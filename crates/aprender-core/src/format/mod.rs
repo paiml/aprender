@@ -418,6 +418,9 @@ pub mod apr_gguf_forward_parity;
 // INV-BPE-001 — tokenizer-bpe vocab range + paired-model match.
 pub mod bpe_inv_001;
 
+// FALSIFY-PROF10-003 — apr profile graphed vs ungraphed sanity inequality.
+pub mod prof10_003;
+
 // FALSIFY-SUB-FFN-005 — sub-FFN telemetry per-layer line count.
 pub mod sub_ffn_005;
 
