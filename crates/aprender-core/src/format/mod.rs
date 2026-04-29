@@ -412,6 +412,9 @@ pub mod ship_024;
 // to one pure verdict fn + mutation survey. Authoritative contract:
 // contracts/compound-ship-gates-v1.yaml v1.0.0.
 
+// FALSIFY-APR-GGUF-PARITY — per-layer ffn_swigl ratio gate for SHIP-007.
+pub mod apr_gguf_forward_parity;
+
 // GATE-SHIP-001 — MODEL-1 aggregate-AND over 10 AC-SHIP1-* booleans.
 pub mod gate_ship_001;
 
