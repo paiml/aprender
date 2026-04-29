@@ -415,6 +415,9 @@ pub mod ship_024;
 // FALSIFY-APR-GGUF-PARITY — per-layer ffn_swigl ratio gate for SHIP-007.
 pub mod apr_gguf_forward_parity;
 
+// FALSIFY-APR-DISTILL-TRAIN-002 — KL loss decreases over epochs gate.
+pub mod distill_train_002;
+
 // GATE-SHIP-001 — MODEL-1 aggregate-AND over 10 AC-SHIP1-* booleans.
 pub mod gate_ship_001;
 
