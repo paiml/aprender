@@ -412,6 +412,39 @@ pub mod ship_024;
 // to one pure verdict fn + mutation survey. Authoritative contract:
 // contracts/compound-ship-gates-v1.yaml v1.0.0.
 
+// FALSIFY-APR-GGUF-PARITY — per-layer ffn_swigl ratio gate for SHIP-007.
+pub mod apr_gguf_forward_parity;
+
+// INV-BPE-001 — tokenizer-bpe vocab range + paired-model match.
+pub mod bpe_inv_001;
+
+// FALSIFY-PROF10-003 — apr profile graphed vs ungraphed sanity inequality.
+pub mod prof10_003;
+
+// FALSIFY-SUB-FFN-005 — sub-FFN telemetry per-layer line count.
+pub mod sub_ffn_005;
+
+// FALSIFY-APR-TOK-PAR-002 — parallel BPE 80% efficiency floor.
+pub mod tok_par_002;
+
+// INV-DATA-004 — dataset-thestack-python train range + val floor.
+pub mod data_inv_004;
+
+// INV-PRETOK-003 — pretokenize-bin manifest sum=actual invariant.
+pub mod pretok_inv_003;
+
+// INV-PRETOK-002 — pretokenize-bin shard u32-alignment invariant.
+pub mod pretok_inv_002;
+
+// INV-PRETOK-001 — pretokenize-bin token id < vocab_size invariant.
+pub mod pretok_inv_001;
+
+// FALSIFY-APR-DISTILL-TRAIN-006 — stage train resumes from precompute cache.
+pub mod distill_train_006;
+
+// FALSIFY-APR-DISTILL-TRAIN-001 — real-training (not stub) tensor-diff gate.
+pub mod distill_train_001;
+
 // GATE-SHIP-001 — MODEL-1 aggregate-AND over 10 AC-SHIP1-* booleans.
 pub mod gate_ship_001;
 
