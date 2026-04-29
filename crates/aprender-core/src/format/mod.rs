@@ -415,6 +415,9 @@ pub mod ship_024;
 // FALSIFY-APR-GGUF-PARITY — per-layer ffn_swigl ratio gate for SHIP-007.
 pub mod apr_gguf_forward_parity;
 
+// INV-DATA-006 — dataset-thestack-python disjoint train/val splits.
+pub mod data_inv_006;
+
 // INV-DATA-004 — dataset-thestack-python train range + val floor.
 pub mod data_inv_004;
 
