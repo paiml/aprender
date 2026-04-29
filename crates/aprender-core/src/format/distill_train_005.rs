@@ -98,9 +98,8 @@ pub fn verdict_from_paired_per_file_hashes(
         return DistillTrain005Verdict::Fail;
     }
     for (a, b) in run_a.iter().zip(run_b.iter()) {
-        match verdict_from_sha256_match(a, b) {
-            Ship010Verdict::Pass => continue,
-            Ship010Verdict::Fail => return DistillTrain005Verdict::Fail,
+        if matches!(verdict_from_sha256_match(a, b), Ship010Verdict::Fail) {
+            return DistillTrain005Verdict::Fail;
         }
     }
     DistillTrain005Verdict::Pass
