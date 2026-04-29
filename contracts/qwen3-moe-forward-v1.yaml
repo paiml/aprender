@@ -1,8 +1,92 @@
 metadata:
-  version: 1.1.0
+  version: 1.2.0
   created: '2026-04-28'
   author: PAIML Engineering
   amendment_history:
+    - version: 1.2.0
+      date: '2026-04-29'
+      kind: amendment
+      title: 'M32c.2.2.2.1 integration strategy decision'
+      description: |
+        Records the design decision that gates the final wire-up
+        (M32c.2.2.2.1) for `apr run` to produce tokens against
+        Qwen3-Coder-30B-A3B-Instruct. After M32c.2.2.2.0 shipped a
+        complete single-layer MoE FFN dispatch (`moe_ffn_forward_layer`)
+        live-verified against the cached 17.3 GB GGUF, the only
+        remaining work is integrating that kernel into the per-token
+        forward loop. Three approaches were considered:
+
+        (A) Add fields to `OwnedQuantizedModel`
+            - Add `mmap: Option<Arc<memmap2::Mmap>>` and
+              `moe_layers: Vec<Option<Qwen3MoeQuantizedLayer>>`.
+            - Cost: 99 construction sites must be updated (verified
+              by `grep -rn "OwnedQuantizedModel {" crates/aprender-serve/src/`).
+              99 mechanical edits.
+            - Pros: cleanest architectural fit; enables lazy
+              mmap-borrowed `expert_byte_slice` calls from forward.
+            - Cons: massive blast radius for one feature.
+
+        (B) Parallel `run_qwen3_moe_generate` function
+            - New top-level inference function that bypasses
+              `OwnedQuantizedModel` entirely, holding `MappedGGUFModel`
+              for the full inference lifetime.
+            - Cost: ~300 LOC of duplicated attention/RoPE/KV cache
+              code, OR refactor that code into reusable helpers.
+            - Pros: zero touch to OwnedQuantizedModel; clean
+              separation of MoE vs dense.
+            - Cons: code duplication or significant refactor.
+
+        (C) Wrapper struct `Qwen3MoeOwnedModel`
+            - Composition: holds `OwnedQuantizedModel` + `Arc<Mmap>` +
+              `moe_layers`. Forward methods delegate to inner for
+              attention, intercept FFN to call `moe_ffn_forward_layer`.
+            - Cost: ~150 LOC; needs `OwnedQuantizedModel` to expose
+              attention/QKV/output-proj as `pub(crate)` methods.
+            - Pros: zero touch to 99 sites; clean composition.
+            - Cons: requires existing forward to be split into
+              composable phases (separate work).
+
+        DECISION: Approach (B) — parallel `run_qwen3_moe_generate`
+        with attention/RoPE/KV refactored into reusable helpers.
+
+        Rationale:
+          * (A)'s 99-site blast radius fails the "CI-must-stay-green"
+            invariant during the refactor.
+          * (C)'s requirement to split existing forward into composable
+            phases is the SAME refactor as (B)'s helper extraction,
+            but (C) ALSO requires a new struct. (B) is strictly less
+            work for the same prerequisite.
+          * (B) makes the MoE forward path a self-contained module
+            that can be ground-truth-validated against llama.cpp
+            (M32d) without entangling the dense path.
+
+        IMPLEMENTATION SLICES (M32c.2.2.2.1.0 → M32c.2.2.2.1.4):
+          * .1.0 — Extract `apply_rope`, `causal_attention`,
+            `qkv_matmul` from `OwnedQuantizedModel` into pure
+            functions in a new `gguf::inference::common` module.
+            Existing forward() refactored to call them. Behavior
+            unchanged; coverage maintained.
+          * .1.1 — New `crates/aprender-serve/src/gguf/qwen3_moe_forward.rs`:
+            implements `forward_one_token(mapped, moe_layers,
+            transformer_state, token_id, position, kv_cache)`.
+          * .1.2 — `run_qwen3_moe_generate(mapped, tokens, config)`:
+            full inference loop using .1.1's per-token forward.
+          * .1.3 — Dispatch: `run_inference` for arch == "qwen3_moe"
+            calls `run_qwen3_moe_generate` instead of
+            `run_gguf_generate`. Removes M32c.2.1's
+            `gguf_gpu_generate.rs` short-circuit.
+          * .1.4 — Falsifier FALSIFY-QW3-MOE-FORWARD-003: `apr run
+            <qwen3-coder>.gguf --prompt "Hi" -n 8` exits 0 + stdout
+            matches /\\S/. Live test on lambda-vector RTX 4090.
+
+        Each slice is a small, atomically-testable PR. .1.0 is
+        contract-preserving (no behavior change). .1.1-.1.2 are
+        additive (new module, no existing path touched). .1.3 is
+        the flip. .1.4 is the live falsifier.
+
+        After M32c.2.2.2.1.4: M32d numerical parity vs llama.cpp
+        Q4_K + HF FP16 is the last gate before flipping this
+        contract from DRAFT → ACTIVE_RUNTIME.
     - version: 1.1.0
       date: '2026-04-28'
       kind: amendment
@@ -81,8 +165,13 @@ metadata:
 
 kind: KernelContract
 name: qwen3-moe-forward
-version: "1.1.0"
+version: "1.2.0"
 status: DRAFT   # SCAFFOLD — flips to ACTIVE_RUNTIME at end of M32d (parity discharge).
+                # v1.2.0 (2026-04-29): adds M32c.2.2.2.1 integration strategy decision —
+                # parallel `run_qwen3_moe_generate` function chosen over (A) 99-site
+                # OwnedQuantizedModel field-add and (C) wrapper struct. Implementation
+                # staged into 5 sub-slices (.1.0 extract helpers, .1.1 per-token
+                # forward, .1.2 generate loop, .1.3 dispatch flip, .1.4 falsifier).
                 # v1.1.0 (2026-04-28): adds dequant_strategy decision under metadata —
                 # LAZY-FUSED-MATVEC was chosen; EAGER rejected (would expand 17.5 GB
                 # Q4_K → 70 GB F32, exceeding RTX 4090 24 GB VRAM). See metadata.
