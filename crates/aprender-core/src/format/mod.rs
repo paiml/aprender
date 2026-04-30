@@ -415,6 +415,9 @@ pub mod ship_024;
 // FALSIFY-APR-GGUF-PARITY — per-layer ffn_swigl ratio gate for SHIP-007.
 pub mod apr_gguf_forward_parity;
 
+// FALSIFY-APR-DISTILL-TRAIN-005 — precompute byte-determinism gate.
+pub mod distill_train_005;
+
 // INV-DATA-006 — dataset-thestack-python disjoint train/val splits.
 pub mod data_inv_006;
 
