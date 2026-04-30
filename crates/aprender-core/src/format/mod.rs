@@ -424,6 +424,9 @@ pub mod data_inv_006;
 // FALSIFY-APR-DISTILL-TRAIN-002 — KL loss decreases over epochs gate.
 pub mod distill_train_002;
 
+// FALSIFY-APR-DISTILL-TRAIN-009 — distill student val_loss < from-scratch baseline.
+pub mod distill_train_009;
+
 // INV-BPE-001 — tokenizer-bpe vocab range + paired-model match.
 pub mod bpe_inv_001;
 
