@@ -430,6 +430,9 @@ pub mod bpe_inv_001;
 // INV-BPE-007 — tokenizer-bpe byte coverage / no UNK on valid UTF-8.
 pub mod bpe_inv_007;
 
+// INV-BPE-003 — tokenizer-bpe round-trip byte-equality on 10K held-out docs.
+pub mod bpe_inv_003;
+
 // INV-BPE-002 — tokenizer-bpe four required special tokens distinct + in range.
 pub mod bpe_inv_002;
 
