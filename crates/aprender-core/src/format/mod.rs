@@ -454,6 +454,9 @@ pub mod data_inv_002;
 // INV-DATA-003 — dataset-thestack-python Jaccard dedup floor (< 0.85).
 pub mod data_inv_003;
 
+// INV-DATA-005 — dataset-thestack-python corpus_sha256 reproducibility.
+pub mod data_inv_005;
+
 // INV-PRETOK-003 — pretokenize-bin manifest sum=actual invariant.
 pub mod pretok_inv_003;
 
