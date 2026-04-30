@@ -472,6 +472,9 @@ pub mod bpe_inv_003;
 // INV-BPE-002 — tokenizer-bpe four required special tokens distinct + in range.
 pub mod bpe_inv_002;
 
+// INV-BPE-004 — tokenizer-bpe merge-rule count algebra (vocab − specials − bytes ± 4).
+pub mod bpe_inv_004;
+
 // FALSIFY-PROF10-003 — apr profile graphed vs ungraphed sanity inequality.
 pub mod prof10_003;
 
