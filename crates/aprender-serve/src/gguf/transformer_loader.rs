@@ -14,6 +14,27 @@ impl GGUFTransformer {
         // Phase 2: Validate config at construction boundary.
         let config = ValidatedModelConfig::from_gguf(model)?.into_inner();
 
+        // M32b: refuse MoE architectures with a structured, contract-named
+        // error before reaching the dense-FFN tensor lookup. Replaces the
+        // pre-M32 cryptic "Tensor 'blk.0.ffn_up.weight' not found" surface
+        // captured by FALSIFY-QW3-MOE-FORWARD-001 in
+        // contracts/qwen3-moe-forward-v1.yaml.
+        let canonical_arch = crate::tensor_names::normalize_architecture(&config.architecture);
+        if canonical_arch == "qwen3_moe" {
+            return Err(crate::error::RealizarError::UnsupportedOperation {
+                operation: "moe_forward_pass".to_string(),
+                reason: format!(
+                    "Architecture '{}' (canonical 'qwen3_moe') uses Mixture-of-Experts FFN. \
+                     Forward pass not yet implemented in the GGUF transformer path. \
+                     Tracked under contract qwen3-moe-forward-v1 (M32 staged plan: \
+                     M32a contract scaffold SHIPPED; M32b arch-aware load \
+                     IN PROGRESS; M32c CPU forward + M32d numerical parity PENDING). \
+                     See contracts/qwen3-moe-forward-v1.yaml.",
+                    config.architecture
+                ),
+            });
+        }
+
         // Load token embedding
         let token_embedding = model.get_tensor_f32("token_embd.weight", file_data)?;
         // GH-278: Position embedding — standard GGUF name + aprender export fallback
