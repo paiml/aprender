@@ -1,7 +1,228 @@
 metadata:
-  version: 1.0.0
+  version: 1.3.0
   created: '2026-04-28'
   author: PAIML Engineering
+  amendment_history:
+    - version: 1.3.0
+      date: '2026-04-29'
+      kind: amendment
+      title: 'M32d parity strategy decision (replaces aspirational llama-cli --logit-output)'
+      description: |
+        M32a/b/c/c.2.2.* all SHIPPED on aprender main; FALSIFY-QW3-MOE-FORWARD-003
+        is LIVE-DISCHARGED on lambda-vector RTX 4090: `apr run` against the
+        cached 17.3 GB Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf emits real
+        tokens end-to-end (PR #1126 squash a902eea93; live falsifier pinned
+        in CI at PR #1127 squash 0392b1843).
+
+        M32d is the last gate before flipping this contract DRAFT →
+        ACTIVE_RUNTIME. The original test text in
+        FALSIFY-QW3-MOE-FORWARD-004 references
+        `llama-cli ... --verbose --logit-output` as the reference path
+        for full-vector logit dump. **That flag does not exist** in
+        stock llama.cpp v7746 (`llama-cli --help` exposes `--logit-bias`
+        for input bias but no logit-output flag). Three reference paths
+        were considered:
+
+        (P1) HuggingFace transformers FP16 (canonical FP16 ground truth)
+             - Path: uv-run Python script loading the HF Qwen3-Coder
+               weights at FP16 (or BF16 if FP16 unavailable) and
+               dumping `model(input_ids).logits[0, -1, :]` to a npy
+               or json fixture.
+             - Pros: standard, exposed via the transformers public API;
+               full 151936-dim logit vector available; matches CLAUDE.md
+               ground-truth verification checklist (HF as FP32/FP16
+               reference).
+             - Cons: requires network or local HF cache for FP16 weights
+               (~60GB for the un-quantized 30B model — but Qwen3-Coder
+               ships a 30B-A3B-FP16 variant, so disk-feasible). One-time
+               fixture-generation cost (~minutes on RTX 4090).
+             - Cosine-similarity tolerance: > 0.99 (per AC_QW3_MOE_005).
+
+        (P2) llama.cpp Q4_K (same-quantization sanity check)
+             - Path: patch llama.cpp to dump logits at decode step 0,
+               OR use the llama-server REST API's logprobs:N field.
+             - Pros: same quantization as our Q4_K_M dispatch path —
+               isolates "is the kernel correct?" from "is the
+               dequantization correct?".
+             - Cons: stock llama.cpp does not expose full-vector logit
+               dump; needs a patched build OR a stack of top-N logprobs
+               (256 deep; not a full 151936 vector). With top-N only,
+               we can do top-1 argmax-exact match instead of cosine on
+               the full vector.
+             - Sanity tolerance: top-1 argmax must match.
+
+        (P3) Patched llama.cpp full-vector logit dump
+             - Path: fork llama.cpp, add a `--logit-output FILE` flag
+               that writes the full logit tensor to disk at decode 0.
+             - Pros: matches the original FALSIFY-QW3-MOE-FORWARD-004
+               text; cleanest cross-implementation comparison.
+             - Cons: out-of-tree patch on llama.cpp; maintenance
+               burden; not reproducible on user machines without a
+               build dance.
+
+        DECISION: P1 (HF FP16) as PRIMARY reference; P2 (top-1 argmax
+        from llama-cli stdout) as SECONDARY sanity check. P3 rejected
+        as too costly for the discharge value.
+
+        Rationale:
+          * P1 fully discharges AC_QW3_MOE_005 (cosine > 0.99 vs HF
+            FP16) — the original strict gate.
+          * P2 partially discharges AC_QW3_MOE_001 (Q4_K tolerance) at
+            the argmax-exact level — sufficient for CI gate, since
+            cosine vs HF FP16 already covers the full-vector case.
+          * P1+P2 together cover both "is the math right?" (P1) and
+            "is the quantization handled correctly?" (P2) without
+            requiring an out-of-tree llama.cpp patch.
+
+        Staged implementation sub-slices for M32d:
+
+          * M32d.0 — THIS contract amendment (parity strategy).
+          * M32d.1 — Author the HF FP16 fixture-generation script
+            (`scripts/generate_qwen3_moe_fp16_logits.py`) using
+            `uv run --with torch --with transformers`. One-time run
+            on lambda-vector dumps `tests/fixtures/qwen3_moe_fp16_logits_pos0.json`
+            for prompt "What is 2+2?".
+          * M32d.2 — Author `crates/aprender-serve/tests/qwen3_moe_parity.rs`
+            (F-QW3-MOE-PARITY-001) computing cosine similarity between
+            apr-CPU-forward logits[0] and the FP16 fixture; assert
+            > 0.99. Marked `#[ignore]` (heavy; needs cached GGUF +
+            fixture).
+          * M32d.3 — Author secondary sanity test
+            (F-QW3-MOE-PARITY-002): runs `llama-cli` as a subprocess
+            on the same prompt + GGUF, parses stdout to extract the
+            top-1 sampled token, asserts apr's argmax-token equals
+            llama.cpp's top-1.
+          * M32d.4 — Flip contract DRAFT → ACTIVE_RUNTIME; bump
+            qwen3-moe-forward-v1 v1.3.0 → v1.4.0 (or v2.0.0 if status
+            transitions warrant a major bump per pv conventions).
+
+        FALSIFY-QW3-MOE-FORWARD-004 is updated below: `test:` field
+        rewritten to reference the HF FP16 fixture path; `if_fails:`
+        clarifies the HF-vs-Q4K divergence diagnostic order.
+
+    - version: 1.2.0
+      date: '2026-04-29'
+      kind: amendment
+      title: 'M32c.2.2.2.1 integration strategy decision'
+      description: |
+        Records the design decision that gates the final wire-up
+        (M32c.2.2.2.1) for `apr run` to produce tokens against
+        Qwen3-Coder-30B-A3B-Instruct. After M32c.2.2.2.0 shipped a
+        complete single-layer MoE FFN dispatch (`moe_ffn_forward_layer`)
+        live-verified against the cached 17.3 GB GGUF, the only
+        remaining work is integrating that kernel into the per-token
+        forward loop. Three approaches were considered:
+
+        (A) Add fields to `OwnedQuantizedModel`
+            - Add `mmap: Option<Arc<memmap2::Mmap>>` and
+              `moe_layers: Vec<Option<Qwen3MoeQuantizedLayer>>`.
+            - Cost: 99 construction sites must be updated (verified
+              by `grep -rn "OwnedQuantizedModel {" crates/aprender-serve/src/`).
+              99 mechanical edits.
+            - Pros: cleanest architectural fit; enables lazy
+              mmap-borrowed `expert_byte_slice` calls from forward.
+            - Cons: massive blast radius for one feature.
+
+        (B) Parallel `run_qwen3_moe_generate` function
+            - New top-level inference function that bypasses
+              `OwnedQuantizedModel` entirely, holding `MappedGGUFModel`
+              for the full inference lifetime.
+            - Cost: ~300 LOC of duplicated attention/RoPE/KV cache
+              code, OR refactor that code into reusable helpers.
+            - Pros: zero touch to OwnedQuantizedModel; clean
+              separation of MoE vs dense.
+            - Cons: code duplication or significant refactor.
+
+        (C) Wrapper struct `Qwen3MoeOwnedModel`
+            - Composition: holds `OwnedQuantizedModel` + `Arc<Mmap>` +
+              `moe_layers`. Forward methods delegate to inner for
+              attention, intercept FFN to call `moe_ffn_forward_layer`.
+            - Cost: ~150 LOC; needs `OwnedQuantizedModel` to expose
+              attention/QKV/output-proj as `pub(crate)` methods.
+            - Pros: zero touch to 99 sites; clean composition.
+            - Cons: requires existing forward to be split into
+              composable phases (separate work).
+
+        DECISION: Approach (B) — parallel `run_qwen3_moe_generate`
+        with attention/RoPE/KV refactored into reusable helpers.
+
+        Rationale:
+          * (A)'s 99-site blast radius fails the "CI-must-stay-green"
+            invariant during the refactor.
+          * (C)'s requirement to split existing forward into composable
+            phases is the SAME refactor as (B)'s helper extraction,
+            but (C) ALSO requires a new struct. (B) is strictly less
+            work for the same prerequisite.
+          * (B) makes the MoE forward path a self-contained module
+            that can be ground-truth-validated against llama.cpp
+            (M32d) without entangling the dense path.
+
+        IMPLEMENTATION SLICES (M32c.2.2.2.1.0 → M32c.2.2.2.1.4):
+          * .1.0 — Extract `apply_rope`, `causal_attention`,
+            `qkv_matmul` from `OwnedQuantizedModel` into pure
+            functions in a new `gguf::inference::common` module.
+            Existing forward() refactored to call them. Behavior
+            unchanged; coverage maintained.
+          * .1.1 — New `crates/aprender-serve/src/gguf/qwen3_moe_forward.rs`:
+            implements `forward_one_token(mapped, moe_layers,
+            transformer_state, token_id, position, kv_cache)`.
+          * .1.2 — `run_qwen3_moe_generate(mapped, tokens, config)`:
+            full inference loop using .1.1's per-token forward.
+          * .1.3 — Dispatch: `run_inference` for arch == "qwen3_moe"
+            calls `run_qwen3_moe_generate` instead of
+            `run_gguf_generate`. Removes M32c.2.1's
+            `gguf_gpu_generate.rs` short-circuit.
+          * .1.4 — Falsifier FALSIFY-QW3-MOE-FORWARD-003: `apr run
+            <qwen3-coder>.gguf --prompt "Hi" -n 8` exits 0 + stdout
+            matches /\\S/. Live test on lambda-vector RTX 4090.
+
+        Each slice is a small, atomically-testable PR. .1.0 is
+        contract-preserving (no behavior change). .1.1-.1.2 are
+        additive (new module, no existing path touched). .1.3 is
+        the flip. .1.4 is the live falsifier.
+
+        After M32c.2.2.2.1.4: M32d numerical parity vs llama.cpp
+        Q4_K + HF FP16 is the last gate before flipping this
+        contract from DRAFT → ACTIVE_RUNTIME.
+    - version: 1.1.0
+      date: '2026-04-28'
+      kind: amendment
+      title: 'M32c.2.2 dequant strategy decision recorded'
+      description: |
+        Adds a `dequant_strategy` block under `metadata` recording the
+        design decision that gates M32c.2.2's implementation. The
+        decision is LAZY-FUSED-MATVEC: per-token forward dispatch
+        keeps the 4 MoE expert tensors in their on-disk Q4_K/Q6_K/F32
+        form and dequantizes inline through the existing
+        `fused_q4k_parallel_matvec` / `fused_q6k_parallel_matvec`
+        row-major matvec kernels (per CLAUDE.md LAYOUT-002 row-major
+        mandate), preserving the 8× memory-bandwidth advantage that
+        the rest of the pipeline relies on.
+
+        EAGER pre-dequantization at load time was rejected because
+        Qwen3-Coder-30B-A3B-Instruct's expert tensors total 17.5 GB
+        in Q4_K/Q6_K and would expand to ~70 GB in F32, exceeding
+        the canonical RTX 4090 24 GB VRAM and stressing host RAM
+        (96 GB on lambda-vector). Eager would also defeat the
+        roofline-bound rationale for fused dequant+matmul that
+        underpins the existing dense-FFN forward path
+        (`crates/aprender-serve/CLAUDE.md` § "8x bandwidth reduction
+        for Q4_K vs f32").
+
+        The decision implies a small API change to
+        `gpu/scheduler/moe_dispatch.rs::moe_forward_token` (or a
+        sibling fn): instead of taking pre-dequantized
+        `MoeExpertWeights { gate_weight: Vec<f32>, ... }`, the
+        per-token forward will take `Qwen3MoeQuantizedLayer` (the
+        4 `QuantizedTensorRef`s from M32c.1) plus the file's
+        mmapped `&[u8]`, and dispatch the existing
+        `fused_q4k_parallel_matvec`/`fused_q6k_parallel_matvec`
+        kernels per selected expert. Adapter shape work
+        (M32c.2.2.0): a thin function that, given a layer and a
+        selected expert id, slices the Q4_K bytes for THIS
+        expert's gate/up/down within the stacked
+        `[num_experts, intermediate, hidden]` and `[num_experts,
+        hidden, intermediate]` layouts.
   description: |
     Qwen3-MoE forward pass — composes router + per-expert SwiGLU + weighted
     aggregation into a single, falsifiable forward kernel for any model in
@@ -41,8 +262,21 @@ metadata:
 
 kind: KernelContract
 name: qwen3-moe-forward
-version: "1.0.0"
-status: DRAFT   # SCAFFOLD — flips to ACTIVE_RUNTIME at end of M32d (parity discharge)
+version: "1.3.0"
+status: DRAFT   # SCAFFOLD — flips to ACTIVE_RUNTIME at end of M32d (parity discharge).
+                # v1.3.0 (M32d.0) records the parity strategy decision:
+                # HF FP16 (primary, cosine > 0.99) + llama.cpp top-1 argmax
+                # (secondary sanity check). Replaces aspirational
+                # `llama-cli --logit-output` reference path which does not
+                # exist in stock llama.cpp v7746.
+                # v1.2.0 (2026-04-29): adds M32c.2.2.2.1 integration strategy decision —
+                # parallel `run_qwen3_moe_generate` function chosen over (A) 99-site
+                # OwnedQuantizedModel field-add and (C) wrapper struct. Implementation
+                # staged into 5 sub-slices (.1.0 extract helpers, .1.1 per-token
+                # forward, .1.2 generate loop, .1.3 dispatch flip, .1.4 falsifier).
+                # v1.1.0 (2026-04-28): adds dequant_strategy decision under metadata —
+                # LAZY-FUSED-MATVEC was chosen; EAGER rejected (would expand 17.5 GB
+                # Q4_K → 70 GB F32, exceeding RTX 4090 24 GB VRAM). See metadata.
 scope: "crates/aprender-serve/src/{gguf,apr}/**, crates/aprender-serve/src/gpu/scheduler/moe_dispatch.rs"
 
 description: |
@@ -206,13 +440,40 @@ implementation_stages:
 - id: M32d
   status: PENDING
   description: |
-    Numerical parity vs ground truth. Compare apr CPU forward
-    logits against llama.cpp Q4_K (primary) and HF transformers
-    FP16 (secondary) per CLAUDE.md ground-truth verification
-    workflow. Falsifier: F_QW3_MOE_FORWARD_004. After M32d this
-    contract flips DRAFT → ACTIVE_RUNTIME and unblocks the
-    companion-repo FALSIFY-CCPA-013 measured tool-dispatch parity
-    score.
+    Numerical parity vs ground truth. Reference-path priority
+    revised at v1.3.0 (M32d.0):
+      * PRIMARY:   HF transformers FP16 (cosine > 0.99 on full
+                   151936-dim logit vector)
+      * SECONDARY: llama.cpp top-1 argmax (sanity match against
+                   same Q4_K_M GGUF, greedy decode)
+    Falsifier: FALSIFY-QW3-MOE-FORWARD-004 (rewritten at v1.3.0).
+    After M32d this contract flips DRAFT → ACTIVE_RUNTIME and
+    unblocks the companion-repo FALSIFY-CCPA-013 measured
+    tool-dispatch parity score.
+
+    Sub-slices (each its own PR):
+
+      * M32d.0 — Contract amendment recording the parity strategy
+                 decision (THIS amendment, v1.2.0 → v1.3.0).
+      * M32d.1 — Author `scripts/generate_qwen3_moe_fp16_logits.py`
+                 + run it once on lambda-vector to produce
+                 `crates/aprender-serve/tests/fixtures/qwen3_moe_fp16_logits_pos0.json`
+                 (151936-dim float vector at position 0 for
+                 prompt "What is 2+2?", HF FP16).
+      * M32d.2 — Author primary parity test
+                 `f_qw3_moe_parity_001_cosine_vs_hf_fp16` in
+                 `crates/aprender-serve/tests/qwen3_moe_parity.rs`.
+                 Computes cosine similarity vs the M32d.1 fixture;
+                 asserts > 0.99. `#[ignore]` (heavy).
+      * M32d.3 — Author secondary sanity test
+                 `f_qw3_moe_parity_002_argmax_vs_llama_cpp`. Runs
+                 llama-cli as subprocess on same GGUF + prompt;
+                 asserts apr's argmax == llama.cpp's top-1 token.
+                 `#[ignore]` (heavy; needs llama-cli on PATH).
+      * M32d.4 — Flip contract DRAFT → ACTIVE_RUNTIME; bump
+                 v1.3.0 → v2.0.0 (status transition is a major bump
+                 per pv conventions). Update companion-repo POC
+                 spec snapshot to record FALSIFY-CCPA-013 unblock.
   unblocks_obligations: [AC_QW3_MOE_001, AC_QW3_MOE_005]
 
 falsification_tests:
@@ -265,26 +526,66 @@ falsification_tests:
     branching at the dispatch site reaches `moe_forward_token`.
 
 - id: FALSIFY-QW3-MOE-FORWARD-004
-  rule: 'M32d discharges numerical parity vs llama.cpp Q4_K reference'
+  rule: 'M32d discharges numerical parity vs HF FP16 + llama.cpp argmax'
   prediction: |
-    cosine_similarity(apr_logits[0], llama_cpp_logits[0]) > 0.99
-    on prompt "What is 2+2?" with greedy decode (top_k=1).
+    Two-axis discharge:
+      (a) cosine_similarity(apr_logits[0], hf_fp16_logits[0]) > 0.99
+          on prompt "What is 2+2?" — greedy decode (top_k=1) at
+          position 0 of the prompt's first generation step.
+      (b) argmax(apr_logits[0]) == llama_cpp_top1_token on the same
+          prompt + same GGUF + greedy sampler.
+    Both must hold for the contract to flip DRAFT → ACTIVE_RUNTIME.
   test: |
-    cargo test -p aprender-serve --test qwen3_moe_parity \
-        -- --include-ignored
-    Compares aprender CPU forward logits at position 0 against
-    llama.cpp's `llama-cli -m <gguf> -p "What is 2+2?" -n 1
-    --verbose --logit-output` parsed reference.
+    Pre-step (one-time, M32d.1):
+      uv run --with torch --with transformers \
+          scripts/generate_qwen3_moe_fp16_logits.py \
+          --prompt "What is 2+2?" \
+          --output crates/aprender-serve/tests/fixtures/qwen3_moe_fp16_logits_pos0.json
+      Loads HF Qwen3-Coder-30B-A3B-Instruct (FP16) on RTX 4090, runs
+      one greedy decode step, dumps the 151936-dim logit vector at
+      position 0 to a JSON file.
+
+    Primary gate (M32d.2 — cosine vs HF FP16):
+      cargo test -p aprender-serve --test qwen3_moe_parity \
+          f_qw3_moe_parity_001_cosine_vs_hf_fp16 \
+          -- --ignored --nocapture
+      Loads the cached 17.3 GB Qwen3-Coder GGUF, runs apr-CPU forward
+      via OwnedQuantizedModel::forward_qwen3_moe on the same prompt,
+      loads the FP16 fixture, computes cosine similarity, asserts > 0.99.
+
+    Secondary sanity (M32d.3 — argmax vs llama.cpp):
+      cargo test -p aprender-serve --test qwen3_moe_parity \
+          f_qw3_moe_parity_002_argmax_vs_llama_cpp \
+          -- --ignored --nocapture
+      Runs `llama-cli -m <gguf> -p "What is 2+2?" -n 1 --top-k 1
+      --temp 0.0 --seed 0` as a subprocess, parses stdout to extract
+      the single emitted token, asserts == apr argmax.
   if_fails: |
-    Numerical divergence — investigate per CLAUDE.md ground-truth
-    verification checklist (embedding → RMSNorm → attention →
-    FFN → final logits). Quantization tolerance is ±5%
-    element-wise / <1% L2 for Q4_K.
+    Diagnostic order (per CLAUDE.md ground-truth verification checklist):
+
+    1. If (a) fails (cosine ≤ 0.99 vs HF FP16):
+       - Numerical divergence in the math itself, NOT just quantization.
+       - Investigate layer-by-layer: embedding (Q4_K embed token vs
+         FP16 embed token) → RMSNorm → attention QKV → RoPE → causal
+         attention → FFN router → per-expert SwiGLU → lm_head.
+       - Tolerance budgets per CLAUDE.md: ±5% element-wise / <1% L2
+         for Q4_K layers; ±0.1% for FP16-equivalent layers.
+
+    2. If (a) passes but (b) fails:
+       - Math is correct (cosine > 0.99); divergence is in the
+         sampler or in dropout/seed handling. Check that
+         apr's greedy_argmax matches llama.cpp's --top-k 1
+         --temp 0.0 deterministic path.
+
+    3. If both fail:
+       - Catastrophic divergence; rerun M32c.2.2.2.1.* falsifiers
+         to confirm forward path is still emitting (not a
+         regression in the M32c chain).
 
 cross_repo_references:
 - repo: paiml/claude-code-parity-apr
   contract: claude-code-parity-apr-v1
-  current_version: "1.19.0"
+  current_version: "1.20.0"
   relation: |
     The companion-repo POC's measured tool-dispatch parity gate
     (FALSIFY-CCPA-013) is unblocked by M32d shipping. That POC

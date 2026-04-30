@@ -495,3 +495,5 @@ include!("gguf_gpu_generate.rs");
 include!("mod_log_transformer_eos.rs");
 include!("mod_05.rs");
 include!("batch.rs");
+
+pub mod qwen3_moe_generate;

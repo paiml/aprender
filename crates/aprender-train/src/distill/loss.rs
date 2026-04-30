@@ -554,4 +554,143 @@ mod tests {
             }
         }
     }
+
+    // =========================================================================
+    // FALSIFY-APR-DISTILL-TRAIN-003 / TRAIN-004: apr-cli-distill-train-v1.yaml
+    //
+    // Pure-math property tests that partial-discharge 2 of 9 falsifiers in the
+    // PROPOSED `apr-cli-distill-train-v1` contract. The full contract still
+    // requires the missing real-training implementation (per spec §35);
+    // these two falsifiers are the math invariants that any future
+    // implementation must preserve.
+    //
+    // Five-Whys:
+    //   Why 1: §35 found `apr distill --stage train` is a stub.
+    //   Why 2: contract `apr-cli-distill-train-v1.yaml` was authored with 9
+    //          falsifiers but 0 are tested.
+    //   Why 3: TRAIN-003/004 are *purely-mathematical* invariants of the
+    //          existing `softmax_2d` + `DistillationLoss` helpers; testable
+    //          today against existing code.
+    //   Why 4: pinning these now means a future real-training PR cannot
+    //          regress the math without tripping these gates.
+    //   Why 5: §26.8 stack-tool-extension methodology — extend apr in
+    //          falsifier-sized slices, never one big PR.
+    // =========================================================================
+
+    /// FALSIFY-APR-DISTILL-TRAIN-003: temperature scaling preserves softmax ranking.
+    ///
+    /// Contract: For any (logits, T>0): argmax(softmax(logits/T)) == argmax(logits).
+    ///
+    /// This is the deterministic-greedy invariant: if knowledge distillation
+    /// were to *reorder* the teacher's argmax under temperature, the student
+    /// would learn a corrupted preference. The max-subtraction trick in
+    /// `softmax_2d` already gives translation-invariance (FALSIFY-SM-007);
+    /// this test pins the *positive-scaling* case across the canonical T set.
+    #[test]
+    fn falsify_apr_distill_train_003_t_scaling_preserves_argmax() {
+        let logits = array![[3.0_f32, 1.0, 0.5, -1.0, 7.0, -3.0, 2.5, 0.0]];
+        let baseline_argmax = logits
+            .row(0)
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("operation should succeed"))
+            .expect("operation should succeed")
+            .0;
+
+        for &t in &[1.0_f32, 2.0, 3.0, 5.0, 10.0] {
+            let scaled = &logits / t;
+            let probs = softmax_2d(&scaled);
+            let scaled_argmax = probs
+                .row(0)
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("operation should succeed"))
+                .expect("operation should succeed")
+                .0;
+            assert_eq!(
+                baseline_argmax, scaled_argmax,
+                "FALSIFIED APR-DISTILL-TRAIN-003: argmax shifted from {baseline_argmax} to {scaled_argmax} at T={t}"
+            );
+        }
+    }
+
+    /// FALSIFY-APR-DISTILL-TRAIN-004: alpha=1.0 reduces to pure KD.
+    ///
+    /// Contract: At alpha=1.0, total_loss = T*T * kl_loss exactly
+    /// (the (1-alpha)*ce_loss term is zeroed).
+    ///
+    /// This is the alpha-weighting bookkeeping invariant. If alpha-handling
+    /// regresses (e.g., off-by-one on the (1-alpha) coefficient), this gate
+    /// catches it before the test_distillation_loss_basic top-level test does
+    /// — because the top-level test only checks `loss > 0`, which a buggy
+    /// alpha implementation can also satisfy.
+    #[test]
+    fn falsify_apr_distill_train_004_alpha_one_equals_pure_kd() {
+        let student = array![[2.5_f32, 0.7, -1.3, 4.0]];
+        let teacher = array![[1.8_f32, 1.1, -0.2, 3.5]];
+        let labels = vec![3_usize];
+
+        let temperature = 3.0_f32;
+        let alpha_one = DistillationLoss::new(temperature, 1.0);
+        let total_at_alpha_one = alpha_one.forward(&student, &teacher, &labels);
+
+        // Reproduce the kl_loss term directly via the same helpers
+        // forward() uses, scaled by T*T per the formula.
+        let student_soft = softmax_2d(&(&student / temperature));
+        let teacher_soft = softmax_2d(&(&teacher / temperature));
+        let kl = kl_divergence(&teacher_soft, &student_soft);
+        let pure_kd = kl * temperature * temperature;
+
+        assert_relative_eq!(total_at_alpha_one, pure_kd, epsilon = 1e-5);
+    }
+
+    /// FALSIFY-APR-DISTILL-TRAIN-003 (proptest variant): random logit vectors
+    /// across canonical T set must preserve argmax ranking.
+    mod apr_distill_train_proptest {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(200))]
+            #[test]
+            fn falsify_apr_distill_train_003_prop_t_scaling_preserves_argmax(
+                logits in proptest::collection::vec(-50.0_f32..50.0, 2..32),
+            ) {
+                let has_dupes = {
+                    let mut sorted = logits.clone();
+                    sorted.sort_by(|a, b| a.partial_cmp(b).expect("operation should succeed"));
+                    sorted.windows(2).any(|w| (w[0] - w[1]).abs() < 1e-6)
+                };
+                if has_dupes {
+                    return Ok(());
+                }
+
+                let n = logits.len();
+                let baseline_argmax = logits
+                    .iter()
+                    .enumerate()
+                    .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("operation should succeed"))
+                    .expect("operation should succeed")
+                    .0;
+
+                for &t in &[1.0_f32, 2.0, 3.0, 5.0, 10.0] {
+                    let arr = Array2::from_shape_vec((1, n), logits.clone())
+                        .expect("operation should succeed");
+                    let scaled = &arr / t;
+                    let probs = softmax_2d(&scaled);
+                    let scaled_argmax = probs
+                        .row(0)
+                        .iter()
+                        .enumerate()
+                        .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("operation should succeed"))
+                        .expect("operation should succeed")
+                        .0;
+                    prop_assert_eq!(
+                        baseline_argmax, scaled_argmax,
+                        "FALSIFIED APR-DISTILL-TRAIN-003-prop: argmax shifted at T={}", t
+                    );
+                }
+            }
+        }
+    }
 }
