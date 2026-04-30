@@ -442,6 +442,9 @@ pub mod data_inv_004;
 // INV-DATA-007 — dataset-thestack-python UTF-8 + NFC round-trip.
 pub mod data_inv_007;
 
+// INV-DATA-001 — dataset-thestack-python license whitelist (zero-tolerance).
+pub mod data_inv_001;
+
 // INV-PRETOK-003 — pretokenize-bin manifest sum=actual invariant.
 pub mod pretok_inv_003;
 
