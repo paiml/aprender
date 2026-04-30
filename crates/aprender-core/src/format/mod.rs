@@ -424,11 +424,11 @@ pub mod data_inv_006;
 // FALSIFY-APR-DISTILL-TRAIN-002 — KL loss decreases over epochs gate.
 pub mod distill_train_002;
 
-// FALSIFY-OPS-005 — concurrent inference results independent (no KV-cache leak).
-pub mod ops_005;
+// FALSIFY-QA-005 — apr --version contains git short hash.
+pub mod qa_005;
 
-// FALSIFY-OPS-006 — tokenizer encode/decode roundtrip on 1000 random UTF-8 strings.
-pub mod ops_006;
+// FALSIFY-QA-010 — cross-subcommand architecture consistency.
+pub mod qa_010;
 
 // FALSIFY-QA-002 + 006 — apr-cli error-exit honesty (exit != 0 on missing file / error output).
 pub mod qa_002_006;
