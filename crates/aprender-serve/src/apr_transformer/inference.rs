@@ -45,6 +45,11 @@ impl AprTransformer {
                 self.config.eps,
             );
             let attn_norm_stats = ActivationStats::from_slice(&normed);
+            // Last-token-only slice for parity with GGUF (§37 / FALSIFY-APR-GGUF-PARITY-007)
+            let seq_len_for_last = token_ids.len();
+            let last_token_attn_norm_stats = ActivationStats::from_slice(
+                &normed[(seq_len_for_last - 1) * hidden_dim..],
+            );
 
             // 2b. QKV projection
             let qkv_dim = layer.qkv_weight.len() / hidden_dim;
@@ -53,6 +58,8 @@ impl AprTransformer {
                 self.add_bias(&mut qkv, bias);
             }
             let qkv_stats = ActivationStats::from_slice(&qkv);
+            let last_token_qkv_stats =
+                ActivationStats::from_slice(&qkv[(seq_len_for_last - 1) * qkv_dim..]);
 
             // 2c. Attention computation (simplified for trace - same logic as forward)
             let seq_len = token_ids.len();
@@ -127,6 +134,9 @@ impl AprTransformer {
                 self.add_bias(&mut attn_output, bias);
             }
             let attn_out_stats = ActivationStats::from_slice(&attn_output);
+            let last_token_attn_out_stats = ActivationStats::from_slice(
+                &attn_output[(seq_len_for_last - 1) * hidden_dim..],
+            );
 
             // Residual connection
             for i in 0..hidden.len() {
@@ -146,6 +156,9 @@ impl AprTransformer {
                 hidden.clone()
             };
             let ffn_norm_stats = ActivationStats::from_slice(&ffn_input);
+            let last_token_ffn_norm_stats = ActivationStats::from_slice(
+                &ffn_input[(seq_len_for_last - 1) * hidden_dim..],
+            );
 
             // 2g. FFN - check if gated MLP (SwiGLU) by presence of gate weight
             // Per contracts/trace-ffn-sub-block-v1.yaml: capture sub-FFN
@@ -155,6 +168,10 @@ impl AprTransformer {
             let mut ffn_up_stats = ActivationStats::default();
             let mut ffn_silu_gate_stats = ActivationStats::default();
             let mut ffn_swiglu_inner_stats = ActivationStats::default();
+            let mut last_token_ffn_gate_stats = ActivationStats::default();
+            let mut last_token_ffn_up_stats = ActivationStats::default();
+            let mut last_token_ffn_silu_gate_stats = ActivationStats::default();
+            let mut last_token_ffn_swiglu_inner_stats = ActivationStats::default();
 
             let ffn_output = if let Some(ref gate_weight) = layer.ffn_gate_weight {
                 let gate = self.matmul(&ffn_input, gate_weight, hidden_dim, intermediate_dim);
@@ -167,6 +184,12 @@ impl AprTransformer {
 
                 ffn_gate_stats = ActivationStats::from_slice(&gate);
                 ffn_up_stats = ActivationStats::from_slice(&up);
+                last_token_ffn_gate_stats = ActivationStats::from_slice(
+                    &gate[(seq_len_for_last - 1) * intermediate_dim..],
+                );
+                last_token_ffn_up_stats = ActivationStats::from_slice(
+                    &up[(seq_len_for_last - 1) * intermediate_dim..],
+                );
 
                 let mut silu_gate = Vec::with_capacity(gate.len());
                 let mut ffn_hidden = Vec::with_capacity(gate.len());
@@ -178,6 +201,12 @@ impl AprTransformer {
 
                 ffn_silu_gate_stats = ActivationStats::from_slice(&silu_gate);
                 ffn_swiglu_inner_stats = ActivationStats::from_slice(&ffn_hidden);
+                last_token_ffn_silu_gate_stats = ActivationStats::from_slice(
+                    &silu_gate[(seq_len_for_last - 1) * intermediate_dim..],
+                );
+                last_token_ffn_swiglu_inner_stats = ActivationStats::from_slice(
+                    &ffn_hidden[(seq_len_for_last - 1) * intermediate_dim..],
+                );
 
                 let mut out = self.matmul(
                     &ffn_hidden,
@@ -203,6 +232,9 @@ impl AprTransformer {
                     self.add_bias(&mut ffn_hidden, bias);
                 }
                 ffn_up_stats = ActivationStats::from_slice(&ffn_hidden);
+                last_token_ffn_up_stats = ActivationStats::from_slice(
+                    &ffn_hidden[(seq_len_for_last - 1) * intermediate_dim..],
+                );
                 for h in &mut ffn_hidden {
                     let gelu_approx =
                         0.5 * *h * (1.0 + (0.797_884_6 * (*h + 0.044_715 * *h * *h * *h)).tanh());
@@ -220,12 +252,34 @@ impl AprTransformer {
                 out
             };
             let ffn_out_stats = ActivationStats::from_slice(&ffn_output);
+            let last_token_ffn_out_stats = ActivationStats::from_slice(
+                &ffn_output[(seq_len_for_last - 1) * hidden_dim..],
+            );
 
             // Residual connection
             for i in 0..hidden.len() {
                 hidden[i] += ffn_output[i];
             }
             let output_stats = ActivationStats::from_slice(&hidden);
+            let last_token_output_stats = ActivationStats::from_slice(
+                &hidden[(seq_len_for_last - 1) * hidden_dim..],
+            );
+
+            // §37 / FALSIFY-APR-GGUF-PARITY-007: emit last-token-only stats for
+            // sample-size parity with GGUF's forward_traced (which traces only
+            // the last token). When seq_len == 1, last_token == all-tokens.
+            let last_token = Some(crate::apr_transformer::LastTokenStats {
+                attn_norm_stats: last_token_attn_norm_stats,
+                qkv_stats: last_token_qkv_stats,
+                attn_out_stats: last_token_attn_out_stats,
+                ffn_norm_stats: last_token_ffn_norm_stats,
+                ffn_gate_stats: last_token_ffn_gate_stats,
+                ffn_up_stats: last_token_ffn_up_stats,
+                ffn_silu_gate_stats: last_token_ffn_silu_gate_stats,
+                ffn_swiglu_inner_stats: last_token_ffn_swiglu_inner_stats,
+                ffn_out_stats: last_token_ffn_out_stats,
+                output_stats: last_token_output_stats,
+            });
 
             layer_activations.push(LayerActivation {
                 layer_idx,
@@ -239,6 +293,7 @@ impl AprTransformer {
                 ffn_swiglu_inner_stats,
                 ffn_out_stats,
                 output_stats,
+                last_token,
             });
         }
 

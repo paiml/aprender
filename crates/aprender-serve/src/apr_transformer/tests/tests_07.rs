@@ -337,6 +337,7 @@ fn test_layer_activation_construction() {
         ffn_swiglu_inner_stats: ActivationStats::default(),
         ffn_out_stats: stats.clone(),
         output_stats: stats,
+        last_token: None,
     };
     assert_eq!(layer_act.layer_idx, 0);
     assert_eq!(layer_act.attn_norm_stats.count, 3);
@@ -358,6 +359,7 @@ fn test_layer_activation_debug() {
         ffn_swiglu_inner_stats: ActivationStats::default(),
         ffn_out_stats: stats.clone(),
         output_stats: stats,
+        last_token: None,
     };
     let debug_str = format!("{:?}", layer_act);
     assert!(debug_str.contains("LayerActivation"));
@@ -378,6 +380,7 @@ fn test_layer_activation_clone() {
         ffn_swiglu_inner_stats: ActivationStats::default(),
         ffn_out_stats: stats.clone(),
         output_stats: stats,
+        last_token: None,
     };
     let cloned = layer_act.clone();
     assert_eq!(cloned.layer_idx, 3);
@@ -418,6 +421,7 @@ fn test_forward_trace_with_layers() {
         ffn_swiglu_inner_stats: ActivationStats::default(),
         ffn_out_stats: stats.clone(),
         output_stats: stats.clone(),
+        last_token: None,
     };
     let trace = ForwardTrace {
         input_tokens: vec![1],
