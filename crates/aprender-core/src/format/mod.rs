@@ -439,6 +439,9 @@ pub mod tok_par_002;
 // INV-DATA-004 — dataset-thestack-python train range + val floor.
 pub mod data_inv_004;
 
+// INV-DATA-007 — dataset-thestack-python UTF-8 + NFC round-trip.
+pub mod data_inv_007;
+
 // INV-PRETOK-003 — pretokenize-bin manifest sum=actual invariant.
 pub mod pretok_inv_003;
 
