@@ -51,6 +51,7 @@ mod owned;
 #[cfg(feature = "cuda")]
 pub mod parity;
 mod quantized;
+pub mod qwen3_moe_load;
 mod runtime;
 mod transformer;
 mod types;

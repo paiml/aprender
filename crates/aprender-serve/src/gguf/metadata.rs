@@ -479,4 +479,42 @@ impl GGUFModel {
             None
         }
     }
+
+    /// M32c.2.2.2.1.2: Get MoE expert count (`{arch}.expert_count`).
+    /// 128 for Qwen3-Coder-30B-A3B-Instruct. Returns None for dense models.
+    pub fn expert_count(&self) -> Option<usize> {
+        let arch = self.architecture()?;
+        let key = crate::gguf::keys::arch_key(arch, crate::gguf::keys::EXPERT_COUNT);
+        if let Some(GGUFValue::UInt32(count)) = self.metadata.get(&key) {
+            Some(*count as usize)
+        } else {
+            None
+        }
+    }
+
+    /// M32c.2.2.2.1.2: Get MoE top-k expert count (`{arch}.expert_used_count`).
+    /// 8 for Qwen3-Coder-30B-A3B-Instruct. Returns None for dense models.
+    pub fn expert_used_count(&self) -> Option<usize> {
+        let arch = self.architecture()?;
+        let key = crate::gguf::keys::arch_key(arch, crate::gguf::keys::EXPERT_USED_COUNT);
+        if let Some(GGUFValue::UInt32(count)) = self.metadata.get(&key) {
+            Some(*count as usize)
+        } else {
+            None
+        }
+    }
+
+    /// M32c.2.2.2.1.2: Get MoE per-expert FFN intermediate dim
+    /// (`{arch}.expert_feed_forward_length`). 768 for Qwen3-Coder-30B-A3B.
+    /// Returns None for dense models.
+    pub fn expert_feed_forward_length(&self) -> Option<usize> {
+        let arch = self.architecture()?;
+        let key =
+            crate::gguf::keys::arch_key(arch, crate::gguf::keys::EXPERT_FEED_FORWARD_LENGTH);
+        if let Some(GGUFValue::UInt32(len)) = self.metadata.get(&key) {
+            Some(*len as usize)
+        } else {
+            None
+        }
+    }
 }
