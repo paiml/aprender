@@ -79,6 +79,7 @@ fn test_forward_trace_multiple_layers() {
             ffn_swiglu_inner_stats: ActivationStats::default(),
             ffn_out_stats: stats.clone(),
             output_stats: stats.clone(),
+            last_token: None,
         })
         .collect();
 
@@ -113,9 +114,72 @@ fn test_layer_activation_with_different_stats() {
         ffn_swiglu_inner_stats: ActivationStats::default(),
         ffn_out_stats: ffn_stats.clone(),
         output_stats: ffn_stats,
+        last_token: None,
     };
 
     assert!((layer.attn_norm_stats.mean - 2.0).abs() < 0.01);
     assert!((layer.ffn_norm_stats.mean - 20.0).abs() < 0.01);
     assert!((layer.output_stats.mean - 20.0).abs() < 0.01);
+}
+
+/// FALSIFY-APR-GGUF-PARITY-007: LayerActivation.last_token is Option-typed
+/// and defaults to None for backwards-compat callers (e.g., GPU forward
+/// pass not yet populating). This test pins the schema invariant.
+#[test]
+fn test_layer_activation_last_token_optional_default_none() {
+    let stats = ActivationStats::from_slice(&[1.0, 2.0, 3.0]);
+    let layer = LayerActivation {
+        layer_idx: 0,
+        attn_norm_stats: stats.clone(),
+        qkv_stats: stats.clone(),
+        attn_out_stats: stats.clone(),
+        ffn_norm_stats: stats.clone(),
+        ffn_gate_stats: ActivationStats::default(),
+        ffn_up_stats: ActivationStats::default(),
+        ffn_silu_gate_stats: ActivationStats::default(),
+        ffn_swiglu_inner_stats: ActivationStats::default(),
+        ffn_out_stats: stats.clone(),
+        output_stats: stats,
+        last_token: None,
+    };
+    assert!(layer.last_token.is_none(), "default should be None for backwards-compat");
+}
+
+/// FALSIFY-APR-GGUF-PARITY-007: When last_token IS populated, all 10 stat
+/// slots are present and have count == hidden_dim or intermediate_dim
+/// (matching GGUF's last-token-only sample). This test pins the data shape.
+#[test]
+fn test_layer_activation_last_token_populated_count_parity() {
+    use crate::apr_transformer::LastTokenStats;
+    let hidden_dim = 64;
+    let intermediate_dim = 256;
+    // Simulate last-token slices (single token's worth of values)
+    let last_hidden = vec![0.5f32; hidden_dim];
+    let last_intermediate = vec![0.7f32; intermediate_dim];
+
+    let last_token = LastTokenStats {
+        attn_norm_stats: ActivationStats::from_slice(&last_hidden),
+        qkv_stats: ActivationStats::from_slice(&last_hidden),
+        attn_out_stats: ActivationStats::from_slice(&last_hidden),
+        ffn_norm_stats: ActivationStats::from_slice(&last_hidden),
+        ffn_gate_stats: ActivationStats::from_slice(&last_intermediate),
+        ffn_up_stats: ActivationStats::from_slice(&last_intermediate),
+        ffn_silu_gate_stats: ActivationStats::from_slice(&last_intermediate),
+        ffn_swiglu_inner_stats: ActivationStats::from_slice(&last_intermediate),
+        ffn_out_stats: ActivationStats::from_slice(&last_hidden),
+        output_stats: ActivationStats::from_slice(&last_hidden),
+    };
+
+    // Hidden-dim stat slots: count == hidden_dim
+    assert_eq!(last_token.attn_norm_stats.count, hidden_dim);
+    assert_eq!(last_token.qkv_stats.count, hidden_dim);
+    assert_eq!(last_token.attn_out_stats.count, hidden_dim);
+    assert_eq!(last_token.ffn_norm_stats.count, hidden_dim);
+    assert_eq!(last_token.ffn_out_stats.count, hidden_dim);
+    assert_eq!(last_token.output_stats.count, hidden_dim);
+    // Intermediate-dim sub-FFN stat slots: count == intermediate_dim
+    assert_eq!(last_token.ffn_gate_stats.count, intermediate_dim);
+    assert_eq!(last_token.ffn_up_stats.count, intermediate_dim);
+    assert_eq!(last_token.ffn_silu_gate_stats.count, intermediate_dim);
+    assert_eq!(last_token.ffn_swiglu_inner_stats.count, intermediate_dim);
 }
