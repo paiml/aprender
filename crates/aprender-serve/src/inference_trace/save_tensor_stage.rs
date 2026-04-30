@@ -1,0 +1,442 @@
+//! Stage enum + comma-list parser for `apr trace --save-tensor`.
+//!
+//! Contract: [`contracts/apr-cli-trace-save-tensor-v1.yaml`] v1.0.0 (PROPOSED).
+//!
+//! The contract's `cli_signature` equation enumerates 19 capture-point names:
+//!
+//! ```text
+//! embedding, attn_norm, qkv_matmul, qkv_bias, q_post_rope, k_post_rope,
+//! attention, attn_out, post_attn_residual, ffn_norm, ffn_gate, ffn_up,
+//! ffn_silu, ffn_swigl, ffn_out, post_ffn_residual, layer_output (alias for
+//! post_ffn_residual), final_norm, lm_head
+//! ```
+//!
+//! ## What this module provides
+//!
+//! - [`SaveTensorStage`] — typed enum over the 19 capture points.
+//! - `FromStr` for case-insensitive single-name parsing.
+//! - [`SaveTensorStage::is_per_layer`] — distinguishes per-layer stages
+//!   (which need a layer index in the file header) from whole-model stages
+//!   (`final_norm`, `lm_head`, which use the WHOLE_MODEL_LAYER sentinel).
+//! - [`SaveTensorStage::canonical_name`] — exact name as referenced in the
+//!   contract; used for both file-naming (`<DIR>/layer-<N>/<NAME>.bin`)
+//!   and CLI-help.
+//! - [`parse_stage_list`] — comma-delimited list parser, partial-discharges
+//!   `FALSIFY-APR-TRACE-SAVE-005` (multi-stage in one run).
+//!
+//! ## Discharge status
+//!
+//! Partial-discharge of `FALSIFY-APR-TRACE-SAVE-005` (multi-stage parser)
+//! at the parser level. Full discharge requires the `apr trace --save-tensor`
+//! CLI implementation that calls the writer at each chosen stage.
+
+use std::str::FromStr;
+
+/// One of the 19 stages where `apr trace --save-tensor` may capture an F32
+/// tensor for per-element APR-vs-GGUF comparison.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SaveTensorStage {
+    /// Token embedding lookup output.
+    Embedding,
+    /// Post-RMSNorm pre-QKV.
+    AttnNorm,
+    /// Post matmul, pre-bias.
+    QkvMatmul,
+    /// Post-bias add, pre-RoPE.
+    QkvBias,
+    /// Q after RoPE.
+    QPostRope,
+    /// K after RoPE.
+    KPostRope,
+    /// Post softmax(Q@Kᵀ)@V, pre O-proj.
+    Attention,
+    /// Post-O-projection.
+    AttnOut,
+    /// Hidden state post layer-N attention residual.
+    PostAttnResidual,
+    /// Post-FFN-RMSNorm pre-gate.
+    FfnNorm,
+    /// Post gate matmul.
+    FfnGate,
+    /// Post up matmul.
+    FfnUp,
+    /// silu(gate).
+    FfnSilu,
+    /// silu(gate) × up.
+    FfnSwigl,
+    /// Post down-projection.
+    FfnOut,
+    /// Hidden state post layer-N FFN residual. Same as `LayerOutput`; both
+    /// names accepted on parse, `PostFfnResidual` is the canonical form.
+    PostFfnResidual,
+    /// Post-output-norm (whole-model, NOT per-layer).
+    FinalNorm,
+    /// Logits (whole-model, NOT per-layer).
+    LmHead,
+}
+
+impl SaveTensorStage {
+    /// All 18 distinct stages (alphabetical), excluding the `LayerOutput`
+    /// alias for `PostFfnResidual`.
+    pub const ALL: [SaveTensorStage; 18] = [
+        Self::Embedding,
+        Self::AttnNorm,
+        Self::QkvMatmul,
+        Self::QkvBias,
+        Self::QPostRope,
+        Self::KPostRope,
+        Self::Attention,
+        Self::AttnOut,
+        Self::PostAttnResidual,
+        Self::FfnNorm,
+        Self::FfnGate,
+        Self::FfnUp,
+        Self::FfnSilu,
+        Self::FfnSwigl,
+        Self::FfnOut,
+        Self::PostFfnResidual,
+        Self::FinalNorm,
+        Self::LmHead,
+    ];
+
+    /// Canonical name as referenced in the contract `cli_signature` and as
+    /// used for file paths (`<DIR>/layer-<N>/<NAME>.bin`).
+    #[must_use]
+    pub fn canonical_name(&self) -> &'static str {
+        match self {
+            Self::Embedding => "embedding",
+            Self::AttnNorm => "attn_norm",
+            Self::QkvMatmul => "qkv_matmul",
+            Self::QkvBias => "qkv_bias",
+            Self::QPostRope => "q_post_rope",
+            Self::KPostRope => "k_post_rope",
+            Self::Attention => "attention",
+            Self::AttnOut => "attn_out",
+            Self::PostAttnResidual => "post_attn_residual",
+            Self::FfnNorm => "ffn_norm",
+            Self::FfnGate => "ffn_gate",
+            Self::FfnUp => "ffn_up",
+            Self::FfnSilu => "ffn_silu",
+            Self::FfnSwigl => "ffn_swigl",
+            Self::FfnOut => "ffn_out",
+            Self::PostFfnResidual => "post_ffn_residual",
+            Self::FinalNorm => "final_norm",
+            Self::LmHead => "lm_head",
+        }
+    }
+
+    /// `true` if this stage emits one tensor per decoder layer; `false` if
+    /// it emits exactly one whole-model tensor (used for `final_norm` and
+    /// `lm_head` only).
+    #[must_use]
+    pub fn is_per_layer(&self) -> bool {
+        !matches!(self, Self::FinalNorm | Self::LmHead)
+    }
+}
+
+/// Errors that can arise parsing a stage name.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum StageParseError {
+    /// Not one of the recognised stage names.
+    #[error("unknown save-tensor stage {got:?}; valid stages: {valid}")]
+    Unknown {
+        /// The unrecognised input string.
+        got: String,
+        /// Comma-joined list of valid stage names for help text.
+        valid: String,
+    },
+    /// Empty token (e.g. an empty `--save-tensor` value, or a stray comma
+    /// like `embedding,,ffn_gate`).
+    #[error("save-tensor stage cannot be an empty string")]
+    Empty,
+}
+
+impl FromStr for SaveTensorStage {
+    type Err = StageParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let trimmed = s.trim();
+        if trimmed.is_empty() {
+            return Err(StageParseError::Empty);
+        }
+        match trimmed.to_lowercase().as_str() {
+            "embedding" => Ok(Self::Embedding),
+            "attn_norm" => Ok(Self::AttnNorm),
+            "qkv_matmul" => Ok(Self::QkvMatmul),
+            "qkv_bias" => Ok(Self::QkvBias),
+            "q_post_rope" => Ok(Self::QPostRope),
+            "k_post_rope" => Ok(Self::KPostRope),
+            "attention" => Ok(Self::Attention),
+            "attn_out" => Ok(Self::AttnOut),
+            "post_attn_residual" => Ok(Self::PostAttnResidual),
+            "ffn_norm" => Ok(Self::FfnNorm),
+            "ffn_gate" => Ok(Self::FfnGate),
+            "ffn_up" => Ok(Self::FfnUp),
+            "ffn_silu" => Ok(Self::FfnSilu),
+            "ffn_swigl" => Ok(Self::FfnSwigl),
+            "ffn_out" => Ok(Self::FfnOut),
+            "post_ffn_residual" | "layer_output" => Ok(Self::PostFfnResidual),
+            "final_norm" => Ok(Self::FinalNorm),
+            "lm_head" => Ok(Self::LmHead),
+            _ => Err(StageParseError::Unknown {
+                got: trimmed.to_string(),
+                valid: SaveTensorStage::ALL
+                    .iter()
+                    .map(|s| s.canonical_name())
+                    .collect::<Vec<_>>()
+                    .join(","),
+            }),
+        }
+    }
+}
+
+/// Parse a comma-delimited list of stage names.
+///
+/// Whitespace around commas is tolerated. Duplicates are preserved
+/// (caller decides whether to dedupe). Empty list parses to `Ok(vec![])`
+/// — a no-op `--save-tensor=` is treated as "no stages selected", same as
+/// not passing the flag at all. A list containing an empty token like
+/// `embedding,,ffn_gate` is a parse error.
+///
+/// # Errors
+///
+/// Returns [`StageParseError`] on the first bad token; remaining tokens
+/// are NOT parsed.
+///
+/// # Example
+///
+/// ```
+/// # use realizar::inference_trace::save_tensor_stage::{parse_stage_list, SaveTensorStage};
+/// let stages = parse_stage_list("embedding, ffn_gate ,ffn_swigl").unwrap();
+/// assert_eq!(stages, vec![
+///     SaveTensorStage::Embedding,
+///     SaveTensorStage::FfnGate,
+///     SaveTensorStage::FfnSwigl,
+/// ]);
+/// ```
+pub fn parse_stage_list(s: &str) -> Result<Vec<SaveTensorStage>, StageParseError> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return Ok(vec![]);
+    }
+    trimmed.split(',').map(SaveTensorStage::from_str).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn all_eighteen_stages_have_unique_canonical_names() {
+        let mut names: Vec<&str> = SaveTensorStage::ALL
+            .iter()
+            .map(|s| s.canonical_name())
+            .collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(
+            names.len(),
+            SaveTensorStage::ALL.len(),
+            "stage canonical_names must be unique"
+        );
+    }
+
+    #[test]
+    fn canonical_names_match_contract_enumeration() {
+        // Per apr-cli-trace-save-tensor-v1.yaml `cli_signature` equation.
+        let expected = [
+            "embedding",
+            "attn_norm",
+            "qkv_matmul",
+            "qkv_bias",
+            "q_post_rope",
+            "k_post_rope",
+            "attention",
+            "attn_out",
+            "post_attn_residual",
+            "ffn_norm",
+            "ffn_gate",
+            "ffn_up",
+            "ffn_silu",
+            "ffn_swigl",
+            "ffn_out",
+            "post_ffn_residual",
+            "final_norm",
+            "lm_head",
+        ];
+        let actual: Vec<&str> = SaveTensorStage::ALL
+            .iter()
+            .map(|s| s.canonical_name())
+            .collect();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn from_str_round_trip_for_every_canonical_name() {
+        for stage in SaveTensorStage::ALL {
+            let parsed: SaveTensorStage = stage
+                .canonical_name()
+                .parse()
+                .unwrap_or_else(|_| panic!("canonical name must round-trip: {stage:?}"));
+            assert_eq!(parsed, stage);
+        }
+    }
+
+    #[test]
+    fn from_str_is_case_insensitive() {
+        let parsed: SaveTensorStage = "FFN_GATE".parse().expect("upper-case must parse");
+        assert_eq!(parsed, SaveTensorStage::FfnGate);
+        let parsed: SaveTensorStage = "Ffn_Gate".parse().expect("mixed-case must parse");
+        assert_eq!(parsed, SaveTensorStage::FfnGate);
+    }
+
+    #[test]
+    fn from_str_trims_whitespace() {
+        let parsed: SaveTensorStage = "  embedding  ".parse().expect("trim must work");
+        assert_eq!(parsed, SaveTensorStage::Embedding);
+    }
+
+    #[test]
+    fn from_str_layer_output_is_alias_for_post_ffn_residual() {
+        let alias: SaveTensorStage = "layer_output".parse().expect("alias must parse");
+        let canonical: SaveTensorStage = "post_ffn_residual".parse().unwrap();
+        assert_eq!(alias, canonical);
+        assert_eq!(alias, SaveTensorStage::PostFfnResidual);
+    }
+
+    #[test]
+    fn from_str_rejects_empty() {
+        let err = SaveTensorStage::from_str("").expect_err("empty must fail");
+        assert_eq!(err, StageParseError::Empty);
+        let err = SaveTensorStage::from_str("   ").expect_err("whitespace-only must fail");
+        assert_eq!(err, StageParseError::Empty);
+    }
+
+    #[test]
+    fn from_str_rejects_unknown_stage() {
+        let err = SaveTensorStage::from_str("not_a_stage").expect_err("unknown must fail");
+        match err {
+            StageParseError::Unknown { got, valid } => {
+                assert_eq!(got, "not_a_stage");
+                assert!(valid.contains("embedding"));
+                assert!(valid.contains("ffn_gate"));
+            },
+            StageParseError::Empty => panic!("expected Unknown, got Empty"),
+        }
+    }
+
+    #[test]
+    fn is_per_layer_correct_for_each_stage() {
+        for stage in SaveTensorStage::ALL {
+            let expected = !matches!(stage, SaveTensorStage::FinalNorm | SaveTensorStage::LmHead);
+            assert_eq!(
+                stage.is_per_layer(),
+                expected,
+                "is_per_layer mismatch for {stage:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn is_per_layer_count_matches_contract() {
+        // Per contract: 16 per-layer stages (one per decoder layer N), 2
+        // whole-model stages (final_norm, lm_head). The PostFfnResidual /
+        // LayerOutput alias collapses to one variant in the enum, so total
+        // distinct stages = 18; per-layer = 16; whole-model = 2.
+        let per_layer = SaveTensorStage::ALL
+            .iter()
+            .filter(|s| s.is_per_layer())
+            .count();
+        let whole_model = SaveTensorStage::ALL
+            .iter()
+            .filter(|s| !s.is_per_layer())
+            .count();
+        assert_eq!(per_layer, 16);
+        assert_eq!(whole_model, 2);
+        assert_eq!(per_layer + whole_model, SaveTensorStage::ALL.len());
+    }
+
+    // =========================================================================
+    // FALSIFY-APR-TRACE-SAVE-005 (multi-stage in one run): parser-level
+    // partial-discharge. Full discharge requires the CLI implementation that
+    // produces 3 files per layer when `--save-tensor embedding,ffn_gate,ffn_swigl`
+    // is passed; this test pins the input parsing.
+    // =========================================================================
+
+    #[test]
+    fn falsify_apr_trace_save_005_multi_stage_parsing() {
+        let stages = parse_stage_list("embedding,ffn_gate,ffn_swigl")
+            .expect("3-element comma list must parse");
+        assert_eq!(
+            stages,
+            vec![
+                SaveTensorStage::Embedding,
+                SaveTensorStage::FfnGate,
+                SaveTensorStage::FfnSwigl,
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_stage_list_tolerates_whitespace_around_commas() {
+        let stages = parse_stage_list("embedding, ffn_gate , ffn_swigl ")
+            .expect("whitespace must be trimmed");
+        assert_eq!(
+            stages,
+            vec![
+                SaveTensorStage::Embedding,
+                SaveTensorStage::FfnGate,
+                SaveTensorStage::FfnSwigl,
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_stage_list_empty_returns_empty_vec() {
+        assert_eq!(parse_stage_list("").unwrap(), vec![]);
+        assert_eq!(parse_stage_list("   ").unwrap(), vec![]);
+    }
+
+    #[test]
+    fn parse_stage_list_rejects_double_comma() {
+        let err = parse_stage_list("embedding,,ffn_gate").expect_err("double comma must fail");
+        assert_eq!(err, StageParseError::Empty);
+    }
+
+    #[test]
+    fn parse_stage_list_rejects_trailing_comma() {
+        let err = parse_stage_list("embedding,ffn_gate,").expect_err("trailing comma must fail");
+        assert_eq!(err, StageParseError::Empty);
+    }
+
+    #[test]
+    fn parse_stage_list_rejects_unknown_token() {
+        let err = parse_stage_list("embedding,not_a_stage,ffn_gate")
+            .expect_err("unknown token must fail");
+        assert!(matches!(err, StageParseError::Unknown { .. }));
+    }
+
+    #[test]
+    fn parse_stage_list_preserves_duplicates() {
+        // Caller decides whether to dedupe (e.g., to avoid double-write).
+        let stages = parse_stage_list("ffn_gate,ffn_gate,ffn_gate").expect("dupes must parse");
+        assert_eq!(stages, vec![SaveTensorStage::FfnGate; 3]);
+    }
+
+    #[test]
+    fn parse_stage_list_single_stage() {
+        let stages = parse_stage_list("ffn_swigl").expect("single must parse");
+        assert_eq!(stages, vec![SaveTensorStage::FfnSwigl]);
+    }
+
+    #[test]
+    fn parse_stage_list_all_eighteen_in_one_call() {
+        let csv = SaveTensorStage::ALL
+            .iter()
+            .map(|s| s.canonical_name())
+            .collect::<Vec<_>>()
+            .join(",");
+        let stages = parse_stage_list(&csv).expect("full list must parse");
+        assert_eq!(stages, SaveTensorStage::ALL.to_vec());
+    }
+}
