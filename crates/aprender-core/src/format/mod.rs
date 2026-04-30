@@ -424,6 +424,9 @@ pub mod data_inv_006;
 // FALSIFY-APR-DISTILL-TRAIN-002 — KL loss decreases over epochs gate.
 pub mod distill_train_002;
 
+// FALSIFY-APR-PULL-DATASET-005 — apr pull <model> --dry-run backward compat.
+pub mod pull_dataset_005;
+
 // FALSIFY-APR-PULL-DATASET-003 — apr pull dataset no-match glob fails fast.
 pub mod pull_dataset_003;
 
