@@ -1,8 +1,9 @@
 metadata:
   kind: schema
-  version: 1.0.0
+  version: 1.1.0
   status: PROPOSED
   created: '2026-04-27'
+  updated: '2026-04-28'
   author: PAIML Engineering
   registry: true
   references:
@@ -10,8 +11,19 @@ metadata:
   - 'SPEC-SHIP-TWO-001 §28 — Root cause refined: APR helpers::f32_matmul vs GGUF fused Q4K-aware matmul'
   - 'SPEC-SHIP-TWO-001 §28.8 — Falsifiable next investigation step (PR D + PR E)'
   - 'SPEC-SHIP-TWO-001 §17.5 — SHIP-007 fix discharges 5 MODEL-1 PARTIALs'
+  - 'SPEC-SHIP-TWO-001 §37 — TRACE-CAPTURE-POINT MISMATCH between APR and GGUF forward_traced (sample-size bias)'
   - 'feedback_fix_root_cause_never_route_around.md'
   - 'evidence/ship-007-apr-vs-gguf-2026-04-27/{apr,gguf}-trace.txt'
+  - 'crates/aprender-serve/examples/diag_compare_embedding.rs'
+  - 'crates/aprender-serve/examples/diag_compare_rmsnorm_layer0.rs'
+  changelog:
+    1.1.0:
+    - 'Add FALSIFY-APR-GGUF-PARITY-007 sample-size-parity gate (§37 enforcement)'
+    - 'Document that v1.0.0 ratio gates are BIASED until both reporters use same sample'
+    - 'Add proof_obligation: trace_count_must_match (no apples-to-oranges std comparisons)'
+    - 'Add invariants: APR forward_traced and GGUF forward_traced MUST capture stats over the SAME tensor sample (either both all-tokens or both last-token)'
+    1.0.0:
+    - 'Initial drift-prevention contract for §27 18.23× layer-3 ffn_swigl gate'
   description: >
     Contract codifying the APR-vs-GGUF forward-parity binding criterion
     discovered in §27 + refined in §28. The canonical 7B teacher
@@ -23,6 +35,17 @@ metadata:
     PR E replaces the f32_matmul path with the Q4K-aware fused
     kernel, this contract flips to ACTIVE and the FALSIFY gate
     Passes — discharging 5 MODEL-1 PARTIALs (SHIP-002/005/006/007/008).
+
+    v1.1.0 ENFORCEMENT (§37 finding):
+    The v1.0.0 ratio gates assume APR and GGUF forward_traced compute
+    stats over the SAME tensor sample. Per §37 they DO NOT today: APR
+    captures all-tokens stats (25088 elements for 7-token prompt),
+    GGUF captures last-token-only stats (3584 elements for the same
+    prompt). The 18.23× ratio is partly a sample-size artifact, not
+    a pure precision-drift signal. Falsification gate -007 enforces
+    that APR.count == GGUF.count per layer; this gate FAILS today and
+    must be made to PASS before the v1.0.0 ratio gates are credible
+    binding criteria.
 
 equations:
   per_layer_ffn_swigl_parity:
@@ -93,6 +116,44 @@ equations:
     - "No silent fallback to f32_matmul on Q4K weights"
     - "Drift-prevention test PASSES post-fix"
 
+  trace_sample_size_parity:
+    formula: |
+      §37 enforcement: APR and GGUF forward_traced MUST capture
+      ActivationStats over the SAME tensor sample for a given
+      prompt. Specifically, for prompt with seq_len = 7:
+
+        apr_layer[i].attn_norm_stats.count == gguf_layer[i].attn_norm_stats.count
+        apr_layer[i].ffn_swigl_stats.count == gguf_layer[i].ffn_swigl_stats.count
+        ... (for ALL 10 sub-layer ActivationStats slots)
+
+      Either both are seq_len * dim (all-tokens semantics, APR today)
+      or both are dim (last-token semantics, GGUF today). The
+      reporter implementations MUST agree on which.
+
+      Today (v1.0.0 measurement): APR's
+      `apr_transformer/inference.rs:30` does
+      `let mut hidden = self.embed(token_ids)` then captures stats
+      over the full hidden tensor (count = 7 × 3584 = 25088 for
+      attn_norm; 7 × 18944 = 132608 for ffn_swigl). GGUF's
+      `gguf/inference/forward/traced.rs:77-78` prefills 6 tokens
+      silently and captures stats only on the last token (count =
+      3584 for attn_norm; 18944 for ffn_swigl).
+
+      Net effect: r_i in `per_layer_ffn_swigl_parity` is biased.
+      The 18.23× layer-3 ratio mixes (a) any real precision drift
+      with (b) the all-tokens-vs-last-token sampling artifact.
+      Until parity is restored, ratio gates produce false positives
+      (Pass when there's a real bug masked by sampling) or false
+      negatives (Fail when sampling alone explains the drift).
+    domain: trace reporter implementations
+    codomain: bool
+    invariants:
+    - "APR.count == GGUF.count per layer per stat slot"
+    - "Either both all-tokens or both last-token semantics"
+    - "Sample-size parity is a PRECONDITION for ratio-gate credibility"
+    - "Fix surface (Option A): extend GGUF forward_traced to all-tokens stats"
+    - "Fix surface (Option B): extend APR forward_traced to ALSO emit last-token stats"
+
 falsification_tests:
 - id: FALSIFY-APR-GGUF-PARITY-001
   rule: per-layer ffn_swigl std ratio in [0.5, 2.0]
@@ -157,6 +218,56 @@ falsification_tests:
     PR cascade #1081/#1082/#1083 not merged or regressed.
     GGUF dispatch falling back to no-trace path. Re-merge cascade.
 
+- id: FALSIFY-APR-GGUF-PARITY-007
+  rule: APR and GGUF forward_traced capture stats over the same sample (count parity)
+  prediction: |
+    For each layer i ∈ [0, 28) and each ActivationStats slot s ∈
+    {attn_norm, qkv, attn_out, ffn_norm, ffn_gate, ffn_up,
+     ffn_silu_gate, ffn_swiglu_inner, ffn_out, output}:
+
+      apr_layer[i].<s>_stats.count == gguf_layer[i].<s>_stats.count
+
+    Either both stats reflect 7 × hidden_dim (all-tokens semantics)
+    or both reflect 1 × hidden_dim (last-token semantics). The
+    reporters MUST agree.
+
+    TODAY (v1.0.0 measurement, §37 finding) this gate FAILS:
+      apr_layer[0].attn_norm_stats.count == 25088 (7 × 3584)
+      gguf_layer[0].attn_norm_stats.count == 3584  (1 × 3584)
+
+    Once parity is restored (Option A: GGUF → all-tokens; or
+    Option B: APR → also-emit-last-token), this gate PASSES and
+    the v1.0.0 ratio gates -001/-002/-003 become credible binding
+    criteria.
+  test: |
+    cargo test -p aprender-serve --test apr_vs_gguf_forward_parity sample_size_parity --features inference -- --ignored
+    # Test loads both teacher formats, runs forward_traced on the
+    # canonical 7-token prompt, asserts count equality across all
+    # 28 layers × 10 stat slots = 280 equality checks.
+  if_fails: |
+    Per §37, the trace reporters compute stats over different
+    samples. APR's `apr_transformer/inference.rs:30` uses all
+    7 tokens; GGUF's `gguf/inference/forward/traced.rs:77-78`
+    silently prefills 6 tokens then traces the last only.
+
+    Until this gate Passes, FALSIFY-APR-GGUF-PARITY-001/-002/-003
+    are biased by sampling, not pure precision-drift signals.
+    Apparent layer-3 18.23× ratio mixes real drift + sample-size
+    artifact in unknown proportions.
+
+    Fix surface (Option A — recommended, smaller):
+      crates/aprender-serve/src/gguf/inference/forward/traced.rs:77-86
+      Replace prefill-then-trace-last with a per-layer
+      ActivationStats accumulator over all tokens. Estimated
+      50 LOC. Forward semantics unchanged.
+
+    Fix surface (Option B — alternative):
+      crates/aprender-serve/src/apr_transformer/inference.rs:30+
+      After each `ActivationStats::from_slice(&full_hidden)`, also
+      emit `ActivationStats::from_slice(&hidden[(seq_len-1)*dim..])`
+      into a parallel `last_token_*_stats` field. Cost: ~40 LOC +
+      schema change to `LayerActivation`.
+
 proof_obligations:
 - type: invariant
   property: "APR forward path produces per-element bit-equivalent output to GGUF for Q4K weights"
@@ -166,6 +277,10 @@ proof_obligations:
   property: "no route-around fix at silu_g*u multiply that masks the gate-matmul precision issue"
 - type: completeness
   property: "drift-prevention test FAILS today, PASSES post-PR-E (binding criterion semantics)"
+- type: invariant
+  property: "trace reporters compute stats over the same tensor sample (count parity, §37)"
+- type: soundness
+  property: "ratio gates are credible only after sample-size parity is restored"
 
 kani_harnesses:
 - id: KH-APR-GGUF-PARITY-001
@@ -176,15 +291,29 @@ kani_harnesses:
   obligation: divergence_starts_at_gate_matmul
   property: gate_matmul_is_causal_origin
   bound: 4   # 4 sub-FFN slots: gate / up / silu_gate / swiglu_inner
+- id: KH-APR-GGUF-PARITY-003
+  obligation: trace_sample_size_parity
+  property: count_equal_per_layer_per_stat_slot
+  bound: 280  # 28 layers × 10 stat slots per layer
 
 verification_summary:
-  total_obligations: 4
+  total_obligations: 6
   proven: 0
   tested: 0
   status: pending
   notes: |
     Authored 2026-04-27 as PR D of SHIP-TWO-001 §28.8 binding-criterion
     chain. PROPOSED status until PR E (the actual fix) lands.
+
+    v1.1.0 amendment (2026-04-28, §37):
+    Adds the sample-size-parity gate (FALSIFY-APR-GGUF-PARITY-007 +
+    KH-APR-GGUF-PARITY-003) as a PRECONDITION for ratio-gate
+    credibility. Today's measurements (APR all-tokens vs GGUF
+    last-token) make ratio gates biased — the 18.23× layer-3
+    ffn_swigl ratio mixes real drift with sampling artifact in
+    unknown proportions. The parity fix lands BEFORE PR E (or
+    in parallel) so the ratio gates measure pure precision-drift
+    once they go ACTIVE.
 
     PR E specification (per §28.4 + §28.8):
     - Replace helpers::f32_matmul in AprTransformer.matmul() with
