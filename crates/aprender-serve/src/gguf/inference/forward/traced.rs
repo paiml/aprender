@@ -212,6 +212,24 @@ impl OwnedQuantizedModel {
             // Construct LayerActivation. Order matches APR's
             // inference.rs:231-242. PR B: all 10 fields populated for
             // SwiGLU; GELU path leaves 4 sub-FFN at default-zero.
+            //
+            // §37 / FALSIFY-APR-GGUF-PARITY-007: GGUF's forward_traced
+            // already captures last-token-only stats (since it traces only
+            // the last token through the inlined orchestrator at line 86+).
+            // Populate `last_token` with a clone so APR.last_token vs GGUF
+            // can be compared apples-to-apples (count parity satisfied).
+            let last_token = Some(crate::apr_transformer::LastTokenStats {
+                attn_norm_stats: attn_norm_stats.clone(),
+                qkv_stats: qkv_stats.clone(),
+                attn_out_stats: attn_out_stats.clone(),
+                ffn_norm_stats: ffn_norm_stats.clone(),
+                ffn_gate_stats: ffn_gate_stats.clone(),
+                ffn_up_stats: ffn_up_stats.clone(),
+                ffn_silu_gate_stats: ffn_silu_gate_stats.clone(),
+                ffn_swiglu_inner_stats: ffn_swiglu_inner_stats.clone(),
+                ffn_out_stats: ffn_out_stats.clone(),
+                output_stats: output_stats.clone(),
+            });
             layer_activations.push(LayerActivation {
                 layer_idx,
                 attn_norm_stats,
@@ -224,6 +242,7 @@ impl OwnedQuantizedModel {
                 ffn_swiglu_inner_stats,
                 ffn_out_stats,
                 output_stats,
+                last_token,
             });
         }
 
