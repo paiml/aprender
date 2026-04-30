@@ -424,6 +424,9 @@ pub mod data_inv_006;
 // FALSIFY-APR-DISTILL-TRAIN-002 — KL loss decreases over epochs gate.
 pub mod distill_train_002;
 
+// FALSIFY-QA-007 — apr-cli --json flag changes output (not a no-op).
+pub mod qa_007;
+
 // FALSIFY-QA-001 — apr-cli all 58 commands respond to --help.
 pub mod qa_001;
 
