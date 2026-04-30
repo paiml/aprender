@@ -424,6 +424,9 @@ pub mod data_inv_006;
 // FALSIFY-APR-DISTILL-TRAIN-002 — KL loss decreases over epochs gate.
 pub mod distill_train_002;
 
+// FALSIFY-APR-PULL-DATASET-002 — apr pull dataset --include glob exact match count.
+pub mod pull_dataset_002;
+
 // FALSIFY-APR-DISTILL-TRAIN-009 — distill student val_loss < from-scratch baseline.
 pub mod distill_train_009;
 
