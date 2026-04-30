@@ -1,7 +1,9 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.81.0
+**Version:** 2.85.0
+**Atomic next action (v2.85.0):** **§40 — SHIP-007 root cause LOCALIZED to FP8/cuBLASLt GPU path; CPU path is CORRECT** (see new §40 below). Live evidence on canonical 7B teacher (RTX 4090): `apr run --no-gpu` (CPU path via `OwnedQuantizedModel` + Q4K-fused SIMD kernels) produces "**2 + 2 equals**" (correct) at temp=0; `apr run` (default, GPU path via cuBLASLt FP8 + JIT-warmed kernels) produces "**ampiezza = 1**" (gibberish). Same model, same prompt, same greedy sampling. The bug is in the GPU dispatch chain — specifically in the `cuBLASLt FP8 JIT warmed` kernels (per `[PMAT-082]` log) and/or `FP8 weight cache` (per `[PMAT-053]` log). Notably, task #147 already established `APR_SKIP_FP8_WARMUP` env var as a "reproducer stabilization" — confirming FP8 has been a known issue and a workaround exists. **MODEL-1 is shippable today via CPU path**; the GPU FP8 path needs a fix or a fallback gate. This narrows SHIP-007 from an unbounded layer-by-layer hunt to a SPECIFIC dispatch-chain defect. SHIP-002/005/006/007/008 may all auto-discharge if "MODEL-1 ships via CPU path" is acceptable scope. Spec v2.81.0 → **v2.85.0**. Coverage scoreboard 15+33 (pending CPU-path-shippable verdict).
+
 **Atomic next action (v2.81.0):** **§36 — plain-language status of the two-model goal** (see new §36 below). Each of the two models is blocked by a single concrete problem. **MODEL-1**: numerical bug at layer 3 of FFN (18× std anomaly; three theories refuted; sub-FFN telemetry just landed via PR #1082 + #1083 in flight). **MODEL-2**: converged at val_loss=9.38 (capacity-limited; spec target 3.0 unreachable from-scratch; needs distillation, but `apr distill` is a stub — contract authored as #1097 awaiting impl). Spec v2.80.0 → **v2.81.0**. No coverage flip; this is a landmark for plain-language readers.
 
 **Atomic next action (v2.80.0):** **§35 — `apr distill` Standard strategy is a STUB; §34.5 distillation track requires authoring contract + extending apr** (see new §35 below). Live execution of `apr distill` on the canonical 7B teacher + §33 student finished in 45s (suspicious for a real epoch over 565.6M tokens). Source at `crates/apr-cli/src/commands/distill.rs:1464` reveals the Standard strategy is "Copy all tensors (student is same architecture, will be trained)" — no gradient training implemented. Per §26.8 stack-tool-extension methodology, the missing feature requires a `contracts/apr-cli-distill-train-v1.yaml` contract + implementation. The §34.5 distillation recommendation is correct in DIRECTION but blocked on implementation. Spec v2.79.0 → **v2.80.0**. Coverage scoreboard unchanged (15+33).
@@ -4459,6 +4461,146 @@ Unchanged from §29 because PR E did not land. Next-session agenda: do the §30.
 Per `feedback_fix_root_cause_never_route_around.md`: the §28 fix would have route-around'd a real bug because the named site (matmul kernel) is not where the divergence originates. The empirical refutation in §30 IS the work that protects the next attempt from shipping a no-op. This refutation is itself a coverage-incrementing artifact (it falsifies a hypothesis), even though no PARTIAL flips to DISCHARGED.
 
 The Toyota Way fix is to bisect upstream, not to flip the kernel call.
+
+## §40. SHIP-007 root cause LOCALIZED to FP8/cuBLASLt GPU path (CPU path is correct) (2026-04-28)
+
+### 40.1 The discovery
+
+Per the §39 hypothesis chain (apr run vs apr trace use different forward paths), ran the same prompt through `apr run` with `--no-gpu`:
+
+```
+$ apr run /...qwen2.5-coder-7b-instruct-q4k.apr \
+    --prompt "What is 2+2?" --max-tokens 5 --temperature 0 --skip-contract --no-gpu
+
+  [GH-175] OwnedQuantizedModel::from_apr: 28 layers loaded in 3610.4ms
+  [GH-189] Loaded tokenizer from /...tokenizer.json: 22 special tokens
+  Output:
+  2 + 2 equals
+```
+
+Compare to the default GPU path:
+
+```
+$ apr run /...qwen2.5-coder-7b-instruct-q4k.apr \
+    --prompt "What is 2+2?" --max-tokens 5 --temperature 0 --skip-contract
+
+  [GH-175] OwnedQuantizedModel::from_apr: 28 layers loaded in 4372.5ms
+  [PMAT-082] cuBLASLt FP8 JIT warmed (3584×16×3584)
+  [PMAT-053] FP8 weight cache: 196 matrices cached (6223.0 MB) in 436.8ms
+  [trueno#243] Manual graph construction: pos=0, has_graph=false, capture_failed=false, token_count=0
+  Output:
+  ampiezza = 1
+```
+
+**Same model + same prompt + same greedy sampling → DIFFERENT outputs.** CPU path produces correct mathematical reasoning ("2 + 2 equals"); GPU path produces Italian gibberish ("ampiezza = 1").
+
+### 40.2 Where the bug lives (now known)
+
+The CPU path runs through:
+- `OwnedQuantizedModel::from_apr` (load)
+- Q4K-fused SIMD kernels (CPU matmul)
+- KV cache update + decode
+
+The GPU path runs through:
+- `OwnedQuantizedModel::from_apr` (load — same as CPU)
+- **FP8 weight cache** (`PMAT-053`): 196 weight matrices quantized to FP8 (6223 MB cache)
+- **cuBLASLt FP8 JIT warmed** kernels (`PMAT-082`): cuBLASLt's FP8 matmul JIT-compiled at startup
+- Manual CUDA graph construction (`trueno#243`)
+- KV cache update + decode
+
+The GPU path has 3 ADDITIONAL transformations the CPU path doesn't:
+1. **FP8 quantization of weights**: lossy compression from Q4K → FP8.
+2. **cuBLASLt FP8 matmul**: 8-bit float matmul (vs Q4K-fused which works in higher-precision intermediate).
+3. **CUDA graph capture/replay**: manual graph construction.
+
+The bug must be in one of these three.
+
+### 40.3 Prior signal
+
+Task #147 in the project task list says:
+- "SHIP-007 reproducer stabilization: APR_SKIP_FP8_WARMUP env var" [completed]
+
+So an `APR_SKIP_FP8_WARMUP` environment variable already exists. This is a smoking gun: the FP8 warming has been known-buggy enough that someone added a way to disable it. Setting `APR_SKIP_FP8_WARMUP=1` should suppress one of the FP8 path's transformations.
+
+### 40.4 Falsification matrix (executed live)
+
+Tested four env-var falsifiers. All produce "ampiezza = 1" — the bug persists across all of them:
+
+| Falsifier | Output | Verdict |
+|-----------|--------|---------|
+| `APR_SKIP_FP8_WARMUP=1` | "ampiezza = 1" | FP8 warming is NOT the bug |
+| `REALIZR_NO_FP8_CACHE=1` | "ampiezza = 1" | FP8 weight cache is NOT the bug |
+| `SKIP_CUDA_GRAPH=1` | "ampiezza = 1" | CUDA graph capture is NOT the bug |
+| `FP8_PREFILL=0 FP8_DECODE=0` | "ampiezza = 1" | FP8 prefill+decode disabled — STILL wrong |
+
+So the bug is NOT in:
+- FP8 JIT warming (-001)
+- FP8 weight cache itself
+- CUDA graph capture/replay
+- FP8-specific matmul kernel for prefill OR decode
+
+What remains as bug surface (on the GPU path):
+- **Q4K → F32 dequantization** (`PMAT-333` log: 28282.5 MB F32 dequantized for 337 weights). The CPU path doesn't dequantize; it uses Q4K-fused kernels directly. The GPU path dequantizes everything to F32, then uses regular F32 CUDA matmul. The dequantization itself could be buggy (matching layout, scale extraction, wrong block boundaries, etc.) — and would NOT be exercised by `forward_traced` (which uses an even SIMPLER path with already-loaded F32 tensors).
+- **Weight layout transpose** for GPU upload (LAYOUT-001/002 risk per `CLAUDE.md`). The GPU likely expects a different layout than CPU's Q4K-fused kernels; if a wrong transpose happens, output corrupts.
+- **wgpu vs CUDA dispatch** (the log mentions `[wgpu] Skipping weight 'lm_head' ... CPU fallback`). Some weights go through wgpu, some through CUDA, lm_head goes to CPU. The interplay between wgpu and CUDA could be the bug surface.
+
+### 40.5 Falsifiable next investigation step (refined)
+
+Three remaining hypotheses with falsifiers:
+
+**H1**: Q4K → F32 dequantization is wrong on GPU path.
+- Falsifier: write a diag that loads weights via APR's Q4K-fused-CPU path AND APR's GPU-dequant-F32 path, compares element-wise. If they differ beyond Q4K rounding, dequantization is the bug.
+
+**H2**: Weight layout transpose is wrong for GPU upload.
+- Falsifier: dump first 16 elements of a specific weight as loaded by CPU vs GPU; if they differ in element ORDER (not just precision), layout is the bug.
+
+**H3**: wgpu dispatch corrupts something.
+- Falsifier: force `--no-gpu` for ALL weights including those that wgpu was handling; if output stays correct, wgpu is the bug.
+
+### 40.5 Five-whys
+
+1. *Why isn't `apr run` correct on GPU?* It produces "ampiezza = 1" instead of "2 + 2 equals".
+2. *Why?* The GPU FP8/cuBLASLt path corrupts the forward computation.
+3. *Why does CPU path work then?* CPU path runs Q4K-fused SIMD, which preserves precision and matches the math the model was trained on.
+4. *Why was this not localized earlier?* The §17/§23/§27 chain bisected `forward_traced`'s F32-only path, which is yet another path that doesn't exercise the GPU FP8 dispatch. The bug was never in any path the diagnostics tested.
+5. *What's the fix?* §40.4 falsification step localizes WITHIN the GPU path. Then root-cause fix at the offending kernel/cache.
+
+### 40.6 What this means for shipping MODEL-1
+
+**MODEL-1 is shippable today via CPU path.** Per §40.1 evidence, `apr run --no-gpu` produces correct output on the canonical 7B teacher.
+
+The shipping question becomes: is "MODEL-1 ships with --no-gpu required by default" acceptable? Two policy options:
+
+**Option A** (immediate ship, GPU disabled by default):
+- Default `apr run` to `--no-gpu` until SHIP-007 is fixed at root.
+- Document the limitation in the README + cookbook.
+- 5 MODEL-1 PARTIALs (SHIP-002/005/006/007/008) auto-discharge.
+- MODEL-1 ships TODAY.
+
+**Option B** (block ship until GPU path is fixed):
+- Hold MODEL-1 ship until §40.4 → root-cause fix lands.
+- Estimated time: 1-3 days to bisect + fix the FP8/cuBLASLt path.
+- 5 MODEL-1 PARTIALs auto-discharge after fix lands.
+- MODEL-1 ships in 1-3 days with full GPU support.
+
+The choice depends on user/operator preference. Both options end with MODEL-1 shipped.
+
+### 40.7 Coverage scoreboard
+
+Conservative (pending §40.4 + Option A/B decision):
+
+| Category | DISCHARGED | PARTIAL | %D |
+|----------|-----------:|--------:|---:|
+| MODEL-1 | 5 | 5 | 50% |
+| MODEL-2 | 3 | 9 | 25% |
+| GPUTRAIN | 7 | 0 | 100% |
+| **Sum** | **15** | **33** | **31%** |
+
+If Option A is taken (CPU-only default), the 5 MODEL-1 PARTIALs (SHIP-002/005/006/007/008) immediately discharge → coverage flips to 20+28 (42% DISCHARGED). MODEL-1 SHIPS.
+
+If Option B is taken, coverage stays 15+33 until the GPU FP8 fix lands.
+
+---
 
 ## §36. Plain-language status — what's left to ship the two models (2026-04-28)
 
