@@ -418,6 +418,9 @@ pub mod apr_gguf_forward_parity;
 // FALSIFY-APR-DISTILL-TRAIN-005 — precompute byte-determinism gate.
 pub mod distill_train_005;
 
+// INV-DATA-006 — dataset-thestack-python disjoint train/val splits.
+pub mod data_inv_006;
+
 // FALSIFY-APR-DISTILL-TRAIN-002 — KL loss decreases over epochs gate.
 pub mod distill_train_002;
 
