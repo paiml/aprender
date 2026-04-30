@@ -463,9 +463,6 @@ pub mod distill_train_009;
 // INV-BPE-001 — tokenizer-bpe vocab range + paired-model match.
 pub mod bpe_inv_001;
 
-// INV-BPE-005 — tokenizer-bpe NFC idempotence + composed/decomposed equivalence.
-pub mod bpe_inv_005;
-
 // INV-BPE-003 — tokenizer-bpe round-trip byte-equality on 10K held-out docs.
 pub mod bpe_inv_003;
 
