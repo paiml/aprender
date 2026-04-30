@@ -427,6 +427,9 @@ pub mod distill_train_002;
 // INV-BPE-001 — tokenizer-bpe vocab range + paired-model match.
 pub mod bpe_inv_001;
 
+// INV-BPE-002 — tokenizer-bpe four required special tokens distinct + in range.
+pub mod bpe_inv_002;
+
 // FALSIFY-PROF10-003 — apr profile graphed vs ungraphed sanity inequality.
 pub mod prof10_003;
 
