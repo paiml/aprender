@@ -424,8 +424,8 @@ pub mod data_inv_006;
 // FALSIFY-APR-DISTILL-TRAIN-002 — KL loss decreases over epochs gate.
 pub mod distill_train_002;
 
-// FALSIFY-OPS-001 — read-only commands have no filesystem side effects.
-pub mod ops_001;
+// FALSIFY-COV-001 — apr-cli line coverage >= 95% (closes 1/1 sweep).
+pub mod cov_001;
 
 // FALSIFY-QA-002 + 006 — apr-cli error-exit honesty (exit != 0 on missing file / error output).
 pub mod qa_002_006;
