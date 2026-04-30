@@ -365,6 +365,9 @@ impl GpuModel {
                 ffn_swiglu_inner_stats: crate::apr_transformer::ActivationStats::default(),
                 ffn_out_stats,
                 output_stats,
+                // GPU forward_traced does not yet emit last-token-only stats
+                // (FALSIFY-APR-GGUF-PARITY-007 follow-up). None until populated.
+                last_token: None,
             },
         ))
     }
