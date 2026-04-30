@@ -427,6 +427,9 @@ pub mod distill_train_002;
 // INV-BPE-001 — tokenizer-bpe vocab range + paired-model match.
 pub mod bpe_inv_001;
 
+// INV-BPE-003 — tokenizer-bpe round-trip byte-equality on 10K held-out docs.
+pub mod bpe_inv_003;
+
 // FALSIFY-PROF10-003 — apr profile graphed vs ungraphed sanity inequality.
 pub mod prof10_003;
 
