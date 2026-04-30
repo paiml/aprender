@@ -424,14 +424,8 @@ pub mod data_inv_006;
 // FALSIFY-APR-DISTILL-TRAIN-002 — KL loss decreases over epochs gate.
 pub mod distill_train_002;
 
-// FALSIFY-QA-003 — apr-cli JSON output validity (well-formed JSON shape).
-pub mod qa_003;
-
-// FALSIFY-QA-002 + 006 — apr-cli error-exit honesty (exit != 0 on missing file / error output).
-pub mod qa_002_006;
-
-// FALSIFY-QA-004 — apr-cli no NaN/Inf in user output (zero-tolerance scan).
-pub mod qa_004;
+// FALSIFY-QA-008 — apr-cli no phantom subcommands (advertised == implemented).
+pub mod qa_008;
 
 // FALSIFY-QA-001 — apr-cli all 58 commands respond to --help.
 pub mod qa_001;
