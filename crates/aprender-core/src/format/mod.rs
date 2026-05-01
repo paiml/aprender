@@ -448,8 +448,8 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-QM3-001..008 — Qwen3-MoE-235B-A22B shape constants.
-pub mod qm3_shapes_001_008;
+// FALSIFY-QW3-001..009 — Qwen3-8B shape constants.
+pub mod qw3_shapes_001_009;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
