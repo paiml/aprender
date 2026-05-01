@@ -439,8 +439,8 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-CUDA_CLASSIFY_TRAINING_V1_001..002 — cuda-classify-training-v1 PARTIAL_ALGORITHM_LEVEL discharge.
-pub mod cct_001_002;
+// FALSIFY-CONV-001..005 — conversation-generation-v1 PARTIAL_ALGORITHM_LEVEL discharge.
+pub mod conv_001_005;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
