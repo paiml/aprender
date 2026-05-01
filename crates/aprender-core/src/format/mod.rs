@@ -448,8 +448,8 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-BPE-TRAIN-PERF-001..005 — BPE training perf decision rules.
-pub mod bpe_perf_001_005;
+// FALSIFY-ACLI-001..009 — apr-cli-v1 invariants.
+pub mod acli_001_009;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
