@@ -448,8 +448,8 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-AP-001..004 (absolute-position) — Vaswani 2017 learned positional encoding.
-pub mod iso_001_004;
+// FALSIFY-FUSION-001..003 — kernel-fusion-v1 (Poka-Yoke fusion decision registry, PAR-077).
+pub mod qe_001_003;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
