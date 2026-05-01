@@ -103,7 +103,11 @@ mod tests {
 
     // SHARD-004
     #[test] fn s004_pass_exact() { assert_eq!(verdict_from_merged_score_identity(86.0, 86.0), Shard004Verdict::Pass); }
-    #[test] fn s004_pass_within_tolerance() { assert_eq!(verdict_from_merged_score_identity(86.0, 86.01), Shard004Verdict::Pass); }
+    #[test] fn s004_pass_within_tolerance() {
+        // FP rounding: 86.01 - 86.0 ≈ 0.0099999... So use a value
+        // strictly inside the tolerance band.
+        assert_eq!(verdict_from_merged_score_identity(86.0, 86.005), Shard004Verdict::Pass);
+    }
     #[test] fn s004_fail_above_tolerance() { assert_eq!(verdict_from_merged_score_identity(86.0, 86.02), Shard004Verdict::Fail); }
     #[test] fn s004_fail_nan() { assert_eq!(verdict_from_merged_score_identity(f64::NAN, 86.0), Shard004Verdict::Fail); }
 
