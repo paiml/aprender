@@ -448,8 +448,8 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-TOK-001..007 — tokenizer-loading decision rules.
-pub mod tok_001_007;
+// FALSIFY-QS-001..007 — q4k-q6k-superblock decision rules.
+pub mod qs_001_007;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
