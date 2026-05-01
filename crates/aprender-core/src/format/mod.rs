@@ -424,6 +424,9 @@ pub mod data_inv_006;
 // FALSIFY-APR-DISTILL-TRAIN-002 — KL loss decreases over epochs gate.
 pub mod distill_train_002;
 
+// FALSIFY-HE-001..006 — eval-harness-humaneval-v1 (closes 6/6).
+pub mod he_eval;
+
 // INV-TRAIN-001..010 — training-loop-pretrain-v1 (closes 10/10).
 pub mod inv_train;
 
