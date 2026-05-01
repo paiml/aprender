@@ -448,8 +448,8 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-FA-001..004 — flash-attention-v1 (Dao 2022 IO-aware exact attention).
-pub mod fa_001_004;
+// FALSIFY-LP-001..005 — linear-projection-v1 (Bishop 2006 dense layer forward).
+pub mod lp_001_005;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
