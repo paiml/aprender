@@ -448,8 +448,8 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-QM3E-001..007 — qwen3moe-e2e-verification-v1 (Qwen3-235B-A22B MoE).
-pub mod qm3e_001_007;
+// FALSIFY-QW3E-001..007 — qwen3-e2e-verification-v1 (Qwen3-8B end-to-end).
+pub mod qw3e_001_007;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
