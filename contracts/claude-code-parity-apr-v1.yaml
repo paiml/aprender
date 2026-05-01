@@ -63,8 +63,8 @@ metadata:
     - crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml
 
 name: claude-code-parity-apr
-version: "1.21.0"
-status: ACTIVE_RUNTIME   # 13/13 gates green. v1.21.0 (M33 audit-trail bump) — records M32c.2.2.2.1.4 live regression test (aprender #1127 at 0392b1843) + M32d.0/.1/.2/.3 contract amendment + falsifier scaffolding (#1128 #1129 #1130 #1131). Forward chain pinned by live regression. Numerical-correctness fixes (M32d proper) remain the only blocker for `qwen3-moe-forward-v1` flipping DRAFT → ACTIVE_RUNTIME and FALSIFY-CCPA-013 going from synthetic to measured. Live re-verify lambda-vector RTX 4090 (2026-05-01): `apr run` against cached 17.3 GB Qwen3-Coder GGUF exits 0 in 62.5s, stdout matches /\S/, output gibberish ("%%%%%%%%") pending M32d cosine-vs-llama.cpp parity.
+version: "1.22.0"
+status: ACTIVE_RUNTIME   # 13/13 gates green. v1.22.0 (M34 FAST PATH plan + five-whys) — adds the spec section "M32d FAST PATH" with five-whys analysis of the gibberish-output symptom and an ordered, falsifiable 6-step plan to discharge M32d. No code change; the spec amendment converts the open work from "iterate on output" to "diagnose with HF FP16 fixture, bisect per-layer cosine, localize component, target fix". Estimated 4-6 PRs lucky case, 8-10 PRs realistic, 12-15 pessimistic. Each step has an exit criterion. The cosine-vs-llama.cpp gate flips qwen3-moe-forward-v1 DRAFT → ACTIVE_RUNTIME at Step 6.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Top-level invariants — the 12 falsifiable gates this contract asserts.
@@ -721,6 +721,72 @@ milestones:
 # ─────────────────────────────────────────────────────────────────────────────
 
 status_history:
+  - date: '2026-05-01'
+    from: 'ACTIVE_RUNTIME v1.21.0'
+    to: 'ACTIVE_RUNTIME v1.22.0'
+    note: 'M34 — five-whys + FAST PATH plan for M32d numerical parity'
+    reason: |
+      Operator request: "update spec and determine FAST path now using
+      five-whys". Authored to break the gibberish-output deadlock that
+      has held since M32c.2.2.2.1.3 LIVE-DISCHARGED (2026-04-29) on
+      lambda-vector RTX 4090. The forward chain works end-to-end but
+      `apr run` emits "%%%%%%%%" instead of a sensible answer.
+
+      The new spec section "M32d FAST PATH" embeds a five-whys anchor
+      and a 6-step ordered-and-gated plan. Net effect: convert the
+      open work from "iterate on output until it stops being gibberish"
+      (no localization signal) to "produce concrete cosine numbers at
+      each layer-component boundary, localize divergence, target fix".
+
+      Five-whys summary:
+        1. Why "%%%%%%%%"? Greedy argmax repeats one token.
+        2. Why? Logits dominated by one direction regardless of context.
+        3. Why? Hidden state is context-invariant through 48 layers.
+        4. Why? Bug in attention / FFN / MoE / RMSNorm / quant — unknown
+           which because we have no per-layer reference comparison.
+        5. Cheapest experiment: HF FP16 fixture (M32d.1 script exists,
+           hasn't been run) → cosine number → per-layer trace → bisect.
+
+      6-step plan (each step ≤1 PR, each step has exit criterion):
+        Step 1 — run M32d.1 script, commit fixture, get a cosine number.
+        Step 2 — wire `apr trace --payload` into qwen3_moe forward
+                 (today returns null per-layer stats).
+        Step 3 — bisect per-layer cosine, name first divergent layer.
+        Step 4 — sub-bisect that layer's components, name root cause.
+        Step 5 — apply 1–8 targeted fixes, each its own falsifier.
+        Step 6 — discharge: qwen3-moe-forward-v1 DRAFT → ACTIVE_RUNTIME,
+                 ccpa measure runs against teacher fixture,
+                 FALSIFY-CCPA-013 measured (not synthetic) for the
+                 first time.
+
+      Component priors at Step 4 (from CLAUDE.md LAYOUT-001/002 +
+      aprender bug history):
+        rank 1 — per-expert weight LAYOUT (transpose) — 30%
+        rank 2 — Q4_K_M dequant scale interaction — 20%
+        rank 3 — Qwen3 per-head Q/K RMSNorm — 15%
+        rank 4 — RoPE θ=1e7 vs default 1e4 — 10%
+        rank 5 — MoE router softmax renormalize — 10%
+        rank 6 — token embedding dequant — 10%
+        rank 7 — KV cache / lm_head transpose / other — 5%
+
+      Estimated total cost:
+        lucky single-bug case      4– 6 PRs     2–3 days wall
+        realistic 2–4 compounded   8–10 PRs     4–6 days wall
+        pessimistic structural    12–15 PRs    1–2 weeks wall
+
+      What this PR ships:
+        - new spec section "M32d FAST PATH — five-whys + concrete next
+          6–13 PRs" inserted before "Falsification run history"
+        - this status_history entry recording the M34 plan
+        - M22 4-step ritual self-applied (paired aprender mirror push +
+          pin.lock refresh)
+
+      What this PR does NOT ship: any of the M32d fixes themselves.
+      This is planning + diagnosis-of-the-diagnostic-gap. Step 1 (run
+      the fixture script) is the next PR after this one. Step 1 is
+      operator-confirm because it requires ~60 GB HF download + ~30 min
+      multi-device offload forward on a 30B-A3B model.
+
   - date: '2026-05-01'
     from: 'ACTIVE_RUNTIME v1.20.0'
     to: 'ACTIVE_RUNTIME v1.21.0'
