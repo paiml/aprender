@@ -448,8 +448,8 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-ACT-001..006 — activation-kernel-v1 (GELU + SiLU + ReLU activations).
-pub mod ak_001_006;
+// FALSIFY-CE-001..006 — cross-entropy-kernel-v1 (Shannon 1948 + Milakov 2018 LSE).
+pub mod ce_001_006;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
