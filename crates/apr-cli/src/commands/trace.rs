@@ -365,8 +365,27 @@ fn run_traced_inference_gguf(path: &Path) -> Result<(), CliError> {
     // stats for APR-vs-GGUF bisection (the §23 layer-3 ffn_swigl 17×
     // anomaly comparison). Run BEFORE generation so the trace reflects
     // a pristine forward pass on the test prompt.
+    //
+    // M32d Step 2 (claude-code-parity-apr-poc.md § "M32d FAST PATH"):
+    // qwen3_moe-arch GGUF dispatches to forward_qwen3_moe_traced because
+    // the dense path's forward_traced doesn't exercise the MoE FFN
+    // dispatch — it would silently skip the MoE-specific computation.
     println!("{}", "FORWARD PASS (with layer tracing):".green().bold());
-    match model.forward_traced(&test_tokens) {
+    let canonical_arch = realizar::tensor_names::normalize_architecture(&config.architecture);
+    // Accept both canonical "qwen3_moe" and raw GGUF-reported "qwen3moe"
+    // (no underscore) — the build.rs codegen sometimes lags on the YAML
+    // alias mapping `qwen3moe → qwen3_moe`. Robust string comparison is
+    // cheaper than relying on the generator cache being current.
+    let raw_arch_lower = config.architecture.to_lowercase();
+    let is_qwen3_moe = canonical_arch == "qwen3_moe"
+        || raw_arch_lower == "qwen3moe"
+        || raw_arch_lower == "qwen3_moe";
+    let trace_result = if is_qwen3_moe {
+        run_qwen3_moe_traced_forward(&mapped, &model, &test_tokens)
+    } else {
+        model.forward_traced(&test_tokens)
+    };
+    match trace_result {
         Ok(trace) => {
             println!();
             println!("{}", "EMBEDDING:".cyan().bold());
@@ -391,7 +410,24 @@ fn run_traced_inference_gguf(path: &Path) -> Result<(), CliError> {
     }
     println!();
 
-    // Run generation with small max_tokens to see what comes out
+    // Run generation with small max_tokens to see what comes out.
+    //
+    // M32d Step 2 (claude-code-parity-apr-poc.md § "M32d FAST PATH"):
+    // qwen3_moe-arch GGUF cannot use generate_with_cache because that
+    // method calls the dense FFN path on the placeholder zero weights
+    // (per M32c.2.2 LAZY-FUSED-MATVEC strategy — dense FFN fields are
+    // empty stubs for MoE models). Skip generation for qwen3_moe; the
+    // traced forward output above is the load-bearing diagnostic for
+    // FAST PATH Step 3 (per-layer cosine bisection vs HF FP16).
+    if is_qwen3_moe {
+        println!(
+            "{}",
+            "GENERATION: skipped for qwen3_moe (use `apr run` for text generation)".yellow()
+        );
+        println!();
+        return Ok(());
+    }
+
     println!("{}", "GENERATION (max 8 tokens):".green().bold());
     let gen_config = QuantizedGenerateConfig {
         max_tokens: 8,
@@ -451,6 +487,60 @@ fn run_traced_inference_gguf(path: &Path) -> Result<(), CliError> {
     }
 
     Ok(())
+}
+
+/// M32d Step 2 — qwen3_moe-arch traced forward dispatch helper.
+///
+/// Reads MoE config (num_experts, num_experts_per_tok, moe_intermediate)
+/// from GGUF metadata, loads per-layer Qwen3MoeQuantizedLayer descriptors,
+/// then calls forward_qwen3_moe_traced. Returns ForwardTrace with one
+/// LayerActivation per decoder layer; sub-FFN slots are zero (no globally
+/// meaningful SwiGLU breakdown in MoE).
+///
+/// Companion spec: paiml/claude-code-parity-apr docs/specifications/
+/// claude-code-parity-apr-poc.md § "M32d FAST PATH" Step 2.
+#[cfg(feature = "inference")]
+fn run_qwen3_moe_traced_forward(
+    mapped: &realizar::gguf::MappedGGUFModel,
+    model: &realizar::gguf::OwnedQuantizedModel,
+    test_tokens: &[u32],
+) -> realizar::error::Result<realizar::apr_transformer::ForwardTrace> {
+    let num_experts = mapped.model.expert_count().ok_or_else(|| {
+        realizar::error::RealizarError::InvalidShape {
+            reason: "qwen3_moe trace: missing 'expert_count' in GGUF metadata".to_string(),
+        }
+    })?;
+    let num_experts_per_tok = mapped.model.expert_used_count().ok_or_else(|| {
+        realizar::error::RealizarError::InvalidShape {
+            reason: "qwen3_moe trace: missing 'expert_used_count' in GGUF metadata".to_string(),
+        }
+    })?;
+    let moe_intermediate = mapped.model.expert_feed_forward_length().ok_or_else(|| {
+        realizar::error::RealizarError::InvalidShape {
+            reason: "qwen3_moe trace: missing 'expert_feed_forward_length' in GGUF metadata"
+                .to_string(),
+        }
+    })?;
+
+    let data = mapped.data();
+    let num_layers = model.config().num_layers;
+    let mut moe_layers = Vec::with_capacity(num_layers);
+    for layer_idx in 0..num_layers {
+        moe_layers.push(realizar::gguf::qwen3_moe_load::load_qwen3_moe_layer(
+            &mapped.model,
+            data,
+            layer_idx,
+        )?);
+    }
+
+    model.forward_qwen3_moe_traced(
+        test_tokens,
+        &moe_layers,
+        num_experts,
+        num_experts_per_tok,
+        moe_intermediate,
+        data,
+    )
 }
 
 /// Stub for GGUF inference when inference feature is disabled

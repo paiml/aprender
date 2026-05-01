@@ -9,6 +9,7 @@ mod batch;
 mod core;
 mod encoder_decoder;
 mod forward_qwen3_moe;
+mod forward_qwen3_moe_traced;
 mod single;
 mod traced;
 
