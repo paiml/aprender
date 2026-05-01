@@ -424,8 +424,8 @@ pub mod data_inv_006;
 // FALSIFY-APR-DISTILL-TRAIN-002 — KL loss decreases over epochs gate.
 pub mod distill_train_002;
 
-// FALSIFY-PUB-EXTRA-001 + 007 — manifest dry-run exit + 3-format repo coverage.
-pub mod pub_extra_001_007;
+// FALSIFY-PUB-EXTRA-002 + 006 — sha256-mismatch abort + post-upload round-trip.
+pub mod pub_extra_002_006;
 
 // FALSIFY-QA-002 + 006 — apr-cli error-exit honesty (exit != 0 on missing file / error output).
 pub mod qa_002_006;
