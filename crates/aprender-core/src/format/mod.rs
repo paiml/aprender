@@ -448,8 +448,8 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-TSF-001..006 — tensor-shape-flow-v1 (transformer pipeline shape transformations).
-pub mod tsf_001_006;
+// FALSIFY-LF-001..006 — loss-functions-v1 (BCE, NLL, Huber, Smooth-L1, L1, MSE).
+pub mod lf_001_006;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
