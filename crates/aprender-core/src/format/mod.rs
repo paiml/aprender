@@ -448,8 +448,8 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-GGUF-001..006 — gguf-format-safety-v1 (CVE-2024-25664/25631 mitigations).
-pub mod gfs_001_006;
+// FALSIFY-TI-001..006 — tensor-inventory-v1 (counting algebra + parameter decomposition).
+pub mod ti_001_006;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
