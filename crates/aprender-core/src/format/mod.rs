@@ -448,8 +448,8 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-LN-001..007 — layernorm-kernel decision rules + reference impl.
-pub mod ln_001_007;
+// FALSIFY-RP-001..007 — rope-kernel decision rules + reference impl.
+pub mod rp_001_007;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
