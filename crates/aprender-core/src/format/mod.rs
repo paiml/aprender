@@ -448,8 +448,8 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-SA-001..005 — sampling-algorithms-v1 (Holtzman 2019 + Qwen2.5-Coder §14.5).
-pub mod sa_001_005;
+// FALSIFY-FA-001..004 — flash-attention-v1 (Dao 2022 IO-aware exact attention).
+pub mod fa_001_004;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
