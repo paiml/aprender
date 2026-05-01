@@ -439,8 +439,8 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-MOE_ROUTER_V1_001..003 — moe-router-v1 PARTIAL_ALGORITHM_LEVEL discharge.
-pub mod moer_001_003;
+// FALSIFY-SD-001..005 — speculative-decoding-v1 PARTIAL_ALGORITHM_LEVEL discharge.
+pub mod sd_001_005;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
