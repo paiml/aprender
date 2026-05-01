@@ -442,6 +442,9 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
+// FALSIFY-LTSEL-001..002 + FALSIFY-LGF-001..002 — lora-target-selection + lora-gradient-flow (LoRA family bundle).
+pub mod lora_finetune_001_004;
+
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
 
