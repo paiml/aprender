@@ -442,6 +442,9 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
+// FALSIFY-RM-001..005 (roofline) — Williams 2009 performance bound analysis.
+pub mod rm_001_005;
+
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
 
