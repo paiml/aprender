@@ -439,8 +439,8 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-MLC-001..006 — apr-model-lifecycle-v1 PARTIAL_ALGORITHM_LEVEL discharge.
-pub mod mlc_001_006;
+// FALSIFY-GRAPH-001..008 — apr-model-graph-v1 PARTIAL_ALGORITHM_LEVEL discharge.
+pub mod graph_001_008;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
