@@ -424,11 +424,8 @@ pub mod data_inv_006;
 // FALSIFY-APR-DISTILL-TRAIN-002 — KL loss decreases over epochs gate.
 pub mod distill_train_002;
 
-// FALSIFY-QA-005 — apr --version contains git short hash.
-pub mod qa_005;
-
-// FALSIFY-QA-010 — cross-subcommand architecture consistency.
-pub mod qa_010;
+// FALSIFY-PUB-EXTRA-001 + 007 — manifest dry-run exit + 3-format repo coverage.
+pub mod pub_extra_001_007;
 
 // FALSIFY-QA-002 + 006 — apr-cli error-exit honesty (exit != 0 on missing file / error output).
 pub mod qa_002_006;
