@@ -448,8 +448,8 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-CV-001..006 — conv1d-kernel-v1 (1D conv: output shape, linearity, im2col, SIMD, K=1, identity).
-pub mod cv1_001_006;
+// FALSIFY-KV-001..006 — kv-cache-sizing-v1 (KV bytes, hybrid accounting, bias absence).
+pub mod kvc_001_006;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
