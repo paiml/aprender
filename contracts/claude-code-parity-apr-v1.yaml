@@ -63,8 +63,8 @@ metadata:
     - crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml
 
 name: claude-code-parity-apr
-version: "1.20.0"
-status: ACTIVE_RUNTIME   # 13/13 gates green. v1.20.0 (M32c.2.2 → M32c.2.2.2.1.3 chain SHIPPED) — entire CPU MoE forward chain now wired end-to-end and FALSIFY-QW3-MOE-FORWARD-003 LIVE-DISCHARGED on lambda-vector RTX 4090. `apr run` emits real tokens against the cached 17.3 GB Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf. Aprender PRs merged in this cycle: #1119 (M32c.2.2 dequant strategy), #1120 (M32c.2.2.0 expert_byte_slice), #1121 (M32c.2.2.1 expert_swiglu_quantized), #1122 (M32c.2.2.2.0 moe_ffn_forward_layer), #1123 (M32c.2.2.2.1 integration strategy), #1124 (M32c.2.2.2.1.1 forward_qwen3_moe), #1125 (M32c.2.2.2.1.2 run_qwen3_moe_generate), #1126 (M32c.2.2.2.1.3 dispatch flip + Q4_K_M qtype-aware matvec — DISCHARGE PR). M32c.2.2.2.1.4 live-falsifier pin (aprender #1127) and M32d numerical-parity discharge are the remaining slices. After M32d, `qwen3-moe-forward-v1` flips DRAFT → ACTIVE_RUNTIME and FALSIFY-CCPA-013 measured tool-dispatch parity score becomes unblocked.
+version: "1.21.0"
+status: ACTIVE_RUNTIME   # 13/13 gates green. v1.21.0 (M33 audit-trail bump) — records M32c.2.2.2.1.4 live regression test (aprender #1127 at 0392b1843) + M32d.0/.1/.2/.3 contract amendment + falsifier scaffolding (#1128 #1129 #1130 #1131). Forward chain pinned by live regression. Numerical-correctness fixes (M32d proper) remain the only blocker for `qwen3-moe-forward-v1` flipping DRAFT → ACTIVE_RUNTIME and FALSIFY-CCPA-013 going from synthetic to measured. Live re-verify lambda-vector RTX 4090 (2026-05-01): `apr run` against cached 17.3 GB Qwen3-Coder GGUF exits 0 in 62.5s, stdout matches /\S/, output gibberish ("%%%%%%%%") pending M32d cosine-vs-llama.cpp parity.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Top-level invariants — the 12 falsifiable gates this contract asserts.
@@ -721,6 +721,61 @@ milestones:
 # ─────────────────────────────────────────────────────────────────────────────
 
 status_history:
+  - date: '2026-05-01'
+    from: 'ACTIVE_RUNTIME v1.20.0'
+    to: 'ACTIVE_RUNTIME v1.21.0'
+    note: 'M33 — audit-trail bump: record M32c.2.2.2.1.4 live regression test + M32d falsifier scaffolding'
+    reason: |
+      M33 closes the bookkeeping lag between aprender main (where
+      M32c.2.2.2.1.4 + M32d.0/.1/.2/.3 landed across 2026-04-29) and
+      the companion-side spec snapshot (last refreshed at
+      M32c.2.2.2.1.3 in v1.20.0).
+
+      Aprender PRs recorded by this bump:
+
+        #1127 (M32c.2.2.2.1.4) — live `apr run` regression test in
+          aprender-serve/tests/qwen3_moe_apr_run_live.rs. Pins
+          FALSIFY-QW3-MOE-FORWARD-003 against the cached 17.3 GB
+          Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf via subprocess
+          invocation; exit 0 + stdout matches /\S/ + stderr does NOT
+          contain "Tensor 'blk.0.ffn_up.weight' not found". Skipped
+          when GGUF absent.
+
+        #1128 (M32d.0) — qwen3-moe-forward-v1 contract bump v1.2.0 →
+          v1.3.0 with parity strategy decision: cosine vs llama.cpp
+          Q4_K (primary), HF FP16 (secondary), greedy-argmax position-0
+          on canonical prompt "What is 2+2?".
+
+        #1129 (M32d.1) — scripts/generate_qwen3_moe_fp16_logits.py
+          fixture script (HF transformers FP16 reference logit dump).
+
+        #1130 (M32d.2) — aprender-serve/tests/qwen3_moe_parity.rs
+          F-QW3-MOE-PARITY-001 cosine gate (cosine ≥ 0.99 vs reference,
+          gated #[ignore] until fixture file present).
+
+        #1131 (M32d.3) — aprender-serve/tests/qwen3_moe_argmax_parity.rs
+          F-QW3-MOE-PARITY-002 llama.cpp argmax sanity check.
+
+      What this PR does NOT do: it does NOT close the M32d
+      numerical-parity gate. The cosine ≥ 0.99 vs llama.cpp Q4_K is
+      still the load-bearing open work. `apr run` continues to emit
+      gibberish ("%%%%%%%%" verified live 2026-05-01 on lambda-vector
+      RTX 4090) until the actual numerical-correctness fixes land.
+      That is the next contract bump, not this one.
+
+      What this PR DOES do:
+        - sub-milestones table extended through M32c.2.2.2.1.4
+        - status snapshot bumped: M0–M32c.2.2.2.1.4 SHIPPED, contract
+          v1.21.0, last live re-verify timestamp + outcome recorded
+        - this status_history entry adds the M33 audit-trail row
+        - M22 4-step ritual self-applied (paired aprender mirror push
+          + pin.lock refresh)
+
+      Net: companion-side audit trail now matches aprender main.
+      Spec narrative is honest about what's shipped (forward chain
+      end-to-end + live regression test) and what isn't (output
+      correctness, FALSIFY-CCPA-013 measured discharge).
+
   - { date: '2026-04-26', from: 'NEW', to: 'DRAFT v0.1.0',
       reason: 'M0 spec + contract authored on feat/claude-code-parity-apr-poc-spec; awaiting review and PMAT-CCPA-PARITY-001 epic open' }
   - { date: '2026-04-26', from: 'DRAFT v0.1.0', to: 'DRAFT v0.2.0',
