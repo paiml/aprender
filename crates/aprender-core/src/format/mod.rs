@@ -448,8 +448,8 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-QHF-001..007 — qwen35-hybrid-forward-v1 (hybrid attn+GDN forward).
-pub mod qhf_001_007;
+// FALSIFY-QE2E-001..007 — qwen35-e2e-verification-v1 (Qwen3.5-9B hybrid GDN+attention).
+pub mod q35e_001_007;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
