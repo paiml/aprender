@@ -158,7 +158,20 @@ impl OwnedQuantizedModel {
                 ops::add_bias(&mut qkv, bias);
             }
 
-            // 2c. Per-position RoPE + extract Q/K/V
+            // 2c. Per-position per-head Q/K RMSNorm (GH-279, Qwen3) + RoPE +
+            // extract Q/K/V.
+            //
+            // M32d FAST PATH Step 5 fix
+            // (companion claude-code-parity-apr docs/specifications/
+            //  claude-code-parity-apr-poc.md § "M32d FAST PATH"):
+            // Qwen3 applies per-head RMSNorm to Q and K BETWEEN bias and
+            // RoPE — see adaptive_ffn.rs:174-179 (GH-279) for the dense
+            // path's reference implementation. This was missing from
+            // forward_qwen3_moe and was the rank-3 prior (15%) in the
+            // FAST PATH component-prior table. Surfaced by `apr trace
+            // --payload`: layer std-dev grew 40× over 48 layers
+            // (layer[0]=0.07 → layer[47]=2.82) — exact signature of
+            // missing Q/K norm letting attention scores compound.
             let seq_len = token_ids.len();
             let mut q_all = Vec::with_capacity(seq_len * q_dim);
             let mut k_all = Vec::with_capacity(seq_len * k_dim);
@@ -168,6 +181,25 @@ impl OwnedQuantizedModel {
                 let mut q = qkv[qkv_start..qkv_start + q_dim].to_vec();
                 let mut k = qkv[qkv_start + q_dim..qkv_start + q_dim + k_dim].to_vec();
                 let v = &qkv[qkv_start + q_dim + k_dim..qkv_start + q_dim + k_dim + v_dim];
+
+                // GH-279: per-head Q/K RMSNorm AFTER bias, BEFORE RoPE.
+                if let Some(ref q_norm) = layer.attn_q_norm_weight {
+                    ops::apply_per_head_rms_norm(
+                        &mut q,
+                        q_norm,
+                        self.config.num_heads,
+                        self.config.eps,
+                    );
+                }
+                if let Some(ref k_norm) = layer.attn_k_norm_weight {
+                    ops::apply_per_head_rms_norm(
+                        &mut k,
+                        k_norm,
+                        self.config.num_kv_heads,
+                        self.config.eps,
+                    );
+                }
+
                 if self.config.constraints.uses_rope() {
                     self.apply_rope(&mut q, s, self.config.num_heads);
                     self.apply_rope(&mut k, s, self.config.num_kv_heads);
