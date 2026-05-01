@@ -448,8 +448,8 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-INF-001..007 — inference-pipeline decision rules.
-pub mod inf_001_007;
+// FALSIFY-MH-001..007 — metaheuristics decision rules (SA/GA/PSO).
+pub mod mh_001_007;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
