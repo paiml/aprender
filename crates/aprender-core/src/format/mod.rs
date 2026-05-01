@@ -424,6 +424,9 @@ pub mod data_inv_006;
 // FALSIFY-APR-DISTILL-TRAIN-002 — KL loss decreases over epochs gate.
 pub mod distill_train_002;
 
+// FALSIFY-PUB-EXTRA-003 + 004 + 005 + 008 + 009 + 010 — closes 10/10 sweep.
+pub mod pub_extra_rest;
+
 // FALSIFY-QA-002 + 006 — apr-cli error-exit honesty (exit != 0 on missing file / error output).
 pub mod qa_002_006;
 
