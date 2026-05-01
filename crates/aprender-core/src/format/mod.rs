@@ -424,8 +424,8 @@ pub mod data_inv_006;
 // FALSIFY-APR-DISTILL-TRAIN-002 — KL loss decreases over epochs gate.
 pub mod distill_train_002;
 
-// FALSIFY-PUB-EXTRA-002 + 006 — sha256-mismatch abort + post-upload round-trip.
-pub mod pub_extra_002_006;
+// FALSIFY-CMD-SAFETY-001..004 — apr-cli command-safety bundle (closes 4/4).
+pub mod cmd_safety;
 
 // FALSIFY-QA-002 + 006 — apr-cli error-exit honesty (exit != 0 on missing file / error output).
 pub mod qa_002_006;
