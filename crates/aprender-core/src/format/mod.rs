@@ -448,8 +448,8 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-CC-001..004 — gguf-cpu-cache-v1 (KV cache O(n) generation, realizar#95).
-pub mod gcc_001_004;
+// FALSIFY-ST-001..005 (safetensors-format) — CVE-2023-37470 mitigations.
+pub mod sfs_001_005;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
