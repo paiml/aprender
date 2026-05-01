@@ -424,8 +424,8 @@ pub mod data_inv_006;
 // FALSIFY-APR-DISTILL-TRAIN-002 — KL loss decreases over epochs gate.
 pub mod distill_train_002;
 
-// FALSIFY-OPS-002 — GPU memory returns to baseline after inference error (closes 7/7).
-pub mod ops_002;
+// FALSIFY-OPS-004 — progress percentage monotonically non-decreasing.
+pub mod ops_004;
 
 // FALSIFY-QA-002 + 006 — apr-cli error-exit honesty (exit != 0 on missing file / error output).
 pub mod qa_002_006;
