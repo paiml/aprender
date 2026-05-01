@@ -448,8 +448,8 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-RP-001..007 — rope-kernel decision rules + reference impl.
-pub mod rp_001_007;
+// FALSIFY-CRUX-001..010 — crux-competitive-research-ux decision rules.
+pub mod crux_001_010;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
