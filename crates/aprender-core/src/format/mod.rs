@@ -442,6 +442,10 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
+// FALSIFY-GPARITY-001..002 — apr-gpu-parity-consistency-v1 2-gate
+// algorithm-level PARTIAL discharge (parity scope header, ptx-map scope header).
+pub mod gparity_001_002;
+
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
 
