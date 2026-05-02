@@ -188,6 +188,28 @@ fn handle_special_modes(
     diff: bool,
     interactive: bool,
 ) -> Option<Result<(), CliError>> {
+    handle_special_modes_with_json(path, reference, payload, diff, interactive, false)
+}
+
+/// JSON-aware variant of `handle_special_modes`.
+///
+/// When `json && payload`, traced inference output is emitted as a single
+/// JSON object instead of the human-readable text format. This is the exit
+/// criterion shape for M34 FAST PATH Step 2 (companion
+/// claude-code-parity-apr docs/specifications/claude-code-parity-apr-poc.md
+/// § "M32d FAST PATH"):
+///
+///     "apr trace --json --payload <gguf> --prompt 'What is 2+2?' returns
+///      non-null output_stats for every transformer_block_N entry, with
+///      finite L2 norms."
+fn handle_special_modes_with_json(
+    path: &Path,
+    reference: Option<&Path>,
+    payload: bool,
+    diff: bool,
+    interactive: bool,
+    json: bool,
+) -> Option<Result<(), CliError>> {
     if interactive {
         println!("Starting interactive trace (TUI) for {}", path.display());
         println!("(TUI mode not yet fully implemented)");
@@ -195,6 +217,12 @@ fn handle_special_modes(
     }
 
     if payload {
+        if json {
+            // M32d Step 2 exit-criterion shape: machine-readable JSON output
+            // for `apr trace --json --payload`. Text-mode fallback if the
+            // JSON path doesn't apply (e.g. SafeTensors).
+            return Some(run_traced_inference_json(path));
+        }
         return Some(run_traced_inference(path));
     }
 
@@ -487,6 +515,143 @@ fn run_traced_inference_gguf(path: &Path) -> Result<(), CliError> {
     }
 
     Ok(())
+}
+
+/// JSON-output variant of `run_traced_inference` — emits a single JSON
+/// object with `embedding`, `layers[]`, `final_norm`, `logits` shaped
+/// for `apr trace --json --payload` consumers.
+///
+/// Companion spec exit-criterion shape: M34 FAST PATH Step 2 (claude-
+/// code-parity-apr docs/specifications/claude-code-parity-apr-poc.md §
+/// "M32d FAST PATH"). Schema:
+///
+/// ```jsonc
+/// {
+///   "format": "GGUF (qwen3moe)",
+///   "architecture": "qwen3moe",
+///   "num_layers": 48, "hidden_dim": 2048, "vocab_size": 151936,
+///   "prompt": "What is 2+2?",
+///   "encoded_tokens": [...],
+///   "embedding": { "min": ..., "max": ..., "mean": ..., "std_dev": ..., "count": 2048 },
+///   "layers": [
+///     { "layer_idx": 0,
+///       "attn_norm": {...}, "qkv": {...}, "attn_out": {...},
+///       "ffn_norm": {...}, "ffn_out": {...}, "output": {...} },
+///     ...
+///   ],
+///   "final_norm": {...},
+///   "logits": { "vocab_size": 151936, "l2_norm": ..., "top_k": [{"token_id": ..., "logit": ...}, ...] }
+/// }
+/// ```
+#[cfg(feature = "inference")]
+fn run_traced_inference_json(path: &Path) -> Result<(), CliError> {
+    use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
+    use serde_json::json;
+
+    // JSON mode: skip the human-readable "Model: ..." / "Contract: ..."
+    // preamble that resolve_model_path + preflight_contract_check print —
+    // those break `apr trace --json --payload | jq` consumers.
+    let local_path: std::path::PathBuf = if path.to_string_lossy().starts_with("hf://") {
+        resolve_model_path(path)?
+    } else {
+        path.to_path_buf()
+    };
+
+    let mapped = MappedGGUFModel::from_path(&local_path)
+        .map_err(|e| CliError::ModelLoadFailed(format!("Failed to load GGUF: {e}")))?;
+    let model = OwnedQuantizedModel::from_mapped(&mapped)
+        .map_err(|e| CliError::ModelLoadFailed(format!("Failed to create quantized model: {e}")))?;
+
+    let config = model.config();
+    let test_prompt = "What is 2+2?";
+    let test_tokens = mapped
+        .model
+        .encode(test_prompt)
+        .unwrap_or_else(|| vec![1u32]);
+
+    let canonical_arch = realizar::tensor_names::normalize_architecture(&config.architecture);
+    let raw_arch_lower = config.architecture.to_lowercase();
+    let is_qwen3_moe = canonical_arch == "qwen3_moe"
+        || raw_arch_lower == "qwen3moe"
+        || raw_arch_lower == "qwen3_moe";
+    let trace = if is_qwen3_moe {
+        run_qwen3_moe_traced_forward(&mapped, &model, &test_tokens)
+    } else {
+        model.forward_traced(&test_tokens)
+    }
+    .map_err(|e| CliError::InferenceFailed(format!("forward_traced: {e}")))?;
+
+    let stats_to_json = |s: &realizar::apr_transformer::ActivationStats| {
+        json!({
+            "min": s.min, "max": s.max, "mean": s.mean, "std_dev": s.std_dev,
+            "nan_count": s.nan_count, "inf_count": s.inf_count,
+            "zero_count": s.zero_count, "count": s.count,
+        })
+    };
+
+    let layers_json: Vec<_> = trace
+        .layer_activations
+        .iter()
+        .map(|la| {
+            json!({
+                "layer_idx": la.layer_idx,
+                "attn_norm": stats_to_json(&la.attn_norm_stats),
+                "qkv": stats_to_json(&la.qkv_stats),
+                "attn_out": stats_to_json(&la.attn_out_stats),
+                "ffn_norm": stats_to_json(&la.ffn_norm_stats),
+                "ffn_out": stats_to_json(&la.ffn_out_stats),
+                "output": stats_to_json(&la.output_stats),
+            })
+        })
+        .collect();
+
+    let logits_l2: f32 = trace.logits.iter().map(|v| v * v).sum::<f32>().sqrt();
+    let mut indexed: Vec<(usize, f32)> = trace.logits.iter().copied().enumerate().collect();
+    indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    let top_k: Vec<_> = indexed
+        .iter()
+        .take(5)
+        .map(|(i, v)| json!({ "token_id": *i, "logit": *v }))
+        .collect();
+
+    let arch_label = if is_qwen3_moe {
+        format!("GGUF ({})", config.architecture)
+    } else {
+        "GGUF (quantized)".to_string()
+    };
+    let out = json!({
+        "format": arch_label,
+        "architecture": config.architecture,
+        "num_layers": config.num_layers,
+        "hidden_dim": config.hidden_dim,
+        "vocab_size": config.vocab_size,
+        "num_heads": config.num_heads,
+        "num_kv_heads": config.num_kv_heads,
+        "prompt": test_prompt,
+        "encoded_tokens": test_tokens,
+        "embedding": stats_to_json(&trace.embed_stats),
+        "layers": layers_json,
+        "final_norm": stats_to_json(&trace.final_norm_stats),
+        "logits_stats": stats_to_json(&trace.logits_stats),
+        "logits": {
+            "vocab_size": trace.logits.len(),
+            "l2_norm": logits_l2,
+            "top_k": top_k,
+        },
+    });
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&out)
+            .map_err(|e| { CliError::InferenceFailed(format!("JSON serialization: {e}")) })?
+    );
+    Ok(())
+}
+
+#[cfg(not(feature = "inference"))]
+fn run_traced_inference_json(_path: &Path) -> Result<(), CliError> {
+    Err(CliError::FeatureDisabled(
+        "Traced inference requires the 'inference' feature.".to_string(),
+    ))
 }
 
 /// M32d Step 2 — qwen3_moe-arch traced forward dispatch helper.
