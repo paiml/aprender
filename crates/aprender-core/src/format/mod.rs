@@ -550,6 +550,13 @@ pub mod gate_ship_011;
 // GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
 pub mod gate_ship_012;
 
+// FALSIFY-VT-001..004 + FALSIFY-WASM-001..004 + FALSIFY-SPECS-001..003
+// — three-contract sister bundle of validated-tensor-v1 (density, NaN
+// rejection, zero-row L2, SIMD parity), wasmtime-upgrade-v1 (api compat,
+// behavioral parity, advisory clean, gc feature), and unified-specs-v1
+// (TOC ≤500, no orphan, no subcrate specs).
+pub mod vt_wasm_specs_001_011;
+
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
 
