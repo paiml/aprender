@@ -1,0 +1,28 @@
+=== What is 2+2? ===
+
+Output:
+2 + 2 = 4
+
+Completed in 39.22s (cached)
+
+=== Hello ===
+
+Output:
+Hello! How can I help you today?
+
+Completed in 35.78s (cached)
+
+=== fn factorial ===
+## Python
+```python
+def factorial(n):
+
+Completed in 120.80s (cached)
+
+=== List 3 colors: ===
+
+Output:
+Red, blue, and green.
+
+Completed in 35.26s (cached)
+
