@@ -162,7 +162,10 @@ impl OwnedQuantizedModel {
             let qkv_stats =
                 ActivationStats::from_slice(&qkv[qkv_last_start..qkv_last_start + qkv_dim]);
 
-            // 2c. RoPE + extract Q/K/V
+            // 2c. Per-position per-head Q/K RMSNorm (GH-279, Qwen3) + RoPE +
+            // extract Q/K/V. Mirrors forward_qwen3_moe::forward_qwen3_moe
+            // post-Step-5 fix (M32d FAST PATH) so the diagnostic trace shows
+            // the same numerics as the production path.
             let mut q_all = Vec::with_capacity(seq_len * q_dim);
             let mut k_all = Vec::with_capacity(seq_len * k_dim);
             let mut v_all = Vec::with_capacity(seq_len * v_dim);
@@ -171,6 +174,25 @@ impl OwnedQuantizedModel {
                 let mut q = qkv[qkv_start..qkv_start + q_dim].to_vec();
                 let mut k = qkv[qkv_start + q_dim..qkv_start + q_dim + k_dim].to_vec();
                 let v = &qkv[qkv_start + q_dim + k_dim..qkv_start + q_dim + k_dim + v_dim];
+
+                // GH-279: per-head Q/K RMSNorm AFTER bias, BEFORE RoPE.
+                if let Some(ref q_norm) = layer.attn_q_norm_weight {
+                    ops::apply_per_head_rms_norm(
+                        &mut q,
+                        q_norm,
+                        self.config.num_heads,
+                        self.config.eps,
+                    );
+                }
+                if let Some(ref k_norm) = layer.attn_k_norm_weight {
+                    ops::apply_per_head_rms_norm(
+                        &mut k,
+                        k_norm,
+                        self.config.num_kv_heads,
+                        self.config.eps,
+                    );
+                }
+
                 if self.config.constraints.uses_rope() {
                     self.apply_rope(&mut q, s, self.config.num_heads);
                     self.apply_rope(&mut k, s, self.config.num_kv_heads);
