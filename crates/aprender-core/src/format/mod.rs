@@ -442,6 +442,11 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
+// FALSIFY-BATCH-001..006 — batch-training-v1 6-gate algorithm-level
+// PARTIAL discharge (gradient equivalence, loss finite, gradient
+// clipping, optimizer step, no stale grads, gradient scaling).
+pub mod btrain_001_006;
+
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
 
