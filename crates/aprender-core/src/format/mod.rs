@@ -556,10 +556,11 @@ pub mod gate_ship_011;
 // GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
 pub mod gate_ship_012;
 
-// FALSIFY-LM-001..005 — linear-models-v1 5-gate algorithm-level PARTIAL
-// discharge (R² ≥ 0 train, predict deterministic, R²≈1 collinear,
-// logistic bounded (0,1), P(y=0)+P(y=1)=1).
-pub mod lm_001_005;
+// FT-GPU-CTX-001..003 + FALSIFY-FP16_CUBLAS_GEMM_V1_001..002 — sister
+// bundle of gpu-context-health-v1 (FP8 cc gate, warmup no-op,
+// Ada/Hopper FP8 enabled) + fp16-cublas-gemm-v1 (precision bound,
+// 1.5× throughput floor).
+pub mod gpuctx_fp16_001_005;
 
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
