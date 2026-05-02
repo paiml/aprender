@@ -261,7 +261,20 @@ fn dispatch_diagnostic_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             payload,
             diff,
             interactive,
+            save_tensor,
+            save_tensor_dir,
+            save_tensor_layers,
         } => crate::error::resolve_model_path(file).and_then(|r| {
+            // SHIP-007 layer-0 stage diff: emit a stub message until
+            // the forward_traced wiring lands (PR-B). The clap surface
+            // is shipped here so the contract `apr-cli-trace-save-tensor-v1`
+            // CLI signature is bound at the binary boundary.
+            if let Some(stages) = save_tensor.as_deref() {
+                eprintln!(
+                    "apr trace: --save-tensor={stages} --save-tensor-dir={:?} --save-tensor-layers={save_tensor_layers} (PR-B will plumb to forward_traced)",
+                    save_tensor_dir,
+                );
+            }
             trace::run(
                 &r,
                 layer.as_deref(),
