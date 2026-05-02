@@ -558,6 +558,9 @@
             payload: false,
             diff: false,
             interactive: false,
+            save_tensor: None,
+            save_tensor_dir: None,
+            save_tensor_layers: "0..1".to_string(),
         });
         let result = dispatch_diagnostic_commands(&cli);
         assert!(result.is_some(), "Trace should be handled by diagnostic dispatcher");

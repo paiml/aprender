@@ -255,6 +255,23 @@ pub enum Commands {
         /// Interactive mode
         #[arg(long)]
         interactive: bool,
+        /// Save per-stage F32 tensors during trace for SHIP-007 layer-0
+        /// element-wise diff. Comma-separated stage names from
+        /// `apr-cli-trace-save-tensor-v1.yaml` (e.g.
+        /// `embedding,qkv_matmul,attention`). Pass `all` to save every
+        /// stage. Output goes to `--save-tensor-dir` if provided,
+        /// else `<file_dir>/trace-tensors/<run_id>/`.
+        #[arg(long, value_name = "STAGES")]
+        save_tensor: Option<String>,
+        /// Output directory for `--save-tensor` (default: sibling
+        /// `trace-tensors/<run_id>/`).
+        #[arg(long, value_name = "DIR")]
+        save_tensor_dir: Option<PathBuf>,
+        /// Layer-id range for `--save-tensor` (default: 0..1, i.e.
+        /// layer 0 only). Format: `START..END` (Rust range syntax,
+        /// END exclusive).
+        #[arg(long, value_name = "RANGE", default_value = "0..1")]
+        save_tensor_layers: String,
     },
     /// Check for best practices and conventions
     Lint {
