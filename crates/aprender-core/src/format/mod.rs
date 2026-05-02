@@ -556,12 +556,10 @@ pub mod gate_ship_011;
 // GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
 pub mod gate_ship_012;
 
-// FALSIFY-DECODE-HP2-001..003 + FALSIFY-DECODE-HP3-001..003 —
-// decode-hot-path-{first-tokens,prefix-cache}-diagnostic-v1 6-gate
-// algorithm-level PARTIAL discharge (zero-eprintln source invariant,
-// TPS+parity composite, golden 2/2, PMAT-450 config.trace gating,
-// symmetric HIT/INSERT/ERROR wrap).
-pub mod decode_hp23_001_006;
+// FALSIFY-GRS-001..004 — decode-gpu-resident-sampling-v1 4-gate
+// algorithm-level PARTIAL discharge (token parity, throughput crosses
+// 1.50×, stop-token latency bound, host overhead ≤ 20%).
+pub mod grs_001_004;
 
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
