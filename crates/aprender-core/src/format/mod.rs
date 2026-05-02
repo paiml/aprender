@@ -550,6 +550,11 @@ pub mod gate_ship_011;
 // GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
 pub mod gate_ship_012;
 
+// FALSIFY-CPP-001..007 — cpp-type-preservation-v1 7-gate algorithm-level
+// PARTIAL discharge (class→struct, ctor→new, dtor→Drop, namespace→mod,
+// operator+→Add, inheritance→Deref, this→self).
+pub mod cpp_001_007;
+
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
 
