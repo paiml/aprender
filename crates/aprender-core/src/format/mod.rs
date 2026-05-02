@@ -556,11 +556,10 @@ pub mod gate_ship_011;
 // GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
 pub mod gate_ship_012;
 
-// FALSIFY-KL-001..004 + FALSIFY-ICA-001..003 — sister bundle of
-// kernel-launch-budget-v1 (per-token formula, 12-kernel decomposition,
-// monotone in layers, SIMD≡scalar) and ica-v1 (output shape,
-// deterministic transform, finite output).
-pub mod kl_ica_001_007;
+// FALSIFY-LB-001..006 — lbfgs-kernel-v1 6-gate algorithm-level PARTIAL
+// discharge (descent direction, curvature, history bound, Rosenbrock
+// decrease, SIMD≡scalar within 8 ULP, empty-history → -g).
+pub mod lb_001_006;
 
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
