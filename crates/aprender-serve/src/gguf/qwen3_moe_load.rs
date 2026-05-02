@@ -451,17 +451,38 @@ pub fn moe_ffn_forward_layer(
     };
 
     // ---- Per-expert SwiGLU + weighted accumulate ----
+    //
+    // The top-k experts are independent — each `expert_swiglu_quantized`
+    // call reads its own slice of the on-disk MoE tensors and produces a
+    // [hidden_dim] output. Run them in parallel with rayon, then
+    // sequentially fold the weighted contributions (weighted-add is cheap
+    // compared to the per-expert SwiGLU + Q4_K dequant).
+    //
+    // Performance: pre-parallel measurement on lambda-vector RTX 4090
+    // showed `apr run --max-tokens 8` against the 17.3 GB Qwen3-Coder
+    // GGUF taking ~5 minutes (k=8 experts × 48 layers running serially).
+    // After this change each forward step does k=8 per-expert SwiGLU calls
+    // in parallel (one per CPU core, up to k cores), reducing per-layer
+    // FFN time by close to k×.
+    use rayon::prelude::*;
+    let expert_outputs: Vec<(f32, Vec<f32>)> = topk_renorm
+        .par_iter()
+        .map(|(expert_id, weight)| {
+            let expert_out = expert_swiglu_quantized(
+                hidden,
+                layer,
+                *expert_id,
+                num_experts,
+                intermediate,
+                hidden_dim,
+                data,
+            )?;
+            Ok::<_, RealizarError>((*weight, expert_out))
+        })
+        .collect::<Result<Vec<_>>>()?;
+
     let mut output = vec![0.0f32; hidden_dim];
-    for (expert_id, weight) in topk_renorm {
-        let expert_out = expert_swiglu_quantized(
-            hidden,
-            layer,
-            expert_id,
-            num_experts,
-            intermediate,
-            hidden_dim,
-            data,
-        )?;
+    for (weight, expert_out) in expert_outputs {
         for i in 0..hidden_dim {
             output[i] += weight * expert_out[i];
         }
