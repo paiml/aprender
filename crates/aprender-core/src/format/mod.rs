@@ -439,12 +439,10 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-ARCH-001..008 — apr-architecture-schema-v1 8-gate algorithm-
-// level PARTIAL discharge (transformer architecture: head divisibility,
-// GQA group, attn/FFN shapes, norm count, embedding shape, RoPE type,
-// total tensor count tolerance). Module name `archschema_` to
-// disambiguate from architecture-requirements-v1 (task #260).
-pub mod archschema_001_008;
+// FALSIFY-COMPARE-HF-001..003 — apr-compare-hf-nonvacuous-v1 3-gate
+// algorithm-level PARTIAL discharge (0-tensor non-zero exit, no PASS
+// phrase on vacuous, mapping diagnostic on vacuous).
+pub mod comparehf_001_003;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
