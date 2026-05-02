@@ -5,13 +5,12 @@
 //! ## Role in the cascade
 //!
 //! - PR-A (#1405, MERGED) — `apr trace --save-tensor` clap surface
-//! - PR-B (#1406, OPEN)   — [`SaveTensorPlan`] plan-builder
-//! - PR-B-prep (#1407)    — plan ↔ writer integration tests
-//! - **This file**        — public API surface that connects the two:
-//!                          [`AprTransformer::forward_traced_with_save_tensor`]
-//!                          delegates to [`AprTransformer::forward_traced`]
-//!                          and emits the **embedding** stage to disk if the
-//!                          plan selects it.
+//! - PR-B (#1406, MERGED) — [`SaveTensorPlan`] plan-builder
+//! - PR-B-prep (#1407, MERGED) — plan ↔ writer integration tests
+//! - **This file** — public API surface that connects the two:
+//!   [`AprTransformer::forward_traced_with_save_tensor`] delegates to
+//!   [`AprTransformer::forward_traced`] and emits the **embedding** stage
+//!   to disk if the plan selects it.
 //!
 //! ## Why "step 1" (just embedding)
 //!
