@@ -439,10 +439,10 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-APRCORPUS-001..005 — generic 5-condition algorithm-level
-// PARTIAL discharge for the apr-corpus-* family (13 ground-truth-corpus
-// contracts × 5 conditions = 65 falsifier instantiations).
-pub mod aprcorpus_001_005;
+// FALSIFY-APRPAGE-001..005 — generic 5-condition algorithm-level PARTIAL
+// discharge for the apr-page-* family (257 contracts × 5 conditions =
+// 1,285 falsifier instantiations).
+pub mod aprpage_001_005;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
