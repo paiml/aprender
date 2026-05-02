@@ -439,10 +439,10 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// F-CHAOS-001..005 — apr-qa-chaos-v1 5-gate algorithm-level PARTIAL
-// discharge (memory budget, graceful OOM, SIGINT handling, batch
-// overwrite protection, disk exhaustion).
-pub mod chaos_001_005;
+// FALSIFY-APRTOOL-001..005 — generic 5-condition algorithm-level
+// PARTIAL discharge for the apr-tool-* family (21 active-tool contracts ×
+// 5 conditions = 105 falsifier instantiations).
+pub mod aprtool_001_005;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
