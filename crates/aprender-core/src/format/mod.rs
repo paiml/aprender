@@ -439,10 +439,10 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-BD-001..005 — backend-dispatch-v1 5-gate algorithm-level
-// PARTIAL discharge (GPU threshold, garbage oracle, QK norm bound,
-// BPE roundtrip, SIMD dispatch equivalence).
-pub mod bd_001_005;
+// FALSIFY-CODEGEN_DISPATCH_V1_001..002 — codegen-dispatch-v1 2-gate
+// algorithm-level PARTIAL discharge (scalar fallback safety, dispatch
+// determinism on identical hardware).
+pub mod codegen_001_002;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
