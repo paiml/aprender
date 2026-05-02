@@ -192,6 +192,9 @@
             payload: false,
             diff: false,
             interactive: false,
+            save_tensor: None,
+            save_tensor_dir: None,
+            save_tensor_layers: "0..1".to_string(),
         };
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths, vec![PathBuf::from("model.apr")]);
