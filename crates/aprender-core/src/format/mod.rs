@@ -550,6 +550,13 @@ pub mod gate_ship_011;
 // GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
 pub mod gate_ship_012;
 
+// FALSIFY-DIMENSION_INDEPENDENT_KERNELS_V1_001..002 +
+// FALSIFY-DISTRIBUTED_TRAINING_V1_001..002 — sister bundle of
+// dimension-independent-kernels-v1 (output equiv vs specialized,
+// no per-launch recompile) and distributed-training-v1 (gradient
+// sync, loss equivalence vs single-worker).
+pub mod dim_dist_001_004;
+
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
 
