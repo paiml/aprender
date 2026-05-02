@@ -550,6 +550,12 @@ pub mod gate_ship_011;
 // GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
 pub mod gate_ship_012;
 
+// FALSIFY-WS-001..004 + FALSIFY-ENC-001..004 — sister bundle of
+// cpu-work-stealing-v1 (dispatch overhead, L1 miss rate, parity vs
+// Rayon, scaling efficiency) and encoder-forward-v1 (shape preservation,
+// finite output, HF reference parity, CLS pooling).
+pub mod ws_enc_001_008;
+
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
 
