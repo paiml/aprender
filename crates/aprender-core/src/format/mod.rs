@@ -556,11 +556,11 @@ pub mod gate_ship_011;
 // GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
 pub mod gate_ship_012;
 
-// FALSIFY-F16-001..004 + FALSIFY-DPO-001..005 — sister bundle of
-// f16-conversion-v1 (bit-trick parity, roundtrip, sign, SIMD≡scalar)
-// and dpo-loss-v1 (non-negativity, log(2) at zero, monotonicity,
-// numerical stability, symmetry).
-pub mod f16_dpo_001_009;
+// FALSIFY-ARCH-CONSTRAINTS-001..003 + FALSIFY-COOP-001..003 — sister
+// bundle of arch-constraints-v1 (family consistency, enum exhaustive,
+// DeepSeek eps regression) + cooperative-matrix-gemm-v1 (parity
+// 1e-3, throughput >2×, fallback no-crash).
+pub mod arch_coop_001_006;
 
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
