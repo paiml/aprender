@@ -550,6 +550,12 @@ pub mod gate_ship_011;
 // GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
 pub mod gate_ship_012;
 
+// FALSIFY-RT-001..003 + FALSIFY-GW-001..004 — sister bundle of
+// encoder-roundtrip-v1 (APR F32 bit-exact, GGUF shape preservation,
+// SafeTensors metadata) and gateway-contract-v1 (MQS zeroing,
+// two-phase, G4 25% threshold, 5 gateway types).
+pub mod rt_gw_001_007;
+
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
 
