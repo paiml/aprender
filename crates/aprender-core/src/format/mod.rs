@@ -442,6 +442,11 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
+// FALSIFY-BIATT-001..004 — bidirectional-attention-v1 4-gate algorithm-
+// level PARTIAL discharge (no causal mask, n=1 causal parity, weight
+// normalization, full density).
+pub mod biattn_001_004;
+
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
 
