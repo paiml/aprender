@@ -550,6 +550,12 @@ pub mod gate_ship_011;
 // GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
 pub mod gate_ship_012;
 
+// FALSIFY-ARCH-CONSTRAINTS-001..003 + FALSIFY-COOP-001..003 — sister
+// bundle of arch-constraints-v1 (family consistency, enum exhaustive,
+// DeepSeek eps regression) + cooperative-matrix-gemm-v1 (parity
+// 1e-3, throughput >2×, fallback no-crash).
+pub mod arch_coop_001_006;
+
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
 
