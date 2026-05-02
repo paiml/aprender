@@ -439,10 +439,10 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-AVX512-Q4K-001..002 — avx512-q4k-v1 2-gate algorithm-level
-// PARTIAL discharge (scalar equivalence within 1e-3, ≥1.5x AVX2 speedup
-// at in_dim ≥ 1024).
-pub mod avx512q4k_001_002;
+// FALSIFY-DOT-001..005 — avx2-fma-dot-v1 5-gate algorithm-level PARTIAL
+// discharge (SIMD-vs-scalar equivalence, empty/unit base, decoder dim,
+// commutativity, NaN propagation).
+pub mod dot_001_005;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
