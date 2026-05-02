@@ -556,10 +556,12 @@ pub mod gate_ship_011;
 // GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
 pub mod gate_ship_012;
 
-// FALSIFY-CODE-PARITY-001..005 — apr-code-parity-v1 5-gate algorithm-level
-// PARTIAL discharge (mechanical audit, headline aggregate, prose↔YAML
-// drift, P0 closure, epic closure).
-pub mod codeparity_001_005;
+// FALSIFY-TRACING_OBSERVABILITY_V1_001..002 + FALSIFY-TOK-001..003 —
+// sister bundle of tracing-observability-v1 (span lifecycle, parent/
+// child containment) and tokenizer-v1 (BPE roundtrip, special token
+// detection, GGUF/json vocab match). Module-name disambiguated as
+// `trace_tokv1` from `tok_001_007` (tokenizer-loading-v1).
+pub mod trace_tokv1_001_005;
 
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
