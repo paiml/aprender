@@ -556,10 +556,10 @@ pub mod gate_ship_011;
 // GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
 pub mod gate_ship_012;
 
-// FALSIFY-MEM-001..003 + FALSIFY-STPOT-001..003 — sister bundle of
-// memory-safety-v1 (allocation bounds, OOB-as-Err, zero-init guarantee)
-// and streaming-tpot-v1 (TPOT>0, TTFT separable, content parity).
-pub mod mem_stpot_001_006;
+// FALSIFY-QDOT-001..005 — quantized-dot-product-v1 5-gate algorithm-level
+// PARTIAL discharge (SIMD≡scalar within ULP, cross-format isolation,
+// bsum equality, registry symmetry, dispatch exhaustiveness).
+pub mod qdot_001_005;
 
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
