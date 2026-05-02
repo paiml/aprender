@@ -550,6 +550,11 @@ pub mod gate_ship_011;
 // GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
 pub mod gate_ship_012;
 
+// FALSIFY-DRIFT-001..004 — drift-detection-v1 4-gate algorithm-level
+// PARTIAL discharge (score nonneg, monotone classification, min_samples
+// guard, identical → NoDrift).
+pub mod drift_001_004;
+
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
 
