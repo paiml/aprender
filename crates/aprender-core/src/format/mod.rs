@@ -556,11 +556,10 @@ pub mod gate_ship_011;
 // GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
 pub mod gate_ship_012;
 
-// FALSIFY-TE-001..004 + FALSIFY-DBC-001..005 — sister bundle of
-// tied-embeddings-v1 (output shape, matmul equivalence, no extra
-// params, finite output) + work-dbc-v1 (forward transitions, require/
-// ensure clauses, falsify non-destructive, rescue bounded).
-pub mod te_dbc_001_009;
+// FALSIFY-TP-001..006 — transpose-kernel-v1 6-gate algorithm-level
+// PARTIAL discharge (element correctness, involution, non-8-aligned,
+// AVX2 vs scalar parity, identity, attention shape).
+pub mod tp_001_006;
 
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
