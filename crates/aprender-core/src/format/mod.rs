@@ -550,6 +550,11 @@ pub mod gate_ship_011;
 // GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
 pub mod gate_ship_012;
 
+// FALSIFY-CUDA-001..004 — cuda-kernel-safety-v1 4-gate algorithm-level
+// PARTIAL discharge (kernel FFI, host transpilation, qualifier preservation,
+// keyword detection).
+pub mod cudasafety_001_004;
+
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
 
