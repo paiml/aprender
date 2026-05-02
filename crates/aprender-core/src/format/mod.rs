@@ -550,6 +550,12 @@ pub mod gate_ship_011;
 // GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
 pub mod gate_ship_012;
 
+// FALSIFY-PROBE-001..004 + FALSIFY-PARITY-001..005 — sister bundle of
+// linear-probe-classifier-v1 (encoder frozen, softmax valid, K*d+K
+// param count, embedding determinism) + model-family-parity-v1
+// (enum↔YAML symmetry, round-trip, display_name nonempty, is_llm).
+pub mod probe_parity_001_009;
+
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
 
