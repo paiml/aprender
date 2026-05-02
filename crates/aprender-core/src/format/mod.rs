@@ -439,11 +439,10 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-CLI-001..004 (cli-dispatch-v1) — 4-gate algorithm-level
-// PARTIAL discharge (dispatch completeness, exit-code injectivity,
-// JSON parseability, inspection idempotency). Module suffix
-// `clidispatch_` to disambiguate from apr-cli-commands-v1 (task #278).
-pub mod clidispatch_001_004;
+// FALSIFY-COMP-001..002 — compression-roundtrip-v1 2-gate algorithm-
+// level PARTIAL discharge (LZ4 lossless roundtrip, Zstd lossless
+// roundtrip).
+pub mod comp_001_002;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
