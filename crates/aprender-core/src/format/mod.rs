@@ -439,10 +439,10 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// F-SILENT-001..005 — apr-qa-silent-fallback-v1 5-gate algorithm-level
-// PARTIAL discharge (truncation detection, zero-tps rejection,
-// unknown-arch handling, missing-tokenizer detection, loud failure).
-pub mod qasilent_001_005;
+// F-META-001..005 — apr-qa-metamorphic-v1 5-gate algorithm-level PARTIAL
+// discharge (quant equivalence, roundtrip fidelity, multi-arch smoke,
+// prompt invariance, temperature=0 determinism).
+pub mod qameta_001_005;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
