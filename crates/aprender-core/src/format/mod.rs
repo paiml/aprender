@@ -556,11 +556,12 @@ pub mod gate_ship_011;
 // GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
 pub mod gate_ship_012;
 
-// FALSIFY-GO-001..004 + FALSIFY-GEMM_BACKWARD_TILED_V1_001..002 —
-// sister bundle of garbage-oracle-v1 (no false positives, LAYOUT-002
-// detection, control char detection, empty=garbage) + gemm-backward-
-// tiled-v1 (gradient correctness ε, transpose involution).
-pub mod go_gembw_001_006;
+// FALSIFY-GLM-001..004 + FALSIFY-GNN-001..006 + FALSIFY-POS-001..003 —
+// triple bundle of glm-v1 (link round-trip, mean range, IRLS monotone,
+// finite preds), gnn-v1 (node count, finite, max-pool bound, dim
+// preservation), learned-position-embedding-v1 (OOB rejection,
+// deterministic, output dim).
+pub mod glm_gnn_pos_001_013;
 
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
