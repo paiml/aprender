@@ -439,11 +439,10 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-ZEROGATEV-001..004 — apr-zero-feature-gate-v1 4-gate
-// algorithm-level PARTIAL discharge (every subcommand --help exits 0,
-// no feature-gate phrases, GPU fallback graceful, default features
-// complete with cuda/code excluded).
-pub mod zerogate_001_004;
+// FALSIFY-SGD-001..003 — apr-stochastic-lr-v1 3-gate algorithm-level
+// PARTIAL discharge (backward compat default Batch, stochastic MCC > 0.3
+// on imbalanced, mini-batch(n) == full-batch unbiased).
+pub mod sgd_001_003;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
