@@ -439,10 +439,10 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-SGD-001..003 — apr-stochastic-lr-v1 3-gate algorithm-level
-// PARTIAL discharge (backward compat default Batch, stochastic MCC > 0.3
-// on imbalanced, mini-batch(n) == full-batch unbiased).
-pub mod sgd_001_003;
+// F-SILENT-001..005 — apr-qa-silent-fallback-v1 5-gate algorithm-level
+// PARTIAL discharge (truncation detection, zero-tps rejection,
+// unknown-arch handling, missing-tokenizer detection, loud failure).
+pub mod qasilent_001_005;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
