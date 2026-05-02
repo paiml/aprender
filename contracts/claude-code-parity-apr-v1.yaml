@@ -63,8 +63,8 @@ metadata:
     - crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml
 
 name: claude-code-parity-apr
-version: "1.22.0"
-status: ACTIVE_RUNTIME   # 13/13 gates green. v1.22.0 (M34 FAST PATH plan + five-whys) — adds the spec section "M32d FAST PATH" with five-whys analysis of the gibberish-output symptom and an ordered, falsifiable 6-step plan to discharge M32d. No code change; the spec amendment converts the open work from "iterate on output" to "diagnose with HF FP16 fixture, bisect per-layer cosine, localize component, target fix". Estimated 4-6 PRs lucky case, 8-10 PRs realistic, 12-15 pessimistic. Each step has an exit criterion. The cosine-vs-llama.cpp gate flips qwen3-moe-forward-v1 DRAFT → ACTIVE_RUNTIME at Step 6.
+version: "1.23.0"
+status: ACTIVE_RUNTIME   # 13/13 gates green. v1.23.0 (M35 M32d discharge audit-trail bump) — records the 4-bug stack landed on aprender main as commit 5235aaeb9 (#1228) plus diagnostic surface PRs #1222 (Step 2), #1226 (Step 2.5), #1401 (Step 2 JSON wire). M32d gibberish output ("%%%%%%%%") converted to coherent English answers across math/geography/translation/code domains. M34 FAST PATH 5-whys plan delivered at lucky-case bound (5 substantive PRs vs 4-6 estimated, ~6 hours wall vs 2-3 days). Component priors verified empirically: rank-3 Q/K RMSNorm (15%) + rank-4 rope_theta (10%) + chat template both correct. Cosine vs HF FP16 (formal `qwen3-moe-forward-v1` DRAFT → ACTIVE_RUNTIME) remains operator-confirm pending ~60 GB HF download.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Top-level invariants — the 12 falsifiable gates this contract asserts.
@@ -721,6 +721,107 @@ milestones:
 # ─────────────────────────────────────────────────────────────────────────────
 
 status_history:
+  - date: '2026-05-02'
+    from: 'ACTIVE_RUNTIME v1.22.0'
+    to: 'ACTIVE_RUNTIME v1.23.0'
+    note: 'M35 — M32d discharge audit-trail bump'
+    reason: |
+      M32d numerical parity is functionally discharged on aprender main as
+      of commit 5235aaeb9 (#1228 squash) on 2026-05-02 13:42 UTC.
+
+      What landed on aprender main (across multiple PRs):
+
+        #1222 (M32d Step 2)        forward_qwen3_moe_traced per-layer
+                                   ActivationStats — diagnostic surface.
+        #1226 (M32d Step 2.5)      `apr trace --payload` dispatch for
+                                   qwen3_moe arch (squashed into #1222).
+        #1242                      RUSTSEC-2026-0114 audit unblocker —
+                                   restored CI capacity.
+        #1401 (Step 2 JSON wire)   `apr trace --json --payload` JSON output;
+                                   exit-criterion shape for FAST PATH Step 2
+                                   ("48 transformer_block_N entries with
+                                   finite L2 norms").
+        #1228 (M32d numerical
+               -parity bundle)     SQUASH containing Step 5 + 5b + 6 + 7
+                                   + regression test + evidence:
+                                   - per-head Q/K RMSNorm in
+                                     forward_qwen3_moe (rank-3 prior)
+                                   - rope_theta default 10K → 1M for
+                                     qwen3_moe arch (rank-4 prior)
+                                   - chat template: qwen3_moe → ChatML
+                                     (no `<think>` injection)
+                                   - sync forward_qwen3_moe_traced with
+                                     Step 5 Q/K norm
+                                   - F-QW3-MOE-STEP5-001 regression test
+                                   - evidence: pre/post-fix dogfood
+
+      Live verification on lambda-vector RTX 4090 against the cached 17.3 GB
+      Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf:
+
+        $ apr run --prompt "What is 2+2?" --max-tokens 8
+        Output: 2 + 2 = 4
+
+        $ apr run --prompt "Capital of France:" --max-tokens 30
+        Output: The capital of France is Paris.
+
+        $ apr run --prompt "Translate to Spanish: Hello world" --max-tokens 30
+        Output: ¡Hola mundo!
+
+        $ apr run --prompt "Solve x^2 - 5x + 6 = 0:" --max-tokens 30
+        Output: I need to solve the quadratic equation x² - 5x + 6 = 0.
+                I can solve this by factoring.
+
+      Output transition timeline:
+        pre-fix         "%%%%%%%%"               (gibberish, repeated argmax)
+        post-Step-5     "Human: What is 2+"      (coherent English, partial)
+        post-Step-5b    "Human: What is 2+2?"    (full prompt reproduced)
+        post-Step-6     "2 + 2 = 4"              (correct answer)
+
+      M34 FAST PATH plan cost actual vs estimate:
+
+        Outcome          PRs   Wall-clock
+        ACTUAL           5     ~6 hours
+        Lucky estimate   4-6   2-3 days
+        Realistic        8-10  4-6 days
+        Pessimistic      12-15 1-2 weeks
+
+      Came in at the lucky-case bound, well under the wall-clock estimate.
+
+      Component priors verified empirically:
+
+        rank-1 LAYOUT (30%)        not at issue
+        rank-2 Q4_K_M scales (20%) not at issue
+        rank-3 Q/K norm (15%)      FIXED in #1228
+        rank-4 RoPE θ (10%)        FIXED in #1228
+        rank-5 router softmax (10%) not at issue
+        rank-6 token embed (10%)   not at issue
+        rank-7 other (5%)          n/a
+        outside-priors             FIXED in #1228 (chat template wrapping)
+
+      The diagnostic surface from Step 2 + 2.5 (`apr trace --payload`
+      reporting per-layer std-dev) directly named rank-3 via the 40× std
+      growth signature without needing the HF FP16 fixture (originally
+      Step 1 of the plan, deferred as operator-confirm).
+
+      What is NOT in this discharge:
+
+        - Cosine vs HF FP16 measurement (operator-confirm — ~60 GB
+          download, ~30 min on 30B-A3B model). The formal flip of
+          `qwen3-moe-forward-v1` v1.3.0 DRAFT → v1.4.0 ACTIVE_RUNTIME
+          waits for that measurement.
+        - GPU MoE path (no `forward_qwen3_moe_gpu`; CUDA/wgpu kernels TBD).
+        - Other Qwen3-MoE variants beyond Qwen3-Coder-30B-A3B-Instruct.
+        - Sub-FFN MoE breakdown in `apr trace` (router output, per-expert
+          contribution) — Step 4 work was bypassed because the
+          rank-3+rank-4 fix was sufficient.
+
+      Companion contract bumps v1.22.0 → v1.23.0; M22 paired aprender
+      contract-mirror push at byte-identical sha256.
+
+      Refs aprender PR #1228 commit 5235aaeb9
+      Refs M34 FAST PATH plan
+      Refs `project_m32d_discharge_2026_05_02.md` (memory)
+
   - date: '2026-05-01'
     from: 'ACTIVE_RUNTIME v1.21.0'
     to: 'ACTIVE_RUNTIME v1.22.0'
