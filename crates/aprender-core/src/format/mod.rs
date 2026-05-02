@@ -556,10 +556,11 @@ pub mod gate_ship_011;
 // GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
 pub mod gate_ship_012;
 
-// FALSIFY-TP-001..006 — transpose-kernel-v1 6-gate algorithm-level
-// PARTIAL discharge (element correctness, involution, non-8-aligned,
-// AVX2 vs scalar parity, identity, attention shape).
-pub mod tp_001_006;
+// FALSIFY-CLI-001..003 — apr-cli-safety-v1 3-gate algorithm-level
+// PARTIAL discharge (validate exit-code monotonic, offline blocks
+// network, encrypt rejects .enc input). Module-name disambiguated
+// from apr-cli-commands-v1 (which also uses FALSIFY-CLI-* prefix).
+pub mod cli_safety_001_003;
 
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
