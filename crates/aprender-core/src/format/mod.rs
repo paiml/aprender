@@ -556,10 +556,10 @@ pub mod gate_ship_011;
 // GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
 pub mod gate_ship_012;
 
-// FALSIFY-QO-001..005 — quantization-ordering-v1 5-gate algorithm-level
-// PARTIAL discharge (size strict ordering, alpha/rank scaling, concrete
-// 9B sizes within 20%, dropout expectation, SIMD≡scalar bit-exact).
-pub mod qo_001_005;
+// FALSIFY-HTTP-001..004 — http-api-v1 4-gate algorithm-level PARTIAL
+// discharge (completions response valid JSON, error envelope, CORS
+// all-or-nothing, 404 JSON envelope).
+pub mod http_001_004;
 
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
