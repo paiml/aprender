@@ -439,10 +439,11 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-BAYES-001..004 — bayesian-v1 4-gate algorithm-level PARTIAL
-// discharge (posterior positivity, prediction finiteness, prediction
-// determinism, posterior concentration with more data).
-pub mod bayes_001_004;
+// FALSIFY-BN-001..006 — batchnorm-kernel-v1 6-gate algorithm-level
+// PARTIAL discharge (training standardization, denominator safety,
+// running stats nonneg, eval mode determinism, SIMD equivalence,
+// batch=1 boundary).
+pub mod bn_001_006;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
