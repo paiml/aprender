@@ -442,6 +442,11 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
+// FALSIFY-CONTEXT_GENERATION_V1_001..002 — context-generation-v1
+// 2-gate algorithm-level PARTIAL discharge (relevance descending order,
+// total tokens ≤ max_context_length).
+pub mod ctxgen_001_002;
+
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
 
