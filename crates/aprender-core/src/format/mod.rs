@@ -442,6 +442,11 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
+// FALSIFY-BATCH-001..005 — batched-beam-search-v1 5-gate algorithm-level
+// PARTIAL discharge (output equivalence with sequential, top-K
+// consistency, beam=1 == greedy, termination, boundary cases).
+pub mod beam_001_005;
+
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
 
