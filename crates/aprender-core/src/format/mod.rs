@@ -550,6 +550,12 @@ pub mod gate_ship_011;
 // GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
 pub mod gate_ship_012;
 
+// FALSIFY-001..012 — tensor-layout-v1 12-gate algorithm-level PARTIAL
+// discharge (canonical source-of-truth contract: density, NaN, lm_head
+// shape, cross-crate parity, quant dispatch, wrong-kernel detection,
+// SafeTensors roundtrip, embedded tokenizer, GPU within-20% parity).
+pub mod tensorlayout_001_012;
+
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
 
