@@ -439,12 +439,11 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
-// FALSIFY-MONO-001..013 — cgp-monorepo-consolidation-v1 13-gate
-// algorithm-level PARTIAL discharge (incremental compile, CI time,
-// merge conflicts, publish time, broken-publish incidents, clone time,
-// history preservation, shim re-exports, version bump compat, registry
-// compliance, single binary, flat layout, contract per subcommand).
-pub mod mono_001_013;
+// FALSIFY-BUILD-001..007 — cgp-monorepo-build-v1 7-gate algorithm-level
+// PARTIAL discharge (no duplicate workspace members, version
+// consistency, ≥60 members, no [patch.crates-io], all dirs have
+// Cargo.toml, aprender-* naming, flat layout).
+pub mod monorepo_001_007;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
