@@ -550,6 +550,11 @@ pub mod gate_ship_011;
 // GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
 pub mod gate_ship_012;
 
+// FALSIFY-CODE-PARITY-001..005 — apr-code-parity-v1 5-gate algorithm-level
+// PARTIAL discharge (mechanical audit, headline aggregate, prose↔YAML
+// drift, P0 closure, epic closure).
+pub mod codeparity_001_005;
+
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
 
