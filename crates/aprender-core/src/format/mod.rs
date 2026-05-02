@@ -550,6 +550,11 @@ pub mod gate_ship_011;
 // GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
 pub mod gate_ship_012;
 
+// FALSIFY-GRS-001..004 — decode-gpu-resident-sampling-v1 4-gate
+// algorithm-level PARTIAL discharge (token parity, throughput crosses
+// 1.50×, stop-token latency bound, host overhead ≤ 20%).
+pub mod grs_001_004;
+
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
 
