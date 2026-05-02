@@ -550,6 +550,12 @@ pub mod gate_ship_011;
 // GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
 pub mod gate_ship_012;
 
+// FALSIFY-TDG_SCORING_V1_001..002 + FALSIFY-DECODE-HP-001..002 —
+// sister bundle of tdg-scoring-v1 (0≤TDG≤100, grade monotonicity)
+// and decode-hot-path-zero-syscalls-v1 (zero per-token fs writes,
+// post-fix throughput ≥ 440 tok/s).
+pub mod tdg_decode_hpzs_001_004;
+
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
 
