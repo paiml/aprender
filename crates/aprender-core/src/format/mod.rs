@@ -442,6 +442,11 @@ pub mod pub_cli_001;
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
 
+// FALSIFY-VERSION-001..003 — apr-version-traceability-v1 3-gate
+// algorithm-level PARTIAL discharge (no `(unknown)` sentinel, no
+// alternative sentinels, version string present).
+pub mod version_001_003;
+
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
 
