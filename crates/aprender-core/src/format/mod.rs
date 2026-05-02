@@ -556,10 +556,10 @@ pub mod gate_ship_011;
 // GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
 pub mod gate_ship_012;
 
-// FALSIFY-QDOT-001..005 — quantized-dot-product-v1 5-gate algorithm-level
-// PARTIAL discharge (SIMD≡scalar within ULP, cross-format isolation,
-// bsum equality, registry symmetry, dispatch exhaustiveness).
-pub mod qdot_001_005;
+// FALSIFY-GWR-001..005 — gpu-weight-residency-v1 5-gate algorithm-level
+// PARTIAL discharge (weight residency, ≥180 tok/s, zero HtoD, GPU/CPU
+// parity, Grace Blackwell eager-alloc flag).
+pub mod gwr_001_005;
 
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
