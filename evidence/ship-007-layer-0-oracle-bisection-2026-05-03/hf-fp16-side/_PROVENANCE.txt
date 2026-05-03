@@ -1,0 +1,16 @@
+# SHIP-007 HF FP16 reference stages
+model:                 Qwen/Qwen2.5-Coder-7B-Instruct
+prompt:                'What is 2+2?'
+tokens:                [3838, 374, 220, 17, 10, 17, 30]
+dtype:                 torch.float16
+device:                cpu
+layers_captured:       [0]
+stages_per_layer:      [embedding, attn_norm, attn_out, post_ffn_residual, ffn_norm, ffn_gate, ffn_up, ffn_silu, ffn_swigl, ffn_out]
+stages_whole_model:    [final_norm, lm_head]
+vocab_size:            152064
+argmax_token:          220
+argmax_text:           ' '
+git_sha:               0cdf967b2b76d131cec68c978c1aa55e94995730
+transformers_version:  5.7.0
+torch_version:         2.11.0+cu130
+generated_utc:         2026-05-03T12:11:12.054391+00:00
