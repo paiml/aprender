@@ -377,6 +377,14 @@ mod tests {
         ) as usize;
         pos += 4 + n_dims * 8 + 4 + 8; // dims + dtype + offset
 
+        // Skip alignment padding before tensor data — `aprender::format::gguf::
+        // export_tensors_to_gguf` writes `padding_for_alignment(header_size,
+        // GGUF_DEFAULT_ALIGNMENT)` zero bytes after the tensor-info section so
+        // tensor data begins at a 32-byte-aligned offset (types.rs:445). Without
+        // this skip we'd read padding zeros instead of the actual f32 bytes.
+        use aprender::format::gguf::{padding_for_alignment, GGUF_DEFAULT_ALIGNMENT};
+        pos += padding_for_alignment(pos, GGUF_DEFAULT_ALIGNMENT);
+
         // Now pos is at the start of tensor data
         let data_start = pos;
         let recovered: Vec<f32> = (0..64)
