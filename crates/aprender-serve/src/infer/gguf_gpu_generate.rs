@@ -438,6 +438,76 @@ fn try_apr_wgpu_inference(
         .map(|_| (vec![0.0f32; max_seq * kv_dim], vec![0.0f32; max_seq * kv_dim]))
         .collect();
 
+    // FALSIFY-CPU-GPU-005 part b: wgpu cosine parity gate.
+    //
+    // Symmetric to FALSIFY-CPU-GPU-003's CUDA parity_gate (cuda::mod_parity_gate).
+    // Run one CPU forward via OwnedQuantizedModel + one wgpu single-step decode for
+    // the same probe token (first input token, typically BOS). Cosine-compare
+    // logits. < 0.99 → emit `WGPU_FALLBACK_LOG_PREFIX` and return None so we fall
+    // back to CPU rather than ship silent wgpu gibberish.
+    //
+    // Uses a separate tiny probe_kv_caches (max_seq=2) so the real autoregressive
+    // loop's kv_caches stay zero-initialized. Cost is one extra forward pass
+    // (~2-5ms on 7B) — paid once per `apr run`, not per token.
+    //
+    // See contracts/apr-cpu-vs-gpu-output-parity-v1.yaml § FALSIFY-CPU-GPU-005
+    // implementation_evidence line 201 for the gate algorithm.
+    {
+        let probe_token = *input_tokens.first().unwrap_or(&0);
+
+        // CPU reference logits.
+        let mut cpu_cache = crate::gguf::OwnedQuantizedKVCache::from_config(cfg, 2);
+        let cpu_logits = match model.forward_single_with_cache(probe_token, &mut cpu_cache, 0) {
+            Ok(l) => l,
+            Err(e) => {
+                eprintln!(
+                    "{}, attempting fallback: CPU probe forward failed: {}",
+                    WGPU_FALLBACK_LOG_PREFIX, e
+                );
+                return None;
+            }
+        };
+
+        // wgpu single-step replay (same code path as the autoregressive loop body).
+        let mut probe_kv_caches: Vec<(Vec<f32>, Vec<f32>)> = (0..num_layers)
+            .map(|_| (vec![0.0f32; 2 * kv_dim], vec![0.0f32; 2 * kv_dim]))
+            .collect();
+        let mut hidden = model.embed(&[probe_token]);
+        for layer_idx in 0..num_layers {
+            let prefix = format!("layer.{layer_idx}");
+            let (ref mut kv_k, ref mut kv_v) = probe_kv_caches[layer_idx];
+            if let Err(e) = fwd.forward_layer(&mut hidden, &prefix, 0, kv_k, kv_v) {
+                eprintln!(
+                    "{}, attempting fallback: wgpu probe layer {} failed: {}",
+                    WGPU_FALLBACK_LOG_PREFIX, layer_idx, e
+                );
+                return None;
+            }
+        }
+        // Output norm + LM head (mirrors the loop body below).
+        let sq_sum: f32 = hidden.iter().map(|x| x * x).sum();
+        let rms = (sq_sum / hidden.len() as f32 + eps).sqrt();
+        let normed: Vec<f32> = hidden
+            .iter()
+            .zip(output_norm.iter())
+            .map(|(x, g)| (x / rms) * g)
+            .collect();
+        let mut wgpu_logits = vec![0.0_f32; vocab_size];
+        for i in 0..vocab_size {
+            let row = &lm_head_f32[i * hidden_dim..(i + 1) * hidden_dim];
+            wgpu_logits[i] = row.iter().zip(normed.iter()).map(|(w, x)| w * x).sum();
+        }
+
+        let cos = cpu_vs_gpu_cosine_similarity(&cpu_logits, &wgpu_logits);
+        if !(cos.is_finite() && cos >= 0.99) {
+            eprintln!(
+                "{}, attempting fallback: cosine vs CPU = {:.6} (< 0.99)",
+                WGPU_FALLBACK_LOG_PREFIX, cos
+            );
+            return None;
+        }
+    }
+
     let model_load_ms = load_start.elapsed().as_millis() as f64;
 
     // Autoregressive generation
