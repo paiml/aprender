@@ -25,7 +25,7 @@ pub enum GgufQuantization {
 /// For Q4_0/Q8_0, quantizes via entrenar's quant module and encodes to GGUF block format.
 pub fn quantize_to_gguf_bytes(data: &[f32], quant: GgufQuantization) -> (Vec<u8>, GgmlType) {
     contract_pre_quantize!(data);
-    match quant {
+    let result = match quant {
         GgufQuantization::None => {
             let bytes: Vec<u8> = bytemuck::cast_slice(data).to_vec();
             (bytes, GgmlType::F32)
