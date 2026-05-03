@@ -111,8 +111,12 @@ pub fn run_save_tensor_apr(
         CliError::InferenceFailed(format!("AprTransformer::from_apr_file failed: {e}"))
     })?;
 
-    // Run the wrapper end-to-end. Currently captures Embedding + LmHead;
-    // SHIP-007 step 3 will widen this to per-layer stages.
+    // SHIP-007 PR-C-real step 3 LIVE: forward_traced_with_save_tensor delegates
+    // to forward_traced_with_plan which threads the SaveTensorPlan through every
+    // capture point in a single forward pass — Embedding, AttnNorm, QkvMatmul,
+    // QkvBias, Attention, AttnOut, PostAttnResidual, FfnNorm, FfnGate, FfnUp,
+    // FfnSilu, FfnSwigl, FfnOut, PostFfnResidual per-layer + FinalNorm + LmHead
+    // whole-model.
     let trace = transformer
         .forward_traced_with_save_tensor(&test_tokens, &plan)
         .map_err(|e| {
@@ -142,8 +146,10 @@ pub fn run_save_tensor_apr(
         trace.logits.len()
     );
     println!(
-        "Note: per-layer stages (qkv, attn_out, ffn_*) are captured in SHIP-007 step 3+; \
-         this run captures Embedding + LmHead only."
+        "Stages captured in single forward pass via SHIP-007 PR-C-real step 3 \
+         (Embedding/AttnNorm/QkvMatmul/QkvBias/Attention/AttnOut/PostAttnResidual/\
+         FfnNorm/FfnGate/FfnUp/FfnSilu/FfnSwigl/FfnOut/PostFfnResidual per-layer \
+         + FinalNorm/LmHead whole-model)."
     );
 
     Ok(())

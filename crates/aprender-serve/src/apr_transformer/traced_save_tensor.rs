@@ -31,12 +31,10 @@
 //! all the way through (a later PR), this wrapper becomes a pure delegator
 //! and can be deleted in favour of `forward_traced(tokens, Some(plan))`.
 
-use std::io::{BufWriter, Write};
-
 use crate::apr_transformer::{AprTransformer, ForwardTrace};
 use crate::error::{RealizarError, Result};
-use crate::inference_trace::save_tensor::{write_tensor_file, WHOLE_MODEL_LAYER};
-use crate::inference_trace::save_tensor_paths::ensure_layer_dir;
+use crate::inference_trace::save_tensor::WHOLE_MODEL_LAYER;
+use crate::inference_trace::save_tensor_emit::maybe_save_stage;
 use crate::inference_trace::save_tensor_plan::SaveTensorPlan;
 use crate::inference_trace::save_tensor_stage::SaveTensorStage;
 
@@ -92,74 +90,12 @@ impl AprTransformer {
         token_ids: &[u32],
         plan: &SaveTensorPlan,
     ) -> Result<ForwardTrace> {
-        // Run the standard traced forward pass first. If it errors, we
-        // never write a partial save_tensor file (atomic-by-construction).
-        let trace = self.forward_traced(token_ids)?;
-
-        // Step-1 scope: emit ONLY the embedding stage.
-        if plan.should_save(SaveTensorStage::Embedding, 0) {
-            // Re-extract the embedding F32 buffer. This is a cheap second
-            // call (token-table lookup, no matmuls). Subsequent SHIP-007
-            // steps replace this with a direct buffer pass-through inside
-            // forward_traced so we don't compute embeddings twice.
-            let embedding = self.embed(token_ids);
-
-            // Build the destination path via the plan; that way file
-            // layout stays in sync with `apr diff --stage` (PR-D) which
-            // reads the same path.
-            let path = plan.stage_path(SaveTensorStage::Embedding, 0);
-            // Embedding is a per-layer stage with layer=0; ensure_layer_dir
-            // creates `<output_dir>/layer-0/`.
-            ensure_layer_dir(&plan.output_dir, 0).map_err(|e| RealizarError::IoError {
-                message: format!("save_tensor::ensure_layer_dir: {e}"),
-            })?;
-            let file = std::fs::File::create(&path).map_err(|e| RealizarError::IoError {
-                message: format!("save_tensor::create({}): {e}", path.display()),
-            })?;
-            let mut writer = BufWriter::new(file);
-            // Layer index in the file header == 0 for embedding (which is
-            // a per-layer stage). Per-layer stages do NOT use the
-            // WHOLE_MODEL_LAYER sentinel.
-            write_tensor_file(&mut writer, 0, &embedding).map_err(|e| RealizarError::IoError {
-                message: format!("save_tensor::write({}): {e}", path.display()),
-            })?;
-            writer.flush().map_err(|e| RealizarError::IoError {
-                message: format!("save_tensor::flush({}): {e}", path.display()),
-            })?;
-        }
-
-        // Step-2 scope: emit the LmHead (final logits) whole-model stage.
-        // `trace.logits` is already a Vec<f32> returned by forward_traced — no
-        // recompute needed, no internal forward_traced surgery. This is the
-        // same low-risk pattern as Embedding above; the corresponding
-        // forward-pass surgery for per-layer stages (qkv, ffn_*, etc.) is
-        // deferred to subsequent SHIP-007 steps.
-        if plan.should_save(SaveTensorStage::LmHead, WHOLE_MODEL_LAYER) {
-            let path = plan.stage_path(SaveTensorStage::LmHead, WHOLE_MODEL_LAYER);
-            // Whole-model stage: ensure_layer_dir(WHOLE_MODEL_LAYER) creates
-            // `<output_dir>/` (no per-layer subdir).
-            ensure_layer_dir(&plan.output_dir, WHOLE_MODEL_LAYER).map_err(|e| {
-                RealizarError::IoError {
-                    message: format!("save_tensor::ensure_layer_dir(lm_head): {e}"),
-                }
-            })?;
-            let file = std::fs::File::create(&path).map_err(|e| RealizarError::IoError {
-                message: format!("save_tensor::create({}): {e}", path.display()),
-            })?;
-            let mut writer = BufWriter::new(file);
-            // Whole-model stages use WHOLE_MODEL_LAYER as the header layer
-            // field per `save_tensor::write_header` contract.
-            write_tensor_file(&mut writer, WHOLE_MODEL_LAYER, &trace.logits).map_err(|e| {
-                RealizarError::IoError {
-                    message: format!("save_tensor::write({}): {e}", path.display()),
-                }
-            })?;
-            writer.flush().map_err(|e| RealizarError::IoError {
-                message: format!("save_tensor::flush({}): {e}", path.display()),
-            })?;
-        }
-
-        Ok(trace)
+        // SHIP-007 PR-C-real step 3: per-layer threading is now done inside
+        // `forward_traced_with_plan`, so this wrapper is a pure delegator.
+        // Single-pass: no double-embed, no post-loop re-emission of LmHead.
+        // All Embedding/AttnNorm/QkvMatmul/.../LmHead emits happen at their
+        // natural buffer sites in `forward_traced_with_plan`.
+        self.forward_traced_with_plan(token_ids, Some(plan))
     }
 }
 
@@ -176,9 +112,9 @@ mod traced_save_tensor_step2_tests {
     //!
     //! Live discharge of the wrapper running on a real model is left to
     //! SHIP-007 PR-E (`apr trace --save-tensor lm_head` end-to-end).
-    use super::{
-        ensure_layer_dir, write_tensor_file, SaveTensorPlan, SaveTensorStage, WHOLE_MODEL_LAYER,
-    };
+    use super::{SaveTensorPlan, SaveTensorStage, WHOLE_MODEL_LAYER};
+    use crate::inference_trace::save_tensor::write_tensor_file;
+    use crate::inference_trace::save_tensor_paths::ensure_layer_dir;
     use std::io::{BufWriter, Write};
 
     /// Mirror the exact byte-flow the wrapper's step-2 branch performs.
