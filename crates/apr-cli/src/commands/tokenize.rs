@@ -658,13 +658,7 @@ pub(crate) fn run_encode_corpus(
         .iter()
         .find_map(|name| tokenizer.token_to_id(name));
 
-    let files = collect_jsonl_files(corpus)?;
-    if files.is_empty() {
-        return Err(CliError::ValidationFailed(format!(
-            "No .jsonl files found under {}",
-            corpus.display()
-        )));
-    }
+    let (files, corpus_format) = collect_corpus_files(corpus)?;
 
     std::fs::create_dir_all(output_dir).map_err(|e| {
         CliError::ValidationFailed(format!(
@@ -682,82 +676,58 @@ pub(crate) fn run_encode_corpus(
     let mut writer = open_shard(output_dir, shard_idx)?;
     let mut doc_iter_count: u64 = 0;
 
-    for file in &files {
-        let content = std::fs::read_to_string(file).map_err(|e| {
-            CliError::ValidationFailed(format!("Cannot read {}: {e}", file.display()))
+    for triple in iter_corpus_texts(&files, corpus_format, content_field) {
+        let (file_display, locator, text) = triple?;
+        let ids = tokenizer.encode(&text).map_err(|e| {
+            CliError::ValidationFailed(format!("Encoding failed at {file_display} {locator}: {e}"))
         })?;
-        for (line_idx, line) in content.lines().enumerate() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-            let value: serde_json::Value = serde_json::from_str(trimmed).map_err(|e| {
-                CliError::ValidationFailed(format!(
-                    "Invalid JSON in {} line {}: {e}",
-                    file.display(),
-                    line_idx + 1
-                ))
-            })?;
-            let Some(text) = value.get(content_field).and_then(|v| v.as_str()) else {
-                continue;
-            };
-            let ids = tokenizer.encode(text).map_err(|e| {
-                CliError::ValidationFailed(format!(
-                    "Encoding failed at {} line {}: {e}",
-                    file.display(),
-                    line_idx + 1
-                ))
-            })?;
 
-            if eos_policy == "between" && doc_iter_count > 0 {
-                if let Some(eos) = eos_id {
-                    writer.write_all(&eos.to_le_bytes()).map_err(|e| {
-                        CliError::ValidationFailed(format!("Shard write failed: {e}"))
-                    })?;
-                    tokens_in_shard += 1;
-                    total_tokens += 1;
-                    eos_count += 1;
-                }
-            }
-
-            for id in &ids {
-                if (*id as usize) >= vocab_size {
-                    return Err(CliError::ValidationFailed(format!(
-                        "Token id {id} >= vocab_size {vocab_size} at {} line {} \
-                         (INV-PRETOK-001 violation)",
-                        file.display(),
-                        line_idx + 1
-                    )));
-                }
+        if eos_policy == "between" && doc_iter_count > 0 {
+            if let Some(eos) = eos_id {
                 writer
-                    .write_all(&id.to_le_bytes())
+                    .write_all(&eos.to_le_bytes())
                     .map_err(|e| CliError::ValidationFailed(format!("Shard write failed: {e}")))?;
                 tokens_in_shard += 1;
                 total_tokens += 1;
+                eos_count += 1;
             }
+        }
 
-            if eos_policy == "after" {
-                if let Some(eos) = eos_id {
-                    writer.write_all(&eos.to_le_bytes()).map_err(|e| {
-                        CliError::ValidationFailed(format!("Shard write failed: {e}"))
-                    })?;
-                    tokens_in_shard += 1;
-                    total_tokens += 1;
-                    eos_count += 1;
-                }
+        for id in &ids {
+            if (*id as usize) >= vocab_size {
+                return Err(CliError::ValidationFailed(format!(
+                    "Token id {id} >= vocab_size {vocab_size} at {file_display} {locator} \
+                     (INV-PRETOK-001 violation)"
+                )));
             }
+            writer
+                .write_all(&id.to_le_bytes())
+                .map_err(|e| CliError::ValidationFailed(format!("Shard write failed: {e}")))?;
+            tokens_in_shard += 1;
+            total_tokens += 1;
+        }
 
-            doc_iter_count += 1;
-            total_docs += 1;
-
-            if tokens_in_shard >= shard_tokens {
+        if eos_policy == "after" {
+            if let Some(eos) = eos_id {
                 writer
-                    .flush()
-                    .map_err(|e| CliError::ValidationFailed(format!("Shard flush failed: {e}")))?;
-                shard_idx += 1;
-                tokens_in_shard = 0;
-                writer = open_shard(output_dir, shard_idx)?;
+                    .write_all(&eos.to_le_bytes())
+                    .map_err(|e| CliError::ValidationFailed(format!("Shard write failed: {e}")))?;
+                tokens_in_shard += 1;
+                total_tokens += 1;
+                eos_count += 1;
             }
+        }
+
+        doc_iter_count += 1;
+        total_docs += 1;
+
+        if tokens_in_shard >= shard_tokens {
+            writer
+                .flush()
+                .map_err(|e| CliError::ValidationFailed(format!("Shard flush failed: {e}")))?;
+            shard_idx += 1;
+            tokens_in_shard = 0;
+            writer = open_shard(output_dir, shard_idx)?;
         }
     }
     writer
@@ -778,6 +748,10 @@ pub(crate) fn run_encode_corpus(
         "total_documents": total_docs,
         "content_field": content_field,
         "normalization": normalization,
+        "input_format": match corpus_format {
+            CorpusFormat::Jsonl => "jsonl",
+            CorpusFormat::Parquet => "parquet",
+        },
         "input_files": files.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
         "elapsed_seconds": elapsed.as_secs_f64(),
     });
@@ -853,6 +827,128 @@ fn collect_jsonl_files(path: &Path) -> Result<Vec<std::path::PathBuf>> {
 
 fn is_jsonl(path: &Path) -> bool {
     path.extension().and_then(|e| e.to_str()) == Some("jsonl")
+}
+
+/// Issue #1410: Stack v1.2 / codeparrot ship as parquet, not JSONL. The
+/// `apr tokenize encode-corpus` corpus argument now accepts either format.
+/// Detection is by extension (in directory mode, parquet wins if both
+/// extensions are present — the JSONL adapter is the legacy path).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CorpusFormat {
+    Jsonl,
+    Parquet,
+}
+
+/// Detect corpus format and collect files. Mirrors `collect_jsonl_files`
+/// for both formats, returning the chosen format alongside the file list.
+///
+/// File mode: extension decides format; non-`.jsonl`/`.parquet` files
+/// error out.
+///
+/// Directory mode: parquet shards are preferred when both are present
+/// (the new path); fall back to JSONL otherwise. Empty directories error.
+fn collect_corpus_files(path: &Path) -> Result<(Vec<std::path::PathBuf>, CorpusFormat)> {
+    let meta = std::fs::metadata(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Cannot stat {}: {e}", path.display())))?;
+
+    if meta.is_file() {
+        if super::tokenize_parquet::is_parquet(path) {
+            return Ok((vec![path.to_path_buf()], CorpusFormat::Parquet));
+        }
+        if is_jsonl(path) {
+            return Ok((vec![path.to_path_buf()], CorpusFormat::Jsonl));
+        }
+        return Err(CliError::ValidationFailed(format!(
+            "Corpus file {} is not a .jsonl or .parquet file",
+            path.display()
+        )));
+    }
+
+    let parquet = super::tokenize_parquet::collect_parquet_files(path).unwrap_or_default();
+    if !parquet.is_empty() {
+        return Ok((parquet, CorpusFormat::Parquet));
+    }
+
+    let jsonl = collect_jsonl_files(path)?;
+    if jsonl.is_empty() {
+        return Err(CliError::ValidationFailed(format!(
+            "No .jsonl or .parquet files found under {}",
+            path.display()
+        )));
+    }
+    Ok((jsonl, CorpusFormat::Jsonl))
+}
+
+/// Unified text iterator: yields `(file_display, locator, text)` triples
+/// regardless of source format. `locator` is human-readable ("line 5" /
+/// "row 12", 1-indexed) so error messages stay consistent across formats.
+///
+/// Streaming for both branches: parquet reads one row group at a time;
+/// JSONL reads each file's content into memory one file at a time
+/// (matches the legacy behavior — Stack v1.2 shards are ~200 MB, CSN-Python
+/// shards are ~50 MB, both well under typical RAM).
+#[cfg(feature = "training")]
+fn iter_corpus_texts<'a>(
+    files: &'a [std::path::PathBuf],
+    format: CorpusFormat,
+    content_field: &'a str,
+) -> Box<dyn Iterator<Item = Result<(String, String, String)>> + 'a> {
+    match format {
+        CorpusFormat::Parquet => Box::new(files.iter().flat_map(move |file| {
+            let file_display = file.display().to_string();
+            match super::tokenize_parquet::iter_parquet_content(file, content_field) {
+                Ok(it) => {
+                    let fd = file_display;
+                    let inner: Box<dyn Iterator<Item = Result<(String, String, String)>>> =
+                        Box::new(it.enumerate().map(move |(idx, r)| {
+                            r.map(|t| (fd.clone(), format!("row {}", idx + 1), t))
+                        }));
+                    inner
+                }
+                Err(e) => {
+                    let inner: Box<dyn Iterator<Item = Result<(String, String, String)>>> =
+                        Box::new(std::iter::once(Err(e)));
+                    inner
+                }
+            }
+        })),
+        CorpusFormat::Jsonl => Box::new(files.iter().flat_map(move |file| {
+            let file_display = file.display().to_string();
+            match std::fs::read_to_string(file) {
+                Ok(content) => {
+                    let fd = file_display;
+                    let triples: Vec<Result<(String, String, String)>> = content
+                        .lines()
+                        .enumerate()
+                        .filter_map(|(idx, line)| {
+                            let trimmed = line.trim();
+                            if trimmed.is_empty() {
+                                return None;
+                            }
+                            match serde_json::from_str::<serde_json::Value>(trimmed) {
+                                Ok(v) => v.get(content_field).and_then(|x| x.as_str()).map(|s| {
+                                    Ok((fd.clone(), format!("line {}", idx + 1), s.to_string()))
+                                }),
+                                Err(e) => Some(Err(CliError::ValidationFailed(format!(
+                                    "Invalid JSON in {fd} line {}: {e}",
+                                    idx + 1
+                                )))),
+                            }
+                        })
+                        .collect();
+                    let inner: Box<dyn Iterator<Item = Result<(String, String, String)>>> =
+                        Box::new(triples.into_iter());
+                    inner
+                }
+                Err(e) => {
+                    let msg = format!("Cannot read {file_display}: {e}");
+                    let inner: Box<dyn Iterator<Item = Result<(String, String, String)>>> =
+                        Box::new(std::iter::once(Err(CliError::ValidationFailed(msg))));
+                    inner
+                }
+            }
+        })),
+    }
 }
 
 fn read_jsonl_content(path: &Path, out: &mut Vec<String>) -> Result<()> {
