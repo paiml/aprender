@@ -8,6 +8,17 @@
 pub(crate) const CUDA_FALLBACK_LOG_PREFIX: &str =
     "[apr-cpu-vs-gpu-output-parity-v1] CUDA path rejected";
 
+/// FALSIFY-CPU-GPU-005 jidoka tag emitted on stderr when wgpu init/forward
+/// rejection forces a fallback. Locked in by
+/// `tests::wgpu_fallback_log_prefix_is_contract_tagged` to prevent the same
+/// silent-fallback regression class that #1428 closed for CUDA — the v1.2.0
+/// contract predicts this tag at `gguf_gpu_generate.rs:317`-style rejection
+/// points so users always see which backend was rejected without --verbose.
+///
+/// See `contracts/apr-cpu-vs-gpu-output-parity-v1.yaml` § FALSIFY-CPU-GPU-005.
+pub(crate) const WGPU_FALLBACK_LOG_PREFIX: &str =
+    "[apr-cpu-vs-gpu-output-parity-v1] wgpu path rejected";
+
 /// GH-559: Try wgpu (Vulkan) generation as fallback when CUDA JIT fails.
 /// Uses trueno's WgslForwardPass with dequantized F32 weights.
 /// Proven: cosine=0.999863 on Blackwell sm_121.
@@ -314,6 +325,10 @@ fn try_apr_wgpu_inference(
         Err(e) => {
             // FALSIFY-CPU-GPU-005: wgpu init failure is a backend-fallback decision —
             // user must see why this backend was rejected without --verbose.
+            // Emit BOTH the contract-tagged prefix (greppable, locked in by
+            // `wgpu_fallback_log_prefix_is_contract_tagged` test) AND the
+            // existing [GH-559] tag (preserved for runbook continuity).
+            eprintln!("{}, attempting fallback: {}", WGPU_FALLBACK_LOG_PREFIX, e);
             eprintln!("[GH-559] wgpu init failed: {}", e);
             return None;
         }
@@ -875,7 +890,7 @@ fn try_safetensors_cuda_inference(
 
 #[cfg(test)]
 mod tests {
-    use super::CUDA_FALLBACK_LOG_PREFIX;
+    use super::{CUDA_FALLBACK_LOG_PREFIX, WGPU_FALLBACK_LOG_PREFIX};
 
     /// Drift-prevention for FALSIFY-CPU-GPU-003 (PR #1428):
     /// the user-visible eprintln tag MUST start with the contract ID so that
@@ -897,5 +912,42 @@ mod tests {
             CUDA_FALLBACK_LOG_PREFIX.contains("CUDA path rejected"),
             "fallback message must say which backend was rejected; got: {CUDA_FALLBACK_LOG_PREFIX}"
         );
+    }
+
+    /// Drift-prevention for FALSIFY-CPU-GPU-005 (contract v1.2.0):
+    /// symmetric to the CUDA tag above, the wgpu fallback log MUST also be
+    /// contract-tagged so `apr run` users see WHICH backend was rejected when
+    /// CUDA falls through to wgpu and wgpu itself is rejected (e.g. broken
+    /// GPU build, no Vulkan ICD, etc.).
+    ///
+    /// Same regression class as #1428→#1429: a future refactor could rename
+    /// the tag, drop the contract ID prefix, or revert to verbose-only —
+    /// each silently re-introduces the silent-gibberish loophole the
+    /// `apr-cpu-vs-gpu-output-parity-v1` chain was authored to close.
+    #[test]
+    fn wgpu_fallback_log_prefix_is_contract_tagged() {
+        assert!(
+            WGPU_FALLBACK_LOG_PREFIX.starts_with("[apr-cpu-vs-gpu-output-parity-v1]"),
+            "FALSIFY-CPU-GPU-005 jidoka tag was renamed; bump contract version first. \
+             Got: {WGPU_FALLBACK_LOG_PREFIX}"
+        );
+        assert!(
+            WGPU_FALLBACK_LOG_PREFIX.contains("wgpu path rejected"),
+            "fallback message must say which backend was rejected; got: {WGPU_FALLBACK_LOG_PREFIX}"
+        );
+    }
+
+    /// Symmetry guard: CUDA and wgpu prefixes must share the same contract
+    /// tag and structure (`[CONTRACT_ID] <backend> path rejected`). If they
+    /// diverge, the user-facing log format becomes inconsistent across
+    /// fallback hops and grep recipes break. Locks in the symmetry that
+    /// PR #1428 (CUDA) and this PR (wgpu) explicitly established.
+    #[test]
+    fn cuda_and_wgpu_fallback_log_prefixes_share_contract_tag() {
+        let contract_tag = "[apr-cpu-vs-gpu-output-parity-v1]";
+        assert!(CUDA_FALLBACK_LOG_PREFIX.starts_with(contract_tag));
+        assert!(WGPU_FALLBACK_LOG_PREFIX.starts_with(contract_tag));
+        assert!(CUDA_FALLBACK_LOG_PREFIX.ends_with("path rejected"));
+        assert!(WGPU_FALLBACK_LOG_PREFIX.ends_with("path rejected"));
     }
 }
