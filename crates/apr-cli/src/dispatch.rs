@@ -265,14 +265,30 @@ fn dispatch_diagnostic_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             save_tensor_dir,
             save_tensor_layers,
         } => crate::error::resolve_model_path(file).and_then(|r| {
-            // SHIP-007 layer-0 stage diff: emit a stub message until
-            // the forward_traced wiring lands (PR-B). The clap surface
-            // is shipped here so the contract `apr-cli-trace-save-tensor-v1`
-            // CLI signature is bound at the binary boundary.
+            // SHIP-007 layer-0 stage diff: when --save-tensor is set on a
+            // .apr file, dispatch to the end-to-end save-tensor wrapper
+            // (PR-A clap → PR-B plan → PR-C-real step1+2 wrapper). For
+            // .gguf/.safetensors and the common no-flag case, fall through
+            // to the existing trace path.
+            #[cfg(feature = "inference")]
             if let Some(stages) = save_tensor.as_deref() {
+                let is_apr = r
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(|e| e.eq_ignore_ascii_case("apr"))
+                    .unwrap_or(false);
+                if is_apr {
+                    return crate::commands::trace_save_tensor::run_save_tensor_apr(
+                        &r,
+                        stages,
+                        save_tensor_dir.as_deref(),
+                        save_tensor_layers,
+                    );
+                }
                 eprintln!(
-                    "apr trace: --save-tensor={stages} --save-tensor-dir={:?} --save-tensor-layers={save_tensor_layers} (PR-B will plumb to forward_traced)",
-                    save_tensor_dir,
+                    "apr trace --save-tensor: only .apr models supported in step 1+2; \
+                     .gguf/.safetensors will be wired in SHIP-007 PR-E (got {})",
+                    r.display()
                 );
             }
             trace::run(
