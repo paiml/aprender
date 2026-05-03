@@ -27,9 +27,10 @@ fn try_wgpu_generate(
     let gpu = trueno::backends::gpu::GpuDevice::new()
         .map_err(|e| RealizarError::InferenceError(format!("wgpu init: {e}")))?;
 
-    if verbose {
-        eprintln!("Backend: wgpu (Vulkan)");
-    }
+    // FALSIFY-CPU-GPU-005: wgpu lifecycle visible without --verbose so users
+    // see which backend actually serves their tokens after CUDA fallback.
+    let _ = verbose;
+    eprintln!("Backend: wgpu (Vulkan)");
 
     let config = model.config();
     let hidden_dim = config.hidden_dim;
@@ -311,16 +312,17 @@ fn try_apr_wgpu_inference(
     let gpu = match GpuDevice::new() {
         Ok(g) => g,
         Err(e) => {
-            if config.verbose {
-                eprintln!("[GH-559] wgpu init failed: {}", e);
-            }
+            // FALSIFY-CPU-GPU-005: wgpu init failure is a backend-fallback decision —
+            // user must see why this backend was rejected without --verbose.
+            eprintln!("[GH-559] wgpu init failed: {}", e);
             return None;
         }
     };
 
-    if config.verbose {
-        eprintln!("Backend: wgpu (Vulkan)");
-    }
+    // FALSIFY-CPU-GPU-005: wgpu lifecycle visible without --verbose. Symmetric to
+    // FALSIFY-CPU-GPU-003's CUDA-fallback log so users always know which backend
+    // actually serves their tokens.
+    eprintln!("Backend: wgpu (Vulkan)");
 
     // Load model
     let mapped = match MappedAprModel::from_path(&config.model_path) {
