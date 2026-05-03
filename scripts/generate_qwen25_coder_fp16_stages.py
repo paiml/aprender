@@ -206,13 +206,57 @@ def main() -> int:
                 silu_g = torch.nn.functional.silu(gate_buf[-1])
                 captured[(layer_idx, "ffn_swigl")] = to_fp32_numpy(silu_g * output)
 
+        # QKV captures: HF stores Q/K/V as separate Linears (q_proj, k_proj, v_proj)
+        # while APR fuses them into a single qkv_weight matmul. To compare apples
+        # to apples we concat HF's three outputs along the last dim AND derive the
+        # pre-bias version (qkv_matmul) by subtracting biases.
+        # APR's `qkv_matmul` stage = pre-bias matmul output;
+        # APR's `qkv_bias` stage   = post-bias.
+        # HF's Linear.forward = x @ W^T + b → output IS post-bias; subtract bias to
+        # get pre-bias. Per-Linear bias broadcasts across the batch+seq dims.
+        q_buf: list[torch.Tensor] = []
+        k_buf: list[torch.Tensor] = []
+        v_buf: list[torch.Tensor] = []
+
+        def make_qkv_hook(slot: list, bias: torch.Tensor | None):
+            def hook(module, args_, output):
+                slot.append(output)
+                if len(q_buf) and len(k_buf) and len(v_buf):
+                    # Both qkv_matmul (pre-bias) and qkv_bias (post-bias)
+                    # have the same shape: [batch, seq, q_dim + 2*kv_dim].
+                    qkv_post = torch.cat([q_buf[-1], k_buf[-1], v_buf[-1]], dim=-1)
+                    captured[(layer_idx, "qkv_bias")] = to_fp32_numpy(qkv_post)
+                    # Pre-bias: subtract each Linear's bias (or zero if none).
+                    q_b = layer_module.self_attn.q_proj.bias
+                    k_b = layer_module.self_attn.k_proj.bias
+                    v_b = layer_module.self_attn.v_proj.bias
+                    qkv_pre = torch.cat([
+                        q_buf[-1] - (q_b if q_b is not None else 0.0),
+                        k_buf[-1] - (k_b if k_b is not None else 0.0),
+                        v_buf[-1] - (v_b if v_b is not None else 0.0),
+                    ], dim=-1)
+                    captured[(layer_idx, "qkv_matmul")] = to_fp32_numpy(qkv_pre)
+            return hook
+
+        # `attention` stage = INPUT to o_proj (after softmax(Q@Kᵀ/√d)@V, pre-O-proj).
+        # Use a forward-pre-hook on o_proj — its `args_[0]` is the raw input tensor.
+        def hook_o_proj_pre(module, args_):
+            # forward_pre_hook signature: (module, args) where args is a tuple.
+            # The input to o_proj is args[0].
+            inp = args_[0]
+            captured[(layer_idx, "attention")] = to_fp32_numpy(inp)
+
         return [
-            ("attn_norm", layer_module.input_layernorm, hook_save("attn_norm")),
-            ("attn_out", layer_module.self_attn, hook_save("attn_out")),
-            ("ffn_norm", layer_module.post_attention_layernorm, hook_save("ffn_norm")),
-            ("ffn_gate", layer_module.mlp.gate_proj, hook_gate),
-            ("ffn_up", layer_module.mlp.up_proj, hook_up),
-            ("ffn_out", layer_module.mlp.down_proj, hook_save("ffn_out")),
+            ("attn_norm", layer_module.input_layernorm, hook_save("attn_norm"), False),
+            ("q_proj", layer_module.self_attn.q_proj, make_qkv_hook(q_buf, None), False),
+            ("k_proj", layer_module.self_attn.k_proj, make_qkv_hook(k_buf, None), False),
+            ("v_proj", layer_module.self_attn.v_proj, make_qkv_hook(v_buf, None), False),
+            ("attention_pre_o_proj", layer_module.self_attn.o_proj, hook_o_proj_pre, True),
+            ("attn_out", layer_module.self_attn, hook_save("attn_out"), False),
+            ("ffn_norm", layer_module.post_attention_layernorm, hook_save("ffn_norm"), False),
+            ("ffn_gate", layer_module.mlp.gate_proj, hook_gate, False),
+            ("ffn_up", layer_module.mlp.up_proj, hook_up, False),
+            ("ffn_out", layer_module.mlp.down_proj, hook_save("ffn_out"), False),
         ]
 
     # Whole-model hooks
@@ -238,8 +282,11 @@ def main() -> int:
     handles.append(model.lm_head.register_forward_hook(hook_lm_head))
 
     for layer_idx in layers_to_capture:
-        for _name, mod, hook in make_layer_hooks(layer_idx):
-            handles.append(mod.register_forward_hook(hook))
+        for _name, mod, hook, is_pre in make_layer_hooks(layer_idx):
+            if is_pre:
+                handles.append(mod.register_forward_pre_hook(hook))
+            else:
+                handles.append(mod.register_forward_hook(hook))
 
     # post_attn_residual + post_ffn_residual: capture by hooking each layer's forward
     # OUTPUT — Qwen2DecoderLayer returns (hidden_states, ...) and hidden_states is
