@@ -1,6 +1,6 @@
 metadata:
   kind: schema
-  version: 1.0.0
+  version: 1.1.0
   status: PROPOSED
   created: '2026-04-28'
   author: PAIML Engineering
@@ -165,6 +165,23 @@ falsification_tests:
   prediction: "`pv validate contracts/apr-cli-trace-save-tensor-v1.yaml` exits 0"
   test: "pv validate contracts/apr-cli-trace-save-tensor-v1.yaml"
   if_fails: "contract schema noncompliant"
+
+- id: FALSIFY-APR-TRACE-SAVE-009
+  rule: "`apr diff --values` recognizes APRT magic and runs element-wise stage diff"
+  prediction: |
+    Two APRT stage tensor files with identical contents → max_abs_diff=0,
+    rms_diff=0, cosine_sim≈1. Mismatched dim_product or layer → fail-fast
+    error. Mixed APRT+model file → falls through to existing RosettaStone
+    path (no behavior change for legacy callers).
+  test: "cargo test -p apr-cli --lib commands::diff::aprt_stage_diff_tests (11/11 PASS)"
+  if_fails: "apr diff --values does not honor `apr_diff_values_compat` invariant — stage tensors captured by apr trace --save-tensor cannot be compared without external tooling"
+  binds_to: apr_diff_values_compat
+  status: PARTIAL_ALGORITHM_LEVEL
+  algorithm_evidence:
+    - "is_aprt_stage_file detects b'APRT' magic at offset 0 (4 unit tests covering hit/miss/truncated/missing)"
+    - "compute_aprt_stage_stats element-wise max|diff|, RMS, cosine, top-K (3 unit tests verify identical=0/known-max/top-K-sorted)"
+    - "run_aprt_stage_diff dispatches via include!() in diff.rs after run() detects both inputs are APRT (3 unit tests verify dim_product mismatch / layer mismatch / identical files)"
+    - "Implementation: crates/apr-cli/src/commands/diff_05_aprt_stage.rs"
 
 proof_obligations:
 - type: invariant
