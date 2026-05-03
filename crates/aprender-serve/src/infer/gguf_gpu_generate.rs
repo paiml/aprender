@@ -1,4 +1,13 @@
 
+/// FALSIFY-CPU-GPU-003 jidoka tag emitted on stderr when a GPU init/parity
+/// rejection forces a fallback. Locked in by `tests::cuda_fallback_log_prefix_is_contract_tagged`
+/// to prevent regression to the verbose-only behaviour that v6 fixed.
+///
+/// See `contracts/apr-cpu-vs-gpu-output-parity-v1.yaml` and
+/// `evidence/ship-007-layer-0-oracle-bisection-2026-05-03/findings-v6-parity-gate-fires-but-fallback-is-silent.md`.
+pub(crate) const CUDA_FALLBACK_LOG_PREFIX: &str =
+    "[apr-cpu-vs-gpu-output-parity-v1] CUDA path rejected";
+
 /// GH-559: Try wgpu (Vulkan) generation as fallback when CUDA JIT fails.
 /// Uses trueno's WgslForwardPass with dequantized F32 weights.
 /// Proven: cosine=0.999863 on Blackwell sm_121.
@@ -489,7 +498,7 @@ fn load_apr_cuda_model(
     // be visible without --verbose. Silent fallback was the SHIP-007 jidoka gap:
     // user saw downstream wgpu gibberish without ever knowing CUDA was rejected.
     let cuda_model = OwnedQuantizedModelCuda::with_max_seq_len(model, 0, 2048).map_err(|e| {
-        eprintln!("[apr-cpu-vs-gpu-output-parity-v1] CUDA path rejected, attempting fallback: {}", e);
+        eprintln!("{}, attempting fallback: {}", CUDA_FALLBACK_LOG_PREFIX, e);
     }).ok()?;
 
     Some((cuda_model, info))
@@ -860,4 +869,31 @@ fn try_safetensors_cuda_inference(
         format: "SafeTensors".to_string(),
         used_gpu: true,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CUDA_FALLBACK_LOG_PREFIX;
+
+    /// Drift-prevention for FALSIFY-CPU-GPU-003 (PR #1428):
+    /// the user-visible eprintln tag MUST start with the contract ID so that
+    /// `apr run` users (without --verbose) see exactly which backend was rejected
+    /// rather than silent gibberish from a downstream fallback.
+    ///
+    /// If this assertion ever fails, do NOT loosen it — re-read
+    /// `evidence/ship-007-layer-0-oracle-bisection-2026-05-03/findings-v6-parity-gate-fires-but-fallback-is-silent.md`
+    /// and either keep the tag stable or bump the parity contract before changing
+    /// the wire format.
+    #[test]
+    fn cuda_fallback_log_prefix_is_contract_tagged() {
+        assert!(
+            CUDA_FALLBACK_LOG_PREFIX.starts_with("[apr-cpu-vs-gpu-output-parity-v1]"),
+            "FALSIFY-CPU-GPU-003 jidoka tag was renamed; bump contract version first. \
+             Got: {CUDA_FALLBACK_LOG_PREFIX}"
+        );
+        assert!(
+            CUDA_FALLBACK_LOG_PREFIX.contains("CUDA path rejected"),
+            "fallback message must say which backend was rejected; got: {CUDA_FALLBACK_LOG_PREFIX}"
+        );
+    }
 }
