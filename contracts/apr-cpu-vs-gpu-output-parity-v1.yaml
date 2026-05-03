@@ -1,0 +1,179 @@
+metadata:
+  kind: schema
+  version: 1.0.0
+  status: PROPOSED
+  created: '2026-05-03'
+  author: PAIML Engineering
+  registry: false
+  references:
+  - 'evidence/ship-007-layer-0-oracle-bisection-2026-05-03/findings-v5-gpu-path-confirmed.md'
+  - 'crates/aprender-serve/src/cli/apr_inference.rs (line 46 comment: "Both ... produce garbage on GPU")'
+  - 'crates/aprender-serve/src/gguf/cuda/mod_parity_gate.rs (existing gate for gguf::cuda path)'
+  - 'crates/aprender-serve/src/gguf/cuda/mod.rs:268-279 (gate enforcement, with SKIP_PARITY_GATE=1 bypass)'
+  description: >
+    CPU-vs-GPU output parity contract. Codifies that for any model and prompt,
+    `apr run` GPU output MUST match `apr run --no-gpu` CPU output (modulo
+    floating-point precision noise) for greedy decode (`--temperature 0.0`).
+    Triggered by SHIP-007 v5: the canonical Qwen2.5-Coder-7B teacher produces
+    "ampiezza = 0.5\ndiametro = 10" (gibberish) on GPU but "2 + 2 equals 4."
+    on CPU for the same prompt "What is 2+2?". Existing parity_gate covers
+    only the `gguf::cuda::OwnedQuantizedModelCuda` path used by `apr parity`
+    and `apr run --force-gpu`; the default `.apr` load path (trueno manual
+    graph, 646 kernels) has NO gate and produces gibberish silently.
+
+cli_signature: |
+  # The contract applies at the level of `apr run` user-observable output.
+  # Two invocations on the same model+prompt+greedy-decode MUST produce the
+  # same first-token output (and ideally identical token sequences) regardless
+  # of GPU/CPU backend selection:
+  #
+  #     apr run <model> --prompt <P> --max-tokens N --temperature 0.0
+  #     apr run <model> --prompt <P> --max-tokens N --temperature 0.0 --no-gpu
+  #
+  # Acceptable divergence: floating-point precision (cosine ≥ 0.99 on
+  # last-token logits, argmax must match for greedy decode).
+  # Unacceptable divergence: any cosine < 0.99 OR argmax mismatch.
+
+byte_format: |
+  N/A — this is an output-parity contract, not a serialization contract.
+
+equations:
+  greedy_argmax_parity:
+    formula: |
+      argmax(softmax(GPU_logits)) == argmax(softmax(CPU_logits))
+      for all (model, prompt) pairs at temperature=0 (greedy decode).
+    domain: |
+      (Model M loaded from .apr or .gguf, prompt P, temperature=0.0)
+      → (first-token argmax) on each backend
+    codomain: u32 token id
+    invariants:
+    - "For greedy decode, GPU and CPU MUST produce IDENTICAL first token"
+    - "Argmax mismatch immediately indicates a kernel correctness bug"
+    - "Magnitude of logit error doesn't matter for argmax — only the ranking"
+    - "This is the strictest possible parity test (no tolerance band)"
+
+  cosine_parity:
+    formula: |
+      cosine_similarity(GPU_last_token_logits, CPU_last_token_logits) >= 0.99
+    domain: same as above
+    codomain: float in [-1, 1]
+    invariants:
+    - "Cosine ≥ 0.99 is the existing parity_gate threshold (mod_parity_gate.rs)"
+    - "This is a softer test — a borderline-broken kernel may pass cosine but fail argmax"
+    - "Run BOTH cosine and argmax parity to catch both numerical and structural bugs"
+
+  no_gpu_flag_honor:
+    formula: |
+      `apr run --no-gpu` MUST use only CPU code paths,
+      no GPU initialization, no CUDA graph construction.
+    domain: apr run invocation with --no-gpu set
+    codomain: process behavior + output
+    invariants:
+    - "Flag is honored: no [trueno#243] manual graph log line"
+    - "Flag is honored: no [PMAT-082] cuBLAS init log line"
+    - "Output is correct: matches HF FP16 reference argmax for canonical 7B teacher"
+    - "Performance is competitive: CPU FP16 must complete within 2× GPU latency, ideally faster (current state: CPU is faster on canonical 7B)"
+
+falsification_tests:
+- id: FALSIFY-CPU-GPU-001
+  rule: greedy first-token argmax matches between GPU default and --no-gpu on canonical 7B teacher
+  prediction: |
+    `apr run /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr
+        --prompt "What is 2+2?" --max-tokens 1 --temperature 0.0`
+    AND
+    `apr run [...] --max-tokens 1 --temperature 0.0 --no-gpu`
+    MUST produce IDENTICAL output. As of 2026-05-03 v5 finding, GPU produces
+    "ampie" while CPU produces "2".
+  test: "operator-driven smoke documented in evidence/ship-007-layer-0-oracle-bisection-2026-05-03/findings-v5-gpu-path-confirmed.md"
+  if_fails: "MODEL-1 cannot ship via GPU — falls back to CPU-only (`--no-gpu` default)"
+  binds_to: greedy_argmax_parity
+  status: PARTIAL_ALGORITHM_LEVEL
+  algorithm_evidence:
+  - "Reproducer documented in evidence/ship-007-.../findings-v5-gpu-path-confirmed.md"
+  - "v5 falsifier executed 2026-05-03: GPU=ampie, CPU=2 → FALSIFIED, bug exists"
+  - "Implementation: extending mod_parity_gate.rs to cover .apr trueno graph init in OwnedQuantizedModel::from_apr → trueno_gpu pipeline; currently the gate only fires for gguf::cuda::OwnedQuantizedModelCuda construction"
+
+- id: FALSIFY-CPU-GPU-002
+  rule: cosine similarity of last-token logits ≥ 0.99 between GPU and CPU paths on canonical teacher
+  prediction: |
+    Existing `apr parity` command implements this for .gguf load path.
+    On canonical 7B teacher .gguf, currently reports cosine = -0.005 (FALSIFIED).
+    The .apr load path (no parity command exists) almost certainly has the
+    same divergence since `OwnedQuantizedModel::from_apr` is shared between
+    the gguf::cuda path (which apr parity tests) and the trueno graph path
+    (which apr run uses by default for .apr).
+  test: "apr parity <model.gguf> --prompt 'What is 2+2?' --assert"
+  if_fails: "GPU forward kernel correctness violated; same as FALSIFY-CPU-GPU-001"
+  binds_to: cosine_parity
+  status: PARTIAL_ALGORITHM_LEVEL
+  algorithm_evidence:
+  - "Live `apr parity /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.gguf --prompt 'What is 2+2?' --assert` exit 1 with cos=-0.005, CPU argmax=334 vs GPU argmax=8127"
+  - "Implementation: crates/aprender-serve/src/gguf/cuda/mod_parity_gate.rs (cosine_similarity, parity_gate)"
+  - "Test exists, but the test EXPECTS to detect divergence — not yet a passing gate"
+
+- id: FALSIFY-CPU-GPU-003
+  rule: parity gate is enforced at `apr run` GPU init (not just at `apr parity` command level)
+  prediction: |
+    `apr run <model.apr> --prompt <P>` (default GPU) MUST run a parity gate
+    during model load. If the gate fails (cos < 0.99 or argmax mismatch),
+    `apr run` MUST refuse to serve and either error out or fall back to CPU
+    automatically. Currently NO gate runs for the trueno-graph .apr load path
+    (only the gguf::cuda path has one), allowing gibberish output to slip
+    through.
+  test: |
+    apr run <broken-gpu-model> --prompt 'What is 2+2?' --max-tokens 1
+      --temperature 0.0
+    SHOULD either:
+      (a) error with PARITY-GATE FAILED message, OR
+      (b) silently fall back to CPU and produce correct output.
+    NOT:
+      (c) silently emit gibberish (current behavior).
+  if_fails: "Users can run `apr run` and silently get garbage output; no jidoka stop-the-line for GPU correctness in default path"
+  binds_to: greedy_argmax_parity
+  status: PARTIAL_ALGORITHM_LEVEL
+  algorithm_evidence:
+  - "Existing `parity_gate` function exists in crates/aprender-serve/src/gguf/cuda/mod_parity_gate.rs and IS wired into `OwnedQuantizedModelCuda::with_max_seq_len` (mod.rs:273)"
+  - "BUT `OwnedQuantizedModel::from_apr` → trueno graph path used by default `apr run` for .apr files does NOT call parity_gate"
+  - "Live evidence (v5 finding): apr run on canonical 7B teacher emits gibberish without ANY parity warning"
+  - "Implementation gap: extend parity_gate to cover the trueno graph init path; same diagnostic message + same SKIP_PARITY_GATE=1 escape hatch"
+
+- id: FALSIFY-CPU-GPU-004
+  rule: --no-gpu flag is honored — no GPU init when set
+  prediction: |
+    `apr run --no-gpu <model> ...` MUST NOT load CUDA graph kernels,
+    MUST NOT call cuBLASLt JIT, MUST NOT consume VRAM.
+    Stderr should contain NEITHER `[trueno#243]` NOR `[PMAT-082]` log lines.
+  test: |
+    apr run --no-gpu <model> --prompt 'test' 2>&1 | grep -E '\[trueno#243\]|\[PMAT-082\]' | wc -l
+    Result MUST be 0.
+  if_fails: "Users explicitly opting out of GPU still pay GPU init cost (or error if no GPU available)"
+  binds_to: no_gpu_flag_honor
+  status: FUNCTIONAL
+  algorithm_evidence:
+  - "Live `apr run [...] --no-gpu` produces ONLY [PMAT-171] [GH-175] [GH-189] log lines, NO [trueno#243] or [PMAT-082]"
+  - "Implementation: crates/apr-cli/src/commands/run.rs (--no-gpu flag clap definition at line 138)"
+  - "Implementation: crates/aprender-serve/src/infer/mod.rs (no_gpu boolean propagated to dispatch)"
+  - "Verified empirically 2026-05-03: --no-gpu run completed in 9.81s vs GPU 72.95s, no GPU log lines emitted"
+  functional_evidence:
+  - "Live smoke 2026-05-03 on canonical 7B teacher: --no-gpu produces correct '2 + 2 equals 4.' in 9.81s with no GPU log lines"
+
+proof_obligations:
+- type: invariant
+  property: "apr run greedy first-token argmax is identical between GPU and --no-gpu paths"
+- type: invariant
+  property: "apr run with .apr file MUST run parity gate (currently only .gguf path has one)"
+- type: completeness
+  property: "all 4 falsifiers (greedy argmax, cosine, gate enforced, no-gpu honored) cover the parity surface"
+- type: liveness
+  property: "if GPU parity gate fails, user gets either an explicit error OR a CPU fallback — never silent gibberish"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: pending
+
+obligation_coverage:
+  computational_cost: 'O(1) per `apr run` invocation: one extra forward pass at init for the parity smoke (already implemented for gguf::cuda path)'
+  reproducible_seed: 'fixed prompt "What is 2+2?", greedy decode at temperature 0.0, max_tokens=1'
+  reference_for_oracle: '`apr run --no-gpu` (CPU scalar-loop path; v5 evidence shows it produces correct output on canonical 7B teacher)'
