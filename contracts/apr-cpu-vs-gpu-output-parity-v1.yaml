@@ -1,6 +1,6 @@
 metadata:
   kind: schema
-  version: 1.2.0
+  version: 1.3.0
   status: ACTIVE
   created: '2026-05-03'
   author: PAIML Engineering
@@ -13,6 +13,7 @@ metadata:
   - 'crates/aprender-serve/src/gguf/cuda/mod.rs:268-279 (gate enforcement, with SKIP_PARITY_GATE=1 bypass)'
   - 'crates/aprender-serve/src/infer/gguf_gpu_generate.rs:487-494 (load_apr_cuda_model — visible-fallback log added 2026-05-03)'
   changelog:
+  - '1.3.0 — 2026-05-03 — FALSIFY-CPU-GPU-005 part b implementation landed inline at try_apr_wgpu_inference (gguf_gpu_generate.rs ~line 441-510). Probe-token CPU forward via OwnedQuantizedModel::forward_single_with_cache → wgpu single-step replay using the same fwd.forward_layer code path the autoregressive loop uses → cosine compare via cpu_vs_gpu_cosine_similarity (PR #1440 helper). < 0.99 → emit WGPU_FALLBACK_LOG_PREFIX tagged log, return None, fall to CPU. Symmetric to FALSIFY-CPU-GPU-003 CUDA parity_gate. Algorithm-level discharge; live broken-GPU smoke deferred to a verification PR.'
   - '1.2.0 — 2026-05-03 — added FALSIFY-CPU-GPU-005 (wgpu visibility + parity-gate symmetry). Closes the second half of the silent-fallback loophole: even after #1428 made CUDA rejection visible, the wgpu fallback path still ships gibberish silently for the same canonical 7B teacher because (a) its init/abort logs are verbose-gated and (b) it has no parity_gate analog. Visibility-log fix lands in this revision; the cosine-similarity gate is bound at PARTIAL_ALGORITHM_LEVEL pending a follow-up implementation PR (~100-150 LOC).'
   - '1.1.0 — 2026-05-03 — corrected FALSIFY-CPU-GPU-003 algorithm_evidence: parity_gate IS already wired into the .apr → OwnedQuantizedModelCuda path via with_max_seq_len:268-279 (called from load_apr_cuda_model:487). The user-visible gap was that CUDA failure (e.g. ILLEGAL_ADDRESS during gate forward, or cosine < 0.99) was logged only in --verbose mode — fallback then hits wgpu which itself produces gibberish, so the user saw silent gibberish. PR converts the fallback log to unconditional one-line eprintln so the GPU rejection is always visible. Promoted contract from PROPOSED → ACTIVE.'
   description: >
@@ -198,9 +199,9 @@ falsification_tests:
   algorithm_evidence:
   - "Symptom replicated 2026-05-03: with apr 0.31.2 and PR #1428 landed, default-mode `apr run` on canonical 7B teacher: CUDA logs `[apr-cpu-vs-gpu-output-parity-v1] CUDA path rejected` (good — #1428's contribution), then wgpu silently runs and ships 'ampiezza = 10\\nampie'"
   - "Visibility (a) implementation in this revision: gguf_gpu_generate.rs:305-323 — drop `if config.verbose` from the [GH-559] wgpu init failed and Backend: wgpu (Vulkan) eprintlns"
-  - "Parity gate (b) deferred to follow-up PR. Implementation sketch: at gguf_gpu_generate.rs:388 (after weights uploaded, before autoregressive loop), run one CPU forward via OwnedQuantizedModel.forward_single_with_cache(bos, &mut tmp_cache, 0), run one wgpu single-step decode (extracted from the existing autoregressive loop body), cosine-compare logits. <0.99 → return None (fall to CPU)."
-  - "Implementation gap on follow-up: the wgpu single-step decode is not currently exposed as a callable function — needs a small refactor to extract the per-token loop body."
-  - "Drift-prevention: regression test should grep stderr for both `[apr-cpu-vs-gpu-output-parity-v1] CUDA path rejected` AND `Backend: wgpu (Vulkan)` (or the future wgpu rejection tag) on a deliberately broken or non-CUDA host"
+  - "Parity gate (b) implementation landed 2026-05-03 inline at try_apr_wgpu_inference (gguf_gpu_generate.rs ~line 441-510, between kv_caches init and the autoregressive loop start). Algorithm: (1) take input_tokens.first() as the probe token (typically BOS); (2) run one CPU forward via OwnedQuantizedModel::forward_single_with_cache with a tiny temporary OwnedQuantizedKVCache::from_config(cfg, 2) — gives reference logits without contaminating the real autoregressive kv_caches; (3) run one wgpu single-step replay using the same fwd.forward_layer code path the autoregressive loop uses, with a separate probe_kv_caches vec (max_seq=2, also tiny); (4) replay the loop's output_norm + lm_head argmax math on the wgpu hidden state to get wgpu_logits; (5) compute cosine = cpu_vs_gpu_cosine_similarity(&cpu_logits, &wgpu_logits) (the helper added in PR #1440 — module-scope, no --features cuda dep); (6) if !(cos.is_finite() && cos >= 0.99) emit the WGPU_FALLBACK_LOG_PREFIX tagged stderr line and return None — the caller then falls through to CPU. Both probe error paths (CPU forward failure, wgpu probe layer failure) also emit the contract-tagged log and return None. Net: silent-gibberish loophole closed at the wgpu init boundary, symmetric to FALSIFY-CPU-GPU-003's parity_gate for CUDA."
+  - "Drift-prevention: cpu_vs_gpu_cosine_similarity_{parallel_returns_one,orthogonal_returns_zero,fails_closed} unit tests in gguf_gpu_generate.rs::tests lock the math; CUDA_FALLBACK_LOG_PREFIX and WGPU_FALLBACK_LOG_PREFIX const + the 3 prefix tests lock the user-facing eprintln tag shape. Future regression: a refactor that swaps the helper or the constants without bumping this contract version trips a unit-test failure."
+  - "Live-evidence still pending for full DISCHARGED: needs a `apr run <broken-gpu-model.apr>` smoke on the canonical 7B teacher to confirm cosine fires, the WGPU tag prints, and CPU output follows — call out as a separate verification PR. Algorithm-level discharge holds today via the unit-tested cosine helper + compile-verified call site."
 
 proof_obligations:
 - type: invariant
