@@ -1,6 +1,6 @@
 metadata:
   kind: schema
-  version: 1.2.0
+  version: 1.3.0
   status: PROPOSED
   created: '2026-04-28'
   author: PAIML Engineering
@@ -203,6 +203,29 @@ falsification_tests:
     - "step2_lm_head_writes_logits_bytes_verbatim — bit-identical f32 round-trip including NaN-bit preservation (per `byte_format` NaN invariant)"
     - "Implementation: crates/aprender-serve/src/apr_transformer/traced_save_tensor.rs::forward_traced_with_save_tensor (step-2 branch added 2026-05-03 after PR #1414 merge)"
     - "Live discharge against canonical 7B teacher deferred to SHIP-007 PR-E (layer-0 bisection)"
+
+- id: FALSIFY-APR-TRACE-SAVE-011
+  rule: "`apr trace --save-tensor` CLI dispatches end-to-end on `.apr` models"
+  prediction: |
+    `apr trace --payload <model>.apr --save-tensor <STAGES>` builds a
+    `SaveTensorPlan` from the CLI args, loads the APR model + embedded
+    BPE tokenizer, runs `forward_traced_with_save_tensor`, and prints
+    a summary of files written (path + size). For step 1+2 scope, this
+    means at least one `embedding.bin` and/or `lm_head.bin` lands under
+    `--save-tensor-dir` (or default `<model-stem>-trace/`). Before this
+    discharge, the dispatch only printed a stub — the wrapper was
+    library-reachable but unreachable from the CLI.
+  test: "cargo test -p apr-cli --lib commands::trace_save_tensor::tests (5/5 PASS)"
+  if_fails: "SHIP-007 PR-E live diagnostics blocked: operator cannot run apr trace --save-tensor on the canonical 7B teacher → cannot produce APR-side stage tensor files for `apr diff --values` byte comparison vs GGUF"
+  binds_to: cli_signature
+  status: PARTIAL_ALGORITHM_LEVEL
+  algorithm_evidence:
+    - "default_output_dir — verifies the `<model-stem>-trace/` convention next to the input file (3 unit tests: with parent dir, bare filename, missing extension)"
+    - "collect_bin_files — verifies recursive walk of *.bin under output_dir with non-bin filtering (1 unit test)"
+    - "collect_bin_files_missing_dir_is_ok — verifies graceful no-op when output_dir does not yet exist (caller may pass a path that becomes valid AFTER forward_traced runs)"
+    - "Implementation: crates/apr-cli/src/commands/trace_save_tensor.rs::run_save_tensor_apr — composed of 4 phases: SaveTensorPlan::from_cli + AprV2Model::load + load_embedded_bpe_tokenizer + AprTransformer::from_apr_file + forward_traced_with_save_tensor + collect_bin_files"
+    - "Dispatch site: crates/apr-cli/src/dispatch.rs Trace branch — when --save-tensor is set AND the file extension is .apr, routes to run_save_tensor_apr instead of the existing trace::run path. Other formats print a stub directing to PR-E"
+    - "Live discharge against the canonical 7B teacher deferred to operator-driven smoke after merge — the cli_signature contract test `apr trace --save-tensor --help | grep save-tensor` already passed at the binary boundary; this falsifier extends it to actual file production"
 
 proof_obligations:
 - type: invariant
