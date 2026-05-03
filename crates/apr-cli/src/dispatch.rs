@@ -653,9 +653,17 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             // through to the existing model puller (backward compat).
             if model_ref == "dataset" {
                 match repo.as_deref() {
-                    Some(r) => {
-                        pull::run_dataset(r, include, revision.as_deref(), output.as_deref())
-                    },
+                    // Issue #1410 / FALSIFY-PULL-DATASET-009: thread `dry_run`
+                    // through to the dataset puller. Previously dropped on
+                    // the floor, so `apr pull dataset --dry-run` performed
+                    // full downloads in violation of the contract.
+                    Some(r) => pull::run_dataset(
+                        r,
+                        include,
+                        revision.as_deref(),
+                        output.as_deref(),
+                        *dry_run,
+                    ),
                     None => Err(crate::error::CliError::ValidationFailed(
                         "apr pull dataset <REPO>: REPO argument required".to_string(),
                     )),
