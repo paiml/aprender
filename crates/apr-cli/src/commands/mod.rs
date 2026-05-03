@@ -124,6 +124,8 @@ pub(crate) mod tool_use_classifier;
 pub(crate) mod tool_use_lint;
 pub(crate) mod tp_pp_classifier;
 pub(crate) mod trace;
+#[cfg(feature = "inference")]
+pub(crate) mod trace_save_tensor;
 #[cfg(feature = "training")]
 pub(crate) mod train;
 pub(crate) mod tree;
