@@ -19,6 +19,41 @@ pub(crate) const CUDA_FALLBACK_LOG_PREFIX: &str =
 pub(crate) const WGPU_FALLBACK_LOG_PREFIX: &str =
     "[apr-cpu-vs-gpu-output-parity-v1] wgpu path rejected";
 
+/// f64-accumulated cosine similarity for FALSIFY-CPU-GPU-005 part b.
+///
+/// Numerically-stable companion to `cuda::mod_parity_gate::cosine_similarity` (which
+/// lives behind `cfg(feature = "cuda")`). Lifted to this module so the future wgpu
+/// cosine gate (predicted by contract `apr-cpu-vs-gpu-output-parity-v1` v1.2.0
+/// FALSIFY-CPU-GPU-005 part b) can compare a wgpu single-step decode against a
+/// CPU reference forward at init without taking a `--features cuda` build dependency.
+///
+/// Returns 0.0 when either input is zero-norm or the inputs differ in length —
+/// this is the conservative "fail-closed" default that triggers fallback to CPU.
+///
+/// See `contracts/apr-cpu-vs-gpu-output-parity-v1.yaml` § FALSIFY-CPU-GPU-005
+/// implementation_evidence line 201 for the gate algorithm.
+pub(crate) fn cpu_vs_gpu_cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    if a.len() != b.len() || a.is_empty() {
+        return 0.0;
+    }
+    let mut dot: f64 = 0.0;
+    let mut norm_a: f64 = 0.0;
+    let mut norm_b: f64 = 0.0;
+    for (x, y) in a.iter().zip(b.iter()) {
+        let x = f64::from(*x);
+        let y = f64::from(*y);
+        dot += x * y;
+        norm_a += x * x;
+        norm_b += y * y;
+    }
+    let denom = norm_a.sqrt() * norm_b.sqrt();
+    if denom < 1e-12 {
+        0.0
+    } else {
+        (dot / denom) as f32
+    }
+}
+
 /// GH-559: Try wgpu (Vulkan) generation as fallback when CUDA JIT fails.
 /// Uses trueno's WgslForwardPass with dequantized F32 weights.
 /// Proven: cosine=0.999863 on Blackwell sm_121.
@@ -949,5 +984,68 @@ mod tests {
         assert!(WGPU_FALLBACK_LOG_PREFIX.starts_with(contract_tag));
         assert!(CUDA_FALLBACK_LOG_PREFIX.ends_with("path rejected"));
         assert!(WGPU_FALLBACK_LOG_PREFIX.ends_with("path rejected"));
+    }
+
+    /// FALSIFY-CPU-GPU-005 part b cosine helper — parallel vectors return 1.
+    ///
+    /// Locks in the gate's positive case: when wgpu produces logits identical
+    /// to CPU, the gate must NOT trigger fallback (cosine = 1.0 ≥ 0.99 floor).
+    #[test]
+    fn cpu_vs_gpu_cosine_similarity_parallel_returns_one() {
+        let a = vec![1.0_f32, 2.0, 3.0, 4.0];
+        let b = a.clone();
+        let cos = super::cpu_vs_gpu_cosine_similarity(&a, &b);
+        assert!(
+            (cos - 1.0).abs() < 1e-6,
+            "parallel vectors must yield cosine 1.0, got {cos}"
+        );
+    }
+
+    /// FALSIFY-CPU-GPU-005 part b cosine helper — orthogonal returns 0.
+    ///
+    /// Negative case: orthogonal vectors must yield cosine 0.0 which is well
+    /// below the 0.99 gate floor → fallback triggers.
+    #[test]
+    fn cpu_vs_gpu_cosine_similarity_orthogonal_returns_zero() {
+        let a = vec![1.0_f32, 0.0, 0.0, 0.0];
+        let b = vec![0.0_f32, 1.0, 0.0, 0.0];
+        let cos = super::cpu_vs_gpu_cosine_similarity(&a, &b);
+        assert!(
+            cos.abs() < 1e-6,
+            "orthogonal vectors must yield cosine 0.0, got {cos}"
+        );
+    }
+
+    /// FALSIFY-CPU-GPU-005 part b cosine helper — fail-closed on bad input.
+    ///
+    /// Zero-norm or mismatched-length inputs MUST return 0.0 so the future gate
+    /// triggers fallback rather than dividing by zero or panicking. This is the
+    /// "conservative default" that closes the silent-gibberish loophole even
+    /// when the probe forward itself emits NaN/zeros.
+    #[test]
+    fn cpu_vs_gpu_cosine_similarity_fails_closed() {
+        // Zero-norm input
+        let zero = vec![0.0_f32; 4];
+        let nonzero = vec![1.0_f32, 2.0, 3.0, 4.0];
+        assert_eq!(
+            super::cpu_vs_gpu_cosine_similarity(&zero, &nonzero),
+            0.0,
+            "zero-norm input must fail closed"
+        );
+        // Length mismatch
+        let short = vec![1.0_f32, 2.0];
+        let long = vec![1.0_f32, 2.0, 3.0, 4.0];
+        assert_eq!(
+            super::cpu_vs_gpu_cosine_similarity(&short, &long),
+            0.0,
+            "length mismatch must fail closed"
+        );
+        // Empty input
+        let empty: Vec<f32> = Vec::new();
+        assert_eq!(
+            super::cpu_vs_gpu_cosine_similarity(&empty, &empty),
+            0.0,
+            "empty input must fail closed"
+        );
     }
 }
