@@ -1,6 +1,6 @@
 metadata:
   kind: schema
-  version: 1.1.0
+  version: 1.2.0
   status: ACTIVE
   created: '2026-05-03'
   author: PAIML Engineering
@@ -13,6 +13,7 @@ metadata:
   - 'crates/aprender-serve/src/gguf/cuda/mod.rs:268-279 (gate enforcement, with SKIP_PARITY_GATE=1 bypass)'
   - 'crates/aprender-serve/src/infer/gguf_gpu_generate.rs:487-494 (load_apr_cuda_model — visible-fallback log added 2026-05-03)'
   changelog:
+  - '1.2.0 — 2026-05-03 — added FALSIFY-CPU-GPU-005 (wgpu visibility + parity-gate symmetry). Closes the second half of the silent-fallback loophole: even after #1428 made CUDA rejection visible, the wgpu fallback path still ships gibberish silently for the same canonical 7B teacher because (a) its init/abort logs are verbose-gated and (b) it has no parity_gate analog. Visibility-log fix lands in this revision; the cosine-similarity gate is bound at PARTIAL_ALGORITHM_LEVEL pending a follow-up implementation PR (~100-150 LOC).'
   - '1.1.0 — 2026-05-03 — corrected FALSIFY-CPU-GPU-003 algorithm_evidence: parity_gate IS already wired into the .apr → OwnedQuantizedModelCuda path via with_max_seq_len:268-279 (called from load_apr_cuda_model:487). The user-visible gap was that CUDA failure (e.g. ILLEGAL_ADDRESS during gate forward, or cosine < 0.99) was logged only in --verbose mode — fallback then hits wgpu which itself produces gibberish, so the user saw silent gibberish. PR converts the fallback log to unconditional one-line eprintln so the GPU rejection is always visible. Promoted contract from PROPOSED → ACTIVE.'
   description: >
     CPU-vs-GPU output parity contract. Codifies that for any model and prompt,
@@ -167,18 +168,52 @@ falsification_tests:
   functional_evidence:
   - "Live smoke 2026-05-03 on canonical 7B teacher: --no-gpu produces correct '2 + 2 equals 4.' in 9.81s with no GPU log lines"
 
+- id: FALSIFY-CPU-GPU-005
+  rule: wgpu fallback path must (a) log its lifecycle visibly without --verbose AND (b) run a parity gate at init analogous to CUDA's parity_gate
+  prediction: |
+    When the CUDA path is rejected (FALSIFY-CPU-GPU-003), `apr run`
+    transparently falls through to wgpu (`try_apr_wgpu_inference`,
+    gguf_gpu_generate.rs:297). The wgpu path ALSO produces gibberish on
+    the canonical 7B teacher (v6 evidence). User-visible behaviour MUST
+    be:
+      (a) wgpu init/error logs are non-verbose-gated — user sees
+          "Backend: wgpu (Vulkan)" or "[GH-559] wgpu init failed: ..."
+          without --verbose, just like CUDA.
+      (b) wgpu init runs a one-token CPU-vs-wgpu cosine check on the
+          BOS token. If cosine < 0.99 OR argmax mismatch, return None
+          → fall through to CPU. Tagged stderr line:
+          `[apr-cpu-vs-gpu-output-parity-v1] wgpu path rejected, attempting fallback: <reason>`
+  test: |
+    apr run <broken-gpu-model.apr> --prompt 'What is 2+2?' --max-tokens 1
+      --temperature 0.0 2>&1 | tee /tmp/run.log
+    SHOULD show:
+      [apr-cpu-vs-gpu-output-parity-v1] CUDA path rejected, ...   (existing FALSIFY-CPU-GPU-003)
+      Backend: wgpu (Vulkan)                                       (NEW: visible without -v)
+      [apr-cpu-vs-gpu-output-parity-v1] wgpu path rejected, ...   (NEW: parity gate)
+      Backend: CPU (correct output follows)
+    AND the final stdout output should be the CPU-produced "2 + 2 equals 4." (or equivalent), NOT wgpu's gibberish.
+  if_fails: "Even after the CUDA jidoka log, wgpu can still ship silent gibberish — the loophole is not closed"
+  binds_to: greedy_argmax_parity
+  status: PARTIAL_ALGORITHM_LEVEL
+  algorithm_evidence:
+  - "Symptom replicated 2026-05-03: with apr 0.31.2 and PR #1428 landed, default-mode `apr run` on canonical 7B teacher: CUDA logs `[apr-cpu-vs-gpu-output-parity-v1] CUDA path rejected` (good — #1428's contribution), then wgpu silently runs and ships 'ampiezza = 10\\nampie'"
+  - "Visibility (a) implementation in this revision: gguf_gpu_generate.rs:305-323 — drop `if config.verbose` from the [GH-559] wgpu init failed and Backend: wgpu (Vulkan) eprintlns"
+  - "Parity gate (b) deferred to follow-up PR. Implementation sketch: at gguf_gpu_generate.rs:388 (after weights uploaded, before autoregressive loop), run one CPU forward via OwnedQuantizedModel.forward_single_with_cache(bos, &mut tmp_cache, 0), run one wgpu single-step decode (extracted from the existing autoregressive loop body), cosine-compare logits. <0.99 → return None (fall to CPU)."
+  - "Implementation gap on follow-up: the wgpu single-step decode is not currently exposed as a callable function — needs a small refactor to extract the per-token loop body."
+  - "Drift-prevention: regression test should grep stderr for both `[apr-cpu-vs-gpu-output-parity-v1] CUDA path rejected` AND `Backend: wgpu (Vulkan)` (or the future wgpu rejection tag) on a deliberately broken or non-CUDA host"
+
 proof_obligations:
 - type: invariant
   property: "apr run greedy first-token argmax is identical between GPU and --no-gpu paths"
 - type: invariant
   property: "apr run with .apr file MUST run parity gate (currently only .gguf path has one)"
 - type: completeness
-  property: "all 4 falsifiers (greedy argmax, cosine, gate enforced, no-gpu honored) cover the parity surface"
+  property: "all 5 falsifiers (greedy argmax, cosine, CUDA gate enforced, no-gpu honored, wgpu gate enforced) cover the parity surface"
 - type: liveness
-  property: "if GPU parity gate fails, user gets either an explicit error OR a CPU fallback — never silent gibberish"
+  property: "if GPU parity gate fails on ANY backend (CUDA or wgpu), user gets either an explicit error OR a CPU fallback — never silent gibberish"
 
 verification_summary:
-  total_obligations: 4
+  total_obligations: 5
   proven: 0
   tested: 0
   status: pending
