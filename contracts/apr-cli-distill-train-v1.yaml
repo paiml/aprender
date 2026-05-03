@@ -160,6 +160,21 @@ falsification_tests:
   prediction: "If teacher_logits/ cache exists, stage train SHOULD skip recomputation and proceed to gradient updates"
   test: "rm -rf run/ckpt; apr distill --stage train ... → uses existing cache, no teacher forward"
   if_fails: "missing idempotency — would force re-running expensive precompute on every train"
+  algorithm_evidence:
+    status: PARTIAL_ALGORITHM_LEVEL
+    last_verified: '2026-05-03'
+    test_locations:
+    - 'crates/apr-cli/src/commands/distill_include_01.rs::tests::falsify_apr_distill_train_006_train_errors_without_precompute_cache — negative half: stage train MUST error when manifest.json is absent (asserts CliError::ValidationFailed with "Precompute" in message)'
+    - 'crates/apr-cli/src/commands/distill_include_01.rs::tests::falsify_apr_distill_train_006_train_does_not_error_when_cache_present — positive half: after precompute, stage train MUST NOT error with the cache-missing message (proves the manifest is actually consulted)'
+    notes: |
+      Algorithm-level discharge of the cache-resume idempotency
+      invariant. Both halves are required to avoid the failure mode
+      where the cache is stat-only-checked but never read — the
+      negative test guarantees train rejects no-cache, and the positive
+      test guarantees train accepts present-cache. Promotion to
+      DISCHARGED requires real teacher forward + real student forward
+      that actually loads logits-on-disk and compares to a baseline
+      that re-ran precompute (proving no recomputation happened).
 
 - id: FALSIFY-APR-DISTILL-TRAIN-007
   rule: contract validates via pv
