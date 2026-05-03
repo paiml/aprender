@@ -137,6 +137,23 @@ falsification_tests:
   prediction: "Two runs of `apr distill --stage precompute` with same inputs produce byte-identical teacher_logits/ output"
   test: "diff -r run1/teacher_logits run2/teacher_logits → exit 0"
   if_fails: "non-determinism in teacher forward pass — likely a kernel-launch ordering or atomic-add issue"
+  algorithm_evidence:
+    status: PARTIAL_ALGORITHM_LEVEL
+    last_verified: '2026-05-03'
+    test_locations:
+    - 'crates/apr-cli/src/commands/distill_include_01.rs::tests::falsify_apr_distill_train_005_precompute_is_byte_deterministic — local-teacher branch; two precompute runs over identical fake teacher dir produce byte-identical manifest.json'
+    - 'crates/apr-cli/src/commands/distill_include_01.rs::tests::falsify_apr_distill_train_005_precompute_remote_teacher_stub_is_deterministic — remote-stub branch; two precompute runs against an unresolved HF model_id produce byte-identical pending_download manifest.json'
+    notes: |
+      Algorithm-level discharge. The current `run_config_precompute`
+      writes a JSON manifest derived from (config, tensor_count,
+      teacher_size); both unit tests exercise the local-teacher and
+      remote-stub branches and assert byte-identical output across two
+      invocations. This catches non-determinism that would be introduced
+      by adding any timestamp/UUID/RNG draw or any teacher forward that
+      uses non-deterministic atomic-add reductions. Promotion to
+      DISCHARGED requires running `apr distill --stage precompute`
+      end-to-end on a real teacher with logits-on-disk and asserting
+      byte-identical bytes across two real invocations.
 
 - id: FALSIFY-APR-DISTILL-TRAIN-006
   rule: stage train can resume from precompute cache
