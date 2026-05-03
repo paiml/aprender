@@ -17,6 +17,45 @@ impl AprTransformer {
     ///
     /// Returns error if inference fails
     pub fn forward_traced(&self, token_ids: &[u32]) -> Result<ForwardTrace> {
+        self.forward_traced_with_plan(token_ids, None)
+    }
+
+    /// SHIP-007 PR-C-real step 3: forward_traced + optional per-stage
+    /// `SaveTensorPlan` emission.
+    ///
+    /// Identical to [`Self::forward_traced`] when `plan == None`. When
+    /// `plan == Some(&plan)`, emits selected stage tensors to disk via
+    /// [`crate::inference_trace::save_tensor_emit::maybe_save_stage`] at
+    /// each natural capture point (Embedding, AttnNorm, QkvMatmul, AttnOut,
+    /// PostAttnResidual, FfnNorm, FfnGate, FfnUp, FfnSilu, FfnSwigl, FfnOut,
+    /// PostFfnResidual per-layer, plus FinalNorm + LmHead whole-model).
+    ///
+    /// Contract: [`contracts/apr-cli-trace-save-tensor-v1.yaml`] step-3
+    /// per-layer threading.
+    ///
+    /// # Errors
+    ///
+    /// - Propagates [`RealizarError`](crate::error::RealizarError) from the
+    ///   underlying forward pass.
+    /// - Returns [`RealizarError::IoError`] if any
+    ///   [`maybe_save_stage`](crate::inference_trace::save_tensor_emit::maybe_save_stage)
+    ///   write fails.
+    pub fn forward_traced_with_plan(
+        &self,
+        token_ids: &[u32],
+        plan: Option<&crate::inference_trace::save_tensor_plan::SaveTensorPlan>,
+    ) -> Result<ForwardTrace> {
+        use crate::inference_trace::save_tensor::WHOLE_MODEL_LAYER;
+        use crate::inference_trace::save_tensor_emit::maybe_save_stage;
+        use crate::inference_trace::save_tensor_stage::SaveTensorStage;
+
+        // Wraps `maybe_save_stage` IO error → `RealizarError::IoError`.
+        let emit = |stage: SaveTensorStage, layer: u32, values: &[f32]| -> Result<()> {
+            maybe_save_stage(plan, stage, layer, values).map_err(|e| RealizarError::IoError {
+                message: format!("save_tensor::{stage:?} L{layer}: {e}"),
+            })
+        };
+
         if token_ids.is_empty() {
             return Err(RealizarError::InvalidShape {
                 reason: "Token sequence cannot be empty".to_string(),
@@ -28,6 +67,7 @@ impl AprTransformer {
 
         // 1. Token embedding lookup
         let mut hidden = self.embed(token_ids);
+        emit(SaveTensorStage::Embedding, 0, &hidden)?;
         let embed_stats = ActivationStats::from_slice(&hidden);
 
         let mut layer_activations = Vec::with_capacity(self.layers.len());
@@ -44,6 +84,7 @@ impl AprTransformer {
                 layer.attn_norm_bias.as_deref(),
                 self.config.eps,
             );
+            emit(SaveTensorStage::AttnNorm, layer_idx as u32, &normed)?;
             let attn_norm_stats = ActivationStats::from_slice(&normed);
             // Last-token-only slice for parity with GGUF (§37 / FALSIFY-APR-GGUF-PARITY-007)
             let seq_len_for_last = token_ids.len();
@@ -54,8 +95,10 @@ impl AprTransformer {
             // 2b. QKV projection
             let qkv_dim = layer.qkv_weight.len() / hidden_dim;
             let mut qkv = self.matmul(&normed, &layer.qkv_weight, hidden_dim, qkv_dim);
+            emit(SaveTensorStage::QkvMatmul, layer_idx as u32, &qkv)?;
             if let Some(ref bias) = layer.qkv_bias {
                 self.add_bias(&mut qkv, bias);
+                emit(SaveTensorStage::QkvBias, layer_idx as u32, &qkv)?;
             }
             let qkv_stats = ActivationStats::from_slice(&qkv);
             let last_token_qkv_stats =
@@ -127,12 +170,16 @@ impl AprTransformer {
                 }
             }
 
+            // Capture pre-O-proj attention output (Q@Kᵀ@V combined).
+            emit(SaveTensorStage::Attention, layer_idx as u32, &attn_out)?;
+
             // Output projection
             let mut attn_output =
                 self.matmul(&attn_out, &layer.attn_output_weight, hidden_dim, hidden_dim);
             if let Some(ref bias) = layer.attn_output_bias {
                 self.add_bias(&mut attn_output, bias);
             }
+            emit(SaveTensorStage::AttnOut, layer_idx as u32, &attn_output)?;
             let attn_out_stats = ActivationStats::from_slice(&attn_output);
             let last_token_attn_out_stats = ActivationStats::from_slice(
                 &attn_output[(seq_len_for_last - 1) * hidden_dim..],
@@ -142,6 +189,7 @@ impl AprTransformer {
             for i in 0..hidden.len() {
                 hidden[i] += attn_output[i];
             }
+            emit(SaveTensorStage::PostAttnResidual, layer_idx as u32, &hidden)?;
 
             // 2f. FFN layer norm (if present)
             let ffn_input = if let Some(ref norm_weight) = layer.ffn_norm_weight {
@@ -155,6 +203,7 @@ impl AprTransformer {
             } else {
                 hidden.clone()
             };
+            emit(SaveTensorStage::FfnNorm, layer_idx as u32, &ffn_input)?;
             let ffn_norm_stats = ActivationStats::from_slice(&ffn_input);
             let last_token_ffn_norm_stats = ActivationStats::from_slice(
                 &ffn_input[(seq_len_for_last - 1) * hidden_dim..],
@@ -175,12 +224,14 @@ impl AprTransformer {
 
             let ffn_output = if let Some(ref gate_weight) = layer.ffn_gate_weight {
                 let gate = self.matmul(&ffn_input, gate_weight, hidden_dim, intermediate_dim);
+                emit(SaveTensorStage::FfnGate, layer_idx as u32, &gate)?;
                 let up = self.matmul(
                     &ffn_input,
                     &layer.ffn_up_weight,
                     hidden_dim,
                     intermediate_dim,
                 );
+                emit(SaveTensorStage::FfnUp, layer_idx as u32, &up)?;
 
                 ffn_gate_stats = ActivationStats::from_slice(&gate);
                 ffn_up_stats = ActivationStats::from_slice(&up);
@@ -198,6 +249,8 @@ impl AprTransformer {
                     silu_gate.push(silu_g);
                     ffn_hidden.push(silu_g * u);
                 }
+                emit(SaveTensorStage::FfnSilu, layer_idx as u32, &silu_gate)?;
+                emit(SaveTensorStage::FfnSwigl, layer_idx as u32, &ffn_hidden)?;
 
                 ffn_silu_gate_stats = ActivationStats::from_slice(&silu_gate);
                 ffn_swiglu_inner_stats = ActivationStats::from_slice(&ffn_hidden);
@@ -251,6 +304,7 @@ impl AprTransformer {
                 }
                 out
             };
+            emit(SaveTensorStage::FfnOut, layer_idx as u32, &ffn_output)?;
             let ffn_out_stats = ActivationStats::from_slice(&ffn_output);
             let last_token_ffn_out_stats = ActivationStats::from_slice(
                 &ffn_output[(seq_len_for_last - 1) * hidden_dim..],
@@ -260,6 +314,7 @@ impl AprTransformer {
             for i in 0..hidden.len() {
                 hidden[i] += ffn_output[i];
             }
+            emit(SaveTensorStage::PostFfnResidual, layer_idx as u32, &hidden)?;
             let output_stats = ActivationStats::from_slice(&hidden);
             let last_token_output_stats = ActivationStats::from_slice(
                 &hidden[(seq_len_for_last - 1) * hidden_dim..],
@@ -304,6 +359,7 @@ impl AprTransformer {
             self.output_norm_bias.as_deref(),
             self.config.eps,
         );
+        emit(SaveTensorStage::FinalNorm, WHOLE_MODEL_LAYER, &normed)?;
         let final_norm_stats = ActivationStats::from_slice(&normed);
 
         // 4. LM head projection (only last token)
@@ -320,6 +376,7 @@ impl AprTransformer {
         if let Some(ref bias) = self.lm_head_bias {
             self.add_bias(&mut logits, bias);
         }
+        emit(SaveTensorStage::LmHead, WHOLE_MODEL_LAYER, &logits)?;
         let logits_stats = ActivationStats::from_slice(&logits);
 
         Ok(ForwardTrace {

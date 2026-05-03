@@ -90,41 +90,12 @@ impl AprTransformer {
         token_ids: &[u32],
         plan: &SaveTensorPlan,
     ) -> Result<ForwardTrace> {
-        // Run the standard traced forward pass first. If it errors, we
-        // never write a partial save_tensor file (atomic-by-construction).
-        let trace = self.forward_traced(token_ids)?;
-
-        // Step-1 scope: emit ONLY the embedding stage.
-        // Re-extract the embedding F32 buffer if the plan selects it. This
-        // is a cheap second call (token-table lookup, no matmuls).
-        // Subsequent SHIP-007 steps replace this with a direct buffer
-        // pass-through inside forward_traced so we don't compute
-        // embeddings twice.
-        if plan.should_save(SaveTensorStage::Embedding, 0) {
-            let embedding = self.embed(token_ids);
-            maybe_save_stage(Some(plan), SaveTensorStage::Embedding, 0, &embedding).map_err(
-                |e| RealizarError::IoError {
-                    message: format!("save_tensor::Embedding: {e}"),
-                },
-            )?;
-        }
-
-        // Step-2 scope: emit the LmHead (final logits) whole-model stage.
-        // `trace.logits` is already a Vec<f32> returned by forward_traced — no
-        // recompute needed, no internal forward_traced surgery. The
-        // forward-pass surgery for per-layer stages (qkv, ffn_*, etc.) is
-        // deferred to subsequent SHIP-007 steps.
-        maybe_save_stage(
-            Some(plan),
-            SaveTensorStage::LmHead,
-            WHOLE_MODEL_LAYER,
-            &trace.logits,
-        )
-        .map_err(|e| RealizarError::IoError {
-            message: format!("save_tensor::LmHead: {e}"),
-        })?;
-
-        Ok(trace)
+        // SHIP-007 PR-C-real step 3: per-layer threading is now done inside
+        // `forward_traced_with_plan`, so this wrapper is a pure delegator.
+        // Single-pass: no double-embed, no post-loop re-emission of LmHead.
+        // All Embedding/AttnNorm/QkvMatmul/.../LmHead emits happen at their
+        // natural buffer sites in `forward_traced_with_plan`.
+        self.forward_traced_with_plan(token_ids, Some(plan))
     }
 }
 
