@@ -1,6 +1,6 @@
 metadata:
   kind: schema
-  version: 1.3.0
+  version: 1.4.0
   status: PROPOSED
   created: '2026-04-28'
   author: PAIML Engineering
@@ -173,15 +173,18 @@ falsification_tests:
     rms_diff=0, cosine_sim≈1. Mismatched dim_product or layer → fail-fast
     error. Mixed APRT+model file → falls through to existing RosettaStone
     path (no behavior change for legacy callers).
-  test: "cargo test -p apr-cli --lib commands::diff::aprt_stage_diff_tests (11/11 PASS)"
+  test: "cargo test -p apr-cli --lib commands::diff::aprt_stage_diff_tests (11/11 PASS) + 2026-05-03 live smoke produced 16 APRT files all parseable"
   if_fails: "apr diff --values does not honor `apr_diff_values_compat` invariant — stage tensors captured by apr trace --save-tensor cannot be compared without external tooling"
   binds_to: apr_diff_values_compat
-  status: PARTIAL_ALGORITHM_LEVEL
+  status: FUNCTIONAL
   algorithm_evidence:
     - "is_aprt_stage_file detects b'APRT' magic at offset 0 (4 unit tests covering hit/miss/truncated/missing)"
     - "compute_aprt_stage_stats element-wise max|diff|, RMS, cosine, top-K (3 unit tests verify identical=0/known-max/top-K-sorted)"
     - "run_aprt_stage_diff dispatches via include!() in diff.rs after run() detects both inputs are APRT (3 unit tests verify dim_product mismatch / layer mismatch / identical files)"
     - "Implementation: crates/apr-cli/src/commands/diff_05_aprt_stage.rs"
+  functional_evidence:
+    - "Live smoke 2026-05-03 on canonical Qwen2.5-Coder-7B-Instruct-Q4K teacher (RTX 4090 lambda-labs): produced 16 APRT stage files, all with magic b'APRT' at offset 0, valid 12-byte headers (layer + dim_product), and byte counts matching `12 + 4 * dim_product` (e.g. embedding.bin: 100,364 = 12 + 7×3584×4)"
+    - "Evidence: evidence/ship-007-pr-c-real-2026-05-03/findings.md"
 
 - id: FALSIFY-APR-TRACE-SAVE-010
   rule: "`forward_traced_with_save_tensor` captures the LmHead whole-model stage from `trace.logits`"
@@ -192,17 +195,20 @@ falsification_tests:
     the plan does NOT select LmHead, no `lm_head.bin` is created. Bytes
     after the 12-byte header are the input f32 values verbatim, including
     NaN bits.
-  test: "cargo test -p aprender-serve --lib traced_save_tensor_step2_tests (4/4 PASS)"
+  test: "cargo test -p aprender-serve --lib traced_save_tensor_step2_tests (4/4 PASS) + 2026-05-03 live smoke wrote lm_head.bin from canonical 7B teacher"
   if_fails: "SHIP-007 layer-0 stage diff cannot directly compare APR vs GGUF final logits — operator must fall back to aggregate `output_stats` which can hide per-element drift behind similar std values"
   binds_to: byte_format
-  status: PARTIAL_ALGORITHM_LEVEL
+  status: FUNCTIONAL
   algorithm_evidence:
     - "step2_lm_head_writes_to_output_root_not_per_layer_dir — verifies the output path resolves to <output_dir>/lm_head.bin (whole-model, NOT layer-N)"
     - "step2_lm_head_header_uses_whole_model_sentinel — verifies the 12-byte APRT header has layer=0xFFFFFFFF and dim_product=logits.len()"
     - "step2_lm_head_skipped_when_plan_does_not_select_it — verifies no file is created when the user did not list lm_head in --save-tensor"
     - "step2_lm_head_writes_logits_bytes_verbatim — bit-identical f32 round-trip including NaN-bit preservation (per `byte_format` NaN invariant)"
     - "Implementation: crates/aprender-serve/src/apr_transformer/traced_save_tensor.rs::forward_traced_with_save_tensor (step-2 branch added 2026-05-03 after PR #1414 merge)"
-    - "Live discharge against canonical 7B teacher deferred to SHIP-007 PR-E (layer-0 bisection)"
+  functional_evidence:
+    - "Live smoke 2026-05-03 on canonical Qwen2.5-Coder-7B-Instruct-Q4K teacher: lm_head.bin produced at output_dir root (no per-layer subdir) with header layer=0xFFFFFFFF and dim_product=152064 (Qwen2.5-Coder vocab); total 608,268 bytes = 12 + 152064×4 ✓"
+    - "xxd-confirmed: `4150 5254 ffff ffff 0052 0200` (APRT + WHOLE_MODEL_LAYER + dim=0x00025200=152064)"
+    - "Evidence: evidence/ship-007-pr-c-real-2026-05-03/findings.md"
 
 - id: FALSIFY-APR-TRACE-SAVE-011
   rule: "`apr trace --save-tensor` CLI dispatches end-to-end on `.apr` models"
@@ -215,17 +221,21 @@ falsification_tests:
     `--save-tensor-dir` (or default `<model-stem>-trace/`). Before this
     discharge, the dispatch only printed a stub — the wrapper was
     library-reachable but unreachable from the CLI.
-  test: "cargo test -p apr-cli --lib commands::trace_save_tensor::tests (5/5 PASS)"
+  test: "cargo test -p apr-cli --lib commands::trace_save_tensor::tests (5/5 PASS) + 2026-05-03 live smoke produced 16 stage files end-to-end"
   if_fails: "SHIP-007 PR-E live diagnostics blocked: operator cannot run apr trace --save-tensor on the canonical 7B teacher → cannot produce APR-side stage tensor files for `apr diff --values` byte comparison vs GGUF"
   binds_to: cli_signature
-  status: PARTIAL_ALGORITHM_LEVEL
+  status: FUNCTIONAL
   algorithm_evidence:
     - "default_output_dir — verifies the `<model-stem>-trace/` convention next to the input file (3 unit tests: with parent dir, bare filename, missing extension)"
     - "collect_bin_files — verifies recursive walk of *.bin under output_dir with non-bin filtering (1 unit test)"
     - "collect_bin_files_missing_dir_is_ok — verifies graceful no-op when output_dir does not yet exist (caller may pass a path that becomes valid AFTER forward_traced runs)"
     - "Implementation: crates/apr-cli/src/commands/trace_save_tensor.rs::run_save_tensor_apr — composed of 4 phases: SaveTensorPlan::from_cli + AprV2Model::load + load_embedded_bpe_tokenizer + AprTransformer::from_apr_file + forward_traced_with_save_tensor + collect_bin_files"
-    - "Dispatch site: crates/apr-cli/src/dispatch.rs Trace branch — when --save-tensor is set AND the file extension is .apr, routes to run_save_tensor_apr instead of the existing trace::run path. Other formats print a stub directing to PR-E"
-    - "Live discharge against the canonical 7B teacher deferred to operator-driven smoke after merge — the cli_signature contract test `apr trace --save-tensor --help | grep save-tensor` already passed at the binary boundary; this falsifier extends it to actual file production"
+    - "Dispatch site: crates/apr-cli/src/dispatch.rs Trace branch — when --save-tensor is set AND the file extension is .apr, routes to run_save_tensor_apr instead of the existing trace::run path"
+  functional_evidence:
+    - "Live smoke 2026-05-03 on canonical Qwen2.5-Coder-7B-Instruct-Q4K teacher (RTX 4090 lambda-labs): `apr trace <model.apr> --save-tensor 'embedding,attn_norm,qkv_matmul,qkv_bias,attention,attn_out,post_attn_residual,ffn_norm,ffn_gate,ffn_up,ffn_silu,ffn_swigl,ffn_out,post_ffn_residual,final_norm,lm_head' --save-tensor-dir <dir>` exit 0 with `Wrote 16 stage tensor file(s)`"
+    - "Step 3 SHIP-007 PR-C-real (PR #1416 + #1421) thread `Option<&SaveTensorPlan>` through `forward_traced_with_plan` — single forward pass emits all 16 stages (14 per-layer + 2 whole-model)"
+    - "All 16 file sizes match the algebraic prediction `12 + 4 * dim_product` for their stage type (3584 hidden, 18944 intermediate, 4608 qkv, 152064 vocab on Qwen2.5-Coder-7B)"
+    - "Evidence: evidence/ship-007-pr-c-real-2026-05-03/findings.md"
 
 proof_obligations:
 - type: invariant
