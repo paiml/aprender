@@ -1,6 +1,6 @@
 metadata:
   kind: schema
-  version: 1.1.0
+  version: 1.2.0
   status: PROPOSED
   created: '2026-04-28'
   author: PAIML Engineering
@@ -182,6 +182,27 @@ falsification_tests:
     - "compute_aprt_stage_stats element-wise max|diff|, RMS, cosine, top-K (3 unit tests verify identical=0/known-max/top-K-sorted)"
     - "run_aprt_stage_diff dispatches via include!() in diff.rs after run() detects both inputs are APRT (3 unit tests verify dim_product mismatch / layer mismatch / identical files)"
     - "Implementation: crates/apr-cli/src/commands/diff_05_aprt_stage.rs"
+
+- id: FALSIFY-APR-TRACE-SAVE-010
+  rule: "`forward_traced_with_save_tensor` captures the LmHead whole-model stage from `trace.logits`"
+  prediction: |
+    When the supplied `SaveTensorPlan` selects `LmHead`, the wrapper writes
+    `trace.logits` to `<output_dir>/lm_head.bin` with header
+    layer=WHOLE_MODEL_LAYER (0xFFFFFFFF) and dim_product=logits.len(). When
+    the plan does NOT select LmHead, no `lm_head.bin` is created. Bytes
+    after the 12-byte header are the input f32 values verbatim, including
+    NaN bits.
+  test: "cargo test -p aprender-serve --lib traced_save_tensor_step2_tests (4/4 PASS)"
+  if_fails: "SHIP-007 layer-0 stage diff cannot directly compare APR vs GGUF final logits — operator must fall back to aggregate `output_stats` which can hide per-element drift behind similar std values"
+  binds_to: byte_format
+  status: PARTIAL_ALGORITHM_LEVEL
+  algorithm_evidence:
+    - "step2_lm_head_writes_to_output_root_not_per_layer_dir — verifies the output path resolves to <output_dir>/lm_head.bin (whole-model, NOT layer-N)"
+    - "step2_lm_head_header_uses_whole_model_sentinel — verifies the 12-byte APRT header has layer=0xFFFFFFFF and dim_product=logits.len()"
+    - "step2_lm_head_skipped_when_plan_does_not_select_it — verifies no file is created when the user did not list lm_head in --save-tensor"
+    - "step2_lm_head_writes_logits_bytes_verbatim — bit-identical f32 round-trip including NaN-bit preservation (per `byte_format` NaN invariant)"
+    - "Implementation: crates/aprender-serve/src/apr_transformer/traced_save_tensor.rs::forward_traced_with_save_tensor (step-2 branch added 2026-05-03 after PR #1414 merge)"
+    - "Live discharge against canonical 7B teacher deferred to SHIP-007 PR-E (layer-0 bisection)"
 
 proof_obligations:
 - type: invariant
