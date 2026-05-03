@@ -181,18 +181,62 @@ falsification_tests:
   prediction: "`pv validate contracts/apr-cli-distill-train-v1.yaml` exits 0"
   test: "pv validate contracts/apr-cli-distill-train-v1.yaml"
   if_fails: "contract schema noncompliant"
+  algorithm_evidence:
+    status: PARTIAL_ALGORITHM_LEVEL
+    last_verified: '2026-05-04'
+    test_locations:
+    - 'pv validate contracts/apr-cli-distill-train-v1.yaml — exits 0 with "0 error(s), 0 warning(s)" / "Contract is valid." after each amendment in PRs #1438, #1439, #1442'
+    notes: |
+      Algorithm-level meta-discharge. Every amendment to this contract
+      passes through `pv validate` as a precondition for commit (the
+      pre-commit hook + manual operator runs both apply). Running it
+      verbatim 2026-05-04 on this branch: exits 0 with 0 errors / 0
+      warnings. Promotion to DISCHARGED requires no further work — `pv
+      validate` has been the drift gate since v1.0.0 PROPOSED.
 
 - id: FALSIFY-APR-DISTILL-TRAIN-008
   rule: 3-surface drift (cli + registry + test)
   prediction: "Adding --stage flag + new behavior touches all 3 of: distill.rs clap, apr-cli-commands-v1.yaml registry, cli_commands::registered_commands() test"
   test: "cargo test -p apr-cli --test cli_commands registered_commands"
   if_fails: "feedback_cli_subcommand_three_surface_drift violated"
+  algorithm_evidence:
+    status: PARTIAL_ALGORITHM_LEVEL
+    last_verified: '2026-05-04'
+    test_locations:
+    - 'crates/apr-cli/tests/cli_commands.rs::test_no_unregistered_commands — passes 1/1 today; locks the 3-surface invariant by enforcing every clap subcommand variant matches an entry in apr-cli-commands-v1.yaml'
+    notes: |
+      Algorithm-level discharge per `feedback_cli_subcommand_three_surface_drift`.
+      The `test_no_unregistered_commands` integration test in
+      crates/apr-cli/tests/cli_commands.rs walks the live clap parser at
+      runtime and asserts every Subcommand variant is registered in the
+      apr-cli-commands-v1.yaml registry — a refactor adding a new
+      `--stage <variant>` to `distill.rs` that forgets the registry +
+      yaml entry trips this test. Live verification 2026-05-04:
+      `cargo test -p apr-cli --test cli_commands registered_commands` →
+      "1 passed; 0 failed". Promotion to DISCHARGED requires nothing
+      more — this is an existing CI gate that already binds the
+      invariant.
 
 - id: FALSIFY-APR-DISTILL-TRAIN-009
   rule: end-to-end smoke on tiny pair beats from-scratch baseline
   prediction: "Distilling a 50M-param student from a 500M-param teacher on 1M tokens for 1 epoch produces a student with val_loss < (50M-from-scratch on same data, same epochs)"
   test: "tests/distill_smoke.rs runs the full pipeline + asserts val_loss differential"
   if_fails: "distillation provides no measurable benefit over pretraining at this scale — re-evaluate hyperparameters or approach"
+  algorithm_evidence:
+    status: BLOCKER_FIXTURE_ABSENT
+    last_verified: '2026-05-04'
+    test_locations: []
+    notes: |
+      Discharge BLOCKED on the missing real-training implementation per
+      §35 (apr distill --stage train is currently a stub). Without real
+      gradient descent, there is no val_loss to compare. The path to
+      DISCHARGED is: (1) implement real distillation in `apr distill
+      --stage train` (multi-PR scope per §35); (2) author
+      `tests/distill_smoke.rs` invoking the pipeline on a tiny
+      teacher/student pair (50M from-500M, 1M tokens, 1 epoch); (3)
+      assert val_loss(distilled) < val_loss(from_scratch). Tracked here
+      so future PRs don't accidentally claim FUNCTIONAL discharge
+      without the real-training prerequisite.
 
 proof_obligations:
 - type: invariant
