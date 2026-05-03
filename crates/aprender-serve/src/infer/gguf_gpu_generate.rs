@@ -484,8 +484,12 @@ fn load_apr_cuda_model(
         hidden_dim: model.config.hidden_dim,
     };
 
+    // FALSIFY-CPU-GPU-003: CUDA init failure (e.g. parity_gate cosine < 0.99 on
+    // a broken GPU build, or ILLEGAL_ADDRESS during the gate's GPU forward) MUST
+    // be visible without --verbose. Silent fallback was the SHIP-007 jidoka gap:
+    // user saw downstream wgpu gibberish without ever knowing CUDA was rejected.
     let cuda_model = OwnedQuantizedModelCuda::with_max_seq_len(model, 0, 2048).map_err(|e| {
-        if verbose { eprintln!("Backend: CPU (GPU unavailable: {})", e); }
+        eprintln!("[apr-cpu-vs-gpu-output-parity-v1] CUDA path rejected, attempting fallback: {}", e);
     }).ok()?;
 
     Some((cuda_model, info))

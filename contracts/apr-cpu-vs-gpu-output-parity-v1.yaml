@@ -1,15 +1,19 @@
 metadata:
   kind: schema
-  version: 1.0.0
-  status: PROPOSED
+  version: 1.1.0
+  status: ACTIVE
   created: '2026-05-03'
   author: PAIML Engineering
   registry: false
   references:
   - 'evidence/ship-007-layer-0-oracle-bisection-2026-05-03/findings-v5-gpu-path-confirmed.md'
+  - 'evidence/ship-007-layer-0-oracle-bisection-2026-05-03/findings-v6-parity-gate-fires-but-fallback-is-silent.md'
   - 'crates/aprender-serve/src/cli/apr_inference.rs (line 46 comment: "Both ... produce garbage on GPU")'
   - 'crates/aprender-serve/src/gguf/cuda/mod_parity_gate.rs (existing gate for gguf::cuda path)'
   - 'crates/aprender-serve/src/gguf/cuda/mod.rs:268-279 (gate enforcement, with SKIP_PARITY_GATE=1 bypass)'
+  - 'crates/aprender-serve/src/infer/gguf_gpu_generate.rs:487-494 (load_apr_cuda_model — visible-fallback log added 2026-05-03)'
+  changelog:
+  - '1.1.0 — 2026-05-03 — corrected FALSIFY-CPU-GPU-003 algorithm_evidence: parity_gate IS already wired into the .apr → OwnedQuantizedModelCuda path via with_max_seq_len:268-279 (called from load_apr_cuda_model:487). The user-visible gap was that CUDA failure (e.g. ILLEGAL_ADDRESS during gate forward, or cosine < 0.99) was logged only in --verbose mode — fallback then hits wgpu which itself produces gibberish, so the user saw silent gibberish. PR converts the fallback log to unconditional one-line eprintln so the GPU rejection is always visible. Promoted contract from PROPOSED → ACTIVE.'
   description: >
     CPU-vs-GPU output parity contract. Codifies that for any model and prompt,
     `apr run` GPU output MUST match `apr run --no-gpu` CPU output (modulo
@@ -112,30 +116,36 @@ falsification_tests:
   - "Test exists, but the test EXPECTS to detect divergence — not yet a passing gate"
 
 - id: FALSIFY-CPU-GPU-003
-  rule: parity gate is enforced at `apr run` GPU init (not just at `apr parity` command level)
+  rule: parity gate is enforced at `apr run` GPU init AND its decision is visible without --verbose
   prediction: |
     `apr run <model.apr> --prompt <P>` (default GPU) MUST run a parity gate
-    during model load. If the gate fails (cos < 0.99 or argmax mismatch),
-    `apr run` MUST refuse to serve and either error out or fall back to CPU
-    automatically. Currently NO gate runs for the trueno-graph .apr load path
-    (only the gguf::cuda path has one), allowing gibberish output to slip
-    through.
+    during model load. If the gate fails (cos < 0.99 or argmax mismatch, or
+    the gate's own GPU forward errors), the user MUST see a one-line stderr
+    diagnostic identifying that the CUDA path was rejected — without needing
+    --verbose. Silent fallback is unacceptable because the next-tier backend
+    (wgpu) on canonical 7B teacher today ALSO emits gibberish, leaving the
+    user looking at garbage with no signal.
   test: |
     apr run <broken-gpu-model> --prompt 'What is 2+2?' --max-tokens 1
       --temperature 0.0
-    SHOULD either:
-      (a) error with PARITY-GATE FAILED message, OR
-      (b) silently fall back to CPU and produce correct output.
+    SHOULD emit on stderr (without --verbose):
+      [apr-cpu-vs-gpu-output-parity-v1] CUDA path rejected, attempting fallback: <error>
+    AND ideally also:
+      (a) error out cleanly, OR
+      (b) fall back to a backend that produces correct output.
     NOT:
-      (c) silently emit gibberish (current behavior).
+      (c) silently emit gibberish with no hint that GPU was rejected (pre-fix behavior).
   if_fails: "Users can run `apr run` and silently get garbage output; no jidoka stop-the-line for GPU correctness in default path"
   binds_to: greedy_argmax_parity
   status: PARTIAL_ALGORITHM_LEVEL
   algorithm_evidence:
-  - "Existing `parity_gate` function exists in crates/aprender-serve/src/gguf/cuda/mod_parity_gate.rs and IS wired into `OwnedQuantizedModelCuda::with_max_seq_len` (mod.rs:273)"
-  - "BUT `OwnedQuantizedModel::from_apr` → trueno graph path used by default `apr run` for .apr files does NOT call parity_gate"
-  - "Live evidence (v5 finding): apr run on canonical 7B teacher emits gibberish without ANY parity warning"
-  - "Implementation gap: extend parity_gate to cover the trueno graph init path; same diagnostic message + same SKIP_PARITY_GATE=1 escape hatch"
+  - "Existing `parity_gate` function in crates/aprender-serve/src/gguf/cuda/mod_parity_gate.rs IS wired into `OwnedQuantizedModelCuda::with_max_seq_len` (mod.rs:268-279)"
+  - "Empirical 2026-05-03: that gate IS exercised on the .apr GPU path because load_apr_cuda_model:487 calls with_max_seq_len → preload_and_verify → parity_gate. The trueno-graph claim from v1.0.0 was incorrect."
+  - "Empirical 2026-05-03 with `apr -v run` on canonical 7B teacher: gate's GPU forward errors with `CUDA_ERROR_ILLEGAL_ADDRESS (code: 700)` during forward_all_layers_gpu_to_logits_graphed, surfaced via verbose-only line `Backend: CPU (GPU unavailable: Inference error: PARITY-GATE: GPU forward failed: ...)` — see findings-v6"
+  - "User-visible regression: pre-fix the verbose-only log meant default `apr run` on the broken canonical teacher produced wgpu-gibberish output with NO stderr signal that GPU had been rejected"
+  - "Fix wired in this revision: `gguf_gpu_generate.rs:487-494` now emits one unconditional eprintln tagged with this contract ID when CUDA init/parity rejects the path, so users always see the fallback decision"
+  - "Drift-prevention: regression test should grep stderr for the `[apr-cpu-vs-gpu-output-parity-v1] CUDA path rejected` tag on a deliberately broken or non-CUDA host"
+  - "Remaining work for FUNCTIONAL discharge: extend wgpu path with its own parity gate so that wgpu-gibberish does not slip through after CUDA fallback (tracked under a follow-up FALSIFY-CPU-GPU-005)"
 
 - id: FALSIFY-CPU-GPU-004
   rule: --no-gpu flag is honored — no GPU init when set
