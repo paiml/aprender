@@ -324,4 +324,95 @@ mod tests {
         let student = create_student_from_teacher(&tensors, DistillStrategy::Standard);
         assert_eq!(student.len(), 2, "Standard copies all tensors");
     }
+
+    /// FALSIFY-APR-DISTILL-TRAIN-006: stage train can resume from precompute cache.
+    ///
+    /// Contract `apr-cli-distill-train-v1.yaml` predicts: if `teacher_logits/`
+    /// cache exists (i.e. precompute completed), stage train MUST proceed —
+    /// it MUST NOT silently re-run teacher forward, and it MUST NOT error.
+    /// If the cache is absent, stage train MUST error with a clear "run
+    /// precompute first" message (the inverse half of the idempotency
+    /// invariant — proves train ACTUALLY reads the cache).
+    #[test]
+    fn falsify_apr_distill_train_006_train_errors_without_precompute_cache() {
+        use std::fs;
+        let workdir = tempfile::tempdir().expect("create tempdir");
+        let dataset_path = workdir.path().join("dataset.bin");
+        fs::write(&dataset_path, b"fake-dataset-shard").expect("write dataset");
+
+        let out_dir = workdir.path().join("run");
+        let cfg_path = workdir.path().join("cfg.yaml");
+        fs::write(
+            &cfg_path,
+            format!(
+                "teacher:\n  model_id: paiml/some-teacher\nstudent:\n  model_id: dummy-student\ndataset:\n  path: {dataset}\noutput:\n  dir: {out}\n",
+                dataset = dataset_path.display(),
+                out = out_dir.display()
+            ),
+        )
+        .expect("write cfg");
+
+        let cfg = DistillYamlConfig::load(&cfg_path).expect("load cfg");
+        let result = run_config_train(&cfg, &cfg_path, true);
+        assert!(
+            result.is_err(),
+            "FALSIFY-APR-DISTILL-TRAIN-006: stage train without precompute cache MUST error — instead it succeeded"
+        );
+        match result {
+            Err(CliError::ValidationFailed(msg)) => {
+                assert!(
+                    msg.contains("Precompute") || msg.contains("precompute"),
+                    "FALSIFY-APR-DISTILL-TRAIN-006: error must mention 'precompute' so user knows what to run, got: {msg}"
+                );
+            }
+            other => panic!(
+                "FALSIFY-APR-DISTILL-TRAIN-006: expected ValidationFailed, got {other:?}"
+            ),
+        }
+    }
+
+    /// FALSIFY-APR-DISTILL-TRAIN-006 (positive half): with the precompute
+    /// cache present, stage train MUST NOT error on the cache-missing
+    /// branch. Proves the manifest is actually consulted.
+    #[test]
+    fn falsify_apr_distill_train_006_train_does_not_error_when_cache_present() {
+        use std::fs;
+        let workdir = tempfile::tempdir().expect("create tempdir");
+        let teacher_dir = workdir.path().join("teacher");
+        fs::create_dir_all(&teacher_dir).expect("create teacher");
+        let mut t1 = fs::File::create(teacher_dir.join("part1.bin")).expect("create part1");
+        t1.write_all(&[0xABu8; 1024]).expect("write part1");
+
+        let dataset_path = workdir.path().join("dataset.bin");
+        fs::write(&dataset_path, b"fake-dataset-shard").expect("write dataset");
+
+        let out_dir = workdir.path().join("run");
+        let cfg_path = workdir.path().join("cfg.yaml");
+        fs::write(
+            &cfg_path,
+            format!(
+                "teacher:\n  model_id: {teacher}\nstudent:\n  model_id: paiml/some-student\ndataset:\n  path: {dataset}\noutput:\n  dir: {out}\n",
+                teacher = teacher_dir.display(),
+                dataset = dataset_path.display(),
+                out = out_dir.display()
+            ),
+        )
+        .expect("write cfg");
+
+        let cfg = DistillYamlConfig::load(&cfg_path).expect("load cfg");
+
+        run_config_precompute(&cfg, &cfg_path, true).expect("precompute");
+        assert!(
+            out_dir.join("logits/manifest.json").exists(),
+            "precompute must drop manifest as a precondition for the cache-resume test"
+        );
+
+        let train_result = run_config_train(&cfg, &cfg_path, true);
+        if let Err(CliError::ValidationFailed(msg)) = &train_result {
+            assert!(
+                !(msg.contains("Precompute") && msg.contains("not completed")),
+                "FALSIFY-APR-DISTILL-TRAIN-006: train errored with 'Precompute stage not completed' even though manifest.json exists — cache-resume is broken: {msg}"
+            );
+        }
+    }
 }
