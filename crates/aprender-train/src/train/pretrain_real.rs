@@ -24,12 +24,88 @@ use crate::train::pretrain::{CheckpointFn, EpochArtifact, StepFn, ValFn};
 use crate::train::transformer_trainer::{LMBatch, TransformerTrainConfig, TransformerTrainer};
 use crate::transformer::{ModelArchitecture, TransformerConfig};
 use std::cell::RefCell;
+use std::collections::BTreeMap;
+use std::path::Path;
 use std::rc::Rc;
 
 /// Shared mutable ownership of the `TransformerTrainer` — both
 /// `RealStepFn` (training steps) and `RealValFn` (forward-only
 /// validation) clone this `Rc`.
 pub type SharedTrainer = Rc<RefCell<TransformerTrainer>>;
+
+/// Load tensors from an APR file as the read-half of `apr pretrain --init`.
+///
+/// Per `apr-pretrain-arch-polymorphic-v1` §init_load_semantics (PR #1473),
+/// the loader is REUSED, not reimplemented — this function is a thin wrapper
+/// over `aprender::format::converter::convert_report::load_model_tensors`,
+/// which is the same machinery `apr export` and `apr inspect` use. No
+/// duplicate APR parser; one source of truth.
+///
+/// Returns a map of `tensor_name -> (flat_f32_data, shape)`. The HF naming
+/// convention is preserved (e.g., `model.embed_tokens.weight`); reconciling
+/// against the trainer's parameter names is step 5f.3 (the population step).
+///
+/// Discharges from `apr-pretrain-arch-polymorphic-v1`:
+///   - §init_load_semantics invariant: "Loader is reused, not reimplemented"
+///   - FALSIFY-006 (init_loss < 6.0) at READ-COMPILE-BIND level: this
+///     function is the read half. Full FALSIFY-006 discharge requires
+///     5f.3 (population) + 5g (LIVE 500-step fine-tune).
+///
+/// Spec: SPEC-SHIP-TWO-001 §50.4 step 5f.2.
+///
+/// # Errors
+///
+/// Returns Err if the APR file:
+/// - Does not exist (filesystem I/O error)
+/// - Has invalid magic bytes (not APR\\0 or APRN)
+/// - Has a corrupted tensor index
+/// - Contains tensors with unsupported dtype (non-F32)
+pub fn load_init_tensors_from_apr(
+    path: impl AsRef<Path>,
+) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>, String> {
+    let path_ref = path.as_ref();
+    aprender::format::converter::load_model_tensors(path_ref).map_err(|e| {
+        format!(
+            "FALSIFY-APR-PRETRAIN-INIT-006: failed to load init tensors from APR file {}: {e}",
+            path_ref.display()
+        )
+    })
+}
+
+/// Reject an init `TransformerConfig` whose architecture family is incompatible
+/// with the pretrain target (decoder-only LM training).
+///
+/// Per `apr-pretrain-arch-polymorphic-v1` §arch_extraction_signature
+/// (PR #1473), wrong-arch APR (e.g., a CodeBERT/RoBERTa encoder model)
+/// MUST be FAIL-FAST not silent-truncate. Without this gate, an operator
+/// who points `--init` at e.g. `microsoft/codebert-base.apr` would silently
+/// load encoder weights into a decoder-shaped trainer, producing nonsense
+/// gradients that the divergence guard catches LATE (after multiple epochs).
+///
+/// Discharges FALSIFY-APR-PRETRAIN-ARCH-007 at PARTIAL_ALGORITHM_LEVEL.
+///
+/// Spec: SPEC-SHIP-TWO-001 §50.4 step 5f.1.
+///
+/// # Errors
+///
+/// Returns Err with a clear architecture-family-mismatch message when:
+/// - `cfg.architecture` is `ModelArchitecture::Encoder` (BERT/RoBERTa/CodeBERT)
+///
+/// Future expansion can add other family checks (e.g., reject hybrid SSM
+/// architectures whose forward pass differs from the standard decoder loop).
+pub fn validate_pretrain_init_arch_compatible(cfg: &TransformerConfig) -> Result<(), String> {
+    match cfg.architecture {
+        ModelArchitecture::Decoder => Ok(()),
+        ModelArchitecture::Encoder => Err(format!(
+            "FALSIFY-APR-PRETRAIN-ARCH-007: --init checkpoint has architecture=Encoder \
+             (e.g., BERT/RoBERTa/CodeBERT) but the pretrain trainer is decoder-only \
+             (Llama/Qwen-class causal LMs). Loading encoder weights into a decoder \
+             trainer would produce nonsense gradients. Architectural details: \
+             hidden_size={}, num_layers={}, vocab_size={}, hf_architecture={:?}",
+            cfg.hidden_size, cfg.num_hidden_layers, cfg.vocab_size, cfg.hf_architecture
+        )),
+    }
+}
 
 /// Build a `TransformerConfig` field-for-field from `Llama370MConfig::*`
 /// constants (the contract-frozen MODEL-2 370M architecture).
@@ -225,6 +301,51 @@ mod tests {
     use super::*;
     use crate::train::transformer_trainer::LMBatch;
 
+    /// FALSIFY-APR-PRETRAIN-INIT-006 (read-half) — load_init_tensors_from_apr
+    /// returns Err with a clear message naming the falsifier when the path
+    /// does not exist.
+    ///
+    /// Spec: SPEC-SHIP-TWO-001 §50.4 step 5f.2.
+    #[test]
+    fn load_init_tensors_missing_file_errors_with_falsifier_id() {
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let missing = tmp.path().join("does-not-exist.apr");
+        let err = load_init_tensors_from_apr(&missing)
+            .expect_err("missing init APR file MUST fail-fast");
+        assert!(
+            err.contains("FALSIFY-APR-PRETRAIN-INIT-006"),
+            "error must cite falsifier id (auditability): {err}"
+        );
+        assert!(
+            err.contains("does-not-exist.apr"),
+            "error must name the missing path (operator-experience): {err}"
+        );
+    }
+
+    /// FALSIFY-APR-PRETRAIN-INIT-006 (read-half) — function exists with the
+    /// right signature: `Path -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>>`.
+    /// Discharges the COMPILE-BIND level claim. Live empirical correctness
+    /// requires step 5g (operator-runnable LIVE fine-tune).
+    ///
+    /// Drift-prevention: this test catches a future refactor that changes
+    /// the return type or signature, which would break the §50.4 step 5f.3
+    /// follow-up that reconciles the BTreeMap against trainer parameters.
+    #[test]
+    fn load_init_tensors_signature_compile_bind() {
+        // Verify the function signature compile-binds: takes a Path-like,
+        // returns the right Result type. This is a compile-time check —
+        // if the signature drifts, this test stops compiling.
+        fn _check_signature<F>(_f: F)
+        where
+            F: Fn(
+                &Path,
+            )
+                -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>, String>,
+        {
+        }
+        _check_signature(|p| load_init_tensors_from_apr(p));
+    }
+
     #[test]
     fn transformer_config_matches_llama_370m_constants() {
         let cfg = llama_370m_transformer_config();
@@ -331,6 +452,83 @@ mod tests {
             none_result.vocab_size, some_result.vocab_size,
             "dispatch must differentiate None vs Some — Llama370M vocab=50257 vs Qwen=151936"
         );
+    }
+
+    /// FALSIFY-APR-PRETRAIN-ARCH-007 (decoder branch) — `validate_pretrain_init_arch_compatible`
+    /// returns Ok for a decoder-family config.
+    ///
+    /// Spec: SPEC-SHIP-TWO-001 §50.4 step 5f.1.
+    #[test]
+    fn validate_pretrain_init_arch_accepts_decoder() {
+        let qwen = TransformerConfig::qwen2_0_5b();
+        assert_eq!(qwen.architecture, ModelArchitecture::Decoder);
+        validate_pretrain_init_arch_compatible(&qwen)
+            .expect("decoder-family config (Qwen2.5-0.5B) MUST pass arch-compat gate");
+    }
+
+    /// FALSIFY-APR-PRETRAIN-ARCH-007 (encoder branch) — load-bearing test.
+    /// `validate_pretrain_init_arch_compatible` returns Err naming the
+    /// architecture-family mismatch when given an encoder config (e.g.,
+    /// CodeBERT). Without this gate, the decoder trainer would silently
+    /// build with encoder weights producing nonsense gradients.
+    ///
+    /// Spec: SPEC-SHIP-TWO-001 §50.4 step 5f.1.
+    #[test]
+    fn validate_pretrain_init_arch_rejects_encoder() {
+        // Construct a minimal encoder config (CodeBERT-shaped).
+        let bert = TransformerConfig {
+            hidden_size: 768,
+            num_attention_heads: 12,
+            num_kv_heads: 12,
+            intermediate_size: 3072,
+            num_hidden_layers: 12,
+            vocab_size: 50265,
+            max_position_embeddings: 514,
+            rms_norm_eps: 1e-12,
+            rope_theta: 10_000.0,
+            use_bias: true,
+            head_dim_override: None,
+            architecture: ModelArchitecture::Encoder,
+            hf_architecture: Some("RobertaModel".to_string()),
+            hf_model_type: Some("roberta".to_string()),
+            tie_word_embeddings: false,
+        };
+        let err = validate_pretrain_init_arch_compatible(&bert).expect_err(
+            "encoder-family config (CodeBERT/RoBERTa) MUST fail arch-compat gate — \
+             silent acceptance would corrupt §49 fine-tune trajectory before any \
+             FALSIFY-006 check could measure it",
+        );
+        assert!(
+            err.contains("FALSIFY-APR-PRETRAIN-ARCH-007"),
+            "error must cite falsifier id: {err}"
+        );
+        assert!(
+            err.contains("Encoder"),
+            "error must name the architecture family: {err}"
+        );
+        assert!(
+            err.contains("decoder-only"),
+            "error must explain why this is wrong (decoder trainer): {err}"
+        );
+        assert!(
+            err.contains("RobertaModel"),
+            "error must name the offending hf_architecture: {err}"
+        );
+    }
+
+    /// Drift-prevention: validate_pretrain_init_arch_compatible's behavior on
+    /// the from-scratch baseline (Llama370M) — must Ok. Catches a future
+    /// refactor that accidentally over-rejects decoder configs.
+    #[test]
+    fn validate_pretrain_init_arch_accepts_llama370m_baseline() {
+        let llama = llama_370m_transformer_config();
+        assert_eq!(
+            llama.architecture,
+            ModelArchitecture::Decoder,
+            "Llama370M baseline MUST be Decoder (regression-free)"
+        );
+        validate_pretrain_init_arch_compatible(&llama)
+            .expect("Llama370M baseline (Decoder) MUST pass arch-compat gate");
     }
 
     #[test]
