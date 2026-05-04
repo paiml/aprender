@@ -41,6 +41,10 @@ mod config;
 mod cuda;
 #[cfg(feature = "cuda")]
 mod cuda_model;
+#[cfg(feature = "gpu")]
+mod wgpu_backend;
+#[cfg(feature = "gpu")]
+mod wgpu_model;
 mod inference;
 mod inference_types;
 mod io;
@@ -80,6 +84,8 @@ pub use config::*;
 pub use cuda::{BatchedDecodeState, CudaBackend, CudaInitError};
 #[cfg(feature = "cuda")]
 pub use cuda_model::*;
+#[cfg(feature = "gpu")]
+pub use wgpu_model::*;
 pub use model::*;
 pub use quantized::*;
 pub use runtime::*;
