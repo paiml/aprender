@@ -1,14 +1,18 @@
 //! Stage enum + comma-list parser for `apr trace --save-tensor`.
 //!
 //! Contract: [`contracts/apr-cli-trace-save-tensor-v1.yaml`] v1.0.0 (PROPOSED).
+//! Sub-stage extension: [`contracts/trace-attn-sub-stages-v1.yaml`] v1.1.0
+//! (PROPOSED) — adds `attn_scores` + `attn_softmax` for SHIP-007 layer-0
+//! attention bisection.
 //!
-//! The contract's `cli_signature` equation enumerates 19 capture-point names:
+//! The combined enumeration is 21 capture-point names:
 //!
 //! ```text
 //! embedding, attn_norm, qkv_matmul, qkv_bias, q_post_rope, k_post_rope,
-//! attention, attn_out, post_attn_residual, ffn_norm, ffn_gate, ffn_up,
-//! ffn_silu, ffn_swigl, ffn_out, post_ffn_residual, layer_output (alias for
-//! post_ffn_residual), final_norm, lm_head
+//! attn_scores, attn_softmax, attention, attn_out, post_attn_residual,
+//! ffn_norm, ffn_gate, ffn_up, ffn_silu, ffn_swigl, ffn_out,
+//! post_ffn_residual, layer_output (alias for post_ffn_residual),
+//! final_norm, lm_head
 //! ```
 //!
 //! ## What this module provides
@@ -48,6 +52,16 @@ pub enum SaveTensorStage {
     QPostRope,
     /// K after RoPE.
     KPostRope,
+    /// Q·Kᵀ / sqrt(head_dim), pre-softmax + pre-causal-mask.
+    /// Per `contracts/trace-attn-sub-stages-v1.yaml` v1.1.0 — closes the
+    /// SHIP-007 layer-0 attention bisection gap between `KPostRope` and
+    /// `AttnSoftmax`.
+    AttnScores,
+    /// softmax(scores + causal_mask), pre-V-multiply.
+    /// Per `contracts/trace-attn-sub-stages-v1.yaml` v1.1.0 — closes the
+    /// SHIP-007 layer-0 attention bisection gap between `AttnScores` and
+    /// `Attention`.
+    AttnSoftmax,
     /// Post softmax(Q@Kᵀ)@V, pre O-proj.
     Attention,
     /// Post-O-projection.
@@ -76,15 +90,20 @@ pub enum SaveTensorStage {
 }
 
 impl SaveTensorStage {
-    /// All 18 distinct stages (alphabetical), excluding the `LayerOutput`
-    /// alias for `PostFfnResidual`.
-    pub const ALL: [SaveTensorStage; 18] = [
+    /// All 20 distinct stages (computation order), excluding the `LayerOutput`
+    /// alias for `PostFfnResidual`. `AttnScores` and `AttnSoftmax` are the 2
+    /// new variants per `contracts/trace-attn-sub-stages-v1.yaml` v1.1.0
+    /// (closes the SHIP-007 layer-0 attention bisection gap inside the
+    /// Q·Kᵀ → softmax → ·V chain).
+    pub const ALL: [SaveTensorStage; 20] = [
         Self::Embedding,
         Self::AttnNorm,
         Self::QkvMatmul,
         Self::QkvBias,
         Self::QPostRope,
         Self::KPostRope,
+        Self::AttnScores,
+        Self::AttnSoftmax,
         Self::Attention,
         Self::AttnOut,
         Self::PostAttnResidual,
@@ -110,6 +129,8 @@ impl SaveTensorStage {
             Self::QkvBias => "qkv_bias",
             Self::QPostRope => "q_post_rope",
             Self::KPostRope => "k_post_rope",
+            Self::AttnScores => "attn_scores",
+            Self::AttnSoftmax => "attn_softmax",
             Self::Attention => "attention",
             Self::AttnOut => "attn_out",
             Self::PostAttnResidual => "post_attn_residual",
@@ -166,6 +187,8 @@ impl FromStr for SaveTensorStage {
             "qkv_bias" => Ok(Self::QkvBias),
             "q_post_rope" => Ok(Self::QPostRope),
             "k_post_rope" => Ok(Self::KPostRope),
+            "attn_scores" => Ok(Self::AttnScores),
+            "attn_softmax" => Ok(Self::AttnSoftmax),
             "attention" => Ok(Self::Attention),
             "attn_out" => Ok(Self::AttnOut),
             "post_attn_residual" => Ok(Self::PostAttnResidual),
@@ -227,7 +250,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn all_eighteen_stages_have_unique_canonical_names() {
+    fn all_twenty_stages_have_unique_canonical_names() {
         let mut names: Vec<&str> = SaveTensorStage::ALL
             .iter()
             .map(|s| s.canonical_name())
@@ -243,7 +266,8 @@ mod tests {
 
     #[test]
     fn canonical_names_match_contract_enumeration() {
-        // Per apr-cli-trace-save-tensor-v1.yaml `cli_signature` equation.
+        // Per apr-cli-trace-save-tensor-v1.yaml `cli_signature` equation +
+        // trace-attn-sub-stages-v1.yaml v1.1.0 (attn_scores, attn_softmax).
         let expected = [
             "embedding",
             "attn_norm",
@@ -251,6 +275,8 @@ mod tests {
             "qkv_bias",
             "q_post_rope",
             "k_post_rope",
+            "attn_scores",
+            "attn_softmax",
             "attention",
             "attn_out",
             "post_attn_residual",
@@ -339,10 +365,11 @@ mod tests {
 
     #[test]
     fn is_per_layer_count_matches_contract() {
-        // Per contract: 16 per-layer stages (one per decoder layer N), 2
-        // whole-model stages (final_norm, lm_head). The PostFfnResidual /
-        // LayerOutput alias collapses to one variant in the enum, so total
-        // distinct stages = 18; per-layer = 16; whole-model = 2.
+        // Per parent + sub-stages contracts: 18 per-layer stages (one per
+        // decoder layer N), 2 whole-model stages (final_norm, lm_head). The
+        // PostFfnResidual / LayerOutput alias collapses to one variant. After
+        // trace-attn-sub-stages-v1 v1.1.0 added attn_scores + attn_softmax:
+        // total distinct stages = 20; per-layer = 18; whole-model = 2.
         let per_layer = SaveTensorStage::ALL
             .iter()
             .filter(|s| s.is_per_layer())
@@ -351,9 +378,88 @@ mod tests {
             .iter()
             .filter(|s| !s.is_per_layer())
             .count();
-        assert_eq!(per_layer, 16);
+        assert_eq!(per_layer, 18);
         assert_eq!(whole_model, 2);
         assert_eq!(per_layer + whole_model, SaveTensorStage::ALL.len());
+    }
+
+    // =========================================================================
+    // FALSIFY-ATTN-SUB-001 (trace-attn-sub-stages-v1.yaml v1.1.0): the 2 new
+    // sub-stage variants exist on `SaveTensorStage` enum without breaking
+    // existing callers. Round-trip + parse-list coverage for AttnScores and
+    // AttnSoftmax.
+    // =========================================================================
+
+    #[test]
+    fn falsify_attn_sub_001_attn_scores_round_trip() {
+        let parsed: SaveTensorStage = "attn_scores".parse().expect("attn_scores must parse");
+        assert_eq!(parsed, SaveTensorStage::AttnScores);
+        assert_eq!(SaveTensorStage::AttnScores.canonical_name(), "attn_scores");
+        assert!(SaveTensorStage::AttnScores.is_per_layer());
+    }
+
+    #[test]
+    fn falsify_attn_sub_001_attn_softmax_round_trip() {
+        let parsed: SaveTensorStage = "attn_softmax".parse().expect("attn_softmax must parse");
+        assert_eq!(parsed, SaveTensorStage::AttnSoftmax);
+        assert_eq!(
+            SaveTensorStage::AttnSoftmax.canonical_name(),
+            "attn_softmax"
+        );
+        assert!(SaveTensorStage::AttnSoftmax.is_per_layer());
+    }
+
+    #[test]
+    fn falsify_attn_sub_001_2_new_stages_in_canonical_order() {
+        // Per trace-attn-sub-stages-v1.yaml v1.1.0 ordering proof_obligation:
+        // QkvBias → QPostRope → KPostRope → AttnScores → AttnSoftmax → Attention → AttnOut
+        let attn_block: Vec<SaveTensorStage> = SaveTensorStage::ALL
+            .iter()
+            .copied()
+            .skip_while(|s| !matches!(s, SaveTensorStage::QkvBias))
+            .take_while(|s| {
+                !matches!(
+                    s,
+                    SaveTensorStage::PostAttnResidual | SaveTensorStage::FfnNorm
+                )
+            })
+            .collect();
+        assert_eq!(
+            attn_block,
+            vec![
+                SaveTensorStage::QkvBias,
+                SaveTensorStage::QPostRope,
+                SaveTensorStage::KPostRope,
+                SaveTensorStage::AttnScores,
+                SaveTensorStage::AttnSoftmax,
+                SaveTensorStage::Attention,
+                SaveTensorStage::AttnOut,
+            ]
+        );
+    }
+
+    #[test]
+    fn falsify_attn_sub_001_parse_list_accepts_2_new_stages_together() {
+        let stages =
+            parse_stage_list("attn_scores,attn_softmax").expect("2-element comma list must parse");
+        assert_eq!(
+            stages,
+            vec![SaveTensorStage::AttnScores, SaveTensorStage::AttnSoftmax]
+        );
+    }
+
+    #[test]
+    fn falsify_attn_sub_001_parse_list_accepts_full_attn_block_chain() {
+        // Per trace-attn-sub-stages-v1.yaml `bisection_chain_layer_0` equation:
+        // the 9-element cosine sequence requires all 9 stage names parsing
+        // cleanly in one comma-delimited call.
+        let stages = parse_stage_list(
+            "attn_norm,qkv_matmul,qkv_bias,q_post_rope,k_post_rope,attn_scores,attn_softmax,attention,attn_out",
+        )
+        .expect("9-stage layer-0 attention chain must parse");
+        assert_eq!(stages.len(), 9);
+        assert_eq!(stages[5], SaveTensorStage::AttnScores);
+        assert_eq!(stages[6], SaveTensorStage::AttnSoftmax);
     }
 
     // =========================================================================
@@ -430,7 +536,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_stage_list_all_eighteen_in_one_call() {
+    fn parse_stage_list_all_twenty_in_one_call() {
         let csv = SaveTensorStage::ALL
             .iter()
             .map(|s| s.canonical_name())
