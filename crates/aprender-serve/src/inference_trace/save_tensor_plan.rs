@@ -16,7 +16,7 @@
 //!
 //! ## Decisions captured here
 //!
-//! - The `all` keyword expands to [`SaveTensorStage::ALL`] (all 18 stages).
+//! - The `all` keyword expands to [`SaveTensorStage::ALL`] (all 20 stages).
 //! - Stage list is comma-delimited (existing [`parse_stage_list`] semantics).
 //! - Layer range is parsed as Rust `START..END` syntax with `END` exclusive.
 //!   `0..1` (the clap default) selects layer 0 only.
@@ -219,9 +219,9 @@ mod tests {
     }
 
     #[test]
-    fn all_keyword_expands_to_eighteen_stages() {
+    fn all_keyword_expands_to_twenty_stages() {
         let plan = SaveTensorPlan::from_cli("all", "0..1", PathBuf::from("/tmp")).unwrap();
-        assert_eq!(plan.stages.len(), 18);
+        assert_eq!(plan.stages.len(), 20);
         assert_eq!(plan.stages, SaveTensorStage::ALL.to_vec());
     }
 
@@ -230,7 +230,7 @@ mod tests {
         for variant in ["all", "ALL", "All", "aLL"] {
             let plan = SaveTensorPlan::from_cli(variant, "0..1", PathBuf::from("/tmp"))
                 .expect("case variant should parse");
-            assert_eq!(plan.stages.len(), 18);
+            assert_eq!(plan.stages.len(), 20);
         }
     }
 
