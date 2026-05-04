@@ -1,6 +1,6 @@
 metadata:
   id: C-TRACE-ATTN-SUB-STAGES
-  version: 1.1.0
+  version: 1.2.0
   created: '2026-05-04'
   author: PAIML Engineering
   kind: pattern
@@ -8,6 +8,30 @@ metadata:
   description: |
     Sub-attention bisection plan for `apr trace --save-tensor` —
     SHIP-007 layer-0 attention divergence localization.
+
+    v1.2.0 (2026-05-04): PROPOSED. Two changes bundled:
+
+    (1) SUB-003 function-name drift fix. SUB-003 algorithm_evidence
+    .function_names previously listed `load_tensor_apr_aprt`, which
+    does not exist. The actual wired functions in
+    `crates/apr-cli/src/commands/diff_05_aprt_stage.rs` are
+    `is_aprt_stage_file`, `compute_aprt_stage_stats`, and
+    `run_aprt_stage_diff`. PR #1456's drift-prevention test
+    `falsify_attn_sub_003_new_stages_per_stage_agnostic` exercises
+    those real functions; this version aligns the contract with the
+    real symbols.
+
+    (2) SUB-004 status promotion: BLOCKER_FIXTURE_ABSENT →
+    PARTIAL_ALGORITHM_LEVEL. PR #1457 (HF FP16 oracle script
+    extension) has merged on main; the fixture for the 9-element
+    cosine sequence is no longer absent — the script now installs
+    a per-instance `Qwen2Attention.forward` monkeypatch that
+    captures `q_post_rope`, `k_post_rope`, `attn_scores`,
+    `attn_softmax` (the 4 stages previously missing from the HF
+    side). All §47.1 cascade roadmap pre-conditions (steps 1-6)
+    for the LIVE RTX 4090 bisection are now on main. SUB-004's
+    status is upgraded; FUNCTIONAL discharge still requires
+    operator-triggered LIVE run (step 7) per `feedback_compute_pre_authorized.md`.
 
     v1.1.0 (2026-05-04): PROPOSED. Toyota Way correction of v1.0.0.
 
@@ -216,13 +240,24 @@ falsification_tests:
   status: PARTIAL_ALGORITHM_LEVEL
   algorithm_evidence:
     file_paths:
+      - crates/apr-cli/src/commands/diff_05_aprt_stage.rs
       - crates/apr-cli/src/commands/diff.rs
     function_names:
-      - load_tensor_apr_aprt
+      - is_aprt_stage_file
+      - compute_aprt_stage_stats
+      - run_aprt_stage_diff
     invariants_enforced:
       - 'Existing APRT recognition path generalizes to the 2 new stage IDs without per-stage hardcoding'
+      - 'falsify_attn_sub_003_new_stages_per_stage_agnostic test pins the per-stage-agnostic loader for layer_0_attn_scores.aprt + layer_0_attn_softmax.aprt at realistic shape 28*7*7=1372'
+      - 'falsify_attn_sub_003_cosine_detects_softmax_divergence pins cosine-sensitivity floor (mixed-perturbation < 0.999) for the FALSIFY-ATTN-SUB-004 LIVE bisection predicate'
     notes: |
-      Algorithm-level evidence pinned today.
+      Algorithm-level evidence: PR #1456 added 2 drift-prevention tests in
+      `aprt_stage_diff_tests` mod that exercise the real wired functions
+      (`is_aprt_stage_file` + `compute_aprt_stage_stats` + `run_aprt_stage_diff`)
+      with filenames `layer_0_attn_scores.aprt` + `layer_0_attn_softmax.aprt`.
+      0 LOC production change required — the loader is genuinely per-stage-
+      agnostic by construction (stage names are encoded only in the OUTPUT
+      FILENAME, not in the APRT binary content).
 
 - id: FALSIFY-ATTN-SUB-004
   rule: 'Bisection narrows SHIP-007 layer-0 divergence to ONE specific adjacent stage pair'
@@ -242,20 +277,45 @@ falsification_tests:
     Either the divergence is split across multiple adjacent pairs
     (SHIP-007 is not single-stage; refines hypothesis) OR the HF FP16
     reference itself drifts.
-  status: BLOCKER_FIXTURE_ABSENT
+  status: PARTIAL_ALGORITHM_LEVEL
   algorithm_evidence:
     file_paths:
-      - 'scripts/ship-007-layer0-oracle/  (PR #1423)'
+      - scripts/generate_qwen25_coder_fp16_stages.py
+      - crates/aprender-serve/src/inference_trace/save_tensor_stage.rs
+      - crates/aprender-serve/src/apr_transformer/inference.rs
     function_names:
-      - run_hf_fp16_reference (extension to capture 2 new sub-stages)
+      - install_attn_substages_patch
+      - traced_forward
+      - SaveTensorStage::AttnScores
+      - SaveTensorStage::AttnSoftmax
+      - SaveTensorStage::QPostRope
+      - SaveTensorStage::KPostRope
     invariants_enforced:
       - 'Single-pair divergence hypothesis is the falsifiable claim'
+      - 'HF FP16 oracle (PR #1457) installs per-instance Qwen2Attention.forward monkeypatch under attn_implementation="eager" to capture q_post_rope/k_post_rope/attn_scores/attn_softmax — closes the 4-stage HF reference gap'
+      - 'APR side wire (PR #1455) emits the same 4 stages via `forward_traced_with_plan` — closes the 4-stage APR reference gap'
+      - '9-element cosine sequence [attn_norm, qkv_matmul, qkv_bias, q_post_rope, k_post_rope, attn_scores, attn_softmax, attention, attn_out] is end-to-end emit-able from BOTH sides on main'
     notes: |
-      BLOCKER_FIXTURE_ABSENT: discharge requires (i) the 2 new stages
-      implemented (FALSIFY-ATTN-SUB-001), (ii) the HF FP16 oracle
-      extended to capture the 2 new stage tensors, (iii) live diff
-      run on RTX 4090. Contract pins the gate; live discharge is a
-      follow-up PR cascade that delivers all three pre-conditions.
+      Status promoted BLOCKER_FIXTURE_ABSENT → PARTIAL_ALGORITHM_LEVEL
+      after PR #1457 merged (HF FP16 oracle extension). The fixture
+      previously claimed "absent" is now generated by the oracle
+      script via `--with-attn-substages` (default ON).
+
+      FUNCTIONAL discharge still requires LIVE RTX 4090 run on the
+      canonical 7B teacher to produce the actual 9-element cosine
+      sequence and identify the bug-bearing sub-stage. Per
+      `feedback_compute_pre_authorized.md`, this LIVE run is
+      operator-triggered and gated on:
+      (a) `cargo build --release --features cuda --bin apr` (canonical
+          binary built pre-#1451 rejects `attn_scores` stage today)
+      (b) PyTorch/CUDA driver fix on host OR fall back to
+          `--device cpu` on the oracle script (multi-min FP16 forward
+          but functional)
+
+      Once LIVE runs and produces the cosine sequence, SUB-004 flips
+      PARTIAL_ALGORITHM_LEVEL → FUNCTIONAL/DISCHARGED, identifying
+      the SHIP-007 sub-stage and unblocking step 8 root-cause fix
+      per §47.1 cascade roadmap.
 
 - id: FALSIFY-ATTN-SUB-005
   rule: 'New sub-stage capture is purely additive — existing forward-pass token output is byte-identical pre/post implementation'
