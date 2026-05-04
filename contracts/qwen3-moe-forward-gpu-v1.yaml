@@ -1,0 +1,442 @@
+metadata:
+  version: 1.0.0
+  kind: kernel
+  created: '2026-05-04'
+  author: PAIML Engineering
+  amendment_history:
+    - version: 1.0.0
+      date: '2026-05-04'
+      kind: created
+      title: 'Initial contract scaffold for GPU MoE forward path (P0 / HIGHEST PRIORITY per claude-code-parity-apr M49)'
+      description: |
+        Companion to `qwen3-moe-forward-v1` (CPU LAZY-FUSED-MATVEC,
+        ACTIVE_ALGORITHM_LEVEL since M32d functional discharge
+        2026-05-02). This contract specifies the GPU sibling.
+
+        Why P0 / HIGHEST PRIORITY (per claude-code-parity-apr POC spec
+        M49 elevation, 2026-05-04):
+
+          - CPU-only LAZY-FUSED-MATVEC produces correct output but at
+            ~30 tok/s on Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.
+          - The dense GPU path on this stack runs at 225-440 tok/s
+            (cuBLAS Q4_K on RTX 4090).
+          - MoE inference is ~10x slower than dense — makes the
+            spec-prescribed default Qwen3-Coder model production-
+            infeasible at ~30 tok/s.
+          - The action-stream parity machinery in the companion
+            (CCPA-001..013, all DISCHARGED) is correct but cannot be
+            exercised at production cadence — every `apr code`
+            invocation hits the 30 tok/s wall.
+
+        Until this contract discharges, the companion's dogfood loops
+        and the production `apr code` path are throughput-bounded by
+        the CPU MoE baseline. Hence P0.
+
+        Scaffold-only at v1.0.0; status DRAFT until at least M-stage
+        M-GPU-MOE-1 (CUDA kernel + cosine parity gate) lands on
+        aprender main. Stages outlined in implementation_stages below.
+
+  description: |
+    GPU companion to `qwen3-moe-forward-v1` (CPU LAZY-FUSED-MATVEC,
+    ACTIVE_ALGORITHM_LEVEL since M32d functional discharge 2026-05-02).
+    Specifies the CUDA/wgpu sibling with identical numerical semantics
+    + cosine ≥0.99 parity gate vs the CPU reference + ≥150 tok/s
+    throughput target on RTX 4090. P0/HIGHEST PRIORITY per
+    claude-code-parity-apr POC M49 elevation 2026-05-04 — current CPU
+    baseline of ~30 tok/s is the rate-limit on production-cadence
+    consumption of the M32d discharge.
+
+  references:
+    - 'aprender contracts/qwen3-moe-forward-v1.yaml — CPU LAZY-FUSED-MATVEC sibling'
+    - 'aprender contracts/moe-router-v1.yaml — softmax + top-k + renormalize'
+    - 'aprender contracts/moe-expert-dispatch-v1.yaml — per-expert dispatch + weighted aggregation'
+    - 'aprender contracts/swiglu-kernel-v1.yaml — per-expert FFN'
+    - 'aprender contracts/apr-cpu-vs-gpu-output-parity-v1.yaml — CPU↔GPU parity discipline (FALSIFY-CPU-GPU-001..005)'
+    - 'paiml/claude-code-parity-apr docs/specifications/claude-code-parity-apr-poc.md § "Scope extensions" sub-extension 2 (P0)'
+    - 'paiml/claude-code-parity-apr docs/specifications/claude-code-parity-apr-poc.md § "Risks & open questions" R10'
+    - 'arXiv:2305.18398 Dao FlashAttention-2 (fused-kernel parity discipline)'
+    - 'arXiv:2305.05176 Aminabadi et al. DeepSpeed-MoE (sparse-MoE GPU dispatch / expert-parallel scheduling)'
+    - 'arXiv:2101.03961 Fedus et al. Switch Transformers (modern MoE forward conventions)'
+
+  depends_on:
+    - qwen3-moe-forward-v1
+    - moe-router-v1
+    - moe-expert-dispatch-v1
+    - swiglu-kernel-v1
+    - apr-cpu-vs-gpu-output-parity-v1
+    - tensor-layout-v1
+    - tensor-names-v1
+
+kind: KernelContract
+name: qwen3-moe-forward-gpu
+version: "1.0.0"
+status: DRAFT   # Scaffold only; flips to ACTIVE_ALGORITHM_LEVEL when
+                # CUDA kernel + cosine parity gate (FALSIFY-QW3-MOE-GPU-
+                # PARITY-001) lands on aprender main. Flips to
+                # ACTIVE_RUNTIME when wgpu fallback + throughput target
+                # (≥150 tok/s on RTX 4090) also discharge.
+                #
+                # v1.0.0 (2026-05-04): Initial scaffold per
+                # claude-code-parity-apr POC M49 priority elevation.
+                # No code yet — this contract IS the deliverable for
+                # M-stage M-GPU-MOE-0.
+scope: "crates/aprender-serve/src/gpu/{forward_qwen3_moe_gpu,scheduler/moe_dispatch}.rs, crates/aprender-compute/src/gpu/moe_kernels.rs (TBD)"
+
+description: |
+  GPU sibling of the CPU `forward_qwen3_moe` path. Same end-to-end
+  semantics as `qwen3-moe-forward-v1`: hidden_state[hidden_dim] in,
+  hidden_state'[hidden_dim] out, with hidden_state' = hidden_state +
+  MoE(RMSNorm(hidden_state)).
+
+  The numerical decomposition is identical:
+
+    1. Router: softmax(W_router @ x) → top-k → renormalize
+    2. Per-expert SwiGLU: down(SiLU(gate(x)) * up(x))
+    3. Weighted aggregation: Σ_e w[t,e] * expert_out[t,e]
+    4. Optional shared expert with sigmoid gate
+
+  What changes is the dispatch substrate: CUDA kernel (primary) +
+  wgpu fallback (per CLAUDE.md backend-agnostic mandate). The CPU
+  LAZY-FUSED-MATVEC path remains the reference; the GPU path must
+  produce cosine ≥ 0.99 against it (FALSIFY-QW3-MOE-GPU-PARITY-001).
+
+  Dispatch architecture (DeepSpeed-MoE precedent, arXiv:2305.05176):
+
+    - Sparse expert dispatch: only the top-k experts per token are
+      visited; experts not selected do NOT trigger GPU memory
+      transfers or kernel launches.
+    - Fused dequant+matmul: Q4_K/Q6_K tiles dequantized into shared
+      memory inline with the matmul, mirroring the CPU
+      `fused_q4k_parallel_matvec` / `fused_q6k_parallel_matvec`
+      semantics.
+    - Expert-parallel scheduling: tokens routed to the same expert
+      are batched within a single kernel launch; cross-expert
+      synchronization at the weighted-aggregation step.
+
+  Memory budget on RTX 4090 (24 GB VRAM):
+
+    - 17.5 GB Q4_K/Q6_K expert tensors stay on GPU (mmap'd at load
+      time). EAGER FP32 expansion would expand to 70 GB and OOM —
+      this is the same constraint that drove the CPU
+      LAZY-FUSED-MATVEC choice in qwen3-moe-forward-v1 v1.1.0.
+    - ~2 GB attention KV cache.
+    - ~1-2 GB activations + workspace.
+    - ~3 GB headroom.
+
+  Tensor naming follows tensor-names-v1 v1.1.0 (qwen3_moe arch key,
+  same as the CPU path): blk.{L}.ffn_gate_inp / ffn_gate_exps /
+  ffn_up_exps / ffn_down_exps.
+
+equations:
+  moe_forward_one_layer_gpu:
+    formula: |
+      h' = h + MoE_gpu(RMSNorm(h))
+      where MoE_gpu(x) = Σ_{e ∈ TopK(softmax(W_r @ x), k)} w_e · SwiGLU_gpu_e(x)
+                         + (optional) σ(W_s @ x) · SwiGLU_gpu_shared(x)
+    domain: |
+      h ∈ R^d, W_r ∈ R^{N_e × d}, W_s ∈ R^{1 × d}, k = num_experts_per_tok,
+      SwiGLU_gpu_e ∈ R^d → R^d parameterized by (W_gate^e, W_up^e, W_down^e),
+      all weights resident on GPU global memory in their on-disk Q4_K/Q6_K
+      quantized form (no FP32 expansion).
+    invariants:
+    - h.len() == hidden_dim
+    - 'router weights sum: Σ_e selected_w[e] = 1.0  (post-renormalization)'
+    - 'output shape preserved: result.len() == hidden_dim'
+    - 'selected experts ∈ [0, N_e)'
+    - 'cosine_similarity(MoE_gpu(x), MoE_cpu_lazy_fused_matvec(x)) ≥ 0.99'
+    preconditions:
+    - hidden_dim > 0
+    - num_experts > 0
+    - num_experts_per_tok > 0 ∧ num_experts_per_tok ≤ num_experts
+    - 'router_weight.shape == [num_experts, hidden_dim]'
+    - 'expert_gate.shape == [num_experts, intermediate, hidden_dim]'
+    - 'expert_up.shape   == [num_experts, intermediate, hidden_dim]'
+    - 'expert_down.shape == [num_experts, hidden, intermediate]'
+    - 'CudaExecutor::new(0).is_ok() — GPU device 0 available'
+    postconditions:
+    - 'h_prime.len() == hidden_dim'
+    - 'h_prime.iter().all(|v| v.is_finite())'
+    - 'cosine_similarity(h_prime, cpu_reference) ≥ 0.99'
+
+  gpu_throughput_target:
+    formula: |
+      tokens_per_second(qwen3_coder_30b_a3b_instruct_q4_k_m, RTX_4090) ≥ 150
+    domain: |
+      Single-prompt single-stream generate loop, no batching, KV cache
+      enabled. Model: Qwen3-Coder-30B-A3B-Instruct-Q4_K_M (17.3 GB GGUF).
+      Hardware: NVIDIA RTX 4090 (24 GB VRAM, 16384 CUDA cores).
+      Measurement window: ≥128 tokens generated (per CLAUDE.md "128-tok
+      median" perf-parity convention).
+    invariants:
+    - 'tps ≥ 150 over ≥128-token measurement window'
+    - 'tps ≥ 5x CPU baseline of ~30 tok/s'
+    rationale: |
+      CPU LAZY-FUSED-MATVEC measured at ~30 tok/s on the same model.
+      Dense GPU Q4_K (Qwen2.5-Coder-7B Q4_K_M) measured at 225-440 tok/s
+      on RTX 4090 cuBLAS. MoE has expert-dispatch overhead; allow
+      headroom: target ≥150 tok/s = ≥5x CPU baseline, ~3x slower than
+      dense GPU (the dispatch overhead).
+
+proof_obligations:
+- type: equivalence
+  property: 'GPU forward result matches CPU LAZY-FUSED-MATVEC reference within ≥0.99 cosine (AC_GPU_MOE_001)'
+  formal: 'cosine_similarity(forward_qwen3_moe_gpu(x), forward_qwen3_moe_cpu(x)) ≥ 0.99'
+  tolerance: 0.01
+  applies_to: all
+
+- type: invariant
+  property: 'Router weights sum to 1.0 after top-k renormalization (AC_GPU_MOE_002)'
+  formal: 'Σ_e route.weights[e] = 1.0 ± 1e-6'
+  applies_to: all
+
+- type: invariant
+  property: 'Output dimensions preserved (AC_GPU_MOE_003)'
+  formal: 'forward_gpu.output.len() == hidden_dim'
+  applies_to: all
+
+- type: invariant
+  property: 'Output is finite — no NaN/Inf (AC_GPU_MOE_004)'
+  formal: 'forward_gpu.output.iter().all(|v| v.is_finite())'
+  applies_to: all
+
+- type: equivalence
+  property: 'GPU forward result matches HF FP16 reference (AC_GPU_MOE_005)'
+  formal: 'cosine_similarity(apr_gpu_logits, hf_fp16_logits) > 0.99'
+  tolerance: 0.01
+  applies_to: all
+  note: |
+    Inherits from qwen3-moe-forward-v1 AC_QW3_MOE_005. Operator-confirm
+    pending the same ~60 GB Qwen3-Coder-30B-A3B-FP16 download.
+
+- type: bound
+  property: 'GPU throughput ≥ 150 tok/s on RTX 4090 (AC_GPU_MOE_006)'
+  formal: 'tps_128_tok_median(qwen3_coder_30b_a3b_q4_k_m, RTX_4090) ≥ 150'
+  applies_to: all
+
+- type: invariant
+  property: 'GPU memory budget under 24 GB VRAM (AC_GPU_MOE_007)'
+  formal: 'cuda_mem_get_info().used / cuda_mem_get_info().total ≤ 0.95'
+  applies_to: all
+  note: |
+    Hard cap: 95% VRAM utilization to leave headroom for activations,
+    KV cache, and OS/driver overhead. Model alone (17.5 GB Q4_K/Q6_K
+    expert tensors) is ~73% of 24 GB; remaining 22% covers
+    activations + KV cache + workspace + headroom per the description's
+    memory-budget breakdown.
+
+implementation_stages:
+- id: M-GPU-MOE-0
+  status: SHIPPED
+  description: |
+    This contract scaffold (v1.0.0). No code; just the kernel-contract
+    YAML defining what GPU MoE means and the gates it has to discharge.
+  evidence:
+    - 'aprender contracts/qwen3-moe-forward-gpu-v1.yaml at v1.0.0'
+    - 'pv validate contracts/qwen3-moe-forward-gpu-v1.yaml exits 0'
+
+- id: M-GPU-MOE-1
+  status: PENDING
+  description: |
+    CUDA kernel `forward_qwen3_moe_gpu` in
+    `crates/aprender-serve/src/gpu/forward_qwen3_moe_gpu.rs` (or similar).
+    Sparse expert dispatch + fused dequant+matmul. Discharges
+    AC_GPU_MOE_001..005 against the CPU LAZY-FUSED-MATVEC reference and
+    the HF FP16 reference (the latter inherited from the v1 contract).
+    Flips this contract DRAFT → ACTIVE_ALGORITHM_LEVEL.
+  expected_acceptance:
+    - AC_GPU_MOE_001
+    - AC_GPU_MOE_002
+    - AC_GPU_MOE_003
+    - AC_GPU_MOE_004
+    - AC_GPU_MOE_005
+  blockers:
+    - 'aprender does not yet have a fused-quantized-dequant-matmul GPU kernel for sparse MoE dispatch'
+    - 'DeepSpeed-MoE-style expert-parallel scheduling needs design work for the Q4_K_M / Q6_K row-major layouts'
+
+- id: M-GPU-MOE-2
+  status: PENDING
+  description: |
+    wgpu fallback path (per CLAUDE.md backend-agnostic mandate).
+    Same numerical equivalence gate as M-GPU-MOE-1 but for non-CUDA
+    hardware. Discharges AC_GPU_MOE_001..005 on a wgpu device.
+  expected_acceptance:
+    - AC_GPU_MOE_001
+    - AC_GPU_MOE_002
+    - AC_GPU_MOE_003
+    - AC_GPU_MOE_004
+    - AC_GPU_MOE_005
+
+- id: M-GPU-MOE-3
+  status: PENDING
+  description: |
+    Throughput target. ≥150 tok/s on Qwen3-Coder-30B-A3B-Instruct-Q4_K_M
+    on RTX 4090. Discharges AC_GPU_MOE_006. Memory-budget compliance
+    discharges AC_GPU_MOE_007.
+    With this stage SHIPPED, this contract flips ACTIVE_ALGORITHM_LEVEL
+    → ACTIVE_RUNTIME — the same convention as qwen3-moe-forward-v1.
+  expected_acceptance:
+    - AC_GPU_MOE_006
+    - AC_GPU_MOE_007
+
+falsification_tests:
+- id: FALSIFY-QW3-MOE-GPU-001
+  rule: 'Baseline failure: GPU MoE forward path does not exist'
+  prediction: |
+    `apr run <qwen3-moe>.gguf --gpu` (with explicit GPU dispatch) for
+    a qwen3_moe model falls back to CPU LAZY-FUSED-MATVEC (the v1
+    contract path) — there is no `forward_qwen3_moe_gpu` symbol.
+  test: |
+    grep -rn "forward_qwen3_moe_gpu" crates/aprender-serve/src/
+    Expect: 0 matches (function does not exist).
+  if_fails: |
+    Someone shipped GPU MoE without bumping this contract — please
+    update v1.0.0 → v1.1.0 with the discharge and flip status.
+
+- id: FALSIFY-QW3-MOE-GPU-PARITY-001
+  rule: 'M-GPU-MOE-1 discharges CPU↔GPU cosine ≥0.99 parity gate'
+  prediction: |
+    A GPU forward pass on Qwen3-Coder-30B-A3B-Instruct-Q4_K_M produces
+    logits with cosine ≥0.99 vs the CPU LAZY-FUSED-MATVEC reference on
+    the same input.
+  test: |
+    cargo test -p aprender-serve --test qwen3_moe_gpu_parity --features cuda -- --include-ignored
+    Asserts: cosine_similarity(apr_gpu_logits, apr_cpu_logits) ≥ 0.99
+    on a fixed prompt vs the cached 17.3 GB Qwen3-Coder GGUF.
+  if_fails: |
+    GPU kernel diverges from CPU reference. Bisect via
+    `apr trace --json --payload` (M32d Step 2 surface) on both paths,
+    diff per-layer ActivationStats. Common failure modes:
+      - per-head Q/K RMSNorm not applied on GPU (rank-3 prior, see
+        qwen3-moe-forward-v1 v1.4.0 § M32d Step 5)
+      - rope_theta default 10K instead of 1M for qwen3_moe (rank-4
+        prior, see § M32d Step 5b)
+      - Q4_K dequant scale/zero-point mismatch
+      - sparse expert dispatch picking different top-k vs CPU (router
+        floating-point reordering)
+
+- id: FALSIFY-QW3-MOE-GPU-PARITY-002
+  rule: 'M-GPU-MOE-1 inherits HF FP16 cosine ≥0.99 from v1 contract'
+  prediction: |
+    GPU forward pass logits, compared against
+    qwen3_moe_fp16_logits_pos0.json (M32d.1 fixture, operator-confirm),
+    produce cosine_similarity ≥ 0.99.
+  test: |
+    cargo test -p aprender-serve --test qwen3_moe_gpu_hf_parity --features cuda -- --include-ignored
+    Asserts: cosine_similarity(apr_gpu_logits, hf_fp16_logits) ≥ 0.99
+  if_fails: |
+    Same as v1 contract's FALSIFY-QW3-MOE-FORWARD-004 if-fails:
+    HF FP16 fixture missing (M32d.1 not run yet) → run
+    `scripts/generate_qwen3_moe_fp16_logits.py` first, then re-run.
+    Otherwise, GPU kernel has a numerical bug — see PARITY-001 if_fails.
+
+- id: FALSIFY-QW3-MOE-GPU-THROUGHPUT-001
+  rule: 'M-GPU-MOE-3 discharges throughput target ≥150 tok/s'
+  prediction: |
+    `apr bench --model qwen3-coder-30b-a3b-instruct-q4_k_m --gpu --backend cuda`
+    over a 128-token median measurement window reports ≥150 tok/s on
+    RTX 4090.
+  test: |
+    apr bench /path/to/qwen3-coder-30b-a3b-instruct-q4_k_m.gguf \
+        --backend cuda --tokens 128 --runs 5 --json | jq '.median_tps'
+    Assert: ≥ 150
+  if_fails: |
+    GPU kernel correct but slow. Profile via `apr profile` (roofline)
+    and `apr trace`. Common failure modes:
+      - sparse expert dispatch not actually sparse (visiting all 128
+        experts per token, not just top-8)
+      - dequant happening per-element instead of per-tile
+      - kernel launch overhead per expert (should batch)
+      - DRAM bandwidth bottleneck (Q4_K bytes streaming inefficiently)
+
+- id: FALSIFY-QW3-MOE-GPU-INVARIANTS-001
+  rule: 'M-GPU-MOE-1 discharges output-shape + finiteness invariants (AC_GPU_MOE_002/003/004)'
+  prediction: |
+    A GPU forward pass on Qwen3-Coder-30B-A3B-Instruct-Q4_K_M produces
+    output that satisfies: router weights sum to 1.0 ± 1e-6 after
+    top-k renormalization (AC_GPU_MOE_002), output length equals
+    hidden_dim (AC_GPU_MOE_003), every output element is finite
+    (no NaN, no Inf — AC_GPU_MOE_004).
+  test: |
+    cargo test -p aprender-serve --test qwen3_moe_gpu_invariants --features cuda -- --include-ignored
+    Asserts:
+      (Σ router_weights[selected]) ∈ [1.0 - 1e-6, 1.0 + 1e-6]
+      output.len() == config.hidden_dim
+      output.iter().all(|v| v.is_finite())
+  if_fails: |
+    Different failure modes per assertion:
+      - router weight sum != 1.0 → top-k softmax + renormalization
+        bug; check that the scatter+normalize step picks ALL top-k
+        weights and divides by their pre-normalize sum.
+      - output.len() != hidden_dim → kernel writes wrong slice or
+        the workspace tensor shape is wrong.
+      - output contains NaN/Inf → numerical overflow, likely in
+        Q4_K dequantization (scale x quant + zero-point) or in the
+        SwiGLU SiLU activation.
+
+- id: FALSIFY-QW3-MOE-GPU-DETERMINISM-001
+  rule: 'GPU forward is deterministic across runs on same input + seed (mirrors apr-cpu-vs-gpu-output-parity-v1 FALSIFY-CPU-GPU-003 discharge)'
+  prediction: |
+    Two consecutive `apr run --backend cuda` invocations on the same
+    GGUF + same prompt + same seed produce byte-identical token streams
+    AND cosine ≥0.9999999 logit equivalence (per CLAUDE.md PMAT-216
+    GPU-parity mandate).
+  test: |
+    apr run <gguf> --backend cuda --prompt "Hi" --max-tokens 32 --seed 42 > out1.txt
+    apr run <gguf> --backend cuda --prompt "Hi" --max-tokens 32 --seed 42 > out2.txt
+    diff out1.txt out2.txt
+    Assert: empty diff, exit 0
+  if_fails: |
+    Non-deterministic GPU dispatch. Common causes: cuBLAS DEFAULT_MATH
+    instead of PEDANTIC_MATH (see GPUTRAIN-006 discharge precedent on
+    aprender main: cuBLAS DEFAULT_MATH → PEDANTIC_MATH in PR #1052),
+    atomic adds in reduction kernels (use deterministic warp-shuffle
+    reductions instead, per RmsNormGammaReduceKernel precedent), or
+    unsynchronized stream operations.
+
+- id: FALSIFY-QW3-MOE-GPU-MEMORY-001
+  rule: 'M-GPU-MOE-3 discharges memory-budget gate (AC_GPU_MOE_007)'
+  prediction: |
+    Live `apr run` against Qwen3-Coder-30B-A3B-Instruct-Q4_K_M on
+    RTX 4090 stays under 95% VRAM utilization.
+  test: |
+    apr run <gguf> --backend cuda --prompt "Hi" --max-tokens 128 &
+    sleep 5
+    nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits | head -1
+    Assert: used / total ≤ 0.95
+  if_fails: |
+    Either (a) experts being EAGER-expanded instead of LAZY-FUSED, OR
+    (b) workspace/scratch buffers oversized, OR (c) KV cache larger
+    than expected. Check that expert tensors stay in their on-disk
+    Q4_K/Q6_K form on GPU (no FP32 expansion). The 17.5 GB → 70 GB
+    expansion is the documented OOM mode (qwen3-moe-forward-v1
+    v1.1.0 LAZY-FUSED-MATVEC decision).
+
+qa_gate:
+  id: F-QW3-MOE-GPU-001
+  name: Qwen3-MoE GPU Forward Contract
+  checks:
+  - cpu_gpu_cosine_parity_at_least_0.99
+  - hf_fp16_cosine_parity_at_least_0.99
+  - throughput_at_least_150_tokens_per_second
+  - vram_under_95_percent
+  - bytewise_determinism
+  pass_criteria: All 7 falsification tests pass — FALSIFY-QW3-MOE-GPU-001 + PARITY-001/002 + INVARIANTS-001 + DETERMINISM-001 + THROUGHPUT-001 + MEMORY-001
+  falsification: Swap quantized expert dispatch with EAGER FP32 expansion (will OOM on 24 GB VRAM, fail FALSIFY-QW3-MOE-GPU-MEMORY-001)
+
+
+kani_harnesses:
+- id: KANI-QW3-MOE-GPU-001
+  obligation: "Router weights sum to 1.0 +/- 1e-6 after top-k renormalization (AC_GPU_MOE_002)"
+  property: "For all input hidden_state h, router output satisfies sum(selected_w) in [1.0 - 1e-6, 1.0 + 1e-6] post-renormalization"
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_gpu_router_weights_sum_to_one
+- id: KANI-QW3-MOE-GPU-002
+  obligation: "Output shape preserved: forward_gpu.output.len() == hidden_dim (AC_GPU_MOE_003)"
+  property: "For all input h with h.len() == hidden_dim, forward_qwen3_moe_gpu(h).len() == hidden_dim"
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_gpu_output_shape_preserved
+
