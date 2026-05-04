@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+#### CPU/GPU output parity contract (jidoka armor)
+- **`contracts/apr-cpu-vs-gpu-output-parity-v1.yaml`** — new provable contract codifying the CPU-vs-GPU output-parity invariant for `apr run` / `apr serve` (#1427). Authored after SHIP-007 evidence v5 confirmed the GPU forward path emits gibberish on the canonical Qwen2.5-Coder-7B teacher while the CPU path returns correct output. Contract progressed v1.0.0 → **v1.5.0 ACTIVE** with **5/5 falsifiers DISCHARGED** in a single 2-PR cycle (#1445 + #1446) — first contract in the SHIP-TWO program to reach complete-evidence terminal state.
+- **CUDA fallback log prefix** (`[apr-cpu-vs-gpu-output-parity-v1] CUDA path rejected`) — the CUDA fallback decision is now visible without `--verbose` (#1428). Drift-prevention test pins the contract tag verbatim (#1429).
+- **wgpu fallback log prefix + cosine parity gate** (`[apr-cpu-vs-gpu-output-parity-v1] wgpu path rejected ...`) — the wgpu inference path now emits a structured rejection log AND runs an inline CPU-vs-GPU cosine parity check on the embedding stage; below threshold, the GPU path fails closed and execution falls back to CPU (#1435, #1440, #1442). Closes the silent-GPU-gibberish failure mode end-to-end.
+- **Live discharge evidence** — full chain verified on canonical broken-GPU teacher with both default (`apr run model.apr`) and `--no-gpu` smokes; smoke logs + findings stored under `evidence/cpu-gpu-005-live-discharge-2026-05-04/`.
+
+#### `apr trace --save-tensor` — SHIP-007 layer-0 oracle bisection
+- **`apr trace --save-tensor <stages>`** — new flag captures per-stage forward-pass tensor dumps in APRT byte format for element-wise GPU/CPU bisection (#1405, #1408, #1413, #1414, #1417). Scaffolded by `contracts/apr-cli-trace-save-tensor-v1.yaml` (v1.1.0 → **v1.4.0 FUNCTIONAL**) with falsifiers FALSIFY-009/010/011 promoted from PARTIAL_ALGORITHM_LEVEL → FUNCTIONAL.
+- **`apr diff --values` recognizes APRT stage tensors** (#1413) — closes the trace→diff loop without round-tripping through SafeTensors.
+- **HF FP16 oracle bisection script** — `scripts/ship-007-layer0-oracle/` runs the Qwen2.5-Coder-7B HF FP16 reference forward pass and pinpoints the SHIP-007 divergence to layer-0 `attn_out` (cos=0.99999995 at `attn_norm` → cos=0.9966 after attention block) (#1423, #1426). First empirical confirmation that the bug lives **inside** the attention block (qkv/RoPE/softmax/V/O), not before.
+
+#### Distillation training contract
+- **`contracts/apr-cli-distill-train-v1.yaml`** — 9 falsifiers all algorithm-bound at PARTIAL_ALGORITHM_LEVEL (#1438, #1439, #1443, #1444). Sweep closes 9/9 with TRAIN-009 explicitly classified BLOCKER_FIXTURE_ABSENT.
+- **DistillationLoss falsifier-parity coverage** — `hf_pipeline` DistillationLoss tests added for FALSIFY-TRAIN-003/004 (#1436).
+
+#### Specification amendments — SHIP-TWO-001
+- Spec v2.86.0 → v2.87.0 → v2.88.0 → v2.89.0 → **v2.90.0** records the §41/§42/§43/§44/§45 jidoka chain and the **5/5 LIVE DISCHARGE milestone** on `apr-cpu-vs-gpu-output-parity-v1`. **MODEL-1 ship % now 91%**, coverage tally 15+37 → 20+32.
+
+### Performance
+
+- **MoE expert dispatch parallelized with rayon — 2× speedup** (#1396) on `apr-cpu-vs-gpu-output-parity-v1` MoE inference path (`forward_qwen3_moe`). Discharges `qwen3-moe-forward-v1` v1.3.0 → v1.4.0 FUNCTIONAL.
+- **APR file mmap in `load_tensor_f32`** (#1058) — unblocks `apr diff --values` on 7B-parameter models (was 12+ min for limit=20, now 192s for full 339-tensor sweep).
+
+### Fixed
+
+#### M32d numerical parity (Qwen3-MoE)
+- **Qwen3-MoE numerical-parity bundle** — fixes 4 root-cause bugs (Q/K RMSNorm rank-3 reshape, `rope_theta` default rank-4, chat template emission, traced sync) that produced gibberish on Qwen3-Coder-30B-A3B (#1228). Multi-domain dogfood (math/geo/translate/code) now correct end-to-end.
+
+#### Hub build chain
+- `aprender-train` `--features hub` build chain repaired (#1432, #1433, #1434): `quantize_to_gguf_bytes` match-result binding, empty-input early return, GGUF tensor-data alignment padding accounted for in test helpers.
+
+### Documentation
+
+- **README claims** updated against `contracts/readme-claims-v1.yaml` drift gate: 1096 → **1105 contracts**, 79 → **80 CLI commands**. `bash scripts/check_readme_claims.sh` is GREEN against HEAD.
+
+### Provable contracts (algorithm-binding sweep)
+
+This release closes a record contract algorithm-binding sweep — **150+ provable contracts** flipped from `unbound` to `PARTIAL_ALGORITHM_LEVEL` across kernel, format, training, GPU-backend, and CLI families (commits in the 50-200 range above v0.31.2). Each binding ties an existing falsifier to a concrete, executable algorithm reference, preserving the YAML→code audit story without claiming live discharge.
+
+**Sweep highlights**: AdamW, RMSNorm, GQA, RoPE, SwiGLU, Q4K/Q6K superblocks, paged-KV-cache, sliding-window attention, attention-scaling, fused-QKV, NF4 fused gate-up/RMSNorm-GEMV/QKV/tensor-core GEMM, LoRA algebra, QLoRA hyperparameters, online-softmax, flash-attention, speculative-decoding, MoE router/dispatch, classification metrics, regression metrics, ranking metrics, clustering metrics, BPE training/loading, dataset-thestack-python, document-integrity, eval-harness HumanEval, GPU multi-backend parity, training-loop-pretrain, eval-sharding, chat-template, qwen2/qwen3/qwen3-moe/qwen35 shapes + e2e-verification, `apr-cli-{publish,pull-dataset,qa,operations,coverage,publish-extra,dep-migration,command-safety,distill-train}-v1`, `apr-{provenance,inspect-*,model-{diagnostics,graph,lifecycle,optimization,qa,security},mcp-server,mono-binary-rule,chat-session,claude-proxy,chrome-trace,gpu-{presence,diagnostics,parity-consistency},docs,org-taxonomy,page-*,corpus-*,book-*,tool-*,qa-{chaos,coverage,differential,metamorphic,silent-fallback},serve,stochastic-lr,zero-feature-gate,version-traceability,compare-hf-nonvacuous,architecture-schema}-v1`.
+
 ## [0.31.1] - 2026-04-19
 
 ### Fixed
