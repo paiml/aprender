@@ -1,7 +1,8 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.90.0
+**Version:** 2.91.0
+**Atomic next action (v2.91.0):** **§46 — v0.32.0 release-cut decision: HOLD, gated on SHIP-007 layer-0 attention bisection (PR #1448 in flight)** (see new §46 below). After landing the v2.90.0 §45 milestone (PR #1447 merged), the next decision was whether the 238-commit body of work since v0.31.2 warrants a `cargo publish` cut. **Verdict: HOLD.** The release-readiness audit found exactly one load-bearing blocker — SHIP-007 layer-0 attention divergence is empirically pinpointed (cos=0.99999995 attn_norm → 0.9966 attn_out per memory `2026-05-03 SHIP-007 finding`) but **not yet fixed**, so cutting v0.32.0 today would crates.io-ship a binary where `apr run` on a 7B GPU teacher still emits gibberish unless the user passes `--no-gpu`. The §41-§45 jidoka armor makes the failure visible + fail-closed (which is shippable behaviour), but a user-facing `## [0.32.0]` headline that reads "5/5 DISCHARGE on apr-cpu-vs-gpu-output-parity-v1" implies the GPU correctness hole is closed when in truth it is only contained. Two pre-flight artifacts shipped along with this decision: (i) PR #1448 fills the empty `[Unreleased]` CHANGELOG section with the full session body of work; (ii) PR #1448 also repairs the `bash scripts/check_readme_claims.sh` drift gate which was FAILING on `main` (1096→1105 contracts, 79→80 CLI commands). Per `feedback_post_publish_qa_required.md`, the next cut also requires `cargo install aprender --force` + `/dogfood` GO verdict — v0.31.1 was yanked for skipping that gate. Spec v2.90.0 → **v2.91.0**. Coverage tally unchanged (no falsifiers flipped this cycle; this amendment is a release-decision audit record).
 **Atomic next action (v2.90.0):** **§45 — `apr-cpu-vs-gpu-output-parity-v1` 5/5 LIVE DISCHARGE milestone (PRs #1445 + #1446)** (see new §45 below). Two live smokes on canonical Qwen2.5-Coder-7B teacher (RTX 4090, binary built from main @ 817ec0553) closed every falsifier in the parity contract: (i) PR #1445 — default-mode `apr run` smoke fired all three jidoka tags in stderr (CUDA cos=-0.005 + argmax 8127≠334; `Backend: wgpu (Vulkan)`; wgpu cos=0.766 < 0.99) and produced correct CPU output "2 + 2 equals 4." → FALSIFY-CPU-GPU-005 PARTIAL_ALGORITHM_LEVEL → DISCHARGED. (ii) PR #1446 — `--no-gpu` smoke produced 9.02s CPU-only run with zero GPU log lines + correct output → joined #1445 evidence to flip FALSIFY-CPU-GPU-001/002/003 PARTIAL → DISCHARGED + FALSIFY-CPU-GPU-004 FUNCTIONAL → DISCHARGED. **All 5/5 falsifiers in apr-cpu-vs-gpu-output-parity-v1 are now DISCHARGED**; the contract is COMPLETE. Coverage tally: 15+37 → **20+32** (+5 in this 2-PR cycle, the largest single-cycle coverage flip of the SHIP-TWO program). MODEL-1 ship % nudges 89% → **91%** (the silent-gibberish loophole that v5/§40 originated is now both implemented closed AND end-to-end live-verified on the canonical broken-GPU model). The §41 → §43 → §44 → §45 jidoka chain is contract-complete; only the underlying SHIP-007 GPU kernel root-cause fix per §40 remains for full GPU-shipability of MODEL-1. Spec v2.89.0 → **v2.90.0**. Contract apr-cpu-vs-gpu-output-parity-v1 v1.3.0 → v1.5.0 ACTIVE.
 **Atomic next action (v2.89.0):** **§44 — FALSIFY-CPU-GPU-005 part b implementation + distill-train 9/9 sweep close (PRs #1442 + #1443)** (see new §44 below). Today's continuation cycle landed two more PRs across both ship tracks: (i) PR #1442 — FALSIFY-CPU-GPU-005 part b live implementation: ~70 LOC inline at `try_apr_wgpu_inference` running a CPU-vs-wgpu cosine probe on the BOS token before the autoregressive loop, with a separate tiny probe_kv_caches (max_seq=2) so the real cache stays uncontaminated; emits `WGPU_FALLBACK_LOG_PREFIX` and returns None on cosine < 0.99 OR any probe error (fail-closed). Contract `apr-cpu-vs-gpu-output-parity-v1` v1.2.0 → v1.3.0 ACTIVE. (ii) PR #1443 — closes the last three falsifiers in `apr-cli-distill-train-v1`: TRAIN-007 + TRAIN-008 PARTIAL_ALGORITHM_LEVEL via existing tests (`pv validate` + `cli_commands::test_no_unregistered_commands`), and TRAIN-009 explicitly marked BLOCKER_FIXTURE_ABSENT pending the §35 real-training implementation. **All 9 TRAIN-* falsifiers now have explicit `algorithm_evidence` blocks** (8× PARTIAL + 1× BLOCKER); the distill contract has reached terminal-binding state — no further drift gaps remain. **MODEL-1 ship % nudges 88% → 89%** (wgpu silent-gibberish loophole now closed at the init boundary, symmetric to the CUDA `parity_gate` from §41); **MODEL-2 ship % nudges 56% → 57%** (last falsifier-binding gap closed for the distill contract; only remaining lever is §35 real-training implementation, multi-PR scope). Spec v2.88.0 → **v2.89.0**. Coverage tally 15+35 → **15+37** (+2 PARTIAL_ALGORITHM_LEVEL closed; TRAIN-009 explicitly blocked, not counted).
 **Atomic next action (v2.88.0):** **§43 — distill-train algorithm-binding + wgpu cosine helper for FALSIFY-CPU-GPU-005 part b (PRs #1438-#1440)** (see new §43 below). Today's session shipped 3 additional PRs across both ship tracks: (i) PR #1438 — FALSIFY-APR-DISTILL-TRAIN-005 PARTIAL_ALGORITHM_LEVEL via 2 unit tests (precompute byte-determinism, local + remote-stub branches); (ii) PR #1439 — FALSIFY-APR-DISTILL-TRAIN-006 PARTIAL_ALGORITHM_LEVEL via 2 unit tests (cache-resume idempotency, negative + positive halves); (iii) PR #1440 — `cpu_vs_gpu_cosine_similarity` helper at `infer/gguf_gpu_generate.rs` module scope + 3 fail-closed unit tests, lifting the cosine math out of `cuda::mod_parity_gate` so the future wgpu cosine gate can call it without a `--features cuda` build dependency. Two contract drifts closed (TRAIN-005 + TRAIN-006: tasks #195/#196 claimed PARTIAL_ALGORITHM_LEVEL on 2026-04-30 but YAML had no `algorithm_evidence` until today). **MODEL-2 ship % nudges 54% → 56%** (TRAIN-005/006 algorithm-bindings lock in the math invariants of the precompute/train idempotency contract); **MODEL-1 ship % nudges 87% → 88%** (cosine helper + 3 tests is infrastructure-ready for the part b wgpu single-step decode in a future PR). Spec v2.87.0 → **v2.88.0**. Coverage tally 15+33 → **15+35** (+2 PARTIAL_ALGORITHM_LEVEL closed). The underlying SHIP-007 GPU kernel fix and `apr distill --stage train` real-training implementation remain open per §40 + §35.
@@ -4466,6 +4467,84 @@ Unchanged from §29 because PR E did not land. Next-session agenda: do the §30.
 Per `feedback_fix_root_cause_never_route_around.md`: the §28 fix would have route-around'd a real bug because the named site (matmul kernel) is not where the divergence originates. The empirical refutation in §30 IS the work that protects the next attempt from shipping a no-op. This refutation is itself a coverage-incrementing artifact (it falsifies a hypothesis), even though no PARTIAL flips to DISCHARGED.
 
 The Toyota Way fix is to bisect upstream, not to flip the kernel call.
+
+## §46. v0.32.0 release-cut decision — HOLD, gated on SHIP-007 layer-0 attention bisection (2026-05-04)
+
+After §45 landed the 5/5 DISCHARGE milestone for `apr-cpu-vs-gpu-output-parity-v1`, the natural follow-up question is whether the 238 commits accumulated since v0.31.2 (2026-04-19) warrant a `cargo publish` cut today. This section records the audit, the verdict, the pre-flight artifacts shipped alongside the decision, and the explicit pre-conditions for the future cut.
+
+### 46.1 What's accumulated since v0.31.2
+
+| Headline | Source |
+|----------|--------|
+| **5/5 DISCHARGE** on `apr-cpu-vs-gpu-output-parity-v1` (first contract in SHIP-TWO program at terminal state) | §41 → §45, PRs #1427-#1442 + #1445 + #1446 |
+| `apr trace --save-tensor` end-to-end live | `apr-cli-trace-save-tensor-v1` v1.4.0 FUNCTIONAL, PRs #1405/#1408/#1413/#1414/#1417/#1419/#1422 |
+| HF FP16 oracle pinpoints SHIP-007 to layer-0 `attn_out` (cos 0.99999995 → 0.9966) | PRs #1423 + #1426 + memory `2026-05-03 SHIP-007 finding` |
+| Distillation training contract — 9/9 falsifier-bind | `apr-cli-distill-train-v1`, PRs #1438/#1439/#1443/#1444 |
+| MoE expert dispatch parallelized — 2× speedup | PR #1396, `qwen3-moe-forward-v1` v1.4.0 FUNCTIONAL |
+| APR file `mmap` in `load_tensor_f32` — unblocks `apr diff --values` on 7B | PR #1058 |
+| M32d numerical-parity bundle (Q/K RMSNorm + rope_theta + chat template) | PR #1228 |
+| 150+ contract algorithm-bind sweep across kernel/format/training/GPU/CLI families | tasks #197-#452, ≥80 PRs |
+
+### 46.2 Release-readiness gate audit
+
+| Gate | Status | Verdict |
+|---|---|---|
+| 238 commits since v0.31.2 | accumulated | ✅ enough body for a minor bump |
+| Headline milestone (5/5 DISCHARGE) | LIVE on main | ✅ shippable |
+| `[Unreleased]` CHANGELOG | filled (PR #1448) | ⏳ in flight |
+| README drift gate (`bash scripts/check_readme_claims.sh`) | currently RED on `main`, GREEN on PR #1448 | ⏳ in flight |
+| **SHIP-007 root cause (GPU forward)** | **PINPOINTED but UNFIXED** | ⛔ **BLOCKER** |
+| `feedback_post_publish_qa_required.md` (`cargo install --force` + `/dogfood` GO) | not yet run | ⛔ blocker (v0.31.1 was yanked for skipping this) |
+
+### 46.3 Why SHIP-007 is the load-bearing blocker
+
+The `apr-cpu-vs-gpu-output-parity-v1` 5/5 DISCHARGE proves that **silent** GPU gibberish is no longer possible — the jidoka armor (#1428/#1430/#1442) emits structured fallback logs and falls back to CPU on cosine < 0.99. That is shippable behaviour. But the headline of the v0.32.0 release would naturally read "5/5 DISCHARGE on apr-cpu-vs-gpu-output-parity-v1", which implies to a crates.io reader that the GPU correctness hole is **closed**. In reality, the GPU forward path on a 7B teacher still produces wrong tokens — the §41-§45 chain only contains the failure (visible + fail-closed). Per `feedback_fix_root_cause_never_route_around.md`, route-around-via-fallback is acceptable as a *temporary jidoka layer*, but it is muda to ship a release whose headline claims a fix that doesn't exist.
+
+The cleanest way out: bisect SHIP-007 to inside the layer-0 attention block (qkv/RoPE/softmax/V/O sub-stages) using `apr trace --save-tensor` + the HF FP16 oracle from #1423, fix the divergence at root, then promote the v0.32.0 headline to "GPU correctness restored on canonical 7B teacher" — which is honest.
+
+### 46.4 Pre-flight artifacts shipped alongside this decision
+
+| Artifact | What | Status |
+|----------|------|--------|
+| **CHANGELOG.md `[Unreleased]`** | Filled with full session body of work — §41-§45 jidoka chain, 5/5 DISCHARGE headline, `apr trace --save-tensor`, HF FP16 oracle, MoE 2× speedup, APR mmap, M32d numerical parity, 150+ contract sweep | PR #1448 |
+| **README drift gate repair** | 1096 → 1105 contracts; 79 → 80 CLI commands; `bash scripts/check_readme_claims.sh` 4/4 PASS | PR #1448 |
+| **§46 spec amendment** | This section (release-cut audit) | This commit |
+
+When SHIP-007 lands, the cut is mechanical: rename `[Unreleased]` → `[0.32.0] - <date>`, bump workspace version `0.31.2 → 0.32.0`, run `cargo install aprender --force` + `/dogfood`, tag, `cargo publish`.
+
+### 46.5 Pre-conditions for the v0.32.0 cut
+
+These are the explicit gates the v0.32.0 PR must satisfy. Each is a falsifiable check, not an opinion.
+
+1. **SHIP-007 layer-0 attention divergence FIXED.** Discharge condition: `apr trace --save-tensor` shows cos ≥ 0.999 at every sub-stage of layer 0 (qkv / rope / softmax / attn_out) on the canonical 7B teacher vs the HF FP16 oracle from PR #1423. (Today: cos = 0.9966 at attn_out — fails.)
+2. **PR #1448 merged.** CHANGELOG `[Unreleased]` populated; README drift gate GREEN on `main`.
+3. **Workspace version bumped.** `Cargo.toml` (root + apr-cli + aprender-* crates as required by APR-MONO) `0.31.2 → 0.32.0`. `## [0.32.0] - <date>` heading replaces `## [Unreleased]` in CHANGELOG.
+4. **Post-publish QA per `feedback_post_publish_qa_required.md`.** `cargo install aprender --force` + `/dogfood` GO verdict on canonical broken-GPU teacher (verifies the jidoka chain plus end-to-end correctness); this is the gate v0.31.1 skipped → yanked.
+5. **Drift gates GREEN.** `bash scripts/check_readme_claims.sh` 4/4 PASS, `pv validate contracts/` clean, `cargo deny check advisories` clean.
+
+### 46.6 Five Whys — why hold, why now, why structured
+
+1. **Why hold v0.32.0?** SHIP-007 is unfixed; releasing now would crates.io-ship a 7B GPU forward bug.
+2. **Why does that matter when the jidoka armor is live?** Armor contains the failure for the user (visible fallback log, correct CPU output) but the released binary is still arithmetically wrong on the GPU dispatch chain. Hiding that behind a "5/5 DISCHARGED" headline is route-around-via-narrative.
+3. **Why amend the spec instead of just deciding offline?** Per `feedback_full_problems_pmat_contracts.md`, every non-trivial decision in the SHIP-TWO program lives in this spec so future maintainers can read the audit. The §46 record + the §46.5 pre-conditions table are the contract for the v0.32.0 PR.
+4. **Why amend now instead of waiting until SHIP-007 lands?** Two reasons: (i) the §46.5 pre-condition table is *itself* the work — it pins the gates so the next cut doesn't drift to "looks ready, ship it" hand-wavy logic; (ii) PR #1448 already in flight needs to be referenced from the spec audit story.
+5. **Why a §46 (release decision) rather than extending §45 (DISCHARGE milestone)?** §45 is a contract-discharge artifact (5/5 DISCHARGED with live evidence). §46 is a release-cut audit (different concern, different vocabulary, different invariants). Keeping them separate matches the §40 → §41 (root-cause vs jidoka armor) split — different contracts, different reviewers.
+
+### 46.7 Net effects
+
+- Spec v2.90.0 → **v2.91.0** (release-cut audit recorded; pre-conditions pinned).
+- **MODEL-1 ship %**: unchanged at 91% (this amendment is metadata, not a falsifier flip).
+- **MODEL-2 ship %**: unchanged at 57% (same).
+- Coverage tally: unchanged (no PARTIAL → DISCHARGED in this cycle; #1448 fills CHANGELOG + drift gate but does not bind a falsifier).
+- Open follow-ups, ranked by ship-leverage:
+  - (a) **SHIP-007 layer-0 attention bisection** — single highest-leverage MODEL-1 work. Use `apr trace --save-tensor` (now FUNCTIONAL per §44) + the HF FP16 oracle script from #1423 to bisect inside layer 0 attention. Memory `2026-05-03 SHIP-007 finding` is the starting state.
+  - (b) **PR #1448 merge** — drift-gate green + CHANGELOG ready for the v0.32.0 rename. Already in flight.
+  - (c) **`apr distill --stage train` real-training implementation** (§35) — multi-PR scope, gates MODEL-2 from val_loss=9.38 toward the spec target.
+  - (d) **Stack v2 corpus** (multi-billion tokens, multi-hour download, operator-authorized) — long-pole for MODEL-2 capacity ceiling per memory `2026-04-27 4× corpus + 80K LR-budget falsification`.
+
+### 46.8 Spec amendment cadence preserved
+
+Six §-amendments in 2026-05-03/04 (§41 → §42 → §43 → §44 → §45 → §46). The cadence rule of "one §-amendment per ≥3-PR cycle OR per landmark milestone" holds: §46 records a landmark non-PR decision (the v0.32.0 hold), so it gets its own section even though it doesn't include a falsifier flip.
 
 ## §45. `apr-cpu-vs-gpu-output-parity-v1` 5/5 LIVE DISCHARGE milestone (2026-05-04)
 
