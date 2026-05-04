@@ -96,13 +96,13 @@ impl OwnedQuantizedModelCuda {
     ///   instantiates a CudaExecutor for device 0)
     #[allow(clippy::too_many_arguments)]
     pub fn forward_qwen3_moe_cuda(
-        &self,
+        &mut self,
         token_ids: &[u32],
         moe_layers: &[Qwen3MoeQuantizedLayer],
         num_experts: usize,
         num_experts_per_tok: usize,
         moe_intermediate: usize,
-        _data: &[u8],
+        data: &[u8],
     ) -> Result<Vec<f32>> {
         if token_ids.is_empty() {
             return Err(RealizarError::InvalidShape {
@@ -136,22 +136,191 @@ impl OwnedQuantizedModelCuda {
             });
         }
 
-        // M-GPU-MOE-1.0-redo: stub returns structured UnsupportedOperation
-        // pointing at the contract. Same M32b precedent as the v1 CPU
-        // sibling staging.
-        Err(RealizarError::UnsupportedOperation {
-            operation: "forward_qwen3_moe_cuda".to_string(),
-            reason: format!(
-                "M-GPU-MOE-1.0-redo stub on OwnedQuantizedModelCuda \
-                 (qwen3-moe-forward-gpu-v1 v1.1.0 option D, ACTIVE_ALGORITHM_LEVEL). \
-                 Stages M-GPU-MOE-1.1 (per-expert CUDA dispatch via self.executor) \
-                 and beyond are pending. Use OwnedQuantizedModel::forward_qwen3_moe \
-                 (CPU LAZY-FUSED-MATVEC) for now. \
-                 num_experts={num_experts}, num_experts_per_tok={num_experts_per_tok}, \
-                 moe_intermediate={moe_intermediate}, layers={}",
-                self.model.layers.len()
-            ),
-        })
+        // M-GPU-MOE-1.1.2 — full forward integration mirroring CPU sibling
+        // forward_qwen3_moe (forward/forward_qwen3_moe.rs) line-for-line.
+        // Only difference: per-layer FFN section routes through
+        // moe_ffn_forward_layer_cuda which dispatches matmuls to
+        // self.executor via the expert_swiglu_cuda helper.
+        //
+        // Attention path stays on CPU. Pattern matches existing
+        // forward_cuda method (CPU attention + CUDA matmul) on
+        // OwnedQuantizedModelCuda — established by v1.1.0 option D.
+
+        let hidden_dim = self.model.config.hidden_dim;
+        let intermediate = moe_intermediate;
+        let use_rmsnorm = self.model.config.constraints.uses_rmsnorm();
+
+        // 1. Token embedding (CPU)
+        let mut hidden = self.model.embed(token_ids);
+
+        // GH-278 absolute-position embedding (qwen3_moe doesn't use this,
+        // but mirror dense path for edge-config correctness).
+        if self.model.config.constraints.uses_absolute_positions() {
+            if let Some(ref pos_emb) = self.model.position_embedding {
+                for s in 0..token_ids.len() {
+                    let pos_start = s * hidden_dim;
+                    let pos_end = pos_start + hidden_dim;
+                    if pos_end <= pos_emb.len() {
+                        let h_start = s * hidden_dim;
+                        for i in 0..hidden_dim {
+                            hidden[h_start + i] += pos_emb[pos_start + i];
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Per-layer
+        for (layer_idx, layer) in self.model.layers.iter().enumerate() {
+            // 2a. Attention norm
+            let normed = if use_rmsnorm {
+                crate::gguf::ops::rms_norm(&hidden, &layer.attn_norm_weight, self.model.config.eps)
+            } else {
+                crate::gguf::ops::layer_norm(
+                    &hidden,
+                    &layer.attn_norm_weight,
+                    layer.attn_norm_bias.as_deref(),
+                    self.model.config.eps,
+                )
+            };
+
+            // 2b. QKV projection (CPU via self.model)
+            let qkv_dim = layer.qkv_weight.out_dim();
+            let q_dim = layer.qkv_weight.q_dim_for_config(
+                self.model.config.num_heads,
+                self.model.config.num_kv_heads,
+                self.model.config.hidden_dim,
+                self.model.config.head_dim(),
+            );
+            let k_dim = layer.qkv_weight.k_dim_for_config(
+                self.model.config.num_heads,
+                self.model.config.num_kv_heads,
+                self.model.config.hidden_dim,
+                self.model.config.head_dim(),
+            );
+            let v_dim = layer.qkv_weight.v_dim_for_config(
+                self.model.config.num_heads,
+                self.model.config.num_kv_heads,
+                self.model.config.hidden_dim,
+                self.model.config.head_dim(),
+            );
+            let mut qkv = self.model.qkv_matmul(&normed, &layer.qkv_weight)?;
+            if let Some(ref bias) = layer.qkv_bias {
+                crate::gguf::ops::add_bias(&mut qkv, bias);
+            }
+
+            // 2c. Per-position per-head Q/K RMSNorm + RoPE (M32d Step 5/5b)
+            let seq_len = token_ids.len();
+            let mut q_all = Vec::with_capacity(seq_len * q_dim);
+            let mut k_all = Vec::with_capacity(seq_len * k_dim);
+            let mut v_all = Vec::with_capacity(seq_len * v_dim);
+            for s in 0..seq_len {
+                let qkv_start = s * qkv_dim;
+                let mut q = qkv[qkv_start..qkv_start + q_dim].to_vec();
+                let mut k = qkv[qkv_start + q_dim..qkv_start + q_dim + k_dim].to_vec();
+                let v = &qkv[qkv_start + q_dim + k_dim..qkv_start + q_dim + k_dim + v_dim];
+
+                if let Some(ref q_norm) = layer.attn_q_norm_weight {
+                    crate::gguf::ops::apply_per_head_rms_norm(
+                        &mut q,
+                        q_norm,
+                        self.model.config.num_heads,
+                        self.model.config.eps,
+                    );
+                }
+                if let Some(ref k_norm) = layer.attn_k_norm_weight {
+                    crate::gguf::ops::apply_per_head_rms_norm(
+                        &mut k,
+                        k_norm,
+                        self.model.config.num_kv_heads,
+                        self.model.config.eps,
+                    );
+                }
+
+                if self.model.config.constraints.uses_rope() {
+                    self.model.apply_rope(&mut q, s, self.model.config.num_heads);
+                    self.model.apply_rope(&mut k, s, self.model.config.num_kv_heads);
+                }
+                q_all.extend_from_slice(&q);
+                k_all.extend_from_slice(&k);
+                v_all.extend_from_slice(v);
+            }
+
+            // 2d. Causal attention + output projection (CPU)
+            let attn_out = self.model.causal_attention(&q_all, &k_all, &v_all, seq_len);
+            let mut attn_output = self.model.fused_matmul(&attn_out, &layer.attn_output_weight)?;
+            if let Some(ref bias) = layer.attn_output_bias {
+                crate::gguf::ops::add_bias(&mut attn_output, bias);
+            }
+
+            // 2e. Residual
+            for i in 0..hidden.len() {
+                hidden[i] += attn_output[i];
+            }
+
+            // 2f. Pre-FFN norm (CPU)
+            let ffn_input = if let Some(ref ffn_norm) = layer.ffn_norm_weight {
+                if use_rmsnorm {
+                    crate::gguf::ops::rms_norm(&hidden, ffn_norm, self.model.config.eps)
+                } else {
+                    crate::gguf::ops::layer_norm(
+                        &hidden,
+                        ffn_norm,
+                        layer.ffn_norm_bias.as_deref(),
+                        self.model.config.eps,
+                    )
+                }
+            } else {
+                hidden.clone()
+            };
+
+            // 2g. **MoE FFN on GPU** — only piece that differs from CPU.
+            // Per-token dispatch through moe_ffn_forward_layer_cuda which
+            // routes per-expert matmuls to self.executor.
+            let mut ffn_output = vec![0.0f32; seq_len * hidden_dim];
+            for s in 0..seq_len {
+                let pos_in = &ffn_input[s * hidden_dim..(s + 1) * hidden_dim];
+                let pos_out = moe_ffn_forward_layer_cuda(
+                    &mut self.executor,
+                    pos_in,
+                    &moe_layers[layer_idx],
+                    num_experts,
+                    num_experts_per_tok,
+                    intermediate,
+                    hidden_dim,
+                    data,
+                )?;
+                ffn_output[s * hidden_dim..(s + 1) * hidden_dim].copy_from_slice(&pos_out);
+            }
+
+            // 2h. Residual
+            for i in 0..hidden.len() {
+                hidden[i] += ffn_output[i];
+            }
+        }
+
+        // 3. Final layer norm (CPU)
+        let normed = if use_rmsnorm {
+            crate::gguf::ops::rms_norm(&hidden, &self.model.output_norm_weight, self.model.config.eps)
+        } else {
+            crate::gguf::ops::layer_norm(
+                &hidden,
+                &self.model.output_norm_weight,
+                self.model.output_norm_bias.as_deref(),
+                self.model.config.eps,
+            )
+        };
+
+        // 4. LM head — last token only (CPU; existing forward_cuda also
+        // does LM head on CPU)
+        let seq_len = token_ids.len();
+        let last_start = (seq_len - 1) * hidden_dim;
+        let last_hidden = &normed[last_start..last_start + hidden_dim];
+        let mut logits = self.model.fused_matmul(last_hidden, &self.model.lm_head_weight)?;
+        if let Some(ref bias) = self.model.lm_head_bias {
+            crate::gguf::ops::add_bias(&mut logits, bias);
+        }
+        Ok(logits)
     }
 }
 
