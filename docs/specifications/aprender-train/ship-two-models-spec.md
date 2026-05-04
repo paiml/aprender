@@ -1,7 +1,8 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.91.0
+**Version:** 2.92.0
+**Atomic next action (v2.92.0):** **§47 — SHIP-007 layer-0 attention bisection cascade STARTED (PRs #1450 + #1451 + #1452)** (see new §47 below). Three more PRs ship the §46.7(a) follow-up scaffold: (i) PR #1450 — new contract `trace-attn-sub-stages-v1.yaml` v1.0.0 PROPOSED → v1.1.0 PROPOSED (Toyota Way correction within the same branch). v1.0.0 originally claimed 5 new `SaveTensorStage` variants; live inspection of `inference_trace::save_tensor_stage` showed 3 already exist (`QPostRope`, `KPostRope`, `Attention`) — only **2 are truly new** (`AttnScores`, `AttnSoftmax`). v1.1.0 corrected scope to those 2 + documented the 9-stage `bisection_chain_layer_0` equation across parent + new stages. (ii) PR #1451 — `SaveTensorStage` enum gains the 2 new variants in canonical computation order (`KPostRope → AttnScores → AttnSoftmax → Attention`); 5 new tests for FALSIFY-ATTN-SUB-001 (round-trip, ordering, parser-list); 167/167 inference_trace tests PASS; `cargo check --workspace --lib` clean. (iii) PR #1452 — research evidence note documenting a **pre-existing capture gap discovered while authoring the wire-plan**: `QPostRope` + `KPostRope` are in the parent enum but have NO `emit()` calls in `forward_traced_with_plan`. The parent contract `apr-cli-trace-save-tensor-v1.yaml` v1.4.0 (FUNCTIONAL) silently overstates coverage for those 2 stages. The next-cycle FALSIFY-ATTN-SUB-002 PR will wire **4 stages, not 2**, closing this drift as a side effect. **MODEL-1 ship % unchanged at 91%** (cascade is scaffold; ship % moves when a falsifier flips DISCHARGED, expected at FALSIFY-ATTN-SUB-004 LIVE bisection in a future cycle). **MODEL-2 ship % unchanged at 57%**. Spec v2.91.0 → **v2.92.0**. Coverage tally unchanged this cycle (5 falsifier slots PARTIAL_ALGORITHM_LEVEL added to a NEW contract — these increment coverage when the contract YAML lands on main, which gates on PR #1450 merge).
 **Atomic next action (v2.91.0):** **§46 — v0.32.0 release-cut decision: HOLD, gated on SHIP-007 layer-0 attention bisection (PR #1448 in flight)** (see new §46 below). After landing the v2.90.0 §45 milestone (PR #1447 merged), the next decision was whether the 238-commit body of work since v0.31.2 warrants a `cargo publish` cut. **Verdict: HOLD.** The release-readiness audit found exactly one load-bearing blocker — SHIP-007 layer-0 attention divergence is empirically pinpointed (cos=0.99999995 attn_norm → 0.9966 attn_out per memory `2026-05-03 SHIP-007 finding`) but **not yet fixed**, so cutting v0.32.0 today would crates.io-ship a binary where `apr run` on a 7B GPU teacher still emits gibberish unless the user passes `--no-gpu`. The §41-§45 jidoka armor makes the failure visible + fail-closed (which is shippable behaviour), but a user-facing `## [0.32.0]` headline that reads "5/5 DISCHARGE on apr-cpu-vs-gpu-output-parity-v1" implies the GPU correctness hole is closed when in truth it is only contained. Two pre-flight artifacts shipped along with this decision: (i) PR #1448 fills the empty `[Unreleased]` CHANGELOG section with the full session body of work; (ii) PR #1448 also repairs the `bash scripts/check_readme_claims.sh` drift gate which was FAILING on `main` (1096→1105 contracts, 79→80 CLI commands). Per `feedback_post_publish_qa_required.md`, the next cut also requires `cargo install aprender --force` + `/dogfood` GO verdict — v0.31.1 was yanked for skipping that gate. Spec v2.90.0 → **v2.91.0**. Coverage tally unchanged (no falsifiers flipped this cycle; this amendment is a release-decision audit record).
 **Atomic next action (v2.90.0):** **§45 — `apr-cpu-vs-gpu-output-parity-v1` 5/5 LIVE DISCHARGE milestone (PRs #1445 + #1446)** (see new §45 below). Two live smokes on canonical Qwen2.5-Coder-7B teacher (RTX 4090, binary built from main @ 817ec0553) closed every falsifier in the parity contract: (i) PR #1445 — default-mode `apr run` smoke fired all three jidoka tags in stderr (CUDA cos=-0.005 + argmax 8127≠334; `Backend: wgpu (Vulkan)`; wgpu cos=0.766 < 0.99) and produced correct CPU output "2 + 2 equals 4." → FALSIFY-CPU-GPU-005 PARTIAL_ALGORITHM_LEVEL → DISCHARGED. (ii) PR #1446 — `--no-gpu` smoke produced 9.02s CPU-only run with zero GPU log lines + correct output → joined #1445 evidence to flip FALSIFY-CPU-GPU-001/002/003 PARTIAL → DISCHARGED + FALSIFY-CPU-GPU-004 FUNCTIONAL → DISCHARGED. **All 5/5 falsifiers in apr-cpu-vs-gpu-output-parity-v1 are now DISCHARGED**; the contract is COMPLETE. Coverage tally: 15+37 → **20+32** (+5 in this 2-PR cycle, the largest single-cycle coverage flip of the SHIP-TWO program). MODEL-1 ship % nudges 89% → **91%** (the silent-gibberish loophole that v5/§40 originated is now both implemented closed AND end-to-end live-verified on the canonical broken-GPU model). The §41 → §43 → §44 → §45 jidoka chain is contract-complete; only the underlying SHIP-007 GPU kernel root-cause fix per §40 remains for full GPU-shipability of MODEL-1. Spec v2.89.0 → **v2.90.0**. Contract apr-cpu-vs-gpu-output-parity-v1 v1.3.0 → v1.5.0 ACTIVE.
 **Atomic next action (v2.89.0):** **§44 — FALSIFY-CPU-GPU-005 part b implementation + distill-train 9/9 sweep close (PRs #1442 + #1443)** (see new §44 below). Today's continuation cycle landed two more PRs across both ship tracks: (i) PR #1442 — FALSIFY-CPU-GPU-005 part b live implementation: ~70 LOC inline at `try_apr_wgpu_inference` running a CPU-vs-wgpu cosine probe on the BOS token before the autoregressive loop, with a separate tiny probe_kv_caches (max_seq=2) so the real cache stays uncontaminated; emits `WGPU_FALLBACK_LOG_PREFIX` and returns None on cosine < 0.99 OR any probe error (fail-closed). Contract `apr-cpu-vs-gpu-output-parity-v1` v1.2.0 → v1.3.0 ACTIVE. (ii) PR #1443 — closes the last three falsifiers in `apr-cli-distill-train-v1`: TRAIN-007 + TRAIN-008 PARTIAL_ALGORITHM_LEVEL via existing tests (`pv validate` + `cli_commands::test_no_unregistered_commands`), and TRAIN-009 explicitly marked BLOCKER_FIXTURE_ABSENT pending the §35 real-training implementation. **All 9 TRAIN-* falsifiers now have explicit `algorithm_evidence` blocks** (8× PARTIAL + 1× BLOCKER); the distill contract has reached terminal-binding state — no further drift gaps remain. **MODEL-1 ship % nudges 88% → 89%** (wgpu silent-gibberish loophole now closed at the init boundary, symmetric to the CUDA `parity_gate` from §41); **MODEL-2 ship % nudges 56% → 57%** (last falsifier-binding gap closed for the distill contract; only remaining lever is §35 real-training implementation, multi-PR scope). Spec v2.88.0 → **v2.89.0**. Coverage tally 15+35 → **15+37** (+2 PARTIAL_ALGORITHM_LEVEL closed; TRAIN-009 explicitly blocked, not counted).
@@ -4467,6 +4468,120 @@ Unchanged from §29 because PR E did not land. Next-session agenda: do the §30.
 Per `feedback_fix_root_cause_never_route_around.md`: the §28 fix would have route-around'd a real bug because the named site (matmul kernel) is not where the divergence originates. The empirical refutation in §30 IS the work that protects the next attempt from shipping a no-op. This refutation is itself a coverage-incrementing artifact (it falsifies a hypothesis), even though no PARTIAL flips to DISCHARGED.
 
 The Toyota Way fix is to bisect upstream, not to flip the kernel call.
+
+## §47. SHIP-007 layer-0 attention bisection cascade STARTED (2026-05-04)
+
+After §46 declared the v0.32.0 cut HOLD-gated on SHIP-007 layer-0 attention, the §46.7(a) follow-up cascade kicked off the same day with three PRs (#1450 + #1451 + #1452). This section records what landed, the Toyota Way correction caught mid-cascade, and the wire-plan for the next cycle's implementation PR.
+
+### 47.1 Cascade roadmap
+
+The full SHIP-007 layer-0 attention bisection requires this PR sequence:
+
+| # | PR | What | Discharge status |
+|---|----|------|-------|
+| 1 | #1450 | Contract `trace-attn-sub-stages-v1.yaml` v1.1.0 PROPOSED | 5 falsifiers algorithm-bound (4× PARTIAL + 1× BLOCKER) |
+| 2 | #1451 | Enum extension: 2 new `SaveTensorStage` variants | FALSIFY-ATTN-SUB-001 PARTIAL_ALGORITHM_LEVEL |
+| 3 | #1452 | Research evidence note (pre-existing capture gap) | No falsifier flip; documentation only |
+| 4 | (next) | `forward_traced_with_plan` wires 4 sub-stages | FALSIFY-ATTN-SUB-002 algorithm-bind + drift fix |
+| 5 | (next) | `apr diff --values` recognizes new stages | FALSIFY-ATTN-SUB-003 |
+| 6 | (next) | HF FP16 oracle script extension | unblocks FALSIFY-ATTN-SUB-004 |
+| 7 | (next) | Live RTX 4090 bisection on canonical 7B teacher | FALSIFY-ATTN-SUB-004 → DISCHARGED |
+| 8 | (next) | SHIP-007 root-cause fix at the bisected sub-stage | unblocks MODEL-1 GPU shipability |
+
+§47 captures the first 3 (scaffold). §48+ will capture later steps as they land.
+
+### 47.2 What landed
+
+**PR #1450** — Contract authoring:
+
+- Initial v1.0.0 claimed 5 new variants needed: `QPostRope`, `KPostRope`, `AttnScores`, `AttnSoftmax`, `AttnVOut`.
+- Mid-cascade live source inspection (per `feedback_no_guessing.md`) showed `QPostRope`, `KPostRope`, and `Attention` (the latter semantically equivalent to my proposed "AttnVOut") **already exist** in the parent `SaveTensorStage` enum.
+- Toyota Way correction within same branch: v1.0.0 → v1.1.0, scope reduced to 2 truly-new variants (`AttnScores` between Q·Kᵀ and softmax; `AttnSoftmax` between softmax-mask and ·V).
+- v1.1.0 also added the `bisection_chain_layer_0` equation pinning the **9-element cosine sequence** that FALSIFY-ATTN-SUB-004 will measure on RTX 4090.
+
+**PR #1451** — Enum extension:
+
+- Adds `AttnScores` + `AttnSoftmax` to `SaveTensorStage` in canonical computation order (`KPostRope → AttnScores → AttnSoftmax → Attention`).
+- Updates `ALL` (18 → 20), `canonical_name`, `FromStr`, plus `is_per_layer_count` test (16+2 per-layer + 2 whole-model = 20).
+- 5 new tests for FALSIFY-ATTN-SUB-001: round-trip for each new name, full 7-stage attention block ordering, 2-stage parser-list, 9-stage full layer-0 chain parser-list.
+- `cargo test -p aprender-serve --lib inference_trace` 167/167 PASS; `cargo check --workspace --lib` clean.
+
+**PR #1452** — Research evidence:
+
+- Authored while inspecting `forward_traced_with_plan` to scope FALSIFY-ATTN-SUB-002.
+- Discovered: `QPostRope` + `KPostRope` are in the enum but have **no `emit()` call**. Their tensors `q_all` + `k_all` are computed at lines 130-131 of `apr_transformer/inference.rs` but never captured.
+- The parent contract `apr-cli-trace-save-tensor-v1.yaml` v1.4.0 (FUNCTIONAL) silently overstates coverage for those 2 stages.
+- Records the wire-plan that the next-cycle FALSIFY-ATTN-SUB-002 PR will close: 4 stages (the 2 new + 2 pre-existing gaps), not 2.
+
+### 47.3 The Toyota Way correction in detail
+
+v1.0.0 of `trace-attn-sub-stages-v1.yaml` was the day's first defect. Caught on the next iteration, mid-cascade, before any implementation PR depended on the wrong scope.
+
+| Aspect | v1.0.0 (defective) | v1.1.0 (corrected) |
+|---|---|---|
+| New variants claimed | 5 | 2 |
+| Implementation PR LOC estimate | ~150 | ~60 (40% reduction) |
+| Pre-existing gap acknowledged | No | Yes (`QPostRope`/`KPostRope` are in enum but unwired) |
+| `bisection_chain_layer_0` equation | Vague | 9-element cosine sequence pinned |
+
+The cost-of-defect was paid at the contract layer (cheapest place). Correction was a YAML-only re-author, no code rolled back.
+
+Per `feedback_no_guessing.md`: "use pmat query / apr trace / contracts, not speculation". The v1.0.0 defect was authored from the parent contract's prose description without checking the live enum. v1.1.0 fixed that.
+
+### 47.4 Pre-existing parent contract drift
+
+`apr-cli-trace-save-tensor-v1.yaml` v1.4.0 is FUNCTIONAL. Its `cli_signature` enumerates 18 stages including `QPostRope` + `KPostRope`. Its `forward_traced_with_plan` claim is that all 18 stages emit at the documented capture points.
+
+**Empirically false.** `forward_traced_with_plan` has no `emit(QPostRope, ...)` or `emit(KPostRope, ...)` call. A user passing `--save-tensor q_post_rope` gets a clean exit with no file written — silent failure.
+
+This is a parent-contract drift, not a regression introduced by the SHIP-007 cascade. The cascade discovered it; the next-cycle FALSIFY-ATTN-SUB-002 PR will close it as a free side-effect by wiring the 2 missing stages alongside the 2 new ones. Per `feedback_toyota_way_all_defects.md`: all defects are mine. The parent contract bump (v1.4.0 → v1.5.0) will be done in the same PR that closes the wires.
+
+### 47.5 Net effects
+
+- Spec v2.91.0 → **v2.92.0** (cascade-started record).
+- Contract `trace-attn-sub-stages-v1.yaml` v1.0.0 → v1.1.0 PROPOSED (PR #1450 — pending merge).
+- `SaveTensorStage` enum: 18 → 20 variants (PR #1451 — pending merge).
+- 5 new falsifiers algorithm-bound (4× PARTIAL_ALGORITHM_LEVEL + 1× BLOCKER_FIXTURE_ABSENT) once #1450 merges.
+- **MODEL-1 ship %**: unchanged at 91% (scaffold; ship % moves at FALSIFY-ATTN-SUB-004 LIVE DISCHARGE in a future cycle).
+- **MODEL-2 ship %**: unchanged at 57%.
+- Coverage tally: unchanged this cycle (the 5 new PARTIAL_ALGORITHM_LEVEL increments will land when PR #1450 lands the YAML).
+
+### 47.6 Open follow-ups (next-cycle priorities)
+
+In ranked-leverage order:
+
+1. **FALSIFY-ATTN-SUB-002 implementation PR** — wires 4 stages (`QPostRope`, `KPostRope`, `AttnScores`, `AttnSoftmax`) into `forward_traced_with_plan`. Closes the parent-contract drift as a side-effect. Per the wire-plan in `evidence/ship-007-layer0-attn-bisection-2026-05-04/forward-traced-research.md`: insertion points are post line 133 for Q/K post-rope; inside head loop lines 152/160 for scores/softmax with a per-head accumulator. Expected ~60 LOC + 4-5 unit tests + 1 backward-compat test.
+
+2. **FALSIFY-ATTN-SUB-003 — `apr diff --values` recognition** — generic APRT path already exists; verify the 2 new stage suffixes load + diff cleanly. Likely 1 test + 0 LOC change if the loader is per-stage-agnostic.
+
+3. **HF FP16 oracle extension** — extend `scripts/ship-007-layer0-oracle/` (PR #1423) to capture `attn_scores` + `attn_softmax` reference tensors. Pre-condition for FALSIFY-ATTN-SUB-004 LIVE discharge.
+
+4. **FALSIFY-ATTN-SUB-004 LIVE bisection** — `apr diff` on the 9-stage cosine sequence on RTX 4090. Identifies the SHIP-007 sub-stage. **This is the load-bearing predicate** that converts pinpoint-to-bisected-sub-stage. Expected to flip 1 sub-stage from "correct" to "wrong" — likely the QkvMatmul→QPostRope transition (since memory `2026-05-03 SHIP-007 finding` already pins divergence inside attention block).
+
+5. **SHIP-007 root-cause fix** — once SUB-004 names the bug-bearing sub-stage, the fix PR scopes to that one sub-stage's algorithm. Expected 100-300 LOC.
+
+After step 5, MODEL-1 ship % moves 91% → 95%+ pending live `apr run` correctness on default (GPU) path.
+
+### 47.7 Five Whys — why amend after only 3 PRs
+
+1. **Why amend now (3 PRs) and not after 5?**
+   The §41-§46 cadence rule was "one amendment per ≥3-PR cycle". Today's 3 PRs hit the threshold exactly. Holding for more would muddy the audit story (the 5-step bisection cascade is a single conceptual unit and should be split into start-state and discharge-state amendments).
+
+2. **Why split into §47 (cascade started) and a future §48 (cascade discharged)?**
+   The Toyota Way correction (v1.0.0 → v1.1.0) is a fact worth pinning. If §47 waited for cascade discharge, the audit would lose the mid-cascade course-correction event.
+
+3. **Why pin the parent contract drift in §47 rather than amend `apr-cli-trace-save-tensor-v1.yaml` directly?**
+   The parent contract is on FUNCTIONAL; bumping it is a minor revision. §47 records the drift for posterity; the actual bump happens in the next-cycle implementation PR that closes the drift as a side-effect.
+
+4. **Why not include FALSIFY-ATTN-SUB-002 implementation in this cycle?**
+   Single-piece flow (Toyota Way). Adding a 5th PR to a 4-PR train slows merge throughput. The implementation requires a small refactor of the score/softmax accumulator loop in `inference.rs` — better landed cleanly off main once #1451 merges.
+
+5. **Why not also amend `apr-cli-trace-save-tensor-v1.yaml` to add `q_post_rope`/`k_post_rope` evidence?**
+   The drift is already pinned in §47 + the research evidence file. Bumping the parent contract requires either (a) the wire fix landing first (FUNCTIONAL evidence), or (b) PROPOSED→ACTIVE downgrade (which loses the FUNCTIONAL claim entirely). Cleaner to bump in the next-cycle PR that ships the wire.
+
+### 47.8 Spec amendment cadence preserved
+
+Seven §-amendments since 2026-05-03 (§41 → §42 → §43 → §44 → §45 → §46 → §47). Each ≥1-PR cycle, each preserving the audit story for a future maintainer. The cadence rule of "one amendment per ≥3-PR cycle OR per landmark milestone" continues to hold: §47 records a 3-PR cycle scaffold milestone.
 
 ## §46. v0.32.0 release-cut decision — HOLD, gated on SHIP-007 layer-0 attention bisection (2026-05-04)
 
