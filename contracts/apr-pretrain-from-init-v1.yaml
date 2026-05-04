@@ -1,8 +1,20 @@
 metadata:
   kind: schema
-  version: 1.0.0
-  status: PROPOSED
+  version: 1.1.0
+  status: PARTIAL_ALGORITHM_LEVEL
   created: '2026-05-04'
+  updated: '2026-05-04'
+  changelog:
+    - "1.1.0 (2026-05-04): Algorithm-level binding via §49 step 4 wire-up.
+       Clap field added in extended_commands.rs; `validate_init_apr_path()`
+       in pretrain.rs binds FALSIFY-003 (missing-file) + -004 (invalid-magic)
+       at PARTIAL level. `pretrain::tests::pretrain_init_*` (7 tests) bind
+       FALSIFY-001 (clap surface), -002 (regression-free absent), -003,
+       -004, plus the §49-step-5 partial-state guard (valid APR returns
+       'not yet wired' rather than silent random-init). Status PROPOSED →
+       PARTIAL_ALGORITHM_LEVEL. FUNCTIONAL gated on §49 step 5 (weight
+       load + arch match); DISCHARGED gated on LIVE 500-step fine-tune
+       producing val_loss < 9.38 (FALSIFY-006)."
   author: PAIML Engineering
   registry: true
   references:
