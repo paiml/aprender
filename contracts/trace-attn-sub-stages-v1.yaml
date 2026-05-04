@@ -1,6 +1,6 @@
 metadata:
   id: C-TRACE-ATTN-SUB-STAGES
-  version: 1.1.0
+  version: 1.2.0
   created: '2026-05-04'
   author: PAIML Engineering
   kind: pattern
@@ -8,6 +8,16 @@ metadata:
   description: |
     Sub-attention bisection plan for `apr trace --save-tensor` —
     SHIP-007 layer-0 attention divergence localization.
+
+    v1.2.0 (2026-05-04): PROPOSED. Function-name drift fix.
+    SUB-003 algorithm_evidence.function_names previously listed
+    `load_tensor_apr_aprt`, which does not exist. The actual wired
+    functions in `crates/apr-cli/src/commands/diff_05_aprt_stage.rs`
+    are `is_aprt_stage_file`, `compute_aprt_stage_stats`, and
+    `run_aprt_stage_diff`. PR #1456's drift-prevention test
+    `falsify_attn_sub_003_new_stages_per_stage_agnostic` exercises
+    those real functions; this version aligns the contract with the
+    real symbols.
 
     v1.1.0 (2026-05-04): PROPOSED. Toyota Way correction of v1.0.0.
 
@@ -216,13 +226,24 @@ falsification_tests:
   status: PARTIAL_ALGORITHM_LEVEL
   algorithm_evidence:
     file_paths:
+      - crates/apr-cli/src/commands/diff_05_aprt_stage.rs
       - crates/apr-cli/src/commands/diff.rs
     function_names:
-      - load_tensor_apr_aprt
+      - is_aprt_stage_file
+      - compute_aprt_stage_stats
+      - run_aprt_stage_diff
     invariants_enforced:
       - 'Existing APRT recognition path generalizes to the 2 new stage IDs without per-stage hardcoding'
+      - 'falsify_attn_sub_003_new_stages_per_stage_agnostic test pins the per-stage-agnostic loader for layer_0_attn_scores.aprt + layer_0_attn_softmax.aprt at realistic shape 28*7*7=1372'
+      - 'falsify_attn_sub_003_cosine_detects_softmax_divergence pins cosine-sensitivity floor (mixed-perturbation < 0.999) for the FALSIFY-ATTN-SUB-004 LIVE bisection predicate'
     notes: |
-      Algorithm-level evidence pinned today.
+      Algorithm-level evidence: PR #1456 added 2 drift-prevention tests in
+      `aprt_stage_diff_tests` mod that exercise the real wired functions
+      (`is_aprt_stage_file` + `compute_aprt_stage_stats` + `run_aprt_stage_diff`)
+      with filenames `layer_0_attn_scores.aprt` + `layer_0_attn_softmax.aprt`.
+      0 LOC production change required — the loader is genuinely per-stage-
+      agnostic by construction (stage names are encoded only in the OUTPUT
+      FILENAME, not in the APRT binary content).
 
 - id: FALSIFY-ATTN-SUB-004
   rule: 'Bisection narrows SHIP-007 layer-0 divergence to ONE specific adjacent stage pair'
