@@ -24,12 +24,53 @@ use crate::train::pretrain::{CheckpointFn, EpochArtifact, StepFn, ValFn};
 use crate::train::transformer_trainer::{LMBatch, TransformerTrainConfig, TransformerTrainer};
 use crate::transformer::{ModelArchitecture, TransformerConfig};
 use std::cell::RefCell;
+use std::collections::BTreeMap;
+use std::path::Path;
 use std::rc::Rc;
 
 /// Shared mutable ownership of the `TransformerTrainer` — both
 /// `RealStepFn` (training steps) and `RealValFn` (forward-only
 /// validation) clone this `Rc`.
 pub type SharedTrainer = Rc<RefCell<TransformerTrainer>>;
+
+/// Load tensors from an APR file as the read-half of `apr pretrain --init`.
+///
+/// Per `apr-pretrain-arch-polymorphic-v1` §init_load_semantics (PR #1473),
+/// the loader is REUSED, not reimplemented — this function is a thin wrapper
+/// over `aprender::format::converter::convert_report::load_model_tensors`,
+/// which is the same machinery `apr export` and `apr inspect` use. No
+/// duplicate APR parser; one source of truth.
+///
+/// Returns a map of `tensor_name -> (flat_f32_data, shape)`. The HF naming
+/// convention is preserved (e.g., `model.embed_tokens.weight`); reconciling
+/// against the trainer's parameter names is step 5f.3 (the population step).
+///
+/// Discharges from `apr-pretrain-arch-polymorphic-v1`:
+///   - §init_load_semantics invariant: "Loader is reused, not reimplemented"
+///   - FALSIFY-006 (init_loss < 6.0) at READ-COMPILE-BIND level: this
+///     function is the read half. Full FALSIFY-006 discharge requires
+///     5f.3 (population) + 5g (LIVE 500-step fine-tune).
+///
+/// Spec: SPEC-SHIP-TWO-001 §50.4 step 5f.2.
+///
+/// # Errors
+///
+/// Returns Err if the APR file:
+/// - Does not exist (filesystem I/O error)
+/// - Has invalid magic bytes (not APR\\0 or APRN)
+/// - Has a corrupted tensor index
+/// - Contains tensors with unsupported dtype (non-F32)
+pub fn load_init_tensors_from_apr(
+    path: impl AsRef<Path>,
+) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>, String> {
+    let path_ref = path.as_ref();
+    aprender::format::converter::load_model_tensors(path_ref).map_err(|e| {
+        format!(
+            "FALSIFY-APR-PRETRAIN-INIT-006: failed to load init tensors from APR file {}: {e}",
+            path_ref.display()
+        )
+    })
+}
 
 /// Build a `TransformerConfig` field-for-field from `Llama370MConfig::*`
 /// constants (the contract-frozen MODEL-2 370M architecture).
@@ -224,6 +265,51 @@ pub fn build_shared_trainer(lr: f32, seq_length: usize, seed: u64) -> SharedTrai
 mod tests {
     use super::*;
     use crate::train::transformer_trainer::LMBatch;
+
+    /// FALSIFY-APR-PRETRAIN-INIT-006 (read-half) — load_init_tensors_from_apr
+    /// returns Err with a clear message naming the falsifier when the path
+    /// does not exist.
+    ///
+    /// Spec: SPEC-SHIP-TWO-001 §50.4 step 5f.2.
+    #[test]
+    fn load_init_tensors_missing_file_errors_with_falsifier_id() {
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let missing = tmp.path().join("does-not-exist.apr");
+        let err = load_init_tensors_from_apr(&missing)
+            .expect_err("missing init APR file MUST fail-fast");
+        assert!(
+            err.contains("FALSIFY-APR-PRETRAIN-INIT-006"),
+            "error must cite falsifier id (auditability): {err}"
+        );
+        assert!(
+            err.contains("does-not-exist.apr"),
+            "error must name the missing path (operator-experience): {err}"
+        );
+    }
+
+    /// FALSIFY-APR-PRETRAIN-INIT-006 (read-half) — function exists with the
+    /// right signature: `Path -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>>`.
+    /// Discharges the COMPILE-BIND level claim. Live empirical correctness
+    /// requires step 5g (operator-runnable LIVE fine-tune).
+    ///
+    /// Drift-prevention: this test catches a future refactor that changes
+    /// the return type or signature, which would break the §50.4 step 5f.3
+    /// follow-up that reconciles the BTreeMap against trainer parameters.
+    #[test]
+    fn load_init_tensors_signature_compile_bind() {
+        // Verify the function signature compile-binds: takes a Path-like,
+        // returns the right Result type. This is a compile-time check —
+        // if the signature drifts, this test stops compiling.
+        fn _check_signature<F>(_f: F)
+        where
+            F: Fn(
+                &Path,
+            )
+                -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>, String>,
+        {
+        }
+        _check_signature(|p| load_init_tensors_from_apr(p));
+    }
 
     #[test]
     fn transformer_config_matches_llama_370m_constants() {
