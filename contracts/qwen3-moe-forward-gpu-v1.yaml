@@ -1,9 +1,111 @@
 metadata:
-  version: 1.2.0
+  version: 1.3.0
   kind: kernel
   created: '2026-05-04'
   author: PAIML Engineering
   amendment_history:
+    - version: 1.3.0
+      date: '2026-05-04'
+      kind: amendment
+      title: 'M-GPU-MOE-1.3 — preload_weights_gpu MoE-awareness fix (CudaExecutor::build_indexed_weights)'
+      description: |
+        Records the discovery + fix-architecture decision for the
+        live-dogfood finding 2026-05-04: the M-GPU-MOE-1.2 heavy
+        `qwen3_moe_gpu_parity` test (FALSIFY-QW3-MOE-GPU-PARITY-001)
+        cannot run on the cached 17.3 GB Qwen3-Coder-30B-A3B-Instruct
+        GGUF because `OwnedQuantizedModelCuda::new` itself fails
+        before forward dispatch. See evidence file at:
+        `evidence/m-gpu-moe-1-2-blocked-by-preload-bug-2026-05-04/findings.md`.
+
+        ROOT CAUSE (5-whys in evidence file):
+
+          The constructor calls `preload_weights_gpu` which calls
+          `executor.build_indexed_weights(num_layers, ..., arch)`.
+          That function unconditionally requires
+          `blk.{i}.ffn_gate.weight`, `.ffn_up.weight`,
+          `.ffn_down.weight` to be in the GPU weight cache for
+          every layer. For MoE layers these names DO NOT EXIST —
+          MoE has 128 expert gates per layer
+          (`blk.{i}.ffn_gate_exps.weight`) loaded into the
+          `moe_layers` parameter at forward time, not the indexed
+          dense path.
+
+        WHY M-GPU-MOE-1.1.2 (PR #1477) didn't surface this:
+
+          The full forward integration's body sidesteps
+          `indexed_layer_weights` for the FFN section (uses
+          `moe_layers` directly). But the wrapper construction goes
+          through `preload_weights_gpu` BEFORE forward is called.
+          Wrapper construction fails first; forward never executes.
+
+        WHY default CI didn't catch this:
+
+          The lib-only `forward_qwen3_moe_cuda_stub_compiles_*` test
+          (PR #1464) only checks the function signature at compile
+          time. The heavy `qwen3_moe_gpu_parity.rs` test (PR #1484)
+          is `#[ignore]`d by default and requires both RTX 4090 +
+          17.3 GB cached GGUF — neither in default CI. The bug is
+          only discoverable via `--include-ignored` on lambda-vector,
+          which 2026-05-04's dogfood was the first to exercise.
+
+        FIX ARCHITECTURE (M-GPU-MOE-1.3):
+
+          Three-step fix:
+
+          (1) Add `is_moe` field to `ArchConstraints` (or expose as
+              `arch.is_moe()` method) wired from
+              `arch-constraints-v1.yaml` (set to `true` for
+              `qwen3_moe`).
+
+          (2) `build_indexed_weights` (`crates/aprender-serve/src/cuda/executor/weights.rs:325-373`)
+              gates the 3 FFN-related lookups on `is_moe`:
+
+                let (ffn_gate_ptr, ffn_gate_len) = if is_moe {
+                    (0u64, 0usize)  // MoE: weights live in moe_layers param
+                } else {
+                    get_qweight(&gate_name)?
+                };
+                // (same pattern for ffn_up, ffn_down + their qtypes)
+
+              The 0/0 sentinel is safe because for MoE layers the
+              indexed FFN pointers are never dereferenced —
+              `forward_qwen3_moe_cuda` routes FFN through
+              `moe_ffn_forward_layer_cuda` which uses the
+              `moe_layers` parameter directly.
+
+          (3) Drift-prevention test
+              `falsify_qw3_moe_gpu_preload_no_dense_ffn_lookup`
+              (lib-only, no hardware dependency) — constructs a
+              minimal mock `ArchConstraints` with `is_moe = true`
+              and asserts `build_indexed_weights` succeeds without
+              the FFN names being cached. This catches future
+              regression to the unconditional-lookup behaviour.
+
+        NEW FALSIFICATION TEST (this amendment):
+
+          FALSIFY-QW3-MOE-GPU-PRELOAD-001 — guards against the
+          preload bug returning. Test predicate: on any qwen3_moe
+          GGUF, `OwnedQuantizedModelCuda::new(model, 0)` must
+          succeed. Hardware-dependent; runs as part of the
+          M-GPU-MOE-1.2 heavy test cascade.
+
+        WHY NOT JUST FIX IT WITHOUT A CONTRACT BUMP?
+
+          Per CLAUDE.md "NEVER write code before writing a provable
+          contract": the bug class (MoE-unaware GPU weight indexing)
+          is a load-bearing architectural assumption that needs to
+          be pinned in the contract. v1.0.0 → v1.1.0 → v1.2.0
+          progressively pinned the integration architecture (option
+          D → option I); v1.3.0 pins the MoE-vs-dense weight-cache
+          dispatch. Future GPU-MoE backends (v2.0.0+) will inherit
+          this constraint.
+
+        IMPLEMENTATION_STAGES UPDATE: M-GPU-MOE-1.3 added between
+        M-GPU-MOE-1.2 (cosine parity test scaffold, SHIPPED at
+        M52/M54) and M-GPU-MOE-2 (wgpu fallback). M-GPU-MOE-1.2's
+        `--include-ignored` heavy run is BLOCKED on M-GPU-MOE-1.3
+        landing first.
+
     - version: 1.2.0
       date: '2026-05-04'
       kind: amendment
@@ -303,13 +405,14 @@ metadata:
 
 kind: KernelContract
 name: qwen3-moe-forward-gpu
-version: "1.2.0"
-status: DRAFT   # Scaffold + architecture amendments only; flips to
-                # ACTIVE_ALGORITHM_LEVEL when CUDA kernel + cosine
-                # parity gate (FALSIFY-QW3-MOE-GPU-PARITY-001) lands on
-                # aprender main. Flips to ACTIVE_RUNTIME when wgpu
-                # fallback + throughput target (≥150 tok/s on RTX 4090)
-                # also discharge.
+version: "1.3.0"
+status: DRAFT   # Scaffold + architecture amendments + preload-bug fix
+                # plan only; flips to ACTIVE_ALGORITHM_LEVEL when CUDA
+                # kernel + cosine parity gate
+                # (FALSIFY-QW3-MOE-GPU-PARITY-001) lands on aprender
+                # main AND M-GPU-MOE-1.3 preload-bug fix lands. Flips
+                # to ACTIVE_RUNTIME when wgpu fallback + throughput
+                # target (≥150 tok/s on RTX 4090) also discharge.
                 #
                 # v1.0.0 (2026-05-04): Initial scaffold per
                 # claude-code-parity-apr POC M49 priority elevation.
@@ -489,6 +592,40 @@ implementation_stages:
   blockers:
     - 'aprender does not yet have a fused-quantized-dequant-matmul GPU kernel for sparse MoE dispatch'
     - 'DeepSpeed-MoE-style expert-parallel scheduling needs design work for the Q4_K_M / Q6_K row-major layouts'
+
+- id: M-GPU-MOE-1.3
+  status: PENDING
+  description: |
+    Preload-weights MoE-awareness fix for `CudaExecutor::build_indexed_weights`
+    (`crates/aprender-serve/src/cuda/executor/weights.rs:325-373`).
+
+    See evidence file
+    `evidence/m-gpu-moe-1-2-blocked-by-preload-bug-2026-05-04/findings.md`
+    for the live-dogfood discovery on lambda-vector RTX 4090
+    (2026-05-04). The bug: `OwnedQuantizedModelCuda::new` for any
+    qwen3_moe GGUF panics inside `preload_weights_gpu` because
+    `build_indexed_weights` unconditionally requires
+    `blk.{i}.ffn_gate.weight` etc. which don't exist for MoE
+    (MoE has 128 expert-gate tensors per layer, named
+    `blk.{i}.ffn_gate_exps.weight`, loaded into `moe_layers`
+    parameter at forward-time).
+
+    Three-step fix per amendment v1.3.0 description:
+    (1) Add `is_moe` to ArchConstraints (or expose method) wired
+        from arch-constraints-v1.yaml.
+    (2) Gate FFN-related lookups in build_indexed_weights on
+        is_moe; use (0u64, 0usize) sentinels for MoE.
+    (3) Drift-prevention test
+        `falsify_qw3_moe_gpu_preload_no_dense_ffn_lookup` (lib-only).
+
+    Discharges FALSIFY-QW3-MOE-GPU-PRELOAD-001 (new).
+
+    BLOCKING: M-GPU-MOE-1.2's `--include-ignored` heavy run on
+    lambda-vector RTX 4090 cannot proceed until this fix lands.
+  expected_acceptance:
+    - AC_GPU_MOE_003  # output dimensions preserved (the wrapper succeeds in constructing)
+  blockers:
+    - 'M-GPU-MOE-1.2 heavy assertion blocked on this fix'
 
 - id: M-GPU-MOE-2
   status: PENDING
@@ -684,6 +821,33 @@ falsification_tests:
     Q4_K/Q6_K form on GPU (no FP32 expansion). The 17.5 GB → 70 GB
     expansion is the documented OOM mode (qwen3-moe-forward-v1
     v1.1.0 LAZY-FUSED-MATVEC decision).
+
+- id: FALSIFY-QW3-MOE-GPU-PRELOAD-001
+  rule: 'M-GPU-MOE-1.3 discharges preload_weights_gpu MoE-awareness — wrapper construction succeeds'
+  prediction: |
+    `OwnedQuantizedModelCuda::new(model, 0)` succeeds for any
+    qwen3_moe GGUF (does NOT panic inside preload_weights_gpu →
+    build_indexed_weights demanding `blk.{i}.ffn_gate.weight`).
+  test: |
+    cargo test -p aprender-serve --test qwen3_moe_gpu_parity --features cuda \
+        --release -- --include-ignored --nocapture
+    Asserts: progresses past `OwnedQuantizedModelCuda::new(model, 0)`
+    without `UnsupportedOperation { operation: "preload_weights_gpu",
+    reason: "PAR-043: Failed to build indexed weights: Invalid launch
+    config: Quantized weight 'blk.0.ffn_gate.weight' not cached" }`.
+
+    Lib-only sibling test:
+    `cargo test -p aprender-serve --lib --features cuda \
+        falsify_qw3_moe_gpu_preload_no_dense_ffn_lookup`
+    asserts the same precondition without hardware (mock
+    ArchConstraints with is_moe=true).
+  if_fails: |
+    The MoE-aware fix at `crates/aprender-serve/src/cuda/executor/weights.rs`
+    regressed. Common failure modes:
+      - Someone removed `is_moe` field from ArchConstraints
+      - Someone re-added unconditional `get_qweight(&gate_name)?`
+      - The `is_moe` lookup at `build_indexed_weights` returns
+        false for qwen3_moe (check arch-constraints-v1.yaml)
 
 qa_gate:
   id: F-QW3-MOE-GPU-001
