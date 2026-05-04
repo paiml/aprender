@@ -132,6 +132,31 @@ impl AprTransformer {
                 v_all.extend_from_slice(v_pos);
             }
 
+            // Capture Q/K post-RoPE tensors per `trace-attn-sub-stages-v1.yaml`.
+            // Closes pre-existing capture gap in parent contract per
+            // `evidence/ship-007-layer0-attn-bisection-2026-05-04/forward-traced-research.md`.
+            emit(SaveTensorStage::QPostRope, layer_idx as u32, &q_all)?;
+            emit(SaveTensorStage::KPostRope, layer_idx as u32, &k_all)?;
+
+            // Allocate accumulators for attn_scores + attn_softmax ONLY when
+            // the plan requests them. Per `trace-attn-sub-stages-v1.yaml`
+            // v1.1.0 FALSIFY-ATTN-SUB-005 (additive purity): no allocation
+            // unless capture is selected.
+            let want_scores = plan
+                .is_some_and(|p| p.should_save(SaveTensorStage::AttnScores, layer_idx as u32));
+            let want_softmax = plan
+                .is_some_and(|p| p.should_save(SaveTensorStage::AttnSoftmax, layer_idx as u32));
+            let mut scores_all: Option<Vec<f32>> = if want_scores {
+                Some(vec![0.0f32; self.config.num_heads * seq_len * seq_len])
+            } else {
+                None
+            };
+            let mut softmax_all: Option<Vec<f32>> = if want_softmax {
+                Some(vec![0.0f32; self.config.num_heads * seq_len * seq_len])
+            } else {
+                None
+            };
+
             // Attention output
             let mut attn_out = vec![0.0f32; seq_len * hidden_dim];
             for head in 0..self.config.num_heads {
@@ -152,12 +177,30 @@ impl AprTransformer {
                         scores.push(score * scale);
                     }
 
+                    // Capture pre-softmax scores into [num_heads × seq × seq]
+                    // buffer (zero-padded for non-causal positions).
+                    if let Some(ref mut buf) = scores_all {
+                        let row_base = head * seq_len * seq_len + i * seq_len;
+                        for (j, &s) in scores.iter().enumerate() {
+                            buf[row_base + j] = s;
+                        }
+                    }
+
                     // Softmax
                     let max_score = scores.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
                     let exp_scores: Vec<f32> =
                         scores.iter().map(|s| (s - max_score).exp()).collect();
                     let sum_exp: f32 = exp_scores.iter().sum();
                     let probs: Vec<f32> = exp_scores.iter().map(|e| e / sum_exp).collect();
+
+                    // Capture post-softmax probabilities into the same
+                    // [num_heads × seq × seq] shape.
+                    if let Some(ref mut buf) = softmax_all {
+                        let row_base = head * seq_len * seq_len + i * seq_len;
+                        for (j, &p) in probs.iter().enumerate() {
+                            buf[row_base + j] = p;
+                        }
+                    }
 
                     // Weighted sum of values
                     let out_start = i * hidden_dim + q_head_offset;
@@ -168,6 +211,14 @@ impl AprTransformer {
                         }
                     }
                 }
+            }
+
+            // Emit captured attention sub-stages (no-op if accumulator is None).
+            if let Some(buf) = scores_all.as_deref() {
+                emit(SaveTensorStage::AttnScores, layer_idx as u32, buf)?;
+            }
+            if let Some(buf) = softmax_all.as_deref() {
+                emit(SaveTensorStage::AttnSoftmax, layer_idx as u32, buf)?;
             }
 
             // Capture pre-O-proj attention output (Q@Kᵀ@V combined).
