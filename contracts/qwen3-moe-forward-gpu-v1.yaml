@@ -1,9 +1,106 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   kind: kernel
   created: '2026-05-04'
   author: PAIML Engineering
   amendment_history:
+    - version: 1.1.0
+      date: '2026-05-04'
+      kind: amendment
+      title: 'M-GPU-MOE-1.1 integration-architecture decision: option D (OwnedQuantizedModelCuda)'
+      description: |
+        Records the architectural-seam decision that gates M-GPU-MOE-1.1
+        (per-expert CUDA dispatch). Mirrors the qwen3-moe-forward-v1
+        v1.2.0 amendment (M32c.2.2.2.1) which picked between three
+        integration options for the CPU path before any kernel work
+        could land.
+
+        The v1.0.0 contract scaffold (M-GPU-MOE-0) was authored from
+        outside the code: it specified WHAT GPU MoE means (cosine
+        ≥0.99 vs CPU, ≥150 tok/s, ≤95% VRAM) but left WHERE in the
+        type hierarchy unspecified. The first-cut M-GPU-MOE-1.0 stub
+        (PR #1460) made an implicit choice — placed the function on
+        `OwnedQuantizedModel` — that this amendment now overrides.
+
+        FOUR integration options were considered:
+
+          (A) Add GPU state directly to OwnedQuantizedModel
+              - Add HybridScheduler, GPU expert tensor handles, etc.
+                as fields on OwnedQuantizedModel.
+              - Pros: Uniform forward path; CPU/GPU dispatch picks at
+                method call time.
+              - Cons: Invasive — touches every CPU-MoE call site;
+                forces a runtime branch on whether GPU state is
+                populated; couples a CPU-pure type to GPU dependencies.
+              REJECTED.
+
+          (B) Thread &HybridScheduler / &mut GpuModel into
+              forward_qwen3_moe_gpu's signature
+              - Add a parameter that doesn't exist on the CPU sibling.
+              - Pros: No type changes.
+              - Cons: Breaks signature parity with forward_qwen3_moe;
+                forces every caller to plumb scheduler state through.
+              REJECTED.
+
+          (C) Spawn a transient GpuModel-like helper inside
+              forward_qwen3_moe_gpu for the duration of one forward pass
+              - Construct/teardown CUDA buffers per token call.
+              - Pros: Stateless to the caller.
+              - Cons: Resource thrash on every token; allocates GPU
+                buffers in the hot path; unviable performance-wise.
+              REJECTED.
+
+          (D) Mirror the existing OwnedQuantizedModelCuda pattern —
+              add forward_qwen3_moe_cuda as a method on the existing
+              CUDA wrapper type
+              - OwnedQuantizedModelCuda already exists at
+                crates/aprender-serve/src/gguf/cuda/mod.rs:106.
+              - Wraps OwnedQuantizedModel + holds CudaExecutor + GPU
+                buffers (embed_buf, prefix_cache).
+              - Existing forward_cuda method (cuda.rs:18) already does
+                "CPU attention + CUDA FFN matmul" — the established
+                pattern this contract should extend, not invent a new
+                substrate.
+              - Pros: Zero new types; reuses CudaExecutor cache,
+                memory-info tracking, prefix-cache; signature parity
+                preserved (just on a different self type); follows
+                the same precedent that made forward_cuda's
+                incremental landing work.
+              - Cons: forward_qwen3_moe_cuda needs Qwen3MoeQuantizedLayer
+                descriptors to be reachable from OwnedQuantizedModelCuda;
+                already trivially reachable via self.model.layers and
+                separate moe_layers parameter.
+              CHOSEN.
+
+        DECISION: Option D. The implementation lives at
+        `OwnedQuantizedModelCuda::forward_qwen3_moe_cuda` (note the
+        `_cuda` suffix matching the existing `forward_cuda` precedent,
+        not `_gpu`). The first-cut M-GPU-MOE-1.0 stub on
+        OwnedQuantizedModel (PR #1460) is RETIRED in favor of the
+        properly-placed stub on OwnedQuantizedModelCuda; once #1460
+        merges, a follow-up PR relocates the stub.
+
+        Implementation stages updated to reflect option D:
+
+          M-GPU-MOE-0    Contract scaffold (v1.0.0)              SHIPPED ✓
+          M-GPU-MOE-0.5  This decision amendment (v1.1.0)        SHIPPED (THIS PR)
+          M-GPU-MOE-1.0  Stub on OwnedQuantizedModelCuda         PENDING
+                         (relocates the wrong-type stub from #1460)
+          M-GPU-MOE-1.1  Per-expert CUDA dispatch via            PENDING
+                         self.executor (gemm_q4k for gate/up,
+                         gemm_q6k for down)
+          M-GPU-MOE-1.2  Cosine-vs-CPU parity gate ≥0.99        PENDING
+                         (FALSIFY-QW3-MOE-GPU-PARITY-001)
+          M-GPU-MOE-2    wgpu fallback (separate type analogous
+                         to OwnedQuantizedModelCuda for wgpu)    PENDING
+          M-GPU-MOE-3    Throughput ≥150 tok/s + VRAM ≤ 95%      PENDING
+
+        Why this matters: per CLAUDE.md "NEVER write code before
+        writing a provable contract", and per the M32 staging
+        precedent, every load-bearing architectural decision needs
+        to land in the contract before code. The v1.0.0 scaffold
+        skipped this; v1.1.0 fixes it.
+
     - version: 1.0.0
       date: '2026-05-04'
       kind: created
@@ -69,7 +166,7 @@ metadata:
 
 kind: KernelContract
 name: qwen3-moe-forward-gpu
-version: "1.0.0"
+version: "1.1.0"
 status: DRAFT   # Scaffold only; flips to ACTIVE_ALGORITHM_LEVEL when
                 # CUDA kernel + cosine parity gate (FALSIFY-QW3-MOE-GPU-
                 # PARITY-001) lands on aprender main. Flips to
@@ -80,7 +177,7 @@ status: DRAFT   # Scaffold only; flips to ACTIVE_ALGORITHM_LEVEL when
                 # claude-code-parity-apr POC M49 priority elevation.
                 # No code yet — this contract IS the deliverable for
                 # M-stage M-GPU-MOE-0.
-scope: "crates/aprender-serve/src/gpu/{forward_qwen3_moe_gpu,scheduler/moe_dispatch}.rs, crates/aprender-compute/src/gpu/moe_kernels.rs (TBD)"
+scope: "crates/aprender-serve/src/gguf/cuda/forward_qwen3_moe_cuda.rs (TBD per v1.1.0 option D), crates/aprender-serve/src/gguf/cuda/mod.rs (extends OwnedQuantizedModelCuda)"
 
 description: |
   GPU sibling of the CPU `forward_qwen3_moe` path. Same end-to-end
