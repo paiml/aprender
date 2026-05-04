@@ -291,6 +291,64 @@ pub enum OutputVerification {
     },
 }
 
+/// Statistical gibberish detection — returns Some(reason) if output is junk.
+///
+/// Three signals; any one triggers rejection:
+/// 1. **Non-ASCII saturation**: For ASCII-prompt completions, > 60% non-ASCII
+///    bytes is a strong gibberish indicator. English+code answers are ASCII-heavy.
+/// 2. **Repeated-fragment detection**: A 4+ byte substring appearing 3+ times
+///    consecutively (e.g. "udaÅĤo udaÅĤo udaÅĤo") flags BPE/loop pathologies.
+/// 3. **Replacement-character density**: > 1 U+FFFD per 32 chars indicates
+///    repeated UTF-8 decode failures.
+///
+/// All thresholds are conservative — coherent English/code outputs pass cleanly,
+/// while the Qwen2-0.5B observed gibberish ("ëĸ» Ãĥ pÃ³Åº zwiÄħzku") is rejected.
+fn detect_gibberish(output: &str, test_id: &str) -> Option<String> {
+    // Signal 1: non-ASCII saturation
+    let total = output.chars().count();
+    if total >= 16 {
+        let non_ascii = output.chars().filter(|c| !c.is_ascii()).count();
+        let ratio = non_ascii as f64 / total as f64;
+        if ratio > 0.6 {
+            return Some(format!(
+                "{test_id}: gibberish (non-ASCII ratio {:.1}% > 60%)",
+                ratio * 100.0
+            ));
+        }
+    }
+
+    // Signal 2: 4+ byte fragment repeated 3+ times in a row
+    let bytes = output.as_bytes();
+    if bytes.len() >= 12 {
+        let max_frag = 16.min(bytes.len() / 3);
+        for frag_len in 4..=max_frag {
+            let mut i = 0;
+            while i + frag_len * 3 <= bytes.len() {
+                let frag = &bytes[i..i + frag_len];
+                if &bytes[i + frag_len..i + 2 * frag_len] == frag
+                    && &bytes[i + 2 * frag_len..i + 3 * frag_len] == frag
+                {
+                    let preview = String::from_utf8_lossy(frag).into_owned();
+                    return Some(format!(
+                        "{test_id}: gibberish (fragment {preview:?} repeats 3+ times)"
+                    ));
+                }
+                i += 1;
+            }
+        }
+    }
+
+    // Signal 3: replacement-character density
+    let fffd_count = output.matches('\u{FFFD}').count();
+    if fffd_count > 0 && total >= 32 && fffd_count * 32 > total {
+        return Some(format!(
+            "{test_id}: gibberish (U+FFFD density {fffd_count}/{total} > 1/32)"
+        ));
+    }
+
+    None
+}
+
 /// Verify output is correct: not empty, no garbage, contains expected answer
 /// (PMAT-QA-PROTOCOL-001 §7.4)
 ///
@@ -319,6 +377,15 @@ pub fn verify_output(
                 reason: format!("{test_id}: Garbage detected: '{pattern}'"),
             };
         }
+    }
+
+    // Check 2.5: Statistical gibberish detection (Toyota Way root-cause fix).
+    // The fixed garbage-pattern list above misses new defect classes — e.g.
+    // Qwen2-0.5B-Instruct emits CJK/Polish/diacritic byte-fragments like
+    // "udaÅĤo", "ëĸ»", "zwiÄħzku" that no prior pattern catches. We add three
+    // statistical signals; ANY positive trip rejects the output.
+    if let Some(reason) = detect_gibberish(output, test_id) {
+        return OutputVerification::Fail { reason };
     }
 
     // Check 3: BPE artifacts (null bytes, excessive control chars)
