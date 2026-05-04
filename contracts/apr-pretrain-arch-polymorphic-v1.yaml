@@ -1,0 +1,237 @@
+metadata:
+  kind: schema
+  version: 1.0.0
+  status: PROPOSED
+  created: '2026-05-04'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'SPEC-SHIP-TWO-001 §50 — MODEL-2 architecture-coupling finding (2026-05-04)'
+  - 'SPEC-SHIP-TWO-001 §50.4 step 5a — author this contract'
+  - 'SPEC-SHIP-TWO-001 §50.4 steps 5b-5f — implementation roadmap this contract drives'
+  - 'contracts/apr-pretrain-from-init-v1.yaml v1.1.0 PARTIAL_ALGORITHM_LEVEL — sibling (FALSIFY-005 arch-mismatch is consumed here)'
+  - 'contracts/training-loop-pretrain-v1.yaml v1.5.0 ACTIVE — parent (PretrainConfig is what the polymorphic builder emits)'
+  - 'contracts/architecture-requirements-v1.yaml — sibling (TransformerConfig family invariants)'
+  - 'contracts/gqa-kernel-v1.yaml — sibling (GQA ratio invariants)'
+  - 'feedback_no_guessing.md — read source before forming hypothesis'
+  - 'feedback_fix_root_cause_never_route_around.md'
+  description: >
+    Contract pinning the architecture-extraction algorithm for the
+    pretrained-init MODEL-2 path. Per §50, the existing pretrain trainer
+    HARDCODES every architectural constant from `Llama370MConfig` —
+    making it impossible to fine-tune from a Qwen2.5-class checkpoint
+    that has different (vocab, hidden, heads, kv_heads, ffn, rope_theta)
+    shape. This contract specifies the polymorphic builder that derives
+    `TransformerConfig` from the init APR file's metadata when `--init
+    <PATH>` is set, and falls back to `Llama370MConfig` (the §24/§25
+    from-scratch baseline) when `--init` is absent. It also pins the
+    Qwen-tokenizer compatibility surface and the GQA-7:1 forward-pass
+    invariants that the existing GQA-4:1 (Llama370M) code did not
+    exercise. Together, this contract + sibling apr-pretrain-from-init-v1
+    discharge §50.4's step-5 architecture-mismatch class.
+
+equations:
+  arch_extraction_signature:
+    formula: |
+      `pretrain_real::build_transformer_config(init: Option<&InitArch>)
+      -> TransformerConfig` MUST satisfy:
+        init = None  → return TransformerConfig::from(Llama370MConfig::*)
+                       (existing from-scratch baseline; §24/§25 evidence preserved)
+        init = Some  → return TransformerConfig derived from the init APR
+                       file's header metadata, NOT from Llama370MConfig
+      The derivation MUST extract exactly these 7 fields from the APR
+      file's metadata block (no defaults, no inference):
+        - vocab_size, hidden_size, num_attention_heads, num_kv_heads,
+        - intermediate_size, num_hidden_layers, max_position_embeddings.
+      Plus 3 architecture-family fields:
+        - rope_theta, rms_norm_eps, tie_word_embeddings.
+      Architecture family (decoder/encoder) is fixed to decoder for the
+      §49 use case (Qwen2.5/Llama-class causal LMs).
+    domain: pretrain trainer build boundary
+    codomain: TransformerConfig
+    invariants:
+    - "init=None case unchanged from §24/§25 baseline (regression-free)"
+    - "init=Some case extracts ALL 10 fields, no silent defaults"
+    - "extracted config is byte-equivalent to apr inspect <PATH> --json metadata"
+    - "wrong-arch APR (e.g., encoder model) is FAIL-FAST not silent-truncate"
+
+  qwen2_0_5b_constructor:
+    formula: |
+      `TransformerConfig::qwen2_0_5b()` MUST return a TransformerConfig
+      with the empirically-verified Qwen2.5-Coder-0.5B-Instruct shape
+      (per ~/.cache/huggingface/hub/.../config.json, validated 2026-05-04):
+        hidden_size:               896
+        num_attention_heads:       14
+        num_kv_heads:              2  (GQA-7:1 ratio)
+        intermediate_size:         4864
+        num_hidden_layers:         24
+        vocab_size:                151_936
+        max_position_embeddings:   32_768
+        rope_theta:                1_000_000.0
+        rms_norm_eps:              1e-6
+        use_bias:                  true   (Qwen2 has bias on q/k/v projections)
+        tie_word_embeddings:       true   (Qwen2 default)
+        architecture:              ModelArchitecture::Decoder
+      The constructor sits next to existing `llama2_7b()` and `llama2_13b()`
+      in `crates/aprender-train/src/transformer/config.rs`.
+    domain: TransformerConfig family
+    codomain: TransformerConfig
+    invariants:
+    - "shape constants match HF config.json byte-for-byte"
+    - "constructor is pure (no I/O, no env reads)"
+    - "GQA ratio = num_attention_heads / num_kv_heads = 14/2 = 7 (canonical Qwen2 0.5B)"
+    - "use_bias=true differs from Llama (false) — Qwen2 quirk, contract-pinned"
+    - "tie_word_embeddings=true differs from Llama (false) — Qwen2 quirk, contract-pinned"
+
+  gqa_7_to_1_invariants:
+    formula: |
+      The forward-pass attention kernel MUST handle GQA-7:1 (kv_heads=2,
+      query_heads=14) without requiring a per-ratio specialization.
+      Specifically:
+        K, V tensors broadcast across query_heads / kv_heads = 7 groups
+        Each group of 7 query heads attends to the SAME (K, V) head
+        Output concatenation preserves head order
+      This is a strictly more general case than the Llama370M GQA-4:1
+      ratio the existing code targets. The contract requires:
+        - property test verifying GQA-7:1 numerical equivalence with
+          (a) GQA-1:1 (full MHA, repeating each KV pair 7×) on the same input
+          (b) Reference Qwen2 forward pass via HF FP16 oracle
+        - cosine ≥ 0.9999 vs (a) up to FP rounding
+        - cosine ≥ 0.999 vs (b) — same threshold as
+          apr-vs-gguf-forward-parity-v1 §sample_size_parity_v1_1
+    domain: attention kernel
+    codomain: F32[seq, num_heads * head_dim]
+    invariants:
+    - "GQA ratio is data, not code — same kernel handles 1:1, 4:1, 7:1, 8:1"
+    - "K/V broadcast is index arithmetic, not tensor copy"
+    - "Output ordering is num_heads-major (matches HF Qwen2 convention)"
+
+  qwen_tokenizer_vocab_compatibility:
+    formula: |
+      `preflight_tokenizer_vocab_matches_model()` (the GATE-ARCH-370M-011
+      pre-flight in `crates/apr-cli/src/commands/pretrain.rs`) MUST gate
+      by the EXTRACTED arch's vocab_size, NOT by the hardcoded
+      `Llama370MConfig::VOCAB_SIZE` (50_257).
+      Specifically:
+        With --init present:
+          target_vocab = extracted_config.vocab_size
+          (e.g., 151_936 for Qwen2.5-0.5B; 32_000 for LLaMA2;
+                 50_257 for 370M-from-scratch)
+        With --init absent:
+          target_vocab = Llama370MConfig::VOCAB_SIZE  (existing behavior)
+      The Qwen tokenizer's vocab.json (151_936 entries) MUST pass
+      pre-flight when --init points at a Qwen2.5 APR file. Same
+      tokenizer with --init absent MUST still fail pre-flight (correct
+      regression on the from-scratch path).
+    domain: tokenizer-model vocab match boundary
+    codomain: bool
+    invariants:
+    - "init present → vocab match against extracted config"
+    - "init absent → vocab match against Llama370MConfig::VOCAB_SIZE (regression-free)"
+    - "false-pass (e.g., 50_257 tokenizer with Qwen init) is FAIL-FAST"
+    - "false-fail (e.g., 151_936 tokenizer with Qwen init) is FORBIDDEN"
+
+falsification_tests:
+- id: FALSIFY-APR-PRETRAIN-ARCH-001
+  rule: TransformerConfig::qwen2_0_5b constructor exists and matches HF config
+  prediction: "`TransformerConfig::qwen2_0_5b()` returns a config whose 10 fields match the empirically-verified Qwen2.5-Coder-0.5B-Instruct shape byte-for-byte"
+  test: "cargo test -p aprender-train --lib transformer::config::tests::qwen2_0_5b_matches_hf_config"
+  if_fails: "constructor missing or shape drifts from HF config — §50.4 step 5b unimplemented or regressed"
+
+- id: FALSIFY-APR-PRETRAIN-ARCH-002
+  rule: build_transformer_config(None) preserves Llama370M baseline
+  prediction: "with init=None, `build_transformer_config()` returns TransformerConfig field-for-field equal to the existing pretrain_real::build_transformer_config() output"
+  test: "cargo test -p aprender-train --lib train::pretrain_real::tests::build_transformer_config_no_init_matches_llama370m"
+  if_fails: "from-scratch baseline regressed — §24/§25 falsification evidence destroyed"
+
+- id: FALSIFY-APR-PRETRAIN-ARCH-003
+  rule: build_transformer_config(Some) extracts all 10 fields from APR header
+  prediction: "with init=Some(<Qwen2.5-0.5B.apr>), `build_transformer_config()` returns the same TransformerConfig as `TransformerConfig::qwen2_0_5b()` modulo max_position which inherits from --seq-length CLI"
+  test: "cargo test -p aprender-train --lib train::pretrain_real::tests::build_transformer_config_qwen_init_matches_constructor"
+  if_fails: "extractor silently fills defaults instead of reading APR metadata — §50 root cause not addressed"
+
+- id: FALSIFY-APR-PRETRAIN-ARCH-004
+  rule: GQA-7:1 forward-pass numerical parity with GQA-1:1
+  prediction: "GQA-7:1 (kv_heads=2, query_heads=14) attention output cosine ≥ 0.9999 vs GQA-1:1 reference (kv_heads=14, query_heads=14, with each query group's KV repeated 7×) on the same input tensors"
+  test: "cargo test -p aprender-train --lib transformer::attention::tests::gqa_7_to_1_matches_full_mha_via_repeat"
+  if_fails: "attention kernel mishandles GQA-7:1 — Qwen2 forward pass produces silent gibberish"
+
+- id: FALSIFY-APR-PRETRAIN-ARCH-005
+  rule: Qwen tokenizer (vocab=151_936) passes pre-flight with --init Qwen
+  prediction: "preflight_tokenizer_vocab_matches_model() returns Ok with vocab.json containing 151_936 entries when --init points at a Qwen2.5 APR file"
+  test: "cargo test -p apr-cli --lib commands::pretrain::tests::preflight_qwen_vocab_passes_with_qwen_init"
+  if_fails: "preflight false-fails on Qwen tokenizer — operator cannot fine-tune Qwen2.5 even with arch-polymorphic builder"
+
+- id: FALSIFY-APR-PRETRAIN-ARCH-006
+  rule: Qwen tokenizer with --init absent fails pre-flight
+  prediction: "preflight_tokenizer_vocab_matches_model() returns Err with vocab.json containing 151_936 entries when --init is absent (target=Llama370MConfig::VOCAB_SIZE=50_257)"
+  test: "cargo test -p apr-cli --lib commands::pretrain::tests::preflight_qwen_vocab_fails_without_init"
+  if_fails: "preflight false-passes — from-scratch path silently accepts wrong-vocab tokenizer"
+
+- id: FALSIFY-APR-PRETRAIN-ARCH-007
+  rule: Wrong-arch APR (e.g., encoder model) fails fast
+  prediction: "build_transformer_config(Some(<encoder.apr>)) returns Err naming the architecture mismatch — decoder builder cannot accept encoder weights"
+  test: "cargo test -p aprender-train --lib train::pretrain_real::tests::build_transformer_config_encoder_init_errors"
+  if_fails: "silent decoder/encoder mismatch — would later fail at first forward pass with cryptic shape error"
+
+- id: FALSIFY-APR-PRETRAIN-ARCH-008
+  rule: contract validates via pv
+  prediction: "`pv validate contracts/apr-pretrain-arch-polymorphic-v1.yaml` exits 0"
+  test: "pv validate contracts/apr-pretrain-arch-polymorphic-v1.yaml"
+  if_fails: "contract schema noncompliant; will not pass CI gate"
+
+proof_obligations:
+- type: invariant
+  property: "arch_extraction_signature: init=None preserves Llama370M baseline byte-for-byte"
+- type: soundness
+  property: "arch_extraction_signature: init=Some extracts ALL 10 fields, no silent defaults"
+- type: invariant
+  property: "qwen2_0_5b_constructor: constructor is pure (no I/O); shape matches HF config.json"
+- type: invariant
+  property: "gqa_7_to_1_invariants: GQA ratio is data, not code; one kernel handles all ratios"
+- type: liveness
+  property: "qwen_tokenizer_vocab_compatibility: preflight passes for matching vocab; fails for mismatching"
+- type: termination
+  property: "build_transformer_config terminates on a finite-size APR header (no recursion)"
+
+kani_harnesses:
+- id: KH-APR-PRETRAIN-ARCH-001
+  obligation: arch_extraction_signature
+  property: init_none_implies_llama370m
+  bound: 4  # 2 init states × 2 architectures = 4-cell decision table
+- id: KH-APR-PRETRAIN-ARCH-002
+  obligation: gqa_7_to_1_invariants
+  property: gqa_ratio_kernel_polymorphism
+  bound: 8  # GQA ratios in {1, 2, 4, 7, 8} × 2 head_dim values = 10 (clamped to 8)
+
+verification_summary:
+  total_obligations: 6
+  proven: 0
+  tested: 0
+  status: pending
+  notes: |
+    Authored 2026-05-04 as §50.4 step 5a of SHIP-TWO-001 MODEL-2
+    architecture-polymorphic pivot. PROPOSED status until §50.4 steps
+    5b-5e land (constructor + extractor + Qwen tokenizer surface +
+    GQA-7:1 verification). Promotion to PARTIAL_ALGORITHM_LEVEL
+    requires the 8 FALSIFY-APR-PRETRAIN-ARCH-* tests to be at least
+    authored (compile-bound, may xfail until impl). Promotion to
+    FUNCTIONAL requires all 8 to PASS. Promotion to DISCHARGED requires
+    a LIVE 500-step fine-tune run on the canonical Qwen2.5-Coder-0.5B-
+    Instruct APR file producing val_loss < 9.38 (the §24/§25 corpus
+    floor) — empirical proof that the architecture-polymorphic path
+    actually works end-to-end.
+
+    Cross-references:
+    - This contract DOES NOT replace apr-pretrain-from-init-v1; the two
+      compose. apr-pretrain-from-init-v1 pins the --init flag's CLI
+      surface + magic-byte validation; this contract pins the
+      architecture extraction algorithm that --init's weight load
+      depends on. FALSIFY-APR-PRETRAIN-INIT-005 (arch mismatch) becomes
+      DISCHARGED when this contract's FALSIFY-007 lands.
+    - GQA ratio invariants (FALSIFY-004) cross-reference
+      gqa-kernel-v1.yaml. The Llama370M codepath exercised GQA-4:1
+      (kv_heads=4, query_heads=16); Qwen2.5-0.5B exercises GQA-7:1
+      (kv_heads=2, query_heads=14). Both are in scope of the same
+      polymorphic kernel, but only 4:1 was empirically verified before
+      this contract.
