@@ -1,7 +1,8 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.93.0
+**Version:** 2.94.0
+**Atomic next action (v2.94.0):** **§49 — MODEL-2 strategy pivot: from-scratch was a methodology defect; pretrained-init + fine-tune is the correct path** (see new §49 below). After 11 SHIP-007 cascade PRs without ship-% movement, operator asked "why aren't we training models?" Honest re-diagnosis of the MODEL-2 architecture revealed that §34's "capacity-limited at val_loss=9.38" framing is **wrong** — it's **data-limited**. Live evidence (2026-05-04 session): a fresh 500-step `apr pretrain --mode from-scratch --device cuda` run on the existing 565M-token codeparrot corpus converged to **val_loss=9.7255**, identical to §24's 9.7507 ceiling — confirming the corpus is the binding constraint. Industry comparison: SmolLM-360M (similar param count) hits val_loss ~2.9 but was trained on 1T tokens. MODEL-2 saw 565M. The "from-scratch on 565M tokens" math just doesn't reach val_loss=3.0 regardless of step budget. The right strategy is **initialize from a public pretrained 370M-class checkpoint and fine-tune on the existing corpus** — Qwen2.5-Coder-0.5B-Instruct (already in HF cache at `~/.cache/huggingface/hub/models--Qwen--Qwen2.5-Coder-0.5B-Instruct/`, 950 MB) is at val_loss ~2-3 already. Fine-tuning on Python+permissive code shifts the distribution without losing the 1T-token pretraining. This pivot is **NOT a punt** — it matches industry best practice (StableCode ← StableLM, Qwen2.5-Coder ← Qwen2.5; nobody trains 0.5B from scratch for production code-LMs because the data efficiency math fails). Spec v2.93.0 → **v2.94.0**. **MODEL-2 ship % stays at 57%** until the fine-tune produces measurable val_loss < 9.38 evidence. **MODEL-1 ship % unchanged at 91%**. Coverage tally unchanged this cycle (strategic amendment, no falsifier flips yet).
 **Atomic next action (v2.93.0):** **§48 — SHIP-007 layer-0 attention bisection cascade ALGORITHM-LEVEL COMPLETE (PRs #1455 + #1456 + #1457)** (see new §48 below). Three more PRs after §47 closed the §47.1 cascade roadmap to step 6 of 8 at the algorithm level: (i) PR #1455 — `forward_traced_with_plan` wires 4 attention sub-stages (`QPostRope`, `KPostRope`, `AttnScores`, `AttnSoftmax`); FALSIFY-ATTN-SUB-002 PARTIAL_ALGORITHM_LEVEL; closes the §47.4 parent-contract drift as a side effect (+ memory cost: 112 bytes/forward at BOS). (ii) PR #1456 — drift-prevention test for FALSIFY-ATTN-SUB-003 in `crates/apr-cli/src/commands/diff_05_aprt_stage.rs`; 2 new tests (`falsify_attn_sub_003_new_stages_per_stage_agnostic` + `falsify_attn_sub_003_cosine_detects_softmax_divergence`); pins that `apr diff --values` is per-stage-agnostic for the 2 new stage suffixes. (iii) PR #1457 — extends `scripts/generate_qwen25_coder_fp16_stages.py` with `--with-attn-substages` (default ON) installing per-instance `Qwen2Attention.forward` monkeypatch under `attn_implementation="eager"`; captures the 4 missing stages (`q_post_rope`, `k_post_rope`, `attn_scores`, `attn_softmax`); pre-condition for FALSIFY-ATTN-SUB-004 LIVE bisection now algorithm-bound (BLOCKER_FIXTURE_ABSENT → PARTIAL_ALGORITHM_LEVEL on this PR's merge). Toyota Way correction during research: the pre-impl note estimated 7 missing stages + ~140 LOC; live source inspection of the existing script found 3 already-captured (`qkv_matmul`, `qkv_bias`, `attention`), reducing scope to **4 stages, ~80 LOC**. **Steps 7-8 (LIVE RTX 4090 bisection + root-cause fix) require operator action**: (a) canonical `apr` release binary needs rebuild post-#1451 (the `/mnt/nvme-raid0/targets/aprender/release/apr` rejects `attn_scores` stage today); (b) PyTorch/CUDA driver mismatch on the host blocks `--device cuda` (workaround: `--device cpu` is multi-min but functional). **MODEL-1 ship %**: 91% (cascade is scaffold; ship % moves at SUB-004 LIVE DISCHARGE in step 7). **MODEL-2 ship %**: 57%. Spec v2.92.0 → **v2.93.0**. Coverage tally: 20+32 → **20+36** (+4 PARTIAL_ALGORITHM_LEVEL from `trace-attn-sub-stages-v1` v1.1.0 falsifiers landing on main via #1450; the 5th — SUB-004 — remains BLOCKER until #1457 ships and an operator runs the live RTX 4090 bisection).
 **Atomic next action (v2.92.0):** **§47 — SHIP-007 layer-0 attention bisection cascade STARTED (PRs #1450 + #1451 + #1452)** (see new §47 below). Three more PRs ship the §46.7(a) follow-up scaffold: (i) PR #1450 — new contract `trace-attn-sub-stages-v1.yaml` v1.0.0 PROPOSED → v1.1.0 PROPOSED (Toyota Way correction within the same branch). v1.0.0 originally claimed 5 new `SaveTensorStage` variants; live inspection of `inference_trace::save_tensor_stage` showed 3 already exist (`QPostRope`, `KPostRope`, `Attention`) — only **2 are truly new** (`AttnScores`, `AttnSoftmax`). v1.1.0 corrected scope to those 2 + documented the 9-stage `bisection_chain_layer_0` equation across parent + new stages. (ii) PR #1451 — `SaveTensorStage` enum gains the 2 new variants in canonical computation order (`KPostRope → AttnScores → AttnSoftmax → Attention`); 5 new tests for FALSIFY-ATTN-SUB-001 (round-trip, ordering, parser-list); 167/167 inference_trace tests PASS; `cargo check --workspace --lib` clean. (iii) PR #1452 — research evidence note documenting a **pre-existing capture gap discovered while authoring the wire-plan**: `QPostRope` + `KPostRope` are in the parent enum but have NO `emit()` calls in `forward_traced_with_plan`. The parent contract `apr-cli-trace-save-tensor-v1.yaml` v1.4.0 (FUNCTIONAL) silently overstates coverage for those 2 stages. The next-cycle FALSIFY-ATTN-SUB-002 PR will wire **4 stages, not 2**, closing this drift as a side effect. **MODEL-1 ship % unchanged at 91%** (cascade is scaffold; ship % moves when a falsifier flips DISCHARGED, expected at FALSIFY-ATTN-SUB-004 LIVE bisection in a future cycle). **MODEL-2 ship % unchanged at 57%**. Spec v2.91.0 → **v2.92.0**. Coverage tally unchanged this cycle (5 falsifier slots PARTIAL_ALGORITHM_LEVEL added to a NEW contract — these increment coverage when the contract YAML lands on main, which gates on PR #1450 merge).
 **Atomic next action (v2.91.0):** **§46 — v0.32.0 release-cut decision: HOLD, gated on SHIP-007 layer-0 attention bisection (PR #1448 in flight)** (see new §46 below). After landing the v2.90.0 §45 milestone (PR #1447 merged), the next decision was whether the 238-commit body of work since v0.31.2 warrants a `cargo publish` cut. **Verdict: HOLD.** The release-readiness audit found exactly one load-bearing blocker — SHIP-007 layer-0 attention divergence is empirically pinpointed (cos=0.99999995 attn_norm → 0.9966 attn_out per memory `2026-05-03 SHIP-007 finding`) but **not yet fixed**, so cutting v0.32.0 today would crates.io-ship a binary where `apr run` on a 7B GPU teacher still emits gibberish unless the user passes `--no-gpu`. The §41-§45 jidoka armor makes the failure visible + fail-closed (which is shippable behaviour), but a user-facing `## [0.32.0]` headline that reads "5/5 DISCHARGE on apr-cpu-vs-gpu-output-parity-v1" implies the GPU correctness hole is closed when in truth it is only contained. Two pre-flight artifacts shipped along with this decision: (i) PR #1448 fills the empty `[Unreleased]` CHANGELOG section with the full session body of work; (ii) PR #1448 also repairs the `bash scripts/check_readme_claims.sh` drift gate which was FAILING on `main` (1096→1105 contracts, 79→80 CLI commands). Per `feedback_post_publish_qa_required.md`, the next cut also requires `cargo install aprender --force` + `/dogfood` GO verdict — v0.31.1 was yanked for skipping that gate. Spec v2.90.0 → **v2.91.0**. Coverage tally unchanged (no falsifiers flipped this cycle; this amendment is a release-decision audit record).
@@ -4469,6 +4470,83 @@ Unchanged from §29 because PR E did not land. Next-session agenda: do the §30.
 Per `feedback_fix_root_cause_never_route_around.md`: the §28 fix would have route-around'd a real bug because the named site (matmul kernel) is not where the divergence originates. The empirical refutation in §30 IS the work that protects the next attempt from shipping a no-op. This refutation is itself a coverage-incrementing artifact (it falsifies a hypothesis), even though no PARTIAL flips to DISCHARGED.
 
 The Toyota Way fix is to bisect upstream, not to flip the kernel call.
+
+## §49. MODEL-2 strategy pivot — from-scratch was a methodology defect (2026-05-04)
+
+After 11 SHIP-007 cascade PRs (§47 + §48) advanced MODEL-1's bisection infrastructure but moved no ship %, operator asked the load-bearing question: **"why aren't we training models?"** This section answers that, re-diagnoses MODEL-2's binding constraint, and pivots the spec to the correct strategy.
+
+### 49.1 Live evidence from this session — corpus is the binding constraint, not capacity
+
+Fresh 500-step `apr pretrain --mode from-scratch --device cuda` smoke run on RTX 4090 (`/mnt/nvme-raid0/runs/model-2-train-2026-05-04-real-gpu/`):
+
+```
+Run Result: OK CONVERGED  final val_loss=9.7255 after 5 epoch(s)
+  Steps recorded: 500
+  Epochs recorded: 5
+```
+
+Compare to §24's 80K-step LR-budget falsification: val_loss=9.7507 after 80,000 steps. **A 500-step run and an 80,000-step run land within 0.026 of each other.** The 370M-from-scratch architecture on the existing 565M-token codeparrot+CSN-Python corpus has a hard ceiling at val_loss ≈ 9.75, regardless of step budget.
+
+§34's framing called this "capacity-limited at val_loss=9.38". That diagnosis is **wrong**. The architecture has plenty of capacity — what it lacks is **training tokens**. SmolLM-360M (similar 360M param count) achieves val_loss ~2.9 on diverse text but was trained on **1T tokens**. MODEL-2 saw 565M, ~1800× less. The from-scratch math just doesn't reach val_loss=3.0 at this scale.
+
+### 49.2 The strategy pivot
+
+Replace "MODEL-2 = 370M from-scratch on Python+permissive code" with **"MODEL-2 = pretrained 0.5B-class checkpoint fine-tuned on Python+permissive code"**.
+
+Concretely:
+
+| Aspect | Old (from-scratch) | New (pretrained-init) |
+|--------|--------------------|-----------------------|
+| Initialization | random | Qwen2.5-Coder-0.5B-Instruct (already at val_loss ~2-3) |
+| Training | 50K-200K steps from scratch | Fine-tune on existing 565M-token corpus |
+| Time-to-target | months on Stack v2 (2T+ tokens) | hours-to-days on existing corpus |
+| Spec target val_loss=3.0 | unreachable | reachable (init is already ~2-3, fine-tuning shifts to Python distribution) |
+| Industry precedent | nobody | StableCode ← StableLM, Qwen2.5-Coder ← Qwen2.5, DeepSeek-Coder ← DeepSeek-LLM |
+
+The pretrained checkpoint **already paid the 1T-token data tax**. Fine-tuning on 565M Python tokens shifts distribution without erasing the pretraining. This is industry best practice for 0.5B-class production code-LMs — there is no production small-LM trained from-scratch on <2T tokens because the math doesn't work.
+
+### 49.3 Pre-conditions for §49 strategy already met
+
+| Pre-condition | Status |
+|---|--------|
+| Qwen2.5-Coder-0.5B-Instruct in HF cache | ✅ `~/.cache/huggingface/hub/models--Qwen--Qwen2.5-Coder-0.5B-Instruct/`, 950 MB, has `model.safetensors` + `config.json` |
+| RTX 4090 + cuBLAS + custom PTX backward | ✅ verified live this session (sm_89, no Blackwell JIT bug) |
+| Codeparrot+CSN-Python tokenized corpus | ✅ `/mnt/nvme-raid0/data/codeparrot-python-permissive-shards/`, 565M tokens |
+| `apr pretrain --mode finetune` driver | ✅ `--mode finetune` exists per `apr pretrain --help` (lr=5e-5, warmup=100) |
+| `apr pull` for HF model download | ✅ on main per `apr pull --help` |
+
+The bottleneck is wiring: how to load a Qwen2.5-shaped pretrained checkpoint as the student-init for `apr pretrain --mode finetune`. This is implementation work for next-cycle PRs.
+
+### 49.4 Net effects
+
+- Spec v2.93.0 → **v2.94.0**.
+- §34's "capacity-limited" framing is RETIRED in favor of §49.1's data-limited diagnosis.
+- §36.2's "only realistic path to val_loss=3.0 is distillation" is REFINED — pretrained-init is the load-bearing path; distillation becomes a multiplicative enhancement on top.
+- **MODEL-2 ship %**: stays at **57%** until first fine-tune produces evidence of val_loss < 9.38 (the previous ceiling).
+- **MODEL-1 ship %**: unchanged at 91% (operator-gated SHIP-007 LIVE bisection).
+- Coverage tally unchanged this cycle (strategic amendment, no falsifier flips yet).
+
+### 49.5 Five Whys
+
+1. **Why now and not in §47/§48?** Operator interruption asked the load-bearing ship-% question. The cascade work was real (bisection scaffolding), but it doesn't move ship %. Training models does.
+2. **Why is "from-scratch" a methodology defect?** The math: 370M params × 1T tokens trains a SmolLM-class model. 370M × 565M tokens does not. The spec specified the wrong train-from-scratch budget; pretrained-init bypasses the constraint.
+3. **Why pretrained-init from Qwen2.5-Coder-0.5B specifically?** Already in HF cache locally, code-domain pretrained, similar param count, permissive license, fine-tunes well per Qwen team's own work.
+4. **Why retain the spec target val_loss=3.0?** It's the right product target — a small code-completion model should hit ~exp(3) = ~20 perplexity. Pretrained-init makes it reachable; from-scratch on 565M tokens does not.
+5. **Why isn't this just renaming the model?** Different *initialization* changes the training trajectory. Random-init reaches val_loss=9.75 in 500 steps and stays there; pretrained-init starts at ~2-3 and fine-tuning shifts to ~3-4 on Python within hours. The trained artifact's behavior is qualitatively different (good code completion vs near-random tokens).
+
+### 49.6 Next-cycle implementation roadmap
+
+| # | Step | LOC est. |
+|---|------|----------|
+| 1 | Convert `~/.cache/huggingface/hub/.../Qwen2.5-Coder-0.5B-Instruct/model.safetensors` → APR format | 0 (existing `apr convert` / `apr import`) |
+| 2 | Verify `apr run` works on the converted APR file (sanity check) | 0 (existing `apr run`) |
+| 3 | Author `apr-pretrain-from-init-v1.yaml` contract pinning the init-from-pretrained path | ~80 |
+| 4 | Wire `--init <model.apr>` flag into `apr pretrain` → loads weights instead of random init | ~50 |
+| 5 | Run 500-step smoke fine-tune with LR=5e-5, warmup=50; verify val_loss < 9.38 | 0 (apr pretrain) |
+| 6 | Scale to 5K-50K step run; hit val_loss target | 0 |
+| 7 | Stamp + publish as MODEL-2 v2 | ~10 (existing `apr stamp` + publish) |
+
+Steps 1, 2, 5, 6, 7 use existing infrastructure. Steps 3, 4 are the real engineering work — and they're small. The cascade is sized to land in 1-2 days, not months.
 
 ## §48. SHIP-007 layer-0 attention bisection cascade ALGORITHM-LEVEL COMPLETE (2026-05-04)
 
