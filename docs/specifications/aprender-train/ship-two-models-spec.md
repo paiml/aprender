@@ -1,7 +1,8 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.94.0
+**Version:** 2.95.0
+**Atomic next action (v2.95.0):** **§50 — LAYOUT-001/002 contract violation in safetensors→APR FFN import is the root cause of Qwen2-0.5B-Instruct gibberish (blocks §49 pretrained-init pivot)** (see new §50 below). Empirical bisection 2026-05-04 via `apr diff <0.5b.apr> <0.5b.gguf> --values --limit 5` produced the literal diagnosis line: `Values identical, shapes transposed (format layout diff)`. APR stores `mlp.{down,gate,up}_proj.weight` in HF SafeTensors `[out, in]` orientation; the realizar runtime kernel was designed for the GGUF-imported APR layout (transposed). 7B works because GGUF-imported (inherits transposed layout); 0.5B fails because safetensors-imported (preserves HF layout). The investigation **falsified 4 surface hypotheses** before `apr diff` produced the diagnosis in one command — methodology lesson saved to memory: **`apr diff` + `apr qa --verbose` come BEFORE any code reading**. Two PRs shipped this cycle: (i) PR #1463 MERGED — `apr qa` Golden Output gibberish detector (statistical signals: non-ASCII ratio, repeated 4+ byte fragment, U+FFFD density) prevents this defect class from hiding in CI; 14/14 unit tests passing including 3 with captured Qwen2-0.5B gibberish strings. (ii) PR #1466 OPEN auto-merge-armed — evidence file `evidence/qwen2-0.5b-bisection-2026-05-04/findings.md` + `gguf-trace-coherent-logits.json` proving model weights are healthy (top-5 logits `<|im_end|>` 10.54, ` The` 10.47, ` For` 10.18, ` Each` 10.15 from `apr trace` on GGUF-converted model). **Fix is NOT yet shipped** — bounded scope identified (~50 LOC in safetensors→APR write path), but a wrong transpose direction would break MODEL-1's working 7B teacher. The `needs_transpose` function at `crates/aprender-core/src/format/converter/f16_convert.rs:100` exists as `#[allow(dead_code)]` scaffolding for PMAT-103, NOT wired up. **MODEL-1 ship % unchanged at 91%** (7B still works). **MODEL-2 ship % unchanged at 57%** — strategy A (Qwen2.5-Coder-0.5B-Instruct fine-tune from §49) is BLOCKED on this fix. Spec v2.94.0 → **v2.95.0**. Coverage tally unchanged this cycle (PR #1463 added 3 unit tests for QA gate, not contract falsifiers).
 **Atomic next action (v2.94.0):** **§49 — MODEL-2 strategy pivot: from-scratch was a methodology defect; pretrained-init + fine-tune is the correct path** (see new §49 below). After 11 SHIP-007 cascade PRs without ship-% movement, operator asked "why aren't we training models?" Honest re-diagnosis of the MODEL-2 architecture revealed that §34's "capacity-limited at val_loss=9.38" framing is **wrong** — it's **data-limited**. Live evidence (2026-05-04 session): a fresh 500-step `apr pretrain --mode from-scratch --device cuda` run on the existing 565M-token codeparrot corpus converged to **val_loss=9.7255**, identical to §24's 9.7507 ceiling — confirming the corpus is the binding constraint. Industry comparison: SmolLM-360M (similar param count) hits val_loss ~2.9 but was trained on 1T tokens. MODEL-2 saw 565M. The "from-scratch on 565M tokens" math just doesn't reach val_loss=3.0 regardless of step budget. The right strategy is **initialize from a public pretrained 370M-class checkpoint and fine-tune on the existing corpus** — Qwen2.5-Coder-0.5B-Instruct (already in HF cache at `~/.cache/huggingface/hub/models--Qwen--Qwen2.5-Coder-0.5B-Instruct/`, 950 MB) is at val_loss ~2-3 already. Fine-tuning on Python+permissive code shifts the distribution without losing the 1T-token pretraining. This pivot is **NOT a punt** — it matches industry best practice (StableCode ← StableLM, Qwen2.5-Coder ← Qwen2.5; nobody trains 0.5B from scratch for production code-LMs because the data efficiency math fails). Spec v2.93.0 → **v2.94.0**. **MODEL-2 ship % stays at 57%** until the fine-tune produces measurable val_loss < 9.38 evidence. **MODEL-1 ship % unchanged at 91%**. Coverage tally unchanged this cycle (strategic amendment, no falsifier flips yet).
 **Atomic next action (v2.93.0):** **§48 — SHIP-007 layer-0 attention bisection cascade ALGORITHM-LEVEL COMPLETE (PRs #1455 + #1456 + #1457)** (see new §48 below). Three more PRs after §47 closed the §47.1 cascade roadmap to step 6 of 8 at the algorithm level: (i) PR #1455 — `forward_traced_with_plan` wires 4 attention sub-stages (`QPostRope`, `KPostRope`, `AttnScores`, `AttnSoftmax`); FALSIFY-ATTN-SUB-002 PARTIAL_ALGORITHM_LEVEL; closes the §47.4 parent-contract drift as a side effect (+ memory cost: 112 bytes/forward at BOS). (ii) PR #1456 — drift-prevention test for FALSIFY-ATTN-SUB-003 in `crates/apr-cli/src/commands/diff_05_aprt_stage.rs`; 2 new tests (`falsify_attn_sub_003_new_stages_per_stage_agnostic` + `falsify_attn_sub_003_cosine_detects_softmax_divergence`); pins that `apr diff --values` is per-stage-agnostic for the 2 new stage suffixes. (iii) PR #1457 — extends `scripts/generate_qwen25_coder_fp16_stages.py` with `--with-attn-substages` (default ON) installing per-instance `Qwen2Attention.forward` monkeypatch under `attn_implementation="eager"`; captures the 4 missing stages (`q_post_rope`, `k_post_rope`, `attn_scores`, `attn_softmax`); pre-condition for FALSIFY-ATTN-SUB-004 LIVE bisection now algorithm-bound (BLOCKER_FIXTURE_ABSENT → PARTIAL_ALGORITHM_LEVEL on this PR's merge). Toyota Way correction during research: the pre-impl note estimated 7 missing stages + ~140 LOC; live source inspection of the existing script found 3 already-captured (`qkv_matmul`, `qkv_bias`, `attention`), reducing scope to **4 stages, ~80 LOC**. **Steps 7-8 (LIVE RTX 4090 bisection + root-cause fix) require operator action**: (a) canonical `apr` release binary needs rebuild post-#1451 (the `/mnt/nvme-raid0/targets/aprender/release/apr` rejects `attn_scores` stage today); (b) PyTorch/CUDA driver mismatch on the host blocks `--device cuda` (workaround: `--device cpu` is multi-min but functional). **MODEL-1 ship %**: 91% (cascade is scaffold; ship % moves at SUB-004 LIVE DISCHARGE in step 7). **MODEL-2 ship %**: 57%. Spec v2.92.0 → **v2.93.0**. Coverage tally: 20+32 → **20+36** (+4 PARTIAL_ALGORITHM_LEVEL from `trace-attn-sub-stages-v1` v1.1.0 falsifiers landing on main via #1450; the 5th — SUB-004 — remains BLOCKER until #1457 ships and an operator runs the live RTX 4090 bisection).
 **Atomic next action (v2.92.0):** **§47 — SHIP-007 layer-0 attention bisection cascade STARTED (PRs #1450 + #1451 + #1452)** (see new §47 below). Three more PRs ship the §46.7(a) follow-up scaffold: (i) PR #1450 — new contract `trace-attn-sub-stages-v1.yaml` v1.0.0 PROPOSED → v1.1.0 PROPOSED (Toyota Way correction within the same branch). v1.0.0 originally claimed 5 new `SaveTensorStage` variants; live inspection of `inference_trace::save_tensor_stage` showed 3 already exist (`QPostRope`, `KPostRope`, `Attention`) — only **2 are truly new** (`AttnScores`, `AttnSoftmax`). v1.1.0 corrected scope to those 2 + documented the 9-stage `bisection_chain_layer_0` equation across parent + new stages. (ii) PR #1451 — `SaveTensorStage` enum gains the 2 new variants in canonical computation order (`KPostRope → AttnScores → AttnSoftmax → Attention`); 5 new tests for FALSIFY-ATTN-SUB-001 (round-trip, ordering, parser-list); 167/167 inference_trace tests PASS; `cargo check --workspace --lib` clean. (iii) PR #1452 — research evidence note documenting a **pre-existing capture gap discovered while authoring the wire-plan**: `QPostRope` + `KPostRope` are in the parent enum but have NO `emit()` calls in `forward_traced_with_plan`. The parent contract `apr-cli-trace-save-tensor-v1.yaml` v1.4.0 (FUNCTIONAL) silently overstates coverage for those 2 stages. The next-cycle FALSIFY-ATTN-SUB-002 PR will wire **4 stages, not 2**, closing this drift as a side effect. **MODEL-1 ship % unchanged at 91%** (cascade is scaffold; ship % moves when a falsifier flips DISCHARGED, expected at FALSIFY-ATTN-SUB-004 LIVE bisection in a future cycle). **MODEL-2 ship % unchanged at 57%**. Spec v2.91.0 → **v2.92.0**. Coverage tally unchanged this cycle (5 falsifier slots PARTIAL_ALGORITHM_LEVEL added to a NEW contract — these increment coverage when the contract YAML lands on main, which gates on PR #1450 merge).
@@ -4470,6 +4471,102 @@ Unchanged from §29 because PR E did not land. Next-session agenda: do the §30.
 Per `feedback_fix_root_cause_never_route_around.md`: the §28 fix would have route-around'd a real bug because the named site (matmul kernel) is not where the divergence originates. The empirical refutation in §30 IS the work that protects the next attempt from shipping a no-op. This refutation is itself a coverage-incrementing artifact (it falsifies a hypothesis), even though no PARTIAL flips to DISCHARGED.
 
 The Toyota Way fix is to bisect upstream, not to flip the kernel call.
+
+## §50. LAYOUT-001/002 contract violation in safetensors→APR FFN import — root cause of Qwen2-0.5B-Instruct gibberish, blocks §49 (2026-05-04)
+
+§49 pivoted MODEL-2 strategy to "initialize from Qwen2.5-Coder-0.5B-Instruct + fine-tune." The first attempt to use that base model surfaced an immediate blocker: `apr run` on the imported 0.5B produces gibberish (CJK/Polish/diacritic byte fragments like "udaÅĤo", "ëĸ»", "zwiÄħzku"). This section documents the empirical bisection that pinned the root cause, the methodology lesson learned, and the bounded fix scope for next session.
+
+### 50.1 Empirical root cause via `apr diff` (one command, definitive)
+
+```
+$ apr diff /mnt/nvme-raid0/models/qwen2.5-coder-0.5b-instruct-imported.apr \
+           /tmp/qwen2.5-coder-0.5b-instruct.gguf \
+           --values --limit 5
+[TRANSPOSED] model.layers.0.mlp.down_proj.weight
+  TRANSPOSED shapes: [896, 4864] vs [4864, 896]
+  dist: 100.0% ident, 0.0% small, 0.0% med, 0.0% large
+[TRANSPOSED] model.layers.0.mlp.gate_proj.weight
+  TRANSPOSED shapes: [4864, 896] vs [896, 4864]
+[TRANSPOSED] model.layers.0.mlp.up_proj.weight
+  TRANSPOSED shapes: [4864, 896] vs [896, 4864]
+[IDENTICAL] model.layers.0.post_attention_layernorm
+DIAGNOSIS: Values identical, shapes transposed (format layout diff)
+```
+
+The diagnosis line **literally identifies the bug class**: `LAYOUT-001/002` — same class CLAUDE.md flags as "this bug has occurred 100+ times". Only FFN tensors are mis-laid; q/k/v/o projections and norms are correct. Bytes are byte-identical between APR and GGUF; only the shape interpretation differs.
+
+### 50.2 Why 7B works, 0.5B fails (variable isolated)
+
+| Aspect | 7B Qwen2.5-Coder | 0.5B Qwen2.5-Coder |
+|--------|------------------|---------------------|
+| Source format | GGUF | SafeTensors |
+| `apr import` path | GGUF→APR (with transpose) | SafeTensors→APR (no transpose) |
+| FFN layout in APR | `[in, out]` (transposed at import to match runtime kernel) | `[out, in]` (HF native, NOT transposed) |
+| `apr run` result | ✅ coherent ("def fibonacci(n):\n if n <= 0:\n return ...") | ❌ gibberish |
+
+The 7B teacher (MODEL-1 candidate) has worked since import because it inherited GGUF's transposed FFN layout. The 0.5B base (MODEL-2 §49 candidate) preserves HF's native layout, which is incompatible with realizar's runtime kernel expectations.
+
+### 50.3 Five Whys (evidence-backed, all wrong hypotheses falsified)
+
+1. **Why does 0.5B `apr run` produce gibberish?** FFN matmul reads weights in wrong orientation → garbage output propagated through 24 layers.
+2. **Why wrong orientation?** APR FFN tensors stored as `[out, in]` (HF SafeTensors convention); GGUF/kernel expect `[in, out]` (transposed).
+3. **Why APR has HF layout?** Safetensors→APR import preserved HF shape labels without transposing to canonical APR layout.
+4. **Why no transpose?** The import code path lacks the LAYOUT-001/002 transpose step that GGUF→APR import has at `crates/aprender-core/src/format/converter/write.rs::transpose_q4k_for_matmul` (etc., now in `trueno-quant`).
+5. **Why undetected for months?** No round-trip falsification gate compares post-import APR shapes against GGUF reference. `apr diff` finds it instantly but isn't run automatically post-import.
+
+### 50.4 Hypotheses falsified during this investigation (do NOT re-investigate)
+
+The bisection burned ~15 turns on these surface hypotheses before `apr diff` produced the diagnosis in one command. Saved to memory `project_qwen2_0_5b_is_ship_007_manifestation.md`:
+
+| # | Hypothesis | How falsified |
+|---|-----------|---------------|
+| 1 | Tied-embedding shape orientation `[vocab, hidden]` vs `[hidden, vocab]` | Both runtime paths handle correctly |
+| 2 | dtype string case mismatch `"f16"` vs `"F16"` | Writer emits uppercase (`tensor_index_impl.rs:188`) |
+| 3 | `dtype_to_qtype("F16")` falls through to F32 | Returns 1 correctly (`mapped_apr_model.rs:212`) |
+| 4 | `fused_matmul` doesn't handle qtype=1 | Has explicit F16 branch (`matmul_fused.rs:116-121`) |
+
+### 50.5 Methodology lesson (saved to feedback memory)
+
+CLAUDE.md mandates "use apr tools first" and lists `apr qa`, `apr diff`, `apr trace` etc. as MANDATORY first-step diagnostics. This investigation demonstrated that **for any model output defect, `apr diff` and `apr qa --verbose` MUST come BEFORE any code reading**. Running `apr diff` in turn 1 would have produced the LAYOUT-001/002 diagnosis immediately. Memory entries created:
+
+- `feedback_apr_qa_first_then_hypothesize.md` — methodology rule
+- `project_qwen2_0_5b_is_ship_007_manifestation.md` — full investigation log with falsified hypotheses
+
+### 50.6 Two PRs shipped this cycle
+
+**PR #1463 MERGED (10:09Z):** `apr qa` Golden Output gate hardened with statistical gibberish detection (3 signals: non-ASCII ratio > 60%, 4+ byte fragment repeated 3+ times, U+FFFD density). 14/14 unit tests passing including 3 with captured Qwen2-0.5B gibberish strings as positive cases. **Prevents this entire defect class from hiding in CI going forward** — the gate that allowed 0.5B's gibberish to pass undetected is now load-bearing.
+
+**PR #1466 OPEN auto-merge-armed:** `evidence/qwen2-0.5b-bisection-2026-05-04/` directory — `findings.md` (full Five Whys + falsified hypotheses + fix scope) + `gguf-trace-coherent-logits.json` (proves model weights are healthy: top-5 logits `<|im_end|>` 10.54, ` The` 10.47, ` For` 10.18, ` Each` 10.15 from `apr trace` on GGUF-converted 0.5B). No code changes — single-piece-flow Toyota Way: investigation evidence and implementation are separate atomic PRs.
+
+### 50.7 Fix scope NOT shipped this cycle (next-session work)
+
+The fix is bounded but **NOT trivial**. Multi-path complexity makes a wrong-direction transpose catastrophic — would silently break MODEL-1's working 7B teacher (worse regression than current 0.5B issue). Specifically:
+
+- **Three writer entry points**: `add_f32_tensor_to_writer` (`write.rs:247`), `add_tensor_with_quantization` (`f16_convert.rs:164`), and the streaming variant. Each handles different quantization regimes (F32, F16, Q4_K) and may interact differently with the existing transpose helpers (`transpose_q4k_for_matmul` etc., now consolidated in trueno-quant per "Toyota Way consolidation" comments).
+- **`needs_transpose` scaffolding exists but is dead code**: `crates/aprender-core/src/format/converter/f16_convert.rs:100-127` — has the right tensor patterns (`down_proj.weight`, `gate_proj.weight`, `up_proj.weight`, `o_proj.weight`, `q_proj.weight`, etc.) but is `#[allow(dead_code)]` annotated as "Scaffolding for PMAT-103 layout conversion optimization." Either wire it up correctly OR refactor into an explicit per-path transpose call.
+- **7B regression risk**: 7B was GGUF-imported. Verifying its byte layout is unchanged after the safetensors-path fix requires a control test (`apr diff` on a re-imported 7B, expecting all `IDENTICAL`).
+
+**Recommended next-session implementation plan:**
+1. Read `tensor-layout-v1.yaml` contract to establish canonical direction (the SOURCE OF TRUTH per CLAUDE.md).
+2. Verify which path each format takes via instrumented logging or `apr inspect --json` on a known-working 7B import vs failing 0.5B import.
+3. Add direction-correct transpose for safetensors path in the appropriate writer. Bounded scope: ~50 LOC.
+4. Drift-prevention test: post-import, run `apr diff <imported.apr> <reference.gguf> --values --limit 3` — must report `IDENTICAL`, fail if `[TRANSPOSED]`. Gate as new falsifier in `tensor-layout-v1` v1.x.0.
+5. Verify with live RTX 4090: `apr run` on re-imported 0.5B produces coherent code completion AND 7B teacher still produces coherent inference (no regression).
+
+### 50.8 Ship-% impact
+
+**MODEL-1 ship % unchanged at 91%** — 7B teacher still works through the GGUF-import path. The fix in §50.7 must verify this remains true (drift gate).
+
+**MODEL-2 ship % unchanged at 57%** — strategy A from §49 (Qwen2.5-Coder-0.5B-Instruct fine-tune) is **BLOCKED** on this fix. Once §50.7 lands and `apr run` on the 0.5B base produces coherent inference, MODEL-2 unblocks and ship % can move on fine-tune evidence.
+
+### 50.9 Related contracts and cross-references
+
+- **`tensor-layout-v1`** (`contracts/tensor-layout-v1.yaml`) — SOURCE OF TRUTH for LAYOUT-001/002. The bug `apr diff` found is exactly the class this contract exists to prevent. The §50.7 fix should add a new falsifier (e.g. `FFN-TRANSPOSE-001`) that round-trip-checks safetensors→APR FFN layout against a GGUF reference.
+- **`tied-embeddings-v1`** (phase `transpose_embed`) — same defect class, different tensor (lm_head/embed_tokens). Already has falsifiers for the lm_head case; the FFN case needs analogous coverage.
+- **§49** (MODEL-2 strategy pivot) — directly blocked on §50.7 fix landing.
+- **CLAUDE.md `## LAYOUT-001/002 Tensor Layout Safety`** — flags this bug class as "occurred 100+ times" and lists "Key Files" including `src/format/converter/write.rs` (where the fix lives) and `contracts/tensor-layout-v1.yaml` (where the new falsifier goes).
+
+---
 
 ## §49. MODEL-2 strategy pivot — from-scratch was a methodology defect (2026-05-04)
 
