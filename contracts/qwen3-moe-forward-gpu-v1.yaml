@@ -1,9 +1,146 @@
 metadata:
-  version: 1.1.0
+  version: 1.2.0
   kind: kernel
   created: '2026-05-04'
   author: PAIML Engineering
   amendment_history:
+    - version: 1.2.0
+      date: '2026-05-04'
+      kind: amendment
+      title: 'M-GPU-MOE-2 wgpu-fallback architecture decision: option I (OwnedQuantizedModelWgpu, analog of v1.1.0 option D)'
+      description: |
+        Records the architectural-seam decision that gates M-GPU-MOE-2
+        (wgpu fallback, per CLAUDE.md backend-agnostic mandate). Mirrors
+        the v1.1.0 option D amendment which pinned the CUDA substrate
+        BEFORE M-GPU-MOE-1.0 implementation; this amendment pins the
+        wgpu substrate before any wgpu code lands.
+
+        WHY THIS MATTERS NOW: M-GPU-MOE-1 implementation is in flight
+        (M-GPU-MOE-1.0-redo SHIPPED, M-GPU-MOE-1.1.1 SHIPPED,
+        M-GPU-MOE-1.1.2 OPEN as aprender PR #1477, M-GPU-MOE-1.2 test
+        scaffold OPEN as aprender PR #1484). Choosing the wgpu seam
+        early prevents the "wrong-type stub" wasted cycle that hit
+        M-GPU-MOE-1.0 (PR #1460 placed forward_qwen3_moe_gpu on
+        OwnedQuantizedModel; one cycle later we realized
+        OwnedQuantizedModelCuda was the correct seam and had to redo
+        the stub in PR #1464).
+
+        FOUR integration options for the wgpu fallback were considered:
+
+          (I) Mirror v1.1.0 option D: a new wrapper type
+              OwnedQuantizedModelWgpu with method forward_qwen3_moe_wgpu
+              - Wraps OwnedQuantizedModel + holds a wgpu::Device +
+                wgpu::Queue + cached wgpu::ComputePipelines for the
+                trueno-gpu kernels (QuantizeKernel for Q4_K dequant,
+                GemmKernel for matmul, etc.).
+              - Per-expert SwiGLU dispatches gate Q4_K matmul + up Q4_K
+                matmul + SiLU + down Q6_K matmul through the cached
+                pipelines, mirroring expert_swiglu_cuda's three-matmul
+                pattern.
+              - Pros: Maximum symmetry with v1.1.0 option D; reviewers
+                already understand the precedent; new file
+                `crates/aprender-serve/src/gguf/wgpu/forward_qwen3_moe_wgpu.rs`
+                line-for-line analog of forward_qwen3_moe_cuda;
+                helpers `wgpu/expert_swiglu_wgpu.rs` +
+                `wgpu/moe_ffn_forward_layer_wgpu.rs` analog of the
+                M-GPU-MOE-1.1.1 helpers.
+              - Cons: Code duplication between cuda/ and wgpu/ trees;
+                future cross-backend bug fixes touch two places.
+              CHOSEN.
+
+          (II) Generic GPU trait — define `GpuExecutor` impl'd by
+               CudaExecutor + a new WgpuExecutor; parameterize
+               forward_qwen3_moe_gpu<E: GpuExecutor> by executor type.
+              - Pros: One forward function for both backends; future
+                bug fixes auto-apply to both.
+              - Cons: Invasive — touches the existing
+                `OwnedQuantizedModelCuda::forward_qwen3_moe_cuda`
+                signature already shipped in M-GPU-MOE-1.0-redo;
+                forces every CUDA call site to migrate to the trait;
+                the trait surface area is large (q4k_matvec, q6k_gemv,
+                kernel_cache, prefix_cache, embed_buf, ...) and not
+                all primitives have wgpu equivalents in trueno-gpu
+                yet (e.g. prefix_cache is CUDA-only). Also: refactor
+                cost is ~5x option I and the user already ratified
+                "MODEL-1 ships GPU only" — abstraction is premature.
+              REJECTED.
+
+          (III) Runtime backend enum inside OwnedQuantizedModelCuda —
+                rename to OwnedQuantizedModelGpu + add
+                `enum Backend { Cuda(CudaExecutor), Wgpu(WgpuExecutor) }`
+                + branch on every method.
+              - Pros: One type covers both.
+              - Cons: Renames the type that's been the public surface
+                for `apr run --features cuda` since GH-87 (March
+                2026). Touches every existing CudaExecutor call site
+                with a runtime branch; CudaExecutor APIs that don't
+                map to wgpu (custom PTX kernels, CUDA streams,
+                cuBLAS) become Result::Err on the Wgpu arm — runtime
+                error class instead of compile-time prevention. Same
+                "invasive" failure mode as v1.1.0 option A.
+              REJECTED.
+
+          (IV) Defer wgpu indefinitely — mark M-GPU-MOE-2 as out of
+               scope for this contract; add a v2 contract when
+               needed.
+              - Pros: Zero amendment; ships nothing.
+              - Cons: Violates CLAUDE.md backend-agnostic mandate
+                (paragraph "Backend Agnostic — CPU (SIMD), GPU, WASM
+                via Trueno"); leaves the contract permanently DRAFT
+                because the v1.0.0 status block requires "wgpu
+                fallback + throughput target also discharge" for
+                ACTIVE_RUNTIME flip; effectively concedes that GPU
+                MoE only works on CUDA hardware (no Apple Silicon, no
+                AMD, no Intel ARC).
+              REJECTED.
+
+        DECISION: Option I. Implementation lives at
+        `crates/aprender-serve/src/gguf/wgpu/` (new directory mirroring
+        `crates/aprender-serve/src/gguf/cuda/`). Type:
+        `OwnedQuantizedModelWgpu`. Forward method:
+        `forward_qwen3_moe_wgpu(...)`. Per-layer helper:
+        `moe_ffn_forward_layer_wgpu`. Per-expert SwiGLU helper:
+        `expert_swiglu_wgpu`. The existing CUDA tree (M-GPU-MOE-1.0
+        through 1.2) is untouched — backend parity by code-path
+        symmetry, not by trait abstraction.
+
+        Naming convention note: cuda methods carry `_cuda` suffix
+        (forward_cuda, forward_qwen3_moe_cuda, q4k_matvec_cuda — the
+        last is implicit in CudaExecutor's API). The wgpu sibling
+        methods carry `_wgpu` suffix to preserve symmetry.
+
+        Implementation stages updated to reflect option I (no change
+        to M-GPU-MOE-0 / 0.5 / 1.x / 3 — only M-GPU-MOE-2 detail
+        expansion):
+
+          M-GPU-MOE-0    Contract scaffold (v1.0.0)              SHIPPED ✓
+          M-GPU-MOE-0.5  v1.1.0 option D amendment               SHIPPED ✓
+          M-GPU-MOE-0.6  v1.2.0 option I amendment (THIS PR)     SHIPPED ✓
+          M-GPU-MOE-1.0  Stub on OwnedQuantizedModelCuda         SHIPPED ✓ (PR #1464)
+          M-GPU-MOE-1.1  Per-expert CUDA dispatch                SHIPPED ✓ (PR #1469)
+          M-GPU-MOE-1.1.2 Full forward integration               OPEN (PR #1477)
+          M-GPU-MOE-1.2  Cosine-vs-CPU parity test scaffold      OPEN (PR #1484)
+          M-GPU-MOE-2.0  Stub on new OwnedQuantizedModelWgpu     PENDING
+                          (analog of M-GPU-MOE-1.0-redo for wgpu)
+          M-GPU-MOE-2.1  Per-expert wgpu dispatch via            PENDING
+                          trueno-gpu QuantizeKernel + GemmKernel
+                          (analog of M-GPU-MOE-1.1.1)
+          M-GPU-MOE-2.2  Full forward integration                PENDING
+                          (analog of M-GPU-MOE-1.1.2)
+          M-GPU-MOE-2.3  Cosine-vs-CPU parity test (wgpu)        PENDING
+                          (analog of M-GPU-MOE-1.2)
+          M-GPU-MOE-3    Throughput ≥150 tok/s + VRAM ≤95%       PENDING
+
+        Why this matters: option I has the same load-bearing virtue
+        that made v1.1.0 option D the right call — it's the option
+        a maintenance-mode reviewer can verify by code reading rather
+        than by running CI. Adding a new file tree under wgpu/ that
+        mirrors cuda/ line-for-line means a parity bug is caught by
+        diff, not by elaborate test infrastructure.
+
+        Recording cadence: companion-spec records this as M52
+        (cross-repo bookkeeping, no companion contract bump).
+
     - version: 1.1.0
       date: '2026-05-04'
       kind: amendment
@@ -166,18 +303,21 @@ metadata:
 
 kind: KernelContract
 name: qwen3-moe-forward-gpu
-version: "1.1.0"
-status: DRAFT   # Scaffold only; flips to ACTIVE_ALGORITHM_LEVEL when
-                # CUDA kernel + cosine parity gate (FALSIFY-QW3-MOE-GPU-
-                # PARITY-001) lands on aprender main. Flips to
-                # ACTIVE_RUNTIME when wgpu fallback + throughput target
-                # (≥150 tok/s on RTX 4090) also discharge.
+version: "1.2.0"
+status: DRAFT   # Scaffold + architecture amendments only; flips to
+                # ACTIVE_ALGORITHM_LEVEL when CUDA kernel + cosine
+                # parity gate (FALSIFY-QW3-MOE-GPU-PARITY-001) lands on
+                # aprender main. Flips to ACTIVE_RUNTIME when wgpu
+                # fallback + throughput target (≥150 tok/s on RTX 4090)
+                # also discharge.
                 #
                 # v1.0.0 (2026-05-04): Initial scaffold per
                 # claude-code-parity-apr POC M49 priority elevation.
                 # No code yet — this contract IS the deliverable for
                 # M-stage M-GPU-MOE-0.
-scope: "crates/aprender-serve/src/gguf/cuda/forward_qwen3_moe_cuda.rs (TBD per v1.1.0 option D), crates/aprender-serve/src/gguf/cuda/mod.rs (extends OwnedQuantizedModelCuda)"
+                # v1.1.0 (2026-05-04): Option D (OwnedQuantizedModelCuda).
+                # v1.2.0 (2026-05-04): Option I (OwnedQuantizedModelWgpu).
+scope: "crates/aprender-serve/src/gguf/cuda/forward_qwen3_moe_cuda.rs (per v1.1.0 option D), crates/aprender-serve/src/gguf/cuda/mod.rs (extends OwnedQuantizedModelCuda), crates/aprender-serve/src/gguf/wgpu/forward_qwen3_moe_wgpu.rs (per v1.2.0 option I, PENDING M-GPU-MOE-2.0), crates/aprender-serve/src/gguf/wgpu/mod.rs (introduces OwnedQuantizedModelWgpu, PENDING M-GPU-MOE-2.0)"
 
 description: |
   GPU sibling of the CPU `forward_qwen3_moe` path. Same end-to-end
@@ -356,12 +496,49 @@ implementation_stages:
     wgpu fallback path (per CLAUDE.md backend-agnostic mandate).
     Same numerical equivalence gate as M-GPU-MOE-1 but for non-CUDA
     hardware. Discharges AC_GPU_MOE_001..005 on a wgpu device.
+
+    Per v1.2.0 option I, M-GPU-MOE-2 decomposes into 4 substages
+    that mirror the M-GPU-MOE-1.x cascade:
+
+      M-GPU-MOE-2.0  Stub on new OwnedQuantizedModelWgpu type
+                     (new file `crates/aprender-serve/src/gguf/wgpu/mod.rs`,
+                     analog of `crates/aprender-serve/src/gguf/cuda/mod.rs`).
+                     Holds OwnedQuantizedModel + wgpu::Device + Queue +
+                     cached compute pipelines. New stub method
+                     `forward_qwen3_moe_wgpu(...)` returns
+                     UnsupportedOperation with a redirect to the
+                     2.x followups.
+
+      M-GPU-MOE-2.1  Per-expert wgpu dispatch helpers
+                     (`expert_swiglu_wgpu`, `moe_ffn_forward_layer_wgpu`,
+                     analog of M-GPU-MOE-1.1.1's helpers). Routes the
+                     three matmuls through trueno-gpu's QuantizeKernel
+                     (Q4_K dequant) + GemmKernel (matmul) via cached
+                     wgpu compute pipelines.
+
+      M-GPU-MOE-2.2  Full forward integration on
+                     OwnedQuantizedModelWgpu — replaces the 2.0 stub
+                     body with a line-for-line analog of
+                     forward_qwen3_moe_cuda's body. FFN dispatches
+                     through moe_ffn_forward_layer_wgpu.
+
+      M-GPU-MOE-2.3  Cosine-vs-CPU parity test
+                     `crates/aprender-serve/tests/qwen3_moe_wgpu_parity.rs`
+                     (analog of M-GPU-MOE-1.2's qwen3_moe_gpu_parity.rs).
+                     Asserts cos_sim ≥ 0.99 against CPU LAZY-FUSED-MATVEC
+                     reference on the cached 17.3 GB Qwen3-Coder GGUF.
+                     Run on hardware with wgpu support (Apple Silicon
+                     Metal, AMD ROCm via wgpu-vulkan, Intel ARC via
+                     wgpu-vulkan, etc).
   expected_acceptance:
     - AC_GPU_MOE_001
     - AC_GPU_MOE_002
     - AC_GPU_MOE_003
     - AC_GPU_MOE_004
     - AC_GPU_MOE_005
+  blockers:
+    - 'wgpu adapter selection on non-NVIDIA hardware needs a probe + selection policy (Apple Metal, AMD Vulkan, Intel Vulkan)'
+    - 'trueno-gpu QuantizeKernel for Q6_K is required for the down-projection (Q4_K is in trueno-gpu already; verify Q6_K coverage before M-GPU-MOE-2.1)'
 
 - id: M-GPU-MOE-3
   status: PENDING
