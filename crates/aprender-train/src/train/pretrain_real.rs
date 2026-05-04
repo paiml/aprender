@@ -53,6 +53,30 @@ pub fn llama_370m_transformer_config() -> TransformerConfig {
     }
 }
 
+/// Polymorphic builder per `apr-pretrain-arch-polymorphic-v1` §arch_extraction_signature.
+///
+/// Discharges FALSIFY-APR-PRETRAIN-ARCH-002 (init=None preserves Llama370M baseline)
+/// and FALSIFY-APR-PRETRAIN-ARCH-003 (init=Some passes through extracted config).
+///
+/// Behaviour:
+///   init = None  → return `llama_370m_transformer_config()`, the §24/§25
+///                  from-scratch baseline. NO regression.
+///   init = Some  → clone the caller-extracted `TransformerConfig` byte-for-byte.
+///                  No silent defaults, no field overrides.
+///
+/// The caller is responsible for actually reading the APR file and producing the
+/// `TransformerConfig` (typically via `TransformerConfig::from_apr_metadata` from
+/// `transformer::config`). Decoupling the dispatch from the file I/O keeps
+/// `aprender-train` free of `aprender-serve` (the APR loader) as a build dep.
+///
+/// Spec: SPEC-SHIP-TWO-001 §50.4 step 5c.
+pub fn build_transformer_config(init: Option<&TransformerConfig>) -> TransformerConfig {
+    match init {
+        None => llama_370m_transformer_config(),
+        Some(cfg) => cfg.clone(),
+    }
+}
+
 /// Build a `TransformerTrainConfig` with MODEL-2 v2-remedy defaults
 /// (LR=5e-5, AdamW defaults, fp32, seed=42 set by caller).
 pub fn llama_370m_train_config(lr: f32, seq_length: usize, seed: u64) -> TransformerTrainConfig {
@@ -214,6 +238,99 @@ mod tests {
         assert!((cfg.rms_norm_eps - Llama370MConfig::RMS_NORM_EPS).abs() < f32::EPSILON);
         assert!(!cfg.use_bias, "INV-ARCH-370M-008: no bias");
         assert!(cfg.tie_word_embeddings, "INV-ARCH-370M-004: tied embeddings");
+    }
+
+    /// FALSIFY-APR-PRETRAIN-ARCH-002 — `build_transformer_config(None)` returns
+    /// the Llama370M baseline byte-for-byte. Falsifies regression in the §24/§25
+    /// from-scratch path when the polymorphic dispatch was added.
+    ///
+    /// Spec: SPEC-SHIP-TWO-001 §50.4 step 5c.
+    #[test]
+    fn build_transformer_config_no_init_matches_llama370m() {
+        let baseline = llama_370m_transformer_config();
+        let result = build_transformer_config(None);
+        assert_eq!(result.hidden_size, baseline.hidden_size);
+        assert_eq!(result.num_attention_heads, baseline.num_attention_heads);
+        assert_eq!(result.num_kv_heads, baseline.num_kv_heads);
+        assert_eq!(result.intermediate_size, baseline.intermediate_size);
+        assert_eq!(result.num_hidden_layers, baseline.num_hidden_layers);
+        assert_eq!(result.vocab_size, baseline.vocab_size);
+        assert_eq!(
+            result.max_position_embeddings,
+            baseline.max_position_embeddings
+        );
+        assert!((result.rms_norm_eps - baseline.rms_norm_eps).abs() < f32::EPSILON);
+        assert!((result.rope_theta - baseline.rope_theta).abs() < f32::EPSILON);
+        assert_eq!(result.use_bias, baseline.use_bias);
+        assert_eq!(result.tie_word_embeddings, baseline.tie_word_embeddings);
+        assert_eq!(result.architecture, baseline.architecture);
+        assert_eq!(result.hf_architecture, baseline.hf_architecture);
+        assert_eq!(result.hf_model_type, baseline.hf_model_type);
+    }
+
+    /// FALSIFY-APR-PRETRAIN-ARCH-003 — `build_transformer_config(Some(cfg))`
+    /// passes through the caller-provided config byte-for-byte. No silent
+    /// defaults, no field overrides. Tests with Qwen2.5-Coder-0.5B shape
+    /// because that is the §49 fine-tune target.
+    ///
+    /// Spec: SPEC-SHIP-TWO-001 §50.4 step 5c.
+    #[test]
+    fn build_transformer_config_qwen_init_matches_input() {
+        let qwen = TransformerConfig::qwen2_0_5b();
+        let result = build_transformer_config(Some(&qwen));
+        assert_eq!(result.hidden_size, qwen.hidden_size, "hidden_size");
+        assert_eq!(
+            result.num_attention_heads, qwen.num_attention_heads,
+            "num_attention_heads"
+        );
+        assert_eq!(result.num_kv_heads, qwen.num_kv_heads, "num_kv_heads");
+        assert_eq!(
+            result.intermediate_size, qwen.intermediate_size,
+            "intermediate_size"
+        );
+        assert_eq!(
+            result.num_hidden_layers, qwen.num_hidden_layers,
+            "num_hidden_layers"
+        );
+        assert_eq!(result.vocab_size, qwen.vocab_size, "vocab_size");
+        assert_eq!(
+            result.max_position_embeddings, qwen.max_position_embeddings,
+            "max_position_embeddings"
+        );
+        assert_eq!(result.use_bias, qwen.use_bias, "use_bias");
+        assert_eq!(
+            result.tie_word_embeddings, qwen.tie_word_embeddings,
+            "tie_word_embeddings"
+        );
+        assert_eq!(result.architecture, qwen.architecture, "architecture");
+        // GQA-7:1 ratio preserved (Qwen2.5-0.5B: 14 / 2 = 7)
+        assert_eq!(
+            result.num_attention_heads / result.num_kv_heads,
+            7,
+            "GQA ratio must preserve as 7:1 (Qwen2.5-0.5B canonical)"
+        );
+    }
+
+    /// Drift-prevention: dispatch is mutually exclusive — None and Some
+    /// produce different configs (otherwise the polymorphic builder is
+    /// vacuous). Catches a future refactor that accidentally always
+    /// returns Llama370M regardless of init.
+    ///
+    /// Spec: SPEC-SHIP-TWO-001 §50.4 step 5c — drift prevention.
+    #[test]
+    fn build_transformer_config_dispatch_mutually_exclusive() {
+        let qwen = TransformerConfig::qwen2_0_5b();
+        let none_result = build_transformer_config(None);
+        let some_result = build_transformer_config(Some(&qwen));
+        // The two outputs MUST differ, otherwise the dispatch is broken.
+        assert_ne!(
+            none_result.hidden_size, some_result.hidden_size,
+            "dispatch must differentiate None vs Some — Llama370M hidden=1024 vs Qwen=896"
+        );
+        assert_ne!(
+            none_result.vocab_size, some_result.vocab_size,
+            "dispatch must differentiate None vs Some — Llama370M vocab=50257 vs Qwen=151936"
+        );
     }
 
     #[test]
