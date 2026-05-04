@@ -44,13 +44,21 @@ Captured stages (13 per-layer + 2 whole-model = 15/16):
       final_norm (model.norm out)
       lm_head (model.lm_head out — last-token logits, dim_product=152064)
 
-Stages NOT captured (3/16 — require deeper module instrumentation):
+    Attention sub-stages (gated on --with-attn-substages, default ON):
       qkv_matmul (concat of pre-bias q_proj+k_proj+v_proj outputs)
       qkv_bias (post-bias)
-      attention (Q@Kᵀ@V before O-proj — needs RoPE'd Q/K)
-    These are deferred to a follow-up — the 13 captured stages already
-    cover all major stages of the forward and provide complete bisection
-    signal for finding the first diverging stage between APR and HF FP16.
+      q_post_rope (Q after apply_rotary_pos_emb, pre-repeat_kv)
+      k_post_rope (K after apply_rotary_pos_emb, pre-repeat_kv)
+      attn_scores (Q·Kᵀ * scaling, pre-mask, pre-softmax)
+      attn_softmax (softmax(scores+mask), pre-V)
+      attention (softmax @ V, pre-O-proj)
+
+The 4 stages between qkv_bias and attn_out require a per-layer monkeypatch
+on `Qwen2Attention.forward` because they are intermediate tensors inside
+the attention module, not module inputs/outputs that hooks can see. The
+patch closes over a shared `captured` dict and emits the 4 stages for each
+target layer index; non-target layers fall through to the original eager
+forward.
 
 Output schema (APRT byte format, identical to `apr trace --save-tensor`):
     Header: 12 bytes
@@ -100,6 +108,13 @@ def parse_args() -> argparse.Namespace:
                    help="Model dtype (default: float16, matches APR Q4K dequant precision)")
     p.add_argument("--device", default="cuda",
                    help="Device for forward pass (default: cuda; FP16 7B fits on 24GB VRAM)")
+    p.add_argument("--with-attn-substages", dest="with_attn_substages", action="store_true",
+                   default=True,
+                   help="Capture 4 attention sub-stages via Qwen2Attention.forward monkeypatch "
+                        "(q_post_rope, k_post_rope, attn_scores, attn_softmax). Default: ON. "
+                        "Required for FALSIFY-ATTN-SUB-004 LIVE bisection (§47.6 step 7).")
+    p.add_argument("--no-attn-substages", dest="with_attn_substages", action="store_false",
+                   help="Skip the attention sub-stage monkeypatch (legacy 13-stage capture).")
     return p.parse_args()
 
 
@@ -132,6 +147,88 @@ def to_fp32_numpy(t: torch.Tensor) -> np.ndarray:
     return t.detach().float().cpu().numpy().astype(np.float32, copy=False)
 
 
+def install_attn_substages_patch(
+    model: torch.nn.Module,
+    layers_to_capture: list[int],
+    captured: dict[tuple[int, str], np.ndarray],
+) -> None:
+    """Install per-layer monkeypatches on `Qwen2Attention.forward` to capture
+    the 4 attention sub-stages: q_post_rope, k_post_rope, attn_scores, attn_softmax.
+
+    Pre-condition: model must be loaded with `attn_implementation="eager"` so that
+    the inlined eager attention path matches the patched forward semantics
+    (else attn_scores + attn_softmax may be skipped by sdpa/flash-attn fast paths).
+
+    The patch is applied PER INSTANCE on the requested layers' `.self_attn` modules
+    (not globally on the class). Non-target layers retain the original forward.
+
+    Per `contracts/trace-attn-sub-stages-v1.yaml` v1.1.0 SUB-004 invariant:
+    "9-element cosine sequence layer-0 [attn_norm, qkv_matmul, qkv_bias, q_post_rope,
+    k_post_rope, attn_scores, attn_softmax, attention, attn_out]".
+    """
+    from transformers.models.qwen2.modeling_qwen2 import (  # type: ignore[import-untyped]
+        apply_rotary_pos_emb,
+        repeat_kv,
+    )
+
+    target_layer_idxs = set(layers_to_capture)
+
+    def traced_forward(self, hidden_states, position_embeddings, attention_mask=None,
+                       past_key_values=None, **kwargs):
+        # Mirrors transformers 5.x Qwen2Attention.forward but inlines eager_attention_forward
+        # so we can capture intermediates. Only target layers go through this path.
+        input_shape = hidden_states.shape[:-1]
+        hidden_shape = (*input_shape, -1, self.head_dim)
+
+        query_states = self.q_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+        key_states = self.k_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+        value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+
+        cos, sin = position_embeddings
+        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
+
+        # Capture #1+#2: post-RoPE Q and K (pre-repeat_kv, GQA-shaped).
+        captured[(self.layer_idx, "q_post_rope")] = to_fp32_numpy(query_states)
+        captured[(self.layer_idx, "k_post_rope")] = to_fp32_numpy(key_states)
+
+        if past_key_values is not None:
+            key_states, value_states = past_key_values.update(
+                key_states, value_states, self.layer_idx
+            )
+
+        # Inline eager_attention_forward with capture points at scores + softmax.
+        key_states_repeated = repeat_kv(key_states, self.num_key_value_groups)
+        value_states_repeated = repeat_kv(value_states, self.num_key_value_groups)
+
+        attn_scores = torch.matmul(query_states, key_states_repeated.transpose(2, 3)) * self.scaling
+
+        # Capture #3: pre-mask, pre-softmax scores.
+        captured[(self.layer_idx, "attn_scores")] = to_fp32_numpy(attn_scores)
+
+        attn_weights_masked = attn_scores
+        if attention_mask is not None:
+            attn_weights_masked = attn_weights_masked + attention_mask
+
+        attn_weights = torch.nn.functional.softmax(
+            attn_weights_masked, dim=-1, dtype=torch.float32
+        ).to(query_states.dtype)
+
+        # Capture #4: post-softmax weights (pre-V multiply).
+        captured[(self.layer_idx, "attn_softmax")] = to_fp32_numpy(attn_weights)
+
+        attn_output = torch.matmul(attn_weights, value_states_repeated)
+        attn_output = attn_output.transpose(1, 2).contiguous()
+        attn_output = attn_output.reshape(*input_shape, -1).contiguous()
+        attn_output = self.o_proj(attn_output)
+        return attn_output, attn_weights
+
+    import types
+
+    for layer_idx in target_layer_idxs:
+        attn_module = model.model.layers[layer_idx].self_attn
+        attn_module.forward = types.MethodType(traced_forward, attn_module)
+
+
 def main() -> int:
     args = parse_args()
     layers_to_capture = sorted({int(x) for x in args.layers.split(",") if x.strip()})
@@ -150,12 +247,18 @@ def main() -> int:
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
 
     print("Loading model from HF cache (no download — should be instant)...")
+    # Force eager attention when capturing sub-stages: sdpa/flash-attn fast paths
+    # don't expose pre-softmax scores or post-softmax weights as captureable
+    # intermediates. Eager path is the only one whose attn_scores/attn_softmax
+    # we can intercept via monkeypatch.
+    attn_impl = "eager" if args.with_attn_substages else None
     model = AutoModelForCausalLM.from_pretrained(
         args.model,
         torch_dtype=dtype,
         device_map={"": args.device},
         trust_remote_code=True,
         low_cpu_mem_usage=True,
+        attn_implementation=attn_impl,
     )
     model.eval()
 
@@ -304,6 +407,11 @@ def main() -> int:
         handles.append(model.model.layers[layer_idx].register_forward_hook(make_layer_output_hook(layer_idx)))
 
     print(f"  registered {len(handles)} hooks")
+
+    if args.with_attn_substages:
+        print(f"Installing Qwen2Attention.forward monkeypatch on layers {layers_to_capture}...")
+        install_attn_substages_patch(model, layers_to_capture, captured)
+        print(f"  patched {len(layers_to_capture)} layer(s) for q_post_rope/k_post_rope/attn_scores/attn_softmax")
     print()
 
     print("Running forward pass (no_grad)...")
@@ -348,8 +456,19 @@ def main() -> int:
         f.write(f"dtype:                 {dtype}\n")
         f.write(f"device:                {args.device}\n")
         f.write(f"layers_captured:       {layers_to_capture}\n")
-        f.write(f"stages_per_layer:      [embedding, attn_norm, attn_out, post_ffn_residual, ffn_norm, ffn_gate, ffn_up, ffn_silu, ffn_swigl, ffn_out]\n")
+        base_stages = [
+            "embedding", "attn_norm", "qkv_matmul", "qkv_bias", "attention",
+            "attn_out", "post_ffn_residual", "ffn_norm", "ffn_gate", "ffn_up",
+            "ffn_silu", "ffn_swigl", "ffn_out",
+        ]
+        substage_stages = ["q_post_rope", "k_post_rope", "attn_scores", "attn_softmax"]
+        if args.with_attn_substages:
+            stages_per_layer_list = base_stages + substage_stages
+        else:
+            stages_per_layer_list = base_stages
+        f.write(f"stages_per_layer:      {stages_per_layer_list}\n")
         f.write(f"stages_whole_model:    [final_norm, lm_head]\n")
+        f.write(f"with_attn_substages:   {args.with_attn_substages}\n")
         f.write(f"vocab_size:            {lm_head_logits.shape[0]}\n")
         f.write(f"argmax_token:          {argmax_token}\n")
         f.write(f"argmax_text:           {argmax_text!r}\n")
