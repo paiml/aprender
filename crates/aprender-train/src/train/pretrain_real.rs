@@ -72,6 +72,41 @@ pub fn load_init_tensors_from_apr(
     })
 }
 
+/// Reject an init `TransformerConfig` whose architecture family is incompatible
+/// with the pretrain target (decoder-only LM training).
+///
+/// Per `apr-pretrain-arch-polymorphic-v1` §arch_extraction_signature
+/// (PR #1473), wrong-arch APR (e.g., a CodeBERT/RoBERTa encoder model)
+/// MUST be FAIL-FAST not silent-truncate. Without this gate, an operator
+/// who points `--init` at e.g. `microsoft/codebert-base.apr` would silently
+/// load encoder weights into a decoder-shaped trainer, producing nonsense
+/// gradients that the divergence guard catches LATE (after multiple epochs).
+///
+/// Discharges FALSIFY-APR-PRETRAIN-ARCH-007 at PARTIAL_ALGORITHM_LEVEL.
+///
+/// Spec: SPEC-SHIP-TWO-001 §50.4 step 5f.1.
+///
+/// # Errors
+///
+/// Returns Err with a clear architecture-family-mismatch message when:
+/// - `cfg.architecture` is `ModelArchitecture::Encoder` (BERT/RoBERTa/CodeBERT)
+///
+/// Future expansion can add other family checks (e.g., reject hybrid SSM
+/// architectures whose forward pass differs from the standard decoder loop).
+pub fn validate_pretrain_init_arch_compatible(cfg: &TransformerConfig) -> Result<(), String> {
+    match cfg.architecture {
+        ModelArchitecture::Decoder => Ok(()),
+        ModelArchitecture::Encoder => Err(format!(
+            "FALSIFY-APR-PRETRAIN-ARCH-007: --init checkpoint has architecture=Encoder \
+             (e.g., BERT/RoBERTa/CodeBERT) but the pretrain trainer is decoder-only \
+             (Llama/Qwen-class causal LMs). Loading encoder weights into a decoder \
+             trainer would produce nonsense gradients. Architectural details: \
+             hidden_size={}, num_layers={}, vocab_size={}, hf_architecture={:?}",
+            cfg.hidden_size, cfg.num_hidden_layers, cfg.vocab_size, cfg.hf_architecture
+        )),
+    }
+}
+
 /// Build a `TransformerConfig` field-for-field from `Llama370MConfig::*`
 /// constants (the contract-frozen MODEL-2 370M architecture).
 pub fn llama_370m_transformer_config() -> TransformerConfig {
@@ -417,6 +452,83 @@ mod tests {
             none_result.vocab_size, some_result.vocab_size,
             "dispatch must differentiate None vs Some — Llama370M vocab=50257 vs Qwen=151936"
         );
+    }
+
+    /// FALSIFY-APR-PRETRAIN-ARCH-007 (decoder branch) — `validate_pretrain_init_arch_compatible`
+    /// returns Ok for a decoder-family config.
+    ///
+    /// Spec: SPEC-SHIP-TWO-001 §50.4 step 5f.1.
+    #[test]
+    fn validate_pretrain_init_arch_accepts_decoder() {
+        let qwen = TransformerConfig::qwen2_0_5b();
+        assert_eq!(qwen.architecture, ModelArchitecture::Decoder);
+        validate_pretrain_init_arch_compatible(&qwen)
+            .expect("decoder-family config (Qwen2.5-0.5B) MUST pass arch-compat gate");
+    }
+
+    /// FALSIFY-APR-PRETRAIN-ARCH-007 (encoder branch) — load-bearing test.
+    /// `validate_pretrain_init_arch_compatible` returns Err naming the
+    /// architecture-family mismatch when given an encoder config (e.g.,
+    /// CodeBERT). Without this gate, the decoder trainer would silently
+    /// build with encoder weights producing nonsense gradients.
+    ///
+    /// Spec: SPEC-SHIP-TWO-001 §50.4 step 5f.1.
+    #[test]
+    fn validate_pretrain_init_arch_rejects_encoder() {
+        // Construct a minimal encoder config (CodeBERT-shaped).
+        let bert = TransformerConfig {
+            hidden_size: 768,
+            num_attention_heads: 12,
+            num_kv_heads: 12,
+            intermediate_size: 3072,
+            num_hidden_layers: 12,
+            vocab_size: 50265,
+            max_position_embeddings: 514,
+            rms_norm_eps: 1e-12,
+            rope_theta: 10_000.0,
+            use_bias: true,
+            head_dim_override: None,
+            architecture: ModelArchitecture::Encoder,
+            hf_architecture: Some("RobertaModel".to_string()),
+            hf_model_type: Some("roberta".to_string()),
+            tie_word_embeddings: false,
+        };
+        let err = validate_pretrain_init_arch_compatible(&bert).expect_err(
+            "encoder-family config (CodeBERT/RoBERTa) MUST fail arch-compat gate — \
+             silent acceptance would corrupt §49 fine-tune trajectory before any \
+             FALSIFY-006 check could measure it",
+        );
+        assert!(
+            err.contains("FALSIFY-APR-PRETRAIN-ARCH-007"),
+            "error must cite falsifier id: {err}"
+        );
+        assert!(
+            err.contains("Encoder"),
+            "error must name the architecture family: {err}"
+        );
+        assert!(
+            err.contains("decoder-only"),
+            "error must explain why this is wrong (decoder trainer): {err}"
+        );
+        assert!(
+            err.contains("RobertaModel"),
+            "error must name the offending hf_architecture: {err}"
+        );
+    }
+
+    /// Drift-prevention: validate_pretrain_init_arch_compatible's behavior on
+    /// the from-scratch baseline (Llama370M) — must Ok. Catches a future
+    /// refactor that accidentally over-rejects decoder configs.
+    #[test]
+    fn validate_pretrain_init_arch_accepts_llama370m_baseline() {
+        let llama = llama_370m_transformer_config();
+        assert_eq!(
+            llama.architecture,
+            ModelArchitecture::Decoder,
+            "Llama370M baseline MUST be Decoder (regression-free)"
+        );
+        validate_pretrain_init_arch_compatible(&llama)
+            .expect("Llama370M baseline (Decoder) MUST pass arch-compat gate");
     }
 
     #[test]
