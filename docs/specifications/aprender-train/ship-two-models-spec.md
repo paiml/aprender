@@ -1,7 +1,8 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.96.0
+**Version:** 2.97.0
+**Atomic next action (v2.97.0):** **§52 — §50.4 cascade ALGORITHM-COMPLETE on main; new step 5f.4 CLI wireup gap identified before 5g LIVE (2026-05-04)** (see new §52 below). Same-day continuation of §51 cascade landed PR #1479 (FALSIFY-APR-PRETRAIN-ARCH-007 encoder/decoder family validator) and PR #1481 (`load_init_tensors_from_apr` in `aprender-train`). #1483 (`populate_trainer_from_init_tensors`, §50.4 step 5f.3) and #1482 (contract `apr-pretrain-arch-polymorphic-v1` v1.0.0 → v1.1.0 PARTIAL_ALGORITHM_LEVEL bump) are MERGEABLE in queue. **All 8 falsifiers in `apr-pretrain-arch-polymorphic-v1` are now bound on main or about to land**: 6 already MERGED (#1474/#1475/#1476/#1478/#1479/#1473), #1483 + #1482 cover the remaining 2 (5f.3 populate + the v1.1.0 contract status bump). **NEW finding from live source inspection of `apr-cli/src/commands/pretrain.rs:259-297`**: even with all helper functions merged (`load_init_tensors_from_apr` + `validate_pretrain_init_arch_compatible` + `populate_trainer_from_init_tensors` + `build_transformer_config` + polymorphic preflight), the CLI dispatch `validate_init_apr_path` HARDCODES an `Err(...not yet wired...)` return — so an operator running `apr pretrain --init <Qwen>.apr` STILL gets a "not yet wired" runtime error. **Step 5f.4 (CLI wireup, ~150 LOC) is the missing connecting step that makes 5g LIVE actually runnable.** Roadmap re-scoped: 5a-5f.3 (algorithm machinery, COMPLETE) → **5f.4 (CLI wireup, NOT YET STARTED)** → 5g (LIVE 500-step fine-tune, gates ship-%) → 5h (stamp + publish). Spec v2.96.0 → **v2.97.0**. **MODEL-1 ship %**: unchanged at **91%**. **MODEL-2 ship %**: unchanged at **57%** until step 5g produces val_loss < 9.38 evidence — but step 5g now requires step 5f.4 to land first. Coverage tally unchanged this cycle (snapshot + roadmap re-scoping, not falsifier flips).
 **Atomic next action (v2.96.0):** **§51 — §50.4 cascade snapshot: 7/8 falsifiers PARTIAL_ALGORITHM_LEVEL bound; MODEL-2 ship-% gate narrowed to step 5g LIVE (2026-05-04)** (see new §51 below). Same-day continuation cycle landed 8 PRs across the architecture-polymorphic infrastructure track (§50.4 steps 5a-5f.1). Falsifier scoreboard for `apr-pretrain-arch-polymorphic-v1`: FALSIFY-001 (#1474) qwen2_0_5b matches HF + tie_word_embeddings DEFECT FIX; FALSIFY-002 + 003 (#1475) build_transformer_config polymorphic dispatch; FALSIFY-004 (#1478 MERGED) GQA-7:1 forward smoke; FALSIFY-005 + 006 (#1476 MERGED) polymorphic preflight Qwen vocab; FALSIFY-007 (#1479) encoder/decoder family validator; FALSIFY-008 contract-level pv-validate. Three PRs MERGED (#1472 §50, #1476, #1478); four still in auto-merge queue (#1473 contract, #1474 fix, #1475 dispatch, #1479 validator). **Step 5f.2 (APR weight load + tensor materialization, ~80 LOC) deliberately deferred** to let cascade settle; doing 5f.2 now would mean rebasing onto 4 in-flight PRs as they land. **Step 5g LIVE 500-step fine-tune is the only remaining load-bearing test** that moves MODEL-2 ship-%; everything else is infrastructure. Per §47-§48 lesson: "infrastructure shipped ≠ ship-% movement." Spec v2.95.0 → **v2.96.0**. **MODEL-1 ship %**: unchanged at **91%**. **MODEL-2 ship %**: unchanged at **57%** until step 5g produces val_loss < 9.38 evidence. Coverage tally unchanged (snapshot, not falsifier flip).
 **Atomic next action (v2.95.0):** **§50 — MODEL-2 architecture-coupling finding: §49.6 step 5 is multi-PR scope, not single-PR (re-scoped 5a-5h)** (see new §50 below). After §49.6 steps 3 + 4 landed (PR #1470 contract + PR #1471 wire-up), live source inspection of `pretrain_real.rs:38-46` revealed the trainer hardcodes every architectural constant from `Llama370MConfig` (hidden=1024, heads=16/4, ffn=2816, vocab=50_257). Qwen2.5-Coder-0.5B has different shape (hidden=896, heads=14/2, ffn=4864, vocab=151_936, GQA-7:1). Every tensor mismatches; §49.6 step 5's "0 LOC, just run apr pretrain --init" assumption fails. Three options surfaced (A: find/build a Llama-shaped 0.5B checkpoint; B: make trainer arch-polymorphic; C: replace Llama370MConfig with Qwen-shaped). **Recommend Option B** — preserves §24/§25 falsification evidence, exercises `TransformerConfig`'s designed polymorphism, binds each new component (Qwen tokenizer, GQA-7:1, extracted-arch loader) to its own falsifier. Re-scoped roadmap: 5a (new contract `apr-pretrain-arch-polymorphic-v1`) → 5b (TransformerConfig::qwen2_0_5b constructor) → 5c (extract arch from init APR) → 5d (Qwen tokenizer surface) → 5e (GQA-7:1 verification) → 5f (weight load) → 5g (LIVE 500-step fine-tune) → 5h (publish). **Total: ~410 LOC + 1 LIVE run, not 0 LOC.** Spec v2.94.0 → **v2.95.0**. **MODEL-1 ship % unchanged at 91%. MODEL-2 ship % unchanged at 57%** until 5g produces val_loss < 9.38. Coverage tally unchanged (architecture finding, not a falsifier flip).
 **Atomic next action (v2.94.0):** **§49 — MODEL-2 strategy pivot: from-scratch was a methodology defect; pretrained-init + fine-tune is the correct path** (see new §49 below). After 11 SHIP-007 cascade PRs without ship-% movement, operator asked "why aren't we training models?" Honest re-diagnosis of the MODEL-2 architecture revealed that §34's "capacity-limited at val_loss=9.38" framing is **wrong** — it's **data-limited**. Live evidence (2026-05-04 session): a fresh 500-step `apr pretrain --mode from-scratch --device cuda` run on the existing 565M-token codeparrot corpus converged to **val_loss=9.7255**, identical to §24's 9.7507 ceiling — confirming the corpus is the binding constraint. Industry comparison: SmolLM-360M (similar param count) hits val_loss ~2.9 but was trained on 1T tokens. MODEL-2 saw 565M. The "from-scratch on 565M tokens" math just doesn't reach val_loss=3.0 regardless of step budget. The right strategy is **initialize from a public pretrained 370M-class checkpoint and fine-tune on the existing corpus** — Qwen2.5-Coder-0.5B-Instruct (already in HF cache at `~/.cache/huggingface/hub/models--Qwen--Qwen2.5-Coder-0.5B-Instruct/`, 950 MB) is at val_loss ~2-3 already. Fine-tuning on Python+permissive code shifts the distribution without losing the 1T-token pretraining. This pivot is **NOT a punt** — it matches industry best practice (StableCode ← StableLM, Qwen2.5-Coder ← Qwen2.5; nobody trains 0.5B from scratch for production code-LMs because the data efficiency math fails). Spec v2.93.0 → **v2.94.0**. **MODEL-2 ship % stays at 57%** until the fine-tune produces measurable val_loss < 9.38 evidence. **MODEL-1 ship % unchanged at 91%**. Coverage tally unchanged this cycle (strategic amendment, no falsifier flips yet).
@@ -4472,6 +4473,101 @@ Unchanged from §29 because PR E did not land. Next-session agenda: do the §30.
 Per `feedback_fix_root_cause_never_route_around.md`: the §28 fix would have route-around'd a real bug because the named site (matmul kernel) is not where the divergence originates. The empirical refutation in §30 IS the work that protects the next attempt from shipping a no-op. This refutation is itself a coverage-incrementing artifact (it falsifies a hypothesis), even though no PARTIAL flips to DISCHARGED.
 
 The Toyota Way fix is to bisect upstream, not to flip the kernel call.
+
+## §52. §50.4 cascade ALGORITHM-COMPLETE on main; new step 5f.4 CLI wireup gap identified before 5g LIVE (2026-05-04)
+
+§51 captured 7/8 falsifiers PARTIAL_ALGORITHM_LEVEL bound. Same-day continuation landed PR #1479 (FALSIFY-007 encoder/decoder family validator) and PR #1481 (`load_init_tensors_from_apr`). With #1483 (5f.3 populate) and #1482 (contract v1.1.0 status bump) MERGEABLE in queue, the cascade is one PR-merge away from algorithm-complete.
+
+But during the live source inspection that followed, a NEW gap was found: even with all helper functions in place, the CLI dispatch hardcodes a "not yet wired" error.
+
+### 52.1 Updated falsifier scoreboard for `apr-pretrain-arch-polymorphic-v1`
+
+| Falsifier | What it pins | PR | Status |
+|---|---|---|---|
+| FALSIFY-001 | `qwen2_0_5b()` matches HF config byte-for-byte | #1474 ✓ MERGED | PARTIAL_ALGORITHM_LEVEL |
+| FALSIFY-002 | `init=None` preserves Llama370M baseline | #1475 ✓ MERGED | PARTIAL_ALGORITHM_LEVEL |
+| FALSIFY-003 | `init=Some` pass-through (no silent defaults) | #1475 ✓ MERGED | PARTIAL_ALGORITHM_LEVEL |
+| FALSIFY-004 | GQA-7:1 forward-pass smoke | #1478 ✓ MERGED | PARTIAL_ALGORITHM_LEVEL |
+| FALSIFY-005 | Qwen tokenizer + Qwen target = pass | #1476 ✓ MERGED | PARTIAL_ALGORITHM_LEVEL |
+| FALSIFY-006 | Qwen tokenizer + Llama target = fail | #1476 ✓ MERGED | PARTIAL_ALGORITHM_LEVEL |
+| FALSIFY-007 | Encoder/decoder family mismatch fails fast | #1479 ✓ MERGED | PARTIAL_ALGORITHM_LEVEL |
+| FALSIFY-008 | `pv validate` exits 0 | #1473 ✓ MERGED | PARTIAL_ALGORITHM_LEVEL |
+
+**8 of 8 falsifiers** at PARTIAL_ALGORITHM_LEVEL on main. The cascade has reached algorithm-complete. Helper functions also landed: `load_init_tensors_from_apr` (#1481 ✓ MERGED) and `populate_trainer_from_init_tensors` (#1483, MERGEABLE in queue).
+
+### 52.2 Step roadmap status — NEW step 5f.4 added
+
+| # | Step | LOC | PR | Status |
+|---|------|-----|----|--------|
+| 5a | Author `apr-pretrain-arch-polymorphic-v1.yaml` contract | ~80 | #1473 | ✅ MERGED |
+| 5b | `qwen2_0_5b()` constructor verified + tie_word_embeddings defect fix | 1 LOC + tests | #1474 | ✅ MERGED |
+| 5c | `build_transformer_config` polymorphic dispatch | ~25 | #1475 | ✅ MERGED |
+| 5d | Polymorphic preflight gating by EXTRACTED vocab | ~70 | #1476 | ✅ MERGED |
+| 5e | GQA-7:1 forward-pass smoke test | ~70 | #1478 | ✅ MERGED |
+| 5f.1 | Encoder/decoder family validator | ~30 | #1479 | ✅ MERGED |
+| 5f.2 | `load_init_tensors_from_apr` (read APR tensors into BTreeMap) | ~40 | #1481 | ✅ MERGED |
+| 5f.3 | `populate_trainer_from_init_tensors` (BTreeMap → trainer params) | ~120 | #1483 | mergeable in queue |
+| **5f.4** | **CLI wireup: plumb `init: Option<&Path>` + invoke 5f.1/5f.2/5f.3** | **~150** | **(NOT YET STARTED)** | **identified this cycle** |
+| 5g | LIVE 500-step smoke fine-tune (operator dispatch) | 0 | (pending) | gated on 5f.4 |
+| 5h | Stamp + publish as MODEL-2 v2 | ~10 | (pending) | follows 5g |
+
+### 52.3 The 5f.4 CLI wireup gap (NEW finding from this cycle)
+
+Live source inspection of `crates/apr-cli/src/commands/pretrain.rs` (post-#1479 merge):
+
+- Line 96-130: `run()` plumbs `init: Option<&Path>` to `validate_init_apr_path()`.
+- Line 259-297: `validate_init_apr_path()` validates the APR file's existence + magic bytes, then **HARDCODES** `Err(...not yet wired...)`.
+- Line 346-413: `drive_real()` does NOT receive `init` and does NOT use the helper functions added in 5f.1/5f.2/5f.3.
+- Line 420-477: `drive_real_cpu/cuda()` build a hardcoded `llama_370m` trainer regardless of `--init`.
+
+**Net effect**: an operator running `apr pretrain --init <Qwen2.5-Coder-0.5B>.apr ...` today gets a hard error: `--init <PATH> is recognised as a valid APR file (...) but weight loading is not yet wired (§49 step 5 follow-up).` Step 5g LIVE cannot be dispatched until 5f.4 lands.
+
+### 52.4 Step 5f.4 algorithm — wireup invariant
+
+Per `apr-pretrain-arch-polymorphic-v1` §arch_extraction_signature + §init_load_semantics, step 5f.4 MUST:
+
+1. **Plumb** `init: Option<&Path>` through `run() → drive_real() → drive_real_cpu()/drive_real_cuda()` so trainer construction can access it.
+2. **Extract** when `init.is_some()`: call `model_config::read_apr_architecture(path)` (already exists at `apr-cli/src/commands/model_config.rs:18`) to get a `TransformerConfig` from the APR header metadata.
+3. **Validate** the extracted config family with `validate_pretrain_init_arch_compatible()` (5f.1).
+4. **Use** the extracted vocab in `preflight_tokenizer_vocab_matches_target()` call site (currently hardcoded to `Llama370MConfig::VOCAB_SIZE`).
+5. **Build** a new `build_shared_trainer_with_init(lr, seq_length, seed, init: Option<(&TransformerConfig, &Path)>) -> Result<SharedTrainer, String>` in `pretrain_real.rs` that, when init is Some, calls `load_init_tensors_from_apr(path)` (5f.2) then `populate_trainer_from_init_tensors(model, &tensors)` (5f.3).
+6. **Replace** the `Err(...not yet wired...)` in `validate_init_apr_path()` with `Ok(())` (the wireup is now real).
+
+**Constraint**: this MUST be a single atomic PR. Removing the "not yet wired" error WITHOUT a working `build_shared_trainer_with_init` would silently produce a random-init trainer when `--init` was passed — exactly the §28 SHIP-007 "silent gibberish" defect class. **No partial 5f.4 PR is safe.**
+
+### 52.5 The MODEL-2 ship-% gate is now precisely defined
+
+- **5f.4 (CLI wireup, ~150 LOC, 1 PR)** — makes step 5g dispatchable. Until this PR lands, `apr pretrain --init` errors out and 5g cannot fire.
+- **5g (LIVE 500-step fine-tune, 0 LOC, operator dispatch)** — DISCHARGES FALSIFY-006 empirically. **Load-bearing test that moves MODEL-2 ship-% from 57% → ≥58%.**
+- **5h (stamp + publish, ~10 LOC, 1 PR)** — follows 5g.
+
+Step 5f.4 is **author work** that was missed in the original §50 8-step decomposition. Step 5g is **operator work** (compute dispatch + corpus). Step 5h is **author work** that follows 5g evidence.
+
+### 52.6 Why §50.4 originally said "5f" without the .4 split
+
+§50 was authored before live source inspection of the CLI dispatch. The original §50 5f was scoped as "weight load" assuming the CLI would dispatch through it; live inspection (this cycle, post-§51) revealed that the CLI dispatch is a separate seam that hardcodes the `Err(...)`. §52 makes the wireup explicit and discharges the implicit assumption.
+
+This is the same lesson as §50 itself: the spec re-scoped from "single PR" to "8-step roadmap" after the live source revealed multi-PR coupling. §52 is one more turn of the same crank — what looked like 1 step is 2 (5f.3 + 5f.4) because the dispatch is independent of the helpers.
+
+### 52.7 Net effects
+
+- Spec v2.96.0 → **v2.97.0**.
+- §50.4 roadmap status: **5a-5f.3 algorithm-complete (8 PRs landed/queued); 5f.4 (CLI wireup) is the new author-work gate before 5g LIVE.**
+- **MODEL-1 ship %**: unchanged at **91%** (SHIP-007 cascade unrelated track).
+- **MODEL-2 ship %**: unchanged at **57%** until step 5g produces val_loss < 9.38 evidence; step 5g now requires step 5f.4 to land first.
+- Coverage tally unchanged this cycle (snapshot + roadmap re-scoping, not a falsifier flip).
+
+### 52.8 Five Whys
+
+1. **Why didn't §50 catch step 5f.4?** §50 was authored from a top-down architecture-coupling lens (data hardcoded in `Llama370MConfig`); the CLI-dispatch seam was implicit. Live source inspection of `pretrain.rs:259-297` (this cycle) made the seam explicit.
+2. **Why is 5f.4 a separate PR rather than folded into 5f.3?** Because 5f.3 (populate) lives in `aprender-train` and 5f.4 (wireup) lives in `apr-cli`. Both crates need changes, plus the wireup needs `model_config::read_apr_architecture` (already in apr-cli). One atomic PR per file/crate boundary; conflating them mixes review concerns.
+3. **Why must 5f.4 be a single atomic PR?** Removing the "not yet wired" error without a working `build_shared_trainer_with_init` produces silent random-init — exactly the §28 SHIP-007 defect class. The "not yet wired" Err is a load-bearing safety; it can only be removed simultaneously with the actual wireup.
+4. **Why ~150 LOC and not 50?** Plumbing `init` through 4 levels of function signatures (`run` → `drive_real` → `drive_real_cpu` → builder) plus the new `build_shared_trainer_with_init` body plus 2-3 tests. CUDA path also needs symmetric wireup. The number is conservative; could be 100 if the CUDA path stays out of scope (deferred to 5f.5).
+5. **Why call 5f.4 out in spec at all rather than just file it as a PR?** Per `feedback_falsifier_first_cascade_pattern.md`, when an unauthored step is identified, the spec is the source of truth. Without a §52, future operators (or sessions) reading PR #1483's "step 5f.3 capped" message would assume 5g is dispatchable. §52 says explicitly: **5g is gated on 5f.4, which is not yet authored.**
+
+### 52.9 Spec amendment cadence preserved
+
+§41 → §42 → §43 → §44 → §45 → §46 → §47 → §48 → §49 → §50 → §51 → §52. Twelve amendments since 2026-05-03. §52 is a roadmap-revision amendment immediately following the §51 cascade snapshot — same-day spec hygiene to record the wireup gap before it gets buried under cascade-merge noise.
 
 ## §51. §50.4 cascade — 7/8 falsifiers PARTIAL_ALGORITHM_LEVEL bound, MODEL-2 ship-% gated on step 5g LIVE (2026-05-04)
 
