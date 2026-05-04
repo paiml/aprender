@@ -309,3 +309,4 @@ include!("cuda.rs");
 include!("matmul.rs");
 include!("clone_layer_weights.rs");
 include!("forward_qwen3_moe_cuda.rs");
+include!("expert_swiglu_cuda.rs");
