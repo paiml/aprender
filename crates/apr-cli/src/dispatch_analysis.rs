@@ -359,6 +359,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             vocab_size,
             synthetic,
             device,
+            init,
         } => commands::pretrain::run(
             dataset,
             tokenizer,
@@ -375,6 +376,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *vocab_size,
             *synthetic,
             device,
+            init.as_deref(),
             cli.json,
         ),
         ExtendedCommands::Tokenize { command } => dispatch_tokenize_command(command, cli),

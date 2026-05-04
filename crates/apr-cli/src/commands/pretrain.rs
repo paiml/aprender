@@ -109,6 +109,7 @@ pub(crate) fn run(
     vocab_size: u32,
     synthetic: bool,
     device: &str,
+    init: Option<&Path>,
     json_output: bool,
 ) -> Result<()> {
     // Contract gpu-training-backend-v1 INV-GPUTRAIN-001 / GATE-GPUTRAIN-002:
@@ -118,6 +119,15 @@ pub(crate) fn run(
     // with real compute) but the stub error surface is identical.
     let resolved_device =
         resolve_device(device).map_err(|e| CliError::ValidationFailed(e.to_string()))?;
+
+    // Contract apr-pretrain-from-init-v1 (§49 step 4) — when --init
+    // is present, validate the APR file's existence and magic bytes
+    // BEFORE any trainer allocation. Missing/corrupted files exit
+    // non-zero with a clear error. Architecture matching and weight
+    // load are §49 step 5 (DISCHARGED requires LIVE training run).
+    if let Some(init_path) = init {
+        validate_init_apr_path(init_path)?;
+    }
 
     let hp = mode_defaults(mode, vocab_size, lr, warmup_steps, target_val_loss);
 
@@ -235,6 +245,55 @@ fn drive_synthetic(
     let val_fn = ScriptedVal { sequence };
     // Synthetic drive has no real weights to checkpoint.
     run_and_report(config, step_fn, val_fn, None, json_output)
+}
+
+/// Contract apr-pretrain-from-init-v1 §init_load_semantics + §init_error_semantics:
+/// validate `--init <PATH>` BEFORE any trainer allocation. Falsifies
+/// FALSIFY-APR-PRETRAIN-INIT-003 (missing-file) + -004 (invalid-magic).
+///
+/// Architecture matching (FALSIFY-005) and full weight load
+/// (FALSIFY-006/009/010 — load-bearing) are §49 step 5 follow-up. This
+/// step pins the algorithm at PARTIAL_ALGORITHM_LEVEL: file existence
+/// and magic bytes verified; downstream weight-load returns a clear
+/// "not yet wired" error so an operator never silently gets random init.
+fn validate_init_apr_path(path: &Path) -> Result<()> {
+    let mut file = std::fs::File::open(path).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "FALSIFY-APR-PRETRAIN-INIT-003: --init path does not exist or is unreadable: {} ({e})",
+            path.display()
+        ))
+    })?;
+    let mut magic = [0u8; 4];
+    use std::io::Read;
+    file.read_exact(&mut magic).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "FALSIFY-APR-PRETRAIN-INIT-004: --init file too short to contain APR magic bytes: {} ({e})",
+            path.display()
+        ))
+    })?;
+    // APR magic bytes per `crates/aprender-core/src/format/kani_proofs.rs`:
+    //   APR\0 = [0x41, 0x50, 0x52, 0x00] (v2)
+    //   APRN  = [0x41, 0x50, 0x52, 0x4E] (v1)
+    const APR_MAGIC_V2: [u8; 4] = [0x41, 0x50, 0x52, 0x00];
+    const APR_MAGIC_V1: [u8; 4] = [0x41, 0x50, 0x52, 0x4E];
+    if magic != APR_MAGIC_V2 && magic != APR_MAGIC_V1 {
+        return Err(CliError::ValidationFailed(format!(
+            "FALSIFY-APR-PRETRAIN-INIT-004: --init file is not a valid APR file (magic={:02X?}, expected {:02X?} or {:02X?}): {}",
+            magic, APR_MAGIC_V2, APR_MAGIC_V1, path.display()
+        )));
+    }
+    // §49 step 5 follow-up: at this PARTIAL level we have only validated
+    // file existence + magic bytes. Architecture matching + weight
+    // materialization are gated on the next PR. Until then, the flag
+    // is REJECTED at runtime to honour the contract's no-silent-fallback
+    // invariant — operators cannot accidentally ship a fine-tune run
+    // that thinks it's loading init weights but is actually random.
+    Err(CliError::ValidationFailed(format!(
+        "--init <PATH> is recognised as a valid APR file ({}) but weight loading is not yet wired (§49 step 5 follow-up). \
+         Run without --init to reproduce existing from-scratch / finetune behavior. \
+         Tracking: contract apr-pretrain-from-init-v1 falsifiers FALSIFY-005..010.",
+        path.display()
+    )))
 }
 
 /// GATE-ARCH-370M-011 pre-flight: count the tokenizer's vocabulary entries
@@ -700,6 +759,7 @@ mod tests {
             50257,
             true,
             "cpu",
+            None,
             true,
         );
         assert!(
@@ -734,6 +794,7 @@ mod tests {
             50257,
             false,
             "cpu",
+            None,
             true,
         )
         .expect_err("empty dataset dir must fail to initialise the shard iterator");
@@ -767,6 +828,7 @@ mod tests {
             50257,
             true,
             "cpu",
+            None,
             true,
         )
         .expect_err("negative target_val_loss must be rejected");
@@ -968,5 +1030,251 @@ mod tests {
         // `--device cuda:7` MUST round-trip unchanged; grammar
         // enforcement happens in `resolve_device`, not at clap.
         assert_eq!(parse_pretrain_device(&["--device", "cuda:7"]), "cuda:7");
+    }
+
+    // ── apr-pretrain-from-init-v1 falsifiers ────────────────────────────
+    // Contract: contracts/apr-pretrain-from-init-v1.yaml v1.0.0 PROPOSED
+    // Spec: SPEC-SHIP-TWO-001 §49 step 4 — wire `apr pretrain --init`
+    //
+    // PARTIAL_ALGORITHM_LEVEL: file-existence + magic-byte checks bind
+    // FALSIFY-APR-PRETRAIN-INIT-003 / -004; the clap surface binds
+    // FALSIFY-001 / -007. FALSIFY-005 (arch mismatch), -006 (init_loss
+    // signal), -009 (optimizer state), -010 (idempotent load) are gated
+    // on the §49 step 5 weight-load impl. The "valid APR returns
+    // not-yet-wired" test pins the no-silent-fallback contract: a
+    // recognised APR cannot be silently ignored.
+
+    fn parse_pretrain_init(extra: &[&str]) -> Option<std::path::PathBuf> {
+        let extra: Vec<String> = extra.iter().map(|s| (*s).to_string()).collect();
+        std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(move || {
+                use clap::Parser;
+                let mut argv: Vec<String> = vec![
+                    "apr".to_string(),
+                    "pretrain".to_string(),
+                    "--dataset".to_string(),
+                    "/tmp/_init_flag/ds".to_string(),
+                    "--tokenizer".to_string(),
+                    "/tmp/_init_flag/tok".to_string(),
+                    "--run-dir".to_string(),
+                    "/tmp/_init_flag/run".to_string(),
+                ];
+                argv.extend(extra);
+                let cli = crate::Cli::try_parse_from(&argv).expect("clap parse must succeed");
+                match *cli.command {
+                    crate::Commands::Extended(crate::ExtendedCommands::Pretrain {
+                        init, ..
+                    }) => init,
+                    other => panic!("expected ExtendedCommands::Pretrain, got {other:?}"),
+                }
+            })
+            .expect("spawn parse thread")
+            .join()
+            .expect("parse thread must not panic")
+    }
+
+    /// FALSIFY-APR-PRETRAIN-INIT-001: --init flag exists in clap surface.
+    #[test]
+    fn pretrain_init_flag_absent_parses_to_none() {
+        // Absent --init MUST parse to None. Falsifies a regression where a
+        // default value silently injects a path the operator never typed.
+        assert_eq!(
+            parse_pretrain_init(&[]),
+            None,
+            "FALSIFY-APR-PRETRAIN-INIT-001/002: default --init must be None (no silent default)"
+        );
+    }
+
+    /// FALSIFY-APR-PRETRAIN-INIT-001: --init <PATH> parses to Some(PathBuf).
+    #[test]
+    fn pretrain_init_flag_parses_path() {
+        let parsed = parse_pretrain_init(&["--init", "/tmp/foo.apr"]);
+        assert_eq!(
+            parsed.as_deref().and_then(|p| p.to_str()),
+            Some("/tmp/foo.apr"),
+            "FALSIFY-APR-PRETRAIN-INIT-001: --init <PATH> must round-trip through clap"
+        );
+    }
+
+    /// FALSIFY-APR-PRETRAIN-INIT-003: --init <missing-file> fails fast
+    /// before any trainer allocation; stderr names the path.
+    #[test]
+    fn pretrain_init_missing_file_errors() {
+        let tmp = TempDir::new().expect("tempdir");
+        let missing = tmp.path().join("does-not-exist.apr");
+        let err = run(
+            tmp.path(),
+            tmp.path(),
+            tmp.path(),
+            PretrainMode::Finetune,
+            Some(5.0e-5),
+            10,
+            Some(2),
+            2,
+            4,
+            5,
+            42,
+            Some(2.2),
+            50257,
+            true,
+            "cpu",
+            Some(&missing),
+            true,
+        )
+        .expect_err("missing --init file must be rejected");
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(
+                    msg.contains("FALSIFY-APR-PRETRAIN-INIT-003"),
+                    "msg must cite falsifier id: {msg}"
+                );
+                assert!(
+                    msg.contains("does-not-exist.apr"),
+                    "msg must name the missing path: {msg}"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    /// FALSIFY-APR-PRETRAIN-INIT-004: --init with wrong magic bytes fails fast.
+    #[test]
+    fn pretrain_init_bad_magic_errors() {
+        let tmp = TempDir::new().expect("tempdir");
+        let bad = tmp.path().join("not-an-apr.bin");
+        std::fs::write(&bad, b"GGUF\x00\x00\x00\x00\x00\x00\x00\x00")
+            .expect("write fixture file");
+        let err = run(
+            tmp.path(),
+            tmp.path(),
+            tmp.path(),
+            PretrainMode::Finetune,
+            Some(5.0e-5),
+            10,
+            Some(2),
+            2,
+            4,
+            5,
+            42,
+            Some(2.2),
+            50257,
+            true,
+            "cpu",
+            Some(&bad),
+            true,
+        )
+        .expect_err("invalid magic bytes must be rejected");
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(
+                    msg.contains("FALSIFY-APR-PRETRAIN-INIT-004"),
+                    "msg must cite falsifier id: {msg}"
+                );
+                assert!(
+                    msg.contains("not a valid APR file"),
+                    "msg must describe magic mismatch: {msg}"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    /// FALSIFY-APR-PRETRAIN-INIT-004: empty file (read_exact fails on 4 bytes).
+    #[test]
+    fn pretrain_init_empty_file_errors() {
+        let tmp = TempDir::new().expect("tempdir");
+        let empty = tmp.path().join("empty.apr");
+        std::fs::write(&empty, b"").expect("write empty fixture");
+        let err = run(
+            tmp.path(),
+            tmp.path(),
+            tmp.path(),
+            PretrainMode::Finetune,
+            Some(5.0e-5),
+            10,
+            Some(2),
+            2,
+            4,
+            5,
+            42,
+            Some(2.2),
+            50257,
+            true,
+            "cpu",
+            Some(&empty),
+            true,
+        )
+        .expect_err("empty file must be rejected (cannot contain magic bytes)");
+        assert!(matches!(err, CliError::ValidationFailed(_)));
+    }
+
+    /// Pin the §49 step 4 partial-impl boundary: a syntactically VALID APR
+    /// file (correct magic) MUST NOT silently fall back to random init —
+    /// the operator gets a clear "not yet wired" error pointing at the
+    /// next step. This test fails the day step 5 ships AND removes this
+    /// guard; that's the trip-wire for promoting the PARTIAL → FUNCTIONAL.
+    #[test]
+    fn pretrain_init_valid_apr_rejected_until_step5() {
+        let tmp = TempDir::new().expect("tempdir");
+        let valid = tmp.path().join("v2-valid-magic.apr");
+        // APR\0 magic + a few padding bytes; no real header, but
+        // validate_init_apr_path only reads the first 4.
+        std::fs::write(&valid, b"APR\x00\x00\x00\x00\x00\x00\x00\x00\x00")
+            .expect("write fixture file");
+        let err = run(
+            tmp.path(),
+            tmp.path(),
+            tmp.path(),
+            PretrainMode::Finetune,
+            Some(5.0e-5),
+            10,
+            Some(2),
+            2,
+            4,
+            5,
+            42,
+            Some(2.2),
+            50257,
+            true,
+            "cpu",
+            Some(&valid),
+            true,
+        )
+        .expect_err("valid APR --init must NOT silently random-init while step 5 is open");
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(
+                    msg.contains("not yet wired"),
+                    "msg must signal step-5 partial state: {msg}"
+                );
+                assert!(
+                    msg.contains("§49 step 5") || msg.contains("step 5"),
+                    "msg must point at §49 step 5 follow-up: {msg}"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    /// Pin v1 magic (APRN) acceptance — even older APR files are
+    /// recognised at the magic-byte layer, not silently rejected.
+    #[test]
+    fn pretrain_init_v1_magic_aprn_recognised() {
+        let tmp = TempDir::new().expect("tempdir");
+        let v1 = tmp.path().join("v1-aprn.apr");
+        std::fs::write(&v1, b"APRN\x00\x00\x00\x00").expect("write fixture file");
+        // Direct helper call — exercises just the magic-byte branch.
+        let err = validate_init_apr_path(&v1)
+            .expect_err("APRN magic should pass magic check but hit step-5 partial guard");
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(
+                    msg.contains("not yet wired"),
+                    "msg must signal step-5 partial state for valid APRN: {msg}"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
     }
 }

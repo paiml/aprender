@@ -690,6 +690,16 @@ pub enum ExtendedCommands {
         /// hard-fail on missing runtime per GATE-GPUTRAIN-002).
         #[arg(long, default_value = "auto")]
         device: String,
+        /// Initial weights from a pretrained APR file
+        /// (contract `apr-pretrain-from-init-v1`). Per spec §49's
+        /// MODEL-2 pretrained-init pivot: when present, load weights
+        /// from `<PATH>` instead of random-init. Composes with
+        /// `--mode finetune` (canonical) or `--mode from-scratch`
+        /// (allowed but non-canonical — emits a warning). Missing,
+        /// corrupted, or arch-mismatched APR files exit non-zero
+        /// before step 1 (no silent random-init fallback).
+        #[arg(long, value_name = "PATH")]
+        init: Option<PathBuf>,
     },
     /// Tokenizer training pipeline (plan/apply) — BPE vocabulary learning
     Tokenize {
