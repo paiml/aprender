@@ -112,6 +112,17 @@ pub struct ArchConstraints {
     pub has_qk_norm: bool,
     /// Default norm epsilon when GGUF metadata is missing
     pub default_eps: f32,
+    /// Whether this architecture is a Mixture-of-Experts (MoE) variant
+    /// (qwen3_moe, qwen3_5_moe, ...). MoE architectures have per-layer
+    /// expert tensors `blk.{i}.ffn_gate_exps.weight` etc. instead of
+    /// the dense single-tensor names `blk.{i}.ffn_gate.weight` used by
+    /// dense architectures (llama, qwen3, etc.).
+    ///
+    /// Consumers MUST gate dense-FFN-name lookups on `!is_moe`:
+    /// `CudaExecutor::build_indexed_weights` skips ffn_gate/up/down
+    /// weight lookups when this is true (M-GPU-MOE-1.3 per
+    /// `qwen3-moe-forward-gpu-v1` v1.3.0).
+    pub is_moe: bool,
 }
 
 // GH-323: Generated from arch-constraints-v1.yaml by build.rs.
