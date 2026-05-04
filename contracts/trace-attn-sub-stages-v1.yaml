@@ -1,45 +1,54 @@
 metadata:
   id: C-TRACE-ATTN-SUB-STAGES
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-05-04'
   author: PAIML Engineering
   kind: pattern
   status: PROPOSED
   description: |
-    Sub-attention bisection scaffold for `apr trace --save-tensor`.
+    Sub-attention bisection plan for `apr trace --save-tensor` —
+    SHIP-007 layer-0 attention divergence localization.
 
-    v1.0.0 (2026-05-04): PROPOSED. Authors the contract envelope for
-    extending the `SaveTensorStage` enum (currently capturing
-    Embedding, AttnNorm, QkvMatmul, AttnOut, PostAttnResidual,
-    FfnNorm, FfnGate, FfnUp, FfnSilu, FfnSwigl, FfnOut,
-    PostFfnResidual, FinalNorm, LmHead) with FIVE new intermediate
-    attention-block sub-stages so SHIP-007 layer-0 attention
-    divergence can be bisected element-wise against the HF FP16
-    oracle (PR #1423).
+    v1.1.0 (2026-05-04): PROPOSED. Toyota Way correction of v1.0.0.
 
-    Why: the v5 evidence (PR #1423/#1426 + memory `2026-05-03 SHIP-007
-    finding`) pinpoints the SHIP-007 divergence to inside the layer-0
-    attention block — `cos(APR.attn_norm, HF.attn_norm) = 0.99999995`
-    (correct) vs `cos(APR.attn_out, HF.attn_out) = 0.9966` (wrong).
-    The existing `QkvMatmul` stage is a single coarse capture point
-    inside that block; everything between QkvMatmul and AttnOut
-    (RoPE, attention scores, softmax, V·softmax) is currently
-    invisible to `apr trace --save-tensor`. To localize the bug to
-    one of {qkv-pre-rope, q-post-rope, k-post-rope, attn-scores,
-    attn-softmax, attn-v-out}, instrumentation must subdivide the
-    existing AttnOut capture point.
+    v1.0.0 originally claimed FIVE new SaveTensorStage variants
+    were needed for the layer-0 attention bisection. Empirical
+    inspection of `crates/aprender-serve/src/inference_trace/save_tensor_stage.rs`
+    showed THREE of those five (`QPostRope`, `KPostRope`,
+    `Attention` = post-softmax·V pre-O-proj) ALREADY EXIST in the
+    parent contract `apr-cli-trace-save-tensor-v1.yaml` v1.4.0
+    FUNCTIONAL. The defect was in the contract, not in the code.
+
+    v1.1.0 corrects the scope: only TWO new variants are actually
+    missing (`AttnScores` and `AttnSoftmax`); the other three are
+    already wired and just need to be exercised on the canonical
+    7B teacher. The contract pivots from "scaffold 5 new stages"
+    to "(a) add 2 missing intra-softmax stages + (b) document the
+    layer-0 attention bisection sequence using all 7 attention
+    sub-stages".
+
+    Per `feedback_toyota_way_all_defects.md`: caught on next
+    iteration after authoring; corrected at the contract level
+    BEFORE any implementation PR depended on the wrong scope.
+    Per `feedback_no_guessing.md`: should have run
+    `pmat query SaveTensorStage` BEFORE authoring v1.0.0.
+
+    Why this contract: SHIP-007 layer-0 attention divergence is
+    empirically pinpointed (cos=0.99999995 attn_norm → 0.9966 attn_out
+    per memory `2026-05-03 SHIP-007 finding`). The 18-stage parent
+    enum already provides 5 bracketing capture points inside the
+    attention block (`AttnNorm` → `QkvMatmul` → `QkvBias` →
+    `QPostRope`+`KPostRope` → `Attention` → `AttnOut`). Adding 2
+    intra-softmax stages (`AttnScores`, `AttnSoftmax`) closes the
+    last bisection gap inside Q·Kᵀ → softmax → ·V.
 
     Per `feedback_apr_trace_not_eprintln.md`: "Missing TraceStep
-    granularity → extend the enum behind a contract." This contract
-    pre-commits to the schema BEFORE the implementation lands so the
-    audit chain remains: spec § → contract → implementation PRs →
-    live discharge.
+    granularity → extend the enum behind a contract." Contract-first
+    preserves the audit chain spec § → contract → implementation
+    PRs → live discharge.
 
     Pattern mirrors the `trace-ffn-sub-block-v1.yaml` SHIP-007
-    layer-3 prior art (#1083) — same structural sub-block-contract
-    motif, applied one block earlier in the same layer-0 attention
-    block. This is the §46.7 (a) follow-up: the highest-leverage
-    MODEL-1 work, broken into atomic spec/contract scope first.
+    layer-3 prior art (#1083).
 
     Load-bearing for the SHIP-007 fix per ship-two-models-spec.md
     §40 + §46.7.
@@ -48,13 +57,16 @@ metadata:
     - 'docs/specifications/aprender-train/ship-two-models-spec.md §40'
     - 'docs/specifications/aprender-train/ship-two-models-spec.md §46.7'
     - 'feedback_apr_trace_not_eprintln.md (memory)'
+    - 'feedback_toyota_way_all_defects.md (memory)'
+    - 'feedback_no_guessing.md (memory)'
     - 'memory: 2026-05-03 SHIP-007 finding'
-    - 'contracts/apr-cli-trace-save-tensor-v1.yaml'
-    - 'contracts/trace-ffn-sub-block-v1.yaml'
+    - 'contracts/apr-cli-trace-save-tensor-v1.yaml v1.4.0 FUNCTIONAL (parent)'
+    - 'contracts/trace-ffn-sub-block-v1.yaml (sibling pattern)'
     - 'crates/aprender-serve/src/inference_trace/save_tensor_stage.rs'
     - 'crates/aprender-serve/src/apr_transformer/inference.rs::forward_traced_with_plan'
     - 'PR #1423 (HF FP16 oracle bisection script)'
     - 'PR #1426 (SHIP-007 evidence v5)'
+    - 'PR #1450 (this contract, v1.0.0 → v1.1.0)'
 
   binds_to:
     - 'AC-SHIP1-007 (SHIP-007 root-cause fix)'
@@ -62,90 +74,86 @@ metadata:
     - 'apr-cpu-vs-gpu-output-parity-v1 (post-DISCHARGE follow-on)'
 
   depends_on:
-    - 'apr-cli-trace-save-tensor-v1 (parent contract, must be FUNCTIONAL)'
+    - 'apr-cli-trace-save-tensor-v1 (parent contract, FUNCTIONAL)'
 
 equations:
-  q_after_rope:
-    formula: 'q_rotated[h, t, d] = rope_apply(q_proj[h, t, d], theta_t, freqs[d])'
-    where:
-      - 'q_proj is [num_heads, seq, head_dim] post-Q-projection vector'
-      - 'rope_apply rotates each (even, odd) pair by theta_t * freqs[d]'
-      - 'q_rotated has identical shape to q_proj'
-
-  k_after_rope:
-    formula: 'k_rotated[h, t, d] = rope_apply(k_proj[h, t, d], theta_t, freqs[d])'
-    where:
-      - 'k_proj is [num_kv_heads, seq, head_dim] post-K-projection vector'
-      - 'GQA: num_kv_heads ≤ num_heads, K is shared across head_dim_groups'
-
   attention_scores:
     formula: 'scores[h, t, t_kv] = (q_rotated[h, t, :] . k_rotated[h//head_group_size, t_kv, :]) / sqrt(head_dim)'
     where:
       - 'h ∈ [0, num_heads); t_kv ∈ [0, seq); t ∈ [0, seq)'
       - 'GQA: q-head h indexes into kv-head h // (num_heads // num_kv_heads)'
       - 'sqrt(head_dim) is the standard attention-scaling denominator'
+    note: |
+      AttnScores is the NEW capture point between QPostRope/KPostRope
+      (already in parent enum) and AttnSoftmax (also NEW). Captures
+      raw scores BEFORE causal mask + softmax.
 
   attention_softmax:
     formula: 'p[h, t, t_kv] = softmax(scores[h, t, :] + causal_mask[t, :])[t_kv]'
     where:
       - 'causal_mask[t, t_kv] = 0 if t_kv ≤ t else -inf'
       - 'softmax normalizes across the t_kv axis'
-
-  attention_v_out:
-    formula: 'attn_v[h, t, d] = sum over t_kv of (p[h, t, t_kv] * v_proj[h//group, t_kv, d])'
-    where:
-      - 'v_proj is [num_kv_heads, seq, head_dim] post-V-projection vector'
-      - 'attn_v is the output of attention BEFORE the output (O) projection'
-
-  attn_out_recompose:
-    formula: 'attn_out[t, hidden] = O_proj(concat(attn_v[h, t, :] for h in 0..num_heads))'
-    where:
-      - 'O_proj is the [hidden, hidden] output projection'
     note: |
-      The existing AttnOut stage captures attn_out (post-O-projection).
-      The 5 new sub-stages bracket every intermediate state between
-      QkvMatmul and AttnOut so any divergence can be bisected.
+      AttnSoftmax is the NEW capture point between AttnScores (NEW)
+      and Attention (= softmax·V, ALREADY in parent enum). Captures
+      probability distribution BEFORE multiplication with V.
+
+  bisection_chain_layer_0:
+    formula: |
+      cos_sequence = [
+        cos(APR.attn_norm,    HF.attn_norm),
+        cos(APR.qkv_matmul,   HF.qkv_matmul),
+        cos(APR.qkv_bias,     HF.qkv_bias),
+        cos(APR.q_post_rope,  HF.q_post_rope),
+        cos(APR.k_post_rope,  HF.k_post_rope),
+        cos(APR.attn_scores,  HF.attn_scores),    # NEW
+        cos(APR.attn_softmax, HF.attn_softmax),   # NEW
+        cos(APR.attention,    HF.attention),
+        cos(APR.attn_out,     HF.attn_out),
+      ]
+    where:
+      - '8 capture points, of which 2 are new (attn_scores, attn_softmax)'
+      - '5 stages from parent contract: AttnNorm, QkvMatmul, QkvBias, QPostRope, KPostRope'
+      - '2 stages also from parent contract: Attention, AttnOut'
+      - 'Bisection narrows divergence to ONE adjacent (correct, wrong) pair'
+    note: |
+      Today's empirical state (per memory `2026-05-03 SHIP-007 finding`):
+      cos_sequence[0] = 0.99999995 (correct), cos_sequence[8] = 0.9966 (wrong).
+      Inflection point is between index 1 and 8. The bisection chain
+      identifies which pair of adjacent stages straddles the SHIP-007 root.
 
 proof_obligations:
 - type: invariant
-  property: '`SaveTensorStage` enum gains 5 new variants without removing or renaming any existing variant'
-  formal: 'variants_after = variants_before ∪ {QPostRope, KPostRope, AttnScores, AttnSoftmax, AttnVOut} AND variants_before ⊆ variants_after'
+  property: '`SaveTensorStage` enum gains EXACTLY 2 new variants without removing or renaming any existing variant'
+  formal: 'variants_after = variants_before ∪ {AttnScores, AttnSoftmax} AND |variants_after| = |variants_before| + 2 AND variants_before ⊆ variants_after'
   applies_to: crates/aprender-serve/src/inference_trace/save_tensor_stage.rs::SaveTensorStage
 - type: invariant
-  property: 'Existing AttnNorm + QkvMatmul + AttnOut capture semantics preserved byte-identically'
-  formal: 'forall stage in {AttnNorm, QkvMatmul, AttnOut}: bytes_after_pr(stage) == bytes_before_pr(stage) on canonical 7B teacher, layer 0, BOS token'
+  property: 'Existing 18 capture-point semantics preserved byte-identically pre/post-implementation'
+  formal: 'forall stage in {Embedding, AttnNorm, QkvMatmul, QkvBias, QPostRope, KPostRope, Attention, AttnOut, ...}: bytes_after_pr(stage) == bytes_before_pr(stage) on canonical 7B teacher, layer 0, BOS token'
   tolerance: 0.0
   applies_to: crates/aprender-serve/src/apr_transformer/inference.rs::forward_traced_with_plan
 - type: invariant
-  property: 'Comma-parser accepts the 5 new stage names with case-insensitive fallback (mirroring existing parser behavior)'
-  formal: 'parse_stage_list("q_post_rope,k_post_rope,attn_scores,attn_softmax,attn_v_out") = Ok([QPostRope, KPostRope, AttnScores, AttnSoftmax, AttnVOut])'
+  property: 'Comma-parser accepts the 2 new stage names with case-insensitive fallback (mirroring existing parser behavior)'
+  formal: 'parse_stage_list("attn_scores,attn_softmax") = Ok([AttnScores, AttnSoftmax])'
   applies_to: crates/aprender-serve/src/inference_trace/save_tensor_stage.rs::parse_stage_list
 - type: ordering
-  property: 'Capture order inside the attention block is QkvMatmul → QPostRope → KPostRope → AttnScores → AttnSoftmax → AttnVOut → AttnOut'
-  formal: 'attn_block_order = [QkvMatmul, QPostRope, KPostRope, AttnScores, AttnSoftmax, AttnVOut, AttnOut]'
+  property: 'Capture order inside the attention block: QkvBias → QPostRope → KPostRope → AttnScores → AttnSoftmax → Attention → AttnOut'
+  formal: 'attn_block_order = [QkvBias, QPostRope, KPostRope, AttnScores, AttnSoftmax, Attention, AttnOut]'
   applies_to: crates/aprender-serve/src/apr_transformer/inference.rs::forward_traced_with_plan
 - type: invariant
-  property: 'APRT byte-format header serializes the 5 new stage IDs without colliding with reserved IDs of existing stages'
-  formal: 'forall new_stage_id in {q_post_rope, k_post_rope, attn_scores, attn_softmax, attn_v_out}: new_stage_id ∉ existing_stage_ids'
+  property: 'APRT byte-format header serializes the 2 new stage IDs without colliding with reserved IDs of existing stages'
+  formal: 'forall new_stage_id in {attn_scores, attn_softmax}: new_stage_id ∉ existing_stage_ids'
   applies_to: crates/aprender-serve/src/inference_trace/save_tensor.rs::write_stage_file
-- type: conservation
-  property: '`apr diff --values` recognizes APRT files for the 5 new stages and reports cosine ≥ 0.999 against HF FP16 reference at every CORRECT sub-stage'
-  formal: 'forall correct_stage: cos(APR.<stage>, HF_FP16.<stage>) >= 0.999'
-  applies_to: crates/apr-cli/src/commands/diff.rs (APRT recognition path)
-  note: |
-    A non-correct stage will fail this; that is the bisection signal.
-    The contract pins the FLOOR; the divergence at SHIP-007 root-cause
-    sub-stage is what falsifies it.
 
 falsification_tests:
 - id: FALSIFY-ATTN-SUB-001
-  rule: '5 new sub-stage variants exist on `SaveTensorStage` enum without breaking existing `apr trace --save-tensor` callers'
+  rule: '2 new sub-stage variants exist on `SaveTensorStage` enum without breaking existing callers'
   prediction: |
     After implementation: `cargo test -p aprender-serve --lib
-    inference_trace::save_tensor_stage` shall emit 19 PASS (current
-    14 + 5 new); existing tests shall continue passing byte-identical.
+    inference_trace::save_tensor_stage` shall emit existing 14 PASS
+    + 2 new round-trip tests (canonical_name, FromStr) PASS;
+    `SaveTensorStage::ALL` length goes 18 → 20.
   test: |
-    cargo test -p aprender-serve --lib inference_trace::save_tensor
     cargo test -p aprender-serve --lib inference_trace::save_tensor_stage
   if_fails: 'Implementation removed/renamed a variant or broke parser fallback. Backward-compat broken.'
   status: PARTIAL_ALGORITHM_LEVEL
@@ -153,31 +161,31 @@ falsification_tests:
     file_paths:
       - crates/aprender-serve/src/inference_trace/save_tensor_stage.rs
     function_names:
-      - SaveTensorStage (enum)
-      - parse_stage_list
+      - SaveTensorStage (enum, gains 2 variants)
+      - parse_stage_list (gains 2 case-insensitive entries)
+      - canonical_name (gains 2 string mappings)
     invariants_enforced:
-      - 'Existing 14 variants preserved byte-identically in upcoming PR'
-      - '5 new variants {QPostRope, KPostRope, AttnScores, AttnSoftmax, AttnVOut} added at enum tail'
+      - 'Existing 18 variants preserved byte-identically'
+      - '2 new variants {AttnScores, AttnSoftmax} added between KPostRope and Attention'
+      - 'parse_stage_list accepts "attn_scores" and "attn_softmax" tokens'
     notes: |
       Algorithm-level evidence pinned today (contract authoring stage).
       Implementation lands in a follow-up PR; FUNCTIONAL discharge once
-      the enum gains the 5 variants + their parser entries.
+      the enum gains the 2 variants + their parser entries.
 
 - id: FALSIFY-ATTN-SUB-002
-  rule: 'forward_traced_with_plan threads the 5 new SaveTensorStage variants in the canonical capture order'
+  rule: 'forward_traced_with_plan threads the 2 new stages in canonical capture order'
   prediction: |
     On a canonical 7B teacher BOS-token forward, `apr trace
-    --save-tensor q_post_rope,k_post_rope,attn_scores,attn_softmax,
-    attn_v_out --layer 0 <model.apr>` shall produce 5 APRT files in
-    that order, each with non-empty payload and matching expected
-    shape (Q/K post-rope: [num_heads × seq × head_dim] flattened; scores:
-    [num_heads × seq × seq] flattened; softmax: same; attn_v_out:
-    [num_heads × seq × head_dim] flattened).
+    --save-tensor attn_scores,attn_softmax --layer 0 <model.apr>`
+    shall produce 2 APRT files with non-empty payload and matching
+    expected shape (scores: [num_heads × seq × seq] flattened;
+    softmax: same shape).
   test: |
     apr trace /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr \
-      --save-tensor q_post_rope,k_post_rope,attn_scores,attn_softmax,attn_v_out \
+      --save-tensor attn_scores,attn_softmax \
       --layer 0 --output /tmp/aprt-attn-substages.d
-    ls /tmp/aprt-attn-substages.d/layer0/
+    ls /tmp/aprt-attn-substages.d/layer-0/
   if_fails: 'forward_traced_with_plan didn''t hook the new capture points; payload empty or wrong shape.'
   status: PARTIAL_ALGORITHM_LEVEL
   algorithm_evidence:
@@ -187,21 +195,21 @@ falsification_tests:
       - forward_traced_with_plan
       - maybe_save_stage
     invariants_enforced:
-      - 'Order [QkvMatmul, QPostRope, KPostRope, AttnScores, AttnSoftmax, AttnVOut, AttnOut] is enforced inside attention block'
-      - 'maybe_save_stage called at each of the 5 new capture points within layer-0 attention'
+      - 'Order [QkvBias, QPostRope, KPostRope, AttnScores, AttnSoftmax, Attention, AttnOut] is enforced inside attention block'
+      - 'maybe_save_stage called at each of the 2 new capture points within layer-0 attention'
     notes: |
-      Algorithm-level evidence pinned today (contract authoring stage).
-      Implementation lands in a follow-up PR.
+      Algorithm-level evidence pinned today; implementation lands in a
+      follow-up PR.
 
 - id: FALSIFY-ATTN-SUB-003
-  rule: 'apr diff --values recognizes APRT files for the 5 new stages and reports per-stage cosine vs HF FP16 reference'
+  rule: 'apr diff --values recognizes APRT files for the 2 new stages and reports per-stage cosine vs HF FP16 reference'
   prediction: |
     `apr diff <APR-stage>.aprt <HF-stage>.bin --values --topk 0` shall
     parse both inputs and report cosine ∈ [-1.0, 1.0] for each of the
-    5 new stages without erroring.
+    2 new stages without erroring.
   test: |
     # After PR #1423's HF FP16 oracle has emitted reference tensors for
-    # each of the 5 new stages, run apr diff for each stage. The pre-
+    # attn_scores + attn_softmax, run apr diff for each. The pre-
     # implementation CLI will reject the unknown stage suffix; that is
     # the falsifier's algorithm-level evidence today.
   if_fails: 'apr diff --values rejects APRT for one or more new stages.'
@@ -212,53 +220,53 @@ falsification_tests:
     function_names:
       - load_tensor_apr_aprt
     invariants_enforced:
-      - 'Existing APRT recognition path generalizes to the 5 new stage IDs without per-stage hardcoding'
+      - 'Existing APRT recognition path generalizes to the 2 new stage IDs without per-stage hardcoding'
     notes: |
-      Algorithm-level evidence pinned today (contract authoring stage).
-      Functional discharge requires the 5 stages to load + diff.
+      Algorithm-level evidence pinned today.
 
 - id: FALSIFY-ATTN-SUB-004
-  rule: 'Bisection narrows SHIP-007 layer-0 divergence to ONE specific sub-stage'
+  rule: 'Bisection narrows SHIP-007 layer-0 divergence to ONE specific adjacent stage pair'
   prediction: |
     On the canonical 7B teacher (broken-GPU APR file) at BOS token
-    layer 0, the cosine sequence cos(APR.<stage>, HF_FP16.<stage>)
-    SHALL exhibit exactly one inflection point ≥ 0.001 drop within
-    {QkvMatmul, QPostRope, KPostRope, AttnScores, AttnSoftmax,
-    AttnVOut, AttnOut}, identifying the SHIP-007 sub-stage.
+    layer 0, the 9-element cosine sequence
+    [attn_norm, qkv_matmul, qkv_bias, q_post_rope, k_post_rope,
+     attn_scores, attn_softmax, attention, attn_out] SHALL exhibit
+    exactly one adjacent pair (i, i+1) where
+    cos[i] ≥ 0.999 AND cos[i+1] < 0.999, identifying the SHIP-007
+    sub-stage as occurring at the transition i → i+1.
   test: |
-    # Pre-condition: live HF FP16 reference tensors for all 5 new
-    # stages exist (gated on PR #1423 oracle script extension).
-    # Then: `apr diff` each pair, plot the cosine sequence.
+    # Pre-condition: live HF FP16 reference tensors for all 9 stages
+    # exist (gated on PR #1423 oracle script extension to the 2 new
+    # stages). Then: `apr diff` each pair, plot the cosine sequence.
   if_fails: |
-    Either the divergence is split across multiple sub-stages
-    (SHIP-007 is not a single-stage bug, refines hypothesis) OR
-    the HF FP16 reference itself drifts.
+    Either the divergence is split across multiple adjacent pairs
+    (SHIP-007 is not single-stage; refines hypothesis) OR the HF FP16
+    reference itself drifts.
   status: BLOCKER_FIXTURE_ABSENT
   algorithm_evidence:
     file_paths:
       - 'scripts/ship-007-layer0-oracle/  (PR #1423)'
     function_names:
-      - run_hf_fp16_reference (extension to capture 5 new sub-stages)
+      - run_hf_fp16_reference (extension to capture 2 new sub-stages)
     invariants_enforced:
-      - 'Single-stage divergence hypothesis is the falsifiable claim'
+      - 'Single-pair divergence hypothesis is the falsifiable claim'
     notes: |
-      BLOCKER_FIXTURE_ABSENT: discharge requires (i) the 5 new stages
-      to be implemented (FALSIFY-ATTN-SUB-001), (ii) the HF FP16 oracle
-      extended to capture the same 5 sub-stage tensors, (iii) live diff
+      BLOCKER_FIXTURE_ABSENT: discharge requires (i) the 2 new stages
+      implemented (FALSIFY-ATTN-SUB-001), (ii) the HF FP16 oracle
+      extended to capture the 2 new stage tensors, (iii) live diff
       run on RTX 4090. Contract pins the gate; live discharge is a
-      follow-up PR that delivers all three pre-conditions.
+      follow-up PR cascade that delivers all three pre-conditions.
 
 - id: FALSIFY-ATTN-SUB-005
   rule: 'New sub-stage capture is purely additive — existing forward-pass token output is byte-identical pre/post implementation'
   prediction: |
-    Adding the 5 new SaveTensorStage capture points shall NOT change
+    Adding the 2 new SaveTensorStage capture points shall NOT change
     the model''s output token sequence on canonical 7B teacher, BOS
     token forward. `apr run` greedy-decode shall produce byte-
     identical token IDs before and after the implementation PR.
   test: |
     apr run /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr \
       --prompt "What is 2+2?" --no-gpu --max-tokens 16 --temperature 0 --json
-    # Compare token IDs before and after the implementation PR; must match.
   if_fails: |
     The capture is mutating intermediate state instead of READING it.
     Implementation must use Vec::clone or &[f32] read-only access.
@@ -273,7 +281,6 @@ falsification_tests:
       - 'maybe_save_stage takes &[f32] (read-only) and clones into APRT format'
       - 'No mutation of forward-pass tensors at any capture point'
     notes: |
-      Algorithm-level evidence pinned today; existing stages already
-      satisfy this invariant by construction (`maybe_save_stage` signature
-      is read-only). The 5 new sub-stage capture points inherit the same
-      shape.
+      Algorithm-level evidence pinned today; existing 18 stages already
+      satisfy this invariant by construction. The 2 new sub-stage
+      capture points inherit the same shape.
