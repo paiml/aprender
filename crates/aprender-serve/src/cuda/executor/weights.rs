@@ -368,9 +368,32 @@ impl CudaExecutor {
             let (attn_k_ptr, attn_k_len) = get_qweight(&k_name)?;
             let (attn_v_ptr, attn_v_len) = get_qweight(&v_name)?;
             let (attn_output_ptr, attn_output_len) = get_qweight(&o_name)?;
-            let (ffn_gate_ptr, ffn_gate_len) = get_qweight(&gate_name)?;
-            let (ffn_up_ptr, ffn_up_len) = get_qweight(&up_name)?;
-            let (ffn_down_ptr, ffn_down_len) = get_qweight(&down_name)?;
+
+            // M-GPU-MOE-1.3 (qwen3-moe-forward-gpu-v1 v1.3.0): for MoE
+            // architectures, the per-layer dense FFN tensor names
+            // (`ffn_gate.weight`, `ffn_up.weight`, `ffn_down.weight`)
+            // do NOT exist in the GGUF — MoE has 128 expert tensors per
+            // layer (`ffn_gate_exps.weight` etc.) loaded into the
+            // `moe_layers` parameter at forward-time. Skip the lookup
+            // and use (0, 0) sentinels; consumers MUST gate FFN access
+            // on `arch.is_moe` and route to `moe_ffn_forward_layer_cuda`.
+            // See: evidence/m-gpu-moe-1-2-blocked-by-preload-bug-2026-05-04/findings.md
+            let (ffn_gate_ptr, ffn_gate_len) = if arch.is_moe {
+                (0u64, 0usize)
+            } else {
+                get_qweight(&gate_name)?
+            };
+            let (ffn_up_ptr, ffn_up_len) = if arch.is_moe {
+                (0u64, 0usize)
+            } else {
+                get_qweight(&up_name)?
+            };
+            let (ffn_down_ptr, ffn_down_len) = if arch.is_moe {
+                (0u64, 0usize)
+            } else {
+                get_qweight(&down_name)?
+            };
+
             let (attn_norm_ptr, attn_norm_len) = get_rmsnorm(&attn_norm_name)?;
             let (ffn_norm_ptr, ffn_norm_len) = get_rmsnorm(&ffn_norm_name)?;
 
@@ -379,9 +402,10 @@ impl CudaExecutor {
             let attn_k_qtype = self.resolve_qtype(&k_name);
             let attn_v_qtype = self.resolve_qtype(&v_name);
             let attn_output_qtype = self.resolve_qtype(&o_name);
-            let ffn_gate_qtype = self.resolve_qtype(&gate_name);
-            let ffn_up_qtype = self.resolve_qtype(&up_name);
-            let ffn_down_qtype = self.resolve_qtype(&down_name);
+            // M-GPU-MOE-1.3: qtype sentinels for MoE (FFN qtypes unused)
+            let ffn_gate_qtype = if arch.is_moe { WeightQuantType::Q4K } else { self.resolve_qtype(&gate_name) };
+            let ffn_up_qtype = if arch.is_moe { WeightQuantType::Q4K } else { self.resolve_qtype(&up_name) };
+            let ffn_down_qtype = if arch.is_moe { WeightQuantType::Q4K } else { self.resolve_qtype(&down_name) };
 
             // Log if non-Q4K types detected (for debugging mixed-quant models)
             self.log_mixed_quant_types(
