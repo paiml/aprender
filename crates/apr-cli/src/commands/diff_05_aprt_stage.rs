@@ -353,4 +353,100 @@ mod aprt_stage_diff_tests {
         let r = run_aprt_stage_diff(&p1, &p2, 5, true);
         assert!(r.is_ok());
     }
+
+    /// FALSIFY-ATTN-SUB-003 — `apr diff --values` is per-stage-agnostic.
+    ///
+    /// The 2 new SaveTensorStage variants (AttnScores, AttnSoftmax) introduced
+    /// in PR #1451 are encoded only in the OUTPUT FILENAME, not in the APRT
+    /// binary format (which is just `b"APRT" + layer_u32_le + dim_u32_le +
+    /// f32_le_body`). This test pins that contract — if anyone adds a per-
+    /// stage code path inside `is_aprt_stage_file` or `compute_aprt_stage_stats`,
+    /// these assertions fail.
+    ///
+    /// Per `contracts/trace-attn-sub-stages-v1.yaml` v1.1.0 SUB-003 invariant
+    /// "Existing APRT recognition path generalizes to the 2 new stage IDs
+    ///  without per-stage hardcoding".
+    #[test]
+    fn falsify_attn_sub_003_new_stages_per_stage_agnostic() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Realistic shape for layer 0 attn_scores at 7-token BOS prompt with
+        // num_heads=28 (Qwen2.5-7B): [num_heads, seq, seq] = 28 × 7 × 7 = 1372.
+        let dim = 28 * 7 * 7;
+        let scores_apr: Vec<f32> = (0..dim).map(|i| (i as f32) * 0.001).collect();
+        let scores_hf = scores_apr.clone();
+        // attn_softmax is bounded in [0, 1] — different value range tests that
+        // the loader is shape/value-agnostic, not stage-name-aware.
+        let softmax_apr: Vec<f32> = (0..dim).map(|i| 1.0 / (1.0 + i as f32)).collect();
+        let softmax_hf = softmax_apr.clone();
+
+        // Files named with the new stage suffixes — the filename is what carries
+        // the stage identity, not the binary content.
+        let scores_p1 = tmp.path().join("layer_0_attn_scores.aprt");
+        let scores_p2 = tmp.path().join("hf_layer_0_attn_scores.aprt");
+        let softmax_p1 = tmp.path().join("layer_0_attn_softmax.aprt");
+        let softmax_p2 = tmp.path().join("hf_layer_0_attn_softmax.aprt");
+
+        write_aprt_file(&scores_p1, 0, &scores_apr);
+        write_aprt_file(&scores_p2, 0, &scores_hf);
+        write_aprt_file(&softmax_p1, 0, &softmax_apr);
+        write_aprt_file(&softmax_p2, 0, &softmax_hf);
+
+        // (1) Magic-byte detection works regardless of stage filename.
+        assert!(is_aprt_stage_file(&scores_p1));
+        assert!(is_aprt_stage_file(&scores_p2));
+        assert!(is_aprt_stage_file(&softmax_p1));
+        assert!(is_aprt_stage_file(&softmax_p2));
+
+        // (2) compute_aprt_stage_stats produces sensible output for both stages
+        //     even though their value ranges differ (scores: ~[0, 1.4], softmax: [0, 1]).
+        let scores_stats = compute_aprt_stage_stats(0, &scores_apr, &scores_hf, 5);
+        assert_eq!(scores_stats.dim_product, dim);
+        assert_eq!(scores_stats.max_abs_diff, 0.0);
+        assert!((scores_stats.cosine_sim - 1.0).abs() < 1e-9);
+
+        let softmax_stats = compute_aprt_stage_stats(0, &softmax_apr, &softmax_hf, 5);
+        assert_eq!(softmax_stats.dim_product, dim);
+        assert_eq!(softmax_stats.max_abs_diff, 0.0);
+        assert!((softmax_stats.cosine_sim - 1.0).abs() < 1e-9);
+
+        // (3) End-to-end run_aprt_stage_diff succeeds for both stages.
+        assert!(run_aprt_stage_diff(&scores_p1, &scores_p2, 5, true).is_ok());
+        assert!(run_aprt_stage_diff(&softmax_p1, &softmax_p2, 5, true).is_ok());
+    }
+
+    /// Cosine sensitivity check — small perturbation in attn_softmax produces
+    /// a measurable cosine drop. Pins that the bisection chain will reliably
+    /// detect divergence at the softmax stage during FALSIFY-ATTN-SUB-004
+    /// LIVE on RTX 4090.
+    #[test]
+    fn falsify_attn_sub_003_cosine_detects_softmax_divergence() {
+        let dim = 28 * 7 * 7;
+        let apr: Vec<f32> = (0..dim).map(|i| 1.0 / (1.0 + i as f32)).collect();
+        // 0.5% per-element multiplicative perturbation simulates a precision
+        // divergence between APR fp16 path and HF fp16 reference.
+        let hf: Vec<f32> = apr.iter().map(|&v| v * 1.005).collect();
+
+        let stats = compute_aprt_stage_stats(0, &apr, &hf, 3);
+        // Cosine for parallel-but-scaled vectors is ~1.0 (collinear).
+        // The bisection compares APR-vs-HF where divergence is *direction*,
+        // not just magnitude. A mixed-perturbation must dent cosine measurably.
+        let hf_mixed: Vec<f32> = apr
+            .iter()
+            .enumerate()
+            .map(|(i, &v)| if i % 7 == 0 { v * 0.5 } else { v })
+            .collect();
+        let stats_mixed = compute_aprt_stage_stats(0, &apr, &hf_mixed, 3);
+        assert!(
+            stats_mixed.cosine_sim < stats.cosine_sim,
+            "mixed-perturbation cosine should dip below scale-only: \
+             scale={} mixed={}",
+            stats.cosine_sim,
+            stats_mixed.cosine_sim
+        );
+        assert!(
+            stats_mixed.cosine_sim < 0.999,
+            "mixed-perturbation cosine should drop below 0.999 bisection floor: {}",
+            stats_mixed.cosine_sim
+        );
+    }
 }
