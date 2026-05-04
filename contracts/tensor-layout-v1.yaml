@@ -1,5 +1,5 @@
 metadata:
-  version: 2.0.0
+  version: 2.1.0
   created: '2026-02-04'
   updated: '2026-02-05'
   author: PAIML Engineering
@@ -628,6 +628,66 @@ falsification_tests:
     \    // SafeTensors will be ~13x slower and this test MUST fail.\n}\n"
   if_test_fails: GH-88 regression - SafeTensors GPU not using fused Q4K kernel path
   reference: GH-88, LAYOUT-002
+- id: FALSIFY-013
+  status: PARTIAL_ALGORITHM_LEVEL
+  rule: F-LAYOUT-CONTRACT-001 (FFN round-trip via apr diff — safetensors→APR import path)
+  prediction: |
+    `apr import <safetensors> --quantize <q>` followed by `apr export <apr> --format gguf`
+    produces an APR file whose FFN tensors (`mlp.{down,gate,up}_proj.weight`) are
+    byte-identical AND shape-equal to the GGUF reference. `apr diff <apr> <gguf>
+    --values --limit 5` MUST report `IDENTICAL` for these three tensors, never
+    `[TRANSPOSED]`.
+  why: |
+    LAYOUT-001/002 contract states `transpose: 'true'` for all FFN weights with
+    `gguf_shape: [intermediate, hidden]` and `apr_shape: [hidden, intermediate]`.
+    The GGUF→APR import path enforces this via `transpose_q4k_for_matmul` (and
+    F32/F16 equivalents). The safetensors→APR import path does NOT — verified
+    empirically 2026-05-04 by running `apr diff` on a Qwen2.5-Coder-0.5B-Instruct
+    model imported from safetensors: diagnosis line "Values identical, shapes
+    transposed (format layout diff)" with `[TRANSPOSED]` tags on all three FFN
+    tensors. Runtime kernel reads APR-laid bytes with axis interpretation flipped
+    → garbage matmul output → gibberish logits → unintelligible model output.
+    See spec §50 and evidence/qwen2-0.5b-bisection-2026-05-04/findings.md.
+  if_fails: |
+    safetensors→APR import path lacks LAYOUT-001/002 transpose step for FFN
+    weights. Fix scope: `crates/aprender-core/src/format/converter/{write.rs,
+    f16_convert.rs}` — wire up the dead-code `needs_transpose` scaffolding at
+    `f16_convert.rs:100-127` (or refactor) so `mlp.{down,gate,up}_proj.weight`
+    get transposed during safetensors import. Bounded ~50 LOC. MUST verify 7B
+    teacher (GGUF-imported) is byte-unchanged after the patch via `apr diff`.
+  falsification_test: |
+    #[test]
+    fn falsify_013_safetensors_ffn_roundtrip_via_apr_diff() {
+        // 1. apr import <small qwen2-class safetensors> --quantize fp16 -o /tmp/imported.apr
+        // 2. apr export /tmp/imported.apr --format gguf -o /tmp/reference.gguf
+        // 3. apr diff /tmp/imported.apr /tmp/reference.gguf --values --limit 5 --json
+        // 4. Parse JSON → assert no entry has tag == "TRANSPOSED" for any
+        //    "model.layers.*.mlp.{down,gate,up}_proj.weight"
+        // 5. Diagnosis line MUST NOT contain "shapes transposed"
+    }
+  if_test_fails: |
+    LAYOUT-001/002 violation in safetensors import path — same defect class as
+    GH-202, GH-370. MODEL-2 strategy A (Qwen2.5-Coder-0.5B-Instruct fine-tune
+    per spec §49) is BLOCKED until this falsifier is DISCHARGED.
+  reference: GH-202, LAYOUT-001, LAYOUT-002, spec §50
+  algorithm_evidence:
+    captured: 2026-05-04
+    method: live `apr diff` on RTX 4090 (noah-Lambda-Vector)
+    artifact: evidence/qwen2-0.5b-bisection-2026-05-04/findings.md
+    diagnosis_line: 'DIAGNOSIS: Values identical, shapes transposed (format layout diff)'
+    affected_tensors:
+      - model.layers.0.mlp.down_proj.weight
+      - model.layers.0.mlp.gate_proj.weight
+      - model.layers.0.mlp.up_proj.weight
+    unaffected_tensors:
+      - model.layers.0.self_attn.q_proj.weight
+      - model.layers.0.self_attn.k_proj.weight
+      - model.layers.0.self_attn.v_proj.weight
+      - model.layers.0.self_attn.o_proj.weight
+      - model.layers.0.input_layernorm.weight
+      - model.layers.0.post_attention_layernorm.weight
+    seven_b_status: works (GGUF-imported, inherits transposed FFN layout)
+    half_b_status: gibberish (safetensors-imported, preserves HF [out, in] layout)
 toyota_way_principles:
   jidoka: '"Automation with a human touch" - The validation stops the line immediately
 
