@@ -1,7 +1,8 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.94.0
+**Version:** 2.95.0
+**Atomic next action (v2.95.0):** **§50 — MODEL-2 architecture-coupling finding: §49.6 step 5 is multi-PR scope, not single-PR (re-scoped 5a-5h)** (see new §50 below). After §49.6 steps 3 + 4 landed (PR #1470 contract + PR #1471 wire-up), live source inspection of `pretrain_real.rs:38-46` revealed the trainer hardcodes every architectural constant from `Llama370MConfig` (hidden=1024, heads=16/4, ffn=2816, vocab=50_257). Qwen2.5-Coder-0.5B has different shape (hidden=896, heads=14/2, ffn=4864, vocab=151_936, GQA-7:1). Every tensor mismatches; §49.6 step 5's "0 LOC, just run apr pretrain --init" assumption fails. Three options surfaced (A: find/build a Llama-shaped 0.5B checkpoint; B: make trainer arch-polymorphic; C: replace Llama370MConfig with Qwen-shaped). **Recommend Option B** — preserves §24/§25 falsification evidence, exercises `TransformerConfig`'s designed polymorphism, binds each new component (Qwen tokenizer, GQA-7:1, extracted-arch loader) to its own falsifier. Re-scoped roadmap: 5a (new contract `apr-pretrain-arch-polymorphic-v1`) → 5b (TransformerConfig::qwen2_0_5b constructor) → 5c (extract arch from init APR) → 5d (Qwen tokenizer surface) → 5e (GQA-7:1 verification) → 5f (weight load) → 5g (LIVE 500-step fine-tune) → 5h (publish). **Total: ~410 LOC + 1 LIVE run, not 0 LOC.** Spec v2.94.0 → **v2.95.0**. **MODEL-1 ship % unchanged at 91%. MODEL-2 ship % unchanged at 57%** until 5g produces val_loss < 9.38. Coverage tally unchanged (architecture finding, not a falsifier flip).
 **Atomic next action (v2.94.0):** **§49 — MODEL-2 strategy pivot: from-scratch was a methodology defect; pretrained-init + fine-tune is the correct path** (see new §49 below). After 11 SHIP-007 cascade PRs without ship-% movement, operator asked "why aren't we training models?" Honest re-diagnosis of the MODEL-2 architecture revealed that §34's "capacity-limited at val_loss=9.38" framing is **wrong** — it's **data-limited**. Live evidence (2026-05-04 session): a fresh 500-step `apr pretrain --mode from-scratch --device cuda` run on the existing 565M-token codeparrot corpus converged to **val_loss=9.7255**, identical to §24's 9.7507 ceiling — confirming the corpus is the binding constraint. Industry comparison: SmolLM-360M (similar param count) hits val_loss ~2.9 but was trained on 1T tokens. MODEL-2 saw 565M. The "from-scratch on 565M tokens" math just doesn't reach val_loss=3.0 regardless of step budget. The right strategy is **initialize from a public pretrained 370M-class checkpoint and fine-tune on the existing corpus** — Qwen2.5-Coder-0.5B-Instruct (already in HF cache at `~/.cache/huggingface/hub/models--Qwen--Qwen2.5-Coder-0.5B-Instruct/`, 950 MB) is at val_loss ~2-3 already. Fine-tuning on Python+permissive code shifts the distribution without losing the 1T-token pretraining. This pivot is **NOT a punt** — it matches industry best practice (StableCode ← StableLM, Qwen2.5-Coder ← Qwen2.5; nobody trains 0.5B from scratch for production code-LMs because the data efficiency math fails). Spec v2.93.0 → **v2.94.0**. **MODEL-2 ship % stays at 57%** until the fine-tune produces measurable val_loss < 9.38 evidence. **MODEL-1 ship % unchanged at 91%**. Coverage tally unchanged this cycle (strategic amendment, no falsifier flips yet).
 **Atomic next action (v2.93.0):** **§48 — SHIP-007 layer-0 attention bisection cascade ALGORITHM-LEVEL COMPLETE (PRs #1455 + #1456 + #1457)** (see new §48 below). Three more PRs after §47 closed the §47.1 cascade roadmap to step 6 of 8 at the algorithm level: (i) PR #1455 — `forward_traced_with_plan` wires 4 attention sub-stages (`QPostRope`, `KPostRope`, `AttnScores`, `AttnSoftmax`); FALSIFY-ATTN-SUB-002 PARTIAL_ALGORITHM_LEVEL; closes the §47.4 parent-contract drift as a side effect (+ memory cost: 112 bytes/forward at BOS). (ii) PR #1456 — drift-prevention test for FALSIFY-ATTN-SUB-003 in `crates/apr-cli/src/commands/diff_05_aprt_stage.rs`; 2 new tests (`falsify_attn_sub_003_new_stages_per_stage_agnostic` + `falsify_attn_sub_003_cosine_detects_softmax_divergence`); pins that `apr diff --values` is per-stage-agnostic for the 2 new stage suffixes. (iii) PR #1457 — extends `scripts/generate_qwen25_coder_fp16_stages.py` with `--with-attn-substages` (default ON) installing per-instance `Qwen2Attention.forward` monkeypatch under `attn_implementation="eager"`; captures the 4 missing stages (`q_post_rope`, `k_post_rope`, `attn_scores`, `attn_softmax`); pre-condition for FALSIFY-ATTN-SUB-004 LIVE bisection now algorithm-bound (BLOCKER_FIXTURE_ABSENT → PARTIAL_ALGORITHM_LEVEL on this PR's merge). Toyota Way correction during research: the pre-impl note estimated 7 missing stages + ~140 LOC; live source inspection of the existing script found 3 already-captured (`qkv_matmul`, `qkv_bias`, `attention`), reducing scope to **4 stages, ~80 LOC**. **Steps 7-8 (LIVE RTX 4090 bisection + root-cause fix) require operator action**: (a) canonical `apr` release binary needs rebuild post-#1451 (the `/mnt/nvme-raid0/targets/aprender/release/apr` rejects `attn_scores` stage today); (b) PyTorch/CUDA driver mismatch on the host blocks `--device cuda` (workaround: `--device cpu` is multi-min but functional). **MODEL-1 ship %**: 91% (cascade is scaffold; ship % moves at SUB-004 LIVE DISCHARGE in step 7). **MODEL-2 ship %**: 57%. Spec v2.92.0 → **v2.93.0**. Coverage tally: 20+32 → **20+36** (+4 PARTIAL_ALGORITHM_LEVEL from `trace-attn-sub-stages-v1` v1.1.0 falsifiers landing on main via #1450; the 5th — SUB-004 — remains BLOCKER until #1457 ships and an operator runs the live RTX 4090 bisection).
 **Atomic next action (v2.92.0):** **§47 — SHIP-007 layer-0 attention bisection cascade STARTED (PRs #1450 + #1451 + #1452)** (see new §47 below). Three more PRs ship the §46.7(a) follow-up scaffold: (i) PR #1450 — new contract `trace-attn-sub-stages-v1.yaml` v1.0.0 PROPOSED → v1.1.0 PROPOSED (Toyota Way correction within the same branch). v1.0.0 originally claimed 5 new `SaveTensorStage` variants; live inspection of `inference_trace::save_tensor_stage` showed 3 already exist (`QPostRope`, `KPostRope`, `Attention`) — only **2 are truly new** (`AttnScores`, `AttnSoftmax`). v1.1.0 corrected scope to those 2 + documented the 9-stage `bisection_chain_layer_0` equation across parent + new stages. (ii) PR #1451 — `SaveTensorStage` enum gains the 2 new variants in canonical computation order (`KPostRope → AttnScores → AttnSoftmax → Attention`); 5 new tests for FALSIFY-ATTN-SUB-001 (round-trip, ordering, parser-list); 167/167 inference_trace tests PASS; `cargo check --workspace --lib` clean. (iii) PR #1452 — research evidence note documenting a **pre-existing capture gap discovered while authoring the wire-plan**: `QPostRope` + `KPostRope` are in the parent enum but have NO `emit()` calls in `forward_traced_with_plan`. The parent contract `apr-cli-trace-save-tensor-v1.yaml` v1.4.0 (FUNCTIONAL) silently overstates coverage for those 2 stages. The next-cycle FALSIFY-ATTN-SUB-002 PR will wire **4 stages, not 2**, closing this drift as a side effect. **MODEL-1 ship % unchanged at 91%** (cascade is scaffold; ship % moves when a falsifier flips DISCHARGED, expected at FALSIFY-ATTN-SUB-004 LIVE bisection in a future cycle). **MODEL-2 ship % unchanged at 57%**. Spec v2.91.0 → **v2.92.0**. Coverage tally unchanged this cycle (5 falsifier slots PARTIAL_ALGORITHM_LEVEL added to a NEW contract — these increment coverage when the contract YAML lands on main, which gates on PR #1450 merge).
@@ -4470,6 +4471,93 @@ Unchanged from §29 because PR E did not land. Next-session agenda: do the §30.
 Per `feedback_fix_root_cause_never_route_around.md`: the §28 fix would have route-around'd a real bug because the named site (matmul kernel) is not where the divergence originates. The empirical refutation in §30 IS the work that protects the next attempt from shipping a no-op. This refutation is itself a coverage-incrementing artifact (it falsifies a hypothesis), even though no PARTIAL flips to DISCHARGED.
 
 The Toyota Way fix is to bisect upstream, not to flip the kernel call.
+
+## §50. MODEL-2 architecture-coupling finding — §49.6 step 5 is multi-PR scope, not single-PR (2026-05-04)
+
+After §49.6 steps 3 + 4 landed (PR #1470 contract + PR #1471 wire-up), step 5 was scoped at "Run 500-step smoke fine-tune with LR=5e-5, warmup=50; verify val_loss < 9.38 | 0 LOC". This section records the architecture-mismatch finding that disproves the 0-LOC claim and re-scopes step 5.
+
+### 50.1 The empirical finding
+
+Live source inspection of the existing pretrain trainer (`crates/aprender-train/src/train/pretrain_real.rs:38-46`) shows it HARDCODES every architectural constant from `Llama370MConfig`:
+
+```rust
+hidden_size:        Llama370MConfig::HIDDEN_DIM,                  // 1024
+num_attention_heads: Llama370MConfig::NUM_HEADS,                  //   16
+num_kv_heads:       Llama370MConfig::NUM_KV_HEADS,                //    4
+intermediate_size:  Llama370MConfig::INTERMEDIATE_DIM,            // 2816
+num_hidden_layers:  Llama370MConfig::NUM_LAYERS,                  //   24
+vocab_size:         Llama370MConfig::VOCAB_SIZE,                  // 50_257
+max_position:       Llama370MConfig::MAX_POSITION_EMBEDDINGS,     // 4096
+```
+
+Qwen2.5-Coder-0.5B-Instruct (the §49 init source from `~/.cache/huggingface/hub/.../config.json`) has:
+
+| Param           | Llama370M | Qwen2.5-Coder-0.5B |
+|-----------------|-----------|--------------------|
+| hidden_size     | 1024      | 896                |
+| num_layers      | 24        | 24                 |
+| num_attention_heads | 16    | 14                 |
+| num_kv_heads    | 4         | 2 (GQA-7:1)        |
+| intermediate_size | 2816    | 4864               |
+| vocab_size      | 50_257    | 151_936            |
+| rope_theta      | 10_000    | 1_000_000          |
+
+**Every single tensor will mismatch.** Loading Qwen2.5 weights into a Llama370M-shaped optimizer is a category error. §49.6 step 5 cannot succeed as written — `--init <Qwen2.5-Coder-0.5B-Instruct.apr>` will fail at FALSIFY-005 (architecture mismatch) the moment step 5's arch-check runs.
+
+### 50.2 Why the §49.6 roadmap missed this
+
+§49 was authored from a strategy lens (data-budget vs capacity ceiling) and correctly identified pretrained-init as the load-bearing path. The roadmap costed step 5 at 0 LOC because it implicitly assumed the trainer was architecture-polymorphic. It is not — `pretrain_real.rs:38-46` predates the Qwen2.5 use case.
+
+`crates/aprender-train/src/transformer/config.rs:14-18` already DEFINES `QWEN2_0_5B_HIDDEN_SIZE = 896` etc as constants (and `qwen2_0_5b()` is the natural sibling to `llama2_7b()`/`llama2_13b()` constructors). So the foundation exists; what's missing is:
+1. A `TransformerConfig::qwen2_0_5b()` constructor (~30 LOC)
+2. A polymorphic `pretrain_real::build_transformer_config()` that derives the config from the init APR file's metadata instead of `Llama370MConfig::*` constants (~80 LOC)
+3. Forward-pass coverage of GQA-7:1 (Qwen2.5 has kv_heads=2, query_heads=14; ratio 7:1) — needs verification that `aprender-train`'s attention kernel handles this ratio correctly (existing code targets 4:1 GQA per Llama370M)
+4. A tokenizer surface that accepts vocab_size=151_936 (Qwen tokenizer) instead of vocab_size=50_257 (codeparrot/GPT-2 BPE) — current `tokenizer.json` shape mismatch will fail GATE-ARCH-370M-011 at preflight
+
+### 50.3 Three options + recommendation
+
+| Option | Description | LOC estimate | Risk |
+|---|---|---|---|
+| **A** | Find/create a Llama370M-shaped pretrained checkpoint (vocab=50257, hidden=1024, layers=24/16/4, ffn=2816). Train SmolLM-360M-class on bigger corpus from-scratch using existing trainer. | ~5K LOC training data prep + multi-week training | High — recreates the §24/§25/§49.1 corpus-bottleneck problem in a new shape. No off-the-shelf 370M Llama checkpoint exists. |
+| **B** | Make the trainer architecture-polymorphic. Derive `TransformerConfig` from init APR metadata; add `qwen2_0_5b()` constructor; verify GQA-7:1 forward pass; add Qwen tokenizer support. | ~200-400 LOC + verification | Medium — exercises new GQA ratio, new tokenizer surface, but each piece is small and contract-bindable. |
+| **C** | Replace `Llama370MConfig` with `Qwen2_5_Coder_0_5B_Config` outright. Pretrain math becomes Qwen-shaped only; from-scratch path becomes "Qwen2.5-from-scratch". | ~300 LOC | Medium — kills the from-scratch falsification path (§24/§25). Less reversible. |
+
+**Recommendation: Option B** — architecture-polymorphic. It preserves the existing from-scratch falsification evidence, exercises the polymorphism that `TransformerConfig` was designed for, and binds each new component (qwen2_0_5b config, GQA-7:1 attention, Qwen tokenizer surface) to its own falsifier. It also leaves the door open for future MODEL-2 alternatives (e.g., StableCode-0.5B-init, DeepSeek-Coder-0.5B-init) without a rewrite.
+
+### 50.4 Re-scoped §49.6 roadmap (replacing original step 5)
+
+| # | Step | LOC | Falsifier discharge |
+|---|------|----------|---------|
+| 5a | Author `apr-pretrain-arch-polymorphic-v1.yaml` contract — pin the architecture-extraction algorithm + Qwen2.5-0.5B forward-pass invariants | ~80 | New contract created |
+| 5b | Add `TransformerConfig::qwen2_0_5b()` constructor + 1 unit test | ~40 | architecture-requirements-v1 (sibling) |
+| 5c | Refactor `pretrain_real::build_transformer_config()` to read from init APR file metadata when `--init <PATH>` is set; fall back to `Llama370MConfig` otherwise | ~80 | apr-pretrain-from-init-v1 FALSIFY-005 (arch match) |
+| 5d | Add Qwen tokenizer-vocab compatibility check at GATE-ARCH-370M-011 — gate by extracted-arch's vocab_size | ~30 | gate-arch-370M-011 update |
+| 5e | Verify GQA-7:1 attention forward pass via property test (kv_heads=2, query_heads=14) | ~50 | gqa-kernel-v1 (existing falsifier expansion) |
+| 5f | Wire the actual weight load — read tensor shards from init APR, materialize into optimizer initial state | ~120 | apr-pretrain-from-init-v1 FALSIFY-006/009/010 |
+| 5g | LIVE 500-step smoke fine-tune on Qwen2.5-Coder-0.5B-Instruct.apr — verify val_loss < 9.38 | 0 (operator dispatch) | apr-pretrain-from-init-v1 FALSIFY-006 DISCHARGED |
+| 5h | Stamp + publish as MODEL-2 v2 | ~10 | (existing) |
+
+**Total estimate: ~410 LOC + 1 LIVE training run** — not 0 LOC. Steps 5a-5f can land independently as separate PRs; 5g is the operator-runnable LIVE gate; 5h is publish.
+
+### 50.5 Net effects
+
+- Spec v2.94.0 → **v2.95.0**.
+- §49.6 step 5 retired in favor of §50.4 sub-steps 5a-5h.
+- **MODEL-2 ship %**: stays at **57%** until 5g produces evidence of val_loss < 9.38. Sub-steps 5a-5f can each individually move 1% with falsifier discharge (architecture-polymorphic infrastructure shipped == evidence that the §49 path is REACHABLE, not just theoretical).
+- **MODEL-1 ship %**: unchanged at **91%**.
+- Coverage tally unchanged this cycle (architecture finding, not a falsifier flip).
+
+### 50.6 Five Whys
+
+1. **Why didn't §49 catch this?** §49 was authored from strategy/data-budget reasoning. The roadmap costed step 5 at 0 LOC because the operator-visible interface (`apr pretrain --init`) suggested polymorphism. Live source inspection (this section's empirical move) revealed `pretrain_real.rs:38-46` predates the assumption.
+2. **Why catch this NOW and not in step 5 implementation?** Per `feedback_no_guessing.md`: read the live source before forming the implementation plan. Surfacing the architecture mismatch BEFORE writing 200 LOC of weight-load code that will fail at runtime is the cheapest place to pay the cost-of-defect. Two §50-prior wrong-premise PRs (#1466/#1467/#1468 closed) on the SHIP-007 / 0.5B gibberish track were the same defect class — read source before forming hypothesis.
+3. **Why option B over A or C?** Option B preserves the §24/§25 falsification evidence (we KEEP knowing from-scratch fails at 9.75; we just don't ship it as MODEL-2). Option B also exercises the polymorphism that `TransformerConfig` was designed for, and each new component (Qwen tokenizer, GQA-7:1) becomes its own falsifier. Option C deletes a working falsification.
+4. **Why is FALSIFY-005 the right place to fail-fast?** The contract authored in PR #1470 already pins "Architecture mismatch is FAIL-FAST, not silent-truncate" as an invariant. The current step-4 wire-up (PR #1471) doesn't enforce arch matching yet — it returns "not yet wired" before getting there. So FALSIFY-005 is currently UNBOUND but its discharge gate is well-defined: read APR header, compare against pretrain target, error with names of mismatched fields.
+5. **Why isn't this spec-amendment a "punt"?** A punt would say "MODEL-2 is blocked, await operator approval to scope". This amendment names three options with LOC estimates, recommends one with reasoning, and gives a concrete 8-step roadmap (5a-5h) with falsifier discharge mapped to each sub-step. The work IS shippable; it's just bigger than 0 LOC.
+
+### 50.7 Next-cycle priority
+
+Author the new contract `apr-pretrain-arch-polymorphic-v1.yaml` per §50.4 step 5a. This contract pins the architecture-extraction algorithm (read APR header → emit TransformerConfig) and adds 4 falsifiers covering: (i) extracted config matches APR header byte-for-byte; (ii) forward-pass on extracted config reproduces the init checkpoint's val_loss; (iii) GQA-7:1 attention numerical parity; (iv) Qwen tokenizer vocab_size flows through GATE-ARCH-370M-011 without false rejection. PROPOSED → PARTIAL_ALGORITHM_LEVEL when the constructor + extractor land.
 
 ## §49. MODEL-2 strategy pivot — from-scratch was a methodology defect (2026-05-04)
 
