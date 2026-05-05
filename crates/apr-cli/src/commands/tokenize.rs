@@ -4,7 +4,7 @@
 //! Apply trains a BPE tokenizer and writes vocab.json + merges.txt.
 
 use colored::Colorize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use crate::{error::CliError, output};
@@ -1010,6 +1010,235 @@ fn print_train_result(result: &TokenizeTrainResult) {
     println!();
 }
 
+// ─── apr tokenize import-hf ─────────────────────────────────────────────────
+// Per `contracts/apr-cli-tokenize-import-hf-v1.yaml` (§50.4 step 5g.0).
+//
+// Extracts vocab.json + merges.txt from a HuggingFace tokenizer.json so the
+// downstream `apr pretrain --tokenizer <DIR>` polymorphic preflight (per
+// apr-pretrain-arch-polymorphic-v1) consumes it without modification. The
+// canonical use case is fine-tuning from public Qwen2.5/Llama2/Mistral
+// checkpoints which distribute as a single tokenizer.json.
+
+/// Run `apr tokenize import-hf` — convert HF tokenizer.json into aprender's
+/// vocab.json + merges.txt + manifest.json layout.
+///
+/// Implements `contracts/apr-cli-tokenize-import-hf-v1.yaml` §extraction_signature.
+/// Falsifies FALSIFY-TOK-IMPORT-HF-001..005.
+pub(crate) fn run_import_hf(
+    input: &Path,
+    output: &Path,
+    include_added_tokens: bool,
+    json_output: bool,
+) -> Result<()> {
+    if !input.exists() {
+        return Err(CliError::FileNotFound(input.to_path_buf()));
+    }
+
+    let raw = std::fs::read_to_string(input).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "[apr-cli-tokenize-import-hf-v1] cannot read {}: {e}",
+            input.display()
+        ))
+    })?;
+    let parsed: serde_json::Value = serde_json::from_str(&raw).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "[apr-cli-tokenize-import-hf-v1] {} is not valid JSON: {e}",
+            input.display()
+        ))
+    })?;
+
+    // Per FALSIFY-TOK-IMPORT-HF-005: only BPE inputs are accepted.
+    let model_type = parsed
+        .get("model")
+        .and_then(|m| m.get("type"))
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            CliError::ValidationFailed(format!(
+                "[apr-cli-tokenize-import-hf-v1] {} has no model.type field; \
+                 not a recognizable HF tokenizer.json",
+                input.display()
+            ))
+        })?;
+    if model_type != "BPE" {
+        return Err(CliError::ValidationFailed(format!(
+            "[apr-cli-tokenize-import-hf-v1] FALSIFY-TOK-IMPORT-HF-005: \
+             model.type = '{model_type}' but only 'BPE' is supported. \
+             {} cannot be imported with this subcommand. \
+             Aprender's BPE loader requires GPT-2-style vocab.json + merges.txt; \
+             Unigram and WordPiece use different state machines and need separate paths.",
+            input.display()
+        )));
+    }
+
+    // Extract model.vocab — token-string → integer-id map.
+    let vocab_obj = parsed
+        .get("model")
+        .and_then(|m| m.get("vocab"))
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| {
+            CliError::ValidationFailed(format!(
+                "[apr-cli-tokenize-import-hf-v1] {} has no model.vocab object",
+                input.display()
+            ))
+        })?;
+    let bpe_vocab_count = vocab_obj.len();
+
+    // Extract model.merges — array of "a b" strings (or [a, b] tuples in older formats).
+    let merges_arr = parsed
+        .get("model")
+        .and_then(|m| m.get("merges"))
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| {
+            CliError::ValidationFailed(format!(
+                "[apr-cli-tokenize-import-hf-v1] {} has no model.merges array",
+                input.display()
+            ))
+        })?;
+    let merges_count = merges_arr.len();
+
+    let added_tokens_arr = parsed
+        .get("added_tokens")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let added_tokens_count = added_tokens_arr.len();
+
+    // Build the output vocab map. Default: BPE state machine only. With
+    // --include-added-tokens, also include each added_token's content → id.
+    let mut effective_vocab: serde_json::Map<String, serde_json::Value> = vocab_obj.clone();
+    if include_added_tokens {
+        for tok in &added_tokens_arr {
+            if let (Some(content), Some(id)) = (
+                tok.get("content").and_then(serde_json::Value::as_str),
+                tok.get("id").and_then(serde_json::Value::as_u64),
+            ) {
+                effective_vocab.insert(
+                    content.to_string(),
+                    serde_json::Value::Number(serde_json::Number::from(id)),
+                );
+            }
+        }
+    }
+
+    // Create output dir.
+    std::fs::create_dir_all(output).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "[apr-cli-tokenize-import-hf-v1] cannot create output dir {}: {e}",
+            output.display()
+        ))
+    })?;
+
+    // Write vocab.json.
+    let vocab_path = output.join("vocab.json");
+    let vocab_json = serde_json::to_string_pretty(&effective_vocab)
+        .map_err(|e| CliError::InvalidFormat(e.to_string()))?;
+    std::fs::write(&vocab_path, vocab_json).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "[apr-cli-tokenize-import-hf-v1] cannot write {}: {e}",
+            vocab_path.display()
+        ))
+    })?;
+
+    // Write merges.txt — one merge per line in original order.
+    let merges_path = output.join("merges.txt");
+    let mut merges_body = String::from("#version: 0.2\n");
+    for (idx, m) in merges_arr.iter().enumerate() {
+        // Two formats are common: (a) "a b" string, (b) ["a", "b"] tuple.
+        let line = match m {
+            serde_json::Value::String(s) => s.clone(),
+            serde_json::Value::Array(parts) if parts.len() == 2 => {
+                let a = parts[0].as_str().unwrap_or("");
+                let b = parts[1].as_str().unwrap_or("");
+                format!("{a} {b}")
+            }
+            _ => {
+                return Err(CliError::ValidationFailed(format!(
+                    "[apr-cli-tokenize-import-hf-v1] merges[{idx}] is neither a string \
+                     nor a [a, b] tuple in {}",
+                    input.display()
+                )));
+            }
+        };
+        merges_body.push_str(&line);
+        merges_body.push('\n');
+    }
+    std::fs::write(&merges_path, merges_body).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "[apr-cli-tokenize-import-hf-v1] cannot write {}: {e}",
+            merges_path.display()
+        ))
+    })?;
+
+    // Write manifest.json with provenance.
+    let manifest = serde_json::json!({
+        "schema": "apr-cli-tokenize-import-hf-v1",
+        "source": input.display().to_string(),
+        "source_sha256": sha256_file(input)?,
+        "model_type": "BPE",
+        "bpe_vocab_count": bpe_vocab_count,
+        "merges_count": merges_count,
+        "added_tokens_count": added_tokens_count,
+        "include_added_tokens": include_added_tokens,
+        "effective_vocab_count": effective_vocab.len(),
+        "extraction_timestamp_utc": chrono::Utc::now().to_rfc3339(),
+    });
+    let manifest_path = output.join("manifest.json");
+    std::fs::write(
+        &manifest_path,
+        serde_json::to_string_pretty(&manifest)
+            .map_err(|e| CliError::InvalidFormat(e.to_string()))?,
+    )
+    .map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "[apr-cli-tokenize-import-hf-v1] cannot write {}: {e}",
+            manifest_path.display()
+        ))
+    })?;
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&manifest)
+                .map_err(|e| CliError::InvalidFormat(e.to_string()))?
+        );
+    } else {
+        output::header("apr tokenize import-hf — HF BPE → aprender extraction");
+        println!();
+        output::kv("  Source", input.display().to_string());
+        output::kv("  BPE vocab", format_number(bpe_vocab_count));
+        output::kv("  Merges", format_number(merges_count));
+        output::kv("  Added tokens", format_number(added_tokens_count));
+        output::kv(
+            "  Effective vocab",
+            format_number(effective_vocab.len()),
+        );
+        output::kv("  Output dir", output.display().to_string());
+        println!();
+        println!("{}", "Wrote:".green().bold());
+        output::kv("  vocab.json", format!("{}/vocab.json", output.display()));
+        output::kv("  merges.txt", format!("{}/merges.txt", output.display()));
+        output::kv(
+            "  manifest.json",
+            format!("{}/manifest.json", output.display()),
+        );
+    }
+
+    Ok(())
+}
+
+fn sha256_file(path: &Path) -> Result<String> {
+    use sha2::{Digest, Sha256};
+    let bytes = std::fs::read(path).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "[apr-cli-tokenize-import-hf-v1] cannot read {} for sha256: {e}",
+            path.display()
+        ))
+    })?;
+    let mut h = Sha256::new();
+    h.update(&bytes);
+    Ok(format!("{:x}", h.finalize()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1139,5 +1368,177 @@ mod tests {
             CliError::ValidationFailed(msg) => assert!(msg.contains("nfkd")),
             other => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    // ─── apr-cli-tokenize-import-hf-v1 falsifier tests (§50.4 step 5g.0) ───
+    // FALSIFY-TOK-IMPORT-HF-002..005. (FALSIFY-001 is the dispatch surface
+    // test in tests/cli_commands.rs.)
+
+    /// Build a minimal HF tokenizer.json file in the BPE format with `n_vocab`
+    /// vocab entries and `n_merges` merges. Used by the falsifier tests below.
+    fn write_minimal_bpe_tokenizer_json(dir: &Path, n_vocab: usize, n_merges: usize) -> PathBuf {
+        let mut vocab = serde_json::Map::new();
+        for i in 0..n_vocab {
+            vocab.insert(format!("tok{i}"), serde_json::Value::Number(i.into()));
+        }
+        let merges: Vec<serde_json::Value> = (0..n_merges)
+            .map(|i| serde_json::Value::String(format!("a{i} b{i}")))
+            .collect();
+        let added_tokens = vec![serde_json::json!({
+            "id": n_vocab,
+            "content": "<|endoftext|>",
+            "special": true,
+        })];
+        let tok = serde_json::json!({
+            "version": "1.0",
+            "added_tokens": added_tokens,
+            "model": {
+                "type": "BPE",
+                "vocab": vocab,
+                "merges": merges,
+            },
+        });
+        let path = dir.join("tokenizer.json");
+        std::fs::write(
+            &path,
+            serde_json::to_string_pretty(&tok).expect("serialize tok"),
+        )
+        .expect("write tok");
+        path
+    }
+
+    /// FALSIFY-TOK-IMPORT-HF-002: BPE input produces non-empty vocab.json + merges.txt.
+    #[test]
+    fn import_hf_qwen_bpe_writes_vocab_and_merges() {
+        let tmp = TempDir::new().expect("tempdir");
+        let input = write_minimal_bpe_tokenizer_json(tmp.path(), 1000, 800);
+        let output = tmp.path().join("extracted");
+
+        run_import_hf(&input, &output, false, true).expect("import-hf should succeed on BPE input");
+
+        let vocab_path = output.join("vocab.json");
+        assert!(vocab_path.exists(), "vocab.json must exist");
+        let vocab_str = std::fs::read_to_string(&vocab_path).expect("read vocab.json");
+        let vocab_obj: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(&vocab_str).expect("parse vocab.json");
+        assert_eq!(
+            vocab_obj.len(),
+            1000,
+            "FALSIFY-TOK-IMPORT-HF-002: vocab.json must have 1000 entries (default mode), got {}",
+            vocab_obj.len()
+        );
+
+        let merges_path = output.join("merges.txt");
+        assert!(merges_path.exists(), "merges.txt must exist");
+        let merges_str = std::fs::read_to_string(&merges_path).expect("read merges.txt");
+        let merge_lines = merges_str.lines().filter(|l| !l.starts_with('#')).count();
+        assert_eq!(
+            merge_lines, 800,
+            "FALSIFY-TOK-IMPORT-HF-002: merges.txt must have 800 merge lines, got {merge_lines}"
+        );
+    }
+
+    /// FALSIFY-TOK-IMPORT-HF-003: vocab.json entry count == |tokenizer.json:model.vocab|.
+    #[test]
+    fn import_hf_vocab_count_matches_input() {
+        let tmp = TempDir::new().expect("tempdir");
+        let input = write_minimal_bpe_tokenizer_json(tmp.path(), 12345, 100);
+        let output = tmp.path().join("extracted");
+
+        run_import_hf(&input, &output, false, true).expect("import-hf");
+
+        let vocab_obj: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(&std::fs::read_to_string(output.join("vocab.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            vocab_obj.len(),
+            12345,
+            "FALSIFY-TOK-IMPORT-HF-003: vocab count must match input model.vocab"
+        );
+    }
+
+    /// FALSIFY-TOK-IMPORT-HF-004: merges.txt has one merge per line, in original order.
+    #[test]
+    fn import_hf_merges_format_and_order() {
+        let tmp = TempDir::new().expect("tempdir");
+        let input = write_minimal_bpe_tokenizer_json(tmp.path(), 10, 5);
+        let output = tmp.path().join("extracted");
+
+        run_import_hf(&input, &output, false, true).expect("import-hf");
+
+        let body = std::fs::read_to_string(output.join("merges.txt")).expect("read merges");
+        let lines: Vec<&str> = body.lines().filter(|l| !l.starts_with('#')).collect();
+        assert_eq!(lines.len(), 5);
+        // The minimal-tokenizer fixture writes "a0 b0", "a1 b1", ... in order.
+        for (i, line) in lines.iter().enumerate() {
+            assert_eq!(
+                line.trim(),
+                format!("a{i} b{i}"),
+                "FALSIFY-TOK-IMPORT-HF-004: merge[{i}] order or format mismatch"
+            );
+        }
+    }
+
+    /// FALSIFY-TOK-IMPORT-HF-005: non-BPE input fails fast.
+    #[test]
+    fn import_hf_unigram_input_errors() {
+        let tmp = TempDir::new().expect("tempdir");
+        let input = tmp.path().join("tokenizer.json");
+        let unigram = serde_json::json!({
+            "model": { "type": "Unigram", "vocab": [] },
+        });
+        std::fs::write(&input, serde_json::to_string_pretty(&unigram).unwrap()).unwrap();
+        let output = tmp.path().join("extracted");
+
+        let err = run_import_hf(&input, &output, false, true)
+            .expect_err("FALSIFY-TOK-IMPORT-HF-005: Unigram input MUST fail-fast");
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(
+                    msg.contains("FALSIFY-TOK-IMPORT-HF-005"),
+                    "error must cite falsifier id (auditability): {msg}"
+                );
+                assert!(
+                    msg.contains("Unigram"),
+                    "error must name the actual model type: {msg}"
+                );
+            }
+            other => panic!("unexpected error variant: {other:?}"),
+        }
+    }
+
+    /// Sanity: --include-added-tokens incorporates added_tokens into vocab.json.
+    /// Pins the §extraction_signature precondition that include_added_tokens is
+    /// a non-default path (default keeps BPE state machine pure).
+    #[test]
+    fn import_hf_include_added_tokens_appends_specials() {
+        let tmp = TempDir::new().expect("tempdir");
+        let input = write_minimal_bpe_tokenizer_json(tmp.path(), 100, 50);
+
+        // Default: no added tokens in vocab.json.
+        let out_default = tmp.path().join("default");
+        run_import_hf(&input, &out_default, false, true).expect("default import");
+        let v_default: serde_json::Map<String, serde_json::Value> = serde_json::from_str(
+            &std::fs::read_to_string(out_default.join("vocab.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(v_default.len(), 100);
+        assert!(
+            !v_default.contains_key("<|endoftext|>"),
+            "default mode must NOT include added_tokens"
+        );
+
+        // With flag: added tokens included.
+        let out_full = tmp.path().join("full");
+        run_import_hf(&input, &out_full, true, true).expect("full import");
+        let v_full: serde_json::Map<String, serde_json::Value> = serde_json::from_str(
+            &std::fs::read_to_string(out_full.join("vocab.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(v_full.len(), 101);
+        assert!(
+            v_full.contains_key("<|endoftext|>"),
+            "include-added-tokens mode must include the special"
+        );
     }
 }
