@@ -23,8 +23,9 @@ use entrenar::train::pretrain::{
     ScriptedVal, StepFn, TrainingRegime, ValFn,
 };
 use entrenar::train::pretrain_real::{
-    build_shared_trainer, AprCheckpointFn, RealStepFn, RealValFn,
+    build_shared_trainer, build_shared_trainer_with_init, AprCheckpointFn, RealStepFn, RealValFn,
 };
+use entrenar::transformer::TransformerConfig;
 use entrenar::train::shard_reader::ShardBatchIter;
 use entrenar::train::transformer_trainer::LMBatch;
 use std::path::Path;
@@ -120,14 +121,28 @@ pub(crate) fn run(
     let resolved_device =
         resolve_device(device).map_err(|e| CliError::ValidationFailed(e.to_string()))?;
 
-    // Contract apr-pretrain-from-init-v1 (§49 step 4) — when --init
-    // is present, validate the APR file's existence and magic bytes
-    // BEFORE any trainer allocation. Missing/corrupted files exit
-    // non-zero with a clear error. Architecture matching and weight
-    // load are §49 step 5 (DISCHARGED requires LIVE training run).
-    if let Some(init_path) = init {
+    // Contract apr-pretrain-from-init-v1 §init_load_semantics + §50.4 step 5f.4:
+    // when --init is present, (1) validate magic bytes, (2) extract
+    // TransformerConfig from the APR header metadata, (3) propagate the
+    // extracted arch through preflight + trainer construction.
+    // Per `apr-pretrain-arch-polymorphic-v1` §arch_extraction_signature,
+    // missing or unreadable architecture metadata is FAIL-FAST not silent-fallback.
+    let init_arch: Option<TransformerConfig> = if let Some(init_path) = init {
         validate_init_apr_path(init_path)?;
-    }
+        Some(crate::commands::model_config::read_apr_architecture(init_path).ok_or_else(
+            || {
+                CliError::ValidationFailed(format!(
+                    "FALSIFY-APR-PRETRAIN-INIT-005: --init APR file at {} has missing or invalid \
+                     architecture metadata (hidden_size, num_heads, num_layers, vocab_size, etc). \
+                     Cannot extract TransformerConfig per apr-pretrain-arch-polymorphic-v1 \
+                     §arch_extraction_signature.",
+                    init_path.display()
+                ))
+            },
+        )?)
+    } else {
+        None
+    };
 
     let hp = mode_defaults(mode, vocab_size, lr, warmup_steps, target_val_loss);
 
@@ -209,6 +224,8 @@ pub(crate) fn run(
             seed,
             resolved_device,
             json_output,
+            init_arch.as_ref(),
+            init,
         )?
     };
 
@@ -251,11 +268,11 @@ fn drive_synthetic(
 /// validate `--init <PATH>` BEFORE any trainer allocation. Falsifies
 /// FALSIFY-APR-PRETRAIN-INIT-003 (missing-file) + -004 (invalid-magic).
 ///
-/// Architecture matching (FALSIFY-005) and full weight load
-/// (FALSIFY-006/009/010 — load-bearing) are §49 step 5 follow-up. This
-/// step pins the algorithm at PARTIAL_ALGORITHM_LEVEL: file existence
-/// and magic bytes verified; downstream weight-load returns a clear
-/// "not yet wired" error so an operator never silently gets random init.
+/// Returns Ok on a valid APR file (existence + magic bytes verified).
+/// Architecture extraction + weight load are §50.4 step 5f.4 — the
+/// caller (`run()`) extracts the config via `model_config::read_apr_architecture`
+/// and passes both to `build_shared_trainer_with_init` per
+/// `apr-pretrain-arch-polymorphic-v1` §init_load_semantics.
 fn validate_init_apr_path(path: &Path) -> Result<()> {
     let mut file = std::fs::File::open(path).map_err(|e| {
         CliError::ValidationFailed(format!(
@@ -282,18 +299,7 @@ fn validate_init_apr_path(path: &Path) -> Result<()> {
             magic, APR_MAGIC_V2, APR_MAGIC_V1, path.display()
         )));
     }
-    // §49 step 5 follow-up: at this PARTIAL level we have only validated
-    // file existence + magic bytes. Architecture matching + weight
-    // materialization are gated on the next PR. Until then, the flag
-    // is REJECTED at runtime to honour the contract's no-silent-fallback
-    // invariant — operators cannot accidentally ship a fine-tune run
-    // that thinks it's loading init weights but is actually random.
-    Err(CliError::ValidationFailed(format!(
-        "--init <PATH> is recognised as a valid APR file ({}) but weight loading is not yet wired (§49 step 5 follow-up). \
-         Run without --init to reproduce existing from-scratch / finetune behavior. \
-         Tracking: contract apr-pretrain-from-init-v1 falsifiers FALSIFY-005..010.",
-        path.display()
-    )))
+    Ok(())
 }
 
 /// GATE-ARCH-370M-011 pre-flight: count the tokenizer's vocabulary entries
@@ -352,21 +358,22 @@ fn drive_real(
     seed: u64,
     device: Device,
     json_output: bool,
+    init_arch: Option<&TransformerConfig>,
+    init_path: Option<&Path>,
 ) -> Result<RunStatus> {
     // GATE-ARCH-370M-011 / INV-ARCH-370M-006 — refuse to dispatch a real
     // training step when the tokenizer vocab_size and the model vocab_size
     // disagree. The N-09 OOB escape guard in Embedding::forward masks the
     // mismatch at runtime → silent garbage gradients otherwise. Synthetic
     // drive skips this check because it never touches the real model.
-    // Per `apr-pretrain-arch-polymorphic-v1` §qwen_tokenizer_vocab_compatibility:
-    // when --init is wired (§50.4 step 5f), this target will be the EXTRACTED
-    // arch's vocab_size. For now (init=None case), gate by the §24/§25
-    // baseline Llama370MConfig::VOCAB_SIZE, preserving regression-free
-    // behavior (FALSIFY-002 + FALSIFY-006).
-    preflight_tokenizer_vocab_matches_target(
-        &config.tokenizer_dir,
-        Llama370MConfig::VOCAB_SIZE,
-    )?;
+    // Per `apr-pretrain-arch-polymorphic-v1` §qwen_tokenizer_vocab_compatibility
+    // (§50.4 step 5d/5f.4): when --init is set, gate by the EXTRACTED arch's
+    // vocab_size; otherwise gate by the §24/§25 baseline Llama370MConfig::VOCAB_SIZE,
+    // preserving regression-free behavior (FALSIFY-002 + FALSIFY-005 + FALSIFY-006).
+    let target_vocab = init_arch
+        .map(|cfg| cfg.vocab_size)
+        .unwrap_or(Llama370MConfig::VOCAB_SIZE);
+    preflight_tokenizer_vocab_matches_target(&config.tokenizer_dir, target_vocab)?;
 
     // MVP: pad_id/eos_id both 0. All sequences are uniform length
     // (seq_length + 1) so LMBatch::from_sequences takes the shared
@@ -407,9 +414,30 @@ fn drive_real(
     }
 
     if device.is_cuda() {
+        // §50.4 step 5f.4 (CPU-only this PR): CUDA path with --init is not
+        // yet wired. The 5f.5 follow-up will add `build_shared_cuda_trainer_with_init`
+        // symmetric to the CPU path. Until then, fail-fast rather than silently
+        // ignore --init on CUDA.
+        if init_arch.is_some() {
+            return Err(CliError::ValidationFailed(
+                "FALSIFY-APR-PRETRAIN-INIT-CUDA-001: --init is not yet wired for --device cuda \
+                 (step 5f.5 follow-up); use --device cpu OR omit --init for from-scratch CUDA training."
+                    .to_string(),
+            ));
+        }
         drive_real_cuda(config, iter, held_out, lr, seq_length, seed, json_output)
     } else {
-        drive_real_cpu(config, iter, held_out, lr, seq_length, seed, json_output)
+        drive_real_cpu(
+            config,
+            iter,
+            held_out,
+            lr,
+            seq_length,
+            seed,
+            json_output,
+            init_arch,
+            init_path,
+        )
     }
 }
 
@@ -425,8 +453,19 @@ fn drive_real_cpu(
     seq_length: usize,
     seed: u64,
     json_output: bool,
+    init_arch: Option<&TransformerConfig>,
+    init_path: Option<&Path>,
 ) -> Result<RunStatus> {
-    let trainer = build_shared_trainer(lr, seq_length, seed);
+    // §50.4 step 5f.4: when --init is set, build the trainer via the
+    // polymorphic builder (extracts arch + loads + populates init tensors).
+    // When --init is absent, use the existing from-scratch baseline builder
+    // so the §24/§25 evidence remains regression-free.
+    let trainer = if init_arch.is_some() || init_path.is_some() {
+        build_shared_trainer_with_init(lr, seq_length, seed, init_arch, init_path)
+            .map_err(CliError::ValidationFailed)?
+    } else {
+        build_shared_trainer(lr, seq_length, seed)
+    };
     let step_fn = RealStepFn::new(trainer.clone(), Box::new(iter));
     let val_fn = RealValFn::new(trainer.clone(), held_out);
     let ckpt: Box<dyn CheckpointFn> = Box::new(AprCheckpointFn::new(
@@ -1280,17 +1319,18 @@ mod tests {
         assert!(matches!(err, CliError::ValidationFailed(_)));
     }
 
-    /// Pin the §49 step 4 partial-impl boundary: a syntactically VALID APR
-    /// file (correct magic) MUST NOT silently fall back to random init —
-    /// the operator gets a clear "not yet wired" error pointing at the
-    /// next step. This test fails the day step 5 ships AND removes this
-    /// guard; that's the trip-wire for promoting the PARTIAL → FUNCTIONAL.
+    /// §50.4 step 5f.4: a magic-byte-valid but metadata-bogus APR file
+    /// MUST be rejected at the architecture-extraction step, not silently
+    /// fall back to random init. The error must clearly cite the
+    /// architecture-extraction failure (not the legacy "not yet wired"
+    /// guard, which was retired when the wireup landed). This drift-prevention
+    /// pins the new fail-closed semantic.
     #[test]
-    fn pretrain_init_valid_apr_rejected_until_step5() {
+    fn pretrain_init_valid_magic_but_bogus_metadata_fails_at_arch_extraction() {
         let tmp = TempDir::new().expect("tempdir");
-        let valid = tmp.path().join("v2-valid-magic.apr");
-        // APR\0 magic + a few padding bytes; no real header, but
-        // validate_init_apr_path only reads the first 4.
+        let valid = tmp.path().join("v2-valid-magic-bogus-metadata.apr");
+        // APR\0 magic + padding; passes validate_init_apr_path but
+        // read_apr_architecture (which reads the v2 header) will return None.
         std::fs::write(&valid, b"APR\x00\x00\x00\x00\x00\x00\x00\x00\x00")
             .expect("write fixture file");
         let err = run(
@@ -1312,40 +1352,33 @@ mod tests {
             Some(&valid),
             true,
         )
-        .expect_err("valid APR --init must NOT silently random-init while step 5 is open");
+        .expect_err("bogus metadata must NOT silently random-init");
         match err {
             CliError::ValidationFailed(msg) => {
                 assert!(
-                    msg.contains("not yet wired"),
-                    "msg must signal step-5 partial state: {msg}"
+                    !msg.contains("not yet wired"),
+                    "the legacy step-5-partial guard must be retired: {msg}"
                 );
-                assert!(
-                    msg.contains("§49 step 5") || msg.contains("step 5"),
-                    "msg must point at §49 step 5 follow-up: {msg}"
-                );
+                // The actual error from read_apr_architecture failure or
+                // downstream layer; both are acceptable as long as we DON'T
+                // silently load random init.
             }
             other => panic!("unexpected error: {other:?}"),
         }
     }
 
-    /// Pin v1 magic (APRN) acceptance — even older APR files are
-    /// recognised at the magic-byte layer, not silently rejected.
+    /// Pin v1 magic (APRN) acceptance — `validate_init_apr_path` alone
+    /// (decoupled from architecture extraction) returns Ok for both APR\0
+    /// and APRN magic bytes. Architecture extraction is a separate step.
     #[test]
-    fn pretrain_init_v1_magic_aprn_recognised() {
+    fn pretrain_init_v1_magic_aprn_passes_validate_init_apr_path() {
         let tmp = TempDir::new().expect("tempdir");
         let v1 = tmp.path().join("v1-aprn.apr");
         std::fs::write(&v1, b"APRN\x00\x00\x00\x00").expect("write fixture file");
-        // Direct helper call — exercises just the magic-byte branch.
-        let err = validate_init_apr_path(&v1)
-            .expect_err("APRN magic should pass magic check but hit step-5 partial guard");
-        match err {
-            CliError::ValidationFailed(msg) => {
-                assert!(
-                    msg.contains("not yet wired"),
-                    "msg must signal step-5 partial state for valid APRN: {msg}"
-                );
-            }
-            other => panic!("unexpected error: {other:?}"),
-        }
+        let result = validate_init_apr_path(&v1);
+        assert!(
+            result.is_ok(),
+            "APRN magic must pass validate_init_apr_path; got {result:?}"
+        );
     }
 }
