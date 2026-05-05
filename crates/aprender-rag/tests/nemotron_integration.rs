@@ -7,7 +7,7 @@
 
 #![cfg(feature = "nemotron")]
 
-use trueno_rag::embed::{cosine_similarity, Embedder, NemotronConfig, NemotronEmbedder};
+use aprender_rag::embed::{cosine_similarity, Embedder, NemotronConfig, NemotronEmbedder};
 
 /// Test model path - set via environment variable or use default
 fn test_model_path() -> Option<String> {
@@ -178,7 +178,7 @@ fn test_nemotron_empty_document_error() {
 #[test]
 #[ignore = "Requires GGUF model file (set NEMOTRON_MODEL_PATH env var)"]
 fn test_nemotron_embed_chunks() {
-    use trueno_rag::{Chunk, DocumentId};
+    use aprender_rag::{Chunk, DocumentId};
 
     let Some(embedder) = create_test_embedder() else {
         eprintln!("Skipping: NEMOTRON_MODEL_PATH not set");

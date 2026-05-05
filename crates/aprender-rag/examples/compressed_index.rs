@@ -6,10 +6,10 @@
 //! reducing storage footprint by 5-10x for typical RAG indices.
 
 #[cfg(feature = "compression")]
-use trueno_rag::{compressed::Compression, index::SparseIndex, BM25Index, Chunk, DocumentId};
+use aprender_rag::{compressed::Compression, index::SparseIndex, BM25Index, Chunk, DocumentId};
 
 #[cfg(feature = "compression")]
-fn main() -> trueno_rag::Result<()> {
+fn main() -> aprender_rag::Result<()> {
     println!("=== Trueno-RAG Compressed Index Demo ===\n");
 
     // Demo basic compression
@@ -29,7 +29,7 @@ fn main() -> trueno_rag::Result<()> {
 }
 
 #[cfg(feature = "compression")]
-fn demo_basic_compression() -> trueno_rag::Result<()> {
+fn demo_basic_compression() -> aprender_rag::Result<()> {
     println!("1. Basic BM25 Index Compression");
     println!("   -----------------------------");
 
@@ -68,7 +68,7 @@ fn demo_basic_compression() -> trueno_rag::Result<()> {
 }
 
 #[cfg(feature = "compression")]
-fn demo_compression_comparison() -> trueno_rag::Result<()> {
+fn demo_compression_comparison() -> aprender_rag::Result<()> {
     println!("2. Compression Ratio Comparison");
     println!("   -----------------------------");
 
@@ -112,7 +112,7 @@ fn demo_compression_comparison() -> trueno_rag::Result<()> {
 }
 
 #[cfg(feature = "compression")]
-fn demo_search_after_restore() -> trueno_rag::Result<()> {
+fn demo_search_after_restore() -> aprender_rag::Result<()> {
     println!("3. Search Behavior After Restore");
     println!("   ------------------------------");
 
@@ -158,7 +158,7 @@ fn demo_search_after_restore() -> trueno_rag::Result<()> {
 }
 
 #[cfg(feature = "compression")]
-fn demo_persistence_workflow() -> trueno_rag::Result<()> {
+fn demo_persistence_workflow() -> aprender_rag::Result<()> {
     println!("4. Persistence Workflow (Simulated)");
     println!("   ---------------------------------");
 

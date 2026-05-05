@@ -181,7 +181,7 @@ const SHIM_MAP: &[(&str, &str, &str, &str)] = &[
     ),
     ("trueno-db", "aprender-db", "trueno_db", "0.4.0"),
     ("trueno-graph", "aprender-graph", "trueno_graph", "0.2.0"),
-    ("trueno-rag", "aprender-rag", "trueno_rag", "0.3.0"),
+    ("trueno-rag", "aprender-rag", "aprender_rag", "0.3.0"),
     ("trueno-viz", "aprender-viz", "trueno_viz", "0.3.0"),
     (
         "trueno-zram-core",
