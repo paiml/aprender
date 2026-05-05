@@ -32,8 +32,13 @@
 use crate::apr_transformer::{ActivationStats, ForwardTrace, LastTokenStats, LayerActivation};
 use crate::error::Result;
 use crate::gguf::ops;
-use crate::gguf::qwen3_moe_load::{moe_ffn_forward_layer, Qwen3MoeQuantizedLayer};
+use crate::gguf::qwen3_moe_load::{
+    moe_ffn_forward_layer, moe_ffn_forward_layer_with_router, Qwen3MoeQuantizedLayer,
+};
 use crate::gguf::OwnedQuantizedModel;
+use crate::inference_trace::save_tensor_emit::maybe_save_stage;
+use crate::inference_trace::save_tensor_plan::SaveTensorPlan;
+use crate::inference_trace::save_tensor_stage::SaveTensorStage;
 
 impl OwnedQuantizedModel {
     /// Run a single forward pass for a Qwen3-MoE-arch model and capture
@@ -66,6 +71,63 @@ impl OwnedQuantizedModel {
         num_experts_per_tok: usize,
         moe_intermediate: usize,
         data: &[u8],
+    ) -> Result<ForwardTrace> {
+        self.forward_qwen3_moe_traced_with_plan(
+            token_ids,
+            moe_layers,
+            num_experts,
+            num_experts_per_tok,
+            moe_intermediate,
+            data,
+            None,
+        )
+    }
+
+    /// M-MOE-SUB-2 step (a) — `forward_qwen3_moe_traced` with optional
+    /// `SaveTensorPlan` for per-layer `MoeRouter` + `MoeFfnOut` capture.
+    ///
+    /// Per `contracts/trace-moe-gpu-sub-stages-v1.yaml` v1.1.0 step (a).
+    ///
+    /// When `plan` is `None`, behavior is byte-identical to
+    /// [`Self::forward_qwen3_moe_traced`] — the only added cost is the
+    /// `Option` discriminant check at each potential capture point. The
+    /// plan-aware code path uses [`moe_ffn_forward_layer_with_router`]
+    /// (M-MOE-SUB-2 step c, M68) at the last sequence position to obtain
+    /// the top-k router weights without re-running the MoE forward.
+    ///
+    /// When `plan` is `Some`, after each layer's MoE FFN completes,
+    /// `MoeRouter` is emitted as `[num_experts_per_tok]` post-softmax
+    /// renormalize top-k weights for the last token's MoE router output
+    /// (per the contract's tensor shape spec), and `MoeFfnOut` is
+    /// emitted as `[hidden_dim]` aggregated MoE FFN output for the last
+    /// token.
+    ///
+    /// Both emissions are gated by [`maybe_save_stage`] which no-ops
+    /// when the plan does not select the stage for that layer.
+    ///
+    /// # Hot path safety
+    ///
+    /// Production [`OwnedQuantizedModel::forward_qwen3_moe`] is unchanged
+    /// (additive-purity invariant pinned in v1.1.0). The traced path
+    /// `forward_qwen3_moe_traced` was already a slow path used only by
+    /// `apr trace`; this adds an `Option` parameter to it without
+    /// changing its `plan == None` behavior. The default-arg-style
+    /// delegate above preserves the public API.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`Self::forward_qwen3_moe_traced`] plus IO errors from
+    /// `maybe_save_stage` when emitting tensors.
+    #[allow(clippy::too_many_arguments)]
+    pub fn forward_qwen3_moe_traced_with_plan(
+        &self,
+        token_ids: &[u32],
+        moe_layers: &[Qwen3MoeQuantizedLayer],
+        num_experts: usize,
+        num_experts_per_tok: usize,
+        moe_intermediate: usize,
+        data: &[u8],
+        plan: Option<&SaveTensorPlan>,
     ) -> Result<ForwardTrace> {
         let hidden_dim = self.config.hidden_dim;
 
@@ -235,22 +297,78 @@ impl OwnedQuantizedModel {
                 ActivationStats::from_slice(&ffn_input[last_start..last_start + hidden_dim]);
 
             // 2g. MoE FFN
+            //
+            // M-MOE-SUB-2 step (a): when `plan` selects MoeRouter or
+            // MoeFfnOut for this layer, capture the LAST sequence
+            // position's router weights via `moe_ffn_forward_layer_with_router`.
+            // For all other positions (and for the last position when
+            // plan does not select either stage), use the production
+            // helper `moe_ffn_forward_layer` so trace cost stays minimal.
+            let last_pos = seq_len - 1;
+            let want_router =
+                plan.is_some_and(|p| p.should_save(SaveTensorStage::MoeRouter, layer_idx as u32));
+            let want_ffn_out =
+                plan.is_some_and(|p| p.should_save(SaveTensorStage::MoeFfnOut, layer_idx as u32));
+            let want_capture = want_router || want_ffn_out;
+
             let mut ffn_output = vec![0.0f32; seq_len * hidden_dim];
+            let mut last_router_top_k: Vec<f32> = Vec::new();
             for s in 0..seq_len {
                 let pos_in = &ffn_input[s * hidden_dim..(s + 1) * hidden_dim];
-                let pos_out = moe_ffn_forward_layer(
-                    pos_in,
-                    &moe_layers[layer_idx],
-                    num_experts,
-                    num_experts_per_tok,
-                    intermediate,
-                    hidden_dim,
-                    data,
-                )?;
-                ffn_output[s * hidden_dim..(s + 1) * hidden_dim].copy_from_slice(&pos_out);
+                if want_capture && s == last_pos {
+                    let (pos_out, router_top_k) = moe_ffn_forward_layer_with_router(
+                        pos_in,
+                        &moe_layers[layer_idx],
+                        num_experts,
+                        num_experts_per_tok,
+                        intermediate,
+                        hidden_dim,
+                        data,
+                    )?;
+                    ffn_output[s * hidden_dim..(s + 1) * hidden_dim].copy_from_slice(&pos_out);
+                    last_router_top_k = router_top_k;
+                } else {
+                    let pos_out = moe_ffn_forward_layer(
+                        pos_in,
+                        &moe_layers[layer_idx],
+                        num_experts,
+                        num_experts_per_tok,
+                        intermediate,
+                        hidden_dim,
+                        data,
+                    )?;
+                    ffn_output[s * hidden_dim..(s + 1) * hidden_dim].copy_from_slice(&pos_out);
+                }
             }
             let ffn_out_stats =
                 ActivationStats::from_slice(&ffn_output[last_start..last_start + hidden_dim]);
+
+            // M-MOE-SUB-2 step (a) — emit per-layer MoeRouter + MoeFfnOut
+            // when the plan selects them. `maybe_save_stage` no-ops when
+            // plan is None or stage/layer not selected.
+            if want_router {
+                maybe_save_stage(
+                    plan,
+                    SaveTensorStage::MoeRouter,
+                    layer_idx as u32,
+                    &last_router_top_k,
+                )
+                .map_err(|e| crate::error::RealizarError::IoError {
+                    message: format!("save_tensor::MoeRouter L{layer_idx}: {e}"),
+                })?;
+            }
+            if want_ffn_out {
+                let last_ffn_out = &ffn_output[last_start..last_start + hidden_dim];
+                maybe_save_stage(
+                    plan,
+                    SaveTensorStage::MoeFfnOut,
+                    layer_idx as u32,
+                    last_ffn_out,
+                )
+                .map_err(|e| crate::error::RealizarError::IoError {
+                    message: format!("save_tensor::MoeFfnOut L{layer_idx}: {e}"),
+                })?;
+            }
 
             // 2h. Residual into hidden
             for i in 0..hidden.len() {
