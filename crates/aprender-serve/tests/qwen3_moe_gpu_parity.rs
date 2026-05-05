@@ -165,9 +165,39 @@ fn falsify_qw3_moe_gpu_parity_001_cosine_vs_cpu() {
         EXPECTED_VOCAB,
         "GPU logits len must equal vocab_size"
     );
+
+    // M-GPU-MOE-1.4 (per qwen3-moe-forward-gpu-v1 v1.4.0 amendment):
+    // diagnostic stats printed BEFORE the finiteness assertion to
+    // give bisection data when the assertion fires. This is
+    // load-bearing for the M-GPU-MOE-1.4 NaN/Inf bisection
+    // (evidence file pending).
+    let nan_count = gpu_logits.iter().filter(|v| v.is_nan()).count();
+    let inf_count = gpu_logits.iter().filter(|v| v.is_infinite()).count();
+    let finite_count = gpu_logits.iter().filter(|v| v.is_finite()).count();
+    let first_nan_idx = gpu_logits.iter().position(|v| v.is_nan());
+    let first_inf_idx = gpu_logits.iter().position(|v| v.is_infinite());
+    let finite_min = gpu_logits.iter().filter(|v| v.is_finite()).cloned()
+        .fold(f32::INFINITY, f32::min);
+    let finite_max = gpu_logits.iter().filter(|v| v.is_finite()).cloned()
+        .fold(f32::NEG_INFINITY, f32::max);
+    eprintln!(
+        "FALSIFY-QW3-MOE-GPU-PARITY-001 finiteness diagnostic:\n  \
+         total      = {}\n  \
+         finite     = {}\n  \
+         nan        = {} (first idx: {:?})\n  \
+         inf        = {} (first idx: {:?})\n  \
+         finite_min = {:.6}\n  \
+         finite_max = {:.6}",
+        gpu_logits.len(), finite_count, nan_count, first_nan_idx,
+        inf_count, first_inf_idx, finite_min, finite_max,
+    );
+
     assert!(
         gpu_logits.iter().all(|v| v.is_finite()),
-        "all GPU logits must be finite (no NaN/Inf)"
+        "all GPU logits must be finite (no NaN/Inf) — see diagnostic above. \
+         Per qwen3-moe-forward-gpu-v1 v1.4.0 M-GPU-MOE-1.4 bisection plan, \
+         next step: extend `apr trace` to capture per-stage MoE GPU tensors \
+         and diff CPU-vs-GPU per-stage to find first NaN/Inf-producing stage."
     );
 
     let cos = cosine_similarity(&cpu_logits, &gpu_logits);
