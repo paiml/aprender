@@ -1,9 +1,132 @@
 metadata:
-  version: 1.3.0
+  version: 1.4.0
   kind: kernel
   created: '2026-05-04'
   author: PAIML Engineering
   amendment_history:
+    - version: 1.4.0
+      date: '2026-05-04'
+      kind: amendment
+      title: 'M-GPU-MOE-1.4 — GPU NaN/Inf bisection + fix plan (post-1.3 downstream)'
+      description: |
+        Records the next-bug-class finding from the M-GPU-MOE-1.3
+        partial discharge (PR #1491 squash f0cbe37f9, MERGED
+        2026-05-04 on aprender main).
+
+        WHAT 1.3 FIXED (DISCHARGED):
+
+          FALSIFY-QW3-MOE-GPU-PRELOAD-001 — wrapper construction now
+          succeeds for qwen3_moe GGUFs. ArchConstraints.is_moe field
+          + build_indexed_weights gating + ValidatedLayerWeights
+          gating + parity_gate MoE guard.
+
+        WHAT 1.3 EXPOSED (NOT FIXED):
+
+          When the heavy `qwen3_moe_gpu_parity` test runs end-to-end
+          on lambda-vector RTX 4090 with the cached 17.3 GB Qwen3-
+          Coder GGUF, GPU forward (`forward_qwen3_moe_cuda`) executes
+          without panic but produces logits where `.iter().all(|v|
+          v.is_finite())` is false — i.e., at least one logit is
+          NaN or Inf. The test asserts at line 168 of
+          `crates/aprender-serve/tests/qwen3_moe_gpu_parity.rs`:
+
+              assert!(
+                  gpu_logits.iter().all(|v| v.is_finite()),
+                  "all GPU logits must be finite (no NaN/Inf)"
+              );
+
+          This blocks FALSIFY-QW3-MOE-GPU-PARITY-001 (the cosine ≥
+          0.99 vs CPU LAZY-FUSED-MATVEC reference) and PARTIAL-
+          discharges FALSIFY-QW3-MOE-GPU-INVARIANTS-001 (output
+          length OK, finiteness FAILS).
+
+        BISECTION PLAN (M-GPU-MOE-1.4):
+
+          Per the M32d Step 2 surface methodology that successfully
+          bisected layer-0 attention divergence (see
+          qwen3-moe-forward-v1 v1.4.0 §M32d FAST PATH), this work
+          decomposes into:
+
+          (a) **Instrumentation** — extend `apr trace --json --payload`
+              to capture per-stage tensors on the MoE GPU forward
+              path, mirroring the existing CPU per-stage capture:
+              - per-layer hidden state pre/post attention
+              - per-layer hidden state pre/post FFN
+              - per-expert SwiGLU intermediate (gate_out, up_out,
+                ffn_inner)
+              - per-expert SwiGLU output
+              - top-k router weights (after softmax + renormalize)
+              - lm_head logits (final)
+
+          (b) **Bisection** — run the heavy test on lambda-vector with
+              `apr trace` enabled on both CPU and GPU paths; diff
+              per-stage to find first stage where GPU produces
+              NaN/Inf while CPU does not. Likely candidates per
+              evidence-file analysis:
+
+              - **Q4K matvec accumulator overflow** in
+                `expert_swiglu_cuda::gate_q4k_matvec` /
+                `up_q4k_matvec` / `down_q6k_gemv` — accumulator may
+                overflow f32 max for high-dimensional inputs on the
+                30B model.
+              - **SwiGLU silu Inf** at `expert_swiglu_cuda.rs:149`
+                where `g / (1.0 + (-g).exp())` for very negative `g`
+                gives `g / Inf = 0` (safe) but for very positive `g`
+                gives `g / 1 = g` — but if `g` is already Inf from
+                upstream, propagates.
+              - **Top-k router weight renormalization div-by-zero**
+                — if all top-k weights are 0 after softmax (e.g.,
+                NaN-poisoned router output), normalization produces
+                Inf/NaN.
+              - **Per-head Q/K RMSNorm gap** — qwen3_moe is
+                has_qk_norm=true (M-GPU-MOE-1.3 fix). If the GPU
+                MoE forward path is missing the per-head Q/K norm
+                step (the dense GPU path applies it; MoE
+                forward_qwen3_moe_cuda may not), the divergence
+                from CPU could compound to NaN at lm_head.
+
+          (c) **Fix** — the fix scope depends on bisection result.
+              Three plausible classes:
+              - Numerical (overflow): clamp/saturate accumulator,
+                use higher-precision intermediate.
+              - Algorithmic (missing step): port the missing step
+                from CPU (e.g., per-head Q/K norm).
+              - Layout (transposed weights): reorient byte slice
+                interpretation.
+
+        DELIVERABLES:
+
+          - `evidence/m-gpu-moe-1-4-nan-inf-bisection-{date}/findings.md`
+            with the bisection result + 5-whys.
+          - apr trace extension to capture MoE GPU per-stage tensors
+            (separate kernel-contract amendment for trace-attn-moe-gpu-v1
+            or similar).
+          - Code fix in either `expert_swiglu_cuda.rs`,
+            `forward_qwen3_moe_cuda.rs` body, or `q4k_matvec` /
+            `q6k_gemv` per bisection result.
+          - Drift-prevention test
+            `falsify_qw3_moe_gpu_finite_canonical_prompt`
+            (lib-only sibling of the heavy test that exercises a
+            small-input path to catch finiteness regressions).
+
+        NEW IMPLEMENTATION_STAGE: M-GPU-MOE-1.4 (added between 1.3
+        and 2 in implementation_stages list; status PENDING).
+
+        FALSIFICATION TEST UPDATED: FALSIFY-QW3-MOE-GPU-INVARIANTS-001
+        amended to explicitly call out the finiteness sub-check as
+        the M-GPU-MOE-1.4 acceptance criterion.
+
+        WHY NOT JUST FIX IT WITHOUT A CONTRACT BUMP:
+
+          Per CLAUDE.md "NEVER write code before writing a provable
+          contract": the bisection-and-fix is a load-bearing engineering
+          decision that needs to be pinned in the contract before
+          code. v1.0.0 → v1.1.0 → v1.2.0 → v1.3.0 progressively
+          pinned every architectural decision; v1.4.0 follows the same
+          pattern. The bisection plan IS the architectural decision
+          (which stages to instrument, which classes of bugs to
+          consider, what evidence to capture).
+
     - version: 1.3.0
       date: '2026-05-04'
       kind: amendment
@@ -405,13 +528,14 @@ metadata:
 
 kind: KernelContract
 name: qwen3-moe-forward-gpu
-version: "1.3.0"
+version: "1.4.0"
 status: DRAFT   # Scaffold + architecture amendments + preload-bug fix
-                # plan only; flips to ACTIVE_ALGORITHM_LEVEL when CUDA
-                # kernel + cosine parity gate
-                # (FALSIFY-QW3-MOE-GPU-PARITY-001) lands on aprender
-                # main AND M-GPU-MOE-1.3 preload-bug fix lands. Flips
-                # to ACTIVE_RUNTIME when wgpu fallback + throughput
+                # plan + NaN/Inf bisection plan only; flips to
+                # ACTIVE_ALGORITHM_LEVEL when CUDA kernel + cosine
+                # parity gate (FALSIFY-QW3-MOE-GPU-PARITY-001) AND
+                # finiteness gate (FALSIFY-QW3-MOE-GPU-INVARIANTS-001)
+                # both discharge on aprender main. Flips to
+                # ACTIVE_RUNTIME when wgpu fallback + throughput
                 # target (≥150 tok/s on RTX 4090) also discharge.
                 #
                 # v1.0.0 (2026-05-04): Initial scaffold per
@@ -593,8 +717,52 @@ implementation_stages:
     - 'aprender does not yet have a fused-quantized-dequant-matmul GPU kernel for sparse MoE dispatch'
     - 'DeepSpeed-MoE-style expert-parallel scheduling needs design work for the Q4_K_M / Q6_K row-major layouts'
 
-- id: M-GPU-MOE-1.3
+- id: M-GPU-MOE-1.4
   status: PENDING
+  description: |
+    GPU NaN/Inf bisection + fix.
+
+    Post-M-GPU-MOE-1.3 (PR #1491 squash f0cbe37f9 MERGED 2026-05-04
+    on aprender main), the heavy `qwen3_moe_gpu_parity` test
+    progresses through CPU forward + wrapper construction + GPU
+    forward execution but fails at:
+
+      assert!(gpu_logits.iter().all(|v| v.is_finite()),
+              "all GPU logits must be finite (no NaN/Inf)");
+
+    Per evidence file
+    `evidence/m-gpu-moe-1-4-nan-inf-bisection-{date}/findings.md`
+    (PENDING), the fix decomposes into:
+
+    (a) Instrumentation — extend `apr trace --json --payload` to
+        capture per-stage tensors on the MoE GPU forward path
+        (per-layer hidden, per-expert SwiGLU intermediates,
+        per-expert SwiGLU output, top-k router weights, lm_head
+        logits).
+    (b) Bisection — diff CPU vs GPU per-stage on lambda-vector
+        RTX 4090 against cached 17.3 GB Qwen3-Coder GGUF; find
+        first stage where GPU produces NaN/Inf while CPU does not.
+        Likely candidates: Q4K matvec accumulator overflow,
+        SwiGLU silu Inf, top-k router renorm div-by-zero, or
+        missing per-head Q/K RMSNorm in MoE GPU path.
+    (c) Fix — apply at the bisected stage. Fix class TBD by
+        bisection: numerical (overflow), algorithmic (missing
+        step), or layout (transposed weights).
+
+    Discharges the finiteness sub-check of FALSIFY-QW3-MOE-GPU-
+    INVARIANTS-001 + unblocks FALSIFY-QW3-MOE-GPU-PARITY-001.
+
+    BLOCKING: M-GPU-MOE-1.2 cosine ≥0.99 assertion is blocked on
+    this fix landing.
+  expected_acceptance:
+    - AC_GPU_MOE_004  # output is finite — no NaN/Inf
+    - AC_GPU_MOE_001  # cosine ≥0.99 (depends on finiteness)
+  blockers:
+    - 'M-GPU-MOE-1.2 cosine assertion blocked on this fix'
+    - 'apr trace MoE-GPU per-stage capture not yet authored'
+
+- id: M-GPU-MOE-1.3
+  status: PARTIALLY_DISCHARGED
   description: |
     Preload-weights MoE-awareness fix for `CudaExecutor::build_indexed_weights`
     (`crates/aprender-serve/src/cuda/executor/weights.rs:325-373`).
