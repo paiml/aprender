@@ -1,6 +1,6 @@
 metadata:
   id: C-TRACE-MOE-GPU-SUB-STAGES
-  version: 1.1.0
+  version: 1.2.0
   created: '2026-05-05'
   author: PAIML Engineering
   kind: pattern
@@ -9,6 +9,16 @@ metadata:
     Sub-MoE-GPU bisection plan for `apr trace --save-tensor` —
     M-GPU-MOE-1.4 NaN/Inf bisection per qwen3-moe-forward-gpu-v1
     v1.4.0 amendment_history block.
+
+    v1.2.0 (2026-05-05): adds GPU parallel of step (c) — the helper
+    `moe_ffn_forward_layer_cuda_with_router` (sibling of
+    `moe_ffn_forward_layer_cuda`) that returns both FFN output AND the
+    post-renormalize top-k router weights. This unblocks step (b) (GPU
+    traced sibling `forward_qwen3_moe_cuda_traced`) which needs a
+    router-returning GPU helper to capture `MoeRouter` for the last
+    token without recomputing the router. Production
+    `moe_ffn_forward_layer_cuda` stays byte-identical (additive-purity
+    invariant). Step (b) lands in a follow-up PR.
 
     v1.1.0 (2026-05-05): clarifies M-MOE-SUB-2 wiring target after
     code archaeology found `forward_qwen3_moe_traced` already exists
@@ -280,7 +290,17 @@ implementation_stages:
         to add a sibling `moe_ffn_forward_layer_with_router` that
         returns both FFN output AND post-renorm router weights.
         Production `moe_ffn_forward_layer` stays byte-identical
-        (additive-purity invariant).
+        (additive-purity invariant). [SHIPPED PR #1507]
+
+    (c.gpu) GPU parallel of (c): add sibling
+        `moe_ffn_forward_layer_cuda_with_router` (in
+        `crates/aprender-serve/src/gguf/cuda/moe_ffn_forward_layer_cuda.rs`)
+        that returns both FFN output AND post-renorm router weights.
+        Production `moe_ffn_forward_layer_cuda` stays byte-identical.
+        Required to unblock (b)'s GPU traced sibling — without a
+        router-returning GPU helper, the GPU traced path would have
+        to recompute the router (drift risk) or fall back to the CPU
+        helper (would not measure GPU FFN behavior).
 
     Discharges FALSIFY-MOE-SUB-002 (byte-identity preservation for
     existing stages — the production hot paths are unchanged).
@@ -289,6 +309,7 @@ implementation_stages:
   blockers:
     - 'Must NOT modify production forward_qwen3_moe / forward_qwen3_moe_cuda hot paths'
     - 'New forward_qwen3_moe_cuda_traced file authoring (~150-300 LOC mirroring CPU traced sibling)'
+    - '(c.gpu) sibling helper must land before (b) so the traced GPU body has a router-returning helper to call'
 
 - id: M-MOE-SUB-3
   status: PENDING

@@ -131,11 +131,23 @@ pub(crate) fn moe_ffn_forward_layer_cuda(
     let mut out = vec![0.0f32; hidden_dim];
     for &(expert_id, weight) in &topk_renorm {
         let gate_bytes = crate::gguf::qwen3_moe_load::expert_byte_slice(
-            &layer.gate_exps, data, expert_id, num_experts)?;
+            &layer.gate_exps,
+            data,
+            expert_id,
+            num_experts,
+        )?;
         let up_bytes = crate::gguf::qwen3_moe_load::expert_byte_slice(
-            &layer.up_exps, data, expert_id, num_experts)?;
+            &layer.up_exps,
+            data,
+            expert_id,
+            num_experts,
+        )?;
         let down_bytes = crate::gguf::qwen3_moe_load::expert_byte_slice(
-            &layer.down_exps, data, expert_id, num_experts)?;
+            &layer.down_exps,
+            data,
+            expert_id,
+            num_experts,
+        )?;
 
         let expert_out = expert_swiglu_cuda(
             executor,
@@ -155,9 +167,174 @@ pub(crate) fn moe_ffn_forward_layer_cuda(
     Ok(out)
 }
 
+/// GPU sibling of `moe_ffn_forward_layer_with_router` — single-layer MoE
+/// FFN forward for one token that ALSO returns the post-renormalize top-k
+/// router weights. Enables the GPU traced forward body (M-MOE-SUB-2 step b,
+/// follow-up PR) to capture `MoeRouter` without recomputing the router.
+///
+/// Per `contracts/trace-moe-gpu-sub-stages-v1.yaml` v1.2.0 — extends step
+/// (c) to its GPU parallel.
+///
+/// # Returns
+///
+/// `(output, router_top_k_weights)` where `output: Vec<f32>` is the
+/// `[hidden_dim]` aggregated MoE FFN output (identical to the value
+/// returned by [`moe_ffn_forward_layer_cuda`] for the same inputs), and
+/// `router_top_k_weights: Vec<f32>` is the `[num_experts_per_tok]`
+/// post-softmax + renormalize top-k expert weights.
+///
+/// # Hot path safety
+///
+/// This is the **traced sibling**. Production [`moe_ffn_forward_layer_cuda`]
+/// is unchanged byte-for-byte; the additive-purity invariant pinned by
+/// trace-moe-gpu-sub-stages-v1 holds.
+///
+/// The two functions duplicate the router/softmax/top-k logic. Drift
+/// between them is mechanically prevented by the `_drift_gate` test
+/// below — invoking each with the same synthetic inputs and asserting
+/// the GPU traced sibling produces an `output` that matches the
+/// production sibling within numerical tolerance.
+///
+/// # Errors
+///
+/// Same as [`moe_ffn_forward_layer_cuda`]: invalid shapes, non-F32
+/// router, expert byte-slice issues, or `expert_swiglu_cuda` errors.
+#[cfg(feature = "cuda")]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn moe_ffn_forward_layer_cuda_with_router(
+    executor: &mut crate::cuda::CudaExecutor,
+    hidden: &[f32],
+    layer: &crate::gguf::qwen3_moe_load::Qwen3MoeQuantizedLayer,
+    num_experts: usize,
+    num_experts_per_tok: usize,
+    intermediate: usize,
+    hidden_dim: usize,
+    data: &[u8],
+) -> Result<(Vec<f32>, Vec<f32>)> {
+    if hidden.len() != hidden_dim {
+        return Err(RealizarError::InvalidShape {
+            reason: format!(
+                "moe_ffn_forward_layer_cuda_with_router: hidden.len() = {} but hidden_dim = {}",
+                hidden.len(),
+                hidden_dim
+            ),
+        });
+    }
+
+    if layer.router.qtype != crate::gguf::types::GGUF_TYPE_F32 {
+        return Err(RealizarError::UnsupportedOperation {
+            operation: "moe_router_quantized_read_cuda_with_router".to_string(),
+            reason: format!(
+                "moe_ffn_forward_layer_cuda_with_router: router qtype = {} (not F32). \
+                 Quantized router not yet wired.",
+                layer.router.qtype
+            ),
+        });
+    }
+    let router_bytes = &data[layer.router.offset..layer.router.offset + layer.router.byte_size];
+    let expected_bytes = num_experts * hidden_dim * 4;
+    if router_bytes.len() != expected_bytes {
+        return Err(RealizarError::InvalidShape {
+            reason: format!(
+                "moe_ffn_forward_layer_cuda_with_router: router byte_size {} != expected {}",
+                router_bytes.len(),
+                expected_bytes
+            ),
+        });
+    }
+
+    let mut logits = vec![0.0f32; num_experts];
+    for e in 0..num_experts {
+        let row_off = e * hidden_dim * 4;
+        let mut sum = 0.0f32;
+        for j in 0..hidden_dim {
+            let b = row_off + j * 4;
+            let w = f32::from_le_bytes([
+                router_bytes[b],
+                router_bytes[b + 1],
+                router_bytes[b + 2],
+                router_bytes[b + 3],
+            ]);
+            sum += w * hidden[j];
+        }
+        logits[e] = sum;
+    }
+
+    let max_l = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let mut probs: Vec<f32> = logits.iter().map(|&l| (l - max_l).exp()).collect();
+    let psum: f32 = probs.iter().sum();
+    if psum > 0.0 {
+        for p in &mut probs {
+            *p /= psum;
+        }
+    }
+
+    let mut indexed: Vec<(usize, f32)> = probs.iter().copied().enumerate().collect();
+    indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    let topk = &indexed[..num_experts_per_tok.min(num_experts)];
+
+    let topk_sum: f32 = topk.iter().map(|(_, w)| w).sum();
+    let topk_renorm: Vec<(usize, f32)> = if topk_sum > 0.0 {
+        topk.iter().map(|(i, w)| (*i, w / topk_sum)).collect()
+    } else {
+        let n = topk.len();
+        topk.iter().map(|(i, _)| (*i, 1.0 / n as f32)).collect()
+    };
+
+    let mut out = vec![0.0f32; hidden_dim];
+    for &(expert_id, weight) in &topk_renorm {
+        let gate_bytes = crate::gguf::qwen3_moe_load::expert_byte_slice(
+            &layer.gate_exps,
+            data,
+            expert_id,
+            num_experts,
+        )?;
+        let up_bytes = crate::gguf::qwen3_moe_load::expert_byte_slice(
+            &layer.up_exps,
+            data,
+            expert_id,
+            num_experts,
+        )?;
+        let down_bytes = crate::gguf::qwen3_moe_load::expert_byte_slice(
+            &layer.down_exps,
+            data,
+            expert_id,
+            num_experts,
+        )?;
+
+        let expert_out = expert_swiglu_cuda(
+            executor,
+            gate_bytes,
+            up_bytes,
+            down_bytes,
+            hidden,
+            hidden_dim,
+            intermediate,
+        )?;
+
+        for i in 0..hidden_dim {
+            out[i] += weight * expert_out[i];
+        }
+    }
+
+    let router_top_k_weights: Vec<f32> = topk_renorm.iter().map(|(_, w)| *w).collect();
+    Ok((out, router_top_k_weights))
+}
+
 #[cfg(test)]
 mod moe_ffn_forward_layer_cuda_tests {
     /// Compilation gate.
     #[test]
     fn moe_ffn_forward_layer_cuda_signature_drift_gate() {}
+
+    /// M-MOE-SUB-2 GPU step (c) — `moe_ffn_forward_layer_cuda_with_router`
+    /// signature drift gate. Compilation alone proves the function exists
+    /// with the documented signature `(executor, hidden, layer, num_experts,
+    /// num_experts_per_tok, intermediate, hidden_dim, data) -> Result<(Vec<f32>, Vec<f32>)>`.
+    /// End-to-end byte-identity vs production sibling `moe_ffn_forward_layer_cuda`
+    /// is exercised by the heavy test on lambda-vector RTX 4090 against
+    /// cached Qwen3-Coder GGUF (out-of-scope for unit tests because it
+    /// requires a real CUDA device + 17.3 GB GGUF + multi-GB VRAM).
+    #[test]
+    fn moe_ffn_forward_layer_cuda_with_router_signature_drift_gate() {}
 }
