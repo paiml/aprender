@@ -1,12 +1,60 @@
 metadata:
   kind: schema
-  version: 1.5.0
+  version: 1.6.0
   status: FUNCTIONAL
   created: '2026-05-04'
   updated: '2026-05-05'
   author: PAIML Engineering
   registry: true
   changelog:
+  - version: 1.6.0
+    date: '2026-05-05'
+    change: |
+      v1.5.0 → v1.6.0 — second-round test-reference drift correction
+      for FALSIFY-APR-PRETRAIN-ARCH-001, 003, 004, and 007.
+
+      Drift inventory (PV-VER-001/002 class — same defect class as
+      PRs #1502/#1504/#1505/#1506; FALSIFY-001 surfaced via the new
+      `pv lint --strict-test-binding` flag from PR #1511):
+        FALSIFY-001 cited `qwen2_0_5b_matches_hf_config`
+          → does NOT exist. Actual: `qwen2_0_5b_matches_hf_config_2026_05_04`
+          (date-suffix added by impl PR #1474 / commit 9af6e71de).
+        FALSIFY-003 cited `build_transformer_config_qwen_init_matches_constructor`
+          → does NOT exist. Actual: `build_transformer_config_qwen_init_matches_input`.
+        FALSIFY-004 cited `transformer::attention::tests::gqa_7_to_1_matches_full_mha_via_repeat`
+          → does NOT exist (and wrong module path).
+          Actual: `transformer::model::tests::falsify_apr_pretrain_arch_004_gqa_7_1_forward_pass_smoke`.
+        FALSIFY-007 cited `build_transformer_config_encoder_init_errors`
+          → does NOT exist. Actual: `validate_pretrain_init_arch_rejects_encoder`.
+
+      §57's drift sweep (this contract's v1.4 → v1.5 bump in PR #1505)
+      caught FALSIFY-005/006 but missed these four because the surface
+      grep against test-name fragments produced false-negatives on
+      `_init_matches_constructor` (the test exists in name but its
+      `_input` suffix differed), `transformer::attention::` module-path
+      drift, and `qwen2_0_5b_matches_hf_config` (date-suffix drift). A
+      more thorough audit (PR #1511's new `--strict-test-binding` lint,
+      cross-referencing every `test:` field against the source-code
+      function-name registry) surfaced these four.
+
+      No falsifier semantics change. No new tests added. Status remains
+      FUNCTIONAL: 11 falsifiers all PASS, with FALSIFY-001/003/004/007
+      now pointing at the actual passing tests.
+
+      Verified locally:
+        - cargo test qwen2_0_5b_matches_hf_config_2026_05_04 PASS
+        - cargo test build_transformer_config_qwen_init_matches_input PASS
+        - cargo test falsify_apr_pretrain_arch_004_gqa_7_1_forward_pass_smoke PASS
+        - cargo test validate_pretrain_init_arch_rejects_encoder PASS
+        - pv validate contracts/apr-pretrain-arch-polymorphic-v1.yaml exits 0.
+        - pv lint --strict-test-binding contracts/apr-pretrain-arch-polymorphic-v1.yaml: 0 PV-VER-002 (down from 4 pre-fix).
+
+      Remaining audit gap: the changelog `(commands/pretrain.rs::tests::...)`
+      and `(pretrain_real.rs::tests::...)` parenthetical refs in v1.1.0
+      historical entry still cite the old names. Per PR #1505's
+      precedent (don't rewrite history), the historical entries are
+      left as-is; the v1.6.0 entry is the corrected reference for
+      future readers.
   - version: 1.5.0
     date: '2026-05-05'
     change: |
@@ -332,7 +380,7 @@ falsification_tests:
 - id: FALSIFY-APR-PRETRAIN-ARCH-001
   rule: TransformerConfig::qwen2_0_5b constructor exists and matches HF config
   prediction: "`TransformerConfig::qwen2_0_5b()` returns a config whose 10 fields match the empirically-verified Qwen2.5-Coder-0.5B-Instruct shape byte-for-byte"
-  test: "cargo test -p aprender-train --lib transformer::config::tests::qwen2_0_5b_matches_hf_config"
+  test: "cargo test -p aprender-train --lib transformer::config::tests::qwen2_0_5b_matches_hf_config_2026_05_04"
   if_fails: "constructor missing or shape drifts from HF config — §50.4 step 5b unimplemented or regressed"
 
 - id: FALSIFY-APR-PRETRAIN-ARCH-002
@@ -344,13 +392,13 @@ falsification_tests:
 - id: FALSIFY-APR-PRETRAIN-ARCH-003
   rule: build_transformer_config(Some) extracts all 10 fields from APR header
   prediction: "with init=Some(<Qwen2.5-0.5B.apr>), `build_transformer_config()` returns the same TransformerConfig as `TransformerConfig::qwen2_0_5b()` modulo max_position which inherits from --seq-length CLI"
-  test: "cargo test -p aprender-train --lib train::pretrain_real::tests::build_transformer_config_qwen_init_matches_constructor"
+  test: "cargo test -p aprender-train --lib train::pretrain_real::tests::build_transformer_config_qwen_init_matches_input"
   if_fails: "extractor silently fills defaults instead of reading APR metadata — §50 root cause not addressed"
 
 - id: FALSIFY-APR-PRETRAIN-ARCH-004
   rule: GQA-7:1 forward-pass numerical parity with GQA-1:1
   prediction: "GQA-7:1 (kv_heads=2, query_heads=14) attention output cosine ≥ 0.9999 vs GQA-1:1 reference (kv_heads=14, query_heads=14, with each query group's KV repeated 7×) on the same input tensors"
-  test: "cargo test -p aprender-train --lib transformer::attention::tests::gqa_7_to_1_matches_full_mha_via_repeat"
+  test: "cargo test -p aprender-train --lib transformer::model::tests::falsify_apr_pretrain_arch_004_gqa_7_1_forward_pass_smoke"
   if_fails: "attention kernel mishandles GQA-7:1 — Qwen2 forward pass produces silent gibberish"
 
 - id: FALSIFY-APR-PRETRAIN-ARCH-005
@@ -368,7 +416,7 @@ falsification_tests:
 - id: FALSIFY-APR-PRETRAIN-ARCH-007
   rule: Wrong-arch APR (e.g., encoder model) fails fast
   prediction: "build_transformer_config(Some(<encoder.apr>)) returns Err naming the architecture mismatch — decoder builder cannot accept encoder weights"
-  test: "cargo test -p aprender-train --lib train::pretrain_real::tests::build_transformer_config_encoder_init_errors"
+  test: "cargo test -p aprender-train --lib train::pretrain_real::tests::validate_pretrain_init_arch_rejects_encoder"
   if_fails: "silent decoder/encoder mismatch — would later fail at first forward pass with cryptic shape error"
 
 - id: FALSIFY-APR-PRETRAIN-ARCH-008
