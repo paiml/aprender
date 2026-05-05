@@ -1,12 +1,40 @@
 metadata:
   kind: schema
-  version: 1.1.0
-  status: PARTIAL_ALGORITHM_LEVEL
+  version: 1.2.0
+  status: FUNCTIONAL
   created: '2026-05-04'
-  updated: '2026-05-04'
+  updated: '2026-05-05'
   author: PAIML Engineering
   registry: true
   changelog:
+  - version: 1.2.0
+    date: '2026-05-05'
+    change: |
+      v1.1.0 PARTIAL_ALGORITHM_LEVEL → v1.2.0 FUNCTIONAL.
+      The §50.4 cascade reached INTEGRATION-COMPLETE with PR #1494
+      merging at 2026-05-05T01:48:14Z. PR #1494 implemented
+      `build_shared_trainer_with_init(lr, seq_length, seed,
+      init_arch, init_path)` in `crates/aprender-train/src/train/pretrain_real.rs`
+      composing the previously-merged helpers
+      (validate_pretrain_init_arch_compatible from #1479,
+      load_init_tensors_from_apr from #1481, populate_trainer_from_init_tensors
+      from #1483) and wired the CLI dispatch
+      (`crates/apr-cli/src/commands/pretrain.rs::run` →
+      `drive_real` → `drive_real_cpu`) to invoke it. The legacy
+      `Err(...not yet wired...)` from §49 step 4 in
+      `validate_init_apr_path()` is RETIRED. Polymorphic preflight
+      gates with `target_vocab = init_arch.map(|cfg|
+      cfg.vocab_size).unwrap_or(Llama370MConfig::VOCAB_SIZE)`.
+      6/8 falsifiers (001/002/003/005/006/007) now reach INTEGRATION
+      via the live CLI dispatch path; the remaining two
+      (FALSIFY-004 forward-pass smoke + FALSIFY-008 contract
+      validation) are inherently algorithm-level. All 8 PASS on main.
+      CUDA path (drive_real_cuda) emits explicit error citing
+      FALSIFY-APR-PRETRAIN-INIT-CUDA-001 — the ~80-LOC symmetric
+      wireup is the §50.4 step 5f.5 follow-up. Promotion to
+      DISCHARGED still requires §50.4 step 5g LIVE empirical
+      500-step fine-tune on canonical
+      Qwen2.5-Coder-0.5B-Instruct.apr producing val_loss < 9.38.
   - version: 1.1.0
     date: '2026-05-04'
     change: |
@@ -47,6 +75,8 @@ metadata:
   - 'SPEC-SHIP-TWO-001 §50.4 step 5a — author this contract'
   - 'SPEC-SHIP-TWO-001 §50.4 steps 5b-5f — implementation roadmap this contract drives'
   - 'SPEC-SHIP-TWO-001 §51 — cascade snapshot recording 7/8 falsifiers PARTIAL_ALGORITHM_LEVEL bound (PR #1480 merged)'
+  - 'SPEC-SHIP-TWO-001 §52 — cascade ALGORITHM-COMPLETE on main; 5f.4 CLI wireup gap identified (PR #1486 merged)'
+  - 'SPEC-SHIP-TWO-001 §53 — cascade INTEGRATION-COMPLETE on main; `apr pretrain --init` end-to-end runnable (this PR + PR #1494 merged 2026-05-05T01:48:14Z)'
   - 'contracts/apr-pretrain-from-init-v1.yaml v1.1.0 PARTIAL_ALGORITHM_LEVEL — sibling (FALSIFY-005 arch-mismatch is consumed here)'
   - 'contracts/training-loop-pretrain-v1.yaml v1.5.0 ACTIVE — parent (PretrainConfig is what the polymorphic builder emits)'
   - 'contracts/architecture-requirements-v1.yaml — sibling (TransformerConfig family invariants)'
@@ -246,22 +276,54 @@ kani_harnesses:
 verification_summary:
   total_obligations: 6
   proven: 0
-  tested: 7
-  status: partial
+  tested: 8
+  status: functional
   notes: |
     Authored 2026-05-04 as §50.4 step 5a of SHIP-TWO-001 MODEL-2
-    architecture-polymorphic pivot. v1.1.0 PARTIAL_ALGORITHM_LEVEL
-    (2026-05-04): 7/8 falsifiers bound on main, 8th (FALSIFY-007)
-    bound on PR #1479 with auto-merge armed. Tests authored:
-      FALSIFY-001..006 — merged (PRs #1474, #1475, #1476, #1478)
-      FALSIFY-007 — PR #1479 (encoder-family fail-fast)
-      FALSIFY-008 — contract self-validation via `pv validate`
-    Promotion to FUNCTIONAL requires #1479 land (FALSIFY-007 PASS on
-    main) AND every FALSIFY-001..006 PASS in CI. Promotion to
-    DISCHARGED requires §50.4 step 5g LIVE empirical run: 500-step
-    fine-tune on canonical Qwen2.5-Coder-0.5B-Instruct.apr producing
-    val_loss < 9.38 (the §24/§25 corpus floor) — empirical proof that
-    the architecture-polymorphic path actually works end-to-end.
+    architecture-polymorphic pivot. v1.2.0 FUNCTIONAL (2026-05-05):
+    PR #1494 (5f.4 CLI wireup) merged at 2026-05-05T01:48:14Z, which
+    composes the previously-merged helpers via
+    `build_shared_trainer_with_init` and routes the live `apr pretrain
+    --init` dispatch through them. 6/8 falsifiers
+    (001/002/003/005/006/007) now reach INTEGRATION via the user-facing
+    CLI flow; 2/8 (004/008) remain inherently algorithm-level. All 8
+    PASS on main. The legacy "not yet wired" Err from §49 step 4 is
+    RETIRED in favor of `Ok(())`.
+
+    §50.4 cascade ships 11 PRs over 2 days
+    (#1471/#1472/#1473/#1474/#1475/#1476/#1478/#1479/#1481/#1482/#1483/#1486/#1494
+    counting spec + contract bumps).
+
+    Tests authored:
+      FALSIFY-001 — merged PR #1474 (qwen2_0_5b shape vs HF config)
+      FALSIFY-002 — merged PR #1475 (init=None preserves Llama370M)
+      FALSIFY-003 — merged PR #1475 (init=Some pass-through)
+      FALSIFY-004 — merged PR #1478 (GQA-7:1 forward-pass smoke)
+      FALSIFY-005 — merged PR #1476 (Qwen tokenizer + Qwen --init)
+      FALSIFY-006 — merged PR #1476 (Qwen tokenizer + no --init)
+      FALSIFY-007 — merged PR #1479 (encoder-family fail-fast)
+      FALSIFY-008 — bound by this YAML passing `pv validate`
+
+    Integration-level tests authored by PR #1494:
+      build_shared_trainer_with_init_none_uses_llama370m_shape
+      build_shared_trainer_with_init_rejects_unpaired_args
+      build_shared_trainer_with_init_rejects_encoder_family
+      build_shared_trainer_with_init_decoder_family_proceeds_to_tensor_load
+      pretrain_init_valid_magic_but_bogus_metadata_fails_at_arch_extraction
+      pretrain_init_v1_magic_aprn_passes_validate_init_apr_path
+
+    Promotion to DISCHARGED requires §50.4 step 5g LIVE empirical run:
+    500-step fine-tune on canonical Qwen2.5-Coder-0.5B-Instruct.apr
+    producing val_loss < 9.38 (the §24/§25 corpus floor) — empirical
+    proof that the architecture-polymorphic path actually trains
+    end-to-end. Step 5g is now operator-dispatchable on RTX 4090 (the
+    only blocker, the CLI wireup, is resolved).
+
+    Step 5f.5 (CUDA path symmetric wireup, ~80 LOC) is the follow-up;
+    `drive_real_cuda` currently emits an explicit error citing
+    FALSIFY-APR-PRETRAIN-INIT-CUDA-001 rather than silently dropping
+    `--init`. CUDA wireup is not on the 5g critical path (5g can run
+    `--device cpu`) but is required for production fine-tune perf.
 
     Cross-references:
     - This contract DOES NOT replace apr-pretrain-from-init-v1; the two
