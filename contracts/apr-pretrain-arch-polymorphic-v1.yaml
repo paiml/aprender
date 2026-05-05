@@ -1,12 +1,45 @@
 metadata:
   kind: schema
-  version: 1.4.0
+  version: 1.5.0
   status: FUNCTIONAL
   created: '2026-05-04'
   updated: '2026-05-05'
   author: PAIML Engineering
   registry: true
   changelog:
+  - version: 1.5.0
+    date: '2026-05-05'
+    change: |
+      v1.4.0 → v1.5.0 — test-reference drift correction for
+      FALSIFY-APR-PRETRAIN-ARCH-005 and FALSIFY-APR-PRETRAIN-ARCH-006.
+
+      Drift inventory (PV-VER-001 class — same defect class as PR #1504
+      caught in apr-pretrain-from-init-v1):
+        FALSIFY-005 cited `preflight_qwen_vocab_passes_with_qwen_init`
+          → does NOT exist in `crates/apr-cli/src/commands/pretrain.rs`.
+          Actual test name authored by PR #1476: `preflight_qwen_vocab_passes_with_qwen_target`.
+        FALSIFY-006 cited `preflight_qwen_vocab_fails_without_init`
+          → does NOT exist. Actual: `preflight_qwen_vocab_fails_with_llama_target`.
+
+      The v1.1.0 changelog entry stamped these names BEFORE PR #1476
+      authored the actual tests; the merge picked semantically-equivalent
+      but textually-different names. The contract's `test:` field stayed
+      stale. v1.4.0 (this contract's most recent bump) didn't catch the
+      drift because CUDA-001 was the focus.
+
+      Same drift class as the apr-pretrain-from-init-v1 v1.2.0 fix
+      (PR #1504, merged 2026-05-05T07:21Z). Per `feedback_no_guessing.md`,
+      contract test references must point to tests that exist; otherwise
+      the falsifier is unfalsifiable.
+
+      No falsifier semantics change. No new tests added. Contract status
+      remains FUNCTIONAL: 11 falsifiers all PASS, including FALSIFY-005
+      and FALSIFY-006 which now reference the existing tests.
+
+      Verified locally:
+        - `cargo test -p apr-cli --lib commands::pretrain::tests::preflight_qwen_vocab_passes_with_qwen_target` PASS
+        - `cargo test -p apr-cli --lib commands::pretrain::tests::preflight_qwen_vocab_fails_with_llama_target` PASS
+        - `pv validate contracts/apr-pretrain-arch-polymorphic-v1.yaml` exits 0.
   - version: 1.4.0
     date: '2026-05-05'
     change: |
@@ -323,13 +356,13 @@ falsification_tests:
 - id: FALSIFY-APR-PRETRAIN-ARCH-005
   rule: Qwen tokenizer (vocab=151_936) passes pre-flight with --init Qwen
   prediction: "preflight_tokenizer_vocab_matches_model() returns Ok with vocab.json containing 151_936 entries when --init points at a Qwen2.5 APR file"
-  test: "cargo test -p apr-cli --lib commands::pretrain::tests::preflight_qwen_vocab_passes_with_qwen_init"
+  test: "cargo test -p apr-cli --lib commands::pretrain::tests::preflight_qwen_vocab_passes_with_qwen_target"
   if_fails: "preflight false-fails on Qwen tokenizer — operator cannot fine-tune Qwen2.5 even with arch-polymorphic builder"
 
 - id: FALSIFY-APR-PRETRAIN-ARCH-006
   rule: Qwen tokenizer with --init absent fails pre-flight
   prediction: "preflight_tokenizer_vocab_matches_model() returns Err with vocab.json containing 151_936 entries when --init is absent (target=Llama370MConfig::VOCAB_SIZE=50_257)"
-  test: "cargo test -p apr-cli --lib commands::pretrain::tests::preflight_qwen_vocab_fails_without_init"
+  test: "cargo test -p apr-cli --lib commands::pretrain::tests::preflight_qwen_vocab_fails_with_llama_target"
   if_fails: "preflight false-passes — from-scratch path silently accepts wrong-vocab tokenizer"
 
 - id: FALSIFY-APR-PRETRAIN-ARCH-007
