@@ -283,3 +283,36 @@ fn test_no_args_exits_usage_error() {
         code
     );
 }
+
+/// FALSIFY-APR-PRETRAIN-INIT-007: 3-surface drift prevention.
+///
+/// Asserts the `--init` flag appears in `apr pretrain --help` output. This is
+/// the integration-test surface that completes the 3-surface drift triangle:
+/// (1) clap field in `Pretrain { init: Option<PathBuf> }`,
+/// (2) unit tests `pretrain_init_*` in `crates/apr-cli/src/commands/pretrain.rs`,
+/// (3) integration test (this one) — confirming the flag is reachable from the
+/// installed binary's help surface.
+///
+/// If clap definition drifts (renamed, removed, hidden), this test fails.
+#[test]
+fn pretrain_init_flag_registered() {
+    let output = apr_binary()
+        .args(["pretrain", "--help"])
+        .output()
+        .expect("failed to run apr pretrain --help");
+
+    assert!(
+        output.status.success(),
+        "apr pretrain --help should exit 0, got {:?}",
+        output.status.code()
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("--init"),
+        "FALSIFY-APR-PRETRAIN-INIT-007: `--init` flag missing from `apr pretrain --help`.\n\
+         Either clap definition drifted, or pretrain subcommand wasn't built with the flag.\n\
+         Full --help output:\n{}",
+        stdout
+    );
+}

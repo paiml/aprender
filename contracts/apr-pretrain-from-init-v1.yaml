@@ -19,13 +19,21 @@ metadata:
        prerequisite (5g.2 / 5g.3) where the binding cannot land via
        unit test. No falsifier is left with a dangling reference.
 
-       Net effect: 4/10 falsifiers now bound to existing tests
-       (001/003/004/005/008); 6/10 explicitly noted as LIVE-pending
-       (002/006/007/009/010 — each names the prerequisite step).
+       Net effect: 5/10 falsifiers now bound to existing tests
+       (001/003/004/005/007/008); 5/10 explicitly noted as LIVE-pending
+       (002/006/009/010 — each names the prerequisite step).
+
+       FALSIFY-007 (3-surface drift) was promoted from LIVE-PENDING by
+       authoring `pretrain_init_flag_registered` in
+       `crates/apr-cli/tests/cli_commands.rs` as part of this same PR;
+       the test invokes `apr pretrain --help` and asserts `--init` is
+       reachable from the installed binary. This closes the full clap +
+       unit + integration triangle for the `--init` flag, matching the
+       3-surface drift prevention rule documented in
+       `feedback_cli_subcommand_three_surface_drift.md`.
 
        Status remains PARTIAL_ALGORITHM_LEVEL; FUNCTIONAL is gated on
-       FALSIFY-006 / FALSIFY-007 binding (which need the 5g.2 LIVE
-       fine-tune + the 3-surface integration test from cli_commands.rs);
+       FALSIFY-006 binding (which needs the 5g.2 LIVE fine-tune);
        DISCHARGED still gated on §50.4 step 5g.3 LIVE val_loss < 9.38."
     - "1.1.0 (2026-05-04): Algorithm-level binding via §49 step 4 wire-up.
        Clap field added in extended_commands.rs; `validate_init_apr_path()`
@@ -217,9 +225,9 @@ falsification_tests:
   if_fails: "init weights are loaded but produce identical loss to random init — either weights are corrupted on load, or the loaded model is silently re-initialized somewhere downstream (this is the §49 load-bearing test)"
 
 - id: FALSIFY-APR-PRETRAIN-INIT-007
-  rule: 3-surface drift prevention (LIVE-PENDING)
+  rule: 3-surface drift prevention
   prediction: "clap field in `extended_commands.rs`, unit test in `pretrain.rs`, and integration test in `cli_commands.rs` all reference --init"
-  test: "LIVE-PENDING — `cli_commands::test_no_unregistered_commands` covers the apr-cli-commands-v1 contract surface (top-level subcommands) but NOT individual flag-level registration. A `pretrain_init_flag_registered` integration test in `crates/apr-cli/tests/cli_commands.rs` is the natural binding site; not yet authored. Out of v1.2.0 scope (drift-correction PR), tracked as v1.2.0 follow-up."
+  test: "cargo test -p apr-cli --test cli_commands pretrain_init_flag_registered"
   if_fails: "3-surface drift; flag exists in clap but not in tests, or vice versa"
 
 - id: FALSIFY-APR-PRETRAIN-INIT-008
