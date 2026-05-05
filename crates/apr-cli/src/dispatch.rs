@@ -90,7 +90,11 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 }
             }
             // GH-326: --gpu overrides --no-gpu when both specified
-            let effective_no_gpu = if *gpu { false } else { *no_gpu || backend_forces_cpu };
+            let effective_no_gpu = if *gpu {
+                false
+            } else {
+                *no_gpu || backend_forces_cpu
+            };
 
             // Batch JSONL mode: load model once, process all prompts
             #[cfg(feature = "inference")]
@@ -272,24 +276,39 @@ fn dispatch_diagnostic_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             // to the existing trace path.
             #[cfg(feature = "inference")]
             if let Some(stages) = save_tensor.as_deref() {
-                let is_apr = r
+                let ext_lower = r
                     .extension()
                     .and_then(|e| e.to_str())
-                    .map(|e| e.eq_ignore_ascii_case("apr"))
-                    .unwrap_or(false);
-                if is_apr {
-                    return crate::commands::trace_save_tensor::run_save_tensor_apr(
-                        &r,
-                        stages,
-                        save_tensor_dir.as_deref(),
-                        save_tensor_layers,
-                    );
+                    .map(str::to_ascii_lowercase);
+                match ext_lower.as_deref() {
+                    Some("apr") => {
+                        return crate::commands::trace_save_tensor::run_save_tensor_apr(
+                            &r,
+                            stages,
+                            save_tensor_dir.as_deref(),
+                            save_tensor_layers,
+                        );
+                    }
+                    Some("gguf") => {
+                        // M-MOE-SUB-2 step (a) CLI completion: GGUF dispatches
+                        // to the MoE-traced wireup if the arch is qwen3_moe;
+                        // dense-GGUF will be wired in SHIP-007 PR-E.
+                        return crate::commands::trace_save_tensor::run_save_tensor_gguf_moe(
+                            &r,
+                            stages,
+                            save_tensor_dir.as_deref(),
+                            save_tensor_layers,
+                        );
+                    }
+                    _ => {
+                        eprintln!(
+                            "apr trace --save-tensor: only .apr and .gguf (qwen3_moe arch) \
+                             supported today; .safetensors will be wired in SHIP-007 PR-E \
+                             (got {})",
+                            r.display()
+                        );
+                    }
                 }
-                eprintln!(
-                    "apr trace --save-tensor: only .apr models supported in step 1+2; \
-                     .gguf/.safetensors will be wired in SHIP-007 PR-E (got {})",
-                    r.display()
-                );
             }
             trace::run(
                 &r,
@@ -390,10 +409,15 @@ fn dispatch_format_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             allow_no_config,
         } => {
             // GH-666: Reject network sources when --offline is set
-            if cli.offline && (source.starts_with("hf://") || source.starts_with("http://") || source.starts_with("https://")) {
-                return Some(Err(crate::error::CliError::NetworkError(
-                    format!("Cannot import from '{}' in --offline mode. Use a local file path.", source),
-                )));
+            if cli.offline
+                && (source.starts_with("hf://")
+                    || source.starts_with("http://")
+                    || source.starts_with("https://"))
+            {
+                return Some(Err(crate::error::CliError::NetworkError(format!(
+                    "Cannot import from '{}' in --offline mode. Use a local file path.",
+                    source
+                ))));
             }
             import::run(
                 source,
@@ -496,7 +520,10 @@ fn dispatch_format_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 }
 
 /// Dispatch model management commands: merge, finetune, prune, distill, pull, list, rm, tui.
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
+#[provable_contracts_macros::contract(
+    "apr-cli-operations-v1",
+    equation = "side_effect_classification"
+)]
 fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     contract_pre_output_path_validation!();
     contract_pre_rm_confirmation_gate!();
@@ -571,37 +598,37 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 eprintln!("StepProfiler enabled for finetune (PMAT-486)");
             }
             finetune::run(
-            file.as_deref(),
-            method,
-            *rank,
-            *vram,
-            *plan,
-            data.as_deref(),
-            output.as_deref(),
-            adapter.as_deref(),
-            *merge,
-            *epochs,
-            *learning_rate,
-            model_size.as_deref(),
-            task.as_deref(),
-            *num_classes,
-            checkpoint_format,
-            *oversample,
-            *max_seq_len,
-            *quantize_nf4,
-            gpus.as_deref(),
-            gpu_backend,
-            role.as_deref(),
-            bind.as_deref(),
-            coordinator.as_deref(),
-            *expect_workers,
-            *wait_gpu,
-            adapters,
-            adapters_config.as_deref(),
-            cli.json,
-            *experimental_mps,
-            *gpu_share,
-        )
+                file.as_deref(),
+                method,
+                *rank,
+                *vram,
+                *plan,
+                data.as_deref(),
+                output.as_deref(),
+                adapter.as_deref(),
+                *merge,
+                *epochs,
+                *learning_rate,
+                model_size.as_deref(),
+                task.as_deref(),
+                *num_classes,
+                checkpoint_format,
+                *oversample,
+                *max_seq_len,
+                *quantize_nf4,
+                gpus.as_deref(),
+                gpu_backend,
+                role.as_deref(),
+                bind.as_deref(),
+                coordinator.as_deref(),
+                *expect_workers,
+                *wait_gpu,
+                adapters,
+                adapters_config.as_deref(),
+                cli.json,
+                *experimental_mps,
+                *gpu_share,
+            )
         }
         Commands::ModelOps(ModelOpsCommands::Prune {
             file,
@@ -687,10 +714,8 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             } else {
                 pull::run(model_ref, *force, *dry_run, revision.as_deref(), *offline)
             }
-        },
-        Commands::Registry { command } => {
-            crate::commands::registry::run(command.clone())
         }
+        Commands::Registry { command } => crate::commands::registry::run(command.clone()),
         Commands::List => pull::list(cli.json, cli.quiet),
         Commands::Rm { model_ref } => pull::remove(model_ref),
         Commands::Tui { file } => tui::run(file.clone()),

@@ -155,6 +155,162 @@ pub fn run_save_tensor_apr(
     Ok(())
 }
 
+/// Run `apr trace --save-tensor <STAGES> <GGUF>` end-to-end for a Qwen3-MoE
+/// arch GGUF model.
+///
+/// M-MOE-SUB-2 step (a) CLI completion (companion-spec M77): wires the
+/// `--save-tensor` / `--save-tensor-layers` / `--save-tensor-dir` clap
+/// fields through to
+/// [`OwnedQuantizedModel::forward_qwen3_moe_traced_with_plan`] (M74,
+/// aprender PR #1516 squash `3138d134d`).
+///
+/// Per `contracts/trace-moe-gpu-sub-stages-v1.yaml` v1.1.0 step (a). The
+/// CPU-traced sibling captures `MoeRouter` + `MoeFfnOut` per-layer when
+/// the plan selects them; this function exists so an operator can
+/// invoke the wireup from the CLI without re-authoring the dispatch
+/// every test.
+///
+/// # Errors
+///
+/// - [`CliError::ValidationFailed`] if the plan args are malformed.
+/// - [`CliError::ModelLoadFailed`] if the GGUF file cannot be loaded
+///   or the arch is not `qwen3_moe`.
+/// - [`CliError::InferenceFailed`] if the forward pass errors.
+pub fn run_save_tensor_gguf_moe(
+    path: &Path,
+    stages: &str,
+    dir: Option<&Path>,
+    layers: &str,
+) -> Result<(), CliError> {
+    use colored::Colorize;
+    use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
+    use realizar::inference_trace::save_tensor_plan::SaveTensorPlan;
+
+    let output_dir = match dir {
+        Some(p) => p.to_path_buf(),
+        None => default_output_dir(path),
+    };
+
+    let plan = SaveTensorPlan::from_cli(stages, layers, output_dir.clone()).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "apr trace --save-tensor: bad plan args (stages={stages:?}, layers={layers:?}): {e:?}"
+        ))
+    })?;
+
+    println!(
+        "{}",
+        "=== apr trace --save-tensor (GGUF MoE) ===".cyan().bold()
+    );
+    println!("Model:        {}", path.display());
+    println!("Stages:       {stages}");
+    println!("Layers:       {layers}");
+    println!("Output dir:   {}", output_dir.display());
+    println!();
+
+    let mapped = MappedGGUFModel::from_path(path)
+        .map_err(|e| CliError::ModelLoadFailed(format!("Failed to load GGUF: {e}")))?;
+    let model = OwnedQuantizedModel::from_mapped(&mapped)
+        .map_err(|e| CliError::ModelLoadFailed(format!("Failed to create quantized model: {e}")))?;
+
+    let canonical_arch =
+        realizar::tensor_names::normalize_architecture(&model.config().architecture);
+    let raw_arch_lower = model.config().architecture.to_lowercase();
+    let is_qwen3_moe = canonical_arch == "qwen3_moe"
+        || raw_arch_lower == "qwen3moe"
+        || raw_arch_lower == "qwen3_moe";
+    if !is_qwen3_moe {
+        return Err(CliError::ModelLoadFailed(format!(
+            "apr trace --save-tensor for GGUF: only qwen3_moe arch supported here \
+             (got {}); use the dense path or .apr conversion",
+            model.config().architecture
+        )));
+    }
+
+    let test_prompt = "What is 2+2?";
+    let test_tokens = mapped
+        .model
+        .encode(test_prompt)
+        .unwrap_or_else(|| vec![1u32]);
+    println!("Test prompt:  {test_prompt:?}");
+    println!(
+        "Token ids:    {test_tokens:?} ({} tokens)",
+        test_tokens.len()
+    );
+    println!();
+
+    let num_experts = mapped.model.expert_count().ok_or_else(|| {
+        CliError::ValidationFailed(
+            "qwen3_moe trace: missing 'expert_count' in GGUF metadata".to_string(),
+        )
+    })?;
+    let num_experts_per_tok = mapped.model.expert_used_count().ok_or_else(|| {
+        CliError::ValidationFailed(
+            "qwen3_moe trace: missing 'expert_used_count' in GGUF metadata".to_string(),
+        )
+    })?;
+    let moe_intermediate = mapped.model.expert_feed_forward_length().ok_or_else(|| {
+        CliError::ValidationFailed(
+            "qwen3_moe trace: missing 'expert_feed_forward_length' in GGUF metadata".to_string(),
+        )
+    })?;
+
+    let data = mapped.data();
+    let num_layers = model.config().num_layers;
+    let mut moe_layers = Vec::with_capacity(num_layers);
+    for layer_idx in 0..num_layers {
+        moe_layers.push(
+            realizar::gguf::qwen3_moe_load::load_qwen3_moe_layer(&mapped.model, data, layer_idx)
+                .map_err(|e| {
+                    CliError::ModelLoadFailed(format!(
+                        "qwen3_moe trace: load layer {layer_idx}: {e}"
+                    ))
+                })?,
+        );
+    }
+
+    let trace = model
+        .forward_qwen3_moe_traced_with_plan(
+            &test_tokens,
+            &moe_layers,
+            num_experts,
+            num_experts_per_tok,
+            moe_intermediate,
+            data,
+            Some(&plan),
+        )
+        .map_err(|e| {
+            CliError::InferenceFailed(format!("forward_qwen3_moe_traced_with_plan failed: {e}"))
+        })?;
+
+    let mut written: Vec<PathBuf> = Vec::new();
+    collect_bin_files(&output_dir, &mut written).map_err(|e| {
+        CliError::ValidationFailed(format!("Cannot enumerate {}: {e}", output_dir.display()))
+    })?;
+    written.sort();
+
+    println!(
+        "{} {} stage tensor file(s):",
+        "Wrote".green().bold(),
+        written.len()
+    );
+    for p in &written {
+        let bytes = std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+        println!("  {} ({} bytes)", p.display(), bytes);
+    }
+    println!();
+    println!(
+        "Forward pass succeeded — {} layer activations, {} logits",
+        trace.layer_activations.len(),
+        trace.logits.len()
+    );
+    println!(
+        "MoE stages captured per `trace-moe-gpu-sub-stages-v1.yaml` v1.1.0 step (a) \
+         (MoeRouter / MoeFfnOut per-layer when plan selects them)."
+    );
+
+    Ok(())
+}
+
 /// Recursively collect `*.bin` files under `dir`.
 fn collect_bin_files(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
     if !dir.exists() {

@@ -1,7 +1,8 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 3.02.0
+**Version:** 3.03.0
+**Atomic next action (v3.03.0):** **§58 — v0.32.0 cascade publish + release-engineering hygiene snapshot (Issue #1514 CLOSED, 6 PRs, 4 hidden defects surfaced + closed) (2026-05-05)** (see new §58 below). Issue #1514 (v0.32.0 cascade publish) CLOSED at 16:14:56Z. Four user-facing crates now live on crates.io at v0.32.0: `aprender`, `aprender-rag`, `aprender-core`, `apr-cli` (verified via `cargo search`). Cascade surfaced 4 release-engineering defects, all closed in their own PRs: #1512 (aprender-rag `[lib] name = "trueno_rag"` → `"aprender_rag"` BREAKING — `use aprender_rag::*` was uncompilable in v0.31.x), #1513 (aprender-orchestrate `cmd_code` 7→8 arg drift on upstream `emit_trace` addition), #1515 + #1517 (aprender-core dev-dep publish-time cycle: path-only and then permissive `version = ">=0.27"` + path, after clean-room sed-strip left invalid `{ package = "..." }` entries), #1518 (apr-cli `include_str!("../../../../configs/aliases.yaml")` failed cargo publish — files outside crate dir excluded; fix copies aliases.yaml into `crates/apr-cli/configs/`). PR #1511 ships `pv lint --strict-test-binding`, closing §57.4's foreshadowed prevention rule. 5g.1 corpus retokenize (PID 2767124) at 62 shards / 16h19m wall (past initial 57-shard estimate; rate ≈ 15-16 min/shard; manifest pending end-of-run). **MODEL-1 ship %**: unchanged at **91%**. **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38. Coverage tally: snapshot (release-engineering hygiene, not falsifier flip).
 **Atomic next action (v3.02.0):** **§57 — drift sweep cleans §50.4 cascade contracts (3 PRs); 5g.1 full corpus run on track (2026-05-05)** (see new §57 below). Three same-class drift fixes shipped this session — PR #1502 (apr-pretrain-arch-polymorphic-v1 v1.4 binds CUDA-001), PR #1505 (apr-pretrain-arch-polymorphic-v1 v1.5 fixes FALSIFY-005/006 names), PR #1506 (apr-cli-tokenize-import-hf-v1 v1.1 binds FALSIFY-001 with integration test). PR #1504 (apr-pretrain-from-init-v1 v1.2 drift correction) closed the largest instance via operator/agent collaboration. After this sweep, `pv lint contracts/` reports **0 PV-VER-001 errors across all 870+ contracts** — every cited test exists. 5g.1 full corpus retokenization (PID 2767124) progresses steadily at 16.3 min/shard; 13/57 shards complete in 3h22min wall; ETA ~22:00Z (5g.1.3 verdict ~12hr from now). **MODEL-1 ship %**: unchanged at **91%**. **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38. Coverage tally: snapshot (drift sweep is hygiene, not falsifier flip).
 **Atomic next action (v3.01.0):** **§56 — 5g.1 LIVE smoke: corpus retokenization with Qwen vocab is correctness-validated; full run is ~17hr operator-dispatch (2026-05-05)** (see new §56 below). Smoke ran `apr tokenize encode-corpus` on first 5000 docs of `python-permissive.jsonl` through the §54-extracted Qwen tokenizer dir; produced 13 valid u32 shards (~13M tokens) at ~110 sec / M-token before being killed. 5g.1 is correctness-validated and operator-dispatchable. Wall projection for full 565M-token corpus: ~17 hours single-thread (1.7× legacy 50257-vocab wall — Qwen's 3× larger merge table is the dominant cost). **Below the 48hr `feedback_compute_pre_authorized.md` ceiling.** Full run dispatched 2026-05-05T07:00Z. Spec v3.00.0 → **v3.01.0**. **MODEL-1 ship %**: unchanged at **91%**. **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38. Coverage tally: 5g.1 reaches LIVE-SMOKE level; promotion to FULL-VALIDATED waits for full-corpus run + manifest.json.
 **Atomic next action (v3.00.0):** **§55 — Polymorphic preflight relaxation: tokenizer_vocab ≤ model_vocab when init=Some; LIVE smoke confirms Qwen extracted tokenizer passes preflight (2026-05-05)** (see new §55 below). §54's LIVE smoke surfaced that public Qwen2.5-Coder-0.5B-Instruct/tokenizer.json materializes 151643 BPE entries + 22 added = 151665 effective strings, but config.json declares vocab_size=151936 (271 reserved/special slots not in tokenizer.json). Strict equality preflight was correct for §24/§25 from-scratch but too strict for HF-distributed pretrained checkpoints with reserved slots. §55 introduces the relaxed bound `tokenizer_vocab ≤ model_vocab` for the polymorphic path (init=Some); strict equality is preserved for the from-scratch path (init=None, regression-free). New helper `assert_tokenizer_vocab_within_model_bound` + extended preflight signature + 4 new tests (2 helper + 2 integration). Contract `apr-pretrain-arch-polymorphic-v1` v1.2.0 → **v1.3.0 FUNCTIONAL** with FALSIFY-009 (relaxed accept) + FALSIFY-010 (oversize reject — OOB safety). LIVE smoke 2026-05-05T05:48Z: rebuilt apr binary + §54-extracted Qwen tokenizer + Qwen 0.5B init APR → preflight PASSED (no GATE-ARCH errors); process proceeded past preflight to weight load (timeout-killed at 30s mid-load). Spec v2.99.0 → **v3.00.0**. **MODEL-1 ship %**: unchanged at **91%**. **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38. Coverage tally: 8 → 10 falsifiers in apr-pretrain-arch-polymorphic-v1 (+2 new, all PASS). 5g.1 (corpus retokenize) now technically dispatchable.
@@ -4478,6 +4479,65 @@ Unchanged from §29 because PR E did not land. Next-session agenda: do the §30.
 Per `feedback_fix_root_cause_never_route_around.md`: the §28 fix would have route-around'd a real bug because the named site (matmul kernel) is not where the divergence originates. The empirical refutation in §30 IS the work that protects the next attempt from shipping a no-op. This refutation is itself a coverage-incrementing artifact (it falsifies a hypothesis), even though no PARTIAL flips to DISCHARGED.
 
 The Toyota Way fix is to bisect upstream, not to flip the kernel call.
+
+## §58. v0.32.0 cascade publish + release-engineering hygiene snapshot (Issue #1514 CLOSED) (2026-05-05)
+
+§57 closed with the §50.4 drift-sweep complete and 5g.1 mid-flight at 13/57 shards. §58 records the parallel **release-engineering** track that landed during the same wait window: the v0.32.0 user-facing-crate cascade publish (Issue #1514 CLOSED) and the four hidden defects it surfaced + closed. This is the second hygiene amendment in a row — the first (§57) was contract-drift hygiene; this one is publish-pipeline hygiene.
+
+### 58.1 Why §58 records release-engineering instead of 5g.1 completion
+
+§57.7 foreshadowed §58 = "(a) the 5g.1 full-run completion + manifest evidence, or (b) the 5g.2 LIVE fine-tune dispatch result." Neither has fired yet (5g.1 is still mid-flight at 62 shards / 16h19m wall). But Issue #1514 CLOSED at 2026-05-05T16:14:56Z represents a **major user-facing shipping milestone**: the `apr` binary at v0.32.0 is now installable on any host via `cargo install aprender`. Recording this in §58 in real time avoids conflating two unrelated narratives when 5g.1 fires. Per the §57.4 lesson — "1 amendment ≈ 1 logical event" — the publish cascade and the 5g.1 verdict are different events even though they share the same wait window.
+
+### 58.2 The v0.32.0 cascade publish — Issue #1514
+
+**Trigger:** Operator follow-up: "the published aprender-rag = "0.31.2" still has [lib] name = "trueno_rag" in its Cargo.toml, so `use aprender_rag::*` won't actually compile against the current crate." The lib-name rename was the smallest user-visible defect that made the public-facing API unusable; bumping aprender-rag alone would have left the rest of the workspace at v0.31.x and out of sync.
+
+Cascade scope: **22 workspace crates published in topological order** (leaves → root). Verified live on crates.io at session-end: `aprender = "0.32.0"`, `aprender-rag = "0.32.0"`, `aprender-core = "0.32.0"`, `apr-cli = "0.32.0"`.
+
+| PR / commit | Crate | Defect class | Fix |
+|---|---|---|---|
+| #1512 845554b8b | aprender-rag | `[lib] name = "trueno_rag"` survived the trueno-rag → aprender-rag rename; external `use aprender_rag::*` was uncompilable. | Rename `[lib] name` to `aprender_rag`; v0.31.2 → v0.32.0 BREAKING (transitive lib-symbol rename). |
+| #1513 1ecf3aaf5 | aprender-orchestrate | `cmd_code` upstream gained 8th `emit_trace: Option<PathBuf>` parameter; the `apr-cli`-side wrapper still passed 7 args. Workspace `cargo check` failed for the bin target. | Pass `None` 8th arg with comment that `--emit-trace` clap surface is a future enhancement. |
+| #1515 6ff85d135 | aprender-core | `cargo publish` failed with publish-time dev-dep cycle: aprender-core dev-dep on `entrenar`/`renacer` requires those crates to be on crates.io at the bumped version, but they depend on aprender-core. | Path-only (no version) on dev-deps so `cargo publish` strips them locally. Worked for `cargo publish --dry-run` but broke clean-room sed-strip (next row). |
+| #1517 a5e081563 | aprender-core | Clean-room build sed-strip is a naive `s/, *path *= *"[^"]*"//g` that only strips `path = "..."`, not whole entries. With path-only deps, post-strip Cargo.toml had invalid `{ package = "..." }` entries. | Permissive `version = ">=0.27"` + path so post-strip remains valid TOML. |
+| #1518 (PR #1518) | apr-cli | `cargo publish` failed: `include_str!("../../../../configs/aliases.yaml")` references file outside crate dir; cargo publish tarball excludes those files. | Copy `configs/aliases.yaml` into `crates/apr-cli/configs/aliases.yaml`; `include_str!` path becomes `../../configs/aliases.yaml` (within-crate). |
+| #1519 (PR #1519) | repo root | CHANGELOG.md missing v0.32.0 entry. | Add `## [0.32.0] - 2026-05-05` section documenting the cascade + 4 hidden defects. |
+
+### 58.3 The pv-lint deliverable from §57.7's foreshadowing
+
+PR #1511 (`feat(pv-lint): add --strict-test-binding to catch dangling test references` — Closes #1510) shipped during the same window. §57.4's "Prevention rule (informal): a future spec amendment could codify a `pv lint --strict-test-binding` enforcement that blocks contract merge when any `test:` field doesn't resolve to an existing test invocation. Out of §57 scope" is now CLOSED. The flag is implemented in `aprender-contracts-cli` and runs over the full 870+ contract registry.
+
+This means: from now on, contract-merge time can flag dangling test refs at lint level — preventing the §57 drift class from recurring. The fix is durable infrastructure, not just a one-time sweep.
+
+### 58.4 Five Whys — why surface 4 release-engineering defects in one cascade?
+
+1. **Why did `cargo publish` fail four times before succeeding?** Each failure exposed a different latent defect (lib-name drift, arg-count drift, dev-dep cycle, sed-strip robustness, include_str scope). All four had survived prior v0.31.x publishes because the cascade hadn't been run end-to-end since the APR-MONO consolidation reshuffled the crate tree.
+2. **Why didn't CI catch these?** GitHub CI runs `cargo build`/`test` with sibling repo paths in scope; clean-room runs `cargo publish --dry-run` with only crates.io deps. CI never simulated the publish-tarball boundary that excludes files outside the crate dir, and clean-room hadn't been run on a fresh aprender pull until the cascade.
+3. **Why fix in 6 separate PRs rather than 1 mega-fix?** Per `feedback_falsifier_first_cascade_pattern.md`: 1 PR ≈ 1 logical defect. Each defect has its own root cause, its own test, its own changelog entry; conflating bumps mixes review concerns and breaks the bisect-able cascade discipline. The same lesson taught by §57.
+4. **Why during the 5g.1 wait?** Same productive-idle pattern as §57. 5g.1 is compute-bound (~16 min/shard), agent is host-resident, defects surfaced as cargo failed each step of the cascade. Discharging them inline preserved the cascade momentum rather than re-running it later from cold.
+5. **Why does `cargo install aprender` matter for ship-%?** It doesn't move ship-% per the spec rules (ship-% measures MODEL-1 SafeTensors-from-Qwen2-7B teacher + MODEL-2 fine-tune verdicts, not binary distribution). But it's a **prerequisite** for downstream consumers to reproduce ship verdicts. Without v0.32.0 publishable, MODEL-1 / MODEL-2 ship evidence is locked to one host. With v0.32.0 publishable, anyone can `cargo install aprender@0.32.0` and reproduce on their own GPU.
+
+### 58.5 Net effects
+
+- Spec v3.02.0 → **v3.03.0**.
+- Issue #1514 (v0.32.0 cascade publish) CLOSED at 2026-05-05T16:14:56Z.
+- 4 user-facing crates verified live on crates.io: `aprender = "0.32.0"`, `aprender-rag = "0.32.0"`, `aprender-core = "0.32.0"`, `apr-cli = "0.32.0"`.
+- 4 hidden defects surfaced + closed (lib-name drift, arg-count drift, dev-dep cycle, include_str scope) across PRs #1512 / #1513 / #1515 / #1517 / #1518.
+- `pv lint --strict-test-binding` (PR #1511) ships durable enforcement against §57's drift class.
+- 5g.1 still mid-flight at 62 shards / 16h19m wall (manifest pending).
+- **MODEL-1 ship %**: unchanged at **91%** (release-engineering hygiene, not falsifier flip).
+- **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38.
+- Coverage tally: snapshot.
+
+### 58.6 Spec amendment cadence preserved
+
+§41 → §42 → §43 → §44 → §45 → §46 → §47 → §48 → §49 → §50 → §51 → §52 → §53 → §54 → §55 → §56 → §57 → §58. Eighteen amendments since 2026-05-03. **§58 is the third hygiene amendment in a row** (after §56's 5g.1 LIVE smoke and §57's drift sweep). The next §59 will record the 5g.1 full-run completion + manifest evidence (ETA ~03:00Z based on current 15-16 min/shard rate × ~5 remaining shards if shard-00067 is the final one).
+
+### 58.7 Methodology takeaway: defect-mining during compute-bound waits
+
+Two consecutive amendments (§57 hygiene, §58 hygiene) shipped during the same 5g.1 wait window. Both surfaced latent invariants that had silently violated for one or more release cycles. The pattern: **when a compute-bound primary task is in flight, the agent has bandwidth to mine + close hidden defects that wouldn't surface under normal load**. This is *not* muda when the defects are real (PV-VER-001 across §50.4; lib-name drift in aprender-rag). It would be muda if the defects were manufactured (e.g., refactoring tests for tidiness when they already passed). The discipline is: **mine for FAILING invariants, not for cosmetic uplift.**
+
+The `pv lint --strict-test-binding` lint + the v0.32.0 cascade together close two recurrence classes — drift between contracts and tests, and drift between source and publish tarball. Both will keep ship-% movement clean for future cycles.
 
 ## §57. Drift sweep cleans §50.4 cascade contracts (3 PRs); 5g.1 full corpus run on track (2026-05-05)
 
