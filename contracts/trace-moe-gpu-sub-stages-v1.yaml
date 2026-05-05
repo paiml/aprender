@@ -1,0 +1,286 @@
+metadata:
+  id: C-TRACE-MOE-GPU-SUB-STAGES
+  version: 1.0.0
+  created: '2026-05-05'
+  author: PAIML Engineering
+  kind: pattern
+  status: PROPOSED
+  description: |
+    Sub-MoE-GPU bisection plan for `apr trace --save-tensor` —
+    M-GPU-MOE-1.4 NaN/Inf bisection per qwen3-moe-forward-gpu-v1
+    v1.4.0 amendment_history block.
+
+    SCOPE: extends `apr-cli-trace-save-tensor-v1` (parent contract)
+    with NEW SaveTensorStage variants for the GPU MoE forward path.
+    Mirrors the proven `trace-attn-sub-stages-v1` pattern that closed
+    the SHIP-007 layer-0 attention bisection gap.
+
+    BACKGROUND: M-GPU-MOE-1.3 partial fix (PR #1491 squash f0cbe37f9)
+    discharged FALSIFY-QW3-MOE-GPU-PRELOAD-001 — wrapper construction
+    succeeds for qwen3_moe GGUFs. Heavy `qwen3_moe_gpu_parity` test
+    on lambda-vector RTX 4090 against cached 17.3 GB Qwen3-Coder GGUF
+    now progresses through GPU forward but produces ALL 151936 logits
+    NaN (none Inf, none finite — see PR #1493 diagnostic stats). 100%
+    NaN at lm_head means NaN poisoning happens early in pipeline +
+    propagates. Steps 1-9 are CPU-only and shared with CPU forward
+    path (which produces finite output). Step 10 (GPU MoE FFN) is
+    the only candidate.
+
+    THE GOAL: extend SaveTensorStage so a future M-GPU-MOE-1.4 fix
+    PR can run `apr trace --json --payload --save-tensor` on both
+    CPU forward_qwen3_moe AND GPU forward_qwen3_moe_cuda, diff per-
+    stage, find the first stage where GPU produces NaN.
+
+  references:
+    - 'qwen3-moe-forward-gpu-v1 v1.4.0 amendment_history (this contract is referenced from there)'
+    - 'apr-cli-trace-save-tensor-v1 (parent SaveTensorStage contract)'
+    - 'trace-attn-sub-stages-v1 (sibling contract — proven pattern for attention bisection)'
+    - 'evidence/m-gpu-moe-1-2-blocked-by-preload-bug-2026-05-04/findings.md'
+    - 'crates/aprender-serve/tests/qwen3_moe_gpu_parity.rs (heavy test where bisection fires)'
+    - 'crates/aprender-serve/src/gguf/cuda/forward_qwen3_moe_cuda.rs (GPU MoE forward)'
+    - 'crates/aprender-serve/src/gguf/inference/forward/forward_qwen3_moe.rs (CPU MoE forward, ground truth)'
+    - 'crates/aprender-serve/src/gguf/cuda/expert_swiglu_cuda.rs (per-expert GPU SwiGLU)'
+    - 'crates/aprender-serve/src/gguf/cuda/moe_ffn_forward_layer_cuda.rs (per-layer GPU helper)'
+
+  binds_to:
+    - 'AC-MGM-1.4 (M-GPU-MOE-1.4 NaN/Inf bisection + fix)'
+    - 'qwen3-moe-forward-gpu-v1 v1.4.0 (parent kernel contract — bisection plan step a)'
+
+  depends_on:
+    - 'apr-cli-trace-save-tensor-v1 (parent contract, FUNCTIONAL)'
+    - 'qwen3-moe-forward-gpu-v1 v1.4.0 (sibling kernel contract, DRAFT)'
+
+equations:
+  moe_router_softmax:
+    formula: |
+      router_logits = router_W @ ffn_input             # [num_experts]
+      router_probs  = softmax(router_logits)           # [num_experts]
+      top_k_idx     = argmax_top_k(router_probs, k)    # [k]
+      top_k_w       = router_probs[top_k_idx]          # [k]
+      router_out    = top_k_w / Σ(top_k_w)             # [k] post-renormalize
+    where:
+      - 'num_experts = 128 for qwen3-coder-30b-a3b'
+      - 'k = num_experts_per_tok = 8 for qwen3-coder-30b-a3b'
+      - 'softmax normalizes across the num_experts axis'
+    note: |
+      MoeRouter is the NEW capture point AFTER FfnNorm and BEFORE the
+      per-expert SwiGLU dispatches. Captures the post-renormalized
+      top-k weights. This is the input to the per-expert weighted
+      aggregation.
+
+  moe_expert_swiglu:
+    formula: |
+      gate[e]      = q4k_matvec(gate_W[e], ffn_input)          # [intermediate]
+      up[e]        = q4k_matvec(up_W[e], ffn_input)            # [intermediate]
+      swigl[e]     = silu(gate[e]) * up[e]                     # [intermediate]
+      expert_out[e] = q6k_gemv(down_W[e], swigl[e])            # [hidden_dim]
+    where:
+      - 'e ∈ TopK selected experts (only k=8 visited per token)'
+      - 'silu(x) = x * sigmoid(x) = x / (1 + e^(-x))'
+      - 'gate_W[e], up_W[e] ∈ Q4_K; down_W[e] ∈ Q6_K'
+    note: |
+      The per-expert SwiGLU on GPU. CPU sibling produces finite output;
+      GPU produces NaN. Bisection isolates which sub-step (gate matvec,
+      up matvec, silu, swigl, down gemv) first introduces NaN.
+
+  moe_aggregated:
+    formula: 'moe_ffn_out = Σ_e top_k_w[e] * expert_out[e]'   # [hidden_dim]
+    where:
+      - 'sum over the k selected experts'
+      - '+ optional shared expert: + sigmoid(W_s @ ffn_input) * SwiGLU_shared(ffn_input)'
+    note: |
+      MoeFfnOut is the NEW capture point AFTER all expert
+      computations. Captures the weighted aggregation. If MoeRouter
+      and MoeFfnOut both match between CPU and GPU, the bug is
+      OUTSIDE the MoE FFN (e.g., upstream attention output diverged
+      enough to cascade). If MoeFfnOut diverges but MoeRouter matches,
+      the bug is in the per-expert SwiGLU (covered by MoeExpertSwigl).
+
+  bisection_chain_moe_gpu:
+    formula: |
+      cos_sequence = [
+        cos(CPU.ffn_norm,        GPU.ffn_norm),         # parent enum (FfnNorm)
+        cos(CPU.moe_router,      GPU.moe_router),       # NEW
+        cos(CPU.moe_expert_gate, GPU.moe_expert_gate),  # NEW (optional, per-expert)
+        cos(CPU.moe_expert_up,   GPU.moe_expert_up),    # NEW (optional, per-expert)
+        cos(CPU.moe_expert_swigl,GPU.moe_expert_swigl), # NEW (optional, per-expert)
+        cos(CPU.moe_expert_out,  GPU.moe_expert_out),   # NEW (optional, per-expert)
+        cos(CPU.moe_ffn_out,     GPU.moe_ffn_out),      # NEW
+      ]
+    where:
+      - 'capture points span pre-FFN-norm through post-aggregated MoE output'
+      - '2 mandatory new stages: MoeRouter, MoeFfnOut'
+      - '4 optional new stages: MoeExpert{Gate,Up,Swigl,Out} (qualified by expert_id)'
+      - 'Bisection narrows divergence to ONE adjacent (correct, wrong) pair'
+    note: |
+      Today's empirical state (per evidence file): cos at lm_head =
+      garbage (100% NaN). The bisection identifies which pair of
+      adjacent stages straddles the M-GPU-MOE-1.4 NaN root.
+
+proof_obligations:
+- type: invariant
+  property: '`SaveTensorStage` enum gains AT LEAST 2 new variants (MoeRouter, MoeFfnOut) without removing or renaming any existing variant'
+  formal: 'variants_after ⊇ variants_before ∪ {MoeRouter, MoeFfnOut} AND variants_before ⊆ variants_after'
+  applies_to: crates/aprender-serve/src/inference_trace/save_tensor_stage.rs::SaveTensorStage
+- type: invariant
+  property: 'Existing 20 capture-point semantics preserved byte-identically pre/post-implementation'
+  formal: 'forall stage in CURRENT_STAGES: bytes_after_pr(stage) == bytes_before_pr(stage) on canonical 7B teacher, layer 0, BOS token'
+  tolerance: 0.0
+  applies_to: crates/aprender-serve/src/apr_transformer/inference.rs::forward_traced_with_plan
+- type: invariant
+  property: 'Comma-parser accepts the 2 new stage names with case-insensitive fallback'
+  formal: 'parse_stage_list("moe_router,moe_ffn_out") = Ok([MoeRouter, MoeFfnOut])'
+  applies_to: crates/aprender-serve/src/inference_trace/save_tensor_stage.rs::parse_stage_list
+- type: ordering
+  property: 'Capture order inside the MoE FFN block: FfnNorm → MoeRouter → (optional per-expert stages) → MoeFfnOut → PostFfnResidual'
+  formal: 'moe_block_order = [FfnNorm, MoeRouter, MoeFfnOut, PostFfnResidual]'
+  applies_to: crates/aprender-serve/src/gguf/cuda/forward_qwen3_moe_cuda.rs
+- type: invariant
+  property: 'APRT byte-format header serializes the new stage IDs without colliding with reserved IDs of existing stages'
+  formal: 'forall new_stage_id in {moe_router, moe_ffn_out, ...}: new_stage_id ∉ existing_stage_ids'
+  applies_to: crates/aprender-serve/src/inference_trace/save_tensor_stage.rs::aprt_serialize
+
+falsification_tests:
+- id: FALSIFY-MOE-SUB-001
+  rule: 'New SaveTensorStage variants exist and parse'
+  prediction: |
+    After implementation, `parse_stage_list("moe_router,moe_ffn_out")`
+    returns `Ok([MoeRouter, MoeFfnOut])` (or richer set for per-expert).
+  test: |
+    cargo test -p aprender-serve --lib falsify_moe_sub_001_new_stages_parse
+    Asserts: parse_stage_list succeeds + canonical_name() returns expected string for each new variant.
+  status: PROPOSED
+  if_fails: |
+    The parse_stage_list extension regressed; check
+    save_tensor_stage.rs::parse_stage_list and ::canonical_name.
+
+- id: FALSIFY-MOE-SUB-002
+  rule: 'Existing 20-stage byte-identity is preserved'
+  prediction: |
+    For every existing SaveTensorStage variant, the bytes captured by
+    `apr trace --save-tensor` on the canonical 7B teacher (BOS token,
+    layer 0) are byte-identical pre/post the M-GPU-MOE-1.4
+    instrumentation PR.
+  test: |
+    cargo test -p apr-cli --test falsify_moe_sub_002_byte_identity
+    Asserts: sha256(post[stage]) == sha256(pre[stage]) for all stages
+    in {Embedding, AttnNorm, ..., LmHead}.
+  status: PROPOSED
+  if_fails: |
+    The instrumentation PR introduced a side-effect that changed
+    existing capture bytes. Bisect via `apr trace` against the
+    pre-PR commit.
+
+- id: FALSIFY-MOE-SUB-003
+  rule: 'M-GPU-MOE-1.4 bisection identifies first NaN-producing stage'
+  prediction: |
+    On lambda-vector RTX 4090 against cached 17.3 GB Qwen3-Coder GGUF,
+    `apr trace --save-tensor moe_router,moe_ffn_out` on both CPU
+    `forward_qwen3_moe` AND GPU `forward_qwen3_moe_cuda` produces
+    captures whose `apr diff --values` identifies the first stage
+    where GPU has NaN/Inf and CPU does not.
+  test: |
+    apr trace <gguf> --backend cpu  --save-tensor moe_router,moe_ffn_out --layer 0 -o cpu/
+    apr trace <gguf> --backend cuda --save-tensor moe_router,moe_ffn_out --layer 0 -o gpu/
+    apr diff cpu/layer-0/moe_router.bin  gpu/layer-0/moe_router.bin  --values
+    apr diff cpu/layer-0/moe_ffn_out.bin gpu/layer-0/moe_ffn_out.bin --values
+    Assert: at least one stage produces a non-empty diff identifying
+    the first divergent stage.
+  status: PROPOSED  # discharges via --include-ignored heavy run
+  if_fails: |
+    Either the trace capture isn't wired (instrumentation PR
+    incomplete), OR the divergence is INSIDE the per-expert SwiGLU
+    (need MoeExpertSwigl variants too). Promote optional per-expert
+    stages to mandatory and re-bisect.
+
+- id: FALSIFY-MOE-SUB-004
+  rule: 'apr diff --values output is actionable for the M-GPU-MOE-1.4 fix'
+  prediction: |
+    The `apr diff --values` output for the first NaN-producing stage
+    pinpoints the fix scope (numerical overflow, algorithmic missing
+    step, or layout mismatch). The fix PR cites SUB-003's bisected
+    stage by name in its title and body.
+  test: |
+    The M-GPU-MOE-1.4 fix PR title/body MUST mention one of:
+    {moe_router, moe_expert_gate, moe_expert_up, moe_expert_swigl,
+     moe_expert_out, moe_ffn_out}.
+  status: PROPOSED  # human-eval at fix-PR review time
+  if_fails: |
+    The bisection didn't pinpoint a specific stage — likely too coarse
+    granularity. Add finer-grained captures (e.g., per-element NaN
+    propagation timeline) and re-author this test.
+
+implementation_stages:
+- id: M-MOE-SUB-0
+  status: SHIPPED  # this contract scaffold IS the deliverable
+  description: |
+    This contract scaffold (v1.0.0). No code; just the trace-stage
+    extensions defined as a pattern contract.
+  evidence:
+    - 'aprender contracts/trace-moe-gpu-sub-stages-v1.yaml at v1.0.0'
+    - 'pv validate contracts/trace-moe-gpu-sub-stages-v1.yaml exits 0'
+
+- id: M-MOE-SUB-1
+  status: PENDING
+  description: |
+    Add `MoeRouter` and `MoeFfnOut` SaveTensorStage variants to
+    `crates/aprender-serve/src/inference_trace/save_tensor_stage.rs`.
+    Update ALL array, canonical_name(), aprt_serialize(),
+    parse_stage_list(). Add lib-only drift-prevention test
+    `falsify_moe_sub_001_new_stages_parse`.
+  expected_acceptance:
+    - FALSIFY-MOE-SUB-001
+  blockers:
+    - 'apr-cli-trace-save-tensor-v1 contract may need v1.5.0 → v1.6.0 amendment to register the new stage IDs'
+
+- id: M-MOE-SUB-2
+  status: PENDING
+  description: |
+    Wire `MoeRouter` capture into BOTH `forward_qwen3_moe` (CPU
+    sibling, ground truth) AND `forward_qwen3_moe_cuda` (GPU sibling,
+    bisection target). Capture top-k weights post-renormalize.
+    Discharges FALSIFY-MOE-SUB-002 (byte-identity preservation for
+    existing stages).
+  expected_acceptance:
+    - FALSIFY-MOE-SUB-002
+
+- id: M-MOE-SUB-3
+  status: PENDING
+  description: |
+    Wire `MoeFfnOut` capture into both forward bodies. Run
+    `--include-ignored` heavy test on lambda-vector RTX 4090 + cached
+    17.3 GB Qwen3-Coder GGUF. Diff CPU vs GPU at MoeRouter and
+    MoeFfnOut. If divergence at MoeFfnOut but match at MoeRouter,
+    promote per-expert stages (MoeExpert*) and re-bisect (M-MOE-SUB-4).
+  expected_acceptance:
+    - FALSIFY-MOE-SUB-003
+
+- id: M-MOE-SUB-4
+  status: PENDING
+  description: |
+    OPTIONAL: per-expert sub-stages (MoeExpertGate, MoeExpertUp,
+    MoeExpertSwigl, MoeExpertOut) with expert_id qualifier. Only
+    needed if M-MOE-SUB-3's bisection doesn't pinpoint the bug at
+    MoeRouter or MoeFfnOut granularity.
+  expected_acceptance:
+    - FALSIFY-MOE-SUB-003 (re-discharge with finer granularity)
+
+qa_gate:
+  id: F-TRACE-MOE-GPU-001
+  name: MoE-GPU Sub-Stages Capture Contract
+  checks:
+  - new_stages_parse_correctly
+  - existing_stages_byte_identical
+  - bisection_pinpoints_first_nan_stage
+  - fix_pr_cites_bisected_stage
+  pass_criteria: All 4 falsification tests pass — FALSIFY-MOE-SUB-001 + 002 + 003 + 004
+  falsification: Add a new SaveTensorStage variant without registering it in parse_stage_list (will fail FALSIFY-MOE-SUB-001)
+
+kani_harnesses:
+- id: KANI-TRACE-MOE-GPU-001
+  obligation: 'New stage IDs do not collide with existing stage IDs in APRT byte-format header'
+  property: 'For all (existing_id, new_id) in cross product: existing_id != new_id'
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_moe_gpu_stage_ids_disjoint_from_existing
