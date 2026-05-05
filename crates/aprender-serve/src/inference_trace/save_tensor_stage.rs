@@ -83,6 +83,18 @@ pub enum SaveTensorStage {
     /// Hidden state post layer-N FFN residual. Same as `LayerOutput`; both
     /// names accepted on parse, `PostFfnResidual` is the canonical form.
     PostFfnResidual,
+    /// **MoE-GPU bisection** (per `contracts/trace-moe-gpu-sub-stages-v1.yaml`
+    /// v1.0.0, M-MOE-SUB-1): top-k expert weights post-softmax + renormalize.
+    /// `[k]` (k = num_experts_per_tok) for the active layer's MoE router output.
+    /// Captured AFTER `FfnNorm` and BEFORE the per-expert SwiGLU dispatches.
+    /// Used by M-GPU-MOE-1.4 to bisect CPU-vs-GPU divergence at the MoE router
+    /// stage independently from the per-expert SwiGLU computation.
+    MoeRouter,
+    /// **MoE-GPU bisection** (same contract as `MoeRouter`): aggregated MoE
+    /// FFN output `Σ_e top_k_w[e] * expert_out[e]` (+ optional shared expert).
+    /// `[hidden_dim]` for the active layer. Captured AFTER all per-expert
+    /// computations and BEFORE the post-FFN residual add.
+    MoeFfnOut,
     /// Post-output-norm (whole-model, NOT per-layer).
     FinalNorm,
     /// Logits (whole-model, NOT per-layer).
@@ -90,12 +102,14 @@ pub enum SaveTensorStage {
 }
 
 impl SaveTensorStage {
-    /// All 20 distinct stages (computation order), excluding the `LayerOutput`
+    /// All 22 distinct stages (computation order), excluding the `LayerOutput`
     /// alias for `PostFfnResidual`. `AttnScores` and `AttnSoftmax` are the 2
-    /// new variants per `contracts/trace-attn-sub-stages-v1.yaml` v1.1.0
-    /// (closes the SHIP-007 layer-0 attention bisection gap inside the
-    /// Q·Kᵀ → softmax → ·V chain).
-    pub const ALL: [SaveTensorStage; 20] = [
+    /// variants per `contracts/trace-attn-sub-stages-v1.yaml` v1.1.0 (closes
+    /// the SHIP-007 layer-0 attention bisection gap inside the Q·Kᵀ → softmax
+    /// → ·V chain). `MoeRouter` and `MoeFfnOut` are the 2 variants per
+    /// `contracts/trace-moe-gpu-sub-stages-v1.yaml` v1.0.0 (M-MOE-SUB-1, for
+    /// the M-GPU-MOE-1.4 NaN/Inf bisection on the GPU MoE FFN path).
+    pub const ALL: [SaveTensorStage; 22] = [
         Self::Embedding,
         Self::AttnNorm,
         Self::QkvMatmul,
@@ -114,6 +128,8 @@ impl SaveTensorStage {
         Self::FfnSwigl,
         Self::FfnOut,
         Self::PostFfnResidual,
+        Self::MoeRouter,
+        Self::MoeFfnOut,
         Self::FinalNorm,
         Self::LmHead,
     ];
@@ -141,6 +157,8 @@ impl SaveTensorStage {
             Self::FfnSwigl => "ffn_swigl",
             Self::FfnOut => "ffn_out",
             Self::PostFfnResidual => "post_ffn_residual",
+            Self::MoeRouter => "moe_router",
+            Self::MoeFfnOut => "moe_ffn_out",
             Self::FinalNorm => "final_norm",
             Self::LmHead => "lm_head",
         }
@@ -199,6 +217,8 @@ impl FromStr for SaveTensorStage {
             "ffn_swigl" => Ok(Self::FfnSwigl),
             "ffn_out" => Ok(Self::FfnOut),
             "post_ffn_residual" | "layer_output" => Ok(Self::PostFfnResidual),
+            "moe_router" => Ok(Self::MoeRouter),
+            "moe_ffn_out" => Ok(Self::MoeFfnOut),
             "final_norm" => Ok(Self::FinalNorm),
             "lm_head" => Ok(Self::LmHead),
             _ => Err(StageParseError::Unknown {
@@ -267,7 +287,8 @@ mod tests {
     #[test]
     fn canonical_names_match_contract_enumeration() {
         // Per apr-cli-trace-save-tensor-v1.yaml `cli_signature` equation +
-        // trace-attn-sub-stages-v1.yaml v1.1.0 (attn_scores, attn_softmax).
+        // trace-attn-sub-stages-v1.yaml v1.1.0 (attn_scores, attn_softmax) +
+        // trace-moe-gpu-sub-stages-v1.yaml v1.0.0 (moe_router, moe_ffn_out).
         let expected = [
             "embedding",
             "attn_norm",
@@ -287,6 +308,8 @@ mod tests {
             "ffn_swigl",
             "ffn_out",
             "post_ffn_residual",
+            "moe_router",
+            "moe_ffn_out",
             "final_norm",
             "lm_head",
         ];
@@ -365,11 +388,12 @@ mod tests {
 
     #[test]
     fn is_per_layer_count_matches_contract() {
-        // Per parent + sub-stages contracts: 18 per-layer stages (one per
-        // decoder layer N), 2 whole-model stages (final_norm, lm_head). The
-        // PostFfnResidual / LayerOutput alias collapses to one variant. After
-        // trace-attn-sub-stages-v1 v1.1.0 added attn_scores + attn_softmax:
-        // total distinct stages = 20; per-layer = 18; whole-model = 2.
+        // Per parent + sub-stages contracts: per-layer stages (one per decoder
+        // layer N) + 2 whole-model stages (final_norm, lm_head). The
+        // PostFfnResidual / LayerOutput alias collapses to one variant.
+        //   - trace-attn-sub-stages-v1 v1.1.0 added attn_scores + attn_softmax
+        //   - trace-moe-gpu-sub-stages-v1 v1.0.0 added moe_router + moe_ffn_out
+        // total distinct stages = 22; per-layer = 20; whole-model = 2.
         let per_layer = SaveTensorStage::ALL
             .iter()
             .filter(|s| s.is_per_layer())
@@ -378,7 +402,7 @@ mod tests {
             .iter()
             .filter(|s| !s.is_per_layer())
             .count();
-        assert_eq!(per_layer, 18);
+        assert_eq!(per_layer, 20);
         assert_eq!(whole_model, 2);
         assert_eq!(per_layer + whole_model, SaveTensorStage::ALL.len());
     }
@@ -460,6 +484,83 @@ mod tests {
         assert_eq!(stages.len(), 9);
         assert_eq!(stages[5], SaveTensorStage::AttnScores);
         assert_eq!(stages[6], SaveTensorStage::AttnSoftmax);
+    }
+
+    // =========================================================================
+    // FALSIFY-MOE-SUB-001 (trace-moe-gpu-sub-stages-v1.yaml v1.0.0): the 2 new
+    // MoE-GPU sub-stage variants exist on `SaveTensorStage` enum without
+    // breaking existing callers. Round-trip + parse-list coverage for
+    // MoeRouter and MoeFfnOut. Discharges M-MOE-SUB-1 acceptance criterion.
+    // =========================================================================
+
+    #[test]
+    fn falsify_moe_sub_001_moe_router_round_trip() {
+        let parsed: SaveTensorStage = "moe_router".parse().expect("moe_router must parse");
+        assert_eq!(parsed, SaveTensorStage::MoeRouter);
+        assert_eq!(SaveTensorStage::MoeRouter.canonical_name(), "moe_router");
+        assert!(SaveTensorStage::MoeRouter.is_per_layer());
+    }
+
+    #[test]
+    fn falsify_moe_sub_001_moe_ffn_out_round_trip() {
+        let parsed: SaveTensorStage = "moe_ffn_out".parse().expect("moe_ffn_out must parse");
+        assert_eq!(parsed, SaveTensorStage::MoeFfnOut);
+        assert_eq!(SaveTensorStage::MoeFfnOut.canonical_name(), "moe_ffn_out");
+        assert!(SaveTensorStage::MoeFfnOut.is_per_layer());
+    }
+
+    #[test]
+    fn falsify_moe_sub_001_2_new_stages_in_canonical_order() {
+        // Per trace-moe-gpu-sub-stages-v1.yaml v1.0.0 ordering proof_obligation:
+        // FfnNorm → MoeRouter → MoeFfnOut → PostFfnResidual (NOTE: MoeRouter
+        // and MoeFfnOut are placed AFTER PostFfnResidual in `ALL` for back-
+        // compat with the existing 18-stage ordering; the contract's
+        // "moe_block_order" is logical ordering, not array position.)
+        //
+        // Position assertion: MoeRouter and MoeFfnOut appear in `ALL` after
+        // PostFfnResidual and before FinalNorm.
+        let post_ffn_idx = SaveTensorStage::ALL
+            .iter()
+            .position(|s| matches!(s, SaveTensorStage::PostFfnResidual))
+            .expect("PostFfnResidual must be in ALL");
+        let moe_router_idx = SaveTensorStage::ALL
+            .iter()
+            .position(|s| matches!(s, SaveTensorStage::MoeRouter))
+            .expect("MoeRouter must be in ALL");
+        let moe_ffn_out_idx = SaveTensorStage::ALL
+            .iter()
+            .position(|s| matches!(s, SaveTensorStage::MoeFfnOut))
+            .expect("MoeFfnOut must be in ALL");
+        let final_norm_idx = SaveTensorStage::ALL
+            .iter()
+            .position(|s| matches!(s, SaveTensorStage::FinalNorm))
+            .expect("FinalNorm must be in ALL");
+        assert!(post_ffn_idx < moe_router_idx);
+        assert!(moe_router_idx < moe_ffn_out_idx);
+        assert!(moe_ffn_out_idx < final_norm_idx);
+    }
+
+    #[test]
+    fn falsify_moe_sub_001_parse_list_accepts_2_new_stages_together() {
+        let stages =
+            parse_stage_list("moe_router,moe_ffn_out").expect("2-element comma list must parse");
+        assert_eq!(
+            stages,
+            vec![SaveTensorStage::MoeRouter, SaveTensorStage::MoeFfnOut]
+        );
+    }
+
+    #[test]
+    fn falsify_moe_sub_001_parse_list_accepts_full_moe_block_chain() {
+        // Per trace-moe-gpu-sub-stages-v1.yaml `bisection_chain_moe_gpu`
+        // equation: 3-element cosine sequence (ffn_norm + moe_router +
+        // moe_ffn_out) for the M-GPU-MOE-1.4 bisection on lambda-vector.
+        let stages = parse_stage_list("ffn_norm,moe_router,moe_ffn_out")
+            .expect("3-stage MoE-GPU bisection chain must parse");
+        assert_eq!(stages.len(), 3);
+        assert_eq!(stages[0], SaveTensorStage::FfnNorm);
+        assert_eq!(stages[1], SaveTensorStage::MoeRouter);
+        assert_eq!(stages[2], SaveTensorStage::MoeFfnOut);
     }
 
     // =========================================================================
