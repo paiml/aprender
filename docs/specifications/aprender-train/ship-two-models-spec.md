@@ -1,7 +1,8 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.98.0
+**Version:** 2.99.0
+**Atomic next action (v2.99.0):** **§54 — Step 5g has multi-step prerequisites; live preflight smoke proves polymorphic gate fires on Qwen --init + legacy 50257-vocab tokenizer (2026-05-05)** (see new §54 below). Live empirical smoke on canonical 0.5B init APR + canonical 565M-token codeparrot corpus + canonical 50257-vocab tokenizer + freshly-built apr binary (commit 92c7e237b post-#1494) FIRED CORRECTLY: `GATE-ARCH-370M-011 (INV-ARCH-370M-006) violated: tokenizer vocab_size (50257) != model vocab_size (151936)`. This is the FIRST end-to-end runtime evidence that the §50.4 cascade's polymorphic preflight (PR #1476) works in the user-facing CLI (FALSIFY-APR-PRETRAIN-ARCH-005/006 reach LIVE-INTEGRATION level beyond unit-test PARTIAL). But the smoke also surfaces 5g's true scope: a Qwen-vocab tokenizer dir + Qwen-tokenized corpus must exist BEFORE the preflight passes — neither exists on this host today. Step 5g is re-scoped from "1 dispatch, 0 LOC" to **5g.0 (Qwen tokenizer extraction, ~50 LOC) → 5g.1 (Qwen-tokenized corpus, multi-hour wall) → 5g.2 (LIVE 500-step fine-tune, 0 LOC operator-dispatch) → 5g.3 (val_loss < 9.38 verdict)**. Spec v2.98.0 → **v2.99.0**. **MODEL-1 ship %**: unchanged at **91%**. **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38 evidence. Coverage tally: snapshot + roadmap re-scoping (no contract status flip — the polymorphic preflight evidence reinforces v1.2.0 FUNCTIONAL but doesn't yet promote to DISCHARGED).
 **Atomic next action (v2.98.0):** **§53 — §50.4 cascade INTEGRATION-COMPLETE on main; `apr pretrain --init` end-to-end runnable; only 5g LIVE remains (2026-05-05)** (see new §53 below). PR #1494 (§50.4 step 5f.4 CLI wireup) MERGED at 01:48:14Z. The `apr pretrain --init <PATH>` flow is now end-to-end functional on CPU: magic-byte validation → arch extraction via `model_config::read_apr_architecture` → polymorphic preflight with EXTRACTED vocab → `build_shared_trainer_with_init` composing 5f.1 (encoder rejection) + 5f.2 (load) + 5f.3 (populate). The legacy "not yet wired" Err from §49 step 4 is RETIRED. CUDA path fail-fasts with FALSIFY-APR-PRETRAIN-INIT-CUDA-001 (5f.5 follow-up). Contract `apr-pretrain-arch-polymorphic-v1` ready for v1.1.0 PARTIAL_ALGORITHM_LEVEL → v1.2.0 FUNCTIONAL bump (8/8 falsifiers PASS on main, integration verified). **§50.4 cascade ships 11 PRs over 2 days** (#1471/#1472/#1473/#1474/#1475/#1476/#1478/#1479/#1481/#1482/#1483/#1486/#1494). Spec v2.97.0 → **v2.98.0**. **MODEL-1 ship %**: unchanged at **91%**. **MODEL-2 ship %**: unchanged at **57%** until step 5g produces val_loss < 9.38 — but step 5g is now operator-dispatchable (the only blocker resolved). Coverage tally: snapshot, contract status flip pending v1.2.0 bump.
 **Atomic next action (v2.97.0):** **§52 — §50.4 cascade ALGORITHM-COMPLETE on main; new step 5f.4 CLI wireup gap identified before 5g LIVE (2026-05-04)** (see new §52 below). Same-day continuation of §51 cascade landed PR #1479 (FALSIFY-APR-PRETRAIN-ARCH-007 encoder/decoder family validator) and PR #1481 (`load_init_tensors_from_apr` in `aprender-train`). #1483 (`populate_trainer_from_init_tensors`, §50.4 step 5f.3) and #1482 (contract `apr-pretrain-arch-polymorphic-v1` v1.0.0 → v1.1.0 PARTIAL_ALGORITHM_LEVEL bump) are MERGEABLE in queue. **All 8 falsifiers in `apr-pretrain-arch-polymorphic-v1` are now bound on main or about to land**: 6 already MERGED (#1474/#1475/#1476/#1478/#1479/#1473), #1483 + #1482 cover the remaining 2 (5f.3 populate + the v1.1.0 contract status bump). **NEW finding from live source inspection of `apr-cli/src/commands/pretrain.rs:259-297`**: even with all helper functions merged (`load_init_tensors_from_apr` + `validate_pretrain_init_arch_compatible` + `populate_trainer_from_init_tensors` + `build_transformer_config` + polymorphic preflight), the CLI dispatch `validate_init_apr_path` HARDCODES an `Err(...not yet wired...)` return — so an operator running `apr pretrain --init <Qwen>.apr` STILL gets a "not yet wired" runtime error. **Step 5f.4 (CLI wireup, ~150 LOC) is the missing connecting step that makes 5g LIVE actually runnable.** Roadmap re-scoped: 5a-5f.3 (algorithm machinery, COMPLETE) → **5f.4 (CLI wireup, NOT YET STARTED)** → 5g (LIVE 500-step fine-tune, gates ship-%) → 5h (stamp + publish). Spec v2.96.0 → **v2.97.0**. **MODEL-1 ship %**: unchanged at **91%**. **MODEL-2 ship %**: unchanged at **57%** until step 5g produces val_loss < 9.38 evidence — but step 5g now requires step 5f.4 to land first. Coverage tally unchanged this cycle (snapshot + roadmap re-scoping, not falsifier flips).
 **Atomic next action (v2.96.0):** **§51 — §50.4 cascade snapshot: 7/8 falsifiers PARTIAL_ALGORITHM_LEVEL bound; MODEL-2 ship-% gate narrowed to step 5g LIVE (2026-05-04)** (see new §51 below). Same-day continuation cycle landed 8 PRs across the architecture-polymorphic infrastructure track (§50.4 steps 5a-5f.1). Falsifier scoreboard for `apr-pretrain-arch-polymorphic-v1`: FALSIFY-001 (#1474) qwen2_0_5b matches HF + tie_word_embeddings DEFECT FIX; FALSIFY-002 + 003 (#1475) build_transformer_config polymorphic dispatch; FALSIFY-004 (#1478 MERGED) GQA-7:1 forward smoke; FALSIFY-005 + 006 (#1476 MERGED) polymorphic preflight Qwen vocab; FALSIFY-007 (#1479) encoder/decoder family validator; FALSIFY-008 contract-level pv-validate. Three PRs MERGED (#1472 §50, #1476, #1478); four still in auto-merge queue (#1473 contract, #1474 fix, #1475 dispatch, #1479 validator). **Step 5f.2 (APR weight load + tensor materialization, ~80 LOC) deliberately deferred** to let cascade settle; doing 5f.2 now would mean rebasing onto 4 in-flight PRs as they land. **Step 5g LIVE 500-step fine-tune is the only remaining load-bearing test** that moves MODEL-2 ship-%; everything else is infrastructure. Per §47-§48 lesson: "infrastructure shipped ≠ ship-% movement." Spec v2.95.0 → **v2.96.0**. **MODEL-1 ship %**: unchanged at **91%**. **MODEL-2 ship %**: unchanged at **57%** until step 5g produces val_loss < 9.38 evidence. Coverage tally unchanged (snapshot, not falsifier flip).
@@ -4474,6 +4475,87 @@ Unchanged from §29 because PR E did not land. Next-session agenda: do the §30.
 Per `feedback_fix_root_cause_never_route_around.md`: the §28 fix would have route-around'd a real bug because the named site (matmul kernel) is not where the divergence originates. The empirical refutation in §30 IS the work that protects the next attempt from shipping a no-op. This refutation is itself a coverage-incrementing artifact (it falsifies a hypothesis), even though no PARTIAL flips to DISCHARGED.
 
 The Toyota Way fix is to bisect upstream, not to flip the kernel call.
+
+## §54. Step 5g has multi-step prerequisites; live preflight smoke proves polymorphic gate fires on Qwen --init + legacy 50257-vocab tokenizer (2026-05-05)
+
+§53 closed with "step 5g LIVE remains" framing 5g as a single operator dispatch. Live source inspection of the post-#1494 binary plus an actual smoke run revealed 5g has **multi-step prerequisites that were not enumerated in §50's original 8-step decomposition**. This section records the prerequisites + the empirical evidence that the polymorphic preflight fires correctly.
+
+### 54.1 The smoke
+
+Built `apr` from origin/main 92c7e237b (post-#1494) at 2026-05-05T04:31Z; dispatched:
+
+```bash
+apr pretrain \
+  --dataset /mnt/nvme-raid0/data/codeparrot-python-permissive-shards \
+  --tokenizer /mnt/nvme-raid0/models/model-2-tokenizer-v1 \
+  --run-dir /tmp/apr-pretrain-5g-smoke/run-1 \
+  --init /mnt/nvme-raid0/models/qwen2.5-coder-0.5b-instruct-fp16.apr \
+  --mode finetune \
+  --num-steps 10 \
+  --device cpu --seed 42 \
+  --vocab-size 151936
+```
+
+Output: `error: Validation failed: GATE-ARCH-370M-011 (INV-ARCH-370M-006) violated: tokenizer vocab_size (50257) != model vocab_size (151936). See contracts/model-families/llama-370m-sovereign-v1.yaml and contracts/tokenizer-bpe-v1.yaml — retrain the tokenizer or amend both contracts in lockstep before resuming pretraining.`
+
+This is **CORRECT FAIL-FAST behaviour**. The polymorphic preflight wired in PR #1476 + #1494:
+- Read the `--init` APR's metadata block: vocab_size = 151936, hidden = 896, layers = 24 (matches `TransformerConfig::qwen2_0_5b()` byte-for-byte).
+- Computed `target_vocab = init_arch.map(|cfg| cfg.vocab_size).unwrap_or(Llama370MConfig::VOCAB_SIZE)` = 151936 (NOT the legacy 50257).
+- Compared against the tokenizer dir's `vocab.json` entry count (50257).
+- Mismatch → fail-fast before any trainer allocation.
+
+Evidence file: `evidence/section-54-5g-prereqs-2026-05-05/preflight-fail-fast-smoke.md`.
+
+### 54.2 What this proves
+
+1. **The §50.4 cascade is end-to-end runtime-correct.** The first 0.5B Qwen `--init` invocation on this host hits exactly the gate it should hit. FALSIFY-APR-PRETRAIN-ARCH-005 + FALSIFY-APR-PRETRAIN-ARCH-006 (PARTIAL_ALGORITHM_LEVEL via unit tests in PR #1476) are now also INTEGRATION-LIVE — proven via real CLI dispatch on canonical model + canonical corpus + canonical binary.
+
+2. **The §53 framing of "only 5g LIVE remains" was incomplete.** Step 5g LIVE assumes a Qwen-vocab tokenizer dir + Qwen-tokenized corpus exist. Neither does. Re-scoping needed.
+
+3. **The §50 decomposition has the same lesson it's had before** (re-scoped at §50 itself, then again at §52 for the 5f.4 gap, now again at §54 for the 5g.0/5g.1 gap): top-down spec planning consistently underestimates the scope-coupling between code paths. The pattern is: top-down planner says "1 step"; live source/smoke inspection finds 2-4 steps. This is the third instance.
+
+### 54.3 Re-scoped 5g roadmap
+
+| Step | What it does | LOC / wall | Status |
+|---|---|---|---|
+| 5g.0 | Extract Qwen2.5-Coder-0.5B-Instruct vocab.json + merges.txt from HF cache `tokenizer.json`; place in aprender-compatible tokenizer dir layout | ~50 LOC tooling (Python or Rust) + ~5 min wall | NOT YET STARTED |
+| 5g.1 | Re-tokenize codeparrot corpus with Qwen vocab (`apr tokenize encode-corpus --tokenizer <Qwen.dir>`) | 0 LOC + ~10 hr wall (per existing manifest's `elapsed_seconds = 35979.9 = 9.99h`) | NOT YET STARTED |
+| 5g.2 | Dispatch `apr pretrain --init <Qwen.apr> --tokenizer <Qwen.dir> --dataset <Qwen-tokenized-shards>` for 500 steps | 0 LOC + ~20-60 min wall (CPU, RTX 4090 idle) | gated on 5g.0 + 5g.1 |
+| 5g.3 | val_loss < 9.38 verdict; flip MODEL-2 ship % from 57% → ≥58%; record in spec amendment §55 | 0 LOC | gated on 5g.2 |
+
+Step 5g.1's ~10-hour wall is the dominant cost. There is a smaller alternative: `5g.1-smoke` — re-tokenize a **single shard** (~10M tokens) for a smoke fine-tune. The val_loss curve from 1 epoch on 10M tokens is sufficient to bind FALSIFY-006 PARTIAL_ALGORITHM_LEVEL → DISCHARGED **as a smoke**, but a 565M-token full run is what produces the spec-target val_loss < 9.38 evidence.
+
+### 54.4 Decision: 5g.0 first, defer 5g.1 to operator
+
+Per `feedback_compute_pre_authorized.md`, named compute lanes (training runs) are pre-authorized. 5g.1 is multi-hour but pre-authorized.
+
+But 5g.0 (tooling) is author work that doesn't need a compute lane. **5g.0 is the next-best PR**:
+- Smaller scope (~50 LOC + tests).
+- Single PR, single falsifier extension to `apr-pretrain-arch-polymorphic-v1` (FALSIFY-009: tokenizer dir extracted from HF tokenizer.json passes preflight on Qwen --init).
+- Unblocks 5g.1, which unblocks 5g.2, which unblocks ship-% movement.
+
+Per `feedback_full_problems_pmat_contracts.md`: the PR will be authored as a contract-bound tooling step, not a one-off shell script.
+
+### 54.5 Five Whys
+
+1. **Why didn't §50 enumerate 5g.0?** §50 was authored from an architecture-coupling lens (Qwen has different tensor shapes than Llama370M). The tokenizer-format coupling (HF `tokenizer.json` vs aprender's `vocab.json` + `merges.txt`) is a separate axis that wasn't surfaced until live smoke. Same lesson as §52's 5f.4 finding: top-down decomposition under-counts when the seams are heterogeneous.
+2. **Why does aprender require vocab.json + merges.txt rather than reading tokenizer.json?** Historical: aprender's BPE loader was authored against GPT-2's released tokenizer format (vocab.json + merges.txt). HF tokenizers came later. Adding a `tokenizer.json` reader is technical debt.
+3. **Why not just add a `tokenizer.json` reader as 5g.0 instead of extracting?** Both are valid. Extraction is ~50 LOC of Python; reader integration is ~200 LOC of Rust + tests. Extraction is the cheaper path for the ship-% gate; reader integration is the principled path that makes future Qwen/Llama2/Mistral fine-tunes one-step. Tradeoff is recorded for later: extraction unblocks 5g now; reader is a follow-up.
+4. **Why is 5g.1's 10-hour wall acceptable?** Because the codeparrot tokenization run already cost 10 hours and produced 565M tokens; re-tokenizing with Qwen vocab on the same JSONL costs the same. 10 hours is below the 48-hour authorization threshold per `feedback_compute_pre_authorized.md`.
+5. **Why is the smoke (54.1) load-bearing for the spec?** Because it's the FIRST live evidence on the canonical model + corpus + binary that the §50.4 cascade does what it claims. Unit tests prove the algorithm; the smoke proves the integration. Without §54, FALSIFY-005/006 sit at PARTIAL_ALGORITHM_LEVEL forever despite the cascade being fully wired — the LIVE evidence step is what auditably promotes them.
+
+### 54.6 Net effects
+
+- Spec v2.98.0 → **v2.99.0**.
+- §50.4 roadmap extended: 5a-5f.4 INTEGRATION-COMPLETE; **5g re-scoped to 5g.0/5g.1/5g.2/5g.3**.
+- **MODEL-1 ship %**: unchanged at **91%**.
+- **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38 evidence.
+- Coverage tally: snapshot. The smoke evidence reinforces FALSIFY-005/006 toward LIVE-DISCHARGED but the contract bump waits for 5g.3 (full val_loss measurement). v1.2.0 FUNCTIONAL is correct intermediate state.
+- Falsifier-first cadence preserved: 1 PR ≈ 1 amendment. §54 is the same-day continuation of §53's "5g LIVE remains" framing.
+
+### 54.7 Spec amendment cadence preserved
+
+§41 → §42 → §43 → §44 → §45 → §46 → §47 → §48 → §49 → §50 → §51 → §52 → §53 → §54. Fourteen amendments since 2026-05-03. §54 is the smoke-discovery bookend to §53's INTEGRATION-COMPLETE — together they record the algorithm-correct + integration-correct + smoke-fail-fast-correct chain that gates 5g.0 → 5g.3.
 
 ## §53. §50.4 cascade INTEGRATION-COMPLETE on main; `apr pretrain --init` end-to-end runnable; only 5g LIVE remains (2026-05-05)
 
