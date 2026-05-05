@@ -47,6 +47,19 @@ use std::path::Path;
 /// proportionally to ~0.01, restoring early-stop signal-to-noise.
 const HELD_OUT_BATCHES: usize = 16;
 
+/// Drift-prevention constant pinned by `apr-pretrain-arch-polymorphic-v1`
+/// v1.4.0 §FALSIFY-APR-PRETRAIN-INIT-CUDA-001.
+///
+/// The fail-fast error returned when an operator passes both `--init <PATH>`
+/// AND `--device cuda` while the §50.4 step 5f.5 CUDA wireup is not yet
+/// implemented. Extracted into a `pub(crate) const` so that a unit test
+/// can verify (a) the falsifier id appears, (b) the "not yet wired" phrase
+/// appears, (c) the 5f.5 follow-up reference appears — without needing a
+/// `--features cuda` build to fire the runtime path.
+pub(crate) const FALSIFY_APR_PRETRAIN_INIT_CUDA_001_MSG: &str =
+    "FALSIFY-APR-PRETRAIN-INIT-CUDA-001: --init is not yet wired for --device cuda \
+     (step 5f.5 follow-up); use --device cpu OR omit --init for from-scratch CUDA training.";
+
 /// CLI selector bound to training-loop-pretrain-v1 §hyperparameter_defaults.
 /// Atomically flips the `(regime, lr_max, warmup_steps, target_val_loss)`
 /// 4-tuple per INV-TRAIN-009. Explicit `--lr` / `--warmup-steps` /
@@ -435,11 +448,15 @@ fn drive_real(
         // yet wired. The 5f.5 follow-up will add `build_shared_cuda_trainer_with_init`
         // symmetric to the CPU path. Until then, fail-fast rather than silently
         // ignore --init on CUDA.
+        //
+        // Per `apr-pretrain-arch-polymorphic-v1` v1.4.0 §FALSIFY-APR-PRETRAIN-INIT-CUDA-001,
+        // the error message is extracted into a `pub(crate) const` so that
+        // a drift-prevention test can pin the citation, the "not yet wired
+        // for --device cuda" phrase, and the 5f.5 follow-up reference
+        // without needing a CUDA-feature build to fire the runtime path.
         if init_arch.is_some() {
             return Err(CliError::ValidationFailed(
-                "FALSIFY-APR-PRETRAIN-INIT-CUDA-001: --init is not yet wired for --device cuda \
-                 (step 5f.5 follow-up); use --device cpu OR omit --init for from-scratch CUDA training."
-                    .to_string(),
+                FALSIFY_APR_PRETRAIN_INIT_CUDA_001_MSG.to_string(),
             ));
         }
         drive_real_cuda(config, iter, held_out, lr, seq_length, seed, json_output)
@@ -939,6 +956,45 @@ mod tests {
             }
             other => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    /// FALSIFY-APR-PRETRAIN-INIT-CUDA-001 (drift-prevention): the
+    /// fail-fast error message returned when `--init` is paired with
+    /// `--device cuda` (before the §50.4 step 5f.5 wireup lands) MUST
+    /// contain (a) the falsifier id, (b) the "not yet wired for --device
+    /// cuda" phrase, and (c) the 5f.5 follow-up reference.
+    ///
+    /// Pinned via `pub(crate) const FALSIFY_APR_PRETRAIN_INIT_CUDA_001_MSG`
+    /// so this test fires on a CPU-only build (no `--features cuda` needed).
+    /// If a future refactor renames or rephrases the error, this test
+    /// catches the drift before the contract reference goes stale.
+    ///
+    /// Promotion to LIVE-INTEGRATION requires §50.4 step 5f.5 LIVE
+    /// (CUDA wireup landed + GPU smoke confirms `apr pretrain --init
+    /// <PATH> --device cuda` actually trains). Until then, this test
+    /// pins the safety guard.
+    #[test]
+    fn drive_real_cuda_init_path_fail_fasts_with_falsifier_citation() {
+        let msg = FALSIFY_APR_PRETRAIN_INIT_CUDA_001_MSG;
+        assert!(
+            msg.contains("FALSIFY-APR-PRETRAIN-INIT-CUDA-001"),
+            "error message MUST cite the falsifier id (auditability): {msg}"
+        );
+        assert!(
+            msg.contains("not yet wired for --device cuda"),
+            "error message MUST contain the canonical 'not yet wired' \
+             phrase so operators recognize the §50.4 step 5f.5 gap: {msg}"
+        );
+        assert!(
+            msg.contains("step 5f.5 follow-up"),
+            "error message MUST reference the 5f.5 follow-up so future \
+             agents know which step retires this guard: {msg}"
+        );
+        assert!(
+            msg.contains("--device cpu") && msg.contains("OR omit --init"),
+            "error message MUST suggest both workarounds (CPU device OR \
+             omit --init for from-scratch CUDA): {msg}"
+        );
     }
 
     #[test]

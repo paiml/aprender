@@ -1,12 +1,42 @@
 metadata:
   kind: schema
-  version: 1.3.0
+  version: 1.4.0
   status: FUNCTIONAL
   created: '2026-05-04'
   updated: '2026-05-05'
   author: PAIML Engineering
   registry: true
   changelog:
+  - version: 1.4.0
+    date: '2026-05-05'
+    change: |
+      v1.3.0 → v1.4.0 — drift-prevention bind for
+      `FALSIFY-APR-PRETRAIN-INIT-CUDA-001`. Pre-this-bump, the
+      falsifier id was REFERENCED in the v1.2.0 changelog and the
+      verification_summary BUT was not formally registered as a
+      falsification_test entry. The fail-fast guard lives at
+      `crates/apr-cli/src/commands/pretrain.rs::drive_real` (post-#1494
+      5f.4 wireup): when `init_arch.is_some() && device.is_cuda()`,
+      it returns Err citing `FALSIFY-APR-PRETRAIN-INIT-CUDA-001`
+      because §50.4 step 5f.5 (CUDA wireup with
+      `build_shared_cuda_trainer_with_init`) is multi-PR scope and
+      not yet implemented. Without a formal falsifier + test, a
+      future refactor could silently let CUDA + --init fall through
+      → §28 SHIP-007 "silent gibberish" defect class.
+
+      This bump:
+        - Adds FALSIFY-APR-PRETRAIN-INIT-CUDA-001 as a formal
+          falsification_test entry (PARTIAL_ALGORITHM_LEVEL).
+        - Adds drift-prevention test
+          `drive_real_cuda_init_path_fail_fasts_with_falsifier_citation`
+          to `apr-cli/src/commands/pretrain.rs::tests` that pins:
+          (a) the citation id appears in the error message,
+          (b) the "not yet wired for --device cuda" phrase appears,
+          (c) the 5f.5 follow-up reference appears.
+
+      Status remains FUNCTIONAL: 10 → 11 falsifiers, all PASS.
+      Promotion of CUDA-001 to DISCHARGED requires §50.4 step 5f.5
+      LIVE (CUDA wireup landed + GPU smoke confirms it works).
   - version: 1.3.0
     date: '2026-05-05'
     change: |
@@ -326,6 +356,12 @@ falsification_tests:
   test: "cargo test -p aprender-train --lib -- falsify_apr_pretrain_arch_010_relaxed_bound_rejects_oversized_tokenizer && cargo test -p apr-cli --lib commands::pretrain::tests::preflight_oversized_tokenizer_rejected_even_under_polymorphic_init"
   if_fails: "relaxed bound is too permissive; a tokenizer with more strings than the model expects emits OOB ids → N-09 escape → silent embedding-lookup garbage during training"
 
+- id: FALSIFY-APR-PRETRAIN-INIT-CUDA-001
+  rule: CUDA path with --init fail-fasts citing this falsifier id
+  prediction: "the CUDA dispatch in `crates/apr-cli/src/commands/pretrain.rs::drive_real` (post-#1494 5f.4 wireup) returns Err with a message containing the literal `FALSIFY-APR-PRETRAIN-INIT-CUDA-001` AND the phrase `not yet wired for --device cuda` AND a 5f.5 follow-up reference, when `init_arch.is_some() && device.is_cuda()`. Drift-prevention: if a future refactor removes the citation, renames the error message, or accidentally lets CUDA + --init fall through to drive_real_cuda silently dropping init, this test fails fast."
+  test: "cargo test -p apr-cli --lib commands::pretrain::tests::drive_real_cuda_init_path_fail_fasts_with_falsifier_citation"
+  if_fails: "CUDA + --init fail-fast guard regressed — operator could silently train from-scratch on cuda when they passed --init, exactly the §28 SHIP-007 'silent gibberish' defect class. The 5f.5 follow-up (CUDA wireup with `build_shared_cuda_trainer_with_init`) is the real fix; this falsifier locks in the safety guard until that lands."
+
 proof_obligations:
 - type: invariant
   property: "arch_extraction_signature: init=None preserves Llama370M baseline byte-for-byte"
@@ -353,7 +389,7 @@ kani_harnesses:
 verification_summary:
   total_obligations: 6
   proven: 0
-  tested: 10
+  tested: 11
   status: functional
   notes: |
     Authored 2026-05-04 as §50.4 step 5a of SHIP-TWO-001 MODEL-2
