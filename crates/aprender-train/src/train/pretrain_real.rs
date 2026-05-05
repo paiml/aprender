@@ -22,7 +22,8 @@
 use crate::models::llama_370m::Llama370MConfig;
 use crate::train::pretrain::{CheckpointFn, EpochArtifact, StepFn, ValFn};
 use crate::train::transformer_trainer::{LMBatch, TransformerTrainConfig, TransformerTrainer};
-use crate::transformer::{ModelArchitecture, TransformerConfig};
+use crate::transformer::{ModelArchitecture, Transformer, TransformerConfig};
+use crate::Tensor;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -105,6 +106,86 @@ pub fn validate_pretrain_init_arch_compatible(cfg: &TransformerConfig) -> Result
             cfg.hidden_size, cfg.num_hidden_layers, cfg.vocab_size, cfg.hf_architecture
         )),
     }
+}
+
+/// Populate a `Transformer`'s parameters from an `init_tensors` BTreeMap.
+///
+/// For each parameter the `Transformer` exposes via `named_parameters()`, look
+/// up the same HF-naming key in `init_tensors` and replace the parameter's
+/// `Tensor` with `Tensor::from_vec(data, requires_grad=true)`. The parameter
+/// remains trainable (gradients still flow) — this is fine-tune init, not
+/// frozen-encoder.
+///
+/// Strictness rules:
+/// - **Every** model parameter must have a matching entry in `init_tensors`.
+///   Missing entries return Err naming the unmatched parameter; this catches
+///   the case where the init APR was extracted from a different architecture.
+/// - **Length** of each init entry must match the model parameter's length
+///   (computed from the model's existing tensor `len()`). Mismatch returns Err.
+/// - **Extra** entries in `init_tensors` are silently ignored. This handles
+///   `tie_word_embeddings`: a Qwen2.5 APR may publish a separate `lm_head.weight`
+///   tensor that the model omits when ties are enabled.
+///
+/// Discharges from `apr-pretrain-arch-polymorphic-v1` §init_load_semantics:
+/// - Population invariant: "Init tensors populate trainer parameters
+///   byte-equivalent to source"
+/// - FALSIFY-APR-PRETRAIN-INIT-007 (population step) at PARTIAL_ALGORITHM_LEVEL.
+///
+/// Spec: SPEC-SHIP-TWO-001 §50.4 step 5f.3.
+///
+/// # Errors
+///
+/// Returns Err if any model parameter is missing from `init_tensors` or if
+/// any matched entry has a wrong length. The error message lists up to the
+/// first 5 problem parameters and the total count.
+pub fn populate_trainer_from_init_tensors(
+    transformer: &mut Transformer,
+    init_tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+) -> Result<usize, String> {
+    let expected: Vec<(String, usize)> = transformer
+        .named_parameters()
+        .into_iter()
+        .map(|(name, t)| (name, t.len()))
+        .collect();
+    let mut populated = 0usize;
+    let mut errors: Vec<String> = Vec::new();
+
+    for (name, expected_len) in &expected {
+        match init_tensors.get(name) {
+            Some((data, _shape)) => {
+                if data.len() != *expected_len {
+                    errors.push(format!(
+                        "{name}: init length {} != trainer expected {expected_len}",
+                        data.len()
+                    ));
+                    continue;
+                }
+                let tensor = Tensor::from_vec(data.clone(), true);
+                if !transformer.set_named_parameter(name, tensor) {
+                    errors.push(format!(
+                        "{name}: set_named_parameter rejected the assignment"
+                    ));
+                    continue;
+                }
+                populated += 1;
+            }
+            None => {
+                errors.push(format!("{name}: not present in init APR tensors"));
+            }
+        }
+    }
+
+    if !errors.is_empty() {
+        let total = errors.len();
+        let head = errors.iter().take(5).cloned().collect::<Vec<_>>().join("; ");
+        return Err(format!(
+            "FALSIFY-APR-PRETRAIN-INIT-007: populate_trainer_from_init_tensors \
+             failed for {total} parameter(s); first {} of {total}: {head}",
+            errors.len().min(5)
+        ));
+    }
+
+    Ok(populated)
 }
 
 /// Build a `TransformerConfig` field-for-field from `Llama370MConfig::*`
@@ -571,5 +652,137 @@ mod tests {
         let mut val = RealValFn::new(trainer, Vec::new());
         let loss = val.validate(0);
         assert!(loss.is_nan(), "empty held_out must surface as NaN to the guard");
+    }
+
+    /// Build a tiny Transformer suitable for unit testing the populate path.
+    /// Uses GQA-1:1 (kv=q) shape — the populate function is shape-agnostic so
+    /// the simpler ratio is fine here.
+    fn tiny_test_transformer() -> Transformer {
+        let mut tiny = TransformerConfig::llama2_7b();
+        tiny.hidden_size = 32;
+        tiny.num_attention_heads = 2;
+        tiny.num_kv_heads = 2;
+        tiny.num_hidden_layers = 2;
+        tiny.intermediate_size = 64;
+        tiny.vocab_size = 16;
+        Transformer::new(&tiny)
+    }
+
+    /// Build a `BTreeMap<String, (Vec<f32>, Vec<usize>)>` from a Transformer's
+    /// `named_parameters()` snapshot. Each tensor is a deterministic ramp
+    /// (i as f32 * 0.001) so populate is byte-identifiable post-set.
+    fn tensors_map_from_transformer(
+        transformer: &Transformer,
+    ) -> BTreeMap<String, (Vec<f32>, Vec<usize>)> {
+        let mut map = BTreeMap::new();
+        for (name, t) in transformer.named_parameters() {
+            let len = t.len();
+            let data: Vec<f32> = (0..len).map(|i| i as f32 * 0.001).collect();
+            map.insert(name, (data, vec![len]));
+        }
+        map
+    }
+
+    /// Happy path — every model parameter has a matching init entry of correct
+    /// length; populate succeeds and the count matches `named_parameters().len()`.
+    #[test]
+    fn populate_trainer_from_init_tensors_happy_path() {
+        let mut transformer = tiny_test_transformer();
+        let init_tensors = tensors_map_from_transformer(&transformer);
+        let expected_count = transformer.named_parameters().len();
+        let result = populate_trainer_from_init_tensors(&mut transformer, &init_tensors);
+        assert!(
+            result.is_ok(),
+            "happy-path populate must succeed: {result:?}"
+        );
+        assert_eq!(
+            result.unwrap(),
+            expected_count,
+            "populated count must equal named_parameters().len()"
+        );
+    }
+
+    /// Drift-prevention: extra entries in `init_tensors` that the model does
+    /// NOT expose are silently ignored. This handles tied-embeddings: a Qwen
+    /// APR may publish a separate `lm_head.weight` that the trainer's tied
+    /// model omits.
+    #[test]
+    fn populate_trainer_from_init_tensors_extra_entries_silently_ignored() {
+        let mut transformer = tiny_test_transformer();
+        let mut init_tensors = tensors_map_from_transformer(&transformer);
+        // Inject a fictitious extra parameter that the model does not have.
+        init_tensors.insert(
+            "model.layers.999.fictitious.weight".to_string(),
+            (vec![0.0; 4], vec![4]),
+        );
+        let expected_count = transformer.named_parameters().len();
+        let result = populate_trainer_from_init_tensors(&mut transformer, &init_tensors);
+        assert!(
+            result.is_ok(),
+            "extra init entries must NOT cause Err: {result:?}"
+        );
+        assert_eq!(result.unwrap(), expected_count);
+    }
+
+    /// FALSIFY-APR-PRETRAIN-INIT-007 (length mismatch) — when an init tensor
+    /// has the wrong flat length for a known parameter, populate MUST Err
+    /// with the FALSIFIER ID and a per-parameter diagnostic line.
+    #[test]
+    fn populate_trainer_from_init_tensors_rejects_length_mismatch() {
+        let mut transformer = tiny_test_transformer();
+        let mut init_tensors = tensors_map_from_transformer(&transformer);
+        // Corrupt one entry's length to trigger the mismatch path.
+        let any_name = transformer.named_parameters()[0].0.clone();
+        init_tensors.insert(any_name.clone(), (vec![0.0; 7], vec![7]));
+        let result = populate_trainer_from_init_tensors(&mut transformer, &init_tensors);
+        assert!(
+            result.is_err(),
+            "length-mismatch must Err, not silently truncate"
+        );
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("FALSIFY-APR-PRETRAIN-INIT-007"),
+            "error must cite falsifier id; got: {err}"
+        );
+        assert!(
+            err.contains(&any_name),
+            "error must name the offending parameter; got: {err}"
+        );
+        assert!(
+            err.contains("init length 7"),
+            "error must report the actual init length; got: {err}"
+        );
+    }
+
+    /// FALSIFY-APR-PRETRAIN-INIT-007 (missing-required) — when a model
+    /// parameter has NO corresponding entry in `init_tensors`, populate MUST
+    /// Err with FALSIFIER ID and a "not present in init APR tensors"
+    /// per-parameter diagnostic. This catches the architecture-mismatch
+    /// class where init was extracted from a different model family.
+    #[test]
+    fn populate_trainer_from_init_tensors_rejects_missing_required_param() {
+        let mut transformer = tiny_test_transformer();
+        let mut init_tensors = tensors_map_from_transformer(&transformer);
+        // Drop one entry to trigger the missing-required path.
+        let any_name = transformer.named_parameters()[0].0.clone();
+        init_tensors.remove(&any_name);
+        let result = populate_trainer_from_init_tensors(&mut transformer, &init_tensors);
+        assert!(
+            result.is_err(),
+            "missing-required must Err, not silently leave random init"
+        );
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("FALSIFY-APR-PRETRAIN-INIT-007"),
+            "error must cite falsifier id; got: {err}"
+        );
+        assert!(
+            err.contains(&any_name),
+            "error must name the missing parameter; got: {err}"
+        );
+        assert!(
+            err.contains("not present in init APR"),
+            "error must say what was missing; got: {err}"
+        );
     }
 }
