@@ -8,7 +8,7 @@
 //! Run with: cargo run --example eval_hybrid
 
 use std::collections::HashSet;
-use trueno_rag::{
+use aprender_rag::{
     embed::{Embedder, MockEmbedder},
     fusion::FusionStrategy,
     metrics::RetrievalMetrics,
@@ -16,7 +16,7 @@ use trueno_rag::{
     BM25Index, Chunk, ChunkId, DocumentId, HybridRetriever, VectorStore,
 };
 
-fn main() -> trueno_rag::Result<()> {
+fn main() -> aprender_rag::Result<()> {
     println!("=== Hybrid vs Dense vs Sparse Retrieval Comparison ===\n");
 
     // Create sample documents about programming and cloud computing
