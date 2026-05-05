@@ -84,6 +84,37 @@ pub enum TokenizeCommands {
         normalization: String,
     },
 
+    /// Import a HuggingFace tokenizer.json into aprender's two-file
+    /// vocab.json + merges.txt layout per
+    /// `contracts/apr-cli-tokenize-import-hf-v1.yaml` (§50.4 step 5g.0).
+    ///
+    /// Reads `<INPUT>` (a HF tokenizer.json with `model.type == "BPE"`),
+    /// extracts `model.vocab` → `<OUTPUT>/vocab.json`, `model.merges` →
+    /// `<OUTPUT>/merges.txt` (one space-separated merge per line), and
+    /// writes `<OUTPUT>/manifest.json` with extraction provenance
+    /// (source path, sha256, vocab_size, merges_count, timestamp).
+    ///
+    /// Non-BPE inputs (Unigram, WordPiece) are rejected fail-fast with a
+    /// clear error citing the contract id.
+    ///
+    /// Unblocks fine-tuning from public HF checkpoints (Qwen2.5/Llama2/
+    /// Mistral) which distribute as a single tokenizer.json. The output
+    /// dir is consumable by `apr tokenize encode-corpus --tokenizer <DIR>`
+    /// and `apr pretrain --tokenizer <DIR>` without modification.
+    ImportHf {
+        /// Path to input HuggingFace tokenizer.json (BPE model required).
+        #[arg(long, value_name = "FILE")]
+        input: PathBuf,
+        /// Output directory; will contain vocab.json + merges.txt + manifest.json.
+        #[arg(long, value_name = "DIR")]
+        output: PathBuf,
+        /// Include `added_tokens` in vocab.json (default: BPE state machine only).
+        /// Use this when the downstream consumer needs special tokens (e.g.,
+        /// `<|im_start|>`, `<|endoftext|>`) materialized in vocab.json itself.
+        #[arg(long, default_value_t = false)]
+        include_added_tokens: bool,
+    },
+
     /// Encode a JSONL corpus into `.bin` shards per contracts/pretokenize-bin-v1.yaml.
     ///
     /// Loads a trained BPE tokenizer (vocab.json + merges.txt) from `--tokenizer`,

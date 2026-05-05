@@ -1,0 +1,182 @@
+metadata:
+  kind: schema
+  version: 1.0.0
+  status: PARTIAL_ALGORITHM_LEVEL
+  created: '2026-05-05'
+  updated: '2026-05-05'
+  author: PAIML Engineering
+  registry: true
+  changelog:
+  - version: 1.0.0
+    date: '2026-05-05'
+    change: |
+      Authored as §50.4 step 5g.0 of SPEC-SHIP-TWO-001 MODEL-2
+      pretrained-init pivot. Per spec §54: a Qwen-vocab tokenizer dir
+      compatible with aprender's GPT-2-style BPE loader does not exist
+      on host today; HF tokenizer.json is the source-of-truth distribution
+      format. This contract pins the `apr tokenize import-hf` subcommand
+      that extracts vocab.json + merges.txt from `tokenizer.json` so the
+      downstream `apr tokenize encode-corpus` and `apr pretrain
+      --tokenizer` paths can consume the result without modification.
+      PARTIAL_ALGORITHM_LEVEL: 5/5 falsifiers bound to executable tests.
+      Promotion to FUNCTIONAL requires 5g.1 (Qwen-tokenized corpus)
+      LIVE on canonical Qwen2.5-Coder-0.5B-Instruct/tokenizer.json
+      input. Promotion to DISCHARGED requires 5g.3 val_loss < 9.38
+      verdict (the MODEL-2 ship-% gate).
+  references:
+  - 'SPEC-SHIP-TWO-001 §54 — step 5g multi-step prerequisites finding (PR #1496 merged 2026-05-05)'
+  - 'SPEC-SHIP-TWO-001 §50.4 step 5g.0 — this contract'
+  - 'contracts/apr-pretrain-arch-polymorphic-v1.yaml v1.2.0 FUNCTIONAL — sibling (the polymorphic preflight that this contract''s output must pass)'
+  - 'contracts/tokenizer-bpe-v1.yaml — sibling (BPE tokenizer invariants the output must satisfy)'
+  - 'contracts/pretokenize-bin-v1.yaml — sibling (consumer of the output dir)'
+  - 'feedback_stack_tool_extension_not_cli_shim.md — extend apr in-tree, not non-stack shims'
+  - 'feedback_falsifier_first_cascade_pattern.md — 1 PR ≈ 1 author-step'
+  - 'feedback_full_problems_pmat_contracts.md — every task: contract + impl + test'
+  description: >
+    Contract pinning the `apr tokenize import-hf <tokenizer.json> --output
+    <DIR>` subcommand that converts a HuggingFace tokenizer.json (BPE
+    model) into aprender's two-file vocab.json + merges.txt layout. This
+    is the prerequisite step that unblocks Qwen-tokenizer fine-tunes per
+    SPEC-SHIP-TWO-001 §54: aprender's GPT-2-style BPE loader requires
+    vocab.json + merges.txt; the public Qwen2.5/Llama2/Mistral tokenizers
+    distribute as a single tokenizer.json file. The subcommand performs
+    a byte-for-byte extraction of `model.vocab` → vocab.json and
+    `model.merges` → merges.txt, plus a manifest.json that records source
+    fingerprint + extraction provenance. Non-BPE inputs (Unigram,
+    WordPiece) are explicitly rejected with a clear error rather than
+    silently mis-extracted.
+
+equations:
+  extraction_signature:
+    formula: |
+      `apr tokenize import-hf <tokenizer.json> --output <DIR>`
+      MUST satisfy:
+        precondition_1: <tokenizer.json> is a JSON file with shape
+                        { "model": { "type": "BPE", "vocab": {...},
+                                     "merges": [...] }, ... }
+        precondition_2: <DIR> is writable (or does not exist; will be created)
+        postcondition_1: <DIR>/vocab.json exists and has the same JSON
+                         structure as tokenizer.json:model.vocab (token→id map)
+        postcondition_2: <DIR>/merges.txt exists with one merge per line in
+                         original order, format `<a> <b>` (space-separated)
+        postcondition_3: <DIR>/manifest.json exists with extraction provenance
+                         (source path, source sha256, vocab_size, merges_count,
+                         extraction_timestamp)
+        postcondition_4: vocab.json entry count == |tokenizer.json:model.vocab|
+        postcondition_5: merges.txt line count == |tokenizer.json:model.merges|
+      Non-BPE inputs MUST fail-fast with a clear error citing the
+      `model.type` value found and the contract id.
+    domain: HF tokenizer.json (BPE)
+    codomain: aprender BPE tokenizer dir (vocab.json + merges.txt + manifest.json)
+    invariants:
+    - "BPE model only — Unigram + WordPiece reject fail-fast"
+    - "byte-for-byte extraction; no normalization, no merging, no truncation"
+    - "manifest.json captures source provenance for audit"
+    - "output dir is consumable by `preflight_tokenizer_vocab_matches_target` from apr-pretrain-arch-polymorphic-v1"
+
+  vocab_size_invariant:
+    formula: |
+      |vocab.json| == |tokenizer.json:model.vocab|
+      and the integer-id range of vocab.json values matches the
+      `vocab_size` declared in the model's config.json (when --strict).
+      Note: HF tokenizers may have vocab_size > |model.vocab| due to
+      reserved/special slots that aren't represented in the BPE state
+      machine. This is a TOKENIZER quirk; the polymorphic preflight in
+      apr-pretrain-arch-polymorphic-v1 §qwen_tokenizer_vocab_compatibility
+      handles the gap by ALSO inspecting added_tokens. For 5g.0 scope,
+      we extract only the BPE state machine (model.vocab + model.merges);
+      added_tokens are recorded in manifest.json but not written to
+      vocab.json. Operators wanting the full vocab including added
+      tokens use `--include-added-tokens`.
+    domain: HF tokenizer.json
+    codomain: aprender vocab.json
+    invariants:
+    - "default extraction: BPE state machine only (model.vocab)"
+    - "with --include-added-tokens: BPE + added_tokens (matches HF effective vocab_size)"
+    - "manifest.json always records both counts for audit"
+
+falsification_tests:
+- id: FALSIFY-TOK-IMPORT-HF-001
+  rule: command is registered in apr tokenize subcommand surface
+  prediction: "`apr tokenize import-hf --help` prints help text and exits 0; the subcommand is recognized in the dispatch path"
+  test: "cargo test -p apr-cli --test cli_commands -- --nocapture (or equivalent) reports import-hf as a registered tokenize subcommand"
+  if_fails: "subcommand was added to TokenizeCommands enum but dispatch surface did not pick it up — three-surface drift per feedback_cli_subcommand_three_surface_drift.md"
+
+- id: FALSIFY-TOK-IMPORT-HF-002
+  rule: BPE input produces non-empty vocab.json + merges.txt
+  prediction: "running `apr tokenize import-hf <Qwen2.5-tokenizer.json> --output <tmp>` writes vocab.json with ≥10000 entries AND merges.txt with ≥10000 lines"
+  test: "cargo test -p apr-cli --lib commands::tokenize::tests::import_hf_qwen_bpe_writes_vocab_and_merges"
+  if_fails: "extraction silently produces empty files — operator gets a tokenizer dir that fails downstream preflight with cryptic error"
+
+- id: FALSIFY-TOK-IMPORT-HF-003
+  rule: vocab.json entry count == |tokenizer.json:model.vocab|
+  prediction: "the JSON object in <DIR>/vocab.json has the same key count as the input tokenizer.json's model.vocab object"
+  test: "cargo test -p apr-cli --lib commands::tokenize::tests::import_hf_vocab_count_matches_input"
+  if_fails: "extraction drops entries OR adds entries — vocab integrity is broken"
+
+- id: FALSIFY-TOK-IMPORT-HF-004
+  rule: merges.txt has one merge per line in original order
+  prediction: "<DIR>/merges.txt has the same line count as tokenizer.json:model.merges, and the i-th line is the i-th merge formatted as `<a> <b>` (space-separated)"
+  test: "cargo test -p apr-cli --lib commands::tokenize::tests::import_hf_merges_format_and_order"
+  if_fails: "merges.txt format doesn't match GPT-2 BPE convention — aprender's BPE loader rejects the dir"
+
+- id: FALSIFY-TOK-IMPORT-HF-005
+  rule: non-BPE input fails fast
+  prediction: "running `apr tokenize import-hf` on a tokenizer.json with model.type != \"BPE\" returns Err with a clear message naming the actual type and citing this contract"
+  test: "cargo test -p apr-cli --lib commands::tokenize::tests::import_hf_unigram_input_errors"
+  if_fails: "non-BPE input silently extracts garbage — operator gets a wrong-format dir that breaks downstream"
+
+proof_obligations:
+- type: invariant
+  property: "extraction_signature: precondition checks BPE model.type before any IO"
+- type: soundness
+  property: "extraction_signature: vocab.json + merges.txt counts match input byte-for-byte"
+- type: invariant
+  property: "vocab_size_invariant: default mode emits BPE state machine only; --include-added-tokens emits unified"
+- type: liveness
+  property: "manifest.json always records source sha256 + counts for audit trail"
+- type: termination
+  property: "extraction terminates on a finite-size tokenizer.json (no recursion, single pass over vocab + merges)"
+
+kani_harnesses:
+- id: KH-TOK-IMPORT-HF-001
+  obligation: extraction_signature
+  property: counts_match_input
+  bound: 4  # 2 input shapes × 2 add-token modes = 4 cells
+- id: KH-TOK-IMPORT-HF-002
+  obligation: vocab_size_invariant
+  property: include_added_tokens_disjunction
+  bound: 4
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 5
+  status: partial
+  notes: |
+    Authored 2026-05-05 as §50.4 step 5g.0 of SHIP-TWO-001 MODEL-2
+    pretrained-init pivot. v1.0.0 PARTIAL_ALGORITHM_LEVEL: 5/5
+    falsifiers bound to executable tests in this PR.
+
+    Promotion to FUNCTIONAL requires:
+      - 5g.1 LIVE: extract Qwen2.5-Coder-0.5B-Instruct tokenizer.json
+        on canonical host AND have downstream `apr tokenize encode-corpus
+        --tokenizer <extracted-dir>` succeed without modification.
+
+    Promotion to DISCHARGED requires:
+      - 5g.3: full chain 5g.0 → 5g.1 → 5g.2 → 5g.3 produces val_loss
+        < 9.38 evidence on canonical Qwen2.5-Coder-0.5B-Instruct.apr
+        + Qwen-tokenized corpus pretrain run.
+
+    Cross-references:
+    - This contract DOES NOT replace tokenizer-bpe-v1; tokenizer-bpe-v1
+      pins what aprender's BPE tokenizer must do at training/inference
+      time, this contract pins how an EXTERNAL HF BPE tokenizer is
+      converted into aprender's expected dir layout. The two compose:
+      apr tokenize import-hf produces output → apr tokenize encode-corpus
+      consumes it → apr pretrain --tokenizer consumes it.
+    - Qwen2.5-Coder-0.5B-Instruct/tokenizer.json was the live smoke
+      input that triggered §54 (`evidence/section-54-5g-prereqs-2026-05-05/preflight-fail-fast-smoke.md`).
+      That tokenizer is BPE with vocab=151643 + 22 added tokens
+      (effective vocab_size=151665 in the BPE state machine; HF config
+      declares 151936 due to reserved slots).

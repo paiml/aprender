@@ -687,6 +687,11 @@ fn dispatch_tokenize_command(
             normalization,
             cli.json,
         ),
+        TokenizeCommands::ImportHf {
+            input,
+            output,
+            include_added_tokens,
+        } => tokenize::run_import_hf(input, output, *include_added_tokens, cli.json),
         #[cfg(feature = "training")]
         TokenizeCommands::EncodeCorpus {
             corpus,
