@@ -1,6 +1,6 @@
 metadata:
   id: C-TRACE-MOE-GPU-SUB-STAGES
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-05-05'
   author: PAIML Engineering
   kind: pattern
@@ -9,6 +9,31 @@ metadata:
     Sub-MoE-GPU bisection plan for `apr trace --save-tensor` —
     M-GPU-MOE-1.4 NaN/Inf bisection per qwen3-moe-forward-gpu-v1
     v1.4.0 amendment_history block.
+
+    v1.1.0 (2026-05-05): clarifies M-MOE-SUB-2 wiring target after
+    code archaeology found `forward_qwen3_moe_traced` already exists
+    (M32d Step 2 work, pre-existing). The existing
+    `forward_qwen3_moe` (production hot path) MUST NOT be modified —
+    that would force every dense caller to plumb a None plan and
+    add a branch in the per-token loop. Instead:
+
+      M-MOE-SUB-2 extends `forward_qwen3_moe_traced` (CPU traced
+      sibling, pre-existing at
+      `crates/aprender-serve/src/gguf/inference/forward/forward_qwen3_moe_traced.rs`)
+      to accept an optional `&SaveTensorPlan` parameter. For the
+      GPU sibling, M-MOE-SUB-2 authors a NEW function
+      `forward_qwen3_moe_cuda_traced` analogous to the CPU traced
+      sibling — does NOT modify the production
+      `forward_qwen3_moe_cuda` hot path.
+
+      `moe_ffn_forward_layer` (in `crates/aprender-serve/src/gguf/qwen3_moe_load.rs`)
+      gains a sibling function `moe_ffn_forward_layer_with_router`
+      that returns both the FFN output AND the post-renorm router
+      weights. The production sibling stays byte-identical for the
+      hot path. The traced forward functions call the new sibling
+      instead of the original. This preserves the "additive purity"
+      invariant (production unchanged; traced path uses the new
+      function with router capture).
 
     SCOPE: extends `apr-cli-trace-save-tensor-v1` (parent contract)
     with NEW SaveTensorStage variants for the GPU MoE forward path.
@@ -236,22 +261,45 @@ implementation_stages:
 - id: M-MOE-SUB-2
   status: PENDING
   description: |
-    Wire `MoeRouter` capture into BOTH `forward_qwen3_moe` (CPU
-    sibling, ground truth) AND `forward_qwen3_moe_cuda` (GPU sibling,
-    bisection target). Capture top-k weights post-renormalize.
+    Wire `MoeRouter` capture into BOTH the **TRACED** sibling forward
+    functions (NOT the production hot paths, per v1.1.0 amendment):
+
+    (a) CPU: extend pre-existing `forward_qwen3_moe_traced` (in
+        `crates/aprender-serve/src/gguf/inference/forward/forward_qwen3_moe_traced.rs`,
+        landed at M32d Step 2) to accept an optional
+        `Option<&SaveTensorPlan>` parameter. When the plan requests
+        `MoeRouter`, capture the top-k post-renormalize weights and
+        emit via the standard plan.emit() pathway.
+
+    (b) GPU: author NEW file
+        `crates/aprender-serve/src/gguf/cuda/forward_qwen3_moe_cuda_traced.rs`
+        with `forward_qwen3_moe_cuda_traced` mirroring (a) for the
+        GPU MoE forward path. Same plan-aware signature.
+
+    (c) Refactor `moe_ffn_forward_layer` (in `qwen3_moe_load.rs`)
+        to add a sibling `moe_ffn_forward_layer_with_router` that
+        returns both FFN output AND post-renorm router weights.
+        Production `moe_ffn_forward_layer` stays byte-identical
+        (additive-purity invariant).
+
     Discharges FALSIFY-MOE-SUB-002 (byte-identity preservation for
-    existing stages).
+    existing stages — the production hot paths are unchanged).
   expected_acceptance:
     - FALSIFY-MOE-SUB-002
+  blockers:
+    - 'Must NOT modify production forward_qwen3_moe / forward_qwen3_moe_cuda hot paths'
+    - 'New forward_qwen3_moe_cuda_traced file authoring (~150-300 LOC mirroring CPU traced sibling)'
 
 - id: M-MOE-SUB-3
   status: PENDING
   description: |
-    Wire `MoeFfnOut` capture into both forward bodies. Run
-    `--include-ignored` heavy test on lambda-vector RTX 4090 + cached
-    17.3 GB Qwen3-Coder GGUF. Diff CPU vs GPU at MoeRouter and
-    MoeFfnOut. If divergence at MoeFfnOut but match at MoeRouter,
-    promote per-expert stages (MoeExpert*) and re-bisect (M-MOE-SUB-4).
+    Wire `MoeFfnOut` capture into both **traced** forward bodies
+    (`forward_qwen3_moe_traced` CPU + `forward_qwen3_moe_cuda_traced`
+    GPU per M-MOE-SUB-2 authoring). Run `--include-ignored` heavy
+    test on lambda-vector RTX 4090 + cached 17.3 GB Qwen3-Coder GGUF.
+    Diff CPU vs GPU at MoeRouter and MoeFfnOut. If divergence at
+    MoeFfnOut but match at MoeRouter, promote per-expert stages
+    (MoeExpert*) and re-bisect (M-MOE-SUB-4).
   expected_acceptance:
     - FALSIFY-MOE-SUB-003
 
