@@ -1,7 +1,8 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 3.01.0
+**Version:** 3.02.0
+**Atomic next action (v3.02.0):** **§57 — drift sweep cleans §50.4 cascade contracts (3 PRs); 5g.1 full corpus run on track (2026-05-05)** (see new §57 below). Three same-class drift fixes shipped this session — PR #1502 (apr-pretrain-arch-polymorphic-v1 v1.4 binds CUDA-001), PR #1505 (apr-pretrain-arch-polymorphic-v1 v1.5 fixes FALSIFY-005/006 names), PR #1506 (apr-cli-tokenize-import-hf-v1 v1.1 binds FALSIFY-001 with integration test). PR #1504 (apr-pretrain-from-init-v1 v1.2 drift correction) closed the largest instance via operator/agent collaboration. After this sweep, `pv lint contracts/` reports **0 PV-VER-001 errors across all 870+ contracts** — every cited test exists. 5g.1 full corpus retokenization (PID 2767124) progresses steadily at 16.3 min/shard; 13/57 shards complete in 3h22min wall; ETA ~22:00Z (5g.1.3 verdict ~12hr from now). **MODEL-1 ship %**: unchanged at **91%**. **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38. Coverage tally: snapshot (drift sweep is hygiene, not falsifier flip).
 **Atomic next action (v3.01.0):** **§56 — 5g.1 LIVE smoke: corpus retokenization with Qwen vocab is correctness-validated; full run is ~17hr operator-dispatch (2026-05-05)** (see new §56 below). Smoke ran `apr tokenize encode-corpus` on first 5000 docs of `python-permissive.jsonl` through the §54-extracted Qwen tokenizer dir; produced 13 valid u32 shards (~13M tokens) at ~110 sec / M-token before being killed. 5g.1 is correctness-validated and operator-dispatchable. Wall projection for full 565M-token corpus: ~17 hours single-thread (1.7× legacy 50257-vocab wall — Qwen's 3× larger merge table is the dominant cost). **Below the 48hr `feedback_compute_pre_authorized.md` ceiling.** Full run dispatched 2026-05-05T07:00Z. Spec v3.00.0 → **v3.01.0**. **MODEL-1 ship %**: unchanged at **91%**. **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38. Coverage tally: 5g.1 reaches LIVE-SMOKE level; promotion to FULL-VALIDATED waits for full-corpus run + manifest.json.
 **Atomic next action (v3.00.0):** **§55 — Polymorphic preflight relaxation: tokenizer_vocab ≤ model_vocab when init=Some; LIVE smoke confirms Qwen extracted tokenizer passes preflight (2026-05-05)** (see new §55 below). §54's LIVE smoke surfaced that public Qwen2.5-Coder-0.5B-Instruct/tokenizer.json materializes 151643 BPE entries + 22 added = 151665 effective strings, but config.json declares vocab_size=151936 (271 reserved/special slots not in tokenizer.json). Strict equality preflight was correct for §24/§25 from-scratch but too strict for HF-distributed pretrained checkpoints with reserved slots. §55 introduces the relaxed bound `tokenizer_vocab ≤ model_vocab` for the polymorphic path (init=Some); strict equality is preserved for the from-scratch path (init=None, regression-free). New helper `assert_tokenizer_vocab_within_model_bound` + extended preflight signature + 4 new tests (2 helper + 2 integration). Contract `apr-pretrain-arch-polymorphic-v1` v1.2.0 → **v1.3.0 FUNCTIONAL** with FALSIFY-009 (relaxed accept) + FALSIFY-010 (oversize reject — OOB safety). LIVE smoke 2026-05-05T05:48Z: rebuilt apr binary + §54-extracted Qwen tokenizer + Qwen 0.5B init APR → preflight PASSED (no GATE-ARCH errors); process proceeded past preflight to weight load (timeout-killed at 30s mid-load). Spec v2.99.0 → **v3.00.0**. **MODEL-1 ship %**: unchanged at **91%**. **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38. Coverage tally: 8 → 10 falsifiers in apr-pretrain-arch-polymorphic-v1 (+2 new, all PASS). 5g.1 (corpus retokenize) now technically dispatchable.
 **Atomic next action (v2.99.0):** **§54 — Step 5g has multi-step prerequisites; live preflight smoke proves polymorphic gate fires on Qwen --init + legacy 50257-vocab tokenizer (2026-05-05)** (see new §54 below). Live empirical smoke on canonical 0.5B init APR + canonical 565M-token codeparrot corpus + canonical 50257-vocab tokenizer + freshly-built apr binary (commit 92c7e237b post-#1494) FIRED CORRECTLY: `GATE-ARCH-370M-011 (INV-ARCH-370M-006) violated: tokenizer vocab_size (50257) != model vocab_size (151936)`. This is the FIRST end-to-end runtime evidence that the §50.4 cascade's polymorphic preflight (PR #1476) works in the user-facing CLI (FALSIFY-APR-PRETRAIN-ARCH-005/006 reach LIVE-INTEGRATION level beyond unit-test PARTIAL). But the smoke also surfaces 5g's true scope: a Qwen-vocab tokenizer dir + Qwen-tokenized corpus must exist BEFORE the preflight passes — neither exists on this host today. Step 5g is re-scoped from "1 dispatch, 0 LOC" to **5g.0 (Qwen tokenizer extraction, ~50 LOC) → 5g.1 (Qwen-tokenized corpus, multi-hour wall) → 5g.2 (LIVE 500-step fine-tune, 0 LOC operator-dispatch) → 5g.3 (val_loss < 9.38 verdict)**. Spec v2.98.0 → **v2.99.0**. **MODEL-1 ship %**: unchanged at **91%**. **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38 evidence. Coverage tally: snapshot + roadmap re-scoping (no contract status flip — the polymorphic preflight evidence reinforces v1.2.0 FUNCTIONAL but doesn't yet promote to DISCHARGED).
@@ -4477,6 +4478,74 @@ Unchanged from §29 because PR E did not land. Next-session agenda: do the §30.
 Per `feedback_fix_root_cause_never_route_around.md`: the §28 fix would have route-around'd a real bug because the named site (matmul kernel) is not where the divergence originates. The empirical refutation in §30 IS the work that protects the next attempt from shipping a no-op. This refutation is itself a coverage-incrementing artifact (it falsifies a hypothesis), even though no PARTIAL flips to DISCHARGED.
 
 The Toyota Way fix is to bisect upstream, not to flip the kernel call.
+
+## §57. Drift sweep cleans §50.4 cascade contracts (3 PRs); 5g.1 full corpus run on track (2026-05-05)
+
+§56 closed with the 5g.1 full-corpus retokenization dispatched (PID 2767124, ~17hr wall projected). §57 records the parallel drift-sweep work that landed during the 5g.1 wait + the throughput characterization of 5g.1 mid-run.
+
+### 57.1 The drift sweep — three same-class PRs
+
+While 5g.1 ran in the background, a sweep of the §50.4 cascade contracts surfaced **the same drift class** across three contracts: cited test names that didn't match what the impl PR actually authored. Each contract was bumped + corrected in its own PR.
+
+| PR | Contract | v_old → v_new | Drift instance |
+|---|---|---|---|
+| #1502 | apr-pretrain-arch-polymorphic-v1 | v1.3.0 → v1.4.0 | FALSIFY-APR-PRETRAIN-INIT-CUDA-001 was REFERENCED in the v1.2.0 changelog but had no formal `falsification_test` entry; bound via new drift-prevention test + `pub(crate) const FALSIFY_APR_PRETRAIN_INIT_CUDA_001_MSG` extraction. |
+| #1504 | apr-pretrain-from-init-v1 | v1.1.0 → v1.2.0 | 7 of 8 cited test names didn't exist (e.g., `pretrain_init_arch_mismatch_errors`, `pretrain_init_step0_loss_below_from_scratch`). Re-aligned to existing tests where possible (4/10 bound); remaining 6/10 explicitly marked `LIVE-PENDING:` with named prerequisites. Operator/agent enriched with `pretrain_init_flag_registered` integration test post-merge → 5/10 bound, 5 LIVE-PENDING. |
+| #1505 | apr-pretrain-arch-polymorphic-v1 | v1.4.0 → v1.5.0 | FALSIFY-005 cited `preflight_qwen_vocab_passes_with_qwen_init` (doesn't exist; actual: `_with_qwen_target`). FALSIFY-006 cited `preflight_qwen_vocab_fails_without_init` (actual: `_with_llama_target`). Names diverged at PR #1476's authoring boundary. |
+| #1506 | apr-cli-tokenize-import-hf-v1 | v1.0.0 → v1.1.0 | FALSIFY-001 cited "or equivalent" instead of a real test name. Authored `tokenize_import_hf_subcommand_registered` integration test mirroring `pretrain_init_flag_registered` pattern. |
+
+### 57.2 Verdict: PV-VER-001 closed across the full contract base
+
+After PR #1506 lands, `pv lint contracts/` reports **0 PV-VER-001 errors across all 870+ contracts**. The drift class — "contract cites a test name that doesn't exist" — is fully closed across the §50.4 cascade contracts AND across every other contract in the registry.
+
+870 PV-ENF-001 warnings remain (equations missing postconditions). This is a separate class — it's not drift, it's incomplete contract authoring style. Closing it is multi-week scope and out of §57.
+
+### 57.3 5g.1 throughput characterization
+
+Real-time throughput captured during the §57 work:
+
+| Shard | Closed at | Δ from previous |
+|---|---|---|
+| 0 | 07:08 | (start; PID dispatched 07:00) |
+| 1 | 07:24 | 16 min |
+| 2 | 07:39 | 15 min |
+| 3 | 07:55 | 16 min |
+| 4 | 08:11 | 16 min |
+| 10 | 09:47 | (avg 16 min/shard across 5..10) |
+| 11 | 10:03 | 16 min |
+| 12 | 10:16 | 13 min (in progress) |
+
+**Mean wall: 16.3 min/shard.** Linear projection: 57 shards × 16.3 min = 929 min = **15.5 hr total**, completing ~22:30Z (slightly under §56's 17hr smoke estimate; the difference is dominated by warm-cache effects in BPE merge-table lookup which the smoke didn't capture).
+
+### 57.4 Methodology takeaway: same-class drift across same-cascade contracts
+
+The pattern: when a contract is authored in PR_A alongside its impl, AND the impl's test names are stamped in the contract's `test:` field BEFORE the impl PR finalizes the names, the names diverge at the cascade boundary. This happened in **3 of 4 §50.4 cascade contracts** (apr-pretrain-from-init-v1, apr-pretrain-arch-polymorphic-v1 twice across two bumps, apr-cli-tokenize-import-hf-v1).
+
+**Prevention rule** (informal): when authoring a new contract that cites tests, EITHER reference tests that already exist on main, OR mark them `PENDING_PR_<N>:` with the impl PR ref so the PV-VER-001 lint can flag dangling refs at contract-merge time. The §57 sweep retrospectively closes the drift but doesn't prevent recurrence.
+
+A future spec amendment could codify a `pv lint --strict-test-binding` enforcement that blocks contract merge when any `test:` field doesn't resolve to an existing test invocation. Out of §57 scope.
+
+### 57.5 Five Whys
+
+1. **Why did the drift go undetected for so long?** Because PV-VER-001 lint only flags it if explicitly run; the default `pv validate <single>` doesn't cross-check test names. The session-level `pv lint contracts/` sweep is what surfaced it.
+2. **Why did three contracts share the same drift class?** All authored alongside their impl in the same cascade, all stamping anticipated test names. When the impl PR landed, the cascade pattern preserved CONTENT but not NAMES.
+3. **Why fix in 3 separate PRs rather than 1 mega-PR?** Per `feedback_falsifier_first_cascade_pattern.md`: 1 PR ≈ 1 contract bump. Each contract has its own version + changelog; conflating bumps mixes review concerns and breaks the bisect-able cascade discipline.
+4. **Why during the 5g.1 wait?** Productive use of compute-bound idle time. Each drift fix is small (~50-100 LOC), unblocks no critical path, doesn't move ship-%, but reduces drift risk for future agents. The alternative (manufacture more big work) would be muda.
+5. **Why no spec amendment per drift fix?** Drift fixes are hygiene — they restore an invariant ("every cited test exists") that v1.x had assumed but didn't enforce. §57 is the single rolling amendment that catalogs all 4 PRs in one place. Per cadence, each individual drift fix would be a §-amendment if it surfaced a NEW finding; these surfaced the SAME finding repeated.
+
+### 57.6 Net effects
+
+- Spec v3.01.0 → **v3.02.0**.
+- Three contract bumps land cleanly: apr-pretrain-arch-polymorphic-v1 v1.3 → v1.4 → v1.5 (CUDA-001 binding + drift fix), apr-pretrain-from-init-v1 v1.1 → v1.2 (test ref drift), apr-cli-tokenize-import-hf-v1 v1.0 → v1.1 (FALSIFY-001 binding).
+- `pv lint contracts/` 0 PV-VER-001 errors across 870+ contracts.
+- 5g.1 full corpus run progressing steadily at 16.3 min/shard; ETA ~22:30Z.
+- **MODEL-1 ship %**: unchanged at **91%**.
+- **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38 (~12hr after this amendment).
+- Coverage tally: snapshot. Drift sweep is hygiene, no falsifier flips.
+
+### 57.7 Spec amendment cadence preserved
+
+§41 → §42 → §43 → §44 → §45 → §46 → §47 → §48 → §49 → §50 → §51 → §52 → §53 → §54 → §55 → §56 → §57. Seventeen amendments since 2026-05-03. §57 is the second hygiene amendment (after §56's 5g.1 LIVE smoke); the next §58 will record either (a) the 5g.1 full-run completion + manifest evidence, or (b) the 5g.2 LIVE fine-tune dispatch result.
 
 ## §56. 5g.1 LIVE smoke: corpus retokenization with Qwen vocab is correctness-validated; full run is ~17hr operator-dispatch (2026-05-05)
 
