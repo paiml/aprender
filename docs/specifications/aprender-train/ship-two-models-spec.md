@@ -1,7 +1,8 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.99.0
+**Version:** 3.00.0
+**Atomic next action (v3.00.0):** **§55 — Polymorphic preflight relaxation: tokenizer_vocab ≤ model_vocab when init=Some; LIVE smoke confirms Qwen extracted tokenizer passes preflight (2026-05-05)** (see new §55 below). §54's LIVE smoke surfaced that public Qwen2.5-Coder-0.5B-Instruct/tokenizer.json materializes 151643 BPE entries + 22 added = 151665 effective strings, but config.json declares vocab_size=151936 (271 reserved/special slots not in tokenizer.json). Strict equality preflight was correct for §24/§25 from-scratch but too strict for HF-distributed pretrained checkpoints with reserved slots. §55 introduces the relaxed bound `tokenizer_vocab ≤ model_vocab` for the polymorphic path (init=Some); strict equality is preserved for the from-scratch path (init=None, regression-free). New helper `assert_tokenizer_vocab_within_model_bound` + extended preflight signature + 4 new tests (2 helper + 2 integration). Contract `apr-pretrain-arch-polymorphic-v1` v1.2.0 → **v1.3.0 FUNCTIONAL** with FALSIFY-009 (relaxed accept) + FALSIFY-010 (oversize reject — OOB safety). LIVE smoke 2026-05-05T05:48Z: rebuilt apr binary + §54-extracted Qwen tokenizer + Qwen 0.5B init APR → preflight PASSED (no GATE-ARCH errors); process proceeded past preflight to weight load (timeout-killed at 30s mid-load). Spec v2.99.0 → **v3.00.0**. **MODEL-1 ship %**: unchanged at **91%**. **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38. Coverage tally: 8 → 10 falsifiers in apr-pretrain-arch-polymorphic-v1 (+2 new, all PASS). 5g.1 (corpus retokenize) now technically dispatchable.
 **Atomic next action (v2.99.0):** **§54 — Step 5g has multi-step prerequisites; live preflight smoke proves polymorphic gate fires on Qwen --init + legacy 50257-vocab tokenizer (2026-05-05)** (see new §54 below). Live empirical smoke on canonical 0.5B init APR + canonical 565M-token codeparrot corpus + canonical 50257-vocab tokenizer + freshly-built apr binary (commit 92c7e237b post-#1494) FIRED CORRECTLY: `GATE-ARCH-370M-011 (INV-ARCH-370M-006) violated: tokenizer vocab_size (50257) != model vocab_size (151936)`. This is the FIRST end-to-end runtime evidence that the §50.4 cascade's polymorphic preflight (PR #1476) works in the user-facing CLI (FALSIFY-APR-PRETRAIN-ARCH-005/006 reach LIVE-INTEGRATION level beyond unit-test PARTIAL). But the smoke also surfaces 5g's true scope: a Qwen-vocab tokenizer dir + Qwen-tokenized corpus must exist BEFORE the preflight passes — neither exists on this host today. Step 5g is re-scoped from "1 dispatch, 0 LOC" to **5g.0 (Qwen tokenizer extraction, ~50 LOC) → 5g.1 (Qwen-tokenized corpus, multi-hour wall) → 5g.2 (LIVE 500-step fine-tune, 0 LOC operator-dispatch) → 5g.3 (val_loss < 9.38 verdict)**. Spec v2.98.0 → **v2.99.0**. **MODEL-1 ship %**: unchanged at **91%**. **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38 evidence. Coverage tally: snapshot + roadmap re-scoping (no contract status flip — the polymorphic preflight evidence reinforces v1.2.0 FUNCTIONAL but doesn't yet promote to DISCHARGED).
 **Atomic next action (v2.98.0):** **§53 — §50.4 cascade INTEGRATION-COMPLETE on main; `apr pretrain --init` end-to-end runnable; only 5g LIVE remains (2026-05-05)** (see new §53 below). PR #1494 (§50.4 step 5f.4 CLI wireup) MERGED at 01:48:14Z. The `apr pretrain --init <PATH>` flow is now end-to-end functional on CPU: magic-byte validation → arch extraction via `model_config::read_apr_architecture` → polymorphic preflight with EXTRACTED vocab → `build_shared_trainer_with_init` composing 5f.1 (encoder rejection) + 5f.2 (load) + 5f.3 (populate). The legacy "not yet wired" Err from §49 step 4 is RETIRED. CUDA path fail-fasts with FALSIFY-APR-PRETRAIN-INIT-CUDA-001 (5f.5 follow-up). Contract `apr-pretrain-arch-polymorphic-v1` ready for v1.1.0 PARTIAL_ALGORITHM_LEVEL → v1.2.0 FUNCTIONAL bump (8/8 falsifiers PASS on main, integration verified). **§50.4 cascade ships 11 PRs over 2 days** (#1471/#1472/#1473/#1474/#1475/#1476/#1478/#1479/#1481/#1482/#1483/#1486/#1494). Spec v2.97.0 → **v2.98.0**. **MODEL-1 ship %**: unchanged at **91%**. **MODEL-2 ship %**: unchanged at **57%** until step 5g produces val_loss < 9.38 — but step 5g is now operator-dispatchable (the only blocker resolved). Coverage tally: snapshot, contract status flip pending v1.2.0 bump.
 **Atomic next action (v2.97.0):** **§52 — §50.4 cascade ALGORITHM-COMPLETE on main; new step 5f.4 CLI wireup gap identified before 5g LIVE (2026-05-04)** (see new §52 below). Same-day continuation of §51 cascade landed PR #1479 (FALSIFY-APR-PRETRAIN-ARCH-007 encoder/decoder family validator) and PR #1481 (`load_init_tensors_from_apr` in `aprender-train`). #1483 (`populate_trainer_from_init_tensors`, §50.4 step 5f.3) and #1482 (contract `apr-pretrain-arch-polymorphic-v1` v1.0.0 → v1.1.0 PARTIAL_ALGORITHM_LEVEL bump) are MERGEABLE in queue. **All 8 falsifiers in `apr-pretrain-arch-polymorphic-v1` are now bound on main or about to land**: 6 already MERGED (#1474/#1475/#1476/#1478/#1479/#1473), #1483 + #1482 cover the remaining 2 (5f.3 populate + the v1.1.0 contract status bump). **NEW finding from live source inspection of `apr-cli/src/commands/pretrain.rs:259-297`**: even with all helper functions merged (`load_init_tensors_from_apr` + `validate_pretrain_init_arch_compatible` + `populate_trainer_from_init_tensors` + `build_transformer_config` + polymorphic preflight), the CLI dispatch `validate_init_apr_path` HARDCODES an `Err(...not yet wired...)` return — so an operator running `apr pretrain --init <Qwen>.apr` STILL gets a "not yet wired" runtime error. **Step 5f.4 (CLI wireup, ~150 LOC) is the missing connecting step that makes 5g LIVE actually runnable.** Roadmap re-scoped: 5a-5f.3 (algorithm machinery, COMPLETE) → **5f.4 (CLI wireup, NOT YET STARTED)** → 5g (LIVE 500-step fine-tune, gates ship-%) → 5h (stamp + publish). Spec v2.96.0 → **v2.97.0**. **MODEL-1 ship %**: unchanged at **91%**. **MODEL-2 ship %**: unchanged at **57%** until step 5g produces val_loss < 9.38 evidence — but step 5g now requires step 5f.4 to land first. Coverage tally unchanged this cycle (snapshot + roadmap re-scoping, not falsifier flips).
@@ -4475,6 +4476,121 @@ Unchanged from §29 because PR E did not land. Next-session agenda: do the §30.
 Per `feedback_fix_root_cause_never_route_around.md`: the §28 fix would have route-around'd a real bug because the named site (matmul kernel) is not where the divergence originates. The empirical refutation in §30 IS the work that protects the next attempt from shipping a no-op. This refutation is itself a coverage-incrementing artifact (it falsifies a hypothesis), even though no PARTIAL flips to DISCHARGED.
 
 The Toyota Way fix is to bisect upstream, not to flip the kernel call.
+
+## §55. Polymorphic preflight relaxation: tokenizer_vocab ≤ model_vocab when init=Some (2026-05-05)
+
+§54 closed with the §55 follow-up identified: the polymorphic preflight's strict equality semantic is too strict for HF-distributed pretrained checkpoints with reserved slots. This section records the relaxation, the contract amendment, and the LIVE smoke that confirms the fix.
+
+### 55.1 The strictness gap §54 surfaced
+
+§54's evidence `evidence/section-54-5g-prereqs-2026-05-05/preflight-fail-fast-smoke.md` showed the polymorphic preflight firing correctly on a tokenizer-vs-model-vocab mismatch (50257 vs 151936). After PR #1497 landed `apr tokenize import-hf` and §54's chain extended to:
+
+```bash
+apr tokenize import-hf --input <Qwen-tokenizer.json> --output /tmp/qwen-tok-extracted
+# → bpe_vocab=151643, merges=151387, added_tokens=22
+apr pretrain --init <Qwen.apr> --tokenizer /tmp/qwen-tok-extracted ...
+# → ERROR: tokenizer vocab_size (151643/151665) != model vocab_size (151936)
+```
+
+This is **the canonical HF reserved-slot pattern**:
+- Qwen2.5-Coder-0.5B-Instruct's `tokenizer.json` contains 151643 BPE state-machine entries + 22 added tokens (e.g., `<|im_start|>`).
+- Qwen2.5-Coder-0.5B-Instruct's `config.json` declares `vocab_size = 151936`.
+- Gap (271 entries) is reserved/special slots: the lm_head + embedding layers have weights for IDs 151665..151935, but no tokenizer string maps to those IDs.
+- This pattern repeats across Qwen2.5/Llama2/Mistral/Phi families.
+
+Strict equality preflight (`tokenizer_vocab == model_vocab`) was correct for §24/§25 from-scratch training (where the operator trains a tokenizer to exactly match the model). It is **wrong** for HF-distributed pretrained checkpoints.
+
+### 55.2 The relaxation
+
+| Path | Bound | Rationale |
+|---|---|---|
+| `init=None` (from-scratch) | `tokenizer_vocab == model_vocab` | UNCHANGED. §24/§25 baseline regression-free. INV-ARCH-370M-006 preserved. |
+| `init=Some` (polymorphic) | `tokenizer_vocab ≤ model_vocab` | NEW per §55. Admits HF reserved slots. OOB-safe because tokenizer-emitted ids ∈ [0, tokenizer_vocab) ⊆ [0, model_vocab). |
+
+**OOB safety argument**: A tokenizer with `tokenizer_vocab` entries can only emit ids in [0, tokenizer_vocab). When `tokenizer_vocab ≤ model_vocab`, every id is in the model's embedding/lm_head domain. Reserved high-id slots (in the model but not the tokenizer) are never indexed at training time. The N-09 OOB escape in `Embedding::forward` cannot fire.
+
+**Symmetric guard**: `tokenizer_vocab > model_vocab` MUST FAIL even under `init=Some` — bound is `≤`, not `<`. A tokenizer with MORE strings than the model declares could emit ids ≥ model_vocab → silent embedding-lookup garbage. FALSIFY-APR-PRETRAIN-ARCH-010 pins this.
+
+### 55.3 What this PR ships
+
+| Artifact | Change | Falsifier |
+|---|---|---|
+| `aprender-train/src/models/llama_370m.rs` | New helper `assert_tokenizer_vocab_within_model_bound` symmetric to `assert_tokenizer_vocab_matches_model` | (helper for FALSIFY-009/010) |
+| `apr-cli/src/commands/pretrain.rs::preflight_tokenizer_vocab_matches_target` | 3rd `init_is_some: bool` param; routes to relaxed/strict assertion | (integration call site) |
+| `apr-cli/src/commands/pretrain.rs::drive_real` | Passes `init_arch.is_some()` to preflight | (integration call site) |
+| `contracts/apr-pretrain-arch-polymorphic-v1.yaml` | v1.2.0 → v1.3.0 FUNCTIONAL; refined `qwen_tokenizer_vocab_compatibility` invariant; added FALSIFY-009 + FALSIFY-010 | FALSIFY-APR-PRETRAIN-ARCH-009/010 PASS |
+| `falsify_apr_pretrain_arch_009_relaxed_bound_accepts_qwen_reserved_slots` | aprender-train unit test | FALSIFY-009 PASS |
+| `falsify_apr_pretrain_arch_010_relaxed_bound_rejects_oversized_tokenizer` | aprender-train unit test | FALSIFY-010 PASS |
+| `preflight_qwen_reserved_slots_pass_under_polymorphic_init` | apr-cli integration test | FALSIFY-009 INTEGRATION PASS |
+| `preflight_oversized_tokenizer_rejected_even_under_polymorphic_init` | apr-cli integration test | FALSIFY-010 INTEGRATION PASS |
+| `evidence/section-55-relaxed-preflight-2026-05-05/relaxed-preflight-passes-smoke.md` | LIVE smoke evidence | FALSIFY-009 LIVE-INTEGRATION |
+
+### 55.4 LIVE smoke
+
+```bash
+# Rebuilt apr binary from this branch + §54-extracted Qwen tokenizer:
+timeout 30 apr pretrain \
+  --tokenizer /tmp/qwen-0.5b-tokenizer-extracted \
+  --init /mnt/nvme-raid0/models/qwen2.5-coder-0.5b-instruct-fp16.apr \
+  --mode finetune --num-steps 1 --device cpu \
+  --vocab-size 151936 --batch-size 1 --seq-length 32
+
+# Result: exit=124 (timeout), AFTER preflight passed.
+# Output: Configuration printed + Device: cpu + (proceeded to weight load)
+# No GATE-ARCH-370M-011 violations.
+```
+
+Evidence: `evidence/section-55-relaxed-preflight-2026-05-05/relaxed-preflight-passes-smoke.md`.
+
+### 55.5 Falsifier scoreboard for `apr-pretrain-arch-polymorphic-v1`
+
+| # | Falsifier | What it pins | Status |
+|---|---|---|---|
+| 001 | qwen2_0_5b matches HF | INTEGRATION (§53) |
+| 002 | init=None preserves Llama370M | INTEGRATION (§53) |
+| 003 | init=Some pass-through | INTEGRATION (§53) |
+| 004 | GQA-7:1 forward smoke | PARTIAL_ALGORITHM_LEVEL |
+| 005 | Qwen tokenizer + Qwen --init pass | INTEGRATION (§53) + LIVE (§55) |
+| 006 | Qwen tokenizer + no --init fail | INTEGRATION (§53) |
+| 007 | Encoder/decoder family validator | INTEGRATION (§53) |
+| 008 | pv validate exits 0 | PARTIAL_ALGORITHM_LEVEL |
+| **009** | **Relaxed bound accepts HF reserved slots** | **PARTIAL_ALGORITHM_LEVEL + LIVE smoke (§55)** |
+| **010** | **Relaxed bound rejects oversized (OOB safety)** | **PARTIAL_ALGORITHM_LEVEL (§55)** |
+
+10/10 falsifiers PASS. Contract status remains FUNCTIONAL (no regression; the v1.3.0 bump adds 2 falsifiers + LIVE smoke evidence for FALSIFY-009).
+
+### 55.6 5g roadmap status update
+
+| # | Step | LOC / wall | Status |
+|---|------|------------|--------|
+| 5g.0 | `apr tokenize import-hf` | ~700 LOC | ✅ MERGED PR #1497 |
+| **5g.0.1** | **Polymorphic preflight relaxation (§55)** | **~140 LOC** | **THIS PR** |
+| 5g.1 | Re-tokenize codeparrot corpus with Qwen vocab | 0 LOC + ~10 hr operator-dispatch | now technically dispatchable |
+| 5g.2 | LIVE 500-step fine-tune dispatch | 0 LOC + ~20-60 min | gated on 5g.1 |
+| 5g.3 | val_loss < 9.38 verdict; flip MODEL-2 ship % 57% → ≥58% | 0 LOC | gated on 5g.2 |
+
+5g.1 has unblocked. The 10-hour wall is the operator's call (per `feedback_compute_pre_authorized.md`, named training/tokenization runs are pre-authorized below 48h).
+
+### 55.7 Five Whys
+
+1. **Why did §54 not catch the strictness gap?** §54 was authored from the legacy-tokenizer perspective (50257 vs 151936 — a vastly larger mismatch). It didn't probe the within-Qwen case (151643/151665 vs 151936) because the §54 smoke used the legacy 50257-vocab tokenizer dir (which §50.4 shipped before §54's tokenizer extraction tooling existed). The within-Qwen case only surfaces AFTER 5g.0 lands.
+2. **Why is the bound `≤` and not `==` even for the polymorphic path?** Because HF-distributed checkpoints standardly declare a vocab_size that exceeds tokenizer.json's materialized count. Strict equality would fail on every Qwen/Llama2/Mistral checkpoint without manual padding — defeats the entire §50.4 cascade purpose.
+3. **Why preserve strict equality on the from-scratch path?** Because §24/§25's evidence was gathered under strict equality; weakening the gate retroactively could mask future from-scratch tokenizer drift bugs (the original incident at commit 29607ed33 that motivated INV-ARCH-370M-006). The from-scratch path doesn't need the relaxation; it would only erode the safety bound.
+4. **Why a new helper `assert_tokenizer_vocab_within_model_bound` instead of a mode parameter on the existing helper?** Because the existing `assert_tokenizer_vocab_matches_model` is referenced by 1+ external callers (training-loop-pretrain-v1 contract, llama-370m-sovereign-v1) that explicitly want strict equality. A mode parameter would be backward-incompatible. Two helpers + a routing call site at the preflight level is the smallest delta.
+5. **Why pin both FALSIFY-009 (accept) and FALSIFY-010 (reject) rather than just one?** Because the bound is `≤`, not `<`. Without FALSIFY-010, a regression that loosens to `tokenizer_vocab > model_vocab` would silently restore N-09 OOB risk; that regression is exactly the class FALSIFY-010 catches.
+
+### 55.8 Net effects
+
+- Spec v2.99.0 → **v3.00.0** (rolling over to 3.x as the §50.4 cascade pivots from polymorphic infrastructure to live training prerequisites).
+- Contract `apr-pretrain-arch-polymorphic-v1` v1.2.0 → **v1.3.0 FUNCTIONAL** (10 falsifiers, all PASS).
+- 5g.0.1 lands as a single PR; 5g.1 unblocked.
+- **MODEL-1 ship %**: unchanged at **91%**.
+- **MODEL-2 ship %**: unchanged at **57%** until 5g.3 produces val_loss < 9.38 evidence.
+- Coverage tally: +2 PARTIAL_ALGORITHM_LEVEL falsifiers (FALSIFY-009/010) added to the v1.3.0 contract; LIVE-INTEGRATION reinforces FALSIFY-005/009.
+
+### 55.9 Spec amendment cadence preserved
+
+§41 → §42 → §43 → §44 → §45 → §46 → §47 → §48 → §49 → §50 → §51 → §52 → §53 → §54 → §55. Fifteen amendments since 2026-05-03. §55 closes the same-day continuation chain that §54 opened — the four-section pattern (52 gap → 53 fill → 54 next gap → 55 fill) is the canonical falsifier-first cadence.
 
 ## §54. Step 5g has multi-step prerequisites; live preflight smoke proves polymorphic gate fires on Qwen --init + legacy 50257-vocab tokenizer (2026-05-05)
 

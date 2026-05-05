@@ -16,7 +16,10 @@ use crate::error::{CliError, Result};
 use crate::output;
 use clap::ValueEnum;
 use colored::Colorize;
-use entrenar::models::llama_370m::{assert_tokenizer_vocab_matches_model, Llama370MConfig};
+use entrenar::models::llama_370m::{
+    assert_tokenizer_vocab_matches_model, assert_tokenizer_vocab_within_model_bound,
+    Llama370MConfig,
+};
 use entrenar::train::device::{resolve_device, Device};
 use entrenar::train::pretrain::{
     CheckpointFn, LinearDecaySynthetic, PretrainAbort, PretrainConfig, PretrainLoop, RunStatus,
@@ -322,6 +325,7 @@ fn validate_init_apr_path(path: &Path) -> Result<()> {
 fn preflight_tokenizer_vocab_matches_target(
     tokenizer_dir: &Path,
     target_vocab_size: usize,
+    init_is_some: bool,
 ) -> Result<()> {
     let vocab_path = tokenizer_dir.join("vocab.json");
     let vocab_json = std::fs::read_to_string(&vocab_path).map_err(|e| {
@@ -337,8 +341,17 @@ fn preflight_tokenizer_vocab_matches_target(
                 vocab_path.display()
             ))
         })?;
-    assert_tokenizer_vocab_matches_model(vocab.len(), target_vocab_size)
-        .map_err(CliError::ValidationFailed)
+    // §55: when --init is set (polymorphic path with HF-distributed
+    // checkpoint), allow tokenizer_vocab ≤ model_vocab to admit Qwen-style
+    // reserved-slot vocabularies. When --init is absent (§24/§25 from-scratch
+    // baseline), enforce strict equality to preserve INV-ARCH-370M-006.
+    if init_is_some {
+        assert_tokenizer_vocab_within_model_bound(vocab.len(), target_vocab_size)
+            .map_err(CliError::ValidationFailed)
+    } else {
+        assert_tokenizer_vocab_matches_model(vocab.len(), target_vocab_size)
+            .map_err(CliError::ValidationFailed)
+    }
 }
 
 /// Real-corpus drive: build a shared 370M trainer (CPU or CUDA), split
@@ -373,7 +386,11 @@ fn drive_real(
     let target_vocab = init_arch
         .map(|cfg| cfg.vocab_size)
         .unwrap_or(Llama370MConfig::VOCAB_SIZE);
-    preflight_tokenizer_vocab_matches_target(&config.tokenizer_dir, target_vocab)?;
+    preflight_tokenizer_vocab_matches_target(
+        &config.tokenizer_dir,
+        target_vocab,
+        init_arch.is_some(),
+    )?;
 
     // MVP: pad_id/eos_id both 0. All sequences are uniform length
     // (seq_length + 1) so LMBatch::from_sequences takes the shared
@@ -739,7 +756,7 @@ mod tests {
         // exactly Llama370MConfig::VOCAB_SIZE entries must pass pre-flight.
         let tmp = TempDir::new().expect("tempdir");
         stage_vocab_json(tmp.path(), Llama370MConfig::VOCAB_SIZE);
-        preflight_tokenizer_vocab_matches_target(tmp.path(), Llama370MConfig::VOCAB_SIZE)
+        preflight_tokenizer_vocab_matches_target(tmp.path(), Llama370MConfig::VOCAB_SIZE, false)
             .expect("matching vocab must pass GATE-ARCH-370M-011");
     }
 
@@ -754,8 +771,9 @@ mod tests {
         let tmp = TempDir::new().expect("tempdir");
         let mismatch = Llama370MConfig::VOCAB_SIZE - 1;
         stage_vocab_json(tmp.path(), mismatch);
-        let err = preflight_tokenizer_vocab_matches_target(tmp.path(), Llama370MConfig::VOCAB_SIZE)
-            .expect_err("tokenizer/model vocab mismatch must be rejected");
+        let err =
+            preflight_tokenizer_vocab_matches_target(tmp.path(), Llama370MConfig::VOCAB_SIZE, false)
+                .expect_err("tokenizer/model vocab mismatch must be rejected");
         match err {
             CliError::ValidationFailed(msg) => {
                 assert!(
@@ -781,8 +799,9 @@ mod tests {
         // error) — the operator should know the tokenizer layout is
         // wrong, not that the dataset is empty.
         let tmp = TempDir::new().expect("tempdir");
-        let err = preflight_tokenizer_vocab_matches_target(tmp.path(), Llama370MConfig::VOCAB_SIZE)
-            .expect_err("missing vocab.json must be rejected");
+        let err =
+            preflight_tokenizer_vocab_matches_target(tmp.path(), Llama370MConfig::VOCAB_SIZE, false)
+                .expect_err("missing vocab.json must be rejected");
         match err {
             CliError::ValidationFailed(msg) => {
                 assert!(
@@ -809,7 +828,10 @@ mod tests {
         const QWEN2_VOCAB_SIZE: usize = 151_936;
         let tmp = TempDir::new().expect("tempdir");
         stage_vocab_json(tmp.path(), QWEN2_VOCAB_SIZE);
-        preflight_tokenizer_vocab_matches_target(tmp.path(), QWEN2_VOCAB_SIZE).expect(
+        // §50.4 step 5d called this with init=Some semantic (the polymorphic path). Use
+        // init_is_some=true here per §55 relaxed-bound semantics; vocab.len() == target
+        // is still acceptable under <=.
+        preflight_tokenizer_vocab_matches_target(tmp.path(), QWEN2_VOCAB_SIZE, true).expect(
             "Qwen tokenizer (151_936) MUST pass preflight when target is Qwen-shaped — \
              this is the load-bearing claim of §49 fine-tune from a Qwen2.5 init checkpoint",
         );
@@ -826,11 +848,17 @@ mod tests {
         const QWEN2_VOCAB_SIZE: usize = 151_936;
         let tmp = TempDir::new().expect("tempdir");
         stage_vocab_json(tmp.path(), QWEN2_VOCAB_SIZE);
-        let err = preflight_tokenizer_vocab_matches_target(tmp.path(), Llama370MConfig::VOCAB_SIZE)
-            .expect_err(
-                "Qwen tokenizer (151_936) MUST FAIL preflight when target is Llama370M (50_257) — \
-                 silent-pass would corrupt training",
-            );
+        // §55: this is the from-scratch path (init absent), so init_is_some=false.
+        // Strict equality applies; tokenizer (151_936) ≠ target (50_257) MUST fail.
+        let err = preflight_tokenizer_vocab_matches_target(
+            tmp.path(),
+            Llama370MConfig::VOCAB_SIZE,
+            false,
+        )
+        .expect_err(
+            "Qwen tokenizer (151_936) MUST FAIL preflight when target is Llama370M (50_257) — \
+             silent-pass would corrupt training",
+        );
         match err {
             CliError::ValidationFailed(msg) => {
                 assert!(
@@ -840,6 +868,73 @@ mod tests {
                 assert!(
                     msg.contains(&Llama370MConfig::VOCAB_SIZE.to_string()),
                     "msg must name target Llama vocab size 50_257: {msg}"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    /// FALSIFY-APR-PRETRAIN-ARCH-009 (§55) — at preflight level, an HF
+    /// tokenizer with vocab.json count = 151665 (BPE+added, the §54 LIVE
+    /// smoke shape) MUST PASS preflight when target is Qwen 151936 AND
+    /// init_is_some=true (the polymorphic path).
+    #[test]
+    fn preflight_qwen_reserved_slots_pass_under_polymorphic_init() {
+        const QWEN_TOKENIZER_EFFECTIVE: usize = 151_665;
+        const QWEN_DECLARED_VOCAB: usize = 151_936;
+        let tmp = TempDir::new().expect("tempdir");
+        stage_vocab_json(tmp.path(), QWEN_TOKENIZER_EFFECTIVE);
+
+        // init_is_some=true: relaxed bound applies; 151665 ≤ 151936 PASSES.
+        preflight_tokenizer_vocab_matches_target(tmp.path(), QWEN_DECLARED_VOCAB, true).expect(
+            "FALSIFY-APR-PRETRAIN-ARCH-009: HF reserved-slot tokenizer (151_665 ≤ 151_936) \
+             MUST pass preflight under polymorphic init path (§55 relaxed bound)",
+        );
+
+        // init_is_some=false: strict equality applies; 151665 ≠ 151936 FAILS.
+        let err =
+            preflight_tokenizer_vocab_matches_target(tmp.path(), QWEN_DECLARED_VOCAB, false)
+                .expect_err(
+                    "FALSIFY-APR-PRETRAIN-ARCH-009 dual: from-scratch path MUST keep strict ==",
+                );
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(
+                    msg.contains("GATE-ARCH-370M-011")
+                        && msg.contains(&QWEN_TOKENIZER_EFFECTIVE.to_string())
+                        && msg.contains(&QWEN_DECLARED_VOCAB.to_string()),
+                    "strict-mode error must name gate + both sizes: {msg}"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    /// FALSIFY-APR-PRETRAIN-ARCH-010 (§55) — at preflight level, a tokenizer
+    /// with MORE entries than the model declares MUST FAIL even under the
+    /// polymorphic init path. This is the OOB-safety guard: such a tokenizer
+    /// could emit ids ≥ model_vocab → silent embedding-lookup garbage.
+    #[test]
+    fn preflight_oversized_tokenizer_rejected_even_under_polymorphic_init() {
+        const QWEN_DECLARED_VOCAB: usize = 151_936;
+        let oversized = QWEN_DECLARED_VOCAB + 100;
+        let tmp = TempDir::new().expect("tempdir");
+        stage_vocab_json(tmp.path(), oversized);
+
+        let err = preflight_tokenizer_vocab_matches_target(
+            tmp.path(),
+            QWEN_DECLARED_VOCAB,
+            true, // polymorphic path
+        )
+        .expect_err(
+            "FALSIFY-APR-PRETRAIN-ARCH-010: oversized tokenizer MUST fail-fast even under \
+             polymorphic init (OOB safety; relaxed bound is ≤ not <)",
+        );
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(
+                    msg.contains("RELAXED") && msg.contains("OOB"),
+                    "polymorphic-mode error must cite RELAXED + OOB: {msg}"
                 );
             }
             other => panic!("unexpected error: {other:?}"),
