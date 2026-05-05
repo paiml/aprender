@@ -10,7 +10,13 @@
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
-const ALIASES_YAML: &str = include_str!("../../../../configs/aliases.yaml");
+// In-crate copy of the canonical alias map. The workspace root's
+// `configs/aliases.yaml` is the source-of-truth; this is a publish-time
+// copy because `cargo publish` excludes files outside the crate directory
+// (was `include_str!("../../../../configs/aliases.yaml")` which broke
+// cargo publish — Issue #1514). Sync after editing workspace copy:
+//   cp ../../configs/aliases.yaml crates/apr-cli/configs/aliases.yaml
+const ALIASES_YAML: &str = include_str!("../../configs/aliases.yaml");
 
 fn aliases() -> &'static BTreeMap<String, String> {
     static MAP: OnceLock<BTreeMap<String, String>> = OnceLock::new();
