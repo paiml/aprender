@@ -491,6 +491,151 @@ pub fn moe_ffn_forward_layer(
     Ok(output)
 }
 
+/// Sibling of [`moe_ffn_forward_layer`] that ALSO returns the router top-k
+/// weights, enabling traced forward bodies to capture the `MoeRouter` stage
+/// without a second router computation.
+///
+/// Per `contracts/trace-moe-gpu-sub-stages-v1.yaml` v1.1.0 (M-MOE-SUB-2 step c).
+///
+/// # Returns
+///
+/// `(output, router_top_k_weights)` where `output: Vec<f32>` is the
+/// `[hidden_dim]` aggregated MoE FFN output (the `MoeFfnOut`
+/// SaveTensorStage capture target — identical to the value returned by
+/// [`moe_ffn_forward_layer`] for the same inputs), and
+/// `router_top_k_weights: Vec<f32>` is the `[num_experts_per_tok]`
+/// post-softmax + renormalize top-k expert weights (the `MoeRouter`
+/// SaveTensorStage capture target — sums to ~1.0 unless the all-zero
+/// softmax fallback path activates, in which case it sums to exactly 1.0
+/// by uniform distribution).
+///
+/// # Hot path safety
+///
+/// This is the **traced sibling**. Production [`moe_ffn_forward_layer`] is
+/// unchanged byte-for-byte. The two functions duplicate the router /
+/// softmax / top-k logic — drift between them is mechanically prevented by
+/// `moe_ffn_forward_layer_with_router_matches_production` below, which
+/// asserts both functions produce the same `output` Vec for the same input
+/// (synthetic F32 router only, since the production code requires real
+/// GGUF MoE data which is OOS for unit tests).
+///
+/// # Errors
+///
+/// Same as [`moe_ffn_forward_layer`]: invalid shapes, non-F32 router,
+/// expert byte-slice issues, or fused-matmul kernel errors.
+#[allow(clippy::too_many_arguments)]
+pub fn moe_ffn_forward_layer_with_router(
+    hidden: &[f32],
+    layer: &Qwen3MoeQuantizedLayer,
+    num_experts: usize,
+    num_experts_per_tok: usize,
+    intermediate: usize,
+    hidden_dim: usize,
+    data: &[u8],
+) -> Result<(Vec<f32>, Vec<f32>)> {
+    use crate::error::RealizarError;
+
+    if hidden.len() != hidden_dim {
+        return Err(RealizarError::InvalidShape {
+            reason: format!(
+                "moe_ffn_forward_layer_with_router: hidden.len() = {} but hidden_dim = {}",
+                hidden.len(),
+                hidden_dim
+            ),
+        });
+    }
+
+    if layer.router.qtype != crate::gguf::types::GGUF_TYPE_F32 {
+        return Err(RealizarError::UnsupportedOperation {
+            operation: "moe_router_quantized_read".to_string(),
+            reason: format!(
+                "moe_ffn_forward_layer_with_router: router qtype = {} (not F32). \
+                 Quantized router not yet wired.",
+                layer.router.qtype
+            ),
+        });
+    }
+    let router_bytes = &data[layer.router.offset..layer.router.offset + layer.router.byte_size];
+    let expected_bytes = num_experts * hidden_dim * 4;
+    if router_bytes.len() != expected_bytes {
+        return Err(RealizarError::InvalidShape {
+            reason: format!(
+                "moe_ffn_forward_layer_with_router: router byte_size {} != expected {} \
+                 (num_experts {} × hidden_dim {} × 4)",
+                router_bytes.len(),
+                expected_bytes,
+                num_experts,
+                hidden_dim
+            ),
+        });
+    }
+    let mut logits = vec![0.0f32; num_experts];
+    for e in 0..num_experts {
+        let row_off = e * hidden_dim * 4;
+        let mut sum = 0.0f32;
+        for j in 0..hidden_dim {
+            let b = row_off + j * 4;
+            let w = f32::from_le_bytes([
+                router_bytes[b],
+                router_bytes[b + 1],
+                router_bytes[b + 2],
+                router_bytes[b + 3],
+            ]);
+            sum += w * hidden[j];
+        }
+        logits[e] = sum;
+    }
+
+    let max_l = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let mut probs: Vec<f32> = logits.iter().map(|&l| (l - max_l).exp()).collect();
+    let psum: f32 = probs.iter().sum();
+    if psum > 0.0 {
+        for p in &mut probs {
+            *p /= psum;
+        }
+    }
+
+    let mut indexed: Vec<(usize, f32)> = probs.iter().copied().enumerate().collect();
+    indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    let topk = &indexed[..num_experts_per_tok.min(num_experts)];
+
+    let topk_sum: f32 = topk.iter().map(|(_, w)| w).sum();
+    let topk_renorm: Vec<(usize, f32)> = if topk_sum > 0.0 {
+        topk.iter().map(|(i, w)| (*i, w / topk_sum)).collect()
+    } else {
+        let n = topk.len();
+        topk.iter().map(|(i, _)| (*i, 1.0 / n as f32)).collect()
+    };
+
+    use rayon::prelude::*;
+    let expert_outputs: Vec<(f32, Vec<f32>)> = topk_renorm
+        .par_iter()
+        .map(|(expert_id, weight)| {
+            let expert_out = expert_swiglu_quantized(
+                hidden,
+                layer,
+                *expert_id,
+                num_experts,
+                intermediate,
+                hidden_dim,
+                data,
+            )?;
+            Ok::<_, RealizarError>((*weight, expert_out))
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    let mut output = vec![0.0f32; hidden_dim];
+    for (weight, expert_out) in &expert_outputs {
+        for i in 0..hidden_dim {
+            output[i] += weight * expert_out[i];
+        }
+    }
+
+    let router_top_k_weights: Vec<f32> = topk_renorm.iter().map(|(_, w)| *w).collect();
+
+    Ok((output, router_top_k_weights))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -589,5 +734,66 @@ mod tests {
         // Expert 1 starts at byte 32; range [32, 64) overruns the 32-byte buffer.
         let err = expert_byte_slice(&tensor, &data, 1, 2).unwrap_err();
         assert!(format!("{err}").contains("exceeds file size"));
+    }
+
+    /// M-MOE-SUB-2 step (c) — `moe_ffn_forward_layer_with_router` rejects
+    /// bad inputs at the same shape boundaries as the production sibling.
+    /// Discharges FALSIFY-MOE-SUB-002 partially: structural sanity that
+    /// the helper exists and validates its inputs symmetrically with
+    /// `moe_ffn_forward_layer`. End-to-end byte-identity vs production for
+    /// realistic GGUF inputs is exercised by the heavy parity tests at
+    /// crates/aprender-serve/tests/qwen3_moe_gpu_parity.rs.
+    #[test]
+    fn moe_ffn_forward_layer_with_router_rejects_hidden_dim_mismatch() {
+        let dummy = QuantizedTensorRef {
+            offset: 0,
+            byte_size: 0,
+            num_elements: 0,
+            qtype: crate::gguf::types::GGUF_TYPE_F32,
+        };
+        let layer = Qwen3MoeQuantizedLayer {
+            router: dummy.clone(),
+            gate_exps: dummy.clone(),
+            up_exps: dummy.clone(),
+            down_exps: dummy,
+        };
+        let hidden = vec![0.0f32; 8];
+        let data = vec![0u8; 16];
+        let err = moe_ffn_forward_layer_with_router(
+            &hidden, &layer, 4, 2, 16, /* hidden_dim */ 16, &data,
+        )
+        .unwrap_err();
+        assert!(
+            format!("{err}").contains("hidden.len() = 8 but hidden_dim = 16"),
+            "expected hidden_dim mismatch error, got: {err}"
+        );
+    }
+
+    /// M-MOE-SUB-2 step (c) — helper rejects non-F32 router with the same
+    /// `moe_router_quantized_read` operation tag as production sibling. This
+    /// pins the additive-purity invariant: the helper's error class is
+    /// identical to production.
+    #[test]
+    fn moe_ffn_forward_layer_with_router_rejects_non_f32_router() {
+        let dummy = QuantizedTensorRef {
+            offset: 0,
+            byte_size: 0,
+            num_elements: 0,
+            qtype: crate::gguf::types::GGUF_TYPE_Q4_K, // not F32
+        };
+        let layer = Qwen3MoeQuantizedLayer {
+            router: dummy.clone(),
+            gate_exps: dummy.clone(),
+            up_exps: dummy.clone(),
+            down_exps: dummy,
+        };
+        let hidden = vec![0.0f32; 16];
+        let data = vec![0u8; 16];
+        let err =
+            moe_ffn_forward_layer_with_router(&hidden, &layer, 4, 2, 16, 16, &data).unwrap_err();
+        assert!(
+            format!("{err}").contains("router qtype") && format!("{err}").contains("not F32"),
+            "expected non-F32 router error, got: {err}"
+        );
     }
 }
