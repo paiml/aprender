@@ -316,3 +316,46 @@ fn pretrain_init_flag_registered() {
         stdout
     );
 }
+
+/// FALSIFY-TOK-IMPORT-HF-001: `apr tokenize import-hf` subcommand is
+/// registered in the dispatch surface.
+///
+/// Asserts `apr tokenize import-hf --help` exits 0 and prints help text
+/// mentioning the `--input`, `--output`, and `--include-added-tokens` flags
+/// that `apr-cli-tokenize-import-hf-v1` v1.0.0 §extraction_signature pins.
+///
+/// 3-surface drift prevention triangle for `import-hf`:
+///   (1) clap variant `TokenizeCommands::ImportHf { ... }` in
+///       `crates/apr-cli/src/tokenize_commands.rs`
+///   (2) unit tests `commands::tokenize::tests::import_hf_*` in
+///       `crates/apr-cli/src/commands/tokenize.rs`
+///   (3) integration test (this one) — confirming the subcommand is
+///       reachable from the installed binary's help surface.
+///
+/// If `tokenize_commands.rs` drops the `ImportHf` variant, or
+/// `dispatch_analysis.rs` fails to wire it through, or the binary is built
+/// without the subcommand registered, this test fails.
+#[test]
+fn tokenize_import_hf_subcommand_registered() {
+    let output = apr_binary()
+        .args(["tokenize", "import-hf", "--help"])
+        .output()
+        .expect("failed to run apr tokenize import-hf --help");
+
+    assert!(
+        output.status.success(),
+        "FALSIFY-TOK-IMPORT-HF-001: `apr tokenize import-hf --help` should exit 0, got {:?}\nstderr:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for flag in ["--input", "--output", "--include-added-tokens"] {
+        assert!(
+            stdout.contains(flag),
+            "FALSIFY-TOK-IMPORT-HF-001: `{flag}` flag missing from `apr tokenize import-hf --help`.\n\
+             Either clap definition drifted, dispatch isn't wired, or the binary was built without the subcommand.\n\
+             Full --help output:\n{stdout}"
+        );
+    }
+}

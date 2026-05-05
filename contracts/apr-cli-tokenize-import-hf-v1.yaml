@@ -1,12 +1,45 @@
 metadata:
   kind: schema
-  version: 1.0.0
+  version: 1.1.0
   status: PARTIAL_ALGORITHM_LEVEL
   created: '2026-05-05'
   updated: '2026-05-05'
   author: PAIML Engineering
   registry: true
   changelog:
+  - version: 1.1.0
+    date: '2026-05-05'
+    change: |
+      v1.0.0 → v1.1.0 — bind FALSIFY-TOK-IMPORT-HF-001 to a real
+      integration test.
+
+      v1.0.0 stamped a vague test reference for FALSIFY-001:
+        "cargo test -p apr-cli --test cli_commands -- --nocapture
+         (or equivalent) reports import-hf as a registered tokenize
+         subcommand"
+      This was not a runnable invocation — same drift class as PR
+      #1504 + PR #1505 caught for sibling pretrain contracts.
+
+      This bump:
+        - Adds `tokenize_import_hf_subcommand_registered` integration
+          test in `crates/apr-cli/tests/cli_commands.rs` that runs
+          `apr tokenize import-hf --help` and asserts (a) exit 0,
+          (b) `--input`, `--output`, `--include-added-tokens` flags
+          appear in stdout. Pins the 3-surface drift triangle:
+            (1) clap variant TokenizeCommands::ImportHf
+            (2) unit tests commands::tokenize::tests::import_hf_*
+            (3) integration test (this new one)
+        - Updates FALSIFY-001 `test:` field to cite the new test by name.
+
+      No falsifier semantics change. Status remains
+      PARTIAL_ALGORITHM_LEVEL: 5/5 falsifiers PASS, but the contract
+      hasn't yet seen the LIVE evidence that promotes to FUNCTIONAL
+      (per v1.0.0 changelog: "Promotion to FUNCTIONAL requires 5g.1
+      LIVE: extract Qwen2.5-Coder-0.5B-Instruct tokenizer.json on
+      canonical host AND have downstream `apr tokenize encode-corpus`
+      succeed without modification" — this happened in §56 LIVE smoke
+      but the contract status flip waits for full-corpus completion
+      via the in-flight 5g.1 dispatch).
   - version: 1.0.0
     date: '2026-05-05'
     change: |
@@ -98,9 +131,9 @@ equations:
 falsification_tests:
 - id: FALSIFY-TOK-IMPORT-HF-001
   rule: command is registered in apr tokenize subcommand surface
-  prediction: "`apr tokenize import-hf --help` prints help text and exits 0; the subcommand is recognized in the dispatch path"
-  test: "cargo test -p apr-cli --test cli_commands -- --nocapture (or equivalent) reports import-hf as a registered tokenize subcommand"
-  if_fails: "subcommand was added to TokenizeCommands enum but dispatch surface did not pick it up — three-surface drift per feedback_cli_subcommand_three_surface_drift.md"
+  prediction: "`apr tokenize import-hf --help` exits 0 and prints help text containing `--input`, `--output`, and `--include-added-tokens` flags. Pins the 3-surface drift triangle: (1) clap variant `TokenizeCommands::ImportHf`, (2) unit tests `commands::tokenize::tests::import_hf_*`, (3) this integration test."
+  test: "cargo test -p apr-cli --test cli_commands -- tokenize_import_hf_subcommand_registered"
+  if_fails: "subcommand was added to TokenizeCommands enum but dispatch surface did not pick it up, OR a flag rename drifted from clap definition — three-surface drift per feedback_cli_subcommand_three_surface_drift.md"
 
 - id: FALSIFY-TOK-IMPORT-HF-002
   rule: BPE input produces non-empty vocab.json + merges.txt
