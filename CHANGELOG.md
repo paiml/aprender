@@ -7,7 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-05-05
+
+### Breaking
+
+- **`aprender-rag` lib name renamed**: `[lib] name = "trueno_rag"` → `"aprender_rag"`. External crates that depended on `aprender-rag = "0.31.2"` and used `use trueno_rag::*` now need `use aprender_rag::*`. The package name (`aprender-rag`) was already canonical post-APR-MONO; this release aligns the lib name to match (#1512). Internal workspace consumers continue to depend on the standalone `trueno-rag = "0.2"` crate from crates.io (DEPRECATED shim) — migrating those is a separate refactor.
+
+### Cascade publish — v0.32.0 release-cut
+
+This release publishes **15 user-facing crates at v0.32.0** in topological dependency order (Issue #1514): `aprender`, `apr-cli`, `aprender-core`, `aprender-compute`, `aprender-train`, `aprender-serve`, `aprender-contracts`, `aprender-contracts-cli`, `aprender-contracts-macros`, `aprender-rag`, `aprender-graph`, `aprender-data`, `aprender-mcp`, `aprender-zram-core`, `aprender-gpu`, `aprender-profile`, plus 7 internal-tier crates (aprender-quant, aprender-gemm-codegen, aprender-train-common, aprender-{solve,sparse,rand,image,tensor,fft,cuda-edge,present-core,present-terminal,orchestrate,train-{lora,distill,inspect}}).
+
+Two release-engineering fix PRs were required:
+- **PR #1515**: `aprender-core` dev-dep cycle break (path-only dev-deps so cargo strips them at publish).
+- **PR #1517**: clean-room compat — permissive `version = ">=0.27"` alongside `path = "..."` so post-strip leaves a valid Cargo.toml entry.
+- **PR #1518**: `apr-cli` brings `configs/aliases.yaml` into the crate dir (cargo publish excludes files outside the crate).
+
 ### Added
+
+#### `apr pretrain --init` polymorphic init + Qwen2.5-Coder-0.5B-Instruct fine-tune (§50.4 cascade)
+- `apr pretrain --init <PATH>.apr` end-to-end runnable on CPU (#1471–#1494). Operator-facing 4-step recipe: `apr tokenize import-hf` → `apr tokenize encode-corpus` → `apr pretrain --init` → val_loss verdict.
+- New subcommand `apr tokenize import-hf <tokenizer.json> --output <DIR>` extracts HF BPE → aprender vocab.json + merges.txt + manifest.json (#1497, contract `apr-cli-tokenize-import-hf-v1` v1.1.0 PARTIAL_ALGORITHM_LEVEL).
+- `apr-pretrain-arch-polymorphic-v1` v1.0.0 PROPOSED → **v1.6.0 FUNCTIONAL** (11 falsifiers, all PASS).
+- Polymorphic preflight: `tokenizer_vocab ≤ model_vocab` (RELAXED) when `--init` is set; preserves strict equality for from-scratch (§55, PR #1500).
+
+#### `pv lint --strict-test-binding` (PV-VER-002)
+- New flag catches dangling test references in contracts (Issue #1510, PR #1511). Default WARNING mode; `--strict` promotes to ERROR. Surfaces 6 drift instances during introduction; closes #1502/#1504/#1505/#1506/#1509 across §50.4 cascade contracts.
 
 #### CPU/GPU output parity contract (jidoka armor)
 - **`contracts/apr-cpu-vs-gpu-output-parity-v1.yaml`** — new provable contract codifying the CPU-vs-GPU output-parity invariant for `apr run` / `apr serve` (#1427). Authored after SHIP-007 evidence v5 confirmed the GPU forward path emits gibberish on the canonical Qwen2.5-Coder-7B teacher while the CPU path returns correct output. Contract progressed v1.0.0 → **v1.5.0 ACTIVE** with **5/5 falsifiers DISCHARGED** in a single 2-PR cycle (#1445 + #1446) — first contract in the SHIP-TWO program to reach complete-evidence terminal state.
