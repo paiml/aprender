@@ -1,0 +1,853 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-core/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-train/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-profile/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-graph/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-orchestrate/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-compute/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-serve/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-train-wasm/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-verify/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-verify-ml/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-data/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-simulate/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-distribute/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-registry/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-db/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-rag/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-viz/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-zram/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: /home/noah/src/aprender/crates/aprender-serve/Cargo.toml: file `/home/noah/src/aprender/crates/aprender-serve/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `aprender-serve`
+  * `example` target `aprender-serve`
+warning: /home/noah/src/aprender/crates/aprender-train/Cargo.toml: file `/home/noah/src/aprender/crates/aprender-train/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `aprender-train`
+  * `example` target `aprender-train`
+warning: /home/noah/src/aprender/crates/aprender-viz/Cargo.toml: `default-features` is ignored for trueno-graph, since `default-features` was not specified for `workspace.dependencies.trueno-graph`, this could become a hard error in the future
+warning: /home/noah/src/aprender/crates/apr-cli/Cargo.toml: `default-features` is ignored for batuta, since `default-features` was not specified for `workspace.dependencies.batuta`, this could become a hard error in the future
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.45
+   Compiling unicode-ident v1.0.24
+   Compiling libc v0.2.184
+   Compiling cfg-if v1.0.4
+   Compiling autocfg v1.5.0
+   Compiling libm v0.2.16
+   Compiling serde_core v1.0.228
+   Compiling once_cell v1.21.4
+   Compiling log v0.4.29
+   Compiling serde v1.0.228
+   Compiling memchr v2.8.0
+   Compiling zerocopy v0.8.48
+   Compiling foldhash v0.2.0
+   Compiling itoa v1.0.18
+   Compiling bytes v1.11.1
+   Compiling bitflags v2.11.0
+   Compiling equivalent v1.0.2
+   Compiling smallvec v1.15.1
+   Compiling pin-project-lite v0.2.17
+   Compiling futures-core v0.3.32
+   Compiling thiserror v2.0.18
+   Compiling find-msvc-tools v0.1.9
+   Compiling hashbrown v0.16.1
+   Compiling shlex v1.3.0
+   Compiling stable_deref_trait v1.2.1
+   Compiling pkg-config v0.3.32
+   Compiling parking_lot_core v0.9.12
+   Compiling futures-sink v0.3.32
+   Compiling version_check v0.9.5
+   Compiling tracing-core v0.1.36
+   Compiling scopeguard v1.2.0
+   Compiling zmij v1.0.21
+   Compiling cfg_aliases v0.2.1
+   Compiling lock_api v0.4.14
+   Compiling num-traits v0.2.19
+   Compiling slab v0.4.12
+   Compiling serde_json v1.0.149
+   Compiling futures-channel v0.3.32
+   Compiling getrandom v0.3.4
+   Compiling arrayvec v0.7.6
+   Compiling iana-time-zone v0.1.65
+   Compiling crossbeam-utils v0.8.21
+   Compiling rustversion v1.0.22
+   Compiling either v1.15.0
+   Compiling anyhow v1.0.102
+   Compiling unicode-width v0.2.0
+   Compiling futures-task v0.3.32
+   Compiling fnv v1.0.7
+   Compiling indexmap v2.13.1
+   Compiling futures-io v0.3.32
+   Compiling rayon-core v1.13.0
+   Compiling foldhash v0.1.5
+   Compiling allocator-api2 v0.2.21
+   Compiling regex-syntax v0.8.10
+   Compiling ryu v1.0.23
+   Compiling aho-corasick v1.1.4
+   Compiling syn v2.0.117
+   Compiling jobserver v0.1.34
+   Compiling mio v1.2.0
+   Compiling socket2 v0.6.3
+   Compiling cc v1.2.59
+   Compiling crossbeam-epoch v0.9.18
+   Compiling hashbrown v0.15.5
+   Compiling libloading v0.8.9
+   Compiling parking_lot v0.12.5
+   Compiling unsafe-libyaml v0.2.11
+   Compiling bit-vec v0.8.0
+   Compiling num-integer v0.1.46
+   Compiling crossbeam-deque v0.8.6
+   Compiling num-bigint v0.4.6
+   Compiling bit-set v0.8.0
+   Compiling errno v0.3.14
+   Compiling naga v27.0.3
+   Compiling khronos-egl v6.0.0
+   Compiling ash v0.38.0+1.3.281
+   Compiling tower-service v0.3.3
+   Compiling signal-hook v0.3.18
+   Compiling signal-hook-registry v1.4.8
+   Compiling codespan-reporting v0.12.0
+   Compiling ahash v0.8.12
+   Compiling http v1.4.0
+   Compiling wgpu-hal v27.0.4
+   Compiling gpu-alloc-types v0.3.0
+   Compiling spirv v0.3.0+sdk-1.3.268.0
+   Compiling gpu-descriptor-types v0.2.0
+   Compiling httparse v1.10.1
+   Compiling static_assertions v1.1.0
+   Compiling vcpkg v0.2.15
+   Compiling hexf-parse v0.2.1
+   Compiling regex-automata v0.4.14
+   Compiling rustc-hash v1.1.0
+   Compiling simd-adler32 v0.3.9
+   Compiling gpu-descriptor v0.3.2
+   Compiling gpu-alloc v0.6.0
+   Compiling rayon v1.11.0
+   Compiling ordered-float v5.3.0
+   Compiling mio v0.8.11
+   Compiling zstd-sys v2.0.16+zstd.1.5.7
+   Compiling getrandom v0.4.2
+   Compiling heck v0.5.0
+   Compiling renderdoc-sys v1.1.0
+   Compiling try-lock v0.2.5
+   Compiling openssl-sys v0.9.112
+   Compiling arrow-schema v57.3.0
+   Compiling glow v0.16.0
+   Compiling raw-window-handle v0.6.2
+   Compiling signal-hook-mio v0.2.5
+   Compiling want v0.3.1
+   Compiling num-complex v0.4.6
+   Compiling num_cpus v1.17.0
+   Compiling wgpu-core v27.0.3
+   Compiling synstructure v0.13.2
+   Compiling httpdate v1.0.3
+   Compiling anstyle v1.0.14
+   Compiling typenum v1.19.0
+   Compiling writeable v0.6.3
+   Compiling litrs v1.0.0
+   Compiling winnow v0.7.15
+   Compiling litemap v0.8.2
+   Compiling adler2 v2.0.1
+   Compiling toml_write v0.1.2
+   Compiling crc32fast v1.5.0
+   Compiling rustix v0.38.44
+   Compiling miniz_oxide v0.8.9
+   Compiling http-body v1.0.1
+   Compiling generic-array v0.14.7
+   Compiling document-features v0.2.12
+   Compiling wgpu v27.0.1
+   Compiling icu_properties_data v2.2.0
+   Compiling zstd-safe v7.2.4
+   Compiling utf8_iter v1.0.4
+   Compiling tower-layer v0.3.3
+   Compiling utf8parse v0.2.2
+   Compiling percent-encoding v2.3.2
+   Compiling paste v1.0.15
+   Compiling icu_normalizer_data v2.2.0
+   Compiling linux-raw-sys v0.4.15
+   Compiling lexical-util v1.0.7
+   Compiling anstyle-parse v1.0.0
+   Compiling form_urlencoded v1.2.2
+   Compiling castaway v0.2.4
+   Compiling hostname v0.4.2
+   Compiling as-slice v0.2.1
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling colorchoice v1.0.5
+   Compiling ident_case v1.0.1
+   Compiling strsim v0.11.1
+   Compiling thiserror v1.0.69
+   Compiling anstyle-query v1.1.5
+   Compiling built v0.8.0
+   Compiling regex v1.12.3
+   Compiling foreign-types-shared v0.1.1
+   Compiling radium v0.7.0
+   Compiling bitflags v1.3.2
+   Compiling openssl v0.10.76
+   Compiling av-scenechange v0.14.1
+   Compiling unicode-segmentation v1.13.2
+   Compiling atomic-waker v1.1.2
+   Compiling crossterm v0.28.1
+   Compiling darling_core v0.23.0
+   Compiling foreign-types v0.3.2
+   Compiling anstream v1.0.0
+   Compiling flate2 v1.1.9
+   Compiling serde_derive v1.0.228
+   Compiling zerocopy-derive v0.8.48
+   Compiling thiserror-impl v2.0.18
+   Compiling tracing-attributes v0.1.31
+   Compiling zerofrom-derive v0.1.7
+   Compiling tokio-macros v2.7.0
+   Compiling futures-macro v0.3.32
+   Compiling yoke-derive v0.8.2
+   Compiling profiling-procmacros v1.0.17
+   Compiling bytemuck_derive v1.10.2
+   Compiling zerovec-derive v0.11.3
+   Compiling displaydoc v0.2.5
+   Compiling profiling v1.0.17
+   Compiling equator-macro v0.4.2
+   Compiling tokio v1.51.1
+   Compiling rav1e v0.8.1
+   Compiling futures-util v0.3.32
+   Compiling arg_enum_proc_macro v0.3.4
+   Compiling thiserror-impl v1.0.69
+   Compiling tracing v0.1.44
+   Compiling zerofrom v0.1.7
+   Compiling bytemuck v1.25.0
+   Compiling openssl-macros v0.1.1
+   Compiling aligned v0.4.3
+   Compiling compact_str v0.8.1
+   Compiling equator v0.4.2
+   Compiling yoke v0.8.2
+   Compiling wgpu-types v27.0.1
+   Compiling aligned-vec v0.6.4
+   Compiling zerovec v0.11.6
+   Compiling zerotrie v0.2.4
+   Compiling futures-intrusive v0.5.0
+   Compiling v_frame v0.3.9
+   Compiling getrandom v0.2.17
+   Compiling http v0.2.12
+   Compiling nom v8.0.0
+   Compiling core2 v0.4.0
+   Compiling pastey v0.1.1
+   Compiling mime v0.3.17
+   Compiling weezl v0.1.12
+   Compiling tinystr v0.8.3
+   Compiling potential_utf v0.1.5
+   Compiling icu_locale_core v2.2.0
+   Compiling icu_collections v2.2.0
+   Compiling sync_wrapper v1.0.2
+   Compiling clap_lex v1.1.0
+   Compiling y4m v0.8.0
+   Compiling native-tls v0.2.18
+   Compiling quick-error v2.0.1
+   Compiling rustix v1.1.4
+   Compiling pollster v0.4.0
+   Compiling tap v1.0.1
+   Compiling futures-executor v0.3.32
+   Compiling clap_builder v4.6.0
+   Compiling wyz v0.5.1
+   Compiling chrono v0.4.44
+   Compiling toml_datetime v0.6.11
+   Compiling serde_spanned v0.6.9
+   Compiling num-rational v0.4.2
+   Compiling serde_yaml_ng v0.10.0
+   Compiling icu_provider v2.2.0
+   Compiling toml_edit v0.22.27
+   Compiling serde_urlencoded v0.7.1
+   Compiling icu_normalizer v2.2.0
+   Compiling icu_properties v2.2.0
+   Compiling bitstream-io v4.9.0
+   Compiling tokio-util v0.7.18
+   Compiling darling_macro v0.23.0
+   Compiling half v2.7.1
+   Compiling ppv-lite86 v0.2.21
+   Compiling av1-grain v0.2.5
+   Compiling rand_core v0.6.4
+   Compiling arrow-buffer v57.3.0
+   Compiling trueno v0.17.5
+   Compiling num-derive v0.4.2
+   Compiling fax_derive v0.2.0
+   Compiling h2 v0.4.13
+   Compiling clap_derive v4.6.0
+   Compiling toml v0.8.23
+   Compiling arrow-data v57.3.0
+   Compiling async-trait v0.1.89
+   Compiling pin-project-internal v1.1.11
+   Compiling trueno v0.14.6
+   Compiling provable-contracts-macros v0.2.2
+   Compiling arrow-array v57.3.0
+   Compiling lexical-parse-integer v1.0.6
+   Compiling lexical-write-integer v1.0.6
+   Compiling http-body-util v0.1.3
+   Compiling maybe-rayon v0.1.1
+   Compiling fdeflate v0.3.7
+   Compiling rand_core v0.9.5
+   Compiling simd_helpers v0.1.0
+   Compiling itertools v0.14.0
+   Compiling same-file v1.0.6
+   Compiling syn v1.0.109
+   Compiling openssl-probe v0.2.1
+   Compiling instability v0.3.12
+   Compiling presentar-terminal v0.3.5
+   Compiling linux-raw-sys v0.12.1
+   Compiling new_debug_unreachable v1.0.6
+   Compiling funty v2.0.0
+   Compiling imgref v1.12.0
+   Compiling unicode-width v0.1.11
+   Compiling color_quant v1.1.0
+   Compiling noop_proc_macro v0.3.0
+   Compiling zune-core v0.5.1
+   Compiling lz4_flex v0.11.6
+   Compiling bitvec v1.0.1
+   Compiling presentar-core v0.3.4
+   Compiling hyper v1.9.0
+   Compiling zune-jpeg v0.5.15
+   Compiling arrow-select v57.3.0
+   Compiling loop9 v0.1.5
+   Compiling walkdir v2.5.0
+   Compiling clap v4.6.0
+   Compiling axum-core v0.4.5
+   Compiling hyper-util v0.1.20
+   Compiling pin-project v1.1.11
+   Compiling lexical-write-float v1.0.6
+   Compiling lexical-parse-float v1.0.6
+   Compiling fax v0.2.6
+   Compiling h2 v0.3.27
+   Compiling darling v0.23.0
+   Compiling rand_chacha v0.3.1
+   Compiling aprender-serve v0.32.0 (/home/noah/src/aprender/crates/aprender-serve)
+   Compiling idna_adapter v1.2.1
+   Compiling trueno-quant v0.1.0
+   Compiling tower v0.5.3
+   Compiling serde_yaml v0.9.34+deprecated
+   Compiling http-body v0.4.6
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling async-stream-impl v0.3.6
+   Compiling strum_macros v0.26.4
+   Compiling trueno-gemm-codegen v0.1.0
+   Compiling uuid v1.23.0
+   Compiling zune-inflate v0.2.54
+   Compiling serde_path_to_error v0.1.20
+   Compiling socket2 v0.5.10
+   Compiling wait-timeout v0.2.1
+   Compiling inotify-sys v0.1.5
+   Compiling itertools v0.13.0
+   Compiling avif-serialize v0.8.8
+   Compiling instant v0.1.13
+   Compiling bit_field v0.10.3
+   Compiling predicates-core v1.0.10
+   Compiling base64 v0.22.1
+   Compiling fastrand v2.4.1
+   Compiling byteorder-lite v0.1.0
+   Compiling portable-atomic v1.13.1
+   Compiling lebe v0.5.3
+   Compiling indoc v2.0.7
+   Compiling hex v0.4.3
+   Compiling rgb v0.8.53
+   Compiling memo-map v0.3.3
+   Compiling matchit v0.7.3
+   Compiling pxfm v0.1.28
+   Compiling ciborium-io v0.2.2
+   Compiling plotters-backend v0.3.7
+   Compiling lazy_static v1.5.0
+   Compiling strum v0.26.3
+   Compiling ciborium-ll v0.2.2
+   Compiling unicode-truncate v1.1.0
+   Compiling sharded-slab v0.1.7
+   Compiling axum v0.7.9
+   Compiling ravif v0.13.0
+   Compiling hyper v0.14.32
+   Compiling plotters-svg v0.3.7
+   Compiling minijinja v2.19.0
+   Compiling renacer-core v0.1.0
+   Compiling exr v1.74.0
+   Compiling image-webp v0.2.4
+   Compiling tempfile v3.27.0
+   Compiling moxcms v0.8.1
+   Compiling wgpu-core-deps-windows-linux-android v27.0.0
+   Compiling notify-types v1.0.1
+   Compiling provable-contracts v0.2.2
+   Compiling inotify v0.10.2
+   Compiling async-stream v0.3.6
+   Compiling digest v0.10.7
+warning: aprender-serve@0.32.0: [PMAT-228] architecture-requirements-v1.yaml not found; using hand-written arch_requirements.rs fallback
+warning: aprender-serve@0.32.0: [GH-323] arch-constraints-v1.yaml not found; using fallback arch_constraints.rs
+warning: aprender-serve@0.32.0: provable-contracts binding.yaml not found at /home/noah/src/aprender/crates/aprender-serve/../provable-contracts/contracts/realizar/binding.yaml; CONTRACT_* env vars will not be set (CI/crates.io build)
+warning: aprender-serve@0.32.0: [contract] Assertions: 0 preconditions, 0 postconditions from YAML
+   Compiling arrow-ord v57.3.0
+   Compiling idna v1.1.0
+   Compiling rand v0.8.5
+   Compiling lexical-core v1.0.6
+   Compiling tiff v0.11.3
+   Compiling tower v0.4.13
+   Compiling tokio-native-tls v0.3.1
+   Compiling gif v0.14.1
+   Compiling png v0.18.1
+   Compiling tokio-stream v0.1.18
+   Compiling futures v0.3.32
+   Compiling tracing-serde v0.2.0
+   Compiling qoi v0.4.1
+   Compiling matchers v0.2.0
+   Compiling tower-http v0.6.8
+   Compiling lru v0.12.5
+   Compiling float-cmp v0.10.0
+   Compiling atoi v2.0.0
+   Compiling arc-swap v1.9.1
+   Compiling filetime v0.2.27
+   Compiling cpufeatures v0.2.17
+   Compiling memmap2 v0.9.10
+   Compiling itertools v0.10.5
+   Compiling tracing-log v0.2.0
+   Compiling thread_local v1.1.9
+   Compiling difflib v0.4.0
+   Compiling sdd v3.0.10
+   Compiling assert_cmd v2.2.0
+   Compiling base64 v0.21.7
+   Compiling nu-ansi-term v0.50.3
+   Compiling normalize-line-endings v0.3.0
+   Compiling byteorder v1.5.0
+   Compiling termtree v0.5.1
+   Compiling quick-error v1.2.3
+   Compiling heck v0.4.1
+   Compiling cassowary v0.3.0
+   Compiling cast v0.3.0
+   Compiling mp4 v0.14.0
+   Compiling strum_macros v0.24.3
+   Compiling ratatui v0.29.0
+   Compiling trueno v0.11.0
+   Compiling criterion-plot v0.5.0
+   Compiling rustls-pemfile v1.0.4
+   Compiling rusty-fork v0.3.1
+   Compiling tracing-subscriber v0.3.23
+   Compiling predicates-tree v1.0.13
+   Compiling predicates v3.1.4
+   Compiling scc v2.4.0
+   Compiling sha2 v0.10.9
+   Compiling notify v7.0.0
+   Compiling arrow-cast v57.3.0
+   Compiling image v0.25.10
+   Compiling hyper-tls v0.5.0
+   Compiling url v2.5.8
+   Compiling plotters v0.3.7
+   Compiling ciborium v0.2.2
+   Compiling arrow-string v57.3.0
+   Compiling arrow-arith v57.3.0
+   Compiling arrow-row v57.3.0
+   Compiling gif v0.13.3
+   Compiling png v0.17.16
+   Compiling rand_chacha v0.9.0
+   Compiling rand v0.9.2
+   Compiling rand_xorshift v0.4.0
+   Compiling tinytemplate v1.2.1
+   Compiling serial_test_derive v3.4.0
+   Compiling crossterm v0.26.1
+   Compiling bstr v1.12.1
+   Compiling console v0.15.11
+   Compiling is-terminal v0.4.17
+   Compiling zstd v0.13.3
+   Compiling encoding_rs v0.8.35
+   Compiling batuta-common v0.1.0
+   Compiling sync_wrapper v0.1.2
+   Compiling anes v0.1.6
+   Compiling ipnet v2.12.0
+   Compiling oorandom v11.1.5
+   Compiling number_prefix v0.4.0
+   Compiling unarray v0.1.4
+   Compiling strum v0.24.1
+   Compiling comfy-table v6.2.0
+   Compiling proptest v1.11.0
+   Compiling indicatif v0.17.11
+   Compiling reqwest v0.11.27
+   Compiling aprender-gpu v0.32.0 (/home/noah/src/aprender/crates/aprender-gpu)
+   Compiling criterion v0.5.1
+warning: unused variable: `ck`
+   --> crates/aprender-gpu/src/kernels/backward/nf4_tensor_core.rs:199:21
+    |
+199 |                 let ck = ctx.min_u32(global_k_out, k_minus_1);
+    |                     ^^ help: if this is intentional, prefix it with an underscore: `_ck`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `a_row_in_tile`
+   --> crates/aprender-gpu/src/kernels/gemm/basic/tensor_core/cta128_wmma.rs:112:17
+    |
+112 |             let a_row_in_tile = ctx.shr_u32(tid, c_2); // t/4 (covers 0..63 for first half)
+    |                 ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_a_row_in_tile`
+
+warning: unused variable: `stride_a`
+   --> crates/aprender-gpu/src/kernels/gemm/basic/tensor_core/cta128_wmma.rs:244:21
+    |
+244 |                 let stride_a = ctx.mov_u32_imm(16); // A leading dim in smem = tile_k=16
+    |                     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_stride_a`
+
+warning: unused variable: `stride_b`
+   --> crates/aprender-gpu/src/kernels/gemm/basic/tensor_core/cta128_wmma.rs:245:21
+    |
+245 |                 let stride_b = ctx.mov_u32_imm(128); // B leading dim in smem = tile_n=128
+    |                     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_stride_b`
+
+warning: unused variable: `c_63`
+  --> crates/aprender-gpu/src/kernels/gemm/basic/tensor_core/cta64_wmma.rs:76:17
+   |
+76 |             let c_63 = ctx.mov_u32_imm(63);
+   |                 ^^^^ help: if this is intentional, prefix it with an underscore: `_c_63`
+
+warning: unused variable: `smem_base`
+   --> crates/aprender-gpu/src/kernels/gemm/basic/tensor_core/cta64_wmma.rs:355:17
+    |
+355 |             let smem_base = ctx.shared_base_addr();
+    |                 ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_smem_base`
+
+warning: unused variable: `smem_base`
+   --> crates/aprender-gpu/src/kernels/gemm/basic/tensor_core/cta64_wmma.rs:662:17
+    |
+662 |             let smem_base = ctx.shared_base_addr();
+    |                 ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_smem_base`
+
+warning: unused variable: `b_row_in_tile`
+   --> crates/aprender-gpu/src/kernels/gemm/basic/tensor_core/cta64_wmma.rs:678:17
+    |
+678 |             let b_row_in_tile = ctx.shr_u32(b_local, c_3); // local/8 (32 rows across 256 threads? No...)
+    |                 ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_b_row_in_tile`
+
+   Compiling serial_test v3.4.0
+   Compiling arrow v57.3.0
+   Compiling jugar-probar v0.4.2
+   Compiling trueno-cuda-edge v0.1.0
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/driver/sys/mod.rs:88:5
+   |
+88 |     pub grid_dim_y: c_uint,
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> crates/aprender-gpu/src/lib.rs:33:9
+   |
+33 | #![warn(missing_docs)]
+   |         ^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/driver/sys/mod.rs:89:5
+   |
+89 |     pub grid_dim_z: c_uint,
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/driver/sys/mod.rs:92:5
+   |
+92 |     pub block_dim_y: c_uint,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/driver/sys/mod.rs:93:5
+   |
+93 |     pub block_dim_z: c_uint,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:23:5
+   |
+23 |     pub max_seq_len: u32,
+   |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:24:5
+   |
+24 |     pub head_dim: u32,
+   |     ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:25:5
+   |
+25 |     pub num_heads: u32,
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:26:5
+   |
+26 |     pub num_kv_heads: u32,
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:27:5
+   |
+27 |     pub batch_size: u32,
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:28:5
+   |
+28 |     pub chunk_size: u32,
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:29:5
+   |
+29 |     pub scale: f32,
+   |     ^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:34:5
+   |
+34 | /     pub fn new(
+35 | |         max_seq_len: u32,
+36 | |         head_dim: u32,
+37 | |         num_heads: u32,
+38 | |         num_kv_heads: u32,
+39 | |         batch_size: u32,
+40 | |     ) -> Self {
+   | |_____________^
+
+warning: missing documentation for a method
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:54:5
+   |
+54 |     pub fn num_chunks(&self, seq_len: u32) -> u32 {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:59:5
+   |
+59 |     pub fn partials_size_per_head(&self, max_chunks: u32) -> u32 {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/backward/nf4_tensor_core.rs:40:5
+   |
+40 |     pub m: u32,
+   |     ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/backward/nf4_tensor_core.rs:41:5
+   |
+41 |     pub n: u32,
+   |     ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/backward/nf4_tensor_core.rs:42:5
+   |
+42 |     pub k: u32,
+   |     ^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> crates/aprender-gpu/src/kernels/backward/nf4_tensor_core.rs:47:5
+   |
+47 |     pub fn new(m: u32, n: u32, k: u32) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> crates/aprender-gpu/src/kernels/backward/nf4_tensor_core.rs:52:5
+   |
+52 |     pub const fn num_k_blocks(&self) -> u32 {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> crates/aprender-gpu/src/kernels/quantize/fused/nf4_gate_up.rs:52:5
+   |
+52 |     pub fn new(m: u32, n: u32, k: u32) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> crates/aprender-gpu/src/kernels/quantize/fused/nf4_gate_up.rs:62:5
+   |
+62 |     pub const fn num_blocks_per_col(&self) -> u32 {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/quantize/nf4_tensor_core.rs:31:5
+   |
+31 |     pub m: u32,
+   |     ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/quantize/nf4_tensor_core.rs:32:5
+   |
+32 |     pub n: u32,
+   |     ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/quantize/nf4_tensor_core.rs:33:5
+   |
+33 |     pub k: u32,
+   |     ^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> crates/aprender-gpu/src/kernels/quantize/nf4_tensor_core.rs:38:5
+   |
+38 |     pub fn new(m: u32, n: u32, k: u32) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> crates/aprender-gpu/src/kernels/quantize/nf4_tensor_core.rs:43:5
+   |
+43 |     pub const fn num_k_blocks(&self) -> u32 {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+   Compiling approx v0.5.1
+   Compiling glob v0.3.3
+warning: `aprender-gpu` (lib) generated 34 warnings (run `cargo fix --lib -p aprender-gpu` to apply 8 suggestions)
+warning: unreachable expression
+  --> crates/aprender-serve/src/quantize/simd_backend.rs:47:5
+   |
+43 |         return SimdBackend::Neon;
+   |         ------------------------ any code following this expression is unreachable
+...
+47 |     SimdBackend::Scalar
+   |     ^^^^^^^^^^^^^^^^^^^ unreachable expression
+   |
+   = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `aprender-serve` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 55.57s
+     Running tests/qwen3_moe_gpu_per_stage_diff.rs (/home/noah/.target-aprender/release/deps/qwen3_moe_gpu_per_stage_diff-d7f4d9866de4a7f2)
+
+running 1 test
+M-MOE-SUB-3 heavy diff: CPU-vs-GPU per-stage at MoeRouter + MoeFfnOut
+  gguf:       /home/noah/.cache/pacha/models/2b88b180a790988f.gguf
+  prompt:     [785, 9217, 308]
+  layers:     0..48
+  stages:     moe_router,moe_ffn_out
+  cpu_dir:    /tmp/moe-sub-cpu-1314086
+  gpu_dir:    /tmp/moe-sub-gpu-1314086
+[BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF — using architecture default for 'qwen3moe'
+[BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF — using architecture default for 'qwen3moe'
+  running CPU traced forward (a few minutes)...
+  cpu_elapsed = 1.182411645s
+[BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF — using architecture default for 'qwen3moe'
+[BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF — using architecture default for 'qwen3moe'
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 3 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 3 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 7 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 7 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-129] Early kernel preload: 49 modules compiled
+[PMAT-053] FP8 cache skipped: requires sm_89-sm_9x (have sm_90, cc=121)
+  running GPU traced forward...
+[GH-480] Patched 3 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+  gpu_elapsed = 3.777424279s
+
+layer | moe_router (cos / verdict)        | moe_ffn_out (cos / verdict)
+------|-----------------------------------|-----------------------------------
+L00   | 1.000000 MATCH                    | 0.999987 MATCH
+L01   | 0.999998 MATCH                    | 0.999904 MATCH
+L02   | 0.999998 MATCH                    | 0.999953 MATCH
+L03   | 0.999975 MATCH                    | 0.999876 MATCH
+L04   | 0.999994 MATCH                    | 0.999861 MATCH
+L05   | 0.999993 MATCH                    | 0.999896 MATCH
+L06   | 0.999986 MATCH                    |             NanGpu
+L07   | 0.818903 DIVERGE                  |             NanGpu
+L08   | 0.914267 DIVERGE                  |             NanGpu
+L09   | 0.951618 DIVERGE                  |             NanGpu
+L10   | 0.982890 DIVERGE                  |             NanGpu
+L11   | 0.955745 DIVERGE                  |             NanGpu
+L12   | 0.978338 DIVERGE                  |             NanGpu
+L13   | 0.956645 DIVERGE                  |             NanGpu
+L14   | 0.968078 DIVERGE                  |             NanGpu
+L15   | 0.942228 DIVERGE                  |             NanGpu
+L16   | 0.876181 DIVERGE                  |             NanGpu
+L17   | 0.943195 DIVERGE                  |             NanGpu
+L18   | 0.935351 DIVERGE                  |             NanGpu
+L19   | 0.846059 DIVERGE                  |             NanGpu
+L20   | 0.811220 DIVERGE                  |             NanGpu
+L21   | 0.968541 DIVERGE                  |             NanGpu
+L22   | 0.908005 DIVERGE                  |             NanGpu
+L23   | 0.869227 DIVERGE                  |             NanGpu
+L24   | 0.965305 DIVERGE                  |             NanGpu
+L25   | 0.913202 DIVERGE                  |             NanGpu
+L26   | 0.937948 DIVERGE                  |             NanGpu
+L27   | 0.929534 DIVERGE                  |             NanGpu
+L28   | 0.941259 DIVERGE                  |             NanGpu
+L29   | 0.815796 DIVERGE                  |             NanGpu
+L30   | 0.928890 DIVERGE                  |             NanGpu
+L31   | 0.928549 DIVERGE                  |             NanGpu
+L32   | 0.928249 DIVERGE                  |             NanGpu
+L33   | 0.951049 DIVERGE                  |             NanGpu
+L34   | 0.912431 DIVERGE                  |             NanGpu
+L35   | 0.769077 DIVERGE                  |             NanGpu
+L36   | 0.997487 MATCH                    |             NanGpu
+L37   | 0.965555 DIVERGE                  |             NanGpu
+L38   | 0.883495 DIVERGE                  |             NanGpu
+L39   | 0.930619 DIVERGE                  |             NanGpu
+L40   | 0.957961 DIVERGE                  |             NanGpu
+L41   | 0.907931 DIVERGE                  |             NanGpu
+L42   | 0.970116 DIVERGE                  |             NanGpu
+L43   | 0.940024 DIVERGE                  |             NanGpu
+L44   | 0.904648 DIVERGE                  |             NanGpu
+L45   | 0.933519 DIVERGE                  |             NanGpu
+L46   | 0.928200 DIVERGE                  |             NanGpu
+L47   | 0.947081 DIVERGE                  |             NanGpu
+
+M-MOE-SUB-3 bisection summary:
+  first DIVERGE on moe_router  : Some(7)
+  first DIVERGE on moe_ffn_out : None
+  first NaN_GPU on moe_router  : None
+  first NaN_GPU on moe_ffn_out : Some(6)
+
+If first_NaN_GPU(moe_router) == 0: bug is in the F32 router @ hidden CPU dot product (unlikely).
+If first_NaN_GPU(moe_ffn_out) == 0 and moe_router @ L0 is finite: bug is in expert_swiglu_cuda.
+If first_NaN_GPU(moe_ffn_out) > 0 and earlier layers MATCH: bug is layer-N specific (rare).
+test falsify_moe_sub_002_cpu_gpu_traced_per_stage_diff ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 23.18s
+
