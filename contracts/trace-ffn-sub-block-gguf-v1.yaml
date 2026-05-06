@@ -1,6 +1,6 @@
 metadata:
   id: C-TRACE-FFN-SUB-BLOCK-GGUF
-  version: 1.7.0
+  version: 1.8.0
   created: '2026-05-06'
   author: PAIML Engineering
   kind: pattern
@@ -84,6 +84,106 @@ metadata:
     harness + fix) have a clear discharge path, and it cross-
     references the prior-work PRs for anyone reading the contract
     surface for the first time.
+
+    v1.8.0 AMENDMENT (2026-05-06): A2 (SOFTMAX SATURATION) ALSO FALSIFIED.
+
+    M96 (v1.7.0) falsified A3 (block-scale variance). Of the three
+    candidate amplifiers, A2 (softmax saturation) was the next
+    most-tractable to test synthetically.
+
+    The A2 hypothesis: attention softmax in saturation regime
+    (one logit much larger than others) is non-linear and could
+    amplify tiny logit drift to large probability drift —
+    contributing to the §27 magnitude beyond what M95's 5.70×
+    chained matvec compounding explains.
+
+    Authored a seventh lib-only falsifier (FALSIFY-FFN-GGUF-011) in
+    `crates/aprender-serve/src/apr_transformer/helpers.rs::
+    determinism_tests`:
+
+      falsify_ffn_gguf_011_softmax_saturation_amplification
+
+    Test: 7-element logit vector with one saturated value
+    (+10.0) and others in normal range; perturbs the saturated
+    logit by 0.077% × 10.0 = 0.0077 (M94-equivalent absolute
+    drift); compares numerically-stable softmax output before
+    and after.
+
+    EMPIRICAL RESULT (2026-05-06):
+      input_rel_drift  = 0.051333% (perturbation / |logits|_L1)
+      output_rel_drift = 0.000578% (Σ |p_b - p_a| / Σ p_a)
+      amplification    = 0.0113×  ← COMPRESSES, not amplifies!
+
+    A2 EMPIRICALLY FALSIFIED in the saturation regime.
+
+    Mechanism explanation: in saturation, the dominant probability
+    is near 1.0 and tail probabilities are near 0.0. softmax is
+    LOCALLY linear in this regime — small input perturbations
+    produce proportionally smaller output changes (compression
+    rather than amplification). The amplification factor 0.01×
+    means softmax suppresses M94 perturbations by ~100×.
+
+    AMPLIFIER LANDSCAPE POST-A2 FALSIFICATION:
+    - A1 (RoPE phase amplification) — UNTESTED, only remaining synthetic candidate.
+    - A2 (Softmax saturation)       — FALSIFIED ✗ (compresses)
+    - A3 (Block-scale variance)     — FALSIFIED ✗ (linear-scaling)
+
+    With both A2 and A3 falsified, A1 (RoPE phase) is the only
+    remaining synthetic-testable candidate. RoPE rotates F32
+    vectors by per-position phase; small magnitude drift could
+    become rotational drift that interacts non-linearly with
+    subsequent QK^T attention dot products.
+
+    Alternative: §27 magnitude may NOT decompose into a single
+    synthetic-testable amplifier. Instead, the cumulative drift
+    may come from:
+    - **A4 (Multi-token batch dimension)**: §27 is 7-token batch;
+      M95 was single-token chain. Batch-dimension drift can
+      interact across positions via attention-mask interactions.
+    - **A5 (Real-weight non-uniformity)**: real Qwen weights may
+      have heavy-tailed distributions (a few large weights
+      dominating per-tensor matvec); per-tensor rel_diff on real
+      weights may be 5-50× larger than synthetic uniform.
+      M-FFN-GGUF-6 real-teacher falsifier directly tests this.
+    - **A6 (RMSNorm rsqrt approximation)**: drift in pre-norm
+      activation produces drift in rsqrt(σ²) which produces
+      drift in normalized activation; in saturated input regime,
+      the rsqrt nonlinearity could amplify.
+
+    NEXT INVESTIGATION CANDIDATE (M-FFN-GGUF-4 step (h)): A1
+    (RoPE phase) synthetic test. Build a small QK^T head with
+    RoPE applied; perturb pre-RoPE Q vector by 0.077%; measure
+    post-attention output drift.
+
+    Most likely path post-2 sequential falsifications: M-FFN-GGUF-6
+    (real-teacher, A4+A5+A6) is now the highest-leverage next test.
+    The synthetic falsifier chain has narrowed candidates to A1,
+    A4, A5, A6, but only A4-A6 are real-teacher-testable while
+    A1 is synthetic.
+
+    GAP-EXPLANATION STATE (after M97):
+    - M94 mechanism EXPLAINS bit-level divergence per matvec (0.077%).
+    - M95 super-linear compounding EXPLAINS up to 5.70× over 5 ops.
+    - 28× residual gap to §27's 1723% UNEXPLAINED at synthetic level.
+    - A2 (softmax) and A3 (block-scale variance) FALSIFIED.
+    - A1 (RoPE phase) remains synthetic candidate.
+    - A4 (multi-token batch), A5 (real-weight non-uniformity),
+      A6 (RMSNorm rsqrt) require real-teacher or multi-token tests.
+
+    STATUS PROMOTIONS (v1.8.0):
+
+    - FALSIFY-FFN-GGUF-011 (NEW): softmax compression in saturation
+      regime asserted as regression-test invariant; status DISCHARGED
+      (test passes; A2 empirically falsified — softmax compresses).
+    - M-FFN-GGUF-4 step (g) A2 candidate: NEW → DISCHARGED
+      (amplification 0.01× rules out softmax saturation as §27
+      amplifier).
+    - Contract metadata.status: ACTIVE_ALGORITHM_LEVEL → unchanged
+      (still gated on M-FFN-GGUF-5 actual fix landing).
+
+    Production hot paths byte-unchanged. New test additive in
+    `crates/aprender-serve/src/apr_transformer/helpers.rs::
+    determinism_tests`.
 
     v1.7.0 AMENDMENT (2026-05-06): A3 (Q4K BLOCK-SCALE VARIANCE) FALSIFIED.
 
