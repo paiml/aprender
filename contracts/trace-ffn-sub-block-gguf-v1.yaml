@@ -1,6 +1,6 @@
 metadata:
   id: C-TRACE-FFN-SUB-BLOCK-GGUF
-  version: 1.2.0
+  version: 1.3.0
   created: '2026-05-06'
   author: PAIML Engineering
   kind: pattern
@@ -84,6 +84,99 @@ metadata:
     harness + fix) have a clear discharge path, and it cross-
     references the prior-work PRs for anyone reading the contract
     surface for the first time.
+
+    v1.3.0 AMENDMENT (2026-05-06): H2a' SIMD-VS-SCALAR REDUCTION-ORDER ALSO FALSIFIED.
+
+    Authored a third lib-only falsifier (FALSIFY-FFN-GGUF-006) in
+    `apr_transformer::helpers::determinism_tests`:
+
+      falsify_ffn_gguf_006_simd_vs_scalar_reduction_order_byte_identity
+
+    This test runs APR's `simd_dot_f32_avx2` (AVX2 8-wide FMA) and
+    APR's scalar fallback (`iter().zip().map(*).sum()`) on the
+    same canonical synthetic input and compares bit patterns via
+    `f32::to_bits()`.
+
+    EMPIRICAL RESULT (2026-05-06): both paths produce BYTE-IDENTICAL
+    output `0x44191e70 = 612.4756`. Asserted as regression-test
+    invariant.
+
+    This **FALSIFIES the refined H2a' hypothesis** at the SIMD-vs-
+    scalar level. The cumulative APR↔GGUF drift cannot be explained
+    by APR's SIMD vs APR's scalar path differing on this class of
+    f32 inputs. Both AVX2 8-wide FMA and scalar left-fold sum produce
+    the same f32 bits — at least for typical synthetic inputs.
+
+    SECOND HYPOTHESIS FALSIFICATION IN ONE SESSION:
+    - §28 (parallel-reduction non-determinism, M91 PR #1535): FALSIFIED
+    - H2a' (SIMD-vs-scalar reduction-order, this M-FFN-GGUF-4 step b):
+      FALSIFIED
+
+    NEW REFINED HYPOTHESIS H2d (post-second-falsification):
+
+    APR's `f32_matmul` and GGUF's `fused_q4k_q8k_parallel_matvec_into`
+    operate at DIFFERENT levels of the quantization hierarchy:
+
+    - APR f32_matmul: takes F32 weights (already dequantized at APR
+      load time), F32 activations, produces F32 dot product via
+      AVX2/scalar paths that we've now shown to be byte-identical.
+    - GGUF fused_q4k_q8k_parallel_matvec_into: takes Q4K weight
+      BYTES + Q8K-quantized activation, fuses dequant + matvec into
+      a single kernel pass. Internal reduction order operates on
+      Q4K super-blocks (256-element blocks with per-block scales).
+
+    The bit-level difference between APR and GGUF must come from
+    one of:
+
+    H2d.1: **APR loads F32 weights from .apr file** (full-precision
+           after a one-time dequantization). GGUF loads RAW Q4K
+           BYTES and dequantizes per-block during matmul.
+           Per-block dequant in GGUF rounds intermediate sums
+           differently than APR's whole-row F32 reduction. Block
+           boundary every 256 elements; 7-token sequence × 4096
+           hidden_dim × 16 layers compounds the difference.
+
+    H2d.2: **APR's F32 weights themselves differ from a true
+           dequantization of the GGUF Q4K bytes**. SHIP-003 PR
+           #1059 verified weights are byte-equivalent at cos≥
+           0.9999999 — but that's per-element cosine, not bit-
+           level identity. A 1e-7 per-element error compounds
+           layer-by-layer to the §27 18.23× drift.
+
+    H2d.3: **GGUF's intermediate Q8K activation quantization**
+           introduces a quantization step APR doesn't have. APR
+           passes F32 activations through f32_matmul; GGUF
+           quantizes activations to Q8K before each matmul. This
+           Q8K quantization rounds activations to ~7-bit precision,
+           which compounds across layers DIFFERENTLY than APR's
+           full-F32 path.
+
+    Each H2d.x is a separate falsifier candidate. Authoring those
+    is M-FFN-GGUF-4 step (c) — the actual fix scope is now
+    narrowed to one of these 3 sub-hypotheses.
+
+    STATUS PROMOTIONS (v1.3.0):
+
+    - FALSIFY-FFN-GGUF-006 (NEW): byte-identical AVX2-vs-scalar
+      asserted as regression-test invariant; status DISCHARGED
+      (test passes on first run; H2a' empirically falsified).
+    - M-FFN-GGUF-4 step (b): PENDING → SHIPPED (the cross-impl
+      diff test is authored at the SIMD-vs-scalar level for
+      APR-internal; the actual APR-vs-GGUF cross-impl test
+      requires loading the canonical 7B teacher and is bounded
+      by operator-dispatch).
+    - Contract metadata.status: ACTIVE_ALGORITHM_LEVEL → unchanged.
+
+    NEXT M-FFN-GGUF-4 step (c) DELIVERABLE: pick one of H2d.{1,2,3}
+    and author its falsifier. H2d.2 (F32-weight-vs-Q4K-bytes
+    dequant identity) is the most directly testable autonomously
+    — load APR weights + GGUF Q4K bytes for the same tensor,
+    dequantize Q4K to F32 by APR's own dequant routine, compare
+    APR's F32 weights to the dequantized Q4K F32 element-wise.
+    If they differ at bit level, H2d.2 is confirmed.
+
+    Production hot paths byte-unchanged. Tests additive in
+    `helpers.rs::determinism_tests`.
 
     v1.2.0 AMENDMENT (2026-05-06): §28 PARALLEL-REDUCTION HYPOTHESIS FALSIFIED.
 
