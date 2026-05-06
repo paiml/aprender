@@ -1,10 +1,10 @@
 metadata:
   id: C-TRACE-FFN-SUB-BLOCK-GGUF
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-05-06'
   author: PAIML Engineering
   kind: pattern
-  status: PROPOSED
+  status: ACTIVE_ALGORITHM_LEVEL
   description: |
     GGUF-side sub-FFN telemetry extension — sibling pattern to
     `trace-ffn-sub-block-v1` (which extends APR's `AprTransformer::
@@ -84,6 +84,88 @@ metadata:
     harness + fix) have a clear discharge path, and it cross-
     references the prior-work PRs for anyone reading the contract
     surface for the first time.
+
+    v1.1.0 AMENDMENT (2026-05-06): §27 EVIDENCE INTEGRATED.
+
+    Same-day discovery during M88+M89 follow-up: ship-two-models-
+    spec.md v2.72.0 §27 records that the H1/H2 bisection has
+    ALREADY been LIVE-run on noah-Lambda-Vector RTX 4090 on
+    2026-04-27 (built `apr` from PR #1083 branch + commits
+    77c016bc2 + c6579685b + f24946412):
+
+      APR layer-3 ffn_swigl std  = 1.2216
+      GGUF layer-3 ffn_swigl std = 0.0670
+      Ratio                       = 18.23×
+      Verdict                     = **H2 CONFIRMED** (APR-side bug)
+      Bug location                = apr_transformer/inference.rs SwiGLU site
+
+    This far exceeds the §26.4 ≥10× threshold for H2 by 8× absolute.
+    Layers 0-2 agree (~1.1× ratio); layer 3 anomaly is APR-only;
+    layers 6+ recover to ~1× ratio (per §27 layer-by-layer evidence).
+
+    STATUS PROMOTIONS (v1.1.0):
+
+    - M-FFN-GGUF-3 (heavy harness): ALGORITHM_LEVEL_DISCHARGED →
+      **DISCHARGED**. The harness exists (M89 PR #1533) AND the
+      verdict has been measured (§27 evidence). The harness adds
+      regression-test coverage for any future re-run; the §27
+      data is the canonical operator-dispatched discharge proof.
+
+    - FALSIFY-FFN-GGUF-003 (bisection distinguishes H1/H2):
+      PROPOSED → **DISCHARGED**. Verdict produced: H2.
+
+    - Contract metadata.status: PROPOSED → ACTIVE_ALGORITHM_LEVEL.
+      All 4 implementation_stages and 3 of 4 falsifiers are now
+      DISCHARGED. Only M-FFN-GGUF-4 (SHIP-007 fix PR) remains
+      PENDING — gated on engineering investigation of the
+      `inference.rs` SwiGLU site (the §27 evidence narrows scope
+      but the actual root cause within the 5-line block has not
+      been pinned to a specific code line yet).
+
+    - FALSIFY-FFN-GGUF-004 (fix-PR-cites-stage): unchanged
+      PROPOSED. Discharges when the SHIP-007 fix PR title/body
+      cites H2 or one of {ffn_swigl, swigl_elementwise_multiply,
+      lm_head, post_ffn_residual, token_position_correlation}.
+      Per §27 evidence, the fix PR will cite H2 +
+      swigl_elementwise_multiply.
+
+    THE M-FFN-GGUF-4 INVESTIGATION GAP:
+
+    The §27 evidence localizes the bug to APR's SwiGLU site
+    (`apr_transformer/inference.rs:298-302` in current code, was
+    `:160-164` at v2.72.0 spec authoring before sub-FFN telemetry
+    line shifts):
+
+      for (g, u) in gate.iter().zip(up.iter()) {
+          let silu_g = g / (1.0 + (-g).exp());
+          silu_gate.push(silu_g);
+          ffn_hidden.push(silu_g * u);
+      }
+
+    The math is textbook SwiGLU. APR vs GGUF differ structurally
+    in:
+    - APR processes ALL tokens at once (`gate`/`up` length =
+      seq_len * intermediate_dim); zip iterates element-by-element
+      across the entire buffer.
+    - GGUF decode_lean processes ONE token; works in-place on
+      a fixed-size workspace buffer.
+
+    Hypotheses for the actual root cause within the SwiGLU block:
+    H2a: Buffer aliasing / scratch-buffer corruption in APR
+         multi-token forward (e.g., `gate` and `up` both written
+         from a shared scratch slot before the multiply).
+    H2b: Layer-3-specific upstream divergence in APR's gate or up
+         computation (despite §22 evidence showing gate/up
+         INDIVIDUALLY normal at layer 3) — perhaps the §22
+         per-stage `std` reading masked a per-token correlation
+         spike that's only visible in std-of-products.
+    H2c: Quantization dequant alignment — APR's matmul vs GGUF's
+         fused_matmul_into may produce subtly different bit
+         patterns for the same Q4_K weights at certain layer
+         configs (layer 3 happens to have one such config).
+
+    Each hypothesis has its own falsifier. Authoring those is
+    M-FFN-GGUF-4 step (a) — a future deliberate-session amendment.
 
   references:
     - 'trace-ffn-sub-block-v1 (parent contract — APR-side telemetry on AprTransformer)'
@@ -184,11 +266,19 @@ falsification_tests:
       (e.g., < 0.5) → APR-side bug confirmed at
       `inference.rs:160-164` swigl elementwise multiply
   test: |
-    apr trace --payload --teacher canonical-7b.apr --max-tokens 1 -o apr-trace.json
-    apr trace --payload --teacher canonical-7b-q4k.gguf --max-tokens 1 -o gguf-trace.json
-    jq '.layers[3].ffn_swigl.std' apr-trace.json gguf-trace.json
-    # Assert: ratio within [0.9, 1.1] → H1, OR ratio > 2 → H2
-  status: PROPOSED
+    cargo test -p aprender-serve --test ffn_gguf_apr_layer_3_swigl_diff \
+        falsify_ffn_gguf_003 -- --include-ignored --nocapture
+    Live binding: regression-test harness in
+    `crates/aprender-serve/tests/ffn_gguf_apr_layer_3_swigl_diff.rs`
+    (M89 PR #1533 squash 009d8b362). `#[ignore]`-gated; skips
+    cleanly if either canonical 7B `.apr` or `.gguf` is missing.
+
+    Discharged 2026-04-27 by §27 LIVE evidence on noah-Lambda-
+    Vector RTX 4090 (built `apr` from PR #1083 branch + commits
+    77c016bc2 + c6579685b + f24946412): APR layer-3 ffn_swigl std
+    = 1.2216, GGUF = 0.0670, ratio = 18.23× → **H2 CONFIRMED**
+    (APR-side bug). See ship-two-models-spec.md §27.
+  status: DISCHARGED  # §27 ratio 18.23× → H2 CONFIRMED 2026-04-27; M89 harness adds regression-test coverage
   if_fails: |
     Either trace capture failed (forward_traced not wired), OR
     both sides agree at low std (anomaly is on neither side
@@ -285,7 +375,7 @@ implementation_stages:
     - FALSIFY-FFN-GGUF-002 (byte-identity vs production)
 
 - id: M-FFN-GGUF-3
-  status: ALGORITHM_LEVEL_DISCHARGED  # harness exists; full discharge pending operator-dispatched LIVE run with canonical 7B .apr + .gguf
+  status: DISCHARGED  # §27 evidence (2026-04-27): ratio 18.23× → H2; harness from M89 PR #1533 adds regression-test coverage
   description: |
     Heavy comparison harness — runs APR `forward_traced` and GGUF
     `forward_traced` on the same canonical 7B teacher prompt,
