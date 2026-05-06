@@ -1,6 +1,6 @@
 metadata:
   id: C-TRACE-MOE-GPU-SUB-STAGES
-  version: 1.5.0
+  version: 1.6.0
   created: '2026-05-05'
   author: PAIML Engineering
   kind: pattern
@@ -9,6 +9,45 @@ metadata:
     Sub-MoE-GPU bisection plan for `apr trace --save-tensor` —
     M-GPU-MOE-1.4 NaN/Inf bisection per qwen3-moe-forward-gpu-v1
     v1.4.0 amendment_history block.
+
+    v1.6.0 (2026-05-06): **all 4 falsification tests DISCHARGED**
+    after the M-GPU-MOE-1.4 step (c) fix landed (aprender PR #1529
+    squash `89cb26af7`).
+
+    Status promotion: FALSIFY-MOE-SUB-004 PROPOSED → **DISCHARGED**.
+
+    Rule: "The M-GPU-MOE-1.4 fix PR title/body MUST mention one of:
+    {moe_router, moe_expert_gate, moe_expert_up, moe_expert_swigl,
+     moe_expert_out, moe_ffn_out}."
+
+    Discharge evidence: PR #1529 title is
+    "fix(M-GPU-MOE-1.4 step c): qtype-aware dispatch in
+     expert_swiglu_cuda — closes L6 moe_ffn_out NaN"
+    — explicitly cites `moe_ffn_out` (one of the 6 enumerated
+    stage names) by name. The fix PR body further cites
+    "moe_ffn_out at layer 6" multiple times in the Five-Whys
+    analysis and the bisection result table.
+
+    All four falsification tests now DISCHARGED:
+    - FALSIFY-MOE-SUB-001 (parse): DISCHARGED at v1.4.0 (M82)
+    - FALSIFY-MOE-SUB-002 (byte-identity / heavy harness):
+      DISCHARGED at v1.5.0 (M83) on gx10 Blackwell GB10
+    - FALSIFY-MOE-SUB-003 (bisection-pinpoints-stage):
+      DISCHARGED at v1.5.0 (M83) — first NaN_GPU on moe_ffn_out
+      at layer 6
+    - FALSIFY-MOE-SUB-004 (fix-PR-cites-stage): **DISCHARGED at
+      v1.6.0 (this amendment, M85 PR #1529 cites moe_ffn_out)**
+
+    M-MOE-SUB-4 (per-expert sub-stages) stays PENDING — was
+    optional ("only needed if MoeRouter+MoeFfnOut bisection is
+    insufficient precision"); it WAS sufficient — the M85 fix
+    landed without it. M-MOE-SUB-4 remains a future enhancement
+    if cosine-refinement work (M-GPU-MOE-3) needs to bisect the
+    ~7-8 cos<0.99 layers (L7, L9, L12, L20, L23, L29, L46) at
+    per-expert granularity.
+
+    YAML-only — production hot paths byte-unchanged (additive-
+    purity invariant pinned in v1.1.0 still holds).
 
     v1.5.0 (2026-05-06): **LIVE bisection DISCHARGED** on Blackwell
     GB10 (gx10). Operator-dispatched run of the M80 heavy harness
@@ -359,7 +398,11 @@ falsification_tests:
     The M-GPU-MOE-1.4 fix PR title/body MUST mention one of:
     {moe_router, moe_expert_gate, moe_expert_up, moe_expert_swigl,
      moe_expert_out, moe_ffn_out}.
-  status: PROPOSED  # human-eval at fix-PR review time
+    Discharged 2026-05-06 by aprender PR #1529 squash 89cb26af7
+    (M85): title "fix(M-GPU-MOE-1.4 step c): qtype-aware dispatch
+    in expert_swiglu_cuda — closes L6 moe_ffn_out NaN" cites
+    `moe_ffn_out` by name (one of the 6 enumerated stages).
+  status: DISCHARGED  # M85 PR #1529 title cites moe_ffn_out by name; v1.6.0 promotion
   if_fails: |
     The bisection didn't pinpoint a specific stage — likely too coarse
     granularity. Add finer-grained captures (e.g., per-element NaN
