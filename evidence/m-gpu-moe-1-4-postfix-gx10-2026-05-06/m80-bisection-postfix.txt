@@ -1,0 +1,419 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-core/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-train/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-profile/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-graph/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-orchestrate/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-compute/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-serve/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-train-wasm/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-verify/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-verify-ml/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-data/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-simulate/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-distribute/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-registry/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-db/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-rag/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-viz/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-zram/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: /home/noah/src/aprender/crates/aprender-serve/Cargo.toml: file `/home/noah/src/aprender/crates/aprender-serve/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `aprender-serve`
+  * `example` target `aprender-serve`
+warning: /home/noah/src/aprender/crates/aprender-viz/Cargo.toml: `default-features` is ignored for trueno-graph, since `default-features` was not specified for `workspace.dependencies.trueno-graph`, this could become a hard error in the future
+warning: /home/noah/src/aprender/crates/aprender-train/Cargo.toml: file `/home/noah/src/aprender/crates/aprender-train/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `aprender-train`
+  * `example` target `aprender-train`
+warning: /home/noah/src/aprender/crates/apr-cli/Cargo.toml: `default-features` is ignored for batuta, since `default-features` was not specified for `workspace.dependencies.batuta`, this could become a hard error in the future
+   Compiling aprender-serve v0.32.0 (/home/noah/src/aprender/crates/aprender-serve)
+warning: unused variable: `ck`
+   --> crates/aprender-gpu/src/kernels/backward/nf4_tensor_core.rs:199:21
+    |
+199 |                 let ck = ctx.min_u32(global_k_out, k_minus_1);
+    |                     ^^ help: if this is intentional, prefix it with an underscore: `_ck`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `a_row_in_tile`
+   --> crates/aprender-gpu/src/kernels/gemm/basic/tensor_core/cta128_wmma.rs:112:17
+    |
+112 |             let a_row_in_tile = ctx.shr_u32(tid, c_2); // t/4 (covers 0..63 for first half)
+    |                 ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_a_row_in_tile`
+
+warning: unused variable: `stride_a`
+   --> crates/aprender-gpu/src/kernels/gemm/basic/tensor_core/cta128_wmma.rs:244:21
+    |
+244 |                 let stride_a = ctx.mov_u32_imm(16); // A leading dim in smem = tile_k=16
+    |                     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_stride_a`
+
+warning: unused variable: `stride_b`
+   --> crates/aprender-gpu/src/kernels/gemm/basic/tensor_core/cta128_wmma.rs:245:21
+    |
+245 |                 let stride_b = ctx.mov_u32_imm(128); // B leading dim in smem = tile_n=128
+    |                     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_stride_b`
+
+warning: unused variable: `c_63`
+  --> crates/aprender-gpu/src/kernels/gemm/basic/tensor_core/cta64_wmma.rs:76:17
+   |
+76 |             let c_63 = ctx.mov_u32_imm(63);
+   |                 ^^^^ help: if this is intentional, prefix it with an underscore: `_c_63`
+
+warning: unused variable: `smem_base`
+   --> crates/aprender-gpu/src/kernels/gemm/basic/tensor_core/cta64_wmma.rs:355:17
+    |
+355 |             let smem_base = ctx.shared_base_addr();
+    |                 ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_smem_base`
+
+warning: unused variable: `smem_base`
+   --> crates/aprender-gpu/src/kernels/gemm/basic/tensor_core/cta64_wmma.rs:662:17
+    |
+662 |             let smem_base = ctx.shared_base_addr();
+    |                 ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_smem_base`
+
+warning: unused variable: `b_row_in_tile`
+   --> crates/aprender-gpu/src/kernels/gemm/basic/tensor_core/cta64_wmma.rs:678:17
+    |
+678 |             let b_row_in_tile = ctx.shr_u32(b_local, c_3); // local/8 (32 rows across 256 threads? No...)
+    |                 ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_b_row_in_tile`
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/driver/sys/mod.rs:88:5
+   |
+88 |     pub grid_dim_y: c_uint,
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> crates/aprender-gpu/src/lib.rs:33:9
+   |
+33 | #![warn(missing_docs)]
+   |         ^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/driver/sys/mod.rs:89:5
+   |
+89 |     pub grid_dim_z: c_uint,
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/driver/sys/mod.rs:92:5
+   |
+92 |     pub block_dim_y: c_uint,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/driver/sys/mod.rs:93:5
+   |
+93 |     pub block_dim_z: c_uint,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:23:5
+   |
+23 |     pub max_seq_len: u32,
+   |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:24:5
+   |
+24 |     pub head_dim: u32,
+   |     ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:25:5
+   |
+25 |     pub num_heads: u32,
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:26:5
+   |
+26 |     pub num_kv_heads: u32,
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:27:5
+   |
+27 |     pub batch_size: u32,
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:28:5
+   |
+28 |     pub chunk_size: u32,
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:29:5
+   |
+29 |     pub scale: f32,
+   |     ^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:34:5
+   |
+34 | /     pub fn new(
+35 | |         max_seq_len: u32,
+36 | |         head_dim: u32,
+37 | |         num_heads: u32,
+38 | |         num_kv_heads: u32,
+39 | |         batch_size: u32,
+40 | |     ) -> Self {
+   | |_____________^
+
+warning: missing documentation for a method
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:54:5
+   |
+54 |     pub fn num_chunks(&self, seq_len: u32) -> u32 {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:59:5
+   |
+59 |     pub fn partials_size_per_head(&self, max_chunks: u32) -> u32 {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/backward/nf4_tensor_core.rs:40:5
+   |
+40 |     pub m: u32,
+   |     ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/backward/nf4_tensor_core.rs:41:5
+   |
+41 |     pub n: u32,
+   |     ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/backward/nf4_tensor_core.rs:42:5
+   |
+42 |     pub k: u32,
+   |     ^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> crates/aprender-gpu/src/kernels/backward/nf4_tensor_core.rs:47:5
+   |
+47 |     pub fn new(m: u32, n: u32, k: u32) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> crates/aprender-gpu/src/kernels/backward/nf4_tensor_core.rs:52:5
+   |
+52 |     pub const fn num_k_blocks(&self) -> u32 {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> crates/aprender-gpu/src/kernels/quantize/fused/nf4_gate_up.rs:52:5
+   |
+52 |     pub fn new(m: u32, n: u32, k: u32) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> crates/aprender-gpu/src/kernels/quantize/fused/nf4_gate_up.rs:62:5
+   |
+62 |     pub const fn num_blocks_per_col(&self) -> u32 {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/quantize/nf4_tensor_core.rs:31:5
+   |
+31 |     pub m: u32,
+   |     ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/quantize/nf4_tensor_core.rs:32:5
+   |
+32 |     pub n: u32,
+   |     ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/quantize/nf4_tensor_core.rs:33:5
+   |
+33 |     pub k: u32,
+   |     ^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> crates/aprender-gpu/src/kernels/quantize/nf4_tensor_core.rs:38:5
+   |
+38 |     pub fn new(m: u32, n: u32, k: u32) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> crates/aprender-gpu/src/kernels/quantize/nf4_tensor_core.rs:43:5
+   |
+43 |     pub const fn num_k_blocks(&self) -> u32 {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `aprender-gpu` (lib) generated 34 warnings (run `cargo fix --lib -p aprender-gpu` to apply 8 suggestions)
+warning: aprender-serve@0.32.0: [PMAT-228] architecture-requirements-v1.yaml not found; using hand-written arch_requirements.rs fallback
+warning: aprender-serve@0.32.0: [GH-323] arch-constraints-v1.yaml not found; using fallback arch_constraints.rs
+warning: aprender-serve@0.32.0: provable-contracts binding.yaml not found at /home/noah/src/aprender/crates/aprender-serve/../provable-contracts/contracts/realizar/binding.yaml; CONTRACT_* env vars will not be set (CI/crates.io build)
+warning: aprender-serve@0.32.0: [contract] Assertions: 0 preconditions, 0 postconditions from YAML
+warning: unreachable expression
+  --> crates/aprender-serve/src/quantize/simd_backend.rs:47:5
+   |
+43 |         return SimdBackend::Neon;
+   |         ------------------------ any code following this expression is unreachable
+...
+47 |     SimdBackend::Scalar
+   |     ^^^^^^^^^^^^^^^^^^^ unreachable expression
+   |
+   = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `aprender-serve` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 17.70s
+     Running tests/qwen3_moe_gpu_per_stage_diff.rs (/home/noah/.target-aprender/release/deps/qwen3_moe_gpu_per_stage_diff-d7f4d9866de4a7f2)
+
+running 1 test
+M-MOE-SUB-3 heavy diff: CPU-vs-GPU per-stage at MoeRouter + MoeFfnOut
+  gguf:       /home/noah/.cache/pacha/models/2b88b180a790988f.gguf
+  prompt:     [785, 9217, 308]
+  layers:     0..48
+  stages:     moe_router,moe_ffn_out
+  cpu_dir:    /tmp/moe-sub-cpu-1318597
+  gpu_dir:    /tmp/moe-sub-gpu-1318597
+[BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF — using architecture default for 'qwen3moe'
+[BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF — using architecture default for 'qwen3moe'
+  running CPU traced forward (a few minutes)...
+  cpu_elapsed = 1.12416277s
+[BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF — using architecture default for 'qwen3moe'
+[BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF — using architecture default for 'qwen3moe'
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 3 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 3 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 7 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 7 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-129] Early kernel preload: 49 modules compiled
+[PMAT-053] FP8 cache skipped: requires sm_89-sm_9x (have sm_90, cc=121)
+  running GPU traced forward...
+[GH-480] Patched 3 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 3 backward branch(es) for sm_121 JIT workaround
+  gpu_elapsed = 3.923418402s
+
+layer | moe_router (cos / verdict)        | moe_ffn_out (cos / verdict)
+------|-----------------------------------|-----------------------------------
+L00   | 1.000000 MATCH                    | 0.999987 MATCH
+L01   | 0.999998 MATCH                    | 0.999904 MATCH
+L02   | 0.999998 MATCH                    | 0.999953 MATCH
+L03   | 0.999975 MATCH                    | 0.999876 MATCH
+L04   | 0.999994 MATCH                    | 0.999861 MATCH
+L05   | 0.999993 MATCH                    | 0.999896 MATCH
+L06   | 0.999986 MATCH                    | 0.999651 MATCH
+L07   | 0.999995 MATCH                    | 0.986950 DIVERGE
+L08   | 0.999603 MATCH                    | 0.998370 MATCH
+L09   | 0.999759 MATCH                    | 0.965918 DIVERGE
+L10   | 0.999889 MATCH                    | 0.996041 MATCH
+L11   | 0.999921 MATCH                    | 0.997602 MATCH
+L12   | 0.999129 MATCH                    | 0.939516 DIVERGE
+L13   | 0.999447 MATCH                    | 0.993877 MATCH
+L14   | 0.999802 MATCH                    | 0.996307 MATCH
+L15   | 0.999327 MATCH                    | 0.996287 MATCH
+L16   | 0.999628 MATCH                    | 0.996208 MATCH
+L17   | 0.999575 MATCH                    | 0.997068 MATCH
+L18   | 0.999546 MATCH                    | 0.996669 MATCH
+L19   | 0.999885 MATCH                    | 0.995674 MATCH
+L20   | 0.999669 MATCH                    | 0.997184 MATCH
+L21   | 0.999604 MATCH                    | 0.996746 MATCH
+L22   | 0.999589 MATCH                    | 0.996791 MATCH
+L23   | 0.999772 MATCH                    | 0.996573 MATCH
+L24   | 0.999889 MATCH                    | 0.996171 MATCH
+L25   | 0.999544 MATCH                    | 0.989729 DIVERGE
+L26   | 0.999730 MATCH                    | 0.995812 MATCH
+L27   | 0.999779 MATCH                    | 0.995488 MATCH
+L28   | 0.999725 MATCH                    | 0.996438 MATCH
+L29   | 0.999627 MATCH                    | 0.997379 MATCH
+L30   | 0.999702 MATCH                    | 0.960886 DIVERGE
+L31   | 0.999670 MATCH                    | 0.987573 DIVERGE
+L32   | 0.999508 MATCH                    | 0.994810 MATCH
+L33   | 0.998617 MATCH                    | 0.991153 MATCH
+L34   | 0.999252 MATCH                    | 0.993372 MATCH
+L35   | 0.999775 MATCH                    | 0.993919 MATCH
+L36   | 0.999087 MATCH                    | 0.992988 MATCH
+L37   | 0.999297 MATCH                    | 0.995954 MATCH
+L38   | 0.999919 MATCH                    | 0.992468 MATCH
+L39   | 0.999821 MATCH                    | 0.995854 MATCH
+L40   | 0.999440 MATCH                    | 0.996634 MATCH
+L41   | 0.999502 MATCH                    | 0.998726 MATCH
+L42   | 0.999628 MATCH                    | 0.997086 MATCH
+L43   | 0.999887 MATCH                    | 0.990301 MATCH
+L44   | 0.999839 MATCH                    | 0.994687 MATCH
+L45   | 0.999613 MATCH                    | 0.997287 MATCH
+L46   | 0.999861 MATCH                    | 0.982729 DIVERGE
+L47   | 0.999871 MATCH                    | 0.999555 MATCH
+
+M-MOE-SUB-3 bisection summary:
+  first DIVERGE on moe_router  : None
+  first DIVERGE on moe_ffn_out : Some(7)
+  first NaN_GPU on moe_router  : None
+  first NaN_GPU on moe_ffn_out : None
+
+If first_NaN_GPU(moe_router) == 0: bug is in the F32 router @ hidden CPU dot product (unlikely).
+If first_NaN_GPU(moe_ffn_out) == 0 and moe_router @ L0 is finite: bug is in expert_swiglu_cuda.
+If first_NaN_GPU(moe_ffn_out) > 0 and earlier layers MATCH: bug is layer-N specific (rare).
+test falsify_moe_sub_002_cpu_gpu_traced_per_stage_diff ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 11.70s
+
