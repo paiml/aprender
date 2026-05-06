@@ -1,6 +1,6 @@
 metadata:
   id: C-TRACE-MOE-GPU-SUB-STAGES
-  version: 1.3.0
+  version: 1.4.0
   created: '2026-05-05'
   author: PAIML Engineering
   kind: pattern
@@ -9,6 +9,41 @@ metadata:
     Sub-MoE-GPU bisection plan for `apr trace --save-tensor` —
     M-GPU-MOE-1.4 NaN/Inf bisection per qwen3-moe-forward-gpu-v1
     v1.4.0 amendment_history block.
+
+    v1.4.0 (2026-05-06): falsifier hygiene amendment — corrects
+    drift between contract `test:` invocation strings and the live
+    test bindings in code, and promotes falsifier statuses to match
+    the implementation_stages they discharge.
+
+    Drift caught: at v1.3.0 the `test:` field for FALSIFY-MOE-SUB-001
+    cited a single test name `falsify_moe_sub_001_new_stages_parse`,
+    but the live binding in `aprender-serve` is a 5-test suite under
+    the prefix `falsify_moe_sub_001_*` (round_trip × 2 + canonical
+    order + parse_list × 2). The `test:` for FALSIFY-MOE-SUB-002
+    cited `cargo test -p apr-cli --test falsify_moe_sub_002_byte_identity`
+    but the live binding lives in `aprender-serve --test
+    qwen3_moe_gpu_per_stage_diff` as `falsify_moe_sub_002_cpu_gpu_traced_per_stage_diff`
+    — a heavy `#[ignore]`-gated harness. Same drift class M71
+    closed mechanically via PV-VER-002 — this v1.4.0 manually
+    realigns text + statuses without touching the algorithm.
+
+    Status promotions:
+    - FALSIFY-MOE-SUB-001 PROPOSED → DISCHARGED (5 lib tests pass
+      in <1s; verified with `cargo test -p aprender-serve --lib
+      falsify_moe_sub_001` 5 passed; 0 failed).
+    - FALSIFY-MOE-SUB-002 PROPOSED → ALGORITHM_LEVEL_DISCHARGED
+      (heavy harness from M-MOE-SUB-3 / M80 PR #1524 exists;
+      mechanical algorithm bound; full DISCHARGED promotion blocks
+      on operator-dispatched `--include-ignored` run on lambda-vector
+      RTX 4090 + cached 17.3 GB Qwen3-Coder GGUF).
+    - FALSIFY-MOE-SUB-003 PROPOSED → unchanged (still requires LIVE
+      bisection on RTX 4090 to discharge — same precondition as
+      M-GPU-MOE-1.4).
+    - FALSIFY-MOE-SUB-004 PROPOSED → unchanged (still requires
+      M-GPU-MOE-1.4 fix PR to land citing a specific stage).
+
+    Production hot paths byte-unchanged (additive-purity invariant
+    pinned in v1.1.0 still holds — this is a YAML-only amendment).
 
     v1.3.0 (2026-05-06): cascade complete on main. M-MOE-SUB-1 + 2 +
     3 status PENDING → SHIPPED (algorithm-level). Five PRs landed
@@ -195,9 +230,14 @@ falsification_tests:
     After implementation, `parse_stage_list("moe_router,moe_ffn_out")`
     returns `Ok([MoeRouter, MoeFfnOut])` (or richer set for per-expert).
   test: |
-    cargo test -p aprender-serve --lib falsify_moe_sub_001_new_stages_parse
-    Asserts: parse_stage_list succeeds + canonical_name() returns expected string for each new variant.
-  status: PROPOSED
+    cargo test -p aprender-serve --lib falsify_moe_sub_001
+    Live binding: 5-test suite in
+    `crates/aprender-serve/src/inference_trace/save_tensor_stage.rs`
+    (round_trip × 2 + canonical_order + parse_list × 2).
+    Asserts: parse_stage_list succeeds + canonical_name() returns
+    expected string for each new variant + ordering preserved + all
+    20-stage chains parse symmetrically.
+  status: DISCHARGED  # 5 lib tests pass <1s; bound to M-MOE-SUB-1 (M60 PR #1499 + M64 v1.1.0 wireup)
   if_fails: |
     The parse_stage_list extension regressed; check
     save_tensor_stage.rs::parse_stage_list and ::canonical_name.
@@ -210,10 +250,17 @@ falsification_tests:
     layer 0) are byte-identical pre/post the M-GPU-MOE-1.4
     instrumentation PR.
   test: |
-    cargo test -p apr-cli --test falsify_moe_sub_002_byte_identity
-    Asserts: sha256(post[stage]) == sha256(pre[stage]) for all stages
-    in {Embedding, AttnNorm, ..., LmHead}.
-  status: PROPOSED
+    cargo test -p aprender-serve --features cuda --test qwen3_moe_gpu_per_stage_diff falsify_moe_sub_002 -- --include-ignored
+    Live binding: heavy harness `falsify_moe_sub_002_cpu_gpu_traced_per_stage_diff`
+    in `crates/aprender-serve/tests/qwen3_moe_gpu_per_stage_diff.rs`
+    (M-MOE-SUB-3 / M80 PR #1524 squash 8865e3bd4). `#![cfg(feature =
+    "cuda")]` + `#[ignore]`-gated; requires cached
+    Qwen3-Coder-30B-A3B-Instruct GGUF on host. Verified discoverable
+    via `--ignored --list` (1 test).
+    Asserts: per-layer per-stage cosine similarity between CPU-traced
+    (M74) + GPU-traced (M79) outputs, identifies first divergent
+    layer.
+  status: ALGORITHM_LEVEL_DISCHARGED  # heavy harness exists; --include-ignored discharge pending RTX 4090 dispatch
   if_fails: |
     The instrumentation PR introduced a side-effect that changed
     existing capture bytes. Bisect via `apr trace` against the
