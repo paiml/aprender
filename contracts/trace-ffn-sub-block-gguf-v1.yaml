@@ -285,23 +285,34 @@ implementation_stages:
     - FALSIFY-FFN-GGUF-002 (byte-identity vs production)
 
 - id: M-FFN-GGUF-3
-  status: PENDING  # heavy comparison harness OPEN
+  status: ALGORITHM_LEVEL_DISCHARGED  # harness exists; full discharge pending operator-dispatched LIVE run with canonical 7B .apr + .gguf
   description: |
-    Heavy comparison harness — runs `apr trace --payload` on both
-    APR `.apr` and GGUF `.gguf` versions of the canonical 7B
-    teacher (paiml/qwen2.5-coder-7b-apache-q4k-v1) on the same
-    prompt, captures per-layer ffn_swigl std for each, computes
-    ratio at layer 3 specifically. Reports H1 (≈1.0 ratio) or
-    H2 (>>1.0 ratio).
+    Heavy comparison harness — runs APR `forward_traced` and GGUF
+    `forward_traced` on the same canonical 7B teacher prompt,
+    extracts per-layer `ffn_swiglu_inner_stats.std_dev`, computes
+    layer-3 ratio. Reports H1 (ratio in [0.5, 2.0]) or H2 (ratio
+    outside that band).
 
-    Operationally unblocked by M-FFN-GGUF-2: the GGUF-side
-    forward_traced now emits the 4 sub-FFN fields. The heavy
-    harness just needs to compare APR vs GGUF on the same prompt.
+    Status promoted PENDING → ALGORITHM_LEVEL_DISCHARGED at this
+    contract amendment: the harness EXISTS at
+    `crates/aprender-serve/tests/ffn_gguf_apr_layer_3_swigl_diff.rs`
+    as `falsify_ffn_gguf_003_layer_3_swigl_h1_h2_bisection`.
+    `#[ignore]`-gated; skips cleanly if neither canonical .apr
+    nor .gguf is present on the host (mirrors the M80
+    `qwen3_moe_gpu_per_stage_diff` skip-if-not-present pattern).
 
-    Implementation hint: mirror the
-    `falsify_moe_sub_002_cpu_gpu_traced_per_stage_diff` heavy
-    harness pattern (M80 PR #1524) but for APR-vs-GGUF instead
-    of CPU-vs-GPU.
+    Full DISCHARGED status pending operator-dispatched LIVE run
+    that produces the actual H1 vs H2 verdict. Required files:
+    - canonical 7B APR teacher (`paiml/qwen2.5-coder-7b-apache-q4k-v1`)
+    - canonical 7B GGUF (`qwen2.5-coder-7b-instruct-q4k.gguf`)
+      — already cached at
+        `/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.gguf`
+
+    Operator workflow:
+        cargo test -p aprender-serve \
+            --test ffn_gguf_apr_layer_3_swigl_diff \
+            -- --include-ignored --nocapture
+    Output: per-layer table + final H1/H2 verdict.
   expected_acceptance:
     - FALSIFY-FFN-GGUF-003 (bisection distinguishes H1/H2)
 
