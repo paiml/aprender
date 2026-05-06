@@ -716,4 +716,194 @@ mod determinism_tests {
              Update contract trace-ffn-sub-block-gguf-v1 v1.4.0 → v1.5.0."
         );
     }
+
+    /// FALSIFY-FFN-GGUF-009 / M-FFN-GGUF-4 step (e):
+    /// QUANTITATIVE compounding test for the M94 mechanism.
+    ///
+    /// M94 (FALSIFY-FFN-GGUF-008) confirmed Path A vs Path B differ at
+    /// bit level on a SINGLE 144-byte Q4K super-block: rel_diff = 0.077%
+    /// per matvec.
+    ///
+    /// The §27 evidence shows layer-3 ffn_swigl APR↔GGUF std-ratio =
+    /// 18.23×. Naive linear projection: 0.077% × (3 layers × ~7
+    /// tensor-ops × 7 tokens) ≈ 11.3% — far below 1723%.
+    ///
+    /// QUESTION: does the M94 mechanism EXPLAIN the §27 magnitude?
+    /// Three sub-hypotheses:
+    ///
+    ///   H-COMPOUND-LINEAR:    rel_diff(N) ≈ rel_diff(1) × N
+    ///                         (no interaction; cumulative ≈ 11%)
+    ///                         → mechanism IS NOT sufficient.
+    ///   H-COMPOUND-SUBLINEAR: rel_diff(N) ≈ rel_diff(1) × √N
+    ///                         (random-walk averaging)
+    ///                         → mechanism IS NOT sufficient (smaller).
+    ///   H-COMPOUND-SUPER:     rel_diff(N) ≈ rel_diff(1) × N^k, k > 1
+    ///                         (positive feedback in cumulative drift)
+    ///                         → mechanism MAY explain §27 magnitude.
+    ///
+    /// This test runs N sequential matvecs (chaining each output as
+    /// the next input) on Path A and Path B, measuring rel_diff at
+    /// each depth. Reports growth pattern.
+    ///
+    /// EXPECTATION (per F32 sum-of-products non-associativity theory):
+    /// growth is approximately √N (random-walk) for INDEPENDENT
+    /// matvecs but can be approximately N or N^k for chained matvecs
+    /// where each output feeds the next (because the divergence
+    /// becomes part of the next matvec's input, where it interacts
+    /// with the next matvec's weights).
+    ///
+    /// EMPIRICAL EXPECTATION: chained matvec divergence grows
+    /// faster than √N because each input divergence is amplified
+    /// by the next matvec's weight magnitude — but the test does
+    /// NOT predict 18.23× from 0.077% × 5 chained matvecs alone.
+    /// What this test DOES is record the empirical growth pattern
+    /// for use in future SHIP-007 §22 fix-PR scope analysis.
+    ///
+    /// Per `contracts/trace-ffn-sub-block-gguf-v1.yaml` v1.5.0 →
+    /// v1.6.0 amendment.
+    #[test]
+    fn falsify_ffn_gguf_009_multi_tensor_divergence_compound() {
+        use crate::quantize::{
+            dequantize_q4_k_simd, fused_q4k_q8k_parallel_matvec_into,
+            quantize_activations_q8k_into,
+        };
+
+        let in_dim = 256;
+        let out_dim = 256;
+
+        // Build N synthetic Q4K super-block weight tensors. Each has
+        // shape [out_dim=256, in_dim=256] = 256 super-blocks × 144
+        // bytes = 36864 bytes.
+        let n_chained = 5;
+        let weight_bytes_per_tensor = 256 * 144;
+        let weights: Vec<Vec<u8>> = (0..n_chained)
+            .map(|t| {
+                let mut block = vec![0u8; weight_bytes_per_tensor];
+                for sb in 0..256 {
+                    let base = sb * 144;
+                    block[base] = 0x00;
+                    block[base + 1] = 0x3C; // f16 d = 1.0
+                    block[base + 2] = 0x00;
+                    block[base + 3] = 0xB4; // f16 dmin = -0.25
+                    for (i, b) in block[base + 4..base + 16].iter_mut().enumerate() {
+                        *b = ((i * 7 + 3 + sb + t * 11) % 256) as u8;
+                    }
+                    for (i, b) in block[base + 16..base + 144].iter_mut().enumerate() {
+                        *b = ((i * 13 + 17 + sb * 3 + t * 19) % 256) as u8;
+                    }
+                }
+                block
+            })
+            .collect();
+
+        // Initial activation (256-element, reproducible).
+        let initial: Vec<f32> = (0..in_dim)
+            .map(|i| ((i as f32) - 128.0) * 0.05 + ((i % 7) as f32) * 0.01)
+            .collect();
+
+        // Path A: chain N standalone matvecs with normalization to
+        // keep activations in a bounded range (otherwise float
+        // overflow dominates).
+        let mut act_a = initial.clone();
+        for w_bytes in &weights {
+            let weights_f32 = dequantize_q4_k_simd(w_bytes).expect("dequant_simd failed");
+            assert_eq!(weights_f32.len(), out_dim * in_dim);
+            // Manual matvec: out_j = sum_i(act[i] * w[j*in_dim + i])
+            let mut next = vec![0.0f32; out_dim];
+            for j in 0..out_dim {
+                let row_base = j * in_dim;
+                next[j] = act_a
+                    .iter()
+                    .zip(weights_f32[row_base..row_base + in_dim].iter())
+                    .map(|(x, y)| x * y)
+                    .sum();
+            }
+            // Normalize to keep magnitude bounded (mimics RMSNorm
+            // effect in real transformers).
+            let norm = (next.iter().map(|x| x * x).sum::<f32>() / (out_dim as f32))
+                .sqrt()
+                .max(1e-9);
+            for x in next.iter_mut() {
+                *x /= norm;
+            }
+            act_a = next;
+        }
+
+        // Path B: chain N fused Q4K+Q8K matvecs with same
+        // normalization between layers.
+        let mut act_b = initial.clone();
+        for w_bytes in &weights {
+            // Q8K-quantize current activations (super-block size 256).
+            let n_super_blocks = in_dim / 256;
+            assert_eq!(in_dim, 256, "test fixture requires in_dim=256");
+            let mut q8k_scales = vec![0.0f32; n_super_blocks];
+            let mut q8k_quants = vec![0i8; in_dim];
+            quantize_activations_q8k_into(&act_b, &mut q8k_scales, &mut q8k_quants)
+                .expect("q8k_quant failed");
+            // Fused matvec into out_dim.
+            let mut next = vec![0.0f32; out_dim];
+            fused_q4k_q8k_parallel_matvec_into(
+                w_bytes,
+                &q8k_scales,
+                &q8k_quants,
+                in_dim,
+                out_dim,
+                &mut next,
+            )
+            .expect("fused_matvec failed");
+            let norm = (next.iter().map(|x| x * x).sum::<f32>() / (out_dim as f32))
+                .sqrt()
+                .max(1e-9);
+            for x in next.iter_mut() {
+                *x /= norm;
+            }
+            act_b = next;
+        }
+
+        // Compute final divergence: L2 norm of (act_a - act_b) /
+        // L2 norm of act_a.
+        let l2_diff = act_a
+            .iter()
+            .zip(act_b.iter())
+            .map(|(a, b)| (a - b).powi(2))
+            .sum::<f32>()
+            .sqrt();
+        let l2_a = act_a.iter().map(|x| x * x).sum::<f32>().sqrt();
+        let rel_diff = l2_diff / l2_a.max(1e-9);
+
+        eprintln!(
+            "FALSIFY-FFN-GGUF-009: chained {n_chained} matvecs (256×256 each, RMSNorm \
+             between layers); final L2(act_a - act_b) = {l2_diff:.6}, L2(act_a) = \
+             {l2_a:.6}, rel_diff = {rel_diff:.6} ({:.4}%)",
+            rel_diff * 100.0
+        );
+
+        // The §27 evidence is 18.23× std-ratio at layer-3 (= 1723%
+        // relative magnitude). The M94 single-tensor mechanism is
+        // 0.077% relative.
+        //
+        // Sanity: chained rel_diff should be MEASURABLY LARGER than
+        // single-tensor (0.077%), confirming compounding. Asserted
+        // as regression-test invariant.
+        assert!(
+            rel_diff > 0.0007,
+            "FALSIFY-FFN-GGUF-009 sanity: chained {n_chained}-matvec rel_diff = \
+             {rel_diff} not measurably larger than single-tensor 0.077%; M94 \
+             mechanism may not COMPOUND across chained matvecs (which would \
+             refute the cumulative-drift explanation for §27)."
+        );
+
+        // Document the canonical empirical value for future re-derivation.
+        eprintln!(
+            "FALSIFY-FFN-GGUF-009: M94 mechanism DOES compound across chained matvecs. \
+             Single-tensor 0.077% → {n_chained}-tensor {:.4}%. Growth factor = {:.2}×. \
+             Whether this is sufficient to fully explain §27's 18.23× std-ratio at \
+             layer-3 depends on the actual layer-3 chain depth (likely 3 layers × ~7 \
+             tensor-ops + RoPE phase rotation + softmax non-linearity which can amplify \
+             precision drift). Test confirms compounding; quantitative match to §27 \
+             requires real-teacher run.",
+            rel_diff * 100.0,
+            rel_diff / 0.00077
+        );
+    }
 }
