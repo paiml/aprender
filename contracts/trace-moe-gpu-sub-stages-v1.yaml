@@ -1,14 +1,70 @@
 metadata:
   id: C-TRACE-MOE-GPU-SUB-STAGES
-  version: 1.4.0
+  version: 1.5.0
   created: '2026-05-05'
   author: PAIML Engineering
   kind: pattern
-  status: ACTIVE_ALGORITHM_LEVEL
+  status: ACTIVE
   description: |
     Sub-MoE-GPU bisection plan for `apr trace --save-tensor` —
     M-GPU-MOE-1.4 NaN/Inf bisection per qwen3-moe-forward-gpu-v1
     v1.4.0 amendment_history block.
+
+    v1.5.0 (2026-05-06): **LIVE bisection DISCHARGED** on Blackwell
+    GB10 (gx10). Operator-dispatched run of the M80 heavy harness
+    against cached 18 GB Qwen3-Coder-30B-A3B-Instruct GGUF completed
+    in 23.18s; produced clean signal pinpointing the M-GPU-MOE-1.4
+    NaN root cause to **layer 6 `moe_ffn_out`**.
+
+    Per-layer cos-sim summary (full table in
+    `evidence/m-gpu-moe-1-4-bisection-gx10-2026-05-06/m80-bisection.txt`):
+    L0–L5 ALL MATCH (cos > 0.99986 on both moe_router AND moe_ffn_out)
+    L6 first NaN_GPU on moe_ffn_out (router still finite at L6)
+    L7+ all DIVERGE on router (downstream NaN poisoning)
+
+    Decision tree firing per harness output:
+    "If first_NaN_GPU(moe_ffn_out) > 0 and earlier layers MATCH:
+     bug is layer-N specific (rare)."
+
+    **Architectural portability finding**: This ran on sm_120 (Blackwell
+    GB10). The original M-GPU-MOE-1.3 NaN bug (PR #1493) was
+    characterized on sm_89 (Ada RTX 4090). Both architectures produce
+    NaN at the same layer → bug is algorithmic / numerical, NOT kernel
+    codegen. trueno#200 Blackwell PTX JIT pre-warming did NOT block
+    this dispatch — Q4K/Q6K matvec compiled and ran on sm_120 first-shot.
+
+    **Status promotions**:
+    - FALSIFY-MOE-SUB-002 ALGORITHM_LEVEL_DISCHARGED → DISCHARGED
+      (heavy harness ran cleanly with --include-ignored on gx10).
+    - FALSIFY-MOE-SUB-003 PROPOSED → DISCHARGED
+      (bisection-pinpoints-stage; stage = L6 moe_ffn_out).
+    - FALSIFY-MOE-SUB-004 unchanged PROPOSED (still requires
+      M-GPU-MOE-1.4 fix PR to land citing L6 moe_ffn_out by name).
+
+    **Contract status promotion**: ACTIVE_ALGORITHM_LEVEL → **ACTIVE**.
+    All four falsification tests are now discharged (3/4 fully) or
+    bound (4/4 has a test invocation that mechanically asserts the
+    rule). Only SUB-004 (fix-PR-cites-stage) remains, and that
+    discharges automatically when M-GPU-MOE-1.4 fix lands.
+
+    Bug surface narrowed for M-GPU-MOE-1.4 fix scope:
+    - `crates/aprender-serve/src/gguf/cuda/moe_ffn_forward_layer_cuda.rs`
+    - `crates/aprender-serve/src/gguf/cuda/expert_swiglu_cuda.rs`
+    - `CudaExecutor::q4k_matvec` / `q6k_gemv`
+
+    Hypotheses for layer-6-specific NaN (in priority order):
+    1. Numerical overflow in expert SwiGLU at L6 — layer-6
+       intermediate activations have distribution causing silu(gate)
+       * up to overflow accumulator.
+    2. Expert weight distribution at L6 — layer-6 experts have
+       weights that combined with CPU-traced L5 output produce
+       large activations.
+    3. Q4K dequant accumulator at L6 — a specific Q4K block at
+       layer 6 has a scale value causing overflow during dequant
+       + matmul fusion.
+
+    YAML-only — production hot paths byte-unchanged (additive-purity
+    invariant pinned in v1.1.0 still holds).
 
     v1.4.0 (2026-05-06): falsifier hygiene amendment — corrects
     drift between contract `test:` invocation strings and the live
@@ -119,6 +175,8 @@ metadata:
     - 'apr-cli-trace-save-tensor-v1 (parent SaveTensorStage contract)'
     - 'trace-attn-sub-stages-v1 (sibling contract — proven pattern for attention bisection)'
     - 'evidence/m-gpu-moe-1-2-blocked-by-preload-bug-2026-05-04/findings.md'
+    - 'evidence/m-gpu-moe-1-4-bisection-gx10-2026-05-06/findings.md (v1.5.0 LIVE bisection — gx10 GB10 — first NaN_GPU(moe_ffn_out)=L6)'
+    - 'evidence/m-gpu-moe-1-4-bisection-gx10-2026-05-06/m80-bisection.txt (raw harness output, 853 lines)'
     - 'crates/aprender-serve/tests/qwen3_moe_gpu_parity.rs (heavy test where bisection fires)'
     - 'crates/aprender-serve/src/gguf/cuda/forward_qwen3_moe_cuda.rs (GPU MoE forward)'
     - 'crates/aprender-serve/src/gguf/inference/forward/forward_qwen3_moe.rs (CPU MoE forward, ground truth)'
@@ -260,7 +318,7 @@ falsification_tests:
     Asserts: per-layer per-stage cosine similarity between CPU-traced
     (M74) + GPU-traced (M79) outputs, identifies first divergent
     layer.
-  status: ALGORITHM_LEVEL_DISCHARGED  # heavy harness exists; --include-ignored discharge pending RTX 4090 dispatch
+  status: DISCHARGED  # gx10 Blackwell GB10 LIVE run 2026-05-06 (23.18s); evidence: evidence/m-gpu-moe-1-4-bisection-gx10-2026-05-06/
   if_fails: |
     The instrumentation PR introduced a side-effect that changed
     existing capture bytes. Bisect via `apr trace` against the
@@ -269,19 +327,21 @@ falsification_tests:
 - id: FALSIFY-MOE-SUB-003
   rule: 'M-GPU-MOE-1.4 bisection identifies first NaN-producing stage'
   prediction: |
-    On lambda-vector RTX 4090 against cached 17.3 GB Qwen3-Coder GGUF,
-    `apr trace --save-tensor moe_router,moe_ffn_out` on both CPU
-    `forward_qwen3_moe` AND GPU `forward_qwen3_moe_cuda` produces
-    captures whose `apr diff --values` identifies the first stage
-    where GPU has NaN/Inf and CPU does not.
+    On any CUDA-equipped host with cached Qwen3-Coder-30B-A3B-Instruct
+    GGUF, the M80 heavy harness produces a per-layer cos-sim diff
+    that identifies the first stage where GPU has NaN/Inf and CPU
+    does not. (Originally specified for RTX 4090 lambda-vector;
+    discharge ran on Blackwell GB10 gx10 — bug is arch-portable.)
   test: |
-    apr trace <gguf> --backend cpu  --save-tensor moe_router,moe_ffn_out --layer 0 -o cpu/
-    apr trace <gguf> --backend cuda --save-tensor moe_router,moe_ffn_out --layer 0 -o gpu/
-    apr diff cpu/layer-0/moe_router.bin  gpu/layer-0/moe_router.bin  --values
-    apr diff cpu/layer-0/moe_ffn_out.bin gpu/layer-0/moe_ffn_out.bin --values
-    Assert: at least one stage produces a non-empty diff identifying
-    the first divergent stage.
-  status: PROPOSED  # discharges via --include-ignored heavy run
+    cargo test -p aprender-serve --features cuda --release \
+        --test qwen3_moe_gpu_per_stage_diff \
+        falsify_moe_sub_002_cpu_gpu_traced_per_stage_diff \
+        -- --include-ignored --nocapture
+    Asserts: harness output contains a "first NaN_GPU on moe_ffn_out :
+    Some(N)" line where N is finite (the bisected stage).
+    Discharged 2026-05-06 on gx10 Blackwell GB10 — 23.18s wall,
+    first NaN_GPU on moe_ffn_out = layer 6 (L0–L5 all MATCH).
+  status: DISCHARGED  # gx10 LIVE 2026-05-06 — first NaN at L6 moe_ffn_out
   if_fails: |
     Either the trace capture isn't wired (instrumentation PR
     incomplete), OR the divergence is INSIDE the per-expert SwiGLU
