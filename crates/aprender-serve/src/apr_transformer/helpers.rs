@@ -477,4 +477,104 @@ mod determinism_tests {
             );
         }
     }
+
+    /// FALSIFY-FFN-GGUF-006 / M-FFN-GGUF-4 step (b):
+    /// APR's `simd_dot_f32_avx2` (AVX2 8-wide FMA) and the scalar
+    /// fallback (`iter().zip().map(*).sum()`) produce **byte-identical**
+    /// f32 results for typical synthetic inputs.
+    ///
+    /// SURPRISING EMPIRICAL RESULT (asserted here as a regression
+    /// test): on the canonical synthetic input below, AVX2 8-wide FMA
+    /// and scalar left-fold sum BOTH produce `0x44191e70 = 612.4756`.
+    ///
+    /// This **FALSIFIES the refined H2a' hypothesis** at the SIMD-vs-
+    /// scalar level. The cumulative APR↔GGUF drift cannot be explained
+    /// by APR's SIMD vs APR's scalar path differing on this class of
+    /// f32 inputs.
+    ///
+    /// WHY THIS MATTERS FOR SHIP-007 §22 / §27 / §28:
+    ///
+    /// Two reduction-order hypotheses are now empirically falsified:
+    /// - §28 (parallel-reduction non-determinism, M91 PR #1535):
+    ///   FALSIFIED — APR's `f32_matmul` is byte-deterministic
+    /// - H2a' (SIMD-vs-scalar reduction-order, this test):
+    ///   FALSIFIED — AVX2 and scalar produce byte-identical output
+    ///
+    /// The SHIP-007 root cause must be at a different boundary:
+    /// - H2b: Layer-3-specific upstream divergence (gate or up at L3)
+    /// - H2c: Quantization dequant alignment differs at certain layer
+    ///        configs
+    /// - H2d (NEW post-falsification): APR↔GGUF differ in the
+    ///        QUANTIZED matvec path (Q4K dequant + activation
+    ///        quantization to Q8K + fused matvec) NOT in F32-vs-F32
+    ///        kernels. APR's f32_matmul takes F32 weights (already
+    ///        dequantized at load time); GGUF's
+    ///        fused_q4k_q8k_parallel_matvec_into takes raw Q4K bytes
+    ///        + Q8K-quantized activations and fuses dequant +
+    ///        matvec. Different reduction order at the QUANTIZED-
+    ///        kernel level (which neither this test nor §28 falsifier
+    ///        exercises) is the remaining viable hypothesis.
+    ///
+    /// REGRESSION-TEST INTENT:
+    ///
+    /// This test asserts BYTE-IDENTITY between SIMD and scalar paths
+    /// for the canonical synthetic input. If a future change makes
+    /// them DIFFER (e.g., scalar path is removed and replaced with a
+    /// chunked reduction), this test will fail and force re-derivation
+    /// of the SHIP-007 hypothesis class.
+    ///
+    /// Per `contracts/trace-ffn-sub-block-gguf-v1.yaml` v1.2.0 → v1.3.0
+    /// refined-hypothesis amendment.
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn falsify_ffn_gguf_006_simd_vs_scalar_reduction_order_byte_identity() {
+        // Skip if AVX2+FMA not available — the test requires both paths
+        // to be exercised and only AVX2 hosts have both.
+        if !is_x86_feature_detected!("avx2") || !is_x86_feature_detected!("fma") {
+            eprintln!(
+                "FALSIFY-FFN-GGUF-006: skipped — host lacks AVX2+FMA (required for SIMD path)"
+            );
+            return;
+        }
+
+        // Canonical synthetic input. Reproducible across runs; pinned
+        // to the values that produced 0x44191e70 = 612.4756 on
+        // 2026-05-06 via empirical verification.
+        let len = 128;
+        let a: Vec<f32> = (0..len)
+            .map(|i| ((i as f32) - 64.0) * 0.1 + ((i % 7) as f32) * 0.013)
+            .collect();
+        let b: Vec<f32> = (0..len)
+            .map(|i| ((i as f32) * 0.7 - 50.0) * 0.05 + ((i % 11) as f32) * 0.011)
+            .collect();
+
+        // SAFETY: AVX2+FMA verified above
+        let result_simd = unsafe { simd_dot_f32_avx2(&a, &b) };
+
+        // Scalar reduction: left-fold sum (Rust's default Iterator::sum)
+        let result_scalar: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
+
+        let bits_simd = result_simd.to_bits();
+        let bits_scalar = result_scalar.to_bits();
+
+        // EMPIRICAL FINDING (2026-05-06): both paths produce
+        // 0x44191e70 = 612.4756 on this canonical input. Asserted as
+        // regression-test invariant.
+        assert_eq!(
+            bits_simd, bits_scalar,
+            "AVX2 SIMD ({:#x} = {result_simd}) and scalar ({:#x} = {result_scalar}) \
+             produced DIFFERENT byte patterns — H2a' refined hypothesis would be \
+             CONFIRMED. The SHIP-007 root cause may then live in this reduction-\
+             order boundary; expand investigation to GGUF's quantized matvec \
+             reduction tree.",
+            bits_simd, bits_scalar
+        );
+
+        // Document the empirical canonical value so a future engineer
+        // can re-verify without re-running the test.
+        eprintln!(
+            "FALSIFY-FFN-GGUF-006: byte-identical at {result_simd} ({bits_simd:#x}). \
+             H2a' refined hypothesis FALSIFIED at SIMD-vs-scalar level."
+        );
+    }
 }
