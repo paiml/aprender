@@ -1,9 +1,117 @@
 metadata:
-  version: 1.4.0
+  version: 1.5.0
   kind: kernel
   created: '2026-05-04'
   author: PAIML Engineering
   amendment_history:
+    - version: 1.5.0
+      date: '2026-05-06'
+      kind: amendment
+      title: 'M-GPU-MOE-1.4 step (b) — LIVE bisection DISCHARGED on gx10 — first NaN at L6 moe_ffn_out'
+      description: |
+        Records the LIVE bisection result for M-GPU-MOE-1.4 step (b)
+        from operator-dispatched run on Blackwell GB10 (gx10) on
+        2026-05-06.
+
+        EVIDENCE: evidence/m-gpu-moe-1-4-bisection-gx10-2026-05-06/
+        - findings.md (5-whys analysis, hypothesis ranking)
+        - m80-bisection.txt (raw 853-line harness output)
+
+        WHAT THE BISECTION FOUND:
+
+          First NaN_GPU on `moe_ffn_out` = **layer 6**.
+          - L0–L5: ALL MATCH on both moe_router AND moe_ffn_out
+            (cos > 0.99986)
+          - L6: first NaN_GPU on moe_ffn_out (router still finite at L6,
+            cos 0.999986)
+          - L7+: all DIVERGE on router (downstream NaN poisoning)
+
+          Per the M80 harness's decision tree:
+          "If first_NaN_GPU(moe_ffn_out) > 0 and earlier layers MATCH:
+           bug is layer-N specific (rare)."
+
+        ARCHITECTURAL PORTABILITY:
+
+          Bisection ran on sm_120 (Blackwell GB10). Original
+          M-GPU-MOE-1.3 NaN bug (PR #1493 diagnostic) was
+          characterized on sm_89 (Ada RTX 4090). Both architectures
+          produce NaN at the same layer → bug is **algorithmic /
+          numerical**, NOT kernel codegen. trueno#200 Blackwell PTX
+          JIT pre-warming did NOT block the dispatch — Q4K/Q6K matvec
+          compiled and ran on sm_120 first-shot.
+
+          → A single fix at the bisected stage discharges both
+            arch-specific manifestations.
+
+        BUG SURFACE NARROWED:
+
+          - crates/aprender-serve/src/gguf/cuda/moe_ffn_forward_layer_cuda.rs
+          - crates/aprender-serve/src/gguf/cuda/expert_swiglu_cuda.rs
+          - CudaExecutor::q4k_matvec / q6k_gemv
+
+          The bug is NOT in the routing logic (router stays finite
+          at L6). It's in the per-expert FFN computation at layer 6
+          specifically.
+
+        HYPOTHESES (priority order, refined from v1.4.0):
+
+          1. **Numerical overflow in expert SwiGLU at L6**: layer-6
+             intermediate activations have a distribution causing
+             silu(gate) * up to overflow F16/F32 accumulator.
+          2. **Expert weight distribution at L6**: layer-6 experts
+             have weights that combined with CPU-traced L5 output
+             produce activations large enough to trigger overflow.
+          3. **Q4K dequant accumulator at L6**: a specific Q4K block
+             at layer 6 has a scale value causing overflow during
+             dequant + matmul fusion.
+
+          The v1.4.0 hypothesis "missing per-head Q/K RMSNorm" is
+          REFUTED by the bisection — Q/K norm runs in attention
+          which is BEFORE FFN; if it were missing the divergence
+          would appear earlier than L6 (likely L0). The bisection
+          confirms attention path is OK through L6 (router input is
+          finite, router itself MATCHES through L7's poisoned input).
+
+        IMPLEMENTATION_STAGE M-GPU-MOE-1.4 STATUS:
+
+          PENDING → PARTIALLY_DISCHARGED. Step (a) instrumentation
+          is COMPLETE (M-MOE-SUB-1+2+3 cascade, M50→M81). Step (b)
+          bisection is COMPLETE (this evidence). Step (c) fix is
+          OPEN — see "NEXT WORK" below.
+
+        FALSIFY-QW3-MOE-GPU-INVARIANTS-001 STATUS:
+
+          Was PARTIALLY_DISCHARGED (output length OK, finiteness
+          FAILS). Stays PARTIALLY_DISCHARGED — the L6 NaN still
+          produces non-finite logits at lm_head. Promotes to
+          DISCHARGED only when M-GPU-MOE-1.4 step (c) fix lands
+          and the heavy `qwen3_moe_gpu_parity` test passes the
+          finiteness assertion.
+
+        NEXT WORK (M-GPU-MOE-1.4 step c fix):
+
+          - Add finer-grained instrumentation at the L6 GPU MoE
+            FFN call site to discriminate among the 3 hypotheses
+            (e.g., capture per-expert SwiGLU intermediates at L6,
+            check accumulator extremes pre-NaN).
+          - Apply fix at the bisected stage. Class TBD by deeper
+            instrumentation (numerical clamp, higher-precision
+            accumulator, or block-specific scale cap).
+          - Add lib-only drift-prevention test
+            `falsify_qw3_moe_gpu_finite_at_layer_6_canonical_prompt`.
+          - Discharge FALSIFY-MOE-SUB-004 (the M82 sibling
+            falsifier — fix-PR-cites-stage L6 moe_ffn_out by name).
+
+        WHY YAML-ONLY AMENDMENT NOW (NOT WAIT FOR FIX):
+
+          The bisection result is itself a load-bearing engineering
+          artifact — it narrows the fix scope from "somewhere in
+          the GPU MoE forward path" to "layer 6 expert FFN
+          computation". Recording this finding in the contract
+          BEFORE writing the fix code is the same pattern v1.4.0
+          followed for the bisection plan. Per CLAUDE.md "NEVER
+          write code before writing a provable contract".
+
     - version: 1.4.0
       date: '2026-05-04'
       kind: amendment
@@ -528,7 +636,7 @@ metadata:
 
 kind: KernelContract
 name: qwen3-moe-forward-gpu
-version: "1.4.0"
+version: "1.5.0"
 status: DRAFT   # Scaffold + architecture amendments + preload-bug fix
                 # plan + NaN/Inf bisection plan only; flips to
                 # ACTIVE_ALGORITHM_LEVEL when CUDA kernel + cosine
@@ -718,9 +826,18 @@ implementation_stages:
     - 'DeepSpeed-MoE-style expert-parallel scheduling needs design work for the Q4_K_M / Q6_K row-major layouts'
 
 - id: M-GPU-MOE-1.4
-  status: PENDING
+  status: PARTIALLY_DISCHARGED  # step (a) + (b) DONE 2026-05-06; step (c) fix OPEN — see v1.5.0 amendment
   description: |
     GPU NaN/Inf bisection + fix.
+
+    Status promoted PENDING → PARTIALLY_DISCHARGED at v1.5.0
+    (2026-05-06): step (a) instrumentation cascade COMPLETE
+    (M-MOE-SUB-1+2+3, aprender PRs #1499/#1507/#1516/#1521/#1522/
+    #1523/#1524 — M50→M81 cascade); step (b) LIVE bisection
+    COMPLETE on Blackwell GB10 gx10 — 23.18s wall, first NaN_GPU
+    on moe_ffn_out at layer 6 (L0–L5 ALL MATCH); evidence at
+    `evidence/m-gpu-moe-1-4-bisection-gx10-2026-05-06/`.
+    Step (c) fix OPEN — see v1.5.0 amendment_history NEXT WORK.
 
     Post-M-GPU-MOE-1.3 (PR #1491 squash f0cbe37f9 MERGED 2026-05-04
     on aprender main), the heavy `qwen3_moe_gpu_parity` test
