@@ -1,0 +1,347 @@
+metadata:
+  id: C-TRACE-FFN-SUB-BLOCK-GGUF
+  version: 1.0.0
+  created: '2026-05-06'
+  author: PAIML Engineering
+  kind: pattern
+  status: PROPOSED
+  description: |
+    GGUF-side sub-FFN telemetry extension — sibling pattern to
+    `trace-ffn-sub-block-v1` (which extends APR's `AprTransformer::
+    forward_traced`). This contract pins the GGUF-side equivalent
+    `OwnedQuantizedModel::forward_traced` so SHIP-007 layer-3
+    bisection can compare APR-side ffn_swigl std vs GGUF-side
+    ffn_swigl std on the same canonical 7B teacher prompt.
+
+    BACKGROUND: SHIP-007 layer-3 ffn_swigl bisection (§21 spec
+    v2.66.0, aprender PR #1072 squash 211edeafc) narrowed the bug
+    to "(layer=3, ffn_swigl element-wise multiply)" on the APR
+    forward path:
+    - Layer 3 ffn_swigl std = 1.222 (17.2× layer-2 baseline 0.071)
+    - Cascades to layer 3 ffn_out std = 11.459 (53× layer-2)
+    - gate/up individually normal at layer 3
+    - silu(gate) at layer 3 is 3.2× baseline (precursor)
+
+    The §21 falsification cannot distinguish two competing
+    hypotheses without GGUF-side per-layer sub-FFN telemetry:
+
+      H1: Token-position-dependent correlation — at the 7-token
+          prompt, layer 3 tokens produce correlated gate/up not
+          present at layers 1-2 (NORMAL model behavior).
+      H2: APR-side bug — APR forward path produces different
+          VALUES than GGUF (despite SHIP-003 PR #1059 proving
+          weights are byte-equivalent at cos≥0.9999999).
+
+    The bisection between H1 and H2 requires running `apr trace
+    --payload` on both sides and comparing layer-3 ffn_swigl std.
+    GGUF currently has NO `forward_traced` method — only
+    `forward_*` orchestrators in `crates/aprender-serve/src/gguf/
+    inference/forward/*`. This contract pins the architecture for
+    adding GGUF-side traced forward.
+
+    SCOPE: extends `trace-ffn-sub-block-v1` (APR sibling) with
+    the parallel GGUF-side method, using the same 5 sub-FFN
+    fields:
+      - gate_proj_out (post gate matmul)
+      - up_proj_out (post up matmul)
+      - silu_gate (post silu activation on gate)
+      - swiglu_inner (silu_gate * up_proj_out, the swigl product)
+      - ffn_down_out (post down matmul, pre-residual)
+
+    Mirrors the proven `trace-moe-gpu-sub-stages-v1` pattern that
+    closed the M-GPU-MOE-1.4 NaN bisection at L6 moe_ffn_out via
+    qtype-aware dispatch fix (M85 PR #1529 squash `89cb26af7`):
+    extend an existing trace surface to a sibling implementation
+    path WITHOUT modifying production hot paths (additive-purity
+    invariant).
+
+    THE GOAL: extend `OwnedQuantizedModel::forward_traced` (NEW
+    method) so a future SHIP-007 layer-3 bisection PR can run
+    `apr trace --json --payload` on both APR forward AND GGUF
+    forward, diff per-layer ffn_swigl std, distinguish H1 from
+    H2, and either:
+    - confirm H1 (normal model behavior — SHIP-007 root cause is
+      ELSEWHERE, likely in lm_head or post-FFN residual)
+    - confirm H2 (APR-side bug — fix at `inference.rs:160-164`
+      element-wise multiply at SwiGLU site)
+
+    Per memory `project_ship_007_layer_3_swiglu_bisection.md`,
+    this gap blocks SHIP-007 root-cause from being pinned to a
+    specific code line; it transitively blocks 5 MODEL-1
+    PARTIALs (SHIP-002, SHIP-005, SHIP-006, SHIP-007, SHIP-008).
+
+    PRIOR-WORK DISCOVERY (during contract authoring):
+    PRs #1081 (scaffold, PR A) + #1082 (sub-FFN populate, PR B)
+    have ALREADY shipped the dense-path forward_traced for GGUF.
+    The 4 sub-FFN ActivationStats slots are populated for SwiGLU
+    paths. So M-FFN-GGUF-1 + M-FFN-GGUF-2 are SHIPPED (retroactive
+    discovery; contract authored AFTER the work). M-FFN-GGUF-3
+    (heavy comparison harness for layer-3 ffn_swigl) and
+    M-FFN-GGUF-4 (SHIP-007 fix PR cites H1 or H2) remain OPEN.
+
+    The contract still serves a load-bearing purpose: it pins the
+    architecture explicitly so future cascade extensions (heavy
+    harness + fix) have a clear discharge path, and it cross-
+    references the prior-work PRs for anyone reading the contract
+    surface for the first time.
+
+  references:
+    - 'trace-ffn-sub-block-v1 (parent contract — APR-side telemetry on AprTransformer)'
+    - 'apr-vs-gguf-forward-parity-v1 (umbrella SHIP-007 contract)'
+    - 'trace-moe-gpu-sub-stages-v1 (proven sibling-pattern precedent — M-GPU-MOE-1.4 cascade)'
+    - 'memory project_ship_007_layer_3_swiglu_bisection.md'
+    - 'docs/specifications/aprender-train/ship-two-models-spec.md §21'
+    - 'evidence/ship-007-layer-3-anomaly/sub-ffn-bisection-2026-04-26.txt (386-line APR-side trace)'
+    - 'evidence/ship-007-layer-3-anomaly/sub-ffn-per-layer-stds.csv'
+    - 'crates/aprender-serve/src/apr_transformer/inference.rs (existing APR forward_traced — lines 160-164 swigl site)'
+    - 'crates/aprender-serve/src/gguf/inference/forward/ (GGUF orchestrators — NEW forward_traced added here)'
+    - 'crates/aprender-serve/src/apr_transformer/mod.rs::LayerActivation (existing struct — 5 sub-FFN fields)'
+
+  binds_to:
+    - 'AC-SHIP1-007 (SHIP-007 layer-3 root cause)'
+    - 'trace-ffn-sub-block-v1 v1.0.0 (parent telemetry schema)'
+
+  depends_on:
+    - 'trace-ffn-sub-block-v1 v1.0.0 (the LayerActivation struct must exist on APR side first — already SHIPPED at PR #1066)'
+
+equations:
+  swiglu_inner_gguf:
+    formula: 'ffn_inner[i] = silu(gate_proj_out[i]) * up_proj_out[i]'
+    where:
+      - 'silu(x) = x / (1 + exp(-x))  ← SiLU = Swish-1'
+      - 'gate_proj_out shape = [intermediate_dim]'
+      - 'up_proj_out shape = [intermediate_dim]'
+    note: |
+      Same equation as APR `trace-ffn-sub-block-v1`. GGUF path
+      computes this identically in
+      `crates/aprender-serve/src/gguf/inference/forward/forward_dense.rs`
+      or `forward_qwen3_moe.rs::expert_swiglu_quantized` (per-expert).
+      Sub-FFN telemetry must capture the same f32 tensors at the
+      same algorithmic positions to enable APR-vs-GGUF diff.
+
+proof_obligations:
+- type: equivalence
+  property: 'GGUF traced forward output byte-identical to GGUF non-traced forward (additive-purity invariant)'
+  formal: 'OwnedQuantizedModel::forward_traced(P)[L].hidden == OwnedQuantizedModel::forward(P)[L].hidden'
+  tolerance: 0.0
+  applies_to: all
+
+- type: invariant
+  property: 'LayerActivation struct schema identical between APR (apr_transformer) and GGUF (gguf::inference::forward) — required for APR-vs-GGUF per-layer std diff'
+  formal: 'fields(apr::LayerActivation) == fields(gguf::LayerActivation)'
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-FFN-GGUF-001
+  rule: 'forward_traced exists on OwnedQuantizedModel and parses --payload'
+  prediction: |
+    `apr trace --json --payload <gguf-path>` invokes
+    `OwnedQuantizedModel::forward_traced` and emits per-layer
+    `LayerActivation` entries with the 5 sub-FFN fields populated.
+  test: |
+    cargo test -p aprender-serve --lib falsify_ffn_gguf_001
+    Live binding: lib-only signature gate test in
+    `crates/aprender-serve/src/gguf/inference/forward/forward_traced.rs`
+    (NEW file). Asserts: method exists with documented signature,
+    accepts SaveTensorPlan, returns `Vec<LayerActivation>` matching
+    apr_transformer::LayerActivation schema.
+  status: PROPOSED
+  if_fails: |
+    The forward_traced method is missing on OwnedQuantizedModel.
+    Add it as a sibling of existing `forward_*` orchestrators in
+    `crates/aprender-serve/src/gguf/inference/forward/`.
+
+- id: FALSIFY-FFN-GGUF-002
+  rule: 'GGUF traced forward output byte-identical to GGUF non-traced'
+  prediction: |
+    For the canonical 7B teacher (paiml/qwen2.5-coder-7b-apache-q4k-v1)
+    on prompt "What is 2+2?", every layer's `hidden_state` from
+    `forward_traced` is byte-identical to the same layer's
+    `hidden_state` from production `forward`.
+  test: |
+    cargo test -p aprender-serve --features cuda --test gguf_forward_traced_byte_identity \
+        falsify_ffn_gguf_002 -- --include-ignored
+    Live binding: heavy test that loads canonical GGUF, runs both
+    forward methods, asserts per-layer hidden_state bytes match.
+    `#[ignore]`-gated; requires cached canonical 7B teacher GGUF.
+  status: PROPOSED
+  if_fails: |
+    The forward_traced sibling has a side-effect that changes
+    production output bytes. Bisect via `apr trace` against the
+    pre-PR commit. Most likely: telemetry capture mutated a
+    scratch buffer that production reads.
+
+- id: FALSIFY-FFN-GGUF-003
+  rule: 'APR-vs-GGUF layer-3 ffn_swigl std comparison distinguishes H1 from H2'
+  prediction: |
+    On canonical 7B teacher prompt "What is 2+2?", running
+    `apr trace --payload` on BOTH the APR `.apr` file and the
+    GGUF `.gguf` file produces per-layer ffn_swigl std values.
+    The layer-3 ffn_swigl comparison falsifies one of:
+    - H1 (normal model behavior): GGUF layer-3 ffn_swigl std
+      ≈ 1.22 (within 10%) → SHIP-007 root cause is ELSEWHERE
+    - H2 (APR-side bug): GGUF layer-3 ffn_swigl std ≪ 1.22
+      (e.g., < 0.5) → APR-side bug confirmed at
+      `inference.rs:160-164` swigl elementwise multiply
+  test: |
+    apr trace --payload --teacher canonical-7b.apr --max-tokens 1 -o apr-trace.json
+    apr trace --payload --teacher canonical-7b-q4k.gguf --max-tokens 1 -o gguf-trace.json
+    jq '.layers[3].ffn_swigl.std' apr-trace.json gguf-trace.json
+    # Assert: ratio within [0.9, 1.1] → H1, OR ratio > 2 → H2
+  status: PROPOSED
+  if_fails: |
+    Either trace capture failed (forward_traced not wired), OR
+    both sides agree at low std (anomaly is on neither side
+    — bug elsewhere in pipeline).
+
+- id: FALSIFY-FFN-GGUF-004
+  rule: 'SHIP-007 fix PR cites the bisected hypothesis (H1 or H2)'
+  prediction: |
+    The follow-up SHIP-007 root-cause fix PR title/body explicitly
+    cites whether the GGUF comparison falsified H1 or H2 (per
+    FALSIFY-FFN-GGUF-003 outcome). If H2: PR fixes
+    `inference.rs:160-164`. If H1: PR pivots SHIP-007 investigation
+    to lm_head / post-FFN residual / token-position correlation.
+  test: |
+    The SHIP-007 root-cause fix PR title/body MUST mention one of:
+    {ffn_swigl, swigl_elementwise_multiply, lm_head, post_ffn_residual,
+     token_position_correlation}
+    AND cite either H1 (normal) or H2 (apr-bug) by name.
+  status: PROPOSED  # human-eval at fix-PR review time
+  if_fails: |
+    The bisection didn't pinpoint a hypothesis — likely needs
+    finer-grained per-token telemetry (extend M-FFN-GGUF-4 with
+    per-token sub-FFN fields).
+
+implementation_stages:
+- id: M-FFN-GGUF-0
+  status: SHIPPED  # this contract scaffold IS the deliverable
+  description: |
+    This contract scaffold (v1.0.0). No code; just the GGUF-side
+    sub-FFN telemetry extension defined as a sibling pattern to
+    `trace-ffn-sub-block-v1`.
+
+    NOTE: The contract was authored AFTER discovering that PRs
+    #1081 (PR A) + #1082 (PR B) had already shipped the
+    forward_traced scaffold + sub-FFN populate. The contract
+    correctly retro-records this prior work in M-FFN-GGUF-1 +
+    M-FFN-GGUF-2 below. Future cascade extensions (M-FFN-GGUF-3
+    heavy harness + M-FFN-GGUF-4 fix PR) build on the now-pinned
+    architecture.
+  evidence:
+    - 'aprender contracts/trace-ffn-sub-block-gguf-v1.yaml at v1.0.0'
+    - 'pv validate contracts/trace-ffn-sub-block-gguf-v1.yaml exits 0'
+
+- id: M-FFN-GGUF-1
+  status: SHIPPED  # `LayerActivation` is shared between APR and GGUF since the original sub-FFN cascade
+  description: |
+    `LayerActivation` struct shared between APR and GGUF inference
+    modules. Originally defined in `apr_transformer::mod.rs` with
+    9 stats fields including 4 sub-FFN fields (ffn_gate_stats,
+    ffn_up_stats, ffn_silu_gate_stats, ffn_swiglu_inner_stats).
+
+    GGUF code (`crates/aprender-serve/src/gguf/inference/forward/
+    traced.rs` + `forward_qwen3_moe_traced.rs`) imports the same
+    type via `use crate::apr_transformer::LayerActivation`. No
+    GGUF-side struct duplication needed.
+
+    Verified by grep: `crates/aprender-serve/src/gguf/cuda/
+    forward_qwen3_moe_cuda_traced.rs:40` + `gguf/inference/
+    forward/forward_qwen3_moe_traced.rs:32` both `use` the apr_
+    transformer LayerActivation.
+  expected_acceptance:
+    - FALSIFY-FFN-GGUF-001 (signature gate)
+
+- id: M-FFN-GGUF-2
+  status: SHIPPED  # PR A #1081 (scaffold) + PR B #1082 (sub-FFN populate) on aprender main
+  description: |
+    `OwnedQuantizedModel::forward_traced` for dense (SwiGLU) GGUF
+    models. Mirrors APR `AprTransformer::forward_traced` step-by-
+    step at `crates/aprender-serve/src/gguf/inference/forward/
+    traced.rs:42`. Production `forward_single_with_scratch` is
+    unchanged byte-for-byte (additive-purity invariant).
+
+    Two-PR cascade ALREADY ON aprender main:
+    - **PR #1081** (squash `108f8f71c`): SHIP-007 GGUF
+      forward_traced scaffold (PR A) — 6 non-FFN LayerActivation
+      fields populated, 4 sub-FFN default-zero
+    - **PR #1082** (squash `30edfd357`): SHIP-007 GGUF
+      forward_traced sub-FFN populate (PR B) — fills the 4
+      sub-FFN ActivationStats slots via `scratch_swiglu_ffn_traced`
+      for SwiGLU paths. GELU paths leave the 4 fields default-zero
+      (no SwiGLU components to capture).
+
+    KNOWN LIMITATION (NOT BLOCKING H1/H2 falsification on dense
+    7B Qwen2.5-Coder which is SwiGLU + non-MoE): The MoE path
+    (`forward_qwen3_moe_traced` at line 32) currently uses the
+    M74-pattern wireup which captures router/ffn_out via
+    SaveTensorPlan but does NOT populate the 4 per-layer
+    LayerActivation sub-FFN fields. Extending forward_qwen3_moe_
+    traced to populate those is a future enhancement (M-FFN-GGUF-2.1
+    if needed for MoE-side SHIP-007 bisection — not currently
+    relevant since the 7B teacher is dense).
+  expected_acceptance:
+    - FALSIFY-FFN-GGUF-001
+    - FALSIFY-FFN-GGUF-002 (byte-identity vs production)
+
+- id: M-FFN-GGUF-3
+  status: PENDING  # heavy comparison harness OPEN
+  description: |
+    Heavy comparison harness — runs `apr trace --payload` on both
+    APR `.apr` and GGUF `.gguf` versions of the canonical 7B
+    teacher (paiml/qwen2.5-coder-7b-apache-q4k-v1) on the same
+    prompt, captures per-layer ffn_swigl std for each, computes
+    ratio at layer 3 specifically. Reports H1 (≈1.0 ratio) or
+    H2 (>>1.0 ratio).
+
+    Operationally unblocked by M-FFN-GGUF-2: the GGUF-side
+    forward_traced now emits the 4 sub-FFN fields. The heavy
+    harness just needs to compare APR vs GGUF on the same prompt.
+
+    Implementation hint: mirror the
+    `falsify_moe_sub_002_cpu_gpu_traced_per_stage_diff` heavy
+    harness pattern (M80 PR #1524) but for APR-vs-GGUF instead
+    of CPU-vs-GPU.
+  expected_acceptance:
+    - FALSIFY-FFN-GGUF-003 (bisection distinguishes H1/H2)
+
+- id: M-FFN-GGUF-4
+  status: PENDING
+  description: |
+    SHIP-007 root cause fix PR — applies fix at the bisected site
+    OR pivots investigation per H1/H2 outcome.
+
+    If H2 (APR-side bug confirmed): fix at `inference.rs:160-164`
+    swigl elementwise multiply. Likely candidates: off-by-one
+    slice indexing, wrong intermediate buffer reuse, fp accumulator
+    order in the `silu(g) * u` reduction.
+
+    If H1 (normal model behavior): pivot SHIP-007 investigation
+    to lm_head / post-FFN residual / token-position correlation
+    surfaces. The §21 layer-3 anomaly is then NOT the SHIP-007
+    bug; root cause is downstream.
+
+    Discharges 5 transitively-blocked MODEL-1 PARTIALs per
+    §17.5: SHIP-002, SHIP-005, SHIP-006, SHIP-007, SHIP-008.
+  expected_acceptance:
+    - FALSIFY-FFN-GGUF-004
+
+qa_gate:
+  id: F-TRACE-FFN-GGUF-001
+  name: GGUF Sub-FFN Telemetry Contract
+  checks:
+  - forward_traced_method_exists_on_owned_quantized_model
+  - layer_activation_schema_parity_apr_gguf
+  - production_forward_byte_identical_pre_post_traced
+  - ship_007_layer_3_h1_h2_falsification
+  pass_criteria: All 4 falsification tests pass — FALSIFY-FFN-GGUF-001 + 002 + 003 + 004
+  falsification: |
+    Add LayerActivation struct without registering forward_traced method
+    (will fail FALSIFY-FFN-GGUF-001) — or modify production forward
+    to emit telemetry (will fail FALSIFY-FFN-GGUF-002 byte-identity).
+
+kani_harnesses:
+- id: KANI-TRACE-FFN-GGUF-001
+  obligation: 'forward_traced does not mutate model state'
+  property: 'For all calls forward_traced(prompt): model state byte-identical pre and post call'
+  bound: 4
