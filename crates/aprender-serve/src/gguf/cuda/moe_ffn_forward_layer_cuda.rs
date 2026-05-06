@@ -127,7 +127,11 @@ pub(crate) fn moe_ffn_forward_layer_cuda(
         topk.iter().map(|(i, _)| (*i, 1.0 / n as f32)).collect()
     };
 
-    // Per-expert SwiGLU on GPU + weighted aggregation on CPU
+    // Per-expert SwiGLU on GPU + weighted aggregation on CPU.
+    // M-GPU-MOE-1.4 step (c) per qwen3-moe-forward-gpu-v1 v1.6.0:
+    // pass per-tensor qtypes so expert_swiglu_cuda can dispatch
+    // each matvec to either q4k_matvec or q6k_gemv (Qwen3-Coder-30B
+    // Q4_K_M mixes Q4_K and Q6_K expert tensors per layer).
     let mut out = vec![0.0f32; hidden_dim];
     for &(expert_id, weight) in &topk_renorm {
         let gate_bytes = crate::gguf::qwen3_moe_load::expert_byte_slice(
@@ -152,8 +156,11 @@ pub(crate) fn moe_ffn_forward_layer_cuda(
         let expert_out = expert_swiglu_cuda(
             executor,
             gate_bytes,
+            layer.gate_exps.qtype,
             up_bytes,
+            layer.up_exps.qtype,
             down_bytes,
+            layer.down_exps.qtype,
             hidden,
             hidden_dim,
             intermediate,
@@ -281,6 +288,11 @@ pub(crate) fn moe_ffn_forward_layer_cuda_with_router(
         topk.iter().map(|(i, _)| (*i, 1.0 / n as f32)).collect()
     };
 
+    // Per-expert SwiGLU on GPU + weighted aggregation on CPU.
+    // M-GPU-MOE-1.4 step (c) per qwen3-moe-forward-gpu-v1 v1.6.0:
+    // pass per-tensor qtypes so expert_swiglu_cuda can dispatch
+    // each matvec to either q4k_matvec or q6k_gemv. Same fix as
+    // the production sibling above; preserves additive-purity.
     let mut out = vec![0.0f32; hidden_dim];
     for &(expert_id, weight) in &topk_renorm {
         let gate_bytes = crate::gguf::qwen3_moe_load::expert_byte_slice(
@@ -305,8 +317,11 @@ pub(crate) fn moe_ffn_forward_layer_cuda_with_router(
         let expert_out = expert_swiglu_cuda(
             executor,
             gate_bytes,
+            layer.gate_exps.qtype,
             up_bytes,
+            layer.up_exps.qtype,
             down_bytes,
+            layer.down_exps.qtype,
             hidden,
             hidden_dim,
             intermediate,
