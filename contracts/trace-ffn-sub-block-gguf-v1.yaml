@@ -1,6 +1,6 @@
 metadata:
   id: C-TRACE-FFN-SUB-BLOCK-GGUF
-  version: 1.1.0
+  version: 1.2.0
   created: '2026-05-06'
   author: PAIML Engineering
   kind: pattern
@@ -84,6 +84,71 @@ metadata:
     harness + fix) have a clear discharge path, and it cross-
     references the prior-work PRs for anyone reading the contract
     surface for the first time.
+
+    v1.2.0 AMENDMENT (2026-05-06): §28 PARALLEL-REDUCTION HYPOTHESIS FALSIFIED.
+
+    Authored 2 lib-only determinism falsifiers in
+    `crates/aprender-serve/src/apr_transformer/helpers.rs::
+     determinism_tests`:
+
+      falsify_ffn_gguf_005_f32_matmul_byte_deterministic_above_parallel_threshold
+      falsify_ffn_gguf_005b_f32_matmul_byte_deterministic_below_parallel_threshold
+
+    Both tests run `f32_matmul` TWICE with identical synthetic
+    inputs (out_dim above + below F32_PARALLEL_THRESHOLD=256) and
+    assert byte-identical output via `f32::to_bits()` comparison.
+
+    BOTH TESTS PASS. APR's `f32_matmul` (and the underlying
+    `f32_matvec_parallel` rayon-parallel kernel) is **byte-
+    deterministic** across repeated calls.
+
+    This FALSIFIES the §28 parallel-reduction hypothesis at the
+    kernel level. The §27 layer-3 18.23× drift is NOT caused by
+    APR being non-deterministic with itself.
+
+    REFINED HYPOTHESIS (post-falsification):
+
+    The cumulative APR↔GGUF drift must be a DIFFERENCE between
+    APR's and GGUF's reduction order, not non-determinism within
+    APR. Candidates:
+
+    H2a' (refined): APR uses `simd_dot_f32_avx2` (4-wide FMA, 8-
+         element AVX2 chunks) while GGUF uses
+         `fused_q4k_q8k_parallel_matvec_into` (different unroll +
+         block boundaries). F32 sum-of-products is non-associative;
+         different unroll → different bit-level results, even with
+         IDENTICAL byte-equivalent weights (per SHIP-003 PR #1059
+         cos≥0.9999999 weight invariance).
+
+    H2b: Layer-3-specific upstream divergence — gate or up at L3
+         only (despite §22 showing them individually normal at
+         std-level; per-element divergence may be hidden by std
+         aggregation).
+
+    H2c: Quantization dequant alignment differs at certain layer
+         configs.
+
+    NEXT M-FFN-GGUF-4 INVESTIGATION STEP (post-§28 falsification):
+
+    Cross-implementation deterministic-difference test — author a
+    SECOND lib-only test that runs APR's `f32_matmul` AND GGUF's
+    `fused_q4k_q8k_parallel_matvec_into` (or its f32 equivalent)
+    on byte-identical synthetic inputs and asserts whether the
+    outputs match. If they differ at the bit level, the candidate
+    fix is to align APR's reduction order to GGUF's (or vice
+    versa). This would transitively fix SHIP-007.
+
+    STATUS PROMOTIONS (v1.2.0):
+
+    - FALSIFY-FFN-GGUF-005 (NEW): falsifier added in
+      determinism_tests module; status DISCHARGED (both tests
+      pass on first run; §28 hypothesis empirically falsified).
+    - M-FFN-GGUF-4 step (a): SHIPPED (this amendment + the 2
+      lib-only falsifier tests). Step (b) cross-impl difference
+      test + step (c) fix remain PENDING.
+
+    Production hot paths byte-unchanged. Tests additive in
+    `helpers.rs` `#[cfg(test)] mod determinism_tests`.
 
     v1.1.0 AMENDMENT (2026-05-06): §27 EVIDENCE INTEGRATED.
 

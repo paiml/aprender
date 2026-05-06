@@ -378,3 +378,103 @@ pub(crate) fn rms_norm(
 }
 
 include!("helpers_simd_dot.rs");
+
+#[cfg(test)]
+mod determinism_tests {
+    use super::*;
+
+    /// FALSIFY-FFN-GGUF-005 / M-FFN-GGUF-4 step (a):
+    /// `f32_matmul` is byte-deterministic across repeated calls.
+    ///
+    /// SHIP-007 §28 hypothesis: APR's `f32_matvec_parallel` uses rayon
+    /// `par_chunks_mut` which COULD produce non-deterministic ordering of
+    /// per-output-element computations across runs. F32 accumulation is
+    /// non-associative; different orders → different results at the
+    /// per-element level. Over 3 layers, per-element differences could
+    /// compound to the layer-3 ffn_swigl 18.23× ratio observed in §27.
+    ///
+    /// This test FALSIFIES the §28 hypothesis at the kernel level.
+    /// `par_chunks_mut` parallelizes ACROSS output elements; each output
+    /// element is computed by exactly one thread; the per-element dot
+    /// product (`simd_dot_f32`) is serial. So the kernel SHOULD be
+    /// byte-deterministic across runs.
+    ///
+    /// If this test PASSES: §28 parallel-reduction hypothesis is
+    /// FALSIFIED. SHIP-007 root cause is elsewhere (likely f32 reduction
+    /// order DIFFERENCE between APR and GGUF — APR uses
+    /// `simd_dot_f32_avx2` 4-wide unrolled FMA; GGUF
+    /// `fused_q4k_q8k_parallel_matvec_into` may use different unroll
+    /// or block boundaries).
+    ///
+    /// If this test FAILS: §28 hypothesis CONFIRMED. Fix = ensure
+    /// deterministic reduction order in `f32_matvec_parallel`.
+    ///
+    /// Per `contracts/trace-ffn-sub-block-gguf-v1.yaml` v1.1.0 amendment
+    /// (§28 hypothesis test).
+    #[test]
+    fn falsify_ffn_gguf_005_f32_matmul_byte_deterministic_above_parallel_threshold() {
+        // out_dim above F32_PARALLEL_THRESHOLD (256) so f32_matvec_parallel fires
+        let in_dim = 128;
+        let out_dim = 512;
+        let seq_len = 4;
+
+        // Synthetic but reproducible inputs (no random — same byte pattern across runs)
+        let input: Vec<f32> = (0..seq_len * in_dim)
+            .map(|i| ((i % 17) as f32 - 8.0) * 0.1)
+            .collect();
+        let weight: Vec<f32> = (0..in_dim * out_dim)
+            .map(|i| (((i * 31) % 23) as f32 - 11.0) * 0.05)
+            .collect();
+
+        // Run twice with identical inputs
+        let result_a = f32_matmul(&input, &weight, in_dim, out_dim);
+        let result_b = f32_matmul(&input, &weight, in_dim, out_dim);
+
+        // Byte-identity assertion (not just "close" — the §28 hypothesis is
+        // about NON-DETERMINISM, which would manifest as differing bits).
+        assert_eq!(
+            result_a.len(),
+            result_b.len(),
+            "matmul output length differs across runs (sanity check failed)"
+        );
+        for (i, (&a, &b)) in result_a.iter().zip(result_b.iter()).enumerate() {
+            assert_eq!(
+                a.to_bits(),
+                b.to_bits(),
+                "f32_matmul non-deterministic at element {i}: {a} ({:#x}) vs {b} ({:#x}) — \
+                 §28 parallel-reduction hypothesis CONFIRMED. Fix scope = make \
+                 f32_matvec_parallel deterministic.",
+                a.to_bits(),
+                b.to_bits()
+            );
+        }
+    }
+
+    /// Same test but for the `f32_matmul_scalar` fallback path (out_dim
+    /// below threshold). Should also be deterministic — no rayon, fully
+    /// sequential.
+    #[test]
+    fn falsify_ffn_gguf_005b_f32_matmul_byte_deterministic_below_parallel_threshold() {
+        let in_dim = 128;
+        let out_dim = 64; // Below F32_PARALLEL_THRESHOLD = 256
+        let seq_len = 1;
+
+        let input: Vec<f32> = (0..seq_len * in_dim)
+            .map(|i| ((i % 13) as f32 - 6.0) * 0.1)
+            .collect();
+        let weight: Vec<f32> = (0..in_dim * out_dim)
+            .map(|i| (((i * 23) % 19) as f32 - 9.0) * 0.05)
+            .collect();
+
+        let result_a = f32_matmul(&input, &weight, in_dim, out_dim);
+        let result_b = f32_matmul(&input, &weight, in_dim, out_dim);
+
+        for (i, (&a, &b)) in result_a.iter().zip(result_b.iter()).enumerate() {
+            assert_eq!(
+                a.to_bits(),
+                b.to_bits(),
+                "f32_matmul (sequential path) non-deterministic at element {i}"
+            );
+        }
+    }
+}
