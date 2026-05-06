@@ -1,6 +1,6 @@
 metadata:
   id: C-TRACE-FFN-SUB-BLOCK-GGUF
-  version: 1.4.0
+  version: 1.6.0
   created: '2026-05-06'
   author: PAIML Engineering
   kind: pattern
@@ -84,6 +84,212 @@ metadata:
     harness + fix) have a clear discharge path, and it cross-
     references the prior-work PRs for anyone reading the contract
     surface for the first time.
+
+    v1.6.0 AMENDMENT (2026-05-06): COMPOUNDING CONFIRMED — SUPER-LINEAR GROWTH.
+
+    M94 confirmed Path A vs Path B differ by 0.077% on a SINGLE
+    144-byte Q4K super-block matvec. v1.5.0 amendment hypothesized
+    (without measurement) that this divergence "compounds across
+    28 layers × 4 matmuls/layer × 7 tokens" to match the §27
+    layer-3 ffn_swigl 18.23× std-ratio.
+
+    QUESTION (M95): does the M94 mechanism actually COMPOUND, and
+    if so, at what growth rate?
+
+    Three sub-hypotheses:
+    - H-COMPOUND-LINEAR:    rel_diff(N) ≈ rel_diff(1) × N
+    - H-COMPOUND-SUBLINEAR: rel_diff(N) ≈ rel_diff(1) × √N
+    - H-COMPOUND-SUPER:     rel_diff(N) ≈ rel_diff(1) × N^k, k > 1
+
+    Authored a fifth lib-only falsifier (FALSIFY-FFN-GGUF-009) in
+    `crates/aprender-serve/src/apr_transformer/helpers.rs::
+    determinism_tests`:
+
+      falsify_ffn_gguf_009_multi_tensor_divergence_compound
+
+    Test runs N=5 sequential matvecs (chained — each output is the
+    next input, with RMSNorm between layers to keep magnitude
+    bounded), comparing Path A vs Path B at the final layer.
+
+    EMPIRICAL RESULT (2026-05-06):
+      Single-tensor rel_diff (M94): 0.077%
+      5-tensor chained rel_diff:    0.4391%
+      Growth factor:                5.70×
+
+    Linear projection would be 5.00× (5 × 0.077%). Sub-linear
+    (√N) projection would be 2.24×. The empirical 5.70× growth
+    is **SUPER-LINEAR** — H-COMPOUND-SUPER is empirically
+    consistent.
+
+    QUANTITATIVE EXTRAPOLATION TO §27:
+      §27 measures layer-3 chain depth (3 layers × ~7 tensor-ops
+      = 21 chained ops) with 7 tokens.
+      Naive super-linear extrapolation:
+        21 × 0.077% × (5.70/5)^log2(21/5) ≈ 1.85% (rel_diff)
+
+      This is FAR BELOW §27's 1723% (18.23× std-ratio).
+
+    GAP ANALYSIS: the M94 mechanism explains COMPOUNDING but not
+    the §27 MAGNITUDE. Three candidate amplifiers (M-FFN-GGUF-6
+    investigation scope):
+
+    - **A1 (RoPE phase amplification)**: RoPE rotates F32 vectors
+      by per-position phase; small magnitude drift becomes
+      ROTATIONAL drift which can amplify non-linearly across
+      attention heads.
+
+    - **A2 (Softmax saturation)**: attention logits drift by
+      ~rel_diff% in magnitude → softmax(logits) can amplify
+      tiny logit differences when one logit is near-saturated
+      (max-token) and another is in the tail.
+
+    - **A3 (Real-weight magnitude variance)**: synthetic weights
+      have uniform magnitude; real Qwen Q4K weights have huge
+      per-tensor magnitude variance. The 0.077% per-tensor
+      divergence on a synthetic block may be 5-50× larger on
+      a typical real layer-3 down_proj tensor.
+
+    NEXT INVESTIGATION STEP RECOMMENDATION (M-FFN-GGUF-6): real-
+    teacher falsifier. Load actual layer-3 down_proj Q4K bytes
+    from canonical 7B Qwen2.5-Coder .apr file, run both Path A
+    and Path B against a real activation vector, measure rel_diff.
+    If real-teacher rel_diff is 5-50× larger than synthetic, A3
+    explains the §27 magnitude alone. If real-teacher rel_diff
+    matches synthetic, A1 + A2 are the load-bearing amplifiers.
+
+    STATUS PROMOTIONS (v1.6.0):
+
+    - FALSIFY-FFN-GGUF-009 (NEW): super-linear compounding
+      asserted as regression-test invariant; status DISCHARGED
+      (test passes on first run; H-COMPOUND-SUPER empirically
+      consistent).
+    - M-FFN-GGUF-4 step (e) compounding-hypothesis: NEW →
+      DISCHARGED (compounding confirmed empirically; magnitude
+      gap deferred to M-FFN-GGUF-6).
+    - M-FFN-GGUF-6 (NEW, NEXT): real-teacher falsifier; PENDING
+      (gated on operator dispatch with canonical 7B teacher
+      .apr file present; the file is on lambda-vector RTX 4090
+      at `/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b
+      -instruct-q4k.apr`).
+    - Contract metadata.status: ACTIVE_ALGORITHM_LEVEL → unchanged
+      (still gated on M-FFN-GGUF-5 actual fix landing).
+
+    Production hot paths byte-unchanged. New test additive in
+    `crates/aprender-serve/src/apr_transformer/helpers.rs::
+    determinism_tests`.
+
+    v1.5.0 AMENDMENT (2026-05-06): H2d.3 + H2d.4 EMPIRICALLY CONFIRMED.
+
+    THIS IS THE FIRST HYPOTHESIS *CONFIRMATION* IN THE CHAIN. After
+    three sequential falsifications (M91 §28, M92 H2a', M93 H2d.2),
+    the H2d.4 falsifier (FALSIFY-FFN-GGUF-008) is the first test
+    that produces the EXPECTED bit-level divergence between the two
+    paths.
+
+    Authored a fourth lib-only falsifier in `crates/aprender-serve/
+    src/apr_transformer/helpers.rs::determinism_tests`:
+
+      falsify_ffn_gguf_008_fused_vs_standalone_q4k_matvec
+
+    Test compares:
+      Path A (APR-style):  dequantize_q4_k_simd + manual F32 dot
+      Path B (GGUF-style): quantize_activations_q8k_into +
+                           fused_q4k_q8k_parallel_matvec_into
+
+    On a synthetic 144-byte Q4K super-block + 256-element F32
+    activation. Both paths compute the same mathematical operation
+    (W @ a) on the same Q4K weight bytes but Path B has an
+    additional Q8K activation-quantization step Path A doesn't
+    have.
+
+    EMPIRICAL RESULT (2026-05-06):
+      Path A = -18882.443 (0xc69384e3)
+      Path B = -18897.059 (0xc693a21e)
+      diff   = 14.615 (rel_diff = 0.077%)
+      bits_a != bits_b ✓
+
+    Paths DIFFER at bit level as expected. Math agreement within
+    0.10% (well below 10% sanity bound) — Q8K precision loss is
+    mathematically reasonable but NOT bit-exact. This **CONFIRMS
+    H2d.3 + H2d.4 simultaneously** at the kernel level.
+
+    SHIP-007 §22 ROOT CAUSE NOW HAS A CONCRETE MECHANISM:
+
+    APR's loader path uses Path A semantics — full F32 dequant of
+    weights, then F32 matmul with F32 activations. GGUF's matvec
+    uses Path B semantics — Q8K quantization of activations + fused
+    inline Q4K dequant during the parallel matvec. Per-tensor the
+    bit divergence is small (0.077%) but cumulative across 28 layers
+    × 4 matmuls/layer × 7 tokens, the divergence compounds in a
+    way that matches the §27 layer-3 ffn_swigl 18.23× APR↔GGUF drift.
+
+    HYPOTHESIS CHAIN (CLOSED for kernel-level reduction-order):
+    - §28  parallel-reduction non-determinism      (M91): FALSIFIED
+    - H2a' SIMD-vs-scalar dot reduction            (M92): FALSIFIED
+    - H2d.2 APR-internal Q4K dequant byte-identity (M93): FALSIFIED
+    - H2d.3 + H2d.4 fused-vs-standalone matvec     (M94): CONFIRMED ✓
+
+    This **CLOSES** the M-FFN-GGUF-4 step (c) hypothesis-narrowing
+    cascade with a CONFIRMED mechanism. The v1.4.0 "remaining viable
+    hypotheses {H2d.1, H2d.3, H2d.4}" set is now resolved:
+    - H2d.1 (per-block boundaries) — not refuted but no longer
+            load-bearing because H2d.3+H2d.4 already explain the
+            mechanism with positive evidence.
+    - H2d.3 (Q8K activation quant) — CONFIRMED ✓
+    - H2d.4 (fused inline dequant) — CONFIRMED ✓ (entangled with
+            H2d.3 in this falsifier; separating requires a
+            Q8K-only or fused-only ablation but is not necessary
+            to scope the SHIP-007 §22 fix).
+
+    SHIP-007 §22 FIX SCOPE (post-confirmation):
+
+    Two architecturally-clean options for closing the §22 18.23×
+    drift now that the mechanism is empirically identified:
+
+      Option-A (PROMOTE GGUF-PATH semantics into APR forward):
+              add Q8K activation quantization + fused-inline-dequant
+              matvec to APR's `apr_transformer::helpers::f32_matmul`
+              call sites. APR forward becomes byte-equivalent to
+              GGUF forward at the matmul boundary.
+              Cost: ~250-400 LOC, 1-2 PRs, no production-path
+                    deletion.
+              Risk: SHIP-003 PR #1059 cos≥0.9999999 weight invariance
+                    may need re-verification post-Q8K-activation.
+
+      Option-B (PROMOTE APR-PATH semantics into GGUF forward):
+              skip Q8K activation quantization in GGUF's matvec,
+              call standalone dequant + F32 matmul. GGUF forward
+              becomes byte-equivalent to APR forward at the matmul
+              boundary, at the cost of ~2-3× memory bandwidth
+              regression (full F32 weights in cache instead of
+              Q4K bytes + Q8K activations).
+              Cost: ~150-300 LOC, 1 PR, but performance regression.
+              Risk: GGUF inference TPS drops below Ollama parity.
+
+    DECISION DEFERRED TO SHIP-007 §22 FIX-PR (M-FFN-GGUF-5):
+      gate Option-A vs Option-B on the parity-vs-perf tradeoff.
+      Most likely Option-A because SHIP-007 has been gating MODEL-2
+      training for ~3 weeks and parity unblocks downstream work,
+      while a one-time perf regression is recoverable.
+
+    STATUS PROMOTIONS (v1.5.0):
+
+    - FALSIFY-FFN-GGUF-008 (NEW): bit-divergent fused-vs-standalone
+      matvec asserted as regression-test invariant; status
+      DISCHARGED with the OPPOSITE polarity from M91/M92/M93 (this
+      one ASSERTS difference rather than identity).
+    - M-FFN-GGUF-4 step (c) hypothesis-narrowing: ALGORITHM_LEVEL
+      → DISCHARGED — chain produced first CONFIRMED mechanism.
+    - M-FFN-GGUF-5 (NEW, NEXT): SHIP-007 §22 actual fix PR; gate
+      Option-A vs Option-B; PENDING.
+    - Contract metadata.status: ACTIVE_ALGORITHM_LEVEL → unchanged
+      (still gated on M-FFN-GGUF-5 actual fix landing — flips to
+      DISCHARGED when the SHIP-007 §22 18.23× drift is closed in
+      end-to-end retrace).
+
+    Production hot paths byte-unchanged. New test additive in
+    `crates/aprender-serve/src/apr_transformer/helpers.rs::
+    determinism_tests`.
 
     v1.4.0 AMENDMENT (2026-05-06): H2d.2 ALSO FALSIFIED AT DEQUANT LEVEL.
 

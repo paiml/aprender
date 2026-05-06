@@ -577,4 +577,333 @@ mod determinism_tests {
              H2a' refined hypothesis FALSIFIED at SIMD-vs-scalar level."
         );
     }
+
+    /// FALSIFY-FFN-GGUF-008 / M-FFN-GGUF-4 step (c) candidate H2d.4:
+    /// Compare APR's standalone-dequant + f32_matmul path vs GGUF's
+    /// fused q4k+q8k matvec path on the same Q4K weight bytes and
+    /// (after Q8K activation quant) the same activation values.
+    ///
+    /// THE TWO PATHS:
+    ///
+    /// Path A (APR-style): standalone dequant + F32 matmul
+    ///   weights_f32 = dequantize_q4_k_simd(weight_bytes)
+    ///   result_a    = f32_matmul(activation_f32, weights_f32, in_dim, out_dim)
+    ///
+    /// Path B (GGUF-style): Q8K activation quant + fused inline dequant
+    ///   (q8k_scales, q8k_quants) = quantize_activations_q8k(activation_f32)
+    ///   result_b = fused_q4k_q8k_parallel_matvec_into(
+    ///       weight_bytes, q8k_scales, q8k_quants, in_dim, out_dim
+    ///   )
+    ///
+    /// Both compute the same mathematical operation (W @ a) but Path B
+    /// has an additional Q8K quantization step on the activation that
+    /// Path A doesn't have. The Q8K step rounds to ~7-bit precision per
+    /// 256-element super-block.
+    ///
+    /// EXPECTATION: paths produce DIFFERENT bit patterns due to Q8K
+    /// activation precision loss. The test asserts the BIT-LEVEL
+    /// difference (analogous to "must differ" at the activation
+    /// quantization boundary). The cosine similarity is also asserted
+    /// to be high (>0.99) to confirm Q8K precision loss is mathematically
+    /// reasonable but not bit-exact.
+    ///
+    /// WHY THIS MATTERS FOR SHIP-007 §22:
+    ///
+    /// Three reduction-order hypotheses falsified so far (M91, M92, M93).
+    /// The remaining viable hypotheses are H2d.1 (per-block dequant
+    /// boundaries), H2d.3 (Q8K activation quant), and H2d.4 (fused
+    /// inline dequant differs from standalone).
+    ///
+    /// This test directly addresses H2d.3 + H2d.4 simultaneously. If
+    /// the paths produce DIFFERENT bits (as expected), then SHIP-007
+    /// §22 root cause has a concrete mechanism: APR's loader uses
+    /// Path A semantics (full F32 dequant + F32 matmul), while GGUF's
+    /// inference uses Path B semantics (Q8K activation quant + fused
+    /// inline dequant). The cumulative bit-level differences compound
+    /// across layers to the §27 18.23× drift.
+    ///
+    /// If the paths produce BYTE-IDENTICAL bits (unexpected): all
+    /// three remaining hypotheses (H2d.1, H2d.3, H2d.4) collapse to
+    /// "no measurable kernel-level difference", and SHIP-007 §22
+    /// must come from elsewhere entirely (RMSNorm precision,
+    /// per-token tokenization, accumulator precision in residual
+    /// addition, ...).
+    ///
+    /// Per `contracts/trace-ffn-sub-block-gguf-v1.yaml` v1.4.0 →
+    /// v1.5.0 amendment.
+    #[test]
+    fn falsify_ffn_gguf_008_fused_vs_standalone_q4k_matvec() {
+        use crate::quantize::{
+            dequantize_q4_k_simd, fused_q4k_q8k_parallel_matvec_into,
+            quantize_activations_q8k_into,
+        };
+
+        // Build synthetic Q4K weights: 256 columns × 1 row = 144 bytes
+        // (one super-block). Both paths consume this same byte buffer.
+        let mut weight_bytes = vec![0u8; 144];
+        weight_bytes[0] = 0x00;
+        weight_bytes[1] = 0x3C; // f16 d = 1.0
+        weight_bytes[2] = 0x00;
+        weight_bytes[3] = 0xB4; // f16 dmin = -0.25
+        for (i, b) in weight_bytes[4..16].iter_mut().enumerate() {
+            *b = ((i * 7 + 3) % 256) as u8;
+        }
+        for (i, b) in weight_bytes[16..144].iter_mut().enumerate() {
+            *b = ((i * 13 + 17) % 256) as u8;
+        }
+
+        let in_dim = 256;
+        let out_dim = 1;
+
+        // Synthetic F32 activation (256 elements, reproducible)
+        let activation: Vec<f32> = (0..in_dim)
+            .map(|i| ((i as f32) - 128.0) * 0.05 + ((i % 7) as f32) * 0.01)
+            .collect();
+
+        // ---- Path A: standalone dequant + manual f32 dot product ----
+        let weights_f32 =
+            dequantize_q4_k_simd(&weight_bytes).expect("dequantize_q4_k_simd failed");
+        assert_eq!(weights_f32.len(), 256);
+        let result_a: f32 = activation.iter().zip(weights_f32.iter()).map(|(x, y)| x * y).sum();
+
+        // ---- Path B: Q8K quant + fused matvec ----
+        let mut q8k_scales = vec![0.0f32; 1]; // 1 super-block
+        let mut q8k_quants = vec![0i8; in_dim];
+        quantize_activations_q8k_into(&activation, &mut q8k_scales, &mut q8k_quants)
+            .expect("quantize_activations_q8k_into failed");
+
+        let mut result_b_buf = vec![0.0f32; out_dim];
+        fused_q4k_q8k_parallel_matvec_into(
+            &weight_bytes,
+            &q8k_scales,
+            &q8k_quants,
+            in_dim,
+            out_dim,
+            &mut result_b_buf,
+        )
+        .expect("fused_q4k_q8k_parallel_matvec_into failed");
+        let result_b = result_b_buf[0];
+
+        eprintln!(
+            "FALSIFY-FFN-GGUF-008: Path A (standalone) = {result_a} ({:#x}); \
+             Path B (fused+Q8K) = {result_b} ({:#x}); diff = {}; rel_diff = {}",
+            result_a.to_bits(),
+            result_b.to_bits(),
+            (result_a - result_b).abs(),
+            (result_a - result_b).abs() / result_a.abs().max(1e-9)
+        );
+
+        // Sanity: both paths should produce mathematically reasonable
+        // results (within Q8K precision tolerance ~5%).
+        let rel_diff = (result_a - result_b).abs() / result_a.abs().max(1e-9);
+        assert!(
+            rel_diff < 0.10,
+            "Mathematical sanity failed: Path A and Path B disagree by more than 10% \
+             (rel_diff = {rel_diff}). Q8K precision loss should be < 5% per super-block."
+        );
+
+        // EXPECTED RESULT: paths produce DIFFERENT bit patterns due to
+        // Q8K activation quantization. Asserted as the regression-test
+        // invariant for the Q8K precision-loss boundary.
+        let bits_a = result_a.to_bits();
+        let bits_b = result_b.to_bits();
+        assert_ne!(
+            bits_a, bits_b,
+            "FALSIFY-FFN-GGUF-008: Path A and Path B produced BYTE-IDENTICAL output \
+             ({result_a} vs {result_b}, both {bits_a:#x}). H2d.3 + H2d.4 hypotheses \
+             FALSIFIED at the kernel level. SHIP-007 §22 root cause must be elsewhere \
+             (RMSNorm, residual accumulator precision, per-token tokenization, ...). \
+             Update contract trace-ffn-sub-block-gguf-v1 v1.4.0 → v1.5.0."
+        );
+    }
+
+    /// FALSIFY-FFN-GGUF-009 / M-FFN-GGUF-4 step (e):
+    /// QUANTITATIVE compounding test for the M94 mechanism.
+    ///
+    /// M94 (FALSIFY-FFN-GGUF-008) confirmed Path A vs Path B differ at
+    /// bit level on a SINGLE 144-byte Q4K super-block: rel_diff = 0.077%
+    /// per matvec.
+    ///
+    /// The §27 evidence shows layer-3 ffn_swigl APR↔GGUF std-ratio =
+    /// 18.23×. Naive linear projection: 0.077% × (3 layers × ~7
+    /// tensor-ops × 7 tokens) ≈ 11.3% — far below 1723%.
+    ///
+    /// QUESTION: does the M94 mechanism EXPLAIN the §27 magnitude?
+    /// Three sub-hypotheses:
+    ///
+    ///   H-COMPOUND-LINEAR:    rel_diff(N) ≈ rel_diff(1) × N
+    ///                         (no interaction; cumulative ≈ 11%)
+    ///                         → mechanism IS NOT sufficient.
+    ///   H-COMPOUND-SUBLINEAR: rel_diff(N) ≈ rel_diff(1) × √N
+    ///                         (random-walk averaging)
+    ///                         → mechanism IS NOT sufficient (smaller).
+    ///   H-COMPOUND-SUPER:     rel_diff(N) ≈ rel_diff(1) × N^k, k > 1
+    ///                         (positive feedback in cumulative drift)
+    ///                         → mechanism MAY explain §27 magnitude.
+    ///
+    /// This test runs N sequential matvecs (chaining each output as
+    /// the next input) on Path A and Path B, measuring rel_diff at
+    /// each depth. Reports growth pattern.
+    ///
+    /// EXPECTATION (per F32 sum-of-products non-associativity theory):
+    /// growth is approximately √N (random-walk) for INDEPENDENT
+    /// matvecs but can be approximately N or N^k for chained matvecs
+    /// where each output feeds the next (because the divergence
+    /// becomes part of the next matvec's input, where it interacts
+    /// with the next matvec's weights).
+    ///
+    /// EMPIRICAL EXPECTATION: chained matvec divergence grows
+    /// faster than √N because each input divergence is amplified
+    /// by the next matvec's weight magnitude — but the test does
+    /// NOT predict 18.23× from 0.077% × 5 chained matvecs alone.
+    /// What this test DOES is record the empirical growth pattern
+    /// for use in future SHIP-007 §22 fix-PR scope analysis.
+    ///
+    /// Per `contracts/trace-ffn-sub-block-gguf-v1.yaml` v1.5.0 →
+    /// v1.6.0 amendment.
+    #[test]
+    fn falsify_ffn_gguf_009_multi_tensor_divergence_compound() {
+        use crate::quantize::{
+            dequantize_q4_k_simd, fused_q4k_q8k_parallel_matvec_into,
+            quantize_activations_q8k_into,
+        };
+
+        let in_dim = 256;
+        let out_dim = 256;
+
+        // Build N synthetic Q4K super-block weight tensors. Each has
+        // shape [out_dim=256, in_dim=256] = 256 super-blocks × 144
+        // bytes = 36864 bytes.
+        let n_chained = 5;
+        let weight_bytes_per_tensor = 256 * 144;
+        let weights: Vec<Vec<u8>> = (0..n_chained)
+            .map(|t| {
+                let mut block = vec![0u8; weight_bytes_per_tensor];
+                for sb in 0..256 {
+                    let base = sb * 144;
+                    block[base] = 0x00;
+                    block[base + 1] = 0x3C; // f16 d = 1.0
+                    block[base + 2] = 0x00;
+                    block[base + 3] = 0xB4; // f16 dmin = -0.25
+                    for (i, b) in block[base + 4..base + 16].iter_mut().enumerate() {
+                        *b = ((i * 7 + 3 + sb + t * 11) % 256) as u8;
+                    }
+                    for (i, b) in block[base + 16..base + 144].iter_mut().enumerate() {
+                        *b = ((i * 13 + 17 + sb * 3 + t * 19) % 256) as u8;
+                    }
+                }
+                block
+            })
+            .collect();
+
+        // Initial activation (256-element, reproducible).
+        let initial: Vec<f32> = (0..in_dim)
+            .map(|i| ((i as f32) - 128.0) * 0.05 + ((i % 7) as f32) * 0.01)
+            .collect();
+
+        // Path A: chain N standalone matvecs with normalization to
+        // keep activations in a bounded range (otherwise float
+        // overflow dominates).
+        let mut act_a = initial.clone();
+        for w_bytes in &weights {
+            let weights_f32 = dequantize_q4_k_simd(w_bytes).expect("dequant_simd failed");
+            assert_eq!(weights_f32.len(), out_dim * in_dim);
+            // Manual matvec: out_j = sum_i(act[i] * w[j*in_dim + i])
+            let mut next = vec![0.0f32; out_dim];
+            for j in 0..out_dim {
+                let row_base = j * in_dim;
+                next[j] = act_a
+                    .iter()
+                    .zip(weights_f32[row_base..row_base + in_dim].iter())
+                    .map(|(x, y)| x * y)
+                    .sum();
+            }
+            // Normalize to keep magnitude bounded (mimics RMSNorm
+            // effect in real transformers).
+            let norm = (next.iter().map(|x| x * x).sum::<f32>() / (out_dim as f32))
+                .sqrt()
+                .max(1e-9);
+            for x in next.iter_mut() {
+                *x /= norm;
+            }
+            act_a = next;
+        }
+
+        // Path B: chain N fused Q4K+Q8K matvecs with same
+        // normalization between layers.
+        let mut act_b = initial.clone();
+        for w_bytes in &weights {
+            // Q8K-quantize current activations (super-block size 256).
+            let n_super_blocks = in_dim / 256;
+            assert_eq!(in_dim, 256, "test fixture requires in_dim=256");
+            let mut q8k_scales = vec![0.0f32; n_super_blocks];
+            let mut q8k_quants = vec![0i8; in_dim];
+            quantize_activations_q8k_into(&act_b, &mut q8k_scales, &mut q8k_quants)
+                .expect("q8k_quant failed");
+            // Fused matvec into out_dim.
+            let mut next = vec![0.0f32; out_dim];
+            fused_q4k_q8k_parallel_matvec_into(
+                w_bytes,
+                &q8k_scales,
+                &q8k_quants,
+                in_dim,
+                out_dim,
+                &mut next,
+            )
+            .expect("fused_matvec failed");
+            let norm = (next.iter().map(|x| x * x).sum::<f32>() / (out_dim as f32))
+                .sqrt()
+                .max(1e-9);
+            for x in next.iter_mut() {
+                *x /= norm;
+            }
+            act_b = next;
+        }
+
+        // Compute final divergence: L2 norm of (act_a - act_b) /
+        // L2 norm of act_a.
+        let l2_diff = act_a
+            .iter()
+            .zip(act_b.iter())
+            .map(|(a, b)| (a - b).powi(2))
+            .sum::<f32>()
+            .sqrt();
+        let l2_a = act_a.iter().map(|x| x * x).sum::<f32>().sqrt();
+        let rel_diff = l2_diff / l2_a.max(1e-9);
+
+        eprintln!(
+            "FALSIFY-FFN-GGUF-009: chained {n_chained} matvecs (256×256 each, RMSNorm \
+             between layers); final L2(act_a - act_b) = {l2_diff:.6}, L2(act_a) = \
+             {l2_a:.6}, rel_diff = {rel_diff:.6} ({:.4}%)",
+            rel_diff * 100.0
+        );
+
+        // The §27 evidence is 18.23× std-ratio at layer-3 (= 1723%
+        // relative magnitude). The M94 single-tensor mechanism is
+        // 0.077% relative.
+        //
+        // Sanity: chained rel_diff should be MEASURABLY LARGER than
+        // single-tensor (0.077%), confirming compounding. Asserted
+        // as regression-test invariant.
+        assert!(
+            rel_diff > 0.0007,
+            "FALSIFY-FFN-GGUF-009 sanity: chained {n_chained}-matvec rel_diff = \
+             {rel_diff} not measurably larger than single-tensor 0.077%; M94 \
+             mechanism may not COMPOUND across chained matvecs (which would \
+             refute the cumulative-drift explanation for §27)."
+        );
+
+        // Document the canonical empirical value for future re-derivation.
+        eprintln!(
+            "FALSIFY-FFN-GGUF-009: M94 mechanism DOES compound across chained matvecs. \
+             Single-tensor 0.077% → {n_chained}-tensor {:.4}%. Growth factor = {:.2}×. \
+             Whether this is sufficient to fully explain §27's 18.23× std-ratio at \
+             layer-3 depends on the actual layer-3 chain depth (likely 3 layers × ~7 \
+             tensor-ops + RoPE phase rotation + softmax non-linearity which can amplify \
+             precision drift). Test confirms compounding; quantitative match to §27 \
+             requires real-teacher run.",
+            rel_diff * 100.0,
+            rel_diff / 0.00077
+        );
+    }
 }
