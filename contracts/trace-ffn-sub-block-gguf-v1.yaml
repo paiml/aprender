@@ -1,6 +1,6 @@
 metadata:
   id: C-TRACE-FFN-SUB-BLOCK-GGUF
-  version: 1.3.0
+  version: 1.4.0
   created: '2026-05-06'
   author: PAIML Engineering
   kind: pattern
@@ -84,6 +84,88 @@ metadata:
     harness + fix) have a clear discharge path, and it cross-
     references the prior-work PRs for anyone reading the contract
     surface for the first time.
+
+    v1.4.0 AMENDMENT (2026-05-06): H2d.2 ALSO FALSIFIED AT DEQUANT LEVEL.
+
+    Authored a third lib-only falsifier (FALSIFY-FFN-GGUF-007) at
+    `crates/aprender-serve/tests/ffn_gguf_007_q4k_dequant_byte_identity.rs`:
+
+      falsify_ffn_gguf_007_q4k_scalar_vs_simd_dequant_byte_identity
+
+    Test runs `realizar::quantize::dequantize_q4_k` (scalar) and
+    `realizar::quantize::dequantize_q4_k_simd` (AVX2 if available)
+    on a synthetic 144-byte Q4K super-block and compares the
+    resulting Vec<f32> bit-by-bit via `f32::to_bits()`.
+
+    EMPIRICAL RESULT (2026-05-06): both paths produce BYTE-IDENTICAL
+    output across all 256 elements. element[0] = 10.75 (0x412c0000);
+    element[255] = 1.25 (0x3fa00000). Asserted as regression-test
+    invariant.
+
+    This **FALSIFIES H2d.2 at the APR-internal dequant level**.
+    APR's two own Q4K dequant paths agree byte-for-byte on the
+    same input. The SHIP-007 §22 layer-3 18.23× drift cannot be
+    explained by APR's loader picking one dequant path while
+    GGUF's matvec uses a different APR-internal dequant path —
+    they're equivalent.
+
+    THIRD HYPOTHESIS FALSIFICATION IN ONE SESSION:
+    - §28  parallel-reduction non-determinism (M91): FALSIFIED
+    - H2a' SIMD-vs-scalar dot reduction (M92): FALSIFIED
+    - H2d.2 APR-internal Q4K dequant byte-identity (this v1.4.0):
+      FALSIFIED
+
+    REMAINING VIABLE HYPOTHESES (post-three-falsification):
+
+    - H2d.1: per-block dequant boundaries differ between APR's
+             whole-row F32 reduction (calls `dequantize_q4_k_simd`
+             once for the full row, then `f32_matmul`) and GGUF's
+             super-block Q4K-byte-by-byte fused reduction
+             (`fused_q4k_q8k_parallel_matvec_into` has its own
+             inline dequant per super-block as the matvec
+             progresses).
+    - H2d.3: Q8K activation quantization in GGUF's path (a step
+             APR doesn't have at all). APR passes F32 activations
+             through f32_matmul; GGUF quantizes activations to Q8K
+             before each matmul. This Q8K quantization rounds
+             activations to ~7-bit precision, which compounds
+             across layers DIFFERENTLY than APR's full-F32 path.
+    - H2d.4 (NEW): the FUSED matvec's INLINE Q4K dequant in
+             `fused_q4k_q8k_parallel_matvec_into` may produce
+             different bits than the STANDALONE dequant routines
+             (`dequantize_q4_k`, `dequantize_q4_k_simd`). Both
+             are byte-identical to each other (this M93), but
+             that doesn't constrain the inline-fused dequant
+             path which is a separate code path.
+
+    NEXT STEP RECOMMENDATION: H2d.4 — author a falsifier comparing
+    standalone `dequantize_q4_k_simd` followed by `f32_matmul` vs
+    the fused `fused_q4k_q8k_parallel_matvec_into` on the same Q4K
+    bytes + (Q8K-quantized → dequantized → re-Q8K-quantized)
+    activation, with a control over Q8K precision loss. Most
+    direct test of H2d.1 + H2d.4 combined.
+
+    Alternative: accept that SHIP-007 §22 root cause may NOT be in
+    a single-tensor reduction-order boundary at all. The cumulative
+    drift could be from accumulator precision in residual-addition
+    sums (which APR and GGUF may handle in different orders), the
+    RMSNorm rsqrt approximation, or the per-token tokenization
+    difference. Each is its own falsifier candidate.
+
+    STATUS PROMOTIONS (v1.4.0):
+
+    - FALSIFY-FFN-GGUF-007 (NEW): byte-identical scalar+SIMD Q4K
+      dequant asserted as regression-test invariant; status
+      DISCHARGED (test passes on first run; H2d.2 empirically
+      falsified at APR-internal dequant level).
+    - M-FFN-GGUF-4 step (c) candidate H2d.2 narrowing: SHIPPED
+      (this falsifier reduces step (c) hypothesis space from
+      {1,2,3} to {1,3,4}).
+    - Contract metadata.status: ACTIVE_ALGORITHM_LEVEL → unchanged
+      (still gated on M-FFN-GGUF-4 step (c) actual fix landing).
+
+    Production hot paths byte-unchanged. New test additive in
+    `crates/aprender-serve/tests/ffn_gguf_007_*.rs`.
 
     v1.3.0 AMENDMENT (2026-05-06): H2a' SIMD-VS-SCALAR REDUCTION-ORDER ALSO FALSIFIED.
 
