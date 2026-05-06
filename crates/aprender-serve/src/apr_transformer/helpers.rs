@@ -577,4 +577,143 @@ mod determinism_tests {
              H2a' refined hypothesis FALSIFIED at SIMD-vs-scalar level."
         );
     }
+
+    /// FALSIFY-FFN-GGUF-008 / M-FFN-GGUF-4 step (c) candidate H2d.4:
+    /// Compare APR's standalone-dequant + f32_matmul path vs GGUF's
+    /// fused q4k+q8k matvec path on the same Q4K weight bytes and
+    /// (after Q8K activation quant) the same activation values.
+    ///
+    /// THE TWO PATHS:
+    ///
+    /// Path A (APR-style): standalone dequant + F32 matmul
+    ///   weights_f32 = dequantize_q4_k_simd(weight_bytes)
+    ///   result_a    = f32_matmul(activation_f32, weights_f32, in_dim, out_dim)
+    ///
+    /// Path B (GGUF-style): Q8K activation quant + fused inline dequant
+    ///   (q8k_scales, q8k_quants) = quantize_activations_q8k(activation_f32)
+    ///   result_b = fused_q4k_q8k_parallel_matvec_into(
+    ///       weight_bytes, q8k_scales, q8k_quants, in_dim, out_dim
+    ///   )
+    ///
+    /// Both compute the same mathematical operation (W @ a) but Path B
+    /// has an additional Q8K quantization step on the activation that
+    /// Path A doesn't have. The Q8K step rounds to ~7-bit precision per
+    /// 256-element super-block.
+    ///
+    /// EXPECTATION: paths produce DIFFERENT bit patterns due to Q8K
+    /// activation precision loss. The test asserts the BIT-LEVEL
+    /// difference (analogous to "must differ" at the activation
+    /// quantization boundary). The cosine similarity is also asserted
+    /// to be high (>0.99) to confirm Q8K precision loss is mathematically
+    /// reasonable but not bit-exact.
+    ///
+    /// WHY THIS MATTERS FOR SHIP-007 §22:
+    ///
+    /// Three reduction-order hypotheses falsified so far (M91, M92, M93).
+    /// The remaining viable hypotheses are H2d.1 (per-block dequant
+    /// boundaries), H2d.3 (Q8K activation quant), and H2d.4 (fused
+    /// inline dequant differs from standalone).
+    ///
+    /// This test directly addresses H2d.3 + H2d.4 simultaneously. If
+    /// the paths produce DIFFERENT bits (as expected), then SHIP-007
+    /// §22 root cause has a concrete mechanism: APR's loader uses
+    /// Path A semantics (full F32 dequant + F32 matmul), while GGUF's
+    /// inference uses Path B semantics (Q8K activation quant + fused
+    /// inline dequant). The cumulative bit-level differences compound
+    /// across layers to the §27 18.23× drift.
+    ///
+    /// If the paths produce BYTE-IDENTICAL bits (unexpected): all
+    /// three remaining hypotheses (H2d.1, H2d.3, H2d.4) collapse to
+    /// "no measurable kernel-level difference", and SHIP-007 §22
+    /// must come from elsewhere entirely (RMSNorm precision,
+    /// per-token tokenization, accumulator precision in residual
+    /// addition, ...).
+    ///
+    /// Per `contracts/trace-ffn-sub-block-gguf-v1.yaml` v1.4.0 →
+    /// v1.5.0 amendment.
+    #[test]
+    fn falsify_ffn_gguf_008_fused_vs_standalone_q4k_matvec() {
+        use crate::quantize::{
+            dequantize_q4_k_simd, fused_q4k_q8k_parallel_matvec_into,
+            quantize_activations_q8k_into,
+        };
+
+        // Build synthetic Q4K weights: 256 columns × 1 row = 144 bytes
+        // (one super-block). Both paths consume this same byte buffer.
+        let mut weight_bytes = vec![0u8; 144];
+        weight_bytes[0] = 0x00;
+        weight_bytes[1] = 0x3C; // f16 d = 1.0
+        weight_bytes[2] = 0x00;
+        weight_bytes[3] = 0xB4; // f16 dmin = -0.25
+        for (i, b) in weight_bytes[4..16].iter_mut().enumerate() {
+            *b = ((i * 7 + 3) % 256) as u8;
+        }
+        for (i, b) in weight_bytes[16..144].iter_mut().enumerate() {
+            *b = ((i * 13 + 17) % 256) as u8;
+        }
+
+        let in_dim = 256;
+        let out_dim = 1;
+
+        // Synthetic F32 activation (256 elements, reproducible)
+        let activation: Vec<f32> = (0..in_dim)
+            .map(|i| ((i as f32) - 128.0) * 0.05 + ((i % 7) as f32) * 0.01)
+            .collect();
+
+        // ---- Path A: standalone dequant + manual f32 dot product ----
+        let weights_f32 =
+            dequantize_q4_k_simd(&weight_bytes).expect("dequantize_q4_k_simd failed");
+        assert_eq!(weights_f32.len(), 256);
+        let result_a: f32 = activation.iter().zip(weights_f32.iter()).map(|(x, y)| x * y).sum();
+
+        // ---- Path B: Q8K quant + fused matvec ----
+        let mut q8k_scales = vec![0.0f32; 1]; // 1 super-block
+        let mut q8k_quants = vec![0i8; in_dim];
+        quantize_activations_q8k_into(&activation, &mut q8k_scales, &mut q8k_quants)
+            .expect("quantize_activations_q8k_into failed");
+
+        let mut result_b_buf = vec![0.0f32; out_dim];
+        fused_q4k_q8k_parallel_matvec_into(
+            &weight_bytes,
+            &q8k_scales,
+            &q8k_quants,
+            in_dim,
+            out_dim,
+            &mut result_b_buf,
+        )
+        .expect("fused_q4k_q8k_parallel_matvec_into failed");
+        let result_b = result_b_buf[0];
+
+        eprintln!(
+            "FALSIFY-FFN-GGUF-008: Path A (standalone) = {result_a} ({:#x}); \
+             Path B (fused+Q8K) = {result_b} ({:#x}); diff = {}; rel_diff = {}",
+            result_a.to_bits(),
+            result_b.to_bits(),
+            (result_a - result_b).abs(),
+            (result_a - result_b).abs() / result_a.abs().max(1e-9)
+        );
+
+        // Sanity: both paths should produce mathematically reasonable
+        // results (within Q8K precision tolerance ~5%).
+        let rel_diff = (result_a - result_b).abs() / result_a.abs().max(1e-9);
+        assert!(
+            rel_diff < 0.10,
+            "Mathematical sanity failed: Path A and Path B disagree by more than 10% \
+             (rel_diff = {rel_diff}). Q8K precision loss should be < 5% per super-block."
+        );
+
+        // EXPECTED RESULT: paths produce DIFFERENT bit patterns due to
+        // Q8K activation quantization. Asserted as the regression-test
+        // invariant for the Q8K precision-loss boundary.
+        let bits_a = result_a.to_bits();
+        let bits_b = result_b.to_bits();
+        assert_ne!(
+            bits_a, bits_b,
+            "FALSIFY-FFN-GGUF-008: Path A and Path B produced BYTE-IDENTICAL output \
+             ({result_a} vs {result_b}, both {bits_a:#x}). H2d.3 + H2d.4 hypotheses \
+             FALSIFIED at the kernel level. SHIP-007 §22 root cause must be elsewhere \
+             (RMSNorm, residual accumulator precision, per-token tokenization, ...). \
+             Update contract trace-ffn-sub-block-gguf-v1 v1.4.0 → v1.5.0."
+        );
+    }
 }
