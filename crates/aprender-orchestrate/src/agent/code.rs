@@ -448,10 +448,25 @@ fn build_default_manifest() -> AgentManifest {
     let project_instructions = load_project_instructions(budget);
     let project_context = gather_project_context();
 
+    // PMAT-CODE-MEMORY-AUTO-001: load `*.md` files from
+    // `~/.config/apr/projects/<slug>/memory/` into the system prompt
+    // under a `## Auto-memory` section. Slug matches Claude Code's
+    // hyphenated-path convention so `~/.claude/projects/` symlinks
+    // continue to work cross-tool.
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let mut auto_warns: Vec<String> = Vec::new();
+    let auto_memory = crate::agent::auto_memory::load_auto_memory(&cwd, &mut auto_warns);
+    for w in &auto_warns {
+        eprintln!("⚠ {w}");
+    }
+
     let mut system_prompt = CODE_SYSTEM_PROMPT.to_string();
     system_prompt.push_str(&format!("\n\n## Project Context\n\n{project_context}"));
     if let Some(ref instructions) = project_instructions {
         system_prompt.push_str(&format!("\n## Project Instructions\n\n{instructions}"));
+    }
+    if let Some(ref mem) = auto_memory {
+        system_prompt.push_str(&format!("\n## Auto-memory\n\n{mem}"));
     }
 
     AgentManifest {
