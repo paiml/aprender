@@ -1426,4 +1426,270 @@ mod determinism_tests {
             );
         }
     }
+
+    /// FALSIFY-FFN-GGUF-013 / M-FFN-GGUF-4 step (i) candidate A4:
+    /// Multi-token batch amplification — does the M94 mechanism's
+    /// per-tensor 0.077% rel_diff get amplified when a B=7-token
+    /// batch is run through chained matvecs (vs M95's single-token
+    /// chain)?
+    ///
+    /// A4 hypothesis: §27 measures std-ratio across a 7-token
+    /// prompt. M95 was single-token. Multi-token batch dimension
+    /// can interact non-linearly via:
+    /// - position-dependent RoPE (different rotations per position
+    ///   may cumulatively diverge differently)
+    /// - intra-batch attention (causal mask + softmax over multiple
+    ///   keys can amplify per-row drift)
+    /// - per-position residual paths (each token's residual sum
+    ///   accumulates drift independently)
+    ///
+    /// This synthetic test isolates the BATCH dimension by running
+    /// 5 chained matvecs on a 7-token batch (vs M95's 1-token).
+    /// Each token's drift compounds independently through the
+    /// chain; final std-ratio is measured per-token AND across
+    /// batch.
+    ///
+    /// EMPIRICAL EXPECTATION: per-token rel_diff matches M95's
+    /// single-token chain (~0.4391% over 5 ops). std-ratio
+    /// across 7-token batch ≈ 1× (each token compounds
+    /// identically; batch dimension doesn't amplify rel_diff).
+    /// If observed batch_std_amplification > 5×, A4 is CONFIRMED;
+    /// if ≈ 1×, A4 falsified.
+    ///
+    /// Per `contracts/trace-ffn-sub-block-gguf-v1.yaml` v1.9.0 →
+    /// v1.10.0 amendment.
+    #[test]
+    fn falsify_ffn_gguf_013_multi_token_batch_amplification() {
+        use crate::quantize::{
+            dequantize_q4_k_simd, fused_q4k_q8k_parallel_matvec_into,
+            quantize_activations_q8k_into,
+        };
+
+        const BATCH_SIZE: usize = 7;
+        const IN_DIM: usize = 256;
+        const OUT_DIM: usize = 256;
+        const N_CHAINED: usize = 5;
+
+        // Build N=5 synthetic Q4K weight tensors (256×256 each).
+        let weights: Vec<Vec<u8>> = (0..N_CHAINED)
+            .map(|t| {
+                let mut block = vec![0u8; 256 * 144];
+                for sb in 0..256 {
+                    let base = sb * 144;
+                    block[base] = 0x00;
+                    block[base + 1] = 0x3C;
+                    block[base + 2] = 0x00;
+                    block[base + 3] = 0xB4;
+                    for (i, b) in block[base + 4..base + 16].iter_mut().enumerate() {
+                        *b = ((i * 7 + 3 + sb + t * 11) % 256) as u8;
+                    }
+                    for (i, b) in block[base + 16..base + 144].iter_mut().enumerate() {
+                        *b = ((i * 13 + 17 + sb * 3 + t * 19) % 256) as u8;
+                    }
+                }
+                block
+            })
+            .collect();
+
+        // Initial 7-token batch: each token has slightly different
+        // initial activation pattern (mimicking different prompt tokens).
+        let initial_batch: Vec<Vec<f32>> = (0..BATCH_SIZE)
+            .map(|tok| {
+                (0..IN_DIM)
+                    .map(|i| ((i as f32) - 128.0) * 0.05 + ((i % 7 + tok) as f32) * 0.01)
+                    .collect()
+            })
+            .collect();
+
+        // Path A: chain 5 matvecs PER TOKEN, with RMSNorm between.
+        let mut act_a_batch: Vec<Vec<f32>> = initial_batch.clone();
+        for w_bytes in &weights {
+            let weights_f32 = dequantize_q4_k_simd(w_bytes).expect("dequant_simd failed");
+            for token_idx in 0..BATCH_SIZE {
+                let act_a = &act_a_batch[token_idx];
+                let mut next = vec![0.0f32; OUT_DIM];
+                for j in 0..OUT_DIM {
+                    let row_base = j * IN_DIM;
+                    next[j] = act_a
+                        .iter()
+                        .zip(weights_f32[row_base..row_base + IN_DIM].iter())
+                        .map(|(x, y)| x * y)
+                        .sum();
+                }
+                let norm =
+                    (next.iter().map(|x| x * x).sum::<f32>() / (OUT_DIM as f32))
+                        .sqrt()
+                        .max(1e-9);
+                for x in next.iter_mut() {
+                    *x /= norm;
+                }
+                act_a_batch[token_idx] = next;
+            }
+        }
+
+        // Path B: same but using Q8K quant + fused matvec per token.
+        let mut act_b_batch: Vec<Vec<f32>> = initial_batch.clone();
+        for w_bytes in &weights {
+            for token_idx in 0..BATCH_SIZE {
+                let act_b = &act_b_batch[token_idx];
+                let n_super_blocks = IN_DIM / 256;
+                let mut q8k_scales = vec![0.0f32; n_super_blocks];
+                let mut q8k_quants = vec![0i8; IN_DIM];
+                quantize_activations_q8k_into(act_b, &mut q8k_scales, &mut q8k_quants)
+                    .expect("q8k failed");
+                let mut next = vec![0.0f32; OUT_DIM];
+                fused_q4k_q8k_parallel_matvec_into(
+                    w_bytes,
+                    &q8k_scales,
+                    &q8k_quants,
+                    IN_DIM,
+                    OUT_DIM,
+                    &mut next,
+                )
+                .expect("fused failed");
+                let norm =
+                    (next.iter().map(|x| x * x).sum::<f32>() / (OUT_DIM as f32))
+                        .sqrt()
+                        .max(1e-9);
+                for x in next.iter_mut() {
+                    *x /= norm;
+                }
+                act_b_batch[token_idx] = next;
+            }
+        }
+
+        // Per-token rel_diff: |act_a - act_b|_L2 / |act_a|_L2.
+        let mut per_token_rel_diffs: Vec<f32> = Vec::new();
+        for token_idx in 0..BATCH_SIZE {
+            let act_a = &act_a_batch[token_idx];
+            let act_b = &act_b_batch[token_idx];
+            let l2_diff: f32 = act_a
+                .iter()
+                .zip(act_b.iter())
+                .map(|(a, b)| (a - b).powi(2))
+                .sum::<f32>()
+                .sqrt();
+            let l2_a: f32 = act_a.iter().map(|x| x * x).sum::<f32>().sqrt();
+            per_token_rel_diffs.push(l2_diff / l2_a.max(1e-9));
+        }
+
+        // Compute STDs across batch dimension for both paths
+        // (mimics §27's std-ratio measurement). Per-component std
+        // across the 7 tokens, then mean over components.
+        let component_std_a: Vec<f32> = (0..OUT_DIM)
+            .map(|c| {
+                let vals: Vec<f32> =
+                    (0..BATCH_SIZE).map(|t| act_a_batch[t][c]).collect();
+                let mean: f32 = vals.iter().sum::<f32>() / (BATCH_SIZE as f32);
+                let variance: f32 = vals.iter().map(|x| (x - mean).powi(2)).sum::<f32>()
+                    / (BATCH_SIZE as f32);
+                variance.sqrt()
+            })
+            .collect();
+        let component_std_b: Vec<f32> = (0..OUT_DIM)
+            .map(|c| {
+                let vals: Vec<f32> =
+                    (0..BATCH_SIZE).map(|t| act_b_batch[t][c]).collect();
+                let mean: f32 = vals.iter().sum::<f32>() / (BATCH_SIZE as f32);
+                let variance: f32 = vals.iter().map(|x| (x - mean).powi(2)).sum::<f32>()
+                    / (BATCH_SIZE as f32);
+                variance.sqrt()
+            })
+            .collect();
+        let mean_std_a: f32 = component_std_a.iter().sum::<f32>() / (OUT_DIM as f32);
+        let mean_std_b: f32 = component_std_b.iter().sum::<f32>() / (OUT_DIM as f32);
+
+        // §27-comparable std-ratio: std_a / std_b (or its absolute
+        // deviation from 1.0).
+        let std_ratio_dev = (mean_std_a / mean_std_b.max(1e-9) - 1.0).abs();
+
+        let min_token_rd = per_token_rel_diffs
+            .iter()
+            .copied()
+            .fold(f32::INFINITY, f32::min);
+        let max_token_rd = per_token_rel_diffs
+            .iter()
+            .copied()
+            .fold(f32::NEG_INFINITY, f32::max);
+        let mean_token_rd: f32 =
+            per_token_rel_diffs.iter().sum::<f32>() / (BATCH_SIZE as f32);
+        let token_rd_variance = max_token_rd / min_token_rd.max(1e-12);
+
+        eprintln!("FALSIFY-FFN-GGUF-013: Multi-token batch amplification (batch={BATCH_SIZE}, chained={N_CHAINED})");
+        eprintln!("  per-token rel_diffs:");
+        for (t, rd) in per_token_rel_diffs.iter().enumerate() {
+            eprintln!("    token[{t}]: {:.6}%", rd * 100.0);
+        }
+        eprintln!(
+            "  per-token rel_diff: min={:.6}% max={:.6}% mean={:.6}% variance_across_tokens={:.2}×",
+            min_token_rd * 100.0,
+            max_token_rd * 100.0,
+            mean_token_rd * 100.0,
+            token_rd_variance
+        );
+        eprintln!(
+            "  Path A mean std (across batch): {:.6}",
+            mean_std_a
+        );
+        eprintln!(
+            "  Path B mean std (across batch): {:.6}",
+            mean_std_b
+        );
+        eprintln!(
+            "  Path A↔B std-ratio deviation from 1.0: {:.6} ({:.4}%)",
+            std_ratio_dev,
+            std_ratio_dev * 100.0
+        );
+
+        // Compare to M95 single-token baseline (5-tensor chained = 0.4391%).
+        let m95_baseline = 0.004391;
+        let multi_token_amplification = mean_token_rd / m95_baseline;
+
+        eprintln!(
+            "  M95 single-token baseline: {:.6}% (5 chained, RMSNorm); multi-token amplification = {:.4}×",
+            m95_baseline * 100.0,
+            multi_token_amplification
+        );
+
+        // Sanity bounds.
+        assert!(
+            mean_token_rd > 1e-7,
+            "per-token rel_diff essentially zero — fixture degenerate"
+        );
+        assert!(
+            mean_std_a > 1e-9 && mean_std_b > 1e-9,
+            "batch std essentially zero — initial activations may be too uniform"
+        );
+
+        // EMPIRICAL VERDICT:
+        if multi_token_amplification > 5.0 {
+            eprintln!(
+                "FALSIFY-FFN-GGUF-013: amplification {multi_token_amplification:.2}× > 5.0 — \
+                 A4 CONFIRMED. Multi-token batch dimension amplifies M94 mechanism \
+                 substantially beyond M95's single-token chain. Real-attention \
+                 batch interactions contribute to §27 magnitude."
+            );
+        } else if multi_token_amplification > 1.5 {
+            eprintln!(
+                "FALSIFY-FFN-GGUF-013: amplification {multi_token_amplification:.2}× ∈ (1.5, 5] — \
+                 A4 PARTIALLY CONFIRMED. Batch dimension provides modest amplification \
+                 beyond single-token compounding."
+            );
+        } else if multi_token_amplification > 0.7 {
+            eprintln!(
+                "FALSIFY-FFN-GGUF-013: amplification {multi_token_amplification:.2}× ≈ 1× — \
+                 A4 NOT CONFIRMED at this regime. Per-token rel_diff matches M95's \
+                 single-token baseline; batch dimension does NOT amplify in this \
+                 synthetic test (no inter-token attention applied; pure batch-of-\
+                 independent-chains)."
+            );
+        } else {
+            eprintln!(
+                "FALSIFY-FFN-GGUF-013: amplification {multi_token_amplification:.2}× < 0.7 — \
+                 A4 FALSIFIED. Multi-token batch COMPRESSES M94 perturbation. \
+                 With A1, A2, A3, A4 all falsified, M-FFN-GGUF-6 (real-teacher \
+                 falsifier) is the only remaining test for the §27 magnitude gap."
+            );
+        }
+    }
 }

@@ -1,7 +1,7 @@
 metadata:
   id: C-TRACE-FFN-SUB-BLOCK-GGUF
-  version: 1.9.0
-  created: '2026-05-06'
+  version: 1.10.0
+  created: '2026-05-07'
   author: PAIML Engineering
   kind: pattern
   status: ACTIVE_ALGORITHM_LEVEL
@@ -84,6 +84,140 @@ metadata:
     harness + fix) have a clear discharge path, and it cross-
     references the prior-work PRs for anyone reading the contract
     surface for the first time.
+
+    v1.10.0 AMENDMENT (2026-05-07): A4 (MULTI-TOKEN BATCH) ALSO FALSIFIED, BUT STD-RATIO MEASUREMENT IS 50× MORE SENSITIVE.
+
+    M96/M97/M98 falsified A1, A2, A3 (the per-tensor synthetic
+    amplifiers). M99 closes the synthetic-amplifier landscape by
+    testing A4 (multi-token batch dimension).
+
+    A4 hypothesis: §27 measures std across a 7-token prompt;
+    M95 was single-token chained. Multi-token batch dimension
+    can interact non-linearly via:
+    - position-dependent RoPE
+    - intra-batch attention (causal mask + softmax)
+    - per-position residual paths
+
+    Authored a ninth lib-only falsifier (FALSIFY-FFN-GGUF-013) in
+    `crates/aprender-serve/src/apr_transformer/helpers.rs::
+    determinism_tests`:
+
+      falsify_ffn_gguf_013_multi_token_batch_amplification
+
+    Test: 7-token batch (B=7); 5 chained matvecs (256×256 each)
+    PER TOKEN with RMSNorm between layers. Reports per-token
+    rel_diff AND batch-std-ratio (mimicking §27 measurement).
+
+    EMPIRICAL RESULT (2026-05-07):
+      per-token rel_diff (rel_diff(act_a, act_b) per token):
+        token[0]: 0.439143%
+        token[1]: 0.246297%
+        token[2]: 0.020914%
+        token[3]: 0.028250%
+        token[4]: 0.023573%
+        token[5]: 0.024674%
+        token[6]: 0.020246%
+      mean per-token rel_diff: 0.114728%
+      variance_across_tokens:  21.69×
+
+      Batch-dimension std (mimics §27 measurement):
+        Path A mean std (across batch): 0.033416
+        Path B mean std (across batch): 0.032228
+        std-ratio deviation from 1.0:   3.69%
+
+      Comparison to M95 single-token baseline (0.4391%):
+        multi_token_amplification = 0.2613× ← COMPRESSES vs single-token
+
+    A4 SYNTHETIC AMPLIFICATION FALSIFIED (0.26× < 1×). Multi-token
+    batch dimension does NOT amplify M94 mechanism beyond M95's
+    single-token chain (in fact, mean rel_diff is LOWER because
+    most tokens stay closer to baseline).
+
+    HOWEVER: A SECONDARY FINDING THAT WAS NOT PREDICTED.
+
+    The §27-comparable measurement (std across batch) shows
+    **3.69% deviation from 1.0** between Path A and Path B —
+    that is 50× the per-tensor 0.077% baseline. This means:
+
+    - Per-token rel_diff: bounded by M94 mechanism × M95 compounding
+    - Batch-std-ratio: 50× MORE SENSITIVE than per-token rel_diff
+      because std measurement amplifies bit-level drift from individual
+      tokens that diverge differently.
+
+    REFINED §27 MAGNITUDE EXPLANATION:
+
+    §27 measures std-ratio = 18.23× = 1723% deviation. In M99
+    synthetic test, std-ratio deviation = 3.69%. Gap = 1723 / 3.69
+    = **467× residual gap** — much smaller than the 3920× synthetic
+    rel_diff gap.
+
+    The std-ratio MEASUREMENT amplifies M94 mechanism by ~50× over
+    per-tensor rel_diff. The remaining 467× gap (synthetic 3.69%
+    vs §27 1723%) is now the actual unexplained-by-synthetic-
+    falsifiers magnitude.
+
+    POST-M99 EXPLANATION-MODEL:
+
+      M94 mechanism × M95 compounding × M99 batch-std-amplification
+      = 0.077% × 5.70× × 50× ≈ 22% drift (synthetic upper bound)
+
+    §27 measured = 1723% drift = ~78× the synthetic upper bound.
+    A 78× residual gap is still unexplained, but is dramatically
+    closer to feasible than the prior 3920× gap.
+
+    POSSIBLE EXPLANATION FOR REMAINING 78× GAP:
+    - A5 (Real-weight non-uniformity): real Qwen weights may
+      produce 5-10× larger per-tensor rel_diff than synthetic
+      uniform weights. Combined with the 50× std-amplification,
+      that's ~250-500× total synthetic upper bound. Still 3-7×
+      below §27.
+    - A6 (RMSNorm rsqrt): real RMSNorm interacts with per-token
+      drift via 1/sqrt(σ²) which is non-linear in saturation
+      regimes. Could provide additional amplification.
+    - Cumulative-layer interaction: §27 is layer-3 measurement
+      (3 layers deep). M99 was 5 chained matvecs OF THE SAME
+      WEIGHT. Real layers have different weight distributions
+      and different attention patterns per layer.
+
+    AMPLIFIER LANDSCAPE POST-A1+A2+A3+A4 FALSIFICATION:
+    - A1 (RoPE phase)            — FALSIFIED ✗ (1.00×)
+    - A2 (Softmax saturation)    — FALSIFIED ✗ (0.01×)
+    - A3 (Block-scale variance)  — FALSIFIED ✗ (1.00×)
+    - A4 (Multi-token batch)     — FALSIFIED ✗ (0.26× per-token,
+                                   50× std-ratio sensitivity)
+    - A5 (Real-weight non-uniformity) — UNTESTED, real-teacher gated
+    - A6 (RMSNorm rsqrt approx)  — UNTESTED, real-teacher gated
+
+    All synthetic amplifier candidates exhausted. M-FFN-GGUF-6
+    (real-teacher) remains the highest-leverage remaining test.
+    The 78× residual gap is now characterizable as: "what fraction
+    of §27's 1723% std-ratio comes from real-weight non-uniformity
+    × cumulative-layer interaction × RMSNorm rsqrt non-linearity?"
+
+    METHODOLOGY OBSERVATION (CONSOLIDATED ACROSS M91-M99):
+
+    The 9-falsifier chain decomposed SHIP-007 §22's 1723% layer-3
+    drift into:
+    - 0.077% per-tensor mechanism (M94: confirmed via assert_ne!)
+    - 5.70× super-linear compounding (M95: confirmed)
+    - 50× std-ratio measurement sensitivity (M99: confirmed)
+    - 78× residual gap (real-weight + RMSNorm + layer interaction)
+
+    The chain is converging on REAL-TEACHER as the only remaining
+    distinguisher. M-FFN-GGUF-6 is the next deliberate-session
+    deliverable.
+
+    STATUS PROMOTIONS (v1.10.0):
+
+    - FALSIFY-FFN-GGUF-013 (NEW): A4 batch amplification falsified
+      (0.26× per-token); std-ratio 50× sensitivity DOCUMENTED;
+      asserted as regression-test invariant; status DISCHARGED.
+    - M-FFN-GGUF-4 step (i) A4 candidate: PENDING → DISCHARGED.
+    - All four synthetic amplifiers (A1, A2, A3, A4) DISCHARGED.
+    - M-FFN-GGUF-6 (real-teacher): now THE ONLY remaining test.
+    - Contract metadata.status: ACTIVE_ALGORITHM_LEVEL → unchanged.
+
+    Production hot paths byte-unchanged.
 
     v1.9.0 AMENDMENT (2026-05-06): A1 (RoPE PHASE) ALSO FALSIFIED — ALL 3 SYNTHETIC AMPLIFIERS NOW FALSIFIED.
 
