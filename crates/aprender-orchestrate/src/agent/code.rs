@@ -68,7 +68,7 @@ pub fn cmd_code(
             // is reported rather than silently ignored.
             let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
             let settings = crate::agent::settings::AprSettings::load_layered(&project_root)?;
-            apply_settings_to_manifest(&mut m, &settings);
+            apply_settings_to_manifest(&mut m, &settings)?;
             m
         }
     };
@@ -237,10 +237,16 @@ pub fn cmd_code(
 /// CLI flags apply. Each `Some(_)` field on settings overrides the manifest
 /// default; `None` fields leave the manifest alone. The CLI surface is wired
 /// AFTER this so `--model` / `--max-turns` always win over settings.
+///
+/// PMAT-CODE-CONFIG-LADDER-FIELDS-001 (2026-05-07): also honors
+/// `permissionMode` (validated via [`PermissionMode::parse`]; unknown
+/// strings produce a hard error so a typo doesn't run the agent under the
+/// wrong policy) and `allowedHosts` (mapped to [`AgentManifest::allowed_hosts`];
+/// Sovereign privacy tier still wins as a Poka-Yoke).
 fn apply_settings_to_manifest(
     manifest: &mut AgentManifest,
     settings: &crate::agent::settings::AprSettings,
-) {
+) -> anyhow::Result<()> {
     if let Some(ref model) = settings.model {
         // Heuristic: a slash or starts with `hf://` / `./` / `/` → repo or
         // path. We keep this loose because the same field accepts both
@@ -266,6 +272,26 @@ fn apply_settings_to_manifest(
     if let Some(mt) = settings.max_turns {
         manifest.resources.max_iterations = mt;
     }
+    if let Some(ref pm) = settings.permission_mode {
+        // Parse once at apply time so the operator sees a clear error with
+        // the bad value rather than a generic serde error. Currently only
+        // the parse + validate is enforced — the runtime per-tool verdict
+        // gate is tracked by PMAT-CODE-PERMISSIONS-RUNTIME-001.
+        if crate::agent::permission::PermissionMode::parse(pm).is_none() {
+            anyhow::bail!(
+                "settings.json permissionMode: unknown mode {pm:?} \
+                 (expected default | plan | acceptEdits | bypassPermissions)"
+            );
+        }
+    }
+    if let Some(ref hosts) = settings.allowed_hosts {
+        // Only apply if the operator hasn't already declared an explicit
+        // list via TOML manifest. Keeps manifest > settings precedence.
+        if manifest.allowed_hosts.is_empty() {
+            manifest.allowed_hosts = hosts.clone();
+        }
+    }
+    Ok(())
 }
 
 /// Build fallback driver (embedded RealizarDriver) when AprServeDriver unavailable.
