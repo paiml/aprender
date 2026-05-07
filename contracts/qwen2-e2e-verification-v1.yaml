@@ -1,5 +1,5 @@
 metadata:
-  version: 1.10.0
+  version: 1.11.0
   created: '2026-02-20'
   author: PAIML Engineering
   description: |
@@ -372,7 +372,12 @@ falsification_tests:
   full_discharge_blocks_on: |
     Live `apr run paiml/qwen2.5-coder-7b-apache-q4k-v1.safetensors --prompt
     "def fib(n):"` on RTX 4090 + `rustpython`/`ruff` AST parse of the emitted
-    completion; any parse error count > 0 is a ship-blocker.
+    completion; any parse error count > 0 is a ship-blocker. **Upstream
+    blocker SHIP-007 §22 RESOLVED 2026-05-07** (aprender PR #1550 squash
+    `e856eb91f`; M-FFN-GGUF-5 fix); per-tensor APR↔GGUF divergence at the
+    matvec kernel boundary closed via Q4K+Q8K dispatch in `forward_traced`;
+    layer-3 ratio = 1.245× → H1 CONFIRMED on canonical 7B teacher. Live
+    discharge is now dispatch-ready — no further upstream blockers.
   counter_example_classes:
   - regressed_sampling
   - widened_tolerance
@@ -421,6 +426,9 @@ falsification_tests:
     paiml/qwen2.5-coder-7b-apache-q4k-v1 --json` on RTX 4090 with
     --features cuda; median pass@1 across 3 seed=0 runs must be ≥
     86.00 (or ≥ 84.80 under spec's 1.2 pp noise allowance).
+    **Upstream blocker SHIP-007 §22 RESOLVED 2026-05-07** (aprender
+    PR #1550 squash `e856eb91f`; M-FFN-GGUF-5 fix); live discharge is
+    now dispatch-ready — no further upstream blockers.
   counter_example_classes:
   - "regressed_teacher: distilled checkpoint lost a quantization
     round-trip and HumanEval pass@1 fell from 87% to 82%"
@@ -461,6 +469,9 @@ falsification_tests:
     Live `apr bench --iterations 5 --max-tokens 128
     paiml/qwen2.5-coder-7b-apache-q4k-v1` on RTX 4090 with --features
     cuda; median of 5 iterations must be ≥ 30.0 tok/s.
+    **Upstream blocker SHIP-007 §22 RESOLVED 2026-05-07** (aprender
+    PR #1550 squash `e856eb91f`; M-FFN-GGUF-5 fix); live discharge is
+    now dispatch-ready — no further upstream blockers.
   counter_example_classes:
   - regressed_kernel
   - drifted_constant
