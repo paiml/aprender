@@ -47,6 +47,7 @@ pub mod result;
 pub mod runtime;
 mod runtime_helpers;
 pub mod session;
+pub mod settings;
 pub mod signing;
 pub mod skill;
 pub mod status_line;

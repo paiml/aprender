@@ -491,6 +491,90 @@ fn test_register_mcp_client_tools_noop_when_empty() {
 #[path = "code_tests_falsification.rs"]
 mod falsification;
 
+// ── PMAT-CODE-CONFIG-LADDER-001: settings.json precedence ladder ──────
+
+#[cfg(test)]
+mod settings_apply_tests {
+    use super::super::apply_settings_to_manifest;
+    use super::super::build_default_manifest;
+    use crate::agent::settings::AprSettings;
+
+    #[test]
+    fn apply_model_repo_preserves_alias_form() {
+        let mut m = build_default_manifest();
+        let s = AprSettings { model: Some("qwen3:1.7b-q4k".into()), ..Default::default() };
+        apply_settings_to_manifest(&mut m, &s);
+        assert_eq!(m.model.model_repo.as_deref(), Some("qwen3:1.7b-q4k"));
+        assert!(m.model.model_path.is_none());
+    }
+
+    #[test]
+    fn apply_model_path_treats_absolute_as_path() {
+        let mut m = build_default_manifest();
+        let s = AprSettings { model: Some("/abs/model.gguf".into()), ..Default::default() };
+        apply_settings_to_manifest(&mut m, &s);
+        assert_eq!(
+            m.model.model_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
+            Some("/abs/model.gguf".to_string())
+        );
+        assert!(m.model.model_repo.is_none());
+    }
+
+    #[test]
+    fn apply_model_path_treats_relative_dot_as_path() {
+        let mut m = build_default_manifest();
+        let s = AprSettings { model: Some("./local.apr".into()), ..Default::default() };
+        apply_settings_to_manifest(&mut m, &s);
+        assert!(m.model.model_path.is_some());
+        assert!(m.model.model_repo.is_none());
+    }
+
+    #[test]
+    fn apply_max_turns_overrides_resource_quota() {
+        let mut m = build_default_manifest();
+        let original = m.resources.max_iterations;
+        let s = AprSettings { max_turns: Some(7), ..Default::default() };
+        apply_settings_to_manifest(&mut m, &s);
+        assert_eq!(m.resources.max_iterations, 7);
+        assert_ne!(7, original, "test invalid: settings.max_turns matches default");
+    }
+
+    #[test]
+    fn apply_extra_system_prompt_appends_does_not_replace() {
+        let mut m = build_default_manifest();
+        let base_len = m.model.system_prompt.len();
+        let s = AprSettings { extra_system_prompt: Some("BE TERSE.".into()), ..Default::default() };
+        apply_settings_to_manifest(&mut m, &s);
+        assert!(m.model.system_prompt.len() > base_len, "must append, not replace");
+        assert!(m.model.system_prompt.ends_with("BE TERSE."));
+    }
+
+    #[test]
+    fn apply_empty_extra_prompt_is_noop() {
+        let mut m = build_default_manifest();
+        let base = m.model.system_prompt.clone();
+        let s = AprSettings { extra_system_prompt: Some("   \n  ".into()), ..Default::default() };
+        apply_settings_to_manifest(&mut m, &s);
+        assert_eq!(m.model.system_prompt, base, "whitespace-only extra is no-op");
+    }
+
+    #[test]
+    fn apply_default_settings_is_noop() {
+        let mut m = build_default_manifest();
+        let snapshot = (
+            m.model.model_path.clone(),
+            m.model.model_repo.clone(),
+            m.model.system_prompt.clone(),
+            m.resources.max_iterations,
+        );
+        apply_settings_to_manifest(&mut m, &AprSettings::default());
+        assert_eq!(m.model.model_path, snapshot.0);
+        assert_eq!(m.model.model_repo, snapshot.1);
+        assert_eq!(m.model.system_prompt, snapshot.2);
+        assert_eq!(m.resources.max_iterations, snapshot.3);
+    }
+}
+
 // ── M28: apr code --emit-trace ────────────────────────────────────────
 
 #[cfg(test)]
