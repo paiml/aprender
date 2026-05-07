@@ -24,6 +24,7 @@ use crate::serve::backends::PrivacyTier;
 /// This is the public library API — callable from both the batuta binary
 /// and apr-cli (PMAT-162). Handles model discovery, driver selection,
 /// tool registration, and REPL launch.
+#[allow(clippy::too_many_arguments)]
 pub fn cmd_code(
     model: Option<PathBuf>,
     project: PathBuf,
@@ -33,6 +34,12 @@ pub fn cmd_code(
     max_turns: u32,
     manifest_path: Option<PathBuf>,
     emit_trace: Option<PathBuf>,
+    // PMAT-CODE-OUTPUT-FORMAT-001 / PMAT-CODE-INPUT-FORMAT-001:
+    // accepted as &str ("text" | "json") to keep this crate's public API
+    // independent of apr-cli's ValueEnum types. Unknown values fall back
+    // to "text" — the legacy behavior — under Poka-Yoke.
+    output_format: &str,
+    input_format: &str,
 ) -> anyhow::Result<()> {
     // --project: change working directory for project instructions
     if project.as_os_str() != "." && project.is_dir() {
@@ -139,7 +146,15 @@ pub fn cmd_code(
         let prompt_text = if prompt.is_empty() {
             let mut buf = String::new();
             std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)?;
-            buf
+            // PMAT-CODE-INPUT-FORMAT-001: when --input-format=json, parse
+            // a `{"role":"user","content":"..."}` envelope and use `content`
+            // as the prompt. Empty/missing content is a hard error so the
+            // operator notices the malformed envelope.
+            if input_format.eq_ignore_ascii_case("json") {
+                parse_json_input_envelope(&buf)?
+            } else {
+                buf
+            }
         } else {
             prompt.join(" ")
         };
@@ -150,6 +165,7 @@ pub fn cmd_code(
             &memory,
             &prompt_text,
             emit_trace.as_deref(),
+            output_format,
         );
         drop(driver); // Kill apr serve subprocess before exit
         std::process::exit(code);
@@ -500,6 +516,8 @@ fn run_single_prompt(
     memory: &dyn crate::agent::memory::MemorySubstrate,
     prompt: &str,
     emit_trace: Option<&std::path::Path>,
+    // PMAT-CODE-OUTPUT-FORMAT-001: "text" (default) or "json".
+    output_format: &str,
 ) -> i32 {
     let mut single_manifest = manifest.clone();
     single_manifest.resources.max_iterations = single_manifest.resources.max_iterations.min(10);
@@ -535,6 +553,7 @@ fn run_single_prompt(
 
     match result {
         Ok(r) => {
+            let elapsed = started.elapsed();
             if r.text.is_empty() {
                 // PMAT-190: Empty response — model may be emitting only thinking tokens
                 // that get stripped by strip_thinking_blocks(). Common with Qwen3 when
@@ -544,6 +563,13 @@ fn run_single_prompt(
                      Model may be in thinking mode — rebuild apr from source for Qwen3NoThinkTemplate fix.",
                     r.iterations, r.tool_calls
                 );
+                if output_format.eq_ignore_ascii_case("json") {
+                    println!("{}", build_json_result_envelope(&r, elapsed, /*is_error*/ true));
+                }
+            } else if output_format.eq_ignore_ascii_case("json") {
+                // PMAT-CODE-OUTPUT-FORMAT-001: structured envelope mirroring
+                // Claude Code's `claude -p --output-format json` shape.
+                println!("{}", build_json_result_envelope(&r, elapsed, /*is_error*/ false));
             } else {
                 println!("{}", r.text);
             }
@@ -647,6 +673,78 @@ fn emit_ccpa_trace(
 
     let body = format!("{}\n{}\n{}\n{}\n", session_start, user_prompt, assistant_turn, session_end);
     std::fs::write(path, body)
+}
+
+/// PMAT-CODE-INPUT-FORMAT-001 (M-NON-INT-002): parse a `{"role":"user","content":"..."}`
+/// JSON envelope from stdin and return the prompt text. Mirrors the shape Claude
+/// Code accepts on `claude -p --input-format json`.
+///
+/// Errors are surfaced (not silently downgraded) so a malformed envelope fails
+/// loudly instead of running the agent on garbage. `role` other than `"user"`
+/// is also rejected — the non-interactive surface is single-user-turn only.
+fn parse_json_input_envelope(buf: &str) -> anyhow::Result<String> {
+    let trimmed = buf.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("--input-format=json: stdin is empty (expected JSON envelope)");
+    }
+    let v: serde_json::Value = serde_json::from_str(trimmed)
+        .map_err(|e| anyhow::anyhow!("--input-format=json: invalid JSON on stdin: {e}"))?;
+    let role = v.get("role").and_then(|r| r.as_str()).unwrap_or("user");
+    if role != "user" {
+        anyhow::bail!("--input-format=json: only role=\"user\" supported, got \"{role}\"");
+    }
+    let content = v
+        .get("content")
+        .and_then(|c| c.as_str())
+        .ok_or_else(|| anyhow::anyhow!("--input-format=json: missing string field `content`"))?;
+    Ok(content.to_owned())
+}
+
+/// PMAT-CODE-OUTPUT-FORMAT-001 (M-NON-INT-001): build a structured JSON
+/// envelope mirroring Claude Code's `claude -p --output-format json` shape:
+///
+/// ```json
+/// {
+///   "type": "result",
+///   "subtype": "success",
+///   "is_error": false,
+///   "duration_ms": 1234,
+///   "result": "the assistant text",
+///   "session_id": "<uuidv7-shaped>",
+///   "num_turns": 1,
+///   "total_cost_usd": 0
+/// }
+/// ```
+fn build_json_result_envelope(
+    result: &super::result::AgentLoopResult,
+    elapsed: std::time::Duration,
+    is_error: bool,
+) -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let ts_micros =
+        SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_micros()).unwrap_or(0);
+    // Same UUIDv7-shaped stable-per-run session id used by emit_ccpa_trace.
+    let session_id = format!(
+        "{:08x}-{:04x}-7000-{:04x}-{:012x}",
+        (ts_micros >> 64) as u32 & 0xFFFF_FFFF,
+        ((ts_micros >> 48) & 0xFFFF) as u16,
+        ((ts_micros >> 32) & 0xFFFF) as u16,
+        (ts_micros & 0xFFFF_FFFF_FFFF) as u64
+    );
+    let envelope = serde_json::json!({
+        "type": "result",
+        "subtype": if is_error { "error" } else { "success" },
+        "is_error": is_error,
+        "duration_ms": elapsed.as_millis() as u64,
+        "result": result.text,
+        "session_id": session_id,
+        "num_turns": result.iterations,
+        "tokens_in": result.usage.input_tokens,
+        "tokens_out": result.usage.output_tokens,
+        // Local sovereign inference: cost is always zero by construction.
+        "total_cost_usd": 0,
+    });
+    envelope.to_string()
 }
 
 // Prompts and exit codes extracted to code_prompts.rs

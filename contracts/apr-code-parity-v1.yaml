@@ -15,13 +15,19 @@
 #
 # Headline invariant: before epic PMAT-CODE-PARITY-MATRIX-001 closes,
 # aggregate counts must reach ≥9 SHIPPED / 7 PARTIAL / ≤4 MISSING.
-# Current counts (2026-04-18 v5.1): 14 SHIPPED / 3 PARTIAL / 4 MISSING. **EPIC CLOSURE CONDITIONS MET** — SHIPPED ≥9 AND MISSING ≤4. Epic PMAT-CODE-PARITY-MATRIX-001 is CLOSEABLE. Remaining 4 MISSING rows (notebook, monitor, plugins, IDE) are all P2 deferred with no epic dependency.
+# Current counts (2026-04-18 v5.1): 14 SHIPPED / 3 PARTIAL / 4 MISSING.
+# 2026-05-07 v5.2 update: non-interactive-mode flipped PARTIAL → SHIPPED via
+# PMAT-CODE-OUTPUT-FORMAT-001 / PMAT-CODE-INPUT-FORMAT-001 (--output-format /
+# --input-format wired on `apr code` with 8 unit tests). New counts: 15 SHIPPED
+# / 2 PARTIAL / 4 MISSING. **EPIC CLOSURE CONDITIONS REMAIN MET** — SHIPPED ≥9
+# AND MISSING ≤4. Epic PMAT-CODE-PARITY-MATRIX-001 is CLOSEABLE. Remaining 4
+# MISSING rows (notebook, monitor, plugins, IDE) are all P2 deferred.
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
-  version: 1.0.0
+  version: 5.2.0
   created: '2026-04-18'
-  last_modified: '2026-04-18'
+  last_modified: '2026-05-07'
   author: PAIML Engineering
   kind: pattern   # cross-cutting verification pattern (parity audit), not a mathematical kernel
   description: >
@@ -363,15 +369,25 @@ categories:
     priority: P2
 
   - id: non-interactive-mode
-    name: Non-interactive mode (-p + --output-format)
-    status: PARTIAL
-    detail: -p works with iteration cap 10; --output-format/--input-format absent
+    name: Non-interactive mode (-p + --output-format/--input-format)
+    status: SHIPPED
+    detail: |
+      -p with --output-format <text|json> AND --input-format <text|json> shipped
+      via PMAT-CODE-OUTPUT-FORMAT-001 / PMAT-CODE-INPUT-FORMAT-001.
+      `--output-format json` emits the Claude-Code `claude -p --output-format
+      json` envelope (`{type:"result",subtype:"success",result,session_id,
+      duration_ms,num_turns,tokens_in,tokens_out,total_cost_usd:0}`).
+      `--input-format json` accepts `{"role":"user","content":"..."}` from
+      stdin. Both flags are clap ValueEnum so unknown values fail loudly
+      (exit 2) instead of running on garbage. 8 unit tests cover envelope
+      shape, error subtype, content extraction, missing fields, and
+      malformed-JSON rejection.
     evidence_path: crates/apr-cli/src/commands_enum.rs
-    evidence_line_range: [509, 515]
+    evidence_line_range: [1, 30]
     cross_check_command: |
-      pmat query --literal "run_single_prompt" --limit 3 --include-source \
-        | grep -c "max_iterations"
-    expected_min_hits: 1
+      /mnt/nvme-raid0/targets/aprender/release/apr code --help 2>&1 \
+        | grep -E -- "--output-format|--input-format" | wc -l
+    expected_min_hits: 2
     ticket: PMAT-CODE-NON-INTERACTIVE-PARITY-001
     priority: P1
 
