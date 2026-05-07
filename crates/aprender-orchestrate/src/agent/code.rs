@@ -117,6 +117,25 @@ pub fn cmd_code(
         Arc::from(build_fallback_driver(&manifest)?)
     };
 
+    // PMAT-CODE-MCP-JSON-LOADER-001: merge `<project>/.mcp.json` (Claude-Code-
+    // shape) servers into manifest.mcp_servers BEFORE tool registration. The
+    // manifest's TOML-declared servers always win on name collision (operator-
+    // declared > project-default), matching the settings-ladder semantics.
+    // Missing .mcp.json is a non-error; malformed JSON is a hard error.
+    #[cfg(feature = "agents-mcp")]
+    {
+        let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        match crate::agent::mcp_json::load_and_merge(&mut manifest, &project_root) {
+            Ok(0) => {}
+            Ok(n) => {
+                eprintln!("✓ Loaded {n} MCP server(s) from .mcp.json");
+            }
+            Err(e) => {
+                anyhow::bail!("invalid .mcp.json: {e}");
+            }
+        }
+    }
+
     // Build tool registry with coding tools
     let mut tools = build_code_tools(&manifest);
 
