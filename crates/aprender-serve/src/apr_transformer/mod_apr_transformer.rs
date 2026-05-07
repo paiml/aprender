@@ -139,6 +139,39 @@ impl AprTransformer {
         helpers::f32_matmul(input, weight, in_dim, out_dim)
     }
 
+    /// M-FFN-GGUF-5 / SHIP-007 §22 fix: matvec with Q4K+Q8K dispatch matching GGUF.
+    ///
+    /// Used by `forward_traced` (inference.rs) to match the production decode
+    /// path's Q4K+Q8K semantics. The cascade M91-M101 + M-FFN-GGUF-7 empirically
+    /// validated that promoting GGUF-PATH semantics into APR forward closes the
+    /// §27 layer-3 ffn_swigl 18.23× APR-vs-GGUF std-ratio.
+    ///
+    /// Multi-token aware: loops over sequence positions when seq_len > 1.
+    /// Falls back to F32 matmul when Q4K bytes are unavailable.
+    #[allow(clippy::unused_self)]
+    fn matmul_q4k_or_f32_traced(
+        &self,
+        input: &[f32],
+        q4k_bytes: Option<&[u8]>,
+        q6k_bytes: Option<&[u8]>,
+        f32_weight: &[f32],
+        in_dim: usize,
+        out_dim: usize,
+    ) -> Vec<f32> {
+        let seq_len = input.len() / in_dim;
+        if let Some(q4k) = q4k_bytes {
+            if let Ok(out) = Self::seq_matmul_q4k(q4k, input, seq_len, out_dim, in_dim) {
+                return out;
+            }
+        }
+        if let Some(q6k) = q6k_bytes {
+            if let Ok(out) = Self::seq_matmul_q6k(q6k, input, seq_len, out_dim, in_dim) {
+                return out;
+            }
+        }
+        helpers::f32_matmul(input, f32_weight, in_dim, out_dim)
+    }
+
     /// Add bias in-place (delegates to helpers module)
     #[allow(clippy::unused_self)]
     fn add_bias(&self, data: &mut [f32], bias: &[f32]) {
