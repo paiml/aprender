@@ -215,6 +215,11 @@ serde_yaml = { package = "serde_yaml_ng", version = "0.10" }
 # Unicode normalization (NFC) for BPE corpus preprocessing (MODEL-2).
 unicode-normalization = "0.1"
 
+# Parallelism — used by `apr tokenize encode-corpus --num-workers` (issue #1547).
+# Per-doc BPE encoding is independent across rows; rayon's chunked par_iter
+# preserves input order via Vec<Result<...>> indexed by chunk position.
+rayon = { workspace = true }
+
 [[example]]
 name = "serve_with_tracing"
 required-features = ["inference"]

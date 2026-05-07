@@ -323,6 +323,7 @@ dependencies = [
  "predicates",
  "proptest",
  "provable-contracts-macros 0.3.1",
+ "rayon",
  "regex",
  "rmp-serde",
  "serde",
