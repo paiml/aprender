@@ -67,7 +67,13 @@ use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
 use std::path::Path;
 
 const CANONICAL_QWEN25_CODER_7B_APR_PATHS: &[&str] = &[
+    // M-FFN-GGUF-5 (2026-05-07): added the canonical 7B Instruct-Q4_K_M path
+    // that was used in M100 LIVE-RUN (matches `apr trace` deployment on
+    // lambda-vector RTX 4090). The original `apache-q4k-v1` paths are kept
+    // for backward compatibility with §27's prior measurement run.
+    "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr",
     "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-apache-q4k-v1.apr",
+    "/home/noah/.apr/models/qwen2.5-coder-7b-instruct-q4k.apr",
     "/home/noah/.apr/models/qwen2.5-coder-7b-apache-q4k-v1.apr",
     "/mnt/nvme-raid0/cache/apr-home/models/qwen2.5-coder-7b-apache-q4k-v1.apr",
 ];
@@ -158,12 +164,23 @@ fn falsify_ffn_gguf_003_layer_3_swigl_h1_h2_bisection() {
         "model has fewer layers than ANOMALY_LAYER ({ANOMALY_LAYER}); got {n_layers}"
     );
 
+
+    // M-FFN-GGUF-5 (2026-05-07): GGUF's `forward_traced` only captures stats
+    // on the LAST token (Phase 2 inlines the last-token-only orchestrator);
+    // APR's `forward_traced` captures stats across ALL tokens. To compare
+    // apples-to-apples, we use APR's `last_token_*_stats` (which is the
+    // last-token-only slice) on the APR side.
     eprintln!();
     eprintln!("layer | apr.ffn_swigl.std    | gguf.ffn_swigl.std   | ratio (apr/gguf)");
+    eprintln!("       (last-token-only)     (last-token-only)");
     eprintln!("------|----------------------|----------------------|------------------");
     let mut anomaly_ratio: Option<f32> = None;
     for layer_idx in 0..n_layers {
-        let apr_std = apr_layers[layer_idx].ffn_swiglu_inner_stats.std_dev;
+        let apr_std = apr_layers[layer_idx]
+            .last_token
+            .as_ref()
+            .map(|lt| lt.ffn_swiglu_inner_stats.std_dev)
+            .unwrap_or(apr_layers[layer_idx].ffn_swiglu_inner_stats.std_dev);
         let gguf_std = gguf_layers[layer_idx].ffn_swiglu_inner_stats.std_dev;
         let ratio = if gguf_std.abs() > 1e-9 {
             apr_std / gguf_std

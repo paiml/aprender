@@ -74,8 +74,11 @@ impl AprTransformer {
 
         // 2. Process through transformer layers with tracing
         for (layer_idx, layer) in self.layers.iter().enumerate() {
-            // Note: Q4K layers not used in traced forward (uses F32 for accuracy)
-            let _q4k_layer = self.q4k_layers.as_ref().and_then(|l| l.get(layer_idx));
+            // M-FFN-GGUF-5 / SHIP-007 §22 fix: use Q4K layers when available
+            // to match GGUF's Q4K+Q8K matvec semantics (per M91-M101 cascade
+            // + M-FFN-GGUF-7 empirical validation that Option-A is the correct
+            // fix path). Falls back to F32 when Q4K bytes are missing.
+            let q4k_layer = self.q4k_layers.as_ref().and_then(|l| l.get(layer_idx));
 
             // 2a. Attention layer norm
             let normed = self.layer_norm(
@@ -224,9 +227,15 @@ impl AprTransformer {
             // Capture pre-O-proj attention output (Q@Kᵀ@V combined).
             emit(SaveTensorStage::Attention, layer_idx as u32, &attn_out)?;
 
-            // Output projection
-            let mut attn_output =
-                self.matmul(&attn_out, &layer.attn_output_weight, hidden_dim, hidden_dim);
+            // Output projection (M-FFN-GGUF-5: Q4K when available)
+            let mut attn_output = self.matmul_q4k_or_f32_traced(
+                &attn_out,
+                q4k_layer.and_then(|q| q.attn_output_weight.as_deref()),
+                None,
+                &layer.attn_output_weight,
+                hidden_dim,
+                hidden_dim,
+            );
             if let Some(ref bias) = layer.attn_output_bias {
                 self.add_bias(&mut attn_output, bias);
             }
@@ -274,10 +283,20 @@ impl AprTransformer {
             let mut last_token_ffn_swiglu_inner_stats = ActivationStats::default();
 
             let ffn_output = if let Some(ref gate_weight) = layer.ffn_gate_weight {
-                let gate = self.matmul(&ffn_input, gate_weight, hidden_dim, intermediate_dim);
-                emit(SaveTensorStage::FfnGate, layer_idx as u32, &gate)?;
-                let up = self.matmul(
+                // M-FFN-GGUF-5: gate / up projections use Q4K when available
+                let gate = self.matmul_q4k_or_f32_traced(
                     &ffn_input,
+                    q4k_layer.and_then(|q| q.ffn_gate_weight.as_deref()),
+                    None,
+                    gate_weight,
+                    hidden_dim,
+                    intermediate_dim,
+                );
+                emit(SaveTensorStage::FfnGate, layer_idx as u32, &gate)?;
+                let up = self.matmul_q4k_or_f32_traced(
+                    &ffn_input,
+                    q4k_layer.and_then(|q| q.ffn_up_weight.as_deref()),
+                    q4k_layer.and_then(|q| q.ffn_up_weight_q6k.as_deref()),
                     &layer.ffn_up_weight,
                     hidden_dim,
                     intermediate_dim,
@@ -312,8 +331,11 @@ impl AprTransformer {
                     &ffn_hidden[(seq_len_for_last - 1) * intermediate_dim..],
                 );
 
-                let mut out = self.matmul(
+                // M-FFN-GGUF-5: ffn_down projection uses Q4K when available
+                let mut out = self.matmul_q4k_or_f32_traced(
                     &ffn_hidden,
+                    q4k_layer.and_then(|q| q.ffn_down_weight.as_deref()),
+                    q4k_layer.and_then(|q| q.ffn_down_weight_q6k.as_deref()),
                     &layer.ffn_down_weight,
                     intermediate_dim,
                     hidden_dim,
@@ -326,8 +348,11 @@ impl AprTransformer {
                 // Standard MLP without gating (no SwiGLU sub-stats apply;
                 // ffn_gate_stats / ffn_silu_gate_stats / ffn_swiglu_inner_stats
                 // remain default-zero; ffn_up_stats reflects pre-GELU values).
-                let mut ffn_hidden = self.matmul(
+                // M-FFN-GGUF-5: ffn_up projection uses Q4K when available
+                let mut ffn_hidden = self.matmul_q4k_or_f32_traced(
                     &ffn_input,
+                    q4k_layer.and_then(|q| q.ffn_up_weight.as_deref()),
+                    q4k_layer.and_then(|q| q.ffn_up_weight_q6k.as_deref()),
                     &layer.ffn_up_weight,
                     hidden_dim,
                     intermediate_dim,
@@ -344,8 +369,11 @@ impl AprTransformer {
                         0.5 * *h * (1.0 + (0.797_884_6 * (*h + 0.044_715 * *h * *h * *h)).tanh());
                     *h = gelu_approx;
                 }
-                let mut out = self.matmul(
+                // M-FFN-GGUF-5: ffn_down projection uses Q4K when available
+                let mut out = self.matmul_q4k_or_f32_traced(
                     &ffn_hidden,
+                    q4k_layer.and_then(|q| q.ffn_down_weight.as_deref()),
+                    q4k_layer.and_then(|q| q.ffn_down_weight_q6k.as_deref()),
                     &layer.ffn_down_weight,
                     intermediate_dim,
                     hidden_dim,
@@ -418,8 +446,11 @@ impl AprTransformer {
         let last_hidden_start = (seq_len - 1) * hidden_dim;
         let last_hidden = &normed[last_hidden_start..last_hidden_start + hidden_dim];
 
-        let mut logits = self.matmul(
+        // M-FFN-GGUF-5: lm_head uses Q4K when available (matches production project_lm_head)
+        let mut logits = self.matmul_q4k_or_f32_traced(
             last_hidden,
+            self.lm_head_weight_q4k.as_deref(),
+            self.lm_head_weight_q6k.as_deref(),
             &self.lm_head_weight,
             hidden_dim,
             self.config.vocab_size,
