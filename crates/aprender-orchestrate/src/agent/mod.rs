@@ -42,6 +42,7 @@ pub mod permission;
 pub mod phase;
 pub mod pool;
 pub mod repl;
+mod repl_directives;
 mod repl_display;
 pub mod result;
 pub mod runtime;
