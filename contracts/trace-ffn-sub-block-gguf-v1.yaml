@@ -1,6 +1,6 @@
 metadata:
   id: C-TRACE-FFN-SUB-BLOCK-GGUF
-  version: 1.6.0
+  version: 1.7.0
   created: '2026-05-06'
   author: PAIML Engineering
   kind: pattern
@@ -84,6 +84,102 @@ metadata:
     harness + fix) have a clear discharge path, and it cross-
     references the prior-work PRs for anyone reading the contract
     surface for the first time.
+
+    v1.7.0 AMENDMENT (2026-05-06): A3 (Q4K BLOCK-SCALE VARIANCE) FALSIFIED.
+
+    M95 (v1.6.0 amendment) recorded a 28× magnitude gap between
+    M95's synthetic 0.4391% (5-tensor chained) and §27's 1723%
+    (18.23× std-ratio at layer-3 ffn_swigl). Three candidate
+    amplifiers were pinned: A1 (RoPE phase amplification),
+    A2 (Softmax saturation), A3 (Real-weight magnitude variance).
+
+    A3 was the strongest candidate because real Qwen Q4K weights
+    have huge per-tensor magnitude variance not present in
+    synthetic tests. The hypothesis: per-block scale variance
+    amplifies M94 mechanism beyond linear-scaling.
+
+    Authored a sixth lib-only falsifier (FALSIFY-FFN-GGUF-010) in
+    `crates/aprender-serve/src/apr_transformer/helpers.rs::
+    determinism_tests`:
+
+      falsify_ffn_gguf_010_q4k_block_scale_variance
+
+    Test compares Path A vs Path B per-block divergence at 7 block
+    scales spanning 4 orders of magnitude:
+      d ∈ {0.001, 0.01, 0.05, 0.1, 0.5, 1.0, 10.0}
+
+    Each scale produces a single Q4K super-block; both paths run
+    the same matvec, rel_diff measured. Test reports the
+    variance_factor (max rel_diff / min rel_diff across scales).
+
+    EMPIRICAL RESULT (2026-05-06):
+      d=0.001:  0.091873% rel_diff (matvec=-15.4 vs -15.4)
+      d=0.01:   0.091873%
+      d=0.05:   0.091924%
+      d=0.1:    0.092017%
+      d=0.5:    0.091932%
+      d=1.0:    0.091932% (M94-comparable; note dmin=0 here vs M94's
+                          dmin=-0.25 → slight rel_diff difference)
+      d=10.0:   0.091966%
+
+    variance_factor = max/min = **1.00×** across 4 orders of
+    magnitude in block scale.
+
+    A3 EMPIRICALLY FALSIFIED at the per-block granularity.
+
+    The M94 mechanism is LINEAR-SCALING: Path A and Path B both
+    scale proportionally with block magnitude, so rel_diff (a
+    RATIO) is scale-INVARIANT. Per-block magnitude variance in
+    real Qwen weights does NOT amplify M94 mechanism beyond the
+    measured 0.077-0.092% rel_diff baseline.
+
+    AMPLIFIER LANDSCAPE POST-A3 FALSIFICATION:
+    - A1 (RoPE phase amplification) — UNTESTED, candidate.
+    - A2 (Softmax saturation)       — UNTESTED, candidate.
+    - A3 (Block-scale variance)     — FALSIFIED ✗
+
+    NEXT INVESTIGATION CANDIDATE (M-FFN-GGUF-4 step (g)): A2
+    (softmax saturation) is the simplest synthetic test — small
+    logits vector with one near-saturated value (e.g. 10.0)
+    plus a tiny perturbation (0.077% of max), measure
+    softmax(logits) before/after, check whether output
+    probability drift exceeds input drift.
+
+    A1 (RoPE phase) is harder to test in isolation — RoPE
+    rotates per-position by per-frequency phase; small magnitude
+    drift becomes rotational drift that interacts with
+    subsequent attention dot products. The test fixture would
+    need RoPE rotation + dot product against another rotated
+    vector with a corresponding small drift.
+
+    Both A1 and A2 are smaller scope than M-FFN-GGUF-6 (real-
+    teacher falsifier). M-FFN-GGUF-6 remains the most-direct
+    test but is gated on operator dispatch.
+
+    GAP-EXPLANATION STATE:
+    - M94 mechanism (Q8K activation quant + fused inline dequant)
+      EXPLAINS bit-level divergence per matvec.
+    - M95 super-linear compounding EXPLAINS chained drift up to
+      ~5.70× over 5 ops.
+    - 28× magnitude gap to §27's 1723% UNEXPLAINED at synthetic
+      level. A3 falsified narrows the gap to A1 + A2 + non-linear
+      stage interaction (silu saturation, RoPE-attn coupling) +
+      potentially real-teacher only.
+
+    STATUS PROMOTIONS (v1.7.0):
+
+    - FALSIFY-FFN-GGUF-010 (NEW): block-scale variance falsified
+      asserted as regression-test invariant; status DISCHARGED
+      (test passes; A3 empirically falsified at per-block scale).
+    - M-FFN-GGUF-4 step (f) A3 candidate: NEW → DISCHARGED
+      (variance_factor 1.00× rules out block-scale variance as
+      §27 amplifier).
+    - Contract metadata.status: ACTIVE_ALGORITHM_LEVEL → unchanged
+      (still gated on M-FFN-GGUF-5 actual fix landing).
+
+    Production hot paths byte-unchanged. New test additive in
+    `crates/aprender-serve/src/apr_transformer/helpers.rs::
+    determinism_tests`.
 
     v1.6.0 AMENDMENT (2026-05-06): COMPOUNDING CONFIRMED — SUPER-LINEAR GROWTH.
 
