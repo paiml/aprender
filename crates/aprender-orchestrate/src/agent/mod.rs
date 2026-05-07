@@ -36,6 +36,8 @@ pub mod driver;
 pub mod guard;
 pub mod hooks;
 pub mod manifest;
+#[cfg(feature = "agents-mcp")]
+pub mod mcp_json;
 pub mod memory;
 pub mod org_policy;
 pub mod permission;
