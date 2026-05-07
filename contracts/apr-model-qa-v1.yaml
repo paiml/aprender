@@ -1,5 +1,5 @@
 metadata:
-  version: 1.2.0
+  version: 1.3.0
   created: '2026-04-04'
   updated: '2026-04-22'
   author: PAIML Engineering
@@ -325,6 +325,9 @@ falsification_tests:
     RTX 4090 host producing 8 "pass": true entries. Algorithm-level
     rule is dischargeable offline; compute-heavy harness awaits
     SHIP-TWO-001 MODEL-1 post-ship evidence lane.
+    **Upstream blocker SHIP-007 §22 RESOLVED 2026-05-07** (aprender PR
+    #1550 squash `e856eb91f`; M-FFN-GGUF-5 fix); live discharge is now
+    dispatch-ready — no further upstream blockers.
 - id: FALSIFY-EX-001
   rule: Golden Output is a hard ship-blocker under --require-golden-output
   prediction: |
