@@ -82,3 +82,11 @@ SC1009
 # pattern. bashrs interprets the brackets as glob ranges, but the string
 # is consumed by grep as an ERE pattern.
 SC2102
+
+# SEC001: Command injection risk via eval
+# Justification: False positive on the literal substring "eval" in comments
+# and JSON strings. Our ship-discharge scripts (scripts/ship-discharges/*.sh)
+# invoke `apr eval` as an apr subcommand (apr-cli HumanEval benchmark), not
+# the bash `eval` builtin. The shell never invokes `eval`. This file already
+# contains audited use sites; new uses must be reviewed before adding here.
+SEC001
