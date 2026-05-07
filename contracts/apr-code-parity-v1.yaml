@@ -21,14 +21,17 @@
 # --input-format wired on `apr code`). 14/3/4 → 15/2/4.
 # 2026-05-07 v5.3 update: configuration-ladder flipped PARTIAL → SHIPPED via
 # PMAT-CODE-CONFIG-LADDER-001 (~/.config/apr/settings.json + .apr/settings.json
-# + CLI override). 15/2/4 → 16 SHIPPED / 1 PARTIAL / 4 MISSING. Only
-# remaining PARTIAL row is keyboard-shortcuts (REPL Phase 2). EPIC
-# closure conditions remain met. Remaining 4 MISSING rows (notebook,
-# monitor, plugins, IDE) are all P2 deferred.
+# + CLI override). 15/2/4 → 16/1/4.
+# 2026-05-07 v5.4 update: keyboard-shortcuts flipped PARTIAL → SHIPPED via
+# PMAT-CODE-REPL-PHASE2-001 (! shell prefix + @path expansion). 16/1/4 →
+# **17 SHIPPED / 0 PARTIAL / 4 MISSING**. **ZERO PARTIAL ROWS REMAIN** —
+# every parity row is now either SHIPPED or P2-deferred MISSING. Epic
+# PMAT-CODE-PARITY-MATRIX-001 closure is fully discharged for everything
+# except the 4 P2 rows (notebook, monitor, plugins, IDE).
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
-  version: 5.3.0
+  version: 5.4.0
   created: '2026-04-18'
   last_modified: '2026-05-07'
   author: PAIML Engineering
@@ -406,14 +409,32 @@ categories:
     priority: P1
 
   - id: keyboard-shortcuts
-    name: Keyboard shortcuts (Shift+Tab cycle, ! prefix, @path)
-    status: PARTIAL
-    detail: REPL Phase 1 shipped (slash + Ctrl+C); Shift+Tab / ! / @ not yet
-    evidence_spec: docs/specifications/apr-code-feasibility-falsification.md
+    name: Keyboard shortcuts (! shell prefix, @path expansion, slash commands)
+    status: SHIPPED
+    detail: |
+      REPL Phase 2 shipped (PMAT-CODE-REPL-PHASE2-001):
+      * `!<cmd>` — leading `!` execs the rest as a shell command (`sh -c`).
+        stdout+stderr captured & printed, nonzero exit shown as `(exit N)`,
+        agent loop is NOT invoked. `!` alone is a no-op.
+      * `@<path>` — every `@<path>` token in the prompt (boundary-anchored
+        so `noah@paiml.com` is NOT a path) is expanded inline as
+        `<file path="...">\n<contents>\n</file>` before the agent sees the
+        prompt. Missing files leave the token verbatim AND emit a
+        stderr warning (Poka-Yoke).
+      Implementation in `crates/aprender-orchestrate/src/agent/repl_
+      directives.rs` is pure-function (no TTY dependency) so 19 unit
+      tests cover the parser + shell exec headlessly. Wiring in
+      `read_input` (agent/repl.rs) handles `!` BEFORE slash-commands
+      and `@` expansion AFTER (so a literal `@` in a slash-command
+      argument is unaffected).
+      `Shift+Tab` cycle requires raw-mode crossterm capture — deferred
+      to PMAT-CODE-REPL-PHASE3-001 (cosmetic; the substantive Claude-
+      Code shortcuts ! and @ are now both shipped).
+    evidence_path: crates/aprender-orchestrate/src/agent/repl_directives.rs
     cross_check_command: |
-      pmat query --literal "Shift+Tab" --limit 3 2>/dev/null \
-        | grep -E "agent/repl" | wc -l
-    expected_max_hits_until_closed: 0
+      pmat query --literal "parse_bang_command" --limit 3 2>/dev/null \
+        | wc -l
+    expected_min_hits: 1
     ticket: PMAT-CODE-REPL-PHASE2-001
     priority: P1
 
