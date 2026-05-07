@@ -452,9 +452,24 @@ mod tests {
     }
 
     // ── find_user_global_instructions / load_layered_instructions ──
+    //
+    // CI flake fix: tests below mutate the process-wide `APR_CONFIG` env
+    // var. cargo test runs `#[test]` functions in parallel by default;
+    // without serialization, two parallel tests can corrupt each other's
+    // view of the env (test A sets, test B reads, test A removes). Local
+    // runs happened to pass because of timing; CI hit the race.
+    //
+    // The Mutex below serializes all env-mutating tests in this module.
+    // The `.lock()` is held for the duration of each test so neither
+    // `set_var` nor `remove_var` can interleave.
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
 
     #[test]
     fn user_global_honors_apr_config_env_first() {
+        let _guard = env_lock();
         let dir = tempfile::tempdir().expect("tempdir");
         write(&dir.path().join("CLAUDE.md"), "user-global-content");
         std::env::set_var("APR_CONFIG", dir.path());
@@ -465,6 +480,7 @@ mod tests {
 
     #[test]
     fn user_global_prefers_apr_md_over_claude_md_within_layer() {
+        let _guard = env_lock();
         let dir = tempfile::tempdir().expect("tempdir");
         write(&dir.path().join("APR.md"), "apr-version");
         write(&dir.path().join("CLAUDE.md"), "claude-version");
@@ -476,6 +492,7 @@ mod tests {
 
     #[test]
     fn load_layered_returns_none_when_nothing_to_load() {
+        let _guard = env_lock();
         let cfg = tempfile::tempdir().expect("cfg");
         let proj = tempfile::tempdir().expect("proj");
         std::env::set_var("APR_CONFIG", cfg.path());
@@ -487,6 +504,7 @@ mod tests {
 
     #[test]
     fn load_layered_concatenates_user_global_then_project() {
+        let _guard = env_lock();
         let cfg = tempfile::tempdir().expect("cfg");
         let proj = tempfile::tempdir().expect("proj");
         write(&cfg.path().join("CLAUDE.md"), "USER-GLOBAL-BODY\n");
@@ -507,6 +525,7 @@ mod tests {
 
     #[test]
     fn load_layered_resolves_imports_in_each_layer() {
+        let _guard = env_lock();
         let cfg = tempfile::tempdir().expect("cfg");
         let proj = tempfile::tempdir().expect("proj");
         // user-global: imports a sibling file
