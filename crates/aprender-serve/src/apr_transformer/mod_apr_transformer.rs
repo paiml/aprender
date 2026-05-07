@@ -172,6 +172,77 @@ impl AprTransformer {
         helpers::f32_matmul(input, f32_weight, in_dim, out_dim)
     }
 
+    /// M-FFN-GGUF-5b / SHIP-007 §22 closure: split-Q4K QKV projection for the
+    /// multi-token traced/forward paths.
+    ///
+    /// When `q4k_layer` exposes separate `attn_q_weight` / `attn_k_weight` /
+    /// `attn_v_weight{,_q6k}` Q4K bytes (matching the production decode
+    /// `forward_with_cache` storage layout), this helper computes Q, K, V
+    /// independently across all sequence positions via `seq_matmul_q4k` /
+    /// `seq_matmul_q6k`, then re-interleaves per-token to produce the fused
+    /// `[Q_pos | K_pos | V_pos]` layout that the downstream RoPE +
+    /// attention code expects (mirrors the F32 fused QKV matmul output of
+    /// `f32_matmul(normed, qkv_weight, hidden_dim, qkv_dim)`).
+    ///
+    /// Mirrors `project_qkv_fused`'s semantics (single-token decode) at
+    /// sequence granularity. Falls back to fused F32 matmul when any Q
+    /// or K bytes are missing (V can be Q6K).
+    ///
+    /// Closes the 8th `forward_traced` / `forward()` matmul site that M-FFN-GGUF-5
+    /// (PR #1550) left as F32 fallback because Q4K storage splits Q/K/V into
+    /// separate arrays while APR uses a fused F32 `qkv_weight` array.
+    #[allow(clippy::unused_self)]
+    #[allow(clippy::too_many_arguments)]
+    fn qkv_split_q4k_traced(
+        &self,
+        normed: &[f32],
+        q4k_layer: Option<&Q4KLayerWeights>,
+        fused_f32_weight: &[f32],
+        seq_len: usize,
+        hidden_dim: usize,
+        kv_size: usize,
+        qkv_dim: usize,
+    ) -> Vec<f32> {
+        // Try Q4K-split path: requires separate attn_q + attn_k bytes;
+        // V may be Q4K or Q6K (Q6K used for high-precision V on some 7B
+        // qwen2.5 quantizations — mirrors `select_q4k_q6k` cascade).
+        if let Some(q4k) = q4k_layer {
+            let q_b = q4k.attn_q_weight.as_deref();
+            let k_b = q4k.attn_k_weight.as_deref();
+            let v_q4k = q4k.attn_v_weight.as_deref();
+            let v_q6k = q4k.attn_v_weight_q6k.as_deref();
+
+            if let (Some(qb), Some(kb)) = (q_b, k_b) {
+                let q_out = Self::seq_matmul_q4k(qb, normed, seq_len, hidden_dim, hidden_dim).ok();
+                let k_out = Self::seq_matmul_q4k(kb, normed, seq_len, kv_size, hidden_dim).ok();
+                // V: prefer Q4K, fall back to Q6K.
+                let v_out = if let Some(vb) = v_q4k {
+                    Self::seq_matmul_q4k(vb, normed, seq_len, kv_size, hidden_dim).ok()
+                } else if let Some(vb) = v_q6k {
+                    Self::seq_matmul_q6k(vb, normed, seq_len, kv_size, hidden_dim).ok()
+                } else {
+                    None
+                };
+                if let (Some(q), Some(k), Some(v)) = (q_out, k_out, v_out) {
+                    let mut qkv = vec![0.0f32; seq_len * qkv_dim];
+                    for s in 0..seq_len {
+                        let qkv_off = s * qkv_dim;
+                        qkv[qkv_off..qkv_off + hidden_dim]
+                            .copy_from_slice(&q[s * hidden_dim..(s + 1) * hidden_dim]);
+                        qkv[qkv_off + hidden_dim..qkv_off + hidden_dim + kv_size]
+                            .copy_from_slice(&k[s * kv_size..(s + 1) * kv_size]);
+                        qkv[qkv_off + hidden_dim + kv_size
+                            ..qkv_off + hidden_dim + 2 * kv_size]
+                            .copy_from_slice(&v[s * kv_size..(s + 1) * kv_size]);
+                    }
+                    return qkv;
+                }
+            }
+        }
+        // F32 fused fallback: matches existing legacy semantics byte-for-byte.
+        helpers::f32_matmul(normed, fused_f32_weight, hidden_dim, qkv_dim)
+    }
+
     /// Add bias in-place (delegates to helpers module)
     #[allow(clippy::unused_self)]
     fn add_bias(&self, data: &mut [f32], bias: &[f32]) {
