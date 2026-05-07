@@ -52,6 +52,12 @@ enum SlashCommand {
     Resume,
     AddDir,
     Agents,
+    // PMAT-CODE-SLASH-EXTENDED-001: final 3 variants from Claude Code's
+    // built-in surface. Stubs that print a deliberate placeholder so
+    // operators see "not yet wired" rather than `Unknown`.
+    Debug,
+    Rename,
+    Upgrade,
     Unknown(String),
 }
 
@@ -85,6 +91,10 @@ impl SlashCommand {
             "/resume" => Self::Resume,
             "/add-dir" | "/adddir" => Self::AddDir,
             "/agents" => Self::Agents,
+            // PMAT-CODE-SLASH-EXTENDED-001
+            "/debug" | "/dbg" => Self::Debug,
+            "/rename" => Self::Rename,
+            "/upgrade" => Self::Upgrade,
             other => Self::Unknown(other.to_string()),
         })
     }
@@ -543,6 +553,32 @@ fn handle_slash_command(
         SlashCommand::Agents => {
             println!(
                 "  Custom agents not yet implemented — tracked by PMAT-CODE-CUSTOM-AGENTS-001."
+            );
+        }
+        // PMAT-CODE-SLASH-EXTENDED-001: stub handlers for the final 3
+        // Claude-Code-parity variants. Each prints a deliberate placeholder
+        // so the operator sees "recognized, not yet wired" instead of
+        // "Unknown command" — same pattern the 2026-04-18 batch used.
+        SlashCommand::Debug => {
+            println!(
+                "  /debug not yet implemented — interactive trace inspection \
+                 tracked by PMAT-CODE-SLASH-DEBUG-001 (P2). \
+                 Use `apr trace --json --payload` for non-interactive tracing."
+            );
+        }
+        SlashCommand::Rename => {
+            println!(
+                "  /rename not yet implemented — session rename \
+                 tracked by PMAT-CODE-SLASH-RENAME-001 (P2). \
+                 Sessions are currently identified by their UUIDv7 id under \
+                 ~/.apr/sessions/<id>/."
+            );
+        }
+        SlashCommand::Upgrade => {
+            println!(
+                "  /upgrade not yet implemented — version-check + self-upgrade \
+                 tracked by PMAT-CODE-SLASH-UPGRADE-001 (P2). \
+                 Run `cargo install aprender --force` for now."
             );
         }
         SlashCommand::Unknown(name) => {
