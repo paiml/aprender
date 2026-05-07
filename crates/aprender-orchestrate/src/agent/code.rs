@@ -46,7 +46,12 @@ pub fn cmd_code(
         std::env::set_current_dir(&project)?;
     }
 
-    // Load manifest or build default
+    // Load manifest or build default. When `--manifest` is set it short-
+    // circuits the settings ladder (the manifest is treated as a complete
+    // agent specification); otherwise we fold in
+    // `~/.config/apr/settings.json` (user-global) and
+    // `<project_root>/.apr/settings.json` (project-local) as Claude-Code
+    // parity defaults (PMAT-CODE-CONFIG-LADDER-001). CLI flags always win.
     let mut manifest = match manifest_path {
         Some(ref path) => {
             let content = std::fs::read_to_string(path)
@@ -56,10 +61,21 @@ pub fn cmd_code(
             eprintln!("✓ Loaded manifest: {}", path.display());
             m
         }
-        None => build_default_manifest(),
+        None => {
+            let mut m = build_default_manifest();
+            // PMAT-CODE-CONFIG-LADDER-001: settings.json layered defaults.
+            // Errors are surfaced (Poka-Yoke) — a malformed settings file
+            // is reported rather than silently ignored.
+            let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            let settings = crate::agent::settings::AprSettings::load_layered(&project_root)?;
+            apply_settings_to_manifest(&mut m, &settings);
+            m
+        }
     };
 
-    // --model flag overrides manifest model_path
+    // --model flag overrides manifest model_path (and therefore overrides
+    // any settings.json `model` field — CLI always wins, per the parity
+    // ladder contract).
     if let Some(ref model_path) = model {
         manifest.model.model_path = Some(model_path.clone());
     }
@@ -195,6 +211,42 @@ pub fn cmd_code(
         f64::MAX,
         resume_session_id.as_deref(),
     )
+}
+
+/// PMAT-CODE-CONFIG-LADDER-001: fold loaded `~/.config/apr/settings.json` /
+/// `<project>/.apr/settings.json` defaults into the default manifest **before**
+/// CLI flags apply. Each `Some(_)` field on settings overrides the manifest
+/// default; `None` fields leave the manifest alone. The CLI surface is wired
+/// AFTER this so `--model` / `--max-turns` always win over settings.
+fn apply_settings_to_manifest(
+    manifest: &mut AgentManifest,
+    settings: &crate::agent::settings::AprSettings,
+) {
+    if let Some(ref model) = settings.model {
+        // Heuristic: a slash or starts with `hf://` / `./` / `/` → repo or
+        // path. We keep this loose because the same field accepts both
+        // `qwen3:1.7b-q4k` (apr pull alias) and `/abs/path.gguf`.
+        if std::path::Path::new(model).is_absolute()
+            || model.starts_with("./")
+            || model.starts_with("../")
+            || (!model.contains(':') && !model.starts_with("hf://"))
+        {
+            manifest.model.model_path = Some(std::path::PathBuf::from(model));
+        } else {
+            manifest.model.model_repo = Some(model.clone());
+        }
+    }
+    if let Some(extra) = settings.extra_system_prompt.as_deref() {
+        if !extra.trim().is_empty() {
+            // Append, don't replace — base prompt must keep tool-calling
+            // grammar guidance intact.
+            manifest.model.system_prompt.push_str("\n\n");
+            manifest.model.system_prompt.push_str(extra);
+        }
+    }
+    if let Some(mt) = settings.max_turns {
+        manifest.resources.max_iterations = mt;
+    }
 }
 
 /// Build fallback driver (embedded RealizarDriver) when AprServeDriver unavailable.

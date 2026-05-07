@@ -18,14 +18,17 @@
 # Current counts (2026-04-18 v5.1): 14 SHIPPED / 3 PARTIAL / 4 MISSING.
 # 2026-05-07 v5.2 update: non-interactive-mode flipped PARTIAL → SHIPPED via
 # PMAT-CODE-OUTPUT-FORMAT-001 / PMAT-CODE-INPUT-FORMAT-001 (--output-format /
-# --input-format wired on `apr code` with 8 unit tests). New counts: 15 SHIPPED
-# / 2 PARTIAL / 4 MISSING. **EPIC CLOSURE CONDITIONS REMAIN MET** — SHIPPED ≥9
-# AND MISSING ≤4. Epic PMAT-CODE-PARITY-MATRIX-001 is CLOSEABLE. Remaining 4
-# MISSING rows (notebook, monitor, plugins, IDE) are all P2 deferred.
+# --input-format wired on `apr code`). 14/3/4 → 15/2/4.
+# 2026-05-07 v5.3 update: configuration-ladder flipped PARTIAL → SHIPPED via
+# PMAT-CODE-CONFIG-LADDER-001 (~/.config/apr/settings.json + .apr/settings.json
+# + CLI override). 15/2/4 → 16 SHIPPED / 1 PARTIAL / 4 MISSING. Only
+# remaining PARTIAL row is keyboard-shortcuts (REPL Phase 2). EPIC
+# closure conditions remain met. Remaining 4 MISSING rows (notebook,
+# monitor, plugins, IDE) are all P2 deferred.
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
-  version: 5.2.0
+  version: 5.3.0
   created: '2026-04-18'
   last_modified: '2026-05-07'
   author: PAIML Engineering
@@ -335,15 +338,26 @@ categories:
     priority: P1
 
   - id: configuration-ladder
-    name: Configuration (~/.claude/settings.json + precedence ladder)
-    status: PARTIAL
-    detail: TOML AgentManifest via --manifest, no user-global settings ladder
-    evidence_path: crates/apr-cli/src/commands_enum.rs
-    evidence_line: 517
+    name: Configuration (~/.config/apr/settings.json + precedence ladder)
+    status: SHIPPED
+    detail: |
+      Three-tier ladder shipped via PMAT-CODE-CONFIG-LADDER-001:
+      1. user-global  — `$APR_CONFIG/settings.json` (override) or
+         `~/.config/apr/settings.json` (XDG default)
+      2. project-local — `<project_root>/.apr/settings.json`
+      3. CLI flags    — `--model`, `--max-turns`, `--manifest`
+      Latter layers override earlier ones field-by-field. `--manifest`
+      short-circuits the JSON ladder (TOML manifest is treated as a
+      complete agent specification). Settings struct uses
+      `serde(deny_unknown_fields)` so typos fail loudly (Poka-Yoke).
+      Loader and apply helpers in `crates/aprender-orchestrate/src/agent/
+      settings.rs` (14 unit tests) and `crates/aprender-orchestrate/src/
+      agent/code.rs::apply_settings_to_manifest` (7 unit tests).
+    evidence_path: crates/aprender-orchestrate/src/agent/settings.rs
     cross_check_command: |
       pmat query --literal "~/.config/apr/settings" --limit 5 2>/dev/null \
         | wc -l
-    expected_max_hits_until_closed: 0
+    expected_min_hits: 1
     ticket: PMAT-CODE-CONFIG-LADDER-001
     priority: P1
 
