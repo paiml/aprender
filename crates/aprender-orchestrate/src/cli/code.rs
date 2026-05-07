@@ -12,11 +12,15 @@ use std::path::PathBuf;
 ///
 /// Delegates entirely to the library-level `agent::code::cmd_code`.
 ///
-/// Note: the upstream `cmd_code` gained an 8th `emit_trace: Option<PathBuf>`
-/// parameter; the bin-side clap surface (`Commands::Code` in
-/// `main_dispatch.rs`) does not yet expose it, so this wrapper passes
-/// `None`. Threading `--emit-trace` through the clap surface is a
-/// future enhancement.
+/// Note: the upstream `cmd_code` has gained additional parameters over time:
+/// - 8th: `emit_trace: Option<PathBuf>` (M28 — ccpa-trace.jsonl)
+/// - 9th: `output_format: &str` (PMAT-CODE-OUTPUT-FORMAT-001 — Claude-Code parity)
+/// - 10th: `input_format: &str` (PMAT-CODE-INPUT-FORMAT-001 — Claude-Code parity)
+///
+/// The bin-side clap surface (`Commands::Code` in `main_dispatch.rs`) does
+/// not yet expose them; this wrapper passes legacy defaults so behavior is
+/// unchanged. Threading the new flags through the binary's clap is a future
+/// enhancement (the apr-cli surface already exposes them via `apr code`).
 pub fn cmd_code(
     model: Option<PathBuf>,
     project: PathBuf,
@@ -34,7 +38,9 @@ pub fn cmd_code(
         print,
         max_turns,
         manifest_path,
-        None, // emit_trace: not yet plumbed through the binary's clap surface.
+        None,   // emit_trace: not yet plumbed through the binary's clap surface.
+        "text", // output_format: legacy default
+        "text", // input_format: legacy default
     )
 }
 
