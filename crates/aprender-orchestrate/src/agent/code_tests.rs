@@ -491,6 +491,96 @@ fn test_register_mcp_client_tools_noop_when_empty() {
 #[path = "code_tests_falsification.rs"]
 mod falsification;
 
+// ── PMAT-CODE-ORG-POLICY-RUNTIME-001: system-prompt assembly helper ───
+
+#[cfg(test)]
+mod assemble_prompt_tests {
+    use super::super::assemble_system_prompt;
+    use crate::agent::org_policy::{OrgPolicy, PolicyTier};
+    use std::path::PathBuf;
+
+    fn synth_policy(content: &str) -> OrgPolicy {
+        OrgPolicy {
+            source: PathBuf::from("/etc/apr-code/CLAUDE.md"),
+            content: content.into(),
+            tier: PolicyTier::Enforced,
+        }
+    }
+
+    #[test]
+    fn no_policy_no_extras_yields_base_plus_context() {
+        let out = assemble_system_prompt("BASE", "ctx body", None, None, None);
+        assert!(out.starts_with("BASE"));
+        assert!(out.contains("## Project Context"));
+        assert!(out.contains("ctx body"));
+        // No optional sections should appear.
+        assert!(!out.contains("## Enforced"));
+        assert!(!out.contains("## Project Instructions"));
+        assert!(!out.contains("## Auto-memory"));
+    }
+
+    #[test]
+    fn policy_appears_before_context_and_instructions() {
+        let pol = synth_policy("MUST USE MFA.\n");
+        let out = assemble_system_prompt(
+            "BASE",
+            "ctx body",
+            Some("PROJ-INSTR"),
+            Some("MEMORY-NOTE"),
+            Some(&pol),
+        );
+        // All sections present.
+        assert!(out.contains("## Enforced organization policy"));
+        assert!(out.contains("MUST USE MFA"));
+        assert!(out.contains("## Project Context"));
+        assert!(out.contains("ctx body"));
+        assert!(out.contains("## Project Instructions"));
+        assert!(out.contains("PROJ-INSTR"));
+        assert!(out.contains("## Auto-memory"));
+        assert!(out.contains("MEMORY-NOTE"));
+        // Order check: policy < context < instructions < memory.
+        let policy_idx = out.find("## Enforced").expect("policy section");
+        let context_idx = out.find("## Project Context").expect("context section");
+        let instr_idx = out.find("## Project Instructions").expect("instructions section");
+        let mem_idx = out.find("## Auto-memory").expect("memory section");
+        assert!(policy_idx < context_idx, "policy must precede context");
+        assert!(context_idx < instr_idx, "context must precede instructions");
+        assert!(instr_idx < mem_idx, "instructions must precede auto-memory");
+    }
+
+    #[test]
+    fn policy_only_omits_other_optional_sections() {
+        let pol = synth_policy("POLICY");
+        let out = assemble_system_prompt("BASE", "ctx", None, None, Some(&pol));
+        assert!(out.contains("## Enforced organization policy"));
+        assert!(out.contains("POLICY"));
+        // Instructions / memory not emitted.
+        assert!(!out.contains("## Project Instructions"));
+        assert!(!out.contains("## Auto-memory"));
+    }
+
+    #[test]
+    fn policy_source_path_is_surfaced() {
+        // The operator should be able to spot where the policy came from
+        // by reading the system prompt itself — useful for CCPA tracing.
+        let pol = synth_policy("X");
+        let out = assemble_system_prompt("B", "c", None, None, Some(&pol));
+        assert!(
+            out.contains("/etc/apr-code/CLAUDE.md"),
+            "source path must appear in the policy heading: {out}"
+        );
+    }
+
+    #[test]
+    fn instructions_only_no_memory_no_policy() {
+        let out = assemble_system_prompt("B", "c", Some("INSTR"), None, None);
+        assert!(out.contains("## Project Instructions"));
+        assert!(out.contains("INSTR"));
+        assert!(!out.contains("## Enforced"));
+        assert!(!out.contains("## Auto-memory"));
+    }
+}
+
 // ── PMAT-CODE-CONFIG-LADDER-001: settings.json precedence ladder ──────
 
 #[cfg(test)]
