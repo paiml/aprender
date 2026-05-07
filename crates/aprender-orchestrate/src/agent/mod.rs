@@ -27,6 +27,7 @@
 //! - arXiv:2501.09136 — Agentic RAG survey
 //! - arXiv:2406.09187 — `GuardAgent` safety
 
+pub mod auto_memory;
 pub mod capability;
 pub mod code;
 mod code_prompts;
