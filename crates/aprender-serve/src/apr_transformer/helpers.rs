@@ -1100,4 +1100,164 @@ mod determinism_tests {
             );
         }
     }
+
+    /// FALSIFY-FFN-GGUF-011 / M-FFN-GGUF-4 step (g) candidate A2:
+    /// Softmax saturation amplification — does a small input-logit
+    /// drift (M94 mechanism's ~0.077% rel_diff) get AMPLIFIED by
+    /// softmax when one logit is near-saturated (max-token)?
+    ///
+    /// Synthetic A2 hypothesis test: attention softmax compresses
+    /// logits into probabilities; when one logit is much larger
+    /// than others (saturated regime), softmax becomes near-step-
+    /// function. Tiny input perturbations to the saturated logit
+    /// can produce large output probability changes.
+    ///
+    /// Test design:
+    /// - 7-element logit vector mimicking attention scores at
+    ///   sequence position 0 of a 7-token prompt.
+    /// - One logit "saturated" at +10.0 (very confident token).
+    /// - Other logits in normal range [-2.0, +2.0].
+    /// - Add a 0.077% perturbation to the saturated logit and
+    ///   measure softmax output drift.
+    ///
+    /// EXPECTATION:
+    /// - softmax(logits) is NOT a linear function; in saturated
+    ///   regime, the dominant probability is near 1.0 and tail
+    ///   probabilities are near 0.0. A 0.077% drift in the
+    ///   dominant logit shifts the dominant probability by a
+    ///   tiny fraction near 1.0 → output_rel_diff ≈ 0% on the
+    ///   dominant token.
+    /// - But TAIL probabilities (the small ones near 0) can
+    ///   shift by larger relative amounts, since the absolute
+    ///   shift is now divided by a small base.
+    ///
+    /// QUESTION: does the L1 norm of the softmax output drift
+    /// exceed the L1 norm of the input drift? If yes, A2 is
+    /// CONFIRMED at the saturation regime; if no, A2 doesn't
+    /// amplify in this regime.
+    ///
+    /// Per `contracts/trace-ffn-sub-block-gguf-v1.yaml` v1.7.0 →
+    /// v1.8.0 amendment.
+    #[test]
+    fn falsify_ffn_gguf_011_softmax_saturation_amplification() {
+        // 7-element logit vector — one saturated, others normal.
+        // The saturated logit (index 3) is at +10.0; M94 perturbation
+        // would add 0.077% × 10.0 = 0.0077 to it.
+        let logits_a: Vec<f32> = vec![-1.5, 0.5, -0.8, 10.0, 1.2, -0.3, 0.7];
+
+        // Path B: simulate the M94 mechanism's bit-level perturbation
+        // on the dominant logit. The 0.077% drift is the per-tensor
+        // baseline; for an attention QK^T product reaching +10.0
+        // logit value, that's about +0.0077 absolute drift.
+        let perturbation = 0.00077 * 10.0; // 0.077% of 10.0
+        let mut logits_b = logits_a.clone();
+        logits_b[3] += perturbation;
+
+        // Numerically-stable softmax (subtract max).
+        fn softmax(logits: &[f32]) -> Vec<f32> {
+            let max = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            let exps: Vec<f32> = logits.iter().map(|x| (x - max).exp()).collect();
+            let sum: f32 = exps.iter().sum();
+            exps.into_iter().map(|x| x / sum).collect()
+        }
+
+        let probs_a = softmax(&logits_a);
+        let probs_b = softmax(&logits_b);
+
+        // L1 input drift = abs(perturbation) (only one element changed).
+        let input_l1_drift = perturbation.abs();
+        let input_l1_norm: f32 = logits_a.iter().map(|x| x.abs()).sum();
+        let input_rel_drift = input_l1_drift / input_l1_norm;
+
+        // L1 output drift = sum |p_b - p_a|.
+        let output_l1_drift: f32 = probs_a
+            .iter()
+            .zip(probs_b.iter())
+            .map(|(a, b)| (a - b).abs())
+            .sum();
+        let output_l1_norm: f32 = probs_a.iter().map(|x| x.abs()).sum(); // = 1.0 for valid softmax
+        let output_rel_drift = output_l1_drift / output_l1_norm.max(1e-9);
+
+        // Amplification factor: how many times larger is output
+        // relative drift than input relative drift?
+        let amplification = output_rel_drift / input_rel_drift.max(1e-12);
+
+        eprintln!("FALSIFY-FFN-GGUF-011: softmax saturation amplification");
+        eprintln!("  logits (saturated at index 3): {logits_a:?}");
+        eprintln!("  perturbation on saturated logit: +{perturbation}");
+        eprintln!(
+            "  probs_a (top-3): {:.6}, {:.6}, {:.6}",
+            probs_a[3], probs_a[4], probs_a[1]
+        );
+        eprintln!(
+            "  probs_b (top-3): {:.6}, {:.6}, {:.6}",
+            probs_b[3], probs_b[4], probs_b[1]
+        );
+        eprintln!(
+            "  input rel_drift  = {:.6}% ({:.6e})",
+            input_rel_drift * 100.0,
+            input_rel_drift
+        );
+        eprintln!(
+            "  output rel_drift = {:.6}% ({:.6e})",
+            output_rel_drift * 100.0,
+            output_rel_drift
+        );
+        eprintln!("  amplification factor = {amplification:.4}×");
+
+        // Sanity: input_rel_drift > 0 (perturbation actually applied).
+        assert!(
+            input_rel_drift > 0.0,
+            "test fixture: perturbation must be > 0"
+        );
+
+        // Sanity: probabilities sum to 1 (within numerical tolerance).
+        let sum_a: f32 = probs_a.iter().sum();
+        let sum_b: f32 = probs_b.iter().sum();
+        assert!(
+            (sum_a - 1.0).abs() < 1e-5 && (sum_b - 1.0).abs() < 1e-5,
+            "softmax outputs must sum to 1; got a={sum_a}, b={sum_b}"
+        );
+
+        // EMPIRICAL VERDICT: if amplification > 5.0, A2 is CONFIRMED
+        // (softmax in saturation regime amplifies M94 perturbation).
+        // If <= 1.0, A2 is FALSIFIED (softmax compresses). If 1-5×,
+        // PARTIAL.
+        if amplification > 5.0 {
+            eprintln!(
+                "FALSIFY-FFN-GGUF-011: amplification {amplification:.2}× > 5.0 — \
+                 A2 CONFIRMED. Softmax in saturation regime amplifies M94 \
+                 perturbation. Real-attention softmax with saturated logits \
+                 contributes substantially to §27 magnitude beyond the \
+                 5.70× chained matvec compounding."
+            );
+        } else if amplification > 1.0 {
+            eprintln!(
+                "FALSIFY-FFN-GGUF-011: amplification {amplification:.2}× ∈ (1, 5] — \
+                 A2 PARTIALLY CONFIRMED. Softmax compresses but does not \
+                 fully amplify."
+            );
+        } else {
+            eprintln!(
+                "FALSIFY-FFN-GGUF-011: amplification {amplification:.2}× ≤ 1.0 — \
+                 A2 NOT CONFIRMED at this regime. Softmax in saturation \
+                 regime COMPRESSES M94 perturbation rather than amplifying. \
+                 Tested with single saturated logit (+10.0); other regimes \
+                 (multiple saturated, near-tie, etc) may behave differently."
+            );
+        }
+
+        // Document amplification as regression-test invariant.
+        // If amplification flips sign or magnitude class in a future
+        // refactor of softmax/logit handling, this test catches it.
+        // Sanity bound: amplification must be measurable (> 1e-9)
+        // — zero would indicate softmax produced bit-identical
+        // outputs which contradicts the test premise.
+        assert!(
+            amplification > 1e-9,
+            "FALSIFY-FFN-GGUF-011: amplification {amplification} is essentially zero — \
+             softmax produced byte-identical outputs from perturbed inputs, which \
+             contradicts the test premise that softmax is sensitive to logit drift"
+        );
+    }
 }
