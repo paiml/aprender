@@ -222,3 +222,12 @@ falsification_tests:
     status: "IMPLEMENTED"
     implementation: "src/format/metadata_bounds_contract_falsify.rs"
     if_fails: "A new model pushes close to the ceiling — consider raising the bound"
+
+qa_gate:
+  id: F-METADATA-BOUNDS-GATE
+  name: Model Metadata Bounds Gate
+  description: Quality gate for model configuration metadata range constraints (vocab_size, hidden_dim, num_heads, etc.)
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All falsification tests pass + proof obligations satisfied

@@ -92,3 +92,12 @@ falsification:
       - "wrong special-token family (ChatML → Llama2 / <|user|> drift)"
       - "role-order swap (user before system)"
       - "single-byte flip at trailing newline (byte-equality, not approx)"
+
+qa_gate:
+  id: F-CHAT-TEMPLATE-GATE
+  name: Chat Template Gate
+  description: Quality gate for chat template Jinja2 rendering correctness (ChatML, Llama, Qwen, Mistral)
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All falsification tests pass; render output byte-equivalent to HuggingFace reference
