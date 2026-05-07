@@ -35,6 +35,7 @@ pub mod custom_agents;
 pub mod driver;
 pub mod guard;
 pub mod hooks;
+pub mod instructions;
 pub mod manifest;
 pub mod memory;
 pub mod org_policy;

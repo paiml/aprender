@@ -426,7 +426,17 @@ fn gather_project_context() -> String {
 fn build_default_manifest() -> AgentManifest {
     let ctx_window = 4096_usize;
     let budget = instruction_budget(ctx_window);
-    let project_instructions = load_project_instructions(budget);
+    // PMAT-CODE-MEMORY-PARITY-001: Use layered loader (user-global → project)
+    // with `@import` resolution. Falls through to legacy single-file load
+    // when nothing matches at either layer.
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let mut import_warnings = Vec::new();
+    let project_instructions =
+        crate::agent::instructions::load_layered_instructions(&cwd, budget, &mut import_warnings)
+            .or_else(|| load_project_instructions(budget));
+    for w in &import_warnings {
+        eprintln!("⚠ instructions: {w}");
+    }
     let project_context = gather_project_context();
 
     let mut system_prompt = CODE_SYSTEM_PROMPT.to_string();
