@@ -231,8 +231,19 @@ mod tests {
         assert!(msg.contains("invalid settings JSON") || msg.contains("settings.json"));
     }
 
+    // CI flake prevention: tests below mutate the process-wide
+    // `APR_CONFIG` env var. cargo test runs `#[test]` fns in parallel
+    // by default; without serialization, two parallel tests can corrupt
+    // each other's view of the env (test A sets, test B reads, test A
+    // removes). Same fix as agent::instructions::tests (PR #1567).
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     #[test]
     fn user_global_honors_apr_config_env() {
+        let _guard = env_lock();
         let dir = tempfile::tempdir().expect("tempdir");
         std::env::set_var("APR_CONFIG", dir.path());
         let p = AprSettings::user_global_path().expect("path resolved");
@@ -248,6 +259,7 @@ mod tests {
 
     #[test]
     fn load_layered_project_overrides_user_global() {
+        let _guard = env_lock();
         // Set up a temp APR_CONFIG with model="user" and a temp project with model="project".
         // Project must win.
         let cfg_dir = tempfile::tempdir().expect("cfg tempdir");
@@ -264,6 +276,7 @@ mod tests {
 
     #[test]
     fn load_layered_no_files_returns_default() {
+        let _guard = env_lock();
         let cfg_dir = tempfile::tempdir().expect("cfg tempdir");
         let proj_dir = tempfile::tempdir().expect("proj tempdir");
         // No settings.json written anywhere.
