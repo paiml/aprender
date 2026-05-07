@@ -369,6 +369,24 @@ fn read_input(
         return InputResult::Empty;
     }
 
+    // PMAT-CODE-REPL-PHASE2-001: handle `!<cmd>` shell directive
+    // BEFORE slash-command parsing — `!` is a peer to `/` in the
+    // Claude-Code interactive surface.
+    if let Some(shell_cmd) = super::repl_directives::parse_bang_command(trimmed) {
+        match super::repl_directives::execute_bang_command(shell_cmd) {
+            Ok((code, out)) => {
+                if !out.is_empty() {
+                    println!("{out}");
+                }
+                if code != 0 {
+                    eprintln!("(exit {code})");
+                }
+            }
+            Err(e) => eprintln!("! shell error: {e}"),
+        }
+        return InputResult::SlashHandled;
+    }
+
     // Handle slash commands
     if let Some(cmd) = SlashCommand::parse(trimmed) {
         handle_slash_command(&cmd, session, budget, history);
@@ -378,7 +396,17 @@ fn read_input(
         };
     }
 
-    InputResult::Prompt(trimmed.to_string())
+    // PMAT-CODE-REPL-PHASE2-001: expand `@<path>` tokens inline
+    // before handing the prompt to the agent. Missing files print a
+    // stderr warning and leave the token verbatim (Poka-Yoke — no
+    // silent partial expansion).
+    let mut warnings = Vec::new();
+    let expanded = super::repl_directives::expand_at_paths(trimmed, &mut warnings);
+    for w in &warnings {
+        eprintln!("⚠ @-expansion: {w}");
+    }
+
+    InputResult::Prompt(expanded)
 }
 
 /// Handle a slash command.
