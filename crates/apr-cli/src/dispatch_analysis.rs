@@ -702,6 +702,9 @@ fn dispatch_tokenize_command(
             normalization,
             eos_policy,
             num_workers,
+            quiet,
+            progress_interval_docs,
+            progress_interval_seconds,
         } => tokenize::run_encode_corpus(
             corpus,
             tokenizer,
@@ -711,6 +714,11 @@ fn dispatch_tokenize_command(
             normalization,
             eos_policy,
             *num_workers,
+            tokenize::ProgressConfig {
+                quiet: *quiet,
+                interval_docs: *progress_interval_docs,
+                interval_seconds: *progress_interval_seconds,
+            },
             cli.json,
         ),
     }
