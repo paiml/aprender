@@ -58,6 +58,29 @@ pub struct AprSettings {
     /// Default working-directory project root override. Resolved relative
     /// to the settings file's directory; absolute paths pass through.
     pub project: Option<PathBuf>,
+
+    /// Permission mode for the agent's tool dispatch (PMAT-CODE-CONFIG-LADDER-FIELDS-001).
+    /// Mirrors Claude Code's `permissionMode` field. Accepts the camelCase /
+    /// kebab-case / snake_case aliases that
+    /// [`crate::agent::permission::PermissionMode::parse`] honors:
+    /// `"default" | "plan" | "acceptEdits" | "bypassPermissions"` (and
+    /// case-insensitive equivalents). Unknown strings produce a settings-load
+    /// error from `apply_settings_to_manifest` (Poka-Yoke).
+    ///
+    /// Stored as `Option<String>` rather than `Option<PermissionMode>` so the
+    /// settings type stays JSON-trivial and so unknown values surface a
+    /// clear `apr code` error message at apply time rather than a generic
+    /// serde error at parse time.
+    #[serde(rename = "permissionMode", alias = "permission_mode")]
+    pub permission_mode: Option<String>,
+
+    /// Hostnames the agent's `NetworkTool` / `BrowserTool` may reach
+    /// (PMAT-CODE-CONFIG-LADDER-FIELDS-001). Mirrors `AgentManifest.allowed_hosts`.
+    /// Sovereign privacy tier always blocks network tools regardless of this
+    /// list (Poka-Yoke; tier wins over config). Empty list = no network
+    /// tools registered.
+    #[serde(rename = "allowedHosts", alias = "allowed_hosts")]
+    pub allowed_hosts: Option<Vec<String>>,
 }
 
 impl AprSettings {
@@ -75,6 +98,12 @@ impl AprSettings {
         }
         if other.project.is_some() {
             self.project = other.project.clone();
+        }
+        if other.permission_mode.is_some() {
+            self.permission_mode = other.permission_mode.clone();
+        }
+        if other.allowed_hosts.is_some() {
+            self.allowed_hosts = other.allowed_hosts.clone();
         }
     }
 
@@ -193,6 +222,62 @@ mod tests {
         // Poka-Yoke: typo in field name shouldn't silently no-op.
         let err = AprSettings::from_json_str(r#"{"modle":"foo"}"#).expect_err("must reject typo");
         assert!(format!("{err}").contains("invalid settings JSON"));
+    }
+
+    // PMAT-CODE-CONFIG-LADDER-FIELDS-001 — permission_mode + allowed_hosts
+
+    #[test]
+    fn from_json_parses_permission_mode_camel() {
+        // Claude Code's `permissionMode` shape (camelCase wire form).
+        let s = AprSettings::from_json_str(r#"{"permissionMode":"acceptEdits"}"#).expect("parse");
+        assert_eq!(s.permission_mode.as_deref(), Some("acceptEdits"));
+    }
+
+    #[test]
+    fn from_json_parses_permission_mode_snake_alias() {
+        // Operator-friendly snake_case alias also accepted.
+        let s = AprSettings::from_json_str(r#"{"permission_mode":"plan"}"#).expect("parse");
+        assert_eq!(s.permission_mode.as_deref(), Some("plan"));
+    }
+
+    #[test]
+    fn from_json_parses_allowed_hosts_camel() {
+        let s =
+            AprSettings::from_json_str(r#"{"allowedHosts":["docs.anthropic.com","crates.io"]}"#)
+                .expect("parse");
+        assert_eq!(
+            s.allowed_hosts.as_deref(),
+            Some(&["docs.anthropic.com".to_string(), "crates.io".to_string()][..])
+        );
+    }
+
+    #[test]
+    fn from_json_parses_allowed_hosts_snake_alias() {
+        let s = AprSettings::from_json_str(r#"{"allowed_hosts":["github.com"]}"#).expect("parse");
+        assert_eq!(s.allowed_hosts.as_deref(), Some(&["github.com".to_string()][..]));
+    }
+
+    #[test]
+    fn merge_permission_mode_other_wins() {
+        let mut base =
+            AprSettings { permission_mode: Some("default".into()), ..Default::default() };
+        let over = AprSettings { permission_mode: Some("plan".into()), ..Default::default() };
+        base.merge(&over);
+        assert_eq!(base.permission_mode.as_deref(), Some("plan"));
+    }
+
+    #[test]
+    fn merge_allowed_hosts_other_wins_replaces_not_unions() {
+        // Settings ladder semantics: project-local fully replaces user-global
+        // for any field with `Some(_)`. We do NOT do list-union — operator
+        // who wants both must list both in the project file.
+        let mut base = AprSettings {
+            allowed_hosts: Some(vec!["a.com".into(), "b.com".into()]),
+            ..Default::default()
+        };
+        let over = AprSettings { allowed_hosts: Some(vec!["c.com".into()]), ..Default::default() };
+        base.merge(&over);
+        assert_eq!(base.allowed_hosts.as_deref(), Some(&["c.com".to_string()][..]));
     }
 
     #[test]
