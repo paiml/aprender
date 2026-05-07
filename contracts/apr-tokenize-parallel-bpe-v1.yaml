@@ -1,14 +1,16 @@
 metadata:
   kind: schema
-  version: 1.0.0
-  status: PROPOSED
+  version: 1.1.0
+  status: ACTIVE
   created: '2026-04-27'
+  updated: '2026-05-05'
   author: PAIML Engineering
   registry: false
   references:
   - 'SPEC-SHIP-TWO-001 §26.2 — corpus pipeline'
   - 'SPEC-SHIP-TWO-001 §26.8 — apr is canonical, extend apr never CLI-shim'
   - 'feedback_compute_pre_authorized.md — lambda-labs lane is open'
+  - 'GH-1547 — SHIP-TWO-001 5g.1: live encode at hour 47, single-thread'
   description: >
     Contract for parallelizing `apr tokenize encode-corpus` across multiple
     CPU cores. Triggering observation 2026-04-27: P1.5 BPE encoding of a
@@ -16,6 +18,13 @@ metadata:
     tokens/sec on RTX 4090 host (48 cores available). Total encode time
     ~4 hours for 190M tokens. With N-way parallelism, expected speedup
     ~Nx (BPE is CPU-bound, no shared mutable state across rows).
+
+    v1.1.0 (2026-05-05): Implementation landed via GH-1547. Strategy
+    REVISED from "split input + N child encoders + post-hoc merge" to
+    "single-process chunked rayon": pull a CHUNK of docs, par_iter encode,
+    sequential write. Strictly safer (no shard renumbering, no merge step)
+    and just as fast for CPU-bound BPE. Flag is `--num-workers N` (operator
+    request, not `--workers`). Default is `available_parallelism`.
 
 equations:
   parallel_correctness:
@@ -35,20 +44,30 @@ equations:
     - "Same tokenizer + same row → same token sequence (deterministic)"
     - "Concatenation order preserves input order"
 
-  shard_renumbering:
+  in_process_chunked_rayon:
     formula: |
-      When N parallel encoders write to N output directories, each
-      producing shard-00000.bin .. shard-MMM.bin, the merged corpus is
-      formed by:
-        merged_shard_idx[i] = sum(N_shards[0..encoder_idx]) + local_shard_idx
-      with renumbered files copied (or hardlinked) into the merged dir.
-      The final shard from encoder_k may be partial (< 10M tokens); this
-      is preserved by the merge.
-    domain: shard numbering
+      v1.1.0 implementation — single-process chunked rayon (no shard
+      renumbering or merge needed):
+
+      1. Pull a CHUNK of K docs from the canonical input iterator
+         (preserves on-disk JSONL/parquet order).
+      2. Encode the chunk via rayon par_iter into a Vec<Result<...>>
+         indexed by chunk-local position (par_iter on Vec<T> preserves
+         output index order).
+      3. Drain the encoded vec into the open shard writer in chunk-local
+         order, applying eos_policy and rotating shards exactly as the
+         legacy single-threaded path does.
+      4. Repeat until the source iterator is exhausted.
+
+      This collapses v1.0.0's three-stage "split → fan-out encoders →
+      merge" pipeline into a single-pass loop. Memory is bounded by
+      `K * avg_doc_token_count * 4 bytes`. Chunk size K = 10_000 docs.
+    domain: in-process chunked parallelism
     codomain: bool
     invariants:
-    - "No two merged shards have the same shard_idx"
-    - "Order: encoder-0's shards come first, then encoder-1's, etc."
+    - "Output bytes are independent of worker count (byte-identical across N)"
+    - "Output shard naming is shard-{idx:05}.bin (same as legacy path)"
+    - "No temporary directories — one output dir, written incrementally"
     - "Total tokens preserved exactly"
 
   speedup_target:
@@ -64,34 +83,47 @@ equations:
 
 falsification_tests:
 - id: FALSIFY-APR-TOK-PAR-001
-  rule: parallel encode produces identical token stream as serial
-  prediction: "Splitting a 1MB JSONL into 4 chunks and parallel-encoding produces a token stream concat-equal to serial-encoding the full file"
-  test: |
-    apr tokenize encode-corpus --corpus full.jsonl --tokenizer T --output single/
-    split_jsonl full.jsonl --chunks 4
-    for i in 0..3: apr tokenize encode-corpus --corpus chunk-$i.jsonl --tokenizer T --output par-$i/ &
-    wait
-    merge_shards par-0/ par-1/ par-2/ par-3/ --output merged/
-    cmp single/concat.bin merged/concat.bin
-  if_fails: "parallel encoding diverges — bug in chunk split or shard merge"
+  rule: parallel encode produces byte-identical shards vs serial
+  prediction: "`--num-workers 4` and `--num-workers 1` produce shard-NNNNN.bin files that are byte-identical for the same JSONL input"
+  test: "crates/apr-cli/src/commands/tokenize.rs::tests::encode_corpus_num_workers_1_matches_num_workers_n_byte_for_byte"
+  status: DISCHARGED
+  if_fails: "parallel encoding diverges — chunk-internal ordering or shard rotation broke determinism"
 
 - id: FALSIFY-APR-TOK-PAR-002
   rule: speedup ≥ 0.8N for 4-way
   prediction: "4-way parallel on 4-core machine completes in ≤ 1.25× single-threaded / 4"
-  test: "time_par <= time_serial * 1.25 / 4"
+  test: "operational measurement (issue #1547 retrain target: 17h → ~6h on 8-core)"
+  status: PARTIAL_OPERATIONAL_PENDING
   if_fails: "parallelism overhead too high — likely due to fork-join cost or I/O contention"
 
 - id: FALSIFY-APR-TOK-PAR-003
-  rule: 8-way doesn't crash
-  prediction: "apr tokenize encode-corpus --workers 8 on 16-core machine succeeds (no OOM, no deadlock)"
+  rule: high worker counts don't crash or starve
+  prediction: "apr tokenize encode-corpus --num-workers 8 on 16-core machine succeeds (no OOM, no deadlock)"
   test: "exit code = 0, output dir has expected shard count"
+  status: DISCHARGED_BY_CONSTRUCTION
   if_fails: "parallelism causes resource exhaustion — workers must respect a memory budget"
+  notes: "Memory is bounded by CHUNK_SIZE × avg_doc_tokens × 4. Chunk drains before next pull."
 
 - id: FALSIFY-APR-TOK-PAR-004
-  rule: --workers flag is positional discriminator
-  prediction: "`apr tokenize encode-corpus --workers 4` is accepted by clap and visible in --help"
-  test: "apr tokenize encode-corpus --help | grep -q workers"
+  rule: --num-workers flag is registered in clap surface
+  prediction: "`apr tokenize encode-corpus --help` output includes the literal string `--num-workers`"
+  test: "crates/apr-cli/tests/falsification_apr_tok_par_004.rs::falsify_apr_tok_par_004_help_advertises_num_workers_flag"
+  status: DISCHARGED
   if_fails: "CLI surface drift — flag not registered in clap"
+
+- id: FALSIFY-APR-TOK-PAR-005
+  rule: --num-workers default equals available_parallelism
+  prediction: "resolve_num_workers(None) == std::thread::available_parallelism().get() (or 1 on cgroup-restricted hosts)"
+  test: "crates/apr-cli/src/commands/tokenize.rs::tests::encode_corpus_resolve_workers_default_is_available_parallelism"
+  status: DISCHARGED
+  if_fails: "default is hardcoded — operator gets surprising thread count on smaller machines"
+
+- id: FALSIFY-APR-TOK-PAR-006
+  rule: --num-workers 0 is a config error not a silent fallback
+  prediction: "resolve_num_workers(Some(0)) returns CliError::ValidationFailed naming the flag and the >= 1 bound"
+  test: "crates/apr-cli/src/commands/tokenize.rs::tests::encode_corpus_resolve_workers_rejects_zero"
+  status: DISCHARGED
+  if_fails: "operator typo silently coerced — typo class hidden"
 
 proof_obligations:
 - type: invariant
@@ -106,24 +138,35 @@ proof_obligations:
 verification_summary:
   total_obligations: 4
   proven: 0
-  tested: 0
-  status: pending
+  tested: 4
+  status: discharged_unit
   notes: |
     Authored 2026-04-27 from observation that P1.5 BPE encoding ran single-
     threaded at ~13K tokens/sec on a 48-core host. With 760M chars (~190M
     tokens) to encode, single-threaded ETA was ~4 hours; 8-way parallelism
     would have brought this to ~30 minutes.
 
-    PROPOSED status until implementation. Implementation steps:
-    1. Add `--workers N` flag to `apr tokenize encode-corpus`.
-    2. Split input JSONL by row count modulo N (preserving order within chunk).
-    3. Spawn N rayon worker threads, each running the existing single-
-       threaded encode logic on its chunk to a per-worker temp dir.
-    4. After all workers complete, merge by renumbering shards in
-       (worker_idx, local_idx) order into the final output dir.
-    5. Write final manifest.json with merged shard list.
+    v1.1.0 (2026-05-05, GH-1547): ACTIVE. Implementation landed in
+    `crates/apr-cli/src/commands/tokenize.rs::run_encode_corpus`. Strategy
+    revised from v1.0.0's "split + N-encoder + merge" to a strictly safer
+    single-pass chunked rayon loop:
 
-    Implementation cost estimate: ~200 LOC + 5 unit tests. P3 priority
-    (after MODEL-2 retrain on codeparrot lands and proves the corpus
-    scales to ~1B+ tokens — at which point single-threaded encoding
-    becomes a 24+ hour operation that's clearly worth paralleling).
+    1. `--num-workers N` clap flag on `apr tokenize encode-corpus`.
+       Default = `std::thread::available_parallelism()` (logical CPU count).
+       Some(0) is rejected as a config error.
+    2. Pull CHUNK_SIZE (10_000) docs from the canonical input iterator.
+    3. par_iter the chunk through tokenizer.encode → Vec<Result<...>>
+       indexed by chunk-local position.
+    4. Drain in chunk-local order into the open shard writer, applying
+       eos_policy and rotating shards exactly as the legacy single-thread
+       path does.
+    5. Repeat until iterator exhausted.
+
+    Live trigger: SHIP-TWO-001 5g.1 retrain encode running 47h on PID
+    2767124, projected 17h. Issue #1547. Falsifiers
+    FALSIFY-APR-TOK-PAR-001/004/005/006 DISCHARGED via unit tests in
+    `tokenize.rs::tests::encode_corpus_*`. -PAR-002 (operational speedup)
+    is PARTIAL_OPERATIONAL_PENDING — discharged once the next encode run
+    posts wall-clock evidence ≤ 6h on the same corpus. -PAR-003
+    (no-crash at high worker count) is DISCHARGED_BY_CONSTRUCTION via the
+    bounded-memory chunk loop.

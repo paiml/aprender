@@ -150,5 +150,16 @@ pub enum TokenizeCommands {
         /// EOS insertion policy: none|between|after.
         #[arg(long, default_value = "between")]
         eos_policy: String,
+        /// Number of rayon workers for per-document BPE encoding.
+        ///
+        /// Defaults to `std::thread::available_parallelism()` (logical CPU count).
+        /// Set to `1` to force the single-threaded byte-identical legacy path.
+        /// Set to a fixed N to bound memory or share the host with other jobs.
+        ///
+        /// Output shard order is preserved: chunked encoding keeps original
+        /// document order regardless of worker count (issue #1547,
+        /// contracts/apr-tokenize-parallel-bpe-v1.yaml `parallel_correctness`).
+        #[arg(long, value_name = "N")]
+        num_workers: Option<usize>,
     },
 }

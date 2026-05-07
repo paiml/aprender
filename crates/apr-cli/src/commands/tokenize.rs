@@ -590,12 +590,45 @@ fn validate_normalization(norm: &str) -> Result<()> {
     }
 }
 
+/// Per-doc-chunk batch size for the parallel encode path. Chosen so each
+/// rayon spawn amortizes thread setup against ~10K BPE encodes (~13K tok/s
+/// per worker → ~1s of work per chunk on the SHIP-TWO-001 760M-char Python
+/// corpus). Smaller chunks waste rayon overhead; larger chunks delay shard
+/// flush feedback (issue #1547).
+#[cfg(feature = "training")]
+const ENCODE_CHUNK_SIZE: usize = 10_000;
+
+/// Resolve the effective rayon worker count for `apr tokenize encode-corpus`.
+///
+/// `None` (default) → `std::thread::available_parallelism()`, falling back
+/// to 1 if the OS cannot answer (e.g. cgroup-restricted CI). Explicit `Some(0)`
+/// is rejected as a config error rather than silently coerced. `Some(1)`
+/// triggers the legacy single-threaded byte-identical path.
+#[cfg(feature = "training")]
+fn resolve_num_workers(num_workers: Option<usize>) -> Result<usize> {
+    match num_workers {
+        Some(0) => Err(CliError::ValidationFailed(
+            "--num-workers must be >= 1 (got 0)".to_string(),
+        )),
+        Some(n) => Ok(n),
+        None => Ok(std::thread::available_parallelism()
+            .map(std::num::NonZeroUsize::get)
+            .unwrap_or(1)),
+    }
+}
+
 /// Run `apr tokenize encode-corpus` — pretokenize a JSONL corpus into `.bin`
 /// shards per contracts/pretokenize-bin-v1.yaml. Emits flat little-endian u32
 /// streams (the exact format ShardBatchIter expects at MODEL-2 pretrain time).
 ///
 /// Requires the `training` feature so `entrenar::tokenizer::BPETokenizer`
 /// is linked; without it, encode-corpus is unavailable (matching `run_train`).
+///
+/// `num_workers` controls per-document BPE encoding parallelism (issue #1547).
+/// `Some(1)` runs the byte-identical single-threaded legacy path; `None` uses
+/// `available_parallelism`; `Some(N)` for N > 1 uses chunked rayon while
+/// preserving original document order per `parallel_correctness` invariant
+/// in `contracts/apr-tokenize-parallel-bpe-v1.yaml`.
 #[cfg(feature = "training")]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_encode_corpus(
@@ -606,6 +639,7 @@ pub(crate) fn run_encode_corpus(
     content_field: &str,
     normalization: &str,
     eos_policy: &str,
+    num_workers: Option<usize>,
     json_output: bool,
 ) -> Result<()> {
     use entrenar::tokenizer::{BPETokenizer, Normalization, Tokenizer, TokenizerConfig};
@@ -625,6 +659,7 @@ pub(crate) fn run_encode_corpus(
             "shard_tokens must be > 0".to_string(),
         ));
     }
+    let workers = resolve_num_workers(num_workers)?;
     if !corpus.exists() {
         return Err(CliError::FileNotFound(corpus.to_path_buf()));
     }
@@ -676,24 +711,39 @@ pub(crate) fn run_encode_corpus(
     let mut writer = open_shard(output_dir, shard_idx)?;
     let mut doc_iter_count: u64 = 0;
 
-    for triple in iter_corpus_texts(&files, corpus_format, content_field) {
-        let (file_display, locator, text) = triple?;
-        let ids = tokenizer.encode(&text).map_err(|e| {
-            CliError::ValidationFailed(format!("Encoding failed at {file_display} {locator}: {e}"))
-        })?;
+    // Source iterator: yields (file_display, locator, text) triples in
+    // canonical input order. Both the single-threaded and chunked-parallel
+    // paths consume from this same iterator — the only difference is whether
+    // chunks are encoded in lock-step or via rayon.
+    let mut source = iter_corpus_texts(&files, corpus_format, content_field);
 
-        if eos_policy == "between" && doc_iter_count > 0 {
+    // Closure: emit a single doc's encoded ids into `writer`, applying the
+    // EOS policy and shard rotation. Identical bookkeeping for both paths
+    // — the only invariant difference is when (and on what thread) the
+    // `tokenizer.encode()` call happened. Output bytes per doc are
+    // independent of worker count.
+    let emit = |writer: &mut std::io::BufWriter<std::fs::File>,
+                shard_idx: &mut usize,
+                tokens_in_shard: &mut usize,
+                total_tokens: &mut u64,
+                eos_count: &mut u64,
+                doc_iter_count: &mut u64,
+                file_display: &str,
+                locator: &str,
+                ids: &[u32]|
+     -> Result<()> {
+        if eos_policy == "between" && *doc_iter_count > 0 {
             if let Some(eos) = eos_id {
                 writer
                     .write_all(&eos.to_le_bytes())
                     .map_err(|e| CliError::ValidationFailed(format!("Shard write failed: {e}")))?;
-                tokens_in_shard += 1;
-                total_tokens += 1;
-                eos_count += 1;
+                *tokens_in_shard += 1;
+                *total_tokens += 1;
+                *eos_count += 1;
             }
         }
 
-        for id in &ids {
+        for id in ids {
             if (*id as usize) >= vocab_size {
                 return Err(CliError::ValidationFailed(format!(
                     "Token id {id} >= vocab_size {vocab_size} at {file_display} {locator} \
@@ -703,8 +753,8 @@ pub(crate) fn run_encode_corpus(
             writer
                 .write_all(&id.to_le_bytes())
                 .map_err(|e| CliError::ValidationFailed(format!("Shard write failed: {e}")))?;
-            tokens_in_shard += 1;
-            total_tokens += 1;
+            *tokens_in_shard += 1;
+            *total_tokens += 1;
         }
 
         if eos_policy == "after" {
@@ -712,24 +762,126 @@ pub(crate) fn run_encode_corpus(
                 writer
                     .write_all(&eos.to_le_bytes())
                     .map_err(|e| CliError::ValidationFailed(format!("Shard write failed: {e}")))?;
-                tokens_in_shard += 1;
-                total_tokens += 1;
-                eos_count += 1;
+                *tokens_in_shard += 1;
+                *total_tokens += 1;
+                *eos_count += 1;
             }
         }
 
-        doc_iter_count += 1;
-        total_docs += 1;
+        *doc_iter_count += 1;
+        Ok(())
+    };
 
-        if tokens_in_shard >= shard_tokens {
-            writer
-                .flush()
-                .map_err(|e| CliError::ValidationFailed(format!("Shard flush failed: {e}")))?;
-            shard_idx += 1;
-            tokens_in_shard = 0;
-            writer = open_shard(output_dir, shard_idx)?;
+    if workers <= 1 {
+        // Legacy single-threaded path. MUST stay byte-identical to pre-#1547
+        // output for any operator job that pinned `--num-workers 1`.
+        for triple in source.by_ref() {
+            let (file_display, locator, text) = triple?;
+            let ids = tokenizer.encode(&text).map_err(|e| {
+                CliError::ValidationFailed(format!(
+                    "Encoding failed at {file_display} {locator}: {e}"
+                ))
+            })?;
+            emit(
+                &mut writer,
+                &mut shard_idx,
+                &mut tokens_in_shard,
+                &mut total_tokens,
+                &mut eos_count,
+                &mut doc_iter_count,
+                &file_display,
+                &locator,
+                &ids,
+            )?;
+            total_docs += 1;
+            if tokens_in_shard >= shard_tokens {
+                writer
+                    .flush()
+                    .map_err(|e| CliError::ValidationFailed(format!("Shard flush failed: {e}")))?;
+                shard_idx += 1;
+                tokens_in_shard = 0;
+                writer = open_shard(output_dir, shard_idx)?;
+            }
+        }
+    } else {
+        // Chunked parallel path. Read CHUNK docs sequentially, encode in
+        // parallel via rayon (preserving chunk-local order via index), then
+        // drain into `writer` sequentially. This bounds memory at roughly
+        // `CHUNK * avg_doc_token_count * 4` bytes and bounds rayon spawn
+        // overhead at `total_docs / CHUNK` dispatches.
+        use rayon::prelude::*;
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(workers)
+            .build()
+            .map_err(|e| {
+                CliError::ValidationFailed(format!("Cannot build rayon pool ({workers}): {e}"))
+            })?;
+
+        loop {
+            // 1. Pull next chunk from the canonical source iterator. Errors
+            //    here are JSON-parse / IO errors — surface them before
+            //    dispatching the chunk so the failing locator is precise.
+            let mut chunk: Vec<(String, String, String)> = Vec::with_capacity(ENCODE_CHUNK_SIZE);
+            for _ in 0..ENCODE_CHUNK_SIZE {
+                match source.next() {
+                    Some(Ok(triple)) => chunk.push(triple),
+                    Some(Err(e)) => return Err(e),
+                    None => break,
+                }
+            }
+            if chunk.is_empty() {
+                break;
+            }
+
+            // 2. Parallel encode within this rayon pool. `par_iter` over a
+            //    Vec<T> preserves index order in the output Vec, so the
+            //    write phase below sees docs in original input order.
+            let encoded: Vec<Result<(String, String, Vec<u32>)>> = pool.install(|| {
+                chunk
+                    .par_iter()
+                    .map(|(file_display, locator, text)| {
+                        tokenizer
+                            .encode(text)
+                            .map(|ids| (file_display.clone(), locator.clone(), ids))
+                            .map_err(|e| {
+                                CliError::ValidationFailed(format!(
+                                    "Encoding failed at {file_display} {locator}: {e}"
+                                ))
+                            })
+                    })
+                    .collect()
+            });
+
+            // 3. Sequential write phase — same emit closure as the
+            //    single-threaded path, so output bytes are determined
+            //    purely by (doc_index, tokenizer, eos_policy) and not by
+            //    worker count.
+            for result in encoded {
+                let (file_display, locator, ids) = result?;
+                emit(
+                    &mut writer,
+                    &mut shard_idx,
+                    &mut tokens_in_shard,
+                    &mut total_tokens,
+                    &mut eos_count,
+                    &mut doc_iter_count,
+                    &file_display,
+                    &locator,
+                    &ids,
+                )?;
+                total_docs += 1;
+                if tokens_in_shard >= shard_tokens {
+                    writer.flush().map_err(|e| {
+                        CliError::ValidationFailed(format!("Shard flush failed: {e}"))
+                    })?;
+                    shard_idx += 1;
+                    tokens_in_shard = 0;
+                    writer = open_shard(output_dir, shard_idx)?;
+                }
+            }
         }
     }
+
     writer
         .flush()
         .map_err(|e| CliError::ValidationFailed(format!("Shard flush failed: {e}")))?;
@@ -753,6 +905,7 @@ pub(crate) fn run_encode_corpus(
             CorpusFormat::Parquet => "parquet",
         },
         "input_files": files.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
+        "num_workers": workers,
         "elapsed_seconds": elapsed.as_secs_f64(),
     });
     let manifest_path = output_dir.join("manifest.json");
@@ -775,6 +928,7 @@ pub(crate) fn run_encode_corpus(
         output::kv("  Total tokens", format_number(total_tokens as usize));
         output::kv("  Total documents", format_number(total_docs as usize));
         output::kv("  Vocab size", format_number(vocab_size));
+        output::kv("  Workers", workers.to_string());
         output::kv("  Elapsed", format!("{:.1}s", elapsed.as_secs_f64()));
         output::kv("  Manifest", manifest_path.display().to_string());
     }
@@ -1208,10 +1362,7 @@ pub(crate) fn run_import_hf(
         output::kv("  BPE vocab", format_number(bpe_vocab_count));
         output::kv("  Merges", format_number(merges_count));
         output::kv("  Added tokens", format_number(added_tokens_count));
-        output::kv(
-            "  Effective vocab",
-            format_number(effective_vocab.len()),
-        );
+        output::kv("  Effective vocab", format_number(effective_vocab.len()));
         output::kv("  Output dir", output.display().to_string());
         println!();
         println!("{}", "Wrote:".green().bold());
@@ -1518,10 +1669,9 @@ mod tests {
         // Default: no added tokens in vocab.json.
         let out_default = tmp.path().join("default");
         run_import_hf(&input, &out_default, false, true).expect("default import");
-        let v_default: serde_json::Map<String, serde_json::Value> = serde_json::from_str(
-            &std::fs::read_to_string(out_default.join("vocab.json")).unwrap(),
-        )
-        .unwrap();
+        let v_default: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(&std::fs::read_to_string(out_default.join("vocab.json")).unwrap())
+                .unwrap();
         assert_eq!(v_default.len(), 100);
         assert!(
             !v_default.contains_key("<|endoftext|>"),
@@ -1531,14 +1681,191 @@ mod tests {
         // With flag: added tokens included.
         let out_full = tmp.path().join("full");
         run_import_hf(&input, &out_full, true, true).expect("full import");
-        let v_full: serde_json::Map<String, serde_json::Value> = serde_json::from_str(
-            &std::fs::read_to_string(out_full.join("vocab.json")).unwrap(),
-        )
-        .unwrap();
+        let v_full: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(&std::fs::read_to_string(out_full.join("vocab.json")).unwrap())
+                .unwrap();
         assert_eq!(v_full.len(), 101);
         assert!(
             v_full.contains_key("<|endoftext|>"),
             "include-added-tokens mode must include the special"
         );
+    }
+
+    // ─── apr tokenize encode-corpus --num-workers (issue #1547) ─────────
+    // SHIP-TWO-001 5g.1 unblock: per-document BPE encoding is independent
+    // across rows, so chunked rayon with sequential write-phase preserves
+    // both byte-identity (for `--num-workers 1`) and shard order (for any N).
+    // These tests pin those properties.
+    //
+    // Note: FALSIFY-APR-TOK-PAR-004 (`--num-workers` advertised in
+    // `apr tokenize encode-corpus --help`) is verified by the integration
+    // test at `tests/falsification_apr_tok_par_004.rs` — running clap's
+    // CommandFactory in-process recurses through the full Cli tree, which
+    // overflows the default test stack on this binary's command surface.
+    // The integration test invokes the compiled `apr` binary instead, which
+    // matches the operator-facing surface 1:1 and avoids the stack issue.
+
+    #[cfg(feature = "training")]
+    #[test]
+    fn encode_corpus_resolve_workers_default_is_available_parallelism() {
+        // FALSIFY-#1547-DEFAULT: `None` → std::thread::available_parallelism().
+        // Allow the OS-cgroup edge case where parallelism is reported as 1
+        // (covered by the unwrap_or(1) fallback). The contract is "not zero
+        // and matches the platform reading", not a hardcoded core count.
+        let resolved = resolve_num_workers(None).expect("default must resolve");
+        let expected = std::thread::available_parallelism()
+            .map(std::num::NonZeroUsize::get)
+            .unwrap_or(1);
+        assert_eq!(
+            resolved, expected,
+            "default must equal available_parallelism (or 1 fallback)"
+        );
+        assert!(resolved >= 1, "resolved worker count must be >= 1");
+    }
+
+    #[cfg(feature = "training")]
+    #[test]
+    fn encode_corpus_resolve_workers_explicit_value_passes_through() {
+        // Explicit Some(N) for N >= 1 returns N verbatim — operators can
+        // pin worker count for memory/sharing reasons without surprise.
+        assert_eq!(resolve_num_workers(Some(1)).expect("Some(1)"), 1);
+        assert_eq!(resolve_num_workers(Some(4)).expect("Some(4)"), 4);
+        assert_eq!(resolve_num_workers(Some(64)).expect("Some(64)"), 64);
+    }
+
+    #[cfg(feature = "training")]
+    #[test]
+    fn encode_corpus_resolve_workers_rejects_zero() {
+        // Some(0) is a config error, not a silent fallback. Keeps the
+        // failure-mode loud — a user who typed `--num-workers 0` almost
+        // certainly meant something else, and silently coercing to 1 (or
+        // available_parallelism) hides the typo.
+        let err = resolve_num_workers(Some(0)).expect_err("zero must error");
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(msg.contains("--num-workers"), "error must name flag: {msg}");
+                assert!(msg.contains(">= 1"), "error must state bound: {msg}");
+            }
+            other => panic!("unexpected error variant: {other:?}"),
+        }
+    }
+
+    /// Issue #1547 byte-identity AC: `--num-workers 1` MUST produce the
+    /// same shard bytes as the pre-PR single-threaded path on a small
+    /// fixture, AND `--num-workers N` (N > 1) MUST produce the same shard
+    /// bytes as `--num-workers 1`. The latter is the operative invariant
+    /// for the SHIP-TWO-001 5g.1 retraining: parallelism MUST NOT alter
+    /// the token stream the trainer ingests.
+    ///
+    /// Per `contracts/apr-tokenize-parallel-bpe-v1.yaml` §parallel_correctness:
+    ///   ENC(jsonl_full, tok) ≡ concat(ENC(chunk_0), ..., ENC(chunk_N-1))
+    /// when chunks preserve input order and BPE has no cross-row state.
+    ///
+    /// 10 distinct documents (avoids any "chunk-of-1 happens to be ordered"
+    /// degenerate case) and a non-trivial vocab to exercise real merges.
+    #[cfg(feature = "training")]
+    #[test]
+    fn encode_corpus_num_workers_1_matches_num_workers_n_byte_for_byte() {
+        let tmp = TempDir::new().expect("tempdir");
+
+        // Build a tokenizer in-tree so the test stays hermetic.
+        let train_corpus = write_corpus_file(
+            tmp.path(),
+            "train.jsonl",
+            &[
+                r#"{"content": "hello world the quick brown fox"}"#,
+                r#"{"content": "the lazy dog jumped over the fence"}"#,
+                r#"{"content": "rust is a systems programming language"}"#,
+            ],
+        );
+        let tok_dir = tmp.path().join("tok");
+        run_train(&train_corpus, 400, 1, &tok_dir, "nfc", true).expect("train tokenizer");
+
+        // 10-doc encode corpus — diverse content so chunk-internal order
+        // matters (any reordering shows up as token-stream divergence).
+        let encode_lines: Vec<String> = (0..10)
+            .map(|i| {
+                format!(
+                    r#"{{"content": "doc {i} alpha beta gamma the quick brown fox jumps {i}"}}"#
+                )
+            })
+            .collect();
+        let encode_refs: Vec<&str> = encode_lines.iter().map(String::as_str).collect();
+        let corpus = write_corpus_file(tmp.path(), "encode.jsonl", &encode_refs);
+
+        // Single-threaded reference output.
+        let out_1 = tmp.path().join("out_1");
+        run_encode_corpus(
+            &corpus,
+            &tok_dir,
+            &out_1,
+            10_000_000,
+            "content",
+            "nfc",
+            "between",
+            Some(1),
+            true,
+        )
+        .expect("encode --num-workers 1");
+
+        // Parallel output (4 workers — > 1 forces the rayon path).
+        let out_n = tmp.path().join("out_n");
+        run_encode_corpus(
+            &corpus,
+            &tok_dir,
+            &out_n,
+            10_000_000,
+            "content",
+            "nfc",
+            "between",
+            Some(4),
+            true,
+        )
+        .expect("encode --num-workers 4");
+
+        // Compare every shard byte-for-byte. The manifest gains a
+        // `num_workers` field (additive metadata) so we deliberately only
+        // diff the .bin shards — they encode the load-bearing invariant.
+        let shards_1: Vec<_> = std::fs::read_dir(&out_1)
+            .expect("read out_1")
+            .filter_map(std::result::Result::ok)
+            .filter(|e| e.path().extension().and_then(std::ffi::OsStr::to_str) == Some("bin"))
+            .collect();
+        let shards_n: Vec<_> = std::fs::read_dir(&out_n)
+            .expect("read out_n")
+            .filter_map(std::result::Result::ok)
+            .filter(|e| e.path().extension().and_then(std::ffi::OsStr::to_str) == Some("bin"))
+            .collect();
+        assert_eq!(
+            shards_1.len(),
+            shards_n.len(),
+            "shard count must match across worker counts"
+        );
+        assert!(!shards_1.is_empty(), "test must produce at least one shard");
+
+        let mut names_1: Vec<String> = shards_1
+            .iter()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        let mut names_n: Vec<String> = shards_n
+            .iter()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        names_1.sort();
+        names_n.sort();
+        assert_eq!(
+            names_1, names_n,
+            "shard filenames must match (deterministic naming)"
+        );
+
+        for name in &names_1 {
+            let bytes_1 = std::fs::read(out_1.join(name)).expect("read single-threaded shard");
+            let bytes_n = std::fs::read(out_n.join(name)).expect("read parallel shard");
+            assert_eq!(
+                bytes_1, bytes_n,
+                "FALSIFY-#1547-PARITY: shard {name} must be byte-identical \
+                 between --num-workers 1 and --num-workers 4"
+            );
+        }
     }
 }

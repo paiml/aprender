@@ -701,6 +701,7 @@ fn dispatch_tokenize_command(
             content_field,
             normalization,
             eos_policy,
+            num_workers,
         } => tokenize::run_encode_corpus(
             corpus,
             tokenizer,
@@ -709,6 +710,7 @@ fn dispatch_tokenize_command(
             content_field,
             normalization,
             eos_policy,
+            *num_workers,
             cli.json,
         ),
     }
