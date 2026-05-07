@@ -1692,4 +1692,152 @@ mod determinism_tests {
             );
         }
     }
+
+    /// FALSIFY-FFN-GGUF-015 / M-FFN-GGUF-6b candidate A6:
+    /// RMSNorm rsqrt amplification — does the M94 mechanism's per-
+    /// tensor 0.077% rel_diff get amplified through RMSNorm's
+    /// 1/sqrt(σ²) non-linearity?
+    ///
+    /// A6 hypothesis: RMSNorm normalizes x by 1/sqrt(mean(x²) + eps).
+    /// The rsqrt is non-linear; small input drift in x produces
+    /// drift in mean(x²), which non-linearly affects 1/sqrt(σ²),
+    /// which then scales the entire output. In saturated regimes
+    /// (small σ²), the rsqrt amplification factor can be large.
+    ///
+    /// Test design:
+    /// - Vector x with 256 elements in realistic range.
+    /// - Apply M94-equivalent perturbation (0.077%) to all elements.
+    /// - Compute RMSNorm(x) and RMSNorm(x_perturbed).
+    /// - Measure output L2 drift.
+    ///
+    /// EXPECTATION:
+    /// - For a smooth distribution, RMSNorm is approximately
+    ///   homogeneous of degree 0 (RMSNorm(αx) = RMSNorm(x) for any
+    ///   non-zero scalar α). A scale-perturbation should produce
+    ///   essentially zero output drift.
+    /// - But M94 perturbation is NOT a pure scale — it's a per-element
+    ///   bit-level drift. Each element drifts independently by 0.077%
+    ///   (in worst case). This breaks the homogeneity and causes
+    ///   real output drift.
+    ///
+    /// The rsqrt amplification is bounded by the variance of the
+    /// per-element drift relative to the mean magnitude. For a
+    /// well-distributed activation vector, amplification should be
+    /// ~1× (no significant amplification beyond the input drift).
+    ///
+    /// EMPIRICAL HYPOTHESIS: amplification ≈ 1×. If FALSIFIED
+    /// (amplification > 5×), A6 has a sub-mechanism worth
+    /// investigating in M-FFN-GGUF-7 (multi-layer real-teacher).
+    ///
+    /// Per `contracts/trace-ffn-sub-block-gguf-v1.yaml` v1.11.0 →
+    /// v1.12.0 amendment.
+    #[test]
+    fn falsify_ffn_gguf_015_rmsnorm_rsqrt_amplification() {
+        const HIDDEN_DIM: usize = 256;
+        const EPS: f32 = 1e-6;
+
+        // Build realistic activation vector. RMSNorm typically applies
+        // to layer-output residual streams with std ~1.0 after warmup.
+        let x_a: Vec<f32> = (0..HIDDEN_DIM)
+            .map(|i| ((i as f32) - 128.0) * 0.05 + ((i % 7) as f32) * 0.01)
+            .collect();
+
+        // M94-equivalent perturbation: each element drifts by ~0.077%
+        // (additive per-element noise; mimics M94 mechanism's bit-level
+        // drift pattern, NOT pure scaling).
+        let x_b: Vec<f32> = x_a
+            .iter()
+            .enumerate()
+            .map(|(i, x)| {
+                // Pseudo-random per-element drift in ±0.077% range.
+                let sign = if (i * 13 + 7) % 17 < 8 { 1.0 } else { -1.0 };
+                x + sign * x.abs() * 0.00077
+            })
+            .collect();
+
+        // RMSNorm: x_i / sqrt(mean(x²) + eps).
+        fn rmsnorm(x: &[f32], eps: f32) -> Vec<f32> {
+            let mean_sq: f32 = x.iter().map(|v| v * v).sum::<f32>() / (x.len() as f32);
+            let rms = (mean_sq + eps).sqrt().max(1e-9);
+            x.iter().map(|v| v / rms).collect()
+        }
+
+        let y_a = rmsnorm(&x_a, EPS);
+        let y_b = rmsnorm(&x_b, EPS);
+
+        // Input drift: |x_b - x_a|_L2 / |x_a|_L2.
+        let x_diff_l2: f32 = x_a
+            .iter()
+            .zip(x_b.iter())
+            .map(|(a, b)| (a - b).powi(2))
+            .sum::<f32>()
+            .sqrt();
+        let x_a_l2: f32 = x_a.iter().map(|v| v * v).sum::<f32>().sqrt();
+        let input_rel_drift = x_diff_l2 / x_a_l2.max(1e-9);
+
+        // Output drift: |y_b - y_a|_L2 / |y_a|_L2.
+        let y_diff_l2: f32 = y_a
+            .iter()
+            .zip(y_b.iter())
+            .map(|(a, b)| (a - b).powi(2))
+            .sum::<f32>()
+            .sqrt();
+        let y_a_l2: f32 = y_a.iter().map(|v| v * v).sum::<f32>().sqrt();
+        let output_rel_drift = y_diff_l2 / y_a_l2.max(1e-9);
+
+        let amplification = output_rel_drift / input_rel_drift.max(1e-12);
+
+        eprintln!("FALSIFY-FFN-GGUF-015: RMSNorm rsqrt amplification");
+        eprintln!("  hidden_dim = {HIDDEN_DIM}, eps = {EPS}");
+        eprintln!(
+            "  x_a L2 = {x_a_l2:.6}, x_diff_l2 = {x_diff_l2:.6}, input_rel_drift = {:.6}%",
+            input_rel_drift * 100.0
+        );
+        eprintln!(
+            "  y_a L2 = {y_a_l2:.6}, y_diff_l2 = {y_diff_l2:.6}, output_rel_drift = {:.6}%",
+            output_rel_drift * 100.0
+        );
+        eprintln!("  amplification factor = {amplification:.4}×");
+
+        // Sanity bounds.
+        assert!(input_rel_drift > 0.0, "perturbation must produce nonzero input drift");
+        assert!(
+            amplification > 1e-9,
+            "amplification {amplification} essentially zero — RMSNorm may be \
+             producing bit-identical outputs"
+        );
+
+        // EMPIRICAL VERDICT:
+        if amplification > 5.0 {
+            eprintln!(
+                "FALSIFY-FFN-GGUF-015: amplification {amplification:.2}× > 5.0 — \
+                 A6 CONFIRMED. RMSNorm rsqrt amplifies M94 perturbation \
+                 substantially. Real-RMSNorm contributes to §27 magnitude \
+                 beyond the M91-M100 5.56×× synthetic+real upper bound. \
+                 The 14× residual gap is partly explained by A6."
+            );
+        } else if amplification > 1.5 {
+            eprintln!(
+                "FALSIFY-FFN-GGUF-015: amplification {amplification:.2}× ∈ (1.5, 5] — \
+                 A6 PARTIALLY CONFIRMED. RMSNorm provides modest amplification."
+            );
+        } else if amplification > 0.7 {
+            eprintln!(
+                "FALSIFY-FFN-GGUF-015: amplification {amplification:.2}× ≈ 1× — \
+                 A6 NOT CONFIRMED at this regime. RMSNorm is approximately \
+                 homogeneous over the per-element drift pattern; rsqrt \
+                 nonlinearity does NOT amplify M94 perturbation in synthetic \
+                 test. The 14× residual must come from cumulative-layer \
+                 interaction (M-FFN-GGUF-7)."
+            );
+        } else {
+            eprintln!(
+                "FALSIFY-FFN-GGUF-015: amplification {amplification:.2}× < 0.7 — \
+                 A6 FALSIFIED. RMSNorm COMPRESSES M94 perturbation. The 14× \
+                 residual comes entirely from cumulative-layer interaction; \
+                 M-FFN-GGUF-7 (multi-layer real-teacher) is the only remaining \
+                 test for §27 closure."
+            );
+        }
+    }
 }
