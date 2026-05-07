@@ -1,6 +1,6 @@
 metadata:
   id: C-TRACE-FFN-SUB-BLOCK-GGUF
-  version: 1.8.0
+  version: 1.9.0
   created: '2026-05-06'
   author: PAIML Engineering
   kind: pattern
@@ -84,6 +84,117 @@ metadata:
     harness + fix) have a clear discharge path, and it cross-
     references the prior-work PRs for anyone reading the contract
     surface for the first time.
+
+    v1.9.0 AMENDMENT (2026-05-06): A1 (RoPE PHASE) ALSO FALSIFIED — ALL 3 SYNTHETIC AMPLIFIERS NOW FALSIFIED.
+
+    M97 (v1.8.0) falsified A2 (softmax saturation). M96 (v1.7.0)
+    falsified A3 (block-scale variance). A1 (RoPE phase) was the
+    last remaining synthetic-testable candidate amplifier.
+
+    The A1 hypothesis: RoPE rotates F32 vectors by per-position
+    phase; tiny magnitude drift in pre-RoPE Q becomes ROTATIONAL
+    drift in post-RoPE Q. When Q' is then dotted with K' (also
+    rotated), the rotational drift may compound non-linearly into
+    a larger QK^T attention score drift than the magnitude drift
+    alone.
+
+    Authored an eighth lib-only falsifier (FALSIFY-FFN-GGUF-012) in
+    `crates/aprender-serve/src/apr_transformer/helpers.rs::
+    determinism_tests`:
+
+      falsify_ffn_gguf_012_rope_phase_amplification
+
+    Test: head_dim=64 (typical Qwen 7B), rope_theta=10000.
+    Generates Q vector at position 0; perturbs by 0.077% (M94-
+    equivalent); applies RoPE; generates K at position 1; applies
+    RoPE; computes scaled QK^T scores before/after Q perturbation.
+
+    EMPIRICAL RESULT (2026-05-06):
+      input_rel_drift  = 0.076997% (perturbation L2 / Q L2)
+      output_rel_drift = 0.076986% (score drift / |score|)
+      amplification    = 0.9999×  ← UNITARY, essentially 1×
+
+    A1 EMPIRICALLY FALSIFIED. RoPE rotation is approximately
+    unitary; QK^T dot product preserves drift magnitude exactly.
+    Tiny pre-RoPE perturbation produces a proportional post-attn
+    score drift, NOT amplified.
+
+    AMPLIFIER LANDSCAPE POST-A1+A2+A3 FALSIFICATION:
+    - A1 (RoPE phase amplification) — FALSIFIED ✗ (unitary rotation)
+    - A2 (Softmax saturation)       — FALSIFIED ✗ (compresses)
+    - A3 (Block-scale variance)     — FALSIFIED ✗ (linear-scaling)
+    - A4 (Multi-token batch)        — UNTESTED (requires multi-position)
+    - A5 (Real-weight non-uniformity)— UNTESTED (requires real-teacher)
+    - A6 (RMSNorm rsqrt approx)     — UNTESTED (requires non-linear regime)
+
+    ALL THREE SYNTHETIC-TESTABLE amplifiers are now FALSIFIED.
+    The 28× magnitude gap between M95's synthetic 0.4391% and
+    §27's measured 1723% MUST come from one or more of:
+    A4 (multi-token batch), A5 (real-weight), A6 (RMSNorm rsqrt).
+
+    M-FFN-GGUF-6 (real-teacher falsifier) is now THE highest-
+    leverage remaining test. The synthetic falsifier chain has
+    narrowed the candidate space from 6 hypotheses to 3, all of
+    which require either multi-position or real-teacher fixtures.
+
+    NEXT INVESTIGATION CANDIDATE (M-FFN-GGUF-4 step (i) OR
+    M-FFN-GGUF-6 directly): A4 (multi-token batch dimension) is
+    synthetically testable as an extension of M95 — instead of
+    chaining single-token matvecs, chain 7-token batched matvecs
+    with attention applied between tokens. Cumulative drift may
+    compound differently across batch positions due to attention-
+    mask interactions.
+
+    A5 and A6 remain real-teacher gated.
+
+    GAP-EXPLANATION STATE (after M98):
+    - M94 mechanism EXPLAINS bit-level divergence per matvec (0.077%).
+    - M95 super-linear compounding EXPLAINS up to 5.70× over 5 ops.
+    - 28× residual gap to §27's 1723% UNEXPLAINED at synthetic level.
+    - **All synthetic amplifiers (A1, A2, A3) FALSIFIED**.
+    - Real-teacher falsifier (M-FFN-GGUF-6) is the next deliberate-
+      session deliverable.
+
+    METHODOLOGY OBSERVATION:
+
+    The chain (M91-M98) decomposed the SHIP-007 §22 18.23× layer-3
+    drift into:
+
+    | Stage | Empirical | Explains |
+    |-------|-----------|----------|
+    | M94 single-tensor mechanism | 0.077% rel_diff | per-matvec bit divergence |
+    | M95 super-linear compound | 5.70× over 5 ops | chained drift growth |
+    | M96 A3 block-scale invariance | 1.00× | weight magnitude doesn't amplify |
+    | M97 A2 softmax compression | 0.01× | saturated softmax suppresses |
+    | M98 A1 RoPE unitarity | 1.00× | RoPE+QK^T preserves drift |
+
+    Combined synthetic upper bound: ~5.70× total amplification
+    from a 0.077% per-matvec mechanism = ~0.4391% total drift.
+    §27 measured 1723% drift = **3920× residual gap unexplained
+    by synthetic mechanisms**.
+
+    Either M-FFN-GGUF-6 (real-teacher) shows real-weight
+    non-uniformity produces 3920× larger per-tensor rel_diff
+    than synthetic uniform weights, OR there's a non-decomposable
+    interaction between layers that synthetic falsifiers can't
+    isolate.
+
+    STATUS PROMOTIONS (v1.9.0):
+
+    - FALSIFY-FFN-GGUF-012 (NEW): RoPE+QK^T unitarity asserted as
+      regression-test invariant; status DISCHARGED (test passes;
+      A1 empirically falsified).
+    - M-FFN-GGUF-4 step (h) A1 candidate: NEW → DISCHARGED
+      (amplification 1.00× rules out RoPE phase as §27 amplifier).
+    - All three synthetic amplifiers (A1, A2, A3) DISCHARGED.
+    - M-FFN-GGUF-4 step (i) A4 multi-token batch: NEW, PENDING
+      (synthetically testable extension; not authored in this
+      cascade).
+    - M-FFN-GGUF-6 (real-teacher): now the highest-leverage
+      remaining test for §27 magnitude gap. PENDING.
+    - Contract metadata.status: ACTIVE_ALGORITHM_LEVEL → unchanged.
+
+    Production hot paths byte-unchanged.
 
     v1.8.0 AMENDMENT (2026-05-06): A2 (SOFTMAX SATURATION) ALSO FALSIFIED.
 

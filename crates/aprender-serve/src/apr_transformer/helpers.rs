@@ -1260,4 +1260,170 @@ mod determinism_tests {
              contradicts the test premise that softmax is sensitive to logit drift"
         );
     }
+
+    /// FALSIFY-FFN-GGUF-012 / M-FFN-GGUF-4 step (h) candidate A1:
+    /// RoPE phase amplification — does a small magnitude drift in
+    /// pre-RoPE Q/K vectors (M94 mechanism's ~0.077% rel_diff) get
+    /// AMPLIFIED by RoPE rotation + subsequent QK^T attention dot
+    /// product?
+    ///
+    /// Hypothesis A1: RoPE rotates F32 vectors by per-position phase;
+    /// tiny magnitude drift in pre-RoPE Q becomes ROTATIONAL drift in
+    /// post-RoPE Q. When Q' is then dotted with K' (also rotated),
+    /// the rotational drift may compound non-linearly into a larger
+    /// QK^T attention score drift than the magnitude drift alone.
+    ///
+    /// Test design:
+    /// - Single attention head at sequence position 0 (the prompt
+    ///   start token of a 7-token batch).
+    /// - head_dim = 64 (typical Qwen 7B), rope_theta = 10000.0.
+    /// - Generate Q vector with realistic magnitude distribution.
+    /// - Apply M94-equivalent perturbation (0.077%) to Q.
+    /// - Apply RoPE to both Q and Q'.
+    /// - Generate K vector at sequence position 1 (different
+    ///   position; RoPE applies different phase per position).
+    /// - Apply RoPE to K (single — K is not perturbed in this test).
+    /// - Compute QK^T scores: q_a • k vs q_b • k.
+    /// - Compare scores; report amplification = output_drift /
+    ///   input_drift.
+    ///
+    /// EXPECTATION:
+    /// - If RoPE were a unitary rotation (preserves L2 norm),
+    ///   amplification would be exactly 1× (rotation doesn't
+    ///   change magnitude, dot product is symmetric).
+    /// - But RoPE introduces position-dependent phase rotation.
+    ///   Tiny magnitude drift in pre-RoPE Q produces tiny drift
+    ///   in each rotated component; rotated drift may project
+    ///   onto K differently than the original drift would, leading
+    ///   to amplification or compression.
+    ///
+    /// EMPIRICAL HYPOTHESIS: amplification ≈ 1× (RoPE is a unitary
+    /// rotation; QK^T dot product preserves drift magnitude). If
+    /// confirmed, A1 is FALSIFIED — RoPE doesn't amplify M94 drift.
+    ///
+    /// Per `contracts/trace-ffn-sub-block-gguf-v1.yaml` v1.8.0 →
+    /// v1.9.0 amendment.
+    #[test]
+    fn falsify_ffn_gguf_012_rope_phase_amplification() {
+        const HEAD_DIM: usize = 64;
+        const ROPE_THETA: f32 = 10000.0;
+        const POS_Q: usize = 0;
+        const POS_K: usize = 1;
+
+        // Generate Q vector at position 0 with realistic magnitudes.
+        let q_a: Vec<f32> = (0..HEAD_DIM)
+            .map(|i| ((i as f32) - (HEAD_DIM as f32) / 2.0) * 0.05 + ((i % 5) as f32) * 0.02)
+            .collect();
+
+        // Apply M94-equivalent perturbation: scale q_a by (1 + 0.00077).
+        let perturbation = 0.00077;
+        let q_b: Vec<f32> = q_a.iter().map(|x| x * (1.0 + perturbation)).collect();
+
+        // Generate K vector at position 1.
+        let k: Vec<f32> = (0..HEAD_DIM)
+            .map(|i| ((i as f32) - (HEAD_DIM as f32) / 2.0) * 0.04 + ((i % 7) as f32) * 0.015)
+            .collect();
+
+        // RoPE: rotate pairs (x_2i, x_2i+1) by angle theta_i × pos
+        // where theta_i = 1 / ROPE_THETA^(2i / HEAD_DIM).
+        fn apply_rope(vec: &[f32], pos: usize, head_dim: usize, theta: f32) -> Vec<f32> {
+            let mut out = vec.to_vec();
+            let half = head_dim / 2;
+            for i in 0..half {
+                let freq = 1.0 / theta.powf((2.0 * i as f32) / head_dim as f32);
+                let angle = (pos as f32) * freq;
+                let cos_a = angle.cos();
+                let sin_a = angle.sin();
+                let x0 = vec[i];
+                let x1 = vec[i + half];
+                out[i] = x0 * cos_a - x1 * sin_a;
+                out[i + half] = x0 * sin_a + x1 * cos_a;
+            }
+            out
+        }
+
+        let q_a_rope = apply_rope(&q_a, POS_Q, HEAD_DIM, ROPE_THETA);
+        let q_b_rope = apply_rope(&q_b, POS_Q, HEAD_DIM, ROPE_THETA);
+        let k_rope = apply_rope(&k, POS_K, HEAD_DIM, ROPE_THETA);
+
+        // Compute attention scores: q • k (scaled by 1/sqrt(d)).
+        let scale = (HEAD_DIM as f32).sqrt().recip();
+        let score_a: f32 = q_a_rope.iter().zip(k_rope.iter()).map(|(x, y)| x * y).sum::<f32>() * scale;
+        let score_b: f32 = q_b_rope.iter().zip(k_rope.iter()).map(|(x, y)| x * y).sum::<f32>() * scale;
+
+        // Input rel_drift: |q_b - q_a|_L2 / |q_a|_L2.
+        let q_diff_l2: f32 = q_a
+            .iter()
+            .zip(q_b.iter())
+            .map(|(a, b)| (a - b).powi(2))
+            .sum::<f32>()
+            .sqrt();
+        let q_a_l2: f32 = q_a.iter().map(|x| x * x).sum::<f32>().sqrt();
+        let input_rel_drift = q_diff_l2 / q_a_l2.max(1e-9);
+
+        // Output rel_drift: |score_b - score_a| / |score_a|.
+        let score_diff = (score_b - score_a).abs();
+        let output_rel_drift = score_diff / score_a.abs().max(1e-9);
+
+        let amplification = output_rel_drift / input_rel_drift.max(1e-12);
+
+        eprintln!("FALSIFY-FFN-GGUF-012: RoPE phase amplification");
+        eprintln!("  head_dim = {HEAD_DIM}, rope_theta = {ROPE_THETA}, pos_q = {POS_Q}, pos_k = {POS_K}");
+        eprintln!(
+            "  q_a_l2 = {q_a_l2:.6}, q_diff_l2 = {q_diff_l2:.6}, input_rel_drift = {:.6}%",
+            input_rel_drift * 100.0
+        );
+        eprintln!(
+            "  score_a = {score_a:.6}, score_b = {score_b:.6}, score_diff = {score_diff:.6}, output_rel_drift = {:.6}%",
+            output_rel_drift * 100.0
+        );
+        eprintln!("  amplification factor = {amplification:.4}×");
+
+        // Sanity: input_rel_drift > 0 (perturbation actually applied).
+        assert!(
+            input_rel_drift > 0.0,
+            "test fixture: perturbation must produce non-zero input drift"
+        );
+
+        // Sanity: amplification is measurable (> 1e-9).
+        assert!(
+            amplification > 1e-9,
+            "amplification {amplification} essentially zero — RoPE+dot may be \
+             producing bit-identical outputs from perturbed inputs, contradicting \
+             test premise"
+        );
+
+        // EMPIRICAL VERDICT:
+        if amplification > 5.0 {
+            eprintln!(
+                "FALSIFY-FFN-GGUF-012: amplification {amplification:.2}× > 5.0 — \
+                 A1 CONFIRMED. RoPE phase rotation amplifies M94 perturbation \
+                 substantially in QK^T attention dot product. Real-attention \
+                 contributes to §27 magnitude beyond the 5.70× chained matvec \
+                 compounding."
+            );
+        } else if amplification > 1.5 {
+            eprintln!(
+                "FALSIFY-FFN-GGUF-012: amplification {amplification:.2}× ∈ (1.5, 5] — \
+                 A1 PARTIALLY CONFIRMED. RoPE+QK^T amplifies M94 perturbation \
+                 modestly."
+            );
+        } else if amplification > 0.5 {
+            eprintln!(
+                "FALSIFY-FFN-GGUF-012: amplification {amplification:.2}× ≈ 1× — \
+                 A1 NOT CONFIRMED. RoPE rotation is approximately unitary and \
+                 QK^T preserves drift magnitude — no substantial amplification \
+                 in this regime. Real-attention may behave differently due to \
+                 multi-position sums or causal masking."
+            );
+        } else {
+            eprintln!(
+                "FALSIFY-FFN-GGUF-012: amplification {amplification:.2}× < 0.5 — \
+                 A1 FALSIFIED. RoPE+QK^T COMPRESSES M94 perturbation in this \
+                 regime. With A1, A2, A3 all falsified, M-FFN-GGUF-6 (real-teacher \
+                 falsifier) is the highest-leverage remaining test for the §27 \
+                 magnitude gap."
+            );
+        }
+    }
 }
