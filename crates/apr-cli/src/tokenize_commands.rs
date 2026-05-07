@@ -161,5 +161,22 @@ pub enum TokenizeCommands {
         /// contracts/apr-tokenize-parallel-bpe-v1.yaml `parallel_correctness`).
         #[arg(long, value_name = "N")]
         num_workers: Option<usize>,
+        /// Suppress per-document progress emission to stderr (issue #1547,
+        /// contract v1.2.0). Default: emit a `[progress] doc=N/T tokens=K
+        /// rate=X.X docs/s eta=...` line every `--progress-interval-docs`
+        /// docs OR `--progress-interval-seconds` seconds (whichever fires
+        /// first). Useful for CI / log-scraping callers that prefer silence.
+        #[arg(long, default_value_t = false)]
+        quiet: bool,
+        /// Emit a progress line at most every N docs (default 1000). Pair
+        /// with `--progress-interval-seconds` — whichever bound is reached
+        /// first triggers emission. Issue #1547 contract v1.2.0.
+        #[arg(long, value_name = "N", default_value_t = 1000)]
+        progress_interval_docs: u64,
+        /// Emit a progress line at most every S seconds (default 60). Pair
+        /// with `--progress-interval-docs` — whichever bound is reached
+        /// first triggers emission. Issue #1547 contract v1.2.0.
+        #[arg(long, value_name = "S", default_value_t = 60)]
+        progress_interval_seconds: u64,
     },
 }

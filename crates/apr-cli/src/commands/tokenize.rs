@@ -598,6 +598,175 @@ fn validate_normalization(norm: &str) -> Result<()> {
 #[cfg(feature = "training")]
 const ENCODE_CHUNK_SIZE: usize = 10_000;
 
+/// Operator-facing progress emission knobs for `apr tokenize encode-corpus`
+/// (issue #1547, contract apr-tokenize-parallel-bpe-v1.yaml v1.2.0).
+///
+/// Default emits a `[progress]` line on stderr every 1000 docs OR every
+/// 60 seconds, whichever comes first. `quiet=true` suppresses everything
+/// except the final summary line. Tunable bounds let CI pin smaller
+/// budgets without re-deriving the full `ProgressEmitter` state.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ProgressConfig {
+    /// When `true`, suppresses all per-doc and final progress lines on
+    /// stderr (the JSON manifest and stdout summary still emit). Used
+    /// by CI/log-scraping callers that prefer total silence.
+    pub quiet: bool,
+    /// Emit a progress line at most every N docs (default 1000).
+    pub interval_docs: u64,
+    /// Emit a progress line at most every S seconds (default 60).
+    pub interval_seconds: u64,
+}
+
+impl Default for ProgressConfig {
+    fn default() -> Self {
+        Self {
+            quiet: false,
+            interval_docs: 1000,
+            interval_seconds: 60,
+        }
+    }
+}
+
+/// Stateful per-run emitter. Tracks last emission tick (docs + wall) so
+/// the OR-cadence can fire correctly: emit when EITHER N docs have been
+/// seen since last tick OR S seconds have elapsed since last tick. Final
+/// emission shows total wall + tokens + per-doc rate at completion.
+///
+/// Format: `[progress] doc=N/T tokens=K rate=X.X docs/s eta=YYYY-MM-DDTHH:MM:SSZ`.
+/// When total `T` is unknown, omits the `/T` and `eta=` fragments.
+#[cfg(feature = "training")]
+pub(crate) struct ProgressEmitter {
+    cfg: ProgressConfig,
+    start: Instant,
+    last_emit_docs: u64,
+    last_emit_time: Instant,
+    total_docs_hint: Option<u64>,
+}
+
+#[cfg(feature = "training")]
+impl ProgressEmitter {
+    pub(crate) fn new(cfg: ProgressConfig, total_docs_hint: Option<u64>) -> Self {
+        let now = Instant::now();
+        Self {
+            cfg,
+            start: now,
+            last_emit_docs: 0,
+            last_emit_time: now,
+            total_docs_hint,
+        }
+    }
+
+    /// Decide whether `(docs_seen, tokens_seen)` warrants an emit. Returns
+    /// `true` when EITHER `docs_seen - last_emit_docs >= interval_docs`
+    /// OR `wall_since_last >= interval_seconds`. Pure-function caller can
+    /// mock without IO.
+    pub(crate) fn should_emit(&self, docs_seen: u64, now: Instant) -> bool {
+        if self.cfg.quiet {
+            return false;
+        }
+        let docs_due = docs_seen.saturating_sub(self.last_emit_docs) >= self.cfg.interval_docs;
+        let time_due = now.saturating_duration_since(self.last_emit_time).as_secs()
+            >= self.cfg.interval_seconds;
+        docs_due || time_due
+    }
+
+    /// Reset the per-tick clocks (call right after an emit) so the next
+    /// firing requires a fresh `interval_docs`/`interval_seconds` budget.
+    pub(crate) fn mark_emitted(&mut self, docs_seen: u64, now: Instant) {
+        self.last_emit_docs = docs_seen;
+        self.last_emit_time = now;
+    }
+
+    /// Format the per-tick progress line. Public for test inspection so
+    /// the format invariants (issue #1547 §AC1) can be pinned without
+    /// scraping stderr in unit tests.
+    pub(crate) fn format_line(&self, docs_seen: u64, tokens_seen: u64, now: Instant) -> String {
+        let elapsed = now.saturating_duration_since(self.start).as_secs_f64();
+        // Avoid division by zero on the very first emit (elapsed≈0).
+        let rate = if elapsed > 0.0 {
+            docs_seen as f64 / elapsed
+        } else {
+            0.0
+        };
+        match self.total_docs_hint {
+            Some(total) if total > 0 => {
+                let remaining = total.saturating_sub(docs_seen);
+                let eta_secs = if rate > 0.0 {
+                    (remaining as f64 / rate).round() as i64
+                } else {
+                    0
+                };
+                let eta = format_eta_iso8601_utc(eta_secs);
+                format!(
+                    "[progress] doc={docs_seen}/{total} tokens={tokens_seen} \
+                     rate={rate:.1} docs/s eta={eta}"
+                )
+            }
+            _ => format!("[progress] doc={docs_seen} tokens={tokens_seen} rate={rate:.1} docs/s"),
+        }
+    }
+
+    /// Emit a per-tick line to stderr, then update the tick clocks. No-op
+    /// when `quiet=true`.
+    pub(crate) fn emit_tick(&mut self, docs_seen: u64, tokens_seen: u64, now: Instant) {
+        if self.cfg.quiet {
+            return;
+        }
+        eprintln!("{}", self.format_line(docs_seen, tokens_seen, now));
+        self.mark_emitted(docs_seen, now);
+    }
+
+    /// Emit the final completion line. Format follows AC4 — total wall +
+    /// tokens + per-doc rate. Always shows total docs (no /T fragment
+    /// needed since we know the actual count at this point).
+    pub(crate) fn emit_final(&self, total_docs: u64, total_tokens: u64) {
+        if self.cfg.quiet {
+            return;
+        }
+        let elapsed = self.start.elapsed().as_secs_f64();
+        let rate = if elapsed > 0.0 {
+            total_docs as f64 / elapsed
+        } else {
+            0.0
+        };
+        eprintln!(
+            "[progress] done docs={total_docs} tokens={total_tokens} \
+             elapsed={elapsed:.1}s rate={rate:.1} docs/s"
+        );
+    }
+}
+
+/// Format a forward-looking ETA (in seconds from now) as an ISO-8601 UTC
+/// timestamp without external chrono dependency. Computes SystemTime::now()
+/// + offset → seconds since epoch → breaks into Y/M/D/H/M/S using the
+/// civil-from-days algorithm (Howard Hinnant's date library, public domain).
+///
+/// Output: `2026-05-05T18:33:07Z`. Pure function of (now, offset_secs).
+fn format_eta_iso8601_utc(offset_secs: i64) -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now_epoch = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let target = now_epoch.saturating_add(offset_secs);
+    let (days, seconds_of_day) = (target.div_euclid(86_400), target.rem_euclid(86_400));
+    let h = seconds_of_day / 3600;
+    let m = (seconds_of_day % 3600) / 60;
+    let s = seconds_of_day % 60;
+    // Howard Hinnant civil_from_days (proleptic Gregorian, days since 1970-01-01).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m_civ = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y_civ = if m_civ <= 2 { y + 1 } else { y };
+    format!("{y_civ:04}-{m_civ:02}-{d:02}T{h:02}:{m:02}:{s:02}Z")
+}
+
 /// Resolve the effective rayon worker count for `apr tokenize encode-corpus`.
 ///
 /// `None` (default) → `std::thread::available_parallelism()`, falling back
@@ -640,6 +809,7 @@ pub(crate) fn run_encode_corpus(
     normalization: &str,
     eos_policy: &str,
     num_workers: Option<usize>,
+    progress: ProgressConfig,
     json_output: bool,
 ) -> Result<()> {
     use entrenar::tokenizer::{BPETokenizer, Normalization, Tokenizer, TokenizerConfig};
@@ -710,6 +880,13 @@ pub(crate) fn run_encode_corpus(
     let mut eos_count: u64 = 0;
     let mut writer = open_shard(output_dir, shard_idx)?;
     let mut doc_iter_count: u64 = 0;
+
+    // Per-doc progress emitter (issue #1547 / contract v1.2.0). The
+    // total-docs hint is currently `None` — counting the input would
+    // double-walk the corpus (the parquet adapter especially is not
+    // free). The `format_line` path tolerates `None` and emits without
+    // the `/T` and `eta=` fragments, matching AC1.
+    let mut emitter = ProgressEmitter::new(progress, None);
 
     // Source iterator: yields (file_display, locator, text) triples in
     // canonical input order. Both the single-threaded and chunked-parallel
@@ -802,6 +979,14 @@ pub(crate) fn run_encode_corpus(
                 tokens_in_shard = 0;
                 writer = open_shard(output_dir, shard_idx)?;
             }
+            // Per-doc progress emission (issue #1547 / contract v1.2.0).
+            // The OR-cadence is: emit when either N docs OR S seconds have
+            // accumulated since the last tick. `quiet=true` short-circuits
+            // inside `emit_tick`/`should_emit`.
+            let now = Instant::now();
+            if emitter.should_emit(total_docs, now) {
+                emitter.emit_tick(total_docs, total_tokens, now);
+            }
         }
     } else {
         // Chunked parallel path. Read CHUNK docs sequentially, encode in
@@ -878,6 +1063,14 @@ pub(crate) fn run_encode_corpus(
                     tokens_in_shard = 0;
                     writer = open_shard(output_dir, shard_idx)?;
                 }
+                // Per-doc progress emission (issue #1547 / contract v1.2.0).
+                // Same OR-cadence as the single-thread path; placed inside
+                // the per-doc loop so the emitter sees per-doc granularity
+                // even in chunked mode.
+                let now = Instant::now();
+                if emitter.should_emit(total_docs, now) {
+                    emitter.emit_tick(total_docs, total_tokens, now);
+                }
             }
         }
     }
@@ -887,6 +1080,11 @@ pub(crate) fn run_encode_corpus(
         .map_err(|e| CliError::ValidationFailed(format!("Shard flush failed: {e}")))?;
     let shard_count = shard_idx + 1;
     let elapsed = start.elapsed();
+
+    // Final progress emission (issue #1547 §AC4 / contract v1.2.0). Suppressed
+    // when `quiet=true`. The stdout/JSON summary below is always emitted —
+    // this is the operator-facing stderr line.
+    emitter.emit_final(total_docs, total_tokens);
 
     let manifest = serde_json::json!({
         "schema": "pretokenize-bin-v1",
@@ -1804,6 +2002,10 @@ mod tests {
             "nfc",
             "between",
             Some(1),
+            ProgressConfig {
+                quiet: true,
+                ..ProgressConfig::default()
+            },
             true,
         )
         .expect("encode --num-workers 1");
@@ -1819,6 +2021,10 @@ mod tests {
             "nfc",
             "between",
             Some(4),
+            ProgressConfig {
+                quiet: true,
+                ..ProgressConfig::default()
+            },
             true,
         )
         .expect("encode --num-workers 4");
@@ -1867,5 +2073,182 @@ mod tests {
                  between --num-workers 1 and --num-workers 4"
             );
         }
+    }
+
+    // ─── apr tokenize encode-corpus --quiet / --progress-* (issue #1547,
+    //      contract apr-tokenize-parallel-bpe-v1.yaml v1.2.0) ─────────────
+    // Per-doc progress emission obeys an OR-cadence: emit when EITHER N
+    // docs OR S seconds have elapsed since the last tick. The unit tests
+    // below pin the predicate (`should_emit`) directly so we don't have
+    // to scrape stderr — that's the operator-facing wire format and is
+    // already covered by `format_line` plus a dedicated stdout-shape
+    // assertion. `quiet` pins suppression at every layer.
+
+    #[cfg(feature = "training")]
+    #[test]
+    fn progress_emit_every_n_docs_when_under_seconds_window() {
+        // FALSIFY-APR-TOK-PAR-007: doc-tick branch fires when N docs have
+        // accumulated since last emit, even though the wall-clock window
+        // hasn't elapsed yet. Use a 1000-doc / 60s default config and
+        // simulate a fast-running encode where 1500 docs land in ~0s.
+        let cfg = ProgressConfig {
+            quiet: false,
+            interval_docs: 1000,
+            interval_seconds: 60,
+        };
+        let emitter = ProgressEmitter::new(cfg, None);
+        let now = emitter.start; // simulated "no time has passed"
+
+        // Below threshold: must NOT trigger.
+        assert!(
+            !emitter.should_emit(999, now),
+            "999 docs (< 1000 threshold) must not trigger doc-tick emission"
+        );
+        // At threshold: MUST trigger (first emit on the boundary).
+        assert!(
+            emitter.should_emit(1000, now),
+            "1000 docs (== threshold) must trigger doc-tick emission"
+        );
+        // Far above: still fires.
+        assert!(
+            emitter.should_emit(5000, now),
+            "5000 docs must trigger doc-tick emission"
+        );
+    }
+
+    #[cfg(feature = "training")]
+    #[test]
+    fn progress_emit_every_n_seconds_when_under_docs_window() {
+        // FALSIFY-APR-TOK-PAR-008: time-tick branch fires when S seconds
+        // have elapsed even though doc count is below the doc threshold.
+        // Set interval_docs huge so only the time path can trigger.
+        let cfg = ProgressConfig {
+            quiet: false,
+            interval_docs: 1_000_000,
+            interval_seconds: 1, // 1s threshold so we can simulate easily
+        };
+        let emitter = ProgressEmitter::new(cfg, None);
+
+        // Just-now: must NOT trigger.
+        let now0 = emitter.start;
+        assert!(
+            !emitter.should_emit(10, now0),
+            "0s elapsed must not trigger time-tick emission"
+        );
+
+        // Past 1s: MUST trigger even at 10 docs (well below the 1M doc
+        // threshold). This pins the OR-cadence: time alone is enough.
+        let now1 = emitter.start + std::time::Duration::from_secs(1);
+        assert!(
+            emitter.should_emit(10, now1),
+            "1s elapsed must trigger time-tick emission even with only 10 docs"
+        );
+    }
+
+    #[cfg(feature = "training")]
+    #[test]
+    fn progress_quiet_flag_suppresses_emission() {
+        // FALSIFY-APR-TOK-PAR-009: --quiet must suppress emission at the
+        // predicate level. Even at the boundary of both bounds, quiet=true
+        // returns false so no stderr line is ever generated. This is the
+        // operative invariant for CI callers that scrape logs.
+        let cfg = ProgressConfig {
+            quiet: true,
+            interval_docs: 1,
+            interval_seconds: 1,
+        };
+        let emitter = ProgressEmitter::new(cfg, None);
+
+        // Even at the trigger boundary for both sub-conditions, quiet
+        // wins.
+        let now = emitter.start + std::time::Duration::from_secs(120);
+        assert!(
+            !emitter.should_emit(10_000, now),
+            "quiet=true must suppress emission regardless of doc/time window"
+        );
+    }
+
+    #[cfg(feature = "training")]
+    #[test]
+    fn progress_format_line_no_total_omits_eta_fragment() {
+        // AC1: when the total-docs hint is absent, the per-tick line must
+        // emit `doc=N rate=X.X docs/s` without the `/T` and `eta=` parts.
+        let cfg = ProgressConfig::default();
+        let emitter = ProgressEmitter::new(cfg, None);
+        let now = emitter.start + std::time::Duration::from_secs(10);
+        let line = emitter.format_line(2000, 50_000, now);
+        assert!(line.starts_with("[progress] "), "expected prefix: {line}");
+        assert!(line.contains("doc=2000"), "doc count missing: {line}");
+        assert!(
+            !line.contains("doc=2000/"),
+            "must not include /T fragment when total unknown: {line}"
+        );
+        assert!(
+            !line.contains("eta="),
+            "must not include eta= when total unknown: {line}"
+        );
+        assert!(
+            line.contains("tokens=50000"),
+            "tokens count missing: {line}"
+        );
+        assert!(
+            line.contains("rate=") && line.contains("docs/s"),
+            "rate fragment missing: {line}"
+        );
+    }
+
+    #[cfg(feature = "training")]
+    #[test]
+    fn progress_format_line_with_total_includes_eta_fragment() {
+        // AC1: when total is known, line must include `doc=N/T` and an
+        // `eta=YYYY-MM-DDTHH:MM:SSZ` ISO-8601 UTC timestamp.
+        let cfg = ProgressConfig::default();
+        let emitter = ProgressEmitter::new(cfg, Some(10_000));
+        let now = emitter.start + std::time::Duration::from_secs(5);
+        let line = emitter.format_line(1000, 25_000, now);
+        assert!(
+            line.contains("doc=1000/10000"),
+            "doc/total fragment missing: {line}"
+        );
+        assert!(line.contains("eta="), "eta fragment missing: {line}");
+        // ISO-8601 anchor: must end in `Z` (UTC).
+        let eta_idx = line.find("eta=").expect("eta= present");
+        let after_eta = &line[eta_idx + 4..];
+        assert!(
+            after_eta.contains('T') && after_eta.trim_end().ends_with('Z'),
+            "eta must be ISO-8601 UTC (`...T...Z`): {line}"
+        );
+    }
+
+    #[cfg(feature = "training")]
+    #[test]
+    fn progress_mark_emitted_resets_both_clocks() {
+        // After an emit, both the doc tick and the time tick must reset
+        // so the NEXT emit requires another full interval. This is what
+        // makes the OR-cadence correct: a doc-triggered emit also resets
+        // the time clock.
+        let cfg = ProgressConfig {
+            quiet: false,
+            interval_docs: 1000,
+            interval_seconds: 60,
+        };
+        let mut emitter = ProgressEmitter::new(cfg, None);
+        let t0 = emitter.start;
+
+        // First emission at 1000 docs / 0s.
+        assert!(emitter.should_emit(1000, t0));
+        emitter.mark_emitted(1000, t0);
+
+        // Immediately after: 1500 docs is only +500 since last tick → no.
+        assert!(
+            !emitter.should_emit(1500, t0),
+            "1500 - 1000 = 500 < 1000 threshold; must not re-emit"
+        );
+
+        // 2000 docs → +1000 since last tick → yes.
+        assert!(
+            emitter.should_emit(2000, t0),
+            "2000 - 1000 = 1000 >= threshold; must re-emit"
+        );
     }
 }
