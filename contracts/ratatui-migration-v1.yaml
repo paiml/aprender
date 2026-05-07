@@ -81,6 +81,7 @@ kani_harnesses:
 - id: KH-RATATUI-001
   obligation: zero_ratatui_deps
   property: no_ratatui_anywhere
+  bound: 4
 
 verification_summary:
   total_obligations: 4
