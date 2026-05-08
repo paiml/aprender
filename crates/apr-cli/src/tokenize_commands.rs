@@ -179,4 +179,40 @@ pub enum TokenizeCommands {
         #[arg(long, value_name = "S", default_value_t = 60)]
         progress_interval_seconds: u64,
     },
+
+    /// Reconstruct manifest.json from existing shard-NNNN.bin files.
+    ///
+    /// `apr tokenize encode-corpus` writes manifest.json only on clean
+    /// process exit. If the encoder is killed (operator SIGINT, OOM,
+    /// crash, power loss) AFTER all shards flush but BEFORE manifest
+    /// write, the corpus on disk is consumable by `ShardBatchIter` but
+    /// has no provenance file for ship audit / dashboards.
+    ///
+    /// `repair-manifest` is the cheap recovery path: it scans
+    /// `<OUTPUT>/shard-*.bin`, computes shard_count + total_tokens
+    /// from file sizes (each shard is a flat little-endian u32 stream;
+    /// tokens = file_size / 4), and writes a schema-conforming
+    /// `manifest.json`. Idempotent: runs twice are byte-identical
+    /// modulo `repaired_at` timestamp.
+    ///
+    /// Contract: `contracts/apr-tokenize-repair-manifest-v1.yaml`.
+    /// Motivating instance: SHIP-TWO §56 5g.1 corpus (228 shards
+    /// flushed, manifest missing).
+    #[cfg(feature = "training")]
+    RepairManifest {
+        /// Output directory containing shard-NNNN.bin files.
+        /// `manifest.json` will be written into this directory.
+        #[arg(long, value_name = "DIR")]
+        output: PathBuf,
+        /// Optional tokenizer directory; when provided, `vocab.json`
+        /// is read for the manifest's `vocab_size` field. Without it,
+        /// `vocab_size` is recorded as `null` (provenance-incomplete
+        /// but otherwise valid).
+        #[arg(long, value_name = "DIR")]
+        tokenizer: Option<PathBuf>,
+        /// Emit the manifest body as JSON to stdout (in addition to
+        /// writing to disk).
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
 }
