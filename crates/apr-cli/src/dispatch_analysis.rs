@@ -721,6 +721,12 @@ fn dispatch_tokenize_command(
             },
             cli.json,
         ),
+        #[cfg(feature = "training")]
+        TokenizeCommands::RepairManifest {
+            output,
+            tokenizer,
+            json,
+        } => tokenize::run_repair_manifest(output, tokenizer.as_deref(), *json || cli.json),
     }
 }
 

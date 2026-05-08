@@ -1588,6 +1588,159 @@ fn sha256_file(path: &Path) -> Result<String> {
     Ok(format!("{:x}", h.finalize()))
 }
 
+#[cfg(feature = "training")]
+fn collect_shard_paths(output_dir: &Path) -> Result<Vec<std::path::PathBuf>> {
+    let entries = std::fs::read_dir(output_dir).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "[apr-tokenize-repair-manifest-v1] cannot read output dir {}: {e}",
+            output_dir.display()
+        ))
+    })?;
+    let mut shards: Vec<std::path::PathBuf> = entries
+        .filter_map(std::result::Result::ok)
+        .map(|e| e.path())
+        .filter(|p| {
+            p.is_file()
+                && p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with("shard-") && n.ends_with(".bin"))
+        })
+        .collect();
+    shards.sort();
+    Ok(shards)
+}
+
+#[cfg(feature = "training")]
+fn read_vocab_size_from_tokenizer(tokenizer_dir: &Path) -> Result<usize> {
+    let vocab_path = tokenizer_dir.join("vocab.json");
+    let raw = std::fs::read_to_string(&vocab_path).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "[apr-tokenize-repair-manifest-v1] cannot read {}: {e}",
+            vocab_path.display()
+        ))
+    })?;
+    let parsed: serde_json::Value = serde_json::from_str(&raw).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "[apr-tokenize-repair-manifest-v1] {} is not valid JSON: {e}",
+            vocab_path.display()
+        ))
+    })?;
+    let obj = parsed.as_object().ok_or_else(|| {
+        CliError::ValidationFailed(format!(
+            "[apr-tokenize-repair-manifest-v1] {} is not a JSON object",
+            vocab_path.display()
+        ))
+    })?;
+    Ok(obj.len())
+}
+
+/// Reconstruct manifest.json from existing shard-NNNN.bin files.
+///
+/// Falsifiers per `contracts/apr-tokenize-repair-manifest-v1.yaml`:
+/// - FALSIFY-REPAIR-MANIFEST-001: shard_count == count(shard-*.bin in output_dir)
+/// - FALSIFY-REPAIR-MANIFEST-002: total_tokens == Σ file_size(shard) / 4
+/// - FALSIFY-REPAIR-MANIFEST-003: schema == "pretokenize-bin-v1"
+/// - FALSIFY-REPAIR-MANIFEST-004: repair == true ∧ valid_rfc3339(repaired_at)
+/// - FALSIFY-REPAIR-MANIFEST-005: ShardBatchIter::new succeeds after repair
+/// - FALSIFY-REPAIR-MANIFEST-006: idempotent modulo repaired_at
+#[cfg(feature = "training")]
+pub(crate) fn run_repair_manifest(
+    output_dir: &Path,
+    tokenizer_dir: Option<&Path>,
+    json_output: bool,
+) -> Result<()> {
+    if !output_dir.is_dir() {
+        return Err(CliError::ValidationFailed(format!(
+            "[apr-tokenize-repair-manifest-v1] output dir {} does not exist or is not a directory",
+            output_dir.display()
+        )));
+    }
+
+    let shards = collect_shard_paths(output_dir)?;
+    if shards.is_empty() {
+        return Err(CliError::ValidationFailed(format!(
+            "[apr-tokenize-repair-manifest-v1] no shard-*.bin files in {} — nothing to repair",
+            output_dir.display()
+        )));
+    }
+
+    let mut total_bytes: u64 = 0;
+    for shard in &shards {
+        let meta = std::fs::metadata(shard).map_err(|e| {
+            CliError::ValidationFailed(format!(
+                "[apr-tokenize-repair-manifest-v1] cannot stat {}: {e}",
+                shard.display()
+            ))
+        })?;
+        let len = meta.len();
+        if !len.is_multiple_of(4) {
+            return Err(CliError::ValidationFailed(format!(
+                "[apr-tokenize-repair-manifest-v1] {} byte length {} is not a multiple of 4 \
+                 (shards are little-endian u32 streams; corrupt or non-shard file)",
+                shard.display(),
+                len
+            )));
+        }
+        total_bytes += len;
+    }
+    let total_tokens: u64 = total_bytes / 4;
+    let shard_count = shards.len();
+
+    let vocab_size = match tokenizer_dir {
+        Some(dir) => Some(read_vocab_size_from_tokenizer(dir)?),
+        None => None,
+    };
+
+    let manifest = serde_json::json!({
+        "schema": "pretokenize-bin-v1",
+        "shard_count": shard_count,
+        "total_tokens": total_tokens,
+        "vocab_size": vocab_size,
+        "tokenizer_dir": tokenizer_dir.map(|p| p.display().to_string()),
+        "repair": true,
+        "repaired_at": chrono::Utc::now().to_rfc3339(),
+        "source": "repair-manifest",
+        "note": "Reconstructed from existing shard-*.bin file sizes; original \
+                 encoder process exited before writing manifest.json. \
+                 ShardBatchIter consumes this directory regardless — the \
+                 manifest is provenance, not load-bearing.",
+    });
+
+    let manifest_path = output_dir.join("manifest.json");
+    std::fs::write(
+        &manifest_path,
+        serde_json::to_string_pretty(&manifest)
+            .map_err(|e| CliError::InvalidFormat(e.to_string()))?,
+    )
+    .map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "[apr-tokenize-repair-manifest-v1] cannot write {}: {e}",
+            manifest_path.display()
+        ))
+    })?;
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&manifest)
+                .map_err(|e| CliError::InvalidFormat(e.to_string()))?
+        );
+    } else {
+        output::header("apr tokenize repair-manifest — Provenance Recovery");
+        output::kv("  Shards", format_number(shard_count));
+        output::kv("  Total tokens", format_number(total_tokens as usize));
+        output::kv("  Total bytes", format_number(total_bytes as usize));
+        if let Some(v) = vocab_size {
+            output::kv("  Vocab size", format_number(v));
+        } else {
+            output::kv("  Vocab size", "(unknown — pass --tokenizer)".to_string());
+        }
+        output::kv("  Manifest", manifest_path.display().to_string());
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2249,6 +2402,190 @@ mod tests {
         assert!(
             emitter.should_emit(2000, t0),
             "2000 - 1000 = 1000 >= threshold; must re-emit"
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // repair-manifest falsifiers (PMAT-CODE-TOKENIZE-REPAIR-MANIFEST-001)
+    // contracts/apr-tokenize-repair-manifest-v1.yaml
+    // ─────────────────────────────────────────────────────────────────
+
+    #[cfg(feature = "training")]
+    fn write_synthetic_shard(dir: &Path, idx: usize, n_tokens: usize) -> std::path::PathBuf {
+        let path = dir.join(format!("shard-{idx:05}.bin"));
+        let mut bytes = Vec::with_capacity(n_tokens * 4);
+        for tok in 0..n_tokens {
+            let t = ((idx * 1000) + tok) as u32;
+            bytes.extend_from_slice(&t.to_le_bytes());
+        }
+        std::fs::write(&path, bytes).expect("write synthetic shard");
+        path
+    }
+
+    #[cfg(feature = "training")]
+    fn read_manifest(dir: &Path) -> serde_json::Value {
+        let raw = std::fs::read_to_string(dir.join("manifest.json"))
+            .expect("manifest.json must exist after repair");
+        serde_json::from_str(&raw).expect("manifest.json must be valid JSON")
+    }
+
+    #[cfg(feature = "training")]
+    #[test]
+    fn repair_manifest_shard_count_matches_filesystem() {
+        // FALSIFY-REPAIR-MANIFEST-001
+        let tmp = TempDir::new().expect("tempdir");
+        for i in 0..7 {
+            write_synthetic_shard(tmp.path(), i, 16);
+        }
+        run_repair_manifest(tmp.path(), None, false).expect("repair ok");
+        let m = read_manifest(tmp.path());
+        assert_eq!(
+            m["shard_count"].as_u64(),
+            Some(7),
+            "shard_count==7 expected"
+        );
+    }
+
+    #[cfg(feature = "training")]
+    #[test]
+    fn repair_manifest_total_tokens_equals_byte_sum_div_4() {
+        // FALSIFY-REPAIR-MANIFEST-002
+        let tmp = TempDir::new().expect("tempdir");
+        let counts = [10_usize, 20, 30, 40];
+        for (i, &n) in counts.iter().enumerate() {
+            write_synthetic_shard(tmp.path(), i, n);
+        }
+        let expected: u64 = counts.iter().map(|&x| x as u64).sum();
+        run_repair_manifest(tmp.path(), None, false).expect("repair ok");
+        let m = read_manifest(tmp.path());
+        assert_eq!(
+            m["total_tokens"].as_u64(),
+            Some(expected),
+            "total_tokens must equal sum of token counts"
+        );
+    }
+
+    #[cfg(feature = "training")]
+    #[test]
+    fn repair_manifest_schema_field_is_pretokenize_bin_v1() {
+        // FALSIFY-REPAIR-MANIFEST-003
+        let tmp = TempDir::new().expect("tempdir");
+        write_synthetic_shard(tmp.path(), 0, 8);
+        run_repair_manifest(tmp.path(), None, false).expect("repair ok");
+        let m = read_manifest(tmp.path());
+        assert_eq!(m["schema"].as_str(), Some("pretokenize-bin-v1"));
+    }
+
+    #[cfg(feature = "training")]
+    #[test]
+    fn repair_manifest_carries_repair_flag_and_rfc3339_timestamp() {
+        // FALSIFY-REPAIR-MANIFEST-004
+        let tmp = TempDir::new().expect("tempdir");
+        write_synthetic_shard(tmp.path(), 0, 4);
+        run_repair_manifest(tmp.path(), None, false).expect("repair ok");
+        let m = read_manifest(tmp.path());
+        assert_eq!(
+            m["repair"].as_bool(),
+            Some(true),
+            "repair flag must be true"
+        );
+        let ts = m["repaired_at"]
+            .as_str()
+            .expect("repaired_at must be a string");
+        let parsed = chrono::DateTime::parse_from_rfc3339(ts);
+        assert!(
+            parsed.is_ok(),
+            "repaired_at must be RFC3339-parseable, got: {ts}"
+        );
+    }
+
+    #[cfg(feature = "training")]
+    #[test]
+    fn repair_manifest_does_not_break_shardbatchiter() {
+        // FALSIFY-REPAIR-MANIFEST-005 — manifest is provenance, not load-bearing.
+        use entrenar::train::shard_reader::ShardBatchIter;
+        let tmp = TempDir::new().expect("tempdir");
+        // 8 tokens per shard × 2 shards = 16 tokens; seq=4 gives 3 sequences
+        // (each consumes seq+1=5 tokens), batch=1 yields 3 batches.
+        write_synthetic_shard(tmp.path(), 0, 8);
+        write_synthetic_shard(tmp.path(), 1, 8);
+        run_repair_manifest(tmp.path(), None, false).expect("repair ok");
+
+        let mut iter = ShardBatchIter::new(tmp.path(), 1, 4, 0, 0)
+            .expect("ShardBatchIter must consume directory after repair");
+        assert!(iter.next().is_some(), "iterator must yield ≥1 batch");
+    }
+
+    #[cfg(feature = "training")]
+    #[test]
+    fn repair_manifest_is_idempotent_modulo_timestamp() {
+        // FALSIFY-REPAIR-MANIFEST-006
+        let tmp = TempDir::new().expect("tempdir");
+        write_synthetic_shard(tmp.path(), 0, 12);
+        write_synthetic_shard(tmp.path(), 1, 12);
+        write_synthetic_shard(tmp.path(), 2, 12);
+
+        run_repair_manifest(tmp.path(), None, false).expect("repair 1 ok");
+        let m1 = read_manifest(tmp.path());
+        // Sleep ≥1s of wall guaranteed across two RFC3339 second-resolution
+        // stamps; safer is to compare without timestamp.
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        run_repair_manifest(tmp.path(), None, false).expect("repair 2 ok");
+        let m2 = read_manifest(tmp.path());
+
+        for field in ["schema", "shard_count", "total_tokens", "source", "repair"] {
+            assert_eq!(
+                m1[field], m2[field],
+                "field `{field}` must be byte-identical across repairs"
+            );
+        }
+    }
+
+    #[cfg(feature = "training")]
+    #[test]
+    fn repair_manifest_rejects_empty_directory() {
+        // Defensive: no shards → fail-fast, no manifest written.
+        let tmp = TempDir::new().expect("tempdir");
+        let res = run_repair_manifest(tmp.path(), None, false);
+        assert!(res.is_err(), "must reject directory with no shards");
+        assert!(
+            !tmp.path().join("manifest.json").exists(),
+            "must NOT write manifest when no shards"
+        );
+    }
+
+    #[cfg(feature = "training")]
+    #[test]
+    fn repair_manifest_rejects_misaligned_shard() {
+        // Defensive: u32 stream invariant — file_size must be % 4 == 0.
+        let tmp = TempDir::new().expect("tempdir");
+        let path = tmp.path().join("shard-00000.bin");
+        std::fs::write(&path, [0u8, 1, 2]).expect("write 3-byte shard");
+        let res = run_repair_manifest(tmp.path(), None, false);
+        assert!(res.is_err(), "must reject 3-byte misaligned shard");
+    }
+
+    #[cfg(feature = "training")]
+    #[test]
+    fn repair_manifest_with_tokenizer_records_vocab_size() {
+        // Optional --tokenizer flag flows vocab.json count into the manifest.
+        let tmp = TempDir::new().expect("tempdir");
+        write_synthetic_shard(tmp.path(), 0, 4);
+        let tok_dir = tmp.path().join("tok");
+        std::fs::create_dir_all(&tok_dir).expect("mkdir");
+        let vocab = serde_json::json!({"a": 0, "b": 1, "c": 2, "d": 3});
+        std::fs::write(
+            tok_dir.join("vocab.json"),
+            serde_json::to_string(&vocab).unwrap(),
+        )
+        .expect("write vocab.json");
+
+        run_repair_manifest(tmp.path(), Some(&tok_dir), false).expect("repair ok");
+        let m = read_manifest(tmp.path());
+        assert_eq!(
+            m["vocab_size"].as_u64(),
+            Some(4),
+            "vocab_size must equal len(vocab.json)"
         );
     }
 }
