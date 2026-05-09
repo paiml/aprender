@@ -1,12 +1,81 @@
 metadata:
   kind: schema
-  version: 1.7.0
+  version: 1.8.0
   status: FUNCTIONAL
   created: '2026-05-04'
   updated: '2026-05-09'
   author: PAIML Engineering
   registry: true
   changelog:
+  - version: 1.8.0
+    date: '2026-05-09'
+    change: |
+      v1.7.0 → v1.8.0 — populate-coverage gap closed.
+
+      §59 spec amendment (forthcoming) records that the 5g.2 LIVE
+      smoke (PR #1577) produced val_loss=0.0008, implausibly low.
+      Investigation surfaced root cause: `MultiHeadAttention::new`
+      hardcoded `b_q/b_k/b_v: None` regardless of `config.use_bias`,
+      so `Transformer::new(qwen2_0_5b())` had ZERO Q/K/V biases —
+      24 × 3 = 72 missing tensors per canonical Qwen 0.5B HF count
+      of 290. `populate_trainer_from_init_tensors` then iterated
+      only over `transformer.named_parameters()` (218 entries),
+      silently dropping the 72 init biases (per the "extras silently
+      ignored" rule that exists for tied weights).
+
+      The forward pass at attention.rs:388-395 ALREADY honored
+      `Option<Tensor>` biases — the gap was solely in the
+      constructor.
+
+      WHY DID PROVABLE-CONTRACTS NOT CATCH THIS? Existing falsifiers:
+        FALSIFY-001 — qwen2_0_5b config FIELD VALUES match HF ✓
+        FALSIFY-INIT-007 — populate Errs on missing model params ✓
+      Both PASSED. Neither observed the gap (FALSIFY-001 checked
+      config fields, not constructor outputs; FALSIFY-INIT-007
+      passed because 218 model params ⊆ 290 init keys, but did
+      NOT check that ALL 290 init keys were consumed).
+
+      Provable-contracts only enforce invariants you express. A
+      hardcoded value is "allowed" iff no falsifier observes it.
+      v1.8.0 closes the gap with two new falsifiers (RED-then-GREEN):
+
+        FALSIFY-APR-PRETRAIN-INIT-POPULATE-COVERAGE-001 — counts
+          named_parameters() (must equal 290 = 2 + 24×12 for Qwen 0.5B).
+        FALSIFY-APR-PRETRAIN-INIT-POPULATE-COVERAGE-002 — names
+          q_proj.bias / k_proj.bias / v_proj.bias for each layer
+          when config.use_bias is true.
+
+      Fix:
+        - MultiHeadAttention::new allocates b_q/b_k/b_v as zero
+          tensors when config.use_bias (HF Linear bias=True init
+          convention).
+        - MultiHeadAttention::set_named_parameter routes the bias
+          suffixes to b_q/b_k/b_v fields, returning false when None
+          (keeps populate honest for use_bias=false configs).
+
+      LIVE EVIDENCE on RTX 4090 (1-step CUDA smoke):
+        Pre-fix:  step-0 train_loss=0.0019, val_loss=0.0008 (degenerate)
+        Post-fix: step-0 train_loss=2.24, val_loss=0.628, grad_norm=14.81
+                  (PLAUSIBLE for Qwen 0.5B on Python; industry baseline ~2-3)
+      1000× train_loss shift confirms H2 was the dominant defect.
+
+      Encoder block test (codebert): parameters() count 12 → 15
+      (+3 q/k/v biases per layer). Pre-fix 12 was itself reflecting
+      the bug — encoder Q/K/V biases would have silently dropped
+      on any HF BERT/RoBERTa init.
+
+      Verified:
+        - cargo test -p aprender-train --lib falsify_qwen2_0_5b: 3/3 PASS
+        - cargo test -p aprender-train --lib: 7584/7584 PASS
+        - LIVE 1-step CUDA smoke train_loss=2.24 (was 0.0019)
+        - pv validate: 0 errors
+
+      Out-of-scope follow-ups (own falsifier-discharge cascades):
+        - H1: CudaTransformerTrainer::eval_batch CPU-vs-CUDA parity
+          (val_loss=0.628 still low; secondary defect tracked
+          separately).
+        - 500-step LIVE re-dispatch with this fix to flip MODEL-2
+          ship % 57% → ≥58% honestly.
   - version: 1.7.0
     date: '2026-05-09'
     change: |
@@ -517,6 +586,18 @@ falsification_tests:
   prediction: "calling `build_shared_cuda_trainer_with_init` with `init_arch.architecture == ModelArchitecture::Encoder` returns Err — same semantic as the CPU sibling `build_shared_trainer_with_init_rejects_encoder_family`. The encoder rejection happens before any GPU allocation (via the shared `validate_pretrain_init_arch_compatible` helper from pretrain_real.rs), so the test fires on any host."
   test: "cargo test -p aprender-train --features cuda --lib train::pretrain_real_cuda::tests::build_shared_cuda_trainer_with_init_rejects_encoder_family"
   if_fails: "encoder rejection regressed on the CUDA path — pretrain might attempt to fine-tune a BERT-class encoder as if it were a decoder, producing meaningless gradients. The §50.4 step 5f.1 helper MUST be threaded through both backends identically."
+
+- id: FALSIFY-APR-PRETRAIN-INIT-POPULATE-COVERAGE-001
+  rule: Transformer::new(qwen2_0_5b()).named_parameters().len() matches HF canonical 290
+  prediction: "`Transformer::new(qwen2_0_5b()).named_parameters().len() == 290` (= 2 model-level + 24 layers × 12 params/layer). The 12 params/layer are: 2 layernorm weights + 4 attention weights (Q,K,V,O) + 3 attention biases (Q,K,V — required when config.use_bias=true) + 3 mlp weights (gate,up,down). Tied lm_head shares with embed_tokens, so it is NOT counted as an extra named parameter. The test fires WITHOUT a CUDA runtime and without loading any APR file — it exercises only the constructor."
+  test: "cargo test -p aprender-train --lib transformer::config::tests::falsify_qwen2_0_5b_named_parameters_count_matches_hf"
+  if_fails: "the count regressed below 290 — likely MultiHeadAttention::new dropped the bias allocation again, OR the polymorphic Transformer struct lost a field. Each missing param will be silently dropped during populate_trainer_from_init_tensors when the source APR has them, producing a hybrid model that masquerades as Qwen but lacks structural elements (the §59 val_loss=0.0008 anomaly defect class)."
+
+- id: FALSIFY-APR-PRETRAIN-INIT-POPULATE-COVERAGE-002
+  rule: every layer in Transformer::new(qwen2_0_5b()) exposes Q/K/V projection biases when use_bias=true
+  prediction: "for every layer_idx in 0..24, `Transformer::new(qwen2_0_5b()).named_parameters()` contains the keys `model.layers.{layer_idx}.self_attn.q_proj.bias`, `model.layers.{layer_idx}.self_attn.k_proj.bias`, and `model.layers.{layer_idx}.self_attn.v_proj.bias`. Stricter than -001: not only counts the right number, but names the exact tensors so the populate path's BTreeMap lookup hits real init keys."
+  test: "cargo test -p aprender-train --lib transformer::config::tests::falsify_qwen2_0_5b_layers_expose_qkv_biases_when_use_bias_true"
+  if_fails: "MultiHeadAttention::new is dropping bias allocation despite config.use_bias=true; each missing bias is a 3 × 24 = 72 silent-drop per Qwen2 0.5B init, restoring the §59 val_loss=0.0008 defect class. Restore the `if config.use_bias { Some(zero_tensor) } else { None }` branch."
 
 proof_obligations:
 - type: invariant
