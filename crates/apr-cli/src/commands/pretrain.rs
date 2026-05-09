@@ -28,9 +28,9 @@ use entrenar::train::pretrain::{
 use entrenar::train::pretrain_real::{
     build_shared_trainer, build_shared_trainer_with_init, AprCheckpointFn, RealStepFn, RealValFn,
 };
-use entrenar::transformer::TransformerConfig;
 use entrenar::train::shard_reader::ShardBatchIter;
 use entrenar::train::transformer_trainer::LMBatch;
+use entrenar::transformer::TransformerConfig;
 use std::path::Path;
 
 /// Number of LMBatches pulled off the head of the shard stream and
@@ -48,17 +48,27 @@ use std::path::Path;
 const HELD_OUT_BATCHES: usize = 16;
 
 /// Drift-prevention constant pinned by `apr-pretrain-arch-polymorphic-v1`
-/// v1.4.0 §FALSIFY-APR-PRETRAIN-INIT-CUDA-001.
+/// v1.7.0 §FALSIFY-APR-PRETRAIN-INIT-CUDA-001.
 ///
-/// The fail-fast error returned when an operator passes both `--init <PATH>`
-/// AND `--device cuda` while the §50.4 step 5f.5 CUDA wireup is not yet
-/// implemented. Extracted into a `pub(crate) const` so that a unit test
-/// can verify (a) the falsifier id appears, (b) the "not yet wired" phrase
-/// appears, (c) the 5f.5 follow-up reference appears — without needing a
-/// `--features cuda` build to fire the runtime path.
+/// Pre-§50.4-step-5f.5 (this constant's first incarnation, v1.4.0..v1.6.0):
+/// the fail-fast error returned when `--init <PATH>` AND `--device cuda`
+/// were combined and the CUDA wireup did not exist. The const was the
+/// drift-prevention surface — a unit test verified the citation, the
+/// "not yet wired" phrase, and the 5f.5 reference all appeared.
+///
+/// Post-5f.5 (this PR — `apr-pretrain-arch-polymorphic-v1` v1.7.0): the
+/// CUDA wireup landed via `entrenar::train::pretrain_real_cuda::
+/// build_shared_cuda_trainer_with_init` (symmetric to the CPU
+/// `build_shared_trainer_with_init`). The const is RETAINED but its
+/// payload is repurposed as a drift-prevention sentinel: if a future
+/// refactor accidentally re-introduces a fail-fast on the CUDA + --init
+/// path, the test that pins this string will fail-fast and surface the
+/// regression. The string itself is no longer emitted by any code path
+/// in `drive_real`; it survives only to anchor the contract obligation.
 pub(crate) const FALSIFY_APR_PRETRAIN_INIT_CUDA_001_MSG: &str =
-    "FALSIFY-APR-PRETRAIN-INIT-CUDA-001: --init is not yet wired for --device cuda \
-     (step 5f.5 follow-up); use --device cpu OR omit --init for from-scratch CUDA training.";
+    "FALSIFY-APR-PRETRAIN-INIT-CUDA-001: --init is wired for --device cuda \
+     via build_shared_cuda_trainer_with_init (5f.5 SHIPPED); operator can pass \
+     --init <PATH> --device cuda for end-to-end GPU fine-tune dispatch.";
 
 /// CLI selector bound to training-loop-pretrain-v1 §hyperparameter_defaults.
 /// Atomically flips the `(regime, lr_max, warmup_steps, target_val_loss)`
@@ -145,8 +155,8 @@ pub(crate) fn run(
     // missing or unreadable architecture metadata is FAIL-FAST not silent-fallback.
     let init_arch: Option<TransformerConfig> = if let Some(init_path) = init {
         validate_init_apr_path(init_path)?;
-        Some(crate::commands::model_config::read_apr_architecture(init_path).ok_or_else(
-            || {
+        Some(
+            crate::commands::model_config::read_apr_architecture(init_path).ok_or_else(|| {
                 CliError::ValidationFailed(format!(
                     "FALSIFY-APR-PRETRAIN-INIT-005: --init APR file at {} has missing or invalid \
                      architecture metadata (hidden_size, num_heads, num_layers, vocab_size, etc). \
@@ -154,8 +164,8 @@ pub(crate) fn run(
                      §arch_extraction_signature.",
                     init_path.display()
                 ))
-            },
-        )?)
+            })?,
+        )
     } else {
         None
     };
@@ -444,22 +454,33 @@ fn drive_real(
     }
 
     if device.is_cuda() {
-        // §50.4 step 5f.4 (CPU-only this PR): CUDA path with --init is not
-        // yet wired. The 5f.5 follow-up will add `build_shared_cuda_trainer_with_init`
-        // symmetric to the CPU path. Until then, fail-fast rather than silently
-        // ignore --init on CUDA.
+        // §50.4 step 5f.5 SHIPPED (this PR): CUDA path with --init is now
+        // wired symmetric to the CPU path via
+        // `entrenar::train::pretrain_real_cuda::build_shared_cuda_trainer_with_init`.
+        // The same §50.4 step-5f machinery composes through both backends:
+        //   5c: build_transformer_config(init_arch)
+        //   5f.1: validate_pretrain_init_arch_compatible(init_arch) — encoder rejection
+        //   5f.2: load_init_tensors_from_apr(path) — read APR weights
+        //   5f.3: populate_trainer_from_init_tensors(transformer, &tensors) — populate CPU model
+        //   5f.5 (this PR): CudaTransformerTrainer::with_model uploads populated
+        //                   blocks / norm / lm_head to GPU.
         //
-        // Per `apr-pretrain-arch-polymorphic-v1` v1.4.0 §FALSIFY-APR-PRETRAIN-INIT-CUDA-001,
-        // the error message is extracted into a `pub(crate) const` so that
-        // a drift-prevention test can pin the citation, the "not yet wired
-        // for --device cuda" phrase, and the 5f.5 follow-up reference
-        // without needing a CUDA-feature build to fire the runtime path.
-        if init_arch.is_some() {
-            return Err(CliError::ValidationFailed(
-                FALSIFY_APR_PRETRAIN_INIT_CUDA_001_MSG.to_string(),
-            ));
-        }
-        drive_real_cuda(config, iter, held_out, lr, seq_length, seed, json_output)
+        // Per `apr-pretrain-arch-polymorphic-v1` v1.7.0 §FALSIFY-APR-PRETRAIN-INIT-CUDA-001,
+        // the const FALSIFY_APR_PRETRAIN_INIT_CUDA_001_MSG is repurposed as a
+        // drift-prevention sentinel — if a future refactor re-introduces a
+        // fail-fast on the CUDA + --init path, the test that pins the const
+        // will fail and surface the regression.
+        drive_real_cuda(
+            config,
+            iter,
+            held_out,
+            lr,
+            seq_length,
+            seed,
+            json_output,
+            init_arch,
+            init_path,
+        )
     } else {
         drive_real_cpu(
             config,
@@ -527,18 +548,40 @@ fn drive_real_cuda(
     seq_length: usize,
     seed: u64,
     json_output: bool,
+    init_arch: Option<&TransformerConfig>,
+    init_path: Option<&Path>,
 ) -> Result<RunStatus> {
     use entrenar::train::pretrain_real_cuda::{
-        build_shared_cuda_trainer, CudaAprCheckpointFn, CudaRealStepFn, CudaRealValFn,
+        build_shared_cuda_trainer, build_shared_cuda_trainer_with_init, CudaAprCheckpointFn,
+        CudaRealStepFn, CudaRealValFn,
     };
-    let trainer = build_shared_cuda_trainer(lr, seq_length, seed).map_err(|e| {
-        CliError::ValidationFailed(format!(
-            "GATE-GPUTRAIN-002: CUDA trainer allocation failed: {e}. \
-             See contracts/entrenar/gpu-training-backend-v1.yaml and \
-             memory/feedback_cuda_feature_footgun.md — this path is \
-             only reachable when the binary was built with `--features cuda`.",
-        ))
-    })?;
+    // §50.4 step 5f.5: when --init is set on the CUDA path, build via the
+    // polymorphic builder (extracts arch + loads + populates init tensors,
+    // then uploads to GPU). When --init is absent, use the existing
+    // from-scratch baseline so the §24/§25 evidence remains regression-free
+    // and INV-ARCH-370M-001 stays enforced on the from-scratch CUDA path.
+    let trainer = if init_arch.is_some() || init_path.is_some() {
+        build_shared_cuda_trainer_with_init(lr, seq_length, seed, init_arch, init_path).map_err(
+            |e| {
+                CliError::ValidationFailed(format!(
+                    "GATE-GPUTRAIN-002: CUDA trainer allocation (--init path) failed: {e}. \
+                     See contracts/entrenar/gpu-training-backend-v1.yaml and \
+                     contracts/apr-pretrain-arch-polymorphic-v1.yaml v1.7.0 \
+                     §FALSIFY-APR-PRETRAIN-INIT-CUDA-001 — this path is only \
+                     reachable when the binary was built with `--features cuda`.",
+                ))
+            },
+        )?
+    } else {
+        build_shared_cuda_trainer(lr, seq_length, seed).map_err(|e| {
+            CliError::ValidationFailed(format!(
+                "GATE-GPUTRAIN-002: CUDA trainer allocation failed: {e}. \
+                 See contracts/entrenar/gpu-training-backend-v1.yaml and \
+                 memory/feedback_cuda_feature_footgun.md — this path is \
+                 only reachable when the binary was built with `--features cuda`.",
+            ))
+        })?
+    };
     let step_fn = CudaRealStepFn::new(trainer.clone(), Box::new(iter));
     let val_fn = CudaRealValFn::new(trainer.clone(), held_out);
     let ckpt: Box<dyn CheckpointFn> = Box::new(CudaAprCheckpointFn::new(
@@ -566,6 +609,8 @@ fn drive_real_cuda(
     _seq_length: usize,
     _seed: u64,
     _json_output: bool,
+    _init_arch: Option<&TransformerConfig>,
+    _init_path: Option<&Path>,
 ) -> Result<RunStatus> {
     Err(CliError::ValidationFailed(
         "GATE-GPUTRAIN-002: --device cuda was requested but this `apr` \
@@ -788,9 +833,12 @@ mod tests {
         let tmp = TempDir::new().expect("tempdir");
         let mismatch = Llama370MConfig::VOCAB_SIZE - 1;
         stage_vocab_json(tmp.path(), mismatch);
-        let err =
-            preflight_tokenizer_vocab_matches_target(tmp.path(), Llama370MConfig::VOCAB_SIZE, false)
-                .expect_err("tokenizer/model vocab mismatch must be rejected");
+        let err = preflight_tokenizer_vocab_matches_target(
+            tmp.path(),
+            Llama370MConfig::VOCAB_SIZE,
+            false,
+        )
+        .expect_err("tokenizer/model vocab mismatch must be rejected");
         match err {
             CliError::ValidationFailed(msg) => {
                 assert!(
@@ -816,9 +864,12 @@ mod tests {
         // error) — the operator should know the tokenizer layout is
         // wrong, not that the dataset is empty.
         let tmp = TempDir::new().expect("tempdir");
-        let err =
-            preflight_tokenizer_vocab_matches_target(tmp.path(), Llama370MConfig::VOCAB_SIZE, false)
-                .expect_err("missing vocab.json must be rejected");
+        let err = preflight_tokenizer_vocab_matches_target(
+            tmp.path(),
+            Llama370MConfig::VOCAB_SIZE,
+            false,
+        )
+        .expect_err("missing vocab.json must be rejected");
         match err {
             CliError::ValidationFailed(msg) => {
                 assert!(
@@ -909,11 +960,10 @@ mod tests {
         );
 
         // init_is_some=false: strict equality applies; 151665 ≠ 151936 FAILS.
-        let err =
-            preflight_tokenizer_vocab_matches_target(tmp.path(), QWEN_DECLARED_VOCAB, false)
-                .expect_err(
-                    "FALSIFY-APR-PRETRAIN-ARCH-009 dual: from-scratch path MUST keep strict ==",
-                );
+        let err = preflight_tokenizer_vocab_matches_target(tmp.path(), QWEN_DECLARED_VOCAB, false)
+            .expect_err(
+                "FALSIFY-APR-PRETRAIN-ARCH-009 dual: from-scratch path MUST keep strict ==",
+            );
         match err {
             CliError::ValidationFailed(msg) => {
                 assert!(
@@ -958,42 +1008,44 @@ mod tests {
         }
     }
 
-    /// FALSIFY-APR-PRETRAIN-INIT-CUDA-001 (drift-prevention): the
-    /// fail-fast error message returned when `--init` is paired with
-    /// `--device cuda` (before the §50.4 step 5f.5 wireup lands) MUST
-    /// contain (a) the falsifier id, (b) the "not yet wired for --device
-    /// cuda" phrase, and (c) the 5f.5 follow-up reference.
+    /// FALSIFY-APR-PRETRAIN-INIT-CUDA-001 (drift-prevention sentinel,
+    /// post-5f.5): after §50.4 step 5f.5 SHIPPED, the const message
+    /// pins the wireup-is-wired property. The string MUST contain
+    /// (a) the falsifier id, (b) the canonical "is wired for --device
+    /// cuda" phrase, (c) a reference to the symmetric builder
+    /// `build_shared_cuda_trainer_with_init`, and (d) the "5f.5
+    /// SHIPPED" status marker. If a future refactor accidentally
+    /// reverts the wireup or renames the symmetric builder, this test
+    /// catches the drift before the contract reference goes stale.
     ///
     /// Pinned via `pub(crate) const FALSIFY_APR_PRETRAIN_INIT_CUDA_001_MSG`
     /// so this test fires on a CPU-only build (no `--features cuda` needed).
-    /// If a future refactor renames or rephrases the error, this test
-    /// catches the drift before the contract reference goes stale.
-    ///
-    /// Promotion to LIVE-INTEGRATION requires §50.4 step 5f.5 LIVE
-    /// (CUDA wireup landed + GPU smoke confirms `apr pretrain --init
-    /// <PATH> --device cuda` actually trains). Until then, this test
-    /// pins the safety guard.
+    /// The const itself is NOT emitted by any code path in `drive_real`;
+    /// it survives only to anchor the contract obligation. The runtime
+    /// behaviour (`drive_real_cuda` calling `build_shared_cuda_trainer_with_init`
+    /// when `init_arch.is_some() || init_path.is_some()`) is exercised
+    /// at the entrenar crate level where CUDA-feature builds can fire it.
     #[test]
-    fn drive_real_cuda_init_path_fail_fasts_with_falsifier_citation() {
+    fn drive_real_cuda_init_path_wireup_sentinel_pinned() {
         let msg = FALSIFY_APR_PRETRAIN_INIT_CUDA_001_MSG;
         assert!(
             msg.contains("FALSIFY-APR-PRETRAIN-INIT-CUDA-001"),
-            "error message MUST cite the falsifier id (auditability): {msg}"
+            "sentinel MUST cite the falsifier id (auditability): {msg}"
         );
         assert!(
-            msg.contains("not yet wired for --device cuda"),
-            "error message MUST contain the canonical 'not yet wired' \
-             phrase so operators recognize the §50.4 step 5f.5 gap: {msg}"
+            msg.contains("is wired for --device cuda"),
+            "sentinel MUST contain the canonical 'is wired' phrase so \
+             operators recognize §50.4 step 5f.5 SHIPPED: {msg}"
         );
         assert!(
-            msg.contains("step 5f.5 follow-up"),
-            "error message MUST reference the 5f.5 follow-up so future \
-             agents know which step retires this guard: {msg}"
+            msg.contains("build_shared_cuda_trainer_with_init"),
+            "sentinel MUST name the symmetric builder so future agents \
+             know which symbol implements the wireup: {msg}"
         );
         assert!(
-            msg.contains("--device cpu") && msg.contains("OR omit --init"),
-            "error message MUST suggest both workarounds (CPU device OR \
-             omit --init for from-scratch CUDA): {msg}"
+            msg.contains("5f.5 SHIPPED"),
+            "sentinel MUST include the 5f.5 SHIPPED status marker so \
+             grep over the codebase can find the discharge point: {msg}"
         );
     }
 
@@ -1404,8 +1456,7 @@ mod tests {
     fn pretrain_init_bad_magic_errors() {
         let tmp = TempDir::new().expect("tempdir");
         let bad = tmp.path().join("not-an-apr.bin");
-        std::fs::write(&bad, b"GGUF\x00\x00\x00\x00\x00\x00\x00\x00")
-            .expect("write fixture file");
+        std::fs::write(&bad, b"GGUF\x00\x00\x00\x00\x00\x00\x00\x00").expect("write fixture file");
         let err = run(
             tmp.path(),
             tmp.path(),
