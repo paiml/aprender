@@ -706,6 +706,89 @@ mod tests {
         assert_eq!(config.num_attention_heads / config.num_kv_heads, 7);
     }
 
+    /// FALSIFY-APR-PRETRAIN-INIT-POPULATE-COVERAGE-001 (RED-then-GREEN):
+    /// `Transformer::new(qwen2_0_5b())` MUST allocate Q/K/V projection
+    /// biases when `config.use_bias == true`. Without this invariant,
+    /// `populate_trainer_from_init_tensors` silently drops 24 layers ×
+    /// 3 biases = 72 init tensors during populate, producing a hybrid
+    /// model whose forward pass is structurally wrong.
+    ///
+    /// Discovered 2026-05-09 via the 5g.2 LIVE smoke producing
+    /// val_loss=0.0008 (implausibly low; see
+    /// `evidence/section-59-5g-2-dispatch-2026-05-09/README.md`).
+    /// Root cause: `MultiHeadAttention::new` hardcoded `b_q: None,
+    /// b_k: None, b_v: None` regardless of `config.use_bias`. The
+    /// existing FALSIFY-001 (`qwen2_0_5b_matches_hf_config_2026_05_04`)
+    /// only checked the CONFIG STRUCT FIELD VALUES; it did not
+    /// observe that `MultiHeadAttention::new(config)` ignored
+    /// `config.use_bias`. This is the gap-between-contracts class
+    /// of defect that provable-contracts can only catch when a
+    /// falsifier observes the gap.
+    ///
+    /// Methodology: we pick the canonical 290-tensor count of
+    /// Qwen2.5-Coder-0.5B-Instruct (per HF config) and assert
+    /// `Transformer::new(qwen2_0_5b()).named_parameters().len() == 290`.
+    ///   2 (embed_tokens.weight + model.norm.weight)
+    /// + 24 layers × 12 params/layer (2 norms + 4 attn weights +
+    ///                                 3 attn biases + 3 mlp weights)
+    /// = 2 + 288 = 290. Tied lm_head shares with embed_tokens, so
+    /// it does NOT appear as an extra named parameter.
+    ///
+    /// Spec: SPEC-SHIP-TWO-001 §59 (forthcoming) val_loss anomaly
+    /// → §50.4 step 5f.6 (populate-coverage cascade).
+    #[test]
+    fn falsify_qwen2_0_5b_named_parameters_count_matches_hf() {
+        use super::super::Transformer;
+        let config = TransformerConfig::qwen2_0_5b();
+        let model = Transformer::new(&config);
+        let params = model.named_parameters();
+        let actual = params.len();
+        let expected = 2 + 24 * 12; // embed + norm + 24 layers × 12 params
+        assert_eq!(
+            actual, expected,
+            "FALSIFY-APR-PRETRAIN-INIT-POPULATE-COVERAGE-001: \
+             Transformer::new(qwen2_0_5b()).named_parameters().len() = {actual}, \
+             expected {expected}. Missing params likely include Q/K/V \
+             projection biases (24 layers × 3 = 72 expected biases) — \
+             MultiHeadAttention::new must allocate them when \
+             config.use_bias == true. See evidence/section-59-5g-2-\
+             dispatch-2026-05-09/README.md for the val_loss=0.0008 \
+             anomaly that surfaced this gap.",
+        );
+    }
+
+    /// FALSIFY-APR-PRETRAIN-INIT-POPULATE-COVERAGE-002 (paired with -001):
+    /// Every layer in `Transformer::new(qwen2_0_5b())` MUST expose
+    /// `q_proj.bias`, `k_proj.bias`, `v_proj.bias` in its
+    /// `named_parameters()` output when `config.use_bias == true`.
+    /// This is a stricter form of -001 — it not only counts but
+    /// names the missing tensors so the populate path's BTreeMap
+    /// lookup hits real init keys.
+    #[test]
+    fn falsify_qwen2_0_5b_layers_expose_qkv_biases_when_use_bias_true() {
+        use super::super::Transformer;
+        let config = TransformerConfig::qwen2_0_5b();
+        assert!(config.use_bias, "qwen2_0_5b config must declare use_bias=true");
+        let model = Transformer::new(&config);
+        let params = model.named_parameters();
+        let names: std::collections::BTreeSet<&str> =
+            params.iter().map(|(name, _)| name.as_str()).collect();
+
+        for layer_idx in 0..24 {
+            for proj in &["q_proj", "k_proj", "v_proj"] {
+                let key = format!("model.layers.{layer_idx}.self_attn.{proj}.bias");
+                assert!(
+                    names.contains(key.as_str()),
+                    "FALSIFY-APR-PRETRAIN-INIT-POPULATE-COVERAGE-002: \
+                     missing named parameter `{key}` despite use_bias=true. \
+                     MultiHeadAttention::new MUST allocate b_{} when \
+                     config.use_bias is true; today it hardcodes None.",
+                    proj.split('_').next().unwrap_or(proj)
+                );
+            }
+        }
+    }
+
     /// Drift-prevention: `qwen2_1_5b()` inherits `tie_word_embeddings` from
     /// `qwen2_0_5b()` via `..Self::qwen2_0_5b()` spread. If someone splits
     /// the inheritance, this test catches the silent flip.
