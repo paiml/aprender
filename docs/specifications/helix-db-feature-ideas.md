@@ -144,8 +144,11 @@ mmap.
 
 ### 2.2 HELIX-IDEA-002 — Inventory-based MCP handler auto-registration
 
-**Status:** Recommended.
-**Effort:** Low.
+**Status:** **Shipped** in PR #1605 (commit `e24f7795c`).
+**Contract:** `contracts/apr-mcp-tool-inventory-v1.yaml` (ACTIVE).
+**Effort:** Low (~1 commit). Macro authored as a declarative
+`register_mcp_tool!` in `aprender-mcp` itself instead of a new
+`aprender-mcp-macros` proc-macro crate (see "Implementation deltas").
 **Target crate:** `aprender-mcp` (additive; does not replace contracts path).
 
 **Problem.** Adding a new MCP tool to `aprender-mcp` today requires editing
@@ -187,16 +190,52 @@ coexist; contracts wins on conflict.
 
 **Acceptance signals.**
 - Adding a new internal MCP tool requires editing exactly one file.
-- Existing contracts-derived tools continue to work unchanged.
-- Compile-time uniqueness check: two `#[mcp_tool(name = "foo")]` fail to
-  link with a clear error.
+  **(Met: the new file under `tools/` carries the
+  `_tool_definition()` factory, the `dispatch` shim, and the
+  `register_mcp_tool!` invocation. `tools/mod.rs` still needs the
+  `pub mod foo;` declaration — Rust's module system requires it; not
+  considered an "edit" of the registration site.)**
+- Existing contracts-derived tools continue to work unchanged. **(Met:
+  all 8 FALSIFY-MCP-* gates from the parent contract pass on
+  HEAD without modification — confirmed by 54 lib + ~30 integration
+  tests in `cargo test -p aprender-mcp`.)**
+- Compile-time uniqueness check: two `#[mcp_tool(name = "foo")]` fail
+  to link with a clear error. **(Downgraded to runtime panic — see
+  "Implementation deltas" for the five-whys. Discharge in
+  `falsify_inventory_002.rs::duplicate_tool_name_panics_at_index_build`.)**
 
 **Risk.** `inventory` registers via static linker sections at process
 startup. It is synchronous and runs before tokio is initialized.
 aprender-mcp's `run_stdio()` uses tokio worker threads — the registration
-data structure must be `Send + Sync` and immutable post-startup. This
-should be fine (handler fn pointers are static), but verify against the
-existing async/cancellation model before merging.
+data structure must be `Send + Sync` and immutable post-startup. **No
+issue observed at merge time**: `McpToolEntry` holds only `&'static str`
+and `fn` pointers (both trivially `Send + Sync`), and the
+`OnceLock`-cached `ToolIndex` is read-only after first access.
+
+**Implementation deltas vs original sketch.**
+- **No proc-macro crate.** Original sketch proposed
+  `aprender-mcp-macros`; shipped as a declarative `macro_rules!
+  register_mcp_tool!` inside `aprender-mcp` itself. Why: (1) the macro
+  expands to one `inventory::submit!` block and a register-link pair
+  — declarative is sufficient; (2) skipping the proc-macro crate
+  saves a workspace member and proc-macro compile-time cost; (3)
+  `aprender-contracts-macros` already covers the proc-macro need for
+  `#[contract]` annotations.
+- **Compile-time uniqueness downgraded to runtime panic.** Original
+  Gate 002 said "two `#[mcp_tool(name = "foo")]` fail to link." The
+  `inventory::submit!` macro emits valid linker-section entries even
+  for duplicate names — collision detection is *inherently runtime*.
+  Mitigation: `ToolIndex::from_inventory()` panics on collision and is
+  called by every `AprMcpServer::new()` in the test suite, so a
+  duplicate fails *every* test that hits the dispatcher rather than
+  one targeted gate. Contract amended; gate stays ENFORCED.
+- **Three duplicated sites collapsed, not two.** §2.2 originally
+  named only the hardcoded `Vec` at `server.rs:221-233` and the
+  `tools/mod.rs` `mod foo;` declaration. The actual count was three
+  — the `dispatch_tool_call_with_sink` match arms at
+  `server.rs:461-483` were the third (and noisier) duplication. PR
+  #1605 collapses both `server.rs` sites into the inventory pipeline;
+  `tools/mod.rs` retained per Rust module-system requirements.
 
 ---
 
