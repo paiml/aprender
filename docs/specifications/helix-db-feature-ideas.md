@@ -237,6 +237,15 @@ mmap.
 - Cold-start open + first query in <500 ms.
 - Recall@10 ≥ 0.95 vs. exact baseline (matches in-memory implementation).
 
+**Pre-authored falsification gates** (for `contracts/apr-hnsw-persistence-v1.yaml`).
+
+| Gate ID | Property | Test target |
+|---|---|---|
+| `FALSIFY-HNSW-PERSIST-001` | Insert→close→reopen→query yields exactly the same `Vec<(id, score)>` top-k as the same operations against the in-memory `Hnsw`. Falsifies "persistence loses or reorders neighbours". | `crates/aprender-{core,ann}/tests/falsify_hnsw_persist_001.rs::reopen_top_k_matches_in_memory` |
+| `FALSIFY-HNSW-PERSIST-002` | A `flush()` followed by process kill (simulated via `Drop` without `flush`) yields a file that opens cleanly OR errors with a recovery-required diagnostic — never silently returns truncated results. Falsifies "crash mid-write produces a usable-looking but lying index". | `crates/aprender-{core,ann}/tests/falsify_hnsw_persist_002.rs::partial_write_does_not_silently_corrupt` |
+| `FALSIFY-HNSW-PERSIST-003` | Recall@10 against a 10⁵-vector golden corpus is ≥ 0.95 vs. exact (brute-force) baseline. Tunable corpus path via `APR_HNSW_BENCH_CORPUS` for the 1M × 768-dim production target; CI uses a smaller fixture so the gate runs in under a minute. Falsifies "persistence layer subtly degraded recall". | `crates/aprender-{core,ann}/tests/falsify_hnsw_persist_003.rs::recall_at_10_meets_threshold` |
+| `FALSIFY-HNSW-PERSIST-004` | Cold-start open + first query latency is < 500 ms on the CI fixture; production-size budget tunable via `APR_HNSW_OPEN_BUDGET_MS`. Falsifies "open() rebuilds the graph eagerly". | `crates/aprender-{core,ann}/tests/falsify_hnsw_persist_004.rs::cold_open_first_query_within_budget` |
+
 ---
 
 ### 2.2 HELIX-IDEA-002 — Inventory-based MCP handler auto-registration
