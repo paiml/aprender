@@ -591,8 +591,13 @@ authorization. Single-key auth is the v1.
   `aprender-contracts`, and a fuzz target where input is untrusted (HNSW
   load path qualifies).
 - **Verification of `pmat query`-derived facts.** Section 1.3's claims
-  (HNSW LOC, registry uses rusqlite, no `inventory` usage) were verified
-  at draft time and may drift. Re-verify before implementation.
+  (HNSW LOC, registry uses rusqlite, etc.) were verified at draft time
+  and may drift. Re-verify before implementation. **The "no `inventory`
+  usage" claim already drifted: PR #1605 added it as an aprender-mcp
+  dep. Section 1.3 has been amended to reflect that.** Future
+  implementations should expect similar drift on every fact §1.3
+  asserts; the §6 falsification log is the canonical record of
+  measured-state changes.
 
 ## 5. References
 
@@ -642,15 +647,29 @@ authorization. Single-key auth is the v1.
 
 ## 6. Falsification log
 
-This document was falsified against live code after the initial draft.
-Tracked corrections:
+This document was falsified against live code after the initial draft
+and again after PR #1605 shipped HELIX-IDEA-002/007/009. Tracked
+corrections:
 
 | Date       | Section           | Original claim                                                      | Correction                                                                                  |
 |------------|-------------------|---------------------------------------------------------------------|---------------------------------------------------------------------------------------------|
 | Draft v0.1 | §1.3 MCP          | "handler discovery is contracts-mediated"                           | Discovery is a hardcoded `Vec` at `server.rs:221-233`; contracts mediate **schema** only.   |
 | Draft v0.1 | §2.2 Risk         | (absent)                                                            | Added: `inventory` runs synchronously pre-tokio; verify against async/cancellation model.   |
+| v0.2.0     | §1.3 MCP          | "Adding a new tool today requires editing `server.rs` and `tools/mod.rs`" | Post-PR #1605: `server.rs` is no longer touched. Inventory replaces both the `Vec` at `:221-233` and the dispatch match at `:461-483`. |
+| v0.2.0     | §1.3 (new row)    | (absent — `subtle` was transitive only)                             | `subtle = "2.6"` is now a direct apr-cli dep (HELIX-IDEA-009).                              |
+| v0.2.0     | §1.3 (new row)    | "The `inventory` crate is unused anywhere in the workspace"         | `inventory = "0.3"` is now a direct aprender-mcp dep (HELIX-IDEA-002).                      |
+| v0.2.0     | §2.9 target crate | "Target crate: `aprender-serve`"                                    | Corrected: `apr-cli` (HTTP routers live in `apr-cli/src/commands/serve/`, not `aprender-serve`). |
+| v0.2.0     | §2.2 duplication count | "Edit two files: `tools/mod.rs` + the hardcoded `Vec` at `server.rs:221-233`" | Three sites, not two: dispatch match at `server.rs:461-483` was the missed third site.     |
+| v0.2.0     | §2.2 Gate 002     | "Two `#[mcp_tool(name = "foo")]` fail to link with a clear error"   | Downgraded to runtime panic in `ToolIndex::from_inventory()`. `inventory::submit!` allows duplicate names at link time; runtime check fires on every `AprMcpServer::new()`. |
+| v0.2.0     | §2.7 acceptance   | "without blocking writers for >100 ms"                              | Replaced with 5 s default budget (env-tunable `APR_SNAPSHOT_BUDGET_MS`); 100 ms is below SQLITE_BUSY retry windows on cold caches. |
 
 Five proposals were added in the same revision (HELIX-IDEA-005 through
 009) to close gaps surfaced by a wider audit of helix-db's feature set
 that the initial draft missed. Items the audit flagged but that this
 spec *intentionally* does not adopt are listed in §3.
+
+The v0.2.0 amendments are post-implementation falsifications: the
+shipped code in PR #1605 disagreed with v0.1.0's measured-state claims
+on 8 distinct rows. Future implementations of HELIX-IDEA-001/005/006/008
+should expect the same — author the contract first, ship the code, then
+re-falsify the spec.
