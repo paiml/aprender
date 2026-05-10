@@ -1,0 +1,135 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-hnsw-persistence-v1
+#
+# HELIX-IDEA-001: persistent on-disk HNSW. Phase 1 ships the round-trip
+# identity gate (FALSIFY-HNSW-PERSIST-001); Phases 2-4 amend this contract to
+# add gates 002 (crash safety), 003 (recall threshold), and 004 (cold-open
+# latency budget) — see docs/specifications/helix-db-feature-ideas.md §2.1.
+#
+# Source pattern: helix-db couples HNSW to its storage engine (heed3/LMDB)
+# so graph nodes, edges, and HNSW layer pointers are all persisted as
+# zero-copy MDB pages. Re-implemented as a thin save/load wrapper around
+# `aprender_core::index::HNSWIndex` — Phase 1 is "rebuild on open" semantics,
+# not zero-copy mmap. Phase 4 (gate 004) will tighten cold-open latency if
+# the rebuild path is too slow on production-size corpora.
+#
+# Scope at author time (2026-05-10): Phase 1 — round-trip gate only.
+# ─────────────────────────────────────────────────────────────────────────────
+
+metadata:
+  version: 1.0.0
+  created: '2026-05-10'
+  author: apr-cli team
+  kind: registry
+  description: >
+    HELIX-IDEA-001 Phase 1 — `PersistentHnsw` save/load wrapper around
+    `aprender_core::index::HNSWIndex`. Discharges
+    FALSIFY-HNSW-PERSIST-001 (insert→flush→reopen yields the same top-k
+    as the in-memory baseline). Phases 2-4 amend this contract in
+    successive PRs to add crash-safety, recall@10 ≥ 0.95, and
+    cold-open latency budget gates per the pre-authored table in
+    docs/specifications/helix-db-feature-ideas.md §2.1.
+  references:
+    - 'docs/specifications/helix-db-feature-ideas.md §2.1 (HELIX-IDEA-001)'
+    - 'crates/aprender-core/src/index/hnsw.rs (in-memory HNSWIndex)'
+    - 'crates/aprender-core/src/index/persistent_hnsw.rs (save/load wrapper)'
+    - 'helix-db/src/helix_engine/ (LMDB-backed pattern source)'
+    - 'Malkov & Yashunin (2018) HNSW — https://arxiv.org/abs/1603.09320'
+  depends_on: []
+
+kind: AprHnswPersistenceContract
+name: apr-hnsw-persistence
+version: "1.0.0"
+status: ACTIVE
+scope: "the `PersistentHnsw` save/load wrapper in aprender-core"
+binary: "(library API)"
+crate: "aprender-core"
+spec: docs/specifications/helix-db-feature-ideas.md
+
+description: |
+  HELIX-IDEA-001 Phase 1 promotes "no on-disk HNSW" from a known gap to
+  an ACTIVE contract for the round-trip subset. The implementation adds
+  one new module (`crates/aprender-core/src/index/persistent_hnsw.rs`)
+  and discharges the first of four pre-authored gates from §2.1.
+
+  API shape (Phase 1):
+    impl PersistentHnsw {
+        pub fn open(path: &Path, m: usize, ef: usize) -> Result<Self>;
+        pub fn add(&mut self, id: &str, vec: Vector<f64>);
+        pub fn search(&self, query: &Vector<f64>, k: usize) -> Vec<(String, f64)>;
+        pub fn flush(&self) -> Result<()>;
+    }
+
+  Persistence model (Phase 1 — DELIBERATELY simple):
+  - `add()` updates the in-memory `HNSWIndex` AND appends `(id, vec)` to
+    an in-memory `Vec<(String, Vector<f64>)>`.
+  - `flush()` writes that vec to disk via `bincode`.
+  - `open(existing_path, ...)` reads the vec and re-`add`s each entry
+    to a fresh in-memory `HNSWIndex`. This is "rebuild on open"
+    semantics — sufficient for gate 001 (round-trip identity); gate
+    004 (cold-open latency) will tighten this in Phase 4 if the
+    rebuild path is too slow on production-size corpora.
+
+  Out of scope for v1.0.0 (folded into v1.1.0+ phases):
+  - Crash safety. `flush()` is a single overwrite; a process kill mid-
+    write can leave a truncated file. Phase 2 (gate 002) introduces
+    fsync + atomic rename.
+  - Recall threshold. Gate 003 measures recall@10 against a
+    brute-force baseline on a frozen fixture corpus.
+  - Cold-open latency. Gate 004 measures and bounds.
+  - WAL / per-insert durability. Out of scope until gates 002-004 are
+    discharged AND a use case demonstrates the need.
+
+# ── Enforced falsification gates ──
+
+falsification_conditions:
+  - id: FALSIFY-HNSW-PERSIST-001
+    description: >
+      Insert N vectors into a `PersistentHnsw`, `flush()`, drop the
+      handle, re-`open()` the same path, query the top-k, and assert
+      the result is *exactly* the same `Vec<(id, score)>` as the same
+      operations performed against an in-memory `HNSWIndex` baseline.
+      Falsifies "persistence loses or reorders neighbours". The test
+      uses a small deterministic corpus (8-32 vectors) to keep the
+      gate CI-tractable; production-size validation lives in gate 003
+      (recall threshold) which lands in Phase 3.
+    test_file: crates/aprender-core/tests/falsify_hnsw_persist_001.rs
+    test_name: reopen_top_k_matches_in_memory
+    status: ENFORCED
+
+# ── Acceptance gate ──
+
+qa_gate:
+  id: F-HNSW-PERSIST-GATE
+  name: "HNSW persistence contract (Phase 1)"
+  pass_criteria: "FALSIFY-HNSW-PERSIST-001 passes; gates 002-004 pending Phase 2-4 amendments"
+  run: "cargo test -p aprender-core --test falsify_hnsw_persist_001 --no-fail-fast"
+  falsification: >
+    Rename or delete the test_file / test_name and the
+    `aprender-contracts::apr_hnsw_persistence_contract` integration
+    test fails before aprender-core compiles.
+
+toyota_way_principles:
+  jidoka: >
+    "Automation with a human touch" — `flush()` either succeeds or
+    errors; partial states are surfaced as Err, never as a "looks
+    fine" file that lies on read. Phase 2 hardens this further with
+    fsync + atomic rename so a process kill cannot produce a
+    truncated-but-readable artifact.
+  poka_yoke: >
+    "Mistake-proofing" — the in-memory and on-disk views are kept in
+    lockstep by routing both through `add()`. There is no path that
+    inserts to the index without updating the persistence buffer,
+    and no reload path that builds the index from anything other
+    than the persistence buffer. Drift is structurally impossible
+    without explicitly writing a new code path.
+  genchi_genbutsu: >
+    "Go and see" — Gate 001 exercises real bincode round-trips on a
+    real `tempfile::NamedTempFile`. The same `HNSWIndex` type used
+    in production is what the test drives.
+  kaizen: >
+    "Continuous improvement" — Phase 1 ships the load-bearing slice;
+    Phases 2-4 amend this contract in successive PRs as the
+    pre-authored gates 002/003/004 from §2.1 are discharged. Each
+    phase = one PR ≈ one falsifier, per the project's
+    falsifier-first cascade convention.
