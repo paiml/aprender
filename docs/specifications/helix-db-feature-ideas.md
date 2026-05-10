@@ -1,13 +1,18 @@
 # HelixDB Feature Ideas for aprender
 
-**Version:** 0.3.0
-**Status:** Active — 3 of 9 shipped (002, 007, 009 in PR #1605); 4 recommended
-(001, 005, 006, 008); 2 deferred/speculative (003, 004)
+**Version:** 0.4.0
+**Status:** Active — 3 of 9 shipped (002, 007, 009 in PR #1605); 3
+recommended with **pre-authored gates** (001, 005, 006); 1 recommended
+without gates (008, speculative pending pain point); 2
+deferred/speculative (003, 004)
 **Methodology:** Design by Provable Contract (`aprender-contracts` /
 `pv` CLI). Every shipped HELIX-IDEA carries an ACTIVE
 `contracts/*.yaml`, an ENFORCED set of falsification gates, and an
 aprender-contracts integration test that pins the gate→test mapping.
-See §1.4.
+Recommended-but-unshipped ideas now carry pre-authored gate IDs in
+their §2.x "Pre-authored falsification gates" tables, so a future
+implementation PR can transcribe them directly into the YAML
+without inventing gate names under time pressure. See §1.4.
 **Authors:** Pragmatic AI Labs
 **References:** HELIX-IDEA-001..009
 
@@ -178,12 +183,18 @@ returns `Contract is valid.` on each. `cargo test -p aprender-contracts
 
 #### Forward obligations
 
-Every future HELIX-IDEA implementation MUST follow the same chain:
+Every future HELIX-IDEA implementation MUST follow the same chain.
+Three of the four recommended-unshipped ideas already have
+pre-authored gate IDs in their §2.x bodies — the implementation PR
+transcribes them into the YAML's `falsification_conditions:` list
+verbatim:
 
-- HELIX-IDEA-001 (Persistent HNSW) → `contracts/apr-hnsw-persistence-v1.yaml`
-- HELIX-IDEA-005 (BM25 + dense hybrid) → `contracts/apr-hybrid-retrieval-v1.yaml`
-- HELIX-IDEA-006 (Reranking pipeline) → `contracts/apr-rerank-v1.yaml`
-- HELIX-IDEA-008 (Schema migration) → `contracts/apr-schema-migration-v1.yaml`
+| Idea | Contract YAML (to author) | Pre-authored gates |
+|---|---|---|
+| HELIX-IDEA-001 (Persistent HNSW) | `contracts/apr-hnsw-persistence-v1.yaml` | §2.1: 4 gates (`FALSIFY-HNSW-PERSIST-001..004`) |
+| HELIX-IDEA-005 (BM25 + dense) | `contracts/apr-hybrid-retrieval-v1.yaml` | §2.5: 4 gates (`FALSIFY-HYBRID-001..004`) |
+| HELIX-IDEA-006 (Reranking) | `contracts/apr-rerank-v1.yaml` | §2.6: 6 gates (`FALSIFY-RERANK-RRF-001/002`, `MMR-001/002`, `XENC-001/002`) |
+| HELIX-IDEA-008 (Schema migration) | `contracts/apr-schema-migration-v1.yaml` | Not yet pre-authored — speculative pending concrete pain point (§2.8) |
 
 A PR that merges code without authoring its YAML, or authors a YAML
 without the integration test, or alters the live registry without
@@ -712,10 +723,17 @@ authorization. Single-key auth is the v1.
   re-implementation, not code lift. No license analysis required for
   pattern reuse, but if any helix-db source is referenced in a future PR
   it must be cited and license-checked.
-- **Quality gates.** Each accepted proposal must satisfy aprender's
-  standard gates: ≥95% coverage, contract validation via
-  `aprender-contracts`, and a fuzz target where input is untrusted (HNSW
-  load path qualifies).
+- **Quality gates.** Each accepted proposal MUST satisfy the
+  Design-by-Provable-Contract chain in §1.4 (proposal → YAML →
+  ENFORCED falsifiers → `aprender-contracts` integration test).
+  Standard project-wide gates also apply: ≥95% line coverage on the
+  new code, `cargo clippy -- -D warnings`, and a fuzz target where
+  input is untrusted (the HNSW load path in HELIX-IDEA-001 qualifies;
+  the auth header parser in HELIX-IDEA-009 also qualifies but is
+  small enough that proptest in `auth.rs::tests` was deemed
+  sufficient — see PR #1605). The §1.4 chain is load-bearing: a
+  PR without an authored YAML is rejected at review even if all
+  other gates pass.
 - **Verification of `pmat query`-derived facts.** Section 1.3's claims
   (HNSW LOC, registry uses rusqlite, etc.) were verified at draft time
   and may drift. Re-verify before implementation. **The "no `inventory`
