@@ -38,7 +38,9 @@ use trueno_gpu::driver::{CudaStream, GpuBuffer};
 #[cfg(feature = "cuda")]
 use crate::autograd::cuda_backward::{gemm_backward_a, gemm_backward_b, rms_norm_backward};
 #[cfg(feature = "cuda")]
-use crate::autograd::cuda_forward::{gemm_forward, pre_warm_forward_kernels, rms_norm_forward};
+use crate::autograd::cuda_forward::{
+    gemm_forward, pre_warm_forward_kernels, rms_norm_forward, rms_norm_forward_with_eps,
+};
 #[cfg(feature = "cuda")]
 use crate::autograd::cuda_optim::{
     adamw_step_cuda, clip_scale_reduce_cuda, fused_cross_entropy_cuda, gradient_clip_cuda,
@@ -1205,12 +1207,16 @@ impl CudaTransformerTrainer {
         }
 
         // Final RMSNorm forward (GPU)
-        rms_norm_forward(
+        // FALSIFY-CUDA-RMSNORM-EPS-PARITY-001: thread `config.rms_norm_eps`
+        // through so Qwen2 (1e-6) gets the right epsilon. Pre-fix the
+        // legacy `rms_norm_forward` hardcoded 1e-5 (Llama default).
+        rms_norm_forward_with_eps(
             final_output,
             &self.gpu_training.final_norm_weight,
             &mut self.gpu_training.norm_output,
             seq_len as u32,
             hidden_size as u32,
+            self.config.model_config.rms_norm_eps,
             stream,
         )
         .ok()?;

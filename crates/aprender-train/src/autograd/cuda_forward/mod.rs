@@ -71,5 +71,6 @@ pub use matmul::{gemm_nf4_backward_a_cublas, gemm_nf4_dequant_cublas};
 pub use matmul_f16::{gemm_f16_to_f32_backward_a, gemm_f16_to_f32_forward, gemm_forward_f16};
 pub use normalization::{
     batched_rope_neox_backward, batched_rope_neox_forward, fused_residual_rmsnorm_forward,
-    layer_norm_forward, per_head_rmsnorm_forward, rms_norm_forward, rope_neox_forward,
+    layer_norm_forward, per_head_rmsnorm_forward, rms_norm_forward, rms_norm_forward_with_eps,
+    rope_neox_forward,
 };

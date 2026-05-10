@@ -86,7 +86,8 @@ use crate::autograd::cuda_forward::{
     batched_softmax_forward, batched_to_interleaved_forward, batched_transpose_forward,
     cast_f32_to_f16_gpu, elementwise_mul_forward, expand_kv_heads, fused_residual_rmsnorm_forward,
     fused_swiglu_forward, gemm_f16_to_f32_forward, gemm_forward, interleaved_to_batched_forward,
-    per_head_rmsnorm_forward, residual_add_forward, rms_norm_forward, scale_forward, silu_forward,
+    per_head_rmsnorm_forward, residual_add_forward, rms_norm_forward, rms_norm_forward_with_eps,
+    scale_forward, silu_forward,
 };
 #[cfg(feature = "cuda")]
 use crate::autograd::cuda_optim::{adamw_step_cuda, gradient_clip_cuda, squared_sum_cuda};
@@ -755,12 +756,16 @@ impl CudaTransformerBlock {
         let intermediate_size = self.config.intermediate_size;
 
         // === Pre-attention RMSNorm (ENT-147) ===
-        rms_norm_forward(
+        // FALSIFY-CUDA-RMSNORM-EPS-PARITY-001: thread `config.rms_norm_eps`
+        // through to the kernel so Qwen2 (1e-6) and Llama (1e-5) get the
+        // correct epsilon. Pre-fix this hardcoded 1e-5 for everyone.
+        rms_norm_forward_with_eps(
             input,
             &self.input_norm_weight,
             &mut self.scratch.norm1_out,
             saturating_u32(seq_len),
             saturating_u32(hidden_size),
+            self.config.rms_norm_eps,
             stream,
         )?;
 
@@ -834,12 +839,14 @@ impl CudaTransformerBlock {
         )?;
 
         // === Post-attention RMSNorm ===
-        rms_norm_forward(
+        // FALSIFY-CUDA-RMSNORM-EPS-PARITY-001: see pre-attn note above.
+        rms_norm_forward_with_eps(
             &self.scratch.residual1,
             &self.post_attn_norm_weight,
             &mut self.scratch.norm2_out,
             saturating_u32(seq_len),
             saturating_u32(hidden_size),
+            self.config.rms_norm_eps,
             stream,
         )?;
 
@@ -3099,13 +3106,16 @@ impl CudaNf4TransformerBlock {
         scratch.prepare_causal_mask(seq_len, &self.ctx)?;
 
         // === Pre-attention RMSNorm === (PMAT-483: per-op profiling)
+        // FALSIFY-CUDA-RMSNORM-EPS-PARITY-001: thread config eps so Qwen2
+        // (1e-6) and Llama (1e-5) get the right epsilon (was hardcoded 1e-5).
         let _t = scratch.op_begin();
-        rms_norm_forward(
+        rms_norm_forward_with_eps(
             input,
             &self.input_norm_weight,
             &mut scratch.norm1_out,
             saturating_u32(seq_len),
             saturating_u32(hidden_size),
+            self.config.rms_norm_eps,
             stream,
         )?;
         scratch.op_end(_t, OP_RMSNORM_ATTN);
