@@ -27,6 +27,35 @@ impl RegistryDb {
         Ok(db)
     }
 
+    /// HELIX-IDEA-007 — atomic point-in-time snapshot via SQLite
+    /// `VACUUM INTO 'path'`. The target path MUST NOT already exist;
+    /// SQLite refuses to overwrite, and we surface that refusal as
+    /// `PachaError::Database` rather than silently truncating.
+    ///
+    /// Concurrent writers continue against the source DB; their changes
+    /// are not visible in the snapshot. Reads block briefly only while
+    /// VACUUM INTO copies pages.
+    ///
+    /// Contract: `contracts/apr-registry-snapshot-v1.yaml`
+    /// (FALSIFY-SNAPSHOT-001..003).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL fails — most commonly when `target`
+    /// already exists.
+    pub fn vacuum_into<P: AsRef<Path>>(&self, target: P) -> Result<()> {
+        // SQLite parameter binding can't be used with VACUUM INTO; the
+        // path is a quoted string literal in the SQL grammar. Construct
+        // the statement defensively by escaping single quotes.
+        let raw = target.as_ref().to_str().ok_or_else(|| {
+            PachaError::Validation("snapshot path is not valid UTF-8".to_string())
+        })?;
+        let escaped = raw.replace('\'', "''");
+        let sql = format!("VACUUM INTO '{escaped}'");
+        self.conn.execute_batch(&sql)?;
+        Ok(())
+    }
+
     /// Initialize the database schema.
     fn init_schema(&self) -> Result<()> {
         self.conn.execute_batch(
