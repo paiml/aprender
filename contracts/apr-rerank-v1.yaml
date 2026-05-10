@@ -18,21 +18,23 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-05-10'
   author: apr-cli team
   kind: registry
   description: >
-    HELIX-IDEA-006 Phase 1 — pure-math reranking primitives in
-    `aprender-rag::{fusion, mmr}`. Discharges FALSIFY-RERANK-RRF-002
-    (RRF score combination is symmetric in input list ordering —
-    `rrf(a, b) == rrf(b, a)` byte-for-byte on a tie-free fixture)
-    and FALSIFY-RERANK-MMR-002 (MMR with `λ=1` returns the input
-    sorted by relevance — diversity formula leaks zero at the
-    relevance extreme). Phase 2+ amend this contract to add the
-    remaining gates (RRF nDCG, MMR diversity, cross-encoder
-    latency/structure) as their upstream dependencies (HELIX-IDEA-005
-    hybrid retrieval, `aprender-serve` cross-encoder routing) land.
+    HELIX-IDEA-006 Phases 1-2 — reranking primitives in
+    `aprender-rag::{fusion, mmr}` plus the MMR diversity-vs-recall
+    gate. Discharges FALSIFY-RERANK-RRF-002 (RRF symmetric in input
+    list ordering), FALSIFY-RERANK-MMR-002 (λ=1 identity), and
+    FALSIFY-RERANK-MMR-001 (λ=0.5 raises mean-pairwise-distance
+    diversity ≥10% vs. relevance-only baseline while keeping
+    recall@k within 1 percentage point on a 6-doc clustered fixture
+    where all candidates are ground-truth relevant). Phase 3+ amends
+    this contract to add the remaining gates (RRF nDCG,
+    cross-encoder latency/structure) as their upstream dependencies
+    (HELIX-IDEA-005 hybrid retrieval recall fixture, `aprender-serve`
+    cross-encoder routing) land.
   references:
     - 'docs/specifications/helix-db-feature-ideas.md §2.6 (HELIX-IDEA-006)'
     - 'crates/aprender-rag/src/fusion.rs (FusionStrategy::RRF)'
@@ -44,7 +46,7 @@ metadata:
 
 kind: AprRerankContract
 name: apr-rerank
-version: "1.0.0"
+version: "1.1.0"
 status: ACTIVE
 scope: "the `aprender-rag::{fusion, mmr}` reranking primitives — pure-math subset"
 binary: "(library API)"
@@ -118,13 +120,32 @@ falsification_conditions:
     test_name: mmr_lambda_one_is_identity
     status: ENFORCED
 
+  - id: FALSIFY-RERANK-MMR-001
+    description: >
+      MMR with `λ=0.5` increases mean-pairwise-distance diversity
+      across the top-k by ≥10% vs. the relevance-only baseline (λ=1)
+      while keeping recall@k within 1 percentage point on a 6-doc
+      clustered fixture where all candidates are ground-truth
+      relevant. Two euclidean-cluster centroids at (1,0) and (0,1)
+      ensure the relevance-only baseline picks 3 of 4 from the same
+      cluster (low pairwise distance), while MMR at λ=0.5 picks 2
+      from each cluster (high pairwise distance). Because all 6 docs
+      are in the relevance set, recall@4 stays at 4/6 = 0.667 for
+      both — the "within 1 percentage point" constraint binds the
+      gate so a future implementation that gains diversity by
+      excluding relevant items fails the test. Falsifies "MMR
+      trades recall for nothing measurable".
+    test_file: crates/aprender-rag/tests/falsify_rerank_mmr_001.rs
+    test_name: mmr_increases_diversity_within_recall_budget
+    status: ENFORCED
+
 # ── Acceptance gate ──
 
 qa_gate:
   id: F-RERANK-GATE
-  name: "Reranking contract (Phase 1 — pure-math subset)"
-  pass_criteria: "FALSIFY-RERANK-RRF-002 and FALSIFY-RERANK-MMR-002 pass; remaining 4 gates pending Phase 2+ amendments"
-  run: "cargo test -p aprender-rag --test falsify_rerank_rrf_002 --test falsify_rerank_mmr_002 --no-fail-fast"
+  name: "Reranking contract (Phases 1-2)"
+  pass_criteria: "FALSIFY-RERANK-RRF-002, MMR-002, and MMR-001 pass; remaining 3 gates (RRF-001, XENC-001/002) pending Phase 3+ amendments"
+  run: "cargo test -p aprender-rag --test falsify_rerank_rrf_002 --test falsify_rerank_mmr_002 --test falsify_rerank_mmr_001 --no-fail-fast"
   falsification: >
     Rename or delete any test_file / test_name and the
     `aprender-contracts::apr_rerank_contract` integration test

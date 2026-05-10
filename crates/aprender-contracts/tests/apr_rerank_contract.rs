@@ -1,15 +1,18 @@
 //! Integration test for `contracts/apr-rerank-v1.yaml`.
 //!
-//! HELIX-IDEA-006 Phase 1. Loader/validator that promotes the
+//! HELIX-IDEA-006 Phases 1-2. Loader/validator that promotes the
 //! reranking contract from DRAFT to ACTIVE for the pure-math
-//! subset. Same pattern as `apr_mcp_server_contract.rs`. Asserts:
+//! subset + diversity gate. Same pattern as
+//! `apr_mcp_server_contract.rs`. Asserts:
 //!
 //! 1. The YAML file exists and parses as valid YAML.
 //! 2. Top-level `status: ACTIVE`.
-//! 3. **Exactly 2** entries in `falsification_conditions`:
-//!    FALSIFY-RERANK-RRF-002 (input-order invariance) and
-//!    FALSIFY-RERANK-MMR-002 (λ=1 identity). Phases 2+ will amend
-//!    the contract to add the remaining gates from §2.6.
+//! 3. **Exactly 3** entries in `falsification_conditions`:
+//!    FALSIFY-RERANK-RRF-002 (Phase 1, input-order invariance),
+//!    FALSIFY-RERANK-MMR-002 (Phase 1, λ=1 identity), and
+//!    FALSIFY-RERANK-MMR-001 (Phase 2, diversity-vs-recall budget).
+//!    Phases 3+ will amend the contract to add the remaining gates
+//!    (RRF-001 nDCG, XENC-001/002 cross-encoder).
 //! 4. Every entry's `test_file` exists on disk, `test_name` is
 //!    non-empty, and `status: ENFORCED`.
 
@@ -62,25 +65,25 @@ fn apr_rerank_contract_is_active() {
     let contract = load_contract();
     assert_eq!(
         contract.status, "ACTIVE",
-        "apr-rerank-v1.yaml must be ACTIVE for Phase 1 (RRF symmetry + MMR λ=1 shipped)."
+        "apr-rerank-v1.yaml must be ACTIVE for Phases 1-2 (RRF symmetry + MMR λ=1 + MMR diversity-vs-recall)."
     );
 }
 
 #[test]
-fn apr_rerank_contract_has_exactly_two_phase_one_conditions() {
+fn apr_rerank_contract_has_exactly_three_conditions() {
     let contract = load_contract();
     assert_eq!(
         contract.falsification_conditions.len(),
-        2,
-        "Phase 1 ships exactly 2 falsification gates \
-         (FALSIFY-RERANK-RRF-002 + FALSIFY-RERANK-MMR-002); contract has {}. \
-         Phase 2+ amendments must update both the YAML and this test in the same PR.",
+        3,
+        "Phases 1-2 ship exactly 3 falsification gates \
+         (FALSIFY-RERANK-RRF-002, MMR-002, MMR-001); contract has {}. \
+         Phase 3+ amendments must update both the YAML and this test in the same PR.",
         contract.falsification_conditions.len()
     );
 }
 
 #[test]
-fn apr_rerank_contract_ids_are_rrf_002_and_mmr_002() {
+fn apr_rerank_contract_ids_are_rrf_002_mmr_002_and_mmr_001() {
     let contract = load_contract();
     let actual: Vec<String> = contract
         .falsification_conditions
@@ -92,6 +95,7 @@ fn apr_rerank_contract_ids_are_rrf_002_and_mmr_002() {
         vec![
             "FALSIFY-RERANK-RRF-002".to_string(),
             "FALSIFY-RERANK-MMR-002".to_string(),
+            "FALSIFY-RERANK-MMR-001".to_string(),
         ],
     );
 }
