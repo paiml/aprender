@@ -99,6 +99,7 @@ pub mod index;
 pub mod loader;
 pub mod media;
 pub mod metrics;
+pub mod mmr;
 #[cfg(feature = "multivector")]
 pub mod multivector;
 pub mod pipeline;

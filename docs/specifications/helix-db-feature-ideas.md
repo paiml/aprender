@@ -1,12 +1,14 @@
 # HelixDB Feature Ideas for aprender
 
-**Version:** 0.9.0
-**Status:** Active — **4 of 9 fully shipped** (001, 002, 007, 009 —
-13 ENFORCED falsification gates total: 4 (HNSW persistence) + 3
-(MCP inventory) + 3 (registry snapshot) + 3 (API key auth)); 2
-recommended with **pre-authored gates** (005, 006); 1 recommended
-without gates (008, speculative pending pain point); 2
-deferred/speculative (003, 004)
+**Version:** 0.10.0
+**Status:** Active — **4 of 9 fully shipped** (001, 002, 007, 009);
+**1 partially shipped** (006 Phase 1 of 2+ — RRF-002 + MMR-002
+ENFORCED; 4 remaining gates pending HELIX-IDEA-005 / aprender-serve
+upstream); 1 recommended with **pre-authored gates** (005); 1
+recommended without gates (008, speculative pending pain point); 2
+deferred/speculative (003, 004). 15 ENFORCED falsification gates
+total: 4 (HNSW persistence) + 3 (MCP inventory) + 3 (registry
+snapshot) + 3 (API key auth) + 2 (rerank pure-math)
 **Methodology:** Design by Provable Contract (`aprender-contracts` /
 `pv` CLI). Every shipped HELIX-IDEA carries an ACTIVE
 `contracts/*.yaml`, an ENFORCED set of falsification gates, and an
@@ -178,6 +180,7 @@ corresponding `aprender-contracts` integration test in CI.
 | **HELIX-IDEA-002** (MCP inventory) | `contracts/apr-mcp-tool-inventory-v1.yaml` | ACTIVE | `FALSIFY-INVENTORY-001` → `crates/aprender-mcp/tests/falsify_inventory_001.rs::inventory_yields_same_tool_set_as_hardcoded_list`<br>`FALSIFY-INVENTORY-002` → `crates/aprender-mcp/tests/falsify_inventory_002.rs::duplicate_tool_name_panics_at_index_build`<br>`FALSIFY-INVENTORY-003` → `crates/aprender-mcp/tests/falsify_inventory_003.rs::inventory_dispatch_envelope_matches_hardcoded_path` | `crates/aprender-contracts/tests/apr_mcp_tool_inventory_contract.rs` (6 assertions) |
 | **HELIX-IDEA-007** (registry snapshot) | `contracts/apr-registry-snapshot-v1.yaml` | ACTIVE | `FALSIFY-SNAPSHOT-001` → `crates/aprender-registry/tests/falsify_snapshot_001.rs::snapshot_yields_bit_identical_query_results`<br>`FALSIFY-SNAPSHOT-002` → `crates/aprender-registry/tests/falsify_snapshot_002.rs::snapshot_does_not_block_concurrent_writers`<br>`FALSIFY-SNAPSHOT-003` → `crates/aprender-registry/tests/falsify_snapshot_003.rs::snapshot_refuses_to_overwrite_existing_file` | `crates/aprender-contracts/tests/apr_registry_snapshot_contract.rs` (6 assertions) |
 | **HELIX-IDEA-009** (API key auth) | `contracts/apr-serve-api-key-auth-v1.yaml` | ACTIVE | `FALSIFY-AUTH-001` → `crates/apr-cli/tests/falsify_auth_001.rs::missing_bearer_returns_401_on_every_route`<br>`FALSIFY-AUTH-002` → `crates/apr-cli/tests/falsify_auth_002.rs::valid_bearer_passes_and_hash_path_is_constant_time`<br>`FALSIFY-AUTH-003` → `crates/apr-cli/tests/falsify_auth_003.rs::auth_module_uses_subtle_constanttimeeq` | `crates/aprender-contracts/tests/apr_serve_api_key_auth_contract.rs` (6 assertions) |
+| **HELIX-IDEA-006** (Reranking — Phase 1, pure-math) | `contracts/apr-rerank-v1.yaml` v1.0.0 | ACTIVE | `FALSIFY-RERANK-RRF-002` → `crates/aprender-rag/tests/falsify_rerank_rrf_002.rs::rrf_is_input_order_invariant`<br>`FALSIFY-RERANK-MMR-002` → `crates/aprender-rag/tests/falsify_rerank_mmr_002.rs::mmr_lambda_one_is_identity` <br>(Gates RRF-001, MMR-001, XENC-001/002 pending Phase 2+ — depend on HELIX-IDEA-005 + `aprender-serve` cross-encoder routing) | `crates/aprender-contracts/tests/apr_rerank_contract.rs` (6 assertions) |
 
 **Audit reproduction:** `pv validate contracts/apr-{mcp-tool-inventory,registry-snapshot,serve-api-key-auth}-v1.yaml`
 returns `Contract is valid.` on each. `cargo test -p aprender-contracts
@@ -196,7 +199,7 @@ verbatim.
 | Idea | Contract YAML | Status | Pre-authored gates |
 |---|---|---|---|
 | HELIX-IDEA-005 (BM25 + dense) | `contracts/apr-hybrid-retrieval-v1.yaml` | To author | §2.5: 4 gates (`FALSIFY-HYBRID-001..004`) |
-| HELIX-IDEA-006 (Reranking) | `contracts/apr-rerank-v1.yaml` | To author | §2.6: 6 gates (`FALSIFY-RERANK-RRF-001/002`, `MMR-001/002`, `XENC-001/002`) |
+| HELIX-IDEA-006 (Reranking) | `contracts/apr-rerank-v1.yaml` | **v1.0.0 ACTIVE — Phase 1 (RRF-002 + MMR-002) shipped; Phase 2+ (RRF-001, MMR-001, XENC-001/002) pending HELIX-IDEA-005 + `aprender-serve` cross-encoder upstream** | §2.6: 6 gates total |
 | HELIX-IDEA-008 (Schema migration) | `contracts/apr-schema-migration-v1.yaml` | To author | Not yet pre-authored — speculative pending concrete pain point (§2.8) |
 
 A PR that merges code without authoring its YAML, or authors a YAML
@@ -510,9 +513,21 @@ follow-up work.
 
 ### 2.6 HELIX-IDEA-006 — Reranking pipeline (RRF, MMR, cross-encoder)
 
-**Status:** Recommended, high priority. Pairs with HELIX-IDEA-005.
-**Effort:** Medium (~3–4 weeks).
-**Target crate:** new `aprender-rerank` or submodule of `aprender-rag`.
+**Status:** **Shipped (Phase 1 — pure-math fusion)**;
+FALSIFY-RERANK-RRF-002 (input-order invariance) and
+FALSIFY-RERANK-MMR-002 (λ=1 identity) ENFORCED. Phase 2+ ships the
+remaining 4 gates (RRF-001 nDCG, MMR-001 diversity, XENC-001/002)
+once their upstream dependencies (HELIX-IDEA-005, `aprender-serve`
+cross-encoder routing) land.
+**Contract:** `contracts/apr-rerank-v1.yaml` v1.0.0 (ACTIVE).
+**Effort:** Medium total; Phase 1 fit in one commit using the
+existing `aprender-rag::fusion::FusionStrategy::RRF` plus a new
+`aprender-rag::mmr::mmr_select` primitive (~150 LOC + tests).
+**Target crate:** **submodule of `aprender-rag`** (chosen over the
+"new aprender-rerank crate" alternative — `aprender-rag` already
+hosts a `Reranker` trait at `rerank.rs` and a `FusionStrategy::RRF`
+at `fusion.rs`, so adding `mmr.rs` alongside avoids splitting
+related primitives across crates).
 
 **Problem.** Production RAG quality is bottlenecked by reranking, not
 first-stage retrieval. aprender has no reranking primitives, no
@@ -551,12 +566,12 @@ model needed); cross-encoder requires an inference path.
 
 | Gate ID | Property | Test target |
 |---|---|---|
-| `FALSIFY-RERANK-RRF-001` | RRF over hybrid retrieval (HELIX-IDEA-005) yields ≥3-point nDCG@10 improvement vs. either single retriever on a frozen BEIR subset. Falsifies "RRF is a wash on this corpus". | `crates/aprender-rerank/tests/falsify_rerank_rrf_001.rs::rrf_beats_single_retriever_ndcg10` |
-| `FALSIFY-RERANK-RRF-002` | RRF score combination is *order-independent* in input list ordering — `rrf(a, b) == rrf(b, a)` byte-for-byte. Falsifies "RRF accidentally weights one input more than another". | `crates/aprender-rerank/tests/falsify_rerank_rrf_002.rs::rrf_is_input_order_invariant` |
-| `FALSIFY-RERANK-MMR-001` | MMR with `λ=0.5` reduces top-k centroid distance (a diversity proxy) by ≥10% vs. unranked top-k while keeping recall@10 within 1 point. Falsifies "MMR trades recall for nothing measurable". | `crates/aprender-rerank/tests/falsify_rerank_mmr_001.rs::mmr_increases_diversity_within_recall_budget` |
-| `FALSIFY-RERANK-MMR-002` | MMR with `λ=1.0` (no diversity weight) returns the same top-k as the input scorer. Falsifies "the diversity formula leaks even at λ=1". | `crates/aprender-rerank/tests/falsify_rerank_mmr_002.rs::mmr_lambda_one_is_identity` |
-| `FALSIFY-RERANK-XENC-001` | Cross-encoder rerank for 100 candidates completes within 100 ms on a ≤100M-param model. Tunable via `APR_RERANK_BUDGET_MS`. Falsifies "the cross-encoder path is too slow for the production budget". | `crates/aprender-rerank/tests/falsify_rerank_xenc_001.rs::cross_encoder_top_100_within_budget` |
-| `FALSIFY-RERANK-XENC-002` | Cross-encoder inference goes through `aprender-serve` (no parallel inference stack inside `aprender-rerank`). Structural source-grep gate, similar to `FALSIFY-AUTH-003`. Falsifies "the rerank crate quietly forked the inference engine". | `crates/aprender-rerank/tests/falsify_rerank_xenc_002.rs::cross_encoder_uses_aprender_serve` |
+| `FALSIFY-RERANK-RRF-001` | RRF over hybrid retrieval (HELIX-IDEA-005) yields ≥3-point nDCG@10 improvement vs. either single retriever on a frozen BEIR subset. Falsifies "RRF is a wash on this corpus". | `crates/aprender-rag/tests/falsify_rerank_rrf_001.rs::rrf_beats_single_retriever_ndcg10` |
+| `FALSIFY-RERANK-RRF-002` | RRF score combination is *order-independent* in input list ordering — `rrf(a, b) == rrf(b, a)` byte-for-byte on a tie-free fixture. Falsifies "RRF accidentally weights one input more than another". | `crates/aprender-rag/tests/falsify_rerank_rrf_002.rs::rrf_is_input_order_invariant` **(SHIPPED Phase 1)** |
+| `FALSIFY-RERANK-MMR-001` | MMR with `λ=0.5` reduces top-k centroid distance (a diversity proxy) by ≥10% vs. unranked top-k while keeping recall@10 within 1 point. Falsifies "MMR trades recall for nothing measurable". | `crates/aprender-rag/tests/falsify_rerank_mmr_001.rs::mmr_increases_diversity_within_recall_budget` |
+| `FALSIFY-RERANK-MMR-002` | MMR with `λ=1.0` (no diversity weight) returns the same top-k as the input scorer (output sorted by relevance descending; output scores equal input relevance scores). Falsifies "the diversity formula leaks even at λ=1". | `crates/aprender-rag/tests/falsify_rerank_mmr_002.rs::mmr_lambda_one_is_identity` **(SHIPPED Phase 1)** |
+| `FALSIFY-RERANK-XENC-001` | Cross-encoder rerank for 100 candidates completes within 100 ms on a ≤100M-param model. Tunable via `APR_RERANK_BUDGET_MS`. Falsifies "the cross-encoder path is too slow for the production budget". | `crates/aprender-rag/tests/falsify_rerank_xenc_001.rs::cross_encoder_top_100_within_budget` |
+| `FALSIFY-RERANK-XENC-002` | Cross-encoder inference goes through `aprender-serve` (no parallel inference stack inside `aprender-rag`). Structural source-grep gate, similar to `FALSIFY-AUTH-003`. Falsifies "the rerank crate quietly forked the inference engine". | `crates/aprender-rag/tests/falsify_rerank_xenc_002.rs::cross_encoder_uses_aprender_serve` |
 
 ---
 
