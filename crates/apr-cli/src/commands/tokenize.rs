@@ -899,70 +899,80 @@ pub(crate) fn run_encode_corpus(
         })?
         .to_string();
 
-    // Two-format dispatch (PMAT-CODE-TOKENIZE-BPE-FORMAT-001 follow-up
-    // to PR #1585's fail-fast). Try the hex-byte loader first; on
-    // FALSIFY-BPE-FORMAT-MISMATCH-001 (vocab is GPT-2 byte-level, e.g.,
-    // from `apr tokenize import-hf`), fall through to the byte-level
-    // BpeTokenizer in `aprender::text::bpe`. Either path produces a
-    // working `EncodeTokenizer`; both fail → real load error.
-    let tokenizer: EncodeTokenizer = match BPETokenizer::from_vocab_merges(
-        &vocab_path_str,
-        &merges_path_str,
-        config,
-    ) {
-        Ok(t) => EncodeTokenizer::Hex(t),
-        Err(hex_err) => {
-            let hex_err_str = format!("{hex_err}");
-            if hex_err_str.contains("FALSIFY-BPE-FORMAT-MISMATCH-001") {
-                // Byte-level dispatch: prefer a sibling tokenizer.json
-                // (HuggingFace canonical format with proper added_tokens
-                // and pretokenizer config), fall back to vocab.json +
-                // merges.txt.
-                //
-                // NOTE on naming: aprender::text::bpe::load_from_files
-                // takes JSON STRING and MERGES STRING as CONTENT (not
-                // file paths) — the function name is misleading.
-                let tokenizer_json_path = tokenizer_dir.join("tokenizer.json");
-                let bpe = if tokenizer_json_path.exists() {
-                    let json = std::fs::read_to_string(&tokenizer_json_path).map_err(|e| {
-                        CliError::ValidationFailed(format!(
-                            "byte-level loader: cannot read {}: {e}",
-                            tokenizer_json_path.display()
-                        ))
-                    })?;
-                    aprender::text::bpe::load_from_json(&json).map_err(|byte_err| {
-                        CliError::ValidationFailed(format!(
-                            "byte-level loader (tokenizer.json): {byte_err}"
-                        ))
-                    })?
-                } else {
-                    let vocab_json = std::fs::read_to_string(&vocab_path_str).map_err(|e| {
-                        CliError::ValidationFailed(format!(
-                            "byte-level loader: cannot read vocab.json {vocab_path_str}: {e}"
-                        ))
-                    })?;
-                    let merges_txt = std::fs::read_to_string(&merges_path_str).map_err(|e| {
-                        CliError::ValidationFailed(format!(
-                            "byte-level loader: cannot read merges.txt {merges_path_str}: {e}"
-                        ))
-                    })?;
-                    aprender::text::bpe::load_from_files(&vocab_json, &merges_txt).map_err(
-                        |byte_err| {
-                            CliError::ValidationFailed(format!(
-                                "Cannot load tokenizer (both formats failed):\n  \
-                                     hex-byte loader: {hex_err}\n  \
-                                     byte-level loader: {byte_err}"
-                            ))
-                        },
-                    )?
-                };
-                EncodeTokenizer::ByteLevel(bpe)
-            } else {
-                return Err(CliError::ValidationFailed(format!(
-                    "Cannot load tokenizer: {hex_err}"
-                )));
-            }
-        }
+    // Two-format dispatch (PMAT-CODE-TOKENIZE-BPE-UPSTREAM-001 follow-up
+    // to PR #1596's initial dispatch). DETECT FORMAT UPFRONT by counting
+    // canonical hex-byte tokens "00".."ff" in vocab.json. A legitimate
+    // hex-byte vocab from `apr tokenize train` always has all 256.
+    // A GPT-2 byte-level vocab (from `apr tokenize import-hf` of Qwen
+    // /Llama2/Mistral) has < 200. This detection is independent of
+    // BPETokenizer::from_vocab_merges's behavior — works whether or
+    // not the upstream fail-fast (PR #1585) has merged.
+    //
+    // Discovery: PR #1596's "try hex first, fall through on FALSIFY-001"
+    // strategy depended on PR #1585's fail-fast, which was not yet on
+    // main. With #1585 absent, the hex loader silently succeeded on
+    // Qwen-format vocabs and produced 99% `<unk>`. Upfront detection
+    // eliminates the dependency.
+    //
+    // Verified: aprender::text::bpe::load_from_json on real Qwen
+    // tokenizer.json produces 0% unk (test
+    // falsify_bpe_qwen_encode_python_does_not_unk_99pct in
+    // crates/aprender-core/src/text/bpe/tests_encode_decode.rs).
+    let vocab_json_for_detect = std::fs::read_to_string(&vocab_path_str).map_err(|e| {
+        CliError::ValidationFailed(format!("cannot read vocab.json {vocab_path_str}: {e}"))
+    })?;
+    let detected_vocab: std::collections::HashMap<String, u32> =
+        serde_json::from_str(&vocab_json_for_detect).map_err(|e| {
+            CliError::ValidationFailed(format!("vocab.json is not valid JSON: {e}"))
+        })?;
+    let hex_byte_count = (0u8..=255)
+        .map(|b| format!("{b:02x}"))
+        .filter(|hex| detected_vocab.contains_key(hex))
+        .count();
+    const MIN_HEX_BYTES: usize = 200;
+
+    let tokenizer: EncodeTokenizer = if hex_byte_count >= MIN_HEX_BYTES {
+        // Hex-byte format (legacy `apr tokenize train` output).
+        BPETokenizer::from_vocab_merges(&vocab_path_str, &merges_path_str, config)
+            .map(EncodeTokenizer::Hex)
+            .map_err(|e| CliError::ValidationFailed(format!("Cannot load tokenizer: {e}")))?
+    } else {
+        // GPT-2 byte-level format (from `apr tokenize import-hf` or
+        // direct tokenizer.json). Prefer sibling tokenizer.json when
+        // present (canonical HF format with added_tokens registered);
+        // fall back to vocab.json + merges.txt.
+        //
+        // NOTE on naming: `load_from_files` takes JSON STRING and
+        // MERGES STRING as CONTENT (not file paths). We read the
+        // contents and pass them.
+        let tokenizer_json_path = tokenizer_dir.join("tokenizer.json");
+        let bpe = if tokenizer_json_path.exists() {
+            let json = std::fs::read_to_string(&tokenizer_json_path).map_err(|e| {
+                CliError::ValidationFailed(format!(
+                    "byte-level loader: cannot read {}: {e}",
+                    tokenizer_json_path.display()
+                ))
+            })?;
+            aprender::text::bpe::load_from_json(&json).map_err(|byte_err| {
+                CliError::ValidationFailed(format!(
+                    "byte-level loader (tokenizer.json): {byte_err}"
+                ))
+            })?
+        } else {
+            let merges_txt = std::fs::read_to_string(&merges_path_str).map_err(|e| {
+                CliError::ValidationFailed(format!(
+                    "byte-level loader: cannot read merges.txt {merges_path_str}: {e}"
+                ))
+            })?;
+            aprender::text::bpe::load_from_files(&vocab_json_for_detect, &merges_txt).map_err(
+                |byte_err| {
+                    CliError::ValidationFailed(format!(
+                        "byte-level loader (vocab.json+merges.txt): {byte_err}"
+                    ))
+                },
+            )?
+        };
+        EncodeTokenizer::ByteLevel(bpe)
     };
     let vocab_size = tokenizer.vocab_size();
     let eos_id = ["</s>", "<|endoftext|>", "<eos>", "<|eos|>"]
