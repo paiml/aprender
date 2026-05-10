@@ -1,4 +1,27 @@
 
+/// Output format for `apr code` non-interactive mode (PMAT-CODE-OUTPUT-FORMAT-001).
+/// Mirrors Claude Code's `claude -p --output-format <fmt>` parity row.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum, Default)]
+pub enum CodeOutputFormat {
+    /// Plain assistant text on stdout (default; existing behavior).
+    #[default]
+    Text,
+    /// Structured JSON envelope: `{type:"result", subtype:"success", result, session_id, duration_ms}`.
+    Json,
+}
+
+/// Input format for `apr code` non-interactive mode (PMAT-CODE-INPUT-FORMAT-001).
+/// `--input-format json` reads `{"role":"user","content":"..."}` from stdin instead
+/// of treating stdin as raw prompt text.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum, Default)]
+pub enum CodeInputFormat {
+    /// Raw prompt text from positional args or stdin (default; existing behavior).
+    #[default]
+    Text,
+    /// JSON message envelope on stdin: `{"role":"user","content":"..."}`.
+    Json,
+}
+
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Run model directly (auto-download, cache, execute)
@@ -255,6 +278,23 @@ pub enum Commands {
         /// Interactive mode
         #[arg(long)]
         interactive: bool,
+        /// Save per-stage F32 tensors during trace for SHIP-007 layer-0
+        /// element-wise diff. Comma-separated stage names from
+        /// `apr-cli-trace-save-tensor-v1.yaml` (e.g.
+        /// `embedding,qkv_matmul,attention`). Pass `all` to save every
+        /// stage. Output goes to `--save-tensor-dir` if provided,
+        /// else `<file_dir>/trace-tensors/<run_id>/`.
+        #[arg(long, value_name = "STAGES")]
+        save_tensor: Option<String>,
+        /// Output directory for `--save-tensor` (default: sibling
+        /// `trace-tensors/<run_id>/`).
+        #[arg(long, value_name = "DIR")]
+        save_tensor_dir: Option<PathBuf>,
+        /// Layer-id range for `--save-tensor` (default: 0..1, i.e.
+        /// layer 0 only). Format: `START..END` (Rust range syntax,
+        /// END exclusive).
+        #[arg(long, value_name = "RANGE", default_value = "0..1")]
+        save_tensor_layers: String,
     },
     /// Check for best practices and conventions
     Lint {
@@ -353,11 +393,18 @@ pub enum Commands {
         #[arg(long)]
         allow_no_config: bool,
     },
-    /// Download and cache model from HuggingFace (Ollama-like UX)
+    /// Download and cache model OR HuggingFace dataset (Ollama-like UX)
     Pull {
-        /// Model reference (alias, hf:// URI, or org/repo)
-        #[arg(value_name = "MODEL")]
+        /// Model reference (alias, hf:// URI, or org/repo) OR "dataset"
+        /// asset-type discriminator. When this value is the literal
+        /// string "dataset", the next positional `repo` is the
+        /// HuggingFace dataset repo and dataset-pull semantics apply.
+        #[arg(value_name = "MODEL_OR_ASSET_TYPE")]
         model_ref: String,
+        /// Dataset repository (used only when model_ref == "dataset").
+        /// Per `apr-cli-pull-dataset-v1.yaml`.
+        #[arg(value_name = "REPO")]
+        repo: Option<String>,
         /// Force re-download even if cached
         #[arg(long)]
         force: bool,
@@ -373,6 +420,15 @@ pub enum Commands {
         /// Equivalent to APR_OFFLINE=1 or HF_HUB_OFFLINE=1 in the environment.
         #[arg(long)]
         offline: bool,
+        /// (dataset mode) Glob pattern for shard selection. May be passed
+        /// multiple times; matches are unioned. fnmatch-compatible
+        /// (`*`, `?`, `[a-z]`). No-match is fail-fast.
+        #[arg(long, value_name = "GLOB")]
+        include: Vec<String>,
+        /// (dataset mode) Output directory. Default:
+        /// `~/.cache/aprender/datasets/<repo>/`.
+        #[arg(short = 'o', long)]
+        output: Option<PathBuf>,
     },
     /// Registry operations (CRUX-A-01): inspect alias map, etc.
     Registry {
@@ -577,6 +633,28 @@ pub enum Commands {
         /// Max turns before stopping
         #[arg(long, default_value = "50")]
         max_turns: u32,
+
+        /// Emit a `ccpa-trace.jsonl` describing the run to this path.
+        /// Format mirrors the schema at
+        /// <https://github.com/paiml/claude-code-parity-apr/blob/main/contracts/claude-code-parity-apr-v1.yaml>
+        /// (`§ trace_schema`). Used by `ccpa measure` to score apr-code
+        /// against canonical Claude Code reference fixtures.
+        #[arg(long)]
+        emit_trace: Option<PathBuf>,
+
+        /// Output format for non-interactive (`-p`) mode (PMAT-CODE-OUTPUT-FORMAT-001).
+        /// `text` (default): plain assistant text.
+        /// `json`: structured `{type:"result", subtype:"success", result, session_id, duration_ms}`
+        /// envelope matching Claude Code's `claude -p --output-format json` shape.
+        #[arg(long, value_enum, default_value_t = CodeOutputFormat::Text)]
+        output_format: CodeOutputFormat,
+
+        /// Input format for non-interactive stdin (PMAT-CODE-INPUT-FORMAT-001).
+        /// `text` (default): treat stdin as raw prompt text.
+        /// `json`: parse `{"role":"user","content":"..."}` from stdin and use `content`
+        /// as the prompt. Matches Claude Code's `claude -p --input-format json` shape.
+        #[arg(long, value_enum, default_value_t = CodeInputFormat::Text)]
+        input_format: CodeInputFormat,
     },
     /// Extended analysis, profiling, QA, and visualization commands
     #[command(flatten)]

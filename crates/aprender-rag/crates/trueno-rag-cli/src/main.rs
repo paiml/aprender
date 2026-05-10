@@ -33,7 +33,7 @@ mod transcribe;
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
-use trueno_rag::loader::LoaderRegistry;
+use aprender_rag::loader::LoaderRegistry;
 
 /// Embedder type selection
 #[derive(Debug, Clone, Copy, Default, ValueEnum)]
@@ -652,8 +652,8 @@ mod tests {
     use std::collections::HashMap;
     use std::fs;
     use std::path::{Path, PathBuf};
-    use trueno_rag::fusion::FusionStrategy;
-    use trueno_rag::Document;
+    use aprender_rag::fusion::FusionStrategy;
+    use aprender_rag::Document;
 
     // Re-import functions from submodules for testing
     use crate::discover::*;
@@ -881,7 +881,7 @@ mod tests {
         assert!(db_path.exists(), "index.sqlite should be created");
 
         // Verify doc and chunk counts via SqliteIndex API
-        let idx = trueno_rag::SqliteIndex::open(&db_path).unwrap();
+        let idx = aprender_rag::SqliteIndex::open(&db_path).unwrap();
         assert_eq!(idx.document_count().unwrap(), 2, "2 unique source docs");
         assert_eq!(idx.chunk_count().unwrap(), 3, "3 chunks total");
 
@@ -943,7 +943,7 @@ mod tests {
 
         export_sqlite(&persisted, &dir).unwrap();
 
-        let idx = trueno_rag::SqliteIndex::open(dir.join("index.sqlite")).unwrap();
+        let idx = aprender_rag::SqliteIndex::open(dir.join("index.sqlite")).unwrap();
         assert_eq!(idx.document_count().unwrap(), 2);
         assert_eq!(idx.chunk_count().unwrap(), 4);
 
@@ -973,7 +973,7 @@ mod tests {
 
         export_sqlite(&persisted, &dir).unwrap();
 
-        let idx = trueno_rag::SqliteIndex::open(dir.join("index.sqlite")).unwrap();
+        let idx = aprender_rag::SqliteIndex::open(dir.join("index.sqlite")).unwrap();
         assert_eq!(idx.document_count().unwrap(), 1, "unknown doc grouped");
         assert_eq!(idx.chunk_count().unwrap(), 1);
 
@@ -1006,7 +1006,7 @@ mod tests {
 
         export_sqlite(&persisted, &dir).unwrap();
 
-        let idx = trueno_rag::SqliteIndex::open(dir.join("index.sqlite")).unwrap();
+        let idx = aprender_rag::SqliteIndex::open(dir.join("index.sqlite")).unwrap();
         assert_eq!(idx.document_count().unwrap(), 1);
         assert_eq!(idx.chunk_count().unwrap(), 1);
 
@@ -1055,7 +1055,7 @@ mod tests {
 
         export_sqlite(&persisted, &dir).unwrap();
 
-        let idx = trueno_rag::SqliteIndex::open(dir.join("index.sqlite")).unwrap();
+        let idx = aprender_rag::SqliteIndex::open(dir.join("index.sqlite")).unwrap();
         assert_eq!(idx.document_count().unwrap(), 0);
         assert_eq!(idx.chunk_count().unwrap(), 0);
 
@@ -1341,9 +1341,9 @@ mod tests {
 
     #[test]
     fn test_chunk_and_embed_timestamp_strategy() {
-        use trueno_rag::chunk::RecursiveChunker;
-        use trueno_rag::chunk::TimestampChunker;
-        use trueno_rag::embed::MockEmbedder;
+        use aprender_rag::chunk::RecursiveChunker;
+        use aprender_rag::chunk::TimestampChunker;
+        use aprender_rag::embed::MockEmbedder;
 
         let embedder = MockEmbedder::new(4);
         let recursive = RecursiveChunker::new(512, 64);
@@ -1438,9 +1438,9 @@ mod tests {
 
     #[test]
     fn test_chunk_and_embed_empty_document() {
-        use trueno_rag::chunk::RecursiveChunker;
-        use trueno_rag::chunk::TimestampChunker;
-        use trueno_rag::embed::MockEmbedder;
+        use aprender_rag::chunk::RecursiveChunker;
+        use aprender_rag::chunk::TimestampChunker;
+        use aprender_rag::embed::MockEmbedder;
 
         let embedder = MockEmbedder::new(4);
         let recursive = RecursiveChunker::new(512, 64);
@@ -1468,9 +1468,9 @@ mod tests {
 
     #[test]
     fn test_chunk_and_embed_with_dedup() {
-        use trueno_rag::chunk::RecursiveChunker;
-        use trueno_rag::chunk::TimestampChunker;
-        use trueno_rag::embed::MockEmbedder;
+        use aprender_rag::chunk::RecursiveChunker;
+        use aprender_rag::chunk::TimestampChunker;
+        use aprender_rag::embed::MockEmbedder;
 
         let embedder = MockEmbedder::new(4);
         let recursive = RecursiveChunker::new(512, 64);

@@ -383,6 +383,45 @@ pub fn assert_tokenizer_vocab_matches_model(
     ))
 }
 
+/// Polymorphic-path variant of [`assert_tokenizer_vocab_matches_model`] that
+/// allows `tokenizer_vocab_size <= model_vocab_size` (per
+/// `apr-pretrain-arch-polymorphic-v1` v1.3.0 §qwen_tokenizer_vocab_compatibility,
+/// SPEC-SHIP-TWO-001 §55). When fine-tuning from an HF-distributed
+/// pretrained checkpoint (Qwen2.5 / Llama2 / Mistral), `tokenizer.json`
+/// commonly materializes fewer string-token entries than the model's
+/// declared `vocab_size` declares. The gap is reserved/special slots
+/// (e.g., `<|reserved_271|>`...) that the lm_head + embedding layers
+/// have weights for but no tokenizer string maps to. Strict equality
+/// (the §24/§25 from-scratch baseline invariant) is too strict for
+/// these models; the relaxed bound preserves the OOB-safety property:
+///
+/// **Safety argument**: tokenizer.encode(text) → ids ∈ [0, tokenizer_vocab).
+/// Embedding/lm_head layers are sized for [0, model_vocab). When
+/// tokenizer_vocab ≤ model_vocab, every encoded id is in-bounds; the
+/// reserved high-id slots are never indexed at training time. When
+/// tokenizer_vocab > model_vocab, the encoder could emit ids ≥ model_vocab
+/// → N-09 OOB → silent garbage gradients → fail-fast.
+///
+/// Returns `Ok(())` when bound holds, `Err(String)` with a machine-diffable
+/// message when violated.
+pub fn assert_tokenizer_vocab_within_model_bound(
+    tokenizer_vocab_size: usize,
+    model_vocab_size: usize,
+) -> Result<(), String> {
+    if tokenizer_vocab_size <= model_vocab_size {
+        return Ok(());
+    }
+    Err(format!(
+        "GATE-ARCH-370M-011 (INV-ARCH-370M-006-RELAXED) violated: \
+         tokenizer vocab_size ({tokenizer_vocab_size}) > model vocab_size \
+         ({model_vocab_size}). See contracts/apr-pretrain-arch-polymorphic-v1.yaml \
+         §qwen_tokenizer_vocab_compatibility — for HF-distributed pretrained \
+         checkpoints, tokenizer_vocab MUST be <= model_vocab (reserved-slot \
+         tolerance); a tokenizer with MORE strings than the model expects \
+         would emit OOB ids → N-09 escape → silent garbage gradients."
+    ))
+}
+
 // ─────────────────────────────────────────────────────────────
 // FALSIFY-SHIP-017 / AC-SHIP2-007 / GATE-ARCH-370M-005
 // ─────────────────────────────────────────────────────────────
@@ -804,6 +843,64 @@ mod tests {
             Llama370MConfig::VOCAB_SIZE
         )
         .is_err());
+    }
+
+    /// FALSIFY-APR-PRETRAIN-ARCH-009 (§55) — relaxed-bound helper accepts
+    /// `tokenizer_vocab <= model_vocab` for the polymorphic init path.
+    /// Discharges the §55 finding: HF-distributed Qwen2.5-Coder-0.5B
+    /// materializes 151643 BPE entries + 22 added = 151665 effective
+    /// strings, but config.json declares `vocab_size = 151936` (271
+    /// reserved slots). The relaxed bound preserves OOB safety while
+    /// admitting the standard HF reserved-slot pattern.
+    #[test]
+    fn falsify_apr_pretrain_arch_009_relaxed_bound_accepts_qwen_reserved_slots() {
+        // The exact §55 LIVE smoke shape: 151665 ≤ 151936 must pass.
+        const QWEN_BPE_PLUS_ADDED: usize = 151_665;
+        const QWEN_DECLARED_VOCAB: usize = 151_936;
+        assert!(
+            assert_tokenizer_vocab_within_model_bound(
+                QWEN_BPE_PLUS_ADDED,
+                QWEN_DECLARED_VOCAB
+            )
+            .is_ok(),
+            "FALSIFY-APR-PRETRAIN-ARCH-009: tokenizer 151665 ≤ model 151936 MUST pass relaxed bound \
+             (HF reserved-slot tolerance)"
+        );
+
+        // BPE-only count (without --include-added-tokens): 151643 ≤ 151936 must also pass.
+        const QWEN_BPE_ONLY: usize = 151_643;
+        assert!(
+            assert_tokenizer_vocab_within_model_bound(QWEN_BPE_ONLY, QWEN_DECLARED_VOCAB).is_ok()
+        );
+
+        // Equality remains acceptable (Llama370M-from-scratch case).
+        assert!(assert_tokenizer_vocab_within_model_bound(
+            Llama370MConfig::VOCAB_SIZE,
+            Llama370MConfig::VOCAB_SIZE
+        )
+        .is_ok());
+    }
+
+    /// FALSIFY-APR-PRETRAIN-ARCH-010 (§55) — relaxed-bound helper REJECTS
+    /// `tokenizer_vocab > model_vocab`. This is the OOB-safety guard:
+    /// a tokenizer producing ids ≥ model_vocab would silently corrupt
+    /// embedding lookup. Strict-greater MUST fail-fast.
+    #[test]
+    fn falsify_apr_pretrain_arch_010_relaxed_bound_rejects_oversized_tokenizer() {
+        const QWEN_DECLARED_VOCAB: usize = 151_936;
+        let oversized = QWEN_DECLARED_VOCAB + 1;
+        let err =
+            assert_tokenizer_vocab_within_model_bound(oversized, QWEN_DECLARED_VOCAB)
+                .expect_err("FALSIFY-APR-PRETRAIN-ARCH-010: tokenizer > model MUST fail-fast");
+        assert!(
+            err.contains("RELAXED") && err.contains("OOB"),
+            "error must cite the relaxed-mode invariant + OOB risk: {err}"
+        );
+        assert!(
+            err.contains(&oversized.to_string())
+                && err.contains(&QWEN_DECLARED_VOCAB.to_string()),
+            "error must name both sizes for forensics: {err}"
+        );
     }
 
     /// INV-ARCH-370M-001 — estimated param count within [366M, 374M].

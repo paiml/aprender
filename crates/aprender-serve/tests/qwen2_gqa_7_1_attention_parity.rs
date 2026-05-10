@@ -241,9 +241,7 @@ fn ship_007_qwen2_gqa_7_1_cpu_gpu_parity_first_token() {
         for line in &first_mismatches {
             eprintln!("{line}");
         }
-        eprintln!(
-            "Total mismatches: {diff_count}/{HIDDEN_DIM} (max diff: {max_diff:.6})",
-        );
+        eprintln!("Total mismatches: {diff_count}/{HIDDEN_DIM} (max diff: {max_diff:.6})",);
     }
 
     assert!(
@@ -300,7 +298,11 @@ fn ship_007_qwen2_gqa_7_1_cpu_gpu_parity_second_token() {
 
     let mut first_output = vec![0.0f32; HIDDEN_DIM];
     if let Err(e) = executor.incremental_attention_gpu(
-        layer_idx, &q_first, &cached_k, &cached_v, &mut first_output,
+        layer_idx,
+        &q_first,
+        &cached_k,
+        &cached_v,
+        &mut first_output,
     ) {
         panic!("GPU first-token populate failed: {e:?}");
     }
@@ -319,9 +321,9 @@ fn ship_007_qwen2_gqa_7_1_cpu_gpu_parity_second_token() {
     let cpu_output = cpu_gqa_attention(&q_second, &cached_k, &cached_v, &new_k, &new_v);
 
     let mut gpu_output = vec![0.0f32; HIDDEN_DIM];
-    if let Err(e) = executor.incremental_attention_gpu(
-        layer_idx, &q_second, &new_k, &new_v, &mut gpu_output,
-    ) {
+    if let Err(e) =
+        executor.incremental_attention_gpu(layer_idx, &q_second, &new_k, &new_v, &mut gpu_output)
+    {
         panic!("GPU second-token attention failed: {e:?}");
     }
 
@@ -353,9 +355,7 @@ fn ship_007_qwen2_gqa_7_1_cpu_gpu_parity_second_token() {
         for line in &first_mismatches {
             eprintln!("{line}");
         }
-        eprintln!(
-            "Total mismatches: {diff_count}/{HIDDEN_DIM} (max diff: {max_diff:.6})",
-        );
+        eprintln!("Total mismatches: {diff_count}/{HIDDEN_DIM} (max diff: {max_diff:.6})",);
     }
 
     assert!(

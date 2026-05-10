@@ -36,8 +36,8 @@ publishing — all backed by YAML provable contracts that fail CI on drift.
 | Metric | Count | Source of truth |
 |-------:|------:|---|
 | Workspace crates | **80** workspace crates | `ls crates/` |
-| Provable contracts | **1096** provable contracts | `find contracts/ -name '*.yaml'` |
-| CLI commands | **79** CLI commands | `apr --help` |
+| Provable contracts | **1105** provable contracts | `find contracts/ -name '*.yaml'` |
+| CLI commands | **80** CLI commands | `apr --help` |
 
 These numbers are enforced by [`contracts/readme-claims-v1.yaml`](contracts/readme-claims-v1.yaml).
 Drift between this table and live repo state fails `bash scripts/check_readme_claims.sh`
@@ -135,7 +135,7 @@ paiml/aprender/
 ├── Cargo.toml                      # Workspace root + `cargo install aprender`
 ├── crates/
 │   ├── aprender-core/              # ML library (use aprender::*)
-│   ├── apr-cli/                    # CLI logic (79 subcommands)
+│   ├── apr-cli/                    # CLI logic (80 subcommands)
 │   ├── aprender-compute/           # SIMD/GPU compute kernels
 │   ├── aprender-gpu/               # CUDA PTX
 │   ├── aprender-serve/             # Inference server
@@ -145,7 +145,7 @@ paiml/aprender/
 │   ├── aprender-profile/           # Profiling
 │   ├── aprender-db/ aprender-graph/ aprender-rag/
 │   └── ... (80 crates total)
-├── contracts/                      # 1096 provable YAML contracts
+├── contracts/                      # 1105 provable YAML contracts
 └── book/                           # mdBook documentation
 ```
 
@@ -176,7 +176,7 @@ falsification_tests:
   prediction: apr validate bad-model.apr exits non-zero
 ```
 
-1096 contracts across inference, training, quantization, attention, FFN,
+1105 contracts across inference, training, quantization, attention, FFN,
 tokenization, model formats, CLI safety — and this README itself.
 
 ## Migration from old crates

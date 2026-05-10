@@ -90,7 +90,11 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 }
             }
             // GH-326: --gpu overrides --no-gpu when both specified
-            let effective_no_gpu = if *gpu { false } else { *no_gpu || backend_forces_cpu };
+            let effective_no_gpu = if *gpu {
+                false
+            } else {
+                *no_gpu || backend_forces_cpu
+            };
 
             // Batch JSONL mode: load model once, process all prompts
             #[cfg(feature = "inference")]
@@ -153,6 +157,9 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             print,
             max_turns,
             manifest,
+            emit_trace,
+            output_format,
+            input_format,
         } => batuta::agent::code::cmd_code(
             model.clone(),
             project.clone(),
@@ -161,6 +168,18 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *print,
             *max_turns,
             manifest.clone(),
+            emit_trace.clone(),
+            // PMAT-CODE-OUTPUT-FORMAT-001 / PMAT-CODE-INPUT-FORMAT-001:
+            // forward as `&str` so the orchestrate crate need not depend on
+            // the apr-cli ValueEnum types.
+            match output_format {
+                crate::CodeOutputFormat::Text => "text",
+                crate::CodeOutputFormat::Json => "json",
+            },
+            match input_format {
+                crate::CodeInputFormat::Text => "text",
+                crate::CodeInputFormat::Json => "json",
+            },
         )
         .map_err(|e| CliError::Aprender(e.to_string())),
 
@@ -259,7 +278,51 @@ fn dispatch_diagnostic_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             payload,
             diff,
             interactive,
+            save_tensor,
+            save_tensor_dir,
+            save_tensor_layers,
         } => crate::error::resolve_model_path(file).and_then(|r| {
+            // SHIP-007 layer-0 stage diff: when --save-tensor is set on a
+            // .apr file, dispatch to the end-to-end save-tensor wrapper
+            // (PR-A clap → PR-B plan → PR-C-real step1+2 wrapper). For
+            // .gguf/.safetensors and the common no-flag case, fall through
+            // to the existing trace path.
+            #[cfg(feature = "inference")]
+            if let Some(stages) = save_tensor.as_deref() {
+                let ext_lower = r
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(str::to_ascii_lowercase);
+                match ext_lower.as_deref() {
+                    Some("apr") => {
+                        return crate::commands::trace_save_tensor::run_save_tensor_apr(
+                            &r,
+                            stages,
+                            save_tensor_dir.as_deref(),
+                            save_tensor_layers,
+                        );
+                    }
+                    Some("gguf") => {
+                        // M-MOE-SUB-2 step (a) CLI completion: GGUF dispatches
+                        // to the MoE-traced wireup if the arch is qwen3_moe;
+                        // dense-GGUF will be wired in SHIP-007 PR-E.
+                        return crate::commands::trace_save_tensor::run_save_tensor_gguf_moe(
+                            &r,
+                            stages,
+                            save_tensor_dir.as_deref(),
+                            save_tensor_layers,
+                        );
+                    }
+                    _ => {
+                        eprintln!(
+                            "apr trace --save-tensor: only .apr and .gguf (qwen3_moe arch) \
+                             supported today; .safetensors will be wired in SHIP-007 PR-E \
+                             (got {})",
+                            r.display()
+                        );
+                    }
+                }
+            }
             trace::run(
                 &r,
                 layer.as_deref(),
@@ -359,10 +422,15 @@ fn dispatch_format_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             allow_no_config,
         } => {
             // GH-666: Reject network sources when --offline is set
-            if cli.offline && (source.starts_with("hf://") || source.starts_with("http://") || source.starts_with("https://")) {
-                return Some(Err(crate::error::CliError::NetworkError(
-                    format!("Cannot import from '{}' in --offline mode. Use a local file path.", source),
-                )));
+            if cli.offline
+                && (source.starts_with("hf://")
+                    || source.starts_with("http://")
+                    || source.starts_with("https://"))
+            {
+                return Some(Err(crate::error::CliError::NetworkError(format!(
+                    "Cannot import from '{}' in --offline mode. Use a local file path.",
+                    source
+                ))));
             }
             import::run(
                 source,
@@ -465,7 +533,10 @@ fn dispatch_format_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 }
 
 /// Dispatch model management commands: merge, finetune, prune, distill, pull, list, rm, tui.
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
+#[provable_contracts_macros::contract(
+    "apr-cli-operations-v1",
+    equation = "side_effect_classification"
+)]
 fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     contract_pre_output_path_validation!();
     contract_pre_rm_confirmation_gate!();
@@ -540,37 +611,37 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 eprintln!("StepProfiler enabled for finetune (PMAT-486)");
             }
             finetune::run(
-            file.as_deref(),
-            method,
-            *rank,
-            *vram,
-            *plan,
-            data.as_deref(),
-            output.as_deref(),
-            adapter.as_deref(),
-            *merge,
-            *epochs,
-            *learning_rate,
-            model_size.as_deref(),
-            task.as_deref(),
-            *num_classes,
-            checkpoint_format,
-            *oversample,
-            *max_seq_len,
-            *quantize_nf4,
-            gpus.as_deref(),
-            gpu_backend,
-            role.as_deref(),
-            bind.as_deref(),
-            coordinator.as_deref(),
-            *expect_workers,
-            *wait_gpu,
-            adapters,
-            adapters_config.as_deref(),
-            cli.json,
-            *experimental_mps,
-            *gpu_share,
-        )
+                file.as_deref(),
+                method,
+                *rank,
+                *vram,
+                *plan,
+                data.as_deref(),
+                output.as_deref(),
+                adapter.as_deref(),
+                *merge,
+                *epochs,
+                *learning_rate,
+                model_size.as_deref(),
+                task.as_deref(),
+                *num_classes,
+                checkpoint_format,
+                *oversample,
+                *max_seq_len,
+                *quantize_nf4,
+                gpus.as_deref(),
+                gpu_backend,
+                role.as_deref(),
+                bind.as_deref(),
+                coordinator.as_deref(),
+                *expect_workers,
+                *wait_gpu,
+                adapters,
+                adapters_config.as_deref(),
+                cli.json,
+                *experimental_mps,
+                *gpu_share,
+            )
         }
         Commands::ModelOps(ModelOpsCommands::Prune {
             file,
@@ -624,14 +695,40 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         ),
         Commands::Pull {
             model_ref,
+            repo,
             force,
             dry_run,
             revision,
             offline,
-        } => pull::run(model_ref, *force, *dry_run, revision.as_deref(), *offline),
-        Commands::Registry { command } => {
-            crate::commands::registry::run(command.clone())
+            include,
+            output,
+        } => {
+            // SHIP-TWO-001 §26.8: when first positional is the literal
+            // "dataset", treat the second positional as the HF dataset
+            // repo and dispatch to the dataset puller. Otherwise fall
+            // through to the existing model puller (backward compat).
+            if model_ref == "dataset" {
+                match repo.as_deref() {
+                    // Issue #1410 / FALSIFY-PULL-DATASET-009: thread `dry_run`
+                    // through to the dataset puller. Previously dropped on
+                    // the floor, so `apr pull dataset --dry-run` performed
+                    // full downloads in violation of the contract.
+                    Some(r) => pull::run_dataset(
+                        r,
+                        include,
+                        revision.as_deref(),
+                        output.as_deref(),
+                        *dry_run,
+                    ),
+                    None => Err(crate::error::CliError::ValidationFailed(
+                        "apr pull dataset <REPO>: REPO argument required".to_string(),
+                    )),
+                }
+            } else {
+                pull::run(model_ref, *force, *dry_run, revision.as_deref(), *offline)
+            }
         }
+        Commands::Registry { command } => crate::commands::registry::run(command.clone()),
         Commands::List => pull::list(cli.json, cli.quiet),
         Commands::Rm { model_ref } => pull::remove(model_ref),
         Commands::Tui { file } => tui::run(file.clone()),

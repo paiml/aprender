@@ -111,7 +111,7 @@ impl NemotronConfig {
 /// # Example
 ///
 /// ```rust,ignore
-/// use trueno_rag::embed::{NemotronEmbedder, NemotronConfig, Embedder};
+/// use aprender_rag::embed::{NemotronEmbedder, NemotronConfig, Embedder};
 ///
 /// let config = NemotronConfig::new("models/NV-Embed-v2-Q4_K.gguf")
 ///     .with_gpu(true);

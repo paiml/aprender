@@ -1,0 +1,10 @@
+=== APR Run ===
+
+Source: /home/noah/.cache/pacha/models/2b88b180a790988f.gguf
+[BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF — using architecture default for 'qwen3moe'
+[BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF — using architecture default for 'qwen3moe'
+
+Output:
+Human: What is 2+
+
+Completed in 47.14s (cached)

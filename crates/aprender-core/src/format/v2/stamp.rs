@@ -114,8 +114,8 @@ pub fn stamp_provenance_bytes(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::{AprV2Flags, AprV2Metadata, TensorDType};
+    use super::*;
 
     /// Build a minimal valid APR v2 buffer for round-trip tests.
     fn minimal_apr_with_flags(flags: u16) -> Vec<u8> {
@@ -149,7 +149,10 @@ mod tests {
             md.data_source.as_deref(),
             Some("huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct")
         );
-        assert_eq!(md.data_license.as_deref(), Some("Qwen-License-Agreement-v1"));
+        assert_eq!(
+            md.data_license.as_deref(),
+            Some("Qwen-License-Agreement-v1")
+        );
     }
 
     #[test]

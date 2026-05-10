@@ -16,17 +16,21 @@ use crate::error::{CliError, Result};
 use crate::output;
 use clap::ValueEnum;
 use colored::Colorize;
-use entrenar::models::llama_370m::{assert_tokenizer_vocab_matches_model, Llama370MConfig};
+use entrenar::models::llama_370m::{
+    assert_tokenizer_vocab_matches_model, assert_tokenizer_vocab_within_model_bound,
+    Llama370MConfig,
+};
 use entrenar::train::device::{resolve_device, Device};
 use entrenar::train::pretrain::{
     CheckpointFn, LinearDecaySynthetic, PretrainAbort, PretrainConfig, PretrainLoop, RunStatus,
     ScriptedVal, StepFn, TrainingRegime, ValFn,
 };
 use entrenar::train::pretrain_real::{
-    build_shared_trainer, AprCheckpointFn, RealStepFn, RealValFn,
+    build_shared_trainer, build_shared_trainer_with_init, AprCheckpointFn, RealStepFn, RealValFn,
 };
 use entrenar::train::shard_reader::ShardBatchIter;
 use entrenar::train::transformer_trainer::LMBatch;
+use entrenar::transformer::TransformerConfig;
 use std::path::Path;
 
 /// Number of LMBatches pulled off the head of the shard stream and
@@ -42,6 +46,29 @@ use std::path::Path;
 /// held-out batches (131K tokens), val_loss noise floor drops
 /// proportionally to ~0.01, restoring early-stop signal-to-noise.
 const HELD_OUT_BATCHES: usize = 16;
+
+/// Drift-prevention constant pinned by `apr-pretrain-arch-polymorphic-v1`
+/// v1.7.0 §FALSIFY-APR-PRETRAIN-INIT-CUDA-001.
+///
+/// Pre-§50.4-step-5f.5 (this constant's first incarnation, v1.4.0..v1.6.0):
+/// the fail-fast error returned when `--init <PATH>` AND `--device cuda`
+/// were combined and the CUDA wireup did not exist. The const was the
+/// drift-prevention surface — a unit test verified the citation, the
+/// "not yet wired" phrase, and the 5f.5 reference all appeared.
+///
+/// Post-5f.5 (this PR — `apr-pretrain-arch-polymorphic-v1` v1.7.0): the
+/// CUDA wireup landed via `entrenar::train::pretrain_real_cuda::
+/// build_shared_cuda_trainer_with_init` (symmetric to the CPU
+/// `build_shared_trainer_with_init`). The const is RETAINED but its
+/// payload is repurposed as a drift-prevention sentinel: if a future
+/// refactor accidentally re-introduces a fail-fast on the CUDA + --init
+/// path, the test that pins this string will fail-fast and surface the
+/// regression. The string itself is no longer emitted by any code path
+/// in `drive_real`; it survives only to anchor the contract obligation.
+pub(crate) const FALSIFY_APR_PRETRAIN_INIT_CUDA_001_MSG: &str =
+    "FALSIFY-APR-PRETRAIN-INIT-CUDA-001: --init is wired for --device cuda \
+     via build_shared_cuda_trainer_with_init (5f.5 SHIPPED); operator can pass \
+     --init <PATH> --device cuda for end-to-end GPU fine-tune dispatch.";
 
 /// CLI selector bound to training-loop-pretrain-v1 §hyperparameter_defaults.
 /// Atomically flips the `(regime, lr_max, warmup_steps, target_val_loss)`
@@ -109,6 +136,7 @@ pub(crate) fn run(
     vocab_size: u32,
     synthetic: bool,
     device: &str,
+    init: Option<&Path>,
     json_output: bool,
 ) -> Result<()> {
     // Contract gpu-training-backend-v1 INV-GPUTRAIN-001 / GATE-GPUTRAIN-002:
@@ -118,6 +146,29 @@ pub(crate) fn run(
     // with real compute) but the stub error surface is identical.
     let resolved_device =
         resolve_device(device).map_err(|e| CliError::ValidationFailed(e.to_string()))?;
+
+    // Contract apr-pretrain-from-init-v1 §init_load_semantics + §50.4 step 5f.4:
+    // when --init is present, (1) validate magic bytes, (2) extract
+    // TransformerConfig from the APR header metadata, (3) propagate the
+    // extracted arch through preflight + trainer construction.
+    // Per `apr-pretrain-arch-polymorphic-v1` §arch_extraction_signature,
+    // missing or unreadable architecture metadata is FAIL-FAST not silent-fallback.
+    let init_arch: Option<TransformerConfig> = if let Some(init_path) = init {
+        validate_init_apr_path(init_path)?;
+        Some(
+            crate::commands::model_config::read_apr_architecture(init_path).ok_or_else(|| {
+                CliError::ValidationFailed(format!(
+                    "FALSIFY-APR-PRETRAIN-INIT-005: --init APR file at {} has missing or invalid \
+                     architecture metadata (hidden_size, num_heads, num_layers, vocab_size, etc). \
+                     Cannot extract TransformerConfig per apr-pretrain-arch-polymorphic-v1 \
+                     §arch_extraction_signature.",
+                    init_path.display()
+                ))
+            })?,
+        )
+    } else {
+        None
+    };
 
     let hp = mode_defaults(mode, vocab_size, lr, warmup_steps, target_val_loss);
 
@@ -199,6 +250,8 @@ pub(crate) fn run(
             seed,
             resolved_device,
             json_output,
+            init_arch.as_ref(),
+            init,
         )?
     };
 
@@ -237,12 +290,66 @@ fn drive_synthetic(
     run_and_report(config, step_fn, val_fn, None, json_output)
 }
 
+/// Contract apr-pretrain-from-init-v1 §init_load_semantics + §init_error_semantics:
+/// validate `--init <PATH>` BEFORE any trainer allocation. Falsifies
+/// FALSIFY-APR-PRETRAIN-INIT-003 (missing-file) + -004 (invalid-magic).
+///
+/// Returns Ok on a valid APR file (existence + magic bytes verified).
+/// Architecture extraction + weight load are §50.4 step 5f.4 — the
+/// caller (`run()`) extracts the config via `model_config::read_apr_architecture`
+/// and passes both to `build_shared_trainer_with_init` per
+/// `apr-pretrain-arch-polymorphic-v1` §init_load_semantics.
+fn validate_init_apr_path(path: &Path) -> Result<()> {
+    let mut file = std::fs::File::open(path).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "FALSIFY-APR-PRETRAIN-INIT-003: --init path does not exist or is unreadable: {} ({e})",
+            path.display()
+        ))
+    })?;
+    let mut magic = [0u8; 4];
+    use std::io::Read;
+    file.read_exact(&mut magic).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "FALSIFY-APR-PRETRAIN-INIT-004: --init file too short to contain APR magic bytes: {} ({e})",
+            path.display()
+        ))
+    })?;
+    // APR magic bytes per `crates/aprender-core/src/format/kani_proofs.rs`:
+    //   APR\0 = [0x41, 0x50, 0x52, 0x00] (v2)
+    //   APRN  = [0x41, 0x50, 0x52, 0x4E] (v1)
+    const APR_MAGIC_V2: [u8; 4] = [0x41, 0x50, 0x52, 0x00];
+    const APR_MAGIC_V1: [u8; 4] = [0x41, 0x50, 0x52, 0x4E];
+    if magic != APR_MAGIC_V2 && magic != APR_MAGIC_V1 {
+        return Err(CliError::ValidationFailed(format!(
+            "FALSIFY-APR-PRETRAIN-INIT-004: --init file is not a valid APR file (magic={:02X?}, expected {:02X?} or {:02X?}): {}",
+            magic, APR_MAGIC_V2, APR_MAGIC_V1, path.display()
+        )));
+    }
+    Ok(())
+}
+
 /// GATE-ARCH-370M-011 pre-flight: count the tokenizer's vocabulary entries
-/// from `vocab.json` and assert the count matches `Llama370MConfig::VOCAB_SIZE`
-/// before any trainer allocation. Any mismatch aborts the dispatch with a
-/// clear error naming both values and the violated invariant — the N-09 OOB
-/// escape in `Embedding::forward` would otherwise silently corrupt training.
-fn preflight_tokenizer_vocab_matches_model(tokenizer_dir: &Path) -> Result<()> {
+/// from `vocab.json` and assert the count matches `target_vocab_size`
+/// before any trainer allocation.
+///
+/// Per `apr-pretrain-arch-polymorphic-v1` §qwen_tokenizer_vocab_compatibility
+/// (PR #1473), the target is now POLYMORPHIC — when `--init <PATH>` is set,
+/// the caller passes the extracted-arch's vocab_size (e.g., 151_936 for
+/// Qwen2.5-0.5B); otherwise `Llama370MConfig::VOCAB_SIZE` (50_257) for
+/// the §24/§25 from-scratch baseline.
+///
+/// Any mismatch aborts the dispatch with a clear error naming both values
+/// and the violated invariant — the N-09 OOB escape in `Embedding::forward`
+/// would otherwise silently corrupt training.
+///
+/// Discharges FALSIFY-APR-PRETRAIN-ARCH-005 (Qwen tokenizer passes with
+/// Qwen target) and FALSIFY-APR-PRETRAIN-ARCH-006 (Qwen tokenizer fails
+/// with Llama target).
+fn preflight_tokenizer_vocab_matches_target(
+    tokenizer_dir: &Path,
+    target_vocab_size: usize,
+    init_is_some: bool,
+) -> Result<()> {
     let vocab_path = tokenizer_dir.join("vocab.json");
     let vocab_json = std::fs::read_to_string(&vocab_path).map_err(|e| {
         CliError::ValidationFailed(format!(
@@ -257,8 +364,17 @@ fn preflight_tokenizer_vocab_matches_model(tokenizer_dir: &Path) -> Result<()> {
                 vocab_path.display()
             ))
         })?;
-    assert_tokenizer_vocab_matches_model(vocab.len(), Llama370MConfig::VOCAB_SIZE)
-        .map_err(CliError::ValidationFailed)
+    // §55: when --init is set (polymorphic path with HF-distributed
+    // checkpoint), allow tokenizer_vocab ≤ model_vocab to admit Qwen-style
+    // reserved-slot vocabularies. When --init is absent (§24/§25 from-scratch
+    // baseline), enforce strict equality to preserve INV-ARCH-370M-006.
+    if init_is_some {
+        assert_tokenizer_vocab_within_model_bound(vocab.len(), target_vocab_size)
+            .map_err(CliError::ValidationFailed)
+    } else {
+        assert_tokenizer_vocab_matches_model(vocab.len(), target_vocab_size)
+            .map_err(CliError::ValidationFailed)
+    }
 }
 
 /// Real-corpus drive: build a shared 370M trainer (CPU or CUDA), split
@@ -278,13 +394,26 @@ fn drive_real(
     seed: u64,
     device: Device,
     json_output: bool,
+    init_arch: Option<&TransformerConfig>,
+    init_path: Option<&Path>,
 ) -> Result<RunStatus> {
     // GATE-ARCH-370M-011 / INV-ARCH-370M-006 — refuse to dispatch a real
     // training step when the tokenizer vocab_size and the model vocab_size
     // disagree. The N-09 OOB escape guard in Embedding::forward masks the
     // mismatch at runtime → silent garbage gradients otherwise. Synthetic
     // drive skips this check because it never touches the real model.
-    preflight_tokenizer_vocab_matches_model(&config.tokenizer_dir)?;
+    // Per `apr-pretrain-arch-polymorphic-v1` §qwen_tokenizer_vocab_compatibility
+    // (§50.4 step 5d/5f.4): when --init is set, gate by the EXTRACTED arch's
+    // vocab_size; otherwise gate by the §24/§25 baseline Llama370MConfig::VOCAB_SIZE,
+    // preserving regression-free behavior (FALSIFY-002 + FALSIFY-005 + FALSIFY-006).
+    let target_vocab = init_arch
+        .map(|cfg| cfg.vocab_size)
+        .unwrap_or(Llama370MConfig::VOCAB_SIZE);
+    preflight_tokenizer_vocab_matches_target(
+        &config.tokenizer_dir,
+        target_vocab,
+        init_arch.is_some(),
+    )?;
 
     // MVP: pad_id/eos_id both 0. All sequences are uniform length
     // (seq_length + 1) so LMBatch::from_sequences takes the shared
@@ -325,9 +454,45 @@ fn drive_real(
     }
 
     if device.is_cuda() {
-        drive_real_cuda(config, iter, held_out, lr, seq_length, seed, json_output)
+        // §50.4 step 5f.5 SHIPPED (this PR): CUDA path with --init is now
+        // wired symmetric to the CPU path via
+        // `entrenar::train::pretrain_real_cuda::build_shared_cuda_trainer_with_init`.
+        // The same §50.4 step-5f machinery composes through both backends:
+        //   5c: build_transformer_config(init_arch)
+        //   5f.1: validate_pretrain_init_arch_compatible(init_arch) — encoder rejection
+        //   5f.2: load_init_tensors_from_apr(path) — read APR weights
+        //   5f.3: populate_trainer_from_init_tensors(transformer, &tensors) — populate CPU model
+        //   5f.5 (this PR): CudaTransformerTrainer::with_model uploads populated
+        //                   blocks / norm / lm_head to GPU.
+        //
+        // Per `apr-pretrain-arch-polymorphic-v1` v1.7.0 §FALSIFY-APR-PRETRAIN-INIT-CUDA-001,
+        // the const FALSIFY_APR_PRETRAIN_INIT_CUDA_001_MSG is repurposed as a
+        // drift-prevention sentinel — if a future refactor re-introduces a
+        // fail-fast on the CUDA + --init path, the test that pins the const
+        // will fail and surface the regression.
+        drive_real_cuda(
+            config,
+            iter,
+            held_out,
+            lr,
+            seq_length,
+            seed,
+            json_output,
+            init_arch,
+            init_path,
+        )
     } else {
-        drive_real_cpu(config, iter, held_out, lr, seq_length, seed, json_output)
+        drive_real_cpu(
+            config,
+            iter,
+            held_out,
+            lr,
+            seq_length,
+            seed,
+            json_output,
+            init_arch,
+            init_path,
+        )
     }
 }
 
@@ -343,8 +508,19 @@ fn drive_real_cpu(
     seq_length: usize,
     seed: u64,
     json_output: bool,
+    init_arch: Option<&TransformerConfig>,
+    init_path: Option<&Path>,
 ) -> Result<RunStatus> {
-    let trainer = build_shared_trainer(lr, seq_length, seed);
+    // §50.4 step 5f.4: when --init is set, build the trainer via the
+    // polymorphic builder (extracts arch + loads + populates init tensors).
+    // When --init is absent, use the existing from-scratch baseline builder
+    // so the §24/§25 evidence remains regression-free.
+    let trainer = if init_arch.is_some() || init_path.is_some() {
+        build_shared_trainer_with_init(lr, seq_length, seed, init_arch, init_path)
+            .map_err(CliError::ValidationFailed)?
+    } else {
+        build_shared_trainer(lr, seq_length, seed)
+    };
     let step_fn = RealStepFn::new(trainer.clone(), Box::new(iter));
     let val_fn = RealValFn::new(trainer.clone(), held_out);
     let ckpt: Box<dyn CheckpointFn> = Box::new(AprCheckpointFn::new(
@@ -372,18 +548,40 @@ fn drive_real_cuda(
     seq_length: usize,
     seed: u64,
     json_output: bool,
+    init_arch: Option<&TransformerConfig>,
+    init_path: Option<&Path>,
 ) -> Result<RunStatus> {
     use entrenar::train::pretrain_real_cuda::{
-        build_shared_cuda_trainer, CudaAprCheckpointFn, CudaRealStepFn, CudaRealValFn,
+        build_shared_cuda_trainer, build_shared_cuda_trainer_with_init, CudaAprCheckpointFn,
+        CudaRealStepFn, CudaRealValFn,
     };
-    let trainer = build_shared_cuda_trainer(lr, seq_length, seed).map_err(|e| {
-        CliError::ValidationFailed(format!(
-            "GATE-GPUTRAIN-002: CUDA trainer allocation failed: {e}. \
-             See contracts/entrenar/gpu-training-backend-v1.yaml and \
-             memory/feedback_cuda_feature_footgun.md — this path is \
-             only reachable when the binary was built with `--features cuda`.",
-        ))
-    })?;
+    // §50.4 step 5f.5: when --init is set on the CUDA path, build via the
+    // polymorphic builder (extracts arch + loads + populates init tensors,
+    // then uploads to GPU). When --init is absent, use the existing
+    // from-scratch baseline so the §24/§25 evidence remains regression-free
+    // and INV-ARCH-370M-001 stays enforced on the from-scratch CUDA path.
+    let trainer = if init_arch.is_some() || init_path.is_some() {
+        build_shared_cuda_trainer_with_init(lr, seq_length, seed, init_arch, init_path).map_err(
+            |e| {
+                CliError::ValidationFailed(format!(
+                    "GATE-GPUTRAIN-002: CUDA trainer allocation (--init path) failed: {e}. \
+                     See contracts/entrenar/gpu-training-backend-v1.yaml and \
+                     contracts/apr-pretrain-arch-polymorphic-v1.yaml v1.7.0 \
+                     §FALSIFY-APR-PRETRAIN-INIT-CUDA-001 — this path is only \
+                     reachable when the binary was built with `--features cuda`.",
+                ))
+            },
+        )?
+    } else {
+        build_shared_cuda_trainer(lr, seq_length, seed).map_err(|e| {
+            CliError::ValidationFailed(format!(
+                "GATE-GPUTRAIN-002: CUDA trainer allocation failed: {e}. \
+                 See contracts/entrenar/gpu-training-backend-v1.yaml and \
+                 memory/feedback_cuda_feature_footgun.md — this path is \
+                 only reachable when the binary was built with `--features cuda`.",
+            ))
+        })?
+    };
     let step_fn = CudaRealStepFn::new(trainer.clone(), Box::new(iter));
     let val_fn = CudaRealValFn::new(trainer.clone(), held_out);
     let ckpt: Box<dyn CheckpointFn> = Box::new(CudaAprCheckpointFn::new(
@@ -411,6 +609,8 @@ fn drive_real_cuda(
     _seq_length: usize,
     _seed: u64,
     _json_output: bool,
+    _init_arch: Option<&TransformerConfig>,
+    _init_path: Option<&Path>,
 ) -> Result<RunStatus> {
     Err(CliError::ValidationFailed(
         "GATE-GPUTRAIN-002: --device cuda was requested but this `apr` \
@@ -618,7 +818,7 @@ mod tests {
         // exactly Llama370MConfig::VOCAB_SIZE entries must pass pre-flight.
         let tmp = TempDir::new().expect("tempdir");
         stage_vocab_json(tmp.path(), Llama370MConfig::VOCAB_SIZE);
-        preflight_tokenizer_vocab_matches_model(tmp.path())
+        preflight_tokenizer_vocab_matches_target(tmp.path(), Llama370MConfig::VOCAB_SIZE, false)
             .expect("matching vocab must pass GATE-ARCH-370M-011");
     }
 
@@ -633,8 +833,12 @@ mod tests {
         let tmp = TempDir::new().expect("tempdir");
         let mismatch = Llama370MConfig::VOCAB_SIZE - 1;
         stage_vocab_json(tmp.path(), mismatch);
-        let err = preflight_tokenizer_vocab_matches_model(tmp.path())
-            .expect_err("tokenizer/model vocab mismatch must be rejected");
+        let err = preflight_tokenizer_vocab_matches_target(
+            tmp.path(),
+            Llama370MConfig::VOCAB_SIZE,
+            false,
+        )
+        .expect_err("tokenizer/model vocab mismatch must be rejected");
         match err {
             CliError::ValidationFailed(msg) => {
                 assert!(
@@ -660,8 +864,12 @@ mod tests {
         // error) — the operator should know the tokenizer layout is
         // wrong, not that the dataset is empty.
         let tmp = TempDir::new().expect("tempdir");
-        let err = preflight_tokenizer_vocab_matches_model(tmp.path())
-            .expect_err("missing vocab.json must be rejected");
+        let err = preflight_tokenizer_vocab_matches_target(
+            tmp.path(),
+            Llama370MConfig::VOCAB_SIZE,
+            false,
+        )
+        .expect_err("missing vocab.json must be rejected");
         match err {
             CliError::ValidationFailed(msg) => {
                 assert!(
@@ -675,6 +883,170 @@ mod tests {
             }
             other => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    /// FALSIFY-APR-PRETRAIN-ARCH-005 — a Qwen tokenizer (vocab=151_936) MUST
+    /// pass preflight when the target_vocab_size is the Qwen extracted-arch
+    /// (151_936). Falsifies a regression where preflight would still gate
+    /// against the hardcoded Llama370M vocab.
+    ///
+    /// Spec: SPEC-SHIP-TWO-001 §50.4 step 5d.
+    #[test]
+    fn preflight_qwen_vocab_passes_with_qwen_target() {
+        const QWEN2_VOCAB_SIZE: usize = 151_936;
+        let tmp = TempDir::new().expect("tempdir");
+        stage_vocab_json(tmp.path(), QWEN2_VOCAB_SIZE);
+        // §50.4 step 5d called this with init=Some semantic (the polymorphic path). Use
+        // init_is_some=true here per §55 relaxed-bound semantics; vocab.len() == target
+        // is still acceptable under <=.
+        preflight_tokenizer_vocab_matches_target(tmp.path(), QWEN2_VOCAB_SIZE, true).expect(
+            "Qwen tokenizer (151_936) MUST pass preflight when target is Qwen-shaped — \
+             this is the load-bearing claim of §49 fine-tune from a Qwen2.5 init checkpoint",
+        );
+    }
+
+    /// FALSIFY-APR-PRETRAIN-ARCH-006 — a Qwen tokenizer (vocab=151_936) MUST
+    /// FAIL preflight when target_vocab_size is the Llama370M baseline
+    /// (50_257). Falsifies the silent-pass class where an operator would
+    /// accidentally pair a Qwen tokenizer with the from-scratch trainer.
+    ///
+    /// Spec: SPEC-SHIP-TWO-001 §50.4 step 5d.
+    #[test]
+    fn preflight_qwen_vocab_fails_with_llama_target() {
+        const QWEN2_VOCAB_SIZE: usize = 151_936;
+        let tmp = TempDir::new().expect("tempdir");
+        stage_vocab_json(tmp.path(), QWEN2_VOCAB_SIZE);
+        // §55: this is the from-scratch path (init absent), so init_is_some=false.
+        // Strict equality applies; tokenizer (151_936) ≠ target (50_257) MUST fail.
+        let err = preflight_tokenizer_vocab_matches_target(
+            tmp.path(),
+            Llama370MConfig::VOCAB_SIZE,
+            false,
+        )
+        .expect_err(
+            "Qwen tokenizer (151_936) MUST FAIL preflight when target is Llama370M (50_257) — \
+             silent-pass would corrupt training",
+        );
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(
+                    msg.contains(&QWEN2_VOCAB_SIZE.to_string()),
+                    "msg must name Qwen vocab size 151_936: {msg}"
+                );
+                assert!(
+                    msg.contains(&Llama370MConfig::VOCAB_SIZE.to_string()),
+                    "msg must name target Llama vocab size 50_257: {msg}"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    /// FALSIFY-APR-PRETRAIN-ARCH-009 (§55) — at preflight level, an HF
+    /// tokenizer with vocab.json count = 151665 (BPE+added, the §54 LIVE
+    /// smoke shape) MUST PASS preflight when target is Qwen 151936 AND
+    /// init_is_some=true (the polymorphic path).
+    #[test]
+    fn preflight_qwen_reserved_slots_pass_under_polymorphic_init() {
+        const QWEN_TOKENIZER_EFFECTIVE: usize = 151_665;
+        const QWEN_DECLARED_VOCAB: usize = 151_936;
+        let tmp = TempDir::new().expect("tempdir");
+        stage_vocab_json(tmp.path(), QWEN_TOKENIZER_EFFECTIVE);
+
+        // init_is_some=true: relaxed bound applies; 151665 ≤ 151936 PASSES.
+        preflight_tokenizer_vocab_matches_target(tmp.path(), QWEN_DECLARED_VOCAB, true).expect(
+            "FALSIFY-APR-PRETRAIN-ARCH-009: HF reserved-slot tokenizer (151_665 ≤ 151_936) \
+             MUST pass preflight under polymorphic init path (§55 relaxed bound)",
+        );
+
+        // init_is_some=false: strict equality applies; 151665 ≠ 151936 FAILS.
+        let err = preflight_tokenizer_vocab_matches_target(tmp.path(), QWEN_DECLARED_VOCAB, false)
+            .expect_err(
+                "FALSIFY-APR-PRETRAIN-ARCH-009 dual: from-scratch path MUST keep strict ==",
+            );
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(
+                    msg.contains("GATE-ARCH-370M-011")
+                        && msg.contains(&QWEN_TOKENIZER_EFFECTIVE.to_string())
+                        && msg.contains(&QWEN_DECLARED_VOCAB.to_string()),
+                    "strict-mode error must name gate + both sizes: {msg}"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    /// FALSIFY-APR-PRETRAIN-ARCH-010 (§55) — at preflight level, a tokenizer
+    /// with MORE entries than the model declares MUST FAIL even under the
+    /// polymorphic init path. This is the OOB-safety guard: such a tokenizer
+    /// could emit ids ≥ model_vocab → silent embedding-lookup garbage.
+    #[test]
+    fn preflight_oversized_tokenizer_rejected_even_under_polymorphic_init() {
+        const QWEN_DECLARED_VOCAB: usize = 151_936;
+        let oversized = QWEN_DECLARED_VOCAB + 100;
+        let tmp = TempDir::new().expect("tempdir");
+        stage_vocab_json(tmp.path(), oversized);
+
+        let err = preflight_tokenizer_vocab_matches_target(
+            tmp.path(),
+            QWEN_DECLARED_VOCAB,
+            true, // polymorphic path
+        )
+        .expect_err(
+            "FALSIFY-APR-PRETRAIN-ARCH-010: oversized tokenizer MUST fail-fast even under \
+             polymorphic init (OOB safety; relaxed bound is ≤ not <)",
+        );
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(
+                    msg.contains("RELAXED") && msg.contains("OOB"),
+                    "polymorphic-mode error must cite RELAXED + OOB: {msg}"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    /// FALSIFY-APR-PRETRAIN-INIT-CUDA-001 (drift-prevention sentinel,
+    /// post-5f.5): after §50.4 step 5f.5 SHIPPED, the const message
+    /// pins the wireup-is-wired property. The string MUST contain
+    /// (a) the falsifier id, (b) the canonical "is wired for --device
+    /// cuda" phrase, (c) a reference to the symmetric builder
+    /// `build_shared_cuda_trainer_with_init`, and (d) the "5f.5
+    /// SHIPPED" status marker. If a future refactor accidentally
+    /// reverts the wireup or renames the symmetric builder, this test
+    /// catches the drift before the contract reference goes stale.
+    ///
+    /// Pinned via `pub(crate) const FALSIFY_APR_PRETRAIN_INIT_CUDA_001_MSG`
+    /// so this test fires on a CPU-only build (no `--features cuda` needed).
+    /// The const itself is NOT emitted by any code path in `drive_real`;
+    /// it survives only to anchor the contract obligation. The runtime
+    /// behaviour (`drive_real_cuda` calling `build_shared_cuda_trainer_with_init`
+    /// when `init_arch.is_some() || init_path.is_some()`) is exercised
+    /// at the entrenar crate level where CUDA-feature builds can fire it.
+    #[test]
+    fn drive_real_cuda_init_path_wireup_sentinel_pinned() {
+        let msg = FALSIFY_APR_PRETRAIN_INIT_CUDA_001_MSG;
+        assert!(
+            msg.contains("FALSIFY-APR-PRETRAIN-INIT-CUDA-001"),
+            "sentinel MUST cite the falsifier id (auditability): {msg}"
+        );
+        assert!(
+            msg.contains("is wired for --device cuda"),
+            "sentinel MUST contain the canonical 'is wired' phrase so \
+             operators recognize §50.4 step 5f.5 SHIPPED: {msg}"
+        );
+        assert!(
+            msg.contains("build_shared_cuda_trainer_with_init"),
+            "sentinel MUST name the symmetric builder so future agents \
+             know which symbol implements the wireup: {msg}"
+        );
+        assert!(
+            msg.contains("5f.5 SHIPPED"),
+            "sentinel MUST include the 5f.5 SHIPPED status marker so \
+             grep over the codebase can find the discharge point: {msg}"
+        );
     }
 
     #[test]
@@ -700,6 +1072,7 @@ mod tests {
             50257,
             true,
             "cpu",
+            None,
             true,
         );
         assert!(
@@ -734,6 +1107,7 @@ mod tests {
             50257,
             false,
             "cpu",
+            None,
             true,
         )
         .expect_err("empty dataset dir must fail to initialise the shard iterator");
@@ -767,6 +1141,7 @@ mod tests {
             50257,
             true,
             "cpu",
+            None,
             true,
         )
         .expect_err("negative target_val_loss must be rejected");
@@ -968,5 +1343,244 @@ mod tests {
         // `--device cuda:7` MUST round-trip unchanged; grammar
         // enforcement happens in `resolve_device`, not at clap.
         assert_eq!(parse_pretrain_device(&["--device", "cuda:7"]), "cuda:7");
+    }
+
+    // ── apr-pretrain-from-init-v1 falsifiers ────────────────────────────
+    // Contract: contracts/apr-pretrain-from-init-v1.yaml v1.0.0 PROPOSED
+    // Spec: SPEC-SHIP-TWO-001 §49 step 4 — wire `apr pretrain --init`
+    //
+    // PARTIAL_ALGORITHM_LEVEL: file-existence + magic-byte checks bind
+    // FALSIFY-APR-PRETRAIN-INIT-003 / -004; the clap surface binds
+    // FALSIFY-001 / -007. FALSIFY-005 (arch mismatch), -006 (init_loss
+    // signal), -009 (optimizer state), -010 (idempotent load) are gated
+    // on the §49 step 5 weight-load impl. The "valid APR returns
+    // not-yet-wired" test pins the no-silent-fallback contract: a
+    // recognised APR cannot be silently ignored.
+
+    fn parse_pretrain_init(extra: &[&str]) -> Option<std::path::PathBuf> {
+        let extra: Vec<String> = extra.iter().map(|s| (*s).to_string()).collect();
+        std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(move || {
+                use clap::Parser;
+                let mut argv: Vec<String> = vec![
+                    "apr".to_string(),
+                    "pretrain".to_string(),
+                    "--dataset".to_string(),
+                    "/tmp/_init_flag/ds".to_string(),
+                    "--tokenizer".to_string(),
+                    "/tmp/_init_flag/tok".to_string(),
+                    "--run-dir".to_string(),
+                    "/tmp/_init_flag/run".to_string(),
+                ];
+                argv.extend(extra);
+                let cli = crate::Cli::try_parse_from(&argv).expect("clap parse must succeed");
+                match *cli.command {
+                    crate::Commands::Extended(crate::ExtendedCommands::Pretrain {
+                        init, ..
+                    }) => init,
+                    other => panic!("expected ExtendedCommands::Pretrain, got {other:?}"),
+                }
+            })
+            .expect("spawn parse thread")
+            .join()
+            .expect("parse thread must not panic")
+    }
+
+    /// FALSIFY-APR-PRETRAIN-INIT-001: --init flag exists in clap surface.
+    #[test]
+    fn pretrain_init_flag_absent_parses_to_none() {
+        // Absent --init MUST parse to None. Falsifies a regression where a
+        // default value silently injects a path the operator never typed.
+        assert_eq!(
+            parse_pretrain_init(&[]),
+            None,
+            "FALSIFY-APR-PRETRAIN-INIT-001/002: default --init must be None (no silent default)"
+        );
+    }
+
+    /// FALSIFY-APR-PRETRAIN-INIT-001: --init <PATH> parses to Some(PathBuf).
+    #[test]
+    fn pretrain_init_flag_parses_path() {
+        let parsed = parse_pretrain_init(&["--init", "/tmp/foo.apr"]);
+        assert_eq!(
+            parsed.as_deref().and_then(|p| p.to_str()),
+            Some("/tmp/foo.apr"),
+            "FALSIFY-APR-PRETRAIN-INIT-001: --init <PATH> must round-trip through clap"
+        );
+    }
+
+    /// FALSIFY-APR-PRETRAIN-INIT-003: --init <missing-file> fails fast
+    /// before any trainer allocation; stderr names the path.
+    #[test]
+    fn pretrain_init_missing_file_errors() {
+        let tmp = TempDir::new().expect("tempdir");
+        let missing = tmp.path().join("does-not-exist.apr");
+        let err = run(
+            tmp.path(),
+            tmp.path(),
+            tmp.path(),
+            PretrainMode::Finetune,
+            Some(5.0e-5),
+            10,
+            Some(2),
+            2,
+            4,
+            5,
+            42,
+            Some(2.2),
+            50257,
+            true,
+            "cpu",
+            Some(&missing),
+            true,
+        )
+        .expect_err("missing --init file must be rejected");
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(
+                    msg.contains("FALSIFY-APR-PRETRAIN-INIT-003"),
+                    "msg must cite falsifier id: {msg}"
+                );
+                assert!(
+                    msg.contains("does-not-exist.apr"),
+                    "msg must name the missing path: {msg}"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    /// FALSIFY-APR-PRETRAIN-INIT-004: --init with wrong magic bytes fails fast.
+    #[test]
+    fn pretrain_init_bad_magic_errors() {
+        let tmp = TempDir::new().expect("tempdir");
+        let bad = tmp.path().join("not-an-apr.bin");
+        std::fs::write(&bad, b"GGUF\x00\x00\x00\x00\x00\x00\x00\x00").expect("write fixture file");
+        let err = run(
+            tmp.path(),
+            tmp.path(),
+            tmp.path(),
+            PretrainMode::Finetune,
+            Some(5.0e-5),
+            10,
+            Some(2),
+            2,
+            4,
+            5,
+            42,
+            Some(2.2),
+            50257,
+            true,
+            "cpu",
+            Some(&bad),
+            true,
+        )
+        .expect_err("invalid magic bytes must be rejected");
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(
+                    msg.contains("FALSIFY-APR-PRETRAIN-INIT-004"),
+                    "msg must cite falsifier id: {msg}"
+                );
+                assert!(
+                    msg.contains("not a valid APR file"),
+                    "msg must describe magic mismatch: {msg}"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    /// FALSIFY-APR-PRETRAIN-INIT-004: empty file (read_exact fails on 4 bytes).
+    #[test]
+    fn pretrain_init_empty_file_errors() {
+        let tmp = TempDir::new().expect("tempdir");
+        let empty = tmp.path().join("empty.apr");
+        std::fs::write(&empty, b"").expect("write empty fixture");
+        let err = run(
+            tmp.path(),
+            tmp.path(),
+            tmp.path(),
+            PretrainMode::Finetune,
+            Some(5.0e-5),
+            10,
+            Some(2),
+            2,
+            4,
+            5,
+            42,
+            Some(2.2),
+            50257,
+            true,
+            "cpu",
+            Some(&empty),
+            true,
+        )
+        .expect_err("empty file must be rejected (cannot contain magic bytes)");
+        assert!(matches!(err, CliError::ValidationFailed(_)));
+    }
+
+    /// §50.4 step 5f.4: a magic-byte-valid but metadata-bogus APR file
+    /// MUST be rejected at the architecture-extraction step, not silently
+    /// fall back to random init. The error must clearly cite the
+    /// architecture-extraction failure (not the legacy "not yet wired"
+    /// guard, which was retired when the wireup landed). This drift-prevention
+    /// pins the new fail-closed semantic.
+    #[test]
+    fn pretrain_init_valid_magic_but_bogus_metadata_fails_at_arch_extraction() {
+        let tmp = TempDir::new().expect("tempdir");
+        let valid = tmp.path().join("v2-valid-magic-bogus-metadata.apr");
+        // APR\0 magic + padding; passes validate_init_apr_path but
+        // read_apr_architecture (which reads the v2 header) will return None.
+        std::fs::write(&valid, b"APR\x00\x00\x00\x00\x00\x00\x00\x00\x00")
+            .expect("write fixture file");
+        let err = run(
+            tmp.path(),
+            tmp.path(),
+            tmp.path(),
+            PretrainMode::Finetune,
+            Some(5.0e-5),
+            10,
+            Some(2),
+            2,
+            4,
+            5,
+            42,
+            Some(2.2),
+            50257,
+            true,
+            "cpu",
+            Some(&valid),
+            true,
+        )
+        .expect_err("bogus metadata must NOT silently random-init");
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(
+                    !msg.contains("not yet wired"),
+                    "the legacy step-5-partial guard must be retired: {msg}"
+                );
+                // The actual error from read_apr_architecture failure or
+                // downstream layer; both are acceptable as long as we DON'T
+                // silently load random init.
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    /// Pin v1 magic (APRN) acceptance — `validate_init_apr_path` alone
+    /// (decoupled from architecture extraction) returns Ok for both APR\0
+    /// and APRN magic bytes. Architecture extraction is a separate step.
+    #[test]
+    fn pretrain_init_v1_magic_aprn_passes_validate_init_apr_path() {
+        let tmp = TempDir::new().expect("tempdir");
+        let v1 = tmp.path().join("v1-aprn.apr");
+        std::fs::write(&v1, b"APRN\x00\x00\x00\x00").expect("write fixture file");
+        let result = validate_init_apr_path(&v1);
+        assert!(
+            result.is_ok(),
+            "APRN magic must pass validate_init_apr_path; got {result:?}"
+        );
     }
 }

@@ -47,6 +47,14 @@ equations:
     invariants:
       - '|grad_V| < 1e6 (no gradient explosion)'
       - 'grad_V = 0 when attn_weights = 0 (causal mask respected)'
+    preconditions:
+      - 'attn_weights.shape == [NH, S, S]'
+      - 'grad_attn_out.shape == [NH, S, HD]'
+      - 'attn_weights.is_finite() && grad_attn_out.is_finite()'
+    postconditions:
+      - 'result.shape == [NH, S, HD]'
+      - 'result.is_finite() (no NaN/Inf in grad_V output)'
+    lean_theorem: 'Theorems.Attention_backward_grad_v'
 
   attention_backward_grad_scores:
     formula: |
@@ -56,6 +64,14 @@ equations:
     domain: grad_attn_out, V from forward activation checkpointing
     invariants:
       - 'grad_scores[i,j] = 0 when V[j,:] = 0'
+    preconditions:
+      - 'grad_attn_out.shape == [NH, S, HD]'
+      - 'V.shape == [NH, S, HD]'
+      - 'grad_attn_out.is_finite() && V.is_finite()'
+    postconditions:
+      - 'result.shape == [NH, S, S]'
+      - 'result.is_finite() (no NaN/Inf in grad_scores output)'
+    lean_theorem: 'Theorems.Attention_backward_grad_scores'
 
   softmax_backward:
     formula: |
@@ -67,6 +83,15 @@ equations:
     invariants:
       - 'sum(grad_raw[i,:]) ≈ 0 for each row (softmax gradient sums to zero)'
       - 'grad_raw[i,j] = 0 where causal mask applied (j > i)'
+    preconditions:
+      - 's.shape == ds.shape == [NH, S, S]'
+      - 's.is_finite() && ds.is_finite()'
+      - 's.iter().all(|v| v >= 0.0 && v <= 1.0) (s is softmax output)'
+    postconditions:
+      - 'result.shape == [NH, S, S]'
+      - '|sum(result[i,:])| < 1e-5 for each i (softmax-Jacobian zero-sum invariant)'
+      - 'result.is_finite()'
+    lean_theorem: 'Theorems.Softmax_backward'
 
   attention_backward_grad_qk:
     formula: |
@@ -76,6 +101,14 @@ equations:
     domain: grad_raw from softmax backward, Q/K from forward (RoPE-applied)
     invariants:
       - grad_Q and grad_K finite when all inputs finite
+    preconditions:
+      - 'grad_raw.shape == [NH, S, S]'
+      - 'Q.shape == K.shape == [NH, S, HD]'
+      - 'grad_raw.is_finite() && Q.is_finite() && K.is_finite()'
+    postconditions:
+      - 'grad_Q.shape == [NH, S, HD] && grad_K.shape == [NH, S, HD]'
+      - 'grad_Q.is_finite() && grad_K.is_finite() (no NaN/Inf when inputs finite)'
+    lean_theorem: 'Theorems.Attention_backward_grad_qk'
 
 proof_obligations:
   - type: equivalence

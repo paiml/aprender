@@ -1,0 +1,697 @@
+metadata:
+  kind: schema
+  version: 1.8.0
+  status: FUNCTIONAL
+  created: '2026-05-04'
+  updated: '2026-05-09'
+  author: PAIML Engineering
+  registry: true
+  changelog:
+  - version: 1.8.0
+    date: '2026-05-09'
+    change: |
+      v1.7.0 → v1.8.0 — populate-coverage gap closed.
+
+      §59 spec amendment (forthcoming) records that the 5g.2 LIVE
+      smoke (PR #1577) produced val_loss=0.0008, implausibly low.
+      Investigation surfaced root cause: `MultiHeadAttention::new`
+      hardcoded `b_q/b_k/b_v: None` regardless of `config.use_bias`,
+      so `Transformer::new(qwen2_0_5b())` had ZERO Q/K/V biases —
+      24 × 3 = 72 missing tensors per canonical Qwen 0.5B HF count
+      of 290. `populate_trainer_from_init_tensors` then iterated
+      only over `transformer.named_parameters()` (218 entries),
+      silently dropping the 72 init biases (per the "extras silently
+      ignored" rule that exists for tied weights).
+
+      The forward pass at attention.rs:388-395 ALREADY honored
+      `Option<Tensor>` biases — the gap was solely in the
+      constructor.
+
+      WHY DID PROVABLE-CONTRACTS NOT CATCH THIS? Existing falsifiers:
+        FALSIFY-001 — qwen2_0_5b config FIELD VALUES match HF ✓
+        FALSIFY-INIT-007 — populate Errs on missing model params ✓
+      Both PASSED. Neither observed the gap (FALSIFY-001 checked
+      config fields, not constructor outputs; FALSIFY-INIT-007
+      passed because 218 model params ⊆ 290 init keys, but did
+      NOT check that ALL 290 init keys were consumed).
+
+      Provable-contracts only enforce invariants you express. A
+      hardcoded value is "allowed" iff no falsifier observes it.
+      v1.8.0 closes the gap with two new falsifiers (RED-then-GREEN):
+
+        FALSIFY-APR-PRETRAIN-INIT-POPULATE-COVERAGE-001 — counts
+          named_parameters() (must equal 290 = 2 + 24×12 for Qwen 0.5B).
+        FALSIFY-APR-PRETRAIN-INIT-POPULATE-COVERAGE-002 — names
+          q_proj.bias / k_proj.bias / v_proj.bias for each layer
+          when config.use_bias is true.
+
+      Fix:
+        - MultiHeadAttention::new allocates b_q/b_k/b_v as zero
+          tensors when config.use_bias (HF Linear bias=True init
+          convention).
+        - MultiHeadAttention::set_named_parameter routes the bias
+          suffixes to b_q/b_k/b_v fields, returning false when None
+          (keeps populate honest for use_bias=false configs).
+
+      LIVE EVIDENCE on RTX 4090 (1-step CUDA smoke):
+        Pre-fix:  step-0 train_loss=0.0019, val_loss=0.0008 (degenerate)
+        Post-fix: step-0 train_loss=2.24, val_loss=0.628, grad_norm=14.81
+                  (PLAUSIBLE for Qwen 0.5B on Python; industry baseline ~2-3)
+      1000× train_loss shift confirms H2 was the dominant defect.
+
+      Encoder block test (codebert): parameters() count 12 → 15
+      (+3 q/k/v biases per layer). Pre-fix 12 was itself reflecting
+      the bug — encoder Q/K/V biases would have silently dropped
+      on any HF BERT/RoBERTa init.
+
+      Verified:
+        - cargo test -p aprender-train --lib falsify_qwen2_0_5b: 3/3 PASS
+        - cargo test -p aprender-train --lib: 7584/7584 PASS
+        - LIVE 1-step CUDA smoke train_loss=2.24 (was 0.0019)
+        - pv validate: 0 errors
+
+      Out-of-scope follow-ups (own falsifier-discharge cascades):
+        - H1: CudaTransformerTrainer::eval_batch CPU-vs-CUDA parity
+          (val_loss=0.628 still low; secondary defect tracked
+          separately).
+        - 500-step LIVE re-dispatch with this fix to flip MODEL-2
+          ship % 57% → ≥58% honestly.
+  - version: 1.7.0
+    date: '2026-05-09'
+    change: |
+      v1.6.0 → v1.7.0 — §50.4 step 5f.5 SHIPPED. CUDA `--init` wireup
+      is now symmetric to the CPU path.
+
+      Wireup landed via PMAT-CODE-PRETRAIN-INIT-CUDA-WIREUP-001:
+        - New: `entrenar::train::pretrain_real_cuda::build_shared_cuda_trainer_with_init`
+          (~80 LOC, mirrors CPU `build_shared_trainer_with_init`).
+        - Composes the SAME §50.4 step-5f machinery through both backends:
+            5c:    build_transformer_config(init_arch)
+            5f.1:  validate_pretrain_init_arch_compatible(init_arch) — encoder rejection
+            5f.2:  load_init_tensors_from_apr(path) — read APR weights
+            5f.3:  populate_trainer_from_init_tensors(transformer, &tensors) — populate CPU model
+            5f.5:  CudaTransformerTrainer::with_model uploads populated blocks
+                   / final_norm / lm_head / embed_tokens to GPU.
+        - The §50.4 step 5f.1/5f.2/5f.3 helpers are reused VERBATIM —
+          population semantics are identical between backends.
+        - apr-cli `drive_real_cuda` now accepts `init_arch: Option<&TransformerConfig>`
+          + `init_path: Option<&Path>` and routes through the new builder
+          when either is `Some`. Both-`Some` and both-`None` are valid;
+          mixed is a caller-bug fail-fast (FALSIFY-APR-PRETRAIN-INIT-CUDA-002).
+        - INV-ARCH-370M-001 param-count band check is preserved on the
+          from-scratch CUDA path (init=None branch); skipped on the
+          polymorphic path (consistent with CPU semantic).
+
+      FALSIFY-APR-PRETRAIN-INIT-CUDA-001 SEMANTIC FLIP:
+        v1.4.0..v1.6.0: "CUDA + --init MUST fail-fast with the
+                         pre-5f.5 not-yet-wired error"
+        v1.7.0:         "CUDA + --init MUST be wired via
+                         build_shared_cuda_trainer_with_init"
+      The `pub(crate) const FALSIFY_APR_PRETRAIN_INIT_CUDA_001_MSG`
+      survives but is repurposed as a drift-prevention sentinel — its
+      payload now reads "is wired for --device cuda via
+      build_shared_cuda_trainer_with_init (5f.5 SHIPPED)" so a future
+      regression that re-introduces a fail-fast on this path fires the
+      sentinel test before the contract reference goes stale.
+
+      Two new falsifiers bind the new builder's invariants:
+        FALSIFY-APR-PRETRAIN-INIT-CUDA-002 — paired-args invariant
+        FALSIFY-APR-PRETRAIN-INIT-CUDA-003 — encoder family rejection
+
+      Both new falsifiers fire WITHOUT a CUDA runtime — the args
+      check and encoder rejection both happen before any GPU
+      allocation, so they exercise on any host even when CUDA is
+      unavailable. This matches the CPU sibling tests
+      `build_shared_trainer_with_init_rejects_unpaired_args` and
+      `build_shared_trainer_with_init_rejects_encoder_family`.
+
+      Discharge consequence: §50.4 cascade now COMPLETE (5a-5f.5 all
+      shipped). The next step in the SHIP-TWO MODEL-2 critical path
+      is 5g.2 — LIVE 500-step fine-tune dispatch on Qwen 0.5B init +
+      5g.1 corpus + RTX 4090. Per `contracts/apr-pretrain-init-finetune-v1.yaml`
+      v1.0.0 (PMAT-CODE-PRETRAIN-INIT-FINETUNE-001 PR #1576), the
+      dispatch's val_loss < 9.38 verdict flips MODEL-2 ship %
+      57% → ≥58%.
+
+      Verified locally (commit on feat/apr-pretrain-init-cuda-wireup-5f5):
+        - cargo test -p aprender-train --features cuda --lib build_shared_cuda_trainer_with_init: 2/2 PASS
+        - cargo test -p apr-cli --features training --lib drive_real_cuda_init_path_wireup_sentinel_pinned: 1/1 PASS
+        - cargo check -p apr-cli --features training: clean
+        - cargo check -p apr-cli --features training,cuda: clean
+        - pv validate contracts/apr-pretrain-arch-polymorphic-v1.yaml: 0 errors
+  - version: 1.6.0
+    date: '2026-05-05'
+    change: |
+      v1.5.0 → v1.6.0 — second-round test-reference drift correction
+      for FALSIFY-APR-PRETRAIN-ARCH-001, 003, 004, and 007.
+
+      Drift inventory (PV-VER-001/002 class — same defect class as
+      PRs #1502/#1504/#1505/#1506; FALSIFY-001 surfaced via the new
+      `pv lint --strict-test-binding` flag from PR #1511):
+        FALSIFY-001 cited `qwen2_0_5b_matches_hf_config`
+          → does NOT exist. Actual: `qwen2_0_5b_matches_hf_config_2026_05_04`
+          (date-suffix added by impl PR #1474 / commit 9af6e71de).
+        FALSIFY-003 cited `build_transformer_config_qwen_init_matches_constructor`
+          → does NOT exist. Actual: `build_transformer_config_qwen_init_matches_input`.
+        FALSIFY-004 cited `transformer::attention::tests::gqa_7_to_1_matches_full_mha_via_repeat`
+          → does NOT exist (and wrong module path).
+          Actual: `transformer::model::tests::falsify_apr_pretrain_arch_004_gqa_7_1_forward_pass_smoke`.
+        FALSIFY-007 cited `build_transformer_config_encoder_init_errors`
+          → does NOT exist. Actual: `validate_pretrain_init_arch_rejects_encoder`.
+
+      §57's drift sweep (this contract's v1.4 → v1.5 bump in PR #1505)
+      caught FALSIFY-005/006 but missed these four because the surface
+      grep against test-name fragments produced false-negatives on
+      `_init_matches_constructor` (the test exists in name but its
+      `_input` suffix differed), `transformer::attention::` module-path
+      drift, and `qwen2_0_5b_matches_hf_config` (date-suffix drift). A
+      more thorough audit (PR #1511's new `--strict-test-binding` lint,
+      cross-referencing every `test:` field against the source-code
+      function-name registry) surfaced these four.
+
+      No falsifier semantics change. No new tests added. Status remains
+      FUNCTIONAL: 11 falsifiers all PASS, with FALSIFY-001/003/004/007
+      now pointing at the actual passing tests.
+
+      Verified locally:
+        - cargo test qwen2_0_5b_matches_hf_config_2026_05_04 PASS
+        - cargo test build_transformer_config_qwen_init_matches_input PASS
+        - cargo test falsify_apr_pretrain_arch_004_gqa_7_1_forward_pass_smoke PASS
+        - cargo test validate_pretrain_init_arch_rejects_encoder PASS
+        - pv validate contracts/apr-pretrain-arch-polymorphic-v1.yaml exits 0.
+        - pv lint --strict-test-binding contracts/apr-pretrain-arch-polymorphic-v1.yaml: 0 PV-VER-002 (down from 4 pre-fix).
+
+      Remaining audit gap: the changelog `(commands/pretrain.rs::tests::...)`
+      and `(pretrain_real.rs::tests::...)` parenthetical refs in v1.1.0
+      historical entry still cite the old names. Per PR #1505's
+      precedent (don't rewrite history), the historical entries are
+      left as-is; the v1.6.0 entry is the corrected reference for
+      future readers.
+  - version: 1.5.0
+    date: '2026-05-05'
+    change: |
+      v1.4.0 → v1.5.0 — test-reference drift correction for
+      FALSIFY-APR-PRETRAIN-ARCH-005 and FALSIFY-APR-PRETRAIN-ARCH-006.
+
+      Drift inventory (PV-VER-001 class — same defect class as PR #1504
+      caught in apr-pretrain-from-init-v1):
+        FALSIFY-005 cited `preflight_qwen_vocab_passes_with_qwen_init`
+          → does NOT exist in `crates/apr-cli/src/commands/pretrain.rs`.
+          Actual test name authored by PR #1476: `preflight_qwen_vocab_passes_with_qwen_target`.
+        FALSIFY-006 cited `preflight_qwen_vocab_fails_without_init`
+          → does NOT exist. Actual: `preflight_qwen_vocab_fails_with_llama_target`.
+
+      The v1.1.0 changelog entry stamped these names BEFORE PR #1476
+      authored the actual tests; the merge picked semantically-equivalent
+      but textually-different names. The contract's `test:` field stayed
+      stale. v1.4.0 (this contract's most recent bump) didn't catch the
+      drift because CUDA-001 was the focus.
+
+      Same drift class as the apr-pretrain-from-init-v1 v1.2.0 fix
+      (PR #1504, merged 2026-05-05T07:21Z). Per `feedback_no_guessing.md`,
+      contract test references must point to tests that exist; otherwise
+      the falsifier is unfalsifiable.
+
+      No falsifier semantics change. No new tests added. Contract status
+      remains FUNCTIONAL: 11 falsifiers all PASS, including FALSIFY-005
+      and FALSIFY-006 which now reference the existing tests.
+
+      Verified locally:
+        - `cargo test -p apr-cli --lib commands::pretrain::tests::preflight_qwen_vocab_passes_with_qwen_target` PASS
+        - `cargo test -p apr-cli --lib commands::pretrain::tests::preflight_qwen_vocab_fails_with_llama_target` PASS
+        - `pv validate contracts/apr-pretrain-arch-polymorphic-v1.yaml` exits 0.
+  - version: 1.4.0
+    date: '2026-05-05'
+    change: |
+      v1.3.0 → v1.4.0 — drift-prevention bind for
+      `FALSIFY-APR-PRETRAIN-INIT-CUDA-001`. Pre-this-bump, the
+      falsifier id was REFERENCED in the v1.2.0 changelog and the
+      verification_summary BUT was not formally registered as a
+      falsification_test entry. The fail-fast guard lives at
+      `crates/apr-cli/src/commands/pretrain.rs::drive_real` (post-#1494
+      5f.4 wireup): when `init_arch.is_some() && device.is_cuda()`,
+      it returns Err citing `FALSIFY-APR-PRETRAIN-INIT-CUDA-001`
+      because §50.4 step 5f.5 (CUDA wireup with
+      `build_shared_cuda_trainer_with_init`) is multi-PR scope and
+      not yet implemented. Without a formal falsifier + test, a
+      future refactor could silently let CUDA + --init fall through
+      → §28 SHIP-007 "silent gibberish" defect class.
+
+      This bump:
+        - Adds FALSIFY-APR-PRETRAIN-INIT-CUDA-001 as a formal
+          falsification_test entry (PARTIAL_ALGORITHM_LEVEL).
+        - Adds drift-prevention test
+          `drive_real_cuda_init_path_fail_fasts_with_falsifier_citation`
+          to `apr-cli/src/commands/pretrain.rs::tests` that pins:
+          (a) the citation id appears in the error message,
+          (b) the "not yet wired for --device cuda" phrase appears,
+          (c) the 5f.5 follow-up reference appears.
+
+      Status remains FUNCTIONAL: 10 → 11 falsifiers, all PASS.
+      Promotion of CUDA-001 to DISCHARGED requires §50.4 step 5f.5
+      LIVE (CUDA wireup landed + GPU smoke confirms it works).
+  - version: 1.3.0
+    date: '2026-05-05'
+    change: |
+      v1.2.0 → v1.3.0 — refines `qwen_tokenizer_vocab_compatibility`
+      semantic from strict equality to relaxed bound when --init is
+      set (SPEC-SHIP-TWO-001 §55).
+
+      Trigger: §54's LIVE smoke (`evidence/section-54-5g-prereqs-2026-05-05/`)
+      surfaced that public Qwen2.5-Coder-0.5B-Instruct/tokenizer.json
+      materializes 151643 BPE entries + 22 added tokens = 151665
+      effective strings, but config.json declares vocab_size=151936
+      (271 reserved/special slots not in the BPE state machine).
+      Strict equality was correct for §24/§25 from-scratch but too
+      strict for HF-distributed pretrained checkpoints with reserved
+      slots (the standard pattern across Qwen2.5/Llama2/Mistral).
+
+      Relaxed semantic:
+        init=Some  → tokenizer_vocab ≤ model_vocab (HF reserved-slot
+                     tolerance; preserves OOB safety because every
+                     tokenizer-emitted id is in [0, tokenizer_vocab)
+                     ⊆ [0, model_vocab))
+        init=None  → tokenizer_vocab == model_vocab (UNCHANGED;
+                     §24/§25 from-scratch baseline regression-free)
+
+      Implementation: new helper `assert_tokenizer_vocab_within_model_bound`
+      in `aprender-train/src/models/llama_370m.rs` symmetric to
+      `assert_tokenizer_vocab_matches_model`; `preflight_tokenizer_vocab_matches_target`
+      in apr-cli takes a 3rd `init_is_some: bool` parameter and routes
+      to the appropriate assertion.
+
+      Two new falsifiers added at PARTIAL_ALGORITHM_LEVEL:
+        FALSIFY-APR-PRETRAIN-ARCH-009 — relaxed bound accepts
+          tokenizer_vocab ≤ model_vocab under polymorphic init
+          (Qwen reserved-slot pattern: 151665 ≤ 151936 PASSES)
+        FALSIFY-APR-PRETRAIN-ARCH-010 — relaxed bound REJECTS
+          tokenizer_vocab > model_vocab even under polymorphic init
+          (OOB safety: bound is ≤ not <)
+
+      LIVE smoke 2026-05-05T05:48Z: rebuilt apr from this branch +
+      §54-extracted Qwen tokenizer dir at /tmp/qwen-0.5b-tokenizer-extracted
+      + Qwen2.5-Coder-0.5B-Instruct-fp16.apr (declared vocab=151936) →
+      preflight PASSED (no GATE-ARCH / FALSIFY errors). Process
+      proceeded past preflight to weight load (timeout-killed at 30s
+      mid-load; the load itself takes >30s for 942MB FP16 single-thread).
+
+      Status remains FUNCTIONAL: 8 original falsifiers PASS + 2 new
+      relaxed-bound falsifiers PASS = 10/10. Promotion to DISCHARGED
+      still requires §50.4 step 5g.3 LIVE val_loss < 9.38 measurement.
+  - version: 1.2.0
+    date: '2026-05-05'
+    change: |
+      v1.1.0 PARTIAL_ALGORITHM_LEVEL → v1.2.0 FUNCTIONAL.
+      The §50.4 cascade reached INTEGRATION-COMPLETE with PR #1494
+      merging at 2026-05-05T01:48:14Z. PR #1494 implemented
+      `build_shared_trainer_with_init(lr, seq_length, seed,
+      init_arch, init_path)` in `crates/aprender-train/src/train/pretrain_real.rs`
+      composing the previously-merged helpers
+      (validate_pretrain_init_arch_compatible from #1479,
+      load_init_tensors_from_apr from #1481, populate_trainer_from_init_tensors
+      from #1483) and wired the CLI dispatch
+      (`crates/apr-cli/src/commands/pretrain.rs::run` →
+      `drive_real` → `drive_real_cpu`) to invoke it. The legacy
+      `Err(...not yet wired...)` from §49 step 4 in
+      `validate_init_apr_path()` is RETIRED. Polymorphic preflight
+      gates with `target_vocab = init_arch.map(|cfg|
+      cfg.vocab_size).unwrap_or(Llama370MConfig::VOCAB_SIZE)`.
+      6/8 falsifiers (001/002/003/005/006/007) now reach INTEGRATION
+      via the live CLI dispatch path; the remaining two
+      (FALSIFY-004 forward-pass smoke + FALSIFY-008 contract
+      validation) are inherently algorithm-level. All 8 PASS on main.
+      CUDA path (drive_real_cuda) emits explicit error citing
+      FALSIFY-APR-PRETRAIN-INIT-CUDA-001 — the ~80-LOC symmetric
+      wireup is the §50.4 step 5f.5 follow-up. Promotion to
+      DISCHARGED still requires §50.4 step 5g LIVE empirical
+      500-step fine-tune on canonical
+      Qwen2.5-Coder-0.5B-Instruct.apr producing val_loss < 9.38.
+  - version: 1.1.0
+    date: '2026-05-04'
+    change: |
+      v1.0.0 PROPOSED → v1.1.0 PARTIAL_ALGORITHM_LEVEL.
+      All 8 FALSIFY-APR-PRETRAIN-ARCH-* falsifiers are now bound to
+      executable tests:
+        FALSIFY-001 (qwen2_0_5b matches HF config) — PR #1474 merged
+          (config.rs::tests::qwen2_0_5b_matches_hf_config)
+        FALSIFY-002 (build_transformer_config(None) preserves Llama370M)
+          — PR #1475 merged
+          (pretrain_real.rs::tests::build_transformer_config_no_init_matches_llama370m)
+        FALSIFY-003 (build_transformer_config(Some) extracts 10 fields)
+          — PR #1475 merged
+          (pretrain_real.rs::tests::build_transformer_config_qwen_init_matches_constructor)
+        FALSIFY-004 (GQA-7:1 forward-pass smoke) — PR #1478 merged
+          (transformer/model.rs::tests::falsify_apr_pretrain_arch_004_gqa_7_1_forward_pass_smoke)
+        FALSIFY-005 (Qwen tokenizer passes with Qwen --init) — PR #1476 merged
+          (commands/pretrain.rs::tests::preflight_qwen_vocab_passes_with_qwen_init)
+        FALSIFY-006 (Qwen tokenizer fails without --init) — PR #1476 merged
+          (commands/pretrain.rs::tests::preflight_qwen_vocab_fails_without_init)
+        FALSIFY-007 (encoder-arch APR rejected fail-fast) — PR #1479 open,
+          auto-merge armed (pretrain_real.rs::tests::validate_pretrain_init_arch_compatible_*)
+        FALSIFY-008 (contract self-validates via pv) — bound by this YAML
+          passing `pv validate`
+      Promotion to FUNCTIONAL requires all 8 tests to PASS on main
+      (FALSIFY-007 lands when #1479 merges). Promotion to DISCHARGED
+      requires §50.4 step 5g LIVE empirical 500-step fine-tune on
+      Qwen2.5-Coder-0.5B-Instruct.apr.
+  - version: 1.0.0
+    date: '2026-05-04'
+    change: |
+      Authored as §50.4 step 5a of SHIP-TWO-001 MODEL-2 polymorphic
+      pivot (PR #1473 merged). PROPOSED status — pinning the
+      arch-extraction algorithm before any §50.4 step 5b-5h
+      implementation lands.
+  references:
+  - 'SPEC-SHIP-TWO-001 §50 — MODEL-2 architecture-coupling finding (2026-05-04)'
+  - 'SPEC-SHIP-TWO-001 §50.4 step 5a — author this contract'
+  - 'SPEC-SHIP-TWO-001 §50.4 steps 5b-5f — implementation roadmap this contract drives'
+  - 'SPEC-SHIP-TWO-001 §51 — cascade snapshot recording 7/8 falsifiers PARTIAL_ALGORITHM_LEVEL bound (PR #1480 merged)'
+  - 'SPEC-SHIP-TWO-001 §52 — cascade ALGORITHM-COMPLETE on main; 5f.4 CLI wireup gap identified (PR #1486 merged)'
+  - 'SPEC-SHIP-TWO-001 §53 — cascade INTEGRATION-COMPLETE on main; `apr pretrain --init` end-to-end runnable (this PR + PR #1494 merged 2026-05-05T01:48:14Z)'
+  - 'contracts/apr-pretrain-from-init-v1.yaml v1.1.0 PARTIAL_ALGORITHM_LEVEL — sibling (FALSIFY-005 arch-mismatch is consumed here)'
+  - 'contracts/training-loop-pretrain-v1.yaml v1.5.0 ACTIVE — parent (PretrainConfig is what the polymorphic builder emits)'
+  - 'contracts/architecture-requirements-v1.yaml — sibling (TransformerConfig family invariants)'
+  - 'contracts/gqa-kernel-v1.yaml — sibling (GQA ratio invariants)'
+  - 'feedback_no_guessing.md — read source before forming hypothesis'
+  - 'feedback_fix_root_cause_never_route_around.md'
+  - 'feedback_falsifier_first_cascade_pattern.md — 1 PR ≈ 1 falsifier discharge cascade (this contract is the canonical example)'
+  description: >
+    Contract pinning the architecture-extraction algorithm for the
+    pretrained-init MODEL-2 path. Per §50, the existing pretrain trainer
+    HARDCODES every architectural constant from `Llama370MConfig` —
+    making it impossible to fine-tune from a Qwen2.5-class checkpoint
+    that has different (vocab, hidden, heads, kv_heads, ffn, rope_theta)
+    shape. This contract specifies the polymorphic builder that derives
+    `TransformerConfig` from the init APR file's metadata when `--init
+    <PATH>` is set, and falls back to `Llama370MConfig` (the §24/§25
+    from-scratch baseline) when `--init` is absent. It also pins the
+    Qwen-tokenizer compatibility surface and the GQA-7:1 forward-pass
+    invariants that the existing GQA-4:1 (Llama370M) code did not
+    exercise. Together, this contract + sibling apr-pretrain-from-init-v1
+    discharge §50.4's step-5 architecture-mismatch class.
+
+equations:
+  arch_extraction_signature:
+    formula: |
+      `pretrain_real::build_transformer_config(init: Option<&InitArch>)
+      -> TransformerConfig` MUST satisfy:
+        init = None  → return TransformerConfig::from(Llama370MConfig::*)
+                       (existing from-scratch baseline; §24/§25 evidence preserved)
+        init = Some  → return TransformerConfig derived from the init APR
+                       file's header metadata, NOT from Llama370MConfig
+      The derivation MUST extract exactly these 7 fields from the APR
+      file's metadata block (no defaults, no inference):
+        - vocab_size, hidden_size, num_attention_heads, num_kv_heads,
+        - intermediate_size, num_hidden_layers, max_position_embeddings.
+      Plus 3 architecture-family fields:
+        - rope_theta, rms_norm_eps, tie_word_embeddings.
+      Architecture family (decoder/encoder) is fixed to decoder for the
+      §49 use case (Qwen2.5/Llama-class causal LMs).
+    domain: pretrain trainer build boundary
+    codomain: TransformerConfig
+    invariants:
+    - "init=None case unchanged from §24/§25 baseline (regression-free)"
+    - "init=Some case extracts ALL 10 fields, no silent defaults"
+    - "extracted config is byte-equivalent to apr inspect <PATH> --json metadata"
+    - "wrong-arch APR (e.g., encoder model) is FAIL-FAST not silent-truncate"
+
+  qwen2_0_5b_constructor:
+    formula: |
+      `TransformerConfig::qwen2_0_5b()` MUST return a TransformerConfig
+      with the empirically-verified Qwen2.5-Coder-0.5B-Instruct shape
+      (per ~/.cache/huggingface/hub/.../config.json, validated 2026-05-04):
+        hidden_size:               896
+        num_attention_heads:       14
+        num_kv_heads:              2  (GQA-7:1 ratio)
+        intermediate_size:         4864
+        num_hidden_layers:         24
+        vocab_size:                151_936
+        max_position_embeddings:   32_768
+        rope_theta:                1_000_000.0
+        rms_norm_eps:              1e-6
+        use_bias:                  true   (Qwen2 has bias on q/k/v projections)
+        tie_word_embeddings:       true   (Qwen2 default)
+        architecture:              ModelArchitecture::Decoder
+      The constructor sits next to existing `llama2_7b()` and `llama2_13b()`
+      in `crates/aprender-train/src/transformer/config.rs`.
+    domain: TransformerConfig family
+    codomain: TransformerConfig
+    invariants:
+    - "shape constants match HF config.json byte-for-byte"
+    - "constructor is pure (no I/O, no env reads)"
+    - "GQA ratio = num_attention_heads / num_kv_heads = 14/2 = 7 (canonical Qwen2 0.5B)"
+    - "use_bias=true differs from Llama (false) — Qwen2 quirk, contract-pinned"
+    - "tie_word_embeddings=true differs from Llama (false) — Qwen2 quirk, contract-pinned"
+
+  gqa_7_to_1_invariants:
+    formula: |
+      The forward-pass attention kernel MUST handle GQA-7:1 (kv_heads=2,
+      query_heads=14) without requiring a per-ratio specialization.
+      Specifically:
+        K, V tensors broadcast across query_heads / kv_heads = 7 groups
+        Each group of 7 query heads attends to the SAME (K, V) head
+        Output concatenation preserves head order
+      This is a strictly more general case than the Llama370M GQA-4:1
+      ratio the existing code targets. The contract requires:
+        - property test verifying GQA-7:1 numerical equivalence with
+          (a) GQA-1:1 (full MHA, repeating each KV pair 7×) on the same input
+          (b) Reference Qwen2 forward pass via HF FP16 oracle
+        - cosine ≥ 0.9999 vs (a) up to FP rounding
+        - cosine ≥ 0.999 vs (b) — same threshold as
+          apr-vs-gguf-forward-parity-v1 §sample_size_parity_v1_1
+    domain: attention kernel
+    codomain: F32[seq, num_heads * head_dim]
+    invariants:
+    - "GQA ratio is data, not code — same kernel handles 1:1, 4:1, 7:1, 8:1"
+    - "K/V broadcast is index arithmetic, not tensor copy"
+    - "Output ordering is num_heads-major (matches HF Qwen2 convention)"
+
+  qwen_tokenizer_vocab_compatibility:
+    formula: |
+      `preflight_tokenizer_vocab_matches_model()` (the GATE-ARCH-370M-011
+      pre-flight in `crates/apr-cli/src/commands/pretrain.rs`) MUST gate
+      by the EXTRACTED arch's vocab_size, NOT by the hardcoded
+      `Llama370MConfig::VOCAB_SIZE` (50_257). The bound semantic is
+      polymorphic per §55:
+        With --init present:
+          target_vocab = extracted_config.vocab_size
+          INVARIANT: tokenizer_vocab ≤ target_vocab  (RELAXED bound)
+          Rationale: HF-distributed checkpoints (Qwen2.5/Llama2/Mistral)
+          materialize fewer string-token entries in tokenizer.json than
+          their config.json declares as `vocab_size` — the gap is
+          reserved/special slots that lm_head + embedding layers have
+          weights for but no tokenizer string maps to. Strict equality
+          would fail-fast on every HF model.
+          Safety: tokenizer-emitted ids ∈ [0, tokenizer_vocab) ⊆
+          [0, model_vocab); reserved high-id slots are never indexed
+          at training time; bound preserves N-09 OOB safety.
+        With --init absent:
+          target_vocab = Llama370MConfig::VOCAB_SIZE  (50_257)
+          INVARIANT: tokenizer_vocab == target_vocab  (STRICT bound,
+          the §24/§25 from-scratch baseline; preserves
+          INV-ARCH-370M-006 regression-free)
+      The Qwen tokenizer's effective vocab.json (151_643 BPE-only or
+      151_665 BPE+added_tokens) MUST pass pre-flight when --init points
+      at a Qwen2.5 APR file (declared vocab 151_936). Same tokenizer
+      with --init absent MUST still fail pre-flight (correct regression
+      on the from-scratch path).
+      OVERSIZE GUARD: tokenizer_vocab > target_vocab MUST FAIL even
+      under polymorphic init (FALSIFY-APR-PRETRAIN-ARCH-010); bound is
+      ≤, not <. A tokenizer with more strings than the model declares
+      could emit ids ≥ model_vocab → silent embedding-lookup garbage.
+    domain: tokenizer-model vocab match boundary
+    codomain: bool
+    invariants:
+    - "init present → tokenizer_vocab ≤ extracted_config.vocab_size (RELAXED, admits HF reserved slots)"
+    - "init absent → tokenizer_vocab == Llama370MConfig::VOCAB_SIZE (STRICT, regression-free)"
+    - "false-pass (e.g., 50_257 tokenizer with Qwen 151_936 init) is FAIL-FAST"
+    - "false-fail (e.g., 151_665 HF Qwen tokenizer with Qwen 151_936 init) is FORBIDDEN"
+    - "OOB-class (tokenizer > model) is FAIL-FAST under both modes"
+
+falsification_tests:
+- id: FALSIFY-APR-PRETRAIN-ARCH-001
+  rule: TransformerConfig::qwen2_0_5b constructor exists and matches HF config
+  prediction: "`TransformerConfig::qwen2_0_5b()` returns a config whose 10 fields match the empirically-verified Qwen2.5-Coder-0.5B-Instruct shape byte-for-byte"
+  test: "cargo test -p aprender-train --lib transformer::config::tests::qwen2_0_5b_matches_hf_config_2026_05_04"
+  if_fails: "constructor missing or shape drifts from HF config — §50.4 step 5b unimplemented or regressed"
+
+- id: FALSIFY-APR-PRETRAIN-ARCH-002
+  rule: build_transformer_config(None) preserves Llama370M baseline
+  prediction: "with init=None, `build_transformer_config()` returns TransformerConfig field-for-field equal to the existing pretrain_real::build_transformer_config() output"
+  test: "cargo test -p aprender-train --lib train::pretrain_real::tests::build_transformer_config_no_init_matches_llama370m"
+  if_fails: "from-scratch baseline regressed — §24/§25 falsification evidence destroyed"
+
+- id: FALSIFY-APR-PRETRAIN-ARCH-003
+  rule: build_transformer_config(Some) extracts all 10 fields from APR header
+  prediction: "with init=Some(<Qwen2.5-0.5B.apr>), `build_transformer_config()` returns the same TransformerConfig as `TransformerConfig::qwen2_0_5b()` modulo max_position which inherits from --seq-length CLI"
+  test: "cargo test -p aprender-train --lib train::pretrain_real::tests::build_transformer_config_qwen_init_matches_input"
+  if_fails: "extractor silently fills defaults instead of reading APR metadata — §50 root cause not addressed"
+
+- id: FALSIFY-APR-PRETRAIN-ARCH-004
+  rule: GQA-7:1 forward-pass numerical parity with GQA-1:1
+  prediction: "GQA-7:1 (kv_heads=2, query_heads=14) attention output cosine ≥ 0.9999 vs GQA-1:1 reference (kv_heads=14, query_heads=14, with each query group's KV repeated 7×) on the same input tensors"
+  test: "cargo test -p aprender-train --lib transformer::model::tests::falsify_apr_pretrain_arch_004_gqa_7_1_forward_pass_smoke"
+  if_fails: "attention kernel mishandles GQA-7:1 — Qwen2 forward pass produces silent gibberish"
+
+- id: FALSIFY-APR-PRETRAIN-ARCH-005
+  rule: Qwen tokenizer (vocab=151_936) passes pre-flight with --init Qwen
+  prediction: "preflight_tokenizer_vocab_matches_model() returns Ok with vocab.json containing 151_936 entries when --init points at a Qwen2.5 APR file"
+  test: "cargo test -p apr-cli --lib commands::pretrain::tests::preflight_qwen_vocab_passes_with_qwen_target"
+  if_fails: "preflight false-fails on Qwen tokenizer — operator cannot fine-tune Qwen2.5 even with arch-polymorphic builder"
+
+- id: FALSIFY-APR-PRETRAIN-ARCH-006
+  rule: Qwen tokenizer with --init absent fails pre-flight
+  prediction: "preflight_tokenizer_vocab_matches_model() returns Err with vocab.json containing 151_936 entries when --init is absent (target=Llama370MConfig::VOCAB_SIZE=50_257)"
+  test: "cargo test -p apr-cli --lib commands::pretrain::tests::preflight_qwen_vocab_fails_with_llama_target"
+  if_fails: "preflight false-passes — from-scratch path silently accepts wrong-vocab tokenizer"
+
+- id: FALSIFY-APR-PRETRAIN-ARCH-007
+  rule: Wrong-arch APR (e.g., encoder model) fails fast
+  prediction: "build_transformer_config(Some(<encoder.apr>)) returns Err naming the architecture mismatch — decoder builder cannot accept encoder weights"
+  test: "cargo test -p aprender-train --lib train::pretrain_real::tests::validate_pretrain_init_arch_rejects_encoder"
+  if_fails: "silent decoder/encoder mismatch — would later fail at first forward pass with cryptic shape error"
+
+- id: FALSIFY-APR-PRETRAIN-ARCH-008
+  rule: contract validates via pv
+  prediction: "`pv validate contracts/apr-pretrain-arch-polymorphic-v1.yaml` exits 0"
+  test: "pv validate contracts/apr-pretrain-arch-polymorphic-v1.yaml"
+  if_fails: "contract schema noncompliant; will not pass CI gate"
+
+- id: FALSIFY-APR-PRETRAIN-ARCH-009
+  rule: relaxed bound accepts HF reserved-slot tokenizer under polymorphic init
+  prediction: "`assert_tokenizer_vocab_within_model_bound(151_665, 151_936)` returns Ok; `preflight_tokenizer_vocab_matches_target(<dir with 151_665 entries>, 151_936, init_is_some=true)` returns Ok. The §54 LIVE smoke shape (Qwen2.5-Coder-0.5B materialized 151_665 ≤ declared 151_936) MUST PASS preflight under the polymorphic init path."
+  test: "cargo test -p aprender-train --lib -- falsify_apr_pretrain_arch_009_relaxed_bound_accepts_qwen_reserved_slots && cargo test -p apr-cli --lib commands::pretrain::tests::preflight_qwen_reserved_slots_pass_under_polymorphic_init"
+  if_fails: "polymorphic preflight is too strict; HF-distributed tokenizers (Qwen/Llama2/Mistral) cannot be fine-tuned without padding their vocab.json with synthetic reserved tokens — defeats the §50.4 cascade's purpose"
+
+- id: FALSIFY-APR-PRETRAIN-ARCH-010
+  rule: relaxed bound rejects oversized tokenizer even under polymorphic init
+  prediction: "`assert_tokenizer_vocab_within_model_bound(<model_vocab + 1>, model_vocab)` returns Err citing RELAXED + OOB; `preflight_tokenizer_vocab_matches_target(<dir with > target entries>, target, init_is_some=true)` returns Err. Bound is ≤, not <; OOB safety is preserved."
+  test: "cargo test -p aprender-train --lib -- falsify_apr_pretrain_arch_010_relaxed_bound_rejects_oversized_tokenizer && cargo test -p apr-cli --lib commands::pretrain::tests::preflight_oversized_tokenizer_rejected_even_under_polymorphic_init"
+  if_fails: "relaxed bound is too permissive; a tokenizer with more strings than the model expects emits OOB ids → N-09 escape → silent embedding-lookup garbage during training"
+
+- id: FALSIFY-APR-PRETRAIN-INIT-CUDA-001
+  rule: CUDA path with --init is wired via build_shared_cuda_trainer_with_init (§50.4 step 5f.5 SHIPPED)
+  prediction: "the `pub(crate) const FALSIFY_APR_PRETRAIN_INIT_CUDA_001_MSG` in `crates/apr-cli/src/commands/pretrain.rs` contains (a) the literal `FALSIFY-APR-PRETRAIN-INIT-CUDA-001`, (b) the phrase `is wired for --device cuda`, (c) the symmetric builder name `build_shared_cuda_trainer_with_init`, and (d) the `5f.5 SHIPPED` status marker. Drift-prevention sentinel: if a future refactor accidentally re-introduces a fail-fast on the CUDA + --init path (or renames the symmetric builder), this test fails fast."
+  test: "cargo test -p apr-cli --lib commands::pretrain::tests::drive_real_cuda_init_path_wireup_sentinel_pinned"
+  if_fails: "CUDA + --init wireup regressed — operator either gets a fail-fast on a path that should now succeed, or silent random-init at the GPU boundary (§28 SHIP-007 'silent gibberish' defect class). The post-5f.5 wireup must be restored or the sentinel string corrected to match the new symbol."
+
+- id: FALSIFY-APR-PRETRAIN-INIT-CUDA-002
+  rule: build_shared_cuda_trainer_with_init enforces paired-args (Some/Some or None/None)
+  prediction: "calling `entrenar::train::pretrain_real_cuda::build_shared_cuda_trainer_with_init` with (Some, None) OR (None, Some) returns Err whose ConfigError payload names the function so callers can grep back to the offending invocation. The check fires WITHOUT a CUDA runtime (returns before any GPU allocation), so the test runs on any host even when CUDA is unavailable."
+  test: "cargo test -p aprender-train --features cuda --lib train::pretrain_real_cuda::tests::build_shared_cuda_trainer_with_init_rejects_unpaired_args"
+  if_fails: "the paired-args invariant regressed — a caller could pass an arch without weights (silent random-init at the GPU upload boundary) or weights without an arch (silently fall back to Llama370M shape). This is the same defect class FALSIFY-APR-PRETRAIN-INIT-001 prevents on the CPU path; the symmetric guard MUST hold on the CUDA path too."
+
+- id: FALSIFY-APR-PRETRAIN-INIT-CUDA-003
+  rule: build_shared_cuda_trainer_with_init rejects encoder-family init configs (§50.4 step 5f.1 threading)
+  prediction: "calling `build_shared_cuda_trainer_with_init` with `init_arch.architecture == ModelArchitecture::Encoder` returns Err — same semantic as the CPU sibling `build_shared_trainer_with_init_rejects_encoder_family`. The encoder rejection happens before any GPU allocation (via the shared `validate_pretrain_init_arch_compatible` helper from pretrain_real.rs), so the test fires on any host."
+  test: "cargo test -p aprender-train --features cuda --lib train::pretrain_real_cuda::tests::build_shared_cuda_trainer_with_init_rejects_encoder_family"
+  if_fails: "encoder rejection regressed on the CUDA path — pretrain might attempt to fine-tune a BERT-class encoder as if it were a decoder, producing meaningless gradients. The §50.4 step 5f.1 helper MUST be threaded through both backends identically."
+
+- id: FALSIFY-APR-PRETRAIN-INIT-POPULATE-COVERAGE-001
+  rule: Transformer::new(qwen2_0_5b()).named_parameters().len() matches HF canonical 290
+  prediction: "`Transformer::new(qwen2_0_5b()).named_parameters().len() == 290` (= 2 model-level + 24 layers × 12 params/layer). The 12 params/layer are: 2 layernorm weights + 4 attention weights (Q,K,V,O) + 3 attention biases (Q,K,V — required when config.use_bias=true) + 3 mlp weights (gate,up,down). Tied lm_head shares with embed_tokens, so it is NOT counted as an extra named parameter. The test fires WITHOUT a CUDA runtime and without loading any APR file — it exercises only the constructor."
+  test: "cargo test -p aprender-train --lib transformer::config::tests::falsify_qwen2_0_5b_named_parameters_count_matches_hf"
+  if_fails: "the count regressed below 290 — likely MultiHeadAttention::new dropped the bias allocation again, OR the polymorphic Transformer struct lost a field. Each missing param will be silently dropped during populate_trainer_from_init_tensors when the source APR has them, producing a hybrid model that masquerades as Qwen but lacks structural elements (the §59 val_loss=0.0008 anomaly defect class)."
+
+- id: FALSIFY-APR-PRETRAIN-INIT-POPULATE-COVERAGE-002
+  rule: every layer in Transformer::new(qwen2_0_5b()) exposes Q/K/V projection biases when use_bias=true
+  prediction: "for every layer_idx in 0..24, `Transformer::new(qwen2_0_5b()).named_parameters()` contains the keys `model.layers.{layer_idx}.self_attn.q_proj.bias`, `model.layers.{layer_idx}.self_attn.k_proj.bias`, and `model.layers.{layer_idx}.self_attn.v_proj.bias`. Stricter than -001: not only counts the right number, but names the exact tensors so the populate path's BTreeMap lookup hits real init keys."
+  test: "cargo test -p aprender-train --lib transformer::config::tests::falsify_qwen2_0_5b_layers_expose_qkv_biases_when_use_bias_true"
+  if_fails: "MultiHeadAttention::new is dropping bias allocation despite config.use_bias=true; each missing bias is a 3 × 24 = 72 silent-drop per Qwen2 0.5B init, restoring the §59 val_loss=0.0008 defect class. Restore the `if config.use_bias { Some(zero_tensor) } else { None }` branch."
+
+proof_obligations:
+- type: invariant
+  property: "arch_extraction_signature: init=None preserves Llama370M baseline byte-for-byte"
+- type: soundness
+  property: "arch_extraction_signature: init=Some extracts ALL 10 fields, no silent defaults"
+- type: invariant
+  property: "qwen2_0_5b_constructor: constructor is pure (no I/O); shape matches HF config.json"
+- type: invariant
+  property: "gqa_7_to_1_invariants: GQA ratio is data, not code; one kernel handles all ratios"
+- type: liveness
+  property: "qwen_tokenizer_vocab_compatibility: preflight passes for matching vocab; fails for mismatching"
+- type: termination
+  property: "build_transformer_config terminates on a finite-size APR header (no recursion)"
+
+kani_harnesses:
+- id: KH-APR-PRETRAIN-ARCH-001
+  obligation: arch_extraction_signature
+  property: init_none_implies_llama370m
+  bound: 4  # 2 init states × 2 architectures = 4-cell decision table
+- id: KH-APR-PRETRAIN-ARCH-002
+  obligation: gqa_7_to_1_invariants
+  property: gqa_ratio_kernel_polymorphism
+  bound: 8  # GQA ratios in {1, 2, 4, 7, 8} × 2 head_dim values = 10 (clamped to 8)
+
+verification_summary:
+  total_obligations: 6
+  proven: 0
+  tested: 11
+  status: functional
+  notes: |
+    Authored 2026-05-04 as §50.4 step 5a of SHIP-TWO-001 MODEL-2
+    architecture-polymorphic pivot. v1.3.0 FUNCTIONAL (2026-05-05):
+    §55 amendment refines the polymorphic-path bound from strict
+    equality to ≤ (with strict-equality preserved for from-scratch).
+    Two new falsifiers (FALSIFY-009/010) bind the relaxed bound +
+    OOB safety. LIVE smoke confirms preflight passes on §54-extracted
+    Qwen tokenizer.
+
+    v1.2.0 FUNCTIONAL (2026-05-05):
+    PR #1494 (5f.4 CLI wireup) merged at 2026-05-05T01:48:14Z, which
+    composes the previously-merged helpers via
+    `build_shared_trainer_with_init` and routes the live `apr pretrain
+    --init` dispatch through them. 6/8 falsifiers
+    (001/002/003/005/006/007) now reach INTEGRATION via the user-facing
+    CLI flow; 2/8 (004/008) remain inherently algorithm-level. All 8
+    PASS on main. The legacy "not yet wired" Err from §49 step 4 is
+    RETIRED in favor of `Ok(())`.
+
+    §50.4 cascade ships 11 PRs over 2 days
+    (#1471/#1472/#1473/#1474/#1475/#1476/#1478/#1479/#1481/#1482/#1483/#1486/#1494
+    counting spec + contract bumps).
+
+    Tests authored:
+      FALSIFY-001 — merged PR #1474 (qwen2_0_5b shape vs HF config)
+      FALSIFY-002 — merged PR #1475 (init=None preserves Llama370M)
+      FALSIFY-003 — merged PR #1475 (init=Some pass-through)
+      FALSIFY-004 — merged PR #1478 (GQA-7:1 forward-pass smoke)
+      FALSIFY-005 — merged PR #1476 (Qwen tokenizer + Qwen --init)
+      FALSIFY-006 — merged PR #1476 (Qwen tokenizer + no --init)
+      FALSIFY-007 — merged PR #1479 (encoder-family fail-fast)
+      FALSIFY-008 — bound by this YAML passing `pv validate`
+
+    Integration-level tests authored by PR #1494:
+      build_shared_trainer_with_init_none_uses_llama370m_shape
+      build_shared_trainer_with_init_rejects_unpaired_args
+      build_shared_trainer_with_init_rejects_encoder_family
+      build_shared_trainer_with_init_decoder_family_proceeds_to_tensor_load
+      pretrain_init_valid_magic_but_bogus_metadata_fails_at_arch_extraction
+      pretrain_init_v1_magic_aprn_passes_validate_init_apr_path
+
+    Promotion to DISCHARGED requires §50.4 step 5g LIVE empirical run:
+    500-step fine-tune on canonical Qwen2.5-Coder-0.5B-Instruct.apr
+    producing val_loss < 9.38 (the §24/§25 corpus floor) — empirical
+    proof that the architecture-polymorphic path actually trains
+    end-to-end. Step 5g is now operator-dispatchable on RTX 4090 (the
+    only blocker, the CLI wireup, is resolved).
+
+    Step 5f.5 (CUDA path symmetric wireup, ~80 LOC) is the follow-up;
+    `drive_real_cuda` currently emits an explicit error citing
+    FALSIFY-APR-PRETRAIN-INIT-CUDA-001 rather than silently dropping
+    `--init`. CUDA wireup is not on the 5g critical path (5g can run
+    `--device cpu`) but is required for production fine-tune perf.
+
+    Cross-references:
+    - This contract DOES NOT replace apr-pretrain-from-init-v1; the two
+      compose. apr-pretrain-from-init-v1 pins the --init flag's CLI
+      surface + magic-byte validation; this contract pins the
+      architecture extraction algorithm that --init's weight load
+      depends on. FALSIFY-APR-PRETRAIN-INIT-005 (arch mismatch) becomes
+      DISCHARGED when this contract's FALSIFY-007 lands.
+    - GQA ratio invariants (FALSIFY-004) cross-reference
+      gqa-kernel-v1.yaml. The Llama370M codepath exercised GQA-4:1
+      (kv_heads=4, query_heads=16); Qwen2.5-0.5B exercises GQA-7:1
+      (kv_heads=2, query_heads=14). Both are in scope of the same
+      polymorphic kernel, but only 4:1 was empirically verified before
+      this contract.

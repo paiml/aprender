@@ -33,9 +33,7 @@ use aprender::format::ship_004::{
     AC_SHIP1_004_GGUF_MAGIC_BYTES, AC_SHIP1_004_GGUF_SUPPORTED_VERSIONS,
     AC_SHIP1_004_LLAMA_CLI_SUCCESS_EXIT_CODE,
 };
-use aprender::format::ship_010::{
-    AC_SHIP1_010_REQUIRED_URL_SCHEME, AC_SHIP1_010_SHA256_HEX_LEN,
-};
+use aprender::format::ship_010::{AC_SHIP1_010_REQUIRED_URL_SCHEME, AC_SHIP1_010_SHA256_HEX_LEN};
 use aprender::format::ship_023::AC_SHIP1_023_MAX_HUMANEVAL_DRIFT_PP;
 use aprender::format::ship_024::{
     AC_SHIP1_024_MAX_TOLERATED_NAN_COUNT, AC_SHIP1_024_MAX_TOLERATED_PANIC_COUNT,
@@ -121,8 +119,7 @@ fn ship1_005_noise_allowance_is_1_2_pp() {
 #[test]
 fn ship1_005_effective_equals_nominal_minus_noise() {
     // f32 `86.0 - 1.2 ≈ 84.79999924` — tolerance-bounded equality, not exact.
-    let expected = AC_SHIP1_005_NOMINAL_HUMANEVAL_PASS_AT_1_PCT
-        - AC_SHIP1_005_NOISE_ALLOWANCE_PP;
+    let expected = AC_SHIP1_005_NOMINAL_HUMANEVAL_PASS_AT_1_PCT - AC_SHIP1_005_NOISE_ALLOWANCE_PP;
     assert!(
         (AC_SHIP1_005_EFFECTIVE_HUMANEVAL_PASS_AT_1_PCT - expected).abs() < 1e-4,
         "effective ({}) should equal nominal ({}) - noise ({})",
@@ -144,10 +141,7 @@ fn ship1_007_decode_tps_floor_is_30() {
 
 #[test]
 fn ship1_008_canonical_system_prompt_is_fixed() {
-    assert_eq!(
-        AC_SHIP1_008_CANONICAL_SYSTEM,
-        "You are a helpful coding assistant."
-    );
+    assert_eq!(AC_SHIP1_008_CANONICAL_SYSTEM, "You are a helpful coding assistant.");
 }
 
 #[test]
@@ -208,10 +202,7 @@ fn ship2_004_training_budget_is_21_days() {
 fn ship2_006_qa_gate_count_matches_model_1() {
     // Both models run the same 8-gate `apr qa` suite.
     assert_eq!(AC_SHIP2_006_REQUIRED_QA_GATE_COUNT, 8);
-    assert_eq!(
-        AC_SHIP2_006_REQUIRED_QA_GATE_COUNT,
-        AC_SHIP1_006_REQUIRED_QA_GATE_COUNT
-    );
+    assert_eq!(AC_SHIP2_006_REQUIRED_QA_GATE_COUNT, AC_SHIP1_006_REQUIRED_QA_GATE_COUNT);
 }
 
 #[test]

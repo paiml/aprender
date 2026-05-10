@@ -412,6 +412,108 @@ pub mod ship_024;
 // to one pure verdict fn + mutation survey. Authoritative contract:
 // contracts/compound-ship-gates-v1.yaml v1.0.0.
 
+// FALSIFY-APR-GGUF-PARITY — per-layer ffn_swigl ratio gate for SHIP-007.
+pub mod apr_gguf_forward_parity;
+
+// FALSIFY-APR-DISTILL-TRAIN-005 — precompute byte-determinism gate.
+pub mod distill_train_005;
+
+// INV-DATA-006 — dataset-thestack-python disjoint train/val splits.
+pub mod data_inv_006;
+
+// FALSIFY-APR-DISTILL-TRAIN-002 — KL loss decreases over epochs gate.
+pub mod distill_train_002;
+
+// FALSIFY-QA-002 + 006 — apr-cli error-exit honesty (exit != 0 on missing file / error output).
+pub mod qa_002_006;
+
+// FALSIFY-QA-004 — apr-cli no NaN/Inf in user output (zero-tolerance scan).
+pub mod qa_004;
+
+// FALSIFY-QA-001 — apr-cli all 58 commands respond to --help.
+pub mod qa_001;
+
+// FALSIFY-PUB-CLI-002 + 004 — cargo install/check exit codes (shared verdict).
+pub mod pub_cli_002_004;
+
+// FALSIFY-PUB-CLI-001 — apr-cli default features contain no forbidden substrings.
+pub mod pub_cli_001;
+
+// FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
+pub mod pub_cli_003;
+
+// FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
+pub mod pull_dataset_001;
+
+// FALSIFY-APR-PULL-DATASET-005 — apr pull <model> --dry-run backward compat.
+pub mod pull_dataset_005;
+
+// FALSIFY-APR-PULL-DATASET-003 — apr pull dataset no-match glob fails fast.
+pub mod pull_dataset_003;
+
+// FALSIFY-APR-PULL-DATASET-004 — license allowlist drops disallowed rows.
+pub mod pull_dataset_004;
+
+// FALSIFY-APR-PULL-DATASET-002 — apr pull dataset --include glob exact match count.
+pub mod pull_dataset_002;
+
+// FALSIFY-APR-DISTILL-TRAIN-009 — distill student val_loss < from-scratch baseline.
+pub mod distill_train_009;
+
+// INV-BPE-001 — tokenizer-bpe vocab range + paired-model match.
+pub mod bpe_inv_001;
+
+// INV-BPE-006 — tokenizer-bpe encode determinism (cross-process bit-identical IDs).
+pub mod bpe_inv_006;
+
+// INV-BPE-003 — tokenizer-bpe round-trip byte-equality on 10K held-out docs.
+pub mod bpe_inv_003;
+
+// INV-BPE-002 — tokenizer-bpe four required special tokens distinct + in range.
+pub mod bpe_inv_002;
+
+// FALSIFY-PROF10-003 — apr profile graphed vs ungraphed sanity inequality.
+pub mod prof10_003;
+
+// FALSIFY-SUB-FFN-005 — sub-FFN telemetry per-layer line count.
+pub mod sub_ffn_005;
+
+// FALSIFY-APR-TOK-PAR-002 — parallel BPE 80% efficiency floor.
+pub mod tok_par_002;
+
+// INV-DATA-004 — dataset-thestack-python train range + val floor.
+pub mod data_inv_004;
+
+// INV-DATA-007 — dataset-thestack-python UTF-8 + NFC round-trip.
+pub mod data_inv_007;
+
+// INV-DATA-001 — dataset-thestack-python license whitelist (zero-tolerance).
+pub mod data_inv_001;
+
+// INV-DATA-002 — dataset-thestack-python PII scrub zero-match invariant.
+pub mod data_inv_002;
+
+// INV-DATA-003 — dataset-thestack-python Jaccard dedup floor (< 0.85).
+pub mod data_inv_003;
+
+// INV-DATA-005 — dataset-thestack-python corpus_sha256 reproducibility.
+pub mod data_inv_005;
+
+// INV-PRETOK-003 — pretokenize-bin manifest sum=actual invariant.
+pub mod pretok_inv_003;
+
+// INV-PRETOK-002 — pretokenize-bin shard u32-alignment invariant.
+pub mod pretok_inv_002;
+
+// INV-PRETOK-001 — pretokenize-bin token id < vocab_size invariant.
+pub mod pretok_inv_001;
+
+// FALSIFY-APR-DISTILL-TRAIN-006 — stage train resumes from precompute cache.
+pub mod distill_train_006;
+
+// FALSIFY-APR-DISTILL-TRAIN-001 — real-training (not stub) tensor-diff gate.
+pub mod distill_train_001;
+
 // GATE-SHIP-001 — MODEL-1 aggregate-AND over 10 AC-SHIP1-* booleans.
 pub mod gate_ship_001;
 
