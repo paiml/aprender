@@ -18,23 +18,22 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
-  version: 1.1.0
+  version: 1.2.0
   created: '2026-05-10'
   author: apr-cli team
   kind: registry
   description: >
-    HELIX-IDEA-005 Phases 1-2 — trait-equivalence gate over the
-    existing `aprender_rag::retrieve::HybridRetriever` (Phase 1) and
-    BM25 index-build linear-scaling budget (Phase 2). Discharges
-    FALSIFY-HYBRID-002 (the trait method does not silently
-    re-normalize, drop, or reorder fused results compared to a manual
-    `FusionStrategy::fuse(dense_search(q), sparse_search(q))`
-    callsite) and FALSIFY-HYBRID-004 (BM25Index batch ingest of a
-    deterministic 5k-doc fixture stays within a tunable budget;
-    extrapolates linearly to the §2.5 production target of 1M docs).
-    Phases 3+ amend this contract to add recall-improvement
-    (HYBRID-001) and tokenizer-reuse (HYBRID-003) gates as their
-    fixture and architectural prerequisites land.
+    HELIX-IDEA-005 Phases 1-3 — trait-equivalence (Phase 1),
+    BM25 build-perf (Phase 2), and synthetic-adversarial-corpus
+    recall-improvement (Phase 3). Discharges FALSIFY-HYBRID-002 (the
+    trait method does not silently re-normalize, drop, or reorder
+    fused results), FALSIFY-HYBRID-004 (BM25Index batch ingest of a
+    5k-doc fixture stays within budget), and FALSIFY-HYBRID-001
+    (hybrid recall@k beats max(dense, sparse) recall@k by ≥5pp on a
+    hand-crafted adversarial fixture where dense and sparse legs
+    cover disjoint subsets of the ground-truth set). Phase 4 amends
+    this contract to add tokenizer-reuse (HYBRID-003) once the BM25
+    indexer is refactored to share the inference Tokenizer trait.
   references:
     - 'docs/specifications/helix-db-feature-ideas.md §2.5 (HELIX-IDEA-005)'
     - 'crates/aprender-rag/src/retrieve.rs (HybridRetriever)'
@@ -46,7 +45,7 @@ metadata:
 
 kind: AprHybridRetrievalContract
 name: apr-hybrid-retrieval
-version: "1.1.0"
+version: "1.2.0"
 status: ACTIVE
 scope: "the `aprender-rag::retrieve::HybridRetriever` trait-equivalence subset"
 binary: "(library API)"
@@ -117,13 +116,35 @@ falsification_conditions:
     test_name: bm25_batch_index_within_budget
     status: ENFORCED
 
+  - id: FALSIFY-HYBRID-001
+    description: >
+      Hybrid retrieval recall@k beats max(dense recall@k, sparse
+      recall@k) by ≥5 percentage points on a hand-crafted adversarial
+      fixture where the dense and sparse legs cover disjoint subsets
+      of the ground-truth set. Concretely: 8 docs total, 6 marked
+      relevant, top_k=4. Dense embeddings align 3 relevant docs
+      (d1/d2/d3) with the query while leaving 3 relevant docs
+      (d4/d5/d6) orthogonal. BM25 content does the opposite — the
+      query keyword appears with varying tf in d4/d5/d6 (so they
+      win sparse top-3) and is absent from d1/d2/d3. Two irrelevant
+      docs (d7/d8) sit just below each leg's top-3, occupying rank
+      4. Expected: dense recall@4 = 3/6 ≈ 0.50, sparse recall@4 ≈
+      0.50, hybrid (RRF) recall@4 = 4/6 ≈ 0.667 — a +0.167 gain,
+      well above the 0.05 contractual threshold. Falsifies "hybrid
+      is statistically equivalent to one of the legs" — i.e., the
+      fusion isn't actually adding signal beyond what each leg
+      provides alone.
+    test_file: crates/aprender-rag/tests/falsify_hybrid_001.rs
+    test_name: hybrid_beats_max_of_legs_by_5pts
+    status: ENFORCED
+
 # ── Acceptance gate ──
 
 qa_gate:
   id: F-HYBRID-GATE
-  name: "Hybrid retrieval contract (Phases 1-2)"
-  pass_criteria: "FALSIFY-HYBRID-002 + FALSIFY-HYBRID-004 pass; gates 001 + 003 pending Phase 3+ amendments"
-  run: "cargo test -p aprender-rag --test falsify_hybrid_002 --test falsify_hybrid_004 --no-fail-fast"
+  name: "Hybrid retrieval contract (Phases 1-3)"
+  pass_criteria: "FALSIFY-HYBRID-002 + FALSIFY-HYBRID-004 + FALSIFY-HYBRID-001 pass; gate 003 pending Phase 4 amendment"
+  run: "cargo test -p aprender-rag --test falsify_hybrid_002 --test falsify_hybrid_004 --test falsify_hybrid_001 --no-fail-fast"
   falsification: >
     Rename or delete any test_file / test_name and the
     `aprender-contracts::apr_hybrid_retrieval_contract` integration
