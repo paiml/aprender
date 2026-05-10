@@ -18,20 +18,23 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-05-10'
   author: apr-cli team
   kind: registry
   description: >
-    HELIX-IDEA-005 Phase 1 — trait-equivalence gate over the existing
-    `aprender_rag::retrieve::HybridRetriever`. Discharges
+    HELIX-IDEA-005 Phases 1-2 — trait-equivalence gate over the
+    existing `aprender_rag::retrieve::HybridRetriever` (Phase 1) and
+    BM25 index-build linear-scaling budget (Phase 2). Discharges
     FALSIFY-HYBRID-002 (the trait method does not silently
     re-normalize, drop, or reorder fused results compared to a manual
     `FusionStrategy::fuse(dense_search(q), sparse_search(q))`
-    callsite). Phases 2+ amend this contract to add recall-improvement
-    (HYBRID-001), tokenizer-reuse (HYBRID-003), and build-perf
-    (HYBRID-004) gates as their fixture and architectural
-    prerequisites land.
+    callsite) and FALSIFY-HYBRID-004 (BM25Index batch ingest of a
+    deterministic 5k-doc fixture stays within a tunable budget;
+    extrapolates linearly to the §2.5 production target of 1M docs).
+    Phases 3+ amend this contract to add recall-improvement
+    (HYBRID-001) and tokenizer-reuse (HYBRID-003) gates as their
+    fixture and architectural prerequisites land.
   references:
     - 'docs/specifications/helix-db-feature-ideas.md §2.5 (HELIX-IDEA-005)'
     - 'crates/aprender-rag/src/retrieve.rs (HybridRetriever)'
@@ -43,7 +46,7 @@ metadata:
 
 kind: AprHybridRetrievalContract
 name: apr-hybrid-retrieval
-version: "1.0.0"
+version: "1.1.0"
 status: ACTIVE
 scope: "the `aprender-rag::retrieve::HybridRetriever` trait-equivalence subset"
 binary: "(library API)"
@@ -96,15 +99,33 @@ falsification_conditions:
     test_name: trait_method_matches_explicit_combine
     status: ENFORCED
 
+  - id: FALSIFY-HYBRID-004
+    description: >
+      `BM25Index::add_batch` over a deterministic 5k-doc fixture
+      (each doc is a 10-word synthetic sentence drawn from a small
+      vocabulary, ChaCha8Rng-seeded for reproducibility) completes
+      within 10 s on commodity hardware. The §2.5 production target
+      is "<2 min for 1M docs"; on a 5k fixture, extrapolating
+      linearly that's 0.6 s — but the gate sets a 10 s ceiling
+      (≥16× headroom) to absorb CI noise on shared runners while
+      still catching order-of-magnitude regressions
+      (super-linear-in-corpus blowups). Tunable via
+      `APR_BM25_BUILD_BUDGET_MS`. Falsifies "indexing is
+      super-linear in corpus size" or "the indexer does work
+      proportional to vocabulary squared".
+    test_file: crates/aprender-rag/tests/falsify_hybrid_004.rs
+    test_name: bm25_batch_index_within_budget
+    status: ENFORCED
+
 # ── Acceptance gate ──
 
 qa_gate:
   id: F-HYBRID-GATE
-  name: "Hybrid retrieval contract (Phase 1 — trait equivalence)"
-  pass_criteria: "FALSIFY-HYBRID-002 passes; gates 001/003/004 pending Phase 2+ amendments"
-  run: "cargo test -p aprender-rag --test falsify_hybrid_002 --no-fail-fast"
+  name: "Hybrid retrieval contract (Phases 1-2)"
+  pass_criteria: "FALSIFY-HYBRID-002 + FALSIFY-HYBRID-004 pass; gates 001 + 003 pending Phase 3+ amendments"
+  run: "cargo test -p aprender-rag --test falsify_hybrid_002 --test falsify_hybrid_004 --no-fail-fast"
   falsification: >
-    Rename or delete the test_file / test_name and the
+    Rename or delete any test_file / test_name and the
     `aprender-contracts::apr_hybrid_retrieval_contract` integration
     test fails before aprender-rag compiles.
 

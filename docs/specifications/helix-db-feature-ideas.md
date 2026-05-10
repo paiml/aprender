@@ -1,15 +1,15 @@
 # HelixDB Feature Ideas for aprender
 
-**Version:** 0.11.0
+**Version:** 0.12.0
 **Status:** Active — **4 of 9 fully shipped** (001, 002, 007, 009);
-**2 partially shipped** (005 Phase 1 of 2+ — trait-equivalence
-ENFORCED; 006 Phase 1 of 2+ — pure-math fusion ENFORCED;
+**2 partially shipped** (005 Phases 1-2 of 4 — trait-equivalence +
+build-perf ENFORCED; 006 Phase 1 of 2+ — pure-math fusion ENFORCED;
 remaining gates pending fixture/refactoring/cross-encoder upstream
 work); 1 recommended without gates (008, speculative pending pain
-point); 2 deferred/speculative (003, 004). **16 ENFORCED
+point); 2 deferred/speculative (003, 004). **17 ENFORCED
 falsification gates total**: 4 (HNSW persistence) + 3 (MCP
 inventory) + 3 (registry snapshot) + 3 (API key auth) + 2 (rerank
-pure-math) + 1 (hybrid trait equivalence)
+pure-math) + 2 (hybrid trait equivalence + build perf)
 **Methodology:** Design by Provable Contract (`aprender-contracts` /
 `pv` CLI). Every shipped HELIX-IDEA carries an ACTIVE
 `contracts/*.yaml`, an ENFORCED set of falsification gates, and an
@@ -182,7 +182,7 @@ corresponding `aprender-contracts` integration test in CI.
 | **HELIX-IDEA-007** (registry snapshot) | `contracts/apr-registry-snapshot-v1.yaml` | ACTIVE | `FALSIFY-SNAPSHOT-001` → `crates/aprender-registry/tests/falsify_snapshot_001.rs::snapshot_yields_bit_identical_query_results`<br>`FALSIFY-SNAPSHOT-002` → `crates/aprender-registry/tests/falsify_snapshot_002.rs::snapshot_does_not_block_concurrent_writers`<br>`FALSIFY-SNAPSHOT-003` → `crates/aprender-registry/tests/falsify_snapshot_003.rs::snapshot_refuses_to_overwrite_existing_file` | `crates/aprender-contracts/tests/apr_registry_snapshot_contract.rs` (6 assertions) |
 | **HELIX-IDEA-009** (API key auth) | `contracts/apr-serve-api-key-auth-v1.yaml` | ACTIVE | `FALSIFY-AUTH-001` → `crates/apr-cli/tests/falsify_auth_001.rs::missing_bearer_returns_401_on_every_route`<br>`FALSIFY-AUTH-002` → `crates/apr-cli/tests/falsify_auth_002.rs::valid_bearer_passes_and_hash_path_is_constant_time`<br>`FALSIFY-AUTH-003` → `crates/apr-cli/tests/falsify_auth_003.rs::auth_module_uses_subtle_constanttimeeq` | `crates/aprender-contracts/tests/apr_serve_api_key_auth_contract.rs` (6 assertions) |
 | **HELIX-IDEA-006** (Reranking — Phase 1, pure-math) | `contracts/apr-rerank-v1.yaml` v1.0.0 | ACTIVE | `FALSIFY-RERANK-RRF-002` → `crates/aprender-rag/tests/falsify_rerank_rrf_002.rs::rrf_is_input_order_invariant`<br>`FALSIFY-RERANK-MMR-002` → `crates/aprender-rag/tests/falsify_rerank_mmr_002.rs::mmr_lambda_one_is_identity` <br>(Gates RRF-001, MMR-001, XENC-001/002 pending Phase 2+ — depend on HELIX-IDEA-005 + `aprender-serve` cross-encoder routing) | `crates/aprender-contracts/tests/apr_rerank_contract.rs` (6 assertions) |
-| **HELIX-IDEA-005** (Hybrid retrieval — Phase 1, trait equivalence) | `contracts/apr-hybrid-retrieval-v1.yaml` v1.0.0 | ACTIVE | `FALSIFY-HYBRID-002` → `crates/aprender-rag/tests/falsify_hybrid_002.rs::trait_method_matches_explicit_combine` <br>(Gates HYBRID-001 recall, 003 tokenizer reuse, 004 build perf pending Phase 2+) | `crates/aprender-contracts/tests/apr_hybrid_retrieval_contract.rs` (6 assertions) |
+| **HELIX-IDEA-005** (Hybrid retrieval — Phases 1-2) | `contracts/apr-hybrid-retrieval-v1.yaml` v1.1.0 | ACTIVE | `FALSIFY-HYBRID-002` → `crates/aprender-rag/tests/falsify_hybrid_002.rs::trait_method_matches_explicit_combine`<br>`FALSIFY-HYBRID-004` → `crates/aprender-rag/tests/falsify_hybrid_004.rs::bm25_batch_index_within_budget` <br>(Gates HYBRID-001 recall, 003 tokenizer reuse pending Phase 3+) | `crates/aprender-contracts/tests/apr_hybrid_retrieval_contract.rs` (6 assertions) |
 
 **Audit reproduction:** `pv validate contracts/apr-{mcp-tool-inventory,registry-snapshot,serve-api-key-auth}-v1.yaml`
 returns `Contract is valid.` on each. `cargo test -p aprender-contracts
@@ -200,7 +200,7 @@ verbatim.
 
 | Idea | Contract YAML | Status | Pre-authored gates |
 |---|---|---|---|
-| HELIX-IDEA-005 (BM25 + dense) | `contracts/apr-hybrid-retrieval-v1.yaml` | **v1.0.0 ACTIVE — Phase 1 (HYBRID-002 trait equivalence) shipped; Phases 2+ (HYBRID-001 recall, 003 tokenizer, 004 build perf) pending fixture/refactoring/perf work** | §2.5: 4 gates total |
+| HELIX-IDEA-005 (BM25 + dense) | `contracts/apr-hybrid-retrieval-v1.yaml` | **v1.1.0 ACTIVE — Phases 1-2 (HYBRID-002 + HYBRID-004) shipped; Phases 3+ (HYBRID-001 recall, 003 tokenizer) pending fixture/refactoring work** | §2.5: 4 gates total |
 | HELIX-IDEA-006 (Reranking) | `contracts/apr-rerank-v1.yaml` | **v1.0.0 ACTIVE — Phase 1 (RRF-002 + MMR-002) shipped; Phase 2+ (RRF-001, MMR-001, XENC-001/002) pending HELIX-IDEA-005 (recall fixture) + `aprender-serve` cross-encoder upstream** | §2.6: 6 gates total |
 | HELIX-IDEA-008 (Schema migration) | `contracts/apr-schema-migration-v1.yaml` | To author | Not yet pre-authored — speculative pending concrete pain point (§2.8) |
 
@@ -464,17 +464,18 @@ that direction exists.
 
 ### 2.5 HELIX-IDEA-005 — Hybrid retrieval (BM25 + dense vector)
 
-**Status:** **Shipped (Phase 1 — trait equivalence)**;
-FALSIFY-HYBRID-002 ENFORCED. Phase 2+ ships the remaining 3 gates
-(HYBRID-001 recall improvement on a BEIR subset, HYBRID-003
-tokenizer reuse with the inference path, HYBRID-004 build perf on
-a 100k-doc fixture) as their fixture/refactoring/perf prerequisites
-land.
-**Contract:** `contracts/apr-hybrid-retrieval-v1.yaml` v1.0.0 (ACTIVE).
-**Effort:** Medium total; Phase 1 fit in one commit because
-`aprender-rag::retrieve::HybridRetriever` and
-`aprender-rag::fusion::FusionStrategy` already shipped — the gate
-just locks in their trait-equivalence property.
+**Status:** **Shipped (Phases 1-2)**; FALSIFY-HYBRID-002 (trait
+equivalence) and FALSIFY-HYBRID-004 (BM25 build-perf budget on a
+deterministic 5k-doc fixture) ENFORCED. Phase 3+ ships the
+remaining 2 gates (HYBRID-001 recall improvement on a BEIR subset,
+HYBRID-003 tokenizer reuse with the inference path) as their
+fixture and architectural prerequisites land.
+**Contract:** `contracts/apr-hybrid-retrieval-v1.yaml` v1.1.0 (ACTIVE).
+**Effort:** Medium total; Phases 1-2 fit in two commits each
+~150-200 LOC of test infra + zero production code change (the
+existing `aprender-rag::retrieve::HybridRetriever`,
+`FusionStrategy`, and `BM25Index` already meet both gates'
+properties).
 **Target crate:** **`aprender-rag`** (chosen over the "new
 aprender-retrieve crate" alternative — `aprender-rag` already hosts
 `HybridRetriever`, `BM25Index`, `VectorStore`, and `FusionStrategy`
@@ -522,7 +523,7 @@ follow-up work.
 | `FALSIFY-HYBRID-001` | Hybrid `recall@10 ≥ max(dense, sparse) + 0.05` on a frozen BEIR subset (NFCorpus or SciFact — small enough for CI). Tunable corpus path via `APR_BEIR_CORPUS`. Falsifies "hybrid is statistically equivalent to one of the legs". | `crates/aprender-rag/tests/falsify_hybrid_001.rs::hybrid_beats_max_of_legs_by_5pts` |
 | `FALSIFY-HYBRID-002` | `HybridRetriever::retrieve` is *score-equivalent* to a manual `FusionStrategy::fuse(dense_search(q), sparse_search(q))` callsite — i.e., the trait method does not silently change weighting or drop candidates compared to the documented arithmetic. Falsifies "the trait re-normalizes scores in a way callers don't expect". | `crates/aprender-rag/tests/falsify_hybrid_002.rs::trait_method_matches_explicit_combine` **(SHIPPED Phase 1)** |
 | `FALSIFY-HYBRID-003` | Tokenization for BM25 indexing comes from the **same** tokenizer used by `apr serve` inference (no separate BM25-only tokenizer). Tested via a structural assertion that the BM25 indexer's tokenizer trait object's type-id equals the inference path's. Falsifies "BM25 quietly forks tokenization". | `crates/aprender-rag/tests/falsify_hybrid_003.rs::bm25_uses_inference_tokenizer` |
-| `FALSIFY-HYBRID-004` | BM25 index build for a 100k-doc fixture completes within 12 s on commodity hardware (extrapolates to <2 min for 1M docs at the same per-doc cost). Tunable via `APR_BM25_BUILD_BUDGET_MS`. Falsifies "indexing is super-linear in corpus size". | `crates/aprender-rag/tests/falsify_hybrid_004.rs::index_build_within_budget` |
+| `FALSIFY-HYBRID-004` | BM25 batch index of a deterministic **5k-doc** fixture completes within 10 s on commodity hardware (≥16× headroom over linearly-extrapolated expected cost; gate exists to catch order-of-magnitude regressions, not microbenchmark perf). Tunable via `APR_BM25_BUILD_BUDGET_MS`. Falsifies "indexing is super-linear in corpus size". | `crates/aprender-rag/tests/falsify_hybrid_004.rs::bm25_batch_index_within_budget` **(SHIPPED Phase 2)** |
 
 ---
 

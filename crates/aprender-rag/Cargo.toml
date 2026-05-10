@@ -83,6 +83,12 @@ serde_yaml_ng = "0.10"
 tokio-test = "0.4"
 proptest = "1.9"
 criterion = { version = "0.6", features = ["html_reports"] }
+# HELIX-IDEA-005 Phase 2 (FALSIFY-HYBRID-004): seedable PRNG for the
+# 5k-doc deterministic synthetic corpus that the build-perf gate
+# ingests. ChaCha8 is the same family aprender-core uses for the
+# HNSW recall fixture.
+rand = "0.9"
+rand_chacha = "0.9"
 
 [[bench]]
 name = "retrieval"
