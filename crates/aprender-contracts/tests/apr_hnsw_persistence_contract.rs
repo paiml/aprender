@@ -1,17 +1,18 @@
 //! Integration test for `contracts/apr-hnsw-persistence-v1.yaml`.
 //!
-//! HELIX-IDEA-001 Phases 1-2. Loader/validator that promotes the HNSW
-//! persistence contract from DRAFT to ACTIVE for round-trip identity
-//! and crash safety. Same pattern as `apr_mcp_server_contract.rs`.
-//! Asserts:
+//! HELIX-IDEA-001 Phases 1-3. Loader/validator that promotes the HNSW
+//! persistence contract from DRAFT to ACTIVE for round-trip identity,
+//! crash safety, and recall threshold. Same pattern as
+//! `apr_mcp_server_contract.rs`. Asserts:
 //!
 //! 1. The YAML file exists and parses as valid YAML.
 //! 2. Top-level `status: ACTIVE`.
-//! 3. **Exactly 2** entries in `falsification_conditions`:
-//!    FALSIFY-HNSW-PERSIST-001 (Phase 1, round-trip) and
-//!    FALSIFY-HNSW-PERSIST-002 (Phase 2, crash safety). Phases 3/4
+//! 3. **Exactly 3** entries in `falsification_conditions`:
+//!    FALSIFY-HNSW-PERSIST-001 (Phase 1, round-trip),
+//!    FALSIFY-HNSW-PERSIST-002 (Phase 2, crash safety), and
+//!    FALSIFY-HNSW-PERSIST-003 (Phase 3, recall threshold). Phase 4
 //!    will amend the contract (and bump the expected count here in
-//!    lockstep) as gates 003/004 discharge.
+//!    lockstep) as gate 004 discharges.
 //! 4. Every entry's `test_file` exists on disk, `test_name` is
 //!    non-empty, and `status: ENFORCED`.
 
@@ -68,24 +69,24 @@ fn apr_hnsw_persistence_contract_is_active() {
     let contract = load_contract();
     assert_eq!(
         contract.status, "ACTIVE",
-        "apr-hnsw-persistence-v1.yaml must be ACTIVE for Phases 1-2 (round-trip + crash safety shipped)."
+        "apr-hnsw-persistence-v1.yaml must be ACTIVE for Phases 1-3 (round-trip + crash safety + recall threshold)."
     );
 }
 
 #[test]
-fn apr_hnsw_persistence_contract_has_exactly_two_conditions() {
+fn apr_hnsw_persistence_contract_has_exactly_three_conditions() {
     let contract = load_contract();
     assert_eq!(
         contract.falsification_conditions.len(),
-        2,
-        "Phases 1-2 ship exactly 2 falsification gates (FALSIFY-HNSW-PERSIST-001/002); contract has {}. \
-         Phase 3/4 amendments must update both the YAML and this test in the same PR.",
+        3,
+        "Phases 1-3 ship exactly 3 falsification gates (FALSIFY-HNSW-PERSIST-001/002/003); contract has {}. \
+         Phase 4 amendment must update both the YAML and this test in the same PR.",
         contract.falsification_conditions.len()
     );
 }
 
 #[test]
-fn apr_hnsw_persistence_contract_ids_are_persist_001_and_002() {
+fn apr_hnsw_persistence_contract_ids_are_persist_001_through_003() {
     let contract = load_contract();
     let actual: Vec<String> = contract
         .falsification_conditions
@@ -97,6 +98,7 @@ fn apr_hnsw_persistence_contract_ids_are_persist_001_and_002() {
         vec![
             "FALSIFY-HNSW-PERSIST-001".to_string(),
             "FALSIFY-HNSW-PERSIST-002".to_string(),
+            "FALSIFY-HNSW-PERSIST-003".to_string(),
         ],
     );
 }
