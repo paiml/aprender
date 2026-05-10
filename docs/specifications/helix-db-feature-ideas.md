@@ -1,8 +1,10 @@
 # HelixDB Feature Ideas for aprender
 
-**Version:** 0.8.0
-**Status:** Active — **4 of 9 fully shipped** (001, 002, 007, 009);
-2 recommended with **pre-authored gates** (005, 006); 1 recommended
+**Version:** 0.9.0
+**Status:** Active — **4 of 9 fully shipped** (001, 002, 007, 009 —
+13 ENFORCED falsification gates total: 4 (HNSW persistence) + 3
+(MCP inventory) + 3 (registry snapshot) + 3 (API key auth)); 2
+recommended with **pre-authored gates** (005, 006); 1 recommended
 without gates (008, speculative pending pain point); 2
 deferred/speculative (003, 004)
 **Methodology:** Design by Provable Contract (`aprender-contracts` /
@@ -33,7 +35,7 @@ Contract** discipline: every shipped idea is gated by an ACTIVE
 provable-contract YAML whose `falsification_conditions:` entries each
 map to a shipped Rust test, with an `aprender-contracts` integration
 test asserting the gate→test mapping holds on disk. See §1.4 for the
-full chain and the audit table for HELIX-IDEA-002/007/009.
+full chain and the audit table covering HELIX-IDEA-001/002/007/009.
 
 ## 1. Introduction
 
@@ -164,7 +166,7 @@ but not required for these registry-kind contracts; provability
 applies to the dispatch behaviour ("the gate's test fails iff the
 property fails"), not to the YAML's mathematical invariants.
 
-#### Contract chain audit (HELIX-IDEA-002/007/009)
+#### Contract chain audit (HELIX-IDEA-001/002/007/009)
 
 Every shipped idea is reachable from this table. A row that doesn't
 hold (renamed test, missing YAML, dropped gate) breaks the
@@ -184,15 +186,15 @@ returns `Contract is valid.` on each. `cargo test -p aprender-contracts
 
 #### Forward obligations
 
-Every future HELIX-IDEA implementation MUST follow the same chain.
-Three of the four recommended-unshipped ideas already have
-pre-authored gate IDs in their §2.x bodies — the implementation PR
-transcribes them into the YAML's `falsification_conditions:` list
-verbatim:
+HELIX-IDEA-001 shipped end-to-end across PR #1605 (v1.0.0 → v1.3.0,
+all 4 pre-authored gates discharged) and now appears in the audit
+table above. Three recommended ideas remain unshipped; two carry
+pre-authored gate IDs in their §2.x bodies that an implementation
+PR transcribes into the YAML's `falsification_conditions:` list
+verbatim.
 
 | Idea | Contract YAML | Status | Pre-authored gates |
 |---|---|---|---|
-| HELIX-IDEA-001 (Persistent HNSW) | `contracts/apr-hnsw-persistence-v1.yaml` | **v1.3.0 ACTIVE — FULL (all 4 gates shipped)** | §2.1: 4 gates (`FALSIFY-HNSW-PERSIST-001..004`) |
 | HELIX-IDEA-005 (BM25 + dense) | `contracts/apr-hybrid-retrieval-v1.yaml` | To author | §2.5: 4 gates (`FALSIFY-HYBRID-001..004`) |
 | HELIX-IDEA-006 (Reranking) | `contracts/apr-rerank-v1.yaml` | To author | §2.6: 6 gates (`FALSIFY-RERANK-RRF-001/002`, `MMR-001/002`, `XENC-001/002`) |
 | HELIX-IDEA-008 (Schema migration) | `contracts/apr-schema-migration-v1.yaml` | To author | Not yet pre-authored — speculative pending concrete pain point (§2.8) |
@@ -201,6 +203,16 @@ A PR that merges code without authoring its YAML, or authors a YAML
 without the integration test, or alters the live registry without
 updating the spec's §6 falsification log, MUST be rejected at review
 — the contract chain is the audit trail.
+
+**Empirical observation from HELIX-IDEA-001's full ship (v1.0.0 →
+v1.3.0):** pre-authored gates *did* survive contact with code, but
+several specifics shifted during implementation — the substrate
+chosen (bincode whole-graph) was none of the §2.1 options; the
+recall threshold relaxed 0.95 → 0.90 on the CI fixture; "rebuild on
+open" semantics were dropped in favour of whole-graph save. Each
+shift is recorded in §6 v0.5.0-v0.8.0 entries. Future authors of
+005/006/008 should expect similar drift between pre-auth and
+implementation; the §6 log is where they record it.
 
 ## 2. Proposals
 
@@ -828,9 +840,10 @@ authorization. Single-key auth is the v1.
 
 ## 6. Falsification log
 
-This document was falsified against live code after the initial draft
-and again after PR #1605 shipped HELIX-IDEA-002/007/009. Tracked
-corrections:
+This document was falsified against live code after the initial draft,
+again after PR #1605 shipped HELIX-IDEA-002/007/009 (v0.2.0 round),
+and again after the same PR shipped HELIX-IDEA-001 across four
+phases (v0.5.0-v0.8.0 round). Tracked corrections:
 
 | Date       | Section           | Original claim                                                      | Correction                                                                                  |
 |------------|-------------------|---------------------------------------------------------------------|---------------------------------------------------------------------------------------------|
@@ -843,14 +856,26 @@ corrections:
 | v0.2.0     | §2.2 duplication count | "Edit two files: `tools/mod.rs` + the hardcoded `Vec` at `server.rs:221-233`" | Three sites, not two: dispatch match at `server.rs:461-483` was the missed third site.     |
 | v0.2.0     | §2.2 Gate 002     | "Two `#[mcp_tool(name = "foo")]` fail to link with a clear error"   | Downgraded to runtime panic in `ToolIndex::from_inventory()`. `inventory::submit!` allows duplicate names at link time; runtime check fires on every `AprMcpServer::new()`. |
 | v0.2.0     | §2.7 acceptance   | "without blocking writers for >100 ms"                              | Replaced with 5 s default budget (env-tunable `APR_SNAPSHOT_BUDGET_MS`); 100 ms is below SQLITE_BUSY retry windows on cold caches. |
+| v0.5.0     | §2.1 substrate    | "Option A — Arrow IPC … Option B — `redb` …"                       | Phase 1 chose neither: bincode whole-graph snapshot via `Serialize/Deserialize` derives on the existing `HNSWIndex`, with `#[serde(skip)]` on the `ThreadRng` field. No new storage substrate needed.  |
+| v0.5.0     | §2.1 semantics    | "rebuild on open" (re-add each persisted vector to a fresh index)   | Replaced with whole-graph round-trip. `HNSWIndex::add()` uses `ThreadRng`, so "rebuild" is non-deterministic and would have failed FALSIFY-HNSW-PERSIST-001's byte-stable comparison. Save+load preserves the graph exactly. |
+| v0.6.0     | §2.1 Gate 002     | "yields a file that opens cleanly OR errors with a recovery-required diagnostic"  | Implementation: temp file + `File::sync_all()` (fsync) + `fs::rename` for POSIX atomicity. Falsifier additionally grep-asserts the source uses `fs::rename` and `.sync_all()`, not `fs::write` direct.  |
+| v0.7.0     | §2.1 Gate 003     | "Recall@10 ≥ 0.95"                                                  | Relaxed to ≥ 0.90 on the 200-doc × 32-dim CI fixture. The 0.95 sketch was scoped at the 10⁵-vec production regime; on a small fixture, occasional probes fall outside the corpus's spectral sweet spot. Production-size validation opt-in via `APR_HNSW_BENCH_CORPUS`. |
+| v0.7.0     | §2.1 Gate 003     | (absent harness sanity)                                             | Added `brute_force_top_k_is_self_consistent` companion test: a query that IS one of the docs returns that doc with distance 0. Guards against a buggy harness silently passing the main gate. |
+| v0.8.0     | §2.1 Gate 004     | (absent regression decomposition)                                   | Added `open_alone_is_well_under_budget` companion test alongside the cold-open + first-query gate, so a regression in the rebuild path can be diagnosed without ambiguity from the first-search contribution. |
 
 Five proposals were added in the same revision (HELIX-IDEA-005 through
 009) to close gaps surfaced by a wider audit of helix-db's feature set
 that the initial draft missed. Items the audit flagged but that this
 spec *intentionally* does not adopt are listed in §3.
 
-The v0.2.0 amendments are post-implementation falsifications: the
-shipped code in PR #1605 disagreed with v0.1.0's measured-state claims
-on 8 distinct rows. Future implementations of HELIX-IDEA-001/005/006/008
-should expect the same — author the contract first, ship the code, then
-re-falsify the spec.
+The v0.2.0 round was the first post-implementation falsification (8
+rows of measured-state correction after HELIX-IDEA-002/007/009
+shipped). The v0.5.0–v0.8.0 round was the second: shipping
+HELIX-IDEA-001 across four phases produced 6 more rows — and those
+were against the *pre-authored gates table* in §2.1, not just the
+prose acceptance signals. Pre-authoring catches scope and intent
+correctly; specifics (substrate choice, threshold tightness,
+semantic shape) still drift on contact with code. The pattern is
+durable: future implementations of HELIX-IDEA-005/006/008 will
+generate their own §6 entries that future authors should expect
+and welcome — this log *is* the kaizen loop.
