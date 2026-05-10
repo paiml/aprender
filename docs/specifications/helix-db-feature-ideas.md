@@ -415,9 +415,12 @@ backward-incompatible registry change has been painfully shipped.
 
 ### 2.9 HELIX-IDEA-009 — Constant-time API key auth for `apr serve`
 
-**Status:** Recommended, low effort, gates production usage.
-**Effort:** Low (~2 weeks).
-**Target crate:** `aprender-serve`.
+**Status:** **Shipped** in PR #1605 (commit `3aef8f958`).
+**Contract:** `contracts/apr-serve-api-key-auth-v1.yaml` (ACTIVE).
+**Effort:** Low (~2 weeks → 1 commit).
+**Target crate:** `apr-cli` (corrected from `aprender-serve`; the HTTP
+router builders live in `apr-cli/src/commands/serve/`, not in the
+inference-only `aprender-serve` crate).
 
 **Problem.** `apr serve` exposes inference over HTTP with no built-in
 authentication. Every shipped HTTP inference deployment will need
@@ -443,9 +446,27 @@ Schema introspection sits behind the same gate at
 authorization. Single-key auth is the v1.
 
 **Acceptance signals.**
-- All `apr serve` HTTP routes 401 without a valid key.
+- All `apr serve` HTTP routes 401 without a valid key. **(Met:
+  `crates/apr-cli/tests/falsify_auth_001.rs` — 4 routes ×
+  GET/POST.)**
 - Constant-time comparison verified by a timing test (CI-tractable).
-- Documented setup: one env var, one curl example.
+  **(Met via structural source-grep gate
+  `falsify_auth_003.rs::auth_module_uses_subtle_constanttimeeq`,
+  not runtime timing — too noisy for CI per the contract's note.)**
+- Documented setup: one env var, one curl example. **(Partial:
+  `APR_API_KEY` / `APR_API_KEY_HASH` documented in
+  `crates/apr-cli/src/commands/serve/auth.rs` rustdoc; curl example
+  pending operator-facing README update.)**
+
+**Implementation deltas vs original sketch.**
+- `--auth-disabled` CLI flag deferred to v1.1.0 — env-var-only
+  configuration is sufficient (unset env vars = disabled with a
+  one-line stderr warning). Adding a flag requires touching
+  `serve_commands.rs` + `dispatch_run.rs` + `ServerConfig`; bundled
+  with the v1.1.0 multi-key follow-up.
+- `APR_API_KEY_HASH` env var added on top of `APR_API_KEY`
+  (preferred for deployments where the plaintext should never sit on
+  disk). Both supported; hash wins on conflict.
 
 ---
 
