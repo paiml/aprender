@@ -1,7 +1,8 @@
 # HelixDB Feature Ideas for aprender
 
-**Version:** 0.1.0
-**Status:** Draft / Ideation
+**Version:** 0.2.0
+**Status:** Active — 3 of 9 shipped (002, 007, 009 in PR #1605); 4 recommended
+(001, 005, 006, 008); 2 deferred/speculative (003, 004)
 **Authors:** Pragmatic AI Labs
 **References:** HELIX-IDEA-001..009
 
@@ -50,15 +51,23 @@ means an earlier draft was wrong and the entry has been rewritten.
 - **Registry storage**: `[VERIFIED]` `aprender-registry` declares
   `rusqlite = { version = "0.32", features = ["bundled"] }` and uses it for
   model/dataset/recipe metadata. Not a vector store. No swap recommended.
-- **MCP**: `[CORRECTED]` Earlier draft said "handler discovery is
-  contracts-mediated." Wrong. Contracts mediate **schema**, not
-  **discovery**. Discovery is a hardcoded `Vec<ToolDefinition>` at
-  `crates/aprender-mcp/src/server.rs:221–233`. Schemas come from
-  `build.rs` codegen consuming `contracts/apr-mcp-tool-schemas-v1.yaml`
-  into `APR_<TOOL>_SCHEMA` constants. The `inventory` crate is unused
-  anywhere in the workspace. Adding a new tool today requires editing
-  `server.rs` and `tools/mod.rs`. This makes HELIX-IDEA-002 *more*
-  valuable than originally framed.
+- **MCP**: `[CORRECTED twice]` Initial draft said "handler discovery is
+  contracts-mediated." Wrong: contracts mediate **schema**, not
+  **discovery**. v0.1.0 corrected to: "Discovery is a hardcoded
+  `Vec<ToolDefinition>` at `server.rs:221–233`; adding a new tool
+  requires editing `server.rs` and `tools/mod.rs`." That was
+  point-in-time accurate at draft time. **v0.2.0 correction**: as of PR
+  #1605 (HELIX-IDEA-002 shipped) the hardcoded Vec at
+  `server.rs:221–233` AND the duplicated dispatch match at
+  `server.rs:461-483` are both gone — replaced by
+  `tools::ToolIndex::from_inventory()` reading
+  `inventory::iter::<McpToolEntry>` populated by per-tool
+  `register_mcp_tool!` invocations. Schemas still come from `build.rs`
+  codegen consuming `contracts/apr-mcp-tool-schemas-v1.yaml` into
+  `APR_<TOOL>_SCHEMA` constants — that pipeline was intentionally not
+  replaced (FALSIFY-MCP-008 stays the source of truth). Adding a new
+  tool now requires one new file under `tools/` plus a `pub mod foo;`
+  line in `tools/mod.rs`.
 - **Macros**: `[VERIFIED]` Three `*-macros` crates exist:
   `aprender-contracts-macros` (pre/postconditions),
   `aprender-present-test-macros` (widget tests), and a contracts variant.
@@ -73,6 +82,16 @@ means an earlier draft was wrong and the entry has been rewritten.
   `Cargo.lock` as a transitive dependency only — no aprender crate
   declares it directly. Available in the build graph but not yet
   integrated. `sled`/`fjall` are absent.
+- **`subtle` crate**: `[CHANGED v0.2.0]` Pre-PR #1605 `subtle` was a
+  transitive lockfile entry only (no direct dep). Now declared as a
+  direct dependency of `apr-cli` for the HELIX-IDEA-009 constant-time
+  digest comparison. Future auth or crypto code in any other crate
+  should reuse this entry rather than redeclare.
+- **`inventory` crate**: `[CHANGED v0.2.0]` Pre-PR #1605 `inventory`
+  was absent from the workspace entirely. Now declared as a direct
+  dependency of `aprender-mcp` (HELIX-IDEA-002). Other crates that
+  want link-time plugin registration (e.g., a future
+  `aprender-orchestrate` step registry) can reuse the same crate.
 
 ## 2. Proposals
 
