@@ -1,0 +1,59 @@
+{
+  "evidence_id": "SECTION-61-8-PRED-FIRED-2026-05-10",
+  "session_date": "2026-05-10",
+  "host": "noah-Lambda-Vector (RTX 4090)",
+  "binary": "/mnt/nvme-raid0/targets/aprender/release/apr v0.32.0 (post-e856eb91f M-FFN-GGUF-5)",
+  "summary": "PRED-61-A and PRED-61-B both fired. PRED-61-B GREEN. PRED-61-A surfaces a separate prompt-insensitive GGUF generation bug, refining the §61 picture from a 2-way to a 3-way bug taxonomy.",
+  "predictions_fired": {
+    "PRED_61_B": {
+      "prediction": "APR + direct continuation prompt 'What is 2+2? The answer is ' → CLEAN single-token answer",
+      "verdict": "GREEN",
+      "evidence_file": "evidence/section-61-8-pred-fired-2026-05-10/pred-61-b-apr-direct.txt",
+      "observed_output": "4",
+      "wall_time_seconds": 79.09,
+      "interpretation": "Bug is bounded to special-token handling, NOT cumulative drift. APR forward path under direct prompts produces semantically correct answers."
+    },
+    "PRED_61_A": {
+      "prediction": "GGUF + ChatML on canonical 7B → CLEAN output (would localize bug to APR-side chat-template handling)",
+      "verdict": "RED — but in an unexpected way",
+      "evidence_files": [
+        "evidence/section-61-8-pred-fired-2026-05-10/pred-61-a-gguf-direct.txt",
+        "evidence/section-61-8-pred-fired-2026-05-10/pred-61-a-gguf-chatml.txt",
+        "evidence/section-61-8-pred-fired-2026-05-10/gguf-third-prompt.txt"
+      ],
+      "observed_output_all_prompts": "ampiezza = 0.5\ndiametro = 10\naltezza = 20\n\n# Calcolo del volume\nvolume = (",
+      "wall_times_seconds": [48.73, 48.68, 39.65],
+      "interpretation": "GGUF emits BYTE-IDENTICAL Italian output regardless of prompt. Three distinct prompts ('What is 2+2? The answer is ', '<|im_start|>...<|im_end|>...<|im_start|>assistant\\n', 'Hello, my name is') all produced 'ampiezza = 0.5\\ndiametro = 10\\n...'. Wall times differ (inference IS running, not cached), but output text matches byte-for-byte. This is a PROMPT-INSENSITIVE GGUF generation bug — input tokens are dropped, ignored, or the model state is initialized to a fixed configuration."
+    }
+  },
+  "three_way_bug_taxonomy": {
+    "APR_direct_prompt": {
+      "examples": [
+        "def fib(n): → coherent fib() Python (SHIP-002 LIVE evidence)",
+        "What is 2+2? The answer is → '4' (PRED-61-B)"
+      ],
+      "verdict": "WORKING",
+      "matches_paper_§60": true
+    },
+    "APR_ChatML_prompt": {
+      "example": "<|im_start|>user\\nWhat is 2+2?<|im_end|>\\n<|im_start|>assistant\\n → 'gibberish (fragment \\\"\\\\ns\\\\ns\\\" repeats 3+ times)'",
+      "verdict": "BROKEN — degenerate \\n\\s repetition",
+      "scope": "APR-side ChatML special-token handling (input tokenization or causal mask construction at boundary)"
+    },
+    "GGUF_any_prompt": {
+      "example": "All three tested prompts (direct, ChatML, conversational) → byte-identical 'ampiezza = 0.5\\ndiametro = 10\\n...'",
+      "verdict": "BROKEN — prompt-insensitive canned output",
+      "scope": "GGUF inference path entirely; not §60-related (§60 is about forward-parity, this is about input handling/state initialization)"
+    }
+  },
+  "scope_implications": {
+    "previous_§61_picture": "1 bug in APR ChatML path; GGUF assumed working",
+    "refined_§61_8_picture": "2 separate bugs: (A) APR ChatML degenerate-output, (B) GGUF prompt-insensitive canned-output",
+    "investigation_branches": {
+      "branch_A_APR_ChatML": "Bisect APR special-token application path. Suspect: tokenizer's special-token splitting + causal mask construction at <|im_start|> token boundaries. Multi-PR scope but bounded.",
+      "branch_B_GGUF_prompt_insensitive": "Bisect GGUF input-token feeding. Suspect: prompt tokens dropped before forward pass, OR forward pass starts from BOS regardless of input. CRITICAL — affects all GGUF inference. Multi-PR scope; possibly larger than branch A."
+    }
+  },
+  "ship_percent_movement": "MODEL-1 stays at 92% (1 of 5 §17.5 PARTIALs LIVE-discharged). Branch A and Branch B are independent investigations. SHIP-006 (apr qa golden_output) is co-blocked on both branches. SHIP-008 (chat template render) is co-blocked on Branch A specifically. SHIP-005 (HumanEval) and SHIP-007 (decode tps) likely co-blocked on Branch B.",
+  "next_session_action": "Author falsifier-test contracts for Branch A and Branch B independently. Each branch needs its own bisection cascade. DO NOT attempt LIVE-discharge of SHIP-005/006/008 until at least one branch closes."
+}
