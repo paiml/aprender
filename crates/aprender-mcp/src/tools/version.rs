@@ -43,6 +43,24 @@ pub fn call(_args: &serde_json::Value) -> ToolCallResult {
     ToolCallResult::success(payload.to_string())
 }
 
+/// HELIX-IDEA-002 — unified-signature shim for the inventory dispatcher.
+/// `apr.version` is sync; `cancel`, `sink`, `token` are accepted only for
+/// ABI uniformity with cancel-aware tools.
+pub fn dispatch(
+    args: &serde_json::Value,
+    _cancel: &std::sync::mpsc::Receiver<()>,
+    _sink: Option<&crate::server::NotificationSink>,
+    _token: Option<serde_json::Value>,
+) -> ToolCallResult {
+    call(args)
+}
+
+crate::register_mcp_tool!(
+    name: NAME,
+    definition: version_tool_definition,
+    dispatch: dispatch,
+);
+
 #[cfg(test)]
 #[allow(clippy::disallowed_methods)] // serde_json::json! expands to code that hits unwrap()
 mod tests {

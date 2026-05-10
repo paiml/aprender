@@ -12,6 +12,7 @@
 pub mod bench;
 pub mod finetune;
 pub mod qa;
+pub mod registry;
 pub mod run;
 pub mod serve;
 pub mod subprocess;
@@ -19,6 +20,8 @@ pub mod tensors;
 pub mod trace;
 pub mod validate;
 pub mod version;
+
+pub use registry::{DispatchFn, McpToolEntry, ToolIndex};
 
 pub use bench::bench_tool_definition;
 pub use finetune::finetune_tool_definition;

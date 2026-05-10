@@ -17,7 +17,6 @@
 
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
-use crate::tools;
 use crate::types::{
     JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, ToolCallResult, ToolDefinition,
 };
@@ -217,19 +216,16 @@ impl AprMcpServer {
     }
 
     /// All tool definitions registered on this server.
+    ///
+    /// HELIX-IDEA-002 / FALSIFY-INVENTORY-001: returns whatever
+    /// [`crate::tools::ToolIndex::definitions`] contains, which is
+    /// populated at startup by iterating
+    /// `inventory::iter::<McpToolEntry>`. Adding a new tool requires only
+    /// a `register_mcp_tool!` invocation in that tool's module — no
+    /// edit here.
     #[must_use]
     pub fn tool_definitions(&self) -> Vec<ToolDefinition> {
-        vec![
-            tools::version_tool_definition(),
-            tools::validate_tool_definition(),
-            tools::tensors_tool_definition(),
-            tools::bench_tool_definition(),
-            tools::qa_tool_definition(),
-            tools::trace_tool_definition(),
-            tools::run_tool_definition(),
-            tools::serve_tool_definition(),
-            tools::finetune_tool_definition(),
-        ]
+        tool_index().definitions().to_vec()
     }
 
     /// Register a new in-flight request and return its cancel receiver.
@@ -458,28 +454,29 @@ fn dispatch_tool_call_with_sink(
         .cloned()
         .unwrap_or_else(|| serde_json::json!({}));
 
-    match name {
-        Some(tools::version::NAME) => tools::version::call(&arguments),
-        Some(tools::validate::NAME) => tools::validate::call(&arguments),
-        Some(tools::tensors::NAME) => tools::tensors::call(&arguments),
-        Some(tools::bench::NAME) => tools::bench::call(&arguments),
-        Some(tools::qa::NAME) => tools::qa::call(&arguments),
-        Some(tools::trace::NAME) => tools::trace::call(&arguments),
-        Some(tools::run::NAME) => {
-            // FALSIFY-MCP-PROGRESS-002: pass sink + progressToken so that
-            // when the client requested progress, apr.run streams via
-            // `apr run --stream` and forwards each NDJSON line as
-            // notifications/progress. Without a progressToken the call
-            // falls back to the cancellable sync path.
-            tools::run::call_with_sink(&arguments, cancel_rx, sink, progress_token)
-        }
-        Some(tools::serve::NAME) => tools::serve::call(&arguments),
-        Some(tools::finetune::NAME) => {
-            tools::finetune::call_with_sink(&arguments, sink, progress_token)
-        }
-        Some(other) => ToolCallResult::error(format!("Unknown tool: {other}")),
-        None => ToolCallResult::error("Missing tool name"),
+    // HELIX-IDEA-002 / FALSIFY-INVENTORY-003: dispatch goes through the
+    // inventory-built name → fn-pointer index. Every shipped tool's
+    // module owns a `dispatch` shim that adapts to the unified
+    // `DispatchFn` signature (FALSIFY-MCP-PROGRESS-002 still applies for
+    // `apr.run` and `apr.finetune`; sink + progress_token forward through
+    // the shim as before).
+    let Some(name) = name else {
+        return ToolCallResult::error("Missing tool name");
+    };
+    match tool_index().dispatch_for(name) {
+        Some(dispatch_fn) => dispatch_fn(&arguments, cancel_rx, sink, progress_token),
+        None => ToolCallResult::error(format!("Unknown tool: {name}")),
     }
+}
+
+/// Module-local inventory cache. Built once on first access via
+/// [`crate::tools::ToolIndex::from_inventory`]; that call panics
+/// (FALSIFY-INVENTORY-002) if two tools advertise the same name, so a
+/// duplicate-registration regression fails every test that hits the
+/// dispatcher rather than silently shadowing one entry.
+fn tool_index() -> &'static crate::tools::ToolIndex {
+    static INDEX: std::sync::OnceLock<crate::tools::ToolIndex> = std::sync::OnceLock::new();
+    INDEX.get_or_init(crate::tools::ToolIndex::from_inventory)
 }
 
 /// Pull `params._meta.progressToken` out of a `tools/call` request. Returns

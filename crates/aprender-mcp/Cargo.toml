@@ -41,6 +41,11 @@ pmcp-dispatcher = ["dep:pmcp"]
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true, optional = true }
+# HELIX-IDEA-002: link-time tool registration. Each `tools/<tool>.rs`
+# submits an `McpToolEntry` via `register_mcp_tool!`; the dispatcher
+# iterates `inventory::iter::<McpToolEntry>` at startup. See
+# contracts/apr-mcp-tool-inventory-v1.yaml.
+inventory = "0.3"
 # M5 prep: pmcp 2.3 is PAIML's Rust MCP SDK, already pinned in
 # aprender-orchestrate for the MCP client side. Pulled in here as an optional
 # dep so PR 1 is a zero-behaviour-change patch — the dispatcher still runs on

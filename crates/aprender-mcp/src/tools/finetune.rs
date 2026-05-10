@@ -156,6 +156,24 @@ pub fn stream_with_sink(
     })
 }
 
+/// HELIX-IDEA-002 — unified-signature shim for the inventory dispatcher.
+/// `apr.finetune` honours the optional notification sink; cancellation is
+/// not yet wired (FALSIFY-MCP-006 covers `apr.run` only).
+pub fn dispatch(
+    args: &serde_json::Value,
+    _cancel: &std::sync::mpsc::Receiver<()>,
+    sink: Option<&NotificationSink>,
+    progress_token: Option<serde_json::Value>,
+) -> ToolCallResult {
+    call_with_sink(args, sink, progress_token)
+}
+
+crate::register_mcp_tool!(
+    name: NAME,
+    definition: finetune_tool_definition,
+    dispatch: dispatch,
+);
+
 #[cfg(test)]
 #[allow(clippy::disallowed_methods)] // serde_json::json! expands to code that hits unwrap()
 mod tests {

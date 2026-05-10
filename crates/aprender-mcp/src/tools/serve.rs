@@ -105,6 +105,22 @@ pub fn call(args: &serde_json::Value) -> ToolCallResult {
     }
 }
 
+/// HELIX-IDEA-002 — unified-signature shim for the inventory dispatcher.
+pub fn dispatch(
+    args: &serde_json::Value,
+    _cancel: &std::sync::mpsc::Receiver<()>,
+    _sink: Option<&crate::server::NotificationSink>,
+    _token: Option<serde_json::Value>,
+) -> ToolCallResult {
+    call(args)
+}
+
+crate::register_mcp_tool!(
+    name: NAME,
+    definition: serve_tool_definition,
+    dispatch: dispatch,
+);
+
 #[cfg(test)]
 #[allow(clippy::disallowed_methods)] // serde_json::json! expands to code that hits unwrap()
 mod tests {
