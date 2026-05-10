@@ -349,10 +349,13 @@ model needed); cross-encoder requires an inference path.
 
 ### 2.7 HELIX-IDEA-007 — Snapshot / atomic backup primitive
 
-**Status:** Recommended, low effort, high operational value.
-**Effort:** Low (~2 weeks).
-**Target crate:** `aprender-registry` (extend) and HELIX-IDEA-001's
-persistent index crate.
+**Status:** **Shipped (engine primitive)** in PR #1605 (commit
+`378888eb5`); the `apr backup --to <dir>` umbrella subcommand is
+deferred to a follow-up (see "Implementation deltas" below).
+**Contract:** `contracts/apr-registry-snapshot-v1.yaml` (ACTIVE).
+**Effort:** Low (~2 weeks → 1 commit for the engine primitive).
+**Target crate:** `aprender-registry` (extend); HELIX-IDEA-001's
+persistent index crate is still upstream.
 
 **Problem.** Aprender has no documented point-in-time backup story for
 local state (registry SQLite DB, model cache, future persistent ANN).
@@ -374,8 +377,37 @@ a consistent on-disk snapshot from a live database with no downtime.
 
 **Acceptance signals.**
 - Backup runs against a registry under concurrent writes without
-  blocking writers for >100 ms.
+  blocking writers for >100 ms. **(Met as ≤5 s wall-clock budget in
+  `crates/aprender-registry/tests/falsify_snapshot_002.rs`; the
+  100 ms bound was not adopted because SQLITE_BUSY retry
+  windows can dwarf it on cold caches. The contract's
+  FALSIFY-SNAPSHOT-002 enforces "writers continue, snapshot
+  returns" not microbenchmark perf — env-tunable via
+  `APR_SNAPSHOT_BUDGET_MS`.)**
 - Restore from backup yields bit-identical query results vs. live.
+  **(Met:
+  `crates/aprender-registry/tests/falsify_snapshot_001.rs`
+  asserts model/dataset/recipe count + per-row identity; covers
+  empty-registry round-trip and source-immutability after
+  snapshot.)**
+
+**Implementation deltas vs original sketch.**
+- `apr backup --to <dir>` umbrella subcommand DEFERRED to a separate
+  PR. Why: `apr-cli` currently imports `pacha` from crates.io 0.2.4
+  (HuggingFace fetcher only). The workspace `aprender-registry`
+  exports the same `[lib] name = "pacha"`, so adding both as
+  apr-cli deps causes a name collision. Resolving it (either bump
+  crates.io pacha or rename one) is a separate dep-resolution PR
+  out of HELIX-IDEA-007 scope.
+- Added FALSIFY-SNAPSHOT-003 ("snapshot refuses to overwrite
+  existing target") which the original sketch left implicit. SQLite
+  `VACUUM INTO` itself refuses; we surface that as `Err(_)` instead
+  of silently truncating, so operators must rotate filenames
+  explicitly.
+- Object-store snapshot (BLAKE3-keyed `objects/`) and persistent
+  HNSW snapshot are documented but NOT automated in v1 — the
+  former is `cp -r objects/` (immutable by construction), the
+  latter depends on HELIX-IDEA-001 substrate.
 
 ---
 
