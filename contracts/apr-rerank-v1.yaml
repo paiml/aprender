@@ -18,23 +18,24 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
-  version: 1.1.0
+  version: 1.2.0
   created: '2026-05-10'
   author: apr-cli team
   kind: registry
   description: >
-    HELIX-IDEA-006 Phases 1-2 — reranking primitives in
+    HELIX-IDEA-006 Phases 1-3 — reranking primitives in
     `aprender-rag::{fusion, mmr}` plus the MMR diversity-vs-recall
-    gate. Discharges FALSIFY-RERANK-RRF-002 (RRF symmetric in input
-    list ordering), FALSIFY-RERANK-MMR-002 (λ=1 identity), and
-    FALSIFY-RERANK-MMR-001 (λ=0.5 raises mean-pairwise-distance
-    diversity ≥10% vs. relevance-only baseline while keeping
-    recall@k within 1 percentage point on a 6-doc clustered fixture
-    where all candidates are ground-truth relevant). Phase 3+ amends
-    this contract to add the remaining gates (RRF nDCG,
-    cross-encoder latency/structure) as their upstream dependencies
-    (HELIX-IDEA-005 hybrid retrieval recall fixture, `aprender-serve`
-    cross-encoder routing) land.
+    gate AND the RRF nDCG-improvement gate. Discharges
+    FALSIFY-RERANK-RRF-002 (RRF symmetric in input list ordering),
+    FALSIFY-RERANK-MMR-002 (λ=1 identity), FALSIFY-RERANK-MMR-001
+    (λ=0.5 raises mean-pairwise-distance diversity ≥10% vs.
+    relevance-only baseline at <1pp recall loss), and
+    FALSIFY-RERANK-RRF-001 (RRF over the dense+sparse legs of the
+    HYBRID-001 adversarial fixture yields ≥3-point nDCG@k
+    improvement vs. either single retriever). Phase 4+ amends this
+    contract to add the remaining cross-encoder gates (XENC-001
+    latency, XENC-002 structural source) once the
+    `aprender-serve` cross-encoder routing path lands.
   references:
     - 'docs/specifications/helix-db-feature-ideas.md §2.6 (HELIX-IDEA-006)'
     - 'crates/aprender-rag/src/fusion.rs (FusionStrategy::RRF)'
@@ -46,7 +47,7 @@ metadata:
 
 kind: AprRerankContract
 name: apr-rerank
-version: "1.1.0"
+version: "1.2.0"
 status: ACTIVE
 scope: "the `aprender-rag::{fusion, mmr}` reranking primitives — pure-math subset"
 binary: "(library API)"
@@ -139,13 +140,31 @@ falsification_conditions:
     test_name: mmr_increases_diversity_within_recall_budget
     status: ENFORCED
 
+  - id: FALSIFY-RERANK-RRF-001
+    description: >
+      `FusionStrategy::RRF.fuse(dense, sparse)` over the dense and
+      sparse legs of the HYBRID-001 adversarial fixture (5 docs, 3
+      relevant) yields ≥3-point nDCG@k improvement vs. either single
+      retriever's nDCG. RRF places all 3 relevant docs at the top of
+      the top-3 ranking (nDCG = 1.000), while each single leg
+      mixes 2 relevant + 1 irrelevant (nDCG ≈ 0.765). Falsifies
+      "RRF is a wash on this corpus" — i.e., the fusion does not
+      add information beyond what each leg provides alone. The
+      production §2.6 sketch named "BEIR subset" as the corpus;
+      shipped against the same hand-crafted fixture as HYBRID-001
+      to share the labelled-corpus prerequisite (BEIR opt-in
+      remains a future amendment).
+    test_file: crates/aprender-rag/tests/falsify_rerank_rrf_001.rs
+    test_name: rrf_beats_single_retriever_ndcg10
+    status: ENFORCED
+
 # ── Acceptance gate ──
 
 qa_gate:
   id: F-RERANK-GATE
-  name: "Reranking contract (Phases 1-2)"
-  pass_criteria: "FALSIFY-RERANK-RRF-002, MMR-002, and MMR-001 pass; remaining 3 gates (RRF-001, XENC-001/002) pending Phase 3+ amendments"
-  run: "cargo test -p aprender-rag --test falsify_rerank_rrf_002 --test falsify_rerank_mmr_002 --test falsify_rerank_mmr_001 --no-fail-fast"
+  name: "Reranking contract (Phases 1-3)"
+  pass_criteria: "FALSIFY-RERANK-RRF-002, MMR-002, MMR-001, and RRF-001 pass; remaining 2 gates (XENC-001/002) pending Phase 4+ amendments"
+  run: "cargo test -p aprender-rag --test falsify_rerank_rrf_002 --test falsify_rerank_mmr_002 --test falsify_rerank_mmr_001 --test falsify_rerank_rrf_001 --no-fail-fast"
   falsification: >
     Rename or delete any test_file / test_name and the
     `aprender-contracts::apr_rerank_contract` integration test
