@@ -24,11 +24,13 @@ existing crate.
 
 ### 1.1 Motivation
 
-A side-by-side review of `helix-db` and `aprender` surfaced four patterns
-worth considering. The list is deliberately short: most of helix-db's surface
-area (LMDB storage engine, HelixQL DSL, graph traversal model) does not
-transfer because aprender's substrates (Arrow columnar, GPU/SIMD compute,
-SQL via `sqlparser`) are deliberately different.
+A side-by-side review of `helix-db` and `aprender` surfaced nine patterns
+worth considering (HELIX-IDEA-001..009; v0.1.0 listed four, v0.1.0
+revision-1 added five more after a wider audit — see §6). The set is
+deliberately bounded: most of helix-db's surface area (LMDB storage
+engine, HelixQL DSL, graph traversal model) does not transfer because
+aprender's substrates (Arrow columnar, GPU/SIMD compute, SQL via
+`sqlparser`) are deliberately different.
 
 ### 1.2 Scope
 
@@ -39,9 +41,15 @@ replacing the SQL frontend with a custom DSL.
 
 ### 1.3 Current aprender state (verified, with falsification log)
 
-Each fact below was checked against the actual code on draft + revision.
-A `[VERIFIED]` tag means the claim survived falsification; `[CORRECTED]`
-means an earlier draft was wrong and the entry has been rewritten.
+Each fact below was checked against the actual code on draft + revision
++ post-implementation (PR #1605). Tag legend:
+
+- `[VERIFIED]` — claim survived every falsification round.
+- `[CORRECTED]` — an earlier draft was wrong and the entry has been
+  rewritten.
+- `[CHANGED v0.2.0]` — claim was correct at draft time but the
+  implementation in PR #1605 changed the underlying code. The §6
+  falsification log carries the migration row.
 
 - **HNSW**: `[VERIFIED]` Present and in-memory at
   `crates/aprender-core/src/index/hnsw.rs` (470 LOC exactly). No
