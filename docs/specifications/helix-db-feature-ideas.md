@@ -449,6 +449,15 @@ follow-up work.
   ≥ max(dense recall@10, BM25 recall@10) by at least 5 points.
 - BM25 index build for 1M docs in <2 min on commodity hardware.
 
+**Pre-authored falsification gates** (for `contracts/apr-hybrid-retrieval-v1.yaml`).
+
+| Gate ID | Property | Test target |
+|---|---|---|
+| `FALSIFY-HYBRID-001` | Hybrid `recall@10 ≥ max(dense, sparse) + 0.05` on a frozen BEIR subset (NFCorpus or SciFact — small enough for CI). Tunable corpus path via `APR_BEIR_CORPUS`. Falsifies "hybrid is statistically equivalent to one of the legs". | `crates/aprender-retrieve/tests/falsify_hybrid_001.rs::hybrid_beats_max_of_legs_by_5pts` |
+| `FALSIFY-HYBRID-002` | The `Retriever::hybrid(weights)` API is *score-equivalent* to a manual `combine(dense(q), sparse(q), weights)` callsite — i.e., the trait method does not silently change weighting compared to the documented arithmetic. Falsifies "the trait re-normalizes scores in a way callers don't expect". | `crates/aprender-retrieve/tests/falsify_hybrid_002.rs::trait_method_matches_explicit_combine` |
+| `FALSIFY-HYBRID-003` | Tokenization for BM25 indexing comes from the **same** tokenizer used by `apr serve` inference (no separate BM25-only tokenizer). Tested via a structural assertion that the BM25 indexer's tokenizer trait object's type-id equals the inference path's. Falsifies "BM25 quietly forks tokenization". | `crates/aprender-retrieve/tests/falsify_hybrid_003.rs::bm25_uses_inference_tokenizer` |
+| `FALSIFY-HYBRID-004` | BM25 index build for a 100k-doc fixture completes within 12 s on commodity hardware (extrapolates to <2 min for 1M docs at the same per-doc cost). Tunable via `APR_BM25_BUILD_BUDGET_MS`. Falsifies "indexing is super-linear in corpus size". | `crates/aprender-retrieve/tests/falsify_hybrid_004.rs::index_build_within_budget` |
+
 ---
 
 ### 2.6 HELIX-IDEA-006 — Reranking pipeline (RRF, MMR, cross-encoder)
@@ -489,6 +498,17 @@ model needed); cross-encoder requires an inference path.
   metric (e.g., centroid distance) without hurting recall@10.
 - Cross-encoder rerank latency for top-100 candidates <100 ms on a
   small (≤100M-param) model.
+
+**Pre-authored falsification gates** (for `contracts/apr-rerank-v1.yaml`).
+
+| Gate ID | Property | Test target |
+|---|---|---|
+| `FALSIFY-RERANK-RRF-001` | RRF over hybrid retrieval (HELIX-IDEA-005) yields ≥3-point nDCG@10 improvement vs. either single retriever on a frozen BEIR subset. Falsifies "RRF is a wash on this corpus". | `crates/aprender-rerank/tests/falsify_rerank_rrf_001.rs::rrf_beats_single_retriever_ndcg10` |
+| `FALSIFY-RERANK-RRF-002` | RRF score combination is *order-independent* in input list ordering — `rrf(a, b) == rrf(b, a)` byte-for-byte. Falsifies "RRF accidentally weights one input more than another". | `crates/aprender-rerank/tests/falsify_rerank_rrf_002.rs::rrf_is_input_order_invariant` |
+| `FALSIFY-RERANK-MMR-001` | MMR with `λ=0.5` reduces top-k centroid distance (a diversity proxy) by ≥10% vs. unranked top-k while keeping recall@10 within 1 point. Falsifies "MMR trades recall for nothing measurable". | `crates/aprender-rerank/tests/falsify_rerank_mmr_001.rs::mmr_increases_diversity_within_recall_budget` |
+| `FALSIFY-RERANK-MMR-002` | MMR with `λ=1.0` (no diversity weight) returns the same top-k as the input scorer. Falsifies "the diversity formula leaks even at λ=1". | `crates/aprender-rerank/tests/falsify_rerank_mmr_002.rs::mmr_lambda_one_is_identity` |
+| `FALSIFY-RERANK-XENC-001` | Cross-encoder rerank for 100 candidates completes within 100 ms on a ≤100M-param model. Tunable via `APR_RERANK_BUDGET_MS`. Falsifies "the cross-encoder path is too slow for the production budget". | `crates/aprender-rerank/tests/falsify_rerank_xenc_001.rs::cross_encoder_top_100_within_budget` |
+| `FALSIFY-RERANK-XENC-002` | Cross-encoder inference goes through `aprender-serve` (no parallel inference stack inside `aprender-rerank`). Structural source-grep gate, similar to `FALSIFY-AUTH-003`. Falsifies "the rerank crate quietly forked the inference engine". | `crates/aprender-rerank/tests/falsify_rerank_xenc_002.rs::cross_encoder_uses_aprender_serve` |
 
 ---
 
