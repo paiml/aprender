@@ -109,6 +109,7 @@ pub mod retrieve;
 #[cfg(feature = "sqlite")]
 #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 pub mod sqlite;
+pub mod tokenizer;
 pub use chunk::{
     Chunk, ChunkId, ChunkMetadata, Chunker, ChunkingStrategy, FixedSizeChunker, ParagraphChunker,
     RecursiveChunker, SemanticChunker, SentenceChunker, StructuralChunker, TimestampChunker,

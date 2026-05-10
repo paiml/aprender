@@ -18,22 +18,20 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
-  version: 1.2.0
+  version: 1.3.0
   created: '2026-05-10'
   author: apr-cli team
   kind: registry
   description: >
-    HELIX-IDEA-005 Phases 1-3 — trait-equivalence (Phase 1),
-    BM25 build-perf (Phase 2), and synthetic-adversarial-corpus
-    recall-improvement (Phase 3). Discharges FALSIFY-HYBRID-002 (the
-    trait method does not silently re-normalize, drop, or reorder
-    fused results), FALSIFY-HYBRID-004 (BM25Index batch ingest of a
-    5k-doc fixture stays within budget), and FALSIFY-HYBRID-001
-    (hybrid recall@k beats max(dense, sparse) recall@k by ≥5pp on a
-    hand-crafted adversarial fixture where dense and sparse legs
-    cover disjoint subsets of the ground-truth set). Phase 4 amends
-    this contract to add tokenizer-reuse (HYBRID-003) once the BM25
-    indexer is refactored to share the inference Tokenizer trait.
+    HELIX-IDEA-005 Phases 1-4 (FULL) — trait-equivalence (Phase 1),
+    BM25 build-perf (Phase 2), synthetic-adversarial-corpus
+    recall-improvement (Phase 3), and pluggable-tokenizer
+    architecture (Phase 4). Discharges FALSIFY-HYBRID-002,
+    FALSIFY-HYBRID-004, FALSIFY-HYBRID-001, and FALSIFY-HYBRID-003
+    (BM25Index accepts an injected `Tokenizer` trait object via
+    `with_tokenizer()`; the trait is public and reusable by future
+    callers including the inference path). All four pre-authored
+    gates from §2.5 are now ENFORCED.
   references:
     - 'docs/specifications/helix-db-feature-ideas.md §2.5 (HELIX-IDEA-005)'
     - 'crates/aprender-rag/src/retrieve.rs (HybridRetriever)'
@@ -45,7 +43,7 @@ metadata:
 
 kind: AprHybridRetrievalContract
 name: apr-hybrid-retrieval
-version: "1.2.0"
+version: "1.3.0"
 status: ACTIVE
 scope: "the `aprender-rag::retrieve::HybridRetriever` trait-equivalence subset"
 binary: "(library API)"
@@ -138,13 +136,36 @@ falsification_conditions:
     test_name: hybrid_beats_max_of_legs_by_5pts
     status: ENFORCED
 
+  - id: FALSIFY-HYBRID-003
+    description: >
+      `BM25Index` accepts an injected `Tokenizer` trait object via
+      `with_tokenizer(Arc<dyn Tokenizer>)` and uses it for both
+      indexing and search. The trait lives at
+      `aprender-rag::tokenizer::Tokenizer` and is `Send + Sync +
+      Debug` so the index stays Clone+Sync. A custom tokenizer that
+      emits known synthetic tokens is wired in; the test verifies
+      (a) the index reports `has_custom_tokenizer() == true`, (b)
+      the inverted-index keys after `add_batch` exactly match the
+      synthetic tokens, and (c) search-by-synthetic-token retrieves
+      the indexed chunks. Falsifies "BM25 quietly forks
+      tokenization" — the gate proves the rule is pluggable, so a
+      future shared inference tokenizer wires in via the same trait
+      with no `BM25Index` source change. Pin to a unified
+      inference tokenizer's type-id is a Phase 5+ amendment when
+      that path lands (today's apr-cli inference uses model-specific
+      BPE/SentencePiece tokenizers that aren't yet exposed via a
+      shared trait).
+    test_file: crates/aprender-rag/tests/falsify_hybrid_003.rs
+    test_name: bm25_uses_injected_tokenizer
+    status: ENFORCED
+
 # ── Acceptance gate ──
 
 qa_gate:
   id: F-HYBRID-GATE
-  name: "Hybrid retrieval contract (Phases 1-3)"
-  pass_criteria: "FALSIFY-HYBRID-002 + FALSIFY-HYBRID-004 + FALSIFY-HYBRID-001 pass; gate 003 pending Phase 4 amendment"
-  run: "cargo test -p aprender-rag --test falsify_hybrid_002 --test falsify_hybrid_004 --test falsify_hybrid_001 --no-fail-fast"
+  name: "Hybrid retrieval contract (Phases 1-4 — FULL)"
+  pass_criteria: "All 4 FALSIFY-HYBRID gates pass — HELIX-IDEA-005 fully shipped"
+  run: "cargo test -p aprender-rag --test falsify_hybrid_002 --test falsify_hybrid_004 --test falsify_hybrid_001 --test falsify_hybrid_003 --no-fail-fast"
   falsification: >
     Rename or delete any test_file / test_name and the
     `aprender-contracts::apr_hybrid_retrieval_contract` integration

@@ -1,19 +1,18 @@
 //! Integration test for `contracts/apr-hybrid-retrieval-v1.yaml`.
 //!
-//! HELIX-IDEA-005 Phases 1-3. Loader/validator that promotes the
-//! hybrid-retrieval contract from DRAFT to ACTIVE for trait
-//! equivalence + build perf + recall improvement. Same pattern as
+//! HELIX-IDEA-005 (FULL — Phases 1-4). Loader/validator that
+//! promotes the hybrid-retrieval contract from DRAFT to ACTIVE
+//! for the entire pre-authored gate set. Same pattern as
 //! `apr_mcp_server_contract.rs`. Asserts:
 //!
 //! 1. The YAML file exists and parses as valid YAML.
 //! 2. Top-level `status: ACTIVE`.
-//! 3. **Exactly 3** entries in `falsification_conditions`:
-//!    FALSIFY-HYBRID-002 (Phase 1, trait equivalence),
-//!    FALSIFY-HYBRID-004 (Phase 2, build perf budget), and
-//!    FALSIFY-HYBRID-001 (Phase 3, recall improvement on
-//!    adversarial fixture). Phase 4 will amend the contract (and
-//!    bump the expected count here in lockstep) as gate 003
-//!    (tokenizer reuse) discharges.
+//! 3. **Exactly 4** entries in `falsification_conditions`:
+//!    FALSIFY-HYBRID-002 (trait equivalence),
+//!    FALSIFY-HYBRID-004 (build perf budget),
+//!    FALSIFY-HYBRID-001 (recall improvement), and
+//!    FALSIFY-HYBRID-003 (pluggable Tokenizer trait). All four
+//!    pre-authored gates from §2.5 are now discharged.
 //! 4. Every entry's `test_file` exists on disk, `test_name` is
 //!    non-empty, and `status: ENFORCED`.
 
@@ -70,25 +69,25 @@ fn apr_hybrid_retrieval_contract_is_active() {
     let contract = load_contract();
     assert_eq!(
         contract.status, "ACTIVE",
-        "apr-hybrid-retrieval-v1.yaml must be ACTIVE for Phases 1-3 (trait-equivalence + build-perf + recall)."
+        "apr-hybrid-retrieval-v1.yaml must be ACTIVE — all 4 pre-authored gates discharged."
     );
 }
 
 #[test]
-fn apr_hybrid_retrieval_contract_has_exactly_three_conditions() {
+fn apr_hybrid_retrieval_contract_has_exactly_four_conditions() {
     let contract = load_contract();
     assert_eq!(
         contract.falsification_conditions.len(),
-        3,
-        "Phases 1-3 ship exactly 3 falsification gates \
-         (FALSIFY-HYBRID-002 + 004 + 001); contract has {}. \
-         Phase 4 amendment (HYBRID-003) must update both the YAML and this test in the same PR.",
+        4,
+        "HELIX-IDEA-005 ships exactly 4 falsification gates \
+         (FALSIFY-HYBRID-002 + 004 + 001 + 003); contract has {}. \
+         Any future amendment must update both the YAML and this test in the same PR.",
         contract.falsification_conditions.len()
     );
 }
 
 #[test]
-fn apr_hybrid_retrieval_contract_ids_are_hybrid_002_004_and_001() {
+fn apr_hybrid_retrieval_contract_ids_are_hybrid_002_004_001_and_003() {
     let contract = load_contract();
     let actual: Vec<String> = contract
         .falsification_conditions
@@ -101,6 +100,7 @@ fn apr_hybrid_retrieval_contract_ids_are_hybrid_002_004_and_001() {
             "FALSIFY-HYBRID-002".to_string(),
             "FALSIFY-HYBRID-004".to_string(),
             "FALSIFY-HYBRID-001".to_string(),
+            "FALSIFY-HYBRID-003".to_string(),
         ],
     );
 }
