@@ -1,0 +1,148 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-serve-api-key-auth-v1
+#
+# HELIX-IDEA-009: constant-time API-key authentication middleware for
+# `apr serve`. Single-key, header-based, header is `Authorization: Bearer
+# <key>`. Comparison is SHA-256 + `subtle::ConstantTimeEq`.
+#
+# Source pattern: helix-db `helix_gateway/key_verification.rs`. Re-implemented
+# from scratch for aprender's axum stack — no code lift.
+#
+# Scope at author time (2026-05-10): ships the 3 falsification gates listed in
+# `falsification_conditions`. OAuth, JWT, multi-key, and role-based access
+# are explicit non-goals (helix-db does not have them either).
+# ─────────────────────────────────────────────────────────────────────────────
+
+metadata:
+  version: 1.0.0
+  created: '2026-05-10'
+  author: apr-cli team
+  kind: registry
+  description: >
+    HELIX-IDEA-009 — single-key bearer-token authentication for the
+    `apr serve` HTTP surface. Server holds a SHA-256 hash; clients present
+    the plaintext key as `Authorization: Bearer <key>`; comparison is
+    constant-time via the `subtle` crate. When no hash is configured the
+    server starts in `--auth-disabled` mode and prints a one-line warning
+    to stderr at startup. This contract pins the three falsification gates
+    that any conforming implementation must pass.
+  references:
+    - 'docs/specifications/helix-db-feature-ideas.md §2.9 (HELIX-IDEA-009)'
+    - 'crates/apr-cli/src/commands/serve/routes.rs::create_router'
+    - 'crates/apr-cli/src/commands/serve/handlers.rs::build_apr_cpu_router'
+    - 'crates/apr-cli/src/commands/serve/handlers_include_01.rs::build_gpu_router'
+    - 'helix-db/src/helix_gateway/key_verification.rs (pattern source)'
+    - 'https://crates.io/crates/subtle'
+  depends_on:
+    - apr-serve-v1
+
+kind: AprServeApiKeyAuthContract
+name: apr-serve-api-key-auth
+version: "1.0.0"
+status: ACTIVE
+scope: "the `apr serve` HTTP surface — every route on every router builder honours the same auth gate"
+binary: "apr serve"
+crate: "apr-cli"
+spec: docs/specifications/helix-db-feature-ideas.md
+
+description: |
+  HELIX-IDEA-009 promotes single-key auth from a deferred TODO to an
+  ACTIVE contract. The middleware is layered on every route built by
+  every router constructor in `crates/apr-cli/src/commands/serve/`
+  (`create_router`, `build_apr_cpu_router`, `build_gpu_router`).
+
+  Configuration matrix:
+  - `APR_API_KEY` env var holds plaintext; server hashes it on startup.
+  - `APR_API_KEY_HASH` env var holds the hex SHA-256 hash directly
+    (preferred for deployments — secret never decrypts at rest).
+  - Either env var configures auth. Both set → `APR_API_KEY_HASH` wins.
+  - Neither set → server starts with `auth_disabled = true` and emits
+    one stderr warning. Routes 200 without an `Authorization` header.
+  - `--auth-disabled` CLI flag suppresses the configured hash for local
+    dev; mirrors helix-db's escape hatch.
+
+  Comparison invariants:
+  - Plain string `==` is FORBIDDEN. Comparison goes through
+    `subtle::ConstantTimeEq::ct_eq`.
+  - The presented bearer token is hashed with SHA-256 first; only the
+    32-byte digests are compared. This means the ConstantTimeEq path
+    runs over fixed-length input regardless of attacker probe length.
+
+  Failure mode:
+  - Missing/malformed `Authorization` header → `401 Unauthorized` with
+    a small JSON envelope `{"error":"unauthorized","message":...}` and
+    a `WWW-Authenticate: Bearer` response header.
+  - Hash mismatch → identical `401` envelope. The server MUST NOT
+    distinguish "no header" from "wrong key" in its response shape;
+    timing parity is enforced by Gate 003.
+
+# ── Enforced falsification gates ──
+# Every gate maps to a shipped Rust test. Adding/renaming a test without
+# updating this YAML breaks the workspace contract integration test.
+
+falsification_conditions:
+  - id: FALSIFY-AUTH-001
+    description: >
+      Without an `Authorization: Bearer <key>` header, every protected
+      route on every router builder returns HTTP 401 with a JSON envelope
+      whose `error` field equals `"unauthorized"`. Health/metrics endpoints
+      are NOT exempt — auth applies to the whole surface.
+    test_file: crates/apr-cli/tests/falsify_auth_001.rs
+    test_name: missing_bearer_returns_401_on_every_route
+    status: ENFORCED
+
+  - id: FALSIFY-AUTH-002
+    description: >
+      A valid bearer token (one whose SHA-256 hash equals the configured
+      hash) is accepted on every protected route. Hash comparison happens
+      AFTER the bearer is hashed — the configured hash is never compared
+      against plaintext.
+    test_file: crates/apr-cli/tests/falsify_auth_002.rs
+    test_name: valid_bearer_passes_and_hash_path_is_constant_time
+    status: ENFORCED
+
+  - id: FALSIFY-AUTH-003
+    description: >
+      Hash comparison uses `subtle::ConstantTimeEq::ct_eq`, not `==` or
+      `[u8]::eq`. The test grep-asserts the auth module imports
+      `subtle::ConstantTimeEq` and does NOT contain `==` between digest
+      arrays. This is a structural source-code gate — necessary because
+      runtime timing tests are too noisy to be CI-tractable.
+    test_file: crates/apr-cli/tests/falsify_auth_003.rs
+    test_name: auth_module_uses_subtle_constanttimeeq
+    status: ENFORCED
+
+# ── Acceptance gate ──
+# Promoting any future change requires all 3 conditions above to hold.
+qa_gate:
+  id: F-AUTH-GATE
+  name: "apr serve API key auth contract"
+  pass_criteria: "All 3 FALSIFY-AUTH-* tests listed above pass"
+  run: "cargo test -p apr-cli --test falsify_auth_001 --test falsify_auth_002 --test falsify_auth_003 --no-fail-fast"
+  falsification: >
+    Rename or delete any test_file / test_name and the
+    `aprender-contracts::apr_serve_api_key_auth_contract` integration
+    test fails before apr-cli compiles.
+
+toyota_way_principles:
+  jidoka: >
+    "Automation with a human touch" — auth runs as middleware in front of
+    every handler. The application code does not know auth exists; the
+    layer either rejects with 401 or hands a verified request through.
+    Disabling auth requires an explicit `--auth-disabled` flag with a
+    visible startup warning, not a silent default.
+  poka_yoke: >
+    "Mistake-proofing" — Gate 003 grep-asserts the source uses
+    `subtle::ConstantTimeEq`. A drive-by refactor that switches to `==`
+    fails CI immediately. Plaintext keys never sit in memory — the env
+    var is hashed and zeroed before the server enters its accept loop.
+  genchi_genbutsu: >
+    "Go and see" — Gates 001/002 spin up a real `axum::Router` and drive
+    it with `axum::http::Request` over the in-process service trait. No
+    mocks, no shims — the path under test is what production traffic
+    hits.
+  kaizen: >
+    "Continuous improvement" — single-key v1 is the smallest shippable
+    contract. Multi-key, OAuth, and role-based access can extend this
+    contract without breaking the v1 acceptance gate (each adds new
+    gates rather than reinterpreting the existing ones).

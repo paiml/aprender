@@ -1,0 +1,147 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-registry-snapshot-v1
+#
+# HELIX-IDEA-007: atomic point-in-time snapshot of the local Pacha registry.
+# Wraps SQLite's built-in `VACUUM INTO 'path'` — produces a consistent on-disk
+# copy from a live database without blocking writers for >100 ms.
+#
+# Source pattern: helix-db `helix-cli/src/commands/backup.rs`
+# (LMDB `Env::copy_to_path` with CompactionOption). Re-implemented for SQLite
+# via VACUUM INTO — same operational semantics, different substrate.
+#
+# Scope at author time (2026-05-10): registry SQLite snapshot only. Persistent
+# HNSW snapshot (HELIX-IDEA-001 substrate) is explicitly DEFERRED — added when
+# the persistent index lands.
+# ─────────────────────────────────────────────────────────────────────────────
+
+metadata:
+  version: 1.0.0
+  created: '2026-05-10'
+  author: apr-cli team
+  kind: registry
+  description: >
+    HELIX-IDEA-007 — atomic snapshot primitive on `aprender-registry`. Adds
+    `Registry::snapshot(&self, to: &Path) -> Result<()>` which executes
+    `VACUUM INTO ?1` against the live SQLite handle, producing a
+    self-consistent target file with no exclusive lock held against the
+    source. Concurrent writers continue against the source; the snapshot
+    is consistent as of the moment VACUUM INTO begins.
+  references:
+    - 'docs/specifications/helix-db-feature-ideas.md §2.7 (HELIX-IDEA-007)'
+    - 'crates/aprender-registry/src/registry/mod.rs::Registry::open'
+    - 'crates/aprender-registry/src/registry/database.rs::RegistryDb'
+    - 'helix-db/helix-cli/src/commands/backup.rs (pattern source)'
+    - 'https://www.sqlite.org/lang_vacuum.html#vacuuminto'
+  depends_on: []
+
+kind: AprRegistrySnapshotContract
+name: apr-registry-snapshot
+version: "1.0.0"
+status: ACTIVE
+scope: "the `aprender-registry` SQLite-backed registry — point-in-time snapshot semantics"
+binary: "(library API)"
+crate: "aprender-registry"
+spec: docs/specifications/helix-db-feature-ideas.md
+
+description: |
+  HELIX-IDEA-007 promotes "no documented backup story" from a known gap to
+  an ACTIVE contract. The implementation adds one new public method on
+  `Registry` and discharges three falsification gates.
+
+  API shape:
+    impl Registry {
+        pub fn snapshot(&self, to: &Path) -> Result<()>;
+    }
+  - `to` MUST point to a non-existent file in an existing parent directory.
+    SQLite refuses to overwrite; the method surfaces that error as
+    `PachaError::Database` rather than silently truncating.
+  - The source registry's lock is held only for the duration of the
+    `VACUUM INTO` statement. Concurrent connections to the same DB
+    continue to write; their changes are not present in the snapshot.
+
+  Operational semantics:
+  - The snapshot file is a complete, self-contained SQLite database.
+  - Opening it with `RegistryDb::open(snapshot_path)` MUST yield exactly
+    the model/dataset/recipe rows that were committed at snapshot time.
+  - The snapshot is NOT a delta from a prior snapshot. Each call writes
+    the full state (current size: ~tens of KB to single-digit MB for
+    realistic registries; VACUUM INTO compacts).
+
+  Out of scope for v1.0.0 (folded into a future v1.1.0 bump):
+  - Persistent HNSW snapshot — depends on HELIX-IDEA-001 substrate choice.
+  - Object-store snapshot — content-addressed objects are immutable, so a
+    consistent snapshot is just a `cp -r` of the objects/ directory; we
+    document but do not automate this in v1.
+  - `apr backup --to <dir>` umbrella subcommand — wires the engine
+    primitive into apr-cli. Deferred because apr-cli's `pacha` dependency
+    is currently the crates.io 0.2.4 release, which does not export
+    `snapshot()`. Wiring requires a separate dep-resolution PR.
+
+# ── Enforced falsification gates ──
+
+falsification_conditions:
+  - id: FALSIFY-SNAPSHOT-001
+    description: >
+      A snapshot taken on a populated registry yields a target file that,
+      when opened, reports the same model/dataset/recipe counts and the
+      same row content (id, name, version) as the source at snapshot time.
+      The test populates a temp registry, calls `snapshot()`, opens the
+      target, and asserts equality.
+    test_file: crates/aprender-registry/tests/falsify_snapshot_001.rs
+    test_name: snapshot_yields_bit_identical_query_results
+    status: ENFORCED
+
+  - id: FALSIFY-SNAPSHOT-002
+    description: >
+      Concurrent writers do NOT block on snapshot. The test starts a
+      writer thread that performs N register_model calls in a loop while
+      the main thread takes a snapshot; snapshot returns within a
+      generous wall-clock budget (1 second on commodity hardware) and
+      writer thread completion is unaffected. Wall-clock budget tunable
+      via env to avoid CI flakes; gate enforces correctness, not
+      microbenchmark perf.
+    test_file: crates/aprender-registry/tests/falsify_snapshot_002.rs
+    test_name: snapshot_does_not_block_concurrent_writers
+    status: ENFORCED
+
+  - id: FALSIFY-SNAPSHOT-003
+    description: >
+      Snapshot to a path that already exists returns an error rather
+      than silently overwriting. Mirrors SQLite's VACUUM INTO refusal —
+      the snapshot operation is intentionally NOT idempotent on the
+      target path; callers must rotate filenames.
+    test_file: crates/aprender-registry/tests/falsify_snapshot_003.rs
+    test_name: snapshot_refuses_to_overwrite_existing_file
+    status: ENFORCED
+
+# ── Acceptance gate ──
+qa_gate:
+  id: F-SNAPSHOT-GATE
+  name: "registry snapshot contract"
+  pass_criteria: "All 3 FALSIFY-SNAPSHOT-* tests pass"
+  run: "cargo test -p aprender-registry --test falsify_snapshot_001 --test falsify_snapshot_002 --test falsify_snapshot_003 --no-fail-fast"
+  falsification: >
+    Rename or delete any test_file / test_name and the
+    `aprender-contracts::apr_registry_snapshot_contract` integration
+    test fails before aprender-registry compiles.
+
+toyota_way_principles:
+  jidoka: >
+    "Automation with a human touch" — the engine primitive is a single
+    SQLite statement; no orchestration code, no temp-file dance, no
+    swap-aside. Either VACUUM INTO succeeds and the file is consistent,
+    or it errors and the file is not created. Partial states are
+    impossible by SQLite's design.
+  poka_yoke: >
+    "Mistake-proofing" — Gate 003 makes "snapshot accidentally clobbered
+    last night's backup" structurally impossible. Operators must rotate
+    paths explicitly, which forces them to think about retention.
+  genchi_genbutsu: >
+    "Go and see" — Gates 001/002 exercise the real Registry API against
+    a tempfile-backed SQLite database. No mocks; the path under test is
+    what `~/.pacha` will hit.
+  kaizen: >
+    "Continuous improvement" — v1 ships the load-bearing primitive.
+    `apr backup --to <dir>` and persistent-HNSW snapshot are
+    natural-extension follow-ups that compose this method without
+    rewriting it.

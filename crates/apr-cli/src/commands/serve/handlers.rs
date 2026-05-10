@@ -1051,7 +1051,7 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
     let bind_addr = config.bind_addr();
 
     runtime.block_on(async move {
-        let app = build_apr_cpu_router(state);
+        let app = build_apr_cpu_router(state, super::auth::AuthGate::from_env());
 
         let listener = tokio::net::TcpListener::bind(&bind_addr)
             .await
@@ -1133,9 +1133,13 @@ fn try_apr_quantized_cpu(model_path: &Path, config: &ServerConfig) -> Result<()>
 ///
 /// GH-284: Handlers are async with `spawn_blocking` to avoid blocking the
 /// tokio runtime during multi-second generation.
+///
+/// HELIX-IDEA-009 / FALSIFY-AUTH-001: every route on the returned router
+/// is gated by `auth_gate` via `super::auth::layer`. Pass
+/// `AuthGate::disabled()` to bypass.
 #[cfg(feature = "inference")]
 #[allow(clippy::disallowed_methods)] // serde_json::json!() macro uses infallible unwrap
-fn build_apr_cpu_router(state: AprServerState) -> axum::Router {
+fn build_apr_cpu_router(state: AprServerState, auth_gate: super::auth::AuthGate) -> axum::Router {
     use axum::{
         http::StatusCode,
         response::IntoResponse,
@@ -1148,7 +1152,7 @@ fn build_apr_cpu_router(state: AprServerState) -> axum::Router {
     let state_for_completions = Arc::new(Mutex::new(state.clone()));
     let state_for_chat = Arc::new(Mutex::new(state));
 
-    Router::new()
+    let router = Router::new()
         .route(
             "/health",
             get(move || {
@@ -1195,7 +1199,8 @@ fn build_apr_cpu_router(state: AprServerState) -> axum::Router {
                     "message": "Route not found. Available: /health, /v1/completions, /v1/chat/completions"
                 })),
             )
-        })
+        });
+    super::auth::layer(auth_gate, router)
 }
 
 include!("handler_apr_cpu_completion.rs");
