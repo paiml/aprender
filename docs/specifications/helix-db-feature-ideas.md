@@ -1,8 +1,13 @@
 # HelixDB Feature Ideas for aprender
 
-**Version:** 0.2.0
+**Version:** 0.3.0
 **Status:** Active — 3 of 9 shipped (002, 007, 009 in PR #1605); 4 recommended
 (001, 005, 006, 008); 2 deferred/speculative (003, 004)
+**Methodology:** Design by Provable Contract (`aprender-contracts` /
+`pv` CLI). Every shipped HELIX-IDEA carries an ACTIVE
+`contracts/*.yaml`, an ENFORCED set of falsification gates, and an
+aprender-contracts integration test that pins the gate→test mapping.
+See §1.4.
 **Authors:** Pragmatic AI Labs
 **References:** HELIX-IDEA-001..009
 
@@ -18,7 +23,12 @@ has either left open or implemented less ergonomically.
 
 Each proposal is scoped, justified against aprender's current state, and
 explicitly marked when it requires net-new infrastructure vs. extending an
-existing crate.
+existing crate. Authoring follows aprender's **Design by Provable
+Contract** discipline: every shipped idea is gated by an ACTIVE
+provable-contract YAML whose `falsification_conditions:` entries each
+map to a shipped Rust test, with an `aprender-contracts` integration
+test asserting the gate→test mapping holds on disk. See §1.4 for the
+full chain and the audit table for HELIX-IDEA-002/007/009.
 
 ## 1. Introduction
 
@@ -100,6 +110,85 @@ Each fact below was checked against the actual code on draft + revision
   dependency of `aprender-mcp` (HELIX-IDEA-002). Other crates that
   want link-time plugin registration (e.g., a future
   `aprender-orchestrate` step registry) can reuse the same crate.
+
+### 1.4 Design by Provable Contract
+
+This spec is authored under aprender's **Design by Provable Contract**
+discipline. The methodology, instantiated by the in-tree
+`aprender-contracts` crate and the `pv` CLI (APR-MONO Phase 2b), is:
+
+1. **Spec proposal** — a `HELIX-IDEA-NNN` entry in §2 names a problem,
+   the helix-db pattern that solves it, and an aprender adaptation
+   that does not lift code. Each proposal lists explicit
+   "Acceptance signals" — the falsifiable assertions that must hold
+   for the idea to be considered shipped.
+2. **Provable contract YAML** — a `contracts/<idea>-v1.yaml` file
+   under [`metadata.kind: registry`](../../crates/aprender-contracts/src/schema/kind.rs)
+   declares the contract's `falsification_conditions:` list. Each
+   entry binds an ID (e.g., `FALSIFY-AUTH-001`) to a `test_file:` +
+   `test_name:` pair plus a `status:` of `ENFORCED`. `pv validate
+   contracts/...yaml` parses, validates, and rejects malformed
+   contracts; `pv lint contracts/` runs the strict gate
+   (validate + audit + score) workspace-wide.
+3. **Falsifier discharge** — every `test_file` is a real Rust test
+   in `crates/<crate>/tests/` that runs as part of `cargo test`.
+   Tests assert *negative* claims ("missing bearer fails to 401"),
+   not just positive ones — falsification is the load-bearing
+   shape, per Popper.
+4. **Integration test** — a sibling `aprender-contracts` test
+   (`crates/aprender-contracts/tests/<idea>_contract.rs`) loads the
+   YAML, asserts `status: ACTIVE`, asserts the exact set of
+   `FALSIFY-*-NNN` IDs is present, and asserts every referenced
+   `test_file:` exists on disk. A renamed or deleted falsifier
+   breaks this integration test before the crate it points at even
+   compiles — drift cannot ship silently.
+5. **Spec re-falsification** — after the implementation merges, this
+   spec's §1.3 measured-state and §6 falsification log are
+   re-walked against HEAD; any drift between v0.1.0 claims and live
+   code is recorded as a `[CHANGED vX.Y.Z]` row. v0.2.0's amendments
+   are this loop's first execution; v0.3.0's contract-chain audit
+   below is the second.
+
+**Why it matters for this spec specifically.** HelixDB itself is
+*not* contract-driven — it documents acceptance criteria in prose
+and ships tests that resemble them. We deliberately do not lift that
+practice. Every helix-db pattern adopted here is reframed in
+aprender's contract idiom before merging. The
+`aprender-contracts-macros` `#[contract]` annotation is available
+but not required for these registry-kind contracts; provability
+applies to the dispatch behaviour ("the gate's test fails iff the
+property fails"), not to the YAML's mathematical invariants.
+
+#### Contract chain audit (HELIX-IDEA-002/007/009)
+
+Every shipped idea is reachable from this table. A row that doesn't
+hold (renamed test, missing YAML, dropped gate) breaks the
+corresponding `aprender-contracts` integration test in CI.
+
+| Idea | Contract YAML | Status | Falsifiers (all `ENFORCED`) | Integration test |
+|---|---|---|---|---|
+| **HELIX-IDEA-002** (MCP inventory) | `contracts/apr-mcp-tool-inventory-v1.yaml` | ACTIVE | `FALSIFY-INVENTORY-001` → `crates/aprender-mcp/tests/falsify_inventory_001.rs::inventory_yields_same_tool_set_as_hardcoded_list`<br>`FALSIFY-INVENTORY-002` → `crates/aprender-mcp/tests/falsify_inventory_002.rs::duplicate_tool_name_panics_at_index_build`<br>`FALSIFY-INVENTORY-003` → `crates/aprender-mcp/tests/falsify_inventory_003.rs::inventory_dispatch_envelope_matches_hardcoded_path` | `crates/aprender-contracts/tests/apr_mcp_tool_inventory_contract.rs` (6 assertions) |
+| **HELIX-IDEA-007** (registry snapshot) | `contracts/apr-registry-snapshot-v1.yaml` | ACTIVE | `FALSIFY-SNAPSHOT-001` → `crates/aprender-registry/tests/falsify_snapshot_001.rs::snapshot_yields_bit_identical_query_results`<br>`FALSIFY-SNAPSHOT-002` → `crates/aprender-registry/tests/falsify_snapshot_002.rs::snapshot_does_not_block_concurrent_writers`<br>`FALSIFY-SNAPSHOT-003` → `crates/aprender-registry/tests/falsify_snapshot_003.rs::snapshot_refuses_to_overwrite_existing_file` | `crates/aprender-contracts/tests/apr_registry_snapshot_contract.rs` (6 assertions) |
+| **HELIX-IDEA-009** (API key auth) | `contracts/apr-serve-api-key-auth-v1.yaml` | ACTIVE | `FALSIFY-AUTH-001` → `crates/apr-cli/tests/falsify_auth_001.rs::missing_bearer_returns_401_on_every_route`<br>`FALSIFY-AUTH-002` → `crates/apr-cli/tests/falsify_auth_002.rs::valid_bearer_passes_and_hash_path_is_constant_time`<br>`FALSIFY-AUTH-003` → `crates/apr-cli/tests/falsify_auth_003.rs::auth_module_uses_subtle_constanttimeeq` | `crates/aprender-contracts/tests/apr_serve_api_key_auth_contract.rs` (6 assertions) |
+
+**Audit reproduction:** `pv validate contracts/apr-{mcp-tool-inventory,registry-snapshot,serve-api-key-auth}-v1.yaml`
+returns `Contract is valid.` on each. `cargo test -p aprender-contracts
+--test apr_mcp_tool_inventory_contract --test apr_registry_snapshot_contract
+--test apr_serve_api_key_auth_contract` produces 18 passed; 0 failed.
+
+#### Forward obligations
+
+Every future HELIX-IDEA implementation MUST follow the same chain:
+
+- HELIX-IDEA-001 (Persistent HNSW) → `contracts/apr-hnsw-persistence-v1.yaml`
+- HELIX-IDEA-005 (BM25 + dense hybrid) → `contracts/apr-hybrid-retrieval-v1.yaml`
+- HELIX-IDEA-006 (Reranking pipeline) → `contracts/apr-rerank-v1.yaml`
+- HELIX-IDEA-008 (Schema migration) → `contracts/apr-schema-migration-v1.yaml`
+
+A PR that merges code without authoring its YAML, or authors a YAML
+without the integration test, or alters the live registry without
+updating the spec's §6 falsification log, MUST be rejected at review
+— the contract chain is the audit trail.
 
 ## 2. Proposals
 
