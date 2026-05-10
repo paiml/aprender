@@ -17,21 +17,23 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
-  version: 1.2.0
+  version: 1.3.0
   created: '2026-05-10'
   author: apr-cli team
   kind: registry
   description: >
-    HELIX-IDEA-001 Phases 1-3 — `PersistentHnsw` save/load wrapper
-    around `aprender_core::index::HNSWIndex` with atomic-write crash
-    safety AND recall threshold guarantee. Discharges
-    FALSIFY-HNSW-PERSIST-001 (round-trip identity),
+    HELIX-IDEA-001 Phases 1-4 (FULL) — `PersistentHnsw` save/load
+    wrapper around `aprender_core::index::HNSWIndex` with atomic-write
+    crash safety, recall threshold, and cold-open latency budget.
+    Discharges FALSIFY-HNSW-PERSIST-001 (round-trip identity),
     FALSIFY-HNSW-PERSIST-002 (crash mid-flush does not silently
-    corrupt the snapshot), and FALSIFY-HNSW-PERSIST-003 (recall@10 vs
+    corrupt the snapshot), FALSIFY-HNSW-PERSIST-003 (recall@10 vs
     brute-force baseline meets the contractual threshold on a
-    deterministic fixture corpus). Phase 4 amends this contract to
-    add the cold-open latency budget gate per the pre-authored table
-    in docs/specifications/helix-db-feature-ideas.md §2.1.
+    deterministic fixture corpus), and FALSIFY-HNSW-PERSIST-004
+    (cold-open + first-query latency on the CI fixture stays under
+    the contracted budget). All four pre-authored gates from
+    docs/specifications/helix-db-feature-ideas.md §2.1 are now
+    ENFORCED.
   references:
     - 'docs/specifications/helix-db-feature-ideas.md §2.1 (HELIX-IDEA-001)'
     - 'crates/aprender-core/src/index/hnsw.rs (in-memory HNSWIndex)'
@@ -42,7 +44,7 @@ metadata:
 
 kind: AprHnswPersistenceContract
 name: apr-hnsw-persistence
-version: "1.2.0"
+version: "1.3.0"
 status: ACTIVE
 scope: "the `PersistentHnsw` save/load wrapper in aprender-core"
 binary: "(library API)"
@@ -134,13 +136,30 @@ falsification_conditions:
     test_name: recall_at_10_meets_threshold
     status: ENFORCED
 
+  - id: FALSIFY-HNSW-PERSIST-004
+    description: >
+      Cold-open + first-query end-to-end latency on a deterministic
+      200-doc × 32-dim fixture stays under 500 ms (the §2.1
+      pre-auth budget). Tunable via `APR_HNSW_OPEN_BUDGET_MS` for
+      operators with stricter budgets or production-scale corpora.
+      Falsifies "open() rebuilds the graph eagerly" or "first query
+      hits a cold cache that takes seconds". The test measures the
+      full pipeline (`PersistentHnsw::open` → first
+      `search` call) so a regression in either side fails the gate.
+      The 500 ms budget on the CI fixture is comfortably loose;
+      the gate exists to catch order-of-magnitude regressions, not
+      to chase tens of milliseconds.
+    test_file: crates/aprender-core/tests/falsify_hnsw_persist_004.rs
+    test_name: cold_open_first_query_within_budget
+    status: ENFORCED
+
 # ── Acceptance gate ──
 
 qa_gate:
   id: F-HNSW-PERSIST-GATE
-  name: "HNSW persistence contract (Phases 1-3)"
-  pass_criteria: "FALSIFY-HNSW-PERSIST-001..003 pass; gate 004 pending Phase 4 amendment"
-  run: "cargo test -p aprender-core --test falsify_hnsw_persist_001 --test falsify_hnsw_persist_002 --test falsify_hnsw_persist_003 --no-fail-fast"
+  name: "HNSW persistence contract (Phases 1-4 — FULL)"
+  pass_criteria: "All 4 FALSIFY-HNSW-PERSIST gates pass — HELIX-IDEA-001 fully shipped"
+  run: "cargo test -p aprender-core --test falsify_hnsw_persist_001 --test falsify_hnsw_persist_002 --test falsify_hnsw_persist_003 --test falsify_hnsw_persist_004 --no-fail-fast"
   falsification: >
     Rename or delete any test_file / test_name and the
     `aprender-contracts::apr_hnsw_persistence_contract` integration
