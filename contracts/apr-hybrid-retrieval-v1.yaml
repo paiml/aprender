@@ -1,0 +1,134 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-hybrid-retrieval-v1
+#
+# HELIX-IDEA-005: hybrid retrieval (BM25 + dense vector). Phase 1 ships
+# the trait-equivalence gate (FALSIFY-HYBRID-002) which proves the
+# `HybridRetriever::retrieve` method's fused output matches what a
+# caller would compute by manually applying the configured
+# `FusionStrategy` to separately-fetched dense + sparse results.
+# Phases 2+ amend this contract to add recall-improvement, tokenizer-
+# reuse, and build-perf gates per the pre-authored table in
+# docs/specifications/helix-db-feature-ideas.md §2.5.
+#
+# Source pattern: helix-db `helix_engine/bm25/` + `traversal_core/ops/bm25/
+# hybrid_search_bm25.rs`. Re-implemented atop the pre-existing
+# `aprender-rag::{index, retrieve, fusion}` modules — no code lift.
+#
+# Scope at author time (2026-05-10): Phase 1 — trait-equivalence only.
+# ─────────────────────────────────────────────────────────────────────────────
+
+metadata:
+  version: 1.0.0
+  created: '2026-05-10'
+  author: apr-cli team
+  kind: registry
+  description: >
+    HELIX-IDEA-005 Phase 1 — trait-equivalence gate over the existing
+    `aprender_rag::retrieve::HybridRetriever`. Discharges
+    FALSIFY-HYBRID-002 (the trait method does not silently
+    re-normalize, drop, or reorder fused results compared to a manual
+    `FusionStrategy::fuse(dense_search(q), sparse_search(q))`
+    callsite). Phases 2+ amend this contract to add recall-improvement
+    (HYBRID-001), tokenizer-reuse (HYBRID-003), and build-perf
+    (HYBRID-004) gates as their fixture and architectural
+    prerequisites land.
+  references:
+    - 'docs/specifications/helix-db-feature-ideas.md §2.5 (HELIX-IDEA-005)'
+    - 'crates/aprender-rag/src/retrieve.rs (HybridRetriever)'
+    - 'crates/aprender-rag/src/fusion.rs (FusionStrategy)'
+    - 'crates/aprender-rag/src/index.rs (BM25Index, VectorStore)'
+    - 'helix-db/src/helix_engine/bm25/ (pattern source)'
+    - 'helix-db/src/helix_engine/traversal_core/ops/bm25/hybrid_search_bm25.rs'
+  depends_on: []
+
+kind: AprHybridRetrievalContract
+name: apr-hybrid-retrieval
+version: "1.0.0"
+status: ACTIVE
+scope: "the `aprender-rag::retrieve::HybridRetriever` trait-equivalence subset"
+binary: "(library API)"
+crate: "aprender-rag"
+spec: docs/specifications/helix-db-feature-ideas.md
+
+description: |
+  HELIX-IDEA-005 Phase 1 promotes one of the four pre-authored gates
+  from §2.5 to ACTIVE. The implementation reuses the pre-existing
+  `aprender_rag::retrieve::HybridRetriever` (which already wires
+  `BM25Index` + `VectorStore` + `FusionStrategy::fuse`) and adds a
+  test harness that proves trait equivalence — i.e., that the
+  high-level `retrieve()` method does not subtly diverge from a
+  hand-rolled callsite using the same FusionStrategy on the same
+  dense/sparse inputs.
+
+  Why ship this gate first: it is the only HYBRID gate that has no
+  fixture or architectural prerequisite. Gates 001 (recall@10 ≥
+  max(dense, sparse) + 5pts), 003 (tokenizer reuse with inference
+  path), and 004 (build perf on a 100k-doc fixture) require BEIR
+  data, refactoring BM25 to share the inference tokenizer, and a
+  large fixture corpus respectively. Gate 002 needs none of these.
+
+  Out of scope for v1.0.0 (folded into v1.1.0+ phases):
+  - FALSIFY-HYBRID-001 — hybrid recall improvement on a BEIR subset.
+  - FALSIFY-HYBRID-003 — BM25 indexer uses the same tokenizer as the
+    inference path (architectural — requires BM25Index to take a
+    `Tokenizer` trait object instead of its current internal
+    word-boundary tokenizer).
+  - FALSIFY-HYBRID-004 — build perf budget for 100k-doc fixture.
+
+# ── Enforced falsification gates ──
+
+falsification_conditions:
+  - id: FALSIFY-HYBRID-002
+    description: >
+      `HybridRetriever::retrieve(query, k)` returns
+      `Vec<RetrievalResult>` whose `(chunk.id, fused_score)` pairs
+      match — for the same query, configured `FusionStrategy`,
+      `candidates_per_source`, and `k` — what a caller computes by
+      separately calling `dense_store().search(embed_query(q), c)`,
+      `sparse_index().search(q, c)`, then
+      `fusion.fuse(&dense, &sparse).into_iter().take(k)`. Falsifies
+      "the trait method silently re-normalizes scores or drops
+      candidates compared to the documented arithmetic". The test
+      runs against a 6-chunk fixture with deterministic
+      `MockEmbedder::new(64)` content-derived embeddings; the
+      manual side and the trait side must produce the same Vec.
+    test_file: crates/aprender-rag/tests/falsify_hybrid_002.rs
+    test_name: trait_method_matches_explicit_combine
+    status: ENFORCED
+
+# ── Acceptance gate ──
+
+qa_gate:
+  id: F-HYBRID-GATE
+  name: "Hybrid retrieval contract (Phase 1 — trait equivalence)"
+  pass_criteria: "FALSIFY-HYBRID-002 passes; gates 001/003/004 pending Phase 2+ amendments"
+  run: "cargo test -p aprender-rag --test falsify_hybrid_002 --no-fail-fast"
+  falsification: >
+    Rename or delete the test_file / test_name and the
+    `aprender-contracts::apr_hybrid_retrieval_contract` integration
+    test fails before aprender-rag compiles.
+
+toyota_way_principles:
+  jidoka: >
+    "Automation with a human touch" — the gate compares two paths
+    through the same code base (the trait method's internal pipeline
+    vs. an explicit caller composition). A drift between them
+    surfaces immediately because it would mean either the trait
+    method re-orders inputs, drops candidates, or applies
+    additional normalization the doc comments don't mention.
+  poka_yoke: >
+    "Mistake-proofing" — the test pulls the FusionStrategy out of
+    the same `HybridRetrieverConfig` the retriever uses. A future
+    amendment that swaps the strategy at the trait boundary (e.g.,
+    silently coercing RRF → Linear) is caught the same instant the
+    test runs.
+  genchi_genbutsu: >
+    "Go and see" — the test exercises real `HybridRetriever`,
+    `BM25Index`, `VectorStore`, and `MockEmbedder` types over their
+    public APIs. No mocks of internal components.
+  kaizen: >
+    "Continuous improvement" — Phase 1 ships the algebra check.
+    Phases 2+ amend this contract in successive PRs as the
+    fixture/refactoring/perf prerequisites for gates 001/003/004
+    land. Each phase = one PR ≈ one falsifier, per the project's
+    falsifier-first cascade.
