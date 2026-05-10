@@ -132,6 +132,17 @@ pub struct CudaTransformerBlock {
     /// ENT-270: QK-norm weights (per-head RMSNorm, shape=[head_dim])
     q_norm_weight: Option<GpuBuffer<f32>>,
     k_norm_weight: Option<GpuBuffer<f32>>,
+    /// FALSIFY-CUDA-FORWARD-PARITY-002: Q projection bias replicated
+    /// across max_seq_len rows. Allocated when `config.use_bias == true`
+    /// (Qwen2 family). Pre-replicated so `cuda_add_inplace` can apply
+    /// the bias broadcast in a single kernel call. Memory: max_seq_len
+    /// × q_dim × 4 bytes per layer (e.g., 512 × 896 × 4 = 1.75 MB on
+    /// Qwen 0.5B). Pre-fix this field did not exist; Qwen Q/K/V biases
+    /// silently dropped → val_loss > ln(vocab) per
+    /// `apr-pretrain-cuda-forward-parity-v1.yaml`.
+    b_q_replicated: Option<GpuBuffer<f32>>,
+    b_k_replicated: Option<GpuBuffer<f32>>,
+    b_v_replicated: Option<GpuBuffer<f32>>,
 }
 
 /// Preallocated scratch buffers for transformer forward/backward pass.
@@ -566,6 +577,7 @@ impl CudaTransformerBlock {
     /// Create a new CUDA transformer block from CPU tensors
     ///
     /// Uploads all weights to GPU memory.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         config: &TransformerConfig,
         layer_idx: usize,
@@ -580,6 +592,14 @@ impl CudaTransformerBlock {
         w_up: &[f32],
         w_down: &[f32],
         max_seq_len: usize,
+        // FALSIFY-CUDA-FORWARD-PARITY-002: Optional Q/K/V projection
+        // biases (Qwen2 family has them; Llama doesn't). When present,
+        // each is replicated across max_seq_len rows so the existing
+        // `cuda_add_inplace` (residual_add) can apply the broadcast
+        // in one kernel call.
+        b_q: Option<&[f32]>,
+        b_k: Option<&[f32]>,
+        b_v: Option<&[f32]>,
     ) -> Result<Self> {
         let hidden_size = config.hidden_size;
         let q_dim = config.q_dim(); // num_heads * head_dim (may differ from hidden_size)
@@ -657,6 +677,33 @@ impl CudaTransformerBlock {
             op_profiling_enabled: false,
         };
 
+        // FALSIFY-CUDA-FORWARD-PARITY-002: replicate Q/K/V biases across
+        // max_seq_len rows when use_bias=true. Each replicated buffer
+        // is used by `cuda_add_inplace` after the corresponding gemm to
+        // apply the broadcast bias. Pre-fix this allocation didn't
+        // exist; biases dropped silently on Qwen-init paths.
+        let replicate = |bias: Option<&[f32]>, dim: usize| -> Result<Option<GpuBuffer<f32>>> {
+            match bias {
+                Some(slice) => {
+                    debug_assert_eq!(
+                        slice.len(),
+                        dim,
+                        "bias slice len {} != expected dim {dim}",
+                        slice.len()
+                    );
+                    let mut repl: Vec<f32> = Vec::with_capacity(max_seq_len * dim);
+                    for _ in 0..max_seq_len {
+                        repl.extend_from_slice(slice);
+                    }
+                    Ok(Some(GpuBuffer::from_host(&ctx, &repl)?))
+                }
+                None => Ok(None),
+            }
+        };
+        let b_q_replicated = replicate(b_q, q_dim)?;
+        let b_k_replicated = replicate(b_k, kv_hidden_size)?;
+        let b_v_replicated = replicate(b_v, kv_hidden_size)?;
+
         Ok(Self {
             config: config.clone(),
             layer_idx,
@@ -674,6 +721,9 @@ impl CudaTransformerBlock {
             norm_zero_buf: vec![0.0f32; hidden_size],
             q_norm_weight: None, // ENT-270: set via set_qk_norm() after construction
             k_norm_weight: None,
+            b_q_replicated,
+            b_k_replicated,
+            b_v_replicated,
         })
     }
 
@@ -725,6 +775,13 @@ impl CudaTransformerBlock {
             saturating_u32(q_dim),
             stream,
         )?;
+        // FALSIFY-CUDA-FORWARD-PARITY-003: apply Q bias broadcast when
+        // use_bias=true (Qwen2 family). The replicated bias buffer is
+        // allocated at block-construction time; here we add the first
+        // `seq_len * q_dim` elements element-wise.
+        if let Some(b_q_repl) = self.b_q_replicated.as_ref() {
+            cuda_add_inplace(&mut self.scratch.q, b_q_repl, seq_len * q_dim, stream)?;
+        }
 
         gemm_forward(
             &self.scratch.norm1_out,
@@ -735,6 +792,9 @@ impl CudaTransformerBlock {
             saturating_u32(kv_hidden_size),
             stream,
         )?;
+        if let Some(b_k_repl) = self.b_k_replicated.as_ref() {
+            cuda_add_inplace(&mut self.scratch.k, b_k_repl, seq_len * kv_hidden_size, stream)?;
+        }
 
         gemm_forward(
             &self.scratch.norm1_out,
@@ -745,6 +805,9 @@ impl CudaTransformerBlock {
             saturating_u32(kv_hidden_size),
             stream,
         )?;
+        if let Some(b_v_repl) = self.b_v_replicated.as_ref() {
+            cuda_add_inplace(&mut self.scratch.v, b_v_repl, seq_len * kv_hidden_size, stream)?;
+        }
 
         // === Multi-Head Attention (GPU-only, zero CPU transfers) ===
         self.compute_attention_cuda(seq_len, stream)?;

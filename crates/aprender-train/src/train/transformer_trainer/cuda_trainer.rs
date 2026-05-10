@@ -925,6 +925,25 @@ impl CudaTransformerTrainer {
             println!("  ✓ {num_layers} NF4 transformer blocks uploaded (LoRA rank={lora_rank}, alpha={lora_alpha})");
         } else {
             for (i, layer) in model.layers.iter().enumerate() {
+                // FALSIFY-CUDA-FORWARD-PARITY-002 thread Q/K/V biases
+                // through to the CudaTransformerBlock when present
+                // (Qwen2 family use_bias=true). Pre-fix these were
+                // silently dropped → val_loss > ln(vocab) on Qwen.
+                let b_q = layer
+                    .self_attn
+                    .b_q
+                    .as_ref()
+                    .map(|t| t.data().as_slice().expect("contiguous b_q").to_vec());
+                let b_k = layer
+                    .self_attn
+                    .b_k
+                    .as_ref()
+                    .map(|t| t.data().as_slice().expect("contiguous b_k").to_vec());
+                let b_v = layer
+                    .self_attn
+                    .b_v
+                    .as_ref()
+                    .map(|t| t.data().as_slice().expect("contiguous b_v").to_vec());
                 let block = CudaTransformerBlock::new(
                     mc,
                     i,
@@ -939,6 +958,9 @@ impl CudaTransformerTrainer {
                     layer.ffn.w_up.data().as_slice().expect("contiguous"),
                     layer.ffn.w_down.data().as_slice().expect("contiguous"),
                     max_seq_len,
+                    b_q.as_deref(),
+                    b_k.as_deref(),
+                    b_v.as_deref(),
                 )
                 .map_err(|e| {
                     crate::error::Error::ConfigError(format!("Block {i} upload failed: {e:?}"))
