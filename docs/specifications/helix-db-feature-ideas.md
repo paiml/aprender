@@ -614,16 +614,28 @@ authorization. Single-key auth is the v1.
   `crates/aprender-core/src/index/hnsw.rs`
 - aprender registry storage:
   `crates/aprender-registry/Cargo.toml` (`rusqlite` bundled)
-- aprender MCP server (manual handler vec):
-  `crates/aprender-mcp/src/server.rs:221-233`
-- aprender MCP schema codegen path:
+- aprender MCP tool registration (post-PR #1605):
+  `crates/aprender-mcp/src/tools/registry.rs` —
+  `ToolIndex::from_inventory()` replaces the pre-PR hardcoded
+  `Vec<ToolDefinition>` at `server.rs:221-233` AND the dispatch match
+  at `server.rs:461-483`.
+- aprender MCP schema codegen path (unchanged):
   `contracts/apr-mcp-tool-schemas-v1.yaml` →
   `crates/aprender-mcp/build.rs` → `APR_<TOOL>_SCHEMA` constants
 - aprender contracts macros:
   `crates/aprender-contracts-macros/`
 - aprender RAG spec (lists hybrid retrieval as a design principle):
   `docs/specifications/aprender-rag/rag-pipeline-spec.md`
-- aprender serve (HTTP inference):
+- apr-cli serve HTTP routers (HELIX-IDEA-009 lives here, not in
+  `aprender-serve`):
+  `crates/apr-cli/src/commands/serve/{routes,handlers,handlers_include_01}.rs`
+- apr-cli auth gate (post-PR #1605):
+  `crates/apr-cli/src/commands/serve/auth.rs` (re-exported as
+  `apr_cli::serve_auth::{AuthGate, layer, apply}`)
+- aprender registry snapshot (post-PR #1605):
+  `crates/aprender-registry/src/registry/database.rs::vacuum_into`
+  and `crates/aprender-registry/src/registry/mod.rs::Registry::snapshot`
+- aprender serve (HTTP inference, lib only — no router builders):
   `crates/aprender-serve/` (lib name `realizar`)
 - aprender distribute (work-stealing scheduler, *not* a deploy crate):
   `crates/aprender-distribute/` (lib name `repartir`)
