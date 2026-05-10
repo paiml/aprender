@@ -18,24 +18,22 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
-  version: 1.2.0
+  version: 1.3.0
   created: '2026-05-10'
   author: apr-cli team
   kind: registry
   description: >
-    HELIX-IDEA-006 Phases 1-3 — reranking primitives in
-    `aprender-rag::{fusion, mmr}` plus the MMR diversity-vs-recall
-    gate AND the RRF nDCG-improvement gate. Discharges
-    FALSIFY-RERANK-RRF-002 (RRF symmetric in input list ordering),
-    FALSIFY-RERANK-MMR-002 (λ=1 identity), FALSIFY-RERANK-MMR-001
-    (λ=0.5 raises mean-pairwise-distance diversity ≥10% vs.
-    relevance-only baseline at <1pp recall loss), and
-    FALSIFY-RERANK-RRF-001 (RRF over the dense+sparse legs of the
-    HYBRID-001 adversarial fixture yields ≥3-point nDCG@k
-    improvement vs. either single retriever). Phase 4+ amends this
-    contract to add the remaining cross-encoder gates (XENC-001
-    latency, XENC-002 structural source) once the
-    `aprender-serve` cross-encoder routing path lands.
+    HELIX-IDEA-006 Phases 1-4 — reranking primitives plus
+    diversity, RRF nDCG, and structural cross-encoder
+    architecture gate. Discharges FALSIFY-RERANK-RRF-002,
+    FALSIFY-RERANK-MMR-002, FALSIFY-RERANK-MMR-001,
+    FALSIFY-RERANK-RRF-001, and FALSIFY-RERANK-XENC-002 (no
+    parallel inference stack inside `aprender-rag`'s rerank
+    module — a future real cross-encoder MUST route through
+    `aprender-serve`). Phase 5 amends this contract to add the
+    XENC-001 latency budget gate once `aprender-serve`
+    cross-encoder routing actually exists and a benchmark fixture
+    is wired.
   references:
     - 'docs/specifications/helix-db-feature-ideas.md §2.6 (HELIX-IDEA-006)'
     - 'crates/aprender-rag/src/fusion.rs (FusionStrategy::RRF)'
@@ -47,7 +45,7 @@ metadata:
 
 kind: AprRerankContract
 name: apr-rerank
-version: "1.2.0"
+version: "1.3.0"
 status: ACTIVE
 scope: "the `aprender-rag::{fusion, mmr}` reranking primitives — pure-math subset"
 binary: "(library API)"
@@ -158,13 +156,33 @@ falsification_conditions:
     test_name: rrf_beats_single_retriever_ndcg10
     status: ENFORCED
 
+  - id: FALSIFY-RERANK-XENC-002
+    description: >
+      `aprender-rag::rerank` does not contain a parallel inference
+      stack — i.e., no direct imports of inference crates
+      (`realizar`, `candle_core`, `candle_nn`, `tch`, `ort`,
+      `onnxruntime`, etc.) and no model-loading or forward-pass
+      patterns inlined into the reranker. A future real
+      cross-encoder MUST route through `aprender-serve` via its
+      HTTP/library API; the Mock cross-encoder shipped today uses
+      a term-overlap proxy and trivially complies. Structural
+      source-grep gate — same shape as FALSIFY-AUTH-003. Falsifies
+      "the rerank crate quietly forked the inference engine" — a
+      drive-by refactor that adds a real model into rerank.rs
+      without routing through the canonical inference path is
+      caught at the source level even before the test that
+      exercises it runs.
+    test_file: crates/aprender-rag/tests/falsify_rerank_xenc_002.rs
+    test_name: rerank_module_does_not_fork_inference_stack
+    status: ENFORCED
+
 # ── Acceptance gate ──
 
 qa_gate:
   id: F-RERANK-GATE
-  name: "Reranking contract (Phases 1-3)"
-  pass_criteria: "FALSIFY-RERANK-RRF-002, MMR-002, MMR-001, and RRF-001 pass; remaining 2 gates (XENC-001/002) pending Phase 4+ amendments"
-  run: "cargo test -p aprender-rag --test falsify_rerank_rrf_002 --test falsify_rerank_mmr_002 --test falsify_rerank_mmr_001 --test falsify_rerank_rrf_001 --no-fail-fast"
+  name: "Reranking contract (Phases 1-4)"
+  pass_criteria: "FALSIFY-RERANK-RRF-002, MMR-002, MMR-001, RRF-001, and XENC-002 pass; XENC-001 latency gate pending Phase 5 amendment (requires aprender-serve cross-encoder routing + benchmark fixture)"
+  run: "cargo test -p aprender-rag --test falsify_rerank_rrf_002 --test falsify_rerank_mmr_002 --test falsify_rerank_mmr_001 --test falsify_rerank_rrf_001 --test falsify_rerank_xenc_002 --no-fail-fast"
   falsification: >
     Rename or delete any test_file / test_name and the
     `aprender-contracts::apr_rerank_contract` integration test
