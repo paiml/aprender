@@ -17,17 +17,18 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-05-10'
   author: apr-cli team
   kind: registry
   description: >
-    HELIX-IDEA-001 Phase 1 — `PersistentHnsw` save/load wrapper around
-    `aprender_core::index::HNSWIndex`. Discharges
-    FALSIFY-HNSW-PERSIST-001 (insert→flush→reopen yields the same top-k
-    as the in-memory baseline). Phases 2-4 amend this contract in
-    successive PRs to add crash-safety, recall@10 ≥ 0.95, and
-    cold-open latency budget gates per the pre-authored table in
+    HELIX-IDEA-001 Phases 1-2 — `PersistentHnsw` save/load wrapper
+    around `aprender_core::index::HNSWIndex` with atomic-write crash
+    safety. Discharges FALSIFY-HNSW-PERSIST-001 (round-trip identity)
+    and FALSIFY-HNSW-PERSIST-002 (crash mid-flush does not silently
+    corrupt the snapshot). Phases 3-4 amend this contract in
+    successive PRs to add recall@10 ≥ 0.95 and cold-open latency
+    budget gates per the pre-authored table in
     docs/specifications/helix-db-feature-ideas.md §2.1.
   references:
     - 'docs/specifications/helix-db-feature-ideas.md §2.1 (HELIX-IDEA-001)'
@@ -39,7 +40,7 @@ metadata:
 
 kind: AprHnswPersistenceContract
 name: apr-hnsw-persistence
-version: "1.0.0"
+version: "1.1.0"
 status: ACTIVE
 scope: "the `PersistentHnsw` save/load wrapper in aprender-core"
 binary: "(library API)"
@@ -97,15 +98,31 @@ falsification_conditions:
     test_name: reopen_top_k_matches_in_memory
     status: ENFORCED
 
+  - id: FALSIFY-HNSW-PERSIST-002
+    description: >
+      `flush()` is atomic: bytes are written to a sibling `.tmp` file,
+      fsync'd, then renamed onto `<path>`. A process kill before the
+      rename leaves `<path>` holding the previous good snapshot (or
+      no file on first-flush) — never a truncated payload that decodes
+      to a usable-looking but lying index. Falsified by: (a) writing
+      garbage to the `.tmp` sibling and asserting `open(path)` still
+      returns the previous good index unaffected; (b) corrupting
+      `<path>` itself and asserting `open()` returns `Err(Decode(_))`,
+      not silent garbage; (c) structural source-grep that
+      `flush()` calls `fs::rename` (not `fs::write` direct).
+    test_file: crates/aprender-core/tests/falsify_hnsw_persist_002.rs
+    test_name: partial_write_does_not_silently_corrupt
+    status: ENFORCED
+
 # ── Acceptance gate ──
 
 qa_gate:
   id: F-HNSW-PERSIST-GATE
-  name: "HNSW persistence contract (Phase 1)"
-  pass_criteria: "FALSIFY-HNSW-PERSIST-001 passes; gates 002-004 pending Phase 2-4 amendments"
-  run: "cargo test -p aprender-core --test falsify_hnsw_persist_001 --no-fail-fast"
+  name: "HNSW persistence contract (Phases 1-2)"
+  pass_criteria: "FALSIFY-HNSW-PERSIST-001 and FALSIFY-HNSW-PERSIST-002 pass; gates 003-004 pending Phase 3-4 amendments"
+  run: "cargo test -p aprender-core --test falsify_hnsw_persist_001 --test falsify_hnsw_persist_002 --no-fail-fast"
   falsification: >
-    Rename or delete the test_file / test_name and the
+    Rename or delete any test_file / test_name and the
     `aprender-contracts::apr_hnsw_persistence_contract` integration
     test fails before aprender-core compiles.
 

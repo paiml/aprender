@@ -153,21 +153,61 @@ impl PersistentHnsw {
         self.dirty
     }
 
-    /// Flush the current in-memory index to disk as a single bincode
-    /// snapshot. Phase 1: a single overwrite — atomicity and crash
-    /// safety land with FALSIFY-HNSW-PERSIST-002 in Phase 2.
+    /// Flush the current in-memory index to disk as a bincode
+    /// snapshot.
+    ///
+    /// **Phase 2 (FALSIFY-HNSW-PERSIST-002): atomic write.** Bytes
+    /// are first written to `<path>.tmp`, fsync'd via
+    /// [`std::fs::File::sync_all`], then atomically renamed to
+    /// `<path>` via [`std::fs::rename`]. If the process is killed
+    /// mid-flush:
+    /// - If the kill happens during the temp write or before the
+    ///   rename: `<path>` still holds the previous good snapshot
+    ///   (or no file at all on first-flush). The temp file may
+    ///   linger; [`Self::open`] never reads it.
+    /// - If the kill happens after the rename: `<path>` holds the
+    ///   new snapshot, which is consistent because the bytes were
+    ///   fsync'd before rename.
+    ///
+    /// In neither case can `<path>` decode to a "valid-looking but
+    /// truncated" index — the contract's load-bearing guarantee.
     ///
     /// # Errors
     ///
     /// Returns `PersistentHnswError::Io` if the file system rejects
-    /// the write, or `PersistentHnswError::Decode` if the index
-    /// itself fails to serialize (should not happen with the shipped
-    /// types).
+    /// the temp write, the fsync, or the rename, or
+    /// `PersistentHnswError::Decode` if the index itself fails to
+    /// serialize (should not happen with the shipped types).
     pub fn flush(&mut self) -> Result<(), PersistentHnswError> {
+        use std::io::Write;
+
         let bytes = bincode::serialize(&self.inner)?;
-        fs::write(&self.path, bytes)?;
+        let tmp = Self::tmp_path(&self.path);
+
+        // Write the full payload to a sibling temp file, fsync it.
+        {
+            let mut f = fs::File::create(&tmp)?;
+            f.write_all(&bytes)?;
+            f.sync_all()?;
+        }
+
+        // Atomic rename: on POSIX this either fully replaces the
+        // target or leaves it untouched. On Windows the semantics are
+        // looser pre-Win10 1607; for now we accept the platform's
+        // best-effort and document.
+        fs::rename(&tmp, &self.path)?;
+
         self.dirty = false;
         Ok(())
+    }
+
+    /// Compute the temp-file sibling path for atomic-write flush.
+    /// Pulled out so [`falsify_hnsw_persist_002`] can simulate a
+    /// crash by manipulating the same path.
+    pub(crate) fn tmp_path(path: &Path) -> PathBuf {
+        let mut s = path.as_os_str().to_os_string();
+        s.push(".tmp");
+        PathBuf::from(s)
     }
 
     /// Borrow the underlying [`HNSWIndex`] read-only. Useful when
