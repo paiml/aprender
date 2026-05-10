@@ -357,4 +357,211 @@ mod tests {
             build_shared_cuda_trainer_with_init(1.0e-4, 128, 42, Some(&encoder_cfg), Some(&dummy));
         assert!(matches!(result, Err(_)), "Encoder-family init MUST Err under §50.4 step 5f.1");
     }
+
+    /// FALSIFY-APR-PRETRAIN-EVAL-METHODOLOGY-001 (H1 sanity bound):
+    /// `CudaTransformerTrainer::eval_batch` on a fresh-init trainer
+    /// (random weights) over a synthetic batch with random uniform
+    /// tokens MUST return a loss in a sensible range.
+    ///
+    /// Theoretical bound: random-init Llama-style 2-layer transformer
+    /// over uniformly-distributed targets in vocab=1000 produces
+    /// average cross-entropy near `ln(1000) = 6.91`. Any non-trivially-
+    /// trained model with finite weights produces loss in
+    /// `[0.5 × ln(vocab), 1.5 × ln(vocab)]` modulo float noise.
+    ///
+    /// LIVE EVIDENCE motivating this test (this branch's parent):
+    /// `evidence/section-60-5g-2-redispatch-2026-05-09/README.md`
+    /// recorded a 1500× train/eval discrepancy at the same model
+    /// state (epoch 0: train_loss=1.20 vs val_loss=0.00081). The
+    /// gap survived PR #1579's H2 (populate-coverage) fix, confirming
+    /// H1 (eval_batch degenerate) is independent of H2.
+    ///
+    /// This test reproduces the bug at unit-test level: if H1 is
+    /// real, eval_batch on a tiny random-init model returns ~0
+    /// instead of ~ln(vocab_size). The test is gated on
+    /// `--features cuda` so CI without that flag does not see it;
+    /// `cargo test -p aprender-train --features cuda --lib
+    /// falsify_eval_batch_h1_sanity_bound` reproduces.
+    ///
+    /// Spec: SPEC-SHIP-TWO-001 §60 (forthcoming) H1 root-cause cascade.
+    #[test]
+    fn falsify_eval_batch_h1_sanity_bound() {
+        use crate::train::transformer_trainer::TransformerTrainConfig;
+        use crate::train::transformer_trainer::{CudaTransformerTrainer, LMBatch};
+
+        // Tiny model so the test runs in a few seconds on RTX 4090.
+        let model_cfg = TransformerConfig::tiny();
+        let train_cfg = TransformerTrainConfig::new(model_cfg.clone());
+
+        // Build trainer with random init. Skip the test (rather than
+        // panic) if CUDA is unavailable on the host — the falsifier is
+        // host-dependent.
+        let trainer = match CudaTransformerTrainer::new(train_cfg) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!(
+                    "[falsify_eval_batch_h1_sanity_bound] skipping: \
+                     CudaTransformerTrainer::new failed: {e:?} \
+                     (test requires --features cuda + a CUDA host)"
+                );
+                return;
+            }
+        };
+        let mut trainer = trainer;
+
+        // Build a synthetic batch: 4 sequences × 16 tokens each, drawn
+        // from a deterministic LCG so the test is reproducible.
+        let vocab_size = model_cfg.vocab_size as u32;
+        let seq_len = 16;
+        let batch_size = 4;
+        let mut state: u64 = 0xDEAD_BEEF_CAFE_F00D;
+        let lcg = |s: &mut u64| -> u32 {
+            *s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((*s >> 32) as u32) % vocab_size
+        };
+        let mut sequences = Vec::with_capacity(batch_size);
+        for _ in 0..batch_size {
+            let mut seq = Vec::with_capacity(seq_len + 1);
+            for _ in 0..(seq_len + 1) {
+                seq.push(lcg(&mut state));
+            }
+            sequences.push(seq);
+        }
+        let batch = LMBatch::from_sequences(&sequences, 0, 0);
+
+        // Sanity bound: random-init eval loss should be ≈ ln(1000) = 6.91.
+        // We accept anything in [0.5, 1.5 × ln(vocab)] = [0.5, ~10.4].
+        // If H1 is real, eval_batch returns ~0 (degenerate).
+        let loss = trainer.eval_batch(&batch);
+        let ln_vocab = (vocab_size as f32).ln();
+        let lower_bound = 0.5_f32;
+        let upper_bound = 1.5_f32 * ln_vocab;
+
+        assert!(
+            loss >= lower_bound,
+            "FALSIFY-APR-PRETRAIN-EVAL-METHODOLOGY-001 (H1 lower bound): \
+             eval_batch on random-init {}-vocab tiny model returned \
+             loss = {loss}, expected ≥ {lower_bound} (random-init theoretical \
+             ≈ ln({vocab_size}) = {ln_vocab:.3}). Loss < 0.5 indicates \
+             eval pipeline is degenerate (cross-entropy collapsing to 0); \
+             see evidence/section-60-5g-2-redispatch-2026-05-09/ for the \
+             1500× train/eval discrepancy that motivated this falsifier.",
+            vocab_size
+        );
+        assert!(
+            loss <= upper_bound,
+            "FALSIFY-APR-PRETRAIN-EVAL-METHODOLOGY-001 (H1 upper bound): \
+             eval_batch returned loss = {loss}, expected ≤ {upper_bound:.3} \
+             (1.5 × ln(vocab)). Loss > upper_bound suggests numerical \
+             explosion (NaN coercion or gradient overflow), a separate \
+             defect class from the lower-bound H1.",
+        );
+        assert!(loss.is_finite(), "eval_batch returned non-finite loss = {loss}");
+    }
+
+    /// FALSIFY-APR-PRETRAIN-EVAL-METHODOLOGY-002 (H1 hypothesis A —
+    /// train→eval state pollution): the val_loss anomaly observed in
+    /// `evidence/section-60-5g-2-redispatch-2026-05-09/README.md`
+    /// fired at EPOCH 0 — i.e., AFTER 100 train_batch calls, not on
+    /// a fresh trainer. This test exercises that ordering directly:
+    /// eval_batch BEFORE training (loss_a, sanity), then train_batch,
+    /// then eval_batch on the same evaluation batch (loss_b). The
+    /// two losses should differ by AT MOST the optimizer-step effect
+    /// (a few percent at lr=5e-5 on one mini-batch).
+    ///
+    /// If H1 hypothesis A (logits_buf state contamination) is real,
+    /// loss_b will be much smaller than loss_a even though the model
+    /// only changed by one optimizer step. The 1500× train/val
+    /// discrepancy in §59/§60 evidence implies loss_b/loss_a ~ 1/1500.
+    #[test]
+    fn falsify_eval_batch_h1_train_pollution() {
+        use crate::train::transformer_trainer::TransformerTrainConfig;
+        use crate::train::transformer_trainer::{CudaTransformerTrainer, LMBatch};
+
+        let model_cfg = TransformerConfig::tiny();
+        let train_cfg = TransformerTrainConfig::new(model_cfg.clone());
+
+        let trainer = match CudaTransformerTrainer::new(train_cfg) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!(
+                    "[falsify_eval_batch_h1_train_pollution] skipping: \
+                     CudaTransformerTrainer::new failed: {e:?} \
+                     (test requires --features cuda + a CUDA host)"
+                );
+                return;
+            }
+        };
+        let mut trainer = trainer;
+
+        let vocab_size = model_cfg.vocab_size as u32;
+        let seq_len = 16;
+        let batch_size = 4;
+        let mut state: u64 = 0xCAFE_BABE_DEAD_BEEF;
+        let lcg = |s: &mut u64| -> u32 {
+            *s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((*s >> 32) as u32) % vocab_size
+        };
+        let make_batch = |state: &mut u64, lcg: &dyn Fn(&mut u64) -> u32| -> LMBatch {
+            let mut sequences = Vec::with_capacity(batch_size);
+            for _ in 0..batch_size {
+                let mut seq = Vec::with_capacity(seq_len + 1);
+                for _ in 0..(seq_len + 1) {
+                    seq.push(lcg(state));
+                }
+                sequences.push(seq);
+            }
+            LMBatch::from_sequences(&sequences, 0, 0)
+        };
+
+        let train_batch_data = make_batch(&mut state, &lcg);
+        let eval_batch_data = make_batch(&mut state, &lcg);
+
+        // Phase 1: eval BEFORE any training — establishes baseline.
+        let loss_a = trainer.eval_batch(&eval_batch_data);
+        assert!(
+            loss_a.is_finite() && loss_a >= 0.5,
+            "Phase 1 baseline: eval before any train must be sensible \
+             (got {loss_a}); test setup precondition failed before \
+             we can probe H1A. See test 001 for the same lower bound."
+        );
+
+        // Phase 2: train on a DIFFERENT batch — mutates logits_buf
+        // (KAIZEN-052 in-place gradient writeback) and runs optimizer_step.
+        let _train_loss = trainer.train_batch(&train_batch_data);
+
+        // Phase 3: eval on the SAME eval batch — same model state up
+        // to one optimizer step. loss_b should be close to loss_a.
+        let loss_b = trainer.eval_batch(&eval_batch_data);
+
+        // The optimizer step at lr=5e-5 (default finetune mode but our
+        // train_cfg uses lr=0.001 from TrainConfig::default) on ONE
+        // mini-batch can shift loss by maybe 5-30%. We accept any
+        // |loss_b - loss_a| / loss_a < 0.95 (i.e., loss_b doesn't drop
+        // by more than 95%) — generous to allow normal training
+        // dynamics. A drop to ~0 (factor of 1500× as observed in §60)
+        // would break this bound by orders of magnitude.
+        let rel_drop = (loss_a - loss_b).max(0.0) / loss_a;
+        assert!(
+            loss_b.is_finite(),
+            "eval_batch after train returned non-finite loss = {loss_b}; \
+             possible NaN propagation from train_batch's in-place gradient \
+             writeback contaminating subsequent eval forward."
+        );
+        assert!(
+            rel_drop < 0.95,
+            "FALSIFY-APR-PRETRAIN-EVAL-METHODOLOGY-002 (H1A train→eval \
+             state pollution): eval_batch loss dropped from {loss_a} to \
+             {loss_b} ({:.4}× relative drop) after a single train_batch \
+             on a DIFFERENT batch. A single optimizer step at typical \
+             learning rates cannot legitimately move loss by ≥95%. \
+             This indicates train_batch contaminates state that eval_batch \
+             reads (most likely the gpu_training.logits_buf via KAIZEN-052 \
+             in-place gradient writeback overlapping with the next \
+             gpu_forward GEMM). See \
+             evidence/section-60-5g-2-redispatch-2026-05-09/README.md \
+             for the 1500× train/val discrepancy this falsifier reproduces.",
+            rel_drop
+        );
+    }
 }

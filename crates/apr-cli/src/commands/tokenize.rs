@@ -815,6 +815,44 @@ pub(crate) fn run_encode_corpus(
     use entrenar::tokenizer::{BPETokenizer, Normalization, Tokenizer, TokenizerConfig};
     use std::io::Write as IoWrite;
 
+    /// Two-format tokenizer dispatch for `apr tokenize encode-corpus`.
+    ///
+    /// `Hex` — aprender-train's `BPETokenizer` (hex-byte format). Used
+    /// when vocab.json contains canonical `00..ff` hex tokens (i.e.,
+    /// trained by `apr tokenize train`).
+    ///
+    /// `ByteLevel` — aprender-core's `BpeTokenizer` (GPT-2 byte-level
+    /// + Ġ-prefix). Used when vocab.json is HuggingFace-format (i.e.,
+    /// extracted by `apr tokenize import-hf` from Qwen2/Llama2/Mistral
+    /// tokenizer.json). This path closes the SHIP-TWO §60 silent-`<unk>`
+    /// defect class — pre-this-PR, the hex loader fail-fasted with
+    /// FALSIFY-BPE-FORMAT-MISMATCH-001 (PR #1585) instead of routing
+    /// through the byte-level encoder.
+    enum EncodeTokenizer {
+        Hex(BPETokenizer),
+        ByteLevel(aprender::text::bpe::BpeTokenizer),
+    }
+    impl EncodeTokenizer {
+        fn vocab_size(&self) -> usize {
+            match self {
+                Self::Hex(t) => Tokenizer::vocab_size(t),
+                Self::ByteLevel(t) => t.vocab_size(),
+            }
+        }
+        fn token_to_id(&self, name: &str) -> Option<u32> {
+            match self {
+                Self::Hex(t) => Tokenizer::token_to_id(t, name),
+                Self::ByteLevel(t) => t.token_to_id(name),
+            }
+        }
+        fn encode(&self, text: &str) -> std::result::Result<Vec<u32>, String> {
+            match self {
+                Self::Hex(t) => Tokenizer::encode(t, text).map_err(|e| format!("{e}")),
+                Self::ByteLevel(t) => Ok(t.encode(text)),
+            }
+        }
+    }
+
     validate_normalization(normalization)?;
     match eos_policy {
         "none" | "between" | "after" => {}
@@ -848,16 +886,84 @@ pub(crate) fn run_encode_corpus(
         _ => unreachable!("validated above"),
     };
     let config = TokenizerConfig::bpe().with_normalization(norm);
-    let tokenizer = BPETokenizer::from_vocab_merges(
-        vocab_path.to_str().ok_or_else(|| {
+    let vocab_path_str = vocab_path
+        .to_str()
+        .ok_or_else(|| {
             CliError::ValidationFailed("vocab.json path has non-utf8 bytes".to_string())
-        })?,
-        merges_path.to_str().ok_or_else(|| {
+        })?
+        .to_string();
+    let merges_path_str = merges_path
+        .to_str()
+        .ok_or_else(|| {
             CliError::ValidationFailed("merges.txt path has non-utf8 bytes".to_string())
-        })?,
+        })?
+        .to_string();
+
+    // Two-format dispatch (PMAT-CODE-TOKENIZE-BPE-FORMAT-001 follow-up
+    // to PR #1585's fail-fast). Try the hex-byte loader first; on
+    // FALSIFY-BPE-FORMAT-MISMATCH-001 (vocab is GPT-2 byte-level, e.g.,
+    // from `apr tokenize import-hf`), fall through to the byte-level
+    // BpeTokenizer in `aprender::text::bpe`. Either path produces a
+    // working `EncodeTokenizer`; both fail → real load error.
+    let tokenizer: EncodeTokenizer = match BPETokenizer::from_vocab_merges(
+        &vocab_path_str,
+        &merges_path_str,
         config,
-    )
-    .map_err(|e| CliError::ValidationFailed(format!("Cannot load tokenizer: {e}")))?;
+    ) {
+        Ok(t) => EncodeTokenizer::Hex(t),
+        Err(hex_err) => {
+            let hex_err_str = format!("{hex_err}");
+            if hex_err_str.contains("FALSIFY-BPE-FORMAT-MISMATCH-001") {
+                // Byte-level dispatch: prefer a sibling tokenizer.json
+                // (HuggingFace canonical format with proper added_tokens
+                // and pretokenizer config), fall back to vocab.json +
+                // merges.txt.
+                //
+                // NOTE on naming: aprender::text::bpe::load_from_files
+                // takes JSON STRING and MERGES STRING as CONTENT (not
+                // file paths) — the function name is misleading.
+                let tokenizer_json_path = tokenizer_dir.join("tokenizer.json");
+                let bpe = if tokenizer_json_path.exists() {
+                    let json = std::fs::read_to_string(&tokenizer_json_path).map_err(|e| {
+                        CliError::ValidationFailed(format!(
+                            "byte-level loader: cannot read {}: {e}",
+                            tokenizer_json_path.display()
+                        ))
+                    })?;
+                    aprender::text::bpe::load_from_json(&json).map_err(|byte_err| {
+                        CliError::ValidationFailed(format!(
+                            "byte-level loader (tokenizer.json): {byte_err}"
+                        ))
+                    })?
+                } else {
+                    let vocab_json = std::fs::read_to_string(&vocab_path_str).map_err(|e| {
+                        CliError::ValidationFailed(format!(
+                            "byte-level loader: cannot read vocab.json {vocab_path_str}: {e}"
+                        ))
+                    })?;
+                    let merges_txt = std::fs::read_to_string(&merges_path_str).map_err(|e| {
+                        CliError::ValidationFailed(format!(
+                            "byte-level loader: cannot read merges.txt {merges_path_str}: {e}"
+                        ))
+                    })?;
+                    aprender::text::bpe::load_from_files(&vocab_json, &merges_txt).map_err(
+                        |byte_err| {
+                            CliError::ValidationFailed(format!(
+                                "Cannot load tokenizer (both formats failed):\n  \
+                                     hex-byte loader: {hex_err}\n  \
+                                     byte-level loader: {byte_err}"
+                            ))
+                        },
+                    )?
+                };
+                EncodeTokenizer::ByteLevel(bpe)
+            } else {
+                return Err(CliError::ValidationFailed(format!(
+                    "Cannot load tokenizer: {hex_err}"
+                )));
+            }
+        }
+    };
     let vocab_size = tokenizer.vocab_size();
     let eos_id = ["</s>", "<|endoftext|>", "<eos>", "<|eos|>"]
         .iter()
