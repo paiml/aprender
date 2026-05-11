@@ -432,32 +432,28 @@ fn prepare_tokens_apr(config: &InferenceConfig, prompt: &str) -> Result<Prepared
         .and_then(|n| n.to_str())
         .unwrap_or("");
 
-    // PMAT-237: Detect instruct from MODEL DATA, not filename.
-    // Filename heuristic silently skips chat template for hash-named APR files.
-    // Three-tier detection: architecture metadata > vocab special tokens > filename fallback.
-    let (apr_arch, has_chatml_tokens) =
+    // PMAT-237: APR metadata preserves architecture family, but that is not
+    // sufficient to distinguish base vs instruct checkpoints.
+    let apr_arch =
         if config.model_path.extension().is_some_and(|e| e == "apr") {
             match AprV2Model::load(&config.model_path) {
                 Ok(model) => {
-                    let arch = model.metadata().architecture.clone().unwrap_or_default();
-                    let has_chatml = model.metadata().get_embedded_vocabulary().is_some_and(
-                        |vocab: Vec<String>| vocab.iter().any(|t| t == "<|im_start|>"),
-                    );
-                    (arch, has_chatml)
+                    model.metadata().architecture.clone().unwrap_or_default()
                 },
-                Err(_) => (String::new(), false),
+                Err(_) => String::new(),
             }
         } else {
-            (String::new(), false)
+            String::new()
         };
 
-    let is_instruct_arch = matches!(
-        apr_arch.to_lowercase().as_str(),
-        "qwen2" | "qwen" | "llama" | "mistral" | "phi" | "phi3"
-    );
-    let filename_instruct = model_name.to_lowercase().contains("instruct");
+    let name_lower = model_name.to_lowercase();
+    let filename_instruct = name_lower.contains("instruct") || name_lower.contains("-chat");
 
-    let is_instruct = is_instruct_arch || has_chatml_tokens || filename_instruct;
+    // Do not infer chat formatting from architecture family or mere presence
+    // of ChatML special tokens in the vocab: many base Qwen/LLaMA tokenizers
+    // still carry those tokens. Use explicit naming only until APR stores a
+    // real chat-template/instruct bit in metadata.
+    let is_instruct = filename_instruct;
 
     let formatted_prompt = if is_instruct {
         let template_hint = apr_arch_to_template_hint(&apr_arch, model_name);
