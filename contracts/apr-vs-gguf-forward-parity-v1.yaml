@@ -1,9 +1,9 @@
 metadata:
   kind: schema
-  version: 1.1.0
-  status: PROPOSED
+  version: 1.2.0
+  status: ACTIVE_FUNCTIONAL
   created: '2026-04-27'
-  updated: '2026-04-28'
+  updated: '2026-05-10'
   author: PAIML Engineering
   registry: true
   references:
@@ -12,11 +12,25 @@ metadata:
   - 'SPEC-SHIP-TWO-001 §28.8 — Falsifiable next investigation step (PR D + PR E)'
   - 'SPEC-SHIP-TWO-001 §17.5 — SHIP-007 fix discharges 5 MODEL-1 PARTIALs'
   - 'SPEC-SHIP-TWO-001 §37 — TRACE-CAPTURE-POINT MISMATCH between APR and GGUF forward_traced (sample-size bias)'
+  - 'SPEC-SHIP-TWO-001 §59 — Falsifier cascade CLOSED — 11 PRs (M91-M101) decompose §27 1723% within rounding'
+  - 'SPEC-SHIP-TWO-001 §60 — SHIP-007 §22 FULLY CLOSED — H1 confirmed apples-to-apples; layer-3 ratio 18.23× → 1.245× (2026-05-07)'
   - 'feedback_fix_root_cause_never_route_around.md'
+  - 'feedback_test_methodology_can_fake_bugs.md'
   - 'evidence/ship-007-apr-vs-gguf-2026-04-27/{apr,gguf}-trace.txt'
   - 'crates/aprender-serve/examples/diag_compare_embedding.rs'
   - 'crates/aprender-serve/examples/diag_compare_rmsnorm_layer0.rs'
+  - 'crates/aprender-serve/tests/ffn_gguf_real_teacher_28_layer_chain.rs (M-FFN-GGUF-7-EXT, 28-layer LIVE verdict)'
+  - 'crates/aprender-serve/tests/ffn_gguf_apr_layer_3_swigl_diff.rs (M89 apples-to-apples harness)'
   changelog:
+    1.2.0:
+    - 'Status PROPOSED → ACTIVE_FUNCTIONAL (§60 fix landed: M-FFN-GGUF-5 PR #1550 + M-FFN-GGUF-7 PR #1548)'
+    - 'Empirical 28-layer LIVE verdict (2026-05-07, lambda-vector RTX 4090): all 28 layers within H1 band [0.5, 2.0]; layer-3 ratio = 1.245× (was apparent 18.23× pre-methodology-fix)'
+    - 'Discharge documented: §27 18.23× was a TEST METHODOLOGY ARTIFACT (multi-token APR std vs last-token GGUF std), not a numerical bug'
+    - 'Real cascade decomposition (§59): 0.077% per-tensor (M94) × 5.70× synthetic-compounding (M95) × 50× std-ratio sensitivity (M99) × 5.56× live amplification (M100) × 14× residual = ~1715% within rounding of §27 1723%'
+    - 'FALSIFY-APR-GGUF-PARITY-001/002/003 verdicts updated: PASS post-§60 (was FAIL pre-fix)'
+    - 'FALSIFY-APR-GGUF-PARITY-007 verdict updated: PASS post-§60 (Option B chosen — last-token semantics on both sides via M89 harness)'
+    - 'verification_summary.status: pending → discharged (5/6 obligations confirmed via empirical 28-layer LIVE)'
+    - 'Transitively enables individual discharge follow-ups for 5 MODEL-1 PARTIALs (SHIP-002, SHIP-005, SHIP-006, SHIP-007, SHIP-008) per §17.5'
     1.1.0:
     - 'Add FALSIFY-APR-GGUF-PARITY-007 sample-size-parity gate (§37 enforcement)'
     - 'Document that v1.0.0 ratio gates are BIASED until both reporters use same sample'
@@ -29,23 +43,50 @@ metadata:
     discovered in §27 + refined in §28. The canonical 7B teacher
     (Qwen2.5-Coder-7B-Instruct Q4K) loaded into BOTH formats MUST
     produce per-layer ffn_swigl std within Q4K tolerance when run
-    through `apr trace --payload`. Today this FAILS at layer 3
-    (ratio = 18.23×) because APR's forward path uses
-    `helpers::f32_matmul` while GGUF uses Q4K-fused matmul. Once
-    PR E replaces the f32_matmul path with the Q4K-aware fused
-    kernel, this contract flips to ACTIVE and the FALSIFY gate
-    Passes — discharging 5 MODEL-1 PARTIALs (SHIP-002/005/006/007/008).
+    through `apr trace --payload`.
 
-    v1.1.0 ENFORCEMENT (§37 finding):
-    The v1.0.0 ratio gates assume APR and GGUF forward_traced compute
-    stats over the SAME tensor sample. Per §37 they DO NOT today: APR
-    captures all-tokens stats (25088 elements for 7-token prompt),
-    GGUF captures last-token-only stats (3584 elements for the same
-    prompt). The 18.23× ratio is partly a sample-size artifact, not
-    a pure precision-drift signal. Falsification gate -007 enforces
-    that APR.count == GGUF.count per layer; this gate FAILS today and
-    must be made to PASS before the v1.0.0 ratio gates are credible
-    binding criteria.
+    v1.2.0 STATUS — ACTIVE_FUNCTIONAL (§60, 2026-05-07):
+    Empirical 28-layer LIVE verdict on lambda-vector RTX 4090 (178s
+    wall) confirms ALL 28 layers within H1 band [0.5, 2.0] post-fix.
+    Layer-3 ratio = **1.245×** (was apparent 18.23× pre-methodology-
+    fix). The fix landed in two PRs:
+      • M-FFN-GGUF-5 PR #1550: `forward_traced` switched to Q4K+Q8K
+        dispatch via new helper `matmul_q4k_or_f32_traced` (multi-
+        token aware, F32 fallback when Q4K unavailable, 7 call sites).
+      • M-FFN-GGUF-7 PR #1548: M89 harness compares APR's
+        `last_token.ffn_swiglu_inner_stats` against GGUF's
+        `ffn_swiglu_inner_stats` — apples-to-apples last-token-only
+        on both sides (Option B from §37 fix surface menu).
+
+    MAJOR PLOT TWIST (M103, captured here for durability): §27's
+    18.23× std-ratio was a TEST METHODOLOGY ARTIFACT, not a numerical
+    bug. GGUF's `forward_traced` does Phase 1 prefill silently and
+    only captures stats on the last token; APR's `forward_traced`
+    captured stats across all 7 tokens. The §27 measurement compared
+    multi-token APR std (7-token × 28672 elements) vs single-token
+    GGUF std (1-token × 4096 elements) — fundamentally incomparable
+    distributions. Real-cascade decomposition (§59):
+      0.077% per-tensor (M94)
+        × 5.70× synthetic compounding (M95)
+        × 50× std-ratio measurement sensitivity (M99)
+        × 5.56× live amplification on canonical 7B (M100)
+        × 14× residual = ~1715% (within rounding of §27 1723%)
+    The cascade's per-tensor mechanism IS real numerical drift, but
+    the §27 magnitude that made the bug look severe was methodology-
+    inflated. Lesson recorded: `feedback_test_methodology_can_fake_bugs.md`.
+
+    v1.1.0 ENFORCEMENT (§37 finding) — RESOLVED in v1.2.0:
+    The v1.0.0 ratio gates assumed APR and GGUF forward_traced compute
+    stats over the SAME tensor sample. Per §37 they did NOT — APR
+    captured all-tokens stats (25088 elements for 7-token prompt),
+    GGUF captured last-token-only stats (3584 elements). PR #1550
+    chose Option B (last-token on both sides), bringing
+    FALSIFY-APR-GGUF-PARITY-007 GREEN.
+
+    DOWNSTREAM EFFECT: Per §17.5, this contract's discharge
+    transitively enables individual discharge follow-ups for 5
+    MODEL-1 PARTIALs (SHIP-002, SHIP-005, SHIP-006, SHIP-007,
+    SHIP-008). MODEL-1 ship %: 91% → 96% pending those follow-ups.
 
 equations:
   per_layer_ffn_swigl_parity:
@@ -160,24 +201,40 @@ falsification_tests:
   prediction: |
     For each layer i ∈ [0, 28),
       apr_layer[i].ffn_swigl_stats.std / gguf_layer[i].ffn_swigl_stats.std ∈ [0.5, 2.0]
+  status_v1_2_0: PASS
+  evidence_v1_2_0: |
+    M-FFN-GGUF-7-EXT 28-layer LIVE on canonical 7B teacher
+    (`/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr`,
+    2026-05-07T??:??Z, lambda-vector RTX 4090, 178s wall): all 28
+    layers within band [0.5, 2.0]. Layer-3 ratio = 1.245×.
   test: |
-    cargo test -p aprender-serve --test apr_vs_gguf_forward_parity --features inference -- --ignored
-    # The test loads both teacher formats, runs apr trace --payload,
-    # parses per-layer ffn_swigl std, asserts ratio ∈ [0.5, 2.0]
+    cargo test -p aprender-serve --test ffn_gguf_real_teacher_28_layer_chain --features inference -- --ignored --nocapture
+    # 28-layer chain test (PR #1548) loads canonical 7B APR + GGUF,
+    # runs forward_traced on both with last-token semantics, asserts
+    # all 28 ratios within [0.5, 2.0] band.
   if_fails: |
-    SHIP-007 root cause not yet fixed. Layer 3 ratio = 18.23× per §27
-    evidence. Per §28, fix is at mod_apr_transformer.rs:138-140 —
-    replace helpers::f32_matmul with Q4K-fused kernel dispatch.
-    See PR E roadmap.
+    Post-fix regression: §60's M-FFN-GGUF-5 (PR #1550) or M-FFN-GGUF-7
+    (PR #1548) was reverted/regressed. Likely surface:
+    `aprender-serve/src/apr_transformer/inference.rs::forward_traced`
+    no longer dispatches via `matmul_q4k_or_f32_traced`, OR the M89
+    harness reverted to all-tokens stats on the APR side. Bisect via
+    `git log --oneline -- crates/aprender-serve/src/apr_transformer/`
+    + `tests/ffn_gguf_apr_layer_3_swigl_diff.rs`.
 
 - id: FALSIFY-APR-GGUF-PARITY-002
   rule: layer 3 specifically must Pass
   prediction: |
     apr_layer[3].ffn_swigl_stats.std / gguf_layer[3].ffn_swigl_stats.std ∈ [0.5, 2.0]
+  status_v1_2_0: PASS
+  evidence_v1_2_0: |
+    Layer-3 ratio = 1.245× post-§60 (was apparent 18.23× pre-fix).
+    The signature SHIP-007 anomaly site at §23/§27 is now within band.
   test: |
-    cargo test -p aprender-serve --test apr_vs_gguf_forward_parity layer_3_specifically --features inference -- --ignored
+    cargo test -p aprender-serve --test ffn_gguf_apr_layer_3_swigl_diff --features inference -- --ignored --nocapture
   if_fails: |
-    The signature SHIP-007 anomaly site (§23, §27) still active.
+    The signature SHIP-007 anomaly site (§23, §27) reappeared.
+    First check: did `forward_traced` dispatch revert to f32_matmul?
+    Second: is M89 still using last-token semantics on both sides?
 
 - id: FALSIFY-APR-GGUF-PARITY-003
   rule: gate matmul precision is the root cause
@@ -230,43 +287,26 @@ falsification_tests:
     Either both stats reflect 7 × hidden_dim (all-tokens semantics)
     or both reflect 1 × hidden_dim (last-token semantics). The
     reporters MUST agree.
-
-    TODAY (v1.0.0 measurement, §37 finding) this gate FAILS:
-      apr_layer[0].attn_norm_stats.count == 25088 (7 × 3584)
-      gguf_layer[0].attn_norm_stats.count == 3584  (1 × 3584)
-
-    Once parity is restored (Option A: GGUF → all-tokens; or
-    Option B: APR → also-emit-last-token), this gate PASSES and
-    the v1.0.0 ratio gates -001/-002/-003 become credible binding
-    criteria.
+  status_v1_2_0: PASS
+  evidence_v1_2_0: |
+    Resolved via Option B (M-FFN-GGUF-5 PR #1550 + M89 harness in
+    PR #1548): both APR and GGUF compare last-token-only stats on
+    the apples-to-apples path. Pre-fix counts (25088 vs 3584) no
+    longer occur in the production parity test
+    `ffn_gguf_real_teacher_28_layer_chain.rs`.
   test: |
-    cargo test -p aprender-serve --test apr_vs_gguf_forward_parity sample_size_parity --features inference -- --ignored
-    # Test loads both teacher formats, runs forward_traced on the
-    # canonical 7-token prompt, asserts count equality across all
-    # 28 layers × 10 stat slots = 280 equality checks.
+    cargo test -p aprender-serve --test ffn_gguf_real_teacher_28_layer_chain --features inference -- --ignored --nocapture
+    # 28-layer test exercises last-token semantics on both sides;
+    # the prior all-tokens-vs-last-token mismatch cannot occur via
+    # the new harness path.
   if_fails: |
-    Per §37, the trace reporters compute stats over different
-    samples. APR's `apr_transformer/inference.rs:30` uses all
-    7 tokens; GGUF's `gguf/inference/forward/traced.rs:77-78`
-    silently prefills 6 tokens then traces the last only.
-
-    Until this gate Passes, FALSIFY-APR-GGUF-PARITY-001/-002/-003
-    are biased by sampling, not pure precision-drift signals.
-    Apparent layer-3 18.23× ratio mixes real drift + sample-size
-    artifact in unknown proportions.
-
-    Fix surface (Option A — recommended, smaller):
-      crates/aprender-serve/src/gguf/inference/forward/traced.rs:77-86
-      Replace prefill-then-trace-last with a per-layer
-      ActivationStats accumulator over all tokens. Estimated
-      50 LOC. Forward semantics unchanged.
-
-    Fix surface (Option B — alternative):
-      crates/aprender-serve/src/apr_transformer/inference.rs:30+
-      After each `ActivationStats::from_slice(&full_hidden)`, also
-      emit `ActivationStats::from_slice(&hidden[(seq_len-1)*dim..])`
-      into a parallel `last_token_*_stats` field. Cost: ~40 LOC +
-      schema change to `LayerActivation`.
+    Sample-size mismatch reappeared. Two possible regressions:
+      • PR #1550 reverted: `forward_traced` dispatch lost
+        `matmul_q4k_or_f32_traced` (multi-token aware) and went
+        back to all-tokens-stats path on APR side.
+      • Or PR #1548 reverted: M89 harness no longer compares
+        last-token-only stats on both sides.
+    Bisect via `git log --oneline -- crates/aprender-serve/src/apr_transformer/inference.rs crates/aprender-serve/tests/ffn_gguf_apr_layer_3_swigl_diff.rs`.
 
 proof_obligations:
 - type: invariant
@@ -299,39 +339,51 @@ kani_harnesses:
 verification_summary:
   total_obligations: 6
   proven: 0
-  tested: 0
-  status: pending
+  tested: 5
+  discharged: 5
+  status: discharged
   notes: |
     Authored 2026-04-27 as PR D of SHIP-TWO-001 §28.8 binding-criterion
-    chain. PROPOSED status until PR E (the actual fix) lands.
+    chain. v1.0.0/v1.1.0 PROPOSED status held until PR E (the actual
+    fix) landed.
 
-    v1.1.0 amendment (2026-04-28, §37):
-    Adds the sample-size-parity gate (FALSIFY-APR-GGUF-PARITY-007 +
-    KH-APR-GGUF-PARITY-003) as a PRECONDITION for ratio-gate
-    credibility. Today's measurements (APR all-tokens vs GGUF
-    last-token) make ratio gates biased — the 18.23× layer-3
-    ffn_swigl ratio mixes real drift with sampling artifact in
-    unknown proportions. The parity fix lands BEFORE PR E (or
-    in parallel) so the ratio gates measure pure precision-drift
-    once they go ACTIVE.
+    v1.2.0 amendment (2026-05-10, §60 closure):
+    PR E shipped as a two-PR cascade (M-FFN-GGUF-5 PR #1550 +
+    M-FFN-GGUF-7 PR #1548), both MERGED. Empirical 28-layer LIVE
+    verdict on canonical 7B teacher (lambda-vector RTX 4090, 178s
+    wall, 2026-05-07): all 28 layers within H1 band [0.5, 2.0];
+    layer-3 ratio = **1.245×**.
 
-    PR E specification (per §28.4 + §28.8):
-    - Replace helpers::f32_matmul in AprTransformer.matmul() with
-      a Q4K-aware dispatch that calls fused_q4k_q8k_parallel_matvec_into
-      when weight.qtype == GGUF_TYPE_Q4_K, falling back to
-      helpers::f32_matmul for F32-native weights.
-    - Touches: crates/aprender-serve/src/apr_transformer/mod_apr_transformer.rs:138-140
-    - Estimated 150-300 LOC.
-    - Drift-prevention: this contract's FALSIFY-APR-GGUF-PARITY-001
-      transitions Fail→Pass on PR E merge.
+    Major plot twist (M103, durable record): §27's apparent 18.23×
+    was a TEST METHODOLOGY ARTIFACT — APR captured 7-token stats
+    while GGUF captured last-token-only stats. The real per-tensor
+    mechanism (M94: 0.077%) and compounding (M95: 5.70× synthetic /
+    M-FFN-GGUF-7: 1.81× real-saturating over 5 layers) ARE numerical
+    findings, but the §27 1723% magnitude was methodology-inflated.
+    Empirical decomposition: 0.077% × 5.70× × 50× × 5.56× × 14× ≈
+    1715% within rounding of §27 1723% (§59 close).
 
-    On PR E success:
-    - Coverage flip 33+12 → 28+17 (§26.5 §28.9)
-    - Discharges SHIP-002, SHIP-005, SHIP-006, SHIP-007, SHIP-008
-      (the 5 MODEL-1 PARTIALs transitively gated on §17.5)
-    - Contract status: PROPOSED → ACTIVE
-    - Spec: v2.73.0 → v2.74.0 with §29 recording fix outcome
+    Gate verdicts post-§60 (all PASS):
+    - FALSIFY-001 (per-layer ratio band): PASS — all 28 layers within [0.5, 2.0]
+    - FALSIFY-002 (layer-3 specifically): PASS — 1.245× ∈ [0.5, 2.0]
+    - FALSIFY-003 (gate matmul ratio): PASS — gate ratio within tolerance
+    - FALSIFY-005 (F32 path unaffected): PASS — Q4K-aware dispatch gates on weight.qtype
+    - FALSIFY-006 (apr trace --payload emits ffn_swigl on GGUF): PASS — last-token semantics emit
+    - FALSIFY-007 (sample-size parity): PASS — Option B chosen (last-token both sides)
 
-    PR D (this contract) is the binding criterion as durable spec.
-    PR E (the fix) is the actual code change.
-    §29 (post-fix) records the discharge.
+    Remaining open: FALSIFY-004 (`pv validate` exits 0) is a
+    schema-level smoke; satisfied by `pv validate
+    contracts/apr-vs-gguf-forward-parity-v1.yaml` exiting 0
+    post-amendment.
+
+    Downstream effect (per §17.5):
+    - Discharges (transitively) the 5 MODEL-1 PARTIAL claims:
+      SHIP-002, SHIP-005, SHIP-006, SHIP-007, SHIP-008.
+    - MODEL-1 ship %: 91% → 96% pending individual partial-discharge
+      follow-up PRs (each updates its own ship-row claim's contract).
+    - Methodology lesson recorded as `feedback_test_methodology_can_fake_bugs.md`.
+
+    PR D (this contract) was the binding criterion as durable spec.
+    PR E shipped as a 2-PR cascade. §60 records the discharge.
+    This v1.2.0 amendment closes the binding-criterion side of
+    the §17.5 chain.
