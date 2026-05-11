@@ -360,9 +360,15 @@ fn run_humaneval_inference(
         };
         let completion = truncate_at_function_boundary(&completion);
 
+        // PMAT-CODE-SHIP-005-WHITESPACE-RESIDUAL: BPE raw-continuation
+        // can emit a 1-space over-indent at the prompt-completion boundary.
+        // Align to the prompt's last non-empty line's indent before
+        // concatenation — invalid-Python IndentationError otherwise.
+        let aligned = align_continuation_indent(&problem.prompt, completion);
+
         let full_program = format!(
             "{}{}\n\n{}\n\ncheck({})\n",
-            problem.prompt, completion, problem.test, entry
+            problem.prompt, aligned, problem.test, entry
         );
 
         let ok = execute_python_test(&full_program, 10);
@@ -565,6 +571,139 @@ pub(super) fn truncate_at_function_boundary(completion: &str) -> &str {
         }
     }
     completion
+}
+
+/// PMAT-CODE-SHIP-005-WHITESPACE-RESIDUAL: normalise raw-continuation indent.
+///
+/// HumanEval prompts end with `    """\n` (4-space-indented docstring close);
+/// the function body should continue at 4-space indent. On `apr eval --task
+/// humaneval` raw-continuation path, the model emits 5-space leading indent
+/// (BPE tokenization artifact at the prompt-completion boundary). The
+/// resulting concatenation `    """\n     for i in...` is invalid Python
+/// (IndentationError).
+///
+/// Manual `apr run` on the same model with auto-wrap produces correct
+/// 4-space; the bug is raw-continuation-specific.
+///
+/// Fix: detect the prompt's expected continuation indent (last non-empty
+/// line's leading-space count) vs the completion's first non-empty line
+/// indent; if completion is over-indented, dedent every line by the
+/// excess. Only over-indented completions are touched (no risk to
+/// correctly-aligned outputs).
+///
+/// Lines without sufficient leading whitespace (blank lines or top-level
+/// code) are left untouched.
+pub(super) fn align_continuation_indent(prompt: &str, completion: &str) -> String {
+    let expected_indent = prompt
+        .lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .map(|l| l.chars().take_while(|c| *c == ' ').count())
+        .unwrap_or(0);
+
+    let actual_indent = completion
+        .lines()
+        .find(|l| !l.trim().is_empty())
+        .map(|l| l.chars().take_while(|c| *c == ' ').count())
+        .unwrap_or(0);
+
+    if actual_indent <= expected_indent {
+        return completion.to_string();
+    }
+
+    let excess = actual_indent - expected_indent;
+    let prefix = " ".repeat(excess);
+
+    // Dedent only the function-body chunk — stop at the first non-empty
+    // line that drops to indent 0 (signaling we've exited the function
+    // scope; e.g., `if __name__ == "__main__":` post-amble). Top-level
+    // code at indent < `excess` must be preserved as-is.
+    let mut in_body = true;
+    completion
+        .split_inclusive('\n')
+        .map(|line| {
+            let trimmed = line.trim_start_matches(' ').trim_end_matches('\n');
+            // Track scope transition: once we see a non-empty 0-indent line,
+            // we're past the function body — leave all subsequent lines alone.
+            if in_body && !trimmed.is_empty() {
+                let leading = line.chars().take_while(|c| *c == ' ').count();
+                if leading == 0 {
+                    in_body = false;
+                }
+            }
+            if in_body && line.starts_with(&prefix) {
+                line[excess..].to_string()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod align_indent_tests {
+    use super::align_continuation_indent;
+
+    /// Pre-fix HumanEval/0 reproduction: 5-space body indent should
+    /// dedent to 4-space, with relative inner nesting preserved.
+    #[test]
+    fn dedents_one_excess_space() {
+        let prompt = "def f(x: int) -> int:\n    \"\"\" doc.\n    \"\"\"\n";
+        let completion = "     for i in range(x):\n         if i > 0:\n             return i\n     return 0\n";
+        let got = align_continuation_indent(prompt, completion);
+        let want = "    for i in range(x):\n        if i > 0:\n            return i\n    return 0\n";
+        assert_eq!(got, want);
+    }
+
+    /// Correctly-aligned completion is left unchanged.
+    #[test]
+    fn passthrough_when_already_correct() {
+        let prompt = "def f():\n    \"\"\"doc\"\"\"\n";
+        let completion = "    return 42\n";
+        let got = align_continuation_indent(prompt, completion);
+        assert_eq!(got, completion);
+    }
+
+    /// Top-level code after the function body (e.g., `if __name__`) has 0
+    /// leading spaces and must NOT be dedented (would crash on slice).
+    #[test]
+    fn leaves_zero_indent_lines_untouched() {
+        let prompt = "def f():\n    \"\"\"doc\"\"\"\n";
+        let completion = "     return 1\n\n\nif __name__ == \"__main__\":\n    pass\n";
+        let got = align_continuation_indent(prompt, completion);
+        let want = "    return 1\n\n\nif __name__ == \"__main__\":\n    pass\n";
+        assert_eq!(got, want);
+    }
+
+    /// Multi-space excess (2+) is dedented uniformly.
+    #[test]
+    fn dedents_multi_space_excess() {
+        let prompt = "    pass\n";
+        let completion = "        x = 1\n            nested = 2\n";
+        let got = align_continuation_indent(prompt, completion);
+        // expected = 4 ('    pass' last line), actual = 8 → excess = 4
+        let want = "    x = 1\n        nested = 2\n";
+        assert_eq!(got, want);
+    }
+
+    /// Empty completion is passthrough.
+    #[test]
+    fn empty_completion() {
+        let prompt = "def f():\n    pass\n";
+        let completion = "";
+        let got = align_continuation_indent(prompt, completion);
+        assert_eq!(got, "");
+    }
+
+    /// Mutation-survey section: invariant under no-indent prompt + no-indent
+    /// completion (early-return guard).
+    #[test]
+    fn no_indent_anywhere() {
+        let prompt = "x = 1\n";
+        let completion = "y = 2\n";
+        let got = align_continuation_indent(prompt, completion);
+        assert_eq!(got, completion);
+    }
 }
 
 /// Execute a Python program and check if all assertions pass.
