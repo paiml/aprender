@@ -158,6 +158,8 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             max_turns,
             manifest,
             emit_trace,
+            output_format,
+            input_format,
         } => batuta::agent::code::cmd_code(
             model.clone(),
             project.clone(),
@@ -167,6 +169,17 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *max_turns,
             manifest.clone(),
             emit_trace.clone(),
+            // PMAT-CODE-OUTPUT-FORMAT-001 / PMAT-CODE-INPUT-FORMAT-001:
+            // forward as `&str` so the orchestrate crate need not depend on
+            // the apr-cli ValueEnum types.
+            match output_format {
+                crate::CodeOutputFormat::Text => "text",
+                crate::CodeOutputFormat::Json => "json",
+            },
+            match input_format {
+                crate::CodeInputFormat::Text => "text",
+                crate::CodeInputFormat::Json => "json",
+            },
         )
         .map_err(|e| CliError::Aprender(e.to_string())),
 
