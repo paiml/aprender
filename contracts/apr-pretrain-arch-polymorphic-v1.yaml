@@ -1,12 +1,144 @@
 metadata:
   kind: schema
-  version: 1.6.0
+  version: 1.8.0
   status: FUNCTIONAL
   created: '2026-05-04'
-  updated: '2026-05-05'
+  updated: '2026-05-09'
   author: PAIML Engineering
   registry: true
   changelog:
+  - version: 1.8.0
+    date: '2026-05-09'
+    change: |
+      v1.7.0 → v1.8.0 — populate-coverage gap closed.
+
+      §59 spec amendment (forthcoming) records that the 5g.2 LIVE
+      smoke (PR #1577) produced val_loss=0.0008, implausibly low.
+      Investigation surfaced root cause: `MultiHeadAttention::new`
+      hardcoded `b_q/b_k/b_v: None` regardless of `config.use_bias`,
+      so `Transformer::new(qwen2_0_5b())` had ZERO Q/K/V biases —
+      24 × 3 = 72 missing tensors per canonical Qwen 0.5B HF count
+      of 290. `populate_trainer_from_init_tensors` then iterated
+      only over `transformer.named_parameters()` (218 entries),
+      silently dropping the 72 init biases (per the "extras silently
+      ignored" rule that exists for tied weights).
+
+      The forward pass at attention.rs:388-395 ALREADY honored
+      `Option<Tensor>` biases — the gap was solely in the
+      constructor.
+
+      WHY DID PROVABLE-CONTRACTS NOT CATCH THIS? Existing falsifiers:
+        FALSIFY-001 — qwen2_0_5b config FIELD VALUES match HF ✓
+        FALSIFY-INIT-007 — populate Errs on missing model params ✓
+      Both PASSED. Neither observed the gap (FALSIFY-001 checked
+      config fields, not constructor outputs; FALSIFY-INIT-007
+      passed because 218 model params ⊆ 290 init keys, but did
+      NOT check that ALL 290 init keys were consumed).
+
+      Provable-contracts only enforce invariants you express. A
+      hardcoded value is "allowed" iff no falsifier observes it.
+      v1.8.0 closes the gap with two new falsifiers (RED-then-GREEN):
+
+        FALSIFY-APR-PRETRAIN-INIT-POPULATE-COVERAGE-001 — counts
+          named_parameters() (must equal 290 = 2 + 24×12 for Qwen 0.5B).
+        FALSIFY-APR-PRETRAIN-INIT-POPULATE-COVERAGE-002 — names
+          q_proj.bias / k_proj.bias / v_proj.bias for each layer
+          when config.use_bias is true.
+
+      Fix:
+        - MultiHeadAttention::new allocates b_q/b_k/b_v as zero
+          tensors when config.use_bias (HF Linear bias=True init
+          convention).
+        - MultiHeadAttention::set_named_parameter routes the bias
+          suffixes to b_q/b_k/b_v fields, returning false when None
+          (keeps populate honest for use_bias=false configs).
+
+      LIVE EVIDENCE on RTX 4090 (1-step CUDA smoke):
+        Pre-fix:  step-0 train_loss=0.0019, val_loss=0.0008 (degenerate)
+        Post-fix: step-0 train_loss=2.24, val_loss=0.628, grad_norm=14.81
+                  (PLAUSIBLE for Qwen 0.5B on Python; industry baseline ~2-3)
+      1000× train_loss shift confirms H2 was the dominant defect.
+
+      Encoder block test (codebert): parameters() count 12 → 15
+      (+3 q/k/v biases per layer). Pre-fix 12 was itself reflecting
+      the bug — encoder Q/K/V biases would have silently dropped
+      on any HF BERT/RoBERTa init.
+
+      Verified:
+        - cargo test -p aprender-train --lib falsify_qwen2_0_5b: 3/3 PASS
+        - cargo test -p aprender-train --lib: 7584/7584 PASS
+        - LIVE 1-step CUDA smoke train_loss=2.24 (was 0.0019)
+        - pv validate: 0 errors
+
+      Out-of-scope follow-ups (own falsifier-discharge cascades):
+        - H1: CudaTransformerTrainer::eval_batch CPU-vs-CUDA parity
+          (val_loss=0.628 still low; secondary defect tracked
+          separately).
+        - 500-step LIVE re-dispatch with this fix to flip MODEL-2
+          ship % 57% → ≥58% honestly.
+  - version: 1.7.0
+    date: '2026-05-09'
+    change: |
+      v1.6.0 → v1.7.0 — §50.4 step 5f.5 SHIPPED. CUDA `--init` wireup
+      is now symmetric to the CPU path.
+
+      Wireup landed via PMAT-CODE-PRETRAIN-INIT-CUDA-WIREUP-001:
+        - New: `entrenar::train::pretrain_real_cuda::build_shared_cuda_trainer_with_init`
+          (~80 LOC, mirrors CPU `build_shared_trainer_with_init`).
+        - Composes the SAME §50.4 step-5f machinery through both backends:
+            5c:    build_transformer_config(init_arch)
+            5f.1:  validate_pretrain_init_arch_compatible(init_arch) — encoder rejection
+            5f.2:  load_init_tensors_from_apr(path) — read APR weights
+            5f.3:  populate_trainer_from_init_tensors(transformer, &tensors) — populate CPU model
+            5f.5:  CudaTransformerTrainer::with_model uploads populated blocks
+                   / final_norm / lm_head / embed_tokens to GPU.
+        - The §50.4 step 5f.1/5f.2/5f.3 helpers are reused VERBATIM —
+          population semantics are identical between backends.
+        - apr-cli `drive_real_cuda` now accepts `init_arch: Option<&TransformerConfig>`
+          + `init_path: Option<&Path>` and routes through the new builder
+          when either is `Some`. Both-`Some` and both-`None` are valid;
+          mixed is a caller-bug fail-fast (FALSIFY-APR-PRETRAIN-INIT-CUDA-002).
+        - INV-ARCH-370M-001 param-count band check is preserved on the
+          from-scratch CUDA path (init=None branch); skipped on the
+          polymorphic path (consistent with CPU semantic).
+
+      FALSIFY-APR-PRETRAIN-INIT-CUDA-001 SEMANTIC FLIP:
+        v1.4.0..v1.6.0: "CUDA + --init MUST fail-fast with the
+                         pre-5f.5 not-yet-wired error"
+        v1.7.0:         "CUDA + --init MUST be wired via
+                         build_shared_cuda_trainer_with_init"
+      The `pub(crate) const FALSIFY_APR_PRETRAIN_INIT_CUDA_001_MSG`
+      survives but is repurposed as a drift-prevention sentinel — its
+      payload now reads "is wired for --device cuda via
+      build_shared_cuda_trainer_with_init (5f.5 SHIPPED)" so a future
+      regression that re-introduces a fail-fast on this path fires the
+      sentinel test before the contract reference goes stale.
+
+      Two new falsifiers bind the new builder's invariants:
+        FALSIFY-APR-PRETRAIN-INIT-CUDA-002 — paired-args invariant
+        FALSIFY-APR-PRETRAIN-INIT-CUDA-003 — encoder family rejection
+
+      Both new falsifiers fire WITHOUT a CUDA runtime — the args
+      check and encoder rejection both happen before any GPU
+      allocation, so they exercise on any host even when CUDA is
+      unavailable. This matches the CPU sibling tests
+      `build_shared_trainer_with_init_rejects_unpaired_args` and
+      `build_shared_trainer_with_init_rejects_encoder_family`.
+
+      Discharge consequence: §50.4 cascade now COMPLETE (5a-5f.5 all
+      shipped). The next step in the SHIP-TWO MODEL-2 critical path
+      is 5g.2 — LIVE 500-step fine-tune dispatch on Qwen 0.5B init +
+      5g.1 corpus + RTX 4090. Per `contracts/apr-pretrain-init-finetune-v1.yaml`
+      v1.0.0 (PMAT-CODE-PRETRAIN-INIT-FINETUNE-001 PR #1576), the
+      dispatch's val_loss < 9.38 verdict flips MODEL-2 ship %
+      57% → ≥58%.
+
+      Verified locally (commit on feat/apr-pretrain-init-cuda-wireup-5f5):
+        - cargo test -p aprender-train --features cuda --lib build_shared_cuda_trainer_with_init: 2/2 PASS
+        - cargo test -p apr-cli --features training --lib drive_real_cuda_init_path_wireup_sentinel_pinned: 1/1 PASS
+        - cargo check -p apr-cli --features training: clean
+        - cargo check -p apr-cli --features training,cuda: clean
+        - pv validate contracts/apr-pretrain-arch-polymorphic-v1.yaml: 0 errors
   - version: 1.6.0
     date: '2026-05-05'
     change: |
@@ -438,10 +570,34 @@ falsification_tests:
   if_fails: "relaxed bound is too permissive; a tokenizer with more strings than the model expects emits OOB ids → N-09 escape → silent embedding-lookup garbage during training"
 
 - id: FALSIFY-APR-PRETRAIN-INIT-CUDA-001
-  rule: CUDA path with --init fail-fasts citing this falsifier id
-  prediction: "the CUDA dispatch in `crates/apr-cli/src/commands/pretrain.rs::drive_real` (post-#1494 5f.4 wireup) returns Err with a message containing the literal `FALSIFY-APR-PRETRAIN-INIT-CUDA-001` AND the phrase `not yet wired for --device cuda` AND a 5f.5 follow-up reference, when `init_arch.is_some() && device.is_cuda()`. Drift-prevention: if a future refactor removes the citation, renames the error message, or accidentally lets CUDA + --init fall through to drive_real_cuda silently dropping init, this test fails fast."
-  test: "cargo test -p apr-cli --lib commands::pretrain::tests::drive_real_cuda_init_path_fail_fasts_with_falsifier_citation"
-  if_fails: "CUDA + --init fail-fast guard regressed — operator could silently train from-scratch on cuda when they passed --init, exactly the §28 SHIP-007 'silent gibberish' defect class. The 5f.5 follow-up (CUDA wireup with `build_shared_cuda_trainer_with_init`) is the real fix; this falsifier locks in the safety guard until that lands."
+  rule: CUDA path with --init is wired via build_shared_cuda_trainer_with_init (§50.4 step 5f.5 SHIPPED)
+  prediction: "the `pub(crate) const FALSIFY_APR_PRETRAIN_INIT_CUDA_001_MSG` in `crates/apr-cli/src/commands/pretrain.rs` contains (a) the literal `FALSIFY-APR-PRETRAIN-INIT-CUDA-001`, (b) the phrase `is wired for --device cuda`, (c) the symmetric builder name `build_shared_cuda_trainer_with_init`, and (d) the `5f.5 SHIPPED` status marker. Drift-prevention sentinel: if a future refactor accidentally re-introduces a fail-fast on the CUDA + --init path (or renames the symmetric builder), this test fails fast."
+  test: "cargo test -p apr-cli --lib commands::pretrain::tests::drive_real_cuda_init_path_wireup_sentinel_pinned"
+  if_fails: "CUDA + --init wireup regressed — operator either gets a fail-fast on a path that should now succeed, or silent random-init at the GPU boundary (§28 SHIP-007 'silent gibberish' defect class). The post-5f.5 wireup must be restored or the sentinel string corrected to match the new symbol."
+
+- id: FALSIFY-APR-PRETRAIN-INIT-CUDA-002
+  rule: build_shared_cuda_trainer_with_init enforces paired-args (Some/Some or None/None)
+  prediction: "calling `entrenar::train::pretrain_real_cuda::build_shared_cuda_trainer_with_init` with (Some, None) OR (None, Some) returns Err whose ConfigError payload names the function so callers can grep back to the offending invocation. The check fires WITHOUT a CUDA runtime (returns before any GPU allocation), so the test runs on any host even when CUDA is unavailable."
+  test: "cargo test -p aprender-train --features cuda --lib train::pretrain_real_cuda::tests::build_shared_cuda_trainer_with_init_rejects_unpaired_args"
+  if_fails: "the paired-args invariant regressed — a caller could pass an arch without weights (silent random-init at the GPU upload boundary) or weights without an arch (silently fall back to Llama370M shape). This is the same defect class FALSIFY-APR-PRETRAIN-INIT-001 prevents on the CPU path; the symmetric guard MUST hold on the CUDA path too."
+
+- id: FALSIFY-APR-PRETRAIN-INIT-CUDA-003
+  rule: build_shared_cuda_trainer_with_init rejects encoder-family init configs (§50.4 step 5f.1 threading)
+  prediction: "calling `build_shared_cuda_trainer_with_init` with `init_arch.architecture == ModelArchitecture::Encoder` returns Err — same semantic as the CPU sibling `build_shared_trainer_with_init_rejects_encoder_family`. The encoder rejection happens before any GPU allocation (via the shared `validate_pretrain_init_arch_compatible` helper from pretrain_real.rs), so the test fires on any host."
+  test: "cargo test -p aprender-train --features cuda --lib train::pretrain_real_cuda::tests::build_shared_cuda_trainer_with_init_rejects_encoder_family"
+  if_fails: "encoder rejection regressed on the CUDA path — pretrain might attempt to fine-tune a BERT-class encoder as if it were a decoder, producing meaningless gradients. The §50.4 step 5f.1 helper MUST be threaded through both backends identically."
+
+- id: FALSIFY-APR-PRETRAIN-INIT-POPULATE-COVERAGE-001
+  rule: Transformer::new(qwen2_0_5b()).named_parameters().len() matches HF canonical 290
+  prediction: "`Transformer::new(qwen2_0_5b()).named_parameters().len() == 290` (= 2 model-level + 24 layers × 12 params/layer). The 12 params/layer are: 2 layernorm weights + 4 attention weights (Q,K,V,O) + 3 attention biases (Q,K,V — required when config.use_bias=true) + 3 mlp weights (gate,up,down). Tied lm_head shares with embed_tokens, so it is NOT counted as an extra named parameter. The test fires WITHOUT a CUDA runtime and without loading any APR file — it exercises only the constructor."
+  test: "cargo test -p aprender-train --lib transformer::config::tests::falsify_qwen2_0_5b_named_parameters_count_matches_hf"
+  if_fails: "the count regressed below 290 — likely MultiHeadAttention::new dropped the bias allocation again, OR the polymorphic Transformer struct lost a field. Each missing param will be silently dropped during populate_trainer_from_init_tensors when the source APR has them, producing a hybrid model that masquerades as Qwen but lacks structural elements (the §59 val_loss=0.0008 anomaly defect class)."
+
+- id: FALSIFY-APR-PRETRAIN-INIT-POPULATE-COVERAGE-002
+  rule: every layer in Transformer::new(qwen2_0_5b()) exposes Q/K/V projection biases when use_bias=true
+  prediction: "for every layer_idx in 0..24, `Transformer::new(qwen2_0_5b()).named_parameters()` contains the keys `model.layers.{layer_idx}.self_attn.q_proj.bias`, `model.layers.{layer_idx}.self_attn.k_proj.bias`, and `model.layers.{layer_idx}.self_attn.v_proj.bias`. Stricter than -001: not only counts the right number, but names the exact tensors so the populate path's BTreeMap lookup hits real init keys."
+  test: "cargo test -p aprender-train --lib transformer::config::tests::falsify_qwen2_0_5b_layers_expose_qkv_biases_when_use_bias_true"
+  if_fails: "MultiHeadAttention::new is dropping bias allocation despite config.use_bias=true; each missing bias is a 3 × 24 = 72 silent-drop per Qwen2 0.5B init, restoring the §59 val_loss=0.0008 defect class. Restore the `if config.use_bias { Some(zero_tensor) } else { None }` branch."
 
 proof_obligations:
 - type: invariant

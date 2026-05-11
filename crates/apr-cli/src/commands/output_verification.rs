@@ -487,31 +487,44 @@ fn validate_gpu_golden_output(
     Ok(None)
 }
 
-/// Run golden output test for APR format models
+/// Run golden output test for APR format models.
+///
+/// PMAT-CODE-SHIP-006-FIX (2026-05-10): routed through `realizar::run_inference`
+/// + `OwnedQuantizedModel::from_apr` (the same working path that SHIP-002 +
+/// SHIP-008 LIVE-discharged) instead of the legacy `AprTransformer::from_apr_file`
+/// + `generate_with_cache` path. The legacy path produced "\\ns\\ns" degenerate
+/// output on canonical 7B teacher (recorded as §61.8 Branch A); the
+/// run_inference path produces clean ChatML responses.
+///
+/// Caller passes a pre-formatted ChatML prompt (e.g.,
+/// `"<|im_start|>user\\nWhat is 2+2?<|im_end|>\\n<|im_start|>assistant\\n"`)
+/// per `golden_test_cases()` — we tokenize it directly and pass via
+/// `InferenceConfig::with_input_tokens` to BYPASS the chat-template auto-wrap
+/// in `prepare_tokens_apr` (which would double-wrap a pre-formatted prompt).
 #[cfg(feature = "inference")]
 fn golden_output_apr(path: &Path, prompt: &str, max_tokens: usize) -> Result<(Vec<u32>, String)> {
     use realizar::apr::AprV2Model;
-    use realizar::apr_transformer::{AprTransformer, GenerateConfig};
+    use realizar::{run_inference, InferenceConfig};
 
+    // Tokenize the (already-ChatML-formatted) prompt with the embedded BPE
+    // tokenizer. This produces the exact prompt token sequence the qa gate
+    // intends; passing it via with_input_tokens bypasses prepare_tokens'
+    // ChatML auto-wrap (which would otherwise double-wrap pre-formatted prompts).
     let apr_model = AprV2Model::load(path)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
     let tokenizer = apr_model
         .load_embedded_bpe_tokenizer()
         .ok_or_else(|| CliError::ValidationFailed("APR missing embedded tokenizer".to_string()))?;
-    let transformer = AprTransformer::from_apr_file(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR transformer: {e}")))?;
-
     let prompt_tokens = tokenizer.encode(prompt);
-    let gen_config = GenerateConfig {
-        max_tokens,
-        temperature: 0.0,
-        top_k: 1,
-        ..Default::default()
-    };
 
-    let tokens = transformer
-        .generate_with_cache(&prompt_tokens, &gen_config)
+    let config = InferenceConfig::new(path)
+        .with_input_tokens(prompt_tokens)
+        .with_max_tokens(max_tokens)
+        .with_temperature(0.0)
+        .with_top_k(1);
+
+    let result = run_inference(&config)
         .map_err(|e| CliError::ValidationFailed(format!("Generation failed: {e}")))?;
-    let text = tokenizer.decode(&tokens);
-    Ok((tokens, text))
+
+    Ok((result.tokens, result.text))
 }
