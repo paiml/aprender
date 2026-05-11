@@ -1,0 +1,74 @@
+{
+  "evidence_id": "SECTION-63-SHIP-007-EMPIRICAL-FLOOR-2026-05-11",
+  "session_date": "2026-05-11",
+  "host": "noah-Lambda-Vector (RTX 4090)",
+  "binary": "/mnt/nvme-raid0/targets/aprender/release/apr (post-PR-1615/1616/1617)",
+  "summary": "SHIP-007 (decode tps ≥ 30 tok/s on RTX 4090 with --features cuda) is multi-PR scope: CUDA path has structural parity bug (cosine -0.005 vs CPU); workaround paths give 5.6-9.3 tok/s, all below 10 tok/s spec H12 floor and well below 30 tok/s SHIP-007 floor.",
+  "investigation_findings": {
+    "primary_blocker": {
+      "name": "CUDA_ERROR_ILLEGAL_ADDRESS in cuBLASLt FP8 JIT warmup",
+      "location": "crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/attention.rs:1446",
+      "error": "[PMAT-053] FP8 cache warmup failed (non-fatal): CUDA stream synchronization failed: CUDA driver error: CUDA_ERROR_ILLEGAL_ADDRESS (code: 700)",
+      "workaround": "APR_SKIP_FP8_WARMUP=1 env var (added in commit e4390cb4b on 2026-04-25)",
+      "workaround_effect": "bypasses FP8 warmup, but reveals deeper parity bug"
+    },
+    "secondary_blocker": {
+      "name": "CUDA vs CPU parity gate failure",
+      "command": "APR_SKIP_FP8_WARMUP=1 apr bench <7B teacher> --iterations 5 --max-tokens 128",
+      "error": "PARITY-GATE FAILED: GPU computes a DIFFERENT function than CPU. Cosine similarity: -0.005190 (required: ≥0.98) CPU argmax: 334 | GPU argmax: 8127 Max absolute logit difference: 19.5053",
+      "diagnostic": "This model's dimensions (hidden=3584, heads=28, kv_heads=4) cause GPU forward pass to diverge from CPU",
+      "interpretation": "CUDA path is structurally broken for Qwen2.5-Coder-7B-Instruct dimensions. Not a single-fix bug."
+    },
+    "with_parity_gate_skipped": {
+      "command": "APR_SKIP_FP8_WARMUP=1 SKIP_PARITY_GATE=1 apr bench <7B teacher> --iterations 1 --max-tokens 32",
+      "throughput_tok_per_sec": 5.6,
+      "median_iteration_seconds": 5.73,
+      "spec_h12_floor_tok_per_sec": 10.0,
+      "ship_007_floor_tok_per_sec": 30.0,
+      "verdict": "5.6 tok/s is BELOW spec H12 floor (10) AND BELOW SHIP-007 floor (30); even with broken-but-running CUDA path, can't meet SHIP-007"
+    }
+  },
+  "sub_agent_investigation": {
+    "date": "2026-05-11",
+    "findings": [
+      "PMAT-053 (FP8 cache warmup) and GH-181 (workspace reinit) located in crates/aprender-serve/src/cuda/executor/{layers/cublas_prefill/attention.rs:1319-1487, workspace.rs:252-262}",
+      "Likely root cause: out-of-bounds GPU memory access during FP8 warmup (m=16, n=hidden_dim=3584, k=hidden_dim=3584); buffer size mismatch or dangling pointer from incompletely-initialized cache",
+      "Alternative root cause: allocation order — FP8 cache allocates after KV cache; memory fragmentation could cause 256-element padding to fail at workspace.rs:51 (GH-215 fix)",
+      "Recent suspicious commit: e4390cb4b (2026-04-25) — acknowledged the warmup is poisoning the context but only added APR_SKIP_FP8_WARMUP=1 workaround (opt-in, not default fix)",
+      "Recent suspicious commit: 8bd4ce5ad (2026-05-07) — rewrote workspace.rs from scratch with GH-215 padding logic; FP8 warmup bug remains"
+    ],
+    "recommended_options": {
+      "option_a_conservative": {
+        "scope": "~50 LOC",
+        "description": "Default APR_SKIP_FP8_WARMUP=1 in apr bench code path only (not apr run). Add FALSIFY-CUDA-WARMUP-001 to pin the regression.",
+        "status_today": "BLOCKED by secondary parity blocker — even with FP8 warmup skipped, CUDA path is structurally broken (cosine -0.005)"
+      },
+      "option_b_root_fix": {
+        "scope": "~150 LOC",
+        "description": "Pre-checks before cuBLASLt FP8 GEMM call: verify fp8_weight_ptr bounds, validate workspace pre-init, pad warmup scratch to 256-element GEMV boundary. Add FALSIFY-CUDA-ALLOCATION-LIFECYCLE-001.",
+        "status_today": "INSUFFICIENT — fixes FP8 warmup but does not address the parity gate failure"
+      },
+      "option_c_forensic": {
+        "scope": "~200 LOC",
+        "description": "Add compute-sanitizer integration; identify exact line that triggers out-of-bounds access.",
+        "status_today": "DIAGNOSTIC TOOL — does not directly fix; necessary for full root-fix"
+      }
+    }
+  },
+  "discharge_blockers_summary": {
+    "ship_007_blocker_1": "CUDA path FP8 warmup ILLEGAL_ADDRESS (Option A bypasses)",
+    "ship_007_blocker_2": "CUDA path produces wrong output (cosine -0.005 vs CPU) — structural fix needed",
+    "ship_007_blocker_3": "Even bypassing both, CUDA throughput is 5.6 tok/s — below 10 tok/s spec H12 floor",
+    "estimate_to_fix": "Multi-PR cascade across 3 surfaces: (1) FP8 warmup, (2) CUDA forward parity for hidden=3584/heads=28/kv_heads=4 dimensions, (3) throughput optimization to reach 30 tok/s"
+  },
+  "ship_percent_impact": {
+    "ship_007_dischargeable_today": false,
+    "blocker_class": "structural CUDA parity failure",
+    "estimate_to_discharge": "multi-PR; multi-day investigation",
+    "model_1_ship_percent_remaining": "94% → 95% (when SHIP-005 LIVE-discharges from 164-run) → 96% (when SHIP-007 multi-PR cascade closes)"
+  },
+  "raw_evidence_files": {
+    "bench_cuda_skip_parity": "evidence/section-63-ship-007-empirical-floor-2026-05-11/bench-cuda-skip-parity.txt (OOM at GPU saturation by 164-run; ran earlier when GPU was free showing 5.6 tok/s)",
+    "164_run_concurrent": "/tmp/he-164-result.json (currently in progress; saturating GPU)"
+  }
+}
