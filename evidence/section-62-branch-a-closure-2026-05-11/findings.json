@@ -1,0 +1,65 @@
+{
+  "session_date": "2026-05-11",
+  "host": "noah-Lambda-Vector (RTX 4090)",
+  "binary": "/mnt/nvme-raid0/targets/aprender/release/apr (post-PR-1615/1616/1617)",
+  "branch_a_closure_prs": [
+    {
+      "pr": 1615,
+      "surface": "apr-cli/src/commands/output_verification.rs::golden_output_apr",
+      "discharge": "SHIP-006 LIVE"
+    },
+    {
+      "pr": 1616,
+      "surface": "apr-cli/src/commands/eval/inference.rs::run_humaneval_inference",
+      "discharge": "eval-path infrastructure"
+    },
+    {
+      "pr": 1617,
+      "surface": "apr-cli/src/commands/eval/inference.rs::align_continuation_indent",
+      "discharge": "HumanEval/0 1/1 PASS post-fix"
+    }
+  ],
+  "humaneval_10_sample": {
+    "passed": 8,
+    "problems": 10,
+    "pass_at_1_rate": 0.8,
+    "per_problem_pass": [
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true
+    ],
+    "per_problem_task_ids": [
+      "HumanEval/0",
+      "HumanEval/1",
+      "HumanEval/2",
+      "HumanEval/3",
+      "HumanEval/4",
+      "HumanEval/5",
+      "HumanEval/6",
+      "HumanEval/7",
+      "HumanEval/8",
+      "HumanEval/9"
+    ]
+  },
+  "contract_floor_pp": {
+    "nominal": 86.0,
+    "effective": 84.8,
+    "noise_pp": 1.2
+  },
+  "sample_vs_floor": "80% on 10-problem sample within statistical noise of 86% nominal; 95% binomial CI = [44%, 97%]",
+  "full_164_dispatch": {
+    "dispatched_at": "2026-05-11 (background)",
+    "estimated_wall_hours": 5.2,
+    "pre_authorized_per": "feedback_compute_pre_authorized.md (lambda-labs 48h ceiling)",
+    "discharge_condition": "pass@1 >= 84.80% on full 164 problems",
+    "discharge_consequence": "MODEL-1 ship % 94% -> 95%"
+  },
+  "methodology_lesson_10": "Branch closure is a multi-PR cascade, not a single fix. Same defect class manifests in distinct call sites; each needs its own surgical reroute."
+}

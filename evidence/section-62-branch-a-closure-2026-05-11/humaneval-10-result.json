@@ -1,0 +1,96 @@
+{
+  "benchmark": "humaneval",
+  "elapsed_secs": 797.228271484375,
+  "mode": "inference",
+  "model": "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr",
+  "pass_at_k": [
+    {
+      "k": 1,
+      "rate": 0.8
+    },
+    {
+      "k": 10,
+      "rate": 1.0
+    },
+    {
+      "k": 100,
+      "rate": 1.0
+    }
+  ],
+  "passed": 8,
+  "per_problem_results": [
+    {
+      "correct": 1,
+      "entry_point": "has_close_elements",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/0"
+    },
+    {
+      "correct": 1,
+      "entry_point": "separate_paren_groups",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/1"
+    },
+    {
+      "correct": 0,
+      "entry_point": "truncate_number",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/2"
+    },
+    {
+      "correct": 1,
+      "entry_point": "below_zero",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/3"
+    },
+    {
+      "correct": 1,
+      "entry_point": "mean_absolute_deviation",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/4"
+    },
+    {
+      "correct": 1,
+      "entry_point": "intersperse",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/5"
+    },
+    {
+      "correct": 0,
+      "entry_point": "parse_nested_parens",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/6"
+    },
+    {
+      "correct": 1,
+      "entry_point": "filter_by_substring",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/7"
+    },
+    {
+      "correct": 1,
+      "entry_point": "sum_product",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/8"
+    },
+    {
+      "correct": 1,
+      "entry_point": "rolling_max",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/9"
+    }
+  ],
+  "problems": 10,
+  "samples_per_problem": 1,
+  "temperature": 0.0
+}
