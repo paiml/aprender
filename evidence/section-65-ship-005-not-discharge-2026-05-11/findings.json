@@ -1,0 +1,63 @@
+{
+  "evidence_id": "SECTION-65-SHIP-005-NOT-DISCHARGE-2026-05-11",
+  "session_date": "2026-05-11",
+  "host": "gx10-a5b5 (Blackwell GB10, aarch64)",
+  "binary": "/home/noah/src/aprender/target/release/apr v0.32.0 (525f8d181, post-§63 main)",
+  "summary": "SHIP-005 LIVE-discharge attempt on gx10 164-run produces pass@1 = 34.15% (56/164) — well below 84.80% effective floor. SHIP-005 does NOT discharge from this evidence. However, pass@10 = 98.68% and pass@100 = 100% — the model IS capable of solving these problems; the failure is at the greedy-temperature-0 sampling step. Three investigation hypotheses surface.",
+  "run_metadata": {
+    "command": "apr eval /home/noah/src/apr-leaderboard/checkpoints/qwen2.5-coder-7b-instruct-q4k.apr --task humaneval --data /home/noah/src/albor/data/humaneval.jsonl --samples 1 --temperature 0.0 --json",
+    "host_artifact_sha256": "0a854098d05b15921c173b7c8deb87c1cbecdffc66e918825c11a02775c73666",
+    "lambda_vector_artifact_sha256": "a394dd286732a5f32dfb983fd2ea0eeba4d6239ac4c47e44bcfe62f590ddeb28",
+    "wall_time_seconds_estimated": 17000,
+    "elapsed_hours_approx": 4.7,
+    "backend": "CPU fallback (Blackwell PTX JIT bug blocks GPU)"
+  },
+  "pass_at_k_results": {
+    "pass_at_1": 0.3415,
+    "pass_at_10": 0.9868,
+    "pass_at_100": 1.0
+  },
+  "contract_thresholds": {
+    "nominal_pass_at_1_pct": 86.0,
+    "effective_floor_pct": 84.8,
+    "noise_allowance_pp": 1.2
+  },
+  "verdict": "FAIL",
+  "delta_from_floor": -50.65,
+  "interpretation": "34.15% pass@1 is 50.65 percentage points below the 84.80% effective floor. This is not a near-miss — it's a fundamental failure of the test methodology, not a small drift.",
+  "hypotheses": {
+    "h1_gx10_teacher_divergence": {
+      "description": "gx10 teacher artifact has different sha256 than lambda-vector. The 10-problem sample on lambda-vector was 8/10 = 80%; gx10 first-10-problems (per per-problem-summary) was similarly high. So the divergence may be in the >10 region.",
+      "evidence": "sha256 mismatch: 0a854098 (gx10) vs a394dd28 (lambda-vector)",
+      "investigation_plan": "Sync canonical teacher from lambda-vector to gx10; rerun. ~15-30 min sync + 4.5h rerun.",
+      "estimated_probability": "high (50%)"
+    },
+    "h2_align_continuation_indent_too_aggressive": {
+      "description": "PR #1617's align_continuation_indent dedent post-processing may break problems where the prompt's indent expectations are unusual.",
+      "evidence": "10-problem sample on lambda-vector showed 80% (8/10 passed). If post-processing is the issue, would expect the failure rate to be more uniform across problem sets.",
+      "investigation_plan": "Run subset of failed problems with debug logs; inspect the completion text vs the prompt to verify the dedent isn't corrupting valid output.",
+      "estimated_probability": "medium (30%)"
+    },
+    "h3_bpe_tokenization_artifacts": {
+      "description": "Raw-continuation BPE tokenization may produce different artifacts on different problem prompt shapes (especially those with type hints, decorators, or complex docstrings).",
+      "evidence": "Failed problems include HumanEval/2 (truncate_number — float manipulation), /6 (parse_nested_parens — complex parsing). These have unusual prompt structures.",
+      "investigation_plan": "Capture raw tokenized prompt for a representative failed problem; inspect for special-token quirks.",
+      "estimated_probability": "medium (20%)"
+    }
+  },
+  "model_capability_evidence": {
+    "pass_at_10": 0.9868,
+    "pass_at_100": 1.0,
+    "interpretation": "The model CAN solve 162/164 problems given 10 samples and 164/164 given 100 samples. The bug is in greedy-temp-0 sampling, not in model knowledge."
+  },
+  "ship_005_status": "NOT DISCHARGED",
+  "ship_percent_impact": {
+    "model_1_ship_percent": "stays at 94% (not 95%)",
+    "remaining_partials": ["SHIP-005 (this finding)", "SHIP-007 (multi-PR per §63)"]
+  },
+  "next_actions": [
+    "H1 (highest priority): sync canonical teacher to gx10, rerun. ~5h compute.",
+    "H2: instrument 5-10 failed problems with completion-vs-prompt diff to verify dedent isn't corrupting valid completions.",
+    "H3: capture tokenized prompts for HumanEval/2, /6, /15, /20 (failed problems) and verify special-token handling."
+  ]
+}

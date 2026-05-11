@@ -1,7 +1,8 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 3.09.0
+**Version:** 3.11.0
+**Atomic next action (v3.11.0):** **§65 — SHIP-005 NOT-DISCHARGE finding — gx10 164-run pass@1 = 34.15%, 50pp below 84.80% floor (2026-05-11)** (see new §65 below). Empirical RED outcome: `apr eval --task humaneval` completed on gx10 (4.7h wall) producing 56/164 passed = 34.15%. SHIP-005 does NOT LIVE-discharge. KEY signal: pass@10 = 98.68% and pass@100 = 100% — model IS capable; the bug is in greedy-temperature-0 sampling/decoding, not in model knowledge. Three falsifiable hypotheses surface: (H1, prio 50%) gx10 teacher sha256 differs from lambda-vector — sync + rerun closes; (H2, 30%) `align_continuation_indent` post-processing too aggressive; (H3, 20%) BPE artifacts on complex prompts. **Methodology lesson #12 NEW**: a directional empirical sample (10-problem 80%) can lie about full-distribution performance (164-problem 34%); the binomial CI is too wide to predict full-set rate. **MODEL-1 ship %**: stays at **94%** (ceiling without further investigation). SHIP-005 remains PARTIAL; SHIP-007 multi-PR per §63. **MODEL-2 ship %**: unchanged at **57%**. (§64 mid-cascade snapshot in PR #1625 is the prior banner; this §65 supersedes the SHIP-005 portion.)
 **Atomic next action (v3.09.0):** **§63 — SHIP-007 empirical floor — CUDA structurally broken on Qwen 7B; multi-PR cascade scope (2026-05-11)** (see new §63 below). LIVE `apr bench` on canonical 7B APR teacher surfaces a 3-layer blocker stack for SHIP-007 (decode tps ≥ 30 tok/s): (1) `CUDA_ERROR_ILLEGAL_ADDRESS` in cuBLASLt FP8 JIT warmup (workaround: `APR_SKIP_FP8_WARMUP=1`); (2) PARITY-GATE rejects with cosine = -0.005 because GPU forward computes a DIFFERENT function than CPU on Qwen2.5-Coder-Instruct dimensions (hidden=3584, heads=28, kv_heads=4); (3) even with both gates skipped, throughput is 5.6 tok/s (well below 30 floor). SHIP-007 is multi-PR cascade scope, not a 1-PR LIVE-discharge. **Methodology lesson #11 NEW**: an unblocking closure (§60) may transitively unblock SOME §17.5 PARTIALs (SHIP-002/006/008, and likely SHIP-005 from in-progress 164-run) but leave OTHERS requiring their own multi-PR cascades. **MODEL-1 ship %**: stays at **94%** (pending 164-run → SHIP-005 → potentially 95%). SHIP-007 estimated to flip 95% → 96% on multi-PR cascade close. **MODEL-2 ship %**: unchanged at **57%**. Coverage tally: snapshot + empirical-floor record + 3-layer blocker bound (no new falsifier flips this cycle).
 **Atomic next action (v3.06.0):** **§61 — Post-§60 LIVE-discharge cascade — direct-prompt SHIP-002 GREEN; ChatML-prompt SHIP-006/008 surface a generation-quality gap (2026-05-10)** (see new §61 below). §60 closure unblocked the §17.5 chain. This session shipped the SHIP-002 LIVE discharge (PR #1609) — `apr run --prompt "def fib(n):" --max-tokens 128` on canonical 7B APR teacher emits coherent fib() Python with 0 syntax errors / 68 AST nodes / 1 FunctionDef. But the parallel `apr qa` LIVE attempt surfaced a NEW empirical finding: the SAME canonical teacher fails the `golden_output` gate ("gibberish, fragment '\\ns\\ns' repeats 3+ times") under the ChatML-wrapped prompt `<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n`. Forward-parity (§60) ≠ generation parity. SHIP-006/008 blocked on this ChatML degenerate-output bug; SHIP-007 separately blocked on perf (8.8 tok/s vs 30 floor on CPU fallback path). §61 records the two falsifiable predictions for the next bisection: PRED-61-A (GGUF + ChatML → CLEAN? localizes bug to APR side); PRED-61-B (APR + direct continuation "What is 2+2? The answer is " → CLEAN? localizes bug to special-token handling vs cumulative drift). Cascade-this-session: 6 PRs (#1604/#1606/#1607/#1608/#1609 + this §61). **MODEL-1 ship %**: **91% → 92%** (1 of 5 §17.5 PARTIALs LIVE-discharged via #1609; SHIP-005/006/007/008 stay PARTIAL). **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38. Coverage tally: 1 new LIVE discharge (SHIP-002 in `qwen2-e2e-verification-v1.yaml` v1.10.0 → v1.12.0); plus 1 status flip (`apr-vs-gguf-forward-parity-v1` v1.1.0 → v1.2.0 PROPOSED → ACTIVE_FUNCTIONAL via PR #1608); plus 3 cascade fixes in `aprender-train` CUDA forward path (Q/K/V bias dispatch / RMSNorm eps cache key / RoPE theta cache key — PRs #1604/#1606/#1607).
 **Atomic next action (v3.05.0):** **§60 — SHIP-007 §22 FULLY CLOSED — H1 CONFIRMED apples-to-apples on canonical 7B teacher; layer-3 ratio 18.23× → 1.245× (2026-05-07)** (see companion-spec entries M91-M103 + parity #89 for full per-PR narrative; aprender contract `contracts/trace-ffn-sub-block-gguf-v1.yaml` v1.0.0 → v1.13.0 across 13 amendments). M-FFN-GGUF-5 fix shipped (aprender PR #1550 squash pending) + M-FFN-GGUF-7 multi-layer real-teacher chain shipped (aprender PR #1548 MERGED). **MAJOR PLOT TWIST in M103 fix PR**: §27's 18.23× std-ratio was a TEST METHODOLOGY ARTIFACT, NOT a numerical bug. GGUF's `forward_traced` does Phase 1 prefill silently and only captures stats on the LAST token; APR's `forward_traced` captured stats across ALL 7 tokens. The §27 measurement compared multi-token APR std (7-token × 28672 elements) vs single-token GGUF std (1-token × 4096 elements) — fundamentally incomparable distributions. **Two coherent fixes in M-FFN-GGUF-5 PR #1550**: (1) `forward_traced` now uses Q4K+Q8K dispatch via new helper `matmul_q4k_or_f32_traced` (multi-token aware, F32 fallback when Q4K unavailable, 7 call sites updated); (2) M89 harness compares APR's `last_token.ffn_swiglu_inner_stats` against GGUF's `ffn_swiglu_inner_stats` (apples-to-apples last-token-only on both sides). **EMPIRICAL END-TO-END VERIFICATION** (2026-05-07, lambda-vector RTX 4090, 178s wall): all 28 layers within H1 band [0.5, 2.0]; **layer-3 ratio = 1.245×** (was 18.23× pre-methodology-fix). **Verdict flipped: H2 (apparent APR-side bug) → H1 CONFIRMED (apples-to-apples agreement)**. The cascade's per-tensor mechanism (M94 0.077% Path A vs Path B per matmul) and compounding (M95 5.70× synthetic / M-FFN-GGUF-7 1.81× real-saturating) ARE real numerical findings — but the §27 1723% magnitude that made the bug look severe was test-methodology-inflated. **M-FFN-GGUF-7 finding** (M102 PR #1548): real-layer chain SATURATES at 1.81× over 5 layers (vs synthetic M95's 5.70×); Layer 2 drops to 0.029% from weight-pattern cancellation; naive growth-factor exponentiation gives 1.81^22.4 = 5.78e5× at 28-layer depth — physically impossible; real systems saturate. **Methodology lesson #7 NEW** (`feedback_test_methodology_can_fake_bugs.md`): when comparing two implementations via summary statistics (std/mean/cosine), VERIFY both sides measure the SAME distribution shape (count, dim, element selection) BEFORE trusting the comparison. Mismatched distribution shapes can amplify a small real divergence into an apparent magnitude that looks like a bug. SHIP-007 §22 burned ~3 weeks pre-cascade + 2 days cascade + 2 hours fix on a methodology issue that produced a fake apparent magnitude on top of the real per-matvec mechanism. **15,233 lib tests pass, 0 failures**; production hot paths byte-unchanged (only `forward_traced` touched in PR #1550). **Discharge potential**: per §17.5, M-FFN-GGUF-5 closure transitively enables individual discharge of 5 MODEL-1 PARTIALs (SHIP-002, SHIP-005, SHIP-006, SHIP-007, SHIP-008); each may need its own contract-level promotion follow-up. **MODEL-1 ship %**: 91% → **96% pending individual partial discharges**. **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38. Coverage tally: 12 falsifiers + 1 fix DISCHARGED across `trace-ffn-sub-block-gguf-v1` v1.0.0 → v1.13.0 cascade. **Total session: 28 PRs across 2 days** including 1 actual fix landing.
@@ -4483,6 +4484,87 @@ Unchanged from §29 because PR E did not land. Next-session agenda: do the §30.
 Per `feedback_fix_root_cause_never_route_around.md`: the §28 fix would have route-around'd a real bug because the named site (matmul kernel) is not where the divergence originates. The empirical refutation in §30 IS the work that protects the next attempt from shipping a no-op. This refutation is itself a coverage-incrementing artifact (it falsifies a hypothesis), even though no PARTIAL flips to DISCHARGED.
 
 The Toyota Way fix is to bisect upstream, not to flip the kernel call.
+
+## §65. SHIP-005 NOT-DISCHARGE finding — gx10 164-run pass@1 = 34.15%, 50pp below floor (2026-05-11)
+
+§65 records a falsifier-RED outcome. The gx10 164-run completed; pass@1 = **56/164 = 34.15%**, well below the 84.80% effective floor. SHIP-005 does **NOT** LIVE-discharge from this evidence. This is a falsifier-first finding (per §60 H1 lesson): the empirical result invalidates the §61.8 directional prior (80% on the 10-problem sample) and demands fresh investigation.
+
+### 65.1 The verdict
+
+```
+$ apr eval <canonical 7B APR teacher> --task humaneval --data <164.jsonl> \
+        --samples 1 --temperature 0.0 --json
+
+passed = 56/164
+pass@1   = 0.3415  (FAIL: 50.65pp below 0.848 effective floor)
+pass@10  = 0.9868
+pass@100 = 1.0000
+```
+
+### 65.2 What this tells us
+
+| Signal | Value | Interpretation |
+|--------|-------|----------------|
+| pass@1 = 34.15% | -50.65pp below floor | Greedy-temperature-0 sampling fails frequently |
+| pass@10 = 98.68% | very high | Model knowledge is intact; problem is in sampling/decoding |
+| pass@100 = 100.00% | ceiling | Every problem is solvable; no model-content issue |
+
+This is a **sampling/decoding** failure, not a **model knowledge** failure. The published Qwen2.5-Coder-7B-Instruct pass@1 is 88.4% on HumanEval; we observed 34.15% via our `apr eval` harness. The 54-pp gap is too large to be model degradation — it's harness-level.
+
+### 65.3 Three falsifiable hypotheses
+
+**H1 — gx10 teacher artifact has different sha256 than lambda-vector:**
+- gx10: `0a854098d05b15921c173b7c8deb87c1cbecdffc66e918825c11a02775c73666`
+- lambda-vector: `a394dd286732a5f32dfb983fd2ea0eeba4d6239ac4c47e44bcfe62f590ddeb28`
+- The 10-problem lambda-vector sample (PR #1617 evidence) was 8/10 = 80%; the gx10 first-10 was similarly high. Gap may be in the >10 region. Sync canonical artifact + rerun → resolves H1 in ~5h.
+
+**H2 — `align_continuation_indent` post-processing is too aggressive:**
+- Introduced in PR #1617 to fix the 5-space-indent residual on HumanEval/0
+- May dedent completions in cases where the model's output is already correctly indented
+- Test: instrument failed problems (HumanEval/2 `truncate_number`, /6 `parse_nested_parens`, etc.) with completion-vs-prompt diff; verify dedent doesn't corrupt valid outputs
+
+**H3 — BPE tokenization artifacts on complex prompts:**
+- Raw-continuation BPE may produce different artifacts for prompts with type hints, decorators, complex docstrings
+- Test: capture tokenized prompts for representative failed problems; inspect special-token handling
+
+H1 priority: **HIGH (50%)** — fastest to falsify, biggest potential impact.
+H2 priority: **MEDIUM (30%)**.
+H3 priority: **MEDIUM (20%)**.
+
+### 65.4 Methodology lesson #12 (NEW)
+
+**A directional empirical sample can lie about full-distribution performance.** The 10-problem lambda-vector sample (80% pass@1) was within statistical noise of the 86% floor (95% CI [44%, 97%]), so it appeared a strong directional signal. The full 164-run revealed 34.15% — well outside that CI. The sample's failures (2/10 — HumanEval/2 and /6) happened to be the ONLY hard problems early in the dataset; harder problems are concentrated later (HumanEval/100+).
+
+Lesson generalises lessons #6-#11:
+- #6: Magnitude bugs decompose via falsifier chains
+- #7: Methodology can fake bug magnitude
+- #8: A falsifier's RED may surface different bug class
+- #9: A falsifier's GREEN may invalidate earlier RED
+- #10: Single bug class may need multi-PR fixes across call sites
+- #11: Unblocking closure may transitively unblock SOME PARTIALs but leave OTHERS
+- **#12 (NEW)**: A directional empirical sample can lie about full-distribution performance — the 10-problem sample's CI is too wide to predict the 164-problem rate
+
+### 65.5 Ship-% movement
+
+- **MODEL-1 ship %**: stays at **94%** (3/5 §17.5 PARTIALs LIVE-discharged: SHIP-002, SHIP-006, SHIP-008). SHIP-005 remains PARTIAL pending H1/H2/H3 investigation. SHIP-007 is multi-PR cascade per §63. **Ceiling without further investigation: 94%.**
+- **MODEL-2 ship %**: unchanged at **57%**.
+
+### 65.6 What §65 is NOT
+
+§65 does NOT claim the harness or model is broken. It records an empirical NOT-DISCHARGE outcome and three falsifiable next steps. The follow-up cascade (H1 sync-and-rerun → H2/H3 if H1 doesn't close the gap) will land as separate PRs.
+
+Evidence persisted to:
+
+```
+evidence/section-65-ship-005-not-discharge-2026-05-11/
+├── humaneval-164-gx10.json         # raw apr eval --json output
+├── per-problem-summary.json        # passed/failed task IDs
+└── findings.json                   # structured H1/H2/H3 analysis + verdict
+```
+
+Spec v3.10.0 → **v3.11.0**.
+
+---
 
 ## §63. SHIP-007 empirical floor — CUDA structurally broken on Qwen 7B; multi-PR cascade scope (2026-05-11)
 

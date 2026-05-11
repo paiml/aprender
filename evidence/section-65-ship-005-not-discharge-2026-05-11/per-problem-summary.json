@@ -1,0 +1,66 @@
+{
+  "passed_count": 56,
+  "problem_count": 164,
+  "pass_at_k": [
+    {
+      "k": 1,
+      "rate": 0.3414634146341463
+    },
+    {
+      "k": 10,
+      "rate": 0.9867922902691145
+    },
+    {
+      "k": 100,
+      "rate": 1.0
+    }
+  ],
+  "samples_per_problem": 1,
+  "temperature": 0.0,
+  "passed_task_ids_sample": [
+    "HumanEval/0",
+    "HumanEval/1",
+    "HumanEval/3",
+    "HumanEval/4",
+    "HumanEval/5",
+    "HumanEval/7",
+    "HumanEval/8",
+    "HumanEval/9",
+    "HumanEval/10",
+    "HumanEval/11",
+    "HumanEval/12",
+    "HumanEval/13",
+    "HumanEval/14",
+    "HumanEval/17",
+    "HumanEval/18",
+    "HumanEval/19",
+    "HumanEval/20",
+    "HumanEval/21",
+    "HumanEval/22",
+    "HumanEval/23"
+  ],
+  "failed_task_ids_sample": [
+    "HumanEval/2",
+    "HumanEval/6",
+    "HumanEval/15",
+    "HumanEval/16",
+    "HumanEval/24",
+    "HumanEval/27",
+    "HumanEval/29",
+    "HumanEval/31",
+    "HumanEval/32",
+    "HumanEval/33",
+    "HumanEval/36",
+    "HumanEval/37",
+    "HumanEval/38",
+    "HumanEval/39",
+    "HumanEval/40",
+    "HumanEval/41",
+    "HumanEval/43",
+    "HumanEval/46",
+    "HumanEval/47",
+    "HumanEval/54"
+  ],
+  "passed_count_actual": 56,
+  "failed_count_actual": 108
+}
