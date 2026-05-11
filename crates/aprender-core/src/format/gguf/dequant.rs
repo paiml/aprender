@@ -177,23 +177,18 @@ pub fn dequantize_q5_0(data: &[u8], start: usize, num_elements: usize) -> Result
         ]);
         offset += 4;
 
-        // Read 16 bytes = 32 4-bit low values
+        // PMAT-231-Q5: GGML layout matches Q4_0: low nibbles → elements 0-15, high nibbles → 16-31.
+        // High bit mapping: bit i → element i (low nibble), bit i+16 → element i+16 (high nibble).
+        // Previous code emitted interleaved pairs and used wrong bit indices (i*2, i*2+1).
         for i in 0..16 {
-            let byte = data[offset + i];
-            // Extract low 4-bit values
-            let low0 = byte & 0x0F;
-            let low1 = byte >> 4;
-
-            // Get high bits for these two elements
-            let high0 = ((high_bits >> (i * 2)) & 1) as u8;
-            let high1 = ((high_bits >> (i * 2 + 1)) & 1) as u8;
-
-            // Combine: 5-bit value = high_bit << 4 | low_4_bits, centered at 16
-            let v0 = f32::from(((high0 << 4) | low0) as i8 - 16);
-            let v1 = f32::from(((high1 << 4) | low1) as i8 - 16);
-
-            result.push(v0 * scale);
-            result.push(v1 * scale);
+            let low = data[offset + i] & 0x0F;
+            let high_bit = ((high_bits >> i) & 1) as u8;
+            result.push(f32::from(((high_bit << 4) | low) as i8 - 16) * scale);
+        }
+        for i in 0..16 {
+            let high_nib = data[offset + i] >> 4;
+            let high_bit = ((high_bits >> (i + 16)) & 1) as u8;
+            result.push(f32::from(((high_bit << 4) | high_nib) as i8 - 16) * scale);
         }
         offset += 16;
     }
@@ -245,24 +240,16 @@ pub(crate) fn dequantize_q5_1(data: &[u8], start: usize, num_elements: usize) ->
         ]);
         offset += 4;
 
-        // Read 16 bytes = 32 4-bit low values
+        // PMAT-231-Q5: Same layout fix as Q5_0 — low nibbles first, high nibbles second.
         for i in 0..16 {
-            let byte = data[offset + i];
-            // Extract low 4-bit values
-            let low0 = byte & 0x0F;
-            let low1 = byte >> 4;
-
-            // Get high bits for these two elements
-            let high0 = ((high_bits >> (i * 2)) & 1) as u8;
-            let high1 = ((high_bits >> (i * 2 + 1)) & 1) as u8;
-
-            // Combine: 5-bit value = high_bit << 4 | low_4_bits
-            // Q5_1 uses scale * q + min (no centering needed)
-            let v0 = f32::from((high0 << 4) | low0);
-            let v1 = f32::from((high1 << 4) | low1);
-
-            result.push(v0 * scale + min_val);
-            result.push(v1 * scale + min_val);
+            let low = data[offset + i] & 0x0F;
+            let high_bit = ((high_bits >> i) & 1) as u8;
+            result.push(f32::from((high_bit << 4) | low) * scale + min_val);
+        }
+        for i in 0..16 {
+            let high_nib = data[offset + i] >> 4;
+            let high_bit = ((high_bits >> (i + 16)) & 1) as u8;
+            result.push(f32::from((high_bit << 4) | high_nib) * scale + min_val);
         }
         offset += 16;
     }
