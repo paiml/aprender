@@ -1,12 +1,14 @@
 # HelixDB Feature Ideas for aprender
 
-**Version:** 0.18.0
-**Status:** Active — **6 of 9 fully shipped** (001, 002, 005, 006,
-007, 009); 1 recommended without gates (008, speculative pending
-pain point); 2 deferred/speculative (003, 004). **23 ENFORCED
+**Version:** 0.19.0
+**Status:** Active — **all Recommended-with-pre-authored-gates
+ideas shipped FULL** (001, 002, 005, 006, 007, 009 — 6 of 9
+total). The remaining 3 ideas (003, 004, 008) are intentionally
+deferred/speculative per their §2.x rationales — they wait on
+concrete signals from elsewhere in the project. **23 ENFORCED
 falsification gates total**: 4 (HNSW persistence) + 3 (MCP
 inventory) + 3 (registry snapshot) + 3 (API key auth) + 6 (rerank
-FULL) + 4 (hybrid FULL)
+FULL) + 4 (hybrid FULL). Audit reproduction commands in §1.4.
 **Methodology:** Design by Provable Contract (`aprender-contracts` /
 `pv` CLI). Every shipped HELIX-IDEA carries an ACTIVE
 `contracts/*.yaml`, an ENFORCED set of falsification gates, and an
@@ -166,7 +168,7 @@ but not required for these registry-kind contracts; provability
 applies to the dispatch behaviour ("the gate's test fails iff the
 property fails"), not to the YAML's mathematical invariants.
 
-#### Contract chain audit (HELIX-IDEA-001/002/007/009)
+#### Contract chain audit (HELIX-IDEA-001/002/005/006/007/009)
 
 Every shipped idea is reachable from this table. A row that doesn't
 hold (renamed test, missing YAML, dropped gate) breaks the
@@ -181,40 +183,46 @@ corresponding `aprender-contracts` integration test in CI.
 | **HELIX-IDEA-006** (Reranking — FULL) | `contracts/apr-rerank-v1.yaml` v1.4.0 | ACTIVE | `FALSIFY-RERANK-RRF-002` → `crates/aprender-rag/tests/falsify_rerank_rrf_002.rs::rrf_is_input_order_invariant`<br>`FALSIFY-RERANK-MMR-002` → `crates/aprender-rag/tests/falsify_rerank_mmr_002.rs::mmr_lambda_one_is_identity`<br>`FALSIFY-RERANK-MMR-001` → `crates/aprender-rag/tests/falsify_rerank_mmr_001.rs::mmr_increases_diversity_within_recall_budget`<br>`FALSIFY-RERANK-RRF-001` → `crates/aprender-rag/tests/falsify_rerank_rrf_001.rs::rrf_beats_single_retriever_ndcg10`<br>`FALSIFY-RERANK-XENC-002` → `crates/aprender-rag/tests/falsify_rerank_xenc_002.rs::rerank_module_does_not_fork_inference_stack`<br>`FALSIFY-RERANK-XENC-001` → `crates/aprender-rag/tests/falsify_rerank_xenc_001.rs::rerank_top_100_within_budget` | `crates/aprender-contracts/tests/apr_rerank_contract.rs` (6 assertions) |
 | **HELIX-IDEA-005** (Hybrid retrieval — FULL) | `contracts/apr-hybrid-retrieval-v1.yaml` v1.3.0 | ACTIVE | `FALSIFY-HYBRID-002` → `crates/aprender-rag/tests/falsify_hybrid_002.rs::trait_method_matches_explicit_combine`<br>`FALSIFY-HYBRID-004` → `crates/aprender-rag/tests/falsify_hybrid_004.rs::bm25_batch_index_within_budget`<br>`FALSIFY-HYBRID-001` → `crates/aprender-rag/tests/falsify_hybrid_001.rs::hybrid_beats_max_of_legs_by_5pts`<br>`FALSIFY-HYBRID-003` → `crates/aprender-rag/tests/falsify_hybrid_003.rs::bm25_uses_injected_tokenizer` | `crates/aprender-contracts/tests/apr_hybrid_retrieval_contract.rs` (6 assertions) |
 
-**Audit reproduction:** `pv validate contracts/apr-{mcp-tool-inventory,registry-snapshot,serve-api-key-auth}-v1.yaml`
+**Audit reproduction:** `pv validate contracts/apr-{hnsw-persistence,mcp-tool-inventory,hybrid-retrieval,rerank,registry-snapshot,serve-api-key-auth}-v1.yaml`
 returns `Contract is valid.` on each. `cargo test -p aprender-contracts
---test apr_mcp_tool_inventory_contract --test apr_registry_snapshot_contract
---test apr_serve_api_key_auth_contract` produces 18 passed; 0 failed.
+--test apr_hnsw_persistence_contract --test apr_mcp_tool_inventory_contract
+--test apr_hybrid_retrieval_contract --test apr_rerank_contract
+--test apr_registry_snapshot_contract --test apr_serve_api_key_auth_contract`
+produces 36 passed; 0 failed (6 contracts × 6 assertions each).
 
 #### Forward obligations
 
-HELIX-IDEA-001 shipped end-to-end across PR #1605 (v1.0.0 → v1.3.0,
-all 4 pre-authored gates discharged) and now appears in the audit
-table above. Three recommended ideas remain unshipped; two carry
-pre-authored gate IDs in their §2.x bodies that an implementation
-PR transcribes into the YAML's `falsification_conditions:` list
-verbatim.
+**All six Recommended ideas with pre-authored gates have shipped.**
+HELIX-IDEA-001 (v1.3.0, 4 gates), 002 (v1.0.0, 3 gates), 005
+(v1.3.0, 4 gates), 006 (v1.4.0, 6 gates), 007 (v1.0.0, 3 gates),
+and 009 (v1.0.0, 3 gates) appear in the audit table above. Only
+the speculative idea HELIX-IDEA-008 remains in the unshipped set,
+and §2.8 explicitly defers it pending a concrete backward-
+incompatible registry change.
 
 | Idea | Contract YAML | Status | Pre-authored gates |
 |---|---|---|---|
-| HELIX-IDEA-005 (BM25 + dense) | `contracts/apr-hybrid-retrieval-v1.yaml` | **v1.3.0 ACTIVE — FULL (all 4 gates shipped)** | §2.5: 4 gates total |
-| HELIX-IDEA-006 (Reranking) | `contracts/apr-rerank-v1.yaml` | **v1.4.0 ACTIVE — FULL (all 6 gates shipped)** | §2.6: 6 gates total |
-| HELIX-IDEA-008 (Schema migration) | `contracts/apr-schema-migration-v1.yaml` | To author | Not yet pre-authored — speculative pending concrete pain point (§2.8) |
+| HELIX-IDEA-008 (Schema migration) | `contracts/apr-schema-migration-v1.yaml` | To author when triggered | Not yet pre-authored — speculative pending concrete pain point (§2.8) |
 
 A PR that merges code without authoring its YAML, or authors a YAML
 without the integration test, or alters the live registry without
 updating the spec's §6 falsification log, MUST be rejected at review
 — the contract chain is the audit trail.
 
-**Empirical observation from HELIX-IDEA-001's full ship (v1.0.0 →
-v1.3.0):** pre-authored gates *did* survive contact with code, but
-several specifics shifted during implementation — the substrate
-chosen (bincode whole-graph) was none of the §2.1 options; the
-recall threshold relaxed 0.95 → 0.90 on the CI fixture; "rebuild on
-open" semantics were dropped in favour of whole-graph save. Each
-shift is recorded in §6 v0.5.0-v0.8.0 entries. Future authors of
-005/006/008 should expect similar drift between pre-auth and
-implementation; the §6 log is where they record it.
+**Empirical observations across all six shipped ideas:**
+pre-authored gates *did* survive contact with code at the
+scope/intent level — every gate ID's *property* held in the
+shipped implementation. But specifics drifted on contact at every
+single idea: HELIX-IDEA-001 (substrate choice, recall threshold,
+rebuild-on-open semantics — v0.5.0-v0.8.0), HELIX-IDEA-005 (BEIR
+deferred, hand-crafted fixture redesigned twice, BM25 build budget
+fixture-size choice, tokenizer type-id pin deferred — v0.14.0,
+v0.17.0), HELIX-IDEA-006 (MMR fixture widening, RRF fixture reuse,
+XENC mock-vs-real-model budget — v0.13.0, v0.15.0, v0.18.0). The
+§6 falsification log accumulates 4 rounds of post-implementation
+corrections across these phases (v0.2.0, v0.5.0-v0.8.0, v0.13.0-
+v0.15.0, v0.17.0-v0.18.0). The pattern is durable: future HELIX-IDEA-008
+work should expect its own §6 round.
 
 ## 2. Proposals
 
@@ -868,10 +876,15 @@ authorization. Single-key auth is the v1.
 
 ## 6. Falsification log
 
-This document was falsified against live code after the initial draft,
-again after PR #1605 shipped HELIX-IDEA-002/007/009 (v0.2.0 round),
-and again after the same PR shipped HELIX-IDEA-001 across four
-phases (v0.5.0-v0.8.0 round). Tracked corrections:
+This document was falsified against live code in four rounds:
+- **Draft → v0.1.0**: initial draft self-corrections.
+- **v0.2.0 round**: post-PR #1605 shipping HELIX-IDEA-002/007/009.
+- **v0.5.0-v0.8.0 round**: HELIX-IDEA-001 shipping across 4 phases.
+- **v0.13.0-v0.15.0 round**: HELIX-IDEA-005/006 partial-then-FULL shipping.
+- **v0.17.0-v0.18.0 round**: HELIX-IDEA-005/006 final-phase shipping
+  (BM25 tokenizer + rerank latency).
+
+Tracked corrections:
 
 | Date       | Section           | Original claim                                                      | Correction                                                                                  |
 |------------|-------------------|---------------------------------------------------------------------|---------------------------------------------------------------------------------------------|
@@ -903,14 +916,21 @@ Five proposals were added in the same revision (HELIX-IDEA-005 through
 that the initial draft missed. Items the audit flagged but that this
 spec *intentionally* does not adopt are listed in §3.
 
-The v0.2.0 round was the first post-implementation falsification (8
-rows of measured-state correction after HELIX-IDEA-002/007/009
-shipped). The v0.5.0–v0.8.0 round was the second: shipping
-HELIX-IDEA-001 across four phases produced 6 more rows — and those
-were against the *pre-authored gates table* in §2.1, not just the
-prose acceptance signals. Pre-authoring catches scope and intent
+**Cumulative observation across all four post-implementation
+rounds:** every shipped HELIX-IDEA produced its own §6 entries.
+v0.2.0 (8 rows, after 002/007/009): corrections to the §1.3
+measured-state, target-crate names, and gate-mechanism choices.
+v0.5.0-v0.8.0 (6 rows, after 001): substrate, semantics, recall
+threshold, and companion-test additions. v0.13.0-v0.15.0 (3
+rows, after 005/006 partial-FULL): fixture sizing for HYBRID-004
+and MMR-001, fixture-reuse decision for RRF-001. v0.17.0-v0.18.0
+(3 rows, after 005/006 final-FULL): tokenizer type-id pin
+deferral and test-design pivot for HYBRID-003; cross-encoder
+budget discharge against the trait surface for XENC-001. The
+pattern is durable: pre-authoring catches scope and intent
 correctly; specifics (substrate choice, threshold tightness,
-semantic shape) still drift on contact with code. The pattern is
-durable: future implementations of HELIX-IDEA-005/006/008 will
-generate their own §6 entries that future authors should expect
-and welcome — this log *is* the kaizen loop.
+fixture sizing, semantic shape) drift on contact with code, and
+each drift is worth recording because future implementers will
+expect similar drift on their own work. Future implementations
+of HELIX-IDEA-008 should plan to generate their own §6 entries
+— this log *is* the kaizen loop.
