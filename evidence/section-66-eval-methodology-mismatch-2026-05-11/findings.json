@@ -1,0 +1,30 @@
+{
+  "evidence_id": "SECTION-66-EVAL-METHODOLOGY-MISMATCH-2026-05-11",
+  "session_date": "2026-05-11",
+  "host": "gx10-a5b5 (Blackwell GB10, aarch64)",
+  "summary": "H4 NEW: 34% pass@1 (§65) is harness methodology mismatch. apr eval uses raw-continuation but Qwen-Instruct expects ChatML. Live cross-CLI test on gx10 falsifies H1/H2/H3 in 5 minutes.",
+  "smoking_gun_test": {
+    "host": "gx10-a5b5",
+    "model": "/home/noah/src/apr-leaderboard/checkpoints/qwen2.5-coder-7b-instruct-q4k.apr",
+    "problem": "HumanEval/2 (truncate_number)",
+    "path_a_apr_run_chatml": {
+      "command": "apr run <model> --prompt '<HumanEval/2>' --max-tokens 256",
+      "result": "PASS",
+      "completion": "```python\\nimport math\\n\\ndef truncate_number(...) -> float:\\n    fractional_part, _ = math.modf(number)\\n    return fractional_part\\n```"
+    },
+    "path_b_apr_eval_raw": {
+      "command": "apr eval <model> --task humaneval --data <he2.jsonl>",
+      "result": "FAIL",
+      "verdict": "[FAIL] HumanEval/2 (truncate_number) | pass@1: 0.0%"
+    }
+  },
+  "h4_hypothesis": "Evaluation methodology mismatch — Qwen-Instruct expects ChatML, harness uses raw-continuation",
+  "h1_h2_h3_disposition": {
+    "h1_artifact": "DEPRIORITIZED (gx10 first-10 matches lambda-vector 8/10)",
+    "h2_dedent": "DEPRIORITIZED (dedent works on HumanEval/0)",
+    "h3_bpe": "DEPRIORITIZED (raw-continuation IS the fundamental issue)"
+  },
+  "fix_scope": "~80-120 LOC in run_humaneval_inference: ChatML wrap + markdown code-block parsing",
+  "expected_post_fix_pass_at_1": "80-88% (matches published Qwen 88.4%)",
+  "methodology_lesson_13": "Cross-CLI behavior comparison falsifies hypotheses fast"
+}
