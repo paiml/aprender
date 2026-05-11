@@ -275,18 +275,24 @@ fn load_humaneval_tokenizer(
 
 /// ALB-084: Run HumanEval with actual model inference + Python test execution.
 ///
-/// PMAT-CODE-SHIP-005-FIX (2026-05-11): routed through `realizar::run_inference`
-/// + `OwnedQuantizedModel::from_apr` (the same working path that SHIP-002 +
-/// SHIP-006 + SHIP-008 LIVE-discharged) instead of the legacy
-/// `AprTransformer::forward_with_cache + AprKVCache` path. The legacy path
-/// produced 0/3 pass@1 on canonical 7B teacher smoke test (every problem
-/// FAIL); the run_inference path produces the canonical pairwise-comparison
-/// solution for HumanEval/0 (verified manually 2026-05-11 via `apr run`).
+/// PMAT-CODE-SHIP-005-H4-FIX (2026-05-11): for instruct-family models, route
+/// the prompt through ChatML auto-wrap (`InferenceConfig::with_prompt` →
+/// `prepare_tokens_apr` → ChatMLTemplate). Parse the assistant's
+/// `\`\`\`python ... \`\`\`` code block out of the response and use that as the
+/// completion. Falls back to raw-continuation when no code block is found
+/// (preserving the older PMAT-CODE-SHIP-005-FIX behaviour).
 ///
-/// HumanEval prompts are raw Python code (with docstrings); we tokenize via
-/// embedded BPE and pass via `InferenceConfig::with_input_tokens` to bypass
-/// `prepare_tokens_apr`'s ChatML auto-wrap (which would wrap raw Python in
-/// `<|im_start|>user...` causing degenerate output).
+/// Why: §65 + §66 evidence. Raw-continuation produces 34.15% pass@1 on
+/// canonical 7B Qwen2.5-Coder-Instruct. Same model + same prompt via `apr run`
+/// (ChatML auto-wrap) produces correct solutions. The Qwen-Instruct teacher
+/// is trained for chat format; published pass@1 = 88.4% uses chat template.
+///
+/// Detection: a model is considered "instruct" when its file extension is
+/// `.apr` and either the architecture metadata is qwen2/qwen/llama/mistral/
+/// phi/phi3, the vocabulary contains `<|im_start|>`, or the filename
+/// contains `instruct`/`-chat`. This matches `prepare_tokens_apr`'s
+/// detection logic; we don't replicate it — `with_prompt` triggers the same
+/// auto-wrap inside `prepare_tokens`.
 #[cfg(feature = "inference")]
 fn run_humaneval_inference(
     model_path: &Path,
@@ -321,16 +327,19 @@ fn run_humaneval_inference(
             continue;
         }
 
-        // Generate completion via run_inference (greedy, max 256 tokens).
-        // `with_input_tokens` bypasses `prepare_tokens_apr`'s ChatML auto-wrap
-        // — HumanEval prompts are raw Python and must NOT be wrapped.
-        let config = InferenceConfig::new(model_path)
-            .with_input_tokens(prompt_tokens.clone())
-            .with_max_tokens(256)
+        // H4 fix: route through ChatML auto-wrap via `with_prompt`. The
+        // `prepare_tokens_apr` in realizar/aprender-serve detects the
+        // instruct architecture from APR metadata and wraps the user prompt
+        // in `<|im_start|>user\n...<|im_end|>\n<|im_start|>assistant\n` for
+        // chat-tuned models. The assistant emits a markdown-wrapped Python
+        // code block.
+        let config_chatml = InferenceConfig::new(model_path)
+            .with_prompt(problem.prompt.clone())
+            .with_max_tokens(512)
             .with_temperature(0.0)
             .with_top_k(1);
 
-        let result = match run_inference(&config) {
+        let result = match run_inference(&config_chatml) {
             Ok(r) => r,
             Err(e) => {
                 if !json_output {
@@ -341,35 +350,48 @@ fn run_humaneval_inference(
             },
         };
 
-        // run_inference's `result.text` is the FULL decoded sequence
-        // (prompt + completion). Slicing by the prompt string preserves
-        // exact byte boundaries — slicing by tokens introduces a leading-
-        // whitespace artifact when the prompt ends with `\n` and the
-        // first generated token decodes as a leading-space-prefixed run.
-        let completion = if let Some(stripped) = result.text.strip_prefix(&problem.prompt) {
-            stripped.to_string()
+        // Try to extract a Python code block from the assistant response.
+        // On instruct-family models the response is wrapped in markdown;
+        // on base models the response is raw continuation — both are handled.
+        let completion = if let Some(code) = extract_python_code_block(&result.text) {
+            // ChatML/markdown path: assistant emitted `\`\`\`python\n…\n\`\`\``.
+            // The extracted code contains the full function (signature +
+            // body); concatenating with prompt would duplicate the signature,
+            // so we use the code block AS the program (after the prompt's
+            // imports — the canonical solution-checking format expects
+            // `prompt + completion` to be a valid program).
+            //
+            // The simplest robust approach is to use the extracted block
+            // directly as the COMPLETE function, drop the prompt's empty
+            // function shell, and append the test harness.
+            code
         } else {
-            // Fallback: token-level slicing if text doesn't begin with the
-            // prompt verbatim (e.g., tokenizer-specific whitespace handling).
-            let completion_tokens = if result.tokens.len() > result.input_token_count {
-                &result.tokens[result.input_token_count..]
+            // Raw-continuation fallback (pre-H4 path). Slice off the prompt
+            // prefix when it's verbatim in result.text; otherwise decode
+            // tokens past `input_token_count`. Apply dedent residual fix.
+            let raw = if let Some(stripped) = result.text.strip_prefix(&problem.prompt) {
+                stripped.to_string()
             } else {
-                &result.tokens[..]
+                let completion_tokens = if result.tokens.len() > result.input_token_count {
+                    &result.tokens[result.input_token_count..]
+                } else {
+                    &result.tokens[..]
+                };
+                tokenizer.decode(completion_tokens)
             };
-            tokenizer.decode(completion_tokens)
+            let truncated = truncate_at_function_boundary(&raw);
+            // The aligned form goes APPENDED to the prompt; encode that as
+            // the full continuation. We then split the prompt back off in
+            // the program-build step below.
+            format!("{}{}", problem.prompt, align_continuation_indent(&problem.prompt, truncated))
         };
-        let completion = truncate_at_function_boundary(&completion);
 
-        // PMAT-CODE-SHIP-005-WHITESPACE-RESIDUAL: BPE raw-continuation
-        // can emit a 1-space over-indent at the prompt-completion boundary.
-        // Align to the prompt's last non-empty line's indent before
-        // concatenation — invalid-Python IndentationError otherwise.
-        let aligned = align_continuation_indent(&problem.prompt, completion);
-
-        let full_program = format!(
-            "{}{}\n\n{}\n\ncheck({})\n",
-            problem.prompt, aligned, problem.test, entry
-        );
+        // Build the test program. Two cases:
+        //   - ChatML path: `completion` is a complete function from the
+        //     code block (signature + body). Use it directly.
+        //   - Raw-continuation path: `completion` already includes the
+        //     prompt prefix (concatenated above).
+        let full_program = format!("{completion}\n\n{}\n\ncheck({})\n", problem.test, entry);
 
         let ok = execute_python_test(&full_program, 10);
         if ok {
@@ -562,6 +584,45 @@ fn run_humaneval_inference_cuda(
     Err("CUDA not available (compile with --features cuda)".to_string())
 }
 
+/// PMAT-CODE-SHIP-005-H4-FIX: extract the first Python code block from a
+/// ChatML assistant response.
+///
+/// Instruct-family models (Qwen-Coder-Instruct, etc.) respond to a coding
+/// prompt with a markdown-wrapped solution like:
+///
+/// ```text
+/// Certainly! Here's a solution:
+/// ```python
+/// def truncate_number(number: float) -> float:
+///     import math
+///     fractional_part, _ = math.modf(number)
+///     return fractional_part
+/// ```
+/// ```
+///
+/// This helper extracts the inner code between the first ```python fence
+/// and the next ``` fence. Returns `None` when no fenced Python block is
+/// found (caller falls back to raw-continuation slicing).
+///
+/// Tolerant of variants:
+/// - ```python … ``` (preferred)
+/// - ```py … ```
+/// - ``` … ``` (untagged — still treated as Python on a code-eval path)
+pub(super) fn extract_python_code_block(text: &str) -> Option<String> {
+    for fence in ["```python\n", "```py\n", "```\n"] {
+        if let Some(start) = text.find(fence) {
+            let after_open = start + fence.len();
+            if let Some(rel_end) = text[after_open..].find("\n```") {
+                let code = &text[after_open..after_open + rel_end];
+                if !code.trim().is_empty() {
+                    return Some(code.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Truncate completion at the next top-level function/class definition.
 pub(super) fn truncate_at_function_boundary(completion: &str) -> &str {
     // Find the first '\ndef ' or '\nclass ' that indicates a new top-level definition
@@ -638,6 +699,59 @@ pub(super) fn align_continuation_indent(prompt: &str, completion: &str) -> Strin
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod extract_python_code_block_tests {
+    use super::extract_python_code_block;
+
+    /// SHIP-005 H4 canonical case: assistant emits a Python fenced block.
+    #[test]
+    fn extracts_python_fenced_block() {
+        let text = "Certainly!\n```python\ndef f(x):\n    return x + 1\n```\nLet me know if you need more.";
+        let got = extract_python_code_block(text);
+        assert_eq!(got.as_deref(), Some("def f(x):\n    return x + 1"));
+    }
+
+    /// Tolerates `py` shortform fence.
+    #[test]
+    fn extracts_py_short_fence() {
+        let text = "```py\ndef g():\n    pass\n```";
+        let got = extract_python_code_block(text);
+        assert_eq!(got.as_deref(), Some("def g():\n    pass"));
+    }
+
+    /// Untagged fence — accept for code-eval path.
+    #[test]
+    fn extracts_untagged_fence() {
+        let text = "```\nimport os\n```";
+        let got = extract_python_code_block(text);
+        assert_eq!(got.as_deref(), Some("import os"));
+    }
+
+    /// No fence → None (caller falls back to raw-continuation).
+    #[test]
+    fn returns_none_on_no_fence() {
+        let text = "Just plain text with no code block.";
+        let got = extract_python_code_block(text);
+        assert!(got.is_none());
+    }
+
+    /// Empty fenced block → None (not an actionable code completion).
+    #[test]
+    fn returns_none_on_empty_fence() {
+        let text = "```python\n\n```";
+        let got = extract_python_code_block(text);
+        assert!(got.is_none());
+    }
+
+    /// Multiple fenced blocks → first one wins.
+    #[test]
+    fn extracts_first_of_multiple_blocks() {
+        let text = "```python\nfirst = 1\n```\nthen:\n```python\nsecond = 2\n```";
+        let got = extract_python_code_block(text);
+        assert_eq!(got.as_deref(), Some("first = 1"));
+    }
 }
 
 #[cfg(test)]

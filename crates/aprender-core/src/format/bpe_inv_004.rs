@@ -135,11 +135,7 @@ pub fn verdict_from_merge_rule_count(
         Some(v) if v > 0 => v,
         _ => return BpeInv004Verdict::Fail,
     };
-    let abs_diff = if merge_count >= expected {
-        merge_count - expected
-    } else {
-        expected - merge_count
-    };
+    let abs_diff = merge_count.abs_diff(expected);
     if abs_diff <= AC_BPE_INV_004_SLACK {
         BpeInv004Verdict::Pass
     } else {
