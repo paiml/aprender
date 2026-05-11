@@ -2,7 +2,7 @@
 //!
 //! Run with: cargo run --example chunking_strategies
 
-use trueno_rag::{
+use aprender_rag::{
     chunk::{
         Chunker, FixedSizeChunker, ParagraphChunker, RecursiveChunker, SentenceChunker,
         StructuralChunker,
@@ -10,7 +10,7 @@ use trueno_rag::{
     Document,
 };
 
-fn main() -> trueno_rag::Result<()> {
+fn main() -> aprender_rag::Result<()> {
     println!("=== Chunking Strategies Comparison ===\n");
 
     // Sample document

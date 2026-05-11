@@ -8,7 +8,7 @@
 //! The first run will download the model (~90MB for MiniLM).
 
 #[cfg(feature = "embeddings")]
-use trueno_rag::{
+use aprender_rag::{
     chunk::RecursiveChunker, embed::Embedder, fusion::FusionStrategy, pipeline::RagPipelineBuilder,
     rerank::LexicalReranker, Document, EmbeddingModelType, FastEmbedder,
 };
@@ -53,7 +53,7 @@ fn sample_documents() -> Vec<Document> {
 }
 
 #[cfg(feature = "embeddings")]
-fn demo_similarity() -> trueno_rag::Result<()> {
+fn demo_similarity() -> aprender_rag::Result<()> {
     println!("=== Embedding Similarity Demo ===\n");
     let embedder = FastEmbedder::new(EmbeddingModelType::AllMiniLmL6V2)?;
 
@@ -84,7 +84,7 @@ fn demo_similarity() -> trueno_rag::Result<()> {
 }
 
 #[cfg(feature = "embeddings")]
-fn demo_retrieval() -> trueno_rag::Result<()> {
+fn demo_retrieval() -> aprender_rag::Result<()> {
     println!("Loading embedding model (first run downloads ~90MB)...");
     let embedder = FastEmbedder::new(EmbeddingModelType::AllMiniLmL6V2)?;
     println!("Model: {} (dimension: {})\n", embedder.model_id(), embedder.dimension());
@@ -116,7 +116,7 @@ fn demo_retrieval() -> trueno_rag::Result<()> {
 }
 
 #[cfg(feature = "embeddings")]
-fn main() -> trueno_rag::Result<()> {
+fn main() -> aprender_rag::Result<()> {
     println!("=== Semantic Embeddings Example ===\n");
     demo_retrieval()?;
     demo_similarity()
@@ -124,9 +124,9 @@ fn main() -> trueno_rag::Result<()> {
 
 #[cfg(feature = "embeddings")]
 fn run_query(
-    pipeline: &mut trueno_rag::pipeline::RagPipeline<FastEmbedder, LexicalReranker>,
+    pipeline: &mut aprender_rag::pipeline::RagPipeline<FastEmbedder, LexicalReranker>,
     query: &str,
-) -> trueno_rag::Result<()> {
+) -> aprender_rag::Result<()> {
     println!("Query: \"{}\"\n", query);
     let results = pipeline.query(query, 2)?;
     if results.is_empty() {

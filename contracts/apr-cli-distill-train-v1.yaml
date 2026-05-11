@@ -137,30 +137,106 @@ falsification_tests:
   prediction: "Two runs of `apr distill --stage precompute` with same inputs produce byte-identical teacher_logits/ output"
   test: "diff -r run1/teacher_logits run2/teacher_logits → exit 0"
   if_fails: "non-determinism in teacher forward pass — likely a kernel-launch ordering or atomic-add issue"
+  algorithm_evidence:
+    status: PARTIAL_ALGORITHM_LEVEL
+    last_verified: '2026-05-03'
+    test_locations:
+    - 'crates/apr-cli/src/commands/distill_include_01.rs::tests::falsify_apr_distill_train_005_precompute_is_byte_deterministic — local-teacher branch; two precompute runs over identical fake teacher dir produce byte-identical manifest.json'
+    - 'crates/apr-cli/src/commands/distill_include_01.rs::tests::falsify_apr_distill_train_005_precompute_remote_teacher_stub_is_deterministic — remote-stub branch; two precompute runs against an unresolved HF model_id produce byte-identical pending_download manifest.json'
+    notes: |
+      Algorithm-level discharge. The current `run_config_precompute`
+      writes a JSON manifest derived from (config, tensor_count,
+      teacher_size); both unit tests exercise the local-teacher and
+      remote-stub branches and assert byte-identical output across two
+      invocations. This catches non-determinism that would be introduced
+      by adding any timestamp/UUID/RNG draw or any teacher forward that
+      uses non-deterministic atomic-add reductions. Promotion to
+      DISCHARGED requires running `apr distill --stage precompute`
+      end-to-end on a real teacher with logits-on-disk and asserting
+      byte-identical bytes across two real invocations.
 
 - id: FALSIFY-APR-DISTILL-TRAIN-006
   rule: stage train can resume from precompute cache
   prediction: "If teacher_logits/ cache exists, stage train SHOULD skip recomputation and proceed to gradient updates"
   test: "rm -rf run/ckpt; apr distill --stage train ... → uses existing cache, no teacher forward"
   if_fails: "missing idempotency — would force re-running expensive precompute on every train"
+  algorithm_evidence:
+    status: PARTIAL_ALGORITHM_LEVEL
+    last_verified: '2026-05-03'
+    test_locations:
+    - 'crates/apr-cli/src/commands/distill_include_01.rs::tests::falsify_apr_distill_train_006_train_errors_without_precompute_cache — negative half: stage train MUST error when manifest.json is absent (asserts CliError::ValidationFailed with "Precompute" in message)'
+    - 'crates/apr-cli/src/commands/distill_include_01.rs::tests::falsify_apr_distill_train_006_train_does_not_error_when_cache_present — positive half: after precompute, stage train MUST NOT error with the cache-missing message (proves the manifest is actually consulted)'
+    notes: |
+      Algorithm-level discharge of the cache-resume idempotency
+      invariant. Both halves are required to avoid the failure mode
+      where the cache is stat-only-checked but never read — the
+      negative test guarantees train rejects no-cache, and the positive
+      test guarantees train accepts present-cache. Promotion to
+      DISCHARGED requires real teacher forward + real student forward
+      that actually loads logits-on-disk and compares to a baseline
+      that re-ran precompute (proving no recomputation happened).
 
 - id: FALSIFY-APR-DISTILL-TRAIN-007
   rule: contract validates via pv
   prediction: "`pv validate contracts/apr-cli-distill-train-v1.yaml` exits 0"
   test: "pv validate contracts/apr-cli-distill-train-v1.yaml"
   if_fails: "contract schema noncompliant"
+  algorithm_evidence:
+    status: PARTIAL_ALGORITHM_LEVEL
+    last_verified: '2026-05-04'
+    test_locations:
+    - 'pv validate contracts/apr-cli-distill-train-v1.yaml — exits 0 with "0 error(s), 0 warning(s)" / "Contract is valid." after each amendment in PRs #1438, #1439, #1442'
+    notes: |
+      Algorithm-level meta-discharge. Every amendment to this contract
+      passes through `pv validate` as a precondition for commit (the
+      pre-commit hook + manual operator runs both apply). Running it
+      verbatim 2026-05-04 on this branch: exits 0 with 0 errors / 0
+      warnings. Promotion to DISCHARGED requires no further work — `pv
+      validate` has been the drift gate since v1.0.0 PROPOSED.
 
 - id: FALSIFY-APR-DISTILL-TRAIN-008
   rule: 3-surface drift (cli + registry + test)
   prediction: "Adding --stage flag + new behavior touches all 3 of: distill.rs clap, apr-cli-commands-v1.yaml registry, cli_commands::registered_commands() test"
   test: "cargo test -p apr-cli --test cli_commands registered_commands"
   if_fails: "feedback_cli_subcommand_three_surface_drift violated"
+  algorithm_evidence:
+    status: PARTIAL_ALGORITHM_LEVEL
+    last_verified: '2026-05-04'
+    test_locations:
+    - 'crates/apr-cli/tests/cli_commands.rs::test_no_unregistered_commands — passes 1/1 today; locks the 3-surface invariant by enforcing every clap subcommand variant matches an entry in apr-cli-commands-v1.yaml'
+    notes: |
+      Algorithm-level discharge per `feedback_cli_subcommand_three_surface_drift`.
+      The `test_no_unregistered_commands` integration test in
+      crates/apr-cli/tests/cli_commands.rs walks the live clap parser at
+      runtime and asserts every Subcommand variant is registered in the
+      apr-cli-commands-v1.yaml registry — a refactor adding a new
+      `--stage <variant>` to `distill.rs` that forgets the registry +
+      yaml entry trips this test. Live verification 2026-05-04:
+      `cargo test -p apr-cli --test cli_commands registered_commands` →
+      "1 passed; 0 failed". Promotion to DISCHARGED requires nothing
+      more — this is an existing CI gate that already binds the
+      invariant.
 
 - id: FALSIFY-APR-DISTILL-TRAIN-009
   rule: end-to-end smoke on tiny pair beats from-scratch baseline
   prediction: "Distilling a 50M-param student from a 500M-param teacher on 1M tokens for 1 epoch produces a student with val_loss < (50M-from-scratch on same data, same epochs)"
   test: "tests/distill_smoke.rs runs the full pipeline + asserts val_loss differential"
   if_fails: "distillation provides no measurable benefit over pretraining at this scale — re-evaluate hyperparameters or approach"
+  algorithm_evidence:
+    status: BLOCKER_FIXTURE_ABSENT
+    last_verified: '2026-05-04'
+    test_locations: []
+    notes: |
+      Discharge BLOCKED on the missing real-training implementation per
+      §35 (apr distill --stage train is currently a stub). Without real
+      gradient descent, there is no val_loss to compare. The path to
+      DISCHARGED is: (1) implement real distillation in `apr distill
+      --stage train` (multi-PR scope per §35); (2) author
+      `tests/distill_smoke.rs` invoking the pipeline on a tiny
+      teacher/student pair (50M from-500M, 1M tokens, 1 epoch); (3)
+      assert val_loss(distilled) < val_loss(from_scratch). Tracked here
+      so future PRs don't accidentally claim FUNCTIONAL discharge
+      without the real-training prerequisite.
 
 proof_obligations:
 - type: invariant

@@ -1,0 +1,313 @@
+metadata:
+  id: C-APR-PRETRAIN-INIT-FINETUNE
+  version: 1.0.0
+  created: '2026-05-08'
+  author: PAIML Engineering
+  kind: pattern
+  status: DRAFT
+  description: |
+    Pins the falsifiable invariants of the SHIP-TWO §56.4 "Step 5g.2"
+    LIVE 500-step fine-tune dispatch — the next observable ship-%-
+    moving event for MODEL-2 (albor) per
+    `docs/specifications/aprender-train/ship-two-models-spec.md` §56.
+
+    BACKGROUND. SHIP-TWO MODEL-2 ship % has been stuck at 57% since
+    §44 (2026-05-04). All 12 ACs are PARTIAL_ALGORITHM_LEVEL except
+    AC-SHIP2-011 (DISCHARGED, seed reproducibility) and AC-SHIP2-012
+    (DISCHARGED, provenance). The current binding gate is val_loss
+    convergence below the 370M-from-scratch ceiling of 9.38 (§34) on
+    the codeparrot-python-permissive corpus.
+
+    Per §49 (2026-05-04), the from-scratch strategy was a methodology
+    defect: 565M tokens cannot reach val_loss=3.0 regardless of step
+    budget (industry comparison: SmolLM-360M at val_loss ~2.9 saw 1T
+    tokens). The corrected path is **initialize from a public 0.5B-
+    class pretrained checkpoint and fine-tune on the existing corpus**
+    — Qwen2.5-Coder-0.5B-Instruct fits the same architectural
+    polymorphism cascade landed in §50.4 (PRs #1474..#1494).
+
+    PRE-REQUISITES (all DONE on host as of 2026-05-08):
+    - Qwen 0.5B init APR: /mnt/nvme-raid0/models/qwen2.5-coder-0.5b-instruct-fp16.apr
+    - Qwen-tokenized 5g.1 corpus (228 shards, 2.278B tokens) at
+      /mnt/nvme-raid0/data/codeparrot-python-permissive-shards-qwen
+      (manifest.json reconstructed by PMAT-CODE-TOKENIZE-REPAIR-MANIFEST-001)
+    - `apr pretrain --init` end-to-end runnable per §53 (PR #1494
+      MERGED 2026-05-05T01:48Z)
+    - Polymorphic preflight per §55 (PR #1500 MERGED 2026-05-05T05:06Z)
+
+    THIS CONTRACT pins the 5g.2 dispatch invariants WITHOUT requiring
+    the live run to have happened yet. Status starts DRAFT; flips to
+    ACTIVE_RUNTIME on the live verdict via §59 spec amendment.
+
+    SHIP-% MOVEMENT IF FALSIFY-005 PASSES: MODEL-2 57% → ≥58% per
+    §56.4 step 5g.3 row.
+
+  references:
+    - 'docs/specifications/aprender-train/ship-two-models-spec.md § 56.4 (5g roadmap status)'
+    - 'docs/specifications/aprender-train/ship-two-models-spec.md § 49 (pivot to from-init)'
+    - 'docs/specifications/aprender-train/ship-two-models-spec.md § 34 (370M from-scratch ceiling at val_loss=9.38)'
+    - 'contracts/apr-pretrain-arch-polymorphic-v1.yaml v1.5.0 (the §50.4 cascade contract)'
+    - 'contracts/apr-pretrain-from-init-v1.yaml v1.2.0 (sibling, init-load semantics)'
+    - 'contracts/apr-tokenize-repair-manifest-v1.yaml v1.0.0 (5g.1 manifest recovery, PR #1575)'
+    - 'memory: feedback_compute_pre_authorized.md — named GPU dispatches do NOT require per-lane re-asking on lambda-labs'
+    - 'memory: project_qwen2_0_5b_is_ship_007_manifestation.md — note: SHIP-007 closed 2026-05-07'
+  depends_on:
+    - 'apr-pretrain-arch-polymorphic-v1'
+    - 'apr-pretrain-from-init-v1'
+
+equations:
+  exit_status_invariant:
+    formula: |
+      apr_pretrain_from_init_500_steps.exit_code == 0
+    domain: |
+      The 5g.2 dispatch must terminate with status 0. Any panic, unwrap
+      failure, OOM, kernel error, or contract precondition failure
+      surfaces as a non-zero exit and falsifies the gate.
+    invariants:
+    - 'process exit code is exactly 0'
+    - 'no SIGSEGV / SIGABRT / SIGBUS during run'
+    preconditions:
+    - 'init APR file exists and validates per FALSIFY-APR-PRETRAIN-INIT-005'
+    - 'shards-dir contains ≥1 shard-*.bin file'
+    - 'tokenizer dir contains vocab.json + merges.txt'
+    - 'CUDA device available OR --device cpu specified'
+
+  wall_budget_invariant:
+    formula: |
+      apr_pretrain_from_init_500_steps.wall_seconds <= 3600
+    domain: |
+      A 0.5B parameter model fine-tuning 500 steps on RTX 4090 with
+      batch=8 seq=512 should complete in under 60 minutes. The 1-hour
+      ceiling is generous; typical runs finish in ~20-30 minutes per
+      §56 spec scoping.
+    invariants:
+    - 'wall clock from process start to exit is ≤ 3600 seconds'
+    preconditions:
+    - 'exit_status_invariant holds'
+
+  init_weights_used_invariant:
+    formula: |
+      step_0_loss(--mode from-init) <= 0.7 * step_0_loss(--mode from-scratch)
+    domain: |
+      If init weights are LOADED into the trainer (not silently
+      zero-initialized), step 0 loss must reflect the pretrained
+      Qwen distribution, NOT a uniform-over-vocab baseline. Uniform
+      cross-entropy over vocab=151936 is ln(151936) ≈ 11.93. A
+      working init load should put step 0 loss well below
+      0.7 × 11.93 ≈ 8.35.
+    invariants:
+    - 'first reported training-loss at step 0 is ≤ 8.35'
+    - 'first reported training-loss at step 0 is < ln(vocab_size) by margin ≥ 30%'
+    preconditions:
+    - 'exit_status_invariant holds'
+    - 'init APR contains qwen2 architecture metadata per FALSIFY-APR-PRETRAIN-INIT-005'
+
+  val_loss_below_from_scratch_invariant:
+    formula: |
+      apr_pretrain_from_init_500_steps.val_loss < 9.38
+    domain: |
+      The 370M-from-scratch ceiling is val_loss=9.38 per §34 (200K-step
+      retrain confirmation, 2026-04-28). Any from-init run that DOES
+      NOT beat 9.38 is methodologically suspect — either init weights
+      are not flowing through forward pass, OR the corpus / tokenizer
+      pairing is wrong, OR a regression has been introduced.
+
+      This is THE binding criterion that flips MODEL-2 ship % 57%→≥58%.
+    invariants:
+    - 'reported val_loss after 500 steps is < 9.38'
+    - 'val_loss is finite (not NaN, not Inf)'
+    preconditions:
+    - 'init_weights_used_invariant holds'
+    - 'exit_status_invariant holds'
+
+  checkpoint_written_invariant:
+    formula: |
+      ∃ p ∈ output_dir : matches(p, "*.apr") ∧ valid_apr_magic(p)
+    domain: |
+      A successful 5g.2 dispatch leaves a fine-tuned checkpoint on
+      disk that downstream stages (apr qa, apr eval, apr export) can
+      consume. The checkpoint must carry the canonical APR magic
+      bytes (`APR\0` v2 or `APRN` v1).
+    invariants:
+    - 'at least one *.apr file exists in checkpoint output dir'
+    # See line below for canonical magic bytes (NUL-byte sentinel for v2):
+    - 'first 4 bytes are 0x41 0x50 0x52 0x00 (v2) or 0x41 0x50 0x52 0x4E (v1)'
+    preconditions:
+    - 'exit_status_invariant holds'
+
+proof_obligations:
+- type: invariant
+  property: 5g.2 dispatch exits 0
+  formal: 'apr_pretrain_500_steps.exit_code == 0'
+  applies_to: exit_status_invariant
+- type: invariant
+  property: 5g.2 wall budget ≤ 3600 s
+  formal: 'wall_seconds ≤ 3600'
+  applies_to: wall_budget_invariant
+- type: invariant
+  property: Init weights flow through forward pass
+  formal: 'step_0_loss ≤ 0.7 × ln(vocab_size)'
+  applies_to: init_weights_used_invariant
+- type: invariant
+  property: val_loss beats 370M from-scratch ceiling
+  formal: 'val_loss < 9.38'
+  applies_to: val_loss_below_from_scratch_invariant
+- type: invariant
+  property: A finetune checkpoint is written to disk
+  formal: '∃ p ∈ output : valid_apr_magic(p)'
+  applies_to: checkpoint_written_invariant
+
+falsification_tests:
+- id: FALSIFY-APR-PRETRAIN-INIT-FINETUNE-001
+  rule: |
+    `apr pretrain --mode from-init --init <Qwen.apr> --shards-dir
+    <5g.1> --steps 500 --device cuda` exits with status 0.
+  prediction: |
+    With all 5g pre-reqs met (init APR exists, polymorphic preflight
+    passes, shards dir non-empty), the dispatch terminates with
+    status 0.
+  test: |
+    LIVE: bash evidence/section-59-5g-2-dispatch-2026-05-08/dispatch.sh
+    && echo $? == 0
+  if_fails: |
+    Five-Whys: panic? OOM? CUDA error? Capture stderr, narrow per
+    §22 / §28 / §50.4 root-cause cascade methodology.
+  ship_blocking: true
+  counter_example_classes:
+  - cuda_oom
+  - panic_in_forward
+  - tokenizer_vocab_mismatch_after_§55
+  - init_load_path_regressed
+
+- id: FALSIFY-APR-PRETRAIN-INIT-FINETUNE-002
+  rule: |
+    The 500-step fine-tune dispatch on RTX 4090 completes in under
+    one wall hour.
+  prediction: |
+    `apr_pretrain_from_init_500_steps.wall_seconds ≤ 3600` for
+    batch=8, seq=512, 0.5B params, single GPU.
+  test: |
+    LIVE: time the dispatch via /usr/bin/time -f "%e" -o /tmp/wall.txt
+    bash dispatch.sh && [ "$(cat /tmp/wall.txt | cut -d. -f1)" -le 3600 ]
+  if_fails: |
+    Either the kernel dispatch is mispriced (SHIP-007 GPU regression
+    class), OR something in the inner loop allocates per-step (Toyota
+    Way muda). Profile with `apr profile` before re-dispatch.
+  ship_blocking: false
+  counter_example_classes:
+  - cuda_kernel_serialized
+  - per_step_alloc_storm
+  - cpu_data_loader_starvation
+
+- id: FALSIFY-APR-PRETRAIN-INIT-FINETUNE-003
+  rule: |
+    Step 0 training loss reflects pretrained init, not uniform-over-
+    vocab baseline. Empirically, step 0 loss must be ≤ 0.7 × ln(151936)
+    ≈ 8.35 for the Qwen 0.5B init.
+  prediction: |
+    `step_0_train_loss ≤ 8.35`. A from-scratch run on the same corpus
+    starts ~ln(151936) ≈ 11.93; from-init must be materially lower.
+  test: |
+    LIVE: parse step-0 train_loss from dispatch.log (regex
+    `step=0.*loss=([0-9.]+)`); assert value ≤ 8.35.
+  if_fails: |
+    Init weights are NOT being loaded into the forward pass. This
+    is the §28 / §49 silent-gibberish defect class — fail-fast at
+    `populate_trainer_from_init_tensors` (PR #1483) is supposed to
+    prevent this. Re-validate `load_init_tensors_from_apr` flow.
+  ship_blocking: true
+  counter_example_classes:
+  - init_load_silently_zeroed_weights
+  - vocab_misalignment_after_§55_relaxation
+  - tokenizer_vocab_mismatch_eats_logits
+
+- id: FALSIFY-APR-PRETRAIN-INIT-FINETUNE-004
+  rule: |
+    A `.apr` checkpoint with valid magic bytes is written to the
+    output directory at the end of the run.
+  prediction: |
+    `find <output_dir> -name "*.apr"` returns ≥1 file whose first 4
+    bytes are `APR\0` (v2) or `APRN` (v1).
+  test: |
+    LIVE: ls <output_dir>/*.apr | head -1 | xargs -I{} head -c 4 {} |
+    od -c | grep -E "(A   P   R  \\\\0|A   P   R   N)"
+  if_fails: |
+    Checkpoint serialization is broken — likely a regression in
+    `aprender::format::write` or the magic-byte sentinel logic.
+    Run `apr validate <checkpoint>.apr` for diagnostic.
+  ship_blocking: true
+  counter_example_classes:
+  - checkpoint_never_written
+  - non_canonical_magic_bytes
+  - truncated_serialization
+
+- id: FALSIFY-APR-PRETRAIN-INIT-FINETUNE-005
+  rule: |
+    Reported val_loss after 500 steps is < 9.38, beating the §34
+    370M-from-scratch ceiling. THIS GATE FLIPS MODEL-2 SHIP %
+    57% → ≥58%.
+  prediction: |
+    With Qwen 0.5B init + 5g.1 corpus + 500 steps fine-tune, the
+    final val_loss column reports a numeric value strictly less
+    than 9.38.
+  test: |
+    LIVE: parse final val_loss from dispatch.log (regex
+    `val_loss=([0-9.]+)` last match); assert value < 9.38 AND finite.
+  if_fails: |
+    Either the from-init pivot's MODEL-2 strategy is wrong (corpus
+    is so far from Qwen distribution that 500 steps can't beat
+    from-scratch), OR a runtime regression silently breaks the
+    forward pass post-init. Five-Whys + bisect against §54 LIVE
+    smoke evidence.
+  ship_blocking: true
+  counter_example_classes:
+  - val_loss_above_9_38
+  - val_loss_nan
+  - val_loss_inf
+  - early_stop_before_500_steps
+
+- id: FALSIFY-APR-PRETRAIN-INIT-FINETUNE-006
+  rule: |
+    No GPU OOM, no CUDA driver error, no kernel-launch failure
+    during the 500-step run.
+  prediction: |
+    Dispatch stderr contains zero occurrences of `CUDA_ERROR_*`,
+    `out of memory`, `cudaErrorIllegalAddress`, or
+    `cudaErrorLaunchOutOfResources`.
+  test: |
+    LIVE: grep -cE 'CUDA_ERROR|out of memory|illegal|launch.*out_of' \
+    dispatch.stderr || echo 0; assert count == 0.
+  if_fails: |
+    GPU resource issue. Check nvidia-smi memory budget pre-dispatch;
+    bisect by reducing batch_size; verify CUDA driver matches
+    cargo-built feature flag.
+  ship_blocking: false
+  counter_example_classes:
+  - cuda_oom
+  - cuda_illegal_address
+  - cuda_launch_resources
+  - driver_kernel_mismatch
+
+kani_harnesses: []
+
+qa_gate:
+  id: QA-PRETRAIN-INIT-FINETUNE-001
+  name: 5g.2 LIVE 500-step fine-tune dispatch gate
+  description: |
+    The single named atomic event that moves MODEL-2 ship %
+    57% → ≥58% per SHIP-TWO §56.4. All 5 ship-blocking falsifiers
+    must pass on a LIVE RTX 4090 dispatch using the §56-§57 prepared
+    Qwen-tokenized 5g.1 corpus and the canonical Qwen 0.5B init APR.
+  checks:
+  - exit_status_invariant
+  - init_weights_used_invariant
+  - val_loss_below_from_scratch_invariant
+  - checkpoint_written_invariant
+  pass_criteria: |
+    All 5 ship_blocking=true falsifiers (FALSIFY-APR-PRETRAIN-INIT-
+    FINETUNE-001/003/004/005, plus 002 wall-budget treated as advisory)
+    must PASS on the LIVE dispatch evidence.
+  falsification: |
+    Any single ship_blocking failure fails the gate and blocks the
+    MODEL-2 ship-% flip. Failure triggers Hansei / Five-Whys per
+    SHIP-TWO §10 (Failure Protocol).

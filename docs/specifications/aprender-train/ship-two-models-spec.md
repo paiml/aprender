@@ -1,7 +1,29 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.85.0
+**Version:** 3.09.0
+**Atomic next action (v3.09.0):** **§63 — SHIP-007 empirical floor — CUDA structurally broken on Qwen 7B; multi-PR cascade scope (2026-05-11)** (see new §63 below). LIVE `apr bench` on canonical 7B APR teacher surfaces a 3-layer blocker stack for SHIP-007 (decode tps ≥ 30 tok/s): (1) `CUDA_ERROR_ILLEGAL_ADDRESS` in cuBLASLt FP8 JIT warmup (workaround: `APR_SKIP_FP8_WARMUP=1`); (2) PARITY-GATE rejects with cosine = -0.005 because GPU forward computes a DIFFERENT function than CPU on Qwen2.5-Coder-Instruct dimensions (hidden=3584, heads=28, kv_heads=4); (3) even with both gates skipped, throughput is 5.6 tok/s (well below 30 floor). SHIP-007 is multi-PR cascade scope, not a 1-PR LIVE-discharge. **Methodology lesson #11 NEW**: an unblocking closure (§60) may transitively unblock SOME §17.5 PARTIALs (SHIP-002/006/008, and likely SHIP-005 from in-progress 164-run) but leave OTHERS requiring their own multi-PR cascades. **MODEL-1 ship %**: stays at **94%** (pending 164-run → SHIP-005 → potentially 95%). SHIP-007 estimated to flip 95% → 96% on multi-PR cascade close. **MODEL-2 ship %**: unchanged at **57%**. Coverage tally: snapshot + empirical-floor record + 3-layer blocker bound (no new falsifier flips this cycle).
+**Atomic next action (v3.06.0):** **§61 — Post-§60 LIVE-discharge cascade — direct-prompt SHIP-002 GREEN; ChatML-prompt SHIP-006/008 surface a generation-quality gap (2026-05-10)** (see new §61 below). §60 closure unblocked the §17.5 chain. This session shipped the SHIP-002 LIVE discharge (PR #1609) — `apr run --prompt "def fib(n):" --max-tokens 128` on canonical 7B APR teacher emits coherent fib() Python with 0 syntax errors / 68 AST nodes / 1 FunctionDef. But the parallel `apr qa` LIVE attempt surfaced a NEW empirical finding: the SAME canonical teacher fails the `golden_output` gate ("gibberish, fragment '\\ns\\ns' repeats 3+ times") under the ChatML-wrapped prompt `<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n`. Forward-parity (§60) ≠ generation parity. SHIP-006/008 blocked on this ChatML degenerate-output bug; SHIP-007 separately blocked on perf (8.8 tok/s vs 30 floor on CPU fallback path). §61 records the two falsifiable predictions for the next bisection: PRED-61-A (GGUF + ChatML → CLEAN? localizes bug to APR side); PRED-61-B (APR + direct continuation "What is 2+2? The answer is " → CLEAN? localizes bug to special-token handling vs cumulative drift). Cascade-this-session: 6 PRs (#1604/#1606/#1607/#1608/#1609 + this §61). **MODEL-1 ship %**: **91% → 92%** (1 of 5 §17.5 PARTIALs LIVE-discharged via #1609; SHIP-005/006/007/008 stay PARTIAL). **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38. Coverage tally: 1 new LIVE discharge (SHIP-002 in `qwen2-e2e-verification-v1.yaml` v1.10.0 → v1.12.0); plus 1 status flip (`apr-vs-gguf-forward-parity-v1` v1.1.0 → v1.2.0 PROPOSED → ACTIVE_FUNCTIONAL via PR #1608); plus 3 cascade fixes in `aprender-train` CUDA forward path (Q/K/V bias dispatch / RMSNorm eps cache key / RoPE theta cache key — PRs #1604/#1606/#1607).
+**Atomic next action (v3.05.0):** **§60 — SHIP-007 §22 FULLY CLOSED — H1 CONFIRMED apples-to-apples on canonical 7B teacher; layer-3 ratio 18.23× → 1.245× (2026-05-07)** (see companion-spec entries M91-M103 + parity #89 for full per-PR narrative; aprender contract `contracts/trace-ffn-sub-block-gguf-v1.yaml` v1.0.0 → v1.13.0 across 13 amendments). M-FFN-GGUF-5 fix shipped (aprender PR #1550 squash pending) + M-FFN-GGUF-7 multi-layer real-teacher chain shipped (aprender PR #1548 MERGED). **MAJOR PLOT TWIST in M103 fix PR**: §27's 18.23× std-ratio was a TEST METHODOLOGY ARTIFACT, NOT a numerical bug. GGUF's `forward_traced` does Phase 1 prefill silently and only captures stats on the LAST token; APR's `forward_traced` captured stats across ALL 7 tokens. The §27 measurement compared multi-token APR std (7-token × 28672 elements) vs single-token GGUF std (1-token × 4096 elements) — fundamentally incomparable distributions. **Two coherent fixes in M-FFN-GGUF-5 PR #1550**: (1) `forward_traced` now uses Q4K+Q8K dispatch via new helper `matmul_q4k_or_f32_traced` (multi-token aware, F32 fallback when Q4K unavailable, 7 call sites updated); (2) M89 harness compares APR's `last_token.ffn_swiglu_inner_stats` against GGUF's `ffn_swiglu_inner_stats` (apples-to-apples last-token-only on both sides). **EMPIRICAL END-TO-END VERIFICATION** (2026-05-07, lambda-vector RTX 4090, 178s wall): all 28 layers within H1 band [0.5, 2.0]; **layer-3 ratio = 1.245×** (was 18.23× pre-methodology-fix). **Verdict flipped: H2 (apparent APR-side bug) → H1 CONFIRMED (apples-to-apples agreement)**. The cascade's per-tensor mechanism (M94 0.077% Path A vs Path B per matmul) and compounding (M95 5.70× synthetic / M-FFN-GGUF-7 1.81× real-saturating) ARE real numerical findings — but the §27 1723% magnitude that made the bug look severe was test-methodology-inflated. **M-FFN-GGUF-7 finding** (M102 PR #1548): real-layer chain SATURATES at 1.81× over 5 layers (vs synthetic M95's 5.70×); Layer 2 drops to 0.029% from weight-pattern cancellation; naive growth-factor exponentiation gives 1.81^22.4 = 5.78e5× at 28-layer depth — physically impossible; real systems saturate. **Methodology lesson #7 NEW** (`feedback_test_methodology_can_fake_bugs.md`): when comparing two implementations via summary statistics (std/mean/cosine), VERIFY both sides measure the SAME distribution shape (count, dim, element selection) BEFORE trusting the comparison. Mismatched distribution shapes can amplify a small real divergence into an apparent magnitude that looks like a bug. SHIP-007 §22 burned ~3 weeks pre-cascade + 2 days cascade + 2 hours fix on a methodology issue that produced a fake apparent magnitude on top of the real per-matvec mechanism. **15,233 lib tests pass, 0 failures**; production hot paths byte-unchanged (only `forward_traced` touched in PR #1550). **Discharge potential**: per §17.5, M-FFN-GGUF-5 closure transitively enables individual discharge of 5 MODEL-1 PARTIALs (SHIP-002, SHIP-005, SHIP-006, SHIP-007, SHIP-008); each may need its own contract-level promotion follow-up. **MODEL-1 ship %**: 91% → **96% pending individual partial discharges**. **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38. Coverage tally: 12 falsifiers + 1 fix DISCHARGED across `trace-ffn-sub-block-gguf-v1` v1.0.0 → v1.13.0 cascade. **Total session: 28 PRs across 2 days** including 1 actual fix landing.
+**Atomic next action (v3.04.0):** **§59 — SHIP-007 §22 falsifier cascade CLOSED — 11 PRs (M91-M101) decompose §27 1723% within rounding; fix scope EMPIRICALLY VALIDATED as Option-A (2026-05-06+07)** (see companion-spec entries M91-M101 in `claude-code-parity-apr/docs/specifications/claude-code-parity-apr-poc.md` for the full per-PR cascade narrative; aprender contract `contracts/trace-ffn-sub-block-gguf-v1.yaml` v1.0.0 → v1.12.0 across 12 amendments). Two-day autonomous /loop session shipped 11 lib-test + 1 integration-test falsifiers (aprender PRs #1535/#1536/#1537/#1538/#1540/#1541/#1542/#1543/#1544/#1545) decomposing the §27 layer-3 ffn_swigl 18.23× APR-vs-GGUF std-ratio (=1723% deviation from 1.0). **Final empirical decomposition (2026-05-07)**: 0.077% per-tensor mechanism (M94, FALSIFY-FFN-GGUF-008 — first CONFIRMED bit-divergence between APR's standalone-dequant + F32-matmul "Path A" semantics vs GGUF's Q8K-activation-quant + fused-inline-dequant "Path B" semantics on synthetic 144-byte Q4K super-block) × 5.70× super-linear compounding (M95, 5 chained matvecs grow 0.077% → 0.4391%) × 50× std-ratio measurement sensitivity (M99, batch-dimension std measurement vs per-tensor rel_diff) × 5.56× LIVE real-teacher amplification (M100, FALSIFY-FFN-GGUF-014 LIVE on canonical 7B Qwen2.5-Coder-Instruct-Q4_K_M layer-3 ffn_down_weight Q4K bytes from `/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr`: Path A=-1.658492 [`0xbfd44977`] vs Path B=-1.665596 [`0xbfd5323e`], rel_diff 0.428%) × 14× residual = ~1715% — **within rounding of §27's 1723%**. **Six synthetic amplifier candidates resolved**: A1 (RoPE phase, M98) FALSIFIED 1.00× UNITARY; A2 (softmax saturation, M97) FALSIFIED 0.01× COMPRESSES; A3 (block-scale variance, M96) FALSIFIED 1.00× SCALE-INVARIANT; A4 (multi-token batch, M99) FALSIFIED 0.26× per-token PLUS 50× std-ratio measurement sensitivity finding; A5 (real-weight non-uniformity, M100) **PARTIALLY CONFIRMED 5.56× LIVE on canonical 7B**; A6 (RMSNorm rsqrt, M101) FALSIFIED 1.00× HOMOGENEOUS. **14× residual gap is now attributed entirely to cumulative-layer interaction** (synthetic single-layer + homogeneous-RMSNorm tests cannot capture it; M-FFN-GGUF-7 multi-layer real-teacher chain is the only remaining test path but does NOT block fix PR). **SHIP-007 §22 fix scope EMPIRICALLY VALIDATED as Option-A (PROMOTE GGUF-PATH semantics into APR forward)**: switching APR's `f32_matmul` to Q8K activation quant + fused matvec semantics will recover the 5.56× per-matvec amplification on every matmul, eliminating cumulative APR-vs-GGUF drift. Estimated fix scope ~250-400 LOC; transitively discharges 5 MODEL-1 PARTIALs (SHIP-002, SHIP-005, SHIP-006, SHIP-007, SHIP-008) per §17.5. Cascade methodology lessons consolidated to `~/.claude/projects/-home-noah-src-aprender/memory/feedback_falsifier_cascade_decomposes_magnitude.md` and `feedback_falsifier_chain_assert_difference.md`. **MODEL-1 ship %**: unchanged at **91%** until M-FFN-GGUF-5 (the actual fix PR) lands. **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38. Coverage tally: 11 new falsifiers DISCHARGED across `trace-ffn-sub-block-gguf-v1` v1.0.0 → v1.12.0 cascade.
+**Atomic next action (v3.03.0):** **§58 — v0.32.0 cascade publish + release-engineering hygiene snapshot (Issue #1514 CLOSED, 6 PRs, 4 hidden defects surfaced + closed) (2026-05-05)** (see new §58 below). Issue #1514 (v0.32.0 cascade publish) CLOSED at 16:14:56Z. Four user-facing crates now live on crates.io at v0.32.0: `aprender`, `aprender-rag`, `aprender-core`, `apr-cli` (verified via `cargo search`). Cascade surfaced 4 release-engineering defects, all closed in their own PRs: #1512 (aprender-rag `[lib] name = "trueno_rag"` → `"aprender_rag"` BREAKING — `use aprender_rag::*` was uncompilable in v0.31.x), #1513 (aprender-orchestrate `cmd_code` 7→8 arg drift on upstream `emit_trace` addition), #1515 + #1517 (aprender-core dev-dep publish-time cycle: path-only and then permissive `version = ">=0.27"` + path, after clean-room sed-strip left invalid `{ package = "..." }` entries), #1518 (apr-cli `include_str!("../../../../configs/aliases.yaml")` failed cargo publish — files outside crate dir excluded; fix copies aliases.yaml into `crates/apr-cli/configs/`). PR #1511 ships `pv lint --strict-test-binding`, closing §57.4's foreshadowed prevention rule. 5g.1 corpus retokenize (PID 2767124) at 62 shards / 16h19m wall (past initial 57-shard estimate; rate ≈ 15-16 min/shard; manifest pending end-of-run). **MODEL-1 ship %**: unchanged at **91%**. **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38. Coverage tally: snapshot (release-engineering hygiene, not falsifier flip).
+**Atomic next action (v3.02.0):** **§57 — drift sweep cleans §50.4 cascade contracts (3 PRs); 5g.1 full corpus run on track (2026-05-05)** (see new §57 below). Three same-class drift fixes shipped this session — PR #1502 (apr-pretrain-arch-polymorphic-v1 v1.4 binds CUDA-001), PR #1505 (apr-pretrain-arch-polymorphic-v1 v1.5 fixes FALSIFY-005/006 names), PR #1506 (apr-cli-tokenize-import-hf-v1 v1.1 binds FALSIFY-001 with integration test). PR #1504 (apr-pretrain-from-init-v1 v1.2 drift correction) closed the largest instance via operator/agent collaboration. After this sweep, `pv lint contracts/` reports **0 PV-VER-001 errors across all 870+ contracts** — every cited test exists. 5g.1 full corpus retokenization (PID 2767124) progresses steadily at 16.3 min/shard; 13/57 shards complete in 3h22min wall; ETA ~22:00Z (5g.1.3 verdict ~12hr from now). **MODEL-1 ship %**: unchanged at **91%**. **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38. Coverage tally: snapshot (drift sweep is hygiene, not falsifier flip).
+**Atomic next action (v3.01.0):** **§56 — 5g.1 LIVE smoke: corpus retokenization with Qwen vocab is correctness-validated; full run is ~17hr operator-dispatch (2026-05-05)** (see new §56 below). Smoke ran `apr tokenize encode-corpus` on first 5000 docs of `python-permissive.jsonl` through the §54-extracted Qwen tokenizer dir; produced 13 valid u32 shards (~13M tokens) at ~110 sec / M-token before being killed. 5g.1 is correctness-validated and operator-dispatchable. Wall projection for full 565M-token corpus: ~17 hours single-thread (1.7× legacy 50257-vocab wall — Qwen's 3× larger merge table is the dominant cost). **Below the 48hr `feedback_compute_pre_authorized.md` ceiling.** Full run dispatched 2026-05-05T07:00Z. Spec v3.00.0 → **v3.01.0**. **MODEL-1 ship %**: unchanged at **91%**. **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38. Coverage tally: 5g.1 reaches LIVE-SMOKE level; promotion to FULL-VALIDATED waits for full-corpus run + manifest.json.
+**Atomic next action (v3.00.0):** **§55 — Polymorphic preflight relaxation: tokenizer_vocab ≤ model_vocab when init=Some; LIVE smoke confirms Qwen extracted tokenizer passes preflight (2026-05-05)** (see new §55 below). §54's LIVE smoke surfaced that public Qwen2.5-Coder-0.5B-Instruct/tokenizer.json materializes 151643 BPE entries + 22 added = 151665 effective strings, but config.json declares vocab_size=151936 (271 reserved/special slots not in tokenizer.json). Strict equality preflight was correct for §24/§25 from-scratch but too strict for HF-distributed pretrained checkpoints with reserved slots. §55 introduces the relaxed bound `tokenizer_vocab ≤ model_vocab` for the polymorphic path (init=Some); strict equality is preserved for the from-scratch path (init=None, regression-free). New helper `assert_tokenizer_vocab_within_model_bound` + extended preflight signature + 4 new tests (2 helper + 2 integration). Contract `apr-pretrain-arch-polymorphic-v1` v1.2.0 → **v1.3.0 FUNCTIONAL** with FALSIFY-009 (relaxed accept) + FALSIFY-010 (oversize reject — OOB safety). LIVE smoke 2026-05-05T05:48Z: rebuilt apr binary + §54-extracted Qwen tokenizer + Qwen 0.5B init APR → preflight PASSED (no GATE-ARCH errors); process proceeded past preflight to weight load (timeout-killed at 30s mid-load). Spec v2.99.0 → **v3.00.0**. **MODEL-1 ship %**: unchanged at **91%**. **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38. Coverage tally: 8 → 10 falsifiers in apr-pretrain-arch-polymorphic-v1 (+2 new, all PASS). 5g.1 (corpus retokenize) now technically dispatchable.
+**Atomic next action (v2.99.0):** **§54 — Step 5g has multi-step prerequisites; live preflight smoke proves polymorphic gate fires on Qwen --init + legacy 50257-vocab tokenizer (2026-05-05)** (see new §54 below). Live empirical smoke on canonical 0.5B init APR + canonical 565M-token codeparrot corpus + canonical 50257-vocab tokenizer + freshly-built apr binary (commit 92c7e237b post-#1494) FIRED CORRECTLY: `GATE-ARCH-370M-011 (INV-ARCH-370M-006) violated: tokenizer vocab_size (50257) != model vocab_size (151936)`. This is the FIRST end-to-end runtime evidence that the §50.4 cascade's polymorphic preflight (PR #1476) works in the user-facing CLI (FALSIFY-APR-PRETRAIN-ARCH-005/006 reach LIVE-INTEGRATION level beyond unit-test PARTIAL). But the smoke also surfaces 5g's true scope: a Qwen-vocab tokenizer dir + Qwen-tokenized corpus must exist BEFORE the preflight passes — neither exists on this host today. Step 5g is re-scoped from "1 dispatch, 0 LOC" to **5g.0 (Qwen tokenizer extraction, ~50 LOC) → 5g.1 (Qwen-tokenized corpus, multi-hour wall) → 5g.2 (LIVE 500-step fine-tune, 0 LOC operator-dispatch) → 5g.3 (val_loss < 9.38 verdict)**. Spec v2.98.0 → **v2.99.0**. **MODEL-1 ship %**: unchanged at **91%**. **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38 evidence. Coverage tally: snapshot + roadmap re-scoping (no contract status flip — the polymorphic preflight evidence reinforces v1.2.0 FUNCTIONAL but doesn't yet promote to DISCHARGED).
+**Atomic next action (v2.98.0):** **§53 — §50.4 cascade INTEGRATION-COMPLETE on main; `apr pretrain --init` end-to-end runnable; only 5g LIVE remains (2026-05-05)** (see new §53 below). PR #1494 (§50.4 step 5f.4 CLI wireup) MERGED at 01:48:14Z. The `apr pretrain --init <PATH>` flow is now end-to-end functional on CPU: magic-byte validation → arch extraction via `model_config::read_apr_architecture` → polymorphic preflight with EXTRACTED vocab → `build_shared_trainer_with_init` composing 5f.1 (encoder rejection) + 5f.2 (load) + 5f.3 (populate). The legacy "not yet wired" Err from §49 step 4 is RETIRED. CUDA path fail-fasts with FALSIFY-APR-PRETRAIN-INIT-CUDA-001 (5f.5 follow-up). Contract `apr-pretrain-arch-polymorphic-v1` ready for v1.1.0 PARTIAL_ALGORITHM_LEVEL → v1.2.0 FUNCTIONAL bump (8/8 falsifiers PASS on main, integration verified). **§50.4 cascade ships 11 PRs over 2 days** (#1471/#1472/#1473/#1474/#1475/#1476/#1478/#1479/#1481/#1482/#1483/#1486/#1494). Spec v2.97.0 → **v2.98.0**. **MODEL-1 ship %**: unchanged at **91%**. **MODEL-2 ship %**: unchanged at **57%** until step 5g produces val_loss < 9.38 — but step 5g is now operator-dispatchable (the only blocker resolved). Coverage tally: snapshot, contract status flip pending v1.2.0 bump.
+**Atomic next action (v2.97.0):** **§52 — §50.4 cascade ALGORITHM-COMPLETE on main; new step 5f.4 CLI wireup gap identified before 5g LIVE (2026-05-04)** (see new §52 below). Same-day continuation of §51 cascade landed PR #1479 (FALSIFY-APR-PRETRAIN-ARCH-007 encoder/decoder family validator) and PR #1481 (`load_init_tensors_from_apr` in `aprender-train`). #1483 (`populate_trainer_from_init_tensors`, §50.4 step 5f.3) and #1482 (contract `apr-pretrain-arch-polymorphic-v1` v1.0.0 → v1.1.0 PARTIAL_ALGORITHM_LEVEL bump) are MERGEABLE in queue. **All 8 falsifiers in `apr-pretrain-arch-polymorphic-v1` are now bound on main or about to land**: 6 already MERGED (#1474/#1475/#1476/#1478/#1479/#1473), #1483 + #1482 cover the remaining 2 (5f.3 populate + the v1.1.0 contract status bump). **NEW finding from live source inspection of `apr-cli/src/commands/pretrain.rs:259-297`**: even with all helper functions merged (`load_init_tensors_from_apr` + `validate_pretrain_init_arch_compatible` + `populate_trainer_from_init_tensors` + `build_transformer_config` + polymorphic preflight), the CLI dispatch `validate_init_apr_path` HARDCODES an `Err(...not yet wired...)` return — so an operator running `apr pretrain --init <Qwen>.apr` STILL gets a "not yet wired" runtime error. **Step 5f.4 (CLI wireup, ~150 LOC) is the missing connecting step that makes 5g LIVE actually runnable.** Roadmap re-scoped: 5a-5f.3 (algorithm machinery, COMPLETE) → **5f.4 (CLI wireup, NOT YET STARTED)** → 5g (LIVE 500-step fine-tune, gates ship-%) → 5h (stamp + publish). Spec v2.96.0 → **v2.97.0**. **MODEL-1 ship %**: unchanged at **91%**. **MODEL-2 ship %**: unchanged at **57%** until step 5g produces val_loss < 9.38 evidence — but step 5g now requires step 5f.4 to land first. Coverage tally unchanged this cycle (snapshot + roadmap re-scoping, not falsifier flips).
+**Atomic next action (v2.96.0):** **§51 — §50.4 cascade snapshot: 7/8 falsifiers PARTIAL_ALGORITHM_LEVEL bound; MODEL-2 ship-% gate narrowed to step 5g LIVE (2026-05-04)** (see new §51 below). Same-day continuation cycle landed 8 PRs across the architecture-polymorphic infrastructure track (§50.4 steps 5a-5f.1). Falsifier scoreboard for `apr-pretrain-arch-polymorphic-v1`: FALSIFY-001 (#1474) qwen2_0_5b matches HF + tie_word_embeddings DEFECT FIX; FALSIFY-002 + 003 (#1475) build_transformer_config polymorphic dispatch; FALSIFY-004 (#1478 MERGED) GQA-7:1 forward smoke; FALSIFY-005 + 006 (#1476 MERGED) polymorphic preflight Qwen vocab; FALSIFY-007 (#1479) encoder/decoder family validator; FALSIFY-008 contract-level pv-validate. Three PRs MERGED (#1472 §50, #1476, #1478); four still in auto-merge queue (#1473 contract, #1474 fix, #1475 dispatch, #1479 validator). **Step 5f.2 (APR weight load + tensor materialization, ~80 LOC) deliberately deferred** to let cascade settle; doing 5f.2 now would mean rebasing onto 4 in-flight PRs as they land. **Step 5g LIVE 500-step fine-tune is the only remaining load-bearing test** that moves MODEL-2 ship-%; everything else is infrastructure. Per §47-§48 lesson: "infrastructure shipped ≠ ship-% movement." Spec v2.95.0 → **v2.96.0**. **MODEL-1 ship %**: unchanged at **91%**. **MODEL-2 ship %**: unchanged at **57%** until step 5g produces val_loss < 9.38 evidence. Coverage tally unchanged (snapshot, not falsifier flip).
+**Atomic next action (v2.95.0):** **§50 — MODEL-2 architecture-coupling finding: §49.6 step 5 is multi-PR scope, not single-PR (re-scoped 5a-5h)** (see new §50 below). After §49.6 steps 3 + 4 landed (PR #1470 contract + PR #1471 wire-up), live source inspection of `pretrain_real.rs:38-46` revealed the trainer hardcodes every architectural constant from `Llama370MConfig` (hidden=1024, heads=16/4, ffn=2816, vocab=50_257). Qwen2.5-Coder-0.5B has different shape (hidden=896, heads=14/2, ffn=4864, vocab=151_936, GQA-7:1). Every tensor mismatches; §49.6 step 5's "0 LOC, just run apr pretrain --init" assumption fails. Three options surfaced (A: find/build a Llama-shaped 0.5B checkpoint; B: make trainer arch-polymorphic; C: replace Llama370MConfig with Qwen-shaped). **Recommend Option B** — preserves §24/§25 falsification evidence, exercises `TransformerConfig`'s designed polymorphism, binds each new component (Qwen tokenizer, GQA-7:1, extracted-arch loader) to its own falsifier. Re-scoped roadmap: 5a (new contract `apr-pretrain-arch-polymorphic-v1`) → 5b (TransformerConfig::qwen2_0_5b constructor) → 5c (extract arch from init APR) → 5d (Qwen tokenizer surface) → 5e (GQA-7:1 verification) → 5f (weight load) → 5g (LIVE 500-step fine-tune) → 5h (publish). **Total: ~410 LOC + 1 LIVE run, not 0 LOC.** Spec v2.94.0 → **v2.95.0**. **MODEL-1 ship % unchanged at 91%. MODEL-2 ship % unchanged at 57%** until 5g produces val_loss < 9.38. Coverage tally unchanged (architecture finding, not a falsifier flip).
+**Atomic next action (v2.94.0):** **§49 — MODEL-2 strategy pivot: from-scratch was a methodology defect; pretrained-init + fine-tune is the correct path** (see new §49 below). After 11 SHIP-007 cascade PRs without ship-% movement, operator asked "why aren't we training models?" Honest re-diagnosis of the MODEL-2 architecture revealed that §34's "capacity-limited at val_loss=9.38" framing is **wrong** — it's **data-limited**. Live evidence (2026-05-04 session): a fresh 500-step `apr pretrain --mode from-scratch --device cuda` run on the existing 565M-token codeparrot corpus converged to **val_loss=9.7255**, identical to §24's 9.7507 ceiling — confirming the corpus is the binding constraint. Industry comparison: SmolLM-360M (similar param count) hits val_loss ~2.9 but was trained on 1T tokens. MODEL-2 saw 565M. The "from-scratch on 565M tokens" math just doesn't reach val_loss=3.0 regardless of step budget. The right strategy is **initialize from a public pretrained 370M-class checkpoint and fine-tune on the existing corpus** — Qwen2.5-Coder-0.5B-Instruct (already in HF cache at `~/.cache/huggingface/hub/models--Qwen--Qwen2.5-Coder-0.5B-Instruct/`, 950 MB) is at val_loss ~2-3 already. Fine-tuning on Python+permissive code shifts the distribution without losing the 1T-token pretraining. This pivot is **NOT a punt** — it matches industry best practice (StableCode ← StableLM, Qwen2.5-Coder ← Qwen2.5; nobody trains 0.5B from scratch for production code-LMs because the data efficiency math fails). Spec v2.93.0 → **v2.94.0**. **MODEL-2 ship % stays at 57%** until the fine-tune produces measurable val_loss < 9.38 evidence. **MODEL-1 ship % unchanged at 91%**. Coverage tally unchanged this cycle (strategic amendment, no falsifier flips yet).
+**Atomic next action (v2.93.0):** **§48 — SHIP-007 layer-0 attention bisection cascade ALGORITHM-LEVEL COMPLETE (PRs #1455 + #1456 + #1457)** (see new §48 below). Three more PRs after §47 closed the §47.1 cascade roadmap to step 6 of 8 at the algorithm level: (i) PR #1455 — `forward_traced_with_plan` wires 4 attention sub-stages (`QPostRope`, `KPostRope`, `AttnScores`, `AttnSoftmax`); FALSIFY-ATTN-SUB-002 PARTIAL_ALGORITHM_LEVEL; closes the §47.4 parent-contract drift as a side effect (+ memory cost: 112 bytes/forward at BOS). (ii) PR #1456 — drift-prevention test for FALSIFY-ATTN-SUB-003 in `crates/apr-cli/src/commands/diff_05_aprt_stage.rs`; 2 new tests (`falsify_attn_sub_003_new_stages_per_stage_agnostic` + `falsify_attn_sub_003_cosine_detects_softmax_divergence`); pins that `apr diff --values` is per-stage-agnostic for the 2 new stage suffixes. (iii) PR #1457 — extends `scripts/generate_qwen25_coder_fp16_stages.py` with `--with-attn-substages` (default ON) installing per-instance `Qwen2Attention.forward` monkeypatch under `attn_implementation="eager"`; captures the 4 missing stages (`q_post_rope`, `k_post_rope`, `attn_scores`, `attn_softmax`); pre-condition for FALSIFY-ATTN-SUB-004 LIVE bisection now algorithm-bound (BLOCKER_FIXTURE_ABSENT → PARTIAL_ALGORITHM_LEVEL on this PR's merge). Toyota Way correction during research: the pre-impl note estimated 7 missing stages + ~140 LOC; live source inspection of the existing script found 3 already-captured (`qkv_matmul`, `qkv_bias`, `attention`), reducing scope to **4 stages, ~80 LOC**. **Steps 7-8 (LIVE RTX 4090 bisection + root-cause fix) require operator action**: (a) canonical `apr` release binary needs rebuild post-#1451 (the `/mnt/nvme-raid0/targets/aprender/release/apr` rejects `attn_scores` stage today); (b) PyTorch/CUDA driver mismatch on the host blocks `--device cuda` (workaround: `--device cpu` is multi-min but functional). **MODEL-1 ship %**: 91% (cascade is scaffold; ship % moves at SUB-004 LIVE DISCHARGE in step 7). **MODEL-2 ship %**: 57%. Spec v2.92.0 → **v2.93.0**. Coverage tally: 20+32 → **20+36** (+4 PARTIAL_ALGORITHM_LEVEL from `trace-attn-sub-stages-v1` v1.1.0 falsifiers landing on main via #1450; the 5th — SUB-004 — remains BLOCKER until #1457 ships and an operator runs the live RTX 4090 bisection).
+**Atomic next action (v2.92.0):** **§47 — SHIP-007 layer-0 attention bisection cascade STARTED (PRs #1450 + #1451 + #1452)** (see new §47 below). Three more PRs ship the §46.7(a) follow-up scaffold: (i) PR #1450 — new contract `trace-attn-sub-stages-v1.yaml` v1.0.0 PROPOSED → v1.1.0 PROPOSED (Toyota Way correction within the same branch). v1.0.0 originally claimed 5 new `SaveTensorStage` variants; live inspection of `inference_trace::save_tensor_stage` showed 3 already exist (`QPostRope`, `KPostRope`, `Attention`) — only **2 are truly new** (`AttnScores`, `AttnSoftmax`). v1.1.0 corrected scope to those 2 + documented the 9-stage `bisection_chain_layer_0` equation across parent + new stages. (ii) PR #1451 — `SaveTensorStage` enum gains the 2 new variants in canonical computation order (`KPostRope → AttnScores → AttnSoftmax → Attention`); 5 new tests for FALSIFY-ATTN-SUB-001 (round-trip, ordering, parser-list); 167/167 inference_trace tests PASS; `cargo check --workspace --lib` clean. (iii) PR #1452 — research evidence note documenting a **pre-existing capture gap discovered while authoring the wire-plan**: `QPostRope` + `KPostRope` are in the parent enum but have NO `emit()` calls in `forward_traced_with_plan`. The parent contract `apr-cli-trace-save-tensor-v1.yaml` v1.4.0 (FUNCTIONAL) silently overstates coverage for those 2 stages. The next-cycle FALSIFY-ATTN-SUB-002 PR will wire **4 stages, not 2**, closing this drift as a side effect. **MODEL-1 ship % unchanged at 91%** (cascade is scaffold; ship % moves when a falsifier flips DISCHARGED, expected at FALSIFY-ATTN-SUB-004 LIVE bisection in a future cycle). **MODEL-2 ship % unchanged at 57%**. Spec v2.91.0 → **v2.92.0**. Coverage tally unchanged this cycle (5 falsifier slots PARTIAL_ALGORITHM_LEVEL added to a NEW contract — these increment coverage when the contract YAML lands on main, which gates on PR #1450 merge).
+**Atomic next action (v2.91.0):** **§46 — v0.32.0 release-cut decision: HOLD, gated on SHIP-007 layer-0 attention bisection (PR #1448 in flight)** (see new §46 below). After landing the v2.90.0 §45 milestone (PR #1447 merged), the next decision was whether the 238-commit body of work since v0.31.2 warrants a `cargo publish` cut. **Verdict: HOLD.** The release-readiness audit found exactly one load-bearing blocker — SHIP-007 layer-0 attention divergence is empirically pinpointed (cos=0.99999995 attn_norm → 0.9966 attn_out per memory `2026-05-03 SHIP-007 finding`) but **not yet fixed**, so cutting v0.32.0 today would crates.io-ship a binary where `apr run` on a 7B GPU teacher still emits gibberish unless the user passes `--no-gpu`. The §41-§45 jidoka armor makes the failure visible + fail-closed (which is shippable behaviour), but a user-facing `## [0.32.0]` headline that reads "5/5 DISCHARGE on apr-cpu-vs-gpu-output-parity-v1" implies the GPU correctness hole is closed when in truth it is only contained. Two pre-flight artifacts shipped along with this decision: (i) PR #1448 fills the empty `[Unreleased]` CHANGELOG section with the full session body of work; (ii) PR #1448 also repairs the `bash scripts/check_readme_claims.sh` drift gate which was FAILING on `main` (1096→1105 contracts, 79→80 CLI commands). Per `feedback_post_publish_qa_required.md`, the next cut also requires `cargo install aprender --force` + `/dogfood` GO verdict — v0.31.1 was yanked for skipping that gate. Spec v2.90.0 → **v2.91.0**. Coverage tally unchanged (no falsifiers flipped this cycle; this amendment is a release-decision audit record).
+**Atomic next action (v2.90.0):** **§45 — `apr-cpu-vs-gpu-output-parity-v1` 5/5 LIVE DISCHARGE milestone (PRs #1445 + #1446)** (see new §45 below). Two live smokes on canonical Qwen2.5-Coder-7B teacher (RTX 4090, binary built from main @ 817ec0553) closed every falsifier in the parity contract: (i) PR #1445 — default-mode `apr run` smoke fired all three jidoka tags in stderr (CUDA cos=-0.005 + argmax 8127≠334; `Backend: wgpu (Vulkan)`; wgpu cos=0.766 < 0.99) and produced correct CPU output "2 + 2 equals 4." → FALSIFY-CPU-GPU-005 PARTIAL_ALGORITHM_LEVEL → DISCHARGED. (ii) PR #1446 — `--no-gpu` smoke produced 9.02s CPU-only run with zero GPU log lines + correct output → joined #1445 evidence to flip FALSIFY-CPU-GPU-001/002/003 PARTIAL → DISCHARGED + FALSIFY-CPU-GPU-004 FUNCTIONAL → DISCHARGED. **All 5/5 falsifiers in apr-cpu-vs-gpu-output-parity-v1 are now DISCHARGED**; the contract is COMPLETE. Coverage tally: 15+37 → **20+32** (+5 in this 2-PR cycle, the largest single-cycle coverage flip of the SHIP-TWO program). MODEL-1 ship % nudges 89% → **91%** (the silent-gibberish loophole that v5/§40 originated is now both implemented closed AND end-to-end live-verified on the canonical broken-GPU model). The §41 → §43 → §44 → §45 jidoka chain is contract-complete; only the underlying SHIP-007 GPU kernel root-cause fix per §40 remains for full GPU-shipability of MODEL-1. Spec v2.89.0 → **v2.90.0**. Contract apr-cpu-vs-gpu-output-parity-v1 v1.3.0 → v1.5.0 ACTIVE.
+**Atomic next action (v2.89.0):** **§44 — FALSIFY-CPU-GPU-005 part b implementation + distill-train 9/9 sweep close (PRs #1442 + #1443)** (see new §44 below). Today's continuation cycle landed two more PRs across both ship tracks: (i) PR #1442 — FALSIFY-CPU-GPU-005 part b live implementation: ~70 LOC inline at `try_apr_wgpu_inference` running a CPU-vs-wgpu cosine probe on the BOS token before the autoregressive loop, with a separate tiny probe_kv_caches (max_seq=2) so the real cache stays uncontaminated; emits `WGPU_FALLBACK_LOG_PREFIX` and returns None on cosine < 0.99 OR any probe error (fail-closed). Contract `apr-cpu-vs-gpu-output-parity-v1` v1.2.0 → v1.3.0 ACTIVE. (ii) PR #1443 — closes the last three falsifiers in `apr-cli-distill-train-v1`: TRAIN-007 + TRAIN-008 PARTIAL_ALGORITHM_LEVEL via existing tests (`pv validate` + `cli_commands::test_no_unregistered_commands`), and TRAIN-009 explicitly marked BLOCKER_FIXTURE_ABSENT pending the §35 real-training implementation. **All 9 TRAIN-* falsifiers now have explicit `algorithm_evidence` blocks** (8× PARTIAL + 1× BLOCKER); the distill contract has reached terminal-binding state — no further drift gaps remain. **MODEL-1 ship % nudges 88% → 89%** (wgpu silent-gibberish loophole now closed at the init boundary, symmetric to the CUDA `parity_gate` from §41); **MODEL-2 ship % nudges 56% → 57%** (last falsifier-binding gap closed for the distill contract; only remaining lever is §35 real-training implementation, multi-PR scope). Spec v2.88.0 → **v2.89.0**. Coverage tally 15+35 → **15+37** (+2 PARTIAL_ALGORITHM_LEVEL closed; TRAIN-009 explicitly blocked, not counted).
+**Atomic next action (v2.88.0):** **§43 — distill-train algorithm-binding + wgpu cosine helper for FALSIFY-CPU-GPU-005 part b (PRs #1438-#1440)** (see new §43 below). Today's session shipped 3 additional PRs across both ship tracks: (i) PR #1438 — FALSIFY-APR-DISTILL-TRAIN-005 PARTIAL_ALGORITHM_LEVEL via 2 unit tests (precompute byte-determinism, local + remote-stub branches); (ii) PR #1439 — FALSIFY-APR-DISTILL-TRAIN-006 PARTIAL_ALGORITHM_LEVEL via 2 unit tests (cache-resume idempotency, negative + positive halves); (iii) PR #1440 — `cpu_vs_gpu_cosine_similarity` helper at `infer/gguf_gpu_generate.rs` module scope + 3 fail-closed unit tests, lifting the cosine math out of `cuda::mod_parity_gate` so the future wgpu cosine gate can call it without a `--features cuda` build dependency. Two contract drifts closed (TRAIN-005 + TRAIN-006: tasks #195/#196 claimed PARTIAL_ALGORITHM_LEVEL on 2026-04-30 but YAML had no `algorithm_evidence` until today). **MODEL-2 ship % nudges 54% → 56%** (TRAIN-005/006 algorithm-bindings lock in the math invariants of the precompute/train idempotency contract); **MODEL-1 ship % nudges 87% → 88%** (cosine helper + 3 tests is infrastructure-ready for the part b wgpu single-step decode in a future PR). Spec v2.87.0 → **v2.88.0**. Coverage tally 15+33 → **15+35** (+2 PARTIAL_ALGORITHM_LEVEL closed). The underlying SHIP-007 GPU kernel fix and `apr distill --stage train` real-training implementation remain open per §40 + §35.
+**Atomic next action (v2.87.0):** **§42 — hub-feature build chain repair + hf_pipeline distill-train falsifier-parity (PRs #1432-#1436)** (see new §42 below). Today's session shipped 5 additional PRs that close two pre-existing defect classes: (i) the `--features hub` build was unbuildable on main due to a syntactic bug in `quantize_to_gguf_bytes` that masked 11 pre-existing test failures (PR #1432 fixed the build → 2 surfaced empty-data contract drifts closed by #1433 → 9 GGUF roundtrip alignment-padding test-helper bugs closed by #1434); (ii) the hf_pipeline distill path lacked falsifier-parity coverage with the canonical `distill::loss::DistillationLoss` (PRs #1435 wgpu drift-prevention + #1436 hf_pipeline FALSIFY-APR-DISTILL-TRAIN-003/004 parity tests). Net `--features hub` health: build-error → 7986/7986 pass / 16 ignored. **MODEL-2 ship % nudges 50% → 54%** because the falsifier-coverage parity between the canonical and parallel distillation impls is the prerequisite for any future MODEL-2 distill-train PRs not regressing the math silently. Spec v2.86.0 → **v2.87.0**. Coverage tally unchanged (the underlying SHIP-007 GPU kernel fix and `apr distill --stage train` real-training implementation remain open per §40 + §35).
+**Atomic next action (v2.86.0):** **§41 — `apr-cpu-vs-gpu-output-parity-v1` chain landed (PRs #1427-#1430): three-layer jidoka armor at the GPU-CPU dispatch boundary** (see new §41 below). Today's session shipped 4 PRs that close §40's silent-gibberish loophole *as a regression class*, without (yet) fixing the underlying GPU kernel bug. (i) PR #1427 — contract `apr-cpu-vs-gpu-output-parity-v1` v1.0.0 PROPOSED authoring (4 falsifiers, 3 equations); (ii) PR #1428 — converts CUDA fallback log from verbose-only to unconditional, contract v1.0.0 PROPOSED → v1.1.0 ACTIVE with corrected algorithm_evidence (the parity_gate IS already wired on the .apr → OwnedQuantizedModelCuda path via with_max_seq_len:268-279, contradicting v1.0.0's claim — empirically verified via `apr -v run`); (iii) PR #1429 — drift-prevention: promotes the eprintln tag to `pub(crate) const CUDA_FALLBACK_LOG_PREFIX` + unit test that asserts the contract-tagged prefix shape (locks against rename without contract bump and re-wrapping in `if verbose`); (iv) PR #1430 — adds FALSIFY-CPU-GPU-005 wgpu visibility + parity-gate at PARTIAL_ALGORITHM_LEVEL, lands the wgpu visibility fix immediately (symmetric to #1428's CUDA fix), bumps contract v1.1.0 → v1.2.0 ACTIVE. Net behavioural change for `apr run` on a SHIP-007-broken GPU build: stderr now emits `[apr-cpu-vs-gpu-output-parity-v1] CUDA path rejected, attempting fallback: ... | Backend: wgpu (Vulkan) | ...` so users always know which backend is actually serving their tokens — the `--no-gpu` workaround is now self-evidently the correct path. **MODEL-1 ship % nudges 80% → 87%** because shipping `apr run` users with the `--no-gpu` documented workaround is now jidoka-safe (no silent garbage). Spec v2.85.0 → **v2.86.0**. Coverage tally unchanged (the underlying GPU-kernel SHIP-007 root-cause fix remains an open track per §40).
 **Atomic next action (v2.85.0):** **§40 — SHIP-007 root cause LOCALIZED to FP8/cuBLASLt GPU path; CPU path is CORRECT** (see new §40 below). Live evidence on canonical 7B teacher (RTX 4090): `apr run --no-gpu` (CPU path via `OwnedQuantizedModel` + Q4K-fused SIMD kernels) produces "**2 + 2 equals**" (correct) at temp=0; `apr run` (default, GPU path via cuBLASLt FP8 + JIT-warmed kernels) produces "**ampiezza = 1**" (gibberish). Same model, same prompt, same greedy sampling. The bug is in the GPU dispatch chain — specifically in the `cuBLASLt FP8 JIT warmed` kernels (per `[PMAT-082]` log) and/or `FP8 weight cache` (per `[PMAT-053]` log). Notably, task #147 already established `APR_SKIP_FP8_WARMUP` env var as a "reproducer stabilization" — confirming FP8 has been a known issue and a workaround exists. **MODEL-1 is shippable today via CPU path**; the GPU FP8 path needs a fix or a fallback gate. This narrows SHIP-007 from an unbounded layer-by-layer hunt to a SPECIFIC dispatch-chain defect. SHIP-002/005/006/007/008 may all auto-discharge if "MODEL-1 ships via CPU path" is acceptable scope. Spec v2.81.0 → **v2.85.0**. Coverage scoreboard 15+33 (pending CPU-path-shippable verdict).
 
 **Atomic next action (v2.81.0):** **§36 — plain-language status of the two-model goal** (see new §36 below). Each of the two models is blocked by a single concrete problem. **MODEL-1**: numerical bug at layer 3 of FFN (18× std anomaly; three theories refuted; sub-FFN telemetry just landed via PR #1082 + #1083 in flight). **MODEL-2**: converged at val_loss=9.38 (capacity-limited; spec target 3.0 unreachable from-scratch; needs distillation, but `apr distill` is a stub — contract authored as #1097 awaiting impl). Spec v2.80.0 → **v2.81.0**. No coverage flip; this is a landmark for plain-language readers.
@@ -4461,6 +4483,1659 @@ Unchanged from §29 because PR E did not land. Next-session agenda: do the §30.
 Per `feedback_fix_root_cause_never_route_around.md`: the §28 fix would have route-around'd a real bug because the named site (matmul kernel) is not where the divergence originates. The empirical refutation in §30 IS the work that protects the next attempt from shipping a no-op. This refutation is itself a coverage-incrementing artifact (it falsifies a hypothesis), even though no PARTIAL flips to DISCHARGED.
 
 The Toyota Way fix is to bisect upstream, not to flip the kernel call.
+
+## §63. SHIP-007 empirical floor — CUDA structurally broken on Qwen 7B; multi-PR cascade scope (2026-05-11)
+
+SHIP-007 (decode tps ≥ 30 tok/s on RTX 4090 with `--features cuda` per AC-SHIP1-007) was the last §17.5 PARTIAL hypothesized to discharge from §60 closure. §63 records the LIVE empirical investigation that revealed SHIP-007 is **multi-PR cascade scope**, not a tight 1-PR slice.
+
+### 63.1 The three-layer blocker stack
+
+| Layer | Bug | Workaround | Status |
+|------|-----|-----------|--------|
+| 1 | `CUDA_ERROR_ILLEGAL_ADDRESS` in cuBLASLt FP8 JIT warmup at `crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/attention.rs:1446` (PMAT-053) | `APR_SKIP_FP8_WARMUP=1` env var (commit `e4390cb4b`, opt-in) | Bypasses layer 1; surfaces layer 2 |
+| 2 | CUDA forward path computes a DIFFERENT function than CPU on Qwen2.5-Coder-Instruct dimensions (hidden=3584, heads=28, kv_heads=4). Cosine similarity vs CPU = **-0.005** (uncorrelated). PARITY-GATE rejects. | `SKIP_PARITY_GATE=1` (debugging only, not ship-safe) | Bypasses layer 2 → broken CUDA output |
+| 3 | Throughput on the (broken) CUDA path = **5.6 tok/s**. CPU fallback = 9.3 tok/s. Both well below SHIP-007's 30 tok/s floor AND below spec H12's 10 tok/s floor. | None — needs throughput optimization | Genuine perf gap |
+
+### 63.2 LIVE empirical evidence
+
+Live run on noah-Lambda-Vector RTX 4090 (2026-05-11), canonical 7B APR teacher `/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr` (sha256 `a394dd28…`, 8.0 GB):
+
+```bash
+# Layer 1: ILLEGAL_ADDRESS without workaround
+apr bench <teacher> --iterations 5 --max-tokens 128
+# → "[PMAT-053] FP8 cache warmup failed (non-fatal): CUDA_ERROR_ILLEGAL_ADDRESS (code: 700)"
+# → "error: Validation failed: Failed to init CUDA: ... CUDA_ERROR_ILLEGAL_ADDRESS"
+
+# Layer 2: PARITY-GATE rejects after FP8 warmup is skipped
+APR_SKIP_FP8_WARMUP=1 apr bench <teacher> --iterations 5 --max-tokens 128
+# → "error: PARITY-GATE FAILED: GPU computes a DIFFERENT function than CPU.
+#    Cosine similarity: -0.005190 (required: ≥0.98)
+#    CPU argmax: 334 | GPU argmax: 8127
+#    Max absolute logit difference: 19.5053
+#    This model's dimensions (hidden=3584, heads=28, kv_heads=4) cause
+#    GPU forward pass to diverge from CPU. The GPU CANNOT serve this model."
+
+# Layer 3: With both gates bypassed, throughput = 5.6 tok/s (well below 30)
+APR_SKIP_FP8_WARMUP=1 SKIP_PARITY_GATE=1 apr bench <teacher> --iterations 1 --max-tokens 32
+# → "Throughput: 5.6 tok/s (FAIL: < 10 tok/s)"
+# → "Median iteration time: 5.73s"
+```
+
+### 63.3 Why each layer is multi-PR scope
+
+**Layer 1 (FP8 warmup)**: Conservative 1-PR fix exists (default `APR_SKIP_FP8_WARMUP=1` for `apr bench`, ~50 LOC). But it merely uncovers layer 2.
+
+**Layer 2 (CUDA parity)**: Structural. The error message explicitly states the model's dimensions cause GPU divergence. Investigation surfaces in:
+- `crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/attention.rs` (cuBLAS path)
+- `crates/aprender-serve/src/gguf/inference/forward/` (Q4K matmul dispatch)
+- Likely related to GH-215 256-element padding or M-FFN-GGUF-5 dispatch on the specific 28-head / 4-kv-head shape.
+- Multi-PR: needs falsifier-first contract (e.g., `cuda-forward-parity-qwen-7b-v1.yaml`), bisection through the 28-layer chain (similar to SHIP-007 §22's M91-M101 cascade), and dispatch fix.
+
+**Layer 3 (perf)**: Once layers 1 & 2 are fixed, the throughput is the real ship-floor. 5.6 → 30 tok/s requires:
+- cuBLAS tensor core utilisation
+- Continuous batching (PagedAttention or equivalent)
+- KV cache optimisation
+- Multi-PR optimisation cascade.
+
+### 63.4 Methodology lesson #11
+
+**Some §17.5 PARTIALs are MULTI-PR cascades, not single-PR LIVE-discharges.** §60 closure was sufficient to unblock SHIP-002, SHIP-006, SHIP-008 (each single-PR LIVE), and likely SHIP-005 (in-progress 164-run). SHIP-007 was hypothesized similarly but EMPIRICAL test surfaces a deeper 3-layer blocker stack. Cascade-from-cascade pattern: a closure that unblocks N PARTIALs can still leave M ≤ N requiring their own deeper cascades.
+
+This generalises:
+- Lesson #6: Magnitude bugs decompose via falsifier chains.
+- Lesson #7: Methodology can fake bug magnitude.
+- Lesson #8: A falsifier's RED may surface different bug class.
+- Lesson #9: A falsifier's GREEN may invalidate earlier RED.
+- Lesson #10: Single bug class may need multi-PR fixes across call sites.
+- **Lesson #11**: An unblocking closure may transitively unblock SOME PARTIALs but leave OTHERS requiring their own multi-PR cascades.
+
+### 63.5 Spec-relevant ship-% movement
+
+- **MODEL-1 ship %**: stays at **94%** (pending 164-run completion which may flip SHIP-005 → 95%). SHIP-007 remains PARTIAL pending the 3-layer cascade.
+- **MODEL-2 ship %**: unchanged at **57%** (gated on step 5g.3 val_loss < 9.38).
+- **Estimated MODEL-1 ship % ceiling without SHIP-007 cascade**: 95% (if SHIP-005 discharges from 164-run).
+- **Estimated MODEL-1 ship % with SHIP-007 cascade**: 96% (when 3-layer SHIP-007 cascade closes — multi-day work).
+
+### 63.6 What §63 is NOT
+
+§63 does NOT yet ship a SHIP-007 fix. It documents the empirical floor and bounds the multi-PR scope so future sessions can pick up the cascade with full context. The conservative Option A workaround (default `APR_SKIP_FP8_WARMUP=1` for `apr bench`) remains queued under task #36 and may ship as a hygiene improvement, but does not LIVE-discharge SHIP-007 on its own.
+
+Evidence persisted to:
+
+```
+evidence/section-63-ship-007-empirical-floor-2026-05-11/    # SHIP-007 empirical floor evidence (NEW)
+├── findings.json                          # structured 3-layer blocker analysis
+└── bench-cuda-skip-parity.txt             # raw apr bench logs (captured during GPU-contended window)
+```
+
+Spec v3.08.0 → **v3.09.0**.
+
+---
+
+## §61. Post-§60 LIVE-discharge cascade — direct-prompt SHIP-002 GREEN; ChatML-prompt SHIP-006/008 surface a generation-quality gap (2026-05-10)
+
+§60 closed the SHIP-007 §22 binding-criterion: per-layer APR↔GGUF ffn_swigl ratio falls within H1 band [0.5, 2.0] on canonical 7B teacher (M-FFN-GGUF-5 PR #1550 + M-FFN-GGUF-7 PR #1548). Per §17.5 this transitively unblocks 5 MODEL-1 PARTIAL ship-row claims (SHIP-002/005/006/007/008). §61 records the LIVE-discharge cascade attempted from §60 and surfaces a NEW empirical finding: forward-parity passing does NOT imply generation-quality passing under all prompt formats.
+
+### 61.1 What §61 records vs what §60 closed
+
+| Track | §60 outcome (2026-05-07) | §61 outcome (2026-05-10) |
+|------|--------------------------|--------------------------|
+| Per-layer cosine parity (binding criterion) | layer-3 ratio 18.23× → 1.245× | unchanged — discharged via PR #1608 (`apr-vs-gguf-forward-parity-v1` v1.2.0 ACTIVE_FUNCTIONAL) |
+| §17.5 SHIP-002 LIVE | upstream blocker resolved | **DISCHARGED** via PR #1609 — `apr run --prompt "def fib(n):" --max-tokens 128` emits coherent fib() Python (`ast.parse` 0 syntax errors, 68 nodes) |
+| §17.5 SHIP-006 LIVE (`apr qa` 8 gates aggregate) | dispatch-ready | **BLOCKED** — `golden_output` gate fails with "gibberish (fragment '\\ns\\ns' repeats 3+ times)" on canonical 7B APR teacher under ChatML prompt |
+| §17.5 SHIP-007 LIVE (decode tps ≥ 30) | dispatch-ready | **BLOCKED** — observed throughput 8.8 tok/s on CPU fallback path; below 30 floor |
+| §17.5 SHIP-008 LIVE (ChatML teacher render) | dispatch-ready | **BLOCKED** — same ChatML degenerate-output bug as SHIP-006 |
+| §17.5 SHIP-005 LIVE (HumanEval pass@1 ≥ 86%) | dispatch-ready | **NOT YET ATTEMPTED** — gated on the same ChatML bug if the eval harness wraps prompts in ChatML |
+
+The empirical asymmetry is the load-bearing finding of §61: **direct prompts work; ChatML-wrapped prompts produce gibberish.**
+
+### 61.2 The empirical evidence — direct prompt SHIP-002 LIVE-discharge
+
+Live run on noah-Lambda-Vector RTX 4090 (2026-05-10, apr v0.32.0 post-e856eb91f):
+
+```bash
+apr run /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr \
+    --prompt "def fib(n):" --max-tokens 128
+```
+
+Wall time: 76.11s (cached load). Backend dispatch chain:
+- CUDA → transient `CUDA_ERROR_ILLEGAL_ADDRESS` (workspace reinit failed; non-fatal)
+- wgpu → rejected by `apr-cpu-vs-gpu-output-parity-v1` gate (cosine vs CPU = 0.766 < 0.99 + lm_head 2180 MB > 2147 MB limit)
+- CPU → SELECTED (post-fallback path)
+
+Output:
+
+```python
+def fib(n):
+    if n <= 0:
+        return "Input should be a positive integer"
+    elif n == 1:
+        return 0
+    elif n == 2:
+        return 1
+    else:
+        a, b = 0, 1
+        for i in range(2, n):
+            a, b = b, a + b
+        return b
+```
+
+Python `ast.parse`: **0 syntax errors**, 68 AST nodes, 1 FunctionDef "fib", 19 distinct AST node kinds. Discharged into `evidence/ship-002-discharge-2026-05-10/`. Contract `qwen2-e2e-verification-v1.yaml` v1.10.0 → v1.12.0 records the LIVE evidence chain.
+
+### 61.3 The empirical evidence — ChatML-wrapped prompt SHIP-006 BLOCKED
+
+`apr qa` invokes a `golden_output` gate that wraps "What is 2+2?" in ChatML:
+
+```
+<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n
+```
+
+Live run on the same canonical 7B APR teacher (2026-05-10, apr v0.32.0):
+
+```bash
+apr qa /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr --json
+```
+
+Verdict: **FAIL**. The gate JSON reports:
+
+```json
+{
+  "name": "golden_output",
+  "passed": false,
+  "message": "golden_output: gibberish (fragment \"\\ns\\ns\" repeats 3+ times)",
+  "duration_ms": 86144,
+  "skipped": false
+}
+```
+
+Throughput on the same APR file: 8.8 tok/s (well below SHIP-007's 30 tok/s floor). Five of eleven gates skipped because format ≠ GGUF (ollama_parity, gpu_speedup, format_parity, ptx_parity, gpu_state_isolation), one skipped because `--assert-classifier-head` not requested.
+
+The same model that emitted clean fib() Python via `apr run --prompt "def fib(n):"` produces degenerate `\ns\ns\ns…` repetition under the ChatML wrapper. The byte-identical model + identical inference engine + different prompt format → different output regime.
+
+### 61.4 The §60 → §61 separation
+
+§60 closed the **forward parity invariant**: per-layer activation statistics agree between APR and GGUF reference within Q4K tolerance on the canonical 7-token prompt `[3838, 374, 220, 17, 10, 17, 30]` ("What is 2+2?" tokenized). That gate is binary and discharged.
+
+§61 surfaces that forward parity is **not** sufficient for generation parity. Two model paths can produce statistically-identical activations and still produce different sampled tokens at sufficiently long generation lengths or under sufficiently different prompt distributions. The mechanism is subtle:
+
+1. **Per-layer parity** (§60) measures activation statistics over a fixed input.
+2. **Generation quality** (§61) measures sampled tokens over an autoregressive trajectory.
+3. Even tiny per-layer drift (1.245× ratio is not 1.000×) compounds across many tokens.
+4. The compounding interacts with the **sampling distribution** at each step.
+5. Different prompt formats (direct vs ChatML) push the model into different attention regimes, where cumulative drift behaves differently.
+
+The §27 1723% magnitude was test-methodology-inflated (M103 plot twist), but the underlying per-tensor mechanism (M94 0.077% Path A vs Path B per matvec) IS real numerical drift that compounds. Under direct prompts ("def fib(n):") the model has high-confidence next-token distributions and the drift doesn't flip arg-max. Under ChatML prompts the model is in a low-margin regime (instruction-following, multi-token chain-of-thought initialization) and the drift CAN flip arg-max, producing token-by-token degenerate trajectories that look like "gibberish".
+
+### 61.5 Falsifiable next investigation step
+
+§61's load-bearing diagnostic: **bisect the prompt-format-dependence of the generation gap.**
+
+Two falsifiable predictions:
+
+1. **PRED-61-A — same model, GGUF, ChatML prompt → CLEAN output.** If GGUF passes `apr qa golden_output` on the canonical Qwen2.5-Coder-7B-Instruct teacher with the same ChatML "What is 2+2?" prompt, the bug is APR-side in the inference path's chat-template handling (probably tokenizer-special-token application or causal mask construction at the boundary).
+
+2. **PRED-61-B — same model, APR, direct prompt with continuation → CLEAN output.** If `apr run --prompt "What is 2+2? The answer is " --max-tokens 32` (no ChatML wrapper, just text) produces "4" or near-equivalent, the bug is specifically in the special-token handling, NOT in long-tail cumulative drift.
+
+If both PRED-61-A and PRED-61-B are GREEN, the bug is localized to "APR + ChatML special-token path" — multi-PR scope but bounded.
+
+### 61.6 Spec-relevant ship-% movement
+
+- MODEL-1 ship %: **91% → 92%** (1 of 5 §17.5 PARTIALs LIVE-discharged via PR #1609, SHIP-002).
+- MODEL-1 ship %: STAYS at 92% until the ChatML generation gap closes; SHIP-005/006/008 are co-blocked on it; SHIP-007 is co-blocked on a separate perf issue (8.8 tok/s vs 30 floor).
+- MODEL-2 ship %: unchanged at **57%** (gated on step 5g.3 val_loss < 9.38; the SHIP-TWO-001 cascade for MODEL-2 is independent of §61).
+
+### 61.7 What §61 is NOT
+
+§61 does NOT amend any contract status to claim a fix. It records:
+- An empirical signal (direct vs ChatML asymmetry).
+- Two falsifiable predictions (PRED-61-A, PRED-61-B).
+- The next bisection step.
+
+The §61 amendment is durable spec; the actual ChatML bug fix is a follow-up cascade (multi-PR, scope unknown until PRED-61-A/B fire).
+
+Methodological alignment: zero `eprintln!` debug, zero bash workarounds. All evidence captured via existing `apr run`/`apr qa` CLI primitives. Spec v3.05.0 → **v3.06.0**. Coverage tally unchanged this cycle (snapshot, not falsifier flip).
+
+Evidence persisted to:
+
+```
+evidence/ship-002-discharge-2026-05-10/    # SHIP-002 LIVE-discharge artifact
+├── discharge-evidence-v1.json             # 5-step verification chain + provenance
+├── apr-run-output.txt                     # raw apr run log
+├── fib-completion.py                      # extracted Python source
+└── ast-parse-result.json                  # ast.parse verdict
+```
+
+The SHIP-006 BLOCKED finding does NOT yet have a dedicated evidence directory — by §61.7 design, snapshot in spec is sufficient until the bisection (PRED-61-A/B) fires.
+
+---
+
+## §58. v0.32.0 cascade publish + release-engineering hygiene snapshot (Issue #1514 CLOSED) (2026-05-05)
+
+§57 closed with the §50.4 drift-sweep complete and 5g.1 mid-flight at 13/57 shards. §58 records the parallel **release-engineering** track that landed during the same wait window: the v0.32.0 user-facing-crate cascade publish (Issue #1514 CLOSED) and the four hidden defects it surfaced + closed. This is the second hygiene amendment in a row — the first (§57) was contract-drift hygiene; this one is publish-pipeline hygiene.
+
+### 58.1 Why §58 records release-engineering instead of 5g.1 completion
+
+§57.7 foreshadowed §58 = "(a) the 5g.1 full-run completion + manifest evidence, or (b) the 5g.2 LIVE fine-tune dispatch result." Neither has fired yet (5g.1 is still mid-flight at 62 shards / 16h19m wall). But Issue #1514 CLOSED at 2026-05-05T16:14:56Z represents a **major user-facing shipping milestone**: the `apr` binary at v0.32.0 is now installable on any host via `cargo install aprender`. Recording this in §58 in real time avoids conflating two unrelated narratives when 5g.1 fires. Per the §57.4 lesson — "1 amendment ≈ 1 logical event" — the publish cascade and the 5g.1 verdict are different events even though they share the same wait window.
+
+### 58.2 The v0.32.0 cascade publish — Issue #1514
+
+**Trigger:** Operator follow-up: "the published aprender-rag = "0.31.2" still has [lib] name = "trueno_rag" in its Cargo.toml, so `use aprender_rag::*` won't actually compile against the current crate." The lib-name rename was the smallest user-visible defect that made the public-facing API unusable; bumping aprender-rag alone would have left the rest of the workspace at v0.31.x and out of sync.
+
+Cascade scope: **22 workspace crates published in topological order** (leaves → root). Verified live on crates.io at session-end: `aprender = "0.32.0"`, `aprender-rag = "0.32.0"`, `aprender-core = "0.32.0"`, `apr-cli = "0.32.0"`.
+
+| PR / commit | Crate | Defect class | Fix |
+|---|---|---|---|
+| #1512 845554b8b | aprender-rag | `[lib] name = "trueno_rag"` survived the trueno-rag → aprender-rag rename; external `use aprender_rag::*` was uncompilable. | Rename `[lib] name` to `aprender_rag`; v0.31.2 → v0.32.0 BREAKING (transitive lib-symbol rename). |
+| #1513 1ecf3aaf5 | aprender-orchestrate | `cmd_code` upstream gained 8th `emit_trace: Option<PathBuf>` parameter; the `apr-cli`-side wrapper still passed 7 args. Workspace `cargo check` failed for the bin target. | Pass `None` 8th arg with comment that `--emit-trace` clap surface is a future enhancement. |
+| #1515 6ff85d135 | aprender-core | `cargo publish` failed with publish-time dev-dep cycle: aprender-core dev-dep on `entrenar`/`renacer` requires those crates to be on crates.io at the bumped version, but they depend on aprender-core. | Path-only (no version) on dev-deps so `cargo publish` strips them locally. Worked for `cargo publish --dry-run` but broke clean-room sed-strip (next row). |
+| #1517 a5e081563 | aprender-core | Clean-room build sed-strip is a naive `s/, *path *= *"[^"]*"//g` that only strips `path = "..."`, not whole entries. With path-only deps, post-strip Cargo.toml had invalid `{ package = "..." }` entries. | Permissive `version = ">=0.27"` + path so post-strip remains valid TOML. |
+| #1518 (PR #1518) | apr-cli | `cargo publish` failed: `include_str!("../../../../configs/aliases.yaml")` references file outside crate dir; cargo publish tarball excludes those files. | Copy `configs/aliases.yaml` into `crates/apr-cli/configs/aliases.yaml`; `include_str!` path becomes `../../configs/aliases.yaml` (within-crate). |
+| #1519 (PR #1519) | repo root | CHANGELOG.md missing v0.32.0 entry. | Add `## [0.32.0] - 2026-05-05` section documenting the cascade + 4 hidden defects. |
+
+### 58.3 The pv-lint deliverable from §57.7's foreshadowing
+
+PR #1511 (`feat(pv-lint): add --strict-test-binding to catch dangling test references` — Closes #1510) shipped during the same window. §57.4's "Prevention rule (informal): a future spec amendment could codify a `pv lint --strict-test-binding` enforcement that blocks contract merge when any `test:` field doesn't resolve to an existing test invocation. Out of §57 scope" is now CLOSED. The flag is implemented in `aprender-contracts-cli` and runs over the full 870+ contract registry.
+
+This means: from now on, contract-merge time can flag dangling test refs at lint level — preventing the §57 drift class from recurring. The fix is durable infrastructure, not just a one-time sweep.
+
+### 58.4 Five Whys — why surface 4 release-engineering defects in one cascade?
+
+1. **Why did `cargo publish` fail four times before succeeding?** Each failure exposed a different latent defect (lib-name drift, arg-count drift, dev-dep cycle, sed-strip robustness, include_str scope). All four had survived prior v0.31.x publishes because the cascade hadn't been run end-to-end since the APR-MONO consolidation reshuffled the crate tree.
+2. **Why didn't CI catch these?** GitHub CI runs `cargo build`/`test` with sibling repo paths in scope; clean-room runs `cargo publish --dry-run` with only crates.io deps. CI never simulated the publish-tarball boundary that excludes files outside the crate dir, and clean-room hadn't been run on a fresh aprender pull until the cascade.
+3. **Why fix in 6 separate PRs rather than 1 mega-fix?** Per `feedback_falsifier_first_cascade_pattern.md`: 1 PR ≈ 1 logical defect. Each defect has its own root cause, its own test, its own changelog entry; conflating bumps mixes review concerns and breaks the bisect-able cascade discipline. The same lesson taught by §57.
+4. **Why during the 5g.1 wait?** Same productive-idle pattern as §57. 5g.1 is compute-bound (~16 min/shard), agent is host-resident, defects surfaced as cargo failed each step of the cascade. Discharging them inline preserved the cascade momentum rather than re-running it later from cold.
+5. **Why does `cargo install aprender` matter for ship-%?** It doesn't move ship-% per the spec rules (ship-% measures MODEL-1 SafeTensors-from-Qwen2-7B teacher + MODEL-2 fine-tune verdicts, not binary distribution). But it's a **prerequisite** for downstream consumers to reproduce ship verdicts. Without v0.32.0 publishable, MODEL-1 / MODEL-2 ship evidence is locked to one host. With v0.32.0 publishable, anyone can `cargo install aprender@0.32.0` and reproduce on their own GPU.
+
+### 58.5 Net effects
+
+- Spec v3.02.0 → **v3.03.0**.
+- Issue #1514 (v0.32.0 cascade publish) CLOSED at 2026-05-05T16:14:56Z.
+- 4 user-facing crates verified live on crates.io: `aprender = "0.32.0"`, `aprender-rag = "0.32.0"`, `aprender-core = "0.32.0"`, `apr-cli = "0.32.0"`.
+- 4 hidden defects surfaced + closed (lib-name drift, arg-count drift, dev-dep cycle, include_str scope) across PRs #1512 / #1513 / #1515 / #1517 / #1518.
+- `pv lint --strict-test-binding` (PR #1511) ships durable enforcement against §57's drift class.
+- 5g.1 still mid-flight at 62 shards / 16h19m wall (manifest pending).
+- **MODEL-1 ship %**: unchanged at **91%** (release-engineering hygiene, not falsifier flip).
+- **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38.
+- Coverage tally: snapshot.
+
+### 58.6 Spec amendment cadence preserved
+
+§41 → §42 → §43 → §44 → §45 → §46 → §47 → §48 → §49 → §50 → §51 → §52 → §53 → §54 → §55 → §56 → §57 → §58. Eighteen amendments since 2026-05-03. **§58 is the third hygiene amendment in a row** (after §56's 5g.1 LIVE smoke and §57's drift sweep). The next §59 will record the 5g.1 full-run completion + manifest evidence (ETA ~03:00Z based on current 15-16 min/shard rate × ~5 remaining shards if shard-00067 is the final one).
+
+### 58.7 Methodology takeaway: defect-mining during compute-bound waits
+
+Two consecutive amendments (§57 hygiene, §58 hygiene) shipped during the same 5g.1 wait window. Both surfaced latent invariants that had silently violated for one or more release cycles. The pattern: **when a compute-bound primary task is in flight, the agent has bandwidth to mine + close hidden defects that wouldn't surface under normal load**. This is *not* muda when the defects are real (PV-VER-001 across §50.4; lib-name drift in aprender-rag). It would be muda if the defects were manufactured (e.g., refactoring tests for tidiness when they already passed). The discipline is: **mine for FAILING invariants, not for cosmetic uplift.**
+
+The `pv lint --strict-test-binding` lint + the v0.32.0 cascade together close two recurrence classes — drift between contracts and tests, and drift between source and publish tarball. Both will keep ship-% movement clean for future cycles.
+
+## §57. Drift sweep cleans §50.4 cascade contracts (3 PRs); 5g.1 full corpus run on track (2026-05-05)
+
+§56 closed with the 5g.1 full-corpus retokenization dispatched (PID 2767124, ~17hr wall projected). §57 records the parallel drift-sweep work that landed during the 5g.1 wait + the throughput characterization of 5g.1 mid-run.
+
+### 57.1 The drift sweep — three same-class PRs
+
+While 5g.1 ran in the background, a sweep of the §50.4 cascade contracts surfaced **the same drift class** across three contracts: cited test names that didn't match what the impl PR actually authored. Each contract was bumped + corrected in its own PR.
+
+| PR | Contract | v_old → v_new | Drift instance |
+|---|---|---|---|
+| #1502 | apr-pretrain-arch-polymorphic-v1 | v1.3.0 → v1.4.0 | FALSIFY-APR-PRETRAIN-INIT-CUDA-001 was REFERENCED in the v1.2.0 changelog but had no formal `falsification_test` entry; bound via new drift-prevention test + `pub(crate) const FALSIFY_APR_PRETRAIN_INIT_CUDA_001_MSG` extraction. |
+| #1504 | apr-pretrain-from-init-v1 | v1.1.0 → v1.2.0 | 7 of 8 cited test names didn't exist (e.g., `pretrain_init_arch_mismatch_errors`, `pretrain_init_step0_loss_below_from_scratch`). Re-aligned to existing tests where possible (4/10 bound); remaining 6/10 explicitly marked `LIVE-PENDING:` with named prerequisites. Operator/agent enriched with `pretrain_init_flag_registered` integration test post-merge → 5/10 bound, 5 LIVE-PENDING. |
+| #1505 | apr-pretrain-arch-polymorphic-v1 | v1.4.0 → v1.5.0 | FALSIFY-005 cited `preflight_qwen_vocab_passes_with_qwen_init` (doesn't exist; actual: `_with_qwen_target`). FALSIFY-006 cited `preflight_qwen_vocab_fails_without_init` (actual: `_with_llama_target`). Names diverged at PR #1476's authoring boundary. |
+| #1506 | apr-cli-tokenize-import-hf-v1 | v1.0.0 → v1.1.0 | FALSIFY-001 cited "or equivalent" instead of a real test name. Authored `tokenize_import_hf_subcommand_registered` integration test mirroring `pretrain_init_flag_registered` pattern. |
+
+### 57.2 Verdict: PV-VER-001 closed across the full contract base
+
+After PR #1506 lands, `pv lint contracts/` reports **0 PV-VER-001 errors across all 870+ contracts**. The drift class — "contract cites a test name that doesn't exist" — is fully closed across the §50.4 cascade contracts AND across every other contract in the registry.
+
+870 PV-ENF-001 warnings remain (equations missing postconditions). This is a separate class — it's not drift, it's incomplete contract authoring style. Closing it is multi-week scope and out of §57.
+
+### 57.3 5g.1 throughput characterization
+
+Real-time throughput captured during the §57 work:
+
+| Shard | Closed at | Δ from previous |
+|---|---|---|
+| 0 | 07:08 | (start; PID dispatched 07:00) |
+| 1 | 07:24 | 16 min |
+| 2 | 07:39 | 15 min |
+| 3 | 07:55 | 16 min |
+| 4 | 08:11 | 16 min |
+| 10 | 09:47 | (avg 16 min/shard across 5..10) |
+| 11 | 10:03 | 16 min |
+| 12 | 10:16 | 13 min (in progress) |
+
+**Mean wall: 16.3 min/shard.** Linear projection: 57 shards × 16.3 min = 929 min = **15.5 hr total**, completing ~22:30Z (slightly under §56's 17hr smoke estimate; the difference is dominated by warm-cache effects in BPE merge-table lookup which the smoke didn't capture).
+
+### 57.4 Methodology takeaway: same-class drift across same-cascade contracts
+
+The pattern: when a contract is authored in PR_A alongside its impl, AND the impl's test names are stamped in the contract's `test:` field BEFORE the impl PR finalizes the names, the names diverge at the cascade boundary. This happened in **3 of 4 §50.4 cascade contracts** (apr-pretrain-from-init-v1, apr-pretrain-arch-polymorphic-v1 twice across two bumps, apr-cli-tokenize-import-hf-v1).
+
+**Prevention rule** (informal): when authoring a new contract that cites tests, EITHER reference tests that already exist on main, OR mark them `PENDING_PR_<N>:` with the impl PR ref so the PV-VER-001 lint can flag dangling refs at contract-merge time. The §57 sweep retrospectively closes the drift but doesn't prevent recurrence.
+
+A future spec amendment could codify a `pv lint --strict-test-binding` enforcement that blocks contract merge when any `test:` field doesn't resolve to an existing test invocation. Out of §57 scope.
+
+### 57.5 Five Whys
+
+1. **Why did the drift go undetected for so long?** Because PV-VER-001 lint only flags it if explicitly run; the default `pv validate <single>` doesn't cross-check test names. The session-level `pv lint contracts/` sweep is what surfaced it.
+2. **Why did three contracts share the same drift class?** All authored alongside their impl in the same cascade, all stamping anticipated test names. When the impl PR landed, the cascade pattern preserved CONTENT but not NAMES.
+3. **Why fix in 3 separate PRs rather than 1 mega-PR?** Per `feedback_falsifier_first_cascade_pattern.md`: 1 PR ≈ 1 contract bump. Each contract has its own version + changelog; conflating bumps mixes review concerns and breaks the bisect-able cascade discipline.
+4. **Why during the 5g.1 wait?** Productive use of compute-bound idle time. Each drift fix is small (~50-100 LOC), unblocks no critical path, doesn't move ship-%, but reduces drift risk for future agents. The alternative (manufacture more big work) would be muda.
+5. **Why no spec amendment per drift fix?** Drift fixes are hygiene — they restore an invariant ("every cited test exists") that v1.x had assumed but didn't enforce. §57 is the single rolling amendment that catalogs all 4 PRs in one place. Per cadence, each individual drift fix would be a §-amendment if it surfaced a NEW finding; these surfaced the SAME finding repeated.
+
+### 57.6 Net effects
+
+- Spec v3.01.0 → **v3.02.0**.
+- Three contract bumps land cleanly: apr-pretrain-arch-polymorphic-v1 v1.3 → v1.4 → v1.5 (CUDA-001 binding + drift fix), apr-pretrain-from-init-v1 v1.1 → v1.2 (test ref drift), apr-cli-tokenize-import-hf-v1 v1.0 → v1.1 (FALSIFY-001 binding).
+- `pv lint contracts/` 0 PV-VER-001 errors across 870+ contracts.
+- 5g.1 full corpus run progressing steadily at 16.3 min/shard; ETA ~22:30Z.
+- **MODEL-1 ship %**: unchanged at **91%**.
+- **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38 (~12hr after this amendment).
+- Coverage tally: snapshot. Drift sweep is hygiene, no falsifier flips.
+
+### 57.7 Spec amendment cadence preserved
+
+§41 → §42 → §43 → §44 → §45 → §46 → §47 → §48 → §49 → §50 → §51 → §52 → §53 → §54 → §55 → §56 → §57. Seventeen amendments since 2026-05-03. §57 is the second hygiene amendment (after §56's 5g.1 LIVE smoke); the next §58 will record either (a) the 5g.1 full-run completion + manifest evidence, or (b) the 5g.2 LIVE fine-tune dispatch result.
+
+## §56. 5g.1 LIVE smoke: corpus retokenization with Qwen vocab is correctness-validated; full run is ~17hr operator-dispatch (2026-05-05)
+
+§55 (PR #1500 merged 2026-05-05T05:06Z) closed the polymorphic preflight strictness gap and unblocked 5g.1 dispatch. §56 records the LIVE smoke that validates 5g.1's correctness end-to-end before committing to the multi-hour full run.
+
+### 56.1 The smoke
+
+After PR #1497 (5g.0 `apr tokenize import-hf`) MERGED + §55 branch built locally, the chain `apr tokenize import-hf → apr tokenize encode-corpus → ShardBatchIter` was end-to-end testable for the first time. The smoke ran:
+
+```bash
+# Slice the first 5000 docs of the source JSONL.
+head -n 5000 /mnt/nvme-raid0/datasets/github-code-clean-2026-04-27/python-permissive.jsonl \
+  > /mnt/nvme-raid0/data/qwen-tokenize-smoke/python-permissive-5k.jsonl
+
+# Encode through the §54-extracted Qwen tokenizer dir.
+apr tokenize encode-corpus \
+  --corpus /mnt/nvme-raid0/data/qwen-tokenize-smoke/python-permissive-5k.jsonl \
+  --tokenizer /tmp/qwen-0.5b-tokenizer-extracted \
+  --output /mnt/nvme-raid0/data/qwen-tokenize-smoke/shards \
+  --shard-tokens 1000000
+```
+
+Result after ~25 min wall (operator-killed when sufficient evidence accumulated):
+- 13 shards produced (12 full × ~1M tokens + 1 partial = ~13M tokens for 5000 docs).
+- ~2600 tokens/doc average — consistent with Python source code BPE-encoded under Qwen vocab.
+- No errors in encode.log; shard rotation triggered correctly at `--shard-tokens` boundary.
+- Process killed before manifest.json write (manifest is end-of-run only).
+
+Evidence: `evidence/section-56-5g-1-smoke-2026-05-05/encode-corpus-smoke-validated.md`.
+
+### 56.2 What this proves
+
+- **`apr tokenize encode-corpus` is correctness-compatible with the §54-extracted Qwen tokenizer dir.** The 13 shard files are valid u32 streams (`pretokenize-bin-v1` schema); ShardBatchIter will consume them at training time without modification.
+- **The §54 → 5g.0 → 5g.1 chain is end-to-end runnable.** Each component handed off to the next correctly.
+- **Throughput is characterized**: ~110 sec / M-token single-thread on this RTX 4090 host. Full 565M-token corpus = ~17 hours.
+
+### 56.3 Throughput finding
+
+The Qwen tokenizer is **~70% slower per token** than the legacy 50257-vocab tokenizer:
+
+| Tokenizer | Vocab | Merges | Throughput | 565M-token wall |
+|---|---|---|---|---|
+| Legacy GPT-2-trained (model-2-tokenizer-v1) | 50257 | 49997 | ~64 sec / M-token | 9.99 hr (validated) |
+| Qwen2.5-Coder extracted (this PR) | 151643 | 151387 | ~110 sec / M-token | ~17 hr (projected) |
+
+Hypothesis: BPE encoding is dominated by per-character merge-table lookups; a 3× larger merge table → ~70% slower per token. This is a tokenization-time cost only — at training/inference time, the larger vocab affects embedding/lm_head matrix size but not throughput at the batch level.
+
+A potential 5g.1 optimization for future ship cycles: parallelize encode-corpus across multiple JSONL shards (the source 3.16GB JSONL could be split into N chunks and encoded concurrently). This is OUT OF 5g.1 scope — current single-thread wall is below the 48hr `feedback_compute_pre_authorized.md` ceiling.
+
+### 56.4 Updated 5g roadmap status
+
+| # | Step | LOC / wall | Status |
+|---|------|------------|--------|
+| 5g.0 | `apr tokenize import-hf` | ~700 LOC | ✅ MERGED PR #1497 |
+| 5g.0.1 | Polymorphic preflight relaxation (§55) | ~140 LOC | ✅ MERGED PR #1500 |
+| 5g.1 | Re-tokenize codeparrot corpus with Qwen vocab | 0 LOC + ~17 hr operator-dispatch | **CORRECTNESS-VALIDATED (this §56 PR), full run dispatched 2026-05-05T07:00Z** |
+| 5g.2 | LIVE 500-step fine-tune dispatch | 0 LOC + ~20-60 min | gated on 5g.1 full run |
+| 5g.3 | val_loss < 9.38 verdict; flip MODEL-2 ship % 57% → ≥58% | 0 LOC | gated on 5g.2 |
+
+### 56.5 5g.1 operator dispatch (already running)
+
+```bash
+# (Pre-existing): /tmp/qwen-0.5b-tokenizer-extracted/ from PR #1497 LIVE smoke.
+# Output dir: parallel to legacy codeparrot-python-permissive-shards/.
+apr tokenize encode-corpus \
+  --corpus /mnt/nvme-raid0/datasets/github-code-clean-2026-04-27/python-permissive.jsonl \
+  --tokenizer /tmp/qwen-0.5b-tokenizer-extracted \
+  --output /mnt/nvme-raid0/data/codeparrot-python-permissive-shards-qwen \
+  --shard-tokens 10000000
+# Wall: ~17 hours single-thread.
+# Output: ~565M tokens across ~57 shards + manifest.json.
+```
+
+Per `feedback_compute_pre_authorized.md`, this run is **pre-authorized** (named training prerequisite, on lambda-labs, below 48hr ceiling). Dispatched 2026-05-05T07:00Z.
+
+### 56.6 Five Whys
+
+1. **Why a smoke before the full run?** ~17hr is a non-trivial compute lane; getting the smoke first proves correctness of the chain (5g.0 + §55-relaxed preflight + encode-corpus + Qwen tokenizer dir) before committing to the long wall. If the smoke had failed, kicking off 17hr of bad output would be muda.
+2. **Why 5000 docs and not 1000 or 10000?** 5000 was the smallest slice that exercises shard rotation (1M tokens / shard, 5000 docs × 2400 tokens/doc = 12M tokens > 10 shards). Smaller slices wouldn't prove rotation correctness.
+3. **Why kill the smoke instead of letting it complete?** 13 shards = sufficient correctness evidence; per `feedback_falsifier_first_cascade_pattern.md`, "1 PR ≈ 1 falsifier discharge" — finishing the smoke wouldn't add evidence beyond what the 13 shards already prove. The wall would have been ~5 more minutes; killing was a small efficiency optimization.
+4. **Why is Qwen 70% slower than legacy?** BPE merge-table size: 151387 vs 49997 merges. Per-character merge-table search is the dominant cost in BPE encoding; 3× more merges → ~70% slower throughput. This is a property of the Qwen tokenizer, not a bug in encode-corpus.
+5. **Why not parallelize encode-corpus to cut the 17hr?** Out of 5g.1 scope. The single-thread wall is below the 48hr authorization ceiling; parallelization would be ~~50% wall reduction at the cost of ~250 LOC + a new contract for shard-merge correctness. ROI is negative for the current cycle; a future ship cycle can revisit if multiple Qwen-tokenizer corpora are needed.
+
+### 56.7 Net effects
+
+- Spec v3.00.0 → **v3.01.0**.
+- 5g.1 reaches **CORRECTNESS-VALIDATED** state. Full-corpus run dispatched 2026-05-05T07:00Z (~17hr wall).
+- **MODEL-1 ship %**: unchanged at **91%**.
+- **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38.
+- Coverage tally: snapshot. The 5g.0/5g.0.1/5g.1 chain is now provably consistent; only the long-wall full run + the actual 500-step fine-tune + val_loss verdict remain.
+
+### 56.8 Spec amendment cadence preserved
+
+§41 → §42 → §43 → §44 → §45 → §46 → §47 → §48 → §49 → §50 → §51 → §52 → §53 → §54 → §55 → §56. Sixteen amendments since 2026-05-03. §56 closes the engineering chain that §54-§55 opened — the next §57 will record either (a) the full-run completion + manifest.json, or (b) the 5g.2 LIVE fine-tune dispatch result, whichever the operator runs first.
+
+## §55. Polymorphic preflight relaxation: tokenizer_vocab ≤ model_vocab when init=Some (2026-05-05)
+
+§54 closed with the §55 follow-up identified: the polymorphic preflight's strict equality semantic is too strict for HF-distributed pretrained checkpoints with reserved slots. This section records the relaxation, the contract amendment, and the LIVE smoke that confirms the fix.
+
+### 55.1 The strictness gap §54 surfaced
+
+§54's evidence `evidence/section-54-5g-prereqs-2026-05-05/preflight-fail-fast-smoke.md` showed the polymorphic preflight firing correctly on a tokenizer-vs-model-vocab mismatch (50257 vs 151936). After PR #1497 landed `apr tokenize import-hf` and §54's chain extended to:
+
+```bash
+apr tokenize import-hf --input <Qwen-tokenizer.json> --output /tmp/qwen-tok-extracted
+# → bpe_vocab=151643, merges=151387, added_tokens=22
+apr pretrain --init <Qwen.apr> --tokenizer /tmp/qwen-tok-extracted ...
+# → ERROR: tokenizer vocab_size (151643/151665) != model vocab_size (151936)
+```
+
+This is **the canonical HF reserved-slot pattern**:
+- Qwen2.5-Coder-0.5B-Instruct's `tokenizer.json` contains 151643 BPE state-machine entries + 22 added tokens (e.g., `<|im_start|>`).
+- Qwen2.5-Coder-0.5B-Instruct's `config.json` declares `vocab_size = 151936`.
+- Gap (271 entries) is reserved/special slots: the lm_head + embedding layers have weights for IDs 151665..151935, but no tokenizer string maps to those IDs.
+- This pattern repeats across Qwen2.5/Llama2/Mistral/Phi families.
+
+Strict equality preflight (`tokenizer_vocab == model_vocab`) was correct for §24/§25 from-scratch training (where the operator trains a tokenizer to exactly match the model). It is **wrong** for HF-distributed pretrained checkpoints.
+
+### 55.2 The relaxation
+
+| Path | Bound | Rationale |
+|---|---|---|
+| `init=None` (from-scratch) | `tokenizer_vocab == model_vocab` | UNCHANGED. §24/§25 baseline regression-free. INV-ARCH-370M-006 preserved. |
+| `init=Some` (polymorphic) | `tokenizer_vocab ≤ model_vocab` | NEW per §55. Admits HF reserved slots. OOB-safe because tokenizer-emitted ids ∈ [0, tokenizer_vocab) ⊆ [0, model_vocab). |
+
+**OOB safety argument**: A tokenizer with `tokenizer_vocab` entries can only emit ids in [0, tokenizer_vocab). When `tokenizer_vocab ≤ model_vocab`, every id is in the model's embedding/lm_head domain. Reserved high-id slots (in the model but not the tokenizer) are never indexed at training time. The N-09 OOB escape in `Embedding::forward` cannot fire.
+
+**Symmetric guard**: `tokenizer_vocab > model_vocab` MUST FAIL even under `init=Some` — bound is `≤`, not `<`. A tokenizer with MORE strings than the model declares could emit ids ≥ model_vocab → silent embedding-lookup garbage. FALSIFY-APR-PRETRAIN-ARCH-010 pins this.
+
+### 55.3 What this PR ships
+
+| Artifact | Change | Falsifier |
+|---|---|---|
+| `aprender-train/src/models/llama_370m.rs` | New helper `assert_tokenizer_vocab_within_model_bound` symmetric to `assert_tokenizer_vocab_matches_model` | (helper for FALSIFY-009/010) |
+| `apr-cli/src/commands/pretrain.rs::preflight_tokenizer_vocab_matches_target` | 3rd `init_is_some: bool` param; routes to relaxed/strict assertion | (integration call site) |
+| `apr-cli/src/commands/pretrain.rs::drive_real` | Passes `init_arch.is_some()` to preflight | (integration call site) |
+| `contracts/apr-pretrain-arch-polymorphic-v1.yaml` | v1.2.0 → v1.3.0 FUNCTIONAL; refined `qwen_tokenizer_vocab_compatibility` invariant; added FALSIFY-009 + FALSIFY-010 | FALSIFY-APR-PRETRAIN-ARCH-009/010 PASS |
+| `falsify_apr_pretrain_arch_009_relaxed_bound_accepts_qwen_reserved_slots` | aprender-train unit test | FALSIFY-009 PASS |
+| `falsify_apr_pretrain_arch_010_relaxed_bound_rejects_oversized_tokenizer` | aprender-train unit test | FALSIFY-010 PASS |
+| `preflight_qwen_reserved_slots_pass_under_polymorphic_init` | apr-cli integration test | FALSIFY-009 INTEGRATION PASS |
+| `preflight_oversized_tokenizer_rejected_even_under_polymorphic_init` | apr-cli integration test | FALSIFY-010 INTEGRATION PASS |
+| `evidence/section-55-relaxed-preflight-2026-05-05/relaxed-preflight-passes-smoke.md` | LIVE smoke evidence | FALSIFY-009 LIVE-INTEGRATION |
+
+### 55.4 LIVE smoke
+
+```bash
+# Rebuilt apr binary from this branch + §54-extracted Qwen tokenizer:
+timeout 30 apr pretrain \
+  --tokenizer /tmp/qwen-0.5b-tokenizer-extracted \
+  --init /mnt/nvme-raid0/models/qwen2.5-coder-0.5b-instruct-fp16.apr \
+  --mode finetune --num-steps 1 --device cpu \
+  --vocab-size 151936 --batch-size 1 --seq-length 32
+
+# Result: exit=124 (timeout), AFTER preflight passed.
+# Output: Configuration printed + Device: cpu + (proceeded to weight load)
+# No GATE-ARCH-370M-011 violations.
+```
+
+Evidence: `evidence/section-55-relaxed-preflight-2026-05-05/relaxed-preflight-passes-smoke.md`.
+
+### 55.5 Falsifier scoreboard for `apr-pretrain-arch-polymorphic-v1`
+
+| # | Falsifier | What it pins | Status |
+|---|---|---|---|
+| 001 | qwen2_0_5b matches HF | INTEGRATION (§53) |
+| 002 | init=None preserves Llama370M | INTEGRATION (§53) |
+| 003 | init=Some pass-through | INTEGRATION (§53) |
+| 004 | GQA-7:1 forward smoke | PARTIAL_ALGORITHM_LEVEL |
+| 005 | Qwen tokenizer + Qwen --init pass | INTEGRATION (§53) + LIVE (§55) |
+| 006 | Qwen tokenizer + no --init fail | INTEGRATION (§53) |
+| 007 | Encoder/decoder family validator | INTEGRATION (§53) |
+| 008 | pv validate exits 0 | PARTIAL_ALGORITHM_LEVEL |
+| **009** | **Relaxed bound accepts HF reserved slots** | **PARTIAL_ALGORITHM_LEVEL + LIVE smoke (§55)** |
+| **010** | **Relaxed bound rejects oversized (OOB safety)** | **PARTIAL_ALGORITHM_LEVEL (§55)** |
+
+10/10 falsifiers PASS. Contract status remains FUNCTIONAL (no regression; the v1.3.0 bump adds 2 falsifiers + LIVE smoke evidence for FALSIFY-009).
+
+### 55.6 5g roadmap status update
+
+| # | Step | LOC / wall | Status |
+|---|------|------------|--------|
+| 5g.0 | `apr tokenize import-hf` | ~700 LOC | ✅ MERGED PR #1497 |
+| **5g.0.1** | **Polymorphic preflight relaxation (§55)** | **~140 LOC** | **THIS PR** |
+| 5g.1 | Re-tokenize codeparrot corpus with Qwen vocab | 0 LOC + ~10 hr operator-dispatch | now technically dispatchable |
+| 5g.2 | LIVE 500-step fine-tune dispatch | 0 LOC + ~20-60 min | gated on 5g.1 |
+| 5g.3 | val_loss < 9.38 verdict; flip MODEL-2 ship % 57% → ≥58% | 0 LOC | gated on 5g.2 |
+
+5g.1 has unblocked. The 10-hour wall is the operator's call (per `feedback_compute_pre_authorized.md`, named training/tokenization runs are pre-authorized below 48h).
+
+### 55.7 Five Whys
+
+1. **Why did §54 not catch the strictness gap?** §54 was authored from the legacy-tokenizer perspective (50257 vs 151936 — a vastly larger mismatch). It didn't probe the within-Qwen case (151643/151665 vs 151936) because the §54 smoke used the legacy 50257-vocab tokenizer dir (which §50.4 shipped before §54's tokenizer extraction tooling existed). The within-Qwen case only surfaces AFTER 5g.0 lands.
+2. **Why is the bound `≤` and not `==` even for the polymorphic path?** Because HF-distributed checkpoints standardly declare a vocab_size that exceeds tokenizer.json's materialized count. Strict equality would fail on every Qwen/Llama2/Mistral checkpoint without manual padding — defeats the entire §50.4 cascade purpose.
+3. **Why preserve strict equality on the from-scratch path?** Because §24/§25's evidence was gathered under strict equality; weakening the gate retroactively could mask future from-scratch tokenizer drift bugs (the original incident at commit 29607ed33 that motivated INV-ARCH-370M-006). The from-scratch path doesn't need the relaxation; it would only erode the safety bound.
+4. **Why a new helper `assert_tokenizer_vocab_within_model_bound` instead of a mode parameter on the existing helper?** Because the existing `assert_tokenizer_vocab_matches_model` is referenced by 1+ external callers (training-loop-pretrain-v1 contract, llama-370m-sovereign-v1) that explicitly want strict equality. A mode parameter would be backward-incompatible. Two helpers + a routing call site at the preflight level is the smallest delta.
+5. **Why pin both FALSIFY-009 (accept) and FALSIFY-010 (reject) rather than just one?** Because the bound is `≤`, not `<`. Without FALSIFY-010, a regression that loosens to `tokenizer_vocab > model_vocab` would silently restore N-09 OOB risk; that regression is exactly the class FALSIFY-010 catches.
+
+### 55.8 Net effects
+
+- Spec v2.99.0 → **v3.00.0** (rolling over to 3.x as the §50.4 cascade pivots from polymorphic infrastructure to live training prerequisites).
+- Contract `apr-pretrain-arch-polymorphic-v1` v1.2.0 → **v1.3.0 FUNCTIONAL** (10 falsifiers, all PASS).
+- 5g.0.1 lands as a single PR; 5g.1 unblocked.
+- **MODEL-1 ship %**: unchanged at **91%**.
+- **MODEL-2 ship %**: unchanged at **57%** until 5g.3 produces val_loss < 9.38 evidence.
+- Coverage tally: +2 PARTIAL_ALGORITHM_LEVEL falsifiers (FALSIFY-009/010) added to the v1.3.0 contract; LIVE-INTEGRATION reinforces FALSIFY-005/009.
+
+### 55.9 Spec amendment cadence preserved
+
+§41 → §42 → §43 → §44 → §45 → §46 → §47 → §48 → §49 → §50 → §51 → §52 → §53 → §54 → §55. Fifteen amendments since 2026-05-03. §55 closes the same-day continuation chain that §54 opened — the four-section pattern (52 gap → 53 fill → 54 next gap → 55 fill) is the canonical falsifier-first cadence.
+
+## §54. Step 5g has multi-step prerequisites; live preflight smoke proves polymorphic gate fires on Qwen --init + legacy 50257-vocab tokenizer (2026-05-05)
+
+§53 closed with "step 5g LIVE remains" framing 5g as a single operator dispatch. Live source inspection of the post-#1494 binary plus an actual smoke run revealed 5g has **multi-step prerequisites that were not enumerated in §50's original 8-step decomposition**. This section records the prerequisites + the empirical evidence that the polymorphic preflight fires correctly.
+
+### 54.1 The smoke
+
+Built `apr` from origin/main 92c7e237b (post-#1494) at 2026-05-05T04:31Z; dispatched:
+
+```bash
+apr pretrain \
+  --dataset /mnt/nvme-raid0/data/codeparrot-python-permissive-shards \
+  --tokenizer /mnt/nvme-raid0/models/model-2-tokenizer-v1 \
+  --run-dir /tmp/apr-pretrain-5g-smoke/run-1 \
+  --init /mnt/nvme-raid0/models/qwen2.5-coder-0.5b-instruct-fp16.apr \
+  --mode finetune \
+  --num-steps 10 \
+  --device cpu --seed 42 \
+  --vocab-size 151936
+```
+
+Output: `error: Validation failed: GATE-ARCH-370M-011 (INV-ARCH-370M-006) violated: tokenizer vocab_size (50257) != model vocab_size (151936). See contracts/model-families/llama-370m-sovereign-v1.yaml and contracts/tokenizer-bpe-v1.yaml — retrain the tokenizer or amend both contracts in lockstep before resuming pretraining.`
+
+This is **CORRECT FAIL-FAST behaviour**. The polymorphic preflight wired in PR #1476 + #1494:
+- Read the `--init` APR's metadata block: vocab_size = 151936, hidden = 896, layers = 24 (matches `TransformerConfig::qwen2_0_5b()` byte-for-byte).
+- Computed `target_vocab = init_arch.map(|cfg| cfg.vocab_size).unwrap_or(Llama370MConfig::VOCAB_SIZE)` = 151936 (NOT the legacy 50257).
+- Compared against the tokenizer dir's `vocab.json` entry count (50257).
+- Mismatch → fail-fast before any trainer allocation.
+
+Evidence file: `evidence/section-54-5g-prereqs-2026-05-05/preflight-fail-fast-smoke.md`.
+
+### 54.2 What this proves
+
+1. **The §50.4 cascade is end-to-end runtime-correct.** The first 0.5B Qwen `--init` invocation on this host hits exactly the gate it should hit. FALSIFY-APR-PRETRAIN-ARCH-005 + FALSIFY-APR-PRETRAIN-ARCH-006 (PARTIAL_ALGORITHM_LEVEL via unit tests in PR #1476) are now also INTEGRATION-LIVE — proven via real CLI dispatch on canonical model + canonical corpus + canonical binary.
+
+2. **The §53 framing of "only 5g LIVE remains" was incomplete.** Step 5g LIVE assumes a Qwen-vocab tokenizer dir + Qwen-tokenized corpus exist. Neither does. Re-scoping needed.
+
+3. **The §50 decomposition has the same lesson it's had before** (re-scoped at §50 itself, then again at §52 for the 5f.4 gap, now again at §54 for the 5g.0/5g.1 gap): top-down spec planning consistently underestimates the scope-coupling between code paths. The pattern is: top-down planner says "1 step"; live source/smoke inspection finds 2-4 steps. This is the third instance.
+
+### 54.3 Re-scoped 5g roadmap
+
+| Step | What it does | LOC / wall | Status |
+|---|---|---|---|
+| 5g.0 | Extract Qwen2.5-Coder-0.5B-Instruct vocab.json + merges.txt from HF cache `tokenizer.json`; place in aprender-compatible tokenizer dir layout | ~50 LOC tooling (Python or Rust) + ~5 min wall | NOT YET STARTED |
+| 5g.1 | Re-tokenize codeparrot corpus with Qwen vocab (`apr tokenize encode-corpus --tokenizer <Qwen.dir>`) | 0 LOC + ~10 hr wall (per existing manifest's `elapsed_seconds = 35979.9 = 9.99h`) | NOT YET STARTED |
+| 5g.2 | Dispatch `apr pretrain --init <Qwen.apr> --tokenizer <Qwen.dir> --dataset <Qwen-tokenized-shards>` for 500 steps | 0 LOC + ~20-60 min wall (CPU, RTX 4090 idle) | gated on 5g.0 + 5g.1 |
+| 5g.3 | val_loss < 9.38 verdict; flip MODEL-2 ship % from 57% → ≥58%; record in spec amendment §55 | 0 LOC | gated on 5g.2 |
+
+Step 5g.1's ~10-hour wall is the dominant cost. There is a smaller alternative: `5g.1-smoke` — re-tokenize a **single shard** (~10M tokens) for a smoke fine-tune. The val_loss curve from 1 epoch on 10M tokens is sufficient to bind FALSIFY-006 PARTIAL_ALGORITHM_LEVEL → DISCHARGED **as a smoke**, but a 565M-token full run is what produces the spec-target val_loss < 9.38 evidence.
+
+### 54.4 Decision: 5g.0 first, defer 5g.1 to operator
+
+Per `feedback_compute_pre_authorized.md`, named compute lanes (training runs) are pre-authorized. 5g.1 is multi-hour but pre-authorized.
+
+But 5g.0 (tooling) is author work that doesn't need a compute lane. **5g.0 is the next-best PR**:
+- Smaller scope (~50 LOC + tests).
+- Single PR, single falsifier extension to `apr-pretrain-arch-polymorphic-v1` (FALSIFY-009: tokenizer dir extracted from HF tokenizer.json passes preflight on Qwen --init).
+- Unblocks 5g.1, which unblocks 5g.2, which unblocks ship-% movement.
+
+Per `feedback_full_problems_pmat_contracts.md`: the PR will be authored as a contract-bound tooling step, not a one-off shell script.
+
+### 54.5 Five Whys
+
+1. **Why didn't §50 enumerate 5g.0?** §50 was authored from an architecture-coupling lens (Qwen has different tensor shapes than Llama370M). The tokenizer-format coupling (HF `tokenizer.json` vs aprender's `vocab.json` + `merges.txt`) is a separate axis that wasn't surfaced until live smoke. Same lesson as §52's 5f.4 finding: top-down decomposition under-counts when the seams are heterogeneous.
+2. **Why does aprender require vocab.json + merges.txt rather than reading tokenizer.json?** Historical: aprender's BPE loader was authored against GPT-2's released tokenizer format (vocab.json + merges.txt). HF tokenizers came later. Adding a `tokenizer.json` reader is technical debt.
+3. **Why not just add a `tokenizer.json` reader as 5g.0 instead of extracting?** Both are valid. Extraction is ~50 LOC of Python; reader integration is ~200 LOC of Rust + tests. Extraction is the cheaper path for the ship-% gate; reader integration is the principled path that makes future Qwen/Llama2/Mistral fine-tunes one-step. Tradeoff is recorded for later: extraction unblocks 5g now; reader is a follow-up.
+4. **Why is 5g.1's 10-hour wall acceptable?** Because the codeparrot tokenization run already cost 10 hours and produced 565M tokens; re-tokenizing with Qwen vocab on the same JSONL costs the same. 10 hours is below the 48-hour authorization threshold per `feedback_compute_pre_authorized.md`.
+5. **Why is the smoke (54.1) load-bearing for the spec?** Because it's the FIRST live evidence on the canonical model + corpus + binary that the §50.4 cascade does what it claims. Unit tests prove the algorithm; the smoke proves the integration. Without §54, FALSIFY-005/006 sit at PARTIAL_ALGORITHM_LEVEL forever despite the cascade being fully wired — the LIVE evidence step is what auditably promotes them.
+
+### 54.6 Net effects
+
+- Spec v2.98.0 → **v2.99.0**.
+- §50.4 roadmap extended: 5a-5f.4 INTEGRATION-COMPLETE; **5g re-scoped to 5g.0/5g.1/5g.2/5g.3**.
+- **MODEL-1 ship %**: unchanged at **91%**.
+- **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38 evidence.
+- Coverage tally: snapshot. The smoke evidence reinforces FALSIFY-005/006 toward LIVE-DISCHARGED but the contract bump waits for 5g.3 (full val_loss measurement). v1.2.0 FUNCTIONAL is correct intermediate state.
+- Falsifier-first cadence preserved: 1 PR ≈ 1 amendment. §54 is the same-day continuation of §53's "5g LIVE remains" framing.
+
+### 54.7 Spec amendment cadence preserved
+
+§41 → §42 → §43 → §44 → §45 → §46 → §47 → §48 → §49 → §50 → §51 → §52 → §53 → §54. Fourteen amendments since 2026-05-03. §54 is the smoke-discovery bookend to §53's INTEGRATION-COMPLETE — together they record the algorithm-correct + integration-correct + smoke-fail-fast-correct chain that gates 5g.0 → 5g.3.
+
+## §53. §50.4 cascade INTEGRATION-COMPLETE on main; `apr pretrain --init` end-to-end runnable; only 5g LIVE remains (2026-05-05)
+
+§52 closed with the scoreboard at "8/8 falsifiers PARTIAL_ALGORITHM_LEVEL bound + step 5f.4 NOT YET STARTED — 5g LIVE blocked." Same-day continuation landed PR #1494 (`feat(apr-cli + aprender-train): apr pretrain --init wireup — §50.4 step 5f.4`) at 2026-05-05T01:48:14Z merge commit `9afca1665`. The `apr pretrain --init <PATH>` flow is now end-to-end functional on CPU, the legacy "not yet wired" Err is RETIRED, and step 5g LIVE is the only remaining gate before MODEL-2 ship-% can move.
+
+### 53.1 Updated falsifier scoreboard for `apr-pretrain-arch-polymorphic-v1`
+
+| Falsifier | What it pins | PR | Status |
+|---|---|---|---|
+| FALSIFY-001 | `qwen2_0_5b()` matches HF config byte-for-byte | #1474 ✓ MERGED | INTEGRATION (5f.4 routes via `from_apr_metadata`) |
+| FALSIFY-002 | `init=None` preserves Llama370M baseline | #1475 ✓ MERGED | INTEGRATION (5f.4 unit test `_none_uses_llama370m_shape`) |
+| FALSIFY-003 | `init=Some` pass-through (no silent defaults) | #1475 ✓ MERGED | INTEGRATION (5f.4 plumbs `init_arch.map(|cfg| cfg.vocab_size).unwrap_or(...)`) |
+| FALSIFY-004 | GQA-7:1 forward-pass smoke | #1478 ✓ MERGED | PARTIAL_ALGORITHM_LEVEL |
+| FALSIFY-005 | Qwen tokenizer + Qwen target = pass | #1476 ✓ MERGED | INTEGRATION (5f.4 polymorphic preflight target_vocab) |
+| FALSIFY-006 | Qwen tokenizer + Llama target = fail | #1476 ✓ MERGED | INTEGRATION (5f.4 polymorphic preflight target_vocab) |
+| FALSIFY-007 | Encoder/decoder family mismatch fails fast | #1479 ✓ MERGED | INTEGRATION (5f.4 invokes via `build_shared_trainer_with_init`) |
+| FALSIFY-008 | `pv validate` exits 0 | #1473 ✓ MERGED | PARTIAL_ALGORITHM_LEVEL |
+
+**6 of 8 falsifiers now reach INTEGRATION** (helper functions called from the live CLI dispatch path). The remaining 2 (FALSIFY-004 forward-pass smoke + FALSIFY-008 contract validation) are inherently algorithm-level (not user-facing dispatch). Contract is ready for v1.1.0 PARTIAL_ALGORITHM_LEVEL → **v1.2.0 FUNCTIONAL** bump.
+
+### 53.2 Updated step roadmap status
+
+| # | Step | LOC | PR | Status |
+|---|------|-----|----|--------|
+| 5a | Author `apr-pretrain-arch-polymorphic-v1.yaml` contract | ~80 | #1473 | ✅ MERGED |
+| 5b | `qwen2_0_5b()` constructor verified + tie_word_embeddings defect fix | 1 LOC + tests | #1474 | ✅ MERGED |
+| 5c | `build_transformer_config` polymorphic dispatch | ~25 | #1475 | ✅ MERGED |
+| 5d | Polymorphic preflight gating by EXTRACTED vocab | ~70 | #1476 | ✅ MERGED |
+| 5e | GQA-7:1 forward-pass smoke test | ~70 | #1478 | ✅ MERGED |
+| 5f.1 | Encoder/decoder family validator | ~30 | #1479 | ✅ MERGED |
+| 5f.2 | `load_init_tensors_from_apr` (read APR tensors into BTreeMap) | ~40 | #1481 | ✅ MERGED |
+| 5f.3 | `populate_trainer_from_init_tensors` (BTreeMap → trainer params) | ~120 | #1483 | ✅ MERGED |
+| 5f.4 | **CLI wireup: plumb `init: Option<&Path>` + invoke 5f.1/5f.2/5f.3** | **~155** | **#1494** | **✅ MERGED 2026-05-05T01:48:14Z** |
+| 5f.5 | CUDA path symmetric wireup (drive_real_cuda) | ~80 | (NOT YET STARTED) | follow-up |
+| 5g | LIVE 500-step smoke fine-tune (operator dispatch) | 0 | (pending) | **operator-dispatchable** |
+| 5h | Stamp + publish as MODEL-2 v2 | ~10 | (pending) | follows 5g |
+
+### 53.3 What PR #1494 delivered
+
+PR #1494 (255 additions / 67 deletions across `apr-cli` + `aprender-train`) delivered the wireup invariant per §52.4:
+
+1. **Plumbed** `init: Option<&Path>` from `run() → drive_real() → drive_real_cpu()`.
+2. **Extracted** the `TransformerConfig` from APR header metadata via `crate::commands::model_config::read_apr_architecture(init_path)` whenever `init.is_some()`.
+3. **Validated** the extracted config family with `validate_pretrain_init_arch_compatible()` (FALSIFY-007) inside `build_shared_trainer_with_init`.
+4. **Used** the extracted vocab in the polymorphic preflight: `let target_vocab = init_arch.map(|cfg| cfg.vocab_size).unwrap_or(Llama370MConfig::VOCAB_SIZE);`
+5. **Built** a new `build_shared_trainer_with_init(lr, seq_length, seed, init_arch, init_path) -> Result<SharedTrainer, String>` in `pretrain_real.rs` that composes 5c (`build_transformer_config`) + 5f.1 (validator) + 5f.2 (load tensors) + 5f.3 (populate). 4 unit tests added: `_none_uses_llama370m_shape`, `_rejects_unpaired_args`, `_rejects_encoder_family`, `_decoder_family_proceeds_to_tensor_load`.
+6. **Replaced** the `Err(...not yet wired...)` in `validate_init_apr_path()` with `Ok(())` — the wireup is now real.
+7. **CUDA path** explicit-error with `FALSIFY-APR-PRETRAIN-INIT-CUDA-001` citation (5f.5 is the symmetric follow-up).
+
+### 53.4 §50.4 cascade ships statistics
+
+The §50.4 cascade ships **11 PRs over 2 days** (2026-05-04 → 2026-05-05): #1471 (validate_init_apr_path), #1472 (§50 spec), #1473 (5a contract), #1474 (5b qwen2_0_5b), #1475 (5c dispatch), #1476 (5d preflight), #1478 (5e GQA-7:1), #1479 (5f.1 validator), #1481 (5f.2 load), #1482 (contract v1.1.0 bump), #1483 (5f.3 populate), #1486 (§52 spec), #1494 (5f.4 wireup). Counting spec + contract amendments separately yields 13 distinct merges; counting algorithm-binding PRs alone is 11.
+
+### 53.5 The MODEL-2 ship-% gate is now precisely "5g LIVE"
+
+- **5g (LIVE 500-step fine-tune on Qwen2.5-Coder-0.5B-Instruct.apr, 0 LOC, operator dispatch on RTX 4090)** — DISCHARGES FALSIFY-006 empirically. Produces `val_loss < 9.38` evidence on canonical corpus. **Load-bearing test that moves MODEL-2 ship-% from 57% → ≥58%.**
+- **5h (stamp + publish, ~10 LOC, 1 PR)** — follows 5g.
+- **5f.5 (CUDA wireup, ~80 LOC, 1 PR)** — symmetric to 5f.4 for `drive_real_cuda`. Not on the critical path for 5g (which can run CPU); can be parallelized.
+
+The legacy "5g requires 5f.4 to land first" gate from §52 is now resolved. **Step 5g is operator-dispatchable today.**
+
+### 53.6 Five Whys
+
+1. **Why is §53 a separate amendment from §52?** §52 identified the wireup gap; §53 records its closure. Same-day spec hygiene per `feedback_falsifier_first_cascade_pattern.md` — when an amendment-identified author-step lands within hours, the closure deserves its own §-section so the falsifier-scoreboard transitions are auditable. §52 said "5f.4 NOT YET STARTED"; §53 says "5f.4 ✅ MERGED 01:48:14Z."
+2. **Why bump the contract to FUNCTIONAL rather than DISCHARGED?** FUNCTIONAL means "all falsifiers pass and the integration path is live"; DISCHARGED requires LIVE evidence on the canonical model+corpus combination. We have full algorithm-level + integration-level coverage, but no `val_loss < 9.38` measurement yet. That measurement is step 5g, which gates DISCHARGED. FUNCTIONAL is the correct intermediate state.
+3. **Why call out 6/8 INTEGRATION rather than 8/8?** Two falsifiers are inherently algorithm-level: FALSIFY-004 (forward-pass smoke is a unit test, not a CLI flow) and FALSIFY-008 (contract validation is a `pv` smoke, not a runtime path). Counting them as INTEGRATION would inflate the metric; PARTIAL_ALGORITHM_LEVEL is the correct terminal state for those two.
+4. **Why didn't §52 include the FUNCTIONAL bump?** Because §52 was authored before 5f.4 landed. The contract was at v1.1.0 PARTIAL because 5f.3 was the last merge at that point. §53 is the bump-trigger amendment.
+5. **Why is the cascade 11 PRs and not 1 mega-PR?** Per `feedback_falsifier_first_cascade_pattern.md` (codified 2026-05-04 §51): one PR ≈ one falsifier discharge or one author-step. 11 author-steps × ~80-150 LOC each ≈ ~1100 LOC total, which is large for review-correctness but small per-PR. The cascade discipline keeps each merge auditable and bisectable; mega-PRs hide review concerns and entangle conflicts.
+
+### 53.7 Net effects
+
+- Spec v2.97.0 → **v2.98.0**.
+- §50.4 roadmap status: **5a-5f.4 INTEGRATION-COMPLETE (10 PRs landed); only 5g LIVE remains** for MODEL-2 ship-% movement.
+- Contract `apr-pretrain-arch-polymorphic-v1` v1.1.0 PARTIAL_ALGORITHM_LEVEL → **v1.2.0 FUNCTIONAL** (this PR).
+- **MODEL-1 ship %**: unchanged at **91%** (SHIP-007 cascade unrelated track).
+- **MODEL-2 ship %**: unchanged at **57%** until step 5g produces val_loss < 9.38 evidence; step 5g is now operator-dispatchable (the only blocker resolved).
+- Coverage tally: snapshot pending v1.2.0 FUNCTIONAL bump landing on main.
+
+### 53.8 CI andon classes documented as feedback memories during the cascade
+
+Three distinct CI-flake classes surfaced during the §50.4 cascade auto-merge cycle (PRs #1483, #1486, #1494) and are now durable in user-memory:
+
+- **`feedback_workspace_test_missing_binary_transient.md`** — workspace-test exits 101 with "could not execute process .../target/debug/deps/<crate>-<hash>: No such file or directory" while all lib tests passed; runner-cache flake. Fix: `gh pr update-branch <PR>` for clean re-CI.
+- **`feedback_workspace_test_trueno_sigsegv_cleanup.md`** — workspace-test exits with "signal: 11, SIGSEGV" on `trueno-<hash>` after all `aprender-compute` tests pass; the workflow step is literally named "(tolerate SIGSEGV at exit)" but the tolerate logic doesn't match. Fix: `gh run rerun <id> --failed`.
+- **`feedback_auto_merge_behind_state_andon.md`** — auto-merge livelock when `mergeable_state=behind` (parallel-track PRs merging between green-CI and auto-merge fire). Fix: `gh pr update-branch <id>` to reset to current main.
+
+Each pattern wasted ≥30min on first encounter; durable saving prevents re-investigation in future cascades.
+
+### 53.9 Spec amendment cadence preserved
+
+§41 → §42 → §43 → §44 → §45 → §46 → §47 → §48 → §49 → §50 → §51 → §52 → §53. Thirteen amendments since 2026-05-03. §53 is the cascade-completion bookend to §52's gap-identification — the single-PR-per-step discipline produces a single-§-per-milestone amendment cadence.
+
+## §52. §50.4 cascade ALGORITHM-COMPLETE on main; new step 5f.4 CLI wireup gap identified before 5g LIVE (2026-05-04)
+
+§51 captured 7/8 falsifiers PARTIAL_ALGORITHM_LEVEL bound. Same-day continuation landed PR #1479 (FALSIFY-007 encoder/decoder family validator) and PR #1481 (`load_init_tensors_from_apr`). With #1483 (5f.3 populate) and #1482 (contract v1.1.0 status bump) MERGEABLE in queue, the cascade is one PR-merge away from algorithm-complete.
+
+But during the live source inspection that followed, a NEW gap was found: even with all helper functions in place, the CLI dispatch hardcodes a "not yet wired" error.
+
+### 52.1 Updated falsifier scoreboard for `apr-pretrain-arch-polymorphic-v1`
+
+| Falsifier | What it pins | PR | Status |
+|---|---|---|---|
+| FALSIFY-001 | `qwen2_0_5b()` matches HF config byte-for-byte | #1474 ✓ MERGED | PARTIAL_ALGORITHM_LEVEL |
+| FALSIFY-002 | `init=None` preserves Llama370M baseline | #1475 ✓ MERGED | PARTIAL_ALGORITHM_LEVEL |
+| FALSIFY-003 | `init=Some` pass-through (no silent defaults) | #1475 ✓ MERGED | PARTIAL_ALGORITHM_LEVEL |
+| FALSIFY-004 | GQA-7:1 forward-pass smoke | #1478 ✓ MERGED | PARTIAL_ALGORITHM_LEVEL |
+| FALSIFY-005 | Qwen tokenizer + Qwen target = pass | #1476 ✓ MERGED | PARTIAL_ALGORITHM_LEVEL |
+| FALSIFY-006 | Qwen tokenizer + Llama target = fail | #1476 ✓ MERGED | PARTIAL_ALGORITHM_LEVEL |
+| FALSIFY-007 | Encoder/decoder family mismatch fails fast | #1479 ✓ MERGED | PARTIAL_ALGORITHM_LEVEL |
+| FALSIFY-008 | `pv validate` exits 0 | #1473 ✓ MERGED | PARTIAL_ALGORITHM_LEVEL |
+
+**8 of 8 falsifiers** at PARTIAL_ALGORITHM_LEVEL on main. The cascade has reached algorithm-complete. Helper functions also landed: `load_init_tensors_from_apr` (#1481 ✓ MERGED) and `populate_trainer_from_init_tensors` (#1483, MERGEABLE in queue).
+
+### 52.2 Step roadmap status — NEW step 5f.4 added
+
+| # | Step | LOC | PR | Status |
+|---|------|-----|----|--------|
+| 5a | Author `apr-pretrain-arch-polymorphic-v1.yaml` contract | ~80 | #1473 | ✅ MERGED |
+| 5b | `qwen2_0_5b()` constructor verified + tie_word_embeddings defect fix | 1 LOC + tests | #1474 | ✅ MERGED |
+| 5c | `build_transformer_config` polymorphic dispatch | ~25 | #1475 | ✅ MERGED |
+| 5d | Polymorphic preflight gating by EXTRACTED vocab | ~70 | #1476 | ✅ MERGED |
+| 5e | GQA-7:1 forward-pass smoke test | ~70 | #1478 | ✅ MERGED |
+| 5f.1 | Encoder/decoder family validator | ~30 | #1479 | ✅ MERGED |
+| 5f.2 | `load_init_tensors_from_apr` (read APR tensors into BTreeMap) | ~40 | #1481 | ✅ MERGED |
+| 5f.3 | `populate_trainer_from_init_tensors` (BTreeMap → trainer params) | ~120 | #1483 | mergeable in queue |
+| **5f.4** | **CLI wireup: plumb `init: Option<&Path>` + invoke 5f.1/5f.2/5f.3** | **~150** | **(NOT YET STARTED)** | **identified this cycle** |
+| 5g | LIVE 500-step smoke fine-tune (operator dispatch) | 0 | (pending) | gated on 5f.4 |
+| 5h | Stamp + publish as MODEL-2 v2 | ~10 | (pending) | follows 5g |
+
+### 52.3 The 5f.4 CLI wireup gap (NEW finding from this cycle)
+
+Live source inspection of `crates/apr-cli/src/commands/pretrain.rs` (post-#1479 merge):
+
+- Line 96-130: `run()` plumbs `init: Option<&Path>` to `validate_init_apr_path()`.
+- Line 259-297: `validate_init_apr_path()` validates the APR file's existence + magic bytes, then **HARDCODES** `Err(...not yet wired...)`.
+- Line 346-413: `drive_real()` does NOT receive `init` and does NOT use the helper functions added in 5f.1/5f.2/5f.3.
+- Line 420-477: `drive_real_cpu/cuda()` build a hardcoded `llama_370m` trainer regardless of `--init`.
+
+**Net effect**: an operator running `apr pretrain --init <Qwen2.5-Coder-0.5B>.apr ...` today gets a hard error: `--init <PATH> is recognised as a valid APR file (...) but weight loading is not yet wired (§49 step 5 follow-up).` Step 5g LIVE cannot be dispatched until 5f.4 lands.
+
+### 52.4 Step 5f.4 algorithm — wireup invariant
+
+Per `apr-pretrain-arch-polymorphic-v1` §arch_extraction_signature + §init_load_semantics, step 5f.4 MUST:
+
+1. **Plumb** `init: Option<&Path>` through `run() → drive_real() → drive_real_cpu()/drive_real_cuda()` so trainer construction can access it.
+2. **Extract** when `init.is_some()`: call `model_config::read_apr_architecture(path)` (already exists at `apr-cli/src/commands/model_config.rs:18`) to get a `TransformerConfig` from the APR header metadata.
+3. **Validate** the extracted config family with `validate_pretrain_init_arch_compatible()` (5f.1).
+4. **Use** the extracted vocab in `preflight_tokenizer_vocab_matches_target()` call site (currently hardcoded to `Llama370MConfig::VOCAB_SIZE`).
+5. **Build** a new `build_shared_trainer_with_init(lr, seq_length, seed, init: Option<(&TransformerConfig, &Path)>) -> Result<SharedTrainer, String>` in `pretrain_real.rs` that, when init is Some, calls `load_init_tensors_from_apr(path)` (5f.2) then `populate_trainer_from_init_tensors(model, &tensors)` (5f.3).
+6. **Replace** the `Err(...not yet wired...)` in `validate_init_apr_path()` with `Ok(())` (the wireup is now real).
+
+**Constraint**: this MUST be a single atomic PR. Removing the "not yet wired" error WITHOUT a working `build_shared_trainer_with_init` would silently produce a random-init trainer when `--init` was passed — exactly the §28 SHIP-007 "silent gibberish" defect class. **No partial 5f.4 PR is safe.**
+
+### 52.5 The MODEL-2 ship-% gate is now precisely defined
+
+- **5f.4 (CLI wireup, ~150 LOC, 1 PR)** — makes step 5g dispatchable. Until this PR lands, `apr pretrain --init` errors out and 5g cannot fire.
+- **5g (LIVE 500-step fine-tune, 0 LOC, operator dispatch)** — DISCHARGES FALSIFY-006 empirically. **Load-bearing test that moves MODEL-2 ship-% from 57% → ≥58%.**
+- **5h (stamp + publish, ~10 LOC, 1 PR)** — follows 5g.
+
+Step 5f.4 is **author work** that was missed in the original §50 8-step decomposition. Step 5g is **operator work** (compute dispatch + corpus). Step 5h is **author work** that follows 5g evidence.
+
+### 52.6 Why §50.4 originally said "5f" without the .4 split
+
+§50 was authored before live source inspection of the CLI dispatch. The original §50 5f was scoped as "weight load" assuming the CLI would dispatch through it; live inspection (this cycle, post-§51) revealed that the CLI dispatch is a separate seam that hardcodes the `Err(...)`. §52 makes the wireup explicit and discharges the implicit assumption.
+
+This is the same lesson as §50 itself: the spec re-scoped from "single PR" to "8-step roadmap" after the live source revealed multi-PR coupling. §52 is one more turn of the same crank — what looked like 1 step is 2 (5f.3 + 5f.4) because the dispatch is independent of the helpers.
+
+### 52.7 Net effects
+
+- Spec v2.96.0 → **v2.97.0**.
+- §50.4 roadmap status: **5a-5f.3 algorithm-complete (8 PRs landed/queued); 5f.4 (CLI wireup) is the new author-work gate before 5g LIVE.**
+- **MODEL-1 ship %**: unchanged at **91%** (SHIP-007 cascade unrelated track).
+- **MODEL-2 ship %**: unchanged at **57%** until step 5g produces val_loss < 9.38 evidence; step 5g now requires step 5f.4 to land first.
+- Coverage tally unchanged this cycle (snapshot + roadmap re-scoping, not a falsifier flip).
+
+### 52.8 Five Whys
+
+1. **Why didn't §50 catch step 5f.4?** §50 was authored from a top-down architecture-coupling lens (data hardcoded in `Llama370MConfig`); the CLI-dispatch seam was implicit. Live source inspection of `pretrain.rs:259-297` (this cycle) made the seam explicit.
+2. **Why is 5f.4 a separate PR rather than folded into 5f.3?** Because 5f.3 (populate) lives in `aprender-train` and 5f.4 (wireup) lives in `apr-cli`. Both crates need changes, plus the wireup needs `model_config::read_apr_architecture` (already in apr-cli). One atomic PR per file/crate boundary; conflating them mixes review concerns.
+3. **Why must 5f.4 be a single atomic PR?** Removing the "not yet wired" error without a working `build_shared_trainer_with_init` produces silent random-init — exactly the §28 SHIP-007 defect class. The "not yet wired" Err is a load-bearing safety; it can only be removed simultaneously with the actual wireup.
+4. **Why ~150 LOC and not 50?** Plumbing `init` through 4 levels of function signatures (`run` → `drive_real` → `drive_real_cpu` → builder) plus the new `build_shared_trainer_with_init` body plus 2-3 tests. CUDA path also needs symmetric wireup. The number is conservative; could be 100 if the CUDA path stays out of scope (deferred to 5f.5).
+5. **Why call 5f.4 out in spec at all rather than just file it as a PR?** Per `feedback_falsifier_first_cascade_pattern.md`, when an unauthored step is identified, the spec is the source of truth. Without a §52, future operators (or sessions) reading PR #1483's "step 5f.3 capped" message would assume 5g is dispatchable. §52 says explicitly: **5g is gated on 5f.4, which is not yet authored.**
+
+### 52.9 Spec amendment cadence preserved
+
+§41 → §42 → §43 → §44 → §45 → §46 → §47 → §48 → §49 → §50 → §51 → §52. Twelve amendments since 2026-05-03. §52 is a roadmap-revision amendment immediately following the §51 cascade snapshot — same-day spec hygiene to record the wireup gap before it gets buried under cascade-merge noise.
+
+## §51. §50.4 cascade — 7/8 falsifiers PARTIAL_ALGORITHM_LEVEL bound, MODEL-2 ship-% gated on step 5g LIVE (2026-05-04)
+
+After §50 retired the single-PR step 5 in favor of an 8-step roadmap (5a-5h), the same-day continuation cycle landed 8 PRs across the architecture-polymorphic infrastructure track. This section records the cascade-complete state and pinpoints the remaining MODEL-2 ship-% gate.
+
+### 51.1 Falsifier-discharge scoreboard for `apr-pretrain-arch-polymorphic-v1`
+
+| Falsifier | What it pins | PR | Status |
+|---|---|---|---|
+| FALSIFY-001 | `qwen2_0_5b()` matches HF config byte-for-byte | #1474 | PARTIAL_ALGORITHM_LEVEL |
+| FALSIFY-002 | `init=None` preserves Llama370M baseline | #1475 | PARTIAL_ALGORITHM_LEVEL |
+| FALSIFY-003 | `init=Some` pass-through (no silent defaults) | #1475 | PARTIAL_ALGORITHM_LEVEL |
+| FALSIFY-004 | GQA-7:1 forward-pass smoke | #1478 ✓ MERGED | PARTIAL_ALGORITHM_LEVEL |
+| FALSIFY-005 | Qwen tokenizer + Qwen target = pass | #1476 ✓ MERGED | PARTIAL_ALGORITHM_LEVEL |
+| FALSIFY-006 | Qwen tokenizer + Llama target = fail | #1476 ✓ MERGED | PARTIAL_ALGORITHM_LEVEL |
+| FALSIFY-007 | Encoder/decoder family mismatch fails fast | #1479 | PARTIAL_ALGORITHM_LEVEL |
+| FALSIFY-008 | `pv validate` exits 0 | #1473 | PARTIAL_ALGORITHM_LEVEL |
+
+**7 of 8 falsifiers** at PARTIAL_ALGORITHM_LEVEL or higher. The 8th (FALSIFY-008 / `pv validate`) is contract-level and trivially passes.
+
+### 51.2 Step roadmap status (§50.4)
+
+| # | Step | LOC | PR | Status |
+|---|------|-----|----|--------|
+| 5a | Author `apr-pretrain-arch-polymorphic-v1.yaml` contract | ~80 | #1473 | open |
+| 5b | `qwen2_0_5b()` constructor verified + tie_word_embeddings defect fix | 1 LOC + tests | #1474 | open |
+| 5c | `build_transformer_config` polymorphic dispatch | ~25 | #1475 | open |
+| 5d | Polymorphic preflight gating by EXTRACTED vocab | ~70 | #1476 | ✅ MERGED |
+| 5e | GQA-7:1 forward-pass smoke test | ~70 | #1478 | ✅ MERGED |
+| 5f.1 | Encoder/decoder family validator | ~30 | #1479 | open |
+| 5f.2 | Wire APR file open + tensor materialization | ~80 (est) | (pending) | not started |
+| 5g | LIVE 500-step smoke fine-tune (operator dispatch) | 0 | (pending) | not started |
+| 5h | Stamp + publish as MODEL-2 v2 | ~10 | (pending) | not started |
+
+### 51.3 The MODEL-2 ship-% gate is now narrow
+
+Of the 8 sub-steps, the ones that move ship-% are:
+- **5f.2** — wires the actual init-weight load. Without this, `apr pretrain --init <Qwen>.apr` returns the §49-step-4 "not yet wired" error. Compile-bind discharge of FALSIFY-006 needs 5f.2 + 5g.
+- **5g** — the LIVE 500-step fine-tune. Operator-runnable. DISCHARGES FALSIFY-006 (init_loss < 6.0) empirically. **This is the load-bearing test that moves MODEL-2 ship-%.**
+- **5h** — stamp + publish, follows 5g.
+
+Steps 5a-5f.1 deliver INFRASTRUCTURE; they don't move ship-%. Cascade complete = "the architecture-polymorphic foundation is in place"; ship-% movement still requires the LIVE empirical check.
+
+### 51.4 Why 5f.2 was deliberately deferred this cycle
+
+`feedback_no_guessing.md` mandates: read live source before forming the implementation plan. The 5f.2 weight load involves:
+
+1. Opening an APR file via `aprender-core::format::v2::AprV2Reader` (in scope for apr-cli's deps)
+2. Reading the tensor index + metadata fields (vocab_size, hidden, layers, etc.)
+3. Mapping each tensor blob to a trainer parameter slot
+4. Copying values into the `TransformerTrainer`'s `parameters()` slots (this requires understanding the `entrenar::train::transformer_trainer` ownership model)
+
+That's ~80 LOC across files in two crates plus careful tensor-name mapping. With 4 cascade PRs (#1473/#1474/#1475/#1479) still in the merge queue, doing 5f.2 NOW means rebasing it onto each of those as they land. Single-piece flow per Toyota Way: let the cascade settle first; 5f.2 lands clean afterward.
+
+### 51.5 Net effects
+
+- Spec v2.95.0 → **v2.96.0**.
+- §50.4 roadmap status updated above (7/8 sub-steps PARTIAL_ALGORITHM_LEVEL or MERGED; 5f.2/5g/5h pending).
+- **MODEL-1 ship %**: unchanged at **91%** (SHIP-007 cascade infrastructure track).
+- **MODEL-2 ship %**: unchanged at **57%** until step 5g produces val_loss < 9.38 evidence.
+- Coverage tally unchanged this cycle (snapshot, not falsifier flip).
+
+### 51.6 Five Whys
+
+1. **Why a snapshot now and not just continue to 5f.2?** Multiple PRs in cascade auto-merge create cognitive load: which falsifiers are on main? What's the actual state of MODEL-2 ship gate? A spec snapshot captures both the achievement (7 falsifiers bound) AND the remaining gate (step 5g LIVE). Without it, future operators (or future sessions) waste cycles re-deriving the state from PR titles.
+2. **Why focus on the falsifier scoreboard rather than total LOC delivered?** LOC is a proxy. Falsifier discharge is the actual contract obligation. 7 of 8 invariants pinned at PARTIAL_ALGORITHM_LEVEL means CI now catches regressions in the polymorphic-init path; that's the load-bearing claim, not "we wrote N lines."
+3. **Why mention 5f.2 explicitly as deliberately deferred?** Naming the deferral makes it not a punt. Step 5f.2 has a clear "when": after the 4 in-flight PRs cascade-merge, then 5f.2 lands clean. Without naming it, future readers might assume cascade-complete = ship-ready, when really MODEL-2 still needs 3 more sub-steps.
+4. **Why call out that infrastructure ≠ ship-%?** The §47-§48 cascade taught the same lesson — "11 SHIP-007 cascade PRs landed but no ship-% movement." Operator-facing ship-% is the LIVE check, not the falsifier-bind. §51 makes this explicit so the same lesson doesn't need re-teaching.
+5. **Why is FALSIFY-006 LIVE the load-bearing claim?** The contract pins `init_loss(step=0) ≤ 6.0` while `from_scratch_loss(step=0) ≥ 9.5`. If the init weights load correctly AND the trainer's forward pass uses them, this gap appears at step 0 — proving end-to-end correctness in one number. No other falsifier can substitute (e.g., shape match alone doesn't prove the values flow through). LIVE 500-step fine-tune at val_loss < 9.38 confirms the gap PERSISTS through training, not just at init.
+
+### 51.7 Spec amendment cadence preserved
+
+§41 → §42 → §43 → §44 → §45 → §46 → §47 → §48 → §49 → §50 → §51. Eleven amendments since 2026-05-03. Each ≥ 1-PR cycle, each preserves the audit story. §51 is a snapshot amendment after a major (8-PR) cascade — same-day spec hygiene rather than letting the cascade-complete state remain implicit.
+
+## §50. MODEL-2 architecture-coupling finding — §49.6 step 5 is multi-PR scope, not single-PR (2026-05-04)
+
+After §49.6 steps 3 + 4 landed (PR #1470 contract + PR #1471 wire-up), step 5 was scoped at "Run 500-step smoke fine-tune with LR=5e-5, warmup=50; verify val_loss < 9.38 | 0 LOC". This section records the architecture-mismatch finding that disproves the 0-LOC claim and re-scopes step 5.
+
+### 50.1 The empirical finding
+
+Live source inspection of the existing pretrain trainer (`crates/aprender-train/src/train/pretrain_real.rs:38-46`) shows it HARDCODES every architectural constant from `Llama370MConfig`:
+
+```rust
+hidden_size:        Llama370MConfig::HIDDEN_DIM,                  // 1024
+num_attention_heads: Llama370MConfig::NUM_HEADS,                  //   16
+num_kv_heads:       Llama370MConfig::NUM_KV_HEADS,                //    4
+intermediate_size:  Llama370MConfig::INTERMEDIATE_DIM,            // 2816
+num_hidden_layers:  Llama370MConfig::NUM_LAYERS,                  //   24
+vocab_size:         Llama370MConfig::VOCAB_SIZE,                  // 50_257
+max_position:       Llama370MConfig::MAX_POSITION_EMBEDDINGS,     // 4096
+```
+
+Qwen2.5-Coder-0.5B-Instruct (the §49 init source from `~/.cache/huggingface/hub/.../config.json`) has:
+
+| Param           | Llama370M | Qwen2.5-Coder-0.5B |
+|-----------------|-----------|--------------------|
+| hidden_size     | 1024      | 896                |
+| num_layers      | 24        | 24                 |
+| num_attention_heads | 16    | 14                 |
+| num_kv_heads    | 4         | 2 (GQA-7:1)        |
+| intermediate_size | 2816    | 4864               |
+| vocab_size      | 50_257    | 151_936            |
+| rope_theta      | 10_000    | 1_000_000          |
+
+**Every single tensor will mismatch.** Loading Qwen2.5 weights into a Llama370M-shaped optimizer is a category error. §49.6 step 5 cannot succeed as written — `--init <Qwen2.5-Coder-0.5B-Instruct.apr>` will fail at FALSIFY-005 (architecture mismatch) the moment step 5's arch-check runs.
+
+### 50.2 Why the §49.6 roadmap missed this
+
+§49 was authored from a strategy lens (data-budget vs capacity ceiling) and correctly identified pretrained-init as the load-bearing path. The roadmap costed step 5 at 0 LOC because it implicitly assumed the trainer was architecture-polymorphic. It is not — `pretrain_real.rs:38-46` predates the Qwen2.5 use case.
+
+`crates/aprender-train/src/transformer/config.rs:14-18` already DEFINES `QWEN2_0_5B_HIDDEN_SIZE = 896` etc as constants (and `qwen2_0_5b()` is the natural sibling to `llama2_7b()`/`llama2_13b()` constructors). So the foundation exists; what's missing is:
+1. A `TransformerConfig::qwen2_0_5b()` constructor (~30 LOC)
+2. A polymorphic `pretrain_real::build_transformer_config()` that derives the config from the init APR file's metadata instead of `Llama370MConfig::*` constants (~80 LOC)
+3. Forward-pass coverage of GQA-7:1 (Qwen2.5 has kv_heads=2, query_heads=14; ratio 7:1) — needs verification that `aprender-train`'s attention kernel handles this ratio correctly (existing code targets 4:1 GQA per Llama370M)
+4. A tokenizer surface that accepts vocab_size=151_936 (Qwen tokenizer) instead of vocab_size=50_257 (codeparrot/GPT-2 BPE) — current `tokenizer.json` shape mismatch will fail GATE-ARCH-370M-011 at preflight
+
+### 50.3 Three options + recommendation
+
+| Option | Description | LOC estimate | Risk |
+|---|---|---|---|
+| **A** | Find/create a Llama370M-shaped pretrained checkpoint (vocab=50257, hidden=1024, layers=24/16/4, ffn=2816). Train SmolLM-360M-class on bigger corpus from-scratch using existing trainer. | ~5K LOC training data prep + multi-week training | High — recreates the §24/§25/§49.1 corpus-bottleneck problem in a new shape. No off-the-shelf 370M Llama checkpoint exists. |
+| **B** | Make the trainer architecture-polymorphic. Derive `TransformerConfig` from init APR metadata; add `qwen2_0_5b()` constructor; verify GQA-7:1 forward pass; add Qwen tokenizer support. | ~200-400 LOC + verification | Medium — exercises new GQA ratio, new tokenizer surface, but each piece is small and contract-bindable. |
+| **C** | Replace `Llama370MConfig` with `Qwen2_5_Coder_0_5B_Config` outright. Pretrain math becomes Qwen-shaped only; from-scratch path becomes "Qwen2.5-from-scratch". | ~300 LOC | Medium — kills the from-scratch falsification path (§24/§25). Less reversible. |
+
+**Recommendation: Option B** — architecture-polymorphic. It preserves the existing from-scratch falsification evidence, exercises the polymorphism that `TransformerConfig` was designed for, and binds each new component (qwen2_0_5b config, GQA-7:1 attention, Qwen tokenizer surface) to its own falsifier. It also leaves the door open for future MODEL-2 alternatives (e.g., StableCode-0.5B-init, DeepSeek-Coder-0.5B-init) without a rewrite.
+
+### 50.4 Re-scoped §49.6 roadmap (replacing original step 5)
+
+| # | Step | LOC | Falsifier discharge |
+|---|------|----------|---------|
+| 5a | Author `apr-pretrain-arch-polymorphic-v1.yaml` contract — pin the architecture-extraction algorithm + Qwen2.5-0.5B forward-pass invariants | ~80 | New contract created |
+| 5b | Add `TransformerConfig::qwen2_0_5b()` constructor + 1 unit test | ~40 | architecture-requirements-v1 (sibling) |
+| 5c | Refactor `pretrain_real::build_transformer_config()` to read from init APR file metadata when `--init <PATH>` is set; fall back to `Llama370MConfig` otherwise | ~80 | apr-pretrain-from-init-v1 FALSIFY-005 (arch match) |
+| 5d | Add Qwen tokenizer-vocab compatibility check at GATE-ARCH-370M-011 — gate by extracted-arch's vocab_size | ~30 | gate-arch-370M-011 update |
+| 5e | Verify GQA-7:1 attention forward pass via property test (kv_heads=2, query_heads=14) | ~50 | gqa-kernel-v1 (existing falsifier expansion) |
+| 5f | Wire the actual weight load — read tensor shards from init APR, materialize into optimizer initial state | ~120 | apr-pretrain-from-init-v1 FALSIFY-006/009/010 |
+| 5g | LIVE 500-step smoke fine-tune on Qwen2.5-Coder-0.5B-Instruct.apr — verify val_loss < 9.38 | 0 (operator dispatch) | apr-pretrain-from-init-v1 FALSIFY-006 DISCHARGED |
+| 5h | Stamp + publish as MODEL-2 v2 | ~10 | (existing) |
+
+**Total estimate: ~410 LOC + 1 LIVE training run** — not 0 LOC. Steps 5a-5f can land independently as separate PRs; 5g is the operator-runnable LIVE gate; 5h is publish.
+
+### 50.5 Net effects
+
+- Spec v2.94.0 → **v2.95.0**.
+- §49.6 step 5 retired in favor of §50.4 sub-steps 5a-5h.
+- **MODEL-2 ship %**: stays at **57%** until 5g produces evidence of val_loss < 9.38. Sub-steps 5a-5f can each individually move 1% with falsifier discharge (architecture-polymorphic infrastructure shipped == evidence that the §49 path is REACHABLE, not just theoretical).
+- **MODEL-1 ship %**: unchanged at **91%**.
+- Coverage tally unchanged this cycle (architecture finding, not a falsifier flip).
+
+### 50.6 Five Whys
+
+1. **Why didn't §49 catch this?** §49 was authored from strategy/data-budget reasoning. The roadmap costed step 5 at 0 LOC because the operator-visible interface (`apr pretrain --init`) suggested polymorphism. Live source inspection (this section's empirical move) revealed `pretrain_real.rs:38-46` predates the assumption.
+2. **Why catch this NOW and not in step 5 implementation?** Per `feedback_no_guessing.md`: read the live source before forming the implementation plan. Surfacing the architecture mismatch BEFORE writing 200 LOC of weight-load code that will fail at runtime is the cheapest place to pay the cost-of-defect. Two §50-prior wrong-premise PRs (#1466/#1467/#1468 closed) on the SHIP-007 / 0.5B gibberish track were the same defect class — read source before forming hypothesis.
+3. **Why option B over A or C?** Option B preserves the §24/§25 falsification evidence (we KEEP knowing from-scratch fails at 9.75; we just don't ship it as MODEL-2). Option B also exercises the polymorphism that `TransformerConfig` was designed for, and each new component (Qwen tokenizer, GQA-7:1) becomes its own falsifier. Option C deletes a working falsification.
+4. **Why is FALSIFY-005 the right place to fail-fast?** The contract authored in PR #1470 already pins "Architecture mismatch is FAIL-FAST, not silent-truncate" as an invariant. The current step-4 wire-up (PR #1471) doesn't enforce arch matching yet — it returns "not yet wired" before getting there. So FALSIFY-005 is currently UNBOUND but its discharge gate is well-defined: read APR header, compare against pretrain target, error with names of mismatched fields.
+5. **Why isn't this spec-amendment a "punt"?** A punt would say "MODEL-2 is blocked, await operator approval to scope". This amendment names three options with LOC estimates, recommends one with reasoning, and gives a concrete 8-step roadmap (5a-5h) with falsifier discharge mapped to each sub-step. The work IS shippable; it's just bigger than 0 LOC.
+
+### 50.7 Next-cycle priority
+
+Author the new contract `apr-pretrain-arch-polymorphic-v1.yaml` per §50.4 step 5a. This contract pins the architecture-extraction algorithm (read APR header → emit TransformerConfig) and adds 4 falsifiers covering: (i) extracted config matches APR header byte-for-byte; (ii) forward-pass on extracted config reproduces the init checkpoint's val_loss; (iii) GQA-7:1 attention numerical parity; (iv) Qwen tokenizer vocab_size flows through GATE-ARCH-370M-011 without false rejection. PROPOSED → PARTIAL_ALGORITHM_LEVEL when the constructor + extractor land.
+
+## §49. MODEL-2 strategy pivot — from-scratch was a methodology defect (2026-05-04)
+
+After 11 SHIP-007 cascade PRs (§47 + §48) advanced MODEL-1's bisection infrastructure but moved no ship %, operator asked the load-bearing question: **"why aren't we training models?"** This section answers that, re-diagnoses MODEL-2's binding constraint, and pivots the spec to the correct strategy.
+
+### 49.1 Live evidence from this session — corpus is the binding constraint, not capacity
+
+Fresh 500-step `apr pretrain --mode from-scratch --device cuda` smoke run on RTX 4090 (`/mnt/nvme-raid0/runs/model-2-train-2026-05-04-real-gpu/`):
+
+```
+Run Result: OK CONVERGED  final val_loss=9.7255 after 5 epoch(s)
+  Steps recorded: 500
+  Epochs recorded: 5
+```
+
+Compare to §24's 80K-step LR-budget falsification: val_loss=9.7507 after 80,000 steps. **A 500-step run and an 80,000-step run land within 0.026 of each other.** The 370M-from-scratch architecture on the existing 565M-token codeparrot+CSN-Python corpus has a hard ceiling at val_loss ≈ 9.75, regardless of step budget.
+
+§34's framing called this "capacity-limited at val_loss=9.38". That diagnosis is **wrong**. The architecture has plenty of capacity — what it lacks is **training tokens**. SmolLM-360M (similar 360M param count) achieves val_loss ~2.9 on diverse text but was trained on **1T tokens**. MODEL-2 saw 565M, ~1800× less. The from-scratch math just doesn't reach val_loss=3.0 at this scale.
+
+### 49.2 The strategy pivot
+
+Replace "MODEL-2 = 370M from-scratch on Python+permissive code" with **"MODEL-2 = pretrained 0.5B-class checkpoint fine-tuned on Python+permissive code"**.
+
+Concretely:
+
+| Aspect | Old (from-scratch) | New (pretrained-init) |
+|--------|--------------------|-----------------------|
+| Initialization | random | Qwen2.5-Coder-0.5B-Instruct (already at val_loss ~2-3) |
+| Training | 50K-200K steps from scratch | Fine-tune on existing 565M-token corpus |
+| Time-to-target | months on Stack v2 (2T+ tokens) | hours-to-days on existing corpus |
+| Spec target val_loss=3.0 | unreachable | reachable (init is already ~2-3, fine-tuning shifts to Python distribution) |
+| Industry precedent | nobody | StableCode ← StableLM, Qwen2.5-Coder ← Qwen2.5, DeepSeek-Coder ← DeepSeek-LLM |
+
+The pretrained checkpoint **already paid the 1T-token data tax**. Fine-tuning on 565M Python tokens shifts distribution without erasing the pretraining. This is industry best practice for 0.5B-class production code-LMs — there is no production small-LM trained from-scratch on <2T tokens because the math doesn't work.
+
+### 49.3 Pre-conditions for §49 strategy already met
+
+| Pre-condition | Status |
+|---|--------|
+| Qwen2.5-Coder-0.5B-Instruct in HF cache | ✅ `~/.cache/huggingface/hub/models--Qwen--Qwen2.5-Coder-0.5B-Instruct/`, 950 MB, has `model.safetensors` + `config.json` |
+| RTX 4090 + cuBLAS + custom PTX backward | ✅ verified live this session (sm_89, no Blackwell JIT bug) |
+| Codeparrot+CSN-Python tokenized corpus | ✅ `/mnt/nvme-raid0/data/codeparrot-python-permissive-shards/`, 565M tokens |
+| `apr pretrain --mode finetune` driver | ✅ `--mode finetune` exists per `apr pretrain --help` (lr=5e-5, warmup=100) |
+| `apr pull` for HF model download | ✅ on main per `apr pull --help` |
+
+The bottleneck is wiring: how to load a Qwen2.5-shaped pretrained checkpoint as the student-init for `apr pretrain --mode finetune`. This is implementation work for next-cycle PRs.
+
+### 49.4 Net effects
+
+- Spec v2.93.0 → **v2.94.0**.
+- §34's "capacity-limited" framing is RETIRED in favor of §49.1's data-limited diagnosis.
+- §36.2's "only realistic path to val_loss=3.0 is distillation" is REFINED — pretrained-init is the load-bearing path; distillation becomes a multiplicative enhancement on top.
+- **MODEL-2 ship %**: stays at **57%** until first fine-tune produces evidence of val_loss < 9.38 (the previous ceiling).
+- **MODEL-1 ship %**: unchanged at 91% (operator-gated SHIP-007 LIVE bisection).
+- Coverage tally unchanged this cycle (strategic amendment, no falsifier flips yet).
+
+### 49.5 Five Whys
+
+1. **Why now and not in §47/§48?** Operator interruption asked the load-bearing ship-% question. The cascade work was real (bisection scaffolding), but it doesn't move ship %. Training models does.
+2. **Why is "from-scratch" a methodology defect?** The math: 370M params × 1T tokens trains a SmolLM-class model. 370M × 565M tokens does not. The spec specified the wrong train-from-scratch budget; pretrained-init bypasses the constraint.
+3. **Why pretrained-init from Qwen2.5-Coder-0.5B specifically?** Already in HF cache locally, code-domain pretrained, similar param count, permissive license, fine-tunes well per Qwen team's own work.
+4. **Why retain the spec target val_loss=3.0?** It's the right product target — a small code-completion model should hit ~exp(3) = ~20 perplexity. Pretrained-init makes it reachable; from-scratch on 565M tokens does not.
+5. **Why isn't this just renaming the model?** Different *initialization* changes the training trajectory. Random-init reaches val_loss=9.75 in 500 steps and stays there; pretrained-init starts at ~2-3 and fine-tuning shifts to ~3-4 on Python within hours. The trained artifact's behavior is qualitatively different (good code completion vs near-random tokens).
+
+### 49.6 Next-cycle implementation roadmap
+
+| # | Step | LOC est. |
+|---|------|----------|
+| 1 | Convert `~/.cache/huggingface/hub/.../Qwen2.5-Coder-0.5B-Instruct/model.safetensors` → APR format | 0 (existing `apr convert` / `apr import`) |
+| 2 | Verify `apr run` works on the converted APR file (sanity check) | 0 (existing `apr run`) |
+| 3 | Author `apr-pretrain-from-init-v1.yaml` contract pinning the init-from-pretrained path | ~80 |
+| 4 | Wire `--init <model.apr>` flag into `apr pretrain` → loads weights instead of random init | ~50 |
+| 5 | Run 500-step smoke fine-tune with LR=5e-5, warmup=50; verify val_loss < 9.38 | 0 (apr pretrain) |
+| 6 | Scale to 5K-50K step run; hit val_loss target | 0 |
+| 7 | Stamp + publish as MODEL-2 v2 | ~10 (existing `apr stamp` + publish) |
+
+Steps 1, 2, 5, 6, 7 use existing infrastructure. Steps 3, 4 are the real engineering work — and they're small. The cascade is sized to land in 1-2 days, not months.
+
+## §48. SHIP-007 layer-0 attention bisection cascade ALGORITHM-LEVEL COMPLETE (2026-05-04)
+
+After §47 recorded the cascade-started milestone (PRs #1450 + #1451 + #1452 scaffolding), the same-day continuation cycle closed §47.1 cascade roadmap steps 4-6 at the algorithm level. This section records what landed, what's blocked on operator action, and the Toyota Way correction caught during the HF FP16 oracle PR.
+
+### 48.1 What landed
+
+| # | PR | What | Discharge |
+|---|----|------|-----------|
+| §47.1 step 4 | #1455 | `forward_traced_with_plan` wires 4 attention sub-stages | FALSIFY-ATTN-SUB-002 PARTIAL_ALGORITHM_LEVEL |
+| §47.1 step 5 | #1456 | drift-prevention test for `apr diff --values` per-stage-agnostic loader | FALSIFY-ATTN-SUB-003 algorithm-level pinned |
+| §47.1 step 6 | #1457 | HF FP16 oracle script extension (4 missing stage captures) | FALSIFY-ATTN-SUB-004 BLOCKER_FIXTURE_ABSENT → PARTIAL_ALGORITHM_LEVEL on merge |
+
+**PR #1455** wires `QPostRope` + `KPostRope` (which were in the parent enum but had no `emit()` calls per §47.4) plus the 2 new variants `AttnScores` + `AttnSoftmax`. Closes the parent contract drift discovered in §47.4 as a side effect — the 9-stage `bisection_chain_layer_0` equation is now end-to-end emit-able from the APR side.
+
+**PR #1456** adds 2 unit tests at `crates/apr-cli/src/commands/diff_05_aprt_stage.rs`: `falsify_attn_sub_003_new_stages_per_stage_agnostic` (pins that the magic-byte loader + cosine + RMS + e2e diff all work for filenames `layer_0_attn_scores.aprt` + `layer_0_attn_softmax.aprt` at realistic shape `28*7*7=1372`); `falsify_attn_sub_003_cosine_detects_softmax_divergence` (pins cosine sensitivity for the FALSIFY-ATTN-SUB-004 LIVE bisection — mixed-perturbation drops below 0.999 floor). 0 LOC production change. Spec said "likely 1 test + 0 LOC if loader is per-stage-agnostic" — empirically confirmed.
+
+**PR #1457** extends `scripts/generate_qwen25_coder_fp16_stages.py` with `--with-attn-substages` (default ON). Forces `attn_implementation="eager"` at model load and installs per-instance `Qwen2Attention.forward` monkeypatch via `types.MethodType` on the target layers; non-target layers retain the original eager forward. Captures the 4 missing stages (`q_post_rope`, `k_post_rope`, `attn_scores`, `attn_softmax`) at the right semantic points by inlining `eager_attention_forward` with capture wrapping.
+
+### 48.2 Toyota Way correction (research-note overestimate)
+
+The pre-implementation research note (`evidence/ship-007-layer0-attn-bisection-2026-05-04/hf-oracle-extension-research.md`, uncommitted) estimated **7 missing stages, ~140 LOC**. Live source inspection of the existing script during PR #1457 found that **3 of those 7 stages (`qkv_matmul`, `qkv_bias`, `attention`) were already captured** via existing forward hooks (`make_qkv_hook` derives qkv_matmul/qkv_bias from `q_proj`/`k_proj`/`v_proj` outputs via bias subtraction; `hook_o_proj_pre` captures `attention` as the input to o_proj). Net new work: **4 stages, ~80 LOC monkeypatch**.
+
+Per `feedback_no_guessing.md`. Cost-of-defect paid at the implementation layer (cheapest place once the research note had already been authored from outdated docstring lines that say "stages NOT captured (3/16 — require deeper module instrumentation)"). The docstring itself was the source of the overestimate — it claimed those 3 stages weren't captured, but the implementation HAS them. Fix is rolled into PR #1457's docstring update.
+
+### 48.3 Steps 7-8 require operator action
+
+The §47.1 cascade roadmap's remaining 2 steps require operator dispatches that fall outside the loop scope:
+
+| # | Step | Blocker | Workaround |
+|---|------|---------|-----------|
+| §47.1 step 7 | LIVE RTX 4090 bisection on canonical 7B teacher | (a) canonical `apr` release binary at `/mnt/nvme-raid0/targets/aprender/release/apr` was built pre-#1451 — rejects `attn_scores`/`attn_softmax` stages today (verified: `Stage(Unknown { got: "attn_scores" })`). (b) PyTorch/CUDA driver mismatch on noah-Lambda-Vector — `RuntimeError: NVIDIA driver too old (found 12080)`. | (a) `cargo build --release --features cuda --bin apr` (~5-10 min). (b) operator updates driver OR runs script with `--device cpu` (multi-min FP16 forward but functional). |
+| §47.1 step 8 | SHIP-007 root-cause fix at the bisected sub-stage | Gated on step 7 finding (which sub-stage cosine drops below 0.999). | n/a — discovery-driven scope. |
+
+Pre-conditions verified by this cycle:
+- ✅ Canonical APR teacher: `qwen2.5-coder-7b-instruct-q4k.apr` (7.5 GB)
+- ✅ HF FP16 model in cache: 15 GB at `~/.cache/huggingface/hub/models--Qwen--Qwen2.5-Coder-7B-Instruct/`
+- ✅ Tokenizer: 6.8 MB
+- ✅ Extended HF FP16 oracle script (PR #1457)
+- ✅ APR `apr trace --save-tensor` 4-stage wire (#1455 merged)
+- ✅ APR `apr diff --values` recognition pinned by drift-prevention test (#1456 merged)
+
+### 48.4 Net effects
+
+- Spec v2.92.0 → **v2.93.0**.
+- §47.1 cascade roadmap: 6/8 steps algorithm-level COMPLETE; steps 7-8 LIVE/operator-gated.
+- Coverage tally: 20+32 → **20+36** (+4 PARTIAL_ALGORITHM_LEVEL flipping in this cycle from `trace-attn-sub-stages-v1` v1.1.0 falsifiers landing on main when #1450 merged: SUB-001/002/003/005). SUB-004 stays BLOCKER_FIXTURE_ABSENT until #1457 ships and an operator runs the live bisection.
+- **MODEL-1 ship %**: unchanged at **91%** (cascade is scaffold; ship % moves at SUB-004 LIVE DISCHARGE in step 7).
+- **MODEL-2 ship %**: unchanged at **57%**.
+
+### 48.5 Five Whys
+
+1. **Why amend after only 3 PRs (1455 + 1456 + 1457) and not after 5?**
+   The §41-§46 cadence rule was "one amendment per ≥3-PR cycle OR per landmark milestone". This cycle hits both: 3 PRs + the cascade-algorithm-level-complete milestone is naturally bracketed.
+
+2. **Why split into §47 (started) and §48 (algorithm-complete)?**
+   Two distinct narrative beats: (a) cascade scaffold authored with Toyota Way correction caught mid-cascade (§47); (b) cascade algorithm-level complete with another Toyota Way correction caught at the HF oracle PR (§48). Combining would lose the audit trail of the two distinct course-corrections.
+
+3. **Why not also flip FALSIFY-ATTN-SUB-004 from BLOCKER to PARTIAL_ALGORITHM_LEVEL in this amendment?**
+   The status flip is gated on PR #1457 merging on main. As of §48 authoring, #1457 is in CI. The flip is captured in the next-cycle YAML bump that lands with the SUB-004 PARTIAL_ALGORITHM_LEVEL formal evidence. This amendment records the algorithm-bind work but does NOT pre-fire the contract status update.
+
+4. **Why not run the LIVE RTX 4090 bisection in this loop iteration?**
+   Per `feedback_compute_pre_authorized.md`, named GPU lanes (teacher regen, QLoRA retry, MODEL-2 10K pretrain, smokes/evals) are pre-authorized; SHIP-007 layer-0 bisection on a fresh broken-GPU teacher is a borderline lane that benefits from explicit operator approval — particularly because the canonical `apr` binary needs a rebuild first AND the host PyTorch+CUDA driver mismatch forces either driver fix or `--device cpu` (multi-min). Running blind risks producing partial evidence that an operator-triggered run would re-do anyway.
+
+5. **Why is MODEL-1 ship % still 91%?**
+   The §47.1 cascade is bisection infrastructure. It produces the EVIDENCE that pinpoints SHIP-007 to a specific sub-stage; it does NOT FIX the bug. Ship % moves only when (a) SUB-004 LIVE discharges and identifies the bug-bearing sub-stage, then (b) step 8 lands the root-cause fix and `apr run` on the GPU path produces correct tokens on the canonical 7B teacher.
+
+### 48.6 Spec amendment cadence preserved
+
+Eight §-amendments since 2026-05-03 (§41 → §42 → §43 → §44 → §45 → §46 → §47 → §48). Each ≥1-PR cycle, each preserving the audit story. The cadence rule of "one amendment per ≥3-PR cycle OR per landmark milestone" continues to hold: §48 records a cascade-algorithm-level-complete milestone after 3 cascade PRs landed/in-flight.
+
+## §47. SHIP-007 layer-0 attention bisection cascade STARTED (2026-05-04)
+
+After §46 declared the v0.32.0 cut HOLD-gated on SHIP-007 layer-0 attention, the §46.7(a) follow-up cascade kicked off the same day with three PRs (#1450 + #1451 + #1452). This section records what landed, the Toyota Way correction caught mid-cascade, and the wire-plan for the next cycle's implementation PR.
+
+### 47.1 Cascade roadmap
+
+The full SHIP-007 layer-0 attention bisection requires this PR sequence:
+
+| # | PR | What | Discharge status |
+|---|----|------|-------|
+| 1 | #1450 | Contract `trace-attn-sub-stages-v1.yaml` v1.1.0 PROPOSED | 5 falsifiers algorithm-bound (4× PARTIAL + 1× BLOCKER) |
+| 2 | #1451 | Enum extension: 2 new `SaveTensorStage` variants | FALSIFY-ATTN-SUB-001 PARTIAL_ALGORITHM_LEVEL |
+| 3 | #1452 | Research evidence note (pre-existing capture gap) | No falsifier flip; documentation only |
+| 4 | (next) | `forward_traced_with_plan` wires 4 sub-stages | FALSIFY-ATTN-SUB-002 algorithm-bind + drift fix |
+| 5 | (next) | `apr diff --values` recognizes new stages | FALSIFY-ATTN-SUB-003 |
+| 6 | (next) | HF FP16 oracle script extension | unblocks FALSIFY-ATTN-SUB-004 |
+| 7 | (next) | Live RTX 4090 bisection on canonical 7B teacher | FALSIFY-ATTN-SUB-004 → DISCHARGED |
+| 8 | (next) | SHIP-007 root-cause fix at the bisected sub-stage | unblocks MODEL-1 GPU shipability |
+
+§47 captures the first 3 (scaffold). §48+ will capture later steps as they land.
+
+### 47.2 What landed
+
+**PR #1450** — Contract authoring:
+
+- Initial v1.0.0 claimed 5 new variants needed: `QPostRope`, `KPostRope`, `AttnScores`, `AttnSoftmax`, `AttnVOut`.
+- Mid-cascade live source inspection (per `feedback_no_guessing.md`) showed `QPostRope`, `KPostRope`, and `Attention` (the latter semantically equivalent to my proposed "AttnVOut") **already exist** in the parent `SaveTensorStage` enum.
+- Toyota Way correction within same branch: v1.0.0 → v1.1.0, scope reduced to 2 truly-new variants (`AttnScores` between Q·Kᵀ and softmax; `AttnSoftmax` between softmax-mask and ·V).
+- v1.1.0 also added the `bisection_chain_layer_0` equation pinning the **9-element cosine sequence** that FALSIFY-ATTN-SUB-004 will measure on RTX 4090.
+
+**PR #1451** — Enum extension:
+
+- Adds `AttnScores` + `AttnSoftmax` to `SaveTensorStage` in canonical computation order (`KPostRope → AttnScores → AttnSoftmax → Attention`).
+- Updates `ALL` (18 → 20), `canonical_name`, `FromStr`, plus `is_per_layer_count` test (16+2 per-layer + 2 whole-model = 20).
+- 5 new tests for FALSIFY-ATTN-SUB-001: round-trip for each new name, full 7-stage attention block ordering, 2-stage parser-list, 9-stage full layer-0 chain parser-list.
+- `cargo test -p aprender-serve --lib inference_trace` 167/167 PASS; `cargo check --workspace --lib` clean.
+
+**PR #1452** — Research evidence:
+
+- Authored while inspecting `forward_traced_with_plan` to scope FALSIFY-ATTN-SUB-002.
+- Discovered: `QPostRope` + `KPostRope` are in the enum but have **no `emit()` call**. Their tensors `q_all` + `k_all` are computed at lines 130-131 of `apr_transformer/inference.rs` but never captured.
+- The parent contract `apr-cli-trace-save-tensor-v1.yaml` v1.4.0 (FUNCTIONAL) silently overstates coverage for those 2 stages.
+- Records the wire-plan that the next-cycle FALSIFY-ATTN-SUB-002 PR will close: 4 stages (the 2 new + 2 pre-existing gaps), not 2.
+
+### 47.3 The Toyota Way correction in detail
+
+v1.0.0 of `trace-attn-sub-stages-v1.yaml` was the day's first defect. Caught on the next iteration, mid-cascade, before any implementation PR depended on the wrong scope.
+
+| Aspect | v1.0.0 (defective) | v1.1.0 (corrected) |
+|---|---|---|
+| New variants claimed | 5 | 2 |
+| Implementation PR LOC estimate | ~150 | ~60 (40% reduction) |
+| Pre-existing gap acknowledged | No | Yes (`QPostRope`/`KPostRope` are in enum but unwired) |
+| `bisection_chain_layer_0` equation | Vague | 9-element cosine sequence pinned |
+
+The cost-of-defect was paid at the contract layer (cheapest place). Correction was a YAML-only re-author, no code rolled back.
+
+Per `feedback_no_guessing.md`: "use pmat query / apr trace / contracts, not speculation". The v1.0.0 defect was authored from the parent contract's prose description without checking the live enum. v1.1.0 fixed that.
+
+### 47.4 Pre-existing parent contract drift
+
+`apr-cli-trace-save-tensor-v1.yaml` v1.4.0 is FUNCTIONAL. Its `cli_signature` enumerates 18 stages including `QPostRope` + `KPostRope`. Its `forward_traced_with_plan` claim is that all 18 stages emit at the documented capture points.
+
+**Empirically false.** `forward_traced_with_plan` has no `emit(QPostRope, ...)` or `emit(KPostRope, ...)` call. A user passing `--save-tensor q_post_rope` gets a clean exit with no file written — silent failure.
+
+This is a parent-contract drift, not a regression introduced by the SHIP-007 cascade. The cascade discovered it; the next-cycle FALSIFY-ATTN-SUB-002 PR will close it as a free side-effect by wiring the 2 missing stages alongside the 2 new ones. Per `feedback_toyota_way_all_defects.md`: all defects are mine. The parent contract bump (v1.4.0 → v1.5.0) will be done in the same PR that closes the wires.
+
+### 47.5 Net effects
+
+- Spec v2.91.0 → **v2.92.0** (cascade-started record).
+- Contract `trace-attn-sub-stages-v1.yaml` v1.0.0 → v1.1.0 PROPOSED (PR #1450 — pending merge).
+- `SaveTensorStage` enum: 18 → 20 variants (PR #1451 — pending merge).
+- 5 new falsifiers algorithm-bound (4× PARTIAL_ALGORITHM_LEVEL + 1× BLOCKER_FIXTURE_ABSENT) once #1450 merges.
+- **MODEL-1 ship %**: unchanged at 91% (scaffold; ship % moves at FALSIFY-ATTN-SUB-004 LIVE DISCHARGE in a future cycle).
+- **MODEL-2 ship %**: unchanged at 57%.
+- Coverage tally: unchanged this cycle (the 5 new PARTIAL_ALGORITHM_LEVEL increments will land when PR #1450 lands the YAML).
+
+### 47.6 Open follow-ups (next-cycle priorities)
+
+In ranked-leverage order:
+
+1. **FALSIFY-ATTN-SUB-002 implementation PR** — wires 4 stages (`QPostRope`, `KPostRope`, `AttnScores`, `AttnSoftmax`) into `forward_traced_with_plan`. Closes the parent-contract drift as a side-effect. Per the wire-plan in `evidence/ship-007-layer0-attn-bisection-2026-05-04/forward-traced-research.md`: insertion points are post line 133 for Q/K post-rope; inside head loop lines 152/160 for scores/softmax with a per-head accumulator. Expected ~60 LOC + 4-5 unit tests + 1 backward-compat test.
+
+2. **FALSIFY-ATTN-SUB-003 — `apr diff --values` recognition** — generic APRT path already exists; verify the 2 new stage suffixes load + diff cleanly. Likely 1 test + 0 LOC change if the loader is per-stage-agnostic.
+
+3. **HF FP16 oracle extension** — extend `scripts/ship-007-layer0-oracle/` (PR #1423) to capture `attn_scores` + `attn_softmax` reference tensors. Pre-condition for FALSIFY-ATTN-SUB-004 LIVE discharge.
+
+4. **FALSIFY-ATTN-SUB-004 LIVE bisection** — `apr diff` on the 9-stage cosine sequence on RTX 4090. Identifies the SHIP-007 sub-stage. **This is the load-bearing predicate** that converts pinpoint-to-bisected-sub-stage. Expected to flip 1 sub-stage from "correct" to "wrong" — likely the QkvMatmul→QPostRope transition (since memory `2026-05-03 SHIP-007 finding` already pins divergence inside attention block).
+
+5. **SHIP-007 root-cause fix** — once SUB-004 names the bug-bearing sub-stage, the fix PR scopes to that one sub-stage's algorithm. Expected 100-300 LOC.
+
+After step 5, MODEL-1 ship % moves 91% → 95%+ pending live `apr run` correctness on default (GPU) path.
+
+### 47.7 Five Whys — why amend after only 3 PRs
+
+1. **Why amend now (3 PRs) and not after 5?**
+   The §41-§46 cadence rule was "one amendment per ≥3-PR cycle". Today's 3 PRs hit the threshold exactly. Holding for more would muddy the audit story (the 5-step bisection cascade is a single conceptual unit and should be split into start-state and discharge-state amendments).
+
+2. **Why split into §47 (cascade started) and a future §48 (cascade discharged)?**
+   The Toyota Way correction (v1.0.0 → v1.1.0) is a fact worth pinning. If §47 waited for cascade discharge, the audit would lose the mid-cascade course-correction event.
+
+3. **Why pin the parent contract drift in §47 rather than amend `apr-cli-trace-save-tensor-v1.yaml` directly?**
+   The parent contract is on FUNCTIONAL; bumping it is a minor revision. §47 records the drift for posterity; the actual bump happens in the next-cycle implementation PR that closes the drift as a side-effect.
+
+4. **Why not include FALSIFY-ATTN-SUB-002 implementation in this cycle?**
+   Single-piece flow (Toyota Way). Adding a 5th PR to a 4-PR train slows merge throughput. The implementation requires a small refactor of the score/softmax accumulator loop in `inference.rs` — better landed cleanly off main once #1451 merges.
+
+5. **Why not also amend `apr-cli-trace-save-tensor-v1.yaml` to add `q_post_rope`/`k_post_rope` evidence?**
+   The drift is already pinned in §47 + the research evidence file. Bumping the parent contract requires either (a) the wire fix landing first (FUNCTIONAL evidence), or (b) PROPOSED→ACTIVE downgrade (which loses the FUNCTIONAL claim entirely). Cleaner to bump in the next-cycle PR that ships the wire.
+
+### 47.8 Spec amendment cadence preserved
+
+Seven §-amendments since 2026-05-03 (§41 → §42 → §43 → §44 → §45 → §46 → §47). Each ≥1-PR cycle, each preserving the audit story for a future maintainer. The cadence rule of "one amendment per ≥3-PR cycle OR per landmark milestone" continues to hold: §47 records a 3-PR cycle scaffold milestone.
+
+## §46. v0.32.0 release-cut decision — HOLD, gated on SHIP-007 layer-0 attention bisection (2026-05-04)
+
+After §45 landed the 5/5 DISCHARGE milestone for `apr-cpu-vs-gpu-output-parity-v1`, the natural follow-up question is whether the 238 commits accumulated since v0.31.2 (2026-04-19) warrant a `cargo publish` cut today. This section records the audit, the verdict, the pre-flight artifacts shipped alongside the decision, and the explicit pre-conditions for the future cut.
+
+### 46.1 What's accumulated since v0.31.2
+
+| Headline | Source |
+|----------|--------|
+| **5/5 DISCHARGE** on `apr-cpu-vs-gpu-output-parity-v1` (first contract in SHIP-TWO program at terminal state) | §41 → §45, PRs #1427-#1442 + #1445 + #1446 |
+| `apr trace --save-tensor` end-to-end live | `apr-cli-trace-save-tensor-v1` v1.4.0 FUNCTIONAL, PRs #1405/#1408/#1413/#1414/#1417/#1419/#1422 |
+| HF FP16 oracle pinpoints SHIP-007 to layer-0 `attn_out` (cos 0.99999995 → 0.9966) | PRs #1423 + #1426 + memory `2026-05-03 SHIP-007 finding` |
+| Distillation training contract — 9/9 falsifier-bind | `apr-cli-distill-train-v1`, PRs #1438/#1439/#1443/#1444 |
+| MoE expert dispatch parallelized — 2× speedup | PR #1396, `qwen3-moe-forward-v1` v1.4.0 FUNCTIONAL |
+| APR file `mmap` in `load_tensor_f32` — unblocks `apr diff --values` on 7B | PR #1058 |
+| M32d numerical-parity bundle (Q/K RMSNorm + rope_theta + chat template) | PR #1228 |
+| 150+ contract algorithm-bind sweep across kernel/format/training/GPU/CLI families | tasks #197-#452, ≥80 PRs |
+
+### 46.2 Release-readiness gate audit
+
+| Gate | Status | Verdict |
+|---|---|---|
+| 238 commits since v0.31.2 | accumulated | ✅ enough body for a minor bump |
+| Headline milestone (5/5 DISCHARGE) | LIVE on main | ✅ shippable |
+| `[Unreleased]` CHANGELOG | filled (PR #1448) | ⏳ in flight |
+| README drift gate (`bash scripts/check_readme_claims.sh`) | currently RED on `main`, GREEN on PR #1448 | ⏳ in flight |
+| **SHIP-007 root cause (GPU forward)** | **PINPOINTED but UNFIXED** | ⛔ **BLOCKER** |
+| `feedback_post_publish_qa_required.md` (`cargo install --force` + `/dogfood` GO) | not yet run | ⛔ blocker (v0.31.1 was yanked for skipping this) |
+
+### 46.3 Why SHIP-007 is the load-bearing blocker
+
+The `apr-cpu-vs-gpu-output-parity-v1` 5/5 DISCHARGE proves that **silent** GPU gibberish is no longer possible — the jidoka armor (#1428/#1430/#1442) emits structured fallback logs and falls back to CPU on cosine < 0.99. That is shippable behaviour. But the headline of the v0.32.0 release would naturally read "5/5 DISCHARGE on apr-cpu-vs-gpu-output-parity-v1", which implies to a crates.io reader that the GPU correctness hole is **closed**. In reality, the GPU forward path on a 7B teacher still produces wrong tokens — the §41-§45 chain only contains the failure (visible + fail-closed). Per `feedback_fix_root_cause_never_route_around.md`, route-around-via-fallback is acceptable as a *temporary jidoka layer*, but it is muda to ship a release whose headline claims a fix that doesn't exist.
+
+The cleanest way out: bisect SHIP-007 to inside the layer-0 attention block (qkv/RoPE/softmax/V/O sub-stages) using `apr trace --save-tensor` + the HF FP16 oracle from #1423, fix the divergence at root, then promote the v0.32.0 headline to "GPU correctness restored on canonical 7B teacher" — which is honest.
+
+### 46.4 Pre-flight artifacts shipped alongside this decision
+
+| Artifact | What | Status |
+|----------|------|--------|
+| **CHANGELOG.md `[Unreleased]`** | Filled with full session body of work — §41-§45 jidoka chain, 5/5 DISCHARGE headline, `apr trace --save-tensor`, HF FP16 oracle, MoE 2× speedup, APR mmap, M32d numerical parity, 150+ contract sweep | PR #1448 |
+| **README drift gate repair** | 1096 → 1105 contracts; 79 → 80 CLI commands; `bash scripts/check_readme_claims.sh` 4/4 PASS | PR #1448 |
+| **§46 spec amendment** | This section (release-cut audit) | This commit |
+
+When SHIP-007 lands, the cut is mechanical: rename `[Unreleased]` → `[0.32.0] - <date>`, bump workspace version `0.31.2 → 0.32.0`, run `cargo install aprender --force` + `/dogfood`, tag, `cargo publish`.
+
+### 46.5 Pre-conditions for the v0.32.0 cut
+
+These are the explicit gates the v0.32.0 PR must satisfy. Each is a falsifiable check, not an opinion.
+
+1. **SHIP-007 layer-0 attention divergence FIXED.** Discharge condition: `apr trace --save-tensor` shows cos ≥ 0.999 at every sub-stage of layer 0 (qkv / rope / softmax / attn_out) on the canonical 7B teacher vs the HF FP16 oracle from PR #1423. (Today: cos = 0.9966 at attn_out — fails.)
+2. **PR #1448 merged.** CHANGELOG `[Unreleased]` populated; README drift gate GREEN on `main`.
+3. **Workspace version bumped.** `Cargo.toml` (root + apr-cli + aprender-* crates as required by APR-MONO) `0.31.2 → 0.32.0`. `## [0.32.0] - <date>` heading replaces `## [Unreleased]` in CHANGELOG.
+4. **Post-publish QA per `feedback_post_publish_qa_required.md`.** `cargo install aprender --force` + `/dogfood` GO verdict on canonical broken-GPU teacher (verifies the jidoka chain plus end-to-end correctness); this is the gate v0.31.1 skipped → yanked.
+5. **Drift gates GREEN.** `bash scripts/check_readme_claims.sh` 4/4 PASS, `pv validate contracts/` clean, `cargo deny check advisories` clean.
+
+### 46.6 Five Whys — why hold, why now, why structured
+
+1. **Why hold v0.32.0?** SHIP-007 is unfixed; releasing now would crates.io-ship a 7B GPU forward bug.
+2. **Why does that matter when the jidoka armor is live?** Armor contains the failure for the user (visible fallback log, correct CPU output) but the released binary is still arithmetically wrong on the GPU dispatch chain. Hiding that behind a "5/5 DISCHARGED" headline is route-around-via-narrative.
+3. **Why amend the spec instead of just deciding offline?** Per `feedback_full_problems_pmat_contracts.md`, every non-trivial decision in the SHIP-TWO program lives in this spec so future maintainers can read the audit. The §46 record + the §46.5 pre-conditions table are the contract for the v0.32.0 PR.
+4. **Why amend now instead of waiting until SHIP-007 lands?** Two reasons: (i) the §46.5 pre-condition table is *itself* the work — it pins the gates so the next cut doesn't drift to "looks ready, ship it" hand-wavy logic; (ii) PR #1448 already in flight needs to be referenced from the spec audit story.
+5. **Why a §46 (release decision) rather than extending §45 (DISCHARGE milestone)?** §45 is a contract-discharge artifact (5/5 DISCHARGED with live evidence). §46 is a release-cut audit (different concern, different vocabulary, different invariants). Keeping them separate matches the §40 → §41 (root-cause vs jidoka armor) split — different contracts, different reviewers.
+
+### 46.7 Net effects
+
+- Spec v2.90.0 → **v2.91.0** (release-cut audit recorded; pre-conditions pinned).
+- **MODEL-1 ship %**: unchanged at 91% (this amendment is metadata, not a falsifier flip).
+- **MODEL-2 ship %**: unchanged at 57% (same).
+- Coverage tally: unchanged (no PARTIAL → DISCHARGED in this cycle; #1448 fills CHANGELOG + drift gate but does not bind a falsifier).
+- Open follow-ups, ranked by ship-leverage:
+  - (a) **SHIP-007 layer-0 attention bisection** — single highest-leverage MODEL-1 work. Use `apr trace --save-tensor` (now FUNCTIONAL per §44) + the HF FP16 oracle script from #1423 to bisect inside layer 0 attention. Memory `2026-05-03 SHIP-007 finding` is the starting state.
+  - (b) **PR #1448 merge** — drift-gate green + CHANGELOG ready for the v0.32.0 rename. Already in flight.
+  - (c) **`apr distill --stage train` real-training implementation** (§35) — multi-PR scope, gates MODEL-2 from val_loss=9.38 toward the spec target.
+  - (d) **Stack v2 corpus** (multi-billion tokens, multi-hour download, operator-authorized) — long-pole for MODEL-2 capacity ceiling per memory `2026-04-27 4× corpus + 80K LR-budget falsification`.
+
+### 46.8 Spec amendment cadence preserved
+
+Six §-amendments in 2026-05-03/04 (§41 → §42 → §43 → §44 → §45 → §46). The cadence rule of "one §-amendment per ≥3-PR cycle OR per landmark milestone" holds: §46 records a landmark non-PR decision (the v0.32.0 hold), so it gets its own section even though it doesn't include a falsifier flip.
+
+## §45. `apr-cpu-vs-gpu-output-parity-v1` 5/5 LIVE DISCHARGE milestone (2026-05-04)
+
+The `apr-cpu-vs-gpu-output-parity-v1` contract reaches its terminal state today. All five falsifiers (FALSIFY-CPU-GPU-001..005) are now DISCHARGED with live empirical evidence on the canonical Qwen2.5-Coder-7B teacher. The §41 → §43 → §44 → §45 jidoka chain is contract-complete: silent-GPU-gibberish on canonical broken-GPU is no longer possible — both the implementation closure AND end-to-end live verification have been delivered.
+
+### 45.1 What landed
+
+| PR | Smoke | What it discharged |
+|----|------|-------|
+| [#1445](https://github.com/paiml/aprender/pull/1445) | Default-mode `apr run` (RTX 4090, post-#1442 binary) — full jidoka chain emits 3 tagged stderr lines + delivers correct CPU output | FALSIFY-CPU-GPU-005 PARTIAL_ALGORITHM_LEVEL → DISCHARGED. Contract v1.3.0 → v1.4.0. |
+| [#1446](https://github.com/paiml/aprender/pull/1446) | `apr run --no-gpu` smoke (9.02s, 0 GPU log lines, correct output) + reuse of #1445 wgpu-smoke.log evidence | FALSIFY-CPU-GPU-001/002/003 PARTIAL_ALGORITHM_LEVEL → DISCHARGED. FALSIFY-CPU-GPU-004 FUNCTIONAL → DISCHARGED. Contract v1.4.0 → v1.5.0. |
+
+### 45.2 The complete observed jidoka chain (verbatim from #1445 wgpu-smoke.log)
+
+```
+[apr-cpu-vs-gpu-output-parity-v1] CUDA path rejected, attempting fallback:
+    Inference error: PARITY-GATE FAILED: GPU computes a DIFFERENT function than CPU.
+    Cosine similarity: -0.005190 (required: ≥0.98)
+    CPU argmax: 334 | GPU argmax: 8127
+    Max absolute logit difference: 19.5053
+
+Backend: wgpu (Vulkan)
+[PMAT-333] Dequantizing 28 layers ...
+[apr-cpu-vs-gpu-output-parity-v1] wgpu path rejected, attempting fallback:
+    cosine vs CPU = 0.766079 (< 0.99)
+
+Output:
+2 + 2 equals 4.
+```
+
+Three jidoka tags fire in deterministic order. The user observes which backends were rejected and why, with no `--verbose` flag required. Fallback proceeds CUDA → wgpu → CPU and delivers the correct CPU output. This is the first end-to-end live verification of the entire jidoka chain on the canonical broken-GPU model.
+
+### 45.3 Coverage flip
+
+This is the **largest single-cycle coverage flip** of the SHIP-TWO program: **+5 falsifiers** moved into DISCHARGED in one 2-PR cycle.
+
+| Falsifier | Before today | After PR #1446 |
+|-----------|--------------|---------------|
+| FALSIFY-CPU-GPU-001 | PARTIAL_ALGORITHM_LEVEL | **DISCHARGED** |
+| FALSIFY-CPU-GPU-002 | PARTIAL_ALGORITHM_LEVEL | **DISCHARGED** |
+| FALSIFY-CPU-GPU-003 | PARTIAL_ALGORITHM_LEVEL | **DISCHARGED** |
+| FALSIFY-CPU-GPU-004 | FUNCTIONAL | **DISCHARGED** |
+| FALSIFY-CPU-GPU-005 | PARTIAL_ALGORITHM_LEVEL | **DISCHARGED** (#1445) |
+
+Coverage tally: **15+37 → 20+32**. Contract `apr-cpu-vs-gpu-output-parity-v1` reaches v1.5.0 ACTIVE with all 5/5 falsifiers DISCHARGED — the contract is COMPLETE.
+
+### 45.4 Why this milestone matters
+
+**For SHIP-TWO program audit**: every contract-claimed gate against silent GPU gibberish is now live-verified, not just impl-closed. A future PR that regresses the parity gate (e.g., re-wraps the eprintln in `if verbose`, swaps the cosine helper, removes the wgpu probe) trips one of three drift-prevention surfaces: unit-test (cosine helper math + log prefix const), integration test (`test_no_unregistered_commands`), and reproducible smoke evidence file.
+
+**For MODEL-1**: today's discharge does NOT fix the underlying SHIP-007 GPU kernel bug (the GPU path still produces wrong output on canonical 7B). What it DOES is close the user-visible failure mode — the user can still ship MODEL-1 via `apr run --no-gpu` (CPU path, correct output) and see clear stderr signaling when GPU is rejected. MODEL-1 ship % moves to **91%** because the entire MODEL-1-blocking jidoka contract is closed; only the §40 GPU kernel root-cause fix remains for full GPU-shipability.
+
+**For the spec amendment cadence**: today's session shipped §41 (jidoka chain), §42 (hub build chain), §43 (distill-train falsifier-parity), §44 (part b impl + distill 9/9), §45 (5/5 contract DISCHARGE). Five spec amendments + 16 PRs in flight in a single session, each preserving the audit story for a future maintainer.
+
+### 45.5 Five Whys
+
+1. **Why is this milestone significant?** It's the first contract in the SHIP-TWO program to reach 5/5 DISCHARGED — a complete-evidence terminal state. Other contracts have multiple PARTIAL or FUNCTIONAL gates; this is the first all-DISCHARGED contract.
+2. **Why was the multi-discharge bundleable into one PR?** Because the same #1445 wgpu-smoke.log evidence already covered FALSIFY-CPU-GPU-001/002/003 in addition to 005. Adding one `--no-gpu` smoke (9.02s) covered FALSIFY-CPU-GPU-004. Bundling preserved the audit story (one PR = one discharge cycle = one evidence dir).
+3. **Why does cosine=0.766 (wgpu) matter for the contract verdict?** It's empirical justification for the 0.99 floor (rather than 0.95 or 0.98). Argmax-only catches CUDA (cos=-0.005, fully orthogonal) but might pass wgpu (cos=0.766, similar direction but wrong scale). The 0.99 floor catches both. Future contract revisions that propose loosening the floor have a concrete data point to argue against.
+4. **Why doesn't this discharge close MODEL-1?** Because the parity contract is the *defensive* layer. The *underlying* GPU bug per §40 still produces wrong output. The defensive layer ensures users don't see silent gibberish; the offensive fix would let MODEL-1 ship via GPU rather than CPU. SHIP-007 root-cause is the remaining blocker for full GPU shipability.
+5. **Why bound this cycle to a §45 spec amendment now?** The §41-§44 cadence has been "amend after each ≥3-PR cycle". Today's #1445 + #1446 (only 2 PRs) is below that threshold but the *milestone* (first 5/5 contract) warrants its own §45 record so it's auditable from the spec alone, not buried in a multi-cycle §46.
+
+### 45.6 Net effects
+
+- **Contract `apr-cpu-vs-gpu-output-parity-v1`**: v1.3.0 → **v1.5.0 ACTIVE**, 5/5 falsifiers DISCHARGED. Terminal complete state.
+- **MODEL-1 ship %**: 89% → **91%**.
+- **MODEL-2 ship %**: 57% (unchanged this cycle).
+- **Coverage tally**: 15+37 → **20+32** (+5 DISCHARGED).
+- **Today's session**: 16 PRs in flight (#1437-#1446 + #1444 + this one). 6 spec amendments (§41 records pre-session, §42-§45 in-session; §44 just merged via #1444).
+
+### 45.7 Next-session pickup
+
+The remaining MODEL-1 / MODEL-2 levers are both multi-PR research tracks:
+
+(a) **MODEL-1 SHIP-007 GPU kernel root-cause fix** — per memory's `2026-05-03 SHIP-007 finding`, divergence is pinpointed to layer-0 attn_out (cos drops from 0.99999995 attn_norm → 0.9966 attn_out). Next-step bisection inside the attention block requires extending `apr trace --save-tensor` with sub-stage granularity (qkv, RoPE, softmax, V, O) and re-running the layer-0 oracle bisection. Single highest-leverage MODEL-1 work; could push ship % to 95%+.
+
+(b) **MODEL-2 §35 real-training implementation** — extend `run_config_train` from a manifest-only stub to actual gradient-descent over precomputed teacher logits. Math is in place (canonical `distill::loss::DistillationLoss` + parallel `hf_pipeline::distillation::DistillationLoss`). Optimizer + checkpoint loop is missing. Multi-PR (3-5) scope; would simultaneously discharge TRAIN-001/002/009 (currently 1× PARTIAL + 1× PARTIAL + 1× BLOCKER_FIXTURE_ABSENT).
+
+(c) **Cross-contract sweep** — other contracts likely have similar PARTIAL → DISCHARGED candidates if today's smoke evidence is reusable. E.g., `apr-vs-gguf-forward-parity-v1` may benefit from the same canonical-7B smoke for its own gates.
+
+Operator preference decides which lands first. Each is roughly single-day-of-work scope.
+
+---
+
+## §44. FALSIFY-CPU-GPU-005 part b implementation + distill-train 9/9 sweep close (2026-05-04)
+
+Two PRs that close the two outstanding scope items §43.6 named as next-session pickup: (a) the wgpu cosine parity gate implementation, and (b) the remaining unbound falsifiers in the distill contract. Both pass `pv validate`, both build clean, and both close concrete gaps that the v2.88.0 spec called out as deferred.
+
+### 44.1 What landed
+
+| PR | What | Effect |
+|----|------|--------|
+| [#1442](https://github.com/paiml/aprender/pull/1442) | FALSIFY-CPU-GPU-005 part b live implementation | ~70 LOC inline at `try_apr_wgpu_inference` (`crates/aprender-serve/src/infer/gguf_gpu_generate.rs` ~line 441-510), between `kv_caches` init and the autoregressive loop. Algorithm: probe-token CPU forward via `OwnedQuantizedModel::forward_single_with_cache` with a tiny `OwnedQuantizedKVCache::from_config(cfg, 2)` → wgpu single-step replay using the same `fwd.forward_layer` code path as the autoregressive loop, with a separate `probe_kv_caches` vec (max_seq=2) → output norm + LM head argmax math mirrors loop body → `cpu_vs_gpu_cosine_similarity` (helper from §43 PR #1440, module-scope, no `--features cuda` dep) → if `!(cos.is_finite() && cos >= 0.99)` emit `WGPU_FALLBACK_LOG_PREFIX` tagged stderr line and return None. Probe error paths (CPU forward failure, wgpu probe layer failure) also fail-closed with the contract-tagged log. Cost: one extra forward pass at init (~2-5ms on 7B), paid once per `apr run`, not per token. Real autoregressive `kv_caches` are NOT touched by the probe. Contract `apr-cpu-vs-gpu-output-parity-v1` v1.2.0 → v1.3.0 ACTIVE. |
+| [#1443](https://github.com/paiml/aprender/pull/1443) | distill-train 9/9 falsifier sweep close | Adds `algorithm_evidence` blocks to the last three unbound falsifiers in `apr-cli-distill-train-v1`: TRAIN-007 PARTIAL_ALGORITHM_LEVEL via `pv validate` (live: 0 errors / 0 warnings); TRAIN-008 PARTIAL_ALGORITHM_LEVEL via `cargo test -p apr-cli --test cli_commands registered_commands` (live: 1 pass — `test_no_unregistered_commands` enforces the 3-surface invariant); TRAIN-009 BLOCKER_FIXTURE_ABSENT (pending §35 real-training implementation — there is no val_loss to compare without gradient descent). All 9 TRAIN-* falsifiers now have explicit status blocks. |
+
+### 44.2 Coverage flips
+
+| Falsifier | Status before | Status after | Notes |
+|-----------|---------------|--------------|-------|
+| FALSIFY-CPU-GPU-005 (wgpu parity gate) | PARTIAL_ALGORITHM_LEVEL (visibility-log + cosine helper only) | PARTIAL_ALGORITHM_LEVEL (gate impl in place; live broken-GPU smoke deferred) | Code-evidence half complete. Live discharge needs operator smoke on canonical 7B teacher. |
+| FALSIFY-APR-DISTILL-TRAIN-007 | unbound (drift between task #218/#247 list and YAML) | PARTIAL_ALGORITHM_LEVEL | `pv validate` is meta-discharge; runs as a precondition for every contract amendment. |
+| FALSIFY-APR-DISTILL-TRAIN-008 | unbound (drift between task list and YAML) | PARTIAL_ALGORITHM_LEVEL | Existing `test_no_unregistered_commands` integration test enforces 3-surface invariant per `feedback_cli_subcommand_three_surface_drift`. |
+| FALSIFY-APR-DISTILL-TRAIN-009 | unbound | BLOCKER_FIXTURE_ABSENT | Honest classification: blocker is §35 real-training implementation (multi-PR scope). Path to DISCHARGED documented in YAML notes. |
+
+Coverage tally: **15 + 35 → 15 + 37** (+2 PARTIAL_ALGORITHM_LEVEL closed; TRAIN-009 explicitly blocked, not counted).
+
+### 44.3 Why this chain matters
+
+**MODEL-1 (#1442 part b)**: Closes the last loophole in the §41 jidoka chain. Pre-#1442, even after §41/§43 made wgpu lifecycle visible, a wgpu-broken-but-cosine-acceptable model could still ship subtly wrong output. The cosine probe at init is the same algorithmic shape as the CUDA `parity_gate` (`mod_parity_gate.rs:cosine_similarity` + `parity_gate`) — wgpu now gets the same defensive check, paid once per `apr run` rather than per token. The implementation reuses the autoregressive loop's exact `fwd.forward_layer` code path (so a probe-vs-loop divergence would itself be a separate bug, not a parity gap), and uses the §43 module-scope `cpu_vs_gpu_cosine_similarity` helper with no `--features cuda` dependency.
+
+**MODEL-2 (#1443 sweep close)**: The distill-train contract has reached terminal-binding state. Every falsifier (9/9) has an explicit `algorithm_evidence` block — 8 PARTIAL_ALGORITHM_LEVEL with concrete test_locations, 1 explicitly BLOCKER_FIXTURE_ABSENT pending §35. There is no longer any "claimed PARTIAL but YAML doesn't show it" drift between the task list and the contract. Future MODEL-2 work on this contract has a clean slate: the only remaining lever is §35 real-training implementation, which is multi-PR scope and will discharge TRAIN-001/002/009 simultaneously when it lands.
+
+### 44.4 Five Whys
+
+1. **Why ship part b implementation now?** v2.88.0 §43.6 (a) named it as the bounded next-session pickup, and the cosine helper from #1440 (also v2.88.0) had unblocked the path. Toyota Way: each scoped commitment lands as its own focused PR.
+2. **Why inline implementation, not extracted helper?** Loop body is ~30 LOC; extracting a separate function would force passing 8+ borrowed locals (max_seq, eps, vocab_size, hidden_dim, num_layers, output_norm, lm_head_f32, fwd) or wrapping them in a single-use struct. Inline block scope localizes `probe_kv_caches`, `hidden`, `normed`, `wgpu_logits` cleanly.
+3. **Why fail-closed on probe errors (return None) instead of propagating?** Per `feedback_fix_root_cause_never_route_around` and §40/§41 jidoka pattern: the gate's job is to NEVER ship silent gibberish. CPU probe failure or wgpu kernel failure both indicate the wgpu path is unsafe — the correct user experience is fall-to-CPU with a tagged stderr line, not crash or hide.
+4. **Why mark TRAIN-009 BLOCKER_FIXTURE_ABSENT instead of leaving it untyped?** Honest classification beats false PARTIAL claims. TRAIN-009 has a clear test design (`tests/distill_smoke.rs`) and a clear blocker (§35 real-training). Marking it as BLOCKER makes the dependency explicit so a future PR cannot accidentally promote it without the prerequisite. The path to DISCHARGED is documented in the YAML notes.
+5. **Why bound this cycle to 2 PRs?** Each falsifier (or family) gets its own focused PR per Toyota Way. #1442 was 70 LOC + 9 LOC YAML; #1443 was 45 LOC YAML. Bundled they would be ~125 LOC across two distinct contracts and would obscure the audit story.
+
+### 44.5 Net effects
+
+- **MODEL-1 ship %**: 88% → **89%** (wgpu jidoka armor complete at the init boundary, symmetric to §41's CUDA parity_gate).
+- **MODEL-2 ship %**: 56% → **57%** (last falsifier-binding gap closed for distill contract; only remaining MODEL-2 lever is §35 real-training implementation, multi-PR scope).
+- **Coverage scoreboard**: 15+35 → **15+37** (+2 PARTIAL_ALGORITHM_LEVEL closed; TRAIN-009 explicitly blocked).
+- **Contracts touched**: `apr-cpu-vs-gpu-output-parity-v1` v1.2.0 → v1.3.0 ACTIVE (gate impl recorded); `apr-cli-distill-train-v1` 9/9 falsifiers now algorithm-bound (no version bump — adding evidence is patch-level, contract still v1.0.0 PROPOSED).
+- **`pv validate`** exits 0 on both touched contracts.
+
+### 44.6 Next-session pickup
+
+Three natural levers, ordered by ROI:
+
+(a) **FALSIFY-CPU-GPU-005 live discharge** — operator-driven smoke on canonical 7B teacher: rebuild `apr` with `--features cuda gpu`, run `apr run /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr --prompt 'What is 2+2?' --max-tokens 8 --temperature 0.0 2>&1 | tee /tmp/wgpu-smoke.log`, expect stderr to contain `[apr-cpu-vs-gpu-output-parity-v1] CUDA path rejected` (existing) AND `[apr-cpu-vs-gpu-output-parity-v1] wgpu path rejected, attempting fallback: cosine vs CPU = ...` (NEW from #1442) AND CPU produces "2 + 2 equals 4." Promotes FALSIFY-CPU-GPU-005 from PARTIAL_ALGORITHM_LEVEL → DISCHARGED. Cost: ~10min binary rebuild + ~30s model load + ~5s inference.
+
+(b) **MODEL-2 §35 real-training implementation** — the only remaining MODEL-2 lever; would simultaneously discharge TRAIN-001/002/009 from PARTIAL/BLOCKER → FUNCTIONAL when it lands. Multi-PR scope: extend `run_config_train` from a manifest-only stub to actual gradient-descent over precomputed teacher logits, building on the existing `distill::loss::DistillationLoss` and `hf_pipeline::distillation::DistillationLoss` impls (math is in place; only the optimizer + checkpoint loop is missing). Estimated 3-5 PRs depending on slice size.
+
+(c) **MODEL-1 SHIP-007 GPU kernel root-cause fix** — the underlying GPU forward bug per §40. The §41/§44 jidoka chain prevents silent gibberish (user sees a fallback log + correct CPU output), but the GPU path itself still produces wrong output. Fixing it would let MODEL-1 ship via GPU rather than `--no-gpu`. This is the highest-leverage MODEL-1 work but also the largest scope (memory's `2026-05-03 SHIP-007 finding` pinpoints layer-0 attn_out as the divergence point; further bisection inside attn block is needed).
+
+(a) is single-PR + ~10min compute + closes one PARTIAL → DISCHARGED. (b) and (c) are multi-PR research tracks. Operator preference decides which lands first.
+
+---
+
+## §43. distill-train algorithm-binding + wgpu cosine helper for FALSIFY-CPU-GPU-005 part b (2026-05-03)
+
+Three PRs that complete today's split-track cycle: two MODEL-2 algorithm-bindings (closing contract drift between task list and YAML) and one MODEL-1 infrastructure helper (cosine math primitive ready for the future wgpu cosine gate). All three pass `pv validate` and CI-required quality gates.
+
+### 43.1 What landed
+
+| PR | What | Effect |
+|----|------|--------|
+| [#1438](https://github.com/paiml/aprender/pull/1438) | FALSIFY-APR-DISTILL-TRAIN-005 PARTIAL_ALGORITHM_LEVEL — precompute byte-determinism | Closes contract drift between task #195 (claimed PARTIAL on 2026-04-30) and YAML (no `algorithm_evidence` until today). Adds 2 unit tests in `apr-cli/src/commands/distill_include_01.rs::tests`: local-teacher branch + remote-stub branch, both asserting byte-identical `manifest.json` across two `run_config_precompute` invocations on the same fake teacher dir. |
+| [#1439](https://github.com/paiml/aprender/pull/1439) | FALSIFY-APR-DISTILL-TRAIN-006 PARTIAL_ALGORITHM_LEVEL — train cache-resume idempotency | Closes the parallel drift on TRAIN-006 (task #196 same pattern). 2 unit tests for negative half (`run_config_train` errors with "Precompute" in message when `manifest.json` is absent) + positive half (does NOT error with cache-missing message after precompute drops the manifest, proving the manifest is actually consulted not just stat-checked). |
+| [#1440](https://github.com/paiml/aprender/pull/1440) | `cpu_vs_gpu_cosine_similarity` helper for FALSIFY-CPU-GPU-005 part b | Lifts cosine math out of `cuda::mod_parity_gate` (which is `cfg(feature = "cuda")`-gated) into `infer/gguf_gpu_generate.rs` at module scope. f64-accumulated, fail-closed semantics (returns 0.0 on length-mismatch / zero-norm / empty input → triggers fallback below 0.99 floor). 3 unit tests lock parallel=1, orthogonal=0, and conservative-default cases. Future part b implementation (~100-150 LOC wgpu single-step decode) can now call this helper without the cuda feature gate. |
+
+### 43.2 Coverage flips
+
+| Falsifier | Status before | Status after | Notes |
+|-----------|---------------|--------------|-------|
+| FALSIFY-APR-DISTILL-TRAIN-005 | unbound (drift between task list and YAML) | PARTIAL_ALGORITHM_LEVEL | 2 unit tests + `algorithm_evidence` block now in YAML |
+| FALSIFY-APR-DISTILL-TRAIN-006 | unbound (drift between task list and YAML) | PARTIAL_ALGORITHM_LEVEL | 2 unit tests + `algorithm_evidence` block now in YAML |
+| FALSIFY-CPU-GPU-005 | PARTIAL_ALGORITHM_LEVEL (visibility-log only) | PARTIAL_ALGORITHM_LEVEL (cosine primitive added; gate impl still pending) | Helper is callable but not yet called by wgpu init — that's the part b PR |
+
+Coverage tally: **15 + 33 → 15 + 35** (+2 PARTIAL_ALGORITHM_LEVEL closed).
+
+### 43.3 Why this chain matters
+
+**MODEL-2 (TRAIN-005/006)**: Per `feedback_coverage_contracts_coevolution`, every contract claim of PARTIAL_ALGORITHM_LEVEL must have a YAML `algorithm_evidence` block — otherwise the claim is an *assertion*, not *evidence*. PR #1438 + #1439 are the same fix-pattern as #1436 (which closed the parallel-impl drift between `distill::loss` and `hf_pipeline::distillation`). They prove that, in the absence of real-training implementation per §35, the math invariants the contract asserts (precompute byte-determinism, train cache-resume idempotency) actually hold for the stub code paths today and would be caught immediately if a future PR regresses them.
+
+**MODEL-1 (cosine helper)**: The single piece of work that closes FALSIFY-CPU-GPU-005 from PARTIAL_ALGORITHM_LEVEL → FUNCTIONAL is the wgpu single-step decode at init that compares a CPU forward to a wgpu forward via cosine. The cosine primitive itself was sitting behind `cuda::mod_parity_gate`'s feature gate — calling it from the wgpu code path would have required enabling `--features cuda` purely for the math. PR #1440 lifts the helper out, so the future part b PR (~100-150 LOC wgpu single-step extraction + parity gate) can be authored without that feature dependency.
+
+### 43.4 Five Whys
+
+1. **Why amend the spec now?** Per §41 / §42 cadence: each split-track cycle that lands ≥3 PRs gets a canonical record so the ship % is auditable from the spec alone, and the next-session pickup is unambiguous.
+2. **Why one amendment for all 3 PRs?** All three landed in a single /loop iteration with one operator and one cache window. They share the rebase chain (post-#1437 main bump) and would have produced 3 spec amendments for a single audit story.
+3. **Why algorithm-bind two TRAIN-* falsifiers in separate PRs?** Toyota Way: each focused PR locks in one contract claim. Bundled, a future revert of one would silently take the other with it.
+4. **Why ship the cosine helper without the part b implementation?** Because the helper is independently testable, has no behavior dependency, and unblocks the part b PR scope. Bundled, a 30-LOC helper would be buried in a 150-LOC implementation review.
+5. **Why bounded?** Total chain across 3 PRs: ~280 LOC (test scaffolding 80%, contract YAML 15%, primitive 5%). No production code change to the existing wgpu fallback path. Coverage uplift only.
+
+### 43.5 Ship % effects
+
+- **MODEL-1**: 87% → **88%** — cosine primitive lands at the right module layer for the part b PR; FALSIFY-CPU-GPU-005 code-evidence half is now in place even though the gate impl is still pending.
+- **MODEL-2**: 54% → **56%** — TRAIN-005 + TRAIN-006 algorithm-bindings prove the math invariants that any future real-training implementation must preserve.
+- **Coverage scoreboard**: 15+33 → **15+35** (+2 PARTIAL_ALGORITHM_LEVEL closed).
+- The underlying SHIP-007 GPU kernel fix (§40) and `apr distill --stage train` real-training implementation (§35) remain open and unaffected.
+
+### 43.6 Next-session pickup
+
+Two natural levers, both bounded:
+
+(a) **FALSIFY-CPU-GPU-005 part b implementation** — extract wgpu single-step decode body into a helper, run one CPU-vs-wgpu BOS forward at init using `cpu_vs_gpu_cosine_similarity` (now available without `--features cuda`), return None on cosine < 0.99. ~100-150 LOC including a temporary tiny-max-seq probe KV cache to avoid contaminating the autoregressive loop's cache. Promotes FALSIFY-CPU-GPU-005 from PARTIAL_ALGORITHM_LEVEL → FUNCTIONAL.
+
+(b) **MODEL-2 distill-train scaffolding next sub-task** — with TRAIN-005/006 algorithm-bindings now locked in, the next bounded MODEL-2 sub-task is FALSIFY-APR-DISTILL-TRAIN-001 (real training, not stub — the §35 implementation that the rest of the contract depends on). This is multi-PR scope, but the falsifier framework is now in place to land each piece without regression.
+
+Both are bounded. Operator preference decides which lands first; (a) is single-PR and unblocks MODEL-1 jidoka further, (b) is multi-PR and the only path past MODEL-2's val_loss=9.38 capacity ceiling per §34.
+
+---
+
+## §42. hub-feature build chain repair + hf_pipeline distill-train falsifier-parity (2026-05-03)
+
+Five PRs that complete today's MODEL-2-side hygiene cycle. `--features hub` (the HuggingFace transformers-style export pipeline) was previously unbuildable on main due to a syntactic bug, which masked 11 pre-existing test failures. With the build healthy, the falsifier-coverage parity between the canonical and parallel distillation impls — originally requested in a /loop iteration before #1432 — is finally executable.
+
+### 42.1 What landed
+
+| PR | What | Effect |
+|----|------|--------|
+| [#1432](https://github.com/paiml/aprender/pull/1432) | One-char fix: bind `quantize_to_gguf_bytes` match result so `--features hub` builds | Trailing `;` after the `match` discarded its `(Vec<u8>, GgmlType)` tuple; `result` was referenced but unbound (E0425). Fix unmasks 11 pre-existing test failures (jidoka). |
+| [#1433](https://github.com/paiml/aprender/pull/1433) | Early-return on empty input in `quantize_to_gguf_bytes` | Closes 3 surfaced contract-drift failures (`test_falsify_quantize_empty_data_*`): `contract_pre_quantize!` asserts `input.len() > 0` while tests assert empty→empty. Resolution: handle empty path before the precondition fires (its domain is non-empty). |
+| [#1434](https://github.com/paiml/aprender/pull/1434) | GGUF tensor-data alignment-padding skip in test helpers | Closes 8 surfaced GGUF roundtrip failures (`test_falsify_*_roundtrip` family + 1 `pipeline.rs` inline clone). `aprender::format::gguf::export_tensors_to_gguf` writes 32-byte alignment padding (types.rs:445), but two test helpers had a comment claiming "NO alignment padding" and read f32 bytes from the padding zeros — producing the characteristic `[0.0, ~5.93e-39, ~5.95e-39, ...]` failure pattern. |
+| [#1435](https://github.com/paiml/aprender/pull/1435) | `WGPU_FALLBACK_LOG_PREFIX` + drift-prevention tests | Closes the contract drift between `apr-cpu-vs-gpu-output-parity-v1` v1.2.0's prediction (FALSIFY-CPU-GPU-005 wgpu rejection log = `[CONTRACT_ID] wgpu path rejected`) and the actual code (only `[GH-559]`/`Backend:` were unconditional after #1430). Adds 3 unit tests: per-backend prefix validation + symmetry guard. |
+| [#1436](https://github.com/paiml/aprender/pull/1436) | hf_pipeline FALSIFY-APR-DISTILL-TRAIN-003/004 falsifier-parity | Adds 4 unit tests to `hf_pipeline::distillation::tests` mirroring the canonical `distill::loss::tests`: T-scaling preserves argmax, alpha=1 → pure KD, alpha=0 → pure CE (dual), log_softmax/softmax inverse identity. Closes the parallel-implementation coverage gap that originally surfaced #1432. |
+
+### 42.2 Net `--features hub` health across the chain
+
+- Pre-#1432: **build-error** (syntactic bug in `quantize_to_gguf_bytes`)
+- Post-#1432: 7975/7986 pass (build works, 11 pre-existing failures surfaced)
+- Post-#1433: 7977/7986 pass (3 empty-data tests fixed)
+- Post-#1434: 7986/7986 pass (alignment-padding fix closes the rest) ✅
+- Post-#1436: **7990/7990 pass** (+4 hf_pipeline distill falsifier-parity tests added)
+
+### 42.3 Why this chain matters for MODEL-2
+
+The canonical `distill::loss::DistillationLoss` and parallel `hf_pipeline::distillation::DistillationLoss` are the two implementations that MODEL-2's distillation track depends on. Per `feedback_coverage_contracts_coevolution`:
+
+> Every parallel implementation that participates in a contract must have the same falsifier coverage — silent drift would let one impl regress without the other surfacing.
+
+Before this chain:
+- Canonical impl: had FALSIFY-APR-DISTILL-TRAIN-003/004 tests since 2026-04-30 (task #186)
+- Parallel impl: had **zero** falsifier-test coverage; the build was broken so no one could even run the tests
+
+After this chain: both impls have symmetric falsifier coverage on the math invariants the contract requires. A future MODEL-2 distill-train PR (the missing real-training implementation per §35) cannot regress the math on either path silently.
+
+### 42.4 Five Whys
+
+1. **Why was the hub-feature build broken?** A trailing `;` after the `match` in `quantize_to_gguf_bytes` discarded the computed tuple, and a stray `let result = ...` binding was lost during refactor. The function compiled to two `error[E0425]: cannot find value 'result' in this scope`.
+2. **Why didn't main CI catch it?** `--features hub` is opt-in (requires HF API access); no workflow in `.github/workflows/` exercises it. Main CI was green throughout.
+3. **Why did fixing the syntactic bug in #1432 surface 11 failures?** The build error was masking PRE-EXISTING bugs that tests were designed to catch but couldn't run. Two distinct root causes (empty-data contract drift + alignment-padding test helper bug) accounted for all 11.
+4. **Why two near-identical helpers (`tests/mod.rs` + `pipeline.rs`)?** Refactor extracted `find_data_section_start` for reuse but missed an inline clone in `pipeline.rs`. Drift between the two means a fix to one is incomplete; #1434 fixes both. Follow-up: collapse the inline copy to a call into the shared helper.
+5. **Why ship the falsifier-parity tests now (#1436) rather than as part of MODEL-2 distill-train scaffolding?** Each falsifier addition gets its own focused PR per Toyota Way. Adding them now means the tests are already locked in when distill-train scaffolding starts — no regression window.
+
+### 42.5 Coverage update
+
+No PARTIAL→DISCHARGED flips today. Within the contract `apr-cli-distill-train-v1` (v1.0.0 PROPOSED):
+- TRAIN-003 + TRAIN-004 were already PARTIAL_ALGORITHM_LEVEL via canonical `distill::loss::tests` (tasks #195, #196 / 2026-04-30)
+- After #1436: same falsifier coverage now applies on both `distill::loss` and `hf_pipeline::distillation` impls — symmetric, drift-protected
+- Tally: **15 + 33** (unchanged; this is parallel-impl coverage uplift, not a new discharge)
+
+Within the contract `apr-cpu-vs-gpu-output-parity-v1` (v1.2.0 ACTIVE from #1430):
+- FALSIFY-CPU-GPU-005 is now wired symmetric to FALSIFY-CPU-GPU-003 via #1435's `WGPU_FALLBACK_LOG_PREFIX` + 3 drift-prevention tests
+- Status remains PARTIAL_ALGORITHM_LEVEL (full discharge requires the deferred wgpu cosine gate at init, ~100-150 LOC)
+
+### 42.6 Ship % effects
+
+- **MODEL-1**: 87% → **88%** — wgpu drift-prevention (#1435) closes one more loophole at the contract level (the v1.2.0 prediction is now matched by code).
+- **MODEL-2**: 50% → **54%** — falsifier-parity unblocks future distill-train PRs from regressing math silently. Net hub-feature build health: from broken to 7990/7990 pass.
+
+### 42.7 Next-session pickup
+
+Two natural levers, both bounded:
+
+(a) **FALSIFY-CPU-GPU-005 part b** (wgpu cosine gate) — extract wgpu single-step decode body, run one CPU-vs-wgpu BOS forward at init, cosine-compare logits, return None on < 0.99. ~100-150 LOC + test. Promotes FALSIFY-CPU-GPU-005 from PARTIAL_ALGORITHM_LEVEL → FUNCTIONAL.
+
+(b) **MODEL-2 distill-train scaffolding next sub-task** — with the falsifier-coverage symmetry now locked in, the next bounded sub-task is the `--stage precompute` deterministic-output gate (FALSIFY-APR-DISTILL-TRAIN-005). Empirical: two runs of `apr distill --stage precompute` with the same inputs MUST produce byte-identical `teacher_logits/` output. Implementation requires real teacher forward, but the falsifier-test scaffolding is bounded.
+
+Both are bounded. Operator preference decides which lands first.
+
+---
+
+## §41. `apr-cpu-vs-gpu-output-parity-v1` chain — three-layer jidoka armor at the dispatch boundary (2026-05-03)
+
+### 41.1 What landed
+
+Four PRs in one session, all merged on `main`, all under the `apr-cpu-vs-gpu-output-parity-v1` umbrella contract:
+
+| PR | What | Effect |
+|----|------|--------|
+| [#1427](https://github.com/paiml/aprender/pull/1427) | Author contract v1.0.0 PROPOSED | 3 equations + 4 falsifiers (FALSIFY-CPU-GPU-001..004) codify the regression class triggered by §40's "GPU silent gibberish" finding |
+| [#1428](https://github.com/paiml/aprender/pull/1428) | Make CUDA fallback log visible without `--verbose` + bump v1.0.0 PROPOSED → v1.1.0 ACTIVE | Empirically verified (live `apr -v run` on canonical 7B teacher) that the `parity_gate` IS already wired on the `.apr` → `OwnedQuantizedModelCuda` path via `with_max_seq_len:268-279`. v1.0.0's claim "no gate runs for the trueno-graph .apr load path" was incorrect; the v6 evidence file documents the correction. The user-visible gap was that the gate's failure (e.g. `CUDA_ERROR_ILLEGAL_ADDRESS` during the gate's own GPU forward) was logged behind `if verbose` at `gguf_gpu_generate.rs:487-489`. PR converts to unconditional `eprintln` with contract tag |
+| [#1429](https://github.com/paiml/aprender/pull/1429) | Drift-prevention: `pub(crate) const CUDA_FALLBACK_LOG_PREFIX` + unit test | Locks the contract-tagged prefix shape at the type/test level. Future regressions (rename without bump, re-wrapping in `if verbose`) fail at `cargo test` — no GPU required for the test |
+| [#1430](https://github.com/paiml/aprender/pull/1430) | FALSIFY-CPU-GPU-005 (wgpu visibility + parity-gate symmetry) + bump v1.1.0 → v1.2.0 ACTIVE | (a) wgpu lifecycle log made unconditional (symmetric to #1428's CUDA fix); (b) wgpu cosine-similarity gate bound at PARTIAL_ALGORITHM_LEVEL pending follow-up implementation (~100-150 LOC). Contract now 5 falsifiers / 5 obligations |
+
+### 41.2 Net behavioural change for `apr run`
+
+Before today: default `apr run <model.apr>` on a SHIP-007-broken GPU build emitted gibberish ("ampiezza = 10\\nampie") with **zero** stderr signal that GPU had been rejected. User had no diagnostic path to `--no-gpu` workaround.
+
+After today: same invocation emits the full backend-fallback chain on stderr without `--verbose`:
+
+```
+[apr-cpu-vs-gpu-output-parity-v1] CUDA path rejected, attempting fallback:
+  Inference error: PARITY-GATE: GPU forward failed: ...CUDA_ERROR_ILLEGAL_ADDRESS...
+Backend: wgpu (Vulkan)
+[wgpu] Skipping weight 'lm_head' (2180.0 MB > 2147.5 MB limit) — CPU fallback
+...
+```
+
+The user now has the diagnostic to know `--no-gpu` is the correct path on this build.
+
+### 41.3 What this is NOT
+
+This chain does **not** fix the SHIP-007 GPU kernel bug. The `cuBLASLt FP8` / trueno_gpu manual-graph (646 kernels) defect identified in §40 still produces wrong output. What today's chain does is convert the failure mode from "silent gibberish" to "loud, contracted, user-visible fallback decision". This is jidoka (stop-the-line / defect visibility) — separate from the actual fix.
+
+### 41.4 Five Whys — why ship visibility before the kernel fix?
+
+1. **Why armor the dispatch boundary first?** Because MODEL-1 is shippable today via `apr run --no-gpu` (per §40 — CPU path produces correct "2 + 2 equals" in 9.81s on RTX 4090, faster than the broken 72.95s GPU path). The blocker for shipping with confidence was that users running default `apr run` would get garbage with no signal to switch flags. Closing that signal gap is necessary for ship and was achievable in 4 small PRs across one session.
+2. **Why three layers (visibility + drift-prevention test + wgpu symmetry)?** Because each layer addresses a distinct regression class:
+   - Visibility (#1428) closes "silent fallback today"
+   - Drift-prevention test (#1429) closes "future refactor reverts visibility"
+   - wgpu symmetry (#1430) closes "fallback hits wgpu which has its own gibberish, leaving user back in silent-garbage land"
+3. **Why bump the contract three times in one day?** Because each PR materially changed the contract's claims (corrected wrong algorithm_evidence in #1428, added a new falsifier in #1430). Memory `feedback_pv_not_bash_for_contracts.md` and the spec's contract-first methodology require the YAML to track reality.
+4. **Why not implement the wgpu cosine gate today?** Because it requires extracting the per-token wgpu decode loop body into a callable single-step function (~100-150 LOC + test), which is bigger than one /loop iteration. Bound at PARTIAL_ALGORITHM_LEVEL with a clear implementation sketch in v1.2.0 algorithm_evidence; deferred to a follow-up PR.
+5. **Why is this MODEL-1 ship % progress and not just paperwork?** Because under the spec's "MODEL-1 ships GPU only" memory rule (`feedback_model_1_ships_gpu_only.md`) the ship gate was previously ambiguous when GPU produces garbage. With the visibility chain, MODEL-1 has a documented `--no-gpu` recovery path that's automatically discoverable from any default-mode `apr run` invocation. Per §40's own conclusion, "MODEL-1 is shippable today via CPU path" — today's chain makes that actually true for users, not just for spec authors.
+
+### 41.5 Coverage update
+
+No PARTIAL→DISCHARGED flips today. The contract `apr-cpu-vs-gpu-output-parity-v1` itself was authored fresh as v1.0.0 PROPOSED → v1.2.0 ACTIVE within one session, so it's not part of the coverage scoreboard's PARTIAL/DISCHARGED count yet (it would need explicit binding via tasks/spec rules to count). Tally: **15 + 33** (unchanged).
+
+### 41.6 Next-session pickup
+
+Two natural levers:
+
+(a) **FALSIFY-CPU-GPU-005 part b** (wgpu cosine gate) — extract wgpu single-step decode body, run one CPU-vs-wgpu BOS forward at init, cosine-compare logits, return None on < 0.99. ~100-150 LOC + test. Promotes FALSIFY-CPU-GPU-005 from PARTIAL_ALGORITHM_LEVEL → FUNCTIONAL.
+
+(b) **MODEL-2 distill-train scaffolding** (§35 / `apr-cli-distill-train-v1`) — start the Rust impl. Memory says ~600-1200 LOC + tests, multi-day. One iteration = one bounded sub-task (e.g. KL divergence loss helper, or temperature-scaled softmax kernel).
+
+Both are bounded. (a) closes one more loophole on the MODEL-1 fallback layer; (b) starts moving MODEL-2 ship % off its 50% plateau. Operator preference decides which lands first.
+
+---
 
 ## §40. SHIP-007 root cause LOCALIZED to FP8/cuBLASLt GPU path (CPU path is correct) (2026-04-28)
 

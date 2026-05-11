@@ -210,7 +210,7 @@ fn test_cmd_code_signature_matches_spec() {
     // Verify the public API signature exists and is callable
     // This catches regressions where the function is made private or renamed
     // Verify cmd_code exists and is callable
-    let _ = cmd_code as fn(_, _, _, _, _, _, _, _) -> _;
+    let _ = cmd_code as fn(_, _, _, _, _, _, _, _, _, _) -> _;
 }
 
 #[test]
@@ -491,6 +491,149 @@ fn test_register_mcp_client_tools_noop_when_empty() {
 #[path = "code_tests_falsification.rs"]
 mod falsification;
 
+// ── PMAT-CODE-CONFIG-LADDER-001: settings.json precedence ladder ──────
+
+#[cfg(test)]
+mod settings_apply_tests {
+    use super::super::apply_settings_to_manifest;
+    use super::super::build_default_manifest;
+    use crate::agent::settings::AprSettings;
+
+    #[test]
+    fn apply_model_repo_preserves_alias_form() {
+        let mut m = build_default_manifest();
+        let s = AprSettings { model: Some("qwen3:1.7b-q4k".into()), ..Default::default() };
+        apply_settings_to_manifest(&mut m, &s).expect("apply ok");
+        assert_eq!(m.model.model_repo.as_deref(), Some("qwen3:1.7b-q4k"));
+        assert!(m.model.model_path.is_none());
+    }
+
+    #[test]
+    fn apply_model_path_treats_absolute_as_path() {
+        let mut m = build_default_manifest();
+        let s = AprSettings { model: Some("/abs/model.gguf".into()), ..Default::default() };
+        apply_settings_to_manifest(&mut m, &s).expect("apply ok");
+        assert_eq!(
+            m.model.model_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
+            Some("/abs/model.gguf".to_string())
+        );
+        assert!(m.model.model_repo.is_none());
+    }
+
+    #[test]
+    fn apply_model_path_treats_relative_dot_as_path() {
+        let mut m = build_default_manifest();
+        let s = AprSettings { model: Some("./local.apr".into()), ..Default::default() };
+        apply_settings_to_manifest(&mut m, &s).expect("apply ok");
+        assert!(m.model.model_path.is_some());
+        assert!(m.model.model_repo.is_none());
+    }
+
+    #[test]
+    fn apply_max_turns_overrides_resource_quota() {
+        let mut m = build_default_manifest();
+        let original = m.resources.max_iterations;
+        let s = AprSettings { max_turns: Some(7), ..Default::default() };
+        apply_settings_to_manifest(&mut m, &s).expect("apply ok");
+        assert_eq!(m.resources.max_iterations, 7);
+        assert_ne!(7, original, "test invalid: settings.max_turns matches default");
+    }
+
+    #[test]
+    fn apply_extra_system_prompt_appends_does_not_replace() {
+        let mut m = build_default_manifest();
+        let base_len = m.model.system_prompt.len();
+        let s = AprSettings { extra_system_prompt: Some("BE TERSE.".into()), ..Default::default() };
+        apply_settings_to_manifest(&mut m, &s).expect("apply ok");
+        assert!(m.model.system_prompt.len() > base_len, "must append, not replace");
+        assert!(m.model.system_prompt.ends_with("BE TERSE."));
+    }
+
+    #[test]
+    fn apply_empty_extra_prompt_is_noop() {
+        let mut m = build_default_manifest();
+        let base = m.model.system_prompt.clone();
+        let s = AprSettings { extra_system_prompt: Some("   \n  ".into()), ..Default::default() };
+        apply_settings_to_manifest(&mut m, &s).expect("apply ok");
+        assert_eq!(m.model.system_prompt, base, "whitespace-only extra is no-op");
+    }
+
+    #[test]
+    fn apply_default_settings_is_noop() {
+        let mut m = build_default_manifest();
+        let snapshot = (
+            m.model.model_path.clone(),
+            m.model.model_repo.clone(),
+            m.model.system_prompt.clone(),
+            m.resources.max_iterations,
+        );
+        apply_settings_to_manifest(&mut m, &AprSettings::default()).expect("apply ok");
+        assert_eq!(m.model.model_path, snapshot.0);
+        assert_eq!(m.model.model_repo, snapshot.1);
+        assert_eq!(m.model.system_prompt, snapshot.2);
+        assert_eq!(m.resources.max_iterations, snapshot.3);
+    }
+
+    // ── PMAT-CODE-CONFIG-LADDER-FIELDS-001: permission_mode + allowed_hosts
+
+    #[test]
+    fn apply_valid_permission_mode_succeeds() {
+        let mut m = build_default_manifest();
+        for mode in &["default", "plan", "acceptEdits", "bypassPermissions"] {
+            let s = AprSettings { permission_mode: Some((*mode).into()), ..Default::default() };
+            apply_settings_to_manifest(&mut m, &s)
+                .unwrap_or_else(|e| panic!("expected {mode} to parse: {e}"));
+        }
+    }
+
+    #[test]
+    fn apply_unknown_permission_mode_errs_loudly() {
+        let mut m = build_default_manifest();
+        let s = AprSettings { permission_mode: Some("totally-fake".into()), ..Default::default() };
+        let err = apply_settings_to_manifest(&mut m, &s).expect_err("must reject unknown");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("permissionMode"),
+            "error must mention permissionMode field name: {msg}"
+        );
+        assert!(msg.contains("totally-fake"), "error must echo the bad value: {msg}");
+    }
+
+    #[test]
+    fn apply_allowed_hosts_populates_manifest() {
+        let mut m = build_default_manifest();
+        // Default manifest's allowed_hosts is empty (Sovereign by default).
+        assert!(m.allowed_hosts.is_empty());
+        let s = AprSettings {
+            allowed_hosts: Some(vec!["docs.anthropic.com".into(), "crates.io".into()]),
+            ..Default::default()
+        };
+        apply_settings_to_manifest(&mut m, &s).expect("apply ok");
+        assert_eq!(
+            m.allowed_hosts,
+            vec!["docs.anthropic.com".to_string(), "crates.io".to_string()]
+        );
+    }
+
+    #[test]
+    fn apply_allowed_hosts_does_not_override_explicit_manifest() {
+        // Operator-declared TOML manifest wins over settings.json — same
+        // policy as model/max_turns/etc.
+        let mut m = build_default_manifest();
+        m.allowed_hosts = vec!["explicit.example.com".into()];
+        let s = AprSettings {
+            allowed_hosts: Some(vec!["from-settings.example.com".into()]),
+            ..Default::default()
+        };
+        apply_settings_to_manifest(&mut m, &s).expect("apply ok");
+        assert_eq!(
+            m.allowed_hosts,
+            vec!["explicit.example.com".to_string()],
+            "manifest-declared list must NOT be replaced by settings"
+        );
+    }
+}
+
 // ── M28: apr code --emit-trace ────────────────────────────────────────
 
 #[cfg(test)]
@@ -568,5 +711,100 @@ mod emit_trace_tests {
         for line in body.lines() {
             assert!(line.contains("\"v\":1"), "every JSONL record must carry v:1, got: {line}");
         }
+    }
+}
+
+// ── PMAT-CODE-OUTPUT-FORMAT-001 / PMAT-CODE-INPUT-FORMAT-001 ─────────
+// Non-interactive mode parity with `claude -p --output-format <fmt>`
+// and `claude -p --input-format json`.
+
+#[cfg(test)]
+mod non_interactive_format_tests {
+    use super::super::{build_json_result_envelope, parse_json_input_envelope};
+    use crate::agent::{AgentLoopResult, TokenUsage};
+
+    fn synth_result(text: &str) -> AgentLoopResult {
+        AgentLoopResult {
+            text: text.to_owned(),
+            usage: TokenUsage { input_tokens: 42, output_tokens: 7 },
+            iterations: 3,
+            tool_calls: 1,
+        }
+    }
+
+    #[test]
+    fn json_output_envelope_carries_required_fields() {
+        // Mirrors `claude -p "x" --output-format json` shape — the operator
+        // contract for any tool downstream (e.g. CCPA differ) that parses
+        // this envelope.
+        let r = synth_result("the answer is 4");
+        let s = build_json_result_envelope(&r, std::time::Duration::from_millis(123), false);
+        let v: serde_json::Value = serde_json::from_str(&s).expect("envelope is valid JSON");
+        assert_eq!(v["type"], "result");
+        assert_eq!(v["subtype"], "success");
+        assert_eq!(v["is_error"], false);
+        assert_eq!(v["duration_ms"], 123);
+        assert_eq!(v["result"], "the answer is 4");
+        assert_eq!(v["num_turns"], 3);
+        assert_eq!(v["tokens_in"], 42);
+        assert_eq!(v["tokens_out"], 7);
+        assert_eq!(v["total_cost_usd"], 0);
+        assert!(v["session_id"].as_str().is_some_and(|s| !s.is_empty()));
+    }
+
+    #[test]
+    fn json_output_envelope_marks_error_subtype_on_empty_response() {
+        let r = synth_result("");
+        let s = build_json_result_envelope(&r, std::time::Duration::from_millis(1), true);
+        let v: serde_json::Value = serde_json::from_str(&s).expect("valid JSON");
+        assert_eq!(v["subtype"], "error");
+        assert_eq!(v["is_error"], true);
+        assert_eq!(v["result"], "");
+    }
+
+    #[test]
+    fn json_input_envelope_extracts_user_content() {
+        let buf = r#"{"role":"user","content":"What is 2+2?"}"#;
+        let prompt = parse_json_input_envelope(buf).expect("valid envelope");
+        assert_eq!(prompt, "What is 2+2?");
+    }
+
+    #[test]
+    fn json_input_envelope_defaults_role_to_user_when_omitted() {
+        // Lenient: omitted role implies "user" since non-interactive surface
+        // is single-turn user-only by construction.
+        let buf = r#"{"content":"hello"}"#;
+        let prompt = parse_json_input_envelope(buf).expect("valid envelope");
+        assert_eq!(prompt, "hello");
+    }
+
+    #[test]
+    fn json_input_envelope_rejects_non_user_role() {
+        let buf = r#"{"role":"assistant","content":"x"}"#;
+        let err = parse_json_input_envelope(buf).expect_err("must reject non-user role");
+        let msg = format!("{err}");
+        assert!(msg.contains("role"), "error must mention role: {msg}");
+    }
+
+    #[test]
+    fn json_input_envelope_rejects_missing_content() {
+        let buf = r#"{"role":"user"}"#;
+        let err = parse_json_input_envelope(buf).expect_err("must reject missing content");
+        let msg = format!("{err}");
+        assert!(msg.contains("content"), "error must mention content field: {msg}");
+    }
+
+    #[test]
+    fn json_input_envelope_rejects_empty_stdin() {
+        let err = parse_json_input_envelope("   \n").expect_err("must reject empty stdin");
+        let msg = format!("{err}");
+        assert!(msg.contains("empty"), "error must mention empty: {msg}");
+    }
+
+    #[test]
+    fn json_input_envelope_rejects_malformed_json() {
+        let err = parse_json_input_envelope("{not json").expect_err("must reject bad JSON");
+        let msg = format!("{err}");
+        assert!(msg.contains("invalid JSON"), "error must mention JSON: {msg}");
     }
 }

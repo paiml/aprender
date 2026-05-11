@@ -1,8 +1,171 @@
 metadata:
-  version: 1.3.0
+  version: 1.5.0
   created: '2026-04-28'
   author: PAIML Engineering
   amendment_history:
+    - version: 1.5.0
+      date: '2026-05-09'
+      kind: status_promotion
+      title: 'M109 DISCHARGE — F-QW3-MOE-PARITY-001 PASSED, status ACTIVE_ALGORITHM_LEVEL → ACTIVE_RUNTIME'
+      description: |
+        Per the M34 FAST PATH plan and the v1.4.0 functional discharge audit
+        trail, this v1.5.0 amendment records the **formal numerical-parity
+        discharge** of M32d via FALSIFY-QW3-MOE-FORWARD-004 axis (a)
+        cosine ≥ 0.99 vs HF FP16 reference logits.
+
+        Discharge measured 2026-05-09 on lambda-vector RTX 4090
+        (companion `paiml/claude-code-parity-apr` PR #95 squash 9c2833334,
+        M109 milestone-table row).
+
+        ## Live test results
+
+          cargo test --release -p aprender-serve --test qwen3_moe_parity -- \
+            --include-ignored f_qw3_moe_parity_001_cosine_vs_hf_fp16
+
+          F-QW3-MOE-PARITY-001:
+            elapsed       = 555.52868ms
+            cos_sim       = 0.995384
+            threshold     = 0.99
+            apr_argmax    = 3555 (val = 22.3671)
+            hf_argmax     = 3555 (" What")
+
+          test result: ok. 4 passed; 0 failed; 0 ignored
+
+        ## Margin analysis
+
+        - cos_sim 0.995384 ≥ 0.99 threshold by **0.0054** (substantial
+          margin, well above noise floor).
+        - **apr_argmax = hf_argmax = 3555** (exact agreement, not just
+          "cos > 0.99 forces argmax under near-tie hypothesis"). This is
+          a stronger discharge than the contract requires.
+
+        ## Discovery: stale "60 GB HF download is pending" claim
+
+        v1.4.0 (2026-05-02) recorded the cosine measurement as
+        "operator-confirm pending ~60 GB HF download". Companion-repo
+        M109 (2026-05-09) discovered the FP16 weights had been on
+        lambda-vector at /mnt/nvme-raid0/models/Qwen3-Coder-30B-A3B-Instruct/
+        (57 GB across 16 safetensors shards, Mar 8 timestamps) for ~62
+        days — well before v1.4.0 was authored.
+
+        Five-whys on root cause (companion M109 commit body):
+
+          (1) "operator-confirm pending X" claims age silently when X
+              becomes mechanically checkable.
+          (2) Companion-side detector (12 asserts at M107) covers
+              M-count / gate-count / contract-version / fixture-count
+              / status-anchor consistency, but NOT "is the X-pending
+              claim still true on disk?"
+          (3) Future M110-class kaizen: extend detector to query
+              filesystem state for mechanically-checkable "pending"
+              claims.
+
+        ## Fixture generation reproducibility
+
+        HF FP16 fixture generated in **52s wall** (vs script's "10-30 min"
+        estimate which assumed HF Hub download):
+
+          uv run --with torch --with transformers --with accelerate \
+            scripts/generate_qwen3_moe_fp16_logits.py \
+            --model /mnt/nvme-raid0/models/Qwen3-Coder-30B-A3B-Instruct \
+            --output crates/aprender-serve/tests/fixtures/qwen3_moe_fp16_logits_pos0.json
+
+        Fixture committed in this PR at
+        crates/aprender-serve/tests/fixtures/qwen3_moe_fp16_logits_pos0.json
+        (2.06 MiB, 151936-dim FP32 logit vector for prompt
+        "What is 2+2?" at position 6 = end-of-prompt).
+
+        ## F-QW3-MOE-PARITY-002 sibling status
+
+        FALSIFY-QW3-MOE-FORWARD-004 axis (b) — argmax(apr_logits) ==
+        llama_cpp_top1_token — was **deferred** in this discharge.
+        CPU-only `llama-cli` (build #7746) on the
+        Qwen3-Coder-30B-A3B-Instruct-Q4_K_M GGUF hung at 99.9% single-CPU
+        for 2 hours without producing output, even with `-ngl 999`
+        GPU-offload flag (suspected MoE expert dispatch is CPU-bound in
+        this llama.cpp build — upstream issue, not aprender-side).
+
+        The transitive sanity check is no longer load-bearing: axis (a)
+        already proved `apr_argmax = hf_argmax = 3555` directly.
+        Discharge of axis (a) alone is sufficient for the ACTIVE_RUNTIME
+        flip per AC_QW3_MOE_005's primary gate semantics.
+
+        F-QW3-MOE-PARITY-002 stays `[#ignore]`-gated for regression
+        coverage when llama.cpp's MoE-on-CPU performance improves.
+
+        ## Status promotions
+
+          - status: ACTIVE_ALGORITHM_LEVEL → ACTIVE_RUNTIME
+          - implementation_stages.M32d: PENDING → DISCHARGED
+          - FALSIFY-QW3-MOE-FORWARD-004 axis (a): DISCHARGED
+            (cos_sim 0.995384, apr_argmax = hf_argmax)
+          - FALSIFY-QW3-MOE-FORWARD-004 axis (b): DEFERRED
+            (transitive — not load-bearing post axis-a discharge;
+            test stays for regression coverage)
+
+        ## Cross-repo refs
+
+          - companion M109: paiml/claude-code-parity-apr#95 squash
+            9c2833334 (2026-05-09T15:02:33Z)
+          - companion ticketing M108: paiml/claude-code-parity-apr#94
+          - aprender#1584: closes via this PR (operator-confirm gate)
+
+    - version: 1.4.0
+      date: '2026-05-02'
+      kind: amendment
+      title: 'M32d FUNCTIONAL DISCHARGE — output transition gibberish → coherent English'
+      description: |
+        Per the M34 FAST PATH plan (companion `paiml/claude-code-parity-apr`
+        docs/specifications/claude-code-parity-apr-poc.md § "M32d FAST PATH"),
+        the M32d numerical-parity gate is FUNCTIONALLY DISCHARGED on aprender
+        main as commit 5235aaeb9 (#1228 squash, 2026-05-02 13:42 UTC).
+
+        Output transition on lambda-vector RTX 4090 against the cached
+        17.3 GB Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf:
+
+          pre-fix         "%%%%%%%%"               (gibberish, repeated argmax)
+          + Step 5        "Human: What is 2+"      (coherent English, partial)
+          + Step 5b       "Human: What is 2+2?"    (full prompt reproduced)
+          + Step 6        "2 + 2 = 4"              (correct answer)
+
+        Multi-domain dogfood (math/geography/translation/code) all correct.
+
+        Fix bundle (in PR #1228 squash):
+          - Step 5  per-head Q/K RMSNorm in forward_qwen3_moe (rank-3 prior)
+          - Step 5b rope_theta default 10K → 1M for qwen3_moe (rank-4 prior)
+          - Step 6  chat template: qwen3_moe → ChatML (no `<think>` injection)
+          - Step 7  sync forward_qwen3_moe_traced with Step 5 Q/K norm
+
+        Diagnostic surface (PRs #1222, #1226, #1401):
+          - forward_qwen3_moe_traced per-layer ActivationStats
+          - apr trace --payload qwen3_moe arch dispatch
+          - apr trace --json --payload JSON output
+
+        Status flips DRAFT → ACTIVE_ALGORITHM_LEVEL (not yet ACTIVE_RUNTIME):
+        the formal flip to ACTIVE_RUNTIME requires cosine ≥ 0.99 vs HF FP16
+        reference logits (M32d.1 fixture script). That measurement is
+        operator-confirm pending (~60 GB HF download + ~30 min on 30B-A3B).
+
+        Component priors verified empirically:
+
+          rank-1 LAYOUT (30%)        not at issue
+          rank-2 Q4_K_M scales (20%) not at issue
+          rank-3 Q/K norm (15%)      FIXED (Step 5)
+          rank-4 RoPE θ (10%)        FIXED (Step 5b)
+          rank-5 router softmax      not at issue
+          rank-6 token embed         not at issue
+          rank-7 other               n/a
+          outside-priors             FIXED (Step 6 chat template wrapping)
+
+        M34 FAST PATH cost: 5 PRs / ~6 hours wall-clock — at the lucky-case
+        bound of the original 4-6 PRs / 2-3 days estimate. Diagnostic
+        surface (Step 2 + 2.5) named rank-3 directly via 40× std-growth
+        signature without needing the HF FP16 fixture.
+
+        Refs aprender PR #1228 commit 5235aaeb9
+        Refs companion M35 status_history
+        Refs `project_m32d_discharge_2026_05_02.md` (memory)
+
     - version: 1.3.0
       date: '2026-04-29'
       kind: amendment
@@ -262,9 +425,33 @@ metadata:
 
 kind: KernelContract
 name: qwen3-moe-forward
-version: "1.3.0"
-status: DRAFT   # SCAFFOLD — flips to ACTIVE_RUNTIME at end of M32d (parity discharge).
-                # v1.3.0 (M32d.0) records the parity strategy decision:
+version: "1.5.0"
+status: ACTIVE_RUNTIME   # M32d FULLY DISCHARGED 2026-05-09 — formal cosine
+                # ≥ 0.99 vs HF FP16 reference PASSED at cos_sim 0.995384,
+                # apr_argmax = hf_argmax = 3555 (" What") on prompt
+                # "What is 2+2?" / lambda-vector RTX 4090. The "60 GB HF
+                # download is pending" claim in v1.4.0 was stale — weights
+                # were on local SSD ~62 days; companion-repo M109
+                # (paiml/claude-code-parity-apr#95 squash 9c2833334)
+                # discovered + ran the discharge. v1.5.0 promotes status
+                # ACTIVE_ALGORITHM_LEVEL → ACTIVE_RUNTIME.
+                #
+                # v1.5.0 (M109 DISCHARGE — 2026-05-09):
+                #   F-QW3-MOE-PARITY-001 PASSED at cos_sim 0.995384 ≥ 0.99
+                #   threshold (margin 0.0054). apr_argmax == hf_argmax = 3555
+                #   exact agreement. APR forward 555ms on 7-token prefill.
+                #   HF FP16 fixture committed in same PR (2.06 MiB JSON for
+                #   prompt "What is 2+2?" position 6).
+                #
+                # v1.4.0 (M32d FUNCTIONAL DISCHARGE — 2026-05-02):
+                #   Step 5 / 5b / 6 / 7 fix bundle landed on aprender main as
+                #   PR #1228 squash 5235aaeb9. Output transition: "%%%%%%%%"
+                #   gibberish → "2 + 2 = 4" + multi-domain (math/geo/translate/
+                #   code). Component priors verified: rank-3 Q/K norm + rank-4
+                #   RoPE θ + chat template all correct. M34 FAST PATH cost
+                #   5 PRs / ~6 hours wall — lucky-case bound met.
+                #
+                # v1.3.0 (M32d.0) recorded the parity strategy decision:
                 # HF FP16 (primary, cosine > 0.99) + llama.cpp top-1 argmax
                 # (secondary sanity check). Replaces aspirational
                 # `llama-cli --logit-output` reference path which does not
@@ -438,7 +625,7 @@ implementation_stages:
   unblocks_obligations: [AC_QW3_MOE_003, AC_QW3_MOE_004]
 
 - id: M32d
-  status: PENDING
+  status: DISCHARGED
   description: |
     Numerical parity vs ground truth. Reference-path priority
     revised at v1.3.0 (M32d.0):
@@ -447,9 +634,16 @@ implementation_stages:
       * SECONDARY: llama.cpp top-1 argmax (sanity match against
                    same Q4_K_M GGUF, greedy decode)
     Falsifier: FALSIFY-QW3-MOE-FORWARD-004 (rewritten at v1.3.0).
-    After M32d this contract flips DRAFT → ACTIVE_RUNTIME and
-    unblocks the companion-repo FALSIFY-CCPA-013 measured
-    tool-dispatch parity score.
+    DISCHARGED at v1.5.0 (2026-05-09 / companion M109): primary
+    gate axis (a) PASSED at cos_sim 0.995384 ≥ 0.99 with
+    apr_argmax = hf_argmax = 3555 (" What") on lambda-vector
+    RTX 4090. Secondary axis (b) deferred — llama-cli on
+    Qwen3-Coder-30B-A3B-Instruct CPU-bound for 2 hrs without
+    output even with -ngl 999; transitive to axis (a) and not
+    load-bearing post primary discharge.
+    Status flipped ACTIVE_ALGORITHM_LEVEL → ACTIVE_RUNTIME at
+    v1.5.0; companion-repo FALSIFY-CCPA-013 measured tool-
+    dispatch parity score is unblocked (companion M109).
 
     Sub-slices (each its own PR):
 

@@ -1,5 +1,5 @@
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-13"
   updated: "2026-04-22"
   author: PAIML Engineering
@@ -19,7 +19,7 @@ metadata:
 
 kind: AlgorithmContract
 name: chat-template
-version: "1.1.0"
+version: "1.2.0"
 scope: "crates/aprender-core/src/text/chat_template/ + crates/aprender-serve/src/chat/"
 
 description: |
@@ -83,9 +83,21 @@ falsification:
       spec-defined golden output. Algorithm-level rule is dischargeable
       offline; compute-heavy harness awaits SHIP-TWO-001 evidence
       collection lane.
+      **Upstream blocker SHIP-007 §22 RESOLVED 2026-05-07** (aprender PR
+      #1550 squash `e856eb91f`; M-FFN-GGUF-5 fix); live discharge is now
+      dispatch-ready — no further upstream blockers.
     counter_example_classes:
       - "empty render (engine crash / returned empty string)"
       - "missing trailing <|im_start|>assistant\\n generation prompt"
       - "wrong special-token family (ChatML → Llama2 / <|user|> drift)"
       - "role-order swap (user before system)"
       - "single-byte flip at trailing newline (byte-equality, not approx)"
+
+qa_gate:
+  id: F-CHAT-TEMPLATE-GATE
+  name: Chat Template Gate
+  description: Quality gate for chat template Jinja2 rendering correctness (ChatML, Llama, Qwen, Mistral)
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All falsification tests pass; render output byte-equivalent to HuggingFace reference

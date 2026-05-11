@@ -99,10 +99,10 @@ libc = "0.2"
 
 [dependencies]
 # Core aprender library
-aprender = { path = "../aprender-core", version = "0.31.2", package = "aprender-core", default-features = true, features = ["format-compression"] }
+aprender = { path = "../aprender-core", version = "0.32.0", package = "aprender-core", default-features = true, features = ["format-compression"] }
 
 # MCP (Model Context Protocol) server — `apr mcp` subcommand
-aprender-mcp = { path = "../aprender-mcp", version = "0.31.2" }
+aprender-mcp = { path = "../aprender-mcp", version = "0.32.0" }
 async-stream = "0.3"
 provable-contracts-macros = "0.3"
 
@@ -168,6 +168,13 @@ glob = "0.3"
 dirs = "5.0"
 which = "7"
 
+# Parquet input for `apr tokenize encode-corpus` — issue #1410 follow-up.
+# Stack v1.2 / codeparrot Python corpora ship as parquet, not JSONL; this
+# enables `apr tokenize encode-corpus --corpus <path>.parquet` end-to-end
+# without a Python shim (per `feedback_stack_tool_extension_not_cli_shim.md`).
+parquet = { version = "57", default-features = false, features = ["arrow", "snap", "zstd"] }
+arrow-array = "57"
+
 # HTTP client for downloads
 ureq = "2.10"
 
@@ -207,6 +214,11 @@ serde_yaml = { package = "serde_yaml_ng", version = "0.10" }
 
 # Unicode normalization (NFC) for BPE corpus preprocessing (MODEL-2).
 unicode-normalization = "0.1"
+
+# Parallelism — used by `apr tokenize encode-corpus --num-workers` (issue #1547).
+# Per-doc BPE encoding is independent across rows; rayon's chunked par_iter
+# preserves input order via Vec<Result<...>> indexed by chunk position.
+rayon = { workspace = true }
 
 [[example]]
 name = "serve_with_tracing"

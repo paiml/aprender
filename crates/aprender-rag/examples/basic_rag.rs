@@ -2,12 +2,12 @@
 //!
 //! Run with: cargo run --example basic_rag
 
-use trueno_rag::{
+use aprender_rag::{
     chunk::RecursiveChunker, embed::MockEmbedder, fusion::FusionStrategy,
     pipeline::RagPipelineBuilder, rerank::LexicalReranker, Document,
 };
 
-fn main() -> trueno_rag::Result<()> {
+fn main() -> aprender_rag::Result<()> {
     println!("=== Basic RAG Pipeline Example ===\n");
 
     // 1. Build the pipeline

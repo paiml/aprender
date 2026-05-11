@@ -1,4 +1,27 @@
 
+/// Output format for `apr code` non-interactive mode (PMAT-CODE-OUTPUT-FORMAT-001).
+/// Mirrors Claude Code's `claude -p --output-format <fmt>` parity row.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum, Default)]
+pub enum CodeOutputFormat {
+    /// Plain assistant text on stdout (default; existing behavior).
+    #[default]
+    Text,
+    /// Structured JSON envelope: `{type:"result", subtype:"success", result, session_id, duration_ms}`.
+    Json,
+}
+
+/// Input format for `apr code` non-interactive mode (PMAT-CODE-INPUT-FORMAT-001).
+/// `--input-format json` reads `{"role":"user","content":"..."}` from stdin instead
+/// of treating stdin as raw prompt text.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum, Default)]
+pub enum CodeInputFormat {
+    /// Raw prompt text from positional args or stdin (default; existing behavior).
+    #[default]
+    Text,
+    /// JSON message envelope on stdin: `{"role":"user","content":"..."}`.
+    Json,
+}
+
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Run model directly (auto-download, cache, execute)
@@ -255,6 +278,23 @@ pub enum Commands {
         /// Interactive mode
         #[arg(long)]
         interactive: bool,
+        /// Save per-stage F32 tensors during trace for SHIP-007 layer-0
+        /// element-wise diff. Comma-separated stage names from
+        /// `apr-cli-trace-save-tensor-v1.yaml` (e.g.
+        /// `embedding,qkv_matmul,attention`). Pass `all` to save every
+        /// stage. Output goes to `--save-tensor-dir` if provided,
+        /// else `<file_dir>/trace-tensors/<run_id>/`.
+        #[arg(long, value_name = "STAGES")]
+        save_tensor: Option<String>,
+        /// Output directory for `--save-tensor` (default: sibling
+        /// `trace-tensors/<run_id>/`).
+        #[arg(long, value_name = "DIR")]
+        save_tensor_dir: Option<PathBuf>,
+        /// Layer-id range for `--save-tensor` (default: 0..1, i.e.
+        /// layer 0 only). Format: `START..END` (Rust range syntax,
+        /// END exclusive).
+        #[arg(long, value_name = "RANGE", default_value = "0..1")]
+        save_tensor_layers: String,
     },
     /// Check for best practices and conventions
     Lint {
@@ -601,6 +641,20 @@ pub enum Commands {
         /// against canonical Claude Code reference fixtures.
         #[arg(long)]
         emit_trace: Option<PathBuf>,
+
+        /// Output format for non-interactive (`-p`) mode (PMAT-CODE-OUTPUT-FORMAT-001).
+        /// `text` (default): plain assistant text.
+        /// `json`: structured `{type:"result", subtype:"success", result, session_id, duration_ms}`
+        /// envelope matching Claude Code's `claude -p --output-format json` shape.
+        #[arg(long, value_enum, default_value_t = CodeOutputFormat::Text)]
+        output_format: CodeOutputFormat,
+
+        /// Input format for non-interactive stdin (PMAT-CODE-INPUT-FORMAT-001).
+        /// `text` (default): treat stdin as raw prompt text.
+        /// `json`: parse `{"role":"user","content":"..."}` from stdin and use `content`
+        /// as the prompt. Matches Claude Code's `claude -p --input-format json` shape.
+        #[arg(long, value_enum, default_value_t = CodeInputFormat::Text)]
+        input_format: CodeInputFormat,
     },
     /// Extended analysis, profiling, QA, and visualization commands
     #[command(flatten)]

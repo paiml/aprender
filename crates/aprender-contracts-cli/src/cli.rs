@@ -233,6 +233,14 @@ pub enum Commands {
         /// Explain a lint rule in detail (e.g. PV-ENF-001)
         #[arg(long)]
         explain: Option<String>,
+        /// Enable strict test-binding gate (PV-VER-002): cross-checks every
+        /// `falsification_tests[].test` cargo invocation against `#[test]` fns
+        /// in the source tree. Catches drift classes that PV-VER-001 misses
+        /// (suffix drift, module-path drift, convention drift, "or equivalent"
+        /// placeholders). Default emits Warning; combine with `--strict` to
+        /// promote to Error and fail CI. Issue #1510.
+        #[arg(long)]
+        strict_test_binding: bool,
     },
     /// Score contracts or a codebase directory
     Score {

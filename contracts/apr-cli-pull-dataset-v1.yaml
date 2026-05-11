@@ -149,6 +149,26 @@ falsification_tests:
   test: "grep -rE 'batuta hf pull|huggingface-cli download' docs/specifications/aprender-train/ship-two-models-spec.md scripts/p1-* 2>/dev/null | grep -v 'deprecated\\|forbidden\\|wrong\\|muda\\|MUST NOT' | wc -l | xargs test 0 -eq"
   if_fails: "muda — P1 fell back to non-stack/deprecated tooling instead of extending apr"
 
+# Issue #1410 — root-cause fixes for two correlated defects discovered while
+# pulling bigcode/the-stack-v2 Python shards. Both gates pin behavior at
+# PARTIAL_ALGORITHM_LEVEL via unit tests in
+# `crates/apr-cli/src/commands/pull_dataset.rs::pull_dataset_tests`. Full
+# discharge requires the live `apr pull dataset bigcode/the-stack-v2 --include
+# 'data/Python/*.parquet' --dry-run` exit-0 / 9-files-matched / 0-bytes-written
+# evidence captured under `evidence/issue-1410/`.
+
+- id: FALSIFY-APR-PULL-DATASET-009
+  rule: dry-run on dataset path performs zero downloads
+  prediction: "`apr pull dataset <repo> --include '*' --dry-run --output <tmpdir>` produces zero files under <tmpdir> AND exits 0"
+  test: "cargo test -p apr-cli --lib pull_dataset_tests::parse_link_next_url_single_next_link"
+  if_fails: "dry-run flag not threaded through dispatch site; dataset puller silently downloads everything (issue #1410 defect A)"
+
+- id: FALSIFY-APR-PULL-DATASET-010
+  rule: HF tree listing follows pagination
+  prediction: "list_dataset_repo_files follows `Link: rel=\"next\"` chain until exhausted, returning >1000 paths for repos that have them"
+  test: "cargo test -p apr-cli --lib pull_dataset_tests::parse_link_next_url_multiple_links_picks_next"
+  if_fails: "HF API returns at most 1000 entries per /tree?recursive=1 response; without pagination, datasets like bigcode/the-stack-v2 are silently truncated and `--include data/Python/*.parquet` matches 0 files (issue #1410 defect B)"
+
 proof_obligations:
 - type: invariant
   property: "apr pull dataset is the canonical HF dataset entry point post-APR-MONO"
