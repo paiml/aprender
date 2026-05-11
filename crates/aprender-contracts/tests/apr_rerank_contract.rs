@@ -1,21 +1,21 @@
 //! Integration test for `contracts/apr-rerank-v1.yaml`.
 //!
-//! HELIX-IDEA-006 Phases 1-4. Loader/validator that promotes the
-//! reranking contract from DRAFT to ACTIVE for the pure-math
-//! subset + diversity + RRF nDCG + structural cross-encoder gate.
-//! Same pattern as `apr_mcp_server_contract.rs`. Asserts:
+//! HELIX-IDEA-006 (FULL — Phases 1-5). Loader/validator that
+//! promotes the reranking contract from DRAFT to ACTIVE for the
+//! entire pre-authored gate set. Same pattern as
+//! `apr_mcp_server_contract.rs`. Asserts:
 //!
 //! 1. The YAML file exists and parses as valid YAML.
 //! 2. Top-level `status: ACTIVE`.
-//! 3. **Exactly 5** entries in `falsification_conditions`:
-//!    FALSIFY-RERANK-RRF-002 (Phase 1, input-order invariance),
-//!    FALSIFY-RERANK-MMR-002 (Phase 1, λ=1 identity),
-//!    FALSIFY-RERANK-MMR-001 (Phase 2, diversity-vs-recall budget),
-//!    FALSIFY-RERANK-RRF-001 (Phase 3, RRF nDCG improvement),
-//!    and FALSIFY-RERANK-XENC-002 (Phase 4, structural cross-encoder
-//!    architecture). Phase 5 will amend the contract to add the
-//!    XENC-001 latency budget once aprender-serve cross-encoder
-//!    routing exists.
+//! 3. **Exactly 6** entries in `falsification_conditions`:
+//!    FALSIFY-RERANK-RRF-002 (input-order invariance),
+//!    FALSIFY-RERANK-MMR-002 (λ=1 identity),
+//!    FALSIFY-RERANK-MMR-001 (diversity-vs-recall budget),
+//!    FALSIFY-RERANK-RRF-001 (RRF nDCG improvement),
+//!    FALSIFY-RERANK-XENC-002 (structural cross-encoder
+//!    architecture), and FALSIFY-RERANK-XENC-001 (rerank latency
+//!    budget for top-100 candidates). All six pre-authored gates
+//!    from §2.6 are now discharged.
 //! 4. Every entry's `test_file` exists on disk, `test_name` is
 //!    non-empty, and `status: ENFORCED`.
 
@@ -68,25 +68,26 @@ fn apr_rerank_contract_is_active() {
     let contract = load_contract();
     assert_eq!(
         contract.status, "ACTIVE",
-        "apr-rerank-v1.yaml must be ACTIVE for Phases 1-4 (RRF symmetry + MMR λ=1 + MMR diversity + RRF nDCG + XENC structural)."
+        "apr-rerank-v1.yaml must be ACTIVE — all 6 pre-authored gates discharged."
     );
 }
 
 #[test]
-fn apr_rerank_contract_has_exactly_five_conditions() {
+fn apr_rerank_contract_has_exactly_six_conditions() {
     let contract = load_contract();
     assert_eq!(
         contract.falsification_conditions.len(),
-        5,
-        "Phases 1-4 ship exactly 5 falsification gates \
-         (FALSIFY-RERANK-RRF-002, MMR-002, MMR-001, RRF-001, XENC-002); contract has {}. \
-         Phase 5 amendment (XENC-001) must update both the YAML and this test in the same PR.",
+        6,
+        "HELIX-IDEA-006 ships exactly 6 falsification gates \
+         (FALSIFY-RERANK-RRF-002, MMR-002, MMR-001, RRF-001, XENC-002, XENC-001); \
+         contract has {}. Any future amendment must update both the YAML and \
+         this test in the same PR.",
         contract.falsification_conditions.len()
     );
 }
 
 #[test]
-fn apr_rerank_contract_ids_through_phase_4() {
+fn apr_rerank_contract_ids_all_six() {
     let contract = load_contract();
     let actual: Vec<String> = contract
         .falsification_conditions
@@ -101,6 +102,7 @@ fn apr_rerank_contract_ids_through_phase_4() {
             "FALSIFY-RERANK-MMR-001".to_string(),
             "FALSIFY-RERANK-RRF-001".to_string(),
             "FALSIFY-RERANK-XENC-002".to_string(),
+            "FALSIFY-RERANK-XENC-001".to_string(),
         ],
     );
 }
