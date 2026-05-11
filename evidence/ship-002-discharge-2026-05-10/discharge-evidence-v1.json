@@ -1,0 +1,98 @@
+{
+  "$schema": "../../contracts/qwen2-e2e-verification-v1.yaml#FALSIFY-QW2E-SHIP-002.discharged_evidence",
+  "evidence_id": "FALSIFY-SHIP-002-DISCHARGED-EVIDENCE-V1",
+  "binds_to": "AC-SHIP1-002",
+  "falsification_id": "FALSIFY-QW2E-SHIP-002",
+  "discharge_status": "DISCHARGED",
+  "previous_status": "PARTIAL_ALGORITHM_LEVEL (per qwen2-e2e-verification-v1.yaml v1.10.0; held on upstream blocker SHIP-007 §22 until 2026-05-07)",
+  "discharge_date": "2026-05-10",
+  "discharge_session": "ship-two-001 SHIP-002 PARTIAL → DISCHARGED via apr run on canonical 7B teacher; Python AST parse confirms 0 syntax errors",
+  "upstream_blocker_resolved": {
+    "blocker": "SHIP-007 §22 — APR vs GGUF forward parity",
+    "resolution_date": "2026-05-07",
+    "resolution_pr": "aprender#1550 squash e856eb91f (M-FFN-GGUF-5)",
+    "binding_criterion_contract": "contracts/apr-vs-gguf-forward-parity-v1.yaml v1.2.0 ACTIVE_FUNCTIONAL (PR #1608)",
+    "evidence_pin": "Layer-3 ratio 18.23× → 1.245× (H1 confirmed apples-to-apples on canonical 7B; all 28 layers within band [0.5, 2.0])"
+  },
+  "host": {
+    "hostname": "noah-Lambda-Vector",
+    "tier": "lambda-labs",
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "binary_path": "/mnt/nvme-raid0/targets/aprender/release/apr",
+    "binary_features": "default (CPU+wgpu+cuda fallback chain)",
+    "binary_commit_floor": "0d288e1fc (apr 0.32.0) — includes M-FFN-GGUF-5 fix e856eb91f"
+  },
+  "shipped_artifact": {
+    "canonical_path": "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr",
+    "format": "APR",
+    "file_size_bytes": 8035635652,
+    "sha256": "a394dd286732a5f32dfb983fd2ea0eeba4d6239ac4c47e44bcfe62f590ddeb28",
+    "tensor_count_floor": 339,
+    "architecture": "qwen2",
+    "total_params": 7615616512,
+    "param_count_match": "Qwen2.5-Coder-7B canonical 7.6B"
+  },
+  "command": "apr run /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr --prompt \"def fib(n):\" --max-tokens 128",
+  "raw_run_output": "evidence/ship-002-discharge-2026-05-10/apr-run-output.txt",
+  "model_completion": "evidence/ship-002-discharge-2026-05-10/fib-completion.py",
+  "ast_parse_result": "evidence/ship-002-discharge-2026-05-10/ast-parse-result.json",
+  "verification_chain": [
+    {
+      "step": 1,
+      "purpose": "Open canonical 7B teacher APR file",
+      "verdict": "Pass — `OwnedQuantizedModel::from_apr: 28 layers loaded` (3.7s)"
+    },
+    {
+      "step": 2,
+      "purpose": "Embedded BPE tokenizer load + special tokens",
+      "verdict": "Pass — `[PMAT-171] 152064 vocab, 151387 merges, 25 special tokens`"
+    },
+    {
+      "step": 3,
+      "purpose": "Backend dispatch (CUDA → wgpu → CPU fallback chain)",
+      "evidence": "CUDA path rejected (CUDA_ERROR_ILLEGAL_ADDRESS — known transient), wgpu rejected (lm_head 2180MB > 2147MB limit AND cosine vs CPU = 0.766 < 0.99), CPU path SELECTED via apr-cpu-vs-gpu-output-parity-v1 fallback gate",
+      "verdict": "Pass — fallback gate fired correctly; CPU path chosen with cosine-parity guard"
+    },
+    {
+      "step": 4,
+      "purpose": "Forward pass + sampling on prompt 'def fib(n):'",
+      "verdict": "Pass — coherent Python emitted; 76.11s wall (cached load)"
+    },
+    {
+      "step": 5,
+      "purpose": "Python AST parse of completion (zero-tolerance)",
+      "gate": "verdict_from_syntax_error_count(usize) -> Ship002Verdict",
+      "syntax_errors": 0,
+      "ast_node_count": 68,
+      "function_count": 1,
+      "function_names": ["fib"],
+      "verdict": "Pass — 0 syntax errors, well-formed FunctionDef with control flow + arithmetic"
+    }
+  ],
+  "completion_text": "def fib(n):\n    if n <= 0:\n        return \"Input should be a positive integer\"\n    elif n == 1:\n        return 0\n    elif n == 2:\n        return 1\n    else:\n        a, b = 0, 1\n        for i in range(2, n):\n            a, b = b, a + b\n        return b",
+  "ast_summary": {
+    "ast_parse": "OK",
+    "syntax_errors": 0,
+    "ast_node_count": 68,
+    "function_count": 1,
+    "function_names": ["fib"],
+    "node_kinds": [
+      "Add", "Assign", "BinOp", "Call", "Compare", "Constant", "Eq", "For",
+      "FunctionDef", "If", "Load", "LtE", "Module", "Name", "Return", "Store",
+      "Tuple", "arg", "arguments"
+    ]
+  },
+  "discharge_proof": {
+    "rule": "AC_SHIP1_002_MAX_TOLERATED_SYNTAX_ERRORS = 0",
+    "observed": 0,
+    "verdict": "Pass — observed (0) ≤ threshold (0); inequality holds at strict-equality boundary",
+    "ship_blocking": true,
+    "evidence_strength": "LIVE on canonical 7B teacher; reproducible via single apr run command"
+  },
+  "next_actions": [
+    "FALSIFY-QW2E-SHIP-005 (HumanEval pass@1): requires apr eval --benchmark humaneval (separate compute dispatch)",
+    "FALSIFY-QW2E-SHIP-007 (decode tps ≥ 30): requires apr bench tps measurement (separate dispatch)",
+    "FALSIFY-QA-SHIP-006 (apr qa 8 gates): requires apr qa run on canonical teacher",
+    "FALSIFY-CHAT-SHIP-008 (chat template render): requires apr run with chat template applied"
+  ]
+}
