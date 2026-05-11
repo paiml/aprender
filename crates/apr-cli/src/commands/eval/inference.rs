@@ -274,6 +274,19 @@ fn load_humaneval_tokenizer(
 }
 
 /// ALB-084: Run HumanEval with actual model inference + Python test execution.
+///
+/// PMAT-CODE-SHIP-005-FIX (2026-05-11): routed through `realizar::run_inference`
+/// + `OwnedQuantizedModel::from_apr` (the same working path that SHIP-002 +
+/// SHIP-006 + SHIP-008 LIVE-discharged) instead of the legacy
+/// `AprTransformer::forward_with_cache + AprKVCache` path. The legacy path
+/// produced 0/3 pass@1 on canonical 7B teacher smoke test (every problem
+/// FAIL); the run_inference path produces the canonical pairwise-comparison
+/// solution for HumanEval/0 (verified manually 2026-05-11 via `apr run`).
+///
+/// HumanEval prompts are raw Python code (with docstrings); we tokenize via
+/// embedded BPE and pass via `InferenceConfig::with_input_tokens` to bypass
+/// `prepare_tokens_apr`'s ChatML auto-wrap (which would wrap raw Python in
+/// `<|im_start|>user...` causing degenerate output).
 #[cfg(feature = "inference")]
 fn run_humaneval_inference(
     model_path: &Path,
@@ -281,27 +294,19 @@ fn run_humaneval_inference(
     _k_values: &[usize],
     json_output: bool,
 ) -> std::result::Result<(usize, Vec<(String, String, bool)>), String> {
-    use realizar::apr_transformer::AprKVCache;
+    use realizar::{run_inference, InferenceConfig};
 
     if !json_output {
         println!("  {} Loading model for inference...", "→".dimmed());
     }
-    let transformer = load_humaneval_model(model_path)?;
     let tokenizer = load_humaneval_tokenizer(model_path, json_output)?;
 
     if !json_output {
-        println!(
-            "  {} Model loaded ({} layers, vocab={})",
-            "✓".green(),
-            transformer.config.num_layers,
-            transformer.config.vocab_size
-        );
+        println!("  {} Tokenizer loaded", "✓".green());
     }
 
     let mut passed = 0usize;
     let mut results = Vec::new();
-    let temperature = 0.0f32;
-    let mut rng_state: u64 = 42;
 
     for (i, problem) in problems.iter().enumerate() {
         let entry = problem
@@ -316,37 +321,43 @@ fn run_humaneval_inference(
             continue;
         }
 
-        // Generate completion (greedy, max 256 tokens)
-        let mut cache = AprKVCache::new(&transformer.config);
-        let mut tokens = prompt_tokens.clone();
+        // Generate completion via run_inference (greedy, max 256 tokens).
+        // `with_input_tokens` bypasses `prepare_tokens_apr`'s ChatML auto-wrap
+        // — HumanEval prompts are raw Python and must NOT be wrapped.
+        let config = InferenceConfig::new(model_path)
+            .with_input_tokens(prompt_tokens.clone())
+            .with_max_tokens(256)
+            .with_temperature(0.0)
+            .with_top_k(1);
 
-        for (pos, &tok) in prompt_tokens.iter().enumerate() {
-            let _ = transformer.forward_with_cache(tok, &mut cache, pos);
-        }
-
-        let max_new = 256;
-        for step in 0..max_new {
-            let pos = prompt_tokens.len() + step;
-            let last_tok = *tokens.last().expect("last(");
-            let logits = transformer
-                .forward_with_cache(last_tok, &mut cache, pos)
-                .map_err(|e| format!("Generation failed: {e}"))?;
-
-            let next = sample_token(&logits, temperature, &mut rng_state);
-            tokens.push(next);
-
-            if next == 0 {
-                break;
-            }
-            if let Some(eos) = transformer.config.eos_token_id {
-                if next == eos {
-                    break;
+        let result = match run_inference(&config) {
+            Ok(r) => r,
+            Err(e) => {
+                if !json_output {
+                    eprintln!("  [FAIL] {} ({}): inference error: {e}", problem.task_id, entry);
                 }
-            }
-        }
+                results.push((problem.task_id.clone(), entry.to_string(), false));
+                continue;
+            },
+        };
 
-        let completion_tokens = &tokens[prompt_tokens.len()..];
-        let completion = tokenizer.decode(completion_tokens);
+        // run_inference's `result.text` is the FULL decoded sequence
+        // (prompt + completion). Slicing by the prompt string preserves
+        // exact byte boundaries — slicing by tokens introduces a leading-
+        // whitespace artifact when the prompt ends with `\n` and the
+        // first generated token decodes as a leading-space-prefixed run.
+        let completion = if let Some(stripped) = result.text.strip_prefix(&problem.prompt) {
+            stripped.to_string()
+        } else {
+            // Fallback: token-level slicing if text doesn't begin with the
+            // prompt verbatim (e.g., tokenizer-specific whitespace handling).
+            let completion_tokens = if result.tokens.len() > result.input_token_count {
+                &result.tokens[result.input_token_count..]
+            } else {
+                &result.tokens[..]
+            };
+            tokenizer.decode(completion_tokens)
+        };
         let completion = truncate_at_function_boundary(&completion);
 
         let full_program = format!(
