@@ -1,0 +1,79 @@
+{
+  "evidence_id": "SECTION-70-RC3-FIX-2026-05-12",
+  "session_date": "2026-05-12",
+  "summary": "§69 RC3 (format!() drops imports) CONFIRMED on gx10 HumanEval/1 via APR_EVAL_DEBUG=1, then FIX implemented (extract_prompt_preamble + ChatML-branch prepend), then DISCHARGED via 3/3 flip on §68's known-failed trio.",
+  "host": "gx10-a5b5 (Blackwell GB10, aarch64)",
+  "artifact": "/home/noah/src/apr-leaderboard/checkpoints/qwen2.5-coder-7b-instruct-q4k.apr",
+  "rc3_disambiguation": {
+    "binary_pre_fix": "apr 0.32.0 (3b59b434a) — diagnostic surface only",
+    "binary_post_fix": "apr 0.32.0 (b7e69bfc8) — RC3 fix included",
+    "humaneval_1_pre_fix": {
+      "exit_code": 1,
+      "success": false,
+      "stderr_head": "NameError: name 'List' is not defined. Did you mean: 'list'?",
+      "interpretation": "RC3 CONFIRMED: full_program drops 'from typing import List' from problem.prompt"
+    },
+    "humaneval_1_post_fix": {
+      "exit_code": 0,
+      "success": true,
+      "completion_len": 548,
+      "interpretation": "RC3 fix flipped HumanEval/1 from FAIL to PASS"
+    }
+  },
+  "rc_table": {
+    "rc1_model_state_leak": "FALSIFIED — apr eval emitted coherent 1031-byte response",
+    "rc2_false_negative": "FALSIFIED — python3 actually returned exit 1; harness reported correctly",
+    "rc3_format_bug": "CONFIRMED — full_program drops typing import from problem.prompt",
+    "rc4_max_tokens_truncation": "FALSIFIED — closing fence present, 524-char completion extracted"
+  },
+  "section_68_trio_smoke_post_fix": {
+    "task_ids": ["HumanEval/1", "HumanEval/3", "HumanEval/6"],
+    "pre_fix_verdict": {
+      "humaneval_1": "FAIL",
+      "humaneval_3": "FAIL",
+      "humaneval_6": "FAIL",
+      "source": "§68 (PR #1631)"
+    },
+    "post_fix_verdict": {
+      "humaneval_1": "PASS",
+      "humaneval_3": "PASS",
+      "humaneval_6": "PASS"
+    },
+    "flip_rate": "3/3 (100%)",
+    "interpretation": "All 3 §68 'Class B sampling/quantization' failures were actually RC3 import-stripping false-failures. §68's interpretation FALSIFIED."
+  },
+  "diagnostic_dumps": {
+    "humaneval_1": {
+      "completion_len": 548,
+      "exit_code": 0,
+      "success": true
+    },
+    "humaneval_3": {
+      "completion_len": 213,
+      "exit_code": 0,
+      "success": true
+    },
+    "humaneval_6": {
+      "completion_len": 418,
+      "exit_code": 0,
+      "success": true
+    }
+  },
+  "methodology_lesson_17_new": {
+    "name": "Pre-fix RED smoke can mask the bug class",
+    "description": "§68 ran a 3-problem smoke pre-fix with R1+R2 only and observed 0/3 flip. Conclusion at the time: 'failures are Class B (sampling/quantization)'. The TRUE failure class was Class C (harness-RC3) — invisible because R1+R2 doesn't touch the format!() at line 400. Lesson: a 0/N flip RATE in a smoke does NOT prove the failure class — it only proves the candidate fix doesn't move the needle. The class must be identified via diagnostic instrumentation (APR_EVAL_DEBUG=1), not inferred from a flip rate."
+  },
+  "ship_005_path": {
+    "pre_fix_pass_at_1": "80.49% (§67, gx10 164-run)",
+    "post_fix_expected_pass_at_1": "85-95% (3/3 of §68 trio flipped; HumanEval canonical set has ~70% typing-import usage in signatures)",
+    "ship_005_floor": "84.80% (AC-SHIP1-005)",
+    "discharge_condition": "post-fix pass@1 >= 84.80% on 164-problem set",
+    "next_action": "gx10 164-run dispatched (commit b7e69bfc8 binary, full canonical set, T=0.0); ~5h CPU wall, completion expected ~13:00 CEST"
+  },
+  "files_referenced": [
+    "crates/apr-cli/src/commands/eval/inference.rs::extract_prompt_preamble",
+    "crates/apr-cli/src/commands/eval/inference.rs::run_humaneval_inference (ChatML branch)",
+    "contracts/apr-eval-humaneval-harness-invariant-v1.yaml (v1.1.0 validation_result_v1_1)",
+    "evidence/section-69-harness-bug-2026-05-12/findings.json (prior session)"
+  ]
+}
