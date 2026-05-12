@@ -1,0 +1,53 @@
+{
+  "passed": 132,
+  "problems": 164,
+  "pass_at_k": [
+    {
+      "k": 1,
+      "rate": 0.8048780487804879
+    },
+    {
+      "k": 10,
+      "rate": 0.9999999779959476
+    },
+    {
+      "k": 100,
+      "rate": 1.0
+    }
+  ],
+  "failed_count": 32,
+  "failed_task_ids": [
+    "HumanEval/1",
+    "HumanEval/3",
+    "HumanEval/6",
+    "HumanEval/9",
+    "HumanEval/10",
+    "HumanEval/17",
+    "HumanEval/20",
+    "HumanEval/22",
+    "HumanEval/32",
+    "HumanEval/38",
+    "HumanEval/50",
+    "HumanEval/54",
+    "HumanEval/55",
+    "HumanEval/83",
+    "HumanEval/93",
+    "HumanEval/94",
+    "HumanEval/95",
+    "HumanEval/108",
+    "HumanEval/115",
+    "HumanEval/126",
+    "HumanEval/127",
+    "HumanEval/129",
+    "HumanEval/130",
+    "HumanEval/132",
+    "HumanEval/134",
+    "HumanEval/137",
+    "HumanEval/140",
+    "HumanEval/141",
+    "HumanEval/142",
+    "HumanEval/145",
+    "HumanEval/155",
+    "HumanEval/163"
+  ]
+}
