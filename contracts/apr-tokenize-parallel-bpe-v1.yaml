@@ -1,0 +1,260 @@
+metadata:
+  kind: schema
+  version: 1.2.0
+  status: ACTIVE
+  created: '2026-04-27'
+  updated: '2026-05-05'
+  author: PAIML Engineering
+  registry: false
+  references:
+  - 'SPEC-SHIP-TWO-001 §26.2 — corpus pipeline'
+  - 'SPEC-SHIP-TWO-001 §26.8 — apr is canonical, extend apr never CLI-shim'
+  - 'feedback_compute_pre_authorized.md — lambda-labs lane is open'
+  - 'GH-1547 — SHIP-TWO-001 5g.1: live encode at hour 47, single-thread'
+  description: >
+    Contract for parallelizing `apr tokenize encode-corpus` across multiple
+    CPU cores. Triggering observation 2026-04-27: P1.5 BPE encoding of a
+    760M-char Python+permissive JSONL corpus runs single-threaded at ~13K
+    tokens/sec on RTX 4090 host (48 cores available). Total encode time
+    ~4 hours for 190M tokens. With N-way parallelism, expected speedup
+    ~Nx (BPE is CPU-bound, no shared mutable state across rows).
+
+    v1.1.0 (2026-05-05): Implementation landed via GH-1547. Strategy
+    REVISED from "split input + N child encoders + post-hoc merge" to
+    "single-process chunked rayon": pull a CHUNK of docs, par_iter encode,
+    sequential write. Strictly safer (no shard renumbering, no merge step)
+    and just as fast for CPU-bound BPE. Flag is `--num-workers N` (operator
+    request, not `--workers`). Default is `available_parallelism`.
+
+    v1.2.0 (2026-05-05): GH-1547 piece 2 of 3 — operator-facing progress
+    emission. Added `--quiet`, `--progress-interval-docs <N>` (default
+    1000), `--progress-interval-seconds <S>` (default 60). The encode loop
+    emits a `[progress] doc=N/T tokens=K rate=X.X docs/s eta=...` line on
+    stderr when EITHER N docs OR S seconds have elapsed since the last
+    tick (OR-cadence). When the total document count is unknown (the
+    common case — counting up-front would double-walk the corpus), the
+    `/T` and `eta=` fragments are omitted. A final `[progress] done docs=
+    ... tokens=... elapsed=... rate=...` line is emitted at completion.
+    `--quiet` suppresses all stderr emission (the JSON manifest and stdout
+    summary still emit). Operator motivation: SHIP-TWO-001 5g.1 ran 47h
+    blind — there was no in-flight signal whether the encode was healthy
+    or near completion. ProgressEmitter is pure-functional under
+    should_emit/format_line, so unit tests pin OR-cadence + format
+    invariants without scraping stderr.
+
+equations:
+  parallel_correctness:
+    formula: |
+      Splitting the input JSONL into N chunks, encoding each chunk
+      independently with the SAME tokenizer, and concatenating the
+      output token streams MUST produce a token stream IDENTICAL to
+      the single-threaded encoding (modulo final-shard boundary).
+
+      ENC(jsonl_full, tok) ≡ concat(ENC(chunk_0, tok), ..., ENC(chunk_N-1, tok))
+
+      Where ENC encodes per-row independently (BPE has no cross-row state).
+    domain: BPE encoding determinism
+    codomain: bool
+    invariants:
+    - "BPE per-row encoding is independent (no cross-row context window)"
+    - "Same tokenizer + same row → same token sequence (deterministic)"
+    - "Concatenation order preserves input order"
+
+  in_process_chunked_rayon:
+    formula: |
+      v1.1.0 implementation — single-process chunked rayon (no shard
+      renumbering or merge needed):
+
+      1. Pull a CHUNK of K docs from the canonical input iterator
+         (preserves on-disk JSONL/parquet order).
+      2. Encode the chunk via rayon par_iter into a Vec<Result<...>>
+         indexed by chunk-local position (par_iter on Vec<T> preserves
+         output index order).
+      3. Drain the encoded vec into the open shard writer in chunk-local
+         order, applying eos_policy and rotating shards exactly as the
+         legacy single-threaded path does.
+      4. Repeat until the source iterator is exhausted.
+
+      This collapses v1.0.0's three-stage "split → fan-out encoders →
+      merge" pipeline into a single-pass loop. Memory is bounded by
+      `K * avg_doc_token_count * 4 bytes`. Chunk size K = 10_000 docs.
+    domain: in-process chunked parallelism
+    codomain: bool
+    invariants:
+    - "Output bytes are independent of worker count (byte-identical across N)"
+    - "Output shard naming is shard-{idx:05}.bin (same as legacy path)"
+    - "No temporary directories — one output dir, written incrementally"
+    - "Total tokens preserved exactly"
+
+  speedup_target:
+    formula: |
+      N-way parallel encoding wall_time ≤ (single_threaded_time / N) +
+      epsilon, where epsilon is fixed I/O+merge overhead bounded by
+      10 seconds independent of N.
+    domain: performance
+    codomain: bool
+    invariants:
+    - "speedup ≥ 0.8 × N for N ≤ min(num_cores, 8)"
+    - "merge step O(num_shards) not O(num_tokens)"
+
+  progress_or_cadence:
+    formula: |
+      v1.2.0 — operator progress emission obeys an OR-cadence: emit a
+      stderr line when EITHER `docs_seen - last_emit_docs >= interval_docs`
+      OR `wall_since_last_emit >= interval_seconds`. After an emit, BOTH
+      clocks reset (the next emit requires another full interval on
+      whichever bound triggers first).
+
+      should_emit(docs_seen, now) ≡
+        ¬quiet ∧ (
+          docs_seen - last_emit_docs ≥ interval_docs
+          ∨ (now - last_emit_time) ≥ interval_seconds
+        )
+
+      Format (when total_docs_hint = Some(T)):
+        [progress] doc={N}/{T} tokens={K} rate={X.X} docs/s eta={ISO-8601}
+      Format (when total_docs_hint = None):
+        [progress] doc={N} tokens={K} rate={X.X} docs/s
+      Final line:
+        [progress] done docs={N} tokens={K} elapsed={E}s rate={X.X} docs/s
+
+      `quiet=true` short-circuits should_emit/emit_tick/emit_final
+      regardless of doc/time window.
+    domain: progress emission predicate
+    codomain: bool
+    invariants:
+    - "quiet=true implies should_emit returns false unconditionally"
+    - "interval_docs OR interval_seconds threshold triggers emission"
+    - "mark_emitted resets BOTH the doc tick and the time tick"
+    - "format_line omits /T and eta= fragments when total_docs_hint is None"
+    - "emission goes to stderr; stdout JSON manifest is unaffected"
+
+falsification_tests:
+- id: FALSIFY-APR-TOK-PAR-001
+  rule: parallel encode produces byte-identical shards vs serial
+  prediction: "`--num-workers 4` and `--num-workers 1` produce shard-NNNNN.bin files that are byte-identical for the same JSONL input"
+  test: "crates/apr-cli/src/commands/tokenize.rs::tests::encode_corpus_num_workers_1_matches_num_workers_n_byte_for_byte"
+  status: DISCHARGED
+  if_fails: "parallel encoding diverges — chunk-internal ordering or shard rotation broke determinism"
+
+- id: FALSIFY-APR-TOK-PAR-002
+  rule: speedup ≥ 0.8N for 4-way
+  prediction: "4-way parallel on 4-core machine completes in ≤ 1.25× single-threaded / 4"
+  test: "operational measurement (issue #1547 retrain target: 17h → ~6h on 8-core)"
+  status: PARTIAL_OPERATIONAL_PENDING
+  if_fails: "parallelism overhead too high — likely due to fork-join cost or I/O contention"
+
+- id: FALSIFY-APR-TOK-PAR-003
+  rule: high worker counts don't crash or starve
+  prediction: "apr tokenize encode-corpus --num-workers 8 on 16-core machine succeeds (no OOM, no deadlock)"
+  test: "exit code = 0, output dir has expected shard count"
+  status: DISCHARGED_BY_CONSTRUCTION
+  if_fails: "parallelism causes resource exhaustion — workers must respect a memory budget"
+  notes: "Memory is bounded by CHUNK_SIZE × avg_doc_tokens × 4. Chunk drains before next pull."
+
+- id: FALSIFY-APR-TOK-PAR-004
+  rule: --num-workers flag is registered in clap surface
+  prediction: "`apr tokenize encode-corpus --help` output includes the literal string `--num-workers`"
+  test: "crates/apr-cli/tests/falsification_apr_tok_par_004.rs::falsify_apr_tok_par_004_help_advertises_num_workers_flag"
+  status: DISCHARGED
+  if_fails: "CLI surface drift — flag not registered in clap"
+
+- id: FALSIFY-APR-TOK-PAR-005
+  rule: --num-workers default equals available_parallelism
+  prediction: "resolve_num_workers(None) == std::thread::available_parallelism().get() (or 1 on cgroup-restricted hosts)"
+  test: "crates/apr-cli/src/commands/tokenize.rs::tests::encode_corpus_resolve_workers_default_is_available_parallelism"
+  status: DISCHARGED
+  if_fails: "default is hardcoded — operator gets surprising thread count on smaller machines"
+
+- id: FALSIFY-APR-TOK-PAR-006
+  rule: --num-workers 0 is a config error not a silent fallback
+  prediction: "resolve_num_workers(Some(0)) returns CliError::ValidationFailed naming the flag and the >= 1 bound"
+  test: "crates/apr-cli/src/commands/tokenize.rs::tests::encode_corpus_resolve_workers_rejects_zero"
+  status: DISCHARGED
+  if_fails: "operator typo silently coerced — typo class hidden"
+
+- id: FALSIFY-APR-TOK-PAR-007
+  rule: progress emit fires on doc-tick boundary even when seconds budget unused
+  prediction: "ProgressEmitter::should_emit returns true at docs_seen == interval_docs even when zero seconds have elapsed"
+  test: "crates/apr-cli/src/commands/tokenize.rs::tests::progress_emit_every_n_docs_when_under_seconds_window"
+  status: DISCHARGED
+  if_fails: "OR-cadence broken — doc-tick branch ignored, regression to silence"
+
+- id: FALSIFY-APR-TOK-PAR-008
+  rule: progress emit fires on time-tick boundary even when doc budget unused
+  prediction: "ProgressEmitter::should_emit returns true after interval_seconds elapsed even when docs_seen << interval_docs"
+  test: "crates/apr-cli/src/commands/tokenize.rs::tests::progress_emit_every_n_seconds_when_under_docs_window"
+  status: DISCHARGED
+  if_fails: "OR-cadence broken — time-tick branch ignored, slow encodes go silent"
+
+- id: FALSIFY-APR-TOK-PAR-009
+  rule: --quiet suppresses progress emission at the predicate layer
+  prediction: "ProgressEmitter::should_emit returns false unconditionally when quiet=true even at the trigger boundary for both bounds"
+  test: "crates/apr-cli/src/commands/tokenize.rs::tests::progress_quiet_flag_suppresses_emission"
+  status: DISCHARGED
+  if_fails: "--quiet ignored — CI logs become noisy; flag broken"
+
+- id: FALSIFY-APR-TOK-PAR-010
+  rule: progress format line obeys total/no-total fragment invariants
+  prediction: "format_line emits `doc=N/T ... eta=ISO-8601` when total_docs_hint=Some(T); emits `doc=N` without /T or eta= when total_docs_hint=None"
+  test: "crates/apr-cli/src/commands/tokenize.rs::tests::progress_format_line_no_total_omits_eta_fragment AND ::progress_format_line_with_total_includes_eta_fragment"
+  status: DISCHARGED
+  if_fails: "wire format drift — operator-facing line shape regresses"
+
+proof_obligations:
+- type: invariant
+  property: "parallel encoding preserves bit-exact tokenization vs serial"
+- type: invariant
+  property: "merged shard byte-stream concat-equals serial output"
+- type: termination
+  property: "no parallel worker hangs; merge step terminates in O(num_shards)"
+- type: completeness
+  property: "every input row appears in exactly one merged shard"
+- type: invariant
+  property: "v1.2.0 progress emitter obeys OR-cadence (doc OR time bound)"
+- type: invariant
+  property: "v1.2.0 --quiet suppresses emission at the predicate layer"
+
+verification_summary:
+  total_obligations: 6
+  proven: 0
+  tested: 6
+  status: discharged_unit
+  notes: |
+    Authored 2026-04-27 from observation that P1.5 BPE encoding ran single-
+    threaded at ~13K tokens/sec on a 48-core host. With 760M chars (~190M
+    tokens) to encode, single-threaded ETA was ~4 hours; 8-way parallelism
+    would have brought this to ~30 minutes.
+
+    v1.1.0 (2026-05-05, GH-1547): ACTIVE. Implementation landed in
+    `crates/apr-cli/src/commands/tokenize.rs::run_encode_corpus`. Strategy
+    revised from v1.0.0's "split + N-encoder + merge" to a strictly safer
+    single-pass chunked rayon loop:
+
+    1. `--num-workers N` clap flag on `apr tokenize encode-corpus`.
+       Default = `std::thread::available_parallelism()` (logical CPU count).
+       Some(0) is rejected as a config error.
+    2. Pull CHUNK_SIZE (10_000) docs from the canonical input iterator.
+    3. par_iter the chunk through tokenizer.encode → Vec<Result<...>>
+       indexed by chunk-local position.
+    4. Drain in chunk-local order into the open shard writer, applying
+       eos_policy and rotating shards exactly as the legacy single-thread
+       path does.
+    5. Repeat until iterator exhausted.
+
+    Live trigger: SHIP-TWO-001 5g.1 retrain encode running 47h on PID
+    2767124, projected 17h. Issue #1547. Falsifiers
+    FALSIFY-APR-TOK-PAR-001/004/005/006 DISCHARGED via unit tests in
+    `tokenize.rs::tests::encode_corpus_*`. -PAR-002 (operational speedup)
+    is PARTIAL_OPERATIONAL_PENDING — discharged once the next encode run
+    posts wall-clock evidence ≤ 6h on the same corpus. -PAR-003
+    (no-crash at high worker count) is DISCHARGED_BY_CONSTRUCTION via the
+    bounded-memory chunk loop.
+
+    v1.2.0 (2026-05-05, GH-1547 piece 2): adds `--quiet`,
+    `--progress-interval-docs`, `--progress-interval-seconds`. Falsifiers
+    FALSIFY-APR-TOK-PAR-007/008/009/010 DISCHARGED via 6 new unit tests
+    in `tokenize.rs::tests::progress_*` covering should_emit OR-cadence,
+    format_line no-total / with-total invariants, --quiet suppression,
+    and mark_emitted clock-reset semantics. Both single-thread and
+    chunked-rayon paths emit identically.

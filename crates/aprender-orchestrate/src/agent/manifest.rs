@@ -5,7 +5,7 @@
 //! granted capabilities (Poka-Yoke), and privacy tier.
 
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::capability::Capability;
 use crate::serve::backends::PrivacyTier;
@@ -220,14 +220,25 @@ impl ModelConfig {
             return None;
         }
 
-        // Sort: valid first, then newest mtime (user intent), then APR preferred.
+        // Sort: valid → preferred-name → newest mtime → APR format (tiebreaker).
+        //
         // PMAT-185: mtime before format — the model the user most recently
-        // downloaded is more likely their intended default. A valid-but-broken-
-        // for-tool-use APR should not shadow a newer GGUF with better quality.
+        // downloaded is more likely their intended default.
+        //
+        // Default-model preference (added 2026-04-28): when the user has
+        // pulled the recommended `apr code` default
+        // (Qwen3-Coder-30B-A3B-Instruct), prefer it over a newer-but-smaller
+        // model. The 4090's 24 GB capacity rewards the larger model, and the
+        // small fallback hits PMAT-190 thinking-loop bugs that emit gibberish
+        // — bad UX even though mtime says it's "newest". See
+        // `is_preferred_default_model` for the canonical name list.
         candidates.sort_by(|a, b| {
-            b.3.cmp(&a.3) // valid preferred (true > false)
-                .then_with(|| b.1.cmp(&a.1)) // newest first (user intent)
-                .then_with(|| b.2.cmp(&a.2)) // APR preferred as tiebreaker
+            let a_pref = is_preferred_default_model(&a.0);
+            let b_pref = is_preferred_default_model(&b.0);
+            b.3.cmp(&a.3) // valid preferred
+                .then_with(|| b_pref.cmp(&a_pref)) // preferred-name first
+                .then_with(|| b.1.cmp(&a.1)) // newest mtime
+                .then_with(|| b.2.cmp(&a.2)) // APR format (tiebreaker)
         });
 
         Some(candidates[0].0.clone())
@@ -235,15 +246,18 @@ impl ModelConfig {
 
     /// Sort model candidates by priority. Extracted for contract testing (PMAT-188).
     ///
-    /// Sort order: valid > newest mtime > APR format (tiebreaker only).
+    /// Sort order: valid > preferred-name > newest mtime > APR format.
     #[cfg(test)]
     pub(crate) fn sort_candidates(
         candidates: &mut [(std::path::PathBuf, std::time::SystemTime, bool, bool)],
     ) {
         candidates.sort_by(|a, b| {
-            b.3.cmp(&a.3) // valid preferred
-                .then_with(|| b.1.cmp(&a.1)) // newest first
-                .then_with(|| b.2.cmp(&a.2)) // APR tiebreaker
+            let a_pref = is_preferred_default_model(&a.0);
+            let b_pref = is_preferred_default_model(&b.0);
+            b.3.cmp(&a.3)
+                .then_with(|| b_pref.cmp(&a_pref))
+                .then_with(|| b.1.cmp(&a.1))
+                .then_with(|| b.2.cmp(&a.2))
         });
     }
 
@@ -252,6 +266,12 @@ impl ModelConfig {
         let mut dirs = Vec::new();
         if let Some(home) = dirs::home_dir() {
             dirs.push(home.join(".apr").join("models"));
+            // `apr pull` writes content-addressed files here. Names are
+            // hashes (e.g. `2b88b180a790988f.gguf`) so they won't trip
+            // the preferred-name filter on their own — pair with a
+            // friendly symlink in `~/.apr/models/` for default-discovery
+            // to pick the recommended model.
+            dirs.push(home.join(".cache").join("pacha").join("models"));
             dirs.push(home.join(".cache").join("huggingface"));
         }
         dirs.push(PathBuf::from("./models"));
@@ -307,6 +327,36 @@ impl ModelConfig {
 
         Ok(target_path)
     }
+}
+
+/// Whether a discovered model file matches one of the recommended
+/// `apr code` defaults. Used by [`ModelConfig::discover_model`] to
+/// jump preferred models ahead of newer-but-smaller models in the
+/// discovery sort order.
+///
+/// As of 2026-04-28 the canonical default is
+/// `Qwen3-Coder-30B-A3B-Instruct` at Q4_K_M (~17–19 GB depending on
+/// quant variant) — see the `qwen3-coder` alias in
+/// `aprender-registry/src/aliases.rs`. Match is case-insensitive
+/// substring against the file basename, so a friendly symlink in
+/// `~/.apr/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf` pointing
+/// at a content-hashed file in `~/.cache/pacha/models/` is the
+/// idiomatic way to opt in.
+fn is_preferred_default_model(path: &Path) -> bool {
+    const PREFERRED_NAME_TOKENS: &[&str] = &[
+        // Primary: Qwen3-Coder-30B-A3B-Instruct (any quant).
+        "qwen3-coder-30b-a3b",
+        // Secondary fallbacks (still 4090-appropriate; any of these
+        // beats a 1-2 B fallback).
+        "qwen3-coder-next",
+        "qwen2.5-coder-32b",
+        "qwen2.5-coder-14b",
+    ];
+    let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+        return false;
+    };
+    let name_lc: String = name.to_ascii_lowercase();
+    PREFERRED_NAME_TOKENS.iter().any(|token| name_lc.contains(token))
 }
 
 /// Errors from model auto-pull operations.

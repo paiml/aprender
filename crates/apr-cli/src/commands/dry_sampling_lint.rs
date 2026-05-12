@@ -177,12 +177,12 @@ fn params_fail_reason(o: &clf::DryParamOutcome) -> Option<String> {
         clf::DryParamOutcome::MultiplierNegative { multiplier } => Some(format!(
             "FALSIFY-CRUX-C-23-001 params: multiplier={multiplier} < 0.0"
         )),
-        clf::DryParamOutcome::BaseBelowOne { base } => Some(format!(
-            "FALSIFY-CRUX-C-23-001 params: base={base} < 1.0"
-        )),
-        clf::DryParamOutcome::AllowedLengthZero => Some(
-            "FALSIFY-CRUX-C-23-001 params: allowed_length == 0".to_string(),
-        ),
+        clf::DryParamOutcome::BaseBelowOne { base } => {
+            Some(format!("FALSIFY-CRUX-C-23-001 params: base={base} < 1.0"))
+        }
+        clf::DryParamOutcome::AllowedLengthZero => {
+            Some("FALSIFY-CRUX-C-23-001 params: allowed_length == 0".to_string())
+        }
     }
 }
 

@@ -1,0 +1,24 @@
+Loading APR:  /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr
+Loading GGUF: /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.gguf
+
+>>> Comparing LAYER 3 Q4K weight bytes <<<
+
+=== ffn_gate.weight Q4K ===  APR len=38191104 bytes, GGUF len=38191104 bytes
+  ✓ APR ≡ GGUF byte-for-byte (38191104 bytes match)
+
+=== ffn_up.weight Q4K ===  APR len=38191104 bytes, GGUF len=38191104 bytes
+  ✓ APR ≡ GGUF byte-for-byte (38191104 bytes match)
+
+=== ffn_down.weight Q4K ===  APR len=38191104 bytes, GGUF len=38191104 bytes
+  ✓ APR ≡ GGUF byte-for-byte (38191104 bytes match)
+
+
+>>> Sanity: LAYER 0 ffn_gate (should be OK if §30/§31 chain holds) <<<
+
+=== layer0 ffn_gate.weight Q4K ===  APR len=38191104 bytes, GGUF len=38191104 bytes
+  ✓ APR ≡ GGUF byte-for-byte (38191104 bytes match)
+
+=== INTERPRETATION ===
+If layer-3 ffn_gate bytes match: bug is NOT in the converter — it's in the
+forward path (likely a layer-3-specific code path or a trace-capture site).
+If layer-3 ffn_gate bytes differ: bug IS in the GGUF→APR converter at layer 3.

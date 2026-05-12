@@ -341,8 +341,7 @@ mod tests {
         let shape = qwen25_coder_7b();
         // Typical RTX 4090: 24 GiB free.
         let free = 24u64 * 1024 * 1024 * 1024;
-        let d = select_auto_quant(shape, &all_quants(), free, 2048, DEFAULT_SAFETY_FACTOR)
-            .unwrap();
+        let d = select_auto_quant(shape, &all_quants(), free, 2048, DEFAULT_SAFETY_FACTOR).unwrap();
         assert!(decision_respects_budget(&d));
     }
 
@@ -352,8 +351,7 @@ mod tests {
         // higher-quality quant fits within budget.
         let shape = qwen25_coder_7b();
         let free = 16u64 * 1024 * 1024 * 1024; // 16 GiB — tighter
-        let d = select_auto_quant(shape, &all_quants(), free, 8192, DEFAULT_SAFETY_FACTOR)
-            .unwrap();
+        let d = select_auto_quant(shape, &all_quants(), free, 8192, DEFAULT_SAFETY_FACTOR).unwrap();
         assert!(decision_is_argmax(&d));
     }
 
@@ -363,12 +361,10 @@ mod tests {
         // ctx_len never raises the selected quant's quality_rank.
         let shape = qwen25_coder_7b();
         let free = 12u64 * 1024 * 1024 * 1024;
-        let a = select_auto_quant(shape, &all_quants(), free, 2048, DEFAULT_SAFETY_FACTOR)
-            .unwrap();
-        let b = select_auto_quant(shape, &all_quants(), free, 4096, DEFAULT_SAFETY_FACTOR)
-            .unwrap();
-        let c = select_auto_quant(shape, &all_quants(), free, 32768, DEFAULT_SAFETY_FACTOR)
-            .unwrap();
+        let a = select_auto_quant(shape, &all_quants(), free, 2048, DEFAULT_SAFETY_FACTOR).unwrap();
+        let b = select_auto_quant(shape, &all_quants(), free, 4096, DEFAULT_SAFETY_FACTOR).unwrap();
+        let c =
+            select_auto_quant(shape, &all_quants(), free, 32768, DEFAULT_SAFETY_FACTOR).unwrap();
         let rank_a = a.selected.map(|q| q.quality_rank()).unwrap_or(0);
         let rank_b = b.selected.map(|q| q.quality_rank()).unwrap_or(0);
         let rank_c = c.selected.map(|q| q.quality_rank()).unwrap_or(0);
@@ -414,8 +410,7 @@ mod tests {
         // 7B F16 won't fit in 4 GiB.
         let shape = qwen25_coder_7b();
         let free = 4u64 * 1024 * 1024 * 1024;
-        let d = select_auto_quant(shape, &[QuantTag::F16], free, 2048, 0.9)
-            .unwrap();
+        let d = select_auto_quant(shape, &[QuantTag::F16], free, 2048, 0.9).unwrap();
         assert!(d.selected.is_none(), "expected cpu_fallback");
         assert!(d.candidates.iter().all(|c| !c.fits));
         assert!(decision_is_argmax(&d));

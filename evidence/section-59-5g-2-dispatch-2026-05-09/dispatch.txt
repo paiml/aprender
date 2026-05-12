@@ -1,0 +1,30 @@
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  apr pretrain — SHIP-TWO-001 MODEL-2 training loop
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+=== Configuration ===
+    Dataset: /mnt/nvme-raid0/data/codeparrot-python-permissive-shards-qwen
+    Tokenizer: /tmp/qwen-0.5b-tokenizer-extracted
+    Run dir: /mnt/nvme-raid0/runs/5g-2-live-500step-2026-05-09
+    LR max: 5.00e-5
+    Total steps: 500
+    Warmup steps: 100
+    Batch × seq: 4 × 512
+    Steps / epoch: 100
+    Seed: 42
+    Target val_loss: 2.20
+
+    Device: cuda:0
+
+  GPU: NVIDIA GeForce RTX 4090 (25.2 GB)
+  ✓ 24 transformer blocks uploaded to GPU
+  ✓ GPU training state allocated (LM head: 544.5 MB)
+  ✓ Fused gradient clipping: 1506 partials (5.9 KB)
+
+=== Run Result ===
+  OK CONVERGED  final val_loss=0.0008 after 3 epoch(s)
+    Steps recorded: 300
+    Epochs recorded: 3
+

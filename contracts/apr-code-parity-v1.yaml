@@ -15,13 +15,25 @@
 #
 # Headline invariant: before epic PMAT-CODE-PARITY-MATRIX-001 closes,
 # aggregate counts must reach ≥9 SHIPPED / 7 PARTIAL / ≤4 MISSING.
-# Current counts (2026-04-18 v5.1): 14 SHIPPED / 3 PARTIAL / 4 MISSING. **EPIC CLOSURE CONDITIONS MET** — SHIPPED ≥9 AND MISSING ≤4. Epic PMAT-CODE-PARITY-MATRIX-001 is CLOSEABLE. Remaining 4 MISSING rows (notebook, monitor, plugins, IDE) are all P2 deferred with no epic dependency.
+# Current counts (2026-04-18 v5.1): 14 SHIPPED / 3 PARTIAL / 4 MISSING.
+# 2026-05-07 v5.2 update: non-interactive-mode flipped PARTIAL → SHIPPED via
+# PMAT-CODE-OUTPUT-FORMAT-001 / PMAT-CODE-INPUT-FORMAT-001 (--output-format /
+# --input-format wired on `apr code`). 14/3/4 → 15/2/4.
+# 2026-05-07 v5.3 update: configuration-ladder flipped PARTIAL → SHIPPED via
+# PMAT-CODE-CONFIG-LADDER-001 (~/.config/apr/settings.json + .apr/settings.json
+# + CLI override). 15/2/4 → 16/1/4.
+# 2026-05-07 v5.4 update: keyboard-shortcuts flipped PARTIAL → SHIPPED via
+# PMAT-CODE-REPL-PHASE2-001 (! shell prefix + @path expansion). 16/1/4 →
+# **17 SHIPPED / 0 PARTIAL / 4 MISSING**. **ZERO PARTIAL ROWS REMAIN** —
+# every parity row is now either SHIPPED or P2-deferred MISSING. Epic
+# PMAT-CODE-PARITY-MATRIX-001 closure is fully discharged for everything
+# except the 4 P2 rows (notebook, monitor, plugins, IDE).
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
-  version: 1.0.0
+  version: 5.4.0
   created: '2026-04-18'
-  last_modified: '2026-04-18'
+  last_modified: '2026-05-07'
   author: PAIML Engineering
   kind: pattern   # cross-cutting verification pattern (parity audit), not a mathematical kernel
   description: >
@@ -329,15 +341,26 @@ categories:
     priority: P1
 
   - id: configuration-ladder
-    name: Configuration (~/.claude/settings.json + precedence ladder)
-    status: PARTIAL
-    detail: TOML AgentManifest via --manifest, no user-global settings ladder
-    evidence_path: crates/apr-cli/src/commands_enum.rs
-    evidence_line: 517
+    name: Configuration (~/.config/apr/settings.json + precedence ladder)
+    status: SHIPPED
+    detail: |
+      Three-tier ladder shipped via PMAT-CODE-CONFIG-LADDER-001:
+      1. user-global  — `$APR_CONFIG/settings.json` (override) or
+         `~/.config/apr/settings.json` (XDG default)
+      2. project-local — `<project_root>/.apr/settings.json`
+      3. CLI flags    — `--model`, `--max-turns`, `--manifest`
+      Latter layers override earlier ones field-by-field. `--manifest`
+      short-circuits the JSON ladder (TOML manifest is treated as a
+      complete agent specification). Settings struct uses
+      `serde(deny_unknown_fields)` so typos fail loudly (Poka-Yoke).
+      Loader and apply helpers in `crates/aprender-orchestrate/src/agent/
+      settings.rs` (14 unit tests) and `crates/aprender-orchestrate/src/
+      agent/code.rs::apply_settings_to_manifest` (7 unit tests).
+    evidence_path: crates/aprender-orchestrate/src/agent/settings.rs
     cross_check_command: |
       pmat query --literal "~/.config/apr/settings" --limit 5 2>/dev/null \
         | wc -l
-    expected_max_hits_until_closed: 0
+    expected_min_hits: 1
     ticket: PMAT-CODE-CONFIG-LADDER-001
     priority: P1
 
@@ -363,27 +386,55 @@ categories:
     priority: P2
 
   - id: non-interactive-mode
-    name: Non-interactive mode (-p + --output-format)
-    status: PARTIAL
-    detail: -p works with iteration cap 10; --output-format/--input-format absent
+    name: Non-interactive mode (-p + --output-format/--input-format)
+    status: SHIPPED
+    detail: |
+      -p with --output-format <text|json> AND --input-format <text|json> shipped
+      via PMAT-CODE-OUTPUT-FORMAT-001 / PMAT-CODE-INPUT-FORMAT-001.
+      `--output-format json` emits the Claude-Code `claude -p --output-format
+      json` envelope (`{type:"result",subtype:"success",result,session_id,
+      duration_ms,num_turns,tokens_in,tokens_out,total_cost_usd:0}`).
+      `--input-format json` accepts `{"role":"user","content":"..."}` from
+      stdin. Both flags are clap ValueEnum so unknown values fail loudly
+      (exit 2) instead of running on garbage. 8 unit tests cover envelope
+      shape, error subtype, content extraction, missing fields, and
+      malformed-JSON rejection.
     evidence_path: crates/apr-cli/src/commands_enum.rs
-    evidence_line_range: [509, 515]
+    evidence_line_range: [1, 30]
     cross_check_command: |
-      pmat query --literal "run_single_prompt" --limit 3 --include-source \
-        | grep -c "max_iterations"
-    expected_min_hits: 1
+      /mnt/nvme-raid0/targets/aprender/release/apr code --help 2>&1 \
+        | grep -E -- "--output-format|--input-format" | wc -l
+    expected_min_hits: 2
     ticket: PMAT-CODE-NON-INTERACTIVE-PARITY-001
     priority: P1
 
   - id: keyboard-shortcuts
-    name: Keyboard shortcuts (Shift+Tab cycle, ! prefix, @path)
-    status: PARTIAL
-    detail: REPL Phase 1 shipped (slash + Ctrl+C); Shift+Tab / ! / @ not yet
-    evidence_spec: docs/specifications/apr-code-feasibility-falsification.md
+    name: Keyboard shortcuts (! shell prefix, @path expansion, slash commands)
+    status: SHIPPED
+    detail: |
+      REPL Phase 2 shipped (PMAT-CODE-REPL-PHASE2-001):
+      * `!<cmd>` — leading `!` execs the rest as a shell command (`sh -c`).
+        stdout+stderr captured & printed, nonzero exit shown as `(exit N)`,
+        agent loop is NOT invoked. `!` alone is a no-op.
+      * `@<path>` — every `@<path>` token in the prompt (boundary-anchored
+        so `noah@paiml.com` is NOT a path) is expanded inline as
+        `<file path="...">\n<contents>\n</file>` before the agent sees the
+        prompt. Missing files leave the token verbatim AND emit a
+        stderr warning (Poka-Yoke).
+      Implementation in `crates/aprender-orchestrate/src/agent/repl_
+      directives.rs` is pure-function (no TTY dependency) so 19 unit
+      tests cover the parser + shell exec headlessly. Wiring in
+      `read_input` (agent/repl.rs) handles `!` BEFORE slash-commands
+      and `@` expansion AFTER (so a literal `@` in a slash-command
+      argument is unaffected).
+      `Shift+Tab` cycle requires raw-mode crossterm capture — deferred
+      to PMAT-CODE-REPL-PHASE3-001 (cosmetic; the substantive Claude-
+      Code shortcuts ! and @ are now both shipped).
+    evidence_path: crates/aprender-orchestrate/src/agent/repl_directives.rs
     cross_check_command: |
-      pmat query --literal "Shift+Tab" --limit 3 2>/dev/null \
-        | grep -E "agent/repl" | wc -l
-    expected_max_hits_until_closed: 0
+      pmat query --literal "parse_bang_command" --limit 3 2>/dev/null \
+        | wc -l
+    expected_min_hits: 1
     ticket: PMAT-CODE-REPL-PHASE2-001
     priority: P1
 

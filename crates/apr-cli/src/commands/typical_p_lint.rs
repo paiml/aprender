@@ -134,15 +134,15 @@ fn classify_renorm(obs: &Value) -> Option<clf::RenormOutcome> {
 fn range_fail_reason(o: &clf::TypicalPRangeOutcome) -> Option<String> {
     match o {
         clf::TypicalPRangeOutcome::Valid => None,
-        clf::TypicalPRangeOutcome::NotFinite => Some(
-            "FALSIFY-CRUX-C-22-001 range: p is not finite".to_string(),
-        ),
+        clf::TypicalPRangeOutcome::NotFinite => {
+            Some("FALSIFY-CRUX-C-22-001 range: p is not finite".to_string())
+        }
         clf::TypicalPRangeOutcome::BelowMinimum { p } => Some(format!(
             "FALSIFY-CRUX-C-22-001 range: p={p} <= 0.0 (must be > 0)"
         )),
-        clf::TypicalPRangeOutcome::AboveMaximum { p } => Some(format!(
-            "FALSIFY-CRUX-C-22-001 range: p={p} > 1.0"
-        )),
+        clf::TypicalPRangeOutcome::AboveMaximum { p } => {
+            Some(format!("FALSIFY-CRUX-C-22-001 range: p={p} > 1.0"))
+        }
     }
 }
 
@@ -167,7 +167,10 @@ fn mass_fail_reason(o: &clf::MassCoverageOutcome) -> Option<String> {
         clf::MassCoverageOutcome::InvalidInput { reason } => Some(format!(
             "FALSIFY-CRUX-C-22-002 mass: invalid input: {reason}"
         )),
-        clf::MassCoverageOutcome::InsufficientMass { kept_mass, required } => Some(format!(
+        clf::MassCoverageOutcome::InsufficientMass {
+            kept_mass,
+            required,
+        } => Some(format!(
             "FALSIFY-CRUX-C-22-002 mass: kept_mass={kept_mass} < required={required}"
         )),
         clf::MassCoverageOutcome::TooLarge { kept_mass, excess } => Some(format!(

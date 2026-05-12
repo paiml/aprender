@@ -1,0 +1,150 @@
+metadata:
+  kind: schema
+  version: 1.0.0
+  status: PROPOSED
+  created: '2026-05-02'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'SPEC-SHIP-TWO-001 §26.8 — apr is canonical, extend apr never CLI-shim'
+  - 'feedback_stack_tool_extension_not_cli_shim.md — apr-extend rule, 2026-04-27'
+  - 'contracts/pretokenize-bin-v1.yaml (peer — defines binary shard format)'
+  - 'contracts/dataset-thestack-python-v1.yaml (peer — Stack v1.2 parquet schema)'
+  - 'crates/apr-cli/src/commands/tokenize_parquet.rs (implementation)'
+  - 'crates/apr-cli/src/commands/tokenize.rs::run_encode_corpus (dispatcher)'
+  description: >
+    Extends `apr tokenize encode-corpus` to accept parquet shards as input,
+    not just JSONL. The Stack v1.2 (`bigcode/the-stack-dedup`) and
+    codeparrot Python corpora ship as parquet; without this extension,
+    callers must shell out to `uv run --with pyarrow` to convert
+    parquet → JSONL — exactly the kind of CLI-shim that
+    `feedback_stack_tool_extension_not_cli_shim.md` flags as muda.
+    The producer-side change closes the parquet input path; the consumer
+    side (ShardBatchIter binary shard format) is unchanged and remains
+    governed by `pretokenize-bin-v1.yaml`.
+
+equations:
+  parquet_input_signature:
+    formula: |
+      `apr tokenize encode-corpus --corpus <PATH>` MUST accept either a
+      single parquet file, a single JSONL file, or a directory containing
+      either format. Detection is by file extension:
+        - `.parquet` (case-insensitive) → parquet adapter
+        - `.jsonl`                       → legacy JSONL adapter
+      Directory mode prefers parquet when both extensions are present
+      (parquet is the new path; JSONL is legacy).
+    domain: crates/apr-cli/src/commands/tokenize.rs::collect_corpus_files
+    codomain: (Vec<PathBuf>, CorpusFormat)
+    invariants:
+    - "Single .parquet file → parquet path"
+    - "Single .jsonl file → JSONL path"
+    - "Directory with parquet shards → parquet path"
+    - "Directory with only JSONL → JSONL path"
+    - "Empty directory or unsupported extension → fail-fast error"
+    - "Existing JSONL behavior unchanged for back-compat"
+
+  parquet_row_streaming:
+    formula: |
+      Parquet shards are read via Apache Arrow's `ParquetRecordBatchReaderBuilder`,
+      one RecordBatch at a time. Rows are extracted from the column named
+      by --content-field (default: "content"). Null rows are skipped (matching
+      JSONL's "skip lines without content field" behavior). Rows are yielded
+      as owned `String` values directly into the existing tokenizer encode loop.
+    domain: parquet shard → text iterator
+    codomain: Iterator<Result<String>>
+    invariants:
+    - "One row group at a time — peak memory bounded by row-group size"
+    - "Utf8 and LargeUtf8 array types both supported"
+    - "Null cells are silently skipped"
+    - "Missing column → fail-fast error with available columns listed"
+    - "Non-Utf8 column type → fail-fast error"
+
+  manifest_format_traceability:
+    formula: |
+      The `manifest.json` written by encode-corpus MUST record an
+      `input_format` field with value `"parquet"` or `"jsonl"`, alongside
+      the existing `input_files` list. This makes the producer's source
+      format discoverable downstream (e.g., training-loop sanity checks,
+      provenance audits).
+    domain: pretokenize manifest schema
+    codomain: bool
+    invariants:
+    - "manifest.input_format ∈ {'parquet', 'jsonl'}"
+    - "manifest.input_files is unchanged in semantics"
+    - "All other manifest fields backward-compatible"
+
+  no_python_shim:
+    formula: |
+      Per `feedback_stack_tool_extension_not_cli_shim.md`: invoking a
+      Python pyarrow conversion before encode-corpus is forbidden. The
+      apr binary alone, with its compiled-in parquet+arrow-array deps,
+      MUST be sufficient to round-trip Stack v1.2 / codeparrot parquet
+      shards into the binary shard format defined by pretokenize-bin-v1.
+    domain: apr-extend rule
+    codomain: bool
+    invariants:
+    - "No external dependency on `uv`, `python`, `pyarrow`, or `huggingface-cli`"
+    - "`cargo install aprender` followed by `apr tokenize encode-corpus` is sufficient"
+    - "Same binary handles both JSONL and parquet without rebuild"
+
+falsification_tests:
+- id: FALSIFY-PARQ-INPUT-001
+  rule: parquet single-file input is recognized
+  prediction: "`apr tokenize encode-corpus --corpus <file>.parquet ...` dispatches to parquet path; manifest.input_format == 'parquet'"
+  test: "Live: build with cargo, run on a small synthetic parquet shard with 'content' column, assert manifest.input_format=='parquet'"
+  if_fails: "Format detection broken — parquet falls through to JSONL collector and errors with 'Corpus file is not a .jsonl file'"
+  binds_to: parquet_input_signature
+  status: PARTIAL_ALGORITHM_LEVEL
+  algorithm_evidence:
+    - "tokenize_parquet::is_parquet — case-insensitive extension check (unit test: is_parquet_recognises_extension_case_insensitive)"
+    - "tokenize::collect_corpus_files — extension-based dispatch returns CorpusFormat::Parquet for single .parquet file"
+
+- id: FALSIFY-PARQ-INPUT-002
+  rule: parquet content column is streamed correctly
+  prediction: "iter_parquet_content yields each non-null row of the configured column as String"
+  test: "tokenize_parquet::tests::iter_parquet_content_yields_each_row + iter_parquet_content_skips_null_rows"
+  if_fails: "Tokenizer either misses rows (silent data loss) or panics on null cells (corpus pipeline brittle)"
+  binds_to: parquet_row_streaming
+  status: PARTIAL_ALGORITHM_LEVEL
+  algorithm_evidence:
+    - "tokenize_parquet::parquet_string_iter — Arrow RecordBatch flat_map with StringArray + LargeStringArray downcast paths"
+    - "Null cells filtered via Array::is_null"
+    - "Unit tests: iter_parquet_content_yields_each_row, iter_parquet_content_skips_null_rows"
+
+- id: FALSIFY-PARQ-INPUT-003
+  rule: missing content column fails fast with helpful message
+  prediction: "Parquet without the requested --content-field column errors with available column names listed, exits non-zero"
+  test: "tokenize_parquet::tests::iter_parquet_content_unknown_column_errors_with_helpful_message"
+  if_fails: "Silent data loss or unhelpful generic error — operator cannot diagnose schema mismatch"
+  binds_to: parquet_row_streaming
+  status: PARTIAL_ALGORITHM_LEVEL
+  algorithm_evidence:
+    - "iter_parquet_content uses schema.index_of and surfaces available column names in the error string"
+    - "Unit test asserts error contains both the requested column name and the actual schema"
+
+- id: FALSIFY-PARQ-INPUT-004
+  rule: directory-mode prefers parquet when both formats present
+  prediction: "Directory containing .parquet shards picks parquet, ignores any JSONL siblings; pure-JSONL directory still works"
+  test: "Live: directory with mixed extensions tokenizes via parquet path"
+  if_fails: "Mixed-format directory ambiguity → user-visible nondeterminism in which adapter handles their corpus"
+  binds_to: parquet_input_signature
+  status: PARTIAL_ALGORITHM_LEVEL
+  algorithm_evidence:
+    - "tokenize::collect_corpus_files: parquet probe runs first; CorpusFormat::Jsonl returned only when parquet is empty"
+    - "tokenize_parquet::tests::collect_parquet_files_directory_filters_and_sorts (parquet collector ignores .json siblings)"
+
+proof_obligations:
+  - type: bound
+    property: "Producer accepts both .parquet and .jsonl extensions"
+    formal: "∀ ext ∈ {'parquet', 'jsonl'}, collect_corpus_files(any_file_with_ext) → Ok(_)"
+    applies_to: all
+  - type: equivalence
+    property: "JSONL-input behavior unchanged from pre-extension baseline"
+    formal: "encode_corpus(jsonl_corpus) ≡ pre_change_encode_corpus(jsonl_corpus)"
+    applies_to: all
+  - type: equivalence
+    property: "Round-trip through parquet is lossless at the text level"
+    formal: "for_each_row(parquet_with_content_field) ≡ tokenizer.encode(content_value)"
+    applies_to: all
+
+equations_extra: {}

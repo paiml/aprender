@@ -1,0 +1,37 @@
+{
+  "evidence_id": "task-132/version-json-schema-20260424",
+  "contract": "contracts/entrenar/gpu-training-backend-v1.yaml",
+  "falsification_id": "FALSIFY-GPUTRAIN-007",
+  "spec_ac": "AC_GPUTRAIN_007_REQUIRED_VERSION_JSON_KEYS = [\"cuda_feature\", \"cuda_runtime_available\", \"visible_devices\"]",
+  "date": "2026-04-24",
+  "host": "noah-Lambda-Vector (RTX 4090, driver 570.207, CUDA 12.8)",
+  "apr_binary": "/mnt/nvme-raid0/targets/aprender/release/apr (HEAD + version-json hook)",
+  "probe": {
+    "command": "apr --version --json",
+    "output": {
+      "cuda_feature": true,
+      "cuda_runtime_available": true,
+      "git_sha": "b1ccb7285",
+      "name": "apr",
+      "version": "0.31.2",
+      "visible_devices": ["0"]
+    }
+  },
+  "verdict_checks": {
+    "verdict_from_version_json_keys": {
+      "input_keys": ["name", "version", "git_sha", "cuda_feature", "cuda_runtime_available", "visible_devices"],
+      "required": ["cuda_feature", "cuda_runtime_available", "visible_devices"],
+      "all_required_present": true,
+      "verdict": "Pass"
+    },
+    "verdict_from_version_json_fields": {
+      "cuda_feature": true,
+      "cuda_runtime_available": true,
+      "visible_devices_count": 1,
+      "visible_devices_count_within_limit_16": true,
+      "claims_feature_without_runtime": false,
+      "verdict": "Pass"
+    }
+  },
+  "outcome": "FALSIFY-GPUTRAIN-007 DISCHARGED — `apr --version --json` emits all 3 required keys with correct types; 1 visible device (RTX 4090) within the 16-device grammar limit; no feature-without-runtime inconsistency."
+}

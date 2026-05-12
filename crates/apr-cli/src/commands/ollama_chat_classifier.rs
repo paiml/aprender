@@ -268,9 +268,7 @@ mod tests {
         resp["done"] = json!("true");
         assert_eq!(
             classify_ollama_chat_schema(&resp),
-            OllamaSchemaOutcome::NotDone {
-                got: json!("true")
-            }
+            OllamaSchemaOutcome::NotDone { got: json!("true") }
         );
     }
 
@@ -284,18 +282,12 @@ mod tests {
 
     #[test]
     fn eval_metrics_ok_on_nonempty_reply() {
-        assert_eq!(
-            classify_eval_metrics(1, 500, true),
-            EvalMetricsOutcome::Ok
-        );
+        assert_eq!(classify_eval_metrics(1, 500, true), EvalMetricsOutcome::Ok);
     }
 
     #[test]
     fn eval_metrics_ok_on_empty_reply_even_with_zero_metrics() {
-        assert_eq!(
-            classify_eval_metrics(0, 0, false),
-            EvalMetricsOutcome::Ok
-        );
+        assert_eq!(classify_eval_metrics(0, 0, false), EvalMetricsOutcome::Ok);
     }
 
     #[test]
@@ -330,11 +322,7 @@ mod tests {
 
     #[test]
     fn ndjson_ok_on_well_formed_stream() {
-        let frames = vec![
-            delta_frame("he"),
-            delta_frame("llo"),
-            terminal_frame(),
-        ];
+        let frames = vec![delta_frame("he"), delta_frame("llo"), terminal_frame()];
         assert_eq!(classify_ndjson_stream(&frames), NdjsonStreamOutcome::Ok);
     }
 
@@ -347,7 +335,10 @@ mod tests {
     #[test]
     fn ndjson_rejects_empty_stream() {
         let frames: Vec<Value> = vec![];
-        assert_eq!(classify_ndjson_stream(&frames), NdjsonStreamOutcome::NoFrames);
+        assert_eq!(
+            classify_ndjson_stream(&frames),
+            NdjsonStreamOutcome::NoFrames
+        );
     }
 
     #[test]
@@ -361,7 +352,10 @@ mod tests {
 
     #[test]
     fn ndjson_rejects_missing_done_field() {
-        let frames = vec![json!({"message": {"role":"assistant","content":"x"}}), terminal_frame()];
+        let frames = vec![
+            json!({"message": {"role":"assistant","content":"x"}}),
+            terminal_frame(),
+        ];
         assert_eq!(
             classify_ndjson_stream(&frames),
             NdjsonStreamOutcome::MissingDoneField { frame_index: 0 }
@@ -396,7 +390,9 @@ mod tests {
         let frames = vec![delta_frame("a"), delta_frame("b")];
         assert_eq!(
             classify_ndjson_stream(&frames),
-            NdjsonStreamOutcome::TerminalFrameNotDone { last_frame_index: 1 }
+            NdjsonStreamOutcome::TerminalFrameNotDone {
+                last_frame_index: 1
+            }
         );
     }
 

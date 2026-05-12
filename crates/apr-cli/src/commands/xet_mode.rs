@@ -165,8 +165,7 @@ mod tests {
         // the most recent export is what getenv() returns.
         // Current implementation: first truthy/falsy hit short-circuits;
         // document that behavior so future changes are deliberate.
-        let first_falsy_wins =
-            is_xet_enabled(false, [("APR_XET", "0"), ("APR_XET", "1")]);
+        let first_falsy_wins = is_xet_enabled(false, [("APR_XET", "0"), ("APR_XET", "1")]);
         assert!(!first_falsy_wins);
     }
 

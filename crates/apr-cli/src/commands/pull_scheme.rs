@@ -37,20 +37,11 @@ pub enum PullScheme {
     /// `https://host/...` → direct HTTPS download.
     Https(String),
     /// `s3://bucket/key` → AWS S3 (or S3-compatible: MinIO, Cloudflare R2).
-    S3 {
-        bucket: String,
-        key: String,
-    },
+    S3 { bucket: String, key: String },
     /// `gs://bucket/object` → Google Cloud Storage.
-    Gs {
-        bucket: String,
-        object: String,
-    },
+    Gs { bucket: String, object: String },
     /// `az://container/blob` → Azure Blob Storage.
-    Az {
-        container: String,
-        blob: String,
-    },
+    Az { container: String, blob: String },
     /// `org/repo` (no scheme, contains slash) → treat as `hf://org/repo`.
     BareOrgRepo(String),
     /// Single token, no scheme, no slash → alias lookup required.
@@ -197,9 +188,8 @@ mod tests {
 
     #[test]
     fn https_scheme_classifies_as_https() {
-        let r =
-            classify_pull_source("https://huggingface.co/org/repo/resolve/main/config.json")
-                .unwrap();
+        let r = classify_pull_source("https://huggingface.co/org/repo/resolve/main/config.json")
+            .unwrap();
         assert!(matches!(r, PullScheme::Https(_)));
         assert!(!is_local_transport(&r));
     }
@@ -207,7 +197,10 @@ mod tests {
     #[test]
     fn bare_org_slash_repo_classifies_as_bare() {
         let r = classify_pull_source("openai-community/gpt2").unwrap();
-        assert_eq!(r, PullScheme::BareOrgRepo("openai-community/gpt2".to_string()));
+        assert_eq!(
+            r,
+            PullScheme::BareOrgRepo("openai-community/gpt2".to_string())
+        );
         assert!(!is_local_transport(&r));
     }
 

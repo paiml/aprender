@@ -54,6 +54,7 @@ kani_harnesses:
 - id: KH-DEPMIG-001
   obligation: no_old_dep_names
   property: all_deps_use_new_names
+  bound: 4
 
 verification_summary:
   total_obligations: 2

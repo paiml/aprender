@@ -27,6 +27,7 @@
 //! - arXiv:2501.09136 — Agentic RAG survey
 //! - arXiv:2406.09187 — `GuardAgent` safety
 
+pub mod auto_memory;
 pub mod capability;
 pub mod code;
 mod code_prompts;
@@ -35,18 +36,23 @@ pub mod custom_agents;
 pub mod driver;
 pub mod guard;
 pub mod hooks;
+pub mod instructions;
 pub mod manifest;
+#[cfg(feature = "agents-mcp")]
+pub mod mcp_json;
 pub mod memory;
 pub mod org_policy;
 pub mod permission;
 pub mod phase;
 pub mod pool;
 pub mod repl;
+mod repl_directives;
 mod repl_display;
 pub mod result;
 pub mod runtime;
 mod runtime_helpers;
 pub mod session;
+pub mod settings;
 pub mod signing;
 pub mod skill;
 pub mod status_line;
