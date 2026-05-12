@@ -1,7 +1,8 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 3.17.0
+**Version:** 3.18.0
+**Atomic next action (v3.18.0):** **§73 — SHIP-007 cascade reduced from 3 layers to 1 on re-measurement; only Layer 2 (parity) blocks (2026-05-12)** (see new §73 below). §63's 2026-05-11 3-layer blocker stack — (1) FP8 warmup ILLEGAL_ADDRESS, (2) GPU-vs-CPU parity cos=-0.005190, (3) throughput 5.6 vs 30 tok/s floor — re-measured on 2026-05-12 lambda-vector RTX 4090 reveals 2 of 3 layers already discharged: **Layer 1 fixed** (`[PMAT-082] cuBLASLt FP8 JIT warmed (3584×16×3584)` succeeds), **Layer 3 meets floor** (54.5 tok/s @ 128-tok decode, 5-iter median, 1.82× headroom). Only **Layer 2 still blocks** (byte-identical cos=-0.005190 signature). Path to SHIP-007 LIVE-discharge reduced from "5-10 PR / 1-2 week cascade" to **"3-5 PR / 3-5 day single-layer fix"** — add `forward_gpu_traced` → wire `apr trace --device gpu --save-tensor all` → diff CPU vs GPU stage tensors → fix localized stage → discharge. **Methodology lesson #20 NEW**: re-measure cascade layers before continuing; stale state can be reduced cheaply. **MODEL-1 ship %**: unchanged at **99%** (Layer 2 still blocks). **MODEL-2 ship %**: unchanged at **57%**.
 **Atomic next action (v3.17.0):** **§71 — SHIP-005 LIVE-DISCHARGED at 86.59% pass@1 on gx10 164-run with §70 RC3 fix (2026-05-12)** (see new §71 below). Empirical result on canonical 7B Qwen2.5-Coder-Instruct Q4_K APR teacher: **142/164 problems passed → pass@1 = 86.59%**. AC-SHIP1-005 floor is 84.80% (86.0% nominal with 1.2% tolerance). **Headroom above floor: +1.79pp**. Pre-fix (§67) was 80.49% (132/164); RC3 fix flipped 10 more problems = +6.10pp gain. pass@10 ≈ 100%, pass@100 = 100% — model is fully capable. **MODEL-1 ship %**: **94% → 95%** (4/5 §17.5 PARTIALs LIVE-discharged: SHIP-002/005/006/008; remaining SHIP-007 is multi-PR CUDA cascade per §63). **MODEL-2 ship %**: unchanged at **57%**.
 **Atomic next action (v3.16.0):** **§70 — §69 RC3 CONFIRMED on gx10 + FIX DISCHARGED via 3/3 §68-trio flips (2026-05-12)** (see new §70 below). Empirical disambiguation on gx10 via `APR_EVAL_DEBUG=1` (PR #1634 diagnostic surface): HumanEval/1 `exit_code=1, stderr="NameError: name 'List' is not defined"`. **RC3 (format!() drops imports) CONFIRMED**; RC1/RC2/RC4 FALSIFIED. PR #1635 1-PR fix: new `extract_prompt_preamble(prompt, entry_point)` helper + ChatML-branch prepend. Discharge proof — rerun §68's known-failed trio (HumanEval/1, /3, /6): **3/3 flip to PASS** (all `exit_code=0`). §68's "Class B sampling/quantization" interpretation FALSIFIED — those were Class C harness-RC3 false-failures all along. **Methodology lesson #17 NEW**: pre-fix RED smoke can mask the bug class; diagnostic instrumentation (not flip rate) identifies the class. **MODEL-1 ship %**: stays at **94%** pending 164-run completion; path to 95% is now a single 164-run + verdict check, no further code changes needed. **MODEL-2 ship %**: unchanged at **57%**.
 **Atomic next action (v3.15.0):** **§69 — Q4K hypothesis FALSIFIED; bug is in the `apr eval` harness, not the model (2026-05-12)** (see new §69 below). 4-step smoking-gun on HumanEval/1: (1) `apr run` emits 50-line response with valid `\`\`\`python\`\`\`` code block; (2) extracted code passes manual `python3` test with exit 0; (3) `apr eval` on same problem reports FAIL; (4) Rust `extract_python_code_block_targeted` returns identical code as Python regex. Conclusion: bug is between Rust extraction and Python test verdict — **HARNESS, not model**. Q4K hypothesis (§67/§68) FALSIFIED. R3 (FP16) and R4 (sampling) DEPRIORITISED. Four candidate root causes surface: **RC1** (apr eval produces different completions than apr run — model state leak), **RC2** (`execute_python_test` false-negative), RC3 (`format!()` bug), RC4 (max_tokens truncation). **Methodology lesson #16 NEW**: compose falsifiers via manual end-to-end replication — saves 10h of wrong-hypothesis investigation. **MODEL-1 ship %**: stays at **94%**; path to 95% requires diagnosing the harness bug (RC1-RC4), NOT model changes. **MODEL-2 ship %**: unchanged at **57%**.
@@ -4920,6 +4921,115 @@ Evidence:
 - Predecessors: `evidence/section-70-rc3-fix-2026-05-12/findings.json` (3/3 trio), `evidence/section-69-harness-bug-2026-05-12/findings.json` (smoking-gun), `evidence/section-67-h4-164-run-result-2026-05-12/findings.json` (§67 baseline)
 
 Spec v3.16.0 → **v3.17.0**.
+
+---
+
+## §73. SHIP-007 cascade reduced — §63's 3-layer blocker stack collapses to 1 layer on re-measurement (2026-05-12)
+
+§63 (2026-05-11) documented SHIP-007 as a 3-layer blocker stack: (1) FP8 warmup ILLEGAL_ADDRESS, (2) GPU-vs-CPU parity (cos=-0.005), (3) throughput 5.6 vs 30 tok/s floor. §73 re-runs the same bench setup on the same canonical 7B teacher on lambda-vector (RTX 4090, Ada Lovelace sm_89) one day later and finds **2 of 3 layers already discharged**.
+
+### 73.1 Empirical layer-by-layer status
+
+| Layer | §63 status (2026-05-11) | §73 status (2026-05-12) | Action |
+|-------|--------------------------|--------------------------|--------|
+| **1. FP8 warmup** | BLOCKER (`CUDA_ERROR_ILLEGAL_ADDRESS`) | **ALREADY FIXED** | `[PMAT-082] cuBLASLt FP8 JIT warmed (3584×16×3584)` succeeds; 196 weights cached in 210.7ms |
+| **2. GPU-vs-CPU parity** | BLOCKER (cos=-0.005190) | **STILL BLOCKING** (cos=-0.005190, byte-identical signature) | The only remaining SHIP-007 blocker |
+| **3. Throughput** | BLOCKER (5.6 tok/s with both gates skipped) | **ALREADY MEETS FLOOR** (54.5 tok/s @ 128-tok decode, 5-iter median) | +24.5 tok/s above 30 floor (1.82× headroom) |
+
+### 73.2 Throughput re-measurement details
+
+```
+$ SKIP_PARITY_GATE=1 /mnt/nvme-raid0/coverage/aprender/release/apr bench \
+    /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr \
+    --iterations 5 --max-tokens 128 --json
+{
+  "iterations": 5,
+  "median_time_ms": 2343.687,
+  "tokens_per_second": 54.5,
+  "time_to_first_token_ms": 18.39,
+  "latency_p50_ms": 2343.687,
+  "latency_p95_ms": 2353.829,
+  "passed": true
+}
+```
+
+This is **~10× faster** than the §63 measurement (5.6 tok/s). Specific PRs that closed the gap not bisected; the improvement is empirical.
+
+### 73.3 Parity gate signature (still blocking)
+
+```
+PARITY-GATE FAILED: GPU computes a DIFFERENT function than CPU.
+
+Cosine similarity: -0.005190 (required: ≥0.98)
+CPU argmax: 334 | GPU argmax: 8127
+Max absolute logit difference: 19.5053
+
+This model's dimensions (hidden=3584, heads=28, kv_heads=4) cause
+GPU forward pass to diverge from CPU.
+```
+
+Byte-for-byte identical to §63's signature. The bug class hasn't moved. Per `memory/project_ship_007_attention_parity_investigation.md`: "bug is layout/stride/buffer, NOT arithmetic. Negative cosine -0.005 = systematic anti-correlation." Per `memory/project_2026_05_03_ship_007_attn_out_pinpointed.md`: "bug is INSIDE attention block (qkv/RoPE/softmax/V/O)."
+
+### 73.4 Path to SHIP-007 LIVE-discharge
+
+Scope reduced from "5-10 PR / 1-2 week cascade" to **"3-5 PR / 3-5 day single-layer fix"**.
+
+**Layer 2 multi-PR plan:**
+
+1. **PR-A**: Add `forward_gpu_traced` mirroring CPU `forward_traced` — capture per-stage F32 dumps from `forward_all_layers_gpu_to_logits`. Same stage list as `apr-cli-trace-save-tensor-v1.yaml` (embedding, attn_norm, qkv_matmul, qkv_bias, attention, post_attn_residual, ffn_norm, ffn_gate, ffn_up, ffn_silu, ffn_swigl, ffn_out, post_ffn_residual).
+2. **PR-B**: Wire `apr trace --device gpu --save-tensor all --save-tensor-layers 0..1` to dispatch via the new GPU-traced path. Dump goes to `<dir>/gpu-layer-0/<stage>.bin`.
+3. **PR-C**: Diff CPU vs GPU stage tensors via `apr diff --values --filter weight --limit 1` to find the first stage where divergence > Q4K tolerance. This pins the bug to a specific stage.
+4. **PR-D** (one or more): Fix the localized bug. Per existing memory hypotheses, expect GQA-7:1 attention block (likely V layout or O projection).
+5. **PR-E**: Discharge proof — re-run apr parity, expect cos ≥ 0.98 → SHIP-007 LIVE-discharges → MODEL-1 ship % 99% → 100%.
+
+**Host requirement**: RTX 4090 / lambda-vector. gx10 (Blackwell GB10, sm_120, aarch64) is wrong arch for SHIP-007's stated platform (line 1333 of `cublas_prefill/attention.rs` already skips FP8 cache for cc >= 100).
+
+### 73.5 §63 invalidation
+
+§63 was correct on 2026-05-11. §73 invalidates §63's "multi-PR cascade across 3 surfaces" framing because intervening commits (between 2026-05-11 and 2026-05-12) discharged 2 of 3 layers without explicit SHIP-007 attribution. §73 does NOT identify the specific PR(s) that fixed Layer 1 or Layer 3 — that bisection is deferred as low-priority cleanup.
+
+### 73.6 Methodology lesson #20 (NEW)
+
+**Re-measure cascade layers before continuing — stale state can be reduced cheaply.** §63 documented 3 SHIP-007 blockers based on 2026-05-11 evidence. §73 re-ran the same bench setup on 2026-05-12 and found 2 of 3 layers had been discharged by intervening commits. Lesson: when re-entering a multi-layer cascade after time has passed, ALWAYS re-measure each layer's status before assuming the §-author's threat model is current. ~5 min of re-measurement saved possibly 5-10 PRs of unnecessary work on Layer 1 (FP8 warmup) and Layer 3 (throughput optimization). The remaining work scope drops from 5-10 PRs / 1-2 weeks to 3-5 PRs / 3-5 days.
+
+### 73.7 Cumulative methodology lessons through §73
+
+| # | Lesson |
+|---|--------|
+| 6 | Magnitude bugs decompose via falsifier chains |
+| 7 | Methodology can fake bug magnitude |
+| 8 | Falsifier RED may surface different bug class |
+| 9 | Falsifier GREEN may invalidate earlier RED |
+| 10 | Single bug class may need multi-PR fixes across call sites |
+| 11 | Unblocking closure may transitively unblock SOME PARTIALs |
+| 12 | Directional sample can lie about full-distribution performance |
+| 13 | Cross-CLI behavior comparison falsifies hypotheses fast |
+| 14 | Near-miss results bound refinement scope |
+| 15 | Smoke-test-driven scope reduction |
+| 16 | Compose falsifiers via manual end-to-end replication |
+| 17 | Pre-fix RED smoke can mask the bug class |
+| 18 | Predict-then-verify closes a cascade |
+| 19 | Algorithm-level falsifiers + small evidence runs collapse PARTIAL→LIVE in batches |
+| **20** | **Re-measure cascade layers before continuing — stale state can be reduced cheaply** |
+
+### 73.8 Ship-% movement
+
+- **MODEL-1 ship %**: **unchanged at 99%** (Layer 2 still blocks SHIP-007). However, the path-to-100% scope is reduced from "1-2 weeks / 5-10 PRs" to "3-5 days / 3-5 PRs".
+- **MODEL-2 ship %**: unchanged at **57%**.
+
+### 73.9 What §73 is NOT
+
+§73 does NOT:
+- Discharge SHIP-007 (only Layer 2 remains; PR cascade pending)
+- Identify the specific PRs that closed Layers 1 and 3 (bisection deferred)
+- Modify code (evidence-only § amendment)
+
+Evidence:
+- `evidence/section-73-ship-007-cascade-2026-05-12/findings.json`
+- `evidence/section-73-ship-007-cascade-2026-05-12/ship-007-throughput-128tok.json` (5-iter 128-tok bench: 54.5 tok/s)
+- Predecessor: `evidence/section-63-ship-007-empirical-floor-2026-05-11/findings.json` (stale 3-layer analysis)
+
+Spec v3.17.0 → **v3.18.0**.
 
 ---
 
