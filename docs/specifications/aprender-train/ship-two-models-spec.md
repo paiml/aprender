@@ -4625,6 +4625,87 @@ Spec v3.13.0 → **v3.14.0**.
 
 ---
 
+## §69. Q4K hypothesis FALSIFIED — extracted code passes manually but `apr eval` reports FAIL; bug is in the harness (2026-05-12)
+
+§67 attributed the SHIP-005 4.31pp residual to Q4K quantization. §68 refined to "Class B failures = model-quality at greedy temp=0". **§69 falsifies both.** Manual replication of the apr eval flow on HumanEval/1 shows the model emits correct code, the extraction returns correct code, and the code passes the HumanEval test locally — but `apr eval` still reports FAIL.
+
+### 69.1 The smoking-gun test (4 steps)
+
+**Step 1**: `apr run <canonical 7B APR> --prompt '<HumanEval/1>' --max-tokens 512`
+- Model emits 50-line response: explanation + `\`\`\`python` code block (765 chars) + post-fence text
+
+**Step 2**: Manual Python test of extracted code
+- `python3 <(extracted_code + test + check(separate_paren_groups))`
+- Exit code: **0** (PASS)
+
+**Step 3**: `apr eval <canonical 7B APR> --task humaneval --data <he1.jsonl>`
+- Verdict: **FAIL**, pass@1 = 0.0%
+
+**Step 4**: Rust `extract_python_code_block_targeted` standalone test
+- Input: same 50-line response from step 1
+- Output: identical 765-char code (matches Python regex extraction)
+
+The model produces correct code. The Rust extractor returns correct code. The extracted code passes the HumanEval test under direct python3. But `apr eval` reports FAIL. **The bug is between Rust extraction and Python test verdict.**
+
+### 69.2 What this invalidates
+
+| Hypothesis | Pre-§69 | Post-§69 |
+|------------|---------|----------|
+| H4: methodology mismatch (raw vs ChatML) | CONFIRMED (§66) | CONFIRMED PARTIALLY — necessary but not sufficient |
+| Q4K quantization (§67-§68) | Suspected root cause | **FALSIFIED** |
+| R1+R2 robustness (§68) | Insufficient | Class B is harness, not model |
+| R3 (Q4K → FP16) | Recommended | **DEPRIORITISED** |
+| R4 (temperature sampling) | Recommended | **DEPRIORITISED** |
+
+### 69.3 Four candidate root causes (in the harness)
+
+| RC | Description | Diagnostic |
+|----|-------------|------------|
+| **RC1** | `apr eval` produces different completions than `apr run` (model state leak at temp=0) | Add `APR_EVAL_DEBUG=1`: dump `result.text` per problem; compare to `apr run` |
+| **RC2** | `execute_python_test` false-negative (timeout / signal / exit-code interpretation) | Capture `/tmp/apr_eval_*.py` + actual exit code; compare to manual `python3` run |
+| **RC3** | `format!()` for full_program bug — Rust string formatting injects something | Print full_program before execution; diff vs manually-built |
+| **RC4** | `max_tokens=512` truncates closing fence; extractor falls through to broken fallback | Increase `max_tokens` to 1024 and rerun smoke |
+
+Priority: **RC1+RC2 = HIGH**, RC3+RC4 = MEDIUM.
+
+### 69.4 Why §66/§67/§68 reached the wrong conclusion
+
+§66 confirmed H4. True. §67 saw 80.49% pass@1 and attributed the 4.31pp to Q4K WITHOUT verifying that ANY individual failure was actually model-quality. §68 confirmed R1+R2 didn't flip 3 known-failed problems and concluded "Class B = model-quality". But manual replication shows the model IS correct on those problems — the harness is the bug.
+
+**The chain assumed `apr eval` is a reliable measurement.** §69 falsifies that. The harness is the unit-under-test, not just the model.
+
+### 69.5 Methodology lesson #16 (NEW)
+
+**Compose falsifiers via manual end-to-end replication.** When the evaluation harness reports FAIL on a problem the model clearly solves correctly via the underlying primitive (`apr run`), the harness is the bug, not the model. The §69 smoking-gun took ~5 minutes. The §66-§68 chain spent ~10 hours on Q4K/sampling hypotheses that were never the bug.
+
+### 69.6 Refined next-action menu
+
+R1+R2 (PR #1630) remains useful as a robustness baseline. SHIP-005 path now:
+
+1. **NEW R-candidate**: instrument `apr eval` with `APR_EVAL_DEBUG=1` — dump model responses + extracted code + full_program + exit code; compare against manual replication
+2. **Hypothesis falsification cascade**: RC1 → RC2 → RC3 → RC4
+3. **Eventually**: 1-PR fix for whichever RC fires
+
+R3 (Q4K → FP16) and R4 (sampling) are DEPRIORITISED — they would NOT fix the harness bug.
+
+### 69.7 Ship-% movement
+
+- **MODEL-1 ship %**: stays at **94%**. Path to 95% now requires diagnosing the harness bug (RC1-RC4), NOT touching the model.
+- **MODEL-2 ship %**: unchanged at **57%**.
+
+### 69.8 What §69 is NOT
+
+§69 does NOT identify the specific harness bug. It records the empirical falsification of the Q4K hypothesis and bounds the next investigation to RC1-RC4.
+
+Evidence:
+- `evidence/section-69-harness-bug-2026-05-12/findings.json`
+- `/tmp/he1-resp-local.txt` (model response, 50 lines)
+- `/tmp/he1-test.py` (manual full_program that passes python3 with exit 0)
+
+Spec v3.14.0 → **v3.15.0**.
+
+---
+
 ## §70. §69 RC3 CONFIRMED on gx10 + FIX DISCHARGED via 3/3 §68-trio flips — full_program preamble (2026-05-12)
 
 §69 (PR #1633) enumerated 4 candidate root causes for the apr eval HumanEval harness false-failure. §70 reports the **empirical disambiguation** on gx10 via the diagnostic surface (PR #1634), the **1-PR root-cause fix** (PR #1635), and the **discharge proof** via the §68 known-failed trio.
