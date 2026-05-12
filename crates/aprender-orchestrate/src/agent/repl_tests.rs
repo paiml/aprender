@@ -58,6 +58,27 @@ fn test_slash_command_parse_claude_code_parity() {
     assert_eq!(SlashCommand::parse("/config edit"), Some(SlashCommand::Config));
 }
 
+/// PMAT-CODE-SLASH-EXTENDED-001: final 3 Claude-Code variants. Stub
+/// handlers print a deliberate placeholder so the operator sees
+/// "recognized, not yet wired" — same falsifier pattern as the v4.2
+/// parity batch.
+#[test]
+fn test_slash_command_parse_extended() {
+    assert_eq!(SlashCommand::parse("/debug"), Some(SlashCommand::Debug));
+    assert_eq!(SlashCommand::parse("/dbg"), Some(SlashCommand::Debug));
+    assert_eq!(SlashCommand::parse("/rename"), Some(SlashCommand::Rename));
+    assert_eq!(SlashCommand::parse("/upgrade"), Some(SlashCommand::Upgrade));
+    // Trailing args route correctly.
+    assert_eq!(SlashCommand::parse("/rename my-session"), Some(SlashCommand::Rename));
+    assert_eq!(SlashCommand::parse("/debug verbose"), Some(SlashCommand::Debug));
+    // Anything that doesn't match the canonical 24 variants still routes
+    // to Unknown — this is the falsification gate.
+    assert_eq!(
+        SlashCommand::parse("/totally-fake"),
+        Some(SlashCommand::Unknown("/totally-fake".to_string()))
+    );
+}
+
 #[test]
 fn test_repl_session_new() {
     let session = ReplSession::new("test", 4096);

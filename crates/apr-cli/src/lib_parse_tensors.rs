@@ -107,6 +107,9 @@
                 payload,
                 diff,
                 interactive,
+                save_tensor: _,
+                save_tensor_dir: _,
+                save_tensor_layers: _,
             } => {
                 assert_eq!(file, PathBuf::from("model.apr"));
                 assert_eq!(layer, Some("layer.0".to_string()));

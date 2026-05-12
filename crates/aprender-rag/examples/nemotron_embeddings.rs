@@ -15,10 +15,10 @@
 //! ```
 
 #[cfg(feature = "nemotron")]
-use trueno_rag::embed::{cosine_similarity, Embedder, NemotronConfig, NemotronEmbedder};
+use aprender_rag::embed::{cosine_similarity, Embedder, NemotronConfig, NemotronEmbedder};
 
 #[cfg(feature = "nemotron")]
-fn main() -> trueno_rag::Result<()> {
+fn main() -> aprender_rag::Result<()> {
     // Configure the embedder
     // Replace with your actual model path
     let model_path = std::env::var("NEMOTRON_MODEL_PATH")

@@ -424,8 +424,50 @@ pub mod data_inv_006;
 // FALSIFY-APR-DISTILL-TRAIN-002 — KL loss decreases over epochs gate.
 pub mod distill_train_002;
 
+// FALSIFY-QA-002 + 006 — apr-cli error-exit honesty (exit != 0 on missing file / error output).
+pub mod qa_002_006;
+
+// FALSIFY-QA-004 — apr-cli no NaN/Inf in user output (zero-tolerance scan).
+pub mod qa_004;
+
+// FALSIFY-QA-001 — apr-cli all 58 commands respond to --help.
+pub mod qa_001;
+
+// FALSIFY-PUB-CLI-002 + 004 — cargo install/check exit codes (shared verdict).
+pub mod pub_cli_002_004;
+
+// FALSIFY-PUB-CLI-001 — apr-cli default features contain no forbidden substrings.
+pub mod pub_cli_001;
+
+// FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
+pub mod pub_cli_003;
+
+// FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
+pub mod pull_dataset_001;
+
+// FALSIFY-APR-PULL-DATASET-005 — apr pull <model> --dry-run backward compat.
+pub mod pull_dataset_005;
+
+// FALSIFY-APR-PULL-DATASET-003 — apr pull dataset no-match glob fails fast.
+pub mod pull_dataset_003;
+
+// FALSIFY-APR-PULL-DATASET-004 — license allowlist drops disallowed rows.
+pub mod pull_dataset_004;
+
+// FALSIFY-APR-PULL-DATASET-002 — apr pull dataset --include glob exact match count.
+pub mod pull_dataset_002;
+
+// FALSIFY-APR-DISTILL-TRAIN-009 — distill student val_loss < from-scratch baseline.
+pub mod distill_train_009;
+
 // INV-BPE-001 — tokenizer-bpe vocab range + paired-model match.
 pub mod bpe_inv_001;
+
+// INV-BPE-006 — tokenizer-bpe encode determinism (cross-process bit-identical IDs).
+pub mod bpe_inv_006;
+
+// INV-BPE-003 — tokenizer-bpe round-trip byte-equality on 10K held-out docs.
+pub mod bpe_inv_003;
 
 // INV-BPE-002 — tokenizer-bpe four required special tokens distinct + in range.
 pub mod bpe_inv_002;

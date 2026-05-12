@@ -159,12 +159,20 @@ serde_yaml_ng = "0.10"
 [dev-dependencies]
 proptest = "1.6"
 criterion = { workspace = true }
-renacer = { workspace = true }
+# Permissive version + path: locally resolves via path; clean-room's
+# strip_path_deps removes `path = "..."` leaving a valid `version + package`
+# entry. Permissive range (>=0.27) breaks the publish-time cycle (otherwise
+# aprender-core's publish requires entrenar/renacer at workspace 0.32.0 on
+# crates.io BEFORE aprender-core itself ships, but those crates can't ship
+# until aprender-core does).
+renacer = { version = ">=0.27", path = "../aprender-profile", package = "aprender-profile" }
 tempfile = "3.14"  # For format module tests
 jugar-probar = "0.5"  # TUI/GUI testing framework with coverage tracking (spec §8)
 ctrlc = "3.4"  # Signal handling for SIGINT/SIGTERM (PMAT-098-PF: zombie process mitigation)
 provable-contracts = "0.3"  # Contract enforcement (dev-only)
-entrenar = { workspace = true }  # Integration tests for InferenceMonitor (GH-305: was runtime dep, now dev-only)
+# Integration tests for InferenceMonitor (GH-305: was runtime dep, now dev-only).
+# Same publish-time cycle break as renacer above.
+entrenar = { version = ">=0.27", path = "../aprender-train", package = "aprender-train" }
 serde_yaml = "0.9"  # YAML contract binding in tests (FALSIFY-SHIP-009 GATE-APR-PROV-004)
 
 [features]

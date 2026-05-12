@@ -1,0 +1,297 @@
+metadata:
+  kind: schema
+  version: 1.2.0
+  status: PARTIAL_ALGORITHM_LEVEL
+  created: '2026-05-04'
+  updated: '2026-05-05'
+  changelog:
+    - "1.2.0 (2026-05-05): Test-reference drift correction. v1.1.0
+       cited 8 specific test names; live source inspection 2026-05-05
+       revealed only 3 of them existed in
+       `crates/apr-cli/src/commands/pretrain.rs`. The §50.4 cascade
+       (5f.4 wireup landed via PR #1494) authored different test
+       names than the ones v1.1.0 stamped, leaving 6 falsifier
+       bindings with dangling `test:` references.
+
+       This bump re-aligns each falsifier to a test that actually
+       exists, OR explicitly marks the falsifier PARTIAL_ALGORITHM_LEVEL
+       with a documented `if_fails` rationale citing the LIVE-only
+       prerequisite (5g.2 / 5g.3) where the binding cannot land via
+       unit test. No falsifier is left with a dangling reference.
+
+       Net effect: 5/10 falsifiers now bound to existing tests
+       (001/003/004/005/007/008); 5/10 explicitly noted as LIVE-pending
+       (002/006/009/010 — each names the prerequisite step).
+
+       FALSIFY-007 (3-surface drift) was promoted from LIVE-PENDING by
+       authoring `pretrain_init_flag_registered` in
+       `crates/apr-cli/tests/cli_commands.rs` as part of this same PR;
+       the test invokes `apr pretrain --help` and asserts `--init` is
+       reachable from the installed binary. This closes the full clap +
+       unit + integration triangle for the `--init` flag, matching the
+       3-surface drift prevention rule documented in
+       `feedback_cli_subcommand_three_surface_drift.md`.
+
+       Status remains PARTIAL_ALGORITHM_LEVEL; FUNCTIONAL is gated on
+       FALSIFY-006 binding (which needs the 5g.2 LIVE fine-tune);
+       DISCHARGED still gated on §50.4 step 5g.3 LIVE val_loss < 9.38."
+    - "1.1.0 (2026-05-04): Algorithm-level binding via §49 step 4 wire-up.
+       Clap field added in extended_commands.rs; `validate_init_apr_path()`
+       in pretrain.rs binds FALSIFY-003 (missing-file) + -004 (invalid-magic)
+       at PARTIAL level. `pretrain::tests::pretrain_init_*` (7 tests) bind
+       FALSIFY-001 (clap surface), -002 (regression-free absent), -003,
+       -004, plus the §49-step-5 partial-state guard (valid APR returns
+       'not yet wired' rather than silent random-init). Status PROPOSED →
+       PARTIAL_ALGORITHM_LEVEL. FUNCTIONAL gated on §49 step 5 (weight
+       load + arch match); DISCHARGED gated on LIVE 500-step fine-tune
+       producing val_loss < 9.38 (FALSIFY-006)."
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'SPEC-SHIP-TWO-001 §49 — MODEL-2 strategy pivot from-scratch → pretrained-init (2026-05-04)'
+  - 'SPEC-SHIP-TWO-001 §49.6 step 3 — author apr-pretrain-from-init-v1 contract'
+  - 'SPEC-SHIP-TWO-001 §49.6 step 4 — wire --init <model.apr> flag (this contract drives that PR)'
+  - 'contracts/training-loop-pretrain-v1.yaml — parent contract (C-TRAIN-PRETRAIN v1.5.0 ACTIVE)'
+  - 'feedback_cli_subcommand_three_surface_drift.md — clap+yaml+test 3-surface rule'
+  - 'feedback_fix_root_cause_never_route_around.md'
+  - 'feedback_no_guessing.md'
+  description: >
+    Contract pinning the semantics of `apr pretrain --init <model.apr>` for §49's
+    MODEL-2 pretrained-init strategy. The previous from-scratch strategy
+    asymptoted at val_loss=9.75 on a 565M-token corpus (§24, §25, §49.1) — a
+    data-budget ceiling, not a capacity ceiling. §49 retires from-scratch in
+    favor of fine-tuning a Qwen2.5-class pretrained checkpoint on the same
+    corpus, where the pretrained init has already paid the 1T-token data tax.
+    This contract pins what the new flag MUST do: load weights from an APR
+    file as initial weights for the pretrain optimizer, fail-fast on missing
+    or shape-mismatched files, and surface a measurable init_loss <
+    from_scratch_loss signal at step 0 that proves the load-bearing claim
+    "the init weights arrived intact and are evaluating on the new corpus."
+    Note: this contract is orthogonal to the parallel SHIP-007 / Qwen2-0.5B
+    `apr run` gibberish investigation (memory entry
+    project_qwen2_0_5b_is_ship_007_manifestation.md, 2026-05-04). Training
+    forward passes use a different code path than `apr run` inference; the
+    init flag's correctness is provable independently.
+
+equations:
+  init_flag_signature:
+    formula: |
+      `apr pretrain` MUST accept an optional `--init <PATH>` flag whose value
+      is a path to an existing APR-format model file. Semantics:
+        absent → existing behavior (random init for from-scratch, or whatever
+                 the existing `--mode finetune` path uses today)
+        present → load weights from <PATH>.apr as the initial weights for the
+                  pretrain optimizer, then run the existing pretrain loop.
+      The flag composes with `--mode {finetune,from-scratch}`:
+        --mode finetune --init <PATH>     → load <PATH>, fine-tune defaults
+        --mode from-scratch --init <PATH> → load <PATH>, from-scratch defaults
+                                            (allowed but non-canonical — emits
+                                            a warning since cosine-decay window
+                                            is sized for cold start)
+        --mode finetune (no --init)       → existing finetune path (no regression)
+        --mode from-scratch (no --init)   → existing from-scratch path (no regression)
+    domain: crates/apr-cli/src/commands/pretrain.rs CLI surface
+    codomain: bool
+    invariants:
+    - "Flag is OPTIONAL — its absence MUST NOT regress existing pretrain behavior"
+    - "Flag value is a filesystem path to an APR-format file"
+    - "Flag composes with --mode without restriction at parse time"
+    - "Flag value defaults to None (not empty string)"
+    - "Help text mentions the §49 pretrained-init strategy"
+
+  init_load_semantics:
+    formula: |
+      When `--init <PATH>` is present, the pretrain driver MUST:
+        1. Open <PATH> via the existing APR loader (not duplicate logic)
+        2. Verify magic bytes APR\\0 (v2) or APRN (v1)
+        3. Verify the loaded model's architecture matches the pretrain target
+           (vocab_size, hidden_size, num_layers, num_heads, num_kv_heads,
+           ffn_intermediate, max_position_embeddings) — exact equality
+        4. Materialize all tensor weights as the optimizer's initial state
+        5. Begin training with these weights instead of random init
+      Loading order: weights load BEFORE optimizer state (Adam moments, LR
+      scheduler step counter). Optimizer state begins fresh at step 0 (the
+      pretrained checkpoint's optimizer state is NOT carried over — only the
+      model weights).
+    domain: weight loading boundary
+    codomain: WeightTensor[*]
+    invariants:
+    - "APR magic bytes verified before any tensor read"
+    - "Architecture mismatch is FAIL-FAST, not silent-truncate"
+    - "Optimizer state starts fresh — only weights inherit from <PATH>"
+    - "Loader is reused, not reimplemented (no duplicate APR parser)"
+    - "All tensor shapes match exactly; no silent reshape/transpose"
+
+  init_error_semantics:
+    formula: |
+      When `--init <PATH>` is present and any of these conditions hold, the
+      pretrain driver MUST exit non-zero BEFORE step 1:
+        - <PATH> does not exist
+        - <PATH> exists but is not a valid APR file (wrong magic bytes)
+        - <PATH> is a valid APR file but architecture does not match
+          (vocab_size mismatch, hidden_size mismatch, etc.)
+        - <PATH> is a valid APR file with matching architecture but a
+          tensor's shape does not match the target architecture's expectation
+      No silent fallback to random init. No silent truncate. No silent
+      partial-load. The training run does not begin until weight loading
+      succeeds end-to-end.
+    domain: error-exit boundary
+    codomain: ExitCode
+    invariants:
+    - "Missing file → exit non-zero before step 1"
+    - "Invalid magic bytes → exit non-zero before step 1"
+    - "Architecture mismatch → exit non-zero before step 1"
+    - "Shape mismatch → exit non-zero before step 1"
+    - "No silent random-init fallback when --init was specified"
+    - "Error messages name the specific mismatch (vocab, hidden, layer count, etc.)"
+
+  init_loss_signal:
+    formula: |
+      The load-bearing empirical claim of §49: a pretrained checkpoint
+      evaluated on the new corpus has init_loss STRICTLY less than the
+      from-scratch random-init loss on the same corpus. Concretely:
+        init_loss(step=0) < from_scratch_loss(step=0)
+      where both are evaluated on the same val split of the same corpus,
+      same seed, same batch size, same seq length. For Qwen2.5-Coder-0.5B
+      class init on csn-python+codeparrot corpus, expected:
+        init_loss(step=0) ∈ [2.5, 6.0]    (pretrained on similar code)
+        from_scratch_loss(step=0) ∈ [9.5, 11.0]  (uniform over vocab=50257,
+                                                  ln(50257)≈10.82)
+      The contract pins ONLY the strict-inequality + ceiling claim:
+        init_loss(step=0) ≤ 6.0 < from_scratch_loss(step=0)
+      Tighter bounds belong in evidence, not in the contract.
+    domain: validation loss at step 0
+    codomain: float (cross-entropy nats)
+    invariants:
+    - "init_loss(step=0) is finite (not NaN, not Inf)"
+    - "init_loss(step=0) ≤ 6.0"
+    - "from_scratch_loss(step=0) ≥ ln(vocab_size) − 1.5 ≈ 9.32 (Q in [9.5, 11.0])"
+    - "init_loss(step=0) < from_scratch_loss(step=0) by ≥ 3.0 (load-bearing gap)"
+
+  three_surface_drift_prevention:
+    formula: |
+      Adding `--init <PATH>` to `apr pretrain` MUST update three surfaces
+      atomically per `feedback_cli_subcommand_three_surface_drift.md`:
+        1. crates/apr-cli/src/commands/pretrain.rs (clap field)
+        2. crates/apr-cli/src/commands/pretrain.rs::tests (clap-parse tests)
+        3. crates/apr-cli/tests/cli_commands.rs (cli_commands flag-parse test)
+      All three MUST be updated in the same PR; CI gate must catch missing
+      cases. Note: unlike `apr pull dataset`, --init is a FLAG on an EXISTING
+      subcommand, so contracts/apr-cli-commands-v1.yaml does NOT need a new
+      registry entry (registry is per-subcommand, not per-flag).
+    domain: 3-surface coherence for new clap flags
+    codomain: bool
+    invariants:
+    - "Clap field present in PretrainArgs / PretrainOptions struct"
+    - "At least one unit test parses --init <path> via clap"
+    - "At least one integration test exercises --init <missing-file> error path"
+    - "cargo test -p apr-cli passes (pretrain.rs and cli_commands.rs tests)"
+
+falsification_tests:
+- id: FALSIFY-APR-PRETRAIN-INIT-001
+  rule: --init flag exists and is parsed by clap (clap-surface bound)
+  prediction: "`apr pretrain --help` prints text that includes the substring `--init`; clap parses `--init <PATH>` to `Some(path)` and `apr pretrain` (no --init) to `None`"
+  test: "cargo test -p apr-cli --lib commands::pretrain::tests::pretrain_init_flag_absent_parses_to_none && cargo test -p apr-cli --lib commands::pretrain::tests::pretrain_init_flag_parses_path"
+  if_fails: "flag missing or parse-broken — §49 strategy unimplemented at the CLI surface"
+
+- id: FALSIFY-APR-PRETRAIN-INIT-002
+  rule: --init absent regression-free (synthetic path)
+  prediction: "`apr pretrain --mode from-scratch --synthetic ...` (no --init) exits 0 and reaches the synthetic linear-decay step function — the §24/§25 baseline path is unchanged"
+  test: "cargo test -p apr-cli --lib commands::pretrain::tests::synthetic_pretrain_end_to_end_happy_path"
+  if_fails: "regression in existing pretrain behavior — §49 must not break §24/§25"
+
+- id: FALSIFY-APR-PRETRAIN-INIT-003
+  rule: --init missing-file fails fast
+  prediction: "`apr pretrain --init /tmp/nonexistent.apr ...` returns Err with `FALSIFY-APR-PRETRAIN-INIT-003` in the message; exit happens BEFORE any trainer allocation"
+  test: "cargo test -p apr-cli --lib commands::pretrain::tests::pretrain_init_missing_file_errors"
+  if_fails: "silent fallback to random-init when --init was specified — operator gets a from-scratch run mislabeled as init-finetune"
+
+- id: FALSIFY-APR-PRETRAIN-INIT-004
+  rule: --init invalid magic fails fast
+  prediction: "`apr pretrain --init <file-with-wrong-magic.apr> ...` returns Err with `FALSIFY-APR-PRETRAIN-INIT-004` in the message; exit happens BEFORE any trainer allocation"
+  test: "cargo test -p apr-cli --lib commands::pretrain::tests::pretrain_init_bad_magic_errors && cargo test -p apr-cli --lib commands::pretrain::tests::pretrain_init_empty_file_errors"
+  if_fails: "silent random-init fallback on corrupted APR — same defect class as -003"
+
+- id: FALSIFY-APR-PRETRAIN-INIT-005
+  rule: --init architecture mismatch / metadata-bogus fails fast
+  prediction: "valid APR magic but missing/bogus architecture metadata → `FALSIFY-APR-PRETRAIN-INIT-005` Err with no silent fallback; the legacy `not yet wired` Err from §49 step 4 is RETIRED post-#1494"
+  test: "cargo test -p apr-cli --lib commands::pretrain::tests::pretrain_init_valid_magic_but_bogus_metadata_fails_at_arch_extraction"
+  if_fails: "silent shape-truncate or shape-pad — produces a model whose embedding rows are uninitialized garbage"
+
+- id: FALSIFY-APR-PRETRAIN-INIT-006
+  rule: --init load-bearing init_loss signal (LIVE-PENDING)
+  prediction: "step-0 val_loss with --init <Qwen2.5-Coder-0.5B-Instruct.apr> is ≤ 6.0; step-0 val_loss without --init (--mode from-scratch) is ≥ 9.5; gap ≥ 3.0"
+  test: "LIVE-PENDING — requires §50.4 step 5g.2 LIVE 500-step fine-tune dispatch on RTX 4090. No unit-test surface exists today because (a) the 942MB FP16 weight load takes >5 min single-thread CPU which exceeds CI test budget; (b) the val_loss measurement requires the canonical Qwen2.5-Coder-0.5B-Instruct.apr fixture which is 942MB and not committed to the repo; (c) GPU dispatch is gated on §50.4 step 5f.5 (CUDA wireup, multi-PR scope)."
+  if_fails: "init weights are loaded but produce identical loss to random init — either weights are corrupted on load, or the loaded model is silently re-initialized somewhere downstream (this is the §49 load-bearing test)"
+
+- id: FALSIFY-APR-PRETRAIN-INIT-007
+  rule: 3-surface drift prevention
+  prediction: "clap field in `extended_commands.rs`, unit test in `pretrain.rs`, and integration test in `cli_commands.rs` all reference --init"
+  test: "cargo test -p apr-cli --test cli_commands pretrain_init_flag_registered"
+  if_fails: "3-surface drift; flag exists in clap but not in tests, or vice versa"
+
+- id: FALSIFY-APR-PRETRAIN-INIT-008
+  rule: contract validates via pv
+  prediction: "`pv validate contracts/apr-pretrain-from-init-v1.yaml` exits 0"
+  test: "pv validate contracts/apr-pretrain-from-init-v1.yaml"
+  if_fails: "contract schema noncompliant; will not pass CI gate"
+
+- id: FALSIFY-APR-PRETRAIN-INIT-009
+  rule: optimizer state begins fresh (LIVE-PENDING)
+  prediction: "with --init <PATH>, Adam first-moment and second-moment buffers are zero-initialized at step 0; LR scheduler step counter is 0"
+  test: "LIVE-PENDING — requires (a) the §50.4 step 5g.2 LIVE 500-step fine-tune to actually dispatch (currently blocked on 5g.1 corpus retokenize, ~17hr wall) and (b) a debug accessor on the trainer that exposes Adam (m, v, t) state at step 0. The accessor exists in `aprender-train/src/train/transformer_trainer/cuda_trainer.rs` (CUDA path) but not yet on the CPU TransformerTrainer. Out of v1.2.0 scope, tracked as 5g.2 follow-up."
+  if_fails: "stale optimizer state from the source checkpoint contaminates new training trajectory; LR schedule misaligned with corpus"
+
+- id: FALSIFY-APR-PRETRAIN-INIT-010
+  rule: weight load is idempotent (LIVE-PENDING)
+  prediction: "two consecutive `apr pretrain --init <PATH> --num-steps 0 --seed 42` invocations produce byte-identical post-init checkpoints"
+  test: "LIVE-PENDING — requires running `apr pretrain` twice with `--num-steps 0` and comparing checkpoint sha256s. The 942MB FP16 weight load takes >5 min single-thread CPU per invocation (so >10 min for the comparison pair); exceeds CI test budget. Naturally lands as part of the 5g.2 LIVE smoke evidence pack. Out of v1.2.0 scope."
+  if_fails: "non-deterministic weight load — debugging future divergence becomes impossible"
+
+proof_obligations:
+- type: invariant
+  property: "init_flag_signature: --init is OPTIONAL and composes with --mode without restriction"
+- type: invariant
+  property: "init_load_semantics: APR loader is REUSED, not duplicated; magic-byte check happens before tensor read"
+- type: soundness
+  property: "init_error_semantics: every load failure exits non-zero BEFORE step 1; no silent random-init fallback when --init was specified"
+- type: termination
+  property: "init_load_semantics terminates on a finite-size APR file"
+- type: liveness
+  property: "init_loss_signal: step-0 val_loss(init) < step-0 val_loss(from-scratch); gap ≥ 3.0 nats"
+- type: invariant
+  property: "three_surface_drift_prevention: clap field + unit test + integration test all present in same PR"
+
+kani_harnesses:
+- id: KH-APR-PRETRAIN-INIT-001
+  obligation: init_flag_signature
+  property: flag_absent_implies_existing_behavior
+  bound: 4  # 2 modes × 2 init-presence states = 4-cell decision table
+- id: KH-APR-PRETRAIN-INIT-002
+  obligation: init_error_semantics
+  property: load_failure_implies_nonzero_exit
+  bound: 8  # 4 failure modes × 2 mode values
+
+verification_summary:
+  total_obligations: 6
+  proven: 0
+  tested: 0
+  status: pending
+  notes: |
+    Authored 2026-05-04 as §49 step 3 of SHIP-TWO-001 MODEL-2 pretrained-init
+    pivot. PROPOSED status until §49 step 4 (wire-up PR) lands. Promotion to
+    PARTIAL_ALGORITHM_LEVEL requires the 10 FALSIFY-APR-PRETRAIN-INIT-* tests
+    to be at least authored (compile-bound, may xfail until impl). Promotion
+    to FUNCTIONAL requires all 10 to PASS. Promotion to DISCHARGED requires a
+    LIVE 500-step fine-tune run on the canonical Qwen2.5-Coder-0.5B-Instruct
+    APR file producing val_loss < 9.38 (the previous corpus-bottleneck floor)
+    per §49.6 step 5.
+
+    Cross-reference: this contract is INDEPENDENT of the SHIP-007 / Qwen2-0.5B
+    `apr run` gibberish defect (memory:project_qwen2_0_5b_is_ship_007_manifestation.md,
+    2026-05-04). The training forward path uses a different loader and dispatch
+    surface than `apr run` inference; the init flag's correctness is provable
+    independently. If the gibberish defect turns out to also infect the
+    training forward path, this contract's FALSIFY-APR-PRETRAIN-INIT-006
+    will catch it — init_loss will not be ≤ 6.0 if the loaded weights are
+    being silently corrupted.

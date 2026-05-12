@@ -451,6 +451,9 @@
             payload: false,
             diff: false,
             interactive: false,
+            save_tensor: None,
+            save_tensor_dir: None,
+            save_tensor_layers: "0..1".to_string(),
         });
         let result = execute_command(&cli);
         assert!(result.is_err(), "Trace should fail with non-existent file");

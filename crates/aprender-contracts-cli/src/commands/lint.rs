@@ -39,6 +39,7 @@ pub fn run(
     crate_dir: Option<&Path>,
     min_level: Option<&str>,
     watch: bool,
+    strict_test_binding: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if watch {
         return run_watch(
@@ -57,6 +58,7 @@ pub fn run(
             cache_stats,
             crate_dir,
             min_level,
+            strict_test_binding,
         );
     }
 
@@ -87,6 +89,7 @@ pub fn run(
         cache_stats,
         crate_dir,
         min_level,
+        strict_test_binding,
     );
 
     let report = run_lint(&config);
@@ -282,6 +285,7 @@ fn run_watch(
     cache_stats: bool,
     crate_dir: Option<&Path>,
     min_level: Option<&str>,
+    strict_test_binding: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop {
         let config = build_config(
@@ -300,6 +304,7 @@ fn run_watch(
             cache_stats,
             crate_dir,
             min_level,
+            strict_test_binding,
         );
 
         let report = run_lint(&config);
@@ -346,6 +351,7 @@ fn build_config<'a>(
     cache_stats: bool,
     crate_dir: Option<&'a Path>,
     min_level: Option<&str>,
+    strict_test_binding: bool,
 ) -> LintConfig<'a> {
     let pv_config = config_path
         .and_then(|cp| match load_config(cp) {
@@ -424,6 +430,7 @@ fn build_config<'a>(
         cache_stats,
         crate_dir,
         min_level: min_level.and_then(parse_enforcement_level),
+        strict_test_binding,
     }
 }
 

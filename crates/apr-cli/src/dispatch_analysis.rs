@@ -359,6 +359,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             vocab_size,
             synthetic,
             device,
+            init,
         } => commands::pretrain::run(
             dataset,
             tokenizer,
@@ -375,6 +376,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *vocab_size,
             *synthetic,
             device,
+            init.as_deref(),
             cli.json,
         ),
         ExtendedCommands::Tokenize { command } => dispatch_tokenize_command(command, cli),
@@ -685,6 +687,11 @@ fn dispatch_tokenize_command(
             normalization,
             cli.json,
         ),
+        TokenizeCommands::ImportHf {
+            input,
+            output,
+            include_added_tokens,
+        } => tokenize::run_import_hf(input, output, *include_added_tokens, cli.json),
         #[cfg(feature = "training")]
         TokenizeCommands::EncodeCorpus {
             corpus,
@@ -694,6 +701,10 @@ fn dispatch_tokenize_command(
             content_field,
             normalization,
             eos_policy,
+            num_workers,
+            quiet,
+            progress_interval_docs,
+            progress_interval_seconds,
         } => tokenize::run_encode_corpus(
             corpus,
             tokenizer,
@@ -702,8 +713,20 @@ fn dispatch_tokenize_command(
             content_field,
             normalization,
             eos_policy,
+            *num_workers,
+            tokenize::ProgressConfig {
+                quiet: *quiet,
+                interval_docs: *progress_interval_docs,
+                interval_seconds: *progress_interval_seconds,
+            },
             cli.json,
         ),
+        #[cfg(feature = "training")]
+        TokenizeCommands::RepairManifest {
+            output,
+            tokenizer,
+            json,
+        } => tokenize::run_repair_manifest(output, tokenizer.as_deref(), *json || cli.json),
     }
 }
 
