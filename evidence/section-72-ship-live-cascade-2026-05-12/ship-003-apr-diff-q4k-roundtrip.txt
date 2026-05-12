@@ -1,0 +1,96 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║           TENSOR VALUE DIFF (Statistical Comparison)                         ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║ Model A: ...0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.safetensors ║
+║ Model B: ...vme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║ Legend: IDENTICAL ~IDENT SMALL MEDIUM LARGE CRITICAL ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║ [~IDENTICAL] lm_head.weight                           ║
+║   max_diff=0.000061 mean_diff=0.000000 rmse=0.000002 cos_sim=1.000000 ║
+║   dist: 99.6% ident, 0.4% small, 0.0% med, 0.0% large (544997376 elems)  ║
+╠──────────────────────────────────────────────────────────────────────────────╣
+║ [~IDENTICAL] model.embed_tokens.weight                ║
+║   max_diff=0.000061 mean_diff=0.000000 rmse=0.000002 cos_sim=1.000000 ║
+║   dist: 98.0% ident, 2.0% small, 0.0% med, 0.0% large (544997376 elems)  ║
+╠──────────────────────────────────────────────────────────────────────────────╣
+║ [IDENTICAL] model.layers.0.input_layernorm.weight    ║
+║   max_diff=0.000000 mean_diff=0.000000 rmse=0.000000 cos_sim=1.000000 ║
+╠──────────────────────────────────────────────────────────────────────────────╣
+║ [~IDENTICAL] model.layers.0.mlp.down_proj.weight      ║
+║   max_diff=0.000481 mean_diff=0.000004 rmse=0.000007 cos_sim=1.000000 ║
+║   dist: 12.9% ident, 87.1% small, 0.0% med, 0.0% large (67895296 elems)  ║
+╠──────────────────────────────────────────────────────────────────────────────╣
+║ [~IDENTICAL] model.layers.0.mlp.gate_proj.weight      ║
+║   max_diff=0.000443 mean_diff=0.000004 rmse=0.000007 cos_sim=1.000000 ║
+║   dist: 13.1% ident, 86.9% small, 0.0% med, 0.0% large (67895296 elems)  ║
+╠──────────────────────────────────────────────────────────────────────────────╣
+║ [~IDENTICAL] model.layers.0.mlp.up_proj.weight        ║
+║   max_diff=0.000239 mean_diff=0.000004 rmse=0.000006 cos_sim=1.000000 ║
+║   dist: 8.7% ident, 91.3% small, 0.0% med, 0.0% large (67895296 elems)  ║
+╠──────────────────────────────────────────────────────────────────────────────╣
+║ [IDENTICAL] model.layers.0.post_attention_layerno... ║
+║   max_diff=0.000000 mean_diff=0.000000 rmse=0.000000 cos_sim=1.000000 ║
+╠──────────────────────────────────────────────────────────────────────────────╣
+║ [~IDENTICAL] model.layers.0.self_attn.k_proj.weight   ║
+║   max_diff=0.000121 mean_diff=0.000008 rmse=0.000013 cos_sim=1.000000 ║
+║   dist: 9.3% ident, 90.7% small, 0.0% med, 0.0% large (1835008 elems)  ║
+╠──────────────────────────────────────────────────────────────────────────────╣
+║ [~IDENTICAL] model.layers.0.self_attn.o_proj.weight   ║
+║   max_diff=0.000237 mean_diff=0.000004 rmse=0.000007 cos_sim=1.000000 ║
+║   dist: 9.8% ident, 90.2% small, 0.0% med, 0.0% large (12845056 elems)  ║
+╠──────────────────────────────────────────────────────────────────────────────╣
+║ [~IDENTICAL] model.layers.0.self_attn.q_proj.weight   ║
+║   max_diff=0.000473 mean_diff=0.000006 rmse=0.000009 cos_sim=1.000000 ║
+║   dist: 9.3% ident, 90.7% small, 0.0% med, 0.0% large (12845056 elems)  ║
+╠──────────────────────────────────────────────────────────────────────────────╣
+║ [~IDENTICAL] model.layers.0.self_attn.v_proj.weight   ║
+║   max_diff=0.000061 mean_diff=0.000005 rmse=0.000007 cos_sim=1.000000 ║
+║   dist: 8.3% ident, 91.7% small, 0.0% med, 0.0% large (1835008 elems)  ║
+╠──────────────────────────────────────────────────────────────────────────────╣
+║ [IDENTICAL] model.layers.1.input_layernorm.weight    ║
+║   max_diff=0.000000 mean_diff=0.000000 rmse=0.000000 cos_sim=1.000000 ║
+╠──────────────────────────────────────────────────────────────────────────────╣
+║ [~IDENTICAL] model.layers.1.mlp.down_proj.weight      ║
+║   max_diff=0.000359 mean_diff=0.000003 rmse=0.000007 cos_sim=1.000000 ║
+║   dist: 18.7% ident, 81.3% small, 0.0% med, 0.0% large (67895296 elems)  ║
+╠──────────────────────────────────────────────────────────────────────────────╣
+║ [~IDENTICAL] model.layers.1.mlp.gate_proj.weight      ║
+║   max_diff=0.000186 mean_diff=0.000004 rmse=0.000008 cos_sim=1.000000 ║
+║   dist: 16.9% ident, 83.1% small, 0.0% med, 0.0% large (67895296 elems)  ║
+╠──────────────────────────────────────────────────────────────────────────────╣
+║ [~IDENTICAL] model.layers.1.mlp.up_proj.weight        ║
+║   max_diff=0.000240 mean_diff=0.000003 rmse=0.000006 cos_sim=1.000000 ║
+║   dist: 16.4% ident, 83.6% small, 0.0% med, 0.0% large (67895296 elems)  ║
+╠──────────────────────────────────────────────────────────────────────────────╣
+║ [IDENTICAL] model.layers.1.post_attention_layerno... ║
+║   max_diff=0.000000 mean_diff=0.000000 rmse=0.000000 cos_sim=1.000000 ║
+╠──────────────────────────────────────────────────────────────────────────────╣
+║ [~IDENTICAL] model.layers.1.self_attn.k_proj.weight   ║
+║   max_diff=0.000240 mean_diff=0.000005 rmse=0.000010 cos_sim=1.000000 ║
+║   dist: 16.8% ident, 83.2% small, 0.0% med, 0.0% large (1835008 elems)  ║
+╠──────────────────────────────────────────────────────────────────────────────╣
+║ [~IDENTICAL] model.layers.1.self_attn.o_proj.weight   ║
+║   max_diff=0.000225 mean_diff=0.000005 rmse=0.000007 cos_sim=1.000000 ║
+║   dist: 9.4% ident, 90.6% small, 0.0% med, 0.0% large (12845056 elems)  ║
+╠──────────────────────────────────────────────────────────────────────────────╣
+║ [~IDENTICAL] model.layers.1.self_attn.q_proj.weight   ║
+║   max_diff=0.000237 mean_diff=0.000004 rmse=0.000007 cos_sim=1.000000 ║
+║   dist: 18.5% ident, 81.5% small, 0.0% med, 0.0% large (12845056 elems)  ║
+╠──────────────────────────────────────────────────────────────────────────────╣
+║ [~IDENTICAL] model.layers.1.self_attn.v_proj.weight   ║
+║   max_diff=0.000117 mean_diff=0.000004 rmse=0.000006 cos_sim=1.000000 ║
+║   dist: 12.4% ident, 87.6% small, 0.0% med, 0.0% large (1835008 elems)  ║
+╠──────────────────────────────────────────────────────────────────────────────╣
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                              SUMMARY                                          ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║ Tensors compared: 20                                                         ║
+║ Identical: 20                                                                ║
+║ Transposed (layout diff): 0                                                  ║
+║ Critical differences: 0                                                      ║
+║ Large differences: 0                                                         ║
+║ Medium differences: 0                                                        ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║ DIAGNOSIS: Tensors are nearly identical ║
+╚══════════════════════════════════════════════════════════════════════════════╝
