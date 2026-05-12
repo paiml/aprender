@@ -1,7 +1,8 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 3.13.0
+**Version:** 3.15.0
+**Atomic next action (v3.15.0):** **§69 — Q4K hypothesis FALSIFIED; bug is in the `apr eval` harness, not the model (2026-05-12)** (see new §69 below). 4-step smoking-gun on HumanEval/1: (1) `apr run` emits 50-line response with valid `\`\`\`python\`\`\`` code block; (2) extracted code passes manual `python3` test with exit 0; (3) `apr eval` on same problem reports FAIL; (4) Rust `extract_python_code_block_targeted` returns identical code as Python regex. Conclusion: bug is between Rust extraction and Python test verdict — **HARNESS, not model**. Q4K hypothesis (§67/§68) FALSIFIED. R3 (FP16) and R4 (sampling) DEPRIORITISED. Four candidate root causes surface: **RC1** (apr eval produces different completions than apr run — model state leak), **RC2** (`execute_python_test` false-negative), RC3 (`format!()` bug), RC4 (max_tokens truncation). **Methodology lesson #16 NEW**: compose falsifiers via manual end-to-end replication — saves 10h of wrong-hypothesis investigation. **MODEL-1 ship %**: stays at **94%**; path to 95% requires diagnosing the harness bug (RC1-RC4), NOT model changes. **MODEL-2 ship %**: unchanged at **57%**.
 **Atomic next action (v3.13.0):** **§67 — H4 fix LIVE result: pass@1 = 80.49% on gx10 164-run (+46pp gain, 4.31pp below floor) (2026-05-12)** (see new §67 below). PR #1628 H4 fix (ChatML wrap + `extract_python_code_block`) shipped; gx10 164-run on canonical 7B APR teacher took 5.8h CPU wall → 132/164 = **80.49% pass@1**. Up from 34.15% (§65) = **+46pp gain**. pass@10 ≈ 100%, pass@100 = 100% — model fully capable; SHIP-005 stays PARTIAL but gap is now **refinement-scale (4.31pp)**, not fundamental. Four refinement candidates surface: R1 (extraction robustness, est 2-3pp), R2 (function-targeted extraction, 1-2pp), R3 (Q4K→FP16 quantization, 2-3pp), R4 (sampling refinement, 1-2pp). R1+R2 are cheapest (eval-harness code + 5h gx10 rerun). **Methodology lesson #14 NEW**: near-miss results bound refinement scope (50pp gap = methodology; 4pp gap = refinement). **MODEL-1 ship %**: stays at **94%**. **MODEL-2 ship %**: unchanged at **57%**.
 **Atomic next action (v3.09.0):** **§63 — SHIP-007 empirical floor — CUDA structurally broken on Qwen 7B; multi-PR cascade scope (2026-05-11)** (see new §63 below). LIVE `apr bench` on canonical 7B APR teacher surfaces a 3-layer blocker stack for SHIP-007 (decode tps ≥ 30 tok/s): (1) `CUDA_ERROR_ILLEGAL_ADDRESS` in cuBLASLt FP8 JIT warmup (workaround: `APR_SKIP_FP8_WARMUP=1`); (2) PARITY-GATE rejects with cosine = -0.005 because GPU forward computes a DIFFERENT function than CPU on Qwen2.5-Coder-Instruct dimensions (hidden=3584, heads=28, kv_heads=4); (3) even with both gates skipped, throughput is 5.6 tok/s (well below 30 floor). SHIP-007 is multi-PR cascade scope, not a 1-PR LIVE-discharge. **Methodology lesson #11 NEW**: an unblocking closure (§60) may transitively unblock SOME §17.5 PARTIALs (SHIP-002/006/008, and likely SHIP-005 from in-progress 164-run) but leave OTHERS requiring their own multi-PR cascades. **MODEL-1 ship %**: stays at **94%** (pending 164-run → SHIP-005 → potentially 95%). SHIP-007 estimated to flip 95% → 96% on multi-PR cascade close. **MODEL-2 ship %**: unchanged at **57%**. Coverage tally: snapshot + empirical-floor record + 3-layer blocker bound (no new falsifier flips this cycle).
 **Atomic next action (v3.06.0):** **§61 — Post-§60 LIVE-discharge cascade — direct-prompt SHIP-002 GREEN; ChatML-prompt SHIP-006/008 surface a generation-quality gap (2026-05-10)** (see new §61 below). §60 closure unblocked the §17.5 chain. This session shipped the SHIP-002 LIVE discharge (PR #1609) — `apr run --prompt "def fib(n):" --max-tokens 128` on canonical 7B APR teacher emits coherent fib() Python with 0 syntax errors / 68 AST nodes / 1 FunctionDef. But the parallel `apr qa` LIVE attempt surfaced a NEW empirical finding: the SAME canonical teacher fails the `golden_output` gate ("gibberish, fragment '\\ns\\ns' repeats 3+ times") under the ChatML-wrapped prompt `<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n`. Forward-parity (§60) ≠ generation parity. SHIP-006/008 blocked on this ChatML degenerate-output bug; SHIP-007 separately blocked on perf (8.8 tok/s vs 30 floor on CPU fallback path). §61 records the two falsifiable predictions for the next bisection: PRED-61-A (GGUF + ChatML → CLEAN? localizes bug to APR side); PRED-61-B (APR + direct continuation "What is 2+2? The answer is " → CLEAN? localizes bug to special-token handling vs cumulative drift). Cascade-this-session: 6 PRs (#1604/#1606/#1607/#1608/#1609 + this §61). **MODEL-1 ship %**: **91% → 92%** (1 of 5 §17.5 PARTIALs LIVE-discharged via #1609; SHIP-005/006/007/008 stay PARTIAL). **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38. Coverage tally: 1 new LIVE discharge (SHIP-002 in `qwen2-e2e-verification-v1.yaml` v1.10.0 → v1.12.0); plus 1 status flip (`apr-vs-gguf-forward-parity-v1` v1.1.0 → v1.2.0 PROPOSED → ACTIVE_FUNCTIONAL via PR #1608); plus 3 cascade fixes in `aprender-train` CUDA forward path (Q/K/V bias dispatch / RMSNorm eps cache key / RoPE theta cache key — PRs #1604/#1606/#1607).
@@ -4543,6 +4544,87 @@ R1+R2 are cheapest (eval-harness code change + 5h gx10 rerun).
 Evidence: `evidence/section-67-h4-164-run-result-2026-05-12/{humaneval-164-h4-gx10.json, summary.json, findings.json}`.
 
 Spec v3.12.0 → **v3.13.0**.
+
+---
+
+## §69. Q4K hypothesis FALSIFIED — extracted code passes manually but `apr eval` reports FAIL; bug is in the harness (2026-05-12)
+
+§67 attributed the SHIP-005 4.31pp residual to Q4K quantization. §68 refined to "Class B failures = model-quality at greedy temp=0". **§69 falsifies both.** Manual replication of the apr eval flow on HumanEval/1 shows the model emits correct code, the extraction returns correct code, and the code passes the HumanEval test locally — but `apr eval` still reports FAIL.
+
+### 69.1 The smoking-gun test (4 steps)
+
+**Step 1**: `apr run <canonical 7B APR> --prompt '<HumanEval/1>' --max-tokens 512`
+- Model emits 50-line response: explanation + `\`\`\`python` code block (765 chars) + post-fence text
+
+**Step 2**: Manual Python test of extracted code
+- `python3 <(extracted_code + test + check(separate_paren_groups))`
+- Exit code: **0** (PASS)
+
+**Step 3**: `apr eval <canonical 7B APR> --task humaneval --data <he1.jsonl>`
+- Verdict: **FAIL**, pass@1 = 0.0%
+
+**Step 4**: Rust `extract_python_code_block_targeted` standalone test
+- Input: same 50-line response from step 1
+- Output: identical 765-char code (matches Python regex extraction)
+
+The model produces correct code. The Rust extractor returns correct code. The extracted code passes the HumanEval test under direct python3. But `apr eval` reports FAIL. **The bug is between Rust extraction and Python test verdict.**
+
+### 69.2 What this invalidates
+
+| Hypothesis | Pre-§69 | Post-§69 |
+|------------|---------|----------|
+| H4: methodology mismatch (raw vs ChatML) | CONFIRMED (§66) | CONFIRMED PARTIALLY — necessary but not sufficient |
+| Q4K quantization (§67-§68) | Suspected root cause | **FALSIFIED** |
+| R1+R2 robustness (§68) | Insufficient | Class B is harness, not model |
+| R3 (Q4K → FP16) | Recommended | **DEPRIORITISED** |
+| R4 (temperature sampling) | Recommended | **DEPRIORITISED** |
+
+### 69.3 Four candidate root causes (in the harness)
+
+| RC | Description | Diagnostic |
+|----|-------------|------------|
+| **RC1** | `apr eval` produces different completions than `apr run` (model state leak at temp=0) | Add `APR_EVAL_DEBUG=1`: dump `result.text` per problem; compare to `apr run` |
+| **RC2** | `execute_python_test` false-negative (timeout / signal / exit-code interpretation) | Capture `/tmp/apr_eval_*.py` + actual exit code; compare to manual `python3` run |
+| **RC3** | `format!()` for full_program bug — Rust string formatting injects something | Print full_program before execution; diff vs manually-built |
+| **RC4** | `max_tokens=512` truncates closing fence; extractor falls through to broken fallback | Increase `max_tokens` to 1024 and rerun smoke |
+
+Priority: **RC1+RC2 = HIGH**, RC3+RC4 = MEDIUM.
+
+### 69.4 Why §66/§67/§68 reached the wrong conclusion
+
+§66 confirmed H4. True. §67 saw 80.49% pass@1 and attributed the 4.31pp to Q4K WITHOUT verifying that ANY individual failure was actually model-quality. §68 confirmed R1+R2 didn't flip 3 known-failed problems and concluded "Class B = model-quality". But manual replication shows the model IS correct on those problems — the harness is the bug.
+
+**The chain assumed `apr eval` is a reliable measurement.** §69 falsifies that. The harness is the unit-under-test, not just the model.
+
+### 69.5 Methodology lesson #16 (NEW)
+
+**Compose falsifiers via manual end-to-end replication.** When the evaluation harness reports FAIL on a problem the model clearly solves correctly via the underlying primitive (`apr run`), the harness is the bug, not the model. The §69 smoking-gun took ~5 minutes. The §66-§68 chain spent ~10 hours on Q4K/sampling hypotheses that were never the bug.
+
+### 69.6 Refined next-action menu
+
+R1+R2 (PR #1630) remains useful as a robustness baseline. SHIP-005 path now:
+
+1. **NEW R-candidate**: instrument `apr eval` with `APR_EVAL_DEBUG=1` — dump model responses + extracted code + full_program + exit code; compare against manual replication
+2. **Hypothesis falsification cascade**: RC1 → RC2 → RC3 → RC4
+3. **Eventually**: 1-PR fix for whichever RC fires
+
+R3 (Q4K → FP16) and R4 (sampling) are DEPRIORITISED — they would NOT fix the harness bug.
+
+### 69.7 Ship-% movement
+
+- **MODEL-1 ship %**: stays at **94%**. Path to 95% now requires diagnosing the harness bug (RC1-RC4), NOT touching the model.
+- **MODEL-2 ship %**: unchanged at **57%**.
+
+### 69.8 What §69 is NOT
+
+§69 does NOT identify the specific harness bug. It records the empirical falsification of the Q4K hypothesis and bounds the next investigation to RC1-RC4.
+
+Evidence:
+- `evidence/section-69-harness-bug-2026-05-12/findings.json`
+- `/tmp/he1-resp-local.txt` (model response, 50 lines)
+- `/tmp/he1-test.py` (manual full_program that passes python3 with exit 0)
+
+Spec v3.14.0 → **v3.15.0**.
 
 ---
 
