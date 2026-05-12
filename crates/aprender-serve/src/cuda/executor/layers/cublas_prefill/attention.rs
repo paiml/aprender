@@ -1399,7 +1399,19 @@ DONE_NORM:
 
         // PMAT-082: cuBLASLt FP8 JIT warmup — eliminate 3ms first-request latency.
         // First cuBLASLt FP8 GEMM triggers JIT compilation; warm it here at model load.
-        if cached > 0 {
+        //
+        // SHIP-007 reproducer-stabilisation hook: this warmup intermittently
+        // produces `CUDA_ERROR_ILLEGAL_ADDRESS (code: 700)` on the
+        // 7B Q4_K teacher (3584-hidden) which poisons the CUDA context and
+        // makes downstream debugging instrumentation unreliable. Setting
+        // `APR_SKIP_FP8_WARMUP=1` skips warmup so `apr parity` /
+        // `GPU_DEBUG_ALL_LAYERS=1` runs can fire deterministically. Default
+        // (env unset) preserves the production warmup behaviour. See
+        // `memory/project_ship_007_attention_parity_investigation.md` —
+        // 5th-pass observation that the FP8 warmup is the context-poison
+        // source, separate from the underlying GQA-7:1 parity divergence.
+        let skip_warmup = std::env::var("APR_SKIP_FP8_WARMUP").is_ok();
+        if cached > 0 && !skip_warmup {
             if self.cublaslt_handle.is_none() {
                 self.cublaslt_handle = Some(trueno_gpu::driver::CublasLtHandle::new()?);
             }
@@ -1450,6 +1462,12 @@ DONE_NORM:
                 self.stream.synchronize()?;
                 eprintln!("[PMAT-082] cuBLASLt FP8 JIT warmed ({n_warmup}×{m_warmup}×{k_warmup})");
             }
+        } else if cached > 0 && skip_warmup {
+            eprintln!(
+                "[PMAT-082] FP8 JIT warmup SKIPPED (APR_SKIP_FP8_WARMUP=1) — \
+                 first FP8 inference will incur ~3ms JIT-compile latency. \
+                 SHIP-007 reproducer-stabilisation hook."
+            );
         }
 
         let elapsed = start.elapsed();

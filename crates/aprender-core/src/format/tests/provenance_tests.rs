@@ -109,3 +109,138 @@ fn falsify_ship_022_partial_provenance_round_trip() {
     );
     assert_eq!(reparsed.data_license, Some("CC-BY-4.0".to_string()));
 }
+
+/// GATE-APR-PROV-004 / FALSIFY-SHIP-009 algorithm-level PARTIAL
+/// discharge: the SAME AprV2Metadata + serde-JSON decision rule that
+/// discharges AC-SHIP2-012 (MODEL-2 sovereign) also discharges
+/// AC-SHIP1-009 (MODEL-1 teacher license & provenance recorded in
+/// model.apr metadata).
+///
+/// This test constructs a teacher-representative metadata object —
+/// paiml/qwen2.5-coder-7b-apache-q4k-v1 shipped at HF under the
+/// Apache-2.0 license, distilled from Qwen2.5-Coder-7B-Instruct
+/// (also Apache-2.0). Verifies the three required AC-SHIP1-009
+/// fields (license, data_source, data_license) survive JSON
+/// round-trip byte-identically. The fn is model-agnostic — no
+/// teacher-specific logic beyond the input values.
+#[test]
+fn falsify_ship_009_apr_metadata_applies_to_model_1_teacher() {
+    let teacher_meta = AprV2Metadata {
+        license: Some("apache-2.0".to_string()),
+        data_source: Some("qwen2.5-coder-7b-instruct".to_string()),
+        data_license: Some("apache-2.0".to_string()),
+        ..Default::default()
+    };
+
+    let json = teacher_meta
+        .to_json()
+        .expect("teacher AprV2Metadata must serialize");
+    let reparsed = AprV2Metadata::from_json(&json).expect("teacher AprV2Metadata must deserialize");
+
+    assert_eq!(
+        reparsed.license,
+        Some("apache-2.0".to_string()),
+        "AC-SHIP1-009: teacher license must round-trip byte-identically"
+    );
+    assert_eq!(
+        reparsed.data_source,
+        Some("qwen2.5-coder-7b-instruct".to_string()),
+        "AC-SHIP1-009: teacher data_source must round-trip byte-identically"
+    );
+    assert_eq!(
+        reparsed.data_license,
+        Some("apache-2.0".to_string()),
+        "AC-SHIP1-009: teacher data_license must round-trip byte-identically"
+    );
+
+    assert!(
+        !reparsed.custom.contains_key("license"),
+        "license must remain a named field for MODEL-1 teacher too"
+    );
+    assert!(
+        !reparsed.custom.contains_key("data_source"),
+        "data_source must remain a named field for MODEL-1 teacher too"
+    );
+    assert!(
+        !reparsed.custom.contains_key("data_license"),
+        "data_license must remain a named field for MODEL-1 teacher too"
+    );
+}
+
+/// GATE-APR-PROV-004 YAML binding: parses apr-provenance-v1.yaml and
+/// asserts the gate block correctly binds AC-SHIP1-009 /
+/// FALSIFY-SHIP-009 with DISCHARGED status (was PARTIAL_ALGORITHM_LEVEL
+/// at v1.1.0; flipped to DISCHARGED at v1.2.0 on 2026-04-25 via live
+/// `apr stamp` fixture-swap on the canonical lambda-labs staging
+/// artifact). Falsifier: if the contract is edited to drop AC-SHIP1-009
+/// binding or downgrade the discharge marker, this test fails.
+#[test]
+fn falsify_ship_009_gate_apr_prov_004_has_partial_discharge_marker() {
+    const CONTRACT_YAML: &str = include_str!("../../../../../contracts/apr-provenance-v1.yaml");
+
+    let doc: serde_yaml::Value =
+        serde_yaml::from_str(CONTRACT_YAML).expect("apr-provenance-v1.yaml must parse as YAML");
+
+    let gates = doc["gates"]
+        .as_sequence()
+        .expect("gates must be a sequence in apr-provenance-v1");
+    let gate = gates
+        .iter()
+        .find(|g| g["id"].as_str() == Some("GATE-APR-PROV-004"))
+        .expect("GATE-APR-PROV-004 must exist in apr-provenance-v1");
+
+    assert_eq!(
+        gate["falsification_id"].as_str(),
+        Some("FALSIFY-SHIP-009"),
+        "GATE-APR-PROV-004 must bind FALSIFY-SHIP-009",
+    );
+    assert_eq!(
+        gate["binds_to"].as_str(),
+        Some("AC-SHIP1-009"),
+        "GATE-APR-PROV-004 must bind AC-SHIP1-009 (MODEL-1 teacher license/provenance)",
+    );
+    assert_eq!(
+        gate["discharge_status"].as_str(),
+        Some("DISCHARGED"),
+        "GATE-APR-PROV-004 must advertise DISCHARGED \
+         (live `apr stamp` fixture-swap on canonical lambda-labs staging \
+         artifact at v1.2.0; previous PARTIAL_ALGORITHM_LEVEL at v1.1.0)",
+    );
+    assert!(
+        gate["discharged_evidence"].is_mapping(),
+        "GATE-APR-PROV-004 DISCHARGED status requires a discharged_evidence \
+         block documenting the host, pre/post sha256, and tooling chain",
+    );
+    assert_eq!(
+        gate["discharged_evidence"]["post_stamp"]["provenance_state"]["license"].as_str(),
+        Some("Apache-2.0"),
+        "discharged_evidence.post_stamp.provenance_state.license must equal Apache-2.0",
+    );
+    assert_eq!(
+        gate["discharged_evidence"]["host"].as_str(),
+        Some("noah-Lambda-Vector"),
+        "discharged_evidence.host must pin to the lambda-labs RTX 4090 host",
+    );
+    assert_eq!(
+        gate["ship_blocking"].as_bool(),
+        Some(true),
+        "GATE-APR-PROV-004 must be ship_blocking=true",
+    );
+    let evidence = gate["evidence_discharged_by"]
+        .as_sequence()
+        .expect("GATE-APR-PROV-004 must have evidence_discharged_by");
+    assert!(
+        !evidence.is_empty(),
+        "GATE-APR-PROV-004 evidence_discharged_by must list at least one test",
+    );
+    let live_evidence = gate["discharged_evidence"]["evidence_discharged_by_live"]
+        .as_sequence()
+        .expect(
+            "GATE-APR-PROV-004 DISCHARGED requires \
+             discharged_evidence.evidence_discharged_by_live (live RTX 4090 evidence list)",
+        );
+    assert!(
+        !live_evidence.is_empty(),
+        "GATE-APR-PROV-004 evidence_discharged_by_live must list at least one live observation",
+    );
+}

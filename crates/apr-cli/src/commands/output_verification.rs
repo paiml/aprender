@@ -291,6 +291,64 @@ pub enum OutputVerification {
     },
 }
 
+/// Statistical gibberish detection — returns Some(reason) if output is junk.
+///
+/// Three signals; any one triggers rejection:
+/// 1. **Non-ASCII saturation**: For ASCII-prompt completions, > 60% non-ASCII
+///    bytes is a strong gibberish indicator. English+code answers are ASCII-heavy.
+/// 2. **Repeated-fragment detection**: A 4+ byte substring appearing 3+ times
+///    consecutively (e.g. "udaÅĤo udaÅĤo udaÅĤo") flags BPE/loop pathologies.
+/// 3. **Replacement-character density**: > 1 U+FFFD per 32 chars indicates
+///    repeated UTF-8 decode failures.
+///
+/// All thresholds are conservative — coherent English/code outputs pass cleanly,
+/// while the Qwen2-0.5B observed gibberish ("ëĸ» Ãĥ pÃ³Åº zwiÄħzku") is rejected.
+fn detect_gibberish(output: &str, test_id: &str) -> Option<String> {
+    // Signal 1: non-ASCII saturation
+    let total = output.chars().count();
+    if total >= 16 {
+        let non_ascii = output.chars().filter(|c| !c.is_ascii()).count();
+        let ratio = non_ascii as f64 / total as f64;
+        if ratio > 0.6 {
+            return Some(format!(
+                "{test_id}: gibberish (non-ASCII ratio {:.1}% > 60%)",
+                ratio * 100.0
+            ));
+        }
+    }
+
+    // Signal 2: 4+ byte fragment repeated 3+ times in a row
+    let bytes = output.as_bytes();
+    if bytes.len() >= 12 {
+        let max_frag = 16.min(bytes.len() / 3);
+        for frag_len in 4..=max_frag {
+            let mut i = 0;
+            while i + frag_len * 3 <= bytes.len() {
+                let frag = &bytes[i..i + frag_len];
+                if &bytes[i + frag_len..i + 2 * frag_len] == frag
+                    && &bytes[i + 2 * frag_len..i + 3 * frag_len] == frag
+                {
+                    let preview = String::from_utf8_lossy(frag).into_owned();
+                    return Some(format!(
+                        "{test_id}: gibberish (fragment {preview:?} repeats 3+ times)"
+                    ));
+                }
+                i += 1;
+            }
+        }
+    }
+
+    // Signal 3: replacement-character density
+    let fffd_count = output.matches('\u{FFFD}').count();
+    if fffd_count > 0 && total >= 32 && fffd_count * 32 > total {
+        return Some(format!(
+            "{test_id}: gibberish (U+FFFD density {fffd_count}/{total} > 1/32)"
+        ));
+    }
+
+    None
+}
+
 /// Verify output is correct: not empty, no garbage, contains expected answer
 /// (PMAT-QA-PROTOCOL-001 §7.4)
 ///
@@ -319,6 +377,15 @@ pub fn verify_output(
                 reason: format!("{test_id}: Garbage detected: '{pattern}'"),
             };
         }
+    }
+
+    // Check 2.5: Statistical gibberish detection (Toyota Way root-cause fix).
+    // The fixed garbage-pattern list above misses new defect classes — e.g.
+    // Qwen2-0.5B-Instruct emits CJK/Polish/diacritic byte-fragments like
+    // "udaÅĤo", "ëĸ»", "zwiÄħzku" that no prior pattern catches. We add three
+    // statistical signals; ANY positive trip rejects the output.
+    if let Some(reason) = detect_gibberish(output, test_id) {
+        return OutputVerification::Fail { reason };
     }
 
     // Check 3: BPE artifacts (null bytes, excessive control chars)
@@ -420,31 +487,44 @@ fn validate_gpu_golden_output(
     Ok(None)
 }
 
-/// Run golden output test for APR format models
+/// Run golden output test for APR format models.
+///
+/// PMAT-CODE-SHIP-006-FIX (2026-05-10): routed through `realizar::run_inference`
+/// + `OwnedQuantizedModel::from_apr` (the same working path that SHIP-002 +
+/// SHIP-008 LIVE-discharged) instead of the legacy `AprTransformer::from_apr_file`
+/// + `generate_with_cache` path. The legacy path produced "\\ns\\ns" degenerate
+/// output on canonical 7B teacher (recorded as §61.8 Branch A); the
+/// run_inference path produces clean ChatML responses.
+///
+/// Caller passes a pre-formatted ChatML prompt (e.g.,
+/// `"<|im_start|>user\\nWhat is 2+2?<|im_end|>\\n<|im_start|>assistant\\n"`)
+/// per `golden_test_cases()` — we tokenize it directly and pass via
+/// `InferenceConfig::with_input_tokens` to BYPASS the chat-template auto-wrap
+/// in `prepare_tokens_apr` (which would double-wrap a pre-formatted prompt).
 #[cfg(feature = "inference")]
 fn golden_output_apr(path: &Path, prompt: &str, max_tokens: usize) -> Result<(Vec<u32>, String)> {
     use realizar::apr::AprV2Model;
-    use realizar::apr_transformer::{AprTransformer, GenerateConfig};
+    use realizar::{run_inference, InferenceConfig};
 
+    // Tokenize the (already-ChatML-formatted) prompt with the embedded BPE
+    // tokenizer. This produces the exact prompt token sequence the qa gate
+    // intends; passing it via with_input_tokens bypasses prepare_tokens'
+    // ChatML auto-wrap (which would otherwise double-wrap pre-formatted prompts).
     let apr_model = AprV2Model::load(path)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
     let tokenizer = apr_model
         .load_embedded_bpe_tokenizer()
         .ok_or_else(|| CliError::ValidationFailed("APR missing embedded tokenizer".to_string()))?;
-    let transformer = AprTransformer::from_apr_file(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR transformer: {e}")))?;
-
     let prompt_tokens = tokenizer.encode(prompt);
-    let gen_config = GenerateConfig {
-        max_tokens,
-        temperature: 0.0,
-        top_k: 1,
-        ..Default::default()
-    };
 
-    let tokens = transformer
-        .generate_with_cache(&prompt_tokens, &gen_config)
+    let config = InferenceConfig::new(path)
+        .with_input_tokens(prompt_tokens)
+        .with_max_tokens(max_tokens)
+        .with_temperature(0.0)
+        .with_top_k(1);
+
+    let result = run_inference(&config)
         .map_err(|e| CliError::ValidationFailed(format!("Generation failed: {e}")))?;
-    let text = tokenizer.decode(&tokens);
-    Ok((tokens, text))
+
+    Ok((result.tokens, result.text))
 }

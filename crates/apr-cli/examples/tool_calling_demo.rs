@@ -1,3 +1,6 @@
+// Example demo: serde_json::json! macro expands with unwrap; allow disallowed_methods here.
+#![allow(clippy::disallowed_methods)]
+
 //! Tool Calling Demo (GH-160, PMAT-186)
 //!
 //! Demonstrates OpenAI-compatible tool calling with apr serve.

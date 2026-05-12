@@ -84,6 +84,37 @@ pub enum TokenizeCommands {
         normalization: String,
     },
 
+    /// Import a HuggingFace tokenizer.json into aprender's two-file
+    /// vocab.json + merges.txt layout per
+    /// `contracts/apr-cli-tokenize-import-hf-v1.yaml` (§50.4 step 5g.0).
+    ///
+    /// Reads `<INPUT>` (a HF tokenizer.json with `model.type == "BPE"`),
+    /// extracts `model.vocab` → `<OUTPUT>/vocab.json`, `model.merges` →
+    /// `<OUTPUT>/merges.txt` (one space-separated merge per line), and
+    /// writes `<OUTPUT>/manifest.json` with extraction provenance
+    /// (source path, sha256, vocab_size, merges_count, timestamp).
+    ///
+    /// Non-BPE inputs (Unigram, WordPiece) are rejected fail-fast with a
+    /// clear error citing the contract id.
+    ///
+    /// Unblocks fine-tuning from public HF checkpoints (Qwen2.5/Llama2/
+    /// Mistral) which distribute as a single tokenizer.json. The output
+    /// dir is consumable by `apr tokenize encode-corpus --tokenizer <DIR>`
+    /// and `apr pretrain --tokenizer <DIR>` without modification.
+    ImportHf {
+        /// Path to input HuggingFace tokenizer.json (BPE model required).
+        #[arg(long, value_name = "FILE")]
+        input: PathBuf,
+        /// Output directory; will contain vocab.json + merges.txt + manifest.json.
+        #[arg(long, value_name = "DIR")]
+        output: PathBuf,
+        /// Include `added_tokens` in vocab.json (default: BPE state machine only).
+        /// Use this when the downstream consumer needs special tokens (e.g.,
+        /// `<|im_start|>`, `<|endoftext|>`) materialized in vocab.json itself.
+        #[arg(long, default_value_t = false)]
+        include_added_tokens: bool,
+    },
+
     /// Encode a JSONL corpus into `.bin` shards per contracts/pretokenize-bin-v1.yaml.
     ///
     /// Loads a trained BPE tokenizer (vocab.json + merges.txt) from `--tokenizer`,
@@ -96,6 +127,7 @@ pub enum TokenizeCommands {
     /// Root-cause fix for the pretokenize-to-bin gap documented in
     /// memory/project_shard_reader_bin_format.md — replaces a Python shim
     /// that was flagged as MUDA on 2026-04-19.
+    #[cfg(feature = "training")]
     EncodeCorpus {
         /// Path to JSONL corpus file or directory of `.jsonl` files.
         #[arg(long, value_name = "PATH")]
@@ -118,5 +150,69 @@ pub enum TokenizeCommands {
         /// EOS insertion policy: none|between|after.
         #[arg(long, default_value = "between")]
         eos_policy: String,
+        /// Number of rayon workers for per-document BPE encoding.
+        ///
+        /// Defaults to `std::thread::available_parallelism()` (logical CPU count).
+        /// Set to `1` to force the single-threaded byte-identical legacy path.
+        /// Set to a fixed N to bound memory or share the host with other jobs.
+        ///
+        /// Output shard order is preserved: chunked encoding keeps original
+        /// document order regardless of worker count (issue #1547,
+        /// contracts/apr-tokenize-parallel-bpe-v1.yaml `parallel_correctness`).
+        #[arg(long, value_name = "N")]
+        num_workers: Option<usize>,
+        /// Suppress per-document progress emission to stderr (issue #1547,
+        /// contract v1.2.0). Default: emit a `[progress] doc=N/T tokens=K
+        /// rate=X.X docs/s eta=...` line every `--progress-interval-docs`
+        /// docs OR `--progress-interval-seconds` seconds (whichever fires
+        /// first). Useful for CI / log-scraping callers that prefer silence.
+        #[arg(long, default_value_t = false)]
+        quiet: bool,
+        /// Emit a progress line at most every N docs (default 1000). Pair
+        /// with `--progress-interval-seconds` — whichever bound is reached
+        /// first triggers emission. Issue #1547 contract v1.2.0.
+        #[arg(long, value_name = "N", default_value_t = 1000)]
+        progress_interval_docs: u64,
+        /// Emit a progress line at most every S seconds (default 60). Pair
+        /// with `--progress-interval-docs` — whichever bound is reached
+        /// first triggers emission. Issue #1547 contract v1.2.0.
+        #[arg(long, value_name = "S", default_value_t = 60)]
+        progress_interval_seconds: u64,
+    },
+
+    /// Reconstruct manifest.json from existing shard-NNNN.bin files.
+    ///
+    /// `apr tokenize encode-corpus` writes manifest.json only on clean
+    /// process exit. If the encoder is killed (operator SIGINT, OOM,
+    /// crash, power loss) AFTER all shards flush but BEFORE manifest
+    /// write, the corpus on disk is consumable by `ShardBatchIter` but
+    /// has no provenance file for ship audit / dashboards.
+    ///
+    /// `repair-manifest` is the cheap recovery path: it scans
+    /// `<OUTPUT>/shard-*.bin`, computes shard_count + total_tokens
+    /// from file sizes (each shard is a flat little-endian u32 stream;
+    /// tokens = file_size / 4), and writes a schema-conforming
+    /// `manifest.json`. Idempotent: runs twice are byte-identical
+    /// modulo `repaired_at` timestamp.
+    ///
+    /// Contract: `contracts/apr-tokenize-repair-manifest-v1.yaml`.
+    /// Motivating instance: SHIP-TWO §56 5g.1 corpus (228 shards
+    /// flushed, manifest missing).
+    #[cfg(feature = "training")]
+    RepairManifest {
+        /// Output directory containing shard-NNNN.bin files.
+        /// `manifest.json` will be written into this directory.
+        #[arg(long, value_name = "DIR")]
+        output: PathBuf,
+        /// Optional tokenizer directory; when provided, `vocab.json`
+        /// is read for the manifest's `vocab_size` field. Without it,
+        /// `vocab_size` is recorded as `null` (provenance-incomplete
+        /// but otherwise valid).
+        #[arg(long, value_name = "DIR")]
+        tokenizer: Option<PathBuf>,
+        /// Emit the manifest body as JSON to stdout (in addition to
+        /// writing to disk).
+        #[arg(long, default_value_t = false)]
+        json: bool,
     },
 }

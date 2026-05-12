@@ -82,8 +82,8 @@ impl Default for TranscriptionConfig {
 /// # Example
 ///
 /// ```rust,no_run
-/// use trueno_rag::loader::transcription::{TranscriptionLoader, TranscriptionConfig};
-/// use trueno_rag::loader::LoaderRegistry;
+/// use aprender_rag::loader::transcription::{TranscriptionLoader, TranscriptionConfig};
+/// use aprender_rag::loader::LoaderRegistry;
 ///
 /// let mut registry = LoaderRegistry::new();
 /// registry.register(Box::new(TranscriptionLoader::with_defaults()));

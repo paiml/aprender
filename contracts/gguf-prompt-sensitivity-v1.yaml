@@ -1,0 +1,282 @@
+metadata:
+  id: C-GGUF-PROMPT-SENSITIVITY
+  version: 1.1.0
+  created: '2026-05-10'
+  updated: '2026-05-10'
+  author: PAIML Engineering
+  kind: pattern
+  status: ACTIVE_FUNCTIONAL
+  description: |
+    Pins the falsifiable invariant that `apr run <gguf>` produces
+    distinct outputs for distinct prompts.
+
+    BACKGROUND. SPEC-SHIP-TWO-001 §61.8 (2026-05-10) recorded an
+    empirical finding from `apr run` CLI invocations: the canonical
+    7B teacher GGUF emits APPARENTLY-IDENTICAL `"ampiezza = 0.5\n
+    diametro = 10..."` Italian gibberish across multiple distinct
+    prompts.
+
+    v1.1.0 EMPIRICAL REFINEMENT (2026-05-10 same-day): Live LIVE
+    falsifier run on noah-Lambda-Vector RTX 4090 (`cargo test -p
+    aprender-serve --test gguf_prompt_sensitivity --release --
+    --ignored`, 321.91s wall) refined the picture:
+
+      • At the `run_inference()` LIBRARY level on canonical 7B GGUF
+        teacher, distinct prompts DO produce distinct outputs (not
+        byte-identical):
+        - "What is 2+2? The answer is " → "ampiezza = 0.5\ndiametro
+          = 10\naltezza = 20\n\n# Calcolo del volume\nvolume = ("
+        - "Hello, my name is" → "ampiezza = 10\nampiezza\n\n# Stampa
+          il doppio del valore di ampiezza\ndoppio_ampiezza ="
+        Three-prompt cardinality: 2 (not the predicted 1).
+
+      • At the `run_inference()` LIBRARY level on canonical 7B APR
+        teacher, distinct prompts produce CLEAN conversational
+        outputs:
+        - "What is 2+2? The answer is " → "2+2 is 4." (correct!)
+        - "Hello, my name is" → "Hello! It's nice to meet you. What
+          can I help you with today?" (correct!)
+        APR + ChatML auto-wrap path is FUNCTIONAL through the
+        library; this confirms M-FFN-GGUF-5/5b PRs (#1550, #1556)
+        on 2026-05-07 fully fixed the APR inference path.
+
+      • The original §61.8 "byte-identical across 3 prompts"
+        observation came from `apr run` CLI; under truncation
+        (max-tokens 16 vs 32) the first 16 tokens MATCH between
+        prompts (not strictly byte-identical at full length).
+        Re-checked at max-tokens 16 with a third prompt ("Banana
+        split recipe is "): output = "ampiezza = 0.5\ndiametro
+        = 10". The prompts produce closely-clustered Italian
+        gibberish but are not literally byte-identical at full
+        generation length.
+
+    BUG SCOPE NARROWING:
+      - GGUF inference: produces Italian-coding-style "mode-collapse"
+        gibberish that STARTS the same way across prompts but
+        diverges at sufficient generation length. Output is
+        prompt-correlated (different prompts → different gibberish)
+        but still semantically wrong.
+      - APR inference: WORKING through library at conversational
+        and direct-prompt paths. CLI may have a separate residual
+        bug — `apr run` produces different output than direct
+        `run_inference` for the same prompt.
+
+    RED-then-GREEN cycle:
+      v1.0.0 RED (predicted): byte-identical output across distinct prompts
+      v1.0.0 GREEN (observed): outputs differ, but both are gibberish
+      v1.1.0 ACTIVE_FUNCTIONAL: prompt-sensitivity invariant HOLDS at
+        library level; the actual residual bug is "GGUF mode collapse
+        to Italian-coding-gibberish cluster" — captured in a separate
+        contract gguf-mode-collapse-v1 (TODO authored separately).
+
+    SHIP-% MOVEMENT FROM THIS DISCHARGE: NONE on its own (this
+    contract documents what IS, not a fix). But the empirical
+    evidence demonstrates that:
+      - SHIP-008 (chat template render): APR + ChatML produces clean
+        conversational output — LIVE-dischargeable today via
+        run_inference test, separate PR.
+      - SHIP-005 (HumanEval): may be runnable on APR (not GGUF) path
+        — the underlying inference engine is fixed; only the GGUF
+        mode-collapse is residual.
+
+    METHODOLOGY LESSON #9 (NEW, recorded for posterity): A
+    falsifier's GREEN outcome may invalidate an earlier RED
+    observation — when the falsifier is more rigorous than the
+    original observation, the contract status flips PROPOSED →
+    ACTIVE_FUNCTIONAL with a refined picture. The original §61.8
+    "byte-identical" claim was based on truncated CLI output (16-32
+    tokens) that happened to share a prefix; the run_inference LIVE
+    test ran 32 tokens and revealed the prompts produce clustered-
+    but-distinct outputs.
+
+  references:
+    - 'docs/specifications/aprender-train/ship-two-models-spec.md §61.8 (PRED-61-A/B fired; 3-way bug taxonomy)'
+    - 'docs/specifications/aprender-train/ship-two-models-spec.md §60 (forward-parity closure on 7-token canonical prompt — does NOT cover this bug class)'
+    - 'docs/specifications/aprender-train/ship-two-models-spec.md §17.5 (5 MODEL-1 PARTIAL chain)'
+    - 'evidence/section-61-8-pred-fired-2026-05-10/findings.json (empirical 3-way taxonomy)'
+    - 'evidence/section-61-8-pred-fired-2026-05-10/pred-61-a-gguf-direct.txt (raw "What is 2+2?" → "ampiezza...")'
+    - 'evidence/section-61-8-pred-fired-2026-05-10/pred-61-a-gguf-chatml.txt (ChatML → byte-identical "ampiezza...")'
+    - 'evidence/section-61-8-pred-fired-2026-05-10/gguf-third-prompt.txt ("Hello, my name is" → byte-identical "ampiezza...")'
+    - 'evidence/ship-two-001/ex-06-ac006-preupload-local.json (2026-04-17 — same "ampiezza..." canned text observed pre-§60 on APR; APR was fixed by §60 cascade, GGUF was not)'
+    - 'crates/aprender-serve/src/infer/mod.rs:268-318 (prepare_tokens_gguf — auto-wraps in ChatML)'
+    - 'crates/aprender-serve/src/infer/inference_result.rs:174 (run_gguf_inference dispatch)'
+    - 'crates/aprender-serve/src/gguf/inference/fails.rs:188-319 (generate_with_cache — prefill loop)'
+    - 'crates/aprender-serve/src/gguf/inference/matmul_fused.rs:40-60 (embed — token_embedding lookup)'
+    - 'feedback_test_methodology_can_fake_bugs.md (methodology lesson #7)'
+    - 'feedback_falsifier_chain_assert_difference.md (assert_ne!-driven bisection pattern)'
+  depends_on:
+    - 'apr-vs-gguf-forward-parity-v1'
+
+equations:
+  prompt_sensitivity_invariant:
+    formula: |
+      ∀ prompts p₁, p₂: p₁ ≠ p₂ ⇒ output(model, p₁) ≠ output(model, p₂)
+    domain: |
+      For any model and any two distinct prompt strings, the inference
+      output (sampled token sequence under fixed seed + temperature)
+      MUST differ as a function of the prompt. Byte-identical output
+      across distinct prompts is structurally impossible for a
+      correctly-functioning autoregressive LM under non-pathological
+      inputs (i.e., excluding the case where p₁ and p₂ tokenize to
+      the same sequence — easily ruled out for English-text prompts
+      of distinct content).
+    invariants:
+    - 'output(p₁) != output(p₂) WHEN p₁ != p₂ AND tokenize(p₁) != tokenize(p₂)'
+    - 'wall time may differ but output text MUST differ'
+    preconditions:
+    - 'canonical 7B teacher loaded as GGUF'
+    - 'three distinct English prompts'
+    - 'greedy or low-temperature sampling (deterministic seed)'
+
+  prompt_token_flow_invariant:
+    formula: |
+      embedding_lookup(token_id) is called WITH the token IDs from
+      tokenize(prompt), NOT a fixed sequence
+    domain: |
+      The forward pass MUST consume the actual prompt tokens, not
+      a fixed BOS sequence or stale cached state. This is a
+      structural invariant on the input-token-feeding path
+      independent of the forward-parity invariant (apr-vs-gguf-
+      forward-parity-v1). Pre-fix the bug bypasses prompt tokens.
+    invariants:
+    - 'Each prefill iteration sees the prompt''s i-th token, not a fixed token'
+    - 'KV cache is flushed between distinct apr run invocations'
+    - 'Sampler reads logits computed from the actual final hidden state, not a poisoned/fixed buffer'
+    preconditions:
+    - 'prompt_sensitivity_invariant holds (downstream consequence)'
+
+proof_obligations:
+- type: invariant
+  property: GGUF distinct-prompt output divergence
+  formal: 'output(p₁) != output(p₂) for p₁ != p₂'
+  applies_to: prompt_sensitivity_invariant
+- type: invariant
+  property: prompt tokens reach embedding lookup
+  formal: 'embedding_lookup arg == tokenize(prompt)[i] at iteration i'
+  applies_to: prompt_token_flow_invariant
+
+falsification_tests:
+- id: FALSIFY-GGUF-PROMPT-SENS-001
+  rule: |
+    Two distinct prompts on canonical 7B GGUF teacher MUST produce
+    DIFFERENT output text via the `run_inference()` library path.
+  prediction: |
+    Call `run_inference` with P1 = "What is 2+2? The answer is " and
+    P2 = "Hello, my name is", max_tokens = 32. Assert
+    `output(P1) != output(P2)`.
+  status_v1_1_0: PASS (LIVE on canonical 7B GGUF teacher 2026-05-10)
+  evidence_v1_1_0: |
+    `cargo test -p aprender-serve --test gguf_prompt_sensitivity --release
+    -- --ignored falsify_gguf_prompt_sensitivity_distinct_prompts_distinct_outputs`
+    on noah-Lambda-Vector RTX 4090: PASS. Outputs:
+      P1 → "ampiezza = 0.5\ndiametro = 10\naltezza = 20\n\n# Calcolo
+            del volume\nvolume = ("
+      P2 → "ampiezza = 10\nampiezza\n\n# Stampa il doppio del valore
+            di ampiezza\ndoppio_ampiezz"
+    Both outputs are still semantically wrong (Italian-coding-style
+    gibberish), but they DIFFER. The original §61.8 "byte-identical"
+    claim came from truncated CLI output that happened to share the
+    "ampiezza = 0.5\ndiametro = 10" prefix at low max-tokens.
+  test: |
+    cargo test -p aprender-serve --test gguf_prompt_sensitivity \
+      --release -- --ignored \
+      falsify_gguf_prompt_sensitivity_distinct_prompts_distinct_outputs
+  if_fails: |
+    Regression — GGUF inference path collapsed to true byte-identity
+    across distinct prompts. Bisect:
+    1. Add eprintln! at `crates/aprender-serve/src/gguf/inference/fails.rs:228`
+       to log token IDs entering the prefill loop.
+    2. Add eprintln! at `crates/aprender-serve/src/gguf/inference/matmul_fused.rs:45`
+       to log embedding-lookup token IDs.
+    3. If logs show distinct tokens but sampler still produces
+       identical first token, KV cache is poisoned or sampler is
+       locked.
+  ship_blocking: true
+  counter_example_classes:
+  - prompt_tokens_dropped_before_forward
+  - kv_cache_poisoned_with_stale_state
+  - sampler_locked_to_fixed_initial_distribution
+  - tokenizer_collapses_distinct_inputs_to_same_tokens
+
+- id: FALSIFY-GGUF-PROMPT-SENS-002
+  rule: |
+    Three-prompt sweep — at least 2 of 3 distinct prompts produce
+    distinct outputs through `run_inference()`. Cardinality ≥ 2
+    rules out the single-canned-output failure mode.
+  prediction: |
+    Three prompts P1, P2, P3 with max_tokens=32. Assert
+    `cardinality({output_i}) >= 2`.
+  status_v1_1_0: PASS (LIVE on canonical 7B GGUF teacher 2026-05-10)
+  evidence_v1_1_0: |
+    Test run 2026-05-10 measured cardinality = 2 across {P1, P2, P3}.
+    Two distinct outputs observed in the cluster; one prompt's output
+    matched another's. Cardinality ≥ 2 holds; the bug is
+    "mode-collapse-to-cluster", not "single-canned-output".
+  test: |
+    cargo test -p aprender-serve --test gguf_prompt_sensitivity \
+      --release -- --ignored \
+      falsify_gguf_prompt_sensitivity_three_prompt_sweep
+  if_fails: |
+    Stronger version of -001 — even 3 distinct prompts collapse to
+    ≤ 1 distinct output. Same bisection as -001 but with stronger
+    evidence that the bug is structural, not edge-case.
+  ship_blocking: true
+  counter_example_classes:
+  - all_three_prompts_produce_byte_identical_output
+  - two_of_three_collapse_to_same_output
+
+- id: FALSIFY-GGUF-PROMPT-SENS-003
+  rule: |
+    The byte-identity failure mode does NOT occur on `.apr`-format
+    inference for the same canonical teacher (control gate proving
+    the bug is GGUF-path-specific, not model-content).
+  prediction: |
+    Same two prompts P1, P2 on canonical 7B APR (same model content,
+    different file format). Assert `output_apr(P1) != output_apr(P2)`.
+  status_v1_1_0: PASS (LIVE on canonical 7B APR teacher 2026-05-10)
+  evidence_v1_1_0: |
+    Test run 2026-05-10 produced CLEAN conversational outputs on APR:
+      P1 → "2+2 is 4."  (correct numerical answer)
+      P2 → "Hello! It's nice to meet you. What can I help you with
+            today?"  (correct conversational greeting)
+    The M-FFN-GGUF-5/5b cascade (PRs #1550 + #1556 on 2026-05-07)
+    fully fixed the APR path. The original 2026-04-17 evidence
+    (`ex-06-ac006-preupload-local.json`) showing APR also produced
+    "ampiezza..." gibberish is now superseded by post-§60 LIVE
+    evidence — APR is functional.
+  test: |
+    cargo test -p aprender-serve --test gguf_prompt_sensitivity \
+      --release -- --ignored \
+      falsify_gguf_prompt_sensitivity_apr_control_passes
+  if_fails: |
+    APR path regressed — the M-FFN-GGUF-5 fix was reverted. Re-merge
+    PR #1550 + #1556. Inspect `apr_transformer/inference.rs` for
+    `forward_traced` Q4K+Q8K dispatch.
+  ship_blocking: true
+  counter_example_classes:
+  - apr_path_also_prompt_insensitive
+  - apr_path_regressed_post_§60
+
+kani_harnesses: []
+
+qa_gate:
+  id: QA-GGUF-PROMPT-SENS-001
+  name: GGUF prompt-sensitivity gate
+  description: |
+    All three FALSIFY-GGUF-PROMPT-SENS-* tests pass at the
+    `run_inference()` library level; GGUF inference on canonical 7B
+    teacher produces distinct outputs for distinct prompts (even if
+    those outputs are still semantically wrong); APR control passes
+    confirming clean conversational output.
+  checks:
+  - prompt_sensitivity_invariant
+  - prompt_token_flow_invariant
+  pass_criteria: All 3 falsifiers pass at run_inference library level (LIVE 2026-05-10)
+  falsification: Any single regression fails the gate (ship-blocking)
+  follow_up_contract: |
+    A separate gguf-mode-collapse-v1 contract is needed for the
+    residual "GGUF emits Italian-coding-style gibberish" bug. That
+    is a SEPARATE invariant (output semantic correctness, not
+    distinctness) and warrants its own falsifier-first cascade.
+    SHIP-005/006/007 may discharge via APR path even with GGUF
+    mode-collapse unfixed.

@@ -62,6 +62,14 @@ impl KernelCache {
         &self.sm_target
     }
 
+    /// Get the CudaContext this cache was built against. Used by callers that
+    /// need to allocate temp `GpuBuffer<T>` (which require a context) — e.g.
+    /// `rms_norm_backward`'s per-row partial buffer for the FALSIFY-GPUTRAIN-006
+    /// deterministic two-stage gamma reduction.
+    pub(super) fn ctx(&self) -> &Arc<CudaContext> {
+        &self.ctx
+    }
+
     /// Look up a previously compiled module by key (KAIZEN-058).
     pub(super) fn get_cached(&mut self, name: &str) -> Option<&mut CudaModule> {
         self.modules.get_mut(name)

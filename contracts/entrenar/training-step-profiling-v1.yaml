@@ -41,6 +41,13 @@ equations:
     invariants:
       - wall_coverage >= 0.90 (phases account for >=90% of step wall time)
       - wall_coverage <= 1.0 (phases are subsets of step time)
+    preconditions:
+      - 'num_layers > 0'
+      - 'all phase timings are finite and non-negative'
+    postconditions:
+      - 'wall_coverage in [0.90, 1.0] (phases account for >=90% but ≤100% of step)'
+      - 'sum(phase_times) <= step_time (phases are non-overlapping and bounded)'
+    lean_theorem: 'Theorems.Training_step_decomposition'
 
   memory_bandwidth_saturation:
     formula: |
@@ -58,6 +65,13 @@ equations:
       - If bw_utilization > 0.7, step is memory-BW bound
       - If bw_utilization < 0.3, step is compute or latency bound
       - Fused kernels reduce bytes_transferred (1 load vs N loads)
+    preconditions:
+      - 'bytes_transferred > 0 && measured_time > 0 && peak_bw > 0'
+      - 'all values finite'
+    postconditions:
+      - 'bw_utilization in [0.0, 1.0] (cannot exceed 100% of peak bandwidth)'
+      - 'bw_utilization is finite'
+    lean_theorem: 'Theorems.Memory_bandwidth_saturation'
 
   compute_roofline:
     formula: |
@@ -71,6 +85,13 @@ equations:
     invariants:
       - compute_utilization > 0.5 means compute-bound (good for fused kernels)
       - compute_utilization < 0.1 means launch/memory/transfer overhead dominates
+    preconditions:
+      - 'flops > 0 && measured_time > 0 && peak_flops > 0'
+      - 'all values finite'
+    postconditions:
+      - 'compute_utilization in [0.0, 1.0] (cannot exceed 100% of peak FLOPS)'
+      - 'compute_utilization is finite'
+    lean_theorem: 'Theorems.Compute_roofline'
 
   kernel_launch_overhead:
     formula: |
@@ -84,6 +105,13 @@ equations:
     invariants:
       - launch_overhead < 0.10 (kernel launch is <10% of step time)
       - CUDA graph capture eliminates launch overhead for captured regions
+    preconditions:
+      - 'num_kernels > 0 && avg_launch_latency > 0 && step_time > 0'
+      - 'all values finite'
+    postconditions:
+      - 'launch_overhead in [0.0, 1.0] (overhead cannot exceed step wall time)'
+      - 'launch_overhead is finite'
+    lean_theorem: 'Theorems.Kernel_launch_overhead'
 
 falsification_tests:
   - id: F-TSP-001

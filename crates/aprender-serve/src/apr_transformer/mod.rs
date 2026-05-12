@@ -262,7 +262,55 @@ impl ActivationStats {
     }
 }
 
+/// Last-token-only activation slice for sample-size parity with GGUF traces.
+///
+/// Per `contracts/apr-vs-gguf-forward-parity-v1.yaml` v1.1.0 +
+/// SPEC-SHIP-TWO-001 §37: APR's `forward_traced` historically emits stats
+/// over ALL prompt tokens (seq_len * dim elements), while GGUF's
+/// `forward_traced` emits stats over only the LAST token (1 * dim
+/// elements). FALSIFY-APR-GGUF-PARITY-007 enforces count parity per layer
+/// per stat slot — a precondition for ratio-gate credibility (-001/-002/-003).
+///
+/// Each field mirrors the corresponding `LayerActivation::*_stats` field but
+/// is computed only over the last token's slice, e.g.
+/// `&hidden[(seq_len - 1) * hidden_dim..]`. When `seq_len == 1`, these stats
+/// are identical to the all-tokens stats (single-element optimization).
+#[derive(Debug, Clone, Default)]
+pub struct LastTokenStats {
+    /// attn_norm output, last-token only
+    pub attn_norm_stats: ActivationStats,
+    /// QKV projection output, last-token only
+    pub qkv_stats: ActivationStats,
+    /// Attention output, last-token only
+    pub attn_out_stats: ActivationStats,
+    /// FFN norm output, last-token only
+    pub ffn_norm_stats: ActivationStats,
+    /// FFN gate matmul output, last-token only
+    pub ffn_gate_stats: ActivationStats,
+    /// FFN up matmul output, last-token only
+    pub ffn_up_stats: ActivationStats,
+    /// silu(gate), last-token only
+    pub ffn_silu_gate_stats: ActivationStats,
+    /// silu(gate) * up, last-token only
+    pub ffn_swiglu_inner_stats: ActivationStats,
+    /// FFN output (post-down-proj), last-token only
+    pub ffn_out_stats: ActivationStats,
+    /// Layer output (post-residual), last-token only
+    pub output_stats: ActivationStats,
+}
+
 /// Per-layer activation trace
+///
+/// Sub-FFN telemetry fields (`ffn_gate_stats`, `ffn_up_stats`,
+/// `ffn_silu_gate_stats`, `ffn_swiglu_inner_stats`) added per
+/// `contracts/trace-ffn-sub-block-v1.yaml` v1.0.0 to support sub-block
+/// bisection within a transformer block's FFN. Load-bearing for the
+/// SHIP-007 fix per ship-two-models-spec.md §15.5 + §17.4.
+///
+/// `last_token` field added per `contracts/apr-vs-gguf-forward-parity-v1.yaml`
+/// v1.1.0 + SPEC-SHIP-TWO-001 §37: enables apples-to-apples comparison with
+/// GGUF's last-token-only stats, satisfying FALSIFY-APR-GGUF-PARITY-007
+/// count-parity precondition.
 #[derive(Debug, Clone)]
 pub struct LayerActivation {
     /// Layer index (0-indexed)
@@ -275,10 +323,27 @@ pub struct LayerActivation {
     pub attn_out_stats: ActivationStats,
     /// Statistics after FFN layer norm
     pub ffn_norm_stats: ActivationStats,
-    /// Statistics after FFN output
+    /// Statistics after gate projection matmul (pre-SiLU)
+    /// Per `contracts/trace-ffn-sub-block-v1.yaml` OBL-SUB-FFN-001
+    pub ffn_gate_stats: ActivationStats,
+    /// Statistics after up projection matmul
+    /// Per `contracts/trace-ffn-sub-block-v1.yaml` OBL-SUB-FFN-002
+    pub ffn_up_stats: ActivationStats,
+    /// Statistics after SiLU activation on gate projection (silu(gate))
+    /// Per `contracts/trace-ffn-sub-block-v1.yaml` OBL-SUB-FFN-003
+    pub ffn_silu_gate_stats: ActivationStats,
+    /// Statistics after SwiGLU inner multiply (silu(gate) * up)
+    /// Per `contracts/trace-ffn-sub-block-v1.yaml` OBL-SUB-FFN-004
+    pub ffn_swiglu_inner_stats: ActivationStats,
+    /// Statistics after FFN output (post-down-proj-matmul, residual contribution)
     pub ffn_out_stats: ActivationStats,
     /// Statistics after residual connection (layer output)
     pub output_stats: ActivationStats,
+    /// Last-token-only stats for sample-size parity with GGUF
+    /// (FALSIFY-APR-GGUF-PARITY-007). `None` when reporter does not populate
+    /// (e.g., backwards-compat callers). When populated, count == hidden_dim
+    /// or intermediate_dim per stat slot. Mirrors GGUF reporter semantics.
+    pub last_token: Option<LastTokenStats>,
 }
 
 /// Forward pass trace with layer-by-layer activations
@@ -368,3 +433,5 @@ pub struct AprTransformer {
 
 include!("generation_delegates.rs");
 include!("traced_forward.rs");
+
+mod traced_save_tensor;

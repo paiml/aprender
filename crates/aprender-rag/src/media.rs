@@ -6,7 +6,7 @@
 //! # Example
 //!
 //! ```rust
-//! use trueno_rag::media::{parse_subtitles, SubtitleFormat};
+//! use aprender_rag::media::{parse_subtitles, SubtitleFormat};
 //!
 //! let srt = "1\n00:00:01,000 --> 00:00:04,500\nHello world.\n";
 //! let track = parse_subtitles(srt).unwrap();

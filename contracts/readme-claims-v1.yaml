@@ -1,0 +1,156 @@
+metadata:
+  id: C-README-CLAIMS
+  version: "1.0.0"
+  created: "2026-04-24"
+  author: PAIML Engineering
+  kind: pattern
+  status: enforced
+  description: |
+    Verifiable claims made in the root `README.md`. Every quantitative
+    statement ("N crates", "M contracts", "K CLI commands") and every
+    runnable snippet is bound to a shell-command that re-derives the
+    number from live repository state. Drift between the README and the
+    code is a contract defect.
+
+    Written 2026-04-24 in response to long-standing README drift:
+    numbers were re-authored by hand across multiple editors and diverged
+    (three different crate counts, three contract counts, two CLI command
+    counts, two test totals). The fix is the same pattern applied to
+    SHIP-TWO-001: pin the claim, bind it to a falsifiable recomputation,
+    reject drift at CI time.
+  references:
+    - README.md
+    - ../apr-cookbook/README.md
+    - docs/specifications/aprender-monorepo-consolidation.md
+  depends_on: []
+equations:
+  workspace_crate_count:
+    formula: |
+      readme_crate_count == count(ls crates/)
+    domain: |
+      Every crate directory under `crates/` must be reflected in the
+      README's workspace-crate claim.
+    invariants:
+    - "the quoted count must match `ls crates/ | wc -l` at HEAD"
+    preconditions: []
+  contract_count:
+    formula: |
+      readme_contract_count == count(find contracts/ -name "*.yaml")
+    domain: |
+      Every YAML contract under `contracts/` (including nested families)
+      must be included in the README's provable-contract claim.
+    invariants:
+    - "the quoted count must match `find contracts/ -name '*.yaml' | wc -l`"
+    preconditions: []
+  cli_command_count:
+    formula: |
+      readme_cli_command_count == count(apr --help | grep -cE "^  [a-z][-a-z0-9]* ")
+    domain: |
+      The README's CLI-command count must match what `apr --help` lists.
+    invariants:
+    - "the quoted count must match the live `--help` subcommand list"
+    preconditions:
+    - "apr-cli builds clean on HEAD"
+  apr_cookbook_link_present:
+    formula: |
+      readme_mentions("../apr-cookbook") AND readme_mentions("apr-cookbook")
+    domain: |
+      The README must link to `paiml/apr-cookbook` — the recipe book
+      of production deployment examples — so new users can find
+      worked-out pipelines beyond the bare CLI.
+    invariants:
+    - "README.md contains a link whose href or path segment ends in `apr-cookbook`"
+    preconditions: []
+proof_obligations:
+- type: invariant
+  property: README crate count matches filesystem
+  formal: "readme_crate_count == |crates/|"
+  applies_to: metadata
+- type: invariant
+  property: README contract count matches filesystem
+  formal: "readme_contract_count == |contracts/**/*.yaml|"
+  applies_to: metadata
+- type: invariant
+  property: README CLI command count matches apr --help
+  formal: "readme_cli_command_count == lines_starting_with_lowercase(apr --help)"
+  applies_to: metadata
+- type: invariant
+  property: README links to apr-cookbook
+  formal: "'apr-cookbook' ∈ links(README.md)"
+  applies_to: metadata
+falsification_tests:
+- id: FALSIFY-README-001
+  rule: |
+    Workspace crate count in README matches `ls crates/ | wc -l`.
+  prediction: |
+    `README.md` states N workspace crates ↔ `ls crates/ | wc -l` = N.
+  test: |
+    bash scripts/check_readme_claims.sh --claim crate_count
+  if_fails: |
+    Either a new crate was added without bumping the README, or a crate
+    was removed without updating the count. Fix the README.
+  ship_blocking: false
+  counter_example_classes:
+  - stale_number
+  - off_by_one_new_crate
+  - off_by_one_removed_crate
+- id: FALSIFY-README-002
+  rule: |
+    Contract count in README matches `find contracts/ -name "*.yaml" | wc -l`.
+  prediction: |
+    `README.md` states M provable contracts ↔ filesystem contains M YAML
+    contracts under `contracts/`.
+  test: |
+    bash scripts/check_readme_claims.sh --claim contract_count
+  if_fails: |
+    Contract folder grew/shrank without README update. Rerun
+    `bash scripts/check_readme_claims.sh --regen` to refresh.
+  ship_blocking: false
+  counter_example_classes:
+  - stale_number
+  - missed_kernel_add
+  - missed_registry_add
+- id: FALSIFY-README-003
+  rule: |
+    CLI command count in README matches `apr --help` subcommand list.
+  prediction: |
+    `README.md` states K CLI commands ↔ `apr --help` prints K
+    subcommands on lines matching `^  [a-z][-a-z0-9]* `.
+  test: |
+    bash scripts/check_readme_claims.sh --claim cli_command_count
+  if_fails: |
+    A subcommand was added or renamed without README sync. Update the
+    README or revert the CLI change.
+  ship_blocking: false
+  counter_example_classes:
+  - stale_number
+  - subcommand_added_without_doc
+  - subcommand_renamed_without_doc
+- id: FALSIFY-README-004
+  rule: |
+    README contains a discoverable link to `paiml/apr-cookbook`.
+  prediction: |
+    `grep -F 'apr-cookbook' README.md` returns at least one hit in a
+    link context (`[text](url)` or `../apr-cookbook/...`).
+  test: |
+    bash scripts/check_readme_claims.sh --claim cookbook_link
+  if_fails: |
+    apr-cookbook link was deleted or renamed. Restore the pointer —
+    the cookbook is the canonical end-to-end recipe source.
+  ship_blocking: false
+  counter_example_classes:
+  - link_removed
+  - link_404
+  - link_renamed_without_sync
+kani_harnesses: []
+qa_gate:
+  id: QA-README-001
+  name: README claim consistency
+  description: All README quantitative claims re-derive from live repo state
+  checks:
+  - workspace_crate_count
+  - contract_count
+  - cli_command_count
+  - apr_cookbook_link_present
+  pass_criteria: All 4 falsification tests pass
+  falsification: Any single claim mismatch fails the gate

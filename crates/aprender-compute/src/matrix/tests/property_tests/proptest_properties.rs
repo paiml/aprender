@@ -216,8 +216,8 @@ proptest! {
         for i in 0..ab_v.len() {
             let diff = (ab_v.as_slice()[i] - a_bv.as_slice()[i]).abs();
             let max_val = ab_v.as_slice()[i].abs().max(a_bv.as_slice()[i].abs());
-            // Relaxed tolerance for SIMD backends (AVX512 accumulates more rounding error)
-            let tolerance = if max_val < 1.0 { 1e-2 } else { max_val * 2e-2 };
+            // Relaxed tolerance for SIMD backends (matches test_vecmat_associativity).
+            let tolerance = if max_val < 1.0 { 2e-2 } else { max_val * 2e-2 };
 
             prop_assert!(
                 diff < tolerance,

@@ -78,6 +78,7 @@ kani_harnesses:
 - id: KH-PUB-CLI-001
   obligation: no_cyclic_resolution
   property: acyclic_dep_graph
+  bound: 4
 
 verification_summary:
   total_obligations: 4

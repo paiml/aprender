@@ -462,11 +462,14 @@ fn check_ollama_available() -> bool {
 /// Returns None if no known size pattern is found.
 fn detect_size_from_filename(filename_lower: &str) -> Option<&'static str> {
     // Match size patterns with boundary checks to avoid false positives from
-    // random hex in temp filenames (e.g., ".tmp3bF2a1.gguf" must NOT match "3b").
+    // random hex in temp filenames (e.g., ".tmp97bF2a1.gguf" must NOT match "7b",
+    // ".tmp3bF2a1.gguf" must NOT match "3b").
     //
-    // Rule: the char AFTER the pattern must be a word boundary (end of string,
-    // '-', '_', '.', or non-alphanumeric). This prevents "3b" matching in "3bF2a1"
-    // but allows it in "model3b.gguf" or "model-3b-chat.gguf".
+    // Rule: BOTH the char BEFORE and the char AFTER the pattern must be word
+    // boundaries (start/end of string, '-', '_', '.', or non-alphanumeric).
+    // This prevents "7b" matching in "97bF2a1" but allows it in "model7b.gguf"
+    // or "model-7b-chat.gguf". Without the BEFORE check, NamedTempFile names
+    // with random hex like ".tmp97bXXX" trip the file-size-heuristic test.
     const SIZE_PATTERNS: &[(&str, &str)] = &[
         ("0.5b", "0.5b"),
         ("0_5b", "0.5b"),
@@ -479,11 +482,18 @@ fn detect_size_from_filename(filename_lower: &str) -> Option<&'static str> {
     ];
     SIZE_PATTERNS.iter().find_map(|(pattern, label)| {
         if let Some(pos) = filename_lower.find(pattern) {
+            let bytes = filename_lower.as_bytes();
             let end = pos + pattern.len();
-            // Require word boundary AFTER: end of string or non-alphanumeric
-            let has_boundary = end >= filename_lower.len()
-                || !filename_lower.as_bytes()[end].is_ascii_alphanumeric();
-            if has_boundary {
+            // BEFORE check: rejects random hex like "97b" / "a7b1" but allows
+            // "model3b" / "qwen3b". Rule: char before must NOT be an ASCII digit
+            // (the size patterns 3b/7b/14b/32b are digit+letter, so a preceding
+            // digit means we're inside a longer hex/numeric token, not at a
+            // size-prefix boundary).
+            let has_boundary_before = pos == 0 || !bytes[pos - 1].is_ascii_digit();
+            // AFTER check: rejects "3bF2a1" but allows "3b.gguf" / "3b-chat".
+            // Rule: char after must be end of string or non-alphanumeric.
+            let has_boundary_after = end >= bytes.len() || !bytes[end].is_ascii_alphanumeric();
+            if has_boundary_before && has_boundary_after {
                 return Some(*label);
             }
         }

@@ -92,7 +92,7 @@ duende-policy = "0.2"
 async-trait = "0.1"
 
 # Visualization integration (VIZ-001/002/003/004)
-renacer = { version = "0.9", default-features = false }
+renacer = { workspace = true, default-features = false }
 
 [dev-dependencies]
 proptest = { workspace = true }

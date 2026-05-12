@@ -1,0 +1,11 @@
+[Unit]
+Description=GitHub Actions runner disk guard (nightly target/ prune)
+After=network.target
+
+[Service]
+Type=oneshot
+User=noah
+Group=noah
+ExecStart=/usr/local/bin/runner-disk-guard.sh --nightly
+Nice=10
+IOSchedulingClass=idle

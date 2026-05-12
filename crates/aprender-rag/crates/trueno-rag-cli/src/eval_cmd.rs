@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use trueno_rag::{embed::Embedder, Chunk};
+use aprender_rag::{embed::Embedder, Chunk};
 
 use crate::query::{
     cosine_similarity, create_query_embedder, expand_query_hyde, parse_fusion_strategy,
@@ -79,8 +79,8 @@ fn run_eval_sample(
     sample_size: usize,
     seed: u64,
 ) -> Result<()> {
-    use trueno_rag::eval::generate::IndexChunk;
-    use trueno_rag::eval::{AnthropicClient, GroundTruthGenerator};
+    use aprender_rag::eval::generate::IndexChunk;
+    use aprender_rag::eval::{AnthropicClient, GroundTruthGenerator};
 
     let index_file = Path::new(index_path).join("index.json");
     if !index_file.exists() {
@@ -151,7 +151,7 @@ fn run_eval_generate(
     model: &str,
     dry_run: bool,
 ) -> Result<()> {
-    use trueno_rag::eval::{generate::IndexChunk, AnthropicClient, GroundTruthGenerator};
+    use aprender_rag::eval::{generate::IndexChunk, AnthropicClient, GroundTruthGenerator};
 
     let index_file = Path::new(index_path).join("index.json");
     if !index_file.exists() {
@@ -218,8 +218,8 @@ fn run_eval_retrieve(
     rerank: &str,
     hyde: bool,
 ) -> Result<()> {
-    use trueno_rag::eval::types::GroundTruthEntry;
-    use trueno_rag::DocumentId;
+    use aprender_rag::eval::types::GroundTruthEntry;
+    use aprender_rag::DocumentId;
 
     // Validate mode
     if !["dense", "sparse", "hybrid"].contains(&mode) {
@@ -335,7 +335,7 @@ fn run_eval_retrieve(
 
 /// Expand all ground-truth queries via HyDE (Hypothetical Document Embeddings).
 fn expand_all_queries_hyde(
-    queries: &[trueno_rag::eval::types::GroundTruthEntry],
+    queries: &[aprender_rag::eval::types::GroundTruthEntry],
 ) -> Result<Vec<String>> {
     println!("HyDE enabled — expanding {} queries via Claude API...", queries.len());
     let mut expanded = Vec::with_capacity(queries.len());
@@ -349,7 +349,7 @@ fn expand_all_queries_hyde(
 
 /// Dense eval retrieval: cosine similarity over embeddings.
 fn eval_retrieve_dense(
-    queries: &[trueno_rag::eval::types::GroundTruthEntry],
+    queries: &[aprender_rag::eval::types::GroundTruthEntry],
     persisted: &PersistedIndex,
     embedder: &dyn Embedder,
     effective_query: &dyn Fn(usize, &str) -> String,
@@ -358,7 +358,7 @@ fn eval_retrieve_dense(
     rerank: &str,
     output: &mut impl std::io::Write,
 ) -> Result<()> {
-    use trueno_rag::eval::types::{RetrievalResultEntry, RetrievedChunk};
+    use aprender_rag::eval::types::{RetrievalResultEntry, RetrievedChunk};
 
     for (i, entry) in queries.iter().enumerate() {
         print!("[{}/{}] {}...", i + 1, queries.len(), &entry.query[..entry.query.len().min(60)]);
@@ -411,7 +411,7 @@ fn eval_retrieve_dense(
 
 /// Sparse eval retrieval: BM25 keyword matching.
 fn eval_retrieve_sparse(
-    queries: &[trueno_rag::eval::types::GroundTruthEntry],
+    queries: &[aprender_rag::eval::types::GroundTruthEntry],
     persisted: &PersistedIndex,
     build_chunks: &dyn Fn(bool) -> Vec<Chunk>,
     effective_query: &dyn Fn(usize, &str) -> String,
@@ -420,15 +420,15 @@ fn eval_retrieve_sparse(
     rerank: &str,
     output: &mut impl std::io::Write,
 ) -> Result<()> {
-    use trueno_rag::eval::types::{RetrievalResultEntry, RetrievedChunk};
-    use trueno_rag::index::SparseIndex;
-    use trueno_rag::BM25Index;
+    use aprender_rag::eval::types::{RetrievalResultEntry, RetrievedChunk};
+    use aprender_rag::index::SparseIndex;
+    use aprender_rag::BM25Index;
 
     println!("Building BM25 index from {} chunks...", persisted.chunks.len());
     let start_build = std::time::Instant::now();
     let mut bm25 = BM25Index::new();
     let chunks = build_chunks(false);
-    let mut chunk_map: HashMap<trueno_rag::ChunkId, usize> = HashMap::new();
+    let mut chunk_map: HashMap<aprender_rag::ChunkId, usize> = HashMap::new();
     for (i, chunk) in chunks.iter().enumerate() {
         chunk_map.insert(chunk.id, i);
         bm25.add(chunk);
@@ -479,7 +479,7 @@ fn eval_retrieve_sparse(
 /// Hybrid eval retrieval: BM25 + dense with RRF fusion.
 #[allow(clippy::too_many_arguments)]
 fn eval_retrieve_hybrid(
-    queries: &[trueno_rag::eval::types::GroundTruthEntry],
+    queries: &[aprender_rag::eval::types::GroundTruthEntry],
     persisted: &PersistedIndex,
     embedder: Box<dyn Embedder>,
     build_chunks: &dyn Fn(bool) -> Vec<Chunk>,
@@ -492,10 +492,10 @@ fn eval_retrieve_hybrid(
     candidates: usize,
     output: &mut impl std::io::Write,
 ) -> Result<()> {
-    use trueno_rag::eval::types::{RetrievalResultEntry, RetrievedChunk};
-    use trueno_rag::index::VectorStoreConfig;
-    use trueno_rag::retrieve::HybridRetrieverConfig;
-    use trueno_rag::{BM25Index, HybridRetriever, VectorStore};
+    use aprender_rag::eval::types::{RetrievalResultEntry, RetrievedChunk};
+    use aprender_rag::index::VectorStoreConfig;
+    use aprender_rag::retrieve::HybridRetrieverConfig;
+    use aprender_rag::{BM25Index, HybridRetriever, VectorStore};
 
     let fusion_strategy = parse_fusion_strategy(fusion, fusion_k)?;
     let dim = embedder.dimension();
@@ -514,7 +514,7 @@ fn eval_retrieve_hybrid(
 
     let chunks = build_chunks(true);
     let n_chunks = chunks.len();
-    let mut chunk_meta: HashMap<trueno_rag::ChunkId, usize> = HashMap::new();
+    let mut chunk_meta: HashMap<aprender_rag::ChunkId, usize> = HashMap::new();
     for (i, chunk) in chunks.into_iter().enumerate() {
         chunk_meta.insert(chunk.id, i);
         retriever.index(chunk)?;
@@ -584,7 +584,7 @@ async fn run_eval_judge(
     top_k: usize,
     model: &str,
 ) -> Result<()> {
-    use trueno_rag::eval::{
+    use aprender_rag::eval::{
         types::{JudgeCache, RetrievalResultEntry},
         AnthropicClient, RelevanceJudge,
     };
@@ -627,8 +627,8 @@ fn run_eval_metrics(
     judgments_path: &str,
     output_path: &str,
 ) -> Result<()> {
-    use trueno_rag::eval::metrics::{compute_metrics_from_judgments, format_metrics_summary};
-    use trueno_rag::eval::types::{JudgmentEntry, RetrievalResultEntry};
+    use aprender_rag::eval::metrics::{compute_metrics_from_judgments, format_metrics_summary};
+    use aprender_rag::eval::types::{JudgmentEntry, RetrievalResultEntry};
 
     // Load retrieval results
     let text = fs::read_to_string(retrieval_results_path)
@@ -664,7 +664,7 @@ fn run_eval_metrics(
 }
 
 fn run_eval_compare(baseline_path: &str, candidate_path: &str) -> Result<()> {
-    use trueno_rag::eval::{judge::compare_results, types::EvalOutput};
+    use aprender_rag::eval::{judge::compare_results, types::EvalOutput};
 
     let baseline: EvalOutput = serde_json::from_str(
         &fs::read_to_string(baseline_path)
@@ -680,7 +680,7 @@ fn run_eval_compare(baseline_path: &str, candidate_path: &str) -> Result<()> {
 }
 
 fn run_eval_gate(results_path: &str, min_mrr: f64, min_hit5: f64) -> Result<()> {
-    use trueno_rag::eval::{judge::check_gate, types::EvalOutput};
+    use aprender_rag::eval::{judge::check_gate, types::EvalOutput};
 
     let output: EvalOutput = serde_json::from_str(
         &fs::read_to_string(results_path)
