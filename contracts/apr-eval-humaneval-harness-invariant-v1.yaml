@@ -1,0 +1,322 @@
+---
+contract_id: F-APR-EVAL-HUMANEVAL-HARNESS-INVARIANT-001
+title: "apr eval HumanEval harness must not produce false-negatives (§69 RC1-RC4)"
+status: ACTIVE
+created: 2026-05-12
+updated: 2026-05-12
+parent_spec: docs/specifications/aprender-train/ship-two-models-spec.md
+parent_acceptance_criterion: AC-SHIP1-005
+
+metadata:
+  version: 1.1.0
+  kind: kernel
+  description: |
+    Falsifiable invariant for the `apr eval --benchmark humaneval` harness.
+    Pins the §69 finding (2026-05-12) that the residual gap between H4
+    pass@1 (80.49%) and the SHIP-005 floor (84.80%) is HARNESS-level, not
+    model quality. Locks in the diagnostic surface
+    (`APR_EVAL_DEBUG=1` + `execute_python_test_with_diagnostics`) that
+    composes the falsifier.
+  references:
+    - "docs/specifications/aprender-train/ship-two-models-spec.md §69"
+    - "evidence/section-69-harness-bug-2026-05-12/findings.json"
+    - "crates/apr-cli/src/commands/eval/inference.rs::execute_python_test_with_diagnostics"
+    - "crates/apr-cli/src/commands/eval/inference.rs::write_apr_eval_debug"
+
+# ─────────────────────────────────────────────────────────────
+# ABSTRACT
+# ─────────────────────────────────────────────────────────────
+abstract: |
+  The §69 smoking-gun test on HumanEval/1 showed that the model emits
+  correct Python code, `extract_python_code_block_targeted` returns the
+  correct extraction, and manual `python3` execution of the
+  `{extracted_code}\n\n{problem.test}\n\ncheck({entry})\n` program exits
+  0 — yet `apr eval` reports the same problem as FAIL.
+
+  This contract states the invariant the harness MUST uphold, and the
+  diagnostic surface a falsifier MUST use to either confirm or refute
+  the invariant on a given run.
+
+# ─────────────────────────────────────────────────────────────
+# FIVE-WHYS MOTIVATION
+# ─────────────────────────────────────────────────────────────
+five_whys:
+  - q: "Why do we need a harness-invariant contract?"
+    a: "Because §69 showed 4.31pp residual pass@1 gap is HARNESS, not model. Without an invariant the false-negative class can grow undetected."
+  - q: "Why isn't `eval-harness-humaneval-v1.yaml` enough?"
+    a: "That contract gates ship-% on a single pass@1 number. It cannot DISTINGUISH model failures from harness false-negatives. This contract closes that gap."
+  - q: "Why does the invariant need its own diagnostic surface?"
+    a: "Because §69's 4-step smoking-gun was manual and ad-hoc. To make it run-time falsifiable we need `APR_EVAL_DEBUG=1` to dump per-problem state and `execute_python_test_with_diagnostics` to capture exit code + stderr."
+  - q: "Why a kernel-style contract and not a code-style contract?"
+    a: "Because the invariant is an algebraic statement (manual_passes ⇒ harness_passes); the falsifier is a re-runnable command; both align with the existing pv KernelContract schema and `make eval-humaneval` execution model."
+  - q: "Why ACTIVE and not DRAFT?"
+    a: "Because the invariant is enforceable today: the diagnostic surface ships in this PR, and the falsifier `compare-apr-eval-vs-manual-python.sh` can be run on the canonical 7B teacher."
+
+# ─────────────────────────────────────────────────────────────
+# EQUATIONS / FORMALISATION
+# ─────────────────────────────────────────────────────────────
+equations:
+  - name: harness_invariant
+    formula: |
+      ∀ problem p, ∀ response r:
+        let c   = extract_python_code_block_targeted(r, p.entry_point)
+        let prog = c ++ "\n\n" ++ p.test ++ "\n\ncheck(" ++ p.entry_point ++ ")\n"
+        (manual_python3(prog).exit_code == 0)  ⇒  (execute_python_test(prog) == true)
+    domain: HumanEvalProblem × ModelResponseText
+    codomain: Bool
+    invariants:
+      - "Manual python3 exit 0 ⇒ harness must report success (no false-negatives)"
+      - "Harness must not return false from queue contention, stderr pipe deadlock, tmp-file collision, or PYTHONDONTWRITEBYTECODE side-effects"
+      - "Diagnostic dump (APR_EVAL_DEBUG=1) must capture the COMPLETE input program byte-for-byte"
+
+  - name: diagnostic_completeness
+    formula: |
+      APR_EVAL_DEBUG=1 → write_apr_eval_debug emits JSON with fields
+        {task_id, prompt, response, response_len, completion,
+         completion_len, full_program, exit_code, stderr, timed_out,
+         spawn_error, success}
+      AND len(json.full_program) == len(string_passed_to_execute_python_test)
+    domain: HumanEvalProblem × APR_EVAL_DEBUG
+    codomain: JsonObject
+    invariants:
+      - "Every per-problem debug file is independent (uses task_id, not PID)"
+      - "stderr is captured up to 64KB without deadlocking on success"
+      - "exit_code is recorded as Option<i32> (None ⇔ timeout/spawn failed)"
+
+# ─────────────────────────────────────────────────────────────
+# KANI HARNESSES
+# ─────────────────────────────────────────────────────────────
+kani_harnesses:
+  - id: KANI-HEH-001
+    name: harness_no_false_negative_symbolic
+    obligation: PO-HEH-001
+    description: |
+      Symbolic harness asserting that for any program string P,
+      execute_python_test_with_diagnostics(P, 10).success implies
+      the actual python3 exit code was 0. (Modelled at the level of
+      PythonExecResult fields — actual python3 invocation is delegated
+      to the unit tests under FALSIFY-HEH-001..004 since python3 is not
+      Kani-symbolic.)
+    location: "crates/apr-cli/src/commands/eval/inference.rs (planned)"
+    status: planned
+  - id: KANI-HEH-002
+    name: diagnostic_completeness_symbolic
+    obligation: PO-HEH-003
+    description: |
+      Symbolic harness asserting that when APR_EVAL_DEBUG=1, the JSON
+      written to /tmp/apr_eval_debug_<task>.json round-trips through
+      serde_json::from_str back to the same struct fields with no loss.
+    location: "crates/apr-cli/src/commands/eval/inference.rs (planned)"
+    status: planned
+
+# ─────────────────────────────────────────────────────────────
+# QA GATE
+# ─────────────────────────────────────────────────────────────
+qa_gate:
+  certeza:
+    min_grade: A-
+    min_coverage_percent: 80
+    blocking: false
+  notes: |
+    Coverage of run_humaneval_inference is currently gated by feature
+    flag (inference). The 4 new unit tests under
+    execute_python_test_diagnostics_tests cover the diagnostic surface
+    directly. Full e2e coverage requires a fixture-based eval run.
+
+# ─────────────────────────────────────────────────────────────
+# PROOF OBLIGATIONS
+# ─────────────────────────────────────────────────────────────
+proof_obligations:
+  - id: PO-HEH-001
+    name: harness_no_false_negative
+    statement: |
+      For every HumanEval problem p where manual python3 of the
+      harness-built program reports exit 0, execute_python_test
+      MUST also return true.
+    type: safety
+    discharged_by: FALSIFY-HEH-001
+
+  - id: PO-HEH-002
+    name: stderr_drain_correctness
+    statement: |
+      A passing program emitting up to 64KB to stderr does not deadlock
+      execute_python_test (the stderr pipe is drained before exit).
+    type: safety
+    discharged_by: FALSIFY-HEH-002
+
+  - id: PO-HEH-003
+    name: debug_dump_path_isolation
+    statement: |
+      Concurrent or sequential APR_EVAL_DEBUG=1 dumps for distinct
+      task_ids produce distinct files at /tmp/apr_eval_debug_<task>.json
+      (task_id is part of the filename, not just PID).
+    type: safety
+    discharged_by: FALSIFY-HEH-003
+
+# ─────────────────────────────────────────────────────────────
+# FALSIFICATION TESTS
+# ─────────────────────────────────────────────────────────────
+falsification_tests:
+  - id: FALSIFY-HEH-001
+    name: harness_invariant_passing_program_reports_success
+    description: |
+      A trivially-passing program (`def f(x): return x+1`; `assert f(1) == 2`)
+      MUST be reported as success by execute_python_test_with_diagnostics.
+    test: "crates/apr-cli/src/commands/eval/inference.rs::execute_python_test_diagnostics_tests::harness_invariant_passing_program_reports_success"
+    expected: result.success == true ∧ result.exit_code == Some(0)
+    fails_if: |
+      Test returns false despite the program being valid Python that exits 0.
+      Indicates RC2 (false-negative) regression.
+
+  - id: FALSIFY-HEH-002
+    name: verbose_stderr_does_not_deadlock_on_success
+    description: |
+      A passing program that emits ~10KB to stderr (200 × 50-char lines)
+      MUST NOT timeout — the stderr pipe is drained before child.wait().
+    test: "crates/apr-cli/src/commands/eval/inference.rs::execute_python_test_diagnostics_tests::verbose_stderr_does_not_deadlock_on_success"
+    expected: result.success == true ∧ result.timed_out == false
+    fails_if: |
+      Program times out or returns false. Indicates stderr pipe is not
+      being drained — RC2-variant deadlock bug.
+
+  - id: FALSIFY-HEH-003
+    name: assertion_failure_reports_nonzero_and_traceback
+    description: |
+      A failing program (`assert 1 == 2`) MUST be reported as failure
+      with exit_code = Some(1) and stderr containing 'AssertionError'.
+    test: "crates/apr-cli/src/commands/eval/inference.rs::execute_python_test_diagnostics_tests::assertion_failure_reports_nonzero_and_traceback"
+    expected: result.success == false ∧ result.exit_code == Some(1) ∧ stderr.contains("AssertionError")
+    fails_if: |
+      Failure not reported correctly, or stderr is empty (would indicate
+      pipe-drain regression).
+
+  - id: FALSIFY-HEH-004
+    name: success_program_reports_zero_exit_and_empty_stderr
+    description: |
+      A baseline program (`print('hello')`) reports success + exit 0 +
+      empty stderr — sanity baseline.
+    test: "crates/apr-cli/src/commands/eval/inference.rs::execute_python_test_diagnostics_tests::success_program_reports_zero_exit_and_empty_stderr"
+    expected: result.success == true ∧ result.exit_code == Some(0) ∧ stderr.is_empty()
+    fails_if: |
+      Sanity baseline fails — indicates broader execute_python_test
+      regression.
+
+# ─────────────────────────────────────────────────────────────
+# DIAGNOSTIC SURFACE
+# ─────────────────────────────────────────────────────────────
+diagnostic_surface:
+  env_var: APR_EVAL_DEBUG
+  effect_when_set: |
+    For each HumanEval problem processed by run_humaneval_inference,
+    write a per-problem JSON dump to
+    /tmp/apr_eval_debug_<safe_task_id>.json containing:
+      - task_id, prompt, response, response_len
+      - completion, completion_len
+      - full_program (the actual string passed to execute_python_test)
+      - exit_code (Option<i32>), stderr, timed_out, spawn_error, success
+  enables: |
+    Empirical decision among RC1 (model state leak), RC2 (false-negative),
+    RC3 (format!() bug), RC4 (max_tokens truncation) from §69.
+  usage: |
+    Single-problem replication:
+      APR_EVAL_DEBUG=1 apr eval <model.apr> --task humaneval \
+        --data <single-problem.jsonl> --json
+      jq . /tmp/apr_eval_debug_HumanEval_1.json
+      python3 -c "$(jq -r .full_program /tmp/apr_eval_debug_HumanEval_1.json)"
+      # If python3 exits 0 BUT json.success == false → RC2 confirmed.
+      # If python3 exits non-zero → RC1 or RC3.
+
+# ─────────────────────────────────────────────────────────────
+# SHIP IMPACT
+# ─────────────────────────────────────────────────────────────
+ship_impact:
+  ship_005_status_under_contract: |
+    SHIP-005 stays PARTIAL at 80.49% pass@1 until the harness invariant
+    is empirically discharged on a 164-run. Path to discharge:
+      1. Run `APR_EVAL_DEBUG=1 apr eval` on 164-problem set
+      2. For every fail, check json.full_program manually under python3
+      3. Count how many fails are RC2 (harness false-negatives)
+      4. If false-negative rate > 1pp → fix the harness, re-run
+  model_1_ship_percent: |
+    Stays 94%. Closing the harness gap to ≥84.80% LIVE pass@1 lifts to 95%.
+  methodology_lesson_16: |
+    Compose falsifiers via manual end-to-end replication: when an apparent
+    model failure resists model-side hypotheses, manually replicate every
+    step of the harness outside the binary. If manual reproduces but
+    harness fails, the bug lives in the harness, not the model.
+
+# ─────────────────────────────────────────────────────────────
+# v1.1.0 AMENDMENT — gx10 EMPIRICAL RC3 CONFIRMATION (2026-05-12)
+# ─────────────────────────────────────────────────────────────
+validation_result_v1_1:
+  date: 2026-05-12
+  host: gx10-a5b5 (Blackwell GB10, aarch64)
+  binary: /home/noah/src/aprender/target/release/apr (commit 3b59b434a)
+  artifact: /home/noah/src/apr-leaderboard/checkpoints/qwen2.5-coder-7b-instruct-q4k.apr
+  problem: HumanEval/1 (separate_paren_groups)
+  apr_eval_verdict: FAIL (pass_at_1 = 0.0)
+  diagnostic_dump:
+    path: /tmp/apr_eval_debug_HumanEval_1.json
+    response_len: 1031
+    completion_len: 524
+    exit_code: 1
+    timed_out: false
+    success: false
+    spawn_error: null
+    stderr_head: |
+      Traceback (most recent call last):
+        File "/tmp/apr_eval_68696_*.py", line 1, in <module>
+          def separate_paren_groups(paren_string: str) -> List[str]:
+                                                          ^^^^
+      NameError: name 'List' is not defined. Did you mean: 'list'?
+  rc_disambiguation:
+    rc1_model_state_leak: FALSIFIED — apr eval emitted coherent 1031-byte response
+    rc2_false_negative: FALSIFIED — python3 actually returned exit 1; harness reported it correctly
+    rc3_format_bug: CONFIRMED — full_program drops `from typing import List` from problem.prompt
+    rc4_max_tokens_truncation: FALSIFIED — closing fence present, extraction succeeded (524-char completion)
+  root_cause: |
+    The ChatML/markdown path at run_humaneval_inference uses the extracted
+    code block AS the program (no preamble prepended). The extracted block
+    starts with `def f(x: str) -> List[str]:` but the typing import lives
+    in `problem.prompt` (NOT in the model's emitted code block). Result:
+    NameError at line 1 of the program.
+  fix:
+    file: crates/apr-cli/src/commands/eval/inference.rs
+    helper: extract_prompt_preamble(prompt, entry_point) -> String
+    call_site: ChatML/markdown branch of run_humaneval_inference
+    semantics: |
+      preamble = everything in problem.prompt BEFORE `def {entry_point}(`
+      full_program = preamble + "\n" + extracted_code + "\n\n" + test + "\n\ncheck(entry)\n"
+    unit_tests:
+      - captures_typing_import_preamble
+      - captures_multiline_preamble
+      - empty_when_def_at_start
+      - empty_when_entry_missing
+      - empty_when_entry_empty
+      - empty_when_entry_unknown
+      - rc3_falsifier_composed_program_is_valid_python
+  expected_pass_at_1_after_fix: |
+    The 80.49% baseline (§67) was measured with the buggy harness. With
+    the RC3 fix, every HumanEval problem whose signature uses `List`,
+    `Tuple`, `Dict`, `Optional`, `Any`, `Set`, or `Union` (~70% of the
+    canonical set) should now compile. Empirical lift estimate: +5-15pp
+    on the 164-run, plausibly clearing the 84.80% AC-SHIP1-005 floor.
+  ship_005_status_after_fix: |
+    Path to LIVE discharge is now: rebuild apr binary on gx10 + rerun
+    164-problem eval. If post-fix pass@1 >= 84.80%, SHIP-005 discharges.
+
+# ─────────────────────────────────────────────────────────────
+# v1.1.0 AMENDMENT — additional falsifier from gx10 run
+# ─────────────────────────────────────────────────────────────
+falsification_tests_v1_1:
+  - id: FALSIFY-HEH-005
+    name: rc3_typing_import_preserved_in_full_program
+    description: |
+      For a HumanEval-shaped prompt with `from typing import List` and
+      a function signature `def f(x) -> List[str]:`, the composed
+      full_program MUST include the typing import (or python3 returns
+      NameError).
+    test: "crates/apr-cli/src/commands/eval/inference.rs::extract_prompt_preamble_tests::rc3_falsifier_composed_program_is_valid_python"
+    expected: full_program starts with "from typing import List" AND contains "def f"
+    fails_if: |
+      Composed program omits the import line — reverts the RC3 fix.

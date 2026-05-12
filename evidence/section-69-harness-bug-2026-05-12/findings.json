@@ -1,0 +1,79 @@
+{
+  "evidence_id": "SECTION-69-HARNESS-BUG-2026-05-12",
+  "session_date": "2026-05-12",
+  "summary": "Q4K hypothesis is wrong. Manual extraction of HumanEval/1 model response produces valid Python that passes the HumanEval test locally (exit 0). But apr eval reports HumanEval/1 as FAIL. The bug is HARNESS-level, NOT model quality.",
+  "smoking_gun_test": {
+    "step_1_apr_run_chatml": {
+      "command": "apr run <canonical 7B APR> --prompt '<HumanEval/1 prompt>' --max-tokens 512",
+      "output_length": "50 lines including ```python ... ``` code block",
+      "extracted_code_length": "765 chars (full def separate_paren_groups)"
+    },
+    "step_2_manual_python_test": {
+      "program": "{extracted code} + {test} + check(separate_paren_groups)",
+      "exit_code": 0,
+      "stderr": "(empty)",
+      "verdict": "PASS"
+    },
+    "step_3_apr_eval_same_problem": {
+      "command": "apr eval <canonical 7B APR> --task humaneval --data <he1.jsonl>",
+      "verdict": "FAIL",
+      "pass_at_1": "0.0%"
+    },
+    "step_4_rust_extractor_test": {
+      "input": "/tmp/he1-resp-local.txt (apr run response)",
+      "fn": "extract_python_code_block_targeted(text, Some('separate_paren_groups'))",
+      "result": "765-char code (identical to Python regex extraction)",
+      "verdict": "Rust extractor returns same valid code"
+    }
+  },
+  "interpretation": {
+    "what_we_know": [
+      "Model emits correct code (verified via apr run)",
+      "Python ast parses extracted code (verified manually)",
+      "Test program built from {extracted code + test + check} runs successfully under python3 (exit 0)",
+      "Rust extractor produces identical extracted code to Python regex extraction"
+    ],
+    "what_must_be_true": [
+      "The bug is NOT in the model",
+      "The bug is NOT in extract_python_code_block_targeted (returns correct code)",
+      "The bug is NOT in code quality (manually executable)",
+      "The bug MUST be somewhere between Rust extraction and Python test verdict"
+    ]
+  },
+  "hypothesis_corrections": {
+    "h4_methodology_mismatch_§66": "CONFIRMED PARTIALLY: ChatML wrap is necessary (went 34% → 80%). But not sufficient.",
+    "q4k_quantization_§67_§68": "WRONG: model produces correct code; quantization isn't the issue for HumanEval/1.",
+    "r1_r2_robustness_§68": "INSUFFICIENT: extraction is correct; problem is downstream."
+  },
+  "candidate_root_causes": {
+    "rc1_apr_eval_uses_different_inference_path": {
+      "description": "apr eval may iterate problems in a way that produces non-deterministic completions even at temp=0 (e.g., model state leakage between problems)",
+      "test": "Add APR_EVAL_DEBUG=1 env var that captures result.text per problem; compare to apr run output for the same prompt",
+      "priority": "HIGH"
+    },
+    "rc2_execute_python_test_false_negative": {
+      "description": "execute_python_test reports false-negative (e.g., signal handling, timeout, exit code interpretation)",
+      "test": "Capture the actual program written to /tmp/apr_eval_*.py and exit code; compare to manual python3 run",
+      "priority": "HIGH"
+    },
+    "rc3_full_program_format_string_bug": {
+      "description": "The format!('{completion}\\n\\n{}\\n\\ncheck({})\\n', ...) may produce different output than expected — e.g., extra escaping",
+      "test": "Print full_program to stderr before execution; compare to manually-built program",
+      "priority": "MEDIUM"
+    },
+    "rc4_max_tokens_truncation": {
+      "description": "max_tokens=512 may truncate the closing ``` fence; extractor falls through to fallback",
+      "test": "Increase max_tokens to 1024, rerun smoke",
+      "priority": "MEDIUM"
+    }
+  },
+  "ship_005_status": "STILL PARTIAL, but path is different than §66-§68 suggested",
+  "ship_percent_impact": {
+    "model_1_ship_percent": "stays at 94%",
+    "next_action": "diagnose apr eval harness bug via debug instrumentation, NOT Q4K → FP16 swap"
+  },
+  "methodology_lesson_16_new": {
+    "name": "Compose falsifiers via manual end-to-end replication",
+    "description": "When apr eval reports FAIL on a problem the model clearly solves correctly, the bug is in the harness. To find it: manually replicate the entire apr eval flow (prompt → model → extract → test) outside the binary. If manual replication passes but harness fails, the gap is somewhere in the harness flow's specific implementation, not in any of the individual steps."
+  }
+}
