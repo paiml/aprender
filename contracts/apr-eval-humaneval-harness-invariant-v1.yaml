@@ -8,7 +8,7 @@ parent_spec: docs/specifications/aprender-train/ship-two-models-spec.md
 parent_acceptance_criterion: AC-SHIP1-005
 
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   kind: kernel
   description: |
     Falsifiable invariant for the `apr eval --benchmark humaneval` harness.
@@ -244,3 +244,79 @@ ship_impact:
     model failure resists model-side hypotheses, manually replicate every
     step of the harness outside the binary. If manual reproduces but
     harness fails, the bug lives in the harness, not the model.
+
+# ─────────────────────────────────────────────────────────────
+# v1.1.0 AMENDMENT — gx10 EMPIRICAL RC3 CONFIRMATION (2026-05-12)
+# ─────────────────────────────────────────────────────────────
+validation_result_v1_1:
+  date: 2026-05-12
+  host: gx10-a5b5 (Blackwell GB10, aarch64)
+  binary: /home/noah/src/aprender/target/release/apr (commit 3b59b434a)
+  artifact: /home/noah/src/apr-leaderboard/checkpoints/qwen2.5-coder-7b-instruct-q4k.apr
+  problem: HumanEval/1 (separate_paren_groups)
+  apr_eval_verdict: FAIL (pass_at_1 = 0.0)
+  diagnostic_dump:
+    path: /tmp/apr_eval_debug_HumanEval_1.json
+    response_len: 1031
+    completion_len: 524
+    exit_code: 1
+    timed_out: false
+    success: false
+    spawn_error: null
+    stderr_head: |
+      Traceback (most recent call last):
+        File "/tmp/apr_eval_68696_*.py", line 1, in <module>
+          def separate_paren_groups(paren_string: str) -> List[str]:
+                                                          ^^^^
+      NameError: name 'List' is not defined. Did you mean: 'list'?
+  rc_disambiguation:
+    rc1_model_state_leak: FALSIFIED — apr eval emitted coherent 1031-byte response
+    rc2_false_negative: FALSIFIED — python3 actually returned exit 1; harness reported it correctly
+    rc3_format_bug: CONFIRMED — full_program drops `from typing import List` from problem.prompt
+    rc4_max_tokens_truncation: FALSIFIED — closing fence present, extraction succeeded (524-char completion)
+  root_cause: |
+    The ChatML/markdown path at run_humaneval_inference uses the extracted
+    code block AS the program (no preamble prepended). The extracted block
+    starts with `def f(x: str) -> List[str]:` but the typing import lives
+    in `problem.prompt` (NOT in the model's emitted code block). Result:
+    NameError at line 1 of the program.
+  fix:
+    file: crates/apr-cli/src/commands/eval/inference.rs
+    helper: extract_prompt_preamble(prompt, entry_point) -> String
+    call_site: ChatML/markdown branch of run_humaneval_inference
+    semantics: |
+      preamble = everything in problem.prompt BEFORE `def {entry_point}(`
+      full_program = preamble + "\n" + extracted_code + "\n\n" + test + "\n\ncheck(entry)\n"
+    unit_tests:
+      - captures_typing_import_preamble
+      - captures_multiline_preamble
+      - empty_when_def_at_start
+      - empty_when_entry_missing
+      - empty_when_entry_empty
+      - empty_when_entry_unknown
+      - rc3_falsifier_composed_program_is_valid_python
+  expected_pass_at_1_after_fix: |
+    The 80.49% baseline (§67) was measured with the buggy harness. With
+    the RC3 fix, every HumanEval problem whose signature uses `List`,
+    `Tuple`, `Dict`, `Optional`, `Any`, `Set`, or `Union` (~70% of the
+    canonical set) should now compile. Empirical lift estimate: +5-15pp
+    on the 164-run, plausibly clearing the 84.80% AC-SHIP1-005 floor.
+  ship_005_status_after_fix: |
+    Path to LIVE discharge is now: rebuild apr binary on gx10 + rerun
+    164-problem eval. If post-fix pass@1 >= 84.80%, SHIP-005 discharges.
+
+# ─────────────────────────────────────────────────────────────
+# v1.1.0 AMENDMENT — additional falsifier from gx10 run
+# ─────────────────────────────────────────────────────────────
+falsification_tests_v1_1:
+  - id: FALSIFY-HEH-005
+    name: rc3_typing_import_preserved_in_full_program
+    description: |
+      For a HumanEval-shaped prompt with `from typing import List` and
+      a function signature `def f(x) -> List[str]:`, the composed
+      full_program MUST include the typing import (or python3 returns
+      NameError).
+    test: "crates/apr-cli/src/commands/eval/inference.rs::extract_prompt_preamble_tests::rc3_falsifier_composed_program_is_valid_python"
+    expected: full_program starts with "from typing import List" AND contains "def f"
+    fails_if: |
+      Composed program omits the import line — reverts the RC3 fix.

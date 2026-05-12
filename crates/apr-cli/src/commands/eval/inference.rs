@@ -363,16 +363,20 @@ fn run_humaneval_inference(
         let completion =
             if let Some(code) = extract_python_code_block_targeted(&result.text, Some(entry)) {
                 // ChatML/markdown path: assistant emitted `\`\`\`python\n…\n\`\`\``.
-                // The extracted code contains the full function (signature +
-                // body); concatenating with prompt would duplicate the signature,
-                // so we use the code block AS the program (after the prompt's
-                // imports — the canonical solution-checking format expects
-                // `prompt + completion` to be a valid program).
                 //
-                // The simplest robust approach is to use the extracted block
-                // directly as the COMPLETE function, drop the prompt's empty
-                // function shell, and append the test harness.
-                code
+                // §69 RC3 FIX: the extracted code block contains the function
+                // (signature + body) but NOT the prompt's preamble — typing
+                // imports (`from typing import List`), constants, helpers, etc.
+                // Concatenating ONLY the code block drops those, producing
+                // `NameError: List is not defined` when the function signature
+                // uses typing aliases. Prepend the prompt's preamble (everything
+                // before `def {entry_point}(`) so imports survive.
+                let preamble = extract_prompt_preamble(&problem.prompt, entry);
+                if preamble.is_empty() {
+                    code
+                } else {
+                    format!("{preamble}\n{code}")
+                }
             } else {
                 // Raw-continuation fallback (pre-H4 path). Slice off the prompt
                 // prefix when it's verbatim in result.text; otherwise decode
@@ -718,6 +722,31 @@ pub(super) fn truncate_at_function_boundary(completion: &str) -> &str {
     completion
 }
 
+/// §69 RC3 FIX: extract everything in `prompt` that appears BEFORE the
+/// `def {entry_point}(` line — i.e., the imports/constants/helpers that
+/// the model assumes are in scope. Used by the ChatML/markdown path to
+/// reconstitute a valid `full_program` when the assistant's code block
+/// omits the imports (which it does for instruct models that read the
+/// imports from the user prompt's context).
+///
+/// Returns an empty string when:
+/// - `entry_point` is empty or "unknown"
+/// - `def {entry_point}(` is not found in the prompt
+/// - There's no content before `def {entry_point}(` (preamble-less prompt)
+///
+/// The returned string has trailing whitespace trimmed but leading
+/// imports/code preserved verbatim.
+pub(super) fn extract_prompt_preamble(prompt: &str, entry_point: &str) -> String {
+    if entry_point.is_empty() || entry_point == "unknown" {
+        return String::new();
+    }
+    let needle = format!("def {entry_point}(");
+    let Some(idx) = prompt.find(&needle) else {
+        return String::new();
+    };
+    prompt[..idx].trim_end().to_string()
+}
+
 /// PMAT-CODE-SHIP-005-WHITESPACE-RESIDUAL: normalise raw-continuation indent.
 ///
 /// HumanEval prompts end with `    """\n` (4-space-indented docstring close);
@@ -904,6 +933,82 @@ mod extract_python_code_block_tests {
         let text = "```python\nfirst = 1\n```\nthen:\n```python\nsecond = 2\n```";
         let got = extract_python_code_block(text);
         assert_eq!(got.as_deref(), Some("first = 1"));
+    }
+}
+
+#[cfg(test)]
+mod extract_prompt_preamble_tests {
+    use super::extract_prompt_preamble;
+
+    /// §69 RC3 canonical: HumanEval/1-shaped prompt with `from typing import List`
+    /// preamble must be extracted before `def {entry_point}(`.
+    #[test]
+    fn captures_typing_import_preamble() {
+        let prompt = "from typing import List\n\n\ndef separate_paren_groups(s: str) -> List[str]:\n    \"\"\"...\"\"\"\n";
+        let got = extract_prompt_preamble(prompt, "separate_paren_groups");
+        assert_eq!(got, "from typing import List");
+    }
+
+    /// Multi-import + constant preamble — preserves every line up to `def`.
+    #[test]
+    fn captures_multiline_preamble() {
+        let prompt = "from typing import List, Tuple\nimport math\n\nPI = 3.14\n\ndef f(x: List[int]) -> Tuple[int, int]:\n    pass\n";
+        let got = extract_prompt_preamble(prompt, "f");
+        assert_eq!(
+            got,
+            "from typing import List, Tuple\nimport math\n\nPI = 3.14"
+        );
+    }
+
+    /// No preamble — `def` is at byte 0 → returns empty.
+    #[test]
+    fn empty_when_def_at_start() {
+        let prompt = "def trivial():\n    pass\n";
+        let got = extract_prompt_preamble(prompt, "trivial");
+        assert_eq!(got, "");
+    }
+
+    /// `entry_point` not found in prompt → returns empty (don't guess).
+    #[test]
+    fn empty_when_entry_missing() {
+        let prompt = "from typing import List\n\ndef other_fn():\n    pass\n";
+        let got = extract_prompt_preamble(prompt, "expected_fn");
+        assert_eq!(got, "");
+    }
+
+    /// Empty entry_point string → returns empty (safety guard).
+    #[test]
+    fn empty_when_entry_empty() {
+        let prompt = "from typing import List\n\ndef f():\n    pass\n";
+        let got = extract_prompt_preamble(prompt, "");
+        assert_eq!(got, "");
+    }
+
+    /// "unknown" sentinel (fallback when extract_function_name fails) → empty.
+    #[test]
+    fn empty_when_entry_unknown() {
+        let prompt = "from typing import List\n\ndef f():\n    pass\n";
+        let got = extract_prompt_preamble(prompt, "unknown");
+        assert_eq!(got, "");
+    }
+
+    /// §69 RC3 falsifier: a composed full_program built from
+    /// `preamble + extracted_code + test + check` MUST be valid Python
+    /// when the prompt has typing imports.
+    #[test]
+    fn rc3_falsifier_composed_program_is_valid_python() {
+        let prompt = "from typing import List\n\n\ndef separate_paren_groups(s: str) -> List[str]:\n    pass\n";
+        let preamble = extract_prompt_preamble(prompt, "separate_paren_groups");
+        let extracted_code = "def separate_paren_groups(s: str) -> List[str]:\n    return [s]";
+        let full = format!("{preamble}\n{extracted_code}\n");
+        assert!(
+            full.starts_with("from typing import List"),
+            "preamble must lead with import; got: {full}"
+        );
+        assert!(
+            full.contains("def separate_paren_groups"),
+            "must contain function: {full}"
+        );
     }
 }
 
