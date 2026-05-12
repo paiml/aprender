@@ -1,0 +1,40 @@
+{
+  "run_id": "model-2-from-scratch-010-4x-80k",
+  "date": "2026-04-27",
+  "host": "noah-Lambda-Vector",
+  "hypothesis": "§24.8 LR-budget vs corpus-diversity falsification",
+  "hyperparameters": {
+    "num_steps_target": 80000,
+    "steps_completed": 22000,
+    "steps_per_epoch": 2000,
+    "batch_size": 16, "seq_length": 512, "vocab_size": 50257,
+    "lr_max": 3e-4, "warmup_steps": 1000,
+    "corpus_tokens": 74286865, "corpus_path": "/mnt/nvme-raid0/data/csn-python-shards-full"
+  },
+  "epochs": [
+{  "epoch": 0,  "train_loss": 10.011036,  "val_loss": 9.943903,  "train_ppl": 22270.895,  "val_ppl": 20824.865,  "optimizer_state_sha": "51190911836ec4311a4a5bf1ca8239fc9845e2728c136a17e0a9d92476c567d5",  "wall_seconds": 502.50772,  "tokens_seen": 16384000,  "grad_norm_max": 1.8972534},
+{  "epoch": 1,  "train_loss": 9.63258,  "val_loss": 9.927234,  "train_ppl": 15253.737,  "val_ppl": 20480.607,  "optimizer_state_sha": "465d3c0716a8fe988c46726054379ca39c863976873793a2c1895aa1d5ed522d",  "wall_seconds": 495.51318,  "tokens_seen": 32768000,  "grad_norm_max": 1.9976085},
+{  "epoch": 2,  "train_loss": 9.630406,  "val_loss": 9.90696,  "train_ppl": 15220.62,  "val_ppl": 20069.56,  "optimizer_state_sha": "3d9f0b052054f33c22d217d0f614759ff39c0e4973ca8f091a11a7332c76bfe9",  "wall_seconds": 495.98975,  "tokens_seen": 49152000,  "grad_norm_max": 1.2997079},
+{  "epoch": 3,  "train_loss": 9.604397,  "val_loss": 9.879662,  "train_ppl": 14829.843,  "val_ppl": 19529.111,  "optimizer_state_sha": "98b0ff2fbb78369bba08a6500852273bab64df5e177943ab34999fc15531be98",  "wall_seconds": 494.92334,  "tokens_seen": 65536000,  "grad_norm_max": 1.3916723},
+{  "epoch": 4,  "train_loss": 9.763767,  "val_loss": 9.750687,  "train_ppl": 17392.03,  "val_ppl": 17166.012,  "optimizer_state_sha": "2d16a21b1747014bf1009c86ce1e4af3f38a7f02e8353b6faff3be403632ebe4",  "wall_seconds": 494.7906,  "tokens_seen": 81920000,  "grad_norm_max": 1.0163398},
+{  "epoch": 5,  "train_loss": 9.693294,  "val_loss": 9.859088,  "train_ppl": 16208.54,  "val_ppl": 19131.432,  "optimizer_state_sha": "9ee6f182bc4b75eae36fa428972689d7275ecd4c823973d3eda6515fd48257a7",  "wall_seconds": 494.84598,  "tokens_seen": 98304000,  "grad_norm_max": 1.2217146},
+{  "epoch": 6,  "train_loss": 9.579424,  "val_loss": 9.806235,  "train_ppl": 14464.084,  "val_ppl": 18146.543,  "optimizer_state_sha": "c31b1aade3362d52f72cc45758e8364bdf418254dea498d36452d9e505dc72a9",  "wall_seconds": 494.95657,  "tokens_seen": 114688000,  "grad_norm_max": 1.1090157},
+{  "epoch": 7,  "train_loss": 9.550105,  "val_loss": 9.858836,  "train_ppl": 14046.171,  "val_ppl": 19126.617,  "optimizer_state_sha": "7172859379bd6469f7128c515852484f12610da6ebe8bb155f02ce965d3d76f5",  "wall_seconds": 494.62863,  "tokens_seen": 131072000,  "grad_norm_max": 1.0975807},
+{  "epoch": 8,  "train_loss": 9.57374,  "val_loss": 9.835924,  "train_ppl": 14382.105,  "val_ppl": 18693.37,  "optimizer_state_sha": "b98ac6bf61a14fa779ec298cda274dafd592645d96cd18f121251b2929565238",  "wall_seconds": 494.7832,  "tokens_seen": 147456000,  "grad_norm_max": 1.1192256},
+{  "epoch": 9,  "train_loss": 9.816107,  "val_loss": 9.80625,  "train_ppl": 18326.562,  "val_ppl": 18146.803,  "optimizer_state_sha": "e3553d9f3a2888e3fef7532f330bf3d511a7687bd5a08f960baded2df4e6d60a",  "wall_seconds": 494.86743,  "tokens_seen": 163840000,  "grad_norm_max": 0.92400384},
+{  "epoch": 10,  "train_loss": 9.563081,  "val_loss": 9.813224,  "train_ppl": 14229.617,  "val_ppl": 18273.805,  "optimizer_state_sha": "6584232f30dfdabf61dfa1fdf43eea916db89a3d316b5676e9eef4f507f3a0cb",  "wall_seconds": 494.70554,  "tokens_seen": 180224000,  "grad_norm_max": 0.978612}
+  ],
+  "summary": {
+    "termination": "OK EARLY_STOP",
+    "best_val_loss": 9.7507,
+    "best_epoch": 4,
+    "steps_completed": 22000,
+    "steps_target": 80000,
+    "epochs_completed": 11,
+    "epochs_target": 40,
+    "comparison_20k_best": 9.7513,
+    "comparison_delta": -0.0006,
+    "empirical_finding": "4× LR budget did NOT break val_loss=9.75 plateau — model memorizes capacity-fit at epoch 4 regardless of cosine decay length",
+    "§24_8_predicted_outcome": "plateau near 9.5-9.7 → only Stack v2 will move the needle (CONFIRMED)"
+  }
+}

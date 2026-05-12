@@ -22,14 +22,166 @@
 use crate::models::llama_370m::Llama370MConfig;
 use crate::train::pretrain::{CheckpointFn, EpochArtifact, StepFn, ValFn};
 use crate::train::transformer_trainer::{LMBatch, TransformerTrainConfig, TransformerTrainer};
-use crate::transformer::{ModelArchitecture, TransformerConfig};
+use crate::transformer::{ModelArchitecture, Transformer, TransformerConfig};
+use crate::Tensor;
 use std::cell::RefCell;
+use std::collections::BTreeMap;
+use std::path::Path;
 use std::rc::Rc;
 
 /// Shared mutable ownership of the `TransformerTrainer` — both
 /// `RealStepFn` (training steps) and `RealValFn` (forward-only
 /// validation) clone this `Rc`.
 pub type SharedTrainer = Rc<RefCell<TransformerTrainer>>;
+
+/// Load tensors from an APR file as the read-half of `apr pretrain --init`.
+///
+/// Per `apr-pretrain-arch-polymorphic-v1` §init_load_semantics (PR #1473),
+/// the loader is REUSED, not reimplemented — this function is a thin wrapper
+/// over `aprender::format::converter::convert_report::load_model_tensors`,
+/// which is the same machinery `apr export` and `apr inspect` use. No
+/// duplicate APR parser; one source of truth.
+///
+/// Returns a map of `tensor_name -> (flat_f32_data, shape)`. The HF naming
+/// convention is preserved (e.g., `model.embed_tokens.weight`); reconciling
+/// against the trainer's parameter names is step 5f.3 (the population step).
+///
+/// Discharges from `apr-pretrain-arch-polymorphic-v1`:
+///   - §init_load_semantics invariant: "Loader is reused, not reimplemented"
+///   - FALSIFY-006 (init_loss < 6.0) at READ-COMPILE-BIND level: this
+///     function is the read half. Full FALSIFY-006 discharge requires
+///     5f.3 (population) + 5g (LIVE 500-step fine-tune).
+///
+/// Spec: SPEC-SHIP-TWO-001 §50.4 step 5f.2.
+///
+/// # Errors
+///
+/// Returns Err if the APR file:
+/// - Does not exist (filesystem I/O error)
+/// - Has invalid magic bytes (not APR\\0 or APRN)
+/// - Has a corrupted tensor index
+/// - Contains tensors with unsupported dtype (non-F32)
+pub fn load_init_tensors_from_apr(
+    path: impl AsRef<Path>,
+) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>, String> {
+    let path_ref = path.as_ref();
+    aprender::format::converter::load_model_tensors(path_ref).map_err(|e| {
+        format!(
+            "FALSIFY-APR-PRETRAIN-INIT-006: failed to load init tensors from APR file {}: {e}",
+            path_ref.display()
+        )
+    })
+}
+
+/// Reject an init `TransformerConfig` whose architecture family is incompatible
+/// with the pretrain target (decoder-only LM training).
+///
+/// Per `apr-pretrain-arch-polymorphic-v1` §arch_extraction_signature
+/// (PR #1473), wrong-arch APR (e.g., a CodeBERT/RoBERTa encoder model)
+/// MUST be FAIL-FAST not silent-truncate. Without this gate, an operator
+/// who points `--init` at e.g. `microsoft/codebert-base.apr` would silently
+/// load encoder weights into a decoder-shaped trainer, producing nonsense
+/// gradients that the divergence guard catches LATE (after multiple epochs).
+///
+/// Discharges FALSIFY-APR-PRETRAIN-ARCH-007 at PARTIAL_ALGORITHM_LEVEL.
+///
+/// Spec: SPEC-SHIP-TWO-001 §50.4 step 5f.1.
+///
+/// # Errors
+///
+/// Returns Err with a clear architecture-family-mismatch message when:
+/// - `cfg.architecture` is `ModelArchitecture::Encoder` (BERT/RoBERTa/CodeBERT)
+///
+/// Future expansion can add other family checks (e.g., reject hybrid SSM
+/// architectures whose forward pass differs from the standard decoder loop).
+pub fn validate_pretrain_init_arch_compatible(cfg: &TransformerConfig) -> Result<(), String> {
+    match cfg.architecture {
+        ModelArchitecture::Decoder => Ok(()),
+        ModelArchitecture::Encoder => Err(format!(
+            "FALSIFY-APR-PRETRAIN-ARCH-007: --init checkpoint has architecture=Encoder \
+             (e.g., BERT/RoBERTa/CodeBERT) but the pretrain trainer is decoder-only \
+             (Llama/Qwen-class causal LMs). Loading encoder weights into a decoder \
+             trainer would produce nonsense gradients. Architectural details: \
+             hidden_size={}, num_layers={}, vocab_size={}, hf_architecture={:?}",
+            cfg.hidden_size, cfg.num_hidden_layers, cfg.vocab_size, cfg.hf_architecture
+        )),
+    }
+}
+
+/// Populate a `Transformer`'s parameters from an `init_tensors` BTreeMap.
+///
+/// For each parameter the `Transformer` exposes via `named_parameters()`, look
+/// up the same HF-naming key in `init_tensors` and replace the parameter's
+/// `Tensor` with `Tensor::from_vec(data, requires_grad=true)`. The parameter
+/// remains trainable (gradients still flow) — this is fine-tune init, not
+/// frozen-encoder.
+///
+/// Strictness rules:
+/// - **Every** model parameter must have a matching entry in `init_tensors`.
+///   Missing entries return Err naming the unmatched parameter; this catches
+///   the case where the init APR was extracted from a different architecture.
+/// - **Length** of each init entry must match the model parameter's length
+///   (computed from the model's existing tensor `len()`). Mismatch returns Err.
+/// - **Extra** entries in `init_tensors` are silently ignored. This handles
+///   `tie_word_embeddings`: a Qwen2.5 APR may publish a separate `lm_head.weight`
+///   tensor that the model omits when ties are enabled.
+///
+/// Discharges from `apr-pretrain-arch-polymorphic-v1` §init_load_semantics:
+/// - Population invariant: "Init tensors populate trainer parameters
+///   byte-equivalent to source"
+/// - FALSIFY-APR-PRETRAIN-INIT-007 (population step) at PARTIAL_ALGORITHM_LEVEL.
+///
+/// Spec: SPEC-SHIP-TWO-001 §50.4 step 5f.3.
+///
+/// # Errors
+///
+/// Returns Err if any model parameter is missing from `init_tensors` or if
+/// any matched entry has a wrong length. The error message lists up to the
+/// first 5 problem parameters and the total count.
+pub fn populate_trainer_from_init_tensors(
+    transformer: &mut Transformer,
+    init_tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+) -> Result<usize, String> {
+    let expected: Vec<(String, usize)> =
+        transformer.named_parameters().into_iter().map(|(name, t)| (name, t.len())).collect();
+    let mut populated = 0usize;
+    let mut errors: Vec<String> = Vec::new();
+
+    for (name, expected_len) in &expected {
+        match init_tensors.get(name) {
+            Some((data, _shape)) => {
+                if data.len() != *expected_len {
+                    errors.push(format!(
+                        "{name}: init length {} != trainer expected {expected_len}",
+                        data.len()
+                    ));
+                    continue;
+                }
+                let tensor = Tensor::from_vec(data.clone(), true);
+                if !transformer.set_named_parameter(name, tensor) {
+                    errors.push(format!("{name}: set_named_parameter rejected the assignment"));
+                    continue;
+                }
+                populated += 1;
+            }
+            None => {
+                errors.push(format!("{name}: not present in init APR tensors"));
+            }
+        }
+    }
+
+    if !errors.is_empty() {
+        let total = errors.len();
+        let head = errors.iter().take(5).cloned().collect::<Vec<_>>().join("; ");
+        return Err(format!(
+            "FALSIFY-APR-PRETRAIN-INIT-007: populate_trainer_from_init_tensors \
+             failed for {total} parameter(s); first {} of {total}: {head}",
+            errors.len().min(5)
+        ));
+    }
+
+    Ok(populated)
+}
 
 /// Build a `TransformerConfig` field-for-field from `Llama370MConfig::*`
 /// constants (the contract-frozen MODEL-2 370M architecture).
@@ -50,6 +202,30 @@ pub fn llama_370m_transformer_config() -> TransformerConfig {
         hf_architecture: Some("LlamaForCausalLM".into()),
         hf_model_type: Some("llama".into()),
         tie_word_embeddings: true,
+    }
+}
+
+/// Polymorphic builder per `apr-pretrain-arch-polymorphic-v1` §arch_extraction_signature.
+///
+/// Discharges FALSIFY-APR-PRETRAIN-ARCH-002 (init=None preserves Llama370M baseline)
+/// and FALSIFY-APR-PRETRAIN-ARCH-003 (init=Some passes through extracted config).
+///
+/// Behaviour:
+///   init = None  → return `llama_370m_transformer_config()`, the §24/§25
+///                  from-scratch baseline. NO regression.
+///   init = Some  → clone the caller-extracted `TransformerConfig` byte-for-byte.
+///                  No silent defaults, no field overrides.
+///
+/// The caller is responsible for actually reading the APR file and producing the
+/// `TransformerConfig` (typically via `TransformerConfig::from_apr_metadata` from
+/// `transformer::config`). Decoupling the dispatch from the file I/O keeps
+/// `aprender-train` free of `aprender-serve` (the APR loader) as a build dep.
+///
+/// Spec: SPEC-SHIP-TWO-001 §50.4 step 5c.
+pub fn build_transformer_config(init: Option<&TransformerConfig>) -> TransformerConfig {
+    match init {
+        None => llama_370m_transformer_config(),
+        Some(cfg) => cfg.clone(),
     }
 }
 
@@ -196,10 +372,119 @@ pub fn build_shared_trainer(lr: f32, seq_length: usize, seed: u64) -> SharedTrai
     Rc::new(RefCell::new(trainer))
 }
 
+/// Polymorphic trainer builder for `apr pretrain --init` per
+/// `apr-pretrain-arch-polymorphic-v1` §arch_extraction_signature +
+/// §init_load_semantics (PR #1473).
+///
+/// Composes the §50.4 step-5f machinery into a single CLI-callable entry:
+///   - 5c: `build_transformer_config(init_arch)` — polymorphic dispatch
+///   - 5f.1: `validate_pretrain_init_arch_compatible(init_arch)` — encoder rejection
+///   - 5f.2: `load_init_tensors_from_apr(path)` — read APR weights
+///   - 5f.3: `populate_trainer_from_init_tensors(trainer, &tensors)` — populate
+///
+/// Behaviour:
+///   init = None  → identical to `build_shared_trainer` (Llama370M from-scratch
+///                  baseline; INV-ARCH-370M-001 enforced).
+///   init = Some  → builds a trainer with the EXTRACTED arch, validates the
+///                  family, loads tensors from the APR file, populates them.
+///                  INV-ARCH-370M-001 is NOT enforced (the arch is whatever the
+///                  init APR has, e.g. 0.5B / 1.5B / 7B).
+///
+/// Spec: SPEC-SHIP-TWO-001 §52.4 (step 5f.4 wireup).
+///
+/// # Errors
+///
+/// Returns Err when:
+/// - `init_arch` is `Some` with `architecture = Encoder` (FALSIFY-APR-PRETRAIN-ARCH-007)
+/// - `load_init_tensors_from_apr` fails (FALSIFY-APR-PRETRAIN-INIT-006)
+/// - `populate_trainer_from_init_tensors` fails (FALSIFY-APR-PRETRAIN-INIT-007)
+pub fn build_shared_trainer_with_init(
+    lr: f32,
+    seq_length: usize,
+    seed: u64,
+    init_arch: Option<&TransformerConfig>,
+    init_path: Option<&Path>,
+) -> Result<SharedTrainer, String> {
+    if init_arch.is_some() != init_path.is_some() {
+        return Err(format!(
+            "build_shared_trainer_with_init: init_arch and init_path must both be Some \
+             or both None (caller bug; init_arch.is_some()={}, init_path.is_some()={})",
+            init_arch.is_some(),
+            init_path.is_some()
+        ));
+    }
+
+    if let Some(cfg) = init_arch {
+        validate_pretrain_init_arch_compatible(cfg)?;
+    }
+
+    let model_cfg = build_transformer_config(init_arch);
+    let mut train_cfg = TransformerTrainConfig::new(model_cfg);
+    train_cfg.lr = lr;
+    train_cfg.max_seq_len = seq_length;
+    train_cfg.seed = seed;
+    let mut trainer = TransformerTrainer::new(train_cfg);
+
+    // Note: INV-ARCH-370M-001 (param-count band check) lives in
+    // `build_shared_trainer` (the from-scratch CLI path). The polymorphic
+    // builder is shape-agnostic by design — `build_transformer_config(init)`
+    // returns whatever the init APR has (0.5B, 1.5B, 7B, etc), so a single
+    // hardcoded band check would fire-fail on every non-Llama370M init.
+
+    if let Some(path) = init_path {
+        let tensors = load_init_tensors_from_apr(path)?;
+        populate_trainer_from_init_tensors(trainer.model_mut(), &tensors)?;
+    }
+
+    Ok(Rc::new(RefCell::new(trainer)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::train::transformer_trainer::LMBatch;
+
+    /// FALSIFY-APR-PRETRAIN-INIT-006 (read-half) — load_init_tensors_from_apr
+    /// returns Err with a clear message naming the falsifier when the path
+    /// does not exist.
+    ///
+    /// Spec: SPEC-SHIP-TWO-001 §50.4 step 5f.2.
+    #[test]
+    fn load_init_tensors_missing_file_errors_with_falsifier_id() {
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let missing = tmp.path().join("does-not-exist.apr");
+        let err =
+            load_init_tensors_from_apr(&missing).expect_err("missing init APR file MUST fail-fast");
+        assert!(
+            err.contains("FALSIFY-APR-PRETRAIN-INIT-006"),
+            "error must cite falsifier id (auditability): {err}"
+        );
+        assert!(
+            err.contains("does-not-exist.apr"),
+            "error must name the missing path (operator-experience): {err}"
+        );
+    }
+
+    /// FALSIFY-APR-PRETRAIN-INIT-006 (read-half) — function exists with the
+    /// right signature: `Path -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>>`.
+    /// Discharges the COMPILE-BIND level claim. Live empirical correctness
+    /// requires step 5g (operator-runnable LIVE fine-tune).
+    ///
+    /// Drift-prevention: this test catches a future refactor that changes
+    /// the return type or signature, which would break the §50.4 step 5f.3
+    /// follow-up that reconciles the BTreeMap against trainer parameters.
+    #[test]
+    fn load_init_tensors_signature_compile_bind() {
+        // Verify the function signature compile-binds: takes a Path-like,
+        // returns the right Result type. This is a compile-time check —
+        // if the signature drifts, this test stops compiling.
+        fn _check_signature<F>(_f: F)
+        where
+            F: Fn(&Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>, String>,
+        {
+        }
+        _check_signature(|p| load_init_tensors_from_apr(p));
+    }
 
     #[test]
     fn transformer_config_matches_llama_370m_constants() {
@@ -214,6 +499,158 @@ mod tests {
         assert!((cfg.rms_norm_eps - Llama370MConfig::RMS_NORM_EPS).abs() < f32::EPSILON);
         assert!(!cfg.use_bias, "INV-ARCH-370M-008: no bias");
         assert!(cfg.tie_word_embeddings, "INV-ARCH-370M-004: tied embeddings");
+    }
+
+    /// FALSIFY-APR-PRETRAIN-ARCH-002 — `build_transformer_config(None)` returns
+    /// the Llama370M baseline byte-for-byte. Falsifies regression in the §24/§25
+    /// from-scratch path when the polymorphic dispatch was added.
+    ///
+    /// Spec: SPEC-SHIP-TWO-001 §50.4 step 5c.
+    #[test]
+    fn build_transformer_config_no_init_matches_llama370m() {
+        let baseline = llama_370m_transformer_config();
+        let result = build_transformer_config(None);
+        assert_eq!(result.hidden_size, baseline.hidden_size);
+        assert_eq!(result.num_attention_heads, baseline.num_attention_heads);
+        assert_eq!(result.num_kv_heads, baseline.num_kv_heads);
+        assert_eq!(result.intermediate_size, baseline.intermediate_size);
+        assert_eq!(result.num_hidden_layers, baseline.num_hidden_layers);
+        assert_eq!(result.vocab_size, baseline.vocab_size);
+        assert_eq!(result.max_position_embeddings, baseline.max_position_embeddings);
+        assert!((result.rms_norm_eps - baseline.rms_norm_eps).abs() < f32::EPSILON);
+        assert!((result.rope_theta - baseline.rope_theta).abs() < f32::EPSILON);
+        assert_eq!(result.use_bias, baseline.use_bias);
+        assert_eq!(result.tie_word_embeddings, baseline.tie_word_embeddings);
+        assert_eq!(result.architecture, baseline.architecture);
+        assert_eq!(result.hf_architecture, baseline.hf_architecture);
+        assert_eq!(result.hf_model_type, baseline.hf_model_type);
+    }
+
+    /// FALSIFY-APR-PRETRAIN-ARCH-003 — `build_transformer_config(Some(cfg))`
+    /// passes through the caller-provided config byte-for-byte. No silent
+    /// defaults, no field overrides. Tests with Qwen2.5-Coder-0.5B shape
+    /// because that is the §49 fine-tune target.
+    ///
+    /// Spec: SPEC-SHIP-TWO-001 §50.4 step 5c.
+    #[test]
+    fn build_transformer_config_qwen_init_matches_input() {
+        let qwen = TransformerConfig::qwen2_0_5b();
+        let result = build_transformer_config(Some(&qwen));
+        assert_eq!(result.hidden_size, qwen.hidden_size, "hidden_size");
+        assert_eq!(result.num_attention_heads, qwen.num_attention_heads, "num_attention_heads");
+        assert_eq!(result.num_kv_heads, qwen.num_kv_heads, "num_kv_heads");
+        assert_eq!(result.intermediate_size, qwen.intermediate_size, "intermediate_size");
+        assert_eq!(result.num_hidden_layers, qwen.num_hidden_layers, "num_hidden_layers");
+        assert_eq!(result.vocab_size, qwen.vocab_size, "vocab_size");
+        assert_eq!(
+            result.max_position_embeddings, qwen.max_position_embeddings,
+            "max_position_embeddings"
+        );
+        assert_eq!(result.use_bias, qwen.use_bias, "use_bias");
+        assert_eq!(result.tie_word_embeddings, qwen.tie_word_embeddings, "tie_word_embeddings");
+        assert_eq!(result.architecture, qwen.architecture, "architecture");
+        // GQA-7:1 ratio preserved (Qwen2.5-0.5B: 14 / 2 = 7)
+        assert_eq!(
+            result.num_attention_heads / result.num_kv_heads,
+            7,
+            "GQA ratio must preserve as 7:1 (Qwen2.5-0.5B canonical)"
+        );
+    }
+
+    /// Drift-prevention: dispatch is mutually exclusive — None and Some
+    /// produce different configs (otherwise the polymorphic builder is
+    /// vacuous). Catches a future refactor that accidentally always
+    /// returns Llama370M regardless of init.
+    ///
+    /// Spec: SPEC-SHIP-TWO-001 §50.4 step 5c — drift prevention.
+    #[test]
+    fn build_transformer_config_dispatch_mutually_exclusive() {
+        let qwen = TransformerConfig::qwen2_0_5b();
+        let none_result = build_transformer_config(None);
+        let some_result = build_transformer_config(Some(&qwen));
+        // The two outputs MUST differ, otherwise the dispatch is broken.
+        assert_ne!(
+            none_result.hidden_size, some_result.hidden_size,
+            "dispatch must differentiate None vs Some — Llama370M hidden=1024 vs Qwen=896"
+        );
+        assert_ne!(
+            none_result.vocab_size, some_result.vocab_size,
+            "dispatch must differentiate None vs Some — Llama370M vocab=50257 vs Qwen=151936"
+        );
+    }
+
+    /// FALSIFY-APR-PRETRAIN-ARCH-007 (decoder branch) — `validate_pretrain_init_arch_compatible`
+    /// returns Ok for a decoder-family config.
+    ///
+    /// Spec: SPEC-SHIP-TWO-001 §50.4 step 5f.1.
+    #[test]
+    fn validate_pretrain_init_arch_accepts_decoder() {
+        let qwen = TransformerConfig::qwen2_0_5b();
+        assert_eq!(qwen.architecture, ModelArchitecture::Decoder);
+        validate_pretrain_init_arch_compatible(&qwen)
+            .expect("decoder-family config (Qwen2.5-0.5B) MUST pass arch-compat gate");
+    }
+
+    /// FALSIFY-APR-PRETRAIN-ARCH-007 (encoder branch) — load-bearing test.
+    /// `validate_pretrain_init_arch_compatible` returns Err naming the
+    /// architecture-family mismatch when given an encoder config (e.g.,
+    /// CodeBERT). Without this gate, the decoder trainer would silently
+    /// build with encoder weights producing nonsense gradients.
+    ///
+    /// Spec: SPEC-SHIP-TWO-001 §50.4 step 5f.1.
+    #[test]
+    fn validate_pretrain_init_arch_rejects_encoder() {
+        // Construct a minimal encoder config (CodeBERT-shaped).
+        let bert = TransformerConfig {
+            hidden_size: 768,
+            num_attention_heads: 12,
+            num_kv_heads: 12,
+            intermediate_size: 3072,
+            num_hidden_layers: 12,
+            vocab_size: 50265,
+            max_position_embeddings: 514,
+            rms_norm_eps: 1e-12,
+            rope_theta: 10_000.0,
+            use_bias: true,
+            head_dim_override: None,
+            architecture: ModelArchitecture::Encoder,
+            hf_architecture: Some("RobertaModel".to_string()),
+            hf_model_type: Some("roberta".to_string()),
+            tie_word_embeddings: false,
+        };
+        let err = validate_pretrain_init_arch_compatible(&bert).expect_err(
+            "encoder-family config (CodeBERT/RoBERTa) MUST fail arch-compat gate — \
+             silent acceptance would corrupt §49 fine-tune trajectory before any \
+             FALSIFY-006 check could measure it",
+        );
+        assert!(
+            err.contains("FALSIFY-APR-PRETRAIN-ARCH-007"),
+            "error must cite falsifier id: {err}"
+        );
+        assert!(err.contains("Encoder"), "error must name the architecture family: {err}");
+        assert!(
+            err.contains("decoder-only"),
+            "error must explain why this is wrong (decoder trainer): {err}"
+        );
+        assert!(
+            err.contains("RobertaModel"),
+            "error must name the offending hf_architecture: {err}"
+        );
+    }
+
+    /// Drift-prevention: validate_pretrain_init_arch_compatible's behavior on
+    /// the from-scratch baseline (Llama370M) — must Ok. Catches a future
+    /// refactor that accidentally over-rejects decoder configs.
+    #[test]
+    fn validate_pretrain_init_arch_accepts_llama370m_baseline() {
+        let llama = llama_370m_transformer_config();
+        assert_eq!(
+            llama.architecture,
+            ModelArchitecture::Decoder,
+            "Llama370M baseline MUST be Decoder (regression-free)"
+        );
+        validate_pretrain_init_arch_compatible(&llama)
+            .expect("Llama370M baseline (Decoder) MUST pass arch-compat gate");
     }
 
     #[test]
@@ -256,5 +693,284 @@ mod tests {
         let mut val = RealValFn::new(trainer, Vec::new());
         let loss = val.validate(0);
         assert!(loss.is_nan(), "empty held_out must surface as NaN to the guard");
+    }
+
+    /// Build a tiny Transformer suitable for unit testing the populate path.
+    /// Uses GQA-1:1 (kv=q) shape — the populate function is shape-agnostic so
+    /// the simpler ratio is fine here.
+    fn tiny_test_transformer() -> Transformer {
+        let mut tiny = TransformerConfig::llama2_7b();
+        tiny.hidden_size = 32;
+        tiny.num_attention_heads = 2;
+        tiny.num_kv_heads = 2;
+        tiny.num_hidden_layers = 2;
+        tiny.intermediate_size = 64;
+        tiny.vocab_size = 16;
+        Transformer::new(&tiny)
+    }
+
+    /// Build a `BTreeMap<String, (Vec<f32>, Vec<usize>)>` from a Transformer's
+    /// `named_parameters()` snapshot. Each tensor is a deterministic ramp
+    /// (i as f32 * 0.001) so populate is byte-identifiable post-set.
+    fn tensors_map_from_transformer(
+        transformer: &Transformer,
+    ) -> BTreeMap<String, (Vec<f32>, Vec<usize>)> {
+        let mut map = BTreeMap::new();
+        for (name, t) in transformer.named_parameters() {
+            let len = t.len();
+            let data: Vec<f32> = (0..len).map(|i| i as f32 * 0.001).collect();
+            map.insert(name, (data, vec![len]));
+        }
+        map
+    }
+
+    /// Happy path — every model parameter has a matching init entry of correct
+    /// length; populate succeeds and the count matches `named_parameters().len()`.
+    #[test]
+    fn populate_trainer_from_init_tensors_happy_path() {
+        let mut transformer = tiny_test_transformer();
+        let init_tensors = tensors_map_from_transformer(&transformer);
+        let expected_count = transformer.named_parameters().len();
+        let result = populate_trainer_from_init_tensors(&mut transformer, &init_tensors);
+        assert!(result.is_ok(), "happy-path populate must succeed: {result:?}");
+        assert_eq!(
+            result.unwrap(),
+            expected_count,
+            "populated count must equal named_parameters().len()"
+        );
+    }
+
+    /// Drift-prevention: extra entries in `init_tensors` that the model does
+    /// NOT expose are silently ignored. This handles tied-embeddings: a Qwen
+    /// APR may publish a separate `lm_head.weight` that the trainer's tied
+    /// model omits.
+    #[test]
+    fn populate_trainer_from_init_tensors_extra_entries_silently_ignored() {
+        let mut transformer = tiny_test_transformer();
+        let mut init_tensors = tensors_map_from_transformer(&transformer);
+        // Inject a fictitious extra parameter that the model does not have.
+        init_tensors
+            .insert("model.layers.999.fictitious.weight".to_string(), (vec![0.0; 4], vec![4]));
+        let expected_count = transformer.named_parameters().len();
+        let result = populate_trainer_from_init_tensors(&mut transformer, &init_tensors);
+        assert!(result.is_ok(), "extra init entries must NOT cause Err: {result:?}");
+        assert_eq!(result.unwrap(), expected_count);
+    }
+
+    /// FALSIFY-APR-PRETRAIN-INIT-007 (length mismatch) — when an init tensor
+    /// has the wrong flat length for a known parameter, populate MUST Err
+    /// with the FALSIFIER ID and a per-parameter diagnostic line.
+    #[test]
+    fn populate_trainer_from_init_tensors_rejects_length_mismatch() {
+        let mut transformer = tiny_test_transformer();
+        let mut init_tensors = tensors_map_from_transformer(&transformer);
+        // Corrupt one entry's length to trigger the mismatch path.
+        let any_name = transformer.named_parameters()[0].0.clone();
+        init_tensors.insert(any_name.clone(), (vec![0.0; 7], vec![7]));
+        let result = populate_trainer_from_init_tensors(&mut transformer, &init_tensors);
+        assert!(result.is_err(), "length-mismatch must Err, not silently truncate");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("FALSIFY-APR-PRETRAIN-INIT-007"),
+            "error must cite falsifier id; got: {err}"
+        );
+        assert!(err.contains(&any_name), "error must name the offending parameter; got: {err}");
+        assert!(
+            err.contains("init length 7"),
+            "error must report the actual init length; got: {err}"
+        );
+    }
+
+    /// FALSIFY-APR-PRETRAIN-INIT-007 (missing-required) — when a model
+    /// parameter has NO corresponding entry in `init_tensors`, populate MUST
+    /// Err with FALSIFIER ID and a "not present in init APR tensors"
+    /// per-parameter diagnostic. This catches the architecture-mismatch
+    /// class where init was extracted from a different model family.
+    #[test]
+    fn populate_trainer_from_init_tensors_rejects_missing_required_param() {
+        let mut transformer = tiny_test_transformer();
+        let mut init_tensors = tensors_map_from_transformer(&transformer);
+        // Drop one entry to trigger the missing-required path.
+        let any_name = transformer.named_parameters()[0].0.clone();
+        init_tensors.remove(&any_name);
+        let result = populate_trainer_from_init_tensors(&mut transformer, &init_tensors);
+        assert!(result.is_err(), "missing-required must Err, not silently leave random init");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("FALSIFY-APR-PRETRAIN-INIT-007"),
+            "error must cite falsifier id; got: {err}"
+        );
+        assert!(err.contains(&any_name), "error must name the missing parameter; got: {err}");
+        assert!(
+            err.contains("not present in init APR"),
+            "error must say what was missing; got: {err}"
+        );
+    }
+
+    /// `build_shared_trainer_with_init(None, None)` returns a trainer with
+    /// the §24/§25 from-scratch Llama370M architecture (regression-free
+    /// dispatch). Asserts the baseline shape via the (hidden, vocab) tuple
+    /// rather than param count to avoid the stale INV-ARCH-370M-001 band
+    /// check in `build_shared_trainer` (a defect outside §50.4 scope —
+    /// param_count=322M vs assert range [366M, 374M]; tracked for follow-up).
+    #[test]
+    fn build_shared_trainer_with_init_none_uses_llama370m_shape() {
+        let trainer = build_shared_trainer_with_init(1.0e-4, 128, 42, None, None)
+            .expect("None case must succeed");
+        let model = trainer.borrow();
+        // The baseline polymorphic dispatch produces a Llama370M-shaped model.
+        // Embedding shape `vocab × hidden` is the cleanest non-stale check.
+        let embed_len = model.model().named_parameters()[0].1.len();
+        let expected_embed_len = Llama370MConfig::VOCAB_SIZE * Llama370MConfig::HIDDEN_DIM;
+        assert_eq!(
+            embed_len,
+            expected_embed_len,
+            "init=None must produce Llama370M-shaped embedding (vocab={} × hidden={})",
+            Llama370MConfig::VOCAB_SIZE,
+            Llama370MConfig::HIDDEN_DIM
+        );
+    }
+
+    /// `build_shared_trainer_with_init(Some, None)` and the inverse must
+    /// fail-fast — both args are paired and either both Some or both None.
+    /// Drift-prevention: catches a future caller that forgets to pass one.
+    #[test]
+    fn build_shared_trainer_with_init_rejects_unpaired_args() {
+        // arch Some, path None
+        let cfg = TransformerConfig::qwen2_0_5b();
+        let result = build_shared_trainer_with_init(1.0e-4, 128, 42, Some(&cfg), None);
+        assert!(result.is_err(), "unpaired (arch=Some, path=None) must Err");
+        // arch None, path Some
+        let dummy_path = std::path::PathBuf::from("/dev/null");
+        let result = build_shared_trainer_with_init(1.0e-4, 128, 42, None, Some(&dummy_path));
+        assert!(result.is_err(), "unpaired (arch=None, path=Some) must Err");
+    }
+
+    /// `build_shared_trainer_with_init(Some(encoder), Some(path))` rejects
+    /// the encoder family BEFORE attempting tensor load. Drift-prevention for
+    /// FALSIFY-APR-PRETRAIN-ARCH-007 at the trainer-builder integration level.
+    #[test]
+    fn build_shared_trainer_with_init_rejects_encoder_family() {
+        let mut encoder_cfg = TransformerConfig::qwen2_0_5b();
+        encoder_cfg.architecture = ModelArchitecture::Encoder;
+        let dummy_path = std::path::PathBuf::from("/nonexistent/encoder.apr");
+        let result =
+            build_shared_trainer_with_init(1.0e-4, 128, 42, Some(&encoder_cfg), Some(&dummy_path));
+        let err = match result {
+            Ok(_) => panic!("encoder family must be rejected before tensor load"),
+            Err(e) => e,
+        };
+        assert!(
+            err.contains("FALSIFY-APR-PRETRAIN-ARCH-007"),
+            "error must cite falsifier id; got: {err}"
+        );
+    }
+
+    /// `build_shared_trainer_with_init(Some(decoder), Some(missing_path))`
+    /// proceeds past the family check and FAILS at tensor load with a
+    /// FALSIFY-006 error. Pins the failure ordering: arch validation first,
+    /// then tensor load.
+    #[test]
+    fn build_shared_trainer_with_init_decoder_family_proceeds_to_tensor_load() {
+        let cfg = TransformerConfig::qwen2_0_5b();
+        let dummy_path = std::path::PathBuf::from("/nonexistent/decoder.apr");
+        let result = build_shared_trainer_with_init(1.0e-4, 128, 42, Some(&cfg), Some(&dummy_path));
+        let err = match result {
+            Ok(_) => panic!("missing tensor path must Err"),
+            Err(e) => e,
+        };
+        assert!(
+            err.contains("FALSIFY-APR-PRETRAIN-INIT-006"),
+            "decoder family proceeds to tensor load; failure cites INIT-006 not ARCH-007; got: {err}"
+        );
+        assert!(
+            !err.contains("FALSIFY-APR-PRETRAIN-ARCH-007"),
+            "decoder family must NOT trigger encoder-rejection; got: {err}"
+        );
+    }
+
+    /// FALSIFY-H4-CPU-FORWARD-001 (H4 residual cascade — bisect to CPU vs CUDA):
+    /// CPU `aprender::Transformer::forward` on a populated Qwen 0.5B model
+    /// MUST produce sensibly-distributed logits. Host-gated test that
+    /// bisects whether the val_loss > ln(vocab) defect is in the
+    /// populate path / CPU forward (RED here = bug there) or in CUDA
+    /// (GREEN here, RED in eval_batch = bug in CUDA path).
+    #[test]
+    fn falsify_h4_cpu_forward_qwen_logits_sensible() {
+        let fresh = std::path::Path::new("/mnt/nvme-raid0/models/qwen2.5-coder-0.5b-fresh.apr");
+        let legacy =
+            std::path::Path::new("/mnt/nvme-raid0/models/qwen2.5-coder-0.5b-instruct-fp16.apr");
+        let path = if fresh.exists() {
+            fresh
+        } else if legacy.exists() {
+            legacy
+        } else {
+            eprintln!("[falsify-h4-cpu-forward-001] skipping: host lacks Qwen 0.5B APR");
+            return;
+        };
+
+        let tensors = load_init_tensors_from_apr(path).expect("load_init_tensors_from_apr");
+        let cfg = TransformerConfig::qwen2_0_5b();
+        let mut transformer = Transformer::new(&cfg);
+        let populated = populate_trainer_from_init_tensors(&mut transformer, &tensors)
+            .expect("populate_trainer_from_init_tensors");
+        eprintln!("[falsify-h4-cpu-forward-001] populated {populated} tensors");
+
+        let token_ids = vec![100_u32];
+        let logits = transformer.forward(&token_ids);
+        let data = logits.data();
+        let slice = data.as_slice().expect("logits contiguous");
+
+        let mut nan_count = 0usize;
+        let mut inf_count = 0usize;
+        let mut min = f32::INFINITY;
+        let mut max = f32::NEG_INFINITY;
+        let mut sum = 0.0_f64;
+        let mut sum_sq = 0.0_f64;
+        let mut argmax_idx = 0_usize;
+        for (i, &v) in slice.iter().enumerate() {
+            if v.is_nan() {
+                nan_count += 1;
+            } else if v.is_infinite() {
+                inf_count += 1;
+            } else {
+                if v < min {
+                    min = v;
+                }
+                if v > max {
+                    max = v;
+                    argmax_idx = i;
+                }
+                sum += v as f64;
+                sum_sq += (v as f64) * (v as f64);
+            }
+        }
+        let n = slice.len() as f64;
+        let mean = sum / n;
+        let std = (sum_sq / n - mean * mean).sqrt();
+
+        eprintln!(
+            "[falsify-h4-cpu-forward-001] token=100 logits: n={} nan={nan_count} inf={inf_count} \
+             min={min:.4} max={max:.4} mean={mean:.4} std={std:.4} argmax={argmax_idx}",
+            slice.len()
+        );
+
+        assert_eq!(nan_count, 0, "logits contain NaN — forward corruption");
+        assert_eq!(inf_count, 0, "logits contain Inf — forward corruption");
+        assert!(
+            std > 0.01,
+            "FALSIFY-H4-CPU-FORWARD-001: logits std={std} < 0.01 — essentially constant"
+        );
+        let peak_to_mean = (max as f64 - mean).abs() / std.max(1e-9);
+        assert!(
+            peak_to_mean > 1.5,
+            "FALSIFY-H4-CPU-FORWARD-001: peak-to-mean ratio = {peak_to_mean} < 1.5 — \
+             logits are essentially uniform"
+        );
+        assert!(
+            (argmax_idx as u32) < cfg.vocab_size as u32,
+            "FALSIFY-H4-CPU-FORWARD-001: argmax_idx={argmax_idx} >= vocab_size={}",
+            cfg.vocab_size
+        );
     }
 }

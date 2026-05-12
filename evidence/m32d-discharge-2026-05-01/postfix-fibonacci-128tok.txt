@@ -1,0 +1,25 @@
+Output:
+Here are several Python implementations of a Fibonacci function, from basic to optimized:
+
+## 1. Basic Recursive Approach
+```python
+def fibonacci_recursive(n):
+    """
+    Compute the nth Fibonacci number using recursion.
+    Time complexity: O(2^n) - Very slow for large n
+    """
+    if n <= 0:
+        return 0
+    elif n == 1:
+        return 1
+    else:
+        return fibonacci_recursive(n-1) + fibonacci_recursive(n-2)
+```
+
+## 2. Iterative Approach (Recommended)
+```python
+def fibonacci_iterative(n):
+    """
+    Compute the
+
+Completed in 2446.48s (cached)

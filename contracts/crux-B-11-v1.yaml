@@ -2,11 +2,11 @@
 
 metadata:
   id: CRUX-B-11
-  version: "1.1.0"
+  version: "1.3.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "B — Inspection & Debugging"
@@ -20,8 +20,8 @@ metadata:
 
   references:
   - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
-  - github.com/huggingface/peft — LoRA/PEFT
-  - arXiv:2106.09685 — LoRA
+  - 'https://arxiv.org/abs/2209.05433 — FP8 Formats for Deep Learning (NVIDIA/Arm/Intel)'
+  - 'https://docs.nvidia.com/deeplearning/transformer-engine/ — TransformerEngine FP8 spec'
 equations:
   fp8_scaled_roundtrip:
     formula: |
@@ -52,6 +52,68 @@ falsification_tests:
       assert err <= 0.01, f"{k}: err={err:.4f}"
     PY
   if_fails: rule 'fp8 round-trip preserves within 1% Frobenius' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/fp8_classifier.rs
+    cli_path: crates/apr-cli/src/commands/fp8_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_b_11.rs
+    e2e_tests:
+    - falsify_crux_b_11_001_frobenius_ok_on_identical_vectors
+    - falsify_crux_b_11_001_frobenius_rejects_degraded_reconstruction
+    - falsify_crux_b_11_001_frobenius_rejects_length_mismatch
+    - falsify_crux_b_11_001_frobenius_rejects_zero_original
+    sub_claim: |
+      Algorithm-level necessary conditions:
+        (a) `e4m3_positive_finites` enumerates exactly 127 ascending
+            finite magnitudes with endpoints 2⁻⁹ and 448 per the E4M3-FN
+            spec (NaN slot absent; no ±∞);
+        (b) `e4m3_round_to_nearest` is argmin over {0} ∪ positive finites,
+            identity on representable values, saturation-clamping
+            at ±448, sign-preserving, NaN-propagating, tie-deterministic
+            (first-min wins → reproducible);
+        (c) `fp8_absmax_scale = max(|W|)/448` places the largest input
+            at the E4M3 max (zero tensor → neutral 1.0);
+        (d) `relative_frobenius_error` is `None` on length mismatch
+            or zero-norm original (ill-defined ratio), not a silent 0;
+        (e) `classify_frobenius_error` returns `Ok{rel_err}` only when
+            rel_err ≤ `FP8_MAX_FROBENIUS_REL_ERR` (0.01), `Degraded`
+            otherwise, surfacing the threshold, and `InvalidInput` on
+            pipeline errors rather than falsely passing.
+        (f) End-to-end absmax round-trip on a deterministic 4096-element
+            LCG uniform in [-1,1] satisfies the synthetic algorithm-correctness
+            guard (rel_err < 0.05) with a lower bound > 1e-4 to guard against
+            a broken test. The paper's 1% bound requires real LLM weight
+            statistics and is the full-discharge condition below.
+    tests:
+    - e4m3_max_finite_is_exactly_448
+    - e4m3_positive_finites_has_exactly_126_entries
+    - e4m3_positive_finites_are_sorted_ascending_and_unique
+    - e4m3_positive_finites_endpoints_match_spec
+    - e4m3_round_on_exactly_representable_is_identity
+    - e4m3_round_clamps_above_max
+    - e4m3_round_preserves_sign_through_zero
+    - e4m3_round_nan_is_nan
+    - e4m3_round_tiny_value_goes_to_zero_or_smallest_subnormal
+    - absmax_scale_zero_vector_is_one
+    - absmax_scale_puts_max_at_448
+    - roundtrip_zero_vector_is_zero
+    - roundtrip_preserves_sign
+    - frobenius_norm_zero_vector_is_zero
+    - frobenius_norm_unit_basis_is_one
+    - relative_frobenius_error_identical_is_zero
+    - relative_frobenius_error_length_mismatch_is_none
+    - relative_frobenius_error_zero_original_is_none
+    - classify_frobenius_under_threshold_is_ok
+    - classify_frobenius_above_threshold_is_degraded
+    - classify_frobenius_length_mismatch_is_invalid
+    - fp8_mean_roundtrip_error_under_synthetic_uniform_bound
+    scope: "E4M3 table + round-to-nearest + absmax-scaled round-trip + rel-Frobenius classifier (pure f32).
+      NOTE: the synthetic test asserts `FP8_MAX_FROBENIUS_REL_ERR_SYNTHETIC = 0.05`,
+      not the paper's 1% bound, because the contract's 1% figure is empirical
+      on real LLM linear weights (Gaussian-ish) and does not hold under uniform
+      [-1,1] input where per-element ULP error dominates."
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "`apr quantize --format fp8-e4m3` + `apr dequant` CLI surfaces + Hopper hardware for bit-exact TransformerEngine parity check"
+
 - id: FALSIFY-CRUX-B-11-002
   rule: non-Hopper GPU rejected with exit 2
   prediction: "apr quantize --fp8 on sm<90 prints 'requires Hopper/Blackwell' and exits 2"
@@ -62,6 +124,36 @@ falsification_tests:
     grep -Ei "hopper|sm_?90|capability" /tmp/err
 
   if_fails: rule 'non-Hopper GPU rejected with exit 2' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/fp8_classifier.rs
+    cli_path: crates/apr-cli/src/commands/fp8_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_b_11.rs
+    e2e_tests:
+    - falsify_crux_b_11_002_capability_ok_on_sm_90
+    - falsify_crux_b_11_002_capability_ok_on_sm_100_blackwell
+    - falsify_crux_b_11_002_capability_rejects_sm_80_ampere
+    - falsify_crux_b_11_002_capability_rejects_sm_0_unknown
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_sm_capability`
+      admits sm ≥ `FP8_MIN_HOPPER_SM` (90) as `Capable`, and every
+      smaller value as `Incapable { required=90, exit_code=2, message }`
+      where the message names "hopper", "sm_90", or "capability" —
+      satisfying the grep oracle in the original test. The classifier
+      is a pure, deterministic function of the SM number and has a
+      single branch boundary at sm=90 (tested both sides).
+    tests:
+    - sm_90_is_capable
+    - sm_100_blackwell_is_capable
+    - sm_120_next_gen_is_capable
+    - sm_80_ampere_is_incapable_exit_2
+    - sm_86_ampere_incapable_message_mentions_hopper
+    - sm_0_unknown_gpu_is_incapable
+    - sm_capability_is_deterministic
+    - capability_boundary_is_sm_90_inclusive
+    scope: "SM capability → (Capable | Incapable{exit_code=2, message}) classifier"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "wiring `APR_CUDA_SM_OVERRIDE` + `apr quantize --format fp8-e4m3` exit-code path through clap"
+
 proof_obligations:
 - type: equivalence
   property: "apr quantize --fp8 matches `vllm serve --quantization fp8` numerical envelope (≤1% Frobenius)"
@@ -75,6 +167,37 @@ verification_summary:
   proven: 0
   tested: 0
   status: spec-complete
+  discharge_ledger:
+  - falsify_id: FALSIFY-CRUX-B-11-001
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "`apr quantize --format fp8-e4m3` + `apr dequant` CLI surfaces + Hopper hardware"
+  - falsify_id: FALSIFY-CRUX-B-11-002
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "wiring `APR_CUDA_SM_OVERRIDE` + clap exit-code path"
+
+ship_discipline:
+  ship_rule: CRUX-SHIP-001
+  deliverables_present:
+    classifier: crates/apr-cli/src/commands/fp8_classifier.rs
+    cli_wiring: crates/apr-cli/src/commands/fp8_lint.rs
+    e2e_test: crates/apr-cli/tests/falsification_crux_b_11.rs
+    contract: contracts/crux-B-11-v1.yaml
+  merge_gates:
+    g1_classifier_green: true
+    g2_cli_reachable: true
+    g3_e2e_runs: true
+    g4_contract_discharged: PARTIAL_ALGORITHM_LEVEL
+  notes: >
+    `apr fp8-lint --observation-file <obs.json>` dispatches two FP8
+    classifiers (frobenius round-trip, SM capability) over a captured
+    JSON observation. e2e suite (13 tests) exercises help surface,
+    bare-invocation rejection, ok+reject paths on both gates
+    (identical/degraded/length-mismatch/zero-original frobenius and
+    sm 90/100/80/0 capability), empty/nonexistent file rejection, and
+    --json shape. Full ACTIVE discharge remains blocked on
+    `apr quantize --format fp8-e4m3` + `apr dequant` CLI surfaces +
+    Hopper hardware for bit-exact TransformerEngine parity + clap
+    wiring for `APR_CUDA_SM_OVERRIDE` exit-code path.
 
 pmat_work_tracking:
   ticket_tag: crux-crux-b-11

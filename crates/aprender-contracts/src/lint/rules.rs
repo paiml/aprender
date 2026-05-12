@@ -29,6 +29,7 @@ pub enum RuleCategory {
     Trend,
     Suppression,
     Enforcement,
+    Verify,
 }
 
 /// Configurable severity levels per rule.
@@ -254,6 +255,16 @@ pub static RULES: &[LintRule] = &[
         default_severity: RuleSeverity::Error,
         description: "Contract regressed below locked verification level",
         effort_minutes: 5,
+    },
+    // Strict test-binding (Issue #1510) — catches dangling test references in
+    // contract `falsification_tests[].test` fields that survive PV-VER-001
+    // because they don't use the `test_*` / `prop_*` naming convention.
+    LintRule {
+        id: "PV-VER-002",
+        category: RuleCategory::Verify,
+        default_severity: RuleSeverity::Warning,
+        description: "Dangling falsification_test reference — cited fn not found in source",
+        effort_minutes: 10,
     },
 ];
 

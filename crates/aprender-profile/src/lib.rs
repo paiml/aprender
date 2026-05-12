@@ -5,6 +5,19 @@
 //! and comprehensive filtering.
 // Allow unwrap/expect in test code — production code is lint-clean
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::unwrap_in_result))]
+// Pedantic lints carried over from pre-monorepo renacer crate.
+// Follow-up: fix per-lint in dedicated PRs (out of scope for APR-MONO sibling-alias MUDA fix).
+#![allow(
+    clippy::redundant_else,
+    clippy::implicit_hasher,
+    clippy::struct_excessive_bools,
+    clippy::doc_link_with_quotes,
+    clippy::inline_always,
+    clippy::format_collect,
+    clippy::needless_continue,
+    clippy::ref_option,
+    clippy::used_underscore_binding
+)]
 #[macro_use]
 #[allow(unused_macros)]
 mod generated_contracts;

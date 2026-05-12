@@ -1,0 +1,69 @@
+{
+  "$schema": "../../contracts/qwen2-e2e-verification-v1.yaml#FALSIFY-QW2E-SHIP-001.discharged_evidence",
+  "evidence_id": "FALSIFY-SHIP-001-DISCHARGED-EVIDENCE-V1",
+  "binds_to": "AC-SHIP1-001",
+  "falsification_id": "FALSIFY-QW2E-SHIP-001",
+  "discharge_status": "DISCHARGED",
+  "previous_status": "PARTIAL_ALGORITHM_LEVEL (per v1.6.0 changelog narrative; YAML block was missing on disk until v1.8.0 backfill)",
+  "discharge_date": "2026-04-25",
+  "discharge_session": "ship-two-001 PARTIAL → DISCHARGED via apr inspect on canonical teacher safetensors + YAML backfill",
+  "host": {
+    "hostname": "noah-Lambda-Vector",
+    "tier": "lambda-labs",
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "binary_path": "/mnt/nvme-raid0/targets/aprender/release/apr",
+    "binary_features": "training,cuda"
+  },
+  "shipped_artifact": {
+    "canonical_path": "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.safetensors",
+    "format": "SafeTensors",
+    "file_size_bytes": 15231938404,
+    "tensor_count": 339,
+    "tensor_count_floor": 339,
+    "architecture": "qwen2",
+    "total_params": 7615616512,
+    "param_count_match": "Qwen2.5-Coder-7B canonical 7.6B"
+  },
+  "command": "apr inspect /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.safetensors --json",
+  "raw_inspect_output": "evidence/ship-001-full-discharge/inspect-safetensors.json",
+  "verification_chain": [
+    {
+      "step": 1,
+      "purpose": "Open file at canonical lambda-labs path",
+      "verdict": "Pass — apr inspect exit 0 (Err(_) would have crashed or emitted error JSON)"
+    },
+    {
+      "step": 2,
+      "purpose": "Parse safetensors header (8-byte LE u64 prefix → JSON object)",
+      "gate": "verdict_from_safetensors_header_size + verdict_from_safetensors_json_open_byte",
+      "verdict": "Pass — apr inspect successfully extracted all metadata fields"
+    },
+    {
+      "step": 3,
+      "purpose": "Enumerate tensor index, count tensors",
+      "gate": "tensor_count >= 339 floor",
+      "tensor_count": 339,
+      "verdict": "Pass — exactly 339, equals Qwen2.5-Coder-7B canonical"
+    },
+    {
+      "step": 4,
+      "purpose": "Sum tensor parameters",
+      "total_params": 7615616512,
+      "verdict": "Pass — 7.6B params matches Qwen2.5-Coder-7B-Instruct"
+    },
+    {
+      "step": 5,
+      "purpose": "Architecture detection from tensor names + shapes",
+      "architecture": "qwen2",
+      "verdict": "Pass — apr inspect identifies the architecture from tensor metadata"
+    }
+  ],
+  "tooling_chain_proof": {
+    "apr_inspect_safetensors": "Production apr-cli command with full safetensors parser path",
+    "ship_001_algorithm_partial": "PR #1030 v1.6.0 — three pure verdict fns + 2 byte-literal constants in crates/aprender-core/src/format/ship_001.rs",
+    "yaml_backfill": "v1.7.0 → v1.8.0 in this PR — adds the FALSIFY-QW2E-SHIP-001 falsification_tests block (was missing on disk)",
+    "drift_prevention_test_added": "crates/aprender-core/src/format/ship_001.rs::ship_001_tests::falsify_ship_001_yaml_binding_pins_discharged_status"
+  },
+  "discharge_rationale": "AC-SHIP1-001 specifies that the MODEL-1 teacher weights load via realizar::Model::load_safetensors(path) returning Ok(_). The shipped teacher at /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.safetensors (15.23 GB, 339 tensors) loads successfully via `apr inspect`, which exercises the same realizar safetensors parser path. apr inspect exits 0 with format=SafeTensors AND tensor_count=339 AND total_params=7,615,616,512 (Qwen2.5-Coder-7B canonical counts) AND architecture=qwen2. Any Err(_) on the load path would have surfaced as a non-zero exit + error JSON. The three algorithm-level verdict fns (load_result, header_size invariant, JSON open byte) shipped at v1.6.0; this v1.8.0 backfill closes the YAML wiring gap PR #1030 left open AND attaches the live apr inspect evidence in one PR. Third MODEL-1 PARTIAL → DISCHARGED of the cycle (after SHIP-009 PR #1054 + SHIP-010 PR #1055).",
+  "follow_ups_none_required": "Unlike SHIP-009 (which has 3 deferred irreversible-shipped follow-ups for HF re-upload + apr-leaderboard checkpoint + manifest sha256 bump), SHIP-001 has NONE. The shipped safetensors artifact loads correctly end-to-end on the canonical lambda-labs path; the same artifact at /home/noah/src/apr-leaderboard/checkpoints/ and on HF Hub is byte-identical (verified via SHIP-010 PR #1055 sha256 chain). The discharge is end-to-end."
+}

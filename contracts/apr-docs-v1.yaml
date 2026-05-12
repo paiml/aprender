@@ -91,6 +91,7 @@ kani_harnesses:
 - id: KH-DOCS-001
   obligation: readme_install_command
   property: install_produces_apr_binary
+  bound: 4
 
 verification_summary:
   total_obligations: 5

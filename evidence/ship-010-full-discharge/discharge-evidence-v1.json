@@ -1,0 +1,97 @@
+{
+  "$schema": "../../contracts/publish-manifest-v1.yaml#FALSIFY-SHIP-010.discharged_evidence",
+  "evidence_id": "FALSIFY-SHIP-010-DISCHARGED-EVIDENCE-V1",
+  "binds_to": "AC-SHIP1-010",
+  "falsification_id": "FALSIFY-SHIP-010",
+  "discharge_status": "DISCHARGED",
+  "previous_status": "PARTIAL_ALGORITHM_LEVEL",
+  "discharge_date": "2026-04-25",
+  "discharge_session": "ship-two-001 PARTIAL → DISCHARGED via apr validate-manifest --live",
+  "host": {
+    "hostname": "noah-Lambda-Vector",
+    "tier": "lambda-labs",
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "binary_path": "/mnt/nvme-raid0/targets/aprender/release/apr",
+    "binary_features": "training,cuda"
+  },
+  "command_template": "apr validate-manifest <manifest>.yaml --live --json",
+  "manifests_verified": [
+    {
+      "path": "contracts/publish-manifests/paiml-qwen2.5-coder-7b-apache-q4k-v1-apr.yaml",
+      "format": "apr",
+      "live_sha256": "0a854098d05b15921c173b7c8deb87c1cbecdffc66e918825c11a02775c73666",
+      "bytes": 8035635524,
+      "overall": "PASS",
+      "artifact_url": "https://huggingface.co/paiml/qwen2.5-coder-7b-apache-q4k-v1/resolve/main/qwen2.5-coder-7b-instruct-q4k.apr",
+      "evidence_file": "evidence/ship-010-full-discharge/validate-manifest-apr.json",
+      "gates_pass": ["FALSIFY-PM-001", "FALSIFY-PM-003", "FALSIFY-PM-002-live", "FALSIFY-PM-004", "FALSIFY-PM-005", "FALSIFY-PM-006"],
+      "gates_deferred": ["FALSIFY-PM-002 (no --artifact)", "FALSIFY-PM-007 (format != safetensors)", "FALSIFY-PM-008 (format != gguf)", "FALSIFY-PM-009 (no --artifact)"]
+    },
+    {
+      "path": "contracts/publish-manifests/paiml-qwen2.5-coder-7b-apache-q4k-v1-gguf.yaml",
+      "format": "gguf",
+      "live_sha256": "e6cac5d642b042641b308a3ea5d3fa1eb48aa80c48dea5877a7b4efa886e7981",
+      "bytes": 8037129408,
+      "overall": "PASS",
+      "evidence_file": "evidence/ship-010-full-discharge/validate-manifest-gguf.json",
+      "gates_pass": ["FALSIFY-PM-001", "FALSIFY-PM-003", "FALSIFY-PM-002-live", "FALSIFY-PM-004", "FALSIFY-PM-005", "FALSIFY-PM-006"],
+      "gates_deferred": ["FALSIFY-PM-002 (no --artifact)", "FALSIFY-PM-007 (format != safetensors)", "FALSIFY-PM-008 (no --artifact)", "FALSIFY-PM-009 (format != apr)"]
+    },
+    {
+      "path": "contracts/publish-manifests/paiml-qwen2.5-coder-7b-apache-q4k-v1-safetensors.yaml",
+      "format": "safetensors",
+      "live_sha256": "c1058ce763fe47fa7d18a89a8b854d2cd8ebdb87127441304146ab8618dd8954",
+      "bytes": 15231938404,
+      "overall": "PASS",
+      "evidence_file": "evidence/ship-010-full-discharge/validate-manifest-safetensors.json",
+      "gates_pass": ["FALSIFY-PM-001", "FALSIFY-PM-003", "FALSIFY-PM-002-live", "FALSIFY-PM-004", "FALSIFY-PM-005", "FALSIFY-PM-006"],
+      "gates_deferred": ["FALSIFY-PM-002 (no --artifact)", "FALSIFY-PM-007 (no --artifact)", "FALSIFY-PM-008 (format != gguf)", "FALSIFY-PM-009 (format != apr)"]
+    }
+  ],
+  "tooling_chain_proof": {
+    "apr_validate_manifest_live": "PR #898, F-PUBLISH-EXTRA-001 ex-05 dogfood closure",
+    "ship_010_algorithm_partial": "PR shipping ship_010.rs at v1.4.0 (verdict_from_sha256_match + verdict_from_manifest_url)",
+    "drift_prevention_test_added": "crates/aprender-core/src/format/ship_010.rs::ship_010_tests::falsify_ship_010_yaml_binding_pins_discharged_status"
+  },
+  "live_verification_chain": [
+    {
+      "step": 1,
+      "purpose": "HEAD 200 + content-length advertised matches manifest size_bytes",
+      "gate": "FALSIFY-PM-003",
+      "all_3_passed": true
+    },
+    {
+      "step": 2,
+      "purpose": "Streaming download from HF Hub CDN + sha256 incremental computation",
+      "gate": "FALSIFY-PM-002-live",
+      "total_bytes_downloaded_streaming": 31304703336,
+      "all_3_passed": true
+    },
+    {
+      "step": 3,
+      "purpose": "Compare computed sha256 byte-identical to manifest-declared sha256",
+      "gate": "FALSIFY-PM-002-live (compare phase)",
+      "all_3_passed": true
+    },
+    {
+      "step": 4,
+      "purpose": "SPDX identifier validity on license + parent_license + data_license",
+      "gate": "FALSIFY-PM-004",
+      "all_3_passed": true
+    },
+    {
+      "step": 5,
+      "purpose": "recipe_sha256 (contracts/model-families/qwen2.yaml) matches f098ac0813515b669389d4317fff442cf0812b18a181d446d170e182a3689d8b",
+      "gate": "FALSIFY-PM-005",
+      "all_3_passed": true
+    },
+    {
+      "step": 6,
+      "purpose": "Parent chain terminates at Qwen/Qwen2.5-Coder-7B-Instruct (root license-attestable provider)",
+      "gate": "FALSIFY-PM-006",
+      "all_3_passed": true
+    }
+  ],
+  "discharge_rationale": "FALSIFY-SHIP-010 binds AC-SHIP1-010 ('Published artifact URL resolves; SHA-256 matches manifest'). The v1.4.0 algorithm-level PARTIAL discharged the threshold rules (sha256 hex format, https:// scheme). v1.5.0's live discharge runs `apr validate-manifest --live` against all 3 paiml/qwen2.5-coder-7b-apache-q4k-v1 manifests, downloads ~31 GB total from HF Hub CDN, computes streaming sha256, and matches each declared hash byte-identically. Every manifest's overall verdict is PASS. The 6 active gates per manifest (PM-001/003/002-live/004/005/006) all PASS uniformly across the 3 formats; the 4 format-specific gates per manifest (PM-002/007/008/009) DEFER cleanly because they require a local --artifact flag and ship as separate algorithm proofs. This is the most-exhaustive live discharge of any SHIP-TWO-001 row to date — 31 GB streamed from CDN, 3 sha256s computed, 18 gate verdicts asserted across 3 manifests, all PASS.",
+  "follow_ups_none_required": "Unlike SHIP-009 (which has 3 deferred irreversible-shipped follow-ups), SHIP-010 has NONE. The HF Hub artifacts are bytes-stable and serve the manifest-pinned sha256 — no upload, no fixture-swap, no manifest mutation needed. The discharge is end-to-end."
+}

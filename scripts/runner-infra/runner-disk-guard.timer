@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly runner disk guard
+Requires=runner-disk-guard.service
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

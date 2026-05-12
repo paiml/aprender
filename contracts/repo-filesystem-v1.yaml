@@ -98,6 +98,7 @@ kani_harnesses:
 - id: KH-FS-001
   obligation: allowed_root_files
   property: no_cruft_at_root
+  bound: 4
 
 verification_summary:
   total_obligations: 6

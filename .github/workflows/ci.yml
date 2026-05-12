@@ -27,16 +27,18 @@ jobs:
     with:
       repo: ${{ github.event.repository.name }}
       # Phase 3 pilot (heavy workload) — build-performance.md §7 Phase 3.
-      # APR-MONO monorepo: 60+ crates, largest dep graph in the fleet.
-      # Highest expected sccache hit-rate lift — the signal that justifies
-      # fleet-wide rollout (or shelves it).
+      # APR-MONO monorepo: 879+ compile units, largest dep graph in the fleet.
+      # Highest expected sccache hit-rate lift; without it each PR cold-compiles
+      # in its per-PR target dir (`/mnt/nvme-raid0/targets/aprender-ci/<PR>`)
+      # for ~34min, leaving only ~4min for tests inside the 40min timeout —
+      # the entire merge queue saturates.
       #
       # 2026-04-19: temporarily disabled — sovereign-ci:stable container image
-      # is missing the `rustc-sccache` wrapper script, so every sccache-gated
-      # job fails at toolchain probe ("No such file or directory"). Re-enable
-      # once paiml/.github runner image ships the wrapper again (tracked in
-      # paiml/.github infra issue — not this repo).
-      enable_sccache: false
+      # was missing the `rustc-sccache` wrapper script. Fixed upstream in
+      # paiml/infra commit f4fccf9 (PR #66, "use exec script not symlink").
+      # 2026-05-12: re-enabled — image verified to ship `/usr/local/bin/rustc-sccache`
+      # (sccache 0.14.0), shared cache at `/home/noah/data/sccache` (warm, ~11GB).
+      enable_sccache: true
       use_nextest: true
     secrets: inherit
 
@@ -46,16 +48,40 @@ jobs:
     container:
       image: localhost:5000/sovereign-ci:stable
       volumes:
-        - /home/noah/.cargo/registry:/usr/local/cargo/registry
+        # Per-PR (or per-branch) cargo registry. Before ANDON 2026-04-24 (paiml/infra#77),
+        # ALL 16 intel-clean-room-* runners bind-mounted the SAME host
+        # /home/noah/.cargo/registry, which produced EACCES "couldn't read
+        # <crate>/lib.rs: Permission denied" when a concurrent job extracted,
+        # GC'd, or partially wrote the same src/ directory (root-owned crate
+        # extractions from one container were unreadable by another runner's
+        # noah:1000 reaper sweep; partial extractions left .cargo-ok markers
+        # without src/). Mirroring the target-dir isolation below removes the
+        # contention at the source — each PR owns its registry lifecycle and
+        # there is no cross-PR write concurrency.
+        - /mnt/nvme-raid0/cargo-ci/registry/${{ github.event.pull_request.number || github.ref_name }}:/usr/local/cargo/registry
         # Per-PR (or per-branch) target dir. Before task #134, ALL concurrent PRs
         # bind-mounted the same /workspace/target and stomped each other's
         # incremental cache, pushing every run to the 45-min timeout. Isolating
         # the target dir per PR number removes the contention at the source.
         # Push-to-main uses ref_name ("main"); PRs use PR number.
         - /mnt/nvme-raid0/targets/aprender-ci/${{ github.event.pull_request.number || github.ref_name }}:/workspace/target
+        # Shared sccache (Phase 3 §5.3) — content-addressable rustc-output cache
+        # keyed on (toolchain + source + flags). Shared across all 16
+        # intel-clean-room runners and all PRs, with no concurrent-write race
+        # (sccache uses per-entry atomic rename + LRU eviction internally).
+        # Without this, the per-PR target dir above forces cold compile from
+        # scratch for every new PR — ~34min build, leaving only ~6min for
+        # tests inside the 45min timeout. See PR #1632.
+        - /home/noah/data/sccache:/sccache
     timeout-minutes: 45
     env:
       CARGO_TARGET_DIR: /workspace/target
+      # Sccache rustc-wrapper. The image bakes /usr/local/bin/rustc-sccache
+      # as an exec shim that argv[0]-spoofs sccache CLI mode while still
+      # caching rustc invocations (paiml/infra commit f4fccf9). Expected
+      # hit-rate ≥80% on warm cache → cold compile ~34min → ~3-5min.
+      RUSTC_WRAPPER: rustc-sccache
+      SCCACHE_DIR: /sccache
       # CARGO_INCREMENTAL intentionally disabled in CI: incremental compilation
       # tracks per-function dirty state for dev-loop speed, but on PR-scale
       # diffs that touch many files the overhead outweighs savings, and the

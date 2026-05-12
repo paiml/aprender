@@ -101,12 +101,47 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             stream,
         } => commands::ollama_chat::run(response_file, *stream, cli.json),
 
+        ExtendedCommands::OllamaToolsLint {
+            response_file,
+            request_file,
+            stream,
+        } => commands::ollama_tools_lint::run(
+            response_file,
+            request_file.as_deref(),
+            *stream,
+            cli.json,
+        ),
+
         ExtendedCommands::DrySamplingLint { observation_file } => {
             commands::dry_sampling_lint::run(observation_file, cli.json)
         }
 
         ExtendedCommands::AwqLint { observation_file } => commands::awq_lint::run(
             commands::awq_lint::AwqLintArgs {
+                observation_file: observation_file.to_string_lossy().to_string(),
+                json: cli.json,
+            },
+        )
+        .map_err(crate::error::CliError::Aprender),
+
+        ExtendedCommands::Fp8Lint { observation_file } => {
+            commands::fp8_lint::run(commands::fp8_lint::Fp8LintArgs {
+                observation_file: observation_file.to_string_lossy().into_owned(),
+                json: cli.json,
+            })
+            .map_err(crate::error::CliError::Aprender)
+        }
+
+        ExtendedCommands::Nf4Lint { observation_file } => commands::nf4_lint::run(
+            commands::nf4_lint::Nf4LintArgs {
+                observation_file: observation_file.to_string_lossy().to_string(),
+                json: cli.json,
+            },
+        )
+        .map_err(crate::error::CliError::Aprender),
+
+        ExtendedCommands::GptqLint { observation_file } => commands::gptq_lint::run(
+            commands::gptq_lint::GptqLintArgs {
                 observation_file: observation_file.to_string_lossy().to_string(),
                 json: cli.json,
             },
@@ -130,6 +165,66 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             commands::typical_p_lint::run(observation_file, cli.json)
         }
 
+        ExtendedCommands::GradNorm {
+            history_file,
+            max_grad_norm,
+            spike_window,
+            spike_multiplier,
+        } => commands::grad_norm::run(
+            history_file,
+            *max_grad_norm,
+            *spike_window,
+            *spike_multiplier,
+            cli.json,
+        ),
+
+        ExtendedCommands::RegistryQuotaLint { observation_file } => {
+            commands::registry_quota_lint::run(commands::registry_quota_lint::RegistryQuotaLintArgs {
+                observation_file: observation_file.to_string_lossy().to_string(),
+                json: cli.json,
+            })
+            .map_err(crate::error::CliError::Aprender)
+        }
+
+        ExtendedCommands::ImatrixLint { observation_file } => commands::imatrix_lint::run(
+            commands::imatrix_lint::ImatrixLintArgs {
+                observation_file: observation_file.to_string_lossy().to_string(),
+                json: cli.json,
+            },
+        )
+        .map_err(crate::error::CliError::Aprender),
+
+        ExtendedCommands::EmbeddingsLint { observation_file } => {
+            commands::embeddings_lint::run(commands::embeddings_lint::EmbeddingsLintArgs {
+                observation_file: observation_file.to_string_lossy().into_owned(),
+                json: cli.json,
+            })
+            .map_err(crate::error::CliError::Aprender)
+        }
+
+        ExtendedCommands::UnifiedSearchLint { observation_file } => {
+            commands::unified_search_lint::run(commands::unified_search_lint::UnifiedSearchLintArgs {
+                observation_file: observation_file.to_string_lossy().to_string(),
+                json: cli.json,
+            })
+            .map_err(crate::error::CliError::Aprender)
+        }
+
+        ExtendedCommands::RmGcLint { observation_file } => commands::rm_gc_lint::run(
+            commands::rm_gc_lint::RmGcLintArgs {
+                observation_file: observation_file.to_string_lossy().to_string(),
+                json: cli.json,
+            },
+        )
+        .map_err(crate::error::CliError::Aprender),
+
+        ExtendedCommands::SharedCacheLint { observation_file } => {
+            commands::shared_cache_lint::run(commands::shared_cache_lint::SharedCacheLintArgs {
+                observation_file: observation_file.to_string_lossy().to_string(),
+                json: cli.json,
+            })
+            .map_err(crate::error::CliError::Aprender)
+        }
 
         ExtendedCommands::Hex {
             file,
@@ -264,6 +359,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             vocab_size,
             synthetic,
             device,
+            init,
         } => commands::pretrain::run(
             dataset,
             tokenizer,
@@ -280,6 +376,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *vocab_size,
             *synthetic,
             device,
+            init.as_deref(),
             cli.json,
         ),
         ExtendedCommands::Tokenize { command } => dispatch_tokenize_command(command, cli),
@@ -590,6 +687,12 @@ fn dispatch_tokenize_command(
             normalization,
             cli.json,
         ),
+        TokenizeCommands::ImportHf {
+            input,
+            output,
+            include_added_tokens,
+        } => tokenize::run_import_hf(input, output, *include_added_tokens, cli.json),
+        #[cfg(feature = "training")]
         TokenizeCommands::EncodeCorpus {
             corpus,
             tokenizer,
@@ -598,6 +701,10 @@ fn dispatch_tokenize_command(
             content_field,
             normalization,
             eos_policy,
+            num_workers,
+            quiet,
+            progress_interval_docs,
+            progress_interval_seconds,
         } => tokenize::run_encode_corpus(
             corpus,
             tokenizer,
@@ -606,8 +713,20 @@ fn dispatch_tokenize_command(
             content_field,
             normalization,
             eos_policy,
+            *num_workers,
+            tokenize::ProgressConfig {
+                quiet: *quiet,
+                interval_docs: *progress_interval_docs,
+                interval_seconds: *progress_interval_seconds,
+            },
             cli.json,
         ),
+        #[cfg(feature = "training")]
+        TokenizeCommands::RepairManifest {
+            output,
+            tokenizer,
+            json,
+        } => tokenize::run_repair_manifest(output, tokenizer.as_deref(), *json || cli.json),
     }
 }
 

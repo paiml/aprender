@@ -112,7 +112,10 @@ mod tests {
         let tok = "hf_repeat_repeat_repeat_repeat_repeat";
         let line = format!("{tok} and again {tok} and {tok}");
         let out = redact_secrets(&line, &[tok]);
-        assert!(!out.contains(tok), "every occurrence must be removed: {out}");
+        assert!(
+            !out.contains(tok),
+            "every occurrence must be removed: {out}"
+        );
     }
 
     #[test]
@@ -153,7 +156,10 @@ mod tests {
         // contains that secret. This is the observational property the
         // full stderr-scrubbing invariant will reduce to, given that
         // every write is routed through redact_secrets.
-        let secrets = ["hf_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "hf_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"];
+        let secrets = [
+            "hf_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "hf_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        ];
         let inputs = [
             "just a prefix",
             "hf_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -181,7 +187,9 @@ mod tests {
     #[test]
     fn looks_like_hf_token_accepts_canonical_shape() {
         assert!(looks_like_hf_token("hf_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
-        assert!(looks_like_hf_token("  hf_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  "));
+        assert!(looks_like_hf_token(
+            "  hf_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  "
+        ));
     }
 
     #[test]
@@ -189,7 +197,9 @@ mod tests {
         assert!(!looks_like_hf_token(""));
         assert!(!looks_like_hf_token("not_a_token"));
         assert!(!looks_like_hf_token("hf_short"));
-        assert!(!looks_like_hf_token("HF_CAPS_INSTEAD_OF_LOWER_12345678901234"));
+        assert!(!looks_like_hf_token(
+            "HF_CAPS_INSTEAD_OF_LOWER_12345678901234"
+        ));
     }
 
     #[test]
@@ -210,12 +220,7 @@ mod tests {
     fn redact_does_not_panic_on_weird_inputs() {
         // Every non-panicking property: exercise a bag of pathological
         // inputs including unicode, control chars, and very long strings.
-        for input in [
-            "🎉🎉🎉",
-            "\x00\x01\x02",
-            &"x".repeat(10_000),
-            "",
-        ] {
+        for input in ["🎉🎉🎉", "\x00\x01\x02", &"x".repeat(10_000), ""] {
             let _ = redact_secrets(input, &["hf_something_big_enough_to_matter_XX"]);
             let _ = contains_secret(input, &["hf_something_big_enough_to_matter_XX"]);
         }

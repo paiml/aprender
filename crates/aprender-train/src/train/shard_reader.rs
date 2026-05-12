@@ -14,6 +14,14 @@ use std::path::{Path, PathBuf};
 
 /// Streaming iterator over `LMBatch`es produced from a directory of
 /// `.bin` token shards (little-endian u32).
+///
+/// Default behaviour matches the historical contract: when the last
+/// shard is exhausted, `next()` returns `None`. For training paths
+/// where the corpus is finite but the run extends beyond a single
+/// epoch, opt in to loop-on-exhaust via `with_wrap_around(true)`.
+/// This is the standard PyTorch/HuggingFace behaviour; `apr pretrain`
+/// uses it in the real-corpus drive paths so that step-count budgets
+/// are honoured even on small datasets.
 pub struct ShardBatchIter {
     shards: Vec<PathBuf>,
     cursor_shard: usize,
@@ -22,6 +30,8 @@ pub struct ShardBatchIter {
     seq_plus_one: usize,
     pad_id: u32,
     eos_id: u32,
+    wrap_around: bool,
+    epochs_completed: u64,
 }
 
 impl ShardBatchIter {
@@ -56,7 +66,32 @@ impl ShardBatchIter {
             seq_plus_one: seq_length + 1,
             pad_id,
             eos_id,
+            wrap_around: false,
+            epochs_completed: 0,
         })
+    }
+
+    /// Enable corpus wrap-around: when the last shard is exhausted,
+    /// reset the cursor to shard 0 and continue.
+    ///
+    /// This is the standard ML-training behaviour. Without it, an
+    /// 18M-token corpus exhausts in ~2 epochs of a 5K-step run with
+    /// batch=16 seq=512, and the upstream `StepFn` falls back to
+    /// returning placeholder loss `(1.0, 1.0)` — silently producing
+    /// garbage data that breaks convergence. See spec §22 (PR #1073)
+    /// for the corpus-bottleneck investigation.
+    #[must_use]
+    pub fn with_wrap_around(mut self, wrap_around: bool) -> Self {
+        self.wrap_around = wrap_around;
+        self
+    }
+
+    /// Number of times the iterator has cycled through the entire
+    /// shard set. Increments each time the last shard is exhausted
+    /// AND `wrap_around` was true (so a reset happened).
+    #[must_use]
+    pub fn epochs_completed(&self) -> u64 {
+        self.epochs_completed
     }
 
     fn ensure_reader(&mut self) -> io::Result<bool> {
@@ -82,7 +117,20 @@ impl ShardBatchIter {
         let mut buf = vec![0u8; tokens_per_seq * 4];
         loop {
             if !self.ensure_reader()? {
-                return Ok(None);
+                // All shards exhausted. If wrap-around is on, reset cursor
+                // and start over; else return None as before.
+                if self.wrap_around {
+                    self.epochs_completed += 1;
+                    self.cursor_shard = 0;
+                    self.cursor_reader = None;
+                    if !self.ensure_reader()? {
+                        // Still no readable shard after reset — give up
+                        // to avoid infinite loop on a broken shard set.
+                        return Ok(None);
+                    }
+                } else {
+                    return Ok(None);
+                }
             }
             let reader = self.cursor_reader.as_mut().expect("reader set above");
             match reader.read_exact(&mut buf) {
@@ -135,6 +183,46 @@ mod tests {
             bytes.extend_from_slice(&t.to_le_bytes());
         }
         std::fs::write(&path, bytes).expect("shard write");
+    }
+
+    /// Wrap-around regression guard: with `with_wrap_around(true)`,
+    /// the iterator MUST keep yielding batches past the natural shard
+    /// boundary. This is the SHIP-007-adjacent corpus-bottleneck fix —
+    /// without wrap-around an N-token corpus exhausts in 1 epoch and
+    /// the Cuda*StepFn falls back to placeholder `(1.0, 1.0)` losses,
+    /// silently producing garbage gradients (observed 2026-04-26 on a
+    /// 5K-step run that early-stopped at epoch 4 with train_loss=1.0).
+    #[test]
+    fn wrap_around_continues_past_shard_exhaustion() {
+        let tmp = TempDir::new().expect("tempdir");
+        let tokens: Vec<u32> = (0u32..40).collect(); // 8 sequences of len 5
+        write_shard(tmp.path(), "shard-0.bin", &tokens);
+        let mut iter =
+            ShardBatchIter::new(tmp.path(), 2, 4, 0, 0).expect("iter").with_wrap_around(true);
+        // Without wrap-around, we'd get 4 batches then None forever.
+        // With wrap-around, we should get 12 batches (3 epochs of 4).
+        let mut batches = Vec::new();
+        for _ in 0..12 {
+            batches.push(iter.next().expect("wrap-around must keep yielding"));
+        }
+        assert_eq!(batches.len(), 12, "12 batches across 3 simulated epochs");
+        assert!(
+            iter.epochs_completed() >= 2,
+            "epochs_completed = {} should reflect at least 2 wrap resets",
+            iter.epochs_completed()
+        );
+    }
+
+    /// Default behaviour (wrap_around=false) preserved: returns None
+    /// after the corpus is exhausted, matching the historical contract.
+    #[test]
+    fn no_wrap_around_terminates_on_exhaustion() {
+        let tmp = TempDir::new().expect("tempdir");
+        let tokens: Vec<u32> = (0u32..40).collect();
+        write_shard(tmp.path(), "shard-0.bin", &tokens);
+        let iter = ShardBatchIter::new(tmp.path(), 2, 4, 0, 0).expect("iter");
+        let batches: Vec<_> = iter.collect();
+        assert_eq!(batches.len(), 4, "default: 8 seqs / batch=2 = 4 batches then None");
     }
 
     #[test]

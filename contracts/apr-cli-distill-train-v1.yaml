@@ -1,0 +1,285 @@
+metadata:
+  kind: schema
+  version: 1.0.0
+  status: PROPOSED
+  created: '2026-04-28'
+  author: PAIML Engineering
+  registry: false
+  references:
+  - 'SPEC-SHIP-TWO-001 §34.5 — distillation track recommended'
+  - 'SPEC-SHIP-TWO-001 §35 — apr distill Standard strategy is currently a stub'
+  - 'SPEC-SHIP-TWO-001 §26.8 — apr is canonical, extend apr never CLI-shim'
+  - 'feedback_stack_tool_extension_not_cli_shim.md'
+  - 'feedback_compute_pre_authorized.md — lambda-labs lane open for distill'
+  description: >
+    Contract for extending `apr distill` with a real gradient-based logit
+    knowledge-distillation training loop. Triggering observation 2026-04-28:
+    §35 found that `apr distill` Standard strategy at distill.rs:1464 is a
+    stub (just `tensor_clone()`, no gradient training). §34.5 recommended
+    distillation as the path past the val_loss=9.38 capacity ceiling on
+    MODEL-2; this contract is the §26.8 stack-tool-extension that unblocks
+    that recommendation.
+
+equations:
+  kl_divergence_logit_loss:
+    formula: |
+      KL(soft_teacher || soft_student) per-token per-vocab-item:
+        soft_teacher[i,v] = softmax(teacher_logits[i,:] / T)[v]
+        soft_student[i,v] = softmax(student_logits[i,:] / T)[v]
+        kl_loss = sum_v soft_teacher[i,v] * (log(soft_teacher[i,v]) - log(soft_student[i,v]))
+        kl_loss_scaled = kl_loss * T * T  // temperature-scaled gradient compensation
+      Where T is `--temperature` (default 3.0).
+    domain: per-step student logits + teacher logits (precomputed in stage 1)
+    codomain: scalar loss
+    invariants:
+    - "T*T scaling is required so gradient magnitude is independent of T"
+    - "Loss decreases monotonically over training (modulo batch noise)"
+    - "Temperature T=1 reduces to standard cross-entropy"
+
+  alpha_weighted_loss:
+    formula: |
+      total_loss = alpha * kl_loss + (1 - alpha) * ce_loss
+      Where:
+        ce_loss = standard cross-entropy loss of student logits vs ground-truth tokens
+        kl_loss = kl_divergence_logit_loss above
+        alpha = `--alpha` (default 0.7) ∈ [0, 1]
+
+      alpha=1.0 = pure distillation (no ground-truth supervision)
+      alpha=0.0 = pure pretraining (no teacher supervision)
+      alpha=0.7 = standard recipe (recommended)
+    domain: per-step
+    codomain: scalar loss
+    invariants:
+    - "alpha ∈ [0, 1]"
+    - "alpha=1 reduces to pure KD; alpha=0 reduces to pure pretrain"
+    - "total_loss is differentiable w.r.t. student parameters"
+
+  precompute_train_stages:
+    formula: |
+      Stage 1 (`--stage precompute`):
+        - Load teacher model (read-only, frozen)
+        - Forward over training data
+        - Save teacher_logits per-token to disk under `<output_dir>/teacher_logits/`
+        - Memory: peak = teacher_size + activation_buffer
+      Stage 2 (`--stage train`):
+        - Load student model (mutable, gradient-tracked)
+        - Iterate corpus, load corresponding teacher_logits from disk
+        - Compute student_logits, KL+CE total_loss
+        - Backprop, optimizer step
+        - Save checkpoint per epoch
+        - Memory: peak = student_size + activation_buffer + optimizer_state
+      Stage 3 (`--stage generate`, optional):
+        - Load distilled student
+        - Run sample generations to validate output quality
+    domain: stage discriminator
+    codomain: bool
+    invariants:
+    - "stage precompute MUST complete before stage train can run"
+    - "teacher_logits cache is byte-deterministic for same (teacher, data, T)"
+    - "stage train MAY skip stage precompute if cache exists (idempotency)"
+    - "stage train output: student.apr with measurably-different parameters from input"
+
+  drift_prevention_output_must_be_trained:
+    formula: |
+      After distill stage train completes:
+        |student_output_bytes - student_input_bytes| > METADATA_DELTA_THRESHOLD
+      Where METADATA_DELTA_THRESHOLD bounds metadata-only changes
+      (e.g., ≤ 1024 bytes for header rewrites). The actual TENSOR DATA must
+      change, NOT just metadata. This is the falsification gate against
+      the stub behavior found in §35.
+
+      Equivalently: at least one tensor in `student.apr` must have its
+      F32-dequantized values differ from the input student by more than
+      Q4K-quantization tolerance (5%).
+    domain: byte-level + tensor-level diff
+    codomain: bool
+    invariants:
+    - "tensor_clone-only behavior FAILS this gate"
+    - "real training PASSES this gate (loss has flowed to weight updates)"
+    - "metadata-only diff (license, name, etc.) does NOT pass this gate"
+
+falsification_tests:
+- id: FALSIFY-APR-DISTILL-TRAIN-001
+  rule: real training (not stub) — student tensors differ post-train
+  prediction: "After `apr distill --stage train`, at least one tensor in student.apr differs from input student by >Q4K tolerance"
+  test: |
+    apr distill --stage train <teacher> --student <input> --data <corpus> --output <out>
+    apr diff <input> <out> --values --limit 219 | grep -E "max_diff: [^0]"
+  if_fails: "stub behavior — apr distill train just clones tensors. Implementation incomplete."
+
+- id: FALSIFY-APR-DISTILL-TRAIN-002
+  rule: KL loss decreases over epochs
+  prediction: "Per-epoch metadata.json shows kl_loss[epoch=N+1] < kl_loss[epoch=N] (with batch-noise tolerance ≤ 5%)"
+  test: |
+    apr distill --stage train ... --epochs 3
+    python3 -c "
+    import json
+    losses = [json.load(open(f'epoch-{i}.metadata.json'))['kl_loss'] for i in range(3)]
+    assert losses[1] < losses[0] * 1.05  # allow 5% batch noise
+    assert losses[2] < losses[1] * 1.05
+    "
+  if_fails: "loss not decreasing — bug in backprop, optimizer step, or KL formula"
+
+- id: FALSIFY-APR-DISTILL-TRAIN-003
+  rule: temperature scaling preserves softmax ranking
+  prediction: "For any (teacher_logits, T>0): argmax(softmax(teacher_logits/T)) == argmax(teacher_logits)"
+  test: "property test in distill.rs — sample 1000 random logit vectors, verify ranking preserved across T ∈ {1.0, 2.0, 3.0, 5.0, 10.0}"
+  if_fails: "T scaling is buggy — ranking should be invariant under positive monotonic transforms"
+
+- id: FALSIFY-APR-DISTILL-TRAIN-004
+  rule: alpha=1 reduces to pure KD (no ground-truth contribution)
+  prediction: "At alpha=1.0, the total_loss equals kl_loss exactly (ce_loss term zeroed)"
+  test: "property test: with random batches, alpha=1.0 → total_loss ≈ kl_loss (rel_err < 1e-6)"
+  if_fails: "alpha-weighting bug; check the (1-alpha) * ce_loss term"
+
+- id: FALSIFY-APR-DISTILL-TRAIN-005
+  rule: precompute is byte-deterministic
+  prediction: "Two runs of `apr distill --stage precompute` with same inputs produce byte-identical teacher_logits/ output"
+  test: "diff -r run1/teacher_logits run2/teacher_logits → exit 0"
+  if_fails: "non-determinism in teacher forward pass — likely a kernel-launch ordering or atomic-add issue"
+  algorithm_evidence:
+    status: PARTIAL_ALGORITHM_LEVEL
+    last_verified: '2026-05-03'
+    test_locations:
+    - 'crates/apr-cli/src/commands/distill_include_01.rs::tests::falsify_apr_distill_train_005_precompute_is_byte_deterministic — local-teacher branch; two precompute runs over identical fake teacher dir produce byte-identical manifest.json'
+    - 'crates/apr-cli/src/commands/distill_include_01.rs::tests::falsify_apr_distill_train_005_precompute_remote_teacher_stub_is_deterministic — remote-stub branch; two precompute runs against an unresolved HF model_id produce byte-identical pending_download manifest.json'
+    notes: |
+      Algorithm-level discharge. The current `run_config_precompute`
+      writes a JSON manifest derived from (config, tensor_count,
+      teacher_size); both unit tests exercise the local-teacher and
+      remote-stub branches and assert byte-identical output across two
+      invocations. This catches non-determinism that would be introduced
+      by adding any timestamp/UUID/RNG draw or any teacher forward that
+      uses non-deterministic atomic-add reductions. Promotion to
+      DISCHARGED requires running `apr distill --stage precompute`
+      end-to-end on a real teacher with logits-on-disk and asserting
+      byte-identical bytes across two real invocations.
+
+- id: FALSIFY-APR-DISTILL-TRAIN-006
+  rule: stage train can resume from precompute cache
+  prediction: "If teacher_logits/ cache exists, stage train SHOULD skip recomputation and proceed to gradient updates"
+  test: "rm -rf run/ckpt; apr distill --stage train ... → uses existing cache, no teacher forward"
+  if_fails: "missing idempotency — would force re-running expensive precompute on every train"
+  algorithm_evidence:
+    status: PARTIAL_ALGORITHM_LEVEL
+    last_verified: '2026-05-03'
+    test_locations:
+    - 'crates/apr-cli/src/commands/distill_include_01.rs::tests::falsify_apr_distill_train_006_train_errors_without_precompute_cache — negative half: stage train MUST error when manifest.json is absent (asserts CliError::ValidationFailed with "Precompute" in message)'
+    - 'crates/apr-cli/src/commands/distill_include_01.rs::tests::falsify_apr_distill_train_006_train_does_not_error_when_cache_present — positive half: after precompute, stage train MUST NOT error with the cache-missing message (proves the manifest is actually consulted)'
+    notes: |
+      Algorithm-level discharge of the cache-resume idempotency
+      invariant. Both halves are required to avoid the failure mode
+      where the cache is stat-only-checked but never read — the
+      negative test guarantees train rejects no-cache, and the positive
+      test guarantees train accepts present-cache. Promotion to
+      DISCHARGED requires real teacher forward + real student forward
+      that actually loads logits-on-disk and compares to a baseline
+      that re-ran precompute (proving no recomputation happened).
+
+- id: FALSIFY-APR-DISTILL-TRAIN-007
+  rule: contract validates via pv
+  prediction: "`pv validate contracts/apr-cli-distill-train-v1.yaml` exits 0"
+  test: "pv validate contracts/apr-cli-distill-train-v1.yaml"
+  if_fails: "contract schema noncompliant"
+  algorithm_evidence:
+    status: PARTIAL_ALGORITHM_LEVEL
+    last_verified: '2026-05-04'
+    test_locations:
+    - 'pv validate contracts/apr-cli-distill-train-v1.yaml — exits 0 with "0 error(s), 0 warning(s)" / "Contract is valid." after each amendment in PRs #1438, #1439, #1442'
+    notes: |
+      Algorithm-level meta-discharge. Every amendment to this contract
+      passes through `pv validate` as a precondition for commit (the
+      pre-commit hook + manual operator runs both apply). Running it
+      verbatim 2026-05-04 on this branch: exits 0 with 0 errors / 0
+      warnings. Promotion to DISCHARGED requires no further work — `pv
+      validate` has been the drift gate since v1.0.0 PROPOSED.
+
+- id: FALSIFY-APR-DISTILL-TRAIN-008
+  rule: 3-surface drift (cli + registry + test)
+  prediction: "Adding --stage flag + new behavior touches all 3 of: distill.rs clap, apr-cli-commands-v1.yaml registry, cli_commands::registered_commands() test"
+  test: "cargo test -p apr-cli --test cli_commands registered_commands"
+  if_fails: "feedback_cli_subcommand_three_surface_drift violated"
+  algorithm_evidence:
+    status: PARTIAL_ALGORITHM_LEVEL
+    last_verified: '2026-05-04'
+    test_locations:
+    - 'crates/apr-cli/tests/cli_commands.rs::test_no_unregistered_commands — passes 1/1 today; locks the 3-surface invariant by enforcing every clap subcommand variant matches an entry in apr-cli-commands-v1.yaml'
+    notes: |
+      Algorithm-level discharge per `feedback_cli_subcommand_three_surface_drift`.
+      The `test_no_unregistered_commands` integration test in
+      crates/apr-cli/tests/cli_commands.rs walks the live clap parser at
+      runtime and asserts every Subcommand variant is registered in the
+      apr-cli-commands-v1.yaml registry — a refactor adding a new
+      `--stage <variant>` to `distill.rs` that forgets the registry +
+      yaml entry trips this test. Live verification 2026-05-04:
+      `cargo test -p apr-cli --test cli_commands registered_commands` →
+      "1 passed; 0 failed". Promotion to DISCHARGED requires nothing
+      more — this is an existing CI gate that already binds the
+      invariant.
+
+- id: FALSIFY-APR-DISTILL-TRAIN-009
+  rule: end-to-end smoke on tiny pair beats from-scratch baseline
+  prediction: "Distilling a 50M-param student from a 500M-param teacher on 1M tokens for 1 epoch produces a student with val_loss < (50M-from-scratch on same data, same epochs)"
+  test: "tests/distill_smoke.rs runs the full pipeline + asserts val_loss differential"
+  if_fails: "distillation provides no measurable benefit over pretraining at this scale — re-evaluate hyperparameters or approach"
+  algorithm_evidence:
+    status: BLOCKER_FIXTURE_ABSENT
+    last_verified: '2026-05-04'
+    test_locations: []
+    notes: |
+      Discharge BLOCKED on the missing real-training implementation per
+      §35 (apr distill --stage train is currently a stub). Without real
+      gradient descent, there is no val_loss to compare. The path to
+      DISCHARGED is: (1) implement real distillation in `apr distill
+      --stage train` (multi-PR scope per §35); (2) author
+      `tests/distill_smoke.rs` invoking the pipeline on a tiny
+      teacher/student pair (50M from-500M, 1M tokens, 1 epoch); (3)
+      assert val_loss(distilled) < val_loss(from_scratch). Tracked here
+      so future PRs don't accidentally claim FUNCTIONAL discharge
+      without the real-training prerequisite.
+
+proof_obligations:
+- type: invariant
+  property: "real training (not tensor clone) — at least one student tensor differs by >Q4K tolerance after train"
+- type: invariant
+  property: "KL loss is differentiable w.r.t. student parameters"
+- type: monotonicity
+  property: "kl_loss decreases monotonically over epochs (modulo batch noise)"
+- type: idempotency
+  property: "precompute → cache is byte-deterministic across re-runs"
+
+kani_harnesses:
+- id: KH-APR-DISTILL-TRAIN-001
+  obligation: kl_divergence_logit_loss
+  property: T_scaling_preserves_ranking
+  bound: 8  # vocab_size_max for bounded model checking
+- id: KH-APR-DISTILL-TRAIN-002
+  obligation: alpha_weighted_loss
+  property: alpha_zero_equals_pure_pretrain
+  bound: 4
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: pending
+  notes: |
+    Authored 2026-04-28 from §35 discovery that apr distill Standard
+    strategy is currently a stub (just tensor_clone). This contract
+    defines the missing real-training behavior per §34.5's distillation
+    recommendation.
+
+    PROPOSED status until implementation. Implementation steps
+    (~600-1200 LOC + 9 tests):
+    1. distill.rs:1464 — replace teacher_tensors.clone() with real KD pipeline
+    2. Stage `precompute`: forward teacher over corpus, save logits per-token
+    3. Stage `train`: load student + cached teacher logits, KL+CE loss,
+       backprop via aprender-train autograd, optimizer step, checkpoint
+    4. Per-epoch metadata.json includes train_loss, val_loss, kl_loss,
+       ce_loss, total_loss, optimizer_state_sha, wall_seconds, tokens_seen
+    5. CI fixture: small teacher (qwen2.5-0.5b) + student (50M from-scratch)
+       on 1M-token toy corpus, verify FALSIFY-APR-DISTILL-TRAIN-009 passes
+
+    Once shipped, runs §34.5's 7B→370M distillation on the canonical
+    teacher in ~2-4h GPU time and is expected to push MODEL-2's val_loss
+    below the §34 9.38 capacity ceiling.
