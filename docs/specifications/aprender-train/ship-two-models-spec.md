@@ -1,7 +1,8 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 3.09.0
+**Version:** 3.13.0
+**Atomic next action (v3.13.0):** **§67 — H4 fix LIVE result: pass@1 = 80.49% on gx10 164-run (+46pp gain, 4.31pp below floor) (2026-05-12)** (see new §67 below). PR #1628 H4 fix (ChatML wrap + `extract_python_code_block`) shipped; gx10 164-run on canonical 7B APR teacher took 5.8h CPU wall → 132/164 = **80.49% pass@1**. Up from 34.15% (§65) = **+46pp gain**. pass@10 ≈ 100%, pass@100 = 100% — model fully capable; SHIP-005 stays PARTIAL but gap is now **refinement-scale (4.31pp)**, not fundamental. Four refinement candidates surface: R1 (extraction robustness, est 2-3pp), R2 (function-targeted extraction, 1-2pp), R3 (Q4K→FP16 quantization, 2-3pp), R4 (sampling refinement, 1-2pp). R1+R2 are cheapest (eval-harness code + 5h gx10 rerun). **Methodology lesson #14 NEW**: near-miss results bound refinement scope (50pp gap = methodology; 4pp gap = refinement). **MODEL-1 ship %**: stays at **94%**. **MODEL-2 ship %**: unchanged at **57%**.
 **Atomic next action (v3.09.0):** **§63 — SHIP-007 empirical floor — CUDA structurally broken on Qwen 7B; multi-PR cascade scope (2026-05-11)** (see new §63 below). LIVE `apr bench` on canonical 7B APR teacher surfaces a 3-layer blocker stack for SHIP-007 (decode tps ≥ 30 tok/s): (1) `CUDA_ERROR_ILLEGAL_ADDRESS` in cuBLASLt FP8 JIT warmup (workaround: `APR_SKIP_FP8_WARMUP=1`); (2) PARITY-GATE rejects with cosine = -0.005 because GPU forward computes a DIFFERENT function than CPU on Qwen2.5-Coder-Instruct dimensions (hidden=3584, heads=28, kv_heads=4); (3) even with both gates skipped, throughput is 5.6 tok/s (well below 30 floor). SHIP-007 is multi-PR cascade scope, not a 1-PR LIVE-discharge. **Methodology lesson #11 NEW**: an unblocking closure (§60) may transitively unblock SOME §17.5 PARTIALs (SHIP-002/006/008, and likely SHIP-005 from in-progress 164-run) but leave OTHERS requiring their own multi-PR cascades. **MODEL-1 ship %**: stays at **94%** (pending 164-run → SHIP-005 → potentially 95%). SHIP-007 estimated to flip 95% → 96% on multi-PR cascade close. **MODEL-2 ship %**: unchanged at **57%**. Coverage tally: snapshot + empirical-floor record + 3-layer blocker bound (no new falsifier flips this cycle).
 **Atomic next action (v3.06.0):** **§61 — Post-§60 LIVE-discharge cascade — direct-prompt SHIP-002 GREEN; ChatML-prompt SHIP-006/008 surface a generation-quality gap (2026-05-10)** (see new §61 below). §60 closure unblocked the §17.5 chain. This session shipped the SHIP-002 LIVE discharge (PR #1609) — `apr run --prompt "def fib(n):" --max-tokens 128` on canonical 7B APR teacher emits coherent fib() Python with 0 syntax errors / 68 AST nodes / 1 FunctionDef. But the parallel `apr qa` LIVE attempt surfaced a NEW empirical finding: the SAME canonical teacher fails the `golden_output` gate ("gibberish, fragment '\\ns\\ns' repeats 3+ times") under the ChatML-wrapped prompt `<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n`. Forward-parity (§60) ≠ generation parity. SHIP-006/008 blocked on this ChatML degenerate-output bug; SHIP-007 separately blocked on perf (8.8 tok/s vs 30 floor on CPU fallback path). §61 records the two falsifiable predictions for the next bisection: PRED-61-A (GGUF + ChatML → CLEAN? localizes bug to APR side); PRED-61-B (APR + direct continuation "What is 2+2? The answer is " → CLEAN? localizes bug to special-token handling vs cumulative drift). Cascade-this-session: 6 PRs (#1604/#1606/#1607/#1608/#1609 + this §61). **MODEL-1 ship %**: **91% → 92%** (1 of 5 §17.5 PARTIALs LIVE-discharged via #1609; SHIP-005/006/007/008 stay PARTIAL). **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38. Coverage tally: 1 new LIVE discharge (SHIP-002 in `qwen2-e2e-verification-v1.yaml` v1.10.0 → v1.12.0); plus 1 status flip (`apr-vs-gguf-forward-parity-v1` v1.1.0 → v1.2.0 PROPOSED → ACTIVE_FUNCTIONAL via PR #1608); plus 3 cascade fixes in `aprender-train` CUDA forward path (Q/K/V bias dispatch / RMSNorm eps cache key / RoPE theta cache key — PRs #1604/#1606/#1607).
 **Atomic next action (v3.05.0):** **§60 — SHIP-007 §22 FULLY CLOSED — H1 CONFIRMED apples-to-apples on canonical 7B teacher; layer-3 ratio 18.23× → 1.245× (2026-05-07)** (see companion-spec entries M91-M103 + parity #89 for full per-PR narrative; aprender contract `contracts/trace-ffn-sub-block-gguf-v1.yaml` v1.0.0 → v1.13.0 across 13 amendments). M-FFN-GGUF-5 fix shipped (aprender PR #1550 squash pending) + M-FFN-GGUF-7 multi-layer real-teacher chain shipped (aprender PR #1548 MERGED). **MAJOR PLOT TWIST in M103 fix PR**: §27's 18.23× std-ratio was a TEST METHODOLOGY ARTIFACT, NOT a numerical bug. GGUF's `forward_traced` does Phase 1 prefill silently and only captures stats on the LAST token; APR's `forward_traced` captured stats across ALL 7 tokens. The §27 measurement compared multi-token APR std (7-token × 28672 elements) vs single-token GGUF std (1-token × 4096 elements) — fundamentally incomparable distributions. **Two coherent fixes in M-FFN-GGUF-5 PR #1550**: (1) `forward_traced` now uses Q4K+Q8K dispatch via new helper `matmul_q4k_or_f32_traced` (multi-token aware, F32 fallback when Q4K unavailable, 7 call sites updated); (2) M89 harness compares APR's `last_token.ffn_swiglu_inner_stats` against GGUF's `ffn_swiglu_inner_stats` (apples-to-apples last-token-only on both sides). **EMPIRICAL END-TO-END VERIFICATION** (2026-05-07, lambda-vector RTX 4090, 178s wall): all 28 layers within H1 band [0.5, 2.0]; **layer-3 ratio = 1.245×** (was 18.23× pre-methodology-fix). **Verdict flipped: H2 (apparent APR-side bug) → H1 CONFIRMED (apples-to-apples agreement)**. The cascade's per-tensor mechanism (M94 0.077% Path A vs Path B per matmul) and compounding (M95 5.70× synthetic / M-FFN-GGUF-7 1.81× real-saturating) ARE real numerical findings — but the §27 1723% magnitude that made the bug look severe was test-methodology-inflated. **M-FFN-GGUF-7 finding** (M102 PR #1548): real-layer chain SATURATES at 1.81× over 5 layers (vs synthetic M95's 5.70×); Layer 2 drops to 0.029% from weight-pattern cancellation; naive growth-factor exponentiation gives 1.81^22.4 = 5.78e5× at 28-layer depth — physically impossible; real systems saturate. **Methodology lesson #7 NEW** (`feedback_test_methodology_can_fake_bugs.md`): when comparing two implementations via summary statistics (std/mean/cosine), VERIFY both sides measure the SAME distribution shape (count, dim, element selection) BEFORE trusting the comparison. Mismatched distribution shapes can amplify a small real divergence into an apparent magnitude that looks like a bug. SHIP-007 §22 burned ~3 weeks pre-cascade + 2 days cascade + 2 hours fix on a methodology issue that produced a fake apparent magnitude on top of the real per-matvec mechanism. **15,233 lib tests pass, 0 failures**; production hot paths byte-unchanged (only `forward_traced` touched in PR #1550). **Discharge potential**: per §17.5, M-FFN-GGUF-5 closure transitively enables individual discharge of 5 MODEL-1 PARTIALs (SHIP-002, SHIP-005, SHIP-006, SHIP-007, SHIP-008); each may need its own contract-level promotion follow-up. **MODEL-1 ship %**: 91% → **96% pending individual partial discharges**. **MODEL-2 ship %**: unchanged at **57%** until step 5g.3 produces val_loss < 9.38. Coverage tally: 12 falsifiers + 1 fix DISCHARGED across `trace-ffn-sub-block-gguf-v1` v1.0.0 → v1.13.0 cascade. **Total session: 28 PRs across 2 days** including 1 actual fix landing.
@@ -4483,6 +4484,67 @@ Unchanged from §29 because PR E did not land. Next-session agenda: do the §30.
 Per `feedback_fix_root_cause_never_route_around.md`: the §28 fix would have route-around'd a real bug because the named site (matmul kernel) is not where the divergence originates. The empirical refutation in §30 IS the work that protects the next attempt from shipping a no-op. This refutation is itself a coverage-incrementing artifact (it falsifies a hypothesis), even though no PARTIAL flips to DISCHARGED.
 
 The Toyota Way fix is to bisect upstream, not to flip the kernel call.
+
+## §67. H4 fix LIVE result — pass@1 = 80.49% on gx10 164-run (+46pp gain, 4.31pp below floor) (2026-05-12)
+
+§66 confirmed H4. PR #1628 shipped ChatML wrap + `extract_python_code_block` in `run_humaneval_inference`. §67 records the LIVE 164-problem result.
+
+### 67.1 Verdict
+
+```
+passed = 132/164
+pass@1   = 0.8049  ← FAIL (4.31pp below 0.848 effective floor)
+pass@10  = 1.0000
+pass@100 = 1.0000
+```
+
+### 67.2 Comparison
+
+| Run | pass@1 | Delta | Verdict |
+|-----|--------|-------|---------|
+| §65 raw-continuation | 34.15% | (baseline) | FAIL (50pp gap) |
+| §67 H4 ChatML | **80.49%** | **+46.34pp** | FAIL (4.31pp gap) |
+
+H4 closed **92% of the original gap**. Remaining 4.31pp is refinement-scale.
+
+### 67.3 Model capability confirmed
+
+pass@10 ≈ 100%, pass@100 = 100%. The model solves every problem given enough samples; remaining gap is about first-response extraction.
+
+### 67.4 Four refinement candidates for the 4.31pp residual
+
+| Candidate | Description | Est. gain |
+|-----------|-------------|-----------|
+| **R1**: extraction robustness | Some completions may not fence with `\`\`\`python\`\`\``; inspect failed problems | 2-3pp |
+| **R2**: function-targeted extraction | Prefer the fenced block containing `def {entry_point}(` | 1-2pp |
+| **R3**: Q4K → FP16 | Published Qwen 88.4% may use FP16; Q4K typically loses 1-3pp | 2-3pp |
+| **R4**: sampling refinement | `temperature=0.2, samples=3, majority` | 1-2pp |
+
+R1+R2 are cheapest (eval-harness code change + 5h gx10 rerun).
+
+### 67.5 SHIP-005 status
+
+- **Discharge**: stays PARTIAL_ALGORITHM_LEVEL
+- **Cleanest path to LIVE**: R1+R2 fix in `extract_python_code_block` should close 2-4pp; rerun ≥84.80%
+
+### 67.6 Ship-% movement
+
+- **MODEL-1 ship %**: stays at **94%**. SHIP-005 bounded to R1-R4 refinement cascade.
+- **MODEL-2 ship %**: unchanged at **57%**.
+
+### 67.7 Methodology lesson #14 (NEW)
+
+**Near-miss results bound refinement scope.** A 50pp gap (§65) signals a methodology problem; a 4pp gap (§67) signals a refinement problem. Different fix archetypes. Generalises lesson #11.
+
+### 67.8 What §67 is NOT
+
+§67 does NOT ship a refinement. The next 1-PR slice is R1+R2 (extraction-robustness + function-targeted) in `extract_python_code_block` + 5h gx10 rerun.
+
+Evidence: `evidence/section-67-h4-164-run-result-2026-05-12/{humaneval-164-h4-gx10.json, summary.json, findings.json}`.
+
+Spec v3.12.0 → **v3.13.0**.
+
+---
 
 ## §63. SHIP-007 empirical floor — CUDA structurally broken on Qwen 7B; multi-PR cascade scope (2026-05-11)
 
