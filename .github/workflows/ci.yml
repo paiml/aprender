@@ -27,16 +27,18 @@ jobs:
     with:
       repo: ${{ github.event.repository.name }}
       # Phase 3 pilot (heavy workload) — build-performance.md §7 Phase 3.
-      # APR-MONO monorepo: 60+ crates, largest dep graph in the fleet.
-      # Highest expected sccache hit-rate lift — the signal that justifies
-      # fleet-wide rollout (or shelves it).
+      # APR-MONO monorepo: 879+ compile units, largest dep graph in the fleet.
+      # Highest expected sccache hit-rate lift; without it each PR cold-compiles
+      # in its per-PR target dir (`/mnt/nvme-raid0/targets/aprender-ci/<PR>`)
+      # for ~34min, leaving only ~4min for tests inside the 40min timeout —
+      # the entire merge queue saturates.
       #
       # 2026-04-19: temporarily disabled — sovereign-ci:stable container image
-      # is missing the `rustc-sccache` wrapper script, so every sccache-gated
-      # job fails at toolchain probe ("No such file or directory"). Re-enable
-      # once paiml/.github runner image ships the wrapper again (tracked in
-      # paiml/.github infra issue — not this repo).
-      enable_sccache: false
+      # was missing the `rustc-sccache` wrapper script. Fixed upstream in
+      # paiml/infra commit f4fccf9 (PR #66, "use exec script not symlink").
+      # 2026-05-12: re-enabled — image verified to ship `/usr/local/bin/rustc-sccache`
+      # (sccache 0.14.0), shared cache at `/home/noah/data/sccache` (warm, ~11GB).
+      enable_sccache: true
       use_nextest: true
     secrets: inherit
 
