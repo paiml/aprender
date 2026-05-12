@@ -63,8 +63,8 @@ metadata:
     - crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml
 
 name: claude-code-parity-apr
-version: "1.24.0"
-status: ACTIVE_RUNTIME   # 13/13 gates green. v1.24.0 (companion-repo M128-M131 sequence, 2026-05-10) — bumped from v1.23.0 to integrate the M109 cosine-vs-HF-FP16 LIVE-DISCHARGE (cos_sim 0.995384 ≥ 0.99 on lambda-vector RTX 4090, 2026-05-09; aprender PR #1597 squash 3fb04ef86 flipped `qwen3-moe-forward-v1` v1.4.0 ACTIVE_ALGORITHM_LEVEL → v1.5.0 ACTIVE_RUNTIME). Discharges the v1.23.0 status-prose claim "Cosine vs HF FP16 remains operator-confirm pending ~60 GB HF download" — the FP16 weights had been on lambda-vector at /mnt/nvme-raid0/models/Qwen3-Coder-30B-A3B-Instruct/ (57 GB / 16 safetensors shards) for ~7 days; the "60 GB download" blocker was stale by 62 days. v1.23.0 (M35 M32d discharge audit-trail bump) records the 4-bug stack landed on aprender main as commit 5235aaeb9 (#1228) plus diagnostic surface PRs #1222 (Step 2), #1226 (Step 2.5), #1401 (Step 2 JSON wire). M32d gibberish output ("%%%%%%%%") converted to coherent English answers across math/geography/translation/code domains. M34 FAST PATH 5-whys plan delivered at lucky-case bound (5 substantive PRs vs 4-6 estimated, ~6 hours wall vs 2-3 days). Component priors verified empirically: rank-3 Q/K RMSNorm (15%) + rank-4 rope_theta (10%) + chat template both correct. Cosine vs HF FP16 formal flip **DISCHARGED 2026-05-09 at companion-repo M109** (apr_argmax = hf_argmax = 3555 " What"; 555ms apr-forward; HF FP16 fixture generated in 52s).
+version: "1.25.0"
+status: ACTIVE_RUNTIME   # 14/14 gates green. v1.25.0 (companion-repo M136-M140 axis-2-closure-plan sequence, 2026-05-11) — adds FALSIFY-CCPA-014 (os_event_parity_bound) to the gate registry, completing the axis-2 closure-plan idea (2) CLI subprocess instrumentation track. New gate consumes ccpa_subproc::OsEvent records (M136) via ccpa_differ::os_event_parity (M137) and asserts canonical-corpus score >= 0.95 + bidirectional sensitivity on regression corpus (M139). v1.24.0 (companion-repo M128-M131 sequence, 2026-05-10) — bumped from v1.23.0 to integrate the M109 cosine-vs-HF-FP16 LIVE-DISCHARGE (cos_sim 0.995384 ≥ 0.99 on lambda-vector RTX 4090, 2026-05-09; aprender PR #1597 squash 3fb04ef86 flipped `qwen3-moe-forward-v1` v1.4.0 ACTIVE_ALGORITHM_LEVEL → v1.5.0 ACTIVE_RUNTIME). Discharges the v1.23.0 status-prose claim "Cosine vs HF FP16 remains operator-confirm pending ~60 GB HF download" — the FP16 weights had been on lambda-vector at /mnt/nvme-raid0/models/Qwen3-Coder-30B-A3B-Instruct/ (57 GB / 16 safetensors shards) for ~7 days; the "60 GB download" blocker was stale by 62 days. v1.23.0 (M35 M32d discharge audit-trail bump) records the 4-bug stack landed on aprender main as commit 5235aaeb9 (#1228) plus diagnostic surface PRs #1222 (Step 2), #1226 (Step 2.5), #1401 (Step 2 JSON wire). M32d gibberish output ("%%%%%%%%") converted to coherent English answers across math/geography/translation/code domains. M34 FAST PATH 5-whys plan delivered at lucky-case bound (5 substantive PRs vs 4-6 estimated, ~6 hours wall vs 2-3 days). Component priors verified empirically: rank-3 Q/K RMSNorm (15%) + rank-4 rope_theta (10%) + chat template both correct. Cosine vs HF FP16 formal flip **DISCHARGED 2026-05-09 at companion-repo M109** (apr_argmax = hf_argmax = 3555 " What"; 555ms apr-forward; HF FP16 fixture generated in 52s).
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Top-level invariants — the 12 falsifiable gates this contract asserts.
@@ -87,6 +87,7 @@ invariants:
   - { id: FALSIFY-CCPA-007, name: corpus_coverage,            summary: '>=1 fixture per non-MISSING row of apr-code-parity-v1.yaml' }
   - { id: FALSIFY-CCPA-008, name: parity_score_bound,         summary: 'aggregate parity_score >= 0.95, per-fixture >= 0.80' }
   - { id: FALSIFY-CCPA-013, name: first_recorded_parity_score, summary: 'AT LEAST ONE real Claude Code ↔ apr code corpus run produced a measured parity_score recorded in status_history. Flips ACTIVE_ALGORITHM_LEVEL → ACTIVE_RUNTIME.' }
+  - { id: FALSIFY-CCPA-014, name: os_event_parity_bound,       summary: 'OS-level event parity (axis-2-closure-plan M115.4): macro-averaged Jaccard >= 0.95 per fixture in fixtures/os-canonical/; bidirectional-sensitivity gate on fixtures/os-regression/ (every fixture < 0.95 + non-empty drift records).' }
 
 scope: >
   every recorded fixture under <ccpa-repo>/fixtures/, every replay run the
@@ -563,6 +564,73 @@ falsification_conditions:
       - { date: '2026-04-27', version_before: '1.1.0', version_after: '1.2.0',
           change: 'Dropped HTTPS-proxy / live-Claude-Code-recording requirement from FALSIFY-CCPA-013 discharge path per project policy "we will not call api, we will assume claude code". Canonical reference is now AUTHORED in fixtures/canonical/. Per-fixture student traces can be curated or generated. M2.3 proxy removed from spec.' }
 
+  - id: FALSIFY-CCPA-014
+    name: os_event_parity_bound
+    status: ACTIVE_RUNTIME
+    assertion: |
+      OS-level event parity (axis-2-closure-plan idea (2): CLI
+      subprocess instrumentation). For every paired fixture in
+      `fixtures/os-canonical/`:
+        ccpa_differ::os_event_parity(teacher, student).score() >= 0.95
+      where the score is a macro-averaged Jaccard over four sets:
+        - file_open paths
+        - file_write fd projections
+        - file_unlink paths
+        - exec paths
+
+      Bidirectional sensitivity: every paired fixture in
+      `fixtures/os-regression/` MUST score `< 0.95` AND emit
+      non-empty drift records. A regression fixture that scores
+      `>= 0.95` is a meter false-negative and ship-blocking.
+
+      Trace schema: each fixture file is JSONL where each line is
+      a `ccpa_subproc::OsEvent` JSON object:
+        { "pid": <u32>, "kind": <OsEventKind>, "seq": <u64> }
+      `OsEventKind` is a tagged enum with variants:
+        { "kind": "file_open", "path": "...", "flags": "..." }
+        { "kind": "file_write", "fd": "...", "bytes": <u64> }
+        { "kind": "file_unlink", "path": "..." }
+        { "kind": "exec", "path": "..." }
+    test_harness: |
+      `cargo test -p ccpa-differ --test falsify_ccpa_014_os_event_parity`
+      runs 3 functions:
+        - canonical_corpus_meets_os_parity_threshold  (every fixture >= 0.95)
+        - regression_corpus_below_os_parity_threshold (every fixture < 0.95 + non-empty drifts)
+        - identical_traces_score_perfect              (self-compare == 1.0)
+      All three GREEN on the M139 corpus (3 canonical + 1 regression fixtures).
+
+      Capture path: `ccpa-trace-subproc <cmd> [args...]` (binary in
+      crates/ccpa-subproc/, M136) wraps a subprocess under
+      `strace -f -e trace=open,openat,write,unlink,unlinkat,execve,execveat`
+      and emits OS-event JSONL to stdout. The differ
+      (`ccpa_differ::os_event_parity`, M137) consumes those records.
+    rationale: |
+      Axis 2 (real differential test against actual Claude Code) was
+      stuck at ~30% since M2.3 rescope. The completeness-assessment
+      identified 5 closure paths; idea (2) — CLI subprocess
+      instrumentation under `strace` — is the cheapest path to
+      real-input-system-under-test evidence (no Anthropic API
+      budget needed, no upstream `LlmDriver-public` dependency).
+
+      The OS-level differ works at a coarser granularity than the
+      API-level differ because libc / kernel / runtime layers emit
+      different ancillary syscalls in different orders between
+      systems. Multiset Jaccard sidesteps order-sensitivity while
+      preserving "did both systems touch roughly the same set of
+      files / spawn the same set of programs?" semantics.
+
+      The 0.95 threshold mirrors FALSIFY-CCPA-008's `0.80`
+      per-fixture floor plus a 0.15 margin: OS-level Jaccard is
+      set-based and intolerant to single-path divergence, so the
+      threshold can be tighter than the API-level position-aligned
+      score.
+
+      DRAFT → ACTIVE_RUNTIME at v1.25.0 (this revision) once the
+      M139 corpus + gate test land.
+    semantic_change_log:
+      - { date: '2026-05-11', version_before: '1.24.0', version_after: '1.25.0',
+          change: 'Added FALSIFY-CCPA-014 to gate registry. Companion-repo M139 ships the corpus + runtime gate; this revision (M140 / M115.5) flips the contract to recognize CCPA-014 as ACTIVE_RUNTIME from authoring.' }
+
   - id: FALSIFY-CCPA-008
     name: parity_score_bound
     status: PLANNED_M6
@@ -721,6 +789,69 @@ milestones:
 # ─────────────────────────────────────────────────────────────────────────────
 
 status_history:
+  - date: '2026-05-11'
+    from: 'ACTIVE_RUNTIME v1.24.0'
+    to: 'ACTIVE_RUNTIME v1.25.0'
+    note: 'companion-repo M136-M140 axis-2-closure-plan idea (2) sequence — FALSIFY-CCPA-014 (os_event_parity_bound) added to gate registry'
+    reason: |
+      Adds FALSIFY-CCPA-014 to the falsification-gate registry,
+      completing the axis-2-closure-plan idea (2) CLI subprocess
+      instrumentation track. Gate count: 13 → 14.
+
+      Sequence on companion repo (`paiml/claude-code-parity-apr`):
+
+        M136 (PR #122 squash ac1fe50) — axis-2-closure-plan M115.1.
+          New crate crates/ccpa-subproc/ with binary
+          ccpa-trace-subproc <cmd> [args...]. Wraps target subprocess
+          under strace -f -e trace=open,openat,write,unlink,unlinkat,
+          execve,execveat. Pure parser at src/parse.rs; closed-enum
+          schema at src/schema.rs:
+            OsEventKind::{FileOpen, FileWrite, FileUnlink, Exec}
+          Emits OsEvent JSONL on stdout. Tested with 30 unit tests +
+          3 integration smoke tests (1 of which spawns strace on
+          /bin/cat). 100% function / 99.10% line coverage.
+
+        M137 (PR #123 squash 27da75a) — axis-2-closure-plan M115.3.
+          Extends ccpa-differ with src/os_event_diff.rs:
+            os_event_parity(teacher: &[OsEvent], student: &[OsEvent])
+              -> OsParityReport
+            OsParityReport.score()  // macro-averaged Jaccard
+            OsDriftCategory::{UnmatchedFileOpen, UnmatchedFileWrite,
+                              UnmatchedFileUnlink, UnmatchedExec}
+            Side::{Teacher, Student}
+          Multiset Jaccard over file-open / file-write / file-unlink /
+          exec sets. 9 unit tests.
+
+        M138 (PR #124 squash df33a5a) — detector regex extension.
+          scripts/check-doc-drift.sh section #15 regex extended from
+          `docs(M<NN>)` to all 10 Conventional Commits prefixes
+          (docs|feat|fix|chore|refactor|test|build|ci|perf|style|revert).
+          Bumps meta-test coverage 14/14 → 15/15.
+
+        M139 (PR #125 squash cbe378d) — axis-2-closure-plan M115.2 +
+          M115.4. Authored OS-event corpus at fixtures/os-canonical/
+          (3 fixtures) + fixtures/os-regression/ (1 fixture); each
+          has paired teacher.ccpa-os-trace.jsonl + student.ccpa-os-trace.jsonl
+          + meta.toml. New test at
+          crates/ccpa-differ/tests/falsify_ccpa_014_os_event_parity.rs
+          with 3 functions:
+            canonical_corpus_meets_os_parity_threshold  (every fixture >= 0.95)
+            regression_corpus_below_os_parity_threshold (every fixture < 0.95)
+            identical_traces_score_perfect              (self-compare = 1.0)
+          All 3 GREEN. Threshold 0.95.
+
+        M140 (this PR) — axis-2-closure-plan M115.5 / contract bump.
+          Adds FALSIFY-CCPA-014 to gate registry; status: ACTIVE_RUNTIME
+          (runtime evidence shipped at M139). Companion-repo mirror
+          refresh + pin.lock bump follow this PR's squash-merge.
+
+      Coverage gate continues to enforce
+      --fail-under-functions 100 --fail-under-lines 99 (FALSIFY-CCPA-011).
+      Workspace coverage at M139 squash: 100% functions / 99.10% lines.
+
+      30/30 fixtures continue to score aggregate parity 1.0000
+      (FALSIFY-CCPA-008 + FALSIFY-CCPA-013 unaffected).
+
   - date: '2026-05-10'
     from: 'ACTIVE_RUNTIME v1.23.0'
     to: 'ACTIVE_RUNTIME v1.24.0'
