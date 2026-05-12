@@ -1,0 +1,211 @@
+metadata:
+  id: C-APR-PRETRAIN-CUDA-FORWARD-PARITY
+  version: 1.0.0
+  created: '2026-05-10'
+  author: PAIML Engineering
+  kind: pattern
+  status: DRAFT_RED
+  description: |
+    Pins the falsifiable invariant that `CudaTransformerTrainer`'s
+    forward path produces the same logit distribution as the CPU
+    `aprender::Transformer::forward` for the same populated weights.
+
+    BACKGROUND. SHIP-TWO §61 (PR #1600) recorded val_loss=18.55 at
+    step 1 — *above* `ln(vocab)=17.21` (uniform-over-vocab baseline)
+    — meaning CudaTransformerTrainer produces sub-random
+    predictions. PR #1601 found H4 root cause #1 (BF16 dtype
+    mislabel) and the fresh APR has correct values. PR #1602
+    bisected the residual: CPU forward on populated Qwen produces
+    SENSIBLE logits (peak-to-mean=5.68, argmax=9370). The bug is
+    in the CUDA path.
+
+    Direct inspection of `crates/aprender-train/src/transformer/
+    cuda_block.rs` reveals the smoking gun: `CudaTransformerBlock`
+    has NO bias fields (struct definition lines 103-135 lists only
+    `w_q`, `w_k`, `w_v`, `w_o`, `w_gate`, `w_up`, `w_down` — no
+    `b_q`, `b_k`, `b_v`). The forward pass at lines 719-747 calls
+    `gemm_forward(norm1_out, w_q, q)` with no bias addition.
+
+    For Llama (use_bias=false) this is correct. For Qwen2 / Qwen2.5
+    (use_bias=true), the Q/K/V biases (24 layers × 3 = 72 tensors)
+    are SILENTLY DROPPED during forward. Result:
+      - Attention scores miss the bias offset
+      - Softmax peaks shift away from trained positions
+      - Logits become anti-aligned with held-out tokens
+      - val_loss > ln(vocab)
+
+    THIS CONTRACT pins the parity invariant. RED-then-GREEN cycle:
+      RED  (current main): falsifier fires because CUDA forward
+           produces logits with peak-to-mean ratio < 1.5 (essentially
+           uniform) while CPU produces peak-to-mean > 5 on the same
+           weights. Argmax positions differ by orders of magnitude
+           in logit value.
+      GREEN (post-fix):    `CudaTransformerBlock::forward` calls a
+           bias-add kernel after each Q/K/V GEMM when `config.use_bias`
+           is true; biases are uploaded by `with_model` from the
+           populated CPU model.
+
+    SHIP-% MOVEMENT IF FALSIFIER FLIPS GREEN: MODEL-2 57% → ≥58%.
+    The CUDA-side bias gap is the LAST load-bearing bug between
+    "encoder works" and "training produces a converged model".
+
+  references:
+    - 'docs/specifications/aprender-train/ship-two-models-spec.md § 61 (5g.2 honest dispatch)'
+    - 'evidence/section-60-5g-2-redispatch-2026-05-09/README.md (val_loss=11.55 ABORT)'
+    - 'evidence/section-61-5g-1-re-encode-2026-05-10/README.md (corpus FIXED)'
+    - 'crates/aprender-train/src/transformer/cuda_block.rs lines 103-135 (struct missing bias fields)'
+    - 'crates/aprender-train/src/transformer/cuda_block.rs lines 719-747 (gemm without bias)'
+    - 'crates/aprender-train/src/transformer/attention.rs lines 388-395 (CPU forward HONORS Option<Tensor> biases)'
+    - 'contracts/apr-pretrain-arch-polymorphic-v1.yaml v1.8.0 (POPULATE-COVERAGE-001 — CPU side biases populate ✓)'
+  depends_on:
+    - 'apr-pretrain-arch-polymorphic-v1'
+    - 'apr-pretrain-init-finetune-v1'
+
+equations:
+  cpu_cuda_logit_distribution_parity:
+    formula: |
+      let cpu_logits = cpu_transformer.forward(token_ids);
+      let cuda_logits = cuda_trainer.forward_logits(token_ids);
+      |argmax(cpu_logits) == argmax(cuda_logits)| OR
+      cosine_similarity(cpu_logits, cuda_logits) > 0.95
+    domain: |
+      For the same populated Qwen 0.5B weights and the same input
+      token sequence, the CPU `Transformer::forward` and the CUDA
+      `CudaTransformerTrainer`-equivalent forward MUST produce
+      logit distributions whose argmax matches OR whose cosine
+      similarity exceeds 0.95. Numerical drift between f32 CPU
+      math and f32 CUDA math is acceptable; structural divergence
+      (different argmax with cosine << 0.95) is the H4D defect
+      class.
+    invariants:
+    - 'cosine_similarity(cpu_logits, cuda_logits) > 0.95 OR argmax matches'
+    - 'cuda_logits std > 0.01 (not constant)'
+    - 'cuda_logits peak-to-mean > 1.5 (not uniform)'
+    preconditions:
+    - 'cpu_transformer was populated via populate_trainer_from_init_tensors'
+    - 'cuda_trainer was populated via build_shared_cuda_trainer_with_init'
+    - 'init APR is canonical Qwen 0.5B (use_bias=true, tie_word_embeddings=true)'
+
+  bias_upload_invariant:
+    formula: |
+      cuda_block.b_q.is_some() ∧ cuda_block.b_k.is_some() ∧ cuda_block.b_v.is_some()
+      WHEN config.use_bias == true
+    domain: |
+      `CudaTransformerBlock` MUST allocate and upload Q/K/V projection
+      biases when `config.use_bias == true`. Today the struct has
+      no bias fields — biases are silently dropped during upload.
+    invariants:
+    - 'CudaTransformerBlock fields b_q, b_k, b_v are Some when config.use_bias'
+    - 'CudaTransformerBlock fields b_q, b_k, b_v are None when !config.use_bias (Llama)'
+    preconditions:
+    - 'CudaTransformerBlock::new accepts optional bias slices'
+
+  forward_applies_biases_invariant:
+    formula: |
+      ∀ layer ∈ blocks, after q_gemm: q_with_bias[s, i] = q[s, i] + b_q[i]
+      (and same for k, v)
+    domain: |
+      The forward pass MUST add Q/K/V biases after each projection
+      gemm when biases are present. Without this, the attention
+      scores miss the bias offset and the model produces sub-random
+      predictions on Qwen-init checkpoints.
+    invariants:
+    - 'forward applies cuda_add(q, b_q_replicated) after gemm_forward(norm1, w_q, q) when b_q.is_some()'
+    - 'forward unchanged when b_q.is_none() (Llama path regression-free)'
+    preconditions:
+    - 'bias_upload_invariant holds'
+
+proof_obligations:
+- type: invariant
+  property: CPU/CUDA forward parity on populated Qwen
+  formal: 'cosine_similarity(cpu_logits, cuda_logits) > 0.95 OR argmax matches'
+  applies_to: cpu_cuda_logit_distribution_parity
+- type: invariant
+  property: CUDA biases upload when use_bias=true
+  formal: 'cuda_block.b_q.is_some() WHEN config.use_bias'
+  applies_to: bias_upload_invariant
+- type: invariant
+  property: forward pass applies biases after gemm
+  formal: 'q_with_bias = gemm + bias_broadcast WHEN b_q.is_some()'
+  applies_to: forward_applies_biases_invariant
+
+falsification_tests:
+- id: FALSIFY-CUDA-FORWARD-PARITY-001
+  rule: |
+    On a populated Qwen 0.5B, CPU forward and CUDA eval produce
+    logits with cosine similarity > 0.95 OR matching argmax.
+  prediction: |
+    Build CPU `Transformer::new(qwen2_0_5b())` and populate via
+    `populate_trainer_from_init_tensors`. Build
+    `CudaTransformerTrainer` via `build_shared_cuda_trainer_with_init`.
+    Forward the same single-token input through both.
+    Assert cosine_similarity(cpu_logits, cuda_logits) > 0.95.
+  test: |
+    cargo test -p aprender-train --features cuda --lib falsify_cuda_forward_parity_qwen_argmax
+  if_fails: |
+    The CUDA forward path drops biases (or has another structural
+    defect). Bisect by inspecting CudaTransformerBlock::forward
+    for missing bias-add operations; check struct fields for missing
+    bias buffers.
+  ship_blocking: true
+  counter_example_classes:
+  - missing_bias_addition_in_forward
+  - upload_path_drops_optional_tensors
+  - cublas_transpose_convention_drift
+  - logits_buf_off_by_stride
+
+- id: FALSIFY-CUDA-FORWARD-PARITY-002
+  rule: |
+    `CudaTransformerBlock` struct exposes Q/K/V bias fields when
+    `config.use_bias == true`.
+  prediction: |
+    Source-level audit: grep `cuda_block.rs` for `b_q:` `b_k:` `b_v:`
+    in the struct definition. Pre-fix: NOT PRESENT (Llama-design
+    inheritance). Post-fix: present as `Option<GpuBuffer<f32>>`.
+  test: |
+    cargo test -p aprender-train --features cuda --lib falsify_cuda_block_has_bias_fields_when_use_bias
+  if_fails: |
+    Bias fields removed or never added. The Llama-only design
+    leaks back; Qwen biases will silently drop on upload.
+  ship_blocking: true
+  counter_example_classes:
+  - struct_field_removed
+  - llama_only_design_regression
+
+- id: FALSIFY-CUDA-FORWARD-PARITY-003
+  rule: |
+    `CudaTransformerBlock::forward` calls bias-add after Q/K/V
+    gemm_forward when `config.use_bias == true`.
+  prediction: |
+    Source-level audit: lines 717-747 of cuda_block.rs (Q/K/V
+    projection block) include `cuda_add` (or equivalent
+    bias-broadcast) calls following each `gemm_forward`. Pre-fix:
+    NO `cuda_add` between gemms. Post-fix: present, gated on
+    `b_q.is_some()`.
+  test: |
+    cargo test -p aprender-train --features cuda --lib falsify_cuda_forward_applies_biases_when_present
+  if_fails: |
+    Forward path drops biases despite struct exposing them.
+    Same defect class as POPULATE-COVERAGE on the CPU side
+    (PR #1579) — biases stored but never used.
+  ship_blocking: true
+  counter_example_classes:
+  - bias_stored_but_unused
+  - forward_path_skips_optional_op
+
+kani_harnesses: []
+
+qa_gate:
+  id: QA-CUDA-FORWARD-PARITY-001
+  name: CUDA forward parity gate
+  description: |
+    All three FALSIFY-CUDA-FORWARD-PARITY-* tests pass; CUDA
+    eval on populated Qwen produces logits within cosine 0.95 of
+    CPU forward; struct fields expose biases; forward path applies
+    them.
+  checks:
+  - cpu_cuda_logit_distribution_parity
+  - bias_upload_invariant
+  - forward_applies_biases_invariant
+  pass_criteria: All 3 falsifiers pass
+  falsification: Any single failure fails the gate (ship-blocking)
