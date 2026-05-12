@@ -564,4 +564,98 @@ mod tests {
             rel_drop
         );
     }
+
+    /// FALSIFY-CUDA-FORWARD-PARITY-001 (the load-bearing H4D bisect):
+    /// On a populated Qwen 0.5B, `CudaTransformerTrainer::eval_batch`
+    /// MUST produce a finite, non-degenerate val_loss in the same
+    /// regime as the CPU `Transformer::forward` — i.e., in the
+    /// industry-baseline range for Qwen 0.5B on Python (~1.5–3.0).
+    ///
+    /// Concrete bound: when CPU forward produces logits with
+    /// peak-to-mean > 5 (PR #1602 evidence on populated Qwen,
+    /// argmax=9370), the corresponding CUDA path MUST produce
+    /// val_loss < `ln(vocab_size)` × 0.7 = ~12.0. A val_loss
+    /// approaching or exceeding `ln(vocab)` = 17.21 indicates
+    /// the CUDA path is anti-aligned (sub-random predictions).
+    ///
+    /// CONTEXT: SHIP-TWO §61 evidence (PR #1600) recorded
+    /// val_loss=18.55 at step 1 — *above* `ln(vocab)`. The bug
+    /// is in the CUDA forward path's missing bias-add operation:
+    /// `cuda_block.rs::CudaTransformerBlock` has no `b_q`/`b_k`/
+    /// `b_v` fields and `forward()` does pure gemms (lines 719-747)
+    /// without adding the trained Qwen Q/K/V biases.
+    ///
+    /// Pre-fix: this test fails with val_loss > 12 (CUDA path
+    /// drops biases → sub-random predictions).
+    /// Post-fix: passes with val_loss in the expected range.
+    ///
+    /// Host-gated: requires the canonical Qwen 0.5B init APR + the
+    /// 5g.1-v2 corpus on the lambda-vector RTX 4090 host.
+    #[test]
+    fn falsify_cuda_forward_parity_qwen_val_loss_below_ln_vocab() {
+        let init_path = std::path::Path::new("/mnt/nvme-raid0/models/qwen2.5-coder-0.5b-fresh.apr");
+        if !init_path.exists() {
+            eprintln!(
+                "[falsify-cuda-forward-parity-001] skipping: host lacks {}",
+                init_path.display()
+            );
+            return;
+        }
+        let cfg = TransformerConfig::qwen2_0_5b();
+        let trainer_rc = match build_shared_cuda_trainer_with_init(
+            5.0e-5,
+            32,
+            42,
+            Some(&cfg),
+            Some(init_path),
+        ) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!(
+                    "[falsify-cuda-forward-parity-001] skipping: \
+                     build_shared_cuda_trainer_with_init failed: {e:?} \
+                     (test requires --features cuda + a CUDA host)"
+                );
+                return;
+            }
+        };
+
+        // Build a tiny synthetic batch: 1 sequence × 16 tokens.
+        // Choose tokens deterministically; correctness doesn't
+        // depend on which Python tokens — just that the batch is
+        // valid and exercises the forward path end-to-end.
+        let seq = vec![100_u32; 17]; // 16 input + 1 target shift
+        let batch = LMBatch::from_sequences(&[seq], 0, 0);
+
+        let val_loss = trainer_rc.borrow_mut().eval_batch(&batch);
+        let ln_vocab = (cfg.vocab_size as f32).ln();
+        let upper_bound = ln_vocab * 0.7;
+        eprintln!(
+            "[falsify-cuda-forward-parity-001] val_loss={val_loss} ln(vocab)={ln_vocab} \
+             upper_bound (0.7×ln_vocab)={upper_bound}"
+        );
+
+        assert!(val_loss.is_finite(), "val_loss must be finite, got {val_loss}");
+        // The DOMINANT assertion: val_loss MUST be below 0.7×ln(vocab).
+        // CPU forward produces peak-to-mean=5.68 (PR #1602) → cross-
+        // entropy on a single deterministic token should be
+        // O(ln_vocab) at most for a clearly-confident model. The
+        // pre-fix CUDA path produces val_loss > ln_vocab because it
+        // drops Qwen's Q/K/V biases (cuda_block.rs lines 103-135 has
+        // no bias fields; lines 719-747 do bare gemms).
+        assert!(
+            val_loss < upper_bound,
+            "FALSIFY-CUDA-FORWARD-PARITY-001 (H4D): CUDA val_loss={val_loss} >= \
+             0.7×ln(vocab)={upper_bound}. Same Qwen weights produce \
+             peak-to-mean=5.68 on CPU forward (PR #1602 falsify_h4_cpu_forward_*) \
+             but CUDA produces sub-random predictions. Root cause: \
+             CudaTransformerBlock drops Qwen Q/K/V biases — struct has no bias \
+             fields (cuda_block.rs lines 103-135), forward does bare gemms \
+             (lines 719-747) without `cuda_add(q, b_q)` after each projection. \
+             See evidence/section-60-5g-2-redispatch-2026-05-09/ + this contract \
+             apr-pretrain-cuda-forward-parity-v1.yaml. Fix scope: add b_q/b_k/b_v \
+             fields, thread through with_model upload, apply bias-add after each \
+             Q/K/V gemm in forward."
+        );
+    }
 }
