@@ -170,13 +170,19 @@ parameters:
 "#;
         let r = parse_recipe(src).unwrap();
         assert_eq!(r.from, "hf://unsloth/Qwen2.5-Coder-7B-Instruct-GGUF");
-        assert_eq!(r.system.as_deref(), Some("You are a Rust expert. Always answer in one sentence."));
+        assert_eq!(
+            r.system.as_deref(),
+            Some("You are a Rust expert. Always answer in one sentence.")
+        );
         let p = r.parameters.unwrap();
         assert_eq!(p.temperature, Some(0.2));
         assert_eq!(p.top_p, Some(0.9));
         assert_eq!(p.top_k, Some(40));
         assert_eq!(p.num_ctx, Some(8192));
-        assert_eq!(p.stop.unwrap(), vec!["</s>".to_string(), "<|im_end|>".to_string()]);
+        assert_eq!(
+            p.stop.unwrap(),
+            vec!["</s>".to_string(), "<|im_end|>".to_string()]
+        );
     }
 
     #[test]
@@ -336,10 +342,7 @@ parameters:
                     .iter()
                     .position(|m| m.role == "user")
                     .expect("user message always present");
-                assert!(
-                    system_pos < user_pos,
-                    "system must precede user: {msgs:?}"
-                );
+                assert!(system_pos < user_pos, "system must precede user: {msgs:?}");
             }
         }
     }

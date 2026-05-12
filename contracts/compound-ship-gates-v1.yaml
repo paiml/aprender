@@ -1,0 +1,698 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# compound-ship-gates-v1
+#
+# SOURCE OF TRUTH for all 12 §6 Compound Ship Gates from
+# docs/specifications/aprender-train/ship-two-models-spec.md. The original
+# v1.0.0 release covered only gates 001–006 (ship-blocking aggregates,
+# byte-identity, determinism, license, GGUF parity); v1.1.0 extends coverage
+# to the 6 merge-gate meta-policy rows (007–012 — unwrap / contract-density /
+# CI-green / deny / tdg / coverage) by binding the THRESHOLDS themselves
+# (which are algorithmic, integer/ratio/boolean in shape) even though the
+# tool outputs (clippy / pmat / cargo deny / cargo llvm-cov) are still
+# external and enforced by CI. Full discharge of 007–012 still requires
+# running those external tools; what v1.1.0 adds is the decision-rule proof
+# that the thresholds cannot be silently weakened without a contract bump
+# and a Rust-test-fail signal.
+#
+# Each of the 12 gates is bound at PARTIAL_ALGORITHM_LEVEL to one or more
+# pure verdict fns in `crates/aprender-core/src/format/gate_ship_0XX.rs`
+# plus a 5–8 section mutation survey. Full discharge for each gate blocks
+# on the compute-heavy aggregate harness (all 10 AC-SHIP1-* checks actually
+# running for GATE-SHIP-001, `cargo clippy -- -D warnings` for GATE-SHIP-007,
+# `cargo deny check advisories` for GATE-SHIP-010, etc.).
+#
+# Pairs numerically with the 3 single-AC SHIP-* contracts already wired:
+#   - apr-model-qa-v1.yaml (FALSIFY-QA-SHIP-006 — MODEL-1 apr-qa aggregate)
+#   - qwen2-e2e-verification-v1.yaml (FALSIFY-QW2E-SHIP-001..010 + 023 + 024)
+#   - publish-manifest-v1.yaml (GATE-PM-010 — MODEL-1 published artifact)
+#   - apr-provenance-v1.yaml (GATE-APR-PROV-004 — MODEL-1 + MODEL-2 license)
+#   - chat-template-v1.yaml (GATE-CHAT-SHIP-008)
+#   - llama-370m-sovereign-v1.yaml (GATE-ARCH-370M-003..008 — MODEL-2)
+# Those contracts cover per-AC rows; this contract covers the §6 COMPOUND
+# shape (aggregates, regressions, cross-run identity, cross-engine parity).
+# ─────────────────────────────────────────────────────────────────────────────
+metadata:
+  version: 1.1.0
+  created: '2026-04-23'
+  last_modified: '2026-04-23'
+  author: PAIML Engineering
+  kind: pattern   # cross-cutting compound-gate pattern, not a single mathematical kernel
+  compound_gates_kind: CompoundShipGatesContract
+  description: >
+    Algorithm-level PARTIAL discharge of all 12 §6 Compound Ship Gates
+    (GATE-SHIP-001..012) from SHIP-TWO-001. v1.0.0 bound the 6 ship-blocking
+    gates (001..006); v1.1.0 extends coverage to the 6 merge-gate meta-policy
+    rows (007..012) by binding their integer / ratio / boolean thresholds to
+    pure verdict fns even though the tool outputs (clippy / pmat / cargo
+    deny / cargo llvm-cov) remain external and enforced by CI. Each gate is
+    bound to one or more pure verdict fns in crates/aprender-core/src/format/
+    with a 5–8 section mutation survey proving the decision rule without
+    running the compute-heavy aggregate or external-tool harness.
+  references:
+    - 'docs/specifications/aprender-train/ship-two-models-spec.md §6 — Compound Ship Gates'
+    - 'contracts/apr-model-qa-v1.yaml — FALSIFY-QA-SHIP-006 (per-AC MODEL-1 apr-qa)'
+    - 'contracts/qwen2-e2e-verification-v1.yaml — FALSIFY-QW2E-SHIP-001..010 (per-AC MODEL-1)'
+    - 'contracts/publish-manifest-v1.yaml — GATE-PM-010 (per-AC published artifact)'
+    - 'contracts/llama-370m-sovereign-v1.yaml — GATE-ARCH-370M-003..008 (per-AC MODEL-2)'
+    - 'CLAUDE.md § "Contract Validation: DOGFOOD pv, NEVER bash" — harness policy'
+  spec: docs/specifications/aprender-train/ship-two-models-spec.md
+  parent_acceptance_criteria:
+    - AC-SHIP1-001  # aggregate covers all 10 ACs
+    - AC-SHIP1-002
+    - AC-SHIP1-003
+    - AC-SHIP1-004
+    - AC-SHIP1-005
+    - AC-SHIP1-006
+    - AC-SHIP1-007
+    - AC-SHIP1-008
+    - AC-SHIP1-009
+    - AC-SHIP1-010
+    - AC-SHIP2-001  # aggregate covers all 12 ACs
+    - AC-SHIP2-002
+    - AC-SHIP2-003
+    - AC-SHIP2-004
+    - AC-SHIP2-005
+    - AC-SHIP2-006
+    - AC-SHIP2-007
+    - AC-SHIP2-008
+    - AC-SHIP2-009
+    - AC-SHIP2-010
+    - AC-SHIP2-011
+    - AC-SHIP2-012
+status: PROPOSED  # v1.0.0 lands with 6 PARTIAL_ALGORITHM_LEVEL bindings; promotion to ACTIVE blocks on live §6 aggregate harness
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Harness policy (2026-04-23)
+# ─────────────────────────────────────────────────────────────────────────────
+# Every falsification gate in this contract MUST be enforced via `pv validate`
+# (binary from `aprender-contracts-cli`, crate
+# `crates/aprender-contracts-cli/`). `provable-contracts` was merged into
+# aprender as APR-MONO Phase 2b and lives in-tree. The `pv` CLI is THE
+# dogfooded contract validator. Writing a bash/yq/python script to re-run
+# these gates is muda and is explicitly forbidden by CLAUDE.md §
+# "Contract Validation: DOGFOOD pv, NEVER bash".
+harness_policy:
+  dogfood_tool: aprender-contracts-cli
+  binary: pv
+  forbidden_alternatives: [bash, shell, yq-wrapper, python-script]
+  rationale_ref: 'CLAUDE.md § "Contract Validation: DOGFOOD pv, NEVER bash"'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Abstract
+# ─────────────────────────────────────────────────────────────────────────────
+abstract: |
+  The §6 Compound Ship Gates are the publish-time invariants that cross-cut
+  every per-AC row in §4.2 (MODEL-1) and §4.4 (MODEL-2). Each compound gate
+  is binary; any failure blocks publish. This contract's job is to prove
+  that the *decision rule* of each gate cannot be silently weakened without
+  a contract bump and a Rust-test-fail signal.
+
+  The 6 gates decompose into 4 distinct shapes:
+
+    1. Aggregate-AND over N per-AC booleans (001 over 10, 002 over 12).
+    2. Byte-identity across two slices (003 — Golden Output regression).
+    3. Bitwise-identical determinism (004 — two seed=0 HumanEval runs).
+    4. Byte-equal string + well-formedness (005 — license metadata).
+    5. Symmetric absolute-threshold float gate (006 — first-token delta).
+
+  Shapes (1) + (2) + (4) are `const fn`-representable. Shapes (3) and (5)
+  require `is_finite()` checks that are not const-eval-friendly in stable
+  Rust today but are still pure. All 6 carry 6–7 section mutation surveys.
+
+  Full discharge (the live compute-heavy aggregate harness) is out of scope
+  for this v1.0.0 release and is deferred to the SHIP-TWO-001 post-MODEL-2
+  evidence lane.
+
+equations:
+  gate_ship_001_aggregate_and:
+    formula: |
+      verdict_001(ac_passes): [bool; 10] -> {Pass, Fail}
+        Pass iff len(ac_passes) == 10 AND for all i: ac_passes[i] == true
+        Fail otherwise
+  gate_ship_002_aggregate_and:
+    formula: |
+      verdict_002(ac_passes): [bool; 12] -> {Pass, Fail}
+        Pass iff len(ac_passes) == 12 AND for all i: ac_passes[i] == true
+        Fail otherwise
+  gate_ship_003_byte_identity:
+    formula: |
+      verdict_003(pre, post): &[u8] x &[u8] -> {Pass, Fail}
+        Pass iff non-empty(pre) AND non-empty(post) AND pre == post
+        Fail otherwise (conservative on empty)
+  gate_ship_004_bitwise_determinism:
+    formula: |
+      verdict_004(a, b): f32 x f32 -> {Pass, Fail}
+        Pass iff is_finite(a) AND is_finite(b)
+                 AND a in [0.0, 100.0] AND b in [0.0, 100.0]
+                 AND a.to_bits() == b.to_bits()
+        Fail otherwise
+  gate_ship_005_license_byte_equal:
+    formula: |
+      verdict_005(model, upstream): &str x &str -> {Pass, Fail}
+        Pass iff non-empty(model) AND non-empty(upstream)
+                 AND ascii_printable(model) AND ascii_printable(upstream)
+                 AND model == upstream
+        Fail otherwise
+  gate_ship_006_first_token_delta:
+    formula: |
+      verdict_006(p_apr, p_gguf, tol): f32^3 -> {Pass, Fail}
+        Pass iff all finite AND p_apr,p_gguf in [0.0, 1.0] AND tol >= 0.0
+                 AND |p_apr - p_gguf| <= tol
+        Fail otherwise
+  gate_ship_007_unwrap_zero_tolerance:
+    formula: |
+      verdict_007(count): u32 -> {Pass, Fail}
+        Pass iff count == 0
+        Fail otherwise (zero-tolerance; u32 precludes negatives)
+  gate_ship_008_contract_density_threshold:
+    formula: |
+      verdict_008(contracted, total, min_density): u32 x u32 x f32 -> {Pass, Fail}
+        Pass iff total > 0 AND is_finite(min_density)
+                 AND min_density in [0.0, 1.0]
+                 AND contracted <= total
+                 AND (contracted / total) >= min_density
+        Fail otherwise
+  gate_ship_009_ci_aggregate_and:
+    formula: |
+      verdict_009(fmt_pass, clippy_pass, test_pass): bool^3 -> {Pass, Fail}
+        Pass iff fmt_pass AND clippy_pass AND test_pass
+        Fail otherwise (aggregate-AND over the 3 required CI checks)
+  gate_ship_010_advisory_zero_tolerance:
+    formula: |
+      verdict_010(count): u32 -> {Pass, Fail}
+        Pass iff count == 0
+        Fail otherwise (zero-tolerance security audit)
+  gate_ship_011_pmat_tdg_threshold:
+    formula: |
+      verdict_011(measured, threshold): f32 x f32 -> {Pass, Fail}
+        Pass iff is_finite(measured) AND is_finite(threshold)
+                 AND measured >= 0.0
+                 AND threshold in (0.0, 100.0]
+                 AND measured >= threshold
+        Fail otherwise
+  gate_ship_012_line_coverage_threshold:
+    formula: |
+      verdict_012(measured_pct, threshold_pct): f32 x f32 -> {Pass, Fail}
+        Pass iff is_finite(measured_pct) AND is_finite(threshold_pct)
+                 AND measured_pct in [0.0, 100.0]
+                 AND threshold_pct in (0.0, 100.0]
+                 AND measured_pct >= threshold_pct
+        Fail otherwise
+
+proof_obligations:
+  - type: invariant
+    property: GATE-SHIP-001 aggregate-AND shape
+    formal: 'for all masks m != 0x3FF : verdict_001 yields Fail'
+    applies_to: GATE-SHIP-001
+  - type: invariant
+    property: GATE-SHIP-002 aggregate-AND shape
+    formal: 'for all masks m != 0xFFF : verdict_002 yields Fail'
+    applies_to: GATE-SHIP-002
+  - type: invariant
+    property: GATE-SHIP-003 byte-identity + non-empty
+    formal: 'verdict_003(pre, post) = Pass <=> pre == post AND pre != [] AND post != []'
+    applies_to: GATE-SHIP-003
+  - type: invariant
+    property: GATE-SHIP-004 determinism strictly stricter than SHIP-023 drift
+    formal: 'verdict_004(a, b) = Pass => (a - b).abs() = 0 (SHIP-023 tol allows 1.2 pp)'
+    applies_to: GATE-SHIP-004
+  - type: invariant
+    property: GATE-SHIP-005 case-sensitive byte equality
+    formal: 'verdict_005(x, y) = Pass => x.to_lowercase() == y.to_lowercase() BUT NOT converse'
+    applies_to: GATE-SHIP-005
+  - type: monotonicity
+    property: GATE-SHIP-006 delta within tolerance
+    formal: 'verdict_006(a, b, t) = Pass AND t1 >= t => verdict_006(a, b, t1) = Pass'
+    applies_to: GATE-SHIP-006
+  - type: invariant
+    property: GATE-SHIP-007 zero-tolerance unwrap count
+    formal: 'verdict_007(n) = Pass <=> n == 0'
+    applies_to: GATE-SHIP-007
+  - type: invariant
+    property: GATE-SHIP-008 100% contract density on new code
+    formal: 'verdict_008(c, t, 1.0) = Pass => c == t AND t > 0'
+    applies_to: GATE-SHIP-008
+  - type: invariant
+    property: GATE-SHIP-009 CI aggregate-AND shape
+    formal: 'for all masks m != 0b111 : verdict_009(m) yields Fail'
+    applies_to: GATE-SHIP-009
+  - type: invariant
+    property: GATE-SHIP-010 zero-tolerance advisory count
+    formal: 'verdict_010(n) = Pass <=> n == 0'
+    applies_to: GATE-SHIP-010
+  - type: monotonicity
+    property: GATE-SHIP-011 inclusive-floor TDG threshold
+    formal: 'verdict_011(m, t) = Pass AND m1 >= m AND m1 in [0.0, 100.0] => verdict_011(m1, t) = Pass'
+    applies_to: GATE-SHIP-011
+  - type: monotonicity
+    property: GATE-SHIP-012 inclusive-floor line coverage threshold
+    formal: 'verdict_012(m, t) = Pass AND m1 >= m AND m1 in [0.0, 100.0] => verdict_012(m1, t) = Pass'
+    applies_to: GATE-SHIP-012
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Falsification tests — 12 PARTIAL_ALGORITHM_LEVEL bindings
+# ─────────────────────────────────────────────────────────────────────────────
+
+falsification_tests:
+  - id: FALSIFY-GATE-SHIP-001
+    rule: >
+      MODEL-1 teacher cannot ship unless all 10 AC-SHIP1-* (§4.2 rows
+      AC-SHIP1-001 through AC-SHIP1-010) report Pass. Decision rule:
+      aggregate-AND over the 10 per-AC booleans. A 9-long or 11-long
+      input (count drift) or any single false AC Fails.
+    prediction: >
+      verdict_from_model1_ac_aggregate(ac_passes) == GateShip001Verdict::Pass
+      iff ac_passes.len() == 10 AND every entry is true. Proves the AC
+      count, the aggregate shape, and the absence of "9-of-10 is close
+      enough" drift.
+    test: |
+      cargo test -p aprender-core --lib
+        falsify_gate_ship_001_model1_ac_aggregate
+    if_fails: >
+      MODEL-1 publish gate weakens to allow shipping when an AC regresses
+      (contract weakening) or the AC count drifts without spec update
+      (schema rot). Either is a publish-blocker.
+    spec_reference: ship-two-models-spec.md §6 GATE-SHIP-001
+    binds_to: GATE-SHIP-001
+    ship_blocking: true
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - 'crates/aprender-core/src/format/gate_ship_001.rs::AC_GATE_SHIP_001_MODEL_1_AC_COUNT'
+      - 'crates/aprender-core/src/format/gate_ship_001.rs::verdict_from_model1_ac_aggregate'
+      - 'crates/aprender-core/src/format/gate_ship_001.rs::falsify_gate_ship_001_model1_ac_aggregate (6-section survey incl. 2^10=1024 exhaustive bitmask proof)'
+    full_discharge_blocks_on: >
+      Live §6 GATE-SHIP-001 harness that actually runs all 10 per-AC
+      harnesses against paiml/qwen2.5-coder-7b-apache-q4k-v1 on RTX
+      4090 (safetensors load + valid-Python emit + quantize round-trip
+      + GGUF export + HumanEval + `apr qa` + decode tps + chat template
+      + provenance grep + SHA-256 curl) and asserts all 10 report Pass.
+    counter_example_classes:
+      - aggregate_weakened
+      - ac_count_drift_add
+      - ac_count_drift_remove
+      - double_count_concat
+      - silent_majority_relaxation
+
+  - id: FALSIFY-GATE-SHIP-002
+    rule: >
+      MODEL-2 sovereign cannot ship unless all 12 AC-SHIP2-* (§4.4 rows
+      AC-SHIP2-001 through AC-SHIP2-012) report Pass. Decision rule:
+      aggregate-AND over the 12 per-AC booleans. An 11-long or 13-long
+      input (count drift) or any single false AC Fails.
+    prediction: >
+      verdict_from_model2_ac_aggregate(ac_passes) == GateShip002Verdict::Pass
+      iff ac_passes.len() == 12 AND every entry is true. Proves the AC
+      count and aggregate shape for MODEL-2 in lockstep with MODEL-1
+      (FALSIFY-GATE-SHIP-001).
+    test: |
+      cargo test -p aprender-core --lib
+        falsify_gate_ship_002_model2_ac_aggregate
+    if_fails: >
+      MODEL-2 publish gate weakens to allow shipping when an AC regresses,
+      or the AC count drifts without spec update.
+    spec_reference: ship-two-models-spec.md §6 GATE-SHIP-002
+    binds_to: GATE-SHIP-002
+    ship_blocking: true
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - 'crates/aprender-core/src/format/gate_ship_002.rs::AC_GATE_SHIP_002_MODEL_2_AC_COUNT'
+      - 'crates/aprender-core/src/format/gate_ship_002.rs::verdict_from_model2_ac_aggregate'
+      - 'crates/aprender-core/src/format/gate_ship_002.rs::falsify_gate_ship_002_model2_ac_aggregate (6-section survey incl. 2^12=4096 exhaustive bitmask proof)'
+    full_discharge_blocks_on: >
+      Live §6 GATE-SHIP-002 harness that actually runs all 12 per-AC
+      harnesses against paiml/llama-370m-sovereign-apache-v1 on RTX
+      4090 and asserts all 12 report Pass. Blocks on MODEL-2 370M
+      artifact from tasks #126/#131 landing first.
+    counter_example_classes:
+      - aggregate_weakened
+      - ac_count_drift_add
+      - ac_count_drift_remove
+      - double_count_concat
+
+  - id: FALSIFY-GATE-SHIP-003
+    rule: >
+      Both MODEL-1 and MODEL-2 must preserve `apr qa` Golden Output byte-
+      exactly across a quantization round-trip (`apr convert --quantize
+      q4_k_m`). Decision rule: byte-identity between pre-quantize and
+      post-quantize Golden Output byte streams; non-empty on both sides.
+      Empty input (SKIPPED Golden Output gate) conservatively Fails.
+    prediction: >
+      verdict_from_golden_output_diff(pre, post) == GateShip003Verdict::Pass
+      iff both slices are non-empty, same length, and byte-identical.
+      Catches silent whitespace drift, BOM promotion, trailing newline,
+      and the Unicode-folded-compare class of mutation.
+    test: |
+      cargo test -p aprender-core --lib
+        falsify_gate_ship_003_golden_output_byte_identity
+    if_fails: >
+      A quantizer that corrupts the emitted bytes (even by one whitespace
+      char) can ship because the Golden Output comparison was relaxed.
+    spec_reference: ship-two-models-spec.md §6 GATE-SHIP-003
+    binds_to: GATE-SHIP-003
+    ship_blocking: true
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - 'crates/aprender-core/src/format/gate_ship_003.rs::GateShip003Verdict'
+      - 'crates/aprender-core/src/format/gate_ship_003.rs::verdict_from_golden_output_diff'
+      - 'crates/aprender-core/src/format/gate_ship_003.rs::falsify_gate_ship_003_golden_output_byte_identity (6-section survey)'
+    full_discharge_blocks_on: >
+      Live `apr qa <model>.apr --golden-output` run on pre-quantize AND
+      post-quantize checkpoint for both MODEL-1 and MODEL-2 on RTX 4090;
+      byte-for-byte diff of the captured Golden Output bytes.
+    counter_example_classes:
+      - length_mismatch_drift
+      - trailing_whitespace_promotion
+      - case_folded_compare
+      - unicode_normalized_compare
+      - empty_skipped_promoted_to_pass
+
+  - id: FALSIFY-GATE-SHIP-004
+    rule: >
+      HumanEval eval harness MUST produce BITWISE-IDENTICAL pass@1 scores
+      on two consecutive seed=0 runs (same host, same binary, same
+      model). Decision rule: f32.to_bits() equality on both scores, with
+      range guards `[0.0, 100.0]` and is_finite() on both sides. This is
+      STRICTLY STRICTER than FALSIFY-SHIP-023 (1.2 pp day-over-day drift
+      tolerance).
+    prediction: >
+      verdict_from_identical_humaneval_scores(a, b) == GateShip004Verdict::Pass
+      iff both finite, both in [0.0, 100.0], AND a.to_bits() == b.to_bits().
+      A single-ULP drift (f32::from_bits(a.to_bits() + 1)) Fails.
+    test: |
+      cargo test -p aprender-core --lib
+        falsify_gate_ship_004_humaneval_bitwise_determinism
+    if_fails: >
+      Hidden non-determinism in the eval/sampling path (entropy source,
+      thread-local RNG race, atomic-counter read) can ship because the
+      gate tolerated float noise.
+    spec_reference: ship-two-models-spec.md §6 GATE-SHIP-004
+    binds_to: GATE-SHIP-004
+    ship_blocking: true
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - 'crates/aprender-core/src/format/gate_ship_004.rs::GateShip004Verdict'
+      - 'crates/aprender-core/src/format/gate_ship_004.rs::verdict_from_identical_humaneval_scores'
+      - 'crates/aprender-core/src/format/gate_ship_004.rs::falsify_gate_ship_004_humaneval_bitwise_determinism (7-section survey incl. contrast against SHIP-023 drift rule)'
+    full_discharge_blocks_on: >
+      Live two consecutive `apr eval --benchmark humaneval --seed 0
+      <model>.apr` runs on the same RTX 4090 host within the same
+      session; assert the two JSON pass@1 f32 values have byte-equal
+      representation.
+    counter_example_classes:
+      - tolerance_widened_to_ship_023
+      - close_enough_compare
+      - non_finite_passed
+      - range_guard_skipped
+      - bit_representation_compare_skipped
+
+  - id: FALSIFY-GATE-SHIP-005
+    rule: >
+      Every published artifact MUST carry a non-empty `license` metadata
+      field AND that value MUST byte-equally match the upstream
+      declaration (parent model card / HF repo YAML front-matter).
+      Decision rule: both non-empty, both ASCII-printable, byte-equal
+      (case-sensitive; SPDX IDs are canonical).
+    prediction: >
+      verdict_from_license_metadata(model, upstream) == GateShip005Verdict::Pass
+      iff non-empty on both sides, ASCII-printable on both sides, and
+      byte-equal. Catches case drift (Apache-2.0 vs apache-2.0), trailing
+      whitespace, embedded control chars, BOM, and emoji.
+    test: |
+      cargo test -p aprender-core --lib
+        falsify_gate_ship_005_license_metadata_match
+    if_fails: >
+      Publish pipeline silently normalizes the license string, breaking
+      downstream consumers that compare against the canonical SPDX list.
+    spec_reference: ship-two-models-spec.md §6 GATE-SHIP-005
+    binds_to: GATE-SHIP-005
+    ship_blocking: true
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - 'crates/aprender-core/src/format/gate_ship_005.rs::AC_GATE_SHIP_005_REQUIRED_LICENSE_FIELD'
+      - 'crates/aprender-core/src/format/gate_ship_005.rs::verdict_from_license_metadata'
+      - 'crates/aprender-core/src/format/gate_ship_005.rs::falsify_gate_ship_005_license_metadata_match (6-section survey)'
+    full_discharge_blocks_on: >
+      Live `apr inspect <model>.apr --format json | jq -r .metadata.license`
+      compared byte-equally against the upstream source's declared license
+      (HF card YAML front-matter for MODEL-1, dataset card for MODEL-2).
+    counter_example_classes:
+      - case_drift_normalized
+      - trailing_whitespace_promoted
+      - bom_prefixed
+      - emoji_injected
+      - empty_silently_passed
+
+  - id: FALSIFY-GATE-SHIP-006
+    rule: >
+      GGUF round-trip parity — APR inference and `apr export --format gguf`
+      + llama.cpp inference MUST produce first-token probabilities within
+      `AC_GATE_SHIP_006_MAX_FIRST_TOKEN_DELTA = 1e-3` of each other on
+      the same prompt. Decision rule: |p_apr - p_gguf| <= tol, symmetric
+      via .abs(), with range guards `[0.0, 1.0]` and is_finite() on all
+      three args.
+    prediction: >
+      verdict_from_first_token_probability_delta(p_apr, p_gguf, tol)
+      == GateShip006Verdict::Pass iff all finite, p_apr and p_gguf in
+      [0.0, 1.0], tol >= 0.0, AND |p_apr - p_gguf| <= tol. A single-ULP
+      excess Fails.
+    test: |
+      cargo test -p aprender-core --lib
+        falsify_gate_ship_006_first_token_probability_delta
+    if_fails: >
+      A GGUF export path that silently corrupts the first-token
+      distribution (wrong dequant, wrong layout, stale metadata) can
+      ship because the parity gate was relaxed.
+    spec_reference: ship-two-models-spec.md §6 GATE-SHIP-006
+    binds_to: GATE-SHIP-006
+    ship_blocking: true
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - 'crates/aprender-core/src/format/gate_ship_006.rs::AC_GATE_SHIP_006_MAX_FIRST_TOKEN_DELTA'
+      - 'crates/aprender-core/src/format/gate_ship_006.rs::verdict_from_first_token_probability_delta'
+      - 'crates/aprender-core/src/format/gate_ship_006.rs::falsify_gate_ship_006_first_token_probability_delta (7-section survey)'
+    full_discharge_blocks_on: >
+      Live run: `apr run <model>.apr --prompt "def fib(n):" --max-tokens 1
+      --emit-logprobs` + `apr export --format gguf -o <model>.gguf` +
+      `llama-cli -m <model>.gguf -p "def fib(n):" --n-predict 1 --logits-all`
+      on the same RTX 4090 host; extract first-token softmax probability
+      from both emissions and assert |p_apr - p_gguf| <= 1e-3.
+    counter_example_classes:
+      - tolerance_widened_silently
+      - inequality_flipped
+      - range_guard_missing
+      - non_finite_promoted_to_pass
+      - abs_combinator_removed
+
+  - id: FALSIFY-GATE-SHIP-007
+    rule: >
+      A PR cannot merge if it introduces any `.unwrap()` calls in new code.
+      `.clippy.toml` lists `unwrap` under `disallowed-methods`, so `cargo
+      clippy -- -D warnings` fails on any offending line. Decision rule:
+      zero-tolerance count threshold — `count == 0` Pass, else Fail.
+    prediction: >
+      verdict_from_unwrap_count(count) == GateShip007Verdict::Pass iff
+      count == 0. Any positive count Fails.
+    test: |
+      cargo test -p aprender-core --lib
+        falsify_gate_ship_007_unwrap_zero_tolerance
+    if_fails: >
+      Merge pipeline silently accepts `.unwrap()` drift because the
+      threshold softened to a non-zero budget.
+    spec_reference: ship-two-models-spec.md §6 GATE-SHIP-007
+    binds_to: GATE-SHIP-007
+    ship_blocking: false  # merge-gate, not ship-gate
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - 'crates/aprender-core/src/format/gate_ship_007.rs::AC_GATE_SHIP_007_MAX_TOLERATED_UNWRAP_COUNT'
+      - 'crates/aprender-core/src/format/gate_ship_007.rs::verdict_from_unwrap_count'
+      - 'crates/aprender-core/src/format/gate_ship_007.rs::falsify_gate_ship_007_unwrap_zero_tolerance (5-section survey: zero Pass / one Fail / Fail band {2, 10, 100, u32::MAX} / monotonicity sweep 0..=256 / provenance pin)'
+    full_discharge_blocks_on: >
+      Live `cargo clippy --all-targets --all-features -- -D warnings` on
+      the PR's diff; assert zero `clippy::disallowed_methods` lint errors
+      citing `std::result::Result::unwrap` or `std::option::Option::unwrap`.
+    counter_example_classes:
+      - budget_softened
+      - inequality_flipped
+      - tolerance_raised_to_one
+      - monotonicity_broken
+
+  - id: FALSIFY-GATE-SHIP-008
+    rule: >
+      Every newly-introduced public function MUST carry a `#[contract]`
+      annotation. Decision rule: contract density ratio
+      `contracted_new_fns / total_new_public_fns >= min_density`, with
+      divide-by-zero, sanity, finite, and range guards. Spec requires
+      min_density = 1.0 on new code.
+    prediction: >
+      verdict_from_contract_density(c, t, d) == GateShip008Verdict::Pass
+      iff t > 0 AND is_finite(d) AND d in [0.0, 1.0] AND c <= t AND
+      (c / t) >= d. A 9/10 at d = 1.0 Fails; a zero-total input Fails.
+    test: |
+      cargo test -p aprender-core --lib
+        falsify_gate_ship_008_contract_density_threshold
+    if_fails: >
+      Merge pipeline silently accepts contract-less public APIs because
+      the density threshold softened or the divide-by-zero guard inverted.
+    spec_reference: ship-two-models-spec.md §6 GATE-SHIP-008
+    binds_to: GATE-SHIP-008
+    ship_blocking: false  # merge-gate, not ship-gate
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - 'crates/aprender-core/src/format/gate_ship_008.rs::AC_GATE_SHIP_008_MIN_CONTRACT_DENSITY_NEW_CODE'
+      - 'crates/aprender-core/src/format/gate_ship_008.rs::verdict_from_contract_density'
+      - 'crates/aprender-core/src/format/gate_ship_008.rs::falsify_gate_ship_008_contract_density_threshold (7-section survey: 10/10 @ 1.0 Pass / 9/10 @ 1.0 Fail / 10/10 @ 0.9 Pass / zero-total Fail / contracted > total sanity Fail / non-finite or OOR density Fail / provenance pin 1.0)'
+    full_discharge_blocks_on: >
+      Live `pmat density --new-code --json` (or `git diff HEAD^..HEAD --
+      '*.rs' | grep -E 'pub fn'` + `grep -c '#\[contract\]'`) on the PR's
+      diff; feed (contracted, total, 1.0) into verdict_from_contract_density
+      and assert Pass.
+    counter_example_classes:
+      - threshold_softened
+      - zero_total_promoted_to_pass
+      - sanity_guard_skipped
+      - non_finite_promoted_to_pass
+      - range_guard_skipped
+
+  - id: FALSIFY-GATE-SHIP-009
+    rule: >
+      A PR cannot merge unless THREE required CI checks all report green
+      — `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo
+      test --workspace`. Decision rule: aggregate-AND over the 3 booleans.
+    prediction: >
+      verdict_from_ci_aggregate(fmt, clippy, test) == GateShip009Verdict::Pass
+      iff fmt AND clippy AND test. Any single false Fails; exhaustive
+      2^3=8 bitmask proof pins the shape.
+    test: |
+      cargo test -p aprender-core --lib
+        falsify_gate_ship_009_ci_aggregate_and
+    if_fails: >
+      Merge pipeline silently accepts broken fmt / clippy / test because
+      the aggregate shape relaxed to OR or "2-of-3 majority".
+    spec_reference: ship-two-models-spec.md §6 GATE-SHIP-009
+    binds_to: GATE-SHIP-009
+    ship_blocking: false  # merge-gate, not ship-gate
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - 'crates/aprender-core/src/format/gate_ship_009.rs::AC_GATE_SHIP_009_REQUIRED_CHECK_COUNT'
+      - 'crates/aprender-core/src/format/gate_ship_009.rs::verdict_from_ci_aggregate'
+      - 'crates/aprender-core/src/format/gate_ship_009.rs::falsify_gate_ship_009_ci_aggregate_and (8-section survey: all-true Pass / each-single-false×3 Fail / all-false Fail / exhaustive 2^3=8 bitmask proof / each-single-true-only Fail / provenance pin on 3-count / AND-symmetry across argument permutations)'
+    full_discharge_blocks_on: >
+      Live branch-protection required-status-checks on main: `ci / gate`
+      (which covers fmt + clippy + test) AND `workspace-test` must both
+      be green per the repo's GitHub branch-protection config; feed the
+      three conclusions into verdict_from_ci_aggregate and assert Pass.
+    counter_example_classes:
+      - aggregate_relaxed_to_or
+      - majority_promoted_to_pass
+      - argument_position_privileged
+      - check_dropped_silently
+
+  - id: FALSIFY-GATE-SHIP-010
+    rule: >
+      `cargo deny check advisories` MUST report zero vulnerabilities in
+      the workspace dependency tree (weight/tokenizer dependencies
+      specifically, because they ship with published artifacts).
+      Decision rule: zero-tolerance count threshold — `count == 0` Pass,
+      else Fail.
+    prediction: >
+      verdict_from_advisory_count(count) == GateShip010Verdict::Pass
+      iff count == 0. Any positive count Fails.
+    test: |
+      cargo test -p aprender-core --lib
+        falsify_gate_ship_010_advisory_zero_tolerance
+    if_fails: >
+      Merge pipeline silently accepts open CVEs because the threshold
+      softened to a non-zero budget.
+    spec_reference: ship-two-models-spec.md §6 GATE-SHIP-010
+    binds_to: GATE-SHIP-010
+    ship_blocking: false  # merge-gate, not ship-gate
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - 'crates/aprender-core/src/format/gate_ship_010.rs::AC_GATE_SHIP_010_MAX_TOLERATED_ADVISORY_COUNT'
+      - 'crates/aprender-core/src/format/gate_ship_010.rs::verdict_from_advisory_count'
+      - 'crates/aprender-core/src/format/gate_ship_010.rs::falsify_gate_ship_010_advisory_zero_tolerance (5-section survey: zero Pass / one Fail / Fail band {2, 10, 100, u32::MAX} / monotonicity sweep 0..=256 / provenance pin)'
+    full_discharge_blocks_on: >
+      Live `cargo deny check advisories` on the workspace; parse the
+      `error[advisories]` count from stderr and feed into
+      verdict_from_advisory_count; assert Pass.
+    counter_example_classes:
+      - budget_softened
+      - severity_carved_out
+      - inequality_flipped
+      - tolerance_raised_to_one
+
+  - id: FALSIFY-GATE-SHIP-011
+    rule: >
+      PMAT TDG project score MUST be at or above 90.0 (A- grade) for a
+      PR to merge. Decision rule: inclusive-floor threshold —
+      `measured >= threshold` Pass, with non-finite / out-of-range
+      conservative Fail.
+    prediction: >
+      verdict_from_tdg_score(m, t) == GateShip011Verdict::Pass iff
+      is_finite(m) AND is_finite(t) AND m >= 0.0 AND t in (0.0, 100.0]
+      AND m >= t. Boundary m = t = 90.0 Passes (inclusive); ULP-below
+      Fails.
+    test: |
+      cargo test -p aprender-core --lib
+        falsify_gate_ship_011_pmat_tdg_threshold
+    if_fails: >
+      Merge pipeline silently accepts quality regressions because the
+      floor softened (e.g., to 85 / B+) or the inclusive-floor inequality
+      flipped to strict.
+    spec_reference: ship-two-models-spec.md §6 GATE-SHIP-011
+    binds_to: GATE-SHIP-011
+    ship_blocking: false  # merge-gate, not ship-gate
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - 'crates/aprender-core/src/format/gate_ship_011.rs::AC_GATE_SHIP_011_MIN_PMAT_TDG_SCORE'
+      - 'crates/aprender-core/src/format/gate_ship_011.rs::verdict_from_tdg_score'
+      - 'crates/aprender-core/src/format/gate_ship_011.rs::falsify_gate_ship_011_pmat_tdg_threshold (7-section survey: exact 90.0 Pass / ULP-below Fail / clear Pass band {95, 100, 92.5} / clear Fail band {89.9, 80, 0, 50} / non-finite Fail / negative measured + threshold range guards / provenance pin 90.0)'
+    full_discharge_blocks_on: >
+      Live `pmat tdg . --format json --include-components` on the
+      workspace; parse the project-level TDG score and feed into
+      verdict_from_tdg_score at threshold 90.0; assert Pass.
+    counter_example_classes:
+      - floor_softened_to_85
+      - inclusive_flipped_to_strict
+      - non_finite_promoted_to_pass
+      - negative_measured_accepted
+      - out_of_range_threshold_accepted
+
+  - id: FALSIFY-GATE-SHIP-012
+    rule: >
+      Line coverage on new modules MUST be at or above 95% for a PR to
+      merge, per `.pmat-gates.toml` and CLAUDE.md Quality Standards.
+      Decision rule: inclusive-floor percentage threshold —
+      `measured_pct >= threshold_pct` Pass, with non-finite / out-of-range
+      conservative Fail.
+    prediction: >
+      verdict_from_line_coverage_pct(m, t) == GateShip012Verdict::Pass
+      iff is_finite(m) AND is_finite(t) AND m in [0.0, 100.0] AND
+      t in (0.0, 100.0] AND m >= t. Boundary m = t = 95.0 Passes
+      (inclusive); ULP-below Fails.
+    test: |
+      cargo test -p aprender-core --lib
+        falsify_gate_ship_012_line_coverage_threshold
+    if_fails: >
+      Merge pipeline silently accepts coverage regressions because the
+      floor softened (e.g., back to 85 before the CLAUDE.md upgrade)
+      or the inclusive-floor inequality flipped to strict.
+    spec_reference: ship-two-models-spec.md §6 GATE-SHIP-012
+    binds_to: GATE-SHIP-012
+    ship_blocking: false  # merge-gate, not ship-gate
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - 'crates/aprender-core/src/format/gate_ship_012.rs::AC_GATE_SHIP_012_MIN_LINE_COVERAGE_PCT'
+      - 'crates/aprender-core/src/format/gate_ship_012.rs::verdict_from_line_coverage_pct'
+      - 'crates/aprender-core/src/format/gate_ship_012.rs::falsify_gate_ship_012_line_coverage_threshold (7-section survey: exact 95.0 Pass / ULP-below Fail / clear Pass band {96.35, 99, 100, 95.5} / clear Fail band {94.9, 85, 50, 0} / non-finite Fail / out-of-range measured + threshold / provenance pin 95.0)'
+    full_discharge_blocks_on: >
+      Live `cargo llvm-cov test --lib --no-report` + `cargo llvm-cov
+      report --json` on the workspace; parse the per-module line-coverage
+      percentage for new modules from the JSON and feed into
+      verdict_from_line_coverage_pct at threshold 95.0; assert Pass.
+    counter_example_classes:
+      - floor_reverted_to_85
+      - inclusive_flipped_to_strict
+      - non_finite_promoted_to_pass
+      - out_of_range_measured_accepted
+      - out_of_range_threshold_accepted

@@ -1,0 +1,11 @@
+=== APR Run ===
+
+Source: /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr
+[PMAT-171] Loaded embedded BPE tokenizer: 152064 vocab, 151387 merges, 25 special tokens
+[GH-175] OwnedQuantizedModel::from_apr: 28 layers loaded in 3529.8ms
+[GH-189] Loaded tokenizer from /mnt/nvme-raid0/models/ship-two-001/tokenizer.json: 22 special tokens
+
+Output:
+2 + 2 equals 4.
+
+Completed in 9.02s (cached)

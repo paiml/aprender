@@ -1,0 +1,386 @@
+
+=== Traced Inference (APR-TRACE-001) ===
+Model: /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr
+
+[GH-187] Embedding 'lm_head.weight': shape=[152064, 3584], dtype=F32
+[GH-187] Embedding 'model.embed_tokens.weight': shape=[152064, 3584], dtype=F32
+Contract: 339 tensors pass PMAT-235 gates
+
+Format: APR (native)
+
+Architecture:
+  Layers: 28
+  Hidden dim: 3584
+  Vocab size: 152064
+  Heads: 28
+
+[PMAT-171] Loaded embedded BPE tokenizer: 152064 vocab, 151387 merges, 25 special tokens
+Test prompt: "What is 2+2?"
+Encoded tokens: [3838, 374, 220, 17, 10, 17, 30]
+
+FORWARD PASS (with layer tracing):
+
+EMBEDDING:
+  Range: [-0.4160, 0.5273]
+  Mean: 0.0000, Std:   0.0174
+
+LAYER-BY-LAYER ACTIVATIONS:
+  Legend: std>100=RED, std>50=YELLOW, std>10=BLUE, else=GREEN
+
+  Layer  0/28 [OK]
+    attn_norm: mean= -0.0001 std=  0.2213
+    qkv      : mean=  0.2559 std= 10.3291
+    attn_out : mean= -0.0050 std=  0.1776
+    ffn_norm : mean= -0.0048 std=  0.1773
+    ffn_gate : mean= -0.5700 std=  0.9448
+    ffn_up   : mean= -0.0001 std=  0.2393
+    ffn_silu : mean= -0.0640 std=  0.1597
+    ffn_swigl: mean= -0.0005 std=  0.0881
+    ffn_out  : mean=  0.0054 std=  0.3245
+    output   : mean=  0.0004 std=  0.4016
+
+  Layer  1/28 [OK]
+    attn_norm: mean=  0.0009 std=  0.1694
+    qkv      : mean=  0.0336 std=  3.5056
+    attn_out : mean= -0.0001 std=  0.1495
+    ffn_norm : mean=  0.0103 std=  0.8510
+    ffn_gate : mean= -7.0873 std=  1.4995
+    ffn_up   : mean=  0.0056 std=  1.1000
+    ffn_silu : mean= -0.0120 std=  0.0426
+    ffn_swigl: mean= -0.0002 std=  0.0613
+    ffn_out  : mean= -0.0015 std=  0.3448
+    output   : mean= -0.0012 std=  0.6464
+
+  Layer  2/28 [OK]
+    attn_norm: mean=  0.0026 std=  0.3080
+    qkv      : mean= -0.0282 std=  1.4404
+    attn_out : mean= -0.0008 std=  0.1202
+    ffn_norm : mean=  0.0093 std=  0.8552
+    ffn_gate : mean= -6.7704 std=  1.9858
+    ffn_up   : mean= -0.0019 std=  0.9401
+    ffn_silu : mean= -0.0204 std=  0.0522
+    ffn_swigl: mean= -0.0002 std=  0.0709
+    ffn_out  : mean= -0.0001 std=  0.2163
+    output   : mean= -0.0021 std=  0.7159
+
+  Layer  3/28 [OK]
+    attn_norm: mean=  0.0026 std=  0.2933
+    qkv      : mean=  0.0214 std=  1.9535
+    attn_out : mean=  0.0006 std=  0.1818
+    ffn_norm : mean=  0.0170 std=  0.9953
+    ffn_gate : mean= -5.9783 std=  1.9243
+    ffn_up   : mean=  0.0022 std=  1.3351
+    ffn_silu : mean= -0.0277 std=  0.1679
+    ffn_swigl: mean= -0.0026 std=  1.2216
+    ffn_out  : mean= -0.0819 std= 11.4590
+    output   : mean= -0.0834 std= 11.7756
+
+  Layer  4/28 [OK]
+    attn_norm: mean=  0.0045 std=  0.4257
+    qkv      : mean=  0.0274 std=  1.6993
+    attn_out : mean=  0.0005 std=  0.1360
+    ffn_norm : mean=  0.0257 std=  1.0910
+    ffn_gate : mean= -4.9255 std=  2.2882
+    ffn_up   : mean=  0.0007 std=  0.9708
+    ffn_silu : mean= -0.0498 std=  0.1346
+    ffn_swigl: mean=  0.0002 std=  0.3903
+    ffn_out  : mean= -0.0200 std=  3.8374
+    output   : mean= -0.1029 std= 15.4269
+
+  Layer  5/28 [OK]
+    attn_norm: mean=  0.0043 std=  0.4505
+    qkv      : mean=  0.0075 std=  1.6407
+    attn_out : mean=  0.0006 std=  0.1173
+    ffn_norm : mean=  0.0340 std=  1.5278
+    ffn_gate : mean= -5.7545 std=  2.0569
+    ffn_up   : mean= -0.0012 std=  1.1136
+    ffn_silu : mean= -0.0434 std=  0.0942
+    ffn_swigl: mean= -0.0008 std=  0.3428
+    ffn_out  : mean= -0.0099 std=  1.7247
+    output   : mean= -0.1122 std= 16.9458
+
+  Layer  6/28 [OK]
+    attn_norm: mean=  0.0035 std=  0.3733
+    qkv      : mean=  0.0819 std=  1.6989
+    attn_out : mean= -0.0012 std=  0.2151
+    ffn_norm : mean=  0.0111 std=  0.6202
+    ffn_gate : mean= -1.3111 std=  1.6108
+    ffn_up   : mean= -0.0003 std=  0.5211
+    ffn_silu : mean= -0.1052 std=  0.2142
+    ffn_swigl: mean=  0.0001 std=  0.2033
+    ffn_out  : mean= -0.0169 std=  1.5377
+    output   : mean= -0.1303 std= 18.2438
+
+  Layer  7/28 [OK]
+    attn_norm: mean= -0.0000 std=  0.4402
+    qkv      : mean=  0.0491 std=  1.2125
+    attn_out : mean=  0.0033 std=  0.2279
+    ffn_norm : mean=  0.0022 std=  0.4563
+    ffn_gate : mean= -0.4981 std=  0.6308
+    ffn_up   : mean= -0.0054 std=  0.5172
+    ffn_silu : mean= -0.1086 std=  0.2371
+    ffn_swigl: mean= -0.0004 std=  0.2219
+    ffn_out  : mean= -0.0041 std=  1.0579
+    output   : mean= -0.1312 std= 19.0114
+
+  Layer  8/28 [OK]
+    attn_norm: mean=  0.0052 std=  0.4739
+    qkv      : mean=  0.0082 std=  1.5342
+    attn_out : mean=  0.0017 std=  0.2237
+    ffn_norm : mean=  0.0037 std=  0.4738
+    ffn_gate : mean= -0.4544 std=  0.6136
+    ffn_up   : mean=  0.0020 std=  0.5412
+    ffn_silu : mean= -0.0981 std=  0.2401
+    ffn_swigl: mean= -0.0012 std=  0.2163
+    ffn_out  : mean= -0.0096 std=  1.1145
+    output   : mean= -0.1391 std= 19.8066
+
+  Layer  9/28 [OK]
+    attn_norm: mean=  0.0043 std=  0.4759
+    qkv      : mean=  0.0354 std=  1.2415
+    attn_out : mean= -0.0017 std=  0.2581
+    ffn_norm : mean=  0.0022 std=  0.8080
+    ffn_gate : mean= -2.5708 std=  1.5526
+    ffn_up   : mean=  0.0041 std=  0.7450
+    ffn_silu : mean= -0.1356 std=  0.1455
+    ffn_swigl: mean= -0.0006 std=  0.2593
+    ffn_out  : mean= -0.0165 std=  1.3315
+    output   : mean= -0.1573 std= 20.8351
+
+  Layer 10/28 [OK]
+    attn_norm: mean=  0.0028 std=  0.4294
+    qkv      : mean=  0.0686 std=  1.4587
+    attn_out : mean=  0.0006 std=  0.2199
+    ffn_norm : mean=  0.0017 std=  0.4720
+    ffn_gate : mean= -0.5791 std=  0.6426
+    ffn_up   : mean= -0.0001 std=  0.5164
+    ffn_silu : mean= -0.1294 std=  0.2083
+    ffn_swigl: mean= -0.0001 std=  0.1698
+    ffn_out  : mean= -0.0030 std=  0.7159
+    output   : mean= -0.1597 std= 21.2741
+
+  Layer 11/28 [OK]
+    attn_norm: mean=  0.0050 std=  0.4458
+    qkv      : mean= -0.0251 std=  1.7413
+    attn_out : mean=  0.0020 std=  0.1872
+    ffn_norm : mean=  0.0030 std=  0.4428
+    ffn_gate : mean= -0.4996 std=  0.5786
+    ffn_up   : mean=  0.0017 std=  0.5089
+    ffn_silu : mean= -0.1204 std=  0.2028
+    ffn_swigl: mean=  0.0008 std=  0.1616
+    ffn_out  : mean=  0.0006 std=  0.7573
+    output   : mean= -0.1571 std= 21.7559
+
+  Layer 12/28 [OK]
+    attn_norm: mean=  0.0093 std=  0.4563
+    qkv      : mean=  0.0184 std=  1.4191
+    attn_out : mean=  0.0033 std=  0.2229
+    ffn_norm : mean=  0.0068 std=  0.4376
+    ffn_gate : mean= -0.4496 std=  0.5673
+    ffn_up   : mean= -0.0005 std=  0.5207
+    ffn_silu : mean= -0.1075 std=  0.2192
+    ffn_swigl: mean= -0.0012 std=  0.1996
+    ffn_out  : mean= -0.0179 std=  1.2621
+    output   : mean= -0.1717 std= 22.7425
+
+  Layer 13/28 [OK]
+    attn_norm: mean=  0.0089 std=  0.4645
+    qkv      : mean=  0.0827 std=  1.4915
+    attn_out : mean=  0.0045 std=  0.2766
+    ffn_norm : mean=  0.0049 std=  0.4280
+    ffn_gate : mean= -0.4247 std=  0.5853
+    ffn_up   : mean=  0.0006 std=  0.5094
+    ffn_silu : mean= -0.0970 std=  0.2215
+    ffn_swigl: mean=  0.0010 std=  0.2237
+    ffn_out  : mean= -0.0178 std=  1.4689
+    output   : mean= -0.1849 std= 23.9407
+
+  Layer 14/28 [OK]
+    attn_norm: mean=  0.0133 std=  0.5682
+    qkv      : mean=  0.0508 std=  1.4732
+    attn_out : mean=  0.0013 std=  0.2283
+    ffn_norm : mean=  0.0033 std=  0.4361
+    ffn_gate : mean= -0.4066 std=  0.5856
+    ffn_up   : mean=  0.0014 std=  0.5193
+    ffn_silu : mean= -0.0911 std=  0.2221
+    ffn_swigl: mean= -0.0001 std=  0.1999
+    ffn_out  : mean= -0.0104 std=  1.1370
+    output   : mean= -0.1941 std= 24.8312
+
+  Layer 15/28 [OK]
+    attn_norm: mean=  0.0098 std=  0.4963
+    qkv      : mean= -0.0501 std=  1.6881
+    attn_out : mean=  0.0042 std=  0.2308
+    ffn_norm : mean=  0.0044 std=  0.4221
+    ffn_gate : mean= -0.3632 std=  0.5580
+    ffn_up   : mean= -0.0013 std=  0.5178
+    ffn_silu : mean= -0.0823 std=  0.2214
+    ffn_swigl: mean=  0.0009 std=  0.1473
+    ffn_out  : mean= -0.0050 std=  0.7143
+    output   : mean= -0.1949 std= 25.3237
+
+  Layer 16/28 [OK]
+    attn_norm: mean=  0.0128 std=  0.5599
+    qkv      : mean=  0.0206 std=  1.2305
+    attn_out : mean=  0.0035 std=  0.1945
+    ffn_norm : mean=  0.0043 std=  0.4220
+    ffn_gate : mean= -0.3406 std=  0.5483
+    ffn_up   : mean= -0.0057 std=  0.5122
+    ffn_silu : mean= -0.0765 std=  0.2205
+    ffn_swigl: mean=  0.0008 std=  0.1505
+    ffn_out  : mean= -0.0040 std=  0.5788
+    output   : mean= -0.1954 std= 25.6418
+
+  Layer 17/28 [OK]
+    attn_norm: mean=  0.0139 std=  0.5593
+    qkv      : mean= -0.0315 std=  1.3492
+    attn_out : mean= -0.0030 std=  0.1864
+    ffn_norm : mean=  0.0029 std=  0.4418
+    ffn_gate : mean= -0.3368 std=  0.5878
+    ffn_up   : mean= -0.0016 std=  0.5435
+    ffn_silu : mean= -0.0661 std=  0.2371
+    ffn_swigl: mean=  0.0005 std=  0.1634
+    ffn_out  : mean= -0.0043 std=  0.5050
+    output   : mean= -0.2027 std= 25.6967
+
+  Layer 18/28 [OK]
+    attn_norm: mean=  0.0069 std=  0.5095
+    qkv      : mean= -0.0139 std=  2.3212
+    attn_out : mean=  0.0001 std=  0.2661
+    ffn_norm : mean= -0.0003 std=  0.4594
+    ffn_gate : mean= -0.3478 std=  0.6390
+    ffn_up   : mean=  0.0002 std=  0.5750
+    ffn_silu : mean= -0.0580 std=  0.2630
+    ffn_swigl: mean=  0.0002 std=  0.1935
+    ffn_out  : mean= -0.0051 std=  0.5996
+    output   : mean= -0.2077 std= 25.7198
+
+  Layer 19/28 [OK]
+    attn_norm: mean=  0.0064 std=  0.5858
+    qkv      : mean=  0.0207 std=  2.5770
+    attn_out : mean=  0.0089 std=  0.3266
+    ffn_norm : mean= -0.0007 std=  0.5146
+    ffn_gate : mean= -0.4336 std=  0.7452
+    ffn_up   : mean=  0.0002 std=  0.6528
+    ffn_silu : mean= -0.0622 std=  0.2854
+    ffn_swigl: mean=  0.0001 std=  0.2293
+    ffn_out  : mean= -0.0071 std=  0.6702
+    output   : mean= -0.2059 std= 25.7321
+
+  Layer 20/28 [OK]
+    attn_norm: mean=  0.0074 std=  0.5892
+    qkv      : mean= -0.0365 std=  1.4152
+    attn_out : mean= -0.0024 std=  0.2220
+    ffn_norm : mean= -0.0020 std=  0.5630
+    ffn_gate : mean= -0.4421 std=  0.8103
+    ffn_up   : mean= -0.0026 std=  0.7310
+    ffn_silu : mean= -0.0467 std=  0.3257
+    ffn_swigl: mean= -0.0003 std=  0.3167
+    ffn_out  : mean=  0.0033 std=  0.9890
+    output   : mean= -0.2050 std= 25.4083
+
+  Layer 21/28 [OK]
+    attn_norm: mean=  0.0071 std=  0.6467
+    qkv      : mean= -0.0556 std=  1.3357
+    attn_out : mean=  0.0086 std=  0.4398
+    ffn_norm : mean= -0.0000 std=  0.6538
+    ffn_gate : mean= -0.5615 std=  0.9503
+    ffn_up   : mean=  0.0014 std=  0.8503
+    ffn_silu : mean= -0.0442 std=  0.3526
+    ffn_swigl: mean= -0.0005 std=  0.3699
+    ffn_out  : mean=  0.0012 std=  1.0412
+    output   : mean= -0.1952 std= 25.3859
+
+  Layer 22/28 [OK]
+    attn_norm: mean=  0.0123 std=  0.7415
+    qkv      : mean= -0.0500 std=  1.2898
+    attn_out : mean=  0.0038 std=  0.4834
+    ffn_norm : mean=  0.0015 std=  0.7750
+    ffn_gate : mean= -0.7971 std=  1.1111
+    ffn_up   : mean=  0.0052 std=  1.0196
+    ffn_silu : mean= -0.0600 std=  0.3764
+    ffn_swigl: mean=  0.0004 std=  0.4591
+    ffn_out  : mean= -0.0054 std=  1.3017
+    output   : mean= -0.1968 std= 25.3309
+
+  Layer 23/28 [OK]
+    attn_norm: mean=  0.0117 std=  0.7533
+    qkv      : mean= -0.0135 std=  1.3606
+    attn_out : mean= -0.0009 std=  0.5134
+    ffn_norm : mean= -0.0019 std=  0.9222
+    ffn_gate : mean= -1.2215 std=  1.2571
+    ffn_up   : mean=  0.0151 std=  1.1929
+    ffn_silu : mean= -0.1019 std=  0.3474
+    ffn_swigl: mean= -0.0020 std=  0.5495
+    ffn_out  : mean= -0.0033 std=  1.6514
+    output   : mean= -0.2010 std= 24.6528
+
+  Layer 24/28 [OK]
+    attn_norm: mean=  0.0070 std=  0.7684
+    qkv      : mean=  0.0047 std=  1.6092
+    attn_out : mean= -0.0020 std=  0.6294
+    ffn_norm : mean= -0.0023 std=  0.9243
+    ffn_gate : mean= -1.0680 std=  1.2100
+    ffn_up   : mean= -0.0025 std=  1.2028
+    ffn_silu : mean= -0.0886 std=  0.3783
+    ffn_swigl: mean=  0.0013 std=  0.5680
+    ffn_out  : mean= -0.0002 std=  1.7177
+    output   : mean= -0.2031 std= 24.0857
+
+  Layer 25/28 [OK]
+    attn_norm: mean=  0.0127 std=  0.7485
+    qkv      : mean= -0.0406 std=  1.4633
+    attn_out : mean= -0.0023 std=  0.8827
+    ffn_norm : mean=  0.0015 std=  0.9758
+    ffn_gate : mean= -1.2036 std=  1.2883
+    ffn_up   : mean= -0.0023 std=  1.3384
+    ffn_silu : mean= -0.0910 std=  0.4217
+    ffn_swigl: mean= -0.0025 std=  0.9361
+    ffn_out  : mean= -0.0511 std=  2.8708
+    output   : mean= -0.2565 std= 23.2553
+
+  Layer 26/28 [OK]
+    attn_norm: mean=  0.0136 std=  0.7560
+    qkv      : mean= -0.0290 std=  1.5460
+    attn_out : mean= -0.0086 std=  1.1192
+    ffn_norm : mean= -0.0002 std=  1.0039
+    ffn_gate : mean= -1.0941 std=  1.3469
+    ffn_up   : mean= -0.0110 std=  1.6359
+    ffn_silu : mean= -0.0552 std=  0.5646
+    ffn_swigl: mean=  0.0029 std=  1.4519
+    ffn_out  : mean=  0.0409 std=  5.8391
+    output   : mean= -0.2242 std= 19.6001
+
+  Layer 27/28 [OK]
+    attn_norm: mean=  0.0233 std=  1.0156
+    qkv      : mean= -0.1783 std= 15.0980
+    attn_out : mean=  0.0584 std= 10.0809
+    ffn_norm : mean=  0.0127 std=  1.5687
+    ffn_gate : mean= -2.8787 std=  2.2058
+    ffn_up   : mean=  0.0010 std=  2.6311
+    ffn_silu : mean=  0.0227 std=  0.9590
+    ffn_swigl: mean=  0.0020 std=  2.2472
+    ffn_out  : mean=  0.0650 std=  6.4581
+    output   : mean= -0.1008 std= 13.5469
+
+
+FINAL LAYER NORM:
+  Range: [-143.556381, 61.446789]
+  Mean: 0.006147, Std: 2.608262
+
+LM_HEAD output:
+  Vocab size: 152064
+  L2 norm: 1146.0424
+  Range: [-11.262582, 16.736774]
+  Mean: -2.070376
+
+Top 5 predictions:
+  1. token_id=220, logit=16.7368
+  2. token_id=576, logit=15.6684
+  3. token_id=2014, logit=14.1198
+  4. token_id=715, logit=14.0954
+  5. token_id=21806, logit=14.0902
+
+TRACE SUMMARY:
+  All layers have reasonable variance (std < 50)
+  Logit range: 28.00 (reasonable)

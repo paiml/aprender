@@ -426,4 +426,67 @@ mod ship_010_tests {
         assert!(!is_canonical_lowercase_hex("abcdef "));
         assert!(is_canonical_lowercase_hex(""));
     }
+
+    /// FALSIFY-SHIP-010 YAML binding: parses publish-manifest-v1.yaml
+    /// and asserts the FALSIFY-SHIP-010 falsification block has been
+    /// promoted from `PARTIAL_ALGORITHM_LEVEL` (v1.4.0) → `DISCHARGED`
+    /// (v1.5.0) via live `apr validate-manifest --live --json` evidence
+    /// on noah-Lambda-Vector RTX 4090.
+    /// Falsifier: if the contract is edited to drop the live-evidence
+    /// block or downgrade the discharge marker, this test fails before
+    /// any network I/O is launched.
+    #[test]
+    fn falsify_ship_010_yaml_binding_pins_discharged_status() {
+        const CONTRACT_YAML: &str = include_str!("../../../../contracts/publish-manifest-v1.yaml");
+
+        let doc: serde_yaml::Value = serde_yaml::from_str(CONTRACT_YAML)
+            .expect("publish-manifest-v1.yaml must parse as YAML");
+
+        let falsifications = doc["falsification_tests"]
+            .as_sequence()
+            .expect("falsification_tests must be a sequence in publish-manifest-v1");
+        let block = falsifications
+            .iter()
+            .find(|b| b["id"].as_str() == Some("FALSIFY-SHIP-010"))
+            .expect("FALSIFY-SHIP-010 must exist in publish-manifest-v1");
+
+        assert_eq!(
+            block["binds_to"].as_str(),
+            Some("AC-SHIP1-010"),
+            "FALSIFY-SHIP-010 must bind AC-SHIP1-010 (Published artifact URL + SHA-256)",
+        );
+        assert_eq!(
+            block["discharge_status"].as_str(),
+            Some("DISCHARGED"),
+            "FALSIFY-SHIP-010 must advertise DISCHARGED \
+             (live `apr validate-manifest --live` PASS on all 3 paiml \
+             manifests at v1.5.0; previous PARTIAL_ALGORITHM_LEVEL at v1.4.0)",
+        );
+        assert!(
+            block["discharged_evidence"].is_mapping(),
+            "FALSIFY-SHIP-010 DISCHARGED status requires discharged_evidence \
+             block documenting the host, command, and per-manifest live verdicts",
+        );
+        assert_eq!(
+            block["discharged_evidence"]["host"].as_str(),
+            Some("noah-Lambda-Vector"),
+            "discharged_evidence.host must pin to the lambda-labs RTX 4090 host",
+        );
+        let manifests = block["discharged_evidence"]["manifests"]
+            .as_sequence()
+            .expect("discharged_evidence.manifests must be a sequence");
+        assert_eq!(
+            manifests.len(),
+            3,
+            "all 3 paiml-qwen2.5-coder-7b-apache-q4k-v1 manifests \
+             (apr/gguf/safetensors) must show live PASS",
+        );
+        for m in manifests {
+            assert_eq!(
+                m["overall"].as_str(),
+                Some("PASS"),
+                "every manifest in discharged_evidence.manifests must have overall=PASS",
+            );
+        }
+    }
 }

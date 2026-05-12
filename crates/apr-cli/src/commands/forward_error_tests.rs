@@ -127,6 +127,19 @@ mod forward_error_tests {
     }
 
     #[test]
+    fn detect_size_from_filename_no_match_hex_prefixed_digit() {
+        // Reproducer for CI flake (workspace-test #25276156029): random hex like
+        // ".tmp97b...gguf" has "7b" at a position where the BEFORE-char is a
+        // digit ('9'). Without rejecting digit-prefixed matches we mis-detected
+        // the empty file as "7b". Must return None.
+        assert_eq!(detect_size_from_filename(".tmp97b1234.gguf"), None);
+        // 132b pattern — '3' before, '2b' is the candidate
+        assert_eq!(detect_size_from_filename(".tmp132b.gguf"), None);
+        // 'model3b' (letter prefix) is still valid — see _3b_standalone test
+        assert_eq!(detect_size_from_filename("model3b"), Some("3b"));
+    }
+
+    #[test]
     fn detect_size_from_filename_14b() {
         assert_eq!(detect_size_from_filename("model-14b-chat.gguf"), Some("14b"));
     }

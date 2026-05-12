@@ -7,9 +7,9 @@
 //!
 //! (The `sqlite` feature is enabled by default.)
 
-use trueno_rag::sqlite::SqliteIndex;
+use aprender_rag::sqlite::SqliteIndex;
 
-fn main() -> trueno_rag::Result<()> {
+fn main() -> aprender_rag::Result<()> {
     println!("=== SQLite+FTS5 Export Example ===\n");
 
     // 1. Create an in-memory SQLite index

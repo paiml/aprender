@@ -301,10 +301,13 @@
         match *cli.command {
             Commands::Pull {
                 model_ref,
+                repo: _,
                 force,
                 dry_run,
                 revision: _,
                 offline: _,
+                include: _,
+                output: _,
             } => {
                 assert_eq!(model_ref, "hf://Qwen/Qwen2.5-Coder-1.5B");
                 assert!(force);
@@ -322,10 +325,13 @@
         match *cli.command {
             Commands::Pull {
                 model_ref,
+                repo: _,
                 force,
                 dry_run,
                 revision: _,
                 offline: _,
+                include: _,
+                output: _,
             } => {
                 assert_eq!(model_ref, "qwen2.5-coder");
                 assert!(!force);
@@ -343,10 +349,13 @@
         match *cli.command {
             Commands::Pull {
                 model_ref,
+                repo: _,
                 force,
                 dry_run,
                 revision: _,
                 offline: _,
+                include: _,
+                output: _,
             } => {
                 assert_eq!(model_ref, "llama3");
                 assert!(!force);

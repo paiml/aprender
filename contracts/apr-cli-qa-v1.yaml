@@ -184,6 +184,7 @@ kani_harnesses:
 - id: KH-QA-001
   obligation: help_universality
   property: all_commands_respond_to_help
+  bound: 4
 
 verification_summary:
   total_obligations: 10

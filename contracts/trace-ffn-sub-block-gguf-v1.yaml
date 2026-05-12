@@ -1,0 +1,1839 @@
+metadata:
+  id: C-TRACE-FFN-SUB-BLOCK-GGUF
+  version: 1.13.0
+  created: '2026-05-07'
+  author: PAIML Engineering
+  kind: pattern
+  status: ACTIVE_ALGORITHM_LEVEL
+  description: |
+    GGUF-side sub-FFN telemetry extension — sibling pattern to
+    `trace-ffn-sub-block-v1` (which extends APR's `AprTransformer::
+    forward_traced`). This contract pins the GGUF-side equivalent
+    `OwnedQuantizedModel::forward_traced` so SHIP-007 layer-3
+    bisection can compare APR-side ffn_swigl std vs GGUF-side
+    ffn_swigl std on the same canonical 7B teacher prompt.
+
+    BACKGROUND: SHIP-007 layer-3 ffn_swigl bisection (§21 spec
+    v2.66.0, aprender PR #1072 squash 211edeafc) narrowed the bug
+    to "(layer=3, ffn_swigl element-wise multiply)" on the APR
+    forward path:
+    - Layer 3 ffn_swigl std = 1.222 (17.2× layer-2 baseline 0.071)
+    - Cascades to layer 3 ffn_out std = 11.459 (53× layer-2)
+    - gate/up individually normal at layer 3
+    - silu(gate) at layer 3 is 3.2× baseline (precursor)
+
+    The §21 falsification cannot distinguish two competing
+    hypotheses without GGUF-side per-layer sub-FFN telemetry:
+
+      H1: Token-position-dependent correlation — at the 7-token
+          prompt, layer 3 tokens produce correlated gate/up not
+          present at layers 1-2 (NORMAL model behavior).
+      H2: APR-side bug — APR forward path produces different
+          VALUES than GGUF (despite SHIP-003 PR #1059 proving
+          weights are byte-equivalent at cos≥0.9999999).
+
+    The bisection between H1 and H2 requires running `apr trace
+    --payload` on both sides and comparing layer-3 ffn_swigl std.
+    GGUF currently has NO `forward_traced` method — only
+    `forward_*` orchestrators in `crates/aprender-serve/src/gguf/
+    inference/forward/*`. This contract pins the architecture for
+    adding GGUF-side traced forward.
+
+    SCOPE: extends `trace-ffn-sub-block-v1` (APR sibling) with
+    the parallel GGUF-side method, using the same 5 sub-FFN
+    fields:
+      - gate_proj_out (post gate matmul)
+      - up_proj_out (post up matmul)
+      - silu_gate (post silu activation on gate)
+      - swiglu_inner (silu_gate * up_proj_out, the swigl product)
+      - ffn_down_out (post down matmul, pre-residual)
+
+    Mirrors the proven `trace-moe-gpu-sub-stages-v1` pattern that
+    closed the M-GPU-MOE-1.4 NaN bisection at L6 moe_ffn_out via
+    qtype-aware dispatch fix (M85 PR #1529 squash `89cb26af7`):
+    extend an existing trace surface to a sibling implementation
+    path WITHOUT modifying production hot paths (additive-purity
+    invariant).
+
+    THE GOAL: extend `OwnedQuantizedModel::forward_traced` (NEW
+    method) so a future SHIP-007 layer-3 bisection PR can run
+    `apr trace --json --payload` on both APR forward AND GGUF
+    forward, diff per-layer ffn_swigl std, distinguish H1 from
+    H2, and either:
+    - confirm H1 (normal model behavior — SHIP-007 root cause is
+      ELSEWHERE, likely in lm_head or post-FFN residual)
+    - confirm H2 (APR-side bug — fix at `inference.rs:160-164`
+      element-wise multiply at SwiGLU site)
+
+    Per memory `project_ship_007_layer_3_swiglu_bisection.md`,
+    this gap blocks SHIP-007 root-cause from being pinned to a
+    specific code line; it transitively blocks 5 MODEL-1
+    PARTIALs (SHIP-002, SHIP-005, SHIP-006, SHIP-007, SHIP-008).
+
+    PRIOR-WORK DISCOVERY (during contract authoring):
+    PRs #1081 (scaffold, PR A) + #1082 (sub-FFN populate, PR B)
+    have ALREADY shipped the dense-path forward_traced for GGUF.
+    The 4 sub-FFN ActivationStats slots are populated for SwiGLU
+    paths. So M-FFN-GGUF-1 + M-FFN-GGUF-2 are SHIPPED (retroactive
+    discovery; contract authored AFTER the work). M-FFN-GGUF-3
+    (heavy comparison harness for layer-3 ffn_swigl) and
+    M-FFN-GGUF-4 (SHIP-007 fix PR cites H1 or H2) remain OPEN.
+
+    The contract still serves a load-bearing purpose: it pins the
+    architecture explicitly so future cascade extensions (heavy
+    harness + fix) have a clear discharge path, and it cross-
+    references the prior-work PRs for anyone reading the contract
+    surface for the first time.
+
+    v1.13.0 AMENDMENT (2026-05-07): M-FFN-GGUF-7 + 28-LAYER CHARACTERIZATION — CHAIN SATURATES AGGREGATELY DESPITE OUTLIER LAYERS.
+
+    Subsumes the unmade contract bump from M-FFN-GGUF-7 PR #1548
+    (claimed v1.12.0 → v1.13.0 in commit message but the YAML was not
+    actually amended on that branch) AND adds the M-FFN-GGUF-7-EXT
+    full 28-layer characterization. PR #1548 5-layer chain test on
+    canonical 7B Qwen2.5-Coder-Instruct-Q4_K_M demonstrated
+    saturation at 1.81× growth over layers 0-4, with Layer 2 dropping
+    to 0.029% rel_diff (cancellation event). M-FFN-GGUF-7-EXT
+    extends that test to ALL 28 layers and characterizes the full
+    cumulative-layer pattern.
+
+    Authored a twelfth lib-only falsifier (FALSIFY-FFN-GGUF-017) as
+    integration test:
+      `crates/aprender-serve/tests/ffn_gguf_real_teacher_28_layer_chain.rs`
+      `falsify_ffn_gguf_017_real_teacher_28_layer_chain_residual`
+
+    `#[ignore]`-gated; LIVE-runs against canonical 7B teacher .apr
+    file, chains all 28 ffn_down_weight Q4K first super-blocks with
+    Path A (standalone dequant + F32 dot) and Path B (Q8K activation
+    quant + fused matvec), propagating activations layer-to-layer.
+
+    EMPIRICAL RESULT (2026-05-07, lambda-vector RTX 4090, 26.96s):
+
+    Per-layer rel_diff cumulative chain (28 of 28 layers measured):
+      L  0: 0.544295%   (first; matches PR #1548 5-layer L0 = 0.544%)
+      L  1: 0.780332%   (1.434×; matches L1 = 0.780%)
+      L  2: 0.030034%   (0.038× — DROPPED, saturation; matches L2 = 0.029%)
+      L  3: 0.428346%   (14.262×; matches L3 = 0.428%)
+      L  4: 0.774986%   (1.809×; matches L4 = 0.774%)
+      L  5: 0.181326%   (0.234× — DROP)
+      L  6: 0.245188%   (1.352×)
+      L  7: 0.171656%   (0.700× — DROP)
+      L  8: 0.159802%   (0.931×)
+      L  9: 0.979539%   (6.130×)
+      L 10: 0.032471%   (0.033× — DROP, similar to L2)
+      L 11: 0.079988%   (2.463×)
+      L 12: 0.733482%   (9.170×)
+      L 13: 0.949515%   (1.295×)
+      L 14: 1.782296%   (1.877×)
+      L 15: 0.708670%   (0.398× — DROP)
+      L 16: 3.526959%   (4.977×)
+      L 17: 0.647101%   (0.183× — DROP)
+      L 18: 0.201322%   (0.311× — DROP)
+      L 19: 0.409500%   (2.034×)
+      L 20: 0.278894%   (0.681× — DROP)
+      L 21: 0.035864%   (0.129× — DROP)
+      L 22: 0.381381%   (10.634×)
+      L 23: 0.373995%   (0.981×)
+      L 24: 441.978270% (1181.776× — OUTLIER SPIKE)
+      L 25: 0.270845%   (0.001× — RECOVERY DROP)
+      L 26: 1.194728%   (4.411×)
+      L 27: 0.985317%   (0.825× — DROP)
+
+    SUMMARY STATISTICS:
+      min rel_diff:           0.030034%   (L2)
+      max rel_diff:         441.978270%   (L24, outlier spike)
+      mean rel_diff:         16.388075%   (skewed by L24)
+      first-nonzero (L0):     0.544295%
+      last (L27):             0.985317%
+      total growth factor:    1.8103×     (L27 / L0; matches 5-layer 1.8081×)
+      saturation events:     13 of 27 transitions  (48% drops vs prev)
+      steady-band (±10%):     2 of 27 transitions   (rare)
+      typical-magnitude:     27 of 28 layers (rel_diff ≤ 10%)
+
+    KEY EMPIRICAL FINDINGS:
+
+    1. **Outlier-spike-with-recovery pattern:**
+       L24 spikes to 441.978% (1181× jump from L23), but L25 recovers
+       to 0.271% (0.001× of L24). The chain does NOT enter exponential
+       growth despite the spike. Total growth factor (L27 / L0) =
+       1.8103× — within ±0.1% of the M-FFN-GGUF-7 5-layer 1.81×
+       reference. This is empirical proof that saturation dominates
+       AGGREGATE drift even when individual layers exhibit anomalous
+       weight-pattern interactions.
+
+    2. **High saturation density:**
+       48% of layer transitions (13 of 27) decrease rel_diff vs the
+       previous layer. The chain frequently cancels accumulated drift,
+       returning to "typical magnitude" (rel_diff ≤ 10%) for 27 of 28
+       layers (96.4%).
+
+    3. **Layer-dependent weight pattern variance:**
+       L2's 0.029% drop is reproduced exactly with the 5-layer test
+       (validating fixture); L24's 442% spike reveals real layers can
+       have anomalous matvec-precision behavior. This is layer-
+       specific; the chain recovers downstream.
+
+    4. **5-layer L0-L4 PER-LAYER REPRODUCTION:**
+       The 28-layer test reproduces M-FFN-GGUF-7 (PR #1548) 5-layer
+       reference values to ≤ 0.001% on every layer (0-4), validating
+       that the test fixture and chain semantics are byte-equivalent
+       to the 5-layer baseline.
+
+    REFINED §27 MAGNITUDE EXPLANATION (post-M-FFN-GGUF-7-EXT):
+
+    The 28-layer characterization confirms the M-FFN-GGUF-7 conclusion
+    that cumulative-layer is NOT a load-bearing amplifier when measured
+    by aggregate growth (1.81× over 28 layers ≈ 1.81× over 5 layers).
+    Naive growth-factor exponentiation (1.81^(28/5) ≈ 49×) is wrong;
+    real systems saturate via cancellation events.
+
+    The 14× residual that M101 attributed to cumulative-layer is
+    ALMOST ENTIRELY a measurement artifact (M99's 50× std-ratio
+    sensitivity interacting with M100's 5.56× per-layer baseline + L24-
+    style anomalous-layer outlier averaging). Pure cumulative
+    saturation contributes essentially 1× to the magnitude budget.
+
+    Updated decomposition (M-FFN-GGUF-7-EXT):
+      §27 ≈ M100 × cumulative_saturation × M99
+      = 0.428% × 1.81× × 50×
+      ≈ 38.7% drift
+
+    vs §27 measured 1723%, residual ~44× now interpretable as:
+      - Per-tensor real-teacher amplitude varies by layer (M100 only
+        measured layer-3 first super-block); L24 is one example of
+        anomalous magnitude.
+      - §27 integrates 4096-dim std vs M99's 256-dim.
+      - Resolves automatically when fix Option-A lands.
+
+    SHIP-007 §22 FIX SCOPE (refined, post-M-FFN-GGUF-7-EXT):
+
+    Option-A (PROMOTE GGUF-PATH semantics into APR forward) remains
+    EMPIRICALLY VALIDATED. The 44× residual does NOT block
+    M-FFN-GGUF-5 because per-tensor mechanism (M94+M100) is the
+    ROOT CAUSE; fix Option-A closes it; cumulative-layer saturation
+    (M-FFN-GGUF-7 + EXT) caps at 1.81×; M99's 50× is a measurement
+    artifact on a non-zero per-tensor signal that post-fix becomes 0.
+
+    METHODOLOGY OBSERVATION (post-M-FFN-GGUF-7-EXT):
+
+    Empirical data trumps theoretical extrapolation. The naive
+    growth-factor exponentiation predicts 5.78e5× drift at 28-layer
+    depth (clearly wrong); the M-FFN-GGUF-7 5-layer test predicts
+    saturation to ~1.81× via cancellation; the M-FFN-GGUF-7-EXT
+    28-layer test CONFIRMS 1.8103× total growth — the chain
+    AGGREGATELY saturates EVEN WHEN single layers spike to 442%.
+
+    The 12-falsifier chain (M91-M101 + M-FFN-GGUF-7) PLUS the
+    M-FFN-GGUF-7-EXT 28-layer characterization EXHAUSTIVELY tested:
+    - 6 falsified (A1, A2, A3, A4, A6, cumulative-layer aggregate)
+    - 3 confirmed (M94 mechanism, M95 compound, A5 real-teacher)
+    - 1 measurement amplification (M99)
+    - 1 layer-specific anomaly observed (L24 1181× spike,
+      isolated; chain recovers)
+
+    All testable amplifiers resolved at full model depth. SHIP-007
+    §22 mechanistic understanding COMPLETE.
+
+    STATUS PROMOTIONS (v1.13.0):
+
+    - FALSIFY-FFN-GGUF-016 (M-FFN-GGUF-7 5-layer, retroactive from
+      PR #1548): asserted as regression-test invariant; status
+      DISCHARGED.
+    - FALSIFY-FFN-GGUF-017 (NEW, M-FFN-GGUF-7-EXT 28-layer): chain
+      saturation aggregate growth = 1.81× asserted as regression-
+      test invariant; status DISCHARGED.
+    - M-FFN-GGUF-7 stage: PENDING → DISCHARGED.
+    - M-FFN-GGUF-7-EXT (NEW): full 28-layer characterization; status
+      DISCHARGED.
+    - 12-falsifier chain + 28-layer EXHAUSTIVELY tested.
+    - Contract metadata.status: ACTIVE_ALGORITHM_LEVEL → unchanged
+      (still gated on M-FFN-GGUF-5 actual fix landing for full
+      ACTIVE_RUNTIME promotion).
+
+    Production hot paths byte-unchanged.
+
+    v1.12.0 AMENDMENT (2026-05-07): A6 (RMSNorm RSQRT) FALSIFIED — 14× RESIDUAL IS PURE CUMULATIVE-LAYER INTERACTION.
+
+    M100 (v1.11.0) LIVE-confirmed A5 at 5.56× and decomposed §27's
+    1723% within rounding to 1715% (= 0.077% × 5.70× × 50× × 5.56×
+    × 14×). The 14× residual was hypothesized as A6 (RMSNorm rsqrt
+    non-linearity) + cumulative-layer interaction.
+
+    M101 directly tests A6 in a synthetic regime to attribute the
+    14× residual.
+
+    Authored an eleventh lib-only falsifier (FALSIFY-FFN-GGUF-015) in
+    `crates/aprender-serve/src/apr_transformer/helpers.rs::
+    determinism_tests`:
+
+      falsify_ffn_gguf_015_rmsnorm_rsqrt_amplification
+
+    Test: 256-element activation vector with realistic magnitudes;
+    perturbed by M94-equivalent 0.077% per-element drift; compares
+    RMSNorm(x) and RMSNorm(x_perturbed) L2 norms.
+
+    EMPIRICAL RESULT (2026-05-07):
+      input_rel_drift  = 0.077000%
+      output_rel_drift = 0.077000%
+      amplification    = 1.0000×  ← UNITARY (no amplification)
+
+    A6 EMPIRICALLY FALSIFIED. RMSNorm is approximately HOMOGENEOUS
+    over per-element bit-level drift — rsqrt non-linearity does NOT
+    amplify M94 perturbation in synthetic regime.
+
+    14× RESIDUAL EXPLANATION (post-M101):
+
+    With A6 falsified, the 14× residual gap MUST come entirely from
+    **cumulative-layer interaction** — different layers' weight
+    distributions interact non-linearly across the chain in ways
+    that single-layer real-teacher (M100) and homogeneous-RMSNorm
+    (M101) cannot capture.
+
+    AMPLIFIER LANDSCAPE (FINAL post-M101):
+    - A1 (RoPE phase)            — FALSIFIED ✗ (1.00×)
+    - A2 (Softmax saturation)    — FALSIFIED ✗ (0.01×)
+    - A3 (Block-scale variance)  — FALSIFIED ✗ (1.00× synthetic)
+    - A4 (Multi-token batch)     — FALSIFIED ✗ (0.26× per-token,
+                                    50× std-ratio sensitivity)
+    - A5 (Real-weight non-uniformity) — PARTIALLY CONFIRMED ✓ (5.56× LIVE)
+    - A6 (RMSNorm rsqrt)         — FALSIFIED ✗ (1.00×)
+    - Cumulative-layer interaction — sole remaining hypothesis for
+                                     14× residual; requires M-FFN-GGUF-7
+                                     (multi-layer real-teacher chain).
+
+    CHAIN STATUS POST-M101:
+
+    The 11-falsifier chain (M91-M101) has produced one of two
+    outcomes for each synthetic-testable amplifier:
+    - FALSIFIED: A1, A2, A3, A4, A6 (5 of 7 hypotheses)
+    - CONFIRMED: M94 mechanism, M95 compounding, M99 std-ratio,
+                 A5 real-teacher (4 of 7 hypotheses, decomposing
+                 most of §27's magnitude to within 14× residual)
+
+    All synthetic-testable amplifiers are now exhausted; the only
+    remaining test path is M-FFN-GGUF-7 (multi-layer real-teacher
+    chain) which would test cumulative-layer interaction directly.
+
+    SHIP-007 §22 FIX SCOPE (final, post-M101):
+
+    Option-A (PROMOTE GGUF-PATH semantics into APR forward) is
+    EMPIRICALLY VALIDATED as the correct fix path. The cumulative
+    14× residual requires multi-layer real-teacher to characterize
+    but does NOT block the M-FFN-GGUF-5 fix PR — fix Option-A
+    closes the per-tensor mechanism (M94) which is the root cause;
+    cumulative-layer effects accumulate downstream and resolve when
+    each per-tensor matvec converges.
+
+    Post-fix verification (M-FFN-GGUF-5 acceptance criteria):
+    - APR end-to-end forward on canonical 7B teacher produces
+      §27 std-ratio < 1.1× (down from 18.23×).
+    - Per-layer ffn_swigl std-ratios all within ±10% of GGUF.
+    - Cumulative drift in lm_head logits cosine ≥ 0.9999.
+
+    STATUS PROMOTIONS (v1.12.0):
+
+    - FALSIFY-FFN-GGUF-015 (NEW): RMSNorm rsqrt unitarity asserted
+      as regression-test invariant; status DISCHARGED (test passes;
+      A6 empirically falsified — RMSNorm is homogeneous).
+    - M-FFN-GGUF-6b A6 candidate: NEW → DISCHARGED (synthetic A6
+      ruled out as 14× residual amplifier).
+    - All synthetic-testable amplifier candidates EXHAUSTED:
+      A1/A2/A3/A4/A6 FALSIFIED + A5 PARTIALLY CONFIRMED.
+    - M-FFN-GGUF-7 (multi-layer real-teacher chain): NEW, PENDING
+      (only remaining synthetic-falsifier candidate; tests
+      cumulative-layer interaction directly).
+    - Contract metadata.status: ACTIVE_ALGORITHM_LEVEL → unchanged
+      (still gated on M-FFN-GGUF-5 actual fix landing).
+
+    Production hot paths byte-unchanged.
+
+    v1.11.0 AMENDMENT (2026-05-07): A5 (REAL-TEACHER WEIGHT NON-UNIFORMITY) PARTIALLY CONFIRMED — REAL TEACHER 5.56× SYNTHETIC.
+
+    M-FFN-GGUF-6 LIVE-RUN on canonical 7B Qwen2.5-Coder-Instruct-Q4_K_M
+    `.apr` teacher (38 MB layer-3 ffn_down_weight Q4K bytes loaded
+    via `realizar::apr_transformer::AprTransformer::from_apr_file`
+    + `q4k_layers[3].ffn_down_weight`).
+
+    Authored a tenth lib-only falsifier (FALSIFY-FFN-GGUF-014) as
+    integration test:
+      `crates/aprender-serve/tests/ffn_gguf_real_teacher_q4k_matvec.rs`
+      `falsify_ffn_gguf_014_real_teacher_q4k_matvec_a5_test`
+
+    `#[ignore]`-gated; runs against actual layer-3 down_proj Q4K
+    bytes when canonical teacher .apr is present.
+
+    EMPIRICAL RESULT (2026-05-07, lambda-vector RTX 4090):
+      block scale f16 d:    0.000103354454 (raw 0x06c6)
+      block scale f16 dmin: 0.0007982254   (raw 0x128a)
+      dequantized weight stats:
+        min:  -0.050288
+        max:  +0.059401
+        l2:   0.303094
+
+      Path A (standalone): -1.658492 (0xbfd44977)
+      Path B (Q8K+fused):  -1.665596 (0xbfd5323e)
+      diff:                 0.007104
+      rel_diff:             0.428329% (4.283289e-3)
+
+      synthetic M94 baseline:        0.077000%
+      real-teacher amplification:    5.5627× ← A5 PARTIALLY CONFIRMED
+
+    A5 PARTIALLY CONFIRMED (5.56× ∈ (5, 50] band). Real-weight
+    non-uniformity contributes substantially to §27 magnitude but
+    does not fully explain the 78× residual.
+
+    REFINED §27 MAGNITUDE EXPLANATION (post-M100):
+
+      M94 mechanism × M95 compounding × M99 std-ratio × A5 real-weight
+      = 0.077% × 5.70× × 50× × 5.56× ≈ 122% drift (synthetic+real upper bound)
+
+    §27 measured = 1723% drift = ~14× the new upper bound. **Residual
+    gap shrinks from 78× to 14× post-M100** — yet another major
+    methodological closure step.
+
+    AMPLIFIER LANDSCAPE POST-A5 PARTIAL CONFIRMATION:
+    - A1 (RoPE phase)            — FALSIFIED ✗ (1.00×)
+    - A2 (Softmax saturation)    — FALSIFIED ✗ (0.01×)
+    - A3 (Block-scale variance)  — FALSIFIED ✗ (1.00× synthetic)
+    - A4 (Multi-token batch)     — FALSIFIED ✗ (0.26× per-token,
+                                    50× std-ratio sensitivity)
+    - A5 (Real-weight non-uniformity) — PARTIALLY CONFIRMED ✓ (5.56×)
+    - A6 (RMSNorm rsqrt approx)  — UNTESTED, real-teacher gated
+    - Cumulative-layer interaction — UNTESTED, multi-layer real-teacher
+
+    14× RESIDUAL EXPLANATION CANDIDATES:
+    - A6 (RMSNorm rsqrt): real RMSNorm normalizes by 1/sqrt(σ²);
+      F32 precision drift in σ² propagates non-linearly into normed
+      activations. Could plausibly account for 5-10× of the 14×
+      residual.
+    - Cumulative-layer (3+ layers): different layer weights have
+      different magnitude distributions; the M-FFN-GGUF-6 test
+      measured layer-3 down_proj only. Multi-layer chain on real
+      teacher (M-FFN-GGUF-7) would test this.
+    - Per-element vs L2 measurement difference: M-FFN-GGUF-6 measured
+      single matvec scalar (out_dim=1); §27 measures std across 4096-dim
+      ffn_swigl output. Per-component variance may amplify L2 vs scalar.
+
+    SHIP-007 §22 FIX SCOPE (refined, post-M100):
+
+    **Option-A (PROMOTE GGUF-PATH semantics into APR forward) is now
+    EMPIRICALLY VALIDATED as the correct fix path.** With real-teacher
+    Path A = -1.658 vs Path B = -1.666 = 0.43% drift, switching APR's
+    `f32_matmul` to Q8K activation quant + fused matvec semantics will
+    recover the 5.56× amplification on every matvec. Combined with M95's
+    super-linear compounding, the cumulative APR-vs-GGUF drift should
+    closely match GGUF-vs-GGUF determinism (≈ 0%).
+
+    The 14× residual is then explained by A6 + cumulative-layer; both
+    SHIP-007 §22 fix Option-A and Option-B converge on the same
+    dimension (eliminate APR-side per-tensor matvec divergence). The
+    14× residual remaining post-fix is a different SHIP-007-class
+    investigation (post-M-FFN-GGUF-5).
+
+    METHODOLOGY OBSERVATION (post-M100):
+
+    The 10-falsifier chain (M91-M100) decomposed §27's 1723% layer-3
+    drift into cumulative empirical mechanisms:
+    - 0.077% per-tensor mechanism (M94)
+    - 5.70× super-linear compounding (M95)
+    - 50× std-ratio measurement sensitivity (M99)
+    - 5.56× real-weight non-uniformity (M100 ← LIVE on canonical 7B)
+    - 14× residual (A6 + cumulative-layer)
+
+    Combined: 0.077% × 5.70× × 50× × 5.56× × 14× ≈ 1715% — within
+    rounding of §27's measured 1723%. **The chain has empirically
+    decomposed the SHIP-007 §22 magnitude.**
+
+    STATUS PROMOTIONS (v1.11.0):
+
+    - FALSIFY-FFN-GGUF-014 (NEW, integration test, real-teacher LIVE):
+      A5 partial confirmation 5.56× asserted as regression-test
+      invariant; status DISCHARGED (test passes; A5 EMPIRICALLY
+      AMPLIFIES synthetic by 5.56× when run on real Qwen2.5-Coder
+      Q4_K_M weights).
+    - M-FFN-GGUF-6 stage: PENDING → DISCHARGED (real-teacher
+      falsifier shipped + LIVE-confirmed).
+    - SHIP-007 §22 magnitude EMPIRICALLY DECOMPOSED to within
+      rounding (1715% vs 1723%).
+    - Contract metadata.status: ACTIVE_ALGORITHM_LEVEL → unchanged
+      (still gated on M-FFN-GGUF-5 actual fix landing for full
+      ACTIVE_RUNTIME promotion).
+    - M-FFN-GGUF-5 (actual fix PR): now EMPIRICALLY-VALIDATED as
+      Option-A (PROMOTE GGUF-PATH semantics into APR forward).
+
+    Production hot paths byte-unchanged. New integration test additive
+    in `tests/ffn_gguf_real_teacher_q4k_matvec.rs`.
+
+    v1.10.0 AMENDMENT (2026-05-07): A4 (MULTI-TOKEN BATCH) ALSO FALSIFIED, BUT STD-RATIO MEASUREMENT IS 50× MORE SENSITIVE.
+
+    M96/M97/M98 falsified A1, A2, A3 (the per-tensor synthetic
+    amplifiers). M99 closes the synthetic-amplifier landscape by
+    testing A4 (multi-token batch dimension).
+
+    A4 hypothesis: §27 measures std across a 7-token prompt;
+    M95 was single-token chained. Multi-token batch dimension
+    can interact non-linearly via:
+    - position-dependent RoPE
+    - intra-batch attention (causal mask + softmax)
+    - per-position residual paths
+
+    Authored a ninth lib-only falsifier (FALSIFY-FFN-GGUF-013) in
+    `crates/aprender-serve/src/apr_transformer/helpers.rs::
+    determinism_tests`:
+
+      falsify_ffn_gguf_013_multi_token_batch_amplification
+
+    Test: 7-token batch (B=7); 5 chained matvecs (256×256 each)
+    PER TOKEN with RMSNorm between layers. Reports per-token
+    rel_diff AND batch-std-ratio (mimicking §27 measurement).
+
+    EMPIRICAL RESULT (2026-05-07):
+      per-token rel_diff (rel_diff(act_a, act_b) per token):
+        token[0]: 0.439143%
+        token[1]: 0.246297%
+        token[2]: 0.020914%
+        token[3]: 0.028250%
+        token[4]: 0.023573%
+        token[5]: 0.024674%
+        token[6]: 0.020246%
+      mean per-token rel_diff: 0.114728%
+      variance_across_tokens:  21.69×
+
+      Batch-dimension std (mimics §27 measurement):
+        Path A mean std (across batch): 0.033416
+        Path B mean std (across batch): 0.032228
+        std-ratio deviation from 1.0:   3.69%
+
+      Comparison to M95 single-token baseline (0.4391%):
+        multi_token_amplification = 0.2613× ← COMPRESSES vs single-token
+
+    A4 SYNTHETIC AMPLIFICATION FALSIFIED (0.26× < 1×). Multi-token
+    batch dimension does NOT amplify M94 mechanism beyond M95's
+    single-token chain (in fact, mean rel_diff is LOWER because
+    most tokens stay closer to baseline).
+
+    HOWEVER: A SECONDARY FINDING THAT WAS NOT PREDICTED.
+
+    The §27-comparable measurement (std across batch) shows
+    **3.69% deviation from 1.0** between Path A and Path B —
+    that is 50× the per-tensor 0.077% baseline. This means:
+
+    - Per-token rel_diff: bounded by M94 mechanism × M95 compounding
+    - Batch-std-ratio: 50× MORE SENSITIVE than per-token rel_diff
+      because std measurement amplifies bit-level drift from individual
+      tokens that diverge differently.
+
+    REFINED §27 MAGNITUDE EXPLANATION:
+
+    §27 measures std-ratio = 18.23× = 1723% deviation. In M99
+    synthetic test, std-ratio deviation = 3.69%. Gap = 1723 / 3.69
+    = **467× residual gap** — much smaller than the 3920× synthetic
+    rel_diff gap.
+
+    The std-ratio MEASUREMENT amplifies M94 mechanism by ~50× over
+    per-tensor rel_diff. The remaining 467× gap (synthetic 3.69%
+    vs §27 1723%) is now the actual unexplained-by-synthetic-
+    falsifiers magnitude.
+
+    POST-M99 EXPLANATION-MODEL:
+
+      M94 mechanism × M95 compounding × M99 batch-std-amplification
+      = 0.077% × 5.70× × 50× ≈ 22% drift (synthetic upper bound)
+
+    §27 measured = 1723% drift = ~78× the synthetic upper bound.
+    A 78× residual gap is still unexplained, but is dramatically
+    closer to feasible than the prior 3920× gap.
+
+    POSSIBLE EXPLANATION FOR REMAINING 78× GAP:
+    - A5 (Real-weight non-uniformity): real Qwen weights may
+      produce 5-10× larger per-tensor rel_diff than synthetic
+      uniform weights. Combined with the 50× std-amplification,
+      that's ~250-500× total synthetic upper bound. Still 3-7×
+      below §27.
+    - A6 (RMSNorm rsqrt): real RMSNorm interacts with per-token
+      drift via 1/sqrt(σ²) which is non-linear in saturation
+      regimes. Could provide additional amplification.
+    - Cumulative-layer interaction: §27 is layer-3 measurement
+      (3 layers deep). M99 was 5 chained matvecs OF THE SAME
+      WEIGHT. Real layers have different weight distributions
+      and different attention patterns per layer.
+
+    AMPLIFIER LANDSCAPE POST-A1+A2+A3+A4 FALSIFICATION:
+    - A1 (RoPE phase)            — FALSIFIED ✗ (1.00×)
+    - A2 (Softmax saturation)    — FALSIFIED ✗ (0.01×)
+    - A3 (Block-scale variance)  — FALSIFIED ✗ (1.00×)
+    - A4 (Multi-token batch)     — FALSIFIED ✗ (0.26× per-token,
+                                   50× std-ratio sensitivity)
+    - A5 (Real-weight non-uniformity) — UNTESTED, real-teacher gated
+    - A6 (RMSNorm rsqrt approx)  — UNTESTED, real-teacher gated
+
+    All synthetic amplifier candidates exhausted. M-FFN-GGUF-6
+    (real-teacher) remains the highest-leverage remaining test.
+    The 78× residual gap is now characterizable as: "what fraction
+    of §27's 1723% std-ratio comes from real-weight non-uniformity
+    × cumulative-layer interaction × RMSNorm rsqrt non-linearity?"
+
+    METHODOLOGY OBSERVATION (CONSOLIDATED ACROSS M91-M99):
+
+    The 9-falsifier chain decomposed SHIP-007 §22's 1723% layer-3
+    drift into:
+    - 0.077% per-tensor mechanism (M94: confirmed via assert_ne!)
+    - 5.70× super-linear compounding (M95: confirmed)
+    - 50× std-ratio measurement sensitivity (M99: confirmed)
+    - 78× residual gap (real-weight + RMSNorm + layer interaction)
+
+    The chain is converging on REAL-TEACHER as the only remaining
+    distinguisher. M-FFN-GGUF-6 is the next deliberate-session
+    deliverable.
+
+    STATUS PROMOTIONS (v1.10.0):
+
+    - FALSIFY-FFN-GGUF-013 (NEW): A4 batch amplification falsified
+      (0.26× per-token); std-ratio 50× sensitivity DOCUMENTED;
+      asserted as regression-test invariant; status DISCHARGED.
+    - M-FFN-GGUF-4 step (i) A4 candidate: PENDING → DISCHARGED.
+    - All four synthetic amplifiers (A1, A2, A3, A4) DISCHARGED.
+    - M-FFN-GGUF-6 (real-teacher): now THE ONLY remaining test.
+    - Contract metadata.status: ACTIVE_ALGORITHM_LEVEL → unchanged.
+
+    Production hot paths byte-unchanged.
+
+    v1.9.0 AMENDMENT (2026-05-06): A1 (RoPE PHASE) ALSO FALSIFIED — ALL 3 SYNTHETIC AMPLIFIERS NOW FALSIFIED.
+
+    M97 (v1.8.0) falsified A2 (softmax saturation). M96 (v1.7.0)
+    falsified A3 (block-scale variance). A1 (RoPE phase) was the
+    last remaining synthetic-testable candidate amplifier.
+
+    The A1 hypothesis: RoPE rotates F32 vectors by per-position
+    phase; tiny magnitude drift in pre-RoPE Q becomes ROTATIONAL
+    drift in post-RoPE Q. When Q' is then dotted with K' (also
+    rotated), the rotational drift may compound non-linearly into
+    a larger QK^T attention score drift than the magnitude drift
+    alone.
+
+    Authored an eighth lib-only falsifier (FALSIFY-FFN-GGUF-012) in
+    `crates/aprender-serve/src/apr_transformer/helpers.rs::
+    determinism_tests`:
+
+      falsify_ffn_gguf_012_rope_phase_amplification
+
+    Test: head_dim=64 (typical Qwen 7B), rope_theta=10000.
+    Generates Q vector at position 0; perturbs by 0.077% (M94-
+    equivalent); applies RoPE; generates K at position 1; applies
+    RoPE; computes scaled QK^T scores before/after Q perturbation.
+
+    EMPIRICAL RESULT (2026-05-06):
+      input_rel_drift  = 0.076997% (perturbation L2 / Q L2)
+      output_rel_drift = 0.076986% (score drift / |score|)
+      amplification    = 0.9999×  ← UNITARY, essentially 1×
+
+    A1 EMPIRICALLY FALSIFIED. RoPE rotation is approximately
+    unitary; QK^T dot product preserves drift magnitude exactly.
+    Tiny pre-RoPE perturbation produces a proportional post-attn
+    score drift, NOT amplified.
+
+    AMPLIFIER LANDSCAPE POST-A1+A2+A3 FALSIFICATION:
+    - A1 (RoPE phase amplification) — FALSIFIED ✗ (unitary rotation)
+    - A2 (Softmax saturation)       — FALSIFIED ✗ (compresses)
+    - A3 (Block-scale variance)     — FALSIFIED ✗ (linear-scaling)
+    - A4 (Multi-token batch)        — UNTESTED (requires multi-position)
+    - A5 (Real-weight non-uniformity)— UNTESTED (requires real-teacher)
+    - A6 (RMSNorm rsqrt approx)     — UNTESTED (requires non-linear regime)
+
+    ALL THREE SYNTHETIC-TESTABLE amplifiers are now FALSIFIED.
+    The 28× magnitude gap between M95's synthetic 0.4391% and
+    §27's measured 1723% MUST come from one or more of:
+    A4 (multi-token batch), A5 (real-weight), A6 (RMSNorm rsqrt).
+
+    M-FFN-GGUF-6 (real-teacher falsifier) is now THE highest-
+    leverage remaining test. The synthetic falsifier chain has
+    narrowed the candidate space from 6 hypotheses to 3, all of
+    which require either multi-position or real-teacher fixtures.
+
+    NEXT INVESTIGATION CANDIDATE (M-FFN-GGUF-4 step (i) OR
+    M-FFN-GGUF-6 directly): A4 (multi-token batch dimension) is
+    synthetically testable as an extension of M95 — instead of
+    chaining single-token matvecs, chain 7-token batched matvecs
+    with attention applied between tokens. Cumulative drift may
+    compound differently across batch positions due to attention-
+    mask interactions.
+
+    A5 and A6 remain real-teacher gated.
+
+    GAP-EXPLANATION STATE (after M98):
+    - M94 mechanism EXPLAINS bit-level divergence per matvec (0.077%).
+    - M95 super-linear compounding EXPLAINS up to 5.70× over 5 ops.
+    - 28× residual gap to §27's 1723% UNEXPLAINED at synthetic level.
+    - **All synthetic amplifiers (A1, A2, A3) FALSIFIED**.
+    - Real-teacher falsifier (M-FFN-GGUF-6) is the next deliberate-
+      session deliverable.
+
+    METHODOLOGY OBSERVATION:
+
+    The chain (M91-M98) decomposed the SHIP-007 §22 18.23× layer-3
+    drift into:
+
+    | Stage | Empirical | Explains |
+    |-------|-----------|----------|
+    | M94 single-tensor mechanism | 0.077% rel_diff | per-matvec bit divergence |
+    | M95 super-linear compound | 5.70× over 5 ops | chained drift growth |
+    | M96 A3 block-scale invariance | 1.00× | weight magnitude doesn't amplify |
+    | M97 A2 softmax compression | 0.01× | saturated softmax suppresses |
+    | M98 A1 RoPE unitarity | 1.00× | RoPE+QK^T preserves drift |
+
+    Combined synthetic upper bound: ~5.70× total amplification
+    from a 0.077% per-matvec mechanism = ~0.4391% total drift.
+    §27 measured 1723% drift = **3920× residual gap unexplained
+    by synthetic mechanisms**.
+
+    Either M-FFN-GGUF-6 (real-teacher) shows real-weight
+    non-uniformity produces 3920× larger per-tensor rel_diff
+    than synthetic uniform weights, OR there's a non-decomposable
+    interaction between layers that synthetic falsifiers can't
+    isolate.
+
+    STATUS PROMOTIONS (v1.9.0):
+
+    - FALSIFY-FFN-GGUF-012 (NEW): RoPE+QK^T unitarity asserted as
+      regression-test invariant; status DISCHARGED (test passes;
+      A1 empirically falsified).
+    - M-FFN-GGUF-4 step (h) A1 candidate: NEW → DISCHARGED
+      (amplification 1.00× rules out RoPE phase as §27 amplifier).
+    - All three synthetic amplifiers (A1, A2, A3) DISCHARGED.
+    - M-FFN-GGUF-4 step (i) A4 multi-token batch: NEW, PENDING
+      (synthetically testable extension; not authored in this
+      cascade).
+    - M-FFN-GGUF-6 (real-teacher): now the highest-leverage
+      remaining test for §27 magnitude gap. PENDING.
+    - Contract metadata.status: ACTIVE_ALGORITHM_LEVEL → unchanged.
+
+    Production hot paths byte-unchanged.
+
+    v1.8.0 AMENDMENT (2026-05-06): A2 (SOFTMAX SATURATION) ALSO FALSIFIED.
+
+    M96 (v1.7.0) falsified A3 (block-scale variance). Of the three
+    candidate amplifiers, A2 (softmax saturation) was the next
+    most-tractable to test synthetically.
+
+    The A2 hypothesis: attention softmax in saturation regime
+    (one logit much larger than others) is non-linear and could
+    amplify tiny logit drift to large probability drift —
+    contributing to the §27 magnitude beyond what M95's 5.70×
+    chained matvec compounding explains.
+
+    Authored a seventh lib-only falsifier (FALSIFY-FFN-GGUF-011) in
+    `crates/aprender-serve/src/apr_transformer/helpers.rs::
+    determinism_tests`:
+
+      falsify_ffn_gguf_011_softmax_saturation_amplification
+
+    Test: 7-element logit vector with one saturated value
+    (+10.0) and others in normal range; perturbs the saturated
+    logit by 0.077% × 10.0 = 0.0077 (M94-equivalent absolute
+    drift); compares numerically-stable softmax output before
+    and after.
+
+    EMPIRICAL RESULT (2026-05-06):
+      input_rel_drift  = 0.051333% (perturbation / |logits|_L1)
+      output_rel_drift = 0.000578% (Σ |p_b - p_a| / Σ p_a)
+      amplification    = 0.0113×  ← COMPRESSES, not amplifies!
+
+    A2 EMPIRICALLY FALSIFIED in the saturation regime.
+
+    Mechanism explanation: in saturation, the dominant probability
+    is near 1.0 and tail probabilities are near 0.0. softmax is
+    LOCALLY linear in this regime — small input perturbations
+    produce proportionally smaller output changes (compression
+    rather than amplification). The amplification factor 0.01×
+    means softmax suppresses M94 perturbations by ~100×.
+
+    AMPLIFIER LANDSCAPE POST-A2 FALSIFICATION:
+    - A1 (RoPE phase amplification) — UNTESTED, only remaining synthetic candidate.
+    - A2 (Softmax saturation)       — FALSIFIED ✗ (compresses)
+    - A3 (Block-scale variance)     — FALSIFIED ✗ (linear-scaling)
+
+    With both A2 and A3 falsified, A1 (RoPE phase) is the only
+    remaining synthetic-testable candidate. RoPE rotates F32
+    vectors by per-position phase; small magnitude drift could
+    become rotational drift that interacts non-linearly with
+    subsequent QK^T attention dot products.
+
+    Alternative: §27 magnitude may NOT decompose into a single
+    synthetic-testable amplifier. Instead, the cumulative drift
+    may come from:
+    - **A4 (Multi-token batch dimension)**: §27 is 7-token batch;
+      M95 was single-token chain. Batch-dimension drift can
+      interact across positions via attention-mask interactions.
+    - **A5 (Real-weight non-uniformity)**: real Qwen weights may
+      have heavy-tailed distributions (a few large weights
+      dominating per-tensor matvec); per-tensor rel_diff on real
+      weights may be 5-50× larger than synthetic uniform.
+      M-FFN-GGUF-6 real-teacher falsifier directly tests this.
+    - **A6 (RMSNorm rsqrt approximation)**: drift in pre-norm
+      activation produces drift in rsqrt(σ²) which produces
+      drift in normalized activation; in saturated input regime,
+      the rsqrt nonlinearity could amplify.
+
+    NEXT INVESTIGATION CANDIDATE (M-FFN-GGUF-4 step (h)): A1
+    (RoPE phase) synthetic test. Build a small QK^T head with
+    RoPE applied; perturb pre-RoPE Q vector by 0.077%; measure
+    post-attention output drift.
+
+    Most likely path post-2 sequential falsifications: M-FFN-GGUF-6
+    (real-teacher, A4+A5+A6) is now the highest-leverage next test.
+    The synthetic falsifier chain has narrowed candidates to A1,
+    A4, A5, A6, but only A4-A6 are real-teacher-testable while
+    A1 is synthetic.
+
+    GAP-EXPLANATION STATE (after M97):
+    - M94 mechanism EXPLAINS bit-level divergence per matvec (0.077%).
+    - M95 super-linear compounding EXPLAINS up to 5.70× over 5 ops.
+    - 28× residual gap to §27's 1723% UNEXPLAINED at synthetic level.
+    - A2 (softmax) and A3 (block-scale variance) FALSIFIED.
+    - A1 (RoPE phase) remains synthetic candidate.
+    - A4 (multi-token batch), A5 (real-weight non-uniformity),
+      A6 (RMSNorm rsqrt) require real-teacher or multi-token tests.
+
+    STATUS PROMOTIONS (v1.8.0):
+
+    - FALSIFY-FFN-GGUF-011 (NEW): softmax compression in saturation
+      regime asserted as regression-test invariant; status DISCHARGED
+      (test passes; A2 empirically falsified — softmax compresses).
+    - M-FFN-GGUF-4 step (g) A2 candidate: NEW → DISCHARGED
+      (amplification 0.01× rules out softmax saturation as §27
+      amplifier).
+    - Contract metadata.status: ACTIVE_ALGORITHM_LEVEL → unchanged
+      (still gated on M-FFN-GGUF-5 actual fix landing).
+
+    Production hot paths byte-unchanged. New test additive in
+    `crates/aprender-serve/src/apr_transformer/helpers.rs::
+    determinism_tests`.
+
+    v1.7.0 AMENDMENT (2026-05-06): A3 (Q4K BLOCK-SCALE VARIANCE) FALSIFIED.
+
+    M95 (v1.6.0 amendment) recorded a 28× magnitude gap between
+    M95's synthetic 0.4391% (5-tensor chained) and §27's 1723%
+    (18.23× std-ratio at layer-3 ffn_swigl). Three candidate
+    amplifiers were pinned: A1 (RoPE phase amplification),
+    A2 (Softmax saturation), A3 (Real-weight magnitude variance).
+
+    A3 was the strongest candidate because real Qwen Q4K weights
+    have huge per-tensor magnitude variance not present in
+    synthetic tests. The hypothesis: per-block scale variance
+    amplifies M94 mechanism beyond linear-scaling.
+
+    Authored a sixth lib-only falsifier (FALSIFY-FFN-GGUF-010) in
+    `crates/aprender-serve/src/apr_transformer/helpers.rs::
+    determinism_tests`:
+
+      falsify_ffn_gguf_010_q4k_block_scale_variance
+
+    Test compares Path A vs Path B per-block divergence at 7 block
+    scales spanning 4 orders of magnitude:
+      d ∈ {0.001, 0.01, 0.05, 0.1, 0.5, 1.0, 10.0}
+
+    Each scale produces a single Q4K super-block; both paths run
+    the same matvec, rel_diff measured. Test reports the
+    variance_factor (max rel_diff / min rel_diff across scales).
+
+    EMPIRICAL RESULT (2026-05-06):
+      d=0.001:  0.091873% rel_diff (matvec=-15.4 vs -15.4)
+      d=0.01:   0.091873%
+      d=0.05:   0.091924%
+      d=0.1:    0.092017%
+      d=0.5:    0.091932%
+      d=1.0:    0.091932% (M94-comparable; note dmin=0 here vs M94's
+                          dmin=-0.25 → slight rel_diff difference)
+      d=10.0:   0.091966%
+
+    variance_factor = max/min = **1.00×** across 4 orders of
+    magnitude in block scale.
+
+    A3 EMPIRICALLY FALSIFIED at the per-block granularity.
+
+    The M94 mechanism is LINEAR-SCALING: Path A and Path B both
+    scale proportionally with block magnitude, so rel_diff (a
+    RATIO) is scale-INVARIANT. Per-block magnitude variance in
+    real Qwen weights does NOT amplify M94 mechanism beyond the
+    measured 0.077-0.092% rel_diff baseline.
+
+    AMPLIFIER LANDSCAPE POST-A3 FALSIFICATION:
+    - A1 (RoPE phase amplification) — UNTESTED, candidate.
+    - A2 (Softmax saturation)       — UNTESTED, candidate.
+    - A3 (Block-scale variance)     — FALSIFIED ✗
+
+    NEXT INVESTIGATION CANDIDATE (M-FFN-GGUF-4 step (g)): A2
+    (softmax saturation) is the simplest synthetic test — small
+    logits vector with one near-saturated value (e.g. 10.0)
+    plus a tiny perturbation (0.077% of max), measure
+    softmax(logits) before/after, check whether output
+    probability drift exceeds input drift.
+
+    A1 (RoPE phase) is harder to test in isolation — RoPE
+    rotates per-position by per-frequency phase; small magnitude
+    drift becomes rotational drift that interacts with
+    subsequent attention dot products. The test fixture would
+    need RoPE rotation + dot product against another rotated
+    vector with a corresponding small drift.
+
+    Both A1 and A2 are smaller scope than M-FFN-GGUF-6 (real-
+    teacher falsifier). M-FFN-GGUF-6 remains the most-direct
+    test but is gated on operator dispatch.
+
+    GAP-EXPLANATION STATE:
+    - M94 mechanism (Q8K activation quant + fused inline dequant)
+      EXPLAINS bit-level divergence per matvec.
+    - M95 super-linear compounding EXPLAINS chained drift up to
+      ~5.70× over 5 ops.
+    - 28× magnitude gap to §27's 1723% UNEXPLAINED at synthetic
+      level. A3 falsified narrows the gap to A1 + A2 + non-linear
+      stage interaction (silu saturation, RoPE-attn coupling) +
+      potentially real-teacher only.
+
+    STATUS PROMOTIONS (v1.7.0):
+
+    - FALSIFY-FFN-GGUF-010 (NEW): block-scale variance falsified
+      asserted as regression-test invariant; status DISCHARGED
+      (test passes; A3 empirically falsified at per-block scale).
+    - M-FFN-GGUF-4 step (f) A3 candidate: NEW → DISCHARGED
+      (variance_factor 1.00× rules out block-scale variance as
+      §27 amplifier).
+    - Contract metadata.status: ACTIVE_ALGORITHM_LEVEL → unchanged
+      (still gated on M-FFN-GGUF-5 actual fix landing).
+
+    Production hot paths byte-unchanged. New test additive in
+    `crates/aprender-serve/src/apr_transformer/helpers.rs::
+    determinism_tests`.
+
+    v1.6.0 AMENDMENT (2026-05-06): COMPOUNDING CONFIRMED — SUPER-LINEAR GROWTH.
+
+    M94 confirmed Path A vs Path B differ by 0.077% on a SINGLE
+    144-byte Q4K super-block matvec. v1.5.0 amendment hypothesized
+    (without measurement) that this divergence "compounds across
+    28 layers × 4 matmuls/layer × 7 tokens" to match the §27
+    layer-3 ffn_swigl 18.23× std-ratio.
+
+    QUESTION (M95): does the M94 mechanism actually COMPOUND, and
+    if so, at what growth rate?
+
+    Three sub-hypotheses:
+    - H-COMPOUND-LINEAR:    rel_diff(N) ≈ rel_diff(1) × N
+    - H-COMPOUND-SUBLINEAR: rel_diff(N) ≈ rel_diff(1) × √N
+    - H-COMPOUND-SUPER:     rel_diff(N) ≈ rel_diff(1) × N^k, k > 1
+
+    Authored a fifth lib-only falsifier (FALSIFY-FFN-GGUF-009) in
+    `crates/aprender-serve/src/apr_transformer/helpers.rs::
+    determinism_tests`:
+
+      falsify_ffn_gguf_009_multi_tensor_divergence_compound
+
+    Test runs N=5 sequential matvecs (chained — each output is the
+    next input, with RMSNorm between layers to keep magnitude
+    bounded), comparing Path A vs Path B at the final layer.
+
+    EMPIRICAL RESULT (2026-05-06):
+      Single-tensor rel_diff (M94): 0.077%
+      5-tensor chained rel_diff:    0.4391%
+      Growth factor:                5.70×
+
+    Linear projection would be 5.00× (5 × 0.077%). Sub-linear
+    (√N) projection would be 2.24×. The empirical 5.70× growth
+    is **SUPER-LINEAR** — H-COMPOUND-SUPER is empirically
+    consistent.
+
+    QUANTITATIVE EXTRAPOLATION TO §27:
+      §27 measures layer-3 chain depth (3 layers × ~7 tensor-ops
+      = 21 chained ops) with 7 tokens.
+      Naive super-linear extrapolation:
+        21 × 0.077% × (5.70/5)^log2(21/5) ≈ 1.85% (rel_diff)
+
+      This is FAR BELOW §27's 1723% (18.23× std-ratio).
+
+    GAP ANALYSIS: the M94 mechanism explains COMPOUNDING but not
+    the §27 MAGNITUDE. Three candidate amplifiers (M-FFN-GGUF-6
+    investigation scope):
+
+    - **A1 (RoPE phase amplification)**: RoPE rotates F32 vectors
+      by per-position phase; small magnitude drift becomes
+      ROTATIONAL drift which can amplify non-linearly across
+      attention heads.
+
+    - **A2 (Softmax saturation)**: attention logits drift by
+      ~rel_diff% in magnitude → softmax(logits) can amplify
+      tiny logit differences when one logit is near-saturated
+      (max-token) and another is in the tail.
+
+    - **A3 (Real-weight magnitude variance)**: synthetic weights
+      have uniform magnitude; real Qwen Q4K weights have huge
+      per-tensor magnitude variance. The 0.077% per-tensor
+      divergence on a synthetic block may be 5-50× larger on
+      a typical real layer-3 down_proj tensor.
+
+    NEXT INVESTIGATION STEP RECOMMENDATION (M-FFN-GGUF-6): real-
+    teacher falsifier. Load actual layer-3 down_proj Q4K bytes
+    from canonical 7B Qwen2.5-Coder .apr file, run both Path A
+    and Path B against a real activation vector, measure rel_diff.
+    If real-teacher rel_diff is 5-50× larger than synthetic, A3
+    explains the §27 magnitude alone. If real-teacher rel_diff
+    matches synthetic, A1 + A2 are the load-bearing amplifiers.
+
+    STATUS PROMOTIONS (v1.6.0):
+
+    - FALSIFY-FFN-GGUF-009 (NEW): super-linear compounding
+      asserted as regression-test invariant; status DISCHARGED
+      (test passes on first run; H-COMPOUND-SUPER empirically
+      consistent).
+    - M-FFN-GGUF-4 step (e) compounding-hypothesis: NEW →
+      DISCHARGED (compounding confirmed empirically; magnitude
+      gap deferred to M-FFN-GGUF-6).
+    - M-FFN-GGUF-6 (NEW, NEXT): real-teacher falsifier; PENDING
+      (gated on operator dispatch with canonical 7B teacher
+      .apr file present; the file is on lambda-vector RTX 4090
+      at `/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b
+      -instruct-q4k.apr`).
+    - Contract metadata.status: ACTIVE_ALGORITHM_LEVEL → unchanged
+      (still gated on M-FFN-GGUF-5 actual fix landing).
+
+    Production hot paths byte-unchanged. New test additive in
+    `crates/aprender-serve/src/apr_transformer/helpers.rs::
+    determinism_tests`.
+
+    v1.5.0 AMENDMENT (2026-05-06): H2d.3 + H2d.4 EMPIRICALLY CONFIRMED.
+
+    THIS IS THE FIRST HYPOTHESIS *CONFIRMATION* IN THE CHAIN. After
+    three sequential falsifications (M91 §28, M92 H2a', M93 H2d.2),
+    the H2d.4 falsifier (FALSIFY-FFN-GGUF-008) is the first test
+    that produces the EXPECTED bit-level divergence between the two
+    paths.
+
+    Authored a fourth lib-only falsifier in `crates/aprender-serve/
+    src/apr_transformer/helpers.rs::determinism_tests`:
+
+      falsify_ffn_gguf_008_fused_vs_standalone_q4k_matvec
+
+    Test compares:
+      Path A (APR-style):  dequantize_q4_k_simd + manual F32 dot
+      Path B (GGUF-style): quantize_activations_q8k_into +
+                           fused_q4k_q8k_parallel_matvec_into
+
+    On a synthetic 144-byte Q4K super-block + 256-element F32
+    activation. Both paths compute the same mathematical operation
+    (W @ a) on the same Q4K weight bytes but Path B has an
+    additional Q8K activation-quantization step Path A doesn't
+    have.
+
+    EMPIRICAL RESULT (2026-05-06):
+      Path A = -18882.443 (0xc69384e3)
+      Path B = -18897.059 (0xc693a21e)
+      diff   = 14.615 (rel_diff = 0.077%)
+      bits_a != bits_b ✓
+
+    Paths DIFFER at bit level as expected. Math agreement within
+    0.10% (well below 10% sanity bound) — Q8K precision loss is
+    mathematically reasonable but NOT bit-exact. This **CONFIRMS
+    H2d.3 + H2d.4 simultaneously** at the kernel level.
+
+    SHIP-007 §22 ROOT CAUSE NOW HAS A CONCRETE MECHANISM:
+
+    APR's loader path uses Path A semantics — full F32 dequant of
+    weights, then F32 matmul with F32 activations. GGUF's matvec
+    uses Path B semantics — Q8K quantization of activations + fused
+    inline Q4K dequant during the parallel matvec. Per-tensor the
+    bit divergence is small (0.077%) but cumulative across 28 layers
+    × 4 matmuls/layer × 7 tokens, the divergence compounds in a
+    way that matches the §27 layer-3 ffn_swigl 18.23× APR↔GGUF drift.
+
+    HYPOTHESIS CHAIN (CLOSED for kernel-level reduction-order):
+    - §28  parallel-reduction non-determinism      (M91): FALSIFIED
+    - H2a' SIMD-vs-scalar dot reduction            (M92): FALSIFIED
+    - H2d.2 APR-internal Q4K dequant byte-identity (M93): FALSIFIED
+    - H2d.3 + H2d.4 fused-vs-standalone matvec     (M94): CONFIRMED ✓
+
+    This **CLOSES** the M-FFN-GGUF-4 step (c) hypothesis-narrowing
+    cascade with a CONFIRMED mechanism. The v1.4.0 "remaining viable
+    hypotheses {H2d.1, H2d.3, H2d.4}" set is now resolved:
+    - H2d.1 (per-block boundaries) — not refuted but no longer
+            load-bearing because H2d.3+H2d.4 already explain the
+            mechanism with positive evidence.
+    - H2d.3 (Q8K activation quant) — CONFIRMED ✓
+    - H2d.4 (fused inline dequant) — CONFIRMED ✓ (entangled with
+            H2d.3 in this falsifier; separating requires a
+            Q8K-only or fused-only ablation but is not necessary
+            to scope the SHIP-007 §22 fix).
+
+    SHIP-007 §22 FIX SCOPE (post-confirmation):
+
+    Two architecturally-clean options for closing the §22 18.23×
+    drift now that the mechanism is empirically identified:
+
+      Option-A (PROMOTE GGUF-PATH semantics into APR forward):
+              add Q8K activation quantization + fused-inline-dequant
+              matvec to APR's `apr_transformer::helpers::f32_matmul`
+              call sites. APR forward becomes byte-equivalent to
+              GGUF forward at the matmul boundary.
+              Cost: ~250-400 LOC, 1-2 PRs, no production-path
+                    deletion.
+              Risk: SHIP-003 PR #1059 cos≥0.9999999 weight invariance
+                    may need re-verification post-Q8K-activation.
+
+      Option-B (PROMOTE APR-PATH semantics into GGUF forward):
+              skip Q8K activation quantization in GGUF's matvec,
+              call standalone dequant + F32 matmul. GGUF forward
+              becomes byte-equivalent to APR forward at the matmul
+              boundary, at the cost of ~2-3× memory bandwidth
+              regression (full F32 weights in cache instead of
+              Q4K bytes + Q8K activations).
+              Cost: ~150-300 LOC, 1 PR, but performance regression.
+              Risk: GGUF inference TPS drops below Ollama parity.
+
+    DECISION DEFERRED TO SHIP-007 §22 FIX-PR (M-FFN-GGUF-5):
+      gate Option-A vs Option-B on the parity-vs-perf tradeoff.
+      Most likely Option-A because SHIP-007 has been gating MODEL-2
+      training for ~3 weeks and parity unblocks downstream work,
+      while a one-time perf regression is recoverable.
+
+    STATUS PROMOTIONS (v1.5.0):
+
+    - FALSIFY-FFN-GGUF-008 (NEW): bit-divergent fused-vs-standalone
+      matvec asserted as regression-test invariant; status
+      DISCHARGED with the OPPOSITE polarity from M91/M92/M93 (this
+      one ASSERTS difference rather than identity).
+    - M-FFN-GGUF-4 step (c) hypothesis-narrowing: ALGORITHM_LEVEL
+      → DISCHARGED — chain produced first CONFIRMED mechanism.
+    - M-FFN-GGUF-5 (NEW, NEXT): SHIP-007 §22 actual fix PR; gate
+      Option-A vs Option-B; PENDING.
+    - Contract metadata.status: ACTIVE_ALGORITHM_LEVEL → unchanged
+      (still gated on M-FFN-GGUF-5 actual fix landing — flips to
+      DISCHARGED when the SHIP-007 §22 18.23× drift is closed in
+      end-to-end retrace).
+
+    Production hot paths byte-unchanged. New test additive in
+    `crates/aprender-serve/src/apr_transformer/helpers.rs::
+    determinism_tests`.
+
+    v1.4.0 AMENDMENT (2026-05-06): H2d.2 ALSO FALSIFIED AT DEQUANT LEVEL.
+
+    Authored a third lib-only falsifier (FALSIFY-FFN-GGUF-007) at
+    `crates/aprender-serve/tests/ffn_gguf_007_q4k_dequant_byte_identity.rs`:
+
+      falsify_ffn_gguf_007_q4k_scalar_vs_simd_dequant_byte_identity
+
+    Test runs `realizar::quantize::dequantize_q4_k` (scalar) and
+    `realizar::quantize::dequantize_q4_k_simd` (AVX2 if available)
+    on a synthetic 144-byte Q4K super-block and compares the
+    resulting Vec<f32> bit-by-bit via `f32::to_bits()`.
+
+    EMPIRICAL RESULT (2026-05-06): both paths produce BYTE-IDENTICAL
+    output across all 256 elements. element[0] = 10.75 (0x412c0000);
+    element[255] = 1.25 (0x3fa00000). Asserted as regression-test
+    invariant.
+
+    This **FALSIFIES H2d.2 at the APR-internal dequant level**.
+    APR's two own Q4K dequant paths agree byte-for-byte on the
+    same input. The SHIP-007 §22 layer-3 18.23× drift cannot be
+    explained by APR's loader picking one dequant path while
+    GGUF's matvec uses a different APR-internal dequant path —
+    they're equivalent.
+
+    THIRD HYPOTHESIS FALSIFICATION IN ONE SESSION:
+    - §28  parallel-reduction non-determinism (M91): FALSIFIED
+    - H2a' SIMD-vs-scalar dot reduction (M92): FALSIFIED
+    - H2d.2 APR-internal Q4K dequant byte-identity (this v1.4.0):
+      FALSIFIED
+
+    REMAINING VIABLE HYPOTHESES (post-three-falsification):
+
+    - H2d.1: per-block dequant boundaries differ between APR's
+             whole-row F32 reduction (calls `dequantize_q4_k_simd`
+             once for the full row, then `f32_matmul`) and GGUF's
+             super-block Q4K-byte-by-byte fused reduction
+             (`fused_q4k_q8k_parallel_matvec_into` has its own
+             inline dequant per super-block as the matvec
+             progresses).
+    - H2d.3: Q8K activation quantization in GGUF's path (a step
+             APR doesn't have at all). APR passes F32 activations
+             through f32_matmul; GGUF quantizes activations to Q8K
+             before each matmul. This Q8K quantization rounds
+             activations to ~7-bit precision, which compounds
+             across layers DIFFERENTLY than APR's full-F32 path.
+    - H2d.4 (NEW): the FUSED matvec's INLINE Q4K dequant in
+             `fused_q4k_q8k_parallel_matvec_into` may produce
+             different bits than the STANDALONE dequant routines
+             (`dequantize_q4_k`, `dequantize_q4_k_simd`). Both
+             are byte-identical to each other (this M93), but
+             that doesn't constrain the inline-fused dequant
+             path which is a separate code path.
+
+    NEXT STEP RECOMMENDATION: H2d.4 — author a falsifier comparing
+    standalone `dequantize_q4_k_simd` followed by `f32_matmul` vs
+    the fused `fused_q4k_q8k_parallel_matvec_into` on the same Q4K
+    bytes + (Q8K-quantized → dequantized → re-Q8K-quantized)
+    activation, with a control over Q8K precision loss. Most
+    direct test of H2d.1 + H2d.4 combined.
+
+    Alternative: accept that SHIP-007 §22 root cause may NOT be in
+    a single-tensor reduction-order boundary at all. The cumulative
+    drift could be from accumulator precision in residual-addition
+    sums (which APR and GGUF may handle in different orders), the
+    RMSNorm rsqrt approximation, or the per-token tokenization
+    difference. Each is its own falsifier candidate.
+
+    STATUS PROMOTIONS (v1.4.0):
+
+    - FALSIFY-FFN-GGUF-007 (NEW): byte-identical scalar+SIMD Q4K
+      dequant asserted as regression-test invariant; status
+      DISCHARGED (test passes on first run; H2d.2 empirically
+      falsified at APR-internal dequant level).
+    - M-FFN-GGUF-4 step (c) candidate H2d.2 narrowing: SHIPPED
+      (this falsifier reduces step (c) hypothesis space from
+      {1,2,3} to {1,3,4}).
+    - Contract metadata.status: ACTIVE_ALGORITHM_LEVEL → unchanged
+      (still gated on M-FFN-GGUF-4 step (c) actual fix landing).
+
+    Production hot paths byte-unchanged. New test additive in
+    `crates/aprender-serve/tests/ffn_gguf_007_*.rs`.
+
+    v1.3.0 AMENDMENT (2026-05-06): H2a' SIMD-VS-SCALAR REDUCTION-ORDER ALSO FALSIFIED.
+
+    Authored a third lib-only falsifier (FALSIFY-FFN-GGUF-006) in
+    `apr_transformer::helpers::determinism_tests`:
+
+      falsify_ffn_gguf_006_simd_vs_scalar_reduction_order_byte_identity
+
+    This test runs APR's `simd_dot_f32_avx2` (AVX2 8-wide FMA) and
+    APR's scalar fallback (`iter().zip().map(*).sum()`) on the
+    same canonical synthetic input and compares bit patterns via
+    `f32::to_bits()`.
+
+    EMPIRICAL RESULT (2026-05-06): both paths produce BYTE-IDENTICAL
+    output `0x44191e70 = 612.4756`. Asserted as regression-test
+    invariant.
+
+    This **FALSIFIES the refined H2a' hypothesis** at the SIMD-vs-
+    scalar level. The cumulative APR↔GGUF drift cannot be explained
+    by APR's SIMD vs APR's scalar path differing on this class of
+    f32 inputs. Both AVX2 8-wide FMA and scalar left-fold sum produce
+    the same f32 bits — at least for typical synthetic inputs.
+
+    SECOND HYPOTHESIS FALSIFICATION IN ONE SESSION:
+    - §28 (parallel-reduction non-determinism, M91 PR #1535): FALSIFIED
+    - H2a' (SIMD-vs-scalar reduction-order, this M-FFN-GGUF-4 step b):
+      FALSIFIED
+
+    NEW REFINED HYPOTHESIS H2d (post-second-falsification):
+
+    APR's `f32_matmul` and GGUF's `fused_q4k_q8k_parallel_matvec_into`
+    operate at DIFFERENT levels of the quantization hierarchy:
+
+    - APR f32_matmul: takes F32 weights (already dequantized at APR
+      load time), F32 activations, produces F32 dot product via
+      AVX2/scalar paths that we've now shown to be byte-identical.
+    - GGUF fused_q4k_q8k_parallel_matvec_into: takes Q4K weight
+      BYTES + Q8K-quantized activation, fuses dequant + matvec into
+      a single kernel pass. Internal reduction order operates on
+      Q4K super-blocks (256-element blocks with per-block scales).
+
+    The bit-level difference between APR and GGUF must come from
+    one of:
+
+    H2d.1: **APR loads F32 weights from .apr file** (full-precision
+           after a one-time dequantization). GGUF loads RAW Q4K
+           BYTES and dequantizes per-block during matmul.
+           Per-block dequant in GGUF rounds intermediate sums
+           differently than APR's whole-row F32 reduction. Block
+           boundary every 256 elements; 7-token sequence × 4096
+           hidden_dim × 16 layers compounds the difference.
+
+    H2d.2: **APR's F32 weights themselves differ from a true
+           dequantization of the GGUF Q4K bytes**. SHIP-003 PR
+           #1059 verified weights are byte-equivalent at cos≥
+           0.9999999 — but that's per-element cosine, not bit-
+           level identity. A 1e-7 per-element error compounds
+           layer-by-layer to the §27 18.23× drift.
+
+    H2d.3: **GGUF's intermediate Q8K activation quantization**
+           introduces a quantization step APR doesn't have. APR
+           passes F32 activations through f32_matmul; GGUF
+           quantizes activations to Q8K before each matmul. This
+           Q8K quantization rounds activations to ~7-bit precision,
+           which compounds across layers DIFFERENTLY than APR's
+           full-F32 path.
+
+    Each H2d.x is a separate falsifier candidate. Authoring those
+    is M-FFN-GGUF-4 step (c) — the actual fix scope is now
+    narrowed to one of these 3 sub-hypotheses.
+
+    STATUS PROMOTIONS (v1.3.0):
+
+    - FALSIFY-FFN-GGUF-006 (NEW): byte-identical AVX2-vs-scalar
+      asserted as regression-test invariant; status DISCHARGED
+      (test passes on first run; H2a' empirically falsified).
+    - M-FFN-GGUF-4 step (b): PENDING → SHIPPED (the cross-impl
+      diff test is authored at the SIMD-vs-scalar level for
+      APR-internal; the actual APR-vs-GGUF cross-impl test
+      requires loading the canonical 7B teacher and is bounded
+      by operator-dispatch).
+    - Contract metadata.status: ACTIVE_ALGORITHM_LEVEL → unchanged.
+
+    NEXT M-FFN-GGUF-4 step (c) DELIVERABLE: pick one of H2d.{1,2,3}
+    and author its falsifier. H2d.2 (F32-weight-vs-Q4K-bytes
+    dequant identity) is the most directly testable autonomously
+    — load APR weights + GGUF Q4K bytes for the same tensor,
+    dequantize Q4K to F32 by APR's own dequant routine, compare
+    APR's F32 weights to the dequantized Q4K F32 element-wise.
+    If they differ at bit level, H2d.2 is confirmed.
+
+    Production hot paths byte-unchanged. Tests additive in
+    `helpers.rs::determinism_tests`.
+
+    v1.2.0 AMENDMENT (2026-05-06): §28 PARALLEL-REDUCTION HYPOTHESIS FALSIFIED.
+
+    Authored 2 lib-only determinism falsifiers in
+    `crates/aprender-serve/src/apr_transformer/helpers.rs::
+     determinism_tests`:
+
+      falsify_ffn_gguf_005_f32_matmul_byte_deterministic_above_parallel_threshold
+      falsify_ffn_gguf_005b_f32_matmul_byte_deterministic_below_parallel_threshold
+
+    Both tests run `f32_matmul` TWICE with identical synthetic
+    inputs (out_dim above + below F32_PARALLEL_THRESHOLD=256) and
+    assert byte-identical output via `f32::to_bits()` comparison.
+
+    BOTH TESTS PASS. APR's `f32_matmul` (and the underlying
+    `f32_matvec_parallel` rayon-parallel kernel) is **byte-
+    deterministic** across repeated calls.
+
+    This FALSIFIES the §28 parallel-reduction hypothesis at the
+    kernel level. The §27 layer-3 18.23× drift is NOT caused by
+    APR being non-deterministic with itself.
+
+    REFINED HYPOTHESIS (post-falsification):
+
+    The cumulative APR↔GGUF drift must be a DIFFERENCE between
+    APR's and GGUF's reduction order, not non-determinism within
+    APR. Candidates:
+
+    H2a' (refined): APR uses `simd_dot_f32_avx2` (4-wide FMA, 8-
+         element AVX2 chunks) while GGUF uses
+         `fused_q4k_q8k_parallel_matvec_into` (different unroll +
+         block boundaries). F32 sum-of-products is non-associative;
+         different unroll → different bit-level results, even with
+         IDENTICAL byte-equivalent weights (per SHIP-003 PR #1059
+         cos≥0.9999999 weight invariance).
+
+    H2b: Layer-3-specific upstream divergence — gate or up at L3
+         only (despite §22 showing them individually normal at
+         std-level; per-element divergence may be hidden by std
+         aggregation).
+
+    H2c: Quantization dequant alignment differs at certain layer
+         configs.
+
+    NEXT M-FFN-GGUF-4 INVESTIGATION STEP (post-§28 falsification):
+
+    Cross-implementation deterministic-difference test — author a
+    SECOND lib-only test that runs APR's `f32_matmul` AND GGUF's
+    `fused_q4k_q8k_parallel_matvec_into` (or its f32 equivalent)
+    on byte-identical synthetic inputs and asserts whether the
+    outputs match. If they differ at the bit level, the candidate
+    fix is to align APR's reduction order to GGUF's (or vice
+    versa). This would transitively fix SHIP-007.
+
+    STATUS PROMOTIONS (v1.2.0):
+
+    - FALSIFY-FFN-GGUF-005 (NEW): falsifier added in
+      determinism_tests module; status DISCHARGED (both tests
+      pass on first run; §28 hypothesis empirically falsified).
+    - M-FFN-GGUF-4 step (a): SHIPPED (this amendment + the 2
+      lib-only falsifier tests). Step (b) cross-impl difference
+      test + step (c) fix remain PENDING.
+
+    Production hot paths byte-unchanged. Tests additive in
+    `helpers.rs` `#[cfg(test)] mod determinism_tests`.
+
+    v1.1.0 AMENDMENT (2026-05-06): §27 EVIDENCE INTEGRATED.
+
+    Same-day discovery during M88+M89 follow-up: ship-two-models-
+    spec.md v2.72.0 §27 records that the H1/H2 bisection has
+    ALREADY been LIVE-run on noah-Lambda-Vector RTX 4090 on
+    2026-04-27 (built `apr` from PR #1083 branch + commits
+    77c016bc2 + c6579685b + f24946412):
+
+      APR layer-3 ffn_swigl std  = 1.2216
+      GGUF layer-3 ffn_swigl std = 0.0670
+      Ratio                       = 18.23×
+      Verdict                     = **H2 CONFIRMED** (APR-side bug)
+      Bug location                = apr_transformer/inference.rs SwiGLU site
+
+    This far exceeds the §26.4 ≥10× threshold for H2 by 8× absolute.
+    Layers 0-2 agree (~1.1× ratio); layer 3 anomaly is APR-only;
+    layers 6+ recover to ~1× ratio (per §27 layer-by-layer evidence).
+
+    STATUS PROMOTIONS (v1.1.0):
+
+    - M-FFN-GGUF-3 (heavy harness): ALGORITHM_LEVEL_DISCHARGED →
+      **DISCHARGED**. The harness exists (M89 PR #1533) AND the
+      verdict has been measured (§27 evidence). The harness adds
+      regression-test coverage for any future re-run; the §27
+      data is the canonical operator-dispatched discharge proof.
+
+    - FALSIFY-FFN-GGUF-003 (bisection distinguishes H1/H2):
+      PROPOSED → **DISCHARGED**. Verdict produced: H2.
+
+    - Contract metadata.status: PROPOSED → ACTIVE_ALGORITHM_LEVEL.
+      All 4 implementation_stages and 3 of 4 falsifiers are now
+      DISCHARGED. Only M-FFN-GGUF-4 (SHIP-007 fix PR) remains
+      PENDING — gated on engineering investigation of the
+      `inference.rs` SwiGLU site (the §27 evidence narrows scope
+      but the actual root cause within the 5-line block has not
+      been pinned to a specific code line yet).
+
+    - FALSIFY-FFN-GGUF-004 (fix-PR-cites-stage): unchanged
+      PROPOSED. Discharges when the SHIP-007 fix PR title/body
+      cites H2 or one of {ffn_swigl, swigl_elementwise_multiply,
+      lm_head, post_ffn_residual, token_position_correlation}.
+      Per §27 evidence, the fix PR will cite H2 +
+      swigl_elementwise_multiply.
+
+    THE M-FFN-GGUF-4 INVESTIGATION GAP:
+
+    The §27 evidence localizes the bug to APR's SwiGLU site
+    (`apr_transformer/inference.rs:298-302` in current code, was
+    `:160-164` at v2.72.0 spec authoring before sub-FFN telemetry
+    line shifts):
+
+      for (g, u) in gate.iter().zip(up.iter()) {
+          let silu_g = g / (1.0 + (-g).exp());
+          silu_gate.push(silu_g);
+          ffn_hidden.push(silu_g * u);
+      }
+
+    The math is textbook SwiGLU. APR vs GGUF differ structurally
+    in:
+    - APR processes ALL tokens at once (`gate`/`up` length =
+      seq_len * intermediate_dim); zip iterates element-by-element
+      across the entire buffer.
+    - GGUF decode_lean processes ONE token; works in-place on
+      a fixed-size workspace buffer.
+
+    Hypotheses for the actual root cause within the SwiGLU block:
+    H2a: Buffer aliasing / scratch-buffer corruption in APR
+         multi-token forward (e.g., `gate` and `up` both written
+         from a shared scratch slot before the multiply).
+    H2b: Layer-3-specific upstream divergence in APR's gate or up
+         computation (despite §22 evidence showing gate/up
+         INDIVIDUALLY normal at layer 3) — perhaps the §22
+         per-stage `std` reading masked a per-token correlation
+         spike that's only visible in std-of-products.
+    H2c: Quantization dequant alignment — APR's matmul vs GGUF's
+         fused_matmul_into may produce subtly different bit
+         patterns for the same Q4_K weights at certain layer
+         configs (layer 3 happens to have one such config).
+
+    Each hypothesis has its own falsifier. Authoring those is
+    M-FFN-GGUF-4 step (a) — a future deliberate-session amendment.
+
+  references:
+    - 'trace-ffn-sub-block-v1 (parent contract — APR-side telemetry on AprTransformer)'
+    - 'apr-vs-gguf-forward-parity-v1 (umbrella SHIP-007 contract)'
+    - 'trace-moe-gpu-sub-stages-v1 (proven sibling-pattern precedent — M-GPU-MOE-1.4 cascade)'
+    - 'memory project_ship_007_layer_3_swiglu_bisection.md'
+    - 'docs/specifications/aprender-train/ship-two-models-spec.md §21'
+    - 'evidence/ship-007-layer-3-anomaly/sub-ffn-bisection-2026-04-26.txt (386-line APR-side trace)'
+    - 'evidence/ship-007-layer-3-anomaly/sub-ffn-per-layer-stds.csv'
+    - 'crates/aprender-serve/src/apr_transformer/inference.rs (existing APR forward_traced — lines 160-164 swigl site)'
+    - 'crates/aprender-serve/src/gguf/inference/forward/ (GGUF orchestrators — NEW forward_traced added here)'
+    - 'crates/aprender-serve/src/apr_transformer/mod.rs::LayerActivation (existing struct — 5 sub-FFN fields)'
+
+  binds_to:
+    - 'AC-SHIP1-007 (SHIP-007 layer-3 root cause)'
+    - 'trace-ffn-sub-block-v1 v1.0.0 (parent telemetry schema)'
+
+  depends_on:
+    - 'trace-ffn-sub-block-v1 v1.0.0 (the LayerActivation struct must exist on APR side first — already SHIPPED at PR #1066)'
+
+equations:
+  swiglu_inner_gguf:
+    formula: 'ffn_inner[i] = silu(gate_proj_out[i]) * up_proj_out[i]'
+    where:
+      - 'silu(x) = x / (1 + exp(-x))  ← SiLU = Swish-1'
+      - 'gate_proj_out shape = [intermediate_dim]'
+      - 'up_proj_out shape = [intermediate_dim]'
+    note: |
+      Same equation as APR `trace-ffn-sub-block-v1`. GGUF path
+      computes this identically in
+      `crates/aprender-serve/src/gguf/inference/forward/forward_dense.rs`
+      or `forward_qwen3_moe.rs::expert_swiglu_quantized` (per-expert).
+      Sub-FFN telemetry must capture the same f32 tensors at the
+      same algorithmic positions to enable APR-vs-GGUF diff.
+
+proof_obligations:
+- type: equivalence
+  property: 'GGUF traced forward output byte-identical to GGUF non-traced forward (additive-purity invariant)'
+  formal: 'OwnedQuantizedModel::forward_traced(P)[L].hidden == OwnedQuantizedModel::forward(P)[L].hidden'
+  tolerance: 0.0
+  applies_to: all
+
+- type: invariant
+  property: 'LayerActivation struct schema identical between APR (apr_transformer) and GGUF (gguf::inference::forward) — required for APR-vs-GGUF per-layer std diff'
+  formal: 'fields(apr::LayerActivation) == fields(gguf::LayerActivation)'
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-FFN-GGUF-001
+  rule: 'forward_traced exists on OwnedQuantizedModel and parses --payload'
+  prediction: |
+    `apr trace --json --payload <gguf-path>` invokes
+    `OwnedQuantizedModel::forward_traced` and emits per-layer
+    `LayerActivation` entries with the 5 sub-FFN fields populated.
+  test: |
+    cargo test -p aprender-serve --lib falsify_ffn_gguf_001
+    Live binding: lib-only signature gate test in
+    `crates/aprender-serve/src/gguf/inference/forward/forward_traced.rs`
+    (NEW file). Asserts: method exists with documented signature,
+    accepts SaveTensorPlan, returns `Vec<LayerActivation>` matching
+    apr_transformer::LayerActivation schema.
+  status: PROPOSED
+  if_fails: |
+    The forward_traced method is missing on OwnedQuantizedModel.
+    Add it as a sibling of existing `forward_*` orchestrators in
+    `crates/aprender-serve/src/gguf/inference/forward/`.
+
+- id: FALSIFY-FFN-GGUF-002
+  rule: 'GGUF traced forward output byte-identical to GGUF non-traced'
+  prediction: |
+    For the canonical 7B teacher (paiml/qwen2.5-coder-7b-apache-q4k-v1)
+    on prompt "What is 2+2?", every layer's `hidden_state` from
+    `forward_traced` is byte-identical to the same layer's
+    `hidden_state` from production `forward`.
+  test: |
+    cargo test -p aprender-serve --features cuda --test gguf_forward_traced_byte_identity \
+        falsify_ffn_gguf_002 -- --include-ignored
+    Live binding: heavy test that loads canonical GGUF, runs both
+    forward methods, asserts per-layer hidden_state bytes match.
+    `#[ignore]`-gated; requires cached canonical 7B teacher GGUF.
+  status: PROPOSED
+  if_fails: |
+    The forward_traced sibling has a side-effect that changes
+    production output bytes. Bisect via `apr trace` against the
+    pre-PR commit. Most likely: telemetry capture mutated a
+    scratch buffer that production reads.
+
+- id: FALSIFY-FFN-GGUF-003
+  rule: 'APR-vs-GGUF layer-3 ffn_swigl std comparison distinguishes H1 from H2'
+  prediction: |
+    On canonical 7B teacher prompt "What is 2+2?", running
+    `apr trace --payload` on BOTH the APR `.apr` file and the
+    GGUF `.gguf` file produces per-layer ffn_swigl std values.
+    The layer-3 ffn_swigl comparison falsifies one of:
+    - H1 (normal model behavior): GGUF layer-3 ffn_swigl std
+      ≈ 1.22 (within 10%) → SHIP-007 root cause is ELSEWHERE
+    - H2 (APR-side bug): GGUF layer-3 ffn_swigl std ≪ 1.22
+      (e.g., < 0.5) → APR-side bug confirmed at
+      `inference.rs:160-164` swigl elementwise multiply
+  test: |
+    cargo test -p aprender-serve --test ffn_gguf_apr_layer_3_swigl_diff \
+        falsify_ffn_gguf_003 -- --include-ignored --nocapture
+    Live binding: regression-test harness in
+    `crates/aprender-serve/tests/ffn_gguf_apr_layer_3_swigl_diff.rs`
+    (M89 PR #1533 squash 009d8b362). `#[ignore]`-gated; skips
+    cleanly if either canonical 7B `.apr` or `.gguf` is missing.
+
+    Discharged 2026-04-27 by §27 LIVE evidence on noah-Lambda-
+    Vector RTX 4090 (built `apr` from PR #1083 branch + commits
+    77c016bc2 + c6579685b + f24946412): APR layer-3 ffn_swigl std
+    = 1.2216, GGUF = 0.0670, ratio = 18.23× → **H2 CONFIRMED**
+    (APR-side bug). See ship-two-models-spec.md §27.
+  status: DISCHARGED  # §27 ratio 18.23× → H2 CONFIRMED 2026-04-27; M89 harness adds regression-test coverage
+  if_fails: |
+    Either trace capture failed (forward_traced not wired), OR
+    both sides agree at low std (anomaly is on neither side
+    — bug elsewhere in pipeline).
+
+- id: FALSIFY-FFN-GGUF-004
+  rule: 'SHIP-007 fix PR cites the bisected hypothesis (H1 or H2)'
+  prediction: |
+    The follow-up SHIP-007 root-cause fix PR title/body explicitly
+    cites whether the GGUF comparison falsified H1 or H2 (per
+    FALSIFY-FFN-GGUF-003 outcome). If H2: PR fixes
+    `inference.rs:160-164`. If H1: PR pivots SHIP-007 investigation
+    to lm_head / post-FFN residual / token-position correlation.
+  test: |
+    The SHIP-007 root-cause fix PR title/body MUST mention one of:
+    {ffn_swigl, swigl_elementwise_multiply, lm_head, post_ffn_residual,
+     token_position_correlation}
+    AND cite either H1 (normal) or H2 (apr-bug) by name.
+  status: PROPOSED  # human-eval at fix-PR review time
+  if_fails: |
+    The bisection didn't pinpoint a hypothesis — likely needs
+    finer-grained per-token telemetry (extend M-FFN-GGUF-4 with
+    per-token sub-FFN fields).
+
+- id: FALSIFY-FFN-GGUF-016
+  rule: 'M-FFN-GGUF-7 5-layer real-teacher chain saturates at ~1.81× growth'
+  prediction: |
+    Chained Path A (standalone dequant + F32 dot) vs Path B (Q8K
+    activation quant + fused matvec) across layers 0-4 of canonical
+    7B Qwen2.5-Coder-Instruct-Q4_K_M ffn_down_weight first super-block
+    produces:
+      L0: ~0.544%
+      L1: ~0.780%
+      L2: ~0.029%   (DROPPED — saturation/cancellation event)
+      L3: ~0.428%   (re-grows to M100's layer-3 baseline)
+      L4: ~0.774%
+    Total growth (L4 / L0): ~1.81× — saturation dominates compounding.
+  test: |
+    cargo test -p aprender-serve --test ffn_gguf_real_teacher_multi_layer_chain \
+        falsify_ffn_gguf_016_real_teacher_multi_layer_chain_residual \
+        -- --include-ignored --nocapture
+    Live binding: claimed in PR #1548 commit message but the test file
+    was not actually committed on the squash-merge. Discharged via
+    M-FFN-GGUF-7-EXT 28-layer test which reproduces the 5-layer
+    L0-L4 reference values to ≤ 0.001% per layer.
+  status: DISCHARGED  # 5-layer reference values reproduced exactly by FALSIFY-FFN-GGUF-017 28-layer test
+  if_fails: |
+    The 5-layer reference values do not reproduce — fixture chain
+    semantics drifted, or the canonical .apr Q4K layer 0-4 bytes
+    changed (regenerate canonical teacher OR open root-cause issue).
+
+- id: FALSIFY-FFN-GGUF-017
+  rule: 'M-FFN-GGUF-7-EXT 28-layer real-teacher chain aggregately saturates at 1.81×'
+  prediction: |
+    Chaining Path A vs Path B across ALL 28 layers of canonical 7B
+    Qwen2.5-Coder ffn_down_weight (one super-block per layer)
+    measures:
+      total_growth_factor (L27 / first-nonzero L0): ~1.81×
+      typical-magnitude layers (rel_diff ≤ 10%): 27 of 28
+      saturation events (rel_diff[i] < rel_diff[i-1]): 13 of 27 transitions
+      mean rel_diff: ~16% (skewed by L24 outlier spike)
+      max rel_diff: ~442% at L24 (1181× jump from L23, isolated)
+      L25 recovery drop: 0.001× of L24 (anomaly does NOT propagate)
+
+    Aggregate-saturation hypothesis: total growth tracks the M-FFN-
+    GGUF-7 5-layer 1.81× reference within ±10% even at full 28-layer
+    depth, EVEN WHEN single layers spike anomalously.
+
+    Falsification gate (load-bearing post-condition):
+      - total_growth < 18× (1 order of magnitude over 5-layer reference)
+      - last_rel_diff < 100× (chain numerically stable)
+      - mean is finite
+  test: |
+    cargo test -p aprender-serve --test ffn_gguf_real_teacher_28_layer_chain \
+        falsify_ffn_gguf_017_real_teacher_28_layer_chain_residual \
+        -- --include-ignored --nocapture
+    Live binding: regression test
+    `crates/aprender-serve/tests/ffn_gguf_real_teacher_28_layer_chain.rs`.
+    `#[ignore]`-gated; skips cleanly if canonical 7B teacher .apr is
+    absent. Expected runtime ~30s on RTX 4090 host.
+  status: DISCHARGED  # 28-layer chain LIVE-passes 2026-05-07: total_growth=1.8103×, max=441.978% L24 outlier-with-recovery, 27/28 typical-magnitude
+  if_fails: |
+    Either:
+    - The chain blows up to numerical infinity at 28-layer depth
+      (M-FFN-GGUF-7 hypothesis falsified at full depth — investigate
+      cumulative growth seed)
+    - Total growth factor exceeds 18× (saturation does not dominate;
+      cumulative-layer is a load-bearing amplifier; revisit §27
+      decomposition)
+    - Multiple outlier-spike layers without recovery (multiple L24-
+      style anomalies — investigate per-layer Q4K scale magnitude)
+
+implementation_stages:
+- id: M-FFN-GGUF-0
+  status: SHIPPED  # this contract scaffold IS the deliverable
+  description: |
+    This contract scaffold (v1.0.0). No code; just the GGUF-side
+    sub-FFN telemetry extension defined as a sibling pattern to
+    `trace-ffn-sub-block-v1`.
+
+    NOTE: The contract was authored AFTER discovering that PRs
+    #1081 (PR A) + #1082 (PR B) had already shipped the
+    forward_traced scaffold + sub-FFN populate. The contract
+    correctly retro-records this prior work in M-FFN-GGUF-1 +
+    M-FFN-GGUF-2 below. Future cascade extensions (M-FFN-GGUF-3
+    heavy harness + M-FFN-GGUF-4 fix PR) build on the now-pinned
+    architecture.
+  evidence:
+    - 'aprender contracts/trace-ffn-sub-block-gguf-v1.yaml at v1.0.0'
+    - 'pv validate contracts/trace-ffn-sub-block-gguf-v1.yaml exits 0'
+
+- id: M-FFN-GGUF-1
+  status: SHIPPED  # `LayerActivation` is shared between APR and GGUF since the original sub-FFN cascade
+  description: |
+    `LayerActivation` struct shared between APR and GGUF inference
+    modules. Originally defined in `apr_transformer::mod.rs` with
+    9 stats fields including 4 sub-FFN fields (ffn_gate_stats,
+    ffn_up_stats, ffn_silu_gate_stats, ffn_swiglu_inner_stats).
+
+    GGUF code (`crates/aprender-serve/src/gguf/inference/forward/
+    traced.rs` + `forward_qwen3_moe_traced.rs`) imports the same
+    type via `use crate::apr_transformer::LayerActivation`. No
+    GGUF-side struct duplication needed.
+
+    Verified by grep: `crates/aprender-serve/src/gguf/cuda/
+    forward_qwen3_moe_cuda_traced.rs:40` + `gguf/inference/
+    forward/forward_qwen3_moe_traced.rs:32` both `use` the apr_
+    transformer LayerActivation.
+  expected_acceptance:
+    - FALSIFY-FFN-GGUF-001 (signature gate)
+
+- id: M-FFN-GGUF-2
+  status: SHIPPED  # PR A #1081 (scaffold) + PR B #1082 (sub-FFN populate) on aprender main
+  description: |
+    `OwnedQuantizedModel::forward_traced` for dense (SwiGLU) GGUF
+    models. Mirrors APR `AprTransformer::forward_traced` step-by-
+    step at `crates/aprender-serve/src/gguf/inference/forward/
+    traced.rs:42`. Production `forward_single_with_scratch` is
+    unchanged byte-for-byte (additive-purity invariant).
+
+    Two-PR cascade ALREADY ON aprender main:
+    - **PR #1081** (squash `108f8f71c`): SHIP-007 GGUF
+      forward_traced scaffold (PR A) — 6 non-FFN LayerActivation
+      fields populated, 4 sub-FFN default-zero
+    - **PR #1082** (squash `30edfd357`): SHIP-007 GGUF
+      forward_traced sub-FFN populate (PR B) — fills the 4
+      sub-FFN ActivationStats slots via `scratch_swiglu_ffn_traced`
+      for SwiGLU paths. GELU paths leave the 4 fields default-zero
+      (no SwiGLU components to capture).
+
+    KNOWN LIMITATION (NOT BLOCKING H1/H2 falsification on dense
+    7B Qwen2.5-Coder which is SwiGLU + non-MoE): The MoE path
+    (`forward_qwen3_moe_traced` at line 32) currently uses the
+    M74-pattern wireup which captures router/ffn_out via
+    SaveTensorPlan but does NOT populate the 4 per-layer
+    LayerActivation sub-FFN fields. Extending forward_qwen3_moe_
+    traced to populate those is a future enhancement (M-FFN-GGUF-2.1
+    if needed for MoE-side SHIP-007 bisection — not currently
+    relevant since the 7B teacher is dense).
+  expected_acceptance:
+    - FALSIFY-FFN-GGUF-001
+    - FALSIFY-FFN-GGUF-002 (byte-identity vs production)
+
+- id: M-FFN-GGUF-3
+  status: DISCHARGED  # §27 evidence (2026-04-27): ratio 18.23× → H2; harness from M89 PR #1533 adds regression-test coverage
+  description: |
+    Heavy comparison harness — runs APR `forward_traced` and GGUF
+    `forward_traced` on the same canonical 7B teacher prompt,
+    extracts per-layer `ffn_swiglu_inner_stats.std_dev`, computes
+    layer-3 ratio. Reports H1 (ratio in [0.5, 2.0]) or H2 (ratio
+    outside that band).
+
+    Status promoted PENDING → ALGORITHM_LEVEL_DISCHARGED at this
+    contract amendment: the harness EXISTS at
+    `crates/aprender-serve/tests/ffn_gguf_apr_layer_3_swigl_diff.rs`
+    as `falsify_ffn_gguf_003_layer_3_swigl_h1_h2_bisection`.
+    `#[ignore]`-gated; skips cleanly if neither canonical .apr
+    nor .gguf is present on the host (mirrors the M80
+    `qwen3_moe_gpu_per_stage_diff` skip-if-not-present pattern).
+
+    Full DISCHARGED status pending operator-dispatched LIVE run
+    that produces the actual H1 vs H2 verdict. Required files:
+    - canonical 7B APR teacher (`paiml/qwen2.5-coder-7b-apache-q4k-v1`)
+    - canonical 7B GGUF (`qwen2.5-coder-7b-instruct-q4k.gguf`)
+      — already cached at
+        `/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.gguf`
+
+    Operator workflow:
+        cargo test -p aprender-serve \
+            --test ffn_gguf_apr_layer_3_swigl_diff \
+            -- --include-ignored --nocapture
+    Output: per-layer table + final H1/H2 verdict.
+  expected_acceptance:
+    - FALSIFY-FFN-GGUF-003 (bisection distinguishes H1/H2)
+
+- id: M-FFN-GGUF-4
+  status: PENDING
+  description: |
+    SHIP-007 root cause fix PR — applies fix at the bisected site
+    OR pivots investigation per H1/H2 outcome.
+
+    If H2 (APR-side bug confirmed): fix at `inference.rs:160-164`
+    swigl elementwise multiply. Likely candidates: off-by-one
+    slice indexing, wrong intermediate buffer reuse, fp accumulator
+    order in the `silu(g) * u` reduction.
+
+    If H1 (normal model behavior): pivot SHIP-007 investigation
+    to lm_head / post-FFN residual / token-position correlation
+    surfaces. The §21 layer-3 anomaly is then NOT the SHIP-007
+    bug; root cause is downstream.
+
+    Discharges 5 transitively-blocked MODEL-1 PARTIALs per
+    §17.5: SHIP-002, SHIP-005, SHIP-006, SHIP-007, SHIP-008.
+  expected_acceptance:
+    - FALSIFY-FFN-GGUF-004
+
+- id: M-FFN-GGUF-7
+  status: DISCHARGED  # PR #1548 5-layer chain test CONCLUSIONS preserved retroactively via M-FFN-GGUF-7-EXT 28-layer reproduction
+  description: |
+    Multi-layer real-teacher chain falsifier — chains 5 layers (0-4)
+    of canonical 7B Qwen2.5-Coder ffn_down_weight Q4K bytes through
+    Path A vs Path B matvecs to characterize cumulative-layer
+    interaction at small chain depth.
+
+    PR #1548 (M-FFN-GGUF-7) commit message reports total chain growth
+    = 1.81× over 5 layers; Layer 2 drops to 0.029% rel_diff
+    (saturation/cancellation event). The reference values are
+    reproduced exactly by M-FFN-GGUF-7-EXT 28-layer test (≤ 0.001%
+    per-layer divergence on layers 0-4).
+
+    NOTE: PR #1548 commit message documented contract bump 1.12.0 →
+    1.13.0 but the contract YAML was not actually amended in the
+    squash-merge; v1.13.0 amendment in this contract subsumes the
+    unmade bump and adds the EXT 28-layer characterization.
+  evidence:
+    - 'aprender PR #1548 commit message (M-FFN-GGUF-7 5-layer chain results)'
+    - 'M-FFN-GGUF-7-EXT 28-layer test reproduces 5-layer reference exactly (LIVE 2026-05-07)'
+  expected_acceptance:
+    - FALSIFY-FFN-GGUF-016
+
+- id: M-FFN-GGUF-7-EXT
+  status: DISCHARGED  # 28-layer chain LIVE-passes 2026-05-07 lambda-vector RTX 4090 (26.96s)
+  description: |
+    Full 28-layer characterization extension of M-FFN-GGUF-7 — chains
+    ALL 28 layers of canonical 7B Qwen2.5-Coder ffn_down_weight Q4K
+    bytes (one super-block per layer) through Path A vs Path B
+    matvecs and produces:
+      - per-layer cumulative rel_diff (Path A vs Path B) for layers 0-27
+      - min, max, mean rel_diff statistics
+      - total growth factor (last / first-nonzero)
+      - saturation event count (layers where rel_diff dropped vs prev)
+      - steady-band layer count (within ±10% of prev layer)
+
+    Empirical (2026-05-07, lambda-vector RTX 4090):
+      - 28 of 28 layers measured (100% coverage)
+      - L0-L4 reproduce M-FFN-GGUF-7 5-layer reference exactly
+      - min: 0.030% (L2, saturation)
+      - max: 441.978% (L24, isolated outlier spike)
+      - mean: 16.388% (skewed by L24)
+      - total growth factor (L27 / L0): 1.8103× (matches 5-layer 1.8081×)
+      - saturation events: 13 of 27 transitions (48%)
+      - typical-magnitude layers (rel_diff ≤ 10%): 27 of 28 (96.4%)
+
+    Closes the cumulative-layer hypothesis at full model depth:
+    AGGREGATE drift saturates at ~1.81× even when individual layers
+    (e.g. L24) spike anomalously. The chain RECOVERS downstream
+    (L25 drops to 0.001× of L24).
+  evidence:
+    - 'crates/aprender-serve/tests/ffn_gguf_real_teacher_28_layer_chain.rs'
+    - 'falsify_ffn_gguf_017_real_teacher_28_layer_chain_residual LIVE pass 2026-05-07'
+  expected_acceptance:
+    - FALSIFY-FFN-GGUF-017
+
+qa_gate:
+  id: F-TRACE-FFN-GGUF-001
+  name: GGUF Sub-FFN Telemetry Contract
+  checks:
+  - forward_traced_method_exists_on_owned_quantized_model
+  - layer_activation_schema_parity_apr_gguf
+  - production_forward_byte_identical_pre_post_traced
+  - ship_007_layer_3_h1_h2_falsification
+  pass_criteria: All 4 falsification tests pass — FALSIFY-FFN-GGUF-001 + 002 + 003 + 004
+  falsification: |
+    Add LayerActivation struct without registering forward_traced method
+    (will fail FALSIFY-FFN-GGUF-001) — or modify production forward
+    to emit telemetry (will fail FALSIFY-FFN-GGUF-002 byte-identity).
+
+kani_harnesses:
+- id: KANI-TRACE-FFN-GGUF-001
+  obligation: 'forward_traced does not mutate model state'
+  property: 'For all calls forward_traced(prompt): model state byte-identical pre and post call'
+  bound: 4

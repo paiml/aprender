@@ -174,9 +174,15 @@ mod tests {
         let config = TransformerConfig::codebert();
         let block = EncoderBlock::new(&config, 0);
         let params = block.parameters();
-        // self_attn: 4 (Q,K,V,O) + attn_layernorm: 2 (w,b)
+        // Updated 2026-05-09 alongside FALSIFY-APR-PRETRAIN-INIT-POPULATE-COVERAGE-001:
+        // codebert config has `use_bias: true`, and `MultiHeadAttention::new`
+        // now correctly allocates Q/K/V projection biases when use_bias=true
+        // (previously hardcoded to None, masking 3 params per encoder layer).
+        // self_attn: 4 (Q,K,V,O weights) + 3 (Q,K,V biases) + attn_layernorm: 2 (w,b)
         // ffn: 4 (w_up,b_up,w_down,b_down) + ffn_layernorm: 2 (w,b)
-        assert_eq!(params.len(), 12);
+        // Pre-fix this test asserted 12 (wrong; the 3 missing biases would have
+        // been silently dropped during populate from any HF BERT/RoBERTa init).
+        assert_eq!(params.len(), 15);
     }
 
     #[test]

@@ -37,10 +37,7 @@ pub enum JsonGrammarOutputOutcome {
 }
 
 /// Grammar-parity gate: output must be valid JSON and finish must be clean.
-pub fn classify_json_grammar_output(
-    output: &str,
-    finish_reason: &str,
-) -> JsonGrammarOutputOutcome {
+pub fn classify_json_grammar_output(output: &str, finish_reason: &str) -> JsonGrammarOutputOutcome {
     if output.is_empty() {
         return JsonGrammarOutputOutcome::EmptyOutput;
     }
@@ -95,10 +92,7 @@ pub enum IllegalTokenMaskingOutcome {
     /// No legal tokens in the mask (grammar stuck — different defect class).
     NoLegalTokens,
     /// An illegal position has a finite (or +INF, or NaN) logit.
-    IllegalTokenNotMasked {
-        token_index: usize,
-        logit: f32,
-    },
+    IllegalTokenNotMasked { token_index: usize, logit: f32 },
 }
 
 /// Logit-masking gate: illegal-at-state-s tokens have logit = `-INFINITY`.

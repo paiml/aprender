@@ -1,0 +1,31 @@
+{
+  "ast_parse": "OK",
+  "syntax_errors": 0,
+  "ast_node_count": 68,
+  "node_kinds": [
+    "Add",
+    "Assign",
+    "BinOp",
+    "Call",
+    "Compare",
+    "Constant",
+    "Eq",
+    "For",
+    "FunctionDef",
+    "If",
+    "Load",
+    "LtE",
+    "Module",
+    "Name",
+    "Return",
+    "Store",
+    "Tuple",
+    "arg",
+    "arguments"
+  ],
+  "function_count": 1,
+  "function_names": [
+    "fib"
+  ],
+  "top_level_returns": 0
+}

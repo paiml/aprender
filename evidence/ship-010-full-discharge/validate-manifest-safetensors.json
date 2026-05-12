@@ -1,0 +1,57 @@
+{
+  "manifest_path": "contracts/publish-manifests/paiml-qwen2.5-coder-7b-apache-q4k-v1-safetensors.yaml",
+  "artifact_path": null,
+  "falsification_results": [
+    {
+      "id": "FALSIFY-PM-001",
+      "verdict": "PASS",
+      "detail": "all 12 top + 7 provenance required fields present"
+    },
+    {
+      "id": "FALSIFY-PM-002",
+      "verdict": "DEFERRED",
+      "detail": "no --artifact provided for local sha256 check"
+    },
+    {
+      "id": "FALSIFY-PM-003",
+      "verdict": "PASS",
+      "detail": "HEAD 200, content-length 15231938404 == declared 15231938404"
+    },
+    {
+      "id": "FALSIFY-PM-002-live",
+      "verdict": "PASS",
+      "detail": "sha256 c1058ce763fe47fa7d18a89a8b854d2cd8ebdb87127441304146ab8618dd8954 over 15231938404 bytes"
+    },
+    {
+      "id": "FALSIFY-PM-004",
+      "verdict": "PASS",
+      "detail": "3 SPDX identifier(s) valid"
+    },
+    {
+      "id": "FALSIFY-PM-005",
+      "verdict": "PASS",
+      "detail": "recipe_sha256 match (contracts/model-families/qwen2.yaml): f098ac0813515b669389d4317fff442cf0812b18a181d446d170e182a3689d8b"
+    },
+    {
+      "id": "FALSIFY-PM-006",
+      "verdict": "PASS",
+      "detail": "parent chain terminates at Qwen/Qwen2.5-Coder-7B-Instruct"
+    },
+    {
+      "id": "FALSIFY-PM-007",
+      "verdict": "DEFERRED",
+      "detail": "no --artifact provided for safetensors header check"
+    },
+    {
+      "id": "FALSIFY-PM-008",
+      "verdict": "DEFERRED",
+      "detail": "format=safetensors — not gguf; skip file_type gate"
+    },
+    {
+      "id": "FALSIFY-PM-009",
+      "verdict": "DEFERRED",
+      "detail": "format=safetensors — not apr; skip magic gate"
+    }
+  ],
+  "overall": "PASS"
+}

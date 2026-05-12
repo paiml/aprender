@@ -57,6 +57,15 @@ equations:
       - 'efficiency in [0.0, 1.0]'
       - 'grade is monotonically non-decreasing with efficiency'
       - 'grade boundary thresholds are configurable'
+    preconditions:
+      - 'StepProfiler JSON is valid serde_json::Value'
+      - 'avg_step_ms > 0 && tokens_per_step > 0 && hardware_peak_bw > 0'
+      - 'all numeric inputs finite'
+    postconditions:
+      - 'efficiency in [0.0, 1.0]'
+      - 'grade in {"A", "B", "C", "D", "F"}'
+      - 'efficiency_a >= efficiency_b implies grade(a) >= grade(b)'
+    lean_theorem: 'Theorems.Training_efficiency_grade'
 
   bottleneck_classification:
     formula: |
@@ -76,6 +85,14 @@ equations:
     invariants:
       - 'Exactly one classification per measurement'
       - 'Classification thresholds are configurable'
+    preconditions:
+      - 'all per-op timings finite and non-negative'
+      - 'step_time > 0'
+      - 'compute_util in [0.0, 1.0]'
+    postconditions:
+      - 'bottleneck in {"transfer", "launch", "compute", "memory_bw"}'
+      - 'classification is total (every input maps to exactly one class)'
+    lean_theorem: 'Theorems.Bottleneck_classification'
 
   forward_backward_ratio:
     formula: |
@@ -94,6 +111,15 @@ equations:
     invariants:
       - 'ratio >= 0.0'
       - 'Layers with NaN backward skip should be flagged, not averaged'
+    preconditions:
+      - 'fwd_ms[i] > 0 for all valid layers (denominator)'
+      - 'bwd_ms[i] >= 0 for all valid layers'
+      - 'NaN-skip layers excluded from aggregate (flagged separately)'
+    postconditions:
+      - 'ratio[i] >= 0.0 for all valid layers'
+      - 'avg_ratio is finite when any valid layers exist'
+      - 'ratio_cv is finite when avg_ratio > 0'
+    lean_theorem: 'Theorems.Forward_backward_ratio'
 
   regression_detection:
     formula: |
@@ -113,6 +139,15 @@ equations:
     invariants:
       - 'Regression thresholds are configurable per metric'
       - 'At least throughput and step_time must be checked'
+    preconditions:
+      - 'both baseline and current StepProfiler JSON are well-formed'
+      - 'B[m] != 0 for all checked metrics m (delta undefined when baseline is zero)'
+      - 'all metric values finite'
+    postconditions:
+      - 'delta[m] is finite when B[m] != 0'
+      - 'regressed[m] is total over the configured threshold map'
+      - 'output list contains all m where regressed[m] is true (no silent drops)'
+    lean_theorem: 'Theorems.Regression_detection'
 
   scorecard_output:
     formula: |
@@ -141,6 +176,16 @@ equations:
       - 'per_layer_summary has exactly num_model_layers entries'
       - 'hotspot_ops sorted by total_ms descending'
       - 'recommendations non-empty when grade <= C'
+    preconditions:
+      - 'StepProfiler JSON input is well-formed and complete'
+      - 'num_model_layers > 0'
+    postconditions:
+      - 'JSON output is parseable as TrainingScorecard'
+      - 'all numeric fields finite and non-negative'
+      - 'len(per_layer_summary) == num_model_layers'
+      - 'hotspot_ops sorted by total_ms descending'
+      - 'len(recommendations) > 0 when grade in {"C", "D", "F"}'
+    lean_theorem: 'Theorems.Scorecard_output'
 
 proof_obligations:
   - type: invariant

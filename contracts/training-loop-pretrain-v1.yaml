@@ -35,7 +35,7 @@
 # ─────────────────────────────────────────────────────────────
 
 contract_id: C-TRAIN-PRETRAIN
-version: 1.4.0
+version: 1.5.0
 status: ACTIVE
 
 metadata:
@@ -136,6 +136,15 @@ per_step_metrics:
     - name: gpu_util_pct
       type: f32
       description: "GPU utilization percent (0.0..=100.0) sampled during the step."
+    - name: wall_ms
+      type: f32
+      description: |
+        Wall-clock time per optimizer step, milliseconds. Required for
+        GATE-GPUTRAIN-004 (per-step latency budget). Computed from the
+        SAME Instant::now() span that produces tokens_per_sec; consistency
+        invariant: tokens_per_sec * (wall_ms / 1000.0) == batch_tokens
+        within FP rounding. Added in v1.5.0 to discharge §19.4 Residual B
+        of ship-two-models-spec.md.
   sampling_period_steps: 1  # metrics emitted every step, not every-N
 
 # ─────────────────────────────────────────────────────────────

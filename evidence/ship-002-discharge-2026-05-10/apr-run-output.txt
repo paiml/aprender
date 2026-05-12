@@ -1,0 +1,54 @@
+=== APR Run ===
+
+Source: /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr
+[PMAT-171] Loaded embedded BPE tokenizer: 152064 vocab, 151387 merges, 25 special tokens
+[GH-175] OwnedQuantizedModel::from_apr: 28 layers loaded in 4065.4ms
+[GH-129] Early kernel preload: 49 modules compiled
+[PMAT-082] cuBLASLt FP8 JIT warmed (3584×16×3584)
+[PMAT-053] FP8 weight cache: 196 matrices cached (6223.0 MB) in 224.3ms
+[trueno#243] Manual graph construction: pos=0, has_graph=false, capture_failed=false, token_count=0
+[PAR-058-ATTN] Layer 0: num_heads=28, num_kv_heads=4, head_dim=128, max_len=2048, seq_len=1
+[PAR-058-ATTN] K input OK, first 16: [-1.176471, 1.2701252, 1.2559228, -0.4022341, 0.70358115, -0.000451684, 1.8042368, 0.7270411, -0.30878258, -0.85351276, -0.0940561, 0.5748861, 3.249017, -0.5025748, -0.45400226, 0.09651491]
+[PAR-058-ATTN] Q input OK, first 16: [0.06967497, 2.4400415, -0.11822522, 1.06298, 1.619858, 1.313627, 0.74682367, 0.19197217, -0.6462631, -1.5042837, 0.13652515, 0.9694705, 0.5247151, 0.22687194, -0.6274244, 0.1233685]
+[PAR-058-ATTN] K cache head0 pos0 first 16: [-1.176471, 1.2701252, 1.2559228, -0.4022341, 0.70358115, -0.000451684, 1.8042368, 0.7270411, -0.30878258, -0.85351276, -0.0940561, 0.5748861, 3.249017, -0.5025748, -0.45400226, 0.09651491]
+[PAR-058-ATTN] V cache head0 pos0 first 16: [0.23684686, -0.35336325, 0.09470834, 0.27851227, 0.044817664, -0.4625097, 0.11192639, 0.054399572, -0.28750032, -0.050318047, -0.31629676, 0.14544056, -0.40762126, 0.22748044, -0.016041066, 0.35254988]
+[trueno#243] ✓ Manual graph: 646 kernels. first_args=Some(["0x7eb4cc671000", "0x7eb35b1ea000", "0x7eb61eff8000"]), last_args=Some(["0x7eb4cc6a6c00", "0x7eb448000000", "0x7eb4cc668200", "0xe00", "0x25200"]), current_logits_buf=0x7eb4cc6a6c00
+[apr-cpu-vs-gpu-output-parity-v1] CUDA path rejected, attempting fallback: Inference error: PARITY-GATE FAILED: GPU computes a DIFFERENT function than CPU.
+
+Cosine similarity: -0.005190 (required: ≥0.98)
+CPU argmax: 334 | GPU argmax: 8127
+Max absolute logit difference: 19.5053
+
+This model's dimensions (hidden=3584, heads=28, kv_heads=4) cause
+GPU forward pass to diverge from CPU. The GPU CANNOT serve this model.
+
+Run `apr parity <model>` for full SPC diagnosis.
+Set SKIP_PARITY_GATE=1 to bypass (for debugging only).
+Backend: wgpu (Vulkan)
+[GH-175] OwnedQuantizedModel::from_apr: 28 layers loaded in 3973.7ms
+[PMAT-333] Dequantizing 28 layers (hidden=3584, heads=28/4, intermediate=18944)
+  Dequantized layer 7/28
+  Dequantized layer 14/28
+  Dequantized layer 21/28
+  Dequantized layer 28/28
+[PMAT-333] Dequantized 337 weights, 28282.5 MB F32
+[wgpu] Skipping weight 'lm_head' (2180.0 MB > 2147.5 MB limit) — CPU fallback
+[apr-cpu-vs-gpu-output-parity-v1] wgpu path rejected, attempting fallback: cosine vs CPU = 0.766079 (< 0.99)
+[GH-175] OwnedQuantizedModel::from_apr: 28 layers loaded in 3774.2ms
+[GH-189] Loaded tokenizer from /mnt/nvme-raid0/models/ship-two-001/tokenizer.json: 22 special tokens
+
+Output:
+def fib(n):
+    if n <= 0:
+        return "Input should be a positive integer"
+    elif n == 1:
+        return 0
+    elif n == 2:
+        return 1
+    else:
+        a, b = 0, 1
+        for i in range(2, n):
+            a, b = b, a + b
+        return b
+
+Completed in 76.11s (cached)

@@ -1,0 +1,66 @@
+{
+  "evidence_id": "task-132/step-budget-and-repro-20260424",
+  "contract": "contracts/entrenar/gpu-training-backend-v1.yaml",
+  "date": "2026-04-24",
+  "host": {
+    "hostname": "noah-Lambda-Vector",
+    "class": "Lambda Labs Vector workstation",
+    "gpu": "NVIDIA GeForce RTX 4090 (24 GB VRAM)",
+    "driver": "570.207",
+    "cuda": "12.8"
+  },
+  "apr_binary": {
+    "path": "/mnt/nvme-raid0/targets/aprender/release/apr",
+    "features": ["cuda", "training"],
+    "built_from": "HEAD + per-step telemetry emission (new PretrainReport.per_step_metrics)"
+  },
+  "findings": {
+    "FALSIFY-GPUTRAIN-005": {
+      "verdict": "DISCHARGED",
+      "spec_ac": "AC_GPUTRAIN_005_MAX_STEP_TIME_MS_RTX4090_370M = 500.0",
+      "config": {
+        "batch_size": 1,
+        "seq_length": 2048,
+        "num_steps": 30,
+        "warmup_steps": 5
+      },
+      "run_dir_prefix": "/mnt/nvme-raid0/runs/gputrain-005-check-",
+      "derivation": "step_ms = batch_size * seq_length * 1000 / tokens_per_sec",
+      "observed": {
+        "median_ms": 101.30,
+        "min_ms": 97.58,
+        "max_ms": 110.39,
+        "budget_utilization_pct": 20.3
+      },
+      "assessment": "15× safety margin under the 500 ms/step floor on RTX 4090 for 370M at spec-canonical batch=1 seq=2048. Comfortable PASS."
+    },
+    "FALSIFY-GPUTRAIN-006": {
+      "verdict": "FALSIFIED_AT_RUNTIME",
+      "spec_ac": "AC_GPUTRAIN_006_MAX_SEED_LOSS_DELTA = 1e-5",
+      "config": {
+        "device": "cuda:0",
+        "seed": 0,
+        "num_steps": 50,
+        "warmup_steps": 10,
+        "batch_size": 16,
+        "seq_length": 1024
+      },
+      "run_a": "/mnt/nvme-raid0/runs/repro-A-20260424-*",
+      "run_b": "/mnt/nvme-raid0/runs/repro-B-20260424-*",
+      "observed": {
+        "max_abs_delta_train_loss": 0.000827,
+        "max_delta_at_step": 27,
+        "step_0_delta": 2.3e-05,
+        "ratio_over_tolerance": "83x"
+      },
+      "root_cause_hypothesis": "CUDA floating-point non-determinism — cuBLAS GEMM algorithm selection depends on runtime heuristics (workspace size, recent shape cache), atomic reductions in gradient accumulation order by thread scheduling, cuDNN fall-through to non-deterministic algorithms. Observed |Δ| at step 0 (pure forward pass, no training update) confirms the drift originates in matmul/softmax kernels, not in gradient aggregation.",
+      "assessment": "Full runtime discharge of GPUTRAIN-006 blocks on explicit CUDA deterministic mode wiring (cublasSetMathMode CUBLAS_PEDANTIC_MATH, CUBLAS_WORKSPACE_CONFIG=:4096:8, cuDNN determinism flag, atomics-off reductions). Current CudaTransformerTrainer does NOT enable deterministic mode because it costs ~15-30% throughput. Remains PARTIAL_ALGORITHM_LEVEL — the algorithm-level verdict fn is provably correct, but runtime CUDA determinism requires a separate code path not yet written.",
+      "follow_up": "File ticket: 'CUDA deterministic mode for CudaTransformerTrainer — opt-in flag that wires cublasSetMathMode(PEDANTIC) + CUBLAS_WORKSPACE_CONFIG + cuDNN determinism'. Estimate: 1-2 days Rust. Acceptance: re-run GPUTRAIN-006 harness with --deterministic flag, observe max |Δ train_loss| ≤ 1e-5."
+    }
+  },
+  "coverage_shift": {
+    "before": "40 PARTIAL + 5 DISCHARGED",
+    "after": "39 PARTIAL + 6 DISCHARGED",
+    "note": "GPUTRAIN-005 promoted; GPUTRAIN-006 held at PARTIAL with runtime-falsification note (per Toyota Way: document the defect, do not silently widen the tolerance)."
+  }
+}

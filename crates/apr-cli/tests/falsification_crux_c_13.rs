@@ -32,7 +32,10 @@ fn falsify_crux_c_13_help_advertises_observation_file_flag() {
         .args(["embeddings-lint", "--help"])
         .output()
         .expect("run apr embeddings-lint --help");
-    assert!(out.status.success(), "apr embeddings-lint --help must exit 0");
+    assert!(
+        out.status.success(),
+        "apr embeddings-lint --help must exit 0"
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         stdout.contains("--observation-file"),
@@ -205,10 +208,7 @@ fn falsify_crux_c_13_002_determinism_rejects_zero_vector() {
 
 #[test]
 fn falsify_crux_c_13_003_usage_ok_on_matching_prompt_total() {
-    let tmp = write_tmp_json(
-        "em-usage-ok",
-        r#"{ "usage": { "prompt": 8, "total": 8 } }"#,
-    );
+    let tmp = write_tmp_json("em-usage-ok", r#"{ "usage": { "prompt": 8, "total": 8 } }"#);
     let out = apr_binary()
         .args(["embeddings-lint", "--observation-file"])
         .arg(tmp.path())

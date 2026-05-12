@@ -1,0 +1,115 @@
+{
+  "$schema": "../../contracts/apr-provenance-v1.yaml#GATE-APR-PROV-004.discharged_evidence",
+  "evidence_id": "FALSIFY-SHIP-009-DISCHARGED-EVIDENCE-V1",
+  "binds_to": "AC-SHIP1-009",
+  "falsification_id": "FALSIFY-SHIP-009",
+  "gate_id": "GATE-APR-PROV-004",
+  "discharge_status": "DISCHARGED",
+  "previous_status": "PARTIAL_ALGORITHM_LEVEL",
+  "discharge_date": "2026-04-25",
+  "discharge_session": "ship-two-001 PARTIAL → DISCHARGED via apr stamp local fixture-swap",
+  "host": {
+    "hostname": "noah-Lambda-Vector",
+    "tier": "lambda-labs",
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "cuda_compute_capability": "8.9",
+    "binary_path": "/mnt/nvme-raid0/targets/aprender/release/apr",
+    "binary_features": "training,cuda"
+  },
+  "shipped_artifact": {
+    "canonical_path": "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr",
+    "format": "APR v2",
+    "tensor_count": 339,
+    "architecture": "qwen2",
+    "num_layers": 28,
+    "num_heads": 28,
+    "num_kv_heads": 4,
+    "hidden_size": 3584,
+    "vocab_size": 152064,
+    "param_count": 7615616512
+  },
+  "pre_stamp": {
+    "sha256": "0a854098d05b15921c173b7c8deb87c1cbecdffc66e918825c11a02775c73666",
+    "size_bytes": 8035635524,
+    "provenance": {
+      "license": "(missing)",
+      "data_source": "(missing)",
+      "data_license": "(missing)"
+    },
+    "verdict_from_provenance_triple": "Fail",
+    "ship_009_status_before": "FAIL"
+  },
+  "post_stamp": {
+    "sha256": "a394dd286732a5f32dfb983fd2ea0eeba4d6239ac4c47e44bcfe62f590ddeb28",
+    "size_bytes": 8035635652,
+    "size_delta_bytes": 128,
+    "provenance": {
+      "license": "Apache-2.0",
+      "data_source": "huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct",
+      "data_license": "Apache-2.0"
+    },
+    "verdict_from_provenance_triple": "Pass",
+    "ship_009_status_after": "PASS"
+  },
+  "stamp_command": "/mnt/nvme-raid0/targets/aprender/release/apr stamp /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.pre-stamp.bak.apr --license Apache-2.0 --data-source huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct --data-license Apache-2.0 --output /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr --json",
+  "tensor_byte_identity_proof": {
+    "tool": "apr diff",
+    "structural_diffs": 0,
+    "tensor_diffs": 0,
+    "metadata_diffs": 0,
+    "quantization_diffs": 0,
+    "size_diffs": 1,
+    "size_delta_bytes": 128,
+    "interpretation": "apr diff confirms only metadata-block size delta. Tensor bytes are byte-identical between pre-stamp and post-stamp. apr stamp design contract honored: 'Tensor bytes and header flags are preserved verbatim.'"
+  },
+  "verification_command_chain": [
+    {
+      "step": 1,
+      "tool": "apr inspect",
+      "target": "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr",
+      "evidence": "Provenance:  license: Apache-2.0  data_source: huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct  data_license: Apache-2.0",
+      "verdict": "Pass — all 3 fields non-empty, non-(missing), non-null"
+    },
+    {
+      "step": 2,
+      "tool": "apr inspect --json",
+      "target": "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr",
+      "evidence": "metadata.license == 'Apache-2.0' AND metadata.data_source == 'huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct' AND metadata.data_license == 'Apache-2.0'",
+      "verdict": "Pass — JSON-serialized output round-trips with full string values, not null"
+    },
+    {
+      "step": 3,
+      "tool": "apr diff",
+      "args": "<pre-stamp> <post-stamp> --json",
+      "verdict": "Pass — tensor byte-identity preserved; only file_size category shows 128 byte delta as expected for 3 metadata strings"
+    }
+  ],
+  "deferred_irreversible_actions": [
+    {
+      "action": "Replace /home/noah/src/apr-leaderboard/checkpoints/qwen2.5-coder-7b-instruct-q4k.apr with stamped variant",
+      "blast_radius": "git-tracked apr-leaderboard repo; needs separate commit + push",
+      "category": "irreversible-shipped",
+      "user_authorization_required": true
+    },
+    {
+      "action": "Re-upload paiml/qwen2.5-coder-7b-apache-q4k-v1 to HuggingFace Hub",
+      "blast_radius": "public Hub artifact; consumers downloading current sha256 0a854098...c73666 would see new sha256 a394dd28...0ddeb28",
+      "category": "irreversible-shipped",
+      "user_authorization_required": true
+    },
+    {
+      "action": "Update contracts/publish-manifests/paiml-qwen2.5-coder-7b-apache-q4k-v1-apr.yaml sha256 + size_bytes",
+      "blast_radius": "publish-manifest pin updated; FALSIFY-PM-002 bytes-match assertion needs to flip to new hash post-Hub re-upload",
+      "category": "irreversible-shipped",
+      "user_authorization_required": true,
+      "ordering_dependency": "after Hub re-upload completes"
+    }
+  ],
+  "discharge_rationale": "GATE-APR-PROV-004's full_discharge_blocks_on condition reads: 'Teacher .apr republish ... `apr inspect <teacher>.apr --json` must emit each field with its string value (not null). Fixture-swap only — no code change, no contract change.' The local lambda-labs canonical staging artifact at /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr now satisfies the inspect-emits-non-null condition. Pre-stamp backup retained at .pre-stamp.bak.apr (reversible). The contract's algorithm proof was already discharged via the YAML-bind + Rust unit tests at PARTIAL_ALGORITHM_LEVEL; this evidence completes the LIVE step on the canonical fixture path. Three follow-up irreversible actions (apr-leaderboard checkpoint update, HF Hub re-upload, publish-manifest sha256 bump) are documented above and require explicit user authorization per the irreversible-artifacts rule.",
+  "tooling_chain_proof": {
+    "apr_stamp": "shipped at PR #1050 commit 71d23fb5e (task #141, 2026-04-24)",
+    "apr_stamp_cli": "shipped at task #142",
+    "apr_inspect_provenance_emit": "shipped at PR #889 commit 8f0607d42 (FALSIFY-SHIP-022 DISCHARGED, task #113)",
+    "ship_009_partial_discharge": "shipped at PR #1009 (task #116) — apr-provenance-v1 v1.0.0 → v1.1.0 + GATE-APR-PROV-004 binding"
+  }
+}

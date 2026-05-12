@@ -155,6 +155,12 @@ commands:
     requires_model: true
     side_effects: [filesystem]
 
+  - name: stamp
+    category: model_ops
+    description: "Stamp provenance fields (license, data_source, data_license) onto an existing .apr file"
+    requires_model: true
+    side_effects: [filesystem]
+
   - name: compile
     category: model_ops
     description: "Compile model into standalone executable"

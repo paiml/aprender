@@ -87,23 +87,48 @@ impl CublasHandle {
         CublasDriver::check(result)
             .map_err(|e| GpuError::CudaDriver(format!("cublasCreate_v2: {e}"), 0))?;
 
-        // ALB-076: Use CUBLAS_DEFAULT_MATH (no tensor cores for FP32 GEMMs).
+        // ALB-076 + FALSIFY-GPUTRAIN-006: Use CUBLAS_PEDANTIC_MATH.
         //
-        // Root cause: CUBLAS_TF32_TENSOR_OP_MATH + CUBLAS_GEMM_DEFAULT_TENSOR_OP
-        // produce NaN for transposed backward GEMMs (Trans/NoTrans, NoTrans/Trans)
-        // when input gradient magnitudes reach ~1e5 (around block 18 of 24-layer
-        // backward). Forward NoTrans/NoTrans is unaffected.
+        // Two invariants in one mode:
         //
-        // Five Whys analysis:
-        // 1. Why NaN weights? → optimizer reads NaN gradients
-        // 2. Why NaN gradients? → cuBLAS backward_a/b output ALL NaN
-        // 3. Why NaN output from valid inputs? → tensor core GEMM algorithm
-        // 4. Why only backward? → backward uses Trans flag, forward doesn't
-        // 5. Why only after ~5 blocks? → gradient magnification reaches ~1e5
+        // (1) ALB-076 — NaN avoidance for transposed backward GEMMs:
+        //     CUBLAS_TF32_TENSOR_OP_MATH + CUBLAS_GEMM_DEFAULT_TENSOR_OP
+        //     produce NaN for Trans/NoTrans GEMMs when input gradient
+        //     magnitudes reach ~1e5 (around block 18 of 24-layer backward).
+        //     PEDANTIC mode disables ALL tensor-core paths → no NaN.
         //
-        // CUBLAS_DEFAULT_MATH disables tensor cores for FP32, yielding correct
-        // results. cuBLAS SIMD GEMM is still 6-14x faster than hand-written PTX.
-        let result = unsafe { (driver.cublasSetMathMode)(handle, CUBLAS_DEFAULT_MATH) };
+        // (2) FALSIFY-GPUTRAIN-006 — bit-exact seed reproducibility:
+        //     The previous comment claimed CUBLAS_DEFAULT_MATH disables
+        //     tensor cores for FP32. That is WRONG on sm_80+ — per NVIDIA
+        //     docs, DEFAULT mode "leaves room for the cuBLAS library to
+        //     use Tensor Cores when supported", which on Ampere/Ada/Hopper
+        //     means TF32 (10-bit mantissa) for FP32 inputs. TF32 has both
+        //     reduced precision AND shape-dependent algorithm selection,
+        //     so two consecutive cuda:0 seed=0 runs produced different
+        //     scripted-loss traces at |Δ| ≈ 1e-4 (after the
+        //     `rms_norm.rs::grad_gamma atomicAdd` fix removed the dominant
+        //     1.19e-3 source). PEDANTIC math forces full FP32 with a
+        //     fixed algorithm, eliminating that residual.
+        //
+        // Five Whys (FALSIFY-GPUTRAIN-006 residual):
+        // 1. Why |Δ|≈1e-4 after the atomic-fix? → cuBLAS GEMM still differs.
+        // 2. Why does GEMM differ? → DEFAULT_MATH selects TF32 on Ada.
+        // 3. Why is TF32 nondeterministic? → 10-bit mantissa + shape-
+        //    dependent kernel choice (split-K vs not).
+        // 4. Why didn't ALB-076's comment catch this? → It conflated
+        //    "no tensor-core NaN" with "no tensor-core path entirely".
+        // 5. Why is PEDANTIC the right fix? → PEDANTIC explicitly disables
+        //    every Tensor Core / reduced-precision path for FP32 inputs,
+        //    addressing both invariants under a single mode.
+        //
+        // Trade-off: PEDANTIC GEMM on sm_89 is slower than TF32 (no Tensor
+        // Cores). The ALB-076 fix already accepted this trade-off (per its
+        // ~6-14× cuBLAS-vs-PTX speedup claim — that comparison was against
+        // PTX, not against TF32). For training, correctness + reproducibility
+        // dominate raw GEMM throughput; entrenar#318's TF32 handle remains
+        // available via `new_with_tensor_cores` for inference paths that
+        // can tolerate the precision loss.
+        let result = unsafe { (driver.cublasSetMathMode)(handle, CUBLAS_PEDANTIC_MATH) };
         if result != CUBLAS_STATUS_SUCCESS {
             unsafe { (driver.cublasDestroy_v2)(handle) };
             return Err(GpuError::CudaDriver(

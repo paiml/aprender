@@ -112,6 +112,17 @@ pub struct ArchConstraints {
     pub has_qk_norm: bool,
     /// Default norm epsilon when GGUF metadata is missing
     pub default_eps: f32,
+    /// Whether this architecture is a Mixture-of-Experts (MoE) variant
+    /// (qwen3_moe, qwen3_5_moe, ...). MoE architectures have per-layer
+    /// expert tensors `blk.{i}.ffn_gate_exps.weight` etc. instead of
+    /// the dense single-tensor names `blk.{i}.ffn_gate.weight` used by
+    /// dense architectures (llama, qwen3, etc.).
+    ///
+    /// Consumers MUST gate dense-FFN-name lookups on `!is_moe`:
+    /// `CudaExecutor::build_indexed_weights` skips ffn_gate/up/down
+    /// weight lookups when this is true (M-GPU-MOE-1.3 per
+    /// `qwen3-moe-forward-gpu-v1` v1.3.0).
+    pub is_moe: bool,
 }
 
 // GH-323: Generated from arch-constraints-v1.yaml by build.rs.
@@ -325,15 +336,20 @@ pub(crate) fn default_eos_for_architecture(arch: &str) -> Option<u32> {
 ///
 /// Different architectures use fundamentally different RoPE frequency bases:
 /// - LLaMA/Mistral/Gemma: 10,000.0 (original RoPE paper)
-/// - Qwen2/Qwen3: 1,000,000.0 (extended context)
+/// - Qwen2/Qwen3/Qwen3-MoE: 1,000,000.0 (extended context — HF config.json)
 /// - DeepSeek: 10,000.0
 /// - Phi: 10,000.0
 ///
 /// Using the wrong rope_theta produces completely wrong positional encodings.
 /// Sources: HuggingFace config.json files, architecture papers.
+///
+/// M32d Step 5b (companion `claude-code-parity-apr-poc.md` § "M32d FAST PATH"
+/// rank-4 prior, 10%): added `qwen3_moe` to the Qwen3 1M arm because GGUF
+/// for Qwen3-Coder-30B-A3B-Instruct ships WITHOUT `qwen3moe.rope.freq_base`
+/// metadata, so this default fires.
 pub(crate) fn default_rope_theta_for_architecture(arch: &str) -> f32 {
     match arch {
-        "qwen2" | "qwen3" => 1_000_000.0,
+        "qwen2" | "qwen3" | "qwen3_moe" => 1_000_000.0,
         "llama" | "mistral" | "gemma" | "gemma2" | "deepseek" | "deepseek2" => 10_000.0,
         "phi2" | "phi3" | "phi" => 10_000.0,
         // Conservative default: LLaMA's 10K is the original RoPE value
