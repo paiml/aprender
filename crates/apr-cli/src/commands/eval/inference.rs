@@ -343,11 +343,14 @@ fn run_humaneval_inference(
             Ok(r) => r,
             Err(e) => {
                 if !json_output {
-                    eprintln!("  [FAIL] {} ({}): inference error: {e}", problem.task_id, entry);
+                    eprintln!(
+                        "  [FAIL] {} ({}): inference error: {e}",
+                        problem.task_id, entry
+                    );
                 }
                 results.push((problem.task_id.clone(), entry.to_string(), false));
                 continue;
-            },
+            }
         };
 
         // Try to extract a Python code block from the assistant response.
@@ -357,40 +360,43 @@ fn run_humaneval_inference(
         // R1+R2: pass `entry_point` so multi-block completions resolve to
         // the block containing `def {entry_point}(` (not the first
         // explanatory snippet the model may emit).
-        let completion = if let Some(code) =
-            extract_python_code_block_targeted(&result.text, Some(entry))
-        {
-            // ChatML/markdown path: assistant emitted `\`\`\`python\n…\n\`\`\``.
-            // The extracted code contains the full function (signature +
-            // body); concatenating with prompt would duplicate the signature,
-            // so we use the code block AS the program (after the prompt's
-            // imports — the canonical solution-checking format expects
-            // `prompt + completion` to be a valid program).
-            //
-            // The simplest robust approach is to use the extracted block
-            // directly as the COMPLETE function, drop the prompt's empty
-            // function shell, and append the test harness.
-            code
-        } else {
-            // Raw-continuation fallback (pre-H4 path). Slice off the prompt
-            // prefix when it's verbatim in result.text; otherwise decode
-            // tokens past `input_token_count`. Apply dedent residual fix.
-            let raw = if let Some(stripped) = result.text.strip_prefix(&problem.prompt) {
-                stripped.to_string()
+        let completion =
+            if let Some(code) = extract_python_code_block_targeted(&result.text, Some(entry)) {
+                // ChatML/markdown path: assistant emitted `\`\`\`python\n…\n\`\`\``.
+                // The extracted code contains the full function (signature +
+                // body); concatenating with prompt would duplicate the signature,
+                // so we use the code block AS the program (after the prompt's
+                // imports — the canonical solution-checking format expects
+                // `prompt + completion` to be a valid program).
+                //
+                // The simplest robust approach is to use the extracted block
+                // directly as the COMPLETE function, drop the prompt's empty
+                // function shell, and append the test harness.
+                code
             } else {
-                let completion_tokens = if result.tokens.len() > result.input_token_count {
-                    &result.tokens[result.input_token_count..]
+                // Raw-continuation fallback (pre-H4 path). Slice off the prompt
+                // prefix when it's verbatim in result.text; otherwise decode
+                // tokens past `input_token_count`. Apply dedent residual fix.
+                let raw = if let Some(stripped) = result.text.strip_prefix(&problem.prompt) {
+                    stripped.to_string()
                 } else {
-                    &result.tokens[..]
+                    let completion_tokens = if result.tokens.len() > result.input_token_count {
+                        &result.tokens[result.input_token_count..]
+                    } else {
+                        &result.tokens[..]
+                    };
+                    tokenizer.decode(completion_tokens)
                 };
-                tokenizer.decode(completion_tokens)
+                let truncated = truncate_at_function_boundary(&raw);
+                // The aligned form goes APPENDED to the prompt; encode that as
+                // the full continuation. We then split the prompt back off in
+                // the program-build step below.
+                format!(
+                    "{}{}",
+                    problem.prompt,
+                    align_continuation_indent(&problem.prompt, truncated)
+                )
             };
-            let truncated = truncate_at_function_boundary(&raw);
-            // The aligned form goes APPENDED to the prompt; encode that as
-            // the full continuation. We then split the prompt back off in
-            // the program-build step below.
-            format!("{}{}", problem.prompt, align_continuation_indent(&problem.prompt, truncated))
-        };
 
         // Build the test program. Two cases:
         //   - ChatML path: `completion` is a complete function from the
@@ -399,7 +405,20 @@ fn run_humaneval_inference(
         //     prompt prefix (concatenated above).
         let full_program = format!("{completion}\n\n{}\n\ncheck({})\n", problem.test, entry);
 
-        let ok = execute_python_test(&full_program, 10);
+        let exec_result = execute_python_test_with_diagnostics(&full_program, 10);
+        let ok = exec_result.success;
+
+        if std::env::var("APR_EVAL_DEBUG").is_ok() {
+            write_apr_eval_debug(
+                &problem.task_id,
+                &problem.prompt,
+                &result.text,
+                &completion,
+                &full_program,
+                &exec_result,
+            );
+        }
+
         if ok {
             passed += 1;
         }
@@ -650,7 +669,7 @@ pub(super) fn extract_python_code_block_targeted(
                 match best {
                     None => best = Some((rel, after_open)),
                     Some((br, _)) if rel < br => best = Some((rel, after_open)),
-                    _ => {},
+                    _ => {}
                 }
             }
         }
@@ -777,7 +796,10 @@ mod extract_python_code_block_targeted_tests {
     fn prefers_block_containing_entry_point() {
         let text = "First a sketch:\n```python\n# rough idea\nx = 1\n```\nNow the actual solution:\n```python\ndef separate_paren_groups(s):\n    return [s]\n```";
         let got = extract_python_code_block_targeted(text, Some("separate_paren_groups"));
-        assert_eq!(got.as_deref(), Some("def separate_paren_groups(s):\n    return [s]"));
+        assert_eq!(
+            got.as_deref(),
+            Some("def separate_paren_groups(s):\n    return [s]")
+        );
     }
 
     /// Single block + matching entry_point still returns that block.
@@ -894,9 +916,11 @@ mod align_indent_tests {
     #[test]
     fn dedents_one_excess_space() {
         let prompt = "def f(x: int) -> int:\n    \"\"\" doc.\n    \"\"\"\n";
-        let completion = "     for i in range(x):\n         if i > 0:\n             return i\n     return 0\n";
+        let completion =
+            "     for i in range(x):\n         if i > 0:\n             return i\n     return 0\n";
         let got = align_continuation_indent(prompt, completion);
-        let want = "    for i in range(x):\n        if i > 0:\n            return i\n    return 0\n";
+        let want =
+            "    for i in range(x):\n        if i > 0:\n            return i\n    return 0\n";
         assert_eq!(got, want);
     }
 
@@ -951,46 +975,211 @@ mod align_indent_tests {
     }
 }
 
+/// Per-problem debug dump for `APR_EVAL_DEBUG=1`. Diagnoses §69
+/// "harness bug" candidate root causes RC1-RC4 by writing the full
+/// model response, extracted completion, executed program, exit code,
+/// stderr, and timeout flag to `/tmp/apr_eval_debug_<task>.json`.
+///
+/// Used to compose a falsifier: manual `python3` execution of the
+/// dumped program vs harness `execute_python_test` result.
+pub(super) fn write_apr_eval_debug(
+    task_id: &str,
+    prompt: &str,
+    response: &str,
+    completion: &str,
+    full_program: &str,
+    exec: &PythonExecResult,
+) {
+    let safe_task = task_id.replace(['/', '\\', ' '], "_");
+    let path = std::env::temp_dir().join(format!("apr_eval_debug_{safe_task}.json"));
+    let json = serde_json::json!({
+        "task_id": task_id,
+        "prompt": prompt,
+        "response": response,
+        "response_len": response.len(),
+        "completion": completion,
+        "completion_len": completion.len(),
+        "full_program": full_program,
+        "exit_code": exec.exit_code,
+        "stderr": exec.stderr_capture,
+        "timed_out": exec.timed_out,
+        "spawn_error": exec.spawn_error,
+        "success": exec.success,
+    });
+    let _ = std::fs::write(
+        &path,
+        serde_json::to_string_pretty(&json).unwrap_or_default(),
+    );
+}
+
 /// Execute a Python program and check if all assertions pass.
 /// Returns true if exit code is 0, false otherwise.
 /// Enforces a timeout to catch infinite loops (FALSIFY-EVAL-003).
 pub(super) fn execute_python_test(program: &str, timeout_secs: u64) -> bool {
+    execute_python_test_with_diagnostics(program, timeout_secs).success
+}
+
+/// Result of executing a Python program: success flag + diagnostics.
+/// `exit_code` is `Some(code)` when the process exited; `None` when killed
+/// by timeout or spawn failed. `stderr_capture` is captured up to 64KB.
+pub(super) struct PythonExecResult {
+    pub success: bool,
+    pub exit_code: Option<i32>,
+    pub stderr_capture: String,
+    pub timed_out: bool,
+    pub spawn_error: Option<String>,
+}
+
+/// Execute Python and return diagnostics. Drains stderr to avoid pipe-buffer
+/// deadlock (RC2 candidate from §69).
+pub(super) fn execute_python_test_with_diagnostics(
+    program: &str,
+    timeout_secs: u64,
+) -> PythonExecResult {
+    use std::io::Read;
     use std::process::Command;
     use std::time::{Duration, Instant};
 
-    // Write program to a temp file
-    let tmp = std::env::temp_dir().join(format!("apr_eval_{}.py", std::process::id()));
-    if std::fs::write(&tmp, program).is_err() {
-        return false;
+    let tmp = std::env::temp_dir().join(format!(
+        "apr_eval_{}_{}.py",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    if let Err(e) = std::fs::write(&tmp, program) {
+        return PythonExecResult {
+            success: false,
+            exit_code: None,
+            stderr_capture: String::new(),
+            timed_out: false,
+            spawn_error: Some(format!("tmp write: {e}")),
+        };
     }
 
-    let result = Command::new("python3")
+    let spawn_result = Command::new("python3")
         .arg(&tmp)
         .env("PYTHONDONTWRITEBYTECODE", "1")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
-        .spawn()
-        .and_then(|mut child| {
-            let deadline = Instant::now() + Duration::from_secs(timeout_secs);
-            loop {
-                match child.try_wait()? {
-                    Some(status) => return Ok(status.success()),
-                    None => {
-                        if Instant::now() >= deadline {
-                            let _ = child.kill();
-                            let _ = child.wait();
-                            return Ok(false);
-                        }
-                        std::thread::sleep(Duration::from_millis(50));
-                    }
-                }
-            }
-        });
+        .spawn();
 
-    // Clean up temp file
+    let mut child = match spawn_result {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            return PythonExecResult {
+                success: false,
+                exit_code: None,
+                stderr_capture: String::new(),
+                timed_out: false,
+                spawn_error: Some(format!("spawn: {e}")),
+            };
+        }
+    };
+
+    let deadline = Instant::now() + Duration::from_secs(timeout_secs);
+    let mut timed_out = false;
+    let exit_status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Some(status),
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    timed_out = true;
+                    break None;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(_) => break None,
+        }
+    };
+
+    let mut stderr_capture = String::new();
+    if let Some(mut s) = child.stderr.take() {
+        let mut buf = vec![0u8; 65536];
+        if let Ok(n) = s.read(&mut buf) {
+            stderr_capture = String::from_utf8_lossy(&buf[..n]).to_string();
+        }
+    }
+
     let _ = std::fs::remove_file(&tmp);
 
-    result.unwrap_or(false)
+    let exit_code = exit_status.and_then(|s| s.code());
+    let success = exit_status.map(|s| s.success()).unwrap_or(false);
+
+    PythonExecResult {
+        success,
+        exit_code,
+        stderr_capture,
+        timed_out,
+        spawn_error: None,
+    }
+}
+
+#[cfg(test)]
+mod execute_python_test_diagnostics_tests {
+    use super::execute_python_test_with_diagnostics;
+
+    /// Trivially-passing program reports success + exit_code 0 + empty stderr.
+    #[test]
+    fn success_program_reports_zero_exit_and_empty_stderr() {
+        let program = "print('hello')\n";
+        let r = execute_python_test_with_diagnostics(program, 5);
+        assert!(r.success, "program should succeed");
+        assert_eq!(r.exit_code, Some(0));
+        assert!(
+            r.stderr_capture.is_empty(),
+            "no stderr expected, got: {}",
+            r.stderr_capture
+        );
+        assert!(!r.timed_out);
+        assert!(r.spawn_error.is_none());
+    }
+
+    /// Assertion failure → success=false, exit_code=1, stderr captured.
+    #[test]
+    fn assertion_failure_reports_nonzero_and_traceback() {
+        let program = "assert 1 == 2\n";
+        let r = execute_python_test_with_diagnostics(program, 5);
+        assert!(!r.success);
+        assert_eq!(r.exit_code, Some(1));
+        assert!(
+            r.stderr_capture.contains("AssertionError"),
+            "expected traceback, got: {}",
+            r.stderr_capture
+        );
+        assert!(!r.timed_out);
+    }
+
+    /// Falsifier §69 harness invariant: a program that python3 PASSES manually
+    /// MUST also be reported as passing by the harness. If this test ever fails
+    /// we have an RC2 (false-negative) regression.
+    #[test]
+    fn harness_invariant_passing_program_reports_success() {
+        let program = "def f(x):\n    return x + 1\n\nassert f(1) == 2\n";
+        let r = execute_python_test_with_diagnostics(program, 5);
+        assert!(r.success, "passing program must be reported as success");
+        assert_eq!(r.exit_code, Some(0));
+    }
+
+    /// Falsifier §69 RC2-extension: programs that emit verbose stderr but pass
+    /// MUST NOT deadlock — the stderr pipe is drained.
+    #[test]
+    fn verbose_stderr_does_not_deadlock_on_success() {
+        // Emit ~10KB to stderr, then exit 0 → must report success without timeout.
+        let program =
+            "import sys\nfor _ in range(200):\n    print('x' * 50, file=sys.stderr)\nsys.exit(0)\n";
+        let r = execute_python_test_with_diagnostics(program, 10);
+        assert!(
+            r.success,
+            "10KB-stderr passing program timed_out={} exit_code={:?}",
+            r.timed_out, r.exit_code
+        );
+        assert!(!r.timed_out);
+    }
 }
 
 /// Validate a single HumanEval problem has correct structure.
