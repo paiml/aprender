@@ -6,7 +6,7 @@ use anyhow::Result;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use trueno_rag::{
+use aprender_rag::{
     chunk::RecursiveChunker,
     embed::{Embedder, TfIdfEmbedder},
     fusion::FusionStrategy,
@@ -16,7 +16,7 @@ use trueno_rag::{
 };
 
 #[cfg(feature = "embeddings")]
-use trueno_rag::{EmbeddingModelType, FastEmbedder};
+use aprender_rag::{EmbeddingModelType, FastEmbedder};
 
 use crate::{PersistedChunk, PersistedIndex};
 
@@ -175,7 +175,7 @@ pub(crate) fn create_query_embedder(persisted: &PersistedIndex) -> Result<Box<dy
 /// similarity for vocabulary-mismatched queries.
 #[cfg(feature = "eval")]
 pub(crate) fn expand_query_hyde(query: &str) -> Result<String> {
-    use trueno_rag::preprocess::{AnthropicHypotheticalGenerator, HypotheticalGenerator};
+    use aprender_rag::preprocess::{AnthropicHypotheticalGenerator, HypotheticalGenerator};
 
     let generator = AnthropicHypotheticalGenerator::from_env()
         .map_err(|e| anyhow::anyhow!("HyDE requires ANTHROPIC_API_KEY: {e}"))?;
@@ -207,9 +207,9 @@ pub(crate) fn apply_rerank(
     chunks: &[PersistedChunk],
     top_k: usize,
 ) -> Result<Vec<(usize, f32)>> {
-    use trueno_rag::rerank::Reranker;
-    use trueno_rag::retrieve::RetrievalResult;
-    use trueno_rag::DocumentId;
+    use aprender_rag::rerank::Reranker;
+    use aprender_rag::retrieve::RetrievalResult;
+    use aprender_rag::DocumentId;
 
     match rerank {
         "none" => Ok(scores.iter().take(top_k).copied().collect()),
@@ -259,12 +259,12 @@ pub(crate) fn apply_rerank(
 pub(crate) fn rerank_retrieved_chunks(
     rerank: &str,
     query: &str,
-    mut results: Vec<trueno_rag::eval::types::RetrievedChunk>,
+    mut results: Vec<aprender_rag::eval::types::RetrievedChunk>,
     top_k: usize,
-) -> Result<Vec<trueno_rag::eval::types::RetrievedChunk>> {
-    use trueno_rag::rerank::Reranker;
-    use trueno_rag::retrieve::RetrievalResult;
-    use trueno_rag::DocumentId;
+) -> Result<Vec<aprender_rag::eval::types::RetrievedChunk>> {
+    use aprender_rag::rerank::Reranker;
+    use aprender_rag::retrieve::RetrievalResult;
+    use aprender_rag::DocumentId;
 
     match rerank {
         "none" => {
@@ -337,11 +337,11 @@ pub(crate) fn query_sparse(
     persisted: &PersistedIndex,
     top_k: usize,
 ) -> Vec<(usize, f32)> {
-    use trueno_rag::index::SparseIndex;
-    use trueno_rag::{BM25Index, DocumentId};
+    use aprender_rag::index::SparseIndex;
+    use aprender_rag::{BM25Index, DocumentId};
 
     let mut bm25 = BM25Index::new();
-    let mut chunk_map: HashMap<trueno_rag::ChunkId, usize> = HashMap::new();
+    let mut chunk_map: HashMap<aprender_rag::ChunkId, usize> = HashMap::new();
     for (i, pc) in persisted.chunks.iter().enumerate() {
         let chunk = Chunk::new(DocumentId::new(), pc.content.clone(), 0, pc.content.len());
         chunk_map.insert(chunk.id, i);
@@ -361,9 +361,9 @@ pub(crate) fn query_hybrid(
     fusion_k: Option<f32>,
     candidates: usize,
 ) -> Result<Vec<(usize, f32)>> {
-    use trueno_rag::index::VectorStoreConfig;
-    use trueno_rag::retrieve::HybridRetrieverConfig;
-    use trueno_rag::{BM25Index, DocumentId, HybridRetriever, VectorStore};
+    use aprender_rag::index::VectorStoreConfig;
+    use aprender_rag::retrieve::HybridRetrieverConfig;
+    use aprender_rag::{BM25Index, DocumentId, HybridRetriever, VectorStore};
 
     let fusion_strategy = parse_fusion_strategy(fusion, fusion_k)?;
 
@@ -382,7 +382,7 @@ pub(crate) fn query_hybrid(
 
     let mut retriever = HybridRetriever::new(dense_store, bm25, embedder).with_config(config);
 
-    let mut chunk_meta: HashMap<trueno_rag::ChunkId, usize> = HashMap::new();
+    let mut chunk_meta: HashMap<aprender_rag::ChunkId, usize> = HashMap::new();
     for (i, pc) in persisted.chunks.iter().enumerate() {
         let mut chunk = Chunk::new(DocumentId::new(), pc.content.clone(), 0, pc.content.len());
         chunk.metadata.title = pc.title.clone();
@@ -443,8 +443,8 @@ pub(crate) fn format_query_results(
             let time_info = match (chunk.start_secs, chunk.end_secs) {
                 (Some(start), Some(end)) => format!(
                     " [{}–{}]",
-                    trueno_rag::media::format_display_time(start),
-                    trueno_rag::media::format_display_time(end),
+                    aprender_rag::media::format_display_time(start),
+                    aprender_rag::media::format_display_time(end),
                 ),
                 _ => String::new(),
             };

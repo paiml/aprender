@@ -1,33 +1,29 @@
 # CRUX-C-13 — /v1/embeddings endpoint
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-C-13
-  version: "1.0.0-draft"
+  version: "1.2.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "C — Serving & Chat UX"
   competitor: llama_cpp
-  demand_score: 5  # 1..5, critical priority in pmat work
+  demand_score: 5
   intake_status: missing
   description: >
-    /v1/embeddings endpoint. Root-cause workflow extracted from llama_cpp UX — see master
-    subspec §5.C and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    /v1/embeddings endpoint. Root-cause workflow extracted from
+    llama_cpp UX — see master subspec §5.C. OpenAI-compatible response
+    shape; deterministic embeddings; honest usage accounting; CLI
+    `--embeddings-enabled` surface.
 
   references:
   - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
-  - github.com/huggingface/accelerate
-  - github.com/pytorch/pytorch — DDP/FSDP
+  - 'https://platform.openai.com/docs/api-reference/embeddings'
+  - 'https://github.com/ggerganov/llama.cpp/blob/master/examples/server/README.md'
+
 equations:
   embeddings_response_schema:
     formula: |
@@ -42,7 +38,6 @@ equations:
         len(response.data) == len(request.input)      (1 vector per input)
         ∀ i: len(response.data[i].embedding) == H      (H = model.hidden_size)
         response.data[i].index == i                    (preserves request order)
-      Ref: https://platform.openai.com/docs/api-reference/embeddings
     domain: POST /v1/embeddings request
     codomain: JSON response with embeddings array
     invariants:
@@ -54,12 +49,11 @@ equations:
   embedding_determinism:
     formula: |
       For identical input s at temperature-independent endpoint:
-        cosine(embed(s), embed(s)) == 1.0 ± 1e-6
-      (Embeddings MUST be deterministic for the same input on the same model.)
+        cosine(embed(s), embed(s)) >= 1 - 1e-6
     domain: string s ∈ text
     codomain: cosine similarity ∈ [-1, 1]
     invariants:
-    - "Repeated calls with identical input produce cosine == 1.0 ± 1e-6"
+    - "Repeated calls with identical input produce cosine >= 1 - 1e-6"
     - "Embedding model runs with deterministic (no-sampling) forward pass"
 
 falsification_tests:
@@ -72,7 +66,6 @@ falsification_tests:
       -d '{"model":"all-minilm","input":["text1","text2","text3"]}')
     echo "$R" | jq -e '.object == "list"' >/dev/null
     echo "$R" | jq -e '.data | length == 3' >/dev/null
-    # Hidden size is model-dependent; query metadata
     H=$(apr inspect all-minilm.apr --json | jq '.metadata.hidden_size')
     for i in 0 1 2; do
       echo "$R" | jq -e --argjson i "$i" --argjson h "$H" \
@@ -80,10 +73,40 @@ falsification_tests:
       echo "$R" | jq -e --argjson i "$i" '.data[$i].index == $i' >/dev/null
     done
   if_fails: "/v1/embeddings response length or vector dimension mismatches spec"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/embeddings_classifier.rs
+    cli_path: crates/apr-cli/src/commands/embeddings_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_13.rs
+    e2e_tests:
+    - falsify_crux_c_13_001_shape_ok_on_three_rows
+    - falsify_crux_c_13_001_shape_rejects_row_count_mismatch
+    - falsify_crux_c_13_001_shape_rejects_vector_dim_mismatch
+    - falsify_crux_c_13_001_shape_rejects_index_out_of_order
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_embeddings_response_shape`
+      enforces three invariants in sequence, surfacing the first violation
+      with all fields needed to debug:
+        (a) `data.len() == input_len`  → else `RowCountMismatch`;
+        (b) ∀ row r, `r.embedding.len() == hidden_size` → else
+            `VectorDimensionMismatch { row, expected, got }`;
+        (c) ∀ row r at position i, `r.index == i` → else
+            `IndexOutOfOrder { row, expected_index, got_index }`.
+      Empty input/data pair returns `Ok{n_rows:0}` (no vacuous truth, but
+      also no spurious failure). Classifier is a pure function of the
+      (input_len, data, hidden_size) triple and thus deterministic.
+    tests:
+    - shape_ok_for_three_rows_of_hidden_size_4
+    - shape_row_count_mismatch_is_reported
+    - shape_vector_dim_mismatch_is_reported_with_row
+    - shape_index_out_of_order_is_reported
+    - shape_empty_input_empty_data_is_ok
+    scope: "(input_len, data[EmbeddingRow{index, embedding}], hidden_size) → EmbeddingsShapeOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live POST /v1/embeddings handler in aprender-serve + `apr inspect --json` hidden_size surface"
 
 - id: FALSIFY-CRUX-C-13-002
-  rule: determinism — identical inputs cosine == 1.0
-  prediction: "cosine(embed(s), embed(s)) == 1.0 ± 1e-6"
+  rule: determinism — identical inputs cosine >= 1 - 1e-6
+  prediction: "cosine(embed(s), embed(s)) >= 1 - 1e-6"
   test: |
     set -euo pipefail
     R1=$(curl -s http://localhost:8080/v1/embeddings -H 'Content-Type: application/json' \
@@ -98,9 +121,48 @@ falsification_tests:
     n1 = math.sqrt(sum(a*a for a in v1))
     n2 = math.sqrt(sum(b*b for b in v2))
     cos = dot/(n1*n2)
-    assert abs(cos - 1.0) < 1e-6, f"cosine={cos}, expected 1.0"
+    assert cos >= 1.0 - 1e-6, f"cosine={cos}, expected >= 1 - 1e-6"
     PY
   if_fails: "Embeddings non-deterministic for identical input; stochastic path leaked into embedding model"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/embeddings_classifier.rs
+    cli_path: crates/apr-cli/src/commands/embeddings_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_13.rs
+    e2e_tests:
+    - falsify_crux_c_13_002_determinism_ok_on_identical
+    - falsify_crux_c_13_002_determinism_rejects_drift
+    - falsify_crux_c_13_002_determinism_rejects_zero_vector
+    sub_claim: |
+      Algorithm-level necessary conditions:
+        (a) `cosine_similarity` implements the standard <a,b>/(‖a‖·‖b‖)
+            formula (verified on identical-nonzero, orthogonal, and
+            opposite-direction pairs); returns `None` on length
+            mismatch, empty input, or zero norm — surfacing pipeline
+            errors instead of emitting silent 0.0.
+        (b) `classify_determinism` emits `Deterministic { cosine }`
+            iff cosine ≥ 1 − tolerance (with `EMBEDDINGS_COSINE_TOLERANCE
+            = 1e-6` matching the spec); `NonDeterministic { cosine,
+            tolerance }` records the observed drift; `InvalidInput` on
+            pipeline errors.
+        (c) Tiny-perturbation test (1e-7 along a unit vector) stays
+            Deterministic at 1e-6 tolerance, proving the classifier does
+            not demand exact bit-parity.
+    tests:
+    - cosine_identical_nonzero_is_one
+    - cosine_orthogonal_is_zero
+    - cosine_opposite_is_negative_one
+    - cosine_length_mismatch_is_none
+    - cosine_zero_norm_is_none
+    - cosine_empty_vectors_is_none
+    - determinism_identical_vector_is_deterministic
+    - determinism_tiny_noise_within_tolerance_is_deterministic
+    - determinism_large_drift_is_non_deterministic
+    - determinism_zero_vector_is_invalid
+    - determinism_length_mismatch_is_invalid
+    - tolerance_constant_matches_spec
+    scope: "cosine + determinism classifier (pure f64 math over f32 vectors)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "real embedding model + /v1/embeddings handler with deterministic forward pass"
 
 - id: FALSIFY-CRUX-C-13-003
   rule: usage token accounting
@@ -112,6 +174,30 @@ falsification_tests:
     echo "$R" | jq -e '.usage.total_tokens == .usage.prompt_tokens' >/dev/null
     echo "$R" | jq -e '.usage.prompt_tokens >= 1' >/dev/null
   if_fails: "usage fields inconsistent; billing/metering clients will mis-account tokens"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/embeddings_classifier.rs
+    cli_path: crates/apr-cli/src/commands/embeddings_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_13.rs
+    e2e_tests:
+    - falsify_crux_c_13_003_usage_ok_on_matching_prompt_total
+    - falsify_crux_c_13_003_usage_rejects_mismatch
+    - falsify_crux_c_13_003_usage_rejects_zero_prompt
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_usage_tokens(prompt, total)`
+      admits `Ok{prompt, total}` iff prompt ≥ 1 AND total == prompt; else
+      returns `PromptTokensZero` (catches the zero-input billing bug) or
+      `TotalMismatchesPrompt{prompt, total}` (catches silent completion-
+      token leakage in either direction: total > prompt OR total < prompt).
+      Deterministic on its (u64, u64) input pair.
+    tests:
+    - usage_equal_prompt_and_total_is_ok
+    - usage_zero_prompt_is_rejected_even_if_total_matches
+    - usage_total_exceeds_prompt_is_mismatch
+    - usage_total_below_prompt_is_mismatch
+    - usage_classifier_is_deterministic
+    scope: "(prompt_tokens, total_tokens) → UsageOutcome (pure u64 comparator)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "/v1/embeddings handler emitting the `usage` JSON block"
 
 - id: FALSIFY-CRUX-C-13-004
   rule: CLI surface exposes --embeddings-enabled
@@ -119,6 +205,36 @@ falsification_tests:
   test: |
     apr serve --help 2>&1 | grep -qE -- '--embeddings-enabled'
   if_fails: "apr serve lacks --embeddings-enabled flag; endpoint cannot be exposed as documented"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/embeddings_classifier.rs
+    cli_path: crates/apr-cli/src/commands/embeddings_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_13.rs
+    e2e_tests:
+    - falsify_crux_c_13_004_flag_bare_form_enabled
+    - falsify_crux_c_13_004_flag_equals_false_disabled
+    - falsify_crux_c_13_004_flag_rejects_wrong_expectation
+    - falsify_crux_c_13_004_flag_malformed_is_rejected
+    sub_claim: |
+      Algorithm-level necessary condition: `parse_embeddings_flag(argv)`
+      accepts both bare (`--embeddings-enabled`) and equals forms
+      (`--embeddings-enabled=true|1|yes|on` / `=false|0|no|off`,
+      case-insensitive); absent ⇒ `Disabled` (default-off, matching
+      llama.cpp/vllm); unknown value ⇒ `MalformedFlag{raw}` (no silent
+      default-true, no silent default-false — the user's intent is
+      surfaced). Parser is a pure function of argv slice and
+      deterministic.
+    tests:
+    - flag_bare_form_enables
+    - flag_equals_true_enables
+    - flag_equals_1_yes_on_enable
+    - flag_equals_false_disables
+    - flag_equals_zero_no_off_disable
+    - flag_equals_garbage_is_malformed
+    - flag_absent_defaults_to_disabled
+    - flag_parser_is_deterministic
+    scope: "argv → EmbeddingsFlagOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "clap wiring on `apr serve --embeddings-enabled` in crates/apr-cli/src/commands/serve.rs"
 
 proof_obligations:
 - type: invariant
@@ -126,7 +242,7 @@ proof_obligations:
 - type: invariant
   property: "Every embedding vector length equals model.hidden_size"
 - type: invariant
-  property: "cosine(embed(s), embed(s)) == 1.0 ± 1e-6 (determinism)"
+  property: "cosine(embed(s), embed(s)) >= 1 - 1e-6 (determinism)"
 - type: invariant
   property: "usage.total_tokens == usage.prompt_tokens on embedding responses"
 
@@ -135,10 +251,42 @@ verification_summary:
   proven: 0
   tested: 0
   status: spec-complete
+  discharge_ledger:
+  - falsify_id: FALSIFY-CRUX-C-13-001
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "live /v1/embeddings handler + `apr inspect --json` hidden_size"
+  - falsify_id: FALSIFY-CRUX-C-13-002
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "real embedding model with deterministic forward pass"
+  - falsify_id: FALSIFY-CRUX-C-13-003
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "/v1/embeddings handler emitting `usage` block"
+  - falsify_id: FALSIFY-CRUX-C-13-004
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "clap `apr serve --embeddings-enabled` surface"
+
+ship_discipline:
+  ship_rule: CRUX-SHIP-001
+  deliverables_present:
+    classifier: crates/apr-cli/src/commands/embeddings_classifier.rs
+    cli_wiring: crates/apr-cli/src/commands/embeddings_lint.rs
+    e2e_test: crates/apr-cli/tests/falsification_crux_c_13.rs
+    contract: contracts/crux-C-13-v1.yaml
+  merge_gates:
+    g1_classifier_green: true
+    g2_cli_reachable: true
+    g3_e2e_runs: true
+    g4_contract_discharged: PARTIAL_ALGORITHM_LEVEL
+  notes: >
+    `apr embeddings-lint --observation-file <obs.json>` dispatches four
+    classifiers (shape, determinism, usage, flag) over a captured JSON
+    observation. e2e suite (19 tests) exercises help surface, bare-
+    invocation rejection, per-gate ok+reject paths, empty/nonexistent
+    file rejection, and --json shape. Full ACTIVE discharge remains
+    blocked on live /v1/embeddings handler in aprender-serve + clap
+    `--embeddings-enabled` surface on `apr serve`.
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-c-13` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-c-13
   priority: critical
   auto_created: true

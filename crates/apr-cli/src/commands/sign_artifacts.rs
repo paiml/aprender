@@ -127,10 +127,7 @@ pub fn bundle_contains_rekor_payload(bundle_json: &str) -> bool {
         return true;
     }
     // Tolerate case-insensitive fallback (some tooling produces "rekor_bundle").
-    if obj
-        .keys()
-        .any(|k| k.to_ascii_lowercase().contains("rekor"))
-    {
+    if obj.keys().any(|k| k.to_ascii_lowercase().contains("rekor")) {
         return true;
     }
     false

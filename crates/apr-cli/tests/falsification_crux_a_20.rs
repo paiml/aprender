@@ -66,7 +66,9 @@ fn offline_line(stdout: &str) -> String {
     stdout
         .lines()
         .find(|l| l.contains("Offline:"))
-        .unwrap_or_else(|| panic!("CRUX-A-20: stdout must contain an 'Offline:' line, got:\n{stdout}"))
+        .unwrap_or_else(|| {
+            panic!("CRUX-A-20: stdout must contain an 'Offline:' line, got:\n{stdout}")
+        })
         .to_string()
 }
 
@@ -128,11 +130,8 @@ fn falsify_crux_a_20_algo_002_apr_offline_env_triggers_offline() {
 
 #[test]
 fn falsify_crux_a_20_algo_002_apr_offline_env_zero_is_false() {
-    let (output, stdout, _stderr) = run_apr_pull_with_env(
-        &["llama3", "--dry-run"],
-        &[("APR_OFFLINE", "0")],
-        true,
-    );
+    let (output, stdout, _stderr) =
+        run_apr_pull_with_env(&["llama3", "--dry-run"], &[("APR_OFFLINE", "0")], true);
     assert!(output.status.success());
     let line = offline_line(&stdout);
     assert!(
@@ -147,11 +146,8 @@ fn falsify_crux_a_20_algo_002_apr_offline_env_zero_is_false() {
 
 #[test]
 fn falsify_crux_a_20_algo_003_hf_hub_offline_env_triggers_offline() {
-    let (output, stdout, _stderr) = run_apr_pull_with_env(
-        &["llama3", "--dry-run"],
-        &[("HF_HUB_OFFLINE", "1")],
-        true,
-    );
+    let (output, stdout, _stderr) =
+        run_apr_pull_with_env(&["llama3", "--dry-run"], &[("HF_HUB_OFFLINE", "1")], true);
     assert!(output.status.success());
     let line = offline_line(&stdout);
     assert!(
@@ -166,21 +162,12 @@ fn falsify_crux_a_20_algo_003_hf_hub_offline_env_triggers_offline() {
 
 #[test]
 fn falsify_crux_a_20_algo_004_all_three_offline_signals_equivalent() {
-    let (_, flag_stdout, _) = run_apr_pull_with_env(
-        &["llama3", "--dry-run", "--offline"],
-        &[],
-        true,
-    );
-    let (_, apr_env_stdout, _) = run_apr_pull_with_env(
-        &["llama3", "--dry-run"],
-        &[("APR_OFFLINE", "1")],
-        true,
-    );
-    let (_, hf_env_stdout, _) = run_apr_pull_with_env(
-        &["llama3", "--dry-run"],
-        &[("HF_HUB_OFFLINE", "1")],
-        true,
-    );
+    let (_, flag_stdout, _) =
+        run_apr_pull_with_env(&["llama3", "--dry-run", "--offline"], &[], true);
+    let (_, apr_env_stdout, _) =
+        run_apr_pull_with_env(&["llama3", "--dry-run"], &[("APR_OFFLINE", "1")], true);
+    let (_, hf_env_stdout, _) =
+        run_apr_pull_with_env(&["llama3", "--dry-run"], &[("HF_HUB_OFFLINE", "1")], true);
     let flag_line = offline_line(&flag_stdout);
     let apr_env_line = offline_line(&apr_env_stdout);
     let hf_env_line = offline_line(&hf_env_stdout);

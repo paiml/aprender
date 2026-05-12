@@ -1,0 +1,43 @@
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  apr pretrain — SHIP-TWO-001 MODEL-2 training loop
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+=== Configuration ===
+    Dataset: /mnt/nvme-raid0/data/codeparrot-python-permissive-shards
+    Tokenizer: /mnt/nvme-raid0/models/model-2-tokenizer-v1
+    Run dir: /mnt/nvme-raid0/runs/model-2-from-scratch-010-codeparrot
+    LR max: 3.00e-4
+    Total steps: 50000
+    Warmup steps: 2000
+    Batch × seq: 16 × 1024
+    Steps / epoch: 100
+    Seed: 42
+    Target val_loss: 3.00
+
+    Device: cuda:0
+
+[CUDA] cuBLAS initialized — forward TF32 tensor cores (41x vs SIMD)
+[CUDA] Kernel cache initialized for target: sm_89
+  GPU: NVIDIA GeForce RTX 4090 (25.2 GB)
+  ✓ Backward rope kernel pre-warmed in forward cache
+[CUDA] Pre-warmed 27 forward kernels (JIT compiled before block upload)
+[BWD-PREWARM] Called with lora_rank=0, hidden=1024, inter=2816
+[BWD-PREWARM] Skipping (lora_rank=0)
+  ✓ Backward kernels pre-warmed (silu_backward, rms_norm_backward, etc.)
+  ✓ 24 transformer blocks uploaded to GPU
+  ✓ GPU training state allocated (LM head: 205.9 MB)
+  ✓ Fused gradient clipping: 1794 partials (7.0 KB)
+[BWD-CACHE] Compiling 'batched_rms_norm_backward' (ptx_len=3561)
+[BWD-CACHE] OK 'batched_rms_norm_backward'
+[BWD-CACHE] Compiling 'rms_norm_gamma_reduce' (ptx_len=1220)
+[BWD-CACHE] OK 'rms_norm_gamma_reduce'
+[BWD-CACHE] Compiling 'silu_backward' (ptx_len=1301)
+[BWD-CACHE] OK 'silu_backward'
+
+=== Run Result ===
+  OK EARLY_STOP  best val_loss=9.3837 after 51 epoch(s)
+    Steps recorded: 5100
+    Epochs recorded: 51
+

@@ -1,0 +1,20 @@
+Loading /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr...
+
+=== Run 1 ===
+logits.len() = 152064
+first 5 = [2.3340359, 3.7898252, 6.2179155, 3.7658672, 0.8772266]
+
+=== Run 2 ===
+first 5 = [2.3340359, 3.7898252, 6.2179155, 3.7658672, 0.8772266]
+
+=== VERDICT ===
+Total elements: 152064
+Non-zero diffs: 0 (0.000%)
+Max abs diff:   0.0000000000
+RMS diff:       0.0000000000
+
+=== HYPOTHESIS TEST ===
+APR forward is BYTE-IDENTICAL across runs.
+→ Parallel-reduction-nondeterminism hypothesis FALSIFIED.
+→ APR vs GGUF gap is structural (different kernel path).
+→ Next: compare APR vs GGUF kernels on same synthetic input.

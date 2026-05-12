@@ -99,8 +99,12 @@ impl std::error::Error for PretrainAbort {}
 // Per-step metrics — INV-TRAIN-001 / GATE-TRAIN-001
 // ─────────────────────────────────────────────────────────────
 
-/// Exactly the 6 fields the contract's `per_step_metrics.required` list
+/// Exactly the 7 fields the contract's `per_step_metrics.required` list
 /// names. Serialization is JSONL-friendly for downstream QA.
+///
+/// `wall_ms` added per `contracts/training-loop-pretrain-v1.yaml` v1.5.0
+/// to discharge §19.4 Residual B of ship-two-models-spec.md
+/// (GATE-GPUTRAIN-004 per-step latency budget).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StepMetrics {
     /// Monotonic step counter (INV-TRAIN-001).
@@ -115,6 +119,12 @@ pub struct StepMetrics {
     pub tokens_per_sec: f32,
     /// GPU utilization in [0, 100] (INV-TRAIN-008).
     pub gpu_util_pct: f32,
+    /// Wall-clock time for this optimizer step, milliseconds.
+    /// Per `contracts/training-loop-pretrain-v1.yaml` v1.5.0; required
+    /// for GATE-GPUTRAIN-004 (per-step latency budget < 500ms on
+    /// RTX 4090 / 370M).
+    #[serde(default)]
+    pub wall_ms: f32,
 }
 
 impl StepMetrics {
@@ -157,6 +167,13 @@ impl StepMetrics {
                 step: self.step,
                 field: "gpu_util_pct",
                 value: self.gpu_util_pct,
+            });
+        }
+        if !self.wall_ms.is_finite() || self.wall_ms < 0.0 {
+            return Err(PretrainAbort::ThroughputOutOfRange {
+                step: self.step,
+                field: "wall_ms",
+                value: self.wall_ms,
             });
         }
         Ok(())
@@ -570,6 +587,7 @@ impl<S: StepFn, V: ValFn> PretrainLoop<S, V> {
         check_numerical_stability(step, train_loss, grad_norm)?;
 
         let tokens_per_sec = batch_tokens as f32 / elapsed;
+        let wall_ms = elapsed * 1000.0;
         // Synthetic GPU-util: the driver treats real nvml telemetry as
         // out of scope (that belongs to the monitor module). Clamped to
         // a contract-legal [0, 100] range, jitter seeded for GATE-TRAIN-006.
@@ -582,6 +600,7 @@ impl<S: StepFn, V: ValFn> PretrainLoop<S, V> {
             lr,
             tokens_per_sec,
             gpu_util_pct: gpu_util_pct.clamp(0.0, 100.0),
+            wall_ms,
         };
         metrics.validate_finite()?;
 
@@ -964,6 +983,7 @@ mod tests {
             lr: 1e-4,
             tokens_per_sec: 1000.0,
             gpu_util_pct: 75.0,
+            wall_ms: 5.0,
         };
         assert!(m.validate_finite().is_ok());
     }
@@ -977,6 +997,7 @@ mod tests {
             lr: 1e-4,
             tokens_per_sec: -1.0,
             gpu_util_pct: 75.0,
+            wall_ms: 5.0,
         };
         assert!(matches!(m.validate_finite(), Err(PretrainAbort::ThroughputOutOfRange { .. })));
     }
@@ -990,8 +1011,69 @@ mod tests {
             lr: 1e-4,
             tokens_per_sec: 1000.0,
             gpu_util_pct: 150.0,
+            wall_ms: 5.0,
         };
         assert!(matches!(m.validate_finite(), Err(PretrainAbort::ThroughputOutOfRange { .. })));
+    }
+
+    /// Per `contracts/training-loop-pretrain-v1.yaml` v1.5.0:
+    /// wall_ms must be finite and non-negative.
+    #[test]
+    fn step_metrics_rejects_negative_wall_ms() {
+        let m = StepMetrics {
+            step: 1,
+            train_loss: 3.2,
+            grad_norm: 0.5,
+            lr: 1e-4,
+            tokens_per_sec: 1000.0,
+            gpu_util_pct: 75.0,
+            wall_ms: -1.0,
+        };
+        assert!(matches!(m.validate_finite(), Err(PretrainAbort::ThroughputOutOfRange { .. })));
+    }
+
+    /// wall_ms must be finite (NaN/Inf rejected).
+    #[test]
+    fn step_metrics_rejects_nan_wall_ms() {
+        let m = StepMetrics {
+            step: 1,
+            train_loss: 3.2,
+            grad_norm: 0.5,
+            lr: 1e-4,
+            tokens_per_sec: 1000.0,
+            gpu_util_pct: 75.0,
+            wall_ms: f32::NAN,
+        };
+        assert!(matches!(m.validate_finite(), Err(PretrainAbort::ThroughputOutOfRange { .. })));
+    }
+
+    /// Consistency invariant from contract v1.5.0:
+    /// `tokens_per_sec * (wall_ms / 1000.0) ≈ batch_tokens` within FP
+    /// rounding. Both metrics derive from the same `Instant::now()`
+    /// span so they cannot drift independently.
+    #[test]
+    fn step_metrics_wall_ms_consistent_with_tokens_per_sec() {
+        let batch_tokens: u64 = 1024;
+        let elapsed_secs: f32 = 0.5;
+        let tokens_per_sec = batch_tokens as f32 / elapsed_secs;
+        let wall_ms = elapsed_secs * 1000.0;
+
+        let m = StepMetrics {
+            step: 0,
+            train_loss: 3.2,
+            grad_norm: 0.5,
+            lr: 1e-4,
+            tokens_per_sec,
+            gpu_util_pct: 50.0,
+            wall_ms,
+        };
+        assert!(m.validate_finite().is_ok());
+        let derived_tokens = m.tokens_per_sec * (m.wall_ms / 1000.0);
+        let diff = (derived_tokens - batch_tokens as f32).abs();
+        assert!(
+            diff < 0.5,
+            "tokens_per_sec * (wall_ms/1000) = {derived_tokens} should equal batch_tokens={batch_tokens} within FP rounding"
+        );
     }
 
     // ── PretrainLoop — driver-level falsifications ──

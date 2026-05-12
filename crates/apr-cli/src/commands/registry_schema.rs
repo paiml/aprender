@@ -18,8 +18,7 @@ pub const LS_REQUIRED_FIELDS: &[&str] = &["name", "size_bytes", "sha256", "quant
 
 /// The required top-level fields of an `apr show NAME --json` object.
 /// Matches CRUX-A-09 `show_json_schema` formula.
-pub const SHOW_REQUIRED_FIELDS: &[&str] =
-    &["arch", "params", "tensor_histogram", "size_bytes"];
+pub const SHOW_REQUIRED_FIELDS: &[&str] = &["arch", "params", "tensor_histogram", "size_bytes"];
 
 /// Return Ok(()) iff `v` is a single `apr ls` entry with well-typed
 /// required fields. Error string names the offending field for
@@ -52,11 +51,7 @@ pub fn validate_ls_entry(v: &Value) -> Result<(), String> {
 
     match obj.get("sha256") {
         Some(Value::String(s)) if is_hex64(s) => {}
-        _ => {
-            return Err(
-                "ls entry 'sha256' must be a 64-char lowercase hex string".to_string(),
-            )
-        }
+        _ => return Err("ls entry 'sha256' must be a 64-char lowercase hex string".to_string()),
     }
 
     match obj.get("quant") {
@@ -104,11 +99,7 @@ pub fn validate_show_object(v: &Value) -> Result<(), String> {
 
     match obj.get("tensor_histogram") {
         Some(Value::Object(_)) => {}
-        _ => {
-            return Err(
-                "show 'tensor_histogram' must be a JSON object".to_string(),
-            )
-        }
+        _ => return Err("show 'tensor_histogram' must be a JSON object".to_string()),
     }
 
     match obj.get("size_bytes") {
@@ -166,7 +157,9 @@ pub fn rm_dry_run_plan_line(name: &str) -> String {
 }
 
 fn is_hex64(s: &str) -> bool {
-    s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit() && !c.is_uppercase())
+    s.len() == 64
+        && s.chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase())
 }
 
 #[cfg(test)]
@@ -335,7 +328,10 @@ mod tests {
     fn resolve_name_err_message_names_missing_model() {
         let entries: Vec<String> = vec![];
         let msg = resolve_name("xyz-model", &entries).unwrap_err().to_string();
-        assert!(msg.contains("xyz-model"), "message should name missing model: {msg}");
+        assert!(
+            msg.contains("xyz-model"),
+            "message should name missing model: {msg}"
+        );
     }
 
     #[test]
@@ -374,7 +370,10 @@ mod tests {
     #[test]
     fn ls_required_fields_stable() {
         // Downstream jq expressions depend on these exact names.
-        assert_eq!(LS_REQUIRED_FIELDS, &["name", "size_bytes", "sha256", "quant"]);
+        assert_eq!(
+            LS_REQUIRED_FIELDS,
+            &["name", "size_bytes", "sha256", "quant"]
+        );
     }
 
     #[test]

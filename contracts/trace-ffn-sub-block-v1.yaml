@@ -1,0 +1,263 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-26'
+  author: PAIML Engineering
+  description: |
+    Sub-FFN telemetry extension for `apr trace --payload`.
+
+    v1.0.0 (2026-04-26): PROPOSED. Authors the contract envelope for
+    extending `realizar::apr_transformer::LayerActivation` to capture
+    intermediate FFN sub-tensor stats (gate_proj_out, up_proj_out,
+    silu_gate, swiglu_inner, ffn_down_out) so that `apr trace --payload`
+    can bisect within a transformer block's FFN.
+
+    Why: §17 of ship-two-models-spec.md identified APR teacher CPU
+    layer-3 ffn_out std=11.459 vs layer-2 std=0.216 (53× spike) on the
+    canonical paiml/qwen2.5-coder-7b-apache-q4k-v1 teacher. To localize
+    the bug to a sub-block (gate_proj / silu(gate) / silu(gate)*up /
+    down_proj), instrumentation must subdivide the existing
+    `ffn_out_stats` field. Contract pre-commits to the schema BEFORE
+    the implementation lands, per `feedback_apr_trace_not_eprintln.md`:
+    "Missing TraceStep granularity → extend the enum behind a contract."
+
+    Load-bearing for the SHIP-007 fix per ship-two-models-spec.md
+    §15.5 + §17.4.
+
+  references:
+    - 'docs/specifications/aprender-train/ship-two-models-spec.md §15.5'
+    - 'docs/specifications/aprender-train/ship-two-models-spec.md §17.4'
+    - 'feedback_apr_trace_not_eprintln.md (memory)'
+    - 'crates/aprender-serve/src/apr_transformer/mod.rs::LayerActivation'
+    - 'crates/aprender-serve/src/apr_transformer/inference.rs::forward_traced'
+    - 'crates/apr-cli/src/commands/vector_stats.rs::print_stage_stats'
+    - 'evidence/ship-007-layer-3-anomaly/discharge-evidence-v1.json'
+    - 'contracts/layer-parity-v1.yaml'
+
+  binds_to:
+    - 'AC-SHIP1-007 (via §15.5/§17.4 of ship-two-models-spec.md)'
+    - 'PMAT-216 GPU parity mandate'
+
+equations:
+  swiglu_inner:
+    formula: 'ffn_inner[i] = silu(gate_proj_out[i]) * up_proj_out[i]'
+    where:
+      - 'silu(x) = x / (1 + exp(-x))  ← Sigmoid Linear Unit (SiLU = Swish-1)'
+    note: |
+      Standard SwiGLU pattern as implemented in inference.rs:160-164.
+      The activation is applied to the `gate` projection, NOT the `up`
+      projection. §17.4's prose said "silu(up_proj_out)" — this contract
+      pins the correct schema: silu(gate) * up.
+
+  ffn_output:
+    formula: 'ffn_output[j] = sum_i down_proj_weight[j][i] * ffn_inner[i]'
+    where:
+      - 'down_proj is [intermediate_dim, hidden_dim] weight'
+      - 'ffn_inner is [intermediate_dim] vector'
+      - 'ffn_output is [hidden_dim] residual contribution'
+
+proof_obligations:
+- type: invariant
+  property: LayerActivation gains 4 new fields without removing any existing field
+  formal: 'fields_after = fields_before ∪ {ffn_gate_stats, ffn_up_stats, ffn_silu_gate_stats, ffn_swiglu_inner_stats} AND fields_before ⊆ fields_after'
+  applies_to: aprender-serve/src/apr_transformer/mod.rs::LayerActivation
+- type: invariant
+  property: ffn_gate_stats reflects post-gate-proj-matmul values
+  formal: 'ffn_gate_stats = ActivationStats::from_slice(&matmul(ffn_input, gate_weight, hidden_dim, intermediate_dim))'
+  applies_to: aprender-serve/src/apr_transformer/inference.rs::forward_traced
+- type: invariant
+  property: ffn_up_stats reflects post-up-proj-matmul values
+  formal: 'ffn_up_stats = ActivationStats::from_slice(&matmul(ffn_input, up_weight, hidden_dim, intermediate_dim))'
+  applies_to: aprender-serve/src/apr_transformer/inference.rs::forward_traced
+- type: invariant
+  property: ffn_silu_gate_stats reflects post-SiLU values on gate projection
+  formal: 'ffn_silu_gate_stats = ActivationStats::from_slice(&silu(gate)) where silu(g) = g / (1 + exp(-g))'
+  applies_to: aprender-serve/src/apr_transformer/inference.rs::forward_traced
+- type: invariant
+  property: ffn_swiglu_inner_stats reflects post-elementwise-multiply values
+  formal: 'ffn_swiglu_inner_stats = ActivationStats::from_slice(&[silu(gate[i]) * up[i] for i in 0..intermediate_dim])'
+  applies_to: aprender-serve/src/apr_transformer/inference.rs::forward_traced
+- type: conservation
+  property: 'Existing ffn_out_stats semantics preserved (post-down-proj, residual contribution)'
+  formal: 'ffn_out_stats == ActivationStats::from_slice(&matmul(ffn_inner, down_proj, intermediate_dim, hidden_dim) [+ down_bias])'
+  tolerance: 0.0
+  applies_to: aprender-serve/src/apr_transformer/mod.rs::LayerActivation::ffn_out_stats
+- type: ordering
+  property: 'Renderer emits sub-FFN lines in computation order between ffn_norm and ffn_out'
+  formal: 'order = [attn_norm, qkv, attn_out, ffn_norm, ffn_gate, ffn_up, ffn_silu, ffn_swiglu, ffn_out, output]'
+  applies_to: crates/apr-cli/src/commands/vector_stats.rs::print_per_layer_activations
+- type: invariant
+  property: 'JSON layer object key set is the union of old keys and 4 new keys; old keys retain identical names'
+  formal: 'json_keys_after = json_keys_before ∪ {ffn_gate_stats, ffn_up_stats, ffn_silu_gate_stats, ffn_swiglu_inner_stats} AND json_keys_before ⊆ json_keys_after'
+  applies_to: crates/aprender-serve/src/inference_trace/mod.rs
+
+falsification_tests:
+- id: FALSIFY-SUB-FFN-001
+  rule: 'Layer-3 sub-FFN telemetry pins the divergence to one of {gate, up, silu_gate, swiglu_inner, ffn_out}'
+  prediction: |
+    On the canonical 7B teacher, exactly one of the 5 sub-FFN slots at
+    layer 3 SHALL show std ≥3× the median across layers 5-26 for that
+    slot. Other 4 slots SHALL stay within 2× median.
+  test: 'apr trace <teacher>.apr --payload --json | jq .layers[3] (live, on noah-Lambda-Vector RTX 4090)'
+  if_fails: |
+    Either (a) the bug spans multiple sub-FFN slots simultaneously
+    (refines §17 hypothesis), or (b) implementation captures wrong
+    vectors (regression).
+
+- id: FALSIFY-SUB-FFN-002
+  rule: 'Backward compat: existing ffn_out_stats values byte-identical pre/post implementation'
+  prediction: |
+    Adding new fields is purely additive. Existing tests
+    (apr_q4_parity, qkv_parity, gpu_cpu_trace_compare,
+    qwen2_gqa_7_1_attention_parity) SHALL produce byte-identical
+    `ffn_out_stats` before and after.
+  test: 'cargo test --workspace --lib (full regression)'
+  if_fails: 'Implementation accidentally moved ffn_out_stats computation. Backward-compat broken.'
+
+- id: FALSIFY-SUB-FFN-003
+  rule: 'Naming alignment with peer contract layer-parity-v1.yaml'
+  prediction: |
+    The 4 new field names map cleanly to layer-parity-v1.yaml step
+    names: ffn_gate ↔ gate_proj, ffn_up ↔ up_proj, ffn_swiglu ↔
+    swiglu, ffn_out ↔ down_proj.
+  test: 'static cross-reference test: trace JSON keys ⊆ layer-parity step names (mod naming-prefix)'
+  if_fails: 'Naming drift between two contracts in the same domain.'
+
+- id: FALSIFY-SUB-FFN-004
+  rule: 'GPU TracedForward populates the new fields (or marks them as not-yet-implemented)'
+  prediction: |
+    Per PMAT-216 (GPU parity mandate), GPU forward_traced SHALL either
+    (a) populate the 4 new fields with real GPU-side stats, or (b)
+    mark them as zero-filled with `gpu_telemetry_complete: false` so
+    that the parity test doesn't silently pass on incomplete coverage.
+  test: 'cargo test --features cuda --test gpu_cpu_trace_compare'
+  if_fails: 'GPU path silently emits zero stats; parity test compares zero-vs-zero and passes despite missing telemetry.'
+
+- id: FALSIFY-SUB-FFN-005
+  rule: 'Per-layer payload line count grows from 6 to 10'
+  prediction: |
+    Stdout line count for one layer block SHALL be exactly 10 (was 6).
+    Sentinel: `apr trace --payload | grep -c "^\\s\\+ffn_"` SHALL
+    return 4 * 28 = 112 (was 2 * 28 = 56) on the 28-layer teacher.
+  test: 'apr trace <teacher>.apr --payload | grep -c "^\\s\\+ffn_"'
+  if_fails: 'Renderer missed adding new lines.'
+
+- id: FALSIFY-SUB-FFN-006
+  rule: 'Captured vectors match expected length intermediate_dim'
+  prediction: |
+    For Qwen2.5-Coder-7B (intermediate_dim=18944), each of the 4 new
+    intermediate stats SHALL be derived from a vector of length 18944.
+    For sub-FFN-001 the input vector to ActivationStats::from_slice
+    has len 18944 — encode this as a runtime debug_assert.
+  test: 'aprender-serve unit test: forward_traced on synthetic 4-dim model, assert all 4 ActivationStats counts == intermediate_dim'
+  if_fails: 'Implementation captured a slice of wrong length.'
+
+- id: FALSIFY-SUB-FFN-007
+  rule: 'Documentation: each new field doc-comment references this contract id'
+  prediction: |
+    Each of the 4 new pub fields SHALL have a `///` doc-comment
+    citing `contracts/trace-ffn-sub-block-v1.yaml`. Drift-prevention
+    pattern.
+  test: 'grep "contracts/trace-ffn-sub-block-v1" crates/aprender-serve/src/apr_transformer/mod.rs | wc -l ≥ 4'
+  if_fails: 'Documentation drift; field added without citing the contract.'
+
+- id: FALSIFY-SUB-FFN-008
+  rule: 'Coverage co-evolution: new fields covered by ≥1 unit test each'
+  prediction: |
+    Each of the 4 new ActivationStats fields SHALL be asserted in at
+    least 1 test. Per `feedback_coverage_contracts_coevolution.md`:
+    coverage without contracts is rejected; here we co-evolve.
+  test: 'pmat query --coverage-gaps --filter "ffn_gate_stats|ffn_up_stats|ffn_silu_gate_stats|ffn_swiglu_inner_stats" returns 0 uncovered'
+  if_fails: 'Tests omit the new fields — observable coverage gap.'
+
+constants:
+- name: LAYER_ACTIVATION_FIELD_COUNT_BEFORE
+  value: 6
+  description: 'Number of ActivationStats fields on LayerActivation pre-implementation'
+- name: LAYER_ACTIVATION_FIELD_COUNT_AFTER
+  value: 10
+  description: 'Number of ActivationStats fields on LayerActivation post-implementation'
+- name: SHIP_007_REFERENCE_LAYER_INDEX
+  value: 3
+  description: 'First divergent layer in §17, where ffn_out std=11.459 vs layer-2 std=0.216 (53× spike)'
+- name: SHIP_007_REFERENCE_FFN_OUT_STD_LAYER_3
+  value: 11.459
+  description: 'Layer-3 ffn_out std on the canonical 7B teacher, prompt "What is 2+2?", post-PR-#1058 mmap-enabled apr trace --payload'
+- name: SHIP_007_REFERENCE_FFN_OUT_STD_LAYER_2
+  value: 0.216
+  description: 'Layer-2 ffn_out std on the same teacher (baseline for 53× spike)'
+- name: SHIP_007_SPIKE_RATIO
+  value: 53.0
+  description: 'Layer-3/Layer-2 ffn_out std ratio (the bug signal §17 names)'
+
+kani_harnesses:
+- id: KANI-SUB-FFN-001
+  obligation: 'LayerActivation gains 4 new fields without removing any existing field'
+  property: 'Field-set monotonicity (additive extension)'
+  bound: 1
+  strategy: exhaustive
+  harness: verify_layer_activation_field_set_monotonic
+- id: KANI-SUB-FFN-002
+  obligation: 'ffn_silu_gate_stats reflects post-SiLU values on gate projection'
+  property: 'SiLU per-element correctness'
+  bound: 8
+  strategy: bounded_int
+  harness: verify_silu_per_element
+- id: KANI-SUB-FFN-003
+  obligation: 'ffn_swiglu_inner_stats reflects post-elementwise-multiply values'
+  property: 'SwiGLU inner correctness: silu(gate) * up'
+  bound: 8
+  strategy: bounded_int
+  harness: verify_swiglu_inner_correctness
+- id: KANI-SUB-FFN-004
+  obligation: 'Existing ffn_out_stats semantics preserved'
+  property: 'Backward compat (zero-tolerance equality)'
+  bound: 4
+  strategy: exhaustive
+  harness: verify_ffn_out_stats_preserved
+- id: KANI-SUB-FFN-005
+  obligation: 'Renderer emits sub-FFN lines in computation order'
+  property: 'Print order: attn_norm < qkv < attn_out < ffn_norm < ffn_gate < ffn_up < ffn_silu < ffn_swiglu < ffn_out < output'
+  bound: 10
+  strategy: exhaustive
+  harness: verify_print_order_total_order
+- id: KANI-SUB-FFN-006
+  obligation: 'JSON key set is union of old + 4 new keys'
+  property: 'JSON schema additive extension (no key renames or removals)'
+  bound: 1
+  strategy: exhaustive
+  harness: verify_json_key_set_monotonic
+- id: KANI-SUB-FFN-007
+  obligation: 'ffn_gate_stats reflects post-gate-proj-matmul values'
+  property: 'Gate-proj matmul correctness (statistical)'
+  bound: 8
+  strategy: bounded_int
+  harness: verify_gate_proj_matmul_stats
+- id: KANI-SUB-FFN-008
+  obligation: 'ffn_up_stats reflects post-up-proj-matmul values'
+  property: 'Up-proj matmul correctness (statistical)'
+  bound: 8
+  strategy: bounded_int
+  harness: verify_up_proj_matmul_stats
+
+qa_gate:
+  id: F-SUB-FFN-001
+  name: Sub-FFN Telemetry Schema Stability Gate
+  description: |
+    Quality gate ensuring sub-FFN telemetry schema is stable, additive,
+    and aligned with peer layer-parity-v1.yaml contract.
+  checks:
+    - layer_activation_field_count
+    - json_schema_additive
+    - render_order_total
+    - peer_naming_alignment
+    - gpu_parity_complete
+
+discharge_status: PROPOSED
+discharge_status_note: |
+  Contract envelope only. Implementation, falsification tests, and
+  live evidence are PARTIAL_ALGORITHM_LEVEL until the next PR lands
+  the LayerActivation schema extension + apr trace rendering + JSON
+  serialization, AND captures live evidence pinning the bug to a
+  specific sub-FFN slot per FALSIFY-SUB-FFN-001.
+
+status: PROPOSED

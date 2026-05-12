@@ -723,54 +723,54 @@ test-audio-full: ## Run all audio tests including ALSA (if available)
 # ============================================================================
 # CONTRACT ENFORCEMENT (provable-contracts integration)
 # ============================================================================
-# Kernel contracts live in ../provable-contracts/contracts/
-# Binding registry: ../provable-contracts/contracts/aprender/binding.yaml
-# Generated tests: tests/contracts/
+# Kernel contracts live in-tree at contracts/ (APR-MONO Phase 2b
+# consolidation, 2026-04-18). Binding registry:
+# contracts/aprender/binding.yaml. Generated tests: tests/contracts/.
+# Pre-consolidation `../provable-contracts/` references retired.
 
-PV_DIR := ../provable-contracts
-PV_BIN := cargo run --manifest-path $(PV_DIR)/Cargo.toml --bin pv --
-BINDING := $(PV_DIR)/contracts/aprender/binding.yaml
-CONTRACTS := $(PV_DIR)/contracts/softmax-kernel-v1.yaml \
-             $(PV_DIR)/contracts/rmsnorm-kernel-v1.yaml \
-             $(PV_DIR)/contracts/rope-kernel-v1.yaml \
-             $(PV_DIR)/contracts/attention-kernel-v1.yaml \
-             $(PV_DIR)/contracts/activation-kernel-v1.yaml \
-             $(PV_DIR)/contracts/matmul-kernel-v1.yaml \
-             $(PV_DIR)/contracts/flash-attention-v1.yaml \
-             $(PV_DIR)/contracts/swiglu-kernel-v1.yaml \
-             $(PV_DIR)/contracts/gqa-kernel-v1.yaml \
-             $(PV_DIR)/contracts/layernorm-kernel-v1.yaml \
-             $(PV_DIR)/contracts/silu-kernel-v1.yaml \
-             $(PV_DIR)/contracts/cross-entropy-kernel-v1.yaml \
-             $(PV_DIR)/contracts/adamw-kernel-v1.yaml \
-             $(PV_DIR)/contracts/ssm-kernel-v1.yaml \
-             $(PV_DIR)/contracts/conv1d-kernel-v1.yaml \
-             $(PV_DIR)/contracts/batchnorm-kernel-v1.yaml \
-             $(PV_DIR)/contracts/kmeans-kernel-v1.yaml \
-             $(PV_DIR)/contracts/pagerank-kernel-v1.yaml \
-             $(PV_DIR)/contracts/lbfgs-kernel-v1.yaml \
-             $(PV_DIR)/contracts/cma-es-kernel-v1.yaml \
-             $(PV_DIR)/contracts/model-config-algebra-v1.yaml \
-             $(PV_DIR)/contracts/qk-norm-v1.yaml \
-             $(PV_DIR)/contracts/tensor-shape-flow-v1.yaml \
-             $(PV_DIR)/contracts/roofline-model-v1.yaml \
-             $(PV_DIR)/contracts/gated-delta-net-v1.yaml \
-             $(PV_DIR)/contracts/format-parity-v1.yaml \
-             $(PV_DIR)/contracts/shannon-entropy-v1.yaml \
-             $(PV_DIR)/contracts/f16-conversion-v1.yaml \
-             $(PV_DIR)/contracts/kernel-launch-budget-v1.yaml \
-             $(PV_DIR)/contracts/tensor-inventory-v1.yaml \
-             $(PV_DIR)/contracts/performance-grading-v1.yaml \
-             $(PV_DIR)/contracts/lora-algebra-v1.yaml \
-             $(PV_DIR)/contracts/quantization-ordering-v1.yaml \
-             $(PV_DIR)/contracts/q4k-q6k-superblock-v1.yaml \
-             $(PV_DIR)/contracts/sampling-algorithms-v1.yaml \
-             $(PV_DIR)/contracts/validated-tensor-v1.yaml \
-             $(PV_DIR)/contracts/hybrid-layer-dispatch-v1.yaml \
-             $(PV_DIR)/contracts/qwen35-shapes-v1.yaml \
-             $(PV_DIR)/contracts/kv-cache-sizing-v1.yaml \
-             $(PV_DIR)/contracts/backend-dispatch-v1.yaml \
-             $(PV_DIR)/contracts/kv-cache-equivalence-v1.yaml
+PV_BIN := cargo run --release -p aprender-contracts-cli --bin pv --
+BINDING := contracts/aprender/binding.yaml
+CONTRACTS := contracts/softmax-kernel-v1.yaml \
+             contracts/rmsnorm-kernel-v1.yaml \
+             contracts/rope-kernel-v1.yaml \
+             contracts/attention-kernel-v1.yaml \
+             contracts/activation-kernel-v1.yaml \
+             contracts/matmul-kernel-v1.yaml \
+             contracts/flash-attention-v1.yaml \
+             contracts/swiglu-kernel-v1.yaml \
+             contracts/gqa-kernel-v1.yaml \
+             contracts/layernorm-kernel-v1.yaml \
+             contracts/silu-kernel-v1.yaml \
+             contracts/cross-entropy-kernel-v1.yaml \
+             contracts/adamw-kernel-v1.yaml \
+             contracts/ssm-kernel-v1.yaml \
+             contracts/conv1d-kernel-v1.yaml \
+             contracts/batchnorm-kernel-v1.yaml \
+             contracts/kmeans-kernel-v1.yaml \
+             contracts/pagerank-kernel-v1.yaml \
+             contracts/lbfgs-kernel-v1.yaml \
+             contracts/cma-es-kernel-v1.yaml \
+             contracts/model-config-algebra-v1.yaml \
+             contracts/qk-norm-v1.yaml \
+             contracts/tensor-shape-flow-v1.yaml \
+             contracts/roofline-model-v1.yaml \
+             contracts/gated-delta-net-v1.yaml \
+             contracts/format-parity-v1.yaml \
+             contracts/shannon-entropy-v1.yaml \
+             contracts/f16-conversion-v1.yaml \
+             contracts/kernel-launch-budget-v1.yaml \
+             contracts/tensor-inventory-v1.yaml \
+             contracts/performance-grading-v1.yaml \
+             contracts/lora-algebra-v1.yaml \
+             contracts/quantization-ordering-v1.yaml \
+             contracts/q4k-q6k-superblock-v1.yaml \
+             contracts/sampling-algorithms-v1.yaml \
+             contracts/validated-tensor-v1.yaml \
+             contracts/hybrid-layer-dispatch-v1.yaml \
+             contracts/qwen35-shapes-v1.yaml \
+             contracts/kv-cache-sizing-v1.yaml \
+             contracts/backend-dispatch-v1.yaml \
+             contracts/kv-cache-equivalence-v1.yaml
 
 contract-validate: ## Validate all kernel contracts (schema + staleness)
 	@echo "Validating kernel contracts..."

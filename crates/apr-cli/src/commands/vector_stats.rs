@@ -89,8 +89,12 @@ fn run_traced_inference_apr(path: &Path) -> Result<(), CliError> {
 }
 
 /// Print layer-by-layer activation stats with anomaly detection.
+///
+/// Made `pub(crate)` for SHIP-007 §26.4 P3: GGUF dispatch in
+/// `commands/trace.rs::run_traced_inference_gguf` reuses this for
+/// the APR-vs-GGUF layer-3 ffn_swigl bisection comparison.
 #[cfg(feature = "inference")]
-fn print_layer_activations(layers: &[realizar::apr_transformer::LayerActivation]) {
+pub(crate) fn print_layer_activations(layers: &[realizar::apr_transformer::LayerActivation]) {
     use colored::Colorize;
 
     println!();
@@ -130,6 +134,16 @@ fn print_layer_activations(layers: &[realizar::apr_transformer::LayerActivation]
         print_stage_stats("    qkv      ", &layer.qkv_stats);
         print_stage_stats("    attn_out ", &layer.attn_out_stats);
         print_stage_stats("    ffn_norm ", &layer.ffn_norm_stats);
+        // Per contracts/trace-ffn-sub-block-v1.yaml OBL-SUB-FFN-006:
+        // sub-FFN telemetry lines emitted in computation order between
+        // ffn_norm and ffn_out. Lines suppressed when all 4 sub-stats
+        // are default-zero (GPU path until OBL-SUB-FFN-008 lands).
+        if layer.ffn_gate_stats.count > 0 || layer.ffn_up_stats.count > 0 {
+            print_stage_stats("    ffn_gate ", &layer.ffn_gate_stats);
+            print_stage_stats("    ffn_up   ", &layer.ffn_up_stats);
+            print_stage_stats("    ffn_silu ", &layer.ffn_silu_gate_stats);
+            print_stage_stats("    ffn_swigl", &layer.ffn_swiglu_inner_stats);
+        }
         print_stage_stats("    ffn_out  ", &layer.ffn_out_stats);
         print_stage_stats("    output   ", &layer.output_stats);
 
@@ -179,7 +193,7 @@ fn layer_has_inf(layer: &realizar::apr_transformer::LayerActivation) -> bool {
 
 /// Print logit predictions with top-5 tokens.
 #[cfg(feature = "inference")]
-fn print_logit_predictions(logits: &[f32]) {
+pub(crate) fn print_logit_predictions(logits: &[f32]) {
     use colored::Colorize;
 
     let logit_stats = compute_vector_stats(logits);
@@ -199,7 +213,10 @@ fn print_logit_predictions(logits: &[f32]) {
 
 /// Print trace summary analysis (variance, NaN/Inf, logit range).
 #[cfg(feature = "inference")]
-fn print_trace_summary(layers: &[realizar::apr_transformer::LayerActivation], logits: &[f32]) {
+pub(crate) fn print_trace_summary(
+    layers: &[realizar::apr_transformer::LayerActivation],
+    logits: &[f32],
+) {
     use colored::Colorize;
 
     println!();
@@ -351,7 +368,7 @@ fn print_stats(prefix: &str, stats: &VectorStats) {
 
 /// Print activation statistics from realizar's ActivationStats
 #[cfg(feature = "inference")]
-fn print_activation_stats(_prefix: &str, stats: &realizar::apr_transformer::ActivationStats) {
+pub(crate) fn print_activation_stats(_prefix: &str, stats: &realizar::apr_transformer::ActivationStats) {
     use colored::Colorize;
     println!("  Range: [{:.6}, {:.6}]", stats.min, stats.max);
     println!("  Mean: {:.6}, Std: {:.6}", stats.mean, stats.std_dev);
@@ -367,7 +384,7 @@ fn print_activation_stats(_prefix: &str, stats: &realizar::apr_transformer::Acti
 
 /// Print activation statistics with color coding
 #[cfg(feature = "inference")]
-fn print_activation_stats_colored(
+pub(crate) fn print_activation_stats_colored(
     _prefix: &str,
     stats: &realizar::apr_transformer::ActivationStats,
 ) {

@@ -133,6 +133,7 @@ fn run_command(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             min_level,
             explain,
             watch,
+            strict_test_binding,
             ..
         } => {
             if let Some(ref rule_id) = explain {
@@ -161,6 +162,7 @@ fn run_command(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
                 crate_dir.as_deref(),
                 min_level.as_deref(),
                 watch,
+                strict_test_binding,
             )
         }
         Commands::Score {

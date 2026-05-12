@@ -1,0 +1,30 @@
+Loading /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr...
+hidden_dim=3584, kv_dim=512, qkv_dim=4608
+
+Layer 0 fused F32 qkv_weight stats (loaded by load_qkv_weight):
+  layer.qkv_weight: n=16515072, mean=-0.000003, std=0.021903, min=-0.6056, max=0.5965
+  Expected len: 16515072 (= qkv_dim 4608 × hidden_dim 3584)
+  Actual len: 16515072
+
+Layer 0 fused F32 qkv_weight slices (first 3584 = Q part):
+  Q-part [0..3584*3584]: n=12845056, mean=-0.000001, std=0.021468, min=-0.6056, max=0.5965
+  K-part [3584^2..3584^2+512*3584]: n=1835008, mean=-0.000039, std=0.032039, min=-0.2383, max=0.2478
+  V-part [last 512*3584]: n=1835008, mean=0.000023, std=0.010917, min=-0.0840, max=0.0845
+
+Layer 0 Q4K bytes:
+  attn_q_weight: 7225344 bytes
+  attn_k_weight: 1032192 bytes
+  attn_v_weight: 1032192 bytes
+  synthetic_input: n=3584, mean=0.159370, std=0.121413, min=-0.1282, max=0.3000
+
+Path A: F32 fused qkv (matches forward path):
+  Q-out [0..3584]: n=3584, mean=-0.003912, std=0.260898, min=-1.0314, max=1.3124
+  K-out [3584..4096]: n=512, mean=-0.025728, std=0.376392, min=-1.4749, max=1.3113
+  V-out [4096..4608]: n=512, mean=0.008808, std=0.135264, min=-0.3908, max=0.4629
+
+Path B: Q4K dispatched Q only:
+  Q-out (Q4K): n=3584, mean=-0.003899, std=0.260868, min=-1.0291, max=1.3128
+
+Q-out comparison (F32 vs Q4K):
+  max |diff|: 0.005294
+  RMS diff:    0.000673

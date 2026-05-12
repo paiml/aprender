@@ -1,33 +1,41 @@
-# CRUX-I-04 — Ollama function calling
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# CRUX-I-04 — Ollama /api/chat function calling
 
 metadata:
   id: CRUX-I-04
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
+  updated: "2026-04-22"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
+  kind: kernel
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "I — Observability & Metrics"
   competitor: ollama
-  demand_score: 5  # 1..5, critical priority in pmat work
-  intake_status: missing
+  demand_score: 5
+  intake_status: partial
   description: >
-    Ollama function calling. Root-cause workflow extracted from ollama UX — see master
-    subspec §5.I and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Ollama /api/chat function calling. Non-streaming responses that carry tool
+    calls MUST satisfy: `message.tool_calls` is a non-empty JSON array, each
+    element has `function.name` (string) and `function.arguments` (JSON object,
+    NOT a stringified JSON blob). Every called tool name MUST appear in the
+    request's declared `tools[*].function.name` set (no model hallucinations).
+    For streaming, `tool_calls` MUST appear atomically in the single terminator
+    `done == true` frame and NOT in any non-terminator frame.
+
+    v1.1.0: ships CRUX-SHIP-001 retrofit — `apr ollama-tools-lint
+    --response-file FILE [--request-file FILE] [--stream]` dispatches pure
+    classifiers (36 unit tests) over any captured /api/chat tool-call response
+    (16 e2e tests). Live `/api/chat` handler with `tools[]` support in
+    aprender-serve remains the only path still PARTIAL_ALGORITHM_LEVEL under
+    BLOCKER-UPSTREAM-MISSING.
 
   references:
   - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
-  - spec.modelcontextprotocol.io
-  - github.com/anthropics/anthropic-sdk-python — Agent SDK
+  - 'https://github.com/ollama/ollama/blob/main/docs/api.md#generate-a-chat-completion'
+  - 'https://platform.openai.com/docs/guides/function-calling'
+
 equations:
   tool_call_response_schema:
     formula: |
@@ -84,6 +92,44 @@ falsification_tests:
       --data @evidence/crux/ollama/tool-call-weather-request.json)
     echo "$RESP" | jq -e '.message.tool_calls[0].function.name == "get_weather"' >/dev/null
   if_fails: "apr serve --ollama-compat did not emit tool_calls[0].function.name == get_weather"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/ollama_tool_call_classifier.rs
+    cli_path: crates/apr-cli/src/commands/ollama_tools_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_i_04.rs
+    sub_claim: |
+      Algorithm-level necessary conditions on an already-parsed non-streaming
+      /api/chat tool-call response:
+        (a) top-level is a JSON object (else `NotAnObject`);
+        (b) `message` exists and is a JSON object (else `MissingMessage` /
+            `MessageNotAnObject`);
+        (c) `message.tool_calls` is a non-empty JSON array (else
+            `MissingToolCalls` / `ToolCallsNotAnArray` / `ToolCallsEmpty`);
+        (d) each call is an object with `function.name: string` (else
+            `ToolCallNotAnObject` / `MissingFunction` / `FunctionNotAnObject`
+            / `FunctionNameNotAString`).
+      Classifier is a pure function of the parsed response; deterministic.
+      CLI surface: `apr ollama-tools-lint --response-file FILE` dispatches
+      the classifier end-to-end over a captured non-streaming response.
+    tests:
+    - schema_ok_on_well_formed_tool_call
+    - schema_rejects_non_object_top_level
+    - schema_rejects_missing_message
+    - schema_rejects_non_object_message
+    - schema_rejects_missing_tool_calls
+    - schema_rejects_tool_calls_not_array
+    - schema_rejects_empty_tool_calls
+    - schema_rejects_non_object_tool_call
+    - schema_rejects_missing_function
+    - schema_rejects_function_not_object
+    - schema_rejects_missing_function_name
+    - schema_rejects_non_string_function_name
+    - schema_classifier_is_deterministic
+    - falsify_crux_i_04_non_streaming_accepts_well_formed_tool_call
+    - falsify_crux_i_04_rejects_missing_function_name
+    - falsify_crux_i_04_rejects_empty_tool_calls_array
+    scope: "(parsed_json_response) → ToolCallSchemaOutcome (pure) + CLI e2e over captured response"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live /api/chat handler in aprender-serve emitting tool_calls[] when tools[] is declared in the request"
 
 - id: FALSIFY-CRUX-I-04-002
   rule: arguments is a JSON object matching declared schema
@@ -99,6 +145,32 @@ falsification_tests:
     # TODO: once apr bundles a JSON-schema validator in tests, cross-check args
     # against tools[0].function.parameters instead of spot-checking `location`.
   if_fails: "tool call arguments not a JSON object or missing required field from declared schema"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/ollama_tool_call_classifier.rs
+    cli_path: crates/apr-cli/src/commands/ollama_tools_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_i_04.rs
+    sub_claim: |
+      Algorithm-level necessary condition on the tool-call argument shape:
+        (a) `function.arguments` is present (else `MissingFunctionArguments`);
+        (b) `function.arguments` is NOT a string — the canonical OpenAI/Ollama
+            drift bug where `arguments` arrives as a stringified JSON blob
+            instead of a first-class object (else `FunctionArgumentsIsString`);
+        (c) `function.arguments` is a JSON object (else
+            `FunctionArgumentsNotAnObject`).
+      Pure; deterministic. The classifier rejects stringified-arguments even
+      though the content may be "JSON-parseable" — strict schema validation
+      downstream requires a first-class object. JSON-schema validation of
+      arguments against the declared tool parameters remains part of the
+      live-handler discharge (still PARTIAL here).
+    tests:
+    - schema_rejects_missing_arguments
+    - schema_rejects_stringified_arguments
+    - schema_rejects_non_object_non_string_arguments
+    - schema_reports_second_call_violations
+    - falsify_crux_i_04_rejects_stringified_arguments
+    scope: "(parsed_json_response) → ToolCallSchemaOutcome (pure) + CLI e2e"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live /api/chat handler emitting object-typed arguments + bundled JSON-schema validator cross-checking arguments against declared tools[].function.parameters"
 
 - id: FALSIFY-CRUX-I-04-003
   rule: streamed tool_calls arrive in the done=true chunk
@@ -116,6 +188,43 @@ falsification_tests:
     NONTERM=$(echo "$CHUNKS" | jq -cr 'select(.done != true) | .message.tool_calls // empty' | wc -l)
     [ "$NONTERM" -eq 0 ]
   if_fails: "streamed tool_calls split across chunks or terminator did not carry tool_calls"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/ollama_tool_call_classifier.rs
+    cli_path: crates/apr-cli/src/commands/ollama_tools_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_i_04.rs
+    sub_claim: |
+      Algorithm-level necessary conditions on an already-parsed ordered NDJSON
+      frame list for streaming tool calls:
+        (a) frame list is non-empty (else `NoFrames`);
+        (b) every frame is a JSON object with a boolean `done` field (else
+            `FrameNotAnObject` / `MissingDoneField` / `DoneNotBool`);
+        (c) exactly the last frame has `done == true` (else `EarlyDoneFrame`
+            / `NoTerminalFrame`);
+        (d) no non-terminator frame carries a non-empty `message.tool_calls[]`
+            (else `ToolCallsInNonTerminatorFrame`) — the atomicity invariant.
+      Pure; deterministic. CLI surface reads captured NDJSON and dispatches
+      the classifier end-to-end.
+    tests:
+    - ndjson_ok_on_single_terminator_with_tool_calls
+    - ndjson_ok_on_terminator_only
+    - ndjson_ok_when_no_tool_calls_anywhere
+    - ndjson_rejects_empty
+    - ndjson_rejects_non_object_frame
+    - ndjson_rejects_missing_done
+    - ndjson_rejects_non_bool_done
+    - ndjson_rejects_early_done_true
+    - ndjson_rejects_missing_terminator
+    - ndjson_rejects_tool_calls_in_non_terminator
+    - ndjson_allows_empty_tool_calls_array_in_non_terminator
+    - ndjson_classifier_is_deterministic
+    - falsify_crux_i_04_stream_accepts_well_formed_tool_call_ndjson
+    - falsify_crux_i_04_stream_rejects_tool_calls_in_non_terminator
+    - falsify_crux_i_04_stream_rejects_early_done_true
+    - falsify_crux_i_04_stream_rejects_missing_terminator
+    - falsify_crux_i_04_stream_rejects_empty_file
+    scope: "(ordered_ndjson_frames) → StreamingToolCallOutcome (pure) + CLI e2e over captured NDJSON"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live /api/chat handler emitting application/x-ndjson stream with tool_calls atomically delivered in the terminal done=true frame"
 
 - id: FALSIFY-CRUX-I-04-004
   rule: wire-schema parity with Ollama
@@ -130,6 +239,8 @@ falsification_tests:
     diff <(echo "$RESP"  | jq -S 'paths | join(".")' | sort -u) \
          <(jq -S 'paths | join(".")' "$GOLDEN" | sort -u)
   if_fails: "response schema diverges from Ollama golden (missing or extra fields)"
+  discharge_status: BLOCKER_UPSTREAM_MISSING
+  blocked_on: "live apr serve --ollama-compat emitting /api/chat with tool_calls + an Ollama-captured golden fixture to diff against"
 
 - id: FALSIFY-CRUX-I-04-005
   rule: tool name must be one of declared tools
@@ -145,6 +256,33 @@ falsification_tests:
       grep -Fxq "$name" <(echo "$DECLARED") || { echo "hallucinated tool: $name"; exit 1; }
     done
   if_fails: "model invented a tool name not in the declared tools[] array"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/ollama_tool_call_classifier.rs
+    cli_path: crates/apr-cli/src/commands/ollama_tools_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_i_04.rs
+    sub_claim: |
+      Allowlist gate: given the captured request's `tools[*].function.name`
+      set and the captured response's `message.tool_calls[]`, every called
+      name MUST be a member of the declared set (else
+      `HallucinatedToolName{index, name}`). When the request declares no
+      tools but the response carries tool calls, the response is rejected
+      with `NoDeclaredTools`. When neither side has tools, the outcome is
+      `Ok`. Pure; deterministic. CLI surface reads both files and reports
+      the allowlist verdict in the JSON report.
+    tests:
+    - allowlist_ok_when_called_name_matches_declared
+    - allowlist_rejects_hallucinated_name
+    - allowlist_flags_no_declared_tools_when_calls_present
+    - allowlist_ok_when_no_declared_and_no_calls
+    - allowlist_ok_when_no_tool_calls_present
+    - allowlist_reports_second_call_hallucination
+    - allowlist_classifier_is_deterministic
+    - falsify_crux_i_04_allowlist_accepts_declared_tool
+    - falsify_crux_i_04_allowlist_rejects_hallucinated_tool
+    - falsify_crux_i_04_without_request_file_flags_no_declared_tools
+    scope: "(parsed_request, parsed_response) → ToolNameAllowlistOutcome (pure) + CLI e2e"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live /api/chat handler emitting tool_calls against a real tools[] request so the allowlist can be checked end-to-end on a live server"
 
 proof_obligations:
 - type: invariant
@@ -163,10 +301,37 @@ verification_summary:
   proven: 0
   tested: 0
   status: spec-complete
+  discharge_ledger:
+  - falsify_id: FALSIFY-CRUX-I-04-001
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "live /api/chat handler emitting tool_calls[] when tools[] is declared"
+  - falsify_id: FALSIFY-CRUX-I-04-002
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "live /api/chat handler emitting object-typed arguments + JSON-schema validator"
+  - falsify_id: FALSIFY-CRUX-I-04-003
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "live /api/chat handler emitting NDJSON stream with atomic terminator tool_calls"
+  - falsify_id: FALSIFY-CRUX-I-04-004
+    discharge_status: BLOCKER_UPSTREAM_MISSING
+    blocked_on: "live apr serve --ollama-compat + Ollama-captured golden fixture"
+  - falsify_id: FALSIFY-CRUX-I-04-005
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "live /api/chat handler emitting tool_calls against a real tools[] request"
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-i-04` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-i-04
   priority: critical
   auto_created: true
+
+ship_discipline:
+  ship_rule: CRUX-SHIP-001
+  deliverables_present:
+    classifier: crates/apr-cli/src/commands/ollama_tool_call_classifier.rs
+    cli_wiring: "crates/apr-cli/src/extended_commands.rs + dispatch_analysis.rs + commands/ollama_tools_lint.rs (apr ollama-tools-lint --response-file FILE [--request-file FILE] [--stream])"
+    e2e_test: crates/apr-cli/tests/falsification_crux_i_04.rs
+    contract: contracts/crux-I-04-v1.yaml
+  merge_gates:
+    g1_classifier_green: "36 unit tests pass (commands::ollama_tool_call_classifier)"
+    g2_cli_reachable: "apr ollama-tools-lint --help advertises --response-file, --request-file, and --stream"
+    g3_e2e_runs: "16 falsification tests pass (falsification_crux_i_04)"
+    g4_contract_discharged: "4 of 5 FALSIFY-* at PARTIAL_ALGORITHM_LEVEL + 1 BLOCKER_UPSTREAM_MISSING (live /api/chat handler with tools[]); classifier + CLI paths end-to-end exercised"

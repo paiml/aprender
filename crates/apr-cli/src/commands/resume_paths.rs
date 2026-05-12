@@ -125,7 +125,10 @@ mod tests {
         let a = lock_path(Path::new("/tmp/x"));
         let b = lock_path(Path::new("/tmp/x"));
         assert_eq!(a, b);
-        assert_eq!(etag_path(Path::new("/tmp/x")), etag_path(Path::new("/tmp/x")));
+        assert_eq!(
+            etag_path(Path::new("/tmp/x")),
+            etag_path(Path::new("/tmp/x"))
+        );
     }
 
     #[test]
