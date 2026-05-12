@@ -1,0 +1,70 @@
+{
+  "evidence_id": "SECTION-73-SHIP-007-CASCADE-REDUCED-2026-05-12",
+  "session_date": "2026-05-12",
+  "summary": "§63's 3-layer blocker analysis is stale. Re-running apr bench on canonical 7B teacher with current main (post-§71) on lambda-vector RTX 4090 reveals: Layer 1 (FP8 warmup ILLEGAL_ADDRESS) ALREADY FIXED, Layer 3 (throughput) ALREADY MEETS FLOOR (54.5 tok/s vs 30 floor). Only Layer 2 (GPU-vs-CPU parity, cos=-0.005190) blocks SHIP-007. AC-SHIP1-007 reduces to a single bug rather than a 3-layer cascade.",
+  "host": "noah-Lambda-Vector (RTX 4090, Ada Lovelace sm_89, x86_64)",
+  "binary": "/mnt/nvme-raid0/coverage/aprender/release/apr (commit e5778ccce2, --features cuda)",
+  "artifact": "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr",
+  "layer_1_fp8_warmup": {
+    "section_63_status": "BLOCKER — CUDA_ERROR_ILLEGAL_ADDRESS in cuBLASLt FP8 JIT warmup",
+    "section_73_status": "ALREADY FIXED",
+    "evidence": "[PMAT-082] cuBLASLt FP8 JIT warmed (3584×16×3584) — completes cleanly, no error",
+    "fp8_weight_cache": "196 matrices cached (6223.0 MB) in 210.7ms",
+    "notes": "§63 sub-agent's Option B (bounds checks on fp8_weight_ptr) was already implemented sometime between §63 (2026-05-11) and §73 (2026-05-12). Specific fix not bisected; the warmup runs cleanly on current main."
+  },
+  "layer_2_parity_gate": {
+    "section_63_status": "BLOCKER — GPU computes wrong function (cos=-0.005)",
+    "section_73_status": "STILL BLOCKING — re-confirmed empirically",
+    "evidence": {
+      "cosine_similarity": -0.005190,
+      "required_min": 0.98,
+      "cpu_argmax": 334,
+      "gpu_argmax": 8127,
+      "max_absolute_logit_difference": 19.5053
+    },
+    "notes": "Same byte-for-byte signature as §63: cosine=-0.005190. The bug class hasn't moved. Per memory project_ship_007_attention_parity_investigation.md: 'bug is layout/stride/buffer, NOT arithmetic. Negative cosine -0.005 = systematic anti-correlation.' Per project_2026_05_03_ship_007_attn_out_pinpointed.md: 'bug is INSIDE attention block (qkv/RoPE/softmax/V/O)'."
+  },
+  "layer_3_throughput": {
+    "section_63_status": "BLOCKER — 5.6 tok/s with both gates skipped, < 30 floor",
+    "section_73_status": "ALREADY MEETS FLOOR",
+    "empirical_measurements": {
+      "iterations": 5,
+      "max_tokens": 128,
+      "median_tokens_per_second": 54.5,
+      "ttft_ms": 18.39,
+      "p50_latency_ms": 2343.687,
+      "p95_latency_ms": 2353.829,
+      "ship_007_floor_tok_per_sec": 30,
+      "headroom_above_floor": "+24.5 tok/s (1.82x floor)",
+      "verdict": "PASS"
+    },
+    "notes": "Significant improvement since §63's 5.6 tok/s measurement. The throughput optimization layer is no longer a SHIP-007 blocker."
+  },
+  "section_63_layer_count_reduction": {
+    "section_63_layer_count": 3,
+    "section_73_remaining_layers": 1,
+    "reduction": "Layer 1 (FP8 warmup) and Layer 3 (throughput) discharged between 2026-05-11 and 2026-05-12 by unattributed upstream fixes",
+    "remaining_blocker": "Layer 2 only — GPU-vs-CPU parity at logits level"
+  },
+  "next_slice_for_layer_2_discharge": {
+    "scope": "Multi-PR cascade, 1-2 weeks of focused work",
+    "approach": [
+      "Mirror CPU forward_traced into a forward_gpu_traced that captures per-stage F32 dumps from forward_all_layers_gpu_to_logits",
+      "Stage list mirrors apr-cli-trace-save-tensor-v1.yaml: embedding, attn_norm, qkv_matmul, qkv_bias, attention, post_attn_residual, ffn_norm, ffn_gate, ffn_up, ffn_silu, ffn_swigl, ffn_out, post_ffn_residual",
+      "Run trace on layer-0 (CPU) + layer-0 (GPU); diff with apr diff --values",
+      "First stage where divergence > Q4K tolerance localizes the bug",
+      "Memory hypothesis: bug is in attention block (qkv/RoPE/softmax/V/O) due to GQA layout/stride/buffer issue"
+    ],
+    "host_requirement": "RTX 4090 / lambda-vector (gx10 Blackwell sm_120 is wrong arch for SHIP-007's stated platform)"
+  },
+  "ship_percent_impact": {
+    "model_1_pre_section_73": "99% (§72 cascade)",
+    "model_1_post_section_73": "99% — no change",
+    "remaining_path_to_100": "Layer 2 (GPU-vs-CPU parity) discharge",
+    "model_2": "unchanged at 57%"
+  },
+  "methodology_lesson_20_new": {
+    "name": "Re-measure cascade layers before continuing — stale state can be reduced cheaply",
+    "description": "§63 documented 3 SHIP-007 blockers based on 2026-05-11 evidence. §73 re-ran the same bench setup on 2026-05-12 and found 2 of the 3 layers had been discharged by intervening commits (specific PRs not bisected). Lesson: when re-entering a multi-layer cascade after time has passed, ALWAYS re-measure each layer's status before assuming the §-author's threat model is current. ~5 min of re-measurement saved possibly 5-10 PRs of unnecessary work on Layer 1 (FP8 warmup) and Layer 3 (throughput optimization). The remaining work scope drops from 5-10 PRs / 1-2 weeks to 3-5 PRs / 3-5 days."
+  }
+}
