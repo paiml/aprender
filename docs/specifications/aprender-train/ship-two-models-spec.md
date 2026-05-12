@@ -1,8 +1,10 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 3.18.0
-**Atomic next action (v3.18.0):** **§73 — SHIP-007 cascade reduced from 3 layers to 1 on re-measurement; only Layer 2 (parity) blocks (2026-05-12)** (see new §73 below). §63's 2026-05-11 3-layer blocker stack — (1) FP8 warmup ILLEGAL_ADDRESS, (2) GPU-vs-CPU parity cos=-0.005190, (3) throughput 5.6 vs 30 tok/s floor — re-measured on 2026-05-12 lambda-vector RTX 4090 reveals 2 of 3 layers already discharged: **Layer 1 fixed** (`[PMAT-082] cuBLASLt FP8 JIT warmed (3584×16×3584)` succeeds), **Layer 3 meets floor** (54.5 tok/s @ 128-tok decode, 5-iter median, 1.82× headroom). Only **Layer 2 still blocks** (byte-identical cos=-0.005190 signature). Path to SHIP-007 LIVE-discharge reduced from "5-10 PR / 1-2 week cascade" to **"3-5 PR / 3-5 day single-layer fix"** — add `forward_gpu_traced` → wire `apr trace --device gpu --save-tensor all` → diff CPU vs GPU stage tensors → fix localized stage → discharge. **Methodology lesson #20 NEW**: re-measure cascade layers before continuing; stale state can be reduced cheaply. **MODEL-1 ship %**: unchanged at **99%** (Layer 2 still blocks). **MODEL-2 ship %**: unchanged at **57%**.
+**Version:** 3.19.0
+**Atomic next action (v3.19.0):** §72 + §73 combined banner — see both sections below.
+**Atomic next action (v3.18.0 §73):** **§73 — SHIP-007 cascade reduced from 3 layers to 1 on re-measurement; only Layer 2 (parity) blocks (2026-05-12)** (see new §73 below). §63's 2026-05-11 3-layer blocker stack — (1) FP8 warmup ILLEGAL_ADDRESS, (2) GPU-vs-CPU parity cos=-0.005190, (3) throughput 5.6 vs 30 tok/s floor — re-measured on 2026-05-12 lambda-vector RTX 4090 reveals 2 of 3 layers already discharged: **Layer 1 fixed** (`[PMAT-082] cuBLASLt FP8 JIT warmed (3584×16×3584)` succeeds), **Layer 3 meets floor** (54.5 tok/s @ 128-tok decode, 5-iter median, 1.82× headroom). Only **Layer 2 still blocks** (byte-identical cos=-0.005190 signature). Path to SHIP-007 LIVE-discharge reduced from "5-10 PR / 1-2 week cascade" to **"3-5 PR / 3-5 day single-layer fix"** — add `forward_gpu_traced` → wire `apr trace --device gpu --save-tensor all` → diff CPU vs GPU stage tensors → fix localized stage → discharge. **Methodology lesson #20 NEW**: re-measure cascade layers before continuing; stale state can be reduced cheaply. **MODEL-1 ship %**: unchanged at **99%** (Layer 2 still blocks). **MODEL-2 ship %**: unchanged at **57%**.
+**Atomic next action (v3.18.0 §72):** **§72 — 5-AC LIVE-evidence cascade SHIP-001/003/004/009/010 PARTIAL→LIVE-DISCHARGED (2026-05-12)** (see new §72 below). Single ~30-min session captured LIVE evidence for 5 ACs that were PARTIAL_ALGORITHM_LEVEL (had falsifier code, no LIVE-evidence on canonical teacher): SHIP-001 (`apr run <safetensors>` exit 0 + 62.55s load), SHIP-003 (`apr diff` 20 tensors at `cos_sim=1.000000` vs floor 0.999), SHIP-004 (llama-cli on Q4_K_M GGUF: exit 0, "Hello! How can I help you today", 133.1 gen tok/s), SHIP-009 (`apr inspect`: `license: Apache-2.0`, `data_source: huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct`), SHIP-010 (sha256 `0a854098…` == HF lfs.oid). No code changes — pure evidence cascade. **MODEL-1 ship %**: **95% → 99%** (9/10 AC-SHIP1-* LIVE-discharged; only SHIP-007 remains as multi-PR CUDA cascade per §63). **Methodology lesson #19 NEW**: algorithm-level falsifiers + small evidence runs collapse PARTIAL→LIVE in batches. **MODEL-2 ship %**: unchanged at **57%**.
 **Atomic next action (v3.17.0):** **§71 — SHIP-005 LIVE-DISCHARGED at 86.59% pass@1 on gx10 164-run with §70 RC3 fix (2026-05-12)** (see new §71 below). Empirical result on canonical 7B Qwen2.5-Coder-Instruct Q4_K APR teacher: **142/164 problems passed → pass@1 = 86.59%**. AC-SHIP1-005 floor is 84.80% (86.0% nominal with 1.2% tolerance). **Headroom above floor: +1.79pp**. Pre-fix (§67) was 80.49% (132/164); RC3 fix flipped 10 more problems = +6.10pp gain. pass@10 ≈ 100%, pass@100 = 100% — model is fully capable. **MODEL-1 ship %**: **94% → 95%** (4/5 §17.5 PARTIALs LIVE-discharged: SHIP-002/005/006/008; remaining SHIP-007 is multi-PR CUDA cascade per §63). **MODEL-2 ship %**: unchanged at **57%**.
 **Atomic next action (v3.16.0):** **§70 — §69 RC3 CONFIRMED on gx10 + FIX DISCHARGED via 3/3 §68-trio flips (2026-05-12)** (see new §70 below). Empirical disambiguation on gx10 via `APR_EVAL_DEBUG=1` (PR #1634 diagnostic surface): HumanEval/1 `exit_code=1, stderr="NameError: name 'List' is not defined"`. **RC3 (format!() drops imports) CONFIRMED**; RC1/RC2/RC4 FALSIFIED. PR #1635 1-PR fix: new `extract_prompt_preamble(prompt, entry_point)` helper + ChatML-branch prepend. Discharge proof — rerun §68's known-failed trio (HumanEval/1, /3, /6): **3/3 flip to PASS** (all `exit_code=0`). §68's "Class B sampling/quantization" interpretation FALSIFIED — those were Class C harness-RC3 false-failures all along. **Methodology lesson #17 NEW**: pre-fix RED smoke can mask the bug class; diagnostic instrumentation (not flip rate) identifies the class. **MODEL-1 ship %**: stays at **94%** pending 164-run completion; path to 95% is now a single 164-run + verdict check, no further code changes needed. **MODEL-2 ship %**: unchanged at **57%**.
 **Atomic next action (v3.15.0):** **§69 — Q4K hypothesis FALSIFIED; bug is in the `apr eval` harness, not the model (2026-05-12)** (see new §69 below). 4-step smoking-gun on HumanEval/1: (1) `apr run` emits 50-line response with valid `\`\`\`python\`\`\`` code block; (2) extracted code passes manual `python3` test with exit 0; (3) `apr eval` on same problem reports FAIL; (4) Rust `extract_python_code_block_targeted` returns identical code as Python regex. Conclusion: bug is between Rust extraction and Python test verdict — **HARNESS, not model**. Q4K hypothesis (§67/§68) FALSIFIED. R3 (FP16) and R4 (sampling) DEPRIORITISED. Four candidate root causes surface: **RC1** (apr eval produces different completions than apr run — model state leak), **RC2** (`execute_python_test` false-negative), RC3 (`format!()` bug), RC4 (max_tokens truncation). **Methodology lesson #16 NEW**: compose falsifiers via manual end-to-end replication — saves 10h of wrong-hypothesis investigation. **MODEL-1 ship %**: stays at **94%**; path to 95% requires diagnosing the harness bug (RC1-RC4), NOT model changes. **MODEL-2 ship %**: unchanged at **57%**.
@@ -4921,6 +4923,49 @@ Evidence:
 - Predecessors: `evidence/section-70-rc3-fix-2026-05-12/findings.json` (3/3 trio), `evidence/section-69-harness-bug-2026-05-12/findings.json` (smoking-gun), `evidence/section-67-h4-164-run-result-2026-05-12/findings.json` (§67 baseline)
 
 Spec v3.16.0 → **v3.17.0**.
+
+---
+
+## §72. 5-AC LIVE-evidence cascade — SHIP-001/003/004/009/010 PARTIAL→LIVE-DISCHARGED (2026-05-12)
+
+After §71 closed SHIP-005, the remaining gap to 100% MODEL-1 ship % broke down as: 5 ACs at PARTIAL_ALGORITHM_LEVEL (have falsifier code, no LIVE-evidence on canonical teacher) + 1 multi-PR cascade (SHIP-007). §72 closes the 5 algorithm-level PARTIALs in a single evidence-only cascade — no new code.
+
+### 72.1 The cascade
+
+| AC | Falsifier | LIVE method | Verdict |
+|----|-----------|-------------|---------|
+| **SHIP-001** | `realizar::Model::load_safetensors(path).is_ok()` | `apr run <safetensors> --prompt 'Hello' --max-tokens 4` exit 0, 62.55s load | **LIVE-DISCHARGED** |
+| **SHIP-003** | per-layer cosine ≥ 0.999 | `apr diff <safetensors> <q4k.apr> --values --filter weight --limit 20 --transpose-aware` | **LIVE-DISCHARGED** — all 20 tensors `cos_sim=1.000000` |
+| **SHIP-004** | llama.cpp exit 0 | `llama-cli -m <q4k.gguf> -p 'Hello' -n 8 -ngl 99 -st` | **LIVE-DISCHARGED** — exit 0, 133.1 gen tok/s, "Hello! How can I help you today" |
+| **SHIP-009** | `grep license: apache-2.0` | `apr inspect <q4k.apr>` | **LIVE-DISCHARGED** — `license: Apache-2.0`, `data_source: huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct` |
+| **SHIP-010** | sha256 match | `curl HF tree API` + `sha256sum` on canonical gx10 teacher | **LIVE-DISCHARGED** — `0a854098…` == HF lfs.oid `0a854098…` |
+
+### 72.2 §17.5 + AC-SHIP1 chain post-§72
+
+9 of 10 AC-SHIP1-* LIVE-discharged. Only SHIP-007 remains (multi-PR cascade per §63 / scope reduced per §73).
+
+### 72.3 Ship-% movement
+
+- **MODEL-1 ship %**: **95% → 99%** (5 algorithm-level PARTIALs → LIVE in one cascade)
+- **MODEL-2 ship %**: unchanged at **57%**
+
+### 72.4 Methodology lesson #19 (NEW)
+
+**Algorithm-level falsifiers + small evidence runs collapse PARTIAL→LIVE in batches.** Five ACs (SHIP-001/003/004/009/010) had merged falsifier tests at PARTIAL_ALGORITHM_LEVEL but no LIVE-evidence on canonical teacher. A single ~30-min session captured all 5 LIVE-evidence files using existing apr CLI tools (`inspect`/`diff`/`run` + `curl` + `llama-cli`) — no new code needed.
+
+### 72.5 What §72 is NOT
+
+§72 does NOT close SHIP-007 (separate multi-PR scope per §63 / scope reduced per §73), does NOT touch MODEL-2, and does NOT modify code.
+
+Evidence:
+- `evidence/section-72-ship-live-cascade-2026-05-12/findings.json`
+- `ship-001-apr-run-safetensors.txt` (SHIP-001 exit 0)
+- `ship-003-apr-diff-q4k-roundtrip.txt` (20 tensors at cos_sim=1.0)
+- `ship-004-llama-cli-stdout.txt` (SHIP-004 llama.cpp output)
+- `ship-009-apr-inspect.txt` (SHIP-009 license/provenance)
+- `ship-010-sha256-match.json` + `ship-010-hf-tree.json` (SHIP-010 sha256 match)
+
+Spec v3.17.0 → **v3.18.0** (this section's bump; superseded by §73's bump to v3.19.0).
 
 ---
 

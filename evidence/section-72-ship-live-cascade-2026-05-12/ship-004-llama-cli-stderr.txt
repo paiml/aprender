@@ -1,0 +1,5 @@
+ggml_cuda_init: found 1 CUDA devices:
+  Device 0: NVIDIA GeForce RTX 4090, compute capability 8.9, VMM: yes
+llama_memory_breakdown_print: | memory breakdown [MiB] | total    free    self   model   context   compute    unaccounted |
+llama_memory_breakdown_print: |   - CUDA0 (RTX 4090)   | 24045 = 14896 + (7754 =  5580 +    1792 +     382) +        1394 |
+llama_memory_breakdown_print: |   - Host               |                  2150 =  2079 +       0 +      71                |
