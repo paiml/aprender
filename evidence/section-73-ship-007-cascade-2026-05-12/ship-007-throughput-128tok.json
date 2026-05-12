@@ -1,0 +1,22 @@
+[PMAT-171] Loaded embedded BPE tokenizer: 152064 vocab, 151387 merges, 25 special tokens
+[GH-175] OwnedQuantizedModel::from_apr: 28 layers loaded in 3580.1ms
+[GH-129] Early kernel preload: 49 modules compiled
+[PMAT-082] cuBLASLt FP8 JIT warmed (3584×16×3584)
+[PMAT-053] FP8 weight cache: 196 matrices cached (6223.0 MB) in 219.6ms
+[trueno#243] Manual graph construction: pos=7, has_graph=false, capture_failed=false, token_count=0
+[trueno#243] ✓ Manual graph: 646 kernels. first_args=Some(["0x7a91067f7a00", "0x7a8f5f1c0000", "0x7a9258ff8000"]), last_args=Some(["0x7a8e50315800", "0x7a9082000000", "0x7a8f171d8800", "0xe00", "0x25200"]), current_logits_buf=0x7a8e50315800
+{
+  "iterations": 5,
+  "latency_p50_ms": 2343.687,
+  "latency_p95_ms": 2353.829,
+  "latency_p99_ms": 2353.829,
+  "mean_time_ms": 2346.8194000000003,
+  "median_time_ms": 2343.687,
+  "model": "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr",
+  "passed": true,
+  "std_dev_ms": 5.791996,
+  "time_to_first_token_ms": 18.389288999999998,
+  "tokens_per_second": 54.5,
+  "total_time_ms": 11734.097,
+  "total_tokens": 640
+}
