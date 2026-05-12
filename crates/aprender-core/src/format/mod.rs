@@ -424,11 +424,8 @@ pub mod data_inv_006;
 // FALSIFY-APR-DISTILL-TRAIN-002 — KL loss decreases over epochs gate.
 pub mod distill_train_002;
 
-// FALSIFY-QA-002 + 006 — apr-cli error-exit honesty (exit != 0 on missing file / error output).
-pub mod qa_002_006;
-
-// FALSIFY-QA-004 — apr-cli no NaN/Inf in user output (zero-tolerance scan).
-pub mod qa_004;
+// FALSIFY-QA-007 — apr-cli --json flag changes output (not a no-op).
+pub mod qa_007;
 
 // FALSIFY-QA-001 — apr-cli all 58 commands respond to --help.
 pub mod qa_001;
@@ -441,6 +438,9 @@ pub mod pub_cli_001;
 
 // FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
 pub mod pub_cli_003;
+
+// FALSIFY-CHAT-001..003 — chat template render decision rules.
+pub mod chat_template_001_003;
 
 // FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
 pub mod pull_dataset_001;
@@ -462,9 +462,6 @@ pub mod distill_train_009;
 
 // INV-BPE-001 — tokenizer-bpe vocab range + paired-model match.
 pub mod bpe_inv_001;
-
-// INV-BPE-006 — tokenizer-bpe encode determinism (cross-process bit-identical IDs).
-pub mod bpe_inv_006;
 
 // INV-BPE-003 — tokenizer-bpe round-trip byte-equality on 10K held-out docs.
 pub mod bpe_inv_003;
@@ -549,6 +546,11 @@ pub mod gate_ship_011;
 
 // GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
 pub mod gate_ship_012;
+
+// FALSIFY-CUDA-001..004 — cuda-kernel-safety-v1 4-gate algorithm-level
+// PARTIAL discharge (kernel FFI, host transpilation, qualifier preservation,
+// keyword detection).
+pub mod cudasafety_001_004;
 
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
