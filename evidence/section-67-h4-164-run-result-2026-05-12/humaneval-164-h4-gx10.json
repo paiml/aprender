@@ -1,0 +1,1174 @@
+{
+  "benchmark": "humaneval",
+  "elapsed_secs": 21181.54296875,
+  "mode": "inference",
+  "model": "/home/noah/src/apr-leaderboard/checkpoints/qwen2.5-coder-7b-instruct-q4k.apr",
+  "pass_at_k": [
+    {
+      "k": 1,
+      "rate": 0.8048780487804879
+    },
+    {
+      "k": 10,
+      "rate": 0.9999999779959476
+    },
+    {
+      "k": 100,
+      "rate": 1.0
+    }
+  ],
+  "passed": 132,
+  "per_problem_results": [
+    {
+      "correct": 1,
+      "entry_point": "has_close_elements",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/0"
+    },
+    {
+      "correct": 0,
+      "entry_point": "separate_paren_groups",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/1"
+    },
+    {
+      "correct": 1,
+      "entry_point": "truncate_number",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/2"
+    },
+    {
+      "correct": 0,
+      "entry_point": "below_zero",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/3"
+    },
+    {
+      "correct": 1,
+      "entry_point": "mean_absolute_deviation",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/4"
+    },
+    {
+      "correct": 1,
+      "entry_point": "intersperse",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/5"
+    },
+    {
+      "correct": 0,
+      "entry_point": "parse_nested_parens",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/6"
+    },
+    {
+      "correct": 1,
+      "entry_point": "filter_by_substring",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/7"
+    },
+    {
+      "correct": 1,
+      "entry_point": "sum_product",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/8"
+    },
+    {
+      "correct": 0,
+      "entry_point": "rolling_max",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/9"
+    },
+    {
+      "correct": 0,
+      "entry_point": "make_palindrome",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/10"
+    },
+    {
+      "correct": 1,
+      "entry_point": "string_xor",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/11"
+    },
+    {
+      "correct": 1,
+      "entry_point": "longest",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/12"
+    },
+    {
+      "correct": 1,
+      "entry_point": "greatest_common_divisor",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/13"
+    },
+    {
+      "correct": 1,
+      "entry_point": "all_prefixes",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/14"
+    },
+    {
+      "correct": 1,
+      "entry_point": "string_sequence",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/15"
+    },
+    {
+      "correct": 1,
+      "entry_point": "count_distinct_characters",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/16"
+    },
+    {
+      "correct": 0,
+      "entry_point": "parse_music",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/17"
+    },
+    {
+      "correct": 1,
+      "entry_point": "how_many_times",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/18"
+    },
+    {
+      "correct": 1,
+      "entry_point": "sort_numbers",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/19"
+    },
+    {
+      "correct": 0,
+      "entry_point": "find_closest_elements",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/20"
+    },
+    {
+      "correct": 1,
+      "entry_point": "rescale_to_unit",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/21"
+    },
+    {
+      "correct": 0,
+      "entry_point": "filter_integers",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/22"
+    },
+    {
+      "correct": 1,
+      "entry_point": "strlen",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/23"
+    },
+    {
+      "correct": 1,
+      "entry_point": "largest_divisor",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/24"
+    },
+    {
+      "correct": 1,
+      "entry_point": "factorize",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/25"
+    },
+    {
+      "correct": 1,
+      "entry_point": "remove_duplicates",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/26"
+    },
+    {
+      "correct": 1,
+      "entry_point": "flip_case",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/27"
+    },
+    {
+      "correct": 1,
+      "entry_point": "concatenate",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/28"
+    },
+    {
+      "correct": 1,
+      "entry_point": "filter_by_prefix",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/29"
+    },
+    {
+      "correct": 1,
+      "entry_point": "get_positive",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/30"
+    },
+    {
+      "correct": 1,
+      "entry_point": "is_prime",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/31"
+    },
+    {
+      "correct": 0,
+      "entry_point": "find_zero",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/32"
+    },
+    {
+      "correct": 1,
+      "entry_point": "sort_third",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/33"
+    },
+    {
+      "correct": 1,
+      "entry_point": "unique",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/34"
+    },
+    {
+      "correct": 1,
+      "entry_point": "max_element",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/35"
+    },
+    {
+      "correct": 1,
+      "entry_point": "fizz_buzz",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/36"
+    },
+    {
+      "correct": 1,
+      "entry_point": "sort_even",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/37"
+    },
+    {
+      "correct": 0,
+      "entry_point": "decode_cyclic",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/38"
+    },
+    {
+      "correct": 1,
+      "entry_point": "prime_fib",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/39"
+    },
+    {
+      "correct": 1,
+      "entry_point": "triples_sum_to_zero",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/40"
+    },
+    {
+      "correct": 1,
+      "entry_point": "car_race_collision",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/41"
+    },
+    {
+      "correct": 1,
+      "entry_point": "incr_list",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/42"
+    },
+    {
+      "correct": 1,
+      "entry_point": "pairs_sum_to_zero",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/43"
+    },
+    {
+      "correct": 1,
+      "entry_point": "change_base",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/44"
+    },
+    {
+      "correct": 1,
+      "entry_point": "triangle_area",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/45"
+    },
+    {
+      "correct": 1,
+      "entry_point": "fib4",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/46"
+    },
+    {
+      "correct": 1,
+      "entry_point": "median",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/47"
+    },
+    {
+      "correct": 1,
+      "entry_point": "is_palindrome",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/48"
+    },
+    {
+      "correct": 1,
+      "entry_point": "modp",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/49"
+    },
+    {
+      "correct": 0,
+      "entry_point": "decode_shift",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/50"
+    },
+    {
+      "correct": 1,
+      "entry_point": "remove_vowels",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/51"
+    },
+    {
+      "correct": 1,
+      "entry_point": "below_threshold",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/52"
+    },
+    {
+      "correct": 1,
+      "entry_point": "add",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/53"
+    },
+    {
+      "correct": 0,
+      "entry_point": "same_chars",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/54"
+    },
+    {
+      "correct": 0,
+      "entry_point": "fib",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/55"
+    },
+    {
+      "correct": 1,
+      "entry_point": "correct_bracketing",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/56"
+    },
+    {
+      "correct": 1,
+      "entry_point": "monotonic",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/57"
+    },
+    {
+      "correct": 1,
+      "entry_point": "common",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/58"
+    },
+    {
+      "correct": 1,
+      "entry_point": "largest_prime_factor",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/59"
+    },
+    {
+      "correct": 1,
+      "entry_point": "sum_to_n",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/60"
+    },
+    {
+      "correct": 1,
+      "entry_point": "correct_bracketing",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/61"
+    },
+    {
+      "correct": 1,
+      "entry_point": "derivative",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/62"
+    },
+    {
+      "correct": 1,
+      "entry_point": "fibfib",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/63"
+    },
+    {
+      "correct": 1,
+      "entry_point": "vowels_count",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/64"
+    },
+    {
+      "correct": 1,
+      "entry_point": "circular_shift",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/65"
+    },
+    {
+      "correct": 1,
+      "entry_point": "digitSum",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/66"
+    },
+    {
+      "correct": 1,
+      "entry_point": "fruit_distribution",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/67"
+    },
+    {
+      "correct": 1,
+      "entry_point": "pluck",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/68"
+    },
+    {
+      "correct": 1,
+      "entry_point": "search",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/69"
+    },
+    {
+      "correct": 1,
+      "entry_point": "strange_sort_list",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/70"
+    },
+    {
+      "correct": 1,
+      "entry_point": "triangle_area",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/71"
+    },
+    {
+      "correct": 1,
+      "entry_point": "will_it_fly",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/72"
+    },
+    {
+      "correct": 1,
+      "entry_point": "smallest_change",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/73"
+    },
+    {
+      "correct": 1,
+      "entry_point": "total_match",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/74"
+    },
+    {
+      "correct": 1,
+      "entry_point": "is_multiply_prime",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/75"
+    },
+    {
+      "correct": 1,
+      "entry_point": "is_simple_power",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/76"
+    },
+    {
+      "correct": 1,
+      "entry_point": "iscube",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/77"
+    },
+    {
+      "correct": 1,
+      "entry_point": "hex_key",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/78"
+    },
+    {
+      "correct": 1,
+      "entry_point": "decimal_to_binary",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/79"
+    },
+    {
+      "correct": 1,
+      "entry_point": "is_happy",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/80"
+    },
+    {
+      "correct": 1,
+      "entry_point": "numerical_letter_grade",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/81"
+    },
+    {
+      "correct": 1,
+      "entry_point": "prime_length",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/82"
+    },
+    {
+      "correct": 0,
+      "entry_point": "starts_one_ends",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/83"
+    },
+    {
+      "correct": 1,
+      "entry_point": "solve",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/84"
+    },
+    {
+      "correct": 1,
+      "entry_point": "add",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/85"
+    },
+    {
+      "correct": 1,
+      "entry_point": "anti_shuffle",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/86"
+    },
+    {
+      "correct": 1,
+      "entry_point": "get_row",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/87"
+    },
+    {
+      "correct": 1,
+      "entry_point": "sort_array",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/88"
+    },
+    {
+      "correct": 1,
+      "entry_point": "encrypt",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/89"
+    },
+    {
+      "correct": 1,
+      "entry_point": "next_smallest",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/90"
+    },
+    {
+      "correct": 1,
+      "entry_point": "is_bored",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/91"
+    },
+    {
+      "correct": 1,
+      "entry_point": "any_int",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/92"
+    },
+    {
+      "correct": 0,
+      "entry_point": "encode",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/93"
+    },
+    {
+      "correct": 0,
+      "entry_point": "skjkasdkd",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/94"
+    },
+    {
+      "correct": 0,
+      "entry_point": "check_dict_case",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/95"
+    },
+    {
+      "correct": 1,
+      "entry_point": "count_up_to",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/96"
+    },
+    {
+      "correct": 1,
+      "entry_point": "multiply",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/97"
+    },
+    {
+      "correct": 1,
+      "entry_point": "count_upper",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/98"
+    },
+    {
+      "correct": 1,
+      "entry_point": "closest_integer",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/99"
+    },
+    {
+      "correct": 1,
+      "entry_point": "make_a_pile",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/100"
+    },
+    {
+      "correct": 1,
+      "entry_point": "words_string",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/101"
+    },
+    {
+      "correct": 1,
+      "entry_point": "choose_num",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/102"
+    },
+    {
+      "correct": 1,
+      "entry_point": "rounded_avg",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/103"
+    },
+    {
+      "correct": 1,
+      "entry_point": "unique_digits",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/104"
+    },
+    {
+      "correct": 1,
+      "entry_point": "by_length",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/105"
+    },
+    {
+      "correct": 1,
+      "entry_point": "f",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/106"
+    },
+    {
+      "correct": 1,
+      "entry_point": "even_odd_palindrome",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/107"
+    },
+    {
+      "correct": 0,
+      "entry_point": "count_nums",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/108"
+    },
+    {
+      "correct": 1,
+      "entry_point": "move_one_ball",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/109"
+    },
+    {
+      "correct": 1,
+      "entry_point": "exchange",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/110"
+    },
+    {
+      "correct": 1,
+      "entry_point": "histogram",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/111"
+    },
+    {
+      "correct": 1,
+      "entry_point": "reverse_delete",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/112"
+    },
+    {
+      "correct": 1,
+      "entry_point": "odd_count",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/113"
+    },
+    {
+      "correct": 1,
+      "entry_point": "minSubArraySum",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/114"
+    },
+    {
+      "correct": 0,
+      "entry_point": "max_fill",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/115"
+    },
+    {
+      "correct": 1,
+      "entry_point": "sort_array",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/116"
+    },
+    {
+      "correct": 1,
+      "entry_point": "select_words",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/117"
+    },
+    {
+      "correct": 1,
+      "entry_point": "get_closest_vowel",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/118"
+    },
+    {
+      "correct": 1,
+      "entry_point": "match_parens",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/119"
+    },
+    {
+      "correct": 1,
+      "entry_point": "maximum",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/120"
+    },
+    {
+      "correct": 1,
+      "entry_point": "solution",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/121"
+    },
+    {
+      "correct": 1,
+      "entry_point": "add_elements",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/122"
+    },
+    {
+      "correct": 1,
+      "entry_point": "get_odd_collatz",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/123"
+    },
+    {
+      "correct": 1,
+      "entry_point": "valid_date",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/124"
+    },
+    {
+      "correct": 1,
+      "entry_point": "split_words",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/125"
+    },
+    {
+      "correct": 0,
+      "entry_point": "is_sorted",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/126"
+    },
+    {
+      "correct": 0,
+      "entry_point": "intersection",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/127"
+    },
+    {
+      "correct": 1,
+      "entry_point": "prod_signs",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/128"
+    },
+    {
+      "correct": 0,
+      "entry_point": "minPath",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/129"
+    },
+    {
+      "correct": 0,
+      "entry_point": "tri",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/130"
+    },
+    {
+      "correct": 1,
+      "entry_point": "digits",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/131"
+    },
+    {
+      "correct": 0,
+      "entry_point": "is_nested",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/132"
+    },
+    {
+      "correct": 1,
+      "entry_point": "sum_squares",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/133"
+    },
+    {
+      "correct": 0,
+      "entry_point": "check_if_last_char_is_a_letter",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/134"
+    },
+    {
+      "correct": 1,
+      "entry_point": "can_arrange",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/135"
+    },
+    {
+      "correct": 1,
+      "entry_point": "largest_smallest_integers",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/136"
+    },
+    {
+      "correct": 0,
+      "entry_point": "compare_one",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/137"
+    },
+    {
+      "correct": 1,
+      "entry_point": "is_equal_to_sum_even",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/138"
+    },
+    {
+      "correct": 1,
+      "entry_point": "special_factorial",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/139"
+    },
+    {
+      "correct": 0,
+      "entry_point": "fix_spaces",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/140"
+    },
+    {
+      "correct": 0,
+      "entry_point": "file_name_check",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/141"
+    },
+    {
+      "correct": 0,
+      "entry_point": "sum_squares",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/142"
+    },
+    {
+      "correct": 1,
+      "entry_point": "words_in_sentence",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/143"
+    },
+    {
+      "correct": 1,
+      "entry_point": "simplify",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/144"
+    },
+    {
+      "correct": 0,
+      "entry_point": "order_by_points",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/145"
+    },
+    {
+      "correct": 1,
+      "entry_point": "specialFilter",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/146"
+    },
+    {
+      "correct": 1,
+      "entry_point": "get_max_triples",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/147"
+    },
+    {
+      "correct": 1,
+      "entry_point": "bf",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/148"
+    },
+    {
+      "correct": 1,
+      "entry_point": "sorted_list_sum",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/149"
+    },
+    {
+      "correct": 1,
+      "entry_point": "x_or_y",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/150"
+    },
+    {
+      "correct": 1,
+      "entry_point": "double_the_difference",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/151"
+    },
+    {
+      "correct": 1,
+      "entry_point": "compare",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/152"
+    },
+    {
+      "correct": 1,
+      "entry_point": "Strongest_Extension",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/153"
+    },
+    {
+      "correct": 1,
+      "entry_point": "cycpattern_check",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/154"
+    },
+    {
+      "correct": 0,
+      "entry_point": "even_odd_count",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/155"
+    },
+    {
+      "correct": 1,
+      "entry_point": "int_to_mini_roman",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/156"
+    },
+    {
+      "correct": 1,
+      "entry_point": "right_angle_triangle",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/157"
+    },
+    {
+      "correct": 1,
+      "entry_point": "find_max",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/158"
+    },
+    {
+      "correct": 1,
+      "entry_point": "eat",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/159"
+    },
+    {
+      "correct": 1,
+      "entry_point": "do_algebra",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/160"
+    },
+    {
+      "correct": 1,
+      "entry_point": "solve",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/161"
+    },
+    {
+      "correct": 1,
+      "entry_point": "string_to_md5",
+      "passed": true,
+      "samples": 1,
+      "task_id": "HumanEval/162"
+    },
+    {
+      "correct": 0,
+      "entry_point": "generate_integers",
+      "passed": false,
+      "samples": 1,
+      "task_id": "HumanEval/163"
+    }
+  ],
+  "problems": 164,
+  "samples_per_problem": 1,
+  "temperature": 0.0
+}
