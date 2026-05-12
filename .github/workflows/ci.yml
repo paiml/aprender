@@ -65,9 +65,23 @@ jobs:
         # the target dir per PR number removes the contention at the source.
         # Push-to-main uses ref_name ("main"); PRs use PR number.
         - /mnt/nvme-raid0/targets/aprender-ci/${{ github.event.pull_request.number || github.ref_name }}:/workspace/target
+        # Shared sccache (Phase 3 §5.3) — content-addressable rustc-output cache
+        # keyed on (toolchain + source + flags). Shared across all 16
+        # intel-clean-room runners and all PRs, with no concurrent-write race
+        # (sccache uses per-entry atomic rename + LRU eviction internally).
+        # Without this, the per-PR target dir above forces cold compile from
+        # scratch for every new PR — ~34min build, leaving only ~6min for
+        # tests inside the 45min timeout. See PR #1632.
+        - /home/noah/data/sccache:/sccache
     timeout-minutes: 45
     env:
       CARGO_TARGET_DIR: /workspace/target
+      # Sccache rustc-wrapper. The image bakes /usr/local/bin/rustc-sccache
+      # as an exec shim that argv[0]-spoofs sccache CLI mode while still
+      # caching rustc invocations (paiml/infra commit f4fccf9). Expected
+      # hit-rate ≥80% on warm cache → cold compile ~34min → ~3-5min.
+      RUSTC_WRAPPER: rustc-sccache
+      SCCACHE_DIR: /sccache
       # CARGO_INCREMENTAL intentionally disabled in CI: incremental compilation
       # tracks per-function dirty state for dev-loop speed, but on PR-scale
       # diffs that touch many files the overhead outweighs savings, and the
