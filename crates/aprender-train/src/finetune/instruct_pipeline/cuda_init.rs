@@ -295,6 +295,9 @@ impl InstructPipeline {
                     w_up,
                     w_down,
                     max_seq_len,
+                    None, // b_q (instruct pipeline doesn't surface biases yet)
+                    None, // b_k
+                    None, // b_v
                 )
                 .map(CudaBlock::Fp32)
             };
