@@ -1,0 +1,177 @@
+metadata:
+  id: C-APR-PRETRAIN-CUDA-ROPE-THETA-CACHE-KEY
+  version: 1.0.0
+  created: '2026-05-10'
+  author: PAIML Engineering
+  kind: pattern
+  status: ACTIVE_ALGORITHM_LEVEL
+  description: |
+    Pins the falsifiable invariant that CUDA RoPE PTX cache keys
+    include `theta` (the RoPE base frequency), so two calls with
+    different theta values cannot silently shadow each other.
+
+    BACKGROUND. Cascade follow-up to `apr-pretrain-cuda-forward-parity-v1.yaml`
+    (PR #1604) and `apr-pretrain-cuda-rmsnorm-eps-parity-v1.yaml`
+    (PR #1606). Same defect class as the RMSNorm eps cache key issue:
+    a kernel parameter that is BAKED INTO PTX at emit-time was omitted
+    from the cache key.
+
+    Direct source inspection of `aprender-train::rope_neox_forward`,
+    `batched_rope_neox_forward`, and `batched_rope_neox_backward`
+    (`cuda_forward/normalization.rs`) showed cache keys of the form
+    `batched_rope_fwd_{num_heads}_{head_dim}` — theta omitted. trueno-gpu's
+    `RopeNeoxKernel`, `BatchedRopeKernel`, and `BatchedRopeBackwardKernel`
+    all capture `theta` into their `build_ptx` closure (`mov.f32 imm`
+    of the constant), so distinct theta values produce distinct PTX.
+
+    Failure mode: in any process that loads two models with different
+    `rope_theta` values (e.g., a Llama test running before a Qwen test),
+    the second model's RoPE call hits the cache key from the first
+    model and silently uses the WRONG theta. For Llama-then-Qwen, the
+    Qwen forward sees a 100× theta gap (10000 vs 1000000), wildly
+    distorting positional encodings — every position rotates at the
+    wrong frequency, causing structural divergence between CPU and
+    CUDA forward.
+
+    For Qwen-only workflows (the SHIP-TWO-001 pretrain target), the
+    bug does NOT directly cause val_loss inflation because the first
+    Qwen call populates the cache with Qwen theta, and all subsequent
+    calls match. However, this is a latent correctness defect: any
+    test ordering where a Llama model loads first will silently
+    corrupt downstream Qwen runs. Tests are forbidden from mutating
+    global state without falsifiable guards.
+
+    THIS CONTRACT pins the cache-key invariant. RED-then-GREEN cycle:
+      RED  (current main): two `batched_rope_neox_forward` calls
+           with the same `(num_heads, head_dim, seq_len)` but different
+           `theta` produce byte-identical outputs (cache shadows
+           the second call).
+      GREEN (post-fix):    cache key includes `_th{theta_bits:08x}`
+           so distinct theta compiles distinct PTX modules; outputs
+           differ by the expected frequency-shift amount.
+
+    SHIP-% MOVEMENT IF FALSIFIER FLIPS GREEN: SHIP-TWO-001 MODEL-2
+    stays at 57% (this is a hygiene fix, not a Qwen-specific cascade
+    lever — the Qwen path is already self-consistent for theta=1e6).
+    Ships separately because the defect class is real and the fix
+    is mechanical.
+
+  references:
+    - 'crates/aprender-train/src/autograd/cuda_forward/normalization.rs:275 (rope_neox_forward cache key, fixed)'
+    - 'crates/aprender-train/src/autograd/cuda_forward/normalization.rs:339 (batched_rope_neox_forward cache key, fixed)'
+    - 'crates/aprender-train/src/autograd/cuda_forward/normalization.rs:396 (batched_rope_neox_backward cache key, fixed)'
+    - 'crates/aprender-train/src/autograd/cuda_forward/cache.rs:495 (pre-warm key, aligned with runtime)'
+    - '../trueno/trueno-gpu/src/kernels/elementwise/rope/standard.rs:27 (theta baked into PTX via build_ptx closure)'
+  depends_on:
+    - 'apr-pretrain-cuda-rmsnorm-eps-parity-v1'
+
+equations:
+  rope_theta_cache_key_inclusion:
+    formula: |
+      cache_key(num_heads, head_dim, seq_len, theta_a)
+        != cache_key(num_heads, head_dim, seq_len, theta_b)
+      ⇔ theta_a != theta_b
+    domain: |
+      Two RoPE forward / backward calls with the same shape but
+      different `theta` MUST resolve to distinct cache entries so
+      they compile separate PTX modules. Pre-fix the key omitted
+      theta and distinct thetas collapsed to the same entry.
+    invariants:
+    - 'cache_key includes theta_bits (different theta → different cache slot)'
+    - 'pre-warm cache key matches runtime cache key (no orphan warm)'
+    preconditions:
+    - 'caller passes config.rope_theta'
+
+  rope_distinct_theta_distinct_output:
+    formula: |
+      |rope(x, theta_a) - rope(x, theta_b)|_∞ > 1e-3
+      WHEN theta_a != theta_b AND positions != 0
+    domain: |
+      Functional consequence of the cache-key fix: when the cache
+      key correctly distinguishes thetas, two calls with distinct
+      thetas yield distinct PTX modules and distinct numerical
+      outputs (rotation-frequency shift).
+    invariants:
+    - 'output differs by at least 1e-3 max-abs at theta_a=10000, theta_b=1000000'
+    preconditions:
+    - 'rope_theta_cache_key_inclusion holds'
+
+proof_obligations:
+- type: invariant
+  property: cache key uniquely identifies theta
+  formal: 'cache_key contains theta_bits suffix'
+  applies_to: rope_theta_cache_key_inclusion
+- type: invariant
+  property: distinct thetas produce distinct outputs
+  formal: '|rope(x, θ_a) - rope(x, θ_b)|_∞ > 1e-3'
+  applies_to: rope_distinct_theta_distinct_output
+
+falsification_tests:
+- id: FALSIFY-CUDA-ROPE-THETA-CACHE-KEY-001
+  rule: |
+    Two `batched_rope_neox_forward` calls with the same
+    `(num_heads, head_dim, seq_len)` but different `theta` values
+    produce outputs that differ by at least 1e-3 max-abs.
+  prediction: |
+    Build (num_heads=2, head_dim=64, seq_len=4) input. Call
+    `batched_rope_neox_forward` once with theta=10000.0 (Llama),
+    download. Call again with theta=1_000_000.0 (Qwen) and SAME
+    input/positions, download. Assert max abs diff > 1e-3.
+  test: |
+    cargo test -p aprender-train --features cuda --lib \
+      falsify_cuda_rope_theta_cache_key_distinct_thetas_yield_distinct_outputs
+  if_fails: |
+    Cache key still omits theta — second call shadowed by first.
+    Inspect cache key construction in `cuda_forward/normalization.rs`
+    `batched_rope_neox_forward` and confirm `_th{theta_bits:08x}`
+    suffix is present. Same for `rope_neox_forward` and
+    `batched_rope_neox_backward`.
+  ship_blocking: true
+  counter_example_classes:
+  - cache_key_collision_across_theta
+  - pre_warm_key_diverges_from_runtime_key
+  - kernel_built_with_default_theta_silently
+
+- id: FALSIFY-CUDA-ROPE-THETA-CACHE-KEY-002
+  rule: |
+    All three RoPE wrappers (`rope_neox_forward`,
+    `batched_rope_neox_forward`, `batched_rope_neox_backward`) include
+    `_th{theta_bits:08x}` in their cache key.
+  prediction: |
+    Source-level audit:
+      grep -n "batched_rope_fwd_\|batched_rope_bwd_\|rope_neox_fwd_" \
+        crates/aprender-train/src/autograd/cuda_forward/normalization.rs
+    Every match line includes `_th{theta_bits:08x}` suffix. The
+    pre-warm in `cache.rs::pre_warm_backward_kernels_in_forward_cache`
+    also includes the suffix (otherwise pre-warm becomes orphaned).
+  test: |
+    cargo test -p aprender-train --features cuda --lib \
+      falsify_cuda_rope_theta_cache_key_distinct_thetas_yield_distinct_outputs \
+      && grep -nE 'rope_(neox_)?fwd_|batched_rope_(fwd|bwd)_' \
+        crates/aprender-train/src/autograd/cuda_forward/normalization.rs \
+        crates/aprender-train/src/autograd/cuda_forward/cache.rs \
+      | grep -v '_th' | wc -l
+    # expect: 0 (or only doc-comment matches)
+  if_fails: |
+    A new cache key was added without the theta suffix, or a refactor
+    dropped it. Re-add `_th{theta_bits:08x}` and update the pre-warm
+    if any.
+  ship_blocking: true
+  counter_example_classes:
+  - new_callsite_omits_theta_suffix
+  - pre_warm_key_drift
+
+kani_harnesses: []
+
+qa_gate:
+  id: QA-CUDA-ROPE-THETA-CACHE-KEY-001
+  name: CUDA RoPE theta cache key gate
+  description: |
+    All falsifiers pass; cache key includes theta_bits at every
+    callsite (forward, batched forward, batched backward, pre-warm);
+    distinct thetas produce distinct outputs in a falsifiable test.
+  checks:
+  - rope_theta_cache_key_inclusion
+  - rope_distinct_theta_distinct_output
+  pass_criteria: All 2 falsifiers pass
+  falsification: Any single failure fails the gate (ship-blocking)
