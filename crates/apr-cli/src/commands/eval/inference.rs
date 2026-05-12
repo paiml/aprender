@@ -1535,7 +1535,19 @@ fn run_mbpp_inference(
             format!("{completion}\n{setup}\n{tests}\n")
         };
 
-        let ok = execute_python_test(&full_program, 10);
+        let exec_result = execute_python_test_with_diagnostics(&full_program, 10);
+        let ok = exec_result.success;
+
+        if std::env::var("APR_EVAL_DEBUG").is_ok() {
+            write_apr_eval_debug(
+                &task_id,
+                &prompt,
+                &tokenizer.decode(&tokens),
+                completion,
+                &full_program,
+                &exec_result,
+            );
+        }
 
         if ok {
             passed += 1;
@@ -1657,7 +1669,19 @@ fn run_mbpp_inference_cuda(
             format!("{completion}\n{setup}\n{tests}\n")
         };
 
-        let ok = execute_python_test(&full_program, 10);
+        let exec_result = execute_python_test_with_diagnostics(&full_program, 10);
+        let ok = exec_result.success;
+
+        if std::env::var("APR_EVAL_DEBUG").is_ok() {
+            write_apr_eval_debug(
+                &task_id,
+                &prompt,
+                &tokenizer.decode(&tokens),
+                completion,
+                &full_program,
+                &exec_result,
+            );
+        }
 
         if ok {
             passed += 1;
