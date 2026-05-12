@@ -27,6 +27,15 @@ equations:
       qwen_hidden: 1536
       qwen_q_dim: 1536
       qwen_kv_dim: 256
+    preconditions:
+      - 'A.shape == [M, K]; M > 0 && K > 0'
+      - 'W_q_nf4.shape == [K, q_dim]; W_k_nf4.shape == [K, kv_dim]; W_v_nf4.shape == [K, kv_dim]'
+      - 'A is finite'
+    postconditions:
+      - 'q.shape == [M, q_dim]; k.shape == [M, kv_dim]; v.shape == [M, kv_dim]'
+      - 'q, k, v all finite when A is finite'
+      - 'DRAM reads of A == 3 (one per projection)'
+    lean_theorem: 'Theorems.Separate_qkv'
 
   fused_qkv:
     formula: |
@@ -42,8 +51,13 @@ equations:
     preconditions:
     - K dim == V dim (required for fused K+V)
     - hidden_size divisible by 64 (NF4 block alignment)
+    - 'A.shape == [M, K]; M > 0 && K > 0; A is finite'
     postconditions:
     - q, k, v element-wise match separate within tolerance
+    - 'q.shape == [M, q_dim]; k.shape == v.shape == [M, kv_dim]'
+    - 'DRAM reads of A == 2 (Q path + KV path; bandwidth saved vs separate path)'
+    - 'fused_kv element-wise matches [separate_k, separate_v] within ε=1e-4'
+    lean_theorem: 'Theorems.Fused_qkv'
 
   bandwidth_savings:
     formula: |
@@ -55,6 +69,12 @@ equations:
         savings = 2048 × 1536 × 4 = 12.6 MB per layer
         Per forward (28 layers) = 352 MB saved
     domain: bytes
+    preconditions:
+      - 'M > 0 && K > 0'
+    postconditions:
+      - 'savings == M × K × 4 bytes (33% reduction in input reads)'
+      - 'savings > 0'
+    lean_theorem: 'Theorems.Bandwidth_savings'
 
 proof_obligations:
 - type: equivalence

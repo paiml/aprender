@@ -45,10 +45,7 @@ fn any_match(path: &str, patterns: &[Pattern]) -> bool {
 /// on the first malformed pattern.
 fn compile_patterns(raw: &[&str]) -> Result<Vec<Pattern>, GlobFilterError> {
     raw.iter()
-        .map(|s| {
-            Pattern::new(s)
-                .map_err(|_| GlobFilterError::InvalidPattern((*s).to_string()))
-        })
+        .map(|s| Pattern::new(s).map_err(|_| GlobFilterError::InvalidPattern((*s).to_string())))
         .collect()
 }
 
@@ -158,8 +155,7 @@ mod tests {
         // — `--include '*.json' --exclude 'config.json'` keeps *.json
         // files EXCEPT config.json.
         let files = sample_repo();
-        let got =
-            select_files(&files, &["*.json"], &["config.json"]).unwrap();
+        let got = select_files(&files, &["*.json"], &["config.json"]).unwrap();
         assert!(!got.iter().any(|f| f == "config.json"));
         // But other .json files survive.
         assert!(got.iter().any(|f| f == "tokenizer.json"));
@@ -173,8 +169,7 @@ mod tests {
     #[test]
     fn multiple_include_globs_union_semantics() {
         let files = sample_repo();
-        let got =
-            select_files(&files, &["*.safetensors", "*.bin"], &[]).unwrap();
+        let got = select_files(&files, &["*.safetensors", "*.bin"], &[]).unwrap();
         assert_eq!(got.len(), 2);
         assert!(got.contains(&"model.safetensors".to_string()));
         assert!(got.contains(&"pytorch_model.bin".to_string()));
@@ -207,8 +202,7 @@ mod tests {
             "adapters/nested/deep.safetensors",
             "model.safetensors",
         ];
-        let got =
-            select_files(&files, &["adapters/**/*.safetensors"], &[]).unwrap();
+        let got = select_files(&files, &["adapters/**/*.safetensors"], &[]).unwrap();
         assert!(got.contains(&"adapters/lora.safetensors".to_string()));
         assert!(got.contains(&"adapters/nested/deep.safetensors".to_string()));
         assert!(!got.contains(&"model.safetensors".to_string()));
@@ -273,11 +267,7 @@ mod tests {
         let whole = select_files(&files, &inc, &exc).unwrap();
         for f in &files {
             let single = is_selected(f, &inc, &exc).unwrap();
-            assert_eq!(
-                single,
-                whole.iter().any(|w| w == f),
-                "disagreement on {f}",
-            );
+            assert_eq!(single, whole.iter().any(|w| w == f), "disagreement on {f}",);
         }
     }
 
@@ -308,8 +298,7 @@ mod tests {
         // CRUX-A-04 FALSIFY-003 algorithm-level: shell test asserts
         // `! -f "$TMP/config.json"` AND `ls "$TMP"/*.json` succeeds.
         let files = sample_repo();
-        let got =
-            select_files(&files, &["*.json"], &["config.json"]).unwrap();
+        let got = select_files(&files, &["*.json"], &["config.json"]).unwrap();
         assert!(!got.iter().any(|f| f == "config.json"));
         assert!(got.iter().any(|f| f.ends_with(".json")));
     }

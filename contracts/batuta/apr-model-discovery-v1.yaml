@@ -196,3 +196,12 @@ kani_harnesses:
   property: Newer GGUF wins over older APR in sort
   bound: 8
   strategy: exhaustive
+
+qa_gate:
+  id: F-MODEL-DISCOVERY-GATE
+  name: APR Model Discovery Gate
+  description: Quality gate for the `apr` CLI's model file discovery + canonical-path resolution invariants
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All falsification tests pass + proof obligations satisfied

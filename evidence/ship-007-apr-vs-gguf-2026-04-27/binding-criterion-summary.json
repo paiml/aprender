@@ -1,0 +1,24 @@
+{
+  "experiment": "§26.4 P3 binding criterion — APR vs GGUF layer-3 ffn_swigl bisection",
+  "date": "2026-04-27",
+  "host": "noah-Lambda-Vector",
+  "binary": "/mnt/nvme-raid0/targets/aprender/release/apr (commit f24946412 from PR #1083 branch)",
+  "teacher": {
+    "apr": "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr",
+    "gguf": "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.gguf",
+    "prompt": "What is 2+2?"
+  },
+  "layer_3_comparison": {
+    "apr_ffn_swigl_std": 1.2216,
+    "apr_ffn_swigl_mean": -0.0026,
+    "gguf_ffn_swigl_std": 0.0670,
+    "gguf_ffn_swigl_mean": -0.0002,
+    "ratio_apr_over_gguf": 18.23
+  },
+  "binding_criterion": {
+    "threshold": ">=10x ratio implies APR-side bug; <2x implies normal Qwen2.5 behavior",
+    "observed": 18.23,
+    "verdict": "SHIP-007 bug is APR-side — 18.23x exceeds the 10x threshold by 8x absolute, decisive",
+    "bug_location": "crates/aprender-serve/src/apr_transformer/inference.rs:160-164 (silu_g * u element-wise multiply)"
+  }
+}

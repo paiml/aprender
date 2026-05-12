@@ -1,0 +1,34 @@
+
+=== Traced Inference (APR-TRACE-001) ===
+Model: /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.gguf
+
+Contract: 339 tensors pass PMAT-235 gates
+
+Format: GGUF (quantized)
+
+Architecture: qwen2
+  Layers: 28
+  Hidden dim: 3584
+  Vocab size: 152064
+  Heads: 28 (KV: 4)
+
+Test prompt: "What is 2+2?"
+Encoded tokens: [3838, 374, 220, 17, 10, 17, 30]
+
+GENERATION (max 8 tokens):
+  Generated token IDs: [220, 17, 10, 17, 374, 220, 19, 13]
+
+TOKEN-BY-TOKEN DECODE:
+  1. token_id=220 → " "
+  2. token_id=17 → "2"
+  3. token_id=10 → "+"
+  4. token_id=17 → "2"
+  5. token_id=374 → " is"
+  6. token_id=220 → " "
+  7. token_id=19 → "4"
+  8. token_id=13 → "."
+
+FULL OUTPUT:
+  " 2+2 is 4."
+
+✓ Output appears reasonable

@@ -164,7 +164,7 @@ impl OwnedQuantizedModel {
     /// 3. Attention with KV cache (GQA-aware)
     /// 4. Output projection (Q8K-accelerated or F32 fallback)
     /// 5. Residual connection into scratch.hidden
-    fn scratch_attention_block(
+    pub(crate) fn scratch_attention_block(
         &self,
         layer_idx: usize,
         layer: &OwnedQuantizedLayer,
@@ -326,7 +326,7 @@ impl OwnedQuantizedModel {
     ///
     /// Computes FFN up + gate projections with optional Q8K VNNI acceleration,
     /// applies SwiGLU activation, then projects down. Results written to scratch buffers.
-    fn scratch_swiglu_ffn(
+    pub(crate) fn scratch_swiglu_ffn(
         &self,
         layer_idx: usize,
         scratch: &mut InferenceScratchBuffer,
@@ -361,11 +361,91 @@ impl OwnedQuantizedModel {
         self.scratch_q8k_down_projection(layer_idx, scratch, intermediate_dim, hidden_dim)
     }
 
+    /// SHIP-007 PR B: traced variant of `scratch_swiglu_ffn` that captures
+    /// the 4 sub-FFN `ActivationStats` slots needed for the §26.4 layer-3
+    /// ffn_swigl APR-vs-GGUF bisection.
+    ///
+    /// Numerical path is byte-identical to `scratch_swiglu_ffn`; only stat
+    /// capture is added at the 4 capture points documented in
+    /// `project_ship_007_gguf_forward_traced_plan.md`:
+    ///
+    /// | Stat | Capture point |
+    /// |------|---------------|
+    /// | `ffn_gate_stats` | `scratch.ffn_gate` AFTER bias, BEFORE silu |
+    /// | `ffn_up_stats` | `scratch.ffn_up` AFTER bias |
+    /// | `ffn_silu_gate_stats` | `scratch.ffn_gate` AFTER silu, BEFORE multiply |
+    /// | `ffn_swiglu_inner_stats` | `scratch.ffn_gate` AFTER multiply (silu(g) * u) |
+    ///
+    /// PR A's `forward_traced` calls THIS helper instead of `scratch_swiglu_ffn`
+    /// and writes the captured stats into the in-progress `LayerActivation`.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the underlying Q8K up+gate or down projection fails.
+    pub(crate) fn scratch_swiglu_ffn_traced(
+        &self,
+        layer_idx: usize,
+        scratch: &mut InferenceScratchBuffer,
+        use_q8k_path: bool,
+        hidden_dim: usize,
+        intermediate_dim: usize,
+        ffn_gate_stats: &mut crate::apr_transformer::ActivationStats,
+        ffn_up_stats: &mut crate::apr_transformer::ActivationStats,
+        ffn_silu_gate_stats: &mut crate::apr_transformer::ActivationStats,
+        ffn_swiglu_inner_stats: &mut crate::apr_transformer::ActivationStats,
+    ) -> Result<()> {
+        let layer = &self.layers[layer_idx];
+
+        // Up + gate projections (Q8K or F32) — identical to non-traced
+        self.scratch_q8k_up_gate(layer_idx, scratch, use_q8k_path, hidden_dim)?;
+
+        // Apply biases — identical to non-traced
+        if let Some(ref bias) = layer.ffn_up_bias {
+            for i in 0..intermediate_dim {
+                scratch.ffn_up[i] += bias[i];
+            }
+        }
+        if let Some(ref bias) = layer.ffn_gate_bias {
+            for i in 0..intermediate_dim {
+                scratch.ffn_gate[i] += bias[i];
+            }
+        }
+
+        // CAPTURE 1 + 2: ffn_gate (post-bias, pre-silu) + ffn_up (post-bias)
+        *ffn_gate_stats = crate::apr_transformer::ActivationStats::from_slice(
+            &scratch.ffn_gate[..intermediate_dim],
+        );
+        *ffn_up_stats = crate::apr_transformer::ActivationStats::from_slice(
+            &scratch.ffn_up[..intermediate_dim],
+        );
+
+        // SiLU on gate
+        ops::silu(&mut scratch.ffn_gate[..intermediate_dim]);
+
+        // CAPTURE 3: ffn_silu_gate (post-silu, pre-multiply)
+        *ffn_silu_gate_stats = crate::apr_transformer::ActivationStats::from_slice(
+            &scratch.ffn_gate[..intermediate_dim],
+        );
+
+        // Multiply with up: silu(gate) * up
+        for i in 0..intermediate_dim {
+            scratch.ffn_gate[i] *= scratch.ffn_up[i];
+        }
+
+        // CAPTURE 4: ffn_swiglu_inner (post-multiply — THE §23 17× anomaly site)
+        *ffn_swiglu_inner_stats = crate::apr_transformer::ActivationStats::from_slice(
+            &scratch.ffn_gate[..intermediate_dim],
+        );
+
+        // Down projection — identical to non-traced
+        self.scratch_q8k_down_projection(layer_idx, scratch, intermediate_dim, hidden_dim)
+    }
+
     /// GELU FFN path with Q8K acceleration for scratch-buffer forward pass
     ///
     /// Computes FFN up projection with optional Q8K VNNI acceleration,
     /// applies GELU activation, then projects down. Results written to scratch buffers.
-    fn scratch_gelu_ffn(
+    pub(crate) fn scratch_gelu_ffn(
         &self,
         layer_idx: usize,
         scratch: &mut InferenceScratchBuffer,

@@ -1,0 +1,559 @@
+metadata:
+  id: C-TRACE-MOE-GPU-SUB-STAGES
+  version: 1.6.0
+  created: '2026-05-05'
+  author: PAIML Engineering
+  kind: pattern
+  status: ACTIVE
+  description: |
+    Sub-MoE-GPU bisection plan for `apr trace --save-tensor` —
+    M-GPU-MOE-1.4 NaN/Inf bisection per qwen3-moe-forward-gpu-v1
+    v1.4.0 amendment_history block.
+
+    v1.6.0 (2026-05-06): **all 4 falsification tests DISCHARGED**
+    after the M-GPU-MOE-1.4 step (c) fix landed (aprender PR #1529
+    squash `89cb26af7`).
+
+    Status promotion: FALSIFY-MOE-SUB-004 PROPOSED → **DISCHARGED**.
+
+    Rule: "The M-GPU-MOE-1.4 fix PR title/body MUST mention one of:
+    {moe_router, moe_expert_gate, moe_expert_up, moe_expert_swigl,
+     moe_expert_out, moe_ffn_out}."
+
+    Discharge evidence: PR #1529 title is
+    "fix(M-GPU-MOE-1.4 step c): qtype-aware dispatch in
+     expert_swiglu_cuda — closes L6 moe_ffn_out NaN"
+    — explicitly cites `moe_ffn_out` (one of the 6 enumerated
+    stage names) by name. The fix PR body further cites
+    "moe_ffn_out at layer 6" multiple times in the Five-Whys
+    analysis and the bisection result table.
+
+    All four falsification tests now DISCHARGED:
+    - FALSIFY-MOE-SUB-001 (parse): DISCHARGED at v1.4.0 (M82)
+    - FALSIFY-MOE-SUB-002 (byte-identity / heavy harness):
+      DISCHARGED at v1.5.0 (M83) on gx10 Blackwell GB10
+    - FALSIFY-MOE-SUB-003 (bisection-pinpoints-stage):
+      DISCHARGED at v1.5.0 (M83) — first NaN_GPU on moe_ffn_out
+      at layer 6
+    - FALSIFY-MOE-SUB-004 (fix-PR-cites-stage): **DISCHARGED at
+      v1.6.0 (this amendment, M85 PR #1529 cites moe_ffn_out)**
+
+    M-MOE-SUB-4 (per-expert sub-stages) stays PENDING — was
+    optional ("only needed if MoeRouter+MoeFfnOut bisection is
+    insufficient precision"); it WAS sufficient — the M85 fix
+    landed without it. M-MOE-SUB-4 remains a future enhancement
+    if cosine-refinement work (M-GPU-MOE-3) needs to bisect the
+    ~7-8 cos<0.99 layers (L7, L9, L12, L20, L23, L29, L46) at
+    per-expert granularity.
+
+    YAML-only — production hot paths byte-unchanged (additive-
+    purity invariant pinned in v1.1.0 still holds).
+
+    v1.5.0 (2026-05-06): **LIVE bisection DISCHARGED** on Blackwell
+    GB10 (gx10). Operator-dispatched run of the M80 heavy harness
+    against cached 18 GB Qwen3-Coder-30B-A3B-Instruct GGUF completed
+    in 23.18s; produced clean signal pinpointing the M-GPU-MOE-1.4
+    NaN root cause to **layer 6 `moe_ffn_out`**.
+
+    Per-layer cos-sim summary (full table in
+    `evidence/m-gpu-moe-1-4-bisection-gx10-2026-05-06/m80-bisection.txt`):
+    L0–L5 ALL MATCH (cos > 0.99986 on both moe_router AND moe_ffn_out)
+    L6 first NaN_GPU on moe_ffn_out (router still finite at L6)
+    L7+ all DIVERGE on router (downstream NaN poisoning)
+
+    Decision tree firing per harness output:
+    "If first_NaN_GPU(moe_ffn_out) > 0 and earlier layers MATCH:
+     bug is layer-N specific (rare)."
+
+    **Architectural portability finding**: This ran on sm_120 (Blackwell
+    GB10). The original M-GPU-MOE-1.3 NaN bug (PR #1493) was
+    characterized on sm_89 (Ada RTX 4090). Both architectures produce
+    NaN at the same layer → bug is algorithmic / numerical, NOT kernel
+    codegen. trueno#200 Blackwell PTX JIT pre-warming did NOT block
+    this dispatch — Q4K/Q6K matvec compiled and ran on sm_120 first-shot.
+
+    **Status promotions**:
+    - FALSIFY-MOE-SUB-002 ALGORITHM_LEVEL_DISCHARGED → DISCHARGED
+      (heavy harness ran cleanly with --include-ignored on gx10).
+    - FALSIFY-MOE-SUB-003 PROPOSED → DISCHARGED
+      (bisection-pinpoints-stage; stage = L6 moe_ffn_out).
+    - FALSIFY-MOE-SUB-004 unchanged PROPOSED (still requires
+      M-GPU-MOE-1.4 fix PR to land citing L6 moe_ffn_out by name).
+
+    **Contract status promotion**: ACTIVE_ALGORITHM_LEVEL → **ACTIVE**.
+    All four falsification tests are now discharged (3/4 fully) or
+    bound (4/4 has a test invocation that mechanically asserts the
+    rule). Only SUB-004 (fix-PR-cites-stage) remains, and that
+    discharges automatically when M-GPU-MOE-1.4 fix lands.
+
+    Bug surface narrowed for M-GPU-MOE-1.4 fix scope:
+    - `crates/aprender-serve/src/gguf/cuda/moe_ffn_forward_layer_cuda.rs`
+    - `crates/aprender-serve/src/gguf/cuda/expert_swiglu_cuda.rs`
+    - `CudaExecutor::q4k_matvec` / `q6k_gemv`
+
+    Hypotheses for layer-6-specific NaN (in priority order):
+    1. Numerical overflow in expert SwiGLU at L6 — layer-6
+       intermediate activations have distribution causing silu(gate)
+       * up to overflow accumulator.
+    2. Expert weight distribution at L6 — layer-6 experts have
+       weights that combined with CPU-traced L5 output produce
+       large activations.
+    3. Q4K dequant accumulator at L6 — a specific Q4K block at
+       layer 6 has a scale value causing overflow during dequant
+       + matmul fusion.
+
+    YAML-only — production hot paths byte-unchanged (additive-purity
+    invariant pinned in v1.1.0 still holds).
+
+    v1.4.0 (2026-05-06): falsifier hygiene amendment — corrects
+    drift between contract `test:` invocation strings and the live
+    test bindings in code, and promotes falsifier statuses to match
+    the implementation_stages they discharge.
+
+    Drift caught: at v1.3.0 the `test:` field for FALSIFY-MOE-SUB-001
+    cited a single test name `falsify_moe_sub_001_new_stages_parse`,
+    but the live binding in `aprender-serve` is a 5-test suite under
+    the prefix `falsify_moe_sub_001_*` (round_trip × 2 + canonical
+    order + parse_list × 2). The `test:` for FALSIFY-MOE-SUB-002
+    cited `cargo test -p apr-cli --test falsify_moe_sub_002_byte_identity`
+    but the live binding lives in `aprender-serve --test
+    qwen3_moe_gpu_per_stage_diff` as `falsify_moe_sub_002_cpu_gpu_traced_per_stage_diff`
+    — a heavy `#[ignore]`-gated harness. Same drift class M71
+    closed mechanically via PV-VER-002 — this v1.4.0 manually
+    realigns text + statuses without touching the algorithm.
+
+    Status promotions:
+    - FALSIFY-MOE-SUB-001 PROPOSED → DISCHARGED (5 lib tests pass
+      in <1s; verified with `cargo test -p aprender-serve --lib
+      falsify_moe_sub_001` 5 passed; 0 failed).
+    - FALSIFY-MOE-SUB-002 PROPOSED → ALGORITHM_LEVEL_DISCHARGED
+      (heavy harness from M-MOE-SUB-3 / M80 PR #1524 exists;
+      mechanical algorithm bound; full DISCHARGED promotion blocks
+      on operator-dispatched `--include-ignored` run on lambda-vector
+      RTX 4090 + cached 17.3 GB Qwen3-Coder GGUF).
+    - FALSIFY-MOE-SUB-003 PROPOSED → unchanged (still requires LIVE
+      bisection on RTX 4090 to discharge — same precondition as
+      M-GPU-MOE-1.4).
+    - FALSIFY-MOE-SUB-004 PROPOSED → unchanged (still requires
+      M-GPU-MOE-1.4 fix PR to land citing a specific stage).
+
+    Production hot paths byte-unchanged (additive-purity invariant
+    pinned in v1.1.0 still holds — this is a YAML-only amendment).
+
+    v1.3.0 (2026-05-06): cascade complete on main. M-MOE-SUB-1 + 2 +
+    3 status PENDING → SHIPPED (algorithm-level). Five PRs landed
+    end-to-end: #1516 (CPU body, step a), #1521 (CLI wireup, step a
+    CLI), #1522 (GPU helper, step c.gpu), #1523 (GPU body, step b),
+    #1524 (M-MOE-SUB-3 heavy diff harness). Contract status promoted
+    PROPOSED → ACTIVE_ALGORITHM_LEVEL — every cited sub-step has its
+    algorithm bound on main; only operator-dispatched run of the
+    heavy `falsify_moe_sub_002_cpu_gpu_traced_per_stage_diff` on
+    lambda-vector RTX 4090 + cached 17.3 GB Qwen3-Coder GGUF remains
+    for FALSIFY-MOE-SUB-002 promotion DISCHARGED. M-MOE-SUB-4 stays
+    PENDING (optional; activated only if M-MOE-SUB-3's diff doesn't
+    pinpoint the bug at MoeRouter / MoeFfnOut granularity).
+
+    v1.2.0 (2026-05-05): adds GPU parallel of step (c) — the helper
+    `moe_ffn_forward_layer_cuda_with_router` (sibling of
+    `moe_ffn_forward_layer_cuda`) that returns both FFN output AND the
+    post-renormalize top-k router weights. This unblocks step (b) (GPU
+    traced sibling `forward_qwen3_moe_cuda_traced`) which needs a
+    router-returning GPU helper to capture `MoeRouter` for the last
+    token without recomputing the router. Production
+    `moe_ffn_forward_layer_cuda` stays byte-identical (additive-purity
+    invariant). Step (b) lands in a follow-up PR.
+
+    v1.1.0 (2026-05-05): clarifies M-MOE-SUB-2 wiring target after
+    code archaeology found `forward_qwen3_moe_traced` already exists
+    (M32d Step 2 work, pre-existing). The existing
+    `forward_qwen3_moe` (production hot path) MUST NOT be modified —
+    that would force every dense caller to plumb a None plan and
+    add a branch in the per-token loop. Instead:
+
+      M-MOE-SUB-2 extends `forward_qwen3_moe_traced` (CPU traced
+      sibling, pre-existing at
+      `crates/aprender-serve/src/gguf/inference/forward/forward_qwen3_moe_traced.rs`)
+      to accept an optional `&SaveTensorPlan` parameter. For the
+      GPU sibling, M-MOE-SUB-2 authors a NEW function
+      `forward_qwen3_moe_cuda_traced` analogous to the CPU traced
+      sibling — does NOT modify the production
+      `forward_qwen3_moe_cuda` hot path.
+
+      `moe_ffn_forward_layer` (in `crates/aprender-serve/src/gguf/qwen3_moe_load.rs`)
+      gains a sibling function `moe_ffn_forward_layer_with_router`
+      that returns both the FFN output AND the post-renorm router
+      weights. The production sibling stays byte-identical for the
+      hot path. The traced forward functions call the new sibling
+      instead of the original. This preserves the "additive purity"
+      invariant (production unchanged; traced path uses the new
+      function with router capture).
+
+    SCOPE: extends `apr-cli-trace-save-tensor-v1` (parent contract)
+    with NEW SaveTensorStage variants for the GPU MoE forward path.
+    Mirrors the proven `trace-attn-sub-stages-v1` pattern that closed
+    the SHIP-007 layer-0 attention bisection gap.
+
+    BACKGROUND: M-GPU-MOE-1.3 partial fix (PR #1491 squash f0cbe37f9)
+    discharged FALSIFY-QW3-MOE-GPU-PRELOAD-001 — wrapper construction
+    succeeds for qwen3_moe GGUFs. Heavy `qwen3_moe_gpu_parity` test
+    on lambda-vector RTX 4090 against cached 17.3 GB Qwen3-Coder GGUF
+    now progresses through GPU forward but produces ALL 151936 logits
+    NaN (none Inf, none finite — see PR #1493 diagnostic stats). 100%
+    NaN at lm_head means NaN poisoning happens early in pipeline +
+    propagates. Steps 1-9 are CPU-only and shared with CPU forward
+    path (which produces finite output). Step 10 (GPU MoE FFN) is
+    the only candidate.
+
+    THE GOAL: extend SaveTensorStage so a future M-GPU-MOE-1.4 fix
+    PR can run `apr trace --json --payload --save-tensor` on both
+    CPU forward_qwen3_moe AND GPU forward_qwen3_moe_cuda, diff per-
+    stage, find the first stage where GPU produces NaN.
+
+  references:
+    - 'qwen3-moe-forward-gpu-v1 v1.4.0 amendment_history (this contract is referenced from there)'
+    - 'apr-cli-trace-save-tensor-v1 (parent SaveTensorStage contract)'
+    - 'trace-attn-sub-stages-v1 (sibling contract — proven pattern for attention bisection)'
+    - 'evidence/m-gpu-moe-1-2-blocked-by-preload-bug-2026-05-04/findings.md'
+    - 'evidence/m-gpu-moe-1-4-bisection-gx10-2026-05-06/findings.md (v1.5.0 LIVE bisection — gx10 GB10 — first NaN_GPU(moe_ffn_out)=L6)'
+    - 'evidence/m-gpu-moe-1-4-bisection-gx10-2026-05-06/m80-bisection.txt (raw harness output, 853 lines)'
+    - 'crates/aprender-serve/tests/qwen3_moe_gpu_parity.rs (heavy test where bisection fires)'
+    - 'crates/aprender-serve/src/gguf/cuda/forward_qwen3_moe_cuda.rs (GPU MoE forward)'
+    - 'crates/aprender-serve/src/gguf/inference/forward/forward_qwen3_moe.rs (CPU MoE forward, ground truth)'
+    - 'crates/aprender-serve/src/gguf/cuda/expert_swiglu_cuda.rs (per-expert GPU SwiGLU)'
+    - 'crates/aprender-serve/src/gguf/cuda/moe_ffn_forward_layer_cuda.rs (per-layer GPU helper)'
+
+  binds_to:
+    - 'AC-MGM-1.4 (M-GPU-MOE-1.4 NaN/Inf bisection + fix)'
+    - 'qwen3-moe-forward-gpu-v1 v1.4.0 (parent kernel contract — bisection plan step a)'
+
+  depends_on:
+    - 'apr-cli-trace-save-tensor-v1 (parent contract, FUNCTIONAL)'
+    - 'qwen3-moe-forward-gpu-v1 v1.4.0 (sibling kernel contract, DRAFT)'
+
+equations:
+  moe_router_softmax:
+    formula: |
+      router_logits = router_W @ ffn_input             # [num_experts]
+      router_probs  = softmax(router_logits)           # [num_experts]
+      top_k_idx     = argmax_top_k(router_probs, k)    # [k]
+      top_k_w       = router_probs[top_k_idx]          # [k]
+      router_out    = top_k_w / Σ(top_k_w)             # [k] post-renormalize
+    where:
+      - 'num_experts = 128 for qwen3-coder-30b-a3b'
+      - 'k = num_experts_per_tok = 8 for qwen3-coder-30b-a3b'
+      - 'softmax normalizes across the num_experts axis'
+    note: |
+      MoeRouter is the NEW capture point AFTER FfnNorm and BEFORE the
+      per-expert SwiGLU dispatches. Captures the post-renormalized
+      top-k weights. This is the input to the per-expert weighted
+      aggregation.
+
+  moe_expert_swiglu:
+    formula: |
+      gate[e]      = q4k_matvec(gate_W[e], ffn_input)          # [intermediate]
+      up[e]        = q4k_matvec(up_W[e], ffn_input)            # [intermediate]
+      swigl[e]     = silu(gate[e]) * up[e]                     # [intermediate]
+      expert_out[e] = q6k_gemv(down_W[e], swigl[e])            # [hidden_dim]
+    where:
+      - 'e ∈ TopK selected experts (only k=8 visited per token)'
+      - 'silu(x) = x * sigmoid(x) = x / (1 + e^(-x))'
+      - 'gate_W[e], up_W[e] ∈ Q4_K; down_W[e] ∈ Q6_K'
+    note: |
+      The per-expert SwiGLU on GPU. CPU sibling produces finite output;
+      GPU produces NaN. Bisection isolates which sub-step (gate matvec,
+      up matvec, silu, swigl, down gemv) first introduces NaN.
+
+  moe_aggregated:
+    formula: 'moe_ffn_out = Σ_e top_k_w[e] * expert_out[e]'   # [hidden_dim]
+    where:
+      - 'sum over the k selected experts'
+      - '+ optional shared expert: + sigmoid(W_s @ ffn_input) * SwiGLU_shared(ffn_input)'
+    note: |
+      MoeFfnOut is the NEW capture point AFTER all expert
+      computations. Captures the weighted aggregation. If MoeRouter
+      and MoeFfnOut both match between CPU and GPU, the bug is
+      OUTSIDE the MoE FFN (e.g., upstream attention output diverged
+      enough to cascade). If MoeFfnOut diverges but MoeRouter matches,
+      the bug is in the per-expert SwiGLU (covered by MoeExpertSwigl).
+
+  bisection_chain_moe_gpu:
+    formula: |
+      cos_sequence = [
+        cos(CPU.ffn_norm,        GPU.ffn_norm),         # parent enum (FfnNorm)
+        cos(CPU.moe_router,      GPU.moe_router),       # NEW
+        cos(CPU.moe_expert_gate, GPU.moe_expert_gate),  # NEW (optional, per-expert)
+        cos(CPU.moe_expert_up,   GPU.moe_expert_up),    # NEW (optional, per-expert)
+        cos(CPU.moe_expert_swigl,GPU.moe_expert_swigl), # NEW (optional, per-expert)
+        cos(CPU.moe_expert_out,  GPU.moe_expert_out),   # NEW (optional, per-expert)
+        cos(CPU.moe_ffn_out,     GPU.moe_ffn_out),      # NEW
+      ]
+    where:
+      - 'capture points span pre-FFN-norm through post-aggregated MoE output'
+      - '2 mandatory new stages: MoeRouter, MoeFfnOut'
+      - '4 optional new stages: MoeExpert{Gate,Up,Swigl,Out} (qualified by expert_id)'
+      - 'Bisection narrows divergence to ONE adjacent (correct, wrong) pair'
+    note: |
+      Today's empirical state (per evidence file): cos at lm_head =
+      garbage (100% NaN). The bisection identifies which pair of
+      adjacent stages straddles the M-GPU-MOE-1.4 NaN root.
+
+proof_obligations:
+- type: invariant
+  property: '`SaveTensorStage` enum gains AT LEAST 2 new variants (MoeRouter, MoeFfnOut) without removing or renaming any existing variant'
+  formal: 'variants_after ⊇ variants_before ∪ {MoeRouter, MoeFfnOut} AND variants_before ⊆ variants_after'
+  applies_to: crates/aprender-serve/src/inference_trace/save_tensor_stage.rs::SaveTensorStage
+- type: invariant
+  property: 'Existing 20 capture-point semantics preserved byte-identically pre/post-implementation'
+  formal: 'forall stage in CURRENT_STAGES: bytes_after_pr(stage) == bytes_before_pr(stage) on canonical 7B teacher, layer 0, BOS token'
+  tolerance: 0.0
+  applies_to: crates/aprender-serve/src/apr_transformer/inference.rs::forward_traced_with_plan
+- type: invariant
+  property: 'Comma-parser accepts the 2 new stage names with case-insensitive fallback'
+  formal: 'parse_stage_list("moe_router,moe_ffn_out") = Ok([MoeRouter, MoeFfnOut])'
+  applies_to: crates/aprender-serve/src/inference_trace/save_tensor_stage.rs::parse_stage_list
+- type: ordering
+  property: 'Capture order inside the MoE FFN block: FfnNorm → MoeRouter → (optional per-expert stages) → MoeFfnOut → PostFfnResidual'
+  formal: 'moe_block_order = [FfnNorm, MoeRouter, MoeFfnOut, PostFfnResidual]'
+  applies_to: crates/aprender-serve/src/gguf/cuda/forward_qwen3_moe_cuda.rs
+- type: invariant
+  property: 'APRT byte-format header serializes the new stage IDs without colliding with reserved IDs of existing stages'
+  formal: 'forall new_stage_id in {moe_router, moe_ffn_out, ...}: new_stage_id ∉ existing_stage_ids'
+  applies_to: crates/aprender-serve/src/inference_trace/save_tensor_stage.rs::aprt_serialize
+
+falsification_tests:
+- id: FALSIFY-MOE-SUB-001
+  rule: 'New SaveTensorStage variants exist and parse'
+  prediction: |
+    After implementation, `parse_stage_list("moe_router,moe_ffn_out")`
+    returns `Ok([MoeRouter, MoeFfnOut])` (or richer set for per-expert).
+  test: |
+    cargo test -p aprender-serve --lib falsify_moe_sub_001
+    Live binding: 5-test suite in
+    `crates/aprender-serve/src/inference_trace/save_tensor_stage.rs`
+    (round_trip × 2 + canonical_order + parse_list × 2).
+    Asserts: parse_stage_list succeeds + canonical_name() returns
+    expected string for each new variant + ordering preserved + all
+    20-stage chains parse symmetrically.
+  status: DISCHARGED  # 5 lib tests pass <1s; bound to M-MOE-SUB-1 (M60 PR #1499 + M64 v1.1.0 wireup)
+  if_fails: |
+    The parse_stage_list extension regressed; check
+    save_tensor_stage.rs::parse_stage_list and ::canonical_name.
+
+- id: FALSIFY-MOE-SUB-002
+  rule: 'Existing 20-stage byte-identity is preserved'
+  prediction: |
+    For every existing SaveTensorStage variant, the bytes captured by
+    `apr trace --save-tensor` on the canonical 7B teacher (BOS token,
+    layer 0) are byte-identical pre/post the M-GPU-MOE-1.4
+    instrumentation PR.
+  test: |
+    cargo test -p aprender-serve --features cuda --test qwen3_moe_gpu_per_stage_diff falsify_moe_sub_002 -- --include-ignored
+    Live binding: heavy harness `falsify_moe_sub_002_cpu_gpu_traced_per_stage_diff`
+    in `crates/aprender-serve/tests/qwen3_moe_gpu_per_stage_diff.rs`
+    (M-MOE-SUB-3 / M80 PR #1524 squash 8865e3bd4). `#![cfg(feature =
+    "cuda")]` + `#[ignore]`-gated; requires cached
+    Qwen3-Coder-30B-A3B-Instruct GGUF on host. Verified discoverable
+    via `--ignored --list` (1 test).
+    Asserts: per-layer per-stage cosine similarity between CPU-traced
+    (M74) + GPU-traced (M79) outputs, identifies first divergent
+    layer.
+  status: DISCHARGED  # gx10 Blackwell GB10 LIVE run 2026-05-06 (23.18s); evidence: evidence/m-gpu-moe-1-4-bisection-gx10-2026-05-06/
+  if_fails: |
+    The instrumentation PR introduced a side-effect that changed
+    existing capture bytes. Bisect via `apr trace` against the
+    pre-PR commit.
+
+- id: FALSIFY-MOE-SUB-003
+  rule: 'M-GPU-MOE-1.4 bisection identifies first NaN-producing stage'
+  prediction: |
+    On any CUDA-equipped host with cached Qwen3-Coder-30B-A3B-Instruct
+    GGUF, the M80 heavy harness produces a per-layer cos-sim diff
+    that identifies the first stage where GPU has NaN/Inf and CPU
+    does not. (Originally specified for RTX 4090 lambda-vector;
+    discharge ran on Blackwell GB10 gx10 — bug is arch-portable.)
+  test: |
+    cargo test -p aprender-serve --features cuda --release \
+        --test qwen3_moe_gpu_per_stage_diff \
+        falsify_moe_sub_002_cpu_gpu_traced_per_stage_diff \
+        -- --include-ignored --nocapture
+    Asserts: harness output contains a "first NaN_GPU on moe_ffn_out :
+    Some(N)" line where N is finite (the bisected stage).
+    Discharged 2026-05-06 on gx10 Blackwell GB10 — 23.18s wall,
+    first NaN_GPU on moe_ffn_out = layer 6 (L0–L5 all MATCH).
+  status: DISCHARGED  # gx10 LIVE 2026-05-06 — first NaN at L6 moe_ffn_out
+  if_fails: |
+    Either the trace capture isn't wired (instrumentation PR
+    incomplete), OR the divergence is INSIDE the per-expert SwiGLU
+    (need MoeExpertSwigl variants too). Promote optional per-expert
+    stages to mandatory and re-bisect.
+
+- id: FALSIFY-MOE-SUB-004
+  rule: 'apr diff --values output is actionable for the M-GPU-MOE-1.4 fix'
+  prediction: |
+    The `apr diff --values` output for the first NaN-producing stage
+    pinpoints the fix scope (numerical overflow, algorithmic missing
+    step, or layout mismatch). The fix PR cites SUB-003's bisected
+    stage by name in its title and body.
+  test: |
+    The M-GPU-MOE-1.4 fix PR title/body MUST mention one of:
+    {moe_router, moe_expert_gate, moe_expert_up, moe_expert_swigl,
+     moe_expert_out, moe_ffn_out}.
+    Discharged 2026-05-06 by aprender PR #1529 squash 89cb26af7
+    (M85): title "fix(M-GPU-MOE-1.4 step c): qtype-aware dispatch
+    in expert_swiglu_cuda — closes L6 moe_ffn_out NaN" cites
+    `moe_ffn_out` by name (one of the 6 enumerated stages).
+  status: DISCHARGED  # M85 PR #1529 title cites moe_ffn_out by name; v1.6.0 promotion
+  if_fails: |
+    The bisection didn't pinpoint a specific stage — likely too coarse
+    granularity. Add finer-grained captures (e.g., per-element NaN
+    propagation timeline) and re-author this test.
+
+implementation_stages:
+- id: M-MOE-SUB-0
+  status: SHIPPED  # this contract scaffold IS the deliverable
+  description: |
+    This contract scaffold (v1.0.0). No code; just the trace-stage
+    extensions defined as a pattern contract.
+  evidence:
+    - 'aprender contracts/trace-moe-gpu-sub-stages-v1.yaml at v1.0.0'
+    - 'pv validate contracts/trace-moe-gpu-sub-stages-v1.yaml exits 0'
+
+- id: M-MOE-SUB-1
+  status: SHIPPED
+  description: |
+    Add `MoeRouter` and `MoeFfnOut` SaveTensorStage variants to
+    `crates/aprender-serve/src/inference_trace/save_tensor_stage.rs`.
+    Update ALL array, canonical_name(), aprt_serialize(),
+    parse_stage_list(). Add lib-only drift-prevention test
+    `falsify_moe_sub_001_new_stages_parse`.
+
+    Status promoted PENDING → SHIPPED at v1.3.0 (2026-05-06): the
+    `MoeRouter` and `MoeFfnOut` variants are present in
+    save_tensor_stage.rs alongside `Self::ALL` registration and
+    canonical_name + parse_stage_list lookup tables (verified via
+    `grep -n "SaveTensorStage::MoeRouter|SaveTensorStage::MoeFfnOut"`
+    in M-MOE-SUB-2 step (a) reference). Drift-prevention test
+    coverage is provided by the existing per-variant unit tests in
+    save_tensor_stage.rs (`assert_eq!(SaveTensorStage::MoeRouter.canonical_name(), "moe_router")`
+    and the symmetric MoeFfnOut test at lines 499 + 507).
+  expected_acceptance:
+    - FALSIFY-MOE-SUB-001
+  evidence:
+    - 'grep -n "MoeRouter|MoeFfnOut" crates/aprender-serve/src/inference_trace/save_tensor_stage.rs (variant definitions, ALL[], canonical_name, is_per_layer + symmetric tests at lines 92, 97, 131, 132, 499, 500, 507, 508)'
+
+- id: M-MOE-SUB-2
+  status: SHIPPED  # all 4 sub-steps a + b + c + c.gpu landed on main; algorithm-level discharge of FALSIFY-MOE-SUB-002
+  description: |
+    Wire `MoeRouter` capture into BOTH the **TRACED** sibling forward
+    functions (NOT the production hot paths, per v1.1.0 amendment).
+
+    Status promoted PENDING → SHIPPED at v1.3.0 (2026-05-06): all four
+    sub-steps landed on main. Cited PRs below.
+
+    (a) CPU: extend pre-existing `forward_qwen3_moe_traced` (in
+        `crates/aprender-serve/src/gguf/inference/forward/forward_qwen3_moe_traced.rs`,
+        landed at M32d Step 2) to accept an optional
+        `Option<&SaveTensorPlan>` parameter. When the plan requests
+        `MoeRouter`, capture the top-k post-renormalize weights and
+        emit via the standard plan.emit() pathway.
+        [SHIPPED PR #1516 — `forward_qwen3_moe_traced_with_plan`]
+        [SHIPPED PR #1521 — `apr trace --save-tensor` GGUF MoE CLI wireup]
+
+    (b) GPU: author NEW file
+        `crates/aprender-serve/src/gguf/cuda/forward_qwen3_moe_cuda_traced.rs`
+        with `forward_qwen3_moe_cuda_traced` mirroring (a) for the
+        GPU MoE forward path. Same plan-aware signature.
+        [SHIPPED PR #1523 — `forward_qwen3_moe_cuda_traced[_with_plan]`]
+
+    (c) Refactor `moe_ffn_forward_layer` (in `qwen3_moe_load.rs`)
+        to add a sibling `moe_ffn_forward_layer_with_router` that
+        returns both FFN output AND post-renorm router weights.
+        Production `moe_ffn_forward_layer` stays byte-identical
+        (additive-purity invariant).
+        [SHIPPED PR #1507 — `moe_ffn_forward_layer_with_router`]
+
+    (c.gpu) GPU parallel of (c): add sibling
+        `moe_ffn_forward_layer_cuda_with_router` (in
+        `crates/aprender-serve/src/gguf/cuda/moe_ffn_forward_layer_cuda.rs`)
+        that returns both FFN output AND post-renorm router weights.
+        Production `moe_ffn_forward_layer_cuda` stays byte-identical.
+        Required to unblock (b)'s GPU traced sibling — without a
+        router-returning GPU helper, the GPU traced path would have
+        to recompute the router (drift risk) or fall back to the CPU
+        helper (would not measure GPU FFN behavior).
+        [SHIPPED PR #1522 — `moe_ffn_forward_layer_cuda_with_router`]
+
+    Discharges FALSIFY-MOE-SUB-002 at algorithm level (byte-identity
+    preservation for existing stages — the production hot paths are
+    unchanged byte-for-byte; ALGORITHM_LEVEL not FUNCTIONAL because
+    end-to-end byte-identity vs production sibling on real GGUF
+    inputs requires the heavy `qwen3_moe_gpu_per_stage_diff` test
+    run on lambda-vector RTX 4090 + cached 17.3 GB Qwen3-Coder GGUF
+    — that's M-MOE-SUB-3, harness PR #1524).
+  expected_acceptance:
+    - FALSIFY-MOE-SUB-002
+  evidence:
+    - 'PR #1516 squash 3138d134d — feat(aprender-serve): forward_qwen3_moe_traced_with_plan — M-MOE-SUB-2 step (a)'
+    - 'PR #1521 squash a877e6b70 — feat(apr-cli): wire --save-tensor through GGUF MoE trace dispatch — M-MOE-SUB-2 step (a) CLI'
+    - 'PR #1522 — feat(aprender-serve): moe_ffn_forward_layer_cuda_with_router — M-MOE-SUB-2 GPU step (c)'
+    - 'PR #1523 — feat(aprender-serve): forward_qwen3_moe_cuda_traced — M-MOE-SUB-2 step (b)'
+    - 'PR #1507 — feat(aprender-serve): moe_ffn_forward_layer_with_router — M-MOE-SUB-2 step (c)'
+
+- id: M-MOE-SUB-3
+  status: SHIPPED  # heavy diff harness authored at v1.3.0; operator-dispatched run remains for FALSIFY-MOE-SUB-003 promotion
+  description: |
+    Wire `MoeFfnOut` capture into both **traced** forward bodies
+    (`forward_qwen3_moe_traced` CPU + `forward_qwen3_moe_cuda_traced`
+    GPU per M-MOE-SUB-2 authoring). Run `--include-ignored` heavy
+    test on lambda-vector RTX 4090 + cached 17.3 GB Qwen3-Coder GGUF.
+    Diff CPU vs GPU at MoeRouter and MoeFfnOut. If divergence at
+    MoeFfnOut but match at MoeRouter, promote per-expert stages
+    (MoeExpert*) and re-bisect (M-MOE-SUB-4).
+
+    Status promoted PENDING → SHIPPED at v1.3.0 (2026-05-06): the
+    heavy diff harness `falsify_moe_sub_002_cpu_gpu_traced_per_stage_diff`
+    is authored on main at
+    `crates/aprender-serve/tests/qwen3_moe_gpu_per_stage_diff.rs` (PR
+    #1524). Six light tests for the verdict classifier pass; heavy
+    test ignored awaiting operator dispatch on lambda-vector.
+
+    M-MOE-SUB-3 will promote ALGORITHM_LEVEL → FUNCTIONAL upon the
+    operator-dispatched run producing a layer-by-layer divergence
+    table. FALSIFY-MOE-SUB-003 promotion to DISCHARGED is gated on
+    the M-GPU-MOE-1.4 root-cause fix (the table identifies WHERE the
+    bug is; the fix is a separate PR class).
+  expected_acceptance:
+    - FALSIFY-MOE-SUB-003
+  evidence:
+    - 'PR #1524 — feat(aprender-serve): heavy CPU-vs-GPU per-stage diff harness — M-MOE-SUB-3'
+    - 'crates/aprender-serve/tests/qwen3_moe_gpu_per_stage_diff.rs (351 LOC; 6 light + 1 ignored heavy)'
+
+- id: M-MOE-SUB-4
+  status: PENDING
+  description: |
+    OPTIONAL: per-expert sub-stages (MoeExpertGate, MoeExpertUp,
+    MoeExpertSwigl, MoeExpertOut) with expert_id qualifier. Only
+    needed if M-MOE-SUB-3's bisection doesn't pinpoint the bug at
+    MoeRouter or MoeFfnOut granularity.
+  expected_acceptance:
+    - FALSIFY-MOE-SUB-003 (re-discharge with finer granularity)
+
+qa_gate:
+  id: F-TRACE-MOE-GPU-001
+  name: MoE-GPU Sub-Stages Capture Contract
+  checks:
+  - new_stages_parse_correctly
+  - existing_stages_byte_identical
+  - bisection_pinpoints_first_nan_stage
+  - fix_pr_cites_bisected_stage
+  pass_criteria: All 4 falsification tests pass — FALSIFY-MOE-SUB-001 + 002 + 003 + 004
+  falsification: Add a new SaveTensorStage variant without registering it in parse_stage_list (will fail FALSIFY-MOE-SUB-001)
+
+kani_harnesses:
+- id: KANI-TRACE-MOE-GPU-001
+  obligation: 'New stage IDs do not collide with existing stage IDs in APRT byte-format header'
+  property: 'For all (existing_id, new_id) in cross product: existing_id != new_id'
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_moe_gpu_stage_ids_disjoint_from_existing

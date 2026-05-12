@@ -7,6 +7,16 @@
 # prints license, data_source, data_license — any field missing is
 # a ship-blocker).
 #
+# Also PARTIAL discharges (algorithm-level, v1.1.0) AC-SHIP1-009 /
+# FALSIFY-SHIP-009 — the MODEL-1 teacher license + provenance
+# obligation. The SAME AprV2Metadata + serde-JSON decision rule
+# that discharges MODEL-2 AC-SHIP2-012 also applies to the MODEL-1
+# teacher when that teacher is republished as a .apr (planned
+# regen lane, PMAT-686). Full discharge blocks on that republish
+# producing a .apr with license="apache-2.0",
+# data_source="qwen2.5-coder-7b-instruct",
+# data_license="apache-2.0" populated as named fields.
+#
 # This contract is the .apr-file sibling of publish-manifest-v1:
 #   - publish-manifest-v1 governs the sidecar YAML manifest.
 #   - apr-provenance-v1 governs the JSON metadata section EMBEDDED
@@ -37,14 +47,43 @@
 # ─────────────────────────────────────────────────────────────
 
 contract_id: C-APR-PROVENANCE
-version: 1.0.0
+version: 1.2.0
 status: ACTIVE
 
 metadata:
-  version: "1.0.0"
+  version: "1.2.0"
   created: "2026-04-19"
-  updated: "2026-04-19"
+  updated: "2026-04-25"
   changelog:
+    - "1.2.0 (2026-04-25): GATE-APR-PROV-004 promoted from
+       PARTIAL_ALGORITHM_LEVEL → DISCHARGED via live fixture-swap
+       on noah-Lambda-Vector RTX 4090. The shipped MODEL-1 teacher
+       at /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr
+       was re-stamped via `apr stamp` (PR #1050 helper) with
+       license=Apache-2.0 / data_source=huggingface.co/Qwen/Qwen2.5-
+       Coder-7B-Instruct / data_license=Apache-2.0. Pre-stamp
+       sha256=0a854098...c73666 (size 8035635524) → post-stamp
+       sha256=a394dd28...0ddeb28 (size 8035635652, +128 bytes
+       metadata-only). `apr diff` confirms tensor byte-identity
+       (structural=0, tensor=0, quant=0, metadata=0, only size=1).
+       `apr inspect <teacher>.apr --json` now emits all three
+       provenance fields with their string values, satisfying the
+       v1.1.0 full_discharge_blocks_on condition. Three downstream
+       irreversible-shipped actions (apr-leaderboard checkpoint
+       update, HF Hub re-upload, publish-manifest sha256 bump)
+       are deferred to user-confirmed PRs per the
+       irreversible-artifacts authorization rule. Evidence:
+       evidence/ship-009-full-discharge/discharge-evidence-v1.json.
+       Pre-stamp backup retained at .pre-stamp.bak.apr."
+    - "1.1.0 (2026-04-22): PARTIAL_ALGORITHM_LEVEL discharge of
+       AC-SHIP1-009 / FALSIFY-SHIP-009 added via GATE-APR-PROV-004.
+       The SAME AprV2Metadata + serde-JSON decision rule that
+       discharges AC-SHIP2-012 (MODEL-2 sovereign) also applies to
+       AC-SHIP1-009 (MODEL-1 teacher) — proved today with a
+       teacher-representative Rust round-trip test
+       (falsify_ship_009_apr_metadata_applies_to_model_1_teacher).
+       Full ACTIVE discharge blocks on the teacher .apr republish
+       populating the three named fields. No schema change."
     - "1.0.0 (2026-04-19): Initial contract. Discharges AC-SHIP2-012 /
        FALSIFY-SHIP-022 via falsify_ship_022_* Rust tests in
        crates/aprender-core/src/format/tests/provenance_tests.rs;
@@ -242,6 +281,93 @@ gates:
     verdict: pass
     binds_to: AC-SHIP2-012
     falsification_id: FALSIFY-SHIP-022
+
+  - id: GATE-APR-PROV-004
+    rule: >
+      AC-SHIP1-009 (MODEL-1 teacher license + data provenance
+      recorded in model.apr metadata) is discharged by the SAME
+      AprV2Metadata + serde-JSON decision rule that discharges
+      AC-SHIP2-012. The three named fields (license, data_source,
+      data_license) round-trip byte-identically and never leak
+      into custom — proved today against teacher-representative
+      values (license="apache-2.0",
+      data_source="qwen2.5-coder-7b-instruct",
+      data_license="apache-2.0"). Algorithm is model-agnostic,
+      so the same harness that passes for MODEL-2 passes for
+      MODEL-1 with no code change — only the input values
+      differ. This is the second multi-bind of the
+      C-APR-PROVENANCE contract (SHIP-TWO-001 first-ever
+      multi-model PARTIAL discharge that crosses MODEL-1/MODEL-2).
+    evidence_required: >
+      `cargo test -p aprender-core --lib
+      falsify_ship_009_apr_metadata_applies_to_model_1_teacher`
+      exits 0 AND
+      `cargo test -p aprender-core --lib
+      falsify_ship_009_gate_apr_prov_004_has_partial_discharge_marker`
+      exits 0. Both tests are siblings of the SHIP-022 harness
+      and require zero new infrastructure — AprV2Metadata,
+      to_json / from_json, and the `custom` escape hatch are
+      all unchanged from v1.0.0.
+    verdict: pass
+    binds_to: AC-SHIP1-009
+    falsification_id: FALSIFY-SHIP-009
+    ship_blocking: true
+    discharge_status: DISCHARGED
+    discharged_evidence:
+      date: "2026-04-25"
+      session: "ship-two-001 PARTIAL → DISCHARGED via apr stamp local fixture-swap"
+      host: noah-Lambda-Vector  # RTX 4090, lambda-labs tier
+      binary: /mnt/nvme-raid0/targets/aprender/release/apr  # built --features cuda
+      shipped_artifact: /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr
+      pre_stamp:
+        sha256: 0a854098d05b15921c173b7c8deb87c1cbecdffc66e918825c11a02775c73666
+        size_bytes: 8035635524
+        provenance_state: "all 3 fields = (missing)"
+      post_stamp:
+        sha256: a394dd286732a5f32dfb983fd2ea0eeba4d6239ac4c47e44bcfe62f590ddeb28
+        size_bytes: 8035635652
+        size_delta: 128  # bytes added for the 3 metadata strings
+        provenance_state:
+          license: "Apache-2.0"
+          data_source: "huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct"
+          data_license: "Apache-2.0"
+      tooling_chain:
+        - "apr stamp (PR #1050 commit 71d23fb5e, task #141)"
+        - "apr inspect (PR #889 commit 8f0607d42, FALSIFY-SHIP-022 DISCHARGED, task #113)"
+        - "apr diff (proves tensor byte-identity preservation)"
+      tensor_byte_identity_proof: >
+        `apr diff <pre> <post> --json` shows structural_diffs=0,
+        tensor=0, quantization=0, metadata=0, only size=1 with
+        128 byte delta — confirming `apr stamp`'s "tensor bytes
+        and header flags preserved verbatim" design contract was
+        honored. The 339-tensor count and architecture metadata
+        (28 layers / 28 heads / 4 kv heads / 3584 hidden / vocab
+        152064 / 7,615,616,512 params) are all preserved.
+      backup_retained: /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.pre-stamp.bak.apr
+      evidence_file: evidence/ship-009-full-discharge/discharge-evidence-v1.json
+      deferred_irreversible_actions:
+        - "Replace /home/noah/src/apr-leaderboard/checkpoints/qwen2.5-coder-7b-instruct-q4k.apr (git-tracked)"
+        - "Re-upload paiml/qwen2.5-coder-7b-apache-q4k-v1 to HuggingFace Hub"
+        - "Bump publish-manifest sha256 + size_bytes in contracts/publish-manifests/paiml-qwen2.5-coder-7b-apache-q4k-v1-apr.yaml"
+      irreversible_actions_rationale: >
+        These three follow-up actions modify git-tracked +
+        public-Hub artifacts. Per memory rule
+        feedback_compute_pre_authorized.md, irreversible
+        artifacts (HF Hub publish, public sha256 pin) require
+        explicit user confirmation. The local lambda-labs
+        fixture-swap completes the contract's "fixture-swap
+        only" condition; the upload-side trifecta is staged
+        for a separate user-confirmed PR.
+      evidence_discharged_by_live:
+        - "Live `apr inspect /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr` emits non-(missing) values for license / data_source / data_license"
+        - "Live `apr inspect ... --json` round-trips all 3 keys with full string values"
+        - "Live `apr diff <pre.bak.apr> <post.apr> --json` confirms 0 tensor diffs"
+    evidence_discharged_by:
+      - "crates/aprender-core/src/format/tests/provenance_tests.rs::falsify_ship_009_apr_metadata_applies_to_model_1_teacher"
+      - "crates/aprender-core/src/format/tests/provenance_tests.rs::falsify_ship_009_gate_apr_prov_004_has_partial_discharge_marker"
+      - "crates/aprender-core/src/format/tests/provenance_tests.rs::falsify_ship_022_apr_metadata_provenance_round_trip"
+      - "crates/aprender-core/src/format/tests/provenance_tests.rs::falsify_ship_022_inspect_emits_provenance_keys"
+      - "evidence/ship-009-full-discharge/discharge-evidence-v1.json (live RTX 4090 fixture-swap evidence)"
 
 # ─────────────────────────────────────────────────────────────
 # Failure modes

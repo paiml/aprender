@@ -258,9 +258,9 @@ fn run_permission_gate(v: &Value) -> (GateReport, Option<String>) {
         .map(|want| want as i32 == got_exit)
         .unwrap_or(true);
     let hint_ok = match (&result, &expected_hint_substr) {
-        (PullPermissionOutcome::PermissionDenied { hint, .. }, Some(sub)) => {
-            hint.to_ascii_lowercase().contains(&sub.to_ascii_lowercase())
-        }
+        (PullPermissionOutcome::PermissionDenied { hint, .. }, Some(sub)) => hint
+            .to_ascii_lowercase()
+            .contains(&sub.to_ascii_lowercase()),
         _ => true,
     };
     // Strengthened invariant from the classifier: EACCES must never → Ok.

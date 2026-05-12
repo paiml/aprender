@@ -1,0 +1,17 @@
+
+=== APR Benchmark ===
+
+  Model: /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr
+  Warmup iterations: 3
+  Measurement iterations: 1
+  Max tokens: 32
+  Prompt: What is 2+2?
+
+Using realizar inference engine
+
+Format: APR
+CUDA: 1 GPU(s) detected
+Loading APR model (GPU, fused Q4K kernels)...
+[PMAT-171] Loaded embedded BPE tokenizer: 152064 vocab, 151387 merges, 25 special tokens
+[GH-175] OwnedQuantizedModel::from_apr: 28 layers loaded in 3598.4ms
+error: Validation failed: Failed to init CUDA: Operation 'CudaExecutor::new' not supported: CUDA initialization failed: CUDA driver error: CUDA_ERROR_OUT_OF_MEMORY (code: 2)

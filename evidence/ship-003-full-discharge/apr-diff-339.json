@@ -1,0 +1,6849 @@
+{
+  "critical_count": 0,
+  "identical_count": 339,
+  "large_count": 0,
+  "medium_count": 0,
+  "model_a": "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.safetensors",
+  "model_b": "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr",
+  "results": [
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 544997376,
+      "identical_count": 542894817,
+      "large_diff_count": 0,
+      "max_diff": 0.00006079673767089844,
+      "mean_diff": 1.1754004702879683e-7,
+      "medium_diff_count": 0,
+      "name": "lm_head.weight",
+      "rmse": 2.187219706684118e-6,
+      "shape_a": [
+        152064,
+        3584
+      ],
+      "shape_b": [
+        152064,
+        3584
+      ],
+      "small_diff_count": 2102559,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 544997376,
+      "identical_count": 534320394,
+      "large_diff_count": 0,
+      "max_diff": 0.00006079673767089844,
+      "mean_diff": 1.247387757530305e-7,
+      "medium_diff_count": 0,
+      "name": "model.embed_tokens.weight",
+      "rmse": 2.250184024887858e-6,
+      "shape_a": [
+        152064,
+        3584
+      ],
+      "shape_b": [
+        152064,
+        3584
+      ],
+      "small_diff_count": 10676982,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.0.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 67895296,
+      "identical_count": 8731267,
+      "large_diff_count": 0,
+      "max_diff": 0.00048065185546875,
+      "mean_diff": 4.031771823065355e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.0.mlp.down_proj.weight",
+      "rmse": 6.880007731524529e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 59164029,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 67895296,
+      "identical_count": 8901022,
+      "large_diff_count": 0,
+      "max_diff": 0.0004425048828125,
+      "mean_diff": 4.230549166095443e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.0.mlp.gate_proj.weight",
+      "rmse": 7.28473196431878e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 58994274,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 67895296,
+      "identical_count": 5876979,
+      "large_diff_count": 0,
+      "max_diff": 0.0002391338348388672,
+      "mean_diff": 4.083635303686606e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.0.mlp.up_proj.weight",
+      "rmse": 6.334742920444114e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 62018317,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.0.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.0.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 171428,
+      "large_diff_count": 0,
+      "max_diff": 0.00012135505676269531,
+      "mean_diff": 8.4058046923019e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.0.self_attn.k_proj.weight",
+      "rmse": 0.000013189426681492478,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1663580,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 12845056,
+      "identical_count": 1252402,
+      "large_diff_count": 0,
+      "max_diff": 0.00023651123046875,
+      "mean_diff": 4.379091024020454e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.0.self_attn.o_proj.weight",
+      "rmse": 6.727068466716446e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11592654,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.0.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1195160,
+      "large_diff_count": 0,
+      "max_diff": 0.0004730224609375,
+      "mean_diff": 5.779329057986615e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.0.self_attn.q_proj.weight",
+      "rmse": 9.109630809689406e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11649896,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.0.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 152031,
+      "large_diff_count": 0,
+      "max_diff": 0.00006097555160522461,
+      "mean_diff": 5.22119307788671e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.0.self_attn.v_proj.weight",
+      "rmse": 7.172547611844493e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1682977,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.1.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 67895296,
+      "identical_count": 12677834,
+      "large_diff_count": 0,
+      "max_diff": 0.00035858154296875,
+      "mean_diff": 3.3683495530567598e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.1.mlp.down_proj.weight",
+      "rmse": 6.659481186943594e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 55217462,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 67895296,
+      "identical_count": 11503636,
+      "large_diff_count": 0,
+      "max_diff": 0.0001857280731201172,
+      "mean_diff": 4.322492713981774e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.1.mlp.gate_proj.weight",
+      "rmse": 7.709772944508586e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 56391660,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 67895296,
+      "identical_count": 11150769,
+      "large_diff_count": 0,
+      "max_diff": 0.000240325927734375,
+      "mean_diff": 3.157137825837708e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.1.mlp.up_proj.weight",
+      "rmse": 5.56688155484153e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 56744527,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.1.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.1.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 1835008,
+      "identical_count": 308927,
+      "large_diff_count": 0,
+      "max_diff": 0.000240325927734375,
+      "mean_diff": 5.233522642811295e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.1.self_attn.k_proj.weight",
+      "rmse": 9.503231922280975e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1526081,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 12845056,
+      "identical_count": 1204732,
+      "large_diff_count": 0,
+      "max_diff": 0.000225067138671875,
+      "mean_diff": 4.549096502159955e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.1.self_attn.o_proj.weight",
+      "rmse": 7.113322226359742e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11640324,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.1.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 12845056,
+      "identical_count": 2371346,
+      "large_diff_count": 0,
+      "max_diff": 0.00023651123046875,
+      "mean_diff": 3.905286575900391e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.1.self_attn.q_proj.weight",
+      "rmse": 7.391577128146309e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 10473710,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.1.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 1835008,
+      "identical_count": 227787,
+      "large_diff_count": 0,
+      "max_diff": 0.00011658668518066406,
+      "mean_diff": 3.8043433505663415e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.1.self_attn.v_proj.weight",
+      "rmse": 6.480623596871737e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1607221,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.10.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 5961691,
+      "large_diff_count": 0,
+      "max_diff": 0.00048065185546875,
+      "mean_diff": 5.061501269665314e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.10.mlp.down_proj.weight",
+      "rmse": 7.768329851387534e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 61933605,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6000920,
+      "large_diff_count": 0,
+      "max_diff": 0.000457763671875,
+      "mean_diff": 5.418007731350372e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.10.mlp.gate_proj.weight",
+      "rmse": 8.299737601191737e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61894376,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 5917078,
+      "large_diff_count": 0,
+      "max_diff": 0.000240325927734375,
+      "mean_diff": 5.0693970479187556e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.10.mlp.up_proj.weight",
+      "rmse": 7.780282430758234e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61978218,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.10.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.10.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 182319,
+      "large_diff_count": 0,
+      "max_diff": 0.00012195110321044922,
+      "mean_diff": 5.928961854806403e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.10.self_attn.k_proj.weight",
+      "rmse": 9.314683666161727e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1652689,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1176811,
+      "large_diff_count": 0,
+      "max_diff": 0.0003604888916015625,
+      "mean_diff": 5.064788638264872e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.10.self_attn.o_proj.weight",
+      "rmse": 7.832500159565825e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11668245,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.10.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1213952,
+      "large_diff_count": 0,
+      "max_diff": 0.00023365020751953125,
+      "mean_diff": 5.358667749533197e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.10.self_attn.q_proj.weight",
+      "rmse": 8.342668479599524e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11631104,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.10.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 178076,
+      "large_diff_count": 0,
+      "max_diff": 0.00006091594696044922,
+      "mean_diff": 5.312444955052342e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.10.self_attn.v_proj.weight",
+      "rmse": 8.275831532955635e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1656932,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.11.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 5941499,
+      "large_diff_count": 0,
+      "max_diff": 0.00027751922607421875,
+      "mean_diff": 5.132283604325494e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.11.mlp.down_proj.weight",
+      "rmse": 7.862820893933531e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 61953797,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 5940145,
+      "large_diff_count": 0,
+      "max_diff": 0.0002384185791015625,
+      "mean_diff": 5.304445949150249e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.11.mlp.gate_proj.weight",
+      "rmse": 8.12031066743657e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61955151,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 5933841,
+      "large_diff_count": 0,
+      "max_diff": 0.00024127960205078125,
+      "mean_diff": 5.151177447260125e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.11.mlp.up_proj.weight",
+      "rmse": 7.89728801464662e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61961455,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.11.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.11.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 184881,
+      "large_diff_count": 0,
+      "max_diff": 0.00023818016052246094,
+      "mean_diff": 5.992548267386155e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.11.self_attn.k_proj.weight",
+      "rmse": 9.552052688377444e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1650127,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1164947,
+      "large_diff_count": 0,
+      "max_diff": 0.000213623046875,
+      "mean_diff": 4.8873957894102205e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.11.self_attn.o_proj.weight",
+      "rmse": 7.568336968688527e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11680109,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.11.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1226258,
+      "large_diff_count": 0,
+      "max_diff": 0.0002384185791015625,
+      "mean_diff": 5.47872423339868e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.11.self_attn.q_proj.weight",
+      "rmse": 8.5384644989972e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11618798,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.11.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 1835008,
+      "identical_count": 170911,
+      "large_diff_count": 0,
+      "max_diff": 0.0001049041748046875,
+      "mean_diff": 4.769493443745887e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.11.self_attn.v_proj.weight",
+      "rmse": 7.441037723765476e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1664097,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.12.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6255420,
+      "large_diff_count": 0,
+      "max_diff": 0.000476837158203125,
+      "mean_diff": 5.121567483001854e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.12.mlp.down_proj.weight",
+      "rmse": 7.92453829490114e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 61639876,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6065155,
+      "large_diff_count": 0,
+      "max_diff": 0.00048065185546875,
+      "mean_diff": 5.147519004822243e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.12.mlp.gate_proj.weight",
+      "rmse": 7.930604624561965e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61830141,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6073947,
+      "large_diff_count": 0,
+      "max_diff": 0.00047969818115234375,
+      "mean_diff": 5.1853671720891725e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.12.mlp.up_proj.weight",
+      "rmse": 7.98683049652027e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61821349,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.12.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.12.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 188356,
+      "large_diff_count": 0,
+      "max_diff": 0.0002410411834716797,
+      "mean_diff": 5.858980784978485e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.12.self_attn.k_proj.weight",
+      "rmse": 9.448389391764067e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1646652,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1165558,
+      "large_diff_count": 0,
+      "max_diff": 0.0002875328063964844,
+      "mean_diff": 4.966706455888925e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.12.self_attn.o_proj.weight",
+      "rmse": 7.664654731343035e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11679498,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.12.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1219150,
+      "large_diff_count": 0,
+      "max_diff": 0.00021004676818847656,
+      "mean_diff": 5.264514584268909e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.12.self_attn.q_proj.weight",
+      "rmse": 8.239895578299183e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11625906,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.12.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 178851,
+      "large_diff_count": 0,
+      "max_diff": 0.00006842613220214844,
+      "mean_diff": 4.923066626361106e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.12.self_attn.v_proj.weight",
+      "rmse": 7.726089279458392e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1656157,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.13.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6084486,
+      "large_diff_count": 0,
+      "max_diff": 0.00046539306640625,
+      "mean_diff": 5.113854058436118e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.13.mlp.down_proj.weight",
+      "rmse": 7.873125468904618e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 61810810,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6106830,
+      "large_diff_count": 0,
+      "max_diff": 0.00035858154296875,
+      "mean_diff": 5.215930741542252e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.13.mlp.gate_proj.weight",
+      "rmse": 8.049611096794251e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61788466,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6059102,
+      "large_diff_count": 0,
+      "max_diff": 0.000423431396484375,
+      "mean_diff": 5.148109266883694e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.13.mlp.up_proj.weight",
+      "rmse": 7.929400453576818e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61836194,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.13.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.13.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 188359,
+      "large_diff_count": 0,
+      "max_diff": 0.00021386146545410156,
+      "mean_diff": 5.762592081737239e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.13.self_attn.k_proj.weight",
+      "rmse": 9.19146987143904e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1646649,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1199064,
+      "large_diff_count": 0,
+      "max_diff": 0.0004367828369140625,
+      "mean_diff": 5.1226961659267545e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.13.self_attn.o_proj.weight",
+      "rmse": 8.002048161870334e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11645992,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.13.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1256378,
+      "large_diff_count": 0,
+      "max_diff": 0.0002434253692626953,
+      "mean_diff": 5.222813797445269e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.13.self_attn.q_proj.weight",
+      "rmse": 8.179097676475067e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11588678,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.13.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 189447,
+      "large_diff_count": 0,
+      "max_diff": 0.00011932849884033203,
+      "mean_diff": 5.27798101757071e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.13.self_attn.v_proj.weight",
+      "rmse": 8.323549991473556e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1645561,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.14.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6256362,
+      "large_diff_count": 0,
+      "max_diff": 0.00048065185546875,
+      "mean_diff": 5.095381766295759e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.14.mlp.down_proj.weight",
+      "rmse": 7.89059868111508e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 61638934,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6197974,
+      "large_diff_count": 0,
+      "max_diff": 0.00048732757568359375,
+      "mean_diff": 5.117680757393828e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.14.mlp.gate_proj.weight",
+      "rmse": 7.940378054627217e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61697322,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6185794,
+      "large_diff_count": 0,
+      "max_diff": 0.00043010711669921875,
+      "mean_diff": 5.147594947629841e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.14.mlp.up_proj.weight",
+      "rmse": 7.972751518536825e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61709502,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.14.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.14.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 179097,
+      "large_diff_count": 0,
+      "max_diff": 0.00024199485778808594,
+      "mean_diff": 5.938038157182746e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.14.self_attn.k_proj.weight",
+      "rmse": 9.2702957772417e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1655911,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1209922,
+      "large_diff_count": 0,
+      "max_diff": 0.00048351287841796875,
+      "mean_diff": 4.953763436787995e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.14.self_attn.o_proj.weight",
+      "rmse": 7.70039787312271e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11635134,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.14.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1245118,
+      "large_diff_count": 0,
+      "max_diff": 0.00023174285888671875,
+      "mean_diff": 5.319765023159562e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.14.self_attn.q_proj.weight",
+      "rmse": 8.240043825935572e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11599938,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.14.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 188689,
+      "large_diff_count": 0,
+      "max_diff": 0.0001131296157836914,
+      "mean_diff": 4.837855158257298e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.14.self_attn.v_proj.weight",
+      "rmse": 7.691134669585153e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1646319,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.15.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6166278,
+      "large_diff_count": 0,
+      "max_diff": 0.0004730224609375,
+      "mean_diff": 5.153191978024552e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.15.mlp.down_proj.weight",
+      "rmse": 7.955956789373886e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 61729018,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6210494,
+      "large_diff_count": 0,
+      "max_diff": 0.0004730224609375,
+      "mean_diff": 5.0481048674555495e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.15.mlp.gate_proj.weight",
+      "rmse": 7.83177438279381e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61684802,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6185151,
+      "large_diff_count": 0,
+      "max_diff": 0.00024175643920898438,
+      "mean_diff": 5.2116820370429195e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.15.mlp.up_proj.weight",
+      "rmse": 8.048608833632898e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61710145,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.15.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.15.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 189818,
+      "large_diff_count": 0,
+      "max_diff": 0.000240325927734375,
+      "mean_diff": 5.9309932112228125e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.15.self_attn.k_proj.weight",
+      "rmse": 9.504941772320308e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1645190,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1172417,
+      "large_diff_count": 0,
+      "max_diff": 0.0002384185791015625,
+      "mean_diff": 4.935486231261166e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.15.self_attn.o_proj.weight",
+      "rmse": 7.676937457290478e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11672639,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.15.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1267853,
+      "large_diff_count": 0,
+      "max_diff": 0.000240325927734375,
+      "mean_diff": 5.370623966882704e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.15.self_attn.q_proj.weight",
+      "rmse": 8.416009222855791e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11577203,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.15.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 171113,
+      "large_diff_count": 0,
+      "max_diff": 0.00012028217315673828,
+      "mean_diff": 5.0250582717126235e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.15.self_attn.v_proj.weight",
+      "rmse": 7.828774869267363e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1663895,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.16.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6063455,
+      "large_diff_count": 0,
+      "max_diff": 0.0004119873046875,
+      "mean_diff": 5.131680609338218e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.16.mlp.down_proj.weight",
+      "rmse": 7.89574914961122e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 61831841,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6120448,
+      "large_diff_count": 0,
+      "max_diff": 0.00035858154296875,
+      "mean_diff": 5.060200237494428e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.16.mlp.gate_proj.weight",
+      "rmse": 7.826405635569245e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61774848,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6077420,
+      "large_diff_count": 0,
+      "max_diff": 0.00024271011352539062,
+      "mean_diff": 5.201807653065771e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.16.mlp.up_proj.weight",
+      "rmse": 8.006271855265368e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61817876,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.16.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.16.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 182160,
+      "large_diff_count": 0,
+      "max_diff": 0.00016045570373535156,
+      "mean_diff": 5.592549769062316e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.16.self_attn.k_proj.weight",
+      "rmse": 8.721201083972119e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1652848,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1176986,
+      "large_diff_count": 0,
+      "max_diff": 0.00046539306640625,
+      "mean_diff": 5.096507720736554e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.16.self_attn.o_proj.weight",
+      "rmse": 7.897423529357184e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11668070,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.16.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1216076,
+      "large_diff_count": 0,
+      "max_diff": 0.00012111663818359375,
+      "mean_diff": 5.230464466876583e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.16.self_attn.q_proj.weight",
+      "rmse": 8.109454029181506e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11628980,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.16.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 175761,
+      "large_diff_count": 0,
+      "max_diff": 0.00007998943328857422,
+      "mean_diff": 5.400487680162769e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.16.self_attn.v_proj.weight",
+      "rmse": 8.391441951971501e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1659247,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.17.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6219050,
+      "large_diff_count": 0,
+      "max_diff": 0.0004024505615234375,
+      "mean_diff": 5.1111087486788165e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.17.mlp.down_proj.weight",
+      "rmse": 7.901986464275979e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 61676246,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6202482,
+      "large_diff_count": 0,
+      "max_diff": 0.0004730224609375,
+      "mean_diff": 4.994534720026422e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.17.mlp.gate_proj.weight",
+      "rmse": 7.74658201407874e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61692814,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6138874,
+      "large_diff_count": 0,
+      "max_diff": 0.0003204345703125,
+      "mean_diff": 5.207923550187843e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.17.mlp.up_proj.weight",
+      "rmse": 8.034689017222263e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61756422,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.17.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.17.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 187874,
+      "large_diff_count": 0,
+      "max_diff": 0.0002372264862060547,
+      "mean_diff": 5.670532573276432e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.17.self_attn.k_proj.weight",
+      "rmse": 8.893523045117036e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1647134,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1209859,
+      "large_diff_count": 0,
+      "max_diff": 0.0002384185791015625,
+      "mean_diff": 5.026813596487045e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.17.self_attn.o_proj.weight",
+      "rmse": 7.802123946021311e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11635197,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.17.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1221705,
+      "large_diff_count": 0,
+      "max_diff": 0.000240325927734375,
+      "mean_diff": 5.358318503567716e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.17.self_attn.q_proj.weight",
+      "rmse": 8.377360245503951e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11623351,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.17.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 183409,
+      "large_diff_count": 0,
+      "max_diff": 0.0001049041748046875,
+      "mean_diff": 5.176088507141685e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.17.self_attn.v_proj.weight",
+      "rmse": 8.126196917146444e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1651599,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.18.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6293841,
+      "large_diff_count": 0,
+      "max_diff": 0.0004496574401855469,
+      "mean_diff": 5.1919919314968865e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.18.mlp.down_proj.weight",
+      "rmse": 8.03278908279026e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 61601455,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6308671,
+      "large_diff_count": 0,
+      "max_diff": 0.0004730224609375,
+      "mean_diff": 4.953758434567135e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.18.mlp.gate_proj.weight",
+      "rmse": 7.72536441218108e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61586625,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6253219,
+      "large_diff_count": 0,
+      "max_diff": 0.00045013427734375,
+      "mean_diff": 5.2866616897517815e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.18.mlp.up_proj.weight",
+      "rmse": 8.16917327028932e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61642077,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.18.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.18.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 183480,
+      "large_diff_count": 0,
+      "max_diff": 0.0001201629638671875,
+      "mean_diff": 5.387787496147212e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.18.self_attn.k_proj.weight",
+      "rmse": 8.491742846672423e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1651528,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1217943,
+      "large_diff_count": 0,
+      "max_diff": 0.00035858154296875,
+      "mean_diff": 5.314477220963454e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.18.self_attn.o_proj.weight",
+      "rmse": 8.30771114124218e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11627113,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.18.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1255972,
+      "large_diff_count": 0,
+      "max_diff": 0.0004763603210449219,
+      "mean_diff": 5.102734576212242e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.18.self_attn.q_proj.weight",
+      "rmse": 7.973080755618867e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11589084,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.18.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 200804,
+      "large_diff_count": 0,
+      "max_diff": 0.00012135505676269531,
+      "mean_diff": 5.760608019045321e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.18.self_attn.v_proj.weight",
+      "rmse": 9.052965651790146e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1634204,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.19.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6089008,
+      "large_diff_count": 0,
+      "max_diff": 0.00041961669921875,
+      "mean_diff": 5.2038717512914445e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.19.mlp.down_proj.weight",
+      "rmse": 8.002777576621156e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 61806288,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6190056,
+      "large_diff_count": 0,
+      "max_diff": 0.00048065185546875,
+      "mean_diff": 5.057358976046089e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.19.mlp.gate_proj.weight",
+      "rmse": 7.866643500165083e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61705240,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6096550,
+      "large_diff_count": 0,
+      "max_diff": 0.00030517578125,
+      "mean_diff": 5.28960026713321e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.19.mlp.up_proj.weight",
+      "rmse": 8.135704774758779e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61798746,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.19.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.19.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 179798,
+      "large_diff_count": 0,
+      "max_diff": 0.000232696533203125,
+      "mean_diff": 5.35640720045194e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.19.self_attn.k_proj.weight",
+      "rmse": 8.252955922216643e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1655210,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1166326,
+      "large_diff_count": 0,
+      "max_diff": 0.00046253204345703125,
+      "mean_diff": 5.251004949968774e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.19.self_attn.o_proj.weight",
+      "rmse": 8.140880709106568e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11678730,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.19.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1296092,
+      "large_diff_count": 0,
+      "max_diff": 0.00041961669921875,
+      "mean_diff": 5.030211013945518e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.19.self_attn.q_proj.weight",
+      "rmse": 7.911835382401478e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11548964,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.19.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 196157,
+      "large_diff_count": 0,
+      "max_diff": 0.0001201629638671875,
+      "mean_diff": 5.791931926069083e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.19.self_attn.v_proj.weight",
+      "rmse": 9.067011887964327e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1638851,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.2.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 67895296,
+      "identical_count": 8959251,
+      "large_diff_count": 0,
+      "max_diff": 0.0004425048828125,
+      "mean_diff": 4.071491730428534e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.2.mlp.down_proj.weight",
+      "rmse": 6.979655609029578e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 58936045,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 67895296,
+      "identical_count": 9565377,
+      "large_diff_count": 0,
+      "max_diff": 0.00023794174194335938,
+      "mean_diff": 5.110292931931326e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.2.mlp.gate_proj.weight",
+      "rmse": 8.408059329667594e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 58329919,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 67895296,
+      "identical_count": 6028439,
+      "large_diff_count": 0,
+      "max_diff": 0.00048065185546875,
+      "mean_diff": 3.975306299253134e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.2.mlp.up_proj.weight",
+      "rmse": 6.371831204887712e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61866857,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.2.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.2.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 217809,
+      "large_diff_count": 0,
+      "max_diff": 0.0002357959747314453,
+      "mean_diff": 6.421773377951467e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.2.self_attn.k_proj.weight",
+      "rmse": 0.000010509484127396718,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1617199,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 12845056,
+      "identical_count": 1199599,
+      "large_diff_count": 0,
+      "max_diff": 0.00024175643920898438,
+      "mean_diff": 4.412715043144999e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.2.self_attn.o_proj.weight",
+      "rmse": 6.8627182372438256e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11645457,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.2.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 12845056,
+      "identical_count": 1521549,
+      "large_diff_count": 0,
+      "max_diff": 0.00017547607421875,
+      "mean_diff": 5.161465196579229e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.2.self_attn.q_proj.weight",
+      "rmse": 8.383815838897135e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11323507,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.2.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 1835008,
+      "identical_count": 212823,
+      "large_diff_count": 0,
+      "max_diff": 0.00006091594696044922,
+      "mean_diff": 3.862691301037557e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.2.self_attn.v_proj.weight",
+      "rmse": 6.276635303947842e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1622185,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.20.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6228883,
+      "large_diff_count": 0,
+      "max_diff": 0.00054931640625,
+      "mean_diff": 5.189130206417758e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.20.mlp.down_proj.weight",
+      "rmse": 8.030821845750324e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 61666413,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6300080,
+      "large_diff_count": 0,
+      "max_diff": 0.0009183883666992188,
+      "mean_diff": 5.0433109208825044e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.20.mlp.gate_proj.weight",
+      "rmse": 7.863334758440033e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61595216,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6192088,
+      "large_diff_count": 0,
+      "max_diff": 0.0004968643188476562,
+      "mean_diff": 5.3167618716543075e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.20.mlp.up_proj.weight",
+      "rmse": 8.191940651158802e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61703208,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.20.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.20.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 181683,
+      "large_diff_count": 0,
+      "max_diff": 0.000240325927734375,
+      "mean_diff": 5.414482075138949e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.20.self_attn.k_proj.weight",
+      "rmse": 8.448861990473233e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1653325,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1169423,
+      "large_diff_count": 0,
+      "max_diff": 0.000476837158203125,
+      "mean_diff": 5.302046702126972e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.20.self_attn.o_proj.weight",
+      "rmse": 8.255659849965014e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11675633,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.20.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1204271,
+      "large_diff_count": 0,
+      "max_diff": 0.00012159347534179688,
+      "mean_diff": 5.2254458751122e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.20.self_attn.q_proj.weight",
+      "rmse": 8.089307812042534e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11640785,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.20.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 198211,
+      "large_diff_count": 0,
+      "max_diff": 0.00012159347534179688,
+      "mean_diff": 5.8513314797892235e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.20.self_attn.v_proj.weight",
+      "rmse": 9.203722584061325e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1636797,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.21.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6120480,
+      "large_diff_count": 0,
+      "max_diff": 0.0004029273986816406,
+      "mean_diff": 5.220379080128623e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.21.mlp.down_proj.weight",
+      "rmse": 8.048859854170587e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 61774816,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6217287,
+      "large_diff_count": 0,
+      "max_diff": 0.00048065185546875,
+      "mean_diff": 5.166371465747943e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.21.mlp.gate_proj.weight",
+      "rmse": 8.016463652893435e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61678009,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6038295,
+      "large_diff_count": 0,
+      "max_diff": 0.0002741813659667969,
+      "mean_diff": 5.3394678616314195e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.21.mlp.up_proj.weight",
+      "rmse": 8.190687367459759e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61857001,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.21.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.21.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 183286,
+      "large_diff_count": 0,
+      "max_diff": 0.000232696533203125,
+      "mean_diff": 4.986909516446758e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.21.self_attn.k_proj.weight",
+      "rmse": 7.759167601761874e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1651722,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1201004,
+      "large_diff_count": 0,
+      "max_diff": 0.00024271011352539062,
+      "mean_diff": 5.423420134320622e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.21.self_attn.o_proj.weight",
+      "rmse": 8.551150131097529e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11644052,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.21.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1246607,
+      "large_diff_count": 0,
+      "max_diff": 0.000240325927734375,
+      "mean_diff": 5.077985406387597e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.21.self_attn.q_proj.weight",
+      "rmse": 7.978677786013577e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11598449,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.21.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 210342,
+      "large_diff_count": 0,
+      "max_diff": 0.00012183189392089844,
+      "mean_diff": 6.155669325380586e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.21.self_attn.v_proj.weight",
+      "rmse": 9.825488632486667e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1624666,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.22.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6085738,
+      "large_diff_count": 0,
+      "max_diff": 0.00046539306640625,
+      "mean_diff": 5.253119979897747e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.22.mlp.down_proj.weight",
+      "rmse": 8.087517016974743e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 61809558,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6160150,
+      "large_diff_count": 0,
+      "max_diff": 0.00035858154296875,
+      "mean_diff": 5.227804194873897e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.22.mlp.gate_proj.weight",
+      "rmse": 8.073180651990697e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61735146,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 5974209,
+      "large_diff_count": 0,
+      "max_diff": 0.0004734992980957031,
+      "mean_diff": 5.361806870496366e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.22.mlp.up_proj.weight",
+      "rmse": 8.209434781747404e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61921087,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.22.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.22.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 174016,
+      "large_diff_count": 0,
+      "max_diff": 0.000240325927734375,
+      "mean_diff": 5.275493549561361e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.22.self_attn.k_proj.weight",
+      "rmse": 7.931719665066339e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1660992,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1154455,
+      "large_diff_count": 0,
+      "max_diff": 0.0002422332763671875,
+      "mean_diff": 5.532886916626012e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.22.self_attn.o_proj.weight",
+      "rmse": 8.56086171552306e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11690601,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.22.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1265655,
+      "large_diff_count": 0,
+      "max_diff": 0.000240325927734375,
+      "mean_diff": 5.202615284360945e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.22.self_attn.q_proj.weight",
+      "rmse": 8.122048711811658e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11579401,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.22.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 232477,
+      "large_diff_count": 0,
+      "max_diff": 0.00024080276489257812,
+      "mean_diff": 5.748133389715804e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.22.self_attn.v_proj.weight",
+      "rmse": 9.403041985933669e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1602531,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.23.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 5905046,
+      "large_diff_count": 0,
+      "max_diff": 0.0004673004150390625,
+      "mean_diff": 5.295317805575905e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.23.mlp.down_proj.weight",
+      "rmse": 8.097362297121435e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 61990250,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 5948649,
+      "large_diff_count": 0,
+      "max_diff": 0.00048065185546875,
+      "mean_diff": 5.346512352844002e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.23.mlp.gate_proj.weight",
+      "rmse": 8.18235184851801e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61946647,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 5829807,
+      "large_diff_count": 0,
+      "max_diff": 0.00023651123046875,
+      "mean_diff": 5.371441602619598e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.23.mlp.up_proj.weight",
+      "rmse": 8.18751232145587e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 62065489,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.23.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.23.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 187884,
+      "large_diff_count": 0,
+      "max_diff": 0.00017952919006347656,
+      "mean_diff": 5.0439352889952715e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.23.self_attn.k_proj.weight",
+      "rmse": 7.836962140572723e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1647124,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1179155,
+      "large_diff_count": 0,
+      "max_diff": 0.00046634674072265625,
+      "mean_diff": 5.5434029491152614e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.23.self_attn.o_proj.weight",
+      "rmse": 8.651107236801181e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11665901,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.23.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1262825,
+      "large_diff_count": 0,
+      "max_diff": 0.00012373924255371094,
+      "mean_diff": 5.123488335811999e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.23.self_attn.q_proj.weight",
+      "rmse": 8.023696864256635e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11582231,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.23.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 237547,
+      "large_diff_count": 0,
+      "max_diff": 0.00012195110321044922,
+      "mean_diff": 5.752932338509709e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.23.self_attn.v_proj.weight",
+      "rmse": 9.589918590791058e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1597461,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.24.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 5877252,
+      "large_diff_count": 0,
+      "max_diff": 0.0004286766052246094,
+      "mean_diff": 5.4261308832792565e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.24.mlp.down_proj.weight",
+      "rmse": 8.262129085778724e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 62018044,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 5823842,
+      "large_diff_count": 0,
+      "max_diff": 0.0004730224609375,
+      "mean_diff": 5.290993613016326e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.24.mlp.gate_proj.weight",
+      "rmse": 8.075945515884086e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 62071454,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 5795930,
+      "large_diff_count": 0,
+      "max_diff": 0.00024271011352539062,
+      "mean_diff": 5.454838628793368e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.24.mlp.up_proj.weight",
+      "rmse": 8.295530278701335e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 62099366,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.24.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.24.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 176485,
+      "large_diff_count": 0,
+      "max_diff": 0.0002276897430419922,
+      "mean_diff": 5.0634689614526e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.24.self_attn.k_proj.weight",
+      "rmse": 7.731983714620583e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1658523,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1173488,
+      "large_diff_count": 0,
+      "max_diff": 0.00046062469482421875,
+      "mean_diff": 5.642379164783051e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.24.self_attn.o_proj.weight",
+      "rmse": 8.709353096492123e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11671568,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.24.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1237323,
+      "large_diff_count": 0,
+      "max_diff": 0.0002155303955078125,
+      "mean_diff": 4.924856966681546e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.24.self_attn.q_proj.weight",
+      "rmse": 7.710681529715657e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11607733,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.24.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 213844,
+      "large_diff_count": 0,
+      "max_diff": 0.000240325927734375,
+      "mean_diff": 6.808775196986971e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.24.self_attn.v_proj.weight",
+      "rmse": 0.00001083969164028531,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1621164,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.25.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 5936780,
+      "large_diff_count": 0,
+      "max_diff": 0.0004725456237792969,
+      "mean_diff": 5.549385150516173e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.25.mlp.down_proj.weight",
+      "rmse": 8.435321433353238e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 61958516,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 5827495,
+      "large_diff_count": 0,
+      "max_diff": 0.00024175643920898438,
+      "mean_diff": 5.2598984439100605e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.25.mlp.gate_proj.weight",
+      "rmse": 8.033263839024585e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 62067801,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 5862998,
+      "large_diff_count": 0,
+      "max_diff": 0.000240325927734375,
+      "mean_diff": 5.523446361621609e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.25.mlp.up_proj.weight",
+      "rmse": 8.40366101328982e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 62032298,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.25.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.25.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 1835008,
+      "identical_count": 189164,
+      "large_diff_count": 0,
+      "max_diff": 0.00012183189392089844,
+      "mean_diff": 4.6233808461693116e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.25.self_attn.k_proj.weight",
+      "rmse": 7.178074156399816e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1645844,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1218149,
+      "large_diff_count": 0,
+      "max_diff": 0.00045013427734375,
+      "mean_diff": 5.937392415944487e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.25.self_attn.o_proj.weight",
+      "rmse": 9.112306543102022e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11626907,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.25.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1233095,
+      "large_diff_count": 0,
+      "max_diff": 0.00023245811462402344,
+      "mean_diff": 4.869367330684327e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.25.self_attn.q_proj.weight",
+      "rmse": 7.576251391583355e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11611961,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.25.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 223791,
+      "large_diff_count": 0,
+      "max_diff": 0.00024271011352539062,
+      "mean_diff": 7.2921925493574236e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.25.self_attn.v_proj.weight",
+      "rmse": 0.000011877989891218022,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1611217,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.26.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 5952474,
+      "large_diff_count": 0,
+      "max_diff": 0.00048065185546875,
+      "mean_diff": 5.494692686625058e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.26.mlp.down_proj.weight",
+      "rmse": 8.384216016565915e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 61942822,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 5877020,
+      "large_diff_count": 0,
+      "max_diff": 0.0004119873046875,
+      "mean_diff": 5.2365630835993215e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.26.mlp.gate_proj.weight",
+      "rmse": 8.01299302111147e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 62018276,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 5917777,
+      "large_diff_count": 0,
+      "max_diff": 0.0003185272216796875,
+      "mean_diff": 5.5717910072417e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.26.mlp.up_proj.weight",
+      "rmse": 8.488045750709716e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61977519,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.26.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.26.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 1835008,
+      "identical_count": 187451,
+      "large_diff_count": 0,
+      "max_diff": 0.00012135505676269531,
+      "mean_diff": 4.516223270911723e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.26.self_attn.k_proj.weight",
+      "rmse": 6.927939921297366e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1647557,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1313266,
+      "large_diff_count": 0,
+      "max_diff": 0.000457763671875,
+      "mean_diff": 6.168448180687847e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.26.self_attn.o_proj.weight",
+      "rmse": 9.527656402497087e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11531790,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.26.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1270632,
+      "large_diff_count": 0,
+      "max_diff": 0.00023365020751953125,
+      "mean_diff": 4.885359885520302e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.26.self_attn.q_proj.weight",
+      "rmse": 7.481942247977713e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11574424,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.26.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 226370,
+      "large_diff_count": 0,
+      "max_diff": 0.00024247169494628906,
+      "mean_diff": 8.717098353372421e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.26.self_attn.v_proj.weight",
+      "rmse": 0.000014297083907877095,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1608638,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.27.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6245814,
+      "large_diff_count": 0,
+      "max_diff": 0.0008306503295898438,
+      "mean_diff": 5.130785211804323e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.27.mlp.down_proj.weight",
+      "rmse": 7.978855137480423e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 61649482,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6001282,
+      "large_diff_count": 0,
+      "max_diff": 0.00024318695068359375,
+      "mean_diff": 5.511903964361409e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.27.mlp.gate_proj.weight",
+      "rmse": 8.421049642493017e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61894014,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 5982572,
+      "large_diff_count": 0,
+      "max_diff": 0.0002422332763671875,
+      "mean_diff": 5.641178631776711e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.27.mlp.up_proj.weight",
+      "rmse": 8.598092790634837e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61912724,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.27.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.27.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 174814,
+      "large_diff_count": 0,
+      "max_diff": 0.00012123584747314453,
+      "mean_diff": 4.908554274152266e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.27.self_attn.k_proj.weight",
+      "rmse": 7.430531695717946e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1660194,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1226127,
+      "large_diff_count": 0,
+      "max_diff": 0.00048065185546875,
+      "mean_diff": 5.985889856674476e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.27.self_attn.o_proj.weight",
+      "rmse": 9.268650501326192e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11618929,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.27.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1284274,
+      "large_diff_count": 0,
+      "max_diff": 0.00023436546325683594,
+      "mean_diff": 5.046480509918183e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.27.self_attn.q_proj.weight",
+      "rmse": 7.862077836762182e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11560782,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.27.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 209810,
+      "large_diff_count": 0,
+      "max_diff": 0.000240325927734375,
+      "mean_diff": 7.874558832554612e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.27.self_attn.v_proj.weight",
+      "rmse": 0.000012619248082046397,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1625198,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.3.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6132492,
+      "large_diff_count": 0,
+      "max_diff": 0.0004863739013671875,
+      "mean_diff": 4.857937256019795e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.3.mlp.down_proj.weight",
+      "rmse": 7.568899491161574e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 61762804,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6230383,
+      "large_diff_count": 0,
+      "max_diff": 0.000217437744140625,
+      "mean_diff": 5.884028269065311e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.3.mlp.gate_proj.weight",
+      "rmse": 8.947686183091719e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61664913,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6121562,
+      "large_diff_count": 0,
+      "max_diff": 0.00023937225341796875,
+      "mean_diff": 4.8335318751924206e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.3.mlp.up_proj.weight",
+      "rmse": 7.481773081963183e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61773734,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.3.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.3.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 194600,
+      "large_diff_count": 0,
+      "max_diff": 0.00012195110321044922,
+      "mean_diff": 6.74171133141499e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.3.self_attn.k_proj.weight",
+      "rmse": 0.000010656043741619214,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1640408,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 12845056,
+      "identical_count": 1205192,
+      "large_diff_count": 0,
+      "max_diff": 0.00024271011352539062,
+      "mean_diff": 4.611617896443931e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.3.self_attn.o_proj.weight",
+      "rmse": 7.2768161771818995e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11639864,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.3.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1319244,
+      "large_diff_count": 0,
+      "max_diff": 0.000209808349609375,
+      "mean_diff": 5.439761480374727e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.3.self_attn.q_proj.weight",
+      "rmse": 8.569454621465411e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11525812,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.3.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 1835008,
+      "identical_count": 188118,
+      "large_diff_count": 0,
+      "max_diff": 0.00006091594696044922,
+      "mean_diff": 4.183147666481091e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.3.self_attn.v_proj.weight",
+      "rmse": 6.6813017838285305e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1646890,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.4.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 67895296,
+      "identical_count": 6110573,
+      "large_diff_count": 0,
+      "max_diff": 0.00048065185546875,
+      "mean_diff": 4.815089141629869e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.4.mlp.down_proj.weight",
+      "rmse": 7.4558861342666205e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 61784723,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6352049,
+      "large_diff_count": 0,
+      "max_diff": 0.00021958351135253906,
+      "mean_diff": 6.015422513883095e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.4.mlp.gate_proj.weight",
+      "rmse": 9.145365766016766e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61543247,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 67895296,
+      "identical_count": 6132851,
+      "large_diff_count": 0,
+      "max_diff": 0.000202178955078125,
+      "mean_diff": 4.789664217241807e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.4.mlp.up_proj.weight",
+      "rmse": 7.411435944959521e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61762445,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.4.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.4.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 188518,
+      "large_diff_count": 0,
+      "max_diff": 0.00012183189392089844,
+      "mean_diff": 6.164847036416177e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.4.self_attn.k_proj.weight",
+      "rmse": 9.850851711235009e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1646490,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 12845056,
+      "identical_count": 1174834,
+      "large_diff_count": 0,
+      "max_diff": 0.00023651123046875,
+      "mean_diff": 4.743430508824531e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.4.self_attn.o_proj.weight",
+      "rmse": 7.317290510400198e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11670222,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.4.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1309031,
+      "large_diff_count": 0,
+      "max_diff": 0.0002162456512451172,
+      "mean_diff": 5.22798518431955e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.4.self_attn.q_proj.weight",
+      "rmse": 8.249629900092259e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11536025,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.4.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 178640,
+      "large_diff_count": 0,
+      "max_diff": 0.00006091594696044922,
+      "mean_diff": 5.045832949690521e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.4.self_attn.v_proj.weight",
+      "rmse": 7.775471203785855e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1656368,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.5.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 5980398,
+      "large_diff_count": 0,
+      "max_diff": 0.0004730224609375,
+      "mean_diff": 4.938269739795942e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.5.mlp.down_proj.weight",
+      "rmse": 7.605218343087472e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 61914898,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6190769,
+      "large_diff_count": 0,
+      "max_diff": 0.000240325927734375,
+      "mean_diff": 5.808113655803027e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.5.mlp.gate_proj.weight",
+      "rmse": 8.841976523399353e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61704527,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 5958391,
+      "large_diff_count": 0,
+      "max_diff": 0.000362396240234375,
+      "mean_diff": 4.982110567652853e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.5.mlp.up_proj.weight",
+      "rmse": 7.661054951313417e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61936905,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.5.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.5.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 185296,
+      "large_diff_count": 0,
+      "max_diff": 0.0002288818359375,
+      "mean_diff": 5.937374680797802e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.5.self_attn.k_proj.weight",
+      "rmse": 9.416795364813879e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1649712,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 12845056,
+      "identical_count": 1172279,
+      "large_diff_count": 0,
+      "max_diff": 0.000209808349609375,
+      "mean_diff": 4.638549853552831e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.5.self_attn.o_proj.weight",
+      "rmse": 7.184723472164478e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11672777,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.5.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1243250,
+      "large_diff_count": 0,
+      "max_diff": 0.00023031234741210938,
+      "mean_diff": 5.29959334016894e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.5.self_attn.q_proj.weight",
+      "rmse": 8.314019396493677e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11601806,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.5.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 1835008,
+      "identical_count": 175549,
+      "large_diff_count": 0,
+      "max_diff": 0.000087738037109375,
+      "mean_diff": 4.495239863899769e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.5.self_attn.v_proj.weight",
+      "rmse": 7.054477919155033e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1659459,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.6.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6098892,
+      "large_diff_count": 0,
+      "max_diff": 0.00048160552978515625,
+      "mean_diff": 4.829438239539741e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.6.mlp.down_proj.weight",
+      "rmse": 7.4703893915284425e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 61796404,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6322512,
+      "large_diff_count": 0,
+      "max_diff": 0.0004730224609375,
+      "mean_diff": 5.675272404914722e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.6.mlp.gate_proj.weight",
+      "rmse": 8.773595254751854e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61572784,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 5986941,
+      "large_diff_count": 0,
+      "max_diff": 0.0002429485321044922,
+      "mean_diff": 4.916709258395713e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.6.mlp.up_proj.weight",
+      "rmse": 7.569650279037887e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61908355,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.6.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.6.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 175357,
+      "large_diff_count": 0,
+      "max_diff": 0.00012183189392089844,
+      "mean_diff": 6.403951829270227e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.6.self_attn.k_proj.weight",
+      "rmse": 0.000010053392543341033,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1659651,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1166007,
+      "large_diff_count": 0,
+      "max_diff": 0.0003905296325683594,
+      "mean_diff": 4.811872713617049e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.6.self_attn.o_proj.weight",
+      "rmse": 7.465980615961598e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11679049,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.6.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1199705,
+      "large_diff_count": 0,
+      "max_diff": 0.000240325927734375,
+      "mean_diff": 5.444308953883592e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.6.self_attn.q_proj.weight",
+      "rmse": 8.437447831965983e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11645351,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.6.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 1835008,
+      "identical_count": 164107,
+      "large_diff_count": 0,
+      "max_diff": 0.00006097555160522461,
+      "mean_diff": 4.812471615878167e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.6.self_attn.v_proj.weight",
+      "rmse": 7.455036666215165e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1670901,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.7.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6126940,
+      "large_diff_count": 0,
+      "max_diff": 0.0004425048828125,
+      "mean_diff": 4.9723444135452155e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.7.mlp.down_proj.weight",
+      "rmse": 7.691709470236674e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 61768356,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6017805,
+      "large_diff_count": 0,
+      "max_diff": 0.0004119873046875,
+      "mean_diff": 5.373545718612149e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.7.mlp.gate_proj.weight",
+      "rmse": 8.254924978245981e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61877491,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 5972049,
+      "large_diff_count": 0,
+      "max_diff": 0.0002384185791015625,
+      "mean_diff": 5.014148882764857e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.7.mlp.up_proj.weight",
+      "rmse": 7.709983037784696e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61923247,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.7.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.7.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 179214,
+      "large_diff_count": 0,
+      "max_diff": 0.00012040138244628906,
+      "mean_diff": 5.513818450708641e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.7.self_attn.k_proj.weight",
+      "rmse": 8.64929097588174e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1655794,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1178131,
+      "large_diff_count": 0,
+      "max_diff": 0.00022459030151367188,
+      "mean_diff": 5.163995865586912e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.7.self_attn.o_proj.weight",
+      "rmse": 7.988756806298625e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11666925,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.7.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1179483,
+      "large_diff_count": 0,
+      "max_diff": 0.00017881393432617188,
+      "mean_diff": 5.226401299296413e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.7.self_attn.q_proj.weight",
+      "rmse": 8.120547136059031e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11665573,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.7.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 192395,
+      "large_diff_count": 0,
+      "max_diff": 0.0001201629638671875,
+      "mean_diff": 5.431389581644908e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.7.self_attn.v_proj.weight",
+      "rmse": 8.517617061443161e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1642613,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.8.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6016189,
+      "large_diff_count": 0,
+      "max_diff": 0.0004754066467285156,
+      "mean_diff": 5.051494554209057e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.8.mlp.down_proj.weight",
+      "rmse": 7.779528459650464e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 61879107,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 5921568,
+      "large_diff_count": 0,
+      "max_diff": 0.0004506111145019531,
+      "mean_diff": 5.322399374563247e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.8.mlp.gate_proj.weight",
+      "rmse": 8.139165402099025e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61973728,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 5869361,
+      "large_diff_count": 0,
+      "max_diff": 0.0002429485321044922,
+      "mean_diff": 5.118428816786036e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.8.mlp.up_proj.weight",
+      "rmse": 7.842938430258073e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 62025935,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.8.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.8.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 188914,
+      "large_diff_count": 0,
+      "max_diff": 0.0002391338348388672,
+      "mean_diff": 6.157345524115954e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.8.self_attn.k_proj.weight",
+      "rmse": 9.784356734598987e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1646094,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1183354,
+      "large_diff_count": 0,
+      "max_diff": 0.000274658203125,
+      "mean_diff": 4.834491392102791e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.8.self_attn.o_proj.weight",
+      "rmse": 7.513035598094575e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11661702,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.8.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1249881,
+      "large_diff_count": 0,
+      "max_diff": 0.000179290771484375,
+      "mean_diff": 5.3847079470870085e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.8.self_attn.q_proj.weight",
+      "rmse": 8.463739504804835e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11595175,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.8.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 1835008,
+      "identical_count": 168987,
+      "large_diff_count": 0,
+      "max_diff": 0.00006091594696044922,
+      "mean_diff": 4.928350790578406e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.8.self_attn.v_proj.weight",
+      "rmse": 7.65601362218149e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1666021,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.9.input_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 67895296,
+      "identical_count": 6120456,
+      "large_diff_count": 0,
+      "max_diff": 0.0004582405090332031,
+      "mean_diff": 4.77844650959014e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.9.mlp.down_proj.weight",
+      "rmse": 7.3883802542695776e-6,
+      "shape_a": [
+        3584,
+        18944
+      ],
+      "shape_b": [
+        3584,
+        18944
+      ],
+      "small_diff_count": 61774840,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 67895296,
+      "identical_count": 6351736,
+      "large_diff_count": 0,
+      "max_diff": 0.00030517578125,
+      "mean_diff": 5.849744866281981e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.9.mlp.gate_proj.weight",
+      "rmse": 8.960175364336465e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61543560,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 0.9999999403953552,
+      "element_count": 67895296,
+      "identical_count": 6008543,
+      "large_diff_count": 0,
+      "max_diff": 0.000240325927734375,
+      "mean_diff": 4.812222869077232e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.9.mlp.up_proj.weight",
+      "rmse": 7.424666364386212e-6,
+      "shape_a": [
+        18944,
+        3584
+      ],
+      "shape_b": [
+        18944,
+        3584
+      ],
+      "small_diff_count": 61886753,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.9.post_attention_layernorm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.9.self_attn.k_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 185106,
+      "large_diff_count": 0,
+      "max_diff": 0.00012683868408203125,
+      "mean_diff": 5.231102022662526e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.9.self_attn.k_proj.weight",
+      "rmse": 8.345187779923435e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1649902,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1197524,
+      "large_diff_count": 0,
+      "max_diff": 0.00024080276489257812,
+      "mean_diff": 5.277229774947045e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.9.self_attn.o_proj.weight",
+      "rmse": 8.160804100043606e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11647532,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.9.self_attn.q_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 12845056,
+      "identical_count": 1208679,
+      "large_diff_count": 0,
+      "max_diff": 0.00017547607421875,
+      "mean_diff": 5.033734851167537e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.9.self_attn.q_proj.weight",
+      "rmse": 7.860757250455208e-6,
+      "shape_a": [
+        3584,
+        3584
+      ],
+      "shape_b": [
+        3584,
+        3584
+      ],
+      "small_diff_count": 11636377,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 512,
+      "identical_count": 512,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.layers.9.self_attn.v_proj.bias",
+      "rmse": 0.0,
+      "shape_a": [
+        512
+      ],
+      "shape_b": [
+        512
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 1835008,
+      "identical_count": 191024,
+      "large_diff_count": 0,
+      "max_diff": 0.00010752677917480469,
+      "mean_diff": 5.6117933127097785e-6,
+      "medium_diff_count": 0,
+      "name": "model.layers.9.self_attn.v_proj.weight",
+      "rmse": 8.757323485042434e-6,
+      "shape_a": [
+        512,
+        3584
+      ],
+      "shape_b": [
+        512,
+        3584
+      ],
+      "small_diff_count": 1643984,
+      "status": "NearlyIdentical"
+    },
+    {
+      "cosine_similarity": 1.0,
+      "element_count": 3584,
+      "identical_count": 3584,
+      "large_diff_count": 0,
+      "max_diff": 0.0,
+      "mean_diff": 0.0,
+      "medium_diff_count": 0,
+      "name": "model.norm.weight",
+      "rmse": 0.0,
+      "shape_a": [
+        3584
+      ],
+      "shape_b": [
+        3584
+      ],
+      "small_diff_count": 0,
+      "status": "Identical"
+    }
+  ],
+  "tensors_compared": 339,
+  "transposed_count": 0
+}

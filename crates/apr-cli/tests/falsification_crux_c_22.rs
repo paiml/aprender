@@ -32,7 +32,10 @@ fn falsify_crux_c_22_help_advertises_observation_file_flag() {
         .args(["typical-p-lint", "--help"])
         .output()
         .expect("run apr typical-p-lint --help");
-    assert!(out.status.success(), "apr typical-p-lint --help must exit 0");
+    assert!(
+        out.status.success(),
+        "apr typical-p-lint --help must exit 0"
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         stdout.contains("--observation-file"),

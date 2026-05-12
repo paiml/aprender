@@ -26,11 +26,7 @@ pub enum QuotaOutcome {
     /// Pull fits in the remaining budget.
     Allow { free_after: u64 },
     /// Pull would exceed the quota — rejected pre-download.
-    Reject {
-        used: u64,
-        free: u64,
-        needed: u64,
-    },
+    Reject { used: u64, free: u64, needed: u64 },
 }
 
 /// Decide whether a pull of `incoming` bytes is allowed given the
@@ -208,7 +204,10 @@ mod tests {
         // FALSIFY test picks up the last line of stderr — body must not
         // contain embedded newlines.
         let s = render_quota_error_json(100, 50, 200);
-        assert!(!s.contains('\n'), "quota error body must be single-line: {s:?}");
+        assert!(
+            !s.contains('\n'),
+            "quota error body must be single-line: {s:?}"
+        );
     }
 
     #[test]

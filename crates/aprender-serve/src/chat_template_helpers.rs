@@ -54,6 +54,16 @@ pub fn detect_format_from_name(model_name: &str) -> TemplateFormat {
 
     // Pattern rules ordered by specificity (more specific patterns first)
     // Format: (patterns, format) - check patterns before formats that share prefixes
+    //
+    // M32d Step 6 (companion claude-code-parity-apr-poc.md § "M32d FAST
+    // PATH"): Qwen3-Coder / Qwen3-MoE-arch models do NOT have thinking
+    // mode — Qwen3MoeForCausalLM was trained without `<think>` blocks.
+    // Pre-injecting empty `<think>\n</think>\n` confuses the model and
+    // causes it to emit `<|endoftext|>` immediately. Use plain ChatML
+    // for qwen3_moe; keep Qwen3NoThink for dense Qwen3.
+    if name_lower.contains("qwen3_moe") || name_lower.contains("qwen3moe") {
+        return TemplateFormat::ChatML;
+    }
     // PMAT-181: Qwen3 gets special no-think template (before generic "qwen" match)
     if name_lower.contains("qwen3") {
         return TemplateFormat::Qwen3NoThink;

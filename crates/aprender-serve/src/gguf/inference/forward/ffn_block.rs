@@ -252,7 +252,7 @@ impl OwnedQuantizedModel {
         indexed.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
         eprintln!(
             "[DEBUG-VERIFY] Top 5 tokens: {:?}",
-            &indexed[..5.min(indexed.len())]
+            &indexed[..16.min(indexed.len())]
         );
     }
 
@@ -278,8 +278,8 @@ impl OwnedQuantizedModel {
             let sq_sum: f32 = hidden.iter().map(|x| x * x).sum();
             let rms = (sq_sum / hidden.len() as f32).sqrt();
             eprintln!(
-                "[GQA-DEBUG-CPU-EMBED] Embedding before L0: first 5 = {:?}, sum={:.4}, rms={:.4}",
-                &hidden[..5.min(hidden.len())],
+                "[GQA-DEBUG-CPU-EMBED] Embedding before L0: first 16 = {:?}, sum={:.4}, rms={:.4}",
+                &hidden[..16.min(hidden.len())],
                 embed_sum,
                 rms
             );
@@ -296,11 +296,11 @@ impl OwnedQuantizedModel {
             let min = hidden.iter().cloned().fold(f32::INFINITY, f32::min);
             let max = hidden.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
             eprintln!(
-                "[PMAT-114-GGUF] After embed: mean={:.6}, min={:.6}, max={:.6}, first5={:?}",
+                "[PMAT-114-GGUF] After embed: mean={:.6}, min={:.6}, max={:.6}, first16={:?}",
                 mean,
                 min,
                 max,
-                &hidden[..5.min(hidden.len())]
+                &hidden[..16.min(hidden.len())]
             );
         }
     }
@@ -351,9 +351,9 @@ impl OwnedQuantizedModel {
             let k_bias = &bias[q_dim..q_dim + kv_dim];
             let k_bias_mean: f32 = k_bias.iter().sum::<f32>() / kv_dim as f32;
             eprintln!(
-                "[PMAT-114-GGUF] L0 K bias mean={:.6}, first5={:?}",
+                "[PMAT-114-GGUF] L0 K bias mean={:.6}, first16={:?}",
                 k_bias_mean,
-                &k_bias[..5.min(kv_dim)]
+                &k_bias[..16.min(kv_dim)]
             );
         }
 
@@ -368,7 +368,7 @@ impl OwnedQuantizedModel {
             q_mean, k_mean, v_mean
         );
         eprintln!(
-            "[PMAT-114-GGUF] L0 Q first5={:?}",
+            "[PMAT-114-GGUF] L0 Q first16={:?}",
             q.get(..5).unwrap_or(&[])
         );
     }
@@ -423,8 +423,8 @@ impl OwnedQuantizedModel {
             let sq_sum: f32 = hidden.iter().map(|x| x * x).sum();
             let rms = (sq_sum / hidden.len() as f32).sqrt();
             eprintln!(
-                "[GQA-DEBUG-CPU-L0] After layer 0: first 5 = {:?}, sum={:.4}, rms={:.4}",
-                &hidden[..5.min(hidden.len())],
+                "[GQA-DEBUG-CPU-L0] After layer 0: first 16 = {:?}, sum={:.4}, rms={:.4}",
+                &hidden[..16.min(hidden.len())],
                 hidden_sum,
                 rms
             );
@@ -438,12 +438,12 @@ impl OwnedQuantizedModel {
             let min = hidden.iter().cloned().fold(f32::INFINITY, f32::min);
             let max = hidden.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
             eprintln!(
-                "[PMAT-114-GGUF] After layer {}: mean={:.6}, min={:.6}, max={:.6}, first5={:?}",
+                "[PMAT-114-GGUF] After layer {}: mean={:.6}, min={:.6}, max={:.6}, first16={:?}",
                 layer_idx,
                 mean,
                 min,
                 max,
-                &hidden[..5.min(hidden.len())]
+                &hidden[..16.min(hidden.len())]
             );
         }
     }
@@ -517,8 +517,8 @@ impl OwnedQuantizedModel {
                 .map(|(x, g)| (x / rms) * g)
                 .collect();
             eprintln!(
-                "[GH-559-CPU] Layer 0 RMSNorm: rms={:.6}, first5={:?}",
-                rms, &normed[..5.min(normed.len())]
+                "[GH-559-CPU] Layer 0 RMSNorm: rms={:.6}, first16={:?}",
+                rms, &normed[..16.min(normed.len())]
             );
         }
 
@@ -677,9 +677,9 @@ impl OwnedQuantizedModel {
                 let sum: f32 = hidden.iter().sum();
                 let rms: f32 = (hidden.iter().map(|x| x * x).sum::<f32>() / hidden.len() as f32).sqrt();
                 eprintln!(
-                    "[GH-559-CPU] Layer {}/{} output: sum={:.6}, rms={:.6}, first5={:?}",
+                    "[GH-559-CPU] Layer {}/{} output: sum={:.6}, rms={:.6}, first16={:?}",
                     layer_idx, self.layers.len(), sum, rms,
-                    &hidden[..5.min(hidden.len())]
+                    &hidden[..16.min(hidden.len())]
                 );
                 // GH-559: For Layer 0, dump elements at Q4K super-block boundaries (every 256)
                 if layer_idx == 0 {

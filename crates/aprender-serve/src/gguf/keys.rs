@@ -78,6 +78,18 @@ pub(crate) const FEED_FORWARD_LENGTH: &str = "feed_forward_length";
 /// `{arch}.vocab_size` — vocabulary size (architecture-specific location)
 pub(crate) const VOCAB_SIZE: &str = "vocab_size";
 
+/// `{arch}.expert_count` — total expert count for Mixture-of-Experts
+/// (e.g. 128 for Qwen3-Coder-30B-A3B-Instruct).
+pub(crate) const EXPERT_COUNT: &str = "expert_count";
+
+/// `{arch}.expert_used_count` — top-k experts selected per token
+/// (e.g. 8 for Qwen3-Coder-30B-A3B-Instruct).
+pub(crate) const EXPERT_USED_COUNT: &str = "expert_used_count";
+
+/// `{arch}.expert_feed_forward_length` — per-expert FFN intermediate dim
+/// (e.g. 768 for Qwen3-Coder-30B-A3B-Instruct).
+pub(crate) const EXPERT_FEED_FORWARD_LENGTH: &str = "expert_feed_forward_length";
+
 // ─── Key construction ────────────────────────────────────────────────────────
 
 /// Construct an architecture-parameterized GGUF metadata key.

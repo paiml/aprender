@@ -152,10 +152,7 @@ fn parse_blobs(v: Option<&Value>) -> BTreeSet<String> {
 }
 
 fn candidate_set(plan: &GcPlan) -> BTreeSet<String> {
-    plan.candidates
-        .iter()
-        .map(|c| c.sha256.clone())
-        .collect()
+    plan.candidates.iter().map(|c| c.sha256.clone()).collect()
 }
 
 fn run_rm_gate(v: &Value) -> (GateReport, Option<String>) {
@@ -237,9 +234,7 @@ fn run_safety_gate(v: &Value) -> (GateReport, Option<String>) {
     let desc = if violated.is_empty() {
         format!("freed={got:?} expected={expected:?}")
     } else {
-        format!(
-            "SAFETY VIOLATION: plan candidates {violated:?} are still referenced"
-        )
+        format!("SAFETY VIOLATION: plan candidates {violated:?} are still referenced")
     };
     let err = if passed {
         None

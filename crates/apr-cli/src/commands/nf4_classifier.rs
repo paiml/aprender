@@ -271,7 +271,9 @@ mod tests {
         // So we sample 128 blocks and assert the mean meets the bound.
         let mut state: u64 = 0xDEAD_BEEF_CAFE_F00D;
         let mut uniform = |s: &mut u64| -> f64 {
-            *s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            *s = s
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let u = ((*s >> 32) as u32) as f64 / (u32::MAX as f64 + 1.0);
             u.max(1e-12)
         };
@@ -300,7 +302,11 @@ mod tests {
         // And asymptotically better than 0.2 (catastrophic-break guard):
         // a broken codebook with uniform levels would land in the 0.2-0.3
         // range, so a passing assertion proves non-trivial codebook use.
-        assert!(mean > 0.01, "suspiciously small mean {} — test broken?", mean);
+        assert!(
+            mean > 0.01,
+            "suspiciously small mean {} — test broken?",
+            mean
+        );
     }
 
     // ---- FALSIFY-002 (storage footprint) ----

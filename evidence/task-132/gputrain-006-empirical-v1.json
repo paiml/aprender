@@ -1,0 +1,51 @@
+{
+  "study_id": "FALSIFY-GPUTRAIN-006-empirical-v1",
+  "host": "noah-Lambda-Vector (RTX 4090, sm_89, driver 570.207, CUDA 12.8)",
+  "binary": "apr 0.31.2 built --features cuda",
+  "config": {
+    "device": "cuda:0",
+    "seed": 0,
+    "num_steps": 100,
+    "warmup_steps": 1,
+    "mode": "from-scratch",
+    "model": "Llama370M (MODEL-2)",
+    "dataset": "csn-python-smoke-shards",
+    "tokenizer": "model-2-tokenizer-v1 (vocab=50257)",
+    "env": {
+      "CUBLAS_WORKSPACE_CONFIG": ":4096:8"
+    },
+    "deterministic_stack": [
+      "PTX atom.global.add.f32 removed (rms_norm.rs:403 \u2192 per-row partial + RmsNormGammaReduceKernel)",
+      "cuBLAS math mode = CUBLAS_PEDANTIC_MATH (no TF32)",
+      "APR-MONO single-source-of-truth dep migration"
+    ]
+  },
+  "n_runs": 10,
+  "analysis_window": "steps 0..21 (pre-divergence; loss reporter substitutes 1.0 sentinel from step 22)",
+  "pre_divergence_per_step_drift": {
+    "max": 0.0009199999999989217,
+    "mean": 0.000365318181817852,
+    "step_0": 0.0001249999999988205,
+    "step_5": 0.00029699999999976967,
+    "step_10": 0.0004574999999995555,
+    "step_21": 0.0009199999999989217,
+    "max_in_ulps": 771.7519359990954
+  },
+  "ulp": 1.1920928955078125e-06,
+  "random_walk_fit_epsilon": {
+    "mean": 0.00011699153523355713,
+    "max": 0.0002734999999995935,
+    "stdev": 6.95421735545466e-05,
+    "interpretation": "|\u0394loss[k]| \u2248 \u03b5\u00b7\u221a(k+1) with \u03b5 in 1.5e-4 range (~125\u00d7 ULP)"
+  },
+  "cosine_similarity_pre_divergence": {
+    "n_pairs": 45,
+    "worst": 0.9999999997209675
+  },
+  "final_val_loss_distribution": {
+    "mean": 10.2051515,
+    "stdev": 0.0003404553323614733,
+    "range": 0.0013410000000000366,
+    "range_in_ulps": 1124.9123328000308
+  }
+}

@@ -258,8 +258,7 @@ mod tests {
                     "hint should mention permission: {hint}"
                 );
                 assert!(
-                    hint.to_lowercase().contains("daemon")
-                        || hint.to_lowercase().contains("mode"),
+                    hint.to_lowercase().contains("daemon") || hint.to_lowercase().contains("mode"),
                     "hint should be actionable (daemon/mode): {hint}"
                 );
             }

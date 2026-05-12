@@ -300,6 +300,16 @@ impl AliasRegistry {
                 .with_description("Alibaba's Qwen2 family"),
         );
 
+        // Qwen3-Coder — recommended default for `apr code` on a 4090 (24 GB).
+        // 30B-A3B MoE (3B active per token) at Q4_K_M ≈ 17-19 GB; 73-87 tok/s
+        // on RTX 4090; 50.3% SWE-Bench Verified; 256K native context.
+        registry.add(
+            AliasEntry::new("qwen3-coder", "hf://unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF")
+                .with_default_quant("Q4_K_M")
+                .with_variant("30b-a3b", "hf://unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF")
+                .with_description("Alibaba's Qwen3-Coder — agentic coding default for 24 GB GPUs"),
+        );
+
         // CodeLlama
         registry.add(
             AliasEntry::new("codellama", "hf://codellama/CodeLlama-7b-Instruct-hf")

@@ -6,7 +6,7 @@
 //! # Quick Start
 //!
 //! ```rust
-//! use trueno_rag::{
+//! use aprender_rag::{
 //!     pipeline::RagPipelineBuilder,
 //!     chunk::RecursiveChunker,
 //!     embed::MockEmbedder,
@@ -57,7 +57,7 @@
 //! # Example: Custom Chunking
 //!
 //! ```rust
-//! use trueno_rag::{chunk::{ParagraphChunker, Chunker}, Document};
+//! use aprender_rag::{chunk::{ParagraphChunker, Chunker}, Document};
 //!
 //! let chunker = ParagraphChunker::new(2); // 2 paragraphs per chunk
 //! let doc = Document::new("Para 1.\n\nPara 2.\n\nPara 3.");
