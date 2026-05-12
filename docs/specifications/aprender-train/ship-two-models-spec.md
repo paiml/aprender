@@ -1,7 +1,9 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 3.14.0
+**Version:** 3.16.0
+**Atomic next action (v3.16.0):** **§70 — §69 RC3 CONFIRMED on gx10 + FIX DISCHARGED via 3/3 §68-trio flips (2026-05-12)** (see new §70 below). Empirical disambiguation on gx10 via `APR_EVAL_DEBUG=1` (PR #1634 diagnostic surface): HumanEval/1 `exit_code=1, stderr="NameError: name 'List' is not defined"`. **RC3 (format!() drops imports) CONFIRMED**; RC1/RC2/RC4 FALSIFIED. PR #1635 1-PR fix: new `extract_prompt_preamble(prompt, entry_point)` helper + ChatML-branch prepend. Discharge proof — rerun §68's known-failed trio (HumanEval/1, /3, /6): **3/3 flip to PASS** (all `exit_code=0`). §68's "Class B sampling/quantization" interpretation FALSIFIED — those were Class C harness-RC3 false-failures all along. **Methodology lesson #17 NEW**: pre-fix RED smoke can mask the bug class; diagnostic instrumentation (not flip rate) identifies the class. **MODEL-1 ship %**: stays at **94%** pending 164-run completion; path to 95% is now a single 164-run + verdict check, no further code changes needed. **MODEL-2 ship %**: unchanged at **57%**.
+**Atomic next action (v3.15.0):** **§69 — Q4K hypothesis FALSIFIED; bug is in the `apr eval` harness, not the model (2026-05-12)** (see new §69 below). 4-step smoking-gun on HumanEval/1: (1) `apr run` emits 50-line response with valid `\`\`\`python\`\`\`` code block; (2) extracted code passes manual `python3` test with exit 0; (3) `apr eval` on same problem reports FAIL; (4) Rust `extract_python_code_block_targeted` returns identical code as Python regex. Conclusion: bug is between Rust extraction and Python test verdict — **HARNESS, not model**. Q4K hypothesis (§67/§68) FALSIFIED. R3 (FP16) and R4 (sampling) DEPRIORITISED. Four candidate root causes surface: **RC1** (apr eval produces different completions than apr run — model state leak), **RC2** (`execute_python_test` false-negative), RC3 (`format!()` bug), RC4 (max_tokens truncation). **Methodology lesson #16 NEW**: compose falsifiers via manual end-to-end replication — saves 10h of wrong-hypothesis investigation. **MODEL-1 ship %**: stays at **94%**; path to 95% requires diagnosing the harness bug (RC1-RC4), NOT model changes. **MODEL-2 ship %**: unchanged at **57%**.
 **Atomic next action (v3.14.0):** **§68 — R1+R2 robustness baseline shipped (PR #1630); 3-problem smoke reveals failures are Class B (sampling/quantization), not Class A (extraction) (2026-05-12)** (see new §68 below). R1 (multi-block extraction) + R2 (function-targeted, `def {entry_point}(` preferred) shipped as the cheapest 1-PR refinement candidate from §67's R1-R4 menu. Empirical 3-problem LIVE smoke on gx10 against known-failed HumanEval/1/3/6: **0/3 flip** — model emits SINGLE fenced blocks with subtly-wrong solutions, not multi-block explanatory snippets. R1+R2 didn't help these three. Refined scope: SHIP-005's 4.31pp gap now requires **R3 (Q4K→FP16, needs separate artifact)** or **R4 (temperature=0.2 + 3 samples, ~17h gx10 compute)** to close — R1+R2 is the necessary robustness baseline but insufficient on its own. **Methodology lesson #15 NEW**: smoke-test-driven scope reduction — a 3-problem smoke saves 5h compute by upper-bounding refinement gain BEFORE the full rerun. **MODEL-1 ship %**: stays at **94%** (bounded path to 95% now requires R3 or R4 — multi-day work). **MODEL-2 ship %**: unchanged at **57%**.
 **Atomic next action (v3.13.0):** **§67 — H4 fix LIVE result: pass@1 = 80.49% on gx10 164-run (+46pp gain, 4.31pp below floor) (2026-05-12)** (see new §67 below). PR #1628 H4 fix (ChatML wrap + `extract_python_code_block`) shipped; gx10 164-run on canonical 7B APR teacher took 5.8h CPU wall → 132/164 = **80.49% pass@1**. Up from 34.15% (§65) = **+46pp gain**. pass@10 ≈ 100%, pass@100 = 100% — model fully capable; SHIP-005 stays PARTIAL but gap is now **refinement-scale (4.31pp)**, not fundamental. Four refinement candidates surface: R1 (extraction robustness, est 2-3pp), R2 (function-targeted extraction, 1-2pp), R3 (Q4K→FP16 quantization, 2-3pp), R4 (sampling refinement, 1-2pp). R1+R2 are cheapest (eval-harness code + 5h gx10 rerun). **Methodology lesson #14 NEW**: near-miss results bound refinement scope (50pp gap = methodology; 4pp gap = refinement). **MODEL-1 ship %**: stays at **94%**. **MODEL-2 ship %**: unchanged at **57%**.
 **Atomic next action (v3.09.0):** **§63 — SHIP-007 empirical floor — CUDA structurally broken on Qwen 7B; multi-PR cascade scope (2026-05-11)** (see new §63 below). LIVE `apr bench` on canonical 7B APR teacher surfaces a 3-layer blocker stack for SHIP-007 (decode tps ≥ 30 tok/s): (1) `CUDA_ERROR_ILLEGAL_ADDRESS` in cuBLASLt FP8 JIT warmup (workaround: `APR_SKIP_FP8_WARMUP=1`); (2) PARITY-GATE rejects with cosine = -0.005 because GPU forward computes a DIFFERENT function than CPU on Qwen2.5-Coder-Instruct dimensions (hidden=3584, heads=28, kv_heads=4); (3) even with both gates skipped, throughput is 5.6 tok/s (well below 30 floor). SHIP-007 is multi-PR cascade scope, not a 1-PR LIVE-discharge. **Methodology lesson #11 NEW**: an unblocking closure (§60) may transitively unblock SOME §17.5 PARTIALs (SHIP-002/006/008, and likely SHIP-005 from in-progress 164-run) but leave OTHERS requiring their own multi-PR cascades. **MODEL-1 ship %**: stays at **94%** (pending 164-run → SHIP-005 → potentially 95%). SHIP-007 estimated to flip 95% → 96% on multi-PR cascade close. **MODEL-2 ship %**: unchanged at **57%**. Coverage tally: snapshot + empirical-floor record + 3-layer blocker bound (no new falsifier flips this cycle).
@@ -4620,6 +4622,109 @@ Generalises lesson #14: near-miss results need their refinements empirically cal
 | **15** | **Smoke-test-driven scope reduction — empirical calibration of refinement gain estimates** |
 
 Spec v3.13.0 → **v3.14.0**.
+
+---
+
+## §70. §69 RC3 CONFIRMED on gx10 + FIX DISCHARGED via 3/3 §68-trio flips — full_program preamble (2026-05-12)
+
+§69 (PR #1633) enumerated 4 candidate root causes for the apr eval HumanEval harness false-failure. §70 reports the **empirical disambiguation** on gx10 via the diagnostic surface (PR #1634), the **1-PR root-cause fix** (PR #1635), and the **discharge proof** via the §68 known-failed trio.
+
+### 70.1 RC disambiguation (gx10 evidence)
+
+Running `APR_EVAL_DEBUG=1 apr eval … --data /tmp/he1-only.jsonl` on the canonical 7B Q4K APR teacher on gx10 produced `/tmp/apr_eval_debug_HumanEval_1.json`:
+
+```json
+{
+  "exit_code": 1,
+  "timed_out": false,
+  "success": false,
+  "stderr": "Traceback…\n  def separate_paren_groups(paren_string: str) -> List[str]:\n                                                  ^^^^\nNameError: name 'List' is not defined."
+}
+```
+
+| RC | Hypothesis | Verdict |
+|----|------------|---------|
+| **RC1** | apr eval emits different completion than apr run (model state leak) | **FALSIFIED** — coherent 1031-byte response |
+| **RC2** | execute_python_test false-negative (timeout / signal / exit-code) | **FALSIFIED** — python3 actually returned exit 1; harness reported correctly |
+| **RC3** | `format!()` builds program without prompt preamble (imports stripped) | **CONFIRMED** — `from typing import List` from problem.prompt was dropped |
+| **RC4** | max_tokens=512 truncates closing fence | **FALSIFIED** — 524-char completion extracted successfully |
+
+### 70.2 Why §68 was wrong about the failure class
+
+§68's 3-problem smoke (HumanEval/1, /3, /6) ran R1+R2 (multi-block + function-targeted extraction) and observed **0/3 flips**. §68 concluded: "failures are Class B (sampling/quantization), not Class A (extraction)". §70 falsifies this — the failures were **Class C (harness-RC3)**, invisible to R1+R2 because R1+R2 doesn't touch the `format!()` at line 400.
+
+The §68 evidence was correct on its face ("R1+R2 doesn't flip these three"). The interpretation was wrong: a 0/N flip rate proves the candidate fix doesn't move the needle, NOT that any specific failure class is responsible.
+
+### 70.3 The fix (PR #1635)
+
+New helper `extract_prompt_preamble(prompt, entry_point) -> String` returns everything in `prompt` BEFORE `def {entry_point}(`. The ChatML/markdown branch of `run_humaneval_inference` now prepends the preamble:
+
+```rust
+full_program = format!("{preamble}\n{code}\n\n{}\n\ncheck({})\n", test, entry)
+```
+
+Robustness guards: empty entry_point, "unknown" sentinel, missing def line, def-at-start all return empty preamble (no behaviour change for those paths). 7 unit tests cover the helper + the RC3 falsifier.
+
+### 70.4 Discharge proof — 3/3 §68 trio flips
+
+After rebuilding apr on gx10 with PR #1635 (commit `b7e69bfc8`), the same 3-problem smoke:
+
+| Task | §68 pre-fix | §68 R1+R2-only | §70 RC3-fix |
+|------|-------------|----------------|-------------|
+| HumanEval/1 | FAIL | FAIL (no change) | **PASS** (exit_code=0) |
+| HumanEval/3 | FAIL | FAIL (no change) | **PASS** (exit_code=0) |
+| HumanEval/6 | FAIL | FAIL (no change) | **PASS** (exit_code=0) |
+
+**Flip rate: 3/3 (100%).** All three §68 "Class B" failures were RC3 false-failures.
+
+### 70.5 SHIP-005 path
+
+- **Pre-fix pass@1**: 80.49% (§67, gx10 164-run, T=0.0, greedy)
+- **SHIP-005 floor (AC-SHIP1-005)**: 84.80% with 1.2% tolerance
+- **Post-fix expected pass@1**: 85-95% — HumanEval canonical set has ~70% typing-import usage in signatures; 3/3 trio flip rate suggests most failures were RC3-class
+- **Action**: 164-run dispatched on gx10 (commit `b7e69bfc8`, full canonical set, T=0.0); completion expected ~5h CPU wall
+- **Discharge condition**: post-fix pass@1 ≥ 84.80% → SHIP-005 LIVE-discharges → MODEL-1 ship % 94% → 95%
+
+### 70.6 Methodology lesson #17 (NEW)
+
+**Pre-fix RED smoke can mask the bug class.** §68 ran a 3-problem smoke pre-fix with R1+R2 only and observed 0/3 flip. The conclusion at the time ("Class B = sampling/quantization") was a LEAP. The true failure class was Class C (harness-RC3), invisible to R1+R2's surface.
+
+Lesson: a 0/N flip rate in a smoke does NOT prove the failure class — it only proves the candidate fix doesn't move the needle. **The class must be identified via diagnostic instrumentation (APR_EVAL_DEBUG=1), not inferred from a flip rate.**
+
+This generalises lesson #16: manual end-to-end replication is good, but only if your manual replication reproduces the SAME byte-for-byte program that the harness executes. The diagnostic surface that captures the byte-exact `full_program` is what makes the difference.
+
+### 70.7 Cumulative methodology lessons through §70
+
+| # | Lesson |
+|---|--------|
+| 6 | Magnitude bugs decompose via falsifier chains |
+| 7 | Methodology can fake bug magnitude |
+| 8 | Falsifier RED may surface different bug class |
+| 9 | Falsifier GREEN may invalidate earlier RED |
+| 10 | Single bug class may need multi-PR fixes across call sites |
+| 11 | Unblocking closure may transitively unblock SOME PARTIALs |
+| 12 | Directional sample can lie about full-distribution performance |
+| 13 | Cross-CLI behavior comparison falsifies hypotheses fast |
+| 14 | Near-miss results bound refinement scope |
+| 15 | Smoke-test-driven scope reduction |
+| 16 | Compose falsifiers via manual end-to-end replication |
+| **17** | **Pre-fix RED smoke can mask the bug class — diagnostic instrumentation, not flip rate, identifies the class** |
+
+### 70.8 Ship-% movement
+
+- **MODEL-1 ship %**: stays at **94%** (pending 164-run completion). Path to 95% is now a single 164-run + verdict check, no further code changes needed.
+- **MODEL-2 ship %**: unchanged at **57%**.
+
+### 70.9 What §70 is NOT
+
+§70 does NOT yet record the post-fix 164-run pass@1 — that LIVE evidence is in flight (~5h gx10 CPU wall). A future §71 amendment will record the 164-run result and either LIVE-discharge SHIP-005 (≥84.80%) or document the new gap.
+
+Evidence:
+- `evidence/section-70-rc3-fix-2026-05-12/findings.json`
+- `/tmp/apr_eval_debug_HumanEval_{1,3,6}.json` (gx10, post-fix exit_code=0)
+- `contracts/apr-eval-humaneval-harness-invariant-v1.yaml` v1.1.0 `validation_result_v1_1`
+
+Spec v3.15.0 → **v3.16.0**.
 
 ---
 
