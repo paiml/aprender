@@ -1,0 +1,205 @@
+metadata:
+  id: C-APR-PRETRAIN-CUDA-RMSNORM-EPS-PARITY
+  version: 1.0.0
+  created: '2026-05-10'
+  author: PAIML Engineering
+  kind: pattern
+  status: ACTIVE_ALGORITHM_LEVEL
+  description: |
+    Pins the falsifiable invariant that the CUDA RMSNorm forward kernel
+    honours `config.rms_norm_eps` rather than hardcoding the Llama
+    default (1e-5).
+
+    BACKGROUND. Cascade follow-up to
+    `apr-pretrain-cuda-forward-parity-v1.yaml` (PR #1604, H4D
+    Q/K/V-bias dispatch fix). After landing the bias fix, val_loss
+    moved 18.55 → 17.22 on a populated Qwen2.5-Coder-0.5B but
+    remained above ln(vocab) = ln(151936) ≈ 11.93 — the model was
+    still producing essentially uniform predictions. Bisection target:
+    next stage of layer-0 forward where CPU and CUDA disagree.
+
+    Direct source inspection of `aprender-train::rms_norm_forward`
+    (cuda_forward/normalization.rs:91) and the underlying
+    `BatchedVectorizedRmsNormKernel::new` in trueno-gpu shows:
+
+      // trueno-gpu/src/kernels/layernorm/batched.rs:30
+      pub fn new(hidden_size, batch_size) -> Self {
+          Self { hidden_size, batch_size, epsilon: 1e-5 }
+      }
+
+    The Llama default of 1e-5 is **hardcoded** at construction. The
+    aprender-train wrapper does not call `.with_epsilon(eps)`, so
+    every CUDA RMSNorm call (24 layers × 2 RMSNorms per block + 1
+    final norm = 49 calls per forward on Qwen 0.5B) uses 1e-5.
+
+    Qwen2 / Qwen2.5 specifies `rms_norm_eps: 1e-6` (per HF
+    config.json and `TransformerConfig::qwen2_0_5b()` at
+    `crates/aprender-train/src/transformer/config.rs:178`). The CPU
+    path honours this via `RMSNorm::new(hidden_size, eps)` (norm.rs:19),
+    so CPU and CUDA disagree by 9e-6 in the rsqrt-denominator on every
+    call. The drift compounds: 49 mis-eps RMSNorm steps × 24 attention
+    blocks each carrying a few % rms-numerator delta yields a final
+    logit distribution that is structurally different from the CPU
+    forward.
+
+    THIS CONTRACT pins the parity invariant. RED-then-GREEN cycle:
+      RED  (current main): CUDA RMSNorm output disagrees with CPU
+           reference by O(eps_diff / mean_sq) when called for Qwen
+           weights — typically max abs diff > 1e-4 on small-magnitude
+           activations (post-embedding hidden states have std ~0.02,
+           so mean_sq ~ 4e-4, and eps_diff/mean_sq ≈ 2.25%).
+      GREEN (post-fix):    `rms_norm_forward_with_eps(.., eps, ..)`
+           passes `config.rms_norm_eps` into the kernel; cache key
+           includes eps bits so two epsilons compile to two PTX
+           modules; max abs diff falls to f32 round-off (<1e-5).
+
+    SHIP-% MOVEMENT IF ALL FALSIFIERS GREEN: SHIP-TWO-001 MODEL-2
+    advances toward the next bisection layer (RoPE, attention softmax,
+    or FFN dispatch) by eliminating one residual contributor. Cannot
+    move from 57% on its own — needs the residual cascade to
+    cumulatively drop val_loss below ln(vocab).
+
+  references:
+    - 'crates/aprender-train/src/autograd/cuda_forward/normalization.rs:91 (rms_norm_forward, default-eps wrapper)'
+    - 'crates/aprender-train/src/autograd/cuda_forward/normalization.rs:128 (rms_norm_forward_with_eps, NEW)'
+    - 'crates/aprender-train/src/transformer/cuda_block.rs:761 (pre-attn callsite, switched)'
+    - 'crates/aprender-train/src/transformer/cuda_block.rs:842 (post-attn callsite, switched)'
+    - 'crates/aprender-train/src/transformer/cuda_block.rs:3111 (inference forward callsite, switched)'
+    - 'crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs:1208 (final-norm callsite, switched)'
+    - 'crates/aprender-train/src/transformer/norm.rs:19 (CPU RMSNorm honours eps argument)'
+    - 'crates/aprender-train/src/transformer/config.rs:178 (Qwen2 rms_norm_eps=1e-6)'
+    - '../trueno/trueno-gpu/src/kernels/layernorm/batched.rs:30 (BatchedVectorizedRmsNormKernel hardcodes 1e-5)'
+  depends_on:
+    - 'apr-pretrain-cuda-forward-parity-v1'
+    - 'apr-pretrain-arch-polymorphic-v1'
+
+equations:
+  rmsnorm_eps_argument_threading:
+    formula: |
+      rms_norm_forward_with_eps(eps = config.rms_norm_eps)
+      ⇒ kernel_eps == config.rms_norm_eps
+    domain: |
+      The CUDA RMSNorm forward MUST construct its kernel with
+      epsilon equal to the model's `rms_norm_eps` and not the
+      Llama default 1e-5. PTX cache key includes eps bits so a
+      stale module from a different eps cannot shadow the new
+      compilation.
+    invariants:
+    - 'kernel_eps == provided_eps for every call (no hardcoded 1e-5)'
+    - 'cache_key includes eps_bits (different eps → different cached PTX)'
+    preconditions:
+    - 'caller passes config.rms_norm_eps (production sites in cuda_block.rs and cuda_trainer.rs)'
+
+  cuda_cpu_rmsnorm_pointwise_parity:
+    formula: |
+      |cuda_rmsnorm(x, gamma, eps) - cpu_rmsnorm(x, gamma, eps)|_∞ < 1e-4
+    domain: |
+      For matched (x, gamma, eps), the CUDA RMSNorm kernel and the
+      CPU reference produce element-wise outputs within f32 round-off
+      tolerance (1e-4 absolute on Qwen-magnitude activations).
+      Pre-fix CUDA used eps=1e-5 regardless of caller's eps; post-fix
+      kernel honours eps and the bound holds for eps ∈ {1e-5, 1e-6}.
+    invariants:
+    - 'max abs diff < 1e-4 on Qwen-magnitude inputs (std~0.02) at eps=1e-6'
+    - 'max abs diff < 1e-4 on Llama-magnitude inputs (std~0.04) at eps=1e-5'
+    preconditions:
+    - 'rmsnorm_eps_argument_threading holds'
+
+proof_obligations:
+- type: invariant
+  property: kernel epsilon equals caller-provided epsilon
+  formal: 'BatchedVectorizedRmsNormKernel.epsilon == eps_arg'
+  applies_to: rmsnorm_eps_argument_threading
+- type: invariant
+  property: CUDA-CPU RMSNorm pointwise parity at Qwen eps
+  formal: '|cuda_y - cpu_y|_∞ < 1e-4 at eps=1e-6'
+  applies_to: cuda_cpu_rmsnorm_pointwise_parity
+
+falsification_tests:
+- id: FALSIFY-CUDA-RMSNORM-EPS-PARITY-001
+  rule: |
+    `rms_norm_forward_with_eps` produces output matching the CPU
+    reference within 1e-4 max abs diff at Qwen eps=1e-6.
+  prediction: |
+    Build a synthetic batch with 4 sequences × 896 hidden_size,
+    Qwen-magnitude activations (std~0.02), unit-perturbed gamma.
+    Compute CPU reference y_cpu = (x / sqrt(mean(x²)+1e-6)) * gamma.
+    Call `rms_norm_forward_with_eps(.., eps=1e-6, ..)`. Download
+    GPU output. Assert max(|y_cpu - y_gpu|) < 1e-4.
+  test: |
+    cargo test -p aprender-train --features cuda --lib falsify_cuda_rmsnorm_eps_parity_qwen_1e_minus_6
+  if_fails: |
+    Either eps is not threading through (kernel still hardcoded),
+    cache key collision (stale 1e-5 module shadows the new 1e-6
+    module), or there is a deeper kernel arithmetic bug. Inspect
+    the cache key construction; re-emit PTX manually and diff
+    the const-eps embedding.
+  ship_blocking: true
+  counter_example_classes:
+  - eps_hardcoded_at_construction
+  - cache_key_collision_across_eps
+  - kernel_arithmetic_diverges_from_cpu_reference
+
+- id: FALSIFY-CUDA-RMSNORM-EPS-PARITY-002
+  rule: |
+    `aprender-train::rms_norm_forward_with_eps` accepts an explicit
+    `eps: f32` parameter and threads it into the underlying
+    `BatchedVectorizedRmsNormKernel::with_epsilon`.
+  prediction: |
+    Source-level audit: `cuda_forward/normalization.rs::rms_norm_forward_with_eps`
+    constructs the kernel via
+    `BatchedVectorizedRmsNormKernel::new(...).with_epsilon(eps)`,
+    not via bare `::new` (which hardcodes 1e-5).
+  test: |
+    cargo test -p aprender-train --features cuda --lib falsify_cuda_rmsnorm_eps_parity_qwen_1e_minus_6
+  if_fails: |
+    Refactor regression: someone removed the `.with_epsilon(eps)`
+    call. The Llama default leaks back; Qwen RMSNorm silently
+    diverges from CPU.
+  ship_blocking: true
+  counter_example_classes:
+  - with_epsilon_call_removed
+  - eps_argument_dropped_from_signature
+
+- id: FALSIFY-CUDA-RMSNORM-EPS-PARITY-003
+  rule: |
+    Production callsites in `cuda_block.rs` and `cuda_trainer.rs`
+    pass `config.rms_norm_eps` (or `model_config.rms_norm_eps`)
+    into the new wrapper.
+  prediction: |
+    Source-level audit: every `rms_norm_forward_with_eps(...)` call
+    in `cuda_block.rs::forward` (lines ~761, ~842, ~3111) and
+    `cuda_trainer.rs::eval_batch / train_batch` (line ~1208) supplies
+    `self.config.rms_norm_eps` (or `self.config.model_config.rms_norm_eps`)
+    as the `eps` argument.
+  test: |
+    cargo test -p aprender-train --features cuda --lib falsify_cuda_rmsnorm_eps_parity_qwen_1e_minus_6 \
+      && grep -n "rms_norm_forward_with_eps" \
+        crates/aprender-train/src/transformer/cuda_block.rs \
+        crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs \
+      | grep -v "rms_norm_forward(" | wc -l
+    # expect: at least 4 call sites
+  if_fails: |
+    A callsite still uses the legacy `rms_norm_forward(..)` (hardcoded
+    1e-5) instead of `rms_norm_forward_with_eps(.., config.rms_norm_eps, ..)`.
+    Switch it; otherwise that layer/path silently uses the wrong eps.
+  ship_blocking: true
+  counter_example_classes:
+  - legacy_callsite_unchanged
+  - new_callsite_added_without_with_eps_variant
+
+kani_harnesses: []
+
+qa_gate:
+  id: QA-CUDA-RMSNORM-EPS-PARITY-001
+  name: CUDA RMSNorm eps parity gate
+  description: |
+    All three FALSIFY-CUDA-RMSNORM-EPS-PARITY-* tests pass; CUDA
+    kernel honours caller-provided eps; production callsites supply
+    the model's `config.rms_norm_eps`; pointwise parity vs CPU
+    reference holds at 1e-4 abs diff.
+  checks:
+  - rmsnorm_eps_argument_threading
+  - cuda_cpu_rmsnorm_pointwise_parity
+  pass_criteria: All 3 falsifiers pass
+  falsification: Any single failure fails the gate (ship-blocking)
