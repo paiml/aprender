@@ -1,0 +1,190 @@
+name: Binary Release
+
+# Attaches cross-compiled `pv` binaries (provable-contracts CLI from
+# crates/aprender-contracts-cli) to a GitHub Release as tar.gz +
+# sha256. Decoupled from `cargo publish` — downstream consumers can
+# `curl` the prebuilt binary instead of `cargo install
+# aprender-contracts-cli --locked` (which compiles a large workspace
+# from source and is slow on cold caches).
+#
+# The aprender workspace ships dozens of crates; this workflow scopes
+# the release strictly to the `pv` binary from `aprender-contracts-cli`.
+# Other CLIs (apr-cli, aprender-zram-cli, etc.) can opt in by adding
+# their own analogous workflow file.
+#
+# Triggered by:
+#   - `release: published` — fires automatically on each tagged release
+#   - `workflow_dispatch` — manual re-run / backfill, takes a tag input
+#
+# Targets: 4 Linux (x86_64/aarch64 × musl/gnu). musl variants are
+# static and ideal for Docker / scratch / Alpine; gnu variants are
+# smaller and match typical Linux distributions. aarch64 builds use
+# `cross`. Strip uses the matching ${triple}-strip per target — the
+# musl cross image lacks gnu-strip and vice-versa (lessons from
+# pmat v3.16.0 first-run failure on aarch64-musl).
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to attach binaries to (e.g. v0.31.2)'
+        required: true
+        type: string
+
+permissions:
+  contents: write  # upload assets to the release
+
+concurrency:
+  group: pv-binary-release-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  CROSS_VERSION: v0.2.5
+
+jobs:
+  build:
+    name: pv ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            cross: false
+          - target: x86_64-unknown-linux-gnu
+            cross: false
+          - target: aarch64-unknown-linux-musl
+            cross: true
+          - target: aarch64-unknown-linux-gnu
+            cross: true
+    steps:
+      - name: Resolve release tag
+        id: tag
+        run: |
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          if [ -z "$TAG" ]; then
+            echo "::error::No tag resolved (release event missing tag_name and no dispatch input)"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Building pv for $TAG → ${{ matrix.target }}"
+
+      - name: Checkout at tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # The workspace pins a specific channel in `rust-toolchain.toml`
+      # which overrides the dtolnay action for any cargo invocation in
+      # the tree. Add the target explicitly to that pinned toolchain so
+      # native cross-compiles (x86_64-musl) don't fail with `can't find
+      # crate for core` mid-build.
+      - name: Install target on workspace-pinned toolchain
+        if: ${{ !matrix.cross }}
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Install musl tools
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends musl-tools
+
+      - name: Install cross
+        if: matrix.cross
+        run: |
+          dir="$RUNNER_TEMP/cross"
+          mkdir -p "$dir"
+          curl -sL "https://github.com/cross-rs/cross/releases/download/${CROSS_VERSION}/cross-x86_64-unknown-linux-musl.tar.gz" \
+            | tar xz -C "$dir"
+          echo "$dir" >> "$GITHUB_PATH"
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: pv-binary-${{ matrix.target }}
+
+      - name: Build pv
+        run: |
+          if [ "${{ matrix.cross }}" = "true" ]; then
+            cross build --release --bin pv -p aprender-contracts-cli --target ${{ matrix.target }} --locked
+          else
+            cargo build --release --bin pv -p aprender-contracts-cli --target ${{ matrix.target }} --locked
+          fi
+
+      - name: Strip binary
+        run: |
+          TARGET="${{ matrix.target }}"
+          BIN_PATH="target/${TARGET}/release/pv"
+          case "$TARGET" in
+            aarch64-unknown-linux-musl) STRIP=aarch64-linux-musl-strip ;;
+            aarch64-unknown-linux-gnu)  STRIP=aarch64-linux-gnu-strip ;;
+            *)                          STRIP="" ;;
+          esac
+          if [ -n "$STRIP" ]; then
+            docker run --rm -v "$PWD/target:/target:Z" \
+              "ghcr.io/cross-rs/${TARGET}:main" \
+              "$STRIP" "/$BIN_PATH"
+          else
+            strip "$BIN_PATH"
+          fi
+          ls -la "$BIN_PATH"
+
+      - name: Package archive
+        id: package
+        run: |
+          VERSION="${{ steps.tag.outputs.tag }}"
+          TARGET="${{ matrix.target }}"
+          ARCHIVE="pv-${VERSION}-${TARGET}"
+          mkdir -p "$ARCHIVE"
+          cp "target/${TARGET}/release/pv" "$ARCHIVE/"
+          for f in README.md LICENSE LICENSE-MIT LICENSE-APACHE; do
+            [ -f "$f" ] && cp "$f" "$ARCHIVE/"
+          done
+          tar czf "${ARCHIVE}.tar.gz" "$ARCHIVE"
+          shasum -a 256 "${ARCHIVE}.tar.gz" > "${ARCHIVE}.tar.gz.sha256"
+          echo "archive=${ARCHIVE}.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "sha=${ARCHIVE}.tar.gz.sha256" >> "$GITHUB_OUTPUT"
+          du -h "${ARCHIVE}.tar.gz"
+
+      - name: Upload assets to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ steps.tag.outputs.tag }}" \
+            "${{ steps.package.outputs.archive }}" \
+            "${{ steps.package.outputs.sha }}" \
+            --clobber
+
+  summary:
+    name: Summary
+    needs: build
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Write summary
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          STATUS="${{ needs.build.result }}"
+          {
+            echo "### pv Binary Release: $TAG"
+            echo ""
+            if [ "$STATUS" = "success" ]; then
+              echo "- Build matrix: **4/4 targets succeeded**"
+            else
+              echo "- Build matrix: **partial** (status=$STATUS)"
+            fi
+            echo "- Targets:"
+            echo "  - x86_64-unknown-linux-musl"
+            echo "  - x86_64-unknown-linux-gnu"
+            echo "  - aarch64-unknown-linux-musl"
+            echo "  - aarch64-unknown-linux-gnu"
+          } >> "$GITHUB_STEP_SUMMARY"

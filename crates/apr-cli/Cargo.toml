@@ -99,10 +99,10 @@ libc = "0.2"
 
 [dependencies]
 # Core aprender library
-aprender = { path = "../aprender-core", version = "0.31.2", package = "aprender-core", default-features = true, features = ["format-compression"] }
+aprender = { path = "../aprender-core", version = "0.32.0", package = "aprender-core", default-features = true, features = ["format-compression"] }
 
 # MCP (Model Context Protocol) server — `apr mcp` subcommand
-aprender-mcp = { path = "../aprender-mcp", version = "0.31.2" }
+aprender-mcp = { path = "../aprender-mcp", version = "0.32.0" }
 async-stream = "0.3"
 provable-contracts-macros = "0.3"
 
@@ -111,7 +111,7 @@ batuta-common = "0.1"
 
 # Sovereign coding assistant (apr code → batuta agent engine) — PMAT-182
 # GH-344: path dep via .cargo/config.toml.dev-overrides; CI uses checkout+symlink
-batuta = { version = "0.7", optional = true, default-features = false, features = ["agents", "agents-inference", "agents-mcp", "rag"] }
+batuta = { workspace = true, optional = true, default-features = false, features = ["agents", "agents-inference", "agents-mcp", "rag"] }
 
 # Inference engine (workspace path dep — enables cuda/gpu feature forwarding)
 # GH-573: shim (0.9.1) didn't forward cuda feature → 0.7 tok/s instead of 273 tok/s
@@ -125,7 +125,7 @@ whisper-apr = { version = "0.2", optional = true }
 # SIMD compute library (for BrickProfiler in §12.11 unified profiling)
 # MUST use crates.io version to match aprender's trueno dependency
 # 2026-04-05 PMAT-507: bumped 0.16.0→0.17 to match aprender root Cargo.toml (was diamond dep)
-trueno = { version = "0.19.1", optional = true }
+trueno = { workspace = true, optional = true }
 
 # Async runtime for server
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync"], optional = true }
@@ -168,6 +168,13 @@ glob = "0.3"
 dirs = "5.0"
 which = "7"
 
+# Parquet input for `apr tokenize encode-corpus` — issue #1410 follow-up.
+# Stack v1.2 / codeparrot Python corpora ship as parquet, not JSONL; this
+# enables `apr tokenize encode-corpus --corpus <path>.parquet` end-to-end
+# without a Python shim (per `feedback_stack_tool_extension_not_cli_shim.md`).
+parquet = { version = "57", default-features = false, features = ["arrow", "snap", "zstd"] }
+arrow-array = "57"
+
 # HTTP client for downloads
 ureq = "2.10"
 
@@ -180,8 +187,8 @@ presentar-terminal = { workspace = true }
 presentar-core = { workspace = true }
 
 # Visualization (syscall tracing and charts)
-renacer = { version = "0.11", optional = true }
-trueno-viz = { version = "0.3", optional = true }
+renacer = { workspace = true, optional = true }
+trueno-viz = { version = "0.3", optional = true }  # Not yet in monorepo
 
 # ZRAM compression (SIMD-accelerated LZ4/ZSTD)
 trueno-zram-core = { version = "0.3", optional = true }
@@ -193,7 +200,7 @@ pacha = { version = "0.2.4", default-features = false, features = ["remote"] }
 trueno-explain = { version = "0.2.2", optional = true }
 
 # ML tuning: LoRA/QLoRA configuration and memory planning (GH-176, PMAT-184)
-entrenar-lora = { version = "0.3.0", optional = true }
+entrenar-lora = { workspace = true, optional = true }
 # ML training engine (workspace path dep — enables cuda feature forwarding)
 entrenar = { workspace = true, optional = true }
 # Heap profiling (opt-in via --features dhat-heap)
@@ -208,13 +215,10 @@ serde_yaml = { package = "serde_yaml_ng", version = "0.10" }
 # Unicode normalization (NFC) for BPE corpus preprocessing (MODEL-2).
 unicode-normalization = "0.1"
 
-[[example]]
-name = "probar_tui_testing"
-required-features = ["inference"]
-
-[[example]]
-name = "federation_tui_demo"
-required-features = ["inference"]
+# Parallelism — used by `apr tokenize encode-corpus --num-workers` (issue #1547).
+# Per-doc BPE encoding is independent across rows; rayon's chunked par_iter
+# preserves input order via Vec<Result<...>> indexed by chunk position.
+rayon = { workspace = true }
 
 [[example]]
 name = "serve_with_tracing"

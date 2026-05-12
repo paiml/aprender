@@ -1,0 +1,89 @@
+{
+  "$schema": "../../contracts/qwen2-e2e-verification-v1.yaml#FALSIFY-QW2E-SHIP-004.discharged_evidence",
+  "evidence_id": "FALSIFY-SHIP-004-DISCHARGED-EVIDENCE-V1",
+  "binds_to": "AC-SHIP1-004",
+  "falsification_id": "FALSIFY-QW2E-SHIP-004",
+  "discharge_status": "DISCHARGED",
+  "previous_status": "PARTIAL_ALGORITHM_LEVEL",
+  "discharge_date": "2026-04-25",
+  "discharge_session": "ship-two-001 PARTIAL → DISCHARGED via apr export → llama-cli round-trip",
+  "host": {
+    "hostname": "noah-Lambda-Vector",
+    "tier": "lambda-labs",
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "cuda_compute_capability": "8.9",
+    "binary_path": "/mnt/nvme-raid0/targets/aprender/release/apr",
+    "binary_features": "training,cuda",
+    "llama_cli_path": "/home/noah/.local/bin/llama-cli",
+    "llama_cli_version": "build b7746-39173bcac (cuda)"
+  },
+  "step_1_apr_export": {
+    "command": "apr export /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr --format gguf -o /tmp/ship-004/qwen2.5-coder-7b-q4k-via-apr-export.gguf",
+    "input_path": "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr",
+    "input_size_bytes": 8035635524,
+    "input_size_human": "7.48 GiB",
+    "output_path": "/tmp/ship-004/qwen2.5-coder-7b-q4k-via-apr-export.gguf",
+    "output_size_bytes": 8037129408,
+    "output_size_human": "7.49 GiB",
+    "tensor_count": 339,
+    "metadata_keys": 20,
+    "mode": "Q4K passthrough (zero loss)",
+    "exit_code": 0,
+    "verdict": "PASS"
+  },
+  "step_2_gguf_magic_bytes": {
+    "command": "xxd /tmp/ship-004/qwen2.5-coder-7b-q4k-via-apr-export.gguf | head -1",
+    "first_8_bytes_hex": "47 47 55 46 03 00 00 00",
+    "first_4_bytes_ascii": "GGUF",
+    "expected_magic": "AC_SHIP1_004_GGUF_MAGIC_BYTES = b\"GGUF\"",
+    "verdict_from_gguf_magic_bytes": "PASS"
+  },
+  "step_3_gguf_version": {
+    "command": "Read bytes 4-7 LE u32",
+    "version_hex": "03 00 00 00",
+    "version_decimal": 3,
+    "expected_set": "AC_SHIP1_004_GGUF_SUPPORTED_VERSIONS = &[2, 3]",
+    "verdict_from_gguf_version": "PASS"
+  },
+  "step_4_llama_cli_exit": {
+    "command": "llama-cli -m /tmp/ship-004/qwen2.5-coder-7b-q4k-via-apr-export.gguf --prompt \"hello\" -n 4 -ngl 99 --no-warmup",
+    "model_loaded": "qwen2.5-coder-7b-q4k-via-apr-export.gguf",
+    "tokens_emitted": "Hello! How can (4 tokens)",
+    "prompt_throughput_tps": 380.8,
+    "generation_throughput_tps": 127.5,
+    "expected_exit": "AC_SHIP1_004_LLAMA_CLI_SUCCESS_EXIT_CODE = 0",
+    "actual_exit": 0,
+    "verdict_from_llama_cli_exit": "PASS"
+  },
+  "round_trip_overall_verdict": "PASS",
+  "verification_chain": [
+    {
+      "step": 1,
+      "purpose": "Produce GGUF from APR via `apr export`",
+      "verdict": "Pass — 8.04 GB GGUF written in Q4K passthrough mode (339 tensors preserved, 20 metadata keys, contract-driven mapping for family qwen2)"
+    },
+    {
+      "step": 2,
+      "purpose": "Verify first 4 bytes match canonical GGUF magic",
+      "verdict": "Pass — `47 47 55 46` = b\"GGUF\" exactly"
+    },
+    {
+      "step": 3,
+      "purpose": "Verify GGUF version u32 LE in supported set",
+      "verdict": "Pass — version 3, in {2, 3}"
+    },
+    {
+      "step": 4,
+      "purpose": "Run llama-cli on the freshly exported GGUF",
+      "verdict": "Pass — exit 0; model loaded; 4 tokens emitted (Hello! How can); 127.5 tok/s generation"
+    }
+  ],
+  "tooling_chain_proof": {
+    "apr_export_gguf": "Production apr-cli command, GH-277 contract-driven GGUF mapping for family qwen2",
+    "ship_004_algorithm_partial": "PR #1029 v1.5.0 — three pure verdict fns + 3 byte-literal/numeric constants in crates/aprender-core/src/format/ship_004.rs",
+    "llama_cli": "Upstream llama.cpp build b7746-39173bcac with CUDA 8.9 support",
+    "drift_prevention_test_added": "crates/aprender-core/src/format/ship_004.rs::ship_004_tests::falsify_ship_004_yaml_binding_pins_discharged_status"
+  },
+  "discharge_rationale": "AC-SHIP1-004 specifies that `apr export --format gguf` must produce a GGUF that loads in upstream llama.cpp. The contract decomposes this into three independent format-boundary verdicts (magic, version, exit code). All three PASS in one round-trip on the canonical lambda-labs teacher: apr export produces an 8.04 GB GGUF in Q4K passthrough; xxd confirms `b\"GGUF\"` magic + version=3; llama-cli loads and emits 4 valid tokens with exit code 0 (Hello! How can …). 4th MODEL-1 PARTIAL → DISCHARGED of the cycle (after SHIP-009 PR #1054 + SHIP-010 PR #1055 + SHIP-001 PR #1056). The triple-verdict shape mirrors SHIP-001 (which decomposes Result+header_size+open_byte) — both ACs split a tool-accepted-the-artifact rule into independent format-boundary gates.",
+  "follow_ups_none_required": "Like SHIP-001 + SHIP-010, SHIP-004 requires no follow-up. The exported GGUF at /tmp/ship-004/ is ephemeral test artifact; the discharge proves the apr-export → llama-cli pipeline works end-to-end on the canonical teacher. The HF Hub GGUF at paiml/qwen2.5-coder-7b-apache-q4k-v1 is bytes-stable (verified via SHIP-010 PR #1055 sha256 chain)."
+}

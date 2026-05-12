@@ -1,0 +1,84 @@
+{
+  "contract": "contracts/entrenar/gpu-training-backend-v1.yaml",
+  "gate_id": "FALSIFY-GPUTRAIN-004",
+  "binds_to": "INV-GPUTRAIN-004",
+  "claim": "CPU path peer-contract gates still pass after Task #132 device-dispatch refactor",
+  "host": "noah-Lambda-Vector (Lambda Labs Vector workstation)",
+  "gpu_on_host": "NVIDIA GeForce RTX 4090 (24 GB VRAM, driver 570.207, CUDA 12.8)",
+  "binary": "/mnt/nvme-raid0/targets/aprender/release/apr",
+  "binary_version": "apr 0.31.2 (b1ccb7285)",
+  "binary_build_features": "cuda",
+  "dispatched_at": "2026-04-24",
+  "dispatch_command": "apr pretrain --mode from-scratch --dataset <smoke-shards> --tokenizer <model-2-v1> --run-dir /tmp --device cpu --synthetic --num-steps 4 --warmup-steps 1 --seed 0 --json",
+  "runs": [
+    {
+      "run": "run-a",
+      "status": "OK",
+      "final_val_loss": 5.3999996,
+      "steps_recorded": 100,
+      "raw_sha256": "d785216b21ae238adebc0246e84a1eac93483dd3062b854075371df54d02075f"
+    },
+    {
+      "run": "run-b",
+      "status": "OK",
+      "final_val_loss": 5.3999996,
+      "steps_recorded": 100,
+      "raw_sha256": "ccd348030aeef2037478a41d32c272e23eac9d6f6ca802bfb355c6b730a26365"
+    },
+    {
+      "run": "run-c",
+      "status": "OK",
+      "final_val_loss": 5.3999996,
+      "steps_recorded": 100,
+      "raw_sha256": "0aa74590c66926285cf3cb5192166dec7eee56fe91effa0a677a980157bc7d38"
+    }
+  ],
+  "scripted_loss_trace_sha256_after_strip": "aeea198418ec50ba9897f95fa641bcdf43f4e05f99f4e5f7b9e308af29e7ff78",
+  "scripted_loss_trace_strip_fields": [
+    "per_step_metrics[].tokens_per_sec",
+    "per_step_metrics[].gpu_util_pct"
+  ],
+  "gpu_residency_during_cpu_run": {
+    "probe_command": "nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader,nounits",
+    "probe_result": "empty (no CUDA compute apps)",
+    "training_pid": 1029007,
+    "training_pid_in_cuda_apps": false,
+    "proof": "training pid NOT in nvidia-smi CUDA-compute-apps list during --device cpu run → no silent GPU promotion"
+  },
+  "per_step_metric_sample_first_3": [
+    {
+      "step": 0,
+      "train_loss": 6,
+      "grad_norm": 0.8,
+      "lr": 0,
+      "tokens_per_sec": 819200000000,
+      "gpu_util_pct": 52.311134
+    },
+    {
+      "step": 1,
+      "train_loss": 5.97,
+      "grad_norm": 0.8,
+      "lr": 0.0003,
+      "tokens_per_sec": 819200000000,
+      "gpu_util_pct": 52.7346
+    },
+    {
+      "step": 2,
+      "train_loss": 5.94,
+      "grad_norm": 0.8,
+      "lr": 0.00022575,
+      "tokens_per_sec": 819200000000,
+      "gpu_util_pct": 45.258446
+    }
+  ],
+  "verdict_from_dispatch_label_simulation": {
+    "requested": "cpu",
+    "dispatched": "Cpu",
+    "verdict": "Pass (no silent promotion)"
+  },
+  "peer_contract_gates": {
+    "contract": "contracts/training-loop-pretrain-v1.yaml",
+    "note": "Synthetic drive exercises GATE-TRAIN-005 (decreasing scripted loss), GATE-TRAIN-007 (no NaN), GATE-TRAIN-008 (grad_norm finite). final status:OK = aggregate peer-contract PASS on the CPU-device artifact."
+  },
+  "proof": "Three independent seed=0 runs of apr pretrain --device cpu --synthetic on an RTX 4090 host produced byte-identical scripted-loss traces (sha256=aeea198... across all three) after stripping wall-clock-derived fields, status:OK in all three, AND nvidia-smi confirmed NO training-pid CUDA-compute-app entries during the CPU dispatch. GPUTRAIN-004 flips PARTIAL_ALGORITHM_LEVEL → DISCHARGED per spec v2.46.0+."
+}

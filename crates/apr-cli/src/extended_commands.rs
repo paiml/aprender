@@ -690,6 +690,16 @@ pub enum ExtendedCommands {
         /// hard-fail on missing runtime per GATE-GPUTRAIN-002).
         #[arg(long, default_value = "auto")]
         device: String,
+        /// Initial weights from a pretrained APR file
+        /// (contract `apr-pretrain-from-init-v1`). Per spec §49's
+        /// MODEL-2 pretrained-init pivot: when present, load weights
+        /// from `<PATH>` instead of random-init. Composes with
+        /// `--mode finetune` (canonical) or `--mode from-scratch`
+        /// (allowed but non-canonical — emits a warning). Missing,
+        /// corrupted, or arch-mismatched APR files exit non-zero
+        /// before step 1 (no silent random-init fallback).
+        #[arg(long, value_name = "PATH")]
+        init: Option<PathBuf>,
     },
     /// Tokenizer training pipeline (plan/apply) — BPE vocabulary learning
     Tokenize {
@@ -730,6 +740,19 @@ pub enum ExtendedCommands {
         #[arg(long)]
         stream: bool,
     },
+    /// Lint an Ollama /api/chat function-calling response (CRUX-I-04)
+    OllamaToolsLint {
+        /// Path to captured /api/chat response (JSON object, or NDJSON if --stream)
+        #[arg(long, value_name = "FILE")]
+        response_file: PathBuf,
+        /// Optional captured request JSON — enables tool-name allowlist gate
+        /// (every called tool name must appear in request.tools[*].function.name)
+        #[arg(long, value_name = "FILE")]
+        request_file: Option<PathBuf>,
+        /// Treat input as NDJSON stream (one frame per line)
+        #[arg(long)]
+        stream: bool,
+    },
     /// Lint a captured DRY-sampling observation (CRUX-C-23)
     DrySamplingLint {
         /// Path to observation JSON
@@ -739,6 +762,24 @@ pub enum ExtendedCommands {
     /// Lint a captured AWQ quality/compression/flags observation (CRUX-B-08)
     AwqLint {
         /// Path to captured AWQ observation JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
+    /// Lint a captured FP8 (E4M3) round-trip + SM-capability observation (CRUX-B-11)
+    Fp8Lint {
+        /// Path to captured observation JSON (frobenius, capability blocks)
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
+    /// Lint a captured NF4 codebook/roundtrip/storage/parity observation (CRUX-B-10)
+    Nf4Lint {
+        /// Path to captured NF4 observation JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
+    /// Lint a captured GPTQ compression/cosine/flags observation (CRUX-B-09)
+    GptqLint {
+        /// Path to captured GPTQ observation JSON
         #[arg(long, value_name = "FILE")]
         observation_file: PathBuf,
     },
@@ -765,6 +806,56 @@ pub enum ExtendedCommands {
     },
     /// Lint a typical-p sampling observation (CRUX-C-22)
     TypicalPLint {
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
+    /// Gradient-norm telemetry analysis (CRUX-F-09)
+    GradNorm {
+        /// Path to JSON file of per-step grad-norm records
+        #[arg(long, value_name = "FILE")]
+        history_file: PathBuf,
+        /// Maximum allowed clipped grad-norm (for cap-violation check)
+        #[arg(long, value_name = "M")]
+        max_grad_norm: Option<f64>,
+        /// Rolling-median window size for spike detection (in steps)
+        #[arg(long, default_value = "16")]
+        spike_window: usize,
+        /// Multiplier threshold for spike detection
+        #[arg(long, default_value = "10.0")]
+        spike_multiplier: f64,
+    },
+    /// Lint a captured registry byte-quota observation (CRUX-A-22)
+    RegistryQuotaLint {
+        /// Path to captured quota/atomic/ceiling observation JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
+    /// Lint a captured imatrix calibration observation (CRUX-B-07)
+    ImatrixLint {
+        /// Path to captured imatrix observation JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
+    /// Lint a captured /v1/embeddings observation (CRUX-C-13)
+    EmbeddingsLint {
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
+    /// Lint a captured Hub+local unified-search merge observation (CRUX-A-23)
+    UnifiedSearchLint {
+        /// Path to captured unified-search observation JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
+    /// Lint a captured `apr rm` / `apr gc` blob-GC observation (CRUX-A-25)
+    RmGcLint {
+        /// Path to captured rm/gc observation JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
+    /// Lint a captured APR_MODELS shared-cache observation (CRUX-A-21)
+    SharedCacheLint {
+        /// Path to captured dedup/permission observation JSON
         #[arg(long, value_name = "FILE")]
         observation_file: PathBuf,
     },

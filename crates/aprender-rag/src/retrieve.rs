@@ -371,7 +371,7 @@ impl Default for SparseRetriever {
 /// # Example
 ///
 /// ```ignore
-/// use trueno_rag::multivector::{
+/// use aprender_rag::multivector::{
 ///     WarpIndexConfig, WarpSearchConfig,
 ///     MockMultiVectorEmbedder, MultiVectorRetriever,
 /// };

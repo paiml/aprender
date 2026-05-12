@@ -16,8 +16,13 @@
 #   ../entrenar      — training engine (includes entrenar-lora)
 #   ../trueno        — SIMD compute (includes trueno-gpu, trueno-quant)
 #   ../renacer       — profiling
-#   ../provable-contracts — compile-time contract macros
 #   ../pacha         — model registry
+#
+# NOTE: provable-contracts retired from this list 2026-05-04 per
+# APR-MONO Phase 2b consolidation (2026-04-18). The crates moved
+# in-tree as `aprender-contracts` + `aprender-contracts-macros`;
+# Cargo.toml depends on the workspace crates directly, so no patch
+# entry is needed.
 
 [patch.crates-io]
 alimentar = { path = "../alimentar" }
@@ -28,8 +33,10 @@ entrenar = { path = "../entrenar" }
 trueno = { path = "../trueno" }
 trueno-gpu = { path = "../trueno/trueno-gpu" }
 trueno-quant = { path = "../trueno/crates/trueno-quant" }
-provable-contracts-macros = { path = "../provable-contracts/crates/provable-contracts-macros" }
-provable-contracts = { path = "../provable-contracts/crates/provable-contracts" }
+# provable-contracts-macros + provable-contracts retired 2026-05-04 per
+# APR-MONO Phase 2b consolidation (2026-04-18). Now in-tree as
+# aprender-contracts-macros + aprender-contracts; depended on as
+# workspace members, no patch needed.
 pacha = { path = "../pacha" }
 entrenar-lora = { path = "../entrenar/crates/entrenar-lora" }
 renacer = { path = "../renacer" }

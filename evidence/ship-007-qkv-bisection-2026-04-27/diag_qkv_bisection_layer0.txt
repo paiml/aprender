@@ -1,0 +1,34 @@
+Loading /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr...
+config: hidden=3584 num_heads=28 num_kv_heads=4 head_dim=128 kv_dim=512 qkv_dim=4608 theta=1000000
+token_ids: [3838, 374, 220, 17, 10, 17, 30]
+
+[STAGE 0] EMBEDDING:
+  embeddings                               mean=  0.000013 std=  0.017365  (n=25088)
+
+[STAGE 1] attn_norm output (input to QKV matmul):
+  post-RMSNorm                             mean= -0.000083 std=  0.221261  (n=25088)
+
+[STAGE 2] post-QKV-matmul, pre-bias:
+  qkv (post-matmul)                        mean= -0.015918 std=  0.924970  (n=32256)
+    Q-part                                 mean= -0.011921 std=  0.974724  (n=25088)
+    K-part                                 mean= -0.058265 std=  0.983458  (n=3584)
+    V-part                                 mean= -0.001558 std=  0.283301  (n=3584)
+
+[STAGE 3] qkv_bias (shape=4608): mean+std reported below
+  qkv_bias                                 mean=  0.271825 std= 10.243427  (n=4608)
+
+[STAGE 3] post-bias:
+  qkv (post-bias)                          mean=  0.255906 std= 10.328716  (n=32256)
+    Q-part (post-bias)                     mean=  0.115425 std=  3.557455  (n=25088)
+    K-part (post-bias)                     mean=  1.490816 std= 29.492775  (n=3584)
+
+[STAGE 4] Q post-RoPE:
+  Q (post-RoPE)                            mean=  0.091476 std=  3.558162  (n=25088)
+
+=== REFERENCE NUMBERS ===
+APR  layer 0 qkv (from existing trace): mean=0.2559, std=10.3291
+GGUF layer 0 qkv (from existing trace): mean=-0.0163, std=1.1402
+
+=== INTERPRETATION ===
+Whichever stage above matches GGUF std=1.14 is BEFORE the divergence point.
+The next stage is where the 9× APR std blowup is introduced.

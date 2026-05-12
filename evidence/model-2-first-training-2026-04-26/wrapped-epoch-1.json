@@ -1,0 +1,11 @@
+{
+  "epoch": 1,
+  "train_loss": 9.909453,
+  "val_loss": 9.908045,
+  "train_ppl": 20119.674,
+  "val_ppl": 20091.354,
+  "optimizer_state_sha": "5677e15f88710d201b984317f7f7513981ee5d2cc08767d2f4d884fd93d7b89d",
+  "wall_seconds": 261.61295,
+  "tokens_seen": 16384000,
+  "grad_norm_max": 1.4539857
+}

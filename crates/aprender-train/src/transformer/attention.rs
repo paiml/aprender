@@ -279,13 +279,38 @@ pub struct MultiHeadAttention {
 }
 
 impl MultiHeadAttention {
-    /// Create new attention layer with initialized weights
+    /// Create new attention layer with initialized weights.
+    ///
+    /// When `config.use_bias == true` (Qwen2 family), allocates Q/K/V
+    /// projection biases as zero tensors. The forward pass already
+    /// honors `Option<Tensor>` biases (lines 388-395 add via
+    /// `add_bias` when `Some`); without allocating them here, biases
+    /// stay `None` and `populate_trainer_from_init_tensors` silently
+    /// drops the corresponding init tensors during fine-tune from a
+    /// Qwen APR checkpoint — see FALSIFY-APR-PRETRAIN-INIT-POPULATE-
+    /// COVERAGE-001/002 in `transformer::config::tests` for the
+    /// 290-vs-218 named-parameters gap that surfaced this bug.
+    ///
+    /// Zero-init for biases matches HuggingFace LLaMA / Qwen
+    /// convention (PyTorch `nn.Linear(bias=True)` initializes the
+    /// weight with `kaiming_uniform_` but the bias as the all-zeros
+    /// tensor — see `torch.nn.modules.linear.Linear.reset_parameters`).
     pub fn new(config: &TransformerConfig) -> Self {
         use super::init::{get_init_seed, rand_normal_seeded};
         let hidden_size = config.hidden_size;
         let q_dim = config.q_dim();
         let kv_hidden_size = config.num_kv_heads * config.head_dim();
         let seed = get_init_seed();
+
+        let (b_q, b_k, b_v) = if config.use_bias {
+            (
+                Some(Tensor::from_vec(vec![0.0_f32; q_dim], true)),
+                Some(Tensor::from_vec(vec![0.0_f32; kv_hidden_size], true)),
+                Some(Tensor::from_vec(vec![0.0_f32; kv_hidden_size], true)),
+            )
+        } else {
+            (None, None, None)
+        };
 
         // C-INIT-001: normal(0, 0.02) matching HuggingFace LLaMA
         Self {
@@ -300,9 +325,9 @@ impl MultiHeadAttention {
                 true,
             ),
             w_o: Tensor::from_vec(rand_normal_seeded(hidden_size * q_dim, seed, "w_o"), true),
-            b_q: None,
-            b_k: None,
-            b_v: None,
+            b_q,
+            b_k,
+            b_v,
             q_norm: None,
             k_norm: None,
         }
@@ -739,6 +764,15 @@ impl MultiHeadAttention {
     }
 
     /// ENT-282: Set a named parameter by suffix (after "self_attn.").
+    ///
+    /// Bias suffixes route to `b_q` / `b_k` / `b_v` only when those
+    /// fields are already `Some` (i.e., `MultiHeadAttention::new`
+    /// allocated them because `config.use_bias == true`). If the
+    /// caller asks to set a bias on an attention that doesn't have
+    /// one, return false — same semantic as setting an unrecognized
+    /// suffix. This keeps `populate_trainer_from_init_tensors`
+    /// honest: a Qwen-init APR's biases populate iff the target
+    /// `Transformer` was built from a `use_bias=true` config.
     pub fn set_named_parameter(&mut self, suffix: &str, value: Tensor) -> bool {
         match suffix {
             "self_attn.q_proj.weight" => {
@@ -756,6 +790,30 @@ impl MultiHeadAttention {
             "self_attn.o_proj.weight" => {
                 self.w_o = value;
                 true
+            }
+            "self_attn.q_proj.bias" => {
+                if self.b_q.is_some() {
+                    self.b_q = Some(value);
+                    true
+                } else {
+                    false
+                }
+            }
+            "self_attn.k_proj.bias" => {
+                if self.b_k.is_some() {
+                    self.b_k = Some(value);
+                    true
+                } else {
+                    false
+                }
+            }
+            "self_attn.v_proj.bias" => {
+                if self.b_v.is_some() {
+                    self.b_v = Some(value);
+                    true
+                } else {
+                    false
+                }
             }
             _ => false,
         }

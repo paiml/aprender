@@ -15,9 +15,9 @@ use crate::{Document, Error, Result};
 /// # Example
 ///
 /// ```rust
-/// use trueno_rag::chunk::{TimestampChunker, Chunker};
-/// use trueno_rag::Document;
-/// use trueno_rag::media::SubtitleCue;
+/// use aprender_rag::chunk::{TimestampChunker, Chunker};
+/// use aprender_rag::Document;
+/// use aprender_rag::media::SubtitleCue;
 ///
 /// let cues = vec![
 ///     SubtitleCue { index: 0, start_secs: 0.0, end_secs: 30.0, text: "First segment.".into() },

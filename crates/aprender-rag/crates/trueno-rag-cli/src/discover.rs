@@ -8,7 +8,7 @@ use globset::{Glob, GlobSet, GlobSetBuilder};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use trueno_rag::loader::LoaderRegistry;
+use aprender_rag::loader::LoaderRegistry;
 
 /// Media file extensions that can be transcribed.
 pub(crate) const MEDIA_EXTENSIONS: &[&str] = &[

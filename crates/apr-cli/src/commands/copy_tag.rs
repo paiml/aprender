@@ -88,17 +88,11 @@ pub struct CopyPlan {
 /// analogue of the filesystem-level "tag path must stay inside
 /// ~/.apr/models" invariant.
 fn tag_is_valid(tag: &str) -> bool {
-    !tag.is_empty()
-        && !tag.contains('/')
-        && !tag.contains('\\')
-        && !tag.contains('\0')
+    !tag.is_empty() && !tag.contains('/') && !tag.contains('\\') && !tag.contains('\0')
 }
 
 /// Look up a manifest by tag in a registry slice.
-fn find_manifest<'a>(
-    registry: &'a [ManifestView],
-    tag: &str,
-) -> Option<&'a ManifestView> {
+fn find_manifest<'a>(registry: &'a [ManifestView], tag: &str) -> Option<&'a ManifestView> {
     registry.iter().find(|m| m.tag == tag)
 }
 
@@ -110,11 +104,7 @@ fn find_manifest<'a>(
 ///   manifest file only);
 /// * every blob op is a `HardLink`, not a byte-copy;
 /// * exactly one `WriteManifest { tag: dst }` op is emitted.
-pub fn plan_copy(
-    registry: &[ManifestView],
-    src: &str,
-    dst: &str,
-) -> Result<CopyPlan, CopyError> {
+pub fn plan_copy(registry: &[ManifestView], src: &str, dst: &str) -> Result<CopyPlan, CopyError> {
     if !tag_is_valid(src) {
         return Err(CopyError::InvalidTag(src.to_string()));
     }
@@ -122,8 +112,8 @@ pub fn plan_copy(
         return Err(CopyError::InvalidTag(dst.to_string()));
     }
 
-    let src_manifest = find_manifest(registry, src)
-        .ok_or_else(|| CopyError::SourceNotFound(src.to_string()))?;
+    let src_manifest =
+        find_manifest(registry, src).ok_or_else(|| CopyError::SourceNotFound(src.to_string()))?;
 
     if find_manifest(registry, dst).is_some() {
         return Err(CopyError::DestinationExists(dst.to_string()));
@@ -183,10 +173,7 @@ pub fn plan_manifest_write_count(plan: &CopyPlan) -> usize {
 /// Return true iff src and dst manifests reference the SAME blob shas
 /// in the SAME order — the algorithm-level precondition for the
 /// hard-link-inode-equality FALSIFY-002 check.
-pub fn dst_blob_shas_match_src(
-    src: &ManifestView,
-    dst: &ManifestView,
-) -> bool {
+pub fn dst_blob_shas_match_src(src: &ManifestView, dst: &ManifestView) -> bool {
     src.blob_shas == dst.blob_shas
 }
 
@@ -198,11 +185,7 @@ mod tests {
         vec![
             ManifestView {
                 tag: "qwen2.5-0.5b:latest".to_string(),
-                blob_shas: vec![
-                    "a".repeat(64),
-                    "b".repeat(64),
-                    "c".repeat(64),
-                ],
+                blob_shas: vec!["a".repeat(64), "b".repeat(64), "c".repeat(64)],
             },
             ManifestView {
                 tag: "llama3:latest".to_string(),
@@ -214,8 +197,7 @@ mod tests {
     #[test]
     fn copy_produces_identical_blob_sha_list() {
         let reg = sample_registry();
-        let plan = plan_copy(&reg, "qwen2.5-0.5b:latest", "qwen2.5-0.5b:mycopy")
-            .unwrap();
+        let plan = plan_copy(&reg, "qwen2.5-0.5b:latest", "qwen2.5-0.5b:mycopy").unwrap();
         assert_eq!(plan.dst.tag, "qwen2.5-0.5b:mycopy");
         assert_eq!(plan.dst.blob_shas, reg[0].blob_shas);
         assert!(dst_blob_shas_match_src(&reg[0], &plan.dst));
@@ -229,8 +211,7 @@ mod tests {
         // delta ≤ 4 KiB check (if no byte-copy, then delta == sizeof
         // manifest file, which is well under 4 KiB).
         let reg = sample_registry();
-        let plan = plan_copy(&reg, "qwen2.5-0.5b:latest", "qwen2.5-0.5b:mycopy")
-            .unwrap();
+        let plan = plan_copy(&reg, "qwen2.5-0.5b:latest", "qwen2.5-0.5b:mycopy").unwrap();
         assert!(plan_has_no_byte_copy(&plan));
         assert_eq!(plan_blob_op_count(&plan), reg[0].blob_shas.len());
         assert_eq!(plan_manifest_write_count(&plan), 1);
@@ -243,12 +224,12 @@ mod tests {
         // content-addressed blob store) `stat -c %i` on the resolved
         // blob path is equal — there is only one path per sha.
         let reg = sample_registry();
-        let plan = plan_copy(&reg, "qwen2.5-0.5b:latest", "qwen2.5-0.5b:mycopy")
-            .unwrap();
-        for (src_sha, dst_sha) in
-            reg[0].blob_shas.iter().zip(plan.dst.blob_shas.iter())
-        {
-            assert_eq!(src_sha, dst_sha, "blob-sha divergence breaks hard-link claim");
+        let plan = plan_copy(&reg, "qwen2.5-0.5b:latest", "qwen2.5-0.5b:mycopy").unwrap();
+        for (src_sha, dst_sha) in reg[0].blob_shas.iter().zip(plan.dst.blob_shas.iter()) {
+            assert_eq!(
+                src_sha, dst_sha,
+                "blob-sha divergence breaks hard-link claim"
+            );
         }
     }
 
@@ -265,8 +246,7 @@ mod tests {
     #[test]
     fn destination_exists_is_error() {
         let reg = sample_registry();
-        let err =
-            plan_copy(&reg, "qwen2.5-0.5b:latest", "llama3:latest").unwrap_err();
+        let err = plan_copy(&reg, "qwen2.5-0.5b:latest", "llama3:latest").unwrap_err();
         assert_eq!(
             err,
             CopyError::DestinationExists("llama3:latest".to_string())
@@ -291,20 +271,17 @@ mod tests {
     fn tag_with_path_separator_is_invalid() {
         let reg = sample_registry();
         // Forward slash would escape ~/.apr/models via path traversal.
-        let err =
-            plan_copy(&reg, "qwen2.5-0.5b:latest", "../evil").unwrap_err();
+        let err = plan_copy(&reg, "qwen2.5-0.5b:latest", "../evil").unwrap_err();
         assert!(matches!(err, CopyError::InvalidTag(_)));
         // Backslash, same reason on Windows hosts.
-        let err =
-            plan_copy(&reg, "qwen2.5-0.5b:latest", r"a\b").unwrap_err();
+        let err = plan_copy(&reg, "qwen2.5-0.5b:latest", r"a\b").unwrap_err();
         assert!(matches!(err, CopyError::InvalidTag(_)));
     }
 
     #[test]
     fn tag_with_nul_is_invalid() {
         let reg = sample_registry();
-        let err =
-            plan_copy(&reg, "qwen2.5-0.5b:latest", "bad\0tag").unwrap_err();
+        let err = plan_copy(&reg, "qwen2.5-0.5b:latest", "bad\0tag").unwrap_err();
         assert!(matches!(err, CopyError::InvalidTag(_)));
     }
 
@@ -331,10 +308,8 @@ mod tests {
     fn plan_is_deterministic() {
         // Same inputs → byte-identical plan across invocations.
         let reg = sample_registry();
-        let a = plan_copy(&reg, "qwen2.5-0.5b:latest", "qwen2.5-0.5b:a")
-            .unwrap();
-        let b = plan_copy(&reg, "qwen2.5-0.5b:latest", "qwen2.5-0.5b:a")
-            .unwrap();
+        let a = plan_copy(&reg, "qwen2.5-0.5b:latest", "qwen2.5-0.5b:a").unwrap();
+        let b = plan_copy(&reg, "qwen2.5-0.5b:latest", "qwen2.5-0.5b:a").unwrap();
         assert_eq!(a, b);
     }
 
@@ -343,8 +318,7 @@ mod tests {
         // Blob order must match SRC manifest so content-addressed
         // lookup is stable downstream.
         let reg = sample_registry();
-        let plan = plan_copy(&reg, "qwen2.5-0.5b:latest", "qwen2.5-0.5b:a")
-            .unwrap();
+        let plan = plan_copy(&reg, "qwen2.5-0.5b:latest", "qwen2.5-0.5b:a").unwrap();
         let mut seen = vec![];
         for op in &plan.ops {
             if let CopyOp::HardLink { sha } = op {
@@ -360,8 +334,7 @@ mod tests {
         // in place; crash-safety invariant (a partial state with a
         // manifest pointing at a missing blob is forbidden).
         let reg = sample_registry();
-        let plan = plan_copy(&reg, "qwen2.5-0.5b:latest", "qwen2.5-0.5b:a")
-            .unwrap();
+        let plan = plan_copy(&reg, "qwen2.5-0.5b:latest", "qwen2.5-0.5b:a").unwrap();
         match plan.ops.last() {
             Some(CopyOp::WriteManifest { tag }) => {
                 assert_eq!(tag, "qwen2.5-0.5b:a");
@@ -376,8 +349,7 @@ mod tests {
         // the sample registry.
         let reg = sample_registry();
         for src in &reg {
-            let plan =
-                plan_copy(&reg, &src.tag, &format!("{}-copy", src.tag)).unwrap();
+            let plan = plan_copy(&reg, &src.tag, &format!("{}-copy", src.tag)).unwrap();
             assert!(plan_has_no_byte_copy(&plan));
         }
     }
@@ -387,9 +359,7 @@ mod tests {
         // SRC == DST ⇒ DestinationExists (SRC already occupies that
         // tag). Prevents accidental self-clobber.
         let reg = sample_registry();
-        let err =
-            plan_copy(&reg, "qwen2.5-0.5b:latest", "qwen2.5-0.5b:latest")
-                .unwrap_err();
+        let err = plan_copy(&reg, "qwen2.5-0.5b:latest", "qwen2.5-0.5b:latest").unwrap_err();
         assert_eq!(
             err,
             CopyError::DestinationExists("qwen2.5-0.5b:latest".to_string())
@@ -403,8 +373,7 @@ mod tests {
         // (and, since shas are content-addressed, refers to the same
         // physical blobs).
         let reg = sample_registry();
-        let plan = plan_copy(&reg, "qwen2.5-0.5b:latest", "qwen2.5-0.5b:a")
-            .unwrap();
+        let plan = plan_copy(&reg, "qwen2.5-0.5b:latest", "qwen2.5-0.5b:a").unwrap();
         assert_eq!(plan.dst.blob_shas.len(), reg[0].blob_shas.len());
     }
 }

@@ -1,0 +1,279 @@
+metadata:
+  id: C-APR-TOKENIZE-REPAIR-MANIFEST
+  version: 1.0.0
+  created: '2026-05-08'
+  author: PAIML Engineering
+  kind: pattern
+  status: DRAFT
+  description: |
+    `apr tokenize repair-manifest` reconstructs the `manifest.json`
+    provenance file for an `encode-corpus` output directory whose run
+    exited (operator kill / crash / power loss) AFTER all `shard-NNNN.bin`
+    files were flushed but BEFORE the final manifest write.
+
+    This is a HYGIENE subcommand. ShardBatchIter (`crates/aprender-train/
+    src/train/shard_reader.rs:42-72`) reads `.bin` files directly via
+    `read_dir` + extension filter — it does NOT consume manifest.json.
+    So a missing manifest is not a training-time blocker; it IS an audit
+    / provenance / ship-evidence gap.
+
+    LIVE INSTANCE that motivated this contract: SHIP-TWO §56 dispatched
+    a 5g.1 corpus retokenization (`apr tokenize encode-corpus` with the
+    Qwen2.5-Coder vocab) at 2026-05-05T07:00Z. The run produced 228
+    valid `shard-*.bin` files (~8.5 GB on disk, last shard at
+    2026-05-07T20:04Z) but no `manifest.json` was emitted — `encode-
+    corpus` writes the manifest only on clean process exit. Re-running
+    encode-corpus would burn another ~17 hours of GPU host wall to
+    re-derive metadata that is computable from the existing shards in
+    seconds. `repair-manifest` is the cheap recovery path.
+
+    ROOT CAUSE class: any monolithic encoder that defers manifest write
+    to clean exit will silently lose provenance on operator kill. The
+    fix is a separate idempotent recovery subcommand whose output is
+    byte-identical to a clean-run manifest modulo a `repair: true`
+    provenance flag and `repaired_at` ISO-8601 timestamp.
+
+    Schema MUST match what `encode-corpus` emits at
+    `crates/apr-cli/src/commands/tokenize.rs` `manifest = json!({...})`
+    so downstream consumers (apr-leaderboard, ship-evidence dashboards,
+    pv-validate) cannot distinguish a clean manifest from a repaired
+    one beyond the explicit `repair` flag.
+
+  references:
+    - 'docs/specifications/aprender-train/ship-two-models-spec.md § 56 (5g.1 LIVE smoke)'
+    - 'docs/specifications/aprender-train/ship-two-models-spec.md § 58 (5g.1 mid-flight at 62 shards)'
+    - 'crates/apr-cli/src/commands/tokenize.rs run_encode_corpus (manifest emit site)'
+    - 'crates/aprender-train/src/train/shard_reader.rs ShardBatchIter (manifest is NOT load-bearing)'
+    - 'memory: feedback_pv_not_bash_for_contracts.md — every gate flows through pv'
+    - 'memory: feedback_compute_pre_authorized.md — multi-hour compute is precious; recovery beats re-run'
+  depends_on: []
+
+equations:
+  shard_count_invariant:
+    formula: |
+      manifest.shard_count == count(glob "shard-*.bin" in output_dir)
+    domain: |
+      Every `shard-NNNN.bin` in the output directory is reflected in
+      the manifest's `shard_count`. Numerically derived from a single
+      directory listing; no shard contents are read for this field.
+    invariants:
+    - 'manifest.shard_count is an unsigned integer'
+    - 'manifest.shard_count == |{p ∈ output_dir : matches "shard-*.bin"}|'
+    preconditions:
+    - 'output_dir exists and is a directory'
+    - 'every entry matching "shard-*.bin" is a regular file (not a symlink, socket, dir)'
+
+  total_tokens_invariant:
+    formula: |
+      manifest.total_tokens == Σ_i (file_size(shard_i) / 4)
+    domain: |
+      Total token count is derived purely from byte sizes — each shard
+      is a flat little-endian u32 stream, so file_size mod 4 == 0 and
+      tokens == file_size / 4. No shard contents are decoded.
+    invariants:
+    - 'manifest.total_tokens is an unsigned integer'
+    - 'for every shard_i: file_size(shard_i) mod 4 == 0'
+    - 'manifest.total_tokens == Σ_i (file_size(shard_i) / 4)'
+    preconditions:
+    - 'shard_count_invariant holds'
+    - 'every shard file is byte-aligned to u32 (size % 4 == 0)'
+
+  schema_invariant:
+    formula: |
+      manifest.schema == "pretokenize-bin-v1"
+    domain: |
+      The repaired manifest declares the same schema as a clean
+      `encode-corpus` run so downstream consumers cannot distinguish
+      origin beyond the explicit `repair` flag.
+    invariants:
+    - 'manifest.schema is the literal string "pretokenize-bin-v1"'
+    preconditions: []
+
+  repair_provenance_invariant:
+    formula: |
+      manifest.repair == true ∧ valid_rfc3339(manifest.repaired_at)
+    domain: |
+      A repaired manifest is auditable: the `repair: true` flag is
+      mandatory and the `repaired_at` field is a parseable ISO 8601
+      / RFC 3339 UTC timestamp. This is the ONLY structural difference
+      between a clean and a repaired manifest.
+    invariants:
+    - 'manifest.repair is the JSON boolean true'
+    - 'manifest.repaired_at parses via chrono DateTime::parse_from_rfc3339'
+    - 'manifest.repaired_at is in the past relative to wall clock at parse time'
+    preconditions: []
+
+  shardbatchiter_consumability_invariant:
+    formula: |
+      ShardBatchIter::new(output_dir, ...).is_ok()
+    domain: |
+      After repair-manifest writes, ShardBatchIter (which does NOT read
+      the manifest) still consumes the directory cleanly. This anchors
+      the "manifest is provenance, not load-bearing" property and
+      guards against future edits that would couple the two.
+    invariants:
+    - 'ShardBatchIter::new(output_dir, batch=1, seq=4, pad=0, eos=0) returns Ok'
+    - 'iterator.next() returns Some(LMBatch) for at least one tick when total_tokens >= 5'
+    preconditions:
+    - 'output_dir contains at least one shard whose token count >= seq+1 (i.e., ≥ 5 u32)'
+
+proof_obligations:
+- type: invariant
+  property: Manifest shard count matches filesystem
+  formal: 'manifest.shard_count == |{p ∈ output_dir : matches "shard-*.bin"}|'
+  applies_to: shard_count_invariant
+- type: invariant
+  property: Manifest total_tokens equals sum of shard sizes divided by 4
+  formal: 'manifest.total_tokens == Σ_i (file_size(shard_i) / 4)'
+  applies_to: total_tokens_invariant
+- type: invariant
+  property: Manifest schema is the canonical pretokenize-bin-v1 string
+  formal: 'manifest.schema == "pretokenize-bin-v1"'
+  applies_to: schema_invariant
+- type: invariant
+  property: Repaired manifests carry repair flag + RFC3339 timestamp
+  formal: 'manifest.repair == true ∧ valid_rfc3339(manifest.repaired_at)'
+  applies_to: repair_provenance_invariant
+- type: invariant
+  property: ShardBatchIter consumes the directory after repair
+  formal: 'ShardBatchIter::new(output_dir, ...).is_ok()'
+  applies_to: shardbatchiter_consumability_invariant
+
+falsification_tests:
+- id: FALSIFY-REPAIR-MANIFEST-001
+  rule: |
+    `repair-manifest` over a directory containing N shard-NNNN.bin
+    files writes manifest.json with shard_count == N.
+  prediction: |
+    For every N ≥ 1, after `apr tokenize repair-manifest --output DIR`,
+    `jq .shard_count DIR/manifest.json` equals
+    `find DIR -name "shard-*.bin" | wc -l`.
+  test: |
+    cargo test -p apr-cli --lib --features training -- repair_manifest_shard_count_matches_filesystem
+  if_fails: |
+    Either the glob pattern in repair-manifest mismatches encode-
+    corpus's emit pattern, OR the count is computed from something
+    other than the filesystem listing. Inspect
+    `crates/apr-cli/src/commands/tokenize.rs::run_repair_manifest`.
+  ship_blocking: true
+  counter_example_classes:
+  - off_by_one
+  - glob_pattern_drift
+  - hidden_file_inclusion
+
+- id: FALSIFY-REPAIR-MANIFEST-002
+  rule: |
+    `repair-manifest`'s `total_tokens` field equals the sum of every
+    shard's byte size divided by 4 (u32 little-endian token width).
+  prediction: |
+    For every directory with N shards of sizes s_0..s_{N-1} bytes,
+    `jq .total_tokens DIR/manifest.json` equals
+    `(s_0 + s_1 + ... + s_{N-1}) / 4`.
+  test: |
+    cargo test -p apr-cli --lib --features training -- repair_manifest_total_tokens_equals_byte_sum_div_4
+  if_fails: |
+    Either a shard is not aligned to u32 (corrupt), OR the total
+    counter accumulates a different unit (bytes? float words?).
+    Inspect the per-shard size aggregation loop.
+  ship_blocking: true
+  counter_example_classes:
+  - bytes_vs_tokens_mistake
+  - i32_vs_u32_width_drift
+  - shard_size_not_divisible_by_4
+
+- id: FALSIFY-REPAIR-MANIFEST-003
+  rule: |
+    `repair-manifest` writes `schema: "pretokenize-bin-v1"` so down-
+    stream consumers cannot distinguish clean from repaired manifests
+    by schema.
+  prediction: |
+    `jq -r .schema DIR/manifest.json` equals the literal string
+    `pretokenize-bin-v1`.
+  test: |
+    cargo test -p apr-cli --lib --features training -- repair_manifest_schema_field_is_pretokenize_bin_v1
+  if_fails: |
+    Schema string was changed without updating downstream consumers
+    or this contract. Either revert the schema string OR bump it
+    everywhere (encode-corpus + repair-manifest + ShardBatchIter
+    docs + this contract) in lockstep.
+  ship_blocking: true
+  counter_example_classes:
+  - schema_versioning_drift
+  - typo_in_string_literal
+
+- id: FALSIFY-REPAIR-MANIFEST-004
+  rule: |
+    `repair-manifest` sets `repair: true` and writes `repaired_at`
+    as a parseable RFC3339 timestamp.
+  prediction: |
+    `jq .repair DIR/manifest.json` is JSON boolean `true` AND
+    `chrono::DateTime::parse_from_rfc3339(jq -r .repaired_at ...)`
+    succeeds.
+  test: |
+    cargo test -p apr-cli --lib --features training -- repair_manifest_carries_repair_flag_and_rfc3339_timestamp
+  if_fails: |
+    Either the boolean is missing/null (audit hole) or the timestamp
+    is not RFC3339 (parse failure for downstream tooling).
+  ship_blocking: true
+  counter_example_classes:
+  - missing_audit_flag
+  - non_rfc3339_timestamp
+  - locale_specific_format
+
+- id: FALSIFY-REPAIR-MANIFEST-005
+  rule: |
+    After `repair-manifest` writes, `ShardBatchIter::new` consumes
+    the same directory cleanly — proving the manifest is provenance-
+    only and never gates training.
+  prediction: |
+    `ShardBatchIter::new(output_dir, batch=1, seq=4, pad=0, eos=0)`
+    returns `Ok`, and `iterator.next()` yields at least one batch
+    when total_tokens >= 5.
+  test: |
+    cargo test -p apr-cli --lib --features training -- repair_manifest_does_not_break_shardbatchiter
+  if_fails: |
+    `repair-manifest` is mutating shards or directory layout when it
+    should be read-only over .bin files + write-only over manifest.json.
+    Inspect file-system writes during the run.
+  ship_blocking: true
+  counter_example_classes:
+  - shard_renamed
+  - shard_truncated
+  - hidden_file_added_that_breaks_iter
+
+- id: FALSIFY-REPAIR-MANIFEST-006
+  rule: |
+    `repair-manifest` is idempotent: running it twice over the same
+    shards produces the same manifest content (modulo `repaired_at`).
+  prediction: |
+    Running `apr tokenize repair-manifest --output DIR` twice yields
+    a manifest where every field except `repaired_at` is byte-identical
+    between the two runs.
+  test: |
+    cargo test -p apr-cli --lib --features training -- repair_manifest_is_idempotent_modulo_timestamp
+  if_fails: |
+    Some non-time-derived field is non-deterministic (e.g., an
+    iteration order dependent count). Inspect the field accumulation
+    order — sorted glob output is required for stable shard order.
+  ship_blocking: true
+  counter_example_classes:
+  - unsorted_glob_dependent_field
+  - random_uuid_baked_into_manifest
+
+kani_harnesses: []
+
+qa_gate:
+  id: QA-REPAIR-MANIFEST-001
+  name: repair-manifest provenance + safety gate
+  description: |
+    All six FALSIFY-REPAIR-MANIFEST-* tests pass; the repaired manifest
+    is bit-identical to a clean encode-corpus manifest in shape and
+    distinguishable only by the `repair: true` audit flag.
+  checks:
+  - shard_count_invariant
+  - total_tokens_invariant
+  - schema_invariant
+  - repair_provenance_invariant
+  - shardbatchiter_consumability_invariant
+  pass_criteria: All 6 falsification tests pass
+  falsification: Any single FALSIFY-* failure fails the gate
