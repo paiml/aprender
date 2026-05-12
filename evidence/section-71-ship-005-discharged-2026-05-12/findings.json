@@ -1,0 +1,55 @@
+{
+  "evidence_id": "SECTION-71-SHIP-005-LIVE-DISCHARGED-2026-05-12",
+  "session_date": "2026-05-12",
+  "summary": "SHIP-005 (AC-SHIP1-005, HumanEval pass@1 >= 84.80% with 1.2% tolerance) LIVE-DISCHARGED at 86.59% pass@1 on gx10 164-run with §70 RC3 fix.",
+  "host": "gx10-a5b5 (Blackwell GB10, aarch64)",
+  "binary": "/home/noah/src/aprender/target/release/apr (commit b7e69bfc8d — RC3 fix branch)",
+  "artifact": "/home/noah/src/apr-leaderboard/checkpoints/qwen2.5-coder-7b-instruct-q4k.apr (Qwen2.5-Coder-7B-Instruct Q4_K)",
+  "dataset": "openai_humaneval canonical 164 problems",
+  "sampling": {
+    "temperature": 0.0,
+    "samples_per_problem": 1,
+    "max_tokens": 512,
+    "method": "greedy"
+  },
+  "result": {
+    "passed": 142,
+    "problems": 164,
+    "pass_at_1": 0.8658536585365854,
+    "pass_at_10_extrapolated": 0.9999999997794398,
+    "pass_at_100_extrapolated": 1.0
+  },
+  "comparison": {
+    "ship_005_floor": 0.8480,
+    "headroom_above_floor": 0.0179,
+    "section_67_baseline_pre_rc3": 0.8049,
+    "section_67_passed": 132,
+    "rc3_fix_gain_pp": 6.10,
+    "rc3_fix_problems_flipped": 10,
+    "verdict": "SHIP-005 LIVE-DISCHARGED — pass@1 (86.59%) >= floor (84.80%) by +1.79pp"
+  },
+  "wall_clock": {
+    "start_utc": "2026-05-12T08:10:00Z",
+    "end_utc": "2026-05-12T14:00:00Z",
+    "elapsed_hours": 5.83
+  },
+  "model_1_ship_percent": {
+    "pre_section_71": "94% (3/5 §17.5 PARTIALs LIVE-discharged: SHIP-002/006/008)",
+    "post_section_71": "95% (4/5 §17.5 PARTIALs LIVE-discharged: SHIP-002/005/006/008)",
+    "remaining_to_96": "SHIP-007 (multi-PR CUDA cascade per §63)"
+  },
+  "model_2_ship_percent": "57% (unchanged, gated on step 5g.3 val_loss < 9.38)",
+  "evidence_files": {
+    "humaneval_164_json": "evidence/section-71-ship-005-discharged-2026-05-12/humaneval-164-rc3-gx10.json",
+    "diagnostic_dumps": "/tmp/apr_eval_debug_HumanEval_<task>.json (per-problem on gx10; not exported)"
+  },
+  "discharge_path": [
+    "§65 (2026-05-11): gx10 164-run baseline = 34.15% (raw-continuation methodology)",
+    "§66 (2026-05-11): H4 cross-CLI test confirmed ChatML methodology mismatch",
+    "§67 (2026-05-12): H4 ChatML fix shipped; 164-run = 80.49% (+46pp, 4.31pp below floor)",
+    "§68 (2026-05-12): R1+R2 robustness baseline shipped; trio-smoke 0/3 flips",
+    "§69 (2026-05-12): 4-step smoking-gun falsified Q4K hypothesis; bug is HARNESS",
+    "§70 (2026-05-12): RC3 (format!() drops imports) CONFIRMED via APR_EVAL_DEBUG=1 on gx10; FIX shipped; 3/3 §68-trio flip",
+    "§71 (2026-05-12): 164-run with RC3 fix = 86.59% pass@1 → SHIP-005 LIVE-DISCHARGED"
+  ]
+}
