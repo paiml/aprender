@@ -480,17 +480,24 @@ fn pre_warm_backward_kernels_in_forward_cache(
     // Batched RoPE backward — missing from pre_warm_for_model, causes
     // CUDA context poisoning on Blackwell when compiled during backward pass.
     // Need BOTH num_heads AND num_kv_heads variants (GQA uses different head count for K/V).
+    //
+    // FALSIFY-CUDA-ROPE-THETA-CACHE-KEY-001: cache key now includes theta_bits
+    // (matching runtime in `batched_rope_neox_backward`). The hardcoded
+    // 1_000_000.0 here matches Qwen2 / Qwen2.5 default; for Llama
+    // pretrain (theta=10000) the runtime call will compile its own
+    // module on first use, no longer silently shadowing the Qwen warm.
     let nh = num_heads as u32;
     let nkv = _num_kv_heads as u32;
     let hd = head_dim as u32;
     let s = max_seq_len as u32;
+    let qwen_theta_bits = 1_000_000.0_f32.to_bits();
     warm!(
-        format!("batched_rope_bwd_{nh}_{hd}"),
+        format!("batched_rope_bwd_{nh}_{hd}_{s}_th{qwen_theta_bits:08x}"),
         BatchedRopeBackwardKernel::new(nh, hd, s, 1_000_000.0)
     );
     if nkv != nh {
         warm!(
-            format!("batched_rope_bwd_{nkv}_{hd}"),
+            format!("batched_rope_bwd_{nkv}_{hd}_{s}_th{qwen_theta_bits:08x}"),
             BatchedRopeBackwardKernel::new(nkv, hd, s, 1_000_000.0)
         );
     }
