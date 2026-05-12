@@ -1,0 +1,30 @@
+{
+  "ac": "AC-SHIP1-010",
+  "claim": "Published artifact URL resolves; SHA-256 matches manifest",
+  "date": "2026-05-12",
+  "host": "gx10-a5b5 (Blackwell GB10, aarch64)",
+  "verdict": "LIVE-DISCHARGED",
+  "evidence": {
+    "url_resolves": {
+      "url": "https://huggingface.co/paiml/qwen2.5-coder-7b-apache-q4k-v1/resolve/main/qwen2.5-coder-7b-instruct-q4k.apr",
+      "http_status": "HTTP/2 302 → CAS bridge xethub",
+      "content_length": "8035635524 bytes (matches local)"
+    },
+    "sha256_match": {
+      "artifact": "qwen2.5-coder-7b-instruct-q4k.apr",
+      "local_sha256": "0a854098d05b15921c173b7c8deb87c1cbecdffc66e918825c11a02775c73666",
+      "hf_lfs_oid": "0a854098d05b15921c173b7c8deb87c1cbecdffc66e918825c11a02775c73666",
+      "size_bytes": 8035635524,
+      "match": true
+    }
+  },
+  "method": [
+    "curl https://huggingface.co/api/models/paiml/qwen2.5-coder-7b-apache-q4k-v1/tree/main",
+    "extract lfs.oid (=sha256) from response for qwen2.5-coder-7b-instruct-q4k.apr",
+    "sha256sum /home/noah/src/apr-leaderboard/checkpoints/qwen2.5-coder-7b-instruct-q4k.apr on gx10",
+    "compare"
+  ],
+  "raw_evidence_file": "ship-010-hf-tree.json (HF API tree response, archived in this directory)",
+  "ship_005_predecessor": "SHIP-005 §71 used the same canonical 7B teacher (sha256 0a854098…)",
+  "memory_reference": "MEMORY.md → Reference → Canonical apr binary (Lambda-Vector sha a394dd28 differs; gx10 + HF agree at 0a854098)"
+}
