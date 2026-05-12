@@ -1,0 +1,9 @@
+=== APR Run ===
+
+Source: /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.safetensors
+[GH-189] Loaded tokenizer from /mnt/nvme-raid0/models/ship-two-001/tokenizer.json: 22 special tokens
+
+Output:
+pdffulnessians Bayesian
+
+Completed in 62.55s (cached)

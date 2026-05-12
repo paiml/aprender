@@ -1,0 +1,36 @@
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+╭─────────────┬─────────────────────╮
+│      Format │ APR v2              │
+├─────────────┼─────────────────────┤
+│     Version │ 2.0                 │
+│        Size │ 7.48 GiB            │
+│     Tensors │ 339                 │
+│    Checksum │ ✓ VALID             │
+│ Data Offset │ 0x3AB9C0 (3.67 MiB) │
+╰─────────────┴─────────────────────╯
+  Flags: (none)
+
+  Architecture:
+    Family: qwen2
+    Parameters: 7.6B (7615616512)
+    Hidden Size: 3584
+    Layers: 28
+    Attention Heads: 28
+    KV Heads: 4
+    Intermediate Size: 18944
+    Vocab Size: 152064
+    Max Position: 32768
+    RoPE Theta: 1000000
+  Name: qwen2.5-coder-7b-instruct-q4k
+  Model Type: Auto
+
+  Provenance:
+    license: Apache-2.0
+    data_source: huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct
+    data_license: Apache-2.0
+
+  Source Metadata (PMAT-223):
+    format: pt
