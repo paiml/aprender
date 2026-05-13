@@ -126,8 +126,10 @@ impl Architecture {
             "gpt-neox" | "gpt_neox" | "gptneox" | "pythia" => Some(Self::GptNeoX),
             // GH-311: Meta OPT family
             "opt" | "galactica" => Some(Self::Opt),
-            // GH-311: StarCoder reuses GPT-2 tensor naming
-            "starcoder" | "starcoder2" | "bigcode" => Some(Self::Gpt2),
+            // GH-311 / GH-1594: StarCoder + GPTBigCode reuse GPT-2 tensor naming
+            "starcoder" | "starcoder2" | "bigcode" | "gpt_bigcode" | "gpt-bigcode" => {
+                Some(Self::Gpt2)
+            },
             // PMAT-526: Proper architecture variants for major model families
             "deepseek" | "deepseek_v2" | "deepseek-v2" => Some(Self::DeepSeek),
             "gemma" | "gemma2" | "gemma3" => Some(Self::Gemma),
@@ -139,7 +141,9 @@ impl Architecture {
             "openelm" => Some(Self::OpenElm),
             "rwkv" | "rwkv7" | "rwkv-7" => Some(Self::Rwkv7),
             // LLaMA derivatives (use LLaMA tensor naming)
-            "smollm" | "smollm2" | "granite" | "granite3" | "nemotron" => Some(Self::Llama),
+            // GH-1591 OLMo / GH-1592 StableLM added here as Llama-family
+            "smollm" | "smollm2" | "granite" | "granite3" | "nemotron" | "olmo" | "olmo2"
+            | "stablelm" | "stablelm_epoch" | "stablelm_alpha" => Some(Self::Llama),
             _ => None,
         }
     }
