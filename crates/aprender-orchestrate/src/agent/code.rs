@@ -408,6 +408,51 @@ fn instruction_budget(context_window: usize) -> usize {
     budget.min(4096)
 }
 
+/// PMAT-CODE-ORG-POLICY-RUNTIME-001: assemble the system prompt from
+/// its component blocks in the canonical order (matches PolicyTier
+/// precedence + project-instruction conventions).
+///
+/// Pure function — no I/O, no global state. Each input is `Option`-
+/// wrapped so the caller can pass `None` for a missing block; the
+/// helper is responsible for choosing whether to emit the section
+/// heading at all.
+///
+/// Ordering rationale:
+///
+/// 1. `base` — the always-present `CODE_SYSTEM_PROMPT` (tool table,
+///    grammar, sovereign-by-default reminders).
+/// 2. `## Enforced organization policy` — `PolicyTier::Enforced`,
+///    highest precedence; surfaced FIRST after `base` so downstream
+///    sections cannot override it.
+/// 3. `## Project Context` — git branch, file stats, language.
+/// 4. `## Project Instructions` — CLAUDE.md / APR.md (with @import
+///    expansion + user-level fallback).
+/// 5. `## Auto-memory` — per-project memory directory contents.
+fn assemble_system_prompt(
+    base: &str,
+    project_context: &str,
+    project_instructions: Option<&str>,
+    auto_memory: Option<&str>,
+    org_policy: Option<&crate::agent::org_policy::OrgPolicy>,
+) -> String {
+    let mut out = String::from(base);
+    if let Some(pol) = org_policy {
+        out.push_str(&format!(
+            "\n\n## Enforced organization policy ({source})\n\n{content}",
+            source = pol.source.display(),
+            content = pol.content
+        ));
+    }
+    out.push_str(&format!("\n\n## Project Context\n\n{project_context}"));
+    if let Some(instructions) = project_instructions {
+        out.push_str(&format!("\n## Project Instructions\n\n{instructions}"));
+    }
+    if let Some(mem) = auto_memory {
+        out.push_str(&format!("\n## Auto-memory\n\n{mem}"));
+    }
+    out
+}
+
 /// Gather project context — git info, file stats, language.
 fn gather_project_context() -> String {
     let mut ctx = String::new();
@@ -496,14 +541,27 @@ fn build_default_manifest() -> AgentManifest {
         eprintln!("⚠ {w}");
     }
 
-    let mut system_prompt = CODE_SYSTEM_PROMPT.to_string();
-    system_prompt.push_str(&format!("\n\n## Project Context\n\n{project_context}"));
-    if let Some(ref instructions) = project_instructions {
-        system_prompt.push_str(&format!("\n## Project Instructions\n\n{instructions}"));
-    }
-    if let Some(ref mem) = auto_memory {
-        system_prompt.push_str(&format!("\n## Auto-memory\n\n{mem}"));
-    }
+    // PMAT-CODE-ORG-POLICY-RUNTIME-001: load enforced org policy from
+    // `/etc/apr-code/CLAUDE.md` (native first) or `/etc/claude-code/CLAUDE.md`
+    // (cross-compat). The loader silently skips missing files + I/O errors so
+    // a sandboxed runtime can't ransom REPL boot. PolicyTier::Enforced is the
+    // highest tier — surfaced FIRST in the system prompt so a downstream
+    // project / user / auto-memory section cannot override it. Uses the same
+    // 25%-of-context budget as project_instructions; `max_bytes == 0`
+    // disables the loader entirely (small models).
+    let org_policy = crate::agent::org_policy::load_org_policy(
+        &crate::agent::org_policy::canonical_system_roots(),
+        "CLAUDE.md",
+        budget,
+    );
+
+    let system_prompt = assemble_system_prompt(
+        CODE_SYSTEM_PROMPT,
+        &project_context,
+        project_instructions.as_deref(),
+        auto_memory.as_deref(),
+        org_policy.as_ref(),
+    );
 
     AgentManifest {
         name: "apr-code".to_string(),
