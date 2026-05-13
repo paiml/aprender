@@ -1,0 +1,59 @@
+{
+  "evidence_id": "SECTION-75-SHIP-007-LIVE-DISCHARGED-2026-05-13",
+  "session_date": "2026-05-13",
+  "summary": "SHIP-007 LIVE-DISCHARGED via PR-E fix in F32 GEMV PTX kernel layout. PARITY-GATE passes on default path. apr bench reports 124.6 tok/s @ 128-tok decode on RTX 4090 with --features cuda — 4.15× over AC-SHIP1-007 30 tok/s floor.",
+  "host": "noah-Lambda-Vector (RTX 4090, Ada Lovelace sm_89)",
+  "binary": "/mnt/nvme-raid0/targets/aprender/release/apr (PR-E fix applied)",
+  "artifact": "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr",
+  "fix_location": "crates/aprender-gpu/src/kernels/gemv/mod.rs::GemvKernel::build_ptx",
+  "root_cause": {
+    "what_was_wrong": "The F32 GEMV PTX kernel assumed weight matrix A is (K rows × N cols) row-major where A[i,j] is at offset i*N + j. But the standard ML weight convention (PyTorch/SafeTensors/GGUF/dequantized lm_head) stores weights as [output_dim, input_dim] row-major: A[i,j] at i*K + j (where i is output index, j is input index).",
+    "symptom": "Kernel read TRANSPOSED weights. Computed y[i] = sum_k(A[k, i] * x[k]) instead of y[i] = sum_k(A[i, k] * x[k]). Produced systematically anti-correlated logits (cos=-0.005 vs CPU).",
+    "code_change": "Replaced 'col_offset = block_id * 4 + row_stride iteration' with 'row_base = a_ptr + block_id * K * 4; thread iterates A[block_id, t*32+thread_id]' for proper [N,K] row-major access."
+  },
+  "discharge_evidence": {
+    "ac_ship1_007_floor": 30,
+    "measured_tokens_per_second": 124.6,
+    "headroom_x": 4.15,
+    "iterations": 5,
+    "max_tokens_per_iter": 128,
+    "p50_latency_ms": 1016.4,
+    "p95_latency_ms": 1073.3,
+    "ttft_ms": 8.39,
+    "passed": true,
+    "parity_gate_status": "PASS (no error returned from forward_gpu_resident)"
+  },
+  "before_vs_after": {
+    "before_pr_e": {
+      "parity_gate": "FAILED with cos=-0.005190",
+      "argmax_match": "CPU=334 GPU=8127 (completely wrong)",
+      "throughput_with_skip_gate": "5.6 tok/s (§63) / 54.5 tok/s (§73 re-measurement)"
+    },
+    "after_pr_e": {
+      "parity_gate": "PASS (no error)",
+      "default_path_throughput": "124.6 tok/s",
+      "no_workarounds_needed": "SKIP_PARITY_GATE=1 and APR_SKIP_FP8_WARMUP=1 NOT needed"
+    }
+  },
+  "ship_percent_impact": {
+    "model_1_pre_section_75": "99% (9/10 AC-SHIP1-* LIVE-discharged; SHIP-007 PARTIAL)",
+    "model_1_post_section_75": "100% (10/10 AC-SHIP1-* LIVE-discharged)",
+    "what_this_unlocks": "MODEL-1 ship %: 100%. The full §17.5 chain + GATE-SHIP-001 fall into place. SHIP-TWO-001 MODEL-1 fully ships."
+  },
+  "cascade_arc_closeout": {
+    "section_63": "framed SHIP-007 as 3-layer cascade (FP8 warmup + parity + throughput)",
+    "section_73": "re-measured, found 2 of 3 layers already fixed; only parity blocks",
+    "pr_a_1648": "contract scaffold for stage bisection",
+    "pr_b_1649": "APR_GPU_STAGE_DUMP scaffold + intermediate dumps",
+    "section_74_1650": "bug LOCALIZED via stage-by-stage stats analysis to F32 GEMV",
+    "pr_e_this_section": "single-file F32 GEMV layout fix → discharge",
+    "total_session_scope": "1 PR shipped in 1 day, after §73's '3-5 PR / 3-5 day' estimate"
+  },
+  "methodology_lessons_through_section_75": {
+    "lesson_22_new": "Symptom analysis (cos=-0.005, sign-flipped top divergences, GPU mean=0 vs CPU mean=-2.4) localized bug to transposed weight matmul in O(1) — once we knew the bug was in LM head F32 GEMV, the layout issue was visible in the PTX builder code in seconds. Lessons #16-20 (compose falsifiers, predict-then-verify, stage-by-stage stats) compose to make this rate of localization possible."
+  },
+  "files_touched_by_pr_e": [
+    "crates/aprender-gpu/src/kernels/gemv/mod.rs (F32 GEMV kernel — layout fix)",
+    "crates/aprender-serve/src/cuda/executor/layers/logits.rs (APR_LM_HEAD_FORCE_QTYPE env-var probe — kept as diagnostic)"
+  ]
+}
