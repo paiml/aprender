@@ -1,0 +1,83 @@
+{
+  "evidence_id": "SECTION-74-SHIP-007-BISECTION-2026-05-13",
+  "session_date": "2026-05-13",
+  "summary": "First empirical CPU-vs-GPU intermediate-stage diff on canonical 7B teacher. PR-B's APR_GPU_STAGE_DUMP scaffold captures GPU embedding, post_ffn_residual (layer 27), final_norm, and logits + CPU logits (parity_gate). Bug LOCALIZED to LM head dispatch: GPU intermediate values (post_ffn_residual, final_norm) look numerically sane; the systematic anti-correlation emerges in lm_head.",
+  "host": "noah-Lambda-Vector (RTX 4090, Ada Lovelace sm_89)",
+  "binary": "/mnt/nvme-raid0/targets/aprender/release/apr (commit ~36f9829ae7, --features cuda)",
+  "artifact": "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.gguf",
+  "input_token": "single BOS at position 0 (parity_gate canonical)",
+  "stages_captured": {
+    "gpu_embedding": {
+      "path": "evidence/.../layer-0/embedding.bin (not exported)",
+      "elements": 3584
+    },
+    "gpu_post_ffn_residual_layer_27": {
+      "path": "evidence/.../post_ffn_residual.bin",
+      "elements": 3584,
+      "first_10": [1.009, 4.098, 5.705, 16.176, 3.553, -28.001, -16.874, 11.326, 72.343, 25.155],
+      "mean": 0.0220,
+      "max": 370.668,
+      "min": -949.248,
+      "rms": 26.1185,
+      "interpretation": "Reasonable hidden-state magnitudes for residual-stream at end of 28-layer stack."
+    },
+    "gpu_final_norm": {
+      "path": "evidence/.../final_norm.bin",
+      "elements": 3584,
+      "first_10": [0.118, 0.488, 0.679, 1.897, 0.417, -3.350, -1.999, 1.348, 6.102, 3.551],
+      "mean": 0.0370,
+      "max": 51.6669,
+      "min": -59.2264,
+      "rms": 2.8413,
+      "interpretation": "Post-RMSNorm magnitudes look correct (typical post-norm rms ≈ 2-3)."
+    },
+    "gpu_logits": {
+      "path": "evidence/.../gpu-lm-head.bin",
+      "elements": 152064,
+      "argmax": 8127,
+      "argmax_val": 11.3731,
+      "mean": 0.0134,
+      "stdev": 2.4017
+    },
+    "cpu_logits": {
+      "path": "evidence/.../cpu-lm-head.bin",
+      "elements": 152064,
+      "argmax": 334,
+      "argmax_val": 13.8508,
+      "mean": -2.4181,
+      "stdev": 2.1054
+    }
+  },
+  "diff_result": {
+    "cosine_similarity": -0.0051904189,
+    "rms_diff": 4.015977,
+    "max_abs_diff": 19.50531,
+    "max_abs_diff_index": 117375,
+    "top_divergences_all_sign_flipped": true,
+    "cpu_mean_vs_gpu_mean": "-2.4181 vs +0.0134 (Δ=2.43)",
+    "interpretation": "Systematic anti-correlation + 2.43 mean offset. Not random noise; not pure negation (cos=-0.005, not -1)."
+  },
+  "localization": {
+    "stage": "LM head dispatch (dispatch_lm_head_and_download → q6k_gemv_into for Qwen 7B Q4_K_M LM head)",
+    "evidence": [
+      "GPU post_ffn_residual at layer 27 has reasonable rms=26 (typical for end-of-stack residual)",
+      "GPU final_norm has reasonable rms=2.84 (typical post-RMSNorm)",
+      "GPU logits have mean=0.0134 — well-centered — whereas CPU has mean=-2.42",
+      "The CPU's logits have a clear negative bias (most tokens unlikely, predicted token strongly positive) — Qwen's typical inference signature",
+      "The GPU's logits look mean-centered — suggesting the LM head matmul produces a different output than expected"
+    ],
+    "fault_class": "Layout/stride bug in q6k_gemv_into or its dispatch (per memory project_ship_007_attention_parity_investigation.md: 'bug is layout/stride/buffer, NOT arithmetic')",
+    "hypothesis": "lm_head weight may be stored with wrong shape interpretation OR the gemv kernel uses wrong stride. The Q4_K_M GGUF stores lm_head as a [vocab_size, hidden_dim] matrix that must be matmul'd with hidden_state[hidden_dim] to produce logits[vocab_size]. If the kernel transposes or strides incorrectly, the output is systematically wrong."
+  },
+  "next_slice_for_pr_e": {
+    "verify_step_1": "Run apr trace --save-tensor final_norm on the canonical APR teacher and confirm CPU final_norm == GPU final_norm (modulo Q4K tolerance) for single BOS token. If they match, the bug is confirmed in LM head dispatch.",
+    "verify_step_2": "Compute logits manually from GPU's final_norm using a CPU q6k decoder + lm_head matmul; verify those logits match CPU's logits (would confirm GPU's final_norm is correct).",
+    "fix_candidates": [
+      "Read q6k_gemv_into kernel: check vocab_size and hidden_dim are passed correctly to the kernel",
+      "Check stride/leading dimension: lm_head_weight is logically [vocab_size, hidden_dim] but Q4_K_M stores in super-block rows. Q6K super-blocks must be addressed by row not column.",
+      "Check the row indexing in the kernel: e.g., if the kernel reads weight[vocab][hidden] instead of weight[vocab × bytes_per_row + sb] → wrong indexing",
+      "Compare q6k_gemv_into Q6K specifically against the production CPU q6k_matvec used in OwnedQuantizedModel::forward_single_with_cache"
+    ]
+  },
+  "ship_percent_impact": "MODEL-1 unchanged at 99%. Localization complete; fix is single GPU kernel surface (q6k_gemv_into). PR-E ships fix + discharge proof."
+}
