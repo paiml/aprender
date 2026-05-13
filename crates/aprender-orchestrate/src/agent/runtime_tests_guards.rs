@@ -58,6 +58,7 @@ async fn test_mcp_privacy_gate_blocks_sse() {
         command: vec![],
         url: Some("https://example.com/mcp".into()),
         capabilities: vec!["*".into()],
+        env: Default::default(),
     }];
 
     let driver = MockDriver::single_response("unreachable");
@@ -85,6 +86,7 @@ async fn test_mcp_privacy_gate_blocks_websocket() {
         command: vec![],
         url: Some("wss://example.com/mcp".into()),
         capabilities: vec![],
+        env: Default::default(),
     }];
 
     let driver = MockDriver::single_response("unreachable");
@@ -112,6 +114,7 @@ async fn test_mcp_privacy_gate_allows_stdio() {
         command: vec!["echo".into()],
         url: None,
         capabilities: vec!["*".into()],
+        env: Default::default(),
     }];
 
     let driver = MockDriver::single_response("ok");
