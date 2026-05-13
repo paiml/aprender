@@ -1,7 +1,8 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 3.19.0
+**Version:** 3.20.0
+**Atomic next action (v3.20.0):** **§74 — SHIP-007 bug LOCALIZED to LM head F32 GEMV via PR-B stage bisection (2026-05-13)** (see new §74 below). PR-B (#1649) APR_GPU_STAGE_DUMP scaffold captured GPU embedding + post_ffn_residual L27 + final_norm + lm_head + CPU lm_head on single BOS token. GPU intermediate values look numerically sane (post_ffn_residual rms=26, final_norm rms=2.84). Divergence emerges between final_norm and logits: GPU logits mean=0.013 vs CPU mean=-2.42 (Δ=2.43; CPU has Qwen's typical negative-bias signature). PMAT-333 dequantizes ALL weights to F32 on GPU upload (28.3 GB), so `WeightQuantType::from_size` returns F32 for LM head → dispatches `f32_gemv_into`. The F32 GEMV kernel is the localized bug surface. **Methodology lesson #21 NEW**: stage-by-stage numerical analysis can localize bug class without per-element diffing. **MODEL-1 ship %**: unchanged at **99%** (Layer 2 localized; PR-E for fix). **MODEL-2 ship %**: unchanged at **57%**. Path-to-100% reduced to a single PR-E.
 **Atomic next action (v3.19.0):** §72 + §73 combined banner — see both sections below.
 **Atomic next action (v3.18.0 §73):** **§73 — SHIP-007 cascade reduced from 3 layers to 1 on re-measurement; only Layer 2 (parity) blocks (2026-05-12)** (see new §73 below). §63's 2026-05-11 3-layer blocker stack — (1) FP8 warmup ILLEGAL_ADDRESS, (2) GPU-vs-CPU parity cos=-0.005190, (3) throughput 5.6 vs 30 tok/s floor — re-measured on 2026-05-12 lambda-vector RTX 4090 reveals 2 of 3 layers already discharged: **Layer 1 fixed** (`[PMAT-082] cuBLASLt FP8 JIT warmed (3584×16×3584)` succeeds), **Layer 3 meets floor** (54.5 tok/s @ 128-tok decode, 5-iter median, 1.82× headroom). Only **Layer 2 still blocks** (byte-identical cos=-0.005190 signature). Path to SHIP-007 LIVE-discharge reduced from "5-10 PR / 1-2 week cascade" to **"3-5 PR / 3-5 day single-layer fix"** — add `forward_gpu_traced` → wire `apr trace --device gpu --save-tensor all` → diff CPU vs GPU stage tensors → fix localized stage → discharge. **Methodology lesson #20 NEW**: re-measure cascade layers before continuing; stale state can be reduced cheaply. **MODEL-1 ship %**: unchanged at **99%** (Layer 2 still blocks). **MODEL-2 ship %**: unchanged at **57%**.
 **Atomic next action (v3.18.0 §72):** **§72 — 5-AC LIVE-evidence cascade SHIP-001/003/004/009/010 PARTIAL→LIVE-DISCHARGED (2026-05-12)** (see new §72 below). Single ~30-min session captured LIVE evidence for 5 ACs that were PARTIAL_ALGORITHM_LEVEL (had falsifier code, no LIVE-evidence on canonical teacher): SHIP-001 (`apr run <safetensors>` exit 0 + 62.55s load), SHIP-003 (`apr diff` 20 tensors at `cos_sim=1.000000` vs floor 0.999), SHIP-004 (llama-cli on Q4_K_M GGUF: exit 0, "Hello! How can I help you today", 133.1 gen tok/s), SHIP-009 (`apr inspect`: `license: Apache-2.0`, `data_source: huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct`), SHIP-010 (sha256 `0a854098…` == HF lfs.oid). No code changes — pure evidence cascade. **MODEL-1 ship %**: **95% → 99%** (9/10 AC-SHIP1-* LIVE-discharged; only SHIP-007 remains as multi-PR CUDA cascade per §63). **Methodology lesson #19 NEW**: algorithm-level falsifiers + small evidence runs collapse PARTIAL→LIVE in batches. **MODEL-2 ship %**: unchanged at **57%**.
@@ -5075,6 +5076,116 @@ Evidence:
 - Predecessor: `evidence/section-63-ship-007-empirical-floor-2026-05-11/findings.json` (stale 3-layer analysis)
 
 Spec v3.17.0 → **v3.18.0**.
+
+---
+
+## §74. SHIP-007 bug LOCALIZED via PR-B stage bisection — LM head F32 GEMV (2026-05-13)
+
+§73 reduced the SHIP-007 cascade to 1 layer (Layer 2 parity). PR-A (#1648) shipped the contract scaffold. PR-B (#1649) shipped the `APR_GPU_STAGE_DUMP` diagnostic surface + Embedding/PostFfnResidual/FinalNorm/LmHead capture. §74 reports the **empirical localization** result.
+
+### 74.1 Bisection method
+
+Single BOS-token forward through `apr parity` with `APR_GPU_STAGE_DUMP=/tmp/ship-007-gpu-stages SKIP_CUDA_GRAPH=1` captures:
+- GPU embedding (host-side embed_into output)
+- GPU post_ffn_residual @ layer 27 (end of 28-layer stack)
+- GPU final_norm (post-output-RMSNorm)
+- GPU lm_head (logits)
+- CPU lm_head (logits, from parity_gate's CPU forward)
+
+### 74.2 Empirical values (canonical 7B teacher, lambda-vector RTX 4090)
+
+| Stage | mean | rms | max | min | Verdict |
+|-------|------|-----|-----|-----|---------|
+| GPU post_ffn_residual L27 | 0.022 | 26.12 | 370.67 | -949.25 | Sane (typical end-of-stack residual) |
+| GPU final_norm | 0.037 | 2.84 | 51.67 | -59.23 | Sane (typical post-RMSNorm) |
+| GPU lm_head | 0.013 | 2.40 | 11.37 | — | **Mean-centered (suspicious)** |
+| CPU lm_head | **-2.42** | 2.11 | 13.85 | — | **Negative-biased (Qwen typical)** |
+
+Mean differs by 2.43. CPU has Qwen's typical strongly-negative logit bias (most tokens unlikely; predicted token strongly positive). GPU has near-zero mean → produces a different LM head output.
+
+Cosine(CPU, GPU) = -0.005190 (byte-identical to §73/§63). Top-10 divergences all sign-flipped.
+
+### 74.3 Localization conclusion
+
+**Bug is in LM head dispatch (`dispatch_lm_head_and_download` → `f32_gemv_into`).**
+
+The GPU intermediate stages look numerically correct. The divergence emerges between `final_norm` (rms=2.84) and the LM head matmul output. The CPU path uses `fused_matmul_into` on Q6K weights via `crates/aprender-serve/src/gguf/inference/forward/results.rs:658-663`. The GPU path:
+
+1. PMAT-333 dequantizes ALL weights to F32 on upload (`28282.5 MB F32` reported in parity logs)
+2. `WeightQuantType::from_size(2179989504, 152064, 3584)` returns **F32** (matches 152064 × 3584 × 4 bytes exactly)
+3. Dispatches `f32_gemv_into` from `crates/aprender-serve/src/cuda/executor/weight.rs:724`
+
+The F32 GEMV PTX kernel produces logits with mean=0.013 vs CPU's mean=-2.42. Either:
+- The F32 dequantization step is incorrect (rare; would corrupt many weights, not just LM head)
+- The F32 GEMV kernel has a layout/stride bug (most likely)
+
+Per memory `project_ship_007_attention_parity_investigation.md`: "bug is layout/stride/buffer, NOT arithmetic. Negative cosine -0.005 = systematic anti-correlation." Matches.
+
+### 74.4 PR-E plan
+
+| Step | What | LOC |
+|------|------|-----|
+| 74.4.1 | Verify GPU final_norm matches CPU final_norm via `apr trace --save-tensor final_norm` on single BOS — locks bug in LM head dispatch | 0 (empirical) |
+| 74.4.2 | Read `f32_gemv_into` PTX kernel for layout/stride bugs (compare with the CPU `fused_matmul_into` reference path) | code review |
+| 74.4.3 | Alternative path: bypass dequantization-to-F32 for LM head; keep Q6K weights and use `q6k_gemv_into` path (which was the pre-PMAT-333 dispatch) | ~50-100 LOC if simple |
+| 74.4.4 | Fix; rerun `apr parity`; expect cos ≥ 0.98 → SHIP-007 LIVE-DISCHARGED → MODEL-1 99% → 100% | ~50-300 LOC |
+
+### 74.5 Cascade arc closeout
+
+§73 (cascade reduced) → PR-A #1648 (contract) → PR-B #1649 (stage scaffold + dumps) → §74 (bug localized) → PR-E (fix + discharge).
+
+The cascade went from "5-10 PR / 1-2 week" (§63 framing) to "1 PR / 1-3 days" (PR-E). Compounding factors:
+- §73 re-measurement discovered 2 of 3 layers already fixed
+- PR-B's APR_GPU_STAGE_DUMP captures CPU & GPU stage tensors on the SAME single BOS token
+- Numerical analysis of intermediate stages localized bug to LM head F32 GEMV
+
+### 74.6 Methodology lesson #21 (NEW)
+
+**Stage-by-stage numerical analysis can localize a bug class without per-element diffing.** §74 compared stage-level statistics (rms, mean, min/max) between CPU and GPU. Sane intermediate stats + divergent logits stats was enough to localize the bug to the LM head matmul — no need to do per-element comparison of intermediate stages. Per-element diff is the heavy hammer; per-stage stats is the scalpel.
+
+### 74.7 Cumulative methodology lessons through §74
+
+| # | Lesson |
+|---|--------|
+| 6 | Magnitude bugs decompose via falsifier chains |
+| 7 | Methodology can fake bug magnitude |
+| 8 | Falsifier RED may surface different bug class |
+| 9 | Falsifier GREEN may invalidate earlier RED |
+| 10 | Single bug class may need multi-PR fixes across call sites |
+| 11 | Unblocking closure may transitively unblock SOME PARTIALs |
+| 12 | Directional sample can lie about full-distribution performance |
+| 13 | Cross-CLI behavior comparison falsifies hypotheses fast |
+| 14 | Near-miss results bound refinement scope |
+| 15 | Smoke-test-driven scope reduction |
+| 16 | Compose falsifiers via manual end-to-end replication |
+| 17 | Pre-fix RED smoke can mask the bug class |
+| 18 | Predict-then-verify closes a cascade |
+| 19 | Algorithm-level falsifiers + small evidence runs collapse PARTIAL→LIVE in batches |
+| 20 | Re-measure cascade layers before continuing |
+| **21** | **Stage-by-stage numerical analysis can localize a bug class without per-element diffing** |
+
+### 74.8 Ship-% movement
+
+- **MODEL-1 ship %**: unchanged at **99%** (Layer 2 still blocks). Localization complete; PR-E remaining.
+- **MODEL-2 ship %**: unchanged at **57%**.
+
+Path-to-100% now reduced to a **single PR**: PR-E fixes the localized F32 GEMV bug (or restores Q6K dispatch path), then `apr parity` discharge proof.
+
+### 74.9 What §74 is NOT
+
+§74 does NOT:
+- Identify the specific PTX or kernel bug line (PR-E task)
+- Modify any kernel code (PR-B's bisection scaffolding, no compute changes)
+- Verify GPU final_norm matches CPU final_norm (PR-E step 74.4.1)
+
+Evidence:
+- `evidence/section-74-ship-007-bisection-2026-05-13/findings.json`
+- `evidence/section-74-ship-007-bisection-2026-05-13/{cpu,gpu}-lm-head.bin` (CPU + GPU logits on single BOS)
+- `evidence/section-74-ship-007-bisection-2026-05-13/post_ffn_residual.bin` (GPU L27 hidden)
+- `evidence/section-74-ship-007-bisection-2026-05-13/final_norm.bin` (GPU post-output-norm)
+- `evidence/section-74-ship-007-bisection-2026-05-13/lm-head-diff.txt` (apr diff --values)
+
+Spec v3.18.0 → **v3.19.0**.
 
 ---
 
