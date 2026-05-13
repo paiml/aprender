@@ -27,14 +27,34 @@ impl CudaExecutor {
         // PAR-058: Detect LM head quantization type using size-based detection
         // ALB-098: Use pool-aware lookup (pool entries or individual cache)
         let (lm_head_ptr, lm_head_buf_size) = self.get_quantized_weight_ptr_and_size(&lm_head_name)?;
-        let lm_head_qtype =
-            WeightQuantType::from_size(lm_head_buf_size, vocab_size as usize, hidden_dim as usize)
+
+        // SHIP-007 PR-E: env-gated qtype override for bisection test.
+        // §74 localized the bug to f32_gemv_into when LM head is dequantized
+        // to F32 by PMAT-333 (WGPU adapter). Setting APR_LM_HEAD_FORCE_QTYPE=q6k
+        // forces dispatch to q6k_gemv_into instead, which matches the CPU
+        // fused_matmul_into path semantically.
+        let lm_head_qtype = std::env::var("APR_LM_HEAD_FORCE_QTYPE")
+            .ok()
+            .and_then(|v| match v.to_lowercase().as_str() {
+                "q6k" => Some(WeightQuantType::Q6K),
+                "q4k" => Some(WeightQuantType::Q4K),
+                "q5k" => Some(WeightQuantType::Q5K),
+                "f32" => Some(WeightQuantType::F32),
+                _ => None,
+            })
+            .unwrap_or_else(|| {
+                WeightQuantType::from_size(
+                    lm_head_buf_size,
+                    vocab_size as usize,
+                    hidden_dim as usize,
+                )
                 .unwrap_or_else(|| {
                     self.quantized_weight_types
                         .get(&lm_head_name)
                         .and_then(|&t| WeightQuantType::from_ggml_type(t))
                         .unwrap_or(WeightQuantType::Q4K)
-                });
+                })
+            });
 
         // CORRECTNESS-002: Debug LM head weight buffer
         if debug_enabled {
