@@ -457,7 +457,7 @@ impl Default for ResourceQuota {
 
 /// Configuration for an external MCP server connection. [F-022]
 #[cfg(feature = "agents-mcp")]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct McpServerConfig {
     /// MCP server name (used for capability matching).
     pub name: String,
@@ -471,14 +471,21 @@ pub struct McpServerConfig {
     /// Tool names granted from this server. `["*"]` grants all.
     #[serde(default)]
     pub capabilities: Vec<String>,
+    /// Environment variables to set in the MCP subprocess (stdio only).
+    /// PMAT-CODE-MCP-ENV-001: threaded from `.mcp.json` `env` field.
+    /// Empty map = inherit parent env unchanged. Only stdio transport
+    /// honors this; SSE/WebSocket use HTTP, not subprocess spawn.
+    #[serde(default)]
+    pub env: std::collections::BTreeMap<String, String>,
 }
 
 /// MCP transport mechanism. [F-022]
 #[cfg(feature = "agents-mcp")]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum McpTransport {
     /// Subprocess communication via stdin/stdout.
+    #[default]
     Stdio,
     /// Server-Sent Events over HTTP.
     Sse,
