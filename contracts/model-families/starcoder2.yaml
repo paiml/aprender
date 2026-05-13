@@ -1,0 +1,172 @@
+metadata:
+  version: "1.0"
+  created: "2026-05-13"
+  description: "Model family descriptor: starcoder2 (closes GH-1593)"
+  kind: model-family
+  references:
+    - "https://huggingface.co/bigcode/starcoder2-3b/blob/main/config.json"
+    - "https://huggingface.co/bigcode/starcoder2-7b/blob/main/config.json"
+    - "https://huggingface.co/bigcode/starcoder2-15b/blob/main/config.json"
+
+family: starcoder2
+display_name: "BigCode StarCoder2"
+vendor: BigCode
+architectures:
+  - Starcoder2ForCausalLM
+hf_pattern: "bigcode/starcoder2-*"
+
+# StarCoder2 is `from_model_type("starcoder2") => Architecture::Gpt2` in
+# tensor_expectation.rs, mirroring the existing alias table entry
+# `("starcoder2", "Starcoder2ForCausalLM")` in kernel_explain/resolve.rs.
+# StarCoder2 differs from GPT-2 in several runtime details — RoPE (not
+# absolute), GQA (not MHA), sliding-window attention, GELU + LayerNorm —
+# but tensor naming follows the same `c_attn`/`c_fc`/`c_proj` Conv1D
+# layout, so the existing GPT-2 mapper handles names correctly. Engine
+# support for RoPE+GQA on the GPT-2 path is gated separately.
+size_variants:
+  3b:
+    parameters: "3B"
+    hidden_dim: 3072
+    num_layers: 30
+    num_heads: 24
+    num_kv_heads: 2
+    intermediate_dim: 12288
+    vocab_size: 49152
+    max_position_embeddings: 16384
+    head_dim: 128
+    rope_theta: 999999.4420
+    norm_eps: 0.00001
+  7b:
+    parameters: "7B"
+    hidden_dim: 4608
+    num_layers: 32
+    num_heads: 36
+    num_kv_heads: 4
+    intermediate_dim: 18432
+    vocab_size: 49152
+    max_position_embeddings: 16384
+    head_dim: 128
+    rope_theta: 1000000.0
+    norm_eps: 0.00001
+  15b:
+    parameters: "15B"
+    hidden_dim: 6144
+    num_layers: 40
+    num_heads: 48
+    num_kv_heads: 4
+    intermediate_dim: 24576
+    vocab_size: 49152
+    max_position_embeddings: 16384
+    head_dim: 128
+    rope_theta: 100000.0
+    norm_eps: 0.00001
+
+constraints:
+  attention_type: gqa
+  activation: gelu
+  norm_type: layernorm
+  has_bias: true
+  tied_embeddings: false
+  positional_encoding: rope
+  mlp_type: gelu_mlp
+
+# StarCoder2 HuggingFace tensor names (post-Conv1D-split):
+#   model.embed_tokens.weight
+#   model.layers.{n}.self_attn.{q,k,v,o}_proj.{weight,bias}
+#   model.layers.{n}.mlp.{c_fc,c_proj}.{weight,bias} → up_proj / down_proj
+#   model.layers.{n}.input_layernorm.{weight,bias}
+#   model.layers.{n}.post_attention_layernorm.{weight,bias}
+#   model.norm.{weight,bias}
+#   lm_head.weight (tied to embed_tokens)
+#
+# No SwiGLU — gate_proj is absent (single-path MLP like GPT-2). Q/K/V
+# bias is present (HF config `attention_bias: true`); FFN bias is also
+# present (`mlp_bias: true`).
+tensor_template:
+  embedding: "model.embed_tokens.weight"
+  lm_head: "lm_head.weight"
+  final_norm: "model.norm.weight"
+  per_layer:
+    q_proj_weight: "model.layers.{n}.self_attn.q_proj.weight"
+    q_proj_bias: "model.layers.{n}.self_attn.q_proj.bias"
+    k_proj_weight: "model.layers.{n}.self_attn.k_proj.weight"
+    k_proj_bias: "model.layers.{n}.self_attn.k_proj.bias"
+    v_proj_weight: "model.layers.{n}.self_attn.v_proj.weight"
+    v_proj_bias: "model.layers.{n}.self_attn.v_proj.bias"
+    o_proj_weight: "model.layers.{n}.self_attn.o_proj.weight"
+    o_proj_bias: "model.layers.{n}.self_attn.o_proj.bias"
+    up_proj_weight: "model.layers.{n}.mlp.up_proj.weight"
+    up_proj_bias: "model.layers.{n}.mlp.up_proj.bias"
+    down_proj_weight: "model.layers.{n}.mlp.down_proj.weight"
+    down_proj_bias: "model.layers.{n}.mlp.down_proj.bias"
+    input_layernorm_weight: "model.layers.{n}.input_layernorm.weight"
+    input_layernorm_bias: "model.layers.{n}.input_layernorm.bias"
+    post_attention_layernorm_weight: "model.layers.{n}.post_attention_layernorm.weight"
+    post_attention_layernorm_bias: "model.layers.{n}.post_attention_layernorm.bias"
+    gate_proj_weight: null
+    gate_proj_bias: null
+
+shape_template:
+  embedding: "[vocab_size, hidden_dim]"
+  lm_head: "[vocab_size, hidden_dim]"
+  final_norm: "[hidden_dim]"
+  q_proj: "[num_heads * head_dim, hidden_dim]"
+  k_proj: "[num_kv_heads * head_dim, hidden_dim]"
+  v_proj: "[num_kv_heads * head_dim, hidden_dim]"
+  o_proj: "[hidden_dim, num_heads * head_dim]"
+  up_proj: "[intermediate_dim, hidden_dim]"
+  down_proj: "[hidden_dim, intermediate_dim]"
+  input_layernorm: "[hidden_dim]"
+  post_attention_layernorm: "[hidden_dim]"
+  bias: "[hidden_dim]"
+
+# llama.cpp StarCoder2 GGUF expects fused attn_qkv plus standard GPT-2
+# tensor naming (output, output_norm, attn_norm, ffn_norm, ffn_up,
+# ffn_down).
+gguf_tensor_template:
+  embedding: "token_embd.weight"
+  position_embedding: null
+  lm_head: "output.weight"
+  final_norm_weight: "output_norm.weight"
+  final_norm_bias: "output_norm.bias"
+  transpose_weights: false
+  per_layer:
+    q_proj_weight: null
+    q_proj_bias: null
+    k_proj_weight: null
+    k_proj_bias: null
+    v_proj_weight: null
+    v_proj_bias: null
+    o_proj_weight: "attn_output.weight"
+    o_proj_bias: "attn_output.bias"
+    up_proj_weight: "ffn_up.weight"
+    up_proj_bias: "ffn_up.bias"
+    down_proj_weight: "ffn_down.weight"
+    down_proj_bias: "ffn_down.bias"
+    input_layernorm_weight: "attn_norm.weight"
+    input_layernorm_bias: "attn_norm.bias"
+    post_attention_layernorm_weight: "ffn_norm.weight"
+    post_attention_layernorm_bias: "ffn_norm.bias"
+    gate_proj_weight: null
+    gate_proj_bias: null
+  fuse:
+    - gguf_name: "attn_qkv.weight"
+      sources: [q_proj_weight, k_proj_weight, v_proj_weight]
+    - gguf_name: "attn_qkv.bias"
+      sources: [q_proj_bias, k_proj_bias, v_proj_bias]
+
+quantizations:
+  - q4_k_m
+  - q5_k_m
+  - q6_k
+  - q8_0
+  - f16
+  - f32
+
+certification:
+  playbook_path: "../apr-model-qa-playbook/playbooks/models/starcoder2-{size}.playbook.yaml"
+  csv_family_key: "starcoder2"
+  size_categories:
+    3b: small
+    7b: medium
+    15b: large
