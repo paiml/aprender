@@ -382,6 +382,9 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         ExtendedCommands::Tokenize { command } => dispatch_tokenize_command(command, cli),
         ExtendedCommands::Data { command } => dispatch_data_command(command, cli.json),
         ExtendedCommands::Pipeline { command } => dispatch_pipeline_command(command, cli),
+        ExtendedCommands::Ppl { log_probs_file } => {
+            commands::ppl::run(log_probs_file, cli.json)
+        }
 
         ExtendedCommands::Diagnose {
             checkpoint_dir,
