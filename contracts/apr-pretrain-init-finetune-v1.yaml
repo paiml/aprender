@@ -1,10 +1,93 @@
 metadata:
   id: C-APR-PRETRAIN-INIT-FINETUNE
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-05-08'
+  updated: '2026-05-09'
   author: PAIML Engineering
   kind: pattern
-  status: DRAFT
+  status: DRAFT_PARTIAL_DISCHARGE
+  changelog:
+  - version: 1.1.0
+    date: '2026-05-09'
+    change: |
+      v1.0.0 → v1.1.0 — record first LIVE smoke verdict and surface
+      H1 (eval_batch degenerate) as a confirmed open defect.
+
+      LIVE 5g.2 smokes (3 runs on lambda-vector RTX 4090):
+
+        2026-05-08 (PR #1578 evidence) — PRE-FIX baseline:
+          step-0 train_loss = 0.0019  (degenerate; H2 populate gap)
+          step-0 val_loss   = 0.0008  (degenerate; H1 + H2 compounding)
+
+        2026-05-09 1-step CUDA smoke (post PR #1579 populate-coverage fix):
+          step-0 train_loss = 2.24    (PLAUSIBLE; H2 discharged)
+          step-0 val_loss   = 0.628   (low; H1 confirmed)
+          step-0 grad_norm  = 14.81   (healthy)
+
+        2026-05-09 500-step re-dispatch (this evidence, PR #1580):
+          epoch-0 train_loss = 1.20   (PLAUSIBLE; H2 discharged)
+          epoch-0 val_loss   = 0.00081 (degenerate; H1 confirmed)
+          epoch-0 grad_norm  = 14.81
+
+      The 1500× train/val discrepancy at SAME model state empirically
+      confirms H1 (eval_batch degenerate). H2 (populate gap) was a
+      real defect with a real fix (1000× shift in train_loss confirms
+      structural completeness) but was NOT the root cause of the
+      val_loss anomaly.
+
+      Falsifier ledger update:
+        FALSIFY-APR-PRETRAIN-INIT-FINETUNE-001 — exit 0:        DISCHARGED
+        FALSIFY-APR-PRETRAIN-INIT-FINETUNE-002 — wall ≤ 3600s:  DISCHARGED
+        FALSIFY-APR-PRETRAIN-INIT-FINETUNE-003 — step-0 ≤ 8.35: DISCHARGED (1.20)
+        FALSIFY-APR-PRETRAIN-INIT-FINETUNE-004 — magic bytes:   DISCHARGED
+        FALSIFY-APR-PRETRAIN-INIT-FINETUNE-005 — val_loss<9.38: NUMERICALLY-PASSED-METHODOLOGY-SUSPECT
+                                                  (0.00075 passes numerically; H1 eval bug
+                                                   means the number is not honest)
+        FALSIFY-APR-PRETRAIN-INIT-FINETUNE-006 — no CUDA errors: DISCHARGED
+
+      Status DRAFT → DRAFT_PARTIAL_DISCHARGE: 5/6 falsifiers
+      DISCHARGED, 1/6 NUMERICALLY-PASSED-METHODOLOGY-SUSPECT.
+      Promotion to ACTIVE_RUNTIME requires H1 resolved AND a re-
+      dispatch producing val_loss in the 1.5-2.5 plausible range.
+
+      Three H1 sub-hypotheses (each its own falsifier-discharge cascade):
+
+        A) gpu_training.logits_buf state contamination —
+           train_batch's fused_cross_entropy_cuda writes gradients
+           IN-PLACE into logits_buf (KAIZEN-052). If eval_batch's
+           subsequent gpu_forward doesn't fully overwrite the
+           gradients, eval reads a mix of fresh logits and stale
+           gradients.
+
+        B) Stream synchronization — host-side ordering bug where
+           loss_partials is read before the kernel finishes writing
+           it. The stream.synchronize() at line 805 of cuda_optim.rs
+           should prevent this, but a kernel failure that leaves
+           loss_partials at zero and isn't surfaced would explain
+           ~0 val_loss.
+
+        C) Held-out batch label corruption — pathological structure
+           in the held_out tokens such that get_target returns the
+           same tokens as get_input. Hard to hit by accident on
+           real Python code; least likely sub-hypothesis.
+
+      MODEL-2 ship % stays at 57% until FALSIFY-005 reaches honest
+      DISCHARGED state.
+
+      SHIP-TWO impact:
+        - MODEL-1 ship %: unchanged at 91% (this is MODEL-2 work)
+        - MODEL-2 ship %: unchanged at 57% (still gated on honest
+          5g.3 verdict; this evidence + analysis is the audit trail
+          showing why the prior numerical pass was not honest)
+        - §50.4 cascade: COMPLETE per #1577
+        - 5g.2 dispatch: OPERATOR-RUNNABLE end-to-end on RTX 4090
+          but the honest 5g.3 verdict remains gated on H1 resolution
+
+      Evidence:
+        evidence/section-60-5g-2-redispatch-2026-05-09/
+          dispatch.txt
+          epoch-{000,001,002}.metadata.json
+          README.md (H1/H2 hypothesis decomposition + audit)
   description: |
     Pins the falsifiable invariants of the SHIP-TWO §56.4 "Step 5g.2"
     LIVE 500-step fine-tune dispatch — the next observable ship-%-
