@@ -465,10 +465,93 @@ impl CudaExecutor {
         let debug_enabled = Self::gpu_debug_enabled();
         self.debug_dump_hidden_state(&hidden_gpu, workspace_used, debug_enabled)?;
 
+        // SHIP-007 PR-B intermediate-stage dump: post-transformer-stack
+        // hidden (= PostFfnResidual of last layer). Bisects whether the bug
+        // is in the 28-layer stack or in output_norm/LM head.
+        let stage_dump_cfg =
+            crate::inference_trace::gpu_stage_dump::GpuStageDumpConfig::from_env();
+        if stage_dump_cfg.is_some() {
+            // Sync BOTH streams before reading GPU buffers — the transformer
+            // stack runs on multiple streams (compute_stream + self.stream).
+            let _ = self.stream.synchronize();
+            let _ = self.compute_stream.synchronize();
+
+            let last_buf = if workspace_used {
+                self.workspace.hidden_buf2.as_ref()
+            } else {
+                Some(&hidden_gpu)
+            };
+            match last_buf {
+                Some(buf) => {
+                    let n = (hidden_dim as usize).min(buf.len());
+                    let mut host = vec![0.0f32; n];
+                    match buf.copy_to_host(&mut host) {
+                        Ok(()) => {
+                            if let Err(e) =
+                                crate::inference_trace::gpu_stage_dump::maybe_dump_host_buffer(
+                                    stage_dump_cfg.as_ref(),
+                                    crate::inference_trace::save_tensor_stage::SaveTensorStage::PostFfnResidual,
+                                    (num_layers - 1) as u32,
+                                    &host,
+                                )
+                            {
+                                eprintln!("[SHIP-007-PR-B] post_ffn_residual write failed: {e}");
+                            } else {
+                                eprintln!(
+                                    "[SHIP-007-PR-B] dumped post_ffn_residual: layer {} ({} elems, workspace_used={})",
+                                    num_layers - 1, n, workspace_used
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("[SHIP-007-PR-B] post_ffn_residual copy_to_host failed: {e:?}");
+                        }
+                    }
+                }
+                None => {
+                    eprintln!(
+                        "[SHIP-007-PR-B] post_ffn_residual: workspace_used={} but hidden_buf2 is None",
+                        workspace_used
+                    );
+                }
+            }
+        }
+
         let normed_hidden = self.apply_output_rmsnorm_timed(
             &hidden_gpu, workspace_used, hidden_dim, epsilon,
         )?;
         self.debug_dump_normed_hidden(&normed_hidden, debug_enabled)?;
+
+        // SHIP-007 PR-B intermediate-stage dump: post-output-norm hidden
+        // (= FinalNorm). Bisects whether bug is in output_rmsnorm or LM head.
+        if stage_dump_cfg.is_some() {
+            let _ = self.stream.synchronize();
+            let _ = self.compute_stream.synchronize();
+            let n = (hidden_dim as usize).min(normed_hidden.len());
+            let mut host = vec![0.0f32; n];
+            match normed_hidden.copy_to_host(&mut host) {
+                Ok(()) => {
+                    if let Err(e) =
+                        crate::inference_trace::gpu_stage_dump::maybe_dump_host_buffer(
+                            stage_dump_cfg.as_ref(),
+                            crate::inference_trace::save_tensor_stage::SaveTensorStage::FinalNorm,
+                            0,
+                            &host,
+                        )
+                    {
+                        eprintln!("[SHIP-007-PR-B] final_norm write failed: {e}");
+                    } else {
+                        eprintln!(
+                            "[SHIP-007-PR-B] dumped final_norm: {} elems",
+                            n
+                        );
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[SHIP-007-PR-B] final_norm copy_to_host failed: {e:?}");
+                }
+            }
+        }
 
         self.dispatch_lm_head_and_download(
             &normed_hidden, logits, vocab_size, hidden_dim, debug_enabled,
