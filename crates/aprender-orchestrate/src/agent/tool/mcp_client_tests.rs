@@ -170,6 +170,55 @@ async fn test_stdio_transport_server_name() {
     assert_eq!(transport.server_name(), "my-server");
 }
 
+// ── PMAT-CODE-MCP-ENV-001: env-threading transport tests ──────────
+
+#[tokio::test]
+async fn test_stdio_transport_new_starts_with_empty_env() {
+    let transport = StdioMcpTransport::new("test", vec!["echo".into()]);
+    assert!(transport.env().is_empty(), "default constructor must yield empty env");
+}
+
+#[tokio::test]
+async fn test_stdio_transport_new_with_env_carries_pairs() {
+    let mut env = std::collections::BTreeMap::new();
+    env.insert("FOO".to_string(), "bar".to_string());
+    env.insert("BAZ".to_string(), "qux".to_string());
+    let transport = StdioMcpTransport::new_with_env("test", vec!["echo".into()], env.clone());
+    assert_eq!(transport.env().len(), 2);
+    assert_eq!(transport.env().get("FOO").map(String::as_str), Some("bar"));
+    assert_eq!(transport.env().get("BAZ").map(String::as_str), Some("qux"));
+}
+
+/// LIVE smoke: launch a subprocess that reads our env var via `printenv`
+/// and verify the transport's env reaches the spawned process. Skipped in
+/// CI where the inherited environment is unpredictable.
+#[tokio::test]
+async fn test_stdio_transport_env_flows_to_subprocess() {
+    if skip_in_ci() {
+        return;
+    }
+    if std::process::Command::new("printenv").arg("--version").output().is_err() {
+        return; // printenv not available; not a Linux-style host
+    }
+    let mut env = std::collections::BTreeMap::new();
+    env.insert("MCP_ENV_TEST_KEY".to_string(), "smoke-check-42".to_string());
+    let transport = StdioMcpTransport::new_with_env(
+        "envtest",
+        // A tiny shell pipeline: read MCP_ENV_TEST_KEY, emit a fake JSON-RPC
+        // response embedding it. We're verifying spawn-time env carries
+        // through, not the JSON-RPC happy path itself.
+        vec![
+            "sh".into(),
+            "-c".into(),
+            r#"printf '{"jsonrpc":"2.0","id":1,"result":{"content":[{"text":"%s"}]}}\n' "$MCP_ENV_TEST_KEY""#
+                .into(),
+        ],
+        env,
+    );
+    let resp = transport.call_tool("ping", serde_json::json!({})).await.expect("transport ok");
+    assert!(resp.contains("smoke-check-42"), "subprocess did not see MCP_ENV_TEST_KEY: {resp}");
+}
+
 #[tokio::test]
 async fn test_multiple_calls() {
     let tool = mock_tool(vec![Ok("first".into()), Ok("second".into())]);
