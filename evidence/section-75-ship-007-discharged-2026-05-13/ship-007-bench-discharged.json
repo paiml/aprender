@@ -1,0 +1,29 @@
+[PMAT-171] Loaded embedded BPE tokenizer: 152064 vocab, 151387 merges, 25 special tokens
+[GH-175] OwnedQuantizedModel::from_apr: 28 layers loaded in 3696.8ms
+[GH-129] Early kernel preload: 49 modules compiled
+[PMAT-082] cuBLASLt FP8 JIT warmed (3584×16×3584)
+[PMAT-053] FP8 weight cache: 196 matrices cached (6223.0 MB) in 163.5ms
+[trueno#243] Manual graph construction: pos=0, has_graph=false, capture_failed=false, token_count=0
+[PAR-058-ATTN] Layer 0: num_heads=28, num_kv_heads=4, head_dim=128, max_len=2048, seq_len=1
+[PAR-058-ATTN] K input OK, first 16: [-1.176471, 1.2701252, 1.2559228, -0.4022341, 0.70358115, -0.000451684, 1.8042368, 0.7270411, -0.30878258, -0.85351276, -0.0940561, 0.5748861, 3.249017, -0.5025748, -0.45400226, 0.09651491]
+[PAR-058-ATTN] Q input OK, first 16: [0.06967497, 2.4400415, -0.11822522, 1.06298, 1.619858, 1.313627, 0.74682367, 0.19197217, -0.6462631, -1.5042837, 0.13652515, 0.9694705, 0.5247151, 0.22687194, -0.6274244, 0.1233685]
+[PAR-058-ATTN] K cache head0 pos0 first 16: [-1.176471, 1.2701252, 1.2559228, -0.4022341, 0.70358115, -0.000451684, 1.8042368, 0.7270411, -0.30878258, -0.85351276, -0.0940561, 0.5748861, 3.249017, -0.5025748, -0.45400226, 0.09651491]
+[PAR-058-ATTN] V cache head0 pos0 first 16: [0.23684686, -0.35336325, 0.09470834, 0.27851227, 0.044817664, -0.4625097, 0.11192639, 0.054399572, -0.28750032, -0.050318047, -0.31629676, 0.14544056, -0.40762126, 0.22748044, -0.016041066, 0.35254988]
+[trueno#243] ✓ Manual graph: 646 kernels. first_args=Some(["0x78fbfa671000", "0x78fa891ea000", "0x78fd4cff8000"]), last_args=Some(["0x78fbfa6a6c00", "0x78fb76000000", "0x78fbfa668200", "0xe00", "0x25200"]), current_logits_buf=0x78fbfa6a6c00
+[trueno#243] Manual graph construction: pos=7, has_graph=false, capture_failed=false, token_count=2
+[trueno#243] ✓ Manual graph: 646 kernels. first_args=Some(["0x78fbfa671000", "0x78fa531c0000", "0x78fd4cff8000"]), last_args=Some(["0x78fbfa6a6c00", "0x78fb76000000", "0x78fa0b1d8800", "0xe00", "0x25200"]), current_logits_buf=0x78fbfa6a6c00
+{
+  "iterations": 5,
+  "latency_p50_ms": 1016.437,
+  "latency_p95_ms": 1073.299,
+  "latency_p99_ms": 1073.299,
+  "mean_time_ms": 1027.5388,
+  "median_time_ms": 1016.437,
+  "model": "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr",
+  "passed": true,
+  "std_dev_ms": 23.173047,
+  "time_to_first_token_ms": 8.385148000000001,
+  "tokens_per_second": 124.6,
+  "total_time_ms": 5137.6939999999995,
+  "total_tokens": 640
+}
