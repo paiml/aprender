@@ -21,6 +21,7 @@
 //! apr run model.gguf --prompt "Hi" --trace --trace-output trace.json
 //! ```
 
+pub mod gpu_stage_dump;
 pub mod save_tensor;
 pub mod save_tensor_compose;
 pub mod save_tensor_emit;
