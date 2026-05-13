@@ -1,0 +1,137 @@
+metadata:
+  version: "1.0"
+  created: "2026-05-13"
+  description: "Model family descriptor: stablelm (closes GH-1592)"
+  kind: model-family
+  references:
+    - "https://huggingface.co/stabilityai/stablelm-2-1_6b/blob/main/config.json"
+    - "https://huggingface.co/stabilityai/stablelm-3b-4e1t/blob/main/config.json"
+    - "https://huggingface.co/stabilityai/stablelm-zephyr-3b/blob/main/config.json"
+
+family: stablelm
+display_name: "Stability AI StableLM"
+vendor: Stability AI
+architectures:
+  - StableLmForCausalLM
+hf_pattern: "stabilityai/stablelm-*"
+
+# StableLM (2/3B 4e1t, Zephyr) is a Llama-derivative with partial RoPE
+# (`partial_rotary_factor < 1.0`), LayerNorm replaced with RMSNorm (most
+# checkpoints), and per-checkpoint Q/K head bias toggles. Reuses
+# `LlamaForCausalLM` tensor naming for all q/k/v/o + gate/up/down +
+# input/post_attention_layernorm tensors. The Llama mapper handles names;
+# partial-RoPE / norm-type variation is a runtime concern that doesn't
+# affect tensor lookup.
+size_variants:
+  1_6b:
+    parameters: "1.6B"
+    hidden_dim: 2048
+    num_layers: 24
+    num_heads: 32
+    num_kv_heads: 32
+    intermediate_dim: 5632
+    vocab_size: 100352
+    max_position_embeddings: 4096
+    head_dim: 64
+    rope_theta: 10000.0
+    rms_norm_eps: 0.00001
+  3b:
+    parameters: "3B"
+    hidden_dim: 2560
+    num_layers: 32
+    num_heads: 32
+    num_kv_heads: 32
+    intermediate_dim: 6912
+    vocab_size: 50304
+    max_position_embeddings: 4096
+    head_dim: 80
+    rope_theta: 10000.0
+    rms_norm_eps: 0.00001
+  zephyr_3b:
+    parameters: "3B"
+    hidden_dim: 2560
+    num_layers: 32
+    num_heads: 32
+    num_kv_heads: 32
+    intermediate_dim: 6912
+    vocab_size: 50304
+    max_position_embeddings: 4096
+    head_dim: 80
+    rope_theta: 10000.0
+    rms_norm_eps: 0.00001
+
+constraints:
+  attention_type: mha
+  activation: silu
+  norm_type: rmsnorm
+  has_bias: false
+  tied_embeddings: false
+  positional_encoding: rope
+  mlp_type: swiglu
+
+tensor_template:
+  embedding: "model.embed_tokens.weight"
+  lm_head: "lm_head.weight"
+  final_norm: "model.norm.weight"
+  per_layer:
+    q_proj: "model.layers.{n}.self_attn.q_proj.weight"
+    k_proj: "model.layers.{n}.self_attn.k_proj.weight"
+    v_proj: "model.layers.{n}.self_attn.v_proj.weight"
+    o_proj: "model.layers.{n}.self_attn.o_proj.weight"
+    gate_proj: "model.layers.{n}.mlp.gate_proj.weight"
+    up_proj: "model.layers.{n}.mlp.up_proj.weight"
+    down_proj: "model.layers.{n}.mlp.down_proj.weight"
+    input_layernorm: "model.layers.{n}.input_layernorm.weight"
+    post_attention_layernorm: "model.layers.{n}.post_attention_layernorm.weight"
+    q_proj_bias: null
+    k_proj_bias: null
+    v_proj_bias: null
+
+gguf_tensor_template:
+  embedding: "token_embd.weight"
+  position_embedding: null
+  lm_head: "output.weight"
+  final_norm_weight: "output_norm.weight"
+  final_norm_bias: null
+  per_layer:
+    q_proj: "attn_q.weight"
+    k_proj: "attn_k.weight"
+    v_proj: "attn_v.weight"
+    o_proj: "attn_output.weight"
+    gate_proj: "ffn_gate.weight"
+    up_proj: "ffn_up.weight"
+    down_proj: "ffn_down.weight"
+    input_layernorm: "attn_norm.weight"
+    post_attention_layernorm: "ffn_norm.weight"
+    q_proj_bias: null
+    k_proj_bias: null
+    v_proj_bias: null
+
+shape_template:
+  embedding: "[vocab_size, hidden_dim]"
+  lm_head: "[vocab_size, hidden_dim]"
+  q_proj: "[num_heads * head_dim, hidden_dim]"
+  k_proj: "[num_kv_heads * head_dim, hidden_dim]"
+  v_proj: "[num_kv_heads * head_dim, hidden_dim]"
+  o_proj: "[hidden_dim, num_heads * head_dim]"
+  gate_proj: "[intermediate_dim, hidden_dim]"
+  up_proj: "[intermediate_dim, hidden_dim]"
+  down_proj: "[hidden_dim, intermediate_dim]"
+  input_layernorm: "[hidden_dim]"
+  post_attention_layernorm: "[hidden_dim]"
+
+quantizations:
+  - q4_k_m
+  - q5_k_m
+  - q6_k
+  - q8_0
+  - f16
+  - f32
+
+certification:
+  playbook_path: "../apr-model-qa-playbook/playbooks/models/stablelm-{size}.playbook.yaml"
+  csv_family_key: "stablelm"
+  size_categories:
+    1_6b: small
+    3b: small
+    zephyr_3b: small
