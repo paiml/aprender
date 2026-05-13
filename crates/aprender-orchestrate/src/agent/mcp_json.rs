@@ -73,9 +73,10 @@ pub struct McpServerEntry {
     #[serde(default)]
     pub capabilities: Vec<String>,
 
-    /// Process env (stdio only). Currently parsed but not yet
-    /// threaded through to the spawn — tracked in
-    /// `PMAT-CODE-MCP-ENV-001` (P2).
+    /// Process env (stdio only). Threaded through to subprocess spawn
+    /// via `McpServerConfig.env` → `StdioMcpTransport.env` →
+    /// `tokio::process::Command::env`. Empty map = inherit parent env
+    /// unchanged. PMAT-CODE-MCP-ENV-001 (CLOSED 2026-05-07).
     #[serde(default)]
     pub env: BTreeMap<String, String>,
 }
@@ -144,6 +145,9 @@ fn entry_to_config(name: &str, entry: &McpServerEntry) -> Result<McpServerConfig
         command,
         url: entry.url.clone(),
         capabilities: entry.capabilities.clone(),
+        // PMAT-CODE-MCP-ENV-001: threaded through (was previously parsed
+        // but discarded). Empty map = inherit parent env unchanged.
+        env: entry.env.clone(),
     })
 }
 
@@ -385,6 +389,75 @@ mod tests {
         assert_eq!(m.mcp_servers[0].name, "fs");
     }
 
+    // ── PMAT-CODE-MCP-ENV-001: env field threading ────────────────
+
+    #[test]
+    fn parse_entry_env_is_collected() {
+        // Env was previously parsed but discarded. Verify the parser
+        // still reads the JSON shape Claude Code emits.
+        let s = r#"{
+            "mcpServers": {
+                "fs": {
+                    "command": "npx",
+                    "env": {"FS_ROOT": "/tmp", "FS_DEBUG": "1"}
+                }
+            }
+        }"#;
+        let p = from_json_str(s).expect("parse");
+        let entry = &p.mcp_servers["fs"];
+        assert_eq!(entry.env.len(), 2);
+        assert_eq!(entry.env.get("FS_ROOT").map(String::as_str), Some("/tmp"));
+        assert_eq!(entry.env.get("FS_DEBUG").map(String::as_str), Some("1"));
+    }
+
+    #[test]
+    fn entry_to_config_threads_env() {
+        // The fix: `env` MUST flow from McpServerEntry → McpServerConfig
+        // (was previously dropped on the floor at this conversion step).
+        let s = r#"{
+            "mcpServers": {
+                "fs": {
+                    "command": "npx",
+                    "env": {"FOO": "bar", "BAZ": "qux"}
+                }
+            }
+        }"#;
+        let p = from_json_str(s).expect("parse");
+        let cfgs = to_manifest_entries(&p).expect("ok");
+        assert_eq!(cfgs.len(), 1);
+        assert_eq!(cfgs[0].env.len(), 2);
+        assert_eq!(cfgs[0].env.get("FOO").map(String::as_str), Some("bar"));
+        assert_eq!(cfgs[0].env.get("BAZ").map(String::as_str), Some("qux"));
+    }
+
+    #[test]
+    fn entry_to_config_preserves_empty_env() {
+        // No env declared → empty map (not None, not error). Subprocess
+        // inherits parent env unchanged.
+        let s = r#"{"mcpServers": {"fs": {"command": "npx"}}}"#;
+        let p = from_json_str(s).expect("parse");
+        let cfgs = to_manifest_entries(&p).expect("ok");
+        assert!(cfgs[0].env.is_empty());
+    }
+
+    #[test]
+    fn merge_threads_env_to_manifest_servers() {
+        // End-to-end: .mcp.json env reaches AgentManifest.mcp_servers[].env.
+        let mut m = AgentManifest::default();
+        let s = r#"{
+            "mcpServers": {
+                "fs": {
+                    "command": "npx",
+                    "env": {"NODE_ENV": "production"}
+                }
+            }
+        }"#;
+        let parsed = from_json_str(s).expect("parse");
+        merge_into_manifest(&mut m, &parsed).expect("ok");
+        assert_eq!(m.mcp_servers.len(), 1);
+        assert_eq!(m.mcp_servers[0].env.get("NODE_ENV").map(String::as_str), Some("production"));
+    }
+
     #[test]
     fn merge_manifest_wins_on_name_collision() {
         // Manifest already has "fs" — `.mcp.json` "fs" must not overwrite.
@@ -395,6 +468,7 @@ mod tests {
             command: vec!["manifest-cmd".into()],
             url: None,
             capabilities: vec![],
+            env: Default::default(),
         });
         let s = r#"{"mcpServers": {"fs": {"command": "json-cmd"}}}"#;
         let parsed = from_json_str(s).expect("parse");

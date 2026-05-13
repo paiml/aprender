@@ -133,14 +133,39 @@ impl Tool for McpClientTool {
 pub struct StdioMcpTransport {
     server: String,
     command: Vec<String>,
+    /// Environment variables to set in the spawned subprocess.
+    /// PMAT-CODE-MCP-ENV-001: threaded from `McpServerConfig.env`.
+    /// Empty map = inherit parent env unchanged.
+    env: std::collections::BTreeMap<String, String>,
 }
 
 impl StdioMcpTransport {
     /// Create a stdio transport for the given server.
     ///
     /// `command` is the full command line (e.g., `["node", "server.js"]`).
+    /// Process env is inherited from the parent unchanged. Use
+    /// [`Self::new_with_env`] to set per-server overrides.
     pub fn new(server: impl Into<String>, command: Vec<String>) -> Self {
-        Self { server: server.into(), command }
+        Self { server: server.into(), command, env: std::collections::BTreeMap::new() }
+    }
+
+    /// Create a stdio transport with explicit environment variables
+    /// applied to the spawned subprocess (PMAT-CODE-MCP-ENV-001).
+    ///
+    /// Each `(key, value)` is set with `Command::env`. The parent's
+    /// existing env is inherited; overrides go on top. Empty map =
+    /// equivalent to [`Self::new`].
+    pub fn new_with_env(
+        server: impl Into<String>,
+        command: Vec<String>,
+        env: std::collections::BTreeMap<String, String>,
+    ) -> Self {
+        Self { server: server.into(), command, env }
+    }
+
+    /// Read-only access to the env map (for tests + observability).
+    pub fn env(&self) -> &std::collections::BTreeMap<String, String> {
+        &self.env
     }
 }
 
@@ -220,14 +245,18 @@ impl StdioMcpTransport {
         }
         let request_str =
             serde_json::to_string(request).map_err(|e| format!("serialize request: {e}"))?;
-        let mut child = tokio::process::Command::new(&self.command[0])
-            .args(&self.command[1..])
+        let mut cmd = tokio::process::Command::new(&self.command[0]);
+        cmd.args(&self.command[1..])
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|e| format!("spawn {}: {e}", self.command[0]))?;
+            .kill_on_drop(true);
+        // PMAT-CODE-MCP-ENV-001: layer env overrides on top of inherited
+        // parent env. Each (k, v) wins on collision; empty map = no-op.
+        for (k, v) in &self.env {
+            cmd.env(k, v);
+        }
+        let mut child = cmd.spawn().map_err(|e| format!("spawn {}: {e}", self.command[0]))?;
         if let Some(mut stdin) = child.stdin.take() {
             use tokio::io::AsyncWriteExt;
             stdin
@@ -270,7 +299,13 @@ pub async fn discover_mcp_tools(
         if !matches!(server.transport, McpTransport::Stdio) {
             continue;
         }
-        let transport = Arc::new(StdioMcpTransport::new(&server.name, server.command.clone()));
+        // PMAT-CODE-MCP-ENV-001: pass env from server config so .mcp.json
+        // `env` field is honored at spawn time (was previously discarded).
+        let transport = Arc::new(StdioMcpTransport::new_with_env(
+            &server.name,
+            server.command.clone(),
+            server.env.clone(),
+        ));
         let discovered = match transport.discover_tools().await {
             Ok(d) => d,
             Err(e) => {
