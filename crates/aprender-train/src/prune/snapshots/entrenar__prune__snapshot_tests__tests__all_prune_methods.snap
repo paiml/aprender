@@ -1,32 +1,31 @@
 ---
-source: src/prune/snapshot_tests.rs
-assertion_line: 179
+source: crates/aprender-train/src/prune/snapshot_tests.rs
 expression: method_info
 ---
 [
   {
-    "display_name": "Magnitude",
     "name": "magnitude",
+    "display_name": "Magnitude",
     "requires_calibration": false
   },
   {
-    "display_name": "Wanda",
     "name": "wanda",
+    "display_name": "Wanda",
     "requires_calibration": true
   },
   {
-    "display_name": "SparseGPT",
     "name": "sparsegpt",
+    "display_name": "SparseGPT",
     "requires_calibration": true
   },
   {
-    "display_name": "Minitron (Depth)",
     "name": "minitron_depth",
+    "display_name": "Minitron (Depth)",
     "requires_calibration": true
   },
   {
-    "display_name": "Minitron (Width)",
     "name": "minitron_width",
+    "display_name": "Minitron (Width)",
     "requires_calibration": true
   }
 ]
