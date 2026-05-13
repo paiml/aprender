@@ -1,9 +1,14 @@
 //! GEMV (General Matrix-Vector Multiply) Kernel
 //!
-//! Optimized for M=1 matmuls: y = A * x where A is (K×N), x is (K), y is (N)
+//! Optimized for M=1 matmuls: y = A * x where A is (N×K) row-major,
+//! x is (K), y is (N).
 //!
-//! This is the critical path for LLM token generation where each new token
-//! requires M=1 matmuls through all layers.
+//! SHIP-007 PR-E (PMAT-CODE-SHIP-007-F32-GEMV-LAYOUT-FIX, 2026-05-13):
+//! The original kernel assumed A is (K×N) row-major and read transposed
+//! weights, producing systematic anti-correlated logits (cos≈-0.005)
+//! against CPU. Fixed to match the standard PyTorch / SafeTensors / GGUF
+//! convention: weights are stored as [output, input] row-major so
+//! A[output=i, input=j] is at offset i*K + j.
 //!
 //! # Performance Target
 //! - Ollama: ~228 tok/s with cuBLAS GEMV
@@ -12,7 +17,8 @@
 //! # Strategy
 //! - One warp (32 threads) per output element
 //! - Each warp computes one dot product using warp shuffle reduce
-//! - Coalesced memory access for weight matrix
+//! - Coalesced memory access along the K dim (consecutive threads read
+//!   consecutive bytes within a row)
 
 use crate::ptx::builder::{PtxArithmetic, PtxComparison, PtxControl, PtxMemory};
 use crate::ptx::{PtxKernel, PtxType};
@@ -30,8 +36,8 @@ impl GemvKernel {
     /// Create a new GEMV kernel for y = A * x
     ///
     /// # Arguments
-    /// * `k` - Input vector length / matrix rows
-    /// * `n` - Output vector length / matrix columns
+    /// * `k` - Input vector length / matrix cols (after the SHIP-007 fix)
+    /// * `n` - Output vector length / matrix rows (after the SHIP-007 fix)
     #[must_use]
     pub fn new(k: u32, n: u32) -> Self {
         Self { k, n }
@@ -45,22 +51,23 @@ impl super::Kernel for GemvKernel {
 
     fn build_ptx(&self) -> PtxKernel {
         let _k_val = self.k; // Used for documentation, kernel uses runtime k_dim
-        let n_val = self.n;
+        let _n_val = self.n;
 
         // Strategy: One warp (32 threads) per output element
         // Each thread loads K/32 elements, does partial sum, then warp shuffle reduce
+        // Layout: A is N×K row-major, A[i,j] at offset i*K + j.
 
         PtxKernel::new("gemv_warp_reduce")
             .param(PtxType::U64, "y_ptr") // Output vector (N)
-            .param(PtxType::U64, "a_ptr") // Weight matrix (K × N), row-major: A[i,j] at i*N+j
+            .param(PtxType::U64, "a_ptr") // Weight matrix (N × K), row-major: A[i,j] at i*K+j
             .param(PtxType::U64, "x_ptr") // Input vector (K)
             .param(PtxType::U32, "k_dim") // K dimension (for bounds check)
             .param(PtxType::U32, "n_dim") // N dimension (for bounds check)
             .build(move |ctx| {
                 // Block = 32 threads (one warp), grid = N blocks
-                // Each block computes one output element y[block_id] = sum_k(A[k, block_id] * x[k])
+                // Each block computes one output element y[block_id] = sum_k(A[block_id, k] * x[k])
 
-                // Get output index (which column of A we're computing)
+                // Get output index (which row of A we're computing)
                 let block_id = ctx.special_reg(crate::ptx::PtxReg::CtaIdX);
                 let thread_id = ctx.special_reg(crate::ptx::PtxReg::TidX);
 
@@ -78,24 +85,19 @@ impl super::Kernel for GemvKernel {
                 // Initialize partial sum
                 let partial_sum = ctx.mov_f32_imm(0.0);
 
-                // For row-major A[K×N]: A[i,j] is at offset i*N + j
-                // We want y[j] = sum_i(A[i,j] * x[i]) for j=block_id
-                // So we need A[thread_id, block_id], A[thread_id+32, block_id], etc.
+                // For row-major A[N×K]: A[i,j] at offset i*K + j
+                // We want y[i] = sum_j(A[i,j] * x[j]) for i=block_id
+                // So thread t reads A[block_id, t], A[block_id, t+32], ...
 
-                // Compute base address for this output column
-                // A[0, block_id] = a_ptr + block_id * 4
-                let col_offset = ctx.mul_wide_u32(block_id, 4);
-                let a_col_base = ctx.add_u64(a_ptr, col_offset);
-
-                // Row stride = N * 4 bytes (baked in for efficiency)
-                let row_stride = n_val * 4;
+                // Compute base address for this output row
+                // A[block_id, 0] = a_ptr + block_id * K * 4
+                let four_u32 = ctx.mov_u32_imm(4);
+                let bytes_per_row = ctx.mul_lo_u32(k_dim, four_u32); // K * 4 bytes per row (u32)
+                let row_offset = ctx.mul_wide_u32_reg(block_id, bytes_per_row); // u64
+                let a_row_base = ctx.add_u64(a_ptr, row_offset);
 
                 // Each thread processes elements: thread_id, thread_id+32, thread_id+64, ...
-                // Unroll for common K values to avoid loop overhead
-                // For K=4096, that's 128 iterations per thread
-
-                // Simple loop: i = thread_id; while i < k_dim: process; i += 32
-                // Start index (i = 0 + thread_id = thread_id)
+                // Start index (j = thread_id within row)
                 let zero_u32 = ctx.mov_u32_imm(0);
                 let i = ctx.add_u32_reg(zero_u32, thread_id);
 
@@ -111,14 +113,12 @@ impl super::Kernel for GemvKernel {
                 let x_addr = ctx.add_u64(x_ptr, x_offset);
                 let x_val = ctx.ld_global_f32(x_addr);
 
-                // Load A[i, block_id] = a_ptr + i * N * 4 + block_id * 4
-                //                     = a_col_base + i * row_stride
-                let stride_val = ctx.mov_u32_imm(row_stride);
-                let row_offset = ctx.mul_wide_u32_reg(i, stride_val);
-                let a_addr = ctx.add_u64(a_col_base, row_offset);
+                // Load A[block_id, i] = a_row_base + i * 4
+                let a_offset = ctx.mul_wide_u32_reg(i, four);
+                let a_addr = ctx.add_u64(a_row_base, a_offset);
                 let a_val = ctx.ld_global_f32(a_addr);
 
-                // partial_sum += x[i] * A[i, block_id]
+                // partial_sum += x[i] * A[block_id, i]
                 ctx.fma_f32_inplace(partial_sum, x_val, a_val);
 
                 // i += 32
