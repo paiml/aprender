@@ -1,0 +1,228 @@
+---
+contract_id: F-APR-SHIP-007-GPU-STAGE-BISECTION-001
+title: "SHIP-007 GPU-vs-CPU stage-by-stage bisection scaffold for PARITY-GATE discharge"
+status: ACTIVE
+created: 2026-05-12
+updated: 2026-05-12
+parent_spec: docs/specifications/aprender-train/ship-two-models-spec.md
+parent_acceptance_criterion: AC-SHIP1-007
+
+metadata:
+  version: 1.0.0
+  kind: kernel
+  description: |
+    The PARITY-GATE blocks SHIP-007 (AC-SHIP1-007 decode tps ≥ 30 tok/s)
+    on Qwen 7B (hidden=3584, heads=28, kv_heads=4 GQA-7:1) with empirical
+    cosine = -0.005190 between CPU and GPU logits. §73 reduced the §63
+    3-layer cascade to a single Layer 2 fix.
+
+    This contract scaffolds the bisection: stages, falsifiers, fix
+    locations, and discharge proof.
+  references:
+    - "docs/specifications/aprender-train/ship-two-models-spec.md §73"
+    - "evidence/section-73-ship-007-cascade-2026-05-12/findings.json"
+    - "contracts/apr-cli-trace-save-tensor-v1.yaml (CPU side; mirror)"
+    - "memory/project_ship_007_attention_parity_investigation.md (bug=layout/stride/buffer)"
+    - "memory/project_2026_05_03_ship_007_attn_out_pinpointed.md (inside attention block)"
+
+# ─────────────────────────────────────────────────────────────
+# ABSTRACT
+# ─────────────────────────────────────────────────────────────
+abstract: |
+  Mirror the CPU `forward_traced` + `apr trace --save-tensor` pipeline on
+  the GPU side so per-stage F32 tensors can be diffed element-wise
+  against CPU reference. The first stage where divergence exceeds Q4K
+  tolerance localizes the SHIP-007 PARITY-GATE bug.
+
+  The PR cascade is:
+    PR-A (this contract + scaffold): contract + stub
+    PR-B: extend stub to capture all 22 stages from forward_all_layers_gpu_to_logits
+    PR-C: wire `apr trace --device gpu --save-tensor all`
+    PR-D: diff CPU vs GPU dumps with `apr diff --values`
+    PR-E: fix the localized stage; discharge proof
+
+# ─────────────────────────────────────────────────────────────
+# FIVE-WHYS MOTIVATION
+# ─────────────────────────────────────────────────────────────
+five_whys:
+  - q: "Why a GPU-stage-bisection contract?"
+    a: "The PARITY-GATE fails with cosine=-0.005190 at logits but the bug location within the 28-layer × 22-stage forward graph is unknown. Stage-by-stage diff narrows the bug to a specific stage."
+  - q: "Why mirror CPU forward_traced rather than just read the existing GPU_DEBUG output?"
+    a: "GPU_DEBUG=1 dumps stats (sum/rms/first-5) but not full tensors. For element-wise diff at Q4K tolerance (max_diff ≈ 0.000481 on round-trip), we need full F32 binaries in the same APRT format as CPU's apr trace --save-tensor."
+  - q: "Why a contract instead of just shipping the trait?"
+    a: "Multi-PR cascade (PR-A through PR-E). The contract makes the PR sequence falsifiable: PR-A discharges scaffold-exists, PR-B discharges all-stages-captured, PR-D discharges localization, PR-E discharges fix-correctness."
+  - q: "Why the Q4K tolerance threshold?"
+    a: "Per §72 SHIP-003 LIVE evidence: round-trip cos_sim=1.000000 on Q4K teacher with max_diff ≤ 0.000481. The CPU baseline is itself Q4K, so any GPU divergence above Q4K float-arithmetic noise IS the bug."
+  - q: "Why ACTIVE not DRAFT?"
+    a: "The scaffold (this PR) is empirically motivated by §73 evidence and the falsifier list is concrete. Subsequent PRs (B-E) discharge specific falsifiers."
+
+# ─────────────────────────────────────────────────────────────
+# EQUATIONS / FORMALISATION
+# ─────────────────────────────────────────────────────────────
+equations:
+  - name: stage_divergence
+    formula: |
+      For stages S ∈ {Embedding, AttnNorm, QkvMatmul, ..., LmHead}:
+        cpu_stage_value(S, layer) = CPU forward_traced output for stage S at layer
+        gpu_stage_value(S, layer) = GPU forward_traced output for stage S at layer
+        divergence(S, layer) = max_abs(cpu_stage_value - gpu_stage_value)
+
+      first_divergent_stage = argmin_S { S : divergence(S, 0) > Q4K_TOLERANCE }
+
+      where Q4K_TOLERANCE = 0.005  (5× the §72 round-trip empirical max_diff)
+    domain: SaveTensorStage × LayerIndex
+    codomain: f32
+    invariants:
+      - "If gpu_stage_value(Embedding, 0) diverges, the bug is in the embedding lookup (unexpected; embedding is host-side)"
+      - "If the first divergence is at AttnNorm: GPU RMSNorm impl wrong"
+      - "If first divergence is at QkvMatmul: Q4K matmul layout/transpose bug"
+      - "If first divergence is at Q/K-PostRope: RoPE phase or theta bug"
+      - "If first divergence is at Attention: attention compute (V/O layout for GQA-7:1, per memory hypothesis)"
+      - "If first divergence is at FFN stages: FFN gate/up/down kernel bug"
+
+  - name: parity_gate_discharge
+    formula: |
+      Given fix that makes divergence(S, 0) ≤ Q4K_TOLERANCE for all S in layer 0,
+      Then cosine_similarity(cpu_logits, gpu_logits) ≥ 0.98 (PARITY_GATE_COSINE_MIN)
+    domain: ModelArtifact
+    codomain: Bool
+    invariants:
+      - "Per-layer 0 stage parity ⇒ logits parity (assuming N-layer stack composes linearly; empirically true for Q4K)"
+      - "PARITY-GATE discharge ⇒ AC-SHIP1-007 unblocked ⇒ MODEL-1 ship % 99% → 100%"
+
+# ─────────────────────────────────────────────────────────────
+# KANI HARNESSES
+# ─────────────────────────────────────────────────────────────
+kani_harnesses:
+  - id: KANI-SHIP-007-001
+    name: ship_007_stage_dump_path_is_isolated
+    obligation: PO-SHIP-007-003
+    description: |
+      For all 22 stages × N layers, the on-disk dump path
+      <output_dir>/layer-N/<stage>.bin is unique. Required so concurrent
+      stage dumps don't overwrite each other.
+    location: "crates/aprender-serve/src/inference_trace/save_tensor_paths.rs (existing helper)"
+    status: planned
+
+# ─────────────────────────────────────────────────────────────
+# QA GATE
+# ─────────────────────────────────────────────────────────────
+qa_gate:
+  certeza:
+    min_grade: A-
+    min_coverage_percent: 75
+    blocking: false
+  notes: |
+    Coverage is measured on the new forward_traced_cuda function added
+    in PR-A. Falsifier tests under FALSIFY-SHIP-007-GPU-* discharge the
+    multi-PR cascade.
+
+# ─────────────────────────────────────────────────────────────
+# PROOF OBLIGATIONS
+# ─────────────────────────────────────────────────────────────
+proof_obligations:
+  - id: PO-SHIP-007-001
+    name: gpu_stage_dump_byte_format_matches_cpu
+    statement: |
+      For every stage S and layer L, the F32 binary file produced by
+      GPU forward_traced_cuda has the same APRT header + body format as
+      the file produced by CPU forward_traced. Required so
+      `apr diff --values` can compare them.
+    type: invariant
+    discharged_by: FALSIFY-SHIP-007-GPU-001
+
+  - id: PO-SHIP-007-002
+    name: gpu_stage_dump_correctness_on_embedding
+    statement: |
+      For the Embedding stage at layer 0, GPU forward_traced_cuda output
+      MUST be byte-identical to CPU forward_traced output (both are
+      host-side embed_into lookups; no GPU compute involved).
+    type: equivalence
+    discharged_by: FALSIFY-SHIP-007-GPU-002
+
+  - id: PO-SHIP-007-003
+    name: gpu_stage_dump_path_isolation
+    statement: |
+      Each (stage, layer) tuple produces a unique on-disk path so
+      concurrent or sequential dumps don't overwrite each other.
+    type: safety
+    discharged_by: KANI-SHIP-007-001
+
+# ─────────────────────────────────────────────────────────────
+# FALSIFICATION TESTS
+# ─────────────────────────────────────────────────────────────
+falsification_tests:
+  - id: FALSIFY-SHIP-007-GPU-001
+    name: ship_007_gpu_stage_dump_byte_format
+    description: |
+      A round-trip test: CPU forward_traced on a tiny fixture produces
+      <dir>/layer-0/embedding.bin. GPU forward_traced_cuda on the same
+      fixture (with --save-tensor embedding --save-tensor-layers 0..1)
+      produces a separate <gpu-dir>/layer-0/embedding.bin. Both files
+      MUST have the same 12-byte APRT header (magic + layer + dim) and
+      the same f32 LE body length.
+    test: "crates/aprender-serve/tests/ship_007_gpu_stage_format_parity.rs (planned)"
+    expected: "stat(cpu).size == stat(gpu).size AND header_bytes_match"
+    fails_if: |
+      Sizes mismatch, headers mismatch, or one of the files is absent.
+
+  - id: FALSIFY-SHIP-007-GPU-002
+    name: ship_007_gpu_embedding_byte_identity
+    description: |
+      On a tiny fixture (vocab=4, hidden=8, single token id=2), both CPU
+      and GPU forward_traced_cuda dump Embedding bytes that are
+      byte-identical. Validates the simplest possible stage capture
+      (no GPU compute, just host-side lookup) as a smoke for the
+      threading.
+    test: "crates/aprender-serve/tests/ship_007_gpu_embedding_identity.rs (planned)"
+    expected: cpu_embedding.bin == gpu_embedding.bin (byte-identical)
+    fails_if: any byte differs.
+
+  - id: FALSIFY-SHIP-007-GPU-003
+    name: ship_007_first_divergent_stage_localized
+    description: |
+      On the canonical 7B teacher (Qwen2.5-Coder-Instruct Q4K APR), with
+      `apr trace --device gpu --save-tensor all --save-tensor-layers 0..1`
+      and `apr trace --save-tensor all --save-tensor-layers 0..1`, diff
+      every layer-0 stage with `apr diff --values --limit 1`. The first
+      stage with cos_sim < 0.999 is the bug location.
+    test: "PR-D manual evidence run (no unit test — empirical)"
+    expected: "Some stage S has cos_sim < 0.999; report (S, cos_sim, max_diff) in evidence/section-73a-stage-bisection-result.json"
+    fails_if: "all stages cos_sim >= 0.999 but parity gate still fails (would invalidate the bisection plan)"
+
+  - id: FALSIFY-SHIP-007-GPU-004
+    name: ship_007_post_fix_parity_gate_discharge
+    description: |
+      After PR-D identifies stage S and PR-E fixes it, re-run
+      `apr parity <canonical 7B teacher>`. Expect cosine ≥ 0.98 (the
+      PARITY_GATE_COSINE_MIN).
+    test: "PR-E manual evidence run (no unit test — empirical)"
+    expected: "cosine_similarity >= 0.98 AND cpu_argmax == gpu_argmax (or both top-5 overlap)"
+    fails_if: cosine remains < 0.98 (fix didn't work; iterate).
+
+# ─────────────────────────────────────────────────────────────
+# SCAFFOLDING IN THIS PR-A (CONTRACT-ONLY)
+# ─────────────────────────────────────────────────────────────
+pr_a_scope:
+  what_ships:
+    - "This contract (`apr-ship-007-gpu-stage-bisection-v1.yaml`)"
+    - "No code changes"
+    - "`pv validate` must PASS"
+  what_does_not_ship_yet:
+    - "forward_traced_cuda implementation → PR-B"
+    - "apr trace --device gpu wireup → PR-C"
+    - "Stage-by-stage diff evidence → PR-D"
+    - "Fix for localized stage → PR-E"
+    - "Discharge proof → PR-E evidence section"
+
+# ─────────────────────────────────────────────────────────────
+# SHIP IMPACT
+# ─────────────────────────────────────────────────────────────
+ship_impact:
+  ac_ship1_007: "Path-to-discharge scaffold. SHIP-007 stays PARTIAL until PR-E lands."
+  model_1_ship_percent: "Unchanged at 99% until PR-E."
+  model_2_ship_percent: "Unchanged at 57%."
+  notes: |
+    This PR is the SCAFFOLDING for the SHIP-007 cascade. It does not
+    discharge any falsifier yet. The cascade's full discharge happens
+    over PR-B through PR-E.
