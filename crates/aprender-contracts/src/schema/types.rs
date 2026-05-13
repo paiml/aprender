@@ -385,6 +385,12 @@ pub struct KaniHarness {
     pub solver: Option<String>,
     #[serde(default)]
     pub harness: Option<String>,
+    /// GH-1595: When `true`, the harness has been verified by a green
+    /// `cargo kani` run in CI (e.g. apr-cookbook `kani-gate`). Lifts the
+    /// D3 strategy weight to 1.0 for non-exhaustive strategies because
+    /// the runtime witness supplants the static-readiness signal.
+    #[serde(default)]
+    pub actually_verified: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
