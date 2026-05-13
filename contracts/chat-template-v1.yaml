@@ -1,16 +1,36 @@
 metadata:
-  version: "1.2.0"
+  version: "1.3.0"
   created: "2026-04-13"
-  updated: "2026-04-22"
+  updated: "2026-05-10"
   author: PAIML Engineering
   registry: true
   references:
     - "HuggingFace tokenizers chat_template specification"
     - "Jinja2/minijinja template engine"
     - "docs/specifications/aprender-train/ship-two-models-spec.md AC-SHIP1-008"
+    - "docs/specifications/aprender-train/ship-two-models-spec.md §60 (SHIP-007 §22 closure — upstream blocker for SHIP-008 LIVE discharge)"
+    - "docs/specifications/aprender-train/ship-two-models-spec.md §61.8 (Branch B closure)"
+    - "evidence/ship-008-discharge-2026-05-10/discharge-evidence-v1.json (LIVE 2026-05-10)"
   description: |
     Chat template rendering contract. Defines correctness for Jinja2-style
     chat templates used by LLMs (ChatML, Llama, Qwen, Mistral formats).
+
+    v1.3.0 (2026-05-10): GATE-CHAT-SHIP-008 promoted PARTIAL_ALGORITHM_LEVEL
+    → DISCHARGED via live `apr run` on canonical 7B teacher. Run
+    `/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr`
+    with prompt = AC_SHIP1_008_CANONICAL_USER ("Write a Python function to
+    compute the nth Fibonacci number.") via apr v0.32.0 post-e856eb91f
+    M-FFN-GGUF-5. Teacher emits 256-token ChatML response with conversational
+    opening ("Certainly! The Fibonacci sequence..."), Markdown ### headings,
+    3 ```python``` fenced code blocks (all parseable via Python ast.parse,
+    0 syntax errors), and 2 valid function definitions
+    (fibonacci_iterative, fibonacci_recursive). Backend chain: CUDA
+    (transient ILLEGAL_ADDRESS) → wgpu (rejected via apr-cpu-vs-gpu-output-
+    parity-v1 fallback gate) → CPU (selected). Wall: 82.97s. Upstream
+    blocker SHIP-007 §22 RESOLVED 2026-05-07 (PR #1550 e856eb91f);
+    Branch B finding RESOLVED via PR #1612 (gguf-prompt-sensitivity-v1
+    v1.1.0). Evidence: evidence/ship-008-discharge-2026-05-10/. MODEL-1
+    ship % flips 92% → 93% (2 of 5 §17.5 PARTIALs LIVE-discharged).
 
     v1.1.0 (2026-04-22): Added GATE-CHAT-SHIP-008 binding the ChatML
     `format_conversation` render to a byte-exact golden string for the
@@ -19,7 +39,7 @@ metadata:
 
 kind: AlgorithmContract
 name: chat-template
-version: "1.2.0"
+version: "1.3.0"
 scope: "crates/aprender-core/src/text/chat_template/ + crates/aprender-serve/src/chat/"
 
 description: |
@@ -73,25 +93,56 @@ falsification:
       to Fail before teacher inference runs.
     discharges: "AC-SHIP1-008 / FALSIFY-SHIP-008"
     ship_blocking: true
-    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    discharge_status: DISCHARGED
     evidence_discharged_by:
       - "crates/aprender-core/src/text/chat_template/ship_008.rs (verdict fn + 5-section mutation survey)"
       - "cargo test -p aprender-core --lib falsify_ship_008_chat_template_render_bind"
+      - 'evidence/ship-008-discharge-2026-05-10/discharge-evidence-v1.json (LIVE on canonical 7B 2026-05-10)'
+      - 'evidence/ship-008-discharge-2026-05-10/apr-run-output.txt (raw teacher render log)'
+      - 'evidence/ship-008-discharge-2026-05-10/completion.md (extracted ChatML response)'
+      - 'evidence/ship-008-discharge-2026-05-10/parse-result.json (Python ast.parse + structural verdict)'
+    live_discharge:
+      date: '2026-05-10'
+      host: noah-Lambda-Vector (RTX 4090)
+      binary: '/mnt/nvme-raid0/targets/aprender/release/apr (v0.32.0 post-e856eb91f M-FFN-GGUF-5)'
+      artifact: '/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr'
+      artifact_sha256: 'a394dd286732a5f32dfb983fd2ea0eeba4d6239ac4c47e44bcfe62f590ddeb28'
+      artifact_size_bytes: 8035635652
+      command: 'apr run <artifact> --prompt "Write a Python function to compute the nth Fibonacci number." --max-tokens 256'
+      teacher_response_summary:
+        first_line: "Certainly! The Fibonacci sequence is a series of numbers..."
+        code_blocks_emitted: 3
+        function_defs_emitted: ["fibonacci_iterative", "fibonacci_recursive"]
+        python_syntax_errors: 0
+        has_markdown_structure: true
+      wall_time_seconds: 82.97
+      backend_path: 'CUDA (transient ILLEGAL_ADDRESS) → wgpu (rejected via apr-cpu-vs-gpu-output-parity-v1) → CPU (selected)'
+      upstream_blocker_resolved:
+        blocker: 'SHIP-007 §22 — APR vs GGUF forward parity (per §17.5 chain)'
+        resolution_date: '2026-05-07'
+        resolution_pr: 'aprender#1550 squash e856eb91f (M-FFN-GGUF-5) + #1556 (M-FFN-GGUF-5b)'
+        binding_criterion_contract: 'contracts/apr-vs-gguf-forward-parity-v1.yaml v1.2.0 ACTIVE_FUNCTIONAL (PR #1608)'
+      branch_b_finding_resolved:
+        branch: '§61.8 Branch B — GGUF prompt-insensitive output bug'
+        investigation_pr: 'aprender#1612 (gguf-prompt-sensitivity-v1 v1.1.0 ACTIVE_FUNCTIONAL)'
+        evidence: 'APR + ChatML auto-wrap path through run_inference produces clean conversational output. The original §61.8 byte-identical claim was a CLI output truncation artifact.'
     full_discharge_blocks_on: |
-      Live teacher render via `apr run paiml/qwen2.5-coder-7b-apache-q4k-v1
-      --prompt <canonical>` + byte-diff of generated completion against
-      spec-defined golden output. Algorithm-level rule is dischargeable
-      offline; compute-heavy harness awaits SHIP-TWO-001 evidence
-      collection lane.
-      **Upstream blocker SHIP-007 §22 RESOLVED 2026-05-07** (aprender PR
-      #1550 squash `e856eb91f`; M-FFN-GGUF-5 fix); live discharge is now
-      dispatch-ready — no further upstream blockers.
+      RESOLVED 2026-05-10 — see live_discharge block above.
+
+      Pre-discharge gate: Live teacher render via `apr run <canonical 7B
+      teacher>.apr --prompt "<AC_SHIP1_008_CANONICAL_USER>"` + verify
+      teacher emits clean ChatML-formatted response containing valid
+      Python (Python ast.parse on each fenced code block, function defs
+      named "fibonacci*", conversational opening "Certainly!").
+      Algorithm-level rule (PARTIAL) was dischargeable offline; LIVE
+      discharge required upstream SHIP-007 §22 + Branch B resolution.
     counter_example_classes:
       - "empty render (engine crash / returned empty string)"
       - "missing trailing <|im_start|>assistant\\n generation prompt"
       - "wrong special-token family (ChatML → Llama2 / <|user|> drift)"
       - "role-order swap (user before system)"
       - "single-byte flip at trailing newline (byte-equality, not approx)"
+      - "live regression: teacher emits non-Python or '\\ns\\ns' degenerate output on canonical USER message"
 
 qa_gate:
   id: F-CHAT-TEMPLATE-GATE
