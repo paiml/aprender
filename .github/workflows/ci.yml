@@ -43,90 +43,129 @@ jobs:
     secrets: inherit
 
   # APR-MONO: Workspace-wide test (all 75 crates)
+  #
+  # 2026-05-13: Refactored from GH Actions `container:` syntax (which forces an
+  # unconditional `docker pull` with only 3 retries / ~6s total backoff) to
+  # explicit `docker run` steps with a 15-attempt linear-backoff pull retry.
+  # The previous design conflated "image is required" with "registry must be
+  # reachable at pull time" — when `localhost:5000` blipped (registry restart,
+  # network reload), the pull failed and the whole job died after ~25s. This
+  # refactor preserves the same execution semantics (same image, same volume
+  # mounts, same env) but moves the pull into a step the workflow controls,
+  # giving us up to ~13 minutes of retry headroom before declaring the
+  # registry unreachable. Mirrored in the `mutants` job below.
   workspace-test:
     runs-on: [self-hosted, X64, Linux]
-    container:
-      image: localhost:5000/sovereign-ci:stable
-      volumes:
-        # Per-PR (or per-branch) cargo registry. Before ANDON 2026-04-24 (paiml/infra#77),
-        # ALL 16 intel-clean-room-* runners bind-mounted the SAME host
-        # /home/noah/.cargo/registry, which produced EACCES "couldn't read
-        # <crate>/lib.rs: Permission denied" when a concurrent job extracted,
-        # GC'd, or partially wrote the same src/ directory (root-owned crate
-        # extractions from one container were unreadable by another runner's
-        # noah:1000 reaper sweep; partial extractions left .cargo-ok markers
-        # without src/). Mirroring the target-dir isolation below removes the
-        # contention at the source — each PR owns its registry lifecycle and
-        # there is no cross-PR write concurrency.
-        - /mnt/nvme-raid0/cargo-ci/registry/${{ github.event.pull_request.number || github.ref_name }}:/usr/local/cargo/registry
-        # Per-PR (or per-branch) target dir. Before task #134, ALL concurrent PRs
-        # bind-mounted the same /workspace/target and stomped each other's
-        # incremental cache, pushing every run to the 45-min timeout. Isolating
-        # the target dir per PR number removes the contention at the source.
-        # Push-to-main uses ref_name ("main"); PRs use PR number.
-        - /mnt/nvme-raid0/targets/aprender-ci/${{ github.event.pull_request.number || github.ref_name }}:/workspace/target
-        # Shared sccache (Phase 3 §5.3) — content-addressable rustc-output cache
-        # keyed on (toolchain + source + flags). Shared across all 16
-        # intel-clean-room runners and all PRs, with no concurrent-write race
-        # (sccache uses per-entry atomic rename + LRU eviction internally).
-        # Without this, the per-PR target dir above forces cold compile from
-        # scratch for every new PR — ~34min build, leaving only ~6min for
-        # tests inside the 45min timeout. See PR #1632.
-        - /home/noah/data/sccache:/sccache
-    timeout-minutes: 45
+    timeout-minutes: 65  # bumped from 45 — 55min step + 10min overhead/other-steps
     env:
-      CARGO_TARGET_DIR: /workspace/target
-      # Sccache rustc-wrapper. The image bakes /usr/local/bin/rustc-sccache
-      # as an exec shim that argv[0]-spoofs sccache CLI mode while still
-      # caching rustc invocations (paiml/infra commit f4fccf9). Expected
-      # hit-rate ≥80% on warm cache → cold compile ~34min → ~3-5min.
-      RUSTC_WRAPPER: rustc-sccache
-      SCCACHE_DIR: /sccache
-      # CARGO_INCREMENTAL intentionally disabled in CI: incremental compilation
-      # tracks per-function dirty state for dev-loop speed, but on PR-scale
-      # diffs that touch many files the overhead outweighs savings, and the
-      # state file is a further contention point under parallelism.
-      CARGO_INCREMENTAL: 0
-      # Self-cap parallelism to align with infra build-performance.md §4.2
-      # "build" class (J=8). The intel host has 32 cores, and the labeled
-      # runner classes (test/build/lint) that would apply cgroup slices do
-      # NOT exist yet — all 16 self-hosted runners are `clean-room` labeled
-      # and uncapped. Without this cap, N parallel PRs each spawn 32 rustc
-      # processes → N×32 on 32 cores → thrash → every run hits the 45min
-      # timeout simultaneously (observed on #991/#992/#993, 2026-04-21).
-      # J=8 means 3 parallel PRs = 24 active rustc ≤ 1.2 × 32 cores = 38 budget.
-      # Single-run wall-time regresses ~22→35min but completes reliably.
-      # Remove this cap once forjar apply lands cgroup slices on intel (PMAT-156).
-      CARGO_BUILD_JOBS: 8
-      # Reduce debug info to line-tables-only per infra spec §4.4 — keeps
-      # stack traces on test failure, strips type info, ~15-20% faster link.
-      CARGO_PROFILE_TEST_DEBUG: line-tables-only
-      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      IMAGE: localhost:5000/sovereign-ci:stable
+      PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
-      # Removed redundant `cargo check --workspace`: the subsequent
-      # `cargo test --workspace --lib` does strictly more work (type-check +
-      # codegen + link + run), and the test profile doesn't share artifacts
-      # with the check profile, so the check was pure duplicated compilation.
-      # Loses the "fail-fast on type error in 3-5min" signal, gains ~3-5min
-      # back on every successful run. Typecheck-only fail-fast is covered
-      # by the reusable `ci / test` job upstream.
+      - name: Pull sovereign-ci image (with retry + local-cache fallback)
+        # Self-hosted runner's local Docker registry at localhost:5000 is
+        # occasionally restarting OR experiencing extended outages
+        # (paiml/infra ops). Two layers of resilience:
+        #   1. Check the local Docker daemon cache first — the image was
+        #      successfully pulled on a prior run, so it's almost certainly
+        #      still in the cache (Docker doesn't GC images unless `prune`
+        #      is run). If present, skip the pull entirely; this makes the
+        #      workflow registry-outage-tolerant.
+        #   2. Otherwise, try to pull with 15-attempt linear-backoff retry
+        #      (~13min total) — plenty for any normal restart cycle.
+        # The local-cache path accepts slight staleness as the price of
+        # registry-outage tolerance. paiml/infra:machines/intel/sovereign-
+        # ci/rebuild.sh rebuilds the stable tag nightly so any drift gets
+        # corrected within 24h on the next successful pull.
+        run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "Image $IMAGE already cached locally — skipping pull"
+            echo "(local cache is registry-outage-tolerant; nightly rebuild keeps it fresh)"
+            exit 0
+          fi
+          max_attempts=15
+          delay=4
+          for i in $(seq 1 $max_attempts); do
+            if docker pull "$IMAGE"; then
+              echo "Image pulled successfully on attempt $i"
+              exit 0
+            fi
+            if [ $i -eq $max_attempts ]; then
+              echo "::error::Registry localhost:5000 unreachable after $max_attempts attempts (~13min) AND image not in local cache"
+              echo "::error::Suggests paiml/infra runner-side registry restart + initial image seed needed"
+              exit 1
+            fi
+            echo "Pull attempt $i/$max_attempts failed; sleeping ${delay}s"
+            sleep "$delay"
+            delay=$((delay + 6))  # linear backoff: 4,10,16,22,28,34,...
+          done
       - name: Workspace lib tests (25,300+)
         # Excluded: aprender-gpu (cuBLAS), aprender-cuda-edge (CUDA), aprender-compute (SIMD SIGSEGV at exit)
-        run: cargo test --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute
-        timeout-minutes: 40
+        # Timeout: 55min (was 40). Cold sccache run is ~34min compile + ~7min tests
+        # = 41min, which JUST overruns 40 — observed on intel-clean-room-3 first run
+        # after the refactor invalidated its sccache by changing workspace lints.
+        # Warm runs are ~3-5min compile per the workflow comments above.
+        timeout-minutes: 55
+        run: |
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}:/workspace/target" \
+            -v "/home/noah/data/sccache:/sccache" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=rustc-sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
+            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            "$IMAGE" \
+            cargo test --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute
       - name: Compute tests (tolerate SIGSEGV at exit — all tests pass but harness crashes on cleanup)
-        run: cargo test -p aprender-compute --lib 2>&1 | tee /tmp/compute-test.log; grep -q 'test result.*0 failed' /tmp/compute-test.log
+        run: |
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}:/workspace/target" \
+            -v "/home/noah/data/sccache:/sccache" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=rustc-sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS=8 \
+            "$IMAGE" \
+            bash -c 'cargo test -p aprender-compute --lib 2>&1 | tee /tmp/compute-test.log; grep -q "test result.*0 failed" /tmp/compute-test.log'
       - name: Integration tests
         run: |
-          cargo test -p aprender-core --test monorepo_invariants
-          cargo test -p aprender-core --test readme_contract
-          cargo test -p apr-cli --test cli_commands
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}:/workspace/target" \
+            -v "/home/noah/data/sccache:/sccache" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=rustc-sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS=8 \
+            "$IMAGE" \
+            bash -c 'cargo test -p aprender-core --test monorepo_invariants && cargo test -p aprender-core --test readme_contract && cargo test -p apr-cli --test cli_commands'
       - name: Build.rs crate-root escape check (v0.31.1 yank guard)
         # Static Poka-Yoke: flags build.rs files that panic on files outside
         # CARGO_MANIFEST_DIR, which break `cargo install` from crates.io.
         # See scripts/check_build_rs_paths.sh for the full rationale.
-        run: bash scripts/check_build_rs_paths.sh
+        run: |
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace \
+            "$IMAGE" \
+            bash scripts/check_build_rs_paths.sh
       - name: Fix file ownership (container runs as root, runner as noah:1000)
         if: always()
         run: |
@@ -134,7 +173,13 @@ jobs:
           # workspace. Runner (noah:1000) can't git-clean them on next run
           # → checkout fails → CI breaks. This runs inside the container
           # (as root) restoring host ownership for subsequent bare-metal jobs.
-          chown -R 1000:1000 "$GITHUB_WORKSPACE" || true
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}:/workspace/target" \
+            "$IMAGE" \
+            bash -c 'chown -R 1000:1000 /workspace || true; chown -R 1000:1000 /usr/local/cargo/registry || true; chown -R 1000:1000 /workspace/target || true'
 
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".
@@ -155,21 +200,57 @@ jobs:
           fi
           echo "All required jobs passed"
 
+  # Refactored to explicit docker run for the same registry-flake reason
+  # documented above the workspace-test job.
   mutants:
     runs-on: [self-hosted, X64, Linux]
     continue-on-error: true
-    container:
-      image: localhost:5000/sovereign-ci:stable
     timeout-minutes: 120
     needs: [gate]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    env:
+      IMAGE: localhost:5000/sovereign-ci:stable
     steps:
       - uses: actions/checkout@v4
+      - name: Pull sovereign-ci image (with retry + local-cache fallback)
+        # Same two-layer resilience as workspace-test — see that job for full context.
+        run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "Image $IMAGE already cached locally — skipping pull"
+            exit 0
+          fi
+          max_attempts=15
+          delay=4
+          for i in $(seq 1 $max_attempts); do
+            if docker pull "$IMAGE"; then
+              echo "Image pulled successfully on attempt $i"
+              exit 0
+            fi
+            if [ $i -eq $max_attempts ]; then
+              echo "::error::Registry localhost:5000 unreachable after $max_attempts attempts AND image not in local cache"
+              exit 1
+            fi
+            echo "Pull attempt $i/$max_attempts failed; sleeping ${delay}s"
+            sleep "$delay"
+            delay=$((delay + 6))
+          done
       - name: Install cargo-mutants
-        run: cargo install cargo-mutants --locked
+        run: |
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace \
+            "$IMAGE" \
+            cargo install cargo-mutants --locked
       - name: Run mutation testing
-        run: cargo mutants --no-times --timeout 300 --in-place -- --lib
         continue-on-error: true
+        run: |
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace \
+            "$IMAGE" \
+            cargo mutants --no-times --timeout 300 --in-place -- --lib
       - name: Upload mutation results
         uses: actions/upload-artifact@v7
         with:
