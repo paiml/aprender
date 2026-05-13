@@ -148,7 +148,7 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         Commands::Serve { command } => dispatch_serve_command(command, cli),
 
         // PMAT-182: apr code — sovereign coding assistant
-        #[cfg(feature = "code")]
+        
         Commands::Code {
             model,
             project,
