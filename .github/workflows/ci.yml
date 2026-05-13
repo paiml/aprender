@@ -62,13 +62,27 @@ jobs:
       PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
-      - name: Pull sovereign-ci image (with retry on registry flake)
+      - name: Pull sovereign-ci image (with retry + local-cache fallback)
         # Self-hosted runner's local Docker registry at localhost:5000 is
-        # occasionally restarting (paiml/infra ops). GH Actions `container:`
-        # syntax only retries 3x with ~6s total backoff, which is shorter
-        # than the registry-restart cycle. Explicit retry here gives ~13min
-        # of pull headroom — plenty for any normal restart.
+        # occasionally restarting OR experiencing extended outages
+        # (paiml/infra ops). Two layers of resilience:
+        #   1. Check the local Docker daemon cache first — the image was
+        #      successfully pulled on a prior run, so it's almost certainly
+        #      still in the cache (Docker doesn't GC images unless `prune`
+        #      is run). If present, skip the pull entirely; this makes the
+        #      workflow registry-outage-tolerant.
+        #   2. Otherwise, try to pull with 15-attempt linear-backoff retry
+        #      (~13min total) — plenty for any normal restart cycle.
+        # The local-cache path accepts slight staleness as the price of
+        # registry-outage tolerance. paiml/infra:machines/intel/sovereign-
+        # ci/rebuild.sh rebuilds the stable tag nightly so any drift gets
+        # corrected within 24h on the next successful pull.
         run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "Image $IMAGE already cached locally — skipping pull"
+            echo "(local cache is registry-outage-tolerant; nightly rebuild keeps it fresh)"
+            exit 0
+          fi
           max_attempts=15
           delay=4
           for i in $(seq 1 $max_attempts); do
@@ -77,8 +91,8 @@ jobs:
               exit 0
             fi
             if [ $i -eq $max_attempts ]; then
-              echo "::error::Registry localhost:5000 unreachable after $max_attempts attempts (~13min total backoff)"
-              echo "::error::Suggests paiml/infra runner-side registry restart needed"
+              echo "::error::Registry localhost:5000 unreachable after $max_attempts attempts (~13min) AND image not in local cache"
+              echo "::error::Suggests paiml/infra runner-side registry restart + initial image seed needed"
               exit 1
             fi
             echo "Pull attempt $i/$max_attempts failed; sleeping ${delay}s"
@@ -194,8 +208,13 @@ jobs:
       IMAGE: localhost:5000/sovereign-ci:stable
     steps:
       - uses: actions/checkout@v4
-      - name: Pull sovereign-ci image (with retry on registry flake)
+      - name: Pull sovereign-ci image (with retry + local-cache fallback)
+        # Same two-layer resilience as workspace-test — see that job for full context.
         run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "Image $IMAGE already cached locally — skipping pull"
+            exit 0
+          fi
           max_attempts=15
           delay=4
           for i in $(seq 1 $max_attempts); do
@@ -204,7 +223,7 @@ jobs:
               exit 0
             fi
             if [ $i -eq $max_attempts ]; then
-              echo "::error::Registry localhost:5000 unreachable after $max_attempts attempts"
+              echo "::error::Registry localhost:5000 unreachable after $max_attempts attempts AND image not in local cache"
               exit 1
             fi
             echo "Pull attempt $i/$max_attempts failed; sleeping ${delay}s"
