@@ -11,6 +11,7 @@ pub mod drift;
 pub mod evaluator;
 pub mod grad_norm;
 pub mod percentile;
+pub mod perplexity;
 pub mod ranking;
 pub mod ship_005;
 
