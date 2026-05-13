@@ -43,6 +43,28 @@ fn parity_gate(cuda_model: &mut OwnedQuantizedModelCuda) -> Result<()> {
             RealizarError::InferenceError(format!("PARITY-GATE: CPU forward failed: {e}"))
         })?;
 
+    // SHIP-007 PR-B: Dump CPU logits to <APR_GPU_STAGE_DUMP>/cpu/lm_head.bin
+    // for direct CPU-vs-GPU comparison on the SAME single BOS token at
+    // position 0. The GPU side dumps to <APR_GPU_STAGE_DUMP>/lm_head.bin
+    // inside forward_gpu_resident.
+    if let Some(cfg) =
+        crate::inference_trace::gpu_stage_dump::GpuStageDumpConfig::from_env()
+    {
+        let cpu_dir = cfg.output_dir().join("cpu");
+        let cpu_cfg =
+            crate::inference_trace::gpu_stage_dump::GpuStageDumpConfig::with_output_dir(
+                &cpu_dir,
+            );
+        if let Err(e) = crate::inference_trace::gpu_stage_dump::maybe_dump_host_buffer(
+            Some(&cpu_cfg),
+            crate::inference_trace::save_tensor_stage::SaveTensorStage::LmHead,
+            0,
+            &cpu_logits,
+        ) {
+            eprintln!("[SHIP-007-PR-B] CPU logits dump failed (non-fatal): {e}");
+        }
+    }
+
     // GPU forward
     let gpu_logits = cuda_model
         .forward_gpu_resident(token_id, &mut gpu_cache, position)
