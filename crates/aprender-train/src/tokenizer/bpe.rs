@@ -212,6 +212,44 @@ impl BPETokenizer {
             ));
         }
 
+        // FALSIFY-BPE-FORMAT-MISMATCH-001 (SHIP-TWO §60 root cause):
+        // aprender-train's BPETokenizer uses a HEX-BYTE format internally
+        // (`to_bytes` emits "64" for byte 'd', etc.). Loading a vocab that
+        // is NOT hex-byte format (e.g., HuggingFace GPT-2 byte-level
+        // vocabs from `apr tokenize import-hf`, which use Ġ-prefix and
+        // raw characters) produces SILENT `<unk>` for every encoded byte
+        // because `vocab.get("64")` returns None when the vocab has "d"
+        // but not "64". The 5g.1 corpus (PR #1578-#1581) lost ~17 hours
+        // of compute to this defect class.
+        //
+        // Fail-fast detection: count how many of the canonical 256
+        // hex-byte tokens "00".."ff" exist in the vocab. A legitimate
+        // hex-byte vocab from `apr tokenize train` has all 256
+        // (post-bootstrap) — even small training runs allocate the byte
+        // alphabet first. If fewer than 200 hex tokens are present, the
+        // vocab is in the wrong format for this encoder; refuse to load
+        // with a clear diagnosis.
+        let hex_byte_count =
+            (0u8..=255).map(|b| format!("{b:02x}")).filter(|hex| vocab.contains_key(hex)).count();
+        const MIN_HEX_BYTES: usize = 200;
+        if hex_byte_count < MIN_HEX_BYTES {
+            return Err(TokenizerError::Serialization(format!(
+                "FALSIFY-BPE-FORMAT-MISMATCH-001: vocab.json at {} contains \
+                 only {hex_byte_count}/256 canonical hex-byte tokens (\"00\"..\"ff\"), \
+                 below the {MIN_HEX_BYTES} threshold. aprender-train's BPETokenizer \
+                 uses HEX-BYTE format internally (to_bytes emits \"64\" for byte 'd', \
+                 etc.); loading a HuggingFace GPT-2 byte-level vocab (e.g., from \
+                 `apr tokenize import-hf` of Qwen2/Llama2/Mistral, which use \
+                 Ġ-prefix + raw chars) would silently produce 99.99%% `<unk>` \
+                 tokens during encode (root cause of SHIP-TWO §60 val_loss=0.00081 \
+                 anomaly). Fix scope: implement Ġ-prefix encoding path in \
+                 BPETokenizer (multi-PR), OR use a different tokenizer for HF \
+                 byte-level vocabs. For now, this fail-fast prevents silent corpus \
+                 corruption. Tracking: PMAT-CODE-TOKENIZE-BPE-FORMAT-001.",
+                vocab_path
+            )));
+        }
+
         let merges_text = std::fs::read_to_string(merges_path)?;
         let mut merges: Vec<(String, String)> = Vec::new();
         for (line_no, line) in merges_text.lines().enumerate() {
@@ -888,7 +926,18 @@ mod tests {
         let vocab_path = tmp.join("vocab.json");
         let merges_path = tmp.join("merges.txt");
 
-        std::fs::write(&vocab_path, r#"{"<unk>": 0, "aa": 1, "bb": 2}"#).unwrap();
+        // Vocab includes the canonical 256 hex-byte tokens "00".."ff" so
+        // the new FALSIFY-BPE-FORMAT-MISMATCH-001 fail-fast (line ~205)
+        // does NOT fire — this test specifically targets the orphan-merge
+        // rejection downstream of the format check.
+        let mut vocab_obj = serde_json::Map::new();
+        vocab_obj.insert("<unk>".to_string(), serde_json::json!(0));
+        vocab_obj.insert("aa".to_string(), serde_json::json!(1));
+        vocab_obj.insert("bb".to_string(), serde_json::json!(2));
+        for b in 0u32..256 {
+            vocab_obj.insert(format!("{b:02x}"), serde_json::json!(3 + b));
+        }
+        std::fs::write(&vocab_path, serde_json::to_string(&vocab_obj).unwrap()).unwrap();
         std::fs::write(&merges_path, "#version: 0.2\naa bb\n").unwrap();
 
         let result = BPETokenizer::from_vocab_merges(
@@ -1086,5 +1135,109 @@ mod property_tests {
 
             prop_assert!(tokenizer.vocab_size() <= target_size);
         }
+    }
+
+    /// FALSIFY-BPE-FORMAT-MISMATCH-001 (root cause of §60 val_loss=0.00081):
+    /// Loading a HuggingFace GPT-2 byte-level vocab.json (e.g., from
+    /// Qwen2.5 via `apr tokenize import-hf`) into aprender-train's
+    /// `BPETokenizer` and encoding a typical Python source string MUST
+    /// NOT silently fall through to `<unk>` for ≥99% of tokens.
+    ///
+    /// CONTEXT: SHIP-TWO §60 LIVE 5g.2 re-dispatch produced
+    /// val_loss=0.00081, implausibly low. Per
+    /// `evidence/section-60-5g-2-redispatch-2026-05-09/README.md` H1
+    /// hypothesis cascade, the unit-level falsifier 001/002 (PR #1581)
+    /// FALSIFIED H1A (`logits_buf` train→eval pollution) at unit
+    /// level. Direct held-out content audit on the 5g.1 corpus
+    /// shard-00000.bin showed 99.99% of tokens are `<unk>` (id 128244)
+    /// with rare `</s>` (id 128247) markers — Shannon entropy 0.001
+    /// bits out of theoretical 17.21 bits. So the val_loss anomaly is
+    /// CORRECT for a 99.99%-`<unk>` dataset.
+    ///
+    /// ROOT CAUSE: `BPETokenizer::to_bytes` (line 117) emits hex-string
+    /// representations ("64" for byte 'd', "65" for 'e', etc.). The
+    /// Qwen vocab.json from `apr tokenize import-hf` uses GPT-2
+    /// byte-level format (Ġ-prefix for spaces, raw characters). Hex
+    /// strings never appear in Qwen's vocab → vocab.get() always
+    /// returns None → fallback to unk_id (line 275) → entire corpus
+    /// becomes `<unk>` tokens.
+    ///
+    /// This is a between-contracts gap: `apr-cli-tokenize-import-hf-v1`
+    /// guarantees the IMPORT is byte-correct, and `pretokenize-bin-v1`
+    /// guarantees the OUTPUT is u32 stream — but no contract pins
+    /// "the encoder's tokenization scheme matches the imported
+    /// vocab's tokenization scheme."
+    ///
+    /// This test loads a SYNTHETIC GPT-2-style vocab (Ġ-prefix and
+    /// raw chars instead of hex) and asserts that encoding "def" via
+    /// `BPETokenizer::encode` does NOT produce three `<unk>` tokens.
+    /// The current implementation FAILS this test (RED).
+    ///
+    /// Spec: SPEC-SHIP-TWO-001 §60 follow-up.
+    /// Tracking: PMAT-CODE-TOKENIZE-BPE-FORMAT-001 (fix multi-PR scope:
+    /// either implement Ġ-prefix encoding alongside hex-byte encoding,
+    /// OR add fail-fast detection in `apr tokenize encode-corpus` so
+    /// silent-`<unk>` is impossible).
+    #[test]
+    fn falsify_bpe_format_mismatch_gpt2_vocab_load_fails_fast() {
+        // Synthesize a GPT-2-style vocab on disk (raw chars + Ġ-prefix
+        // tokens, NO hex-byte tokens). This mimics what
+        // `apr tokenize import-hf` produces from Qwen2.5/Llama2/Mistral.
+        // Pre-this-PR: from_vocab_merges loaded silently; encode then
+        // produced 100% `<unk>` because to_bytes emits hex strings that
+        // don't match GPT-2 byte-level vocabs. Post-this-PR: load
+        // returns Err with FALSIFY-BPE-FORMAT-MISMATCH-001 citation.
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let vocab_path = tmp.path().join("vocab.json");
+        let merges_path = tmp.path().join("merges.txt");
+
+        // 50 raw-char tokens + Ġ-prefix tokens. NO hex bytes.
+        let mut vocab_obj = serde_json::Map::new();
+        vocab_obj.insert("<unk>".to_string(), serde_json::json!(0));
+        for (i, ch) in "abcdefghijklmnopqrstuvwxyz0123456789()[]{}".chars().enumerate() {
+            vocab_obj.insert(ch.to_string(), serde_json::json!(i + 1));
+        }
+        // Add a few Ġ-prefix tokens (the canonical signal of GPT-2 byte-level)
+        for (i, word) in ["Ġdef", "Ġreturn", "Ġfor", "Ġif"].iter().enumerate() {
+            vocab_obj.insert((*word).to_string(), serde_json::json!(100 + i));
+        }
+        std::fs::write(&vocab_path, serde_json::to_string(&vocab_obj).unwrap())
+            .expect("write vocab");
+        // Empty merges (the load is what fires the format check, not merges)
+        std::fs::write(&merges_path, "#version: 0.2\n").expect("write merges");
+
+        let result = BPETokenizer::from_vocab_merges(
+            vocab_path.to_str().unwrap(),
+            merges_path.to_str().unwrap(),
+            TokenizerConfig::bpe(),
+        );
+
+        assert!(
+            result.is_err(),
+            "FALSIFY-BPE-FORMAT-MISMATCH-001 (load-time fail-fast): \
+             from_vocab_merges accepted a GPT-2 byte-level vocab.json \
+             that does NOT contain hex-byte tokens. Pre-this-fix, this \
+             load succeeded silently and subsequent encode() calls \
+             produced 100% `<unk>` tokens — the root cause of SHIP-TWO \
+             §60's val_loss=0.00081 anomaly (shards became 99.99% \
+             `<unk>` from Qwen vocab). The load MUST refuse so encode-\
+             corpus cannot silently corrupt the corpus."
+        );
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            err_msg.contains("FALSIFY-BPE-FORMAT-MISMATCH-001"),
+            "Err message MUST cite the falsifier id (auditability): {err_msg}"
+        );
+        assert!(
+            err_msg.contains("hex-byte"),
+            "Err message MUST mention the canonical 'hex-byte' format \
+             so operators recognize the cause: {err_msg}"
+        );
+        assert!(
+            err_msg.contains("apr tokenize import-hf"),
+            "Err message MUST name `apr tokenize import-hf` so operators \
+             know which command produces the incompatible vocab format: \
+             {err_msg}"
+        );
     }
 }
