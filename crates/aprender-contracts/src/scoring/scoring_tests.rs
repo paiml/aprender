@@ -160,6 +160,66 @@ fn contract_score_display() {
 }
 
 #[test]
+fn kani_actually_verified_lifts_bounded_int_to_full_score() {
+    // GH-1595: actually_verified: true → D3 score 1.0 for bounded_int
+    // (was capped at 0.9 by static-readiness heuristic).
+    let yaml = r#"
+metadata:
+  version: "1.0.0"
+  description: "Test actually_verified lift"
+equations:
+  f:
+    formula: "f(x) = x"
+proof_obligations:
+  - type: invariant
+    property: "finite"
+kani_harnesses:
+  - id: KANI-001
+    obligation: "finite"
+    bound: 16
+    strategy: bounded_int
+    solver: cadical
+    actually_verified: true
+"#;
+    let contract = parse_contract_str(yaml).unwrap();
+    let score = score_contract(&contract, None, "test-v1");
+    assert!(
+        (score.kani_coverage - 1.0).abs() < 1e-9,
+        "actually_verified should lift bounded_int to 1.0, got {}",
+        score.kani_coverage
+    );
+}
+
+#[test]
+fn kani_actually_verified_false_keeps_strategy_default() {
+    let yaml = r#"
+metadata:
+  version: "1.0.0"
+  description: "Test actually_verified=false"
+equations:
+  f:
+    formula: "f(x) = x"
+proof_obligations:
+  - type: invariant
+    property: "finite"
+kani_harnesses:
+  - id: KANI-001
+    obligation: "finite"
+    bound: 8
+    strategy: bounded_int
+    solver: cadical
+    actually_verified: false
+"#;
+    let contract = parse_contract_str(yaml).unwrap();
+    let score = score_contract(&contract, None, "test-v1");
+    assert!(
+        (score.kani_coverage - 0.9).abs() < 1e-9,
+        "actually_verified=false keeps 0.9 bounded_int weight, got {}",
+        score.kani_coverage
+    );
+}
+
+#[test]
 fn kani_compositional_strategy_weight() {
     let yaml = r#"
 metadata:
