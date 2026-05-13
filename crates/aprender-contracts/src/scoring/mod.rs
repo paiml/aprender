@@ -311,6 +311,12 @@ fn compute_kani_coverage(contract: &Contract, probes: &mut Vec<ScoreProbe>) -> f
     }
 
     let strategy_weight = |h: &KaniHarness| -> f64 {
+        // GH-1595: If the harness has been verified by a green CI run
+        // (apr-cookbook kani-gate or equivalent), lift weight to 1.0 —
+        // runtime witness supplants static-readiness signal.
+        if h.actually_verified == Some(true) {
+            return 1.0;
+        }
         match h.strategy.as_ref() {
             Some(KaniStrategy::Exhaustive) => 1.0,
             Some(KaniStrategy::BoundedInt) => 0.9,
