@@ -1,27 +1,26 @@
 ---
-source: src/prune/snapshot_tests.rs
-assertion_line: 328
+source: crates/aprender-train/src/prune/snapshot_tests.rs
 expression: errors
 ---
 [
   {
-    "error": "end_step (50) must be greater than start_step (100)",
-    "name": "gradual_end_before_start"
+    "name": "gradual_end_before_start",
+    "error": "end_step (50) must be greater than start_step (100)"
   },
   {
-    "error": "initial_sparsity (-0.1) must be between 0.0 and 1.0",
-    "name": "gradual_negative_initial"
+    "name": "gradual_negative_initial",
+    "error": "initial_sparsity (-0.1) must be between 0.0 and 1.0"
   },
   {
-    "error": "final_sparsity (1.5) must be between 0.0 and 1.0",
-    "name": "gradual_final_over_one"
+    "name": "gradual_final_over_one",
+    "error": "final_sparsity (1.5) must be between 0.0 and 1.0"
   },
   {
-    "error": "end_step (50) must be greater than start_step (100)",
-    "name": "cubic_end_before_start"
+    "name": "cubic_end_before_start",
+    "error": "end_step (50) must be greater than start_step (100)"
   },
   {
-    "error": "final_sparsity (-0.1) must be between 0.0 and 1.0",
-    "name": "cubic_negative_sparsity"
+    "name": "cubic_negative_sparsity",
+    "error": "final_sparsity (-0.1) must be between 0.0 and 1.0"
   }
 ]
