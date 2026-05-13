@@ -78,7 +78,11 @@ hf-hub = ["aprender/hf-hub-integration"]
 # Off by default: `hf-xet` adds ~4 MB to the release binary. Users who ship
 # 7B+ teachers enable with `--features xet`.
 xet = ["hf-hub", "aprender/xet"]
-code = ["dep:batuta"]
+# `code` feature kept for backwards-compat but the subcommand itself is no
+# longer gated — the sovereign coding assistant (`apr code` → batuta) is a
+# core part of the apr-cli surface per `claude-code-parity-apr` Phase 2 plan.
+# batuta is a non-optional dependency below.
+code = []
 dev = []  # Enable `apr mono` subcommands (publish, shims, audit, archive)
 safetensors-compare = ["aprender/safetensors-compare"]
 inference = ["realizar", "trueno", "tokio", "axum", "futures-util"]
@@ -109,9 +113,11 @@ provable-contracts-macros = "0.3"
 # Shared formatting and system utilities (Batuta stack)
 batuta-common = "0.1"
 
-# Sovereign coding assistant (apr code → batuta agent engine) — PMAT-182
-# GH-344: path dep via .cargo/config.toml.dev-overrides; CI uses checkout+symlink
-batuta = { workspace = true, optional = true, default-features = false, features = ["agents", "agents-inference", "agents-mcp", "rag"] }
+# Sovereign coding assistant (apr code → batuta agent engine) — PMAT-182.
+# Non-optional since claude-code-parity-apr M150 (outcome-parity Phase 3
+# requires apr code in default builds). GH-344: path dep via
+# .cargo/config.toml.dev-overrides; CI uses checkout+symlink.
+batuta = { workspace = true, default-features = false, features = ["agents", "agents-inference", "agents-mcp", "rag"] }
 
 # Inference engine (workspace path dep — enables cuda/gpu feature forwarding)
 # GH-573: shim (0.9.1) didn't forward cuda feature → 0.7 tok/s instead of 273 tok/s

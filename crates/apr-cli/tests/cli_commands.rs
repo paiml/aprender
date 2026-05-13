@@ -27,10 +27,13 @@ use std::process::Command;
 
 /// All commands registered in contracts/apr-cli-commands-v1.yaml.
 /// This is the Rust-side mirror of the YAML contract.
-/// Feature-gated commands are conditionally included.
+///
+/// As of aprender#1638 / M150, all commands are unconditionally
+/// compiled — the `code` feature flag was removed so `apr code` ships
+/// in the default build. The contract YAML lists `code` unconditionally
+/// too (see contracts/apr-cli-commands-v1.yaml § code).
 fn registered_commands() -> Vec<&'static str> {
-    #[cfg_attr(not(feature = "code"), allow(unused_mut))]
-    let mut cmds = vec![
+    vec![
         "run",
         "serve",
         "chat",
@@ -111,11 +114,8 @@ fn registered_commands() -> Vec<&'static str> {
         "encrypt",
         "decrypt",
         "mcp",
-    ];
-    // Feature-gated commands — only expected when feature is enabled
-    #[cfg(feature = "code")]
-    cmds.push("code");
-    cmds
+        "code",
+    ]
 }
 
 fn apr_binary() -> Command {
