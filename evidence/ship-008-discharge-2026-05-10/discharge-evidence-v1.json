@@ -1,0 +1,128 @@
+{
+  "$schema": "../../contracts/chat-template-v1.yaml#GATE-CHAT-SHIP-008.discharged_evidence",
+  "evidence_id": "GATE-CHAT-SHIP-008-DISCHARGED-EVIDENCE-V1",
+  "binds_to": "AC-SHIP1-008",
+  "falsification_id": "GATE-CHAT-SHIP-008",
+  "discharge_status": "DISCHARGED",
+  "previous_status": "PARTIAL_ALGORITHM_LEVEL (per chat-template-v1.yaml v1.1.0; held on upstream blocker SHIP-007 §22 until 2026-05-07; held on Branch B / Branch A bisection until 2026-05-10)",
+  "discharge_date": "2026-05-10",
+  "discharge_session": "ship-two-001 SHIP-008 PARTIAL → DISCHARGED via apr run on canonical 7B teacher with SHIP-008 canonical USER prompt; teacher emits clean ChatML response with two valid Python fibonacci_* functions",
+  "upstream_blocker_resolved": {
+    "blocker": "SHIP-007 §22 — APR vs GGUF forward parity (per §17.5 chain)",
+    "resolution_date": "2026-05-07",
+    "resolution_pr": "aprender#1550 squash e856eb91f (M-FFN-GGUF-5) + #1556 (M-FFN-GGUF-5b)",
+    "binding_criterion_contract": "contracts/apr-vs-gguf-forward-parity-v1.yaml v1.2.0 ACTIVE_FUNCTIONAL (PR #1608)",
+    "evidence_pin": "Layer-3 ratio 18.23× → 1.245× (H1 confirmed apples-to-apples on canonical 7B; all 28 layers within band [0.5, 2.0])"
+  },
+  "branch_b_finding_resolved": {
+    "branch": "§61.8 Branch B — GGUF prompt-insensitive output bug",
+    "investigation_pr": "aprender#1612 (gguf-prompt-sensitivity-v1 v1.1.0 ACTIVE_FUNCTIONAL)",
+    "evidence_pin": "APR + ChatML auto-wrap path through run_inference produces clean conversational output. The original §61.8 'byte-identical across prompts' claim was a CLI output truncation artifact; library-level inference is functional. Methodology lesson #9 captured."
+  },
+  "host": {
+    "hostname": "noah-Lambda-Vector",
+    "tier": "lambda-labs",
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "binary_path": "/mnt/nvme-raid0/targets/aprender/release/apr",
+    "binary_features": "default + cuda (full fallback chain CUDA→wgpu→CPU)",
+    "binary_commit_floor": "0d288e1fc (apr 0.32.0) — includes M-FFN-GGUF-5 fix e856eb91f"
+  },
+  "shipped_artifact": {
+    "canonical_path": "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr",
+    "format": "APR",
+    "file_size_bytes": 8035635652,
+    "sha256": "a394dd286732a5f32dfb983fd2ea0eeba4d6239ac4c47e44bcfe62f590ddeb28",
+    "tensor_count_floor": 339,
+    "architecture": "qwen2",
+    "total_params": 7615616512,
+    "param_count_match": "Qwen2.5-Coder-7B canonical 7.6B"
+  },
+  "command": "apr run /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr --prompt \"Write a Python function to compute the nth Fibonacci number.\" --max-tokens 256",
+  "raw_run_output": "evidence/ship-008-discharge-2026-05-10/apr-run-output.txt",
+  "model_completion": "evidence/ship-008-discharge-2026-05-10/completion.md",
+  "ast_parse_result": "evidence/ship-008-discharge-2026-05-10/parse-result.json",
+  "verification_chain": [
+    {
+      "step": 1,
+      "purpose": "Open canonical 7B APR teacher and load 28 transformer blocks",
+      "verdict": "Pass — `OwnedQuantizedModel::from_apr` succeeded"
+    },
+    {
+      "step": 2,
+      "purpose": "ChatML auto-wrap user prompt via prepare_tokens_apr (filename contains 'instruct' → is_instruct=true → format_messages with ChatMLTemplate)",
+      "verdict": "Pass — formatted prompt rendered to embedded BPE tokenizer (152064 vocab, 25 special tokens)"
+    },
+    {
+      "step": 3,
+      "purpose": "Forward pass on prompt 'Write a Python function to compute the nth Fibonacci number.' (canonical SHIP-008 USER message per AC_SHIP1_008_CANONICAL_USER)",
+      "verdict": "Pass — 256 tokens generated; wall time 82.97s on CPU fallback path"
+    },
+    {
+      "step": 4,
+      "purpose": "Verify ChatML render quality — completion has conversational structure",
+      "checks": {
+        "has_conversational_opening": true,
+        "contains_fibonacci_lowercase": true,
+        "has_markdown_headings": true,
+        "expected": "Teacher emits assistant-role conversational response with Markdown formatting (the assistant role kicks in because ChatML wrapped the user message correctly)"
+      },
+      "verdict": "Pass — all 3 conversational-structure checks pass"
+    },
+    {
+      "step": 5,
+      "purpose": "Verify completion contains valid Python (zero-tolerance like SHIP-002)",
+      "gate": "ast.parse on each ```python``` code block",
+      "checks": {
+        "python_code_block_count": 3,
+        "parseable_block_count": 3,
+        "syntax_error_count": 0,
+        "function_def_count": 2,
+        "function_names": ["fibonacci_iterative", "fibonacci_recursive"]
+      },
+      "verdict": "Pass — 3/3 code blocks parse cleanly, 2 valid Python function definitions emitted"
+    },
+    {
+      "step": 6,
+      "purpose": "Algorithm-level binding (PARTIAL discharge already shipped)",
+      "test": "cargo test -p aprender-core --lib falsify_ship_008_chat_template_render_bind",
+      "result": "1 passed; 0 failed; 0 ignored",
+      "verdict": "Pass — ChatMLTemplate::format_conversation byte-equals AC_SHIP1_008_CANONICAL_GOLDEN"
+    }
+  ],
+  "completion_summary": {
+    "first_line": "Certainly! The Fibonacci sequence is a series of numbers where each number is the sum of the two preceding ones, usually starting with 0 and 1. Here's a Python function to compute the nth Fibonacci number using both an iterative and a recursive approach:",
+    "code_blocks_emitted": 3,
+    "function_defs_emitted": [
+      "def fibonacci_iterative(n):",
+      "def fibonacci_recursive(n):"
+    ],
+    "structural_features": [
+      "Markdown ### headings (Iterative Approach / Recursive Approach / Example Usage / Explanation)",
+      "Three ```python``` fenced code blocks",
+      "Two distinct fibonacci function definitions",
+      "Print-statement examples with expected output annotations"
+    ]
+  },
+  "discharge_proof": {
+    "rule": "ChatMLTemplate render passes (algorithm-level) AND live teacher emits clean ChatML response on canonical SHIP-008 USER message",
+    "observed_render_byte_equal_golden": true,
+    "observed_completion_python_parseable": true,
+    "observed_completion_contains_fibonacci": true,
+    "observed_completion_has_markdown_structure": true,
+    "verdict": "Pass — all 4 conditions hold; SHIP-008 LIVE-discharge complete",
+    "ship_blocking": true,
+    "evidence_strength": "LIVE on canonical 7B teacher; reproducible via single apr run command + Python ast.parse"
+  },
+  "ship_percent_movement": {
+    "before": "MODEL-1 92% (1 of 5 §17.5 PARTIALs LIVE-discharged after PR #1609 SHIP-002)",
+    "after": "MODEL-1 93% (2 of 5 §17.5 PARTIALs LIVE-discharged after this PR)",
+    "remaining_partial_chain": ["SHIP-005 (HumanEval pass@1)", "SHIP-006 (apr qa 8 gates)", "SHIP-007 (decode tps ≥ 30)"],
+    "estimate_per_remaining_partial_pp": 1
+  },
+  "next_actions": [
+    "FALSIFY-QW2E-SHIP-005 (HumanEval pass@1): requires apr eval --benchmark humaneval (~hour-scale compute dispatch). May discharge on APR path even with GGUF mode-collapse residual.",
+    "FALSIFY-QA-SHIP-006 (apr qa 8 gates): requires golden_output gate to pass. May co-block on GGUF mode-collapse for the GGUF-only gates (ollama_parity / format_parity / ptx_parity).",
+    "FALSIFY-QW2E-SHIP-007 (decode tps ≥ 30): requires apr bench tps measurement on a binary built with --features cuda. CPU fallback measured 8.8 tok/s, well below floor.",
+    "Author gguf-mode-collapse-v1 contract for the residual 'GGUF emits Italian-coding-style gibberish' bug (independent investigation track)."
+  ]
+}

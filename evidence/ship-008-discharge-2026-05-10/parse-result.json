@@ -1,0 +1,24 @@
+{
+  "has_conversational_opening": true,
+  "contains_fibonacci_lowercase": true,
+  "python_code_block_count": 3,
+  "parseable_blocks": [
+    0,
+    1,
+    2
+  ],
+  "function_defs": [
+    {
+      "block": 0,
+      "name": "fibonacci_iterative"
+    },
+    {
+      "block": 1,
+      "name": "fibonacci_recursive"
+    }
+  ],
+  "syntax_errors": [],
+  "has_markdown_headings": true,
+  "parseable_block_count": 3,
+  "function_def_count": 2
+}
