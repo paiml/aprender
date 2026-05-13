@@ -130,6 +130,24 @@ impl OwnedQuantizedModelCuda {
         // PAR-083: Use pre-allocated embed_buf to eliminate per-token heap allocation.
         self.model.embed_into(token_id, &mut self.embed_buf);
 
+        // SHIP-007 PR-B: Stage-dump hook for CPU-vs-GPU parity bisection.
+        // No-op when APR_GPU_STAGE_DUMP env var is unset (production path).
+        // When set, writes the host-side embedding lookup to disk in APRT
+        // format so `apr diff --values` can compare GPU vs CPU.
+        //
+        // Contract: contracts/apr-ship-007-gpu-stage-bisection-v1.yaml
+        // (PO-SHIP-007-002: gpu_stage_dump_correctness_on_embedding).
+        let stage_dump_config =
+            crate::inference_trace::gpu_stage_dump::GpuStageDumpConfig::from_env();
+        if let Err(e) = crate::inference_trace::gpu_stage_dump::maybe_dump_host_buffer(
+            stage_dump_config.as_ref(),
+            crate::inference_trace::save_tensor_stage::SaveTensorStage::Embedding,
+            0,
+            &self.embed_buf,
+        ) {
+            eprintln!("[SHIP-007-PR-B] embedding dump failed (non-fatal): {e}");
+        }
+
         // 2. Fully GPU-resident forward: layers + output norm + LM head
         // PAR-054: Use CUDA graph-captured path for decode (reduces 280 launches to 1)
         // Only 2 syncs total: embedding upload + logits download
@@ -153,6 +171,19 @@ impl OwnedQuantizedModelCuda {
         // 3. Add LM head bias if present (CPU - fast)
         if let Some(ref bias) = self.model.lm_head_bias {
             ops::add_bias(&mut logits, bias);
+        }
+
+        // SHIP-007 PR-B: Final-stage dump — logits at layer "whole-model"
+        // sentinel. Lets us compare final-logits parity directly. If logits
+        // diverge from CPU but earlier stages match, the bug is in the GPU
+        // output_norm or LM-head dispatch.
+        if let Err(e) = crate::inference_trace::gpu_stage_dump::maybe_dump_host_buffer(
+            stage_dump_config.as_ref(),
+            crate::inference_trace::save_tensor_stage::SaveTensorStage::LmHead,
+            0,
+            &logits,
+        ) {
+            eprintln!("[SHIP-007-PR-B] logits dump failed (non-fatal): {e}");
         }
 
         // Advance cache position (for compatibility with cache-based generation)
