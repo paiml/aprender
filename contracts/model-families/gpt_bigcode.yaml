@@ -1,0 +1,166 @@
+metadata:
+  version: "1.0"
+  created: "2026-05-13"
+  description: "Model family descriptor: gpt_bigcode (closes GH-1594)"
+  kind: model-family
+  references:
+    - "https://huggingface.co/bigcode/tiny_starcoder_py/blob/main/config.json"
+    - "https://huggingface.co/bigcode/santacoder/blob/main/config.json"
+    - "https://huggingface.co/bigcode/starcoder/blob/main/config.json"
+
+family: gpt_bigcode
+display_name: "BigCode GPTBigCode (StarCoder1 / SantaCoder)"
+vendor: BigCode
+architectures:
+  - GPTBigCodeForCausalLM
+hf_pattern: "bigcode/{starcoder,santacoder,tiny_starcoder_py}*"
+
+# GPTBigCode (StarCoder1 / SantaCoder / tiny_starcoder_py) uses GPT-2
+# Conv1D tensor layout with Multi-Query Attention (single K/V head shared
+# across all Q heads). `from_model_type("gpt_bigcode")` maps to
+# `Architecture::Gpt2` so the existing GPT-2 tensor mapper handles names
+# (c_attn / c_fc / c_proj split into q/k/v/o + up/down). MQA semantics
+# are runtime-only — they affect cache shape and inference dispatch but
+# not tensor-name resolution.
+size_variants:
+  tiny:
+    parameters: "164M"
+    hidden_dim: 768
+    num_layers: 20
+    num_heads: 12
+    num_kv_heads: 1
+    intermediate_dim: 3072
+    vocab_size: 49152
+    max_position_embeddings: 8192
+    head_dim: 64
+    norm_eps: 0.00001
+  santacoder:
+    parameters: "1.1B"
+    hidden_dim: 2048
+    num_layers: 24
+    num_heads: 16
+    num_kv_heads: 1
+    intermediate_dim: 8192
+    vocab_size: 49280
+    max_position_embeddings: 2048
+    head_dim: 128
+    norm_eps: 0.00001
+  starcoder:
+    parameters: "15.5B"
+    hidden_dim: 6144
+    num_layers: 40
+    num_heads: 48
+    num_kv_heads: 1
+    intermediate_dim: 24576
+    vocab_size: 49152
+    max_position_embeddings: 8192
+    head_dim: 128
+    norm_eps: 0.00001
+
+constraints:
+  attention_type: mqa
+  activation: gelu
+  norm_type: layernorm
+  has_bias: true
+  tied_embeddings: true
+  positional_encoding: absolute
+  mlp_type: gelu_mlp
+
+# GPTBigCode HuggingFace tensor names (after Conv1D c_attn split):
+#   transformer.wte.weight                         -> model.embed_tokens.weight
+#   transformer.wpe.weight                         -> model.position_embedding.weight
+#   transformer.h.{n}.ln_1.weight/bias             -> model.layers.{n}.input_layernorm.{w,b}
+#   transformer.h.{n}.attn.c_attn (MQA)            -> split into q_proj + k_proj + v_proj
+#   transformer.h.{n}.attn.c_proj                  -> model.layers.{n}.self_attn.o_proj
+#   transformer.h.{n}.ln_2.weight/bias             -> model.layers.{n}.post_attention_layernorm.{w,b}
+#   transformer.h.{n}.mlp.c_fc                     -> model.layers.{n}.mlp.up_proj
+#   transformer.h.{n}.mlp.c_proj                   -> model.layers.{n}.mlp.down_proj
+#   transformer.ln_f.weight/bias                   -> model.norm.{w,b}
+tensor_template:
+  embedding: "model.embed_tokens.weight"
+  position_embedding: "model.position_embedding.weight"
+  lm_head: "lm_head.weight"
+  final_norm: "model.norm.weight"
+  per_layer:
+    q_proj_weight: "model.layers.{n}.self_attn.q_proj.weight"
+    q_proj_bias: "model.layers.{n}.self_attn.q_proj.bias"
+    k_proj_weight: "model.layers.{n}.self_attn.k_proj.weight"
+    k_proj_bias: "model.layers.{n}.self_attn.k_proj.bias"
+    v_proj_weight: "model.layers.{n}.self_attn.v_proj.weight"
+    v_proj_bias: "model.layers.{n}.self_attn.v_proj.bias"
+    o_proj_weight: "model.layers.{n}.self_attn.o_proj.weight"
+    o_proj_bias: "model.layers.{n}.self_attn.o_proj.bias"
+    up_proj_weight: "model.layers.{n}.mlp.up_proj.weight"
+    up_proj_bias: "model.layers.{n}.mlp.up_proj.bias"
+    down_proj_weight: "model.layers.{n}.mlp.down_proj.weight"
+    down_proj_bias: "model.layers.{n}.mlp.down_proj.bias"
+    input_layernorm_weight: "model.layers.{n}.input_layernorm.weight"
+    input_layernorm_bias: "model.layers.{n}.input_layernorm.bias"
+    post_attention_layernorm_weight: "model.layers.{n}.post_attention_layernorm.weight"
+    post_attention_layernorm_bias: "model.layers.{n}.post_attention_layernorm.bias"
+    gate_proj_weight: null
+    gate_proj_bias: null
+
+shape_template:
+  embedding: "[vocab_size, hidden_dim]"
+  position_embedding: "[max_position_embeddings, hidden_dim]"
+  lm_head: "[vocab_size, hidden_dim]"
+  final_norm: "[hidden_dim]"
+  # MQA: K and V have a single head, shape = [head_dim, hidden_dim]
+  q_proj: "[num_heads * head_dim, hidden_dim]"
+  k_proj: "[head_dim, hidden_dim]"
+  v_proj: "[head_dim, hidden_dim]"
+  o_proj: "[hidden_dim, num_heads * head_dim]"
+  up_proj: "[intermediate_dim, hidden_dim]"
+  down_proj: "[hidden_dim, intermediate_dim]"
+  input_layernorm: "[hidden_dim]"
+  post_attention_layernorm: "[hidden_dim]"
+  bias: "[hidden_dim]"
+
+gguf_tensor_template:
+  embedding: "token_embd.weight"
+  position_embedding: "position_embd.weight"
+  lm_head: "output.weight"
+  final_norm_weight: "output_norm.weight"
+  final_norm_bias: "output_norm.bias"
+  transpose_weights: false
+  per_layer:
+    q_proj_weight: null
+    q_proj_bias: null
+    k_proj_weight: null
+    k_proj_bias: null
+    v_proj_weight: null
+    v_proj_bias: null
+    o_proj_weight: "attn_output.weight"
+    o_proj_bias: "attn_output.bias"
+    up_proj_weight: "ffn_up.weight"
+    up_proj_bias: "ffn_up.bias"
+    down_proj_weight: "ffn_down.weight"
+    down_proj_bias: "ffn_down.bias"
+    input_layernorm_weight: "attn_norm.weight"
+    input_layernorm_bias: "attn_norm.bias"
+    post_attention_layernorm_weight: "ffn_norm.weight"
+    post_attention_layernorm_bias: "ffn_norm.bias"
+    gate_proj_weight: null
+    gate_proj_bias: null
+  fuse:
+    - gguf_name: "attn_qkv.weight"
+      sources: [q_proj_weight, k_proj_weight, v_proj_weight]
+    - gguf_name: "attn_qkv.bias"
+      sources: [q_proj_bias, k_proj_bias, v_proj_bias]
+
+quantizations:
+  - q4_k_m
+  - q5_k_m
+  - q6_k
+  - q8_0
+  - f16
+  - f32
+
+certification:
+  playbook_path: "../apr-model-qa-playbook/playbooks/models/gpt-bigcode-{size}.playbook.yaml"
+  csv_family_key: "gpt_bigcode"
+  size_categories:
+    tiny: small
+    santacoder: small
+    starcoder: large
