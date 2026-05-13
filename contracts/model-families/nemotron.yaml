@@ -1,0 +1,122 @@
+metadata:
+  version: "1.1"
+  created: "2026-05-13"
+  description: "Model family descriptor: nemotron (closes GH-1590)"
+  kind: model-family
+  references:
+    - "https://huggingface.co/nvidia/Llama-3.1-Nemotron-70B-Instruct-HF/blob/main/config.json"
+
+family: nemotron
+display_name: "NVIDIA Llama-3.1-Nemotron"
+vendor: NVIDIA
+architectures:
+  - NemotronForCausalLM
+hf_pattern: "nvidia/Llama-3.1-Nemotron-*"
+
+# Llama-3.1-Nemotron-70B is an SFT/RLHF tune over meta-llama/Llama-3.1-70B-Instruct.
+# It reuses LlamaForCausalLM tensor naming (handled by Architecture::Llama via
+# `from_model_type("nemotron")`) and the Llama-3.1 128k vocab + 131072 RoPE context.
+#
+# The Nemotron-4 family (Nemotron-4-340B / Nemotron-Mini-4B) uses a different
+# 256k tokenizer and the Minitron-8B uses yet another 131k vocab — those are
+# distinct families with their own configs and architecture classes. They are
+# explicitly NOT covered here (see FALSIFY-MF-011 vocab-consistency contract).
+size_variants:
+  70b:
+    parameters: "70B"
+    hidden_dim: 8192
+    num_layers: 80
+    num_heads: 64
+    num_kv_heads: 8
+    intermediate_dim: 28672
+    vocab_size: 128256
+    max_position_embeddings: 131072
+    head_dim: 128
+    rope_theta: 500000.0
+    rms_norm_eps: 0.00001
+
+constraints:
+  attention_type: gqa
+  activation: silu
+  norm_type: rmsnorm
+  has_bias: false
+  tied_embeddings: false
+  positional_encoding: rope
+  mlp_type: swiglu
+
+tensor_template:
+  embedding: "model.embed_tokens.weight"
+  lm_head: "lm_head.weight"
+  final_norm: "model.norm.weight"
+  per_layer:
+    q_proj: "model.layers.{n}.self_attn.q_proj.weight"
+    k_proj: "model.layers.{n}.self_attn.k_proj.weight"
+    v_proj: "model.layers.{n}.self_attn.v_proj.weight"
+    o_proj: "model.layers.{n}.self_attn.o_proj.weight"
+    gate_proj: "model.layers.{n}.mlp.gate_proj.weight"
+    up_proj: "model.layers.{n}.mlp.up_proj.weight"
+    down_proj: "model.layers.{n}.mlp.down_proj.weight"
+    input_layernorm: "model.layers.{n}.input_layernorm.weight"
+    post_attention_layernorm: "model.layers.{n}.post_attention_layernorm.weight"
+    q_proj_bias: null
+    k_proj_bias: null
+    v_proj_bias: null
+
+gguf_tensor_template:
+  embedding: "token_embd.weight"
+  position_embedding: null
+  lm_head: "output.weight"
+  final_norm_weight: "output_norm.weight"
+  final_norm_bias: null
+  per_layer:
+    q_proj: "attn_q.weight"
+    k_proj: "attn_k.weight"
+    v_proj: "attn_v.weight"
+    o_proj: "attn_output.weight"
+    gate_proj: "ffn_gate.weight"
+    up_proj: "ffn_up.weight"
+    down_proj: "ffn_down.weight"
+    input_layernorm: "attn_norm.weight"
+    post_attention_layernorm: "ffn_norm.weight"
+    q_proj_bias: null
+    k_proj_bias: null
+    v_proj_bias: null
+
+shape_template:
+  embedding: "[vocab_size, hidden_dim]"
+  lm_head: "[vocab_size, hidden_dim]"
+  q_proj: "[num_heads * head_dim, hidden_dim]"
+  k_proj: "[num_kv_heads * head_dim, hidden_dim]"
+  v_proj: "[num_kv_heads * head_dim, hidden_dim]"
+  o_proj: "[hidden_dim, num_heads * head_dim]"
+  gate_proj: "[intermediate_dim, hidden_dim]"
+  up_proj: "[intermediate_dim, hidden_dim]"
+  down_proj: "[hidden_dim, intermediate_dim]"
+  input_layernorm: "[hidden_dim]"
+  post_attention_layernorm: "[hidden_dim]"
+
+quantizations:
+  - q4_k_m
+  - q5_k_m
+  - q6_k
+  - q8_0
+  - f16
+  - f32
+
+chat_template:
+  format: llama
+  template: "{% for message in messages %}{% if message['role'] == 'system' %}<|start_header_id|>system<|end_header_id|>\n\n{{ message['content'] }}<|eot_id|>{% elif message['role'] == 'user' %}<|start_header_id|>user<|end_header_id|>\n\n{{ message['content'] }}<|eot_id|>{% elif message['role'] == 'assistant' %}<|start_header_id|>assistant<|end_header_id|>\n\n{{ message['content'] }}<|eot_id|>{% endif %}{% endfor %}{% if add_generation_prompt %}<|start_header_id|>assistant<|end_header_id|>\n\n{% endif %}"
+  bos_token: "<|begin_of_text|>"
+  eos_token: "<|eot_id|>"
+  special_tokens:
+    begin_of_text: "<|begin_of_text|>"
+    end_of_text: "<|end_of_text|>"
+    start_header_id: "<|start_header_id|>"
+    end_header_id: "<|end_header_id|>"
+    eot_id: "<|eot_id|>"
+
+certification:
+  playbook_path: "../apr-model-qa-playbook/playbooks/models/nemotron-{size}.playbook.yaml"
+  csv_family_key: "nemotron"
+  size_categories:
+    70b: xlarge
