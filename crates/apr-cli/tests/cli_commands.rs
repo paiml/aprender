@@ -105,6 +105,7 @@ fn registered_commands() -> Vec<&'static str> {
         "unified-search-lint",
         "rm-gc-lint",
         "shared-cache-lint",
+        "ppl",
         "oracle",
         "grad-norm",
         "encrypt",
