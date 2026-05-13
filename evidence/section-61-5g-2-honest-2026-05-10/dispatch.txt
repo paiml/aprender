@@ -1,0 +1,30 @@
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  apr pretrain — SHIP-TWO-001 MODEL-2 training loop
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+=== Configuration ===
+    Dataset: /mnt/nvme-raid0/data/codeparrot-python-permissive-shards-qwen-v2
+    Tokenizer: /tmp/qwen-0.5b-tokenizer-extracted
+    Run dir: /mnt/nvme-raid0/runs/5g-2-honest-2026-05-10
+    LR max: 5.00e-5
+    Total steps: 500
+    Warmup steps: 100
+    Batch × seq: 4 × 512
+    Steps / epoch: 100
+    Seed: 42
+    Target val_loss: 0.00
+
+    Device: cuda:0
+
+  GPU: NVIDIA GeForce RTX 4090 (25.2 GB)
+  ✓ 24 transformer blocks uploaded to GPU
+  ✓ GPU training state allocated (LM head: 544.5 MB)
+  ✓ Fused gradient clipping: 1506 partials (5.9 KB)
+
+=== Run Result ===
+  FAIL ABORTED  DIVERGENCE at epoch 0: val_loss 11.552676 is non-finite or > 10.0
+    Steps recorded: 100
+    Epochs recorded: 0
+
