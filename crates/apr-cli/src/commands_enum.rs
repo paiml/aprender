@@ -604,7 +604,7 @@ pub enum Commands {
         json: bool,
     },
     /// Sovereign AI coding assistant — all inference local via realizar (PMAT-182)
-    #[cfg(feature = "code")]
+    
     Code {
         /// Path to local GGUF/APR model file (prefers .apr format)
         #[arg(long)]
