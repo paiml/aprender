@@ -36,6 +36,7 @@ fn make_kani_harness(id: &str) -> KaniHarness {
         strategy: None,
         solver: None,
         harness: None,
+        actually_verified: None,
     }
 }
 
