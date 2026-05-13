@@ -4,7 +4,7 @@
 **Status**: Complete (18/18 contracts implemented)
 **Created**: 2026-03-01
 **Last Updated**: 2026-03-01
-**Parent Spec**: [APR-SPEC.md](APR-SPEC.md) (v2.1.0)
+**Parent Spec**: [APR-SPEC-v2-draft.md](APR-SPEC-v2-draft.md) (v2.1.0)
 
 ---
 

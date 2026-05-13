@@ -6,7 +6,7 @@ Format parity — cross-format tensor equivalence (GGUF, SafeTensors, APR)
 
 ## References
 
-- APR-SPEC.md — APR format specification
+- APR-SPEC-v2-draft.md — APR format specification
 - GGUF spec — GGML unified format
 - SafeTensors spec — Hugging Face safe serialization
 - contracts/tensor-layout-v1.yaml — layout contract (source of truth)

@@ -730,4 +730,4 @@ Q6_K Super-Block (210 bytes for 256 elements):
 1. [SafeTensors Specification](https://github.com/huggingface/safetensors)
 2. [GGUF Format Documentation](https://github.com/ggerganov/ggml/blob/master/docs/gguf.md)
 3. [llama.cpp Quantization](https://github.com/ggerganov/llama.cpp/blob/master/ggml-quants.c)
-4. [APR Specification](./APR-SPEC.md)
+4. [APR Specification](./APR-SPEC-v2-draft.md)

@@ -1,6 +1,6 @@
 //! APR Converter Module - Import Pipeline
 //!
-//! Implements Section 13 of APR-SPEC.md: Import/Convert Pipeline
+//! Implements Section 13 of APR-SPEC-v2-draft.md: Import/Convert Pipeline
 //!
 //! Supports:
 //! - `HuggingFace` Hub downloads (<hf://org/repo>)
