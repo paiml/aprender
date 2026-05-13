@@ -1,0 +1,11 @@
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  apr tokenize encode-corpus — Pretokenization Result
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    Shards: 125
+    Total tokens: 1241.7M
+    Total documents: 405.9K
+    Vocab size: 151.6K
+    Workers: 48
+    Elapsed: 27.2s
+    Manifest: /mnt/nvme-raid0/data/codeparrot-python-permissive-shards-qwen-v2/manifest.json
