@@ -78,6 +78,7 @@ pub(crate) mod oom_lint;
 pub(crate) mod oracle;
 pub(crate) mod parity;
 pub(crate) mod pipeline;
+pub(crate) mod ppl;
 #[cfg(feature = "training")]
 pub(crate) mod pretrain;
 pub(crate) mod probar;

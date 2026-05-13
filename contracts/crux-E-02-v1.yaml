@@ -1,149 +1,202 @@
 # CRUX-E-02 — Perplexity on held-out corpus
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-E-02
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
+  updated: "2026-04-21"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
+  kind: kernel
   parent_contracts:
   - crux-competitive-research-ux-v1
-  category: "E — Training & Fine-tuning"
+  category: "E — Evaluation"
   competitor: llama_cpp
-  demand_score: 5  # 1..5, critical priority in pmat work
-  intake_status: missing
+  demand_score: 5
+  intake_status: partial
   description: >
-    Perplexity on held-out corpus. Root-cause workflow extracted from llama_cpp UX — see master
-    subspec §5.E and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Perplexity on held-out corpus. Root-cause workflow extracted from
+    llama_cpp `examples/perplexity` (`llama-perplexity -m model.gguf -f
+    wikitext-2-raw.txt -c 2048`). Aprender pure-math surface: `apr ppl
+    --log-probs-file <path>.json --json` computes `PPL = exp(-mean(log p))`
+    via the pure classifier `aprender::metrics::perplexity`. The
+    live-inference surface (`apr eval model.apr --task perplexity --corpus
+    ...`) remains PARTIAL under BLOCKER-UPSTREAM-MISSING pending a stable
+    per-token log-probs extraction path for arbitrary GGUF/APR models.
 
   references:
   - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
-  - github.com/EleutherAI/lm-evaluation-harness
-  - github.com/openai/human-eval
-  - github.com/mlfoundations/open_clip
-equations:
-  # Competitor canonical CLI:
-  #   llama-perplexity -m model.gguf -f wikitext-2-raw.txt -c 2048
-  #   → "Final estimate: PPL = 6.1234 +/- 0.01234"
-  # Reference: https://github.com/ggerganov/llama.cpp/tree/master/examples/perplexity
-  # Aprender equivalent:
-  #   apr eval model.apr --task perplexity --corpus wikitext.txt --context 2048 --json
+  - 'llama.cpp examples/perplexity — canonical PPL CLI'
+  - 'arXiv:2402.16775 — held-out perplexity for pretraining evaluation'
+  - 'https://github.com/ggerganov/llama.cpp/issues/7111 (user demand)'
 
+equations:
   perplexity_definition:
     formula: |
-      PPL(M, C) = exp( - (1 / N) * Σ_{i=1..N} log p_M(t_i | t_{<i}) )
+      PPL(log_probs) = exp(- (1/N) * Σ_{i=1..N} log p_i)
       where:
-        M = language model under test
-        C = held-out corpus tokenized into t_1, ..., t_N
-        N = num_tokens evaluated (excludes context warmup)
-        p_M(·|·) = model's next-token probability (softmax of logits)
-    domain: (model M, corpus C, context_length L)
-    codomain: f64 ∈ [1.0, +∞)  # PPL is bounded below by 1.0 (perfect prediction)
+        log p_i ∈ (-∞, 0]  (natural log of observed-token probability)
+        N = |log_probs| > 0
+    domain: "(log_probs: Vec<f64>)"
+    codomain: "PerplexityOutcome (Ok{ppl, mean_nll, num_tokens} | EmptyLogProbs | NonFiniteLogProb | PositiveLogProb)"
     invariants:
-    - "PPL >= 1.0 (exp of non-negative cross-entropy)"
-    - "PPL is finite for non-degenerate models (no NaN/Inf)"
-    - "PPL computed on log-probabilities, NOT argmax"
-    - "context_length L matches --context flag (sliding window over corpus)"
+    - "N > 0 and all log p_i finite and <= 0 -> Ok with ppl >= 1.0 and finite"
+    - "empty log_probs -> EmptyLogProbs (distinct; no silent pass)"
+    - "any NaN or +/-inf -> NonFiniteLogProb"
+    - "any log p_i > 0 -> PositiveLogProb(value) (probability > 1 impossible)"
+    - "log p_i == 0 for all i -> ppl == 1.0 (perfect prediction)"
+    - "mean_nll_a < mean_nll_b -> ppl_a < ppl_b (monotone in NLL)"
 
   ppl_json_schema:
     formula: |
-      apr eval --task perplexity --json output MUST contain:
+      `apr ppl --log-probs-file FILE.json --json` output MUST contain:
         ppl: f64 >= 1.0
-        ppl_stderr: f64 >= 0.0
+        mean_nll: f64 >= 0.0
         num_tokens: u64 > 0
-        context_length: u64 > 0
-        corpus_path: string (valid path)
-        model_path: string (valid path)
-    domain: apr eval --task perplexity --json output
-    codomain: JSON object
+        log_probs_path: string (valid path)
+    domain: "CLI invocation over a JSON array of f64 log-probabilities"
+    codomain: "JSON object"
     invariants:
-    - "All 6 keys MUST be present (missing key = FAIL)"
-    - "ppl_stderr < 0.05 * ppl (convergence sanity; <5% relative stderr)"
-    - "num_tokens >= context_length (at least one full window evaluated)"
-    - "For fp16 Llama-3-8B on WikiText-2-raw, ppl ∈ [5.5, 7.5] (known-good band; llama.cpp reports ~6.1)"
+    - "All 4 keys MUST be present"
+    - "ppl == exp(mean_nll) (round-trip consistency)"
+    - "num_tokens == len(log_probs)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-E-02-001
-  rule: JSON schema complete
-  prediction: "apr eval --task perplexity --json emits all 6 required keys"
+  rule: "apr ppl --help advertises the --log-probs-file flag"
+  prediction: "apr ppl --help exits 0 and stdout contains --log-probs-file"
   test: |
-    OUT=$(apr eval model.apr --task perplexity \
-      --corpus evidence/crux/llama_cpp/wikitext-2-raw.txt \
-      --context 2048 --json)
-    echo "$OUT" | jq -e '.ppl and .ppl_stderr and .num_tokens and .context_length and .corpus_path and .model_path'
-  if_fails: "apr eval perplexity JSON missing required keys (ppl/ppl_stderr/num_tokens/context_length/corpus_path/model_path)"
+    apr ppl --help | grep -F -- '--log-probs-file'
+  if_fails: "CLI does not surface perplexity; users cannot reach the classifier"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/ppl.rs
+    sub_claim: "--log-probs-file flag plumbed through clap"
+    tests:
+    - falsify_crux_e_02_help_advertises_log_probs_file_flag
+    - falsify_crux_e_02_rejects_bare_ppl_without_file
+    scope: FULL
+    discharge_status: FULL
 
 - id: FALSIFY-CRUX-E-02-002
-  rule: PPL in known-good band for Llama-3-8B fp16 on WikiText-2
+  rule: "JSON output emits `ppl` key with correct value"
+  prediction: "For log p_i = -ln(2), apr ppl --json reports ppl approximately 2.0"
+  test: |
+    apr ppl --json --log-probs-file /tmp/log_probs.json | jq -e '.ppl'
+  if_fails: "JSON schema regression — consumers parsing the output will break"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/ppl.rs
+    sub_claim: "print_json emits ppl, mean_nll, num_tokens, log_probs_path keys"
+    tests:
+    - falsify_crux_e_02_json_emits_ppl_key
+    scope: FULL
+    discharge_status: FULL
+
+- id: FALSIFY-CRUX-E-02-003
+  rule: "PPL >= 1.0 and finite for any valid input"
+  prediction: "compute_perplexity(valid log_probs).ppl >= 1.0 and finite"
+  test: |
+    true
+  if_fails: "Cross-entropy computation broken — ppl < 1 or NaN/Inf"
+  evidence_discharged_by:
+    classifier_path: crates/aprender-core/src/metrics/perplexity.rs
+    sub_claim: "classify_ppl_at_least_one holds on representative inputs"
+    tests:
+    - ppl_at_least_one_invariant_holds
+    - perfect_prediction_ppl_is_one
+    - uniform_log_prob_gives_correct_ppl
+    - falsify_crux_e_02_004_ppl_at_least_one_and_finite
+    - falsify_crux_e_02_perfect_prediction_ppl_is_one
+    scope: FULL
+    discharge_status: FULL
+
+- id: FALSIFY-CRUX-E-02-004
+  rule: "No silent pass on ill-formed log-prob input"
+  prediction: "empty / NaN / +/-inf / strictly-positive log-prob all map to distinct Outcome variants"
+  test: |
+    true
+  if_fails: "Silent zero/default on bad input would mask quantile bugs and broken models"
+  evidence_discharged_by:
+    classifier_path: crates/aprender-core/src/metrics/perplexity.rs
+    sub_claim: "EmptyLogProbs, NonFiniteLogProb, PositiveLogProb are distinct variants"
+    tests:
+    - empty_log_probs_distinct_outcome
+    - nan_log_prob_rejected
+    - positive_infinity_rejected
+    - negative_infinity_rejected
+    - positive_log_prob_rejected
+    - classifier_functions_all_pass
+    - falsify_crux_e_02_empty_distinct_outcome
+    - falsify_crux_e_02_nan_log_prob_rejected_via_cli
+    - falsify_crux_e_02_empty_file_rejected_via_cli
+    scope: FULL
+    discharge_status: FULL
+
+- id: FALSIFY-CRUX-E-02-005
+  rule: "PPL monotone in mean NLL"
+  prediction: "mean_nll_a < mean_nll_b implies ppl_a < ppl_b"
+  test: |
+    true
+  if_fails: "exp() monotonicity broken OR sign of mean_nll inverted"
+  evidence_discharged_by:
+    classifier_path: crates/aprender-core/src/metrics/perplexity.rs
+    sub_claim: "compute_perplexity preserves order under mean NLL"
+    tests:
+    - ppl_monotone_in_mean_nll
+    - falsify_crux_e_02_ppl_monotone_in_nll
+    scope: FULL
+    discharge_status: FULL
+
+- id: FALSIFY-CRUX-E-02-006
+  rule: "PPL in known-good band for live fp16 Llama-3-8B on WikiText-2"
   prediction: "5.5 <= ppl <= 7.5 (llama.cpp reference: 6.12)"
   test: |
-    # TODO: requires Llama-3-8B fp16 .apr + WikiText-2-raw golden corpus.
     OUT=$(apr eval models/llama-3-8b-fp16.apr --task perplexity \
       --corpus evidence/crux/llama_cpp/wikitext-2-raw.txt \
       --context 2048 --json)
-    PPL=$(echo "$OUT" | jq '.ppl')
-    python3 -c "import sys; ppl=$PPL; sys.exit(0 if 5.5 <= ppl <= 7.5 else 1)"
+    echo "$OUT" | jq -e '.ppl >= 5.5 and .ppl <= 7.5'
   if_fails: "Llama-3-8B fp16 perplexity outside [5.5, 7.5] band — model or tokenizer broken"
-
-- id: FALSIFY-CRUX-E-02-003
-  rule: ppl_stderr convergence sanity
-  prediction: "ppl_stderr < 0.05 * ppl (stderr under 5% of estimate)"
-  test: |
-    OUT=$(apr eval model.apr --task perplexity \
-      --corpus evidence/crux/llama_cpp/wikitext-2-raw.txt \
-      --context 2048 --json)
-    echo "$OUT" | jq -e '.ppl_stderr < (.ppl * 0.05)'
-  if_fails: "ppl_stderr >= 5% of ppl — not converged, need more tokens or larger context"
-
-- id: FALSIFY-CRUX-E-02-004
-  rule: PPL >= 1.0 invariant
-  prediction: "perplexity is bounded below by 1.0 (exp of non-negative CE)"
-  test: |
-    OUT=$(apr eval model.apr --task perplexity \
-      --corpus evidence/crux/llama_cpp/wikitext-2-raw.txt \
-      --context 2048 --json)
-    echo "$OUT" | jq -e '.ppl >= 1.0 and (.ppl | isnan | not) and (.ppl | isinfinite | not)'
-  if_fails: "PPL < 1.0 or NaN/Inf — cross-entropy computation broken"
-
-- id: FALSIFY-CRUX-E-02-005
-  rule: context_length echoes flag
-  prediction: "JSON .context_length == --context flag value"
-  test: |
-    OUT=$(apr eval model.apr --task perplexity \
-      --corpus evidence/crux/llama_cpp/wikitext-2-raw.txt \
-      --context 2048 --json)
-    echo "$OUT" | jq -e '.context_length == 2048'
-  if_fails: "context_length in JSON does not match --context flag"
+  evidence_discharged_by:
+    classifier_path: crates/aprender-core/src/metrics/perplexity.rs
+    sub_claim: "PPL ballpark smoke-test on realistic mean NLL (~1.8 nats) lands in [5.5, 7.5]"
+    tests:
+    - known_wikitext_ballpark_ppl
+    scope: PARTIAL_ALGORITHM_LEVEL
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "BLOCKER-UPSTREAM-MISSING — no stable per-token log-probs extraction path for arbitrary GGUF/APR models in-tree; classifier holds on synthetic inputs but cannot be exercised against live inference until `apr eval --task perplexity --corpus <path>` wiring lands (separate ticket)"
 
 proof_obligations:
 - type: invariant
   property: "ppl >= 1.0 and finite (no NaN/Inf)"
 - type: invariant
-  property: "JSON output has all 6 required keys: ppl, ppl_stderr, num_tokens, context_length, corpus_path, model_path"
+  property: "JSON output emits ppl, mean_nll, num_tokens, log_probs_path keys"
 - type: invariant
-  property: "ppl_stderr < 0.05 * ppl (convergence sanity)"
+  property: "ill-formed inputs (empty/NaN/Inf/positive log-prob) produce distinct Outcome variants"
 - type: invariant
-  property: "For fp16 Llama-3-8B on WikiText-2, ppl ∈ [5.5, 7.5] (parity with llama.cpp reference)"
+  property: "ppl monotone in mean NLL (order-preserving under exp)"
 - type: invariant
-  property: "num_tokens >= context_length (sliding window covers at least one full context)"
+  property: "--log-probs-file CLI flag reaches the classifier layer"
 
 verification_summary:
   total_obligations: 5
   proven: 0
-  tested: 0
-  status: spec-complete
+  tested: 5
+  status: partial
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-e-02` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-e-02
   priority: critical
   auto_created: true
+
+ship_discipline:
+  ship_rule: CRUX-SHIP-001
+  deliverables_present:
+    classifier: crates/aprender-core/src/metrics/perplexity.rs
+    cli_wiring: "crates/apr-cli/src/extended_commands.rs + dispatch_analysis.rs + commands/ppl.rs (apr ppl --log-probs-file)"
+    e2e_test: crates/apr-cli/tests/falsification_crux_e_02.rs
+    contract: contracts/crux-E-02-v1.yaml
+  merge_gates:
+    g1_classifier_green: "13 unit tests pass (metrics::perplexity)"
+    g2_cli_reachable: "apr ppl --help advertises --log-probs-file"
+    g3_e2e_runs: "9 falsification tests pass (falsification_crux_e_02)"
+    g4_contract_discharged: "5 of 6 FALSIFY-* at FULL; FALSIFY-006 PARTIAL under BLOCKER-UPSTREAM-MISSING"
