@@ -56,7 +56,7 @@ jobs:
   # registry unreachable. Mirrored in the `mutants` job below.
   workspace-test:
     runs-on: [self-hosted, X64, Linux]
-    timeout-minutes: 50  # bumped from 45 to cover pull retry headroom
+    timeout-minutes: 65  # bumped from 45 — 55min step + 10min overhead/other-steps
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
       PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
@@ -101,7 +101,11 @@ jobs:
           done
       - name: Workspace lib tests (25,300+)
         # Excluded: aprender-gpu (cuBLAS), aprender-cuda-edge (CUDA), aprender-compute (SIMD SIGSEGV at exit)
-        timeout-minutes: 40
+        # Timeout: 55min (was 40). Cold sccache run is ~34min compile + ~7min tests
+        # = 41min, which JUST overruns 40 — observed on intel-clean-room-3 first run
+        # after the refactor invalidated its sccache by changing workspace lints.
+        # Warm runs are ~3-5min compile per the workflow comments above.
+        timeout-minutes: 55
         run: |
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
