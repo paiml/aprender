@@ -25,6 +25,19 @@ apr pull qwen2.5-coder-1.5b
 apr run qwen2.5-coder-1.5b "What is 2+2?"
 ```
 
+> **Known Issue (SHIP-007)**: For the canonical 7B Q4K teacher
+> (`paiml/qwen2.5-coder-7b-apache-q4k-v1`), use `--no-gpu` until the
+> GPU dispatch fix lands. The CPU path produces correct mathematical
+> output (`"2 + 2 equals"`); the default GPU path currently produces
+> gibberish for this specific model. Tracked in
+> [SPEC-SHIP-TWO-001 §40](docs/specifications/aprender-train/ship-two-models-spec.md)
+> and gated by
+> [`apr-cli-model-1-ship-via-cpu-v1`](contracts/apr-cli-model-1-ship-via-cpu-v1.yaml).
+>
+> ```bash
+> apr run paiml/qwen2.5-coder-7b-apache-q4k-v1 "What is 2+2?" --no-gpu
+> ```
+
 ## What is Aprender?
 
 A complete ML framework in pure Rust. One `cargo install`, one `apr` binary,
