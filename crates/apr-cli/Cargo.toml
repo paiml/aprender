@@ -88,6 +88,9 @@ full = ["inference", "cuda", "cuda-batch", "visualization", "zram", "training", 
 libc = "0.2"
 
 [dependencies]
+# anyhow — used by `apr-corpus-ingest` and probar bins for error handling
+anyhow = { workspace = true }
+
 # Core aprender library
 aprender = { path = "../aprender-core", version = "0.30.0", package = "aprender-core", default-features = true, features = ["format-compression"] }
 
