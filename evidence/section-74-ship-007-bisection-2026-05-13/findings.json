@@ -1,0 +1,60 @@
+{
+  "evidence_id": "SECTION-74-SHIP-007-BISECTION-FIRST-EMPIRICAL-2026-05-13",
+  "session_date": "2026-05-13",
+  "summary": "First empirical CPU-vs-GPU logits diff on canonical 7B teacher (Qwen2.5-Coder-Instruct Q4K) using PR-B's APR_GPU_STAGE_DUMP scaffold. Confirms PARITY-GATE cosine=-0.005 is reproducible and quantifies the divergence shape: systematic anti-correlation with max|diff|=19.5 and many top-K elements showing OPPOSITE signs between CPU and GPU.",
+  "host": "noah-Lambda-Vector (RTX 4090, Ada Lovelace sm_89)",
+  "binary": "/mnt/nvme-raid0/targets/aprender/release/apr (commit 025412f02d, --features cuda)",
+  "artifact": "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.gguf",
+  "method": {
+    "env": "APR_GPU_STAGE_DUMP=/tmp/ship-007-gpu-stages",
+    "command": "apr parity <canonical 7B teacher>.gguf",
+    "captures": [
+      "/tmp/ship-007-gpu-stages/cpu/lm_head.bin (CPU logits, 608268 bytes = 152064 × 4 + 12 header)",
+      "/tmp/ship-007-gpu-stages/lm_head.bin (GPU logits, 608268 bytes)",
+      "/tmp/ship-007-gpu-stages/layer-0/embedding.bin (GPU embedding, 14348 bytes = 3584 × 4 + 12 header)"
+    ],
+    "diff": "apr diff --values cpu-lm-head.bin gpu-lm-head.bin"
+  },
+  "result": {
+    "elements_compared": 152064,
+    "cosine_similarity": -0.0051904189,
+    "rms_diff": 4.015977,
+    "max_abs_diff": 19.50531,
+    "max_abs_diff_index": 117375,
+    "cpu_argmax": 334,
+    "gpu_argmax": 8127,
+    "top_divergences_anti_correlated": "Many top-|diff| elements show OPPOSITE signs between CPU and GPU (a negative, b positive or vice versa). Systematic anti-correlation, not random noise."
+  },
+  "top_10_divergences": [
+    {"index": 117375, "cpu": -12.234, "gpu": 7.272, "abs_diff": 19.505, "sign_flipped": true},
+    {"index": 27231,  "cpu":  -6.813, "gpu": 9.722, "abs_diff": 16.535, "sign_flipped": true},
+    {"index": 1533,   "cpu":   9.529, "gpu": -6.222, "abs_diff": 15.751, "sign_flipped": true},
+    {"index": 117252, "cpu": -12.320, "gpu": 3.259, "abs_diff": 15.579, "sign_flipped": true},
+    {"index": 1722,   "cpu":  12.621, "gpu": -2.958, "abs_diff": 15.579, "sign_flipped": true},
+    {"index": 24500,  "cpu":  -9.893, "gpu": 5.560, "abs_diff": 15.453, "sign_flipped": true},
+    {"index": 37706,  "cpu":  -8.741, "gpu": 6.420, "abs_diff": 15.160, "sign_flipped": true},
+    {"index": 8127,   "cpu":  -3.622, "gpu": 11.373, "abs_diff": 14.995, "sign_flipped": true, "note": "this is the GPU argmax (CPU has it strongly negative)"},
+    {"index": 85904,  "cpu":  -5.039, "gpu": 9.907, "abs_diff": 14.946, "sign_flipped": true},
+    {"index": 48246,  "cpu":  -5.108, "gpu": 9.512, "abs_diff": 14.619, "sign_flipped": true}
+  ],
+  "interpretation": {
+    "what_we_know": [
+      "CPU logits and GPU logits both produced — not a GPU crash",
+      "Cosine = -0.005 (near-zero, slightly negative) confirms the systematic anti-correlation pattern",
+      "ALL top-10 divergences have opposite signs — strongly suggests sign-flip class of bug (transpose, stride miscalculation, or negation in a kernel)",
+      "max|diff| = 19.5 is large relative to logit scale (typical Qwen logits are ±10) — bug is significant, not numerical noise"
+    ],
+    "what_localizes_further": [
+      "Need intermediate stage dumps (PostFfnResidual after last layer, FinalNorm post-output-norm) to localize whether bug is in transformer stack or LM head",
+      "PR-B's intermediate dump hooks added but didn't fire on this run — likely workspace buffer accessibility issue; needs PR-D investigation"
+    ],
+    "bug_class_hypothesis": "Layout/stride bug in a matmul kernel (most likely attn_out projection or LM head matmul). The systematic sign-flip points to a transpose-or-stride error rather than a numerical accumulation error."
+  },
+  "next_slice_plan": [
+    "PR-D-a: Fix the workspace buffer dump path in forward_utils.rs (currently silently no-op'ing). Likely needs `self.compute_stream.synchronize()?` before `copy_to_host`.",
+    "PR-D-b: With intermediate dumps working, compare CPU vs GPU at PostFfnResidual + FinalNorm. Determines whether bug is in transformer stack (28 layers) or in output_rmsnorm + LM head dispatch.",
+    "PR-D-c: If FinalNorm matches but lm_head diverges → bug in LM head dispatch (look at dispatch_lm_head_and_download). If FinalNorm diverges but PostFfnResidual matches → bug in apply_output_rmsnorm. If PostFfnResidual diverges → bisect into the 28-layer stack.",
+    "PR-E: Fix the localized stage; rerun apr parity; expect cos >= 0.98 → SHIP-007 LIVE-DISCHARGED → MODEL-1 99% → 100%"
+  ],
+  "ship_percent_impact": "MODEL-1 unchanged at 99%. This §74 evidence is the empirical base for PR-D's localization."
+}

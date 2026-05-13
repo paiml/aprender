@@ -100,11 +100,7 @@ pub fn write_stage_file(
 /// `output_dir`, so callers in tests and the future
 /// `forward_traced_inner` plumbing don't need a full plan to construct
 /// the same path.
-fn output_path_for(
-    output_dir: &Path,
-    stage: SaveTensorStage,
-    layer: u32,
-) -> std::path::PathBuf {
+fn output_path_for(output_dir: &Path, stage: SaveTensorStage, layer: u32) -> std::path::PathBuf {
     use crate::inference_trace::save_tensor_paths::output_path;
 
     let header_layer = if stage.is_per_layer() {
@@ -146,12 +142,7 @@ mod tests {
     #[test]
     fn maybe_save_with_unselected_stage_is_noop() {
         let tmp = tempfile::tempdir().unwrap();
-        let plan = SaveTensorPlan::from_cli(
-            "embedding",
-            "0..1",
-            tmp.path().to_path_buf(),
-        )
-        .unwrap();
+        let plan = SaveTensorPlan::from_cli("embedding", "0..1", tmp.path().to_path_buf()).unwrap();
         // Plan selects Embedding only; calling for FfnGate must be a no-op.
         let values = vec![9.9_f32];
         let r = maybe_save_stage(Some(&plan), SaveTensorStage::FfnGate, 0, &values);
@@ -162,17 +153,15 @@ mod tests {
     #[test]
     fn maybe_save_per_layer_writes_to_layer_subdir() {
         let tmp = tempfile::tempdir().unwrap();
-        let plan = SaveTensorPlan::from_cli(
-            "embedding",
-            "0..1",
-            tmp.path().to_path_buf(),
-        )
-        .unwrap();
+        let plan = SaveTensorPlan::from_cli("embedding", "0..1", tmp.path().to_path_buf()).unwrap();
         let values = vec![1.5_f32, 2.5, 3.5, -4.0];
         maybe_save_stage(Some(&plan), SaveTensorStage::Embedding, 0, &values).unwrap();
 
         let path = tmp.path().join("layer-0").join("embedding.bin");
-        assert!(path.exists(), "per-layer stage lands in layer-N/<stage>.bin");
+        assert!(
+            path.exists(),
+            "per-layer stage lands in layer-N/<stage>.bin"
+        );
         let bytes = read_back(&path);
         let (layer, dim) = parse_header_bytes(&bytes);
         assert_eq!(layer, 0);
@@ -182,19 +171,17 @@ mod tests {
     #[test]
     fn maybe_save_whole_model_writes_to_root_with_sentinel() {
         let tmp = tempfile::tempdir().unwrap();
-        let plan = SaveTensorPlan::from_cli(
-            "lm_head",
-            "0..1",
-            tmp.path().to_path_buf(),
-        )
-        .unwrap();
+        let plan = SaveTensorPlan::from_cli("lm_head", "0..1", tmp.path().to_path_buf()).unwrap();
         let values = vec![0.1_f32, 0.2, 0.3];
         // Caller passes an arbitrary "layer" arg; whole-model stages
         // ignore it and always use the sentinel.
         maybe_save_stage(Some(&plan), SaveTensorStage::LmHead, 42, &values).unwrap();
 
         let path = tmp.path().join("lm_head.bin");
-        assert!(path.exists(), "whole-model stage lands at <root>/<stage>.bin");
+        assert!(
+            path.exists(),
+            "whole-model stage lands at <root>/<stage>.bin"
+        );
         // Per-layer subdir must NOT exist for whole-model stages.
         assert!(!tmp.path().join("layer-42").exists());
         let bytes = read_back(&path);
@@ -210,12 +197,7 @@ mod tests {
     fn maybe_save_layer_filter_excludes_out_of_range() {
         let tmp = tempfile::tempdir().unwrap();
         // Plan selects layers 0..2; a write at layer 5 must be a no-op.
-        let plan = SaveTensorPlan::from_cli(
-            "ffn_gate",
-            "0..2",
-            tmp.path().to_path_buf(),
-        )
-        .unwrap();
+        let plan = SaveTensorPlan::from_cli("ffn_gate", "0..2", tmp.path().to_path_buf()).unwrap();
         let values = vec![1.0_f32];
         maybe_save_stage(Some(&plan), SaveTensorStage::FfnGate, 5, &values).unwrap();
         assert!(!tmp.path().join("layer-5").join("ffn_gate.bin").exists());
@@ -227,12 +209,7 @@ mod tests {
     #[test]
     fn maybe_save_writes_bytes_verbatim_including_nans() {
         let tmp = tempfile::tempdir().unwrap();
-        let plan = SaveTensorPlan::from_cli(
-            "embedding",
-            "0..1",
-            tmp.path().to_path_buf(),
-        )
-        .unwrap();
+        let plan = SaveTensorPlan::from_cli("embedding", "0..1", tmp.path().to_path_buf()).unwrap();
         // Round-trip pin: NaN + Inf + signed zero must be preserved bit-exactly.
         let values = vec![1.0_f32, f32::NAN, -0.0, f32::INFINITY];
         maybe_save_stage(Some(&plan), SaveTensorStage::Embedding, 0, &values).unwrap();
