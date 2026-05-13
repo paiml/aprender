@@ -7,6 +7,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-05-13
+
+### 🎉 MODEL-1 SHIP % = 100% — all 10 AC-SHIP1-* LIVE-DISCHARGED
+
+This release completes SHIP-TWO-001 MODEL-1: every acceptance criterion (SHIP-001 through SHIP-010) is LIVE-discharged on the canonical 7B Qwen2.5-Coder-Instruct Q4_K_M teacher on RTX 4090 with `--features cuda`.
+
+| AC | What | Discharge §  |
+|----|------|-------------|
+| SHIP-001 | `apr run <safetensors>` loads via realizar | §72 |
+| SHIP-002 | `apr run "def fib(n):"` valid Python | §61 |
+| SHIP-003 | q4_k_m round-trip cos ≥ 0.999 | §72 |
+| SHIP-004 | GGUF exports + loads in llama.cpp | §72 |
+| SHIP-005 | HumanEval pass@1 = 86.59% on gx10 164-run | §71 |
+| SHIP-006 | `apr qa` 12-gate aggregate PASS | §61.8 |
+| **SHIP-007** | **PARITY-GATE PASS + 124.6 tok/s @ 128-tok decode** | **§75** |
+| SHIP-008 | Chat template render | §61 |
+| SHIP-009 | License + provenance in `model.apr` metadata | §72 |
+| SHIP-010 | Published HF URL + sha256 match | §72 |
+
+### Fixed
+
+#### SHIP-007 — F32 GEMV PTX kernel layout (PR #1651, §75)
+
+`crates/aprender-gpu/src/kernels/gemv/mod.rs::GemvKernel::build_ptx` assumed weight matrix `A` is `[K rows × N cols]` row-major (`A[i,j]` at `i*N + j`). The standard ML weight convention is `[output_dim=N, input_dim=K]` row-major (`A[i,j]` at `i*K + j` per PyTorch/SafeTensors/GGUF/dequantized lm_head). The kernel was reading TRANSPOSED weights → `y = A^T @ x` instead of `y = A @ x` → systematically anti-correlated logits (cos = -0.005190 vs CPU, sign-flipped top-K divergences).
+
+Fix: rewrite inner loop to iterate K within row `block_id` (row_base = a_ptr + block_id * K * 4; thread `t` reads A[block_id, t]).
+
+Empirical discharge on canonical 7B teacher, lambda-vector RTX 4090:
+- PARITY-GATE PASS (no error from `forward_gpu_resident`)
+- `apr bench` 5-iter 128-tok decode = **124.6 tok/s** (4.15× over AC-SHIP1-007 30 tok/s floor)
+- Default path (CUDA graphed), no `SKIP_PARITY_GATE`, no `APR_SKIP_FP8_WARMUP`
+
+#### SHIP-005 — HumanEval harness RC3 fix (PR #1635, §70/§71)
+
+`run_humaneval_inference`'s ChatML branch built `full_program = "{completion}\n\n{test}\n\ncheck({entry})\n"` — dropping `problem.prompt`'s preamble (e.g., `from typing import List`). Function signatures using typing aliases failed with NameError at line 1, affecting ~70% of the HumanEval canonical set.
+
+Fix: new `extract_prompt_preamble(prompt, entry_point)` helper. ChatML branch now prepends preamble: `full_program = "{preamble}\n{completion}\n\n{test}\n\ncheck({entry})\n"`.
+
+Empirical discharge on canonical 7B teacher, gx10 164-run:
+- Pre-fix (§67, H4 only): pass@1 = 80.49%
+- Post-fix (§71, +RC3): **pass@1 = 86.59%** (+6.10pp; clears 84.80% floor by +1.79pp)
+
+### Added
+
+#### Diagnostic surfaces
+
+- `APR_EVAL_DEBUG=1` (PR #1634): per-problem JSON dump in `apr eval`. Captures task_id, prompt, response, full_program, exit_code, stderr, success — diagnoses harness false-negatives (RC1-RC4). Used to localize §70 RC3 in 5 minutes on gx10.
+- `APR_GPU_STAGE_DUMP=<dir>` (PR #1649): GPU-side per-stage F32 tensor dump in APRT format. Captures Embedding, PostFfnResidual @ last layer, FinalNorm, LmHead on the GPU forward path. Used to localize §74/§75 SHIP-007 bug to F32 GEMV via stage-by-stage stats analysis (no per-element diff needed).
+- `APR_LM_HEAD_FORCE_QTYPE=<q4k|q5k|q6k|f32>` (PR #1651): env-gated override for LM head quantization-type detection. Used as bisection probe during §74 investigation; kept as diagnostic.
+
+#### Falsifiable contracts
+
+- `contracts/apr-eval-humaneval-harness-invariant-v1.yaml` v1.1.0 (PR #1634/#1635): 2 equations + 3 proof obligations + 5 falsifiers (FALSIFY-HEH-001..005) covering the §69 harness-invariant class. `pv validate` PASS.
+- `contracts/apr-ship-007-gpu-stage-bisection-v1.yaml` v1.0.0 (PR #1648): 2 equations + 3 proof obligations + 4 falsifiers (FALSIFY-SHIP-007-GPU-001..004) scaffolding the SHIP-007 cascade.
+
+#### MBPP harness fix
+
+- `run_mbpp_inference` routed through `realizar::run_inference` + ChatML auto-wrap + code-block extraction + canonical MBPP prompt format (test-list hint). 1-problem smoke flips MBPP/11 from FAIL→PASS; 5-problem smoke at 4/5 pass@1 (PRs #1641, #1645).
+
+### Methodology lessons captured
+
+Lessons #16-#22 in `MEMORY.md`:
+- #16 Compose falsifiers via manual end-to-end replication (§69)
+- #17 Pre-fix RED smoke can mask the bug class (§70)
+- #18 Predict-then-verify closes a cascade (§70 → §71)
+- #19 Algorithm-level falsifiers + small evidence runs collapse PARTIAL→LIVE in batches (§72)
+- #20 Re-measure cascade layers before continuing (§73)
+- #21 Stage-by-stage numerical analysis localizes bug class without per-element diffing (§74)
+- #22 Symptom analysis → bug class localization in O(1); methodology lessons compose (§75)
+
+### Spec versions
+
+`docs/specifications/aprender-train/ship-two-models-spec.md`: 3.13.0 → **3.21.0** across §67, §68, §69, §70, §71, §72, §73, §74, §75 (9 amendments over 2 days).
+
+### Cascade arc summary
+
+| Date | § | What |
+|------|---|------|
+| 2026-05-12 | 67-72 | SHIP-005 cascade: H4 → RC3 → LIVE-DISCHARGED at 86.59% pass@1; 5-AC LIVE evidence cascade (SHIP-001/003/004/009/010 PARTIAL→LIVE) |
+| 2026-05-12 | 73 | SHIP-007 cascade scope reduced from 3 layers to 1 (FP8 + throughput already fixed; only parity blocks) |
+| 2026-05-13 | 74-75 | SHIP-007 bug LOCALIZED to F32 GEMV via PR-B stage bisection → 1-PR layout fix → MODEL-1 100% |
+
+13 PRs shipped over 2 calendar days. PR-E (#1651) was the single-file layout fix.
+
 ## [0.32.0] - 2026-05-05
 
 ### Breaking
