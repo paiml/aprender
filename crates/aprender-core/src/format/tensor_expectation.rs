@@ -25,6 +25,9 @@ impl Architecture {
             Self::Moonshine => Self::whisper_map_name(source_name), // Audio model, strip model. prefix
             Self::Mamba => Self::auto_map_name(source_name),     // SSM: mixer.* naming, passthrough
             Self::Rwkv7 => Self::auto_map_name(source_name),     // Recurrence: rwkv.blocks.* naming, passthrough
+            // GH-1586: BLOOM's HuggingFace names diverge from the LLaMA pattern
+            // (word_embeddings vs embed_tokens; h.N.* vs model.layers.N.*).
+            Self::Bloom => Self::bloom_map_name(source_name),
         }
     }
 
@@ -59,6 +62,7 @@ impl Architecture {
                 | Self::Mamba
                 | Self::OpenElm
                 | Self::Rwkv7
+                | Self::Bloom
         )
     }
 
@@ -104,6 +108,7 @@ impl Architecture {
             Self::Moonshine => "Moonshine",
             Self::OpenElm => "OpenELM",
             Self::Rwkv7 => "RWKV-7",
+            Self::Bloom => "BLOOM",
         }
     }
 
@@ -144,6 +149,8 @@ impl Architecture {
             // GH-1591 OLMo / GH-1592 StableLM added here as Llama-family
             "smollm" | "smollm2" | "granite" | "granite3" | "nemotron" | "olmo" | "olmo2"
             | "stablelm" | "stablelm_epoch" | "stablelm_alpha" => Some(Self::Llama),
+            // GH-1586: BLOOM — distinct from LLaMA (ALiBi position bias, fused QKV).
+            "bloom" | "bloomz" => Some(Self::Bloom),
             _ => None,
         }
     }
@@ -311,6 +318,64 @@ impl Architecture {
             "model.decoder.embed_positions.weight" => "model.position_embedding.weight".to_string(),
             "model.decoder.final_layer_norm.weight" => "model.norm.weight".to_string(),
             "model.decoder.final_layer_norm.bias" => "model.norm.bias".to_string(),
+            "lm_head.weight" => "lm_head.weight".to_string(),
+            _ => name.to_string(),
+        }
+    }
+
+    /// GH-1586: Map BLOOM tensor names to APR canonical format.
+    ///
+    /// BLOOM (`BloomForCausalLM`) uses HuggingFace `h.N.*` naming with fused
+    /// QKV in `self_attention.query_key_value` and ALiBi position bias (no
+    /// positional-embedding tensor). The fused QKV is RENAMED here but not
+    /// split — the splitter must run at the conversion layer because BLOOM
+    /// packs Q/K/V interleaved per head, not concatenated.
+    ///
+    /// HuggingFace → APR mapping:
+    /// - `word_embeddings.weight`                       → `model.embed_tokens.weight`
+    /// - `word_embeddings_layernorm.weight/bias`        → `model.embed_norm.{w,b}`
+    /// - `h.N.input_layernorm.{w,b}`                    → `model.layers.N.input_layernorm.{w,b}`
+    /// - `h.N.self_attention.query_key_value.{w,b}`     → `model.layers.N.self_attn.qkv_proj.{w,b}` (fused)
+    /// - `h.N.self_attention.dense.{w,b}`               → `model.layers.N.self_attn.o_proj.{w,b}`
+    /// - `h.N.post_attention_layernorm.{w,b}`           → `model.layers.N.post_attention_layernorm.{w,b}`
+    /// - `h.N.mlp.dense_h_to_4h.{w,b}`                  → `model.layers.N.mlp.up_proj.{w,b}`
+    /// - `h.N.mlp.dense_4h_to_h.{w,b}`                  → `model.layers.N.mlp.down_proj.{w,b}`
+    /// - `ln_f.{w,b}`                                   → `model.norm.{w,b}`
+    fn bloom_map_name(name: &str) -> String {
+        if let Some(rest) = name.strip_prefix("h.") {
+            if let Some(dot_pos) = rest.find('.') {
+                let layer_num = &rest[..dot_pos];
+                let suffix = &rest[dot_pos + 1..];
+
+                let apr_suffix = match suffix {
+                    "input_layernorm.weight" => "input_layernorm.weight",
+                    "input_layernorm.bias" => "input_layernorm.bias",
+                    "post_attention_layernorm.weight" => "post_attention_layernorm.weight",
+                    "post_attention_layernorm.bias" => "post_attention_layernorm.bias",
+                    // Fused QKV — kept fused here; splitter runs at conversion layer.
+                    "self_attention.query_key_value.weight" => "self_attn.qkv_proj.weight",
+                    "self_attention.query_key_value.bias" => "self_attn.qkv_proj.bias",
+                    "self_attention.dense.weight" => "self_attn.o_proj.weight",
+                    "self_attention.dense.bias" => "self_attn.o_proj.bias",
+                    "mlp.dense_h_to_4h.weight" => "mlp.up_proj.weight",
+                    "mlp.dense_h_to_4h.bias" => "mlp.up_proj.bias",
+                    "mlp.dense_4h_to_h.weight" => "mlp.down_proj.weight",
+                    "mlp.dense_4h_to_h.bias" => "mlp.down_proj.bias",
+                    other => other,
+                };
+
+                return format!("model.layers.{layer_num}.{apr_suffix}");
+            }
+        }
+
+        // Non-layer tensors
+        match name {
+            "word_embeddings.weight" => "model.embed_tokens.weight".to_string(),
+            "word_embeddings_layernorm.weight" => "model.embed_norm.weight".to_string(),
+            "word_embeddings_layernorm.bias" => "model.embed_norm.bias".to_string(),
+            "ln_f.weight" => "model.norm.weight".to_string(),
+            "ln_f.bias" => "model.norm.bias".to_string(),
+            // BLOOM ties embeddings → lm_head; if a separate lm_head exists, preserve.
             "lm_head.weight" => "lm_head.weight".to_string(),
             _ => name.to_string(),
         }
