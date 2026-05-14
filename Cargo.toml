@@ -191,6 +191,7 @@ realizar = { path = "crates/aprender-serve", version = "0.33.0", package = "apre
 aprender-train = { path = "crates/aprender-train", version = "0.33.0" }
 entrenar = { path = "crates/aprender-train", version = "0.33.0", package = "aprender-train" }
 aprender-train-common = { path = "crates/aprender-train-common", version = "0.33.0" }
+aprender-train-distill = { path = "crates/aprender-train-distill", version = "0.33.0" }
 aprender-orchestrate = { path = "crates/aprender-orchestrate", version = "0.33.0" }
 aprender-contracts = { path = "crates/aprender-contracts", version = "0.33.0" }
 aprender-profile = { path = "crates/aprender-profile", version = "0.33.0" }

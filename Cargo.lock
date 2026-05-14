@@ -297,6 +297,7 @@ dependencies = [
  "aprender-profile",
  "aprender-serve",
  "aprender-train",
+ "aprender-train-distill",
  "aprender-train-lora",
  "arrow-array 57.3.0",
  "assert_cmd",

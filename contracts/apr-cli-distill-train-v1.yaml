@@ -1,6 +1,6 @@
 metadata:
   kind: schema
-  version: 1.0.0
+  version: 1.1.0
   status: PROPOSED
   created: '2026-04-28'
   author: PAIML Engineering
@@ -237,6 +237,42 @@ falsification_tests:
       assert val_loss(distilled) < val_loss(from_scratch). Tracked here
       so future PRs don't accidentally claim FUNCTIONAL discharge
       without the real-training prerequisite.
+
+- id: FALSIFY-APR-DISTILL-TRAIN-010
+  rule: §35 wire-up — config translator preserves all training hyperparameters
+  prediction: "translate_to_distill_config(apr-cli DistillYamlConfig) preserves teacher/student model_ids, temperature, alpha, epochs, batch_size, learning_rate, lora.rank, lora.alpha, output dir across the boundary into aprender_train_distill::DistillConfig"
+  test: |
+    cargo test -p apr-cli --lib --features training falsify_apr_distill_train_010
+  if_fails: "translator drops or coerces a hyperparameter — silent training-math defect (real KD pipeline trains against different hyperparams than the user specified)"
+  algorithm_evidence:
+    status: PARTIAL_ALGORITHM_LEVEL
+    last_verified: '2026-05-14'
+    test_locations:
+    - 'crates/apr-cli/src/commands/distill_include_01.rs::tests::falsify_apr_distill_train_010_translator_preserves_config — asserts 9 hyperparameters round-trip through translate_to_distill_config without precision loss or field drop'
+    notes: |
+      Algorithm-level discharge. The translator is the boundary between
+      apr-cli's user-facing YAML config and aprender-train-distill's
+      pipeline DistillConfig. A drift in any of the 9 hyperparameters
+      means the real KD pipeline trains against different settings than
+      the user specified — a Class A correctness defect.
+
+- id: FALSIFY-APR-DISTILL-TRAIN-011
+  rule: §35 wire-up — real-pipeline branch predicate is correct
+  prediction: "run_config_train_real returns Ok(false) when student.model_id does not resolve to a local path (HF id without local cache), Ok(true) only after invoking aprender_train_distill::run with a local student. MUST NOT panic in either branch."
+  test: |
+    cargo test -p apr-cli --lib --features training falsify_apr_distill_train_011
+  if_fails: "the real-pipeline branch either (a) tries to invoke aprender_train_distill::run with a non-local student (will fail trying to load weights), or (b) silently skips real training even when the student is local (back to stub behavior)"
+  algorithm_evidence:
+    status: PARTIAL_ALGORITHM_LEVEL
+    last_verified: '2026-05-14'
+    test_locations:
+    - 'crates/apr-cli/src/commands/distill_include_01.rs::tests::falsify_apr_distill_train_011_real_branch_predicate — asserts remote HF id student returns Ok(false) without panicking'
+    notes: |
+      Algorithm-level discharge of the wire-up branch predicate. The
+      full local-path branch (Ok(true) after pipeline.execute()) is
+      covered by aprender-train-distill's own pipeline tests; this
+      contract pins the predicate that decides whether to enter the
+      real pipeline or fall through to the stub.
 
 proof_obligations:
 - type: invariant
