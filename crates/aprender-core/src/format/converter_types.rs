@@ -150,6 +150,11 @@ pub enum Architecture {
     OpenElm,
     /// RWKV-7 (linear attention / recurrence)
     Rwkv7,
+    /// TII Falcon classic (`FalconForCausalLM`) — MQA/MGQA, RoPE,
+    /// parallel attn+mlp residuals, `transformer.h.N.*` HF naming.
+    /// GH-1587: tensor name mapping only — parallel-residual runtime
+    /// inference is a separate concern.
+    FalconClassic,
 }
 
 include!("tensor_expectation.rs");
