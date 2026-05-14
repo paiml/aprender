@@ -846,7 +846,7 @@ publish: ## Publish crate(s) to crates.io — strips [patch], publishes, then ve
 		exit 1; \
 	fi; \
 	echo "Publishing $$CRATE..."; \
-	cargo publish -p $$CRATE --allow-dirty; \
+	cargo publish -p $$CRATE --allow-dirty --locked; \
 	STATUS=$$?; \
 	echo "Restoring .cargo/config.toml..."; \
 	if [ -f .cargo/config.toml.publish-backup ]; then \
