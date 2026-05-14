@@ -263,6 +263,59 @@ fn test_dequantize_q5_0_out_of_bounds() {
 }
 
 #[test]
+fn test_dequantize_q5_0_ggml_layout() {
+    // GH-1623: Q5 dequant must match GGML/llama.cpp layout.
+    // For j in 0..16: element j uses qh bit j and qs[j]&0x0F;
+    //                element j+16 uses qh bit j+16 and qs[j]>>4.
+    let mut data = Vec::new();
+    // d = 1.0 in f16 (0x3C00)
+    data.extend_from_slice(&0x3C00u16.to_le_bytes());
+    // qh: set bit 0 (element 0's high bit) and bit 16 (element 16's high bit)
+    let qh: u32 = (1u32 << 0) | (1u32 << 16);
+    data.extend_from_slice(&qh.to_le_bytes());
+    // qs: byte 0 = low0=0x0F, low1=0x00 → element 0 low=15, element 16 low=0
+    let mut qs = [0u8; 16];
+    qs[0] = 0x0F;
+    data.extend_from_slice(&qs);
+
+    let result = dequantize_q5_0(&data, 0, 32).unwrap();
+    assert_eq!(result.len(), 32);
+    // Element 0:  (high=1 << 4) | low=15 = 31; (31 - 16) * 1.0 = 15.0
+    assert_eq!(result[0], 15.0, "element 0: pre-fix this position got interleaved value");
+    // Element 16: (high=1 << 4) | low=0  = 16; (16 - 16) * 1.0 = 0.0
+    assert_eq!(result[16], 0.0, "element 16: pre-fix this position got element 8's bit/byte");
+    // Element 1:  (high=0 << 4) | low=0  =  0; (0  - 16) * 1.0 = -16.0
+    assert_eq!(result[1], -16.0);
+    assert_eq!(result[17], -16.0);
+}
+
+#[test]
+fn test_dequantize_q5_1_ggml_layout() {
+    // GH-1623: Q5_1 dequant must match GGML/llama.cpp layout.
+    let mut data = Vec::new();
+    // d = 1.0 in f16 (0x3C00), m = 0.0
+    data.extend_from_slice(&0x3C00u16.to_le_bytes());
+    data.extend_from_slice(&0x0000u16.to_le_bytes());
+    // qh: set bit 0 and bit 16
+    let qh: u32 = (1u32 << 0) | (1u32 << 16);
+    data.extend_from_slice(&qh.to_le_bytes());
+    // qs[0] = 0x0F (low0=15, low1=0)
+    let mut qs = [0u8; 16];
+    qs[0] = 0x0F;
+    data.extend_from_slice(&qs);
+
+    let result = dequantize_q5_1(&data, 0, 32).unwrap();
+    assert_eq!(result.len(), 32);
+    // Q5_1: y = (5bit) * d + m (no centering)
+    // Element 0:  (1 << 4) | 15 = 31 * 1.0 + 0.0 = 31.0
+    assert_eq!(result[0], 31.0);
+    // Element 16: (1 << 4) | 0  = 16 * 1.0 + 0.0 = 16.0
+    assert_eq!(result[16], 16.0);
+    assert_eq!(result[1], 0.0);
+    assert_eq!(result[17], 0.0);
+}
+
+#[test]
 fn test_dequantize_q5_1_basic() {
     // Q5_1 block size: 2 (d) + 2 (m) + 4 (qh) + 16 (ql) = 24 bytes for 32 elements
     let mut data = Vec::new();
