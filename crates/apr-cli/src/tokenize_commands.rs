@@ -178,6 +178,20 @@ pub enum TokenizeCommands {
         /// first triggers emission. Issue #1547 contract v1.2.0.
         #[arg(long, value_name = "S", default_value_t = 60)]
         progress_interval_seconds: u64,
+        /// Pre-flight only: estimate total tokens / shards / wall time
+        /// without writing any output. Reads `--estimate-sample-docs`
+        /// (default 1000), encodes them, observes (tokens, wall-time-
+        /// per-doc), and extrapolates against the total document count.
+        /// Emits `[estimate]` lines on stderr; no shards or manifest are
+        /// written. Operator pre-flight gate before multi-day encode
+        /// runs (issue #1547 contract v1.3.0).
+        #[arg(long, default_value_t = false)]
+        estimate_only: bool,
+        /// Number of documents to sample for `--estimate-only`
+        /// extrapolation (default: 1000). Larger samples → tighter
+        /// per-doc rate estimate but longer pre-flight wall.
+        #[arg(long, value_name = "N", default_value_t = 1000)]
+        estimate_sample_docs: u64,
     },
 
     /// Reconstruct manifest.json from existing shard-NNNN.bin files.

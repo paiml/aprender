@@ -708,6 +708,8 @@ fn dispatch_tokenize_command(
             quiet,
             progress_interval_docs,
             progress_interval_seconds,
+            estimate_only,
+            estimate_sample_docs,
         } => tokenize::run_encode_corpus(
             corpus,
             tokenizer,
@@ -721,6 +723,10 @@ fn dispatch_tokenize_command(
                 quiet: *quiet,
                 interval_docs: *progress_interval_docs,
                 interval_seconds: *progress_interval_seconds,
+            },
+            tokenize::EstimateConfig {
+                enabled: *estimate_only,
+                sample_docs: *estimate_sample_docs,
             },
             cli.json,
         ),
