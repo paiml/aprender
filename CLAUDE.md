@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Aprender is a next-generation ML framework in pure Rust — **monorepo with 70 workspace crates**. Install: `cargo install aprender` → `apr` binary (58 subcommands). 25,300+ tests, 405 provable contracts. Core library in `crates/aprender-core/` ([lib] name = "aprender"). All 20 repos (trueno, realizar, entrenar, batuta, + 15 satellites) consolidated per APR-MONO spec.
+Aprender is a next-generation ML framework in pure Rust — **monorepo with 80 workspace crates**. Install: `cargo install aprender` → `apr` binary (82 subcommands). 25,300+ tests, 1134 provable contracts. Core library in `crates/aprender-core/` ([lib] name = "aprender"). All 20 repos (trueno, realizar, entrenar, batuta, + 15 satellites) consolidated per APR-MONO spec. **v0.33.0 SHIPPED 2026-05-14: MODEL-1 SHIP % = 100%, all 24 crates on crates.io.**
 
 ## Git Workflow (Branch Protection)
 
@@ -16,11 +16,11 @@ Aprender is a next-generation ML framework in pure Rust — **monorepo with 70 w
 ## Build Commands
 
 ```bash
-cargo build --release              # Optimized build (all 70 crates)
+cargo build --release              # Optimized build (all 80 crates)
 cargo test --workspace --lib       # Full workspace lib tests (25,300+)
 cargo test -p aprender-core --lib  # Core ML library only (12,975)
 cargo test -p apr-cli --lib        # CLI tests only (4,158)
-cargo check --workspace            # Type-check all 70 crates
+cargo check --workspace            # Type-check all 80 crates
 cargo fmt --check                  # Check formatting
 cargo clippy -- -D warnings        # Strict linting
 
@@ -266,14 +266,14 @@ Key: `unsafe_code = "forbid"`, `clippy::all + pedantic = "warn"`, ML-specific al
 - `crates/aprender-core/src/primitives/` - Vector/Matrix with Cholesky solver
 - `crates/aprender-core/src/format/` - APR format, validation, lint, converter, export
 - `crates/aprender-core/src/text/chat_template.rs` - Chat template engine
-- `crates/apr-cli/` - CLI logic (58 commands)
+- `crates/apr-cli/` - CLI logic (82 commands)
 - `src/bin/apr.rs` - Root binary entry point (`cargo install aprender`)
-- `contracts/` - 405 provable contracts (merged from all 20 repos)
+- `contracts/` - 1134 provable contracts (merged from all 20 repos)
 - `docs/specifications/aprender-monorepo-consolidation.md` - Monorepo spec
 
 ## APR CLI (`cargo install aprender`)
 
-58 commands across 10 categories (57 + `mcp`, added PR #864 on 2026-04-17). Contract: `contracts/apr-cli-commands-v1.yaml`.
+82 commands across 10 categories. Contract: `contracts/apr-cli-commands-v1.yaml`.
 Key commands: `run`, `chat`, `serve`, `pull`, `finetune`, `prune`, `distill`, `merge`, `quantize`, `inspect`, `debug`, `validate`, `diff`, `tensors`, `trace`, `lint`, `explain`, `export`, `import`, `convert`, `compile`, `train`, `tune`, `eval`, `bench`, `profile`, `qa`, `mcp`, `probar`, `cbtop`, `tui`, `hex`, `tree`, `flow`, `qualify`
 
 ```bash
