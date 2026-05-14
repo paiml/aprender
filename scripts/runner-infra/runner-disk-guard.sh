@@ -24,6 +24,14 @@ set -euo pipefail
 HIGH_WATER_PCT="${HIGH_WATER_PCT:-85}"
 STALE_DAYS="${STALE_DAYS:-7}"
 RUNNERS_ROOT="${RUNNERS_ROOT:-/home/noah/data}"
+# Space-separated list of "bind-mount target roots" — directories that workflow
+# jobs mount into containers as CARGO_TARGET_DIR. These are NOT under a runner's
+# _work tree, so the standard runner walk doesn't reach them. Subdirs are named
+# by PR number (or "main", or "debug" for pre-isolation orphans). Any subdir
+# not modified in STALE_DAYS days is eligible for prune. On 2026-04-23 this
+# class held 1.9T (36 closed-PR dirs + a 359G "debug" orphan); without this
+# coverage, disk-guard misses the single biggest runner-disk-fill source.
+BIND_MOUNT_ROOTS="${BIND_MOUNT_ROOTS:-/mnt/nvme-raid0/targets/aprender-ci}"
 LOG_TAG="runner-disk-guard"
 
 log() { logger -t "$LOG_TAG" -- "$*" || true; echo "[$LOG_TAG] $*"; }
@@ -89,17 +97,55 @@ prune_target_dirs() {
     log "freed approximately ${total_freed_kb} KiB (mode=$mode)"
 }
 
+# Prune bind-mount target roots (/mnt/nvme-raid0/targets/aprender-ci/*).
+# Subdirs are per-PR target dirs isolated per task #134. Remove:
+#   - "debug" subdir unconditionally (orphan from pre-isolation era)
+#   - numeric PR-named subdirs with mtime older than MIN_IDLE_MIN minutes.
+# Minute-resolution idle check protects in-flight CI bind-mounts; a container
+# touching the dir keeps mtime current. Nightly uses $((STALE_DAYS*24*60));
+# pre-job uses a 60-min floor so a full-disk situation can still reclaim most
+# stale PR dirs while sparing fresh ones.
+prune_bind_mount_target_roots() {
+    local min_idle_min="$1"  # minutes since last mtime that counts as "stale"
+    local root subdir
+    for root in $BIND_MOUNT_ROOTS; do
+        [ -d "$root" ] || continue
+        # Orphan "debug" dir is always safe to prune (not bind-mounted by any
+        # current workflow — isolation task #134 replaced it with per-PR dirs).
+        if [ -d "$root/debug" ]; then
+            log "prune orphan debug: $root/debug"
+            rm -rf --one-file-system "$root/debug" 2>/dev/null \
+                || sudo rm -rf --one-file-system "$root/debug" 2>/dev/null || true
+        fi
+        # Stale numeric PR dirs (mtime > min_idle_min). "main" is explicitly
+        # preserved — it hosts push-to-main CI target cache and is legitimately
+        # re-used; stale-days protection still applies via find -mmin below.
+        while IFS= read -r -d '' subdir; do
+            local name
+            name="$(basename "$subdir")"
+            [ "$name" = "main" ] && continue
+            log "prune stale bind-mount: $subdir"
+            rm -rf --one-file-system "$subdir" 2>/dev/null \
+                || sudo rm -rf --one-file-system "$subdir" 2>/dev/null || true
+        done < <(find "$root" -mindepth 1 -maxdepth 1 -type d -mmin "+$min_idle_min" -print0 2>/dev/null)
+    done
+}
+
 case "${1:-}" in
     --pre-job)
         pct="$(disk_pct)"
         if [ "$pct" -ge "$HIGH_WATER_PCT" ]; then
             log "pre-job: / at ${pct}% ≥ ${HIGH_WATER_PCT}% — pruning target/ dirs"
             prune_target_dirs aggressive
+            # 60-min idle floor spares fresh PR dirs (which would be in-flight
+            # right now) but reclaims anything that's been untouched for an hour.
+            prune_bind_mount_target_roots 60
         fi
         ;;
     --nightly)
         log "nightly: / at $(disk_pct)% — pruning target/ older than ${STALE_DAYS}d"
         prune_target_dirs stale
+        prune_bind_mount_target_roots "$(( STALE_DAYS * 24 * 60 ))"
         ;;
     *)
         echo "usage: $0 --pre-job | --nightly" >&2
