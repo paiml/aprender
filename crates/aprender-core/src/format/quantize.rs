@@ -263,7 +263,12 @@ impl Quantizer for Q8_0Quantizer {
             });
         }
 
-        let mut result = Vec::with_capacity(total_elements);
+        // GH-386: pre-allocate output and write directly to slice ranges so
+        // the inner loop is a tight `i8 → f32 * scale` over a fixed-size local
+        // [i8; 32]. LLVM auto-vectorizes this pattern into AVX2/NEON SIMD,
+        // replacing the previous `Vec::push` loop that bottlenecked on
+        // per-element capacity-growth checks.
+        let mut result = vec![0.0f32; total_elements];
 
         for block_idx in 0..num_blocks {
             let block_start = block_idx * Q8_0_BLOCK_BYTES;
@@ -272,8 +277,8 @@ impl Quantizer for Q8_0Quantizer {
             let scale_bytes = [block.blocks[block_start], block.blocks[block_start + 1]];
             let scale = f16::from_le_bytes(scale_bytes).to_f32();
 
-            // Read and dequantize values
             let quants_start = block_start + 2;
+            let out_start = block_idx * BLOCK_SIZE;
             let elements_in_block = if block_idx == num_blocks - 1 {
                 let remaining = total_elements % BLOCK_SIZE;
                 if remaining == 0 {
@@ -285,10 +290,10 @@ impl Quantizer for Q8_0Quantizer {
                 BLOCK_SIZE
             };
 
-            for i in 0..elements_in_block {
-                let q = block.blocks[quants_start + i] as i8;
-                let val = f32::from(q) * scale;
-                result.push(val);
+            let qs_src = &block.blocks[quants_start..quants_start + elements_in_block];
+            let out = &mut result[out_start..out_start + elements_in_block];
+            for (o, &b) in out.iter_mut().zip(qs_src) {
+                *o = f32::from(b as i8) * scale;
             }
         }
 
@@ -385,7 +390,13 @@ impl Quantizer for Q4_0Quantizer {
             });
         }
 
-        let mut result = Vec::with_capacity(total_elements);
+        // GH-386: pre-allocate output + write to slice ranges. Layout matches
+        // the interleaved pack used by `quantize` above (byte_i carries data
+        // positions 2i and 2i+1) — NOT the GGML half-half layout used in
+        // format::gguf::dequant.rs. Kept identical to the previous code's
+        // observable behavior; only the dispatch is tightened so LLVM can
+        // auto-vectorize the per-byte unpack + multiply.
+        let mut result = vec![0.0f32; total_elements];
 
         for block_idx in 0..num_blocks {
             let block_start = block_idx * Q4_0_BLOCK_BYTES;
@@ -394,8 +405,8 @@ impl Quantizer for Q4_0Quantizer {
             let scale_bytes = [block.blocks[block_start], block.blocks[block_start + 1]];
             let scale = f16::from_le_bytes(scale_bytes).to_f32();
 
-            // Read and dequantize packed nibbles
             let quants_start = block_start + 2;
+            let out_start = block_idx * BLOCK_SIZE;
             let elements_in_block = if block_idx == num_blocks - 1 {
                 let remaining = total_elements % BLOCK_SIZE;
                 if remaining == 0 {
@@ -407,20 +418,19 @@ impl Quantizer for Q4_0Quantizer {
                 BLOCK_SIZE
             };
 
-            for i in 0..(elements_in_block + 1) / 2 {
-                let packed = block.blocks[quants_start + i];
-                let q0 = (packed & 0x0F) as i8 - 8;
-                let q1 = ((packed >> 4) & 0x0F) as i8 - 8;
-
-                result.push(f32::from(q0) * scale);
-                if result.len() < total_elements && (i * 2 + 1) < elements_in_block {
-                    result.push(f32::from(q1) * scale);
+            let nibble_bytes = (elements_in_block + 1) / 2;
+            let packed = &block.blocks[quants_start..quants_start + nibble_bytes];
+            for (i, &p) in packed.iter().enumerate() {
+                let q0 = (p & 0x0F) as i8 - 8;
+                let q1 = ((p >> 4) & 0x0F) as i8 - 8;
+                let idx0 = out_start + i * 2;
+                result[idx0] = f32::from(q0) * scale;
+                let idx1 = idx0 + 1;
+                if idx1 < out_start + elements_in_block {
+                    result[idx1] = f32::from(q1) * scale;
                 }
             }
         }
-
-        // Ensure we have exactly the right number of elements
-        result.truncate(total_elements);
 
         Ok(result)
     }
