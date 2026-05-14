@@ -371,4 +371,4 @@ let response = gateway.infer(&request).await?;
 
 - [Federation Gateway](./federation-gateway.md)
 - [Federation Routing Policies](./federation-routing.md)
-- APR Model Format (see `docs/specifications/APR-SPEC.md`)
+- APR Model Format (see `docs/specifications/APR-SPEC-v2-draft.md`)

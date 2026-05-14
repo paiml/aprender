@@ -6,7 +6,7 @@ metadata:
   registry: true
   references:
   - aprender/docs/specifications/apr-checkpoints.md v1.2.0
-  - aprender/docs/specifications/APR-SPEC.md v2.1.0 (binary format)
+  - aprender/docs/specifications/APR-SPEC-v2-draft.md v2.1.0 (binary format)
   - 'training-loop-v1.yaml (F-LOOP-003: checkpoint restorable)'
   - 'cuda-classify-training-v1.yaml (F-CUDA-004: weight fidelity)'
   depends_on:

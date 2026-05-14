@@ -865,6 +865,6 @@ js-sys = { version = "0.3", optional = true }
 - [Noise Colors](https://en.wikipedia.org/wiki/Colors_of_noise) - Wikipedia
 - [Binaural Beats](https://en.wikipedia.org/wiki/Binaural_beats) - Wikipedia
 - [rustfft Documentation](https://docs.rs/rustfft)
-- [APR Format Specification](./APR-SPEC.md)
+- [APR Format Specification](./APR-SPEC-v2-draft.md)
 - [Batuta WASM Pattern](https://github.com/paiml/batuta/blob/main/src/wasm.rs)
 - [Batuta PMAT Checklist](https://github.com/paiml/batuta/blob/main/docs/specifications/batuta-stack-0.1-100-point-qa-checklist.md)
