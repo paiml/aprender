@@ -155,6 +155,10 @@ pub enum Architecture {
     /// GH-1587: tensor name mapping only — parallel-residual runtime
     /// inference is a separate concern.
     FalconClassic,
+    /// `BigScience` BLOOM (ALiBi position bias, fused QKV).
+    /// GH-1586: tensor name mapping only — full ALiBi runtime inference is
+    /// a separate concern (`is_inference_verified()` returns false).
+    Bloom,
 }
 
 include!("tensor_expectation.rs");
