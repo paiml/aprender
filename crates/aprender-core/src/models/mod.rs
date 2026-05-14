@@ -30,6 +30,8 @@
 //! - Bai et al. (2023). "Qwen Technical Report"
 //! - Vaswani et al. (2017). "Attention Is All You Need"
 
+pub mod bert;
 pub mod qwen2;
 
+pub use bert::{BertConfig, BertEncoder, CrossEncoder};
 pub use qwen2::Qwen2Model;
