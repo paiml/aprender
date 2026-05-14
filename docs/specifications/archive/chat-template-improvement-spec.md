@@ -1010,7 +1010,7 @@ Each checklist item follows the structure:
 | `src/format/converter.rs` | Download tokenizer_config.json |
 | `crates/apr-cli/src/commands/chat.rs` | Use ChatTemplateEngine |
 | `crates/apr-cli/src/commands/import.rs` | Download tokenizer_config.json |
-| `docs/specifications/APR-SPEC.md` | Document chat_template metadata |
+| `docs/specifications/APR-SPEC-v2-draft.md` | Document chat_template metadata |
 | `CLAUDE.md` | Document chat template support |
 
 ---

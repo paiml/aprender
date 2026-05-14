@@ -385,7 +385,7 @@ fn check_gguf_version(&mut self, data: &[u8]) {
 
 
 
-**Specification:** APR-SPEC.md Section 17.1
+**Specification:** APR-SPEC-v2-draft.md Section 17.1
 **Severity:** P1 (Catches GH-186 class bugs at load time)
 **Status:** ✅ IMPLEMENTED (2026-02-03, 6 falsification tests added)
 
@@ -448,7 +448,7 @@ struct TensorFingerprint {
 
 
 
-**Specification:** APR-SPEC.md Section 17.1
+**Specification:** APR-SPEC-v2-draft.md Section 17.1
 **Severity:** P1
 **Status:** ✅ IMPLEMENTED (2026-02-03, 7 falsification tests added)
 
@@ -506,7 +506,7 @@ E020: Statistical anomaly in tensor 'model.layers.0.self_attn.q_proj.weight'
 
 
 
-**Specification:** APR-SPEC.md Section 17.3
+**Specification:** APR-SPEC-v2-draft.md Section 17.3
 **Severity:** P2
 **Status:** ✅ FALSIFICATION TESTS ADDED (2026-02-03, 5 tests)
 
@@ -535,7 +535,7 @@ E020: Statistical anomaly in tensor 'model.layers.0.self_attn.q_proj.weight'
 
 
 
-**Specification:** APR-SPEC.md Section 17.4
+**Specification:** APR-SPEC-v2-draft.md Section 17.4
 **Severity:** P2
 **Status:** 🧪 FALSIFICATION TESTS IMPLEMENTED
 
@@ -578,7 +578,7 @@ E020: Statistical anomaly in tensor 'model.layers.0.self_attn.q_proj.weight'
 
 
 
-**Specification:** APR-SPEC.md Section 17.5
+**Specification:** APR-SPEC-v2-draft.md Section 17.5
 **Severity:** P3
 **Status:** 🧪 FALSIFICATION TESTS IMPLEMENTED
 

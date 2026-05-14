@@ -36,7 +36,7 @@ This specification defines the integration between **renacer** (system call trac
 - **Regression detection**: Automatically detect performance and behavioral regressions
 - **Canary validation**: Verify model outputs match expected reference outputs
 
-This specification implements the `validate` subcommand (Issue #22) and aligns with APR-SPEC.md Section 4.10 (Trace Command) and Section 4.4 (Validate Command).
+This specification implements the `validate` subcommand (Issue #22) and aligns with APR-SPEC-v2-draft.md Section 4.10 (Trace Command) and Section 4.4 (Validate Command).
 
 ---
 
@@ -322,7 +322,7 @@ renacer validate --baseline golden/ --apr-model whisper.apr -- apr run whisper.a
 
 ### 5.2 Tensor Statistics Validation
 
-Cross-references with APR-SPEC.md Section 10.9 (Expected Tensor Statistics):
+Cross-references with APR-SPEC-v2-draft.md Section 10.9 (Expected Tensor Statistics):
 
 ```json
 {
@@ -756,7 +756,7 @@ renacer validate --baseline golden/ --detect-anomalies -- ./unstable_binary
 
 ### 12.1 Internal References
 
-- [APR-SPEC.md](https://github.com/paiml/aprender/docs/specifications/APR-SPEC.md) - APR format specification
+- [APR-SPEC-v2-draft.md](https://github.com/paiml/aprender/docs/specifications/APR-SPEC-v2-draft.md) - APR format specification
 - [trueno-tracing-integration-spec.md](./trueno-tracing-integration-spec.md) - Compute block tracing
 - [golden-thread-open-telemetry-spec.md](./golden-thread-open-telemetry-spec.md) - OTLP integration
 - [cli-tui-spec.md](./cli-tui-spec.md) - CLI/TUI Specification

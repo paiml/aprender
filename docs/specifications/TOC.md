@@ -343,7 +343,7 @@
 - [238 Spec](archive/238-spec.md)
 - [243 Spec](archive/243-spec.md)
 - [246 Spec](archive/246-spec.md)
-- [Apr Spec](archive/APR-SPEC.md)
+- [Apr Spec](archive/APR-SPEC-v2-draft.md)
 - [Bug Gguf 001 Five Whys Analysis](archive/BUG-GGUF-001-five-whys-analysis.md)
 - [Gh 280 Capability Gate](archive/GH-280-capability-gate.md)
 - [Advanced Pruning](archive/advanced-pruning.md)
