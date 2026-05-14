@@ -303,6 +303,10 @@ fn start_safetensors_server_cpu_quantized(
 /// Build the axum Router for GPU inference endpoints.
 ///
 /// GH-284: Handlers are async with `spawn_blocking` to avoid blocking the runtime.
+///
+/// HELIX-IDEA-009 / FALSIFY-AUTH-001: every route on the returned router is
+/// gated by `auth_gate` via `super::auth::layer`. Pass `AuthGate::disabled()`
+/// to bypass.
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 #[allow(clippy::disallowed_methods)] // serde_json::json!() uses infallible unwrap
@@ -310,6 +314,7 @@ fn build_gpu_router(
     cuda_model: Arc<std::sync::Mutex<realizar::apr::AprV2ModelCuda>>,
     tokenizer: Arc<Option<SafeTensorsTokenizerInfo>>,
     cpu_state: Arc<std::sync::Mutex<AprServerState>>,
+    auth_gate: super::auth::AuthGate,
 ) -> axum::Router {
     use axum::{
         response::IntoResponse,
@@ -324,7 +329,7 @@ fn build_gpu_router(
     let tok_for_chat = tokenizer;
     let cpu_for_chat = cpu_state;
 
-    Router::new()
+    let router = Router::new()
         .route(
             "/health",
             get(|| async {
@@ -358,5 +363,6 @@ fn build_gpu_router(
             get(|| async {
                 "APR v2 GPU Inference Server - POST /v1/completions, /v1/chat/completions"
             }),
-        )
+        );
+    super::auth::layer(auth_gate, router)
 }

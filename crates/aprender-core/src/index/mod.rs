@@ -31,8 +31,10 @@
 //! ```
 
 pub mod hnsw;
+pub mod persistent_hnsw;
 
 pub use hnsw::HNSWIndex;
+pub use persistent_hnsw::{PersistentHnsw, PersistentHnswError};
 
 /// Cross-Encoder for reranking search results.
 ///

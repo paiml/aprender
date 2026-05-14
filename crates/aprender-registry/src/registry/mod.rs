@@ -100,6 +100,28 @@ impl Registry {
         &self.config
     }
 
+    /// HELIX-IDEA-007 — atomic point-in-time snapshot of the registry
+    /// SQLite metadata file. Wraps SQLite's `VACUUM INTO 'path'` so the
+    /// target file is a self-consistent copy of the source as of the
+    /// moment the statement begins. Concurrent writers continue against
+    /// the source; their post-snapshot changes are absent from the copy.
+    ///
+    /// The companion content-addressed object store under `objects/` is
+    /// immutable by construction (BLAKE3-keyed) — a consistent snapshot
+    /// of the full registry is `(snapshot.db, cp -r objects/)`. We
+    /// document but do not automate the object copy in v1.
+    ///
+    /// Contract: `contracts/apr-registry-snapshot-v1.yaml`
+    /// (FALSIFY-SNAPSHOT-001..003).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying SQL fails — most commonly when
+    /// `to` already exists (SQLite refuses to overwrite via VACUUM INTO).
+    pub fn snapshot<P: AsRef<Path>>(&self, to: P) -> Result<()> {
+        self.db.vacuum_into(to)
+    }
+
     // ==================== Model Registry ====================
 
     /// Register a new model.

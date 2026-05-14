@@ -152,6 +152,23 @@ pub fn stream_with_sink(
     })
 }
 
+/// HELIX-IDEA-002 — unified-signature shim for the inventory dispatcher.
+/// `apr.run` honours both `cancel_rx` and the optional notification sink.
+pub fn dispatch(
+    args: &serde_json::Value,
+    cancel_rx: &Receiver<()>,
+    sink: Option<&NotificationSink>,
+    progress_token: Option<serde_json::Value>,
+) -> ToolCallResult {
+    call_with_sink(args, cancel_rx, sink, progress_token)
+}
+
+crate::register_mcp_tool!(
+    name: NAME,
+    definition: run_tool_definition,
+    dispatch: dispatch,
+);
+
 #[cfg(test)]
 #[allow(clippy::disallowed_methods)]
 mod tests {

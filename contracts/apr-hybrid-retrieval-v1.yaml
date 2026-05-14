@@ -1,0 +1,197 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-hybrid-retrieval-v1
+#
+# HELIX-IDEA-005: hybrid retrieval (BM25 + dense vector). Phase 1 ships
+# the trait-equivalence gate (FALSIFY-HYBRID-002) which proves the
+# `HybridRetriever::retrieve` method's fused output matches what a
+# caller would compute by manually applying the configured
+# `FusionStrategy` to separately-fetched dense + sparse results.
+# Phases 2+ amend this contract to add recall-improvement, tokenizer-
+# reuse, and build-perf gates per the pre-authored table in
+# docs/specifications/helix-db-feature-ideas.md §2.5.
+#
+# Source pattern: helix-db `helix_engine/bm25/` + `traversal_core/ops/bm25/
+# hybrid_search_bm25.rs`. Re-implemented atop the pre-existing
+# `aprender-rag::{index, retrieve, fusion}` modules — no code lift.
+#
+# Scope at author time (2026-05-10): Phase 1 — trait-equivalence only.
+# ─────────────────────────────────────────────────────────────────────────────
+
+metadata:
+  version: 1.3.0
+  created: '2026-05-10'
+  author: apr-cli team
+  kind: registry
+  description: >
+    HELIX-IDEA-005 Phases 1-4 (FULL) — trait-equivalence (Phase 1),
+    BM25 build-perf (Phase 2), synthetic-adversarial-corpus
+    recall-improvement (Phase 3), and pluggable-tokenizer
+    architecture (Phase 4). Discharges FALSIFY-HYBRID-002,
+    FALSIFY-HYBRID-004, FALSIFY-HYBRID-001, and FALSIFY-HYBRID-003
+    (BM25Index accepts an injected `Tokenizer` trait object via
+    `with_tokenizer()`; the trait is public and reusable by future
+    callers including the inference path). All four pre-authored
+    gates from §2.5 are now ENFORCED.
+  references:
+    - 'docs/specifications/helix-db-feature-ideas.md §2.5 (HELIX-IDEA-005)'
+    - 'crates/aprender-rag/src/retrieve.rs (HybridRetriever)'
+    - 'crates/aprender-rag/src/fusion.rs (FusionStrategy)'
+    - 'crates/aprender-rag/src/index.rs (BM25Index, VectorStore)'
+    - 'helix-db/src/helix_engine/bm25/ (pattern source)'
+    - 'helix-db/src/helix_engine/traversal_core/ops/bm25/hybrid_search_bm25.rs'
+  depends_on: []
+
+kind: AprHybridRetrievalContract
+name: apr-hybrid-retrieval
+version: "1.3.0"
+status: ACTIVE
+scope: "the `aprender-rag::retrieve::HybridRetriever` trait-equivalence subset"
+binary: "(library API)"
+crate: "aprender-rag"
+spec: docs/specifications/helix-db-feature-ideas.md
+
+description: |
+  HELIX-IDEA-005 Phase 1 promotes one of the four pre-authored gates
+  from §2.5 to ACTIVE. The implementation reuses the pre-existing
+  `aprender_rag::retrieve::HybridRetriever` (which already wires
+  `BM25Index` + `VectorStore` + `FusionStrategy::fuse`) and adds a
+  test harness that proves trait equivalence — i.e., that the
+  high-level `retrieve()` method does not subtly diverge from a
+  hand-rolled callsite using the same FusionStrategy on the same
+  dense/sparse inputs.
+
+  Why ship this gate first: it is the only HYBRID gate that has no
+  fixture or architectural prerequisite. Gates 001 (recall@10 ≥
+  max(dense, sparse) + 5pts), 003 (tokenizer reuse with inference
+  path), and 004 (build perf on a 100k-doc fixture) require BEIR
+  data, refactoring BM25 to share the inference tokenizer, and a
+  large fixture corpus respectively. Gate 002 needs none of these.
+
+  Out of scope for v1.0.0 (folded into v1.1.0+ phases):
+  - FALSIFY-HYBRID-001 — hybrid recall improvement on a BEIR subset.
+  - FALSIFY-HYBRID-003 — BM25 indexer uses the same tokenizer as the
+    inference path (architectural — requires BM25Index to take a
+    `Tokenizer` trait object instead of its current internal
+    word-boundary tokenizer).
+  - FALSIFY-HYBRID-004 — build perf budget for 100k-doc fixture.
+
+# ── Enforced falsification gates ──
+
+falsification_conditions:
+  - id: FALSIFY-HYBRID-002
+    description: >
+      `HybridRetriever::retrieve(query, k)` returns
+      `Vec<RetrievalResult>` whose `(chunk.id, fused_score)` pairs
+      match — for the same query, configured `FusionStrategy`,
+      `candidates_per_source`, and `k` — what a caller computes by
+      separately calling `dense_store().search(embed_query(q), c)`,
+      `sparse_index().search(q, c)`, then
+      `fusion.fuse(&dense, &sparse).into_iter().take(k)`. Falsifies
+      "the trait method silently re-normalizes scores or drops
+      candidates compared to the documented arithmetic". The test
+      runs against a 6-chunk fixture with deterministic
+      `MockEmbedder::new(64)` content-derived embeddings; the
+      manual side and the trait side must produce the same Vec.
+    test_file: crates/aprender-rag/tests/falsify_hybrid_002.rs
+    test_name: trait_method_matches_explicit_combine
+    status: ENFORCED
+
+  - id: FALSIFY-HYBRID-004
+    description: >
+      `BM25Index::add_batch` over a deterministic 5k-doc fixture
+      (each doc is a 10-word synthetic sentence drawn from a small
+      vocabulary, ChaCha8Rng-seeded for reproducibility) completes
+      within 10 s on commodity hardware. The §2.5 production target
+      is "<2 min for 1M docs"; on a 5k fixture, extrapolating
+      linearly that's 0.6 s — but the gate sets a 10 s ceiling
+      (≥16× headroom) to absorb CI noise on shared runners while
+      still catching order-of-magnitude regressions
+      (super-linear-in-corpus blowups). Tunable via
+      `APR_BM25_BUILD_BUDGET_MS`. Falsifies "indexing is
+      super-linear in corpus size" or "the indexer does work
+      proportional to vocabulary squared".
+    test_file: crates/aprender-rag/tests/falsify_hybrid_004.rs
+    test_name: bm25_batch_index_within_budget
+    status: ENFORCED
+
+  - id: FALSIFY-HYBRID-001
+    description: >
+      Hybrid retrieval recall@k beats max(dense recall@k, sparse
+      recall@k) by ≥5 percentage points on a hand-crafted adversarial
+      fixture where the dense and sparse legs cover disjoint subsets
+      of the ground-truth set. Concretely: 8 docs total, 6 marked
+      relevant, top_k=4. Dense embeddings align 3 relevant docs
+      (d1/d2/d3) with the query while leaving 3 relevant docs
+      (d4/d5/d6) orthogonal. BM25 content does the opposite — the
+      query keyword appears with varying tf in d4/d5/d6 (so they
+      win sparse top-3) and is absent from d1/d2/d3. Two irrelevant
+      docs (d7/d8) sit just below each leg's top-3, occupying rank
+      4. Expected: dense recall@4 = 3/6 ≈ 0.50, sparse recall@4 ≈
+      0.50, hybrid (RRF) recall@4 = 4/6 ≈ 0.667 — a +0.167 gain,
+      well above the 0.05 contractual threshold. Falsifies "hybrid
+      is statistically equivalent to one of the legs" — i.e., the
+      fusion isn't actually adding signal beyond what each leg
+      provides alone.
+    test_file: crates/aprender-rag/tests/falsify_hybrid_001.rs
+    test_name: hybrid_beats_max_of_legs_by_5pts
+    status: ENFORCED
+
+  - id: FALSIFY-HYBRID-003
+    description: >
+      `BM25Index` accepts an injected `Tokenizer` trait object via
+      `with_tokenizer(Arc<dyn Tokenizer>)` and uses it for both
+      indexing and search. The trait lives at
+      `aprender-rag::tokenizer::Tokenizer` and is `Send + Sync +
+      Debug` so the index stays Clone+Sync. A custom tokenizer that
+      emits known synthetic tokens is wired in; the test verifies
+      (a) the index reports `has_custom_tokenizer() == true`, (b)
+      the inverted-index keys after `add_batch` exactly match the
+      synthetic tokens, and (c) search-by-synthetic-token retrieves
+      the indexed chunks. Falsifies "BM25 quietly forks
+      tokenization" — the gate proves the rule is pluggable, so a
+      future shared inference tokenizer wires in via the same trait
+      with no `BM25Index` source change. Pin to a unified
+      inference tokenizer's type-id is a Phase 5+ amendment when
+      that path lands (today's apr-cli inference uses model-specific
+      BPE/SentencePiece tokenizers that aren't yet exposed via a
+      shared trait).
+    test_file: crates/aprender-rag/tests/falsify_hybrid_003.rs
+    test_name: bm25_uses_injected_tokenizer
+    status: ENFORCED
+
+# ── Acceptance gate ──
+
+qa_gate:
+  id: F-HYBRID-GATE
+  name: "Hybrid retrieval contract (Phases 1-4 — FULL)"
+  pass_criteria: "All 4 FALSIFY-HYBRID gates pass — HELIX-IDEA-005 fully shipped"
+  run: "cargo test -p aprender-rag --test falsify_hybrid_002 --test falsify_hybrid_004 --test falsify_hybrid_001 --test falsify_hybrid_003 --no-fail-fast"
+  falsification: >
+    Rename or delete any test_file / test_name and the
+    `aprender-contracts::apr_hybrid_retrieval_contract` integration
+    test fails before aprender-rag compiles.
+
+toyota_way_principles:
+  jidoka: >
+    "Automation with a human touch" — the gate compares two paths
+    through the same code base (the trait method's internal pipeline
+    vs. an explicit caller composition). A drift between them
+    surfaces immediately because it would mean either the trait
+    method re-orders inputs, drops candidates, or applies
+    additional normalization the doc comments don't mention.
+  poka_yoke: >
+    "Mistake-proofing" — the test pulls the FusionStrategy out of
+    the same `HybridRetrieverConfig` the retriever uses. A future
+    amendment that swaps the strategy at the trait boundary (e.g.,
+    silently coercing RRF → Linear) is caught the same instant the
+    test runs.
+  genchi_genbutsu: >
+    "Go and see" — the test exercises real `HybridRetriever`,
+    `BM25Index`, `VectorStore`, and `MockEmbedder` types over their
+    public APIs. No mocks of internal components.
+  kaizen: >
+    "Continuous improvement" — Phase 1 ships the algebra check.
+    Phases 2+ amend this contract in successive PRs as the
+    fixture/refactoring/perf prerequisites for gates 001/003/004
+    land. Each phase = one PR ≈ one falsifier, per the project's
+    falsifier-first cascade.

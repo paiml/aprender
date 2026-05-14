@@ -47,10 +47,24 @@ pub struct BM25Index {
     k1: f32,
     /// BM25 b parameter (length normalization)
     b: f32,
-    /// Tokenizer settings
+    /// Tokenizer settings (used by the built-in tokenizer when no
+    /// override is supplied via [`Self::with_tokenizer`])
     lowercase: bool,
     /// Stopwords
     stopwords: HashSet<String>,
+    /// HELIX-IDEA-005 Phase 4 (FALSIFY-HYBRID-003): pluggable
+    /// tokenizer override. When `Some`, the built-in
+    /// `tokenize()` delegates to this trait object instead of the
+    /// internal lowercase/stopword/min-length logic — letting
+    /// callers (notably a future inference path) share a single
+    /// tokenizer implementation with BM25.
+    ///
+    /// Skipped on serde round-trip: a saved `BM25Index` reloads
+    /// with `None`, and the caller must re-attach the same
+    /// tokenizer via [`Self::with_tokenizer`] before resuming
+    /// indexing/search.
+    #[serde(skip, default)]
+    custom_tokenizer: Option<std::sync::Arc<dyn crate::tokenizer::Tokenizer>>,
 }
 
 impl Default for BM25Index {
@@ -73,6 +87,7 @@ impl BM25Index {
             b: 0.75,
             lowercase: true,
             stopwords: Self::default_stopwords(),
+            custom_tokenizer: None,
         }
     }
 
@@ -80,6 +95,46 @@ impl BM25Index {
     #[must_use]
     pub fn with_params(k1: f32, b: f32) -> Self {
         Self { k1, b, ..Self::new() }
+    }
+
+    /// HELIX-IDEA-005 Phase 4 (FALSIFY-HYBRID-003): plug a custom
+    /// tokenizer into the index so BM25's notion of "term" can be
+    /// shared with other consumers (e.g., an inference path that
+    /// uses the same lexicon).
+    ///
+    /// When `tokenizer` is `Some`, the index's internal `tokenize()`
+    /// delegates to it; the built-in `lowercase` / `stopwords` /
+    /// min-length rules are bypassed entirely. To revert to the
+    /// built-in path, construct a fresh `BM25Index::new()`.
+    ///
+    /// `Arc<dyn Tokenizer>` because the index is `Clone` and may
+    /// be shared across threads — `Box<dyn Tokenizer>` would force
+    /// each clone to deep-copy the tokenizer state.
+    #[must_use]
+    pub fn with_tokenizer(
+        mut self,
+        tokenizer: std::sync::Arc<dyn crate::tokenizer::Tokenizer>,
+    ) -> Self {
+        self.custom_tokenizer = Some(tokenizer);
+        self
+    }
+
+    /// True iff a custom tokenizer is plugged in (used by tests
+    /// and FALSIFY-HYBRID-003 to confirm the override path is
+    /// active).
+    #[must_use]
+    pub fn has_custom_tokenizer(&self) -> bool {
+        self.custom_tokenizer.is_some()
+    }
+
+    /// All terms currently indexed (i.e., the keys of the
+    /// inverted index). Used by FALSIFY-HYBRID-003 to verify the
+    /// indexer consulted the injected tokenizer during `add()` —
+    /// the built-in tokenizer and an injected one produce
+    /// observably different key sets on the same content.
+    #[must_use]
+    pub fn indexed_terms(&self) -> Vec<&str> {
+        self.inverted_index.keys().map(String::as_str).collect()
     }
 
     /// Set stopwords
@@ -106,8 +161,14 @@ impl BM25Index {
         .collect()
     }
 
-    /// Tokenize text
+    /// Tokenize text. Consults the custom tokenizer override
+    /// (FALSIFY-HYBRID-003) if one is plugged in, otherwise falls
+    /// back to the built-in word-boundary + lowercase + stopwords
+    /// rule.
     pub fn tokenize(&self, text: &str) -> Vec<String> {
+        if let Some(tok) = self.custom_tokenizer.as_ref() {
+            return tok.tokenize(text);
+        }
         text.split(|c: char| !c.is_alphanumeric())
             .filter(|s| !s.is_empty())
             .map(|s| if self.lowercase { s.to_lowercase() } else { s.to_string() })

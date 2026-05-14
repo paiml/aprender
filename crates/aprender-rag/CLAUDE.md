@@ -87,8 +87,10 @@ cargo search trueno
 
 - `src/chunk.rs` - Document chunking (RecursiveChunker, FixedSizeChunker, SentenceChunker, ParagraphChunker, SemanticChunker, StructuralChunker)
 - `src/embed.rs` - Embedding generation (MockEmbedder, TfIdfEmbedder, cosine similarity)
-- `src/index.rs` - BM25 sparse index and VectorStore for dense retrieval
+- `src/index.rs` - BM25 sparse index and VectorStore for dense retrieval. `BM25Index::with_tokenizer(Arc<dyn Tokenizer>)` injects a custom tokenizer (HELIX-IDEA-005 Phase 4, FALSIFY-HYBRID-003)
+- `src/tokenizer.rs` - Pluggable `Tokenizer` trait + `WhitespaceTokenizer` default (HELIX-IDEA-005 Phase 4; lives at `aprender_rag::tokenizer`)
 - `src/fusion.rs` - Score fusion strategies (RRF, Linear, Convex, DBSF, Union, Intersection)
+- `src/mmr.rs` - `mmr_select<T, F>` Maximal Marginal Relevance selection (HELIX-IDEA-006 Phase 1, FALSIFY-RERANK-MMR-002/MMR-001)
 - `src/retrieve.rs` - HybridRetriever, DenseRetriever, SparseRetriever
 - `src/rerank.rs` - Reranking (LexicalReranker, MockCrossEncoderReranker, CompositeReranker)
 - `src/pipeline.rs` - RagPipeline builder, ContextAssembler with citation tracking
@@ -102,6 +104,7 @@ cargo search trueno
 - `Embedder` - `fn embed(&self, text: &str) -> Result<Vec<f32>>`
 - `SparseIndex` - `fn add(&mut self, chunk: &Chunk)`, `fn search(&self, query: &str, k: usize)`
 - `Reranker` - `fn rerank(&self, query: &str, candidates: &[RetrievalResult], top_k: usize)`
+- `Tokenizer` - `fn tokenize(&self, text: &str) -> Vec<String>` (`Send + Sync + Debug`; HELIX-IDEA-005 Phase 4 — plug into `BM25Index::with_tokenizer` to share tokenization with future inference paths)
 
 ### Pipeline Usage
 

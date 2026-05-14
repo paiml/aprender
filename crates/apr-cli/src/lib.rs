@@ -40,6 +40,15 @@ pub mod model_pull {
     pub use crate::commands::pull::{list, run};
 }
 
+// HELIX-IDEA-009: API key auth re-exported so integration tests in
+// `tests/falsify_auth_*.rs` can construct gates and middleware without
+// reaching into the private `commands` tree.
+pub mod serve_auth {
+    #[cfg(feature = "inference")]
+    pub use crate::commands::serve::auth::layer;
+    pub use crate::commands::serve::auth::{apply, AuthGate};
+}
+
 #[cfg(feature = "inference")]
 pub mod federation;
 

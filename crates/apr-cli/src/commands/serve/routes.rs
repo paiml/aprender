@@ -332,9 +332,26 @@ async fn fallback_handler(State(state): State<Arc<ServerState>>) -> impl IntoRes
 ///
 /// This function creates an axum Router that can be used for both production
 /// and testing. All endpoints implement APR-SPEC §4.15.8.3 REST API spec.
+///
+/// HELIX-IDEA-009 / FALSIFY-AUTH-001: when `auth_gate.is_enabled()`, every
+/// route is gated by the `Authorization: Bearer <key>` middleware. Calling
+/// with `AuthGate::disabled()` produces an unauthenticated router (used by
+/// the `--auth-disabled` startup path and most tests).
 #[cfg(feature = "inference")]
 pub fn create_router(state: Arc<ServerState>) -> axum::Router {
-    Router::new()
+    create_router_with_auth(state, super::auth::AuthGate::disabled())
+}
+
+/// Same as [`create_router`] but takes an explicit [`super::auth::AuthGate`].
+/// Production startup code passes `AuthGate::from_env()`; tests use
+/// `AuthGate::from_plain_key("...")` to drive the FALSIFY-AUTH-001 / 002
+/// gates without going through env vars.
+#[cfg(feature = "inference")]
+pub fn create_router_with_auth(
+    state: Arc<ServerState>,
+    auth_gate: super::auth::AuthGate,
+) -> axum::Router {
+    let router = Router::new()
         .route("/", get(root_handler))
         .route("/health", get(health_handler))
         .route("/metrics", get(metrics_handler))
@@ -346,5 +363,6 @@ pub fn create_router(state: Arc<ServerState>) -> axum::Router {
         .route("/transcribe", get(method_not_allowed))
         .layer(middleware::from_fn(size_limit_middleware))
         .fallback(fallback_handler)
-        .with_state(state)
+        .with_state(state);
+    super::auth::layer(auth_gate, router)
 }

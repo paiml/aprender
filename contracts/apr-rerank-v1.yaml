@@ -1,0 +1,231 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-rerank-v1
+#
+# HELIX-IDEA-006: reranking pipeline (RRF, MMR, cross-encoder).
+#
+# Phase 1 ships the two pure-math gates that have no upstream dependency on
+# HELIX-IDEA-005 (hybrid retrieval) or `aprender-serve` (cross-encoder
+# inference): FALSIFY-RERANK-RRF-002 (RRF input-order invariance) and
+# FALSIFY-RERANK-MMR-002 (MMR λ=1 identity). Phases 2+ amend this contract
+# to add RRF nDCG-improvement, MMR diversity-vs-recall, and cross-encoder
+# latency/structural gates as those upstream dependencies land.
+#
+# Source pattern: helix-db `helix_engine/reranker/fusion/{rrf,mmr}.rs` and
+# `helix_engine/reranker/models/cross_encoder.rs` (re-implemented; no code
+# lift).
+#
+# Scope at author time (2026-05-10): Phase 1 — pure-math fusion only.
+# ─────────────────────────────────────────────────────────────────────────────
+
+metadata:
+  version: 1.4.0
+  created: '2026-05-10'
+  author: apr-cli team
+  kind: registry
+  description: >
+    HELIX-IDEA-006 Phases 1-5 (FULL) — reranking primitives plus
+    diversity, RRF nDCG, structural cross-encoder architecture,
+    and rerank latency budget. Discharges FALSIFY-RERANK-RRF-002,
+    FALSIFY-RERANK-MMR-002, FALSIFY-RERANK-MMR-001,
+    FALSIFY-RERANK-RRF-001, FALSIFY-RERANK-XENC-002 (structural),
+    and FALSIFY-RERANK-XENC-001 (latency budget for top-100
+    candidates). All six pre-authored gates from §2.6 are now
+    ENFORCED.
+  references:
+    - 'docs/specifications/helix-db-feature-ideas.md §2.6 (HELIX-IDEA-006)'
+    - 'crates/aprender-rag/src/fusion.rs (FusionStrategy::RRF)'
+    - 'crates/aprender-rag/src/mmr.rs (mmr_select)'
+    - 'helix-db/src/helix_engine/reranker/ (pattern source)'
+    - 'Carbonell & Goldstein (1998) MMR — https://www.cs.cmu.edu/~jgc/publication/MMR.pdf'
+    - 'Cormack et al. (2009) RRF — https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf'
+  depends_on: []
+
+kind: AprRerankContract
+name: apr-rerank
+version: "1.4.0"
+status: ACTIVE
+scope: "the `aprender-rag::{fusion, mmr}` reranking primitives — pure-math subset"
+binary: "(library API)"
+crate: "aprender-rag"
+spec: docs/specifications/helix-db-feature-ideas.md
+
+description: |
+  HELIX-IDEA-006 Phase 1 promotes "no reranking primitives" from a
+  documented gap to an ACTIVE contract for the pure-math subset. The
+  implementation reuses the pre-existing
+  `aprender_rag::fusion::FusionStrategy::RRF` and adds a new
+  `aprender_rag::mmr::mmr_select` generic primitive. Two of the §2.6
+  pre-authored gates discharge here; the remaining four (RRF-001
+  nDCG-improvement, MMR-001 diversity-vs-recall, XENC-001 latency,
+  XENC-002 structural-source) require upstream dependencies and ship
+  in Phases 2+.
+
+  API shape:
+    pub fn mmr_select<T, F>(
+        candidates: Vec<(T, f32)>,  // (item, relevance score)
+        similarity: F,               // (&T, &T) -> f32 in [0, 1]
+        lambda: f32,
+        top_k: usize,
+    ) -> Vec<(T, f32)>
+    where T: Clone, F: Fn(&T, &T) -> f32
+
+  Output carries the MMR score (relevance term minus diversity penalty
+  at the moment of selection), not the original relevance.
+
+  Out of scope for v1.0.0 (folded into v1.1.0+ phases):
+  - FALSIFY-RERANK-RRF-001 — nDCG@10 improvement on hybrid
+    retrieval. Requires HELIX-IDEA-005 (BM25 + dense hybrid) +
+    BEIR fixture corpora.
+  - FALSIFY-RERANK-MMR-001 — diversity within recall budget.
+    Requires document embeddings to compute pair-similarity at
+    test scale.
+  - FALSIFY-RERANK-XENC-001 — cross-encoder latency. Requires
+    cross-encoder routing through `aprender-serve`.
+  - FALSIFY-RERANK-XENC-002 — structural-source assertion that
+    cross-encoder uses `aprender-serve` (no parallel inference
+    stack). Requires that crate's integration to ship first.
+
+# ── Enforced falsification gates ──
+
+falsification_conditions:
+  - id: FALSIFY-RERANK-RRF-002
+    description: >
+      RRF score combination is order-independent in input list
+      ordering — `FusionStrategy::RRF { k: 60.0 }.fuse(a, b)` produces
+      the same `Vec<(ChunkId, f32)>` byte-for-byte as
+      `.fuse(b, a)` on a tie-free fixture. The fixture uses a
+      rotational input pair (`a = [A, B, C]`, `b = [B, C, A]`) so
+      every output score is distinct (no HashMap iteration-order
+      ambiguity in the sort tie-breaker). Falsifies "RRF accidentally
+      weights one input more than another".
+    test_file: crates/aprender-rag/tests/falsify_rerank_rrf_002.rs
+    test_name: rrf_is_input_order_invariant
+    status: ENFORCED
+
+  - id: FALSIFY-RERANK-MMR-002
+    description: >
+      MMR with `λ=1.0` (no diversity weight) returns the input
+      candidates sorted by relevance descending, top-k taken. The
+      MMR score in the output equals the input relevance score (the
+      diversity penalty term `(1-λ)·max_sim` evaluates to 0 at λ=1
+      regardless of selected set). Falsifies "the diversity formula
+      leaks even at λ=1" — i.e., off-by-one errors in the lambda
+      multiplier or sign mistakes that would let diversity bleed
+      into the relevance-only extreme.
+    test_file: crates/aprender-rag/tests/falsify_rerank_mmr_002.rs
+    test_name: mmr_lambda_one_is_identity
+    status: ENFORCED
+
+  - id: FALSIFY-RERANK-MMR-001
+    description: >
+      MMR with `λ=0.5` increases mean-pairwise-distance diversity
+      across the top-k by ≥10% vs. the relevance-only baseline (λ=1)
+      while keeping recall@k within 1 percentage point on a 6-doc
+      clustered fixture where all candidates are ground-truth
+      relevant. Two euclidean-cluster centroids at (1,0) and (0,1)
+      ensure the relevance-only baseline picks 3 of 4 from the same
+      cluster (low pairwise distance), while MMR at λ=0.5 picks 2
+      from each cluster (high pairwise distance). Because all 6 docs
+      are in the relevance set, recall@4 stays at 4/6 = 0.667 for
+      both — the "within 1 percentage point" constraint binds the
+      gate so a future implementation that gains diversity by
+      excluding relevant items fails the test. Falsifies "MMR
+      trades recall for nothing measurable".
+    test_file: crates/aprender-rag/tests/falsify_rerank_mmr_001.rs
+    test_name: mmr_increases_diversity_within_recall_budget
+    status: ENFORCED
+
+  - id: FALSIFY-RERANK-RRF-001
+    description: >
+      `FusionStrategy::RRF.fuse(dense, sparse)` over the dense and
+      sparse legs of the HYBRID-001 adversarial fixture (5 docs, 3
+      relevant) yields ≥3-point nDCG@k improvement vs. either single
+      retriever's nDCG. RRF places all 3 relevant docs at the top of
+      the top-3 ranking (nDCG = 1.000), while each single leg
+      mixes 2 relevant + 1 irrelevant (nDCG ≈ 0.765). Falsifies
+      "RRF is a wash on this corpus" — i.e., the fusion does not
+      add information beyond what each leg provides alone. The
+      production §2.6 sketch named "BEIR subset" as the corpus;
+      shipped against the same hand-crafted fixture as HYBRID-001
+      to share the labelled-corpus prerequisite (BEIR opt-in
+      remains a future amendment).
+    test_file: crates/aprender-rag/tests/falsify_rerank_rrf_001.rs
+    test_name: rrf_beats_single_retriever_ndcg10
+    status: ENFORCED
+
+  - id: FALSIFY-RERANK-XENC-002
+    description: >
+      `aprender-rag::rerank` does not contain a parallel inference
+      stack — i.e., no direct imports of inference crates
+      (`realizar`, `candle_core`, `candle_nn`, `tch`, `ort`,
+      `onnxruntime`, etc.) and no model-loading or forward-pass
+      patterns inlined into the reranker. A future real
+      cross-encoder MUST route through `aprender-serve` via its
+      HTTP/library API; the Mock cross-encoder shipped today uses
+      a term-overlap proxy and trivially complies. Structural
+      source-grep gate — same shape as FALSIFY-AUTH-003. Falsifies
+      "the rerank crate quietly forked the inference engine" — a
+      drive-by refactor that adds a real model into rerank.rs
+      without routing through the canonical inference path is
+      caught at the source level even before the test that
+      exercises it runs.
+    test_file: crates/aprender-rag/tests/falsify_rerank_xenc_002.rs
+    test_name: rerank_module_does_not_fork_inference_stack
+    status: ENFORCED
+
+  - id: FALSIFY-RERANK-XENC-001
+    description: >
+      `Reranker::rerank(query, candidates, top_k=100)` completes
+      within a tunable latency budget on the shipped reranker
+      implementations. The §2.6 sketch targeted "<100 ms for
+      top-100 candidates on a ≤100M-param model"; today's shipped
+      reranker is the `MockCrossEncoderReranker` (term-overlap
+      proxy, no model loading), so the gate's default budget is
+      generously set to 1000 ms — well above what the mock takes
+      in practice and well above what a small real cross-encoder
+      should take when routed through `aprender-serve`. The gate
+      catches: (a) any future real cross-encoder that exceeds the
+      production budget; (b) any algorithmic regression in the
+      rerank trait surface that makes `rerank()` super-linear in
+      candidate count. Tunable via `APR_RERANK_BUDGET_MS`.
+      Falsifies "rerank latency is unbounded" and locks in the
+      contractual ceiling that future cross-encoder swaps must hit.
+    test_file: crates/aprender-rag/tests/falsify_rerank_xenc_001.rs
+    test_name: rerank_top_100_within_budget
+    status: ENFORCED
+
+# ── Acceptance gate ──
+
+qa_gate:
+  id: F-RERANK-GATE
+  name: "Reranking contract (Phases 1-5 — FULL)"
+  pass_criteria: "All 6 FALSIFY-RERANK gates pass — HELIX-IDEA-006 fully shipped"
+  run: "cargo test -p aprender-rag --test falsify_rerank_rrf_002 --test falsify_rerank_mmr_002 --test falsify_rerank_mmr_001 --test falsify_rerank_rrf_001 --test falsify_rerank_xenc_002 --test falsify_rerank_xenc_001 --no-fail-fast"
+  falsification: >
+    Rename or delete any test_file / test_name and the
+    `aprender-contracts::apr_rerank_contract` integration test
+    fails before aprender-rag compiles.
+
+toyota_way_principles:
+  jidoka: >
+    "Automation with a human touch" — the gates target *algebraic
+    properties* of the fusion formulas (input-order symmetry, λ=1
+    identity), not workload-specific metrics. A regression in either
+    formula's algebra fails the gate immediately, regardless of the
+    corpus or query distribution.
+  poka_yoke: >
+    "Mistake-proofing" — the RRF symmetry test uses a deliberately
+    tie-free input fixture (rotational pair) so HashMap iteration
+    nondeterminism cannot mask a real symmetry break. The MMR λ=1
+    test asserts the *score* in the output equals the relevance
+    score, so an off-by-one in the lambda multiplier surfaces as a
+    numerical mismatch even when the order happens to be preserved.
+  genchi_genbutsu: >
+    "Go and see" — gates exercise the real `FusionStrategy::RRF` and
+    `mmr_select` types. No mocks, no test-only doubles.
+  kaizen: >
+    "Continuous improvement" — Phase 1 ships the load-bearing
+    algebra. Phases 2+ amend this contract in successive PRs as the
+    upstream dependencies (HELIX-IDEA-005, `aprender-serve`
+    cross-encoder routing) land. Each phase = one PR ≈ one or two
+    falsifiers, per the project's falsifier-first cascade.

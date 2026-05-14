@@ -38,6 +38,7 @@
 
 use crate::primitives::Vector;
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 /// HNSW index for approximate nearest neighbor search.
@@ -47,7 +48,7 @@ use std::collections::{HashMap, HashSet};
 /// - `m`: Max connections per node (typical: 12-48)
 /// - `ef_construction`: Size of dynamic candidate list during construction (typical: 100-200)
 /// - `ml`: Level multiplier for probabilistic layer assignment (default: 1/ln(2))
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct HNSWIndex {
     /// Maximum number of connections per node
     m: usize,
@@ -63,12 +64,18 @@ pub struct HNSWIndex {
     item_to_node: HashMap<String, usize>,
     /// Entry point (top layer node)
     entry_point: Option<usize>,
-    /// Random number generator
+    /// Random number generator. Skipped on serde round-trip — replaced
+    /// by a fresh thread-local RNG on deserialize because (a) RNG state
+    /// is not part of the index's logical content and (b) `ThreadRng`
+    /// is intentionally not serializable. HELIX-IDEA-001 Phase 1
+    /// (`PersistentHnsw`) relies on this skip: the graph and node
+    /// table round-trip exactly while RNG state regenerates lazily.
+    #[serde(skip, default = "rand::rng")]
     rng: rand::rngs::ThreadRng,
 }
 
 /// Node in the HNSW graph.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct Node {
     /// Item identifier
     item_id: String,
