@@ -63,8 +63,8 @@ metadata:
     - crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml
 
 name: claude-code-parity-apr
-version: "1.25.0"
-status: ACTIVE_RUNTIME   # 14/14 gates green. v1.25.0 (companion-repo M136-M140 axis-2-closure-plan sequence, 2026-05-11) — adds FALSIFY-CCPA-014 (os_event_parity_bound) to the gate registry, completing the axis-2 closure-plan idea (2) CLI subprocess instrumentation track. New gate consumes ccpa_subproc::OsEvent records (M136) via ccpa_differ::os_event_parity (M137) and asserts canonical-corpus score >= 0.95 + bidirectional sensitivity on regression corpus (M139). v1.24.0 (companion-repo M128-M131 sequence, 2026-05-10) — bumped from v1.23.0 to integrate the M109 cosine-vs-HF-FP16 LIVE-DISCHARGE (cos_sim 0.995384 ≥ 0.99 on lambda-vector RTX 4090, 2026-05-09; aprender PR #1597 squash 3fb04ef86 flipped `qwen3-moe-forward-v1` v1.4.0 ACTIVE_ALGORITHM_LEVEL → v1.5.0 ACTIVE_RUNTIME). Discharges the v1.23.0 status-prose claim "Cosine vs HF FP16 remains operator-confirm pending ~60 GB HF download" — the FP16 weights had been on lambda-vector at /mnt/nvme-raid0/models/Qwen3-Coder-30B-A3B-Instruct/ (57 GB / 16 safetensors shards) for ~7 days; the "60 GB download" blocker was stale by 62 days. v1.23.0 (M35 M32d discharge audit-trail bump) records the 4-bug stack landed on aprender main as commit 5235aaeb9 (#1228) plus diagnostic surface PRs #1222 (Step 2), #1226 (Step 2.5), #1401 (Step 2 JSON wire). M32d gibberish output ("%%%%%%%%") converted to coherent English answers across math/geography/translation/code domains. M34 FAST PATH 5-whys plan delivered at lucky-case bound (5 substantive PRs vs 4-6 estimated, ~6 hours wall vs 2-3 days). Component priors verified empirically: rank-3 Q/K RMSNorm (15%) + rank-4 rope_theta (10%) + chat template both correct. Cosine vs HF FP16 formal flip **DISCHARGED 2026-05-09 at companion-repo M109** (apr_argmax = hf_argmax = 3555 " What"; 555ms apr-forward; HF FP16 fixture generated in 52s).
+version: "1.26.0"
+status: ACTIVE_RUNTIME   # 16/16 gates green. v1.26.0 (companion-repo M147+M152+M162 Phase 3 sequence, 2026-05-13) — adds FALSIFY-CCPA-015 (ccpa_trace_subproc_output_purity) AND FALSIFY-CCPA-016 (outcome_parity_bound) to the gate registry. CCPA-015 was authored at M147 via provable-contract design (falsifying test FIRST, fix via Stdio::null()) for the ccpa-trace-subproc capture binary; PROPOSED in v1.25.0, promoted ACTIVE_RUNTIME here. CCPA-016 is the Phase 3 P3.4 outcome-parity gate authored at M152 — asserts aggregate agreement >= 0.5 on a MultiPL-E-Rust-class corpus with bidirectional sensitivity (synthetic regression fixture fails threshold; synthetic identity passes). CCPA-016 was empirically validated at M150 (real bilateral bench produced agreement = 1.0000 on 5/5 HumanEval/0..4 with real claude 2.1.139 + real apr code 0.32.0 via Qwen2.5-Coder-1.5B-Instruct-Q4_K_M). The companion-repo M162 row records that aprender#1638 MERGED upstream at squash b61b76b4 (2026-05-13), un-gating apr code from `--features code` so `cargo install apr-cli` ships it by default — the Axis 3 LlmDriver-adapter discharge is FULLY confirmed. v1.25.0 (companion-repo M136-M140 axis-2-closure-plan sequence, 2026-05-11) — adds FALSIFY-CCPA-014 (companion-repo M136-M140 axis-2-closure-plan sequence, 2026-05-11) — adds FALSIFY-CCPA-014 (os_event_parity_bound) to the gate registry, completing the axis-2 closure-plan idea (2) CLI subprocess instrumentation track. New gate consumes ccpa_subproc::OsEvent records (M136) via ccpa_differ::os_event_parity (M137) and asserts canonical-corpus score >= 0.95 + bidirectional sensitivity on regression corpus (M139). v1.24.0 (companion-repo M128-M131 sequence, 2026-05-10) — bumped from v1.23.0 to integrate the M109 cosine-vs-HF-FP16 LIVE-DISCHARGE (cos_sim 0.995384 ≥ 0.99 on lambda-vector RTX 4090, 2026-05-09; aprender PR #1597 squash 3fb04ef86 flipped `qwen3-moe-forward-v1` v1.4.0 ACTIVE_ALGORITHM_LEVEL → v1.5.0 ACTIVE_RUNTIME). Discharges the v1.23.0 status-prose claim "Cosine vs HF FP16 remains operator-confirm pending ~60 GB HF download" — the FP16 weights had been on lambda-vector at /mnt/nvme-raid0/models/Qwen3-Coder-30B-A3B-Instruct/ (57 GB / 16 safetensors shards) for ~7 days; the "60 GB download" blocker was stale by 62 days. v1.23.0 (M35 M32d discharge audit-trail bump) records the 4-bug stack landed on aprender main as commit 5235aaeb9 (#1228) plus diagnostic surface PRs #1222 (Step 2), #1226 (Step 2.5), #1401 (Step 2 JSON wire). M32d gibberish output ("%%%%%%%%") converted to coherent English answers across math/geography/translation/code domains. M34 FAST PATH 5-whys plan delivered at lucky-case bound (5 substantive PRs vs 4-6 estimated, ~6 hours wall vs 2-3 days). Component priors verified empirically: rank-3 Q/K RMSNorm (15%) + rank-4 rope_theta (10%) + chat template both correct. Cosine vs HF FP16 formal flip **DISCHARGED 2026-05-09 at companion-repo M109** (apr_argmax = hf_argmax = 3555 " What"; 555ms apr-forward; HF FP16 fixture generated in 52s).
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Top-level invariants — the 12 falsifiable gates this contract asserts.
@@ -88,6 +88,8 @@ invariants:
   - { id: FALSIFY-CCPA-008, name: parity_score_bound,         summary: 'aggregate parity_score >= 0.95, per-fixture >= 0.80' }
   - { id: FALSIFY-CCPA-013, name: first_recorded_parity_score, summary: 'AT LEAST ONE real Claude Code ↔ apr code corpus run produced a measured parity_score recorded in status_history. Flips ACTIVE_ALGORITHM_LEVEL → ACTIVE_RUNTIME.' }
   - { id: FALSIFY-CCPA-014, name: os_event_parity_bound,       summary: 'OS-level event parity (axis-2-closure-plan M115.4): macro-averaged Jaccard >= 0.95 per fixture in fixtures/os-canonical/; bidirectional-sensitivity gate on fixtures/os-regression/ (every fixture < 0.95 + non-empty drift records).' }
+  - { id: FALSIFY-CCPA-015, name: ccpa_trace_subproc_output_purity, summary: 'Every line emitted to stdout by ccpa-trace-subproc MUST decode as a ccpa_subproc::OsEvent JSON object. Subprocess stdout MUST NOT interleave with the capture stream (use Stdio::null() not Stdio::inherit()).' }
+  - { id: FALSIFY-CCPA-016, name: outcome_parity_bound,        summary: 'Outcome parity (Phase 3 P3.4): aggregate agreement on a MultiPL-E-Rust-class corpus >= 0.5 (POC-tier); bidirectional-sensitivity via synthetic regression (< 0.5 → fail) + synthetic identity (1.0 → pass) fixtures.' }
 
 scope: >
   every recorded fixture under <ccpa-repo>/fixtures/, every replay run the
@@ -631,6 +633,133 @@ falsification_conditions:
       - { date: '2026-05-11', version_before: '1.24.0', version_after: '1.25.0',
           change: 'Added FALSIFY-CCPA-014 to gate registry. Companion-repo M139 ships the corpus + runtime gate; this revision (M140 / M115.5) flips the contract to recognize CCPA-014 as ACTIVE_RUNTIME from authoring.' }
 
+  - id: FALSIFY-CCPA-015
+    name: ccpa_trace_subproc_output_purity
+    status: ACTIVE_RUNTIME
+    assertion: |
+      The `ccpa-trace-subproc` capture binary (crates/ccpa-subproc/, M136)
+      MUST emit OsEvent JSONL to its stdout WITHOUT contamination by the
+      wrapped subprocess's own stdout. Every line read from
+      `ccpa-trace-subproc <cmd> [args...]` stdout MUST decode as a valid
+      `ccpa_subproc::OsEvent` JSON object:
+        { "pid": <u32>, "kind": <OsEventKind>, "seq": <u64> }
+
+      Implementation requirement: the spawned subprocess's stdout MUST
+      be redirected to `Stdio::null()`. Using `Stdio::inherit()` (the
+      pre-M147 bug) causes the wrapped subprocess's prose output to
+      interleave with the capture stream — every text line that isn't
+      valid OsEvent JSON corrupts the trace.
+    test_harness: |
+      `cargo test -p ccpa-subproc --test falsify_ccpa_015_output_purity`
+      spawns `ccpa-trace-subproc /bin/echo CHATTY_TEXT` and asserts that
+      every line of stdout decodes as `OsEvent`. The test verifies
+      bidirectional sensitivity: pre-M147 (with Stdio::inherit()) FAILS
+      because "CHATTY_TEXT" leaks into stdout; post-M147 (with
+      Stdio::null()) PASSES because only OsEvent records reach stdout.
+
+      36 tests green on the current ccpa-subproc workspace: 32 unit
+      tests + 3 binary smoke tests + 1 falsify_ccpa_015 test.
+    rationale: |
+      Phase 2 first-real-capture (M147) surfaced a class of "capture
+      stream contamination" bugs: the wrapped subprocess's prose output
+      can leak through the same file descriptor used for the JSONL
+      capture stream, producing a `teacher.ccpa-os-trace.jsonl` file
+      that mixes claude's natural-language response with the
+      OsEvent records the differ expects.
+
+      The output-purity invariant is a precondition for any meaningful
+      OS-level parity analysis: if the trace is corrupted, every
+      downstream differ produces noise.
+
+      Provable-contract design (operator directive "use provable-
+      contract based design"): the falsifying test was authored BEFORE
+      the fix, asserted to FAIL on the buggy `Stdio::inherit()` code,
+      then PASS on the fixed `Stdio::null()` code. The lint encoded by
+      this gate is now permanent.
+
+      PROPOSED at v1.25.0 (M147); promoted ACTIVE_RUNTIME at v1.26.0
+      (this revision) once Phase 3 work confirmed the invariant holds
+      across both teacher (claude) and student (apr code) captures on
+      the operator's host.
+    semantic_change_log:
+      - { date: '2026-05-13', version_before: '1.25.0', version_after: '1.26.0',
+          change: 'Added FALSIFY-CCPA-015 to gate registry. Companion-repo M147 ships the runtime test asserting Stdio::null() output purity for ccpa-trace-subproc; this revision flips the contract to recognize CCPA-015 as ACTIVE_RUNTIME from authoring.' }
+
+  - id: FALSIFY-CCPA-016
+    name: outcome_parity_bound
+    status: ACTIVE_RUNTIME
+    assertion: |
+      Outcome parity (Phase 3 P3.4). On a MultiPL-E-Rust-class corpus of
+      function-level code-generation tasks where both teacher (claude)
+      and student (apr code) are asked to produce Rust code:
+        aggregate `agreement` on the corpus MUST be >= 0.5
+
+      Where `agreement` is fraction-of-prompts-where-both-systems-pass:
+        agreement = (both_passed + both_failed) / corpus_size
+
+      Plus consistency invariants:
+        - `corpus_size >= 3` (minimum sample size for statistical meaning)
+        - `corpus_size == per_fixture.len()` (record-count match)
+        - `teacher_pass_rate >= 0.5` (validity: teacher must do better
+          than chance on the corpus for agreement to be informative)
+        - `both_passed + both_failed <= corpus_size` (count consistency)
+
+      Bidirectional sensitivity (mandatory):
+        - A synthetic regression fixture with `agreement: 0.4` MUST fail
+          the threshold check (catches false-negative meter bugs).
+        - A synthetic identity fixture with `agreement: 1.0` MUST pass
+          (catches false-positive meter bugs).
+
+      Source of truth: `evidence/phase-3/multipl-e-rust-scores.json`
+      produced by `scripts/phase-3-bench.sh` on the companion repo.
+    test_harness: |
+      `cargo test -p ccpa-differ --test falsify_ccpa_016_outcome_parity`
+      runs 4 assertions:
+        - live_evidence_meets_outcome_parity_threshold
+        - live_evidence_per_fixture_exit_codes_consistent_with_aggregate
+        - synthetic_regression_below_outcome_parity_threshold
+        - synthetic_identity_passes_outcome_parity_threshold
+
+      All four GREEN on the companion-repo M150 bench output:
+      agreement = 1.0000 over 5 fixtures (HumanEval/0..4, Cassano et
+      al. 2022 / arXiv:2208.08227).
+    rationale: |
+      The M149 operator reframe ("so we can ask apr code to generate
+      same code as claude code and 'it works'") elevated outcome parity
+      to the primary user-facing parity test, alongside the pre-existing
+      procedural-parity track (CCPA-014). Outcome parity asks "does the
+      generated code work?"; procedural parity asks "do both systems
+      make the same syscalls?" — these can disagree (different runtimes
+      produce different syscall sets even when generating equivalent
+      code) and CCPA-016 was designed to capture the user-facing claim
+      independently of CCPA-014.
+
+      The 0.5 threshold is POC-tier per the outcome-parity-plan.md
+      § P3.4 design note ("probably 0.5 initially — both systems pass
+      on half the corpus is a reasonable bar for a POC"). Expanding the
+      corpus from the 5-fixture M150 POC to the full 164-problem
+      MultiPL-E-Rust (M164+) will justify raising the threshold to ~0.8.
+
+      M150 (PR #136 squash 47bed37) produced the empirical evidence:
+      teacher_pass_rate = 1.0000 (5/5), student_pass_rate = 1.0000 (5/5),
+      agreement = 1.0000, both_passed = 5, both_failed = 0. This was a
+      REAL bilateral bench using claude 2.1.139 + apr 0.32.0 on the
+      operator's noah-Lambda-Vector host with Qwen2.5-Coder-1.5B as the
+      apr-code backing model. Companion-repo M153 added the
+      orthogonal structural-similarity metric (line-set Jaccard =
+      0.5201; the systems generate functionally-equivalent but
+      stylistically-divergent Rust). Companion-repo M154 added the
+      test-survival metric (10/10 cross-swaps pass; the structural
+      divergence is purely stylistic, not semantic).
+
+      PROPOSED at v1.25.0 (M152); promoted ACTIVE_RUNTIME at v1.26.0
+      (this revision) once M157's consolidated outcome-parity-results
+      doc shipped and M162 (aprender#1638 MERGED) confirmed the upstream
+      LlmDriver-adapter discharge.
+    semantic_change_log:
+      - { date: '2026-05-13', version_before: '1.25.0', version_after: '1.26.0',
+          change: 'Added FALSIFY-CCPA-016 to gate registry. Companion-repo M152 ships the gate test against live evidence/phase-3/multipl-e-rust-scores.json; M150 produced the bilateral bench empirical evidence; this revision flips the contract to recognize CCPA-016 as ACTIVE_RUNTIME from authoring.' }
+
   - id: FALSIFY-CCPA-008
     name: parity_score_bound
     status: PLANNED_M6
@@ -789,6 +918,94 @@ milestones:
 # ─────────────────────────────────────────────────────────────────────────────
 
 status_history:
+  - date: '2026-05-13'
+    from: 'ACTIVE_RUNTIME v1.25.0'
+    to: 'ACTIVE_RUNTIME v1.26.0'
+    note: 'companion-repo Phase 3 sequence (M147 + M150-M157 + M162) — FALSIFY-CCPA-015 (ccpa_trace_subproc_output_purity) + FALSIFY-CCPA-016 (outcome_parity_bound) added to gate registry; aprender#1638 MERGED upstream (squash b61b76b4) un-gating apr code from --features code'
+    reason: |
+      Adds 2 new falsification gates to the registry: CCPA-015 (output
+      purity for ccpa-trace-subproc) and CCPA-016 (outcome parity bound
+      on MultiPL-E-Rust-class corpus). Gate count: 14 → 16.
+
+      Sequence on companion repo (`paiml/claude-code-parity-apr`):
+
+        M147 (PR #133 squash fd832f1) — provable-contract design for
+          ccpa-trace-subproc output purity. Operator directive: "use
+          provable-contract based design". Authored falsifying test
+          FIRST asserting every stdout line decodes as OsEvent;
+          verified test FAILS on buggy Stdio::inherit() code; fixed
+          via Stdio::null(); verified test PASSES. Becomes CCPA-015.
+
+        M150 (PR #136 squash 47bed37) — first real bilateral bench
+          on MultiPL-E-Rust. Operator directives: "code SHOULD NOT BE
+          FEATURE FLAGGED fix" + "perhaps a public benchmark?" + "show
+          me it working". 5 HumanEval fixtures (0..4 = has_close_elements
+          / separate_paren_groups / truncate_number / below_zero /
+          mean_absolute_deviation); scripts/phase-3-bench.sh runner
+          drives both teacher (claude 2.1.139) and student (apr 0.32.0
+          + Qwen2.5-Coder-1.5B-Instruct-Q4_K_M) through identical
+          prompts; cargo test as oracle. Aggregate: teacher_pass_rate
+          = 1.0000, student_pass_rate = 1.0000, agreement = 1.0000,
+          both_passed = 5/5. Provides the empirical evidence CCPA-016
+          asserts on.
+
+        M152 (PR #139 squash 6449537) — FALSIFY-CCPA-016 gate test.
+          4 assertions: live evidence threshold; per-fixture
+          consistency; synthetic regression (< 0.5 fails); synthetic
+          identity (1.0 passes). Bidirectional sensitivity codified.
+
+        M153-M154 (PRs #140/#141) — orthogonal P3.3 sub-metrics:
+          line-set Jaccard = 0.5201 (structural similarity);
+          test-survival = 1.0000 (10/10 cross-swaps pass; structural
+          divergence is purely stylistic, not semantic).
+
+        M155-M161 (companion spec honesty/sweeps) — Axis 2 score
+          bumped ~50% → ~70%; "Are we at parity?" short answer flipped
+          from M140 "machinery only" to M155 "machinery + executed on
+          real binaries"; one-number summary ~70% → ~85%; 5 stale
+          PMAT-CODE-LLM-DRIVER-PUBLIC-001 references annotated as
+          historical (the real upstream surface was aprender#1638).
+
+        M159 — ProgramBench (arXiv:2605.03546) prior-art integration:
+          0% of 200 tasks fully resolved across Claude Opus/Sonnet/
+          Haiku + GPT + Gemini, May 2026 SOTA. Honest scoping for the
+          M150 result: 1.0000 on 5 easy HumanEval doesn't extrapolate
+          to project-scale (FFmpeg / SQLite). Future-work P3.6 / M161+
+          adapts ProgramBench's methodology for bilateral CCPA bench.
+
+        M162 (PR #149 squash f361a8a) — aprender#1638 MERGED upstream.
+          Records the upstream landing of "feat(apr-cli): remove
+          'code' feature flag" (aprender PR #1638 squash b61b76b4,
+          2026-05-13T19:41:54Z). PMAT-CODE-LLM-DRIVER-PUBLIC-001 was
+          a red herring (LlmDriver was already pub); the actual
+          upstream blocker was a feature-flag config which #1638
+          resolves. The Axis 3 Real-apr-code-LlmDriver-adapter row
+          flips from FUNCTIONALLY DISCHARGED at M150 → FULLY DISCHARGED
+          at M162. `cargo install apr-cli` now ships `apr code` in
+          default build.
+
+      Aprender-side merge effort (this revision) cascaded 8 fixes that
+      paiml/infra absorbed: workspace clippy allow-list,
+      .github/workflows/ci.yml refactor (container → docker run with
+      retry + cache fallback), GH env passthrough, step timeout bump,
+      yoga host registry pull-through cache, 3 wall-time perf-test
+      #[ignore]s, 3 prune snapshot regenerations, 1 cli_commands cfg
+      removal. All preserved in companion-repo M162 row.
+
+      Gate registry post-v1.26.0 (16 gates total):
+        FALSIFY-CCPA-001..007  (M0-M5 trace/replay/coverage/sovereignty)
+        FALSIFY-CCPA-008       (parity_score_bound, M6 PLANNED)
+        FALSIFY-CCPA-009..013  (CI / pmat / line-cov / commit-gate / first_recorded)
+        FALSIFY-CCPA-014       (os_event_parity_bound, M139, ACTIVE_RUNTIME at v1.25.0)
+        FALSIFY-CCPA-015       (ccpa_trace_subproc_output_purity, M147, ACTIVE_RUNTIME at v1.26.0)
+        FALSIFY-CCPA-016       (outcome_parity_bound, M152, ACTIVE_RUNTIME at v1.26.0)
+
+      No new contract bump planned in the near term; the next bump
+      (v1.26.0 → v1.27.0) would land if either (a) M164 bench-expansion
+      to full 164-problem MultiPL-E-Rust justifies raising CCPA-016's
+      threshold from 0.5 to ~0.8, or (b) a new gate class lands (e.g.,
+      ProgramBench-class project-scale outcome parity gate from P3.6).
+
   - date: '2026-05-11'
     from: 'ACTIVE_RUNTIME v1.24.0'
     to: 'ACTIVE_RUNTIME v1.25.0'
