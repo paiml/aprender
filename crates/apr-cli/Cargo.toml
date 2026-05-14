@@ -92,7 +92,7 @@ cuda-batch = ["cuda"]
 wgpu = ["inference"]
 visualization = ["renacer", "trueno-viz"]
 zram = ["trueno-zram-core"]
-training = ["dep:entrenar", "dep:entrenar-lora"]
+training = ["dep:entrenar", "dep:entrenar-lora", "dep:aprender-train-distill"]
 training-gpu = ["training"]
 whisper = ["whisper-apr"]
 dhat-heap = ["dep:dhat"]
@@ -213,6 +213,8 @@ trueno-explain = { version = "0.2.2", optional = true }
 entrenar-lora = { workspace = true, optional = true }
 # ML training engine (workspace path dep — enables cuda feature forwarding)
 entrenar = { workspace = true, optional = true }
+# Distillation pipeline (SPEC-SHIP-TWO-001 §35 wire-up — replaces stub run_config_train)
+aprender-train-distill = { workspace = true, optional = true }
 # Heap profiling (opt-in via --features dhat-heap)
 dhat = { version = "0.3", optional = true }
 # Data loading, splitting, imbalance detection (apr data subcommands)
