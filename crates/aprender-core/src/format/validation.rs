@@ -1,6 +1,6 @@
 //! APR Format Validation Module - 100-Point QA Checklist
 //!
-//! Implements the Master Falsification QA Checklist from APR-SPEC.md Section 11.
+//! Implements the Master Falsification QA Checklist from APR-SPEC-v2-draft.md Section 11.
 //! Each check is testable and falsifiable.
 //!
 //! # Categories

@@ -126,7 +126,7 @@ Tensor Data:
 
 ### 3.3 APR (Aprender Portable Representation)
 
-**Specification**: APR (see APR-SPEC.md)
+**Specification**: APR (see APR-SPEC-v2-draft.md)
 **Extensions**: `.apr`
 **Types**: F16, F32, I8, Q4_K, Q5_K, Q6_K, Q8_0
 

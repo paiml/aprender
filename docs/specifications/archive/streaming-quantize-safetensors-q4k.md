@@ -184,5 +184,5 @@ apr inspect /tmp/test-q4k.apr
 
 - Toyota Production System: Monden, Y. (1983). *Toyota Production System*. Industrial Engineering and Management Press.
 - Design by Contract: [`docs/design-by-contract.md`](../design-by-contract.md)
-- APR Format Spec: [`docs/specifications/APR-SPEC.md`](APR-SPEC.md)
+- APR Format Spec: [`docs/specifications/APR-SPEC-v2-draft.md`](APR-SPEC-v2-draft.md)
 - GH-243 (original `apr quantize`): [`docs/specifications/243-spec.md`](243-spec.md)
