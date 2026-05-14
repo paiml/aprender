@@ -1,6 +1,6 @@
 metadata:
   kind: schema
-  version: 1.2.0
+  version: 1.3.0
   status: ACTIVE
   created: '2026-04-27'
   updated: '2026-05-05'
@@ -41,6 +41,33 @@ metadata:
     or near completion. ProgressEmitter is pure-functional under
     should_emit/format_line, so unit tests pin OR-cadence + format
     invariants without scraping stderr.
+
+    v1.3.0 (2026-05-05): GH-1547 piece 3 of 3 — pre-flight estimate
+    pass. Added `--estimate-only` (bool) and `--estimate-sample-docs
+    <N>` (default 1000). When `--estimate-only` is set, the encode
+    pipeline reads the FIRST `sample_docs` documents, encodes them
+    under the configured tokenizer, observes (sample_tokens,
+    sample_wall), then extrapolates against the total document count
+    (from `wc -l` of JSONL files or parquet metadata footers) to emit:
+
+      [estimate] input_docs=N
+      [estimate] sample_size=K sample_tokens=T sample_wall=Ws
+      [estimate] estimated_total_tokens=NNN
+      [estimate] estimated_shards=NNN (at shard_tokens=NNN)
+      [estimate] estimated_wall=NNN seconds (at --num-workers=N)
+
+    NO shards or manifest are written. The output directory is not
+    even created — the short-circuit lives BEFORE create_dir_all in
+    `run_encode_corpus`. Extrapolation formula (AC4) is:
+
+      estimated_wall = (sample_wall / sample_size) × total_docs / num_workers
+
+    Pure-function `extrapolate_estimate` kernel makes the math
+    unit-testable without invoking the BPE tokenizer or the
+    filesystem. Operator motivation: pre-flight sanity check before
+    dispatching multi-day jobs — the 47h blind run could have been
+    a 5-second sanity check that revealed the projected wall, total
+    tokens, and shard count.
 
 equations:
   parallel_correctness:
@@ -96,6 +123,37 @@ equations:
     invariants:
     - "speedup ≥ 0.8 × N for N ≤ min(num_cores, 8)"
     - "merge step O(num_shards) not O(num_tokens)"
+
+  estimate_extrapolation:
+    formula: |
+      v1.3.0 — `--estimate-only` extrapolates a sample to the full
+      corpus without writing any output:
+
+        sample_size docs took sample_wall seconds and produced
+        sample_tokens tokens →
+          tokens_per_doc = sample_tokens / sample_size
+          wall_per_doc   = sample_wall   / sample_size
+          estimated_total_tokens = round(tokens_per_doc × total_docs)
+          estimated_shards       = ceil(estimated_total_tokens / shard_tokens)
+          estimated_wall         = wall_per_doc × total_docs / max(num_workers, 1)
+
+      sample_size = 0 → all-zero output (no extrapolation possible).
+      shard_tokens = 0 → estimated_shards = 0 (avoid div-by-zero).
+      num_workers = 0 → clamp to 1 (avoid div-by-zero).
+
+      No shards, manifest, or output directory are produced; the
+      output_dir argument is inspected only via `create_dir_all`,
+      which is GATED behind the estimate short-circuit so a
+      `--estimate-only` invocation never even creates the directory.
+    domain: pre-flight extrapolation
+    codomain: (estimated_total_tokens, estimated_shards, estimated_wall)
+    invariants:
+    - "no .bin shards written when --estimate-only is set"
+    - "no manifest.json written when --estimate-only is set"
+    - "estimated_wall scales inversely with num_workers (clamped >= 1)"
+    - "estimated_shards = ceil(estimated_total_tokens / shard_tokens)"
+    - "sample_size = 0 → all-zero output (graceful)"
+    - "extrapolation kernel is pure (no IO; testable on synthetic input)"
 
   progress_or_cadence:
     formula: |
@@ -201,6 +259,34 @@ falsification_tests:
   status: DISCHARGED
   if_fails: "wire format drift — operator-facing line shape regresses"
 
+- id: FALSIFY-APR-TOK-PAR-011
+  rule: extrapolate_estimate kernel obeys AC4 formula
+  prediction: "extrapolate_estimate(1000, 50000, 1.0, 100000, 1000000, 4) returns (5000000, 5, 25.0); 0 sample_size → all-zero; 0 num_workers clamps to 1; 0 shard_tokens → 0 shards"
+  test: "crates/apr-cli/src/commands/tokenize.rs::tests::estimate_only_extrapolation_formula_correct"
+  status: DISCHARGED
+  if_fails: "extrapolation math is wrong — operator gets misleading pre-flight numbers"
+
+- id: FALSIFY-APR-TOK-PAR-012
+  rule: --estimate-only writes no shard files
+  prediction: "run_encode_corpus with EstimateConfig{enabled: true} produces zero `.bin` files in the (would-be) output_dir"
+  test: "crates/apr-cli/src/commands/tokenize.rs::tests::estimate_only_no_shards_written"
+  status: DISCHARGED
+  if_fails: "--estimate-only side-effects on disk — operator pre-flight contaminates real output"
+
+- id: FALSIFY-APR-TOK-PAR-013
+  rule: --estimate-only writes no manifest.json
+  prediction: "run_encode_corpus with EstimateConfig{enabled: true} does not produce manifest.json in output_dir"
+  test: "crates/apr-cli/src/commands/tokenize.rs::tests::estimate_only_no_manifest_written"
+  status: DISCHARGED
+  if_fails: "--estimate-only emits stale manifest — operator real-encode mistakes pre-flight as completed run"
+
+- id: FALSIFY-APR-TOK-PAR-014
+  rule: --estimate-only path returns Ok on a valid corpus + tokenizer
+  prediction: "run_encode_corpus with EstimateConfig{enabled: true, sample_docs: 5} on a 15-doc fixture returns Ok(())"
+  test: "crates/apr-cli/src/commands/tokenize.rs::tests::estimate_only_emits_estimate_lines_to_stderr"
+  status: DISCHARGED
+  if_fails: "--estimate-only wiring broken — operator can't run pre-flight at all"
+
 proof_obligations:
 - type: invariant
   property: "parallel encoding preserves bit-exact tokenization vs serial"
@@ -214,11 +300,15 @@ proof_obligations:
   property: "v1.2.0 progress emitter obeys OR-cadence (doc OR time bound)"
 - type: invariant
   property: "v1.2.0 --quiet suppresses emission at the predicate layer"
+- type: invariant
+  property: "v1.3.0 --estimate-only writes no shards or manifest"
+- type: invariant
+  property: "v1.3.0 estimated_wall scales inversely with num_workers"
 
 verification_summary:
-  total_obligations: 6
+  total_obligations: 8
   proven: 0
-  tested: 6
+  tested: 8
   status: discharged_unit
   notes: |
     Authored 2026-04-27 from observation that P1.5 BPE encoding ran single-
@@ -258,3 +348,12 @@ verification_summary:
     format_line no-total / with-total invariants, --quiet suppression,
     and mark_emitted clock-reset semantics. Both single-thread and
     chunked-rayon paths emit identically.
+
+    v1.3.0 (2026-05-05, GH-1547 piece 3): adds `--estimate-only` and
+    `--estimate-sample-docs`. Falsifiers FALSIFY-APR-TOK-PAR-011/012/
+    013/014 DISCHARGED via 5 new unit tests in
+    `tokenize.rs::tests::estimate_only_*` covering: pure-function
+    extrapolation kernel math (AC4 formula); no .bin shards written;
+    no manifest.json written; happy-path Ok(()) wiring; sample_docs=0
+    rejected as a config error. Pre-flight pass for SHIP-TWO-001 5g.1
+    style multi-day encode dispatches.

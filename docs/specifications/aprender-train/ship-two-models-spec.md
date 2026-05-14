@@ -1,7 +1,8 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 3.20.0
+**Version:** 3.21.0
+**Atomic next action (v3.21.0):** **🎉 §75 — MODEL-1 SHIP %  = 100% — SHIP-007 LIVE-DISCHARGED via F32 GEMV PTX layout fix (2026-05-13)** (see new §75 below). PR-E (#1651) ships single-file fix in `crates/aprender-gpu/src/kernels/gemv/mod.rs`: the F32 GEMV kernel assumed `[K rows × N cols]` row-major but actual ML weights are `[output_dim=N, input_dim=K]` row-major (PyTorch/SafeTensors/GGUF convention). Kernel was reading TRANSPOSED weights → systematically anti-correlated logits (cos=-0.005). Fix rewrites inner loop to iterate K within row `block_id`. Empirical discharge: `apr bench` 5-iter 128-tok decode = **124.6 tok/s** on RTX 4090 (4.15× over AC-SHIP1-007 30 tok/s floor); PARITY-GATE PASS; default path, no workarounds. **All 10 AC-SHIP1-* LIVE-DISCHARGED.** **MODEL-1 ship %**: **99% → 100%** 🎉. **MODEL-2 ship %**: unchanged at **57%**. **Methodology lesson #22 NEW**: symptom analysis → bug class localization in O(1); methodology lessons compose.
 **Atomic next action (v3.20.0):** **§74 — SHIP-007 bug LOCALIZED to LM head F32 GEMV via PR-B stage bisection (2026-05-13)** (see new §74 below). PR-B (#1649) APR_GPU_STAGE_DUMP scaffold captured GPU embedding + post_ffn_residual L27 + final_norm + lm_head + CPU lm_head on single BOS token. GPU intermediate values look numerically sane (post_ffn_residual rms=26, final_norm rms=2.84). Divergence emerges between final_norm and logits: GPU logits mean=0.013 vs CPU mean=-2.42 (Δ=2.43; CPU has Qwen's typical negative-bias signature). PMAT-333 dequantizes ALL weights to F32 on GPU upload (28.3 GB), so `WeightQuantType::from_size` returns F32 for LM head → dispatches `f32_gemv_into`. The F32 GEMV kernel is the localized bug surface. **Methodology lesson #21 NEW**: stage-by-stage numerical analysis can localize bug class without per-element diffing. **MODEL-1 ship %**: unchanged at **99%** (Layer 2 localized; PR-E for fix). **MODEL-2 ship %**: unchanged at **57%**. Path-to-100% reduced to a single PR-E.
 **Atomic next action (v3.19.0):** §72 + §73 combined banner — see both sections below.
 **Atomic next action (v3.18.0 §73):** **§73 — SHIP-007 cascade reduced from 3 layers to 1 on re-measurement; only Layer 2 (parity) blocks (2026-05-12)** (see new §73 below). §63's 2026-05-11 3-layer blocker stack — (1) FP8 warmup ILLEGAL_ADDRESS, (2) GPU-vs-CPU parity cos=-0.005190, (3) throughput 5.6 vs 30 tok/s floor — re-measured on 2026-05-12 lambda-vector RTX 4090 reveals 2 of 3 layers already discharged: **Layer 1 fixed** (`[PMAT-082] cuBLASLt FP8 JIT warmed (3584×16×3584)` succeeds), **Layer 3 meets floor** (54.5 tok/s @ 128-tok decode, 5-iter median, 1.82× headroom). Only **Layer 2 still blocks** (byte-identical cos=-0.005190 signature). Path to SHIP-007 LIVE-discharge reduced from "5-10 PR / 1-2 week cascade" to **"3-5 PR / 3-5 day single-layer fix"** — add `forward_gpu_traced` → wire `apr trace --device gpu --save-tensor all` → diff CPU vs GPU stage tensors → fix localized stage → discharge. **Methodology lesson #20 NEW**: re-measure cascade layers before continuing; stale state can be reduced cheaply. **MODEL-1 ship %**: unchanged at **99%** (Layer 2 still blocks). **MODEL-2 ship %**: unchanged at **57%**.
@@ -5186,6 +5187,104 @@ Evidence:
 - `evidence/section-74-ship-007-bisection-2026-05-13/lm-head-diff.txt` (apr diff --values)
 
 Spec v3.18.0 → **v3.19.0**.
+
+---
+
+## §75. 🎉 MODEL-1 SHIP %  = 100% — SHIP-007 LIVE-DISCHARGED via F32 GEMV PTX layout fix (2026-05-13)
+
+PR-E (#1651) ships the single-file F32 GEMV PTX layout fix that closes SHIP-007 (AC-SHIP1-007). MODEL-1 ship % crosses **99% → 100%**. SHIP-TWO-001 MODEL-1 is now fully ship-ready.
+
+### 75.1 The 10/10 LIVE-discharge table
+
+| AC | Discharge section | Path |
+|----|-------------------|------|
+| SHIP-001 | §72 | `apr run <safetensors>` exit 0 |
+| SHIP-002 | §61 | `apr run "def fib(n):"` valid Python (#1609) |
+| SHIP-003 | §72 | `apr diff` 20 tensors at cos_sim=1.000000 |
+| SHIP-004 | §72 | `llama-cli` exit 0, 133.1 gen tok/s |
+| SHIP-005 | §71 | HumanEval pass@1 = 86.59% gx10 164-run |
+| SHIP-006 | §61.8 | `apr qa` 12-gate aggregate PASS (#1615) |
+| **SHIP-007** | **§75 (this section)** | **PARITY-GATE PASS + 124.6 tok/s @ 128-tok decode** |
+| SHIP-008 | §61 | `apr run` SHIP-008 USER → 256-token ChatML (#1614) |
+| SHIP-009 | §72 | `apr inspect` license/provenance fields |
+| SHIP-010 | §72 | sha256 match `0a854098…` |
+
+**10 of 10 AC-SHIP1-* LIVE-DISCHARGED.**
+
+### 75.2 SHIP-007 root cause + fix
+
+The F32 GEMV PTX kernel at `crates/aprender-gpu/src/kernels/gemv/mod.rs::GemvKernel::build_ptx` assumed weight matrix `A` is `[K rows × N cols]` row-major: `A[i,j]` at offset `i*N + j`. The actual ML weight convention is `[output_dim=N, input_dim=K]` row-major: `A[i,j]` at `i*K + j` (PyTorch / SafeTensors / GGUF / dequantized lm_head all follow this).
+
+Kernel was reading TRANSPOSED weights → computed `y = A^T @ x` instead of `y = A @ x` → systematically anti-correlated logits (cos = -0.005190 vs CPU, top-10 divergences all sign-flipped, GPU mean=0.013 vs CPU mean=-2.42).
+
+The fix: rewrite the inner loop to iterate K within row `block_id`:
+- `row_base = a_ptr + block_id * K * 4`
+- thread `t` reads `A[block_id, t]`, `A[block_id, t+32]`, …
+
+### 75.3 Empirical discharge proof
+
+```
+$ apr bench <canonical 7B Q4_K_M APR> --iterations 5 --max-tokens 128 --json
+{
+  "iterations": 5,
+  "median_time_ms": 1016.4,
+  "tokens_per_second": 124.6,
+  "passed": true,
+  "latency_p50_ms": 1016.4,
+  "latency_p95_ms": 1073.3,
+  "time_to_first_token_ms": 8.39
+}
+```
+
+- AC-SHIP1-007 floor: 30 tok/s
+- Headroom: **4.15× over floor**
+- PARITY-GATE: PASS (no error from `forward_gpu_resident`)
+- Default path (CUDA graphed, no `SKIP_PARITY_GATE`, no `APR_SKIP_FP8_WARMUP`)
+
+### 75.4 Cascade arc — full closeout
+
+| § | Date | Discovery | Impact |
+|---|------|-----------|--------|
+| 63 | 2026-05-11 | SHIP-007 framed as 3-layer cascade (FP8 + parity + throughput) | scope identified |
+| 73 | 2026-05-12 | Re-measurement: 2/3 layers already fixed; only parity blocks | scope -3× |
+| **74** | **2026-05-13** | **Bug LOCALIZED to F32 GEMV via PR-B stage bisection** | scope -10× |
+| 75 | 2026-05-13 | **PR-E layout fix → MODEL-1 100%** | DISCHARGED |
+
+Per §73's "3-5 PR / 3-5 day" estimate. Actual: 4 PRs (PR-A contract, PR-B scaffold, §74 docs, PR-E fix) shipped over 2 calendar days.
+
+### 75.5 Ship-% movement
+
+- **MODEL-1 ship %**: **99% → 100%** 🎉
+- **MODEL-2 ship %**: unchanged at **57%** (independent track, gated on step 5g.3 val_loss < 9.38)
+
+### 75.6 Methodology lesson #22 (NEW)
+
+**Symptom analysis → bug-class localization in O(1) when you know the symptom.** §74 captured CPU vs GPU stage-level stats. The signature — sign-flipped top-K divergences, CPU mean=-2.4 vs GPU mean=0, intermediate stages numerically sane — matches **exactly one bug class**: transposed matmul. Once we knew the kernel was reading transposed weights, the bug was visible in the PTX builder code within seconds (line 86-87: `col_offset = block_id * 4` instead of `row_offset = block_id * K * 4`).
+
+Lessons #16-21 (compose falsifiers, stage-by-stage stats, predict-then-verify, re-measure cascade) **compose**. Each makes the next cheaper.
+
+### 75.7 Cumulative methodology lessons through §75
+
+| # | Lesson |
+|---|--------|
+| 6-21 | (see §74) |
+| **22** | **Symptom analysis → bug class localization in O(1). Methodology lessons compose; each makes the next cheaper.** |
+
+### 75.8 What §75 is NOT
+
+§75 does NOT:
+- Modify MODEL-2 (independent track, ship % stays at 57%)
+- Discharge any benchmark beyond AC-SHIP1-007 (HumanEval/MBPP unchanged; SHIP-005 stays at 86.59% from §71)
+- Imply publish-readiness — GATE-SHIP-001/002/003 still need green CI + post-publish QA per `feedback_post_publish_qa_required.md`
+
+§75 records that **all 10 AC-SHIP1-* falsifiers are LIVE-discharged on the canonical 7B Qwen2.5-Coder-Instruct Q4_K_M teacher on lambda-vector RTX 4090**. This is the contract for AC-SHIP1-* completion.
+
+Evidence:
+- `evidence/section-75-ship-007-discharged-2026-05-13/findings.json`
+- `evidence/section-75-ship-007-discharged-2026-05-13/ship-007-bench-discharged.json` (5-iter 128-tok bench, 124.6 tok/s)
+- Predecessor: `evidence/section-74-ship-007-bisection-2026-05-13/findings.json` (bug localized)
+
+Spec v3.18.0 → **v3.21.0** (post-§72/73 stack at 3.18, §74 at 3.20, §75 here at 3.21 — MODEL-1 100%).
 
 ---
 
