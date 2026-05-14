@@ -421,7 +421,24 @@ fn prepare_tokens_safetensors(config: &InferenceConfig, prompt: &str) -> Result<
     })
 }
 
-/// Prepare tokens for APR format (chat template from model metadata)
+/// Prepare tokens for APR format (chat template from model metadata).
+///
+/// GH-1623: Only apply chat template when the APR actually contains one in
+/// its metadata (`tokenizer.chat_template`). Mirrors GGUF path (GH-278).
+///
+/// Previously, ALL models with known architectures (qwen2 / llama / mistral /
+/// phi) OR with ChatML special tokens in vocab got chat-template wrapping —
+/// even base completion models like `qwen2.5-coder-0.5b` (base) which carry
+/// the Qwen tokenizer with `<|im_start|>` in vocab but are NOT instruct. The
+/// over-triggering produced garbage output for base models.
+///
+/// New detection rule (matches GGUF):
+///   has_chat_template_in_metadata || filename hint (`instruct` / `-chat`)
+///
+/// PMAT-237's note about hash-named APR files remains valid — if a file is
+/// hash-named AND lacks a `tokenizer.chat_template` in its metadata, we now
+/// correctly treat it as a base model (the previous broad heuristic was
+/// silently wrapping such files even when they were base completion models).
 fn prepare_tokens_apr(config: &InferenceConfig, prompt: &str) -> Result<PreparedTokens> {
     use crate::apr::AprV2Model;
     use crate::chat_template::{format_messages, ChatMessage};
@@ -432,18 +449,18 @@ fn prepare_tokens_apr(config: &InferenceConfig, prompt: &str) -> Result<Prepared
         .and_then(|n| n.to_str())
         .unwrap_or("");
 
-    // PMAT-237: Detect instruct from MODEL DATA, not filename.
-    // Filename heuristic silently skips chat template for hash-named APR files.
-    // Three-tier detection: architecture metadata > vocab special tokens > filename fallback.
-    let (apr_arch, has_chatml_tokens) =
+    let (apr_arch, has_chat_template) =
         if config.model_path.extension().is_some_and(|e| e == "apr") {
             match AprV2Model::load(&config.model_path) {
                 Ok(model) => {
-                    let arch = model.metadata().architecture.clone().unwrap_or_default();
-                    let has_chatml = model.metadata().get_embedded_vocabulary().is_some_and(
-                        |vocab: Vec<String>| vocab.iter().any(|t| t == "<|im_start|>"),
-                    );
-                    (arch, has_chatml)
+                    let meta = model.metadata();
+                    let arch = meta.architecture.clone().unwrap_or_default();
+                    let has_tmpl = meta
+                        .extra
+                        .get("tokenizer.chat_template")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|s| !s.is_empty());
+                    (arch, has_tmpl)
                 },
                 Err(_) => (String::new(), false),
             }
@@ -451,13 +468,10 @@ fn prepare_tokens_apr(config: &InferenceConfig, prompt: &str) -> Result<Prepared
             (String::new(), false)
         };
 
-    let is_instruct_arch = matches!(
-        apr_arch.to_lowercase().as_str(),
-        "qwen2" | "qwen" | "llama" | "mistral" | "phi" | "phi3"
-    );
-    let filename_instruct = model_name.to_lowercase().contains("instruct");
+    let filename_instruct = model_name.to_lowercase().contains("instruct")
+        || model_name.to_lowercase().contains("-chat");
 
-    let is_instruct = is_instruct_arch || has_chatml_tokens || filename_instruct;
+    let is_instruct = has_chat_template || filename_instruct;
 
     let formatted_prompt = if is_instruct {
         let template_hint = apr_arch_to_template_hint(&apr_arch, model_name);
