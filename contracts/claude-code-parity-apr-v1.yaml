@@ -63,8 +63,8 @@ metadata:
     - crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml
 
 name: claude-code-parity-apr
-version: "1.26.0"
-status: ACTIVE_RUNTIME   # 16/16 gates green. v1.26.0 (companion-repo M147+M152+M162 Phase 3 sequence, 2026-05-13) — adds FALSIFY-CCPA-015 (ccpa_trace_subproc_output_purity) AND FALSIFY-CCPA-016 (outcome_parity_bound) to the gate registry. CCPA-015 was authored at M147 via provable-contract design (falsifying test FIRST, fix via Stdio::null()) for the ccpa-trace-subproc capture binary; PROPOSED in v1.25.0, promoted ACTIVE_RUNTIME here. CCPA-016 is the Phase 3 P3.4 outcome-parity gate authored at M152 — asserts aggregate agreement >= 0.5 on a MultiPL-E-Rust-class corpus with bidirectional sensitivity (synthetic regression fixture fails threshold; synthetic identity passes). CCPA-016 was empirically validated at M150 (real bilateral bench produced agreement = 1.0000 on 5/5 HumanEval/0..4 with real claude 2.1.139 + real apr code 0.32.0 via Qwen2.5-Coder-1.5B-Instruct-Q4_K_M). The companion-repo M162 row records that aprender#1638 MERGED upstream at squash b61b76b4 (2026-05-13), un-gating apr code from `--features code` so `cargo install apr-cli` ships it by default — the Axis 3 LlmDriver-adapter discharge is FULLY confirmed. v1.25.0 (companion-repo M136-M140 axis-2-closure-plan sequence, 2026-05-11) — adds FALSIFY-CCPA-014 (companion-repo M136-M140 axis-2-closure-plan sequence, 2026-05-11) — adds FALSIFY-CCPA-014 (os_event_parity_bound) to the gate registry, completing the axis-2 closure-plan idea (2) CLI subprocess instrumentation track. New gate consumes ccpa_subproc::OsEvent records (M136) via ccpa_differ::os_event_parity (M137) and asserts canonical-corpus score >= 0.95 + bidirectional sensitivity on regression corpus (M139). v1.24.0 (companion-repo M128-M131 sequence, 2026-05-10) — bumped from v1.23.0 to integrate the M109 cosine-vs-HF-FP16 LIVE-DISCHARGE (cos_sim 0.995384 ≥ 0.99 on lambda-vector RTX 4090, 2026-05-09; aprender PR #1597 squash 3fb04ef86 flipped `qwen3-moe-forward-v1` v1.4.0 ACTIVE_ALGORITHM_LEVEL → v1.5.0 ACTIVE_RUNTIME). Discharges the v1.23.0 status-prose claim "Cosine vs HF FP16 remains operator-confirm pending ~60 GB HF download" — the FP16 weights had been on lambda-vector at /mnt/nvme-raid0/models/Qwen3-Coder-30B-A3B-Instruct/ (57 GB / 16 safetensors shards) for ~7 days; the "60 GB download" blocker was stale by 62 days. v1.23.0 (M35 M32d discharge audit-trail bump) records the 4-bug stack landed on aprender main as commit 5235aaeb9 (#1228) plus diagnostic surface PRs #1222 (Step 2), #1226 (Step 2.5), #1401 (Step 2 JSON wire). M32d gibberish output ("%%%%%%%%") converted to coherent English answers across math/geography/translation/code domains. M34 FAST PATH 5-whys plan delivered at lucky-case bound (5 substantive PRs vs 4-6 estimated, ~6 hours wall vs 2-3 days). Component priors verified empirically: rank-3 Q/K RMSNorm (15%) + rank-4 rope_theta (10%) + chat template both correct. Cosine vs HF FP16 formal flip **DISCHARGED 2026-05-09 at companion-repo M109** (apr_argmax = hf_argmax = 3555 " What"; 555ms apr-forward; HF FP16 fixture generated in 52s).
+version: "1.27.0"
+status: ACTIVE_RUNTIME   # 16/16 gates registered; 4 with status: ACTIVE_RUNTIME (CCPA-013/014/015/016 — the runtime-evidence + outcome-parity track), rest at PLANNED_M*/IN_REVIEW/HARD_BLOCKING_M16 per their lifecycle phase. No OPEN residue. v1.27.0 (companion-repo M167, 2026-05-14) — flips FALSIFY-CCPA-013 (first_recorded_parity_score) from `status: OPEN` → `status: ACTIVE_RUNTIME`. The gate's assertion has been satisfied since v1.1.0 (3 measured_parity blocks dating 2026-04-27 against `fixtures/canonical/` with aggregate_score = 1.0000), but the gate-level status field was never flipped — stale prose that this revision corrects. Also extends the assertion's `fixture_corpus_path` constraint to accept EITHER `fixtures/canonical/` (AUTHORED, since v1.2.0) OR `evidence/phase-3/captures/` (REAL-BINARY bilateral bench, companion-repo M150 — claude 2.1.139 + apr 0.32.0 + Qwen2.5-Coder-1.5B-Instruct-Q4_K_M, agreement = 1.0000 on MultiPL-E-Rust HumanEval/0..4). Adds a 4th measured_parity block under CCPA-013 recording M150's real-binary evidence as the strongest empirical discharge anchor. **CCPA-013 was the last gate stuck at `status: OPEN`** — its flip closes the OPEN residue. v1.26.0 (companion-repo M147+M152+M162 Phase 3 sequence, 2026-05-13) (companion-repo M147+M152+M162 Phase 3 sequence, 2026-05-13) — adds FALSIFY-CCPA-015 (ccpa_trace_subproc_output_purity) AND FALSIFY-CCPA-016 (outcome_parity_bound) to the gate registry. CCPA-015 was authored at M147 via provable-contract design (falsifying test FIRST, fix via Stdio::null()) for the ccpa-trace-subproc capture binary; PROPOSED in v1.25.0, promoted ACTIVE_RUNTIME here. CCPA-016 is the Phase 3 P3.4 outcome-parity gate authored at M152 — asserts aggregate agreement >= 0.5 on a MultiPL-E-Rust-class corpus with bidirectional sensitivity (synthetic regression fixture fails threshold; synthetic identity passes). CCPA-016 was empirically validated at M150 (real bilateral bench produced agreement = 1.0000 on 5/5 HumanEval/0..4 with real claude 2.1.139 + real apr code 0.32.0 via Qwen2.5-Coder-1.5B-Instruct-Q4_K_M). The companion-repo M162 row records that aprender#1638 MERGED upstream at squash b61b76b4 (2026-05-13), un-gating apr code from `--features code` so `cargo install apr-cli` ships it by default — the Axis 3 LlmDriver-adapter discharge is FULLY confirmed. v1.25.0 (companion-repo M136-M140 axis-2-closure-plan sequence, 2026-05-11) — adds FALSIFY-CCPA-014 (companion-repo M136-M140 axis-2-closure-plan sequence, 2026-05-11) — adds FALSIFY-CCPA-014 (os_event_parity_bound) to the gate registry, completing the axis-2 closure-plan idea (2) CLI subprocess instrumentation track. New gate consumes ccpa_subproc::OsEvent records (M136) via ccpa_differ::os_event_parity (M137) and asserts canonical-corpus score >= 0.95 + bidirectional sensitivity on regression corpus (M139). v1.24.0 (companion-repo M128-M131 sequence, 2026-05-10) — bumped from v1.23.0 to integrate the M109 cosine-vs-HF-FP16 LIVE-DISCHARGE (cos_sim 0.995384 ≥ 0.99 on lambda-vector RTX 4090, 2026-05-09; aprender PR #1597 squash 3fb04ef86 flipped `qwen3-moe-forward-v1` v1.4.0 ACTIVE_ALGORITHM_LEVEL → v1.5.0 ACTIVE_RUNTIME). Discharges the v1.23.0 status-prose claim "Cosine vs HF FP16 remains operator-confirm pending ~60 GB HF download" — the FP16 weights had been on lambda-vector at /mnt/nvme-raid0/models/Qwen3-Coder-30B-A3B-Instruct/ (57 GB / 16 safetensors shards) for ~7 days; the "60 GB download" blocker was stale by 62 days. v1.23.0 (M35 M32d discharge audit-trail bump) records the 4-bug stack landed on aprender main as commit 5235aaeb9 (#1228) plus diagnostic surface PRs #1222 (Step 2), #1226 (Step 2.5), #1401 (Step 2 JSON wire). M32d gibberish output ("%%%%%%%%") converted to coherent English answers across math/geography/translation/code domains. M34 FAST PATH 5-whys plan delivered at lucky-case bound (5 substantive PRs vs 4-6 estimated, ~6 hours wall vs 2-3 days). Component priors verified empirically: rank-3 Q/K RMSNorm (15%) + rank-4 rope_theta (10%) + chat template both correct. Cosine vs HF FP16 formal flip **DISCHARGED 2026-05-09 at companion-repo M109** (apr_argmax = hf_argmax = 3555 " What"; 555ms apr-forward; HF FP16 fixture generated in 52s).
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Top-level invariants — the 12 falsifiable gates this contract asserts.
@@ -507,7 +507,7 @@ falsification_conditions:
 
   - id: FALSIFY-CCPA-013
     name: first_recorded_parity_score
-    status: OPEN
+    status: ACTIVE_RUNTIME
     assertion: |
       The contract's status field reaches ACTIVE_RUNTIME if and only if
       at least one row of `status_history` contains a `measured_parity:`
@@ -518,12 +518,16 @@ falsification_conditions:
       where:
         - aggregate_score >= parity_score.thresholds.aggregate_min (0.95)
         - every per_fixture[*].score >= parity_score.thresholds.individual_min (0.80)
-        - fixture_corpus_path is `fixtures/canonical/` containing >=5
-          paired teacher/student .ccpa-trace.jsonl fixtures
-        - teacher_source documents how teachers were authored
-          (e.g. "curated canonical reference; assume Claude Code")
-        - student_source documents how students were generated
-          (e.g. "curated", or "ccpa replay vs apr code @<sha>")
+        - fixture_corpus_path is EITHER `fixtures/canonical/` (AUTHORED
+          canonical-corpus runs, since v1.2.0) OR `evidence/phase-3/captures/`
+          (REAL-BINARY bilateral bench, since v1.27.0 / companion-repo M150)
+          containing >=5 paired teacher/student records
+        - teacher_source documents how teachers were authored or captured
+          (e.g. "curated canonical reference; assume Claude Code", or
+          "real claude binary 2.1.139 on operator's host")
+        - student_source documents how students were generated or captured
+          (e.g. "curated", or "ccpa replay vs apr code @<sha>", or
+          "real apr 0.32.0 + Qwen2.5-Coder-1.5B-Instruct-Q4_K_M")
     test_harness: |
       companion-repo: `ccpa corpus fixtures/canonical/ --json` produces
       the aggregate_score + per_fixture array. The PR landing the
@@ -565,6 +569,56 @@ falsification_conditions:
           change: 'Added FALSIFY-CCPA-013. Refined status enum: ACTIVE_ALGORITHM_LEVEL ⊂ ACTIVE_RUNTIME. v1.0.0 over-claimed by labeling the 12-gate state as ACTIVE without clarifying that runtime parity was unmeasured.' }
       - { date: '2026-04-27', version_before: '1.1.0', version_after: '1.2.0',
           change: 'Dropped HTTPS-proxy / live-Claude-Code-recording requirement from FALSIFY-CCPA-013 discharge path per project policy "we will not call api, we will assume claude code". Canonical reference is now AUTHORED in fixtures/canonical/. Per-fixture student traces can be curated or generated. M2.3 proxy removed from spec.' }
+      - { date: '2026-05-14', version_before: '1.26.0', version_after: '1.27.0',
+          change: 'Flipped CCPA-013 status from OPEN → ACTIVE_RUNTIME. The assertion has been satisfied since v1.1.0 (3 measured_parity blocks dating 2026-04-27 against fixtures/canonical/), but the gate-level status field was never flipped — stale prose corrected. Also extended fixture_corpus_path constraint to accept evidence/phase-3/captures/ in addition to fixtures/canonical/, recognizing M150 real-binary bilateral bench (claude 2.1.139 + apr 0.32.0 + Qwen2.5-Coder-1.5B-Instruct-Q4_K_M; agreement = 1.0000 on MultiPL-E-Rust HumanEval/0..4) as the strongest empirical discharge anchor. New 4th measured_parity block added below this change-log entry recording the M150 evidence.' }
+
+    measured_parity:
+      date: '2026-05-12'
+      fixture_corpus_path: 'evidence/phase-3/captures/'
+      fixture_count: 5
+      aggregate_score: 1.0000
+      thresholds: { aggregate_min: 0.95, individual_min: 0.80 }
+      passes_gate: true
+      per_fixture:
+        - { id: 'HumanEval_0_has_close_elements',      score: 1.0, drift_count: 0, passes_individual: true }
+        - { id: 'HumanEval_1_separate_paren_groups',   score: 1.0, drift_count: 0, passes_individual: true }
+        - { id: 'HumanEval_2_truncate_number',         score: 1.0, drift_count: 0, passes_individual: true }
+        - { id: 'HumanEval_3_below_zero',              score: 1.0, drift_count: 0, passes_individual: true }
+        - { id: 'HumanEval_4_mean_absolute_deviation', score: 1.0, drift_count: 0, passes_individual: true }
+      teacher_source: |
+        REAL claude binary 2.1.139 invoked on operator's noah-Lambda-Vector
+        host via /home/noah/.local/bin/claude. Per-fixture invocation:
+        `claude -p "<prompt from fixtures/multipl-e-rust/<id>/prompt.txt>"`.
+        Generated Rust written to evidence/phase-3/captures/<id>/teacher.src.rs
+        as audit-trail evidence. cargo test against fixture's reference
+        Cargo.toml = PASS for all 5.
+      student_source: |
+        REAL apr-cli 0.32.0 invoked on the same host with
+        --model qwen2.5-coder-1.5b-instruct-q4_k_m.gguf --max-turns 1.
+        Per-fixture invocation: `apr code -p "<same prompt>"`. Generated
+        Rust written to evidence/phase-3/captures/<id>/student.src.rs;
+        cargo test = PASS for all 5. Companion-repo evidence:
+        evidence/phase-3/multipl-e-rust-scores.json.
+      capture_milestone: M150
+      capture_pr: 'companion-repo #136 squash 47bed37'
+      orthogonal_metrics:
+        structural_similarity_lines_jaccard: 0.5201  # M153
+        test_survival_rate_cross_swap: 1.0000        # M154 (10/10 cross-swaps pass)
+      note: |
+        Strongest empirical CCPA-013 discharge anchor. Unlike the
+        2026-04-27 measured_parity blocks (AUTHORED canonical-corpus,
+        teacher_source = "Curated canonical reference; AUTHORED, not
+        recorded"), this block records REAL bilateral capture of an
+        operator-installed claude binary AND an operator-installed apr
+        code binary on a public benchmark (MultiPL-E-Rust, Cassano et
+        al. 2022 / arXiv:2208.08227). The M2.3 rescope walked away
+        from real-teacher recording; M150 walked back to it via outcome
+        parity (claude generates code → apr code generates code → both
+        pass the same test oracle). Honest caveats live in
+        companion-repo docs/specifications/outcome-parity-results.md
+        § "What this does NOT prove" — 5-problem POC saturates at 1.0;
+        full 164-problem MultiPL-E-Rust expansion (M167+ future-work)
+        will produce a more honest pass@1 curve.
 
   - id: FALSIFY-CCPA-014
     name: os_event_parity_bound
@@ -918,6 +972,81 @@ milestones:
 # ─────────────────────────────────────────────────────────────────────────────
 
 status_history:
+  - date: '2026-05-14'
+    from: 'ACTIVE_RUNTIME v1.26.0'
+    to: 'ACTIVE_RUNTIME v1.27.0'
+    note: 'companion-repo M167 — FALSIFY-CCPA-013 flipped OPEN → ACTIVE_RUNTIME; assertion extended to accept evidence/phase-3/captures/; 4th measured_parity block records M150 real-binary bilateral bench'
+    reason: |
+      Closes the last OPEN gate in the registry. Gate-level statuses
+      post-v1.27.0: 4 ACTIVE_RUNTIME (CCPA-013/014/015/016 — the
+      runtime-evidence + outcome-parity track), rest at PLANNED_M*/
+      IN_REVIEW/HARD_BLOCKING_M16 per their lifecycle phase (NOT stale
+      — these reflect intentional phase tracking). No OPEN residue.
+
+      Context: FALSIFY-CCPA-013 (first_recorded_parity_score) was the
+      "runtime evidence" meta-gate authored at v1.1.0 (2026-04-27) —
+      its assertion says the contract reaches ACTIVE_RUNTIME iff
+      status_history contains at least one measured_parity block of
+      specified shape with aggregate_score >= 0.95 + per-fixture >= 0.80
+      against fixtures/canonical/. THREE such blocks have existed in
+      this contract since v1.1.0 (5-fixture, 30-fixture, 24-fixture
+      runs, all aggregate = 1.0000). The CONTRACT top-level status WAS
+      flipped to ACTIVE_RUNTIME at v1.20.0 / companion-repo M82 once
+      30-fixture corpus + meter validation completed; but the GATE's
+      own status field stayed at "OPEN" — stale prose that escaped
+      every prior kaizen sweep until M166 surfaced it as the last
+      gate-level OPEN.
+
+      v1.27.0 fixes this in three ways:
+
+        1. CCPA-013 `status: OPEN` → `status: ACTIVE_RUNTIME`. The
+           gate-level field now matches the structural reality
+           (assertion satisfied by 3 existing measured_parity blocks).
+
+        2. Assertion's `fixture_corpus_path` constraint extended from
+           strict `fixtures/canonical/` to EITHER that path (AUTHORED,
+           since v1.2.0) OR `evidence/phase-3/captures/` (REAL-BINARY
+           bilateral bench, companion-repo M150). teacher_source +
+           student_source descriptions updated to allow both AUTHORED
+           and REAL-CAPTURE narratives.
+
+        3. New 4th measured_parity block added recording M150's
+           bilateral bench: claude 2.1.139 + apr 0.32.0 +
+           Qwen2.5-Coder-1.5B-Instruct-Q4_K_M on the MultiPL-E-Rust
+           HumanEval/0..4 corpus, aggregate_score = 1.0000 (5/5
+           BOTH_PASS), with orthogonal metrics (M153 structural
+           Jaccard = 0.5201, M154 test-survival = 1.0000) embedded
+           for traceability. This block is the STRONGEST empirical
+           discharge anchor — the M2.3 rescope walked away from
+           real-teacher recording; M150 walked back to it via the
+           outcome-parity reframe.
+
+      Honest scoping: the 1.0 saturation on 5 easy HumanEval problems
+      is a 5-fixture POC bound; full 164-problem MultiPL-E-Rust
+      expansion (companion-repo M167+ future-work) will produce a
+      tighter pass@1 + agreement curve and may surface failure modes
+      not visible at 5 problems. ProgramBench prior art (M159,
+      arXiv:2605.03546) shows project-scale = 0% saturation across
+      Claude Opus/Sonnet/Haiku + GPT + Gemini, so the function-level
+      1.0 explicitly does not extrapolate.
+
+      Gate registry post-v1.27.0 (16 gates registered; 4 at status:
+      ACTIVE_RUNTIME — the runtime-evidence + outcome-parity track —
+      others at PLANNED_M*/IN_REVIEW/HARD_BLOCKING_M16 per their
+      lifecycle phase):
+        FALSIFY-CCPA-001..007 (M0-M5 algorithm-level; statuses vary)
+        FALSIFY-CCPA-008      (parity_score_bound, PLANNED_M6)
+        FALSIFY-CCPA-009..012 (M0+ source-of-truth invariants)
+        FALSIFY-CCPA-013      ACTIVE_RUNTIME (first_recorded_parity_score, OPEN→ACTIVE_RUNTIME at v1.27.0)
+        FALSIFY-CCPA-014      ACTIVE_RUNTIME (os_event_parity_bound, at v1.25.0)
+        FALSIFY-CCPA-015      ACTIVE_RUNTIME (ccpa_trace_subproc_output_purity, at v1.26.0)
+        FALSIFY-CCPA-016      ACTIVE_RUNTIME (outcome_parity_bound, at v1.26.0)
+
+      No new gate; no semantics change to existing assertion predicates
+      (only path-tolerance extension); no schema bump in
+      aprender-contracts/src/schema/. Pure status + measured_parity
+      addition + assertion-text refinement. pv validate clean.
+
   - date: '2026-05-13'
     from: 'ACTIVE_RUNTIME v1.25.0'
     to: 'ACTIVE_RUNTIME v1.26.0'
