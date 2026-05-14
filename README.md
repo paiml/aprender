@@ -25,18 +25,12 @@ apr pull qwen2.5-coder-1.5b
 apr run qwen2.5-coder-1.5b "What is 2+2?"
 ```
 
-> **Known Issue (SHIP-007)**: For the canonical 7B Q4K teacher
-> (`paiml/qwen2.5-coder-7b-apache-q4k-v1`), use `--no-gpu` until the
-> GPU dispatch fix lands. The CPU path produces correct mathematical
-> output (`"2 + 2 equals"`); the default GPU path currently produces
-> gibberish for this specific model. Tracked in
-> [SPEC-SHIP-TWO-001 §40](docs/specifications/aprender-train/ship-two-models-spec.md)
-> and gated by
-> [`apr-cli-model-1-ship-via-cpu-v1`](contracts/apr-cli-model-1-ship-via-cpu-v1.yaml).
->
-> ```bash
-> apr run paiml/qwen2.5-coder-7b-apache-q4k-v1 "What is 2+2?" --no-gpu
-> ```
+> **v0.33.0 — MODEL-1 SHIP % = 100%.** SHIP-007 (GPU dispatch on the
+> canonical 7B Q4K teacher) was LIVE-DISCHARGED. The default GPU path now
+> produces correct output for `paiml/qwen2.5-coder-7b-apache-q4k-v1`.
+> See the
+> [v0.33.0 release notes](https://github.com/paiml/aprender/releases/tag/v0.33.0)
+> and SPEC-SHIP-TWO-001 §65–§75 for the cascade detail.
 
 ## What is Aprender?
 
@@ -49,8 +43,8 @@ publishing — all backed by YAML provable contracts that fail CI on drift.
 | Metric | Count | Source of truth |
 |-------:|------:|---|
 | Workspace crates | **80** workspace crates | `ls crates/` |
-| Provable contracts | **1105** provable contracts | `find contracts/ -name '*.yaml'` |
-| CLI commands | **80** CLI commands | `apr --help` |
+| Provable contracts | **1134** provable contracts | `find contracts/ -name '*.yaml'` |
+| CLI commands | **82** CLI commands | `apr --help` |
 
 These numbers are enforced by [`contracts/readme-claims-v1.yaml`](contracts/readme-claims-v1.yaml).
 Drift between this table and live repo state fails `bash scripts/check_readme_claims.sh`
@@ -120,7 +114,7 @@ apr bench model.gguf --assert-tps 100
 
 ```toml
 [dependencies]
-aprender = "0.31"
+aprender = "0.33"
 ```
 
 ```rust
@@ -189,17 +183,17 @@ falsification_tests:
   prediction: apr validate bad-model.apr exits non-zero
 ```
 
-1105 contracts across inference, training, quantization, attention, FFN,
+1134 contracts across inference, training, quantization, attention, FFN,
 tokenization, model formats, CLI safety — and this README itself.
 
 ## Migration from old crates
 
 | Old | New | Status |
 |-----|-----|--------|
-| `trueno = "0.18"` | `aprender-compute = "0.31"` | Shim available |
-| `entrenar = "0.7"` | `aprender-train = "0.31"` | Shim available |
-| `realizar = "0.8"` | `aprender-serve = "0.31"` | Shim available |
-| `batuta = "0.7"` | `aprender-orchestrate = "0.31"` | Shim available |
+| `trueno = "0.18"` | `aprender-compute = "0.33"` | Shim available |
+| `entrenar = "0.7"` | `aprender-train = "0.33"` | Shim available |
+| `realizar = "0.8"` | `aprender-serve = "0.33"` | Shim available |
+| `batuta = "0.7"` | `aprender-orchestrate = "0.33"` | Shim available |
 
 Old repositories are archived. All development happens here.
 
