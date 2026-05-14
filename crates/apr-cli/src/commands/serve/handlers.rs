@@ -1008,11 +1008,35 @@ struct AprCompletionResponse {
 }
 
 fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
-    // GH-87: Try fused Q4K GPU path first (same kernels as GGUF, 190+ tok/s)
+    // GH-471: For Q4K APR models, try the pool-allocator path first. The
+    // generic OwnedQuantizedModel::from_apr() path hangs on large (17GB+ /
+    // 18k tensor) MoE models because it does per-tensor cuMemAlloc; the
+    // ALB-095/098 Q4K scheduler does a single pool cuMemAlloc and loads
+    // the same 30B Q4K MoE in ~12s vs hanging indefinitely.
+    //
+    // The Q4K path's spawn_apr_q4k_inference_thread does its own metadata
+    // validation (`parse_apr_q4k_config`) and weight-format check
+    // (`upload_apr_q4k_weights` rejects non-Q4K tensors), so passing a
+    // non-Q4K APR errors cleanly and falls through to the generic GPU path.
+    //
+    // Without `cuda-batch` feature this function is a stub that errors
+    // immediately, so the fallback chain stays identical for non-batch builds.
     #[cfg(feature = "cuda")]
     {
         let use_gpu = config.gpu && !config.no_gpu;
         if use_gpu {
+            match start_apr_q4k_server_gpu(model_path, config) {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    // Common case for non-Q4K APR — fall through quietly to
+                    // the generic GPU path (which handles dequant + small models).
+                    eprintln!(
+                        "[GH-471] Q4K pool-allocator path declined ({e}), trying generic GPU path"
+                    );
+                }
+            }
+            // GH-87: fused Q4K GPU path (same kernels as GGUF, 190+ tok/s).
+            // Handles dequantized + non-Q4K APR via OwnedQuantizedModel::from_apr.
             match start_apr_server_gpu(model_path, config) {
                 Ok(()) => return Ok(()),
                 Err(e) => {
