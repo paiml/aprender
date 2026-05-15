@@ -1,0 +1,52 @@
+{
+  "issue": "GH-696",
+  "title": "deploy: apr binary on Jetson requires GLIBC_2.39",
+  "date": "2026-05-14",
+  "verdict": "PASS",
+  "rule": "apr binary must run on Jetson (Ubuntu 22.04, aarch64, GLIBC 2.35)",
+  "build_environment": {
+    "host": "noah-Lambda-Vector (lambda-labs)",
+    "host_glibc": "GLIBC 2.39 (Ubuntu 24.04)",
+    "tool": "cargo-zigbuild 0.22.3 + zig 0.13.0",
+    "target": "aarch64-unknown-linux-gnu.2.35",
+    "features": "inference (default minus hf-hub safetensors-compare training visualization zram)",
+    "command": "cargo zigbuild -p apr-cli --release --bin apr --target aarch64-unknown-linux-gnu.2.35 --no-default-features --features inference",
+    "build_duration_seconds": 82.0
+  },
+  "binary": {
+    "path": "/mnt/nvme-raid0/targets/aprender/aarch64-unknown-linux-gnu/release/apr",
+    "size_bytes": 29914032,
+    "size_mib": 28.5,
+    "elf_format": "ELF 64-bit LSB pie executable, ARM aarch64, dynamically linked",
+    "interpreter": "/lib/ld-linux-aarch64.so.1",
+    "glibc_required_max": "GLIBC_2.29",
+    "glibc_versions_used": ["2.17", "2.18", "2.25", "2.27", "2.28", "2.29"]
+  },
+  "target_environment": {
+    "host": "jetson",
+    "kernel": "Linux 5.15.185-tegra aarch64",
+    "os": "Ubuntu 22.04.5 LTS",
+    "glibc_available": "GLIBC 2.35",
+    "headroom": "GLIBC 2.35 - 2.29 = 6 minor versions of safety margin"
+  },
+  "verification": {
+    "scp": "scp /mnt/nvme-raid0/targets/aprender/aarch64-unknown-linux-gnu/release/apr jetson:/tmp/apr",
+    "chmod": "chmod +x /tmp/apr",
+    "version_check": "/tmp/apr --version → 'apr 0.33.0 (1886f1679)'",
+    "help_check": "/tmp/apr --help works",
+    "subcommand_check": "/tmp/apr qa --help works"
+  },
+  "previous_state": "apr binary compiled against GLIBC 2.39 (lambda-labs Ubuntu 24.04 default) — failed with 'GLIBC_2.39 not found' on Jetson (GLIBC 2.35 only).",
+  "resolution": "cargo-zigbuild + zig 0.13.0 + target triple aarch64-unknown-linux-gnu.2.35 produces a binary linked against the older GLIBC ABI. zig acts as the cross-compile sysroot, bundling the older GLIBC stubs. No changes to apr source code needed.",
+  "notes": [
+    "The `.2.35` suffix on the target triple is cargo-zigbuild's syntax for pinning the GLIBC ABI floor.",
+    "Used --no-default-features --features inference to avoid feature-gated deps that don't cross-compile (training-gpu, visualization).",
+    "trueno-zram-core was excluded — would also exclude it if needed for static-only deployment.",
+    "Tested binary is the apr CLI; aprender-serve binary would build the same way."
+  ],
+  "next_steps": [
+    "Wire into CI: add `aarch64-unknown-linux-gnu.2.35` build job to release workflow",
+    "Publish as artifact: attach binary to GitHub release per platform",
+    "Document in install path: 'For Jetson / ARM SBCs, download the aarch64-linux-gnu-2.35 release artifact'"
+  ]
+}
