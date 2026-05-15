@@ -105,8 +105,22 @@ jobs:
         # = 41min, which JUST overruns 40 — observed on intel-clean-room-3 first run
         # after the refactor invalidated its sccache by changing workspace lints.
         # Warm runs are ~3-5min compile per the workflow comments above.
+        #
+        # Cancel-damage recovery (five-whys): when concurrency.cancel-in-progress
+        # cancels the previous run on the same PR mid-compile, cargo's
+        # incremental state is left inconsistent — .rmeta files exist (claiming
+        # "I'm built") but the matching .rcgu.o codegen artifacts were never
+        # written because cargo got SIGKILL'd. The persistent per-PR target
+        # dir at /mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/ preserves
+        # this damage across runs. The next run's linker then fails with:
+        #   clang: error: no such file or directory: '...rcgu.o'
+        # Fix: wrap the cargo invocation; on link-failure pattern (rcgu.o
+        # missing), `cargo clean` and retry once. Adds latency only on the
+        # damage-recovery path; warm-cache happy path unchanged.
         timeout-minutes: 55
         run: |
+          set +e
+          LOG=$(mktemp)
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
@@ -122,7 +136,38 @@ jobs:
             -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             "$IMAGE" \
-            cargo test --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute
+            cargo test --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute 2>&1 | tee "$LOG"
+          TEST_EXIT=${PIPESTATUS[0]}
+          set -e
+          if [ "$TEST_EXIT" -ne 0 ] && grep -qE 'no such file or directory.*\.rcgu\.o' "$LOG"; then
+            echo "::warning::Linker failure on stale target dir from prior cancel-in-progress run; running cargo clean + retry"
+            docker run --rm \
+              -v "${GITHUB_WORKSPACE}:/workspace" \
+              -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}:/workspace/target" \
+              -w /workspace \
+              -e CARGO_TARGET_DIR=/workspace/target \
+              "$IMAGE" \
+              cargo clean
+            docker run --rm \
+            -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+              -v "${GITHUB_WORKSPACE}:/workspace" \
+              -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+              -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}:/workspace/target" \
+              -v "/home/noah/data/sccache:/sccache" \
+              -w /workspace \
+              -e CARGO_TARGET_DIR=/workspace/target \
+              -e RUSTC_WRAPPER=rustc-sccache \
+              -e SCCACHE_DIR=/sccache \
+              -e CARGO_INCREMENTAL=0 \
+              -e CARGO_BUILD_JOBS=8 \
+              -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
+              -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+              "$IMAGE" \
+              cargo test --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute
+          elif [ "$TEST_EXIT" -ne 0 ]; then
+            echo "Non-recovery failure mode; propagating exit $TEST_EXIT"
+            exit "$TEST_EXIT"
+          fi
       - name: Compute tests (tolerate SIGSEGV at exit — all tests pass but harness crashes on cleanup)
         run: |
           docker run --rm \
