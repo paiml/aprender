@@ -590,6 +590,9 @@
             limit: 10,
             transpose_aware: false,
             json: false,
+            quant_roundtrip: false,
+            threshold: 0.95,
+            no_threshold: false,
         });
         let result = dispatch_diagnostic_commands(&cli);
         assert!(result.is_some(), "Diff should be handled by diagnostic dispatcher");
