@@ -606,4 +606,129 @@ mod tests {
         assert!(!r,
             "FALSIFY-APR-DISTILL-TRAIN-011: remote student entered real pipeline; should fall through to stub");
     }
+
+    /// FALSIFY-APR-DISTILL-TRAIN-001 (§35 real-pipeline discharge):
+    /// after `apr distill --stage train` on local SafeTensors teacher+student,
+    /// the saved student tensors MUST differ from the input student by at
+    /// least one element ≥ Q4K tolerance (0.01). The legacy stub (metadata
+    /// only, no tensor mutation) would FAIL this check; the wired pipeline
+    /// runs real KD-gradient descent and writes a mutated student.
+    ///
+    /// Predicate from contract apr-cli-distill-train-v1.yaml:
+    ///   "After `apr distill --stage train`, at least one tensor in
+    ///    student.apr differs from input student by >Q4K tolerance"
+    ///
+    /// Falsified if: max_abs_diff < 0.01 (then the pipeline is the stub,
+    /// or training collapsed to a no-op gradient step).
+    #[cfg(feature = "training")]
+    #[test]
+    fn falsify_apr_distill_train_001_real_tensors_mutate() {
+        use safetensors::tensor::{Dtype, TensorView};
+        use std::fs;
+
+        let workdir = tempfile::tempdir().expect("create tempdir");
+
+        // Teacher: 16x16 weight matrix, ramped values
+        let teacher_data: Vec<f32> = (0..256).map(|i| (i as f32) * 0.02 - 2.0).collect();
+        let teacher_bytes: Vec<u8> = bytemuck::cast_slice(&teacher_data).to_vec();
+        let teacher_views = vec![(
+            "layer.weight",
+            TensorView::new(Dtype::F32, vec![16, 16], &teacher_bytes)
+                .expect("teacher TensorView"),
+        )];
+        let teacher_path = workdir.path().join("teacher.safetensors");
+        fs::write(
+            &teacher_path,
+            safetensors::serialize(teacher_views, &None)
+                .expect("serialize teacher"),
+        )
+        .expect("write teacher");
+
+        // Student: same shape, different initialization
+        let student_data: Vec<f32> = (0..256).map(|i| (i as f32) * -0.01 + 1.0).collect();
+        let student_bytes: Vec<u8> = bytemuck::cast_slice(&student_data).to_vec();
+        let student_views = vec![(
+            "layer.weight",
+            TensorView::new(Dtype::F32, vec![16, 16], &student_bytes)
+                .expect("student TensorView"),
+        )];
+        let student_path = workdir.path().join("student.safetensors");
+        fs::write(
+            &student_path,
+            safetensors::serialize(student_views, &None)
+                .expect("serialize student"),
+        )
+        .expect("write student");
+
+        // Snapshot input student tensor for post-train comparison
+        let input_student = student_data.clone();
+
+        // apr-cli YAML config pointing at the local SafeTensors files.
+        // `dataset.path` is required by the schema but unused by the
+        // train stage (precompute consumes it).
+        let dataset_path = workdir.path().join("dataset.bin");
+        fs::write(&dataset_path, b"unused-by-train").expect("write dataset");
+
+        let output_dir = workdir.path().join("out");
+        fs::create_dir_all(&output_dir).expect("create output dir");
+
+        let yaml = format!(
+            "teacher:\n  model_id: {t}\nstudent:\n  model_id: {s}\ndistillation:\n  temperature: 4.0\n  alpha: 0.7\ntraining:\n  epochs: 2\n  batch_size: 4\n  learning_rate: 1.0e-3\ndataset:\n  path: {ds}\noutput:\n  dir: {out}\n",
+            t = teacher_path.display(),
+            s = student_path.display(),
+            ds = dataset_path.display(),
+            out = output_dir.display()
+        );
+        let cfg_path = workdir.path().join("cfg.yaml");
+        fs::write(&cfg_path, &yaml).expect("write cfg");
+
+        let cfg = DistillYamlConfig::load(&cfg_path).expect("load cfg");
+
+        // Real pipeline path: student exists locally → returns Ok(true).
+        let ran_real = super::run_config_train_real(&cfg, &cfg_path, true)
+            .expect("real pipeline must not error on valid local fixture");
+        assert!(
+            ran_real,
+            "FALSIFY-APR-DISTILL-TRAIN-001: real pipeline did not run despite local student fixture"
+        );
+
+        // Output lands at <output>/student/model.safetensors per translator
+        let out_path = output_dir.join("student").join("model.safetensors");
+        assert!(
+            out_path.exists(),
+            "FALSIFY-APR-DISTILL-TRAIN-001: expected trained student at {} but file is absent",
+            out_path.display()
+        );
+
+        // Load output student tensors and compare to input student
+        let out_bytes = fs::read(&out_path).expect("read output student");
+        let out_safetensors =
+            safetensors::SafeTensors::deserialize(&out_bytes).expect("deserialize output");
+        let out_view = out_safetensors
+            .tensor("layer.weight")
+            .expect("output must contain 'layer.weight'");
+        let out_floats: &[f32] = bytemuck::cast_slice(out_view.data());
+
+        assert_eq!(
+            out_floats.len(),
+            input_student.len(),
+            "FALSIFY-APR-DISTILL-TRAIN-001: output tensor element count {} != input {}",
+            out_floats.len(),
+            input_student.len()
+        );
+
+        let max_diff = out_floats
+            .iter()
+            .zip(input_student.iter())
+            .map(|(o, i)| (o - i).abs())
+            .fold(0.0_f32, f32::max);
+
+        // Q4K tolerance: 0.01 — any real gradient step on a non-degenerate
+        // KD loss must mutate at least one element by more than this.
+        const Q4K_TOLERANCE: f32 = 0.01;
+        assert!(
+            max_diff > Q4K_TOLERANCE,
+            "FALSIFY-APR-DISTILL-TRAIN-001: max |output - input| = {max_diff:.6} ≤ Q4K tolerance {Q4K_TOLERANCE} — pipeline is a stub or gradient step is a no-op"
+        );
+    }
 }
