@@ -76,7 +76,9 @@ fn save_yaml(model: &Model, path: &Path) -> Result<()> {
 /// ALB-086: Infer tensor shapes using config-aware batch analysis.
 /// Scans all parameters to find hidden_size from norm weights, then
 /// computes proper 2D shapes for all weight matrices.
-fn infer_all_tensor_shapes(parameters: &[(String, Tensor)]) -> HashMap<String, Vec<usize>> {
+pub(crate) fn infer_all_tensor_shapes(
+    parameters: &[(String, Tensor)],
+) -> HashMap<String, Vec<usize>> {
     let mut shapes = HashMap::new();
 
     // Find hidden_size from a norm weight (always 1D [H])
