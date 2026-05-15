@@ -187,7 +187,7 @@ fn test_build_tokenizer_gguf_metadata_pre_type_gpt2() {
         ..Default::default()
     };
 
-    let metadata = build_tokenizer_gguf_metadata(&tok, "gpt2", "gpt2-model");
+    let metadata = build_tokenizer_gguf_metadata(&tok, "gpt2", "gpt2-model", 0);
 
     let pre_val = metadata
         .iter()
@@ -209,7 +209,7 @@ fn test_build_tokenizer_gguf_metadata_pre_type_llama_default() {
         ..Default::default()
     };
 
-    let metadata = build_tokenizer_gguf_metadata(&tok, "llama", "model");
+    let metadata = build_tokenizer_gguf_metadata(&tok, "llama", "model", 0);
 
     let pre_val = metadata
         .iter()
@@ -231,7 +231,7 @@ fn test_build_tokenizer_gguf_metadata_preserves_roundtrip_pre_type() {
         ..Default::default()
     };
 
-    let metadata = build_tokenizer_gguf_metadata(&tok, "llama", "model");
+    let metadata = build_tokenizer_gguf_metadata(&tok, "llama", "model", 0);
 
     let pre_val = metadata
         .iter()

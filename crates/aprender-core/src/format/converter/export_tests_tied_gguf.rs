@@ -193,7 +193,7 @@ fn test_build_tokenizer_gguf_metadata_with_full_tokenizer() {
         scores: Vec::new(),
     };
 
-    let metadata = build_tokenizer_gguf_metadata(&tok, "qwen2", "model");
+    let metadata = build_tokenizer_gguf_metadata(&tok, "qwen2", "model", 0);
 
     let keys: Vec<&str> = metadata.iter().map(|(k, _)| k.as_str()).collect();
     assert!(keys.contains(&"tokenizer.ggml.model"));
@@ -224,7 +224,7 @@ fn test_build_tokenizer_gguf_metadata_without_optional_fields() {
         scores: Vec::new(),
     };
 
-    let metadata = build_tokenizer_gguf_metadata(&tok, "llama", "model");
+    let metadata = build_tokenizer_gguf_metadata(&tok, "llama", "model", 0);
 
     // Should have model and pre, but no bos/eos/tokens/merges
     let keys: Vec<&str> = metadata.iter().map(|(k, _)| k.as_str()).collect();
@@ -234,6 +234,162 @@ fn test_build_tokenizer_gguf_metadata_without_optional_fields() {
     assert!(!keys.contains(&"tokenizer.ggml.eos_token_id"));
     assert!(!keys.contains(&"tokenizer.ggml.tokens"));
     assert!(!keys.contains(&"tokenizer.ggml.merges"));
+}
+
+// ========================================================================
+// P0-G: tokenizer.ggml.tokens padding to vocab_size
+// ========================================================================
+
+#[test]
+fn test_p0g_pad_tokens_to_vocab_size() {
+    use crate::format::gguf::{GgufTokenizer, GgufValue};
+
+    let tok = GgufTokenizer {
+        vocabulary: vec!["a".into(), "b".into(), "c".into()],
+        merges: vec![],
+        model_type: Some("gpt2".into()),
+        bos_token_id: Some(0),
+        eos_token_id: Some(1),
+        architecture: None,
+        model_name: None,
+        token_type: vec![],
+        padding_token_id: None,
+        add_bos_token: None,
+        chat_template: None,
+        pre_type: None,
+        scores: Vec::new(),
+    };
+
+    let metadata = build_tokenizer_gguf_metadata(&tok, "qwen2", "model", 8);
+
+    let tokens_val = metadata
+        .iter()
+        .find(|(k, _)| k == "tokenizer.ggml.tokens")
+        .map(|(_, v)| v)
+        .expect("tokens metadata key");
+
+    match tokens_val {
+        GgufValue::ArrayString(arr) => {
+            assert_eq!(arr.len(), 8, "should pad to vocab_size=8");
+            assert_eq!(arr[0], "a");
+            assert_eq!(arr[1], "b");
+            assert_eq!(arr[2], "c");
+            assert_eq!(arr[3], "<|pad_3|>");
+            assert_eq!(arr[7], "<|pad_7|>");
+        }
+        _ => panic!("tokens should be ArrayString"),
+    }
+}
+
+#[test]
+fn test_p0g_no_pad_when_vocab_size_zero() {
+    use crate::format::gguf::{GgufTokenizer, GgufValue};
+
+    let tok = GgufTokenizer {
+        vocabulary: vec!["a".into(), "b".into()],
+        merges: vec![],
+        model_type: Some("gpt2".into()),
+        bos_token_id: None,
+        eos_token_id: None,
+        architecture: None,
+        model_name: None,
+        token_type: vec![],
+        padding_token_id: None,
+        add_bos_token: None,
+        chat_template: None,
+        pre_type: None,
+        scores: Vec::new(),
+    };
+
+    let metadata = build_tokenizer_gguf_metadata(&tok, "qwen2", "model", 0);
+
+    let tokens_val = metadata
+        .iter()
+        .find(|(k, _)| k == "tokenizer.ggml.tokens")
+        .map(|(_, v)| v)
+        .expect("tokens metadata key");
+
+    match tokens_val {
+        GgufValue::ArrayString(arr) => {
+            assert_eq!(arr.len(), 2, "no padding when vocab_size=0");
+            assert_eq!(arr[0], "a");
+            assert_eq!(arr[1], "b");
+        }
+        _ => panic!("tokens should be ArrayString"),
+    }
+}
+
+#[test]
+fn test_p0g_no_pad_when_vocab_size_equals_tokens() {
+    use crate::format::gguf::{GgufTokenizer, GgufValue};
+
+    let tok = GgufTokenizer {
+        vocabulary: vec!["a".into(), "b".into(), "c".into()],
+        merges: vec![],
+        model_type: Some("gpt2".into()),
+        bos_token_id: None,
+        eos_token_id: None,
+        architecture: None,
+        model_name: None,
+        token_type: vec![],
+        padding_token_id: None,
+        add_bos_token: None,
+        chat_template: None,
+        pre_type: None,
+        scores: Vec::new(),
+    };
+
+    let metadata = build_tokenizer_gguf_metadata(&tok, "qwen2", "model", 3);
+
+    let tokens_val = metadata
+        .iter()
+        .find(|(k, _)| k == "tokenizer.ggml.tokens")
+        .map(|(_, v)| v)
+        .expect("tokens metadata key");
+
+    match tokens_val {
+        GgufValue::ArrayString(arr) => {
+            assert_eq!(arr.len(), 3);
+            assert!(arr.iter().all(|t| !t.starts_with("<|pad_")));
+        }
+        _ => panic!("tokens should be ArrayString"),
+    }
+}
+
+#[test]
+fn test_p0g_no_pad_when_vocab_size_smaller() {
+    use crate::format::gguf::{GgufTokenizer, GgufValue};
+
+    let tok = GgufTokenizer {
+        vocabulary: vec!["a".into(), "b".into(), "c".into(), "d".into()],
+        merges: vec![],
+        model_type: Some("gpt2".into()),
+        bos_token_id: None,
+        eos_token_id: None,
+        architecture: None,
+        model_name: None,
+        token_type: vec![],
+        padding_token_id: None,
+        add_bos_token: None,
+        chat_template: None,
+        pre_type: None,
+        scores: Vec::new(),
+    };
+
+    let metadata = build_tokenizer_gguf_metadata(&tok, "qwen2", "model", 2);
+
+    let tokens_val = metadata
+        .iter()
+        .find(|(k, _)| k == "tokenizer.ggml.tokens")
+        .map(|(_, v)| v)
+        .expect("tokens metadata key");
+
+    match tokens_val {
+        GgufValue::ArrayString(arr) => {
+            assert_eq!(arr.len(), 4, "do not truncate when vocab_size < tokens (would lose data)");
+        }
+        _ => panic!("tokens should be ArrayString"),
+    }
 }
 
 // ========================================================================
@@ -350,7 +506,7 @@ fn test_append_tokenizer_prefers_json_over_apr_fallback() {
         serde_json::json!(["x", "y"]),
     );
 
-    append_tokenizer_to_metadata(&mut metadata, Some(&tok), Some(&apr), "qwen2", "model", &input);
+    append_tokenizer_to_metadata(&mut metadata, Some(&tok), Some(&apr), "qwen2", "model", 0, &input);
 
     // Should have tokenizer metadata from the GgufTokenizer, not APR
     let keys: Vec<&str> = metadata.iter().map(|(k, _)| k.as_str()).collect();
@@ -372,7 +528,7 @@ fn test_append_tokenizer_uses_apr_fallback_when_no_json() {
     apr.custom
         .insert("tokenizer.model".to_string(), serde_json::json!("gpt2"));
 
-    append_tokenizer_to_metadata(&mut metadata, None, Some(&apr), "qwen2", "model", &input);
+    append_tokenizer_to_metadata(&mut metadata, None, Some(&apr), "qwen2", "model", 0, &input);
 
     let keys: Vec<&str> = metadata.iter().map(|(k, _)| k.as_str()).collect();
     assert!(
@@ -391,7 +547,7 @@ fn test_append_tokenizer_no_metadata_when_neither_source() {
     let dir = tempfile::tempdir().expect("temp dir");
     let input = dir.path().join("dummy.safetensors");
 
-    append_tokenizer_to_metadata(&mut metadata, None, None, "qwen2", "model", &input);
+    append_tokenizer_to_metadata(&mut metadata, None, None, "qwen2", "model", 0, &input);
 
     // Should have no tokenizer metadata entries
     let tok_keys: Vec<&str> = metadata
