@@ -313,6 +313,15 @@ pub enum Commands {
         #[arg(value_name = "FILE")]
         file: PathBuf,
     },
+    /// Emit a SHA-256 manifest of input files (CRUX-G-05)
+    Manifest {
+        /// Files to include in the manifest (one entry per file)
+        #[arg(value_name = "FILES", num_args = 1..)]
+        files: Vec<PathBuf>,
+        /// Output JSON manifest path
+        #[arg(short, long, value_name = "MAN_JSON")]
+        output: PathBuf,
+    },
     /// Explain errors, architecture, tensors, and kernel dispatch
     Explain {
         /// Error code, model file path, or family name (auto-detected)
