@@ -25,6 +25,9 @@ impl Architecture {
             Self::Moonshine => Self::whisper_map_name(source_name), // Audio model, strip model. prefix
             Self::Mamba => Self::auto_map_name(source_name),     // SSM: mixer.* naming, passthrough
             Self::Rwkv7 => Self::auto_map_name(source_name),     // Recurrence: rwkv.blocks.* naming, passthrough
+            // GH-1587: Falcon classic uses `transformer.h.N.*` naming with
+            // fused QKV (single MQ head in 7B, MGQA in 40B+).
+            Self::FalconClassic => Self::falcon_classic_map_name(source_name),
         }
     }
 
@@ -59,6 +62,7 @@ impl Architecture {
                 | Self::Mamba
                 | Self::OpenElm
                 | Self::Rwkv7
+                | Self::FalconClassic
         )
     }
 
@@ -104,6 +108,7 @@ impl Architecture {
             Self::Moonshine => "Moonshine",
             Self::OpenElm => "OpenELM",
             Self::Rwkv7 => "RWKV-7",
+            Self::FalconClassic => "Falcon",
         }
     }
 
@@ -144,6 +149,10 @@ impl Architecture {
             // GH-1591 OLMo / GH-1592 StableLM added here as Llama-family
             "smollm" | "smollm2" | "granite" | "granite3" | "nemotron" | "olmo" | "olmo2"
             | "stablelm" | "stablelm_epoch" | "stablelm_alpha" => Some(Self::Llama),
+            // GH-1587: Falcon classic — distinct from FalconH1 (hybrid SSM).
+            "falcon" | "falcon7b" | "falcon40b" | "falcon11b" | "refinedweb" => {
+                Some(Self::FalconClassic)
+            },
             _ => None,
         }
     }
@@ -311,6 +320,73 @@ impl Architecture {
             "model.decoder.embed_positions.weight" => "model.position_embedding.weight".to_string(),
             "model.decoder.final_layer_norm.weight" => "model.norm.weight".to_string(),
             "model.decoder.final_layer_norm.bias" => "model.norm.bias".to_string(),
+            "lm_head.weight" => "lm_head.weight".to_string(),
+            _ => name.to_string(),
+        }
+    }
+
+    /// GH-1587: Map Falcon classic tensor names to APR canonical format.
+    ///
+    /// Falcon (`FalconForCausalLM`, both 7B/40B/11B and RefinedWeb variants)
+    /// uses HuggingFace `transformer.h.N.*` naming with:
+    /// - Fused QKV (`self_attention.query_key_value`), either MQA (single
+    ///   K/V head, 7B) or MGQA (8 K/V groups, 40B)
+    /// - RoPE position encoding (no positional-embedding tensor)
+    /// - Parallel attn+mlp residuals (40B+ has separate norms; 7B uses one)
+    /// - LayerNorm (Falcon-7B has a single `input_layernorm` per block; 40B+
+    ///   has both `ln_attn` and `ln_mlp`)
+    ///
+    /// HuggingFace → APR mapping:
+    /// - `transformer.word_embeddings.weight`           → `model.embed_tokens.weight`
+    /// - `transformer.h.N.input_layernorm.{w,b}`        → `model.layers.N.input_layernorm.{w,b}`
+    /// - `transformer.h.N.ln_attn.{w,b}` (40B)          → `model.layers.N.input_layernorm.{w,b}`
+    /// - `transformer.h.N.ln_mlp.{w,b}` (40B)           → `model.layers.N.post_attention_layernorm.{w,b}`
+    /// - `transformer.h.N.self_attention.query_key_value.{w,b}` → `model.layers.N.self_attn.qkv_proj.{w,b}` (fused)
+    /// - `transformer.h.N.self_attention.dense.{w,b}`   → `model.layers.N.self_attn.o_proj.{w,b}`
+    /// - `transformer.h.N.mlp.dense_h_to_4h.{w,b}`      → `model.layers.N.mlp.up_proj.{w,b}`
+    /// - `transformer.h.N.mlp.dense_4h_to_h.{w,b}`      → `model.layers.N.mlp.down_proj.{w,b}`
+    /// - `transformer.ln_f.{w,b}`                       → `model.norm.{w,b}`
+    /// - `lm_head.weight`                               → `lm_head.weight`
+    fn falcon_classic_map_name(name: &str) -> String {
+        if let Some(rest) = name.strip_prefix("transformer.h.") {
+            if let Some(dot_pos) = rest.find('.') {
+                let layer_num = &rest[..dot_pos];
+                let suffix = &rest[dot_pos + 1..];
+
+                let apr_suffix = match suffix {
+                    // Falcon-7B: single layernorm per block
+                    "input_layernorm.weight" => "input_layernorm.weight",
+                    "input_layernorm.bias" => "input_layernorm.bias",
+                    // Falcon-40B: separate attn + mlp layernorms
+                    "ln_attn.weight" => "input_layernorm.weight",
+                    "ln_attn.bias" => "input_layernorm.bias",
+                    "ln_mlp.weight" => "post_attention_layernorm.weight",
+                    "ln_mlp.bias" => "post_attention_layernorm.bias",
+                    // Older single post_attention_layernorm (some variants)
+                    "post_attention_layernorm.weight" => "post_attention_layernorm.weight",
+                    "post_attention_layernorm.bias" => "post_attention_layernorm.bias",
+                    // Fused QKV — kept fused; splitter at conversion layer handles
+                    // the MQA/MGQA-specific Q/K/V layout.
+                    "self_attention.query_key_value.weight" => "self_attn.qkv_proj.weight",
+                    "self_attention.query_key_value.bias" => "self_attn.qkv_proj.bias",
+                    "self_attention.dense.weight" => "self_attn.o_proj.weight",
+                    "self_attention.dense.bias" => "self_attn.o_proj.bias",
+                    "mlp.dense_h_to_4h.weight" => "mlp.up_proj.weight",
+                    "mlp.dense_h_to_4h.bias" => "mlp.up_proj.bias",
+                    "mlp.dense_4h_to_h.weight" => "mlp.down_proj.weight",
+                    "mlp.dense_4h_to_h.bias" => "mlp.down_proj.bias",
+                    other => other,
+                };
+
+                return format!("model.layers.{layer_num}.{apr_suffix}");
+            }
+        }
+
+        // Non-layer tensors
+        match name {
+            "transformer.word_embeddings.weight" => "model.embed_tokens.weight".to_string(),
+            "transformer.ln_f.weight" => "model.norm.weight".to_string(),
+            "transformer.ln_f.bias" => "model.norm.bias".to_string(),
             "lm_head.weight" => "lm_head.weight".to_string(),
             _ => name.to_string(),
         }
