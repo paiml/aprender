@@ -1,0 +1,26 @@
+{
+  "file": "/mnt/nvme-raid0/runs/model-2-from-scratch-006-50k-tuned/ckpt/epoch-002.apr",
+  "valid": true,
+  "format": "APR v2",
+  "version": "2.0",
+  "tensor_count": 219,
+  "size_bytes": 1494053060,
+  "checksum_valid": true,
+  "architecture": "LlamaForCausalLM",
+  "flags": {
+    "lz4_compressed": false,
+    "zstd_compressed": false,
+    "encrypted": false,
+    "signed": false,
+    "sharded": false,
+    "quantized": false,
+    "has_vocab": false
+  },
+  "metadata": {
+    "name": "llama-370m-pretrain",
+    "license": null,
+    "data_source": null,
+    "data_license": null,
+    "architecture": "LlamaForCausalLM"
+  }
+}
