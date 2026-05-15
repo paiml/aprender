@@ -188,3 +188,5 @@ mod export_tests_e2e_gguf;
 mod export_tests_arch_metadata;
 #[path = "export_tests_unfuse_with_metadata.rs"]
 mod export_tests_unfuse_with_metadata;
+#[path = "export_tests_arch_case_mapping.rs"]
+mod export_tests_arch_case_mapping;
