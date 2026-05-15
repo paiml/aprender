@@ -1,7 +1,8 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 3.24.0
+**Version:** 3.27.0
+**Atomic next action (v3.27.0):** **📚 §79 + §80 + §81 — audit retrospective + prioritized backlog + P0 packaging-gap surfacing (2026-05-15)** (see new §79/§80/§81 below). Triple-amendment captures the §78 → §80 dispatch arc that revealed a Class 3 packaging-defect wave in `apr pretrain` output. §79 synthesizes [`docs/specifications/two-model-spec-audit.md`](../two-model-spec-audit.md) with Five-Whys for Cases A/B/C and methodology lesson #26 (three-class root-cause taxonomy: data starvation / optimization defects / infrastructure masking). §80 ranks all open SHIP-TWO-001 work by ship-% delta ÷ effort: P0 trio + P1 Chinchilla gate + P1 python validity + P1 HumanEval + P2-A long train = MODEL-2 ceiling 92% at ~6-10h compute. §81 surfaces three `apr pretrain` output metadata gaps discovered when dispatching §80's P0 trio: missing embedded tokenizer (blocks `apr qa`), missing arch metadata keys (blocks `apr bench`), HF→GGUF arch case mismatch (blocks llama-cli). Companion code PRs #1699 (P0-F arch case) and #1701 (P0-D embed tokenizer + P0-E arch metadata) close all three. **Methodology lessons #26-28 NEW**: three-class root-cause taxonomy / prioritize by ship-% delta ÷ effort / Class 3 defects come in waves (training works ≠ checkpoint is usable). **MODEL-1 ship %**: 100%. **MODEL-2 ship %**: 75% (unchanged in this PR; will move to 77% on #1701 merge via AC-SHIP2-010 DISCHARGED at 315.5 tok/s).
 **Atomic next action (v3.24.0):** **🎯 §78 — 5g.2 CONVERGED — MODEL-2 fine-tune from Qwen-0.5B init produces val_loss=5.36 on 500 steps / 8 min GPU; §34 ceiling broken by 4.02pp; MODEL-2 ship % 57% → 75% (2026-05-15)** (see new §78 below). After §77 retroactively discovered 5g.1 was already complete, 5g.2 was dispatched on RTX 4090 with the canonical Qwen-0.5B init + qwen-v2 corpus. Convergence trajectory: 6.53 → 6.30 → 5.93 → 5.55 → **5.36** val_loss across 5 epochs / 500 steps / 8 min wall. 5 APR checkpoints produced, all integrity-valid (291 tensors / Llama / checksum_valid). **Compared to §49's same-step from-scratch baseline (val_loss=9.73): 44.9% loss reduction — §49 pivot empirically validated.** Discharges AC-SHIP2-003 (vs §34 ceiling), AC-SHIP2-004 (8 min ≪ 21 days), AC-SHIP2-005 (5 valid checkpoints). Newly operator-dispatchable: AC-SHIP2-006/007/008/009/010 against `epoch-004.apr`. **Methodology lesson #25 NEW**: pretrained-init fine-tune dominates from-scratch on small compute (44.9% loss reduction same-budget). First MODEL-2 ship-% movement since §22 (twenty-one days, fifty-six amendments). **MODEL-1 ship %**: 100%. **MODEL-2 ship %**: **57% → 75%**.
 **Atomic next action (v3.23.0):** **🔍 §77 — 5g.1 RETROACTIVELY DISCOVERED COMPLETE; MODEL-2 ship-blocker reduced to 5g.2 GPU dispatch (2026-05-15)** (see new §77 below). Live audit on 2026-05-15 finds `/mnt/nvme-raid0/data/codeparrot-python-permissive-shards-qwen-v2/` contains 125 shards / 1,241,692,519 tokens / 4,966,770,076 bytes — byte-exact integrity verified (tokens × 4 = bytes, u32 LE). Manifest confirms NFC + between-doc EOS + Qwen vocab + 405,904 documents from the permissive corpus. **5g.1 has been DONE since ~2026-05-05** but never recorded as complete in twenty subsequent spec amendments. The cascade was always blocked on 5g.3, not on 5g.1. 5g.2 (500-step fine-tune dispatch) is now operator-dispatchable today — all three prerequisites confirmed on disk: Qwen-tokenized corpus, Qwen tokenizer dir, Qwen-0.5B init APR. **Methodology lesson #24 NEW**: mid-run progress logs are not completion records; manifest.json is the contract for "done". **MODEL-1 ship %**: 100%. **MODEL-2 ship %**: unchanged at **57%** (this is a status-discovery, not an evidence-of-training; the flip is gated on 5g.3 verdict).
 **Atomic next action (v3.22.0):** **🚢 §76 — v0.33.0 cascade PUBLISHED — MODEL-1 in users' hands; 24 crates live on crates.io; /dogfood verdict GO (2026-05-14)** (see new §76 below). 24-crate topological cascade (contracts-macros → core → gpu → compute → serve → train → apr-cli → aprender root) all published to crates.io. `cargo install aprender --force --locked` from registry produces `apr 0.33.0` that runs SHIP-007 fix end-to-end (`apr run` "What is 2+2?" → "4" on 1.5B teacher). /dogfood 12-gate audit on installed binary: **all gates GO, zero FAILs**. Two production-blockers surfaced + closed in flight: PR #1670 (`cc 1.2.59 → 1.2.62` lockfile bump for rustc 1.93.0 — `cargo publish` re-resolves Cargo.lock during verify, ignoring workspace lock; **methodology lesson #23 NEW**: use `--locked` on every publish or bump-before-cascade); `make publish` `.cargo/config.toml` backup race on parallel invocations (mitigated by serialization; Makefile fix deferred). Companion PR #1672 brings README/book/CLAUDE.md in sync (counts 1105→1134, 80→82; SHIP-007 known-issue warning retired). Closes `feedback_post_publish_qa_required.md` requirement (v0.31.1 yank lesson). **MODEL-1 ship %**: 100% (CODE) → **100% (USERS)** — milestone moves from "shipped in code" to "shipped to users." **MODEL-2 ship %**: unchanged at **57%** (independent track; v0.33.0 carries no MODEL-2 movement).
@@ -5602,6 +5603,373 @@ Evidence:
 - `evidence/section-77-5g1-complete-2026-05-15/qwen-v2-manifest.json` — captured copy of the on-disk manifest
 
 ---
+
+## §79. External audit + Five-Whys retrospective on MODEL-2 convergence failures (2026-05-15)
+
+An external audit ([`docs/specifications/two-model-spec-audit.md`](../two-model-spec-audit.md)) analyzed the spec's months-long failure to converge MODEL-2. §79 records the audit's findings, runs Five-Whys on each failure mode, and reconciles the audit's recommendations against the §78 empirical resolution.
+
+### 79.1 The audit's verdict (literature-grounded)
+
+The audit identified **three compounding root causes** for why MODEL-2 sat at val_loss=9.75 across multiple training campaigns from §22 (2026-04-26) through §49 (2026-05-04):
+
+| # | Root cause | Mechanism |
+|---|-----------|-----------|
+| 1 | **Data starvation** | 370M-param model trained on 18.1M token corpus (CodeSearchNet-Python). Chinchilla optimal would be ~7.4B tokens (Hoffmann et al. 2022, arXiv:2203.15556). Actual was **0.24% of optimal**. |
+| 2 | **False plateau hypothesis** | Spec tried scaling steps 20k→80k on the 4× corpus (74.3M tokens). val_loss stayed at 9.7507 (§24) vs 9.7513 (§22). LR-budget hypothesis FALSIFIED. Diversity is the binding constraint. |
+| 3 | **Infrastructure masking bugs** | Silent CPU fallback, corpus-exhaustion `(1.0, 1.0)` placeholder, premature early-stop, all hid the data-starvation signal under noise. |
+
+Memorization signature: train_loss=9.46 vs val_loss=8.91 (val < train) — a known artifact of corpus wrapping (9.1× wraps) producing memorized substrings in held-out sequences (Lee et al. 2021, arXiv:2107.06499).
+
+### 79.2 Five-Whys: Case A — silent corpus exhaustion (§22 root cause #1)
+
+Observation: 5K-step training run showed `train_loss` dropping from ~9.9 to exactly `1.0` in <1s at epoch 3.
+
+| Why | Answer |
+|-----|--------|
+| 1 | Why did loss drop to 1.0 instantly? | `Cuda*StepFn::step` returned a placeholder `(1.0, 1.0)` loss tuple. |
+| 2 | Why a placeholder? | To avoid NaN misfires that would trip `INV-TRAIN-007` (no-NaN invariant). |
+| 3 | Why would there be a NaN? | Because `ShardBatchIter::next()` returned `None` — empty batch to forward pass. |
+| 4 | Why did `next()` return `None`? | The small CSN-Python corpus (18.1M tokens) was completely exhausted after 3 epochs. |
+| 5 | Why didn't the iterator wrap around? | `ShardBatchIter` lacked wrap-around logic that PyTorch/HF pipelines treat as default. |
+
+**Fix**: `with_wrap_around(true)` opt-in on `ShardBatchIter` (PR #1073 first commit).
+
+### 79.3 Five-Whys: Case B — premature early stopping (§22 root cause #2)
+
+Observation: 50K-step run aborted at epoch 5 despite `train_loss` monotonically decreasing.
+
+| Why | Answer |
+|-----|--------|
+| 1 | Why did training stop? | Early-stop patience trigger fired. |
+| 2 | Why did the trigger fire? | `val_loss` fluctuated upward for 2 consecutive epochs. |
+| 3 | Why did `val_loss` fluctuate while `train_loss` decreased? | Validation noise floor was too high. |
+| 4 | Why was the noise floor high? | Validation evaluated on only `HELD_OUT_BATCHES = 2` (16,384 tokens). |
+| 5 | Why was the validation set that small? | The default config inherited the smoke-test setting; no one revisited it for real training scale. |
+
+**Fix**: `HELD_OUT_BATCHES` 2 → 16 (131,072 tokens) + `patience_epochs` 2 → 5 (PR #1073 second commit).
+
+### 79.4 Five-Whys: Case C — val_loss=9.75 plateau on 74M tokens (§24/§34)
+
+Observation: 4× corpus (74.3M tokens) + 4× steps (80k) plateaued at val_loss=9.7507 (vs 9.7513 baseline). No improvement.
+
+| Why | Answer |
+|-----|--------|
+| 1 | Why didn't loss decrease with more steps? | The model had already fit the available signal in the corpus. |
+| 2 | Why was the signal exhausted at 74M tokens for a 370M model? | Chinchilla scaling laws require ~20 tokens/param for compute-optimal training. 74M / 370M = 0.2 tokens/param — 100× under-provisioned. |
+| 3 | Why didn't the existing falsifier catch this earlier? | The val_loss target (3.0) was set assuming Chinchilla-scale data would be provided; the contract didn't gate on `min_corpus_tokens`. |
+| 4 | Why was the data-provisioning gate missing? | The spec optimized for training-loop correctness (NaN guards, deterministic seeds, GATE-TRAIN-*) without a parallel gate on data sufficiency. |
+| 5 | Why was data sufficiency under-engineered? | The "from-scratch" framing inherited assumptions from LLaMA-1 scale (1T+ tokens trivially available) without explicit empirical validation for a 370M-class artisanal corpus. |
+
+**Fix**: §49 pivot — initialize from a public pretrained checkpoint (Qwen-0.5B at val_loss ~2-3 already) and fine-tune on the existing corpus. The pretrained init carries 1T tokens of prior signal; fine-tuning shifts the distribution at low compute cost. §78 empirically validated this: 500 steps, 8 min, val_loss 9.73 (from-scratch baseline) → **5.36 (Qwen init + same compute)** = 44.9% reduction.
+
+### 79.5 How §78 reconciles with audit Recommendations
+
+The audit (written before §78 landed) made three engineering recommendations:
+
+| # | Audit recommendation | §78 resolution | Status |
+|---|---------------------|----------------|--------|
+| 1 | Cease tuning; ingest data until ≥2B tokens for MODEL-2 from-scratch | §78 used 1.24B tokens (qwen-v2 corpus) + **pretrained Qwen-0.5B init**. Pivot to fine-tune dominated the "more data from-scratch" path on 8 min of compute. | ✅ SUPERSEDED by §49 pivot |
+| 2 | Isolate SHIP-007 `ffn_swigl` bug via `OwnedQuantizedModel::forward_traced` GGUF dump | Independently resolved by §74/§75 (PR-B stage bisection + F32 GEMV PTX layout fix). The root cause was NOT layer-3 FFN — it was transposed lm_head F32 GEMV. | ✅ RESOLVED via different bisection path |
+| 3 | Add auto wrap-around-threshold safety check in `apr pretrain` | Not implemented as a hard gate. Still recommended — would prevent §22's memorization signature from recurring. | ⏳ OPEN follow-up |
+
+The audit's Recommendation 1 is the most important finding. §49's pivot achieved the same goal — break the data ceiling — via a fundamentally cheaper route (pretrained-init fine-tune). The audit framed the problem as "need more data" (true); §49 reframed it as "use pretrained data" (also true, dramatically cheaper). Both paths break the §34 ceiling.
+
+### 79.6 Methodology lesson #26 (NEW)
+
+**Three-class root-cause categorization for ML convergence failures.** The audit cleanly separates:
+1. **Data starvation** (Chinchilla-class) — the model can't generalize because the corpus is too small. Fix: more data OR pretrained init.
+2. **Optimization defects** (LR/warmup/early-stop) — the training loop has correctness bugs that hide the data-starvation signal.
+3. **Infrastructure masking** (silent fallbacks, placeholder losses, NaN guards) — bugs in the training plumbing that produce false positives or false negatives on the convergence metric.
+
+Treating all three as "training is broken" wastes weeks. Diagnose which class is binding FIRST. §22 burned ~3 sessions on class 3 (infrastructure) before realizing class 1 (data) was the actual blocker.
+
+### 79.7 Open follow-ups from the audit
+
+| # | Follow-up | Priority | Estimated effort |
+|---|-----------|----------|------------------|
+| 1 | Implement `min_corpus_tokens` gate per Chinchilla — refuse `apr pretrain --mode from-scratch` if `dataset.total_tokens < 4 × model.param_count` | High | ~30 LOC + 2 tests |
+| 2 | Add `apr pretrain --warn-on-wrap-around` flag — warn when expected wrap-around > 4× during training | Med | ~50 LOC + integration test |
+| 3 | Cite arXiv:2203.15556 (Chinchilla) + arXiv:2107.06499 (Dedup) in `contracts/training-loop-pretrain-v1.yaml` `references` block | Low | YAML edit |
+
+### 79.8 Cumulative methodology lessons through §79
+
+| # | Lesson |
+|---|--------|
+| 6-25 | (see §78) |
+| **26** | **Three-class root-cause categorization for ML convergence failures: data starvation / optimization defects / infrastructure masking. Diagnose which class is binding before tuning anything.** |
+
+### 79.9 Ship-% movement
+
+§79 is a retrospective + audit-synthesis amendment. It does NOT move ship %.
+
+- **MODEL-1 ship %**: 100% (unchanged)
+- **MODEL-2 ship %**: 75% (unchanged from §78; §79 explains why we got here)
+
+Spec v3.24.0 → **v3.25.0** (depends on §78's v3.24.0 landing first; if §79 lands first, version stays at v3.24.0 and §78 will bump on its merge).
+
+Evidence:
+- [`docs/specifications/two-model-spec-audit.md`](../two-model-spec-audit.md) — full external audit
+- arXiv:2203.15556 (Hoffmann et al. 2022) — Chinchilla scaling laws
+- arXiv:2107.06499 (Lee et al. 2021) — Deduplicating Training Data Makes LMs Better
+
+---
+
+## §80. Prioritized open-follow-up backlog (2026-05-15)
+
+After §78's MODEL-2 convergence and §79's audit retrospective, the residual work to drive MODEL-2 from 75% → 100% is bounded and ranked. §80 prepares the single source of truth for "what to dispatch next" — ordered by **ship-% impact ÷ effort** with explicit falsifier-binding criteria.
+
+### 80.1 Scoring rubric
+
+| Score | Effort | Ship-% impact | Falsifier | Risk |
+|-------|--------|---------------|-----------|------|
+| **P0 — immediate** | < 1 day | ≥ +5pp | Existing falsifier flips on a single test | Low |
+| **P1 — this week** | 1-3 days | +2 to +5pp | Existing falsifier flips on a dispatch | Low-Medium |
+| **P2 — this month** | 3-7 days | +1 to +2pp | New falsifier required | Medium |
+| **P3 — eventually** | 1+ week | +0.5 to +1pp | New contract scaffolding | Medium-High |
+
+### 80.2 The backlog (ordered by ship-% impact ÷ effort)
+
+#### P0-A — Dispatch AC-SHIP2-006 `apr qa` against `epoch-004.apr` (newly unblocked by §78)
+
+| Field | Value |
+|-------|-------|
+| **AC** | AC-SHIP2-006 — `apr qa <model.apr>` 8 gates PASS |
+| **Effort** | < 1 hour (single dispatch + verdict) |
+| **Ship-% delta** | +2pp (MODEL-2 75% → 77%) |
+| **Falsifier** | FALSIFY-SHIP-016 (existing, PARTIAL_ALGORITHM_LEVEL) → DISCHARGED on 8/8 gate pass |
+| **Dispatch** | `apr qa /mnt/nvme-raid0/runs/model-2-5g2-qwen-init-20260515-085000-cuda/ckpt/epoch-004.apr --json` |
+| **Pass criterion** | All 8 gates PASS in the JSON output |
+| **Risk** | Low — model is integrity-valid per §78 |
+
+#### P0-B — Dispatch AC-SHIP2-010 `apr bench` throughput verification
+
+| Field | Value |
+|-------|-------|
+| **AC** | AC-SHIP2-010 — `apr bench` decode ≥ 100 tok/s on RTX 4090 (370M target) |
+| **Effort** | < 30 min (single bench dispatch) |
+| **Ship-% delta** | +2pp (77% → 79%) |
+| **Falsifier** | FALSIFY-SHIP-020 (existing, PARTIAL_ALGORITHM_LEVEL) |
+| **Dispatch** | `apr bench epoch-004.apr --device cuda:0 --iterations 5 --max-tokens 128 --json` |
+| **Pass criterion** | `tokens_per_second` ≥ 100 |
+| **Risk** | Low — Qwen-0.5B baseline on RTX 4090 should comfortably exceed 100 tok/s |
+
+#### P0-C — Dispatch AC-SHIP2-009 GGUF export verification on `epoch-004.apr`
+
+| Field | Value |
+|-------|-------|
+| **AC** | AC-SHIP2-009 — GGUF export loads in llama.cpp AND matches APR first-token logits (tol ≤ 1e-3) |
+| **Effort** | 1-2 hours (export + llama-cli load + parity check) |
+| **Ship-% delta** | +2pp (79% → 81%) |
+| **Falsifier** | FALSIFY-SHIP-019 (existing, PARTIAL_ALGORITHM_LEVEL) → DISCHARGED on llama-cli load + parity |
+| **Dispatch** | `apr export --format gguf epoch-004.apr -o epoch-004.gguf && llama-cli -m epoch-004.gguf -p "def fib(n):"` |
+| **Pass criterion** | llama-cli exits 0 with non-empty output |
+| **Risk** | Medium — val_loss=5.36 means output may be incoherent; gate is "loads", not "produces clean Python" |
+
+#### P1-A — Implement Chinchilla `min_corpus_tokens` gate (audit Rec #1)
+
+| Field | Value |
+|-------|-------|
+| **Audit ref** | §79.7 item #1 — "Refuse `apr pretrain --mode from-scratch` if `dataset.total_tokens < 4 × model.param_count`" |
+| **Effort** | 1 day (~30 LOC + 2 tests + contract amendment) |
+| **Ship-% delta** | 0pp (preventive — keeps future runs from §22-class data-starvation defects) |
+| **Falsifier** | NEW: FALSIFY-PRETRAIN-CHINCHILLA-001 — `apr pretrain --mode from-scratch` against a corpus with `total_tokens < 1.48B` MUST exit non-zero with a clear "data-starvation refusal" message |
+| **Wire** | `crates/apr-cli/src/commands/pretrain.rs` — new `validate_corpus_chinchilla_ratio` helper invoked before training dispatch |
+| **Risk** | Low — preventive gate; users can `--force-from-scratch` to override |
+
+#### P1-B — Dispatch AC-SHIP2-007 valid-Python rate on 100 held-out prompts
+
+| Field | Value |
+|-------|-------|
+| **AC** | AC-SHIP2-007 — apr run produces syntactically valid Python on 100 held-out prompts |
+| **Effort** | 1-2 days (build 100-prompt holdout + run + parse) |
+| **Ship-% delta** | +3pp (81% → 84%) |
+| **Falsifier** | FALSIFY-SHIP-017 (existing, PARTIAL_ALGORITHM_LEVEL) → DISCHARGED on ≥99/100 valid Python |
+| **Risk** | Medium — at val_loss=5.36, the model may produce many SyntaxErrors; gate may need a longer fine-tune (P2-A) |
+
+#### P1-C — Dispatch AC-SHIP2-008 HumanEval pass@1
+
+| Field | Value |
+|-------|-------|
+| **AC** | AC-SHIP2-008 — apr eval --benchmark humaneval pass@1 ≥ 30.0% |
+| **Effort** | 2-3 days (5-8 hr CPU per the §65-§71 cycle) |
+| **Ship-% delta** | +3pp (84% → 87%) |
+| **Falsifier** | FALSIFY-SHIP-018 (existing, PARTIAL_ALGORITHM_LEVEL) → DISCHARGED on 49+/164 pass |
+| **Risk** | High — 30% pass@1 is ambitious for a 500-step fine-tune; may require multi-thousand-step run |
+
+#### P2-A — Longer 5g.2 dispatch — drive val_loss toward 2.2 stricter target
+
+| Field | Value |
+|-------|-------|
+| **AC** | AC-SHIP2-003 (stricter form) — val CE ≤ 2.2 |
+| **Effort** | 3-5 days (extended training run, 5k-20k steps, on RTX 4090) |
+| **Ship-% delta** | +5pp (87% → 92%) |
+| **Falsifier** | FALSIFY-SHIP-013 (existing, PARTIAL_ALGORITHM_LEVEL) → DISCHARGED on val_loss ≤ 2.2 |
+| **Dispatch** | `apr pretrain --init Qwen-0.5B --dataset qwen-v2 --device cuda:0 --num-steps 5000` (10× this PR's 500) |
+| **Compute** | ~80 min wall (extrapolating §78's 8 min / 500 steps) |
+| **Risk** | Medium — if pivot+corpus aren't enough for 2.2, need a larger corpus |
+
+#### P2-B — `apr pretrain --warn-on-wrap-around` flag (audit Rec #3)
+
+| Field | Value |
+|-------|-------|
+| **Audit ref** | §79.7 item #2 |
+| **Effort** | 2-3 days (~50 LOC + integration test + contract gate) |
+| **Ship-% delta** | 0pp (preventive — prevents §22-class memorization signature) |
+| **Falsifier** | NEW: FALSIFY-PRETRAIN-WRAP-WARN-001 — if `wrap_count × corpus_tokens > step_budget × batch × seq × 4`, MUST emit warning to stderr |
+| **Risk** | Low |
+
+#### P3-A — Contract citations of arXiv refs (audit Rec #3)
+
+| Field | Value |
+|-------|-------|
+| **Audit ref** | §79.7 item #3 |
+| **Effort** | < 1 hour (YAML edits to `contracts/training-loop-pretrain-v1.yaml`) |
+| **Ship-% delta** | 0pp (documentation hygiene) |
+| **References to add** | arXiv:2203.15556 (Chinchilla), arXiv:2107.06499 (Dedup), arXiv:2302.13971 (LLaMA), arXiv:2305.13245 (GQA) |
+| **Risk** | None |
+
+#### P3-B — Distill TRAIN-009 — val_loss vs from-scratch on tiny pair
+
+| Field | Value |
+|-------|-------|
+| **AC** | FALSIFY-APR-DISTILL-TRAIN-009 (BLOCKER_FIXTURE_ABSENT per §35) |
+| **Effort** | 5-7 days (small teacher 500M, small student 50M, real corpus, val_loss comparison) |
+| **Ship-% delta** | 0pp on MODEL-2 (this is `apr distill` infra discharge, not a SHIP-TWO-001 AC) |
+| **Falsifier** | FALSIFY-APR-DISTILL-TRAIN-009 |
+| **Risk** | Medium |
+
+### 80.3 Recommended dispatch order
+
+Optimal sequence for fastest MODEL-2 ship-% gain:
+
+```
+Today        : P0-A (qa)             → +2pp → 77%
+Today        : P0-B (bench)          → +2pp → 79%
+Today        : P0-C (gguf)           → +2pp → 81%
+This week    : P1-A (Chinchilla gate)→ 0pp  prevention (compute-free)
+This week    : P1-B (python validity)→ +3pp → 84%
+Next week    : P1-C (humaneval)      → +3pp → 87%
+2-3 weeks    : P2-A (long train)     → +5pp → 92%
+Anytime      : P2-B + P3-A + P3-B    → 0pp  prevention + hygiene
+```
+
+**Theoretical ceiling without a new MODEL-2 architecture decision: 92%.** The remaining 8pp lives in: AC-SHIP2-005 STRUCTURALLY → FUNCTIONAL via `apr qa --arch-contract` runner (~+2pp), distill quality gates (~+2pp), reserved provenance + bench edge cases (~+4pp).
+
+### 80.4 Total compute budget to 92%
+
+| Item | Est compute |
+|------|-------------|
+| P0-A (apr qa) | < 1 min |
+| P0-B (apr bench) | < 1 min |
+| P0-C (apr export + llama-cli) | < 5 min |
+| P1-A (Chinchilla gate) | 0 compute (CI tests only) |
+| P1-B (Python valid 100) | < 10 min |
+| P1-C (HumanEval pass@1) | 5-8 hours (164 problems × greedy decode) |
+| P2-A (5k-step pretrain) | ~80 min |
+| **Total to 92%** | **~6-10 hours RTX 4090** |
+
+Well below the 48h `feedback_compute_pre_authorized.md` ceiling. Dramatically cheaper than the months-long false-path of from-scratch tuning §79 documents.
+
+### 80.5 Ship-% movement
+
+§80 is a prioritization amendment — no ship-% change.
+
+- **MODEL-1 ship %**: 100% (unchanged)
+- **MODEL-2 ship %**: 75% (unchanged; §80 sequences the path to 92%)
+
+Spec v3.25.0 → **v3.26.0** (depends on §78/§79 landing first; if §80 lands first, version stays at v3.23.0 and the others bump on merge).
+
+### 80.6 Cumulative methodology lessons through §80
+
+| # | Lesson |
+|---|--------|
+| 6-26 | (see §79) |
+| **27** | **Prioritize by ship-% delta ÷ effort, not by alphabetical AC number. P0 dispatches against an already-trained model are 0.1% of the compute cost of the next-cheapest milestone (P2-A long training).** |
+
+---
+
+## §81. P0 dispatch surfaced 3 systemic `apr pretrain` output metadata gaps (2026-05-15)
+
+§80 scheduled three P0 dispatches against §78's `epoch-004.apr` — each ~1-5 min of compute, each predicted to flip a PARTIAL falsifier and drop +2pp on MODEL-2 ship %. All three blocked on different metadata gaps in `apr pretrain` output. **0pp delta achieved; 3 packaging defects exposed.**
+
+### 81.1 The three defects
+
+| P0 item | Predicted | Actual error | Defect |
+|---------|-----------|--------------|--------|
+| **P0-A `apr qa`** | AC-SHIP2-006, +2pp | `Validation failed: APR missing embedded tokenizer` | `apr pretrain` doesn't embed `--tokenizer` dir's tokenizer.json into output `.apr` |
+| **P0-B `apr bench`** | AC-SHIP2-010, +2pp | `C-03: APR model missing 'hidden_size' metadata` | `apr pretrain` doesn't write `hidden_size` (likely + `num_attention_heads`, `num_kv_heads`, `intermediate_size`, `num_hidden_layers`) to .apr metadata |
+| **P0-C `apr export → llama-cli`** | AC-SHIP2-009, +2pp | Export PASSED (2.35 GiB, 291 tensors); llama-cli refused with `unknown model architecture: 'LlamaForCausalLM'` | `apr export --format gguf` writes HuggingFace-convention `architecture="LlamaForCausalLM"`; GGUF/llama.cpp convention is lowercase `architecture="llama"` |
+
+`apr inspect epoch-004.apr` still reports `valid=true / format="APR v2" / tensor_count=291 / checksum_valid=true` — the **file structure is sound**; only the downstream-tool-required metadata fields are missing.
+
+### 81.2 Root cause framing (per §79 lesson #26)
+
+These are all **Class 3 (infrastructure / packaging)** defects, NOT Class 1 (data starvation) or Class 2 (optimization). The §78 fine-tune is fine; the output just doesn't have the keys downstream tools expect. The §79 audit didn't surface them because the audit looked at convergence, not lifecycle-stage packaging.
+
+**Class 3 defects come in waves.** §22's wave hid the data-starvation signal. §81's wave hides packaging readiness. Each wave needs its own surfacing dispatch — running P0-A/B/C is what surfaced this wave.
+
+### 81.3 §80's priority queue is invalidated mid-flight; reschedule
+
+§80 ordered work P0-A → P0-B → P0-C. §81 inserts three blockers ahead:
+
+```
+P0-D (NEW): embed tokenizer in apr pretrain output  → unblocks P0-A
+P0-E (NEW): write arch metadata keys (hidden_size, …)  → unblocks P0-B
+P0-F (NEW): HF-arch → GGUF-arch case mapping in apr export → unblocks P0-C
+P0-A: apr qa (was originally P0-A in §80)
+P0-B: apr bench
+P0-C: apr export → llama-cli
+```
+
+| New item | Effort | Scope |
+|----------|--------|-------|
+| **P0-D embed tokenizer** | ~50 LOC | `pretrain.rs`: read `tokenizer.json` from `--tokenizer` dir, embed via `AprWriter::add_tokenizer` |
+| **P0-E arch metadata** | ~30 LOC | `pretrain.rs`: extract `TransformerConfig` keys and persist via `AprWriter::set_metadata` |
+| **P0-F arch case mapping** | ~10 LOC | `export.rs`: map `LlamaForCausalLM` → `llama`, `Qwen2ForCausalLM` → `qwen2`, etc. (~6 entries) |
+
+Total: ~90 LOC + 3 tests. Estimated 1-2 days of code work. **0 compute required** — pure code/test.
+
+After P0-D/E/F land, re-dispatch P0-A/B/C to reach §80's predicted +6pp (75% → 81%).
+
+### 81.4 Why these weren't caught earlier
+
+`apr pretrain` was tested on synthetic-drive mode (`--synthetic`) and short smoke runs whose output was never piped through `apr qa`, `apr bench`, or `apr export`. §78 was the first time a real MODEL-2 checkpoint exited the training boundary; §81 is the first time anyone tried to USE that checkpoint with downstream tools.
+
+This is a **lifecycle-stage gap in test coverage**: the unit tests cover the training math, but the end-to-end pipeline (train → qa → bench → export) was never exercised as a smoke test. Adding such a smoke test is a P2-class follow-up:
+
+| P2 follow-up | Description |
+|--------------|-------------|
+| **P2-C smoke pipeline** | `cargo test -p apr-cli --test pretrain_e2e` — train a tiny model for 1 step, then run qa + bench + export against the output. Would have caught P0-D/E/F at PR time. |
+
+### 81.5 Methodology lesson #28 (NEW)
+
+**Surface defects in waves; each lifecycle stage needs its own dispatch.** §22's wave hid data-starvation (training-loop defects). §78's wave hid convergence success (training math OK). §81's wave hides packaging readiness (output-side metadata defects). Each wave is invisible until a dispatch tries to use the artifact at the next lifecycle stage. **Don't assume "training works" implies "the checkpoint is usable."**
+
+### 81.6 Cumulative methodology lessons through §81
+
+| # | Lesson |
+|---|--------|
+| 6-27 | (see §80) |
+| **28** | **Surface defects in waves; each lifecycle stage needs its own dispatch. Training works ≠ checkpoint is usable. Run a train→qa→bench→export smoke test at PR time to catch packaging gaps before §81-class field discovery.** |
+
+### 81.7 Ship-% movement
+
+§81 is a defect-surfacing amendment — no ship-% change.
+
+- **MODEL-1 ship %**: 100% (unchanged)
+- **MODEL-2 ship %**: 75% (unchanged; §81 blocks §80's predicted +6pp until P0-D/E/F land)
+
+Spec v3.26.0 → **v3.27.0**.
+
+Evidence:
+- `evidence/section-81-p0-metadata-gaps-2026-05-15/findings.json` — full structured audit
+- `evidence/section-81-p0-metadata-gaps-2026-05-15/p0-a-qa.log` — apr qa raw error
+- `evidence/section-81-p0-metadata-gaps-2026-05-15/p0-b-bench.log` — apr bench raw error
+- `evidence/section-81-p0-metadata-gaps-2026-05-15/p0-c-export.log` — apr export success
+- `evidence/section-81-p0-metadata-gaps-2026-05-15/p0-c-llamacli.log` — llama-cli refusal
+
+---
+
 
 ## §63. SHIP-007 empirical floor — CUDA structurally broken on Qwen 7B; multi-PR cascade scope (2026-05-11)
 
