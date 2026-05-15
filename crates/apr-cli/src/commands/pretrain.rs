@@ -584,11 +584,12 @@ fn drive_real_cuda(
     };
     let step_fn = CudaRealStepFn::new(trainer.clone(), Box::new(iter));
     let val_fn = CudaRealValFn::new(trainer.clone(), held_out);
-    let ckpt: Box<dyn CheckpointFn> = Box::new(CudaAprCheckpointFn::new(
-        trainer,
-        "llama-370m-pretrain",
-        "LlamaForCausalLM",
-    ));
+    // SPEC-SHIP-TWO-001 §81 P0-D: pass --tokenizer through so each
+    // checkpoint embeds the tokenizer.json (apr qa requires this).
+    let ckpt: Box<dyn CheckpointFn> = Box::new(
+        CudaAprCheckpointFn::new(trainer, "llama-370m-pretrain", "LlamaForCausalLM")
+            .with_tokenizer_dir(&config.tokenizer_dir),
+    );
     run_and_report(config, step_fn, val_fn, Some(ckpt), json_output)
 }
 
