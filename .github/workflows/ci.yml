@@ -67,7 +67,7 @@ jobs:
   # registry unreachable. Mirrored in the `mutants` job below.
   workspace-test:
     runs-on: [self-hosted, X64, Linux]
-    timeout-minutes: 65  # bumped from 45 — 55min step + 10min overhead/other-steps
+    timeout-minutes: 85  # bumped to match 75min step + 10min overhead
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
       PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
@@ -112,11 +112,16 @@ jobs:
           done
       - name: Workspace lib tests (25,300+)
         # Excluded: aprender-gpu (cuBLAS), aprender-cuda-edge (CUDA), aprender-compute (SIMD SIGSEGV at exit)
-        # Timeout: 55min (was 40). Cold sccache run is ~34min compile + ~7min tests
-        # = 41min, which JUST overruns 40 — observed on intel-clean-room-3 first run
-        # after the refactor invalidated its sccache by changing workspace lints.
-        # Warm runs are ~3-5min compile per the workflow comments above.
-        timeout-minutes: 55
+        # Timeout: 75min (was 55, was 40).
+        # 2026-05-15: bumped to 75min after the P0 per-run target-dir fix
+        # (#1693) eliminated cargo-incremental cross-run warmth. Cold
+        # compiles now happen on every run; sccache covers codegen
+        # (~80% hit rate on warm cache) but cargo's metadata + linking +
+        # test binaries still cost ~40-50min cold. Under runner-pool
+        # saturation (7+ concurrent CI runs) we observed 55min hits
+        # exactly at the timeout — runs 25919246467 / 25919258460 /
+        # sibling PRs failed simultaneously at 55:00.0.
+        timeout-minutes: 75
         run: |
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
