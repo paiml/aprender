@@ -2691,6 +2691,24 @@ impl CudaTransformerTrainer {
         name: &str,
         architecture: &str,
     ) -> crate::Result<()> {
+        self.save_apr_with_tokenizer(path, name, architecture, None)
+    }
+
+    /// SPEC-SHIP-TWO-001 §81 P0-D + P0-E: save APR checkpoint with arch
+    /// metadata keys AND optionally embed the source tokenizer.json.
+    ///
+    /// When `tokenizer_dir` is `Some`, reads `<dir>/tokenizer.json` and
+    /// embeds the vocabulary + merges + BOS/EOS IDs as well-known
+    /// metadata keys. This makes the resulting .apr file standalone for
+    /// `apr qa`, `apr run`, etc. — no `--tokenizer` flag required at
+    /// downstream tool dispatch.
+    pub fn save_apr_with_tokenizer(
+        &mut self,
+        path: impl AsRef<std::path::Path>,
+        name: &str,
+        architecture: &str,
+        tokenizer_dir: Option<&std::path::Path>,
+    ) -> crate::Result<()> {
         self.sync_weights_to_cpu();
 
         let params: Vec<(String, Tensor)> = self
@@ -2752,6 +2770,69 @@ impl CudaTransformerTrainer {
         }
         if let Some(eps) = serde_json::Number::from_f64(mc.rms_norm_eps as f64) {
             writer.set_metadata("rms_norm_eps", Jv::Number(eps));
+        }
+
+        // SPEC-SHIP-TWO-001 §81 P0-D: embed tokenizer.json from
+        // `tokenizer_dir/tokenizer.json` so `apr qa` (which requires
+        // an embedded tokenizer) accepts the resulting .apr file.
+        // ALB-130 style: parse vocab + merges + special token IDs and
+        // set as well-known metadata keys.
+        if let Some(dir) = tokenizer_dir {
+            let tok_path = dir.join("tokenizer.json");
+            if let Ok(json_bytes) = std::fs::read(&tok_path) {
+                if let Ok(tok) = serde_json::from_slice::<Jv>(&json_bytes) {
+                    if let Some(model) = tok.get("model") {
+                        if let Some(vocab_obj) = model.get("vocab").and_then(|v| v.as_object()) {
+                            let mut vocab_pairs: Vec<(String, u64)> = vocab_obj
+                                .iter()
+                                .filter_map(|(k, v)| Some((k.clone(), v.as_u64()?)))
+                                .collect();
+                            vocab_pairs.sort_by_key(|(_, id)| *id);
+                            let vocab: Vec<Jv> = vocab_pairs
+                                .into_iter()
+                                .map(|(k, _)| Jv::String(k))
+                                .collect();
+                            writer.set_metadata("tokenizer.vocabulary", Jv::Array(vocab));
+                        }
+                        if let Some(merges_arr) =
+                            model.get("merges").and_then(|m| m.as_array())
+                        {
+                            let merges: Vec<Jv> = merges_arr
+                                .iter()
+                                .filter_map(|v| v.as_str().map(|s| Jv::String(s.to_string())))
+                                .collect();
+                            writer.set_metadata("tokenizer.merges", Jv::Array(merges));
+                        }
+                    }
+                    // BOS / EOS from added_tokens (HF format).
+                    if let Some(added) = tok.get("added_tokens").and_then(|a| a.as_array()) {
+                        for entry in added {
+                            let content = entry
+                                .get("content")
+                                .and_then(|c| c.as_str())
+                                .unwrap_or("");
+                            let id = entry.get("id").and_then(|i| i.as_u64());
+                            if let Some(id) = id {
+                                match content {
+                                    "<s>" | "<|im_start|>" | "<|begin_of_text|>" => {
+                                        writer.set_metadata(
+                                            "tokenizer.bos_token_id",
+                                            Jv::Number(serde_json::Number::from(id)),
+                                        );
+                                    }
+                                    "</s>" | "<|im_end|>" | "<|end_of_text|>" | "<|endoftext|>" => {
+                                        writer.set_metadata(
+                                            "tokenizer.eos_token_id",
+                                            Jv::Number(serde_json::Number::from(id)),
+                                        );
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // Tensors — reuse io::save's shape inference for 2D weight handling.
