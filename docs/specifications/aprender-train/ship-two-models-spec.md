@@ -1,7 +1,8 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 3.23.0
+**Version:** 3.27.0
+**Atomic next action (v3.27.0):** **⚠️ §81 — P0 dispatch surfaced 3 systemic `apr pretrain` output metadata gaps (2026-05-15)** (see new §81 below). §80's predicted +6pp from P0-A/B/C dispatch was BLOCKED on three different packaging defects in MODEL-2's `epoch-004.apr`: (1) missing embedded tokenizer (blocks `apr qa`), (2) missing `hidden_size` + arch metadata (blocks `apr bench`), (3) HF-convention `architecture="LlamaForCausalLM"` vs GGUF's `architecture="llama"` (blocks llama-cli load of exported GGUF). All three are Class 3 packaging defects per §79 lesson #26. `apr inspect` still reports the file structure as sound; only downstream-tool-required metadata is missing. **New P0 prerequisites: P0-D embed tokenizer (~50 LOC), P0-E write arch metadata keys (~30 LOC), P0-F HF→GGUF arch case mapping (~10 LOC). Total ~90 LOC + 3 tests, ~1-2 days, 0 compute.** Then re-dispatch P0-A/B/C for the predicted +6pp. **Methodology lesson #28 NEW**: Class 3 defects come in waves; each lifecycle stage needs its own surfacing dispatch (training works ≠ checkpoint is usable). **MODEL-1 ship %**: 100%. **MODEL-2 ship %**: 75% (unchanged; §80's +6pp delta blocked until P0-D/E/F land).
 **Atomic next action (v3.23.0):** **🔍 §77 — 5g.1 RETROACTIVELY DISCOVERED COMPLETE; MODEL-2 ship-blocker reduced to 5g.2 GPU dispatch (2026-05-15)** (see new §77 below). Live audit on 2026-05-15 finds `/mnt/nvme-raid0/data/codeparrot-python-permissive-shards-qwen-v2/` contains 125 shards / 1,241,692,519 tokens / 4,966,770,076 bytes — byte-exact integrity verified (tokens × 4 = bytes, u32 LE). Manifest confirms NFC + between-doc EOS + Qwen vocab + 405,904 documents from the permissive corpus. **5g.1 has been DONE since ~2026-05-05** but never recorded as complete in twenty subsequent spec amendments. The cascade was always blocked on 5g.3, not on 5g.1. 5g.2 (500-step fine-tune dispatch) is now operator-dispatchable today — all three prerequisites confirmed on disk: Qwen-tokenized corpus, Qwen tokenizer dir, Qwen-0.5B init APR. **Methodology lesson #24 NEW**: mid-run progress logs are not completion records; manifest.json is the contract for "done". **MODEL-1 ship %**: 100%. **MODEL-2 ship %**: unchanged at **57%** (this is a status-discovery, not an evidence-of-training; the flip is gated on 5g.3 verdict).
 **Atomic next action (v3.22.0):** **🚢 §76 — v0.33.0 cascade PUBLISHED — MODEL-1 in users' hands; 24 crates live on crates.io; /dogfood verdict GO (2026-05-14)** (see new §76 below). 24-crate topological cascade (contracts-macros → core → gpu → compute → serve → train → apr-cli → aprender root) all published to crates.io. `cargo install aprender --force --locked` from registry produces `apr 0.33.0` that runs SHIP-007 fix end-to-end (`apr run` "What is 2+2?" → "4" on 1.5B teacher). /dogfood 12-gate audit on installed binary: **all gates GO, zero FAILs**. Two production-blockers surfaced + closed in flight: PR #1670 (`cc 1.2.59 → 1.2.62` lockfile bump for rustc 1.93.0 — `cargo publish` re-resolves Cargo.lock during verify, ignoring workspace lock; **methodology lesson #23 NEW**: use `--locked` on every publish or bump-before-cascade); `make publish` `.cargo/config.toml` backup race on parallel invocations (mitigated by serialization; Makefile fix deferred). Companion PR #1672 brings README/book/CLAUDE.md in sync (counts 1105→1134, 80→82; SHIP-007 known-issue warning retired). Closes `feedback_post_publish_qa_required.md` requirement (v0.31.1 yank lesson). **MODEL-1 ship %**: 100% (CODE) → **100% (USERS)** — milestone moves from "shipped in code" to "shipped to users." **MODEL-2 ship %**: unchanged at **57%** (independent track; v0.33.0 carries no MODEL-2 movement).
 **Atomic next action (v3.21.0):** **🎉 §75 — MODEL-1 SHIP %  = 100% — SHIP-007 LIVE-DISCHARGED via F32 GEMV PTX layout fix (2026-05-13)** (see new §75 below). PR-E (#1651) ships single-file fix in `crates/aprender-gpu/src/kernels/gemv/mod.rs`: the F32 GEMV kernel assumed `[K rows × N cols]` row-major but actual ML weights are `[output_dim=N, input_dim=K]` row-major (PyTorch/SafeTensors/GGUF convention). Kernel was reading TRANSPOSED weights → systematically anti-correlated logits (cos=-0.005). Fix rewrites inner loop to iterate K within row `block_id`. Empirical discharge: `apr bench` 5-iter 128-tok decode = **124.6 tok/s** on RTX 4090 (4.15× over AC-SHIP1-007 30 tok/s floor); PARITY-GATE PASS; default path, no workarounds. **All 10 AC-SHIP1-* LIVE-DISCHARGED.** **MODEL-1 ship %**: **99% → 100%** 🎉. **MODEL-2 ship %**: unchanged at **57%**. **Methodology lesson #22 NEW**: symptom analysis → bug class localization in O(1); methodology lessons compose.
@@ -5501,6 +5502,88 @@ Spec v3.22.0 → **v3.23.0**.
 Evidence:
 - `evidence/section-77-5g1-complete-2026-05-15/findings.json` — full integrity audit + manifest summary
 - `evidence/section-77-5g1-complete-2026-05-15/qwen-v2-manifest.json` — captured copy of the on-disk manifest
+
+---
+
+## §81. P0 dispatch surfaced 3 systemic `apr pretrain` output metadata gaps (2026-05-15)
+
+§80 scheduled three P0 dispatches against §78's `epoch-004.apr` — each ~1-5 min of compute, each predicted to flip a PARTIAL falsifier and drop +2pp on MODEL-2 ship %. All three blocked on different metadata gaps in `apr pretrain` output. **0pp delta achieved; 3 packaging defects exposed.**
+
+### 81.1 The three defects
+
+| P0 item | Predicted | Actual error | Defect |
+|---------|-----------|--------------|--------|
+| **P0-A `apr qa`** | AC-SHIP2-006, +2pp | `Validation failed: APR missing embedded tokenizer` | `apr pretrain` doesn't embed `--tokenizer` dir's tokenizer.json into output `.apr` |
+| **P0-B `apr bench`** | AC-SHIP2-010, +2pp | `C-03: APR model missing 'hidden_size' metadata` | `apr pretrain` doesn't write `hidden_size` (likely + `num_attention_heads`, `num_kv_heads`, `intermediate_size`, `num_hidden_layers`) to .apr metadata |
+| **P0-C `apr export → llama-cli`** | AC-SHIP2-009, +2pp | Export PASSED (2.35 GiB, 291 tensors); llama-cli refused with `unknown model architecture: 'LlamaForCausalLM'` | `apr export --format gguf` writes HuggingFace-convention `architecture="LlamaForCausalLM"`; GGUF/llama.cpp convention is lowercase `architecture="llama"` |
+
+`apr inspect epoch-004.apr` still reports `valid=true / format="APR v2" / tensor_count=291 / checksum_valid=true` — the **file structure is sound**; only the downstream-tool-required metadata fields are missing.
+
+### 81.2 Root cause framing (per §79 lesson #26)
+
+These are all **Class 3 (infrastructure / packaging)** defects, NOT Class 1 (data starvation) or Class 2 (optimization). The §78 fine-tune is fine; the output just doesn't have the keys downstream tools expect. The §79 audit didn't surface them because the audit looked at convergence, not lifecycle-stage packaging.
+
+**Class 3 defects come in waves.** §22's wave hid the data-starvation signal. §81's wave hides packaging readiness. Each wave needs its own surfacing dispatch — running P0-A/B/C is what surfaced this wave.
+
+### 81.3 §80's priority queue is invalidated mid-flight; reschedule
+
+§80 ordered work P0-A → P0-B → P0-C. §81 inserts three blockers ahead:
+
+```
+P0-D (NEW): embed tokenizer in apr pretrain output  → unblocks P0-A
+P0-E (NEW): write arch metadata keys (hidden_size, …)  → unblocks P0-B
+P0-F (NEW): HF-arch → GGUF-arch case mapping in apr export → unblocks P0-C
+P0-A: apr qa (was originally P0-A in §80)
+P0-B: apr bench
+P0-C: apr export → llama-cli
+```
+
+| New item | Effort | Scope |
+|----------|--------|-------|
+| **P0-D embed tokenizer** | ~50 LOC | `pretrain.rs`: read `tokenizer.json` from `--tokenizer` dir, embed via `AprWriter::add_tokenizer` |
+| **P0-E arch metadata** | ~30 LOC | `pretrain.rs`: extract `TransformerConfig` keys and persist via `AprWriter::set_metadata` |
+| **P0-F arch case mapping** | ~10 LOC | `export.rs`: map `LlamaForCausalLM` → `llama`, `Qwen2ForCausalLM` → `qwen2`, etc. (~6 entries) |
+
+Total: ~90 LOC + 3 tests. Estimated 1-2 days of code work. **0 compute required** — pure code/test.
+
+After P0-D/E/F land, re-dispatch P0-A/B/C to reach §80's predicted +6pp (75% → 81%).
+
+### 81.4 Why these weren't caught earlier
+
+`apr pretrain` was tested on synthetic-drive mode (`--synthetic`) and short smoke runs whose output was never piped through `apr qa`, `apr bench`, or `apr export`. §78 was the first time a real MODEL-2 checkpoint exited the training boundary; §81 is the first time anyone tried to USE that checkpoint with downstream tools.
+
+This is a **lifecycle-stage gap in test coverage**: the unit tests cover the training math, but the end-to-end pipeline (train → qa → bench → export) was never exercised as a smoke test. Adding such a smoke test is a P2-class follow-up:
+
+| P2 follow-up | Description |
+|--------------|-------------|
+| **P2-C smoke pipeline** | `cargo test -p apr-cli --test pretrain_e2e` — train a tiny model for 1 step, then run qa + bench + export against the output. Would have caught P0-D/E/F at PR time. |
+
+### 81.5 Methodology lesson #28 (NEW)
+
+**Surface defects in waves; each lifecycle stage needs its own dispatch.** §22's wave hid data-starvation (training-loop defects). §78's wave hid convergence success (training math OK). §81's wave hides packaging readiness (output-side metadata defects). Each wave is invisible until a dispatch tries to use the artifact at the next lifecycle stage. **Don't assume "training works" implies "the checkpoint is usable."**
+
+### 81.6 Cumulative methodology lessons through §81
+
+| # | Lesson |
+|---|--------|
+| 6-27 | (see §80) |
+| **28** | **Surface defects in waves; each lifecycle stage needs its own dispatch. Training works ≠ checkpoint is usable. Run a train→qa→bench→export smoke test at PR time to catch packaging gaps before §81-class field discovery.** |
+
+### 81.7 Ship-% movement
+
+§81 is a defect-surfacing amendment — no ship-% change.
+
+- **MODEL-1 ship %**: 100% (unchanged)
+- **MODEL-2 ship %**: 75% (unchanged; §81 blocks §80's predicted +6pp until P0-D/E/F land)
+
+Spec v3.26.0 → **v3.27.0**.
+
+Evidence:
+- `evidence/section-81-p0-metadata-gaps-2026-05-15/findings.json` — full structured audit
+- `evidence/section-81-p0-metadata-gaps-2026-05-15/p0-a-qa.log` — apr qa raw error
+- `evidence/section-81-p0-metadata-gaps-2026-05-15/p0-b-bench.log` — apr bench raw error
+- `evidence/section-81-p0-metadata-gaps-2026-05-15/p0-c-export.log` — apr export success
+- `evidence/section-81-p0-metadata-gaps-2026-05-15/p0-c-llamacli.log` — llama-cli refusal
 
 ---
 
