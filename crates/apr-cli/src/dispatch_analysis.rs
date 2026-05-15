@@ -58,25 +58,29 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *simulated,
         ),
 
-        ExtendedCommands::Probar {
-            file,
-            output,
-            format,
-            golden,
-            layer,
-            assert,
-            tolerance,
-        } => crate::error::resolve_model_path(file).and_then(|r| {
-            probar::run(
-                &r,
+        // GH-876 Milestone 1: Probar is now a subcommand container.
+        // The existing flat-args behavior moved under `apr probar tensor <FILE>`.
+        ExtendedCommands::Probar { command } => match command {
+            ProbarSubcommand::Tensor {
+                file,
                 output,
-                format.parse().unwrap_or(probar::ExportFormat::Both),
-                golden.as_deref(),
-                layer.as_deref(),
-                *assert,
-                *tolerance,
-            )
-        }),
+                format,
+                golden,
+                layer,
+                assert,
+                tolerance,
+            } => crate::error::resolve_model_path(file).and_then(|r| {
+                probar::run(
+                    &r,
+                    output,
+                    format.parse().unwrap_or(probar::ExportFormat::Both),
+                    golden.as_deref(),
+                    layer.as_deref(),
+                    *assert,
+                    *tolerance,
+                )
+            }),
+        },
 
         ExtendedCommands::CompareHf {
             file,
