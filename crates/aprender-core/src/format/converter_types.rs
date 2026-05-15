@@ -155,6 +155,13 @@ pub enum Architecture {
     /// GH-1587: tensor name mapping only — parallel-residual runtime
     /// inference is a separate concern.
     FalconClassic,
+    /// Shanghai AI Lab `InternLM2` / `InternLM2.5` (`InternLM2ForCausalLM`).
+    /// LLaMA-derivative with renamed tensors (`wqkv`/`wo`/`w1`/`w2`/`w3`)
+    /// and `tok_embeddings`/`attention_norm`/`ffn_norm`/`output` instead
+    /// of `embed_tokens`/`input_layernorm`/`post_attention_layernorm`/`lm_head`.
+    /// GH-1589: tensor name mapping only — fused wqkv splitter is a
+    /// separate concern.
+    InternLm2,
 }
 
 include!("tensor_expectation.rs");
