@@ -108,14 +108,17 @@ jobs:
         #
         # Cancel-damage recovery (five-whys): when concurrency.cancel-in-progress
         # cancels the previous run on the same PR mid-compile, cargo's
-        # incremental state is left inconsistent — .rmeta files exist (claiming
-        # "I'm built") but the matching .rcgu.o codegen artifacts were never
-        # written because cargo got SIGKILL'd. The persistent per-PR target
+        # incremental state is left inconsistent. The persistent per-PR target
         # dir at /mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/ preserves
-        # this damage across runs. The next run's linker then fails with:
-        #   clang: error: no such file or directory: '...rcgu.o'
-        # Fix: wrap the cargo invocation; on link-failure pattern (rcgu.o
-        # missing), `cargo clean` and retry once. Adds latency only on the
+        # this damage across runs. Observed damage patterns:
+        #   - Orphan rmeta + missing rcgu.o (link fails):
+        #       clang: error: no such file or directory: '...rcgu.o'
+        #   - Missing build subdirs (cc-rs can't write output files):
+        #       cargo:warning=Fatal error: can't create .../build/.../X.o: No such file or directory
+        #   - Orphan rmeta references (rustc dep-graph lookup fails):
+        #       error: extern location for X does not exist: .../X.rmeta
+        # Fix: wrap the cargo invocation; on ANY of these damage-indicator
+        # patterns, `cargo clean` and retry once. Adds latency only on the
         # damage-recovery path; warm-cache happy path unchanged.
         timeout-minutes: 55
         run: |
@@ -139,7 +142,11 @@ jobs:
             cargo test --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute 2>&1 | tee "$LOG"
           TEST_EXIT=${PIPESTATUS[0]}
           set -e
-          if [ "$TEST_EXIT" -ne 0 ] && grep -qE 'no such file or directory.*\.rcgu\.o' "$LOG"; then
+          # Match any known cancel-damage pattern. Combined regex covers:
+          #   - linker missing .rcgu.o (orphan rmeta, missing codegen)
+          #   - cc-rs Fatal error can't create .o (missing build subdirs)
+          #   - rustc extern location does not exist .rmeta (orphan dep-graph)
+          if [ "$TEST_EXIT" -ne 0 ] && grep -qE 'no such file or directory.*\.rcgu\.o|Fatal error: can.t create.*\.o: No such file|extern location for .* does not exist.*\.rmeta' "$LOG"; then
             echo "::warning::Linker failure on stale target dir from prior cancel-in-progress run; running cargo clean + retry"
             docker run --rm \
               -v "${GITHUB_WORKSPACE}:/workspace" \
