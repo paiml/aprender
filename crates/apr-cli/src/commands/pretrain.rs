@@ -94,6 +94,41 @@ pub(crate) struct ResolvedHp {
     pub target_val_loss: f32,
 }
 
+/// SPEC §82 P0-H: derive APR checkpoint `general.name` and `architecture`
+/// metadata from the `--init` model's TransformerConfig. Without this, the
+/// trainer hardcoded `("llama-370m-pretrain", "LlamaForCausalLM")` even when
+/// fine-tuning a Qwen2 model — which silently produced GGUF exports that
+/// llama.cpp could not load because the 72 Qwen2 bias tensors (q_proj_bias,
+/// k_proj_bias, v_proj_bias per layer × 24 layers) leaked through the
+/// llama-family GGUF mapper as unrecognized passthrough names. The fix
+/// stamps `Qwen2ForCausalLM` so the qwen2 family mapper handles biases
+/// correctly.
+///
+/// Falls back to the pre-§82 defaults when `--init` is not provided (a
+/// from-scratch llama-370m pretrain).
+fn checkpoint_name_and_arch(init_arch: Option<&TransformerConfig>) -> (String, String) {
+    match init_arch {
+        Some(arch) => {
+            let hf_arch = arch
+                .hf_architecture
+                .clone()
+                .unwrap_or_else(|| "LlamaForCausalLM".to_string());
+            // Use the lowercase hf_model_type for the name suffix when
+            // available (e.g. "qwen2-pretrain"), else fall back to a
+            // generic name.
+            let name = arch
+                .hf_model_type
+                .as_deref()
+                .map_or_else(|| "model-pretrain".to_string(), |t| format!("{t}-pretrain"));
+            (name, hf_arch)
+        }
+        None => (
+            "llama-370m-pretrain".to_string(),
+            "LlamaForCausalLM".to_string(),
+        ),
+    }
+}
+
 pub(crate) fn mode_defaults(
     mode: PretrainMode,
     vocab_size: u32,
@@ -523,11 +558,9 @@ fn drive_real_cpu(
     };
     let step_fn = RealStepFn::new(trainer.clone(), Box::new(iter));
     let val_fn = RealValFn::new(trainer.clone(), held_out);
-    let ckpt: Box<dyn CheckpointFn> = Box::new(AprCheckpointFn::new(
-        trainer,
-        "llama-370m-pretrain",
-        "LlamaForCausalLM",
-    ));
+    let (ckpt_name, ckpt_arch) = checkpoint_name_and_arch(init_arch);
+    let ckpt: Box<dyn CheckpointFn> =
+        Box::new(AprCheckpointFn::new(trainer, &ckpt_name, &ckpt_arch));
     run_and_report(config, step_fn, val_fn, Some(ckpt), json_output)
 }
 
@@ -586,8 +619,9 @@ fn drive_real_cuda(
     let val_fn = CudaRealValFn::new(trainer.clone(), held_out);
     // SPEC-SHIP-TWO-001 §81 P0-D: pass --tokenizer through so each
     // checkpoint embeds the tokenizer.json (apr qa requires this).
+    let (ckpt_name, ckpt_arch) = checkpoint_name_and_arch(init_arch);
     let ckpt: Box<dyn CheckpointFn> = Box::new(
-        CudaAprCheckpointFn::new(trainer, "llama-370m-pretrain", "LlamaForCausalLM")
+        CudaAprCheckpointFn::new(trainer, &ckpt_name, &ckpt_arch)
             .with_tokenizer_dir(&config.tokenizer_dir),
     );
     run_and_report(config, step_fn, val_fn, Some(ckpt), json_output)
@@ -798,6 +832,42 @@ impl PretrainReport {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    /// SPEC §82 P0-H: when `--init` is absent, fall back to historical defaults
+    /// so from-scratch 370M pretrain still produces `llama-370m-pretrain` /
+    /// `LlamaForCausalLM` stamps.
+    #[test]
+    fn checkpoint_name_and_arch_default_when_no_init() {
+        let (name, arch) = checkpoint_name_and_arch(None);
+        assert_eq!(name, "llama-370m-pretrain");
+        assert_eq!(arch, "LlamaForCausalLM");
+    }
+
+    /// SPEC §82 P0-H: when `--init` is a Qwen2 model, stamp `qwen2-pretrain`
+    /// and `Qwen2ForCausalLM` so the qwen2 GGUF family mapper handles the
+    /// 72 Qwen2 attn biases instead of leaving them as passthrough names.
+    #[test]
+    fn checkpoint_name_and_arch_qwen2_init() {
+        let mut cfg = TransformerConfig::llama2_7b();
+        cfg.hf_architecture = Some("Qwen2ForCausalLM".to_string());
+        cfg.hf_model_type = Some("qwen2".to_string());
+        let (name, arch) = checkpoint_name_and_arch(Some(&cfg));
+        assert_eq!(name, "qwen2-pretrain");
+        assert_eq!(arch, "Qwen2ForCausalLM");
+    }
+
+    /// SPEC §82 P0-H: a `--init` model that lacks `hf_architecture` falls back
+    /// to `LlamaForCausalLM` rather than silently emitting an empty arch
+    /// string. (Belt-and-suspenders for older APR files written before the
+    /// hf_architecture field existed.)
+    #[test]
+    fn checkpoint_name_and_arch_init_without_hf_fields() {
+        let cfg = TransformerConfig::llama2_7b();
+        // llama2_7b() leaves hf_architecture and hf_model_type as None.
+        let (name, arch) = checkpoint_name_and_arch(Some(&cfg));
+        assert_eq!(name, "model-pretrain");
+        assert_eq!(arch, "LlamaForCausalLM");
+    }
 
     /// Stage a `vocab.json` with exactly `n` distinct integer-string tokens at
     /// `<dir>/vocab.json`. Used by pre-flight gate tests + by other tests that
