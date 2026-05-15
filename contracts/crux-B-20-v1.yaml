@@ -1,18 +1,26 @@
 # CRUX-B-20 — Roundtrip quant diff report
+# Promoted to partial_algorithm_level by CRUX-B-20 implementation PR:
+# `apr diff --quant-roundtrip FILE_REF FILE_QUANT` ships per-tensor
+# RMSE / cosine / max_abs ranked DESC by RMSE, with green/yellow/red
+# verdict bucketing and a configurable cosine-threshold exit-code gate.
+# Format support shipped: SafeTensors (F32/F16/BF16). GGUF Q4_K_M is a
+# separate ticket (requires routing through `format::gguf::dequant`).
 
 metadata:
   id: CRUX-B-20
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
+  updated: "2026-05-15"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial_algorithm_level
+  kind: kernel
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "B — Inspection & Debugging"
   competitor: llama_cpp
   demand_score: 3
-  intake_status: partial
+  intake_status: supported
   description: >
     `apr diff --quant-roundtrip` shows per-tensor quantization error
     (RMSE / cosine / max-abs-err) between fp16 original and dequant of the
@@ -84,8 +92,19 @@ proof_obligations:
 verification_summary:
   total_obligations: 3
   proven: 0
-  tested: 0
-  status: spec-complete
+  tested: 2
+  status: partial_algorithm_level
+  notes: |
+    In-tree falsifiers (cargo test -p apr-cli --lib commands::diff_quant_roundtrip):
+      - metrics_identity / metrics_anti_parallel / metrics_orthogonal / metrics_empty
+      - metrics_small_error_high_cosine
+      - verdict_buckets (green/yellow/red boundary at 0.999 / 0.99)
+    Integration falsifiers (live binary, end-to-end safetensors):
+      - FALSIFY-CRUX-B-20-001 (rows sorted by rmse DESC + schema fields) — IN-TREE
+      - FALSIFY-CRUX-B-20-002 (threshold gate exits ≠ 0 on cosine < 0.95) — IN-TREE
+    Remaining (separate ticket):
+      - FALSIFY-CRUX-B-20-003 (parity with llama-quantize-stats on a golden
+        GGUF model) — pending GGUF dequant path wiring.
 
 pmat_work_tracking:
   ticket_tag: crux-crux-b-20
