@@ -5536,6 +5536,40 @@ Evidence:
 
 ---
 
+## §77. 5g.1 RETROACTIVELY DISCOVERED COMPLETE — Qwen-tokenized corpus exists since 2026-05-05 (2026-05-15)
+
+§56 (2026-05-05) dispatched the full 5g.1 corpus retokenization with an ETA of ~22:00Z that day. §57 recorded mid-run progress (62/57 shards at 16h19m wall). After that, **no spec amendment recorded the completion of 5g.1**. MODEL-2 ship % has been blocked at 57% across §58–§76 (twenty spec amendments) on the assumption that 5g.1 was still in-flight or had silently failed.
+
+**Live audit on 2026-05-15 finds 5g.1 is COMPLETE and integrity-verified:**
+
+| Field | Value |
+|-------|-------|
+| Shards dir | `/mnt/nvme-raid0/data/codeparrot-python-permissive-shards-qwen-v2/` |
+| Shard count (disk) | 125 |
+| Shard count (manifest) | 125 |
+| Total tokens (manifest) | 1,241,692,519 |
+| Total bytes (disk, .bin) | 4,966,770,076 |
+| Bytes-per-token | exactly **4** (u32 LE) ✓ byte-exact integrity |
+| Documents tokenized | 405,904 |
+| Vocab size | 151,646 |
+| Tokenizer dir | `/tmp/qwen-0.5b-tokenizer-extracted` (vocab.json + merges.txt + tokenizer.json present) |
+| Normalization | NFC |
+| EOS policy | between (eos_token_id=128247, count=405903) |
+| Input file | `/mnt/nvme-raid0/datasets/github-code-clean-2026-04-27/python-permissive.jsonl` |
+| Workers | 48 |
+
+The manifest validates: 1,241,692,519 tokens × 4 bytes/token = 4,966,770,076 bytes = exact directory total. (See §78 for the live 5g.2 dispatch verdict — converged with val_loss=5.36 in 8 min wall.)
+
+**Methodology lesson #24 NEW**: when a multi-hour compute lane is "dispatched" but the next amendment is on an unrelated topic, an explicit `5g.X completion verdict` check should re-run on the next spec amendment touching MODEL-2. Mid-run progress logs are not completion records; the manifest.json is.
+
+Spec v3.22.0 → **v3.23.0** (subsequently → v3.24.0 in §78).
+
+Evidence:
+- `evidence/section-77-5g1-complete-2026-05-15/findings.json` — full integrity audit + manifest summary
+- `evidence/section-77-5g1-complete-2026-05-15/qwen-v2-manifest.json` — captured copy of the on-disk manifest
+
+---
+
 ## §63. SHIP-007 empirical floor — CUDA structurally broken on Qwen 7B; multi-PR cascade scope (2026-05-11)
 
 SHIP-007 (decode tps ≥ 30 tok/s on RTX 4090 with `--features cuda` per AC-SHIP1-007) was the last §17.5 PARTIAL hypothesized to discharge from §60 closure. §63 records the LIVE empirical investigation that revealed SHIP-007 is **multi-PR cascade scope**, not a tight 1-PR slice.
