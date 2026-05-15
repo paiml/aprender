@@ -1115,12 +1115,30 @@ fn inspect_dir_files(
 }
 
 /// Stage 2: Train student with KD loss from precomputed logits.
+///
+/// When the `training` feature is enabled and the student model resolves to a
+/// local SafeTensors path, this delegates to `entrenar_distill::run`
+/// (real KD pipeline: loads weights, computes distillation loss, applies
+/// gradient descent, saves trained student). The legacy metadata-only stub
+/// remains as the fallback when the feature is off or the student is remote
+/// (HF model id without local cache) — preserves backward compatibility per
+/// SPEC-SHIP-TWO-001 §35 wire-up.
 #[allow(clippy::disallowed_methods)]
 fn run_config_train(
     config: &DistillYamlConfig,
     config_path: &Path,
     json_output: bool,
 ) -> Result<()> {
+    // §35 wire-up: try real distillation pipeline when the training feature
+    // is on and the student is a local path. Returns Ok(true) if the real
+    // pipeline ran; Ok(false) to fall through to the legacy stub.
+    #[cfg(feature = "training")]
+    {
+        if run_config_train_real(config, config_path, json_output)? {
+            return Ok(());
+        }
+    }
+
     let output_dir = std::path::Path::new(&config.output.dir);
     let logits_dir = output_dir.join("logits");
     let student_dir = output_dir.join("student");
@@ -1245,6 +1263,142 @@ fn run_config_train(
     }
 
     Ok(())
+}
+
+/// §35 wire-up: invoke `entrenar_distill::run` with translated config.
+///
+/// Returns `Ok(true)` if the real pipeline executed (caller should return);
+/// `Ok(false)` to fall through to the legacy metadata stub (e.g. when the
+/// student is a remote HF id without a local cache).
+#[cfg(feature = "training")]
+fn run_config_train_real(
+    config: &DistillYamlConfig,
+    config_path: &Path,
+    json_output: bool,
+) -> Result<bool> {
+    // Only run the real pipeline when the student resolves to a local file.
+    // Remote HF ids (`org/model` without local cache) fall through to the
+    // stub, matching the existing user-facing "pending_download" path.
+    let student_path = std::path::Path::new(&config.student.model_id);
+    if !student_path.exists() {
+        return Ok(false);
+    }
+
+    let distill_config = translate_to_distill_config(config);
+
+    if !json_output {
+        output::header("apr distill apply — Stage 2: Train Student (real KD pipeline)");
+        println!();
+        output::kv("  Config", config_path.display().to_string());
+        output::kv("  Teacher", &config.teacher.model_id);
+        output::kv("  Student", &config.student.model_id);
+        output::kv("  Output dir", &config.output.dir);
+        output::kv(
+            "  Temperature",
+            format!("{:.1}", config.distillation.temperature),
+        );
+        output::kv("  Alpha", format!("{:.2}", config.distillation.alpha));
+        output::kv("  Epochs", config.training.epochs.to_string());
+        println!();
+        output::pipeline_stage("Distillation training", output::StageStatus::Running);
+    }
+
+    let result = entrenar_distill::run(&distill_config)
+        .map_err(|e| CliError::ValidationFailed(format!("distillation pipeline failed: {e}")))?;
+
+    let meta = serde_json::json!({
+        "stage": "train",
+        "teacher": config.teacher.model_id,
+        "student": config.student.model_id,
+        "output_path": result.output_path.display().to_string(),
+        "temperature": config.distillation.temperature,
+        "alpha": config.distillation.alpha,
+        "epochs": config.training.epochs,
+        "batch_size": config.training.batch_size,
+        "learning_rate": config.training.learning_rate,
+        "initial_loss": result.metrics.initial_loss,
+        "final_loss": result.metrics.final_loss,
+        "steps_completed": result.metrics.steps_completed,
+        "duration_seconds": result.duration_seconds,
+        "status": "completed",
+    });
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&meta).unwrap_or_default()
+        );
+    } else {
+        output::pipeline_stage("Distillation training", output::StageStatus::Done);
+        println!();
+        output::kv("  Output", result.output_path.display().to_string());
+        output::kv(
+            "  Initial loss",
+            format!("{:.6}", result.metrics.initial_loss),
+        );
+        output::kv("  Final loss", format!("{:.6}", result.metrics.final_loss));
+        output::kv(
+            "  Steps completed",
+            result.metrics.steps_completed.to_string(),
+        );
+        output::kv("  Duration", format!("{:.2}s", result.duration_seconds));
+        println!();
+        println!("  {} Student training completed.", "DONE".green().bold());
+    }
+
+    Ok(true)
+}
+
+/// Translate apr-cli's `DistillYamlConfig` to `entrenar_distill::DistillConfig`.
+#[cfg(feature = "training")]
+fn translate_to_distill_config(config: &DistillYamlConfig) -> entrenar_distill::DistillConfig {
+    use entrenar_distill::config::{
+        DistillationParams, LoraConfig as DistillLoraOut, OutputConfig, StudentConfig,
+        TeacherConfig, TrainingConfig, WeightFormat,
+    };
+
+    let lora_out = config.student.lora.as_ref().map(|l| DistillLoraOut {
+        rank: u32::try_from(l.rank).unwrap_or(u32::MAX),
+        // apr-cli uses f64 for alpha; pipeline uses f32. lossy cast is fine for
+        // hyperparameters (small magnitudes, no overflow risk in practice).
+        alpha: l.alpha as f32,
+        target_modules: vec![
+            "q_proj".to_string(),
+            "k_proj".to_string(),
+            "v_proj".to_string(),
+            "o_proj".to_string(),
+        ],
+        dropout: 0.0,
+    });
+
+    entrenar_distill::DistillConfig {
+        teacher: TeacherConfig {
+            model_id: config.teacher.model_id.clone(),
+            revision: None,
+            format: WeightFormat::default(),
+        },
+        student: StudentConfig {
+            model_id: config.student.model_id.clone(),
+            lora: lora_out,
+        },
+        distillation: DistillationParams {
+            temperature: config.distillation.temperature,
+            alpha: config.distillation.alpha,
+            progressive: None,
+            attention: None,
+        },
+        training: TrainingConfig {
+            epochs: u32::try_from(config.training.epochs).unwrap_or(u32::MAX),
+            batch_size: u32::try_from(config.training.batch_size).unwrap_or(u32::MAX),
+            learning_rate: config.training.learning_rate,
+            ..TrainingConfig::default()
+        },
+        dataset: entrenar_distill::config::DatasetConfig::default(),
+        output: OutputConfig {
+            dir: std::path::PathBuf::from(&config.output.dir).join("student"),
+            ..OutputConfig::default()
+        },
+    }
 }
 
 /// Result of the distillation operation, containing all metrics needed for output.
