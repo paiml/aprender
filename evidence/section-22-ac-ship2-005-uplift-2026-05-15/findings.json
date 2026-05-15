@@ -1,0 +1,35 @@
+{
+  "spec": "SPEC-SHIP-TWO-001",
+  "section": "§22 / AC-SHIP2-005",
+  "date": "2026-05-15",
+  "host": "noah-Lambda-Vector",
+  "binary": "/home/noah/.cargo/bin/apr (v0.33.0, crates.io install)",
+  "artifact": "/mnt/nvme-raid0/runs/model-2-from-scratch-006-50k-tuned/ckpt/epoch-002.apr",
+  "artifact_size_bytes": 1494053060,
+  "artifact_size_gib": 1.391,
+  "artifact_mtime": "2026-04-26T18:24:00",
+  "prediction": "AC-SHIP2-005 — checkpoint weights saved as .apr (native format, no PyTorch).",
+  "verdict": "DISCHARGED_FUNCTIONAL",
+  "evidence": {
+    "apr_inspect_exit": 0,
+    "valid": true,
+    "format": "APR v2",
+    "tensor_count": 219,
+    "architecture": "LlamaForCausalLM",
+    "checksum_valid": true,
+    "raw_capture": "apr-inspect-epoch-002.json"
+  },
+  "what_this_discharges": [
+    "GATE-ARCH-370M-002: every INV-ARCH-370M-* invariant machine-verified against on-disk artifact — apr inspect runs all checks and exits 0",
+    "Persistent .apr v2 format on real MODEL-2 pretraining output (not synthetic, not stub)",
+    "checksum_valid=true proves the format round-trip is integrity-preserving",
+    "tensor_count=219 matches the canonical 370M architecture tensor count (per llama-370m-sovereign-v1)"
+  ],
+  "what_this_does_NOT_discharge": [
+    "AC-SHIP2-003: val_loss=9.78 vs target 2.2 (capacity ceiling on 565M tokens per §34) — requires §49 pivot or 1T-token corpus",
+    "AC-SHIP2-007/008: model output quality (gibberish at val_loss=9.78)",
+    "GATE-ARCH-370M-004: GGUF roundtrip cos ≥ 1-1e-3 (separate artifact path)"
+  ],
+  "method": "apr inspect --json on canonical epoch-002.apr from the first real-MODEL-2 training run (§22, PR #1073)",
+  "live_command": "apr inspect --json /mnt/nvme-raid0/runs/model-2-from-scratch-006-50k-tuned/ckpt/epoch-002.apr"
+}
