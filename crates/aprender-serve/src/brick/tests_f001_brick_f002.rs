@@ -129,12 +129,20 @@
         assert!(assertion.check_f32(&[1.0, f32::NAN, 3.0], true).is_err());
     }
 
-    // Verify RmsNormBrick runs correctly
+    // Verify RmsNormBrick runs correctly.
+    //
+    // The 1ms budget from the earlier "more lenient" bump is still tight on
+    // contended self-hosted runners — observed `budget exceeded` failures on
+    // PR #1688 (run 25911250791) and multiple sibling PRs the same day.
+    // RmsNorm on a 4-element vector is microseconds of real compute; under
+    // CI load (concurrent cargo builds sharing target dirs + L3) wall time
+    // can spike by 50-100×. Bumping to 100ms preserves the budget guardrail
+    // (catches genuine perf regressions in the 100s-of-ms range) while
+    // eliminating the noise floor crossing.
     #[test]
     fn rmsnorm_brick_runs() {
-        // Use a more lenient budget to avoid flaky failures on slow CI
-        let brick =
-            RmsNormBrick::new(vec![1.0; 4], 1e-5).with_budget(TokenBudget::from_latency(1000.0)); // 1ms budget
+        let brick = RmsNormBrick::new(vec![1.0; 4], 1e-5)
+            .with_budget(TokenBudget::from_latency(100_000.0)); // 100ms budget
         let input = vec![1.0, 2.0, 3.0, 4.0];
         let result = brick.run(&input).expect("should run");
 
