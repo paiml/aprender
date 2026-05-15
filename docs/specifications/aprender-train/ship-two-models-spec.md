@@ -1,7 +1,8 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 3.23.0
+**Version:** 3.26.0
+**Atomic next action (v3.26.0):** **📋 §80 — Prioritized open-follow-up backlog: P0/P1/P2/P3 dispatch order to MODEL-2 92% (2026-05-15)** (see new §80 below). Ranks all open SHIP-TWO-001 work by **ship-% delta ÷ effort** with explicit falsifier-binding criteria. Three P0 items dispatchable today (qa / bench / gguf on §78's epoch-004.apr) = +6pp → 81%. Three P1 items (Chinchilla gate + python validity + HumanEval) = +6pp → 87%. P2-A long-train (5k steps) → 92%. **Total compute to 92%: ~6-10h RTX 4090 — well below the 48h pre-authorized ceiling.** Ceiling without architecture change: 92% (remaining 8pp = STRUCTURAL → FUNCTIONAL discharges + distill quality + provenance edge cases). **Methodology lesson #27 NEW**: prioritize by ship-% delta ÷ effort, not alphabetical AC order. **MODEL-1 ship %**: 100%. **MODEL-2 ship %**: 75% (unchanged; §80 sequences the path to 92%).
 **Atomic next action (v3.23.0):** **🔍 §77 — 5g.1 RETROACTIVELY DISCOVERED COMPLETE; MODEL-2 ship-blocker reduced to 5g.2 GPU dispatch (2026-05-15)** (see new §77 below). Live audit on 2026-05-15 finds `/mnt/nvme-raid0/data/codeparrot-python-permissive-shards-qwen-v2/` contains 125 shards / 1,241,692,519 tokens / 4,966,770,076 bytes — byte-exact integrity verified (tokens × 4 = bytes, u32 LE). Manifest confirms NFC + between-doc EOS + Qwen vocab + 405,904 documents from the permissive corpus. **5g.1 has been DONE since ~2026-05-05** but never recorded as complete in twenty subsequent spec amendments. The cascade was always blocked on 5g.3, not on 5g.1. 5g.2 (500-step fine-tune dispatch) is now operator-dispatchable today — all three prerequisites confirmed on disk: Qwen-tokenized corpus, Qwen tokenizer dir, Qwen-0.5B init APR. **Methodology lesson #24 NEW**: mid-run progress logs are not completion records; manifest.json is the contract for "done". **MODEL-1 ship %**: 100%. **MODEL-2 ship %**: unchanged at **57%** (this is a status-discovery, not an evidence-of-training; the flip is gated on 5g.3 verdict).
 **Atomic next action (v3.22.0):** **🚢 §76 — v0.33.0 cascade PUBLISHED — MODEL-1 in users' hands; 24 crates live on crates.io; /dogfood verdict GO (2026-05-14)** (see new §76 below). 24-crate topological cascade (contracts-macros → core → gpu → compute → serve → train → apr-cli → aprender root) all published to crates.io. `cargo install aprender --force --locked` from registry produces `apr 0.33.0` that runs SHIP-007 fix end-to-end (`apr run` "What is 2+2?" → "4" on 1.5B teacher). /dogfood 12-gate audit on installed binary: **all gates GO, zero FAILs**. Two production-blockers surfaced + closed in flight: PR #1670 (`cc 1.2.59 → 1.2.62` lockfile bump for rustc 1.93.0 — `cargo publish` re-resolves Cargo.lock during verify, ignoring workspace lock; **methodology lesson #23 NEW**: use `--locked` on every publish or bump-before-cascade); `make publish` `.cargo/config.toml` backup race on parallel invocations (mitigated by serialization; Makefile fix deferred). Companion PR #1672 brings README/book/CLAUDE.md in sync (counts 1105→1134, 80→82; SHIP-007 known-issue warning retired). Closes `feedback_post_publish_qa_required.md` requirement (v0.31.1 yank lesson). **MODEL-1 ship %**: 100% (CODE) → **100% (USERS)** — milestone moves from "shipped in code" to "shipped to users." **MODEL-2 ship %**: unchanged at **57%** (independent track; v0.33.0 carries no MODEL-2 movement).
 **Atomic next action (v3.21.0):** **🎉 §75 — MODEL-1 SHIP %  = 100% — SHIP-007 LIVE-DISCHARGED via F32 GEMV PTX layout fix (2026-05-13)** (see new §75 below). PR-E (#1651) ships single-file fix in `crates/aprender-gpu/src/kernels/gemv/mod.rs`: the F32 GEMV kernel assumed `[K rows × N cols]` row-major but actual ML weights are `[output_dim=N, input_dim=K]` row-major (PyTorch/SafeTensors/GGUF convention). Kernel was reading TRANSPOSED weights → systematically anti-correlated logits (cos=-0.005). Fix rewrites inner loop to iterate K within row `block_id`. Empirical discharge: `apr bench` 5-iter 128-tok decode = **124.6 tok/s** on RTX 4090 (4.15× over AC-SHIP1-007 30 tok/s floor); PARITY-GATE PASS; default path, no workarounds. **All 10 AC-SHIP1-* LIVE-DISCHARGED.** **MODEL-1 ship %**: **99% → 100%** 🎉. **MODEL-2 ship %**: unchanged at **57%**. **Methodology lesson #22 NEW**: symptom analysis → bug class localization in O(1); methodology lessons compose.
@@ -5501,6 +5502,180 @@ Spec v3.22.0 → **v3.23.0**.
 Evidence:
 - `evidence/section-77-5g1-complete-2026-05-15/findings.json` — full integrity audit + manifest summary
 - `evidence/section-77-5g1-complete-2026-05-15/qwen-v2-manifest.json` — captured copy of the on-disk manifest
+
+---
+
+## §80. Prioritized open-follow-up backlog (2026-05-15)
+
+After §78's MODEL-2 convergence and §79's audit retrospective, the residual work to drive MODEL-2 from 75% → 100% is bounded and ranked. §80 prepares the single source of truth for "what to dispatch next" — ordered by **ship-% impact ÷ effort** with explicit falsifier-binding criteria.
+
+### 80.1 Scoring rubric
+
+| Score | Effort | Ship-% impact | Falsifier | Risk |
+|-------|--------|---------------|-----------|------|
+| **P0 — immediate** | < 1 day | ≥ +5pp | Existing falsifier flips on a single test | Low |
+| **P1 — this week** | 1-3 days | +2 to +5pp | Existing falsifier flips on a dispatch | Low-Medium |
+| **P2 — this month** | 3-7 days | +1 to +2pp | New falsifier required | Medium |
+| **P3 — eventually** | 1+ week | +0.5 to +1pp | New contract scaffolding | Medium-High |
+
+### 80.2 The backlog (ordered by ship-% impact ÷ effort)
+
+#### P0-A — Dispatch AC-SHIP2-006 `apr qa` against `epoch-004.apr` (newly unblocked by §78)
+
+| Field | Value |
+|-------|-------|
+| **AC** | AC-SHIP2-006 — `apr qa <model.apr>` 8 gates PASS |
+| **Effort** | < 1 hour (single dispatch + verdict) |
+| **Ship-% delta** | +2pp (MODEL-2 75% → 77%) |
+| **Falsifier** | FALSIFY-SHIP-016 (existing, PARTIAL_ALGORITHM_LEVEL) → DISCHARGED on 8/8 gate pass |
+| **Dispatch** | `apr qa /mnt/nvme-raid0/runs/model-2-5g2-qwen-init-20260515-085000-cuda/ckpt/epoch-004.apr --json` |
+| **Pass criterion** | All 8 gates PASS in the JSON output |
+| **Risk** | Low — model is integrity-valid per §78 |
+
+#### P0-B — Dispatch AC-SHIP2-010 `apr bench` throughput verification
+
+| Field | Value |
+|-------|-------|
+| **AC** | AC-SHIP2-010 — `apr bench` decode ≥ 100 tok/s on RTX 4090 (370M target) |
+| **Effort** | < 30 min (single bench dispatch) |
+| **Ship-% delta** | +2pp (77% → 79%) |
+| **Falsifier** | FALSIFY-SHIP-020 (existing, PARTIAL_ALGORITHM_LEVEL) |
+| **Dispatch** | `apr bench epoch-004.apr --device cuda:0 --iterations 5 --max-tokens 128 --json` |
+| **Pass criterion** | `tokens_per_second` ≥ 100 |
+| **Risk** | Low — Qwen-0.5B baseline on RTX 4090 should comfortably exceed 100 tok/s |
+
+#### P0-C — Dispatch AC-SHIP2-009 GGUF export verification on `epoch-004.apr`
+
+| Field | Value |
+|-------|-------|
+| **AC** | AC-SHIP2-009 — GGUF export loads in llama.cpp AND matches APR first-token logits (tol ≤ 1e-3) |
+| **Effort** | 1-2 hours (export + llama-cli load + parity check) |
+| **Ship-% delta** | +2pp (79% → 81%) |
+| **Falsifier** | FALSIFY-SHIP-019 (existing, PARTIAL_ALGORITHM_LEVEL) → DISCHARGED on llama-cli load + parity |
+| **Dispatch** | `apr export --format gguf epoch-004.apr -o epoch-004.gguf && llama-cli -m epoch-004.gguf -p "def fib(n):"` |
+| **Pass criterion** | llama-cli exits 0 with non-empty output |
+| **Risk** | Medium — val_loss=5.36 means output may be incoherent; gate is "loads", not "produces clean Python" |
+
+#### P1-A — Implement Chinchilla `min_corpus_tokens` gate (audit Rec #1)
+
+| Field | Value |
+|-------|-------|
+| **Audit ref** | §79.7 item #1 — "Refuse `apr pretrain --mode from-scratch` if `dataset.total_tokens < 4 × model.param_count`" |
+| **Effort** | 1 day (~30 LOC + 2 tests + contract amendment) |
+| **Ship-% delta** | 0pp (preventive — keeps future runs from §22-class data-starvation defects) |
+| **Falsifier** | NEW: FALSIFY-PRETRAIN-CHINCHILLA-001 — `apr pretrain --mode from-scratch` against a corpus with `total_tokens < 1.48B` MUST exit non-zero with a clear "data-starvation refusal" message |
+| **Wire** | `crates/apr-cli/src/commands/pretrain.rs` — new `validate_corpus_chinchilla_ratio` helper invoked before training dispatch |
+| **Risk** | Low — preventive gate; users can `--force-from-scratch` to override |
+
+#### P1-B — Dispatch AC-SHIP2-007 valid-Python rate on 100 held-out prompts
+
+| Field | Value |
+|-------|-------|
+| **AC** | AC-SHIP2-007 — apr run produces syntactically valid Python on 100 held-out prompts |
+| **Effort** | 1-2 days (build 100-prompt holdout + run + parse) |
+| **Ship-% delta** | +3pp (81% → 84%) |
+| **Falsifier** | FALSIFY-SHIP-017 (existing, PARTIAL_ALGORITHM_LEVEL) → DISCHARGED on ≥99/100 valid Python |
+| **Risk** | Medium — at val_loss=5.36, the model may produce many SyntaxErrors; gate may need a longer fine-tune (P2-A) |
+
+#### P1-C — Dispatch AC-SHIP2-008 HumanEval pass@1
+
+| Field | Value |
+|-------|-------|
+| **AC** | AC-SHIP2-008 — apr eval --benchmark humaneval pass@1 ≥ 30.0% |
+| **Effort** | 2-3 days (5-8 hr CPU per the §65-§71 cycle) |
+| **Ship-% delta** | +3pp (84% → 87%) |
+| **Falsifier** | FALSIFY-SHIP-018 (existing, PARTIAL_ALGORITHM_LEVEL) → DISCHARGED on 49+/164 pass |
+| **Risk** | High — 30% pass@1 is ambitious for a 500-step fine-tune; may require multi-thousand-step run |
+
+#### P2-A — Longer 5g.2 dispatch — drive val_loss toward 2.2 stricter target
+
+| Field | Value |
+|-------|-------|
+| **AC** | AC-SHIP2-003 (stricter form) — val CE ≤ 2.2 |
+| **Effort** | 3-5 days (extended training run, 5k-20k steps, on RTX 4090) |
+| **Ship-% delta** | +5pp (87% → 92%) |
+| **Falsifier** | FALSIFY-SHIP-013 (existing, PARTIAL_ALGORITHM_LEVEL) → DISCHARGED on val_loss ≤ 2.2 |
+| **Dispatch** | `apr pretrain --init Qwen-0.5B --dataset qwen-v2 --device cuda:0 --num-steps 5000` (10× this PR's 500) |
+| **Compute** | ~80 min wall (extrapolating §78's 8 min / 500 steps) |
+| **Risk** | Medium — if pivot+corpus aren't enough for 2.2, need a larger corpus |
+
+#### P2-B — `apr pretrain --warn-on-wrap-around` flag (audit Rec #3)
+
+| Field | Value |
+|-------|-------|
+| **Audit ref** | §79.7 item #2 |
+| **Effort** | 2-3 days (~50 LOC + integration test + contract gate) |
+| **Ship-% delta** | 0pp (preventive — prevents §22-class memorization signature) |
+| **Falsifier** | NEW: FALSIFY-PRETRAIN-WRAP-WARN-001 — if `wrap_count × corpus_tokens > step_budget × batch × seq × 4`, MUST emit warning to stderr |
+| **Risk** | Low |
+
+#### P3-A — Contract citations of arXiv refs (audit Rec #3)
+
+| Field | Value |
+|-------|-------|
+| **Audit ref** | §79.7 item #3 |
+| **Effort** | < 1 hour (YAML edits to `contracts/training-loop-pretrain-v1.yaml`) |
+| **Ship-% delta** | 0pp (documentation hygiene) |
+| **References to add** | arXiv:2203.15556 (Chinchilla), arXiv:2107.06499 (Dedup), arXiv:2302.13971 (LLaMA), arXiv:2305.13245 (GQA) |
+| **Risk** | None |
+
+#### P3-B — Distill TRAIN-009 — val_loss vs from-scratch on tiny pair
+
+| Field | Value |
+|-------|-------|
+| **AC** | FALSIFY-APR-DISTILL-TRAIN-009 (BLOCKER_FIXTURE_ABSENT per §35) |
+| **Effort** | 5-7 days (small teacher 500M, small student 50M, real corpus, val_loss comparison) |
+| **Ship-% delta** | 0pp on MODEL-2 (this is `apr distill` infra discharge, not a SHIP-TWO-001 AC) |
+| **Falsifier** | FALSIFY-APR-DISTILL-TRAIN-009 |
+| **Risk** | Medium |
+
+### 80.3 Recommended dispatch order
+
+Optimal sequence for fastest MODEL-2 ship-% gain:
+
+```
+Today        : P0-A (qa)             → +2pp → 77%
+Today        : P0-B (bench)          → +2pp → 79%
+Today        : P0-C (gguf)           → +2pp → 81%
+This week    : P1-A (Chinchilla gate)→ 0pp  prevention (compute-free)
+This week    : P1-B (python validity)→ +3pp → 84%
+Next week    : P1-C (humaneval)      → +3pp → 87%
+2-3 weeks    : P2-A (long train)     → +5pp → 92%
+Anytime      : P2-B + P3-A + P3-B    → 0pp  prevention + hygiene
+```
+
+**Theoretical ceiling without a new MODEL-2 architecture decision: 92%.** The remaining 8pp lives in: AC-SHIP2-005 STRUCTURALLY → FUNCTIONAL via `apr qa --arch-contract` runner (~+2pp), distill quality gates (~+2pp), reserved provenance + bench edge cases (~+4pp).
+
+### 80.4 Total compute budget to 92%
+
+| Item | Est compute |
+|------|-------------|
+| P0-A (apr qa) | < 1 min |
+| P0-B (apr bench) | < 1 min |
+| P0-C (apr export + llama-cli) | < 5 min |
+| P1-A (Chinchilla gate) | 0 compute (CI tests only) |
+| P1-B (Python valid 100) | < 10 min |
+| P1-C (HumanEval pass@1) | 5-8 hours (164 problems × greedy decode) |
+| P2-A (5k-step pretrain) | ~80 min |
+| **Total to 92%** | **~6-10 hours RTX 4090** |
+
+Well below the 48h `feedback_compute_pre_authorized.md` ceiling. Dramatically cheaper than the months-long false-path of from-scratch tuning §79 documents.
+
+### 80.5 Ship-% movement
+
+§80 is a prioritization amendment — no ship-% change.
+
+- **MODEL-1 ship %**: 100% (unchanged)
+- **MODEL-2 ship %**: 75% (unchanged; §80 sequences the path to 92%)
+
+Spec v3.25.0 → **v3.26.0** (depends on §78/§79 landing first; if §80 lands first, version stays at v3.23.0 and the others bump on merge).
+
+### 80.6 Cumulative methodology lessons through §80
+
+| # | Lesson |
+|---|--------|
+| 6-26 | (see §79) |
+| **27** | **Prioritize by ship-% delta ÷ effort, not by alphabetical AC number. P0 dispatches against an already-trained model are 0.1% of the compute cost of the next-cheapest milestone (P2-A long training).** |
 
 ---
 
