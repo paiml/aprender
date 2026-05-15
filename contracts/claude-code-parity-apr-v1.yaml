@@ -63,8 +63,8 @@ metadata:
     - crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml
 
 name: claude-code-parity-apr
-version: "1.27.0"
-status: ACTIVE_RUNTIME   # 16/16 gates registered; 4 with status: ACTIVE_RUNTIME (CCPA-013/014/015/016 — the runtime-evidence + outcome-parity track), rest at PLANNED_M*/IN_REVIEW/HARD_BLOCKING_M16 per their lifecycle phase. No OPEN residue. v1.27.0 (companion-repo M167, 2026-05-14) — flips FALSIFY-CCPA-013 (first_recorded_parity_score) from `status: OPEN` → `status: ACTIVE_RUNTIME`. The gate's assertion has been satisfied since v1.1.0 (3 measured_parity blocks dating 2026-04-27 against `fixtures/canonical/` with aggregate_score = 1.0000), but the gate-level status field was never flipped — stale prose that this revision corrects. Also extends the assertion's `fixture_corpus_path` constraint to accept EITHER `fixtures/canonical/` (AUTHORED, since v1.2.0) OR `evidence/phase-3/captures/` (REAL-BINARY bilateral bench, companion-repo M150 — claude 2.1.139 + apr 0.32.0 + Qwen2.5-Coder-1.5B-Instruct-Q4_K_M, agreement = 1.0000 on MultiPL-E-Rust HumanEval/0..4). Adds a 4th measured_parity block under CCPA-013 recording M150's real-binary evidence as the strongest empirical discharge anchor. **CCPA-013 was the last gate stuck at `status: OPEN`** — its flip closes the OPEN residue. v1.26.0 (companion-repo M147+M152+M162 Phase 3 sequence, 2026-05-13) (companion-repo M147+M152+M162 Phase 3 sequence, 2026-05-13) — adds FALSIFY-CCPA-015 (ccpa_trace_subproc_output_purity) AND FALSIFY-CCPA-016 (outcome_parity_bound) to the gate registry. CCPA-015 was authored at M147 via provable-contract design (falsifying test FIRST, fix via Stdio::null()) for the ccpa-trace-subproc capture binary; PROPOSED in v1.25.0, promoted ACTIVE_RUNTIME here. CCPA-016 is the Phase 3 P3.4 outcome-parity gate authored at M152 — asserts aggregate agreement >= 0.5 on a MultiPL-E-Rust-class corpus with bidirectional sensitivity (synthetic regression fixture fails threshold; synthetic identity passes). CCPA-016 was empirically validated at M150 (real bilateral bench produced agreement = 1.0000 on 5/5 HumanEval/0..4 with real claude 2.1.139 + real apr code 0.32.0 via Qwen2.5-Coder-1.5B-Instruct-Q4_K_M). The companion-repo M162 row records that aprender#1638 MERGED upstream at squash b61b76b4 (2026-05-13), un-gating apr code from `--features code` so `cargo install apr-cli` ships it by default — the Axis 3 LlmDriver-adapter discharge is FULLY confirmed. v1.25.0 (companion-repo M136-M140 axis-2-closure-plan sequence, 2026-05-11) — adds FALSIFY-CCPA-014 (companion-repo M136-M140 axis-2-closure-plan sequence, 2026-05-11) — adds FALSIFY-CCPA-014 (os_event_parity_bound) to the gate registry, completing the axis-2 closure-plan idea (2) CLI subprocess instrumentation track. New gate consumes ccpa_subproc::OsEvent records (M136) via ccpa_differ::os_event_parity (M137) and asserts canonical-corpus score >= 0.95 + bidirectional sensitivity on regression corpus (M139). v1.24.0 (companion-repo M128-M131 sequence, 2026-05-10) — bumped from v1.23.0 to integrate the M109 cosine-vs-HF-FP16 LIVE-DISCHARGE (cos_sim 0.995384 ≥ 0.99 on lambda-vector RTX 4090, 2026-05-09; aprender PR #1597 squash 3fb04ef86 flipped `qwen3-moe-forward-v1` v1.4.0 ACTIVE_ALGORITHM_LEVEL → v1.5.0 ACTIVE_RUNTIME). Discharges the v1.23.0 status-prose claim "Cosine vs HF FP16 remains operator-confirm pending ~60 GB HF download" — the FP16 weights had been on lambda-vector at /mnt/nvme-raid0/models/Qwen3-Coder-30B-A3B-Instruct/ (57 GB / 16 safetensors shards) for ~7 days; the "60 GB download" blocker was stale by 62 days. v1.23.0 (M35 M32d discharge audit-trail bump) records the 4-bug stack landed on aprender main as commit 5235aaeb9 (#1228) plus diagnostic surface PRs #1222 (Step 2), #1226 (Step 2.5), #1401 (Step 2 JSON wire). M32d gibberish output ("%%%%%%%%") converted to coherent English answers across math/geography/translation/code domains. M34 FAST PATH 5-whys plan delivered at lucky-case bound (5 substantive PRs vs 4-6 estimated, ~6 hours wall vs 2-3 days). Component priors verified empirically: rank-3 Q/K RMSNorm (15%) + rank-4 rope_theta (10%) + chat template both correct. Cosine vs HF FP16 formal flip **DISCHARGED 2026-05-09 at companion-repo M109** (apr_argmax = hf_argmax = 3555 " What"; 555ms apr-forward; HF FP16 fixture generated in 52s).
+version: "1.28.0"
+status: ACTIVE_RUNTIME   # 17/17 gates registered; 4 with status: ACTIVE_RUNTIME (CCPA-013/014/015/016 — the runtime-evidence + outcome-parity track) + 1 with status: PROPOSED (CCPA-017 — project-scale parity, awaiting first operator-dispatched bench to flip ACTIVE_RUNTIME at v1.29.0), rest at PLANNED_M*/IN_REVIEW/HARD_BLOCKING_M16 per their lifecycle phase. No OPEN residue. v1.28.0 (companion-repo M180-M188 Phase 4 sequence, 2026-05-15) — adds FALSIFY-CCPA-017 (project_scale_parity_bound) to the gate registry. Phase 4 operationalizes the M159 ProgramBench prior-art (arXiv:2605.03546, 0%/200 SOTA baseline) into companion-tier project-scale parity testing: the M182 corpus draws 5 fixtures from real open GitHub issues across paiml/decy + paiml/bashrs + paiml/depyler with pinned pre-fix commit SHAs; the M184 runner (scripts/phase-4-bench.sh, 288 lines bash) clones at the pinned SHA, dispatches each system with timeout APR_TIMEOUT_S (default 900s), snapshots diff vs SHA, runs the per-fixture oracle_cmd; the M186 scorer (crates/ccpa-differ/src/project_scale_diff.rs, ~310 lines Rust) lifts the runner JSON into ProjectScaleParityReport with 5 derived metrics (per-fixture: approach_match + lines_edited_ratio; corpus-level: partial_agreement + files_jaccard_corpus + approach_match_rate); the M188 gate test (crates/ccpa-differ/tests/falsify_ccpa_017_project_scale_parity.rs, ~260 lines, 7 active + 1 #[ignore]'d) asserts partial_agreement >= 0.3 AND files_jaccard_corpus >= 0.3 with bidirectional sensitivity verified on synthetic identity (passes) and synthetic regression (fails) fixtures. CCPA-017 enters at status: PROPOSED because no operator-dispatched measurement has produced evidence/phase-4/project-scale-scores.json yet; the live-evidence test is #[ignore]'d until that exists. Threshold values (0.3/0.3) are tentative POC-tier floors — they WILL be recalibrated after first operator dispatch. Phase 4 is the SIGNAL regime, not the SATURATION regime: a CCPA-016-style "agreement = 1.0" result is implausible at project-scale per ProgramBench evidence; the goal is "do both systems make matching partial progress?" not "do both systems fully succeed?". v1.27.0 (companion-repo M167, 2026-05-14) — flips FALSIFY-CCPA-013 (first_recorded_parity_score) from `status: OPEN` → `status: ACTIVE_RUNTIME`. The gate's assertion has been satisfied since v1.1.0 (3 measured_parity blocks dating 2026-04-27 against `fixtures/canonical/` with aggregate_score = 1.0000), but the gate-level status field was never flipped — stale prose that this revision corrects. Also extends the assertion's `fixture_corpus_path` constraint to accept EITHER `fixtures/canonical/` (AUTHORED, since v1.2.0) OR `evidence/phase-3/captures/` (REAL-BINARY bilateral bench, companion-repo M150 — claude 2.1.139 + apr 0.32.0 + Qwen2.5-Coder-1.5B-Instruct-Q4_K_M, agreement = 1.0000 on MultiPL-E-Rust HumanEval/0..4). Adds a 4th measured_parity block under CCPA-013 recording M150's real-binary evidence as the strongest empirical discharge anchor. **CCPA-013 was the last gate stuck at `status: OPEN`** — its flip closes the OPEN residue. v1.26.0 (companion-repo M147+M152+M162 Phase 3 sequence, 2026-05-13) (companion-repo M147+M152+M162 Phase 3 sequence, 2026-05-13) — adds FALSIFY-CCPA-015 (ccpa_trace_subproc_output_purity) AND FALSIFY-CCPA-016 (outcome_parity_bound) to the gate registry. CCPA-015 was authored at M147 via provable-contract design (falsifying test FIRST, fix via Stdio::null()) for the ccpa-trace-subproc capture binary; PROPOSED in v1.25.0, promoted ACTIVE_RUNTIME here. CCPA-016 is the Phase 3 P3.4 outcome-parity gate authored at M152 — asserts aggregate agreement >= 0.5 on a MultiPL-E-Rust-class corpus with bidirectional sensitivity (synthetic regression fixture fails threshold; synthetic identity passes). CCPA-016 was empirically validated at M150 (real bilateral bench produced agreement = 1.0000 on 5/5 HumanEval/0..4 with real claude 2.1.139 + real apr code 0.32.0 via Qwen2.5-Coder-1.5B-Instruct-Q4_K_M). The companion-repo M162 row records that aprender#1638 MERGED upstream at squash b61b76b4 (2026-05-13), un-gating apr code from `--features code` so `cargo install apr-cli` ships it by default — the Axis 3 LlmDriver-adapter discharge is FULLY confirmed. v1.25.0 (companion-repo M136-M140 axis-2-closure-plan sequence, 2026-05-11) — adds FALSIFY-CCPA-014 (companion-repo M136-M140 axis-2-closure-plan sequence, 2026-05-11) — adds FALSIFY-CCPA-014 (os_event_parity_bound) to the gate registry, completing the axis-2 closure-plan idea (2) CLI subprocess instrumentation track. New gate consumes ccpa_subproc::OsEvent records (M136) via ccpa_differ::os_event_parity (M137) and asserts canonical-corpus score >= 0.95 + bidirectional sensitivity on regression corpus (M139). v1.24.0 (companion-repo M128-M131 sequence, 2026-05-10) — bumped from v1.23.0 to integrate the M109 cosine-vs-HF-FP16 LIVE-DISCHARGE (cos_sim 0.995384 ≥ 0.99 on lambda-vector RTX 4090, 2026-05-09; aprender PR #1597 squash 3fb04ef86 flipped `qwen3-moe-forward-v1` v1.4.0 ACTIVE_ALGORITHM_LEVEL → v1.5.0 ACTIVE_RUNTIME). Discharges the v1.23.0 status-prose claim "Cosine vs HF FP16 remains operator-confirm pending ~60 GB HF download" — the FP16 weights had been on lambda-vector at /mnt/nvme-raid0/models/Qwen3-Coder-30B-A3B-Instruct/ (57 GB / 16 safetensors shards) for ~7 days; the "60 GB download" blocker was stale by 62 days. v1.23.0 (M35 M32d discharge audit-trail bump) records the 4-bug stack landed on aprender main as commit 5235aaeb9 (#1228) plus diagnostic surface PRs #1222 (Step 2), #1226 (Step 2.5), #1401 (Step 2 JSON wire). M32d gibberish output ("%%%%%%%%") converted to coherent English answers across math/geography/translation/code domains. M34 FAST PATH 5-whys plan delivered at lucky-case bound (5 substantive PRs vs 4-6 estimated, ~6 hours wall vs 2-3 days). Component priors verified empirically: rank-3 Q/K RMSNorm (15%) + rank-4 rope_theta (10%) + chat template both correct. Cosine vs HF FP16 formal flip **DISCHARGED 2026-05-09 at companion-repo M109** (apr_argmax = hf_argmax = 3555 " What"; 555ms apr-forward; HF FP16 fixture generated in 52s).
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Top-level invariants — the 12 falsifiable gates this contract asserts.
@@ -90,6 +90,7 @@ invariants:
   - { id: FALSIFY-CCPA-014, name: os_event_parity_bound,       summary: 'OS-level event parity (axis-2-closure-plan M115.4): macro-averaged Jaccard >= 0.95 per fixture in fixtures/os-canonical/; bidirectional-sensitivity gate on fixtures/os-regression/ (every fixture < 0.95 + non-empty drift records).' }
   - { id: FALSIFY-CCPA-015, name: ccpa_trace_subproc_output_purity, summary: 'Every line emitted to stdout by ccpa-trace-subproc MUST decode as a ccpa_subproc::OsEvent JSON object. Subprocess stdout MUST NOT interleave with the capture stream (use Stdio::null() not Stdio::inherit()).' }
   - { id: FALSIFY-CCPA-016, name: outcome_parity_bound,        summary: 'Outcome parity (Phase 3 P3.4): aggregate agreement on a MultiPL-E-Rust-class corpus >= 0.5 (POC-tier); bidirectional-sensitivity via synthetic regression (< 0.5 → fail) + synthetic identity (1.0 → pass) fixtures.' }
+  - { id: FALSIFY-CCPA-017, name: project_scale_parity_bound,  summary: 'Project-scale parity (Phase 4 P4.4): aggregate partial_agreement >= 0.3 AND files_jaccard_corpus >= 0.3 on a multi-file Cargo-workspace task corpus drawn from real GitHub issues (companion-repo M182). Bidirectional-sensitivity via synthetic identity (passes) + synthetic regression (fails) fixtures. PROPOSED at v1.28.0; ACTIVE_RUNTIME pending first operator-dispatched measurement.' }
 
 scope: >
   every recorded fixture under <ccpa-repo>/fixtures/, every replay run the
@@ -814,6 +815,118 @@ falsification_conditions:
       - { date: '2026-05-13', version_before: '1.25.0', version_after: '1.26.0',
           change: 'Added FALSIFY-CCPA-016 to gate registry. Companion-repo M152 ships the gate test against live evidence/phase-3/multipl-e-rust-scores.json; M150 produced the bilateral bench empirical evidence; this revision flips the contract to recognize CCPA-016 as ACTIVE_RUNTIME from authoring.' }
 
+  - id: FALSIFY-CCPA-017
+    name: project_scale_parity_bound
+    status: PROPOSED
+    assertion: |
+      Project-scale parity (Phase 4 P4.4). On a multi-file Cargo-workspace
+      task corpus where each task is drawn from a real open GitHub issue
+      (companion-repo M182: fixtures/project-scale/ initially 5 fixtures
+      across paiml/decy + paiml/bashrs + paiml/depyler), both teacher
+      (claude) and student (apr code) are dispatched in a clone of the
+      pinned pre_fix_commit SHA + given the issue body as their prompt
+      + their final repo state is scored against the per-fixture
+      completion oracle_cmd. The aggregate project-scale parity report
+      MUST satisfy BOTH:
+        - aggregate `partial_agreement` >= 0.3
+        - aggregate `files_jaccard_corpus` >= 0.3
+
+      Where derived metrics are:
+        partial_agreement     = mean over fixtures of
+                                 min(teacher.oracle_pass, student.oracle_pass)
+        files_jaccard_corpus  = mean over fixtures of
+                                 |teacher.files_touched ∩ student.files_touched|
+                                 / |teacher.files_touched ∪ student.files_touched|
+
+      Plus consistency invariants:
+        - `corpus_size >= 3` (minimum sample size for statistical meaning)
+        - `corpus_size == per_fixture.len()` (record-count match)
+
+      Bidirectional sensitivity (mandatory):
+        - A synthetic regression fixture (one side passes, other fails,
+          disjoint files-touched lists) MUST fail BOTH thresholds.
+        - A synthetic identity fixture (both sides pass on same files
+          with identical files_touched_jaccard = 1.0) MUST pass.
+        - An empty-corpus report MUST fail (prevents "no-data" from
+          being claimed as success).
+
+      Source of truth: `evidence/phase-4/project-scale-scores.json`
+      produced by `scripts/phase-4-bench.sh` on the companion repo.
+    test_harness: |
+      `cargo test -p ccpa-differ --test falsify_ccpa_017_project_scale_parity`
+      runs 7 active assertions + 1 `#[ignore]`'d live-evidence assertion:
+        - synthetic_identity_corpus_passes_gate
+        - synthetic_regression_corpus_fails_gate
+        - empty_corpus_vacuously_fails_threshold
+        - exactly_at_threshold_passes (verifies >= not >)
+        - just_below_partial_threshold_fails (single-gate sensitivity)
+        - just_below_files_threshold_fails  (single-gate sensitivity)
+        - threshold_constants_match_plan (sentinel)
+        - live_evidence_meets_project_scale_threshold (#[ignore]'d
+          until operator dispatches `bash scripts/phase-4-bench.sh`)
+
+      All 7 active GREEN on the companion-repo M188 scaffold (synthetic
+      fixtures constructed in-test, no on-disk corpus dependency).
+    rationale: |
+      The M180 Phase 4 plan operationalizes the M159 ProgramBench
+      prior-art (arXiv:2605.03546) into companion-tier project-scale
+      parity testing. ProgramBench reports 0%/200 fully-resolved across
+      Claude Opus/Sonnet/Haiku + GPT + Gemini at the project-scale
+      layer; this evidence validates the M159 caveat "function-level
+      1.0 does not extrapolate to project-scale" and establishes the
+      Phase 4 SIGNAL regime: the user-facing parity question is
+      "do both systems make matching partial progress?" not "do both
+      systems fully succeed?".
+
+      The DUAL-threshold design (partial_agreement >= 0.3 AND
+      files_jaccard_corpus >= 0.3) is intentional: project-scale parity
+      has two orthogonal signal channels — pass-rate agreement AND
+      files-touched overlap. A system could match pass rate without
+      touching the same files (different solutions to same problem);
+      or touch the same files without matching pass rate (one fixes
+      the bug, the other breaks more). Both channels must show
+      agreement for "project-scale parity" to mean anything.
+
+      Threshold values (0.3/0.3) are tentative POC-tier floors. They
+      WILL be recalibrated after first operator-dispatched measurement
+      against the M182 corpus. A 0.5/0.5 threshold à la CCPA-016 would
+      assume saturation that ProgramBench evidence shows doesn't exist
+      at project-scale; 0.3 is "at least 30% of fixtures see matching
+      progress" — a plausible POC-tier floor that the M182 corpus
+      might actually meet.
+
+      Status PROPOSED (not ACTIVE_RUNTIME) because no
+      operator-dispatched measurement has produced
+      evidence/phase-4/project-scale-scores.json yet. The
+      live-evidence test is `#[ignore]`'d until that file exists.
+      Once the operator runs `bash scripts/phase-4-bench.sh` and the
+      gate passes against real data, a v1.29.0 bump will flip
+      PROPOSED → ACTIVE_RUNTIME.
+
+      Companion-repo Phase 4 sequence (M180-M188):
+        M180 (PR #167 squash c7107b9) — phase-4-project-scale-plan.md
+          authored; P4.1-P4.5 sub-deliverables defined.
+        M182 (PR #169 squash b36ceb6) — P4.1 corpus: 5 fixtures from
+          paiml/decy#40 + paiml/decy#39 + paiml/bashrs#209 +
+          paiml/depyler#223 + paiml/depyler#224. Operator directive
+          "why not use ../decy ../bashrs and ../depy corpus" steered
+          authoring toward real GitHub issues over synthetic stretch
+          goals.
+        M184 (PR #171 squash 0f8c451) — P4.2 runner: phase-4-bench.sh
+          (288 lines bash); clones at pre_fix_commit SHA + dispatches
+          + snapshots + runs oracle + emits per-fixture and aggregate
+          JSON with files_touched_jaccard via jq set-arithmetic.
+        M186 (PR #173 squash c115966) — P4.3 scoring: project_scale_diff.rs
+          (~310 lines Rust) consumes runner JSON + adds 5 derived
+          metrics + passes_threshold predicate; 14 unit tests GREEN.
+        M188 (PR #175 squash a574655) — P4.4 gate test:
+          falsify_ccpa_017_project_scale_parity.rs (~260 lines); 7
+          synthetic-fixture tests verify bidirectional sensitivity
+          before any real measurement exists.
+    semantic_change_log:
+      - { date: '2026-05-15', version_before: '1.27.0', version_after: '1.28.0',
+          change: "Added FALSIFY-CCPA-017 to gate registry at status: PROPOSED. Companion-repo M188 ships the gate test scaffold (7 synthetic-fixture tests + 1 #[ignore]'d live-evidence test); thresholds (partial_agreement >= 0.3 AND files_jaccard_corpus >= 0.3) are tentative POC-tier floors awaiting first operator-dispatched measurement to calibrate. Phase 4 P4.5 contract bump." }
+
   - id: FALSIFY-CCPA-008
     name: parity_score_bound
     status: PLANNED_M6
@@ -972,6 +1085,92 @@ milestones:
 # ─────────────────────────────────────────────────────────────────────────────
 
 status_history:
+  - date: '2026-05-15'
+    from: 'ACTIVE_RUNTIME v1.27.0'
+    to: 'ACTIVE_RUNTIME v1.28.0'
+    note: 'companion-repo M180-M188 Phase 4 sequence — FALSIFY-CCPA-017 (project_scale_parity_bound) added to gate registry at status: PROPOSED; awaits first operator-dispatched bench to flip ACTIVE_RUNTIME'
+    reason: |
+      Adds 1 new falsification gate to the registry: CCPA-017
+      (project-scale parity bound). Gate count: 16 → 17.
+
+      Phase 4 closes the function-scale → project-scale extrapolation
+      gap the M159 ProgramBench prior-art (arXiv:2605.03546) flagged:
+      0%/200 fully-resolved across Claude Opus/Sonnet/Haiku + GPT +
+      Gemini at the project-scale layer means a CCPA-016-style "both
+      pass" assertion is implausible. CCPA-017 inverts the question:
+      partial-progress agreement, not all-or-nothing.
+
+      DUAL-threshold design: partial_agreement >= 0.3 AND
+      files_jaccard_corpus >= 0.3 — both orthogonal channels must
+      show agreement. Tentative 0.3/0.3 floors; recalibration awaits
+      first operator-dispatched measurement.
+
+      Companion-repo Phase 4 sequence (M180-M188):
+
+        M180 (PR #167 squash c7107b9) — phase-4-project-scale-plan.md
+          authored. P4.1-P4.5 sub-deliverables defined. Anchored in
+          ProgramBench prior-art (M159) for the signal-regime framing.
+
+        M182 (PR #169 squash b36ceb6) — P4.1 corpus: 5 fixtures from
+          real open GitHub issues across paiml/decy + paiml/bashrs +
+          paiml/depyler (decy#40 fix test assertions; decy#39 fix
+          clippy; bashrs#209 lint Makefile false-positives; depyler#223
+          enforce Oracle constraints; depyler#224 numeric coercion).
+          Operator directive "why not use ../decy ../bashrs and
+          ../depy corpus" steered toward real GitHub issues over
+          synthetic stretch goals — real issues = real stretch goals
+          = the operator has already triaged them as work worth doing.
+          Each fixture pins pre_fix_commit SHA in meta.toml; runner
+          clones at dispatch (no per-fixture starting-state snapshot,
+          which would be impractical at 685+ Rust files in depyler).
+
+        M184 (PR #171 squash 0f8c451) — P4.2 runner: phase-4-bench.sh
+          (288 lines bash). Per fixture × system: clone at SHA,
+          dispatch with timeout, snapshot diff, run oracle, record
+          exit + pattern match. Emits per-fixture + aggregate JSON
+          to evidence/phase-4/project-scale-scores.json with
+          files_touched_jaccard via jq set-arithmetic.
+
+        M186 (PR #173 squash c115966) — P4.3 scoring:
+          project_scale_diff.rs (~310 lines Rust). Type hierarchy
+          ProjectScaleParityReport → Vec<PerFixtureScore> →
+          (teacher: SideScore, student: SideScore). Loader
+          ProjectScaleParityReport::from_json_str() + 5 derived
+          metrics (per-fixture: approach_match + lines_edited_ratio;
+          corpus-level: partial_agreement + files_jaccard_corpus +
+          approach_match_rate). 14 unit tests GREEN.
+
+        M188 (PR #175 squash a574655) — P4.4 gate test:
+          falsify_ccpa_017_project_scale_parity.rs (~260 lines).
+          7 active synthetic-fixture tests + 1 #[ignore]'d
+          live-evidence test. Bidirectional sensitivity verified:
+          identity passes (partial=1.0, jaccard=1.0); regression
+          fails (partial=0.0, jaccard=0.0); empty corpus fails
+          (by design — prevents "no-data" from claiming success);
+          exactly-at-threshold passes (>= not > semantics);
+          just-below-either-threshold fails (single-gate
+          sensitivity). 7/7 GREEN.
+
+      Gate-level statuses post-v1.28.0: 4 ACTIVE_RUNTIME (CCPA-013/
+      014/015/016) + 1 PROPOSED (CCPA-017) — awaiting first
+      operator-dispatched bench, after which v1.29.0 will flip
+      PROPOSED → ACTIVE_RUNTIME. Rest at PLANNED_M*/IN_REVIEW/
+      HARD_BLOCKING_M16 per their lifecycle phase. No OPEN residue.
+
+      Gate registry summary post-v1.28.0:
+        FALSIFY-CCPA-001..006  PLANNED_M*    (Phase 1 RECORD scope; M2.3-rescoped)
+        FALSIFY-CCPA-007       IN_REVIEW     (coverage-floor)
+        FALSIFY-CCPA-008       PLANNED_M6    (parity_score_bound)
+        FALSIFY-CCPA-009..012  ACTIVE_ALGORITHM_LEVEL (CI gates from M0)
+        FALSIFY-CCPA-013       ACTIVE_RUNTIME (first_recorded_parity_score, at v1.27.0)
+        FALSIFY-CCPA-014       ACTIVE_RUNTIME (os_event_parity_bound, at v1.25.0)
+        FALSIFY-CCPA-015       ACTIVE_RUNTIME (ccpa_trace_subproc_output_purity, at v1.26.0)
+        FALSIFY-CCPA-016       ACTIVE_RUNTIME (outcome_parity_bound, at v1.26.0)
+        FALSIFY-CCPA-017       PROPOSED       (project_scale_parity_bound, at v1.28.0)
+
+      Pure additive bump: new gate + new status_history entry. No
+      schema bump in aprender-contracts/src/schema/. pv validate clean.
+
   - date: '2026-05-14'
     from: 'ACTIVE_RUNTIME v1.26.0'
     to: 'ACTIVE_RUNTIME v1.27.0'
