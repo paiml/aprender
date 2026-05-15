@@ -1,22 +1,26 @@
 # CRUX-G-05 — Checksum manifest SHA256 per file
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# Promoted to partial_algorithm_level by CRUX-G-05 implementation PR:
+# `apr manifest FILES... -o MAN.json` emits a deterministic JSON manifest
+# with one entry per input file carrying { path, size_bytes, sha256 }.
+# Parity with `sha256sum FILE` verified at the byte-content layer
+# (FALSIFY-CRUX-G-05-003). HF `lfs.oid` parity for already-uploaded
+# files is left to a follow-up because it requires a live HF upload step.
 
 metadata:
   id: CRUX-G-05
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
+  updated: "2026-05-15"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial_algorithm_level
+  kind: kernel
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "G — Format Conversion"
   competitor: huggingface
   demand_score: 4  # 1..5, high priority in pmat work
-  intake_status: partial
+  intake_status: supported
   description: >
     Checksum manifest SHA256 per file. Root-cause workflow extracted from huggingface UX — see master
     subspec §5.G and §2 Five Whys methodology for rationale. This
