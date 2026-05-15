@@ -1,7 +1,8 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 3.22.0
+**Version:** 3.23.0
+**Atomic next action (v3.23.0):** **🔍 §77 — 5g.1 RETROACTIVELY DISCOVERED COMPLETE; MODEL-2 ship-blocker reduced to 5g.2 GPU dispatch (2026-05-15)** (see new §77 below). Live audit on 2026-05-15 finds `/mnt/nvme-raid0/data/codeparrot-python-permissive-shards-qwen-v2/` contains 125 shards / 1,241,692,519 tokens / 4,966,770,076 bytes — byte-exact integrity verified (tokens × 4 = bytes, u32 LE). Manifest confirms NFC + between-doc EOS + Qwen vocab + 405,904 documents from the permissive corpus. **5g.1 has been DONE since ~2026-05-05** but never recorded as complete in twenty subsequent spec amendments. The cascade was always blocked on 5g.3, not on 5g.1. 5g.2 (500-step fine-tune dispatch) is now operator-dispatchable today — all three prerequisites confirmed on disk: Qwen-tokenized corpus, Qwen tokenizer dir, Qwen-0.5B init APR. **Methodology lesson #24 NEW**: mid-run progress logs are not completion records; manifest.json is the contract for "done". **MODEL-1 ship %**: 100%. **MODEL-2 ship %**: unchanged at **57%** (this is a status-discovery, not an evidence-of-training; the flip is gated on 5g.3 verdict).
 **Atomic next action (v3.22.0):** **🚢 §76 — v0.33.0 cascade PUBLISHED — MODEL-1 in users' hands; 24 crates live on crates.io; /dogfood verdict GO (2026-05-14)** (see new §76 below). 24-crate topological cascade (contracts-macros → core → gpu → compute → serve → train → apr-cli → aprender root) all published to crates.io. `cargo install aprender --force --locked` from registry produces `apr 0.33.0` that runs SHIP-007 fix end-to-end (`apr run` "What is 2+2?" → "4" on 1.5B teacher). /dogfood 12-gate audit on installed binary: **all gates GO, zero FAILs**. Two production-blockers surfaced + closed in flight: PR #1670 (`cc 1.2.59 → 1.2.62` lockfile bump for rustc 1.93.0 — `cargo publish` re-resolves Cargo.lock during verify, ignoring workspace lock; **methodology lesson #23 NEW**: use `--locked` on every publish or bump-before-cascade); `make publish` `.cargo/config.toml` backup race on parallel invocations (mitigated by serialization; Makefile fix deferred). Companion PR #1672 brings README/book/CLAUDE.md in sync (counts 1105→1134, 80→82; SHIP-007 known-issue warning retired). Closes `feedback_post_publish_qa_required.md` requirement (v0.31.1 yank lesson). **MODEL-1 ship %**: 100% (CODE) → **100% (USERS)** — milestone moves from "shipped in code" to "shipped to users." **MODEL-2 ship %**: unchanged at **57%** (independent track; v0.33.0 carries no MODEL-2 movement).
 **Atomic next action (v3.21.0):** **🎉 §75 — MODEL-1 SHIP %  = 100% — SHIP-007 LIVE-DISCHARGED via F32 GEMV PTX layout fix (2026-05-13)** (see new §75 below). PR-E (#1651) ships single-file fix in `crates/aprender-gpu/src/kernels/gemv/mod.rs`: the F32 GEMV kernel assumed `[K rows × N cols]` row-major but actual ML weights are `[output_dim=N, input_dim=K]` row-major (PyTorch/SafeTensors/GGUF convention). Kernel was reading TRANSPOSED weights → systematically anti-correlated logits (cos=-0.005). Fix rewrites inner loop to iterate K within row `block_id`. Empirical discharge: `apr bench` 5-iter 128-tok decode = **124.6 tok/s** on RTX 4090 (4.15× over AC-SHIP1-007 30 tok/s floor); PARITY-GATE PASS; default path, no workarounds. **All 10 AC-SHIP1-* LIVE-DISCHARGED.** **MODEL-1 ship %**: **99% → 100%** 🎉. **MODEL-2 ship %**: unchanged at **57%**. **Methodology lesson #22 NEW**: symptom analysis → bug class localization in O(1); methodology lessons compose.
 **Atomic next action (v3.20.0):** **§74 — SHIP-007 bug LOCALIZED to LM head F32 GEMV via PR-B stage bisection (2026-05-13)** (see new §74 below). PR-B (#1649) APR_GPU_STAGE_DUMP scaffold captured GPU embedding + post_ffn_residual L27 + final_norm + lm_head + CPU lm_head on single BOS token. GPU intermediate values look numerically sane (post_ffn_residual rms=26, final_norm rms=2.84). Divergence emerges between final_norm and logits: GPU logits mean=0.013 vs CPU mean=-2.42 (Δ=2.43; CPU has Qwen's typical negative-bias signature). PMAT-333 dequantizes ALL weights to F32 on GPU upload (28.3 GB), so `WeightQuantType::from_size` returns F32 for LM head → dispatches `f32_gemv_into`. The F32 GEMV kernel is the localized bug surface. **Methodology lesson #21 NEW**: stage-by-stage numerical analysis can localize bug class without per-element diffing. **MODEL-1 ship %**: unchanged at **99%** (Layer 2 localized; PR-E for fix). **MODEL-2 ship %**: unchanged at **57%**. Path-to-100% reduced to a single PR-E.
@@ -5421,6 +5422,85 @@ Evidence:
 - `https://github.com/paiml/aprender/pull/1670` (cc bump fix)
 - `https://github.com/paiml/aprender/pull/1672` (docs bump)
 - Memory: `project_v0_33_0_cascade_published.md`, `feedback_cargo_publish_lockfile_regen.md`
+
+---
+
+## §77. 5g.1 RETROACTIVELY DISCOVERED COMPLETE — Qwen-tokenized corpus exists since 2026-05-05 (2026-05-15)
+
+§56 (2026-05-05) dispatched the full 5g.1 corpus retokenization with an ETA of ~22:00Z that day. §57 recorded mid-run progress (62/57 shards at 16h19m wall). After that, **no spec amendment recorded the completion of 5g.1**. MODEL-2 ship % has been blocked at 57% across §58–§76 (twenty spec amendments) on the assumption that 5g.1 was still in-flight or had silently failed.
+
+**Live audit on 2026-05-15 finds 5g.1 is COMPLETE and integrity-verified:**
+
+| Field | Value |
+|-------|-------|
+| Shards dir | `/mnt/nvme-raid0/data/codeparrot-python-permissive-shards-qwen-v2/` |
+| Shard count (disk) | 125 |
+| Shard count (manifest) | 125 |
+| Total tokens (manifest) | 1,241,692,519 |
+| Total bytes (disk, .bin) | 4,966,770,076 |
+| Bytes-per-token | exactly **4** (u32 LE) ✓ byte-exact integrity |
+| Documents tokenized | 405,904 |
+| Vocab size | 151,646 |
+| Tokenizer dir | `/tmp/qwen-0.5b-tokenizer-extracted` (vocab.json + merges.txt + tokenizer.json present) |
+| Normalization | NFC |
+| EOS policy | between (eos_token_id=128247, count=405903) |
+| Input file | `/mnt/nvme-raid0/datasets/github-code-clean-2026-04-27/python-permissive.jsonl` |
+| Workers | 48 |
+
+The manifest validates: 1,241,692,519 tokens × 4 bytes/token = 4,966,770,076 bytes = exact directory total. No corruption, no truncation. This is the same artifact §56 dispatched, with all the documented properties (Qwen vocab, NFC, between-doc EOS).
+
+### 77.1 What this means for MODEL-2 ship %
+
+5g.1 is **DONE**. The cascade was always blocked on 5g.3 (val_loss < 9.38 verdict after the 500-step fine-tune), not on 5g.1. Twenty amendments wrote "MODEL-2 ship % stays at 57% until 5g.3" without re-checking the 5g.1 status they themselves assumed was open.
+
+5g.2 (500-step fine-tune on Qwen-0.5B init + the §77 corpus) is now **operator-dispatchable today** — all three prerequisites are on disk:
+
+| Prerequisite | Path | Status |
+|---|---|---|
+| Qwen-tokenized corpus | `/mnt/nvme-raid0/data/codeparrot-python-permissive-shards-qwen-v2/` (§77) | ✓ verified |
+| Qwen tokenizer dir | `/tmp/qwen-0.5b-tokenizer-extracted/` | ✓ vocab+merges+tokenizer.json present |
+| Qwen-0.5B init APR | `/mnt/nvme-raid0/models/qwen2.5-coder-0.5b-instruct-imported.apr` (+ -fp16 variant) | ✓ on disk |
+
+The dispatch command per §53's wire-up:
+
+```bash
+apr pretrain \
+  --init /mnt/nvme-raid0/models/qwen2.5-coder-0.5b-instruct-imported.apr \
+  --dataset /mnt/nvme-raid0/data/codeparrot-python-permissive-shards-qwen-v2 \
+  --tokenizer /tmp/qwen-0.5b-tokenizer-extracted \
+  --device cuda \
+  --num-steps 500
+```
+
+This is **GPU compute** on RTX 4090 (lambda-vector), distinct from the CPU compute window §56 budgeted for 5g.1. Wall projection: 500 steps × 0.5B param model × Qwen tokenizer = on the order of 30 min – 2 hr (depending on batch size + sequence length).
+
+### 77.2 Why this slipped
+
+Three contributing factors:
+1. §56 said "Full run dispatched 2026-05-05T07:00Z" but never recorded a §57.5-class completion note. §57 logged mid-run progress (62 shards at 16h19m); the gap between 62 shards and 125 (final) was never narrated.
+2. The §58 v0.32.0 cascade-publish session was high-attention and absorbed the spec narrative for 2026-05-05/06; 5g.1 status check fell out of focus.
+3. Subsequent amendments (§59 onward) treated "MODEL-2 stays at 57% until 5g.3" as a refrain without re-validating the 5g.1 prerequisite.
+
+**Methodology lesson #24 NEW**: when a multi-hour compute lane is "dispatched" but the next amendment is on an unrelated topic, an explicit `5g.X completion verdict` check should re-run on the next spec amendment touching MODEL-2. Mid-run progress logs are not completion records; the manifest.json is.
+
+### 77.3 Ship-% movement
+
+§77 itself does NOT move ship %; it's a status-discovery amendment. MODEL-2 stays at **57%**. The real flip is gated on the 5g.2 dispatch + 5g.3 verdict (val_loss < 9.38).
+
+§77 enables the next session to start 5g.2 immediately, against verified-on-disk inputs, with no CPU compute prerequisite.
+
+### 77.4 Cumulative methodology lessons through §77
+
+| # | Lesson |
+|---|--------|
+| 6-23 | (see §76) |
+| **24** | **Mid-run progress logs are not completion records. Re-validate compute-bound prerequisites on the next spec amendment touching the same workstream — manifest.json is the contract for "done".** |
+
+Spec v3.22.0 → **v3.23.0**.
+
+Evidence:
+- `evidence/section-77-5g1-complete-2026-05-15/findings.json` — full integrity audit + manifest summary
+- `evidence/section-77-5g1-complete-2026-05-15/qwen-v2-manifest.json` — captured copy of the on-disk manifest
 
 ---
 
