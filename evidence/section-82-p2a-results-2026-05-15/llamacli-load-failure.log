@@ -1,0 +1,14 @@
+ggml_cuda_init: found 1 CUDA devices:
+  Device 0: NVIDIA GeForce RTX 4090, compute capability 8.9, VMM: yes
+--no-conversation is not supported by llama-cli
+please use llama-completion instead
+
+Loading model... |-\llama_model_load: error loading model: check_tensor_dims: tensor 'token_embd.weight' has wrong shape; expected   896, 151643, got   896, 151936,     1,     1
+llama_model_load_from_file_impl: failed to load model
+llama_params_fit: encountered an error while trying to fit params to free device memory: failed to load model
+|llama_model_load: error loading model: check_tensor_dims: tensor 'token_embd.weight' has wrong shape; expected   896, 151643, got   896, 151936,     1,     1
+llama_model_load_from_file_impl: failed to load model
+/common_init_from_params: failed to load model '/tmp/p2a.gguf'
+srv    load_model: failed to load model, '/tmp/p2a.gguf'
+ 
+Failed to load the model
