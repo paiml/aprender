@@ -256,4 +256,7 @@ axum-test = "16"
 tower = "0.5"
 # FALSIFY-SHIP-012 — NFC normalization for tokenizer round-trip harness
 unicode-normalization = "0.1"
+# FALSIFY-APR-DISTILL-TRAIN-001 — SafeTensors fixture for §35 wire-up integration test
+safetensors = "0.4"
+bytemuck = { version = "1.24", features = ["derive"] }
 
