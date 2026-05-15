@@ -233,6 +233,17 @@ pub enum Commands {
         /// Output as JSON
         #[arg(long)]
         json: bool,
+        /// CRUX-B-20: per-tensor quant roundtrip error report (RMSE / cosine / max_abs).
+        /// FILE1 is the reference (fp16/fp32/bf16); FILE2 is the quantized variant.
+        #[arg(long)]
+        quant_roundtrip: bool,
+        /// CRUX-B-20: cosine threshold for the quant-roundtrip exit-code gate.
+        /// Any tensor with cosine < threshold makes the command exit non-zero.
+        #[arg(long, default_value = "0.95")]
+        threshold: f32,
+        /// CRUX-B-20: suppress the threshold exit-code gate (still emits the report).
+        #[arg(long)]
+        no_threshold: bool,
     },
     /// List tensor names and shapes
     Tensors {

@@ -360,23 +360,74 @@ fn dispatch_diagnostic_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             limit,
             transpose_aware,
             json,
-        } => crate::error::resolve_model_path(file1).and_then(|r1| {
-            crate::error::resolve_model_path(file2).and_then(|r2| {
-                diff::run(
-                    &r1,
-                    &r2,
-                    *weights,
-                    *values,
-                    filter.as_deref(),
-                    *limit,
-                    *transpose_aware,
-                    *json || cli.json,
-                )
-            })
-        }),
+            quant_roundtrip,
+            threshold,
+            no_threshold,
+        } => {
+            if *quant_roundtrip {
+                // CRUX-B-20: per-tensor quant roundtrip error report.
+                crate::error::resolve_model_path(file1).and_then(|r1| {
+                    crate::error::resolve_model_path(file2).and_then(|r2| {
+                        dispatch_quant_roundtrip(
+                            &r1,
+                            &r2,
+                            *threshold,
+                            *no_threshold,
+                            *json || cli.json,
+                        )
+                    })
+                })
+            } else {
+                crate::error::resolve_model_path(file1).and_then(|r1| {
+                    crate::error::resolve_model_path(file2).and_then(|r2| {
+                        diff::run(
+                            &r1,
+                            &r2,
+                            *weights,
+                            *values,
+                            filter.as_deref(),
+                            *limit,
+                            *transpose_aware,
+                            *json || cli.json,
+                        )
+                    })
+                })
+            }
+        }
 
         _ => return None,
     })
+}
+
+/// CRUX-B-20 — render an `apr diff --quant-roundtrip` report.
+fn dispatch_quant_roundtrip(
+    reference: &std::path::Path,
+    quantized: &std::path::Path,
+    threshold: f32,
+    no_threshold: bool,
+    json: bool,
+) -> Result<(), CliError> {
+    use commands::diff_quant_roundtrip::{build_report, render_tsv};
+
+    let report = build_report(reference, quantized, threshold)?;
+
+    if json {
+        let serialized = serde_json::to_string_pretty(&report).map_err(|e| {
+            CliError::ValidationFailed(format!("serialize quant-roundtrip JSON: {e}"))
+        })?;
+        println!("{serialized}");
+    } else {
+        print!("{}", render_tsv(&report));
+    }
+
+    // Threshold gate per contract crux-B-20 invariant
+    // "exit code ≠ 0 if any tensor cosine < 0.95 (unless --no-threshold)".
+    if report.any_below_threshold && !no_threshold {
+        return Err(CliError::ValidationFailed(format!(
+            "quant-roundtrip: at least one tensor below cosine threshold {threshold}",
+        )));
+    }
+    Ok(())
 }
 
 /// Dispatch format operation commands: export, import, convert, quantize.

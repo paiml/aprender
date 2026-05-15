@@ -22,6 +22,7 @@ pub mod modelfile;
 pub(crate) mod copy_tag;
 pub(crate) mod debug;
 pub(crate) mod diff;
+pub(crate) mod diff_quant_roundtrip;
 pub(crate) mod distill;
 pub(crate) mod rm_gc_lint;
 
