@@ -1,6 +1,6 @@
 metadata:
   kind: schema
-  version: 1.2.0
+  version: 1.3.0
   status: PROPOSED
   created: '2026-04-28'
   author: PAIML Engineering
@@ -128,14 +128,24 @@ falsification_tests:
   rule: KL loss decreases over epochs
   prediction: "Per-epoch metadata.json shows kl_loss[epoch=N+1] < kl_loss[epoch=N] (with batch-noise tolerance ≤ 5%)"
   test: |
-    apr distill --stage train ... --epochs 3
-    python3 -c "
-    import json
-    losses = [json.load(open(f'epoch-{i}.metadata.json'))['kl_loss'] for i in range(3)]
-    assert losses[1] < losses[0] * 1.05  # allow 5% batch noise
-    assert losses[2] < losses[1] * 1.05
-    "
+    cargo test -p apr-cli --lib --features training falsify_apr_distill_train_002_loss_decreases
   if_fails: "loss not decreasing — bug in backprop, optimizer step, or KL formula"
+  algorithm_evidence:
+    status: PARTIAL_ALGORITHM_LEVEL
+    last_verified: '2026-05-15'
+    test_locations:
+    - 'crates/apr-cli/src/commands/distill_include_01.rs::tests::falsify_apr_distill_train_002_loss_decreases — builds a 16×16 F32 SafeTensors teacher+student pair in tempdir, drives the pipeline through translate_to_distill_config + aprender_train_distill::run, asserts result.metrics.final_loss < initial_loss (strict) AND final_loss < initial_loss × 1.05 (5% batch-noise tolerance per the contract).'
+    notes: |
+      Algorithm-level discharge of the loss-monotonicity gate. The
+      pipeline-level test asserts both forms: the 5% tolerance form
+      matches the contract prediction (batch noise on real corpora);
+      the strict form is reachable on a deterministic 256-param fixture
+      and pins that gradient direction is correct + LR is stable. The
+      sidecar `distillation_metadata.json` only records final_loss; the
+      test reads initial_loss + final_loss from `result.metrics` returned
+      by `aprender_train_distill::run`. Path to FULL_DISCHARGED: real
+      corpus + multi-epoch metadata sidecar capture (FALSIFY-009 — still
+      BLOCKER_FIXTURE_ABSENT).
 
 - id: FALSIFY-APR-DISTILL-TRAIN-003
   rule: temperature scaling preserves softmax ranking
