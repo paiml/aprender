@@ -29,9 +29,20 @@ jobs:
       # Phase 3 pilot (heavy workload) — build-performance.md §7 Phase 3.
       # APR-MONO monorepo: 879+ compile units, largest dep graph in the fleet.
       # Highest expected sccache hit-rate lift; without it each PR cold-compiles
-      # in its per-PR target dir (`/mnt/nvme-raid0/targets/aprender-ci/<PR>`)
+      # in its per-PR-per-run target dir
+      # (`/mnt/nvme-raid0/targets/aprender-ci/<PR>/run-<RUN_ID>`)
       # for ~34min, leaving only ~4min for tests inside the 40min timeout —
       # the entire merge queue saturates.
+      #
+      # 2026-05-15: target-dir path bumped from `aprender-ci/<PR>` to
+      # `aprender-ci/<PR>/run-<RUN_ID>` to break the cancel-corrupt-state
+      # race introduced by the prior per-PR fix (paiml/.github#31,
+      # 2026-04-23). `concurrency.cancel-in-progress: true` + persistent
+      # per-PR mount = the SIGTERM→SIGKILL window of a dying old cargo
+      # corrupted `/workspace/target/debug/deps/` for the new run that
+      # mounted the same host path. sccache stays on its own mount, so
+      # cross-run cache effectiveness is preserved; only cargo-incremental
+      # state (small fraction of total compile) is lost per new run.
       #
       # 2026-04-19: temporarily disabled — sovereign-ci:stable container image
       # was missing the `rustc-sccache` wrapper script. Fixed upstream in
@@ -111,7 +122,7 @@ jobs:
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
-            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}:/workspace/target" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
             -v "/home/noah/data/sccache:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
@@ -129,7 +140,7 @@ jobs:
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
-            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}:/workspace/target" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
             -v "/home/noah/data/sccache:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
@@ -145,7 +156,7 @@ jobs:
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
-            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}:/workspace/target" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
             -v "/home/noah/data/sccache:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
@@ -177,7 +188,7 @@ jobs:
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
-            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}:/workspace/target" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
             "$IMAGE" \
             bash -c 'chown -R 1000:1000 /workspace || true; chown -R 1000:1000 /usr/local/cargo/registry || true; chown -R 1000:1000 /workspace/target || true'
 
