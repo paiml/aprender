@@ -90,6 +90,7 @@ fn registered_commands() -> Vec<&'static str> {
         "experiment",
         "showcase",
         "probar",
+        "modelfile",
         "diagnose",
         "ollama-chat-lint",
         "ollama-tools-lint",
