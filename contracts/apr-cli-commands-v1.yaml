@@ -386,9 +386,19 @@ commands:
 
   - name: probar
     category: misc
-    description: "Export for probar visual regression testing"
-    requires_model: true
+    description: |
+      Probar testing framework — visual regression, replay, compliance, audio/video, more.
+      GH-876 Milestone 1: `apr probar tensor` (PMAT-481 tensor visual regression).
+      Follow-up milestones add the remaining probador subcommands (test, record,
+      report, coverage, init, config, serve, build, watch, playbook, comply,
+      av-sync, audio, video, animation, stress, llm).
+    requires_model: false
     side_effects: [filesystem]
+    subcommands:
+      - name: tensor
+        description: "Export tensor activations for visual regression testing (PMAT-481)"
+        requires_model: true
+        side_effects: [filesystem]
 
   - name: diagnose
     category: misc

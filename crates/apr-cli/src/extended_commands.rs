@@ -470,29 +470,16 @@ pub enum ExtendedCommands {
         #[arg(long)]
         simulated: bool,
     },
-    /// Export for probar visual regression testing (PMAT-481)
+    /// Probar testing framework (GH-876 — visual regression, replay, more).
+    ///
+    /// GH-876 Milestone 1: `apr probar tensor` migrates the existing flat
+    /// `apr probar <FILE>` behavior (PMAT-481 tensor visual regression).
+    /// The remaining probador subcommands (test, record, coverage, playbook,
+    /// comply, av-sync, audio, video, animation, stress, llm) land in
+    /// follow-up PRs that delegate to the probador library.
     Probar {
-        /// Path to .apr model file
-        #[arg(value_name = "FILE")]
-        file: PathBuf,
-        /// Output directory for test artifacts
-        #[arg(short, long, default_value = "./probar-export")]
-        output: PathBuf,
-        /// Export format: json, png, or both
-        #[arg(long, default_value = "both")]
-        format: String,
-        /// Golden reference directory for comparison
-        #[arg(long)]
-        golden: Option<PathBuf>,
-        /// Filter layers by name pattern
-        #[arg(long)]
-        layer: Option<String>,
-        /// Exit non-zero on golden divergence (CI mode, PMAT-481)
-        #[arg(long)]
-        assert: bool,
-        /// Cosine similarity threshold for golden comparison (default: 0.98)
-        #[arg(long, default_value = "0.98")]
-        tolerance: f32,
+        #[command(subcommand)]
+        command: ProbarSubcommand,
     },
     /// Compare APR model against HuggingFace source
     #[command(name = "compare-hf")]
@@ -943,5 +930,41 @@ pub enum ExperimentCommands {
         /// Output as JSON (non-interactive)
         #[arg(long)]
         json: bool,
+    },
+}
+
+/// GH-876: Subcommands for `apr probar` — consolidates the probador testing
+/// framework under `apr`. Milestone 1 ships only `tensor` (the migrated
+/// existing behavior). Subsequent milestones add the remaining 14 probador
+/// subcommands as separate PRs that delegate to the probador library.
+#[derive(Subcommand, Debug)]
+pub enum ProbarSubcommand {
+    /// Export tensor activations for visual regression testing (PMAT-481).
+    ///
+    /// Generates JSON/PNG per-layer test artifacts that can be compared
+    /// against a golden reference directory to detect regressions in
+    /// model behavior after weight updates, quantization, or refactors.
+    Tensor {
+        /// Path to .apr model file
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+        /// Output directory for test artifacts
+        #[arg(short, long, default_value = "./probar-export")]
+        output: PathBuf,
+        /// Export format: json, png, or both
+        #[arg(long, default_value = "both")]
+        format: String,
+        /// Golden reference directory for comparison
+        #[arg(long)]
+        golden: Option<PathBuf>,
+        /// Filter layers by name pattern
+        #[arg(long)]
+        layer: Option<String>,
+        /// Exit non-zero on golden divergence (CI mode, PMAT-481)
+        #[arg(long)]
+        assert: bool,
+        /// Cosine similarity threshold for golden comparison (default: 0.98)
+        #[arg(long, default_value = "0.98")]
+        tolerance: f32,
     },
 }
