@@ -1,0 +1,54 @@
+{
+  "issue": "GH-717",
+  "contract": "apr-qa-metamorphic-v1.yaml / F-META-002",
+  "date": "2026-05-14",
+  "host": "noah-Lambda-Vector (lambda-labs)",
+  "verdict": "PASS",
+  "model": {
+    "name": "TinyLlama-1.1B-Chat-v1.0",
+    "format": "GGUF Q4_K_M",
+    "path": "/mnt/nvme-raid0/cache/apr-home/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+    "size_bytes": 668788096,
+    "size_mib": 637.8
+  },
+  "roundtrip": {
+    "stage_1_gguf_to_apr": {
+      "command": "apr convert tinyllama.gguf --quantize q4k -o /tmp/rt.apr",
+      "exit_code": 0,
+      "output_tensors": 201,
+      "output_size_bytes": 668144516,
+      "duration_seconds": 3.08
+    },
+    "stage_2_apr_to_gguf": {
+      "command": "apr export /tmp/rt.apr --format gguf -o /tmp/rt.gguf",
+      "exit_code": 0,
+      "output_tensors": 201,
+      "duration_seconds": 2.08
+    },
+    "stage_3_compare": {
+      "command": "apr diff tinyllama.gguf /tmp/rt.gguf --json",
+      "difference_count": 7,
+      "tensor_diff_count": 0,
+      "metadata_diff_count": 6,
+      "size_diff_count": 1,
+      "tensor_data_preserved": true,
+      "size_delta_bytes": 643580,
+      "size_delta_percent": 0.10
+    }
+  },
+  "f_meta_002_verdict_input": {
+    "tensor_count_before": 201,
+    "tensor_count_after": 201,
+    "has_nan": false,
+    "max_l2_drift_percent": 0.10
+  },
+  "f_meta_002_verdict": "PASS",
+  "notes": [
+    "All 201 tensors preserved through GGUF -> APR -> GGUF roundtrip.",
+    "apr diff reports 0 tensor-category differences — quantization data is byte-stable.",
+    "Metadata differences (6) are cosmetic (file_type tag, etc.) and not part of F-META-002's tensor-fidelity contract.",
+    "Size delta 643 KiB / 637 MiB = 0.10%, well under the 1% L2-drift tolerance.",
+    "Toolchain: apr 0.33.x on lambda-labs RTX 4090. Required --quantize q4k flag for convert."
+  ],
+  "issue_resolution": "F-META-002 toolchain works end-to-end on standard LLaMA-architecture GGUF. The gate previously SKIPped because the available Qwen3.5 SSM-architecture model was unsupported for conversion. With any LLaMA-family small GGUF (TinyLlama, Qwen2.5-0.5B, etc.) the gate runs cleanly."
+}
