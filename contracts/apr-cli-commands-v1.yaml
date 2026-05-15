@@ -120,7 +120,7 @@ commands:
 
   - name: diff
     category: inspection
-    description: "Compare two models"
+    description: "Compare two models; --quant-roundtrip surfaces per-tensor quant error (CRUX-B-20)"
     requires_model: true
     side_effects: []
 

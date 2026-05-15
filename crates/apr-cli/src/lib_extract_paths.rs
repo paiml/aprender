@@ -407,6 +407,9 @@
             limit: 10,
             transpose_aware: false,
             json: false,
+            quant_roundtrip: false,
+            threshold: 0.95,
+            no_threshold: false,
         });
         let result = execute_command(&cli);
         assert!(result.is_err(), "Diff should fail with non-existent files");
