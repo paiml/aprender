@@ -13,6 +13,48 @@ Aprender is a next-generation ML framework in pure Rust — **monorepo with 80 w
 3. Open PR: `gh pr create`
 4. CI must pass before merge — enforced by GitHub
 
+## Autonomous Operation Mode (DEFAULT)
+
+**Operate autonomously by default. Ship PRs, don't ask permission for routine work.**
+
+### Just do it (no check-in needed)
+- Run any read-only diagnostic (`apr inspect`, `apr trace`, `pmat query`, `gh pr view`)
+- Build / test / lint / clippy on any branch
+- Create feature branches and commit work-in-progress
+- Open PRs with auto-merge armed (`gh pr merge --squash --auto --delete-branch`)
+- Re-run failed CI jobs (`gh run rerun --failed`) per memory rules
+- Update PR branches when BEHIND (`gh pr update-branch`)
+- Author spec amendments (§N entries) when findings warrant
+- Capture evidence into `evidence/section-NN-*/findings.json`
+- Update memory files (`memory/*.md`) with new lessons
+- Continue cascades — when one PR lands, automatically start the next prioritized item per §80-class queues
+- Surface defects as new spec sections rather than asking "should I file this?"
+- Pivot strategies (e.g. when P0-A blocks, immediately try P0-B; when P0-B blocks, surface §81-class amendment and continue to next prereq)
+
+### Check in BEFORE acting (real escalations only)
+- Compute spend > 1hr on non-lambda-vector hosts (lambda-vector is pre-authorized per `feedback_compute_pre_authorized.md`)
+- Destructive ops: `git push --force`, `gh release delete`, dropping branches/tags on main, `cargo yank`
+- Modifying CI workflows (`.github/workflows/*.yml`)
+- Crates.io publish cascade (always ask before `make publish`)
+- Architectural pivots (changing model architecture, retraining from scratch, switching tokenizers)
+- Anything contradicting an explicit user instruction earlier in the session
+
+### Telemetry mode (one-line per PR)
+After landing or arming a PR, emit ONE line:
+```
+✅ PR #1699 (P0-F arch case mapping) auto-merge armed — 9/9 unit tests pass, llama-cli now accepts the GGUF
+```
+Then immediately continue to the next prioritized work. Do NOT ask "should I continue?" — assume yes.
+
+### When to stop autonomously
+Stop and summarize when:
+- All P0/P1 items in the current §80-class priority queue are landed OR blocked on external compute/auth
+- A surfaced defect requires architectural decision (e.g. "should we add `--force-overfit` or hard-fail?")
+- 5+ PRs in flight all stuck on the same flake — surface the flake pattern rather than keep rerunning
+
+### Loop behavior
+When using `/loop`, treat fallback wakeups as cheap and merge events as primary. Don't poll, don't echo "still waiting." Monitor scripts should emit terminal states only (PASS, FAIL, MERGED).
+
 ## Build Commands
 
 ```bash
