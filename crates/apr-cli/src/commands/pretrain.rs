@@ -470,7 +470,13 @@ fn drive_real(
                 dataset.display()
             ))
         })?
-        .with_wrap_around(true);
+        .with_wrap_around(true)
+        // SPEC §82 P2-B: surface data starvation. When the corpus cycles
+        // mid-run, emit a stderr line so operators can detect that the
+        // step budget exceeds the corpus capacity (per Chinchilla, train
+        // tokens D ≈ 20·N — if D is small, the corpus wraps repeatedly
+        // and the model memorizes instead of generalizing).
+        .with_warn_on_wrap_around(true);
 
     // Reserve the first `HELD_OUT_BATCHES` batches as the held-out val
     // set; the remainder feeds RealStepFn.
