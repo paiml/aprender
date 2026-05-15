@@ -2700,11 +2700,75 @@ impl CudaTransformerTrainer {
             .map(|(name, tensor)| (name, tensor.clone()))
             .collect();
 
-        let metadata = ModelMetadata::new(name, architecture);
-        let model = Model::new(metadata, params);
-        let config = SaveConfig::new(ModelFormat::Apr);
+        // SPEC-SHIP-TWO-001 §81 P0-E: write individual arch metadata keys
+        // so downstream tools (apr qa C-03, apr bench, realizar) can read them
+        // via AprV2Metadata's typed fields. The legacy save_model() path only
+        // carries `name + architecture + format + version` which fails C-03.
+        use aprender::serialization::apr::AprWriter;
+        use serde_json::Value as Jv;
+        use crate::io::save::infer_all_tensor_shapes;
 
-        save_model(&model, path, &config)
+        let mc = &self.config.model_config;
+        let mut writer = AprWriter::new();
+
+        // Identity / version metadata (preserves save_model behavior)
+        writer.set_metadata("model_name", Jv::String(name.to_string()));
+        writer.set_metadata("architecture", Jv::String(architecture.to_string()));
+        writer.set_metadata("version", Jv::String("0.1.0".into()));
+        writer.set_metadata("format", Jv::String("entrenar-checkpoint".into()));
+
+        // Arch dim keys (well-known to AprWriter::build_v2_metadata,
+        // map to AprV2Metadata typed fields).
+        writer.set_metadata(
+            "hidden_size",
+            Jv::Number(serde_json::Number::from(mc.hidden_size as u64)),
+        );
+        writer.set_metadata(
+            "num_hidden_layers",
+            Jv::Number(serde_json::Number::from(mc.num_hidden_layers as u64)),
+        );
+        writer.set_metadata(
+            "num_attention_heads",
+            Jv::Number(serde_json::Number::from(mc.num_attention_heads as u64)),
+        );
+        writer.set_metadata(
+            "num_kv_heads",
+            Jv::Number(serde_json::Number::from(mc.num_kv_heads as u64)),
+        );
+        writer.set_metadata(
+            "intermediate_size",
+            Jv::Number(serde_json::Number::from(mc.intermediate_size as u64)),
+        );
+        writer.set_metadata(
+            "vocab_size",
+            Jv::Number(serde_json::Number::from(mc.vocab_size as u64)),
+        );
+        writer.set_metadata(
+            "max_position_embeddings",
+            Jv::Number(serde_json::Number::from(mc.max_position_embeddings as u64)),
+        );
+        if let Some(rope) = serde_json::Number::from_f64(mc.rope_theta as f64) {
+            writer.set_metadata("rope_theta", Jv::Number(rope));
+        }
+        if let Some(eps) = serde_json::Number::from_f64(mc.rms_norm_eps as f64) {
+            writer.set_metadata("rms_norm_eps", Jv::Number(eps));
+        }
+
+        // Tensors — reuse io::save's shape inference for 2D weight handling.
+        let shapes = infer_all_tensor_shapes(&params);
+        for (tname, tensor) in &params {
+            let data = tensor.data();
+            let slice = data.as_slice().expect("tensor data must be contiguous");
+            let shape = shapes
+                .get(tname)
+                .cloned()
+                .unwrap_or_else(|| vec![tensor.len()]);
+            writer.add_tensor_f32(tname, shape, slice);
+        }
+
+        writer
+            .write(path)
+            .map_err(|e| crate::error::Error::Serialization(format!("APR write failed: {e}")))
     }
 
     /// ALB-096: Prepare APR checkpoint data for async save.
@@ -2836,6 +2900,22 @@ impl CudaTransformerTrainer {
         let model_config_json = serde_json::to_string(&self.config.model_config).ok();
         let is_delta_checkpoint = self.config.quantize_nf4 && self.config.is_lora();
 
+        // SPEC-SHIP-TWO-001 §81 P0-E: extract individual arch metadata keys
+        // so downstream tools (apr qa, apr bench, apr export) can read them
+        // via AprV2Metadata's typed fields. The `model_config` JSON blob is
+        // unrecognized by AprWriter::build_v2_metadata and goes into the
+        // `custom` map — which `realizar::gguf::config::from_apr` does NOT
+        // read (it requires `apr.metadata.hidden_size` etc. to be Some).
+        let arch_hidden_size = self.config.model_config.hidden_size;
+        let arch_num_layers = self.config.model_config.num_hidden_layers;
+        let arch_num_heads = self.config.model_config.num_attention_heads;
+        let arch_num_kv_heads = self.config.model_config.num_kv_heads;
+        let arch_intermediate_size = self.config.model_config.intermediate_size;
+        let arch_vocab_size = self.config.model_config.vocab_size;
+        let arch_max_position_embeddings = self.config.model_config.max_position_embeddings;
+        let arch_rope_theta = self.config.model_config.rope_theta;
+        let arch_rms_norm_eps = self.config.model_config.rms_norm_eps;
+
         // ALB-130: Pre-read tokenizer.json for embedding in checkpoint.
         // Parse HuggingFace tokenizer format → extract vocab + merges + special token IDs.
         let tokenizer_data: Option<(Vec<String>, Vec<String>, Option<u64>, Option<u64>)> =
@@ -2902,6 +2982,44 @@ impl CudaTransformerTrainer {
             writer.set_metadata("optimizer_step", Jv::String(embed_step.to_string()));
             if let Some(cfg) = model_config_json {
                 writer.set_metadata("model_config", Jv::String(cfg));
+            }
+
+            // SPEC-SHIP-TWO-001 §81 P0-E: write individual arch metadata keys
+            // so realizar's `from_apr` (C-03 gate) accepts the checkpoint.
+            // `serde_json::Number::from(u as u64)` converts usize losslessly.
+            writer.set_metadata(
+                "hidden_size",
+                Jv::Number(serde_json::Number::from(arch_hidden_size as u64)),
+            );
+            writer.set_metadata(
+                "num_hidden_layers",
+                Jv::Number(serde_json::Number::from(arch_num_layers as u64)),
+            );
+            writer.set_metadata(
+                "num_attention_heads",
+                Jv::Number(serde_json::Number::from(arch_num_heads as u64)),
+            );
+            writer.set_metadata(
+                "num_kv_heads",
+                Jv::Number(serde_json::Number::from(arch_num_kv_heads as u64)),
+            );
+            writer.set_metadata(
+                "intermediate_size",
+                Jv::Number(serde_json::Number::from(arch_intermediate_size as u64)),
+            );
+            writer.set_metadata(
+                "vocab_size",
+                Jv::Number(serde_json::Number::from(arch_vocab_size as u64)),
+            );
+            writer.set_metadata(
+                "max_position_embeddings",
+                Jv::Number(serde_json::Number::from(arch_max_position_embeddings as u64)),
+            );
+            if let Some(rope) = serde_json::Number::from_f64(arch_rope_theta as f64) {
+                writer.set_metadata("rope_theta", Jv::Number(rope));
+            }
+            if let Some(eps) = serde_json::Number::from_f64(arch_rms_norm_eps as f64) {
+                writer.set_metadata("rms_norm_eps", Jv::Number(eps));
             }
 
             // ALB-130: Embed tokenizer vocab + merges for standalone inference
