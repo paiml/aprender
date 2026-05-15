@@ -1,0 +1,44 @@
+{
+  "spec": "SPEC-SHIP-TWO-001",
+  "section": "§77 / 5g.1 retroactive completion finding",
+  "date": "2026-05-15",
+  "host": "noah-Lambda-Vector",
+  "binary": "/home/noah/.cargo/bin/apr (v0.33.0, crates.io install)",
+  "finding": "5g.1 Qwen-tokenized corpus was completed 2026-05-05 but never recorded as DONE in the spec. The cascade has been blocked on a step that's already done.",
+  "evidence_path": "/mnt/nvme-raid0/data/codeparrot-python-permissive-shards-qwen-v2/",
+  "manifest_path": "/mnt/nvme-raid0/data/codeparrot-python-permissive-shards-qwen-v2/manifest.json",
+  "integrity": {
+    "shard_count_disk": 125,
+    "shard_count_manifest": 125,
+    "shard_count_match": true,
+    "total_bytes_disk": 4966770076,
+    "total_tokens_manifest": 1241692519,
+    "bytes_per_token_expected": 4,
+    "bytes_per_token_actual": 4.0,
+    "u32_le_byte_exact": true,
+    "comment": "1,241,692,519 tokens × 4 bytes/token (u32 LE) = 4,966,770,076 bytes — matches directory byte-for-byte"
+  },
+  "manifest_summary": {
+    "schema": "pretokenize-bin-v1",
+    "shard_count": 125,
+    "total_tokens": 1241692519,
+    "total_documents": 405904,
+    "vocab_size": 151646,
+    "tokenizer_dir": "/tmp/qwen-0.5b-tokenizer-extracted",
+    "normalization": "nfc",
+    "eos_policy": "between",
+    "eos_token_id": 128247,
+    "eos_token_count": 405903,
+    "input_file": "/mnt/nvme-raid0/datasets/github-code-clean-2026-04-27/python-permissive.jsonl",
+    "content_field": "content",
+    "num_workers": 48
+  },
+  "5g_2_prerequisites_satisfied": {
+    "qwen_tokenized_corpus": "/mnt/nvme-raid0/data/codeparrot-python-permissive-shards-qwen-v2/ (THIS SECTION)",
+    "qwen_tokenizer_dir": "/tmp/qwen-0.5b-tokenizer-extracted/ (vocab.json + merges.txt + tokenizer.json all present)",
+    "qwen_05b_init_apr": "/mnt/nvme-raid0/models/qwen2.5-coder-0.5b-instruct-imported.apr (+ fp16 variant)",
+    "all_satisfied": true
+  },
+  "what_this_means_for_ship_pct": "MODEL-2 ship % is gated on 5g.3 (val_loss verdict after 500-step fine-tune). 5g.2 is the dispatch that produces that verdict. All inputs are now confirmed in place. The original 17h CPU compute window for 5g.1 has been consumed; 5g.2 is a separate GPU compute lane.",
+  "ship_pct_movement_this_finding": "57% → 57% (no automatic flip; this is a status-discovery finding, not an evidence-of-training finding). 5g.2 dispatch + verdict is the actual flip."
+}
