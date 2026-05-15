@@ -513,6 +513,11 @@ pub enum ExtendedCommands {
         #[arg(long)]
         json: bool,
     },
+    /// CRUX-K-11: parse Ollama-style Modelfile DSL into apr config.
+    Modelfile {
+        #[command(subcommand)]
+        command: ModelfileSubcommand,
+    },
     /// Format-aware binary forensics (10X better than xxd)
     Hex {
         /// Path to model file (APR, GGUF, or SafeTensors)
@@ -943,5 +948,24 @@ pub enum ExperimentCommands {
         /// Output as JSON (non-interactive)
         #[arg(long)]
         json: bool,
+    },
+}
+
+/// CRUX-K-11: Subcommands for `apr modelfile`.
+#[derive(Subcommand, Debug)]
+pub enum ModelfileSubcommand {
+    /// Parse an Ollama-style Modelfile and emit the parsed config.
+    ///
+    /// Grammar: `FROM`, `PARAMETER`, `TEMPLATE`, `SYSTEM`, `LICENSE`,
+    /// `MESSAGE`, `ADAPTER` directives. Triple-quoted blocks supported.
+    /// Directive names are case-insensitive. Unknown directives raise
+    /// `file:line:col` errors.
+    Parse {
+        /// Path to the Modelfile
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+        /// Output format: `json` or `human`
+        #[arg(long, default_value = "json")]
+        format: String,
     },
 }

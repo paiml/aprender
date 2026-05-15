@@ -226,6 +226,13 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             .map_err(crate::error::CliError::Aprender)
         }
 
+        // CRUX-K-11: Modelfile DSL parser.
+        ExtendedCommands::Modelfile { command } => match command {
+            ModelfileSubcommand::Parse { file, format } => {
+                crate::commands::modelfile::run_parse(file, format)
+            },
+        },
+
         ExtendedCommands::Hex {
             file,
             tensor,
