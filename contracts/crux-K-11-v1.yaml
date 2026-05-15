@@ -6,13 +6,13 @@ metadata:
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial_algorithm_level
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "K — Deployment & Integration"
   competitor: ollama
   demand_score: 3
-  intake_status: missing
+  intake_status: supported
   description: >
     Parse Ollama-style `Modelfile` DSL (FROM, PARAMETER, TEMPLATE,
     SYSTEM, LICENSE, MESSAGE, ADAPTER) and produce a stable apr model

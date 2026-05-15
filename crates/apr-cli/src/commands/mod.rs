@@ -18,6 +18,7 @@ pub mod check;
 pub mod compare_hf;
 pub(crate) mod compile;
 pub(crate) mod convert;
+pub mod modelfile;
 pub(crate) mod copy_tag;
 pub(crate) mod debug;
 pub(crate) mod diff;
