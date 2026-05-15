@@ -28,6 +28,10 @@ impl Architecture {
             // GH-1587: Falcon classic uses `transformer.h.N.*` naming with
             // fused QKV (single MQ head in 7B, MGQA in 40B+).
             Self::FalconClassic => Self::falcon_classic_map_name(source_name),
+            // GH-1589: InternLM2 uses LLaMA-style `model.layers.N.*` but with
+            // distinct subtree names (attention.wqkv / wo / feed_forward.w1/w2/w3 /
+            // attention_norm / ffn_norm / tok_embeddings / output).
+            Self::InternLm2 => Self::internlm2_map_name(source_name),
         }
     }
 
@@ -63,6 +67,7 @@ impl Architecture {
                 | Self::OpenElm
                 | Self::Rwkv7
                 | Self::FalconClassic
+                | Self::InternLm2
         )
     }
 
@@ -109,6 +114,7 @@ impl Architecture {
             Self::OpenElm => "OpenELM",
             Self::Rwkv7 => "RWKV-7",
             Self::FalconClassic => "Falcon",
+            Self::InternLm2 => "InternLM2",
         }
     }
 
@@ -153,6 +159,9 @@ impl Architecture {
             "falcon" | "falcon7b" | "falcon40b" | "falcon11b" | "refinedweb" => {
                 Some(Self::FalconClassic)
             },
+            // GH-1589: InternLM2 / InternLM2.5 — distinct from LLaMA (renamed
+            // subtrees: wqkv/wo/w1/w2/w3 vs q/k/v/o + gate/up/down).
+            "internlm2" | "internlm2_5" | "internlm2.5" => Some(Self::InternLm2),
             _ => None,
         }
     }
@@ -388,6 +397,57 @@ impl Architecture {
             "transformer.ln_f.weight" => "model.norm.weight".to_string(),
             "transformer.ln_f.bias" => "model.norm.bias".to_string(),
             "lm_head.weight" => "lm_head.weight".to_string(),
+            _ => name.to_string(),
+        }
+    }
+
+    /// GH-1589: Map InternLM2 / InternLM2.5 tensor names to APR canonical format.
+    ///
+    /// InternLM2 (`InternLM2ForCausalLM`) is LLaMA-derivative but with renamed
+    /// subtrees:
+    /// - `model.tok_embeddings.weight`                  → `model.embed_tokens.weight`
+    /// - `model.layers.N.attention.wqkv.weight`         → `model.layers.N.self_attn.qkv_proj.weight` (fused)
+    /// - `model.layers.N.attention.wo.weight`           → `model.layers.N.self_attn.o_proj.weight`
+    /// - `model.layers.N.feed_forward.w1.weight`        → `model.layers.N.mlp.gate_proj.weight`
+    /// - `model.layers.N.feed_forward.w2.weight`        → `model.layers.N.mlp.down_proj.weight`
+    /// - `model.layers.N.feed_forward.w3.weight`        → `model.layers.N.mlp.up_proj.weight`
+    /// - `model.layers.N.attention_norm.weight`         → `model.layers.N.input_layernorm.weight`
+    /// - `model.layers.N.ffn_norm.weight`               → `model.layers.N.post_attention_layernorm.weight`
+    /// - `model.norm.weight`                            → `model.norm.weight` (passthrough)
+    /// - `output.weight`                                → `lm_head.weight`
+    ///
+    /// Fused QKV is kept fused here; splitter must run at conversion layer
+    /// since InternLM2 packs Q/K/V interleaved per GQA group (8 K/V groups
+    /// in 7B/2.5-7B, 8 K/V groups in 20B).
+    fn internlm2_map_name(name: &str) -> String {
+        if let Some(rest) = name.strip_prefix("model.layers.") {
+            if let Some(dot_pos) = rest.find('.') {
+                let layer_num = &rest[..dot_pos];
+                let suffix = &rest[dot_pos + 1..];
+
+                let apr_suffix = match suffix {
+                    "attention.wqkv.weight" => "self_attn.qkv_proj.weight",
+                    "attention.wqkv.bias" => "self_attn.qkv_proj.bias",
+                    "attention.wo.weight" => "self_attn.o_proj.weight",
+                    "attention.wo.bias" => "self_attn.o_proj.bias",
+                    // InternLM2 MLP: w1=gate, w2=down, w3=up (SwiGLU)
+                    "feed_forward.w1.weight" => "mlp.gate_proj.weight",
+                    "feed_forward.w2.weight" => "mlp.down_proj.weight",
+                    "feed_forward.w3.weight" => "mlp.up_proj.weight",
+                    "attention_norm.weight" => "input_layernorm.weight",
+                    "ffn_norm.weight" => "post_attention_layernorm.weight",
+                    other => other,
+                };
+
+                return format!("model.layers.{layer_num}.{apr_suffix}");
+            }
+        }
+
+        // Non-layer tensors
+        match name {
+            "model.tok_embeddings.weight" => "model.embed_tokens.weight".to_string(),
+            "model.norm.weight" => "model.norm.weight".to_string(),
+            "output.weight" => "lm_head.weight".to_string(),
             _ => name.to_string(),
         }
     }
