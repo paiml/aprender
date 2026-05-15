@@ -1,7 +1,8 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 3.21.0
+**Version:** 3.22.0
+**Atomic next action (v3.22.0):** **🚢 §76 — v0.33.0 cascade PUBLISHED — MODEL-1 in users' hands; 24 crates live on crates.io; /dogfood verdict GO (2026-05-14)** (see new §76 below). 24-crate topological cascade (contracts-macros → core → gpu → compute → serve → train → apr-cli → aprender root) all published to crates.io. `cargo install aprender --force --locked` from registry produces `apr 0.33.0` that runs SHIP-007 fix end-to-end (`apr run` "What is 2+2?" → "4" on 1.5B teacher). /dogfood 12-gate audit on installed binary: **all gates GO, zero FAILs**. Two production-blockers surfaced + closed in flight: PR #1670 (`cc 1.2.59 → 1.2.62` lockfile bump for rustc 1.93.0 — `cargo publish` re-resolves Cargo.lock during verify, ignoring workspace lock; **methodology lesson #23 NEW**: use `--locked` on every publish or bump-before-cascade); `make publish` `.cargo/config.toml` backup race on parallel invocations (mitigated by serialization; Makefile fix deferred). Companion PR #1672 brings README/book/CLAUDE.md in sync (counts 1105→1134, 80→82; SHIP-007 known-issue warning retired). Closes `feedback_post_publish_qa_required.md` requirement (v0.31.1 yank lesson). **MODEL-1 ship %**: 100% (CODE) → **100% (USERS)** — milestone moves from "shipped in code" to "shipped to users." **MODEL-2 ship %**: unchanged at **57%** (independent track; v0.33.0 carries no MODEL-2 movement).
 **Atomic next action (v3.21.0):** **🎉 §75 — MODEL-1 SHIP %  = 100% — SHIP-007 LIVE-DISCHARGED via F32 GEMV PTX layout fix (2026-05-13)** (see new §75 below). PR-E (#1651) ships single-file fix in `crates/aprender-gpu/src/kernels/gemv/mod.rs`: the F32 GEMV kernel assumed `[K rows × N cols]` row-major but actual ML weights are `[output_dim=N, input_dim=K]` row-major (PyTorch/SafeTensors/GGUF convention). Kernel was reading TRANSPOSED weights → systematically anti-correlated logits (cos=-0.005). Fix rewrites inner loop to iterate K within row `block_id`. Empirical discharge: `apr bench` 5-iter 128-tok decode = **124.6 tok/s** on RTX 4090 (4.15× over AC-SHIP1-007 30 tok/s floor); PARITY-GATE PASS; default path, no workarounds. **All 10 AC-SHIP1-* LIVE-DISCHARGED.** **MODEL-1 ship %**: **99% → 100%** 🎉. **MODEL-2 ship %**: unchanged at **57%**. **Methodology lesson #22 NEW**: symptom analysis → bug class localization in O(1); methodology lessons compose.
 **Atomic next action (v3.20.0):** **§74 — SHIP-007 bug LOCALIZED to LM head F32 GEMV via PR-B stage bisection (2026-05-13)** (see new §74 below). PR-B (#1649) APR_GPU_STAGE_DUMP scaffold captured GPU embedding + post_ffn_residual L27 + final_norm + lm_head + CPU lm_head on single BOS token. GPU intermediate values look numerically sane (post_ffn_residual rms=26, final_norm rms=2.84). Divergence emerges between final_norm and logits: GPU logits mean=0.013 vs CPU mean=-2.42 (Δ=2.43; CPU has Qwen's typical negative-bias signature). PMAT-333 dequantizes ALL weights to F32 on GPU upload (28.3 GB), so `WeightQuantType::from_size` returns F32 for LM head → dispatches `f32_gemv_into`. The F32 GEMV kernel is the localized bug surface. **Methodology lesson #21 NEW**: stage-by-stage numerical analysis can localize bug class without per-element diffing. **MODEL-1 ship %**: unchanged at **99%** (Layer 2 localized; PR-E for fix). **MODEL-2 ship %**: unchanged at **57%**. Path-to-100% reduced to a single PR-E.
 **Atomic next action (v3.19.0):** §72 + §73 combined banner — see both sections below.
@@ -5285,6 +5286,141 @@ Evidence:
 - Predecessor: `evidence/section-74-ship-007-bisection-2026-05-13/findings.json` (bug localized)
 
 Spec v3.18.0 → **v3.21.0** (post-§72/73 stack at 3.18, §74 at 3.20, §75 here at 3.21 — MODEL-1 100%).
+
+---
+
+## §76. v0.33.0 cascade published to crates.io — MODEL-1 in users' hands (2026-05-14)
+
+§75 declared MODEL-1 SHIP % = 100% **in code**. §76 closes the loop: **MODEL-1 SHIP % = 100% in users' hands.** The v0.33.0 release cascade landed all 24 user-facing crates on crates.io and a fresh `cargo install aprender --force --locked` against the public registry installs `apr 0.33.0` with the SHIP-007 F32 GEMV fix baked in.
+
+### 76.1 Cascade scope
+
+24 crates published in topological dependency order:
+
+| Tier | Crates | Why ordered here |
+|------|--------|------------------|
+| 1 (leaves) | aprender-contracts-macros, aprender-gemm-codegen, aprender-quant, aprender-sparse, aprender-solve, aprender-mcp, aprender-train-common, aprender-graph, aprender-data, aprender-profile-core | No workspace deps |
+| 2 | aprender-contracts (needs macros), aprender-zram-core, aprender-profile (needs graph), aprender-core | Single-layer deps |
+| 3 | aprender-gpu (needs profile via dev-dep `renacer` alias) | Dev-deps gate publish |
+| 4 | aprender-cuda-edge, aprender-train (need gpu) | |
+| 5 | aprender-compute (needs gpu + cuda-edge + 4 others) | |
+| 6 | aprender-serve, aprender-present-core (need compute) | |
+| 7 | aprender-present-terminal, aprender-train-lora, aprender-orchestrate | |
+| 8 | apr-cli | Hub of all CLI deps |
+| 9 (root) | aprender | Facade crate — `cargo install aprender` ships `apr` |
+
+All published with `--locked --allow-dirty` against the workspace Cargo.lock.
+
+### 76.2 Two production blockers surfaced + closed in flight
+
+#### 76.2.1 PR #1670 — `cc 1.2.59 → 1.2.62` lockfile bump
+
+`cargo publish` regenerates a fresh Cargo.lock during the local-tarball verify step, ignoring the workspace lockfile. `cc 1.2.59` calls `apple_sdk_name` on the rustc 1.93.0 Apple SDK path — a method that no longer exists — so `apr-cli` and `aprender` root publishes failed at the verify step with `error: could not compile cc (lib) due to 11 previous errors`.
+
+Fix: `cargo update -p cc` to 1.2.62 + republish with `--locked`. Committed on `fix/cargo-lock-cc-1.2.62`, PR #1670 merged to main 2026-05-14T12:59:59Z.
+
+**Methodology lesson #23 NEW** (`feedback_cargo_publish_lockfile_regen.md`): `cargo publish` re-resolves a fresh Cargo.lock during verify; lockfile-sensitive build-deps like `cc` need either a bump-before-cascade or `--locked` on every publish call. Silent re-resolution is the trap. Documented in memory.
+
+#### 76.2.2 `make publish` `.cargo/config.toml` backup race
+
+Parallel `make publish CRATE=X` invocations corrupted each other's `.cargo/config.toml.publish-backup` because each backs up → writes empty → restores. Three parallel publishes failed on the first attempt with dependency-resolution errors that LOOKED like crate ordering but were actually empty-config artifacts.
+
+Mitigation: serialized publish in groups of 1-3 sequentially within a single shell. Future fix candidate: lockfile around `.cargo/config.toml` swap in the Makefile target (left as a follow-up task — not blocking).
+
+### 76.3 Post-publish QA — `/dogfood` GO verdict
+
+Per `feedback_post_publish_qa_required.md` (v0.31.1 was YANKED for skipping this), the published binary was exercised end-to-end:
+
+```
+$ cargo install aprender --force --locked
+$ /home/noah/.cargo/bin/apr --version
+apr 0.33.0 (v0.33.0+no-git)
+
+$ apr run qwen2.5-coder-1.5b-instruct-q4k.apr "What is 2+2?" --max-tokens 16
+Output: 4
+Completed in 15.53s (cached)
+```
+
+12-gate `/dogfood` audit results on the installed v0.33.0 binary:
+
+| Gate | Status | Evidence |
+|------|--------|----------|
+| 1. Install | ✅ PASS | `apr 0.33.0 (v0.33.0+no-git)` from crates.io |
+| 2a. Inspection (11 cmds) | ✅ PASS | All inspect/debug/validate/lint/tensors/trace/diff/hex/tree/flow/explain exit 0 on canonical APR |
+| 2c. Transform (9 cmds) | ✅ PASS | All `--help` exit 0 |
+| 2d. Inference smoke | ✅ PASS | `apr run` "2+2?" → "4" |
+| 2e. Registry | ✅ PASS | list / list --json (3 entries) / gpu (RTX 4090 detected) |
+| 2f/2g/2h Help (21 cmds) | ✅ PASS | All `--help` exit 0 |
+| 3 / P1 Silent flag | ✅ PASS | --json / --vocab produce distinct output |
+| 3 / P2 Exit code | ✅ PASS | nonexistent → exit 3 |
+| 3 / P7 NaN sentinel | ✅ PASS | No NaN/Inf in apr run output |
+| 3 / P8 Version | ✅ PASS | Real version, not sentinel |
+| 3 / P10 JSON valid | ✅ PASS | inspect/list/gpu --json all parse with jq |
+| 8 Silent-fallback | ✅ PASS | S1 truncated exit 5, S2 /dev/null exit 3, S4 corrupt exit 5, S5 missing exit 3 |
+| 9 Metamorphic | ✅ PASS | M2 5 archs (qwen35 + qwen2 × gguf/apr/safetensors); M3 temp=0 deterministic ("Hello! How can" twice) |
+| 11 Chaos | ✅ PASS | C1 RSS=1.1GB < 2GB budget; C2 overwrite blocked; C3 SIGINT → exit 130 |
+| 12 Differential | ✅ PASS | D1 GGUF=APR tensor counts agree; D3 4/4 JSON outputs valid |
+
+**Verdict: 🟢 GO.** No FAILs, no panics, no silent-fallback acceptance of bad input. v0.33.0 from crates.io ships clean.
+
+### 76.4 Tag + GH Release
+
+| Artifact | Value |
+|---|---|
+| Git tag | `v0.33.0` at commit 50c4adead, pushed to origin |
+| GH Release | https://github.com/paiml/aprender/releases/tag/v0.33.0 |
+| Release title | 🎉 v0.33.0 — MODEL-1 SHIP % = 100% (SHIP-007 LIVE-DISCHARGED) |
+| crates.io aprender | https://crates.io/crates/aprender/0.33.0 |
+| crates.io apr-cli | https://crates.io/crates/apr-cli/0.33.0 |
+
+### 76.5 Docs bump (PR #1672 — companion to §76)
+
+PR #1672 brings user-facing docs in sync with v0.33.0:
+- README.md: replaces SHIP-007 known-issue warning with "LIVE-DISCHARGED in v0.33.0" link to GH Release; bumps contract count 1105 → 1134, CLI count 80 → 82, library snippet version 0.31 → 0.33, migration table 0.31 → 0.33
+- book/src/introduction.md: 70 / 58 / 405 → 80 / 82 / 1134
+- book/src/examples/cuda-backend.md: aprender = 0.27/0.18 → 0.33
+- CLAUDE.md (agent context): 70 / 58 / 405 → 80 / 82 / 1134 + v0.33.0 SHIPPED note
+
+All 4 `bash scripts/check_readme_claims.sh` gates (FALSIFY-README-001..004) PASS post-bump.
+
+### 76.6 Ship-% movement
+
+- **MODEL-1 ship %**: **100% (CODE)** → **100% (USERS)** — same %, new dimension. The "in users' hands" qualifier is now satisfied for the first time post-§75.
+- **MODEL-2 ship %**: unchanged at **57%** (independent track; v0.33.0 carries no MODEL-2 movement; gated on §35 distill stub + §34 capacity ceiling at val_loss=9.38)
+
+### 76.7 What §76 IS and IS NOT
+
+§76 IS:
+- Live verification that the v0.33.0 binary on crates.io reproduces the §75 SHIP-007 fix end-to-end
+- The closure of the `feedback_post_publish_qa_required.md` requirement (the v0.31.1 yank lesson)
+- The "MODEL-1 in users' hands" milestone — distinct from §75's "MODEL-1 in code"
+
+§76 does NOT:
+- Move MODEL-2 ship-% (independent track)
+- Discharge any new AC (all 10 AC-SHIP1-* were already LIVE-discharged in §75)
+- Touch SHIP-007 again (the fix is bit-identical to §75; §76 just records that the same fix made it through `cargo publish` verify on a fresh registry pull)
+
+### 76.8 Methodology lesson #23 (NEW)
+
+**`cargo publish` regenerates Cargo.lock during local-tarball verify, ignoring the workspace lockfile.** Lockfile-sensitive build-deps (cc, syn, etc.) silently re-resolve to the latest semver-compatible version available at publish-time. If that version has a toolchain-incompat regression, the verify step fails with confusing errors. Mitigation: either (a) bump-before-cascade + `cargo update -p <dep>` so the workspace lockfile already has the fix, OR (b) pass `--locked` to every publish call to force respect of the workspace lockfile. The user-facing Makefile `publish` target should adopt (b) as standard.
+
+Saved at `feedback_cargo_publish_lockfile_regen.md`.
+
+### 76.9 Cumulative methodology lessons through §76
+
+| # | Lesson |
+|---|--------|
+| 6-22 | (see §75) |
+| **23** | **`cargo publish` regenerates Cargo.lock during verify; use --locked or bump-before-cascade** |
+
+Spec v3.21.0 → **v3.22.0**.
+
+Evidence:
+- `https://crates.io/crates/aprender/0.33.0` (release artifact)
+- `https://github.com/paiml/aprender/releases/tag/v0.33.0` (GH release)
+- `https://github.com/paiml/aprender/pull/1670` (cc bump fix)
+- `https://github.com/paiml/aprender/pull/1672` (docs bump)
+- Memory: `project_v0_33_0_cascade_published.md`, `feedback_cargo_publish_lockfile_regen.md`
 
 ---
 

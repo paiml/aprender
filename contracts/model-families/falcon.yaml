@@ -1,0 +1,147 @@
+metadata:
+  version: "1.0"
+  created: "2026-05-14"
+  description: "Model family descriptor: falcon classic (closes GH-1587)"
+  kind: model-family
+  references:
+    - "https://huggingface.co/tiiuae/falcon-7b/blob/main/config.json"
+    - "https://huggingface.co/tiiuae/falcon-40b/blob/main/config.json"
+    - "https://huggingface.co/tiiuae/falcon-rw-7b/blob/main/config.json"
+
+family: falcon
+display_name: "TII Falcon (classic)"
+vendor: TII (Technology Innovation Institute)
+architectures:
+  - FalconForCausalLM
+hf_pattern: "tiiuae/falcon-*"
+
+# Falcon classic uses RoPE position encoding, fused QKV
+# (`self_attention.query_key_value`), GELU MLP, LayerNorm with bias.
+# Three structural variants:
+#   - Falcon-7B: MQA (single shared K/V head), single per-block layernorm
+#   - Falcon-40B: MGQA (8 K/V groups), separate ln_attn + ln_mlp
+#   - Falcon-11B (RefinedWeb): MGQA, similar to 40B
+# All share `transformer.h.N.*` HF naming (distinct from FalconH1's
+# hybrid SSM, which uses `Architecture::FalconH1`).
+#
+# Falcon does NOT use ALiBi (unlike BLOOM) — RoPE θ=10000 in 7B/40B,
+# θ=500000 in 11B.
+size_variants:
+  7b:
+    parameters: "7B"
+    hidden_dim: 4544
+    num_layers: 32
+    num_heads: 71
+    num_kv_heads: 1
+    intermediate_dim: 18176
+    vocab_size: 65024
+    max_position_embeddings: 2048
+    head_dim: 64
+    rope_theta: 10000.0
+    norm_eps: 0.00001
+  11b:
+    parameters: "11B"
+    hidden_dim: 4096
+    num_layers: 60
+    num_heads: 32
+    num_kv_heads: 8
+    intermediate_dim: 16384
+    vocab_size: 65024
+    max_position_embeddings: 8192
+    head_dim: 128
+    rope_theta: 500000.0
+    norm_eps: 0.00001
+  40b:
+    parameters: "40B"
+    hidden_dim: 8192
+    num_layers: 60
+    num_heads: 128
+    num_kv_heads: 8
+    intermediate_dim: 32768
+    vocab_size: 65024
+    max_position_embeddings: 2048
+    head_dim: 64
+    rope_theta: 10000.0
+    norm_eps: 0.00001
+
+constraints:
+  attention_type: gqa
+  activation: gelu
+  norm_type: layernorm
+  has_bias: true
+  tied_embeddings: false
+  positional_encoding: rope
+  mlp_type: gelu_mlp
+
+tensor_template:
+  embedding: "model.embed_tokens.weight"
+  lm_head: "lm_head.weight"
+  final_norm: "model.norm.weight"
+  per_layer:
+    # Fused QKV — Q/K/V interleaved per head in MQA variants.
+    qkv_proj_weight: "model.layers.{n}.self_attn.qkv_proj.weight"
+    qkv_proj_bias: "model.layers.{n}.self_attn.qkv_proj.bias"
+    o_proj_weight: "model.layers.{n}.self_attn.o_proj.weight"
+    o_proj_bias: "model.layers.{n}.self_attn.o_proj.bias"
+    up_proj_weight: "model.layers.{n}.mlp.up_proj.weight"
+    up_proj_bias: "model.layers.{n}.mlp.up_proj.bias"
+    down_proj_weight: "model.layers.{n}.mlp.down_proj.weight"
+    down_proj_bias: "model.layers.{n}.mlp.down_proj.bias"
+    input_layernorm_weight: "model.layers.{n}.input_layernorm.weight"
+    input_layernorm_bias: "model.layers.{n}.input_layernorm.bias"
+    post_attention_layernorm_weight: "model.layers.{n}.post_attention_layernorm.weight"
+    post_attention_layernorm_bias: "model.layers.{n}.post_attention_layernorm.bias"
+    gate_proj_weight: null
+    gate_proj_bias: null
+
+shape_template:
+  embedding: "[vocab_size, hidden_dim]"
+  lm_head: "[vocab_size, hidden_dim]"
+  final_norm: "[hidden_dim]"
+  # Fused QKV: [num_heads*head_dim + 2*num_kv_heads*head_dim, hidden_dim]
+  qkv_proj_weight: "[(num_heads + 2 * num_kv_heads) * head_dim, hidden_dim]"
+  qkv_proj_bias: "[(num_heads + 2 * num_kv_heads) * head_dim]"
+  o_proj: "[hidden_dim, num_heads * head_dim]"
+  up_proj: "[intermediate_dim, hidden_dim]"
+  down_proj: "[hidden_dim, intermediate_dim]"
+  input_layernorm: "[hidden_dim]"
+  post_attention_layernorm: "[hidden_dim]"
+  bias: "[hidden_dim]"
+
+gguf_tensor_template:
+  embedding: "token_embd.weight"
+  position_embedding: null
+  lm_head: "output.weight"
+  final_norm_weight: "output_norm.weight"
+  final_norm_bias: "output_norm.bias"
+  transpose_weights: false
+  per_layer:
+    qkv_proj_weight: "attn_qkv.weight"
+    qkv_proj_bias: "attn_qkv.bias"
+    o_proj_weight: "attn_output.weight"
+    o_proj_bias: "attn_output.bias"
+    up_proj_weight: "ffn_up.weight"
+    up_proj_bias: "ffn_up.bias"
+    down_proj_weight: "ffn_down.weight"
+    down_proj_bias: "ffn_down.bias"
+    input_layernorm_weight: "attn_norm.weight"
+    input_layernorm_bias: "attn_norm.bias"
+    post_attention_layernorm_weight: "ffn_norm.weight"
+    post_attention_layernorm_bias: "ffn_norm.bias"
+    gate_proj_weight: null
+    gate_proj_bias: null
+
+quantizations:
+  - q4_k_m
+  - q5_k_m
+  - q8_0
+  - f16
+  - f32
+
+certification:
+  playbook_path: "../apr-model-qa-playbook/playbooks/models/falcon-{size}.playbook.yaml"
+  csv_family_key: "falcon"
+  size_categories:
+    7b: medium
+    11b: medium
+    40b: xlarge

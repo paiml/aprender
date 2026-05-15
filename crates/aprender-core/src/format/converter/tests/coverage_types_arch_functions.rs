@@ -94,7 +94,11 @@ fn test_from_model_type_case_insensitive_gh219() {
 fn test_from_model_type_unknown_gh219() {
     assert_eq!(Architecture::from_model_type("unknown_arch"), None);
     assert_eq!(Architecture::from_model_type(""), None);
-    assert_eq!(Architecture::from_model_type("falcon"), None);
+    // GH-1587: "falcon" now maps to FalconClassic (was None pre-#1587).
+    assert_eq!(
+        Architecture::from_model_type("falcon"),
+        Some(Architecture::FalconClassic)
+    );
 }
 
 // -------------------------------------------------------------------------
