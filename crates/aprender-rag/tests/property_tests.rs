@@ -1,13 +1,13 @@
 #![allow(clippy::disallowed_methods)]
 //! Property-based tests for trueno-rag
 
-use proptest::prelude::*;
 use aprender_rag::{
     chunk::{Chunker, FixedSizeChunker, ParagraphChunker, RecursiveChunker, TimestampChunker},
     embed::{cosine_similarity, Embedder, MockEmbedder},
     media::{parse_subtitles, SubtitleCue, SubtitleFormat, SubtitleTrack},
     Document,
 };
+use proptest::prelude::*;
 
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(100))]

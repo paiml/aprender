@@ -92,10 +92,7 @@ pub enum BpeInv003Verdict {
 /// assert_eq!(v, BpeInv003Verdict::Fail);
 /// ```
 #[must_use]
-pub fn verdict_from_roundtrip_scan(
-    docs_scanned: u64,
-    roundtrip_failures: u64,
-) -> BpeInv003Verdict {
+pub fn verdict_from_roundtrip_scan(docs_scanned: u64, roundtrip_failures: u64) -> BpeInv003Verdict {
     if docs_scanned < AC_BPE_INV_003_REQUIRED_DOCS {
         return BpeInv003Verdict::Fail;
     }
@@ -263,10 +260,7 @@ mod tests {
         ];
         for (scanned, expected) in probes {
             let v = verdict_from_roundtrip_scan(scanned, 0);
-            assert_eq!(
-                v, expected,
-                "scanned={scanned} expected {expected:?}"
-            );
+            assert_eq!(v, expected, "scanned={scanned} expected {expected:?}");
         }
     }
 

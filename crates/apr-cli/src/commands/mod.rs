@@ -18,11 +18,11 @@ pub mod check;
 pub mod compare_hf;
 pub(crate) mod compile;
 pub(crate) mod convert;
-pub mod modelfile;
 pub(crate) mod copy_tag;
 pub(crate) mod debug;
 pub(crate) mod diff;
 pub(crate) mod distill;
+pub mod modelfile;
 pub(crate) mod rm_gc_lint;
 
 pub(crate) mod data;

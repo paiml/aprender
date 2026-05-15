@@ -2,8 +2,8 @@
 //!
 //! Run with: cargo run --example metrics_evaluation
 
-use std::collections::HashSet;
 use aprender_rag::{metrics::RetrievalMetrics, ChunkId};
+use std::collections::HashSet;
 
 fn main() {
     println!("=== Retrieval Metrics Evaluation ===\n");

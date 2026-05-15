@@ -63,8 +63,8 @@ metadata:
     - crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml
 
 name: claude-code-parity-apr
-version: "1.28.0"
-status: ACTIVE_RUNTIME   # 17/17 gates registered; 4 with status: ACTIVE_RUNTIME (CCPA-013/014/015/016 — the runtime-evidence + outcome-parity track) + 1 with status: PROPOSED (CCPA-017 — project-scale parity, awaiting first operator-dispatched bench to flip ACTIVE_RUNTIME at v1.29.0), rest at PLANNED_M*/IN_REVIEW/HARD_BLOCKING_M16 per their lifecycle phase. No OPEN residue. v1.28.0 (companion-repo M180-M188 Phase 4 sequence, 2026-05-15) — adds FALSIFY-CCPA-017 (project_scale_parity_bound) to the gate registry. Phase 4 operationalizes the M159 ProgramBench prior-art (arXiv:2605.03546, 0%/200 SOTA baseline) into companion-tier project-scale parity testing: the M182 corpus draws 5 fixtures from real open GitHub issues across paiml/decy + paiml/bashrs + paiml/depyler with pinned pre-fix commit SHAs; the M184 runner (scripts/phase-4-bench.sh, 288 lines bash) clones at the pinned SHA, dispatches each system with timeout APR_TIMEOUT_S (default 900s), snapshots diff vs SHA, runs the per-fixture oracle_cmd; the M186 scorer (crates/ccpa-differ/src/project_scale_diff.rs, ~310 lines Rust) lifts the runner JSON into ProjectScaleParityReport with 5 derived metrics (per-fixture: approach_match + lines_edited_ratio; corpus-level: partial_agreement + files_jaccard_corpus + approach_match_rate); the M188 gate test (crates/ccpa-differ/tests/falsify_ccpa_017_project_scale_parity.rs, ~260 lines, 7 active + 1 #[ignore]'d) asserts partial_agreement >= 0.3 AND files_jaccard_corpus >= 0.3 with bidirectional sensitivity verified on synthetic identity (passes) and synthetic regression (fails) fixtures. CCPA-017 enters at status: PROPOSED because no operator-dispatched measurement has produced evidence/phase-4/project-scale-scores.json yet; the live-evidence test is #[ignore]'d until that exists. Threshold values (0.3/0.3) are tentative POC-tier floors — they WILL be recalibrated after first operator dispatch. Phase 4 is the SIGNAL regime, not the SATURATION regime: a CCPA-016-style "agreement = 1.0" result is implausible at project-scale per ProgramBench evidence; the goal is "do both systems make matching partial progress?" not "do both systems fully succeed?". v1.27.0 (companion-repo M167, 2026-05-14) — flips FALSIFY-CCPA-013 (first_recorded_parity_score) from `status: OPEN` → `status: ACTIVE_RUNTIME`. The gate's assertion has been satisfied since v1.1.0 (3 measured_parity blocks dating 2026-04-27 against `fixtures/canonical/` with aggregate_score = 1.0000), but the gate-level status field was never flipped — stale prose that this revision corrects. Also extends the assertion's `fixture_corpus_path` constraint to accept EITHER `fixtures/canonical/` (AUTHORED, since v1.2.0) OR `evidence/phase-3/captures/` (REAL-BINARY bilateral bench, companion-repo M150 — claude 2.1.139 + apr 0.32.0 + Qwen2.5-Coder-1.5B-Instruct-Q4_K_M, agreement = 1.0000 on MultiPL-E-Rust HumanEval/0..4). Adds a 4th measured_parity block under CCPA-013 recording M150's real-binary evidence as the strongest empirical discharge anchor. **CCPA-013 was the last gate stuck at `status: OPEN`** — its flip closes the OPEN residue. v1.26.0 (companion-repo M147+M152+M162 Phase 3 sequence, 2026-05-13) (companion-repo M147+M152+M162 Phase 3 sequence, 2026-05-13) — adds FALSIFY-CCPA-015 (ccpa_trace_subproc_output_purity) AND FALSIFY-CCPA-016 (outcome_parity_bound) to the gate registry. CCPA-015 was authored at M147 via provable-contract design (falsifying test FIRST, fix via Stdio::null()) for the ccpa-trace-subproc capture binary; PROPOSED in v1.25.0, promoted ACTIVE_RUNTIME here. CCPA-016 is the Phase 3 P3.4 outcome-parity gate authored at M152 — asserts aggregate agreement >= 0.5 on a MultiPL-E-Rust-class corpus with bidirectional sensitivity (synthetic regression fixture fails threshold; synthetic identity passes). CCPA-016 was empirically validated at M150 (real bilateral bench produced agreement = 1.0000 on 5/5 HumanEval/0..4 with real claude 2.1.139 + real apr code 0.32.0 via Qwen2.5-Coder-1.5B-Instruct-Q4_K_M). The companion-repo M162 row records that aprender#1638 MERGED upstream at squash b61b76b4 (2026-05-13), un-gating apr code from `--features code` so `cargo install apr-cli` ships it by default — the Axis 3 LlmDriver-adapter discharge is FULLY confirmed. v1.25.0 (companion-repo M136-M140 axis-2-closure-plan sequence, 2026-05-11) — adds FALSIFY-CCPA-014 (companion-repo M136-M140 axis-2-closure-plan sequence, 2026-05-11) — adds FALSIFY-CCPA-014 (os_event_parity_bound) to the gate registry, completing the axis-2 closure-plan idea (2) CLI subprocess instrumentation track. New gate consumes ccpa_subproc::OsEvent records (M136) via ccpa_differ::os_event_parity (M137) and asserts canonical-corpus score >= 0.95 + bidirectional sensitivity on regression corpus (M139). v1.24.0 (companion-repo M128-M131 sequence, 2026-05-10) — bumped from v1.23.0 to integrate the M109 cosine-vs-HF-FP16 LIVE-DISCHARGE (cos_sim 0.995384 ≥ 0.99 on lambda-vector RTX 4090, 2026-05-09; aprender PR #1597 squash 3fb04ef86 flipped `qwen3-moe-forward-v1` v1.4.0 ACTIVE_ALGORITHM_LEVEL → v1.5.0 ACTIVE_RUNTIME). Discharges the v1.23.0 status-prose claim "Cosine vs HF FP16 remains operator-confirm pending ~60 GB HF download" — the FP16 weights had been on lambda-vector at /mnt/nvme-raid0/models/Qwen3-Coder-30B-A3B-Instruct/ (57 GB / 16 safetensors shards) for ~7 days; the "60 GB download" blocker was stale by 62 days. v1.23.0 (M35 M32d discharge audit-trail bump) records the 4-bug stack landed on aprender main as commit 5235aaeb9 (#1228) plus diagnostic surface PRs #1222 (Step 2), #1226 (Step 2.5), #1401 (Step 2 JSON wire). M32d gibberish output ("%%%%%%%%") converted to coherent English answers across math/geography/translation/code domains. M34 FAST PATH 5-whys plan delivered at lucky-case bound (5 substantive PRs vs 4-6 estimated, ~6 hours wall vs 2-3 days). Component priors verified empirically: rank-3 Q/K RMSNorm (15%) + rank-4 rope_theta (10%) + chat template both correct. Cosine vs HF FP16 formal flip **DISCHARGED 2026-05-09 at companion-repo M109** (apr_argmax = hf_argmax = 3555 " What"; 555ms apr-forward; HF FP16 fixture generated in 52s).
+version: "1.29.0"
+status: ACTIVE_RUNTIME   # 18/18 gates registered; 4 with status: ACTIVE_RUNTIME (CCPA-013/014/015/016 — the runtime-evidence + outcome-parity track) + 2 with status: PROPOSED (CCPA-017 project-scale parity + CCPA-018 Arena recovery-rate, both awaiting first operator-dispatched bench to flip ACTIVE_RUNTIME at v1.30.0), rest at PLANNED_M*/IN_REVIEW/HARD_BLOCKING_M16 per their lifecycle phase. No OPEN residue. v1.29.0 (companion-repo M194-M206 Phase 5 sequence, 2026-05-15) — adds FALSIFY-CCPA-018 (arena_recovery_rate_bound) to the gate registry. Phase 5 operationalizes design-audit.md (M192 operator-authored) R2 + R3 recommendations: a live multi-turn execution harness (crates/ccpa-arena/) where the agent gets bash/test feedback per turn and must recover from failures. The M196 P5.1 scaffolding shipped the ArenaSession + ArenaDriver + OracleCmd + TurnRecord types; M200 P5.2 shipped the real multi-turn loop body (crates/ccpa-arena/src/dispatch.rs with Bash/Read/Write/Edit dispatch via std::process::Command + std::fs); M202 P5.3 shipped SubprocessDriver + bin/ccpa-arena-bench (clap CLI) + scripts/phase-5-arena-bench.sh (operator-dispatch wrapper analogous to phase-4-bench.sh); M204 P5.4 shipped CCPA-018 gate test (asserts recovery_rate >= 0.5 AND oracle_passed_rate >= 0.3 with bidirectional sensitivity verified via synthetic identity/regression/give-up-fast fixtures — the asymmetric give-up-fast test is the canonical R3 distinguishing case: 100% pass rate BUT zero recovery FAILS the gate); M206 P5.5 shipped the falsifier-of-falsifier comparator (crates/ccpa-arena/src/falsifier.rs + evaluate_static_vs_arena() returning FalsifierVerdict with StaticFalsified/StaticValidated/Inconclusive outcomes per design-audit.md §5's Popperian test). CCPA-018 enters at status: PROPOSED because no operator-dispatched Arena bench has produced evidence/phase-5/arena-scores.json yet; the live-evidence test is #[ignore]'d until that exists. Threshold values (0.5 recovery / 0.3 oracle) are tentative POC-tier floors — they WILL be recalibrated after first operator dispatch. Phase 5 is distinct from Phase 4 (CCPA-017): CCPA-017 measures FUNCTIONAL OUTCOME (does the code work?); CCPA-018 measures AGENT QUALITY (does the agent recover when bash fails?). v1.28.0 (companion-repo M180-M188 Phase 4 sequence, 2026-05-15) — adds FALSIFY-CCPA-017 (project_scale_parity_bound) to the gate registry. Phase 4 operationalizes the M159 ProgramBench prior-art (arXiv:2605.03546, 0%/200 SOTA baseline) into companion-tier project-scale parity testing: the M182 corpus draws 5 fixtures from real open GitHub issues across paiml/decy + paiml/bashrs + paiml/depyler with pinned pre-fix commit SHAs; the M184 runner (scripts/phase-4-bench.sh, 288 lines bash) clones at the pinned SHA, dispatches each system with timeout APR_TIMEOUT_S (default 900s), snapshots diff vs SHA, runs the per-fixture oracle_cmd; the M186 scorer (crates/ccpa-differ/src/project_scale_diff.rs, ~310 lines Rust) lifts the runner JSON into ProjectScaleParityReport with 5 derived metrics (per-fixture: approach_match + lines_edited_ratio; corpus-level: partial_agreement + files_jaccard_corpus + approach_match_rate); the M188 gate test (crates/ccpa-differ/tests/falsify_ccpa_017_project_scale_parity.rs, ~260 lines, 7 active + 1 #[ignore]'d) asserts partial_agreement >= 0.3 AND files_jaccard_corpus >= 0.3 with bidirectional sensitivity verified on synthetic identity (passes) and synthetic regression (fails) fixtures. CCPA-017 enters at status: PROPOSED because no operator-dispatched measurement has produced evidence/phase-4/project-scale-scores.json yet; the live-evidence test is #[ignore]'d until that exists. Threshold values (0.3/0.3) are tentative POC-tier floors — they WILL be recalibrated after first operator dispatch. Phase 4 is the SIGNAL regime, not the SATURATION regime: a CCPA-016-style "agreement = 1.0" result is implausible at project-scale per ProgramBench evidence; the goal is "do both systems make matching partial progress?" not "do both systems fully succeed?". v1.27.0 (companion-repo M167, 2026-05-14) — flips FALSIFY-CCPA-013 (first_recorded_parity_score) from `status: OPEN` → `status: ACTIVE_RUNTIME`. The gate's assertion has been satisfied since v1.1.0 (3 measured_parity blocks dating 2026-04-27 against `fixtures/canonical/` with aggregate_score = 1.0000), but the gate-level status field was never flipped — stale prose that this revision corrects. Also extends the assertion's `fixture_corpus_path` constraint to accept EITHER `fixtures/canonical/` (AUTHORED, since v1.2.0) OR `evidence/phase-3/captures/` (REAL-BINARY bilateral bench, companion-repo M150 — claude 2.1.139 + apr 0.32.0 + Qwen2.5-Coder-1.5B-Instruct-Q4_K_M, agreement = 1.0000 on MultiPL-E-Rust HumanEval/0..4). Adds a 4th measured_parity block under CCPA-013 recording M150's real-binary evidence as the strongest empirical discharge anchor. **CCPA-013 was the last gate stuck at `status: OPEN`** — its flip closes the OPEN residue. v1.26.0 (companion-repo M147+M152+M162 Phase 3 sequence, 2026-05-13) (companion-repo M147+M152+M162 Phase 3 sequence, 2026-05-13) — adds FALSIFY-CCPA-015 (ccpa_trace_subproc_output_purity) AND FALSIFY-CCPA-016 (outcome_parity_bound) to the gate registry. CCPA-015 was authored at M147 via provable-contract design (falsifying test FIRST, fix via Stdio::null()) for the ccpa-trace-subproc capture binary; PROPOSED in v1.25.0, promoted ACTIVE_RUNTIME here. CCPA-016 is the Phase 3 P3.4 outcome-parity gate authored at M152 — asserts aggregate agreement >= 0.5 on a MultiPL-E-Rust-class corpus with bidirectional sensitivity (synthetic regression fixture fails threshold; synthetic identity passes). CCPA-016 was empirically validated at M150 (real bilateral bench produced agreement = 1.0000 on 5/5 HumanEval/0..4 with real claude 2.1.139 + real apr code 0.32.0 via Qwen2.5-Coder-1.5B-Instruct-Q4_K_M). The companion-repo M162 row records that aprender#1638 MERGED upstream at squash b61b76b4 (2026-05-13), un-gating apr code from `--features code` so `cargo install apr-cli` ships it by default — the Axis 3 LlmDriver-adapter discharge is FULLY confirmed. v1.25.0 (companion-repo M136-M140 axis-2-closure-plan sequence, 2026-05-11) — adds FALSIFY-CCPA-014 (companion-repo M136-M140 axis-2-closure-plan sequence, 2026-05-11) — adds FALSIFY-CCPA-014 (os_event_parity_bound) to the gate registry, completing the axis-2 closure-plan idea (2) CLI subprocess instrumentation track. New gate consumes ccpa_subproc::OsEvent records (M136) via ccpa_differ::os_event_parity (M137) and asserts canonical-corpus score >= 0.95 + bidirectional sensitivity on regression corpus (M139). v1.24.0 (companion-repo M128-M131 sequence, 2026-05-10) — bumped from v1.23.0 to integrate the M109 cosine-vs-HF-FP16 LIVE-DISCHARGE (cos_sim 0.995384 ≥ 0.99 on lambda-vector RTX 4090, 2026-05-09; aprender PR #1597 squash 3fb04ef86 flipped `qwen3-moe-forward-v1` v1.4.0 ACTIVE_ALGORITHM_LEVEL → v1.5.0 ACTIVE_RUNTIME). Discharges the v1.23.0 status-prose claim "Cosine vs HF FP16 remains operator-confirm pending ~60 GB HF download" — the FP16 weights had been on lambda-vector at /mnt/nvme-raid0/models/Qwen3-Coder-30B-A3B-Instruct/ (57 GB / 16 safetensors shards) for ~7 days; the "60 GB download" blocker was stale by 62 days. v1.23.0 (M35 M32d discharge audit-trail bump) records the 4-bug stack landed on aprender main as commit 5235aaeb9 (#1228) plus diagnostic surface PRs #1222 (Step 2), #1226 (Step 2.5), #1401 (Step 2 JSON wire). M32d gibberish output ("%%%%%%%%") converted to coherent English answers across math/geography/translation/code domains. M34 FAST PATH 5-whys plan delivered at lucky-case bound (5 substantive PRs vs 4-6 estimated, ~6 hours wall vs 2-3 days). Component priors verified empirically: rank-3 Q/K RMSNorm (15%) + rank-4 rope_theta (10%) + chat template both correct. Cosine vs HF FP16 formal flip **DISCHARGED 2026-05-09 at companion-repo M109** (apr_argmax = hf_argmax = 3555 " What"; 555ms apr-forward; HF FP16 fixture generated in 52s).
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Top-level invariants — the 12 falsifiable gates this contract asserts.
@@ -91,6 +91,7 @@ invariants:
   - { id: FALSIFY-CCPA-015, name: ccpa_trace_subproc_output_purity, summary: 'Every line emitted to stdout by ccpa-trace-subproc MUST decode as a ccpa_subproc::OsEvent JSON object. Subprocess stdout MUST NOT interleave with the capture stream (use Stdio::null() not Stdio::inherit()).' }
   - { id: FALSIFY-CCPA-016, name: outcome_parity_bound,        summary: 'Outcome parity (Phase 3 P3.4): aggregate agreement on a MultiPL-E-Rust-class corpus >= 0.5 (POC-tier); bidirectional-sensitivity via synthetic regression (< 0.5 → fail) + synthetic identity (1.0 → pass) fixtures.' }
   - { id: FALSIFY-CCPA-017, name: project_scale_parity_bound,  summary: 'Project-scale parity (Phase 4 P4.4): aggregate partial_agreement >= 0.3 AND files_jaccard_corpus >= 0.3 on a multi-file Cargo-workspace task corpus drawn from real GitHub issues (companion-repo M182). Bidirectional-sensitivity via synthetic identity (passes) + synthetic regression (fails) fixtures. PROPOSED at v1.28.0; ACTIVE_RUNTIME pending first operator-dispatched measurement.' }
+  - { id: FALSIFY-CCPA-018, name: arena_recovery_rate_bound,   summary: 'Arena recovery-rate (Phase 5 P5.4): aggregate recovery_rate >= 0.5 AND oracle_passed_rate >= 0.3 on a multi-turn live Arena bench (companion-repo M196-M206). Measures AGENT QUALITY (does the agent recover from failed bash/test runs?) distinct from CCPA-016/017 functional-outcome metrics. Bidirectional-sensitivity via synthetic identity (passes) + regression (fails) + give-up-fast (asymmetric: 100% pass but zero recovery FAILS recovery floor — the canonical R3 distinguishing test). PROPOSED at v1.29.0; ACTIVE_RUNTIME pending first operator-dispatched Arena bench.' }
 
 scope: >
   every recorded fixture under <ccpa-repo>/fixtures/, every replay run the
@@ -927,6 +928,132 @@ falsification_conditions:
       - { date: '2026-05-15', version_before: '1.27.0', version_after: '1.28.0',
           change: "Added FALSIFY-CCPA-017 to gate registry at status: PROPOSED. Companion-repo M188 ships the gate test scaffold (7 synthetic-fixture tests + 1 #[ignore]'d live-evidence test); thresholds (partial_agreement >= 0.3 AND files_jaccard_corpus >= 0.3) are tentative POC-tier floors awaiting first operator-dispatched measurement to calibrate. Phase 4 P4.5 contract bump." }
 
+  - id: FALSIFY-CCPA-018
+    name: arena_recovery_rate_bound
+    status: PROPOSED
+    assertion: |
+      Arena recovery-rate (Phase 5 P5.4). On a multi-turn live Arena
+      bench against the M182 project-scale corpus (companion-repo
+      fixtures/project-scale/) where each task is driven through an
+      ArenaSession with up to max_turns=20 multi-turn dialog turns and
+      bash/test execution feedback per turn, the aggregate Arena scores
+      MUST satisfy BOTH:
+        - aggregate `recovery_rate` >= 0.5
+        - aggregate `oracle_passed_rate` >= 0.3
+
+      Where derived metrics are:
+        recovery_rate = (teacher_recovered + student_recovered) /
+                        (corpus_size * 2)
+        oracle_passed_rate = (teacher_passed + student_passed) /
+                             (corpus_size * 2)
+        recovery_observed = OraclePassed AND any_bash_failure_in_history
+                            (per side per fixture)
+
+      Plus consistency invariants:
+        - `corpus_size >= 3` (minimum sample size for statistical meaning)
+        - `corpus_size == per_fixture.len()` (record-count match)
+
+      Bidirectional sensitivity (mandatory):
+        - A synthetic identity fixture (all pass + all recovered) MUST
+          pass.
+        - A synthetic regression fixture (no pass, no recovery) MUST fail.
+        - A synthetic give-up-fast fixture (100% pass BUT zero recovery)
+          MUST fail on the recovery floor — this is the canonical R3
+          distinguishing test: a system that solves easy tasks zero-shot
+          but never recovers from a hard task's first failure is NOT
+          accepted by CCPA-018.
+        - An empty-corpus report MUST fail (prevents "no-data" from
+          being claimed as success).
+
+      Source of truth: `evidence/phase-5/arena-scores.json` produced
+      by `scripts/phase-5-arena-bench.sh` on the companion repo.
+
+      CCPA-018 measures AGENT QUALITY (does the agent recover?),
+      distinct from CCPA-016/017 which measure FUNCTIONAL OUTCOME
+      (does the code work?). Direct empirical answer to
+      design-audit.md §6 R3 "self-correction over zero-shot
+      determinism".
+    test_harness: |
+      `cargo test -p ccpa-arena --test falsify_ccpa_018_arena_recovery_rate`
+      runs 7 active assertions + 1 `#[ignore]`'d live-evidence assertion:
+        - synthetic_identity_corpus_passes_gate
+        - synthetic_regression_corpus_fails_gate
+        - synthetic_give_up_fast_fails_on_recovery_floor (THE canonical
+          R3 distinguishing test)
+        - empty_corpus_vacuously_fails_threshold
+        - exactly_at_thresholds_passes (verifies >= not >)
+        - just_below_recovery_threshold_fails (single-gate sensitivity)
+        - threshold_constants_match_plan (sentinel)
+        - live_evidence_meets_arena_recovery_threshold (#[ignore]'d
+          until operator dispatches `bash scripts/phase-5-arena-bench.sh`)
+
+      Plus the falsifier-of-falsifier comparator at
+      `cargo test -p ccpa-arena --test falsify_static_vs_arena`
+      (companion-repo M206 P5.5): 4 active synthetic tests + 1
+      `#[ignore]`'d live-evidence test that loads BOTH evidence files
+      (CCPA-016 + CCPA-018) and emits a `FalsifierVerdict` per
+      design-audit.md §5's Popperian test.
+
+      All 7 + 4 active GREEN on the companion-repo M206 scaffold
+      (synthetic fixtures constructed in-test, no on-disk corpus
+      dependency).
+    rationale: |
+      The M192 design audit (operator-authored, integrated into
+      companion spec at companion-repo M192) identified three tactical
+      recommendations for faster project-scale convergence:
+      (R1) soft-deprecate FALSIFY-CCPA-014; (R2) pivot to a live Arena
+      runner; (R3) prioritize error recovery over zero-shot determinism.
+      CCPA-018 operationalizes R3 explicitly: the recovery_rate metric
+      counts fixtures where the agent's earlier turn produced a
+      non-zero bash exit BUT the session continued and the oracle
+      eventually passed — the canonical "self-correction" signal.
+
+      The DUAL-threshold design (recovery_rate >= 0.5 AND
+      oracle_passed_rate >= 0.3) is intentional: recovery_rate alone
+      passes a "always fail with retry-on-error" agent (degenerate);
+      oracle_passed_rate alone passes a "always succeed zero-shot"
+      agent (fails the R3 framing). Both together require: agent makes
+      progress (oracle passes) AND agent recovers (oracle passes AFTER
+      bash failure). The asymmetric give-up-fast synthetic fixture
+      distinguishes CCPA-018 from CCPA-017: a system passing CCPA-017
+      (functional outcome) but failing CCPA-018 (zero recovery) is
+      empirically detected by the dual-floor predicate.
+
+      Threshold values (0.5/0.3) are tentative POC-tier floors. They
+      WILL be recalibrated after first operator-dispatched Arena bench
+      against the M182 5-fixture corpus.
+
+      Status PROPOSED (not ACTIVE_RUNTIME) because no operator-dispatched
+      Arena bench has produced evidence/phase-5/arena-scores.json yet.
+      The live-evidence test is `#[ignore]`'d until that file exists.
+      Once the operator runs `bash scripts/phase-5-arena-bench.sh` and
+      the gate passes against real data, a v1.30.0 bump will flip
+      PROPOSED → ACTIVE_RUNTIME.
+
+      Companion-repo Phase 5 sequence (M180-M206):
+        M180 (PR #167 squash c7107b9) — phase-5-arena-runner-plan.md
+          authored. P5.1-P5.5 sub-deliverables defined. Operationalizes
+          design-audit.md R2 + R3.
+        M192 (PR #179 squash d9ae48a) — design-audit.md integrated.
+        M196 (PR #183 squash 6a7fe39) — P5.1 Arena harness scaffolding
+          (crates/ccpa-arena/, 4 modules, 19 tests).
+        M200 (PR #187 squash 75ef8e6) — P5.2 multi-turn loop body
+          (crates/ccpa-arena/src/dispatch.rs with Bash/Read/Write/Edit
+          dispatch + run_oracle + render_history + 29 new tests).
+        M202 (PR #189 squash e381d05) — P5.3 Arena bench runner
+          (SubprocessDriver + bin/ccpa-arena-bench clap CLI +
+          scripts/phase-5-arena-bench.sh wrapper).
+        M204 (PR #191 squash aa58ed6) — P5.4 CCPA-018 gate test
+          scaffold (~230 LOC, 7 active synthetic tests + 1 ignored
+          live-evidence). Tentative thresholds 0.5/0.3.
+        M206 (PR #193 squash b95be66) — P5.5 falsifier-of-falsifier
+          (crates/ccpa-arena/src/falsifier.rs comparator +
+          evidence/phase-5/static-fixture-falsification.md template).
+          Phase 5 arc COMPLETE at substantive level.
+    semantic_change_log:
+      - { date: '2026-05-15', version_before: '1.28.0', version_after: '1.29.0',
+          change: "Added FALSIFY-CCPA-018 to gate registry at status: PROPOSED. Companion-repo M204 ships the gate test scaffold (7 synthetic-fixture tests + 1 #[ignore]'d live-evidence test); thresholds (recovery_rate >= 0.5 AND oracle_passed_rate >= 0.3) are tentative POC-tier floors awaiting first operator-dispatched Arena bench to calibrate. Phase 5 P5.5+ contract bump (P5.5 falsifier-of-falsifier shipped at M206)." }
+
   - id: FALSIFY-CCPA-008
     name: parity_score_bound
     status: PLANNED_M6
@@ -1085,6 +1212,90 @@ milestones:
 # ─────────────────────────────────────────────────────────────────────────────
 
 status_history:
+  - date: '2026-05-15'
+    from: 'ACTIVE_RUNTIME v1.28.0'
+    to: 'ACTIVE_RUNTIME v1.29.0'
+    note: 'companion-repo M194-M206 Phase 5 sequence — FALSIFY-CCPA-018 (arena_recovery_rate_bound) added to gate registry at status: PROPOSED; awaits first operator-dispatched Arena bench to flip ACTIVE_RUNTIME'
+    reason: |
+      Adds 1 new falsification gate to the registry: CCPA-018
+      (Arena recovery-rate bound). Gate count: 17 → 18.
+
+      Phase 5 operationalizes design-audit.md (M192 operator-authored,
+      companion-repo) R2 + R3 recommendations: a live multi-turn
+      execution harness where the agent gets bash/test feedback per
+      turn and must recover from failures. CCPA-018 explicitly measures
+      AGENT QUALITY (does the agent recover when bash fails?), distinct
+      from CCPA-016/017 which measure FUNCTIONAL OUTCOME.
+
+      DUAL-threshold design: recovery_rate >= 0.5 AND
+      oracle_passed_rate >= 0.3. The asymmetric give-up-fast synthetic
+      fixture (100% pass but zero recovery → fails recovery floor) is
+      the canonical R3 distinguishing test that separates CCPA-018
+      from CCPA-017.
+
+      Tentative 0.5/0.3 POC-tier floors; recalibration awaits first
+      operator-dispatched Arena bench against M182 corpus.
+
+      Companion-repo Phase 5 sequence (M194-M206):
+
+        M194 (PR #181 squash 4011bea) — phase-5-arena-runner-plan.md
+          authored. P5.1-P5.5 sub-deliverables defined.
+
+        M196 (PR #183 squash 6a7fe39) — P5.1 Arena harness scaffolding.
+          New crate crates/ccpa-arena/ with ArenaSession + ArenaDriver
+          + OracleCmd + TurnRecord types. 19 unit tests.
+
+        M200 (PR #187 squash 75ef8e6) — P5.2 multi-turn loop body.
+          crates/ccpa-arena/src/dispatch.rs (~470 LOC) with real
+          subprocess execution: Bash via std::process::Command, Edit
+          via read+matches.count+replacen+write, Read/Write via
+          std::fs. 29 new tests. R3 recovery validated via
+          run_records_bash_failure_and_continues test.
+
+        M202 (PR #189 squash e381d05) — P5.3 Arena bench runner.
+          SubprocessDriver wraps agent CLI per turn with timeout.
+          New bin crates/ccpa-arena/src/bin/ccpa-arena-bench.rs (clap
+          CLI). New scripts/phase-5-arena-bench.sh wrapper analogous
+          to phase-4-bench.sh. recovery_observed semantic:
+          OraclePassed AND any_bash_failure_in_history.
+
+        M204 (PR #191 squash aa58ed6) — P5.4 CCPA-018 gate test.
+          crates/ccpa-arena/src/scores.rs typed shape +
+          tests/falsify_ccpa_018_arena_recovery_rate.rs (~230 LOC,
+          7 active synthetic + 1 ignored live-evidence). Tentative
+          thresholds 0.5/0.3.
+
+        M206 (PR #193 squash b95be66) — P5.5 falsifier-of-falsifier.
+          crates/ccpa-arena/src/falsifier.rs with
+          evaluate_static_vs_arena() returning FalsifierVerdict
+          (StaticFalsified / StaticValidated / Inconclusive) per
+          design-audit.md §5's Popperian test.
+          evidence/phase-5/static-fixture-falsification.md
+          operator-facing evidence template.
+
+      Gate-level statuses post-v1.29.0: 4 ACTIVE_RUNTIME (CCPA-013/
+      014/015/016) + 2 PROPOSED (CCPA-017 project-scale parity +
+      CCPA-018 Arena recovery-rate) — both awaiting first
+      operator-dispatched bench, after which v1.30.0 will flip
+      PROPOSED → ACTIVE_RUNTIME for whichever has converged. Rest at
+      PLANNED_M*/IN_REVIEW/HARD_BLOCKING_M16 per their lifecycle
+      phase. No OPEN residue.
+
+      Gate registry summary post-v1.29.0:
+        FALSIFY-CCPA-001..006  PLANNED_M*    (Phase 1 RECORD scope; M2.3-rescoped)
+        FALSIFY-CCPA-007       IN_REVIEW     (coverage-floor)
+        FALSIFY-CCPA-008       PLANNED_M6    (parity_score_bound)
+        FALSIFY-CCPA-009..012  ACTIVE_ALGORITHM_LEVEL (CI gates from M0)
+        FALSIFY-CCPA-013       ACTIVE_RUNTIME (first_recorded_parity_score, at v1.27.0)
+        FALSIFY-CCPA-014       ACTIVE_RUNTIME (os_event_parity_bound, at v1.25.0)
+        FALSIFY-CCPA-015       ACTIVE_RUNTIME (ccpa_trace_subproc_output_purity, at v1.26.0)
+        FALSIFY-CCPA-016       ACTIVE_RUNTIME (outcome_parity_bound, at v1.26.0)
+        FALSIFY-CCPA-017       PROPOSED       (project_scale_parity_bound, at v1.28.0)
+        FALSIFY-CCPA-018       PROPOSED       (arena_recovery_rate_bound, at v1.29.0)
+
+      Pure additive bump: new gate + new status_history entry. No
+      schema bump in aprender-contracts/src/schema/. pv validate clean.
+
   - date: '2026-05-15'
     from: 'ACTIVE_RUNTIME v1.27.0'
     to: 'ACTIVE_RUNTIME v1.28.0'

@@ -154,11 +154,7 @@ mod tests {
         let mut host_b = [0xab_u8; 32];
         host_b[0] = 0xac;
         let v = verdict_from_corpus_sha256_pair(&host_a, &host_b);
-        assert_eq!(
-            v,
-            DataInv005Verdict::Fail,
-            "single-byte mismatch must Fail"
-        );
+        assert_eq!(v, DataInv005Verdict::Fail, "single-byte mismatch must Fail");
     }
 
     #[test]

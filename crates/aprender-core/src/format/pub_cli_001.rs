@@ -36,12 +36,8 @@
 /// Per contract: each of these triggers a cyclic or heavy-binary
 /// dep chain when included in the published `aprender` crate's
 /// default features. They MUST be opt-in, never default.
-pub const AC_PUB_CLI_001_FORBIDDEN_SUBSTRINGS: &[&[u8]] = &[
-    b"inference",
-    b"training",
-    b"code",
-    b"cuda",
-];
+pub const AC_PUB_CLI_001_FORBIDDEN_SUBSTRINGS: &[&[u8]] =
+    &[b"inference", b"training", b"code", b"cuda"];
 
 /// Binary verdict for `FALSIFY-PUB-CLI-001`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -634,8 +634,7 @@ mod determinism_tests {
     #[test]
     fn falsify_ffn_gguf_008_fused_vs_standalone_q4k_matvec() {
         use crate::quantize::{
-            dequantize_q4_k_simd, fused_q4k_q8k_parallel_matvec_into,
-            quantize_activations_q8k_into,
+            dequantize_q4_k_simd, fused_q4k_q8k_parallel_matvec_into, quantize_activations_q8k_into,
         };
 
         // Build synthetic Q4K weights: 256 columns × 1 row = 144 bytes
@@ -661,10 +660,13 @@ mod determinism_tests {
             .collect();
 
         // ---- Path A: standalone dequant + manual f32 dot product ----
-        let weights_f32 =
-            dequantize_q4_k_simd(&weight_bytes).expect("dequantize_q4_k_simd failed");
+        let weights_f32 = dequantize_q4_k_simd(&weight_bytes).expect("dequantize_q4_k_simd failed");
         assert_eq!(weights_f32.len(), 256);
-        let result_a: f32 = activation.iter().zip(weights_f32.iter()).map(|(x, y)| x * y).sum();
+        let result_a: f32 = activation
+            .iter()
+            .zip(weights_f32.iter())
+            .map(|(x, y)| x * y)
+            .sum();
 
         // ---- Path B: Q8K quant + fused matvec ----
         let mut q8k_scales = vec![0.0f32; 1]; // 1 super-block
@@ -764,8 +766,7 @@ mod determinism_tests {
     #[test]
     fn falsify_ffn_gguf_009_multi_tensor_divergence_compound() {
         use crate::quantize::{
-            dequantize_q4_k_simd, fused_q4k_q8k_parallel_matvec_into,
-            quantize_activations_q8k_into,
+            dequantize_q4_k_simd, fused_q4k_q8k_parallel_matvec_into, quantize_activations_q8k_into,
         };
 
         let in_dim = 256;
@@ -944,8 +945,7 @@ mod determinism_tests {
     #[test]
     fn falsify_ffn_gguf_010_q4k_block_scale_variance() {
         use crate::quantize::{
-            dequantize_q4_k_simd, fused_q4k_q8k_parallel_matvec_into,
-            quantize_activations_q8k_into,
+            dequantize_q4_k_simd, fused_q4k_q8k_parallel_matvec_into, quantize_activations_q8k_into,
         };
 
         // Synthetic activation pattern reused from M94 (preserves
@@ -976,13 +976,11 @@ mod determinism_tests {
             (10.0, [0x00, 0x49]),
         ];
 
-        eprintln!("FALSIFY-FFN-GGUF-010: Q4K block-scale variance — Path A vs Path B per-block rel_diff");
         eprintln!(
-            "scale    | path_a              | path_b              | diff       | rel_diff"
+            "FALSIFY-FFN-GGUF-010: Q4K block-scale variance — Path A vs Path B per-block rel_diff"
         );
-        eprintln!(
-            "---------|---------------------|---------------------|------------|---------"
-        );
+        eprintln!("scale    | path_a              | path_b              | diff       | rel_diff");
+        eprintln!("---------|---------------------|---------------------|------------|---------");
 
         let mut rel_diffs: Vec<(f32, f32)> = Vec::new();
 
@@ -1004,8 +1002,7 @@ mod determinism_tests {
             }
 
             // Path A: standalone dequant + manual F32 dot
-            let weights_f32 =
-                dequantize_q4_k_simd(&weight_bytes).expect("dequant_simd failed");
+            let weights_f32 = dequantize_q4_k_simd(&weight_bytes).expect("dequant_simd failed");
             let result_a: f32 = activation
                 .iter()
                 .zip(weights_f32.iter())
@@ -1045,7 +1042,10 @@ mod determinism_tests {
         }
 
         // Compute min/max rel_diff across scales — does it vary?
-        let min_rd = rel_diffs.iter().map(|(_, r)| *r).fold(f32::INFINITY, f32::min);
+        let min_rd = rel_diffs
+            .iter()
+            .map(|(_, r)| *r)
+            .fold(f32::INFINITY, f32::min);
         let max_rd = rel_diffs
             .iter()
             .map(|(_, r)| *r)
@@ -1348,8 +1348,18 @@ mod determinism_tests {
 
         // Compute attention scores: q • k (scaled by 1/sqrt(d)).
         let scale = (HEAD_DIM as f32).sqrt().recip();
-        let score_a: f32 = q_a_rope.iter().zip(k_rope.iter()).map(|(x, y)| x * y).sum::<f32>() * scale;
-        let score_b: f32 = q_b_rope.iter().zip(k_rope.iter()).map(|(x, y)| x * y).sum::<f32>() * scale;
+        let score_a: f32 = q_a_rope
+            .iter()
+            .zip(k_rope.iter())
+            .map(|(x, y)| x * y)
+            .sum::<f32>()
+            * scale;
+        let score_b: f32 = q_b_rope
+            .iter()
+            .zip(k_rope.iter())
+            .map(|(x, y)| x * y)
+            .sum::<f32>()
+            * scale;
 
         // Input rel_drift: |q_b - q_a|_L2 / |q_a|_L2.
         let q_diff_l2: f32 = q_a
@@ -1368,7 +1378,9 @@ mod determinism_tests {
         let amplification = output_rel_drift / input_rel_drift.max(1e-12);
 
         eprintln!("FALSIFY-FFN-GGUF-012: RoPE phase amplification");
-        eprintln!("  head_dim = {HEAD_DIM}, rope_theta = {ROPE_THETA}, pos_q = {POS_Q}, pos_k = {POS_K}");
+        eprintln!(
+            "  head_dim = {HEAD_DIM}, rope_theta = {ROPE_THETA}, pos_q = {POS_Q}, pos_k = {POS_K}"
+        );
         eprintln!(
             "  q_a_l2 = {q_a_l2:.6}, q_diff_l2 = {q_diff_l2:.6}, input_rel_drift = {:.6}%",
             input_rel_drift * 100.0
@@ -1461,8 +1473,7 @@ mod determinism_tests {
     #[test]
     fn falsify_ffn_gguf_013_multi_token_batch_amplification() {
         use crate::quantize::{
-            dequantize_q4_k_simd, fused_q4k_q8k_parallel_matvec_into,
-            quantize_activations_q8k_into,
+            dequantize_q4_k_simd, fused_q4k_q8k_parallel_matvec_into, quantize_activations_q8k_into,
         };
 
         const BATCH_SIZE: usize = 7;
@@ -1516,10 +1527,9 @@ mod determinism_tests {
                         .map(|(x, y)| x * y)
                         .sum();
                 }
-                let norm =
-                    (next.iter().map(|x| x * x).sum::<f32>() / (OUT_DIM as f32))
-                        .sqrt()
-                        .max(1e-9);
+                let norm = (next.iter().map(|x| x * x).sum::<f32>() / (OUT_DIM as f32))
+                    .sqrt()
+                    .max(1e-9);
                 for x in next.iter_mut() {
                     *x /= norm;
                 }
@@ -1547,10 +1557,9 @@ mod determinism_tests {
                     &mut next,
                 )
                 .expect("fused failed");
-                let norm =
-                    (next.iter().map(|x| x * x).sum::<f32>() / (OUT_DIM as f32))
-                        .sqrt()
-                        .max(1e-9);
+                let norm = (next.iter().map(|x| x * x).sum::<f32>() / (OUT_DIM as f32))
+                    .sqrt()
+                    .max(1e-9);
                 for x in next.iter_mut() {
                     *x /= norm;
                 }
@@ -1578,21 +1587,19 @@ mod determinism_tests {
         // across the 7 tokens, then mean over components.
         let component_std_a: Vec<f32> = (0..OUT_DIM)
             .map(|c| {
-                let vals: Vec<f32> =
-                    (0..BATCH_SIZE).map(|t| act_a_batch[t][c]).collect();
+                let vals: Vec<f32> = (0..BATCH_SIZE).map(|t| act_a_batch[t][c]).collect();
                 let mean: f32 = vals.iter().sum::<f32>() / (BATCH_SIZE as f32);
-                let variance: f32 = vals.iter().map(|x| (x - mean).powi(2)).sum::<f32>()
-                    / (BATCH_SIZE as f32);
+                let variance: f32 =
+                    vals.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / (BATCH_SIZE as f32);
                 variance.sqrt()
             })
             .collect();
         let component_std_b: Vec<f32> = (0..OUT_DIM)
             .map(|c| {
-                let vals: Vec<f32> =
-                    (0..BATCH_SIZE).map(|t| act_b_batch[t][c]).collect();
+                let vals: Vec<f32> = (0..BATCH_SIZE).map(|t| act_b_batch[t][c]).collect();
                 let mean: f32 = vals.iter().sum::<f32>() / (BATCH_SIZE as f32);
-                let variance: f32 = vals.iter().map(|x| (x - mean).powi(2)).sum::<f32>()
-                    / (BATCH_SIZE as f32);
+                let variance: f32 =
+                    vals.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / (BATCH_SIZE as f32);
                 variance.sqrt()
             })
             .collect();
@@ -1611,8 +1618,7 @@ mod determinism_tests {
             .iter()
             .copied()
             .fold(f32::NEG_INFINITY, f32::max);
-        let mean_token_rd: f32 =
-            per_token_rel_diffs.iter().sum::<f32>() / (BATCH_SIZE as f32);
+        let mean_token_rd: f32 = per_token_rel_diffs.iter().sum::<f32>() / (BATCH_SIZE as f32);
         let token_rd_variance = max_token_rd / min_token_rd.max(1e-12);
 
         eprintln!("FALSIFY-FFN-GGUF-013: Multi-token batch amplification (batch={BATCH_SIZE}, chained={N_CHAINED})");
@@ -1627,14 +1633,8 @@ mod determinism_tests {
             mean_token_rd * 100.0,
             token_rd_variance
         );
-        eprintln!(
-            "  Path A mean std (across batch): {:.6}",
-            mean_std_a
-        );
-        eprintln!(
-            "  Path B mean std (across batch): {:.6}",
-            mean_std_b
-        );
+        eprintln!("  Path A mean std (across batch): {:.6}", mean_std_a);
+        eprintln!("  Path B mean std (across batch): {:.6}", mean_std_b);
         eprintln!(
             "  Path A↔B std-ratio deviation from 1.0: {:.6} ({:.4}%)",
             std_ratio_dev,
@@ -1800,7 +1800,10 @@ mod determinism_tests {
         eprintln!("  amplification factor = {amplification:.4}×");
 
         // Sanity bounds.
-        assert!(input_rel_drift > 0.0, "perturbation must produce nonzero input drift");
+        assert!(
+            input_rel_drift > 0.0,
+            "perturbation must produce nonzero input drift"
+        );
         assert!(
             amplification > 1e-9,
             "amplification {amplification} essentially zero — RMSNorm may be \
