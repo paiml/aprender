@@ -255,6 +255,13 @@ pub struct CudaAprCheckpointFn {
     trainer: SharedCudaTrainer,
     model_name: String,
     architecture: String,
+    /// SPEC-SHIP-TWO-001 §81 P0-D: optional tokenizer directory whose
+    /// tokenizer.json is embedded into every checkpoint via
+    /// `tokenizer.vocabulary` + `tokenizer.merges` metadata keys.
+    /// When None, checkpoints are written without an embedded tokenizer
+    /// (legacy behavior; `apr qa` will fail with C-03/embedded-tokenizer
+    /// gate per §81 — left as caller's responsibility).
+    tokenizer_dir: Option<std::path::PathBuf>,
 }
 
 impl CudaAprCheckpointFn {
@@ -263,7 +270,21 @@ impl CudaAprCheckpointFn {
         model_name: impl Into<String>,
         architecture: impl Into<String>,
     ) -> Self {
-        Self { trainer, model_name: model_name.into(), architecture: architecture.into() }
+        Self {
+            trainer,
+            model_name: model_name.into(),
+            architecture: architecture.into(),
+            tokenizer_dir: None,
+        }
+    }
+
+    /// SPEC-SHIP-TWO-001 §81 P0-D: builder for embedding the tokenizer
+    /// in every checkpoint write. Pass `--tokenizer <DIR>` through here
+    /// so `apr qa <epoch-N.apr>` can run inference without an external
+    /// tokenizer file.
+    pub fn with_tokenizer_dir(mut self, dir: impl Into<std::path::PathBuf>) -> Self {
+        self.tokenizer_dir = Some(dir.into());
+        self
     }
 }
 
@@ -271,7 +292,12 @@ impl CheckpointFn for CudaAprCheckpointFn {
     fn save(&mut self, _epoch: usize, artifact: &EpochArtifact) -> Result<(), String> {
         let mut trainer = self.trainer.borrow_mut();
         trainer
-            .save_apr(&artifact.checkpoint_path, &self.model_name, &self.architecture)
+            .save_apr_with_tokenizer(
+                &artifact.checkpoint_path,
+                &self.model_name,
+                &self.architecture,
+                self.tokenizer_dir.as_deref(),
+            )
             .map_err(|e| format!("save_apr (cuda) failed: {e}"))
     }
 }
