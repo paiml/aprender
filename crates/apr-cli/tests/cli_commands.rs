@@ -42,6 +42,7 @@ fn registered_commands() -> Vec<&'static str> {
         "validate",
         "validate-manifest",
         "lint",
+        "manifest",
         "explain",
         "tensors",
         "trace",
