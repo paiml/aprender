@@ -384,6 +384,18 @@ commands:
     requires_model: true
     side_effects: [network, filesystem]
 
+  - name: modelfile
+    category: misc
+    description: |
+      CRUX-K-11: parse Ollama-style Modelfile DSL into apr config JSON.
+    requires_model: false
+    side_effects: []
+    subcommands:
+      - name: parse
+        description: "Parse a Modelfile and emit config as JSON or human-readable text"
+        requires_model: false
+        side_effects: []
+
   - name: probar
     category: misc
     description: "Export for probar visual regression testing"
