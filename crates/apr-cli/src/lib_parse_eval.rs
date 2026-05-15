@@ -235,12 +235,19 @@
         }
     }
 
-    /// Test parsing 'apr probar' command with options
+    /// Test parsing 'apr probar tensor' command with options.
+    ///
+    /// GH-876 Milestone 1: the existing flat `apr probar <FILE>` became
+    /// `apr probar tensor <FILE>`. The tensor subcommand preserves all
+    /// the original flags (--output / --format / --golden / --layer /
+    /// --assert / --tolerance).
     #[test]
     fn test_parse_probar_command() {
+        use ProbarSubcommand;
         let args = vec![
             "apr",
             "probar",
+            "tensor",
             "model.apr",
             "--output",
             "/tmp/probar",
@@ -253,45 +260,50 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Probar {
-                file,
-                output,
-                format,
-                golden,
-                layer,
-                assert,
-                tolerance,
-            }) => {
-                assert_eq!(file, PathBuf::from("model.apr"));
-                assert_eq!(output, PathBuf::from("/tmp/probar"));
-                assert_eq!(format, "json");
-                assert_eq!(golden, Some(PathBuf::from("/refs/golden")));
-                assert_eq!(layer, Some("layer.0".to_string()));
-                assert!(!assert);
-                assert!((tolerance - 0.98).abs() < 0.01);
-            }
+            Commands::Extended(ExtendedCommands::Probar { command }) => match command {
+                ProbarSubcommand::Tensor {
+                    file,
+                    output,
+                    format,
+                    golden,
+                    layer,
+                    assert,
+                    tolerance,
+                } => {
+                    assert_eq!(file, PathBuf::from("model.apr"));
+                    assert_eq!(output, PathBuf::from("/tmp/probar"));
+                    assert_eq!(format, "json");
+                    assert_eq!(golden, Some(PathBuf::from("/refs/golden")));
+                    assert_eq!(layer, Some("layer.0".to_string()));
+                    assert!(!assert);
+                    assert!((tolerance - 0.98).abs() < 0.01);
+                },
+            },
             _ => panic!("Expected Probar command"),
         }
     }
 
-    /// Test parsing 'apr probar' with defaults
+    /// Test parsing 'apr probar tensor' with defaults
     #[test]
     fn test_parse_probar_defaults() {
-        let args = vec!["apr", "probar", "model.apr"];
+        use ProbarSubcommand;
+        let args = vec!["apr", "probar", "tensor", "model.apr"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Probar {
-                output,
-                format,
-                golden,
-                layer,
-                ..
-            }) => {
-                assert_eq!(output, PathBuf::from("./probar-export"));
-                assert_eq!(format, "both");
-                assert!(golden.is_none());
-                assert!(layer.is_none());
-            }
+            Commands::Extended(ExtendedCommands::Probar { command }) => match command {
+                ProbarSubcommand::Tensor {
+                    output,
+                    format,
+                    golden,
+                    layer,
+                    ..
+                } => {
+                    assert_eq!(output, PathBuf::from("./probar-export"));
+                    assert_eq!(format, "both");
+                    assert!(golden.is_none());
+                    assert!(layer.is_none());
+                },
+            },
             _ => panic!("Expected Probar command"),
         }
     }

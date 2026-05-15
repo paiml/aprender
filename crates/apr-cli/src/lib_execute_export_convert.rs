@@ -86,16 +86,20 @@
     }
 
     /// Test execute_command: Probar with non-existent file returns error
+    /// (via the GH-876 tensor subcommand)
     #[test]
     fn test_execute_probar_file_not_found() {
+        use ProbarSubcommand;
         let cli = make_cli(Commands::Extended(ExtendedCommands::Probar {
-            file: PathBuf::from("/tmp/nonexistent_model_probar_test.apr"),
-            output: PathBuf::from("/tmp/probar-out"),
-            format: "both".to_string(),
-            golden: None,
-            layer: None,
-            assert: false,
-            tolerance: 0.98,
+            command: ProbarSubcommand::Tensor {
+                file: PathBuf::from("/tmp/nonexistent_model_probar_test.apr"),
+                output: PathBuf::from("/tmp/probar-out"),
+                format: "both".to_string(),
+                golden: None,
+                layer: None,
+                assert: false,
+                tolerance: 0.98,
+            },
         }));
         let result = execute_command(&cli);
         assert!(result.is_err(), "Probar should fail with non-existent file");
