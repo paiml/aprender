@@ -217,20 +217,20 @@ fn extract_apr_tokenizer_for_gguf(
     );
     // P0-G: pad tokens array to vocab_size if smaller (Qwen2.5: 151643 → 151936).
     if vocab_size > 0 {
-        if let Some((_, val)) = entries
-            .iter_mut()
-            .find(|(k, _)| k == "tokenizer.ggml.tokens")
-        {
-            if let GgufValue::ArrayString(tokens) = val {
-                if tokens.len() < vocab_size {
-                    let pad_count = vocab_size - tokens.len();
-                    eprintln!(
-                        "[P0-G] Padding APR-fallback tokenizer.ggml.tokens: {} + {} placeholders = {}",
-                        tokens.len(), pad_count, vocab_size
-                    );
-                    for i in tokens.len()..vocab_size {
-                        tokens.push(format!("<|pad_{i}|>"));
-                    }
+        if let Some(tokens) = entries.iter_mut().find_map(|(k, v)| match v {
+            GgufValue::ArrayString(arr) if k == "tokenizer.ggml.tokens" => Some(arr),
+            _ => None,
+        }) {
+            if tokens.len() < vocab_size {
+                let pad_count = vocab_size - tokens.len();
+                eprintln!(
+                    "[P0-G] Padding APR-fallback tokenizer.ggml.tokens: {} + {} placeholders = {}",
+                    tokens.len(),
+                    pad_count,
+                    vocab_size
+                );
+                for i in tokens.len()..vocab_size {
+                    tokens.push(format!("<|pad_{i}|>"));
                 }
             }
         }
