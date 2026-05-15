@@ -1,0 +1,32 @@
+{
+  "issue": "GH-718",
+  "contract": "apr-qa-chaos-v1.yaml / F-CHAOS-001 (C1 memory budget)",
+  "date": "2026-05-14",
+  "host": "noah-Lambda-Vector (lambda-labs)",
+  "verdict": "PASS",
+  "rule": "RSS < 3 × model_size + 512 MiB",
+  "model": {
+    "name": "TinyLlama-1.1B-Chat-v1.0",
+    "format": "GGUF Q4_K_M",
+    "size_kib": 653120,
+    "size_mib": 637.8
+  },
+  "command": "/usr/bin/time -v apr inspect tinyllama.gguf 1>/dev/null",
+  "measurement": {
+    "rss_kib": 1324800,
+    "rss_mib": 1294.5,
+    "budget_kib": 2483648,
+    "budget_mib": 2425.0,
+    "headroom_kib": 1158848,
+    "headroom_mib": 1131.7,
+    "headroom_percent": 46
+  },
+  "verdict_logic": "RSS 1324800 < budget 2483648 → PASS",
+  "notes": [
+    "/usr/bin/time (GNU time) is available at /usr/bin/time on Ubuntu 24.04.",
+    "Stderr capture works correctly: the 'Maximum resident set size (kbytes)' line is the last numeric field.",
+    "apr inspect's working-set is dominated by mmap of the model file; the resident portion stays well under the budget.",
+    "C1 contract assertion verdict_from_memory_budget would return PASS for these inputs."
+  ],
+  "issue_resolution": "/usr/bin/time -v is available and parses correctly. The gate previously SKIPped due to environment-detection issues; with the standard `/usr/bin/time -v ... 2>&1 | grep 'Maximum resident' | awk '{print $NF}'` invocation it produces the RSS value cleanly. C1 contract logic in apr-qa-chaos-v1.yaml works on the live toolchain."
+}

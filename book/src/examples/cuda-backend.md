@@ -25,13 +25,13 @@ Enable GPU or CUDA support in your `Cargo.toml`:
 ```toml
 [dependencies]
 # Default CPU SIMD backend
-aprender = "0.27"
+aprender = "0.33"
 
 # With GPU acceleration (wgpu/WebGPU)
-aprender = { version = "0.18", features = ["gpu"] }
+aprender = { version = "0.33", features = ["gpu"] }
 
 # With NVIDIA CUDA support
-aprender = { version = "0.18", features = ["cuda"] }
+aprender = { version = "0.33", features = ["cuda"] }
 
 # Both GPU and CUDA
 aprender = { version = "0.18", features = ["gpu", "cuda"] }

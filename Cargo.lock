@@ -297,6 +297,7 @@ dependencies = [
  "aprender-profile",
  "aprender-serve",
  "aprender-train",
+ "aprender-train-distill",
  "aprender-train-lora",
  "arrow-array 57.3.0",
  "assert_cmd",
@@ -305,6 +306,7 @@ dependencies = [
  "axum-test",
  "batuta-common",
  "blake3",
+ "bytemuck",
  "chrono",
  "clap",
  "colored 2.2.0",
@@ -326,6 +328,7 @@ dependencies = [
  "rayon",
  "regex",
  "rmp-serde",
+ "safetensors 0.4.5",
  "serde",
  "serde_json",
  "serde_yaml_ng",
@@ -4150,9 +4153,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.59"
+version = "1.2.62"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7a4d3ec6524d28a329fc53654bbadc9bdd7b0431f5d65f1a56ffb28a1ee5283"
+checksum = "a1dce859f0832a7d088c4f1119888ab94ef4b5d6795d1ce05afb7fe159d79f98"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -15576,7 +15579,7 @@ version = "1.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
- "cfg-if 1.0.4",
+ "cfg-if 0.1.10",
  "static_assertions",
 ]
 
