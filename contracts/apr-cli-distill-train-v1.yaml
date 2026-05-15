@@ -1,6 +1,6 @@
 metadata:
   kind: schema
-  version: 1.1.0
+  version: 1.2.0
   status: PROPOSED
   created: '2026-04-28'
   author: PAIML Engineering
@@ -103,9 +103,26 @@ falsification_tests:
   rule: real training (not stub) — student tensors differ post-train
   prediction: "After `apr distill --stage train`, at least one tensor in student.apr differs from input student by >Q4K tolerance"
   test: |
-    apr distill --stage train <teacher> --student <input> --data <corpus> --output <out>
-    apr diff <input> <out> --values --limit 219 | grep -E "max_diff: [^0]"
+    cargo test -p apr-cli --lib --features training falsify_apr_distill_train_001_real_tensors_mutate
   if_fails: "stub behavior — apr distill train just clones tensors. Implementation incomplete."
+  algorithm_evidence:
+    status: PARTIAL_ALGORITHM_LEVEL
+    last_verified: '2026-05-15'
+    test_locations:
+    - 'crates/apr-cli/src/commands/distill_include_01.rs::tests::falsify_apr_distill_train_001_real_tensors_mutate — builds a 16×16 F32 SafeTensors teacher+student pair in tempdir, invokes run_config_train_real (the §35 wired pipeline), reads back the trained student, asserts max |output - input| > 0.01 (Q4K tolerance). PASSES — the real KD pipeline mutates tensors past Q4K noise floor, falsifying the "stub clones tensors" hypothesis.'
+    notes: |
+      Algorithm-level discharge of the load-bearing falsifier for §35.
+      The legacy stub (metadata-only output, no tensor mutation) is now
+      bypassed when the training feature is on and the student is local;
+      apr-cli delegates to aprender_train_distill::run which applies real
+      KD-gradient descent to the loaded student weights and saves them
+      back to disk. Test fixture is intentionally tiny (16×16, 256 f32
+      params) so the integration test runs in <100ms; the underlying
+      pipeline math is unchanged from aprender-train-distill's own unit
+      tests. Path to FULL_DISCHARGED: end-to-end run on a real
+      teacher/student pair (e.g. 50M-from-500M) with val_loss assertion
+      (FALSIFY-APR-DISTILL-TRAIN-009 — still BLOCKER_FIXTURE_ABSENT
+      until that infrastructure lands).
 
 - id: FALSIFY-APR-DISTILL-TRAIN-002
   rule: KL loss decreases over epochs
