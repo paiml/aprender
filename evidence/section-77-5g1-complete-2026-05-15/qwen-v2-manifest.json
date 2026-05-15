@@ -1,0 +1,19 @@
+{
+  "content_field": "content",
+  "elapsed_seconds": 27.231838463,
+  "eos_policy": "between",
+  "eos_token_count": 405903,
+  "eos_token_id": 128247,
+  "input_files": [
+    "/mnt/nvme-raid0/datasets/github-code-clean-2026-04-27/python-permissive.jsonl"
+  ],
+  "input_format": "jsonl",
+  "normalization": "nfc",
+  "num_workers": 48,
+  "schema": "pretokenize-bin-v1",
+  "shard_count": 125,
+  "tokenizer_dir": "/tmp/qwen-0.5b-tokenizer-extracted",
+  "total_documents": 405904,
+  "total_tokens": 1241692519,
+  "vocab_size": 151646
+}
