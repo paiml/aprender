@@ -93,6 +93,40 @@ struct GgufExportConfig {
     model_name: String,
 }
 
+/// Normalize an APR-side architecture string into the GGUF / llama.cpp
+/// convention (lowercase family name).
+///
+/// APR metadata uses HuggingFace transformers convention (e.g.
+/// `"LlamaForCausalLM"`, `"Qwen2ForCausalLM"`). GGUF / llama.cpp
+/// expects lowercase family names (`"llama"`, `"qwen2"`).
+///
+/// SPEC-SHIP-TWO-001 §81 P0-F. Empirical surfacing on §78's MODEL-2
+/// checkpoint: `apr export --format gguf` succeeded but `llama-cli`
+/// refused to load with "unknown model architecture: 'LlamaForCausalLM'".
+///
+/// Strategy: explicit mapping table for known HF names; lowercase fallback
+/// for anything else (preserves backward compatibility with already-correct
+/// inputs).
+pub(crate) fn normalize_arch_for_gguf(arch: &str) -> String {
+    match arch {
+        // HF "*ForCausalLM" suffixed family names → GGUF lowercase
+        "LlamaForCausalLM" => "llama".to_string(),
+        "Qwen2ForCausalLM" => "qwen2".to_string(),
+        "Qwen2MoeForCausalLM" => "qwen2moe".to_string(),
+        "Qwen3ForCausalLM" => "qwen3".to_string(),
+        "Qwen3MoeForCausalLM" => "qwen3moe".to_string(),
+        "MistralForCausalLM" => "llama".to_string(), // Mistral uses llama arch in GGUF
+        "Phi3ForCausalLM" => "phi3".to_string(),
+        "GPT2LMHeadModel" => "gpt2".to_string(),
+        "BertForMaskedLM" => "bert".to_string(),
+        // Already in GGUF convention → pass through unchanged
+        "llama" | "qwen2" | "qwen2moe" | "qwen3" | "qwen3moe" | "phi3" | "gpt2" | "bert"
+        | "unknown" => arch.to_string(),
+        // Unknown HF name → lowercase fallback (preserves debuggability)
+        other => other.to_lowercase(),
+    }
+}
+
 /// Resolve GGUF export config from APR metadata + inferred fallbacks.
 fn resolve_gguf_config(
     apr_metadata: Option<&crate::format::v2::AprV2Metadata>,
@@ -122,10 +156,14 @@ fn resolve_gguf_config(
     );
 
     // N-01 (Meyer DbC): Resolve architecture, then use it for rope_theta default.
-    let arch = apr_metadata
+    let arch_raw = apr_metadata
         .and_then(|m| m.architecture.clone())
         .or_else(|| inferred.and_then(|c| c.architecture.clone()))
         .unwrap_or_else(|| "unknown".to_string());
+    // §81 P0-F: APR metadata uses HuggingFace transformers convention
+    // (e.g. "LlamaForCausalLM"); GGUF / llama.cpp expects lowercase
+    // family names (e.g. "llama"). Map at the export boundary.
+    let arch = normalize_arch_for_gguf(&arch_raw);
 
     GgufExportConfig {
         arch,
