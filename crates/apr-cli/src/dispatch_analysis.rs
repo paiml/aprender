@@ -397,6 +397,16 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             commands::ppl::run(log_probs_file, cli.json)
         }
 
+        ExtendedCommands::Shard {
+            file,
+            max_shard_size,
+            output,
+        } => dispatch_shard(file, max_shard_size, output, cli.json),
+
+        ExtendedCommands::Unshard { input, output } => {
+            dispatch_unshard(input, output, cli.json)
+        }
+
         ExtendedCommands::Diagnose {
             checkpoint_dir,
             data,
@@ -413,6 +423,84 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         _ => return None,
     };
     Some(result)
+}
+
+/// CRUX-B-05 — split a safetensors file into shards + weight-map index.
+fn dispatch_shard(
+    file: &std::path::Path,
+    max_shard_size: &str,
+    output: &std::path::Path,
+    json: bool,
+) -> Result<(), CliError> {
+    match commands::shard::run_shard(file, max_shard_size, output) {
+        Ok(report) => {
+            if json {
+                let shard_names: Vec<String> = report
+                    .shard_files
+                    .iter()
+                    .map(|p| p.file_name().map_or_else(
+                        || p.display().to_string(),
+                        |n| n.to_string_lossy().into_owned(),
+                    ))
+                    .collect();
+                let shards_json: Vec<String> = shard_names
+                    .iter()
+                    .map(|n| format!("\"{n}\""))
+                    .collect();
+                println!(
+                    "{{\"status\":\"ok\",\"command\":\"shard\",\"input\":\"{}\",\"output_dir\":\"{}\",\"index\":\"{}\",\"shard_count\":{},\"tensor_count\":{},\"total_size\":{},\"shards\":[{}]}}",
+                    file.display(),
+                    output.display(),
+                    report.index_path.display(),
+                    report.shard_files.len(),
+                    report.tensor_count,
+                    report.total_size,
+                    shards_json.join(",")
+                );
+            } else {
+                println!("APR Shard");
+                println!("  input:        {}", file.display());
+                println!("  output dir:   {}", output.display());
+                println!("  index:        {}", report.index_path.display());
+                println!("  tensor count: {}", report.tensor_count);
+                println!("  shard count:  {}", report.shard_files.len());
+                println!("  total size:   {} bytes", report.total_size);
+            }
+            Ok(())
+        }
+        Err(e) => Err(CliError::ValidationFailed(format!("apr shard failed: {e}"))),
+    }
+}
+
+/// CRUX-B-05 — reconstruct a single safetensors file from a sharded directory.
+fn dispatch_unshard(
+    input: &std::path::Path,
+    output: &std::path::Path,
+    json: bool,
+) -> Result<(), CliError> {
+    match commands::shard::run_unshard(input, output) {
+        Ok(report) => {
+            if json {
+                println!(
+                    "{{\"status\":\"ok\",\"command\":\"unshard\",\"input_dir\":\"{}\",\"output\":\"{}\",\"shard_count\":{},\"tensor_count\":{},\"total_size\":{}}}",
+                    input.display(),
+                    report.output.display(),
+                    report.shard_count,
+                    report.tensor_count,
+                    report.total_size,
+                );
+            } else {
+                println!("APR Unshard");
+                println!("  input dir:    {}", input.display());
+                println!("  output:       {}", report.output.display());
+                println!("  shard count:  {}", report.shard_count);
+                println!("  tensor count: {}", report.tensor_count);
+                println!("  total size:   {} bytes", report.total_size);
+            }
+            Ok(())
+        }
+        Err(e) => Err(CliError::ValidationFailed(format!("apr unshard failed: {e}"))),
+    }
 }
 
 #[cfg(feature = "training")]
