@@ -7,8 +7,14 @@
 fn extract_extended_model_paths(command: &ExtendedCommands) -> Vec<PathBuf> {
     match command {
         // === ACTION COMMANDS (gated) ===
-        ExtendedCommands::Probar { file, .. }
-        | ExtendedCommands::CompareHf { file, .. }
+        // GH-876: Probar is a subcommand container; extract file from the
+        // active subcommand variant.
+        ExtendedCommands::Probar { command: probar_sub } => match probar_sub {
+            ProbarSubcommand::Tensor { file, .. } => {
+                vec![file.clone()]
+            },
+        },
+        ExtendedCommands::CompareHf { file, .. }
         | ExtendedCommands::Chat { file, .. }
         | ExtendedCommands::Bench { file, .. }
         | ExtendedCommands::Eval { file, .. }
