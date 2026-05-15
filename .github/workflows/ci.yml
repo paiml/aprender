@@ -147,24 +147,31 @@ jobs:
           #   - cc-rs Fatal error can't create .o (missing build subdirs)
           #   - rustc extern location does not exist .rmeta (orphan dep-graph)
           if [ "$TEST_EXIT" -ne 0 ] && grep -qE 'no such file or directory.*\.rcgu\.o|Fatal error: can.t create.*\.o: No such file|extern location for .* does not exist.*\.rmeta' "$LOG"; then
-            echo "::warning::Linker failure on stale target dir from prior cancel-in-progress run; running cargo clean + retry"
+            # Observed in aprender#1684 runs 25907945016 + 25912792473: cargo
+            # clean is insufficient — after the clean, the retry build still
+            # fails with "couldn't create a temp dir: No such file or
+            # directory at .../target/debug/deps/rmetaX" within ~52s. Root
+            # cause is sccache cache pointing at cached metadata referencing
+            # paths the clean just removed. Two-prong fix:
+            #   1. Use rm -rf at the OS level (more thorough than cargo
+            #      clean; doesn't depend on cargo lockfiles to be in a sane
+            #      state).
+            #   2. Disable sccache for the retry (no RUSTC_WRAPPER, no
+            #      sccache mount) — pay the 30-40min cold-compile cost
+            #      once to guarantee correctness over a fast-but-broken
+            #      cached state.
+            echo "::warning::Cancel-damage pattern detected; OS-level target dir nuke + retry without sccache"
             docker run --rm \
-              -v "${GITHUB_WORKSPACE}:/workspace" \
               -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}:/workspace/target" \
-              -w /workspace \
-              -e CARGO_TARGET_DIR=/workspace/target \
               "$IMAGE" \
-              cargo clean
+              bash -c 'rm -rf /workspace/target/* /workspace/target/.[!.]* 2>/dev/null || true; mkdir -p /workspace/target/debug/deps; ls -la /workspace/target/'
             docker run --rm \
             -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
               -v "${GITHUB_WORKSPACE}:/workspace" \
               -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
               -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}:/workspace/target" \
-              -v "/home/noah/data/sccache:/sccache" \
               -w /workspace \
               -e CARGO_TARGET_DIR=/workspace/target \
-              -e RUSTC_WRAPPER=rustc-sccache \
-              -e SCCACHE_DIR=/sccache \
               -e CARGO_INCREMENTAL=0 \
               -e CARGO_BUILD_JOBS=8 \
               -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
