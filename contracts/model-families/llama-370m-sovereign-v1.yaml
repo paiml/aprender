@@ -40,10 +40,25 @@ version: 1.6.0
 status: ACTIVE
 
 metadata:
-  version: "1.10.0"
+  version: "1.11.0"
   created: "2026-04-18"
-  updated: "2026-04-23"
+  updated: "2026-05-15"
   changelog:
+    - "1.11.0 (2026-05-15): GATE-ARCH-370M-002 (binds AC-SHIP2-005)
+       PARTIAL_ALGORITHM_LEVEL discharge via live `apr inspect --json`
+       on the first real MODEL-2 pretraining checkpoint
+       (`epoch-002.apr`, §22 / PR #1073, 1.39 GiB / 219 tensors /
+       LlamaForCausalLM / checksum_valid). The .apr-format invariants
+       (magic, header, tensor manifest, checksum) are all satisfied on
+       a real on-disk artifact produced by the actual training loop.
+       Closes the §22 'STRUCTURALLY DISCHARGED' note that lacked a
+       contract-level evidence binding until now. Full discharge of
+       this gate (`apr qa --arch-contract` subcommand) PENDING on
+       harness binding; data fixture is in place. MODEL-2 ship %:
+       57% → 60% (1 of 10 PARTIALs gains a structured contract-level
+       evidence binding; the 9 others remain PARTIAL on the same
+       underlying artifact or BLOCKER on AC-SHIP2-003 capacity ceiling
+       per §34). Spec uplift target #1 per Q4-2026 plan."
     - "1.10.0 (2026-04-23): Bundled PARTIAL_ALGORITHM_LEVEL discharge
        of the last two untouched MODEL-2 AC rows — AC-SHIP2-003 (val CE
        ≤ 2.2) and AC-SHIP2-004 (training ≤ 21 days on RTX 4090). Added
@@ -484,6 +499,24 @@ gates:
       `apr qa model.apr --arch-contract llama-370m-sovereign-v1` runs
       all 9 invariant checks and exits 0. Output JSON records 9 passed
       invariants; 0 failed; 0 skipped.
+    evidence_discharged_by:
+      - "evidence/section-22-ac-ship2-005-uplift-2026-05-15/findings.json"
+      - "evidence/section-22-ac-ship2-005-uplift-2026-05-15/apr-inspect-epoch-002.json"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    partial_discharge_note: >
+      Live `apr inspect --json` on the first real MODEL-2 pretraining
+      checkpoint (`/mnt/nvme-raid0/runs/model-2-from-scratch-006-50k-tuned/ckpt/epoch-002.apr`,
+      §22 / PR #1073, 1.39 GiB, 2026-04-26) reports valid=true /
+      format="APR v2" / tensor_count=219 / architecture=LlamaForCausalLM /
+      checksum_valid=true / exit 0. The .apr-format invariants
+      (format magic, header, tensor manifest, checksum) are all
+      satisfied on a real on-disk artifact produced by the actual
+      training loop — not a synthetic fixture, not the stub. Full
+      discharge (the dedicated `apr qa --arch-contract` 9-invariant
+      runner) PENDING on that subcommand binding — a small follow-up
+      (~50 LOC + 1 test) once the harness exists; the underlying
+      format-correctness evidence is already in place.
+    full_discharge_blocks_on: "`apr qa --arch-contract llama-370m-sovereign-v1` subcommand binding (follow-up; data fixture already in place)"
     verdict: pass
     binds_to: AC-SHIP2-005
 
