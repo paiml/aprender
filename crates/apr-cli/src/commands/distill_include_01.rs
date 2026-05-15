@@ -731,4 +731,118 @@ mod tests {
             "FALSIFY-APR-DISTILL-TRAIN-001: max |output - input| = {max_diff:.6} ≤ Q4K tolerance {Q4K_TOLERANCE} — pipeline is a stub or gradient step is a no-op"
         );
     }
+
+    /// FALSIFY-APR-DISTILL-TRAIN-002 (§35 KL loss monotonicity discharge):
+    /// after running the wired pipeline, the final KD loss must be lower
+    /// than the initial loss (modulo small batch-noise tolerance). A
+    /// pipeline that mutates tensors but doesn't actually *reduce* loss
+    /// would still flip FALSIFY-001 (tensor diff > 0) yet fail this gate.
+    ///
+    /// Predicate from contract apr-cli-distill-train-v1.yaml:
+    ///   "kl_loss[epoch=N+1] < kl_loss[epoch=N] (with batch-noise tolerance ≤ 5%)"
+    ///
+    /// Discharge form here (algorithm-level, single trajectory): the
+    /// returned `TrainingMetrics.final_loss` is strictly lower than
+    /// `initial_loss` after at least 2 epochs on a non-degenerate
+    /// teacher/student pair. This pins that the gradient direction is
+    /// correct and the learning rate is in a useful range.
+    ///
+    /// Falsified if: final_loss ≥ initial_loss × 1.05 (which would
+    /// indicate gradient sign error, optimizer step bug, or
+    /// learning-rate instability).
+    #[cfg(feature = "training")]
+    #[test]
+    fn falsify_apr_distill_train_002_loss_decreases() {
+        use safetensors::tensor::{Dtype, TensorView};
+        use std::fs;
+
+        let workdir = tempfile::tempdir().expect("create tempdir");
+
+        // Teacher: larger-magnitude weights → meaningful KD target
+        let teacher_data: Vec<f32> = (0..256).map(|i| (i as f32) * 0.03 - 3.0).collect();
+        let teacher_bytes: Vec<u8> = bytemuck::cast_slice(&teacher_data).to_vec();
+        let teacher_views = vec![(
+            "layer.weight",
+            TensorView::new(Dtype::F32, vec![16, 16], &teacher_bytes)
+                .expect("teacher TensorView"),
+        )];
+        let teacher_path = workdir.path().join("teacher.safetensors");
+        fs::write(
+            &teacher_path,
+            safetensors::serialize(teacher_views, &None).expect("serialize teacher"),
+        )
+        .expect("write teacher");
+
+        // Student: distinct init so KD loss has signal
+        let student_data: Vec<f32> = (0..256).map(|i| (i as f32) * -0.02 + 2.0).collect();
+        let student_bytes: Vec<u8> = bytemuck::cast_slice(&student_data).to_vec();
+        let student_views = vec![(
+            "layer.weight",
+            TensorView::new(Dtype::F32, vec![16, 16], &student_bytes)
+                .expect("student TensorView"),
+        )];
+        let student_path = workdir.path().join("student.safetensors");
+        fs::write(
+            &student_path,
+            safetensors::serialize(student_views, &None).expect("serialize student"),
+        )
+        .expect("write student");
+
+        let dataset_path = workdir.path().join("dataset.bin");
+        fs::write(&dataset_path, b"unused-by-train").expect("write dataset");
+        let output_dir = workdir.path().join("out");
+        fs::create_dir_all(&output_dir).expect("create output dir");
+
+        let yaml = format!(
+            "teacher:\n  model_id: {t}\nstudent:\n  model_id: {s}\ndistillation:\n  temperature: 4.0\n  alpha: 0.7\ntraining:\n  epochs: 3\n  batch_size: 4\n  learning_rate: 5.0e-3\ndataset:\n  path: {ds}\noutput:\n  dir: {out}\n",
+            t = teacher_path.display(),
+            s = student_path.display(),
+            ds = dataset_path.display(),
+            out = output_dir.display()
+        );
+        let cfg_path = workdir.path().join("cfg.yaml");
+        fs::write(&cfg_path, &yaml).expect("write cfg");
+
+        let cfg = DistillYamlConfig::load(&cfg_path).expect("load cfg");
+
+        // Drive the pipeline through the translator + aprender_train_distill::run
+        // directly so we can inspect the in-memory TrainingMetrics (the
+        // on-disk distillation_metadata.json sidecar only records final_loss).
+        // The translator is the §35 boundary contract — verified separately
+        // by FALSIFY-010; the wire-up branch predicate by FALSIFY-011. This
+        // test is about the *math* (gradient direction + LR stability).
+        let translated = super::translate_to_distill_config(&cfg);
+        let result = entrenar_distill::run(&translated)
+            .expect("pipeline must not error on valid fixture");
+
+        let initial_loss = result.metrics.initial_loss;
+        let final_loss = result.metrics.final_loss;
+
+        // Sanity: both losses must be finite + non-zero (degenerate
+        // pipelines could report 0/0 and trivially pass a < check)
+        assert!(
+            initial_loss.is_finite() && initial_loss > 0.0,
+            "FALSIFY-APR-DISTILL-TRAIN-002: initial_loss = {initial_loss} is not a positive finite number"
+        );
+        assert!(
+            final_loss.is_finite(),
+            "FALSIFY-APR-DISTILL-TRAIN-002: final_loss = {final_loss} is not finite (NaN/Inf — likely diverged)"
+        );
+
+        // The gate: final_loss < initial_loss × 1.05 (5% batch-noise
+        // tolerance per the contract prediction).
+        let ceiling = initial_loss * 1.05;
+        assert!(
+            final_loss < ceiling,
+            "FALSIFY-APR-DISTILL-TRAIN-002: final_loss {final_loss:.6} ≥ initial_loss × 1.05 ({ceiling:.6}) — gradient sign error, LR instability, or pipeline regression"
+        );
+
+        // Stronger form: assert strict decrease (final < initial). The 1.05
+        // tolerance above accepts noisy-but-stable runs; a real, working
+        // pipeline on this fixture should show real progress.
+        assert!(
+            final_loss < initial_loss,
+            "FALSIFY-APR-DISTILL-TRAIN-002 (strict): final_loss {final_loss:.6} ≥ initial_loss {initial_loss:.6} — no measurable training progress"
+        );
+    }
 }
