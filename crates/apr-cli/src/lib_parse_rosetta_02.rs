@@ -200,17 +200,20 @@
         assert_eq!(paths, vec![PathBuf::from("model.apr")]);
     }
 
-    /// Test extract_model_paths: Probar returns file path
+    /// Test extract_model_paths: Probar returns file path (via tensor subcommand)
     #[test]
     fn test_extract_paths_probar() {
+        use ProbarSubcommand;
         let cmd = Commands::Extended(ExtendedCommands::Probar {
-            file: PathBuf::from("model.apr"),
-            output: PathBuf::from("./probar-export"),
-            format: "both".to_string(),
-            golden: None,
-            layer: None,
-            assert: false,
-            tolerance: 0.98,
+            command: ProbarSubcommand::Tensor {
+                file: PathBuf::from("model.apr"),
+                output: PathBuf::from("./probar-export"),
+                format: "both".to_string(),
+                golden: None,
+                layer: None,
+                assert: false,
+                tolerance: 0.98,
+            },
         });
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths, vec![PathBuf::from("model.apr")]);
