@@ -1,0 +1,65 @@
+{
+  "spec": "SPEC-SHIP-TWO-001",
+  "section": "§81 — P0 dispatch surfaced 3 systemic apr pretrain output metadata gaps",
+  "date": "2026-05-15",
+  "host": "noah-Lambda-Vector",
+  "binary": "/mnt/nvme-raid0/targets/aprender/release/apr (apr 0.33.0 (a975a8520) --features cuda)",
+  "ckpt": "/mnt/nvme-raid0/runs/model-2-5g2-qwen-init-20260515-085000-cuda/ckpt/epoch-004.apr",
+  "ckpt_state": "format=APR v2 / tensors=291 / arch=LlamaForCausalLM / checksum_valid=true (per §78)",
+  "P0_dispatch_attempts": [
+    {
+      "item": "P0-A apr qa",
+      "command": "apr qa epoch-004.apr --json",
+      "exit_code_observed": "non-zero",
+      "error": "Validation failed: APR missing embedded tokenizer",
+      "gate_class": "AC-SHIP2-006",
+      "predicted_ship_pct_delta": "+2pp (would have flipped FALSIFY-SHIP-016)",
+      "actual_outcome": "BLOCKED",
+      "underlying_defect": "apr pretrain output does not embed the source tokenizer into the .apr file",
+      "fix_scope": "~50 LOC in pretrain.rs to read tokenizer.json from --tokenizer dir and embed via AprWriter::add_tokenizer + 1 test",
+      "log_file": "p0-a-qa.log"
+    },
+    {
+      "item": "P0-B apr bench",
+      "command": "apr bench epoch-004.apr --iterations 5 --max-tokens 128 --json",
+      "exit_code_observed": "non-zero",
+      "error": "Validation failed: Failed to create quantized model from APR: Invalid configuration: C-03: APR model missing 'hidden_size' metadata",
+      "gate_class": "AC-SHIP2-010",
+      "predicted_ship_pct_delta": "+2pp (would have flipped FALSIFY-SHIP-020)",
+      "actual_outcome": "BLOCKED",
+      "underlying_defect": "apr pretrain output does not write hidden_size (and likely other arch keys: num_attention_heads, num_kv_heads, intermediate_size, num_hidden_layers) to .apr metadata",
+      "fix_scope": "~30 LOC in pretrain.rs to extract config keys from --init APR or --vocab-size + build_transformer_config + 1 test",
+      "log_file": "p0-b-bench.log"
+    },
+    {
+      "item": "P0-C apr export → llama-cli",
+      "command_a": "apr export --format gguf epoch-004.apr -o /tmp/epoch-004.gguf",
+      "command_a_outcome": "PASS — 2.35 GiB GGUF / 291 tensors / Export successful",
+      "command_b": "llama-cli -m /tmp/epoch-004.gguf -p 'def fib(n):' -n 16 --temp 0",
+      "command_b_outcome": "FAIL — error loading model architecture: unknown model architecture: 'LlamaForCausalLM'",
+      "gate_class": "AC-SHIP2-009",
+      "predicted_ship_pct_delta": "+2pp (would have flipped FALSIFY-SHIP-019)",
+      "actual_outcome": "BLOCKED",
+      "underlying_defect": "apr export --format gguf writes architecture=\"LlamaForCausalLM\" (HuggingFace transformers convention) but llama.cpp/GGUF convention is lowercase architecture=\"llama\"",
+      "fix_scope": "~10 LOC in export.rs to map HF arch names to GGUF arch names + 1 test (case mapping table for llama, qwen2, mistral, phi3, gpt2, ...)",
+      "log_file_a": "p0-c-export.log",
+      "log_file_b": "p0-c-llamacli.log"
+    }
+  ],
+  "ship_pct_impact": {
+    "predicted_in_80": "+6pp from P0 trio (75% → 81%)",
+    "actual": "0pp — all three blocked on output-side packaging defects",
+    "revised_path": "The P0 trio is REQUIRED but requires 3 packaging fixes first (estimated ~90 LOC + 3 tests over 1-2 days). After those land, the P0 dispatches should pass as originally predicted."
+  },
+  "root_cause_categorization": {
+    "class": "Class 3 — Infrastructure / packaging defect, NOT data starvation or optimization defect",
+    "framing": "Per §79 methodology lesson #26, this is the same class as the §22 silent-fallback and §22 early-stop bugs — infrastructure that produces correct-looking output but lacks downstream-tool-required metadata",
+    "why_audit_missed_this": "The external audit (docs/specifications/two-model-spec-audit.md) focused on convergence root causes. Packaging defects only surface when you try to OPERATE on a converged checkpoint. §78 + P0 dispatch is the first time this lifecycle stage has been reached.",
+    "methodology_lesson": "Class 3 (infrastructure) defects come in waves — first wave masks data signal (§22), second wave masks packaging readiness (§81). Each wave needs its own surfacing dispatch."
+  },
+  "revised_priority": {
+    "before_81": "P0-A → P0-B → P0-C (in §80)",
+    "after_81": "P0-D (embed tokenizer) → P0-E (write hidden_size + arch keys) → P0-F (GGUF arch case mapping) → P0-A → P0-B → P0-C",
+    "estimated_compute_to_81pp_revised": "~6 hours of code work + the original <10 min P0 dispatch compute"
+  }
+}
