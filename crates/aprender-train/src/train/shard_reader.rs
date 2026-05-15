@@ -32,6 +32,9 @@ pub struct ShardBatchIter {
     eos_id: u32,
     wrap_around: bool,
     epochs_completed: u64,
+    /// SPEC §82 P2-B: emit `eprintln!` when wrap-around fires.
+    /// Helps operators detect data starvation (corpus too small for step budget).
+    warn_on_wrap_around: bool,
 }
 
 impl ShardBatchIter {
@@ -68,6 +71,7 @@ impl ShardBatchIter {
             eos_id,
             wrap_around: false,
             epochs_completed: 0,
+            warn_on_wrap_around: false,
         })
     }
 
@@ -92,6 +96,15 @@ impl ShardBatchIter {
     #[must_use]
     pub fn epochs_completed(&self) -> u64 {
         self.epochs_completed
+    }
+
+    /// SPEC §82 P2-B: when wrap-around fires, emit a stderr line so operators
+    /// can detect data starvation (corpus too small for the requested step
+    /// budget). Default off for backward compatibility with tests.
+    #[must_use]
+    pub fn with_warn_on_wrap_around(mut self, warn: bool) -> Self {
+        self.warn_on_wrap_around = warn;
+        self
     }
 
     fn ensure_reader(&mut self) -> io::Result<bool> {
@@ -121,6 +134,16 @@ impl ShardBatchIter {
                 // and start over; else return None as before.
                 if self.wrap_around {
                     self.epochs_completed += 1;
+                    if self.warn_on_wrap_around {
+                        eprintln!(
+                            "[P2-B] corpus wrap-around #{}: dataset_dir of {} shards exhausted; \
+                             cycling. If observed early in run, corpus is too small for the \
+                             requested step budget — extend corpus per Chinchilla D ≈ 20·N or \
+                             reduce --num-steps.",
+                            self.epochs_completed,
+                            self.shards.len(),
+                        );
+                    }
                     self.cursor_shard = 0;
                     self.cursor_reader = None;
                     if !self.ensure_reader()? {
@@ -211,6 +234,45 @@ mod tests {
             "epochs_completed = {} should reflect at least 2 wrap resets",
             iter.epochs_completed()
         );
+    }
+
+    /// SPEC §82 P2-B: --warn-on-wrap-around exposes data starvation by
+    /// emitting a stderr line whenever the corpus cycles. This test verifies
+    /// the wrap counter still advances and the iterator stays well-behaved;
+    /// stderr capture is brittle across test harnesses, so we don't assert
+    /// on the literal text — that's a behavioural integration concern.
+    #[test]
+    fn warn_on_wrap_around_does_not_break_iteration() {
+        let tmp = TempDir::new().expect("tempdir");
+        let tokens: Vec<u32> = (0u32..40).collect();
+        write_shard(tmp.path(), "shard-0.bin", &tokens);
+        let mut iter = ShardBatchIter::new(tmp.path(), 2, 4, 0, 0)
+            .expect("iter")
+            .with_wrap_around(true)
+            .with_warn_on_wrap_around(true);
+        let mut batches = Vec::new();
+        for _ in 0..8 {
+            batches.push(iter.next().expect("must keep yielding with wrap"));
+        }
+        assert_eq!(batches.len(), 8);
+        assert!(
+            iter.epochs_completed() >= 1,
+            "at least one wrap should have fired with 4-batches/epoch × 8 pulls",
+        );
+    }
+
+    /// SPEC §82 P2-B: with_warn_on_wrap_around defaults off, and turning it on
+    /// without wrap_around is a no-op (no warning, no wrap, exhaustion is final).
+    #[test]
+    fn warn_without_wrap_is_inert() {
+        let tmp = TempDir::new().expect("tempdir");
+        let tokens: Vec<u32> = (0u32..40).collect();
+        write_shard(tmp.path(), "shard-0.bin", &tokens);
+        let iter = ShardBatchIter::new(tmp.path(), 2, 4, 0, 0)
+            .expect("iter")
+            .with_warn_on_wrap_around(true);
+        let batches: Vec<_> = iter.collect();
+        assert_eq!(batches.len(), 4, "still terminates after one pass without wrap");
     }
 
     /// Default behaviour (wrap_around=false) preserved: returns None
