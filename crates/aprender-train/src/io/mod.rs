@@ -6,7 +6,7 @@
 mod format;
 mod load;
 mod model;
-mod save;
+pub(crate) mod save;
 
 #[cfg(test)]
 mod tests;
