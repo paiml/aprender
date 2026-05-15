@@ -432,6 +432,9 @@
             limit: 10,
             transpose_aware: false,
             json: false,
+            quant_roundtrip: false,
+            threshold: 0.95,
+            no_threshold: false,
         };
         let paths = extract_model_paths(&cmd);
         assert!(paths.is_empty(), "Diff is a diagnostic command (exempt)");
