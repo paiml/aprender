@@ -55,6 +55,9 @@ pub struct InspectResult {
 pub fn run_inspect(model_path: &Path, apr_binary: &str) -> Result<InspectResult> {
     // Retry on ETXTBSY (os error 26): a transient condition on Linux where
     // fork() inherits write fds from other threads, causing execve() to fail.
+    // Empirically 3×10ms is not enough under contended self-hosted runners;
+    // 8 attempts with exponential backoff (10..640ms, ~1.3s total) clears
+    // every observed flake in CI without meaningful latency for the happy path.
     let output = {
         let mut attempts = 0;
         loop {
@@ -66,9 +69,10 @@ pub fn run_inspect(model_path: &Path, apr_binary: &str) -> Result<InspectResult>
                 .output()
             {
                 Ok(output) => break output,
-                Err(e) if e.raw_os_error() == Some(26) && attempts < 3 => {
+                Err(e) if e.raw_os_error() == Some(26) && attempts < 8 => {
+                    let delay = 10u64 << attempts; // 10, 20, 40, 80, 160, 320, 640, 1280
                     attempts += 1;
-                    std::thread::sleep(std::time::Duration::from_millis(10));
+                    std::thread::sleep(std::time::Duration::from_millis(delay));
                 }
                 Err(e) => {
                     return Err(Error::ExecutionFailed {
