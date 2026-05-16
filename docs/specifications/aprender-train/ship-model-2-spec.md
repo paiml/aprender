@@ -1,10 +1,11 @@
-# Specification: MODEL-2 — Sovereign 370M Python Code Completion (albor)
+# Specification: aprender-coder-370m (MODEL-2)
 
-**Document ID:** SPEC-SHIP-MODEL-2
-**Version:** 1.0.0
+**Model name:** `aprender-coder-370m` — sovereign 370M Python code completion student.
+**Document ID:** SPEC-SHIP-MODEL-2 (stable; numeric ID preserved across renames).
+**Version:** 1.1.0
 **Parent:** [Ship Two Models Index](./ship-two-models-spec.md)
 **Companion specs:**
-- [MODEL-1 spec](./ship-model-1-spec.md) — Distilled Qwen2.5-Coder-7B teacher
+- [aprender-coder-7b spec (MODEL-1)](./ship-model-1-spec.md) — distilled 7B coder teacher
 - [Shared methodology](./ship-shared-methodology.md) — foundation + cross-cutting falsifiers
 
 **Ship status (2026-05-15):** **79% — best val_loss 4.71 after §82's P2-A 5000-step run** (broke §34 ceiling from 9.38 → 4.71).

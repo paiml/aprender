@@ -6,12 +6,21 @@
 
 This document was split from a single 8,468-line spec at v3.28.0 into three companion files. The split preserves all original `§N` section markers verbatim so cross-references in git history, PR descriptions, memory files, and contracts remain valid.
 
+## Model identifiers
+
+| Stable ID | Public name | Role | Size |
+|---|---|---|---|
+| **MODEL-1** | `aprender-coder-7b` | Distilled coder teacher (Qwen2.5-Coder-7B-Instruct → 1.5B Q4_K_M) | 7B → 1.5B Q4_K_M |
+| **MODEL-2** | `aprender-coder-370m` | Sovereign Python code completion student | 370M |
+
+MODEL-1 / MODEL-2 are stable document IDs (numeric, preserved across renames). The public names follow HuggingFace-style `aprender-coder-{size}` conventions.
+
 ## Spec layout
 
 | File | Scope | Status |
 |---|---|---|
-| [ship-model-1-spec.md](./ship-model-1-spec.md) | **MODEL-1** — Distilled Qwen2.5-Coder-7B teacher (apr-leaderboard) | **🎉 100% — shipped via v0.33.0** |
-| [ship-model-2-spec.md](./ship-model-2-spec.md) | **MODEL-2** — Sovereign 370M Python student (albor) | **79% — best val_loss 4.71 (§82)** |
+| [ship-model-1-spec.md](./ship-model-1-spec.md) | **aprender-coder-7b** (MODEL-1) — distilled 7B coder teacher | **🎉 100% — shipped via v0.33.0** |
+| [ship-model-2-spec.md](./ship-model-2-spec.md) | **aprender-coder-370m** (MODEL-2) — 370M Python student | **79% — best val_loss 4.71 (§82)** |
 | [ship-shared-methodology.md](./ship-shared-methodology.md) | Foundation (§1-§3, §6-§11, §13) + cross-cutting falsifiers (§18, §36, §41, §44, §45) | Stable |
 
 ## Repository lineage
@@ -20,8 +29,8 @@ Both models originated as standalone GitHub projects before the APR-MONO consoli
 
 | Model | Lineage repo (standalone, dormant) | Active code repo | Artifact repo |
 |---|---|---|---|
-| MODEL-1 | [paiml/apr-leaderboard](https://github.com/paiml/apr-leaderboard) — last commit 2026-04-05 | [paiml/aprender](https://github.com/paiml/aprender) | [paiml/qwen2.5-coder-7b-apache-q4k-v1](https://huggingface.co/paiml/qwen2.5-coder-7b-apache-q4k-v1) (HuggingFace) |
-| MODEL-2 | [paiml/albor](https://github.com/paiml/albor) — last commit 2026-04-05 | [paiml/aprender](https://github.com/paiml/aprender) | (not yet published — pending val_loss < 4) |
+| `aprender-coder-7b` (MODEL-1) | [paiml/apr-leaderboard](https://github.com/paiml/apr-leaderboard) — last commit 2026-04-05 | [paiml/aprender](https://github.com/paiml/aprender) | [paiml/qwen2.5-coder-7b-apache-q4k-v1](https://huggingface.co/paiml/qwen2.5-coder-7b-apache-q4k-v1) (HuggingFace) |
+| `aprender-coder-370m` (MODEL-2) | [paiml/albor](https://github.com/paiml/albor) — last commit 2026-04-05 | [paiml/aprender](https://github.com/paiml/aprender) | (not yet published — pending val_loss < 4) |
 
 ## Latest atomic next action
 
@@ -29,10 +38,10 @@ Both models originated as standalone GitHub projects before the APR-MONO consoli
 
 ## Section ownership (jump table)
 
-### MODEL-1 (see [ship-model-1-spec.md](./ship-model-1-spec.md))
+### `aprender-coder-7b` (MODEL-1) — see [ship-model-1-spec.md](./ship-model-1-spec.md)
 §4 (base), §7.1 (falsification), §12 (expedited teacher-first), §15-§17 (SHIP-007), §23 (sub-FFN), §27 (P3), §30-§32 (SHIP-007 refutations), §40 (LOCALIZED), §46-§48 (layer-0 attention), §58 (v0.32.0 release), §61 (SHIP-002/006/008), §63 (empirical floor), §67-§71 (SHIP-005 chain), §72 (5-AC cascade), §73-§74 (LM head F32 GEMV), §75 (🎉 100%), §76 (v0.33.0 published).
 
-### MODEL-2 (see [ship-model-2-spec.md](./ship-model-2-spec.md))
+### `aprender-coder-370m` (MODEL-2) — see [ship-model-2-spec.md](./ship-model-2-spec.md)
 §5 (base), §7.2 (falsification), §14 (Task #132 CUDA training), §19-§20 (CUDA dispatch), §22 (first real training), §24-§25 (corpus diagnosis), §26 (three-priority plan), §33-§35 (retrain + distill stub), §42-§43 (distill-train), §49 (strategy pivot), §50-§57 (§50.4 cascade + step 5g preflight), §77 (5g.1 discovered), §78 (5g.2 converged), §79 (audit + Five-Whys), §80 (prioritized backlog), §81 (P0 metadata gaps), §82 (P2-A 5000-step val_loss=4.71).
 
 ### Shared (see [ship-shared-methodology.md](./ship-shared-methodology.md))

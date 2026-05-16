@@ -1,10 +1,11 @@
-# Specification: MODEL-1 — Distilled Qwen2.5-Coder-7B (apr-leaderboard)
+# Specification: aprender-coder-7b (MODEL-1)
 
-**Document ID:** SPEC-SHIP-MODEL-1
-**Version:** 1.0.0
+**Model name:** `aprender-coder-7b` — distilled 7B coder teacher.
+**Document ID:** SPEC-SHIP-MODEL-1 (stable; numeric ID preserved across renames).
+**Version:** 1.1.0
 **Parent:** [Ship Two Models Index](./ship-two-models-spec.md)
 **Companion specs:**
-- [MODEL-2 spec](./ship-model-2-spec.md) — Sovereign 370M Python student
+- [aprender-coder-370m spec (MODEL-2)](./ship-model-2-spec.md) — 370M Python student
 - [Shared methodology](./ship-shared-methodology.md) — foundation + cross-cutting falsifiers
 
 **Ship status (2026-05-15):** **🎉 100% — shipped to users via v0.33.0 cascade** (see §75 + §76).
