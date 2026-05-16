@@ -8,12 +8,16 @@ This document was split from a single 8,468-line spec at v3.28.0 into three comp
 
 ## Model identifiers
 
-| Stable ID | Public name | Role | Size |
-|---|---|---|---|
-| **MODEL-1** | `aprender-coder-7b` | Distilled coder teacher (Qwen2.5-Coder-7B-Instruct → 1.5B Q4_K_M) | 7B → 1.5B Q4_K_M |
-| **MODEL-2** | `aprender-coder-370m` | Sovereign Python code completion student | 370M |
+| Stable ID | Family name | Role | Size | HF redistribution slug |
+|---|---|---|---|---|
+| **MODEL-1** | `aprender-coder-7b` | Distilled coder teacher (from Qwen2.5-Coder-7B-Instruct) | 7B → 1.5B Q4_K_M | `paiml/qwen2.5-coder-7b-apache-q4k-v1` |
+| **MODEL-2** | `aprender-coder-370m` | Sovereign Python code completion student | 370M | (not yet published) |
 
-MODEL-1 / MODEL-2 are stable document IDs (numeric, preserved across renames). The public names follow HuggingFace-style `aprender-coder-{size}` conventions.
+**Naming convention.** Spec-level identity follows the multi-model-author family pattern — `{family-prefix}-{variant}-{size}` — used by Mistral (`mistral-7b`, `mixtral-8x7b`), DeepSeek (`deepseek-coder-1.3b`, `-6.7b`, `-33b`), Qwen (`qwen2.5-7b`, `qwen2.5-coder-7b`), and Microsoft Phi (`phi-3.5-mini`, `phi-4`). `aprender` is the framework family prefix and acts as the model-author brand.
+
+**Family vs. redistribution.** The HF redistribution slug keeps upstream lineage in its name (e.g. `paiml/qwen2.5-coder-7b-apache-q4k-v1` retains "qwen2.5-coder" because MODEL-1 is a quantized/relicensed derivative of Qwen's checkpoint). The spec-level family name (`aprender-coder-7b`) is the canonical identity used throughout this repo. Both names refer to the same artifact.
+
+MODEL-1 / MODEL-2 are stable document IDs (numeric, preserved across renames) used for cross-references in AC-SHIP1-*/AC-SHIP2-*, FALSIFY-SHIP-*, contracts, PR titles, and git history.
 
 ## Spec layout
 
