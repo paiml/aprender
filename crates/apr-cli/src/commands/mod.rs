@@ -15,6 +15,8 @@ pub mod canary;
 pub mod cbtop;
 pub mod chat;
 pub mod check;
+pub(crate) mod check_finite_classifier;
+pub(crate) mod check_finite_lint;
 pub mod compare_hf;
 pub(crate) mod compile;
 pub(crate) mod convert;

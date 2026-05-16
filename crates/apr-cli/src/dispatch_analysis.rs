@@ -172,6 +172,17 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             require_greedy,
         } => commands::explain_token_lint::run(jsonl_file, *tolerance, *require_greedy, cli.json),
 
+        ExtendedCommands::CheckFiniteLint {
+            error_file,
+            list_file,
+            min_layers,
+        } => commands::check_finite_lint::run(
+            error_file.as_deref(),
+            list_file.as_deref(),
+            *min_layers,
+            cli.json,
+        ),
+
         ExtendedCommands::OtlpLint {
             otlp_file,
             require_apr_span,
