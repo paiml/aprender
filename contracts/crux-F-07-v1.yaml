@@ -1,16 +1,21 @@
 # CRUX-F-07 — GPU memory timeline Chrome trace
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# Promoted to PARTIAL_ALGORITHM_LEVEL at v1.1.0 under CRUX-SHIP-001 (2026-05-16):
+# - classifier: crates/apr-cli/src/commands/gpu_memtrace_classifier.rs (13 unit tests)
+# - CLI surface: `apr gpu-memtrace-lint --trace-file FILE`
+# - e2e: crates/apr-cli/tests/falsification_crux_f_07.rs (11 tests)
+# Full discharge of FALSIFY-CRUX-F-07-004 (peak agrees with NVML within
+# 10%) requires a live emitter wired into `apr profile --gpu-memory-trace`
+# alongside an NVML reading at peak — tracked as BLOCKER-UPSTREAM-MISSING.
 
 metadata:
   id: CRUX-F-07
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
+  updated: "2026-05-16"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
+  kind: kernel
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "F — Tensor Ops & Low-level"
@@ -88,6 +93,24 @@ falsification_tests:
       || { echo "FAIL: required Chrome Trace fields missing" >&2; exit 1; }
 
   if_fails: rule 'Chrome Trace JSON schema is valid and loadable' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/gpu_memtrace_classifier.rs
+    cli_path: crates/apr-cli/src/commands/gpu_memtrace_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_07.rs
+    e2e_tests:
+    - falsify_crux_f_07_001_schema_ok_on_good_body
+    - falsify_crux_f_07_001_schema_rejects_missing_trace_events
+    - falsify_crux_f_07_001_schema_rejects_event_missing_ph
+    sub_claim: |
+      Algorithm-level necessary conditions: `classify_schema` verifies the
+      Chrome Trace JSON root is an object containing a non-empty
+      `traceEvents` array; every entry has the required Chrome Trace
+      fields (`ph`, `ts`, `name`); `displayTimeUnit` (if present) is one
+      of {ns, ms}. Outcome variants name the first violation deterministically
+      (MissingTraceEvents, TraceEventsEmpty, EventMissingField, etc.).
+    scope: "(body) -> ChromeTraceSchemaOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live `apr profile --gpu-memory-trace` emitter"
 - id: FALSIFY-CRUX-F-07-002
   rule: alloc/free events pair by address
   prediction: "every alloc event has a matching free with identical addr"
@@ -103,6 +126,24 @@ falsification_tests:
     PY
 
   if_fails: rule 'alloc/free events pair by address' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/gpu_memtrace_classifier.rs
+    cli_path: crates/apr-cli/src/commands/gpu_memtrace_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_07.rs
+    e2e_tests:
+    - falsify_crux_f_07_002_alloc_free_pairing_rejects_orphan_alloc
+    - falsify_crux_f_07_002_alloc_free_pairing_rejects_orphan_free
+    sub_claim: |
+      Algorithm-level necessary conditions: `classify_alloc_free_pairing`
+      collects every `args.addr` from `alloc` and `free` events; reports
+      `OrphanAllocs { addresses }` (memory leak signature) or
+      `OrphanFrees { addresses }` (double-free / accounting bug signature)
+      with sorted address lists so the bug is debuggable from lint output
+      alone. `AllocMissingAddr { index }` surfaces malformed emitters
+      where the args object lacks the addr key.
+    scope: "(body) -> AllocFreePairingOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live `apr profile --gpu-memory-trace` emitter writing balanced alloc/free events"
 - id: FALSIFY-CRUX-F-07-003
   rule: timestamps monotone per stream
   prediction: "per-(pid,tid) timestamps are non-decreasing"
@@ -120,6 +161,23 @@ falsification_tests:
     PY
 
   if_fails: rule 'timestamps monotone per stream' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/gpu_memtrace_classifier.rs
+    cli_path: crates/apr-cli/src/commands/gpu_memtrace_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_07.rs
+    e2e_tests:
+    - falsify_crux_f_07_003_monotonic_timestamps_rejects_violation
+    - falsify_crux_f_07_003_monotonic_timestamps_allows_cross_stream_interleave
+    sub_claim: |
+      Algorithm-level necessary conditions: `classify_monotonic_timestamps`
+      walks the trace once tracking the last seen `ts` per `(pid, tid)`
+      key; reports `NonMonotonic { index, pid, tid, prev_ts, got_ts }`
+      on first violation. Different streams may freely interleave (CUDA
+      stream ordering is per-stream); only within a single (pid, tid)
+      must timestamps be non-decreasing.
+    scope: "(body) -> MonotonicTimestampsOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live `apr profile --gpu-memory-trace` emitter preserving CUDA stream ordering"
 - id: FALSIFY-CRUX-F-07-004
   rule: trace-derived peak agrees with NVML within 10%
   prediction: "|peak_trace − peak_nvml| / peak_nvml < 0.10"

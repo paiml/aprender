@@ -50,6 +50,8 @@ pub(crate) mod gptq_classifier;
 pub(crate) mod gptq_lint;
 #[cfg(feature = "training")]
 pub(crate) mod gpu;
+pub(crate) mod gpu_memtrace_classifier;
+pub(crate) mod gpu_memtrace_lint;
 pub(crate) mod grad_norm;
 pub(crate) mod hex;
 pub(crate) mod hf_endpoint;
