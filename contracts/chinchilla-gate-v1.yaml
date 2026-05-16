@@ -90,138 +90,143 @@ motivation: >
 # ─── INVARIANTS ──────────────────────────────────────────────
 
 invariants:
-  INV-CHINCHILLA-001:
-    description: >
-      For every `apr pretrain --init <apr> ...` invocation where the
-      init APR carries arch metadata (hidden_size, num_layers,
-      num_heads, intermediate_size, vocab_size), the CLI MUST compute
-      N = estimate_param_count(arch) and D = num_steps × batch_size
-      × seq_length, then assert D/N ≥ 10.0 OR the operator passed
-      --force-under-provisioned.
-    formal: |
-      ∀ (arch, num_steps, batch_size, seq_length, force) ∈ pretrain_invocation,
-        let N = estimate_param_count(arch),
-            D = num_steps × batch_size × seq_length,
-            ratio = D / N
-        in ratio ≥ 10.0 ∨ force = true ⟹ proceed
-           ratio < 10.0 ∧ force = false ⟹ ABORT with exit 1
-    site: crates/apr-cli/src/commands/pretrain.rs::run
-    rationale: >
-      Hoffmann et al. 2022's compute-optimal ratio is 20·N; 10·N is
-      the safety floor below which observed degeneration is
-      catastrophic (per §82 empirical evidence + Holtzman 2019).
+- id: INV-CHINCHILLA-001
+  description: >
+    For every `apr pretrain --init <apr> ...` invocation where the
+    init APR carries arch metadata (hidden_size, num_layers,
+    num_heads, intermediate_size, vocab_size), the CLI MUST compute
+    N = estimate_param_count(arch) and D = num_steps × batch_size
+    × seq_length, then assert D/N ≥ 10.0 OR the operator passed
+    --force-under-provisioned.
+  formal: |
+    ∀ (arch, num_steps, batch_size, seq_length, force) ∈ pretrain_invocation,
+      let N = estimate_param_count(arch),
+          D = num_steps × batch_size × seq_length,
+          ratio = D / N
+      in ratio ≥ 10.0 ∨ force = true ⟹ proceed
+         ratio < 10.0 ∧ force = false ⟹ ABORT with exit 1
+  site: crates/apr-cli/src/commands/pretrain.rs::run
+  rationale: >
+    Hoffmann et al. 2022's compute-optimal ratio is 20·N; 10·N is
+    the safety floor below which observed degeneration is
+    catastrophic (per §82 empirical evidence + Holtzman 2019).
 
-  INV-CHINCHILLA-002:
-    description: >
-      The --force-under-provisioned flag bypasses the hard gate but
-      MUST emit a loud `[P0-J] Chinchilla gate BYPASSED` stderr line
-      so the override is captured in the run log and post-hoc
-      analysis.
-    formal: |
-      force = true ∧ ratio < 10.0 ⟹ stderr contains "[P0-J] Chinchilla gate BYPASSED"
-    site: crates/apr-cli/src/commands/pretrain.rs::run
-    rationale: >
-      An override that produces no record is invisible to
-      retrospective analysis. The bypass message keeps the audit
-      trail intact.
+- id: INV-CHINCHILLA-002
+  description: >
+    The --force-under-provisioned flag bypasses the hard gate but
+    MUST emit a loud `[P0-J] Chinchilla gate BYPASSED` stderr line
+    so the override is captured in the run log and post-hoc
+    analysis.
+  formal: |
+    force = true ∧ ratio < 10.0 ⟹ stderr contains "[P0-J] Chinchilla gate BYPASSED"
+  site: crates/apr-cli/src/commands/pretrain.rs::run
+  rationale: >
+    An override that produces no record is invisible to
+    retrospective analysis. The bypass message keeps the audit
+    trail intact.
 
-  INV-CHINCHILLA-003:
-    description: >
-      From-scratch synthetic runs (no --init) are exempt — the gate
-      only fires when an init checkpoint allows N estimation.
-    formal: |
-      init_arch = None ⟹ skip gate
-    site: crates/apr-cli/src/commands/pretrain.rs::run
-    rationale: >
-      Without an init checkpoint, the CLI cannot estimate N
-      accurately. Synthetic runs are typically smoke tests or
-      ablations where the operator is aware of the scale.
+- id: INV-CHINCHILLA-003
+  description: >
+    From-scratch synthetic runs (no --init) are exempt — the gate
+    only fires when an init checkpoint allows N estimation.
+  formal: |
+    init_arch = None ⟹ skip gate
+  site: crates/apr-cli/src/commands/pretrain.rs::run
+  rationale: >
+    Without an init checkpoint, the CLI cannot estimate N
+    accurately. Synthetic runs are typically smoke tests or
+    ablations where the operator is aware of the scale.
 
 # ─── GATES ───────────────────────────────────────────────────
 
 gates:
-  GATE-CHINCHILLA-001:
-    invariant: INV-CHINCHILLA-001
-    check: |
-      `apr pretrain --init <under-provisioned.apr> --num-steps 5000
-       --batch-size 16 --seq-length 512` MUST exit non-zero with a
-      stderr message containing "[P0-J] Chinchilla hard gate".
-    enforcement: runtime
-    severity: critical
+- id: GATE-CHINCHILLA-001
+  invariant: INV-CHINCHILLA-001
+  check: |
+    `apr pretrain --init <under-provisioned.apr> --num-steps 5000
+     --batch-size 16 --seq-length 512` MUST exit non-zero with a
+    stderr message containing "[P0-J] Chinchilla hard gate".
+  enforcement: runtime
+  severity: critical
 
-  GATE-CHINCHILLA-002:
-    invariant: INV-CHINCHILLA-002
-    check: |
-      `apr pretrain ... --force-under-provisioned ...` against an
-      under-provisioned config MUST proceed past the gate AND emit a
-      stderr line containing "[P0-J] Chinchilla gate BYPASSED".
-    enforcement: runtime
-    severity: high
+- id: GATE-CHINCHILLA-002
+  invariant: INV-CHINCHILLA-002
+  check: |
+    `apr pretrain ... --force-under-provisioned ...` against an
+    under-provisioned config MUST proceed past the gate AND emit a
+    stderr line containing "[P0-J] Chinchilla gate BYPASSED".
+  enforcement: runtime
+  severity: high
 
-  GATE-CHINCHILLA-003:
-    invariant: INV-CHINCHILLA-003
-    check: |
-      `apr pretrain` without `--init` (synthetic / from-scratch)
-      MUST NOT trigger the gate regardless of D/N ratio.
-    enforcement: runtime
-    severity: medium
+- id: GATE-CHINCHILLA-003
+  invariant: INV-CHINCHILLA-003
+  check: |
+    `apr pretrain` without `--init` (synthetic / from-scratch)
+    MUST NOT trigger the gate regardless of D/N ratio.
+  enforcement: runtime
+  severity: medium
 
 # ─── FALSIFICATION TESTS ─────────────────────────────────────
 
 falsification_tests:
-  FALSIFY-CHINCHILLA-001:
-    invariant: INV-CHINCHILLA-001
-    description: >
-      §82 P2-A reproducer — Qwen-0.5B init (N ≈ 494M) with 5000
-      steps × 16 batch × 512 seq = 40.96M tokens → ratio = 0.083×
-      → MUST be rejected with exit 1 and the P0-J message.
-    test_kind: integration
-    site: crates/apr-cli/tests/chinchilla_gate_test.rs
-    expected_exit_code: 1
-    expected_stderr_pattern: '\[P0-J\] Chinchilla hard gate'
+- id: FALSIFY-CHINCHILLA-001
+  invariant: INV-CHINCHILLA-001
+  rule: under-provisioned-rejected
+  prediction: >
+    §82 P2-A reproducer — Qwen-0.5B init (N ≈ 494M) with 5000
+    steps × 16 batch × 512 seq = 40.96M tokens → ratio = 0.083×
+    → MUST be rejected with exit 1 and the P0-J message.
+  test_kind: integration
+  site: crates/apr-cli/tests/chinchilla_gate_test.rs
+  expected_exit_code: 1
+  expected_stderr_pattern: '\[P0-J\] Chinchilla hard gate'
+  if_fails: gate failed open — under-provisioned dispatch can ship
 
-  FALSIFY-CHINCHILLA-002:
-    invariant: INV-CHINCHILLA-002
-    description: >
-      Same under-provisioned config + --force-under-provisioned MUST
-      pass the gate, emit the BYPASSED message, and proceed to the
-      next pre-flight check.
-    test_kind: integration
-    site: crates/apr-cli/tests/chinchilla_gate_test.rs
-    expected_exit_code: 1   # later check fails (e.g. missing dataset), but NOT the Chinchilla gate
-    expected_stderr_pattern: '\[P0-J\] Chinchilla gate BYPASSED'
+- id: FALSIFY-CHINCHILLA-002
+  invariant: INV-CHINCHILLA-002
+  rule: bypass-flag-works
+  prediction: >
+    Same under-provisioned config + --force-under-provisioned MUST
+    pass the gate, emit the BYPASSED message, and proceed to the
+    next pre-flight check.
+  test_kind: integration
+  site: crates/apr-cli/tests/chinchilla_gate_test.rs
+  expected_exit_code: 1
+  expected_stderr_pattern: '\[P0-J\] Chinchilla gate BYPASSED'
+  if_fails: bypass mechanism broken — operators cannot opt in
 
-  FALSIFY-CHINCHILLA-003:
-    invariant: INV-CHINCHILLA-003
-    description: >
-      Synthetic run with no --init MUST NOT trigger the gate. The
-      stderr MUST NOT contain "[P0-J]" or "Chinchilla hard gate".
-    test_kind: integration
-    site: crates/apr-cli/tests/chinchilla_gate_test.rs
-    expected_exit_code: 0  # synthetic completes
-    expected_stderr_not_pattern: '\[P0-J\] Chinchilla hard gate'
+- id: FALSIFY-CHINCHILLA-003
+  invariant: INV-CHINCHILLA-003
+  rule: no-init-skips-gate
+  prediction: >
+    Synthetic run with no --init MUST NOT trigger the gate. The
+    stderr MUST NOT contain "[P0-J]" or "Chinchilla hard gate".
+  test_kind: integration
+  site: crates/apr-cli/tests/chinchilla_gate_test.rs
+  expected_exit_code: 0
+  expected_stderr_not_pattern: '\[P0-J\] Chinchilla hard gate'
+  if_fails: from-scratch / synthetic runs unfairly blocked by gate
 
-  FALSIFY-CHINCHILLA-004:
-    invariant: INV-CHINCHILLA-001
-    description: >
-      Boundary case at D/N = 10.0 exact: MUST pass (not strict
-      less-than). D/N = 9.99 MUST fail. Floating-point precision is
-      not in scope; the check is `ratio < 10.0`.
-    test_kind: unit
-    site: crates/apr-cli/src/commands/pretrain.rs::tests
-    expected: ratio at 10.0 proceeds; ratio at 9.99 errors
+- id: FALSIFY-CHINCHILLA-004
+  invariant: INV-CHINCHILLA-001
+  rule: boundary-at-10x
+  prediction: >
+    Boundary case at D/N = 10.0 exact MUST pass (not strict less-than).
+    D/N = 9.99 MUST fail. The check is `ratio < 10.0`.
+  test_kind: unit
+  site: crates/apr-cli/src/commands/pretrain.rs::tests
+  if_fails: off-by-one at the safety floor — operators near the
+    boundary get inconsistent outcomes
 
-  FALSIFY-CHINCHILLA-005:
-    invariant: INV-CHINCHILLA-001
-    description: >
-      Generous-provisioning case: ratio ≥ 20× emits no warning at
-      all. 10× ≤ ratio < 20× emits the [P1-A] warning but proceeds.
-    test_kind: unit
-    site: crates/apr-cli/src/commands/pretrain.rs::tests
-    expected: |
-      ratio = 25.0: silent proceed
-      ratio = 15.0: [P1-A] warning + proceed
-      ratio = 9.99: error (unless --force-under-provisioned)
+- id: FALSIFY-CHINCHILLA-005
+  invariant: INV-CHINCHILLA-001
+  rule: well-provisioned-silent
+  prediction: >
+    Generous-provisioning case: ratio ≥ 20× emits no warning at all.
+    10× ≤ ratio < 20× emits the [P1-A] warning but proceeds.
+  test_kind: unit
+  site: crates/apr-cli/src/commands/pretrain.rs::tests
+  if_fails: warning-vs-error band is misaligned with the contract
 
 # ─── EQUATIONS ───────────────────────────────────────────────
 
@@ -248,17 +253,17 @@ equations:
 # ─── PROOF OBLIGATIONS ───────────────────────────────────────
 
 proof_obligations:
-  PO-CHINCHILLA-001:
-    type: integration_test
-    discharges: [INV-CHINCHILLA-001, INV-CHINCHILLA-002, INV-CHINCHILLA-003]
-    site: crates/apr-cli/tests/chinchilla_gate_test.rs
-    state: pending
+- id: PO-CHINCHILLA-001
+  type: integration_test
+  discharges: [INV-CHINCHILLA-001, INV-CHINCHILLA-002, INV-CHINCHILLA-003]
+  site: crates/apr-cli/tests/chinchilla_gate_test.rs
+  state: pending
 
-  PO-CHINCHILLA-002:
-    type: unit_test
-    discharges: [INV-CHINCHILLA-001]
-    site: crates/apr-cli/src/commands/pretrain.rs::tests
-    state: pending
+- id: PO-CHINCHILLA-002
+  type: unit_test
+  discharges: [INV-CHINCHILLA-001]
+  site: crates/apr-cli/src/commands/pretrain.rs::tests
+  state: pending
 
 # ─── REFERENCES ──────────────────────────────────────────────
 
