@@ -157,6 +157,19 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             stderr_file,
         } => commands::oom_lint::run(report_file, stderr_file.as_deref(), cli.json),
 
+        ExtendedCommands::OtlpLint {
+            otlp_file,
+            require_apr_span,
+            require_genai_attrs,
+            expect_trace_id,
+        } => commands::otlp_lint::run(
+            otlp_file,
+            *require_apr_span,
+            *require_genai_attrs,
+            expect_trace_id.as_deref(),
+            cli.json,
+        ),
+
         ExtendedCommands::PrometheusLint {
             metrics_file,
             content_type,

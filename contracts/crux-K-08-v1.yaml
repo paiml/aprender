@@ -1,16 +1,22 @@
 # CRUX-K-08 — OpenTelemetry traces
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# Promoted to PARTIAL_ALGORITHM_LEVEL at v1.1.0 under CRUX-SHIP-001 (2026-05-16):
+# - classifier: crates/apr-cli/src/commands/otlp_classifier.rs (11 unit tests)
+# - CLI surface: `apr otlp-lint --otlp-file FILE [--require-apr-span] [--require-genai-attrs] [--expect-trace-id HEX32]`
+# - e2e: crates/apr-cli/tests/falsification_crux_k_08.rs (11 tests)
+# Full discharge blocks on a live `apr serve` OTLP exporter wired to
+# `OTEL_EXPORTER_OTLP_ENDPOINT` emitting `apr.inference` spans with
+# gen_ai.* attributes and W3C trace-context propagation — tracked as
+# BLOCKER-UPSTREAM-MISSING.
 
 metadata:
   id: CRUX-K-08
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
+  updated: "2026-05-16"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
+  kind: kernel
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "K — Ecosystem & Integration"
@@ -102,6 +108,25 @@ falsification_tests:
     sleep 1
     grep -q 'apr.inference' /tmp/otlp.log
   if_fails: "apr serve does not export OTLP span named 'apr.inference' to configured endpoint"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/otlp_classifier.rs
+    cli_path: crates/apr-cli/src/commands/otlp_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_k_08.rs
+    e2e_tests:
+    - falsify_crux_k_08_001_span_present_ok_on_apr_inference
+    - falsify_crux_k_08_001_span_present_reports_missing_apr_inference
+    sub_claim: |
+      Algorithm-level necessary conditions on an already-captured OTLP/JSON
+      `ExportTraceServiceRequest`: `classify_span_present` walks
+      `resourceSpans[].scopeSpans[].spans[]` and returns `Ok { count }` only
+      when at least one span has the requested name (`apr.inference`),
+      and reports `SpanNameNotFound { names_seen }` listing the names that
+      were emitted so divergence is debuggable. Reject conditions
+      `NotAnObject` and `MissingResourceSpans` surface malformed bodies
+      before they reach the live exporter.
+    scope: "(body, span_name) -> OtlpSpanPresentOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live aprender-serve OTLP exporter emitting `apr.inference` spans"
 
 - id: FALSIFY-CRUX-K-08-002
   rule: "GenAI semantic conventions present on inference span"
@@ -114,6 +139,22 @@ falsification_tests:
       grep -q "$KEY" /tmp/otlp.log || { echo "missing attribute: $KEY"; exit 1; }
     done
   if_fails: "OTLP span missing one of the required gen_ai.* or apr.tokens.* attributes"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/otlp_classifier.rs
+    cli_path: crates/apr-cli/src/commands/otlp_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_k_08.rs
+    e2e_tests:
+    - falsify_crux_k_08_002_genai_attributes_ok_on_full_body
+    - falsify_crux_k_08_002_genai_attributes_reports_partial_set
+    sub_claim: |
+      Algorithm-level necessary conditions: `classify_genai_attributes`
+      collects every `attributes[].key` across all spans in the OTLP body
+      (the OTLP/JSON encoding uses a key-value array, not a map), then
+      verifies the K08_REQUIRED_ATTRIBUTES set is a subset. Missing keys
+      are reported lexicographically so diffs are stable across runs.
+    scope: "(body, required_keys) -> OtlpAttributesOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live aprender-serve OTLP exporter populating gen_ai.* + apr.tokens.* attributes"
 
 - id: FALSIFY-CRUX-K-08-003
   rule: "W3C trace-context propagation: incoming traceparent reused in exported span"
@@ -131,6 +172,25 @@ falsification_tests:
     sleep 1
     grep -q "$TRACE_ID" /tmp/otlp.log
   if_fails: "apr serve does not honor W3C traceparent (trace-id not propagated to exported span)"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/otlp_classifier.rs
+    cli_path: crates/apr-cli/src/commands/otlp_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_k_08.rs
+    e2e_tests:
+    - falsify_crux_k_08_003_trace_propagation_ok_on_canonical_traceparent
+    - falsify_crux_k_08_003_trace_propagation_rejects_short_id
+    - falsify_crux_k_08_003_trace_propagation_reports_mismatch
+    sub_claim: |
+      Algorithm-level necessary conditions: `classify_trace_propagation`
+      first validates the expected trace-id is 32 lowercase hex characters
+      (W3C trace-context format) — rejects anything else with
+      `InvalidExpectedTraceId` so caller bugs surface before the body is
+      walked. Then it scans every `traceId` in the OTLP body for byte-equal
+      match; on miss it reports `TraceIdNotFound { ids_seen }` listing the
+      actual trace-ids so divergence is debuggable.
+    scope: "(body, expected_trace_id) -> OtlpTracePropagationOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live aprender-serve OTLP exporter wiring W3C traceparent into emitted spans"
 
 proof_obligations:
 - type: invariant

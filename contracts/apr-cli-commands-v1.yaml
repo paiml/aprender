@@ -544,6 +544,12 @@ commands:
     requires_model: false
     side_effects: []
 
+  - name: otlp-lint
+    category: inspection
+    description: "Validate captured OTLP/JSON ExportTraceServiceRequest (CRUX-K-08): apr.inference span present + gen_ai.*/apr.tokens.* attributes + W3C trace-context propagation"
+    requires_model: false
+    side_effects: []
+
   - name: shard
     category: model_ops
     description: "Split safetensors file into shards + weight-map index (CRUX-B-05)"

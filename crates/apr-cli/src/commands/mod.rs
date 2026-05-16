@@ -79,6 +79,8 @@ pub(crate) mod ollama_tools_lint;
 pub(crate) mod oom_classifier;
 pub(crate) mod oom_lint;
 pub(crate) mod oracle;
+pub(crate) mod otlp_classifier;
+pub(crate) mod otlp_lint;
 pub(crate) mod parity;
 pub(crate) mod pipeline;
 pub(crate) mod ppl;
