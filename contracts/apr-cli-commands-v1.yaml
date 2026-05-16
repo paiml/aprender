@@ -574,6 +574,12 @@ commands:
     requires_model: false
     side_effects: []
 
+  - name: attn-viz-lint
+    category: inspection
+    description: "Validate captured `apr attn-viz` outputs (CRUX-F-17): 4-D attention dump row-softmax normalization + causal-mask zero + HTML heatmap count"
+    requires_model: false
+    side_effects: []
+
   - name: shard
     category: model_ops
     description: "Split safetensors file into shards + weight-map index (CRUX-B-05)"
