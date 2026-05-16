@@ -1015,7 +1015,7 @@ fn resolve_num_workers(num_workers: Option<usize>) -> Result<usize> {
 #[cfg(feature = "training")]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_encode_corpus(
-    corpus: &Path,
+    corpus: &[std::path::PathBuf],
     tokenizer_dir: &Path,
     output_dir: &Path,
     shard_tokens: usize,
@@ -1083,8 +1083,11 @@ pub(crate) fn run_encode_corpus(
         ));
     }
     let workers = resolve_num_workers(num_workers)?;
-    if !corpus.exists() {
-        return Err(CliError::FileNotFound(corpus.to_path_buf()));
+    // SPEC §83 P2-C: validate each --corpus path exists.
+    for path in corpus {
+        if !path.exists() {
+            return Err(CliError::FileNotFound(path.clone()));
+        }
     }
     let vocab_path = tokenizer_dir.join("vocab.json");
     let merges_path = tokenizer_dir.join("merges.txt");
@@ -1194,7 +1197,27 @@ pub(crate) fn run_encode_corpus(
         .iter()
         .find_map(|name| tokenizer.token_to_id(name));
 
-    let (files, corpus_format) = collect_corpus_files(corpus)?;
+    // SPEC §83 P2-C: collect across all --corpus paths into a tagged
+    // list. When a single --corpus is passed (back-compat path), behaviour
+    // is byte-identical to pre-P2-C since the tagged list collapses to the
+    // legacy (files, format) shape on the legacy iterator wrapper.
+    let tagged_files = collect_corpus_files_multi(corpus)?;
+    // Legacy compatibility for estimate_only and the rest of the loop:
+    // when all files share a single format, expose (files, format); when
+    // mixed, treat as Parquet for estimate sizing (the dominant case)
+    // and use the per-file tagged dispatch for the actual encode loop.
+    let files: Vec<std::path::PathBuf> =
+        tagged_files.iter().map(|(p, _)| p.clone()).collect();
+    let unique_formats: std::collections::HashSet<CorpusFormat> =
+        tagged_files.iter().map(|(_, f)| *f).collect();
+    let corpus_format = if unique_formats.len() == 1 {
+        *unique_formats.iter().next().expect("non-empty")
+    } else {
+        // Mixed multi-format: prefer Parquet's per-row-group streaming
+        // semantics for the estimate-only path. The actual encode loop
+        // dispatches per-file via iter_corpus_texts_tagged.
+        CorpusFormat::Parquet
+    };
 
     // Pre-flight: --estimate-only path (issue #1547 / contract v1.3.0).
     // Sample the first `sample_docs` docs, encode them, observe (tokens,
@@ -1241,8 +1264,12 @@ pub(crate) fn run_encode_corpus(
     // Source iterator: yields (file_display, locator, text) triples in
     // canonical input order. Both the single-threaded and chunked-parallel
     // paths consume from this same iterator — the only difference is whether
-    // chunks are encoded in lock-step or via rayon.
-    let mut source = iter_corpus_texts(&files, corpus_format, content_field);
+    // chunks are encoded in lock-step or via rayon. SPEC §83 P2-C: use the
+    // tagged dispatch so mixed-format multi-source --corpus calls (e.g.
+    // codeparrot JSONL + the-stack-v2 parquet) encode correctly per file.
+    let tagged_iter: Box<dyn Iterator<Item = (std::path::PathBuf, CorpusFormat)>> =
+        Box::new(tagged_files.iter().cloned());
+    let mut source = iter_corpus_texts_tagged(tagged_iter, content_field);
 
     // Closure: emit a single doc's encoded ids into `writer`, applying the
     // EOS policy and shard rotation. Identical bookkeeping for both paths
@@ -1535,7 +1562,7 @@ fn is_jsonl(path: &Path) -> bool {
 /// `apr tokenize encode-corpus` corpus argument now accepts either format.
 /// Detection is by extension (in directory mode, parquet wins if both
 /// extensions are present — the JSONL adapter is the legacy path).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum CorpusFormat {
     Jsonl,
     Parquet,
@@ -1581,6 +1608,30 @@ fn collect_corpus_files(path: &Path) -> Result<(Vec<std::path::PathBuf>, CorpusF
     Ok((jsonl, CorpusFormat::Jsonl))
 }
 
+/// SPEC §83 P2-C multi-source corpus assembly. Calls `collect_corpus_files`
+/// per source path and concatenates the results into a single tagged list
+/// `[(file, format), ...]` so the downstream tokenize loop can dispatch
+/// per-file regardless of mixed formats.
+///
+/// Contract: contracts/corpus-merge-v3-v1.yaml (INV-MERGE-001 ≥ 2 sources).
+fn collect_corpus_files_multi(
+    corpora: &[std::path::PathBuf],
+) -> Result<Vec<(std::path::PathBuf, CorpusFormat)>> {
+    if corpora.is_empty() {
+        return Err(CliError::ValidationFailed(
+            "At least one --corpus path is required".to_string(),
+        ));
+    }
+    let mut tagged: Vec<(std::path::PathBuf, CorpusFormat)> = Vec::new();
+    for path in corpora {
+        let (files, fmt) = collect_corpus_files(path)?;
+        for f in files {
+            tagged.push((f, fmt));
+        }
+    }
+    Ok(tagged)
+}
+
 /// Unified text iterator: yields `(file_display, locator, text)` triples
 /// regardless of source format. `locator` is human-readable ("line 5" /
 /// "row 12", 1-indexed) so error messages stay consistent across formats.
@@ -1591,6 +1642,58 @@ fn collect_corpus_files(path: &Path) -> Result<(Vec<std::path::PathBuf>, CorpusF
 /// shards are ~50 MB, both well under typical RAM).
 #[cfg(feature = "training")]
 fn iter_corpus_texts<'a>(
+    files: &'a [std::path::PathBuf],
+    format: CorpusFormat,
+    content_field: &'a str,
+) -> Box<dyn Iterator<Item = Result<(String, String, String)>> + 'a> {
+    iter_corpus_texts_tagged(
+        Box::new(files.iter().map(move |f| (f.clone(), format))),
+        content_field,
+    )
+}
+
+/// SPEC §83 P2-C multi-source variant: yields texts from a tagged list of
+/// `(file, format)` pairs, dispatching per-file. Used by `run_encode_corpus`
+/// when `--corpus` is repeated; the legacy single-format `iter_corpus_texts`
+/// wraps this with a uniform format tag.
+#[cfg(feature = "training")]
+fn iter_corpus_texts_tagged<'a>(
+    files: Box<dyn Iterator<Item = (std::path::PathBuf, CorpusFormat)> + 'a>,
+    content_field: &'a str,
+) -> Box<dyn Iterator<Item = Result<(String, String, String)>> + 'a> {
+    Box::new(files.flat_map(move |(file, format)| {
+        let single = vec![file];
+        let inner: Box<dyn Iterator<Item = Result<(String, String, String)>>> = match format {
+            CorpusFormat::Parquet => iter_corpus_texts_parquet(&single, content_field),
+            CorpusFormat::Jsonl => iter_corpus_texts_jsonl(&single, content_field),
+        };
+        inner.collect::<Vec<_>>().into_iter()
+    }))
+}
+
+/// Pull the parquet-format body out of the original `iter_corpus_texts`.
+#[cfg(feature = "training")]
+fn iter_corpus_texts_parquet<'a>(
+    files: &'a [std::path::PathBuf],
+    content_field: &'a str,
+) -> Box<dyn Iterator<Item = Result<(String, String, String)>> + 'a> {
+    iter_corpus_texts_old(files, CorpusFormat::Parquet, content_field)
+}
+
+/// Pull the JSONL-format body out of the original `iter_corpus_texts`.
+#[cfg(feature = "training")]
+fn iter_corpus_texts_jsonl<'a>(
+    files: &'a [std::path::PathBuf],
+    content_field: &'a str,
+) -> Box<dyn Iterator<Item = Result<(String, String, String)>> + 'a> {
+    iter_corpus_texts_old(files, CorpusFormat::Jsonl, content_field)
+}
+
+/// Original single-format iterator body (preserved as the per-format
+/// implementation; `iter_corpus_texts` and `iter_corpus_texts_tagged`
+/// both flow through here).
+#[cfg(feature = "training")]
+fn iter_corpus_texts_old<'a>(
     files: &'a [std::path::PathBuf],
     format: CorpusFormat,
     content_field: &'a str,
@@ -2497,7 +2600,7 @@ mod tests {
         // Single-threaded reference output.
         let out_1 = tmp.path().join("out_1");
         run_encode_corpus(
-            &corpus,
+            std::slice::from_ref(&corpus),
             &tok_dir,
             &out_1,
             10_000_000,
@@ -2517,7 +2620,7 @@ mod tests {
         // Parallel output (4 workers — > 1 forces the rayon path).
         let out_n = tmp.path().join("out_n");
         run_encode_corpus(
-            &corpus,
+            std::slice::from_ref(&corpus),
             &tok_dir,
             &out_n,
             10_000_000,
@@ -2842,7 +2945,7 @@ mod tests {
         // there.
         let out = tmp.path().join("out_estimate");
         run_encode_corpus(
-            &corpus,
+            std::slice::from_ref(&corpus),
             &tok_dir,
             &out,
             10_000_000,
@@ -2901,7 +3004,7 @@ mod tests {
 
         let out = tmp.path().join("out_no_manifest");
         run_encode_corpus(
-            &corpus,
+            std::slice::from_ref(&corpus),
             &tok_dir,
             &out,
             10_000_000,
@@ -2956,7 +3059,7 @@ mod tests {
 
         let out = tmp.path().join("out_lines");
         let result = run_encode_corpus(
-            &corpus,
+            std::slice::from_ref(&corpus),
             &tok_dir,
             &out,
             10_000_000,
@@ -2998,7 +3101,7 @@ mod tests {
 
         let out = tmp.path().join("out_zero_sample");
         let err = run_encode_corpus(
-            &corpus,
+            std::slice::from_ref(&corpus),
             &tok_dir,
             &out,
             10_000_000,
@@ -3022,6 +3125,118 @@ mod tests {
                 assert!(
                     msg.contains("--estimate-sample-docs"),
                     "error must name flag: {msg}"
+                );
+            }
+            other => panic!("unexpected error variant: {other:?}"),
+        }
+    }
+
+    /// SPEC §83 P2-C: when `--corpus` is repeated with multiple paths,
+    /// `run_encode_corpus` MUST collect documents from every source and
+    /// write them as a single contiguous shard stream. Verifies the
+    /// multi-source extension that unblocks PMAT-681 corpus widening.
+    #[test]
+    fn encode_corpus_accepts_multiple_corpus_paths() {
+        let tmp = TempDir::new().expect("tempdir");
+        // Train a tiny tokenizer on a generic vocab.
+        let train_corpus = write_corpus_file(
+            tmp.path(),
+            "train.jsonl",
+            &[r#"{"content": "alpha beta gamma delta epsilon"}"#],
+        );
+        let tok_dir = tmp.path().join("tok");
+        run_train(&train_corpus, 400, 1, &tok_dir, "nfc", true).expect("train tokenizer");
+
+        // Two distinct JSONL corpora — different content per source so
+        // the merged output can be inspected for both contributions.
+        let corpus_a = write_corpus_file(
+            tmp.path(),
+            "src_a.jsonl",
+            &[r#"{"content": "alpha alpha alpha"}"#, r#"{"content": "alpha beta"}"#],
+        );
+        let corpus_b = write_corpus_file(
+            tmp.path(),
+            "src_b.jsonl",
+            &[r#"{"content": "gamma delta epsilon"}"#],
+        );
+        let out = tmp.path().join("merged_out");
+
+        let result = run_encode_corpus(
+            &[corpus_a.clone(), corpus_b.clone()],
+            &tok_dir,
+            &out,
+            10_000_000,
+            "content",
+            "nfc",
+            "between",
+            Some(1),
+            ProgressConfig {
+                quiet: true,
+                ..ProgressConfig::default()
+            },
+            EstimateConfig::default(),
+            true,
+        );
+        assert!(result.is_ok(), "multi-corpus encode must succeed: {result:?}");
+
+        // Manifest reports total_docs that sums BOTH sources (2 + 1 = 3).
+        let manifest_path = out.join("manifest.json");
+        let manifest_bytes = std::fs::read(&manifest_path).expect("manifest written");
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&manifest_bytes).expect("manifest is valid JSON");
+        let total_documents = manifest
+            .get("total_documents")
+            .and_then(|v| v.as_u64())
+            .expect("manifest has total_documents");
+        assert_eq!(
+            total_documents, 3,
+            "merged corpus must contain 3 docs (2 from src_a + 1 from src_b), got {total_documents}"
+        );
+        // Manifest also tracks input_files — must list both sources.
+        let input_files = manifest
+            .get("input_files")
+            .and_then(|v| v.as_array())
+            .expect("manifest has input_files");
+        assert!(
+            input_files.len() >= 2,
+            "input_files must list at least 2 source files, got {}",
+            input_files.len(),
+        );
+    }
+
+    /// SPEC §83 P2-C: empty `--corpus` slice must error fast (not silently
+    /// produce an empty output corpus).
+    #[test]
+    fn encode_corpus_rejects_empty_corpus_list() {
+        let tmp = TempDir::new().expect("tempdir");
+        let train_corpus =
+            write_corpus_file(tmp.path(), "train.jsonl", &[r#"{"content": "alpha"}"#]);
+        let tok_dir = tmp.path().join("tok");
+        run_train(&train_corpus, 400, 1, &tok_dir, "nfc", true).expect("train tokenizer");
+        let out = tmp.path().join("out_empty");
+
+        let err = run_encode_corpus(
+            &[],
+            &tok_dir,
+            &out,
+            10_000_000,
+            "content",
+            "nfc",
+            "between",
+            Some(1),
+            ProgressConfig {
+                quiet: true,
+                ..ProgressConfig::default()
+            },
+            EstimateConfig::default(),
+            true,
+        )
+        .expect_err("empty --corpus slice must error");
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(
+                    msg.contains("--corpus") || msg.contains("required"),
+                    "error must mention missing corpus: {msg}"
                 );
             }
             other => panic!("unexpected error variant: {other:?}"),

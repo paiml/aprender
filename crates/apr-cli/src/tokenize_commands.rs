@@ -129,9 +129,14 @@ pub enum TokenizeCommands {
     /// that was flagged as MUDA on 2026-04-19.
     #[cfg(feature = "training")]
     EncodeCorpus {
-        /// Path to JSONL corpus file or directory of `.jsonl` files.
-        #[arg(long, value_name = "PATH")]
-        corpus: PathBuf,
+        /// Path to JSONL corpus file, parquet shard, or directory of `.jsonl`
+        /// or `.parquet` files. Pass `--corpus` multiple times to merge
+        /// multiple sources into a single output corpus (SPEC §83 P2-C —
+        /// see `contracts/corpus-merge-v3-v1.yaml`). When repeated, sources
+        /// are encoded in command-line order and shard numbering is
+        /// continuous across sources.
+        #[arg(long, value_name = "PATH", required = true)]
+        corpus: Vec<PathBuf>,
         /// Directory containing vocab.json + merges.txt from `apr tokenize train`.
         #[arg(long, value_name = "DIR")]
         tokenizer: PathBuf,
