@@ -67,6 +67,11 @@ fn contract_kind_display() {
         ContractKind::PretrainingCorpus.to_string(),
         "pretraining-corpus",
     );
+    assert_eq!(
+        ContractKind::TrainingPreconditionGate.to_string(),
+        "training-precondition-gate",
+    );
+    assert_eq!(ContractKind::CorpusAssembly.to_string(), "corpus-assembly");
     assert_eq!(ContractKind::Pattern.to_string(), "pattern");
     assert_eq!(ContractKind::Schema.to_string(), "schema");
 }
@@ -97,6 +102,8 @@ fn non_kernel_kinds_exempt_from_provability() {
         ContractKind::Tokenizer,
         ContractKind::TrainingLoop,
         ContractKind::PretrainingCorpus,
+        ContractKind::TrainingPreconditionGate,
+        ContractKind::CorpusAssembly,
         ContractKind::Pattern,
         ContractKind::Schema,
     ] {
