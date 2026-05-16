@@ -157,6 +157,11 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             stderr_file,
         } => commands::oom_lint::run(report_file, stderr_file.as_deref(), cli.json),
 
+        ExtendedCommands::KvTimelineLint {
+            timeline_file,
+            preempt_threshold,
+        } => commands::kv_timeline_lint::run(timeline_file, *preempt_threshold, cli.json),
+
         ExtendedCommands::OtlpLint {
             otlp_file,
             require_apr_span,

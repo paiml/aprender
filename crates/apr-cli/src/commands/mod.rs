@@ -58,6 +58,8 @@ pub(crate) mod imatrix_lint;
 pub(crate) mod import;
 pub(crate) mod inspect;
 pub(crate) mod kernel_explain;
+pub(crate) mod kv_timeline_classifier;
+pub(crate) mod kv_timeline_lint;
 pub(crate) mod lint;
 pub(crate) mod manifest;
 pub(crate) mod mcp;

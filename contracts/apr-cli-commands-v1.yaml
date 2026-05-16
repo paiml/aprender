@@ -550,6 +550,12 @@ commands:
     requires_model: false
     side_effects: []
 
+  - name: kv-timeline-lint
+    category: inspection
+    description: "Validate captured KV-cache utilization timeline (CRUX-F-06): schema + block conservation + used_pct arithmetic + peak consistency + preemption-threshold trigger"
+    requires_model: false
+    side_effects: []
+
   - name: shard
     category: model_ops
     description: "Split safetensors file into shards + weight-map index (CRUX-B-05)"

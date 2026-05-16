@@ -1,14 +1,20 @@
 # CRUX-F-06 — KV-cache utilization timeline
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (spec-complete).
-# Evidence must land before ACTIVE promotion — see master §12.
+# Promoted to PARTIAL_ALGORITHM_LEVEL at v1.1.0 under CRUX-SHIP-001 (2026-05-16):
+# - classifier: crates/apr-cli/src/commands/kv_timeline_classifier.rs (14 unit tests)
+# - CLI surface: `apr kv-timeline-lint --timeline-file FILE [--preempt-threshold F]`
+# - e2e: crates/apr-cli/tests/falsification_crux_f_06.rs (11 tests)
+# Full discharge blocks on a live `apr profile --kv-timeline` emitter writing
+# the F-06 timeline JSON — tracked as BLOCKER-UPSTREAM-MISSING.
 
 metadata:
   id: CRUX-F-06
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
+  updated: "2026-05-16"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
+  kind: kernel
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "F — Tensor Ops & Low-level"
@@ -75,6 +81,26 @@ falsification_tests:
     jq '.timeline | map(has("used_blocks") and has("free_blocks") and has("used_pct")) | all' /tmp/kv.json \
       | grep -q true
   if_fails: "timeline entries missing block accounting fields"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/kv_timeline_classifier.rs
+    cli_path: crates/apr-cli/src/commands/kv_timeline_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_06.rs
+    e2e_tests:
+    - falsify_crux_f_06_001_schema_ok_on_good_body
+    - falsify_crux_f_06_001_schema_reports_missing_top_key
+    sub_claim: |
+      Algorithm-level necessary conditions on an already-captured KV-timeline
+      JSON: `classify_schema` verifies the root is an object with all 5
+      required top-level keys (`timeline`, `block_size_tokens`,
+      `total_blocks`, `peak_used_pct`, `preemption_count`), `block_size_tokens`
+      and `total_blocks` are strictly positive, and every entry in `timeline`
+      is an object with all 7 required step-level keys (`step`, `t_ms`,
+      `used_blocks`, `free_blocks`, `used_pct`, `active_seqs`,
+      `preempted_seqs`). Outcome variants name the first missing key so
+      bugs surface deterministically.
+    scope: "(body) -> KvSchemaOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live `apr profile --kv-timeline` emitting the F-06 timeline JSON"
 
 - id: FALSIFY-CRUX-F-06-002
   rule: block conservation
@@ -89,6 +115,23 @@ falsification_tests:
         assert s['used_blocks'] + s['free_blocks'] == T, f'{s}'
     "
   if_fails: "block conservation broken — used + free != total"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/kv_timeline_classifier.rs
+    cli_path: crates/apr-cli/src/commands/kv_timeline_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_06.rs
+    e2e_tests:
+    - falsify_crux_f_06_002_block_conservation_rejects_violation
+    - falsify_crux_f_06_002_used_pct_arithmetic_rejects_mismatch
+    sub_claim: |
+      Algorithm-level necessary conditions: `classify_block_conservation`
+      verifies `used_blocks + free_blocks == total_blocks` for every step;
+      `classify_used_pct_arithmetic` verifies `used_pct == used_blocks /
+      total_blocks` within 1e-9 for every step. Both classifiers report
+      the violating step index and concrete values so allocator bugs can
+      be triaged directly from the lint output.
+    scope: "(body) -> (KvBlockConservationOutcome, KvUsedPctOutcome) (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live `apr profile --kv-timeline` emitting consistent block accounting"
 
 - id: FALSIFY-CRUX-F-06-003
   rule: preemption occurs only near saturation
@@ -104,6 +147,24 @@ falsification_tests:
             assert s['used_pct'] >= 0.95, f'preempt without saturation: {s}'
     "
   if_fails: "preemption triggered below 95% cache utilization"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/kv_timeline_classifier.rs
+    cli_path: crates/apr-cli/src/commands/kv_timeline_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_06.rs
+    e2e_tests:
+    - falsify_crux_f_06_003_preemption_trigger_rejects_below_threshold
+    - falsify_crux_f_06_003_preemption_trigger_respects_custom_threshold
+    sub_claim: |
+      Algorithm-level necessary conditions: `classify_preemption_trigger`
+      walks the timeline once and rejects with
+      `PreemptionBelowThreshold { index, used_pct, threshold,
+      preempted_seqs }` for any step where `preempted_seqs > 0` and
+      `used_pct < threshold` (default 0.95 from vLLM). Threshold is
+      configurable via `--preempt-threshold` so the same classifier
+      catches both canonical and tuned scheduler configurations.
+    scope: "(body, threshold) -> KvPreemptionOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live scheduler emitting preemption events through the timeline"
 
 - id: FALSIFY-CRUX-F-06-004
   rule: peak_used_pct == max(timeline.used_pct)
@@ -117,6 +178,22 @@ falsification_tests:
     assert abs(d['peak_used_pct'] - peak) < 1e-9
     "
   if_fails: "peak_used_pct does not equal timeline max"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/kv_timeline_classifier.rs
+    cli_path: crates/apr-cli/src/commands/kv_timeline_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_06.rs
+    e2e_tests:
+    - falsify_crux_f_06_004_peak_consistency_rejects_peak_mismatch
+    - falsify_crux_f_06_004_peak_consistency_rejects_preempt_count_mismatch
+    sub_claim: |
+      Algorithm-level necessary conditions: `classify_peak_consistency`
+      verifies (a) `peak_used_pct == max(timeline.used_pct)` within 1e-9
+      and (b) `preemption_count == sum(timeline.preempted_seqs)`. Both
+      mismatches name the expected and actual values so emitter bugs are
+      diagnosable from the lint output alone.
+    scope: "(body) -> KvPeakOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live `apr profile --kv-timeline` emitting consistent aggregates"
 
 proof_obligations:
 - type: invariant

@@ -784,6 +784,15 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         stderr_file: Option<PathBuf>,
     },
+    /// Lint a captured KV-cache utilization timeline (CRUX-F-06)
+    KvTimelineLint {
+        /// Path to captured `apr profile --kv-timeline --json` body
+        #[arg(long, value_name = "FILE")]
+        timeline_file: PathBuf,
+        /// Preemption threshold (default 0.95, vLLM canonical)
+        #[arg(long, value_name = "FRACTION", default_value_t = 0.95)]
+        preempt_threshold: f64,
+    },
     /// Lint a captured OTLP/JSON ExportTraceServiceRequest body (CRUX-K-08)
     OtlpLint {
         /// Path to captured OTLP/JSON export body
