@@ -784,6 +784,24 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         stderr_file: Option<PathBuf>,
     },
+    /// Lint a captured `apr attn-viz` attention dump (CRUX-F-17)
+    AttnVizLint {
+        /// Path to attention dump in JSON form (4-D [layers][heads][rows][cols] floats)
+        #[arg(long, value_name = "FILE")]
+        attn_file: Option<PathBuf>,
+        /// Path to HTML heatmap output
+        #[arg(long, value_name = "FILE")]
+        html_file: Option<PathBuf>,
+        /// Minimum <svg|<canvas open-tag count expected in HTML (|layers|*|heads|)
+        #[arg(long, value_name = "N", default_value_t = 1)]
+        expected_heatmaps: usize,
+        /// Row-softmax normalization tolerance (default 1e-5)
+        #[arg(long, value_name = "F64", default_value_t = 1e-5)]
+        tolerance: f64,
+        /// Causal-mask zero epsilon (default 1e-9)
+        #[arg(long, value_name = "F64", default_value_t = 1e-9)]
+        epsilon: f64,
+    },
     /// Lint a captured `apr trace --check-finite` error JSON and/or `--list` coverage JSON (CRUX-F-11)
     CheckFiniteLint {
         /// Captured stderr JSON from `apr trace --check-finite` on a poisoned model
