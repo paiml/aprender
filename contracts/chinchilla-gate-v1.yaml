@@ -46,6 +46,15 @@ metadata:
   created: "2026-05-16"
   updated: "2026-05-16"
   kind: training-precondition-gate
+  description: >
+    Hard-blocks `apr pretrain --init` dispatches with Chinchilla ratio
+    D/N < 10× per Hoffmann et al. 2022 (arXiv:2203.15556). Operators
+    bypass with --force-under-provisioned. Symmetric complement to
+    methodology lesson #18 predict-then-verify: this gate uses
+    pre-flight prediction to CANCEL a doomed dispatch before any
+    compute is consumed. Motivated by SPEC §82 P2-A's 40-min GPU
+    burn on a 0.04× ratio + the §83 external audit pre-falsification
+    of P2-A2. See docs/specifications/audits/albor-370.md.
   changelog:
     - "1.0.0 (2026-05-16): Initial authoring. PR #1710 branch
        refactor/split-two-model-spec ships the audit-driven §83
