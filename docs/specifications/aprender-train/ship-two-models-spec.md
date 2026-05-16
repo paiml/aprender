@@ -30,7 +30,8 @@ MODEL-1 / MODEL-2 are stable document IDs (numeric, preserved across renames) us
 | File | Scope | Status |
 |---|---|---|
 | [ship-model-1-spec.md](./ship-model-1-spec.md) | **aprender/qwen2.5-coder-7b-apache-q4k** (MODEL-1) — distilled 7B coder teacher | **🎉 100% — shipped via v0.33.0** |
-| [ship-model-2-spec.md](./ship-model-2-spec.md) | **aprender/albor-370m** (MODEL-2) — sovereign 370M Python student | **79% — best val_loss 4.71 (§82)** |
+| [ship-model-2-spec.md](./ship-model-2-spec.md) | **aprender/albor-370m** (MODEL-2) — sovereign 370M Python student (historical record §5-§82) | **79% — best val_loss 4.71 (§82)** |
+| [**albor-370m-roadmap.md**](./albor-370m-roadmap.md) | **Active work spec** — forward-looking EV-ranked queue for MODEL-2 ship | **In flight — read this for what to do next** |
 | [ship-shared-methodology.md](./ship-shared-methodology.md) | Foundation (§1-§3, §6-§11, §13) + cross-cutting falsifiers (§18, §36, §41, §44, §45) | Stable |
 
 ## Repository lineage
