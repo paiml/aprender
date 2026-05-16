@@ -62,7 +62,7 @@ fn test_bug_211_extract_apr_tokenizer_for_gguf_with_vocab() {
     meta.custom
         .insert("tokenizer.eos_token_id".to_string(), serde_json::json!(2));
 
-    let entries = extract_apr_tokenizer_for_gguf(&meta);
+    let entries = extract_apr_tokenizer_for_gguf(&meta, 0);
     // Should have at least: model, pre, tokens, merges, bos, eos
     assert!(
         entries.len() >= 6,
@@ -82,9 +82,62 @@ fn test_bug_211_extract_apr_tokenizer_for_gguf_with_vocab() {
 fn test_bug_211_extract_apr_tokenizer_for_gguf_empty() {
     use crate::format::v2::AprV2Metadata;
     let meta = AprV2Metadata::default();
-    let entries = extract_apr_tokenizer_for_gguf(&meta);
+    let entries = extract_apr_tokenizer_for_gguf(&meta, 0);
     // Should still have model and pre even without vocab
     assert!(entries.len() >= 2);
+}
+
+#[test]
+fn test_p0g_apr_fallback_pad_tokens_to_vocab_size() {
+    use crate::format::gguf::GgufValue;
+    use crate::format::v2::AprV2Metadata;
+    let mut meta = AprV2Metadata::default();
+    meta.architecture = Some("qwen2".to_string());
+    meta.custom.insert(
+        "tokenizer.vocabulary".to_string(),
+        serde_json::json!(["a", "b", "c"]),
+    );
+
+    let entries = extract_apr_tokenizer_for_gguf(&meta, 8);
+
+    let tokens = entries
+        .iter()
+        .find(|(k, _)| k == "tokenizer.ggml.tokens")
+        .and_then(|(_, v)| match v {
+            GgufValue::ArrayString(arr) => Some(arr),
+            _ => None,
+        })
+        .expect("tokens entry");
+
+    assert_eq!(tokens.len(), 8, "padded to vocab_size=8");
+    assert_eq!(tokens[0], "a");
+    assert_eq!(tokens[3], "<|pad_3|>");
+    assert_eq!(tokens[7], "<|pad_7|>");
+}
+
+#[test]
+fn test_p0g_apr_fallback_no_pad_when_vocab_size_zero() {
+    use crate::format::gguf::GgufValue;
+    use crate::format::v2::AprV2Metadata;
+    let mut meta = AprV2Metadata::default();
+    meta.architecture = Some("qwen2".to_string());
+    meta.custom.insert(
+        "tokenizer.vocabulary".to_string(),
+        serde_json::json!(["a", "b"]),
+    );
+
+    let entries = extract_apr_tokenizer_for_gguf(&meta, 0);
+
+    let tokens = entries
+        .iter()
+        .find(|(k, _)| k == "tokenizer.ggml.tokens")
+        .and_then(|(_, v)| match v {
+            GgufValue::ArrayString(arr) => Some(arr),
+            _ => None,
+        })
+        .expect("tokens entry");
+
+    assert_eq!(tokens.len(), 2, "no padding when vocab_size=0");
 }
 
 // ========================================================================

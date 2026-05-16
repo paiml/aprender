@@ -1,0 +1,28 @@
+[PMAT-171] Loaded embedded BPE tokenizer: 151643 vocab, 151387 merges, 3 special tokens
+[GH-175] OwnedQuantizedModel::from_apr: 24 layers loaded in 1114.2ms
+[GH-129] Early kernel preload: 42 modules compiled
+[PMAT-053] FP8 weight cache: 0 matrices cached (0.0 MB) in 36.1ms
+[trueno#243] Manual graph construction: pos=0, has_graph=false, capture_failed=false, token_count=0
+[PAR-058-ATTN] Layer 0: num_heads=14, num_kv_heads=2, head_dim=64, max_len=2048, seq_len=1
+[PAR-058-ATTN] K input OK, first 16: [-7.746769, -2.7090347, -6.3233085, 0.3159823, -0.29221037, 9.667455, 8.553739, -0.8223912, 0.37931, -0.17331903, -0.14072429, 0.07525618, -24.597929, -0.18710732, 21.646227, -0.8332443]
+[PAR-058-ATTN] Q input OK, first 16: [-0.13655281, -0.16896741, -0.30947542, 0.5837741, -16.252064, 0.19364268, 0.7481871, -0.6292108, -15.072183, -31.317154, -12.403933, 7.967356, -0.5174506, 7.601438, 0.85273767, 0.9139919]
+[PAR-058-ATTN] K cache head0 pos0 first 16: [-7.746769, -2.7090347, -6.3233085, 0.3159823, -0.29221037, 9.667455, 8.553739, -0.8223912, 0.37931, -0.17331903, -0.14072429, 0.07525618, -24.597929, -0.18710732, 21.646227, -0.8332443]
+[PAR-058-ATTN] V cache head0 pos0 first 16: [0.010414262, -0.027270608, -0.018968947, 0.019752488, 0.04385127, -0.022426203, 0.035676286, 0.046598196, 0.060514048, -0.00742865, 0.009602206, 0.018715253, 0.029579563, 0.0018481528, -0.0034381002, -0.08233424]
+[trueno#243] ✓ Manual graph: 506 kernels. first_args=Some(["0x7e2e4b7e0400", "0x7e2e4b7e6000", "0x7e2e555c9a00"]), last_args=Some(["0x7e2dc7670000", "0x7e2d9e000000", "0x7e2e4b7dda00", "0x380", "0x25180"]), current_logits_buf=0x7e2dc7670000
+[trueno#243] Manual graph construction: pos=7, has_graph=false, capture_failed=false, token_count=2
+[trueno#243] ✓ Manual graph: 506 kernels. first_args=Some(["0x7e2e4b7e0400", "0x7e2e4b7ebc00", "0x7e2e555c9a00"]), last_args=Some(["0x7e2dc7670000", "0x7e2d9e000000", "0x7e2e4b7cf800", "0x380", "0x25180"]), current_logits_buf=0x7e2dc7670000
+{
+  "model": "/mnt/nvme-raid0/runs/model-2-p2a-5000steps-20260515-205805/ckpt/epoch-026.apr",
+  "tokens_per_second": 324.9,
+  "total_tokens": 192,
+  "total_time_ms": 591.022,
+  "time_to_first_token_ms": 3.077031,
+  "iterations": 3,
+  "mean_time_ms": 197.00733300000002,
+  "median_time_ms": 196.963,
+  "std_dev_ms": 0.08708,
+  "passed": true,
+  "latency_p50_ms": 196.963,
+  "latency_p95_ms": 197.129,
+  "latency_p99_ms": 197.129
+}

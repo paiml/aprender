@@ -201,7 +201,7 @@ fn test_extract_apr_tokenizer_maps_bpe_to_gpt2() {
         serde_json::json!(["a", "b"]),
     );
 
-    let entries = extract_apr_tokenizer_for_gguf(&apr);
+    let entries = extract_apr_tokenizer_for_gguf(&apr, 0);
     let model_entry = entries.iter().find(|(k, _)| k == "tokenizer.ggml.model");
     assert!(model_entry.is_some());
     // "bpe" should be mapped to "gpt2"
@@ -217,7 +217,7 @@ fn test_extract_apr_tokenizer_includes_chat_template() {
     let mut apr = AprV2Metadata::new("test");
     apr.chat_template = Some("{% for msg in messages %}...{% endfor %}".to_string());
 
-    let entries = extract_apr_tokenizer_for_gguf(&apr);
+    let entries = extract_apr_tokenizer_for_gguf(&apr, 0);
     let tmpl = entries.iter().find(|(k, _)| k == "tokenizer.chat_template");
     assert!(tmpl.is_some(), "should include chat template from metadata");
 }
@@ -233,7 +233,7 @@ fn test_extract_apr_tokenizer_chat_template_from_custom() {
         serde_json::json!("template_str"),
     );
 
-    let entries = extract_apr_tokenizer_for_gguf(&apr);
+    let entries = extract_apr_tokenizer_for_gguf(&apr, 0);
     let tmpl = entries.iter().find(|(k, _)| k == "tokenizer.chat_template");
     assert!(tmpl.is_some(), "should find chat template in custom fields");
 }
@@ -248,7 +248,7 @@ fn test_extract_apr_tokenizer_add_bos_token() {
         serde_json::json!(true),
     );
 
-    let entries = extract_apr_tokenizer_for_gguf(&apr);
+    let entries = extract_apr_tokenizer_for_gguf(&apr, 0);
     let bos = entries
         .iter()
         .find(|(k, _)| k == "tokenizer.ggml.add_bos_token");
