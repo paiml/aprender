@@ -1,0 +1,30 @@
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Rosetta Stone Inspection
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+╭──────────────┬─────────────╮
+│       Format │ GGUF        │
+├──────────────┼─────────────┤
+│    File Size │ 2.35 GiB    │
+│   Parameters │ 630,167,424 │
+│ Architecture │ llama       │
+│ Quantization │ F32         │
+╰──────────────┴─────────────╯
+
+  ─── Metadata (20 keys)
+╭────────────────────────────────────────┬─────────────────────╮
+│                   general.architecture │ llama               │
+├────────────────────────────────────────┼─────────────────────┤
+│                      general.file_type │ 0                   │
+│                           general.name │ llama-370m-pretrain │
+│           general.quantization_version │ 2                   │
+│             llama.attention.head_count │ 14                  │
+│          llama.attention.head_count_kv │ 2                   │
+│ llama.attention.layer_norm_rms_epsilon │ 0.000001            │
+│                      llama.block_count │ 24                  │
+│                   llama.context_length │ 32768               │
+│                 llama.embedding_length │ 896                 │
+│              llama.feed_forward_length │ 4864                │
+│             llama.rope.dimension_count │ 64                  │
+│                   llama.rope.freq_base │ 1000000             │
+│                       llama.vocab_size │ 151936              │
