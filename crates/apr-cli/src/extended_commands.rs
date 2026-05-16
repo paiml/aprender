@@ -784,6 +784,18 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         stderr_file: Option<PathBuf>,
     },
+    /// Lint a captured Prometheus /metrics response (CRUX-K-07)
+    PrometheusLint {
+        /// Path to captured /metrics response body (text/plain; version=0.0.4)
+        #[arg(long, value_name = "FILE")]
+        metrics_file: PathBuf,
+        /// Optional captured Content-Type header to verify against version=0.0.4
+        #[arg(long, value_name = "HEADER")]
+        content_type: Option<String>,
+        /// Require the K-07 metric set (apr_num_requests_running, ...) to be present
+        #[arg(long)]
+        require_k07_metrics: bool,
+    },
     /// Lint a captured OpenAI tool-use response (CRUX-C-11)
     ToolUseLint {
         /// Path to captured OpenAI tool-use response JSON

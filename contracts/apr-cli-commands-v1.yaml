@@ -538,6 +538,12 @@ commands:
     requires_model: false
     side_effects: []
 
+  - name: prometheus-lint
+    category: inspection
+    description: "Validate captured Prometheus /metrics body (CRUX-K-07): 0.0.4 text-format parse + optional Content-Type + optional K-07 required-metric set"
+    requires_model: false
+    side_effects: []
+
   - name: shard
     category: model_ops
     description: "Split safetensors file into shards + weight-map index (CRUX-B-05)"

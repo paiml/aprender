@@ -18,12 +18,12 @@ pub mod check;
 pub mod compare_hf;
 pub(crate) mod compile;
 pub(crate) mod convert;
-pub mod modelfile;
 pub(crate) mod copy_tag;
 pub(crate) mod debug;
 pub(crate) mod diff;
 pub(crate) mod diff_quant_roundtrip;
 pub(crate) mod distill;
+pub mod modelfile;
 pub(crate) mod rm_gc_lint;
 
 pub(crate) mod data;
@@ -87,6 +87,8 @@ pub(crate) mod pretrain;
 pub(crate) mod probar;
 pub(crate) mod profile;
 pub(crate) mod progress;
+pub(crate) mod prometheus_classifier;
+pub(crate) mod prometheus_lint;
 pub(crate) mod prune;
 pub(crate) mod ps_schema;
 #[cfg(feature = "full")]

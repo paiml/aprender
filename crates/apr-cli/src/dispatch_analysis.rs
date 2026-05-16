@@ -157,6 +157,17 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             stderr_file,
         } => commands::oom_lint::run(report_file, stderr_file.as_deref(), cli.json),
 
+        ExtendedCommands::PrometheusLint {
+            metrics_file,
+            content_type,
+            require_k07_metrics,
+        } => commands::prometheus_lint::run(
+            metrics_file,
+            content_type.as_deref(),
+            *require_k07_metrics,
+            cli.json,
+        ),
+
         ExtendedCommands::ToolUseLint { observation_file } => {
             commands::tool_use_lint::run(observation_file, cli.json)
         }

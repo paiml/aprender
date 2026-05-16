@@ -112,6 +112,7 @@ fn registered_commands() -> Vec<&'static str> {
         "shared-cache-lint",
         "ppl",
         "quant-preservation-lint",
+        "prometheus-lint",
         "shard",
         "unshard",
         "oracle",
