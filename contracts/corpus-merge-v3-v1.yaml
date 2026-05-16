@@ -89,138 +89,138 @@ motivation: >
 # ─── INVARIANTS ──────────────────────────────────────────────
 
 invariants:
-  INV-MERGE-001:
-    description: >
-      The v3 corpus MUST contain tokens from at least 2 distinct
-      upstream sources (the-stack-v2-dedup Python + codeparrot
-      Python). Single-source v3 is rejected because §82 already
-      demonstrated single-source under-provisioning.
-    formal: |
-      let sources = set(manifest.sources)
-      in |sources| ≥ 2 ∧ "bigcode/the-stack-v2-dedup" ∈ sources
-                       ∧ "codeparrot/codeparrot-clean-valid" ∈ sources
+- id: INV-MERGE-001
+  description: >
+    The v3 corpus MUST contain tokens from at least 2 distinct
+    upstream sources (the-stack-v2-dedup Python + codeparrot
+    Python). Single-source v3 is rejected because §82 already
+    demonstrated single-source under-provisioning.
+  formal: |
+    let sources = set(manifest.sources)
+    in |sources| ≥ 2 ∧ "bigcode/the-stack-v2-dedup" ∈ sources
+                     ∧ "codeparrot/codeparrot-clean-valid" ∈ sources
 
-  INV-MERGE-002:
-    description: >
-      Total tokens in the v3 corpus MUST satisfy D ≥ 10·N where N
-      is the target model's parameter count (default 494M for
-      Qwen-0.5B init; verify via manifest.target_param_count).
-    formal: |
-      manifest.total_tokens ≥ 10 × manifest.target_param_count
-      → for N=494M, total_tokens ≥ 4.94B
-      Compute-optimal target: 9.88B (Hoffmann 2022 20·N).
+- id: INV-MERGE-002
+  description: >
+    Total tokens in the v3 corpus MUST satisfy D ≥ 10·N where N
+    is the target model's parameter count (default 494M for
+    Qwen-0.5B init; verify via manifest.target_param_count).
+  formal: |
+    manifest.total_tokens ≥ 10 × manifest.target_param_count
+    → for N=494M, total_tokens ≥ 4.94B
+    Compute-optimal target: 9.88B (Hoffmann 2022 20·N).
 
-  INV-MERGE-003:
-    description: >
-      Every shard in the output directory MUST have a manifest
-      entry with:
-        - source_dataset (one of: bigcode/the-stack-v2-dedup,
-          codeparrot/codeparrot-clean-valid)
-        - upstream_revision (commit hash from HF tree API)
-        - sha256_compressed (parquet/raw input file checksum)
-        - sha256_tokenized (.bin shard checksum)
-        - token_count (u32 LE count, verified: bytes / 4)
-        - tokenizer_id (qwen2.5-tokenizer.json sha256)
-        - normalization (NFC|NFKC|none)
-        - between_doc_eos (true|false)
-    formal: |
-      ∀ shard ∈ manifest.shards,
-        shard.has_field("source_dataset") ∧
-        shard.has_field("upstream_revision") ∧
-        shard.has_field("sha256_compressed") ∧
-        shard.has_field("sha256_tokenized") ∧
-        shard.token_count × 4 = file_size(shard.path) ∧
-        shard.normalization ∈ {NFC, NFKC, none}
+- id: INV-MERGE-003
+  description: >
+    Every shard in the output directory MUST have a manifest
+    entry with:
+      - source_dataset (one of: bigcode/the-stack-v2-dedup,
+        codeparrot/codeparrot-clean-valid)
+      - upstream_revision (commit hash from HF tree API)
+      - sha256_compressed (parquet/raw input file checksum)
+      - sha256_tokenized (.bin shard checksum)
+      - token_count (u32 LE count, verified: bytes / 4)
+      - tokenizer_id (qwen2.5-tokenizer.json sha256)
+      - normalization (NFC|NFKC|none)
+      - between_doc_eos (true|false)
+  formal: |
+    ∀ shard ∈ manifest.shards,
+      shard.has_field("source_dataset") ∧
+      shard.has_field("upstream_revision") ∧
+      shard.has_field("sha256_compressed") ∧
+      shard.has_field("sha256_tokenized") ∧
+      shard.token_count × 4 = file_size(shard.path) ∧
+      shard.normalization ∈ {NFC, NFKC, none}
 
-  INV-MERGE-004:
-    description: >
-      The merged tokenizer MUST be the Qwen 2.5 tokenizer used by
-      §77 qwen-v2 (sha256 must match) so v3 is a strict superset
-      of v2 in tokenization conventions. No multi-tokenizer mixing.
-    formal: |
-      tokenizer_id_v3 == tokenizer_id_v2
+- id: INV-MERGE-004
+  description: >
+    The merged tokenizer MUST be the Qwen 2.5 tokenizer used by
+    §77 qwen-v2 (sha256 must match) so v3 is a strict superset
+    of v2 in tokenization conventions. No multi-tokenizer mixing.
+  formal: |
+    tokenizer_id_v3 == tokenizer_id_v2
 
-  INV-MERGE-005:
-    description: >
-      Dedupe is delegated to the upstream `-dedup` variant of
-      the-stack-v2 (bigcode already ran MinHash + LSH dedupe).
-      No additional cross-source dedupe is performed in v3 because
-      codeparrot and the-stack-v2 may legitimately share files
-      and we want full coverage at this stage. v4 may add cross-
-      source dedupe once a measurement justifies it.
-    formal: |
-      manifest.cross_source_dedupe = false
-      manifest.upstream_dedupe_strategy = "the-stack-v2 MinHash+LSH"
+- id: INV-MERGE-005
+  description: >
+    Dedupe is delegated to the upstream `-dedup` variant of
+    the-stack-v2 (bigcode already ran MinHash + LSH dedupe).
+    No additional cross-source dedupe is performed in v3 because
+    codeparrot and the-stack-v2 may legitimately share files
+    and we want full coverage at this stage. v4 may add cross-
+    source dedupe once a measurement justifies it.
+  formal: |
+    manifest.cross_source_dedupe = false
+    manifest.upstream_dedupe_strategy = "the-stack-v2 MinHash+LSH"
 
 # ─── GATES ───────────────────────────────────────────────────
 
 gates:
-  GATE-MERGE-001:
-    invariant: INV-MERGE-002
-    check: |
-      Manifest's total_tokens MUST be ≥ 10·target_param_count.
-      `apr tokenize encode-corpus --manifest <path>` MUST emit
-      this field and the post-merge validator script MUST assert
-      the inequality.
-    enforcement: build-time (manifest validation)
-    severity: critical
+- id: GATE-MERGE-001
+  invariant: INV-MERGE-002
+  check: |
+    Manifest's total_tokens MUST be ≥ 10·target_param_count.
+    `apr tokenize encode-corpus --manifest <path>` MUST emit
+    this field and the post-merge validator script MUST assert
+    the inequality.
+  enforcement: build-time (manifest validation)
+  severity: critical
 
-  GATE-MERGE-002:
-    invariant: INV-MERGE-003
-    check: |
-      Every .bin shard in the output dir MUST have a corresponding
-      manifest entry with all required fields. Missing field = FAIL.
-    enforcement: build-time (manifest validation)
-    severity: high
+- id: GATE-MERGE-002
+  invariant: INV-MERGE-003
+  check: |
+    Every .bin shard in the output dir MUST have a corresponding
+    manifest entry with all required fields. Missing field = FAIL.
+  enforcement: build-time (manifest validation)
+  severity: high
 
-  GATE-MERGE-003:
-    invariant: INV-MERGE-001
-    check: |
-      Manifest's sources field MUST list at least 2 distinct upstream
-      datasets including bigcode/the-stack-v2-dedup and
-      codeparrot/codeparrot-clean-valid (or named alternates).
-    enforcement: build-time (manifest validation)
-    severity: critical
+- id: GATE-MERGE-003
+  invariant: INV-MERGE-001
+  check: |
+    Manifest's sources field MUST list at least 2 distinct upstream
+    datasets including bigcode/the-stack-v2-dedup and
+    codeparrot/codeparrot-clean-valid (or named alternates).
+  enforcement: build-time (manifest validation)
+  severity: critical
 
 # ─── FALSIFICATION TESTS ─────────────────────────────────────
 
 falsification_tests:
-  FALSIFY-MERGE-001:
-    invariant: INV-MERGE-002
-    description: >
-      A merged corpus with total_tokens < 4.94B (10× 494M) MUST
-      cause the merge to fail with a clear "D/N < 10× Chinchilla
-      safety floor" error. Verifies that under-provisioned merges
-      cannot ship by mistake.
-    test_kind: integration
-    expected_failure_mode: build-time-rejection
+- id: FALSIFY-MERGE-001
+  invariant: INV-MERGE-002
+  description: >
+    A merged corpus with total_tokens < 4.94B (10× 494M) MUST
+    cause the merge to fail with a clear "D/N < 10× Chinchilla
+    safety floor" error. Verifies that under-provisioned merges
+    cannot ship by mistake.
+  test_kind: integration
+  expected_failure_mode: build-time-rejection
 
-  FALSIFY-MERGE-002:
-    invariant: INV-MERGE-001
-    description: >
-      A merge attempt with only one source (just the-stack-v2 OR
-      just codeparrot) MUST fail INV-MERGE-001. Single-source v3
-      is forbidden because §82 already falsified single-source
-      under-provisioning empirically.
-    test_kind: integration
-    expected_failure_mode: build-time-rejection
+- id: FALSIFY-MERGE-002
+  invariant: INV-MERGE-001
+  description: >
+    A merge attempt with only one source (just the-stack-v2 OR
+    just codeparrot) MUST fail INV-MERGE-001. Single-source v3
+    is forbidden because §82 already falsified single-source
+    under-provisioning empirically.
+  test_kind: integration
+  expected_failure_mode: build-time-rejection
 
-  FALSIFY-MERGE-003:
-    invariant: INV-MERGE-003
-    description: >
-      A manifest missing any required field (e.g. sha256_compressed
-      omitted) MUST be rejected. Verifies provenance gating.
-    test_kind: unit
-    expected_failure_mode: validator-rejection
+- id: FALSIFY-MERGE-003
+  invariant: INV-MERGE-003
+  description: >
+    A manifest missing any required field (e.g. sha256_compressed
+    omitted) MUST be rejected. Verifies provenance gating.
+  test_kind: unit
+  expected_failure_mode: validator-rejection
 
-  FALSIFY-MERGE-004:
-    invariant: INV-MERGE-004
-    description: >
-      A merge attempt using a tokenizer with sha256 ≠ qwen-v2's
-      tokenizer MUST be rejected. v3 cannot use a different
-      tokenizer than v2.
-    test_kind: integration
-    expected_failure_mode: build-time-rejection
+- id: FALSIFY-MERGE-004
+  invariant: INV-MERGE-004
+  description: >
+    A merge attempt using a tokenizer with sha256 ≠ qwen-v2's
+    tokenizer MUST be rejected. v3 cannot use a different
+    tokenizer than v2.
+  test_kind: integration
+  expected_failure_mode: build-time-rejection
 
 # ─── EXECUTION PLAN ───────────────────────────────────────────
 
@@ -288,17 +288,17 @@ execution_plan:
 # ─── PROOF OBLIGATIONS ───────────────────────────────────────
 
 proof_obligations:
-  PO-MERGE-001:
-    type: integration_test
-    discharges: [INV-MERGE-001, INV-MERGE-002, INV-MERGE-003]
-    site: tests/corpus_merge_v3_test.rs
-    state: pending
+- id: PO-MERGE-001
+  type: integration_test
+  discharges: [INV-MERGE-001, INV-MERGE-002, INV-MERGE-003]
+  site: tests/corpus_merge_v3_test.rs
+  state: pending
 
-  PO-MERGE-002:
-    type: empirical_dispatch
-    discharges: [INV-MERGE-002, INV-MERGE-004]
-    site: live execution of execution_plan step 1-4
-    state: pending — dispatch gated by lambda-vector availability
+- id: PO-MERGE-002
+  type: empirical_dispatch
+  discharges: [INV-MERGE-002, INV-MERGE-004]
+  site: live execution of execution_plan step 1-4
+  state: pending — dispatch gated by lambda-vector availability
 
 # ─── FAILURE MODES ───────────────────────────────────────────
 
