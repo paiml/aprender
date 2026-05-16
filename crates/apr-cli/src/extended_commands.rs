@@ -784,6 +784,18 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         stderr_file: Option<PathBuf>,
     },
+    /// Lint a captured `apr explain --format jsonl` token-selection trace (CRUX-F-19)
+    ExplainTokenLint {
+        /// Path to captured JSONL body (one sampled-token record per line)
+        #[arg(long, value_name = "FILE")]
+        jsonl_file: PathBuf,
+        /// Tolerance for `Σ post_prob ≈ 1.0` (default 1e-5)
+        #[arg(long, value_name = "F64", default_value_t = 1e-5)]
+        tolerance: f64,
+        /// Assert greedy decoding: sampled_id must equal argmax(pre_prob)
+        #[arg(long)]
+        require_greedy: bool,
+    },
     /// Lint a captured GPU memory Chrome Trace Event Format JSON (CRUX-F-07)
     GpuMemtraceLint {
         /// Path to captured Chrome Trace JSON from `apr profile --gpu-memory-trace`

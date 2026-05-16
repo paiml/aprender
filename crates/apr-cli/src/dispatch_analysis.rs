@@ -166,6 +166,12 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             commands::gpu_memtrace_lint::run(trace_file, cli.json)
         }
 
+        ExtendedCommands::ExplainTokenLint {
+            jsonl_file,
+            tolerance,
+            require_greedy,
+        } => commands::explain_token_lint::run(jsonl_file, *tolerance, *require_greedy, cli.json),
+
         ExtendedCommands::OtlpLint {
             otlp_file,
             require_apr_span,
