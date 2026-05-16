@@ -61,6 +61,8 @@ pub(crate) mod gpu;
 pub(crate) mod gpu_memtrace_classifier;
 pub(crate) mod gpu_memtrace_lint;
 pub(crate) mod grad_norm;
+pub(crate) mod hang_trace_classifier;
+pub(crate) mod hang_trace_lint;
 pub(crate) mod hex;
 pub(crate) mod hf_endpoint;
 pub(crate) mod imatrix_classifier;

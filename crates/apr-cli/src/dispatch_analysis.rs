@@ -226,6 +226,33 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             cli.json,
         ),
 
+        ExtendedCommands::HangTraceLint {
+            trace_dir,
+            mode,
+            world_size,
+            exit_code,
+            expected_exit_code,
+        } => match mode.as_str() {
+            "timeout" | "success" => {
+                let m = if mode == "timeout" {
+                    commands::hang_trace_lint::HangMode::Timeout
+                } else {
+                    commands::hang_trace_lint::HangMode::Success
+                };
+                commands::hang_trace_lint::run(
+                    trace_dir,
+                    m,
+                    *world_size,
+                    *exit_code,
+                    *expected_exit_code,
+                    cli.json,
+                )
+            }
+            other => Err(crate::error::CliError::ValidationFailed(format!(
+                "apr hang-trace-lint --mode must be `timeout` or `success` (got `{other}`)"
+            ))),
+        },
+
         ExtendedCommands::OtlpLint {
             otlp_file,
             require_apr_span,

@@ -598,6 +598,12 @@ commands:
     requires_model: false
     side_effects: []
 
+  - name: hang-trace-lint
+    category: inspection
+    description: "Validate captured `$APR_TRACE_DIR` after a hang/timeout (CRUX-F-14): per-rank rank{N}.py.txt files (world_size + non-empty) OR empty-on-success + exit-code 124/1/0 distinction"
+    requires_model: false
+    side_effects: []
+
   - name: shard
     category: model_ops
     description: "Split safetensors file into shards + weight-map index (CRUX-B-05)"
