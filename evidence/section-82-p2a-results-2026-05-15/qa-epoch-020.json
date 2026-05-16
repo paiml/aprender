@@ -1,0 +1,108 @@
+{
+  "model": "/mnt/nvme-raid0/runs/model-2-p2a-5000steps-20260515-205805/ckpt/epoch-020.apr",
+  "passed": false,
+  "gates": [
+    {
+      "name": "capability_match",
+      "passed": true,
+      "message": "Non-GGUF format — capability check not applicable",
+      "duration_ms": 1142,
+      "skipped": false
+    },
+    {
+      "name": "tensor_contract",
+      "passed": true,
+      "message": "291 tensors passed all PMAT-235 contract gates",
+      "value": 291.0,
+      "threshold": 0.0,
+      "duration_ms": 4226,
+      "skipped": false
+    },
+    {
+      "name": "metadata_plausibility",
+      "passed": true,
+      "message": "4 metadata checks passed (arch=LlamaForCausalLM, rope_theta=1000000, max_pos=32768)",
+      "value": 4.0,
+      "threshold": 0.0,
+      "duration_ms": 2249,
+      "skipped": false
+    },
+    {
+      "name": "classifier_head",
+      "passed": true,
+      "message": "Skipped: Not requested (use --assert-classifier-head)",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "golden_output",
+      "passed": false,
+      "message": "golden_output: gibberish (fragment \"IMIM\" repeats 3+ times)",
+      "duration_ms": 4934,
+      "skipped": false
+    },
+    {
+      "name": "throughput",
+      "passed": true,
+      "message": "25.3 tok/s >= 1 tok/s threshold",
+      "value": 25.269545104756084,
+      "threshold": 1.0,
+      "duration_ms": 21090,
+      "skipped": false
+    },
+    {
+      "name": "ollama_parity",
+      "passed": true,
+      "message": "Skipped: Non-GGUF format (F32/F16 lacks fused kernels for Ollama parity)",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "gpu_speedup",
+      "passed": true,
+      "message": "Skipped: Only GGUF format supported",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "format_parity",
+      "passed": true,
+      "message": "Skipped: Non-GGUF format (format parity test compares GGUF vs SafeTensors forward passes)",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "ptx_parity",
+      "passed": true,
+      "message": "Skipped: Non-GGUF format (PTX kernels only apply to quantized inference)",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "gpu_state_isolation",
+      "passed": true,
+      "message": "Skipped: Only GGUF format supported for GPU state isolation",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "performance_regression",
+      "passed": true,
+      "message": "First run — baseline established (saved for future comparison)",
+      "value": 0.0,
+      "threshold": 0.1,
+      "duration_ms": 0,
+      "skipped": false
+    }
+  ],
+  "gates_executed": 6,
+  "gates_skipped": 6,
+  "total_duration_ms": 38122,
+  "timestamp": "2026-05-15T21:44:35.900946886+00:00",
+  "summary": "Failed gates: golden_output",
+  "system_info": {
+    "cpu_model": "AMD Ryzen Threadripper 7960X 24-Cores",
+    "gpu_model": "NVIDIA GeForce RTX 4090",
+    "gpu_driver": "570.207"
+  }
+}
