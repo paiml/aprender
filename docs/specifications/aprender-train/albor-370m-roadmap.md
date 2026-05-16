@@ -1,13 +1,36 @@
 # Roadmap: aprender/albor-370m (MODEL-2) — Path to Ship
 
 **Document ID:** SPEC-SHIP-MODEL-2-ROADMAP
-**Version:** 1.0.0
+**Version:** 2.0.0 (post-audit reprioritization)
 **Parent specs:**
-- [aprender/albor-370m full spec (MODEL-2)](./ship-model-2-spec.md) — historical record, §5-§82
+- [aprender/albor-370m full spec (MODEL-2)](./ship-model-2-spec.md) — historical record, §5-§83
+- [External audit](../audits/albor-370.md) — 2026-05-16 pre-falsification of P2-A2 via Chinchilla math
 - [Ship Two Models Index](./ship-two-models-spec.md)
 - [Shared methodology](./ship-shared-methodology.md)
 
 **Purpose:** Focused, forward-looking spec for the only open model. The 3,290-line MODEL-2 spec is the source of truth for what *happened*; this roadmap is what we *work against*. Update this doc as items land. Reference §N markers point back to the full spec for context.
+
+## 🚨 Audit-driven reprioritization (2026-05-16, v2.0.0)
+
+An [external audit](../audits/albor-370.md) pre-falsified the v1.0.0 P2-A2 plan via Chinchilla math (Hoffmann et al. 2022, arXiv:2203.15556) BEFORE the dispatch. Key numbers:
+
+| Quantity | Value | Notes |
+|---|---|---|
+| N (params) | ~494M | Qwen-0.5B init scale |
+| Chinchilla target D = 20·N | **9.88B tokens** | Compute-optimal |
+| D consumed in §82 P2-A | **22M tokens** | 2700 steps × ~8192 tokens/step |
+| Empirical ratio | **0.04×** | Catastrophically under-provisioned |
+| Available corpus (qwen-v2 codeparrot-python) | 1.24B tokens | Still only **0.125×** Chinchilla even if fully consumed |
+| Target for first usable run | **> 2B tokens** (audit rec) — drives val_loss toward 3.0 | Requires P2-C corpus widening |
+
+**Audit verdict:** P2-A2 (more steps on same corpus) cannot break the plateau — the binding constraint is *data*, not *compute*. The repetitive `č č č č` gibberish at val_loss=4.71 is the [Holtzman et al. 2019](https://arxiv.org/abs/1904.09751) degeneration signature, classic symptom of an under-trained model with insufficient data diversity to shape the long-tail distribution.
+
+**Four engineering actions** (now reflected in §4 and §6 below):
+
+1. **Promote P2-C above P2-A2.** Widen corpus to > 2B tokens BEFORE the next multi-hour GPU dispatch.
+2. **Make Chinchilla a hard gate, not a warning.** New P0-J: fail-fast in `apr pretrain` when D/N < 10× unless `--force-under-provisioned` flag is passed.
+3. **Defer P1-B/C/P3-A until val_loss < 3.0** (was < 4.0). Perplexity > 20 = mathematically incapable of zero-shot reasoning.
+4. **Pre-flight prediction via theoretical constraint** is a load-bearing methodology — see lesson #30.
 
 ---
 
@@ -58,6 +81,7 @@ Priority order (Δship-% ÷ effort × P(success)):
 | Item | Action | Δship | Effort | P | Notes |
 |---|---|---|---|---|---|
 | **P0-I** Verify P0-G+P0-H end-to-end on a fresh checkpoint | Build apr from post-merge main; re-export `epoch-020.apr` → GGUF → `llama-cli`; expect load + decode | +2 | 30 min | 95% | Validates §82 AC-SHIP2-010 fully. Trivial. |
+| **P0-J** Chinchilla gate: warning → hard blocker | Convert `[P1-A]` stderr warning to a fail-fast error when D/N < 10×; add `--force-under-provisioned` opt-in bypass. Updates `apr-cli/src/commands/pretrain.rs` and writes a contract `chinchilla-gate-v1.yaml` with falsification test. | +1 (prevention) | 1-2h | 95% | Audit recommendation #2. Prevents next "wasted 40 min on a 0.04× run". |
 | **P2-B2** Wire `apr pretrain --warn-on-wrap-around` env-default to enable in CI | (already merged in #1707; just verify default behaviour) | +0 (already counted) | 5 min | 99% | Sanity check. |
 
 ### P1 — short tasks that compose toward 90%
@@ -65,16 +89,16 @@ Priority order (Δship-% ÷ effort × P(success)):
 | Item | Action | Δship | Effort | P | Notes |
 |---|---|---|---|---|---|
 | **P1-A2** Re-run Chinchilla gate against epoch-020 to confirm warning fires (D=22M vs N=494M = 0.04× < 20× target) | Already merged in #1708; verify by running apr pretrain --num-steps 5000 with init and capturing stderr | +0 (already counted) | 10 min | 99% | Confirms gate works in practice. |
-| **P1-B** HumanEval pass@1 on epoch-020 | `apr eval humaneval` against the current checkpoint | +3 if pass > 5% | 5-8h gx10 | **5%** (DEAD at val_loss 4.71 — model output is repetitive) | Defer until val_loss < 4. |
-| **P1-C** Python validity (100 prompts, syntax-only) | Generate from 100 prompts, parse with `ast.parse`, count zero-error | +3 if pass > 30% | 2h | **10%** (still likely gibberish) | Defer until val_loss < 4. |
+| **P1-B** HumanEval pass@1 on epoch-020 | `apr eval humaneval` against the current checkpoint | +3 if pass > 5% | 5-8h gx10 | **3%** (DEAD at val_loss 4.71 — model output is repetitive) | **Defer until val_loss < 3.0** (was 4.0). Audit rec #3: perplexity > 20 = no zero-shot reasoning. |
+| **P1-C** Python validity (100 prompts, syntax-only) | Generate from 100 prompts, parse with `ast.parse`, count zero-error | +3 if pass > 30% | 2h | **5%** (still likely gibberish) | **Defer until val_loss < 3.0** (was 4.0). |
 
-### P2 — multi-hour training compute to drive val_loss down
+### P2 — data engineering + training compute (P2-C now first; audit Rec #1)
 
 | Item | Action | Δship | Effort | P | Notes |
 |---|---|---|---|---|---|
-| **P2-A2** Longer P2-A run: 20K-50K steps, same Qwen-0.5B init + qwen-v2 corpus | `apr pretrain --num-steps 20000 --init <qwen-0.5b> --dataset qwen-v2` | +5 if val_loss < 3.5; +8 if val_loss < 2.5 | 3-8h GPU | 40% (corpus capacity is the binding constraint, not steps) | Highest-EV next dispatch. |
-| **P2-C** Wider corpus: codeparrot-python permissive + the-stack-v2 Python | Author corpus merge contract; retokenize; rerun | +5 if val_loss < 3.0 | 6-12h CPU prep + 8-16h GPU train | 35% | Addresses §49 corpus diversity hypothesis directly. |
-| **P2-D** True distillation from MODEL-1 (replace pretrain with apr distill loop) | Requires shipping `apr distill` per §35 (currently STUB) | +10 | 16-40h (multi-week scope) | 25% | Architectural change; defer until P2-A/C exhausted. |
+| **P2-C** Widen corpus to > 2B tokens: codeparrot-python permissive + the-stack-v2 Python (audit recommendation) | (1) Author corpus merge contract; (2) Pull the-stack-v2 Python permissive shards via `apr corpus pull`; (3) Concatenate + dedupe with §77 NFC pipeline; (4) Retokenize with Qwen tokenizer; (5) Rerun pretrain with Chinchilla gate enforced (P0-J) | +6 if val_loss < 3.5; +10 if val_loss < 3.0 | 6-12h CPU prep + 8-16h GPU train | **55%** (corpus diversity is the binding constraint per §49 + audit) | **NEW highest-EV next dispatch.** Audit Rec #1: P2-A2 cannot break the plateau; only P2-C can. |
+| **P2-A2** Longer P2-A run on the same qwen-v2 subset (DOWNGRADED — pre-falsified) | `apr pretrain --num-steps 20000 --init <qwen-0.5b> --dataset qwen-v2` | +1 (best case overfit) | 3-8h GPU | **15%** (Chinchilla 0.04× → mode collapse guaranteed) | **Audit Rec #1 pre-falsifies this.** Keep as fallback ONLY if P2-C is blocked on corpus pull/tokenize. Otherwise skip. |
+| **P2-D** True distillation from MODEL-1 (replace pretrain with `apr distill` loop) | Requires shipping `apr distill` per §35 (currently STUB) | +10 | 16-40h (multi-week scope) | 25% | Architectural change; defer until P2-C exhausted. |
 
 ### P3 — polish + publish
 
@@ -124,14 +148,14 @@ When dispatching P2-A2 / P2-C, predict val_loss + sample-quality bands BEFORE th
    (today)          (P0-I)    (P2-A2)   (P1-B)   (P3-A/B)   (P3-C/D)
 ```
 
-**Realistic 4-week shipping plan:**
+**Realistic 4-week shipping plan (post-audit, v2.0.0):**
 
-- **Week 1**: Dispatch P0-I (verify) + P2-A2 (20K-step retrain). Lock val_loss < 3.5 or pivot to P2-C.
-- **Week 2**: Run P1-B + P1-C against the new checkpoint. Eval gates `apr inspect --quality` + `apr lint`.
-- **Week 3**: P3-A/B polish; author HF manifest; smoke-test on yoga (RTX 4060) for accessibility.
-- **Week 4**: P3-C publish + P3-D /dogfood verdict. Ship %: 100.
+- **Week 1**: Dispatch P0-I (verify GGUF interop) + P0-J (Chinchilla hard gate landing). Begin P2-C data engineering: pull the-stack-v2 Python, dedupe against codeparrot, retokenize. Target corpus ≥ 2B tokens by end of week. NO multi-hour training dispatches until corpus is ready.
+- **Week 2**: P2-C training dispatch on widened corpus (8-16h GPU). Lock val_loss < 3.0. If val_loss plateaus above 3.0, immediately pivot to P2-D (true distillation).
+- **Week 3**: With val_loss < 3.0, run P1-B + P1-C against the new checkpoint. Eval gates `apr inspect --quality` + `apr lint` (P3-A/B).
+- **Week 4**: P3-C publish to `paiml/albor-370m-v1` + P3-D /dogfood verdict. Ship %: 100.
 
-If P2-A2/C don't crack val_loss < 3 with the available compute budget, pivot to P2-D (true distillation from MODEL-1) and accept multi-week delay.
+**Pre-falsified shortcut.** Per audit math, P2-A2 (more steps on same data) cannot reach val_loss < 3.5 — skip it unless P2-C is blocked on tokenizer infrastructure. If P2-C blocks AND P2-D is multi-week scope, fall back to P2-A2 only to keep momentum, accepting the overfit result.
 
 ## 7. Compute lanes for the queue
 

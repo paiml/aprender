@@ -2130,6 +2130,77 @@ This lesson differs from methodology #27 ("prioritize by ship-% delta ÷ effort"
 ---
 
 
+## §83. External audit pre-falsifies P2-A2 via Chinchilla math; P2-C corpus widening promoted to highest EV (2026-05-16)
+
+Between §82's P2-A landing (val_loss=4.71) and the dispatch of the v1.0.0 roadmap's P2-A2 (20K-step retrain on the same corpus), an [external audit](../audits/albor-370.md) of `albor-370m-roadmap.md` v1.0.0 applied the Hoffmann et al. 2022 Chinchilla scaling laws (arXiv:2203.15556) as an a-priori falsifier. The math:
+
+| Quantity | Value | Source |
+|---|---|---|
+| N (param count, Qwen-0.5B init) | ~494M | `estimate_param_count` (PR #1708) |
+| Chinchilla compute-optimal D | 20·N = **9.88B tokens** | Hoffmann et al. 2022 |
+| §82 P2-A actual D consumed | 2700 steps × ~8192 tokens/step ≈ **22M tokens** | §82 trace |
+| Empirical ratio D/N | **0.04×** | 22M / 494M |
+| Available qwen-v2 corpus | 1.24B tokens | §77 manifest |
+| Full-corpus best case D/N | **0.125×** | 1.24B / 9.88B = 12.5% of target |
+| Audit-recommended target | **> 2B tokens** | Audit Rec #1 |
+
+**Pre-falsification conclusion.** The §82 v1.0.0 roadmap's P2-A2 ("longer run on same corpus") is mathematically guaranteed to fail before it dispatches — running more steps on a 22M-token consumed (1.24B available) corpus cannot break the val_loss plateau because the binding constraint is *data diversity*, not *compute*. The repetitive `č č č č` gibberish observed at val_loss=4.71 is the [Holtzman et al. 2019](https://arxiv.org/abs/1904.09751) "neural text degeneration" signature — classic symptom of an under-trained model whose long-tail distribution has not been shaped by enough unique tokens.
+
+### 83.1 Five-Whys: why was P2-A2 prioritized over P2-C in v1.0.0?
+
+1. **Why was P2-A2 first?** Effort estimate looked smaller (3-8h GPU vs P2-C's 6-12h CPU + 8-16h GPU).
+2. **Why was the effort lower?** P2-A2 reuses existing infra (qwen-v2 corpus, Qwen-0.5B init); P2-C requires data-engineering work (the-stack-v2 pull + dedupe + retokenize).
+3. **Why didn't the EV calculation kill P2-A2?** The v1.0.0 P(success) was set at 40% — too generous given the Chinchilla math. Should have been ≤ 15%.
+4. **Why was 40% accepted?** The previous P2-A run produced *some* loss reduction (9.38 → 4.71), so "more steps = more reduction" felt intuitive. The fact that the corpus capacity was the binding constraint was not externalized as a constant in the EV worksheet.
+5. **Why wasn't Chinchilla the gate?** The Chinchilla check landed in #1708 (P1-A) as a *warning* — a soft signal that the operator can ignore. A warning lets garbage runs through; a hard gate would have rejected P2-A's dispatch on day-0.
+
+**Root cause:** the EV-ranking heuristic (Δship × P / effort) doesn't naturally surface theoretical-impossibility constraints. A 40% P(success) on a 0.04× Chinchilla run is a *category error*: the success probability is closer to 0% given the data constraint, not 40%.
+
+### 83.2 Engineering actions (audit Rec 1-4 → roadmap v2.0.0)
+
+| # | Recommendation | Roadmap delta | Status |
+|---|---|---|---|
+| 1 | Promote P2-C above P2-A2 | Done (roadmap v2.0.0 §4) | Active |
+| 2 | Chinchilla gate: warning → hard blocker | New P0-J item (roadmap §4); contract `chinchilla-gate-v1.yaml` to author; `apr pretrain` exit-1 when D/N < 10× unless `--force-under-provisioned` | Open |
+| 3 | Defer P1-B/C/P3-A until val_loss < 3.0 (was < 4.0) | Roadmap v2.0.0 P1 + P3 row notes updated | Done |
+| 4 | Pre-flight prediction via theoretical constraint | Methodology lesson #30 (this §) | Documented |
+
+### 83.3 Methodology lesson #30 NEW — A-priori theoretical falsification saves multi-hour compute
+
+When the EV-queue includes a multi-hour training dispatch, FIRST check whether the dispatch can be pre-falsified by a known theoretical constraint (Chinchilla, scaling laws, NLL floor, etc.). If yes, the dispatch is a category error regardless of how good its P(success) looks in the spreadsheet.
+
+**Concrete pre-flight checks** to apply before dispatching `apr pretrain`:
+
+1. **Chinchilla:** Is D ≥ 10·N? If not, fail-fast. (P0-J wires this.)
+2. **Corpus diversity:** Is `unique_tokens / total_tokens` > 0.5? If not, mode collapse is likely.
+3. **Initial val_loss:** Is the starting point already in the degeneration zone (val_loss > 6)? If yes, fine-tune init has not generalized to the target distribution.
+4. **Perplexity → coherence band:** If target val_loss > 3.0, no zero-shot reasoning eval should be queued (P1-B/C deferred).
+
+The audit ran in <30 minutes; the falsified dispatch would have burned ~8h GPU. **30 min of math saves 16× compute.** Add this check to the §80-class priority queue authoring template.
+
+This lesson is the symmetric complement to lesson #18 (predict-then-verify): #18 uses prediction to *validate* a fix; #30 uses prediction to *cancel* a dispatch.
+
+### 83.4 Ship % stays at 79
+
+Audit does not flip any AC-SHIP2-* — those need empirical runs to discharge. But the path forward is rebanded: 79 → 81 (P0-I+P0-J landing) → 87 (P2-C produces val_loss < 3.5) → 92 (P1-B+P1-C clean) → 95 (P3-A/B) → 100 (P3-C/D HF publish + /dogfood).
+
+### 83.5 Evidence artifacts
+
+- `docs/specifications/audits/albor-370.md` — full external audit text (5 sections, ArXiv citations)
+- `docs/specifications/aprender-train/albor-370m-roadmap.md` v2.0.0 — reprioritized active-work spec
+- (TBD) `contracts/chinchilla-gate-v1.yaml` — formalizes P0-J hard-blocker behavior
+
+### 83.6 Action items on this branch
+
+- [ ] Roadmap v2.0.0 published (this PR)
+- [ ] §83 amendment landed (this PR)
+- [ ] P0-J: Chinchilla hard-gate implementation (separate PR — small, ~50 LOC + contract)
+- [ ] P0-I: Verify P0-G/P0-H end-to-end (separate PR — ~30 min run + evidence)
+- [ ] P2-C: Author corpus-merge contract + dispatch the-stack-v2 pull (multi-day work)
+
+---
+
+
 ## §57. Drift sweep cleans §50.4 cascade contracts (3 PRs); 5g.1 full corpus run on track (2026-05-05)
 
 §56 closed with the 5g.1 full-corpus retokenization dispatched (PID 2767124, ~17hr wall projected). §57 records the parallel drift-sweep work that landed during the 5g.1 wait + the throughput characterization of 5g.1 mid-run.
