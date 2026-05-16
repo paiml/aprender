@@ -25,6 +25,13 @@ use serde::{Deserialize, Serialize};
 ///   provability; validated for `metadata` + schedule fields.
 /// - `PretrainingCorpus`: a pretraining-corpus contract — dataset source,
 ///   license, total-bytes bound, shard layout. Exempt from provability.
+/// - `TrainingPreconditionGate`: a hard precondition gate that must be
+///   satisfied before training starts (e.g. Chinchilla compute-optimal
+///   token/parameter ratio, GPU memory floor, dataset checksum). Exempt
+///   from provability; validated for `metadata` + gate-formula fields.
+/// - `CorpusAssembly`: a multi-source corpus assembly pipeline contract —
+///   declares input shards, dedup strategy, license-merge policy, and
+///   output manifest. Exempt from provability.
 /// - `Pattern`: a cross-cutting verification pattern (threading safety,
 ///   async safety, compute parity) that applies across multiple kernels.
 ///   Exempt from the kernel provability invariant but still validated for
@@ -45,6 +52,8 @@ pub enum ContractKind {
     Tokenizer,
     TrainingLoop,
     PretrainingCorpus,
+    TrainingPreconditionGate,
+    CorpusAssembly,
     Pattern,
     Schema,
 }
@@ -59,6 +68,8 @@ impl std::fmt::Display for ContractKind {
             Self::Tokenizer => "tokenizer",
             Self::TrainingLoop => "training-loop",
             Self::PretrainingCorpus => "pretraining-corpus",
+            Self::TrainingPreconditionGate => "training-precondition-gate",
+            Self::CorpusAssembly => "corpus-assembly",
             Self::Pattern => "pattern",
             Self::Schema => "schema",
         };
