@@ -9,11 +9,17 @@
 
 **Ship status (2026-05-15):** **79% — best val_loss 4.71 after §82's P2-A 5000-step run** (broke §34 ceiling from 9.38 → 4.71).
 
+## Lineage
+
+MODEL-2 originated as a standalone project at **[paiml/albor](https://github.com/paiml/albor)** before the APR-MONO consolidation. The albor repo (last commit 2026-04-05) carries 54/54 authored contracts, the ALB-* ticket system, and the v28/v29 training history (v28 stopped at step 11K — perplexity peaked at 38.53, diverged to 75.65 — and ALB-134 data-quality filtering for v29). Active development moved to this monorepo: the current best result (val_loss=4.71 in §82) was produced on the `aprender` training stack with a Qwen-0.5B pretrained init rather than from-scratch. `paiml/albor` remains the historical reference for the standalone v0.1.0-v0.2.x lineage and the data-pipeline contract work.
+
 ## Current state
 
 | Metric | Value |
 |---|---|
 | Target | Pretrain 370M Llama-style Python code model from scratch / fine-tune from Qwen-0.5B init |
+| Lineage repo | [paiml/albor](https://github.com/paiml/albor) — standalone predecessor, dormant since 2026-04-05 |
+| Active repo | [paiml/aprender](https://github.com/paiml/aprender) — monorepo where current training lives |
 | Acceptance | 10 AC-SHIP2-* falsifiers (see §5.2) — 4 DISCHARGED, 5 PARTIAL, 1 BLOCKED on P0-H tensor count |
 | Corpus | codeparrot-python-permissive, 1.24B tokens (Qwen-tokenized), 125 shards (§77) |
 | Best ckpt | `/mnt/nvme-raid0/runs/model-2-p2a-5000steps-20260515-205805/ckpt/epoch-020.apr` (val_loss=4.71) |

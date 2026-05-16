@@ -14,6 +14,15 @@ This document was split from a single 8,468-line spec at v3.28.0 into three comp
 | [ship-model-2-spec.md](./ship-model-2-spec.md) | **MODEL-2** — Sovereign 370M Python student (albor) | **79% — best val_loss 4.71 (§82)** |
 | [ship-shared-methodology.md](./ship-shared-methodology.md) | Foundation (§1-§3, §6-§11, §13) + cross-cutting falsifiers (§18, §36, §41, §44, §45) | Stable |
 
+## Repository lineage
+
+Both models originated as standalone GitHub projects before the APR-MONO consolidation absorbed their code, contracts, and ticket systems into this monorepo. The standalone repos remain as historical references; active development is in `paiml/aprender`.
+
+| Model | Lineage repo (standalone, dormant) | Active code repo | Artifact repo |
+|---|---|---|---|
+| MODEL-1 | [paiml/apr-leaderboard](https://github.com/paiml/apr-leaderboard) — last commit 2026-04-05 | [paiml/aprender](https://github.com/paiml/aprender) | [paiml/qwen2.5-coder-7b-apache-q4k-v1](https://huggingface.co/paiml/qwen2.5-coder-7b-apache-q4k-v1) (HuggingFace) |
+| MODEL-2 | [paiml/albor](https://github.com/paiml/albor) — last commit 2026-04-05 | [paiml/aprender](https://github.com/paiml/aprender) | (not yet published — pending val_loss < 4) |
+
 ## Latest atomic next action
 
 **v3.28.0 (2026-05-15) — §82 P2-A 5000-step training EARLY-STOP at val_loss=4.7111.** P0-trio dispatched against epoch-020 checkpoint: AC-SHIP2-009 LIVE-DISCHARGED at 325.1 tok/s; AC-SHIP2-010 blocked on P0-G + P0-H. Both P0-G (PR #1706) and P0-H (PR #1709) merged 2026-05-16 — full §82 cascade closed. **MODEL-1**: 100%. **MODEL-2**: 77% → 79%. See [MODEL-2 spec §82](./ship-model-2-spec.md) for full evidence.

@@ -9,14 +9,20 @@
 
 **Ship status (2026-05-15):** **🎉 100% — shipped to users via v0.33.0 cascade** (see §75 + §76).
 
+## Lineage
+
+MODEL-1 originated as a standalone project at **[paiml/apr-leaderboard](https://github.com/paiml/apr-leaderboard)** before the APR-MONO consolidation. The apr-leaderboard repo (last commit 2026-04-05) carries the original 28 distillation contracts that were promoted into this monorepo (see §4.4 contract registry). Active distillation, packaging, and inference work moved to `paiml/aprender`; the 7B teacher artifact is published separately to HuggingFace as `paiml/qwen2.5-coder-7b-apache-q4k-v1`. `paiml/apr-leaderboard` remains the historical reference for the standalone leaderboard POC.
+
 ## Current state
 
 | Metric | Value |
 |---|---|
 | Target | Distill Qwen2.5-Coder-7B-Instruct → 1.5B Q4_K_M distilled teacher |
+| Lineage repo | [paiml/apr-leaderboard](https://github.com/paiml/apr-leaderboard) — standalone POC, dormant since 2026-04-05 |
+| Active repo | [paiml/aprender](https://github.com/paiml/aprender) — monorepo where current code lives |
+| Artifact repo | [paiml/qwen2.5-coder-7b-apache-q4k-v1](https://huggingface.co/paiml/qwen2.5-coder-7b-apache-q4k-v1) (HuggingFace, 3 formats: SafeTensors / APR / Q4_K_M GGUF) |
 | Acceptance | 10 AC-SHIP1-* falsifiers (see §4.2) — all LIVE-DISCHARGED |
 | Shipping | `cargo install aprender` → `apr 0.33.0` → end-to-end inference works |
-| HuggingFace | `paiml/qwen2.5-coder-7b-apache-q4k-v1` (3 formats: SafeTensors / APR / Q4_K_M GGUF) |
 | RTX 4090 perf | 124.6 tok/s @ 128-tok decode (§75 verdict; 4.15× over 30 tok/s floor) |
 | Final blocker closed | SHIP-007 F32 GEMV PTX layout fix (PR #1651, see §75) |
 
