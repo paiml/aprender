@@ -371,6 +371,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             synthetic,
             device,
             init,
+            force_under_provisioned,
         } => commands::pretrain::run(
             dataset,
             tokenizer,
@@ -388,6 +389,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *synthetic,
             device,
             init.as_deref(),
+            *force_under_provisioned,
             cli.json,
         ),
         ExtendedCommands::Tokenize { command } => dispatch_tokenize_command(command, cli),
