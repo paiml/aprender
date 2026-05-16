@@ -9158,11 +9158,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'P0-J: Chinchilla gate — warning → hard blocker'
-  status: inprogress
+  status: review
   priority: critical
   assigned_to: null
   created: 2026-05-16T07:15:09Z
-  updated: 2026-05-16T13:22:20.550551062+00:00
+  updated: 2026-05-16T13:40:31Z
   spec: null
   acceptance_criteria:
   - 'Convert PR #1708 stderr warning to fail-fast error when D/N < 10× in apr pretrain; add --force-under-provisioned bypass flag. Author contracts/chinchilla-gate-v1.yaml with FALSIFY tests. Audit Rec #2 (audits/albor-370.md). Effort: 1-2h. Δship +1 (prevention). P=95%. See §83.2.'
@@ -9180,14 +9180,14 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'P2-C: Widen corpus to >2B tokens (highest EV)'
-  status: planned
+  status: inprogress
   priority: critical
   assigned_to: null
   created: 2026-05-16T07:15:09Z
-  updated: 2026-05-16T07:15:09Z
+  updated: 2026-05-16T13:44:57Z
   spec: null
   acceptance_criteria:
-  - '(1) Author corpus merge contract; (2) Pull the-stack-v2 Python permissive shards via apr corpus pull; (3) Concatenate + dedupe with §77 NFC pipeline; (4) Retokenize with Qwen tokenizer; (5) Dispatch pretrain with P0-J hard gate enforced. Audit Rec #1 — promoted above P2-A2 because P2-A2 is pre-falsified by Chinchilla math. Effort: 6-12h CPU + 8-16h GPU. Δship +6 (val_loss<3.5) to +10 (val_loss<3.0). P=55%. See §83 + roadmap §4 P2.'
+  - 'P2-C in progress (2026-05-16): (1) Contract corpus-merge-v3-v1.yaml LANDED — 5 invariants, 3 gates, 4 FALSIFY tests, 6-step execution plan, failure-mode taxonomy. (2) Dry-run via apr pull dataset bigcode/the-stack-v2-dedup --include ''data/Python/*.parquet'' --dry-run confirms 6 parquet shards / 15.38 GB compressed (likely 10-50B uncompressed Python tokens — well past the 4.94B Chinchilla 10× floor for 494M params). (3) Next: extend apr tokenize encode-corpus to accept multi-source --source flag; pull 15.38GB on lambda-vector; merge+tokenize; verify manifest; dispatch training under P0-J gate. Effort remaining: 6-12h CPU + 8-16h GPU.'
   phases: []
   subtasks: []
   estimated_effort: null

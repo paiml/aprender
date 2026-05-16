@@ -1,0 +1,323 @@
+# ─────────────────────────────────────────────────────────────
+# Contract: corpus-merge-v3-v1
+# Multi-source corpus assembly for albor-370m post-§83 P2-C.
+# ─────────────────────────────────────────────────────────────
+# Formalizes the data-engineering pipeline that produces the
+# `codeparrot-python-permissive-shards-qwen-v3` tokenized corpus
+# (the qwen-v3 successor to §77's qwen-v2). The v3 corpus widens
+# the source from a single dataset (codeparrot-python-permissive)
+# to a two-dataset merge (codeparrot + bigcode/the-stack-v2-dedup
+# Python) to break out of §82's 0.04× Chinchilla ratio.
+#
+# Motivation: §83 audit (docs/specifications/audits/albor-370.md)
+# pre-falsified the v1.0.0 P2-A2 dispatch via Chinchilla math:
+# 494M params × 20 = 9.88B token target; qwen-v2 alone has 1.24B
+# tokens = 0.125× full corpus. With the-stack-v2 Python merged in
+# (likely 15-30B tokens), the merged v3 corpus exceeds the 10·N
+# safety floor required by chinchilla-gate-v1.
+#
+# Peer:   contracts/chinchilla-gate-v1.yaml
+# Peer:   contracts/apr-cli-pull-dataset-v1.yaml
+# Peer:   contracts/dataset-thestack-python-v1.yaml
+# Peer:   contracts/tokenizer-bpe-v1.yaml
+# Peer:   contracts/apr-provenance-v1.yaml
+#
+# References:
+#   - bigcode/the-stack-v2-dedup (HF dataset)
+#     https://huggingface.co/datasets/bigcode/the-stack-v2-dedup
+#   - codeparrot/codeparrot-clean-valid (HF dataset)
+#   - docs/specifications/aprender-train/ship-model-2-spec.md §77, §82, §83
+#   - docs/specifications/aprender-train/albor-370m-roadmap.md §4 P2-C
+#   - docs/specifications/audits/albor-370.md
+# ─────────────────────────────────────────────────────────────
+
+contract_id: C-CORPUS-MERGE-V3
+version: 1.0.0
+status: PROPOSED
+
+metadata:
+  version: "1.0.0"
+  created: "2026-05-16"
+  updated: "2026-05-16"
+  kind: corpus-assembly
+  changelog:
+    - "1.0.0 (2026-05-16): Initial authoring as part of PMAT-681 P2-C
+       data-engineering scoping. PR #1710 branch."
+  peer_contracts:
+    - contracts/chinchilla-gate-v1.yaml
+    - contracts/apr-cli-pull-dataset-v1.yaml
+    - contracts/dataset-thestack-python-v1.yaml
+  references:
+    - "HF: bigcode/the-stack-v2-dedup (15.38 GB compressed Python subset, 6 parquet shards)"
+    - "HF: codeparrot/codeparrot-clean-valid"
+    - "docs/specifications/aprender-train/ship-model-2-spec.md §77, §82, §83"
+    - "docs/specifications/audits/albor-370.md"
+
+summary: >
+  The qwen-v3 corpus is assembled by:
+    1. Pulling bigcode/the-stack-v2-dedup data/Python/*.parquet via
+       `apr pull dataset` (6 shards, 15.38 GB compressed).
+    2. Pulling codeparrot/codeparrot-clean-valid for re-use of the
+       qwen-v2 source (already on disk from §77).
+    3. Streaming both sources through `apr tokenize encode-corpus`
+       with the Qwen tokenizer + NFC normalization + between-doc EOS,
+       producing concatenated .bin shards in
+       /mnt/nvme-raid0/data/codeparrot-thestack-python-permissive-shards-qwen-v3/.
+    4. Writing a manifest.json with byte/token counts, content sha256
+       per shard, and pull/tokenize provenance per
+       apr-provenance-v1.
+  Target: ≥ 5B tokens (5× Chinchilla safety floor for 494M params).
+  Stretch: ≥ 9.88B tokens (compute-optimal 20× target).
+
+motivation: >
+  qwen-v2 (§77) is a single-source 1.24B token corpus. §82's P2-A
+  run consumed only 22M of those tokens before hitting val_loss=4.71
+  + Holtzman degeneration — proving that even the full qwen-v2 is
+  insufficient. Adding the-stack-v2-dedup Python broadens both the
+  total token count AND the source diversity (different code
+  curation pipeline, different deduplication strategy), which
+  addresses both axes of §83 audit's Five-Whys root cause.
+
+# ─── INVARIANTS ──────────────────────────────────────────────
+
+invariants:
+  INV-MERGE-001:
+    description: >
+      The v3 corpus MUST contain tokens from at least 2 distinct
+      upstream sources (the-stack-v2-dedup Python + codeparrot
+      Python). Single-source v3 is rejected because §82 already
+      demonstrated single-source under-provisioning.
+    formal: |
+      let sources = set(manifest.sources)
+      in |sources| ≥ 2 ∧ "bigcode/the-stack-v2-dedup" ∈ sources
+                       ∧ "codeparrot/codeparrot-clean-valid" ∈ sources
+
+  INV-MERGE-002:
+    description: >
+      Total tokens in the v3 corpus MUST satisfy D ≥ 10·N where N
+      is the target model's parameter count (default 494M for
+      Qwen-0.5B init; verify via manifest.target_param_count).
+    formal: |
+      manifest.total_tokens ≥ 10 × manifest.target_param_count
+      → for N=494M, total_tokens ≥ 4.94B
+      Compute-optimal target: 9.88B (Hoffmann 2022 20·N).
+
+  INV-MERGE-003:
+    description: >
+      Every shard in the output directory MUST have a manifest
+      entry with:
+        - source_dataset (one of: bigcode/the-stack-v2-dedup,
+          codeparrot/codeparrot-clean-valid)
+        - upstream_revision (commit hash from HF tree API)
+        - sha256_compressed (parquet/raw input file checksum)
+        - sha256_tokenized (.bin shard checksum)
+        - token_count (u32 LE count, verified: bytes / 4)
+        - tokenizer_id (qwen2.5-tokenizer.json sha256)
+        - normalization (NFC|NFKC|none)
+        - between_doc_eos (true|false)
+    formal: |
+      ∀ shard ∈ manifest.shards,
+        shard.has_field("source_dataset") ∧
+        shard.has_field("upstream_revision") ∧
+        shard.has_field("sha256_compressed") ∧
+        shard.has_field("sha256_tokenized") ∧
+        shard.token_count × 4 = file_size(shard.path) ∧
+        shard.normalization ∈ {NFC, NFKC, none}
+
+  INV-MERGE-004:
+    description: >
+      The merged tokenizer MUST be the Qwen 2.5 tokenizer used by
+      §77 qwen-v2 (sha256 must match) so v3 is a strict superset
+      of v2 in tokenization conventions. No multi-tokenizer mixing.
+    formal: |
+      tokenizer_id_v3 == tokenizer_id_v2
+
+  INV-MERGE-005:
+    description: >
+      Dedupe is delegated to the upstream `-dedup` variant of
+      the-stack-v2 (bigcode already ran MinHash + LSH dedupe).
+      No additional cross-source dedupe is performed in v3 because
+      codeparrot and the-stack-v2 may legitimately share files
+      and we want full coverage at this stage. v4 may add cross-
+      source dedupe once a measurement justifies it.
+    formal: |
+      manifest.cross_source_dedupe = false
+      manifest.upstream_dedupe_strategy = "the-stack-v2 MinHash+LSH"
+
+# ─── GATES ───────────────────────────────────────────────────
+
+gates:
+  GATE-MERGE-001:
+    invariant: INV-MERGE-002
+    check: |
+      Manifest's total_tokens MUST be ≥ 10·target_param_count.
+      `apr tokenize encode-corpus --manifest <path>` MUST emit
+      this field and the post-merge validator script MUST assert
+      the inequality.
+    enforcement: build-time (manifest validation)
+    severity: critical
+
+  GATE-MERGE-002:
+    invariant: INV-MERGE-003
+    check: |
+      Every .bin shard in the output dir MUST have a corresponding
+      manifest entry with all required fields. Missing field = FAIL.
+    enforcement: build-time (manifest validation)
+    severity: high
+
+  GATE-MERGE-003:
+    invariant: INV-MERGE-001
+    check: |
+      Manifest's sources field MUST list at least 2 distinct upstream
+      datasets including bigcode/the-stack-v2-dedup and
+      codeparrot/codeparrot-clean-valid (or named alternates).
+    enforcement: build-time (manifest validation)
+    severity: critical
+
+# ─── FALSIFICATION TESTS ─────────────────────────────────────
+
+falsification_tests:
+  FALSIFY-MERGE-001:
+    invariant: INV-MERGE-002
+    description: >
+      A merged corpus with total_tokens < 4.94B (10× 494M) MUST
+      cause the merge to fail with a clear "D/N < 10× Chinchilla
+      safety floor" error. Verifies that under-provisioned merges
+      cannot ship by mistake.
+    test_kind: integration
+    expected_failure_mode: build-time-rejection
+
+  FALSIFY-MERGE-002:
+    invariant: INV-MERGE-001
+    description: >
+      A merge attempt with only one source (just the-stack-v2 OR
+      just codeparrot) MUST fail INV-MERGE-001. Single-source v3
+      is forbidden because §82 already falsified single-source
+      under-provisioning empirically.
+    test_kind: integration
+    expected_failure_mode: build-time-rejection
+
+  FALSIFY-MERGE-003:
+    invariant: INV-MERGE-003
+    description: >
+      A manifest missing any required field (e.g. sha256_compressed
+      omitted) MUST be rejected. Verifies provenance gating.
+    test_kind: unit
+    expected_failure_mode: validator-rejection
+
+  FALSIFY-MERGE-004:
+    invariant: INV-MERGE-004
+    description: >
+      A merge attempt using a tokenizer with sha256 ≠ qwen-v2's
+      tokenizer MUST be rejected. v3 cannot use a different
+      tokenizer than v2.
+    test_kind: integration
+    expected_failure_mode: build-time-rejection
+
+# ─── EXECUTION PLAN ───────────────────────────────────────────
+
+execution_plan:
+  step_1_pull_thestack:
+    command: |
+      apr pull dataset bigcode/the-stack-v2-dedup \
+        --include 'data/Python/*.parquet' \
+        --output /mnt/nvme-raid0/data/the-stack-v2-dedup-python/
+    expected_size: ~15.38 GB compressed (verified by dry-run 2026-05-16)
+    expected_wall: 30-60 min on lambda-vector
+
+  step_2_verify_codeparrot_present:
+    command: |
+      ls /mnt/nvme-raid0/data/codeparrot-python-permissive-jsonl/
+    expected: §77 source files already on disk
+
+  step_3_merge_and_tokenize:
+    command: |
+      apr tokenize encode-corpus \
+        --source bigcode/the-stack-v2-dedup:/mnt/nvme-raid0/data/the-stack-v2-dedup-python/ \
+        --source codeparrot/codeparrot-clean-valid:/mnt/nvme-raid0/data/codeparrot-python-permissive-jsonl/ \
+        --tokenizer /mnt/nvme-raid0/tokenizers/qwen-0.5b-tokenizer-extracted/ \
+        --normalization NFC \
+        --between-doc-eos true \
+        --output /mnt/nvme-raid0/data/codeparrot-thestack-python-permissive-shards-qwen-v3/ \
+        --manifest /mnt/nvme-raid0/data/codeparrot-thestack-python-permissive-shards-qwen-v3/manifest.json
+    expected_wall: 8-24 h CPU on a 24-core box (proportional to §77's 17 h for 1.24B tokens)
+    note: |
+      The two-source --source flag may need to be added to
+      `apr tokenize encode-corpus` if it currently only accepts one.
+      That extension is part of P2-C scope.
+
+  step_4_validate:
+    command: |
+      apr inspect /mnt/nvme-raid0/data/codeparrot-thestack-python-permissive-shards-qwen-v3/manifest.json
+    asserts:
+      - total_tokens ≥ 4.94B (Chinchilla 10× floor for 494M)
+      - sources includes both upstream datasets
+      - tokenizer_id matches qwen-v2
+
+  step_5_dispatch_training:
+    command: |
+      apr pretrain \
+        --init /mnt/nvme-raid0/models/qwen2.5-coder-0.5b-instruct-imported.apr \
+        --dataset /mnt/nvme-raid0/data/codeparrot-thestack-python-permissive-shards-qwen-v3 \
+        --tokenizer /mnt/nvme-raid0/tokenizers/qwen-0.5b-tokenizer-extracted/ \
+        --run-dir /mnt/nvme-raid0/runs/model-2-p2c-20260516 \
+        --num-steps 100000 --device cuda:0 --mode finetune --seed 42
+    chinchilla_check: |
+      With D = 100000 × 16 × 512 = 819M tokens (or D = full v3 if smaller),
+      verify D/N ≥ 10× before dispatch. P0-J gate (PR pending) enforces.
+    expected_wall: 8-16 h GPU
+
+  step_6_evaluate_and_close:
+    command: |
+      apr bench /mnt/nvme-raid0/runs/model-2-p2c-20260516/ckpt/epoch-NN.apr
+      apr export --format gguf .../epoch-NN.apr -o /tmp/p2c.gguf
+      llama-cli -m /tmp/p2c.gguf -p "def fib(n):" -n 16
+    success_criteria: |
+      val_loss < 3.5 → flips AC-SHIP2-003 strict closer; P2-C ship-% +6
+      val_loss < 3.0 → flips P1-B/C/P3-A from deferred to dispatchable; P2-C +10
+      llama-cli load succeeds → discharges P0-H half of PMAT-679
+
+# ─── PROOF OBLIGATIONS ───────────────────────────────────────
+
+proof_obligations:
+  PO-MERGE-001:
+    type: integration_test
+    discharges: [INV-MERGE-001, INV-MERGE-002, INV-MERGE-003]
+    site: tests/corpus_merge_v3_test.rs
+    state: pending
+
+  PO-MERGE-002:
+    type: empirical_dispatch
+    discharges: [INV-MERGE-002, INV-MERGE-004]
+    site: live execution of execution_plan step 1-4
+    state: pending — dispatch gated by lambda-vector availability
+
+# ─── FAILURE MODES ───────────────────────────────────────────
+
+failure_modes:
+  FM-MERGE-001:
+    name: insufficient-tokens
+    description: >
+      Even with the-stack-v2-dedup Python merged in, the
+      total_tokens count comes in under 4.94B. Mitigation: include
+      additional Python subsets (e.g. bigcode/the-stack-dedup v1
+      Python, or PyPi-mined corpora).
+    likelihood: low (the-stack-v2 Python is documented at >50B tokens)
+
+  FM-MERGE-002:
+    name: tokenizer-drift
+    description: >
+      During the multi-source tokenize step, the implementation
+      accidentally uses a different tokenizer than qwen-v2. Caught
+      by INV-MERGE-004 / GATE-MERGE-001.
+    likelihood: low (tokenizer is an input arg, not auto-detected)
+
+  FM-MERGE-003:
+    name: provenance-gap
+    description: >
+      A shard's source_dataset field is missing because the
+      tokenize pipeline doesn't carry through the multi-source
+      origin. Mitigation: extend `apr tokenize encode-corpus` to
+      tag each shard with its --source origin (already-mandatory
+      change as part of P2-C step 3).
+    likelihood: medium until step-3 extension lands
