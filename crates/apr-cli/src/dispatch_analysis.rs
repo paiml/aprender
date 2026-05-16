@@ -865,7 +865,7 @@ fn dispatch_tokenize_command(
             estimate_only,
             estimate_sample_docs,
         } => tokenize::run_encode_corpus(
-            corpus,
+            corpus.as_slice(),
             tokenizer,
             output,
             *shard_tokens,
