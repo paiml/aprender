@@ -68,6 +68,10 @@ use std::path::Path;
 #[cfg(feature = "format-quantize")]
 pub mod quantize;
 
+// GH-386: AVX2 SIMD fast paths for Q4_0/Q8_0 dequant.
+#[cfg(feature = "format-quantize")]
+mod quantize_simd;
+
 // Homomorphic encryption module (spec: homomorphic-encryption-spec.md)
 #[cfg(feature = "format-homomorphic")]
 pub mod homomorphic;
