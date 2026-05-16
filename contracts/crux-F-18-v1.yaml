@@ -1,12 +1,21 @@
 # CRUX-F-18 — Token embedding UMAP 2D
+# Promoted to PARTIAL_ALGORITHM_LEVEL at v1.2.0 under CRUX-SHIP-001 (2026-05-17):
+# - classifier: crates/apr-cli/src/commands/embed_viz_classifier.rs (12 unit tests)
+# - CLI surface: `apr embed-viz-lint --csv-file F [--expected-vocab-size N] [--csv-file-b F]`
+# - e2e: crates/apr-cli/tests/falsification_crux_f_18.rs (10 tests)
+# FALSIFY-CRUX-F-18-002 (token_str round-trips via the tokenizer)
+# requires a live tokenizer decoder and is tracked as
+# BLOCKER-UPSTREAM-MISSING.
 
 metadata:
   id: CRUX-F-18
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
+  updated: "2026-05-17"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
+  kind: kernel
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "F — Profiling & Debugging"
@@ -48,6 +57,27 @@ falsification_tests:
     rows=$(tail -n +2 /tmp/emb.csv | wc -l)
     python3 -c "assert $vs == $rows, ($vs, $rows)"
   if_fails: rule 'one row per vocab entry' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/embed_viz_classifier.rs
+    cli_path: crates/apr-cli/src/commands/embed_viz_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_18.rs
+    e2e_tests:
+    - falsify_crux_f_18_001_schema_ok_on_good_body
+    - falsify_crux_f_18_001_schema_rejects_missing_column
+    - falsify_crux_f_18_001_schema_rejects_nonfinite_coord
+    - falsify_crux_f_18_001_row_count_ok_when_matches_vocab
+    - falsify_crux_f_18_001_row_count_rejects_mismatch
+    sub_claim: |
+      Algorithm-level necessary conditions on a captured `apr debug
+      embed-viz` CSV: `classify_schema` verifies the header carries
+      `token_id`, `token_str`, `x`, `y` (order-independent), every row
+      has the same column count as the header, `token_id` parses as a
+      non-negative integer, and `x`/`y` parse as finite floats (no
+      NaN/Inf). `classify_row_count` verifies row count equals the
+      caller-supplied `expected_vocab_size`.
+    scope: "(body, expected_vocab_size) -> (EmbedSchemaOutcome, EmbedRowCountOutcome) (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live `apr debug embed-viz` emitter writing one row per vocab entry"
 - id: FALSIFY-CRUX-F-18-002
   rule: token_str round-trips through tokenizer
   prediction: "row i token_str decodes to tokenizer.decode([i])"
@@ -73,6 +103,23 @@ falsification_tests:
     diff /tmp/emb1.csv /tmp/emb2.csv
 
   if_fails: rule 'determinism under fixed seed' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/embed_viz_classifier.rs
+    cli_path: crates/apr-cli/src/commands/embed_viz_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_18.rs
+    e2e_tests:
+    - falsify_crux_f_18_003_determinism_ok_on_byte_identical
+    - falsify_crux_f_18_003_determinism_rejects_diverging_csvs
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_determinism` does
+      a byte-exact comparison of two CSV bodies produced under the same
+      seed. Variants `LengthDiffers { left_bytes, right_bytes }` and
+      `FirstDiffAtByte { offset, left, right }` pinpoint the exact
+      drift so seed-leak / nondeterminism bugs are debuggable from the
+      lint output alone.
+    scope: "(left_bytes, right_bytes) -> EmbedDeterminismOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live `apr debug embed-viz` emitter writing seed-deterministic CSV"
 proof_obligations:
 - type: equivalence
   property: "apr debug embed-viz matches umap-learn n_components=2 cosine fit_transform"
