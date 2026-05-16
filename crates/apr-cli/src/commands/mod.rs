@@ -98,6 +98,7 @@ pub(crate) mod pull_scheme;
 pub(crate) mod qa;
 pub(crate) mod qa_capability;
 pub(crate) mod qualify;
+pub(crate) mod quant_preservation;
 pub(crate) mod quantize;
 pub(crate) mod recipe;
 pub(crate) mod registry;

@@ -111,6 +111,7 @@ fn registered_commands() -> Vec<&'static str> {
         "rm-gc-lint",
         "shared-cache-lint",
         "ppl",
+        "quant-preservation-lint",
         "shard",
         "unshard",
         "oracle",
@@ -146,6 +147,15 @@ fn get_help_commands() -> Vec<String> {
         if in_commands {
             if line.starts_with("Options:") || line.is_empty() && commands.len() > 5 {
                 break;
+            }
+            // Command rows have exactly 2-space indent (`  cmd  description...`).
+            // Wrapped description continuation lines have a much wider indent
+            // (column-aligned to the description start, typically 20+ spaces).
+            // Filter on exact 2-space indent to avoid picking up the first
+            // word of a wrap continuation as a "command name" (CRUX-B-19).
+            let leading_spaces = line.chars().take_while(|c| *c == ' ').count();
+            if leading_spaces != 2 {
+                continue;
             }
             let trimmed = line.trim();
             if let Some(cmd_name) = trimmed.split_whitespace().next() {

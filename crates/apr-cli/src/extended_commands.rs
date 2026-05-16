@@ -858,6 +858,15 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         log_probs_file: PathBuf,
     },
+    /// Validate dequant→requant metadata preservation (CRUX-B-19)
+    QuantPreservationLint {
+        /// Reference GGUF (pre-roundtrip)
+        #[arg(long, value_name = "REF.gguf")]
+        reference: PathBuf,
+        /// Requantized GGUF (post-roundtrip)
+        #[arg(long, value_name = "REQ.gguf")]
+        requant: PathBuf,
+    },
     /// Split a safetensors file into shards + weight-map index (CRUX-B-05)
     Shard {
         /// Single-file safetensors model to split
