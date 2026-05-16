@@ -117,6 +117,7 @@ fn registered_commands() -> Vec<&'static str> {
         "kv-timeline-lint",
         "gpu-memtrace-lint",
         "explain-token-lint",
+        "check-finite-lint",
         "shard",
         "unshard",
         "oracle",

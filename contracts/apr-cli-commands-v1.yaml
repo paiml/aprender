@@ -568,6 +568,12 @@ commands:
     requires_model: false
     side_effects: []
 
+  - name: check-finite-lint
+    category: inspection
+    description: "Validate captured `apr trace --check-finite` outputs (CRUX-F-11): error JSON shape (6 keys + value ∈ {nan,+inf,-inf}) + layer-coverage list (min_layers + transformer-op prefixes)"
+    requires_model: false
+    side_effects: []
+
   - name: shard
     category: model_ops
     description: "Split safetensors file into shards + weight-map index (CRUX-B-05)"
