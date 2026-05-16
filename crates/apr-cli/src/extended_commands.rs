@@ -792,6 +792,18 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         stderr_file: Option<PathBuf>,
     },
+    /// Lint a captured `apr trace --check-finite` error JSON and/or `--list` coverage JSON (CRUX-F-11)
+    CheckFiniteLint {
+        /// Captured stderr JSON from `apr trace --check-finite` on a poisoned model
+        #[arg(long, value_name = "FILE")]
+        error_file: Option<PathBuf>,
+        /// Captured stdout JSON from `apr trace --check-finite --list`
+        #[arg(long, value_name = "FILE")]
+        list_file: Option<PathBuf>,
+        /// Minimum layer-coverage count when `--list-file` is supplied (default 100)
+        #[arg(long, value_name = "N", default_value_t = 100)]
+        min_layers: usize,
+    },
     /// Lint a captured `apr explain --format jsonl` token-selection trace (CRUX-F-19)
     ExplainTokenLint {
         /// Path to captured JSONL body (one sampled-token record per line)
