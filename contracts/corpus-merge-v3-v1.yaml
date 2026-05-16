@@ -40,6 +40,14 @@ metadata:
   created: "2026-05-16"
   updated: "2026-05-16"
   kind: corpus-assembly
+  description: >
+    Multi-source corpus assembly contract for the qwen-v3 successor
+    to §77's qwen-v2. Merges codeparrot Python + bigcode/the-stack-v2-
+    dedup Python via `apr tokenize encode-corpus --corpus <a> --corpus
+    <b>` (multi-source flag added in PR #1721). Targets ≥ 4.94B tokens
+    (Chinchilla 10× safety floor for 494M-param Qwen-0.5B init); stretch
+    9.88B (compute-optimal 20·N). Per-shard provenance enforced via
+    INV-MERGE-003. Discharges SPEC §83 P2-C step 1.
   changelog:
     - "1.0.0 (2026-05-16): Initial authoring as part of PMAT-681 P2-C
        data-engineering scoping. PR #1710 branch."
