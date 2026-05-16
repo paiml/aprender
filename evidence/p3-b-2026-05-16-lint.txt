@@ -1,0 +1,17 @@
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Model Lint
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Checking: /mnt/nvme-raid0/runs/model-2-p2a-5000steps-20260515-205805/ckpt/epoch-020.apr
+
+╭────────┬────────────┬────────────────────────────────────────────────────────────┬────────────╮
+│ Level  │ Category   │ Message                                                    │ Suggestion │
+├────────┼────────────┼────────────────────────────────────────────────────────────┼────────────┤
+│ ⚠ WARN │ Metadata   │ Missing 'license' field                                    │            │
+│ ⚠ WARN │ Metadata   │ Missing 'model_card'                                       │            │
+│ ⚠ WARN │ Metadata   │ Missing 'provenance' information                           │            │
+│ ℹ INFO │ Efficiency │ 122 uncompressed tensors exceed 1MB - consider compression │            │
+╰────────┴────────────┴────────────────────────────────────────────────────────────┴────────────╯
+
+  ✗ Lint failed 4 issue(s): 0 error(s), 3 warning(s), 1 info(s)
+error: Validation failed: Lint failed with 0 error(s), 3 warning(s), 1 info(s)

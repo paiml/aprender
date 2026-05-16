@@ -1,0 +1,101 @@
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  APR Export
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+╭────────┬───────────────────────────────────────────────────────────────────────────────╮
+│  Input │ /mnt/nvme-raid0/runs/model-2-p2a-5000steps-20260515-205805/ckpt/epoch-020.apr │
+├────────┼───────────────────────────────────────────────────────────────────────────────┤
+│ Output │ /tmp/p0i.gguf                                                                 │
+│ Format │ GGUF                                                                          │
+╰────────┴───────────────────────────────────────────────────────────────────────────────╯
+
+  ◉ Exporting
+[BUG-EXPORT-004] Warning: No tokenizer.json found near /mnt/nvme-raid0/runs/model-2-p2a-5000steps-20260515-205805/ckpt/epoch-020.apr, GGUF may lack tokenizer metadata
+[P0-G] Padding APR-fallback tokenizer.ggml.tokens: 151643 + 293 placeholders = 151936
+[GH-211] Extracted 6 tokenizer entries from APR metadata
+[GGUF-EXPORT-001] Writing 20 metadata keys (arch=llama, layers=24, heads=14/2kv, hidden=896)
+[GH-277] Using contract-driven GGUF mapping for family 'llama'
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.0.self_attn.k_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.0.self_attn.q_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.0.self_attn.v_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.1.self_attn.k_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.1.self_attn.q_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.1.self_attn.v_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.10.self_attn.k_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.10.self_attn.q_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.10.self_attn.v_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.11.self_attn.k_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.11.self_attn.q_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.11.self_attn.v_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.12.self_attn.k_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.12.self_attn.q_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.12.self_attn.v_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.13.self_attn.k_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.13.self_attn.q_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.13.self_attn.v_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.14.self_attn.k_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.14.self_attn.q_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.14.self_attn.v_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.15.self_attn.k_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.15.self_attn.q_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.15.self_attn.v_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.16.self_attn.k_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.16.self_attn.q_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.16.self_attn.v_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.17.self_attn.k_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.17.self_attn.q_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.17.self_attn.v_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.18.self_attn.k_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.18.self_attn.q_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.18.self_attn.v_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.19.self_attn.k_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.19.self_attn.q_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.19.self_attn.v_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.2.self_attn.k_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.2.self_attn.q_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.2.self_attn.v_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.20.self_attn.k_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.20.self_attn.q_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.20.self_attn.v_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.21.self_attn.k_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.21.self_attn.q_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.21.self_attn.v_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.22.self_attn.k_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.22.self_attn.q_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.22.self_attn.v_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.23.self_attn.k_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.23.self_attn.q_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.23.self_attn.v_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.3.self_attn.k_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.3.self_attn.q_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.3.self_attn.v_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.4.self_attn.k_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.4.self_attn.q_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.4.self_attn.v_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.5.self_attn.k_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.5.self_attn.q_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.5.self_attn.v_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.6.self_attn.k_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.6.self_attn.q_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.6.self_attn.v_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.7.self_attn.k_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.7.self_attn.q_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.7.self_attn.v_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.8.self_attn.k_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.8.self_attn.q_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.8.self_attn.v_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.9.self_attn.k_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.9.self_attn.q_proj.bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.layers.9.self_attn.v_proj.bias', passing through
+
+
+  ─── Export Report
+╭───────────────┬──────────╮
+│ Original size │ 2.35 GiB │
+├───────────────┼──────────┤
+│ Exported size │ 2.35 GiB │
+│       Tensors │ 291      │
+│        Format │ GGUF     │
+╰───────────────┴──────────╯
+
+  ✓ Export successful

@@ -9133,3 +9133,250 @@ roadmap:
   - competitor-apr-qa-playbook
   - crux-m-10
   notes: null
+- id: PMAT-679
+  github_issue: null
+  item_type: task
+  title: 'P0-I: Verify P0-G+P0-H end-to-end on fresh checkpoint'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-05-16T07:14:53Z
+  updated: 2026-05-16T07:23:25Z
+  spec: null
+  acceptance_criteria:
+  - 'PARTIAL discharge (2026-05-16): P0-G verified LIVE via pad-on-export message [P0-G] Padding APR-fallback tokenizer.ggml.tokens: 151643 + 293 placeholders = 151936; GGUF metadata + tensor shapes all align at 151936. P0-H NOT verified on epoch-020 checkpoint (it was trained BEFORE P0-H landed; arch metadata still LlamaForCausalLM → Qwen2 biases leak with passthrough names → llama-cli expected 291 got 219). P0-H verification deferred to PMAT-681 (P2-C) since exercising it requires a freshly-emitted checkpoint. Build was blocked by memory pressure (3GB free / 127GB swap exhausted). See evidence/p0-i-2026-05-16/findings.md.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - albor-370m
+  - p0
+  - roadmap-v2
+  - ship-model-2
+  notes: null
+- id: PMAT-680
+  github_issue: null
+  item_type: task
+  title: 'P0-J: Chinchilla gate — warning → hard blocker'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-05-16T07:15:09Z
+  updated: 2026-05-16T07:15:09Z
+  spec: null
+  acceptance_criteria:
+  - 'Convert PR #1708 stderr warning to fail-fast error when D/N < 10× in apr pretrain; add --force-under-provisioned bypass flag. Author contracts/chinchilla-gate-v1.yaml with FALSIFY tests. Audit Rec #2 (audits/albor-370.md). Effort: 1-2h. Δship +1 (prevention). P=95%. See §83.2.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - albor-370m
+  - p0
+  - roadmap-v2
+  - ship-model-2
+  - audit-rec
+  notes: null
+- id: PMAT-681
+  github_issue: null
+  item_type: task
+  title: 'P2-C: Widen corpus to >2B tokens (highest EV)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-05-16T07:15:09Z
+  updated: 2026-05-16T07:15:09Z
+  spec: null
+  acceptance_criteria:
+  - '(1) Author corpus merge contract; (2) Pull the-stack-v2 Python permissive shards via apr corpus pull; (3) Concatenate + dedupe with §77 NFC pipeline; (4) Retokenize with Qwen tokenizer; (5) Dispatch pretrain with P0-J hard gate enforced. Audit Rec #1 — promoted above P2-A2 because P2-A2 is pre-falsified by Chinchilla math. Effort: 6-12h CPU + 8-16h GPU. Δship +6 (val_loss<3.5) to +10 (val_loss<3.0). P=55%. See §83 + roadmap §4 P2.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - albor-370m
+  - p2
+  - roadmap-v2
+  - ship-model-2
+  - audit-rec
+  - binding-constraint
+  notes: null
+- id: PMAT-682
+  github_issue: null
+  item_type: task
+  title: 'P2-A2: Same-corpus longer run (DOWNGRADED — fallback only)'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-05-16T07:15:09Z
+  updated: 2026-05-16T07:15:09Z
+  spec: null
+  acceptance_criteria:
+  - 'FALLBACK ONLY if P2-C is blocked on infrastructure. Pre-falsified by audit via Chinchilla math (D/N = 0.04×). Running more steps on a 22M-token consumed / 1.24B available corpus cannot break the val_loss plateau (binding constraint is data, not compute). If dispatched: --num-steps 20000 --init qwen-0.5b --dataset qwen-v2. Effort: 3-8h GPU. Δship +1 best case. P=15%. See §83.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - albor-370m
+  - p2
+  - roadmap-v2
+  - ship-model-2
+  - fallback
+  - pre-falsified
+  notes: null
+- id: PMAT-683
+  github_issue: null
+  item_type: task
+  title: 'P2-D: True distillation from MODEL-1 (apr distill)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-16T07:15:09Z
+  updated: 2026-05-16T07:15:09Z
+  spec: null
+  acceptance_criteria:
+  - 'Ship apr distill per §35 (currently STUB). Architectural change; defer until P2-C exhausted. Multi-week scope. Effort: 16-40h. Δship +10. P=25%.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - albor-370m
+  - p2
+  - roadmap-v2
+  - ship-model-2
+  - distillation
+  - multi-week
+  notes: null
+- id: PMAT-684
+  github_issue: null
+  item_type: task
+  title: 'P1-B: HumanEval pass@1 on best checkpoint (DEFERRED)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-16T07:15:26Z
+  updated: 2026-05-16T07:15:26Z
+  spec: null
+  acceptance_criteria:
+  - 'BLOCKED on val_loss < 3.0 per audit Rec #3 (was < 4.0). At current val_loss=4.71 (perplexity ~111) zero-shot reasoning is mathematically impossible. apr eval humaneval. Effort: 5-8h gx10. Δship +3 if pass>5%. P=3%. Run AFTER P2-C lands a better checkpoint.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - albor-370m
+  - p1
+  - roadmap-v2
+  - ship-model-2
+  - deferred
+  - blocked-on-p2c
+  notes: null
+- id: PMAT-685
+  github_issue: null
+  item_type: task
+  title: 'P1-C: Python validity 100 prompts (DEFERRED)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-16T07:15:26Z
+  updated: 2026-05-16T07:15:26Z
+  spec: null
+  acceptance_criteria:
+  - 'BLOCKED on val_loss < 3.0 per audit Rec #3. Generate from 100 prompts, parse with ast.parse, count zero-error. Effort: 2h. Δship +3 if pass>30%. P=5% at current val_loss. Run AFTER P2-C.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - albor-370m
+  - p1
+  - roadmap-v2
+  - ship-model-2
+  - deferred
+  - blocked-on-p2c
+  notes: null
+- id: PMAT-686
+  github_issue: null
+  item_type: task
+  title: 'P3-A: apr inspect --quality ≥ 90 on best checkpoint'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-16T07:15:26Z
+  updated: 2026-05-16T07:15:26Z
+  spec: null
+  acceptance_criteria:
+  - 'Discharges AC-SHIP2-007. Run apr inspect --quality against best ckpt. Effort: 1h. Δship +1. P=80%. DEFERRED until val_loss < 3.0 (audit Rec #3).'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - albor-370m
+  - p3
+  - roadmap-v2
+  - ship-model-2
+  - deferred
+  notes: null
+- id: PMAT-687
+  github_issue: null
+  item_type: task
+  title: 'P3-B: apr lint zero High severity on best checkpoint'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-05-16T07:15:26Z
+  updated: 2026-05-16T07:24:18Z
+  spec: null
+  acceptance_criteria:
+  - 'PARTIAL discharge (2026-05-16): apr lint on epoch-020.apr returns 0 errors / 3 warnings / 1 info → meets ''zero High severity'' criterion (AC-SHIP2-008 component). Warnings: missing license + model_card + provenance metadata fields. Info: 122 uncompressed tensors >1MB. Fixing the warnings requires a model-card author step and metadata stamping in the pretrain pipeline (related to AC-SHIP2-022 provenance). See evidence/p3-b-2026-05-16-lint.txt.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - albor-370m
+  - p3
+  - roadmap-v2
+  - ship-model-2
+  notes: null
+- id: PMAT-688
+  github_issue: null
+  item_type: task
+  title: 'P3-C: Publish to HuggingFace as paiml/albor-370m-v1'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-16T07:15:26Z
+  updated: 2026-05-16T07:15:26Z
+  spec: null
+  acceptance_criteria:
+  - 'Once val_loss < 3 + smoke OK: apr publish paiml/albor-370m-v1 --formats apr,safetensors,gguf. Final ship gate. Effort: 1-2h. Δship +5. P=95%. BLOCKED on P2-C + P1-B + P3-A/B.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - albor-370m
+  - p3
+  - roadmap-v2
+  - ship-model-2
+  - publish
+  - blocked-on-p2c
+  notes: null
+- id: PMAT-689
+  github_issue: null
+  item_type: task
+  title: 'P3-D: Post-publish QA + /dogfood verdict'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-16T07:15:26Z
+  updated: 2026-05-16T07:15:26Z
+  spec: null
+  acceptance_criteria:
+  - 'Per feedback_post_publish_qa_required.md — mandatory after every publish. cargo install + /dogfood GO. Effort: 1h. Gating (Δship 0). P=99%.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - albor-370m
+  - p3
+  - roadmap-v2
+  - ship-model-2
+  - publish
+  - blocked-on-p3c
+  notes: null
