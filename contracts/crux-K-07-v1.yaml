@@ -1,16 +1,21 @@
 # CRUX-K-07 — Prometheus /metrics endpoint
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# Promoted to PARTIAL_ALGORITHM_LEVEL at v1.1.0 under CRUX-SHIP-001 (2026-05-16):
+# - classifier: crates/apr-cli/src/commands/prometheus_classifier.rs (14 unit tests)
+# - CLI surface: `apr prometheus-lint --metrics-file FILE [--content-type H] [--require-k07-metrics]`
+# - e2e: crates/apr-cli/tests/falsification_crux_k_07.rs (11 tests)
+# Full discharge blocks on a live `apr serve` `GET /metrics` handler emitting
+# the K-07 metric set in Prometheus 0.0.4 text format — tracked as
+# BLOCKER-UPSTREAM-MISSING.
 
 metadata:
   id: CRUX-K-07
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
+  updated: "2026-05-16"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
+  kind: kernel
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "K — Ecosystem & Integration"
@@ -108,6 +113,37 @@ falsification_tests:
     PY
 
   if_fails: rule '/metrics returns valid Prometheus text v0.0.4' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/prometheus_classifier.rs
+    cli_path: crates/apr-cli/src/commands/prometheus_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_k_07.rs
+    e2e_tests:
+    - falsify_crux_k_07_001_text_format_ok_on_good_body
+    - falsify_crux_k_07_001_text_format_rejects_sample_before_type
+    - falsify_crux_k_07_001_text_format_rejects_nonnumeric_sample
+    - falsify_crux_k_07_001_content_type_ok_on_canonical_header
+    - falsify_crux_k_07_001_content_type_rejects_application_json
+    - falsify_crux_k_07_001_content_type_rejects_missing_version
+    sub_claim: |
+      Algorithm-level necessary conditions on an already-captured /metrics
+      response body + optional Content-Type header:
+        (a) classify_text_format walks the body line-by-line and rejects
+            samples that precede their `# TYPE` declaration
+            (`SampleBeforeType`), `# TYPE` values outside
+            {counter, gauge, histogram, summary, untyped}
+            (`UnknownType`), sample values that don't parse as
+            base-10 float / +Inf / -Inf / NaN
+            (`SampleValueNotNumeric`), and duplicate-name TYPE
+            declarations with conflicting types
+            (`DuplicateConflictingType`).
+        (b) classify_content_type accepts `text/plain; version=0.0.4
+            [; charset=...]` and rejects WrongMediaType / MissingVersion
+            / WrongVersion.
+      Classifier is a pure function of `(body, optional content_type)`
+      and deterministic.
+    scope: "(body, content_type) -> (PromTextFormatOutcome, PromContentTypeOutcome) (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live aprender-serve `GET /metrics` handler emitting Prometheus 0.0.4 text format"
 - id: FALSIFY-CRUX-K-07-002
   rule: required metric set is exported
   prediction: "all MUST_EXPORT metric names appear in /metrics"
@@ -122,6 +158,26 @@ falsification_tests:
     done
 
   if_fails: rule 'required metric set is exported' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/prometheus_classifier.rs
+    cli_path: crates/apr-cli/src/commands/prometheus_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_k_07.rs
+    e2e_tests:
+    - falsify_crux_k_07_002_required_metrics_pass_on_full_body
+    - falsify_crux_k_07_002_required_metrics_reports_partial_set
+    sub_claim: |
+      Algorithm-level necessary conditions: `classify_required_metrics`
+      walks the body once, gathers every `# TYPE`-declared name and every
+      sample-line metric name, then verifies the K-07 required set is a
+      subset. Histogram and summary metrics are matched via their
+      canonical expansion (`<name>_bucket`, `<name>_sum`, `<name>_count`)
+      so a histogram-only emission still satisfies the requirement.
+      Output: `PromRequiredOutcome::Missing { missing }` lists exactly
+      the metric names absent from the body, sorted lexicographically so
+      diffs are stable.
+    scope: "(body, required_set) -> PromRequiredOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live aprender-serve `GET /metrics` handler emitting the K07_REQUIRED_METRICS set"
 - id: FALSIFY-CRUX-K-07-003
   rule: counters are monotone across scrapes after inference
   prediction: "apr_generation_tokens_total strictly increases after a /v1/completions call"
