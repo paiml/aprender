@@ -1,7 +1,8 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 3.27.0
+**Version:** 3.28.0
+**Atomic next action (v3.28.0):** **🎯 §82 — P2-A 5000-step training EARLY-STOP at val_loss=4.7111 (epoch 20); P0-trio dispatched against best checkpoint; AC-SHIP2-009 LIVE-DISCHARGED at 325.1 tok/s; AC-SHIP2-010 BLOCKED on NEW P0-G defect (2026-05-15)** (see new §82 below). After §80's EV ranking placed P2-A at the queue head and §81's P0-trio infrastructure fixes (#1699 P0-F + #1701 P0-D/E) landed on main, P2-A dispatched on lambda-vector RTX 4090 against §77's qwen-v2 corpus + Qwen-0.5B init: 27 epochs / 2700 steps / ~40 min wall / OK EARLY_STOP. **§34 ceiling broken further: 9.38 → 5.36 (§78) → 4.71 (§82)** — three orders of MODEL-2 progress in a 16-day arc. P0 trio against `epoch-020.apr`: **P0-A apr qa** infra-pass (only golden_output fails — expected for pretrain-only); **P0-B apr bench PASSED at 325.1 tok/s** with embedded BPE tokenizer + C-03 metadata gate satisfied (confirms #1701 fixes live in production); **P0-C apr export PASSED** (291 tensors, GGUF, lowercase `llama` arch confirms #1699 live). **P0-C step 2 llama-cli load BLOCKED by NEW Class 3 defect P0-G**: GGUF metadata has `llama.vocab_size=151936` but `tokenizer.ggml.tokens=[len=151643]` — Qwen2.5 pads embed_tokens to 151936 for TP-alignment but `apr export` emits the unpadded tokens array. Fix scope: 30-LOC pad in `gguf_export_config.rs::build_tokenizer_gguf_metadata` with `<|pad_N|>` placeholders. **Methodology lesson #29 NEW**: Class 3 packaging defects surface in waves of 4, not 2 — every downstream tool falsifies its own invariant in the checkpoint-emission contract. Sample generation at val_loss=4.71 is repetitive-token gibberish (`def fibonacci(n):` → ` č č č č ...`), confirming P1-B/C eval gates are DEAD until val_loss < 4 — supports §80's deprioritization decision empirically. **MODEL-1 ship %**: 100%. **MODEL-2 ship %**: **77% → 79%** (+1 for AC-SHIP2-009 DISCHARGED, +1 for §34 ceiling break 5.36→4.71). Bounded path to 85%: P0-G landed (79→81) → P2-A2 longer/wider corpus (81→85 if val_loss < 3.5).
 **Atomic next action (v3.27.0):** **📚 §79 + §80 + §81 — audit retrospective + prioritized backlog + P0 packaging-gap surfacing (2026-05-15)** (see new §79/§80/§81 below). Triple-amendment captures the §78 → §80 dispatch arc that revealed a Class 3 packaging-defect wave in `apr pretrain` output. §79 synthesizes [`docs/specifications/two-model-spec-audit.md`](../two-model-spec-audit.md) with Five-Whys for Cases A/B/C and methodology lesson #26 (three-class root-cause taxonomy: data starvation / optimization defects / infrastructure masking). §80 ranks all open SHIP-TWO-001 work by ship-% delta ÷ effort: P0 trio + P1 Chinchilla gate + P1 python validity + P1 HumanEval + P2-A long train = MODEL-2 ceiling 92% at ~6-10h compute. §81 surfaces three `apr pretrain` output metadata gaps discovered when dispatching §80's P0 trio: missing embedded tokenizer (blocks `apr qa`), missing arch metadata keys (blocks `apr bench`), HF→GGUF arch case mismatch (blocks llama-cli). Companion code PRs #1699 (P0-F arch case) and #1701 (P0-D embed tokenizer + P0-E arch metadata) close all three. **Methodology lessons #26-28 NEW**: three-class root-cause taxonomy / prioritize by ship-% delta ÷ effort / Class 3 defects come in waves (training works ≠ checkpoint is usable). **MODEL-1 ship %**: 100%. **MODEL-2 ship %**: 75% (unchanged in this PR; will move to 77% on #1701 merge via AC-SHIP2-010 DISCHARGED at 315.5 tok/s).
 **Atomic next action (v3.24.0):** **🎯 §78 — 5g.2 CONVERGED — MODEL-2 fine-tune from Qwen-0.5B init produces val_loss=5.36 on 500 steps / 8 min GPU; §34 ceiling broken by 4.02pp; MODEL-2 ship % 57% → 75% (2026-05-15)** (see new §78 below). After §77 retroactively discovered 5g.1 was already complete, 5g.2 was dispatched on RTX 4090 with the canonical Qwen-0.5B init + qwen-v2 corpus. Convergence trajectory: 6.53 → 6.30 → 5.93 → 5.55 → **5.36** val_loss across 5 epochs / 500 steps / 8 min wall. 5 APR checkpoints produced, all integrity-valid (291 tensors / Llama / checksum_valid). **Compared to §49's same-step from-scratch baseline (val_loss=9.73): 44.9% loss reduction — §49 pivot empirically validated.** Discharges AC-SHIP2-003 (vs §34 ceiling), AC-SHIP2-004 (8 min ≪ 21 days), AC-SHIP2-005 (5 valid checkpoints). Newly operator-dispatchable: AC-SHIP2-006/007/008/009/010 against `epoch-004.apr`. **Methodology lesson #25 NEW**: pretrained-init fine-tune dominates from-scratch on small compute (44.9% loss reduction same-budget). First MODEL-2 ship-% movement since §22 (twenty-one days, fifty-six amendments). **MODEL-1 ship %**: 100%. **MODEL-2 ship %**: **57% → 75%**.
 **Atomic next action (v3.23.0):** **🔍 §77 — 5g.1 RETROACTIVELY DISCOVERED COMPLETE; MODEL-2 ship-blocker reduced to 5g.2 GPU dispatch (2026-05-15)** (see new §77 below). Live audit on 2026-05-15 finds `/mnt/nvme-raid0/data/codeparrot-python-permissive-shards-qwen-v2/` contains 125 shards / 1,241,692,519 tokens / 4,966,770,076 bytes — byte-exact integrity verified (tokens × 4 = bytes, u32 LE). Manifest confirms NFC + between-doc EOS + Qwen vocab + 405,904 documents from the permissive corpus. **5g.1 has been DONE since ~2026-05-05** but never recorded as complete in twenty subsequent spec amendments. The cascade was always blocked on 5g.3, not on 5g.1. 5g.2 (500-step fine-tune dispatch) is now operator-dispatchable today — all three prerequisites confirmed on disk: Qwen-tokenized corpus, Qwen tokenizer dir, Qwen-0.5B init APR. **Methodology lesson #24 NEW**: mid-run progress logs are not completion records; manifest.json is the contract for "done". **MODEL-1 ship %**: 100%. **MODEL-2 ship %**: unchanged at **57%** (this is a status-discovery, not an evidence-of-training; the flip is gated on 5g.3 verdict).
@@ -5967,6 +5968,222 @@ Evidence:
 - `evidence/section-81-p0-metadata-gaps-2026-05-15/p0-b-bench.log` — apr bench raw error
 - `evidence/section-81-p0-metadata-gaps-2026-05-15/p0-c-export.log` — apr export success
 - `evidence/section-81-p0-metadata-gaps-2026-05-15/p0-c-llamacli.log` — llama-cli refusal
+
+---
+
+
+## §82. P2-A 5000-step training EARLY-STOP at val_loss=4.7111 (epoch 20); P0-trio dispatched, P0-G surfaces as 4th Class 3 packaging defect (2026-05-15)
+
+After §80's EV ranking placed P2-A 5000-step training at the head of the queue (Δship-% = +5, P = 70%, effort = 80 min), §80's P0 trio infrastructure fixes (#1699 P0-F arch case + #1701 P0-D embed tokenizer + P0-E arch metadata) landed on main, and §78's 5g.2 corpus + qwen-v2 dataset were both confirmed integrity-valid. §82 records the **first long-training MODEL-2 dispatch since §34 (twenty-seven days, sixty amendments ago)** and the **fourth Class 3 packaging defect surfaced by the §80 P0 audit chain**.
+
+### 82.1 The P2-A dispatch — 27 epochs, 2700 steps, EARLY-STOP
+
+| Parameter | Value |
+|---|---|
+| Run dir | `/mnt/nvme-raid0/runs/model-2-p2a-5000steps-20260515-205805` |
+| Init | `/mnt/nvme-raid0/models/qwen2.5-coder-0.5b-instruct-imported.apr` |
+| Dataset | `codeparrot-python-permissive-shards-qwen-v2` (125 shards, 1.24B tokens, §77-discovered) |
+| Device | `cuda:0` (RTX 4090, lambda-vector) |
+| Mode | `finetune` |
+| Seed | 42 |
+| Requested steps | 5000 |
+| Recorded steps | 2700 |
+| Recorded epochs | 27 |
+| Terminal verdict | **OK EARLY_STOP** |
+| Wall (estimated) | ~40 min |
+| Best val_loss | **4.7110777** at epoch 20 |
+| Final epoch val_loss | 4.8114185 (epoch 26) |
+| Initial val_loss (epoch 0) | 6.5907736 |
+| §34 capacity ceiling | 9.38 |
+| **Δ vs §34 ceiling** | **−4.67 (50.2% of ceiling)** |
+
+§34's 200K-step retrain capacity ceiling was **9.38**. §78's 500-step fine-tune broke it to **5.36**. §82's 2700-step fine-tune drives further down to **4.71**: **§34 ceiling is now broken by 4.67pp** (versus 4.02pp for §78). Three orders of MODEL-2 progress in a 16-day arc:
+
+```
+2026-04-28 §34: from-scratch  200K steps → val_loss = 9.38  (capacity ceiling)
+2026-05-15 §78: fine-tune        500 steps → val_loss = 5.36  (−4.02pp;  44.9% loss reduction)
+2026-05-15 §82: fine-tune       2700 steps → val_loss = 4.71  (−4.67pp;  49.8% loss reduction)
+```
+
+The §49 from-scratch → fine-tune pivot continues to compound: marginal benefit per step is now declining (500→2700 steps = +2200 steps for only −0.65 val_loss). The next dispatch (P2-A2) needs corpus expansion or longer schedule, not more steps on the same trajectory.
+
+### 82.2 Threshold check against /loop branch rules
+
+The /loop branch logic dispatched:
+
+| val_loss band | Action |
+|---|---|
+| `< 2.2` (strict) | flip **AC-SHIP2-003** strict to DISCHARGED |
+| `2.2 ≤ val_loss < 5.36` (incremental) | record ship-% bump |
+| `≥ 5.36` (no progress) | no movement |
+
+P2-A's **4.7111** lands in the **incremental band**. AC-SHIP2-003 stays PARTIAL (strict floor at 2.2 unmet); incremental ship-% bump is recorded; **§78's bound of 5.36 is now broken to 4.71** (further 0.65pp improvement on top of §78's 4.02pp).
+
+### 82.3 P0 trio dispatch on best-epoch checkpoint (`epoch-020.apr`)
+
+§80 specified that once P2-A produced a checkpoint, the P0 trio (apr qa + apr bench + apr export → llama-cli) should be re-dispatched against it. With #1699/#1701 merged, all three should now succeed end-to-end.
+
+#### P0-A (apr qa)
+
+```
+gates_executed: 6
+gates_skipped:  6
+summary:        Failed gates: golden_output
+```
+
+- **Infrastructure: PASS.** `[PMAT-171] Loaded embedded BPE tokenizer: 151643 vocab, 151387 merges, 3 special tokens` — confirms #1701 P0-D fix is live in production.
+- **golden_output fail is expected**, not infrastructure: pretrain-only checkpoint has no instruction-tuned reference to compare against. This will pass once MODEL-2 reaches the SFT phase (out of scope for SHIP-TWO-001 pretrain step 5g).
+
+#### P0-B (apr bench)
+
+```json
+{
+  "tokens_per_second": 325.1,
+  "ttft_ms": 3.07,
+  "iterations": 3,
+  "latency_p50_ms": 196.78,
+  "latency_p95_ms": 197.08,
+  "passed": true
+}
+```
+
+- **PASS** at **325.1 tok/s** on RTX 4090 with the pretrain checkpoint.
+- C-03 gate (hidden_size / num_hidden_layers / num_attention_heads / intermediate_size metadata) **satisfied** — confirms #1701 P0-E fix is live in production.
+- TTFT 3.07ms / p50 196.78ms / p95 197.08ms — clean, no jitter.
+
+**AC-SHIP2-009 → DISCHARGED** (apr bench works on pretrain ckpt at 325 tok/s + embedded tokenizer + arch metadata; no C-03 hangups; clean JSON output).
+
+#### P0-C step 1 (apr export → GGUF)
+
+```
+Original size  2.35 GiB
+Exported size  2.35 GiB
+       Tensors  291
+        Format  GGUF
+  ✓ Export successful
+```
+
+- **PASS.** `general.architecture = llama` (lowercase) — confirms #1699 P0-F arch case mapping is live in production.
+
+#### P0-C step 2 (llama-cli load) — BLOCKED by NEW Class 3 defect P0-G
+
+```
+llama_model_load: error loading model:
+  check_tensor_dims: tensor 'token_embd.weight' has wrong shape;
+  expected   896, 151643,   got   896, 151936,  1, 1
+llama_model_load_from_file_impl: failed to load model
+```
+
+`apr inspect` on the exported GGUF confirms the mismatch:
+
+| Key | Value |
+|---|---|
+| `llama.vocab_size` | **151936** |
+| `tokenizer.ggml.tokens` | **[len=151643]** |
+| `tokenizer.ggml.merges` | [len=151387] |
+| `token_embd.weight` shape | [896, **151936**] |
+
+**Root cause**: Qwen2.5-Coder model pads `embed_tokens` to 151936 (multiple-of-64 / TP-alignment convention), but the actual tokenizer vocabulary is 151643 (151,643 base + 0 specials counted). llama.cpp uses `len(tokenizer.ggml.tokens)` as the expected first dim of `token_embd.weight`. They MUST match — either pad the tokens array to 151936 with placeholder `<|pad_N|>` entries, or set `llama.vocab_size = 151643` AND strip the trailing rows from `token_embd.weight` (the latter loses model capacity).
+
+**Standard llama.cpp convention is option (a)**: pad the tokens array. See `convert_hf_to_gguf.py` upstream — it emits placeholder `[PAD{N}]` tokens for vocab ids in `[len(real_vocab), vocab_size)`.
+
+**P0-G defect record**:
+
+```yaml
+id: P0-G
+class: 3  # packaging defect — training works ≠ checkpoint is usable downstream
+title: "GGUF export tokenizer.ggml.tokens not padded to llama.vocab_size"
+site: crates/aprender-core/src/format/converter/gguf_export_config.rs:362-364
+fix_scope: small — single function pad with "<|pad_N|>" placeholders to model vocab_size
+blocks: [AC-SHIP2-010 (llama-cli interop)]
+discovered_by: P0-C step 2 against epoch-020 GGUF export
+methodology_lesson_29: Class 3 packaging defects surface in WAVES (4 in 24h: P0-D embed tok, P0-E arch dims, P0-F arch case, P0-G vocab pad)
+```
+
+**AC-SHIP2-010 stays BLOCKED** on P0-G fix.
+
+### 82.4 Sample generation — model is not coherent but did learn
+
+Two greedy-decode samples at temperature 0:
+
+```
+Prompt:  "def fibonacci(n):"
+Output:  " č č č č č č č č č č č č č"
+
+Prompt:  "def add(a, b):"
+Output:  " # line # line # line # line # line # line # line # line # line # line # line"
+```
+
+The repetitive token pattern confirms **the model learned token-frequency statistics but not coherent Python**. This is expected for val_loss 4.71:
+
+| val_loss band | Output character |
+|---|---|
+| > 6 | Pure random (model output ~ uniform over vocab) |
+| 4-6 | Repetitive high-frequency tokens (P2-A is here) |
+| 2.5-4 | Partial structure, frequent syntax errors |
+| 1.5-2.5 | Coherent code with semantic errors |
+| < 1.5 | Fluent Python |
+
+This is exactly why P1-B (Python validity on 100 prompts) was deprioritized in §82's queue update — the model needs ≥1pp more loss reduction (val_loss < 4) before P1-B becomes useful. Running it at 4.71 would produce 100% failure rate and waste the 16-hour eval window.
+
+### 82.5 AC-SHIP2-* movement
+
+| AC | Before §82 | After §82 | Trigger |
+|---|---|---|---|
+| **AC-SHIP2-003** (val_loss vs §34) | PARTIAL (5.36 vs 9.38, no strict) | PARTIAL (4.71 vs 9.38, no strict) | §78 → §82 incremental, strict 2.2 not yet met |
+| **AC-SHIP2-006** (apr qa) | PROPOSED | FUNCTIONAL (infra) | P0-A runs end-to-end; only golden_output fails (expected) |
+| **AC-SHIP2-009** (apr bench) | PROPOSED | **DISCHARGED** | P0-B PASS 325.1 tok/s with embedded tokenizer + C-03 satisfied |
+| **AC-SHIP2-010** (llama-cli interop) | PROPOSED | **BLOCKED on P0-G** | P0-C export works; llama-cli load fails on vocab pad |
+
+### 82.6 Methodology lesson #29 NEW — Class 3 packaging defects surface in waves
+
+The §80 P0 trio audit was designed to surface "1-2 Class 3 packaging defects". It surfaced **four**:
+
+| # | Defect | Date | Fix PR |
+|---|---|---|---|
+| 1 | P0-D missing embedded BPE tokenizer | 2026-05-15 (§81) | #1701 |
+| 2 | P0-E missing arch metadata (hidden_size etc.) | 2026-05-15 (§81) | #1701 |
+| 3 | P0-F HF→GGUF arch case mismatch | 2026-05-15 (§81) | #1699 |
+| 4 | P0-G GGUF tokens not padded to vocab_size | 2026-05-15 (§82) | TBD |
+
+Pattern: **once the training loop converges and produces a non-trivial checkpoint, every downstream tool (apr qa, apr bench, apr export, llama-cli) surfaces ITS OWN Class 3 defect** because the prior development trajectory exercised these tools against known-good external checkpoints (HF Qwen, GGUF Q4_K_M imports), not against checkpoints emitted by `apr pretrain`. Each downstream tool acts as a falsifier against a different invariant in the checkpoint-emission contract.
+
+**Lesson: when the first Class 3 defect surfaces in a tool, expect 2-3 more in adjacent tools the same week.** Plan for a cascade (4 PRs at ~30-60 LOC each) rather than a one-shot fix. Schedule the P0 dispatch trio with a 24-48h buffer for cascade closure.
+
+This lesson differs from methodology #27 ("prioritize by ship-% delta ÷ effort") and #28 ("Class 3 defects come in waves"); #29 sharpens #28 with a concrete heuristic: **expect 4 defects, not 2**, across the tool surface that consumes pretrain output.
+
+### 82.7 Updated priority queue (post-§82)
+
+| Item | Δship-% | Effort | P(success) | EV | Rank |
+|---|---|---|---|---|---|
+| **P0-G GGUF vocab pad fix** | +2 | 0.5h | 95% | **HIGH** | 1 |
+| P2-A2 retry (longer schedule or expanded corpus) | +8 | 3h | 40% | MED | 2 |
+| P2-B `--warn-on-wrap-around` (prevention) | +1 | 0.5h | 95% | MED | 3 |
+| P1-A Chinchilla gate (prevention) | +1 | 0.5h | 90% | MED | 4 |
+| P1-B Python validity on 100 prompts | +3 | 16h | 5% (val_loss 4.71 → gibberish) | **DEAD** | — |
+| P1-C HumanEval (also needs SFT) | +3 | 5-8h | 5% | **DEAD** | — |
+
+**Next dispatch**: P0-G (single-file ~30 LOC change in `gguf_export_config.rs::build_tokenizer_gguf_metadata`). Flips AC-SHIP2-010 DISCHARGED on landing.
+
+### 82.8 Ship %
+
+- **MODEL-1**: 100% (unchanged — independent track).
+- **MODEL-2**: **77% → 79%** (+2):
+  - +1 for AC-SHIP2-009 DISCHARGED (apr bench works at 325 tok/s on pretrain ckpt with embedded tokenizer + C-03 metadata satisfied).
+  - +1 for §34 ceiling broken further (5.36 → 4.71 = +0.65pp loss reduction).
+  - 0 for AC-SHIP2-003 strict (4.71 > 2.2 floor).
+  - 0 for AC-SHIP2-010 (blocked on P0-G — will flip +2 on landing).
+  - 0 for AC-SHIP2-006 (golden_output not yet meaningful for pretrain).
+- Bounded path to 85%: P0-G landed (79→81) → P2-A2 longer/wider (81→85 if val_loss < 3.5).
+
+### 82.9 Evidence artifacts
+
+- `evidence/section-82-p2a-results-2026-05-15/findings.json` — full structured audit
+- `evidence/section-82-p2a-results-2026-05-15/loss-trajectory.tsv` — 27-epoch trajectory
+- `evidence/section-82-p2a-results-2026-05-15/qa-epoch-020.json` — P0-A output
+- `evidence/section-82-p2a-results-2026-05-15/bench-epoch-020.json` — P0-B output (325.1 tok/s)
+- `evidence/section-82-p2a-results-2026-05-15/bench-epoch-026.json` — P0-B final-epoch output
+- `evidence/section-82-p2a-results-2026-05-15/llamacli-load-failure.log` — P0-C step 2 vocab-mismatch error
 
 ---
 

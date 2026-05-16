@@ -167,9 +167,16 @@ fn push_i32_array(
     }
 }
 
-/// Extract tokenizer metadata from APR custom fields for GGUF export (GH-253)
+/// Extract tokenizer metadata from APR custom fields for GGUF export (GH-253).
+///
+/// P0-G: `vocab_size` is the model's `<arch>.vocab_size`. When the embedded tokenizer
+/// vocabulary is smaller than the model's vocab_size (Qwen2.5: 151643 vs 151936),
+/// the emitted `tokenizer.ggml.tokens` array is padded with `<|pad_N|>` placeholders
+/// so llama.cpp's `check_tensor_dims` accepts the corresponding `token_embd.weight`
+/// first dim. Pass 0 to disable padding.
 fn extract_apr_tokenizer_for_gguf(
     apr_metadata: &crate::format::v2::AprV2Metadata,
+    vocab_size: usize,
 ) -> Vec<(String, crate::format::gguf::GgufValue)> {
     use crate::format::gguf::GgufValue;
 
@@ -208,6 +215,26 @@ fn extract_apr_tokenizer_for_gguf(
         "tokenizer.vocabulary",
         "tokenizer.ggml.tokens",
     );
+    // P0-G: pad tokens array to vocab_size if smaller (Qwen2.5: 151643 → 151936).
+    if vocab_size > 0 {
+        if let Some(tokens) = entries.iter_mut().find_map(|(k, v)| match v {
+            GgufValue::ArrayString(arr) if k == "tokenizer.ggml.tokens" => Some(arr),
+            _ => None,
+        }) {
+            if tokens.len() < vocab_size {
+                let pad_count = vocab_size - tokens.len();
+                eprintln!(
+                    "[P0-G] Padding APR-fallback tokenizer.ggml.tokens: {} + {} placeholders = {}",
+                    tokens.len(),
+                    pad_count,
+                    vocab_size
+                );
+                for i in tokens.len()..vocab_size {
+                    tokens.push(format!("<|pad_{i}|>"));
+                }
+            }
+        }
+    }
     push_string_array(
         &mut entries,
         custom,
@@ -365,7 +392,8 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
 
     // Build metadata from architecture config + tokenizer custom fields
     let mut metadata = build_gguf_arch_metadata(&apr_metadata);
-    metadata.extend(extract_apr_tokenizer_for_gguf(&apr_metadata));
+    let vocab_size = apr_metadata.vocab_size.unwrap_or(0);
+    metadata.extend(extract_apr_tokenizer_for_gguf(&apr_metadata, vocab_size));
 
     // GH-253-4: Validate metadata completeness before writing
     let validated = ValidatedGgufMetadata::validate(metadata)?;
