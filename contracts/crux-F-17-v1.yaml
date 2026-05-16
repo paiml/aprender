@@ -1,12 +1,20 @@
 # CRUX-F-17 — Attention pattern visualization
+# Promoted to PARTIAL_ALGORITHM_LEVEL at v1.2.0 under CRUX-SHIP-001 (2026-05-17):
+# - classifier: crates/apr-cli/src/commands/attn_viz_classifier.rs (9 unit tests)
+# - CLI surface: `apr attn-viz-lint [--attn-file F] [--html-file F] [--expected-heatmaps N] [--tolerance F] [--epsilon F]`
+# - e2e: crates/apr-cli/tests/falsification_crux_f_17.rs (9 tests)
+# Full discharge requires a live `apr attn-viz` emitter writing the
+# attention dump (JSON form) + HTML — tracked as BLOCKER-UPSTREAM-MISSING.
 
 metadata:
   id: CRUX-F-17
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
+  updated: "2026-05-17"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
+  kind: kernel
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "F — Tensor Ops & Low-level"
@@ -52,6 +60,25 @@ falsification_tests:
     assert np.allclose(sums, 1.0, atol=1e-5), (sums.min(), sums.max())
     PY
   if_fails: rule 'attention rows are proper distributions' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/attn_viz_classifier.rs
+    cli_path: crates/apr-cli/src/commands/attn_viz_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_17.rs
+    e2e_tests:
+    - falsify_crux_f_17_001_row_softmax_ok_on_good_dump
+    - falsify_crux_f_17_001_row_softmax_rejects_unnormalized
+    - falsify_crux_f_17_tolerance_relaxes_row_softmax_gate
+    sub_claim: |
+      Algorithm-level necessary condition on the captured attention dump
+      (JSON form, 4-D `[layers][heads][rows][cols]` floats):
+      `classify_row_softmax_normalization` verifies `Σ_j attn[l,h,i,j] ≈ 1.0`
+      within `tolerance` (default 1e-5, configurable). The outcome
+      `RowOutOfNormalization { layer, head, row, sum, tolerance }`
+      pinpoints the offending slice so emitter bugs are debuggable
+      from the lint output alone.
+    scope: "(body, tolerance) -> AttnRowsOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live `apr attn-viz` emitter writing the attention dump"
 - id: FALSIFY-CRUX-F-17-002
   rule: causal mask zeroes future positions
   prediction: "upper-triangular positions (j > i) are ≤ 1e-9"
@@ -65,6 +92,22 @@ falsification_tests:
     assert (a[..., mask] <= 1e-9).all(), a[..., mask].max()
     PY
   if_fails: rule 'causal mask zeroes future positions' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/attn_viz_classifier.rs
+    cli_path: crates/apr-cli/src/commands/attn_viz_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_17.rs
+    e2e_tests:
+    - falsify_crux_f_17_002_causal_mask_rejects_nonzero_future
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_causal_mask` walks
+      the 4-D dump and rejects with `NonZeroFuturePosition { layer,
+      head, row, col, value, epsilon }` on the first `(i, j)` with
+      `j > i` and `|attn[l,h,i,j]| > epsilon` (default 1e-9,
+      configurable). Mask leaks indicate either a missing pre-softmax
+      `-inf` mask injection or an off-by-one in the triangular mask.
+    scope: "(body, epsilon) -> AttnCausalMaskOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live `apr attn-viz` emitter writing causal-masked attention"
 - id: FALSIFY-CRUX-F-17-003
   rule: HTML output contains one heatmap per requested head
   prediction: "html contains |layers|*|heads| canvas/svg elements"
@@ -74,6 +117,23 @@ falsification_tests:
     python3 -c "assert $n >= 4, $n"
 
   if_fails: rule 'HTML output contains one heatmap per requested head' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/attn_viz_classifier.rs
+    cli_path: crates/apr-cli/src/commands/attn_viz_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_17.rs
+    e2e_tests:
+    - falsify_crux_f_17_003_html_heatmap_count_ok_when_threshold_met
+    - falsify_crux_f_17_003_html_heatmap_count_rejects_too_few
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_html_heatmap_count`
+      counts `<svg` and `<canvas` open-tags in the HTML body (tolerant
+      of attributes between the tag name and `>`) and rejects when
+      total < `|layers| * |heads|` (default 1, caller-configured).
+      The outcome reports the actual count so the emitter's coverage
+      gap is debuggable from lint output.
+    scope: "(html, expected) -> AttnHtmlOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live `apr attn-viz` emitter writing the per-head heatmap HTML"
 proof_obligations:
 - type: equivalence
   property: "apr attn-viz attention values match HF `output_attentions=True` to 1e-5 on same model+prompt"

@@ -183,6 +183,21 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             cli.json,
         ),
 
+        ExtendedCommands::AttnVizLint {
+            attn_file,
+            html_file,
+            expected_heatmaps,
+            tolerance,
+            epsilon,
+        } => commands::attn_viz_lint::run(
+            attn_file.as_deref(),
+            html_file.as_deref(),
+            *expected_heatmaps,
+            *tolerance,
+            *epsilon,
+            cli.json,
+        ),
+
         ExtendedCommands::OtlpLint {
             otlp_file,
             require_apr_span,
