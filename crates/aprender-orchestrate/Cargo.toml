@@ -56,6 +56,10 @@ glob = { version = "0.3", optional = true }
 # Process execution (native-only)
 which = { version = "6.0", optional = true }
 
+# Unix syscalls for PR_SET_PDEATHSIG — ensures apr serve children are reaped
+# when their parent apr code process dies (fixes #1712 orphan-process leak).
+libc = { version = "0.2", optional = true }
+
 # Syscall tracing (native-only)
 renacer = { workspace = true, optional = true }
 
@@ -210,7 +214,7 @@ trueno-integration = ["trueno", "native"]
 oracle-mode = ["trueno-graph", "trueno-db", "native"]
 
 # Inference engine integration (GGUF/safetensors serving)
-inference = ["realizar", "native"]
+inference = ["realizar", "native", "libc"]
 
 # Distributed compute integration (CPU/GPU/Remote)
 distributed = ["repartir", "native"]
