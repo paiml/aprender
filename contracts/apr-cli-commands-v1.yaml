@@ -532,6 +532,18 @@ commands:
     requires_model: false
     side_effects: []
 
+  - name: shard
+    category: model_ops
+    description: "Split safetensors file into shards + weight-map index (CRUX-B-05)"
+    requires_model: true
+    side_effects: [filesystem]
+
+  - name: unshard
+    category: model_ops
+    description: "Reconstruct single safetensors file from sharded directory (CRUX-B-05)"
+    requires_model: false
+    side_effects: [filesystem]
+
   - name: oracle
     category: misc
     description: "RAG oracle — search Sovereign AI Stack documentation"
