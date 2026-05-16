@@ -1,11 +1,12 @@
-# Specification: aprender-coder-7b (MODEL-1)
+# Specification: aprender/qwen2.5-coder-7b-apache-q4k (MODEL-1)
 
-**Model name:** `aprender-coder-7b` — distilled 7B coder teacher.
+**Model name:** `aprender/qwen2.5-coder-7b-apache-q4k` — Apache-licensed Q4_K_M derivative of `Qwen/Qwen2.5-Coder-7B-Instruct`. Follows the Unsloth/Bartowski/TheBloke convention: keep the upstream base name in the slug, prefix with the framework org (`aprender/`), suffix with license + quantization tags.
+**HF artifact slug:** `paiml/qwen2.5-coder-7b-apache-q4k-v1` (published; `paiml/` is the GitHub org used for HF, `-v1` is the version tag — same artifact as the family name above).
 **Document ID:** SPEC-SHIP-MODEL-1 (stable; numeric ID preserved across renames).
-**Version:** 1.1.0
+**Version:** 1.2.0
 **Parent:** [Ship Two Models Index](./ship-two-models-spec.md)
 **Companion specs:**
-- [aprender-coder-370m spec (MODEL-2)](./ship-model-2-spec.md) — 370M Python student
+- [aprender/albor-370m spec (MODEL-2)](./ship-model-2-spec.md) — sovereign 370M Python student
 - [Shared methodology](./ship-shared-methodology.md) — foundation + cross-cutting falsifiers
 
 **Ship status (2026-05-15):** **🎉 100% — shipped to users via v0.33.0 cascade** (see §75 + §76).

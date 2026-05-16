@@ -1,11 +1,12 @@
-# Specification: aprender-coder-370m (MODEL-2)
+# Specification: aprender/albor-370m (MODEL-2)
 
-**Model name:** `aprender-coder-370m` — sovereign 370M Python code completion student.
+**Model name:** `aprender/albor-370m` — sovereign 370M Python code completion student. No upstream base (sovereign work), so the slug uses the original project codename `albor` (from `paiml/albor` repo) instead of an upstream model name. Same `{org}/{base}-{size}` shape as MODEL-1.
+**HF artifact slug:** not yet published — pending val_loss < 4 (currently 4.71 at §82). When published, expected slug: `paiml/albor-370m-v1` or similar.
 **Document ID:** SPEC-SHIP-MODEL-2 (stable; numeric ID preserved across renames).
-**Version:** 1.1.0
+**Version:** 1.2.0
 **Parent:** [Ship Two Models Index](./ship-two-models-spec.md)
 **Companion specs:**
-- [aprender-coder-7b spec (MODEL-1)](./ship-model-1-spec.md) — distilled 7B coder teacher
+- [aprender/qwen2.5-coder-7b-apache-q4k spec (MODEL-1)](./ship-model-1-spec.md) — distilled 7B coder teacher
 - [Shared methodology](./ship-shared-methodology.md) — foundation + cross-cutting falsifiers
 
 **Ship status (2026-05-15):** **79% — best val_loss 4.71 after §82's P2-A 5000-step run** (broke §34 ceiling from 9.38 → 4.71).

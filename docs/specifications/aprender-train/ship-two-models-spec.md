@@ -8,14 +8,20 @@ This document was split from a single 8,468-line spec at v3.28.0 into three comp
 
 ## Model identifiers
 
-| Stable ID | Family name | Role | Size | HF redistribution slug |
+| Stable ID | Family name | Role | Size | HF artifact slug |
 |---|---|---|---|---|
-| **MODEL-1** | `aprender-coder-7b` | Distilled coder teacher (from Qwen2.5-Coder-7B-Instruct) | 7B → 1.5B Q4_K_M | `paiml/qwen2.5-coder-7b-apache-q4k-v1` |
-| **MODEL-2** | `aprender-coder-370m` | Sovereign Python code completion student | 370M | (not yet published) |
+| **MODEL-1** | `aprender/qwen2.5-coder-7b-apache-q4k` | Distilled Apache-licensed Q4_K_M Qwen2.5-Coder-7B-Instruct teacher | 7B → 1.5B Q4_K_M | `paiml/qwen2.5-coder-7b-apache-q4k-v1` |
+| **MODEL-2** | `aprender/albor-370m` | Sovereign Python code completion student | 370M | (not yet published) |
 
-**Naming convention.** Spec-level identity follows the multi-model-author family pattern — `{family-prefix}-{variant}-{size}` — used by Mistral (`mistral-7b`, `mixtral-8x7b`), DeepSeek (`deepseek-coder-1.3b`, `-6.7b`, `-33b`), Qwen (`qwen2.5-7b`, `qwen2.5-coder-7b`), and Microsoft Phi (`phi-3.5-mini`, `phi-4`). `aprender` is the framework family prefix and acts as the model-author brand.
+**Naming convention.** Family name uses the redistributor pattern established by Unsloth, Bartowski, TheBloke: `{org}/{base-name}-{license-tag}-{quant-tag}` where `{base-name}` is the upstream model for derivatives or the project codename for sovereign work. `aprender/` is the framework org prefix. Examples in the wild:
 
-**Family vs. redistribution.** The HF redistribution slug keeps upstream lineage in its name (e.g. `paiml/qwen2.5-coder-7b-apache-q4k-v1` retains "qwen2.5-coder" because MODEL-1 is a quantized/relicensed derivative of Qwen's checkpoint). The spec-level family name (`aprender-coder-7b`) is the canonical identity used throughout this repo. Both names refer to the same artifact.
+- `unsloth/Qwen2.5-Coder-7B-Instruct-bnb-4bit` — keeps full Qwen base name, adds `-bnb-4bit` quant tag.
+- `bartowski/Qwen2.5-Coder-7B-Instruct-GGUF` — same base, `-GGUF` format tag.
+- `TheBloke/CodeLlama-7B-Instruct-GGUF` — keeps upstream CodeLlama identity.
+
+**Family name vs. HF artifact slug.** The family name (`aprender/...`) is the canonical spec identity. The HF artifact slug (`paiml/...-v1`) is the published handle, which uses the GitHub org (`paiml`) and a version tag (`-v1`). Both refer to the same artifact; the family name is what cross-references in this repo use.
+
+**Sovereign work (MODEL-2).** Since `albor-370m` is original (no upstream to redistribute), the `{base-name}` slot holds the project codename `albor` from its original repo `paiml/albor`, plus the size suffix `-370m`.
 
 MODEL-1 / MODEL-2 are stable document IDs (numeric, preserved across renames) used for cross-references in AC-SHIP1-*/AC-SHIP2-*, FALSIFY-SHIP-*, contracts, PR titles, and git history.
 
@@ -23,8 +29,8 @@ MODEL-1 / MODEL-2 are stable document IDs (numeric, preserved across renames) us
 
 | File | Scope | Status |
 |---|---|---|
-| [ship-model-1-spec.md](./ship-model-1-spec.md) | **aprender-coder-7b** (MODEL-1) — distilled 7B coder teacher | **🎉 100% — shipped via v0.33.0** |
-| [ship-model-2-spec.md](./ship-model-2-spec.md) | **aprender-coder-370m** (MODEL-2) — 370M Python student | **79% — best val_loss 4.71 (§82)** |
+| [ship-model-1-spec.md](./ship-model-1-spec.md) | **aprender/qwen2.5-coder-7b-apache-q4k** (MODEL-1) — distilled 7B coder teacher | **🎉 100% — shipped via v0.33.0** |
+| [ship-model-2-spec.md](./ship-model-2-spec.md) | **aprender/albor-370m** (MODEL-2) — sovereign 370M Python student | **79% — best val_loss 4.71 (§82)** |
 | [ship-shared-methodology.md](./ship-shared-methodology.md) | Foundation (§1-§3, §6-§11, §13) + cross-cutting falsifiers (§18, §36, §41, §44, §45) | Stable |
 
 ## Repository lineage
@@ -33,8 +39,8 @@ Both models originated as standalone GitHub projects before the APR-MONO consoli
 
 | Model | Lineage repo (standalone, dormant) | Active code repo | Artifact repo |
 |---|---|---|---|
-| `aprender-coder-7b` (MODEL-1) | [paiml/apr-leaderboard](https://github.com/paiml/apr-leaderboard) — last commit 2026-04-05 | [paiml/aprender](https://github.com/paiml/aprender) | [paiml/qwen2.5-coder-7b-apache-q4k-v1](https://huggingface.co/paiml/qwen2.5-coder-7b-apache-q4k-v1) (HuggingFace) |
-| `aprender-coder-370m` (MODEL-2) | [paiml/albor](https://github.com/paiml/albor) — last commit 2026-04-05 | [paiml/aprender](https://github.com/paiml/aprender) | (not yet published — pending val_loss < 4) |
+| `aprender/qwen2.5-coder-7b-apache-q4k` (MODEL-1) | [paiml/apr-leaderboard](https://github.com/paiml/apr-leaderboard) — last commit 2026-04-05 | [paiml/aprender](https://github.com/paiml/aprender) | [paiml/qwen2.5-coder-7b-apache-q4k-v1](https://huggingface.co/paiml/qwen2.5-coder-7b-apache-q4k-v1) (HuggingFace) |
+| `aprender/albor-370m` (MODEL-2) | [paiml/albor](https://github.com/paiml/albor) — last commit 2026-04-05 | [paiml/aprender](https://github.com/paiml/aprender) | (not yet published — pending val_loss < 4) |
 
 ## Latest atomic next action
 
@@ -42,10 +48,10 @@ Both models originated as standalone GitHub projects before the APR-MONO consoli
 
 ## Section ownership (jump table)
 
-### `aprender-coder-7b` (MODEL-1) — see [ship-model-1-spec.md](./ship-model-1-spec.md)
+### `aprender/qwen2.5-coder-7b-apache-q4k` (MODEL-1) — see [ship-model-1-spec.md](./ship-model-1-spec.md)
 §4 (base), §7.1 (falsification), §12 (expedited teacher-first), §15-§17 (SHIP-007), §23 (sub-FFN), §27 (P3), §30-§32 (SHIP-007 refutations), §40 (LOCALIZED), §46-§48 (layer-0 attention), §58 (v0.32.0 release), §61 (SHIP-002/006/008), §63 (empirical floor), §67-§71 (SHIP-005 chain), §72 (5-AC cascade), §73-§74 (LM head F32 GEMV), §75 (🎉 100%), §76 (v0.33.0 published).
 
-### `aprender-coder-370m` (MODEL-2) — see [ship-model-2-spec.md](./ship-model-2-spec.md)
+### `aprender/albor-370m` (MODEL-2) — see [ship-model-2-spec.md](./ship-model-2-spec.md)
 §5 (base), §7.2 (falsification), §14 (Task #132 CUDA training), §19-§20 (CUDA dispatch), §22 (first real training), §24-§25 (corpus diagnosis), §26 (three-priority plan), §33-§35 (retrain + distill stub), §42-§43 (distill-train), §49 (strategy pivot), §50-§57 (§50.4 cascade + step 5g preflight), §77 (5g.1 discovered), §78 (5g.2 converged), §79 (audit + Five-Whys), §80 (prioritized backlog), §81 (P0 metadata gaps), §82 (P2-A 5000-step val_loss=4.71).
 
 ### Shared (see [ship-shared-methodology.md](./ship-shared-methodology.md))
