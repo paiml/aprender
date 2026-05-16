@@ -299,10 +299,17 @@ fn build_gguf_config_metadata(
 }
 
 /// Build tokenizer metadata KV pairs for GGUF export.
+///
+/// P0-G: `vocab_size` is the model's `<arch>.vocab_size` (e.g. 151936 for Qwen2.5
+/// with TP-alignment padding). When the tokenizer's real vocabulary is smaller,
+/// the emitted `tokenizer.ggml.tokens` array is padded with placeholder entries
+/// (`<|pad_N|>`) so that llama.cpp's `check_tensor_dims` accepts the matching
+/// `token_embd.weight` first dim. Pass 0 to disable padding (back-compat).
 fn build_tokenizer_gguf_metadata(
     tokenizer: &crate::format::gguf::GgufTokenizer,
     arch: &str,
     model_name: &str,
+    vocab_size: usize,
 ) -> Vec<(String, crate::format::gguf::GgufValue)> {
     use crate::format::gguf::GgufValue;
     let mut metadata = Vec::new();
@@ -340,7 +347,7 @@ fn build_tokenizer_gguf_metadata(
         // mapped to "<unk>" — llama.cpp requires unique token strings.
         // Fix: append "_N" suffix to duplicates (same approach as convert.py).
         let mut seen = std::collections::HashMap::with_capacity(tokenizer.vocabulary.len());
-        let deduped: Vec<String> = tokenizer
+        let mut deduped: Vec<String> = tokenizer
             .vocabulary
             .iter()
             .enumerate()
@@ -358,13 +365,32 @@ fn build_tokenizer_gguf_metadata(
                 }
             })
             .collect();
+
+        // P0-G: pad to `vocab_size` so `len(tokenizer.ggml.tokens)` matches
+        // `token_embd.weight` first dim. Qwen2.5 has 151643 real tokens but pads
+        // embed_tokens to 151936 for TP-alignment. llama.cpp's check_tensor_dims
+        // refuses to load when these disagree.
+        let padded_len = if vocab_size > deduped.len() {
+            let pad_count = vocab_size - deduped.len();
+            eprintln!(
+                "[P0-G] Padding tokenizer.ggml.tokens: {} real tokens + {} placeholders = {}",
+                deduped.len(), pad_count, vocab_size
+            );
+            for i in deduped.len()..vocab_size {
+                deduped.push(format!("<|pad_{i}|>"));
+            }
+            vocab_size
+        } else {
+            deduped.len()
+        };
+
         metadata.push((
             "tokenizer.ggml.tokens".to_string(),
             GgufValue::ArrayString(deduped),
         ));
         eprintln!(
-            "[BUG-EXPORT-004] Added tokenizer metadata: model={}, vocab_size={}, bos={:?}, eos={:?}",
-            model_type, tokenizer.vocabulary.len(), tokenizer.bos_token_id, tokenizer.eos_token_id
+            "[BUG-EXPORT-004] Added tokenizer metadata: model={}, tokens_len={}, bos={:?}, eos={:?}",
+            model_type, padded_len, tokenizer.bos_token_id, tokenizer.eos_token_id
         );
     }
     if !tokenizer.merges.is_empty() {
@@ -461,6 +487,7 @@ fn export_to_gguf(
         apr_metadata.as_ref(),
         &cfg.arch,
         &cfg.model_name,
+        cfg.vocab_size,
         input,
     );
 

@@ -1,15 +1,22 @@
 
 /// Append tokenizer metadata to GGUF metadata, preferring tokenizer.json over APR fallback.
+///
+/// P0-G: `vocab_size` is the model's `<arch>.vocab_size` (e.g. 151936 for Qwen2.5 with
+/// TP-alignment padding). The tokenizer's true vocabulary may be smaller (151643 for
+/// Qwen2.5-Coder). llama.cpp uses `len(tokenizer.ggml.tokens)` as the expected first dim
+/// of `token_embd.weight`, so the tokens array MUST be padded to `vocab_size` with
+/// placeholder entries to match the actual tensor shape.
 fn append_tokenizer_to_metadata(
     metadata: &mut Vec<(String, crate::format::gguf::GgufValue)>,
     tokenizer: Option<&crate::format::gguf::GgufTokenizer>,
     apr_metadata: Option<&crate::format::v2::AprV2Metadata>,
     arch: &str,
     model_name: &str,
+    vocab_size: usize,
     input: &Path,
 ) {
     if let Some(tok) = tokenizer {
-        metadata.extend(build_tokenizer_gguf_metadata(tok, arch, model_name));
+        metadata.extend(build_tokenizer_gguf_metadata(tok, arch, model_name, vocab_size));
         return;
     }
 
@@ -22,7 +29,7 @@ fn append_tokenizer_to_metadata(
     let Some(apr_meta) = apr_metadata else {
         return;
     };
-    let apr_tok_entries = extract_apr_tokenizer_for_gguf(apr_meta);
+    let apr_tok_entries = extract_apr_tokenizer_for_gguf(apr_meta, vocab_size);
     if !apr_tok_entries.is_empty() {
         eprintln!(
             "[GH-211] Extracted {} tokenizer entries from APR metadata",
