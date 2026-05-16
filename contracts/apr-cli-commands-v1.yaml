@@ -556,6 +556,12 @@ commands:
     requires_model: false
     side_effects: []
 
+  - name: gpu-memtrace-lint
+    category: inspection
+    description: "Validate captured GPU memory Chrome Trace JSON (CRUX-F-07): schema + alloc/free pairing by addr + per-(pid,tid) monotonic timestamps"
+    requires_model: false
+    side_effects: []
+
   - name: shard
     category: model_ops
     description: "Split safetensors file into shards + weight-map index (CRUX-B-05)"

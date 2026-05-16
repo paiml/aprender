@@ -162,6 +162,10 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             preempt_threshold,
         } => commands::kv_timeline_lint::run(timeline_file, *preempt_threshold, cli.json),
 
+        ExtendedCommands::GpuMemtraceLint { trace_file } => {
+            commands::gpu_memtrace_lint::run(trace_file, cli.json)
+        }
+
         ExtendedCommands::OtlpLint {
             otlp_file,
             require_apr_span,

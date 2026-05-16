@@ -784,6 +784,12 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         stderr_file: Option<PathBuf>,
     },
+    /// Lint a captured GPU memory Chrome Trace Event Format JSON (CRUX-F-07)
+    GpuMemtraceLint {
+        /// Path to captured Chrome Trace JSON from `apr profile --gpu-memory-trace`
+        #[arg(long, value_name = "FILE")]
+        trace_file: PathBuf,
+    },
     /// Lint a captured KV-cache utilization timeline (CRUX-F-06)
     KvTimelineLint {
         /// Path to captured `apr profile --kv-timeline --json` body

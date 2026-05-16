@@ -115,6 +115,7 @@ fn registered_commands() -> Vec<&'static str> {
         "prometheus-lint",
         "otlp-lint",
         "kv-timeline-lint",
+        "gpu-memtrace-lint",
         "shard",
         "unshard",
         "oracle",
