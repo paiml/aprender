@@ -784,6 +784,21 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         stderr_file: Option<PathBuf>,
     },
+    /// Lint a captured OTLP/JSON ExportTraceServiceRequest body (CRUX-K-08)
+    OtlpLint {
+        /// Path to captured OTLP/JSON export body
+        #[arg(long, value_name = "FILE")]
+        otlp_file: PathBuf,
+        /// Require at least one `apr.inference` span to be present
+        #[arg(long)]
+        require_apr_span: bool,
+        /// Require gen_ai.* and apr.tokens.* attribute keys on some span
+        #[arg(long)]
+        require_genai_attrs: bool,
+        /// Verify W3C trace-context propagation: expect this 32-hex traceId
+        #[arg(long, value_name = "HEX32")]
+        expect_trace_id: Option<String>,
+    },
     /// Lint a captured Prometheus /metrics response (CRUX-K-07)
     PrometheusLint {
         /// Path to captured /metrics response body (text/plain; version=0.0.4)

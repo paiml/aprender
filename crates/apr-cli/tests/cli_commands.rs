@@ -113,6 +113,7 @@ fn registered_commands() -> Vec<&'static str> {
         "ppl",
         "quant-preservation-lint",
         "prometheus-lint",
+        "otlp-lint",
         "shard",
         "unshard",
         "oracle",
