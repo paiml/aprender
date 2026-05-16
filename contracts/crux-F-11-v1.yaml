@@ -1,16 +1,21 @@
 # CRUX-F-11 — NaN/Inf detector in activations
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# Promoted to PARTIAL_ALGORITHM_LEVEL at v1.1.0 under CRUX-SHIP-001 (2026-05-16):
+# - classifier: crates/apr-cli/src/commands/check_finite_classifier.rs (12 unit tests)
+# - CLI surface: `apr check-finite-lint [--error-file F] [--list-file F] [--min-layers N]`
+# - e2e: crates/apr-cli/tests/falsification_crux_f_11.rs (12 tests)
+# FALSIFY-CRUX-F-11-001 (clean exit 0) and -004 (parity with torch
+# anomaly mode) require a live `apr trace --check-finite` emitter and a
+# poisoned-weight harness — tracked as BLOCKER-UPSTREAM-MISSING.
 
 metadata:
   id: CRUX-F-11
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
+  updated: "2026-05-16"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
+  kind: kernel
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "F — Tensor Ops & Low-level"
@@ -102,6 +107,27 @@ falsification_tests:
       || { echo "FAIL: missing or wrong layer in error JSON: $OUT" >&2; exit 1; }
 
   if_fails: rule 'poisoned weight triggers exit 2 with layer name' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/check_finite_classifier.rs
+    cli_path: crates/apr-cli/src/commands/check_finite_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_11.rs
+    e2e_tests:
+    - falsify_crux_f_11_002_error_json_ok_on_well_formed
+    - falsify_crux_f_11_002_error_json_rejects_missing_layer
+    - falsify_crux_f_11_002_error_json_rejects_wrong_error_tag
+    - falsify_crux_f_11_002_error_json_rejects_value_out_of_set
+    sub_claim: |
+      Algorithm-level necessary conditions on an already-captured stderr
+      JSON from `apr trace --check-finite` on a poisoned model:
+      `classify_error_json` verifies the body is an object with the 6
+      required keys (`error`, `layer`, `shape`, `first_bad_index`,
+      `value`, `op`), `error == "non_finite"`, `value ∈ {nan, +inf, -inf}`,
+      `shape` is an integer array, and `first_bad_index >= 0`. Each
+      outcome names the offending field so emitter bugs are debuggable
+      from the lint output alone.
+    scope: "(body) -> CheckFiniteErrorOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live `apr trace --check-finite` writing the F-11 error JSON on a poisoned model"
 - id: FALSIFY-CRUX-F-11-003
   rule: layer coverage is complete
   prediction: "--check-finite --list enumerates every tensor-producing op"
@@ -112,6 +138,27 @@ falsification_tests:
     [ "$N" -ge 100 ] || { echo "FAIL: only $N layers listed, expected >= 100" >&2; exit 1; }
 
   if_fails: rule 'layer coverage is complete' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/check_finite_classifier.rs
+    cli_path: crates/apr-cli/src/commands/check_finite_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_11.rs
+    e2e_tests:
+    - falsify_crux_f_11_003_layer_coverage_ok_on_well_formed
+    - falsify_crux_f_11_003_layer_coverage_rejects_too_few
+    - falsify_crux_f_11_003_layer_coverage_rejects_missing_op_prefixes
+    - falsify_crux_f_11_min_layers_threshold_is_configurable
+    sub_claim: |
+      Algorithm-level necessary conditions on an already-captured stdout
+      JSON from `apr trace --check-finite --list`:
+      `classify_layer_coverage` verifies the body has a `layers` array
+      with at least `min_layers` entries (default 100, configurable)
+      and every transformer-op prefix in `F11_REQUIRED_OP_PREFIXES`
+      (attention_q/k/v/out, ffn_gate/up/down, layernorm) appears in at
+      least one layer name. Missing prefixes are listed sorted so the
+      coverage gap is debuggable from lint output.
+    scope: "(body, min_layers, required_op_prefixes) -> CheckFiniteCoverageOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live `apr trace --check-finite --list` enumerating every forward-pass tensor op"
 - id: FALSIFY-CRUX-F-11-004
   rule: parity with torch anomaly detection
   prediction: "apr and torch identify the same first-fault layer"
