@@ -931,6 +931,7 @@ dependencies = [
  "glob",
  "indexmap 2.13.1",
  "jugar-probar 1.0.4",
+ "libc",
  "pacha",
  "pepita",
  "pmcp",

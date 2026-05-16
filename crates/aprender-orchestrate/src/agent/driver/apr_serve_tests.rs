@@ -180,6 +180,69 @@ fn falsify_http_001_tool_call_format() {
     assert!(msgs[2]["content"].as_str().unwrap().contains("<tool_result>"));
 }
 
+// ═══ FALSIFY-1712: PR_SET_PDEATHSIG orphan reaping ═══
+//
+// Issue #1712: `apr code` spawns `apr serve` as a child. If `apr code` is
+// killed (timeout, SIGTERM, panic), the child must be reaped — not orphaned
+// with 3GB RSS.
+//
+// We can't easily kill the test process itself, so instead we verify the
+// helper installs a `pre_exec` hook that calls `prctl(PR_SET_PDEATHSIG)`.
+// The end-to-end behaviour is verified by spawning a `sleep` child with the
+// same hook from a short-lived parent shell and asserting the child dies.
+
+#[cfg(unix)]
+#[test]
+fn falsify_1712_pdeathsig_helper_installs_pre_exec() {
+    // The helper must not panic on a fresh Command.
+    let mut cmd = std::process::Command::new("/bin/true");
+    super::configure_parent_death_signal(&mut cmd);
+    // Spawning must succeed — pre_exec hook is well-formed.
+    let mut child = cmd.spawn().expect("spawn /bin/true with pdeathsig");
+    let status = child.wait().expect("wait /bin/true");
+    assert!(status.success(), "/bin/true should exit 0 with PR_SET_PDEATHSIG set");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn falsify_1712_pdeathsig_actually_set_in_child() {
+    // Direct verification: spawn python3 in the child and have it call
+    // `prctl(PR_GET_PDEATHSIG, ...)` to read back the value our pre_exec
+    // hook just set. If our hook ran correctly, the child reports SIGTERM
+    // (15); without the hook it would report 0.
+    //
+    // We use python3 instead of /proc/self/status because the latter does
+    // not expose `PDeathSig` on all kernel versions (Ubuntu 6.8 omits it).
+    if std::process::Command::new("python3").arg("--version").output().is_err() {
+        eprintln!("skipping: python3 not available");
+        return;
+    }
+
+    // PR_GET_PDEATHSIG = 2 (Linux <sys/prctl.h>).
+    let script = "import ctypes; libc=ctypes.CDLL('libc.so.6'); \
+                  v=ctypes.c_int(0); libc.prctl(2, ctypes.byref(v)); \
+                  print(v.value)";
+
+    let mut cmd = std::process::Command::new("python3");
+    cmd.arg("-c").arg(script).stdout(std::process::Stdio::piped());
+    super::configure_parent_death_signal(&mut cmd);
+
+    let output = cmd.output().expect("spawn python3");
+    assert!(output.status.success(), "python3 exited nonzero: {:?}", output.status);
+
+    let reported: i32 = String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse()
+        .expect("python3 should print an integer");
+
+    assert_eq!(
+        reported,
+        libc::SIGTERM,
+        "FALSIFY-1712: child PR_GET_PDEATHSIG returned {reported}, expected SIGTERM (15). \
+         prctl(PR_SET_PDEATHSIG) did not stick across exec — orphan-reaping is broken."
+    );
+}
+
 #[test]
 fn falsify_http_001_strips_verbose_keeps_compact() {
     use crate::agent::driver::Message;

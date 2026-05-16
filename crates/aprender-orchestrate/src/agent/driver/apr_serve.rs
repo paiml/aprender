@@ -87,26 +87,33 @@ impl AprServeDriver {
         // wrong output for Qwen3 (Q6K→FP8 requantization bug). Serial prefill uses
         // Q4K/Q6K GEMV kernels which produce correct output. BATCHED_PREFILL=0 disables
         // the FP8 path while keeping CUDA acceleration for decode tokens.
-        let child = Command::new(&apr_path)
-            .args([
-                "serve",
-                "run",
-                &model_path.to_string_lossy(),
-                "--port",
-                &port.to_string(),
-                "--host",
-                "127.0.0.1",
-                "--gpu",
-            ])
-            .env("BATCHED_PREFILL", "0")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| {
-                AgentError::Driver(DriverError::InferenceFailed(format!(
-                    "failed to spawn apr serve: {e}"
-                )))
-            })?;
+        let mut cmd = Command::new(&apr_path);
+        cmd.args([
+            "serve",
+            "run",
+            &model_path.to_string_lossy(),
+            "--port",
+            &port.to_string(),
+            "--host",
+            "127.0.0.1",
+            "--gpu",
+        ])
+        .env("BATCHED_PREFILL", "0")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+        // Issue #1712: kernel-enforced reaping. Drop on AprServeDriver only fires
+        // for graceful Rust exit — if `apr code` is killed by `timeout`, SIGTERM,
+        // SIGKILL, or an uncaught panic, the Drop never runs and `apr serve`
+        // orphans (~3 GB RSS each). PR_SET_PDEATHSIG asks the kernel to SIGTERM
+        // the child the moment its parent dies, independent of cleanup paths.
+        configure_parent_death_signal(&mut cmd);
+
+        let child = cmd.spawn().map_err(|e| {
+            AgentError::Driver(DriverError::InferenceFailed(format!(
+                "failed to spawn apr serve: {e}"
+            )))
+        })?;
 
         eprintln!("Launched apr serve on port {port} (pid {})", child.id());
 
@@ -340,6 +347,42 @@ fn strip_thinking_blocks(text: &str) -> String {
     // Strip bare </think> tags (model sometimes emits just closing tags)
     result = result.replace("</think>", "");
     result.trim().to_string()
+}
+
+/// Issue #1712: ask the kernel to SIGTERM the child when the parent dies.
+///
+/// On Linux/Unix this uses `PR_SET_PDEATHSIG` via `pre_exec` so the child
+/// receives SIGTERM the instant its parent exits — whether the parent died
+/// gracefully, was SIGKILLed by `timeout`, or was terminated by the OOM
+/// killer. Without this, `apr serve` orphans hold ~3 GB RSS each.
+///
+/// A `getppid()==1` check immediately after `prctl` closes the small race
+/// where the parent dies between fork and prctl (in which case the death
+/// signal has already missed its window).
+#[cfg(unix)]
+#[allow(unsafe_code)] // pre_exec is unsafe-by-API; body uses only async-signal-safe calls
+fn configure_parent_death_signal(cmd: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    // SAFETY: `prctl` and `getppid` are async-signal-safe; `pre_exec` runs
+    // between fork and exec where only async-signal-safe calls are allowed.
+    unsafe {
+        cmd.pre_exec(|| {
+            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM, 0, 0, 0) == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            if libc::getppid() == 1 {
+                return Err(std::io::Error::other(
+                    "parent died before PR_SET_PDEATHSIG took effect",
+                ));
+            }
+            Ok(())
+        });
+    }
+}
+
+#[cfg(not(unix))]
+fn configure_parent_death_signal(_cmd: &mut Command) {
+    // Windows: no equivalent — orphans on parent death still possible.
 }
 
 /// Find the `apr` binary on PATH.
