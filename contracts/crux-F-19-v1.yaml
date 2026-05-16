@@ -1,12 +1,21 @@
 # CRUX-F-19 — apr explain token selection
+# Promoted to PARTIAL_ALGORITHM_LEVEL at v1.2.0 under CRUX-SHIP-001 (2026-05-16):
+# - classifier: crates/apr-cli/src/commands/explain_token_classifier.rs (13 unit tests)
+# - CLI surface: `apr explain-token-lint --jsonl-file FILE [--tolerance F] [--require-greedy]`
+# - e2e: crates/apr-cli/tests/falsification_crux_f_19.rs (11 tests)
+# Full discharge of F-19-001/002/003 requires a live `apr explain` emitter
+# writing the JSONL records under a real sampler — tracked as
+# BLOCKER-UPSTREAM-MISSING.
 
 metadata:
   id: CRUX-F-19
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
+  updated: "2026-05-16"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
+  kind: kernel
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "F — Tensor Ops & Low-level"
@@ -57,6 +66,28 @@ falsification_tests:
       assert abs(total - 1.0) < 1e-5, (r["step"], total)
     PY
   if_fails: rule 'post-sampler probs normalize' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/explain_token_classifier.rs
+    cli_path: crates/apr-cli/src/commands/explain_token_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_19.rs
+    e2e_tests:
+    - falsify_crux_f_19_001_probs_normalize_ok_on_good_body
+    - falsify_crux_f_19_001_probs_normalize_rejects_unnormalized
+    - falsify_crux_f_19_001_schema_rejects_empty_body
+    - falsify_crux_f_19_001_schema_rejects_malformed_line
+    - falsify_crux_f_19_tolerance_relaxes_normalize_gate
+    sub_claim: |
+      Algorithm-level necessary conditions on an already-captured JSONL
+      `apr explain` body: `classify_schema` verifies every line is a JSON
+      object with `step`, `sampled_id`, and a non-empty `candidates` array
+      whose entries carry `{token_id, pre_prob, post_prob, rank}`.
+      `classify_probs_normalize` then verifies `Σ post_prob ≈ 1.0` within
+      `tolerance` (default 1e-5, configurable). Outcome variants name
+      the offending line, step, and concrete sum so emitter bugs are
+      debuggable from lint output.
+    scope: "(body, tolerance) -> ExplainProbsOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live `apr explain` emitter writing normalized post-sampler probabilities"
 - id: FALSIFY-CRUX-F-19-002
   rule: sampled token always present in candidate list
   prediction: "for each step, sampled_token in {c.token for c in candidates}"
@@ -70,6 +101,23 @@ falsification_tests:
       assert r["sampled_id"] in ids, r
     PY
   if_fails: rule 'sampled token always present in candidate list' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/explain_token_classifier.rs
+    cli_path: crates/apr-cli/src/commands/explain_token_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_19.rs
+    e2e_tests:
+    - falsify_crux_f_19_002_sampled_in_candidates_rejects_missing
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_sampled_in_candidates`
+      verifies `sampled_id` appears in `candidates[*].token_id` for every
+      step. The sampler cannot return a token that was not in the
+      considered set; a violation is either a hallucinated sample id or
+      a truncated candidate list. Reports
+      `SampledNotInCandidates { line_no, step, sampled_id }` so the
+      offending step is pinpointed.
+    scope: "(body) -> ExplainSampledOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live `apr explain` emitter writing the full candidate list"
 - id: FALSIFY-CRUX-F-19-003
   rule: temp=0 always picks rank-0 candidate
   prediction: "--temp 0 --top-k 1 → sampled == argmax(logits)"
@@ -86,6 +134,24 @@ falsification_tests:
     PY
 
   if_fails: rule 'temp=0 always picks rank-0 candidate' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/explain_token_classifier.rs
+    cli_path: crates/apr-cli/src/commands/explain_token_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_19.rs
+    e2e_tests:
+    - falsify_crux_f_19_003_greedy_argmax_ok_on_good_body
+    - falsify_crux_f_19_003_greedy_argmax_rejects_non_argmax
+    sub_claim: |
+      Algorithm-level necessary condition: when the caller asserts the
+      trace was produced under greedy decoding (`--temp 0 --top-k 1` —
+      `apr explain-token-lint --require-greedy`), `classify_greedy_picks_argmax`
+      verifies `sampled_id == argmax_id(pre_prob)` for every step.
+      `NotArgmax` outcome reports both the sampled and argmax token
+      ids with their pre-sampler probabilities so divergences are
+      pinpointed.
+    scope: "(body) -> ExplainGreedyOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live `apr explain` emitter under greedy decoding"
 proof_obligations:
 - type: equivalence
   property: "apr explain output matches HF `generate(output_scores=True)` token probabilities within 1e-5"

@@ -1,0 +1,97 @@
+//! `apr explain-token-lint` — CRUX-F-19 sampler-chain JSONL gate.
+//!
+//! Reads an already-captured `apr explain --format jsonl` body and dispatches
+//! the pure classifiers in `explain_token_classifier`. Exits non-zero on any
+//! failure.
+//!
+//! Spec: `contracts/crux-F-19-v1.yaml`. CRUX-SHIP-001 g2/g3 surface.
+
+use std::path::{Path, PathBuf};
+
+use super::explain_token_classifier::{
+    classify_greedy_picks_argmax, classify_probs_normalize, classify_sampled_in_candidates,
+    classify_schema, ExplainGreedyOutcome, ExplainProbsOutcome, ExplainSampledOutcome,
+    ExplainSchemaOutcome,
+};
+use crate::error::{CliError, Result};
+
+pub(crate) fn run(
+    jsonl_file: &Path,
+    tolerance: f64,
+    require_greedy: bool,
+    json: bool,
+) -> Result<()> {
+    if !jsonl_file.exists() {
+        return Err(CliError::FileNotFound(PathBuf::from(jsonl_file)));
+    }
+    let body = std::fs::read_to_string(jsonl_file)?;
+
+    let schema = classify_schema(&body);
+    let (probs, sampled, greedy) = if matches!(schema, ExplainSchemaOutcome::Ok { .. }) {
+        (
+            classify_probs_normalize(&body, tolerance),
+            classify_sampled_in_candidates(&body),
+            if require_greedy {
+                Some(classify_greedy_picks_argmax(&body))
+            } else {
+                None
+            },
+        )
+    } else {
+        (ExplainProbsOutcome::Ok, ExplainSampledOutcome::Ok, None)
+    };
+
+    print_report(jsonl_file, &schema, &probs, &sampled, greedy.as_ref(), json);
+
+    if !matches!(schema, ExplainSchemaOutcome::Ok { .. }) {
+        return Err(CliError::ValidationFailed(format!(
+            "explain-token-lint schema gate rejected body: {schema:?}"
+        )));
+    }
+    if !matches!(probs, ExplainProbsOutcome::Ok) {
+        return Err(CliError::ValidationFailed(format!(
+            "explain-token-lint probs-normalize gate rejected body: {probs:?}"
+        )));
+    }
+    if !matches!(sampled, ExplainSampledOutcome::Ok) {
+        return Err(CliError::ValidationFailed(format!(
+            "explain-token-lint sampled-in-candidates gate rejected body: {sampled:?}"
+        )));
+    }
+    if let Some(g) = &greedy {
+        if !matches!(g, ExplainGreedyOutcome::Ok) {
+            return Err(CliError::ValidationFailed(format!(
+                "explain-token-lint greedy-argmax gate rejected body: {g:?}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn print_report(
+    path: &Path,
+    schema: &ExplainSchemaOutcome,
+    probs: &ExplainProbsOutcome,
+    sampled: &ExplainSampledOutcome,
+    greedy: Option<&ExplainGreedyOutcome>,
+    json: bool,
+) {
+    if json {
+        let obj = serde_json::json!({
+            "file": path.display().to_string(),
+            "schema": format!("{schema:?}"),
+            "probs_normalize": format!("{probs:?}"),
+            "sampled_in_candidates": format!("{sampled:?}"),
+            "greedy_picks_argmax": greedy.map(|g| format!("{g:?}")),
+        });
+        println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
+        return;
+    }
+    println!("explain-token-lint report for {}", path.display());
+    println!("  schema                : {schema:?}");
+    println!("  probs_normalize       : {probs:?}");
+    println!("  sampled_in_candidates : {sampled:?}");
+    if let Some(g) = greedy {
+        println!("  greedy_picks_argmax   : {g:?}");
+    }
+}

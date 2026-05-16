@@ -37,6 +37,8 @@ pub(crate) mod eval;
 #[cfg(feature = "training")]
 pub(crate) mod experiment;
 pub(crate) mod explain;
+pub(crate) mod explain_token_classifier;
+pub(crate) mod explain_token_lint;
 pub(crate) mod export;
 #[cfg(feature = "training")]
 pub(crate) mod finetune;

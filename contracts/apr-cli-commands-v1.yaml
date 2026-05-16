@@ -562,6 +562,12 @@ commands:
     requires_model: false
     side_effects: []
 
+  - name: explain-token-lint
+    category: inspection
+    description: "Validate captured `apr explain --format jsonl` sampler-chain trace (CRUX-F-19): schema + Σ post_prob ≈ 1 + sampled_id present in candidates + optional greedy=argmax assertion"
+    requires_model: false
+    side_effects: []
+
   - name: shard
     category: model_ops
     description: "Split safetensors file into shards + weight-map index (CRUX-B-05)"
