@@ -532,6 +532,12 @@ commands:
     requires_model: false
     side_effects: []
 
+  - name: quant-preservation-lint
+    category: inspection
+    description: "Validate dequant→requant metadata preservation (CRUX-B-19): general.* + tokenizer.* must be byte-equal modulo {quantization_version, file_type}"
+    requires_model: false
+    side_effects: []
+
   - name: shard
     category: model_ops
     description: "Split safetensors file into shards + weight-map index (CRUX-B-05)"

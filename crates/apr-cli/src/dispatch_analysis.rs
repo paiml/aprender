@@ -397,6 +397,11 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             commands::ppl::run(log_probs_file, cli.json)
         }
 
+        ExtendedCommands::QuantPreservationLint { reference, requant } => {
+            // CRUX-B-19 — validate dequant→requant metadata preservation.
+            commands::quant_preservation::run(reference, requant, cli.json)
+        }
+
         ExtendedCommands::Shard {
             file,
             max_shard_size,
