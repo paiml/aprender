@@ -858,6 +858,27 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         log_probs_file: PathBuf,
     },
+    /// Split a safetensors file into shards + weight-map index (CRUX-B-05)
+    Shard {
+        /// Single-file safetensors model to split
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+        /// Maximum size of each shard (e.g. 5GB, 500MB, 1.5GiB)
+        #[arg(long, value_name = "SIZE", default_value = "5GB")]
+        max_shard_size: String,
+        /// Output directory for shards + model.safetensors.index.json
+        #[arg(short, long, value_name = "DIR")]
+        output: PathBuf,
+    },
+    /// Reconstruct a single safetensors file from a sharded directory (CRUX-B-05)
+    Unshard {
+        /// Sharded directory containing model.safetensors.index.json
+        #[arg(value_name = "DIR")]
+        input: PathBuf,
+        /// Output single-file safetensors path
+        #[arg(short, long, value_name = "FILE")]
+        output: PathBuf,
+    },
     /// Publishing, conversion, and analysis tools
     #[command(flatten)]
     Tools(ToolCommands),

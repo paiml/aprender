@@ -114,6 +114,7 @@ pub(crate) mod search_merge;
 pub(crate) mod serve;
 pub(crate) mod serve_plan;
 pub(crate) mod serve_plan_output;
+pub(crate) mod shard;
 pub(crate) mod shared_cache;
 pub(crate) mod shared_cache_lint;
 pub(crate) mod showcase;
