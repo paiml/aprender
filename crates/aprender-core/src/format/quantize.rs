@@ -263,13 +263,24 @@ impl Quantizer for Q8_0Quantizer {
             });
         }
 
-        // GH-386: pre-allocate output and write directly to slice ranges so
-        // the inner loop is a tight `i8 → f32 * scale` over a fixed-size local
-        // [i8; 32]. LLVM auto-vectorizes this pattern into AVX2/NEON SIMD,
-        // replacing the previous `Vec::push` loop that bottlenecked on
-        // per-element capacity-growth checks.
-        let mut result = vec![0.0f32; total_elements];
+        // GH-386: AVX2 fast path. When the host CPU has AVX2, hand off to
+        // the SIMD implementation in `crate::format::quantize_simd`, which
+        // processes 32 elements per block as four 8-wide f32 vectors. The
+        // SIMD output is bit-exact relative to this scalar loop (verified by
+        // `quantize_simd::tests::scalar_simd_parity_q8_0`).
+        let mut result = vec![0.0f32; num_blocks * BLOCK_SIZE];
+        if crate::format::quantize_simd::dequantize_q8_0_avx2_dispatch(
+            &block.blocks,
+            num_blocks,
+            &mut result,
+        ) {
+            result.truncate(total_elements);
+            return Ok(result);
+        }
 
+        // Scalar fallback. Pre-allocate output and write directly to slice
+        // ranges so the inner loop is a tight `i8 → f32 * scale` that LLVM
+        // can auto-vectorize on non-x86 targets.
         for block_idx in 0..num_blocks {
             let block_start = block_idx * Q8_0_BLOCK_BYTES;
 
@@ -297,6 +308,7 @@ impl Quantizer for Q8_0Quantizer {
             }
         }
 
+        result.truncate(total_elements);
         Ok(result)
     }
 
@@ -390,14 +402,26 @@ impl Quantizer for Q4_0Quantizer {
             });
         }
 
-        // GH-386: pre-allocate output + write to slice ranges. Layout matches
-        // the interleaved pack used by `quantize` above (byte_i carries data
-        // positions 2i and 2i+1) — NOT the GGML half-half layout used in
-        // format::gguf::dequant.rs. Kept identical to the previous code's
-        // observable behavior; only the dispatch is tightened so LLVM can
-        // auto-vectorize the per-byte unpack + multiply.
-        let mut result = vec![0.0f32; total_elements];
+        // GH-386: AVX2 fast path. When the host CPU has AVX2, hand off to
+        // the SIMD implementation in `crate::format::quantize_simd`. The
+        // SIMD path produces bit-exact output relative to this scalar loop
+        // (verified by `quantize_simd::tests::scalar_simd_parity_q4_0`).
+        let mut result = vec![0.0f32; num_blocks * BLOCK_SIZE];
+        if crate::format::quantize_simd::dequantize_q4_0_avx2_dispatch(
+            &block.blocks,
+            num_blocks,
+            &mut result,
+        ) {
+            result.truncate(total_elements);
+            return Ok(result);
+        }
 
+        // Scalar fallback. Layout matches the interleaved pack used by
+        // `quantize` above (byte_i carries data positions 2i and 2i+1) —
+        // NOT the GGML half-half layout used in format::gguf::dequant.rs.
+        // Kept identical to the previous code's observable behavior; only
+        // the dispatch is tightened so LLVM can auto-vectorize the per-byte
+        // unpack + multiply on non-x86 targets.
         for block_idx in 0..num_blocks {
             let block_start = block_idx * Q4_0_BLOCK_BYTES;
 
@@ -432,6 +456,7 @@ impl Quantizer for Q4_0Quantizer {
             }
         }
 
+        result.truncate(total_elements);
         Ok(result)
     }
 
