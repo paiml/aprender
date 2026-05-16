@@ -253,17 +253,17 @@ equations:
 # ─── PROOF OBLIGATIONS ───────────────────────────────────────
 
 proof_obligations:
-- id: PO-CHINCHILLA-001
-  type: integration_test
-  discharges: [INV-CHINCHILLA-001, INV-CHINCHILLA-002, INV-CHINCHILLA-003]
-  site: crates/apr-cli/tests/chinchilla_gate_test.rs
-  state: pending
-
-- id: PO-CHINCHILLA-002
-  type: unit_test
-  discharges: [INV-CHINCHILLA-001]
-  site: crates/apr-cli/src/commands/pretrain.rs::tests
-  state: pending
+- type: precondition
+  property: Chinchilla D/N ≥ 10× required for compute-optimal training before any GPU dispatch
+  formal: 'D/N < 10 ∧ ¬force_under_provisioned ⟹ ABORT exit 1'
+  applies_to: all
+- type: invariant
+  property: Bypass flag preserves audit trail via BYPASSED log line
+  formal: 'force_under_provisioned ∧ D/N < 10 ⟹ stderr ∋ "[P0-J] Chinchilla gate BYPASSED"'
+- type: safety
+  property: From-scratch / synthetic runs (no --init) are exempt from the gate
+  formal: 'init_arch = None ⟹ gate skipped'
+  applies_to: all
 
 # ─── REFERENCES ──────────────────────────────────────────────
 
