@@ -1480,6 +1480,11 @@ pub(crate) fn run_encode_corpus(
             CorpusFormat::Parquet => "parquet",
         },
         "input_files": files.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
+        // SPEC §83 P2-C: `corpus_roots` tracks the distinct `--corpus`
+        // arguments passed to this run. Discharges INV-MERGE-001 (≥ 2
+        // sources) of contracts/corpus-merge-v3-v1.yaml at the manifest
+        // level. Per-shard provenance tagging is a v1.1 follow-up.
+        "corpus_roots": corpus.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
         "num_workers": workers,
         "elapsed_seconds": elapsed.as_secs_f64(),
     });
@@ -3201,6 +3206,28 @@ mod tests {
             input_files.len() >= 2,
             "input_files must list at least 2 source files, got {}",
             input_files.len(),
+        );
+        // SPEC §83 P2-C: manifest must list distinct --corpus roots
+        // (INV-MERGE-001 of corpus-merge-v3-v1).
+        let corpus_roots = manifest
+            .get("corpus_roots")
+            .and_then(|v| v.as_array())
+            .expect("manifest has corpus_roots");
+        assert_eq!(
+            corpus_roots.len(),
+            2,
+            "corpus_roots must list exactly 2 sources (src_a + src_b), got {}",
+            corpus_roots.len(),
+        );
+        let root_strs: Vec<&str> =
+            corpus_roots.iter().filter_map(|v| v.as_str()).collect();
+        assert!(
+            root_strs.iter().any(|s| s.contains("src_a.jsonl")),
+            "corpus_roots must reference src_a, got {root_strs:?}",
+        );
+        assert!(
+            root_strs.iter().any(|s| s.contains("src_b.jsonl")),
+            "corpus_roots must reference src_b, got {root_strs:?}",
         );
     }
 
