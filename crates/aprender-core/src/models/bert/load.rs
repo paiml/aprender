@@ -31,6 +31,64 @@ use crate::autograd::Tensor;
 use crate::format::v2::AprV2Reader;
 use crate::models::bert::{BertConfig, BertEmbeddings, BertEncoder, BertLayer, CrossEncoder};
 
+/// Build the canonical set of HuggingFace BERT tensor names this loader
+/// expects for a model of the given config + head shape (GH-326 Phase 2).
+///
+/// Acts as the **import-load contract**: any APR produced by
+/// `apr import --arch bert` must contain at least this set under these
+/// exact names. `Architecture::Bert::map_name` is currently the identity
+/// passthrough, so the import path preserves HF names unchanged — but the
+/// contract is symbolic via this helper, not duplicated across import and
+/// load sites.
+///
+/// `with_pooler` adds `bert.pooler.dense.{weight,bias}` to the set.
+/// `classifier_prefix` is the head name; pass `"classifier"` for the common
+/// case or one of `"score"` / `"rank_head"` for cross-encoder variants.
+#[must_use]
+pub fn expected_bert_tensor_names(
+    config: &BertConfig,
+    with_pooler: bool,
+    classifier_prefix: &str,
+) -> Vec<String> {
+    let mut names = Vec::new();
+
+    // Embeddings (5 tensors).
+    names.push("bert.embeddings.word_embeddings.weight".to_string());
+    names.push("bert.embeddings.position_embeddings.weight".to_string());
+    names.push("bert.embeddings.token_type_embeddings.weight".to_string());
+    names.push("bert.embeddings.LayerNorm.weight".to_string());
+    names.push("bert.embeddings.LayerNorm.bias".to_string());
+
+    // Per encoder layer (16 tensors each).
+    for idx in 0..config.num_layers {
+        let p = format!("bert.encoder.layer.{idx}");
+        for proj in ["query", "key", "value"] {
+            names.push(format!("{p}.attention.self.{proj}.weight"));
+            names.push(format!("{p}.attention.self.{proj}.bias"));
+        }
+        names.push(format!("{p}.attention.output.dense.weight"));
+        names.push(format!("{p}.attention.output.dense.bias"));
+        names.push(format!("{p}.attention.output.LayerNorm.weight"));
+        names.push(format!("{p}.attention.output.LayerNorm.bias"));
+        names.push(format!("{p}.intermediate.dense.weight"));
+        names.push(format!("{p}.intermediate.dense.bias"));
+        names.push(format!("{p}.output.dense.weight"));
+        names.push(format!("{p}.output.dense.bias"));
+        names.push(format!("{p}.output.LayerNorm.weight"));
+        names.push(format!("{p}.output.LayerNorm.bias"));
+    }
+
+    if with_pooler {
+        names.push("bert.pooler.dense.weight".to_string());
+        names.push("bert.pooler.dense.bias".to_string());
+    }
+
+    names.push(format!("{classifier_prefix}.weight"));
+    names.push(format!("{classifier_prefix}.bias"));
+
+    names
+}
+
 /// Error returned when a required tensor is missing or has the wrong shape.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BertLoadError {
@@ -564,6 +622,114 @@ mod tests {
             err.reason.contains("classifier"),
             "error reason must reference classifier tried prefixes: {err:?}"
         );
+    }
+
+    // =========================================================================
+    // FALSIFY-BERT-326-PHASE2 — import-load round-trip contract.
+    //
+    // These tests pin the contract between `apr import --arch bert` (which
+    // routes through `Architecture::Bert.map_name` = identity passthrough in
+    // tensor_expectation.rs) and `CrossEncoder::load_from_reader` (which
+    // expects the HuggingFace BERT tensor names verbatim).
+    //
+    // If anyone changes `bert_map_name` to add/strip a prefix, these tests
+    // fail with a clear name-diff. If anyone adds a new BERT component
+    // (e.g. a new LayerNorm or projection in a layer), `expected_bert_tensor_names`
+    // and the loader must move together.
+    // =========================================================================
+
+    /// `expected_bert_tensor_names` count matches the loader's expectation:
+    /// 5 embedding tensors + 16 per layer + 2 pooler (if present) + 2
+    /// classifier head = `5 + 16 * num_layers + 2 * with_pooler + 2`.
+    #[test]
+    fn falsify_bert_326_phase2_expected_names_count_matches_formula() {
+        let config = tiny_config();
+        let names_with_pooler = expected_bert_tensor_names(&config, true, "classifier");
+        let names_without_pooler = expected_bert_tensor_names(&config, false, "classifier");
+
+        let n = config.num_layers;
+        assert_eq!(names_with_pooler.len(), 5 + 16 * n + 2 + 2);
+        assert_eq!(names_without_pooler.len(), 5 + 16 * n + 2);
+    }
+
+    /// The set produced by `expected_bert_tensor_names` is exactly the set
+    /// the loader reads when loading a `CrossEncoder` from a synthetic APR.
+    /// Built by intersecting the contract helper with the names actually
+    /// requested by `load_cross_encoder_from_reader` (proxied via the
+    /// synthetic APR Phase 1 test infrastructure).
+    #[test]
+    fn falsify_bert_326_phase2_contract_matches_loader_reads() {
+        let config = tiny_config();
+        let bytes = build_stub_bert_apr(&config, true, 1);
+        let reader = AprV2Reader::from_bytes(&bytes).expect("AprV2Reader parse");
+
+        // Every name the contract helper produces must be present in the APR.
+        let expected = expected_bert_tensor_names(&config, true, "classifier");
+        for name in &expected {
+            assert!(
+                reader.get_tensor(name).is_some(),
+                "contract helper named {name:?} but stub APR doesn't contain it"
+            );
+        }
+
+        // And the stub APR has NO extra tensors beyond what the contract
+        // names. (Catches the case where build_stub_bert_apr drifts ahead of
+        // the contract helper.)
+        let stub_names: Vec<String> = reader
+            .tensor_names()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        for name in &stub_names {
+            assert!(
+                expected.contains(name),
+                "stub APR contains {name:?} but contract helper doesn't list it"
+            );
+        }
+
+        // And loader succeeds end-to-end on this exact set.
+        let mut model = CrossEncoder::new(&config, 1, true);
+        model
+            .load_from_reader(&reader, &config)
+            .expect("loader must succeed when APR contains exactly the contract names");
+    }
+
+    /// `Architecture::Bert.map_name` is the identity passthrough, so HF
+    /// SafeTensors → APR import preserves names unchanged. Pinned here so a
+    /// future bert_map_name rewrite (e.g. stripping the `bert.` prefix) is
+    /// caught immediately, not at the integration-test layer.
+    #[test]
+    fn falsify_bert_326_phase2_bert_map_name_is_identity() {
+        use crate::format::converter_types::Architecture;
+
+        let canonical_names = [
+            "bert.embeddings.word_embeddings.weight",
+            "bert.embeddings.LayerNorm.bias",
+            "bert.encoder.layer.0.attention.self.query.weight",
+            "bert.encoder.layer.0.attention.output.LayerNorm.weight",
+            "bert.encoder.layer.11.output.dense.bias",
+            "bert.pooler.dense.weight",
+            "classifier.weight",
+            "classifier.bias",
+        ];
+        for name in canonical_names {
+            assert_eq!(
+                Architecture::Bert.map_name(name),
+                name,
+                "bert_map_name must preserve HF tensor names verbatim (identity passthrough)"
+            );
+        }
+    }
+
+    /// BERT-base-uncased (12 layers) tensor count: 5 + 16*12 + 2 + 2 = 201.
+    /// Smoke test that the contract helper produces the canonical count
+    /// expected for a HuggingFace `bert-base-uncased` cross-encoder.
+    #[test]
+    fn falsify_bert_326_phase2_bert_base_tensor_count() {
+        let config = BertConfig::default(); // bert-base, 12 layers
+        let names = expected_bert_tensor_names(&config, true, "classifier");
+        assert_eq!(names.len(), 5 + 16 * 12 + 2 + 2);
+        assert_eq!(names.len(), 201);
     }
 
     /// Loader reports `BertLoadError` on a shape mismatch with a message
