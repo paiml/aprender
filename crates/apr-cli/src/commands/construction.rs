@@ -412,6 +412,8 @@
             original_format: Some("safetensors".to_string()),
             created_at: Some("2024-01-01".to_string()),
             architecture: Some("qwen2".to_string()),
+            hf_architecture: Some("Qwen2ForCausalLM".to_string()),
+            hf_model_type: Some("qwen2".to_string()),
             param_count: Some(494_000_000),
             hidden_size: Some(896),
             num_layers: Some(24),
