@@ -696,4 +696,5 @@ fn print_header(path: &Path, config: &BenchConfig) {
 
 include!("benchmark.rs");
 include!("bench_safetensors.rs");
+include!("bench_moe.rs");
 include!("bench_04.rs");
