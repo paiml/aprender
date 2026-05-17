@@ -197,6 +197,7 @@ pub(crate) fn run(
     device: &str,
     init: Option<&Path>,
     force_under_provisioned: bool,
+    val_shard: Option<&Path>,
     json_output: bool,
 ) -> Result<()> {
     // Contract gpu-training-backend-v1 INV-GPUTRAIN-001 / GATE-GPUTRAIN-002:
@@ -383,6 +384,7 @@ pub(crate) fn run(
             json_output,
             init_arch.as_ref(),
             init,
+            val_shard,
         )?
     };
 
@@ -527,6 +529,7 @@ fn drive_real(
     json_output: bool,
     init_arch: Option<&TransformerConfig>,
     init_path: Option<&Path>,
+    val_shard: Option<&Path>,
 ) -> Result<RunStatus> {
     // GATE-ARCH-370M-011 / INV-ARCH-370M-006 — refuse to dispatch a real
     // training step when the tokenizer vocab_size and the model vocab_size
@@ -574,21 +577,73 @@ fn drive_real(
         // and the model memorizes instead of generalizing).
         .with_warn_on_wrap_around(true);
 
-    // Reserve the first `HELD_OUT_BATCHES` batches as the held-out val
-    // set; the remainder feeds RealStepFn.
-    let mut held_out: Vec<LMBatch> = Vec::with_capacity(HELD_OUT_BATCHES);
-    for _ in 0..HELD_OUT_BATCHES {
-        match iter.next() {
-            Some(b) => held_out.push(b),
-            None => break,
+    // SPEC §84 P2-F (apr-pretrain-val-shard-v1): held-out val source.
+    //
+    // When --val-shard <DIR> is provided, drain HELD_OUT_BATCHES from a
+    // dedicated independent shard iterator over <DIR>; the training iter
+    // stays at offset 0 (no batch theft). This makes val_loss comparable
+    // across runs whose --dataset composition changes (the P2-C audit-
+    // falsified result was confounded by val sets drawn from different
+    // corpus distributions — see evidence/p2c-2026-05-17/findings.md).
+    //
+    // When --val-shard is None, the historical "first N batches of
+    // --dataset" behaviour is preserved.
+    let held_out: Vec<LMBatch> = if let Some(val_dir) = val_shard {
+        let mut val_iter = ShardBatchIter::new(val_dir, batch_size, seq_length, 0, 0)
+            .map_err(|e| {
+                CliError::ValidationFailed(format!(
+                    "FALSIFY-PRETRAIN-VAL-SHARD-001: --val-shard iterator init failed: {e} \
+                     (path={})",
+                    val_dir.display()
+                ))
+            })?
+            // Per INV-PRETRAIN-VAL-SHARD-002 — the val shard is NOT
+            // wrap-around. A short val corpus draws short held_out
+            // (potentially < HELD_OUT_BATCHES batches) and the run
+            // proceeds; we only fail if zero batches are drawn.
+            .with_wrap_around(false);
+        let mut batches: Vec<LMBatch> = Vec::with_capacity(HELD_OUT_BATCHES);
+        for _ in 0..HELD_OUT_BATCHES {
+            match val_iter.next() {
+                Some(b) => batches.push(b),
+                None => break,
+            }
         }
-    }
-    if held_out.is_empty() {
-        return Err(CliError::ValidationFailed(format!(
-            "dataset {} is too small to reserve any held-out batches",
-            dataset.display()
-        )));
-    }
+        if batches.is_empty() {
+            return Err(CliError::ValidationFailed(format!(
+                "FALSIFY-PRETRAIN-VAL-SHARD-003: --val-shard {} is too small to yield any \
+                 held-out batches at batch_size={} seq_length={}",
+                val_dir.display(),
+                batch_size,
+                seq_length
+            )));
+        }
+        if !json_output {
+            eprintln!(
+                "[P2-F] held-out val source = --val-shard {} ({} batches)",
+                val_dir.display(),
+                batches.len()
+            );
+        }
+        batches
+    } else {
+        // Reserve the first `HELD_OUT_BATCHES` batches as the held-out val
+        // set; the remainder feeds RealStepFn.
+        let mut batches: Vec<LMBatch> = Vec::with_capacity(HELD_OUT_BATCHES);
+        for _ in 0..HELD_OUT_BATCHES {
+            match iter.next() {
+                Some(b) => batches.push(b),
+                None => break,
+            }
+        }
+        if batches.is_empty() {
+            return Err(CliError::ValidationFailed(format!(
+                "dataset {} is too small to reserve any held-out batches",
+                dataset.display()
+            )));
+        }
+        batches
+    };
 
     if device.is_cuda() {
         // §50.4 step 5f.5 SHIPPED (this PR): CUDA path with --init is now
@@ -1398,6 +1453,7 @@ mod tests {
             "cpu",
             None,
             false,
+            None,
             true,
         );
         assert!(
@@ -1434,6 +1490,7 @@ mod tests {
             "cpu",
             None,
             false,
+            None,
             true,
         )
         .expect_err("empty dataset dir must fail to initialise the shard iterator");
@@ -1469,6 +1526,7 @@ mod tests {
             "cpu",
             None,
             false,
+            None,
             true,
         )
         .expect_err("negative target_val_loss must be rejected");
@@ -1761,6 +1819,7 @@ mod tests {
             "cpu",
             Some(&missing),
             false,
+            None,
             true,
         )
         .expect_err("missing --init file must be rejected");
@@ -1803,6 +1862,7 @@ mod tests {
             "cpu",
             Some(&bad),
             false,
+            None,
             true,
         )
         .expect_err("invalid magic bytes must be rejected");
@@ -1845,6 +1905,7 @@ mod tests {
             "cpu",
             Some(&empty),
             false,
+            None,
             true,
         )
         .expect_err("empty file must be rejected (cannot contain magic bytes)");
@@ -1883,6 +1944,7 @@ mod tests {
             "cpu",
             Some(&valid),
             false,
+            None,
             true,
         )
         .expect_err("bogus metadata must NOT silently random-init");

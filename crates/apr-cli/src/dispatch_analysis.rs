@@ -533,6 +533,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             device,
             init,
             force_under_provisioned,
+            val_shard,
         } => commands::pretrain::run(
             dataset,
             tokenizer,
@@ -551,6 +552,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             device,
             init.as_deref(),
             *force_under_provisioned,
+            val_shard.as_deref(),
             cli.json,
         ),
         ExtendedCommands::Tokenize { command } => dispatch_tokenize_command(command, cli),
