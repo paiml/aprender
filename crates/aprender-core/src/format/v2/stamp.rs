@@ -53,6 +53,26 @@ pub struct ProvenancePatch {
     /// field that `apr pretrain --init` reads for arch dispatch, so
     /// patching this is what makes a pre-P0-K checkpoint resumable.
     pub architecture: Option<String>,
+    /// Tokenizer vocabulary (token strings indexed by token-id). When
+    /// `Some`, the stamp embeds these strings into
+    /// `metadata.custom["tokenizer.vocabulary"]` (as a JSON array)
+    /// AND sets the HAS_VOCAB header flag — making the resulting APR
+    /// self-contained for `apr run` inference (which rejects APRs
+    /// without an embedded tokenizer per PMAT-172).
+    ///
+    /// PMAT-690 P3-C-prep follow-up (2026-05-17, defect 1 from
+    /// publish-readiness preflight on P2-E ep49): pre-P0-K APRs lack
+    /// embedded tokenizers because the training init didn't have
+    /// one. Without this stamp extension, the §86 salvage produces a
+    /// 6.0 GB HF-publish-ready directory that fails the headline
+    /// `apr run` smoke test.
+    pub tokenizer_vocab: Option<Vec<String>>,
+    /// BPE merge rules (e.g., `["Ä t", "i n", ...]`). When
+    /// `Some`, embedded into `metadata.custom["tokenizer.merges"]`.
+    pub tokenizer_merges: Option<Vec<String>>,
+    /// Tokenizer model type (e.g., "BPE", "Unigram"). Optional metadata
+    /// for `apr inspect` to surface.
+    pub tokenizer_model_type: Option<String>,
 }
 
 impl ProvenancePatch {
@@ -66,6 +86,9 @@ impl ProvenancePatch {
             || self.hf_architecture.is_some()
             || self.hf_model_type.is_some()
             || self.architecture.is_some()
+            || self.tokenizer_vocab.is_some()
+            || self.tokenizer_merges.is_some()
+            || self.tokenizer_model_type.is_some()
     }
 }
 
@@ -127,9 +150,60 @@ pub fn stamp_provenance_bytes(
     if let Some(ref arch) = patch.architecture {
         new_metadata.architecture = Some(arch.clone());
     }
+    // PMAT-690 P3-C-prep follow-up (defect 1): embed tokenizer into the
+    // custom JSON metadata. Mirrors the apr-import path's behaviour
+    // (`insert_f32_tokenizer_metadata` in converter::write); we duplicate
+    // the key names here so a stamped APR has the same shape as a
+    // freshly-imported one.
+    let mut set_has_vocab = false;
+    if let Some(ref vocab) = patch.tokenizer_vocab {
+        if !vocab.is_empty() {
+            let vocab_array: Vec<serde_json::Value> = vocab
+                .iter()
+                .map(|s| serde_json::Value::String(s.clone()))
+                .collect();
+            new_metadata.custom.insert(
+                "tokenizer.vocabulary".to_string(),
+                serde_json::Value::Array(vocab_array),
+            );
+            new_metadata.custom.insert(
+                "tokenizer.vocab_size".to_string(),
+                serde_json::Value::Number(serde_json::Number::from(vocab.len())),
+            );
+            set_has_vocab = true;
+        }
+    }
+    if let Some(ref merges) = patch.tokenizer_merges {
+        if !merges.is_empty() {
+            let merges_array: Vec<serde_json::Value> = merges
+                .iter()
+                .map(|s| serde_json::Value::String(s.clone()))
+                .collect();
+            new_metadata.custom.insert(
+                "tokenizer.merges".to_string(),
+                serde_json::Value::Array(merges_array),
+            );
+        }
+    }
+    if let Some(ref mt) = patch.tokenizer_model_type {
+        new_metadata.custom.insert(
+            "tokenizer.model_type".to_string(),
+            serde_json::Value::String(mt.clone()),
+        );
+    }
+
+    // PMAT-172 (defect 1 root cause): `apr run` checks the HAS_VOCAB
+    // flag before allowing inference. Setting tokenizer_vocab without
+    // setting the flag would still surface the "missing embedded tokenizer"
+    // error.
+    let effective_flags = if set_has_vocab {
+        original_flags.with(super::AprV2Flags::HAS_VOCAB)
+    } else {
+        original_flags
+    };
 
     let mut writer = AprV2Writer::new(new_metadata);
-    writer.set_header_flags(original_flags);
+    writer.set_header_flags(effective_flags);
 
     // Copy every tensor by name; AprV2Writer sorts by name internally on
     // write(), so input ordering is irrelevant here.
@@ -180,6 +254,9 @@ mod tests {
             hf_architecture: None,
             hf_model_type: None,
             architecture: None,
+            tokenizer_vocab: None,
+            tokenizer_merges: None,
+            tokenizer_model_type: None,
         };
 
         let output = stamp_provenance_bytes(&input, &patch).expect("stamp must succeed");
@@ -315,6 +392,9 @@ mod tests {
             hf_architecture: None,
             hf_model_type: None,
             architecture: None,
+            tokenizer_vocab: None,
+            tokenizer_merges: None,
+            tokenizer_model_type: None,
         };
 
         let first = stamp_provenance_bytes(&input, &patch).unwrap();
