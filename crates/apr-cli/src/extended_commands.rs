@@ -1106,6 +1106,64 @@ pub enum ExtendedCommands {
     /// Publishing, conversion, and analysis tools
     #[command(flatten)]
     Tools(ToolCommands),
+    /// Score a query/passage pair (or rank multiple passages) with a BERT
+    /// cross-encoder loaded from an APR v2 file (GH-326 Phase 3).
+    ///
+    /// Wraps `aprender_core::models::bert::CrossEncoder::load_from_reader`
+    /// + `score()`. The APR must contain the canonical HF BERT tensor
+    /// names (see `models::bert::expected_bert_tensor_names`).
+    ///
+    /// Tokenisation is NOT applied here — caller passes pre-tokenised
+    /// `input_ids` + `token_type_ids` as comma-delimited u32 lists. A
+    /// dedicated tokeniser-aware mode is Phase 3b follow-up scope.
+    Rerank {
+        /// Path to the APR file containing the cross-encoder weights.
+        #[arg(value_name = "MODEL")]
+        model: PathBuf,
+        /// Pre-tokenised input ids (comma-separated `u32`s).
+        /// Example: `--input-ids 101,2024,102,3456,102` for `[CLS] q [SEP] p [SEP]`.
+        #[arg(long, value_name = "IDS")]
+        input_ids: String,
+        /// Pre-tokenised token-type ids (comma-separated `u32`s).
+        /// Same length as `--input-ids`. 0 for query side, 1 for passage.
+        #[arg(long, value_name = "IDS")]
+        token_type_ids: String,
+        /// Override hidden_dim (default: 384 / MiniLM-L-6).
+        #[arg(long, default_value_t = 384)]
+        hidden_dim: usize,
+        /// Override num_layers (default: 6 / MiniLM-L-6).
+        #[arg(long, default_value_t = 6)]
+        num_layers: usize,
+        /// Override num_heads (default: 12 / MiniLM-L-6).
+        #[arg(long, default_value_t = 12)]
+        num_heads: usize,
+        /// Override intermediate_dim (default: 1536 / MiniLM-L-6).
+        #[arg(long, default_value_t = 1536)]
+        intermediate_dim: usize,
+        /// Override vocab_size (default: 30522 / bert-base-uncased).
+        #[arg(long, default_value_t = 30522)]
+        vocab_size: usize,
+        /// Override max_position_embeddings (default: 512).
+        #[arg(long, default_value_t = 512)]
+        max_position_embeddings: usize,
+        /// Override type_vocab_size (default: 2).
+        #[arg(long, default_value_t = 2)]
+        type_vocab_size: usize,
+        /// Number of labels in the classifier head (default: 1 for
+        /// regression-style relevance scoring).
+        #[arg(long, default_value_t = 1)]
+        num_labels: usize,
+        /// Load the optional BERT pooler dense layer (default: true).
+        /// Cross-encoders that skip the pooler should pass `--with-pooler false`.
+        #[arg(long, default_value_t = true)]
+        with_pooler: bool,
+        /// Emit the raw logit instead of the sigmoid-mapped relevance score.
+        #[arg(long)]
+        raw_logit: bool,
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[cfg(feature = "training")]

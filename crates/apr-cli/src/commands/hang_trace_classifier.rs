@@ -96,7 +96,9 @@ pub fn classify_timeout_dump(
             return HangTimeoutOutcome::EmptyFile { rank: r };
         }
     }
-    HangTimeoutOutcome::Ok { ranks_seen: world_size }
+    HangTimeoutOutcome::Ok {
+        ranks_seen: world_size,
+    }
 }
 
 /// FALSIFY-CRUX-F-14-002: verify the trace-dir is empty after a successful
@@ -143,7 +145,9 @@ mod tests {
     use super::*;
 
     fn ok_listing_for(world_size: usize) -> Vec<(String, u64)> {
-        (0..world_size).map(|r| (format!("rank{r}.py.txt"), 256u64)).collect()
+        (0..world_size)
+            .map(|r| (format!("rank{r}.py.txt"), 256u64))
+            .collect()
     }
 
     fn listing_view(pairs: &[(String, u64)]) -> TraceDirListing<'_> {
@@ -164,7 +168,10 @@ mod tests {
 
     #[test]
     fn timeout_dump_rejects_empty_dir() {
-        let listing = TraceDirListing { names: vec![], sizes: vec![] };
+        let listing = TraceDirListing {
+            names: vec![],
+            sizes: vec![],
+        };
         assert_eq!(
             classify_timeout_dump(&listing, 2),
             HangTimeoutOutcome::DirEmpty
@@ -220,7 +227,10 @@ mod tests {
 
     #[test]
     fn empty_on_success_ok_when_dir_is_empty() {
-        let listing = TraceDirListing { names: vec![], sizes: vec![] };
+        let listing = TraceDirListing {
+            names: vec![],
+            sizes: vec![],
+        };
         assert_eq!(
             classify_empty_on_success(&listing),
             HangEmptyOnSuccessOutcome::Ok
@@ -264,7 +274,10 @@ mod tests {
     fn exit_code_mismatch_reports_both_values() {
         assert_eq!(
             classify_exit_code(1, F14_TIMEOUT_EXIT_CODE),
-            HangExitOutcome::ExitCodeMismatch { got: 1, expected: 124 }
+            HangExitOutcome::ExitCodeMismatch {
+                got: 1,
+                expected: 124
+            }
         );
     }
 }

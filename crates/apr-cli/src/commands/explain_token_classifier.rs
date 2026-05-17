@@ -26,29 +26,59 @@ use serde_json::Value;
 /// Outcome of `classify_schema`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExplainSchemaOutcome {
-    Ok { line_count: usize },
+    Ok {
+        line_count: usize,
+    },
     Empty,
-    LineNotJson { line_no: usize, message: String },
-    LineNotAnObject { line_no: usize },
-    LineMissingField { line_no: usize, field: &'static str },
-    CandidatesNotArray { line_no: usize },
-    CandidatesEmpty { line_no: usize },
-    CandidateNotAnObject { line_no: usize, index: usize },
-    CandidateMissingField { line_no: usize, index: usize, field: &'static str },
+    LineNotJson {
+        line_no: usize,
+        message: String,
+    },
+    LineNotAnObject {
+        line_no: usize,
+    },
+    LineMissingField {
+        line_no: usize,
+        field: &'static str,
+    },
+    CandidatesNotArray {
+        line_no: usize,
+    },
+    CandidatesEmpty {
+        line_no: usize,
+    },
+    CandidateNotAnObject {
+        line_no: usize,
+        index: usize,
+    },
+    CandidateMissingField {
+        line_no: usize,
+        index: usize,
+        field: &'static str,
+    },
 }
 
 /// Outcome of `classify_probs_normalize`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExplainProbsOutcome {
     Ok,
-    NotNormalized { line_no: usize, step: i64, sum: f64, tolerance: f64 },
+    NotNormalized {
+        line_no: usize,
+        step: i64,
+        sum: f64,
+        tolerance: f64,
+    },
 }
 
 /// Outcome of `classify_sampled_in_candidates`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExplainSampledOutcome {
     Ok,
-    SampledNotInCandidates { line_no: usize, step: i64, sampled_id: i64 },
+    SampledNotInCandidates {
+        line_no: usize,
+        step: i64,
+        sampled_id: i64,
+    },
 }
 
 /// Outcome of `classify_greedy_picks_argmax`.
@@ -77,9 +107,11 @@ fn parse_jsonl(body: &str) -> Result<Vec<(usize, Value)>, ExplainSchemaOutcome> 
             continue;
         }
         nonblank += 1;
-        let v: Value = serde_json::from_str(trimmed).map_err(|e| {
-            ExplainSchemaOutcome::LineNotJson { line_no, message: e.to_string() }
-        })?;
+        let v: Value =
+            serde_json::from_str(trimmed).map_err(|e| ExplainSchemaOutcome::LineNotJson {
+                line_no,
+                message: e.to_string(),
+            })?;
         if !v.is_object() {
             return Err(ExplainSchemaOutcome::LineNotAnObject { line_no });
         }
@@ -140,7 +172,9 @@ pub fn classify_schema(body: &str) -> ExplainSchemaOutcome {
             }
         }
     }
-    ExplainSchemaOutcome::Ok { line_count: parsed.len() }
+    ExplainSchemaOutcome::Ok {
+        line_count: parsed.len(),
+    }
 }
 
 /// Verify Σ post_prob ≈ 1.0 (within `tolerance`) per step.
@@ -159,7 +193,12 @@ pub fn classify_probs_normalize(body: &str, tolerance: f64) -> ExplainProbsOutco
             .filter_map(|c| c.get("post_prob").and_then(Value::as_f64))
             .sum();
         if (sum - 1.0).abs() > tolerance {
-            return ExplainProbsOutcome::NotNormalized { line_no, step, sum, tolerance };
+            return ExplainProbsOutcome::NotNormalized {
+                line_no,
+                step,
+                sum,
+                tolerance,
+            };
         }
     }
     ExplainProbsOutcome::Ok
@@ -291,19 +330,28 @@ mod tests {
 
     #[test]
     fn schema_rejects_missing_field() {
-        let body = r#"{"step":0,"candidates":[{"token_id":1,"pre_prob":1.0,"post_prob":1.0,"rank":0}]}"#;
+        let body =
+            r#"{"step":0,"candidates":[{"token_id":1,"pre_prob":1.0,"post_prob":1.0,"rank":0}]}"#;
         assert!(matches!(
             classify_schema(body),
-            ExplainSchemaOutcome::LineMissingField { line_no: 1, field: "sampled_id" }
+            ExplainSchemaOutcome::LineMissingField {
+                line_no: 1,
+                field: "sampled_id"
+            }
         ));
     }
 
     #[test]
     fn schema_rejects_candidate_missing_field() {
-        let body = r#"{"step":0,"sampled_id":1,"candidates":[{"token_id":1,"pre_prob":1.0,"rank":0}]}"#;
+        let body =
+            r#"{"step":0,"sampled_id":1,"candidates":[{"token_id":1,"pre_prob":1.0,"rank":0}]}"#;
         assert!(matches!(
             classify_schema(body),
-            ExplainSchemaOutcome::CandidateMissingField { line_no: 1, index: 0, field: "post_prob" }
+            ExplainSchemaOutcome::CandidateMissingField {
+                line_no: 1,
+                index: 0,
+                field: "post_prob"
+            }
         ));
     }
 
@@ -375,7 +423,11 @@ mod tests {
         ]}"#;
         let body = body.split_whitespace().collect::<String>();
         match classify_greedy_picks_argmax(&body) {
-            ExplainGreedyOutcome::NotArgmax { sampled_id, argmax_id, .. } => {
+            ExplainGreedyOutcome::NotArgmax {
+                sampled_id,
+                argmax_id,
+                ..
+            } => {
                 assert_eq!(sampled_id, 3);
                 assert_eq!(argmax_id, 7);
             }
