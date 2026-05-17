@@ -1,12 +1,21 @@
 # CRUX-F-14 — Deadlock/hang detector stack dump
+# Promoted to PARTIAL_ALGORITHM_LEVEL at v1.2.0 under CRUX-SHIP-001 (2026-05-17):
+# - classifier: crates/apr-cli/src/commands/hang_trace_classifier.rs (12 unit tests)
+# - CLI surface: `apr hang-trace-lint --trace-dir DIR [--mode timeout|success] [--world-size N] [--exit-code I] [--expected-exit-code I]`
+# - e2e: crates/apr-cli/tests/falsification_crux_f_14.rs (11 tests)
+# Full discharge of F-14-{001,002,003} requires a live `apr train`
+# watchdog actually emitting per-rank stack dumps on hang — tracked as
+# BLOCKER-UPSTREAM-MISSING.
 
 metadata:
   id: CRUX-F-14
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
+  updated: "2026-05-17"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
+  kind: kernel
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "F — Tensor Ops & Low-level"
@@ -52,6 +61,25 @@ falsification_tests:
     [ "$ec" = "124" ]
     [ -f /tmp/dd/rank0.py.txt ] && [ -f /tmp/dd/rank1.py.txt ]
   if_fails: rule 'timeout produces per-rank stack files' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/hang_trace_classifier.rs
+    cli_path: crates/apr-cli/src/commands/hang_trace_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_14.rs
+    e2e_tests:
+    - falsify_crux_f_14_001_timeout_ok_on_complete_dump
+    - falsify_crux_f_14_001_timeout_rejects_missing_rank
+    - falsify_crux_f_14_001_timeout_rejects_empty_file
+    sub_claim: |
+      Algorithm-level necessary conditions on a captured `$APR_TRACE_DIR`
+      after a timeout: `classify_timeout_dump` verifies the directory
+      contains a non-empty `rank{N}.py.txt` file for every rank in
+      `0..world_size` and rejects unrecognized filenames. Outcome
+      variants `MissingRank { rank }` and `EmptyFile { rank }` pinpoint
+      the offending rank so watchdog bugs are debuggable from the lint
+      output alone.
+    scope: "(listing, world_size) -> HangTimeoutOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live `apr train` watchdog emitting per-rank stack dumps on hang"
 - id: FALSIFY-CRUX-F-14-002
   rule: normal completion produces NO stack dumps
   prediction: "healthy training leaves trace_dir empty (no false triggers)"
@@ -62,6 +90,21 @@ falsification_tests:
       apr train tests/fixtures/tiny-sft.jsonl --model tests/fixtures/tinyllama-hf --steps 1
     [ -z "$(ls /tmp/dd2)" ]
   if_fails: rule 'normal completion produces NO stack dumps' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/hang_trace_classifier.rs
+    cli_path: crates/apr-cli/src/commands/hang_trace_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_14.rs
+    e2e_tests:
+    - falsify_crux_f_14_002_success_ok_when_dir_is_empty
+    - falsify_crux_f_14_002_success_rejects_unexpected_file
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_empty_on_success`
+      verifies the captured trace-dir is empty after a successful run.
+      Any file present produces `UnexpectedFile { name }`, surfacing
+      the false-trigger emit (watchdog firing without an actual hang).
+    scope: "(listing) -> HangEmptyOnSuccessOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live `apr train` watchdog leaving the dir empty on clean exit"
 - id: FALSIFY-CRUX-F-14-003
   rule: exit code 124 signals timeout vs 1 for other errors
   prediction: "non-hang errors return exit=1, not 124"
@@ -72,6 +115,22 @@ falsification_tests:
     [ "$ec" != "124" ]
 
   if_fails: rule 'exit code 124 signals timeout vs 1 for other errors' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/hang_trace_classifier.rs
+    cli_path: crates/apr-cli/src/commands/hang_trace_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_14.rs
+    e2e_tests:
+    - falsify_crux_f_14_003_exit_code_124_passes_timeout_expectation
+    - falsify_crux_f_14_003_exit_code_1_fails_timeout_expectation
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_exit_code` matches
+      observed exit code against an expected value (typically 124 for
+      timeout per POSIX coreutils convention, 1 for other failures, 0
+      for success) and produces `OkTimeout`/`OkOtherError`/`OkSuccess`
+      on match, or `ExitCodeMismatch { got, expected }` on divergence.
+    scope: "(got, expected) -> HangExitOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live `apr train` exiting 124 only on watchdog timeout"
 proof_obligations:
 - type: equivalence
   property: "apr hang detector dump format compatible with PyTorch flight-recorder + NCCL trace ring"

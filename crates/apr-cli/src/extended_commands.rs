@@ -816,6 +816,24 @@ pub enum ExtendedCommands {
         #[arg(long)]
         require_grammar: bool,
     },
+    /// Lint a captured `$APR_TRACE_DIR` hang stack-dump directory (CRUX-F-14)
+    HangTraceLint {
+        /// Path to the captured trace directory
+        #[arg(long, value_name = "DIR")]
+        trace_dir: PathBuf,
+        /// Inspection mode: `timeout` (expects per-rank dumps) or `success` (expects empty dir)
+        #[arg(long, value_name = "MODE", default_value = "timeout")]
+        mode: String,
+        /// Expected world_size when mode=timeout (number of rank{N}.py.txt files)
+        #[arg(long, value_name = "N", default_value_t = 2)]
+        world_size: usize,
+        /// Actual exit code from the run under inspection (for exit-code gate)
+        #[arg(long, value_name = "I32")]
+        exit_code: Option<i32>,
+        /// Expected exit code (typically 124 for timeout, 1 for other error, 0 for success)
+        #[arg(long, value_name = "I32")]
+        expected_exit_code: Option<i32>,
+    },
     /// Lint a captured `apr attn-viz` attention dump (CRUX-F-17)
     AttnVizLint {
         /// Path to attention dump in JSON form (4-D [layers][heads][rows][cols] floats)
