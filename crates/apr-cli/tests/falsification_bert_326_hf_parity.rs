@@ -74,6 +74,26 @@ const MINILM_L6: ModelFixture = ModelFixture {
             "neural networks are a key ML technique",
             0.000020,
         ),
+        // GH-326 Phase 4d — punctuated queries lock in the Phase 6b
+        // WordPiece-punctuation-pre-tokenization fix (#1773). Without
+        // that fix, "France?" was greedy-matched as a single token,
+        // producing different input_ids than HF BertTokenizerFast and
+        // scores that drifted from HF by up to ~0.13.
+        (
+            "what is the capital of France?",
+            "Paris is the capital of France.",
+            0.999797,
+        ),
+        (
+            "what is the capital of France?",
+            "Berlin is the capital of Germany",
+            0.064269,
+        ),
+        (
+            "Why use Rust?",
+            "Rust prevents memory bugs at compile time.",
+            0.993234,
+        ),
     ],
 };
 
