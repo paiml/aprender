@@ -515,6 +515,27 @@ pub enum Commands {
         /// SPDX license for data_source (e.g., Apache-2.0)
         #[arg(long = "data-license")]
         data_license: Option<String>,
+        /// HuggingFace class name (e.g., Qwen2ForCausalLM, LlamaForCausalLM).
+        ///
+        /// PMAT-690 P0-K extension (SPEC §86): patch the upstream
+        /// `architectures[0]` stamp on a pre-P0-K APR so downstream
+        /// consumers (apr inspect --quality, apr pretrain --init,
+        /// apr export → llama-cli) see the correct HF identity.
+        #[arg(long = "hf-architecture")]
+        hf_architecture: Option<String>,
+        /// HuggingFace model_type slug (e.g., qwen2, llama).
+        ///
+        /// PMAT-690 P0-K extension (SPEC §86).
+        #[arg(long = "hf-model-type")]
+        hf_model_type: Option<String>,
+        /// Lowercase architecture family slug (e.g., qwen2, llama).
+        ///
+        /// PMAT-690 P0-K extension (SPEC §86). This is the field
+        /// `apr pretrain --init` reads for arch dispatch — without
+        /// patching it, pre-P0-K checkpoints with the P0-H "LlamaForCausalLM"
+        /// fallback in this field cannot be loaded as Qwen2 inits.
+        #[arg(long)]
+        architecture: Option<String>,
         /// Output file path
         #[arg(short, long)]
         output: PathBuf,
