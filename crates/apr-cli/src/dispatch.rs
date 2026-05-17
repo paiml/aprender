@@ -200,9 +200,10 @@ fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             filters,
             weights,
             json,
+            quality,
         } => {
-            let (v, f, w, j) = (*vocab, *filters, *weights, *json || cli.json);
-            crate::pipe::with_stdin_support(file, |p| inspect::run(p, v, f, w, j))
+            let (v, f, w, j, q) = (*vocab, *filters, *weights, *json || cli.json, *quality);
+            crate::pipe::with_stdin_support(file, |p| inspect::run(p, v, f, w, j, q))
         }
 
         // GH-685: forward cli.verbose to debug

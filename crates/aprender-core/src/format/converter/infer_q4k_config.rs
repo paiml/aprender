@@ -70,6 +70,12 @@ fn build_q4k_metadata(cfg: &InferredQ4kConfig, param_count: u64) -> AprV2Metadat
         chat_format: None,
         special_tokens: None,
         architecture: Some("qwen2".to_string()),
+        // PMAT-690 P0-K: Q4K-quantize-from-SafeTensors path. The caller-side
+        // load_model_config_from_json populates these in the standard import
+        // flow; this builder is the bespoke Q4K Qwen2 path so default to the
+        // canonical Qwen2 class name and family slug rather than None.
+        hf_architecture: Some("Qwen2ForCausalLM".to_string()),
+        hf_model_type: Some("qwen2".to_string()),
         hidden_size: cfg.hidden_size,
         num_layers: cfg.num_layers,
         num_heads: cfg.num_heads,

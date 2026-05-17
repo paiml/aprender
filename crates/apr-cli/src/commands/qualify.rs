@@ -254,7 +254,7 @@ fn dispatch_smoke_gate(
         "inspect" => {
             let p = path.to_path_buf();
             run_gate(name, display, timeout, verbose, move || {
-                inspect::run(&p, false, false, false, false)
+                inspect::run(&p, false, false, false, false, false)
             })
         }
         "validate" => {

@@ -357,6 +357,7 @@
             filters: false,
             weights: false,
             json: false,
+            quality: false,
         });
         let result = execute_command(&cli);
         assert!(

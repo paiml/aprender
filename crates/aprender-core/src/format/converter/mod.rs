@@ -340,11 +340,19 @@ pub fn apr_convert<P: AsRef<Path>>(
         }
     }
 
-    // F-REGR-231 / PMAT-113: Extract GGUF config and tokenizer for metadata fidelity
+    // F-REGR-231 / PMAT-113: Extract GGUF config and tokenizer for metadata fidelity.
+    // PMAT-690 P0-K (extended): for SafeTensors sources, also read the sibling
+    // `config.json` so `architectures[0]` + `model_type` propagate into the APR
+    // metadata. Without this, `apr convert` (distinct from `apr_import` which is
+    // wired separately) produces APR files with `hf_architecture = None`, which
+    // is the exact upstream defect that masqueraded as the §81-§83 packaging
+    // cascade (see evidence/p2c-2026-05-17/findings.md §76-§83).
     let (gguf_config, gguf_tokenizer) = if is_gguf {
         extract_gguf_config(input_path)
     } else {
-        (None, None)
+        let cfg = import::load_model_config_from_json(input_path);
+        let tok = import::load_tokenizer_from_json(input_path);
+        (cfg, tok)
     };
 
     // GH-434 / ALB-093: Streaming Q4K path for large APR inputs (≥4 GiB).

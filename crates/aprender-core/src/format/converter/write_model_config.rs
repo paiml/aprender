@@ -1,3 +1,76 @@
+/// Synthesize a HuggingFace class name (e.g., "Qwen2ForCausalLM") from a
+/// GGUF/family slug (e.g., "qwen2"). PMAT-690 P0-K: GGUF source has no
+/// `architectures[0]`, but downstream `apr export`/llama-cli expects one.
+/// Uses the standard HF naming convention: capitalize-family + "ForCausalLM".
+fn synthesize_hf_architecture_from_family(family: &str) -> String {
+    // Special-case a handful of families whose HF class name diverges from
+    // simple capitalize-family + "ForCausalLM". Add entries here as we
+    // encounter divergences.
+    let class_root = match family {
+        "qwen2" | "qwen2.5" | "qwen" => "Qwen2",
+        "qwen3" | "qwen3_5" | "qwen3.5" => "Qwen3",
+        "llama" => "Llama",
+        "mistral" => "Mistral",
+        "phi" => "Phi",
+        "phi3" => "Phi3",
+        "phi4" => "Phi4",
+        "gemma" => "Gemma",
+        "gemma2" => "Gemma2",
+        _ => {
+            // Default: capitalize first letter
+            return format!(
+                "{}{}ForCausalLM",
+                family
+                    .chars()
+                    .next()
+                    .map(|c| c.to_uppercase().to_string())
+                    .unwrap_or_default(),
+                &family[family.chars().next().map(|c| c.len_utf8()).unwrap_or(0)..]
+            );
+        }
+    };
+    format!("{class_root}ForCausalLM")
+}
+
+#[cfg(test)]
+mod synthesize_arch_tests {
+    use super::synthesize_hf_architecture_from_family;
+
+    #[test]
+    fn known_families_map_to_canonical_class_names() {
+        // PMAT-690 P0-K invariant: GGUF families round-trip to the canonical
+        // HF class names that llama.cpp / transformers / our exporters expect.
+        assert_eq!(
+            synthesize_hf_architecture_from_family("qwen2"),
+            "Qwen2ForCausalLM"
+        );
+        assert_eq!(
+            synthesize_hf_architecture_from_family("qwen2.5"),
+            "Qwen2ForCausalLM"
+        );
+        assert_eq!(
+            synthesize_hf_architecture_from_family("llama"),
+            "LlamaForCausalLM"
+        );
+        assert_eq!(
+            synthesize_hf_architecture_from_family("mistral"),
+            "MistralForCausalLM"
+        );
+        assert_eq!(
+            synthesize_hf_architecture_from_family("gemma2"),
+            "Gemma2ForCausalLM"
+        );
+    }
+
+    #[test]
+    fn unknown_family_capitalizes_first_letter() {
+        assert_eq!(
+            synthesize_hf_architecture_from_family("falcon"),
+            "FalconForCausalLM"
+        );
+    }
+}
+
 /// Insert a usize metadata field if present.
 fn insert_usize_meta(
     custom: &mut std::collections::HashMap<String, serde_json::Value>,
@@ -194,6 +267,14 @@ pub(crate) fn write_apr_file_raw(
         chat_format: None,
         special_tokens: None,
         architecture: model_config.and_then(|c| c.architecture.clone()),
+        // PMAT-690 P0-K: GGUF→APR (raw Q4K) path. GGUF source has no
+        // `architectures[0]`, but downstream tools expect a class name to
+        // round-trip — synthesize from the family slug via the standard
+        // HF naming convention (qwen2 → Qwen2ForCausalLM, llama → LlamaForCausalLM).
+        hf_architecture: model_config
+            .and_then(|c| c.architecture.clone())
+            .map(|family| synthesize_hf_architecture_from_family(&family)),
+        hf_model_type: model_config.and_then(|c| c.architecture.clone()),
         hidden_size: model_config.and_then(|c| c.hidden_size),
         num_layers: model_config.and_then(|c| c.num_layers),
         num_heads: model_config.and_then(|c| c.num_heads),
