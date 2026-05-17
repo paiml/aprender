@@ -1,9 +1,83 @@
 metadata:
-  version: 1.7.0
+  version: 1.7.1
   kind: kernel
   created: '2026-05-04'
   author: PAIML Engineering
   amendment_history:
+    - version: 1.7.1
+      date: '2026-05-17'
+      kind: amendment
+      title: 'M-GPU-MOE-3 PR-2 hardware-verified — 47/48 layers ≥0.99; L47 cascade surfaced'
+      description: |
+        Hardware verification amendment after M-GPU-MOE-3 PR-2 landed
+        on main (#1737, 88ce47f3b — q6k_gemv fp64 accumulators).
+
+        WHAT HAPPENED:
+
+          PR-3 (the manual hardware-verification step in the
+          M-GPU-MOE-3 cascade) ran the per-layer FALSIFY-QW3-MOE-
+          PER-LAYER-001 falsifier on lambda-vector (RTX 4090) against
+          Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.
+
+          Result: **47/48 decoder layers cos ≥ 0.99** (PASS).
+          One layer (L47, the final decoder layer) sits at
+          cos=0.961236 — 3σ below the L40-L46 cluster (~0.998).
+
+          The 7 originally-cited problem layers (L7/L9/L12/L20/L23/
+          L29/L46, all cited in this contract's v1.7.0 amendment
+          block at lines 41-45) ALL lifted above 0.99. L47 was
+          previously undetected because no per-layer falsifier
+          existed in-tree — that gap was closed by PR-1 of this
+          cascade (#1713).
+
+        WHAT FLIPS:
+
+          metadata.version: 1.7.0 → 1.7.1
+
+          AC_GPU_MOE_001 stage status text refresh:
+            BEFORE: "ALGORITHM_LEVEL_DISCHARGED (~85% of layers ≥0.99;
+                     ~7-8 layers at cos 0.94-0.987 due to fp accumulator
+                     order between CPU SIMD and GPU CUDA — separate
+                     M-GPU-MOE-3 work)."
+            AFTER:  "ALGORITHM_LEVEL_DISCHARGED for 47/48 layers
+                     (cos ≥0.99 lambda-vector RTX 4090 2026-05-17
+                     post-PR #1737 fp64 accumulators). Single-layer
+                     cascade for L47 (cos=0.961236) PENDING under a
+                     separate spec section (forthcoming PR-3c)."
+
+        WHAT STAYS PENDING:
+
+          - L47 single-layer cascade — root cause unknown.
+            Candidates (none yet falsified):
+              (i)   L47 has a different qtype in this GGUF (last-layer
+                    higher-precision is a known Qwen pattern)
+              (ii)  L47 routes through a different MoE expert
+                    distribution that pathologically exposes warp-
+                    shuffle reduction order even with fp64 accumulators
+              (iii) L47 has a stride/shape boundary the q6k_gemv kernel
+                    handles differently (e.g. unaligned tile residue)
+            Forthcoming PR-3c: surface §85 (or next-available section
+            in claude-code-parity-apr-v1) covering the L47 cascade.
+            Forthcoming PR-3d+: per-tensor histogram on L47 (qtype,
+            shape, stride, expert distribution) before authoring fix.
+
+          - M-GPU-MOE-2 (wgpu fallback) — unchanged from v1.7.0
+          - M-GPU-MOE-3 PR-4 throughput — unchanged from v1.7.0
+
+        REPRODUCTION:
+
+          cargo test --release --features cuda \
+            -p aprender-serve --test qwen3_moe_per_layer_gpu_parity \
+            -- --ignored --nocapture
+
+          27.92s runtime on RTX 4090. Full 48-layer cos vector logged
+          in GitHub comment on #1583 (issuecomment-4470195446).
+
+        YAML-ONLY:
+
+          Production hot paths byte-unchanged. Additive-purity
+          invariant pinned in v1.1.0 still holds.
+
     - version: 1.7.0
       date: '2026-05-06'
       kind: amendment
@@ -854,8 +928,8 @@ metadata:
 
 kind: KernelContract
 name: qwen3-moe-forward-gpu
-version: "1.7.0"
-status: ACTIVE_ALGORITHM_LEVEL   # 1.x cascade DISCHARGED — wgpu (2) + throughput (3) PENDING
+version: "1.7.1"
+status: ACTIVE_ALGORITHM_LEVEL   # 47/48 layers cos≥0.99 post-PR #1737; L47 single-layer cascade PENDING
                 # plan + NaN/Inf bisection plan only; flips to
                 # ACTIVE_ALGORITHM_LEVEL when CUDA kernel + cosine
                 # parity gate (FALSIFY-QW3-MOE-GPU-PARITY-001) AND
