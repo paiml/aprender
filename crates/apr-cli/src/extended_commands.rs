@@ -804,6 +804,18 @@ pub enum ExtendedCommands {
         #[arg(long)]
         require_doc_link: bool,
     },
+    /// Lint a captured `apr agent --trace` ReAct loop trace (CRUX-I-06)
+    ReactTraceLint {
+        /// Path to captured trace JSON
+        #[arg(long, value_name = "FILE")]
+        trace_file: PathBuf,
+        /// Optional max_iterations budget the trace was produced under
+        #[arg(long, value_name = "N")]
+        max_iterations: Option<i64>,
+        /// Require the scratchpad to parse cleanly as Thought/Action/Observation blocks
+        #[arg(long)]
+        require_grammar: bool,
+    },
     /// Lint a captured `apr attn-viz` attention dump (CRUX-F-17)
     AttnVizLint {
         /// Path to attention dump in JSON form (4-D [layers][heads][rows][cols] floats)
