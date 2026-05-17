@@ -1,4 +1,3 @@
-
 /// Run warmup iterations with progress display.
 fn run_bench_warmup<F: FnMut()>(config: &BenchConfig, count: usize, mut f: F) {
     if !config.quiet {
@@ -176,6 +175,24 @@ fn run_gguf_benchmark(
         .encode(&config.prompt)
         .unwrap_or_else(|| vec![bos, 9707, 11, 358, 1079, 264, 11761, 18328, 13, 9842]);
 
+    // #1749: MoE dispatch — Qwen3-Coder-30B-A3B + other MoE GGUFs have
+    // 3D `*_exps` tensors and no 2D dense FFN tensors. The dense
+    // `forward_single_with_cache` path used by `generate_with_cache`
+    // panics in `matmul_fused.rs:211` on these. Route MoE models to the
+    // MoE-aware bench helpers in `bench_moe.rs` which call
+    // `forward_qwen3_moe[_cuda]` autoregressively.
+    if is_moe_gguf(&gguf) {
+        if !config.quiet {
+            eprintln!(
+                "{} MoE detected (expert_count={}, top-k={}) — routing through forward_qwen3_moe",
+                "Bench mode:".cyan().bold(),
+                gguf.expert_count().unwrap_or(0),
+                gguf.expert_used_count().unwrap_or(0)
+            );
+        }
+        return run_gguf_moe_benchmark(path, config, use_cuda, &prompt_tokens, tracer);
+    }
+
     let gen_config = QuantizedGenerateConfig {
         max_tokens: config.max_tokens.min(128),
         temperature: 0.0,
@@ -205,7 +222,14 @@ fn run_gguf_benchmark(
                     );
                 }
                 let cpu_start = Instant::now();
-                return run_cpu_benchmark(&prompt_tokens, &gen_config, config, cpu_start, path, tracer);
+                return run_cpu_benchmark(
+                    &prompt_tokens,
+                    &gen_config,
+                    config,
+                    cpu_start,
+                    path,
+                    tracer,
+                );
             }
         }
     }
@@ -324,7 +348,7 @@ fn run_apr_benchmark(
         top_k: 0,
         repetition_penalty: 1.0,
         trace: false,
-    stop_tokens: vec![],
+        stop_tokens: vec![],
     };
 
     // Warmup (untraced)
@@ -367,7 +391,8 @@ fn run_apr_measurement(
                 if generate_errors == 0 {
                     eprintln!(
                         "{}",
-                        format!("Warning: generate_with_cache() failed on iteration {i}: {e}").yellow()
+                        format!("Warning: generate_with_cache() failed on iteration {i}: {e}")
+                            .yellow()
                     );
                 }
                 generate_errors += 1;
@@ -393,7 +418,11 @@ fn run_apr_measurement(
     }
 
     total_tokens = handle_zero_generation_fallback(
-        generation_failed, total_tokens, config.iterations, prompt_tokens.len(), config.quiet,
+        generation_failed,
+        total_tokens,
+        config.iterations,
+        prompt_tokens.len(),
+        config.quiet,
     );
     if !config.quiet {
         eprintln!();
@@ -418,7 +447,10 @@ fn run_apr_cuda_benchmark(
     use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda, QuantizedGenerateConfig};
 
     if !config.quiet {
-        eprintln!("{}", "Loading APR model (GPU, fused Q4K kernels)...".yellow());
+        eprintln!(
+            "{}",
+            "Loading APR model (GPU, fused Q4K kernels)...".yellow()
+        );
     }
     let start = Instant::now();
 
@@ -430,8 +462,9 @@ fn run_apr_cuda_benchmark(
 
     // Use embedded tokenizer if available, else fall back to sibling/default
     let prompt_tokens: Vec<u32> = {
-        let cpu_model = AprV2Model::load(path)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR for tokenizer: {e}")))?;
+        let cpu_model = AprV2Model::load(path).map_err(|e| {
+            CliError::ValidationFailed(format!("Failed to load APR for tokenizer: {e}"))
+        })?;
         if let Some(tokenizer) = cpu_model.load_embedded_bpe_tokenizer() {
             tokenizer.encode(&config.prompt)
         } else {
@@ -439,8 +472,9 @@ fn run_apr_cuda_benchmark(
         }
     };
 
-    let model = OwnedQuantizedModel::from_apr(&mapped)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to create quantized model from APR: {e}")))?;
+    let model = OwnedQuantizedModel::from_apr(&mapped).map_err(|e| {
+        CliError::ValidationFailed(format!("Failed to create quantized model from APR: {e}"))
+    })?;
 
     let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to init CUDA: {e}")))?;
