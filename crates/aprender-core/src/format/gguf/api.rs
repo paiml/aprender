@@ -80,6 +80,13 @@ impl GgufTokenizer {
 pub struct GgufModelConfig {
     /// Model architecture family (e.g., "llama", "qwen2", "phi")
     pub architecture: Option<String>,
+    /// HuggingFace class name from `config.json::architectures[0]`
+    /// (e.g., "Qwen2ForCausalLM"). PMAT-690 P0-K: stamped by `apr convert`
+    /// so downstream `apr pretrain --init` propagates it into the trained
+    /// checkpoint's metadata.
+    pub hf_architecture: Option<String>,
+    /// HuggingFace `config.json::model_type` (e.g., "qwen2"). PMAT-690 P0-K.
+    pub hf_model_type: Option<String>,
     /// Hidden dimension size (embedding_length)
     pub hidden_size: Option<usize>,
     /// Number of transformer layers (block_count)
@@ -215,6 +222,11 @@ pub fn load_gguf_with_tokenizer<P: AsRef<Path>>(path: P) -> Result<GgufLoadResul
 
     let model_config = GgufModelConfig {
         architecture: arch,
+        // PMAT-690 P0-K: GGUF source has no `architectures[0]` field; leave
+        // None. The HF→APR import path (load_model_config_from_json) is the
+        // only producer that populates these.
+        hf_architecture: None,
+        hf_model_type: None,
         hidden_size: reader.hidden_size(),
         num_layers: reader.num_layers(),
         num_heads: reader.num_heads(),
@@ -305,6 +317,9 @@ pub fn load_gguf_raw<P: AsRef<Path>>(path: P) -> Result<GgufRawLoadResult> {
 
     let model_config = GgufModelConfig {
         architecture: arch,
+        // PMAT-690 P0-K: GGUF source has no `architectures[0]` field.
+        hf_architecture: None,
+        hf_model_type: None,
         hidden_size: reader.hidden_size(),
         num_layers: reader.num_layers(),
         num_heads: reader.num_heads(),

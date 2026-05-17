@@ -166,6 +166,7 @@
                 filters: false,
                 weights: false,
                 json: false,
+                quality: false,
             }),
             json: false,
             verbose: false,

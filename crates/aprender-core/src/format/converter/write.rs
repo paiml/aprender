@@ -367,6 +367,13 @@ pub(crate) fn write_apr_file(
         custom,
         // Transformer config (CRITICAL for realizar inference)
         architecture: model_config.and_then(|c| c.architecture.clone()),
+        // PMAT-690 P0-K: HF identity fields. Stamped from config.json's
+        // `architectures[0]` (class name) and `model_type` (family slug) so
+        // downstream `apr pretrain --init` propagates the source arch
+        // into the trained checkpoint's metadata. Closes the upstream
+        // metadata gap that masqueraded as the §81-§83 packaging cascade.
+        hf_architecture: model_config.and_then(|c| c.hf_architecture.clone()),
+        hf_model_type: model_config.and_then(|c| c.hf_model_type.clone()),
         hidden_size: model_config.and_then(|c| c.hidden_size),
         num_layers: model_config.and_then(|c| c.num_layers),
         num_heads: model_config.and_then(|c| c.num_heads),
