@@ -192,6 +192,8 @@ falsification_tests:
     cause the merge to fail with a clear "D/N < 10× Chinchilla
     safety floor" error. Verifies that under-provisioned merges
     cannot ship by mistake.
+  prediction: "encode-corpus exits non-zero with a Chinchilla floor diagnostic when total_tokens < 10·N"
+  if_fails: "Under-provisioned corpora can silently ship and re-trigger §82's degeneration; merge gate is regressed"
   test_kind: integration
   expected_failure_mode: build-time-rejection
 
@@ -202,6 +204,8 @@ falsification_tests:
     just codeparrot) MUST fail INV-MERGE-001. Single-source v3
     is forbidden because §82 already falsified single-source
     under-provisioning empirically.
+  prediction: "encode-corpus exits non-zero when |sources| < 2 even if total_tokens clears 10·N"
+  if_fails: "Single-source corpora can ship as v3, reintroducing §82's diversity failure mode"
   test_kind: integration
   expected_failure_mode: build-time-rejection
 
@@ -210,6 +214,8 @@ falsification_tests:
   description: >
     A manifest missing any required field (e.g. sha256_compressed
     omitted) MUST be rejected. Verifies provenance gating.
+  prediction: "manifest validator rejects records missing sha256_compressed, byte_count, or source_dataset"
+  if_fails: "Corpora can land without provenance, breaking dataset-reproducibility for downstream training"
   test_kind: unit
   expected_failure_mode: validator-rejection
 
@@ -219,6 +225,8 @@ falsification_tests:
     A merge attempt using a tokenizer with sha256 ≠ qwen-v2's
     tokenizer MUST be rejected. v3 cannot use a different
     tokenizer than v2.
+  prediction: "encode-corpus exits non-zero when tokenizer.sha256 ≠ qwen-v2 tokenizer.sha256"
+  if_fails: "v3 corpus can use a divergent tokenizer, silently invalidating loss-curve comparisons with v2"
   test_kind: integration
   expected_failure_mode: build-time-rejection
 
