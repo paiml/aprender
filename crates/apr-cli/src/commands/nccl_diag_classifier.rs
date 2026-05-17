@@ -207,7 +207,10 @@ mod tests {
     fn exit_code_rejects_generic_one() {
         assert_eq!(
             classify_exit_code(1, F15_MIN_EXIT_CODE),
-            NcclExitOutcome::BelowThreshold { got: 1, threshold: 128 }
+            NcclExitOutcome::BelowThreshold {
+                got: 1,
+                threshold: 128
+            }
         );
     }
 

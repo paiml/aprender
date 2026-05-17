@@ -95,9 +95,15 @@ pub fn classify_parity_numerics(
         };
     }
     if cos < tol_cos {
-        return AttnParityNumericsOutcome::CosineSimBelowFloor { got: cos, floor: tol_cos };
+        return AttnParityNumericsOutcome::CosineSimBelowFloor {
+            got: cos,
+            floor: tol_cos,
+        };
     }
-    AttnParityNumericsOutcome::Ok { max_abs_diff: mad, cosine_sim: cos }
+    AttnParityNumericsOutcome::Ok {
+        max_abs_diff: mad,
+        cosine_sim: cos,
+    }
 }
 
 /// FALSIFY-CRUX-L-02-003: provenance & fallback metadata.
@@ -118,26 +124,31 @@ pub fn classify_provenance(body: &Value) -> AttnProvenanceOutcome {
                         return AttnProvenanceOutcome::KernelSourceMalformed { got: s.to_string() };
                     }
                     let sha = &s[L02_KERNEL_SOURCE_PREFIX.len()..];
-                    if sha.len() != 40 || !sha.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+                    if sha.len() != 40
+                        || !sha.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
                     {
                         return AttnProvenanceOutcome::KernelSourceMalformed { got: s.to_string() };
                     }
-                    AttnProvenanceOutcome::OkFlash2 { sha: sha.to_string() }
+                    AttnProvenanceOutcome::OkFlash2 {
+                        sha: sha.to_string(),
+                    }
                 }
             }
         }
         "naive" | "fallback" => {
             let fb = obj.get("fallback").and_then(Value::as_str);
             match fb {
-                Some(s) if !s.is_empty() => {
-                    AttnProvenanceOutcome::OkFallback { reason: s.to_string() }
-                }
+                Some(s) if !s.is_empty() => AttnProvenanceOutcome::OkFallback {
+                    reason: s.to_string(),
+                },
                 _ => AttnProvenanceOutcome::FallbackMissingWhenNotFlash2 {
                     attn_impl: impl_.to_string(),
                 },
             }
         }
-        other => AttnProvenanceOutcome::UnknownAttnImpl { got: other.to_string() },
+        other => AttnProvenanceOutcome::UnknownAttnImpl {
+            got: other.to_string(),
+        },
     }
 }
 
@@ -149,10 +160,15 @@ pub fn classify_head_dim_error(body: &Value) -> AttnHeadDimErrorOutcome {
     let Some(err) = obj.get("error").and_then(Value::as_str) else {
         return AttnHeadDimErrorOutcome::MissingErrorField;
     };
-    if err.contains("unsupported-head-dim") || err.contains("head_dim") || err.contains("head-dim") {
-        return AttnHeadDimErrorOutcome::Ok { error: err.to_string() };
+    if err.contains("unsupported-head-dim") || err.contains("head_dim") || err.contains("head-dim")
+    {
+        return AttnHeadDimErrorOutcome::Ok {
+            error: err.to_string(),
+        };
     }
-    AttnHeadDimErrorOutcome::ErrorDoesNotMentionHeadDim { got: err.to_string() }
+    AttnHeadDimErrorOutcome::ErrorDoesNotMentionHeadDim {
+        got: err.to_string(),
+    }
 }
 
 #[cfg(test)]
