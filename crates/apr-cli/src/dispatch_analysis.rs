@@ -226,6 +226,21 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             cli.json,
         ),
 
+        ExtendedCommands::AttnParityLint {
+            parity_file,
+            provenance_file,
+            head_dim_error_file,
+            tol_abs,
+            tol_cos,
+        } => commands::attn_parity_lint::run(
+            parity_file.as_deref(),
+            provenance_file.as_deref(),
+            head_dim_error_file.as_deref(),
+            *tol_abs,
+            *tol_cos,
+            cli.json,
+        ),
+
         ExtendedCommands::AttnVizLint {
             attn_file,
             html_file,

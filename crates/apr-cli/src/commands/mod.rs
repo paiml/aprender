@@ -6,6 +6,8 @@
 //! - Visualization: Make problems visible
 
 pub(crate) mod aliases;
+pub(crate) mod attn_parity_classifier;
+pub(crate) mod attn_parity_lint;
 pub(crate) mod attn_viz_classifier;
 pub(crate) mod attn_viz_lint;
 pub(crate) mod audio_inspect_classifier;
