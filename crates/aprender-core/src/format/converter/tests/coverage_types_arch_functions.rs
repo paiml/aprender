@@ -14,43 +14,82 @@ use super::*;
 
 #[test]
 fn test_from_model_type_qwen2_variants_gh219() {
-    assert_eq!(Architecture::from_model_type("qwen2"), Some(Architecture::Qwen2));
-    assert_eq!(Architecture::from_model_type("qwen"), Some(Architecture::Qwen2));
-    assert_eq!(Architecture::from_model_type("qwen2.5"), Some(Architecture::Qwen2));
+    assert_eq!(
+        Architecture::from_model_type("qwen2"),
+        Some(Architecture::Qwen2)
+    );
+    assert_eq!(
+        Architecture::from_model_type("qwen"),
+        Some(Architecture::Qwen2)
+    );
+    assert_eq!(
+        Architecture::from_model_type("qwen2.5"),
+        Some(Architecture::Qwen2)
+    );
 }
 
 #[test]
 fn test_from_model_type_qwen3_gh219() {
-    assert_eq!(Architecture::from_model_type("qwen3"), Some(Architecture::Qwen3));
+    assert_eq!(
+        Architecture::from_model_type("qwen3"),
+        Some(Architecture::Qwen3)
+    );
 }
 
 #[test]
 fn test_from_model_type_llama_variants_gh219() {
-    assert_eq!(Architecture::from_model_type("llama"), Some(Architecture::Llama));
-    assert_eq!(Architecture::from_model_type("llama2"), Some(Architecture::Llama));
-    assert_eq!(Architecture::from_model_type("llama3"), Some(Architecture::Llama));
+    assert_eq!(
+        Architecture::from_model_type("llama"),
+        Some(Architecture::Llama)
+    );
+    assert_eq!(
+        Architecture::from_model_type("llama2"),
+        Some(Architecture::Llama)
+    );
+    assert_eq!(
+        Architecture::from_model_type("llama3"),
+        Some(Architecture::Llama)
+    );
 }
 
 #[test]
 fn test_from_model_type_whisper_gh219() {
-    assert_eq!(Architecture::from_model_type("whisper"), Some(Architecture::Whisper));
+    assert_eq!(
+        Architecture::from_model_type("whisper"),
+        Some(Architecture::Whisper)
+    );
 }
 
 #[test]
 fn test_from_model_type_bert_gh219() {
-    assert_eq!(Architecture::from_model_type("bert"), Some(Architecture::Bert));
+    assert_eq!(
+        Architecture::from_model_type("bert"),
+        Some(Architecture::Bert)
+    );
 }
 
 #[test]
 fn test_from_model_type_gpt2_gh219() {
-    assert_eq!(Architecture::from_model_type("gpt2"), Some(Architecture::Gpt2));
+    assert_eq!(
+        Architecture::from_model_type("gpt2"),
+        Some(Architecture::Gpt2)
+    );
 }
 
 #[test]
 fn test_from_model_type_phi_variants_gh219() {
-    assert_eq!(Architecture::from_model_type("phi"), Some(Architecture::Phi));
-    assert_eq!(Architecture::from_model_type("phi3"), Some(Architecture::Phi));
-    assert_eq!(Architecture::from_model_type("phi4"), Some(Architecture::Phi));
+    assert_eq!(
+        Architecture::from_model_type("phi"),
+        Some(Architecture::Phi)
+    );
+    assert_eq!(
+        Architecture::from_model_type("phi3"),
+        Some(Architecture::Phi)
+    );
+    assert_eq!(
+        Architecture::from_model_type("phi4"),
+        Some(Architecture::Phi)
+    );
 }
 
 #[test]
@@ -66,28 +105,58 @@ fn test_from_model_type_llama_derivatives_gh219() {
 
 #[test]
 fn test_from_model_type_deepseek_pmat526() {
-    assert_eq!(Architecture::from_model_type("deepseek"), Some(Architecture::DeepSeek));
-    assert_eq!(Architecture::from_model_type("deepseek_v2"), Some(Architecture::DeepSeek));
+    assert_eq!(
+        Architecture::from_model_type("deepseek"),
+        Some(Architecture::DeepSeek)
+    );
+    assert_eq!(
+        Architecture::from_model_type("deepseek_v2"),
+        Some(Architecture::DeepSeek)
+    );
 }
 
 #[test]
 fn test_from_model_type_gemma_pmat526() {
-    assert_eq!(Architecture::from_model_type("gemma"), Some(Architecture::Gemma));
-    assert_eq!(Architecture::from_model_type("gemma2"), Some(Architecture::Gemma));
-    assert_eq!(Architecture::from_model_type("gemma3"), Some(Architecture::Gemma));
+    assert_eq!(
+        Architecture::from_model_type("gemma"),
+        Some(Architecture::Gemma)
+    );
+    assert_eq!(
+        Architecture::from_model_type("gemma2"),
+        Some(Architecture::Gemma)
+    );
+    assert_eq!(
+        Architecture::from_model_type("gemma3"),
+        Some(Architecture::Gemma)
+    );
 }
 
 #[test]
 fn test_from_model_type_mistral_pmat526() {
-    assert_eq!(Architecture::from_model_type("mistral"), Some(Architecture::Mistral));
-    assert_eq!(Architecture::from_model_type("mixtral"), Some(Architecture::Mistral));
+    assert_eq!(
+        Architecture::from_model_type("mistral"),
+        Some(Architecture::Mistral)
+    );
+    assert_eq!(
+        Architecture::from_model_type("mixtral"),
+        Some(Architecture::Mistral)
+    );
 }
 
 #[test]
 fn test_from_model_type_case_insensitive_gh219() {
-    assert_eq!(Architecture::from_model_type("QWEN2"), Some(Architecture::Qwen2));
-    assert_eq!(Architecture::from_model_type("Llama"), Some(Architecture::Llama));
-    assert_eq!(Architecture::from_model_type("GPT2"), Some(Architecture::Gpt2));
+    assert_eq!(
+        Architecture::from_model_type("QWEN2"),
+        Some(Architecture::Qwen2)
+    );
+    assert_eq!(
+        Architecture::from_model_type("Llama"),
+        Some(Architecture::Llama)
+    );
+    assert_eq!(
+        Architecture::from_model_type("GPT2"),
+        Some(Architecture::Gpt2)
+    );
 }
 
 #[test]
@@ -117,8 +186,15 @@ fn test_is_inference_verified_true_gh219() {
 fn test_is_inference_verified_false_gh219() {
     assert!(!Architecture::Auto.is_inference_verified());
     assert!(!Architecture::Whisper.is_inference_verified());
-    assert!(!Architecture::Bert.is_inference_verified());
+    // GH-326 Phase 4b: BERT was promoted to verified after HF parity check.
     assert!(!Architecture::Gpt2.is_inference_verified());
+}
+
+/// GH-326 Phase 4b — BERT is now inference-verified after end-to-end
+/// HF parity demonstration against `cross-encoder/ms-marco-MiniLM-L-6-v2`.
+#[test]
+fn test_is_inference_verified_true_bert_gh326_phase4b() {
+    assert!(Architecture::Bert.is_inference_verified());
 }
 
 // -------------------------------------------------------------------------
@@ -193,35 +269,77 @@ fn test_display_name_all_architectures_gh219() {
 #[test]
 fn test_qwen2_map_name_attn_tensors_gh219() {
     let arch = Architecture::Qwen2;
-    assert_eq!(arch.map_name("blk.0.attn_q.weight"), "model.layers.0.self_attn.q_proj.weight");
-    assert_eq!(arch.map_name("blk.0.attn_q.bias"), "model.layers.0.self_attn.q_proj.bias");
-    assert_eq!(arch.map_name("blk.3.attn_k.weight"), "model.layers.3.self_attn.k_proj.weight");
-    assert_eq!(arch.map_name("blk.3.attn_k.bias"), "model.layers.3.self_attn.k_proj.bias");
-    assert_eq!(arch.map_name("blk.5.attn_v.weight"), "model.layers.5.self_attn.v_proj.weight");
-    assert_eq!(arch.map_name("blk.5.attn_v.bias"), "model.layers.5.self_attn.v_proj.bias");
-    assert_eq!(arch.map_name("blk.2.attn_output.weight"), "model.layers.2.self_attn.o_proj.weight");
-    assert_eq!(arch.map_name("blk.2.attn_output.bias"), "model.layers.2.self_attn.o_proj.bias");
+    assert_eq!(
+        arch.map_name("blk.0.attn_q.weight"),
+        "model.layers.0.self_attn.q_proj.weight"
+    );
+    assert_eq!(
+        arch.map_name("blk.0.attn_q.bias"),
+        "model.layers.0.self_attn.q_proj.bias"
+    );
+    assert_eq!(
+        arch.map_name("blk.3.attn_k.weight"),
+        "model.layers.3.self_attn.k_proj.weight"
+    );
+    assert_eq!(
+        arch.map_name("blk.3.attn_k.bias"),
+        "model.layers.3.self_attn.k_proj.bias"
+    );
+    assert_eq!(
+        arch.map_name("blk.5.attn_v.weight"),
+        "model.layers.5.self_attn.v_proj.weight"
+    );
+    assert_eq!(
+        arch.map_name("blk.5.attn_v.bias"),
+        "model.layers.5.self_attn.v_proj.bias"
+    );
+    assert_eq!(
+        arch.map_name("blk.2.attn_output.weight"),
+        "model.layers.2.self_attn.o_proj.weight"
+    );
+    assert_eq!(
+        arch.map_name("blk.2.attn_output.bias"),
+        "model.layers.2.self_attn.o_proj.bias"
+    );
 }
 
 #[test]
 fn test_qwen2_map_name_norm_tensors_gh219() {
     let arch = Architecture::Qwen2;
-    assert_eq!(arch.map_name("blk.0.attn_norm.weight"), "model.layers.0.input_layernorm.weight");
-    assert_eq!(arch.map_name("blk.7.ffn_norm.weight"), "model.layers.7.post_attention_layernorm.weight");
+    assert_eq!(
+        arch.map_name("blk.0.attn_norm.weight"),
+        "model.layers.0.input_layernorm.weight"
+    );
+    assert_eq!(
+        arch.map_name("blk.7.ffn_norm.weight"),
+        "model.layers.7.post_attention_layernorm.weight"
+    );
 }
 
 #[test]
 fn test_qwen2_map_name_ffn_tensors_gh219() {
     let arch = Architecture::Qwen2;
-    assert_eq!(arch.map_name("blk.1.ffn_gate.weight"), "model.layers.1.mlp.gate_proj.weight");
-    assert_eq!(arch.map_name("blk.1.ffn_up.weight"), "model.layers.1.mlp.up_proj.weight");
-    assert_eq!(arch.map_name("blk.1.ffn_down.weight"), "model.layers.1.mlp.down_proj.weight");
+    assert_eq!(
+        arch.map_name("blk.1.ffn_gate.weight"),
+        "model.layers.1.mlp.gate_proj.weight"
+    );
+    assert_eq!(
+        arch.map_name("blk.1.ffn_up.weight"),
+        "model.layers.1.mlp.up_proj.weight"
+    );
+    assert_eq!(
+        arch.map_name("blk.1.ffn_down.weight"),
+        "model.layers.1.mlp.down_proj.weight"
+    );
 }
 
 #[test]
 fn test_qwen2_map_name_global_tensors_gh219() {
     let arch = Architecture::Qwen2;
-    assert_eq!(arch.map_name("token_embd.weight"), "model.embed_tokens.weight");
+    assert_eq!(
+        arch.map_name("token_embd.weight"),
+        "model.embed_tokens.weight"
+    );
     assert_eq!(arch.map_name("output.weight"), "lm_head.weight");
     assert_eq!(arch.map_name("output_norm.weight"), "model.norm.weight");
 }
@@ -230,7 +348,10 @@ fn test_qwen2_map_name_global_tensors_gh219() {
 fn test_qwen2_map_name_unknown_suffix_gh219() {
     let arch = Architecture::Qwen2;
     // Unknown GGUF suffix should be preserved
-    assert_eq!(arch.map_name("blk.0.custom_layer.weight"), "model.layers.0.custom_layer.weight");
+    assert_eq!(
+        arch.map_name("blk.0.custom_layer.weight"),
+        "model.layers.0.custom_layer.weight"
+    );
     // Unknown global name should be preserved
     assert_eq!(arch.map_name("some_unknown_tensor"), "some_unknown_tensor");
 }
@@ -255,36 +376,81 @@ fn test_qwen3_uses_qwen2_mapping_gh219() {
 #[test]
 fn test_gpt2_map_name_layer_tensors_gh219() {
     let arch = Architecture::Gpt2;
-    assert_eq!(arch.map_name("transformer.h.0.ln_1.weight"), "model.layers.0.input_layernorm.weight");
-    assert_eq!(arch.map_name("transformer.h.0.ln_1.bias"), "model.layers.0.input_layernorm.bias");
-    assert_eq!(arch.map_name("transformer.h.2.ln_2.weight"), "model.layers.2.post_attention_layernorm.weight");
-    assert_eq!(arch.map_name("transformer.h.2.ln_2.bias"), "model.layers.2.post_attention_layernorm.bias");
+    assert_eq!(
+        arch.map_name("transformer.h.0.ln_1.weight"),
+        "model.layers.0.input_layernorm.weight"
+    );
+    assert_eq!(
+        arch.map_name("transformer.h.0.ln_1.bias"),
+        "model.layers.0.input_layernorm.bias"
+    );
+    assert_eq!(
+        arch.map_name("transformer.h.2.ln_2.weight"),
+        "model.layers.2.post_attention_layernorm.weight"
+    );
+    assert_eq!(
+        arch.map_name("transformer.h.2.ln_2.bias"),
+        "model.layers.2.post_attention_layernorm.bias"
+    );
 }
 
 #[test]
 fn test_gpt2_map_name_attn_tensors_gh219() {
     let arch = Architecture::Gpt2;
-    assert_eq!(arch.map_name("transformer.h.0.attn.c_attn.weight"), "model.layers.0.self_attn.c_attn.weight");
-    assert_eq!(arch.map_name("transformer.h.0.attn.c_attn.bias"), "model.layers.0.self_attn.c_attn.bias");
-    assert_eq!(arch.map_name("transformer.h.1.attn.c_proj.weight"), "model.layers.1.self_attn.o_proj.weight");
-    assert_eq!(arch.map_name("transformer.h.1.attn.c_proj.bias"), "model.layers.1.self_attn.o_proj.bias");
+    assert_eq!(
+        arch.map_name("transformer.h.0.attn.c_attn.weight"),
+        "model.layers.0.self_attn.c_attn.weight"
+    );
+    assert_eq!(
+        arch.map_name("transformer.h.0.attn.c_attn.bias"),
+        "model.layers.0.self_attn.c_attn.bias"
+    );
+    assert_eq!(
+        arch.map_name("transformer.h.1.attn.c_proj.weight"),
+        "model.layers.1.self_attn.o_proj.weight"
+    );
+    assert_eq!(
+        arch.map_name("transformer.h.1.attn.c_proj.bias"),
+        "model.layers.1.self_attn.o_proj.bias"
+    );
 }
 
 #[test]
 fn test_gpt2_map_name_mlp_tensors_gh219() {
     let arch = Architecture::Gpt2;
-    assert_eq!(arch.map_name("transformer.h.0.mlp.c_fc.weight"), "model.layers.0.mlp.up_proj.weight");
-    assert_eq!(arch.map_name("transformer.h.0.mlp.c_fc.bias"), "model.layers.0.mlp.up_proj.bias");
-    assert_eq!(arch.map_name("transformer.h.0.mlp.c_proj.weight"), "model.layers.0.mlp.down_proj.weight");
-    assert_eq!(arch.map_name("transformer.h.0.mlp.c_proj.bias"), "model.layers.0.mlp.down_proj.bias");
+    assert_eq!(
+        arch.map_name("transformer.h.0.mlp.c_fc.weight"),
+        "model.layers.0.mlp.up_proj.weight"
+    );
+    assert_eq!(
+        arch.map_name("transformer.h.0.mlp.c_fc.bias"),
+        "model.layers.0.mlp.up_proj.bias"
+    );
+    assert_eq!(
+        arch.map_name("transformer.h.0.mlp.c_proj.weight"),
+        "model.layers.0.mlp.down_proj.weight"
+    );
+    assert_eq!(
+        arch.map_name("transformer.h.0.mlp.c_proj.bias"),
+        "model.layers.0.mlp.down_proj.bias"
+    );
 }
 
 #[test]
 fn test_gpt2_map_name_global_tensors_gh219() {
     let arch = Architecture::Gpt2;
-    assert_eq!(arch.map_name("transformer.wte.weight"), "model.embed_tokens.weight");
-    assert_eq!(arch.map_name("transformer.wpe.weight"), "model.position_embedding.weight");
-    assert_eq!(arch.map_name("transformer.ln_f.weight"), "model.norm.weight");
+    assert_eq!(
+        arch.map_name("transformer.wte.weight"),
+        "model.embed_tokens.weight"
+    );
+    assert_eq!(
+        arch.map_name("transformer.wpe.weight"),
+        "model.position_embedding.weight"
+    );
+    assert_eq!(
+        arch.map_name("transformer.ln_f.weight"),
+        "model.norm.weight"
+    );
     assert_eq!(arch.map_name("transformer.ln_f.bias"), "model.norm.bias");
 }
 
@@ -292,9 +458,18 @@ fn test_gpt2_map_name_global_tensors_gh219() {
 fn test_gpt2_map_name_safetensors_prefix_gh219() {
     // GH-255: SafeTensors uses "h.N.*" without "transformer." prefix
     let arch = Architecture::Gpt2;
-    assert_eq!(arch.map_name("h.0.ln_1.weight"), "model.layers.0.input_layernorm.weight");
-    assert_eq!(arch.map_name("h.3.attn.c_attn.weight"), "model.layers.3.self_attn.c_attn.weight");
-    assert_eq!(arch.map_name("h.0.mlp.c_fc.weight"), "model.layers.0.mlp.up_proj.weight");
+    assert_eq!(
+        arch.map_name("h.0.ln_1.weight"),
+        "model.layers.0.input_layernorm.weight"
+    );
+    assert_eq!(
+        arch.map_name("h.3.attn.c_attn.weight"),
+        "model.layers.3.self_attn.c_attn.weight"
+    );
+    assert_eq!(
+        arch.map_name("h.0.mlp.c_fc.weight"),
+        "model.layers.0.mlp.up_proj.weight"
+    );
 }
 
 #[test]
@@ -302,7 +477,10 @@ fn test_gpt2_map_name_global_without_transformer_prefix_gh219() {
     let arch = Architecture::Gpt2;
     // Without "transformer." prefix
     assert_eq!(arch.map_name("wte.weight"), "model.embed_tokens.weight");
-    assert_eq!(arch.map_name("wpe.weight"), "model.position_embedding.weight");
+    assert_eq!(
+        arch.map_name("wpe.weight"),
+        "model.position_embedding.weight"
+    );
     assert_eq!(arch.map_name("ln_f.weight"), "model.norm.weight");
     assert_eq!(arch.map_name("ln_f.bias"), "model.norm.bias");
 }
@@ -311,7 +489,10 @@ fn test_gpt2_map_name_global_without_transformer_prefix_gh219() {
 fn test_gpt2_map_name_unknown_gh219() {
     let arch = Architecture::Gpt2;
     assert_eq!(arch.map_name("unknown_tensor"), "unknown_tensor");
-    assert_eq!(arch.map_name("transformer.h.0.custom.weight"), "model.layers.0.custom.weight");
+    assert_eq!(
+        arch.map_name("transformer.h.0.custom.weight"),
+        "model.layers.0.custom.weight"
+    );
 }
 
 // -------------------------------------------------------------------------
@@ -399,7 +580,10 @@ fn test_split_gpt2_fused_qkv_no_fused_keys_gh219() {
     use std::collections::BTreeMap;
 
     let mut tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)> = BTreeMap::new();
-    tensors.insert("model.layers.0.self_attn.q_proj.weight".to_string(), (vec![1.0], vec![1]));
+    tensors.insert(
+        "model.layers.0.self_attn.q_proj.weight".to_string(),
+        (vec![1.0], vec![1]),
+    );
 
     Architecture::split_gpt2_fused_qkv(&mut tensors);
 
@@ -521,6 +705,5 @@ fn test_split_gpt2_fused_qkv_raw_bias_not_splittable_gh219() {
     // Should be restored
     assert!(tensors.contains_key("model.layers.0.self_attn.c_attn.bias"));
 }
-
 
 include!("coverage_types_gpt2_split.rs");
