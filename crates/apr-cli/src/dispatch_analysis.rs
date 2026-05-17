@@ -200,6 +200,21 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             cli.json,
         ),
 
+        ExtendedCommands::DdpMetricsLint {
+            metrics_1gpu_file,
+            metrics_ngpu_file,
+            world_size,
+            scaling_floor,
+            loss_tolerance,
+        } => commands::ddp_metrics_lint::run(
+            metrics_1gpu_file,
+            metrics_ngpu_file,
+            *world_size,
+            *scaling_floor,
+            *loss_tolerance,
+            cli.json,
+        ),
+
         ExtendedCommands::AttnVizLint {
             attn_file,
             html_file,

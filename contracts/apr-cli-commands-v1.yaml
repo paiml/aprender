@@ -604,6 +604,12 @@ commands:
     requires_model: false
     side_effects: []
 
+  - name: ddp-metrics-lint
+    category: inspection
+    description: "Validate two captured `apr finetune --parallel ddp --json` outputs (CRUX-D-11): scaling efficiency T_N/(N*T_1) >= 0.85 + loss parity |L_N - L_1|/L_1 <= 0.01 + per-step allreduce bandwidth > 0"
+    requires_model: false
+    side_effects: []
+
   - name: shard
     category: model_ops
     description: "Split safetensors file into shards + weight-map index (CRUX-B-05)"

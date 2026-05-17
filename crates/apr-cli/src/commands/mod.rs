@@ -23,6 +23,8 @@ pub mod compare_hf;
 pub(crate) mod compile;
 pub(crate) mod convert;
 pub(crate) mod copy_tag;
+pub(crate) mod ddp_metrics_classifier;
+pub(crate) mod ddp_metrics_lint;
 pub(crate) mod debug;
 pub(crate) mod diff;
 pub(crate) mod diff_quant_roundtrip;
