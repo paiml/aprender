@@ -78,6 +78,17 @@ struct MetadataInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     created_at: Option<String>,
     architecture: Option<String>,
+    // PMAT-690 P0-K: surface the HF identity fields stamped at import
+    // time so operators can verify upstream propagation (apr convert
+    // → apr pretrain --init → apr export). Distinct from `architecture`
+    // (lowercase family) — `hf_architecture` is the canonical class
+    // name like "Qwen2ForCausalLM"; `hf_model_type` mirrors
+    // `config.json::model_type`. Per C-APR-INSPECT-METADATA-PROPAGATION
+    // and C-APR-CONVERT-HF-ARCH the two fields render as null when
+    // absent (NOT silently skipped via skip_serializing_if) so the
+    // auditor can grep for them in any apr inspect --json output.
+    hf_architecture: Option<String>,
+    hf_model_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     param_count: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -134,6 +145,7 @@ pub(crate) fn run(
     show_filters: bool,
     show_weights: bool,
     json_output: bool,
+    show_quality: bool,
 ) -> Result<(), CliError> {
     validate_path(path)?;
 
@@ -153,6 +165,13 @@ pub(crate) fn run(
                 println!();
                 println!("  (--filters: GGUF/SafeTensors format has no security filter metadata)");
             }
+            // PMAT-690 P3-A: --quality on non-APR is informational; the
+            // score depends on AprV2Metadata fields not present in raw
+            // GGUF/SafeTensors. Operators run `apr convert` first.
+            if show_quality && !json_output {
+                println!();
+                println!("  (--quality: run `apr convert` to APR first for the full score)");
+            }
             result
         }
         _ => {
@@ -165,7 +184,13 @@ pub(crate) fn run(
             let metadata_info = read_metadata(&mut reader, &header);
 
             if json_output {
-                output_json(path, file_size, &header, metadata_info);
+                output_json_with_quality(
+                    path,
+                    file_size,
+                    &header,
+                    metadata_info,
+                    show_quality,
+                );
             } else {
                 output_text(
                     path,
@@ -176,6 +201,9 @@ pub(crate) fn run(
                     show_filters,
                     show_weights,
                 );
+                if show_quality {
+                    output_quality_text(&metadata_info, &header);
+                }
             }
             Ok(())
         }
@@ -524,6 +552,12 @@ fn read_metadata(reader: &mut BufReader<File>, header: &HeaderData) -> MetadataI
                     .architecture
                     .filter(|a| !a.is_empty())
                     .or_else(|| Some("unknown".to_string())),
+                // PMAT-690 P0-K: copy unconditionally (even if None) so
+                // operators can grep `apr inspect --json | jq .hf_architecture`
+                // and distinguish "stamped" from "missing" rather than
+                // having the key silently skipped.
+                hf_architecture: meta.hf_architecture.filter(|a| !a.is_empty()),
+                hf_model_type: meta.hf_model_type.filter(|a| !a.is_empty()),
                 param_count: if meta.param_count > 0 {
                     Some(meta.param_count)
                 } else {

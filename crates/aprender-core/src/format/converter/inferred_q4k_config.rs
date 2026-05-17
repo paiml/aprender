@@ -21,6 +21,15 @@ fn save_model_tensors_with_gguf_config_and_tokenizer(
         .unwrap_or_else(|| "qwen2".to_string());
     // PMAT-113 FIX: Set architecture for chat template detection
     metadata.architecture = gguf_config.architecture.clone();
+    // PMAT-690 P0-K: propagate HF identity through the `apr convert` path
+    // (distinct from the apr_import path; both are needed because they're
+    // wired into different CLI entry points). When the source is a GGUF
+    // file, `hf_architecture` is None here — the synthesizer in
+    // write_model_config.rs covers GGUF round-trip. When the source is
+    // SafeTensors with a sibling config.json, this path picks up the
+    // `architectures[0]` extracted upstream by `load_model_config_from_json`.
+    metadata.hf_architecture = gguf_config.hf_architecture.clone();
+    metadata.hf_model_type = gguf_config.hf_model_type.clone();
 
     // Copy all GGUF config fields to APR metadata
     metadata.hidden_size = gguf_config.hidden_size;

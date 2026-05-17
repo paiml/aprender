@@ -1,0 +1,300 @@
+# ─────────────────────────────────────────────────────────────
+# Contract: apr-convert-hf-arch-v1
+# Upstream metadata-stamping invariant for `apr convert`.
+# ─────────────────────────────────────────────────────────────
+# The HF→APR import path (`apr convert <source>.safetensors`) MUST
+# stamp `hf_architecture` and `hf_model_type` into AprV2Metadata
+# whenever a sibling `config.json` is present. Without this, every
+# downstream tool that needs source-identity information (apr
+# pretrain --init, apr export, apr inspect, llama-cli interop)
+# observes None and falls back to defaults that produce subtle
+# behavioral bugs (wrong class name, wrong tokenizer family, etc.).
+#
+# Motivation: 2026-05-15 → 2026-05-17 §81–§83 Class 3 packaging
+# cascade shipped 5 PRs patching downstream consumers. The
+# subsequent P2-C live training run (evidence/p2c-2026-05-17/)
+# re-exhibited every failure because the imported init APR had
+# `hf_architecture = None` from the upstream import. Methodology
+# lesson #33 names this pattern (memory/
+# feedback_upstream_metadata_masquerade.md): when a Class 3 wave
+# extends past 4-5 defects, the producer is the defect, not the
+# consumers. P0-K closes the producer gap.
+#
+# Peer:   contracts/apr-provenance-v1.yaml
+# Peer:   contracts/apr-pretrain-from-init-v1.yaml
+# Peer:   contracts/apr-inspect-metadata-propagation-v1.yaml
+#
+# References:
+#   - docs/specifications/aprender-train/ship-model-2-spec.md §81–§84
+#   - docs/specifications/aprender-train/albor-370m-roadmap.md §4 P0-K
+#   - evidence/p2c-2026-05-17/findings.md
+#   - memory/feedback_upstream_metadata_masquerade.md (methodology #33)
+# ─────────────────────────────────────────────────────────────
+
+contract_id: C-APR-CONVERT-HF-ARCH
+version: 1.0.0
+status: PROPOSED
+
+metadata:
+  version: "1.0.0"
+  created: "2026-05-17"
+  updated: "2026-05-17"
+  kind: schema
+  author: PAIML Engineering
+  description: >
+    `apr convert` MUST stamp `hf_architecture` (from
+    `config.json::architectures[0]`) and `hf_model_type` (from
+    `config.json::model_type`) into AprV2Metadata. When a sibling
+    `config.json` is absent, both fields stay None. Closes the
+    upstream producer gap that masquerades as 5 downstream packaging
+    defects (P0-D / P0-E / P0-F / P0-G / P0-H). Discharges PMAT-690
+    P0-K per the §84 spec amendment.
+  changelog:
+    - "1.0.0 (2026-05-17): Initial authoring. PR
+       feat/pmat-690-p0k-apr-convert-hf-arch threads hf_architecture
+       + hf_model_type through GgufModelConfig → AprV2Metadata via
+       load_model_config_from_json + write_apr_file."
+  peer_contracts:
+    - contracts/apr-provenance-v1.yaml
+    - contracts/apr-pretrain-from-init-v1.yaml
+    - contracts/apr-inspect-metadata-propagation-v1.yaml
+  references:
+    - "docs/specifications/aprender-train/ship-model-2-spec.md §81-§84"
+    - "docs/specifications/aprender-train/albor-370m-roadmap.md §4 P0-K"
+    - "evidence/p2c-2026-05-17/findings.md"
+    - "memory/feedback_upstream_metadata_masquerade.md"
+
+summary: >
+  `apr convert` is the producer of AprV2Metadata.hf_architecture and
+  .hf_model_type. It MUST extract `architectures[0]` and `model_type`
+  from a sibling `config.json` and stamp them. Absence of config.json
+  → both None. Presence → both Some(value), or test fails.
+
+motivation: >
+  The 2026-05-15 → 2026-05-17 §81–§83 packaging cascade fixed 5
+  downstream consumers (apr qa, apr bench, GGUF export mapper, apr
+  pretrain checkpoint stamping) without addressing the upstream
+  producer. P2-C's live training run reproduced every failure
+  because the init APR had `hf_architecture = None`. This contract
+  encodes the producer-side stamping invariant as a hard rule so
+  the next Class 3 wave on the same data is caught at authoring
+  time, not after a multi-hour GPU run.
+
+# ─── REQUIRED FIELDS in AprV2Metadata + GgufModelConfig ─────
+
+required_fields:
+  - name: hf_architecture
+    type: Option<String>
+    constraint: |
+      When `config.json::architectures` is a non-empty array of
+      strings, hf_architecture = Some(architectures[0]) (the HF
+      class name, e.g. "Qwen2ForCausalLM"). When the field is
+      absent / empty / non-string, hf_architecture = None.
+      Distinct from `architecture` (the lowercase family slug like
+      "qwen2") and `model_type`.
+    ship_blocker: true
+  - name: hf_model_type
+    type: Option<String>
+    constraint: |
+      Mirrors `config.json::model_type` (lowercase family slug).
+      None when config.json absent or model_type missing.
+    ship_blocker: false
+
+# ─── INVARIANTS ──────────────────────────────────────────────
+
+invariants:
+
+- id: INV-CONVERT-HF-ARCH-001
+  description: >
+    `apr convert <model.safetensors>` with a sibling `config.json`
+    containing `"architectures": ["Qwen2ForCausalLM"]` MUST produce
+    an APR file whose AprV2Metadata.hf_architecture equals
+    Some("Qwen2ForCausalLM"). Field MUST round-trip through the
+    binary write + read cycle byte-identical.
+  falsifier: >
+    Write a synthetic config.json + model.safetensors pair, run
+    `apr convert`, then `apr inspect --json` on the output.
+    Assert .hf_architecture equals "Qwen2ForCausalLM". Any
+    drift / None / different string fails.
+
+- id: INV-CONVERT-HF-ARCH-002
+  description: >
+    When `config.json` is absent alongside the source model,
+    hf_architecture = None and hf_model_type = None. No
+    fabricated value is permitted (the fallback tensor-name
+    inference path MUST NOT synthesize a class name).
+  falsifier: >
+    `apr convert` with no sibling config.json. Inspect output.
+    Both fields MUST be None / missing. If either is populated,
+    that's a fabrication bug.
+
+- id: INV-CONVERT-HF-ARCH-003
+  description: >
+    `architectures[]` MAY contain multiple class names (e.g.
+    Qwen2ForCausalLM + Qwen2ForSequenceClassification). The
+    contract picks `architectures[0]` per HuggingFace convention.
+    Documented behavior; not configurable.
+  falsifier: >
+    Synthetic config with architectures = ["Qwen2ForCausalLM",
+    "Qwen2ForSequenceClassification"]. hf_architecture MUST be
+    Some("Qwen2ForCausalLM") — first element.
+
+- id: INV-CONVERT-HF-ARCH-004
+  description: >
+    GGUF → APR conversion has no `architectures[0]` source
+    (GGUF carries only `general.architecture`). The GGUF import
+    path MAY synthesize an HF class name from the family slug
+    via the canonical convention (qwen2 → Qwen2ForCausalLM,
+    llama → LlamaForCausalLM, etc.) so round-tripping a GGUF
+    through APR → llama-cli does not lose arch identity.
+  falsifier: >
+    `apr convert <model.gguf>` on a Qwen2 GGUF. The output APR
+    MUST have hf_architecture = Some("Qwen2ForCausalLM"). The
+    synthesizer is `synthesize_hf_architecture_from_family` in
+    crates/aprender-core/src/format/converter/write_model_config.rs.
+
+# ─── GATES ───────────────────────────────────────────────────
+
+gates:
+
+- id: GATE-CONVERT-HF-ARCH-001
+  invariant: INV-CONVERT-HF-ARCH-001
+  check: |
+    Unit test: synthetic config.json round-trips
+    `architectures[0]` through `load_model_config_from_json` into
+    `GgufModelConfig.hf_architecture`, then through
+    `write_apr_file` into `AprV2Metadata.hf_architecture`.
+  enforcement: ci
+  severity: high
+
+- id: GATE-CONVERT-HF-ARCH-002
+  invariant: INV-CONVERT-HF-ARCH-002
+  check: |
+    Unit test: config.json without `architectures` field results
+    in hf_architecture = None. Tensor-name inference fallback
+    path also returns None (no fabrication).
+  enforcement: ci
+  severity: high
+
+- id: GATE-CONVERT-HF-ARCH-004
+  invariant: INV-CONVERT-HF-ARCH-004
+  check: |
+    Unit test: synthesize_hf_architecture_from_family maps the
+    canonical families (qwen2, qwen2.5, llama, mistral, gemma2,
+    phi, phi3) to their expected HF class names.
+  enforcement: ci
+  severity: medium
+
+# ─── FALSIFICATION TESTS ─────────────────────────────────────
+
+falsification_tests:
+
+- id: FALSIFY-CONVERT-HF-ARCH-001
+  invariant: INV-CONVERT-HF-ARCH-001
+  rule: hf-architecture-extracted-from-config-json
+  prediction: >
+    Given config.json with architectures[0] = "Qwen2ForCausalLM",
+    load_model_config_from_json returns a GgufModelConfig whose
+    hf_architecture = Some("Qwen2ForCausalLM").
+  test_kind: unit
+  site: crates/aprender-core/src/format/converter/source_load_result.rs::load_model_config_from_json_tests::loads_hf_architecture_from_architectures_array
+  if_fails: producer-side extraction broken — every downstream consumer falls back to default
+
+- id: FALSIFY-CONVERT-HF-ARCH-002
+  invariant: INV-CONVERT-HF-ARCH-002
+  rule: missing-architectures-leaves-none
+  prediction: >
+    Given config.json without architectures key,
+    hf_architecture = None. No fabrication.
+  test_kind: unit
+  site: crates/aprender-core/src/format/converter/source_load_result.rs::load_model_config_from_json_tests::missing_architectures_leaves_hf_architecture_none
+  if_fails: silent fabrication — operator cannot distinguish "no source" from "from source"
+
+- id: FALSIFY-CONVERT-HF-ARCH-003
+  invariant: INV-CONVERT-HF-ARCH-003
+  rule: picks-first-when-multiple
+  prediction: >
+    Given config.json with architectures = ["Qwen2ForCausalLM",
+    "Qwen2ForSequenceClassification"], hf_architecture =
+    Some("Qwen2ForCausalLM").
+  test_kind: unit
+  site: crates/aprender-core/src/format/converter/source_load_result.rs::load_model_config_from_json_tests::picks_first_when_multiple_architectures
+  if_fails: ordering bug — downstream picks wrong head class
+
+- id: FALSIFY-CONVERT-HF-ARCH-004
+  invariant: INV-CONVERT-HF-ARCH-004
+  rule: gguf-synthesizes-canonical-class-name
+  prediction: >
+    synthesize_hf_architecture_from_family("qwen2") =
+    "Qwen2ForCausalLM"; ("llama") = "LlamaForCausalLM"; ("gemma2") =
+    "Gemma2ForCausalLM". Unknown family capitalizes first letter
+    + "ForCausalLM".
+  test_kind: unit
+  site: crates/aprender-core/src/format/converter/write_model_config.rs::synthesize_arch_tests
+  if_fails: GGUF round-trip loses arch identity — llama-cli rejects exported GGUF
+
+# ─── EQUATIONS ───────────────────────────────────────────────
+
+equations:
+  EQ-CONVERT-HF-ARCH-001:
+    name: hf_architecture_extraction
+    latex: '\text{hf\_architecture} = \text{config.json::architectures}[0]'
+    description: >
+      Producer-side extraction rule. Given a parsed config.json,
+      hf_architecture takes the first element of the architectures
+      array if it is a non-empty array of strings; otherwise None.
+    runtime_check: |
+      let hf_architecture = json
+          .get("architectures")
+          .and_then(|v| v.as_array())
+          .and_then(|arr| arr.first())
+          .and_then(|v| v.as_str())
+          .map(ToString::to_string);
+
+  EQ-CONVERT-HF-ARCH-002:
+    name: family_to_class_name_canonical
+    latex: '\text{hf\_arch}(f) = \text{Cap}(f) + \text{"ForCausalLM"}'
+    description: >
+      GGUF round-trip rule. When the source format is GGUF (no
+      `architectures[]`), synthesize the HF class name by
+      capitalizing the family slug and appending "ForCausalLM".
+      Special cases (qwen2.5 → Qwen2, qwen3.5 → Qwen3, etc.) are
+      explicit lookup-table entries.
+
+# ─── PROOF OBLIGATIONS ───────────────────────────────────────
+
+proof_obligations:
+- type: precondition
+  property: hf_architecture stamping is a precondition for downstream apr pretrain --init / apr export / apr inspect to propagate source arch identity
+  formal: 'apr_convert(src) ⟹ apr.metadata.hf_architecture = src.config.architectures[0] ∨ src.config = ⊥'
+  applies_to: all
+
+- type: invariant
+  property: When config.json is absent, hf_architecture remains None — no fabrication
+  formal: '¬∃ config.json ⟹ hf_architecture = None'
+  applies_to: all
+
+- type: roundtrip
+  property: AprV2Metadata serializes + deserializes hf_architecture byte-identical via serde-JSON
+  formal: 'from_json(to_json(m)).hf_architecture = m.hf_architecture'
+  applies_to: all
+
+- type: completeness
+  property: GGUF import synthesizes a class name so round-tripping does not lose arch identity
+  formal: 'gguf(family).hf_architecture = synth(family) ∧ synth(family) ≠ ⊥'
+  applies_to: all
+
+# ─── REFERENCES ──────────────────────────────────────────────
+
+references:
+  - id: spec_84_p0k
+    citation: docs/specifications/aprender-train/ship-model-2-spec.md §84 P0-K
+    relevance: Spec amendment that authorized this contract
+
+  - id: p2c_evidence
+    citation: evidence/p2c-2026-05-17/findings.md
+    relevance: Live training-run evidence that motivated P0-K — every §81–§83 fix re-failed because the upstream producer hadn't been touched
+
+  - id: methodology_lesson_33
+    citation: memory/feedback_upstream_metadata_masquerade.md
+    relevance: Methodology lesson #33 — Class 3 packaging waves past 4-5 defects share an upstream producer

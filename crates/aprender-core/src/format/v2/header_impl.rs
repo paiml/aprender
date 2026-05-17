@@ -205,6 +205,20 @@ pub struct AprV2Metadata {
     #[serde(default)]
     pub architecture: Option<String>,
 
+    /// HuggingFace class name from `config.json::architectures[0]`
+    /// (e.g., "Qwen2ForCausalLM", "LlamaForCausalLM"). Distinct from
+    /// `architecture` (family) and `model_type`. PMAT-690 P0-K stamps
+    /// this so downstream `apr pretrain --init` can propagate it into
+    /// the trained checkpoint's metadata.
+    #[serde(default)]
+    pub hf_architecture: Option<String>,
+
+    /// HuggingFace `config.json::model_type` (e.g., "qwen2", "llama").
+    /// PMAT-690 P0-K stamps this alongside `hf_architecture` so the
+    /// import→pretrain→export chain has a single source of truth.
+    #[serde(default)]
+    pub hf_model_type: Option<String>,
+
     /// Hidden dimension size
     #[serde(default)]
     pub hidden_size: Option<usize>,

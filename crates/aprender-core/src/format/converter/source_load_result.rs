@@ -1,4 +1,3 @@
-
 /// Resolve GGUF tokenizer: use embedded, external, or error.
 fn resolve_gguf_tokenizer(
     embedded: &GgufTokenizer,
@@ -264,8 +263,7 @@ pub(crate) fn load_model_config_from_json(model_path: &Path) -> Option<GgufModel
     let num_layers = json_usize_with_aliases(&json, CONFIG_ALIASES_NUM_LAYERS);
     let num_heads = json_usize_with_aliases(&json, CONFIG_ALIASES_NUM_HEADS);
 
-    let num_kv_heads = json_usize_with_aliases(&json, &["num_key_value_heads"])
-        .or(num_heads); // Default to num_heads if not specified (no GQA)
+    let num_kv_heads = json_usize_with_aliases(&json, &["num_key_value_heads"]).or(num_heads); // Default to num_heads if not specified (no GQA)
 
     let vocab_size = json_usize_with_aliases(&json, &["vocab_size"]);
 
@@ -282,6 +280,20 @@ pub(crate) fn load_model_config_from_json(model_path: &Path) -> Option<GgufModel
         .and_then(|v| v.as_str())
         .map(ToString::to_string);
 
+    // PMAT-690 P0-K: Extract `architectures[0]` (HuggingFace class name like
+    // "Qwen2ForCausalLM") separately from `model_type` (family lowercase like
+    // "qwen2"). Downstream `apr pretrain --init` reads `hf_architecture` to
+    // stamp the trained checkpoint's metadata; without it, the §81-§83
+    // packaging cascade has nothing to propagate. See feedback memory
+    // `feedback_upstream_metadata_masquerade.md`.
+    let hf_architecture = json
+        .get("architectures")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string);
+    let hf_model_type = architecture.clone();
+
     // PMAT-114: Infer rope_type from architecture
     // Qwen2/Qwen2.5/Qwen3, Phi, and GPT-NeoX models use NEOX-style RoPE (type 2)
     // GH-311: Added GPT-NeoX family (Pythia)
@@ -294,6 +306,8 @@ pub(crate) fn load_model_config_from_json(model_path: &Path) -> Option<GgufModel
 
     Some(GgufModelConfig {
         architecture,
+        hf_architecture,
+        hf_model_type,
         hidden_size,
         num_layers,
         num_heads,
@@ -516,5 +530,91 @@ mod parse_merges_tests {
             "model": { "type": "BPE", "vocab": {} }
         });
         assert!(parse_merges(&json).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod load_model_config_from_json_tests {
+    use super::*;
+    use std::io::Write;
+
+    /// PMAT-690 P0-K invariant: `load_model_config_from_json` MUST extract
+    /// `architectures[0]` into `hf_architecture` and `model_type` into
+    /// `hf_model_type`. Without this, downstream `apr pretrain --init` has
+    /// no source for the trained checkpoint's arch identity.
+    #[test]
+    fn loads_hf_architecture_from_architectures_array() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let model_path = tmp.path().join("model.safetensors");
+        let config_path = tmp.path().join("config.json");
+        // Write a synthetic Qwen2 config.json with both fields populated.
+        let config_json = serde_json::json!({
+            "model_type": "qwen2",
+            "architectures": ["Qwen2ForCausalLM"],
+            "hidden_size": 896,
+            "num_hidden_layers": 24,
+            "num_attention_heads": 14,
+            "num_key_value_heads": 2,
+            "vocab_size": 151_936,
+            "intermediate_size": 4864,
+            "max_position_embeddings": 32_768,
+            "rms_norm_eps": 1e-6,
+            "rope_theta": 1_000_000.0,
+        });
+        let mut f = std::fs::File::create(&config_path).expect("create config.json");
+        f.write_all(config_json.to_string().as_bytes())
+            .expect("write config.json");
+
+        let cfg = load_model_config_from_json(&model_path)
+            .expect("load_model_config_from_json returned None");
+        assert_eq!(cfg.architecture.as_deref(), Some("qwen2"));
+        assert_eq!(cfg.hf_architecture.as_deref(), Some("Qwen2ForCausalLM"));
+        assert_eq!(cfg.hf_model_type.as_deref(), Some("qwen2"));
+    }
+
+    /// PMAT-690 P0-K: empty/missing `architectures` array means
+    /// `hf_architecture = None` (do not fabricate).
+    #[test]
+    fn missing_architectures_leaves_hf_architecture_none() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let model_path = tmp.path().join("model.safetensors");
+        let config_path = tmp.path().join("config.json");
+        let config_json = serde_json::json!({
+            "model_type": "llama",
+            "hidden_size": 4096,
+            "num_hidden_layers": 32,
+            "num_attention_heads": 32,
+            "vocab_size": 32000,
+        });
+        let mut f = std::fs::File::create(&config_path).expect("create config.json");
+        f.write_all(config_json.to_string().as_bytes())
+            .expect("write config.json");
+
+        let cfg = load_model_config_from_json(&model_path)
+            .expect("load_model_config_from_json returned None");
+        assert_eq!(cfg.architecture.as_deref(), Some("llama"));
+        assert_eq!(cfg.hf_architecture, None);
+        // hf_model_type mirrors model_type even when architectures[] is absent.
+        assert_eq!(cfg.hf_model_type.as_deref(), Some("llama"));
+    }
+
+    /// PMAT-690 P0-K: when `architectures[]` contains multiple entries,
+    /// we take the first (matches HuggingFace convention).
+    #[test]
+    fn picks_first_when_multiple_architectures() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let model_path = tmp.path().join("model.safetensors");
+        let config_path = tmp.path().join("config.json");
+        let config_json = serde_json::json!({
+            "model_type": "qwen2",
+            "architectures": ["Qwen2ForCausalLM", "Qwen2ForSequenceClassification"],
+        });
+        let mut f = std::fs::File::create(&config_path).expect("create config.json");
+        f.write_all(config_json.to_string().as_bytes())
+            .expect("write config.json");
+
+        let cfg = load_model_config_from_json(&model_path)
+            .expect("load_model_config_from_json returned None");
+        assert_eq!(cfg.hf_architecture.as_deref(), Some("Qwen2ForCausalLM"));
     }
 }

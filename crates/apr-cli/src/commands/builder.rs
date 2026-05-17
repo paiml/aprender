@@ -206,14 +206,14 @@
     #[test]
     fn test_run_valid_gguf_inspect() {
         let file = build_inspect_gguf();
-        let result = run(file.path(), false, false, false, false);
+        let result = run(file.path(), false, false, false, false, false);
         assert!(result.is_ok(), "inspect on valid GGUF failed: {result:?}");
     }
 
     #[test]
     fn test_run_valid_gguf_inspect_json() {
         let file = build_inspect_gguf();
-        let result = run(file.path(), false, false, false, true);
+        let result = run(file.path(), false, false, false, true, false);
         assert!(
             result.is_ok(),
             "inspect JSON on valid GGUF failed: {result:?}"
@@ -223,7 +223,7 @@
     #[test]
     fn test_run_valid_safetensors_inspect() {
         let file = build_inspect_safetensors();
-        let result = run(file.path(), false, false, false, false);
+        let result = run(file.path(), false, false, false, false, false);
         assert!(
             result.is_ok(),
             "inspect on valid SafeTensors failed: {result:?}"
@@ -233,7 +233,7 @@
     #[test]
     fn test_run_valid_safetensors_inspect_json() {
         let file = build_inspect_safetensors();
-        let result = run(file.path(), false, false, false, true);
+        let result = run(file.path(), false, false, false, true, false);
         assert!(
             result.is_ok(),
             "inspect JSON on valid SafeTensors failed: {result:?}"
