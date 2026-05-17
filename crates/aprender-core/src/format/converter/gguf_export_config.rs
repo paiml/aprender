@@ -476,8 +476,15 @@ fn encode_gguf_data(
         && shape[1] % 256 == 0;
 
     if q4k_compatible {
-        let gguf_shape_usize = vec![shape[1], shape[0]];
-        let q4k_bytes = super::quantize_q4_k_matrix(data, &gguf_shape_usize);
+        // PMAT-690 defect 3 (2026-05-17): pass APR-native row-major shape
+        // [rows=out, cols=in=K] to quantize_q4_k_matrix. The function pads
+        // along cols when cols is not 256-divisible. Previously we swapped
+        // to [in, out] which made the function pad along the OUT dim and
+        // slice data with wrong stride, producing transposed bytes with the
+        // wrong total length. llama-cpp expects bytes laid out as
+        // `out` super-block-rows of `in/256` blocks each → exactly what
+        // we get when passing shape directly (no swap).
+        let q4k_bytes = super::quantize_q4_k_matrix(data, shape);
         (GgmlType::Q4K, q4k_bytes)
     } else {
         if use_q4k && shape.len() == 2 && data.len() >= 256 && !is_embedding && !is_lm_head {
@@ -695,6 +702,41 @@ mod q4k_divisibility_tests {
         let (dtype, _) =
             encode_gguf_data(&data, &shape, "blk.0.ffn_down.weight", "mlp.down_proj.weight", false);
         assert_eq!(dtype, GgmlType::F32, "use_q4k=false → always F32");
+    }
+
+    #[test]
+    fn q4k_byte_count_matches_llama_cpp_expectation() {
+        // PMAT-690 defect 3 (2026-05-17): the bytes per Q4_K tensor must
+        // equal `(rows * cols / 256) * 144` (super-blocks × bytes/block).
+        // Previously we swapped shape and the quantizer padded along the
+        // wrong dim, inflating bytes from 2,451,456 → 2,801,664 for
+        // ffn_down [896, 4864]. The +350,208 byte excess caused
+        // `gguf_init_from_file_impl: tensor 'blk.0.ffn_gate.weight' has
+        // offset N, expected M` in llama-cli (offset drift in subsequent
+        // tensors).
+        //
+        // For Qwen2 0.5B ffn_down [out=896, in=4864]:
+        //   - rows = 896, cols=4864 (in = K = 256-divisible)
+        //   - super_blocks_per_row = 4864 / 256 = 19
+        //   - total super-blocks = 896 * 19 = 17_024
+        //   - bytes = 17_024 * 144 = 2_451_456
+        let shape = vec![896_usize, 4864];
+        let data = vec![0.0_f32; 896 * 4864];
+        let (dtype, bytes) = encode_gguf_data(
+            &data,
+            &shape,
+            "blk.0.ffn_down.weight",
+            "mlp.down_proj.weight",
+            true,
+        );
+        assert_eq!(dtype, GgmlType::Q4K);
+        assert_eq!(
+            bytes.len(),
+            (896 * 4864 / 256) * 144,
+            "Q4_K bytes = (total_elements / 256) * 144 — \
+             llama-cpp-compatible layout"
+        );
+        assert_eq!(bytes.len(), 2_451_456, "exact byte count for ffn_down");
     }
 }
 

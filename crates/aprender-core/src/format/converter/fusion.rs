@@ -61,11 +61,27 @@ fn build_fused_tensors_f32(
             let gguf_shape = shape_to_gguf(&fused_shape);
             let gguf_name = format!("blk.{layer}.{}", rule.gguf_suffix);
 
-            let (dtype, bytes) = if use_q4k && fused_shape.len() == 2 && all_data.len() >= 256 {
-                let gguf_shape_usize = vec![fused_shape[1], fused_shape[0]];
-                let q4k_bytes = super::quantize_q4_k_matrix(&all_data, &gguf_shape_usize);
+            // PMAT-690 defects 2+3 (2026-05-17): same divisibility +
+            // shape-passing rules as encode_gguf_data. Q4_K needs K
+            // (= fused_shape[1] = APR's inner dim) to be 256-divisible,
+            // and the function must receive the APR-native shape directly
+            // (no swap) so it pads/slices along the correct dim.
+            let q4k_eligible = use_q4k
+                && fused_shape.len() == 2
+                && all_data.len() >= 256
+                && fused_shape[1] % 256 == 0;
+            let (dtype, bytes) = if q4k_eligible {
+                let q4k_bytes = super::quantize_q4_k_matrix(&all_data, &fused_shape);
                 (GgmlType::Q4K, q4k_bytes)
             } else {
+                if use_q4k && fused_shape.len() == 2 && all_data.len() >= 256 {
+                    eprintln!(
+                        "[GH-277-Q4K-FALLBACK] fused {} (shape {:?}) — \
+                         K={} not divisible by 256; falling back to F32",
+                        format!("blk.{layer}.{}", rule.gguf_suffix),
+                        fused_shape, fused_shape[1]
+                    );
+                }
                 let f32_bytes: Vec<u8> = all_data.iter().flat_map(|f| f.to_le_bytes()).collect();
                 (GgmlType::F32, f32_bytes)
             };
