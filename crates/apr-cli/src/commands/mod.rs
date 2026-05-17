@@ -118,6 +118,8 @@ pub(crate) mod qa_capability;
 pub(crate) mod qualify;
 pub(crate) mod quant_preservation;
 pub(crate) mod quantize;
+pub(crate) mod react_trace_classifier;
+pub(crate) mod react_trace_lint;
 pub(crate) mod recipe;
 pub(crate) mod registry;
 pub(crate) mod registry_quota;

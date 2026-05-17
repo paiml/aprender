@@ -1,16 +1,21 @@
 # CRUX-I-06 — ReAct agent loop + stop conditions
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# Promoted to PARTIAL_ALGORITHM_LEVEL at v1.1.0 under CRUX-SHIP-001 (2026-05-17):
+# - classifier: crates/apr-cli/src/commands/react_trace_classifier.rs (14 unit tests)
+# - CLI surface: `apr react-trace-lint --trace-file F [--max-iterations N] [--require-grammar]`
+# - e2e: crates/apr-cli/tests/falsification_crux_i_06.rs (10 tests)
+# Full discharge of -001/-002/-003 requires a live `apr agent` actually
+# running the ReAct loop and writing the trace JSON — tracked as
+# BLOCKER-UPSTREAM-MISSING.
 
 metadata:
   id: CRUX-I-06
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
+  updated: "2026-05-17"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
+  kind: kernel
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "I — Observability & Metrics"
@@ -98,6 +103,27 @@ falsification_tests:
       || { echo "FAIL: answer not extracted from Final Answer: line" >&2; exit 1; }
 
   if_fails: rule 'ReAct loop halts on 'Final Answer:' before next Action' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/react_trace_classifier.rs
+    cli_path: crates/apr-cli/src/commands/react_trace_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_i_06.rs
+    e2e_tests:
+    - falsify_crux_i_06_001_termination_ok_on_final_answer
+    - falsify_crux_i_06_001_termination_rejects_exit_code_mismatch
+    - falsify_crux_i_06_001_termination_rejects_unknown_reason
+    - falsify_crux_i_06_001_grammar_rejects_action_after_final_answer
+    sub_claim: |
+      Algorithm-level necessary conditions: `classify_termination`
+      verifies the canonical reason→exit-code mapping
+      (final_answer=0, max_iterations|timeout=2, tool_error=3,
+      parse_fail=4) and that `final_answer` exits carry an `answer`
+      field. `classify_scratchpad_grammar` parses the captured
+      scratchpad and rejects an `Action:` block emitted after a
+      `Final Answer:` line — that's the live halt violation surfaced
+      offline.
+    scope: "(body) -> (ReactTerminationOutcome, ReactGrammarOutcome) (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live `apr agent` halting on Final Answer:"
 - id: FALSIFY-CRUX-I-06-002
   rule: max-iterations fires with structured reason
   prediction: "loop without Final Answer halts at max_iterations with reason JSON"
@@ -113,6 +139,23 @@ falsification_tests:
       || { echo "FAIL: expected structured max_iterations reason: $OUT" >&2; exit 1; }
 
   if_fails: rule 'max-iterations fires with structured reason' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/react_trace_classifier.rs
+    cli_path: crates/apr-cli/src/commands/react_trace_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_i_06.rs
+    e2e_tests:
+    - falsify_crux_i_06_002_termination_ok_on_max_iterations
+    - falsify_crux_i_06_002_iteration_bound_ok_within_budget
+    - falsify_crux_i_06_002_iteration_bound_rejects_over_budget
+    sub_claim: |
+      Algorithm-level necessary conditions: `classify_termination`
+      maps `reason: "max_iterations"` to exit_code=2 and
+      `classify_iteration_bound` verifies the trace's `iterations`
+      field is within `[0, max_iterations]`. `IterationsExceedBudget`
+      surfaces the canonical bug (loop ignored the budget).
+    scope: "(body, max_iterations) -> (ReactTerminationOutcome, ReactBoundOutcome) (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live `apr agent` respecting --max-iterations"
 - id: FALSIFY-CRUX-I-06-003
   rule: deterministic replay at temperature=0
   prediction: "two runs with same seed and temp=0 produce identical traces"
