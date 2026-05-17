@@ -46,6 +46,20 @@ impl BertEmbeddings {
         }
     }
 
+    /// Load embeddings from an APR v2 reader (GH-326 Phase 6 — embed-only).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BertLoadError`](crate::models::bert::load::BertLoadError)
+    /// on the first missing tensor or shape mismatch.
+    pub fn load_from_reader(
+        &mut self,
+        reader: &crate::format::v2::AprV2Reader,
+        config: &crate::models::bert::BertConfig,
+    ) -> Result<(), crate::models::bert::load::BertLoadError> {
+        crate::models::bert::load::load_embeddings_from_reader(self, reader, config)
+    }
+
     /// Forward pass: produces `[1, seq_len, hidden_dim]` of post-LN embeddings
     /// (batch dim is implicit batch=1 for single-pair scoring).
     ///
