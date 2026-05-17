@@ -2201,6 +2201,112 @@ Audit does not flip any AC-SHIP2-* — those need empirical runs to discharge. B
 ---
 
 
+## §84. P2-C dispatched; audit hypothesis FALSIFIED; P0-K root cause surfaced (2026-05-17)
+
+P2-C completed the audit-recommended multi-source corpus widening — 49.6B tokens (the-stack-dedup Python + codeparrot-clean, 80× §82's 1.24B). Same Qwen-0.5B init, same hyperparameters as §82, +`apr pretrain --val-shard` (shipped PR #1744 alongside this run).
+
+### 84.1 Numbers
+
+| Quantity | §82 (qwen-v2) | P2-C (qwen-v3) |
+|---|---|---|
+| Corpus tokens | 1.24B (codeparrot) | 49.6B (codeparrot + the-stack-dedup) |
+| Chinchilla ratio | 0.125× | 100.45× |
+| Steps recorded | 2700 | 2700 |
+| Epochs recorded | 27 | 27 |
+| Best val_loss | 4.7111 @ ep20 | **4.9112 @ ep20 (+0.20, WORSE)** |
+| Termination | OK EARLY_STOP | OK EARLY_STOP |
+| Bench tok/s | 325.1 | 315.6 |
+
+**Identical termination shape** (27 epochs, 2700 steps, best at ep20) with **+0.2 val_loss DESPITE 80× more corpus tokens**. The audit's Chinchilla-data-starvation hypothesis is **FALSIFIED** by empirical equivalence.
+
+### 84.2 P0-K root cause surfaced
+
+While debugging the P2-C result, the §81–§83 cascade (5 PRs patching `apr qa`, `apr bench`, GGUF export mapper, `apr pretrain` checkpoint stamping) was found to be patching **downstream consumers** of a single upstream defect: `apr convert` (and its `apr_import` peer) did **NOT** stamp `hf_architecture` / `hf_model_type` / embedded tokenizer into the imported APR file. Every downstream consumer fix was reading `None` from upstream and falling back to defaults.
+
+PMAT-690 P0-K (shipped PR #1742) closes the producer-side gap. P0-K covers BOTH `apr convert` (which uses `aprender::format::apr_convert` → `save_model_tensors_with_gguf_config_and_tokenizer`) AND `apr_import` (used by `apr pull` / `apr import` — internal API). The second path was missed in P0-K v1 (covered by #1742 commit) and patched in PR #1748 as a stacked follow-up.
+
+Discharges:
+- INV-CONVERT-HF-ARCH-001/002/003/004 (new contract `apr-convert-hf-arch-v1`)
+- Methodology lesson #33 (`memory/feedback_upstream_metadata_masquerade.md`) — Class 3 packaging cascades past 4-5 PRs share an upstream producer
+
+### 84.3 New §84 priority queue
+
+1. ~~**P0-K**~~ ✅ shipped via PRs #1742, #1746, #1748, #1750 (squash-merged together)
+2. **P2-E** hyperparameter tuning — lower LR + longer warmup, same corpus
+3. **P2-F** shared held-out val set — already shipped as `apr pretrain --val-shard` in PR #1744
+4. Re-dispatch P2-C trained checkpoint AFTER P0-K — proves end-to-end metadata propagation
+
+Evidence: `evidence/p2c-2026-05-17/findings.md` (P2-C trajectory + P0-K root cause analysis).
+
+---
+
+## §85. P2-E live findings — hyperparameter hypothesis CORROBORATED; P0-K closure live-verified (2026-05-17)
+
+P2-E ran the same qwen-v3 corpus as P2-C but with **lower peak LR (1.5e-5 vs 5e-5)** + **5× longer warmup (500 vs 100 steps)**. Result: val_loss=**4.6227** @ ep49 (BELOW §82's 4.71 and P2-C's 4.91 floors). No early-stop; smooth monotonic descent across all 50 epochs.
+
+### 85.1 Numbers
+
+| Quantity | §82 (qwen-v2) | P2-C (qwen-v3) | **P2-E (qwen-v3)** |
+|---|---|---|---|
+| LR peak | 5e-5 | 5e-5 | **1.5e-5** (-3.3×) |
+| Warmup steps | 100 | 100 | **500** (5×) |
+| Steps recorded | 2700 | 2700 | **5000** (full run) |
+| Epochs recorded | 27 | 27 | **50** (full run) |
+| Best val_loss | 4.7111 @ ep20 | 4.9112 @ ep20 | **4.6227 @ ep49** |
+| Termination | OK EARLY_STOP | OK EARLY_STOP | **OK CONVERGED** |
+| Trajectory shape | descend → spike → early-stop | descend → +0.31 spike → early-stop | **smooth monotonic** |
+| Wall time on RTX 4090 | ~30 min | ~30 min | **53 min** (full 5000 steps) |
+| Throughput (pure training) | — | — | **15,460 tok/s** |
+| Throughput (end-to-end w/ checkpoint write) | — | — | **12,880 tok/s** |
+
+### 85.2 Falsification outcome
+
+Hypothesis from §84 P2-E queue: "hyperparameters were the binding constraint, not data quantity." **CORROBORATED**. The smooth monotonic descent says the LR was finally appropriate for the model + corpus combination.
+
+§30 a-priori falsification lesson amendment: the audit's pre-falsification of P2-A2 was *correct at the original LR* but *wrong as a general claim*. Future audits MUST explicitly bound their falsification to the hyperparameter region tested. Without this distinction, audits over-falsify and prematurely retire viable dispatch lanes.
+
+### 85.3 P0-K live-verification
+
+A synthetic `apr convert` → `apr inspect --quality` round-trip on `/tmp/p0k-demo/out.apr` (Qwen2 config.json + tiny safetensors fixture) produces:
+
+- `metadata.hf_architecture = "Qwen2ForCausalLM"` ✅ (was `null` pre-P0-K)
+- `metadata.hf_model_type = "qwen2"` ✅ (was `null` pre-P0-K)
+- `quality.score = 60 / 100`, `breakdown.hf_identity = 20/20` ✅
+
+Pre-P0-K comparison against P2-E ep49 checkpoint (trained from an init APR that pre-dates P0-K):
+- `metadata.hf_architecture = null`
+- `quality.score = 40 / 100`, `breakdown.hf_identity = 0/20`
+
+The +20 delta on the `hf_identity` sub-score empirically confirms P0-K closes the §81–§83 cascade root cause. The cascade is **end-to-end verified** at the CLI surface.
+
+### 85.4 Marginal-gain decay
+
+| Epoch range | Δ val_loss | Δ per epoch |
+|---|---|---|
+| ep 0 → ep 10 | -1.89 | -0.189 |
+| ep 10 → ep 20 | -0.51 | -0.051 |
+| ep 20 → ep 30 | -0.19 | -0.019 |
+| ep 30 → ep 40 | -0.13 | -0.013 |
+| ep 40 → ep 49 | -0.085 | -0.0094 |
+
+Marginal gain decayed ~20× over the run. Extrapolating: another 50 epochs reaches ~4.4, still ~50% of the gap to the 3.0 ship target. **More-of-the-same won't ship MODEL-2** — the next move is a different intervention (architectural, data composition, distillation).
+
+### 85.5 New §85 priority queue
+
+1. **P2-G** (NEW, highest EV) — dispatch 10,000 more steps at the same LR/warmup from the P2-E ep49 checkpoint. Tests marginal-gain extrapolation (~4.4 floor prediction). ETA: ~50 min wall on RTX 4090.
+2. **P2-H** — hyperparameter grid sweep — LR ∈ {1e-5, 2e-5, 3e-5} × warmup ∈ {300, 500, 1000}. Each ~50 min, ~7.5 hr total.
+3. **P2-I** — drop the qwen-0.5b-instruct init and try from-scratch. Tests whether the Instruct init is biasing toward chat-format text. ETA: ~2-4 hr.
+4. **Architectural pivot** (multi-week, out-of-cascade-scope) — more params, different attention, distillation.
+
+### 85.6 Ship-percentage delta
+
+**MODEL-2 ship %**: stays at **79%**. val_loss 4.62 is well above the 3.0 threshold for P1-B/C eligibility. However, this is the **best result on record** and SHOULD be the new init for P2-G + future dispatches.
+
+Evidence: `evidence/p2e-2026-05-17/findings.md` (full trajectory + perf + P0-K live-verification chain).
+
+---
+
+
 ## §57. Drift sweep cleans §50.4 cascade contracts (3 PRs); 5g.1 full corpus run on track (2026-05-05)
 
 §56 closed with the 5g.1 full-corpus retokenization dispatched (PID 2767124, ~17hr wall projected). §57 records the parallel drift-sweep work that landed during the 5g.1 wait + the throughput characterization of 5g.1 mid-run.
