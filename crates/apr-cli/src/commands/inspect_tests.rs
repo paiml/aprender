@@ -201,4 +201,72 @@ mod inspect_tests {
             "populated provenance must not render `(missing)`; got:\n{rendered}"
         );
     }
+
+    // ========================================================================
+    // PMAT-690 P0-K — apr inspect surfaces hf_architecture + hf_model_type
+    // ========================================================================
+
+    /// PMAT-690 P0-K: `apr inspect --json` MUST emit `hf_architecture` and
+    /// `hf_model_type` keys (null when None). Operators query
+    /// `apr inspect --json | jq .metadata.hf_architecture` to verify that
+    /// the upstream `apr convert` stamping worked. Silently skipping the
+    /// keys hides the upstream-producer defect that this contract was
+    /// authored to prevent (see memory/feedback_upstream_metadata_masquerade.md).
+    #[test]
+    fn pmat_690_p0k_inspect_emits_hf_arch_keys_when_none() {
+        let meta = MetadataInfo::default();
+        let json = serde_json::to_string(&meta).expect("serialize MetadataInfo");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse JSON");
+        let obj = parsed.as_object().expect("JSON object at top level");
+
+        // Both keys MUST be present and null (not skipped via
+        // skip_serializing_if). The contract on apr inspect is that an
+        // operator can grep for `"hf_architecture"` in any output and
+        // distinguish "stamped" from "missing".
+        for key in ["hf_architecture", "hf_model_type"] {
+            assert!(
+                obj.contains_key(key),
+                "MetadataInfo JSON must emit key `{key}` even when None \
+                 (no skip_serializing_if). Auditing the import→pretrain→export \
+                 chain requires both keys to be grep-checkable."
+            );
+            assert!(
+                obj[key].is_null(),
+                "key `{key}` must serialize as null when None, got {:?}",
+                obj[key]
+            );
+        }
+    }
+
+    /// PMAT-690 P0-K: when hf_architecture / hf_model_type are populated,
+    /// `apr inspect --json` renders the actual values (not null, not the
+    /// architecture-family-lowercase string).
+    #[test]
+    fn pmat_690_p0k_inspect_emits_hf_arch_values_when_populated() {
+        let meta = MetadataInfo {
+            architecture: Some("qwen2".to_string()),
+            hf_architecture: Some("Qwen2ForCausalLM".to_string()),
+            hf_model_type: Some("qwen2".to_string()),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&meta).expect("serialize MetadataInfo");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse JSON");
+        let obj = parsed.as_object().expect("JSON object");
+
+        assert_eq!(
+            obj.get("architecture").and_then(|v| v.as_str()),
+            Some("qwen2"),
+            "architecture (family) must render unchanged"
+        );
+        assert_eq!(
+            obj.get("hf_architecture").and_then(|v| v.as_str()),
+            Some("Qwen2ForCausalLM"),
+            "hf_architecture (HF class name) must render the canonical string"
+        );
+        assert_eq!(
+            obj.get("hf_model_type").and_then(|v| v.as_str()),
+            Some("qwen2"),
+            "hf_model_type must render the config.json::model_type value"
+        );
+    }
 }

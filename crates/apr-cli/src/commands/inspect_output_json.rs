@@ -142,6 +142,20 @@ fn output_architecture(metadata: &MetadataInfo) {
     if let Some(arch) = &metadata.architecture {
         println!("    Family: {arch}");
     }
+    // PMAT-690 P0-K: surface the HF identity fields so operators can
+    // verify upstream `apr convert` stamping without `--json | jq`.
+    // Distinct from `Family`: `HF Class` is the canonical class name
+    // (e.g. "Qwen2ForCausalLM"); `HF model_type` mirrors
+    // `config.json::model_type`. Per C-APR-CONVERT-HF-ARCH and the
+    // §84 P0-K root-cause analysis, missing fields here mean the
+    // import skipped stamping — operators can route the failure
+    // back to `apr convert` rather than chasing downstream symptoms.
+    if let Some(hf) = &metadata.hf_architecture {
+        println!("    HF Class: {hf}");
+    }
+    if let Some(mt) = &metadata.hf_model_type {
+        println!("    HF model_type: {mt}");
+    }
     if let Some(p) = metadata.param_count {
         println!("    Parameters: {}", format_param_count(p));
     }
