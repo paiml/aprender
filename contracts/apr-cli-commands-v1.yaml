@@ -586,6 +586,12 @@ commands:
     requires_model: false
     side_effects: []
 
+  - name: nccl-diag-lint
+    category: inspection
+    description: "Validate captured NCCL failure-diagnostics JSON (CRUX-F-15): 6 required keys (host, rank, nccl_version, last_op, code, suggest) + optional exit-code >= 128 + optional nvidia.com doc-link in suggest"
+    requires_model: false
+    side_effects: []
+
   - name: shard
     category: model_ops
     description: "Split safetensors file into shards + weight-map index (CRUX-B-05)"

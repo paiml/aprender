@@ -183,6 +183,12 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             cli.json,
         ),
 
+        ExtendedCommands::NcclDiagLint {
+            diag_file,
+            exit_code,
+            require_doc_link,
+        } => commands::nccl_diag_lint::run(diag_file, *exit_code, *require_doc_link, cli.json),
+
         ExtendedCommands::AttnVizLint {
             attn_file,
             html_file,

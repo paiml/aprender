@@ -784,6 +784,18 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         stderr_file: Option<PathBuf>,
     },
+    /// Lint a captured NCCL failure-diagnostics JSON from stderr (CRUX-F-15)
+    NcclDiagLint {
+        /// Path to captured stderr JSON diagnostic
+        #[arg(long, value_name = "FILE")]
+        diag_file: PathBuf,
+        /// Optional observed exit code (gate: >= 128 = NCCL class)
+        #[arg(long, value_name = "I32")]
+        exit_code: Option<i32>,
+        /// Require the `suggest` field to cite an nvidia.com / NVIDIA/nccl URL
+        #[arg(long)]
+        require_doc_link: bool,
+    },
     /// Lint a captured `apr attn-viz` attention dump (CRUX-F-17)
     AttnVizLint {
         /// Path to attention dump in JSON form (4-D [layers][heads][rows][cols] floats)
