@@ -610,6 +610,12 @@ commands:
     requires_model: false
     side_effects: []
 
+  - name: audio-inspect-lint
+    category: inspection
+    description: "Validate captured `apr dataset audio-inspect --format json` body (CRUX-H-13): amplitude bounds (finite + [-1,1]) + sample_rate (canonical set or expected) + channel_shape (positive + optional channel-count match)"
+    requires_model: false
+    side_effects: []
+
   - name: shard
     category: model_ops
     description: "Split safetensors file into shards + weight-map index (CRUX-B-05)"

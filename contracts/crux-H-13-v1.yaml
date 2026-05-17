@@ -1,12 +1,21 @@
 # CRUX-H-13 — Audio dataset loader WAV/FLAC
+# Promoted to PARTIAL_ALGORITHM_LEVEL at v1.2.0 under CRUX-SHIP-001 (2026-05-17):
+# - classifier: crates/apr-cli/src/commands/audio_inspect_classifier.rs (16 unit tests)
+# - CLI surface: `apr audio-inspect-lint --json-file F [--expected-sample-rate U32] [--expected-channels U32]`
+# - e2e: crates/apr-cli/tests/falsification_crux_h_13.rs (11 tests)
+# FALSIFY-CRUX-H-13-003 (unsupported extension raises) needs a live
+# decoder; classifier covers -001 (bounds) and -002 (sample rate).
+# Tracked as BLOCKER-UPSTREAM-MISSING.
 
 metadata:
   id: CRUX-H-13
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
+  updated: "2026-05-17"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
+  kind: kernel
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "H — Data & Datasets"
@@ -52,6 +61,23 @@ falsification_tests:
     assert math.isfinite(d['min']) and math.isfinite(d['max'])
     "
   if_fails: rule 'waveform in [-1, 1] and finite' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/audio_inspect_classifier.rs
+    cli_path: crates/apr-cli/src/commands/audio_inspect_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_h_13.rs
+    e2e_tests:
+    - falsify_crux_h_13_001_amplitude_ok_on_good_body
+    - falsify_crux_h_13_001_amplitude_rejects_below_floor
+    - falsify_crux_h_13_001_amplitude_rejects_above_ceiling
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_amplitude_bounds`
+      verifies `min`/`max` are present, finite, and within `[-1, 1]`,
+      and that `min ≤ max`. Reports `MinBelowFloor`, `MaxAboveCeiling`,
+      `MinNotFinite`/`MaxNotFinite`, and `MinExceedsMax` with the
+      offending values so decoder bugs are debuggable from lint output.
+    scope: "(body) -> AudioBoundsOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live `apr dataset audio-inspect` decoder emitting normalized PCM"
 - id: FALSIFY-CRUX-H-13-002
   rule: resample respects target rate
   prediction: "resample to 16000 Hz sets sample_rate=16000"
@@ -64,6 +90,25 @@ falsification_tests:
     assert d['sample_rate'] == 16000, d
     "
   if_fails: rule 'resample respects target rate' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/audio_inspect_classifier.rs
+    cli_path: crates/apr-cli/src/commands/audio_inspect_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_h_13.rs
+    e2e_tests:
+    - falsify_crux_h_13_002_sample_rate_ok_when_matches
+    - falsify_crux_h_13_002_sample_rate_rejects_mismatch
+    - falsify_crux_h_13_002_sample_rate_rejects_non_canonical
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_sample_rate`
+      verifies the captured `sample_rate` is a positive integer that
+      either matches an explicit `--expected-sample-rate` (typically
+      the `--resample-to` argument used at capture time) or falls in
+      the canonical {8k, 16k, 22.05k, 24k, 32k, 44.1k, 48k, 88.2k, 96k}
+      set. Reports `ExpectedRateMismatch { got, expected }` and
+      `NonCanonicalRate { got }`.
+    scope: "(body, expected_sample_rate) -> AudioSampleRateOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live `apr dataset audio-inspect` resample path"
 - id: FALSIFY-CRUX-H-13-003
   rule: unsupported extension raises
   prediction: ".mp3 without --decode-mp3 flag fails with IOError"

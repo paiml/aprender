@@ -852,6 +852,18 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "F", default_value_t = 0.01)]
         loss_tolerance: f64,
     },
+    /// Lint a captured `apr dataset audio-inspect --format json` body (CRUX-H-13)
+    AudioInspectLint {
+        /// Path to captured JSON body
+        #[arg(long, value_name = "FILE")]
+        json_file: PathBuf,
+        /// Optional expected sample_rate (typically the `--resample-to` arg)
+        #[arg(long, value_name = "U32")]
+        expected_sample_rate: Option<u32>,
+        /// Optional expected channel count (1 = mono after --mono)
+        #[arg(long, value_name = "U32")]
+        expected_channels: Option<u32>,
+    },
     /// Lint a captured `apr attn-viz` attention dump (CRUX-F-17)
     AttnVizLint {
         /// Path to attention dump in JSON form (4-D [layers][heads][rows][cols] floats)

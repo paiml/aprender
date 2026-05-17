@@ -215,6 +215,17 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             cli.json,
         ),
 
+        ExtendedCommands::AudioInspectLint {
+            json_file,
+            expected_sample_rate,
+            expected_channels,
+        } => commands::audio_inspect_lint::run(
+            json_file,
+            *expected_sample_rate,
+            *expected_channels,
+            cli.json,
+        ),
+
         ExtendedCommands::AttnVizLint {
             attn_file,
             html_file,
