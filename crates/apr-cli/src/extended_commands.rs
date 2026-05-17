@@ -700,6 +700,27 @@ pub enum ExtendedCommands {
         /// runs, or smoke tests).
         #[arg(long, action = clap::ArgAction::SetTrue)]
         force_under_provisioned: bool,
+        /// SPEC §84 P2-F: shared held-out validation shard.
+        ///
+        /// When provided, the val-loss eval reads `HELD_OUT_BATCHES`
+        /// batches from this separate `.bin`-shards directory instead
+        /// of stealing the first 16 batches of `--dataset`. This makes
+        /// `val_loss` comparable across runs whose `--dataset`
+        /// composition changes (P2-C's audit-falsified result was
+        /// confounded by val sets being drawn from different corpus
+        /// distributions — qwen-v2 = codeparrot only, qwen-v3 =
+        /// codeparrot + the-stack-dedup).
+        ///
+        /// Path semantics: directory of `.bin` shards (same format as
+        /// `--dataset`). Operator tokenizes the held-out corpus
+        /// independently via `apr tokenize encode-corpus --max-docs N`
+        /// to a separate output dir, then passes that dir here. The
+        /// shard contract is `contracts/dataset-thestack-python-v1.yaml`.
+        ///
+        /// When omitted, falls back to the historical "first 16
+        /// batches of --dataset" behaviour for backwards compatibility.
+        #[arg(long, value_name = "DIR")]
+        val_shard: Option<PathBuf>,
     },
     /// Tokenizer training pipeline (plan/apply) — BPE vocabulary learning
     Tokenize {
