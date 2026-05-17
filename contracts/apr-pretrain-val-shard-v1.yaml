@@ -1,0 +1,301 @@
+# ─────────────────────────────────────────────────────────────
+# Contract: apr-pretrain-val-shard-v1
+# Independent held-out validation shard for `apr pretrain`.
+# ─────────────────────────────────────────────────────────────
+# `apr pretrain --val-shard <DIR>` reads the held-out validation
+# batches from an INDEPENDENT `.bin`-shards directory instead of
+# stealing the first N batches of `--dataset`. The flag closes the
+# "different val distribution" gap that confounded §82-vs-P2C
+# comparisons: when corpus composition changes (single-source
+# → multi-source), the "first N batches of --dataset" approach
+# silently shifts the val distribution, making val_loss values
+# from different runs not comparable.
+#
+# Motivation: P2-C's val_loss=4.91 was +0.20 worse than §82's
+# val_loss=4.71 despite 80× more corpus tokens — but evidence/
+# p2c-2026-05-17/findings.md §97-101 traced the gap to val
+# distribution drift (§82's first-16-batches were codeparrot;
+# P2-C's first-16-batches were a mix of the-stack-dedup + codeparrot).
+# This contract pins a separate val source so the next §82-vs-P2C
+# comparison is apples-to-apples.
+#
+# Peer:   contracts/apr-pretrain-from-init-v1.yaml
+# Peer:   contracts/training-loop-pretrain-v1.yaml
+# Peer:   contracts/dataset-thestack-python-v1.yaml
+# Peer:   contracts/chinchilla-gate-v1.yaml
+#
+# References:
+#   - docs/specifications/aprender-train/ship-model-2-spec.md §84
+#   - evidence/p2c-2026-05-17/findings.md
+#   - albor-370m-roadmap.md §4 P2-F
+# ─────────────────────────────────────────────────────────────
+
+contract_id: C-APR-PRETRAIN-VAL-SHARD
+version: 1.0.0
+status: PROPOSED
+
+metadata:
+  version: "1.0.0"
+  created: "2026-05-17"
+  updated: "2026-05-17"
+  kind: schema
+  author: PAIML Engineering
+  description: >
+    `apr pretrain --val-shard <DIR>` reads held-out validation
+    batches from an independent .bin-shards directory instead of
+    reserving the first 16 batches of `--dataset`. Closes the
+    val-distribution-drift gap that confounded §82-vs-P2C
+    comparison (P2-C val_loss=4.91 vs §82 val_loss=4.71 with
+    different val draws). When the flag is omitted, the historical
+    "first N batches of --dataset" behaviour is preserved for
+    backwards compatibility.
+  changelog:
+    - "1.0.0 (2026-05-17): Initial authoring per §84 P2-F. PR
+       feat/pmat-690-p2f-val-shard threads val_shard:
+       Option<&Path> through PretrainArgs → run() → drive_real()
+       with a branched held-out source."
+  peer_contracts:
+    - contracts/apr-pretrain-from-init-v1.yaml
+    - contracts/training-loop-pretrain-v1.yaml
+    - contracts/dataset-thestack-python-v1.yaml
+    - contracts/chinchilla-gate-v1.yaml
+  references:
+    - "docs/specifications/aprender-train/ship-model-2-spec.md §84"
+    - "evidence/p2c-2026-05-17/findings.md"
+    - "docs/specifications/aprender-train/albor-370m-roadmap.md §4 P2-F"
+
+summary: >
+  `apr pretrain --val-shard <DIR>` enables an independent held-out
+  validation source so val_loss is comparable across runs whose
+  `--dataset` composition changes. Omitting the flag preserves the
+  historical "first 16 batches of --dataset" behaviour.
+
+motivation: >
+  P2-C's audit-falsified val_loss was confounded by val distribution
+  drift: §82's qwen-v2 corpus is codeparrot-only, so the first 16
+  shard batches are pure Python; P2-C's qwen-v3 corpus is
+  codeparrot + the-stack-dedup, so the first 16 shard batches mix
+  two distributions. The +0.20 val_loss gap was therefore a
+  distribution-of-eval-set artifact, not a model-quality finding.
+  A separate `--val-shard` source pins the val distribution so the
+  next P2-F-style comparison can attribute val_loss deltas to
+  model/data quality, not val-set drift.
+
+# ─── REQUIRED CLI SURFACE ───────────────────────────────────
+
+required_fields:
+  - name: --val-shard
+    type: Option<PathBuf>
+    constraint: |
+      Directory of `.bin` shards (same format as `--dataset`).
+      Caller produces this via `apr tokenize encode-corpus
+      --max-docs N` against an independent held-out corpus.
+      Absent value → fall back to historical "first 16 batches
+      of --dataset" behaviour.
+    ship_blocker: false
+
+# ─── INVARIANTS ──────────────────────────────────────────────
+
+invariants:
+
+- id: INV-PRETRAIN-VAL-SHARD-001
+  description: >
+    When `--val-shard <DIR>` is provided, the held-out val batches
+    come from a NEW `ShardBatchIter` opened over <DIR>, not from
+    the `--dataset` shard iterator. The training iterator stays at
+    offset 0 — no "first N batches" are reserved out of the
+    training stream.
+  falsifier: >
+    Stage a small val-shard dir with K (<HELD_OUT_BATCHES) batches.
+    Pass it as `--val-shard`. Assert that the trainer sees the
+    full `--dataset` from offset 0 (no batches missing) and that
+    the val_loss is computed against the K batches in `--val-shard`.
+    Any "first N batches still drained from --dataset" pattern is
+    a violation.
+
+- id: INV-PRETRAIN-VAL-SHARD-002
+  description: >
+    The val-shard iterator MUST NOT wrap around. A short val corpus
+    yields < HELD_OUT_BATCHES batches and the run proceeds with
+    that smaller held_out vector. (Wrap-around on val would inflate
+    apparent val coverage and could shadow data starvation; the
+    operator is responsible for tokenizing enough val corpus.)
+  falsifier: >
+    Stage a val-shard dir with 1 batch worth of tokens. Run with
+    HELD_OUT_BATCHES=16. Assert held_out has length 1 (NOT 16) and
+    the run completes successfully. If the val iterator wrapped
+    around to fill 16 batches, that violates this invariant.
+
+- id: INV-PRETRAIN-VAL-SHARD-003
+  description: >
+    A `--val-shard` directory that yields ZERO batches (empty dir,
+    no .bin shards, or batches smaller than batch_size × seq_length)
+    MUST hard-fail with the FALSIFY-PRETRAIN-VAL-SHARD-003 message,
+    naming the path. Silent fallback to "first N batches of
+    --dataset" is FORBIDDEN — the operator explicitly requested
+    an independent val source.
+  falsifier: >
+    Pass `--val-shard /tmp/empty-dir`. Assert exit non-zero with
+    a stderr message naming `/tmp/empty-dir` and the falsifier
+    ID. Falling back silently to --dataset is a violation.
+
+- id: INV-PRETRAIN-VAL-SHARD-004
+  description: >
+    When `--val-shard` is omitted, the historical "reserve first
+    HELD_OUT_BATCHES batches from --dataset" behaviour is
+    PRESERVED bit-for-bit. This is a backwards-compatibility
+    guarantee: existing runs that depend on the legacy behaviour
+    MUST continue to produce identical val_loss series.
+  falsifier: >
+    Run the same recipe twice — once on a known dataset/tokenizer/
+    seed combo before the patch, once after. Assert the val_loss
+    series at every evaluation step is byte-identical. Any drift
+    indicates the legacy path regressed.
+
+# ─── GATES ───────────────────────────────────────────────────
+
+gates:
+
+- id: GATE-PRETRAIN-VAL-SHARD-001
+  invariant: INV-PRETRAIN-VAL-SHARD-001
+  check: |
+    `apr pretrain --val-shard <DIR>` opens an independent
+    ShardBatchIter over <DIR>; the training iter receives no
+    `for _ in 0..HELD_OUT_BATCHES` drain.
+  enforcement: runtime
+  severity: high
+
+- id: GATE-PRETRAIN-VAL-SHARD-002
+  invariant: INV-PRETRAIN-VAL-SHARD-002
+  check: |
+    The val-shard iterator is built with `.with_wrap_around(false)`.
+  enforcement: runtime
+  severity: medium
+
+- id: GATE-PRETRAIN-VAL-SHARD-003
+  invariant: INV-PRETRAIN-VAL-SHARD-003
+  check: |
+    Empty `--val-shard` directory or zero-batch outcome surfaces
+    `FALSIFY-PRETRAIN-VAL-SHARD-003` with the path in the message.
+  enforcement: runtime
+  severity: high
+
+- id: GATE-PRETRAIN-VAL-SHARD-004
+  invariant: INV-PRETRAIN-VAL-SHARD-004
+  check: |
+    Omitting `--val-shard` preserves the historical "first
+    HELD_OUT_BATCHES of --dataset" behaviour byte-identically.
+  enforcement: ci
+  severity: high
+
+# ─── FALSIFICATION TESTS ─────────────────────────────────────
+
+falsification_tests:
+
+- id: FALSIFY-PRETRAIN-VAL-SHARD-001
+  invariant: INV-PRETRAIN-VAL-SHARD-001
+  rule: independent-val-source
+  prediction: >
+    Stage a dataset shard with batches [A, B, C, ...] and a val
+    shard with batches [X, Y, Z, ...]. Run `apr pretrain
+    --val-shard <val_dir> --dataset <data_dir>`. Assert held_out
+    contains X, Y, Z (NOT A, B, C) and the training iter starts
+    at A (not at index HELD_OUT_BATCHES of the dataset).
+  test_kind: integration
+  site: crates/apr-cli/tests/val_shard_test.rs
+  if_fails: training would silently fall back to stealing from --dataset
+
+- id: FALSIFY-PRETRAIN-VAL-SHARD-002
+  invariant: INV-PRETRAIN-VAL-SHARD-002
+  rule: val-shard-no-wrap-around
+  prediction: >
+    A 1-batch val shard yields held_out.len() = 1 (NOT
+    HELD_OUT_BATCHES). The val iterator must not wrap around to
+    pad the held-out set.
+  test_kind: integration
+  site: crates/apr-cli/tests/val_shard_test.rs
+  if_fails: wrap-around would re-evaluate the same batch K times, inflating apparent val coverage
+
+- id: FALSIFY-PRETRAIN-VAL-SHARD-003
+  invariant: INV-PRETRAIN-VAL-SHARD-003
+  rule: empty-val-shard-rejected
+  prediction: >
+    An empty `--val-shard` directory (or one whose batches yield
+    0 batches at the given batch_size/seq_length) hard-fails with
+    `FALSIFY-PRETRAIN-VAL-SHARD-003: --val-shard <path> is too
+    small to yield any held-out batches`. Exit non-zero.
+  test_kind: integration
+  site: crates/apr-cli/tests/val_shard_test.rs
+  expected_exit_code: 1
+  expected_stderr_pattern: 'FALSIFY-PRETRAIN-VAL-SHARD-003'
+  if_fails: silent-fallback to --dataset masks operator intent
+
+- id: FALSIFY-PRETRAIN-VAL-SHARD-004
+  invariant: INV-PRETRAIN-VAL-SHARD-004
+  rule: legacy-path-preserved
+  prediction: >
+    Omitting `--val-shard` produces a val_loss series identical to
+    the pre-patch behaviour (same tokenizer / dataset / seed /
+    arch).
+  test_kind: unit
+  site: crates/apr-cli/src/commands/pretrain.rs::tests
+  if_fails: backwards compatibility broken
+
+# ─── EQUATIONS ───────────────────────────────────────────────
+
+equations:
+  EQ-PRETRAIN-VAL-SHARD-001:
+    name: held_out_source_branch
+    latex: '\text{held\_out} = \begin{cases} \text{draw}(\text{ShardBatchIter}(\text{val\_shard}), N) & \text{if val\_shard} \neq \bot \\ \text{draw}(\text{iter}, N) & \text{else} \end{cases}'
+    description: >
+      Held-out source selection. When `--val-shard` is provided,
+      held_out is drawn from a new ShardBatchIter over that
+      directory; otherwise the historical "first N from --dataset"
+      path runs.
+    runtime_check: |
+      let held_out = match val_shard {
+        Some(val_dir) => {
+          let mut val_iter = ShardBatchIter::new(val_dir, ...)?
+              .with_wrap_around(false);
+          drain_up_to(val_iter, HELD_OUT_BATCHES)
+        }
+        None => drain_up_to(&mut iter, HELD_OUT_BATCHES),
+      };
+
+# ─── PROOF OBLIGATIONS ───────────────────────────────────────
+
+proof_obligations:
+- type: precondition
+  property: When --val-shard is provided, the path MUST resolve to a directory containing at least one .bin shard with at least one batch worth of tokens
+  formal: 'val_shard ≠ ⊥ ⟹ ∃ shard ∈ val_shard. |shard| ≥ batch_size × (seq_length + 1)'
+  applies_to: all
+
+- type: invariant
+  property: The val iterator does not wrap around
+  formal: 'val_iter.wrap_around = false'
+  applies_to: all
+
+- type: safety
+  property: Empty val-shard hard-fails with the falsifier ID, no silent fallback
+  formal: '|val_iter.batches| = 0 ⟹ ABORT exit 1 ∧ stderr ∋ "FALSIFY-PRETRAIN-VAL-SHARD-003"'
+  applies_to: all
+
+- type: invariant
+  property: Omitting --val-shard preserves the legacy "first N of --dataset" behaviour
+  formal: 'val_shard = ⊥ ⟹ held_out = legacy_first_n(iter, N)'
+  applies_to: all
+
+# ─── REFERENCES ──────────────────────────────────────────────
+
+references:
+  - id: spec_84_p2f
+    citation: docs/specifications/aprender-train/ship-model-2-spec.md §84 P2-F
+    relevance: Spec authorization for this contract
+
+  - id: p2c_evidence
+    citation: evidence/p2c-2026-05-17/findings.md §97-101
+    relevance: Live-run evidence that motivated the val-source separation
+
+  - id: roadmap_p2f
+    citation: docs/specifications/aprender-train/albor-370m-roadmap.md §4 P2-F
+    relevance: EV-ranked queue placement
