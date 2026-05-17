@@ -822,6 +822,18 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "N", default_value_t = 100)]
         min_layers: usize,
     },
+    /// Lint a captured `apr debug embed-viz` CSV (CRUX-F-18)
+    EmbedVizLint {
+        /// Path to captured embed-viz CSV (token_id,token_str,x,y)
+        #[arg(long, value_name = "FILE")]
+        csv_file: PathBuf,
+        /// Expected row count == vocab_size (optional)
+        #[arg(long, value_name = "N")]
+        expected_vocab_size: Option<usize>,
+        /// Second CSV captured under the same seed for determinism check (optional)
+        #[arg(long, value_name = "FILE")]
+        csv_file_b: Option<PathBuf>,
+    },
     /// Lint a captured `apr explain --format jsonl` token-selection trace (CRUX-F-19)
     ExplainTokenLint {
         /// Path to captured JSONL body (one sampled-token record per line)

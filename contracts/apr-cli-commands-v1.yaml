@@ -580,6 +580,12 @@ commands:
     requires_model: false
     side_effects: []
 
+  - name: embed-viz-lint
+    category: inspection
+    description: "Validate captured `apr debug embed-viz` CSV (CRUX-F-18): schema (4 columns + finite coords + non-negative token_id) + optional row-count=vocab_size + optional byte-identical determinism check"
+    requires_model: false
+    side_effects: []
+
   - name: shard
     category: model_ops
     description: "Split safetensors file into shards + weight-map index (CRUX-B-05)"

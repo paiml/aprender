@@ -198,6 +198,17 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             cli.json,
         ),
 
+        ExtendedCommands::EmbedVizLint {
+            csv_file,
+            expected_vocab_size,
+            csv_file_b,
+        } => commands::embed_viz_lint::run(
+            csv_file,
+            *expected_vocab_size,
+            csv_file_b.as_deref(),
+            cli.json,
+        ),
+
         ExtendedCommands::OtlpLint {
             otlp_file,
             require_apr_span,

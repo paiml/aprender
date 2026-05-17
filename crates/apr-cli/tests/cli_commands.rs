@@ -119,6 +119,7 @@ fn registered_commands() -> Vec<&'static str> {
         "explain-token-lint",
         "check-finite-lint",
         "attn-viz-lint",
+        "embed-viz-lint",
         "shard",
         "unshard",
         "oracle",
