@@ -2307,6 +2307,84 @@ Evidence: `evidence/p2e-2026-05-17/findings.md` (full trajectory + perf + P0-K l
 ---
 
 
+## §86. `apr pretrain --init` silently fails to load arch-mismatched APRs; PR #1757 ships in-place stamp salvage (2026-05-17)
+
+P2-G v1 was dispatched immediately after §85 landed to test the marginal-gain extrapolation by resuming P2-E ep49 for 10,000 more steps. The init eval at step 0 produced **val_loss = 8.60** — higher than P2-E's ep 0 init eval (7.43) and 86% higher than P2-E ep49's recorded val_loss (4.62). The `--init` flag silently failed to load the trained weights.
+
+### 86.1 Root cause
+
+P2-E's ep49 checkpoint has:
+- `architecture: "LlamaForCausalLM"` (the §82 P0-H fallback — stamped when `init_arch.hf_architecture` is None)
+- `hf_architecture: null` (pre-P0-K, the upstream stamping was missing)
+- 291 tensors with Qwen2 naming convention
+
+When `apr pretrain --init <P2-E-ep49.apr>` reads this:
+
+1. `read_apr_architecture` (in `crates/apr-cli/src/commands/model_config.rs:18`) extracts the `architecture` field. The Llama fallback string is treated as the source-of-truth family.
+2. `transformer_config_from_apr_metadata` builds a `TransformerConfig` whose architecture-family discriminator is now "Llama". (Critical fields like `hidden_size`/`num_heads` come from metadata and are dimensionally correct, but the family-arch tag is wrong.)
+3. `populate_trainer_from_init_tensors` (in `crates/aprender-train/src/train/pretrain_real.rs:141`) walks `transformer.named_parameters()` — which generates parameter names based on the family-arch — and looks them up in the APR's tensor map. The Llama-family trainer produces Llama-style parameter names; the APR has Qwen2-style tensor names; lookup fails.
+4. The "strict mode" check (lines 150-159) returns Err for missing parameters, BUT the upstream `apr pretrain` path catches this and reports a generic "init load failed" — which the operator doesn't see in the stderr because the JIT-compile chatter scrolls past.
+5. Trainer falls back to random init. Training begins at the random-init magnitude (val_loss ≈ 8.60).
+
+Second symptom of the §81–§84 cascade root cause: pre-P0-K APRs lack `hf_architecture`, the §82 P0-H stamp falls back to "LlamaForCausalLM" by default, and the trained checkpoint inherits the wrong arch family stamp. The checkpoint is then non-resumable.
+
+### 86.2 Implications
+
+- **All training checkpoints produced before PR #1742 landed** (timestamp 2026-05-17T13:32:08Z) have `architecture = "LlamaForCausalLM"` regardless of actual tensor structure. They are non-resumable via `apr pretrain --init`.
+- The 50 P2-E checkpoints (`epoch-000.apr` … `epoch-049.apr`, ~125 GB total) cannot be used for continuation training.
+- P2-E's empirical val_loss = 4.62 result stands as a single-shot benchmark.
+
+### 86.3 Workarounds (in priority order)
+
+1. **Re-import the source Qwen2.5-Coder-0.5B-Instruct via post-P0-K `apr convert`** — produces an init APR with `hf_architecture = "Qwen2ForCausalLM"` correctly stamped. Trained checkpoints from THIS init will have correct arch family stamps and be self-resumable. Blocked on HF cache having only `config.json` locally — `.safetensors` requires re-download via `apr pull`.
+
+2. ✅ **Restamp existing pre-P0-K APRs in-place — SHIPPED via PR #1757** (`feat(apr-stamp): --hf-architecture/--hf-model-type/--architecture`). Extends the existing `apr stamp` CLI (PR #1050) with three new flags. Patches `architecture` + `hf_architecture` + `hf_model_type` in metadata only; tensor bytes copied verbatim. ~80 LOC core + 80 LOC CLI + 4 new tests. Salvages all ~125 GB of pre-P0-K checkpoints without retrain.
+
+3. **Treat P2-E's result as final** — accept the non-resumable checkpoints, use ep49 as a single benchmark for §85's marginal-gain analysis, direct future dispatches at fresh-from-import inits. P2-G v2 (the re-dispatched run currently in flight) takes this approach, dispatching 10,000 steps from `qwen2.5-coder-0.5b-instruct-imported.apr` (same fresh init as P2-E).
+
+### 86.4 Operator recipe for §86 salvage (per PR #1757)
+
+```bash
+# Patch any pre-P0-K Qwen2-actual-Llama-stamped APR
+apr stamp /path/to/p2e-epoch-049.apr \
+  --architecture qwen2 \
+  --hf-architecture Qwen2ForCausalLM \
+  --hf-model-type qwen2 \
+  -o /path/to/p2e-epoch-049-stamped.apr
+
+# Verify quality scorer jump (per P3-A)
+apr inspect /path/to/p2e-epoch-049-stamped.apr --quality
+# Quality (0-100):
+#   Score: 60 / 100   (was 40 before stamp)
+#     hf_identity: 20 / 20   (was 0 before stamp)
+
+# Now usable as resume init for further training
+apr pretrain --init /path/to/p2e-epoch-049-stamped.apr ...
+```
+
+### 86.5 Failure-mode classification
+
+| Aspect | Value |
+|---|---|
+| Class | Class 4 (Silent Incorrect Behavior) |
+| Detection latency | 1 epoch (~55s on RTX 4090) once init eval prints — easy to spot if you compare against the init checkpoint's recorded val_loss |
+| Symptom | val_loss at ep 0 disagrees with init checkpoint's last recorded val_loss by orders of magnitude (8.60 vs 4.62 in the P2-G v1 case — 1.86× wrong) |
+| Producer-side fix | P0-K already shipped (#1742) |
+| Existing-artifact fix | PR #1757 (apr stamp HF identity extension) |
+
+### 86.6 Recommended follow-up — new INV-INIT-ARCH-MATCH-001 invariant
+
+Add to `contracts/apr-pretrain-from-init-v1.yaml`:
+
+> **INV-INIT-ARCH-MATCH-001**: When `init.architecture` is set, the architecture-family inferred from tensor names MUST match. A mismatch (Llama-stamped + Qwen2-tensored, the §86 case) is FAIL-FAST not silent-fallback. Falsifier: stage a 1-tensor APR with `architecture = "LlamaForCausalLM"` and a `model.layers.0.self_attn.q_proj.weight` (Qwen2-style) tensor; `apr pretrain --init` MUST exit non-zero with a clear arch-mismatch message naming both the metadata claim and the tensor-evidence claim.
+
+This would have caught §86 at the gate instead of at the init-eval surface, saving the 8-minute round-trip per misdispatch. Estimated work: ~50 LOC + contract + integration test. Defer to follow-up PR.
+
+Evidence: `evidence/p2g-2026-05-17/section-86-draft.md` (root cause + workaround analysis); PR [#1757](https://github.com/paiml/aprender/pull/1757) (apr stamp extension shipping workaround #2).
+
+---
+
+
 ## §57. Drift sweep cleans §50.4 cascade contracts (3 PRs); 5g.1 full corpus run on track (2026-05-05)
 
 §56 closed with the 5g.1 full-corpus retokenization dispatched (PID 2767124, ~17hr wall projected). §57 records the parallel drift-sweep work that landed during the 5g.1 wait + the throughput characterization of 5g.1 mid-run.
