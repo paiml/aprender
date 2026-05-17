@@ -188,11 +188,33 @@ fn l2_normalize(v: &mut [f32]) {
     }
 }
 
+/// Phase 7 (#326) — read texts from a file, one per line. Blank lines
+/// and lines starting with `#` are skipped. Result is appended to the
+/// caller's `--text` collection.
+fn load_text_file(path: &Path) -> Result<Vec<String>> {
+    let content = std::fs::read_to_string(path).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "Failed to read --text-file {}: {e}",
+            path.display()
+        ))
+    })?;
+    let mut out = Vec::new();
+    for raw in content.lines() {
+        let line = raw.trim_end();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        out.push(line.to_string());
+    }
+    Ok(out)
+}
+
 /// Entry point. Loads the encoder once + processes all texts.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run(
     model: &Path,
     texts: &[String],
+    text_file: Option<&Path>,
     vocab: &Path,
     pool_mode: &str,
     normalize: bool,
@@ -205,9 +227,18 @@ pub(crate) fn run(
     type_vocab_size: usize,
     json: bool,
 ) -> Result<()> {
+    // Concat `--text` (in CLI order) with `--text-file` rows. Phase 7
+    // supports both modes simultaneously so callers can mix a query
+    // (`--text "$Q"`) with a passage corpus (`--text-file docs.txt`).
+    let mut all_texts: Vec<String> = texts.to_vec();
+    if let Some(path) = text_file {
+        all_texts.extend(load_text_file(path)?);
+    }
+    let texts = all_texts.as_slice();
+
     if texts.is_empty() {
         return Err(CliError::ValidationFailed(
-            "apr embed requires at least one --text".to_string(),
+            "apr embed requires at least one --text or --text-file row".to_string(),
         ));
     }
 
@@ -348,5 +379,74 @@ mod tests {
         let mut v = vec![0.0f32; 4];
         l2_normalize(&mut v);
         assert_eq!(v, vec![0.0f32; 4]);
+    }
+
+    /// Phase 7 — `load_text_file` reads one text per line, skipping
+    /// blank lines and `#`-prefixed comments. Trailing whitespace is
+    /// trimmed.
+    #[test]
+    fn load_text_file_reads_one_per_line() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("docs.txt");
+        std::fs::write(
+            &path,
+            "first document\n\
+             second document\n\
+             # this is a comment\n\
+             \n\
+             third document   \n",
+        )
+        .unwrap();
+        let texts = load_text_file(&path).expect("load");
+        assert_eq!(
+            texts,
+            vec![
+                "first document".to_string(),
+                "second document".to_string(),
+                "third document".to_string(),
+            ]
+        );
+    }
+
+    /// Phase 7 — empty file yields empty Vec without erroring.
+    #[test]
+    fn load_text_file_empty_returns_empty() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("empty.txt");
+        std::fs::write(&path, "").unwrap();
+        let texts = load_text_file(&path).expect("load");
+        assert!(texts.is_empty());
+    }
+
+    /// Phase 7 — file with only comments + blank lines yields empty Vec.
+    #[test]
+    fn load_text_file_only_comments_returns_empty() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("comments.txt");
+        std::fs::write(
+            &path,
+            "# header comment\n\
+             \n\
+             # another\n\
+             \n",
+        )
+        .unwrap();
+        let texts = load_text_file(&path).expect("load");
+        assert!(texts.is_empty());
+    }
+
+    /// Phase 7 — missing file produces a structured error mentioning
+    /// the path.
+    #[test]
+    fn load_text_file_missing_path_errors_with_path() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("does-not-exist.txt");
+        let err = load_text_file(&path).expect_err("missing path must error");
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(msg.contains("does-not-exist.txt"), "{msg}")
+            }
+            _ => panic!("expected ValidationFailed"),
+        }
     }
 }

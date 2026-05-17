@@ -176,6 +176,7 @@ mod tests {
             None, // hf_architecture
             None, // hf_model_type
             None, // architecture
+            None, // _tokenizer_dir
             &output,
             false,
             true, // json_output to keep stdout structured
@@ -203,7 +204,7 @@ mod tests {
         write_unpopulated_apr(&input);
 
         let result = run(
-            &input, None, None, None, None, None, None, &output, false, true,
+            &input, None, None, None, None, None, None, None, &output, false, true,
         );
         let err = result.unwrap_err();
         let msg = format!("{err:?}");
@@ -232,6 +233,7 @@ mod tests {
             None,
             None,
             None,
+            None, // _tokenizer_dir
             &output,
             false,
             true,
@@ -260,6 +262,7 @@ mod tests {
             None, // hf_architecture
             None, // hf_model_type
             None, // architecture
+            None, // _tokenizer_dir
             &output,
             false, // force=false
             true,
@@ -291,6 +294,7 @@ mod tests {
             None, // hf_architecture
             None, // hf_model_type
             None, // architecture
+            None, // _tokenizer_dir
             &output,
             true, // force=true
             true,
@@ -346,6 +350,7 @@ mod tests {
             Some("Qwen2ForCausalLM"),
             Some("qwen2"),
             Some("qwen2"),
+            None, // _tokenizer_dir
             &output,
             false,
             true,
@@ -389,6 +394,7 @@ mod tests {
             Some("Qwen2ForCausalLM"),
             None,
             None,
+            None, // _tokenizer_dir
             &output,
             false,
             true,
