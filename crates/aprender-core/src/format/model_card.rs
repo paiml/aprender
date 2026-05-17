@@ -241,10 +241,15 @@ impl ModelCard {
         output.push_str("  - aprender\n");
         output.push_str("  - rust\n");
 
-        // Model index
-        output.push_str("model-index:\n");
-        let _ = writeln!(output, "  - name: {}", self.model_id);
+        // Model index — only emit when metrics exist. HF Hub validates
+        // model-index entries and rejects with HTTP 400
+        // `"model-index[0].results" is required` if `results:` is absent.
+        // Empty model-index is invalid and adds no signal, so skip
+        // entirely when there are no metrics. (PMAT-690 defect 5,
+        // 2026-05-17 — first observed publishing paiml/albor-370m-v1.)
         if !self.metrics.is_empty() {
+            output.push_str("model-index:\n");
+            let _ = writeln!(output, "  - name: {}", self.model_id);
             output.push_str("    results:\n");
             output.push_str("      - task:\n");
             output.push_str("          type: text-generation\n");

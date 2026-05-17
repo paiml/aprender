@@ -203,6 +203,169 @@ impl HfHubClient {
         Ok(())
     }
 
+    /// Upload data via the standard LFS batch API.
+    ///
+    /// PMAT-690 P3-C-prep defect 5 (2026-05-17): HuggingFace's `preupload`
+    /// endpoint returns `uploadMode: "lfs"` with no inline URLs for files in
+    /// the 5MB-5GB band, expecting the client to obtain the presigned S3 URL
+    /// via the LFS Batch API (RFC: <https://github.com/git-lfs/git-lfs/blob/main/docs/api/batch.md>).
+    /// The endpoint for HuggingFace models is
+    /// `https://huggingface.co/{repo}.git/info/lfs/objects/batch` (no
+    /// `/datasets/` prefix — that's the dataset path used in
+    /// `aprender-data`).
+    ///
+    /// Flow:
+    /// 1. POST batch request with `{operation: "upload", transfers: ["basic"],
+    ///    objects: [{oid, size}]}`
+    /// 2. Parse response — `objects[0].actions.upload.href` is the presigned
+    ///    S3 URL. If the object already exists, the `actions.upload` key is
+    ///    absent and we skip the PUT.
+    /// 3. PUT the data to the presigned URL (no auth header — the URL itself
+    ///    is the credential).
+    ///
+    /// Caller (`upload_via_lfs`) handles step 4 (commit LFS pointer).
+    #[cfg(feature = "hf-hub-integration")]
+    #[allow(clippy::disallowed_methods)]
+    fn upload_via_lfs_batch(
+        &self,
+        repo_id: &str,
+        filename: &str,
+        data: &[u8],
+        sha256: &str,
+        token: &str,
+    ) -> Result<()> {
+        use std::time::Instant;
+
+        let batch_url = format!("https://huggingface.co/{}.git/info/lfs/objects/batch", repo_id);
+        eprintln!("[LFS-BATCH] Step 2a: POST {}", batch_url);
+
+        let batch_body = serde_json::json!({
+            "operation": "upload",
+            "transfers": ["basic"],
+            "objects": [{
+                "oid": sha256,
+                "size": data.len()
+            }]
+        });
+
+        let batch_resp = match ureq::post(&batch_url)
+            .set("Authorization", &format!("Bearer {token}"))
+            .set("Content-Type", "application/vnd.git-lfs+json")
+            .set("Accept", "application/vnd.git-lfs+json")
+            .send_json(&batch_body)
+        {
+            Ok(resp) => resp,
+            Err(ureq::Error::Status(code, resp)) => {
+                let body = resp
+                    .into_string()
+                    .unwrap_or_else(|_| "unable to read body".to_string());
+                eprintln!(
+                    "[LFS-BATCH] ERROR: batch API failed with status {}: {}",
+                    code, body
+                );
+                return Err(HfHubError::NetworkError(format!(
+                    "LFS batch failed (HTTP {}): {}",
+                    code, body
+                )));
+            }
+            Err(e) => {
+                eprintln!("[LFS-BATCH] ERROR: batch request failed: {}", e);
+                return Err(HfHubError::NetworkError(format!("LFS batch failed: {e}")));
+            }
+        };
+
+        let batch_json: serde_json::Value = batch_resp.into_json().map_err(|e| {
+            HfHubError::NetworkError(format!("LFS batch response parse failed: {e}"))
+        })?;
+
+        let objects = batch_json["objects"].as_array().ok_or_else(|| {
+            HfHubError::NetworkError("LFS batch response missing 'objects' array".to_string())
+        })?;
+        let object = objects
+            .first()
+            .ok_or_else(|| HfHubError::NetworkError("LFS batch returned no objects".to_string()))?;
+
+        if let Some(error) = object.get("error") {
+            return Err(HfHubError::NetworkError(format!(
+                "LFS batch object error: {}",
+                error
+            )));
+        }
+
+        let upload_action = object.get("actions").and_then(|a| a.get("upload"));
+        let upload_url = match upload_action {
+            Some(upload) => upload["href"].as_str().ok_or_else(|| {
+                HfHubError::NetworkError("LFS batch upload action missing href".to_string())
+            })?,
+            None => {
+                eprintln!(
+                    "[LFS-BATCH] Object already exists on HF storage — skipping PUT, \
+                     proceeding to pointer commit"
+                );
+                return Ok(());
+            }
+        };
+
+        eprintln!(
+            "[LFS-BATCH] Step 2b: PUT {} ({:.1} MB)",
+            &upload_url[..upload_url.len().min(80)],
+            data.len() as f64 / 1_000_000.0
+        );
+
+        let mut request = ureq::put(upload_url)
+            .set("Content-Type", "application/octet-stream")
+            .timeout(std::time::Duration::from_secs(7200));
+
+        if let Some(header_obj) = upload_action.and_then(|a| a.get("header")).and_then(|h| h.as_object()) {
+            for (key, value) in header_obj {
+                if let Some(v) = value.as_str() {
+                    request = request.set(key, v);
+                }
+            }
+        }
+
+        let put_start = Instant::now();
+        let put_resp = request.send_bytes(data).map_err(|e| {
+            eprintln!("[LFS-BATCH] ERROR: PUT failed: {}", e);
+            HfHubError::NetworkError(format!("LFS PUT failed: {e}"))
+        })?;
+        let put_status = put_resp.status();
+        let mbps = (data.len() as f64 / 1_000_000.0) / put_start.elapsed().as_secs_f64();
+        eprintln!(
+            "[LFS-BATCH] PUT complete: status={}, elapsed={:.1}s, speed={:.1} MB/s",
+            put_status,
+            put_start.elapsed().as_secs_f64(),
+            mbps
+        );
+
+        if !(200..300).contains(&put_status) {
+            let body = put_resp.into_string().unwrap_or_default();
+            return Err(HfHubError::NetworkError(format!(
+                "LFS PUT failed (HTTP {}): {}",
+                put_status, body
+            )));
+        }
+
+        // Optional: verify action — some LFS implementations expect a POST to
+        // `verify.href` after successful upload. Skip if absent.
+        if let Some(verify_action) = object.get("actions").and_then(|a| a.get("verify")) {
+            if let Some(verify_url) = verify_action["href"].as_str() {
+                eprintln!("[LFS-BATCH] Step 2c: verify POST {}", verify_url);
+                let verify_body = serde_json::json!({
+                    "oid": sha256,
+                    "size": data.len()
+                });
+                let _ = ureq::post(verify_url)
+                    .set("Authorization", &format!("Bearer {token}"))
+                    .set("Content-Type", "application/vnd.git-lfs+json")
+                    .send_json(&verify_body);
+            }
+        }
+
+        let _ = filename; // logged earlier
+        Ok(())
+    }
+
     /// Commit an LFS pointer to the HuggingFace Hub.
     #[cfg(feature = "hf-hub-integration")]
     #[allow(clippy::disallowed_methods)]
@@ -225,21 +388,38 @@ impl HfHubClient {
         let commit_url = format!("{}/api/models/{}/commit/main", self.api_base, repo_id);
         eprintln!("[LFS] Commit URL: {}", commit_url);
 
-        let commit_body = serde_json::json!({
-            "summary": commit_msg,
-            "operations": [{
-                "op": "addOrUpdate",
-                "path": filename,
-                "content": base64_encode(lfs_pointer.as_bytes()),
-                "encoding": "base64",
-                "lfs": { "sha256": sha256, "size": file_size }
-            }]
+        // PMAT-690 P3-C-prep defect 5 — memory rule
+        // `feedback_hf_commit_ndjson_load_bearing.md` (2026-04-18):
+        // HF Hub's commit endpoint REQUIRES application/x-ndjson with a
+        // `lfsFile` key for LFS-backed files. The JSON `addOrUpdate` body
+        // we used previously returns 200 but silently drops the file —
+        // first observed when paiml/albor-370m-v1 published 9 successful
+        // commits yet `/tree/main` showed only `.gitattributes`.
+        let header_line = serde_json::json!({
+            "key": "header",
+            "value": {
+                "summary": commit_msg,
+                "description": ""
+            }
         });
+        let file_line = serde_json::json!({
+            "key": "lfsFile",
+            "value": {
+                "path": filename,
+                "algo": "sha256",
+                "oid": sha256,
+                "size": file_size
+            }
+        });
+        let ndjson_body = format!("{}\n{}", header_line, file_line);
+
+        let _ = lfs_pointer; // pointer text is no longer inlined — commit references it by OID
+        let _ = base64_encode; // function still imported for non-LFS small-file path
 
         let commit_resp = ureq::post(&commit_url)
             .set("Authorization", &format!("Bearer {token}"))
-            .set("Content-Type", "application/json")
-            .send_json(&commit_body);
+            .set("Content-Type", "application/x-ndjson")
+            .send_string(&ndjson_body);
 
         match commit_resp {
             Ok(resp) if (200..300).contains(&resp.status()) => {
@@ -437,8 +617,18 @@ impl HfHubClient {
         } else if let Some(url) = upload_url {
             Self::upload_single(data, url, &file_info)?;
         } else {
-            eprintln!("[LFS] No upload URL returned - proceeding to commit LFS pointer");
-            eprintln!("[LFS] (This may mean the file content already exists on HF's LFS storage)");
+            // PMAT-690 P3-C-prep defect 5 (2026-05-17): when preupload returns
+            // `uploadMode:lfs` with no inline upload URL, files in the 5MB-5GB
+            // band must use the standard LFS batch API to obtain a presigned
+            // S3 URL. Previously we skipped this and went straight to commit,
+            // landing orphaned LFS pointers (paiml/albor-370m-v1 first
+            // observed). The Xet branch above handles >5 GiB; this branch
+            // handles the gap below it.
+            eprintln!(
+                "[LFS] No inline upload URL — falling back to LFS batch API \
+                 (PMAT-690 defect 5)"
+            );
+            self.upload_via_lfs_batch(repo_id, filename, data, &sha256, token)?;
         }
 
         self.commit_lfs_pointer(repo_id, filename, &sha256, file_size, commit_msg, token)?;
