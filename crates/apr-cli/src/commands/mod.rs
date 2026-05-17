@@ -8,6 +8,8 @@
 pub(crate) mod aliases;
 pub(crate) mod attn_viz_classifier;
 pub(crate) mod attn_viz_lint;
+pub(crate) mod audio_inspect_classifier;
+pub(crate) mod audio_inspect_lint;
 pub(crate) mod auto_quant;
 pub(crate) mod awq_classifier;
 pub(crate) mod awq_lint;
