@@ -198,7 +198,9 @@ mod tests {
         let output = dir.path().join("output.apr");
         write_unpopulated_apr(&input);
 
-        let result = run(&input, None, None, None, None, None, None, &output, false, true);
+        let result = run(
+            &input, None, None, None, None, None, None, &output, false, true,
+        );
         let err = result.unwrap_err();
         let msg = format!("{err:?}");
         assert!(
@@ -218,7 +220,18 @@ mod tests {
         let input = dir.path().join("does-not-exist.apr");
         let output = dir.path().join("output.apr");
 
-        let result = run(&input, Some("Apache-2.0"), None, None, None, None, None, &output, false, true);
+        let result = run(
+            &input,
+            Some("Apache-2.0"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            &output,
+            false,
+            true,
+        );
         let err = result.unwrap_err();
         // CliError::FileNotFound — exact variant, not just substring match.
         assert!(
@@ -385,7 +398,8 @@ mod tests {
             Some("Qwen2ForCausalLM")
         );
         assert_eq!(
-            reader.metadata().hf_model_type, None,
+            reader.metadata().hf_model_type,
+            None,
             "unpatched field must remain None"
         );
     }
