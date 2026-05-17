@@ -27,8 +27,7 @@ pub(crate) fn run(
 ) -> Result<()> {
     if attn_file.is_none() && html_file.is_none() {
         return Err(CliError::ValidationFailed(
-            "apr attn-viz-lint: at least one of --attn-file or --html-file is required"
-                .to_string(),
+            "apr attn-viz-lint: at least one of --attn-file or --html-file is required".to_string(),
         ));
     }
 

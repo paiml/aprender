@@ -144,7 +144,11 @@ pub fn build_report(
     }
 
     // Sort by rmse DESC per contract invariant.
-    rows.sort_by(|a, b| b.rmse.partial_cmp(&a.rmse).unwrap_or(std::cmp::Ordering::Equal));
+    rows.sort_by(|a, b| {
+        b.rmse
+            .partial_cmp(&a.rmse)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     Ok(QuantRoundtripReport {
         reference: reference_path.display().to_string(),
@@ -159,25 +163,16 @@ pub fn build_report(
 ///
 /// Supports SafeTensors (F32, F16, BF16) via the `safetensors` crate.
 fn load_tensors_f32(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, String)>> {
-    let bytes = std::fs::read(path).map_err(|e| {
-        CliError::ValidationFailed(format!("read {}: {}", path.display(), e))
-    })?;
+    let bytes = std::fs::read(path)
+        .map_err(|e| CliError::ValidationFailed(format!("read {}: {}", path.display(), e)))?;
     let st = safetensors::SafeTensors::deserialize(&bytes).map_err(|e| {
-        CliError::ValidationFailed(format!(
-            "parse safetensors {}: {}",
-            path.display(),
-            e
-        ))
+        CliError::ValidationFailed(format!("parse safetensors {}: {}", path.display(), e))
     })?;
 
     let mut out = BTreeMap::new();
     for name in st.names() {
         let view = st.tensor(name).map_err(|e| {
-            CliError::ValidationFailed(format!(
-                "tensor '{name}' in {}: {}",
-                path.display(),
-                e
-            ))
+            CliError::ValidationFailed(format!("tensor '{name}' in {}: {}", path.display(), e))
         })?;
         let dtype = view.dtype();
         let dtype_label = format!("{dtype:?}");
@@ -301,10 +296,7 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
-    fn write_f32_safetensors(
-        path: &std::path::Path,
-        tensors: &[(&str, &[u8], Vec<usize>)],
-    ) {
+    fn write_f32_safetensors(path: &std::path::Path, tensors: &[(&str, &[u8], Vec<usize>)]) {
         let views: Vec<(&str, TensorView<'_>)> = tensors
             .iter()
             .map(|(name, bytes, shape)| {
@@ -406,18 +398,15 @@ mod tests {
         let ref_bytes = f32_to_bytes(&base);
         let near_bytes = f32_to_bytes(&near);
 
-        write_f32_safetensors(
-            &ref_path,
-            &[("only.weight", &ref_bytes, vec![elems])],
-        );
-        write_f32_safetensors(
-            &q_path,
-            &[("only.weight", &near_bytes, vec![elems])],
-        );
+        write_f32_safetensors(&ref_path, &[("only.weight", &ref_bytes, vec![elems])]);
+        write_f32_safetensors(&q_path, &[("only.weight", &near_bytes, vec![elems])]);
 
         // Tiny perturbation → high cosine → does NOT flip (default 0.95).
         let clean = build_report(&ref_path, &q_path, 0.95).expect("build");
-        assert!(!clean.any_below_threshold, "high-cosine case should NOT flip");
+        assert!(
+            !clean.any_below_threshold,
+            "high-cosine case should NOT flip"
+        );
         assert_eq!(clean.tensors[0].verdict, "green");
 
         // Sign-flip half the values — cosine drops sharply.
@@ -427,10 +416,7 @@ mod tests {
             .map(|(i, &x)| if i % 2 == 0 { x } else { -x })
             .collect();
         let bad_bytes = f32_to_bytes(&bad);
-        write_f32_safetensors(
-            &q_path,
-            &[("only.weight", &bad_bytes, vec![elems])],
-        );
+        write_f32_safetensors(&q_path, &[("only.weight", &bad_bytes, vec![elems])]);
 
         let dirty = build_report(&ref_path, &q_path, 0.95).expect("build");
         assert!(dirty.any_below_threshold, "low-cosine case MUST flip");
