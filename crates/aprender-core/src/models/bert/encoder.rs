@@ -42,6 +42,16 @@ impl BertEncoder {
     pub fn num_layers(&self) -> usize {
         self.layers.len()
     }
+
+    /// Mutable access to the `idx`-th encoder layer (GH-326 weight loading).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `idx >= num_layers()`. Callers loading weights should iterate
+    /// `0..num_layers()` which is bound-safe by construction.
+    pub fn layer_mut(&mut self, idx: usize) -> &mut BertLayer {
+        &mut self.layers[idx]
+    }
 }
 
 #[cfg(test)]
