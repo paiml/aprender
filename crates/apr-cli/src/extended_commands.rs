@@ -1199,6 +1199,61 @@ pub enum ExtendedCommands {
         #[arg(long)]
         json: bool,
     },
+    /// Produce sentence embeddings from a BERT bi-encoder (GH-326 Phase 6).
+    ///
+    /// First-stage dense retrieval companion to `apr rerank`. Loads an
+    /// encoder-only BertModel (e.g. `sentence-transformers/all-MiniLM-L6-v2`),
+    /// tokenises the input text with WordPiece, runs the full encoder
+    /// forward, then pools the hidden states with one of:
+    ///   `--pool cls`  — take the [CLS] hidden state
+    ///   `--pool mean` — mean over non-padding token positions (default;
+    ///                   sentence-transformers convention)
+    /// Optionally L2-normalises the result (`--normalize`, default true,
+    /// matches sentence-transformers).
+    Embed {
+        /// Path to the APR file containing the encoder weights (BertModel).
+        #[arg(value_name = "MODEL")]
+        model: PathBuf,
+        /// Text to encode. Repeatable: `apr embed model.apr --text "a" --text "b" --vocab tok.json`.
+        #[arg(long, value_name = "TEXT")]
+        text: Vec<String>,
+        /// Path to a WordPiece `vocab.txt` or HF `tokenizer.json`.
+        #[arg(long, value_name = "FILE")]
+        vocab: PathBuf,
+        /// Pooling strategy (`cls` or `mean`). Default: `mean`
+        /// (matches sentence-transformers convention).
+        #[arg(long, default_value = "mean")]
+        pool: String,
+        /// L2-normalise the output embedding. Default: true (matches
+        /// sentence-transformers convention). Pass `--normalize false`
+        /// to keep raw magnitudes.
+        #[arg(long, default_value_t = true)]
+        normalize: bool,
+        /// Override hidden_dim (default: 384 / MiniLM).
+        #[arg(long, default_value_t = 384)]
+        hidden_dim: usize,
+        /// Override num_layers (default: 6 / MiniLM-L-6).
+        #[arg(long, default_value_t = 6)]
+        num_layers: usize,
+        /// Override num_heads.
+        #[arg(long, default_value_t = 12)]
+        num_heads: usize,
+        /// Override intermediate_dim.
+        #[arg(long, default_value_t = 1536)]
+        intermediate_dim: usize,
+        /// Override vocab_size.
+        #[arg(long, default_value_t = 30522)]
+        vocab_size: usize,
+        /// Override max_position_embeddings.
+        #[arg(long, default_value_t = 512)]
+        max_position_embeddings: usize,
+        /// Override type_vocab_size.
+        #[arg(long, default_value_t = 2)]
+        type_vocab_size: usize,
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[cfg(feature = "training")]
