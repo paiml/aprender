@@ -76,10 +76,12 @@ fn build_fused_tensors_f32(
             } else {
                 if use_q4k && fused_shape.len() == 2 && all_data.len() >= 256 {
                     eprintln!(
-                        "[GH-277-Q4K-FALLBACK] fused {} (shape {:?}) — \
+                        "[GH-277-Q4K-FALLBACK] fused blk.{}.{} (shape {:?}) — \
                          K={} not divisible by 256; falling back to F32",
-                        format!("blk.{layer}.{}", rule.gguf_suffix),
-                        fused_shape, fused_shape[1]
+                        layer,
+                        rule.gguf_suffix,
+                        fused_shape,
+                        fused_shape[1]
                     );
                 }
                 let f32_bytes: Vec<u8> = all_data.iter().flat_map(|f| f.to_le_bytes()).collect();
