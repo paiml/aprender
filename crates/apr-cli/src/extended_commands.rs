@@ -1120,14 +1120,29 @@ pub enum ExtendedCommands {
         /// Path to the APR file containing the cross-encoder weights.
         #[arg(value_name = "MODEL")]
         model: PathBuf,
-        /// Pre-tokenised input ids (comma-separated `u32`s).
+        /// Pre-tokenised input ids (comma-separated `u32`s). Mutually
+        /// exclusive with `--query`+`--passage`+`--vocab` (Phase 3b).
         /// Example: `--input-ids 101,2024,102,3456,102` for `[CLS] q [SEP] p [SEP]`.
         #[arg(long, value_name = "IDS")]
-        input_ids: String,
+        input_ids: Option<String>,
         /// Pre-tokenised token-type ids (comma-separated `u32`s).
         /// Same length as `--input-ids`. 0 for query side, 1 for passage.
         #[arg(long, value_name = "IDS")]
-        token_type_ids: String,
+        token_type_ids: Option<String>,
+        /// Phase 3b — query text. Pair with `--passage` + `--vocab` to enable
+        /// in-process WordPiece tokenisation. The tokeniser builds
+        /// `[CLS] query [SEP] passage [SEP]` with `token_type_ids = 0` for
+        /// the query side and `1` for the passage side.
+        #[arg(long, value_name = "TEXT")]
+        query: Option<String>,
+        /// Phase 3b — passage text. Required when `--query` is supplied.
+        #[arg(long, value_name = "TEXT")]
+        passage: Option<String>,
+        /// Phase 3b — path to a WordPiece `vocab.txt` (one token per line,
+        /// line index = token id). Required when `--query` is supplied.
+        /// Must contain entries for `[CLS]`, `[SEP]`, and `[UNK]`.
+        #[arg(long, value_name = "FILE")]
+        vocab: Option<PathBuf>,
         /// Override hidden_dim (default: 384 / MiniLM-L-6).
         #[arg(long, default_value_t = 384)]
         hidden_dim: usize,
