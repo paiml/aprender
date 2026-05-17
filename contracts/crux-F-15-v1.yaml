@@ -1,12 +1,21 @@
 # CRUX-F-15 — NCCL failure diagnostics
+# Promoted to PARTIAL_ALGORITHM_LEVEL at v1.2.0 under CRUX-SHIP-001 (2026-05-17):
+# - classifier: crates/apr-cli/src/commands/nccl_diag_classifier.rs (12 unit tests)
+# - CLI surface: `apr nccl-diag-lint --diag-file F [--exit-code I] [--require-doc-link]`
+# - e2e: crates/apr-cli/tests/falsification_crux_f_15.rs (11 tests)
+# Full discharge of F-15-{001,002,003} requires a live `apr train`
+# actually emitting the diagnostic on NCCL error — tracked as
+# BLOCKER-UPSTREAM-MISSING.
 
 metadata:
   id: CRUX-F-15
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
+  updated: "2026-05-17"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
+  kind: kernel
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "F — Tensor Ops & Low-level"
@@ -57,6 +66,25 @@ falsification_tests:
       assert k in d, f"missing key {k}"
     PY
   if_fails: rule 'nccl error produces parseable JSON diag' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/nccl_diag_classifier.rs
+    cli_path: crates/apr-cli/src/commands/nccl_diag_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_15.rs
+    e2e_tests:
+    - falsify_crux_f_15_001_schema_ok_on_well_formed
+    - falsify_crux_f_15_001_schema_rejects_missing_key
+    - falsify_crux_f_15_001_schema_rejects_negative_rank
+    sub_claim: |
+      Algorithm-level necessary conditions on the captured stderr
+      JSON: `classify_schema` verifies the body is an object with the
+      6 required keys (`host`, `rank`, `nccl_version`, `last_op`,
+      `code`, `suggest`), `host`/`nccl_version`/`last_op`/`suggest`
+      are strings, `rank` is a non-negative integer, and `code` is
+      an integer. Outcomes name the offending field so emitter bugs
+      are debuggable from lint output alone.
+    scope: "(body) -> NcclSchemaOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live `apr train` emitting the F-15 JSON diagnostic on NCCL error"
 - id: FALSIFY-CRUX-F-15-002
   rule: exit code encodes err code (not generic 1)
   prediction: "exit code != 1 (non-generic); maps to 128+code range"
@@ -66,6 +94,23 @@ falsification_tests:
       --world-size 2 --steps 1 --model tests/fixtures/tinyllama-hf 2>/dev/null; ec=$?
     [ "$ec" -ge 128 ]
   if_fails: rule 'exit code encodes err code (not generic 1)' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/nccl_diag_classifier.rs
+    cli_path: crates/apr-cli/src/commands/nccl_diag_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_15.rs
+    e2e_tests:
+    - falsify_crux_f_15_002_exit_code_ge_128_passes
+    - falsify_crux_f_15_002_exit_code_1_fails
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_exit_code`
+      verifies observed exit code is >= 128 (POSIX `128 +
+      signal_or_code` convention used by NCCL error classes).
+      Generic exit 1 fails, signaling that the scheduler cannot
+      dispatch on the NCCL error class. Reports
+      `BelowThreshold { got, threshold }`.
+    scope: "(got, threshold) -> NcclExitOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live `apr train` returning 128+code on NCCL error"
 - id: FALSIFY-CRUX-F-15-003
   rule: suggest field cites NCCL doc link
   prediction: "suggest field contains an nvidia.com or nccl URL"
@@ -74,6 +119,24 @@ falsification_tests:
     grep -Eo 'https?://(docs\.nvidia\.com|developer\.nvidia\.com|github\.com/NVIDIA/nccl)' /tmp/nccl-err
 
   if_fails: rule 'suggest field cites NCCL doc link' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/nccl_diag_classifier.rs
+    cli_path: crates/apr-cli/src/commands/nccl_diag_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_15.rs
+    e2e_tests:
+    - falsify_crux_f_15_003_doc_link_ok_on_nvidia_url
+    - falsify_crux_f_15_003_doc_link_rejects_free_text
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_doc_link`
+      verifies the `suggest` field contains at least one canonical
+      NCCL documentation URL substring (docs.nvidia.com,
+      developer.nvidia.com, github.com/NVIDIA/nccl). Free-text
+      suggestions fail with `NoDocLink { suggest }`, surfacing
+      the actual emitted text so the operator can patch the
+      suggest table.
+    scope: "(body) -> NcclDocLinkOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live `apr train` emitting actionable doc-link suggestions"
 proof_obligations:
 - type: equivalence
   property: "apr NCCL diagnosis surface matches TORCH_NCCL_ASYNC_ERROR_HANDLING behavior"
