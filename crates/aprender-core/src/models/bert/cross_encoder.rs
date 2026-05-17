@@ -25,6 +25,9 @@ pub struct CrossEncoder {
     /// regression-style relevance scoring).
     classifier: Linear,
     hidden_dim: usize,
+    /// Cached `num_labels` so the loader can validate the classifier-head
+    /// shape without coupling to `Linear::out_features` (GH-326).
+    num_labels: usize,
 }
 
 impl CrossEncoder {
@@ -38,10 +41,60 @@ impl CrossEncoder {
         Self {
             embeddings: BertEmbeddings::new(config),
             encoder: BertEncoder::new(config),
-            pooler: if with_pooler { Some(Linear::new(h, h)) } else { None },
+            pooler: if with_pooler {
+                Some(Linear::new(h, h))
+            } else {
+                None
+            },
             classifier: Linear::new(h, num_labels),
             hidden_dim: h,
+            num_labels,
         }
+    }
+
+    /// Number of output labels (1 for relevance regression, 2+ for classification).
+    #[must_use]
+    pub fn num_labels(&self) -> usize {
+        self.num_labels
+    }
+
+    /// Mutable access to the embeddings table (GH-326 weight loading).
+    pub fn embeddings_mut(&mut self) -> &mut BertEmbeddings {
+        &mut self.embeddings
+    }
+
+    /// Mutable access to the encoder stack (GH-326 weight loading).
+    pub fn encoder_mut(&mut self) -> &mut BertEncoder {
+        &mut self.encoder
+    }
+
+    /// Mutable access to the pooler if present (GH-326 weight loading).
+    pub fn pooler_mut(&mut self) -> Option<&mut Linear> {
+        self.pooler.as_mut()
+    }
+
+    /// Mutable access to the classifier head (GH-326 weight loading).
+    pub fn classifier_mut(&mut self) -> &mut Linear {
+        &mut self.classifier
+    }
+
+    /// Load all weights from a pre-trained `.apr` reader (GH-326 Phase 1).
+    ///
+    /// Reads embeddings + encoder layers + optional pooler + classifier
+    /// head. The tensor names follow the HuggingFace BERT convention
+    /// preserved through `Architecture::Bert.bert_map_name` (identity).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BertLoadError`] on the first missing tensor or shape
+    /// mismatch. Future PRs may add a strict/non-strict mode to allow
+    /// missing pooler weights for encoder-only checkpoints.
+    pub fn load_from_reader(
+        &mut self,
+        reader: &crate::format::v2::AprV2Reader,
+        config: &BertConfig,
+    ) -> Result<(), crate::models::bert::load::BertLoadError> {
+        crate::models::bert::load::load_cross_encoder_from_reader(self, reader, config)
     }
 
     /// Score a single (input_ids, token_type_ids) pair.
