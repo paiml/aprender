@@ -834,6 +834,24 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "I32")]
         expected_exit_code: Option<i32>,
     },
+    /// Lint two captured `apr finetune --parallel ddp --json` outputs (N=1, N=k) (CRUX-D-11)
+    DdpMetricsLint {
+        /// Path to N=1 metrics JSON
+        #[arg(long, value_name = "FILE")]
+        metrics_1gpu_file: PathBuf,
+        /// Path to N=world_size metrics JSON
+        #[arg(long, value_name = "FILE")]
+        metrics_ngpu_file: PathBuf,
+        /// World size used for --metrics-ngpu-file run (>= 2)
+        #[arg(long, value_name = "N")]
+        world_size: i64,
+        /// Scaling-efficiency floor (default 0.85, PyTorch DDP convention)
+        #[arg(long, value_name = "F", default_value_t = 0.85)]
+        scaling_floor: f64,
+        /// Loss-parity relative tolerance (default 0.01)
+        #[arg(long, value_name = "F", default_value_t = 0.01)]
+        loss_tolerance: f64,
+    },
     /// Lint a captured `apr attn-viz` attention dump (CRUX-F-17)
     AttnVizLint {
         /// Path to attention dump in JSON form (4-D [layers][heads][rows][cols] floats)

@@ -1,16 +1,21 @@
 # CRUX-D-11 — DDP multi-GPU single node
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# Promoted to PARTIAL_ALGORITHM_LEVEL at v1.1.0 under CRUX-SHIP-001 (2026-05-17):
+# - classifier: crates/apr-cli/src/commands/ddp_metrics_classifier.rs (12 unit tests)
+# - CLI surface: `apr ddp-metrics-lint --metrics-1gpu-file F --metrics-ngpu-file F --world-size N [--scaling-floor F] [--loss-tolerance F]`
+# - e2e: crates/apr-cli/tests/falsification_crux_d_11.rs (10 tests)
+# Full discharge requires a live multi-GPU `apr finetune` actually
+# emitting the JSON metrics on both world_size=1 and world_size=N runs
+# — tracked as BLOCKER-UPSTREAM-MISSING.
 
 metadata:
   id: CRUX-D-11
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
+  updated: "2026-05-17"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
+  kind: kernel
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "D — Inference & Generation"
@@ -89,6 +94,24 @@ falsification_tests:
     assert eff >= 0.85, f'DDP scaling efficiency {eff:.3f} < 0.85 (T1={t1}, T4={t4})'
     "
   if_fails: "DDP scaling below 0.85× — bucket size, overlap, or PCIe fallback issue"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/ddp_metrics_classifier.rs
+    cli_path: crates/apr-cli/src/commands/ddp_metrics_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_d_11.rs
+    e2e_tests:
+    - falsify_crux_d_11_001_scaling_ok_at_0_875
+    - falsify_crux_d_11_001_scaling_rejects_below_floor
+    - falsify_crux_d_11_scaling_floor_configurable
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_scaling_efficiency`
+      computes `T_N / (N * T_1)` from the two captured `tokens_per_sec`
+      values and rejects when the ratio is below the floor
+      (default 0.85, configurable). Reports
+      `BelowThreshold { world_size, t1, tn, efficiency, threshold }`
+      so the offending run is pinpointed.
+    scope: "(metrics_1gpu, metrics_ngpu, world_size, threshold) -> DdpScalingOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live multi-GPU `apr finetune` emitting tokens_per_sec at N=1 and N=k"
 
 - id: FALSIFY-CRUX-D-11-002
   rule: DDP final loss matches single-GPU within ±1%
@@ -105,6 +128,22 @@ falsification_tests:
     assert rel <= 0.01, f'DDP loss parity failed: rel_diff={rel:.4f} (L1={l1}, LN={ln})'
     "
   if_fails: "DDP final loss diverges from single-GPU — reduction, sampler, or seeding bug"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/ddp_metrics_classifier.rs
+    cli_path: crates/apr-cli/src/commands/ddp_metrics_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_d_11.rs
+    e2e_tests:
+    - falsify_crux_d_11_002_loss_parity_ok_within_tolerance
+    - falsify_crux_d_11_002_loss_parity_rejects_divergence
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_loss_parity`
+      computes `|L_N - L_1| / L_1` and rejects when it exceeds the
+      tolerance (default 0.01, configurable). Reports
+      `Divergence { l1, ln, rel_diff, tolerance }` so reduction /
+      sampler bugs are debuggable from the lint output alone.
+    scope: "(metrics_1gpu, metrics_ngpu, tolerance) -> DdpLossParityOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live multi-GPU `apr finetune` emitting matching final_loss at N=1 and N=k"
 
 - id: FALSIFY-CRUX-D-11-003
   rule: gradient all-reduce bandwidth logged and non-zero
@@ -115,6 +154,22 @@ falsification_tests:
       --epochs 1 --json 2>/dev/null)
     echo "$OUT" | jq -e '.ddp_metrics.allreduce_bandwidth_gbps | length > 0 and all(. > 0)'
   if_fails: "All-reduce bandwidth not logged or reports zero — collective backend misconfigured"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/ddp_metrics_classifier.rs
+    cli_path: crates/apr-cli/src/commands/ddp_metrics_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_d_11.rs
+    e2e_tests:
+    - falsify_crux_d_11_003_allreduce_rejects_missing_array
+    - falsify_crux_d_11_003_allreduce_rejects_zero_step
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_allreduce_bandwidth`
+      walks `ddp_metrics.allreduce_bandwidth_gbps[]` and rejects when
+      the array is absent, empty, or contains any non-positive entry.
+      Reports `MissingDdpMetrics`, `MissingBandwidthArray`,
+      `EmptyBandwidthArray`, or `NonPositiveBandwidth { step_index }`.
+    scope: "(metrics) -> DdpAllreduceOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live multi-GPU `apr finetune` emitting per-step allreduce bandwidth"
 
 - id: FALSIFY-CRUX-D-11-004
   rule: --num-gpus rejects values exceeding detected GPUs
