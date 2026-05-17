@@ -1,0 +1,15 @@
+{
+  "model": "/mnt/nvme-raid0/runs/model-2-p2c-50k-20260517/ckpt/epoch-020.apr",
+  "tokens_per_second": 318.3,
+  "total_tokens": 192,
+  "total_time_ms": 603.179,
+  "time_to_first_token_ms": 3.1525,
+  "iterations": 3,
+  "mean_time_ms": 201.059666,
+  "median_time_ms": 201.744,
+  "std_dev_ms": 0.979129,
+  "passed": true,
+  "latency_p50_ms": 201.744,
+  "latency_p95_ms": 201.76,
+  "latency_p99_ms": 201.76
+}
