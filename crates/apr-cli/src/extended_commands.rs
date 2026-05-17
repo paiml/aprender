@@ -1135,12 +1135,32 @@ pub enum ExtendedCommands {
         /// the query side and `1` for the passage side.
         #[arg(long, value_name = "TEXT")]
         query: Option<String>,
-        /// Phase 3b — passage text. Required when `--query` is supplied.
+        /// Phase 3b — passage text. Required when `--query` is supplied
+        /// in single-pair mode (use `--passages` for batch ranking).
         #[arg(long, value_name = "TEXT")]
         passage: Option<String>,
+        /// Phase 5 — batch ranking mode (#326). Passage candidates to
+        /// score against `--query`. May be supplied multiple times:
+        /// `apr rerank model.apr --query "..." --passages "p1" --passages "p2"`.
+        /// Mutually exclusive with `--passage`. Output is one
+        /// `score[i]` line per passage in input order, OR a JSON array
+        /// of `{passage, logit, score}` objects sorted by descending
+        /// score when `--sort` is set.
+        #[arg(long, value_name = "TEXT")]
+        passages: Vec<String>,
+        /// Phase 5 — sort batch output by descending score (highest
+        /// relevance first). Only meaningful with `--passages` and
+        /// `--json`. Default: preserve input order.
+        #[arg(long)]
+        sort: bool,
+        /// Phase 5 — limit to top-K passages after sorting. Implies
+        /// `--sort`. Default 0 (no limit).
+        #[arg(long, default_value_t = 0)]
+        top_k: usize,
         /// Phase 3b — path to a WordPiece `vocab.txt` (one token per line,
         /// line index = token id). Required when `--query` is supplied.
         /// Must contain entries for `[CLS]`, `[SEP]`, and `[UNK]`.
+        /// Phase 4 accepts HuggingFace `tokenizer.json` (extension-detected).
         #[arg(long, value_name = "FILE")]
         vocab: Option<PathBuf>,
         /// Override hidden_dim (default: 384 / MiniLM-L-6).

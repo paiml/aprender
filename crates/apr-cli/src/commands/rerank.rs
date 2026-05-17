@@ -201,6 +201,10 @@ fn tokenize_query_passage(
 /// - **Text mode (Phase 3b)**: caller supplies `--query` + `--passage` +
 ///   `--vocab` and the helper tokenises in-process using
 ///   `aprender::text::tokenize::WordPieceTokenizer`.
+/// - **Batch mode (Phase 5)**: caller supplies `--query` + repeated
+///   `--passages` + `--vocab`. Each passage is scored independently
+///   against the same query. `--sort` orders output by descending
+///   score; `--top-k N` limits to the top N (implies `--sort`).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run(
     model: &Path,
@@ -208,6 +212,9 @@ pub(crate) fn run(
     token_type_ids_str: Option<&str>,
     query: Option<&str>,
     passage: Option<&str>,
+    passages: &[String],
+    sort: bool,
+    top_k: usize,
     vocab: Option<&Path>,
     hidden_dim: usize,
     num_layers: usize,
@@ -221,38 +228,7 @@ pub(crate) fn run(
     raw_logit: bool,
     json: bool,
 ) -> Result<()> {
-    // Resolve the (input_ids, token_type_ids) pair from one of the two modes.
-    let (input_ids, token_type_ids) =
-        match (input_ids_str, token_type_ids_str, query, passage, vocab) {
-            (Some(id_str), Some(tt_str), None, None, None) => {
-                let input_ids = parse_id_list(id_str, "input-ids")?;
-                let token_type_ids = parse_id_list(tt_str, "token-type-ids")?;
-                (input_ids, token_type_ids)
-            }
-            (None, None, Some(q), Some(p), Some(vp)) => tokenize_query_passage(q, p, vp)?,
-            _ => {
-                return Err(CliError::ValidationFailed(
-                    "apr rerank requires EITHER \
-                 (--input-ids AND --token-type-ids) \
-                 OR (--query AND --passage AND --vocab) — not a mix"
-                        .to_string(),
-                ));
-            }
-        };
-
-    if input_ids.is_empty() {
-        return Err(CliError::ValidationFailed(
-            "--input-ids must be non-empty".to_string(),
-        ));
-    }
-    if input_ids.len() != token_type_ids.len() {
-        return Err(CliError::ValidationFailed(format!(
-            "--input-ids ({}) and --token-type-ids ({}) must have the same length",
-            input_ids.len(),
-            token_type_ids.len()
-        )));
-    }
-
+    // Load model once — reused across all passages in batch mode.
     let model_bytes = std::fs::read(model).map_err(|e| {
         CliError::ValidationFailed(format!("Failed to read {}: {e}", model.display()))
     })?;
@@ -279,6 +255,54 @@ pub(crate) fn run(
     cross_encoder
         .load_from_reader(&reader, &config)
         .map_err(|e| CliError::ValidationFailed(format!("BERT weight loading failed: {e}")))?;
+
+    // Phase 5 batch mode: `--query` + repeated `--passages` + `--vocab`.
+    if !passages.is_empty() {
+        return run_batch(
+            &cross_encoder,
+            model,
+            query,
+            passages,
+            vocab,
+            sort,
+            top_k,
+            raw_logit,
+            json,
+        );
+    }
+
+    // Single-pair mode: resolve the (input_ids, token_type_ids) pair.
+    let (input_ids, token_type_ids) =
+        match (input_ids_str, token_type_ids_str, query, passage, vocab) {
+            (Some(id_str), Some(tt_str), None, None, None) => {
+                let input_ids = parse_id_list(id_str, "input-ids")?;
+                let token_type_ids = parse_id_list(tt_str, "token-type-ids")?;
+                (input_ids, token_type_ids)
+            }
+            (None, None, Some(q), Some(p), Some(vp)) => tokenize_query_passage(q, p, vp)?,
+            _ => {
+                return Err(CliError::ValidationFailed(
+                    "apr rerank requires EITHER \
+                 (--input-ids AND --token-type-ids) \
+                 OR (--query AND --passage AND --vocab) \
+                 OR (--query AND --passages... AND --vocab)"
+                        .to_string(),
+                ));
+            }
+        };
+
+    if input_ids.is_empty() {
+        return Err(CliError::ValidationFailed(
+            "--input-ids must be non-empty".to_string(),
+        ));
+    }
+    if input_ids.len() != token_type_ids.len() {
+        return Err(CliError::ValidationFailed(format!(
+            "--input-ids ({}) and --token-type-ids ({}) must have the same length",
+            input_ids.len(),
+            token_type_ids.len()
+        )));
+    }
 
     let logit_tensor = cross_encoder.forward(&input_ids, &token_type_ids);
     let logits: &[f32] = logit_tensor.data();
@@ -310,6 +334,7 @@ pub(crate) fn run(
         return Ok(());
     }
 
+    // Single-pair text-mode output (continues below).
     if raw_logit {
         for (i, &l) in logits.iter().enumerate() {
             println!("logit[{i}] = {l:.6}");
@@ -317,6 +342,94 @@ pub(crate) fn run(
     } else {
         for (i, &l) in logits.iter().enumerate() {
             let score = 1.0 / (1.0 + (-l).exp());
+            println!("score[{i}] = {score:.6}");
+        }
+    }
+    Ok(())
+}
+
+/// Phase 5 — batch ranking. Score each passage in `passages` against
+/// `query` using the loaded `cross_encoder`. Emits one `score[i]` line
+/// per passage (or a JSON array). With `--sort` or `--top-k`, the JSON
+/// array is sorted by descending score and optionally truncated.
+#[allow(clippy::too_many_arguments)]
+fn run_batch(
+    cross_encoder: &CrossEncoder,
+    model: &Path,
+    query: Option<&str>,
+    passages: &[String],
+    vocab: Option<&Path>,
+    sort: bool,
+    top_k: usize,
+    raw_logit: bool,
+    json: bool,
+) -> Result<()> {
+    let (Some(query), Some(vocab)) = (query, vocab) else {
+        return Err(CliError::ValidationFailed(
+            "--passages requires both --query and --vocab".to_string(),
+        ));
+    };
+
+    // Score every (query, passage) pair. Indices preserved so we can
+    // include the original passage text in the JSON output even after
+    // sort.
+    let mut scored: Vec<(usize, f32, f32)> = Vec::with_capacity(passages.len());
+    for (i, p) in passages.iter().enumerate() {
+        let (input_ids, token_type_ids) = tokenize_query_passage(query, p, vocab)?;
+        let logit_tensor = cross_encoder.forward(&input_ids, &token_type_ids);
+        let logit = logit_tensor.data()[0];
+        let score = 1.0 / (1.0 + (-logit).exp());
+        scored.push((i, logit, score));
+    }
+
+    // Sort descending by score if requested OR if --top-k is set.
+    let do_sort = sort || top_k > 0;
+    if do_sort {
+        scored.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+    }
+    let limit = if top_k > 0 {
+        top_k.min(scored.len())
+    } else {
+        scored.len()
+    };
+    let scored = &scored[..limit];
+
+    if json {
+        #[allow(clippy::disallowed_methods)]
+        {
+            let array: Vec<serde_json::Value> = scored
+                .iter()
+                .map(|&(i, logit, score)| {
+                    serde_json::json!({
+                        "index": i,
+                        "passage": passages[i],
+                        "logit": logit,
+                        "score": score,
+                    })
+                })
+                .collect();
+            let payload = serde_json::json!({
+                "model": model.display().to_string(),
+                "query": query,
+                "num_passages": passages.len(),
+                "returned": scored.len(),
+                "sorted": do_sort,
+                "results": array,
+            });
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&payload).unwrap_or_default()
+            );
+        }
+        return Ok(());
+    }
+
+    if raw_logit {
+        for (i, logit, _score) in scored {
+            println!("logit[{i}] = {logit:.6}");
+        }
+    } else {
+        for (i, _logit, score) in scored {
             println!("score[{i}] = {score:.6}");
         }
     }
