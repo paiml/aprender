@@ -1,0 +1,289 @@
+# ─────────────────────────────────────────────────────────────
+# Contract: chinchilla-gate-v1
+# A-priori theoretical falsification gate for apr pretrain.
+# ─────────────────────────────────────────────────────────────
+# Hard-blocks any `apr pretrain --init <apr>` dispatch where the
+# Chinchilla compute-optimal ratio D/N is severely under the
+# Hoffmann et al. 2022 target of 20× (Training Compute-Optimal
+# Large Language Models, arXiv:2203.15556). The threshold for
+# fatal rejection is D/N < 10×; bypassable via the explicit
+# `--force-under-provisioned` flag.
+#
+# Motivation: SPEC-SHIP-TWO-001 §82 P2-A burned ~40 min RTX 4090
+# compute on a 0.04× ratio (D=22M tokens vs N=494M params), only
+# to produce repetitive token gibberish at val_loss=4.71 — the
+# Holtzman et al. 2019 neural-text-degeneration signature. An
+# external audit (docs/specifications/audits/albor-370.md)
+# pre-falsified the planned P2-A2 follow-up via the same math
+# BEFORE dispatch, saving the next 8-hour GPU burn. This contract
+# encodes that lesson as a runtime hard gate so the operator
+# cannot ship under-provisioned runs by accident.
+#
+# Symmetric complement to lesson #18 (predict-then-verify): #30
+# uses prediction to CANCEL a dispatch before the run.
+#
+# Peer:   contracts/training-loop-pretrain-v1.yaml
+# Peer:   contracts/apr-pretrain-from-init-v1.yaml
+# Peer:   contracts/model-families/llama-370m-sovereign-v1.yaml
+#
+# References:
+#   - Hoffmann et al. (2022). Training Compute-Optimal Large
+#     Language Models. arXiv:2203.15556
+#   - Holtzman et al. (2019). The Curious Case of Neural Text
+#     Degeneration. arXiv:1904.09751
+#   - docs/specifications/aprender-train/ship-model-2-spec.md §82, §83
+#   - docs/specifications/aprender-train/albor-370m-roadmap.md §4 P0-J
+#   - docs/specifications/audits/albor-370.md (external audit)
+#   - memory/feedback_a_priori_theoretical_falsification.md
+# ─────────────────────────────────────────────────────────────
+
+contract_id: C-CHINCHILLA-GATE
+version: 1.0.0
+status: PROPOSED
+
+metadata:
+  version: "1.0.0"
+  created: "2026-05-16"
+  updated: "2026-05-16"
+  kind: training-precondition-gate
+  description: >
+    Hard-blocks `apr pretrain --init` dispatches with Chinchilla ratio
+    D/N < 10× per Hoffmann et al. 2022 (arXiv:2203.15556). Operators
+    bypass with --force-under-provisioned. Symmetric complement to
+    methodology lesson #18 predict-then-verify: this gate uses
+    pre-flight prediction to CANCEL a doomed dispatch before any
+    compute is consumed. Motivated by SPEC §82 P2-A's 40-min GPU
+    burn on a 0.04× ratio + the §83 external audit pre-falsification
+    of P2-A2. See docs/specifications/audits/albor-370.md.
+  changelog:
+    - "1.0.0 (2026-05-16): Initial authoring. PR #1710 branch
+       refactor/split-two-model-spec ships the audit-driven §83
+       reprioritization + this hard-gate contract."
+  peer_contracts:
+    - contracts/training-loop-pretrain-v1.yaml
+    - contracts/apr-pretrain-from-init-v1.yaml
+  references:
+    - "arXiv:2203.15556 — Hoffmann et al. 2022 (Chinchilla)"
+    - "arXiv:1904.09751 — Holtzman et al. 2019 (degeneration)"
+    - "docs/specifications/aprender-train/ship-model-2-spec.md §82, §83"
+    - "docs/specifications/audits/albor-370.md"
+
+summary: >
+  Hard-block `apr pretrain --init <apr>` when the ratio of training
+  tokens D = num_steps × batch_size × seq_length to parameter count
+  N (estimated from arch dims) is below 10×. Threshold derives from
+  Hoffmann et al. 2022's empirical compute-optimal ratio of 20·N
+  with a safety floor at 10·N — below 10·N, models reliably exhibit
+  mode collapse / repetitive degeneration regardless of step count.
+
+motivation: >
+  Pre-§83, the apr pretrain Chinchilla check was a soft `eprintln!`
+  warning that operators could ignore. §82's P2-A burned 40 min GPU
+  on a 0.04× ratio; the v1.0.0 roadmap then proposed P2-A2 ("more
+  steps on same corpus") which the audit pre-falsified via the same
+  math. Converting the warning to a hard fail-fast prevents the next
+  wasted compute hour without removing operator flexibility — the
+  `--force-under-provisioned` flag preserves the ability to run
+  ablation studies, resumed runs, and smoke tests that legitimately
+  need to bypass the gate.
+
+# ─── INVARIANTS ──────────────────────────────────────────────
+
+invariants:
+- id: INV-CHINCHILLA-001
+  description: >
+    For every `apr pretrain --init <apr> ...` invocation where the
+    init APR carries arch metadata (hidden_size, num_layers,
+    num_heads, intermediate_size, vocab_size), the CLI MUST compute
+    N = estimate_param_count(arch) and D = num_steps × batch_size
+    × seq_length, then assert D/N ≥ 10.0 OR the operator passed
+    --force-under-provisioned.
+  formal: |
+    ∀ (arch, num_steps, batch_size, seq_length, force) ∈ pretrain_invocation,
+      let N = estimate_param_count(arch),
+          D = num_steps × batch_size × seq_length,
+          ratio = D / N
+      in ratio ≥ 10.0 ∨ force = true ⟹ proceed
+         ratio < 10.0 ∧ force = false ⟹ ABORT with exit 1
+  site: crates/apr-cli/src/commands/pretrain.rs::run
+  rationale: >
+    Hoffmann et al. 2022's compute-optimal ratio is 20·N; 10·N is
+    the safety floor below which observed degeneration is
+    catastrophic (per §82 empirical evidence + Holtzman 2019).
+
+- id: INV-CHINCHILLA-002
+  description: >
+    The --force-under-provisioned flag bypasses the hard gate but
+    MUST emit a loud `[P0-J] Chinchilla gate BYPASSED` stderr line
+    so the override is captured in the run log and post-hoc
+    analysis.
+  formal: |
+    force = true ∧ ratio < 10.0 ⟹ stderr contains "[P0-J] Chinchilla gate BYPASSED"
+  site: crates/apr-cli/src/commands/pretrain.rs::run
+  rationale: >
+    An override that produces no record is invisible to
+    retrospective analysis. The bypass message keeps the audit
+    trail intact.
+
+- id: INV-CHINCHILLA-003
+  description: >
+    From-scratch synthetic runs (no --init) are exempt — the gate
+    only fires when an init checkpoint allows N estimation.
+  formal: |
+    init_arch = None ⟹ skip gate
+  site: crates/apr-cli/src/commands/pretrain.rs::run
+  rationale: >
+    Without an init checkpoint, the CLI cannot estimate N
+    accurately. Synthetic runs are typically smoke tests or
+    ablations where the operator is aware of the scale.
+
+# ─── GATES ───────────────────────────────────────────────────
+
+gates:
+- id: GATE-CHINCHILLA-001
+  invariant: INV-CHINCHILLA-001
+  check: |
+    `apr pretrain --init <under-provisioned.apr> --num-steps 5000
+     --batch-size 16 --seq-length 512` MUST exit non-zero with a
+    stderr message containing "[P0-J] Chinchilla hard gate".
+  enforcement: runtime
+  severity: critical
+
+- id: GATE-CHINCHILLA-002
+  invariant: INV-CHINCHILLA-002
+  check: |
+    `apr pretrain ... --force-under-provisioned ...` against an
+    under-provisioned config MUST proceed past the gate AND emit a
+    stderr line containing "[P0-J] Chinchilla gate BYPASSED".
+  enforcement: runtime
+  severity: high
+
+- id: GATE-CHINCHILLA-003
+  invariant: INV-CHINCHILLA-003
+  check: |
+    `apr pretrain` without `--init` (synthetic / from-scratch)
+    MUST NOT trigger the gate regardless of D/N ratio.
+  enforcement: runtime
+  severity: medium
+
+# ─── FALSIFICATION TESTS ─────────────────────────────────────
+
+falsification_tests:
+- id: FALSIFY-CHINCHILLA-001
+  invariant: INV-CHINCHILLA-001
+  rule: under-provisioned-rejected
+  prediction: >
+    §82 P2-A reproducer — Qwen-0.5B init (N ≈ 494M) with 5000
+    steps × 16 batch × 512 seq = 40.96M tokens → ratio = 0.083×
+    → MUST be rejected with exit 1 and the P0-J message.
+  test_kind: integration
+  site: crates/apr-cli/tests/chinchilla_gate_test.rs
+  expected_exit_code: 1
+  expected_stderr_pattern: '\[P0-J\] Chinchilla hard gate'
+  if_fails: gate failed open — under-provisioned dispatch can ship
+
+- id: FALSIFY-CHINCHILLA-002
+  invariant: INV-CHINCHILLA-002
+  rule: bypass-flag-works
+  prediction: >
+    Same under-provisioned config + --force-under-provisioned MUST
+    pass the gate, emit the BYPASSED message, and proceed to the
+    next pre-flight check.
+  test_kind: integration
+  site: crates/apr-cli/tests/chinchilla_gate_test.rs
+  expected_exit_code: 1
+  expected_stderr_pattern: '\[P0-J\] Chinchilla gate BYPASSED'
+  if_fails: bypass mechanism broken — operators cannot opt in
+
+- id: FALSIFY-CHINCHILLA-003
+  invariant: INV-CHINCHILLA-003
+  rule: no-init-skips-gate
+  prediction: >
+    Synthetic run with no --init MUST NOT trigger the gate. The
+    stderr MUST NOT contain "[P0-J]" or "Chinchilla hard gate".
+  test_kind: integration
+  site: crates/apr-cli/tests/chinchilla_gate_test.rs
+  expected_exit_code: 0
+  expected_stderr_not_pattern: '\[P0-J\] Chinchilla hard gate'
+  if_fails: from-scratch / synthetic runs unfairly blocked by gate
+
+- id: FALSIFY-CHINCHILLA-004
+  invariant: INV-CHINCHILLA-001
+  rule: boundary-at-10x
+  prediction: >
+    Boundary case at D/N = 10.0 exact MUST pass (not strict less-than).
+    D/N = 9.99 MUST fail. The check is `ratio < 10.0`.
+  test_kind: unit
+  site: crates/apr-cli/src/commands/pretrain.rs::tests
+  if_fails: off-by-one at the safety floor — operators near the
+    boundary get inconsistent outcomes
+
+- id: FALSIFY-CHINCHILLA-005
+  invariant: INV-CHINCHILLA-001
+  rule: well-provisioned-silent
+  prediction: >
+    Generous-provisioning case: ratio ≥ 20× emits no warning at all.
+    10× ≤ ratio < 20× emits the [P1-A] warning but proceeds.
+  test_kind: unit
+  site: crates/apr-cli/src/commands/pretrain.rs::tests
+  if_fails: warning-vs-error band is misaligned with the contract
+
+# ─── EQUATIONS ───────────────────────────────────────────────
+
+equations:
+  EQ-CHINCHILLA-001:
+    name: chinchilla_ratio
+    latex: 'D / N = (\text{num\_steps} \times \text{batch\_size} \times \text{seq\_length}) / N'
+    description: >
+      Training-tokens-to-parameters ratio. Hoffmann et al. 2022
+      finds compute-optimal at D/N = 20.
+    runtime_check: |
+      let n_params = estimate_param_count(arch);
+      let d_tokens = num_steps × batch_size × seq_length;
+      assert!(d_tokens >= 10 * n_params || force_under_provisioned,
+              "Chinchilla hard gate: D/N < 10× rejected");
+
+  EQ-CHINCHILLA-002:
+    name: compute_optimal_steps
+    latex: '\text{num\_steps}^* = (20 \times N) / (\text{batch\_size} \times \text{seq\_length})'
+    description: >
+      Suggested num_steps to reach Chinchilla compute-optimal target.
+      Surfaced in the error message to guide the operator.
+
+# ─── PROOF OBLIGATIONS ───────────────────────────────────────
+
+proof_obligations:
+- type: precondition
+  property: Chinchilla D/N ≥ 10× required for compute-optimal training before any GPU dispatch
+  formal: 'D/N < 10 ∧ ¬force_under_provisioned ⟹ ABORT exit 1'
+  applies_to: all
+- type: invariant
+  property: Bypass flag preserves audit trail via BYPASSED log line
+  formal: 'force_under_provisioned ∧ D/N < 10 ⟹ stderr ∋ "[P0-J] Chinchilla gate BYPASSED"'
+- type: safety
+  property: From-scratch / synthetic runs (no --init) are exempt from the gate
+  formal: 'init_arch = None ⟹ gate skipped'
+  applies_to: all
+
+# ─── REFERENCES ──────────────────────────────────────────────
+
+references:
+  - id: hoffmann_2022
+    citation: >
+      Hoffmann, J., Borgeaud, S., Mensch, A., et al. (2022).
+      Training Compute-Optimal Large Language Models.
+      arXiv:2203.15556.
+    url: https://arxiv.org/abs/2203.15556
+    relevance: Source of the 20·N compute-optimal target
+
+  - id: holtzman_2019
+    citation: >
+      Holtzman, A., Buys, J., Du, L., Forbes, M., & Choi, Y. (2019).
+      The Curious Case of Neural Text Degeneration.
+      arXiv:1904.09751.
+    url: https://arxiv.org/abs/1904.09751
+    relevance: Explains repetitive-token degeneration at low D/N ratios
+
+  - id: spec_82_audit
+    citation: docs/specifications/audits/albor-370.md
+    relevance: External audit that motivated this contract

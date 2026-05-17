@@ -9158,11 +9158,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'P0-J: Chinchilla gate — warning → hard blocker'
-  status: planned
+  status: inprogress
   priority: critical
   assigned_to: null
   created: 2026-05-16T07:15:09Z
-  updated: 2026-05-16T07:15:09Z
+  updated: 2026-05-16T13:22:20.550551062+00:00
   spec: null
   acceptance_criteria:
   - 'Convert PR #1708 stderr warning to fail-fast error when D/N < 10× in apr pretrain; add --force-under-provisioned bypass flag. Author contracts/chinchilla-gate-v1.yaml with FALSIFY tests. Audit Rec #2 (audits/albor-370.md). Effort: 1-2h. Δship +1 (prevention). P=95%. See §83.2.'
