@@ -141,6 +141,7 @@
                 filters: false,
                 weights: false,
                 json: false,
+                quality: false,
             },
             Commands::Debug {
                 file: PathBuf::from("m.apr"),

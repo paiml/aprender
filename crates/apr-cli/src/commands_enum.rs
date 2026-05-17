@@ -156,6 +156,19 @@ pub enum Commands {
         /// Output as JSON
         #[arg(long)]
         json: bool,
+        /// Emit a 0-100 model quality score block.
+        ///
+        /// Per SPEC-SHIP-TWO-001 §84 P3-A (AC-SHIP2-007 quality
+        /// threshold ≥ 90). The score aggregates: physics checks
+        /// (no NaN/Inf, no all-zero tensors), structural
+        /// completeness (architecture / hidden_size / num_layers
+        /// metadata present), provenance (license + data_source +
+        /// data_license non-empty), HF identity (hf_architecture
+        /// stamped per PMAT-690 P0-K), and tokenizer presence
+        /// (has_vocab + embedded merges). A ship-blocking model
+        /// MUST score ≥ 90 by this rubric.
+        #[arg(long)]
+        quality: bool,
     },
     /// Simple debugging output ("drama" mode available)
     Debug {
