@@ -32,18 +32,28 @@ fn good_body() -> &'static str {
 
 #[test]
 fn falsify_crux_f_18_cli_help_advertises_flags() {
-    let out = apr_binary().args(["embed-viz-lint", "--help"]).output().expect("run");
+    let out = apr_binary()
+        .args(["embed-viz-lint", "--help"])
+        .output()
+        .expect("run");
     assert!(out.status.success(), "--help must exit 0");
     let stdout = String::from_utf8_lossy(&out.stdout);
     for flag in ["--csv-file", "--expected-vocab-size", "--csv-file-b"] {
-        assert!(stdout.contains(flag), "--help must advertise {flag}; got:\n{stdout}");
+        assert!(
+            stdout.contains(flag),
+            "--help must advertise {flag}; got:\n{stdout}"
+        );
     }
 }
 
 #[test]
 fn falsify_crux_f_18_cli_missing_file_fails() {
     let out = apr_binary()
-        .args(["embed-viz-lint", "--csv-file", "/nonexistent/crux-f-18-missing.csv"])
+        .args([
+            "embed-viz-lint",
+            "--csv-file",
+            "/nonexistent/crux-f-18-missing.csv",
+        ])
         .output()
         .expect("run");
     assert!(!out.status.success(), "missing file must not exit 0");
@@ -189,6 +199,12 @@ fn falsify_crux_f_18_json_output_contains_outcomes() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("json output must parse");
     assert!(parsed["schema"].as_str().expect("schema").contains("Ok"));
-    assert!(parsed["row_count"].as_str().expect("row_count").contains("Ok"));
-    assert!(parsed["determinism"].as_str().expect("determinism").contains("Ok"));
+    assert!(parsed["row_count"]
+        .as_str()
+        .expect("row_count")
+        .contains("Ok"));
+    assert!(parsed["determinism"]
+        .as_str()
+        .expect("determinism")
+        .contains("Ok"));
 }

@@ -1206,8 +1206,7 @@ pub(crate) fn run_encode_corpus(
     // when all files share a single format, expose (files, format); when
     // mixed, treat as Parquet for estimate sizing (the dominant case)
     // and use the per-file tagged dispatch for the actual encode loop.
-    let files: Vec<std::path::PathBuf> =
-        tagged_files.iter().map(|(p, _)| p.clone()).collect();
+    let files: Vec<std::path::PathBuf> = tagged_files.iter().map(|(p, _)| p.clone()).collect();
     let unique_formats: std::collections::HashSet<CorpusFormat> =
         tagged_files.iter().map(|(_, f)| *f).collect();
     let corpus_format = if unique_formats.len() == 1 {
@@ -3157,7 +3156,10 @@ mod tests {
         let corpus_a = write_corpus_file(
             tmp.path(),
             "src_a.jsonl",
-            &[r#"{"content": "alpha alpha alpha"}"#, r#"{"content": "alpha beta"}"#],
+            &[
+                r#"{"content": "alpha alpha alpha"}"#,
+                r#"{"content": "alpha beta"}"#,
+            ],
         );
         let corpus_b = write_corpus_file(
             tmp.path(),
@@ -3182,7 +3184,10 @@ mod tests {
             EstimateConfig::default(),
             true,
         );
-        assert!(result.is_ok(), "multi-corpus encode must succeed: {result:?}");
+        assert!(
+            result.is_ok(),
+            "multi-corpus encode must succeed: {result:?}"
+        );
 
         // Manifest reports total_docs that sums BOTH sources (2 + 1 = 3).
         let manifest_path = out.join("manifest.json");
@@ -3219,8 +3224,7 @@ mod tests {
             "corpus_roots must list exactly 2 sources (src_a + src_b), got {}",
             corpus_roots.len(),
         );
-        let root_strs: Vec<&str> =
-            corpus_roots.iter().filter_map(|v| v.as_str()).collect();
+        let root_strs: Vec<&str> = corpus_roots.iter().filter_map(|v| v.as_str()).collect();
         assert!(
             root_strs.iter().any(|s| s.contains("src_a.jsonl")),
             "corpus_roots must reference src_a, got {root_strs:?}",

@@ -226,9 +226,9 @@ pub fn unshard_safetensors_dir(
     // Visit tensors in weight_map insertion order. We preserve insertion order
     // because that is what the contract spec requires for the round-trip.
     for (tensor_name, shard_name) in &index.weight_map {
-        let st = by_shard.get(shard_name.as_str()).ok_or_else(|| {
-            UnshardError::Invalid(format!("shard not loaded: {shard_name}"))
-        })?;
+        let st = by_shard
+            .get(shard_name.as_str())
+            .ok_or_else(|| UnshardError::Invalid(format!("shard not loaded: {shard_name}")))?;
         let view = st.tensor(tensor_name).map_err(|e| {
             UnshardError::Invalid(format!(
                 "tensor '{tensor_name}' declared in weight_map but not present in shard {shard_name}: {e}"
@@ -246,11 +246,12 @@ pub fn unshard_safetensors_dir(
         }
     }
 
-    let view_refs: Vec<(&str, TensorView<'_>)> =
-        all_views.iter().map(|(n, v)| (n.as_str(), v.clone())).collect();
+    let view_refs: Vec<(&str, TensorView<'_>)> = all_views
+        .iter()
+        .map(|(n, v)| (n.as_str(), v.clone()))
+        .collect();
 
-    let serialized = safetensors::serialize(view_refs, &None)
-        .map_err(UnshardError::SafeTensors)?;
+    let serialized = safetensors::serialize(view_refs, &None).map_err(UnshardError::SafeTensors)?;
 
     if let Some(parent) = output.parent() {
         if !parent.as_os_str().is_empty() {

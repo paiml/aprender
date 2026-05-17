@@ -263,13 +263,21 @@ fn falsify_ffn_gguf_017_real_teacher_28_layer_chain_residual() {
     eprintln!("  layers measured:       {actual_layers_measured} of {NUM_LAYERS}");
     eprintln!("  min rel_diff:          {:.6}% ({:.6e})", min * 100.0, min);
     eprintln!("  max rel_diff:          {:.6}% ({:.6e})", max * 100.0, max);
-    eprintln!("  mean rel_diff:         {:.6}% ({:.6e})", mean * 100.0, mean);
+    eprintln!(
+        "  mean rel_diff:         {:.6}% ({:.6e})",
+        mean * 100.0,
+        mean
+    );
     eprintln!(
         "  first-nonzero rel_diff: {:.6}% ({:.6e})",
         first_nonzero * 100.0,
         first_nonzero
     );
-    eprintln!("  last rel_diff:         {:.6}% ({:.6e})", last * 100.0, last);
+    eprintln!(
+        "  last rel_diff:         {:.6}% ({:.6e})",
+        last * 100.0,
+        last
+    );
     eprintln!("  total growth factor:   {total_growth:.4}× (last / first-nonzero)");
     eprintln!(
         "  saturation events:     {saturation_events} of {} transitions",

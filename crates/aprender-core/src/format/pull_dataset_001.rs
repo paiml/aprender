@@ -91,10 +91,7 @@ pub enum PullDataset001Verdict {
 /// assert_eq!(v, PullDataset001Verdict::Fail);
 /// ```
 #[must_use]
-pub fn verdict_from_help_output_flags(
-    help_stdout: &[u8],
-    exit_code: i32,
-) -> PullDataset001Verdict {
+pub fn verdict_from_help_output_flags(help_stdout: &[u8], exit_code: i32) -> PullDataset001Verdict {
     if exit_code != 0 {
         return PullDataset001Verdict::Fail;
     }
@@ -134,7 +131,10 @@ mod tests {
 
     #[test]
     fn provenance_license_allowlist_flag_substring() {
-        assert_eq!(AC_PULL_DATASET_001_FLAG_LICENSE_ALLOWLIST, b"--license-allowlist");
+        assert_eq!(
+            AC_PULL_DATASET_001_FLAG_LICENSE_ALLOWLIST,
+            b"--license-allowlist"
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -268,7 +268,11 @@ Usage: apr pull dataset [OPTIONS] <REPO>
         // "--includes" or "--inclu" should not match "--include".
         let stdout = b"--includes <GLOB>  --license-allowlist <LIST>";
         let v = verdict_from_help_output_flags(stdout, 0);
-        assert_eq!(v, PullDataset001Verdict::Pass, "substring of --includes contains --include");
+        assert_eq!(
+            v,
+            PullDataset001Verdict::Pass,
+            "substring of --includes contains --include"
+        );
         // Note: this is a known weakness of substring matching.
         // The test documents the behavior; if stricter word-boundary
         // matching is needed, the verdict should be promoted to
@@ -280,11 +284,7 @@ Usage: apr pull dataset [OPTIONS] <REPO>
         // "--license-allow" doesn't contain "--license-allowlist".
         let stdout = b"--include <GLOB>  --license-allow <LIST>";
         let v = verdict_from_help_output_flags(stdout, 0);
-        assert_eq!(
-            v,
-            PullDataset001Verdict::Fail,
-            "shorter typo must Fail"
-        );
+        assert_eq!(v, PullDataset001Verdict::Fail, "shorter typo must Fail");
     }
 
     // -------------------------------------------------------------------------
@@ -294,10 +294,22 @@ Usage: apr pull dataset [OPTIONS] <REPO>
     fn matrix_only_zero_exit_with_both_flags_passes() {
         let cases: Vec<(&[u8], i32, PullDataset001Verdict)> = vec![
             // Pass case
-            (b"--include --license-allowlist", 0, PullDataset001Verdict::Pass),
+            (
+                b"--include --license-allowlist",
+                0,
+                PullDataset001Verdict::Pass,
+            ),
             // Wrong exit
-            (b"--include --license-allowlist", 1, PullDataset001Verdict::Fail),
-            (b"--include --license-allowlist", -1, PullDataset001Verdict::Fail),
+            (
+                b"--include --license-allowlist",
+                1,
+                PullDataset001Verdict::Fail,
+            ),
+            (
+                b"--include --license-allowlist",
+                -1,
+                PullDataset001Verdict::Fail,
+            ),
             // Empty stdout
             (b"", 0, PullDataset001Verdict::Fail),
             // Missing flags

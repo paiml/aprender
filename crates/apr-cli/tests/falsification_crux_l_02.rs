@@ -20,8 +20,12 @@ fn write_json(body: &serde_json::Value) -> tempfile::NamedTempFile {
         .suffix(".json")
         .tempfile()
         .expect("tempfile");
-    f.write_all(serde_json::to_vec_pretty(body).expect("serialize").as_slice())
-        .expect("write");
+    f.write_all(
+        serde_json::to_vec_pretty(body)
+            .expect("serialize")
+            .as_slice(),
+    )
+    .expect("write");
     f.flush().expect("flush");
     f
 }
@@ -42,7 +46,10 @@ fn good_provenance() -> serde_json::Value {
 
 #[test]
 fn falsify_crux_l_02_cli_help_advertises_flags() {
-    let out = apr_binary().args(["attn-parity-lint", "--help"]).output().expect("run");
+    let out = apr_binary()
+        .args(["attn-parity-lint", "--help"])
+        .output()
+        .expect("run");
     assert!(out.status.success(), "--help must exit 0");
     let stdout = String::from_utf8_lossy(&out.stdout);
     for flag in [
@@ -52,13 +59,19 @@ fn falsify_crux_l_02_cli_help_advertises_flags() {
         "--tol-abs",
         "--tol-cos",
     ] {
-        assert!(stdout.contains(flag), "--help must advertise {flag}; got:\n{stdout}");
+        assert!(
+            stdout.contains(flag),
+            "--help must advertise {flag}; got:\n{stdout}"
+        );
     }
 }
 
 #[test]
 fn falsify_crux_l_02_cli_requires_at_least_one_file() {
-    let out = apr_binary().args(["attn-parity-lint"]).output().expect("run");
+    let out = apr_binary()
+        .args(["attn-parity-lint"])
+        .output()
+        .expect("run");
     assert!(!out.status.success(), "bare invocation must not exit 0");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
@@ -218,6 +231,12 @@ fn falsify_crux_l_02_json_output_contains_outcomes() {
     assert!(out.status.success(), "json + good bodies must exit 0");
     let stdout = String::from_utf8_lossy(&out.stdout);
     let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("json output must parse");
-    assert!(parsed["parity_numerics"].as_str().expect("parity").contains("Ok"));
-    assert!(parsed["provenance"].as_str().expect("provenance").contains("OkFlash2"));
+    assert!(parsed["parity_numerics"]
+        .as_str()
+        .expect("parity")
+        .contains("Ok"));
+    assert!(parsed["provenance"]
+        .as_str()
+        .expect("provenance")
+        .contains("OkFlash2"));
 }

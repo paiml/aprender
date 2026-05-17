@@ -20,8 +20,12 @@ fn write_json(body: &serde_json::Value) -> tempfile::NamedTempFile {
         .suffix(".json")
         .tempfile()
         .expect("tempfile");
-    f.write_all(serde_json::to_vec_pretty(body).expect("serialize").as_slice())
-        .expect("write");
+    f.write_all(
+        serde_json::to_vec_pretty(body)
+            .expect("serialize")
+            .as_slice(),
+    )
+    .expect("write");
     f.flush().expect("flush");
     f
 }
@@ -48,18 +52,28 @@ fn good_max_iterations() -> serde_json::Value {
 
 #[test]
 fn falsify_crux_i_06_cli_help_advertises_flags() {
-    let out = apr_binary().args(["react-trace-lint", "--help"]).output().expect("run");
+    let out = apr_binary()
+        .args(["react-trace-lint", "--help"])
+        .output()
+        .expect("run");
     assert!(out.status.success(), "--help must exit 0");
     let stdout = String::from_utf8_lossy(&out.stdout);
     for flag in ["--trace-file", "--max-iterations", "--require-grammar"] {
-        assert!(stdout.contains(flag), "--help must advertise {flag}; got:\n{stdout}");
+        assert!(
+            stdout.contains(flag),
+            "--help must advertise {flag}; got:\n{stdout}"
+        );
     }
 }
 
 #[test]
 fn falsify_crux_i_06_cli_missing_file_fails() {
     let out = apr_binary()
-        .args(["react-trace-lint", "--trace-file", "/nonexistent/crux-i-06-missing.json"])
+        .args([
+            "react-trace-lint",
+            "--trace-file",
+            "/nonexistent/crux-i-06-missing.json",
+        ])
         .output()
         .expect("run");
     assert!(!out.status.success(), "missing file must not exit 0");
@@ -218,7 +232,16 @@ fn falsify_crux_i_06_json_output_contains_outcomes() {
     assert!(out.status.success(), "json + good body must exit 0");
     let stdout = String::from_utf8_lossy(&out.stdout);
     let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("json output must parse");
-    assert!(parsed["termination"].as_str().expect("termination").contains("Ok"));
-    assert!(parsed["iteration_bound"].as_str().expect("iteration_bound").contains("Ok"));
-    assert!(parsed["scratchpad_grammar"].as_str().expect("scratchpad_grammar").contains("Ok"));
+    assert!(parsed["termination"]
+        .as_str()
+        .expect("termination")
+        .contains("Ok"));
+    assert!(parsed["iteration_bound"]
+        .as_str()
+        .expect("iteration_bound")
+        .contains("Ok"));
+    assert!(parsed["scratchpad_grammar"]
+        .as_str()
+        .expect("scratchpad_grammar")
+        .contains("Ok"));
 }

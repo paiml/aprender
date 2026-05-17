@@ -272,12 +272,12 @@ fn load_unified_tokenizer(
             path.display()
         ))
     })?;
-    let model = json
-        .get("model")
-        .ok_or_else(|| CliError::ValidationFailed(format!(
+    let model = json.get("model").ok_or_else(|| {
+        CliError::ValidationFailed(format!(
             "apr stamp --tokenizer: {} missing `model` field",
             path.display()
-        )))?;
+        ))
+    })?;
     let model_type = model
         .get("type")
         .and_then(|v| v.as_str())
@@ -285,10 +285,12 @@ fn load_unified_tokenizer(
     let vocab_obj = model
         .get("vocab")
         .and_then(|v| v.as_object())
-        .ok_or_else(|| CliError::ValidationFailed(format!(
-            "apr stamp --tokenizer: {} missing `model.vocab`",
-            path.display()
-        )))?;
+        .ok_or_else(|| {
+            CliError::ValidationFailed(format!(
+                "apr stamp --tokenizer: {} missing `model.vocab`",
+                path.display()
+            ))
+        })?;
     let mut pairs: Vec<(u64, String)> = vocab_obj
         .iter()
         .filter_map(|(tok, id)| id.as_u64().map(|n| (n, tok.clone())))
@@ -376,7 +378,9 @@ mod tests {
         let output = dir.path().join("output.apr");
         write_unpopulated_apr(&input);
 
-        let result = run(&input, None, None, None, None, None, None, None, &output, false, true);
+        let result = run(
+            &input, None, None, None, None, None, None, None, &output, false, true,
+        );
         let err = result.unwrap_err();
         let msg = format!("{err:?}");
         assert!(
@@ -396,7 +400,19 @@ mod tests {
         let input = dir.path().join("does-not-exist.apr");
         let output = dir.path().join("output.apr");
 
-        let result = run(&input, Some("Apache-2.0"), None, None, None, None, None, None, &output, false, true);
+        let result = run(
+            &input,
+            Some("Apache-2.0"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            &output,
+            false,
+            true,
+        );
         let err = result.unwrap_err();
         // CliError::FileNotFound — exact variant, not just substring match.
         assert!(
@@ -567,7 +583,8 @@ mod tests {
             Some("Qwen2ForCausalLM")
         );
         assert_eq!(
-            reader.metadata().hf_model_type, None,
+            reader.metadata().hf_model_type,
+            None,
             "unpatched field must remain None"
         );
     }
@@ -592,7 +609,11 @@ mod tests {
         let vocab_json = r#"{"<unk>": 0, "Ġ": 1, "the": 2}"#;
         fs::write(tok_dir.join("vocab.json"), vocab_json).unwrap();
         // merges.txt
-        fs::write(tok_dir.join("merges.txt"), "#version: 0.2\nĠ t\nh e\nĠt he\n").unwrap();
+        fs::write(
+            tok_dir.join("merges.txt"),
+            "#version: 0.2\nĠ t\nh e\nĠt he\n",
+        )
+        .unwrap();
 
         let result = run(
             &input,
@@ -667,9 +688,17 @@ mod tests {
         fs::write(tok_dir.join("vocab.json"), r#"{"a": 0}"#).unwrap();
 
         let result = run(
-            &input, None, None, None, None, None, None,
+            &input,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
             Some(&tok_dir),
-            &output, false, true,
+            &output,
+            false,
+            true,
         );
         assert!(
             result.is_ok(),
@@ -689,9 +718,17 @@ mod tests {
         fs::create_dir_all(&empty_tok).unwrap();
 
         let result = run(
-            &input, None, None, None, None, None, None,
+            &input,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
             Some(&empty_tok),
-            &output, false, true,
+            &output,
+            false,
+            true,
         );
         let err = result.unwrap_err();
         let msg = format!("{err:?}");

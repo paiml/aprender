@@ -35,7 +35,10 @@ fn good_body() -> String {
 
 #[test]
 fn falsify_crux_f_19_cli_help_advertises_flags() {
-    let out = apr_binary().args(["explain-token-lint", "--help"]).output().expect("run");
+    let out = apr_binary()
+        .args(["explain-token-lint", "--help"])
+        .output()
+        .expect("run");
     assert!(out.status.success(), "--help must exit 0");
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
@@ -55,7 +58,11 @@ fn falsify_crux_f_19_cli_help_advertises_flags() {
 #[test]
 fn falsify_crux_f_19_cli_missing_file_fails() {
     let out = apr_binary()
-        .args(["explain-token-lint", "--jsonl-file", "/nonexistent/crux-f-19-missing.jsonl"])
+        .args([
+            "explain-token-lint",
+            "--jsonl-file",
+            "/nonexistent/crux-f-19-missing.jsonl",
+        ])
         .output()
         .expect("run");
     assert!(!out.status.success(), "missing file must not exit 0");
@@ -106,7 +113,10 @@ fn falsify_crux_f_19_002_sampled_in_candidates_rejects_missing() {
         .arg(f.path())
         .output()
         .expect("run");
-    assert!(!out.status.success(), "sampled_id not in candidates must fail");
+    assert!(
+        !out.status.success(),
+        "sampled_id not in candidates must fail"
+    );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.contains("SampledNotInCandidates"),
@@ -160,7 +170,10 @@ fn falsify_crux_f_19_001_schema_rejects_empty_body() {
         .expect("run");
     assert!(!out.status.success(), "empty body must fail");
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("Empty"), "stderr must name Empty; got:\n{stderr}");
+    assert!(
+        stderr.contains("Empty"),
+        "stderr must name Empty; got:\n{stderr}"
+    );
 }
 
 #[test]
@@ -213,7 +226,16 @@ fn falsify_crux_f_19_json_output_contains_outcomes() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("json output must parse");
     assert!(parsed["schema"].as_str().expect("schema").contains("Ok"));
-    assert!(parsed["probs_normalize"].as_str().expect("probs").contains("Ok"));
-    assert!(parsed["sampled_in_candidates"].as_str().expect("sampled").contains("Ok"));
-    assert!(parsed["greedy_picks_argmax"].as_str().expect("greedy").contains("Ok"));
+    assert!(parsed["probs_normalize"]
+        .as_str()
+        .expect("probs")
+        .contains("Ok"));
+    assert!(parsed["sampled_in_candidates"]
+        .as_str()
+        .expect("sampled")
+        .contains("Ok"));
+    assert!(parsed["greedy_picks_argmax"]
+        .as_str()
+        .expect("greedy")
+        .contains("Ok"));
 }
