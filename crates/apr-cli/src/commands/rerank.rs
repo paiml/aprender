@@ -20,6 +20,7 @@
 use crate::error::{CliError, Result};
 use aprender::format::v2::AprV2Reader;
 use aprender::models::bert::{BertConfig, CrossEncoder};
+use std::collections::HashMap;
 use std::path::Path;
 
 /// Parse a comma-delimited list of `u32` IDs.
@@ -35,13 +36,98 @@ fn parse_id_list(s: &str, flag: &str) -> Result<Vec<u32>> {
         .collect()
 }
 
+/// Load a WordPiece `vocab.txt`: one token per line, line index = id (GH-326 Phase 3b).
+///
+/// Tokens with trailing whitespace are trimmed; empty lines become an empty
+/// string token (which is harmless because real BERT vocabs never contain
+/// empty strings). The returned map is suitable for
+/// `WordPieceTokenizer::from_vocab`.
+fn load_vocab_txt(path: &Path) -> Result<HashMap<String, u32>> {
+    let text = std::fs::read_to_string(path).map_err(|e| {
+        CliError::ValidationFailed(format!("Failed to read vocab {}: {e}", path.display()))
+    })?;
+    let mut map = HashMap::new();
+    for (i, line) in text.lines().enumerate() {
+        map.insert(line.trim_end().to_string(), i as u32);
+    }
+    Ok(map)
+}
+
+/// Tokenise `[CLS] query [SEP] passage [SEP]` using a WordPiece vocab
+/// (GH-326 Phase 3b). Returns `(input_ids, token_type_ids)` ready to feed
+/// `CrossEncoder::forward`.
+///
+/// `token_type_ids` is 0 for the `[CLS]`+query+first `[SEP]` segment and 1
+/// for the passage+second `[SEP]` segment, matching the HuggingFace BERT
+/// cross-encoder convention.
+fn tokenize_query_passage(
+    query: &str,
+    passage: &str,
+    vocab_path: &Path,
+) -> Result<(Vec<u32>, Vec<u32>)> {
+    use aprender::text::tokenize::WordPieceTokenizer;
+
+    let vocab = load_vocab_txt(vocab_path)?;
+    let cls_id = *vocab.get("[CLS]").ok_or_else(|| {
+        CliError::ValidationFailed(format!(
+            "vocab {} missing required token [CLS]",
+            vocab_path.display()
+        ))
+    })?;
+    let sep_id = *vocab.get("[SEP]").ok_or_else(|| {
+        CliError::ValidationFailed(format!(
+            "vocab {} missing required token [SEP]",
+            vocab_path.display()
+        ))
+    })?;
+    // [UNK] presence is verified by WordPieceTokenizer::from_vocab at encode
+    // time; we surface a clearer error here if the user passes the wrong file.
+    if !vocab.contains_key("[UNK]") {
+        return Err(CliError::ValidationFailed(format!(
+            "vocab {} missing required token [UNK]",
+            vocab_path.display()
+        )));
+    }
+
+    let tokenizer = WordPieceTokenizer::from_vocab(vocab);
+    let q_ids = tokenizer
+        .encode(query)
+        .map_err(|e| CliError::ValidationFailed(format!("query tokenisation failed: {e:?}")))?;
+    let p_ids = tokenizer
+        .encode(passage)
+        .map_err(|e| CliError::ValidationFailed(format!("passage tokenisation failed: {e:?}")))?;
+
+    let mut input_ids = Vec::with_capacity(1 + q_ids.len() + 1 + p_ids.len() + 1);
+    input_ids.push(cls_id);
+    input_ids.extend(&q_ids);
+    input_ids.push(sep_id);
+    input_ids.extend(&p_ids);
+    input_ids.push(sep_id);
+
+    let mut token_type_ids = Vec::with_capacity(input_ids.len());
+    token_type_ids.extend(std::iter::repeat_n(0u32, 1 + q_ids.len() + 1));
+    token_type_ids.extend(std::iter::repeat_n(1u32, p_ids.len() + 1));
+
+    Ok((input_ids, token_type_ids))
+}
+
 /// Entry point for `apr rerank` — loads the model, scores the pair, prints
 /// the relevance probability (or raw logit) as text or JSON.
+///
+/// Two input modes:
+/// - **ID mode (Phase 3)**: caller supplies `--input-ids` + `--token-type-ids`
+///   as comma-delimited u32 lists.
+/// - **Text mode (Phase 3b)**: caller supplies `--query` + `--passage` +
+///   `--vocab` and the helper tokenises in-process using
+///   `aprender::text::tokenize::WordPieceTokenizer`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run(
     model: &Path,
-    input_ids_str: &str,
-    token_type_ids_str: &str,
+    input_ids_str: Option<&str>,
+    token_type_ids_str: Option<&str>,
+    query: Option<&str>,
+    passage: Option<&str>,
+    vocab: Option<&Path>,
     hidden_dim: usize,
     num_layers: usize,
     num_heads: usize,
@@ -54,8 +140,24 @@ pub(crate) fn run(
     raw_logit: bool,
     json: bool,
 ) -> Result<()> {
-    let input_ids = parse_id_list(input_ids_str, "input-ids")?;
-    let token_type_ids = parse_id_list(token_type_ids_str, "token-type-ids")?;
+    // Resolve the (input_ids, token_type_ids) pair from one of the two modes.
+    let (input_ids, token_type_ids) =
+        match (input_ids_str, token_type_ids_str, query, passage, vocab) {
+            (Some(id_str), Some(tt_str), None, None, None) => {
+                let input_ids = parse_id_list(id_str, "input-ids")?;
+                let token_type_ids = parse_id_list(tt_str, "token-type-ids")?;
+                (input_ids, token_type_ids)
+            }
+            (None, None, Some(q), Some(p), Some(vp)) => tokenize_query_passage(q, p, vp)?,
+            _ => {
+                return Err(CliError::ValidationFailed(
+                    "apr rerank requires EITHER \
+                 (--input-ids AND --token-type-ids) \
+                 OR (--query AND --passage AND --vocab) — not a mix"
+                        .to_string(),
+                ));
+            }
+        };
 
     if input_ids.is_empty() {
         return Err(CliError::ValidationFailed(
@@ -174,5 +276,74 @@ mod tests {
             parse_id_list("1,2,3,", "input-ids").unwrap(),
             vec![1u32, 2, 3]
         );
+    }
+
+    /// Phase 3b — `load_vocab_txt` round-trip: each line index maps to the
+    /// trimmed line content.
+    #[test]
+    fn load_vocab_txt_assigns_line_index_as_id() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("vocab.txt");
+        std::fs::write(&path, "[PAD]\n[UNK]\n[CLS]\n[SEP]\nhello\n##world\n").unwrap();
+        let map = load_vocab_txt(&path).expect("load");
+        assert_eq!(map.get("[PAD]").copied(), Some(0));
+        assert_eq!(map.get("[UNK]").copied(), Some(1));
+        assert_eq!(map.get("[CLS]").copied(), Some(2));
+        assert_eq!(map.get("[SEP]").copied(), Some(3));
+        assert_eq!(map.get("hello").copied(), Some(4));
+        assert_eq!(map.get("##world").copied(), Some(5));
+    }
+
+    /// Phase 3b — `tokenize_query_passage` emits `[CLS] q [SEP] p [SEP]`
+    /// with `token_type_ids` 0 for query side, 1 for passage side.
+    #[test]
+    fn tokenize_query_passage_builds_correct_segment_pair() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("vocab.txt");
+        // Minimal vocab: specials + words our test prompt uses (lower-case
+        // because WordPieceTokenizer lower-cases input by default).
+        std::fs::write(
+            &path,
+            "[PAD]\n[UNK]\n[CLS]\n[SEP]\nhello\nworld\nfoo\nbar\n",
+        )
+        .unwrap();
+        let (input_ids, token_type_ids) =
+            tokenize_query_passage("hello world", "foo bar", &path).expect("tokenize");
+
+        // [CLS]=2, hello=4, world=5, [SEP]=3, foo=6, bar=7, [SEP]=3.
+        assert_eq!(input_ids, vec![2u32, 4, 5, 3, 6, 7, 3]);
+        // token_type_ids: 0 for [CLS]+query+first [SEP] (4 tokens), 1 for
+        // passage+second [SEP] (3 tokens).
+        assert_eq!(token_type_ids, vec![0u32, 0, 0, 0, 1, 1, 1]);
+    }
+
+    /// Phase 3b — `tokenize_query_passage` rejects vocabs missing required
+    /// special tokens with a clear error.
+    #[test]
+    fn tokenize_query_passage_rejects_missing_cls() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("vocab.txt");
+        // No [CLS] in this vocab — should error.
+        std::fs::write(&path, "[PAD]\n[UNK]\n[SEP]\nhello\n").unwrap();
+        let err =
+            tokenize_query_passage("hello", "world", &path).expect_err("missing [CLS] must reject");
+        match err {
+            CliError::ValidationFailed(msg) => assert!(msg.contains("[CLS]"), "{msg}"),
+            _ => panic!("expected ValidationFailed"),
+        }
+    }
+
+    /// Phase 3b — `tokenize_query_passage` rejects vocabs missing `[SEP]`.
+    #[test]
+    fn tokenize_query_passage_rejects_missing_sep() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("vocab.txt");
+        std::fs::write(&path, "[PAD]\n[UNK]\n[CLS]\nhello\n").unwrap();
+        let err =
+            tokenize_query_passage("hello", "world", &path).expect_err("missing [SEP] must reject");
+        match err {
+            CliError::ValidationFailed(msg) => assert!(msg.contains("[SEP]"), "{msg}"),
+            _ => panic!("expected ValidationFailed"),
+        }
     }
 }
