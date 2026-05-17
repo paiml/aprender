@@ -92,6 +92,24 @@ impl LayerNorm {
     pub fn normalized_shape(&self) -> &[usize] {
         &self.normalized_shape
     }
+
+    /// Set the affine weight (γ) tensor from pre-trained data (GH-326).
+    ///
+    /// Used by BERT / Llama / similar model loaders that materialise weights
+    /// from disk into a previously-constructed `LayerNorm`. Caller is
+    /// responsible for passing a tensor whose shape matches `normalized_shape`.
+    pub fn set_weight(&mut self, weight: Tensor) {
+        self.weight = weight;
+    }
+
+    /// Set the affine bias (β) tensor from pre-trained data (GH-326).
+    ///
+    /// Used by model loaders. Caller is responsible for shape match against
+    /// `normalized_shape`. For non-bias variants (e.g. RMSNorm), construct
+    /// via `LayerNorm::without_affine` and skip this setter.
+    pub fn set_bias(&mut self, bias: Tensor) {
+        self.bias = bias;
+    }
 }
 
 impl Module for LayerNorm {
