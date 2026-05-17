@@ -864,6 +864,24 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "U32")]
         expected_channels: Option<u32>,
     },
+    /// Lint captured flash-attn2 parity + provenance JSON outputs (CRUX-L-02)
+    AttnParityLint {
+        /// Path to captured `apr kernel parity --impl flash2 --ref naive --json` body
+        #[arg(long, value_name = "FILE")]
+        parity_file: Option<PathBuf>,
+        /// Path to captured `apr run --attn flash2 --json` body for provenance check
+        #[arg(long, value_name = "FILE")]
+        provenance_file: Option<PathBuf>,
+        /// Path to captured head_dim error JSON
+        #[arg(long, value_name = "FILE")]
+        head_dim_error_file: Option<PathBuf>,
+        /// Max absolute diff tolerance (default 5e-3, FlashAttention-2 bound)
+        #[arg(long, value_name = "F", default_value_t = 5e-3)]
+        tol_abs: f64,
+        /// Min cosine similarity floor (default 0.9999)
+        #[arg(long, value_name = "F", default_value_t = 0.9999)]
+        tol_cos: f64,
+    },
     /// Lint a captured `apr attn-viz` attention dump (CRUX-F-17)
     AttnVizLint {
         /// Path to attention dump in JSON form (4-D [layers][heads][rows][cols] floats)

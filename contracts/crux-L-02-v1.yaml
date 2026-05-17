@@ -1,13 +1,22 @@
 # CRUX-L-02 — Drop-in flash-attn2 dispatch via HF kernels-community
 # Authored under PMAT-656. See docs/specifications/crux-competitive-research-ux-workflows.md §5.L.
+# Promoted to PARTIAL_ALGORITHM_LEVEL at v1.1.0 under CRUX-SHIP-001 (2026-05-17):
+# - classifier: crates/apr-cli/src/commands/attn_parity_classifier.rs (13 unit tests)
+# - CLI surface: `apr attn-parity-lint [--parity-file F] [--provenance-file F] [--head-dim-error-file F] [--tol-abs F] [--tol-cos F]`
+# - e2e: crates/apr-cli/tests/falsification_crux_l_02.rs (11 tests)
+# Full discharge requires live `apr kernel parity` + `apr run --attn flash2`
+# emitters wired to the hf-kernels-community FA2 SO. Tracked as
+# BLOCKER-UPSTREAM-MISSING.
 
 metadata:
   id: CRUX-L-02
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-21"
+  updated: "2026-05-17"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
+  kind: kernel
   parent_contracts:
   - crux-competitive-research-ux-v1
   - crux-L-01-v1

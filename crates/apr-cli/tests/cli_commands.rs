@@ -125,6 +125,7 @@ fn registered_commands() -> Vec<&'static str> {
         "hang-trace-lint",
         "ddp-metrics-lint",
         "audio-inspect-lint",
+        "attn-parity-lint",
         "shard",
         "unshard",
         "oracle",

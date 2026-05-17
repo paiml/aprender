@@ -616,6 +616,12 @@ commands:
     requires_model: false
     side_effects: []
 
+  - name: attn-parity-lint
+    category: inspection
+    description: "Validate captured flash-attn2 parity + provenance JSON outputs (CRUX-L-02): max_abs_diff <= 5e-3, cosine_sim >= 0.9999, kernel_source matches hf-kernels-community:flash-attn2@<40-hex>, fallback reason present when not flash2, head_dim error names the rejection"
+    requires_model: false
+    side_effects: []
+
   - name: shard
     category: model_ops
     description: "Split safetensors file into shards + weight-map index (CRUX-B-05)"
