@@ -57,6 +57,10 @@ pub(crate) fn infer_model_config_from_tensors(
 
     Some(GgufModelConfig {
         architecture,
+        // PMAT-690 P0-K: tensor-name-inference fallback path (no config.json
+        // was found). Without `config.json` we have no source for HF identity.
+        hf_architecture: None,
+        hf_model_type: None,
         hidden_size: Some(hidden_size),
         num_layers: Some(num_layers),
         num_heads,
