@@ -32,6 +32,197 @@ fn output_json(path: &Path, file_size: u64, header: &HeaderData, metadata: Metad
     }
 }
 
+/// PMAT-690 P3-A: JSON output with optional quality block.
+///
+/// Per SPEC §84 P3-A / AC-SHIP2-007, ship-ready models MUST score ≥ 90.
+/// The score is a transparent sum of weighted sub-scores (see
+/// `compute_quality_score` below). When `--quality` is absent, output
+/// is unchanged. When present, a `quality` block is appended with the
+/// numeric score plus the sub-score breakdown so operators can see
+/// exactly which dimension dragged the score down.
+fn output_json_with_quality(
+    path: &Path,
+    file_size: u64,
+    header: &HeaderData,
+    metadata: MetadataInfo,
+    show_quality: bool,
+) {
+    if !show_quality {
+        return output_json(path, file_size, header, metadata);
+    }
+
+    let quality = compute_quality_score(&metadata, header);
+    let (v_maj, v_min) = header.version;
+    let architecture = metadata.architecture.clone();
+    let num_layers = metadata.num_layers;
+    let num_heads = metadata.num_heads;
+    let hidden_size = metadata.hidden_size;
+    let vocab_size = metadata.vocab_size;
+    let result = InspectResult {
+        file: path.display().to_string(),
+        valid: true,
+        format: "APR v2".to_string(),
+        version: format!("{v_maj}.{v_min}"),
+        tensor_count: header.tensor_count,
+        size_bytes: file_size,
+        checksum_valid: header.checksum_valid,
+        architecture,
+        num_layers,
+        num_heads,
+        hidden_size,
+        vocab_size,
+        flags: flags_from_header(header),
+        metadata,
+    };
+    if let Ok(mut json) = serde_json::to_value(&result) {
+        if let Some(obj) = json.as_object_mut() {
+            obj.insert("quality".to_string(), quality.to_json());
+        }
+        if let Ok(pretty) = serde_json::to_string_pretty(&json) {
+            println!("{pretty}");
+        }
+    }
+}
+
+/// PMAT-690 P3-A: model quality score (0-100).
+///
+/// Weighted sum of five sub-scores. The weights reflect SPEC §84 P3-A
+/// ship-blocker priorities — provenance + HF identity are weighted
+/// heaviest because their absence is the exact §81-§83 cascade root
+/// cause we just shipped (P0-K).
+///
+/// | Sub-score    | Weight | What it checks                                |
+/// |--------------|--------|-----------------------------------------------|
+/// | physics      | 20     | header.checksum_valid                         |
+/// | structural   | 20     | arch + hidden_size + num_layers + num_heads   |
+/// | provenance   | 25     | license + data_source + data_license non-null |
+/// | hf_identity  | 20     | hf_architecture + hf_model_type non-null      |
+/// | tokenizer    | 15     | has_vocab flag (from header) is true          |
+///
+/// Total: 100. The ≥ 90 ship gate per AC-SHIP2-007 requires at most
+/// one sub-score missing — usually `has_vocab` (15 pts) is the
+/// recoverable one for distilled / from-scratch models without an
+/// embedded tokenizer. A model missing both HF identity AND
+/// provenance scores ≤ 55, well below the ship threshold.
+fn compute_quality_score(meta: &MetadataInfo, header: &HeaderData) -> QualityReport {
+    let physics = if header.checksum_valid { 20 } else { 0 };
+    let structural = {
+        let mut score = 0;
+        if meta
+            .architecture
+            .as_deref()
+            .is_some_and(|s| !s.is_empty() && s != "unknown")
+        {
+            score += 5;
+        }
+        if meta.hidden_size.is_some() {
+            score += 5;
+        }
+        if meta.num_layers.is_some() {
+            score += 5;
+        }
+        if meta.num_heads.is_some() {
+            score += 5;
+        }
+        score
+    };
+    let provenance = {
+        let mut score = 0;
+        if meta.license.as_deref().is_some_and(|s| !s.is_empty()) {
+            score += 9;
+        }
+        if meta.data_source.as_deref().is_some_and(|s| !s.is_empty()) {
+            score += 8;
+        }
+        if meta
+            .data_license
+            .as_deref()
+            .is_some_and(|s| !s.is_empty())
+        {
+            score += 8;
+        }
+        score
+    };
+    let hf_identity = {
+        let mut score = 0;
+        if meta
+            .hf_architecture
+            .as_deref()
+            .is_some_and(|s| !s.is_empty())
+        {
+            score += 12;
+        }
+        if meta
+            .hf_model_type
+            .as_deref()
+            .is_some_and(|s| !s.is_empty())
+        {
+            score += 8;
+        }
+        score
+    };
+    let tokenizer = if flags_from_header(header).has_vocab {
+        15
+    } else {
+        0
+    };
+    let total = physics + structural + provenance + hf_identity + tokenizer;
+    QualityReport {
+        score: total,
+        physics,
+        structural,
+        provenance,
+        hf_identity,
+        tokenizer,
+        ship_ready: total >= 90,
+    }
+}
+
+#[derive(Debug)]
+struct QualityReport {
+    score: u32,
+    physics: u32,
+    structural: u32,
+    provenance: u32,
+    hf_identity: u32,
+    tokenizer: u32,
+    ship_ready: bool,
+}
+
+impl QualityReport {
+    fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "score": self.score,
+            "ship_ready": self.ship_ready,
+            "threshold": 90,
+            "breakdown": {
+                "physics": self.physics,
+                "structural": self.structural,
+                "provenance": self.provenance,
+                "hf_identity": self.hf_identity,
+                "tokenizer": self.tokenizer,
+            },
+        })
+    }
+}
+
+/// PMAT-690 P3-A: text rendering of the quality block.
+fn output_quality_text(meta: &MetadataInfo, header: &HeaderData) {
+    let q = compute_quality_score(meta, header);
+    println!("\n  Quality (0-100):");
+    println!("    Score: {} / 100", q.score);
+    println!(
+        "    Ship-ready (≥90 per AC-SHIP2-007): {}",
+        if q.ship_ready { "YES" } else { "NO" }
+    );
+    println!("    Breakdown:");
+    println!("      physics:     {} / 20", q.physics);
+    println!("      structural:  {} / 20", q.structural);
+    println!("      provenance:  {} / 25", q.provenance);
+    println!("      hf_identity: {} / 20", q.hf_identity);
+    println!("      tokenizer:   {} / 15", q.tokenizer);
+}
+
 fn output_text(
     path: &Path,
     file_size: u64,

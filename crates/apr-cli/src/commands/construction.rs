@@ -57,6 +57,7 @@
             false,
             false,
             false,
+            false,
         );
         assert!(result.is_err());
     }
@@ -66,7 +67,7 @@
         let mut file = NamedTempFile::with_suffix(".apr").expect("create file");
         file.write_all(b"short").expect("write");
 
-        let result = run(file.path(), false, false, false, false);
+        let result = run(file.path(), false, false, false, false, false);
         assert!(result.is_err());
         match result {
             Err(CliError::InvalidFormat(msg)) => {
@@ -84,7 +85,7 @@
         data[0..4].copy_from_slice(b"XXXX");
         file.write_all(&data).expect("write");
 
-        let result = run(file.path(), false, false, false, false);
+        let result = run(file.path(), false, false, false, false, false);
         assert!(result.is_err());
         match result {
             Err(CliError::InvalidFormat(msg)) => {
@@ -102,7 +103,7 @@
         data[0..4].copy_from_slice(b"APRN");
         file.write_all(&data).expect("write");
 
-        let result = run(file.path(), false, false, false, false);
+        let result = run(file.path(), false, false, false, false, false);
         assert!(result.is_err());
         match result {
             Err(CliError::InvalidFormat(msg)) => {
@@ -130,7 +131,7 @@
             ..Default::default()
         };
         let file = create_test_apr_file(metadata);
-        let result = run(file.path(), false, false, false, false);
+        let result = run(file.path(), false, false, false, false, false);
         assert!(result.is_ok());
     }
 
@@ -143,7 +144,7 @@
             ..Default::default()
         };
         let file = create_test_apr_file(metadata);
-        let result = run(file.path(), false, false, false, true);
+        let result = run(file.path(), false, false, false, true, false);
         assert!(result.is_ok());
     }
 
@@ -173,7 +174,7 @@
         let file = create_test_apr_file(metadata);
 
         // Run JSON output and verify source_metadata appears
-        let result = run(file.path(), false, false, false, true);
+        let result = run(file.path(), false, false, false, true, false);
         assert!(result.is_ok());
     }
 
@@ -181,7 +182,7 @@
     fn test_run_with_show_options() {
         let metadata = AprV2Metadata::new("test");
         let file = create_test_apr_file(metadata);
-        let result = run(file.path(), true, true, true, false);
+        let result = run(file.path(), true, true, true, false, false);
         assert!(result.is_ok());
     }
 

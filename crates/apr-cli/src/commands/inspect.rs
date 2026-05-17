@@ -145,6 +145,7 @@ pub(crate) fn run(
     show_filters: bool,
     show_weights: bool,
     json_output: bool,
+    show_quality: bool,
 ) -> Result<(), CliError> {
     validate_path(path)?;
 
@@ -164,6 +165,13 @@ pub(crate) fn run(
                 println!();
                 println!("  (--filters: GGUF/SafeTensors format has no security filter metadata)");
             }
+            // PMAT-690 P3-A: --quality on non-APR is informational; the
+            // score depends on AprV2Metadata fields not present in raw
+            // GGUF/SafeTensors. Operators run `apr convert` first.
+            if show_quality && !json_output {
+                println!();
+                println!("  (--quality: run `apr convert` to APR first for the full score)");
+            }
             result
         }
         _ => {
@@ -176,7 +184,13 @@ pub(crate) fn run(
             let metadata_info = read_metadata(&mut reader, &header);
 
             if json_output {
-                output_json(path, file_size, &header, metadata_info);
+                output_json_with_quality(
+                    path,
+                    file_size,
+                    &header,
+                    metadata_info,
+                    show_quality,
+                );
             } else {
                 output_text(
                     path,
@@ -187,6 +201,9 @@ pub(crate) fn run(
                     show_filters,
                     show_weights,
                 );
+                if show_quality {
+                    output_quality_text(&metadata_info, &header);
+                }
             }
             Ok(())
         }

@@ -15,6 +15,7 @@
             filters: false,
             weights: false,
             json: false,
+            quality: false,
         });
         let result = dispatch_model_commands(&cli);
         assert!(result.is_none(), "Inspect should not be handled by dispatch_model_commands");
@@ -488,6 +489,7 @@
             filters: false,
             weights: false,
             json: false,
+            quality: false,
         });
         let result = dispatch_inspection_commands(&cli);
         assert!(result.is_some(), "Inspect should be handled by inspection dispatcher");
@@ -606,6 +608,7 @@
             filters: false,
             weights: false,
             json: false,
+            quality: false,
         });
         let result = dispatch_diagnostic_commands(&cli);
         assert!(result.is_none(), "Inspect should NOT be handled by diagnostic dispatcher");
@@ -669,6 +672,7 @@
             filters: false,
             weights: false,
             json: false,
+            quality: false,
         });
         let result = dispatch_format_commands(&cli);
         assert!(result.is_none(), "Inspect should NOT be handled by format dispatcher");
@@ -697,6 +701,7 @@
             filters: false,
             weights: false,
             json: false,
+            quality: false,
         });
         let result = dispatch_runtime_commands(&cli);
         assert!(result.is_none(), "Inspect should NOT be handled by runtime dispatcher");
@@ -714,6 +719,7 @@
             filters: false,
             weights: false,
             json: false,
+            quality: false,
         });
         // dispatch_core_command delegates to dispatch_inspection_commands
         let result = dispatch_core_command(&cli);
