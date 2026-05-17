@@ -536,6 +536,19 @@ pub enum Commands {
         /// fallback in this field cannot be loaded as Qwen2 inits.
         #[arg(long)]
         architecture: Option<String>,
+        /// Directory containing tokenizer files (vocab.json + merges.txt
+        /// OR tokenizer.json). When provided, embeds the vocabulary +
+        /// BPE merges into the APR's `custom.tokenizer.vocabulary` /
+        /// `custom.tokenizer.merges` JSON metadata AND sets the
+        /// HAS_VOCAB header flag.
+        ///
+        /// PMAT-690 P3-C-prep defect 1 fix (2026-05-17): pre-P0-K APRs
+        /// trained from inits without embedded tokenizers fail `apr run`
+        /// with PMAT-172. This flag lets the §86 salvage recipe embed
+        /// the tokenizer post-hoc so the artifact is self-contained
+        /// for inference (the apr binary's headline use case).
+        #[arg(long = "tokenizer", value_name = "DIR")]
+        tokenizer_dir: Option<PathBuf>,
         /// Output file path
         #[arg(short, long)]
         output: PathBuf,
