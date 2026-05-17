@@ -66,7 +66,15 @@ impl Kernel for Q6KGemvKernel {
                 let w_ptr = ctx.load_param_u64("w_ptr");
                 let x_ptr = ctx.load_param_u64("x_ptr");
 
-                let acc = ctx.mov_f32_imm(0.0);
+                // M-GPU-MOE-3 PR-2: f64 accumulator across superblocks.
+                // Mirrors the GH-561 pattern used by nf4_rmsnorm_gemv +
+                // nf4 GEMM — promote per-lane accumulation to f64 so the
+                // ~64-superblock × 8-FMA-per-iter dot product is rounded
+                // once (cvt to f32 below) instead of compounding fp32
+                // rounding through every add. Closes the 7 MoE layers
+                // (L7/L9/L12/L20/L23/L29/L46) that sit at cos 0.94–0.987
+                // between CPU fused_q6k_parallel_matvec and this kernel.
+                let acc = ctx.mov_f64_imm_zero();
                 // Ceiling division: (k + 255) / 256 for GGUF super-block count
                 let k_rounded = ctx.add_u32(k_dim, Q6K_SUPER_BLOCK_SIZE - 1);
                 let num_super_blocks = ctx.div_u32(k_rounded, Q6K_SUPER_BLOCK_SIZE);
@@ -92,7 +100,9 @@ impl Kernel for Q6KGemvKernel {
                 let d = ctx.cvt_f32_f16(d_f16);
 
                 // Each thread handles 8 values at offsets 0, 32, 64, 96, 128, 160, 192, 224
-                let thread_partial = ctx.mov_f32_imm(0.0);
+                // M-GPU-MOE-3 PR-2: f64 partial to keep the 8 in-loop FMAs at
+                // f64 precision before adding into the f64 superblock acc.
+                let thread_partial = ctx.mov_f64_imm_zero();
 
                 // Process each of 8 values per thread
                 // For val_idx = thread_id + offset (offset in [0, 32, 64, 96, 128, 160, 192, 224]):
@@ -216,14 +226,24 @@ impl Kernel for Q6KGemvKernel {
                     let in_bounds = ctx.setp_lt_u32(x_idx, k_dim);
                     let x_val = ctx.ld_global_f32_predicated(x_addr, in_bounds, 0.0);
 
-                    ctx.fma_f32_inplace(thread_partial, x_val, dequant);
+                    // M-GPU-MOE-3 PR-2: fp64 FMA into the per-thread partial.
+                    // x_val (f32) and dequant (f32) are promoted to f64 inside
+                    // the helper; thread_partial stays f64 across iterations.
+                    ctx.fma_f64_acc_inplace(thread_partial, x_val, dequant);
                 }
 
-                ctx.add_f32_inplace(acc, thread_partial);
+                // M-GPU-MOE-3 PR-2: f64 += f64 across superblocks.
+                ctx.add_f64_inplace(acc, thread_partial);
                 ctx.add_u32_inplace(sb_idx, 1);
                 ctx.branch("sb_loop");
 
                 ctx.label("sb_loop_end");
+
+                // M-GPU-MOE-3 PR-2: cvt f64→f32 just before the warp-reduce.
+                // The remaining 5 shuffle-adds run in f32 (shfl.sync.down.b32
+                // is the only shfl primitive we expose); error from 5 adds at
+                // f32 is dominated by the ~16K f64 FMAs we just retired.
+                let acc = ctx.cvt_f32_f64_rn(acc);
 
                 // Warp reduce
                 let tmp16 = ctx.shfl_down_f32(acc, 16, 0xFFFF_FFFF);
@@ -248,5 +268,48 @@ impl Kernel for Q6KGemvKernel {
                 ctx.label("exit");
                 ctx.ret();
             })
+    }
+}
+
+#[cfg(test)]
+mod m_gpu_moe_3_pr2_fp64_acc_tests {
+    use super::*;
+
+    /// FALSIFY-M-GPU-MOE-3-PR2: the q6k_gemv kernel must emit `.f64`
+    /// fma/add/mov for the per-lane accumulators and a final `cvt.rn.f32.f64`
+    /// before the warp-reduce. PR-2 of #1583. If this drifts back to all-`.f32`
+    /// the 7-layer cosine regression (L7/L9/L12/L20/L23/L29/L46 sitting at
+    /// 0.94–0.987 vs CPU) returns.
+    #[test]
+    fn falsify_m_gpu_moe_3_pr2_kernel_emits_fp64_accumulators() {
+        // Concrete dims; values irrelevant — we inspect emitted PTX, not run.
+        let kernel = Q6KGemvKernel::new(4096, 4096);
+        let ptx = kernel.emit_ptx();
+
+        assert!(
+            ptx.contains("fma.rn.f64") || ptx.contains("fma.f64"),
+            "M-GPU-MOE-3 PR-2: q6k_gemv must emit fma.f64 for the per-lane FMA loop; got PTX without it"
+        );
+        assert!(
+            ptx.contains("add.rn.f64") || ptx.contains("add.f64"),
+            "M-GPU-MOE-3 PR-2: q6k_gemv must emit add.f64 for thread_partial → acc accumulation"
+        );
+        assert!(
+            ptx.contains("mov.f64") || ptx.contains("mov.b64"),
+            "M-GPU-MOE-3 PR-2: q6k_gemv must initialise the f64 accumulator with mov.f64"
+        );
+        assert!(
+            ptx.contains("cvt.rn.f32.f64"),
+            "M-GPU-MOE-3 PR-2: q6k_gemv must cvt the f64 accumulator down to f32 before the warp-reduce"
+        );
+        // The post-cvt warp-reduce + the final store must stay f32.
+        assert!(
+            ptx.contains("shfl.sync.down.b32"),
+            "warp-reduce must still use shfl.sync.down.b32 (shuffles are 32-bit only on this PTX surface)"
+        );
+        assert!(
+            ptx.contains("st.global.f32"),
+            "q6k_gemv must still store the final result as f32"
+        );
     }
 }
