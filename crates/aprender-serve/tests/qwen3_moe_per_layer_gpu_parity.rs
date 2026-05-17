@@ -65,9 +65,21 @@ const PROMPT_TOKENS: &[u32] = &[785];
 
 fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     assert_eq!(a.len(), b.len(), "cosine: vectors must be same length");
-    let dot: f64 = a.iter().zip(b.iter()).map(|(x, y)| f64::from(*x) * f64::from(*y)).sum();
-    let na: f64 = a.iter().map(|x| f64::from(*x) * f64::from(*x)).sum::<f64>().sqrt();
-    let nb: f64 = b.iter().map(|x| f64::from(*x) * f64::from(*x)).sum::<f64>().sqrt();
+    let dot: f64 = a
+        .iter()
+        .zip(b.iter())
+        .map(|(x, y)| f64::from(*x) * f64::from(*y))
+        .sum();
+    let na: f64 = a
+        .iter()
+        .map(|x| f64::from(*x) * f64::from(*x))
+        .sum::<f64>()
+        .sqrt();
+    let nb: f64 = b
+        .iter()
+        .map(|x| f64::from(*x) * f64::from(*x))
+        .sum::<f64>()
+        .sqrt();
     if na == 0.0 || nb == 0.0 {
         return 0.0;
     }
@@ -79,8 +91,17 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 /// + dim × 4 bytes f32 (LE).
 fn read_stage_file(path: &Path) -> std::io::Result<(u32, Vec<f32>)> {
     let bytes = std::fs::read(path)?;
-    assert!(bytes.len() >= 12, "stage file < 12-byte header: {}", path.display());
-    assert_eq!(&bytes[0..4], b"APRT", "magic must be APRT: {}", path.display());
+    assert!(
+        bytes.len() >= 12,
+        "stage file < 12-byte header: {}",
+        path.display()
+    );
+    assert_eq!(
+        &bytes[0..4],
+        b"APRT",
+        "magic must be APRT: {}",
+        path.display()
+    );
     let layer = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
     let dim = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]) as usize;
     assert_eq!(
@@ -94,6 +115,19 @@ fn read_stage_file(path: &Path) -> std::io::Result<(u32, Vec<f32>)> {
         values.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
     }
     Ok((layer, values))
+}
+
+/// PR-3e probe plan: capture BOTH MoeRouter (post-softmax + renormalize top-k
+/// weights, `[k=8]` per layer) AND MoeFfnOut (aggregated FFN output,
+/// `[hidden_dim]` per layer). Used by `falsify_qw3_moe_l47_router_probe`
+/// to disambiguate H(ii) routing-divergence from post-routing divergence at L47.
+fn make_router_and_ffn_out_plan(output_dir: PathBuf) -> SaveTensorPlan {
+    SaveTensorPlan::from_cli(
+        "moe_router,moe_ffn_out",
+        &format!("0..{EXPECTED_NUM_LAYERS}"),
+        output_dir,
+    )
+    .expect("MoeRouter+MoeFfnOut plan from_cli must succeed for layer range 0..48")
 }
 
 fn make_moe_ffn_out_plan(output_dir: PathBuf) -> SaveTensorPlan {
@@ -191,10 +225,12 @@ fn falsify_qw3_moe_per_layer_001_cosine_per_layer() {
         let cpu_path = cpu_plan.stage_path(SaveTensorStage::MoeFfnOut, layer_idx as u32);
         let gpu_path = gpu_plan.stage_path(SaveTensorStage::MoeFfnOut, layer_idx as u32);
 
-        let (cpu_layer_hdr, cpu_vec) = read_stage_file(&cpu_path)
-            .unwrap_or_else(|e| panic!("read CPU layer {layer_idx} ({}): {e:?}", cpu_path.display()));
-        let (gpu_layer_hdr, gpu_vec) = read_stage_file(&gpu_path)
-            .unwrap_or_else(|e| panic!("read GPU layer {layer_idx} ({}): {e:?}", gpu_path.display()));
+        let (cpu_layer_hdr, cpu_vec) = read_stage_file(&cpu_path).unwrap_or_else(|e| {
+            panic!("read CPU layer {layer_idx} ({}): {e:?}", cpu_path.display())
+        });
+        let (gpu_layer_hdr, gpu_vec) = read_stage_file(&gpu_path).unwrap_or_else(|e| {
+            panic!("read GPU layer {layer_idx} ({}): {e:?}", gpu_path.display())
+        });
 
         assert_eq!(
             cpu_layer_hdr as usize, layer_idx,
@@ -223,7 +259,11 @@ fn falsify_qw3_moe_per_layer_001_cosine_per_layer() {
     for (idx, cos) in &per_layer_cos {
         eprintln!(
             "  L{idx:02} cos={cos:.6}{}",
-            if *cos < COSINE_THRESHOLD { "  <-- BELOW 0.99" } else { "" }
+            if *cos < COSINE_THRESHOLD {
+                "  <-- BELOW 0.99"
+            } else {
+                ""
+            }
         );
     }
 
@@ -232,4 +272,180 @@ fn falsify_qw3_moe_per_layer_001_cosine_per_layer() {
         "FALSIFY-QW3-MOE-PER-LAYER-001: {} layer(s) below cos≥{COSINE_THRESHOLD}: {violators:?}",
         violators.len()
     );
+}
+
+/// FALSIFY-QW3-MOE-L47-ROUTER-PROBE — disambiguates H(ii) routing divergence
+/// from post-routing divergence at L47.
+///
+/// Context: PR-3 hardware verification (2026-05-17 lambda-vector RTX 4090)
+/// showed 47/48 layers cos ≥ 0.99 for `MoeFfnOut` but L47 alone at cos=0.961.
+/// PR-3d falsified H(i) qtype-mismatch (L0/L46/L47 identical shapes + qtypes).
+/// PR-3e tests the remaining dominant hypothesis H(ii): the L47 cliff is
+/// driven by **MoE expert routing divergence** — by L47 the CPU-vs-GPU
+/// hidden state has drifted by ~0.002, and at L47 that drift straddles a
+/// top-k expert boundary, causing CPU and GPU to pick different expert sets.
+///
+/// ## What this probe asserts
+///
+/// Captures both `MoeRouter` (post-softmax + renormalize top-k weights,
+/// `[k=8]` per layer) and `MoeFfnOut` (aggregated FFN output, `[hidden_dim]`
+/// per layer) for both CPU and GPU forwards. Then prints both per-layer
+/// cosine vectors side-by-side and isolates L47's behavior.
+///
+/// ## How to interpret
+///
+/// - **If `MoeRouter` cos at L47 ≈ 1.0** (e.g. > 0.995) AND `MoeFfnOut` at
+///   L47 ≈ 0.961: H(ii) is **FALSIFIED**. CPU and GPU pick the same experts
+///   with near-identical weights; the L47 divergence happens AFTER routing.
+///   Next investigation target: per-expert FfnSwigl pathology at L47's
+///   specific input (e.g. expert weight cancellation).
+///
+/// - **If `MoeRouter` cos at L47 is much lower** (e.g. < 0.99) than other
+///   layers' `MoeRouter`: H(ii) is alive. The router weight vectors
+///   themselves diverge between CPU and GPU at L47. Need PR-3e2 to capture
+///   top-k INDICES separately to confirm whether expert SETS differ (vs
+///   just weights differing for the same set).
+///
+/// Note: `MoeRouter` saves WEIGHTS only, not INDICES. If CPU picks experts
+/// `{3, 17, 45}` with weights `[0.5, 0.3, 0.2]` and GPU picks `{3, 17, 46}`
+/// with weights `[0.5, 0.3, 0.2]`, the saved tensors are byte-identical.
+/// So a HIGH router-cos at L47 does NOT prove identical expert sets —
+/// it only proves the weight DISTRIBUTION SHAPE matches. The probe is
+/// useful for ruling out H(ii) only via the negative direction (if router
+/// weights diverge wildly, indices likely differ too).
+///
+/// ## Cascade context
+///
+/// - PR-3 ran the per-layer falsifier — 47/48 PASS, L47 surfaces
+///   (#1583 comment-4470195446).
+/// - PR-3b shipped contract v1.7.0 → v1.7.1 (#1739).
+/// - PR-3c shipped scope-doc update + L47 sub-cascade (#1740).
+/// - PR-3d falsified H(i) qtype-mismatch (#1583 comment-4470216021).
+/// - **PR-3e (this PR)** probes H(ii) via MoeRouter weight cos.
+/// - PR-3e2 (follow-up if needed): persist top-k INDICES via new
+///   `SaveTensorStage::MoeRouterIndices` variant.
+/// - PR-3f+ : fix L47 based on PR-3e/PR-3e2 outcome.
+#[test]
+#[ignore = "requires cached Qwen3-Coder-30B-A3B-Instruct-Q4_K_M GGUF + CUDA RTX 4090; takes ~5 min"]
+fn falsify_qw3_moe_l47_router_probe() {
+    let Some(gguf_path) = CANONICAL_QWEN3_CODER_GGUF_PATHS
+        .iter()
+        .find(|p| Path::new(p).exists())
+    else {
+        eprintln!(
+            "FALSIFY-QW3-MOE-L47-ROUTER-PROBE: skipped — no cached Qwen3-Coder GGUF in {CANONICAL_QWEN3_CODER_GGUF_PATHS:?}"
+        );
+        return;
+    };
+
+    eprintln!("FALSIFY-QW3-MOE-L47-ROUTER-PROBE: per-layer MoeRouter+MoeFfnOut cos for H(ii) disambiguation");
+    eprintln!("  gguf:   {gguf_path}");
+    eprintln!("  prompt: {PROMPT_TOKENS:?}");
+
+    let mapped = MappedGGUFModel::from_path(gguf_path).expect("mmap GGUF");
+    let data = mapped.data();
+
+    let mut moe_layers = Vec::with_capacity(EXPECTED_NUM_LAYERS);
+    for layer_idx in 0..EXPECTED_NUM_LAYERS {
+        moe_layers.push(
+            load_qwen3_moe_layer(&mapped.model, data, layer_idx)
+                .unwrap_or_else(|e| panic!("layer {layer_idx} MoE load failed: {e:?}")),
+        );
+    }
+
+    let tmpdir = tempfile::tempdir().expect("create tempdir");
+    let cpu_dir = tmpdir.path().join("cpu");
+    let gpu_dir = tmpdir.path().join("gpu");
+    let cpu_plan = make_router_and_ffn_out_plan(cpu_dir.clone());
+    let gpu_plan = make_router_and_ffn_out_plan(gpu_dir.clone());
+
+    // ----- CPU traced forward -----
+    let cpu_model =
+        OwnedQuantizedModel::from_mapped(&mapped).expect("OwnedQuantizedModel::from_mapped #1");
+    eprintln!("FALSIFY-QW3-MOE-L47-ROUTER-PROBE: running CPU traced forward...");
+    let _cpu_trace = cpu_model
+        .forward_qwen3_moe_traced_with_plan(
+            PROMPT_TOKENS,
+            &moe_layers,
+            EXPECTED_N_EXPERTS,
+            EXPECTED_K,
+            EXPECTED_INTERMEDIATE,
+            data,
+            Some(&cpu_plan),
+        )
+        .expect("CPU traced forward must succeed");
+
+    // ----- GPU traced forward -----
+    let gpu_inner =
+        OwnedQuantizedModel::from_mapped(&mapped).expect("OwnedQuantizedModel::from_mapped #2");
+    let mut gpu_model = OwnedQuantizedModelCuda::new(gpu_inner, 0)
+        .expect("OwnedQuantizedModelCuda::new(model, 0) must succeed on RTX 4090");
+    eprintln!("FALSIFY-QW3-MOE-L47-ROUTER-PROBE: running GPU traced forward...");
+    let _gpu_trace = gpu_model
+        .forward_qwen3_moe_cuda_traced_with_plan(
+            PROMPT_TOKENS,
+            &moe_layers,
+            EXPECTED_N_EXPERTS,
+            EXPECTED_K,
+            EXPECTED_INTERMEDIATE,
+            data,
+            Some(&gpu_plan),
+        )
+        .expect("GPU traced forward must succeed");
+
+    // ----- per-layer cos for BOTH stages -----
+    let mut router_cos: Vec<(usize, f32)> = Vec::with_capacity(EXPECTED_NUM_LAYERS);
+    let mut ffn_out_cos: Vec<(usize, f32)> = Vec::with_capacity(EXPECTED_NUM_LAYERS);
+
+    for layer_idx in 0..EXPECTED_NUM_LAYERS {
+        let cpu_r_path = cpu_plan.stage_path(SaveTensorStage::MoeRouter, layer_idx as u32);
+        let gpu_r_path = gpu_plan.stage_path(SaveTensorStage::MoeRouter, layer_idx as u32);
+        let cpu_o_path = cpu_plan.stage_path(SaveTensorStage::MoeFfnOut, layer_idx as u32);
+        let gpu_o_path = gpu_plan.stage_path(SaveTensorStage::MoeFfnOut, layer_idx as u32);
+
+        let (_, cpu_r) = read_stage_file(&cpu_r_path).expect("read CPU MoeRouter");
+        let (_, gpu_r) = read_stage_file(&gpu_r_path).expect("read GPU MoeRouter");
+        let (_, cpu_o) = read_stage_file(&cpu_o_path).expect("read CPU MoeFfnOut");
+        let (_, gpu_o) = read_stage_file(&gpu_o_path).expect("read GPU MoeFfnOut");
+
+        router_cos.push((layer_idx, cosine_similarity(&cpu_r, &gpu_r)));
+        ffn_out_cos.push((layer_idx, cosine_similarity(&cpu_o, &gpu_o)));
+    }
+
+    eprintln!("FALSIFY-QW3-MOE-L47-ROUTER-PROBE: per-layer cos (router | ffn_out):");
+    eprintln!("  L## | MoeRouter | MoeFfnOut");
+    for ((idx, rcos), (_, ocos)) in router_cos.iter().zip(ffn_out_cos.iter()) {
+        let marker = if *ocos < COSINE_THRESHOLD {
+            "  <-- FfnOut BELOW 0.99"
+        } else if *rcos < COSINE_THRESHOLD {
+            "  <-- Router BELOW 0.99"
+        } else {
+            ""
+        };
+        eprintln!("  L{idx:02} | {rcos:.6}  | {ocos:.6}{marker}");
+    }
+
+    // Specifically focus on L47:
+    let (_, l47_rcos) = router_cos[47];
+    let (_, l47_ocos) = ffn_out_cos[47];
+    eprintln!(
+        "FALSIFY-QW3-MOE-L47-ROUTER-PROBE: L47 router_cos={l47_rcos:.6} ffn_out_cos={l47_ocos:.6}"
+    );
+
+    let h2_falsified = l47_rcos > 0.995 && l47_ocos < COSINE_THRESHOLD;
+    let h2_alive = l47_rcos < COSINE_THRESHOLD;
+
+    eprintln!(
+        "FALSIFY-QW3-MOE-L47-ROUTER-PROBE: verdict — H(ii) routing-divergence: {}",
+        if h2_falsified {
+            "FALSIFIED (router weights agree, divergence is post-routing — investigate per-expert FfnSwigl at L47)"
+        } else if h2_alive {
+            "STILL ALIVE (router weights themselves diverge — PR-3e2 should capture indices to confirm SET divergence)"
+        } else {
+            "INCONCLUSIVE (intermediate state — router cos > 0.99 but ≤ 0.995; index boundary cases possible)"
+        }
+    );
+
+    // This is a PROBE, not a hard-fail falsifier. Print the verdict; do not
+    // assert. The verdict drives the next PR's investigation target.
 }
