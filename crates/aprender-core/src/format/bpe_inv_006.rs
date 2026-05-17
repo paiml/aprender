@@ -141,11 +141,7 @@ mod tests {
         let run_a = vec![1_u32, 42, 17, 99];
         let run_b = vec![2_u32, 42, 17, 99];
         let v = verdict_from_token_id_pair(&run_a, &run_b);
-        assert_eq!(
-            v,
-            BpeInv006Verdict::Fail,
-            "first-token drift must Fail"
-        );
+        assert_eq!(v, BpeInv006Verdict::Fail, "first-token drift must Fail");
     }
 
     #[test]

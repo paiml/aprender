@@ -20,8 +20,12 @@ fn write_json(body: &serde_json::Value) -> tempfile::NamedTempFile {
         .suffix(".json")
         .tempfile()
         .expect("tempfile");
-    f.write_all(serde_json::to_vec_pretty(body).expect("serialize").as_slice())
-        .expect("write");
+    f.write_all(
+        serde_json::to_vec_pretty(body)
+            .expect("serialize")
+            .as_slice(),
+    )
+    .expect("write");
     f.flush().expect("flush");
     f
 }
@@ -47,7 +51,10 @@ fn good_t4() -> serde_json::Value {
 
 #[test]
 fn falsify_crux_d_11_cli_help_advertises_flags() {
-    let out = apr_binary().args(["ddp-metrics-lint", "--help"]).output().expect("run");
+    let out = apr_binary()
+        .args(["ddp-metrics-lint", "--help"])
+        .output()
+        .expect("run");
     assert!(out.status.success(), "--help must exit 0");
     let stdout = String::from_utf8_lossy(&out.stdout);
     for flag in [
@@ -57,7 +64,10 @@ fn falsify_crux_d_11_cli_help_advertises_flags() {
         "--scaling-floor",
         "--loss-tolerance",
     ] {
-        assert!(stdout.contains(flag), "--help must advertise {flag}; got:\n{stdout}");
+        assert!(
+            stdout.contains(flag),
+            "--help must advertise {flag}; got:\n{stdout}"
+        );
     }
 }
 
@@ -256,7 +266,16 @@ fn falsify_crux_d_11_json_output_contains_outcomes() {
     assert!(out.status.success(), "json + good bodies must exit 0");
     let stdout = String::from_utf8_lossy(&out.stdout);
     let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("json output must parse");
-    assert!(parsed["scaling_efficiency"].as_str().expect("scaling").contains("Ok"));
-    assert!(parsed["loss_parity"].as_str().expect("loss_parity").contains("Ok"));
-    assert!(parsed["allreduce_bandwidth"].as_str().expect("allreduce").contains("Ok"));
+    assert!(parsed["scaling_efficiency"]
+        .as_str()
+        .expect("scaling")
+        .contains("Ok"));
+    assert!(parsed["loss_parity"]
+        .as_str()
+        .expect("loss_parity")
+        .contains("Ok"));
+    assert!(parsed["allreduce_bandwidth"]
+        .as_str()
+        .expect("allreduce")
+        .contains("Ok"));
 }

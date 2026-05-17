@@ -11,8 +11,8 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use super::react_trace_classifier::{
-    classify_iteration_bound, classify_scratchpad_grammar, classify_termination,
-    ReactBoundOutcome, ReactGrammarOutcome, ReactTerminationOutcome,
+    classify_iteration_bound, classify_scratchpad_grammar, classify_termination, ReactBoundOutcome,
+    ReactGrammarOutcome, ReactTerminationOutcome,
 };
 use crate::error::{CliError, Result};
 

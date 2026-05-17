@@ -38,7 +38,11 @@ impl CrossEncoder {
         Self {
             embeddings: BertEmbeddings::new(config),
             encoder: BertEncoder::new(config),
-            pooler: if with_pooler { Some(Linear::new(h, h)) } else { None },
+            pooler: if with_pooler {
+                Some(Linear::new(h, h))
+            } else {
+                None
+            },
             classifier: Linear::new(h, num_labels),
             hidden_dim: h,
         }

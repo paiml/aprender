@@ -108,10 +108,7 @@ pub fn verdict_from_special_token_ids(
     if vocab_size == 0 {
         return BpeInv002Verdict::Fail;
     }
-    if bos_id >= vocab_size
-        || eos_id >= vocab_size
-        || pad_id >= vocab_size
-        || unk_id >= vocab_size
+    if bos_id >= vocab_size || eos_id >= vocab_size || pad_id >= vocab_size || unk_id >= vocab_size
     {
         return BpeInv002Verdict::Fail;
     }

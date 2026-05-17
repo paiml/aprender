@@ -236,7 +236,10 @@ impl HfHubClient {
     ) -> Result<()> {
         use std::time::Instant;
 
-        let batch_url = format!("https://huggingface.co/{}.git/info/lfs/objects/batch", repo_id);
+        let batch_url = format!(
+            "https://huggingface.co/{}.git/info/lfs/objects/batch",
+            repo_id
+        );
         eprintln!("[LFS-BATCH] Step 2a: POST {}", batch_url);
 
         let batch_body = serde_json::json!({
@@ -316,7 +319,10 @@ impl HfHubClient {
             .set("Content-Type", "application/octet-stream")
             .timeout(std::time::Duration::from_secs(7200));
 
-        if let Some(header_obj) = upload_action.and_then(|a| a.get("header")).and_then(|h| h.as_object()) {
+        if let Some(header_obj) = upload_action
+            .and_then(|a| a.get("header"))
+            .and_then(|h| h.as_object())
+        {
             for (key, value) in header_obj {
                 if let Some(v) = value.as_str() {
                     request = request.set(key, v);

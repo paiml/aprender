@@ -38,7 +38,14 @@ pub(crate) fn run(
         None => None,
     };
 
-    print_report(csv_file, csv_file_b, &schema, row_count.as_ref(), determinism.as_ref(), json);
+    print_report(
+        csv_file,
+        csv_file_b,
+        &schema,
+        row_count.as_ref(),
+        determinism.as_ref(),
+        json,
+    );
 
     if !matches!(schema, EmbedSchemaOutcome::Ok { .. }) {
         return Err(CliError::ValidationFailed(format!(

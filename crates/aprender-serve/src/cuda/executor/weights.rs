@@ -403,9 +403,21 @@ impl CudaExecutor {
             let attn_v_qtype = self.resolve_qtype(&v_name);
             let attn_output_qtype = self.resolve_qtype(&o_name);
             // M-GPU-MOE-1.3: qtype sentinels for MoE (FFN qtypes unused)
-            let ffn_gate_qtype = if arch.is_moe { WeightQuantType::Q4K } else { self.resolve_qtype(&gate_name) };
-            let ffn_up_qtype = if arch.is_moe { WeightQuantType::Q4K } else { self.resolve_qtype(&up_name) };
-            let ffn_down_qtype = if arch.is_moe { WeightQuantType::Q4K } else { self.resolve_qtype(&down_name) };
+            let ffn_gate_qtype = if arch.is_moe {
+                WeightQuantType::Q4K
+            } else {
+                self.resolve_qtype(&gate_name)
+            };
+            let ffn_up_qtype = if arch.is_moe {
+                WeightQuantType::Q4K
+            } else {
+                self.resolve_qtype(&up_name)
+            };
+            let ffn_down_qtype = if arch.is_moe {
+                WeightQuantType::Q4K
+            } else {
+                self.resolve_qtype(&down_name)
+            };
 
             // Log if non-Q4K types detected (for debugging mixed-quant models)
             self.log_mixed_quant_types(

@@ -16,7 +16,9 @@ impl BertEncoder {
     /// Construct an encoder with `num_layers` zero-initialized `BertLayer`s.
     #[must_use]
     pub fn new(config: &BertConfig) -> Self {
-        let layers = (0..config.num_layers).map(|_| BertLayer::new(config)).collect();
+        let layers = (0..config.num_layers)
+            .map(|_| BertLayer::new(config))
+            .collect();
         Self { layers }
     }
 

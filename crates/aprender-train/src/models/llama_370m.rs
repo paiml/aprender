@@ -889,16 +889,14 @@ mod tests {
     fn falsify_apr_pretrain_arch_010_relaxed_bound_rejects_oversized_tokenizer() {
         const QWEN_DECLARED_VOCAB: usize = 151_936;
         let oversized = QWEN_DECLARED_VOCAB + 1;
-        let err =
-            assert_tokenizer_vocab_within_model_bound(oversized, QWEN_DECLARED_VOCAB)
-                .expect_err("FALSIFY-APR-PRETRAIN-ARCH-010: tokenizer > model MUST fail-fast");
+        let err = assert_tokenizer_vocab_within_model_bound(oversized, QWEN_DECLARED_VOCAB)
+            .expect_err("FALSIFY-APR-PRETRAIN-ARCH-010: tokenizer > model MUST fail-fast");
         assert!(
             err.contains("RELAXED") && err.contains("OOB"),
             "error must cite the relaxed-mode invariant + OOB risk: {err}"
         );
         assert!(
-            err.contains(&oversized.to_string())
-                && err.contains(&QWEN_DECLARED_VOCAB.to_string()),
+            err.contains(&oversized.to_string()) && err.contains(&QWEN_DECLARED_VOCAB.to_string()),
             "error must name both sizes for forensics: {err}"
         );
     }

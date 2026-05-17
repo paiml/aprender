@@ -117,7 +117,8 @@ mod tests {
     // -------------------------------------------------------------------------
     #[test]
     fn pass_canonical_qwen_in_dry_run_output() {
-        let stdout = b"DRY RUN: would pull paiml/qwen2.5-coder-7b-apache-q4k-v1 to ~/.cache/apr/models/";
+        let stdout =
+            b"DRY RUN: would pull paiml/qwen2.5-coder-7b-apache-q4k-v1 to ~/.cache/apr/models/";
         let v = verdict_from_model_path_backward_compat(stdout, b"qwen2.5-coder-7b-apache-q4k-v1");
         assert_eq!(v, PullDataset005Verdict::Pass);
     }
@@ -218,7 +219,8 @@ mod tests {
     #[test]
     fn fail_needle_longer_than_haystack() {
         // 32-byte name, 5-byte stdout.
-        let v = verdict_from_model_path_backward_compat(b"short", b"qwen2.5-coder-7b-apache-q4k-v1");
+        let v =
+            verdict_from_model_path_backward_compat(b"short", b"qwen2.5-coder-7b-apache-q4k-v1");
         assert_eq!(v, PullDataset005Verdict::Fail);
     }
 
