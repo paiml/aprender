@@ -525,6 +525,7 @@ fn dispatch_format_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             hf_architecture,
             hf_model_type,
             architecture,
+            tokenizer_dir,
             output,
             force,
         } => crate::error::resolve_model_path(file).and_then(|r| {
@@ -536,6 +537,7 @@ fn dispatch_format_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 hf_architecture.as_deref(),
                 hf_model_type.as_deref(),
                 architecture.as_deref(),
+                tokenizer_dir.as_deref(),
                 output,
                 *force,
                 cli.json,
