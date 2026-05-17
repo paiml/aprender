@@ -121,6 +121,7 @@ fn registered_commands() -> Vec<&'static str> {
         "attn-viz-lint",
         "embed-viz-lint",
         "nccl-diag-lint",
+        "react-trace-lint",
         "shard",
         "unshard",
         "oracle",

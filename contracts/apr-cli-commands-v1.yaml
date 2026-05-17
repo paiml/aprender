@@ -592,6 +592,12 @@ commands:
     requires_model: false
     side_effects: []
 
+  - name: react-trace-lint
+    category: inspection
+    description: "Validate captured `apr agent --trace` ReAct loop trace (CRUX-I-06): termination reason matches exit-code (final_answer=0, max_iterations|timeout=2, tool_error=3, parse_fail=4) + iteration bound + scratchpad grammar (Thought/Action/Observation/Final Answer)"
+    requires_model: false
+    side_effects: []
+
   - name: shard
     category: model_ops
     description: "Split safetensors file into shards + weight-map index (CRUX-B-05)"
