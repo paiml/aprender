@@ -40,4 +40,4 @@ pub use cross_encoder::CrossEncoder;
 pub use embeddings::BertEmbeddings;
 pub use encoder::BertEncoder;
 pub use layer::BertLayer;
-pub use load::BertLoadError;
+pub use load::{expected_bert_tensor_names, BertLoadError};
