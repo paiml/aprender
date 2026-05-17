@@ -233,20 +233,38 @@ pub(crate) fn run(
 
     let hp = mode_defaults(mode, vocab_size, lr, warmup_steps, target_val_loss);
 
-    // SPEC §82 P1-A + SPEC §83 P0-J: Chinchilla compute-optimal gate
-    // (Hoffmann et al. 2022, arXiv:2203.15556). Compute-optimal pretraining
-    // requires train tokens D ≈ 20·N where N is the parameter count.
+    // SPEC §82 P1-A + SPEC §83 P0-J + SPEC §87 P0-J' upgrade:
+    // Chinchilla compute-optimal gate (Hoffmann et al. 2022, arXiv:2203.15556).
+    // Compute-optimal pretraining requires train tokens D ≈ 20·N where N
+    // is the parameter count.
     //
-    // P0-J upgrade (post-audit, 2026-05-16, audit Rec #2): D/N < 10× is
-    // now a HARD BLOCKER (fail-fast) unless `--force-under-provisioned`
-    // is passed. 10× ≤ D/N < 20× is a strong warning. Triggered only on
-    // `--init` runs where arch dims allow N estimation; from-scratch
-    // runs are exempt.
+    // P0-J' upgrade (post-§85-§86 audit + P2-E/P2-G empirical evidence,
+    // 2026-05-17): D/N < 20× is NOW a HARD BLOCKER (was < 10× pre-§87).
     //
-    // Audit motivation: §82 P2-A's 0.04× ratio + repetitive token
+    // Empirical motivation: §85 P2-E (0.083× ratio at LR=1.5e-5) hit
+    // val_loss=4.6227; §85.4 P2-G (0.155× ratio, 2× more steps) EARLY_STOPPED
+    // at val_loss=4.6497 — WORSE despite 2× compute, definitively
+    // corroborating the audit's plateau prediction. Marginal-gain decay
+    // proves D/N < 20× cannot reach the val_loss < 3.0 ship target
+    // regardless of LR / warmup / patience tuning.
+    //
+    // Theoretical motivation: §82 P2-A's 0.04× ratio + repetitive token
     // gibberish at val_loss=4.71 (Holtzman et al. 2019 degeneration)
     // proved that 30 min of theoretical falsification saves 8h+ GPU.
-    // Contract: contracts/chinchilla-gate-v1.yaml.
+    //
+    // Methodology lesson #36 (`feedback_audit_hypothesis_bounds.md`): the
+    // pre-§87 10× threshold was correct for "definitely-broken" but allowed
+    // an "ablation band" 10-20× that the §85-§86 empirical sequence proved
+    // also hits plateau. Tightening to 20× as hard-gate eliminates the
+    // ambiguous band.
+    //
+    // Bypass policy unchanged: --force-under-provisioned lets operators
+    // opt into sub-20× runs for ablation / resume / smoke purposes. The
+    // emitted log line names the zone (degeneration < 10× vs plateau 10-20×)
+    // so the operator's intent is captured in the audit trail.
+    //
+    // Contract: contracts/chinchilla-gate-v1.yaml (v1.1.0 codifies the 20×
+    // threshold as part of this PR).
     if let Some(arch) = init_arch.as_ref() {
         let n_params = estimate_param_count(arch);
         let d_tokens = (num_steps as u64)
@@ -259,47 +277,55 @@ pub(crate) fn run(
             0
         };
 
-        if ratio < 10.0 && !force_under_provisioned {
+        if ratio < 20.0 && !force_under_provisioned {
+            // §87 P0-J' upgrade: 20× hard gate (was 10× pre-§87).
+            // The expected failure mode differs by zone:
+            //   < 10×  → Holtzman degeneration (repetitive gibberish)
+            //   10-20× → val_loss plateau ~4.65 (§85 P2-E/P2-G empirical)
+            let degeneracy_warning = if ratio < 10.0 {
+                "mode collapse / repetitive degeneration (Holtzman et al. 2019, arXiv:1904.09751)"
+            } else {
+                "val_loss plateau around 4.65 (empirically demonstrated by §85 P2-E + §85.4 P2-G — \
+                 both hit ~4.65 floor and cannot improve regardless of LR / warmup / patience tuning)"
+            };
             return Err(CliError::ValidationFailed(format!(
-                "[P0-J] Chinchilla hard gate (chinchilla-gate-v1): \
-                 train tokens D = {} ({:.1}M) is {:.3}× param count N = {} ({:.1}M); \
-                 Chinchilla compute-optimal target is D ≈ 20·N (Hoffmann et al. 2022, arXiv:2203.15556). \
-                 Run REJECTED: D/N < 10× will produce mode collapse / repetitive degeneration \
-                 (Holtzman et al. 2019, arXiv:1904.09751). \
-                 Increase --num-steps to ~{} OR widen --dataset corpus OR reduce model size. \
+                "[P0-J'] Chinchilla 20x hard gate (chinchilla-gate-v1, SPEC §87 upgrade): \
+                 train tokens D = {} ({:.1}M) is {:.3}x param count N = {} ({:.1}M); \
+                 Chinchilla compute-optimal target is D ~ 20*N (Hoffmann et al. 2022, arXiv:2203.15556). \
+                 Run REJECTED: D/N < 20x will produce {}. \
+                 Increase --num-steps to ~{} (for compute-optimal 20*N) OR \
+                 widen --dataset corpus OR reduce model size. \
                  To bypass anyway (e.g. ablation studies, resumed runs), pass --force-under-provisioned.",
                 d_tokens,
                 d_tokens as f64 / 1e6,
                 ratio,
                 n_params,
                 n_params as f64 / 1e6,
+                degeneracy_warning,
                 suggested_steps,
             )));
         }
 
-        if ratio < 10.0 {
+        if ratio < 20.0 {
             // Bypassed via --force-under-provisioned: emit a loud warning
-            // so the override is captured in the log.
+            // so the override is captured in the log. Zone label
+            // distinguishes failure modes for the audit trail.
+            let zone = if ratio < 10.0 {
+                "DEGENERATION ZONE (< 10x — Holtzman gibberish likely)"
+            } else {
+                "PLATEAU ZONE (10x <= D/N < 20x — §85 P2-E/P2-G evidence: plateaus ~ 4.65)"
+            };
             eprintln!(
-                "[P0-J] Chinchilla gate BYPASSED via --force-under-provisioned: \
-                 D = {} ({:.1}M) is {:.3}× N = {} ({:.1}M). \
-                 Run will likely produce repetitive/degenerate output. \
+                "[P0-J'] Chinchilla 20x gate BYPASSED via --force-under-provisioned: \
+                 D = {} ({:.1}M) is {:.3}x N = {} ({:.1}M). \
+                 {}. \
                  You explicitly opted in.",
-                d_tokens, d_tokens as f64 / 1e6,
+                d_tokens,
+                d_tokens as f64 / 1e6,
                 ratio,
-                n_params, n_params as f64 / 1e6,
-            );
-        } else if ratio < 20.0 {
-            // 10× ≤ D/N < 20× — below compute-optimal but training will
-            // still progress meaningfully. Warning, not error.
-            eprintln!(
-                "[P1-A] Chinchilla gate WARNING: D = {} ({:.1}M) is {:.1}× N = {} ({:.1}M); \
-                 below compute-optimal 20·N target — model has room for more training. \
-                 Suggested --num-steps for 20·N: ~{}.",
-                d_tokens, d_tokens as f64 / 1e6,
-                ratio,
-                n_params, n_params as f64 / 1e6,
-                suggested_steps,
+                n_params,
+                n_params as f64 / 1e6,
+                zone,
             );
         }
     }
@@ -1093,6 +1119,9 @@ mod tests {
     /// Mirror of the inline gate math in `run()` — kept in sync via
     /// review. Returns Some(error_message) if rejected, None if
     /// accepted (with or without bypass).
+    ///
+    /// §87 P0-J' upgrade: threshold raised from 10× to 20× per the
+    /// §85 P2-E + §85.4 P2-G empirical plateau evidence.
     fn chinchilla_gate_check(
         arch: &TransformerConfig,
         num_steps: usize,
@@ -1105,7 +1134,7 @@ mod tests {
             .saturating_mul(batch_size as u64)
             .saturating_mul(seq_length as u64);
         let ratio = d_tokens as f64 / n_params as f64;
-        if ratio < 10.0 && !force_under_provisioned {
+        if ratio < 20.0 && !force_under_provisioned {
             Some(ratio)
         } else {
             None
@@ -1146,41 +1175,48 @@ mod tests {
         assert!(verdict.is_none(), "force_under_provisioned must bypass");
     }
 
-    /// FALSIFY-CHINCHILLA-004 (unit): boundary at exactly D/N = 10
-    /// passes; just below fails. Uses ceiling division to ensure
-    /// the "exact" case actually meets or exceeds 10·N (integer
-    /// truncation on `target_d / (bs*sl)` would land slightly below).
+    /// FALSIFY-CHINCHILLA-004 (unit, §87 upgrade): boundary at exactly
+    /// D/N = 20 passes; just below fails. The §87 P0-J' upgrade raises
+    /// the boundary from 10× → 20× per the §85 plateau evidence.
     #[test]
-    fn chinchilla_hard_gate_boundary_10x() {
+    fn chinchilla_hard_gate_boundary_20x() {
         let cfg = qwen_05b_config();
         let n = estimate_param_count(&cfg);
         let bs = 16u64;
         let sl = 512u64;
-        let target_d = 10 * n;
+        let target_d = 20 * n;
         let bs_sl = bs * sl;
-        // Ceiling division so D ≥ 10·N exactly (passes the gate).
+        // Ceiling division so D >= 20*N exactly (passes the gate).
         let exact_steps = (target_d + bs_sl - 1) / bs_sl;
         let verdict_exact = chinchilla_gate_check(
-            &cfg, exact_steps as usize, bs as usize, sl as usize, false,
+            &cfg,
+            exact_steps as usize,
+            bs as usize,
+            sl as usize,
+            false,
         );
         assert!(
             verdict_exact.is_none(),
-            "ratio ≥ 10.0 should PASS, got verdict={verdict_exact:?}"
+            "ratio >= 20.0 should PASS, got verdict={verdict_exact:?}"
         );
-        // One full step less → below 10·N → REJECTED.
+        // One full step less → below 20·N → REJECTED.
         let verdict_below = chinchilla_gate_check(
-            &cfg, (exact_steps - 1) as usize, bs as usize, sl as usize, false,
+            &cfg,
+            (exact_steps - 1) as usize,
+            bs as usize,
+            sl as usize,
+            false,
         );
         assert!(
             verdict_below.is_some(),
-            "ratio just below 10× should be REJECTED"
+            "ratio just below 20x should be REJECTED"
         );
     }
 
-    /// FALSIFY-CHINCHILLA-005 (unit): generously-provisioned ratios
-    /// (≥ 10×) pass without --force flag.
+    /// FALSIFY-CHINCHILLA-005 (unit, §87 upgrade): generously-provisioned
+    /// ratios (≥ 20×) pass without --force flag.
     #[test]
-    fn chinchilla_hard_gate_accepts_well_provisioned() {
+    fn chinchilla_hard_gate_accepts_compute_optimal() {
         let cfg = qwen_05b_config();
         let n = estimate_param_count(&cfg);
         // 25·N = generous (above 20× compute-optimal target).
@@ -1188,7 +1224,33 @@ mod tests {
         let sl = 512u64;
         let steps_25x = ((25 * n) / (bs * sl)) as usize;
         let verdict = chinchilla_gate_check(&cfg, steps_25x, bs as usize, sl as usize, false);
-        assert!(verdict.is_none(), "25× should pass");
+        assert!(verdict.is_none(), "25x should pass");
+    }
+
+    /// FALSIFY-CHINCHILLA-006 (NEW, §87 upgrade): the 10× ≤ D/N < 20×
+    /// "plateau zone" — previously a warning, now a hard fail per
+    /// §85 P2-E + §85.4 P2-G empirical evidence (both runs at
+    /// 0.083× and 0.155× hit val_loss ≈ 4.65 plateau and EARLY_STOPPED).
+    /// Tightening the gate eliminates this ambiguous band.
+    #[test]
+    fn chinchilla_hard_gate_rejects_plateau_zone() {
+        let cfg = qwen_05b_config();
+        let n = estimate_param_count(&cfg);
+        let bs = 16u64;
+        let sl = 512u64;
+        // 15·N — midway through the old "warn-only" band, now rejected.
+        let steps_15x = ((15 * n) / (bs * sl)) as usize;
+        let verdict = chinchilla_gate_check(&cfg, steps_15x, bs as usize, sl as usize, false);
+        assert!(
+            verdict.is_some(),
+            "15x (plateau zone) should be REJECTED post-§87 upgrade"
+        );
+        // Bypass still works
+        let verdict_bypass = chinchilla_gate_check(&cfg, steps_15x, bs as usize, sl as usize, true);
+        assert!(
+            verdict_bypass.is_none(),
+            "force_under_provisioned must still bypass plateau zone"
+        );
     }
 
     #[test]
