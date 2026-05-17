@@ -9180,14 +9180,14 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'P2-C: Widen corpus to >2B tokens (highest EV)'
-  status: planned
+  status: completed
   priority: critical
   assigned_to: null
   created: 2026-05-16T07:15:09Z
-  updated: 2026-05-16T07:15:09Z
+  updated: 2026-05-17T08:16:22Z
   spec: null
   acceptance_criteria:
-  - '(1) Author corpus merge contract; (2) Pull the-stack-v2 Python permissive shards via apr corpus pull; (3) Concatenate + dedupe with §77 NFC pipeline; (4) Retokenize with Qwen tokenizer; (5) Dispatch pretrain with P0-J hard gate enforced. Audit Rec #1 — promoted above P2-A2 because P2-A2 is pre-falsified by Chinchilla math. Effort: 6-12h CPU + 8-16h GPU. Δship +6 (val_loss<3.5) to +10 (val_loss<3.0). P=55%. See §83 + roadmap §4 P2.'
+  - 'P2-C 50K-step training COMPLETED via lambda-vector dispatch 2026-05-17. Multi-source corpus assembly succeeded (49.6B tokens, 18.3M docs, 17 min tokenize at 22.5K docs/s). Training EARLY_STOP at 27 epochs / 2700 steps with val_loss=4.91 best. AUDIT HYPOTHESIS FALSIFIED: corpus diversity was NOT the binding constraint — identical termination shape to §82 (which had 1.24B-token single-source corpus). Root cause discovered (NEW P0-K): apr convert import-from-HF doesn''t stamp hf_architecture / embedded tokenizer / merges, so all downstream P0-D/E/F/G/H/J machinery has nothing to propagate. Ship % stays at 79. See evidence/p2c-2026-05-17/findings.md for full Five-Whys + methodology lesson #33 (upstream metadata defects masquerade as downstream packaging defects). Next: PMAT-690 NEW P0-K apr convert metadata stamping.'
   phases: []
   subtasks: []
   estimated_effort: null
@@ -9379,4 +9379,26 @@ roadmap:
   - ship-model-2
   - publish
   - blocked-on-p3c
+  notes: null
+- id: PMAT-690
+  github_issue: null
+  item_type: task
+  title: 'P0-K NEW: apr convert must stamp hf_architecture + tokenizer + merges into imported APRs'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-05-17T08:16:22Z
+  updated: 2026-05-17T08:16:22Z
+  spec: null
+  acceptance_criteria:
+  - 'P2-C live falsification (2026-05-17) revealed that PMAT-679..683''s Class 3 packaging cascade (P0-D/E/F/G/H/J) was treating symptoms of a single upstream defect. apr convert from-HF-safetensors doesn''t stamp hf_architecture, tokenizer.vocabulary, or tokenizer.merges into the imported APR. apr pretrain --init then reads None for those fields and downstream P0-* machinery has nothing to propagate. Fix: apr convert reads source config.json architectures[0] + tokenizer.json + writes them into apr_metadata.hf_architecture + custom.tokenizer.{vocabulary,merges}. Scope ~100 LOC. Unblocks PMAT-679 P0-H half + AC-SHIP2-010 llama-cli interop. See evidence/p2c-2026-05-17/findings.md.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - albor-370m
+  - p0
+  - roadmap-v3
+  - ship-model-2
+  - upstream-fix
   notes: null
