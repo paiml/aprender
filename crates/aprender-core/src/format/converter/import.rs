@@ -730,6 +730,13 @@ fn streaming_sharded_import(
         param_count,
         custom,
         architecture: model_config.as_ref().and_then(|c| c.architecture.clone()),
+        // PMAT-690 P0-K: streaming-import path. The synchronous import
+        // path in write.rs already stamps these; without the same wiring
+        // here, the streaming path silently drops the HF identity and
+        // reintroduces the §81-§83 cascade root cause for any model
+        // large enough to trigger streaming (>1 GB).
+        hf_architecture: model_config.as_ref().and_then(|c| c.hf_architecture.clone()),
+        hf_model_type: model_config.as_ref().and_then(|c| c.hf_model_type.clone()),
         hidden_size: model_config.as_ref().and_then(|c| c.hidden_size),
         num_layers: model_config.as_ref().and_then(|c| c.num_layers),
         num_heads: model_config.as_ref().and_then(|c| c.num_heads),
