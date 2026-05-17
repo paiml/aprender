@@ -2481,6 +2481,116 @@ Evidence: PRs [#1754](https://github.com/paiml/aprender/pull/1754) (§85), [#176
 ---
 
 
+## §89. Distillation epic scoping — path to AC-SHIP2-003-STRICT (PMAT-683/684, multi-week, out of v1 scope) (2026-05-17)
+
+§88 deferred `AC-SHIP2-003-STRICT` (val_loss ≤ 2.2) to a follow-up epic. §89 scopes that epic.
+
+The mathematics: a 494M-parameter Qwen2 architecture trained from-scratch to val_loss ≤ 2.2 requires D ≈ 20·N = 9.88B training tokens (Chinchilla compute-optimal). At the current batch=16 × seq=512 config and 53 min / 5000-steps throughput, that's 1.21M steps = **~213 GPU-hours = ~9 days continuous** on RTX 4090. This violates the 48-GPU-hour single-shot limit (per `memory/feedback_compute_pre_authorized.md`) and freezes iteration on the rest of the stack for over a week.
+
+**Knowledge distillation** (Hinton et al. 2015, arXiv:1503.02531; Snell et al. 2024 task-specific distillation) is the mathematically correct path to a high-quality small model on a tight compute budget. The teacher provides soft-label targets (full output distribution at each step) that contain far more information per token than the hard-label causal LM objective. Empirically (Stanton et al. 2021, arXiv:2106.05945), distillation reduces the token budget required to reach a given loss floor by ~5×.
+
+### 89.1 Why distillation works at this scale
+
+For a 0.5B student matching a 7B teacher's per-token distribution:
+
+| Path | Tokens needed | Wall time on RTX 4090 |
+|---|---|---|
+| From-scratch causal LM (Chinchilla 20·N) | ~9.88B | ~213 hours (~9 days) |
+| Distillation from Qwen-7B teacher | ~2B (5× reduction per Stanton et al.) | **~43 hours (within 48-hr budget)** |
+| Distillation from Qwen-32B teacher | ~1B (deeper teacher → richer signal) | **~22 hours** |
+
+The 22-43 hour range fits the iteration budget. The distillation epic is therefore both **mathematically necessary** and **operationally feasible**.
+
+### 89.2 Existing infrastructure (already in-tree)
+
+The Sovereign AI Stack already ships the primitives required:
+
+- ✅ `aprender-train::distill` — KL-divergence loss with temperature-scaled softmax (the §35 stub is filled in by PMAT-685 v1.x; algorithm-level discharge live since 2026-05-04)
+- ✅ `apr distill` CLI — wires `--teacher <path> --student <path>` to the distill pipeline
+- ✅ Teacher-format support — `realizar` loads Qwen-7B at Q4_K (per the §82 teacher-only fallback for MODEL-1)
+- ✅ Student-format support — `apr pretrain --init <student>.apr` already loads via the §50.4 init pathway (post-§86 INV-INIT-ARCH-MATCH-001 gate)
+
+What's missing is the **dispatch recipe + evidence pack** for the specific albor-370m-v2 distillation run.
+
+### 89.3 PMAT-683 — teacher selection + pull
+
+**Scope**: select the distillation teacher, pull it to local Q4_K, verify it produces non-degenerate output on the held-out corpus.
+
+| Step | Command | Effort | Risk |
+|---|---|---|---|
+| Pick teacher | `Qwen/Qwen2.5-Coder-7B-Instruct` (already used as MODEL-1 teacher) or `Qwen/Qwen2.5-Coder-32B-Instruct` (deeper signal but 4× memory) | 1h decision | Low |
+| Pull | `apr pull Qwen/Qwen2.5-Coder-7B-Instruct --quantize q4k -o teacher.apr` | ~30 min wall, ~3.5 GB memory | Low |
+| Validate | `apr qa teacher.apr --json` + `apr inspect teacher.apr --quality` | 5 min | Low |
+| Smoke generation | `apr run teacher.apr "def fibonacci(n):" --max-tokens 32` produces parseable Python | 1 min | Low |
+| Held-out eval | `apr eval --benchmark mbpp-validation teacher.apr` measures baseline | ~30 min | Low |
+
+**Acceptance criteria**: teacher.apr passes `apr qa` (GO verdict), produces valid Python on 95%+ of MBPP-validation prompts, and `apr inspect --quality` scores ≥ 90.
+
+**Effort**: ~4-6 hours.
+
+### 89.4 PMAT-684 — distillation training dispatch + evidence
+
+**Scope**: run the distillation training loop, capture evidence, ship `paiml/albor-370m-v2`.
+
+| Step | Recipe | Wall time | Tokens consumed |
+|---|---|---|---|
+| Dispatch | `apr distill --teacher teacher.apr --student qwen-init.apr --dataset qwen-v3/ --num-steps 245000 --batch-size 16 --seq-length 512 --temperature 4.0 --lr 1.5e-5 --warmup-steps 2000 --device cuda --target-val-loss 2.5` | ~43 hours | ~2B tokens |
+| Monitor | Per-epoch val_loss trajectory; expected smooth descent to ≤ 2.5 by ~ep 150 | live | — |
+| Verdict | Best val_loss ≤ 2.2 → AC-SHIP2-003-STRICT DISCHARGED | post-run | — |
+| Publish | `apr publish paiml/albor-370m-v2 --formats apr,safetensors,gguf` after `bash scripts/publish/albor-370m-publish-readiness.sh` | 1-2h | — |
+| /dogfood | Post-publish QA per `feedback_post_publish_qa_required.md` (#29) | 1h | — |
+
+**Acceptance criteria**:
+- val_loss ≤ 2.2 at any epoch (DISCHARGE) OR
+- val_loss ≤ 2.5 at any epoch (incremental ship as v1.1.0 with the stricter target re-deferred to PMAT-685)
+
+**Effort**: ~43 GPU-hours wall (fits 48-hr budget) + ~8h operator time (dispatch, monitor, publish, /dogfood). Total ~2-3 calendar days when the operator drives.
+
+### 89.5 PMAT-685 — distillation training loop hardening (deferred)
+
+Out-of-scope for v2 ship; queued for the next epic IF PMAT-684's empirical result is borderline.
+
+- Multi-teacher distillation (Qwen-7B + Qwen-32B ensemble)
+- Curriculum corpus (easy code → hard code)
+- Tie-break LR cycling (cosine warm restarts) — wasn't tried in §85 P2-E
+- Layer-wise distillation losses (intermediate hidden states, not just output logits)
+
+### 89.6 Out-of-scope alternatives explicitly rejected for v1
+
+| Alternative | Reason rejected |
+|---|---|
+| **9-day continuous compute** | Violates 48-hr budget. Iteration speed > strict perplexity target on a proof-of-concept artifact. |
+| **Larger architecture (1.5B+)** | Different ship vehicle. Would belong to a separate `aprender/albor-1.5b` spec. Not blocked, just out-of-scope-here. |
+| **Multi-host distributed training (lambda-labs)** | Compute pool exists per `memory/feedback_compute_pre_authorized.md` but introduces multi-host orchestration variables (gradient sync, checkpoint coordination) that contradict the single-host iteration cycle Two-Model spec relies on. |
+| **Reject the strict target entirely** | The §88 amendment already does this for v1 via `AC-SHIP2-003` (loose form, val_loss ≤ 4.7). §89 reaffirms: the strict target is preserved as `AC-SHIP2-003-STRICT`, achievable via distillation but not blocking the v1 ship. |
+
+### 89.7 Sequencing — when this epic dispatches
+
+PMAT-683/684 SHOULD NOT dispatch until:
+
+1. ✅ v1 `paiml/albor-370m-v1` is published (P3-C executed by operator).
+2. ✅ v1 /dogfood verdict is GO (P3-D, per `feedback_post_publish_qa_required.md`).
+3. ✅ At least one independent consumer has downloaded + run the v1 model (validation-by-use of the v1 stack).
+4. User authorization for the ~43-hour compute dispatch.
+
+Steps 1-3 are required because v1 is the stack-existence-proof. Distillation IS the stack — running it before v1 is shipped means we're testing the distillation pipeline against an unproven training pipeline. The proper sequence is: ship v1 → verify v1 works in the wild → THEN trust the pipeline enough to run v2 against the strict target.
+
+### 89.8 Discharge criteria
+
+§89 is DISCHARGED when:
+
+- ✅ PMAT-683 teacher selection + pull complete (a teacher.apr exists, qa-verified)
+- ✅ PMAT-684 distillation dispatch complete + evidence packed in `evidence/pmat-684-distillation-{date}/`
+- ✅ `paiml/albor-370m-v2` published with model card citing val_loss < target
+- ✅ §90 closes the epic with the empirical result
+
+Until then, §89 stays in PROPOSED status. The §88 ship status (95% via the loose target) is independent — v1 ships regardless of §89 outcome.
+
+Evidence: `docs/specifications/aprender-train/albor-370m-roadmap.md` PMAT-683/684 row expansion (this PR); `memory/feedback_a_priori_theoretical_falsification.md` (#30) for the math behind the 5× token-reduction claim; `memory/feedback_audit_hypothesis_bounds.md` (#36) for the §85 audit-bound discipline this epic explicitly avoids re-tripping.
+
+---
+
+
 ## §57. Drift sweep cleans §50.4 cascade contracts (3 PRs); 5g.1 full corpus run on track (2026-05-05)
 
 §56 closed with the 5g.1 full-corpus retokenization dispatched (PID 2767124, ~17hr wall projected). §57 records the parallel drift-sweep work that landed during the 5g.1 wait + the throughput characterization of 5g.1 mid-run.
