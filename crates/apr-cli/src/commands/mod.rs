@@ -35,6 +35,8 @@ pub(crate) mod diagnose;
 
 pub(crate) mod dry_sampling_classifier;
 pub(crate) mod dry_sampling_lint;
+pub(crate) mod embed_viz_classifier;
+pub(crate) mod embed_viz_lint;
 pub(crate) mod embeddings_classifier;
 pub(crate) mod embeddings_lint;
 pub(crate) mod eval;
