@@ -30,6 +30,7 @@ pub(crate) fn run(
     hf_architecture: Option<&str>,
     hf_model_type: Option<&str>,
     architecture: Option<&str>,
+    _tokenizer_dir: Option<&Path>,
     output: &Path,
     force: bool,
     json_output: bool,
@@ -72,6 +73,9 @@ pub(crate) fn run(
         hf_architecture: hf_architecture.map(str::to_string),
         hf_model_type: hf_model_type.map(str::to_string),
         architecture: architecture.map(str::to_string),
+        tokenizer_vocab: None,
+        tokenizer_merges: None,
+        tokenizer_model_type: None,
     };
 
     let stamped = stamp_provenance_bytes(&input, &patch)
