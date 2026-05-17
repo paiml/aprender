@@ -59,7 +59,13 @@ pub(crate) fn run(
         _ => None,
     };
 
-    print_report(trace_dir, dir_outcome_t.as_ref(), dir_outcome_s.as_ref(), exit_outcome.as_ref(), json);
+    print_report(
+        trace_dir,
+        dir_outcome_t.as_ref(),
+        dir_outcome_s.as_ref(),
+        exit_outcome.as_ref(),
+        json,
+    );
 
     if let Some(o) = &dir_outcome_t {
         if !matches!(o, HangTimeoutOutcome::Ok { .. }) {

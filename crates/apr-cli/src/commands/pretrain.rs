@@ -285,9 +285,11 @@ pub(crate) fn run(
                  D = {} ({:.1}M) is {:.3}× N = {} ({:.1}M). \
                  Run will likely produce repetitive/degenerate output. \
                  You explicitly opted in.",
-                d_tokens, d_tokens as f64 / 1e6,
+                d_tokens,
+                d_tokens as f64 / 1e6,
                 ratio,
-                n_params, n_params as f64 / 1e6,
+                n_params,
+                n_params as f64 / 1e6,
             );
         } else if ratio < 20.0 {
             // 10× ≤ D/N < 20× — below compute-optimal but training will
@@ -296,9 +298,11 @@ pub(crate) fn run(
                 "[P1-A] Chinchilla gate WARNING: D = {} ({:.1}M) is {:.1}× N = {} ({:.1}M); \
                  below compute-optimal 20·N target — model has room for more training. \
                  Suggested --num-steps for 20·N: ~{}.",
-                d_tokens, d_tokens as f64 / 1e6,
+                d_tokens,
+                d_tokens as f64 / 1e6,
                 ratio,
-                n_params, n_params as f64 / 1e6,
+                n_params,
+                n_params as f64 / 1e6,
                 suggested_steps,
             );
         }
@@ -1160,16 +1164,19 @@ mod tests {
         let bs_sl = bs * sl;
         // Ceiling division so D ≥ 10·N exactly (passes the gate).
         let exact_steps = (target_d + bs_sl - 1) / bs_sl;
-        let verdict_exact = chinchilla_gate_check(
-            &cfg, exact_steps as usize, bs as usize, sl as usize, false,
-        );
+        let verdict_exact =
+            chinchilla_gate_check(&cfg, exact_steps as usize, bs as usize, sl as usize, false);
         assert!(
             verdict_exact.is_none(),
             "ratio ≥ 10.0 should PASS, got verdict={verdict_exact:?}"
         );
         // One full step less → below 10·N → REJECTED.
         let verdict_below = chinchilla_gate_check(
-            &cfg, (exact_steps - 1) as usize, bs as usize, sl as usize, false,
+            &cfg,
+            (exact_steps - 1) as usize,
+            bs as usize,
+            sl as usize,
+            false,
         );
         assert!(
             verdict_below.is_some(),

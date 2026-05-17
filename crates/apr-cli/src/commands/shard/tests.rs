@@ -70,7 +70,10 @@ fn falsify_crux_b_05_001_weight_map_covers_all_tensors() {
     assert!(index_path.is_file(), "index.json must exist");
     assert_eq!(tensor_count, 20);
     assert!(total_size > 0);
-    assert!(shard_files.len() >= 2, "small limit should produce multiple shards");
+    assert!(
+        shard_files.len() >= 2,
+        "small limit should produce multiple shards"
+    );
 
     let idx_text = fs::read_to_string(&index_path).expect("read index");
     // Spot-check the JSON shape — every tensor name appears as a key.
@@ -143,7 +146,9 @@ fn falsify_crux_b_05_003_total_size_equals_sum_of_bytes() {
 
     // Mix of f32 (4B/elem) and f16 (2B/elem) to exercise dtype_size.
     let f32_bytes = fake_f32_bytes(7, 100 * 100); // 40_000 bytes
-    let f16_bytes: Vec<u8> = (0..(50 * 50)).flat_map(|i| (i as u16).to_le_bytes()).collect(); // 5_000 bytes
+    let f16_bytes: Vec<u8> = (0..(50 * 50))
+        .flat_map(|i| (i as u16).to_le_bytes())
+        .collect(); // 5_000 bytes
     let spec = vec![
         ("a", Dtype::F32, vec![100usize, 100], f32_bytes),
         ("b", Dtype::F16, vec![50usize, 50], f16_bytes),
@@ -155,8 +160,8 @@ fn falsify_crux_b_05_003_total_size_equals_sum_of_bytes() {
     let report = shard_safetensors_file(&input, 1024, &out_dir).expect("shard");
     assert_eq!(report.total_size, expected_total);
 
-    let idx_text = fs::read_to_string(&out_dir.join("model.safetensors.index.json"))
-        .expect("read index");
+    let idx_text =
+        fs::read_to_string(&out_dir.join("model.safetensors.index.json")).expect("read index");
     assert!(
         idx_text.contains(&format!("\"total_size\": {expected_total}")),
         "index.json must declare total_size = {expected_total}"
@@ -168,9 +173,24 @@ fn falsify_crux_b_05_003_total_size_equals_sum_of_bytes() {
 fn oversized_single_tensor_alone() {
     let tmp = TempDir::new().expect("tempdir");
     let spec = vec![
-        ("small1", Dtype::F32, vec![16usize, 16], fake_f32_bytes(0, 256)),
-        ("big", Dtype::F32, vec![512usize, 512], fake_f32_bytes(1, 512 * 512)),
-        ("small2", Dtype::F32, vec![16usize, 16], fake_f32_bytes(2, 256)),
+        (
+            "small1",
+            Dtype::F32,
+            vec![16usize, 16],
+            fake_f32_bytes(0, 256),
+        ),
+        (
+            "big",
+            Dtype::F32,
+            vec![512usize, 512],
+            fake_f32_bytes(1, 512 * 512),
+        ),
+        (
+            "small2",
+            Dtype::F32,
+            vec![16usize, 16],
+            fake_f32_bytes(2, 256),
+        ),
     ];
     let input = write_safetensors(tmp.path(), "model.safetensors", &spec);
 
@@ -200,8 +220,18 @@ fn oversized_single_tensor_alone() {
 fn single_shard_roundtrip() {
     let tmp = TempDir::new().expect("tempdir");
     let spec = vec![
-        ("alpha", Dtype::F32, vec![10usize, 10], fake_f32_bytes(3, 100)),
-        ("beta", Dtype::F32, vec![10usize, 10], fake_f32_bytes(4, 100)),
+        (
+            "alpha",
+            Dtype::F32,
+            vec![10usize, 10],
+            fake_f32_bytes(3, 100),
+        ),
+        (
+            "beta",
+            Dtype::F32,
+            vec![10usize, 10],
+            fake_f32_bytes(4, 100),
+        ),
     ];
     let input = write_safetensors(tmp.path(), "model.safetensors", &spec);
 
@@ -241,7 +271,7 @@ fn shard_rejects_empty_input() {
     let tmp = TempDir::new().expect("tempdir");
     let path = write_safetensors(tmp.path(), "empty.safetensors", &[]);
     let out_dir = tmp.path().join("out");
-    let err = shard_safetensors_file(&path, 1024, &out_dir)
-        .expect_err("empty input should be rejected");
+    let err =
+        shard_safetensors_file(&path, 1024, &out_dir).expect_err("empty input should be rejected");
     assert!(format!("{err}").contains("no tensors"));
 }

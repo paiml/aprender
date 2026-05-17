@@ -1106,6 +1106,154 @@ pub enum ExtendedCommands {
     /// Publishing, conversion, and analysis tools
     #[command(flatten)]
     Tools(ToolCommands),
+    /// Score a query/passage pair (or rank multiple passages) with a BERT
+    /// cross-encoder loaded from an APR v2 file (GH-326 Phase 3).
+    ///
+    /// Wraps `aprender_core::models::bert::CrossEncoder::load_from_reader`
+    /// + `score()`. The APR must contain the canonical HF BERT tensor
+    /// names (see `models::bert::expected_bert_tensor_names`).
+    ///
+    /// Tokenisation is NOT applied here — caller passes pre-tokenised
+    /// `input_ids` + `token_type_ids` as comma-delimited u32 lists. A
+    /// dedicated tokeniser-aware mode is Phase 3b follow-up scope.
+    Rerank {
+        /// Path to the APR file containing the cross-encoder weights.
+        #[arg(value_name = "MODEL")]
+        model: PathBuf,
+        /// Pre-tokenised input ids (comma-separated `u32`s). Mutually
+        /// exclusive with `--query`+`--passage`+`--vocab` (Phase 3b).
+        /// Example: `--input-ids 101,2024,102,3456,102` for `[CLS] q [SEP] p [SEP]`.
+        #[arg(long, value_name = "IDS")]
+        input_ids: Option<String>,
+        /// Pre-tokenised token-type ids (comma-separated `u32`s).
+        /// Same length as `--input-ids`. 0 for query side, 1 for passage.
+        #[arg(long, value_name = "IDS")]
+        token_type_ids: Option<String>,
+        /// Phase 3b — query text. Pair with `--passage` + `--vocab` to enable
+        /// in-process WordPiece tokenisation. The tokeniser builds
+        /// `[CLS] query [SEP] passage [SEP]` with `token_type_ids = 0` for
+        /// the query side and `1` for the passage side.
+        #[arg(long, value_name = "TEXT")]
+        query: Option<String>,
+        /// Phase 3b — passage text. Required when `--query` is supplied
+        /// in single-pair mode (use `--passages` for batch ranking).
+        #[arg(long, value_name = "TEXT")]
+        passage: Option<String>,
+        /// Phase 5 — batch ranking mode (#326). Passage candidates to
+        /// score against `--query`. May be supplied multiple times:
+        /// `apr rerank model.apr --query "..." --passages "p1" --passages "p2"`.
+        /// Mutually exclusive with `--passage`. Output is one
+        /// `score[i]` line per passage in input order, OR a JSON array
+        /// of `{passage, logit, score}` objects sorted by descending
+        /// score when `--sort` is set.
+        #[arg(long, value_name = "TEXT")]
+        passages: Vec<String>,
+        /// Phase 5 — sort batch output by descending score (highest
+        /// relevance first). Only meaningful with `--passages` and
+        /// `--json`. Default: preserve input order.
+        #[arg(long)]
+        sort: bool,
+        /// Phase 5 — limit to top-K passages after sorting. Implies
+        /// `--sort`. Default 0 (no limit).
+        #[arg(long, default_value_t = 0)]
+        top_k: usize,
+        /// Phase 3b — path to a WordPiece `vocab.txt` (one token per line,
+        /// line index = token id). Required when `--query` is supplied.
+        /// Must contain entries for `[CLS]`, `[SEP]`, and `[UNK]`.
+        /// Phase 4 accepts HuggingFace `tokenizer.json` (extension-detected).
+        #[arg(long, value_name = "FILE")]
+        vocab: Option<PathBuf>,
+        /// Override hidden_dim (default: 384 / MiniLM-L-6).
+        #[arg(long, default_value_t = 384)]
+        hidden_dim: usize,
+        /// Override num_layers (default: 6 / MiniLM-L-6).
+        #[arg(long, default_value_t = 6)]
+        num_layers: usize,
+        /// Override num_heads (default: 12 / MiniLM-L-6).
+        #[arg(long, default_value_t = 12)]
+        num_heads: usize,
+        /// Override intermediate_dim (default: 1536 / MiniLM-L-6).
+        #[arg(long, default_value_t = 1536)]
+        intermediate_dim: usize,
+        /// Override vocab_size (default: 30522 / bert-base-uncased).
+        #[arg(long, default_value_t = 30522)]
+        vocab_size: usize,
+        /// Override max_position_embeddings (default: 512).
+        #[arg(long, default_value_t = 512)]
+        max_position_embeddings: usize,
+        /// Override type_vocab_size (default: 2).
+        #[arg(long, default_value_t = 2)]
+        type_vocab_size: usize,
+        /// Number of labels in the classifier head (default: 1 for
+        /// regression-style relevance scoring).
+        #[arg(long, default_value_t = 1)]
+        num_labels: usize,
+        /// Load the optional BERT pooler dense layer (default: true).
+        /// Cross-encoders that skip the pooler should pass `--with-pooler false`.
+        #[arg(long, default_value_t = true)]
+        with_pooler: bool,
+        /// Emit the raw logit instead of the sigmoid-mapped relevance score.
+        #[arg(long)]
+        raw_logit: bool,
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Produce sentence embeddings from a BERT bi-encoder (GH-326 Phase 6).
+    ///
+    /// First-stage dense retrieval companion to `apr rerank`. Loads an
+    /// encoder-only BertModel (e.g. `sentence-transformers/all-MiniLM-L6-v2`),
+    /// tokenises the input text with WordPiece, runs the full encoder
+    /// forward, then pools the hidden states with one of:
+    ///   `--pool cls`  — take the [CLS] hidden state
+    ///   `--pool mean` — mean over non-padding token positions (default;
+    ///                   sentence-transformers convention)
+    /// Optionally L2-normalises the result (`--normalize`, default true,
+    /// matches sentence-transformers).
+    Embed {
+        /// Path to the APR file containing the encoder weights (BertModel).
+        #[arg(value_name = "MODEL")]
+        model: PathBuf,
+        /// Text to encode. Repeatable: `apr embed model.apr --text "a" --text "b" --vocab tok.json`.
+        #[arg(long, value_name = "TEXT")]
+        text: Vec<String>,
+        /// Path to a WordPiece `vocab.txt` or HF `tokenizer.json`.
+        #[arg(long, value_name = "FILE")]
+        vocab: PathBuf,
+        /// Pooling strategy (`cls` or `mean`). Default: `mean`
+        /// (matches sentence-transformers convention).
+        #[arg(long, default_value = "mean")]
+        pool: String,
+        /// L2-normalise the output embedding. Default: true (matches
+        /// sentence-transformers convention). Pass `--normalize false`
+        /// to keep raw magnitudes.
+        #[arg(long, default_value_t = true)]
+        normalize: bool,
+        /// Override hidden_dim (default: 384 / MiniLM).
+        #[arg(long, default_value_t = 384)]
+        hidden_dim: usize,
+        /// Override num_layers (default: 6 / MiniLM-L-6).
+        #[arg(long, default_value_t = 6)]
+        num_layers: usize,
+        /// Override num_heads.
+        #[arg(long, default_value_t = 12)]
+        num_heads: usize,
+        /// Override intermediate_dim.
+        #[arg(long, default_value_t = 1536)]
+        intermediate_dim: usize,
+        /// Override vocab_size.
+        #[arg(long, default_value_t = 30522)]
+        vocab_size: usize,
+        /// Override max_position_embeddings.
+        #[arg(long, default_value_t = 512)]
+        max_position_embeddings: usize,
+        /// Override type_vocab_size.
+        #[arg(long, default_value_t = 2)]
+        type_vocab_size: usize,
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[cfg(feature = "training")]

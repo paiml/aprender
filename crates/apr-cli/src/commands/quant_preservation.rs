@@ -26,10 +26,7 @@ use crate::error::{CliError, Result};
 /// excluded from the equality check). Defined by the GGUF spec — the
 /// quantization_version is per-qtype, and `general.file_type` encodes
 /// the qtype enum on disk.
-const QUANT_VOLATILE_KEYS: &[&str] = &[
-    "general.quantization_version",
-    "general.file_type",
-];
+const QUANT_VOLATILE_KEYS: &[&str] = &["general.quantization_version", "general.file_type"];
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DiffEntry {
@@ -55,12 +52,8 @@ pub struct PreservationReport {
 
 /// Read GGUF metadata from disk.
 pub fn read_gguf_metadata(path: &Path) -> Result<BTreeMap<String, GgufValue>> {
-    let reader = GgufReader::from_file(path).map_err(|e| {
-        CliError::ValidationFailed(format!(
-            "GGUF parse {}: {e}",
-            path.display()
-        ))
-    })?;
+    let reader = GgufReader::from_file(path)
+        .map_err(|e| CliError::ValidationFailed(format!("GGUF parse {}: {e}", path.display())))?;
     Ok(reader.metadata)
 }
 
@@ -198,18 +191,28 @@ pub fn render_text(report: &PreservationReport) -> String {
     if !report.general_keys_diverged.is_empty() {
         out.push_str("  diverged general.*:\n");
         for e in &report.general_keys_diverged {
-            out.push_str(&format!("    {} :: {} → {}\n", e.key, e.reference, e.requant));
+            out.push_str(&format!(
+                "    {} :: {} → {}\n",
+                e.key, e.reference, e.requant
+            ));
         }
     }
     if !report.tokenizer_keys_diverged.is_empty() {
         out.push_str("  diverged tokenizer.*:\n");
         for e in &report.tokenizer_keys_diverged {
-            out.push_str(&format!("    {} :: {} → {}\n", e.key, e.reference, e.requant));
+            out.push_str(&format!(
+                "    {} :: {} → {}\n",
+                e.key, e.reference, e.requant
+            ));
         }
     }
     out.push_str(&format!(
         "  verdict:    {}\n",
-        if report.passed { "PRESERVED" } else { "VIOLATED" }
+        if report.passed {
+            "PRESERVED"
+        } else {
+            "VIOLATED"
+        }
     ));
     out
 }
@@ -227,9 +230,8 @@ pub fn run(reference: &Path, requant: &Path, json: bool) -> Result<()> {
     );
 
     if json {
-        let serialized = serde_json::to_string_pretty(&report).map_err(|e| {
-            CliError::ValidationFailed(format!("serialize report: {e}"))
-        })?;
+        let serialized = serde_json::to_string_pretty(&report)
+            .map_err(|e| CliError::ValidationFailed(format!("serialize report: {e}")))?;
         println!("{serialized}");
     } else {
         print!("{}", render_text(&report));
@@ -248,7 +250,10 @@ mod tests {
     use super::*;
 
     fn meta_kv(pairs: &[(&str, GgufValue)]) -> BTreeMap<String, GgufValue> {
-        pairs.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect()
     }
 
     /// FALSIFY-CRUX-B-19-001 — `general.*` keys (except quantization_version +
@@ -256,7 +261,10 @@ mod tests {
     #[test]
     fn falsify_crux_b_19_001_general_preserved_modulo_volatile() {
         let reference = meta_kv(&[
-            ("general.architecture", GgufValue::String("llama".to_string())),
+            (
+                "general.architecture",
+                GgufValue::String("llama".to_string()),
+            ),
             ("general.name", GgufValue::String("test-model".to_string())),
             ("general.quantization_version", GgufValue::Uint32(2)),
             ("general.file_type", GgufValue::Uint32(10)), // Q4_K
@@ -264,20 +272,22 @@ mod tests {
         ]);
         // requant: same architecture+name; volatile fields differ (Q6_K).
         let requant = meta_kv(&[
-            ("general.architecture", GgufValue::String("llama".to_string())),
+            (
+                "general.architecture",
+                GgufValue::String("llama".to_string()),
+            ),
             ("general.name", GgufValue::String("test-model".to_string())),
             ("general.quantization_version", GgufValue::Uint32(3)),
             ("general.file_type", GgufValue::Uint32(14)), // Q6_K
             ("tokenizer.ggml.bos_token_id", GgufValue::Uint32(1)),
         ]);
-        let report = classify_preservation(
-            &reference,
-            &requant,
-            "ref.gguf".into(),
-            "req.gguf".into(),
-        );
+        let report =
+            classify_preservation(&reference, &requant, "ref.gguf".into(), "req.gguf".into());
         assert!(report.passed, "expected PRESERVED, got {report:#?}");
-        assert_eq!(report.general_keys_checked, 2, "expected 2 non-volatile general keys");
+        assert_eq!(
+            report.general_keys_checked, 2,
+            "expected 2 non-volatile general keys"
+        );
         assert!(report.general_keys_diverged.is_empty());
         assert!(report.tokenizer_keys_diverged.is_empty());
     }
@@ -286,18 +296,9 @@ mod tests {
     /// → classifier MUST flag VIOLATED.
     #[test]
     fn classifier_flags_general_name_change() {
-        let reference = meta_kv(&[
-            ("general.name", GgufValue::String("alpha".to_string())),
-        ]);
-        let requant = meta_kv(&[
-            ("general.name", GgufValue::String("beta".to_string())),
-        ]);
-        let report = classify_preservation(
-            &reference,
-            &requant,
-            "r.gguf".into(),
-            "q.gguf".into(),
-        );
+        let reference = meta_kv(&[("general.name", GgufValue::String("alpha".to_string()))]);
+        let requant = meta_kv(&[("general.name", GgufValue::String("beta".to_string()))]);
+        let report = classify_preservation(&reference, &requant, "r.gguf".into(), "q.gguf".into());
         assert!(!report.passed);
         assert_eq!(report.general_keys_diverged.len(), 1);
         assert_eq!(report.general_keys_diverged[0].key, "general.name");
@@ -311,10 +312,7 @@ mod tests {
             "<eos>".to_string(),
             "hello".to_string(),
         ]);
-        let merges = GgufValue::ArrayString(vec![
-            "h e".to_string(),
-            "he ll".to_string(),
-        ]);
+        let merges = GgufValue::ArrayString(vec!["h e".to_string(), "he ll".to_string()]);
         let reference = meta_kv(&[
             ("tokenizer.ggml.tokens", vocab_a.clone()),
             ("tokenizer.ggml.merges", merges.clone()),
@@ -323,12 +321,7 @@ mod tests {
             ("tokenizer.ggml.tokens", vocab_a),
             ("tokenizer.ggml.merges", merges),
         ]);
-        let report = classify_preservation(
-            &reference,
-            &requant,
-            "r.gguf".into(),
-            "q.gguf".into(),
-        );
+        let report = classify_preservation(&reference, &requant, "r.gguf".into(), "q.gguf".into());
         assert!(report.passed);
         assert_eq!(report.tokenizer_keys_checked, 2);
     }
@@ -344,12 +337,7 @@ mod tests {
             "tokenizer.ggml.tokens",
             GgufValue::ArrayString(vec!["b".to_string(), "a".to_string()]),
         )]);
-        let report = classify_preservation(
-            &reference,
-            &requant,
-            "r.gguf".into(),
-            "q.gguf".into(),
-        );
+        let report = classify_preservation(&reference, &requant, "r.gguf".into(), "q.gguf".into());
         assert!(!report.passed);
         assert_eq!(report.tokenizer_keys_diverged.len(), 1);
     }
@@ -358,19 +346,20 @@ mod tests {
     #[test]
     fn classifier_flags_missing_general_key() {
         let reference = meta_kv(&[
-            ("general.architecture", GgufValue::String("llama".to_string())),
+            (
+                "general.architecture",
+                GgufValue::String("llama".to_string()),
+            ),
             ("general.name", GgufValue::String("m".to_string())),
         ]);
         let requant = meta_kv(&[
-            ("general.architecture", GgufValue::String("llama".to_string())),
+            (
+                "general.architecture",
+                GgufValue::String("llama".to_string()),
+            ),
             // general.name missing
         ]);
-        let report = classify_preservation(
-            &reference,
-            &requant,
-            "r.gguf".into(),
-            "q.gguf".into(),
-        );
+        let report = classify_preservation(&reference, &requant, "r.gguf".into(), "q.gguf".into());
         assert!(!report.passed);
         assert_eq!(report.general_keys_missing_in_requant, vec!["general.name"]);
     }
@@ -381,18 +370,20 @@ mod tests {
         for k in QUANT_VOLATILE_KEYS {
             let reference = meta_kv(&[
                 (k, GgufValue::Uint32(2)),
-                ("general.architecture", GgufValue::String("llama".to_string())),
+                (
+                    "general.architecture",
+                    GgufValue::String("llama".to_string()),
+                ),
             ]);
             let requant = meta_kv(&[
                 (k, GgufValue::Uint32(99)),
-                ("general.architecture", GgufValue::String("llama".to_string())),
+                (
+                    "general.architecture",
+                    GgufValue::String("llama".to_string()),
+                ),
             ]);
-            let report = classify_preservation(
-                &reference,
-                &requant,
-                "r.gguf".into(),
-                "q.gguf".into(),
-            );
+            let report =
+                classify_preservation(&reference, &requant, "r.gguf".into(), "q.gguf".into());
             assert!(report.passed, "volatile key {k} should be ignored");
         }
     }
@@ -409,31 +400,19 @@ mod tests {
             ("llama.attention.head_count", GgufValue::Uint32(99)),
             ("general.name", GgufValue::String("m".to_string())),
         ]);
-        let report = classify_preservation(
-            &reference,
-            &requant,
-            "r.gguf".into(),
-            "q.gguf".into(),
-        );
+        let report = classify_preservation(&reference, &requant, "r.gguf".into(), "q.gguf".into());
         assert!(report.passed, "non-general/non-tokenizer must be ignored");
     }
 
     /// Added keys in requant (that weren't in reference) — flagged.
     #[test]
     fn classifier_flags_added_tokenizer_key() {
-        let reference = meta_kv(&[
-            ("tokenizer.ggml.tokens", GgufValue::ArrayString(vec![])),
-        ]);
+        let reference = meta_kv(&[("tokenizer.ggml.tokens", GgufValue::ArrayString(vec![]))]);
         let requant = meta_kv(&[
             ("tokenizer.ggml.tokens", GgufValue::ArrayString(vec![])),
             ("tokenizer.ggml.merges", GgufValue::ArrayString(vec![])),
         ]);
-        let report = classify_preservation(
-            &reference,
-            &requant,
-            "r.gguf".into(),
-            "q.gguf".into(),
-        );
+        let report = classify_preservation(&reference, &requant, "r.gguf".into(), "q.gguf".into());
         assert!(!report.passed);
         assert_eq!(
             report.tokenizer_keys_added_in_requant,

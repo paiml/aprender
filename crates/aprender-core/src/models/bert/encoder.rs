@@ -16,7 +16,9 @@ impl BertEncoder {
     /// Construct an encoder with `num_layers` zero-initialized `BertLayer`s.
     #[must_use]
     pub fn new(config: &BertConfig) -> Self {
-        let layers = (0..config.num_layers).map(|_| BertLayer::new(config)).collect();
+        let layers = (0..config.num_layers)
+            .map(|_| BertLayer::new(config))
+            .collect();
         Self { layers }
     }
 
@@ -39,6 +41,37 @@ impl BertEncoder {
     #[must_use]
     pub fn num_layers(&self) -> usize {
         self.layers.len()
+    }
+
+    /// Mutable access to the `idx`-th encoder layer (GH-326 weight loading).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `idx >= num_layers()`. Callers loading weights should iterate
+    /// `0..num_layers()` which is bound-safe by construction.
+    pub fn layer_mut(&mut self, idx: usize) -> &mut BertLayer {
+        &mut self.layers[idx]
+    }
+
+    /// Load encoder-only weights from an APR v2 reader (GH-326 Phase 6).
+    ///
+    /// For sentence-embedding models (`BertModel` checkpoints from
+    /// `sentence-transformers`) that ship without a classifier head —
+    /// the `CrossEncoder` loader would error trying to find
+    /// `classifier.weight`. This method loads just the encoder stack
+    /// without requiring a head.
+    ///
+    /// # Errors
+    ///
+    /// Returns
+    /// [`BertLoadError`](crate::models::bert::load::BertLoadError) on
+    /// the first missing tensor or shape mismatch.
+    pub fn load_from_reader(
+        &mut self,
+        reader: &crate::format::v2::AprV2Reader,
+        config: &crate::models::bert::BertConfig,
+    ) -> Result<(), crate::models::bert::load::BertLoadError> {
+        crate::models::bert::load::load_encoder_from_reader(self, reader, config)
     }
 }
 

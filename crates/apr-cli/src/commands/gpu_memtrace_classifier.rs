@@ -90,7 +90,9 @@ pub fn classify_schema(body: &Value) -> ChromeTraceSchemaOutcome {
             }
         }
     }
-    ChromeTraceSchemaOutcome::Ok { event_count: events.len() }
+    ChromeTraceSchemaOutcome::Ok {
+        event_count: events.len(),
+    }
 }
 
 /// Verify that every `alloc` event has a matching `free` event with the
@@ -106,7 +108,10 @@ pub fn classify_alloc_free_pairing(body: &Value) -> AllocFreePairingOutcome {
         if name != "alloc" && name != "free" {
             continue;
         }
-        let addr = e.get("args").and_then(|a| a.get("addr")).and_then(Value::as_str);
+        let addr = e
+            .get("args")
+            .and_then(|a| a.get("addr"))
+            .and_then(Value::as_str);
         let Some(addr) = addr else {
             if name == "alloc" {
                 return AllocFreePairingOutcome::AllocMissingAddr { index: i };
@@ -123,11 +128,15 @@ pub fn classify_alloc_free_pairing(body: &Value) -> AllocFreePairingOutcome {
     let mut orphan_f: Vec<String> = frees.difference(&allocs).cloned().collect();
     if !orphan_a.is_empty() {
         orphan_a.sort();
-        return AllocFreePairingOutcome::OrphanAllocs { addresses: orphan_a };
+        return AllocFreePairingOutcome::OrphanAllocs {
+            addresses: orphan_a,
+        };
     }
     if !orphan_f.is_empty() {
         orphan_f.sort();
-        return AllocFreePairingOutcome::OrphanFrees { addresses: orphan_f };
+        return AllocFreePairingOutcome::OrphanFrees {
+            addresses: orphan_f,
+        };
     }
     AllocFreePairingOutcome::Ok
 }
@@ -213,7 +222,10 @@ mod tests {
     fn schema_rejects_event_missing_ph() {
         let body = json!({"traceEvents": [{"ts": 0, "name": "alloc"}]});
         match classify_schema(&body) {
-            ChromeTraceSchemaOutcome::EventMissingField { index: 0, field: "ph" } => {}
+            ChromeTraceSchemaOutcome::EventMissingField {
+                index: 0,
+                field: "ph",
+            } => {}
             other => panic!("expected EventMissingField(ph), got {other:?}"),
         }
     }
@@ -302,7 +314,9 @@ mod tests {
             ]
         });
         match classify_monotonic_timestamps(&body) {
-            MonotonicTimestampsOutcome::NonMonotonic { index, pid, tid, .. } => {
+            MonotonicTimestampsOutcome::NonMonotonic {
+                index, pid, tid, ..
+            } => {
                 assert_eq!(index, 1);
                 assert_eq!(pid, 0);
                 assert_eq!(tid, 1);

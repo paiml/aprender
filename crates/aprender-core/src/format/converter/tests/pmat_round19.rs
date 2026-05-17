@@ -81,44 +81,57 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn test_pmat224_bert_rejection() {
-        // This test simulates the architecture check logic in apr_import
-        // We can't easily call apr_import because it requires a real file on disk.
-        // Instead, we'll verify the properties of the Architecture enum and logic used.
+    fn test_pmat224_strict_rejects_unverified_arch() {
+        // GH-326 Phase 4b refit: this test used to verify that BERT was
+        // rejected by strict mode (since it was unverified). After BERT
+        // was promoted to verified, the "rejection by strict mode"
+        // semantic moved to Gpt2 which is still unverified. The test
+        // now pins TWO invariants:
+        // (a) BERT IS verified (no longer rejected by strict mode)
+        // (b) Gpt2 is NOT verified (still rejected by strict mode)
 
-        let arch = Architecture::Bert;
-        assert!(!arch.is_inference_verified(), "BERT should NOT be verified");
+        let bert = Architecture::Bert;
+        assert!(
+            bert.is_inference_verified(),
+            "BERT verified post-#326 Phase 4b"
+        );
 
         let qwen = Architecture::Qwen2;
-        assert!(qwen.is_inference_verified(), "Qwen2 SHOULD be verified");
+        assert!(qwen.is_inference_verified(), "Qwen2 verified");
 
-        // Simulate logic flow: strict mode rejects unverified architectures
-        let options_strict = ImportOptions {
+        let gpt2 = Architecture::Gpt2;
+        assert!(
+            !gpt2.is_inference_verified(),
+            "Gpt2 unverified — exercises the strict-mode rejection path"
+        );
+
+        // Strict mode rejects unverified architectures
+        let options_strict_unverified = ImportOptions {
+            architecture: Architecture::Gpt2,
+            strict: true,
+            allow_no_config: true,
+            ..Default::default()
+        };
+        assert!(
+            !options_strict_unverified
+                .architecture
+                .is_inference_verified()
+                && options_strict_unverified.strict,
+            "Strict-mode Gpt2 import should hit the rejection branch"
+        );
+
+        // Strict mode allows verified architectures (including BERT
+        // post-Phase 4b)
+        let options_strict_verified = ImportOptions {
             architecture: Architecture::Bert,
             strict: true,
             allow_no_config: true,
             ..Default::default()
         };
-
-        if !options_strict.architecture.is_inference_verified() && options_strict.strict {
-            // This represents the error path
-            assert!(true, "Strict import correctly flagged unverified arch");
-        } else {
-            panic!("Strict import of BERT should have failed check");
-        }
-
-        // Default (permissive) mode allows unverified architectures with warning
-        let options_permissive = ImportOptions {
-            architecture: Architecture::Bert,
-            allow_no_config: true,
-            ..Default::default()
-        };
-
-        if !options_permissive.architecture.is_inference_verified() && options_permissive.strict {
-            panic!("Permissive import of BERT should have passed check");
-        } else {
-            // This represents the success path
-            assert!(true, "Permissive import correctly bypassed check");
-        }
+        assert!(
+            options_strict_verified.architecture.is_inference_verified(),
+            "Strict-mode BERT import should now pass the verification check \
+             (post-#326 Phase 4b)"
+        );
     }
 }

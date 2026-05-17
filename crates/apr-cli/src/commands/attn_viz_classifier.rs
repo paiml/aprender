@@ -27,8 +27,12 @@ use serde_json::Value;
 /// Outcome of `classify_row_softmax_normalization`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AttnRowsOutcome {
-    Ok { shape: (usize, usize, usize, usize) },
-    NotA4DArray { message: String },
+    Ok {
+        shape: (usize, usize, usize, usize),
+    },
+    NotA4DArray {
+        message: String,
+    },
     RowOutOfNormalization {
         layer: usize,
         head: usize,
@@ -61,21 +65,31 @@ pub enum AttnHtmlOutcome {
 
 /// Parse a 4-D `Vec<Vec<Vec<Vec<f64>>>>` from `body` (typically `attn.json`).
 /// Returns the array and its shape as `(L, H, R, C)`.
-fn parse_4d_array(body: &Value) -> Result<(Vec<Vec<Vec<Vec<f64>>>>, (usize, usize, usize, usize)), String> {
-    let layers = body.as_array().ok_or_else(|| "root is not an array".to_string())?;
+fn parse_4d_array(
+    body: &Value,
+) -> Result<(Vec<Vec<Vec<Vec<f64>>>>, (usize, usize, usize, usize)), String> {
+    let layers = body
+        .as_array()
+        .ok_or_else(|| "root is not an array".to_string())?;
     if layers.is_empty() {
         return Err("layers dimension is empty".to_string());
     }
     let mut out: Vec<Vec<Vec<Vec<f64>>>> = Vec::with_capacity(layers.len());
     let mut shape = (layers.len(), 0usize, 0usize, 0usize);
     for (li, layer) in layers.iter().enumerate() {
-        let heads = layer.as_array().ok_or_else(|| format!("layer[{li}] not an array"))?;
+        let heads = layer
+            .as_array()
+            .ok_or_else(|| format!("layer[{li}] not an array"))?;
         let mut layer_vec: Vec<Vec<Vec<f64>>> = Vec::with_capacity(heads.len());
         for (hi, head) in heads.iter().enumerate() {
-            let rows = head.as_array().ok_or_else(|| format!("layer[{li}].head[{hi}] not an array"))?;
+            let rows = head
+                .as_array()
+                .ok_or_else(|| format!("layer[{li}].head[{hi}] not an array"))?;
             let mut head_vec: Vec<Vec<f64>> = Vec::with_capacity(rows.len());
             for (ri, row) in rows.iter().enumerate() {
-                let cols = row.as_array().ok_or_else(|| format!("layer[{li}].head[{hi}].row[{ri}] not an array"))?;
+                let cols = row
+                    .as_array()
+                    .ok_or_else(|| format!("layer[{li}].head[{hi}].row[{ri}] not an array"))?;
                 let mut row_vec: Vec<f64> = Vec::with_capacity(cols.len());
                 for (ci, c) in cols.iter().enumerate() {
                     let v = c.as_f64().ok_or_else(|| {
@@ -90,7 +104,11 @@ fn parse_4d_array(body: &Value) -> Result<(Vec<Vec<Vec<Vec<f64>>>>, (usize, usiz
         if li == 0 {
             shape.1 = layer_vec.len();
             shape.2 = layer_vec.first().map(Vec::len).unwrap_or(0);
-            shape.3 = layer_vec.first().and_then(|h| h.first()).map(Vec::len).unwrap_or(0);
+            shape.3 = layer_vec
+                .first()
+                .and_then(|h| h.first())
+                .map(Vec::len)
+                .unwrap_or(0);
         }
         out.push(layer_vec);
     }
@@ -158,7 +176,10 @@ pub fn classify_html_heatmap_count(html: &str, expected: usize) -> AttnHtmlOutco
     if count >= expected {
         AttnHtmlOutcome::Ok { count }
     } else {
-        AttnHtmlOutcome::TooFewHeatmaps { got: count, expected }
+        AttnHtmlOutcome::TooFewHeatmaps {
+            got: count,
+            expected,
+        }
     }
 }
 
@@ -198,19 +219,24 @@ mod tests {
     #[test]
     fn rows_softmax_rejects_non_4d_input() {
         let out = classify_row_softmax_normalization(&json!([1, 2, 3]), 1e-5);
-        assert!(matches!(out, AttnRowsOutcome::NotA4DArray { .. }), "{out:?}");
+        assert!(
+            matches!(out, AttnRowsOutcome::NotA4DArray { .. }),
+            "{out:?}"
+        );
     }
 
     #[test]
     fn rows_softmax_reports_unnormalized_row() {
         // Sum to 1.2 on row 0 of layer 0 head 0.
-        let bad = json!([[[
-            [0.6, 0.6, 0.0],
-            [0.4, 0.6, 0.0],
-            [0.2, 0.3, 0.5]
-        ]]]);
+        let bad = json!([[[[0.6, 0.6, 0.0], [0.4, 0.6, 0.0], [0.2, 0.3, 0.5]]]]);
         match classify_row_softmax_normalization(&bad, 1e-5) {
-            AttnRowsOutcome::RowOutOfNormalization { layer: 0, head: 0, row: 0, sum, .. } => {
+            AttnRowsOutcome::RowOutOfNormalization {
+                layer: 0,
+                head: 0,
+                row: 0,
+                sum,
+                ..
+            } => {
                 assert!((sum - 1.2).abs() < 1e-9, "got sum {sum}");
             }
             other => panic!("expected RowOutOfNormalization, got {other:?}"),
@@ -242,11 +268,7 @@ mod tests {
     #[test]
     fn causal_mask_reports_nonzero_future() {
         // Row 0 has weight 0.5 on column 1 — future position leaks.
-        let body = json!([[[
-            [0.5, 0.5, 0.0],
-            [0.4, 0.6, 0.0],
-            [0.2, 0.3, 0.5]
-        ]]]);
+        let body = json!([[[[0.5, 0.5, 0.0], [0.4, 0.6, 0.0], [0.2, 0.3, 0.5]]]]);
         match classify_causal_mask(&body, 1e-9) {
             AttnCausalMaskOutcome::NonZeroFuturePosition {
                 layer: 0,
@@ -276,7 +298,10 @@ mod tests {
         let html = "<html><svg></svg></html>";
         assert_eq!(
             classify_html_heatmap_count(html, 4),
-            AttnHtmlOutcome::TooFewHeatmaps { got: 1, expected: 4 }
+            AttnHtmlOutcome::TooFewHeatmaps {
+                got: 1,
+                expected: 4
+            }
         );
     }
 

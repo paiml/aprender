@@ -14,13 +14,13 @@ use crate::nn::{LayerNorm, Module};
 /// `hidden = LayerNorm(word_embed[ids] + position_embed[0..seq_len] + token_type_embed[type_ids])`
 pub struct BertEmbeddings {
     /// Word embedding table: `[vocab_size, hidden_dim]`.
-    word_embeddings: Tensor,
+    pub(crate) word_embeddings: Tensor,
     /// Position embedding table: `[max_position_embeddings, hidden_dim]`.
-    position_embeddings: Tensor,
+    pub(crate) position_embeddings: Tensor,
     /// Token-type embedding table: `[type_vocab_size, hidden_dim]`.
-    token_type_embeddings: Tensor,
+    pub(crate) token_type_embeddings: Tensor,
     /// Final LayerNorm applied to summed embeddings.
-    layer_norm: LayerNorm,
+    pub(crate) layer_norm: LayerNorm,
     /// Cached hidden_dim for slicing.
     hidden_dim: usize,
     /// Cached max_position_embeddings for bound check.
@@ -44,6 +44,20 @@ impl BertEmbeddings {
             hidden_dim: h,
             max_position_embeddings: config.max_position_embeddings,
         }
+    }
+
+    /// Load embeddings from an APR v2 reader (GH-326 Phase 6 — embed-only).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BertLoadError`](crate::models::bert::load::BertLoadError)
+    /// on the first missing tensor or shape mismatch.
+    pub fn load_from_reader(
+        &mut self,
+        reader: &crate::format::v2::AprV2Reader,
+        config: &crate::models::bert::BertConfig,
+    ) -> Result<(), crate::models::bert::load::BertLoadError> {
+        crate::models::bert::load::load_embeddings_from_reader(self, reader, config)
     }
 
     /// Forward pass: produces `[1, seq_len, hidden_dim]` of post-LN embeddings

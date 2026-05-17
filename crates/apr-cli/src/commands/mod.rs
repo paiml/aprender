@@ -41,6 +41,7 @@ pub(crate) mod diagnose;
 
 pub(crate) mod dry_sampling_classifier;
 pub(crate) mod dry_sampling_lint;
+pub(crate) mod embed;
 pub(crate) mod embed_viz_classifier;
 pub(crate) mod embed_viz_lint;
 pub(crate) mod embeddings_classifier;
@@ -133,6 +134,7 @@ pub(crate) mod registry;
 pub(crate) mod registry_quota;
 pub(crate) mod registry_quota_lint;
 pub(crate) mod registry_schema;
+pub(crate) mod rerank;
 pub(crate) mod resume_paths;
 pub(crate) mod revision;
 pub(crate) mod rosetta;
