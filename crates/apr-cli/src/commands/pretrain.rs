@@ -196,6 +196,7 @@ pub(crate) fn run(
     synthetic: bool,
     device: &str,
     init: Option<&Path>,
+    force_under_provisioned: bool,
     json_output: bool,
 ) -> Result<()> {
     // Contract gpu-training-backend-v1 INV-GPUTRAIN-001 / GATE-GPUTRAIN-002:
@@ -231,38 +232,73 @@ pub(crate) fn run(
 
     let hp = mode_defaults(mode, vocab_size, lr, warmup_steps, target_val_loss);
 
-    // SPEC §82 P1-A: Chinchilla compute-optimal gate (arXiv:2203.15556).
-    // Compute-optimal pretraining requires train tokens D ≈ 20·N where N is
-    // the parameter count. If D < 5·N we're severely under-trained; the
-    // model will memorize the small corpus instead of generalizing.
+    // SPEC §82 P1-A + SPEC §83 P0-J: Chinchilla compute-optimal gate
+    // (Hoffmann et al. 2022, arXiv:2203.15556). Compute-optimal pretraining
+    // requires train tokens D ≈ 20·N where N is the parameter count.
     //
-    // Triggered for `--init` runs where we can read the arch dims to
-    // estimate N; from-scratch synthetic runs are exempt because the
-    // operator usually knows what they're doing. Non-fatal warning only.
+    // P0-J upgrade (post-audit, 2026-05-16, audit Rec #2): D/N < 10× is
+    // now a HARD BLOCKER (fail-fast) unless `--force-under-provisioned`
+    // is passed. 10× ≤ D/N < 20× is a strong warning. Triggered only on
+    // `--init` runs where arch dims allow N estimation; from-scratch
+    // runs are exempt.
+    //
+    // Audit motivation: §82 P2-A's 0.04× ratio + repetitive token
+    // gibberish at val_loss=4.71 (Holtzman et al. 2019 degeneration)
+    // proved that 30 min of theoretical falsification saves 8h+ GPU.
+    // Contract: contracts/chinchilla-gate-v1.yaml.
     if let Some(arch) = init_arch.as_ref() {
         let n_params = estimate_param_count(arch);
         let d_tokens = (num_steps as u64)
             .saturating_mul(batch_size as u64)
             .saturating_mul(seq_length as u64);
         let ratio = d_tokens as f64 / n_params as f64;
-        if ratio < 5.0 {
+        let suggested_steps = if batch_size > 0 && seq_length > 0 {
+            (20 * n_params) / (batch_size as u64 * seq_length as u64)
+        } else {
+            0
+        };
+
+        if ratio < 10.0 && !force_under_provisioned {
+            return Err(CliError::ValidationFailed(format!(
+                "[P0-J] Chinchilla hard gate (chinchilla-gate-v1): \
+                 train tokens D = {} ({:.1}M) is {:.3}× param count N = {} ({:.1}M); \
+                 Chinchilla compute-optimal target is D ≈ 20·N (Hoffmann et al. 2022, arXiv:2203.15556). \
+                 Run REJECTED: D/N < 10× will produce mode collapse / repetitive degeneration \
+                 (Holtzman et al. 2019, arXiv:1904.09751). \
+                 Increase --num-steps to ~{} OR widen --dataset corpus OR reduce model size. \
+                 To bypass anyway (e.g. ablation studies, resumed runs), pass --force-under-provisioned.",
+                d_tokens,
+                d_tokens as f64 / 1e6,
+                ratio,
+                n_params,
+                n_params as f64 / 1e6,
+                suggested_steps,
+            )));
+        }
+
+        if ratio < 10.0 {
+            // Bypassed via --force-under-provisioned: emit a loud warning
+            // so the override is captured in the log.
             eprintln!(
-                "[P1-A] Chinchilla gate WARNING: train tokens D = {} ({:.1}M) is {:.2}× param count N = {} ({:.1}M); \
-                 Chinchilla compute-optimal target is D ≈ 20·N. Run is severely under-trained — \
-                 expect val_loss plateau driven by capacity exhaustion, not optimization. \
-                 Consider increasing --num-steps to ~{} or reducing model size.",
+                "[P0-J] Chinchilla gate BYPASSED via --force-under-provisioned: \
+                 D = {} ({:.1}M) is {:.3}× N = {} ({:.1}M). \
+                 Run will likely produce repetitive/degenerate output. \
+                 You explicitly opted in.",
                 d_tokens, d_tokens as f64 / 1e6,
                 ratio,
                 n_params, n_params as f64 / 1e6,
-                (20 * n_params) / (batch_size as u64 * seq_length as u64),
             );
         } else if ratio < 20.0 {
+            // 10× ≤ D/N < 20× — below compute-optimal but training will
+            // still progress meaningfully. Warning, not error.
             eprintln!(
-                "[P1-A] Chinchilla gate: train tokens D = {} ({:.1}M) is {:.1}× param count N = {} ({:.1}M); \
-                 below compute-optimal 20·N target — model has room for more training.",
+                "[P1-A] Chinchilla gate WARNING: D = {} ({:.1}M) is {:.1}× N = {} ({:.1}M); \
+                 below compute-optimal 20·N target — model has room for more training. \
+                 Suggested --num-steps for 20·N: ~{}.",
                 d_tokens, d_tokens as f64 / 1e6,
                 ratio,
                 n_params, n_params as f64 / 1e6,
+                suggested_steps,
             );
         }
     }
@@ -990,6 +1026,116 @@ mod tests {
         );
     }
 
+    // ─── SPEC §83 P0-J: Chinchilla hard-gate behavior ──────────
+    //
+    // The gate logic itself lives inline in `run()` so a full unit
+    // test requires either calling `run()` (heavy — needs dataset
+    // path + tokenizer dir) or factoring the math into a helper.
+    // Below we test the math in isolation via a local helper; the
+    // end-to-end CLI behavior is covered by integration tests in
+    // tests/chinchilla_gate_test.rs (FALSIFY-CHINCHILLA-001..003).
+
+    /// Mirror of the inline gate math in `run()` — kept in sync via
+    /// review. Returns Some(error_message) if rejected, None if
+    /// accepted (with or without bypass).
+    fn chinchilla_gate_check(
+        arch: &TransformerConfig,
+        num_steps: usize,
+        batch_size: usize,
+        seq_length: usize,
+        force_under_provisioned: bool,
+    ) -> Option<f64> {
+        let n_params = estimate_param_count(arch);
+        let d_tokens = (num_steps as u64)
+            .saturating_mul(batch_size as u64)
+            .saturating_mul(seq_length as u64);
+        let ratio = d_tokens as f64 / n_params as f64;
+        if ratio < 10.0 && !force_under_provisioned {
+            Some(ratio)
+        } else {
+            None
+        }
+    }
+
+    fn qwen_05b_config() -> TransformerConfig {
+        let mut cfg = TransformerConfig::llama2_7b();
+        cfg.hidden_size = 896;
+        cfg.num_hidden_layers = 24;
+        cfg.num_attention_heads = 14;
+        cfg.num_kv_heads = 2;
+        cfg.intermediate_size = 4864;
+        cfg.vocab_size = 151936;
+        cfg.hf_architecture = Some("Qwen2ForCausalLM".to_string());
+        cfg.hf_model_type = Some("qwen2".to_string());
+        cfg
+    }
+
+    /// FALSIFY-CHINCHILLA-001 (unit): §82 P2-A reproducer — 5000
+    /// steps × 16 × 512 = 40.96M tokens against Qwen-0.5B (~494M
+    /// params) = ratio 0.083× → REJECTED.
+    #[test]
+    fn chinchilla_hard_gate_rejects_under_provisioned() {
+        let cfg = qwen_05b_config();
+        let verdict = chinchilla_gate_check(&cfg, 5000, 16, 512, false);
+        assert!(verdict.is_some(), "0.083× should be rejected");
+        let ratio = verdict.expect("ratio");
+        assert!(ratio < 0.1, "expected ratio < 0.1, got {ratio}");
+    }
+
+    /// FALSIFY-CHINCHILLA-002 (unit): same config with bypass flag
+    /// → accepted (returns None despite low ratio).
+    #[test]
+    fn chinchilla_hard_gate_bypasses_with_force_flag() {
+        let cfg = qwen_05b_config();
+        let verdict = chinchilla_gate_check(&cfg, 5000, 16, 512, true);
+        assert!(verdict.is_none(), "force_under_provisioned must bypass");
+    }
+
+    /// FALSIFY-CHINCHILLA-004 (unit): boundary at exactly D/N = 10
+    /// passes; just below fails. Uses ceiling division to ensure
+    /// the "exact" case actually meets or exceeds 10·N (integer
+    /// truncation on `target_d / (bs*sl)` would land slightly below).
+    #[test]
+    fn chinchilla_hard_gate_boundary_10x() {
+        let cfg = qwen_05b_config();
+        let n = estimate_param_count(&cfg);
+        let bs = 16u64;
+        let sl = 512u64;
+        let target_d = 10 * n;
+        let bs_sl = bs * sl;
+        // Ceiling division so D ≥ 10·N exactly (passes the gate).
+        let exact_steps = (target_d + bs_sl - 1) / bs_sl;
+        let verdict_exact = chinchilla_gate_check(
+            &cfg, exact_steps as usize, bs as usize, sl as usize, false,
+        );
+        assert!(
+            verdict_exact.is_none(),
+            "ratio ≥ 10.0 should PASS, got verdict={verdict_exact:?}"
+        );
+        // One full step less → below 10·N → REJECTED.
+        let verdict_below = chinchilla_gate_check(
+            &cfg, (exact_steps - 1) as usize, bs as usize, sl as usize, false,
+        );
+        assert!(
+            verdict_below.is_some(),
+            "ratio just below 10× should be REJECTED"
+        );
+    }
+
+    /// FALSIFY-CHINCHILLA-005 (unit): generously-provisioned ratios
+    /// (≥ 10×) pass without --force flag.
+    #[test]
+    fn chinchilla_hard_gate_accepts_well_provisioned() {
+        let cfg = qwen_05b_config();
+        let n = estimate_param_count(&cfg);
+        // 25·N = generous (above 20× compute-optimal target).
+        let bs = 16u64;
+        let sl = 512u64;
+        let steps_25x = ((25 * n) / (bs * sl)) as usize;
+        let verdict = chinchilla_gate_check(&cfg, steps_25x, bs as usize, sl as usize, false);
+        assert!(verdict.is_none(), "25× should pass");
+    }
+
     #[test]
     fn preflight_accepts_matching_vocab() {
         // GATE-ARCH-370M-011 acceptance case: tokenizer vocab.json with
@@ -1251,6 +1397,7 @@ mod tests {
             true,
             "cpu",
             None,
+            false,
             true,
         );
         assert!(
@@ -1286,6 +1433,7 @@ mod tests {
             false,
             "cpu",
             None,
+            false,
             true,
         )
         .expect_err("empty dataset dir must fail to initialise the shard iterator");
@@ -1320,6 +1468,7 @@ mod tests {
             true,
             "cpu",
             None,
+            false,
             true,
         )
         .expect_err("negative target_val_loss must be rejected");
@@ -1611,6 +1760,7 @@ mod tests {
             true,
             "cpu",
             Some(&missing),
+            false,
             true,
         )
         .expect_err("missing --init file must be rejected");
@@ -1652,6 +1802,7 @@ mod tests {
             true,
             "cpu",
             Some(&bad),
+            false,
             true,
         )
         .expect_err("invalid magic bytes must be rejected");
@@ -1693,6 +1844,7 @@ mod tests {
             true,
             "cpu",
             Some(&empty),
+            false,
             true,
         )
         .expect_err("empty file must be rejected (cannot contain magic bytes)");
@@ -1730,6 +1882,7 @@ mod tests {
             true,
             "cpu",
             Some(&valid),
+            false,
             true,
         )
         .expect_err("bogus metadata must NOT silently random-init");
