@@ -692,6 +692,14 @@ pub enum ExtendedCommands {
         /// before step 1 (no silent random-init fallback).
         #[arg(long, value_name = "PATH")]
         init: Option<PathBuf>,
+        /// SPEC §83 P0-J: bypass the Chinchilla compute-optimal hard
+        /// gate (`chinchilla-gate-v1`). Default is fail-fast when
+        /// D/N < 10× (severely under-provisioned per Hoffmann et al.
+        /// 2022). Pass this flag to acknowledge the under-provisioning
+        /// and proceed anyway (e.g. for ablation studies, resumed
+        /// runs, or smoke tests).
+        #[arg(long, action = clap::ArgAction::SetTrue)]
+        force_under_provisioned: bool,
     },
     /// Tokenizer training pipeline (plan/apply) — BPE vocabulary learning
     Tokenize {
