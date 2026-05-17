@@ -121,13 +121,58 @@ cargo test --release --features cuda \
 
 After PR 1's diagnostic is in place:
 
-- **PR 2**: fp64 accumulator in `Q6KGemvKernel` (upstream `../trueno`).
-  Re-run PR 1's test; expect cos floor → ≥ 0.99 across all layers.
-- **PR 3**: if (PR 2) insufficient, contiguous super-block chunking.
+- **PR 2** ✅ **SHIPPED 2026-05-17** (#1737): fp64 accumulators in
+  `Q6KGemvKernel`. **Lives in-tree at**
+  `crates/aprender-gpu/src/kernels/quantize/q6k/gemv.rs` (the old
+  upstream `../trueno` reference is stale — aprender-gpu has subsumed
+  trueno-gpu per the monorepo consolidation). Pairs with new helper
+  `add_f64_inplace` in `crates/aprender-gpu/src/ptx/builder/inplace_ops.rs`.
+- **PR 3** — manual hardware verification step (not a code PR). Ran
+  PR 1's falsifier on lambda-vector (RTX 4090, 2026-05-17). **Result:
+  47/48 layers cos ≥ 0.99 (PASS). L47 alone fails at cos = 0.961236**
+  (3σ outlier from the L40-L46 cluster). All 7 originally-cited
+  problem layers (L7/L9/L12/L20/L23/L29/L46) lifted above 0.99 — PR 2
+  was a real win. L47 was previously undetected because no in-tree
+  per-layer falsifier existed; PR 1 closed that gap and surfaced
+  L47. Full evidence: comment on #1583
+  ([issuecomment-4470195446](https://github.com/paiml/aprender/issues/1583#issuecomment-4470195446)).
+- **PR 3b** ✅ contract amendment `qwen3-moe-forward-gpu-v1`
+  v1.7.0 → v1.7.1 capturing PR-3 outcome (PR #1739).
+- **PR 3c** ✅ **this update** — scope doc reflects actual landed
+  state + L47 sub-cascade.
+- **PR 3d** ✅ H(i) qtype-mismatch hypothesis **FALSIFIED**.
+  `apr tensors` on `Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf` shows
+  L0, L46, L47 have **identical** tensor shapes AND qtypes (attn_q/k/o
+  = Q4_K, attn_v = Q6_K, ffn_down_exps = Q6_K, ffn_gate_exps + ffn_up_exps
+  = Q4_K, gate_inp + norms = F32). L47 is NOT a last-layer
+  higher-precision pattern. See #1583 comment
+  ([issuecomment-4470216021](https://github.com/paiml/aprender/issues/1583#issuecomment-4470216021)).
+- **PR 3e** — proposed: routing-divergence falsifier. Current
+  dominant hypothesis H(ii): the per-layer cosine is **accumulated**
+  drift (CPU L0..L stream vs GPU L0..L stream). By L47 the
+  CPU-vs-GPU hidden state has drifted by ~0.002. If at L47 that
+  drift straddles a top-k expert boundary (e.g. expert 45 vs 46
+  score difference < drift magnitude), CPU and GPU pick different
+  expert sets and the FFN output diverges by O(1) — matching the
+  0.961 cliff. The falsifier extends `SaveTensorStage::MoeRouter`
+  (or adds a sibling stage) to persist the top-k EXPERT INDICES
+  alongside the weights, then asserts CPU index set == GPU index
+  set at L47. Multi-PR because it touches both CPU
+  `forward_qwen3_moe_traced_with_plan` and CUDA
+  `forward_qwen3_moe_cuda_traced_with_plan` trace plumbing.
+- **PR 3f+** — fix based on PR-3e outcome:
+  - If H(ii) is confirmed: route-score tie-breaking in deterministic
+    expert ordering (independent of fp accumulation order); or
+    fp64 in the MoE gate softmax as well; or expert routing in
+    f64 with f32 conversion only post-selection.
+  - If H(ii) is dead: investigate per-expert weight cancellation
+    pathology at L47's specific input vector (e.g. capture FfnGate
+    + FfnUp + FfnSwigl at L47 per-expert).
 - **PR 4**: Part 2 of the issue — throughput ≥ 150 tok/s + VRAM ≤ 95%.
-  Likely combined with the kernel changes from PR 2/3.
-- **PR 5**: bump `qwen3-moe-forward-gpu-v1` contract v1.7.0 → v1.8.0
-  ACTIVE_ALGORITHM_LEVEL → **ACTIVE_RUNTIME**.
+  Independent of the L47 sub-cascade; can land in parallel.
+- **PR 5**: bump `qwen3-moe-forward-gpu-v1` contract v1.7.1 → v1.8.0
+  ACTIVE_ALGORITHM_LEVEL → **ACTIVE_RUNTIME**, after L47 closes AND
+  throughput target met.
 
 ## Compute lane
 
@@ -146,16 +191,26 @@ After PR 1's diagnostic is in place:
 - Heterogeneous distributed training (#393) — orthogonal multi-node
   coordinator work.
 
-## Cascade map
+## Cascade map (updated 2026-05-17)
 
-| PR | Scope | Status |
-|---|---|---|
-| 1 | Per-layer cos falsifier + this scope doc | **this PR** |
-| 2 | fp64 acc in upstream `Q6KGemvKernel` (`../trueno`) | pending |
-| 3 | Contiguous super-block chunking (if PR-2 insufficient) | pending |
-| 4 | Throughput ≥ 150 tok/s + VRAM ≤ 95% | pending |
-| 5 | Contract `qwen3-moe-forward-gpu-v1` v1.7.0 → v1.8.0 ACTIVE_RUNTIME | pending |
+| PR | Scope | Status | PR / evidence |
+|---|---|---|---|
+| 1  | Per-layer cos falsifier + this scope doc | ✅ shipped | #1713 |
+| 2  | fp64 accumulators in `Q6KGemvKernel` (in-tree at `crates/aprender-gpu/src/kernels/quantize/q6k/gemv.rs`) | ✅ shipped | #1737 |
+| 3  | Hardware verification on lambda-vector RTX 4090 — 47/48 PASS, L47 surfaces | ✅ ran | #1583 comment-4470195446 |
+| 3b | Contract `qwen3-moe-forward-gpu-v1` v1.7.0 → v1.7.1 | ✅ shipped | #1739 |
+| 3c | Scope doc update (this update) | ✅ **this PR** | — |
+| 3d | H(i) qtype mismatch FALSIFIED | ✅ ran | #1583 comment-4470216021 |
+| 3e | Routing-divergence falsifier (H(ii) for L47) | pending | — |
+| 3f+| L47 fix based on PR-3e outcome | pending | — |
+| 4  | Throughput ≥ 150 tok/s + VRAM ≤ 95% | pending (independent) | — |
+| 5  | Contract v1.7.1 → v1.8.0 ACTIVE_RUNTIME | pending (gates: PR-3f+, PR-4) | — |
 
-After PR-1 lands, PR-2 (fp64 acc) can be done independently in
-`../trueno/trueno-gpu/src/kernels/quantize/q6k/gemv.rs`, with this PR-1
-falsifier as the regression gate.
+Note: the original cascade map said PR-2 would land in `../trueno`, but
+the monorepo consolidation has subsumed trueno-gpu into in-tree
+`crates/aprender-gpu`. PR-2 landed there. PR-3 was originally
+"contiguous super-block chunking (if PR-2 insufficient)"; it has been
+renumbered to align with the actual landed cascade — PR-3 is now the
+manual hardware verification step, and the contingency chunking work
+has rolled into the PR-3e / PR-3f+ slot pending the routing-divergence
+falsification outcome.
