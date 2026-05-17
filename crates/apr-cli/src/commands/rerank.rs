@@ -53,6 +53,87 @@ fn load_vocab_txt(path: &Path) -> Result<HashMap<String, u32>> {
     Ok(map)
 }
 
+/// Load a HuggingFace Tokenizers-format `tokenizer.json`, extracting the
+/// WordPiece `model.vocab` map AND merging in the `added_tokens` array
+/// (where BERT's special tokens `[CLS]`/`[SEP]`/`[UNK]` actually live —
+/// they are NOT inside `model.vocab` per the Tokenizers convention).
+fn load_tokenizer_json(path: &Path) -> Result<HashMap<String, u32>> {
+    let text = std::fs::read_to_string(path).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "Failed to read tokenizer.json {}: {e}",
+            path.display()
+        ))
+    })?;
+    let root: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "tokenizer.json {} is not valid JSON: {e}",
+            path.display()
+        ))
+    })?;
+
+    let mut map: HashMap<String, u32> = HashMap::new();
+
+    // First merge `added_tokens` (special tokens live here).
+    if let Some(added) = root.get("added_tokens").and_then(|v| v.as_array()) {
+        for entry in added {
+            let content = entry
+                .get("content")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| {
+                    CliError::ValidationFailed(format!(
+                        "tokenizer.json {}: added_tokens entry missing `content`",
+                        path.display()
+                    ))
+                })?;
+            let id = entry.get("id").and_then(|v| v.as_u64()).ok_or_else(|| {
+                CliError::ValidationFailed(format!(
+                    "tokenizer.json {}: added_tokens entry missing `id`",
+                    path.display()
+                ))
+            })?;
+            map.insert(content.to_string(), id as u32);
+        }
+    }
+
+    // Then merge `model.vocab` (the bulk WordPiece vocabulary).
+    let vocab_obj = root
+        .get("model")
+        .and_then(|m| m.get("vocab"))
+        .and_then(|v| v.as_object())
+        .ok_or_else(|| {
+            CliError::ValidationFailed(format!(
+                "tokenizer.json {}: missing or non-object `model.vocab` \
+                 (only WordPiece-style tokenizer.json is supported)",
+                path.display()
+            ))
+        })?;
+    for (token, id_val) in vocab_obj {
+        let id = id_val.as_u64().ok_or_else(|| {
+            CliError::ValidationFailed(format!(
+                "tokenizer.json {}: model.vocab entry {token:?} has non-integer id",
+                path.display()
+            ))
+        })?;
+        map.insert(token.to_string(), id as u32);
+    }
+
+    Ok(map)
+}
+
+/// Dispatch vocab loading based on file extension — `.json` → HF Tokenizers
+/// format; otherwise treat as legacy line-per-token `vocab.txt`.
+fn load_vocab(path: &Path) -> Result<HashMap<String, u32>> {
+    let is_json = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("json"));
+    if is_json {
+        load_tokenizer_json(path)
+    } else {
+        load_vocab_txt(path)
+    }
+}
+
 /// Tokenise `[CLS] query [SEP] passage [SEP]` using a WordPiece vocab
 /// (GH-326 Phase 3b). Returns `(input_ids, token_type_ids)` ready to feed
 /// `CrossEncoder::forward`.
@@ -67,7 +148,7 @@ fn tokenize_query_passage(
 ) -> Result<(Vec<u32>, Vec<u32>)> {
     use aprender::text::tokenize::WordPieceTokenizer;
 
-    let vocab = load_vocab_txt(vocab_path)?;
+    let vocab = load_vocab(vocab_path)?;
     let cls_id = *vocab.get("[CLS]").ok_or_else(|| {
         CliError::ValidationFailed(format!(
             "vocab {} missing required token [CLS]",
