@@ -1614,6 +1614,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
         ExtendedCommands::Embed {
             model,
             text,
+            text_file,
             vocab,
             pool,
             normalize,
@@ -1628,6 +1629,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
         } => commands::embed::run(
             model,
             text,
+            text_file.as_deref(),
             vocab,
             pool,
             *normalize,

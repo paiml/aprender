@@ -1217,6 +1217,14 @@ pub enum ExtendedCommands {
         /// Text to encode. Repeatable: `apr embed model.apr --text "a" --text "b" --vocab tok.json`.
         #[arg(long, value_name = "TEXT")]
         text: Vec<String>,
+        /// Phase 7 (GH-326) — read texts from a file, one per line.
+        /// Concatenated with `--text` inputs in order: `--text` first,
+        /// then `--text-file` rows. Blank lines and lines starting
+        /// with `#` are skipped. Useful for RAG-style first-stage
+        /// retrieval where the second-stage rerank candidate set
+        /// (50-100 documents) is the embed input.
+        #[arg(long, value_name = "FILE")]
+        text_file: Option<PathBuf>,
         /// Path to a WordPiece `vocab.txt` or HF `tokenizer.json`.
         #[arg(long, value_name = "FILE")]
         vocab: PathBuf,
