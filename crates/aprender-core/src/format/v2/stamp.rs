@@ -24,11 +24,35 @@ use super::{AprV2Reader, AprV2Writer, V2FormatError};
 /// In-place field patches. `None` means "leave unchanged"; `Some("")` is a
 /// legitimate explicit clear (not currently contract-approved but kept
 /// distinct from `None` so callers can express intent).
+///
+/// PMAT-690 P0-K extension (2026-05-17): `hf_architecture` and
+/// `hf_model_type` were added so pre-P0-K APRs can be patched in place
+/// without re-import. The §86 SPEC amendment surfaced this: P2-E's
+/// epoch-49 checkpoint (val_loss=4.62, the best MODEL-2 result on
+/// record) has architecture="LlamaForCausalLM" (the P0-H fallback) and
+/// hf_architecture=null because its init APR pre-dates P0-K. Without
+/// in-place stamping, the 50 P2-E checkpoints (~125 GB) are unusable
+/// as `--init` for resume training because apr pretrain reads the
+/// (wrong) architecture stamp and rejects the load. Stamping the
+/// correct hf_architecture + a corrected `architecture` family slug
+/// salvages the entire run without a 53-min retrain.
 #[derive(Debug, Clone, Default)]
 pub struct ProvenancePatch {
     pub license: Option<String>,
     pub data_source: Option<String>,
     pub data_license: Option<String>,
+    /// HuggingFace class name from `config.json::architectures[0]`
+    /// (e.g., "Qwen2ForCausalLM"). PMAT-690 P0-K extension.
+    pub hf_architecture: Option<String>,
+    /// HuggingFace `config.json::model_type` (e.g., "qwen2").
+    /// PMAT-690 P0-K extension.
+    pub hf_model_type: Option<String>,
+    /// Lowercase architecture family slug (e.g., "qwen2", "llama").
+    /// PMAT-690 P0-K extension. Distinct from `hf_architecture` (which
+    /// is the HF class name like "Qwen2ForCausalLM"). This is the
+    /// field that `apr pretrain --init` reads for arch dispatch, so
+    /// patching this is what makes a pre-P0-K checkpoint resumable.
+    pub architecture: Option<String>,
 }
 
 impl ProvenancePatch {
@@ -36,7 +60,12 @@ impl ProvenancePatch {
     /// no-op rewrite producing a pointless new file.
     #[must_use]
     pub fn has_any(&self) -> bool {
-        self.license.is_some() || self.data_source.is_some() || self.data_license.is_some()
+        self.license.is_some()
+            || self.data_source.is_some()
+            || self.data_license.is_some()
+            || self.hf_architecture.is_some()
+            || self.hf_model_type.is_some()
+            || self.architecture.is_some()
     }
 }
 
@@ -88,6 +117,16 @@ pub fn stamp_provenance_bytes(
     if let Some(ref dl) = patch.data_license {
         new_metadata.data_license = Some(dl.clone());
     }
+    // PMAT-690 P0-K extension: HF identity + architecture family
+    if let Some(ref ha) = patch.hf_architecture {
+        new_metadata.hf_architecture = Some(ha.clone());
+    }
+    if let Some(ref hmt) = patch.hf_model_type {
+        new_metadata.hf_model_type = Some(hmt.clone());
+    }
+    if let Some(ref arch) = patch.architecture {
+        new_metadata.architecture = Some(arch.clone());
+    }
 
     let mut writer = AprV2Writer::new(new_metadata);
     writer.set_header_flags(original_flags);
@@ -138,6 +177,9 @@ mod tests {
             license: Some("Apache-2.0".into()),
             data_source: Some("huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct".into()),
             data_license: Some("Qwen-License-Agreement-v1".into()),
+            hf_architecture: None,
+            hf_model_type: None,
+            architecture: None,
         };
 
         let output = stamp_provenance_bytes(&input, &patch).expect("stamp must succeed");
@@ -270,6 +312,9 @@ mod tests {
             license: Some("Apache-2.0".into()),
             data_source: Some("teacher-only".into()),
             data_license: Some("Apache-2.0".into()),
+            hf_architecture: None,
+            hf_model_type: None,
+            architecture: None,
         };
 
         let first = stamp_provenance_bytes(&input, &patch).unwrap();
