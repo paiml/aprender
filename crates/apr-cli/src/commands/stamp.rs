@@ -21,19 +21,30 @@ use std::path::Path;
 /// `Some(...)`; the helper rejects an empty patch on its own, but we
 /// also surface a clear CLI error message to keep the failure mode
 /// human-readable.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn run(
     file: &Path,
     license: Option<&str>,
     data_source: Option<&str>,
     data_license: Option<&str>,
+    hf_architecture: Option<&str>,
+    hf_model_type: Option<&str>,
+    architecture: Option<&str>,
     output: &Path,
     force: bool,
     json_output: bool,
 ) -> Result<()> {
-    if license.is_none() && data_source.is_none() && data_license.is_none() {
+    if license.is_none()
+        && data_source.is_none()
+        && data_license.is_none()
+        && hf_architecture.is_none()
+        && hf_model_type.is_none()
+        && architecture.is_none()
+    {
         return Err(CliError::ValidationFailed(
-            "apr stamp: at least one of --license, --data-source, --data-license \
-             must be specified — refusing to rewrite without changes"
+            "apr stamp: at least one of --license, --data-source, --data-license, \
+             --hf-architecture, --hf-model-type, --architecture must be specified \
+             — refusing to rewrite without changes"
                 .to_string(),
         ));
     }
@@ -58,6 +69,9 @@ pub(crate) fn run(
         license: license.map(str::to_string),
         data_source: data_source.map(str::to_string),
         data_license: data_license.map(str::to_string),
+        hf_architecture: hf_architecture.map(str::to_string),
+        hf_model_type: hf_model_type.map(str::to_string),
+        architecture: architecture.map(str::to_string),
     };
 
     let stamped = stamp_provenance_bytes(&input, &patch)
@@ -80,9 +94,12 @@ pub(crate) fn run(
             "output_bytes": stamped.len(),
             "tensor_count": verify_reader.tensor_names().len(),
             "stamped":      {
-                "license":      verify_reader.metadata().license,
-                "data_source":  verify_reader.metadata().data_source,
-                "data_license": verify_reader.metadata().data_license,
+                "license":         verify_reader.metadata().license,
+                "data_source":     verify_reader.metadata().data_source,
+                "data_license":    verify_reader.metadata().data_license,
+                "hf_architecture": verify_reader.metadata().hf_architecture,
+                "hf_model_type":   verify_reader.metadata().hf_model_type,
+                "architecture":    verify_reader.metadata().architecture,
             },
             "header_flags_bits": verify_reader.header().flags.bits(),
         });
@@ -99,11 +116,26 @@ pub(crate) fn run(
             input.len(),
             stamped.len(),
         );
-        println!("  license:      {:?}", verify_reader.metadata().license);
-        println!("  data_source:  {:?}", verify_reader.metadata().data_source);
+        println!("  license:         {:?}", verify_reader.metadata().license);
         println!(
-            "  data_license: {:?}",
+            "  data_source:     {:?}",
+            verify_reader.metadata().data_source
+        );
+        println!(
+            "  data_license:    {:?}",
             verify_reader.metadata().data_license
+        );
+        println!(
+            "  hf_architecture: {:?}",
+            verify_reader.metadata().hf_architecture
+        );
+        println!(
+            "  hf_model_type:   {:?}",
+            verify_reader.metadata().hf_model_type
+        );
+        println!(
+            "  architecture:    {:?}",
+            verify_reader.metadata().architecture
         );
     }
 
@@ -137,6 +169,9 @@ mod tests {
             Some("Apache-2.0"),
             Some("huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct"),
             Some("Apache-2.0"),
+            None, // hf_architecture
+            None, // hf_model_type
+            None, // architecture
             &output,
             false,
             true, // json_output to keep stdout structured
@@ -163,7 +198,7 @@ mod tests {
         let output = dir.path().join("output.apr");
         write_unpopulated_apr(&input);
 
-        let result = run(&input, None, None, None, &output, false, true);
+        let result = run(&input, None, None, None, None, None, None, &output, false, true);
         let err = result.unwrap_err();
         let msg = format!("{err:?}");
         assert!(
@@ -183,7 +218,7 @@ mod tests {
         let input = dir.path().join("does-not-exist.apr");
         let output = dir.path().join("output.apr");
 
-        let result = run(&input, Some("Apache-2.0"), None, None, &output, false, true);
+        let result = run(&input, Some("Apache-2.0"), None, None, None, None, None, &output, false, true);
         let err = result.unwrap_err();
         // CliError::FileNotFound — exact variant, not just substring match.
         assert!(
@@ -205,6 +240,9 @@ mod tests {
             Some("Apache-2.0"),
             None,
             None,
+            None, // hf_architecture
+            None, // hf_model_type
+            None, // architecture
             &output,
             false, // force=false
             true,
@@ -233,6 +271,9 @@ mod tests {
             Some("MIT"),
             None,
             None,
+            None, // hf_architecture
+            None, // hf_model_type
+            None, // architecture
             &output,
             true, // force=true
             true,
@@ -246,5 +287,106 @@ mod tests {
         let bytes = fs::read(&output).unwrap();
         let reader = AprV2Reader::from_bytes(&bytes).expect("force-overwritten file must parse");
         assert_eq!(reader.metadata().license.as_deref(), Some("MIT"));
+    }
+
+    // ========================================================================
+    // PMAT-690 P0-K extension (SPEC §86) — HF identity + architecture
+    // family stamping for in-place pre-P0-K APR salvage
+    // ========================================================================
+
+    /// SPEC §86 use case: a pre-P0-K APR has `architecture = "LlamaForCausalLM"`
+    /// (the P0-H fallback) but the actual tensors are Qwen2. `apr stamp
+    /// --hf-architecture Qwen2ForCausalLM --hf-model-type qwen2 --architecture qwen2`
+    /// MUST patch all three fields so the resulting APR is loadable as a
+    /// proper Qwen2 init for `apr pretrain --init`.
+    #[test]
+    fn stamp_p0k_recovers_pre_p0k_apr_identity() {
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("input.apr");
+        let output = dir.path().join("output.apr");
+        // Pre-P0-K state: arch=LlamaForCausalLM (wrong), no hf_architecture.
+        let metadata = AprV2Metadata {
+            architecture: Some("LlamaForCausalLM".to_string()),
+            hf_architecture: None,
+            hf_model_type: None,
+            ..AprV2Metadata::new("p0k-stamp-test")
+        };
+        let mut writer = AprV2Writer::new(metadata);
+        writer.add_tensor(
+            "model.embed_tokens.weight",
+            TensorDType::F32,
+            vec![128, 64],
+            vec![0u8; 128 * 64 * 4],
+        );
+        let bytes = writer.write().expect("write pre-P0-K test apr");
+        fs::write(&input, &bytes).expect("write test apr to disk");
+
+        let result = run(
+            &input,
+            None,
+            None,
+            None,
+            Some("Qwen2ForCausalLM"),
+            Some("qwen2"),
+            Some("qwen2"),
+            &output,
+            false,
+            true,
+        );
+        assert!(result.is_ok(), "stamp run must succeed: {result:?}");
+
+        let out_bytes = fs::read(&output).unwrap();
+        let reader = AprV2Reader::from_bytes(&out_bytes).unwrap();
+        assert_eq!(
+            reader.metadata().hf_architecture.as_deref(),
+            Some("Qwen2ForCausalLM"),
+            "hf_architecture must be patched"
+        );
+        assert_eq!(
+            reader.metadata().hf_model_type.as_deref(),
+            Some("qwen2"),
+            "hf_model_type must be patched"
+        );
+        assert_eq!(
+            reader.metadata().architecture.as_deref(),
+            Some("qwen2"),
+            "architecture (family slug) must be patched away from the wrong P0-H fallback"
+        );
+    }
+
+    /// SPEC §86 partial stamp: an operator who only knows the HF class
+    /// name can patch hf_architecture alone without touching the family slug.
+    /// Verifies the stamp is field-independent.
+    #[test]
+    fn stamp_p0k_partial_hf_architecture_only() {
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("input.apr");
+        let output = dir.path().join("output.apr");
+        write_unpopulated_apr(&input);
+
+        let result = run(
+            &input,
+            None,
+            None,
+            None,
+            Some("Qwen2ForCausalLM"),
+            None,
+            None,
+            &output,
+            false,
+            true,
+        );
+        assert!(result.is_ok(), "partial stamp must succeed: {result:?}");
+
+        let out_bytes = fs::read(&output).unwrap();
+        let reader = AprV2Reader::from_bytes(&out_bytes).unwrap();
+        assert_eq!(
+            reader.metadata().hf_architecture.as_deref(),
+            Some("Qwen2ForCausalLM")
+        );
+        assert_eq!(
+            reader.metadata().hf_model_type, None,
+            "unpatched field must remain None"
+        );
     }
 }
