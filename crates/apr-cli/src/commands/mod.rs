@@ -81,6 +81,8 @@ pub(crate) mod monitor;
 #[cfg(feature = "dev")]
 pub mod mono;
 pub(crate) mod multi_lora_classifier;
+pub(crate) mod nccl_diag_classifier;
+pub(crate) mod nccl_diag_lint;
 pub(crate) mod nf4_classifier;
 pub(crate) mod nf4_lint;
 pub(crate) mod offline;
