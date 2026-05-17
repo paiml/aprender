@@ -30,6 +30,7 @@ pub(crate) fn run(
     hf_architecture: Option<&str>,
     hf_model_type: Option<&str>,
     architecture: Option<&str>,
+    tokenizer_dir: Option<&Path>,
     output: &Path,
     force: bool,
     json_output: bool,
@@ -40,11 +41,12 @@ pub(crate) fn run(
         && hf_architecture.is_none()
         && hf_model_type.is_none()
         && architecture.is_none()
+        && tokenizer_dir.is_none()
     {
         return Err(CliError::ValidationFailed(
             "apr stamp: at least one of --license, --data-source, --data-license, \
-             --hf-architecture, --hf-model-type, --architecture must be specified \
-             — refusing to rewrite without changes"
+             --hf-architecture, --hf-model-type, --architecture, --tokenizer must \
+             be specified — refusing to rewrite without changes"
                 .to_string(),
         ));
     }
@@ -59,6 +61,15 @@ pub(crate) fn run(
         )));
     }
 
+    // PMAT-690 P3-C-prep defect 1 (2026-05-17): load tokenizer files if
+    // --tokenizer <DIR> is provided. Supports vocab.json + merges.txt
+    // (HF GPT-2/BPE format) and tokenizer.json (HF unified format).
+    let (tok_vocab, tok_merges, tok_model_type) = if let Some(dir) = tokenizer_dir {
+        load_tokenizer_files(dir)?
+    } else {
+        (None, None, None)
+    };
+
     if !json_output {
         eprintln!("Reading {}", file.display());
     }
@@ -72,6 +83,9 @@ pub(crate) fn run(
         hf_architecture: hf_architecture.map(str::to_string),
         hf_model_type: hf_model_type.map(str::to_string),
         architecture: architecture.map(str::to_string),
+        tokenizer_vocab: tok_vocab,
+        tokenizer_merges: tok_merges,
+        tokenizer_model_type: tok_model_type,
     };
 
     let stamped = stamp_provenance_bytes(&input, &patch)
@@ -142,6 +156,169 @@ pub(crate) fn run(
     Ok(())
 }
 
+/// PMAT-690 P3-C-prep defect 1: load tokenizer files from a directory.
+///
+/// Accepts two input shapes:
+///
+/// - **`<dir>/vocab.json` + `<dir>/merges.txt`** — HF GPT-2 / Qwen BPE
+///   format. `vocab.json` is `{"token": id, ...}` mapping; we sort by
+///   id and extract the string array. `merges.txt` is one merge per
+///   line (e.g. `"Ä t"`); we skip the optional `#version:` header.
+/// - **`<dir>/tokenizer.json`** — HF unified format. Parsed via the
+///   same path `apr convert` uses (`load_tokenizer_from_explicit_path`
+///   in aprender-core). Returns vocab + merges from the unified JSON.
+///
+/// Returns `(vocab, merges, model_type)`. `model_type` is `Some("BPE")`
+/// when merges are present (the typical case for Qwen / GPT-2 family).
+///
+/// # Errors
+///
+/// Returns Err when the directory has neither a `tokenizer.json` nor
+/// a `vocab.json + merges.txt` pair. Empty vocabulary is also an error
+/// — operator explicitly requested embedded tokenizer.
+fn load_tokenizer_files(
+    dir: &Path,
+) -> Result<(Option<Vec<String>>, Option<Vec<String>>, Option<String>)> {
+    if !dir.is_dir() {
+        return Err(CliError::ValidationFailed(format!(
+            "apr stamp --tokenizer: {} is not a directory",
+            dir.display()
+        )));
+    }
+
+    // Preferred: unified tokenizer.json (reuse aprender-core's loader)
+    let unified = dir.join("tokenizer.json");
+    if unified.is_file() {
+        return load_unified_tokenizer(&unified);
+    }
+
+    // Fallback: vocab.json + merges.txt (the Qwen-coder pretrain default)
+    let vocab_path = dir.join("vocab.json");
+    let merges_path = dir.join("merges.txt");
+    if !vocab_path.is_file() {
+        return Err(CliError::ValidationFailed(format!(
+            "apr stamp --tokenizer: neither tokenizer.json nor vocab.json found in {}",
+            dir.display()
+        )));
+    }
+    let vocab_str = fs::read_to_string(&vocab_path).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "apr stamp --tokenizer: read vocab.json failed: {e}"
+        ))
+    })?;
+    let vocab_map: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&vocab_str)
+        .map_err(|e| {
+            CliError::ValidationFailed(format!(
+                "apr stamp --tokenizer: vocab.json is not a valid JSON object: {e}"
+            ))
+        })?;
+    // Sort by id (the value) to produce a position-indexed vector
+    let mut pairs: Vec<(u64, String)> = vocab_map
+        .iter()
+        .filter_map(|(tok, id)| id.as_u64().map(|n| (n, tok.clone())))
+        .collect();
+    pairs.sort_by_key(|(id, _)| *id);
+    let vocab: Vec<String> = pairs.into_iter().map(|(_, tok)| tok).collect();
+    if vocab.is_empty() {
+        return Err(CliError::ValidationFailed(format!(
+            "apr stamp --tokenizer: vocab.json in {} has no entries",
+            dir.display()
+        )));
+    }
+
+    // merges.txt: one merge per line; skip "#version: ..." header if present
+    let merges: Option<Vec<String>> = if merges_path.is_file() {
+        let merges_str = fs::read_to_string(&merges_path).map_err(|e| {
+            CliError::ValidationFailed(format!(
+                "apr stamp --tokenizer: read merges.txt failed: {e}"
+            ))
+        })?;
+        let m: Vec<String> = merges_str
+            .lines()
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .map(str::to_string)
+            .collect();
+        if m.is_empty() {
+            None
+        } else {
+            Some(m)
+        }
+    } else {
+        None
+    };
+
+    let model_type = if merges.is_some() {
+        Some("BPE".to_string())
+    } else {
+        None
+    };
+    Ok((Some(vocab), merges, model_type))
+}
+
+/// PMAT-690 P3-C-prep defect 1: parse a unified `tokenizer.json` file.
+/// The format embeds vocab + merges in one object — extract both.
+fn load_unified_tokenizer(
+    path: &Path,
+) -> Result<(Option<Vec<String>>, Option<Vec<String>>, Option<String>)> {
+    let content = fs::read_to_string(path).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "apr stamp --tokenizer: read {} failed: {e}",
+            path.display()
+        ))
+    })?;
+    let json: serde_json::Value = serde_json::from_str(&content).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "apr stamp --tokenizer: {} is not valid JSON: {e}",
+            path.display()
+        ))
+    })?;
+    let model = json
+        .get("model")
+        .ok_or_else(|| CliError::ValidationFailed(format!(
+            "apr stamp --tokenizer: {} missing `model` field",
+            path.display()
+        )))?;
+    let model_type = model
+        .get("type")
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string);
+    let vocab_obj = model
+        .get("vocab")
+        .and_then(|v| v.as_object())
+        .ok_or_else(|| CliError::ValidationFailed(format!(
+            "apr stamp --tokenizer: {} missing `model.vocab`",
+            path.display()
+        )))?;
+    let mut pairs: Vec<(u64, String)> = vocab_obj
+        .iter()
+        .filter_map(|(tok, id)| id.as_u64().map(|n| (n, tok.clone())))
+        .collect();
+    pairs.sort_by_key(|(id, _)| *id);
+    let vocab: Vec<String> = pairs.into_iter().map(|(_, tok)| tok).collect();
+    if vocab.is_empty() {
+        return Err(CliError::ValidationFailed(format!(
+            "apr stamp --tokenizer: {} has empty vocab",
+            path.display()
+        )));
+    }
+    // merges may be either ["a b", "c d"] (string form) or [["a","b"],["c","d"]] (array form)
+    let merges: Option<Vec<String>> = model.get("merges").and_then(|v| v.as_array()).map(|arr| {
+        arr.iter()
+            .filter_map(|m| match m {
+                serde_json::Value::String(s) => Some(s.clone()),
+                serde_json::Value::Array(parts) if parts.len() == 2 => {
+                    let a = parts[0].as_str()?;
+                    let b = parts[1].as_str()?;
+                    Some(format!("{a} {b}"))
+                }
+                _ => None,
+            })
+            .collect()
+    });
+    let merges = merges.filter(|m| !m.is_empty());
+    Ok((Some(vocab), merges, model_type))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,6 +349,7 @@ mod tests {
             None, // hf_architecture
             None, // hf_model_type
             None, // architecture
+            None, // tokenizer_dir
             &output,
             false,
             true, // json_output to keep stdout structured
@@ -198,7 +376,7 @@ mod tests {
         let output = dir.path().join("output.apr");
         write_unpopulated_apr(&input);
 
-        let result = run(&input, None, None, None, None, None, None, &output, false, true);
+        let result = run(&input, None, None, None, None, None, None, None, &output, false, true);
         let err = result.unwrap_err();
         let msg = format!("{err:?}");
         assert!(
@@ -218,7 +396,7 @@ mod tests {
         let input = dir.path().join("does-not-exist.apr");
         let output = dir.path().join("output.apr");
 
-        let result = run(&input, Some("Apache-2.0"), None, None, None, None, None, &output, false, true);
+        let result = run(&input, Some("Apache-2.0"), None, None, None, None, None, None, &output, false, true);
         let err = result.unwrap_err();
         // CliError::FileNotFound — exact variant, not just substring match.
         assert!(
@@ -243,6 +421,7 @@ mod tests {
             None, // hf_architecture
             None, // hf_model_type
             None, // architecture
+            None, // tokenizer_dir
             &output,
             false, // force=false
             true,
@@ -274,6 +453,7 @@ mod tests {
             None, // hf_architecture
             None, // hf_model_type
             None, // architecture
+            None, // tokenizer_dir
             &output,
             true, // force=true
             true,
@@ -329,6 +509,7 @@ mod tests {
             Some("Qwen2ForCausalLM"),
             Some("qwen2"),
             Some("qwen2"),
+            None, // tokenizer_dir
             &output,
             false,
             true,
@@ -372,6 +553,7 @@ mod tests {
             Some("Qwen2ForCausalLM"),
             None,
             None,
+            None, // tokenizer_dir
             &output,
             false,
             true,
@@ -387,6 +569,135 @@ mod tests {
         assert_eq!(
             reader.metadata().hf_model_type, None,
             "unpatched field must remain None"
+        );
+    }
+
+    /// PMAT-690 P3-C-prep defect 1: --tokenizer <DIR> with vocab.json
+    /// + merges.txt embeds the vocab + merges into AprV2Metadata.custom
+    /// AND sets the HAS_VOCAB header flag. Required for `apr run` to
+    /// accept the stamped APR for inference (the §86 publish-readiness
+    /// preflight surfaced this gap on P2-E ep49).
+    #[test]
+    fn stamp_p3c_defect1_embeds_tokenizer_from_vocab_merges() {
+        use aprender::format::v2::AprV2Flags;
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("input.apr");
+        let output = dir.path().join("output.apr");
+        write_unpopulated_apr(&input);
+
+        // Stage a vocab.json + merges.txt pair (Qwen-coder pretrain format)
+        let tok_dir = dir.path().join("tokenizer");
+        fs::create_dir_all(&tok_dir).unwrap();
+        // vocab.json: {"<unk>": 0, "Ġ": 1, "the": 2}
+        let vocab_json = r#"{"<unk>": 0, "Ġ": 1, "the": 2}"#;
+        fs::write(tok_dir.join("vocab.json"), vocab_json).unwrap();
+        // merges.txt
+        fs::write(tok_dir.join("merges.txt"), "#version: 0.2\nĠ t\nh e\nĠt he\n").unwrap();
+
+        let result = run(
+            &input,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(&tok_dir),
+            &output,
+            false,
+            true,
+        );
+        assert!(
+            result.is_ok(),
+            "stamp with --tokenizer must succeed: {result:?}"
+        );
+
+        let bytes = fs::read(&output).unwrap();
+        let reader = AprV2Reader::from_bytes(&bytes).unwrap();
+
+        // HAS_VOCAB flag MUST be set (the apr run gate per PMAT-172)
+        assert!(
+            reader.header().flags.contains(AprV2Flags::HAS_VOCAB),
+            "HAS_VOCAB header flag must be set after --tokenizer stamp \
+             (the load-bearing check for apr run inference)"
+        );
+
+        // custom.tokenizer.vocabulary present + has 3 entries
+        let vocab = reader
+            .metadata()
+            .custom
+            .get("tokenizer.vocabulary")
+            .and_then(|v| v.as_array())
+            .expect("tokenizer.vocabulary must be set");
+        assert_eq!(vocab.len(), 3);
+        // Sorted by id: <unk>=0, Ġ=1, the=2
+        assert_eq!(vocab[0].as_str(), Some("<unk>"));
+        assert_eq!(vocab[2].as_str(), Some("the"));
+
+        // custom.tokenizer.merges present + has 3 entries (header skipped)
+        let merges = reader
+            .metadata()
+            .custom
+            .get("tokenizer.merges")
+            .and_then(|v| v.as_array())
+            .expect("tokenizer.merges must be set");
+        assert_eq!(merges.len(), 3);
+
+        // model_type=BPE inferred from presence of merges
+        assert_eq!(
+            reader
+                .metadata()
+                .custom
+                .get("tokenizer.model_type")
+                .and_then(|v| v.as_str()),
+            Some("BPE")
+        );
+    }
+
+    /// PMAT-690 P3-C-prep defect 1: --tokenizer flag alone (no other
+    /// patches) must satisfy the has_any() gate.
+    #[test]
+    fn stamp_p3c_defect1_tokenizer_alone_passes_has_any_gate() {
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("input.apr");
+        let output = dir.path().join("output.apr");
+        write_unpopulated_apr(&input);
+        let tok_dir = dir.path().join("tokenizer");
+        fs::create_dir_all(&tok_dir).unwrap();
+        fs::write(tok_dir.join("vocab.json"), r#"{"a": 0}"#).unwrap();
+
+        let result = run(
+            &input, None, None, None, None, None, None,
+            Some(&tok_dir),
+            &output, false, true,
+        );
+        assert!(
+            result.is_ok(),
+            "stamp with --tokenizer alone must succeed: {result:?}"
+        );
+    }
+
+    /// PMAT-690 P3-C-prep defect 1: --tokenizer with neither
+    /// tokenizer.json nor vocab.json present → clear error.
+    #[test]
+    fn stamp_p3c_defect1_tokenizer_dir_without_files_errors() {
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("input.apr");
+        let output = dir.path().join("output.apr");
+        write_unpopulated_apr(&input);
+        let empty_tok = dir.path().join("empty-tokenizer");
+        fs::create_dir_all(&empty_tok).unwrap();
+
+        let result = run(
+            &input, None, None, None, None, None, None,
+            Some(&empty_tok),
+            &output, false, true,
+        );
+        let err = result.unwrap_err();
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains("neither tokenizer.json nor vocab.json found"),
+            "expected clear missing-files error, got: {msg}"
         );
     }
 }
