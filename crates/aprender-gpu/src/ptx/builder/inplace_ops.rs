@@ -120,6 +120,24 @@ impl<'a> KernelBuilder<'a> {
         dst
     }
 
+    /// GH-561 / M-GPU-MOE-3: Add f64 in-place: `dst += src`. Both operands f64.
+    ///
+    /// Used by kernels that accumulate per-superblock partials into a single
+    /// warp-lane accumulator (e.g. q6k_gemv). Pair with `mov_f64_imm_zero`
+    /// for the initial accumulator and `cvt_f32_f64_rn` for the final
+    /// store. Round-to-nearest is the only mode emitted; matches the
+    /// existing `fma_f64_acc_inplace` rounding.
+    pub fn add_f64_inplace(&mut self, dst: VirtualReg, src: VirtualReg) {
+        self.registers.extend_live_range(dst);
+        self.instructions.push(
+            PtxInstruction::new(PtxOp::Add, PtxType::F64)
+                .dst(Operand::Reg(dst))
+                .src(Operand::Reg(dst))
+                .src(Operand::Reg(src))
+                .rounding(RoundingMode::Rn),
+        );
+    }
+
     /// GH-561: Convert f64 accumulator to f32 result (round to nearest)
     pub fn cvt_f32_f64_rn(&mut self, src: VirtualReg) -> VirtualReg {
         let dst = self.registers.allocate_virtual(PtxType::F32);
