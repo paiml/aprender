@@ -193,29 +193,41 @@ ssh "${GX10_USER}@${GX10_HOST}" "
         local cache_dir
         cache_dir=\$(dirname \"\$cache_path\")
         local target=\"\$stage_dir/model.apr\"
+
+        # PMAT-698d step 1: stage companion files (config.json, tokenizer*)
+        # alongside the source file. apr import looks for config.json next
+        # to the source path and errors out otherwise. Pacha caches them
+        # with the sha prefix; rename to the unprefixed form apr import wants.
+        for companion in config.json tokenizer.json tokenizer_config.json; do
+            local src=\"\${cache_dir}/\${sha}.\${companion}\"
+            if [ -f \"\$src\" ]; then
+                ln -sf \"\$src\" \"\$stage_dir/\${companion}\"
+            fi
+        done
+
         case \"\$ext\" in
             apr)
                 ln -sf \"\$cache_path\" \"\$target\"
                 ;;
             safetensors)
+                # Place a symlink to the source safetensors in stage_dir so
+                # apr import resolves config.json next to it.
+                local src_in_stage=\"\$stage_dir/source.safetensors\"
+                ln -sf \"\$cache_path\" \"\$src_in_stage\"
                 echo \"SafeTensors detected for \$repo - converting to APR via apr import (--arch \$arch_hint)\" >&2
-                ./target/release/apr import \"\$cache_path\" --arch \"\$arch_hint\" -o \"\$target\" >&2
+                ./target/release/apr import \"\$src_in_stage\" --arch \"\$arch_hint\" -o \"\$target\" >&2
                 ;;
             gguf)
+                local src_in_stage=\"\$stage_dir/source.gguf\"
+                ln -sf \"\$cache_path\" \"\$src_in_stage\"
                 echo \"GGUF detected for \$repo - converting to APR via apr import (--arch \$arch_hint --preserve-q4k)\" >&2
-                ./target/release/apr import \"\$cache_path\" --arch \"\$arch_hint\" --preserve-q4k -o \"\$target\" >&2
+                ./target/release/apr import \"\$src_in_stage\" --arch \"\$arch_hint\" --preserve-q4k -o \"\$target\" >&2
                 ;;
             *)
                 echo \"unknown model file extension: \$ext (cache_path=\$cache_path)\" >&2
                 return 1
                 ;;
         esac
-        for companion in tokenizer.json config.json tokenizer_config.json; do
-            local src=\"\${cache_dir}/\${sha}.\${companion}\"
-            if [ -f \"\$src\" ]; then
-                ln -sf \"\$src\" \"\$stage_dir/\${companion}\"
-            fi
-        done
         echo \"staged \$repo -> \$target\" >&2
     }
 
