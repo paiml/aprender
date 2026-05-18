@@ -21,6 +21,11 @@ workspace = true
 [features]
 default = []
 hub = ["entrenar/hub"]
+# SPEC-DISTILL-001 Phase 1b (PMAT-693): enables CudaTrainerTeacher, the
+# real teacher backend that delegates to entrenar's CudaTransformerTrainer
+# in inference-only mode. Without this feature, only FixtureTeacher is
+# available (sufficient for unit tests; real distillation requires `cuda`).
+cuda = ["entrenar/cuda"]
 
 [dependencies]
 entrenar = { version = "0.34.0", path = "../aprender-train", package = "aprender-train" }
