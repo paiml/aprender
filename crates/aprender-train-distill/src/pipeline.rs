@@ -53,38 +53,60 @@ impl TrainingMetrics {
 pub struct Pipeline<'a> {
     config: &'a DistillConfig,
     /// SPEC-DISTILL-001 Phase 1 (PMAT-691): the teacher backend the
-    /// training loop pulls logits from. Defaults to a `FixtureTeacher`
-    /// that returns deterministic stub logits so legacy callers and unit
-    /// tests don't need to wire a real backend. Phase 1b (PMAT-692) adds
-    /// `RealizarTeacher` that delegates to `aprender-serve`.
+    /// training loop pulls logits from. Defaults to a `FixtureTeacher`.
+    /// Phase 1b (PMAT-693) adds `CudaTrainerTeacher` for real backends.
     teacher: Box<dyn crate::teacher_provider::TeacherLogitsProvider + Send>,
+    /// SPEC-DISTILL-001 Phase 2b (PMAT-695): the student backend the
+    /// training loop updates each step. Defaults to a `FixtureStudent`.
+    /// Phase 2d (PMAT-696) adds `CudaStudentProvider` wrapping
+    /// `CudaTransformerTrainer` for production runs.
+    student: Box<dyn crate::student_provider::StudentLogitsProvider + Send>,
 }
 
 impl<'a> Pipeline<'a> {
     /// Create a new pipeline with the given configuration.
     ///
-    /// Uses a fixture-teacher by default. Call [`Self::with_teacher`] to
-    /// swap in a real teacher backend for Phase 4 production runs.
+    /// Uses fixture teacher + student by default. Use [`Self::with_teacher`]
+    /// / [`Self::with_student`] to swap in real backends for Phase 4
+    /// production runs.
     pub fn new(config: &'a DistillConfig) -> Self {
         // The fixture vocab size matches the legacy synthetic-logits stub
-        // (num_classes = 32) so existing tests behave identically.
+        // (num_classes = 32) so existing tests behave identically. The
+        // student starts at uniform logits (0.0) with a moderate LR; this
+        // means without a Phase 2d real backend, the pipeline still does
+        // *something* — it nudges the fixture student's logits toward the
+        // teacher's distribution. Useful for unit tests of the data flow,
+        // not for real distillation.
         Self {
             config,
             teacher: Box::new(crate::teacher_provider::FixtureTeacher::new(32)),
+            student: Box::new(crate::student_provider::FixtureStudent::new(32, 0.0, 0.1)),
         }
     }
 
     /// Swap in a custom teacher backend.
     ///
-    /// Phase 4 wiring point: pass a `RealizarTeacher` loaded with the
-    /// MODEL-1 7B teacher. The fixture is fine for Phase 1's unit-test
-    /// landing.
+    /// Phase 4 wiring point: pass a `CudaTrainerTeacher` loaded with
+    /// the MODEL-1 7B teacher.
     #[must_use]
     pub fn with_teacher(
         mut self,
         teacher: Box<dyn crate::teacher_provider::TeacherLogitsProvider + Send>,
     ) -> Self {
         self.teacher = teacher;
+        self
+    }
+
+    /// Swap in a custom student backend.
+    ///
+    /// Phase 4 wiring point: pass a `CudaStudentProvider` wrapping a
+    /// trainable `CudaTransformerTrainer`.
+    #[must_use]
+    pub fn with_student(
+        mut self,
+        student: Box<dyn crate::student_provider::StudentLogitsProvider + Send>,
+    ) -> Self {
+        self.student = student;
         self
     }
 
@@ -174,30 +196,39 @@ impl<'a> Pipeline<'a> {
         let batch_size = self.config.training.batch_size as usize;
         let num_classes = self.teacher.vocab_size();
 
-        // SPEC-DISTILL-001 Phase 1 (PMAT-691): teacher logits now come from
-        // a real TeacherLogitsProvider, not from synthetic weight-byte
-        // derivation. The provider's output shape is [batch, vocab_size];
-        // we reshape to ndarray::Array2 to match what loss_fn.forward expects.
+        // SPEC-DISTILL-001 Phase 2c (PMAT-691): the training loop now uses
+        // both abstractions end-to-end. Per step:
         //
-        // Until Phase 2 wires a real student forward+backward, we still use
-        // a dummy input_ids batch (all zeros) — Phase 1 only proves the
-        // teacher data path. Phase 2 will replace the dummy batch with
-        // real token IDs from the dataset.
+        //   1. Build a dummy batch of input_ids (Phase 4 replaces this with
+        //      real tokens from a dataset).
+        //   2. self.teacher.logits_for_batch → teacher logits.
+        //   3. self.student.logits_for_batch → student logits.
+        //   4. kd_step's `kd_loss` + `kd_logit_gradient` → (scalar loss,
+        //      per-batch logit gradients).
+        //   5. self.student.apply_kd_gradient → student updates its
+        //      parameters in the gradient direction.
+        //
+        // The ndarray bookkeeping that used to live here is gone — the
+        // student provider owns its parameter buffer. `student_weights`
+        // (loaded from the on-disk safetensors) is only retained so the
+        // export step at the end can write the resulting checkpoint.
+        let _ = (lr, &loss_fn); // legacy values retained for back-compat
         let dummy_batch: Vec<Vec<u32>> = vec![vec![0u32]; batch_size];
-        let teacher_logits_vv = self.teacher.logits_for_batch(&dummy_batch)?;
-        let teacher_flat: Vec<f32> = teacher_logits_vv.into_iter().flatten().collect();
-        let teacher_logits = Array2::from_shape_vec((batch_size, num_classes), teacher_flat)
-            .expect("teacher provider returned (batch, vocab) buffer");
         let labels: Vec<usize> = (0..batch_size).map(|i| i % num_classes).collect();
-
-        // Maintain student logits as a mutable array for gradient descent
-        let mut student_logits = build_synthetic_logits(&student_weights, batch_size, num_classes);
 
         let mut metrics = TrainingMetrics::default();
         let mut best_loss = f32::MAX;
 
-        // Initial loss measurement
-        let initial_loss = loss_fn.forward(&student_logits, &teacher_logits, &labels);
+        // Initial loss — drives `metrics.initial_loss` for the
+        // PipelineResult improvement-ratio computation.
+        let initial_loss = kd_step_loss_for_pipeline(
+            &mut *self.teacher,
+            &mut *self.student,
+            &dummy_batch,
+            &labels,
+            temperature,
+            alpha,
+        )?;
         metrics.initial_loss = initial_loss;
         best_loss = best_loss.min(initial_loss);
 
@@ -208,44 +239,58 @@ impl<'a> Pipeline<'a> {
             let steps_this_epoch = (1000 / u64::from(self.config.training.batch_size)).max(1);
 
             for _s in 0..steps_this_epoch {
-                // Compute distillation loss
-                let loss = loss_fn.forward(&student_logits, &teacher_logits, &labels);
-                best_loss = best_loss.min(loss);
-
-                // Compute KD gradient: d(loss)/d(student_logits)
-                let grad = kd_gradient(
-                    &student_logits,
-                    &teacher_logits,
+                let (loss, grads) = crate::kd_step::kd_step(
+                    self.teacher.as_mut(),
+                    &dummy_batch,
                     &labels,
                     temperature,
                     alpha,
-                );
-
-                // SGD update in logit space
-                student_logits = &student_logits - &(grad * lr);
-
+                    |ids| {
+                        // Compute student logits inline. The closure runs
+                        // once per batch element inside kd_step.
+                        // For Phase 2c we ask the provider for the whole
+                        // batch upfront (cheaper than per-element when the
+                        // provider has shared state) and index into it.
+                        // FixtureStudent and any non-trivial provider both
+                        // satisfy the contract that adjacent calls with the
+                        // same input_ids return the same logits, so this
+                        // simple pattern is safe.
+                        let logits_vv = self
+                            .student
+                            .logits_for_batch(std::slice::from_ref(&ids.to_vec()))
+                            .expect("student provider failed mid-step");
+                        logits_vv.into_iter().next().unwrap_or_default()
+                    },
+                )?;
+                best_loss = best_loss.min(loss);
+                self.student.apply_kd_gradient(&grads)?;
                 step += 1;
             }
         }
 
         let elapsed = train_start.elapsed().as_secs_f32().max(1e-6);
 
-        // Final loss measurement
-        let final_loss = loss_fn.forward(&student_logits, &teacher_logits, &labels);
+        // Final loss measurement.
+        let final_loss = kd_step_loss_for_pipeline(
+            &mut *self.teacher,
+            &mut *self.student,
+            &dummy_batch,
+            &labels,
+            temperature,
+            alpha,
+        )?;
 
         metrics.final_loss = final_loss;
         metrics.best_loss = best_loss.min(final_loss);
         metrics.steps_completed = step;
         metrics.throughput = (step as f32 * batch_size as f32) / elapsed;
 
-        // Write trained logits back into student weight tensor
-        write_logits_to_weights(
-            &mut student_weights,
-            &student_logits,
-            batch_size,
-            num_classes,
-        );
-
+        // SPEC-DISTILL-001 Phase 2c: the student provider owns its
+        // parameter buffer; the export stage writes the on-disk
+        // checkpoint from `student_weights` (loaded from the input
+        // safetensors) as a passthrough. Phase 2d wires a real
+        // student provider that can serialize itself to a checkpoint
+        // — at which point `student_weights` becomes obsolete.
         Ok((metrics, student_weights, student_shapes))
     }
 
@@ -312,6 +357,46 @@ impl<'a> Pipeline<'a> {
 
 /// Resolve a model identifier to a local filesystem path.
 ///
+/// SPEC-DISTILL-001 Phase 2c helper: computes the scalar KD loss for the
+/// current state of (teacher, student) on a `dummy_batch`, without
+/// applying any gradient update. Used to bracket the training loop with
+/// initial-loss and final-loss measurements that drive
+/// `TrainingMetrics.improvement_ratio`.
+fn kd_step_loss_for_pipeline(
+    teacher: &mut dyn crate::teacher_provider::TeacherLogitsProvider,
+    student: &mut dyn crate::student_provider::StudentLogitsProvider,
+    input_ids: &[Vec<u32>],
+    labels: &[usize],
+    temperature: f32,
+    alpha: f32,
+) -> Result<f32> {
+    let teacher_logits = teacher.logits_for_batch(input_ids)?;
+    let student_logits = student.logits_for_batch(input_ids)?;
+    if teacher_logits.len() != student_logits.len() {
+        return Err(EntrenarError::Internal {
+            message: format!(
+                "kd_step_loss_for_pipeline: teacher returned {} logits batches, \
+                 student returned {} — they must match",
+                teacher_logits.len(),
+                student_logits.len()
+            ),
+        });
+    }
+    let mut total = 0.0_f32;
+    for ((s, t), &label) in student_logits
+        .iter()
+        .zip(teacher_logits.iter())
+        .zip(labels.iter())
+    {
+        total += crate::kd_step::kd_loss(s, t, label, temperature, alpha);
+    }
+    Ok(if input_ids.is_empty() {
+        0.0
+    } else {
+        total / input_ids.len() as f32
+    })
+}
+
 /// - If it contains `/` or `.` and exists on disk, returns the path directly.
 /// - If it looks like a HuggingFace model ID (org/model), uses HfModelFetcher
 ///   when the `hub` feature is enabled.
@@ -376,6 +461,7 @@ fn resolve_model_path(model_id: &str) -> Result<PathBuf> {
 /// Takes the first weight tensor large enough and reshapes a slice of it
 /// into [batch_size, num_classes]. This is a placeholder for real forward
 /// pass outputs until the autograd backward ops are complete.
+#[allow(dead_code)]
 fn build_synthetic_logits(
     weights: &HashMap<String, Vec<f32>>,
     batch_size: usize,
@@ -413,6 +499,7 @@ fn build_synthetic_logits(
 ///
 /// ∂L/∂z_student = α·T·(softmax(z_s/T) - softmax(z_t/T))
 ///               + (1-α)·(softmax(z_s) - one_hot(labels))
+#[allow(dead_code)]
 fn kd_gradient(
     student_logits: &Array2<f32>,
     teacher_logits: &Array2<f32>,
@@ -443,6 +530,7 @@ fn kd_gradient(
 }
 
 /// Compute softmax along the last axis of a 2D array.
+#[allow(dead_code)]
 fn softmax_2d(x: &Array2<f32>) -> Array2<f32> {
     let mut result = x.clone();
     for mut row in result.axis_iter_mut(Axis(0)) {
@@ -455,6 +543,7 @@ fn softmax_2d(x: &Array2<f32>) -> Array2<f32> {
 }
 
 /// Write trained logit values back into the first suitable weight tensor.
+#[allow(dead_code)]
 fn write_logits_to_weights(
     weights: &mut HashMap<String, Vec<f32>>,
     logits: &Array2<f32>,
@@ -679,6 +768,75 @@ mod tests {
 
         // Verify distillation metadata sidecar was created
         assert!(output_dir.join("distillation_metadata.json").exists());
+    }
+
+    /// F-DISTILL-PIPELINE-001 — Phase 2c end-to-end falsifier.
+    ///
+    /// Runs `Pipeline::execute()` with the default FixtureTeacher +
+    /// FixtureStudent and asserts that
+    /// `metrics.final_loss < metrics.initial_loss`. This pins the data
+    /// flow correctness: teacher provider → student forward → kd_step
+    /// (loss + gradient) → student.apply_kd_gradient. If any of those
+    /// links break, the loss either stays flat or increases.
+    #[test]
+    fn falsify_pipeline_001_end_to_end_loss_decreases() {
+        use safetensors::tensor::{Dtype, TensorView};
+
+        let tmp = tempfile::TempDir::new().expect("temp file creation should succeed");
+
+        // Minimal safetensors for the on-disk "weight loading" stage —
+        // the actual values aren't used by Phase 2c's logic, but the
+        // loader is still called for back-compat.
+        let dummy: Vec<f32> = (0..32).map(|i| i as f32 * 0.01).collect();
+        let dummy_bytes: Vec<u8> = bytemuck::cast_slice(&dummy).to_vec();
+        for name in ["teacher", "student"] {
+            let p = tmp.path().join(format!("{name}.safetensors"));
+            let views = vec![(
+                "layer.weight",
+                TensorView::new(Dtype::F32, vec![8, 4], &dummy_bytes)
+                    .expect("safetensors view"),
+            )];
+            std::fs::write(
+                &p,
+                safetensors::serialize(views, None).expect("safetensors serialize"),
+            )
+            .expect("safetensors write");
+        }
+
+        let out_dir = tmp.path().join("out");
+        let mut config = DistillConfig::minimal(
+            tmp.path().join("teacher.safetensors").to_str().unwrap(),
+            tmp.path().join("student.safetensors").to_str().unwrap(),
+        );
+        config.output.dir = out_dir;
+        config.training.epochs = 3;
+        config.training.batch_size = 4;
+        config.distillation.temperature = 4.0;
+        config.distillation.alpha = 0.5;
+
+        let mut pipeline = Pipeline::new(&config);
+        let result = pipeline.execute().expect("pipeline must succeed");
+
+        eprintln!(
+            "[F-DISTILL-PIPELINE-001] initial_loss={}, final_loss={}, steps={}",
+            result.metrics.initial_loss,
+            result.metrics.final_loss,
+            result.metrics.steps_completed
+        );
+
+        assert!(
+            result.metrics.steps_completed >= 3,
+            "must run at least 3 steps in 3 epochs"
+        );
+        assert!(
+            result.metrics.final_loss < result.metrics.initial_loss,
+            "F-DISTILL-PIPELINE-001 FAILED: end-to-end pipeline did not \
+             reduce loss (initial={}, final={}). This means the data \
+             flow teacher → student → kd_step → apply_kd_gradient is \
+             broken somewhere.",
+            result.metrics.initial_loss,
+            result.metrics.final_loss
+        );
     }
 
     /// Falsification: does training actually reduce loss?
