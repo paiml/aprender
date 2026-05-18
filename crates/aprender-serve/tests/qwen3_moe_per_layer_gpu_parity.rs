@@ -449,3 +449,187 @@ fn falsify_qw3_moe_l47_router_probe() {
     // This is a PROBE, not a hard-fail falsifier. Print the verdict; do not
     // assert. The verdict drives the next PR's investigation target.
 }
+
+/// (indices, u32 cast to f32 on emit, reinterpreted as u32 on read) +
+/// MoeFfnOut. The triple is the minimal set needed to confirm or falsify
+/// H(ii) expert-set divergence at L47.
+fn make_router_indices_plan(output_dir: PathBuf) -> SaveTensorPlan {
+    SaveTensorPlan::from_cli(
+        "moe_router,moe_router_indices,moe_ffn_out",
+        &format!("0..{EXPECTED_NUM_LAYERS}"),
+        output_dir,
+    )
+    .expect("MoeRouter+MoeRouterIndices+MoeFfnOut plan from_cli must succeed for layer range 0..48")
+}
+
+/// Read a `MoeRouterIndices` stage file. Indices were stored as f32 cast
+/// from u32 in the emit path (`forward_qwen3_moe_traced.rs`,
+/// `forward_qwen3_moe_cuda_traced.rs`). Reinterpret them back to u32 here.
+/// The cast is lossless for any expert id < 2^24; Qwen3 has 128 experts so
+/// we never hit the limit.
+fn read_indices_stage_file(path: &Path) -> std::io::Result<(u32, Vec<u32>)> {
+    let (layer, f32s) = read_stage_file(path)?;
+    let indices: Vec<u32> = f32s.iter().map(|f| *f as u32).collect();
+    Ok((layer, indices))
+}
+
+///
+/// ```
+/// cargo test --release --features cuda \
+///   -p aprender-serve --test qwen3_moe_per_layer_gpu_parity \
+///   falsify_qw3_moe_l47_router_indices \
+///   -- --ignored --nocapture
+/// ```
+///
+/// Hardware: RTX 4090 (sm_89), GGUF cached at `/home/noah/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf`.
+#[test]
+#[ignore = "requires cached Qwen3-Coder-30B-A3B-Instruct-Q4_K_M GGUF + CUDA RTX 4090; takes ~5 min"]
+fn falsify_qw3_moe_l47_router_indices() {
+    let Some(gguf_path) = CANONICAL_QWEN3_CODER_GGUF_PATHS
+        .iter()
+        .find(|p| Path::new(p).exists())
+    else {
+        eprintln!(
+            "FALSIFY-QW3-MOE-L47-ROUTER-INDICES: skipped — no cached Qwen3-Coder GGUF in {CANONICAL_QWEN3_CODER_GGUF_PATHS:?}"
+        );
+        return;
+    };
+
+    eprintln!(
+        "FALSIFY-QW3-MOE-L47-ROUTER-INDICES: definitive H(ii) verdict via top-k INDICES capture"
+    );
+    eprintln!("  gguf:   {gguf_path}");
+    eprintln!("  prompt: {PROMPT_TOKENS:?}");
+
+    let mapped = MappedGGUFModel::from_path(gguf_path).expect("mmap GGUF");
+    let data = mapped.data();
+
+    let mut moe_layers = Vec::with_capacity(EXPECTED_NUM_LAYERS);
+    for layer_idx in 0..EXPECTED_NUM_LAYERS {
+        moe_layers.push(
+            load_qwen3_moe_layer(&mapped.model, data, layer_idx)
+                .unwrap_or_else(|e| panic!("layer {layer_idx} MoE load failed: {e:?}")),
+        );
+    }
+
+    let tmpdir = tempfile::tempdir().expect("create tempdir");
+    let cpu_dir = tmpdir.path().join("cpu");
+    let gpu_dir = tmpdir.path().join("gpu");
+    let cpu_plan = make_router_indices_plan(cpu_dir.clone());
+    let gpu_plan = make_router_indices_plan(gpu_dir.clone());
+
+    // ----- CPU traced forward -----
+    let cpu_model =
+        OwnedQuantizedModel::from_mapped(&mapped).expect("OwnedQuantizedModel::from_mapped #1");
+    eprintln!("FALSIFY-QW3-MOE-L47-ROUTER-INDICES: running CPU traced forward...");
+    let _cpu_trace = cpu_model
+        .forward_qwen3_moe_traced_with_plan(
+            PROMPT_TOKENS,
+            &moe_layers,
+            EXPECTED_N_EXPERTS,
+            EXPECTED_K,
+            EXPECTED_INTERMEDIATE,
+            data,
+            Some(&cpu_plan),
+        )
+        .expect("CPU traced forward must succeed");
+
+    // ----- GPU traced forward -----
+    let gpu_inner =
+        OwnedQuantizedModel::from_mapped(&mapped).expect("OwnedQuantizedModel::from_mapped #2");
+    let mut gpu_model = OwnedQuantizedModelCuda::new(gpu_inner, 0)
+        .expect("OwnedQuantizedModelCuda::new(model, 0) must succeed on RTX 4090");
+    eprintln!("FALSIFY-QW3-MOE-L47-ROUTER-INDICES: running GPU traced forward...");
+    let _gpu_trace = gpu_model
+        .forward_qwen3_moe_cuda_traced_with_plan(
+            PROMPT_TOKENS,
+            &moe_layers,
+            EXPECTED_N_EXPERTS,
+            EXPECTED_K,
+            EXPECTED_INTERMEDIATE,
+            data,
+            Some(&gpu_plan),
+        )
+        .expect("GPU traced forward must succeed");
+
+    // ----- compare top-k INDICES per layer -----
+    let mut layer_diverges: Vec<(usize, Vec<u32>, Vec<u32>)> = Vec::new();
+
+    for layer_idx in 0..EXPECTED_NUM_LAYERS {
+        let cpu_path = cpu_plan.stage_path(SaveTensorStage::MoeRouterIndices, layer_idx as u32);
+        let gpu_path = gpu_plan.stage_path(SaveTensorStage::MoeRouterIndices, layer_idx as u32);
+
+        let (_, mut cpu_indices) =
+            read_indices_stage_file(&cpu_path).expect("read CPU MoeRouterIndices");
+        let (_, mut gpu_indices) =
+            read_indices_stage_file(&gpu_path).expect("read GPU MoeRouterIndices");
+
+        // Sort to compare as SETS (top-k order is descending by weight, which
+        // can differ even when sets are identical due to floating-point ties).
+        cpu_indices.sort_unstable();
+        gpu_indices.sort_unstable();
+
+        if cpu_indices != gpu_indices {
+            layer_diverges.push((layer_idx, cpu_indices, gpu_indices));
+        }
+    }
+
+    eprintln!("FALSIFY-QW3-MOE-L47-ROUTER-INDICES: per-layer expert-set comparison:");
+    if layer_diverges.is_empty() {
+        eprintln!("  All 48 layers: CPU expert SET == GPU expert SET");
+    } else {
+        for (idx, cpu_ids, gpu_ids) in &layer_diverges {
+            let cpu_only: Vec<u32> = cpu_ids
+                .iter()
+                .filter(|x| !gpu_ids.contains(x))
+                .copied()
+                .collect();
+            let gpu_only: Vec<u32> = gpu_ids
+                .iter()
+                .filter(|x| !cpu_ids.contains(x))
+                .copied()
+                .collect();
+            eprintln!(
+                "  L{idx:02} DIVERGE — cpu_only={cpu_only:?} gpu_only={gpu_only:?} cpu={cpu_ids:?} gpu={gpu_ids:?}"
+            );
+        }
+    }
+
+    // Specifically L47 — the cliff layer:
+    let l47_cpu = cpu_plan.stage_path(SaveTensorStage::MoeRouterIndices, 47);
+    let l47_gpu = gpu_plan.stage_path(SaveTensorStage::MoeRouterIndices, 47);
+    let (_, mut cpu_l47) = read_indices_stage_file(&l47_cpu).expect("read CPU L47");
+    let (_, mut gpu_l47) = read_indices_stage_file(&l47_gpu).expect("read GPU L47");
+    cpu_l47.sort_unstable();
+    gpu_l47.sort_unstable();
+
+    eprintln!("FALSIFY-QW3-MOE-L47-ROUTER-INDICES: L47 verdict:");
+    eprintln!("  cpu sorted top-{EXPECTED_K}: {cpu_l47:?}");
+    eprintln!("  gpu sorted top-{EXPECTED_K}: {gpu_l47:?}");
+    if cpu_l47 == gpu_l47 {
+        eprintln!(
+            "  H(ii) FALSIFIED — CPU and GPU pick the SAME 8 experts at L47 with router cos=0.9926"
+        );
+        eprintln!(
+            "  → L47 cliff is POST-ROUTING. Next investigation: per-expert FfnSwigl capture at L47."
+        );
+    } else {
+        let cpu_only: Vec<u32> = cpu_l47
+            .iter()
+            .filter(|x| !gpu_l47.contains(x))
+            .copied()
+            .collect();
+        let gpu_only: Vec<u32> = gpu_l47
+            .iter()
+            .filter(|x| !cpu_l47.contains(x))
+            .copied()
+            .collect();
+        eprintln!("  H(ii) CONFIRMED — CPU expert_only={cpu_only:?} GPU expert_only={gpu_only:?}");
+        eprintln!(
+            "  → L47 cliff is ROUTING DIVERGENCE. Fix space: deterministic tie-breaking | fp64 gate softmax | reorder-stable top-k."
+        );
+    }
+
+    // This is a PROBE — print the verdict, do not assert. The verdict
+    // drives PR-3f+ (fix selection).
+}
