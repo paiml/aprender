@@ -1611,6 +1611,38 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             *json,
         ),
 
+        ExtendedCommands::Embed {
+            model,
+            text,
+            text_file,
+            vocab,
+            pool,
+            normalize,
+            hidden_dim,
+            num_layers,
+            num_heads,
+            intermediate_dim,
+            vocab_size,
+            max_position_embeddings,
+            type_vocab_size,
+            json,
+        } => commands::embed::run(
+            model,
+            text,
+            text_file.as_deref(),
+            vocab,
+            pool,
+            *normalize,
+            *hidden_dim,
+            *num_layers,
+            *num_heads,
+            *intermediate_dim,
+            *vocab_size,
+            *max_position_embeddings,
+            *type_vocab_size,
+            *json,
+        ),
+
         // All other extended commands handled by sub-dispatchers above
         _ => unreachable!("all extended commands handled by sub-dispatchers"),
     }

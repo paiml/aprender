@@ -52,6 +52,27 @@ impl BertEncoder {
     pub fn layer_mut(&mut self, idx: usize) -> &mut BertLayer {
         &mut self.layers[idx]
     }
+
+    /// Load encoder-only weights from an APR v2 reader (GH-326 Phase 6).
+    ///
+    /// For sentence-embedding models (`BertModel` checkpoints from
+    /// `sentence-transformers`) that ship without a classifier head —
+    /// the `CrossEncoder` loader would error trying to find
+    /// `classifier.weight`. This method loads just the encoder stack
+    /// without requiring a head.
+    ///
+    /// # Errors
+    ///
+    /// Returns
+    /// [`BertLoadError`](crate::models::bert::load::BertLoadError) on
+    /// the first missing tensor or shape mismatch.
+    pub fn load_from_reader(
+        &mut self,
+        reader: &crate::format::v2::AprV2Reader,
+        config: &crate::models::bert::BertConfig,
+    ) -> Result<(), crate::models::bert::load::BertLoadError> {
+        crate::models::bert::load::load_encoder_from_reader(self, reader, config)
+    }
 }
 
 #[cfg(test)]
