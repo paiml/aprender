@@ -95,6 +95,24 @@ pub enum SaveTensorStage {
     /// `[hidden_dim]` for the active layer. Captured AFTER all per-expert
     /// computations and BEFORE the post-FFN residual add.
     MoeFfnOut,
+    /// **MoE-GPU bisection L47 sub-cascade** (per M-GPU-MOE-3 PR-3e2,
+    /// issue #1583): top-k expert INDICES post-softmax + argsort. `[k]`
+    /// (k = num_experts_per_tok) for the active layer's MoE router output.
+    /// Captured AFTER `FfnNorm` and BEFORE the per-expert SwiGLU dispatches.
+    ///
+    /// Indices are `u32` semantically (expert id in `[0, num_experts)`) but
+    /// stored as `f32` to fit the existing `maybe_save_stage` `&[f32]`
+    /// write path. The cast is lossless for any `num_experts ≤ 2^24` —
+    /// Qwen3 has 128 experts, well within range.
+    ///
+    /// Sibling of [`MoeRouter`] (weights). The pair (`MoeRouter`,
+    /// `MoeRouterIndices`) together capture the full router state needed
+    /// to falsify or confirm H(ii) routing-divergence at L47: equal
+    /// indices + equal weights ⇒ identical routing decision; equal
+    /// weights + DIFFERENT indices ⇒ disjoint expert sets with similar
+    /// weight histogram shapes (the case the weight-only `MoeRouter`
+    /// vector cannot distinguish, see PR-3e #1741 probe verdict).
+    MoeRouterIndices,
     /// Post-output-norm (whole-model, NOT per-layer).
     FinalNorm,
     /// Logits (whole-model, NOT per-layer).
@@ -102,14 +120,17 @@ pub enum SaveTensorStage {
 }
 
 impl SaveTensorStage {
-    /// All 22 distinct stages (computation order), excluding the `LayerOutput`
+    /// All 23 distinct stages (computation order), excluding the `LayerOutput`
     /// alias for `PostFfnResidual`. `AttnScores` and `AttnSoftmax` are the 2
     /// variants per `contracts/trace-attn-sub-stages-v1.yaml` v1.1.0 (closes
     /// the SHIP-007 layer-0 attention bisection gap inside the Q·Kᵀ → softmax
     /// → ·V chain). `MoeRouter` and `MoeFfnOut` are the 2 variants per
     /// `contracts/trace-moe-gpu-sub-stages-v1.yaml` v1.0.0 (M-MOE-SUB-1, for
     /// the M-GPU-MOE-1.4 NaN/Inf bisection on the GPU MoE FFN path).
-    pub const ALL: [SaveTensorStage; 22] = [
+    /// `MoeRouterIndices` is added in M-GPU-MOE-3 PR-3e2 (#1583) — top-k
+    /// expert INDICES cast to f32, sibling of `MoeRouter` (weights). Pair
+    /// is needed to confirm/falsify H(ii) expert-set divergence at L47.
+    pub const ALL: [SaveTensorStage; 23] = [
         Self::Embedding,
         Self::AttnNorm,
         Self::QkvMatmul,
@@ -130,6 +151,7 @@ impl SaveTensorStage {
         Self::PostFfnResidual,
         Self::MoeRouter,
         Self::MoeFfnOut,
+        Self::MoeRouterIndices,
         Self::FinalNorm,
         Self::LmHead,
     ];
@@ -159,6 +181,7 @@ impl SaveTensorStage {
             Self::PostFfnResidual => "post_ffn_residual",
             Self::MoeRouter => "moe_router",
             Self::MoeFfnOut => "moe_ffn_out",
+            Self::MoeRouterIndices => "moe_router_indices",
             Self::FinalNorm => "final_norm",
             Self::LmHead => "lm_head",
         }
@@ -170,6 +193,16 @@ impl SaveTensorStage {
     #[must_use]
     pub fn is_per_layer(&self) -> bool {
         !matches!(self, Self::FinalNorm | Self::LmHead)
+    }
+
+    /// `true` if this stage stores **integer indices cast to f32** rather
+    /// than genuine f32 activations. The cast is lossless for `num_experts
+    /// ≤ 2^24`. Currently only [`MoeRouterIndices`]. Downstream consumers
+    /// (e.g. apr diff) MUST reinterpret these values as `u32` for equality
+    /// comparison — cosine on indices would be meaningless.
+    #[must_use]
+    pub fn is_index_payload(&self) -> bool {
+        matches!(self, Self::MoeRouterIndices)
     }
 }
 
@@ -219,6 +252,7 @@ impl FromStr for SaveTensorStage {
             "post_ffn_residual" | "layer_output" => Ok(Self::PostFfnResidual),
             "moe_router" => Ok(Self::MoeRouter),
             "moe_ffn_out" => Ok(Self::MoeFfnOut),
+            "moe_router_indices" => Ok(Self::MoeRouterIndices),
             "final_norm" => Ok(Self::FinalNorm),
             "lm_head" => Ok(Self::LmHead),
             _ => Err(StageParseError::Unknown {
@@ -270,7 +304,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn all_twenty_stages_have_unique_canonical_names() {
+    fn all_stages_have_unique_canonical_names() {
         let mut names: Vec<&str> = SaveTensorStage::ALL
             .iter()
             .map(|s| s.canonical_name())
@@ -310,6 +344,7 @@ mod tests {
             "post_ffn_residual",
             "moe_router",
             "moe_ffn_out",
+            "moe_router_indices",
             "final_norm",
             "lm_head",
         ];
@@ -393,7 +428,8 @@ mod tests {
         // PostFfnResidual / LayerOutput alias collapses to one variant.
         //   - trace-attn-sub-stages-v1 v1.1.0 added attn_scores + attn_softmax
         //   - trace-moe-gpu-sub-stages-v1 v1.0.0 added moe_router + moe_ffn_out
-        // total distinct stages = 22; per-layer = 20; whole-model = 2.
+        //   - M-GPU-MOE-3 PR-3e2 (#1583) added moe_router_indices
+        // total distinct stages = 23; per-layer = 21; whole-model = 2.
         let per_layer = SaveTensorStage::ALL
             .iter()
             .filter(|s| s.is_per_layer())
@@ -402,7 +438,7 @@ mod tests {
             .iter()
             .filter(|s| !s.is_per_layer())
             .count();
-        assert_eq!(per_layer, 20);
+        assert_eq!(per_layer, 21);
         assert_eq!(whole_model, 2);
         assert_eq!(per_layer + whole_model, SaveTensorStage::ALL.len());
     }
@@ -637,7 +673,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_stage_list_all_twenty_in_one_call() {
+    fn parse_stage_list_all_stages_in_one_call() {
         let csv = SaveTensorStage::ALL
             .iter()
             .map(|s| s.canonical_name())
