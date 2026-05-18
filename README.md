@@ -25,10 +25,20 @@ apr pull qwen2.5-coder-1.5b
 apr run qwen2.5-coder-1.5b "What is 2+2?"
 ```
 
+> **v0.34.0 — MODEL-2 §88 stack-existence-proof shipped end-to-end.**
+> [`paiml/albor-370m-v1`](https://huggingface.co/paiml/albor-370m-v1) is the
+> first model trained with the pure-Rust Sovereign AI Stack and published
+> to HuggingFace Hub with all three usage paths verified: `apr run` (Rust),
+> `AutoModelForCausalLM.from_pretrained` (HF Transformers), and `llama-cli`
+> (llama.cpp). The publish workflow is now codified in
+> [SPEC-HF-PUBLISH-001](docs/specifications/aprender-train/model-hf-publish-pipeline-spec.md)
+> so future model publishes follow a repeatable 12-file integration plus a
+> 13-tier crates.io cascade (see `scripts/cascade-publish.sh`). See the
+> [v0.34.0 release notes](https://github.com/paiml/aprender/releases/tag/v0.34.0)
+> for the PMAT-690 P3-C-prep defect cascade that motivated the spec.
+>
 > **v0.33.0 — MODEL-1 SHIP % = 100%.** SHIP-007 (GPU dispatch on the
-> canonical 7B Q4K teacher) was LIVE-DISCHARGED. The default GPU path now
-> produces correct output for `paiml/qwen2.5-coder-7b-apache-q4k-v1`.
-> See the
+> canonical 7B Q4K teacher) was LIVE-DISCHARGED. See the
 > [v0.33.0 release notes](https://github.com/paiml/aprender/releases/tag/v0.33.0)
 > and SPEC-SHIP-TWO-001 §65–§75 for the cascade detail.
 
@@ -108,13 +118,21 @@ apr export model.apr --format gguf -o model.gguf
 # Profile
 apr profile model.gguf --roofline
 apr bench model.gguf --assert-tps 100
+
+# Publish to HuggingFace Hub (see SPEC-HF-PUBLISH-001 for the full 12-file pipeline)
+apr stamp ckpt.apr --tokenizer /path/to/qwen-tokenizer --license Apache-2.0 -o staging/model.apr
+apr export staging/model.apr --format gguf --quantize int4 -o staging/model-q4k.gguf
+apr publish staging/ paiml/my-model-v1 --library-name aprender --license Apache-2.0
 ```
+
+> **Publishing a model? Read [SPEC-HF-PUBLISH-001](docs/specifications/aprender-train/model-hf-publish-pipeline-spec.md).**
+> It documents the 12-file minimum (.apr/.gguf/.safetensors/model.safetensors alias/config/tokenizer/LICENSE/etc.), the YAML front-matter schema, the three-path verification protocol, and the HF API gotchas (NDJSON commits, LFS batch for 5MB-5GB, empty `model-index` rejected, Q4_K K%256==0). First applied 2026-05-18 for [paiml/albor-370m-v1](https://huggingface.co/paiml/albor-370m-v1).
 
 ## Library usage
 
 ```toml
 [dependencies]
-aprender = "0.33"
+aprender = "0.34"
 ```
 
 ```rust
