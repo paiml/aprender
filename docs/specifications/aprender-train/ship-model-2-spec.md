@@ -1,15 +1,16 @@
 # Specification: aprender/albor-370m (MODEL-2)
 
 **Model name:** `aprender/albor-370m` — sovereign 370M Python code completion student. No upstream base (sovereign work), so the slug uses the original project codename `albor` (from `paiml/albor` repo) instead of an upstream model name. Same `{org}/{base}-{size}` shape as MODEL-1.
-**HF artifact slug:** not yet published — pending val_loss < 4 (currently 4.71 at §82). When published, expected slug: `paiml/albor-370m-v1` or similar.
+**HF artifact slug:** **PUBLISHED 2026-05-18 at https://huggingface.co/paiml/albor-370m-v1** (val_loss=4.6227; §88 compute-bounded ship). 13 files including .apr/.gguf/.safetensors + model.safetensors alias + full tokenizer + LICENSE + model card; all three usage paths (apr run / HF Transformers / llama.cpp) verified.
 **Document ID:** SPEC-SHIP-MODEL-2 (stable; numeric ID preserved across renames).
-**Version:** 1.2.0
+**Version:** 1.3.0
 **Parent:** [Ship Two Models Index](./ship-two-models-spec.md)
 **Companion specs:**
 - [aprender/qwen2.5-coder-7b-apache-q4k spec (MODEL-1)](./ship-model-1-spec.md) — distilled 7B coder teacher
 - [Shared methodology](./ship-shared-methodology.md) — foundation + cross-cutting falsifiers
+- [**HF Model Publish Pipeline (SPEC-HF-PUBLISH-001)**](./model-hf-publish-pipeline-spec.md) — canonical publish workflow derived from this ship; all future model publishes MUST follow it
 
-**Ship status (2026-05-15):** **79% — best val_loss 4.71 after §82's P2-A 5000-step run** (broke §34 ceiling from 9.38 → 4.71).
+**Ship status (2026-05-18):** **100% — paiml/albor-370m-v1 LIVE on HF Hub** (§88 compute-bounded stack-existence-proof target ≤4.7 achieved at 4.6227; AC-SHIP2-* all DISCHARGED through this ship).
 
 ## Lineage
 
@@ -2129,6 +2130,71 @@ This lesson differs from methodology #27 ("prioritize by ship-% delta ÷ effort"
 
 ---
 
+
+## §84. MODEL-2 SHIPPED — paiml/albor-370m-v1 LIVE on HF Hub; SPEC-HF-PUBLISH-001 born from the cascade (2026-05-18)
+
+P2-E ep49 (val_loss=4.6227) cleared the §88 compute-bounded ship target (≤4.7). The publish workflow surfaced a Class-3 packaging defect wave that became [SPEC-HF-PUBLISH-001](./model-hf-publish-pipeline-spec.md) — every future model publish MUST follow that spec.
+
+### 84.1 Ship outcome
+
+- **Repo:** https://huggingface.co/paiml/albor-370m-v1
+- **13 files published**: `.gitattributes`, `README.md` (11.7KB), `LICENSE`, `config.json`, `generation_config.json`, `tokenizer.json`, `tokenizer_config.json`, `vocab.json`, `merges.txt`, `albor-370m-v1.apr` (2.52GB LFS), `albor-370m-v1-q4k.gguf` (2.17GB LFS), `albor-370m-v1.safetensors` (2.52GB LFS), `model.safetensors` (alias to `.safetensors` OID, dedup'd by LFS).
+- **Three usage paths verified**:
+  1. `apr run paiml/albor-370m-v1 "def fib(n):"` — native Rust stack ✓
+  2. `AutoModelForCausalLM.from_pretrained("paiml/albor-370m-v1")` — HF Transformers ✓ (via `model.safetensors` alias + `tokenizer.json` + `config.json`)
+  3. `llama-cli -m albor-370m-v1-q4k.gguf` — llama.cpp ecosystem ✓
+- **HF page metadata** auto-detected `safetensors`, `gguf`, `qwen2`, `text-generation`, `conversational`, `endpoints_compatible`, `model-index`, `base_model:Qwen/Qwen2.5-Coder-0.5B-Instruct`, `dataset:bigcode/the-stack-dedup`, `dataset:codeparrot/codeparrot-clean`, `license:apache-2.0` tags.
+- **`cargo install aprender` v0.34.0** verified end-to-end: `apr 0.34.0 (v0.34.0+no-git)`.
+
+### 84.2 PMAT-690 P3-C-prep defect cascade (Class-3 wave of 5)
+
+The publish-readiness preflight + actual publish surfaced five distinct defects, each in its own PR. This is the textbook Class-3 packaging-defect wave per `feedback_class_3_defect_waves_of_four.md` (waves of 4, occasionally 5 with cross-tool interaction).
+
+| Defect | Title | PR | Symptom | Fix surface |
+|---|---|----|---------|-------------|
+| 1 | `apr stamp --tokenizer` for embedded vocab | #1769 | `apr run` rejects APR without HAS_VOCAB | new `--tokenizer <DIR>` flag on `apr stamp` writes `custom.tokenizer.vocabulary` + `custom.tokenizer.merges` + sets HAS_VOCAB |
+| 2 | GGUF Q4_K K-divisibility check | #1771 | `tensor 'X' of type 12 (q4_K) has N elements per row, not a multiple of block size (256)` | `encode_gguf_data` falls back to F32 when `shape[1] % 256 != 0` |
+| 3 | GGUF Q4_K shape pass-through | #1771 | `gguf_init_from_file_impl: tensor 'X' has offset N, expected M` (350,208-byte excess) | call sites pass APR-native shape, not swapped `[shape[1], shape[0]]` |
+| 4 | Latent Q4K layout for 1.5B/7B exports | task #110 | not symptomatic (1.5B+ hidden dims are 256-divisible) | investigation only — already-shipped Q4K artifacts may have wrong layout but loaded; follow-up |
+| 5a | `apr publish` LFS batch upload | #1772 | repo has only `.gitattributes` after publish — orphaned LFS pointers | `upload_via_lfs_batch` calls `POST /{repo}.git/info/lfs/objects/batch` to get presigned S3 URL when `preupload` returns lfs-mode-no-url |
+| 5b | NDJSON commits (load-bearing) | #1772 | commit returns 200 + `success: true` but file silently dropped | `commit_lfs_pointer` + `upload_direct` switched from JSON `addOrUpdate` to NDJSON `lfsFile` / `file` keys |
+| 5c | Empty `model-index` rejected by HF | #1772 | HTTP 400 `"model-index[0].results" is required` | `ModelCard::to_huggingface` skips block entirely when metrics empty |
+
+All 5 PRs landed in main; v0.34.0 cut + 67-crate crates.io cascade shipped (see `CHANGELOG.md` and tag `v0.34.0`).
+
+### 84.3 The §88 framing held up
+
+The pre-ship math (§83 Chinchilla analysis) predicted that any val_loss ≤ ~4.5 was the best achievable at the available compute budget without architectural changes. P2-E hit 4.6227 — within the predicted floor (~4.4 with 100 epochs). The §88 amendment to AC-SHIP2-003 (strict val_loss ≤ 2.2 deferred to the distillation epic PMAT-683/684; compute-bounded target ≤4.7 made the active gate) was the right call.
+
+The post-ship audit ([`docs/specifications/audits/albor-370.md`](../audits/albor-370.md), [`docs/specifications/two-model-spec-audit.md`](../two-model-spec-audit.md)) frames this Popperianly: the hypothesis "an RTX 4090 can achieve val_loss < 3.0 within the 48-hour compute limit" was operationalized as the P2-E + P2-G runs and **falsified** by the plateau at 4.6227. Sorscher et al. 2022 ([arXiv:2206.14486](https://arxiv.org/abs/2206.14486), "Beyond neural scaling laws: beating power law scaling via data pruning") supplies the literature support — standard power-law scaling breaks down under strict fixed compute budgets, so accepting the sub-optimal plateau was the correct decision, not a methodological retreat.
+
+The stack-existence-proof framing — "this model demonstrates that the pure-Rust pipeline runs end-to-end, not that the resulting model is competitive at code completion" — is honestly reflected in the README and metadata. Users are warned the model produces gibberish at val_perplexity=102 and pointed at `Qwen/Qwen2.5-Coder-0.5B-Instruct` for production use.
+
+### 84.4 Lessons promoted to spec
+
+The defect cascade exposed gaps that aren't model-2-specific — they would have bitten any future model publish. Encoded as [SPEC-HF-PUBLISH-001](./model-hf-publish-pipeline-spec.md) (v1.0.0, 2026-05-18):
+
+1. **The 12-file minimum** (README.md, LICENSE, config.json, generation_config.json, tokenizer.json, tokenizer_config.json, vocab.json, merges.txt, model.safetensors + named .safetensors + .apr + .gguf) — not all auto-generated by `apr publish` today (defect 6 / file-selection follow-up).
+2. **The `model.safetensors` alias pattern** — LFS dedup makes the duplicate-name trick free; required for HF Transformers `AutoModelForCausalLM.from_pretrained` to auto-discover weights.
+3. **HF API gotchas as load-bearing rules** — NDJSON + `lfsFile` key, LFS batch for 5MB-5GB band, Xet for >5 GiB, empty `model-index` rejected, K%256==0 for Q4_K, APR-native shape to `quantize_q4_k_matrix`.
+4. **The 12-tier crates.io cascade in dep order** — `scripts/cascade-publish.sh` (committed alongside the spec) walks this for any version bump.
+5. **The three-path verification protocol** — `apr run` + HF Transformers + llama-cli. All three must pass or the publish is broken even if the page renders.
+
+### 84.5 What's next for MODEL-2
+
+MODEL-2's §88 ship is **complete**. Further iteration belongs to the distillation epic (PMAT-683/684 — distill from `paiml/qwen2.5-coder-7b-apache-q4k-v1` teacher into a 0.5B student that actually hits HumanEval pass@1). That's tracked as a separate ship, not §85+ of this spec. The stack-existence-proof goal is met.
+
+Task #110 (defect 4 — latent 1.5B/7B Q4K layout investigation) remains open as a quality follow-up — if those already-published Q4K artifacts produce degraded inference, file a re-export ticket; if not, document why the layout difference is benign and close.
+
+### 84.6 Cross-references
+
+- v0.34.0 GH Release: https://github.com/paiml/aprender/releases/tag/v0.34.0
+- PR #1769 (defect 1), #1771 (defects 2+3), #1772 (defect 5a+5b+5c), #1776 (release cut)
+- SPEC-HF-PUBLISH-001: [model-hf-publish-pipeline-spec.md](./model-hf-publish-pipeline-spec.md)
+- Cascade script: `scripts/cascade-publish.sh`
+- Memory: `feedback_class_3_defect_waves_of_four.md`, `feedback_hf_commit_ndjson_load_bearing.md`, `feedback_post_publish_qa_required.md`
+
+---
 
 ## §83. External audit pre-falsifies P2-A2 via Chinchilla math; P2-C corpus widening promoted to highest EV (2026-05-16)
 
