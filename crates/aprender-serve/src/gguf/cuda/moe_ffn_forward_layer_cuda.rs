@@ -217,7 +217,7 @@ pub(crate) fn moe_ffn_forward_layer_cuda_with_router(
     intermediate: usize,
     hidden_dim: usize,
     data: &[u8],
-) -> Result<(Vec<f32>, Vec<f32>)> {
+) -> Result<(Vec<f32>, Vec<f32>, Vec<u32>)> {
     if hidden.len() != hidden_dim {
         return Err(RealizarError::InvalidShape {
             reason: format!(
@@ -333,7 +333,8 @@ pub(crate) fn moe_ffn_forward_layer_cuda_with_router(
     }
 
     let router_top_k_weights: Vec<f32> = topk_renorm.iter().map(|(_, w)| *w).collect();
-    Ok((out, router_top_k_weights))
+    let router_top_k_indices: Vec<u32> = topk_renorm.iter().map(|(i, _)| *i as u32).collect();
+    Ok((out, router_top_k_weights, router_top_k_indices))
 }
 
 #[cfg(test)]
