@@ -744,6 +744,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             plan,
             config,
             stage,
+            backend,
         }) => distill::run(
             teacher.as_deref(),
             student.as_deref(),
@@ -756,6 +757,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *plan,
             config.as_deref(),
             stage.as_deref(),
+            backend.as_str(),
             cli.json,
         ),
         Commands::Pull {

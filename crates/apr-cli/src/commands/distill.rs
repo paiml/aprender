@@ -439,6 +439,7 @@ fn print_distill_header(
     "apr-cli-operations-v1",
     equation = "mutating_output_contract"
 )]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn run(
     teacher_path: Option<&Path>,
     student_path: Option<&Path>,
@@ -451,8 +452,43 @@ pub(crate) fn run(
     plan_only: bool,
     config_path: Option<&Path>,
     stage: Option<&str>,
+    backend: &str,
     json_output: bool,
 ) -> Result<()> {
+    // SPEC-DISTILL-001 Phase 3-prep (PMAT-697): validate backend selector
+    // here so the user's mistake (e.g., typo `--backend cda`) is caught
+    // before any I/O. Unknown backends fail with an enumeration of valid
+    // values.
+    match backend {
+        "fixture" => {} // default; nothing else to validate
+        "cuda" => {
+            // The real backend wiring (CudaTrainerTeacher + CudaStudentProvider)
+            // requires loading APR metadata to build TransformerConfig, then
+            // constructing the providers and threading them through to
+            // Pipeline::with_teacher / with_student. That work lives in a
+            // follow-up PR; here we surface the gap explicitly so a dispatch
+            // script user sees the right error.
+            return Err(CliError::ValidationFailed(
+                "--backend cuda is registered but the CudaTrainerTeacher / \
+                 CudaStudentProvider wiring is Phase 3-prep follow-up work \
+                 (PMAT-697 second half). Until then, the distill loop runs \
+                 with FixtureTeacher (toy logits). To dispatch a real Phase 3 \
+                 smoke, either: (a) wait for the CudaXxxProvider wiring PR, or \
+                 (b) construct the Pipeline programmatically via \
+                 Pipeline::new(&config).with_teacher(...).with_student(...) \
+                 and call execute() directly. See SPEC-DISTILL-001 §Phase 3."
+                    .to_string(),
+            ));
+        }
+        other => {
+            return Err(CliError::ValidationFailed(format!(
+                "--backend '{other}' not recognized. Valid: fixture, cuda. \
+                 Default 'fixture' uses CPU-only stub providers; 'cuda' wires \
+                 the real GPU backends (Phase 3-prep follow-up)."
+            )));
+        }
+    }
+
     // Config-driven mode (ALB-011): --config <yaml> [--stage precompute|train]
     if let Some(config) = config_path {
         return run_config_mode(config, stage, plan_only, json_output);

@@ -9453,3 +9453,37 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-694
+  github_issue: null
+  item_type: task
+  title: Distillation Phase 3-prep — CLI wiring for CudaTeacher / CudaStudent backends
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T13:02:04Z
+  updated: 2026-05-18T13:02:04Z
+  spec: null
+  acceptance_criteria:
+  - 'Surfaced during Phase 3 dispatch: apr distill''s current CLI surface accepts teacher path + --student path + --data path + (temperature, alpha, epochs). The new CudaTrainerTeacher (Phase 1b) + CudaStudentProvider (Phase 2d) backends need CLI flags to be selectable from . Add: --teacher-hf <repo> + --student-init-hf <repo> + --backend cuda flags that construct the providers via Pipeline::with_teacher / with_student. Without this, real Phase 3 smoke uses FixtureTeacher (toy) instead of MODEL-1.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-695
+  github_issue: null
+  item_type: task
+  title: Distill --backend CLI wiring (PMAT-697)
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T13:04:23Z
+  updated: 2026-05-18T13:04:23Z
+  spec: null
+  acceptance_criteria:
+  - 'Phase 3-prep: add --backend flag to apr distill clap variant; when cuda, construct Pipeline::with_teacher(CudaTrainerTeacher) + with_student(CudaStudentProvider) in dispatch.rs path.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
