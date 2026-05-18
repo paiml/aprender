@@ -9436,3 +9436,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-693
+  github_issue: null
+  item_type: task
+  title: Distillation Phase 2d — CudaStudentProvider wrapping CudaTransformerTrainer
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T12:40:21Z
+  updated: 2026-05-18T12:40:21Z
+  spec: null
+  acceptance_criteria:
+  - SPEC-DISTILL-001 Phase 2d. Real GPU student backend. Adds CudaTransformerTrainer::forward_backward_with_grad pub method that takes a precomputed logit gradient and runs forward + uploads grad to logits_buf + gpu_backward + optimizer. Wires CudaStudentProvider to the StudentLogitsProvider trait. Unblocks Phase 3 (500-step E2E smoke).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

@@ -1245,6 +1245,85 @@ impl CudaTransformerTrainer {
     /// ALB-089: Forward-only pass that returns last-position logits on CPU.
     ///
     /// Runs the same GPU forward as training but downloads only the last
+    /// SPEC-DISTILL-001 Phase 2d (PMAT-697): forward + caller-supplied
+    /// logit-gradient backward + optimizer step.
+    ///
+    /// Unlike `forward_backward_batch` (which computes the gradient from
+    /// CE loss internally), this method takes a precomputed last-position
+    /// logit gradient — useful for knowledge distillation where the
+    /// gradient is computed externally as the KD logit gradient
+    /// `α·(softmax(s) - one_hot(label)) + (1-α)·T·(softmax(s/T) - softmax(t/T))`
+    /// (per `aprender-train-distill::kd_step::kd_logit_gradient`).
+    ///
+    /// Flow:
+    /// 1. `gpu_forward(input_ids)` — produces last-position logits in
+    ///    `gpu_training.logits_buf`.
+    /// 2. Upload `logit_gradient` into the last-position slice of
+    ///    `logits_buf`, OVERWRITING what gpu_forward produced (matching
+    ///    the in-place gradient convention `fused_cross_entropy_cuda`
+    ///    uses for the CE path).
+    /// 3. `gpu_backward` — back-props from the uploaded gradient through
+    ///    the transformer stack, accumulating weight gradients.
+    /// 4. `embed_backward` — embedding-table scatter-add.
+    ///
+    /// **Limitations** (Phase 2d):
+    /// - The gradient applies to the LAST POSITION only (this is the KD
+    ///   training objective for next-token-prediction). Sequence-wise KD
+    ///   (every position) is a Phase 2e enhancement.
+    /// - Returns `Some(())` on success, `None` on CUDA failure. Loss is
+    ///   not computed (caller computes from kd_loss separately).
+    ///
+    /// # Errors
+    ///
+    /// Returns `None` if `gpu_forward`, the gradient upload, or
+    /// `gpu_backward` fails. The CUDA stream may be in a poisoned state
+    /// after such a failure; subsequent training steps should be
+    /// considered unreliable.
+    pub fn forward_backward_with_grad(
+        &mut self,
+        input_ids: &[u32],
+        logit_gradient: &[f32],
+    ) -> Option<()> {
+        let seq_len = input_ids.len();
+        let hidden_size = self.config.model_config.hidden_size;
+        let vocab_size = self.config.model_config.vocab_size;
+
+        if seq_len == 0 || seq_len > self.config.max_seq_len {
+            return None;
+        }
+        if logit_gradient.len() != vocab_size {
+            eprintln!(
+                "[forward_backward_with_grad] gradient len {} != vocab_size {}",
+                logit_gradient.len(),
+                vocab_size
+            );
+            return None;
+        }
+
+        self.gpu_forward(input_ids, seq_len, hidden_size, vocab_size)?;
+
+        // Upload the KD gradient into the last-position slice of logits_buf,
+        // replacing whatever gpu_forward wrote there. This matches the
+        // KAIZEN-052 in-place gradient convention that gpu_backward expects.
+        let offset = (seq_len - 1) * vocab_size;
+        self.gpu_training
+            .logits_buf
+            .copy_from_host_at(logit_gradient, offset)
+            .ok()?;
+        let stream = self.cuda_trainer.stream();
+        stream.synchronize().ok()?;
+
+        // Back-prop from the uploaded gradient through the transformer.
+        // accumulate_only=false → run the optimizer step at the end.
+        let grad_output_is_a = self.gpu_backward(seq_len, hidden_size, vocab_size, false)?;
+        // Embedding backward (CPU scatter-add). Pre-condition: grad_output_is_a
+        // is the buffer-flip flag from gpu_backward (per existing
+        // `train_step_inner` pattern at line ~1108).
+        self.embed_backward(input_ids, seq_len, hidden_size, vocab_size, grad_output_is_a);
+
+        Some(())
+    }
+
     /// position's logits (vocab_size floats) for token sampling. No backward
     /// pass, no loss computation.
     ///

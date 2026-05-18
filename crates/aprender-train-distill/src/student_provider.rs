@@ -152,6 +152,149 @@ impl StudentLogitsProvider for FixtureStudent {
     }
 }
 
+// SPEC-DISTILL-001 Phase 2d (PMAT-697): real GPU student backend
+// wrapping `CudaTransformerTrainer`. Gated on the `cuda` feature
+// because the underlying trainer's `for_inference` constructor +
+// `forward_backward_with_grad` method both require CUDA.
+#[cfg(feature = "cuda")]
+pub use cuda_backend::CudaStudentProvider;
+
+#[cfg(feature = "cuda")]
+mod cuda_backend {
+    use super::{Result, StudentLogitsProvider};
+    use entrenar::train::transformer_trainer::CudaTransformerTrainer;
+    use entrenar::transformer::TransformerConfig;
+    use std::path::Path;
+
+    /// Real GPU student backend. Wraps a trainable `CudaTransformerTrainer`
+    /// and bridges the Phase 2b trait surface to the trainer's
+    /// `forward_logits` + `forward_backward_with_grad` methods (the latter
+    /// added in Phase 2d for this purpose).
+    ///
+    /// **Batch_size=1 only** (Phase 2d limitation): the trait's
+    /// `apply_kd_gradient` doesn't take input_ids, so the provider has
+    /// to cache the input_ids from the most-recent `logits_for_batch`
+    /// call and re-run forward on each apply call. With batch_size=1
+    /// that round-trip is correct; with batch_size>1 only the LAST
+    /// element gets a real gradient update. Phase 2e generalizes via a
+    /// fused-step trait method that takes input_ids + gradient together.
+    ///
+    /// # Falsifier
+    ///
+    /// `F-DISTILL-CUDA-STUDENT-001` (proposed) — `logits_for_batch` matches
+    /// a standalone `CudaTransformerTrainer::for_inference(...).forward_logits(...)`
+    /// call within `1e-6` absolute. Verified in Phase 4 production
+    /// (requires CUDA hardware).
+    pub struct CudaStudentProvider {
+        trainer: CudaTransformerTrainer,
+        vocab_size: usize,
+        // Phase 2d batch_size=1 limitation: cache the most-recent
+        // input_ids so apply_kd_gradient knows what activations to
+        // re-establish. None means "no logits_for_batch has been
+        // called yet" — apply_kd_gradient errors in that state.
+        last_input_ids: Option<Vec<u32>>,
+    }
+
+    impl CudaStudentProvider {
+        /// Construct from a checkpoint directory + model config.
+        ///
+        /// The checkpoint must contain a `model.safetensors` or
+        /// `model.apr` file matching `model_config`. Loads onto GPU
+        /// in train mode (optimizer state allocated).
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if checkpoint loading or CUDA initialization
+        /// fails.
+        pub fn for_training(
+            checkpoint_dir: impl AsRef<Path>,
+            model_config: TransformerConfig,
+        ) -> Result<Self> {
+            let vocab_size = model_config.vocab_size;
+            let trainer = CudaTransformerTrainer::for_inference(checkpoint_dir, model_config)
+                .map_err(|e| entrenar_common::EntrenarError::Internal {
+                    message: format!("CudaStudentProvider::for_training: {e}"),
+                })?;
+            Ok(Self {
+                trainer,
+                vocab_size,
+                last_input_ids: None,
+            })
+        }
+    }
+
+    impl StudentLogitsProvider for CudaStudentProvider {
+        fn vocab_size(&self) -> usize {
+            self.vocab_size
+        }
+
+        fn logits_for_batch(&mut self, input_ids: &[Vec<u32>]) -> Result<Vec<Vec<f32>>> {
+            // Phase 2d caches only the most-recent input_ids (batch_size=1
+            // assumption). For batches >1, only the last element's
+            // activations are retained for apply_kd_gradient.
+            self.last_input_ids = input_ids.last().cloned();
+
+            let mut out = Vec::with_capacity(input_ids.len());
+            for ids in input_ids {
+                let logits = self.trainer.forward_logits(ids).ok_or_else(|| {
+                    entrenar_common::EntrenarError::Internal {
+                        message: "CudaStudentProvider.forward_logits returned \
+                                  None (likely CUDA init failure or empty input_ids)"
+                            .to_string(),
+                    }
+                })?;
+                if logits.len() != self.vocab_size {
+                    return Err(entrenar_common::EntrenarError::Internal {
+                        message: format!(
+                            "CudaStudentProvider: forward_logits returned {} \
+                             logits, expected {} (vocab_size mismatch — likely \
+                             a config drift between TransformerConfig and the \
+                             loaded checkpoint)",
+                            logits.len(),
+                            self.vocab_size
+                        ),
+                    });
+                }
+                out.push(logits);
+            }
+            Ok(out)
+        }
+
+        fn apply_kd_gradient(&mut self, gradient: &[Vec<f32>]) -> Result<()> {
+            if gradient.is_empty() {
+                return Ok(());
+            }
+            let Some(last_ids) = self.last_input_ids.clone() else {
+                return Err(entrenar_common::EntrenarError::Internal {
+                    message: "CudaStudentProvider.apply_kd_gradient called \
+                              before logits_for_batch — no cached input_ids \
+                              to re-establish activations"
+                        .to_string(),
+                });
+            };
+            // Apply only the LAST gradient (matches the batch_size=1
+            // limitation documented on the struct). Future Phase 2e fuses
+            // input_ids + gradient into a single trait call so larger
+            // batches can be processed correctly.
+            let last_grad = gradient
+                .last()
+                .ok_or_else(|| entrenar_common::EntrenarError::Internal {
+                    message: "CudaStudentProvider.apply_kd_gradient: empty gradient slice"
+                        .to_string(),
+                })?;
+            self.trainer
+                .forward_backward_with_grad(&last_ids, last_grad)
+                .ok_or_else(|| entrenar_common::EntrenarError::Internal {
+                    message: "CudaTransformerTrainer.forward_backward_with_grad \
+                              returned None (CUDA stream poisoned or gradient \
+                              shape mismatch)"
+                        .to_string(),
+                })?;
+            Ok(())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
