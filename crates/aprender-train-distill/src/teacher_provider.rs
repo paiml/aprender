@@ -97,6 +97,104 @@ impl TeacherLogitsProvider for FixtureTeacher {
     }
 }
 
+// SPEC-DISTILL-001 Phase 1b (PMAT-693): real teacher backend delegating
+// to entrenar's CudaTransformerTrainer in inference-only mode. Gated on
+// the `cuda` feature because the underlying trainer's `for_inference`
+// constructor requires CUDA. Without the feature, only `FixtureTeacher`
+// is available (which is sufficient for unit tests but cannot drive a
+// real distillation training run).
+#[cfg(feature = "cuda")]
+pub use cuda_backend::CudaTrainerTeacher;
+
+#[cfg(feature = "cuda")]
+mod cuda_backend {
+    use super::{Result, TeacherLogitsProvider};
+    use entrenar::train::transformer_trainer::CudaTransformerTrainer;
+    use entrenar::transformer::TransformerConfig;
+    use std::path::Path;
+
+    /// Real teacher backend wrapping a CUDA inference-only trainer.
+    ///
+    /// Constructed via `CudaTrainerTeacher::for_inference(checkpoint_dir,
+    /// model_config)` which loads SafeTensors (preferring APR format if
+    /// present) and stages weights on the GPU.
+    ///
+    /// `logits_for_batch` invokes the trainer's `forward_logits(&tokens)`
+    /// per batch element and returns the last-position logits for each.
+    /// Output shape is `[batch, vocab_size]`.
+    ///
+    /// # Falsifier
+    ///
+    /// `F-DISTILL-TEACHER-002` — the per-batch-element logits must equal
+    /// what a standalone `CudaTransformerTrainer::for_inference(...)
+    /// .forward_logits(...)` call produces on the same input within
+    /// `1e-6` absolute (no extra processing layer; this provider is a
+    /// thin delegation).
+    pub struct CudaTrainerTeacher {
+        trainer: CudaTransformerTrainer,
+        vocab_size: usize,
+    }
+
+    impl CudaTrainerTeacher {
+        /// Construct from a checkpoint directory + model config.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if the checkpoint cannot be loaded or CUDA
+        /// initialization fails.
+        pub fn for_inference(
+            checkpoint_dir: impl AsRef<Path>,
+            model_config: TransformerConfig,
+        ) -> Result<Self> {
+            let vocab_size = model_config.vocab_size;
+            let trainer = CudaTransformerTrainer::for_inference(checkpoint_dir, model_config)
+                .map_err(|e| entrenar_common::EntrenarError::Internal {
+                    message: format!("CudaTrainerTeacher::for_inference: {e}"),
+                })?;
+            Ok(Self {
+                trainer,
+                vocab_size,
+            })
+        }
+    }
+
+    impl TeacherLogitsProvider for CudaTrainerTeacher {
+        fn vocab_size(&self) -> usize {
+            self.vocab_size
+        }
+
+        fn logits_for_batch(&mut self, input_ids: &[Vec<u32>]) -> Result<Vec<Vec<f32>>> {
+            let mut out = Vec::with_capacity(input_ids.len());
+            for ids in input_ids {
+                let logits = self.trainer.forward_logits(ids).ok_or_else(|| {
+                    entrenar_common::EntrenarError::Internal {
+                        message: "CudaTransformerTrainer.forward_logits returned \
+                                  None (likely missing weights or CUDA init failure)"
+                            .to_string(),
+                    }
+                })?;
+                // Defensive size check — the trainer must return vocab_size
+                // logits; if not, something is mis-configured (e.g., the
+                // model_config vocab doesn't match the checkpoint).
+                if logits.len() != self.vocab_size {
+                    return Err(entrenar_common::EntrenarError::Internal {
+                        message: format!(
+                            "CudaTrainerTeacher: forward_logits returned {} \
+                             logits, expected {} (vocab_size mismatch — likely \
+                             a config drift between TransformerConfig and the \
+                             loaded checkpoint)",
+                            logits.len(),
+                            self.vocab_size
+                        ),
+                    });
+                }
+                out.push(logits);
+            }
+            Ok(out)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
