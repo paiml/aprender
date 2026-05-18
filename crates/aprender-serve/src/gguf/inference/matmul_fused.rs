@@ -92,6 +92,15 @@ impl OwnedQuantizedModel {
         let out_dim = weight.out_dim;
         let seq_len = input.len() / in_dim;
 
+        // #1789 defensive guards: empty / undersized `weight.data` would
+        // cause a cryptic `index out of bounds: the len is N but the index
+        // is M` panic deep in the parallel matmul kernel. Most-likely cause
+        // is a Qwen3-MoE-style per-expert tensor where the parent FFN
+        // tensor was registered with empty data because the actual weights
+        // live in per-expert slices the loader hasn't wired in. Bail early
+        // with an actionable error instead of letting rayon workers crash.
+        validate_matmul_weight_shape(weight)?;
+
         // CUDA path when enabled
         #[cfg(feature = "cuda")]
         if let Some(ref executor_mutex) = self.cuda_executor {
@@ -451,5 +460,139 @@ impl OwnedQuantizedModel {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         Ok(output)
+    }
+}
+
+/// #1789 defensive guard for matmul: validate the weight buffer is
+/// non-empty AND large enough for the declared `(in_dim, out_dim)` shape
+/// (plus the F32 byte layout when `qtype == GGUF_TYPE_F32`). Returns
+/// `RealizarError::InvalidShape` with an actionable message instead of
+/// allowing the matmul kernel to panic with an opaque index-out-of-bounds.
+///
+/// The empty-data check fires for Qwen3-MoE-style models where the parent
+/// FFN tensor is registered with an empty data buffer because the actual
+/// weights live in per-expert slices the loader hasn't wired in — without
+/// this guard, the panic site is deep in a parallel kernel and gives no
+/// indication that the root cause is a tensor-loading issue.
+///
+/// Extracted as a free function so the validation logic is unit-testable
+/// without constructing a full `OwnedQuantizedModel`.
+fn validate_matmul_weight_shape(weight: &OwnedQuantizedTensor) -> Result<()> {
+    if weight.data.is_empty() {
+        return Err(RealizarError::InvalidShape {
+            reason: format!(
+                "matmul weight has EMPTY data buffer (in_dim={}, out_dim={}, qtype={}); \
+                 likely a MoE per-expert tensor was registered with len-0 data — see aprender#1789",
+                weight.in_dim, weight.out_dim, weight.qtype
+            ),
+        });
+    }
+    if weight.qtype == GGUF_TYPE_F32 {
+        let expected_bytes = weight
+            .out_dim
+            .checked_mul(weight.in_dim)
+            .and_then(|n| n.checked_mul(4))
+            .ok_or_else(|| RealizarError::InvalidShape {
+                reason: format!(
+                    "F32 matmul: in_dim={} * out_dim={} * 4 overflows usize",
+                    weight.in_dim, weight.out_dim
+                ),
+            })?;
+        if weight.data.len() < expected_bytes {
+            return Err(RealizarError::InvalidShape {
+                reason: format!(
+                    "F32 matmul weight too small: have {} bytes, need {expected_bytes} \
+                     (in_dim={}, out_dim={})",
+                    weight.data.len(),
+                    weight.in_dim,
+                    weight.out_dim
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    fn mk_tensor(data: Vec<u8>, in_dim: usize, out_dim: usize, qtype: u32) -> OwnedQuantizedTensor {
+        OwnedQuantizedTensor {
+            data,
+            in_dim,
+            out_dim,
+            qtype,
+        }
+    }
+
+    #[test]
+    fn validate_empty_data_fires_with_actionable_message() {
+        let t = mk_tensor(vec![], 4096, 4096, GGUF_TYPE_F32);
+        let err = validate_matmul_weight_shape(&t).unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("EMPTY data buffer"),
+            "must call out the empty-data root cause; got: {msg}"
+        );
+        assert!(
+            msg.contains("aprender#1789"),
+            "must reference the tracking issue; got: {msg}"
+        );
+        assert!(
+            msg.contains("in_dim=4096"),
+            "must include declared dims for diagnostics; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn validate_f32_undersized_fires_with_byte_count() {
+        // Declared 16×16 F32 = 16 * 16 * 4 = 1024 bytes needed.
+        // Provide only 100 bytes — should error with concrete counts.
+        let t = mk_tensor(vec![0u8; 100], 16, 16, GGUF_TYPE_F32);
+        let err = validate_matmul_weight_shape(&t).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("F32 matmul weight too small"), "got: {msg}");
+        assert!(msg.contains("have 100 bytes"), "got: {msg}");
+        assert!(msg.contains("need 1024"), "got: {msg}");
+    }
+
+    #[test]
+    fn validate_f32_sized_correctly_passes() {
+        // 16×16 F32 with exactly 1024 bytes is fine.
+        let t = mk_tensor(vec![0u8; 1024], 16, 16, GGUF_TYPE_F32);
+        assert!(validate_matmul_weight_shape(&t).is_ok());
+    }
+
+    #[test]
+    fn validate_f32_oversized_data_passes() {
+        // Padding is allowed (some GGUF readers pad to alignment); only
+        // undersized fails.
+        let t = mk_tensor(vec![0u8; 2048], 16, 16, GGUF_TYPE_F32);
+        assert!(validate_matmul_weight_shape(&t).is_ok());
+    }
+
+    #[test]
+    fn validate_non_f32_only_checks_emptiness() {
+        // Quantized formats (Q4_K, etc.) have their own byte layouts that
+        // aren't `out_dim * in_dim * 4`. The guard only checks that data
+        // isn't empty for non-F32 types; layout validation lives in the
+        // dequantize kernels.
+        let t = mk_tensor(vec![0u8; 1], 4096, 4096, 12); // qtype=12 = GGUF_TYPE_Q4_K
+        assert!(
+            validate_matmul_weight_shape(&t).is_ok(),
+            "1-byte non-F32 data must pass the early guard (full layout check is downstream)"
+        );
+    }
+
+    #[test]
+    fn validate_overflow_fires_with_message() {
+        // usize overflow when in_dim * out_dim * 4 exceeds usize::MAX.
+        // On a 64-bit host this requires dims that multiply to >2^62.
+        let t = mk_tensor(vec![0u8; 1], usize::MAX / 2, 5, GGUF_TYPE_F32);
+        let err = validate_matmul_weight_shape(&t).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("overflows usize"), "got: {msg}");
     }
 }
