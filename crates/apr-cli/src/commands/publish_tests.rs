@@ -697,3 +697,98 @@ fn dry_run_route_above_5_gib_flags_missing_xet_feature() {
         "[✗ would FAIL: rebuild with --features xet]"
     );
 }
+
+// =========================================================================
+// PMAT-690 P3-C-prep defect 6 — companion file discovery + safetensors alias
+// =========================================================================
+
+#[test]
+fn test_find_companion_files_picks_all_hf_integration_files() {
+    let dir = std::env::temp_dir().join(format!("apr_pub_companions_{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    for name in [
+        "README.md",
+        "LICENSE",
+        "config.json",
+        "generation_config.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "vocab.json",
+        "merges.txt",
+        "special_tokens_map.json",
+        "chat_template.jinja",
+    ] {
+        fs::write(dir.join(name), b"x").unwrap();
+    }
+    // Decoy: NOT in the allowlist — must NOT be picked up.
+    fs::write(dir.join("random_other.json"), b"x").unwrap();
+    fs::write(dir.join("notes.txt"), b"x").unwrap();
+    // Binary artifacts also present — find_companion_files MUST NOT include them.
+    fs::write(dir.join("model.apr"), b"x").unwrap();
+    fs::write(dir.join("model.safetensors"), b"x").unwrap();
+
+    let found = super::find_companion_files(&dir).unwrap();
+    let names: Vec<String> = found
+        .iter()
+        .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
+        .collect();
+    assert!(names.contains(&"README.md".to_string()));
+    assert!(names.contains(&"LICENSE".to_string()));
+    assert!(names.contains(&"config.json".to_string()));
+    assert!(names.contains(&"generation_config.json".to_string()));
+    assert!(names.contains(&"tokenizer.json".to_string()));
+    assert!(names.contains(&"tokenizer_config.json".to_string()));
+    assert!(names.contains(&"vocab.json".to_string()));
+    assert!(names.contains(&"merges.txt".to_string()));
+    assert!(names.contains(&"special_tokens_map.json".to_string()));
+    assert!(names.contains(&"chat_template.jinja".to_string()));
+    assert!(!names.contains(&"random_other.json".to_string()));
+    assert!(!names.contains(&"notes.txt".to_string()));
+    assert!(!names.contains(&"model.apr".to_string()));
+    assert!(!names.contains(&"model.safetensors".to_string()));
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_find_companion_files_empty_dir_returns_empty() {
+    let dir = std::env::temp_dir().join(format!("apr_pub_companions_empty_{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let found = super::find_companion_files(&dir).unwrap();
+    assert!(found.is_empty());
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_safetensors_needing_alias_descriptive_name_triggers_alias() {
+    let paths = vec![
+        std::path::PathBuf::from("/tmp/albor-370m-v1.safetensors"),
+        std::path::PathBuf::from("/tmp/albor-370m-v1.apr"),
+    ];
+    let result = super::safetensors_needing_alias(&paths);
+    assert!(result.is_some());
+    assert_eq!(
+        result.unwrap().file_name().unwrap().to_str(),
+        Some("albor-370m-v1.safetensors")
+    );
+}
+
+#[test]
+fn test_safetensors_needing_alias_canonical_name_skips_alias() {
+    // If the file is ALREADY named model.safetensors, no alias is needed
+    // (HF Transformers auto-discovers it directly).
+    let paths = vec![std::path::PathBuf::from("/tmp/model.safetensors")];
+    assert!(super::safetensors_needing_alias(&paths).is_none());
+}
+
+#[test]
+fn test_safetensors_needing_alias_no_safetensors_skips_alias() {
+    // Pure .apr + .gguf publish (no safetensors at all) — no alias needed.
+    let paths = vec![
+        std::path::PathBuf::from("/tmp/model.apr"),
+        std::path::PathBuf::from("/tmp/model.gguf"),
+    ];
+    assert!(super::safetensors_needing_alias(&paths).is_none());
+}
