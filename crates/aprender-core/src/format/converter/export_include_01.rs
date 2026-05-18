@@ -53,10 +53,30 @@ fn build_tied_output_weight(
         return None;
     }
 
+    // PMAT-690 defects 2+3 (2026-05-17): only Q4_K when shape[1] (=K=ne0)
+    // is 256-divisible, and pass APR-native shape directly (no swap) so
+    // the quantizer pads/slices along the correct dim. When K isn't
+    // 256-divisible (e.g., Qwen2 0.5B hidden=896), the tied output weight
+    // must be F32 to keep the GGUF llama-cli-compatible.
+    if shape[1] % 256 != 0 {
+        eprintln!(
+            "[BUG-4-FIX-Q4K-FALLBACK] tied output.weight shape {:?} — \
+             K={} not divisible by 256; emitting F32 instead of Q4K",
+            shape, shape[1]
+        );
+        let f32_bytes: Vec<u8> = data.iter().flat_map(|f| f.to_le_bytes()).collect();
+        let gguf_shape = vec![shape[1] as u64, shape[0] as u64];
+        return Some(GgufTensor {
+            name: "output.weight".to_string(),
+            shape: gguf_shape,
+            dtype: GgmlType::F32,
+            data: f32_bytes,
+        });
+    }
+
     eprintln!("[BUG-4-FIX] Creating Q4K output.weight from embedding for tied embeddings");
 
-    let gguf_shape_usize = vec![shape[1], shape[0]]; // [ne0=cols, ne1=rows]
-    let q4k_bytes = super::quantize_q4_k_matrix(data, &gguf_shape_usize);
+    let q4k_bytes = super::quantize_q4_k_matrix(data, shape);
     let gguf_shape = vec![shape[1] as u64, shape[0] as u64];
 
     Some(GgufTensor {
