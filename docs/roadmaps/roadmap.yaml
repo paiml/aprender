@@ -9419,3 +9419,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-692
+  github_issue: null
+  item_type: task
+  title: Distillation Phase 2c — pipeline integration end-to-end
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T12:22:46Z
+  updated: 2026-05-18T12:22:46Z
+  spec: null
+  acceptance_criteria:
+  - SPEC-DISTILL-001 Phase 2c. Rewrite pipeline.rs::train() to use TeacherLogitsProvider + StudentLogitsProvider + kd_step end-to-end. Replace remaining build_synthetic_logits stubs. Add CPU-only integration test that exercises the full data flow on FixtureTeacher + FixtureStudent + 100 training steps with loss monotonicity falsifier.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
