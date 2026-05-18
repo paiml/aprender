@@ -319,7 +319,7 @@ cargo install aprender --force
 
 ## Lineage / first applied
 
-- **paiml/albor-370m-v1** (MODEL-2 §88 stack-existence-proof, 2026-05-18) — first model shipped through this pipeline. 13 files. All three usage paths verified. Triggered the PMAT-690 P3-C-prep defect cascade (1+2+3+5a+5b+5c) that this spec encodes.
+- **paiml/albor-370m-v1** (MODEL-2 §88 stack-existence-proof, 2026-05-18) — first model shipped through this pipeline. 13 files. All three usage paths verified. Triggered the PMAT-690 P3-C-prep defect cascade (1+2+3+5a+5b+5c) that this spec encodes. See [`docs/specifications/audits/albor-370.md`](../audits/albor-370.md) for the Popperian falsification analysis (RTX 4090 compute-limit hypothesis falsified by the P2-E/P2-G plateau at val_loss=4.6227, with Sorscher et al. 2022 ([arXiv:2206.14486](https://arxiv.org/abs/2206.14486)) cited for why standard power-law scaling breaks down under fixed compute budgets), and [`docs/specifications/two-model-spec-audit.md`](../../two-model-spec-audit.md) for the cross-cutting Five-Whys retrospective.
 - **paiml/qwen2.5-coder-7b-apache-q4k-v1** (MODEL-1 teacher, 2026-04-18) — published BEFORE this spec was authored. Per `feedback_post_publish_qa_required.md`, that publish predates the SPEC-HF-PUBLISH-001 protocol; future MODEL-1 republishes should follow this spec.
 
 ## Changelog

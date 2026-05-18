@@ -2164,7 +2164,11 @@ All 5 PRs landed in main; v0.34.0 cut + 67-crate crates.io cascade shipped (see 
 
 ### 84.3 The §88 framing held up
 
-The pre-ship math (§83 Chinchilla analysis) predicted that any val_loss ≤ ~4.5 was the best achievable at the available compute budget without architectural changes. P2-E hit 4.6227 — within the predicted floor (~4.4 with 100 epochs). The §88 amendment to AC-SHIP2-003 (strict val_loss ≤ 2.2 deferred to the distillation epic PMAT-683/684; compute-bounded target ≤4.7 made the active gate) was the right call. The stack-existence-proof framing — "this model demonstrates that the pure-Rust pipeline runs end-to-end, not that the resulting model is competitive at code completion" — is honestly reflected in the README and metadata. Users are warned the model produces gibberish at val_perplexity=102 and pointed at `Qwen/Qwen2.5-Coder-0.5B-Instruct` for production use.
+The pre-ship math (§83 Chinchilla analysis) predicted that any val_loss ≤ ~4.5 was the best achievable at the available compute budget without architectural changes. P2-E hit 4.6227 — within the predicted floor (~4.4 with 100 epochs). The §88 amendment to AC-SHIP2-003 (strict val_loss ≤ 2.2 deferred to the distillation epic PMAT-683/684; compute-bounded target ≤4.7 made the active gate) was the right call.
+
+The post-ship audit ([`docs/specifications/audits/albor-370.md`](../audits/albor-370.md), [`docs/specifications/two-model-spec-audit.md`](../two-model-spec-audit.md)) frames this Popperianly: the hypothesis "an RTX 4090 can achieve val_loss < 3.0 within the 48-hour compute limit" was operationalized as the P2-E + P2-G runs and **falsified** by the plateau at 4.6227. Sorscher et al. 2022 ([arXiv:2206.14486](https://arxiv.org/abs/2206.14486), "Beyond neural scaling laws: beating power law scaling via data pruning") supplies the literature support — standard power-law scaling breaks down under strict fixed compute budgets, so accepting the sub-optimal plateau was the correct decision, not a methodological retreat.
+
+The stack-existence-proof framing — "this model demonstrates that the pure-Rust pipeline runs end-to-end, not that the resulting model is competitive at code completion" — is honestly reflected in the README and metadata. Users are warned the model produces gibberish at val_perplexity=102 and pointed at `Qwen/Qwen2.5-Coder-0.5B-Instruct` for production use.
 
 ### 84.4 Lessons promoted to spec
 
