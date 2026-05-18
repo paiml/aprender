@@ -1,4 +1,3 @@
-
 impl Architecture {
     /// Map a source tensor name to APR canonical name
     #[must_use]
@@ -23,8 +22,8 @@ impl Architecture {
             Self::FalconH1 => Self::llama_map_name(source_name), // HuggingFace model.layers naming
             Self::OpenElm => Self::llama_map_name(source_name),  // HuggingFace model.layers naming
             Self::Moonshine => Self::whisper_map_name(source_name), // Audio model, strip model. prefix
-            Self::Mamba => Self::auto_map_name(source_name),     // SSM: mixer.* naming, passthrough
-            Self::Rwkv7 => Self::auto_map_name(source_name),     // Recurrence: rwkv.blocks.* naming, passthrough
+            Self::Mamba => Self::auto_map_name(source_name), // SSM: mixer.* naming, passthrough
+            Self::Rwkv7 => Self::auto_map_name(source_name), // Recurrence: rwkv.blocks.* naming, passthrough
             // GH-1587: Falcon classic uses `transformer.h.N.*` naming with
             // fused QKV (single MQ head in 7B, MGQA in 40B+).
             Self::FalconClassic => Self::falcon_classic_map_name(source_name),
@@ -42,9 +41,25 @@ impl Architecture {
     ///
     /// Returns true only for architectures with tested tensor name mapping
     /// and confirmed realizar inference compatibility.
+    ///
+    /// `Bert` was promoted to verified in GH-326 Phase 4b after end-to-end
+    /// numerical parity was demonstrated against the HuggingFace reference
+    /// for `cross-encoder/ms-marco-MiniLM-L-6-v2`:
+    ///
+    /// | pair | HF score | apr score | input_ids match |
+    /// |---|---|---|---|
+    /// | France/Paris | 0.999805 | 0.999805 | ✅ exact |
+    /// | France/Cats  | 0.000015 | 0.000015 | ✅ exact |
+    /// | ML/neural    | 0.000020 | 0.000020 | ✅ exact |
+    ///
+    /// Raw logits differ by < 4e-4 (f32 round-off); sigmoid scores match
+    /// to 6 decimal places. WordPiece tokenization is bit-identical.
     #[must_use]
     pub fn is_inference_verified(&self) -> bool {
-        matches!(self, Self::Qwen2 | Self::Qwen3 | Self::Qwen3_5 | Self::Llama | Self::Phi)
+        matches!(
+            self,
+            Self::Qwen2 | Self::Qwen3 | Self::Qwen3_5 | Self::Llama | Self::Phi | Self::Bert
+        )
     }
 
     /// PMAT-526: Returns true for decoder-only LLM architectures that use BPE tokenizers
@@ -87,7 +102,7 @@ impl Architecture {
             Self::Llama => Some("llama"),
             Self::Qwen2 => Some("qwen2"),
             Self::Qwen3 => Some("qwen3"),
-            Self::Qwen3_5 => Some("qwen3_5"),  // Different: no QK norm (unlike Qwen3)
+            Self::Qwen3_5 => Some("qwen3_5"), // Different: no QK norm (unlike Qwen3)
             Self::Phi => Some("phi"),
             // Auto, Whisper, BERT, GPT-2, GPT-NeoX, OPT: no completeness check (different tensor naming)
             _ => None,
@@ -145,7 +160,7 @@ impl Architecture {
             // GH-311 / GH-1594: StarCoder + GPTBigCode reuse GPT-2 tensor naming
             "starcoder" | "starcoder2" | "bigcode" | "gpt_bigcode" | "gpt-bigcode" => {
                 Some(Self::Gpt2)
-            },
+            }
             // PMAT-526: Proper architecture variants for major model families
             "deepseek" | "deepseek_v2" | "deepseek-v2" => Some(Self::DeepSeek),
             "gemma" | "gemma2" | "gemma3" => Some(Self::Gemma),
@@ -163,7 +178,7 @@ impl Architecture {
             // GH-1587: Falcon classic — distinct from FalconH1 (hybrid SSM).
             "falcon" | "falcon7b" | "falcon40b" | "falcon11b" | "refinedweb" => {
                 Some(Self::FalconClassic)
-            },
+            }
             // GH-1589: InternLM2 / InternLM2.5 — distinct from LLaMA (renamed
             // subtrees: wqkv/wo/w1/w2/w3 vs q/k/v/o + gate/up/down).
             "internlm2" | "internlm2_5" | "internlm2.5" => Some(Self::InternLm2),

@@ -78,7 +78,11 @@ fn synthetic_q4k_super_block() -> Vec<u8> {
 #[test]
 fn falsify_ffn_gguf_007_q4k_scalar_vs_simd_dequant_byte_identity() {
     let block = synthetic_q4k_super_block();
-    assert_eq!(block.len(), 144, "test setup: super-block must be 144 bytes");
+    assert_eq!(
+        block.len(),
+        144,
+        "test setup: super-block must be 144 bytes"
+    );
 
     let result_scalar =
         dequantize_q4_k(&block).expect("dequantize_q4_k (scalar) failed on synthetic block");

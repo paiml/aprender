@@ -148,6 +148,31 @@ impl MultiHeadAttention {
         self
     }
 
+    /// Mutable access to the Q-projection (GH-326).
+    ///
+    /// Used by BERT / Llama / similar model loaders to install pre-trained
+    /// weights via `q_proj_mut().set_weight(w)` after constructing the MHA
+    /// with `MultiHeadAttention::new`. Mirrors the existing
+    /// `Linear::placeholder + set_weight + set_bias` lazy-load pattern.
+    pub fn q_proj_mut(&mut self) -> &mut Linear {
+        &mut self.q_proj
+    }
+
+    /// Mutable access to the K-projection (GH-326).
+    pub fn k_proj_mut(&mut self) -> &mut Linear {
+        &mut self.k_proj
+    }
+
+    /// Mutable access to the V-projection (GH-326).
+    pub fn v_proj_mut(&mut self) -> &mut Linear {
+        &mut self.v_proj
+    }
+
+    /// Mutable access to the output projection (GH-326).
+    pub fn out_proj_mut(&mut self) -> &mut Linear {
+        &mut self.out_proj
+    }
+
     /// Forward pass with separate query, key, value inputs.
     ///
     /// # Arguments

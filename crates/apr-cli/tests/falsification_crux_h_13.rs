@@ -20,8 +20,12 @@ fn write_json(body: &serde_json::Value) -> tempfile::NamedTempFile {
         .suffix(".json")
         .tempfile()
         .expect("tempfile");
-    f.write_all(serde_json::to_vec_pretty(body).expect("serialize").as_slice())
-        .expect("write");
+    f.write_all(
+        serde_json::to_vec_pretty(body)
+            .expect("serialize")
+            .as_slice(),
+    )
+    .expect("write");
     f.flush().expect("flush");
     f
 }
@@ -34,18 +38,32 @@ fn good_body() -> serde_json::Value {
 
 #[test]
 fn falsify_crux_h_13_cli_help_advertises_flags() {
-    let out = apr_binary().args(["audio-inspect-lint", "--help"]).output().expect("run");
+    let out = apr_binary()
+        .args(["audio-inspect-lint", "--help"])
+        .output()
+        .expect("run");
     assert!(out.status.success(), "--help must exit 0");
     let stdout = String::from_utf8_lossy(&out.stdout);
-    for flag in ["--json-file", "--expected-sample-rate", "--expected-channels"] {
-        assert!(stdout.contains(flag), "--help must advertise {flag}; got:\n{stdout}");
+    for flag in [
+        "--json-file",
+        "--expected-sample-rate",
+        "--expected-channels",
+    ] {
+        assert!(
+            stdout.contains(flag),
+            "--help must advertise {flag}; got:\n{stdout}"
+        );
     }
 }
 
 #[test]
 fn falsify_crux_h_13_cli_missing_file_fails() {
     let out = apr_binary()
-        .args(["audio-inspect-lint", "--json-file", "/nonexistent/crux-h-13-missing.json"])
+        .args([
+            "audio-inspect-lint",
+            "--json-file",
+            "/nonexistent/crux-h-13-missing.json",
+        ])
         .output()
         .expect("run");
     assert!(!out.status.success(), "missing file must not exit 0");
@@ -196,13 +214,24 @@ fn falsify_crux_h_13_json_output_contains_outcomes() {
     let out = apr_binary()
         .args(["--json", "audio-inspect-lint", "--json-file"])
         .arg(f.path())
-        .args(["--expected-sample-rate", "16000", "--expected-channels", "2"])
+        .args([
+            "--expected-sample-rate",
+            "16000",
+            "--expected-channels",
+            "2",
+        ])
         .output()
         .expect("run");
     assert!(out.status.success(), "json + good body must exit 0");
     let stdout = String::from_utf8_lossy(&out.stdout);
     let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("json output must parse");
-    assert!(parsed["amplitude_bounds"].as_str().expect("bounds").contains("Ok"));
+    assert!(parsed["amplitude_bounds"]
+        .as_str()
+        .expect("bounds")
+        .contains("Ok"));
     assert!(parsed["sample_rate"].as_str().expect("rate").contains("Ok"));
-    assert!(parsed["channel_shape"].as_str().expect("shape").contains("Ok"));
+    assert!(parsed["channel_shape"]
+        .as_str()
+        .expect("shape")
+        .contains("Ok"));
 }

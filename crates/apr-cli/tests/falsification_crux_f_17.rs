@@ -20,8 +20,12 @@ fn write_json(body: &serde_json::Value) -> tempfile::NamedTempFile {
         .suffix(".json")
         .tempfile()
         .expect("tempfile");
-    f.write_all(serde_json::to_vec_pretty(body).expect("serialize").as_slice())
-        .expect("write");
+    f.write_all(
+        serde_json::to_vec_pretty(body)
+            .expect("serialize")
+            .as_slice(),
+    )
+    .expect("write");
     f.flush().expect("flush");
     f
 }
@@ -51,11 +55,23 @@ fn good_attn() -> serde_json::Value {
 
 #[test]
 fn falsify_crux_f_17_cli_help_advertises_flags() {
-    let out = apr_binary().args(["attn-viz-lint", "--help"]).output().expect("run");
+    let out = apr_binary()
+        .args(["attn-viz-lint", "--help"])
+        .output()
+        .expect("run");
     assert!(out.status.success(), "--help must exit 0");
     let stdout = String::from_utf8_lossy(&out.stdout);
-    for flag in ["--attn-file", "--html-file", "--expected-heatmaps", "--tolerance", "--epsilon"] {
-        assert!(stdout.contains(flag), "--help must advertise {flag}; got:\n{stdout}");
+    for flag in [
+        "--attn-file",
+        "--html-file",
+        "--expected-heatmaps",
+        "--tolerance",
+        "--epsilon",
+    ] {
+        assert!(
+            stdout.contains(flag),
+            "--help must advertise {flag}; got:\n{stdout}"
+        );
     }
 }
 
@@ -149,7 +165,10 @@ fn falsify_crux_f_17_003_html_heatmap_count_rejects_too_few() {
         .args(["--expected-heatmaps", "4"])
         .output()
         .expect("run");
-    assert!(!out.status.success(), "1 heatmap with threshold 4 must fail");
+    assert!(
+        !out.status.success(),
+        "1 heatmap with threshold 4 must fail"
+    );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.contains("TooFewHeatmaps"),
@@ -192,7 +211,16 @@ fn falsify_crux_f_17_json_output_contains_outcomes() {
     assert!(out.status.success(), "json + good bodies must exit 0");
     let stdout = String::from_utf8_lossy(&out.stdout);
     let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("json output must parse");
-    assert!(parsed["row_softmax"].as_str().expect("row_softmax").contains("Ok"));
-    assert!(parsed["causal_mask"].as_str().expect("causal_mask").contains("Ok"));
-    assert!(parsed["html_heatmaps"].as_str().expect("html_heatmaps").contains("Ok"));
+    assert!(parsed["row_softmax"]
+        .as_str()
+        .expect("row_softmax")
+        .contains("Ok"));
+    assert!(parsed["causal_mask"]
+        .as_str()
+        .expect("causal_mask")
+        .contains("Ok"));
+    assert!(parsed["html_heatmaps"]
+        .as_str()
+        .expect("html_heatmaps")
+        .contains("Ok"));
 }

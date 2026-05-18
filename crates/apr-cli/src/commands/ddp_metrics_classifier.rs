@@ -26,10 +26,19 @@ pub const D11_DEFAULT_LOSS_TOLERANCE: f64 = 0.01;
 /// Outcome of `classify_scaling_efficiency`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DdpScalingOutcome {
-    Ok { efficiency: f64 },
-    MissingTokensPerSec { which: &'static str },
-    NonPositiveTokensPerSec { which: &'static str, got: f64 },
-    InvalidWorldSize { got: i64 },
+    Ok {
+        efficiency: f64,
+    },
+    MissingTokensPerSec {
+        which: &'static str,
+    },
+    NonPositiveTokensPerSec {
+        which: &'static str,
+        got: f64,
+    },
+    InvalidWorldSize {
+        got: i64,
+    },
     BelowThreshold {
         world_size: i64,
         t1: f64,
@@ -42,9 +51,15 @@ pub enum DdpScalingOutcome {
 /// Outcome of `classify_loss_parity`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DdpLossParityOutcome {
-    Ok { rel_diff: f64 },
-    MissingFinalLoss { which: &'static str },
-    NonPositiveBaselineLoss { got: f64 },
+    Ok {
+        rel_diff: f64,
+    },
+    MissingFinalLoss {
+        which: &'static str,
+    },
+    NonPositiveBaselineLoss {
+        got: f64,
+    },
     Divergence {
         l1: f64,
         ln: f64,
@@ -74,16 +89,26 @@ pub fn classify_scaling_efficiency(
         return DdpScalingOutcome::InvalidWorldSize { got: world_size };
     }
     let Some(t1) = metrics_1gpu.get("tokens_per_sec").and_then(Value::as_f64) else {
-        return DdpScalingOutcome::MissingTokensPerSec { which: "metrics_1gpu" };
+        return DdpScalingOutcome::MissingTokensPerSec {
+            which: "metrics_1gpu",
+        };
     };
     let Some(tn) = metrics_ngpu.get("tokens_per_sec").and_then(Value::as_f64) else {
-        return DdpScalingOutcome::MissingTokensPerSec { which: "metrics_ngpu" };
+        return DdpScalingOutcome::MissingTokensPerSec {
+            which: "metrics_ngpu",
+        };
     };
     if t1 <= 0.0 {
-        return DdpScalingOutcome::NonPositiveTokensPerSec { which: "metrics_1gpu", got: t1 };
+        return DdpScalingOutcome::NonPositiveTokensPerSec {
+            which: "metrics_1gpu",
+            got: t1,
+        };
     }
     if tn <= 0.0 {
-        return DdpScalingOutcome::NonPositiveTokensPerSec { which: "metrics_ngpu", got: tn };
+        return DdpScalingOutcome::NonPositiveTokensPerSec {
+            which: "metrics_ngpu",
+            got: tn,
+        };
     }
     let efficiency = tn / (world_size as f64 * t1);
     if efficiency < threshold {
@@ -105,17 +130,26 @@ pub fn classify_loss_parity(
     tolerance: f64,
 ) -> DdpLossParityOutcome {
     let Some(l1) = metrics_1gpu.get("final_loss").and_then(Value::as_f64) else {
-        return DdpLossParityOutcome::MissingFinalLoss { which: "metrics_1gpu" };
+        return DdpLossParityOutcome::MissingFinalLoss {
+            which: "metrics_1gpu",
+        };
     };
     let Some(ln) = metrics_ngpu.get("final_loss").and_then(Value::as_f64) else {
-        return DdpLossParityOutcome::MissingFinalLoss { which: "metrics_ngpu" };
+        return DdpLossParityOutcome::MissingFinalLoss {
+            which: "metrics_ngpu",
+        };
     };
     if l1 <= 0.0 {
         return DdpLossParityOutcome::NonPositiveBaselineLoss { got: l1 };
     }
     let rel_diff = (ln - l1).abs() / l1;
     if rel_diff > tolerance {
-        return DdpLossParityOutcome::Divergence { l1, ln, rel_diff, tolerance };
+        return DdpLossParityOutcome::Divergence {
+            l1,
+            ln,
+            rel_diff,
+            tolerance,
+        };
     }
     DdpLossParityOutcome::Ok { rel_diff }
 }
@@ -126,7 +160,10 @@ pub fn classify_allreduce_bandwidth(metrics: &Value) -> DdpAllreduceOutcome {
     let Some(ddp) = metrics.get("ddp_metrics") else {
         return DdpAllreduceOutcome::MissingDdpMetrics;
     };
-    let Some(arr) = ddp.get("allreduce_bandwidth_gbps").and_then(Value::as_array) else {
+    let Some(arr) = ddp
+        .get("allreduce_bandwidth_gbps")
+        .and_then(Value::as_array)
+    else {
         return DdpAllreduceOutcome::MissingBandwidthArray;
     };
     if arr.is_empty() {
@@ -135,7 +172,10 @@ pub fn classify_allreduce_bandwidth(metrics: &Value) -> DdpAllreduceOutcome {
     for (i, v) in arr.iter().enumerate() {
         let bw = v.as_f64().unwrap_or(0.0);
         if bw <= 0.0 {
-            return DdpAllreduceOutcome::NonPositiveBandwidth { step_index: i, got: bw };
+            return DdpAllreduceOutcome::NonPositiveBandwidth {
+                step_index: i,
+                got: bw,
+            };
         }
     }
     DdpAllreduceOutcome::Ok { steps: arr.len() }
@@ -195,7 +235,10 @@ mod tests {
     #[test]
     fn scaling_rejects_invalid_world_size() {
         let out = classify_scaling_efficiency(&t1_body(), &tn_body_efficient(), 1, 0.85);
-        assert!(matches!(out, DdpScalingOutcome::InvalidWorldSize { got: 1 }));
+        assert!(matches!(
+            out,
+            DdpScalingOutcome::InvalidWorldSize { got: 1 }
+        ));
     }
 
     #[test]
@@ -203,7 +246,9 @@ mod tests {
         let empty = json!({});
         assert!(matches!(
             classify_scaling_efficiency(&empty, &tn_body_efficient(), 4, 0.85),
-            DdpScalingOutcome::MissingTokensPerSec { which: "metrics_1gpu" }
+            DdpScalingOutcome::MissingTokensPerSec {
+                which: "metrics_1gpu"
+            }
         ));
     }
 
@@ -212,7 +257,10 @@ mod tests {
         let zero = json!({"tokens_per_sec": 0.0});
         assert!(matches!(
             classify_scaling_efficiency(&t1_body(), &zero, 4, 0.85),
-            DdpScalingOutcome::NonPositiveTokensPerSec { which: "metrics_ngpu", .. }
+            DdpScalingOutcome::NonPositiveTokensPerSec {
+                which: "metrics_ngpu",
+                ..
+            }
         ));
     }
 
@@ -243,7 +291,9 @@ mod tests {
         let empty = json!({});
         assert!(matches!(
             classify_loss_parity(&empty, &tn_body_efficient(), 0.01),
-            DdpLossParityOutcome::MissingFinalLoss { which: "metrics_1gpu" }
+            DdpLossParityOutcome::MissingFinalLoss {
+                which: "metrics_1gpu"
+            }
         ));
     }
 

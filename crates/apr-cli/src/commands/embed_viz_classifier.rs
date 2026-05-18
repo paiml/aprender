@@ -23,13 +23,28 @@ pub const F18_REQUIRED_COLUMNS: &[&str] = &["token_id", "token_str", "x", "y"];
 /// Outcome of `classify_schema`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EmbedSchemaOutcome {
-    Ok { rows: usize },
+    Ok {
+        rows: usize,
+    },
     Empty,
     MissingHeader,
-    MissingColumn { col: &'static str },
-    WrongColumnCount { line_no: usize, got: usize, expected: usize },
-    TokenIdNotNonNegativeInt { line_no: usize, got: String },
-    CoordNotFiniteFloat { line_no: usize, col: &'static str, got: String },
+    MissingColumn {
+        col: &'static str,
+    },
+    WrongColumnCount {
+        line_no: usize,
+        got: usize,
+        expected: usize,
+    },
+    TokenIdNotNonNegativeInt {
+        line_no: usize,
+        got: String,
+    },
+    CoordNotFiniteFloat {
+        line_no: usize,
+        col: &'static str,
+        got: String,
+    },
 }
 
 /// Outcome of `classify_row_count`.
@@ -42,9 +57,18 @@ pub enum EmbedRowCountOutcome {
 /// Outcome of `classify_determinism`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EmbedDeterminismOutcome {
-    Ok { bytes: usize },
-    LengthDiffers { left_bytes: usize, right_bytes: usize },
-    FirstDiffAtByte { offset: usize, left: u8, right: u8 },
+    Ok {
+        bytes: usize,
+    },
+    LengthDiffers {
+        left_bytes: usize,
+        right_bytes: usize,
+    },
+    FirstDiffAtByte {
+        offset: usize,
+        left: u8,
+        right: u8,
+    },
 }
 
 /// Validate CSV schema (header + per-row types).
@@ -140,7 +164,10 @@ pub fn classify_row_count(body: &str, expected: usize) -> EmbedRowCountOutcome {
     if count == expected {
         EmbedRowCountOutcome::Ok
     } else {
-        EmbedRowCountOutcome::Mismatch { got: count, expected }
+        EmbedRowCountOutcome::Mismatch {
+            got: count,
+            expected,
+        }
     }
 }
 
@@ -169,7 +196,8 @@ mod tests {
     use super::*;
 
     fn good_body() -> String {
-        "token_id,token_str,x,y\n0,<pad>,0.1,0.2\n1,<unk>,-0.5,1.5\n2,hello,3.14,-2.71\n".to_string()
+        "token_id,token_str,x,y\n0,<pad>,0.1,0.2\n1,<unk>,-0.5,1.5\n2,hello,3.14,-2.71\n"
+            .to_string()
     }
 
     #[test]
@@ -206,7 +234,11 @@ mod tests {
     fn schema_rejects_nonfinite_x() {
         let body = "token_id,token_str,x,y\n0,<pad>,nan,0.2\n";
         match classify_schema(body) {
-            EmbedSchemaOutcome::CoordNotFiniteFloat { line_no: 2, col: "x", .. } => {}
+            EmbedSchemaOutcome::CoordNotFiniteFloat {
+                line_no: 2,
+                col: "x",
+                ..
+            } => {}
             other => panic!("expected CoordNotFiniteFloat(x), got {other:?}"),
         }
     }
@@ -215,7 +247,11 @@ mod tests {
     fn schema_rejects_inf_y() {
         let body = "token_id,token_str,x,y\n0,<pad>,0.0,inf\n";
         match classify_schema(body) {
-            EmbedSchemaOutcome::CoordNotFiniteFloat { line_no: 2, col: "y", .. } => {}
+            EmbedSchemaOutcome::CoordNotFiniteFloat {
+                line_no: 2,
+                col: "y",
+                ..
+            } => {}
             other => panic!("expected CoordNotFiniteFloat(y), got {other:?}"),
         }
     }
@@ -223,10 +259,7 @@ mod tests {
     #[test]
     fn schema_accepts_reordered_columns() {
         let body = "x,y,token_id,token_str\n0.1,0.2,0,<pad>\n";
-        assert_eq!(
-            classify_schema(body),
-            EmbedSchemaOutcome::Ok { rows: 1 }
-        );
+        assert_eq!(classify_schema(body), EmbedSchemaOutcome::Ok { rows: 1 });
     }
 
     #[test]
@@ -241,7 +274,10 @@ mod tests {
     fn row_count_reports_mismatch() {
         assert_eq!(
             classify_row_count(&good_body(), 100),
-            EmbedRowCountOutcome::Mismatch { got: 3, expected: 100 }
+            EmbedRowCountOutcome::Mismatch {
+                got: 3,
+                expected: 100
+            }
         );
     }
 
@@ -273,7 +309,11 @@ mod tests {
         let b1 = b"abc\n123\n";
         let b2 = b"abc\n124\n";
         match classify_determinism(b1, b2) {
-            EmbedDeterminismOutcome::FirstDiffAtByte { offset: 6, left, right } => {
+            EmbedDeterminismOutcome::FirstDiffAtByte {
+                offset: 6,
+                left,
+                right,
+            } => {
                 assert_eq!(left, b'3');
                 assert_eq!(right, b'4');
             }

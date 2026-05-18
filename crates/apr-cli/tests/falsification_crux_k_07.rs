@@ -238,7 +238,16 @@ fn falsify_crux_k_07_json_output_contains_outcomes() {
     assert!(out.status.success(), "json + good body must exit 0");
     let stdout = String::from_utf8_lossy(&out.stdout);
     let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("json output must parse");
-    assert!(parsed["text_format"].as_str().expect("text_format string").contains("Ok"));
-    assert!(parsed["required_metrics"].as_str().expect("required_metrics string").contains("Ok"));
-    assert!(parsed["content_type"].as_str().expect("content_type string").contains("Ok"));
+    assert!(parsed["text_format"]
+        .as_str()
+        .expect("text_format string")
+        .contains("Ok"));
+    assert!(parsed["required_metrics"]
+        .as_str()
+        .expect("required_metrics string")
+        .contains("Ok"));
+    assert!(parsed["content_type"]
+        .as_str()
+        .expect("content_type string")
+        .contains("Ok"));
 }

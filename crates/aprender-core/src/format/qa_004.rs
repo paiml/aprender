@@ -78,10 +78,7 @@ pub enum Qa004Verdict {
 /// assert_eq!(v, Qa004Verdict::Fail);
 /// ```
 #[must_use]
-pub fn verdict_from_nan_inf_scan(
-    output_lines: u64,
-    nan_inf_match_count: u64,
-) -> Qa004Verdict {
+pub fn verdict_from_nan_inf_scan(output_lines: u64, nan_inf_match_count: u64) -> Qa004Verdict {
     if output_lines == 0 {
         return Qa004Verdict::Fail;
     }
@@ -234,11 +231,7 @@ mod tests {
             assert_eq!(v_pass, Qa004Verdict::Pass, "lines={lines}");
 
             let v_fail = verdict_from_nan_inf_scan(lines, 1);
-            assert_eq!(
-                v_fail,
-                Qa004Verdict::Fail,
-                "lines={lines} with one match"
-            );
+            assert_eq!(v_fail, Qa004Verdict::Fail, "lines={lines} with one match");
         }
     }
 
@@ -259,11 +252,7 @@ mod tests {
         // Worst case: `apr trace --json` emits NaN in one layer's
         // statistics due to a numerical regression.
         let v = verdict_from_nan_inf_scan(280, 1); // 28 layers * 10 fields
-        assert_eq!(
-            v,
-            Qa004Verdict::Fail,
-            "NaN in apr trace stats must Fail"
-        );
+        assert_eq!(v, Qa004Verdict::Fail, "NaN in apr trace stats must Fail");
     }
 
     #[test]
