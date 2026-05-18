@@ -83,6 +83,7 @@ fn upload_to_hub_extended(
     client: &HfHubClient,
     repo_id: &str,
     files: &[std::path::PathBuf],
+    companion_files: &[std::path::PathBuf],
     readme_content: &str,
     manifest: Option<&Path>,
     extra_files: &[std::path::PathBuf],
@@ -131,6 +132,22 @@ fn upload_to_hub_extended(
         upload_one(file, &filename)?;
     }
 
+    // PMAT-690 defect 6 (2026-05-18): upload companion files (config.json,
+    // tokenizer.json, LICENSE, etc.). Skip README.md — it's uploaded
+    // separately below from `readme_content` which the caller may have
+    // already populated with user-authored content.
+    for cf in companion_files {
+        let filename = cf
+            .file_name()
+            .ok_or_else(|| CliError::ValidationFailed("Invalid companion-file path".into()))?
+            .to_string_lossy()
+            .to_string();
+        if filename == "README.md" {
+            continue;
+        }
+        upload_one(cf, &filename)?;
+    }
+
     for ef in extra_files {
         let filename = ef
             .file_name()
@@ -153,6 +170,22 @@ fn upload_to_hub_extended(
         client
             .push_to_hub(repo_id, readme_content.as_bytes(), readme_options)
             .map_err(|e| CliError::NetworkError(format!("README upload failed: {e}")))?;
+    }
+
+    // PMAT-690 defect 6 (2026-05-18): auto-emit `model.safetensors` LFS alias
+    // for HF Transformers AutoModelForCausalLM auto-discovery. LFS dedup
+    // makes the alias storage-free. See SPEC-HF-PUBLISH-001 §"Publishing
+    // the `model.safetensors` alias".
+    if let Some(src) = safetensors_needing_alias(files) {
+        if verbose {
+            println!(
+                "Emitting model.safetensors LFS alias for {} (HF Transformers auto-load)",
+                src.display()
+            );
+        }
+        emit_safetensors_alias(client, repo_id, &src, commit_msg).map_err(|e| {
+            CliError::NetworkError(format!("model.safetensors alias commit failed: {e}"))
+        })?;
     }
 
     Ok(())
@@ -278,10 +311,41 @@ pub fn execute(
         }
     }
 
+    // PMAT-690 P3-C-prep defect 6 (2026-05-18): discover companion files
+    // (config.json, vocab.json, merges.txt, tokenizer*.json, generation_config.json,
+    // LICENSE, special_tokens_map.json, chat_template.jinja) so the publish includes
+    // them automatically per SPEC-HF-PUBLISH-001. Manifest mode is unchanged
+    // — manifest-driven publishes restrict to the declared artifact only.
+    let companion_files: Vec<std::path::PathBuf> = if manifest.is_some() {
+        Vec::new()
+    } else {
+        find_companion_files(directory)?
+    };
+
+    // If the user provided a README.md, use that instead of the auto-generated one
+    // — empirical: the auto-generated stub is consistently weaker than what model
+    // authors hand-craft (observed paiml/albor-370m-v1 publish 2026-05-17).
+    let user_readme: Option<std::path::PathBuf> = companion_files
+        .iter()
+        .find(|p| p.file_name().and_then(|n| n.to_str()) == Some("README.md"))
+        .cloned();
+
     if verbose {
         println!("Uploading {} primary artifact(s):", files.len());
         for f in &files {
             println!("  - {}", f.display());
+        }
+        if !companion_files.is_empty() {
+            println!("Plus {} companion file(s):", companion_files.len());
+            for f in &companion_files {
+                println!("  - {}", f.display());
+            }
+        }
+        if let Some(p) = &user_readme {
+            println!(
+                "User-provided README.md detected at {} — will replace auto-generated card",
+                p.display()
+            );
         }
     }
 
@@ -300,8 +364,16 @@ pub fn execute(
         tags,
         &files,
     );
-    let readme_content =
-        model_card.to_huggingface_extended(pipeline_tag, library_name, tags, &file_names);
+    let readme_content = if let Some(p) = &user_readme {
+        fs::read_to_string(p).map_err(|e| {
+            CliError::ValidationFailed(format!(
+                "Failed to read user README at {}: {e}",
+                p.display()
+            ))
+        })?
+    } else {
+        model_card.to_huggingface_extended(pipeline_tag, library_name, tags, &file_names)
+    };
 
     if dry_run {
         println!("=== DRY RUN: Would publish to {} ===\n", repo_id);
@@ -392,6 +464,7 @@ pub fn execute(
             &client,
             repo_id,
             &files,
+            &companion_files,
             &readme_content,
             manifest,
             extra_files,
@@ -492,7 +565,7 @@ fn stream_sha256(path: &Path) -> Result<String, CliError> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-/// Find model files in directory
+/// Find model binary-artifact files in directory: `.apr`, `.safetensors`, `.gguf`.
 fn find_model_files(directory: &Path) -> Result<Vec<std::path::PathBuf>, CliError> {
     let mut files = Vec::new();
 
@@ -514,6 +587,112 @@ fn find_model_files(directory: &Path) -> Result<Vec<std::path::PathBuf>, CliErro
     // Sort for deterministic order
     files.sort();
     Ok(files)
+}
+
+/// Find companion files in directory: the standard HF / Transformers
+/// integration set required by SPEC-HF-PUBLISH-001 (PMAT-690 defect 6).
+///
+/// Returns paths to files matching the allowlist below. The match is
+/// case-sensitive exact filename (no extension globbing) because these
+/// names are HF-standard and arbitrary `.json` / `.txt` files should NOT
+/// be auto-published.
+///
+/// **Included filenames** (only when present in `directory`):
+/// - `README.md` — user-authored model card (overrides auto-generated)
+/// - `LICENSE` (and `LICENSE.md`, `LICENSE.txt`)
+/// - `config.json` — HF Transformers `AutoConfig`
+/// - `generation_config.json` — HF Transformers generation defaults
+/// - `tokenizer.json` — HF fast tokenizer (single-file)
+/// - `tokenizer_config.json` — chat_template + special tokens
+/// - `vocab.json` — legacy BPE vocab
+/// - `merges.txt` — legacy BPE merges
+/// - `special_tokens_map.json` — special-tokens map (Llama/Mistral arches)
+/// - `chat_template.jinja` — standalone chat template (newer HF convention)
+///
+/// First applied 2026-05-18 to remove the manual NDJSON companion-file
+/// upload step the paiml/albor-370m-v1 publish needed.
+fn find_companion_files(directory: &Path) -> Result<Vec<std::path::PathBuf>, CliError> {
+    const COMPANION_NAMES: &[&str] = &[
+        "README.md",
+        "LICENSE",
+        "LICENSE.md",
+        "LICENSE.txt",
+        "config.json",
+        "generation_config.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "vocab.json",
+        "merges.txt",
+        "special_tokens_map.json",
+        "chat_template.jinja",
+    ];
+
+    let mut files = Vec::new();
+    for name in COMPANION_NAMES {
+        let path = directory.join(name);
+        if path.is_file() {
+            files.push(path);
+        }
+    }
+    files.sort();
+    Ok(files)
+}
+
+/// Check if any binary-artifact file is a SafeTensors export NOT named
+/// `model.safetensors`. Returns the path of the first such file, which
+/// will get an LFS-alias commit emitted after upload so that
+/// `AutoModelForCausalLM.from_pretrained` can auto-discover the weights
+/// without an explicit `weights_file` argument.
+///
+/// PMAT-690 defect 6 (2026-05-18): pin the alias-emission heuristic so a
+/// regression test can falsify it.
+fn safetensors_needing_alias(files: &[std::path::PathBuf]) -> Option<std::path::PathBuf> {
+    files
+        .iter()
+        .find(|p| {
+            p.extension().and_then(|e| e.to_str()) == Some("safetensors")
+                && p.file_name().and_then(|n| n.to_str()) != Some("model.safetensors")
+        })
+        .cloned()
+}
+
+/// Emit an NDJSON `lfsFile` commit for `model.safetensors` pointing at the
+/// same OID as `src` (which was already uploaded with its descriptive name).
+///
+/// LFS deduplicates by OID, so this is storage-free: both filenames resolve
+/// to the same blob. Required for HF Transformers
+/// `AutoModelForCausalLM.from_pretrained` to auto-discover the weights
+/// without an explicit `weights_file` argument.
+///
+/// PMAT-690 defect 6 (2026-05-18). See SPEC-HF-PUBLISH-001 §"Publishing
+/// the `model.safetensors` alias".
+#[cfg(feature = "hf-hub")]
+fn emit_safetensors_alias(
+    client: &HfHubClient,
+    repo_id: &str,
+    src: &Path,
+    commit_msg: &str,
+) -> Result<(), aprender::hf_hub::HfHubError> {
+    use sha2::{Digest, Sha256};
+
+    let data = fs::read(src).map_err(|e| {
+        aprender::hf_hub::HfHubError::NetworkError(format!(
+            "Failed to read {} for alias hashing: {e}",
+            src.display()
+        ))
+    })?;
+    let size = data.len();
+    let mut hasher = Sha256::new();
+    hasher.update(&data);
+    let sha256 = format!("{:x}", hasher.finalize());
+
+    client.commit_lfs_alias(
+        repo_id,
+        "model.safetensors",
+        &sha256,
+        size,
+        &format!("{commit_msg} (model.safetensors alias)"),
+    )
 }
 
 /// Generate model card from parameters
