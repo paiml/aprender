@@ -1,11 +1,12 @@
 # Specification: Distillation Epic — paiml/albor-370m-v2
 
 **Document ID:** SPEC-DISTILL-001
-**Version:** 1.0.0
-**Status:** Live — opens the distillation track that picks up where MODEL-2's §88 stack-existence-proof ship left off
+**Version:** 1.1.0 (priority promoted to HIGH; Phase 1 design revised from cache → online teacher provider after the storage-math sanity check)
+**Status:** **Live and ACTIVE** — distillation track is the highest-priority work after MODEL-2 §88 shipped
+**Priority:** **HIGH** (per `pmat work edit`, 2026-05-18 — PMAT-683 + PMAT-684 both elevated from `medium` to `high`)
 **Parent:** [ship-model-2-spec.md §84.5](./ship-model-2-spec.md)
-**Triggers:** PMAT-683 (P2-D: True distillation from MODEL-1), PMAT-684 (P1-B: HumanEval pass@1)
-**First applied:** TBD — see Phase 1 below
+**Triggers:** PMAT-683 (P2-D: True distillation from MODEL-1) **HIGH**, PMAT-684 (P1-B: HumanEval pass@1) **HIGH**, PMAT-691 (Phase 1 implementation kickoff) **HIGH**
+**First applied:** Phase 1 work session started 2026-05-18 (PMAT-691)
 
 ## Purpose
 
@@ -35,20 +36,35 @@ Closing this gap is the epic.
 
 ## Phased plan
 
-### Phase 1 — Teacher logits service via realizar (PMAT-683 P1, ~3 days)
+### Phase 1 — Online teacher logits provider (PMAT-683 P1 + PMAT-691, ~2 days)
 
-**Goal**: `apr distill` invokes realizar to compute teacher logits over the training corpus and caches them to disk.
+**Goal**: `aprender-train-distill` can fetch full teacher logits for an arbitrary batch by delegating to realizar — synchronously, in the training hot path.
 
-Why a separate phase: teacher forward over a 7B model is expensive (~3-5s/batch on RTX 4090 for batch=8 seq=512). Recomputing per training step is wasteful. The HF community standard (DistilBERT, MiniLM, Distil-Qwen) caches teacher logits once per corpus and replays them across training epochs. We do the same.
+**Why online instead of on-disk cache** (revised from v1.0.0 of this spec): the original plan (top-K=64 sparse cache) does not scale to a real corpus. The math: 1.24B tokens (qwen-v3 corpus) × 64 entries/position × ~6 bytes/entry (u32 index + f16 logit) ≈ **476 GB**. That exceeds the lambda-vector NVMe budget. Lowering K further degrades KD signal-to-noise. Modern distillation pipelines (DistilBERT 2019, MiniLM 2020, Distil-Qwen 2024) all use **online teacher inference** — pay the ~2× student-step cost in exchange for zero cache footprint. We do the same.
+
+The cache approach is preserved as a **Phase 1.5 optional optimization**: an in-memory ring of N pre-computed batches that the producer thread fills while the student GPU is busy on the previous batch. Adds 0 disk cost, hides teacher latency under student compute. Implement after Phase 4 lands real numbers worth optimizing.
 
 **Deliverables:**
-1. `apr distill prepare --teacher <path> --dataset <bin-shards> --out <cache-dir>` — new subcommand. Iterates batches, calls `realizar::Model::forward_logits(input_ids) -> Vec<f32>`, writes per-batch `.logits.bin` files (top-K + indices to reduce storage; K=64 is standard).
-2. New module `aprender-train-distill/src/teacher_cache.rs` — defines on-disk format (header magic `APRLOG\0`, per-batch records `(batch_idx, seq_len, top_k_logits[K], top_k_indices[K])`).
-3. Integration test: prepare 100-batch slice, verify cache file size + read-back matches realizar's online compute within float-roundoff.
+1. New module `aprender-train-distill/src/teacher_provider.rs` — defines:
+   ```rust
+   pub trait TeacherLogitsProvider {
+       fn logits_for_batch(&mut self, input_ids: &[Vec<u32>]) -> Result<Vec<Vec<f32>>>;
+   }
+   pub struct RealizarTeacher { /* wraps realizar::Model */ }
+   impl TeacherLogitsProvider for RealizarTeacher { ... }
+   ```
+2. `RealizarTeacher::new(path: &Path, device: Device)` loads the teacher .apr/.gguf via realizar's standard path; subsequent `logits_for_batch` calls run forward and return the full V-dim distribution (or last-position logits depending on training objective).
+3. Wired call site: `aprender-train-distill/src/pipeline.rs::train()` replaces `build_synthetic_logits(...)` with `self.teacher.logits_for_batch(...)`.
+4. Unit test against a frozen golden reference: load a 3-layer toy teacher; assert `logits_for_batch([[1, 2, 3]])` returns bytes matching a recorded fixture within `1e-3` absolute.
 
-**Effort estimate**: 16-24 hours engineering + 4-8h compute (1B-token corpus prep takes ~6h on RTX 4090 for a 7B teacher at batch=8).
+**Effort estimate**: 16-24 hours engineering + <1h compute. No corpus prep needed (no cache).
 
-**Falsifier**: F-DISTILL-PREP-001 — `apr distill prepare` produces a cache where, for any random batch, calling `realizar` online produces the same top-K within cosine sim ≥ 0.999.
+**Falsifier**: F-DISTILL-TEACHER-001 — `RealizarTeacher::logits_for_batch` output matches `realizar`'s standard `apr trace --layer logits` JSON dump on the same input within 1e-3 absolute error, for a frozen 3-layer fixture model.
+
+**Implementation notes**:
+- For the v2 ship we need full V-dim logits during the student step (KL divergence is computed over the full distribution). Top-K truncation can come later as an optimization once Phase 4 numbers exist.
+- The teacher is held in GPU memory between calls. On RTX 4090 (24GB) the 7B Q4_K teacher fits with ~16GB headroom — enough for a batch-8 seq-512 student to share the GPU.
+- realizar's `Model::forward_logits` already returns `Vec<f32>` for the last position. For sequence-wise KD (every position), Phase 1 needs to expose an extended API `forward_logits_full` returning shape `[batch, seq_len, vocab]`. If not present, add it in `aprender-serve` as a small extension.
 
 ### Phase 2 — Student forward+backward wired to KD loss (PMAT-683 P2, ~2 days)
 
@@ -124,21 +140,22 @@ Why a separate phase: teacher forward over a 7B model is expensive (~3-5s/batch 
 
 | Phase | Engineering | Compute | Calendar |
 |---|---|---|---|
-| 1: Teacher logits cache | 16-24h | 4-8h | 3 days |
+| 1: Online teacher provider (PMAT-691) | 16-24h | <1h | 2 days |
 | 2: KD-wired forward+backward | 16-24h | <1h | 2 days |
 | 3: E2E smoke (500 steps) | 8h | 4h | 1 day |
 | 4: V2 training run | 4h | 30h (unattended) | 2-3 days wall |
 | 5: HumanEval discharge | 4h | 5-8h | 1 day |
 | 6: Publish v2 | 3h | 1h | 0.5 day |
-| **Total** | **~70h** | **~45h** | **~10 days** |
+| **Total** | **~70h** | **~40h** | **~9 days** |
 
-This matches PMAT-683's "16-40h. Δship +10. P=25%" original estimate when scaled to the realistic full epic; PMAT-683 was authored before §82 P2-A landed the trainer infrastructure that Phase 2 reuses.
+This matches PMAT-683's "16-40h. Δship +10. P=25%" original estimate when scaled to the realistic full epic; PMAT-683 was authored before §82 P2-A landed the trainer infrastructure that Phase 2 reuses. The v1.1.0 revision (online teacher provider instead of disk cache) drops Phase 1 compute from 4-8h to <1h.
 
 ## Risk register
 
 | Risk | Mitigation |
 |---|---|
-| Teacher logits cache is too large (~100 GB for full qwen-v3) | Top-K=64 sparsification reduces by ~25× → ~4 GB. Stream from disk per batch. |
+| Online teacher inference doubles training step time (~3-5s teacher fwd + ~1.5s student step on RTX 4090) | Acceptable for Phase 4's 50K-step run (≈ 21 hr → 42 hr active training). Phase 1.5 ring-cache reclaims it later if needed. |
+| Teacher + student both on the same GPU could OOM at batch > 8 | Phase 3 smoke confirms VRAM headroom. Fallback: place teacher on a separate device or use `--device-teacher cpu` (slower but works on any host). |
 | Student forward+backward + KD has unmeasured CUDA bugs that only surface at scale | Phase 3 smoke catches anything that surfaces in the first 500 steps. Phase 4 has per-epoch sanity (val_loss monotone + checkpoint preserved). |
 | HumanEval pass@1 falls below 15% at end of Phase 4 → ship is blocked | Two-path fallback: (a) widen corpus per the P2-C lineage (4× corpus), retrain Phase 4 from scratch; (b) drop KD temperature from 4.0 → 2.0 to sharpen teacher distribution. Both add ~1 week each. |
 | KD loss is mathematically wrong or numerically unstable (e.g., logsumexp drift, FP16 overflow on KL) | Phase 2 unit test compares against a Python reference (PyTorch nn.KLDivLoss) within 1e-4 absolute error. |
@@ -173,4 +190,5 @@ This matches PMAT-683's "16-40h. Δship +10. P=25%" original estimate when scale
 
 ## Changelog
 
+- **1.1.0 (2026-05-18)** — Priority promoted to HIGH (PMAT-683 + PMAT-684 + new PMAT-691 elevated via `pmat work edit`). Phase 1 design revised from on-disk top-K cache to online teacher logits provider after the storage-math sanity check showed 1.24B tokens × 64 entries × 6 bytes ≈ 476 GB (exceeds available disk). The cache approach moves to Phase 1.5 as an optional ring-buffer optimization. Online-teacher decision matches DistilBERT/Distil-Qwen actual practice. Effort + compute totals updated accordingly.
 - **1.0.0 (2026-05-18)** — Initial publish. Scopes the 6-phase plan opening the distillation track that picks up MODEL-2 v2 from where the §88 stack-existence-proof ship left off.
