@@ -184,7 +184,7 @@ impl<'a> Pipeline<'a> {
         // the teacher provider instead) but we still load + drop it to
         // validate the teacher checkpoint is well-formed before training.
         let (_teacher_weights_validate, _teacher_shapes) = load_safetensors_weights(teacher_path)?;
-        let (mut student_weights, student_shapes) = load_safetensors_weights(student_path)?;
+        let (student_weights, student_shapes) = load_safetensors_weights(student_path)?;
 
         // Create distillation loss function
         let temperature = self.config.distillation.temperature;
