@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# SPEC-DISTILL-001 Phase 3 — 500-step E2E smoke run on gx10 (Blackwell GB10).
+# SPEC-DISTILL-001 Phase 3 - 500-step E2E smoke run on gx10 (Blackwell GB10).
 #
-# Falsifier: F-DISTILL-SMOKE-001 — val_loss at step 500 < step 0.
+# Falsifier: F-DISTILL-SMOKE-001 - val_loss at step 500 < step 0.
 #
 # Prerequisites
 # =============
@@ -11,7 +11,7 @@
 # 3. MODEL-1 teacher is cached on gx10 at
 #    ~/.cache/huggingface/hub/models--paiml--qwen2.5-coder-7b-apache-q4k-v1/
 #    (apr pull will fetch it if missing).
-# 4. HF_TOKEN exported in the local shell — propagated via ssh -A or
+# 4. HF_TOKEN exported in the local shell - propagated via ssh -A or
 #    explicit `ssh gx10 "export HF_TOKEN=...; ./run.sh"` patterns.
 #
 # Constraints
@@ -19,7 +19,7 @@
 # - gx10 is aarch64 + Blackwell (sm_121). The trueno backward path on
 #   Blackwell may hit the JIT pre-warming bug per memory rule
 #   `feedback_blackwell_jit_blocked_training.md`. Phase 3 specifically
-#   tolerates this — if the fused-NF4 path crashes, we fall back to the
+#   tolerates this - if the fused-NF4 path crashes, we fall back to the
 #   in-tree forward-only smoke (proves teacher + kd_step orchestration
 #   without weight updates) and document Phase 3a as partial.
 # - Real Phase 3 discharge of F-DISTILL-SMOKE-001 needs a working
@@ -119,30 +119,68 @@ echo "=== dispatching smoke run on gx10 ==="
 RUN_DIR_REMOTE="/mnt/nvme-raid0/runs/${RUN_NAME}"
 LOG_REMOTE="${RUN_DIR_REMOTE}/launch.log"
 
+# SPEC-DISTILL-001 Phase 3 dispatch - CLI-flag-aligned invocation (PMAT-698b).
+# The post-#1797 `apr distill` surface is:
+#   - positional <TEACHER>           (PathBuf - directory containing model.apr or model.safetensors)
+#   - --student <STUDENT>            (PathBuf - same shape)
+#   - --epochs <N>                   (no --num-steps; pipeline runs ~31 steps/epoch at default batch=32)
+#   - --temperature, --alpha, --backend cuda, --output <FILE>
+# Per evidence/distill-phase-3-readiness/findings.md, the earlier script used
+# aspirational flags (--num-steps/--batch-size/--learning-rate/--student-init/
+# --output-dir/--device) that do not exist on the post-Phase-3-prep CLI.
+#
+# Map the user-facing knobs to the real CLI:
+#   - STEPS=500 (default) → --epochs 17 (~527 steps at default batch=32)
+#   - BATCH_SIZE / LR are NOT yet exposed on the CLI; documented but unused
+#     here. A follow-up PMAT-698c adds --batch-size / --learning-rate / --max-steps.
+#   - TEACHER_REPO / STUDENT_INIT → resolved to ~/.cache/huggingface/hub snapshot
+#     dirs via shell expansion (apr pull populates the cache).
+
+EPOCHS_FROM_STEPS=$(( (STEPS + 30) / 31 ))  # round up: 500 → 17 epochs
+
 ssh "${GX10_USER}@${GX10_HOST}" "
     set -e
     mkdir -p '${RUN_DIR_REMOTE}'
     cd '${GX10_REPO_PATH}'
-    nohup ./target/release/apr distill \\
-        --teacher ${TEACHER_REPO} \\
-        --student-init ${STUDENT_INIT} \\
-        --num-steps ${STEPS} \\
-        --batch-size ${BATCH_SIZE} \\
-        --learning-rate ${LR} \\
+
+    # Resolve HF repo → local cache snapshot dir. The hub layout is
+    # models--<org>--<name>/snapshots/<sha>/, with one snapshot per pull.
+    hf_repo_to_dir() {
+        local repo=\"\$1\"
+        local sanitized=\"\${repo//\\//--}\"
+        local cache_root=\"\$HOME/.cache/huggingface/hub/models--\${sanitized}\"
+        ls -td \"\${cache_root}/snapshots/\"*/ 2>/dev/null | head -1 | sed 's:/\$::'
+    }
+    TEACHER_DIR=\$(hf_repo_to_dir '${TEACHER_REPO}')
+    STUDENT_DIR=\$(hf_repo_to_dir '${STUDENT_INIT}')
+    if [ -z \"\$TEACHER_DIR\" ] || [ ! -d \"\$TEACHER_DIR\" ]; then
+        echo \"teacher cache dir not found for '${TEACHER_REPO}' - apr pull failed?\" >&2
+        exit 1
+    fi
+    if [ -z \"\$STUDENT_DIR\" ] || [ ! -d \"\$STUDENT_DIR\" ]; then
+        echo \"student cache dir not found for '${STUDENT_INIT}' - apr pull failed?\" >&2
+        exit 1
+    fi
+    echo \"teacher dir: \$TEACHER_DIR\"
+    echo \"student dir: \$STUDENT_DIR\"
+
+    nohup ./target/release/apr distill \"\$TEACHER_DIR\" \\
+        --student \"\$STUDENT_DIR\" \\
+        --epochs ${EPOCHS_FROM_STEPS} \\
         --temperature ${T} \\
         --alpha ${ALPHA} \\
-        --output-dir '${RUN_DIR_REMOTE}' \\
-        --device cuda \\
+        --backend cuda \\
+        --output '${RUN_DIR_REMOTE}/student.apr' \\
         > '${LOG_REMOTE}' 2>&1 &
     DISPATCH_PID=\$!
     echo \"dispatched PID \${DISPATCH_PID}\"
     sleep 5
     if ! kill -0 \${DISPATCH_PID} 2>/dev/null; then
-        echo 'EARLY EXIT — capturing tail of log:' >&2
+        echo 'EARLY EXIT - capturing tail of log:' >&2
         tail -40 '${LOG_REMOTE}' >&2 || true
         exit 1
     fi
-    echo \"PID alive after 5s — training underway\"
+    echo \"PID alive after 5s - training underway\"
 "
 
 # --------------------------------------------------------------------------
@@ -152,7 +190,7 @@ mkdir -p "${EVIDENCE_DIR}"
 cat > "${EVIDENCE_DIR}/dispatch.json" <<JSON
 {
   "ticket": "PMAT-697",
-  "phase": "SPEC-DISTILL-001 Phase 3 — E2E smoke",
+  "phase": "SPEC-DISTILL-001 Phase 3 - E2E smoke",
   "falsifier": "F-DISTILL-SMOKE-001",
   "run_name": "${RUN_NAME}",
   "host": "${GX10_HOST}",
