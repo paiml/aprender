@@ -1,8 +1,8 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof (INDEX)
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 4.0.0 (split-into-three index)
-**Status:** Live — see per-model specs below for active content.
+**Version:** 4.1.0 (MODEL-2 §88 ship complete; SPEC-HF-PUBLISH-001 added)
+**Status:** Live — both MODEL-1 and MODEL-2 published. See SPEC-HF-PUBLISH-001 for the canonical workflow that future model publishes MUST follow.
 
 This document was split from a single 8,468-line spec at v3.28.0 into three companion files. The split preserves all original `§N` section markers verbatim so cross-references in git history, PR descriptions, memory files, and contracts remain valid.
 
@@ -11,7 +11,7 @@ This document was split from a single 8,468-line spec at v3.28.0 into three comp
 | Stable ID | Family name | Role | Size | HF artifact slug |
 |---|---|---|---|---|
 | **MODEL-1** | `aprender/qwen2.5-coder-7b-apache-q4k` | Distilled Apache-licensed Q4_K_M Qwen2.5-Coder-7B-Instruct teacher | 7B → 1.5B Q4_K_M | `paiml/qwen2.5-coder-7b-apache-q4k-v1` |
-| **MODEL-2** | `aprender/albor-370m` | Sovereign Python code completion student | 370M | (not yet published) |
+| **MODEL-2** | `aprender/albor-370m` | Sovereign Python code completion student (§88 stack-existence-proof) | 494M unique params (kept "370m" slug for continuity) | [`paiml/albor-370m-v1`](https://huggingface.co/paiml/albor-370m-v1) — **PUBLISHED 2026-05-18** |
 
 **Naming convention.** Family name uses the redistributor pattern established by Unsloth, Bartowski, TheBloke: `{org}/{base-name}-{license-tag}-{quant-tag}` where `{base-name}` is the upstream model for derivatives or the project codename for sovereign work. `aprender/` is the framework org prefix. Examples in the wild:
 
@@ -30,8 +30,9 @@ MODEL-1 / MODEL-2 are stable document IDs (numeric, preserved across renames) us
 | File | Scope | Status |
 |---|---|---|
 | [ship-model-1-spec.md](./ship-model-1-spec.md) | **aprender/qwen2.5-coder-7b-apache-q4k** (MODEL-1) — distilled 7B coder teacher | **🎉 100% — shipped via v0.33.0** |
-| [ship-model-2-spec.md](./ship-model-2-spec.md) | **aprender/albor-370m** (MODEL-2) — sovereign 370M Python student (historical record §5-§82) | **79% — best val_loss 4.71 (§82)** |
-| [**albor-370m-roadmap.md**](./albor-370m-roadmap.md) | **Active work spec** — forward-looking EV-ranked queue for MODEL-2 ship | **In flight — read this for what to do next** |
+| [ship-model-2-spec.md](./ship-model-2-spec.md) | **aprender/albor-370m** (MODEL-2) — sovereign 370M Python student | **🎉 100% — shipped via v0.34.0 at [paiml/albor-370m-v1](https://huggingface.co/paiml/albor-370m-v1)** (§88 stack-existence-proof; val_loss=4.6227 within compute-bounded target ≤4.7) |
+| [**model-hf-publish-pipeline-spec.md**](./model-hf-publish-pipeline-spec.md) | **SPEC-HF-PUBLISH-001** — canonical workflow for publishing any future model to HF Hub. Defines 12-file minimum, YAML schema, NDJSON-commit rule, LFS-batch flow, 12-tier crates.io cascade, three-path verification protocol | **Stable — first applied 2026-05-18 for MODEL-2 ship** |
+| [**albor-370m-roadmap.md**](./albor-370m-roadmap.md) | Forward-looking EV-ranked queue — used through MODEL-2's §88 ship; further iteration belongs to the distillation epic (PMAT-683/684) | Closed for MODEL-2 §88; reference for the distillation epic |
 | [ship-shared-methodology.md](./ship-shared-methodology.md) | Foundation (§1-§3, §6-§11, §13) + cross-cutting falsifiers (§18, §36, §41, §44, §45) | Stable |
 
 ## Repository lineage
