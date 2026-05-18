@@ -108,6 +108,206 @@ pub fn validate_pretrain_init_arch_compatible(cfg: &TransformerConfig) -> Result
     }
 }
 
+/// SPEC §86 / INV-INIT-ARCH-MATCH-001 — infer the family-arch slug from
+/// tensor names alone (no tensor data needed).
+///
+/// Mirrors the heavyweight `infer_architecture_from_names` in
+/// `aprender-core::format::converter::tokenizer_loader` but takes only
+/// names, so callers don't have to materialize the full F32 tensor map.
+/// Used by `validate_init_arch_matches_tensor_evidence` to catch the
+/// §86 case (Llama-stamped metadata + Qwen2-tensored APR) at the gate.
+///
+/// Returns one of: "qwen3", "qwen2", "llama", "mamba", "rwkv",
+/// "gpt-neox", "opt", "bert", "gpt2", "unknown".
+#[must_use]
+pub fn family_from_tensor_names<'a, I>(names: I) -> &'static str
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    // We iterate once but need to check multiple predicates; collect names
+    // into a Vec<&str> so the predicates can each scan independently. For
+    // an Qwen2-0.5B APR (~291 tensors) this is negligible.
+    let names: Vec<&str> = names.into_iter().collect();
+
+    let any_contains = |needle: &str| names.iter().any(|k| k.contains(needle));
+    let any_starts_with = |pfx: &str| names.iter().any(|k| k.starts_with(pfx));
+
+    // PMAT-546: Mamba (SSM)
+    if any_contains("mixer.in_proj") || any_contains("mixer.out_proj") {
+        return "mamba";
+    }
+    // PMAT-546: RWKV
+    if any_starts_with("rwkv.blocks.") || any_contains("blocks.0.att.") {
+        return "rwkv";
+    }
+    // GH-311: GPT-NeoX (must precede model.layers)
+    if any_starts_with("gpt_neox.") {
+        return "gpt-neox";
+    }
+    // GH-311: OPT
+    if any_starts_with("model.decoder.layers.") {
+        return "opt";
+    }
+    // GH-311: BERT
+    if any_starts_with("bert.") {
+        return "bert";
+    }
+    let has_model_layers = any_contains("model.layers");
+    let has_transformer_h = any_contains("transformer.h")
+        || names.iter().any(|k| k.starts_with("h.") && k.contains(".attn."));
+    let has_blk = any_contains("blk.");
+    if has_model_layers {
+        // Qwen3 — unique QK-norm signal
+        if any_contains("self_attn.q_norm.weight") {
+            return "qwen3";
+        }
+        // Qwen2 — distinguished from Llama by attention bias / fused QKV
+        if any_contains("self_attn.q_proj.bias") || any_contains("qkv_proj.weight") {
+            return "qwen2";
+        }
+        return "llama";
+    }
+    if has_transformer_h {
+        return "gpt2";
+    }
+    if has_blk {
+        return "unknown"; // GGUF-naming, can't disambiguate
+    }
+    "unknown"
+}
+
+/// SPEC §86 / INV-INIT-ARCH-MATCH-001 — normalize an APR metadata
+/// `architecture` string to the canonical family slug used by
+/// `family_from_tensor_names`.
+///
+/// Handles the three forms the field can take:
+///
+/// - **HF class name** (e.g., `"Qwen2ForCausalLM"`, `"LlamaForCausalLM"`)
+///   — the §82 P0-H fallback stamps this into the family field when
+///   `hf_architecture` is absent.
+/// - **Family slug** (e.g., `"qwen2"`, `"llama"`) — the canonical form
+///   from a properly-imported APR (post-P0-K).
+/// - **Capitalised legacy** (e.g., `"Qwen2"`, `"Llama"`) — older imports.
+///
+/// Returns `None` for `"unknown"` or unmappable strings — the caller
+/// should treat those as "no metadata claim" and skip the cross-check.
+#[must_use]
+pub fn normalize_metadata_arch_family(arch: &str) -> Option<&'static str> {
+    match arch {
+        // HF class names (P0-H §82 fallback stamps these into the family field)
+        "Qwen2ForCausalLM" | "Qwen2.5ForCausalLM" => Some("qwen2"),
+        "Qwen3ForCausalLM" | "Qwen3MoeForCausalLM" => Some("qwen3"),
+        "LlamaForCausalLM" => Some("llama"),
+        "MistralForCausalLM" => Some("llama"), // Mistral shares Llama tensor shape
+        "Phi3ForCausalLM" | "PhiForCausalLM" => Some("llama"), // Phi shares Llama family for our purposes
+        "GPT2LMHeadModel" => Some("gpt2"),
+        "GPTNeoXForCausalLM" => Some("gpt-neox"),
+        "MambaForCausalLM" => Some("mamba"),
+        "RwkvForCausalLM" | "Rwkv6ForCausalLM" => Some("rwkv"),
+        "BertModel" | "BertForMaskedLM" => Some("bert"),
+        "OPTForCausalLM" => Some("opt"),
+        // Family slugs (canonical / lowercase)
+        "qwen2" | "qwen2.5" | "qwen" => Some("qwen2"),
+        "qwen3" | "qwen3_5" | "qwen3.5" => Some("qwen3"),
+        "llama" | "mistral" | "phi" | "phi3" | "phi4" => Some("llama"),
+        "gpt2" => Some("gpt2"),
+        "gpt-neox" | "gpt_neox" | "gptneox" | "pythia" => Some("gpt-neox"),
+        "mamba" => Some("mamba"),
+        "rwkv" => Some("rwkv"),
+        "bert" => Some("bert"),
+        "opt" => Some("opt"),
+        // Capitalised legacy
+        "Qwen2" | "Qwen2.5" | "Qwen" => Some("qwen2"),
+        "Qwen3" => Some("qwen3"),
+        "Llama" | "Mistral" | "Phi" | "Phi3" | "Phi4" => Some("llama"),
+        "Gpt2" | "GPT2" => Some("gpt2"),
+        // Unknown / unmappable — caller should skip the cross-check
+        _ => None,
+    }
+}
+
+/// SPEC §86 / INV-INIT-ARCH-MATCH-001 — FAIL-FAST when an APR's
+/// metadata `architecture` claim contradicts what its tensor names imply.
+///
+/// This catches the §86 silent-failure case at the gate instead of at
+/// init eval: a pre-P0-K APR with `architecture = "LlamaForCausalLM"`
+/// (the §82 P0-H fallback) and Qwen2-style tensor names produces
+/// random-init training instead of resume-from-checkpoint, with
+/// val_loss at step 0 disagreeing with the init's recorded val_loss
+/// by orders of magnitude. The fix at the framework level is shipped
+/// via PR #1742 (P0-K stamping); this invariant prevents existing
+/// pre-P0-K artifacts from training silently from random init.
+///
+/// Discharges INV-INIT-ARCH-MATCH-001 in `contracts/apr-pretrain-from-init-v1.yaml`
+/// (forthcoming, scope-noted in SPEC §86.6).
+///
+/// # Errors
+///
+/// Returns Err with a clear naming-both-claims message when the
+/// metadata family slug differs from the tensor-evidence family slug.
+/// When the metadata claim is `"unknown"` (or doesn't parse to a known
+/// family) the gate is skipped — no false-positive on novel architectures.
+///
+/// # Salvage path
+///
+/// Operators with pre-P0-K Llama-stamped Qwen2 checkpoints can
+/// restamp the metadata in place via the §86.4 recipe:
+///
+/// ```ignore
+/// apr stamp <pre-p0k.apr> --architecture qwen2 --hf-architecture Qwen2ForCausalLM \
+///                          -o <stamped.apr>
+/// ```
+///
+/// See PR #1757 (apr stamp HF identity extension).
+pub fn validate_init_arch_matches_tensor_evidence(
+    metadata_arch: Option<&str>,
+    init_tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+) -> Result<(), String> {
+    // If the metadata claim is absent or unmappable, we have no claim to
+    // contradict — skip the cross-check (a novel arch is not §86's case).
+    let Some(metadata_family) = metadata_arch.and_then(normalize_metadata_arch_family) else {
+        return Ok(());
+    };
+
+    let tensor_family = family_from_tensor_names(init_tensors.keys().map(String::as_str));
+
+    // If tensor inference returns "unknown" (e.g., GGUF blk.* names that
+    // can't be disambiguated), we trust the metadata claim. Only fail
+    // when BOTH inferences produce concrete family slugs AND they differ.
+    if tensor_family == "unknown" {
+        return Ok(());
+    }
+
+    if metadata_family != tensor_family {
+        return Err(format!(
+            "FALSIFY-INIT-ARCH-MATCH-001: --init APR metadata claims architecture \
+             family `{metadata_family}` (from `{}`) but tensor naming implies \
+             family `{tensor_family}`. This is the SPEC §86 silent-failure pattern: \
+             pre-P0-K APRs with the §82 P0-H \"LlamaForCausalLM\" fallback stamp + \
+             Qwen2 tensors load as random-init and train from scratch. Salvage with \
+             `apr stamp <input.apr> --architecture {tensor_family} --hf-architecture \
+             {} -o <stamped.apr>` (see PR #1757 / SPEC §86.4) then re-run \
+             `apr pretrain --init <stamped.apr>`.",
+            metadata_arch.unwrap_or("?"),
+            // Synthesize the canonical HF class name from the tensor-evidence family
+            match tensor_family {
+                "qwen2" => "Qwen2ForCausalLM",
+                "qwen3" => "Qwen3ForCausalLM",
+                "llama" => "LlamaForCausalLM",
+                "gpt2" => "GPT2LMHeadModel",
+                "gpt-neox" => "GPTNeoXForCausalLM",
+                "mamba" => "MambaForCausalLM",
+                "rwkv" => "RwkvForCausalLM",
+                "bert" => "BertModel",
+                "opt" => "OPTForCausalLM",
+                other => other,
+            }
+        ));
+    }
+
+    Ok(())
+}
+
 /// Populate a `Transformer`'s parameters from an `init_tensors` BTreeMap.
 ///
 /// For each parameter the `Transformer` exposes via `named_parameters()`, look
@@ -433,10 +633,43 @@ pub fn build_shared_trainer_with_init(
 
     if let Some(path) = init_path {
         let tensors = load_init_tensors_from_apr(path)?;
+        // SPEC §86 / INV-INIT-ARCH-MATCH-001 — fail-fast on the §86
+        // silent-failure pattern (pre-P0-K APR with wrong arch stamp +
+        // mismatched tensor names → random-init fallback at val_loss ≈ 8.6).
+        // Read the raw metadata.architecture string here (init_arch.hf_architecture
+        // is None for pre-P0-K APRs, which is precisely the §86 case — so the
+        // TransformerConfig isn't sufficient).
+        let raw_metadata_arch = read_apr_metadata_architecture_string(path);
+        validate_init_arch_matches_tensor_evidence(raw_metadata_arch.as_deref(), &tensors)?;
         populate_trainer_from_init_tensors(trainer.model_mut(), &tensors)?;
     }
 
     Ok(Rc::new(RefCell::new(trainer)))
+}
+
+/// SPEC §86 helper — read the raw `architecture` string from an APR v2
+/// metadata block without going through `transformer_config_from_apr_metadata`
+/// (which converts to a `ModelArchitecture` enum and loses the original
+/// string). Used by INV-INIT-ARCH-MATCH-001 to detect the §86 case where
+/// the metadata claims "LlamaForCausalLM" but the tensors are Qwen2-shaped.
+///
+/// Returns `None` on any read / parse failure — the gate caller treats
+/// "no metadata claim" as "skip check" so this is safe.
+fn read_apr_metadata_architecture_string(path: &Path) -> Option<String> {
+    use aprender::format::v2::{AprV2Header, AprV2Metadata, HEADER_SIZE_V2, MAGIC_V2};
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut header_buf = [0u8; HEADER_SIZE_V2];
+    file.read_exact(&mut header_buf).ok()?;
+    if header_buf[..4] != MAGIC_V2 {
+        return None;
+    }
+    let header = AprV2Header::from_bytes(&header_buf).ok()?;
+    file.seek(SeekFrom::Start(header.metadata_offset)).ok()?;
+    let mut meta_buf = vec![0u8; header.metadata_size as usize];
+    file.read_exact(&mut meta_buf).ok()?;
+    let metadata = AprV2Metadata::from_json(&meta_buf).ok()?;
+    metadata.architecture
 }
 
 #[cfg(test)]
@@ -1136,5 +1369,155 @@ mod tests {
             "FALSIFY-H4-CPU-FORWARD-001: argmax_idx={argmax_idx} >= vocab_size={}",
             cfg.vocab_size
         );
+    }
+
+    // ========================================================================
+    // SPEC §86 / INV-INIT-ARCH-MATCH-001 unit tests — arch-mismatch fail-fast
+    // ========================================================================
+
+    fn qwen2_tensor_names() -> BTreeMap<String, (Vec<f32>, Vec<usize>)> {
+        // Minimal Qwen2 signature: model.layers + self_attn.q_proj.bias (distinguishes from Llama)
+        let mut m = BTreeMap::new();
+        m.insert(
+            "model.layers.0.self_attn.q_proj.bias".to_string(),
+            (vec![0.0_f32; 4], vec![4]),
+        );
+        m.insert(
+            "model.layers.0.self_attn.q_proj.weight".to_string(),
+            (vec![0.0_f32; 16], vec![4, 4]),
+        );
+        m
+    }
+
+    fn llama_tensor_names() -> BTreeMap<String, (Vec<f32>, Vec<usize>)> {
+        // Llama signature: model.layers + NO attention bias + NO qkv_proj
+        let mut m = BTreeMap::new();
+        m.insert(
+            "model.layers.0.self_attn.q_proj.weight".to_string(),
+            (vec![0.0_f32; 16], vec![4, 4]),
+        );
+        m.insert(
+            "model.layers.0.input_layernorm.weight".to_string(),
+            (vec![1.0_f32; 4], vec![4]),
+        );
+        m
+    }
+
+    /// SPEC §86 INV-INIT-ARCH-MATCH-001: the canonical §86 case — APR
+    /// metadata claims "LlamaForCausalLM" (§82 P0-H fallback) but tensors
+    /// are Qwen2-shaped (have q_proj.bias). MUST fail with the falsifier ID.
+    #[test]
+    fn inv_init_arch_match_001_rejects_llama_stamped_qwen2_tensors() {
+        let tensors = qwen2_tensor_names();
+        let err = validate_init_arch_matches_tensor_evidence(Some("LlamaForCausalLM"), &tensors)
+            .expect_err("§86 case MUST be rejected");
+        assert!(
+            err.contains("FALSIFY-INIT-ARCH-MATCH-001"),
+            "error must cite falsifier id; got: {err}"
+        );
+        assert!(
+            err.contains("llama") && err.contains("qwen2"),
+            "error must name both claimed and inferred families; got: {err}"
+        );
+        assert!(
+            err.contains("apr stamp"),
+            "error must include the §86.4 salvage recipe; got: {err}"
+        );
+    }
+
+    /// SPEC §86: the inverse — metadata claims "Qwen2ForCausalLM" but
+    /// tensors are Llama-shaped (no q_proj.bias). MUST fail.
+    #[test]
+    fn inv_init_arch_match_001_rejects_qwen2_stamped_llama_tensors() {
+        let tensors = llama_tensor_names();
+        let err = validate_init_arch_matches_tensor_evidence(Some("Qwen2ForCausalLM"), &tensors)
+            .expect_err("inverse §86 case MUST be rejected");
+        assert!(err.contains("FALSIFY-INIT-ARCH-MATCH-001"));
+        assert!(err.contains("qwen2") && err.contains("llama"));
+    }
+
+    /// SPEC §86: matching family slug + Qwen2 tensors — must PASS (no false-positive).
+    #[test]
+    fn inv_init_arch_match_001_accepts_matching_qwen2() {
+        let tensors = qwen2_tensor_names();
+        validate_init_arch_matches_tensor_evidence(Some("Qwen2ForCausalLM"), &tensors)
+            .expect("matching qwen2 + qwen2 must pass");
+        validate_init_arch_matches_tensor_evidence(Some("qwen2"), &tensors)
+            .expect("matching qwen2 slug + qwen2 tensors must pass");
+    }
+
+    /// SPEC §86: matching family slug + Llama tensors — must PASS.
+    #[test]
+    fn inv_init_arch_match_001_accepts_matching_llama() {
+        let tensors = llama_tensor_names();
+        validate_init_arch_matches_tensor_evidence(Some("LlamaForCausalLM"), &tensors)
+            .expect("matching llama + llama must pass");
+        validate_init_arch_matches_tensor_evidence(Some("llama"), &tensors)
+            .expect("matching llama slug + llama tensors must pass");
+    }
+
+    /// SPEC §86: None metadata claim — skip the check (no false-positive
+    /// on novel architectures).
+    #[test]
+    fn inv_init_arch_match_001_skips_when_metadata_absent() {
+        let tensors = qwen2_tensor_names();
+        validate_init_arch_matches_tensor_evidence(None, &tensors)
+            .expect("absent metadata claim must skip check");
+    }
+
+    /// SPEC §86: unknown family in metadata (e.g., "weird-novel-arch") —
+    /// skip the check.
+    #[test]
+    fn inv_init_arch_match_001_skips_unmappable_metadata() {
+        let tensors = qwen2_tensor_names();
+        validate_init_arch_matches_tensor_evidence(Some("WeirdNovelArchForCausalLM"), &tensors)
+            .expect("unmappable metadata MUST skip check (no false-positive on novel arch)");
+    }
+
+    /// SPEC §86: GGUF-style tensor names (blk.*) — inference returns
+    /// "unknown" and we trust the metadata claim. Must not fail.
+    #[test]
+    fn inv_init_arch_match_001_trusts_metadata_when_tensors_unknown() {
+        let mut tensors = BTreeMap::new();
+        tensors.insert(
+            "blk.0.attn_q.weight".to_string(),
+            (vec![0.0_f32; 16], vec![4, 4]),
+        );
+        // GGUF names can't disambiguate; we trust the metadata.
+        validate_init_arch_matches_tensor_evidence(Some("LlamaForCausalLM"), &tensors)
+            .expect("unknown tensor family must skip check (trust metadata)");
+    }
+
+    /// Spec §86 helper test: family_from_tensor_names correctly
+    /// distinguishes Qwen2 from Llama by the attention-bias signal.
+    #[test]
+    fn family_from_tensor_names_distinguishes_qwen2_from_llama() {
+        let qwen2: Vec<&str> = vec![
+            "model.layers.0.self_attn.q_proj.weight",
+            "model.layers.0.self_attn.q_proj.bias", // bias = Qwen2 signature
+        ];
+        assert_eq!(family_from_tensor_names(qwen2.iter().copied()), "qwen2");
+
+        let llama: Vec<&str> = vec![
+            "model.layers.0.self_attn.q_proj.weight",
+            "model.layers.0.input_layernorm.weight",
+        ];
+        assert_eq!(family_from_tensor_names(llama.iter().copied()), "llama");
+    }
+
+    /// Spec §86: normalize_metadata_arch_family handles all three input forms.
+    #[test]
+    fn normalize_metadata_arch_family_handles_three_forms() {
+        // Class name (P0-H fallback)
+        assert_eq!(normalize_metadata_arch_family("Qwen2ForCausalLM"), Some("qwen2"));
+        assert_eq!(normalize_metadata_arch_family("LlamaForCausalLM"), Some("llama"));
+        // Family slug (canonical)
+        assert_eq!(normalize_metadata_arch_family("qwen2"), Some("qwen2"));
+        assert_eq!(normalize_metadata_arch_family("llama"), Some("llama"));
+        // Capitalised legacy
+        assert_eq!(normalize_metadata_arch_family("Qwen2"), Some("qwen2"));
+        // Unknown
+        assert_eq!(normalize_metadata_arch_family("unknown"), None);
+        assert_eq!(normalize_metadata_arch_family("WeirdNovelArch"), None);
     }
 }
