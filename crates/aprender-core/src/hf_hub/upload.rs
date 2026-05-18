@@ -464,6 +464,48 @@ impl HfHubClient {
         }
     }
 
+    /// PMAT-690 P3-C-prep defect 6 (2026-05-18): public LFS-alias commit.
+    ///
+    /// Emits an NDJSON commit that adds a new filename pointing at an
+    /// already-uploaded LFS object identified by `sha256` + `file_size`.
+    /// HF deduplicates LFS blobs by OID — the same bytes back both paths
+    /// at zero storage cost. Used by `apr publish` to auto-emit a
+    /// `model.safetensors` alias next to a descriptive-named SafeTensors
+    /// export so HF Transformers `AutoModelForCausalLM.from_pretrained`
+    /// can auto-discover the weights.
+    ///
+    /// # Errors
+    ///
+    /// Returns `HfHubError::MissingToken` when `HF_TOKEN` is not set.
+    /// Propagates the underlying NDJSON commit error otherwise.
+    #[cfg(feature = "hf-hub-integration")]
+    pub fn commit_lfs_alias(
+        &self,
+        repo_id: &str,
+        alias_filename: &str,
+        sha256: &str,
+        file_size: usize,
+        commit_msg: &str,
+    ) -> Result<()> {
+        let token = self.token.as_ref().ok_or(HfHubError::MissingToken)?;
+        self.commit_lfs_pointer(repo_id, alias_filename, sha256, file_size, commit_msg, token)
+    }
+
+    /// Stub when feature is disabled.
+    #[cfg(not(feature = "hf-hub-integration"))]
+    pub fn commit_lfs_alias(
+        &self,
+        _repo_id: &str,
+        _alias_filename: &str,
+        _sha256: &str,
+        _file_size: usize,
+        _commit_msg: &str,
+    ) -> Result<()> {
+        Err(HfHubError::NetworkError(
+            "commit_lfs_alias requires the hf-hub-integration feature".to_string(),
+        ))
+    }
+
     /// Abort with a precise error when the Xet transfer path is needed but
     /// not compiled in.
     ///
