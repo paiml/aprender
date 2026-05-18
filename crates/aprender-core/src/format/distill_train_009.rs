@@ -276,7 +276,7 @@ mod tests {
             (1.0, DistillTrain009Verdict::Pass),
             (8.0, DistillTrain009Verdict::Pass),
             (8.999, DistillTrain009Verdict::Pass),
-            (9.0, DistillTrain009Verdict::Fail),    // exact tie
+            (9.0, DistillTrain009Verdict::Fail), // exact tie
             (9.001, DistillTrain009Verdict::Fail),
             (10.0, DistillTrain009Verdict::Fail),
             (50.0, DistillTrain009Verdict::Fail),

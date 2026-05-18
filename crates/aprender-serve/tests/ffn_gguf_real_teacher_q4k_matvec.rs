@@ -64,8 +64,7 @@ const ANOMALY_LAYER: usize = 3;
 #[ignore]
 fn falsify_ffn_gguf_014_real_teacher_q4k_matvec_a5_test() {
     use realizar::quantize::{
-        dequantize_q4_k_simd, fused_q4k_q8k_parallel_matvec_into,
-        quantize_activations_q8k_into,
+        dequantize_q4_k_simd, fused_q4k_q8k_parallel_matvec_into, quantize_activations_q8k_into,
     };
 
     let Some(apr_path) = CANONICAL_QWEN25_CODER_7B_APR_PATHS
@@ -103,7 +102,11 @@ fn falsify_ffn_gguf_014_real_teacher_q4k_matvec_a5_test() {
         .expect("ffn_down_weight is None at layer 3 — may be Q6_K instead");
 
     eprintln!("  layer-{ANOMALY_LAYER} ffn_down_weight:");
-    eprintln!("    bytes:  {} ({} KB)", raw_bytes.len(), raw_bytes.len() / 1024);
+    eprintln!(
+        "    bytes:  {} ({} KB)",
+        raw_bytes.len(),
+        raw_bytes.len() / 1024
+    );
 
     // Q4K super-block size = 256 elements / 144 bytes.
     // For down_proj [hidden_dim=4096, intermediate_dim=11008]:
@@ -156,12 +159,14 @@ fn falsify_ffn_gguf_014_real_teacher_q4k_matvec_a5_test() {
     // Block-scale info: read f16 d directly from bytes to log magnitude.
     let d_f16 = u16::from_le_bytes([super_block_bytes[0], super_block_bytes[1]]);
     let d_f32 = half::f16::from_bits(d_f16).to_f32();
-    let dmin_f16 =
-        u16::from_le_bytes([super_block_bytes[2], super_block_bytes[3]]);
+    let dmin_f16 = u16::from_le_bytes([super_block_bytes[2], super_block_bytes[3]]);
     let dmin_f32 = half::f16::from_bits(dmin_f16).to_f32();
 
     // Stats on dequantized F32 weights.
-    let weight_max = weights_f32.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let weight_max = weights_f32
+        .iter()
+        .copied()
+        .fold(f32::NEG_INFINITY, f32::max);
     let weight_min = weights_f32.iter().copied().fold(f32::INFINITY, f32::min);
     let weight_l2: f32 = weights_f32.iter().map(|x| x * x).sum::<f32>().sqrt();
 

@@ -394,6 +394,8 @@ excessive_precision = "allow"  # ML test data needs precise values
 format_push_string = "allow"  # String building style preference
 if_not_else = "allow"  # Style preference
 manual_contains = "allow"  # Explicit iteration sometimes clearer
+manual_is_multiple_of = "allow"  # Rust 1.93 new lint — pre-existing `% N == 0` patterns in aprender-test-lib and others; bulk cleanup deferred to a focused PR
+format_in_format_args = "allow"  # Rust 1.93 new lint — `format!()` inside `eprintln!()` etc. is idiomatic in debug logging
 match_same_arms = "allow"  # Explicit matching for future-proofing
 needless_borrows_for_generic_args = "allow"  # Style preference
 needless_raw_string_hashes = "allow"  # Style preference

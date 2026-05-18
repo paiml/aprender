@@ -20,8 +20,12 @@ fn write_body(body: &serde_json::Value) -> tempfile::NamedTempFile {
         .suffix(".json")
         .tempfile()
         .expect("tempfile");
-    f.write_all(serde_json::to_vec_pretty(body).expect("serialize").as_slice())
-        .expect("write");
+    f.write_all(
+        serde_json::to_vec_pretty(body)
+            .expect("serialize")
+            .as_slice(),
+    )
+    .expect("write");
     f.flush().expect("flush");
     f
 }
@@ -42,7 +46,10 @@ fn good_trace() -> serde_json::Value {
 
 #[test]
 fn falsify_crux_f_07_cli_help_advertises_trace_file() {
-    let out = apr_binary().args(["gpu-memtrace-lint", "--help"]).output().expect("run");
+    let out = apr_binary()
+        .args(["gpu-memtrace-lint", "--help"])
+        .output()
+        .expect("run");
     assert!(out.status.success(), "--help must exit 0");
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
@@ -54,7 +61,11 @@ fn falsify_crux_f_07_cli_help_advertises_trace_file() {
 #[test]
 fn falsify_crux_f_07_cli_missing_file_fails() {
     let out = apr_binary()
-        .args(["gpu-memtrace-lint", "--trace-file", "/nonexistent/crux-f-07-missing.json"])
+        .args([
+            "gpu-memtrace-lint",
+            "--trace-file",
+            "/nonexistent/crux-f-07-missing.json",
+        ])
         .output()
         .expect("run");
     assert!(!out.status.success(), "missing file must not exit 0");
@@ -234,6 +245,12 @@ fn falsify_crux_f_07_json_output_contains_outcomes() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("json output must parse");
     assert!(parsed["schema"].as_str().expect("schema").contains("Ok"));
-    assert!(parsed["alloc_free_pairing"].as_str().expect("pairing").contains("Ok"));
-    assert!(parsed["monotonic_timestamps"].as_str().expect("ts").contains("Ok"));
+    assert!(parsed["alloc_free_pairing"]
+        .as_str()
+        .expect("pairing")
+        .contains("Ok"));
+    assert!(parsed["monotonic_timestamps"]
+        .as_str()
+        .expect("ts")
+        .contains("Ok"));
 }

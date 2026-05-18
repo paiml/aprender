@@ -78,9 +78,8 @@ const CANONICAL_QWEN25_CODER_7B_APR_PATHS: &[&str] = &[
     "/mnt/nvme-raid0/cache/apr-home/models/qwen2.5-coder-7b-apache-q4k-v1.apr",
 ];
 
-const CANONICAL_QWEN25_CODER_7B_GGUF_PATHS: &[&str] = &[
-    "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.gguf",
-];
+const CANONICAL_QWEN25_CODER_7B_GGUF_PATHS: &[&str] =
+    &["/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.gguf"];
 
 /// Layer 3 is the §21 narrowed anomaly site (ffn_swigl std = 1.222 vs
 /// layer-2 baseline 0.071 — 17.2× spike).
@@ -164,7 +163,6 @@ fn falsify_ffn_gguf_003_layer_3_swigl_h1_h2_bisection() {
         "model has fewer layers than ANOMALY_LAYER ({ANOMALY_LAYER}); got {n_layers}"
     );
 
-
     // M-FFN-GGUF-5 (2026-05-07): GGUF's `forward_traced` only captures stats
     // on the LAST token (Phase 2 inlines the last-token-only orchestrator);
     // APR's `forward_traced` captures stats across ALL tokens. To compare
@@ -187,9 +185,7 @@ fn falsify_ffn_gguf_003_layer_3_swigl_h1_h2_bisection() {
         } else {
             f32::NAN
         };
-        eprintln!(
-            "L{layer_idx:02}   | {apr_std:>20.6} | {gguf_std:>20.6} | {ratio:>16.4}"
-        );
+        eprintln!("L{layer_idx:02}   | {apr_std:>20.6} | {gguf_std:>20.6} | {ratio:>16.4}");
         if layer_idx == ANOMALY_LAYER {
             anomaly_ratio = Some(ratio);
         }

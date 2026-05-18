@@ -82,7 +82,10 @@ fn falsify_cliparity_01_audio_extension_dispatched_to_whisper() {
     // with a Whisper-specific error message (proving the audio branch
     // took it). A non-audio input would instead route to realizar and
     // produce a different error.
-    let dir = tempfile::Builder::new().prefix("crux-575-wav-").tempdir().expect("tempdir");
+    let dir = tempfile::Builder::new()
+        .prefix("crux-575-wav-")
+        .tempdir()
+        .expect("tempdir");
     let wav = dir.path().join("input.wav");
     write_test_wav(&wav, 440.0, 1_600); // 0.1s of A4
 
@@ -110,7 +113,10 @@ fn falsify_cliparity_01_audio_extension_dispatched_to_whisper() {
 fn falsify_cliparity_01_synthetic_wav_decodes_to_samples() {
     use whisper_apr::audio::decode::load_audio_file;
 
-    let dir = tempfile::Builder::new().prefix("crux-575-decode-").tempdir().expect("tempdir");
+    let dir = tempfile::Builder::new()
+        .prefix("crux-575-decode-")
+        .tempdir()
+        .expect("tempdir");
     let wav = dir.path().join("sine.wav");
     write_test_wav(&wav, 440.0, 16_000); // 1s of A4 at 16kHz
 
@@ -134,7 +140,10 @@ fn falsify_cliparity_01_synthetic_wav_decodes_to_samples() {
 fn falsify_cliparity_01_unsupported_audio_format_errors() {
     use whisper_apr::audio::decode::load_audio_file;
 
-    let dir = tempfile::Builder::new().prefix("crux-575-bad-").tempdir().expect("tempdir");
+    let dir = tempfile::Builder::new()
+        .prefix("crux-575-bad-")
+        .tempdir()
+        .expect("tempdir");
     let bogus = dir.path().join("not_audio.wav");
     fs::write(&bogus, b"this is not a wav file").expect("write");
 
@@ -176,7 +185,10 @@ fn falsify_cliparity_01_full_e2e_round_trip() {
                 .arg(&out)
                 .status()
                 .expect("run apr import");
-            assert!(status.success(), "apr import hf://openai/whisper-tiny failed");
+            assert!(
+                status.success(),
+                "apr import hf://openai/whisper-tiny failed"
+            );
             // Leak the tempdir so the file stays alive for transcribe below.
             std::mem::forget(dir);
             out
@@ -184,7 +196,10 @@ fn falsify_cliparity_01_full_e2e_round_trip() {
     };
 
     // Phase 2: write a 1s sine wav and transcribe.
-    let dir = tempfile::Builder::new().prefix("crux-575-input-").tempdir().expect("tempdir");
+    let dir = tempfile::Builder::new()
+        .prefix("crux-575-input-")
+        .tempdir()
+        .expect("tempdir");
     let wav = dir.path().join("sine.wav");
     write_test_wav(&wav, 440.0, 16_000);
 
