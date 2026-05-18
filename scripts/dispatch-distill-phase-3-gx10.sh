@@ -168,9 +168,11 @@ ssh "${GX10_USER}@${GX10_HOST}" "
     mkdir -p '${RUN_DIR_REMOTE}'
     cd '${GX10_REPO_PATH}'
 
-    # PMAT-698d: stage pacha-cached repo into a directory layout that
-    # CudaTrainerTeacher::for_inference expects (model.apr or model.safetensors
-    # at the dir root). Captures the cache path from \`apr pull\` stdout.
+    # PMAT-698d: stage pacha-cached repo into the layout the cuda backend
+    # actually wants. apr distill --backend cuda reads teacher_path AS A FILE
+    # (std::fs::read + AprV2Reader::from_bytes) and uses its parent dir for
+    # for_inference(). So we always need an APR v2 file at \$stage_dir/model.apr,
+    # whether the source was .apr / .safetensors / .gguf.
     stage_repo() {
         local repo=\"\$1\"
         local stage_dir=\"\$2\"
@@ -190,16 +192,18 @@ ssh "${GX10_USER}@${GX10_HOST}" "
         sha=\$(basename \"\$cache_path\" \".\$ext\")
         local cache_dir
         cache_dir=\$(dirname \"\$cache_path\")
+        local target=\"\$stage_dir/model.apr\"
         case \"\$ext\" in
-            safetensors)
-                ln -sf \"\$cache_path\" \"\$stage_dir/model.safetensors\"
-                ;;
             apr)
-                ln -sf \"\$cache_path\" \"\$stage_dir/model.apr\"
+                ln -sf \"\$cache_path\" \"\$target\"
+                ;;
+            safetensors)
+                echo \"SafeTensors detected for \$repo - converting to APR via apr import (--arch \$arch_hint)\" >&2
+                ./target/release/apr import \"\$cache_path\" --arch \"\$arch_hint\" -o \"\$target\" >&2
                 ;;
             gguf)
-                echo \"GGUF detected for \$repo - converting to APR via apr import (--arch \$arch_hint)\" >&2
-                ./target/release/apr import \"\$cache_path\" --arch \"\$arch_hint\" --preserve-q4k -o \"\$stage_dir/model.apr\" >&2
+                echo \"GGUF detected for \$repo - converting to APR via apr import (--arch \$arch_hint --preserve-q4k)\" >&2
+                ./target/release/apr import \"\$cache_path\" --arch \"\$arch_hint\" --preserve-q4k -o \"\$target\" >&2
                 ;;
             *)
                 echo \"unknown model file extension: \$ext (cache_path=\$cache_path)\" >&2
@@ -212,23 +216,25 @@ ssh "${GX10_USER}@${GX10_HOST}" "
                 ln -sf \"\$src\" \"\$stage_dir/\${companion}\"
             fi
         done
-        echo \"staged \$repo -> \$stage_dir\" >&2
+        echo \"staged \$repo -> \$target\" >&2
     }
 
     TEACHER_DIR=\"${RUN_DIR_REMOTE}/teacher\"
     STUDENT_DIR=\"${RUN_DIR_REMOTE}/student\"
     stage_repo '${TEACHER_REPO}' \"\$TEACHER_DIR\" qwen2
     stage_repo '${STUDENT_INIT}' \"\$STUDENT_DIR\" qwen2
-    echo \"teacher dir: \$TEACHER_DIR\"
-    echo \"student dir: \$STUDENT_DIR\"
+    TEACHER_APR=\"\$TEACHER_DIR/model.apr\"
+    STUDENT_APR=\"\$STUDENT_DIR/model.apr\"
+    echo \"teacher: \$TEACHER_APR\"
+    echo \"student: \$STUDENT_APR\"
 
-    nohup ./target/release/apr distill \"\$TEACHER_DIR\" \\
-        --student \"\$STUDENT_DIR\" \\
+    nohup ./target/release/apr distill \"\$TEACHER_APR\" \\
+        --student \"\$STUDENT_APR\" \\
         --epochs ${EPOCHS_FROM_STEPS} \\
         --temperature ${T} \\
         --alpha ${ALPHA} \\
         --backend cuda \\
-        --output '${RUN_DIR_REMOTE}/student.apr' \\
+        --output '${RUN_DIR_REMOTE}/student-trained.apr' \\
         > '${LOG_REMOTE}' 2>&1 &
     DISPATCH_PID=\$!
     echo \"dispatched PID \${DISPATCH_PID}\"
