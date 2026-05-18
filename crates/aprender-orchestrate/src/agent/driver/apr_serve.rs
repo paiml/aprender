@@ -30,6 +30,9 @@ pub struct AprServeDriver {
     _child: Child,
     /// Context window size
     context_window_size: usize,
+    /// Model file size in bytes (used to scale the startup-ready timeout
+    /// for large MoE GGUFs). `None` if stat failed at launch time.
+    model_size_bytes: Option<u64>,
 }
 
 impl Drop for AprServeDriver {
@@ -117,11 +120,14 @@ impl AprServeDriver {
 
         eprintln!("Launched apr serve on port {port} (pid {})", child.id());
 
+        let model_size_bytes = std::fs::metadata(&model_path).ok().map(|m| m.len());
+
         let mut driver = Self {
             base_url,
             model_name,
             _child: child,
             context_window_size: context_window.unwrap_or(4096),
+            model_size_bytes,
         };
 
         // Wait for server to be ready
@@ -130,22 +136,35 @@ impl AprServeDriver {
         Ok(driver)
     }
 
-    /// Poll health endpoint until server is ready (max 30s).
+    /// Poll health endpoint until server is ready.
+    ///
+    /// Default budget is 30 seconds — fine for small models that mmap and
+    /// validate in <5s. Large MoE GGUFs (e.g., Qwen3-Coder-30B at 18.5 GB)
+    /// can exceed 30s on cold-cache loads, so the budget is overridable
+    /// via `APR_SERVE_READY_TIMEOUT_S` (an integer count of seconds).
+    /// The default also auto-scales by model file size when the model
+    /// is known: +1 second per 500 MB above 2 GB (e.g., an 18 GB model
+    /// gets ~62s budget; a 1 GB model gets the 30s baseline).
     ///
     /// PMAT-171: Detects subprocess death during startup. On timeout or crash,
     /// reads stderr from the child process for actionable debug output.
+    ///
+    /// PR #1781: Configurable timeout + size-aware default.
     fn wait_for_ready(&mut self) -> Result<(), AgentError> {
         let addr = self.base_url.trim_start_matches("http://").to_string();
         let sock_addr: std::net::SocketAddr =
             addr.parse().unwrap_or_else(|_| std::net::SocketAddr::from(([127, 0, 0, 1], 19384)));
 
+        let timeout_secs = self.resolve_ready_timeout_secs();
         let start = std::time::Instant::now();
-        let timeout = std::time::Duration::from_secs(30);
+        let timeout = std::time::Duration::from_secs(timeout_secs);
 
         loop {
             if start.elapsed() > timeout {
                 let stderr = self.drain_stderr();
-                let mut msg = "apr serve did not become ready within 30s".to_string();
+                let mut msg = format!(
+                    "apr serve did not become ready within {timeout_secs}s (override via APR_SERVE_READY_TIMEOUT_S)"
+                );
                 if !stderr.is_empty() {
                     msg.push_str(&format!("\nsubprocess stderr:\n{stderr}"));
                 }
@@ -178,6 +197,16 @@ impl AprServeDriver {
 
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
+    }
+
+    /// Resolve the startup-ready timeout in seconds.
+    ///
+    /// Reads `APR_SERVE_READY_TIMEOUT_S` from the env (operator override)
+    /// and falls back to a size-aware default. See
+    /// [`compute_ready_timeout_secs`] for the resolution rules + unit tests.
+    fn resolve_ready_timeout_secs(&self) -> u64 {
+        let env_override = std::env::var("APR_SERVE_READY_TIMEOUT_S").ok();
+        compute_ready_timeout_secs(self.model_size_bytes, env_override.as_deref())
     }
 
     /// Read available stderr from the child process (non-blocking, last 2KB).
@@ -262,6 +291,46 @@ impl AprServeDriver {
             "stream": false
         })
     }
+}
+
+/// Compute the startup-ready timeout in seconds for `apr serve`.
+///
+/// Resolution order:
+/// 1. If `env_override` parses as a `u64`, use it verbatim (operator
+///    override; minimum 1s clamp via `.max(1)`).
+/// 2. Otherwise compute a size-aware default: 30s baseline + 1s per
+///    500 MB above 2 GB. A 1 GB model gets 30s; a 4 GB model gets ~34s;
+///    an 18 GB model gets ~62s; a 30 GB model gets ~86s.
+/// 3. If model size is unknown (stat failed at launch), fall back to
+///    30s baseline.
+///
+/// Always returns at least `MIN_TIMEOUT_S = 1` to avoid the pathological
+/// 0-second budget case.
+///
+/// Extracted as a free function so the resolution logic is unit-testable
+/// without spawning a subprocess. Called from
+/// [`AprServeDriver::resolve_ready_timeout_secs`] with the live env.
+#[must_use]
+pub fn compute_ready_timeout_secs(
+    model_size_bytes: Option<u64>,
+    env_override: Option<&str>,
+) -> u64 {
+    const MIN_TIMEOUT_S: u64 = 1;
+    const BASELINE_S: u64 = 30;
+    const SIZE_FREE_BYTES: u64 = 2 * 1024 * 1024 * 1024; // 2 GB
+    const BYTES_PER_EXTRA_SECOND: u64 = 500 * 1024 * 1024; // 500 MB
+
+    if let Some(raw) = env_override {
+        if let Ok(n) = raw.parse::<u64>() {
+            return n.max(MIN_TIMEOUT_S);
+        }
+    }
+    let Some(bytes) = model_size_bytes else {
+        return BASELINE_S;
+    };
+    let extra_bytes = bytes.saturating_sub(SIZE_FREE_BYTES);
+    let extra_secs = extra_bytes / BYTES_PER_EXTRA_SECOND;
+    BASELINE_S.saturating_add(extra_secs)
 }
 
 #[async_trait]
