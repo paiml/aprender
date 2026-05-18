@@ -86,7 +86,7 @@ code = []
 dev = []  # Enable `apr mono` subcommands (publish, shims, audit, archive)
 safetensors-compare = ["aprender/safetensors-compare"]
 inference = ["realizar", "trueno", "tokio", "axum", "futures-util"]
-cuda = ["inference", "realizar/cuda", "entrenar/cuda"]
+cuda = ["inference", "realizar/cuda", "entrenar/cuda", "aprender-train-distill?/cuda"]
 cuda-batch = ["cuda"]
 # PMAT-335: WGPU backend for AMD/Intel/Apple GPU inference via Vulkan/Metal/WebGPU
 wgpu = ["inference"]
