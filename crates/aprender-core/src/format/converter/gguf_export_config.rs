@@ -434,6 +434,27 @@ fn to_gguf_shape(shape: &[usize]) -> Vec<u64> {
 }
 
 /// Quantize or encode tensor data for GGUF output.
+///
+/// PMAT-690 P3-C-prep defect 2 (2026-05-17): Q4_K requires the inner
+/// matmul dimension (K) to be divisible by 256 (the Q4_K block size).
+/// llama.cpp rejects GGUF files where any Q4_K tensor has K % 256 != 0
+/// with `tensor 'X' has N elements per row, not a multiple of block size (256)`.
+/// This breaks llama-cli interop on architectures with hidden_size not
+/// divisible by 256 — notably Qwen2 0.5B (hidden=896) where 7+ tensors
+/// per layer hit this case.
+///
+/// Fix: when shape[1] (the K dim after GGUF's row/col swap) is not
+/// divisible by 256, fall back to F32 for that tensor. Matches the
+/// convention `llama.cpp/convert_hf_to_gguf.py` uses (F16 fallback;
+/// we use F32 because our intermediate is already f32 — no precision
+/// loss in the fallback path).
+///
+/// The fallback inflates file size for affected tensors by 8× vs Q4_K.
+/// For Qwen2 0.5B this means the GGUF Q4_K export is ~2.1 GB instead of
+/// the ~700 MB it would be if all tensors were Q4_K-encodable. Tradeoff
+/// is acceptable for the v1 stack-existence-proof ship (SPEC §88) since
+/// the alternative is "broken artifact." Future enhancement: investigate
+/// Q4_0 (block=32) for these tensors — would give ~1.0 GB output.
 fn encode_gguf_data(
     data: &[f32],
     shape: &[usize],
@@ -446,11 +467,37 @@ fn encode_gguf_data(
     let is_embedding = gguf_name == "token_embd.weight" || name.contains("embed_tokens");
     let is_lm_head = gguf_name == "output.weight" || name.contains("lm_head");
 
-    if use_q4k && shape.len() == 2 && data.len() >= 256 && !is_embedding && !is_lm_head {
-        let gguf_shape_usize = vec![shape[1], shape[0]];
-        let q4k_bytes = super::quantize_q4_k_matrix(data, &gguf_shape_usize);
+    let q4k_compatible = use_q4k
+        && shape.len() == 2
+        && data.len() >= 256
+        && !is_embedding
+        && !is_lm_head
+        // Defect 2 fix: Q4_K block_size=256 requires K % 256 == 0
+        && shape[1] % 256 == 0;
+
+    if q4k_compatible {
+        // PMAT-690 defect 3 (2026-05-17): pass APR-native row-major shape
+        // [rows=out, cols=in=K] to quantize_q4_k_matrix. The function pads
+        // along cols when cols is not 256-divisible. Previously we swapped
+        // to [in, out] which made the function pad along the OUT dim and
+        // slice data with wrong stride, producing transposed bytes with the
+        // wrong total length. llama-cpp expects bytes laid out as
+        // `out` super-block-rows of `in/256` blocks each → exactly what
+        // we get when passing shape directly (no swap).
+        let q4k_bytes = super::quantize_q4_k_matrix(data, shape);
         (GgmlType::Q4K, q4k_bytes)
     } else {
+        if use_q4k && shape.len() == 2 && data.len() >= 256 && !is_embedding && !is_lm_head {
+            // Q4_K was requested but tensor isn't Q4_K-compatible — log
+            // the fallback so operators can see which tensors inflated
+            // file size and why.
+            eprintln!(
+                "[GGUF-EXPORT-Q4K-FALLBACK] {} (shape [{}, {}]) — \
+                 K={} not divisible by 256; falling back to F32 \
+                 (llama.cpp Q4_K block-size requirement, defect 2 fix)",
+                gguf_name, shape[0], shape[1], shape[1]
+            );
+        }
         let f32_bytes: Vec<u8> = data.iter().flat_map(|f| f.to_le_bytes()).collect();
         (GgmlType::F32, f32_bytes)
     }
@@ -539,5 +586,158 @@ fn export_to_gguf(
     export_tensors_to_gguf(&mut writer, &gguf_tensors, &metadata)
 }
 
+
+#[cfg(test)]
+mod q4k_divisibility_tests {
+    //! PMAT-690 P3-C-prep defect 2 (2026-05-17): Q4_K block_size=256
+    //! requires K % 256 == 0 (llama.cpp llama-cli enforces this).
+    //!
+    //! These tests pin the fallback behaviour added in encode_gguf_data so
+    //! a future refactor cannot silently regress and produce a GGUF that
+    //! llama-cli rejects with
+    //! `tensor 'X' of type 12 (q4_K) has N elements per row, not a multiple
+    //! of block size (256)`.
+    //!
+    //! Real-world trigger: Qwen2 0.5B (hidden=896, intermediate=4864).
+    //! 896 % 256 = 128 — most projections must fall back to F32. The 0.5B
+    //! variant is unusually small for Qwen2; the 1.5B (hidden=1536) and
+    //! 7B (hidden=3584) keep K % 256 == 0 throughout, so this defect did
+    //! not surface until P2-E shipping.
+    use super::encode_gguf_data;
+    use crate::format::gguf::GgmlType;
+
+    #[test]
+    fn q4k_falls_back_to_f32_when_inner_dim_not_divisible_by_256() {
+        // Qwen2 0.5B ffn_gate.weight: [intermediate=4864, hidden=896]
+        // After GGUF mapping the inner (K) dim is hidden=896, NOT divisible.
+        let shape = vec![4864, 896];
+        let data = vec![0.0_f32; 4864 * 896];
+        let (dtype, bytes) =
+            encode_gguf_data(&data, &shape, "blk.0.ffn_gate.weight", "mlp.gate_proj.weight", true);
+        assert_eq!(
+            dtype,
+            GgmlType::F32,
+            "K=896 not divisible by 256 — must fall back to F32"
+        );
+        assert_eq!(
+            bytes.len(),
+            4864 * 896 * 4,
+            "F32 byte count = elements * 4"
+        );
+    }
+
+    #[test]
+    fn q4k_applied_when_inner_dim_divisible_by_256() {
+        // ffn_down: [hidden=896, intermediate=4864]. K=4864, 4864/256=19. Quantize.
+        let shape = vec![896, 4864];
+        let data = vec![0.0_f32; 896 * 4864];
+        let (dtype, _bytes) = encode_gguf_data(
+            &data,
+            &shape,
+            "blk.0.ffn_down.weight",
+            "mlp.down_proj.weight",
+            true,
+        );
+        assert_eq!(
+            dtype,
+            GgmlType::Q4K,
+            "K=4864 divisible by 256 — must Q4_K encode"
+        );
+    }
+
+    #[test]
+    fn q4k_applied_on_exact_256_boundary() {
+        // Exact block boundary [128, 256] — K=256 divides itself once.
+        let shape = vec![128, 256];
+        let data = vec![0.0_f32; 128 * 256];
+        let (dtype, _bytes) =
+            encode_gguf_data(&data, &shape, "blk.0.attn_q.weight", "self_attn.q_proj.weight", true);
+        assert_eq!(
+            dtype,
+            GgmlType::Q4K,
+            "K=256 exactly divisible — must Q4_K encode"
+        );
+    }
+
+    #[test]
+    fn q4k_falls_back_for_qwen2_0_5b_attn_projections() {
+        // Qwen2 0.5B attention: q_proj=[896, 896], k_proj=[128, 896]
+        // GQA-7:1 ratio means k/v are tiny. All have K=896, NOT divisible.
+        for (name, shape) in &[
+            ("self_attn.q_proj.weight", vec![896_usize, 896]),
+            ("self_attn.k_proj.weight", vec![128_usize, 896]),
+            ("self_attn.v_proj.weight", vec![128_usize, 896]),
+            ("self_attn.o_proj.weight", vec![896_usize, 896]),
+        ] {
+            let data = vec![0.0_f32; shape[0] * shape[1]];
+            let (dtype, _bytes) =
+                encode_gguf_data(&data, shape, "blk.0.attn_q.weight", name, true);
+            assert_eq!(
+                dtype,
+                GgmlType::F32,
+                "Qwen2 0.5B {} (K={}) must fall back to F32",
+                name,
+                shape[1]
+            );
+        }
+    }
+
+    #[test]
+    fn embedding_and_lm_head_always_f32_regardless_of_divisibility() {
+        // Even when K is divisible, embedding and lm_head MUST stay F32
+        // (special-cased — Q4_K of the vocab table breaks llama-cli too).
+        let shape = vec![1024_usize, 1024]; // K=1024 divisible by 256 — but path excluded
+        let data = vec![0.0_f32; 1024 * 1024];
+        let (dtype, _) = encode_gguf_data(&data, &shape, "token_embd.weight", "embed_tokens", true);
+        assert_eq!(dtype, GgmlType::F32, "embedding stays F32");
+        let (dtype, _) = encode_gguf_data(&data, &shape, "output.weight", "lm_head", true);
+        assert_eq!(dtype, GgmlType::F32, "lm_head stays F32");
+    }
+
+    #[test]
+    fn use_q4k_false_always_returns_f32() {
+        // When the user didn't ask for Q4_K, no quantization regardless of shape.
+        let shape = vec![896, 4864]; // divisible — would Q4_K with use_q4k=true
+        let data = vec![0.0_f32; 896 * 4864];
+        let (dtype, _) =
+            encode_gguf_data(&data, &shape, "blk.0.ffn_down.weight", "mlp.down_proj.weight", false);
+        assert_eq!(dtype, GgmlType::F32, "use_q4k=false → always F32");
+    }
+
+    #[test]
+    fn q4k_byte_count_matches_llama_cpp_expectation() {
+        // PMAT-690 defect 3 (2026-05-17): the bytes per Q4_K tensor must
+        // equal `(rows * cols / 256) * 144` (super-blocks × bytes/block).
+        // Previously we swapped shape and the quantizer padded along the
+        // wrong dim, inflating bytes from 2,451,456 → 2,801,664 for
+        // ffn_down [896, 4864]. The +350,208 byte excess caused
+        // `gguf_init_from_file_impl: tensor 'blk.0.ffn_gate.weight' has
+        // offset N, expected M` in llama-cli (offset drift in subsequent
+        // tensors).
+        //
+        // For Qwen2 0.5B ffn_down [out=896, in=4864]:
+        //   - rows = 896, cols=4864 (in = K = 256-divisible)
+        //   - super_blocks_per_row = 4864 / 256 = 19
+        //   - total super-blocks = 896 * 19 = 17_024
+        //   - bytes = 17_024 * 144 = 2_451_456
+        let shape = vec![896_usize, 4864];
+        let data = vec![0.0_f32; 896 * 4864];
+        let (dtype, bytes) = encode_gguf_data(
+            &data,
+            &shape,
+            "blk.0.ffn_down.weight",
+            "mlp.down_proj.weight",
+            true,
+        );
+        assert_eq!(dtype, GgmlType::Q4K);
+        assert_eq!(
+            bytes.len(),
+            (896 * 4864 / 256) * 144,
+            "Q4_K bytes = (total_elements / 256) * 144 — \
+             llama-cpp-compatible layout"
+        );
+        assert_eq!(bytes.len(), 2_451_456, "exact byte count for ffn_down");
+    }
+}
 
 include!("export_include_01.rs");

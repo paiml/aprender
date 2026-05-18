@@ -40,11 +40,20 @@ pub const I06_REASON_EXIT: &[(&str, i32)] = &[
 /// Outcome of `classify_termination`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReactTerminationOutcome {
-    Ok { reason: String, exit_code: i32 },
+    Ok {
+        reason: String,
+        exit_code: i32,
+    },
     NotAnObject,
     MissingExitCode,
-    UnknownReason { got: String },
-    ExitCodeMismatch { reason: String, got: i32, expected: i32 },
+    UnknownReason {
+        got: String,
+    },
+    ExitCodeMismatch {
+        reason: String,
+        got: i32,
+        expected: i32,
+    },
     FinalAnswerWithoutAnswerField,
 }
 
@@ -80,7 +89,11 @@ pub fn classify_termination(body: &Value) -> ReactTerminationOutcome {
     let reason: String = match obj.get("reason").and_then(Value::as_str) {
         Some(s) => s.to_string(),
         None if exit_code == 0 => "final_answer".to_string(),
-        None => return ReactTerminationOutcome::UnknownReason { got: "<missing>".to_string() },
+        None => {
+            return ReactTerminationOutcome::UnknownReason {
+                got: "<missing>".to_string(),
+            }
+        }
     };
     let Some((_, expected)) = I06_REASON_EXIT.iter().find(|(r, _)| *r == reason.as_str()) else {
         return ReactTerminationOutcome::UnknownReason { got: reason };
@@ -239,9 +252,14 @@ mod tests {
 
     #[test]
     fn termination_rejects_exit_code_mismatch() {
-        let body = json!({"iterations": 3, "reason": "max_iterations", "scratchpad": "", "exit_code": 1});
+        let body =
+            json!({"iterations": 3, "reason": "max_iterations", "scratchpad": "", "exit_code": 1});
         match classify_termination(&body) {
-            ReactTerminationOutcome::ExitCodeMismatch { reason, got, expected } => {
+            ReactTerminationOutcome::ExitCodeMismatch {
+                reason,
+                got,
+                expected,
+            } => {
                 assert_eq!(reason, "max_iterations");
                 assert_eq!(got, 1);
                 assert_eq!(expected, 2);
@@ -291,10 +309,7 @@ mod tests {
 
     #[test]
     fn scratchpad_rejects_empty() {
-        assert_eq!(
-            classify_scratchpad_grammar(""),
-            ReactGrammarOutcome::Empty
-        );
+        assert_eq!(classify_scratchpad_grammar(""), ReactGrammarOutcome::Empty);
     }
 
     #[test]
@@ -319,10 +334,7 @@ mod tests {
     #[test]
     fn iteration_bound_ok_within_budget() {
         let body = json!({"iterations": 3});
-        assert_eq!(
-            classify_iteration_bound(&body, 5),
-            ReactBoundOutcome::Ok
-        );
+        assert_eq!(classify_iteration_bound(&body, 5), ReactBoundOutcome::Ok);
     }
 
     #[test]

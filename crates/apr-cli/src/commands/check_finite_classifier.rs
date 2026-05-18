@@ -80,11 +80,15 @@ pub fn classify_error_json(body: &Value) -> CheckFiniteErrorOutcome {
     }
     let err = obj.get("error").and_then(Value::as_str).unwrap_or("");
     if err != "non_finite" {
-        return CheckFiniteErrorOutcome::ErrorTagWrong { got: err.to_string() };
+        return CheckFiniteErrorOutcome::ErrorTagWrong {
+            got: err.to_string(),
+        };
     }
     let value = obj.get("value").and_then(Value::as_str).unwrap_or("");
     if !F11_ALLOWED_VALUES.contains(&value) {
-        return CheckFiniteErrorOutcome::ValueOutOfSet { got: value.to_string() };
+        return CheckFiniteErrorOutcome::ValueOutOfSet {
+            got: value.to_string(),
+        };
     }
     let Some(shape) = obj.get("shape").and_then(Value::as_array) else {
         return CheckFiniteErrorOutcome::ShapeNotIntArray;
@@ -94,7 +98,10 @@ pub fn classify_error_json(body: &Value) -> CheckFiniteErrorOutcome {
             return CheckFiniteErrorOutcome::ShapeNotIntArray;
         }
     }
-    let idx = obj.get("first_bad_index").and_then(Value::as_i64).unwrap_or(-1);
+    let idx = obj
+        .get("first_bad_index")
+        .and_then(Value::as_i64)
+        .unwrap_or(-1);
     if idx < 0 {
         return CheckFiniteErrorOutcome::FirstBadIndexNotNonNegative { got: idx };
     }
@@ -116,7 +123,10 @@ pub fn classify_layer_coverage(
     };
     let count = layers.len();
     if count < min_layers {
-        return CheckFiniteCoverageOutcome::TooFewLayers { got: count, min: min_layers };
+        return CheckFiniteCoverageOutcome::TooFewLayers {
+            got: count,
+            min: min_layers,
+        };
     }
     // Collect every layer name (`name` field, otherwise the layer entry
     // itself if it is a bare string).
@@ -181,7 +191,10 @@ mod tests {
 
     #[test]
     fn error_json_ok_on_well_formed() {
-        assert_eq!(classify_error_json(&good_error_json()), CheckFiniteErrorOutcome::Ok);
+        assert_eq!(
+            classify_error_json(&good_error_json()),
+            CheckFiniteErrorOutcome::Ok
+        );
     }
 
     #[test]

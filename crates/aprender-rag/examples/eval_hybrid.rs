@@ -7,7 +7,6 @@
 //!
 //! Run with: cargo run --example eval_hybrid
 
-use std::collections::HashSet;
 use aprender_rag::{
     embed::{Embedder, MockEmbedder},
     fusion::FusionStrategy,
@@ -15,6 +14,7 @@ use aprender_rag::{
     retrieve::HybridRetrieverConfig,
     BM25Index, Chunk, ChunkId, DocumentId, HybridRetriever, VectorStore,
 };
+use std::collections::HashSet;
 
 fn main() -> aprender_rag::Result<()> {
     println!("=== Hybrid vs Dense vs Sparse Retrieval Comparison ===\n");

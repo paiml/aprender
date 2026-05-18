@@ -97,11 +97,10 @@ pub fn run_parse(file: &Path, format: &str) -> Result<(), CliError> {
 
     match format {
         "json" => {
-            let pretty = serde_json::to_string_pretty(&config).map_err(|e| {
-                CliError::ValidationFailed(format!("JSON serialize failed: {e}"))
-            })?;
+            let pretty = serde_json::to_string_pretty(&config)
+                .map_err(|e| CliError::ValidationFailed(format!("JSON serialize failed: {e}")))?;
             println!("{pretty}");
-        },
+        }
         "human" | "" => {
             println!("FROM: {}", config.from);
             for (k, v) in &config.parameters {
@@ -122,12 +121,12 @@ pub fn run_parse(file: &Path, format: &str) -> Result<(), CliError> {
             if let Some(a) = &config.adapter {
                 println!("ADAPTER: {a}");
             }
-        },
+        }
         other => {
             return Err(CliError::ValidationFailed(format!(
                 "unknown --format {other}; expected `json` or `human`"
             )));
-        },
+        }
     }
 
     Ok(())

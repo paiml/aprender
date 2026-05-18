@@ -22,24 +22,10 @@ You are a helpful assistant.
 "#;
     let cfg = parse(input).expect("parse");
     assert_eq!(cfg.from, "tinyllama");
-    assert!(
-        (cfg.parameters
-            .get("temperature")
-            .unwrap()
-            .as_f64()
-            .unwrap()
-            - 0.7)
-            .abs()
-            < 1e-9
-    );
-    assert!(
-        (cfg.parameters.get("top_p").unwrap().as_f64().unwrap() - 0.9).abs() < 1e-9
-    );
+    assert!((cfg.parameters.get("temperature").unwrap().as_f64().unwrap() - 0.7).abs() < 1e-9);
+    assert!((cfg.parameters.get("top_p").unwrap().as_f64().unwrap() - 0.9).abs() < 1e-9);
     let system = cfg.system.expect("system set");
-    assert!(
-        system.contains("helpful assistant"),
-        "got system: {system}"
-    );
+    assert!(system.contains("helpful assistant"), "got system: {system}");
 }
 
 #[test]
@@ -97,11 +83,7 @@ SYSTEM """one-line system"""
 fn unterminated_triple_quote_is_an_error() {
     let input = "FROM model\nSYSTEM \"\"\"\nstart but never end\n";
     let err = parse(input).unwrap_err();
-    assert!(
-        err.to_string().contains("unterminated"),
-        "got: {}",
-        err
-    );
+    assert!(err.to_string().contains("unterminated"), "got: {}", err);
 }
 
 #[test]
@@ -175,7 +157,6 @@ LICENSE Apache-2.0
 "#;
     let cfg = parse(input).expect("parse");
     let json = serde_json::to_string_pretty(&cfg).expect("serialize");
-    let round: super::ModelfileConfig =
-        serde_json::from_str(&json).expect("deserialize");
+    let round: super::ModelfileConfig = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(round, cfg);
 }

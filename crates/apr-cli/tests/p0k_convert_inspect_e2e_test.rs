@@ -54,8 +54,7 @@ fn stage_qwen2_safetensors_fixture(dir: &std::path::Path) {
         "rope_theta": 1_000_000.0,
         "torch_dtype": "float32",
     });
-    fs::write(dir.join("config.json"), config_json.to_string())
-        .expect("write config.json");
+    fs::write(dir.join("config.json"), config_json.to_string()).expect("write config.json");
 
     // Stage a tiny safetensors file. Only one weight tensor — enough for
     // the converter to walk without erroring on an empty model. Shapes
@@ -124,13 +123,14 @@ fn pmat_690_p0k_apr_convert_inspect_e2e_round_trips_hf_arch() {
     );
 
     let stdout = String::from_utf8_lossy(&inspect_output.stdout);
-    let parsed: serde_json::Value = serde_json::from_str(&stdout)
-        .unwrap_or_else(|e| panic!("apr inspect --json output must be valid JSON: {e}\nstdout:\n{stdout}"));
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|e| {
+        panic!("apr inspect --json output must be valid JSON: {e}\nstdout:\n{stdout}")
+    });
 
     // Step 3: Verify the two new fields are present AND populated.
-    let metadata = parsed
-        .get("metadata")
-        .unwrap_or_else(|| panic!("apr inspect --json must emit a `metadata` object\nfull output:\n{stdout}"));
+    let metadata = parsed.get("metadata").unwrap_or_else(|| {
+        panic!("apr inspect --json must emit a `metadata` object\nfull output:\n{stdout}")
+    });
 
     let hf_arch = metadata.get("hf_architecture").unwrap_or_else(|| {
         panic!(
@@ -148,9 +148,7 @@ fn pmat_690_p0k_apr_convert_inspect_e2e_round_trips_hf_arch() {
     );
 
     let hf_model_type = metadata.get("hf_model_type").unwrap_or_else(|| {
-        panic!(
-            "metadata MUST contain `hf_model_type` key per P0-K.\nfull output:\n{stdout}"
-        )
+        panic!("metadata MUST contain `hf_model_type` key per P0-K.\nfull output:\n{stdout}")
     });
     assert_eq!(
         hf_model_type.as_str(),

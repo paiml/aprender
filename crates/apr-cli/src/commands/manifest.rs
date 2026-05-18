@@ -48,16 +48,15 @@ pub struct Manifest {
 /// Stream-hash a single file. Used for both small models and large LFS-eligible
 /// artifacts (constant 64 KiB memory).
 pub(crate) fn sha256_of_file(path: &Path) -> Result<(u64, String)> {
-    let mut f = File::open(path).map_err(|e| {
-        CliError::ValidationFailed(format!("open {}: {}", path.display(), e))
-    })?;
+    let mut f = File::open(path)
+        .map_err(|e| CliError::ValidationFailed(format!("open {}: {}", path.display(), e)))?;
     let mut hasher = Sha256::new();
     let mut buf = [0u8; 64 * 1024];
     let mut total: u64 = 0;
     loop {
-        let n = f.read(&mut buf).map_err(|e| {
-            CliError::ValidationFailed(format!("read {}: {}", path.display(), e))
-        })?;
+        let n = f
+            .read(&mut buf)
+            .map_err(|e| CliError::ValidationFailed(format!("read {}: {}", path.display(), e)))?;
         if n == 0 {
             break;
         }
@@ -107,15 +106,12 @@ pub fn build_manifest(files: &[PathBuf]) -> Result<Manifest> {
 /// Render manifest to a JSON file (pretty-printed, deterministic key order
 /// via serde struct ordering).
 pub fn write_manifest(manifest: &Manifest, output: &Path) -> Result<()> {
-    let json = serde_json::to_string_pretty(manifest).map_err(|e| {
-        CliError::ValidationFailed(format!("serialize manifest: {e}"))
-    })?;
-    let mut f = File::create(output).map_err(|e| {
-        CliError::ValidationFailed(format!("create {}: {}", output.display(), e))
-    })?;
-    f.write_all(json.as_bytes()).map_err(|e| {
-        CliError::ValidationFailed(format!("write {}: {}", output.display(), e))
-    })?;
+    let json = serde_json::to_string_pretty(manifest)
+        .map_err(|e| CliError::ValidationFailed(format!("serialize manifest: {e}")))?;
+    let mut f = File::create(output)
+        .map_err(|e| CliError::ValidationFailed(format!("create {}: {}", output.display(), e)))?;
+    f.write_all(json.as_bytes())
+        .map_err(|e| CliError::ValidationFailed(format!("write {}: {}", output.display(), e)))?;
     f.write_all(b"\n").ok();
     Ok(())
 }
@@ -126,9 +122,8 @@ pub fn run(files: &[PathBuf], output: &Path, json_stdout: bool) -> Result<()> {
     if json_stdout {
         // Also emit to stdout if caller requested JSON; still write to file
         // because the contract specifies `-o MAN.json`.
-        let json = serde_json::to_string_pretty(&manifest).map_err(|e| {
-            CliError::ValidationFailed(format!("serialize manifest: {e}"))
-        })?;
+        let json = serde_json::to_string_pretty(&manifest)
+            .map_err(|e| CliError::ValidationFailed(format!("serialize manifest: {e}")))?;
         println!("{json}");
     } else {
         println!("APR Manifest");
@@ -243,7 +238,10 @@ mod tests {
             assert_eq!(entry.path, file.display().to_string());
             // SHA-256 hex must be 64 lowercase hex chars
             assert_eq!(entry.sha256.len(), 64);
-            assert!(entry.sha256.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+            assert!(entry
+                .sha256
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
             // Equality with re-hash via the same function (idempotency).
             let (sz, hash) = sha256_of_file(file).unwrap();
             assert_eq!(entry.size_bytes, sz);
@@ -256,7 +254,13 @@ mod tests {
     fn falsify_crux_g_05_002_no_omissions() {
         let tmp = TempDir::new().unwrap();
         let files: Vec<PathBuf> = (0..7)
-            .map(|i| write_file(tmp.path(), &format!("f{i}.bin"), format!("content{i}").as_bytes()))
+            .map(|i| {
+                write_file(
+                    tmp.path(),
+                    &format!("f{i}.bin"),
+                    format!("content{i}").as_bytes(),
+                )
+            })
             .collect();
         let manifest = build_manifest(&files).unwrap();
         assert_eq!(manifest.files.len(), files.len());
@@ -279,8 +283,14 @@ mod tests {
     fn falsify_crux_g_05_003_parity_with_known_vectors() {
         let tmp = TempDir::new().unwrap();
         let known = [
-            (b"" as &[u8], "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
-            (b"abc" as &[u8], "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
+            (
+                b"" as &[u8],
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            ),
+            (
+                b"abc" as &[u8],
+                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            ),
         ];
         for (i, (bytes, expected)) in known.iter().enumerate() {
             let p = write_file(tmp.path(), &format!("kv{i}.bin"), bytes);

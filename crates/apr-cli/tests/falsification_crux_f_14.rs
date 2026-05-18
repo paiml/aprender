@@ -39,18 +39,34 @@ fn good_world_size_2() -> Vec<(&'static str, &'static [u8])> {
 
 #[test]
 fn falsify_crux_f_14_cli_help_advertises_flags() {
-    let out = apr_binary().args(["hang-trace-lint", "--help"]).output().expect("run");
+    let out = apr_binary()
+        .args(["hang-trace-lint", "--help"])
+        .output()
+        .expect("run");
     assert!(out.status.success(), "--help must exit 0");
     let stdout = String::from_utf8_lossy(&out.stdout);
-    for flag in ["--trace-dir", "--mode", "--world-size", "--exit-code", "--expected-exit-code"] {
-        assert!(stdout.contains(flag), "--help must advertise {flag}; got:\n{stdout}");
+    for flag in [
+        "--trace-dir",
+        "--mode",
+        "--world-size",
+        "--exit-code",
+        "--expected-exit-code",
+    ] {
+        assert!(
+            stdout.contains(flag),
+            "--help must advertise {flag}; got:\n{stdout}"
+        );
     }
 }
 
 #[test]
 fn falsify_crux_f_14_cli_missing_dir_fails() {
     let out = apr_binary()
-        .args(["hang-trace-lint", "--trace-dir", "/nonexistent/crux-f-14-missing"])
+        .args([
+            "hang-trace-lint",
+            "--trace-dir",
+            "/nonexistent/crux-f-14-missing",
+        ])
         .output()
         .expect("run");
     assert!(!out.status.success(), "missing dir must not exit 0");
@@ -111,10 +127,7 @@ fn falsify_crux_f_14_001_timeout_rejects_missing_rank() {
 
 #[test]
 fn falsify_crux_f_14_001_timeout_rejects_empty_file() {
-    let pairs: Vec<(&str, &[u8])> = vec![
-        ("rank0.py.txt", b"traceback\n"),
-        ("rank1.py.txt", b""),
-    ];
+    let pairs: Vec<(&str, &[u8])> = vec![("rank0.py.txt", b"traceback\n"), ("rank1.py.txt", b"")];
     let dir = make_trace_dir(&pairs);
     let out = apr_binary()
         .args(["hang-trace-lint", "--trace-dir"])
@@ -157,7 +170,10 @@ fn falsify_crux_f_14_002_success_rejects_unexpected_file() {
         .args(["--mode", "success"])
         .output()
         .expect("run");
-    assert!(!out.status.success(), "false-trigger dump must fail success mode");
+    assert!(
+        !out.status.success(),
+        "false-trigger dump must fail success mode"
+    );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.contains("UnexpectedFile"),
@@ -171,7 +187,14 @@ fn falsify_crux_f_14_003_exit_code_124_passes_timeout_expectation() {
     let out = apr_binary()
         .args(["hang-trace-lint", "--trace-dir"])
         .arg(dir.path())
-        .args(["--world-size", "2", "--exit-code", "124", "--expected-exit-code", "124"])
+        .args([
+            "--world-size",
+            "2",
+            "--exit-code",
+            "124",
+            "--expected-exit-code",
+            "124",
+        ])
         .output()
         .expect("run");
     assert!(
@@ -187,7 +210,14 @@ fn falsify_crux_f_14_003_exit_code_1_fails_timeout_expectation() {
     let out = apr_binary()
         .args(["hang-trace-lint", "--trace-dir"])
         .arg(dir.path())
-        .args(["--world-size", "2", "--exit-code", "1", "--expected-exit-code", "124"])
+        .args([
+            "--world-size",
+            "2",
+            "--exit-code",
+            "1",
+            "--expected-exit-code",
+            "124",
+        ])
         .output()
         .expect("run");
     assert!(!out.status.success(), "exit 1 != 124 must fail");
@@ -206,12 +236,25 @@ fn falsify_crux_f_14_json_output_contains_outcomes() {
     let out = apr_binary()
         .args(["--json", "hang-trace-lint", "--trace-dir"])
         .arg(dir.path())
-        .args(["--world-size", "2", "--exit-code", "124", "--expected-exit-code", "124"])
+        .args([
+            "--world-size",
+            "2",
+            "--exit-code",
+            "124",
+            "--expected-exit-code",
+            "124",
+        ])
         .output()
         .expect("run");
     assert!(out.status.success(), "json + good dir must exit 0");
     let stdout = String::from_utf8_lossy(&out.stdout);
     let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("json output must parse");
-    assert!(parsed["timeout_dump"].as_str().expect("timeout_dump").contains("Ok"));
-    assert!(parsed["exit_code"].as_str().expect("exit_code").contains("OkTimeout"));
+    assert!(parsed["timeout_dump"]
+        .as_str()
+        .expect("timeout_dump")
+        .contains("Ok"));
+    assert!(parsed["exit_code"]
+        .as_str()
+        .expect("exit_code")
+        .contains("OkTimeout"));
 }

@@ -19,8 +19,7 @@ use realizar::{run_inference, InferenceConfig};
 
 const CANONICAL_GGUF: &str =
     "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.gguf";
-const CANONICAL_APR: &str =
-    "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr";
+const CANONICAL_APR: &str = "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr";
 
 fn run_one(model_path: &str, prompt: &str, max_tokens: usize) -> Option<String> {
     let path = Path::new(model_path);
@@ -61,8 +60,14 @@ fn falsify_gguf_prompt_sensitivity_distinct_prompts_distinct_outputs() {
         None => return,
     };
 
-    eprintln!("[falsify-gguf-prompt-sens-001] P1 output (first 80 chars): {:?}", &out_a[..out_a.len().min(80)]);
-    eprintln!("[falsify-gguf-prompt-sens-001] P2 output (first 80 chars): {:?}", &out_b[..out_b.len().min(80)]);
+    eprintln!(
+        "[falsify-gguf-prompt-sens-001] P1 output (first 80 chars): {:?}",
+        &out_a[..out_a.len().min(80)]
+    );
+    eprintln!(
+        "[falsify-gguf-prompt-sens-001] P2 output (first 80 chars): {:?}",
+        &out_b[..out_b.len().min(80)]
+    );
 
     assert_ne!(
         out_a, out_b,
@@ -105,7 +110,10 @@ fn falsify_gguf_prompt_sensitivity_three_prompt_sweep() {
     distinct.insert(out_2.clone());
     distinct.insert(out_3.clone());
 
-    eprintln!("[falsify-gguf-prompt-sens-002] cardinality: {}", distinct.len());
+    eprintln!(
+        "[falsify-gguf-prompt-sens-002] cardinality: {}",
+        distinct.len()
+    );
     eprintln!("[falsify-gguf-prompt-sens-002] outputs: {:?}", distinct);
 
     assert!(
@@ -139,8 +147,14 @@ fn falsify_gguf_prompt_sensitivity_apr_control_passes() {
         None => return,
     };
 
-    eprintln!("[falsify-gguf-prompt-sens-003] APR P1 (first 80 chars): {:?}", &out_a[..out_a.len().min(80)]);
-    eprintln!("[falsify-gguf-prompt-sens-003] APR P2 (first 80 chars): {:?}", &out_b[..out_b.len().min(80)]);
+    eprintln!(
+        "[falsify-gguf-prompt-sens-003] APR P1 (first 80 chars): {:?}",
+        &out_a[..out_a.len().min(80)]
+    );
+    eprintln!(
+        "[falsify-gguf-prompt-sens-003] APR P2 (first 80 chars): {:?}",
+        &out_b[..out_b.len().min(80)]
+    );
 
     assert_ne!(
         out_a, out_b,

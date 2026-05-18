@@ -254,14 +254,14 @@ mod tests {
     #[test]
     fn matrix_only_zero_match_with_canonical_nonzero_exit_passes() {
         let cases: Vec<(u64, i32, PullDataset003Verdict)> = vec![
-            (0, 0, PullDataset003Verdict::Fail),     // silent no-op
-            (0, 1, PullDataset003Verdict::Pass),     // contract pass
-            (0, 2, PullDataset003Verdict::Pass),     // contract pass
-            (0, -1, PullDataset003Verdict::Fail),    // bad exit
-            (0, 256, PullDataset003Verdict::Fail),   // bad exit
-            (1, 0, PullDataset003Verdict::Fail),     // wrong gate
-            (1, 1, PullDataset003Verdict::Fail),     // wrong gate
-            (100, 2, PullDataset003Verdict::Fail),   // wrong gate
+            (0, 0, PullDataset003Verdict::Fail),        // silent no-op
+            (0, 1, PullDataset003Verdict::Pass),        // contract pass
+            (0, 2, PullDataset003Verdict::Pass),        // contract pass
+            (0, -1, PullDataset003Verdict::Fail),       // bad exit
+            (0, 256, PullDataset003Verdict::Fail),      // bad exit
+            (1, 0, PullDataset003Verdict::Fail),        // wrong gate
+            (1, 1, PullDataset003Verdict::Fail),        // wrong gate
+            (100, 2, PullDataset003Verdict::Fail),      // wrong gate
             (u64::MAX, 1, PullDataset003Verdict::Fail), // wrong gate
         ];
         for (matched, exit, expected) in cases {

@@ -622,6 +622,12 @@ commands:
     requires_model: false
     side_effects: []
 
+  - name: rerank
+    category: inference
+    description: "Score a (query, passage) pair with a BERT cross-encoder loaded from an APR file (GH-326 Phase 3 + 3b). Two input modes: (1) pre-tokenised `--input-ids` + `--token-type-ids` u32 lists; (2) Phase 3b text mode — `--query` + `--passage` + `--vocab <vocab.txt>` invokes in-process WordPiece tokenisation that builds `[CLS] query [SEP] passage [SEP]` with `token_type_ids = 0` for the query side and `1` for the passage side. Emits sigmoid-mapped relevance ∈ [0,1] by default or `--raw-logit` for the raw classifier logit. Supports `--json` output."
+    requires_model: true
+    side_effects: []
+
   - name: shard
     category: model_ops
     description: "Split safetensors file into shards + weight-map index (CRUX-B-05)"
