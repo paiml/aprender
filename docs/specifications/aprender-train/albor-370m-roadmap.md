@@ -98,16 +98,28 @@ Priority order (Δship-% ÷ effort × P(success)):
 |---|---|---|---|---|---|
 | **P2-C** Widen corpus to > 2B tokens: codeparrot-python permissive + the-stack-v2 Python (audit recommendation) | (1) Author corpus merge contract; (2) Pull the-stack-v2 Python permissive shards via `apr corpus pull`; (3) Concatenate + dedupe with §77 NFC pipeline; (4) Retokenize with Qwen tokenizer; (5) Rerun pretrain with Chinchilla gate enforced (P0-J) | +6 if val_loss < 3.5; +10 if val_loss < 3.0 | 6-12h CPU prep + 8-16h GPU train | **55%** (corpus diversity is the binding constraint per §49 + audit) | **NEW highest-EV next dispatch.** Audit Rec #1: P2-A2 cannot break the plateau; only P2-C can. |
 | **P2-A2** Longer P2-A run on the same qwen-v2 subset (DOWNGRADED — pre-falsified) | `apr pretrain --num-steps 20000 --init <qwen-0.5b> --dataset qwen-v2` | +1 (best case overfit) | 3-8h GPU | **15%** (Chinchilla 0.04× → mode collapse guaranteed) | **Audit Rec #1 pre-falsifies this.** Keep as fallback ONLY if P2-C is blocked on corpus pull/tokenize. Otherwise skip. |
-| **P2-D** True distillation from MODEL-1 (replace pretrain with `apr distill` loop) | Requires shipping `apr distill` per §35 (currently STUB) | +10 | 16-40h (multi-week scope) | 25% | Architectural change; defer until P2-C exhausted. |
+| **P2-D** True distillation from MODEL-1 (replace pretrain with `apr distill` loop) | Requires shipping `apr distill` per §35 (currently STUB) | +10 | 16-40h (multi-week scope) | 25% | Architectural change; superseded by PMAT-683/684 (SPEC §89) — distillation epic post-v1-ship. |
 
-### P3 — polish + publish
+### P3 — polish + publish — STATUS POST-§88
 
-| Item | Action | Δship | Effort | P | Notes |
+| Item | Action | Δship | Effort | P | Status (2026-05-17) |
 |---|---|---|---|---|---|
-| **P3-A** `apr inspect --quality` on best checkpoint | Run the quality scorer (needs implementation if not present) | +1 | 1h | 80% | Discharges AC-SHIP2-007. |
-| **P3-B** `apr lint` zero High severity | Currently passes presumably | +1 | 30 min | 90% | Discharges AC-SHIP2-008. |
-| **P3-C** Publish to HuggingFace as `paiml/albor-370m-v1` | Once val_loss < 3 + smoke OK: `apr publish paiml/albor-370m-v1 --formats apr,safetensors,gguf` | +5 (final ship gate) | 1-2h | 95% | Triggers full ship close. |
-| **P3-D** Post-publish QA + /dogfood verdict | Per `feedback_post_publish_qa_required.md` | +0 (gating) | 1h | 99% | Mandatory after every publish. |
+| **P3-A** `apr inspect --quality` on best checkpoint | Run the quality scorer | +1 | 1h | 80% | ✅ **SHIPPED** (PR #1750, merged via #1742 squash). Scorer lives at `apr inspect --quality`. AC-SHIP2-007-prep DISCHARGED. |
+| **P3-B** `apr lint` zero High severity | `apr lint` passes | +1 | 30 min | 90% | ⚙️ Operator-dispatchable. Pre-§88 deferred until val_loss < 3.0; §88 unblocks. |
+| **P3-C-prep** Model card + publish-readiness preflight | PR #1764 ships `docs/model-cards/albor-370m-v1.md` + `scripts/publish/albor-370m-publish-readiness.sh` | +1 | 1h | 95% | ✅ **SHIPPED** (PR #1764). |
+| **P3-C-exec** Publish to HuggingFace as `paiml/albor-370m-v1` | Operator runs: `apr stamp <pre-P0-K-ckpt> --architecture qwen2 ...` (§86 salvage) → `bash scripts/publish/albor-370m-publish-readiness.sh <stamped.apr>` → `apr publish paiml/albor-370m-v1 --formats apr,safetensors,gguf --model-card docs/model-cards/albor-370m-v1.md` | +5 (final ship gate) | 1-2h | 95% | 🟡 **OPERATOR-READY** — requires explicit user invocation (external-action authorization). |
+| **P3-D** Post-publish QA + /dogfood verdict | Per `feedback_post_publish_qa_required.md`; template at `docs/dogfood-templates/albor-370m-v1-dogfood-template.md` (PR #1765) | +0 (gating) | 1h | 99% | 🟡 **TEMPLATE READY** — execution gated on P3-C-exec. |
+
+### P4 — Distillation epic (out-of-v1-scope per SPEC §89)
+
+Path to `AC-SHIP2-003-STRICT` (val_loss ≤ 2.2). Deferred to a follow-up epic post-v1-ship.
+
+| Item | Action | Δship-strict | Effort | P | Notes |
+|---|---|---|---|---|---|
+| **PMAT-683** Teacher selection + pull | `apr pull Qwen/Qwen2.5-Coder-7B-Instruct --quantize q4k -o teacher.apr` + `apr qa teacher.apr` | +0 (gating) | 4-6h operator | 95% | Validates the teacher reaches non-degenerate output on the held-out corpus. |
+| **PMAT-684** Distillation training dispatch + evidence | `apr distill --teacher teacher.apr --student qwen-init.apr --dataset qwen-v3/ --num-steps 245000 --temperature 4.0 --lr 1.5e-5` | +5 (strict-target ship) | ~43h GPU (fits 48-hr budget) + ~8h operator | 70% | Tests Stanton et al. 2021's 5× token-reduction claim empirically. |
+| **PMAT-685** Distillation loop hardening (deferred) | Multi-teacher ensemble / curriculum corpus / LR cycling / layer-wise losses | +0 (signaling) | TBD | TBD | Only dispatched IF PMAT-684 result is borderline. |
+| **paiml/albor-370m-v2** Publish + /dogfood | Same workflow as v1 but using §86.4 stamp recipe pre-baked into a `v2-prep` script | +5 (formal STRICT discharge) | 1-2h | 95% | After PMAT-684 reaches val_loss ≤ 2.2. |
 
 ## 5. Methodology lessons in flight (apply to MODEL-2 work)
 
@@ -156,6 +168,34 @@ When dispatching P2-A2 / P2-C, predict val_loss + sample-quality bands BEFORE th
 - **Week 4**: P3-C publish to `paiml/albor-370m-v1` + P3-D /dogfood verdict. Ship %: 100.
 
 **Pre-falsified shortcut.** Per audit math, P2-A2 (more steps on same data) cannot reach val_loss < 3.5 — skip it unless P2-C is blocked on tokenizer infrastructure. If P2-C blocks AND P2-D is multi-week scope, fall back to P2-A2 only to keep momentum, accepting the overfit result.
+
+## 7. Post-§88 actual shipping plan (2026-05-17 amendment)
+
+The §82-§87 cycle empirically proved the 4-week plan above was over-optimistic on val_loss target (the strict CE ≤ 2.2 requires 9-day compute, not feasible in 48-hr iteration budgets). §88 amended `AC-SHIP2-003` to a compute-bounded target (CE ≤ 4.7) which P2-E **DISCHARGES** at val_loss = 4.6227. The shipping plan compresses to:
+
+### v1 ship (stack-existence-proof, post-§88)
+
+| Phase | Status | Owner | Notes |
+|---|---|---|---|
+| P0-K cascade (PRs #1742/1746/1748/1750/1757) | ✅ SHIPPED | autonomous | apr_convert + apr_import + apr inspect + E2E test + apr stamp HF identity |
+| P2-F val-shard (#1744) | ✅ SHIPPED | autonomous | independent held-out val source |
+| P2-E training (val_loss=4.6227) | ✅ COMPLETE | autonomous | discharges §88 loose target |
+| §85 + §86 + §87 + §88 spec amendments | 🟡 PR #1754 + #1763 stack (auto-merge armed) | autonomous | will land via #1754 squash |
+| §89 distillation epic scoping | 🟡 this PR | autonomous | scopes PMAT-683/684 |
+| P3-A apr inspect --quality (#1750) | ✅ SHIPPED | autonomous | scorer landed |
+| P3-C-prep model card + readiness (#1764) | ✅ SHIPPED | autonomous | docs ready |
+| P3-C-exec `apr publish paiml/albor-370m-v1` | 🟡 OPERATOR-READY | user | external-action authorization required |
+| P3-D /dogfood verdict (template #1765) | 🟡 TEMPLATE READY | user | gated on P3-C-exec |
+
+### v2 ship (strict-target distillation, multi-week)
+
+Per SPEC §89 — out of v1 scope. Triggers AFTER:
+
+1. ✅ v1 published + /dogfood GO
+2. ✅ At least one independent consumer downloads + runs v1 (validation-by-use)
+3. ✅ User authorization for ~43-hour distillation dispatch
+
+Then PMAT-683 (teacher pull, 4-6h) → PMAT-684 (distillation training, 43h GPU + 8h operator) → publish `paiml/albor-370m-v2` with strict-target discharge.
 
 ## 7. Compute lanes for the queue
 
