@@ -106,13 +106,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 _ => {
                     println!("  unsupported qtype: {}", tensor.qtype);
                     return Ok(());
-                }
+                },
             };
             println!("  Dequantized {} f32 values", f32_data.len());
             q_data = f32_data[..q_dim * hidden].to_vec();
             k_data = f32_data[q_dim * hidden..(q_dim + kv_dim) * hidden].to_vec();
             v_data = f32_data[(q_dim + kv_dim) * hidden..total_out * hidden].to_vec();
-        }
+        },
         OwnedQKVWeights::Separate { q, k, v } => {
             println!("  Layer 0 QKV is SEPARATE");
             println!(
@@ -153,7 +153,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             k_data = dq(k)?;
             v_data = dq(v)?;
             println!("  → Separate layout — wgpu_adapter.rs:56-62 fused-slicing not exercised.");
-        }
+        },
     }
 
     println!("\n=== Step 2: Per-projection statistics ===");
@@ -162,18 +162,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     stats("V-projection (dequant)", &v_data);
 
     println!("\n=== Step 3: First 8 elements per projection ===");
-    println!(
-        "  Q[0..8]: {:?}",
-        &q_data[..8.min(q_data.len())]
-    );
-    println!(
-        "  K[0..8]: {:?}",
-        &k_data[..8.min(k_data.len())]
-    );
-    println!(
-        "  V[0..8]: {:?}",
-        &v_data[..8.min(v_data.len())]
-    );
+    println!("  Q[0..8]: {:?}", &q_data[..8.min(q_data.len())]);
+    println!("  K[0..8]: {:?}", &k_data[..8.min(k_data.len())]);
+    println!("  V[0..8]: {:?}", &v_data[..8.min(v_data.len())]);
 
     println!("\n=== Step 4: Sanity bounds ===");
     let q_max_abs = q_data.iter().fold(0.0f32, |a, b| a.max(b.abs()));
@@ -193,21 +184,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("\n=== VERDICT ===");
-    println!(
-        "  This script establishes the Q-projection's dequantized values ground-truth via"
-    );
-    println!(
-        "  the same `dequantize_q4_k` function that the GPU upload path uses (per"
-    );
-    println!(
-        "  wgpu_adapter.rs:54 / dequant_tensor_public). Stats and first-elements above are"
-    );
-    println!(
-        "  the OBSERVABLE for H1+H2 falsification. Next: instrument the actual GPU upload"
-    );
-    println!(
-        "  path to dump its uploaded F32 weight bytes, then diff vs the values above."
-    );
+    println!("  This script establishes the Q-projection's dequantized values ground-truth via");
+    println!("  the same `dequantize_q4_k` function that the GPU upload path uses (per");
+    println!("  wgpu_adapter.rs:54 / dequant_tensor_public). Stats and first-elements above are");
+    println!("  the OBSERVABLE for H1+H2 falsification. Next: instrument the actual GPU upload");
+    println!("  path to dump its uploaded F32 weight bytes, then diff vs the values above.");
 
     Ok(())
 }

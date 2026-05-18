@@ -1,4 +1,3 @@
-
 /// GH-353: Format the memory savings from F16/BF16 passthrough (skipping F32 conversion).
 /// Each passthrough tensor saves 4 bytes/param (the F32 copy that was never used).
 fn format_passthrough_savings<'a>(shapes: impl Iterator<Item = &'a Vec<usize>>) -> String {
@@ -118,10 +117,7 @@ fn validate_config_json_presence(
 }
 
 /// Load tensors from a single SafeTensors file with config.json validation.
-fn load_single_safetensors(
-    path: &Path,
-    options: &ImportOptions,
-) -> Result<SourceLoadResult> {
+fn load_single_safetensors(path: &Path, options: &ImportOptions) -> Result<SourceLoadResult> {
     // GH-88: Quantization (Q4K, Int4, Int8) requires F32 input data.
     // F16 passthrough mode yields shape-only placeholders, so use F32 loading path instead.
     let needs_f32 = options.quantize.is_some();
@@ -267,7 +263,8 @@ pub(crate) fn load_sharded_safetensors(
     // GH-363: Canonicalize index_path to resolve symlinks before extracting parent dir.
     // When index.json is a symlink, parent() returns the symlink's directory (no shards).
     // Canonicalize resolves to the real directory where shard files actually live.
-    let canonical_index = std::fs::canonicalize(index_path).unwrap_or_else(|_| index_path.to_path_buf());
+    let canonical_index =
+        std::fs::canonicalize(index_path).unwrap_or_else(|_| index_path.to_path_buf());
     let base_dir = canonical_index
         .parent()
         .ok_or_else(|| AprenderError::FormatError {
@@ -373,6 +370,15 @@ pub(crate) fn load_safetensors_tensors(
                 message: format!("Tensor metadata not found for '{name}'"),
             })?;
 
+        // GH-326: BERT (and other HF transformer architectures) register
+        // integer buffers (`position_ids`, `token_type_ids` cache) alongside
+        // trainable f32 weights. Skip them at the source — the dequant path
+        // only handles F32/F16/BF16 and these are re-derivable constants,
+        // not parameters that need persisting.
+        if is_non_trainable_buffer(name, &meta.dtype) {
+            continue;
+        }
+
         let data = mapped
             .get_tensor(name)
             .map_err(|e| AprenderError::FormatError {
@@ -386,6 +392,74 @@ pub(crate) fn load_safetensors_tensors(
     }
 
     Ok(tensors)
+}
+
+/// GH-326: Detect non-trainable buffer tensors that the import path should
+/// skip rather than fail dequant on.
+///
+/// HuggingFace `transformers` ships several integer-typed buffers alongside
+/// trainable weights (`register_buffer` calls in `__init__`). They're
+/// deterministic functions of the config — re-derivable at inference time,
+/// not parameters that need persisting. The current dequant path only
+/// handles F32/F16/BF16; these buffers would abort the whole import.
+fn is_non_trainable_buffer(name: &str, dtype: &str) -> bool {
+    let is_int_dtype = matches!(dtype, "I64" | "I32" | "U8" | "BOOL");
+    if !is_int_dtype {
+        return false;
+    }
+    name.ends_with(".position_ids")
+        || name.ends_with(".token_type_ids")
+        || name.ends_with(".attention_mask")
+        || name.ends_with(".causal_mask")
+}
+
+#[cfg(test)]
+mod is_non_trainable_buffer_tests {
+    use super::is_non_trainable_buffer;
+
+    #[test]
+    fn bert_position_ids_i64_is_buffer() {
+        assert!(is_non_trainable_buffer(
+            "bert.embeddings.position_ids",
+            "I64"
+        ));
+    }
+
+    #[test]
+    fn token_type_ids_i64_is_buffer() {
+        assert!(is_non_trainable_buffer(
+            "bert.embeddings.token_type_ids",
+            "I64"
+        ));
+    }
+
+    #[test]
+    fn position_ids_f32_is_not_buffer() {
+        // F32 positional weights are TRAINABLE — must NOT be skipped.
+        assert!(!is_non_trainable_buffer(
+            "bert.embeddings.position_ids",
+            "F32"
+        ));
+    }
+
+    #[test]
+    fn weight_tensor_is_not_buffer() {
+        // Regular weight is never a buffer regardless of dtype.
+        assert!(!is_non_trainable_buffer(
+            "bert.embeddings.word_embeddings.weight",
+            "F32"
+        ));
+        assert!(!is_non_trainable_buffer(
+            "bert.embeddings.word_embeddings.weight",
+            "I64"
+        ));
+    }
+
+    #[test]
+    fn unknown_name_is_not_buffer() {
+        // Defensive: random I64 tensor with no buffer-suffix is NOT auto-skipped.
+        assert!(!is_non_trainable_buffer("some.weird.tensor", "I64"));
+    }
 }
 
 /// GH-205 + GH-353: Result of loading SafeTensors with F16/BF16 passthrough support.
@@ -423,7 +497,10 @@ fn try_f16_passthrough(
         return false;
     }
     if let Some(raw_bytes) = mapped.get_tensor_bytes(name) {
-        f16_raw_tensors.insert(name.to_string(), (raw_bytes.to_vec(), shape.to_vec(), is_bf16));
+        f16_raw_tensors.insert(
+            name.to_string(),
+            (raw_bytes.to_vec(), shape.to_vec(), is_bf16),
+        );
         tensors.insert(name.to_string(), (Vec::new(), shape.to_vec()));
         true
     } else {
@@ -465,7 +542,19 @@ pub(crate) fn load_safetensors_with_f16_passthrough(path: &Path) -> Result<SafeT
                 message: format!("Tensor metadata not found for '{name}'"),
             })?;
 
-        if try_f16_passthrough(&mapped, name, &meta.dtype, &meta.shape, &mut tensors, &mut f16_raw_tensors) {
+        // GH-326: skip integer buffers (BERT position_ids, token_type_ids cache).
+        if is_non_trainable_buffer(name, &meta.dtype) {
+            continue;
+        }
+
+        if try_f16_passthrough(
+            &mapped,
+            name,
+            &meta.dtype,
+            &meta.shape,
+            &mut tensors,
+            &mut f16_raw_tensors,
+        ) {
             f16_count += 1;
             continue;
         }
@@ -532,6 +621,11 @@ pub(crate) fn load_safetensors_as_f32(path: &Path) -> Result<SafeTensorsLoadResu
             .ok_or_else(|| AprenderError::FormatError {
                 message: format!("Tensor metadata not found for '{name}'"),
             })?;
+
+        // GH-326: skip integer buffers (BERT position_ids, token_type_ids cache).
+        if is_non_trainable_buffer(name, &meta.dtype) {
+            continue;
+        }
 
         // Convert ALL tensors to F32 (no passthrough) for quantization
         let data = mapped

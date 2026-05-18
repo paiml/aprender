@@ -128,7 +128,11 @@ mod tests {
     #[test]
     fn perfect_prediction_ppl_is_one() {
         match compute_perplexity(&[0.0, 0.0, 0.0]) {
-            PerplexityOutcome::Ok { ppl, mean_nll, num_tokens } => {
+            PerplexityOutcome::Ok {
+                ppl,
+                mean_nll,
+                num_tokens,
+            } => {
                 assert!((ppl - 1.0).abs() < 1e-12, "ppl={ppl} expected 1.0");
                 assert!(mean_nll.abs() < 1e-12);
                 assert_eq!(num_tokens, 3);
@@ -144,7 +148,11 @@ mod tests {
         let ln_half = -std::f64::consts::LN_2;
         let samples = vec![ln_half; 16];
         match compute_perplexity(&samples) {
-            PerplexityOutcome::Ok { ppl, mean_nll, num_tokens } => {
+            PerplexityOutcome::Ok {
+                ppl,
+                mean_nll,
+                num_tokens,
+            } => {
                 assert!((ppl - 2.0).abs() < 1e-12, "ppl={ppl}");
                 assert!((mean_nll - std::f64::consts::LN_2).abs() < 1e-12);
                 assert_eq!(num_tokens, 16);
@@ -201,7 +209,11 @@ mod tests {
     #[test]
     fn single_log_prob_works() {
         match compute_perplexity(&[-1.0]) {
-            PerplexityOutcome::Ok { ppl, mean_nll, num_tokens } => {
+            PerplexityOutcome::Ok {
+                ppl,
+                mean_nll,
+                num_tokens,
+            } => {
                 assert!((ppl - std::f64::consts::E).abs() < 1e-12);
                 assert!((mean_nll - 1.0).abs() < 1e-12);
                 assert_eq!(num_tokens, 1);

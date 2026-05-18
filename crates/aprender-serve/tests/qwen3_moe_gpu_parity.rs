@@ -176,9 +176,15 @@ fn falsify_qw3_moe_gpu_parity_001_cosine_vs_cpu() {
     let finite_count = gpu_logits.iter().filter(|v| v.is_finite()).count();
     let first_nan_idx = gpu_logits.iter().position(|v| v.is_nan());
     let first_inf_idx = gpu_logits.iter().position(|v| v.is_infinite());
-    let finite_min = gpu_logits.iter().filter(|v| v.is_finite()).cloned()
+    let finite_min = gpu_logits
+        .iter()
+        .filter(|v| v.is_finite())
+        .cloned()
         .fold(f32::INFINITY, f32::min);
-    let finite_max = gpu_logits.iter().filter(|v| v.is_finite()).cloned()
+    let finite_max = gpu_logits
+        .iter()
+        .filter(|v| v.is_finite())
+        .cloned()
         .fold(f32::NEG_INFINITY, f32::max);
     eprintln!(
         "FALSIFY-QW3-MOE-GPU-PARITY-001 finiteness diagnostic:\n  \
@@ -188,8 +194,14 @@ fn falsify_qw3_moe_gpu_parity_001_cosine_vs_cpu() {
          inf        = {} (first idx: {:?})\n  \
          finite_min = {:.6}\n  \
          finite_max = {:.6}",
-        gpu_logits.len(), finite_count, nan_count, first_nan_idx,
-        inf_count, first_inf_idx, finite_min, finite_max,
+        gpu_logits.len(),
+        finite_count,
+        nan_count,
+        first_nan_idx,
+        inf_count,
+        first_inf_idx,
+        finite_min,
+        finite_max,
     );
 
     assert!(
@@ -308,13 +320,16 @@ fn falsify_qw3_moe_gpu_argmax_agreement() {
     // prompt-dependent L47-divergence-→-argmax-flip cases. If argmax
     // agrees on all of these, L47 is benign with high confidence.
     let canonical_prompts: &[(&str, &[u32])] = &[
-        ("canonical_3tok", &[785, 9217, 308]),       // existing test prompt
-        ("single_tok_785", &[785]),                  // PR-3 per-layer prompt
+        ("canonical_3tok", &[785, 9217, 308]), // existing test prompt
+        ("single_tok_785", &[785]),            // PR-3 per-layer prompt
         ("multi_tok_short", &[785, 374, 264, 6716]), // 4-token English
         ("multi_tok_code", &[750, 220, 17, 220, 488, 220, 17, 30]), // "def 2 + 2?"
     ];
 
-    eprintln!("FALSIFY-QW3-MOE-GPU-ARGMAX-AGREEMENT: testing argmax agreement across {} prompts", canonical_prompts.len());
+    eprintln!(
+        "FALSIFY-QW3-MOE-GPU-ARGMAX-AGREEMENT: testing argmax agreement across {} prompts",
+        canonical_prompts.len()
+    );
     eprintln!("  gguf: {gguf_path}");
 
     let mapped = MappedGGUFModel::from_path(gguf_path).expect("mmap GGUF");
@@ -340,7 +355,10 @@ fn falsify_qw3_moe_gpu_argmax_agreement() {
     let mut disagreements: Vec<(String, u32, u32)> = Vec::new();
 
     for (name, tokens) in canonical_prompts {
-        eprintln!("FALSIFY-QW3-MOE-GPU-ARGMAX-AGREEMENT: {name} (len={})", tokens.len());
+        eprintln!(
+            "FALSIFY-QW3-MOE-GPU-ARGMAX-AGREEMENT: {name} (len={})",
+            tokens.len()
+        );
         let cpu_logits = cpu_model
             .forward_qwen3_moe(
                 tokens,
@@ -390,7 +408,11 @@ fn falsify_qw3_moe_gpu_argmax_agreement() {
     eprintln!("FALSIFY-QW3-MOE-GPU-ARGMAX-AGREEMENT: per-prompt argmax:");
     eprintln!("  PROMPT             | CPU argmax (val)     | GPU argmax (val)");
     for (name, cpu_arg, gpu_arg, cpu_val, gpu_val) in &results {
-        let mark = if cpu_arg == gpu_arg { "✓" } else { "✗ MISMATCH" };
+        let mark = if cpu_arg == gpu_arg {
+            "✓"
+        } else {
+            "✗ MISMATCH"
+        };
         eprintln!(
             "  {name:18} | {cpu_arg:6} ({cpu_val:8.4})  | {gpu_arg:6} ({gpu_val:8.4})  {mark}"
         );
@@ -413,9 +435,7 @@ fn falsify_qw3_moe_gpu_argmax_agreement() {
         for (name, cpu_arg, gpu_arg) in &disagreements {
             eprintln!("    {name}: cpu={cpu_arg} gpu={gpu_arg}");
         }
-        eprintln!(
-            "  → Option C (fp64 in per-expert SwiGLU) must be authored as PR-3h."
-        );
+        eprintln!("  → Option C (fp64 in per-expert SwiGLU) must be authored as PR-3h.");
     }
 
     // This is a PROBE — print the verdict but do not assert. The

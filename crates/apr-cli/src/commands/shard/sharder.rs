@@ -70,11 +70,7 @@ fn tensor_byte_size(view: &TensorView<'_>) -> u64 {
 /// current one is non-empty and adding the next tensor would exceed
 /// `max_shard_size`. Tensors larger than `max_shard_size` are placed in their
 /// own shard alone (HF transformers behaviour — single tensors never split).
-fn plan_shards<'a>(
-    names: &'a [&'a str],
-    sizes: &[u64],
-    max_shard_size: u64,
-) -> Vec<Vec<usize>> {
+fn plan_shards<'a>(names: &'a [&'a str], sizes: &[u64], max_shard_size: u64) -> Vec<Vec<usize>> {
     debug_assert_eq!(names.len(), sizes.len());
     let mut shards: Vec<Vec<usize>> = Vec::new();
     let mut current: Vec<usize> = Vec::new();
@@ -101,10 +97,7 @@ fn shard_filename(index: usize, total: usize) -> String {
 }
 
 /// Produce a sorted, deterministic `model.safetensors.index.json` payload.
-fn build_index_json(
-    weight_map: &BTreeMap<String, String>,
-    total_size: u64,
-) -> String {
+fn build_index_json(weight_map: &BTreeMap<String, String>, total_size: u64) -> String {
     let mut out = String::with_capacity(weight_map.len() * 80 + 64);
     out.push_str("{\n");
     out.push_str("  \"metadata\": {\n");
@@ -199,8 +192,8 @@ pub fn shard_safetensors_file(
             .map(|&i| (names[i], views[i].clone()))
             .collect();
 
-        let serialized = safetensors::serialize(shard_tensors, &None)
-            .map_err(ShardError::SafeTensors)?;
+        let serialized =
+            safetensors::serialize(shard_tensors, &None).map_err(ShardError::SafeTensors)?;
         fs::write(&shard_path, &serialized)?;
 
         for &i in group {

@@ -2722,9 +2722,9 @@ impl CudaTransformerTrainer {
         // so downstream tools (apr qa C-03, apr bench, realizar) can read them
         // via AprV2Metadata's typed fields. The legacy save_model() path only
         // carries `name + architecture + format + version` which fails C-03.
+        use crate::io::save::infer_all_tensor_shapes;
         use aprender::serialization::apr::AprWriter;
         use serde_json::Value as Jv;
-        use crate::io::save::infer_all_tensor_shapes;
 
         let mc = &self.config.model_config;
         let mut writer = AprWriter::new();
@@ -2757,10 +2757,8 @@ impl CudaTransformerTrainer {
             "intermediate_size",
             Jv::Number(serde_json::Number::from(mc.intermediate_size as u64)),
         );
-        writer.set_metadata(
-            "vocab_size",
-            Jv::Number(serde_json::Number::from(mc.vocab_size as u64)),
-        );
+        writer
+            .set_metadata("vocab_size", Jv::Number(serde_json::Number::from(mc.vocab_size as u64)));
         writer.set_metadata(
             "max_position_embeddings",
             Jv::Number(serde_json::Number::from(mc.max_position_embeddings as u64)),
@@ -2788,15 +2786,11 @@ impl CudaTransformerTrainer {
                                 .filter_map(|(k, v)| Some((k.clone(), v.as_u64()?)))
                                 .collect();
                             vocab_pairs.sort_by_key(|(_, id)| *id);
-                            let vocab: Vec<Jv> = vocab_pairs
-                                .into_iter()
-                                .map(|(k, _)| Jv::String(k))
-                                .collect();
+                            let vocab: Vec<Jv> =
+                                vocab_pairs.into_iter().map(|(k, _)| Jv::String(k)).collect();
                             writer.set_metadata("tokenizer.vocabulary", Jv::Array(vocab));
                         }
-                        if let Some(merges_arr) =
-                            model.get("merges").and_then(|m| m.as_array())
-                        {
+                        if let Some(merges_arr) = model.get("merges").and_then(|m| m.as_array()) {
                             let merges: Vec<Jv> = merges_arr
                                 .iter()
                                 .filter_map(|v| v.as_str().map(|s| Jv::String(s.to_string())))
@@ -2807,10 +2801,8 @@ impl CudaTransformerTrainer {
                     // BOS / EOS from added_tokens (HF format).
                     if let Some(added) = tok.get("added_tokens").and_then(|a| a.as_array()) {
                         for entry in added {
-                            let content = entry
-                                .get("content")
-                                .and_then(|c| c.as_str())
-                                .unwrap_or("");
+                            let content =
+                                entry.get("content").and_then(|c| c.as_str()).unwrap_or("");
                             let id = entry.get("id").and_then(|i| i.as_u64());
                             if let Some(id) = id {
                                 match content {
@@ -2840,10 +2832,7 @@ impl CudaTransformerTrainer {
         for (tname, tensor) in &params {
             let data = tensor.data();
             let slice = data.as_slice().expect("tensor data must be contiguous");
-            let shape = shapes
-                .get(tname)
-                .cloned()
-                .unwrap_or_else(|| vec![tensor.len()]);
+            let shape = shapes.get(tname).cloned().unwrap_or_else(|| vec![tensor.len()]);
             writer.add_tensor_f32(tname, shape, slice);
         }
 

@@ -21,8 +21,9 @@ use serde_json::Value;
 
 /// Canonical sample rates accepted by the H-13 contract when no explicit
 /// `--resample-to` is supplied. Mirrors the torchaudio test corpus.
-pub const H13_CANONICAL_SAMPLE_RATES: &[u32] =
-    &[8_000, 16_000, 22_050, 24_000, 32_000, 44_100, 48_000, 88_200, 96_000];
+pub const H13_CANONICAL_SAMPLE_RATES: &[u32] = &[
+    8_000, 16_000, 22_050, 24_000, 32_000, 44_100, 48_000, 88_200, 96_000,
+];
 
 /// Outcome of `classify_amplitude_bounds`.
 #[derive(Debug, Clone, PartialEq)]
@@ -77,10 +78,16 @@ pub fn classify_amplitude_bounds(body: &Value) -> AudioBoundsOutcome {
         return AudioBoundsOutcome::MaxNotFinite { got: max };
     }
     if min < -1.0 {
-        return AudioBoundsOutcome::MinBelowFloor { got: min, floor: -1.0 };
+        return AudioBoundsOutcome::MinBelowFloor {
+            got: min,
+            floor: -1.0,
+        };
     }
     if max > 1.0 {
-        return AudioBoundsOutcome::MaxAboveCeiling { got: max, ceiling: 1.0 };
+        return AudioBoundsOutcome::MaxAboveCeiling {
+            got: max,
+            ceiling: 1.0,
+        };
     }
     if min > max {
         return AudioBoundsOutcome::MinExceedsMax { min, max };
@@ -99,7 +106,10 @@ pub fn classify_sample_rate(body: &Value, expected: Option<u32>) -> AudioSampleR
     let rate = raw as u32;
     if let Some(exp) = expected {
         if rate != exp {
-            return AudioSampleRateOutcome::ExpectedRateMismatch { got: rate, expected: exp };
+            return AudioSampleRateOutcome::ExpectedRateMismatch {
+                got: rate,
+                expected: exp,
+            };
         }
         return AudioSampleRateOutcome::Ok { rate };
     }
@@ -184,7 +194,10 @@ mod tests {
         // construct via Value::from_f64 (returns None) — fallback: rely on serde to skip NaN.
         // Instead, set min to a value the parser sees as f64 but is NaN-equivalent: use a string.
         body["min"] = json!("nan");
-        assert_eq!(classify_amplitude_bounds(&body), AudioBoundsOutcome::MissingMin);
+        assert_eq!(
+            classify_amplitude_bounds(&body),
+            AudioBoundsOutcome::MissingMin
+        );
     }
 
     #[test]

@@ -449,24 +449,24 @@ fn prepare_tokens_apr(config: &InferenceConfig, prompt: &str) -> Result<Prepared
         .and_then(|n| n.to_str())
         .unwrap_or("");
 
-    let (apr_arch, has_chat_template) =
-        if config.model_path.extension().is_some_and(|e| e == "apr") {
-            match AprV2Model::load(&config.model_path) {
-                Ok(model) => {
-                    let meta = model.metadata();
-                    let arch = meta.architecture.clone().unwrap_or_default();
-                    let has_tmpl = meta
-                        .extra
-                        .get("tokenizer.chat_template")
-                        .and_then(|v| v.as_str())
-                        .is_some_and(|s| !s.is_empty());
-                    (arch, has_tmpl)
-                },
-                Err(_) => (String::new(), false),
-            }
-        } else {
-            (String::new(), false)
-        };
+    let (apr_arch, has_chat_template) = if config.model_path.extension().is_some_and(|e| e == "apr")
+    {
+        match AprV2Model::load(&config.model_path) {
+            Ok(model) => {
+                let meta = model.metadata();
+                let arch = meta.architecture.clone().unwrap_or_default();
+                let has_tmpl = meta
+                    .extra
+                    .get("tokenizer.chat_template")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|s| !s.is_empty());
+                (arch, has_tmpl)
+            },
+            Err(_) => (String::new(), false),
+        }
+    } else {
+        (String::new(), false)
+    };
 
     let filename_instruct = model_name.to_lowercase().contains("instruct")
         || model_name.to_lowercase().contains("-chat");

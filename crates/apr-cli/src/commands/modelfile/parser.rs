@@ -133,7 +133,7 @@ pub fn parse_modelfile_str(
                     });
                 }
                 config.from = trimmed_value;
-            },
+            }
             "PARAMETER" => {
                 let (k, v) = parse_parameter_kv(&trimmed_value).ok_or_else(|| ModelfileError {
                     source: source_path.to_path_buf(),
@@ -142,16 +142,16 @@ pub fn parse_modelfile_str(
                     message: "PARAMETER requires `<name> <value>`".into(),
                 })?;
                 config.parameters.insert(k, v);
-            },
+            }
             "TEMPLATE" => {
                 config.template = Some(trimmed_value);
-            },
+            }
             "SYSTEM" => {
                 config.system = Some(trimmed_value);
-            },
+            }
             "LICENSE" => {
                 config.license = Some(trimmed_value);
-            },
+            }
             "MESSAGE" => {
                 let (role, content) =
                     parse_message_value(&trimmed_value).ok_or_else(|| ModelfileError {
@@ -161,10 +161,10 @@ pub fn parse_modelfile_str(
                         message: "MESSAGE requires `<role> <content>`".into(),
                     })?;
                 config.messages.push(MessageEntry { role, content });
-            },
+            }
             "ADAPTER" => {
                 config.adapter = Some(trimmed_value);
-            },
+            }
             _ => unreachable!("KNOWN_DIRECTIVES guard"),
         }
 

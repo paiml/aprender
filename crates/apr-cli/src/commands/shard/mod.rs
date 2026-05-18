@@ -49,9 +49,7 @@ pub fn parse_size(s: &str) -> Result<u64, String> {
         return Err("empty size".to_string());
     }
 
-    let split_at = s
-        .find(|c: char| c.is_ascii_alphabetic())
-        .unwrap_or(s.len());
+    let split_at = s.find(|c: char| c.is_ascii_alphabetic()).unwrap_or(s.len());
     let (num_part, unit_part) = s.split_at(split_at);
     let num_part = num_part.trim();
     let unit_part = unit_part.trim();
