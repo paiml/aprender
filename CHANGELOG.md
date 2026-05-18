@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-05-18
+
+### 🎉 MODEL-2 §88 stack-existence-proof published — paiml/albor-370m-v1 LIVE on HF Hub
+
+End-to-end publish of the first model trained with the Sovereign AI Stack: https://huggingface.co/paiml/albor-370m-v1. 494M-parameter Qwen2 architecture (init from Qwen2.5-Coder-0.5B-Instruct, fine-tuned on bigcode/the-stack-dedup + codeparrot/codeparrot-clean Python permissive subset), val_loss=4.6227, all 3 binary artifacts (.apr, .gguf, .safetensors) + tokenizer + config + 11.6KB model card. GGUF verified loadable by llama.cpp.
+
+PMAT-690 P3-C-prep defect cascade (Class-3 wave of 5):
+
+### Added
+
+- **`apr stamp --tokenizer <DIR>`** (#1769) — embeds `vocab.json` + `merges.txt` (or `tokenizer.json`) into APR `custom.tokenizer.vocabulary` + sets `HAS_VOCAB` flag. Closes the §86 salvage workflow: pre-P0-K APRs that lacked embedded vocab can now be elevated to publish quality without re-training.
+- **GGUF Q4_K K-divisibility check** (#1771) — when `K % 256 != 0` (Q4_K block size), affected tensors fall back to F32 with a clear `[GGUF-EXPORT-Q4K-FALLBACK]` log line. llama.cpp previously rejected such files with `tensor 'X' of type 12 (q4_K) has N elements per row, not a multiple of block size (256)`. Notable: Qwen2 0.5B (hidden=896) hits this on every layer's attention + ffn_gate/ffn_up; 1.5B (hidden=1536) and 7B (hidden=3584) are unaffected.
+- **LFS batch upload + NDJSON commit** (#1772) — `apr publish` now handles the 5MB–5GB band correctly. Three sub-defects fixed in one PR:
+  - `upload_via_lfs_batch` (new) calls HF's standard LFS Batch API (`POST /{repo}.git/info/lfs/objects/batch`) to fetch the presigned S3 URL when `preupload` returns `uploadMode: lfs` without inline URLs. Previously orphaned LFS pointers landed in the repo without their blobs.
+  - `commit_lfs_pointer` + `upload_direct` now emit NDJSON with the `lfsFile` / `file` keys per HF's commit API spec. JSON `addOrUpdate` commits returned 200 but silently dropped files.
+  - `ModelCard::to_huggingface` no longer emits an empty `model-index:` block. HF's metadata validator rejects with HTTP 400 `"model-index[0].results" is required` if `results:` is absent.
+
+### Fixed
+
+- **GGUF Q4_K shape pass-through** (#1771) — `encode_gguf_data`, `fusion.rs::build_fused_tensors_f32`, and `export_include_01.rs::build_tied_output_weight` now pass the APR-native shape directly to `quantize_q4_k_matrix` instead of `[shape[1], shape[0]]`. Previously the swap made the quantizer treat the K dim as `rows`, padding the wrong axis and producing transposed bytes with the wrong byte count (350,208-byte excess on Qwen2 0.5B ffn_down). Symptom for llama.cpp: `gguf_init_from_file_impl: tensor 'X' has offset N, expected M`.
+- **Workspace clippy lints** (#1771 + #1772) — allow `manual_is_multiple_of` + `format_in_format_args` at workspace level (Rust 1.93 promoted these to pedantic; pre-existing sites in aprender-test-lib + idiomatic debug-logging patterns).
+- **Workspace fmt drift** (#1771 + #1772) — `cargo fmt --all` rebaseline.
+
+### Verification
+
+- **End-to-end**: Qwen2 0.5B (P2-E ep49) — `apr stamp` → `apr export gguf int4` → `llama-cli` loads and generates tokens. No Q4_K rejection. No offset drift. No tokenizer-merges error.
+- **HF publish**: `paiml/albor-370m-v1` repo has 8 files (.gitattributes + README + 3 LFS + config + vocab + merges) with valid `pipeline_tag: text-generation`, `library_name: aprender`, `model-index` containing val_loss/val_perplexity/throughput metrics.
+- **Tests**: 7 new `q4k_divisibility_tests` (including `q4k_byte_count_matches_llama_cpp_expectation`); all 55 pre-existing q4k tests pass; 13,805 aprender-core lib tests pass.
+
 ## [0.33.0] - 2026-05-13
 
 ### 🎉 MODEL-1 SHIP % = 100% — all 10 AC-SHIP1-* LIVE-DISCHARGED
