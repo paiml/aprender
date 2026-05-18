@@ -9227,10 +9227,10 @@ roadmap:
   item_type: task
   title: 'P2-D: True distillation from MODEL-1 (apr distill)'
   status: planned
-  priority: high
+  priority: medium
   assigned_to: null
   created: 2026-05-16T07:15:09Z
-  updated: 2026-05-18T10:01:40Z
+  updated: 2026-05-16T07:15:09Z
   spec: null
   acceptance_criteria:
   - 'Ship apr distill per §35 (currently STUB). Architectural change; defer until P2-C exhausted. Multi-week scope. Effort: 16-40h. Δship +10. P=25%.'
@@ -9250,10 +9250,10 @@ roadmap:
   item_type: task
   title: 'P1-B: HumanEval pass@1 on best checkpoint (DEFERRED)'
   status: planned
-  priority: high
+  priority: medium
   assigned_to: null
   created: 2026-05-16T07:15:26Z
-  updated: 2026-05-18T10:01:40Z
+  updated: 2026-05-16T07:15:26Z
   spec: null
   acceptance_criteria:
   - 'BLOCKED on val_loss < 3.0 per audit Rec #3 (was < 4.0). At current val_loss=4.71 (perplexity ~111) zero-shot reasoning is mathematically impossible. apr eval humaneval. Effort: 5-8h gx10. Δship +3 if pass>5%. P=3%. Run AFTER P2-C lands a better checkpoint.'
@@ -9405,83 +9405,15 @@ roadmap:
 - id: PMAT-691
   github_issue: null
   item_type: task
-  title: Distillation Phase 1 — apr distill prepare (teacher logits cache)
+  title: Distillation Phase 2 — KD-wired student forward+backward
   status: inprogress
   priority: high
   assigned_to: null
-  created: 2026-05-18T10:01:48Z
-  updated: 2026-05-18T10:01:53.808598526+00:00
+  created: 2026-05-18T10:58:38Z
+  updated: 2026-05-18T10:58:47.974418794+00:00
   spec: null
   acceptance_criteria:
-  - 'SPEC-DISTILL-001 Phase 1. New ''apr distill prepare --teacher <path> --dataset <bin-shards> --out <cache-dir>'' subcommand. Iterates batches via realizar::Model::forward_logits, writes top-K=64 sparse cache (.logits.bin per batch) with header magic APRLOG. New module aprender-train-distill/src/teacher_cache.rs. Falsifier F-DISTILL-PREP-001: 100-batch slice, cos sim >= 0.999 vs online realizar recompute. Effort: 16-24h eng + 4-8h compute, 3 days calendar.'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: PMAT-692
-  github_issue: null
-  item_type: task
-  title: Distillation Phase 2c — pipeline integration end-to-end
-  status: planned
-  priority: high
-  assigned_to: null
-  created: 2026-05-18T12:22:46Z
-  updated: 2026-05-18T12:22:46Z
-  spec: null
-  acceptance_criteria:
-  - SPEC-DISTILL-001 Phase 2c. Rewrite pipeline.rs::train() to use TeacherLogitsProvider + StudentLogitsProvider + kd_step end-to-end. Replace remaining build_synthetic_logits stubs. Add CPU-only integration test that exercises the full data flow on FixtureTeacher + FixtureStudent + 100 training steps with loss monotonicity falsifier.
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: PMAT-693
-  github_issue: null
-  item_type: task
-  title: Distillation Phase 2d — CudaStudentProvider wrapping CudaTransformerTrainer
-  status: planned
-  priority: high
-  assigned_to: null
-  created: 2026-05-18T12:40:21Z
-  updated: 2026-05-18T12:40:21Z
-  spec: null
-  acceptance_criteria:
-  - SPEC-DISTILL-001 Phase 2d. Real GPU student backend. Adds CudaTransformerTrainer::forward_backward_with_grad pub method that takes a precomputed logit gradient and runs forward + uploads grad to logits_buf + gpu_backward + optimizer. Wires CudaStudentProvider to the StudentLogitsProvider trait. Unblocks Phase 3 (500-step E2E smoke).
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: PMAT-694
-  github_issue: null
-  item_type: task
-  title: Distillation Phase 3-prep — CLI wiring for CudaTeacher / CudaStudent backends
-  status: planned
-  priority: high
-  assigned_to: null
-  created: 2026-05-18T13:02:04Z
-  updated: 2026-05-18T13:02:04Z
-  spec: null
-  acceptance_criteria:
-  - 'Surfaced during Phase 3 dispatch: apr distill''s current CLI surface accepts teacher path + --student path + --data path + (temperature, alpha, epochs). The new CudaTrainerTeacher (Phase 1b) + CudaStudentProvider (Phase 2d) backends need CLI flags to be selectable from . Add: --teacher-hf <repo> + --student-init-hf <repo> + --backend cuda flags that construct the providers via Pipeline::with_teacher / with_student. Without this, real Phase 3 smoke uses FixtureTeacher (toy) instead of MODEL-1.'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: PMAT-695
-  github_issue: null
-  item_type: task
-  title: Distill --backend CLI wiring (PMAT-697)
-  status: planned
-  priority: high
-  assigned_to: null
-  created: 2026-05-18T13:04:23Z
-  updated: 2026-05-18T13:04:23Z
-  spec: null
-  acceptance_criteria:
-  - 'Phase 3-prep: add --backend flag to apr distill clap variant; when cuda, construct Pipeline::with_teacher(CudaTrainerTeacher) + with_student(CudaStudentProvider) in dispatch.rs path.'
+  - SPEC-DISTILL-001 Phase 2. Wire CudaTransformerTrainer's KD-loss backward into pipeline.rs::train(). Add forward_backward_kd_batch(batch, teacher_logits) on the trainer. Replace remaining build_synthetic_logits stub for student path. Falsifier F-DISTILL-KD-001 — loss monotone over 100 steps.
   phases: []
   subtasks: []
   estimated_effort: null
