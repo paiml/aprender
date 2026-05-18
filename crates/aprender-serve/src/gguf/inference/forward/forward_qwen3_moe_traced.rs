@@ -309,24 +309,30 @@ impl OwnedQuantizedModel {
                 plan.is_some_and(|p| p.should_save(SaveTensorStage::MoeRouter, layer_idx as u32));
             let want_ffn_out =
                 plan.is_some_and(|p| p.should_save(SaveTensorStage::MoeFfnOut, layer_idx as u32));
-            let want_capture = want_router || want_ffn_out;
+            let want_router_indices = plan.is_some_and(|p| {
+                p.should_save(SaveTensorStage::MoeRouterIndices, layer_idx as u32)
+            });
+            let want_capture = want_router || want_ffn_out || want_router_indices;
 
             let mut ffn_output = vec![0.0f32; seq_len * hidden_dim];
             let mut last_router_top_k: Vec<f32> = Vec::new();
+            let mut last_router_top_k_indices: Vec<u32> = Vec::new();
             for s in 0..seq_len {
                 let pos_in = &ffn_input[s * hidden_dim..(s + 1) * hidden_dim];
                 if want_capture && s == last_pos {
-                    let (pos_out, router_top_k) = moe_ffn_forward_layer_with_router(
-                        pos_in,
-                        &moe_layers[layer_idx],
-                        num_experts,
-                        num_experts_per_tok,
-                        intermediate,
-                        hidden_dim,
-                        data,
-                    )?;
+                    let (pos_out, router_top_k, router_top_k_indices) =
+                        moe_ffn_forward_layer_with_router(
+                            pos_in,
+                            &moe_layers[layer_idx],
+                            num_experts,
+                            num_experts_per_tok,
+                            intermediate,
+                            hidden_dim,
+                            data,
+                        )?;
                     ffn_output[s * hidden_dim..(s + 1) * hidden_dim].copy_from_slice(&pos_out);
                     last_router_top_k = router_top_k;
+                    last_router_top_k_indices = router_top_k_indices;
                 } else {
                     let pos_out = moe_ffn_forward_layer(
                         pos_in,
@@ -367,6 +373,25 @@ impl OwnedQuantizedModel {
                 )
                 .map_err(|e| crate::error::RealizarError::IoError {
                     message: format!("save_tensor::MoeFfnOut L{layer_idx}: {e}"),
+                })?;
+            }
+            if want_router_indices {
+                // PR-3e2 (#1583): expert IDs cast to f32 lossless for
+                // num_experts ≤ 2^24. Persisted as the
+                // `SaveTensorStage::MoeRouterIndices` payload — reinterpret
+                // each f32 back to u32 on read.
+                let indices_f32: Vec<f32> = last_router_top_k_indices
+                    .iter()
+                    .map(|&i| i as f32)
+                    .collect();
+                maybe_save_stage(
+                    plan,
+                    SaveTensorStage::MoeRouterIndices,
+                    layer_idx as u32,
+                    &indices_f32,
+                )
+                .map_err(|e| crate::error::RealizarError::IoError {
+                    message: format!("save_tensor::MoeRouterIndices L{layer_idx}: {e}"),
                 })?;
             }
 
