@@ -14,11 +14,13 @@
 
 pub mod config;
 pub mod pipeline;
+pub mod teacher_provider;
 pub mod validation;
 pub mod weights;
 
 pub use config::DistillConfig;
 pub use pipeline::{Pipeline, PipelineResult};
+pub use teacher_provider::{FixtureTeacher, TeacherLogitsProvider};
 pub use validation::ConfigValidator;
 pub use weights::load_safetensors_weights;
 
