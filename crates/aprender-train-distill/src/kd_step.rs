@@ -1,0 +1,388 @@
+//! Knowledge-distillation training step orchestration.
+//!
+//! # SPEC-DISTILL-001 Phase 2 (PMAT-691)
+//!
+//! This module wires together the teacher logits provider (Phase 1/1b)
+//! and the student trainer's loss computation, producing a per-step KD
+//! signal that the pipeline can log and (in Phase 2b) feed back into the
+//! student's gradient update.
+//!
+//! ## Scope of Phase 2 vs Phase 2b
+//!
+//! **Phase 2 (this module, landed in this PR)**: orchestrates the data
+//! path. For each batch:
+//!
+//! 1. Call `teacher.logits_for_batch(input_ids)` → teacher logits.
+//! 2. Compute the student's predictions via a caller-supplied closure
+//!    (so the implementation isn't coupled to `CudaTransformerTrainer`
+//!    today — the caller can pass any function that returns student
+//!    logits per batch element).
+//! 3. Apply `DistillationLoss::forward` to produce the combined CE+KL
+//!    scalar for logging.
+//! 4. Compute the KD-aware logit-space gradient via `kd_logit_gradient`
+//!    (made available here as a Phase 2b primer, but not yet pushed
+//!    through `CudaTransformerTrainer.backward` — that wiring is
+//!    Phase 2b).
+//!
+//! **Phase 2b (separate ticket, PMAT-694)**: extends
+//! `CudaTransformerTrainer` with `forward_backward_kd_batch(batch,
+//! teacher_logits)` that uses the KD logit gradient (not CE alone) as
+//! the back-prop seed. With that in place, the pipeline switches from
+//! "CE training with KD telemetry" to "real KD training".
+//!
+//! Splitting Phase 2 into 2a/2b lets us land the orchestration layer
+//! and its tests now — without needing to extend a complex piece of
+//! GPU code in the same PR.
+//!
+//! ## Falsifiers pinned here
+//!
+//! - **F-DISTILL-KDSTEP-001** — `kd_logit_gradient` reduces to plain
+//!   softmax-CE gradient when `alpha = 1.0`. (CE-only sanity bound.)
+//! - **F-DISTILL-KDSTEP-002** — when student logits equal teacher logits
+//!   (perfect agreement), the KL portion of the loss is zero and the
+//!   KL portion of the gradient is zero.
+//! - **F-DISTILL-KDSTEP-003** — `kd_loss_for_batch` produces a scalar
+//!   that strictly increases when student logits move away from a fixed
+//!   teacher target.
+//!
+//! These pin the orchestration math now so Phase 2b only has to wire
+//! the GPU backward — it doesn't have to also re-derive the math.
+
+use crate::teacher_provider::TeacherLogitsProvider;
+use entrenar_common::Result;
+
+/// Softmax over a 1D logits slice (numerically stable via max-shift).
+fn softmax(logits: &[f32]) -> Vec<f32> {
+    let m = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let exps: Vec<f32> = logits.iter().map(|x| (x - m).exp()).collect();
+    let z: f32 = exps.iter().sum();
+    if z > 0.0 {
+        exps.into_iter().map(|x| x / z).collect()
+    } else {
+        // Pathological: all -inf. Fall back to uniform.
+        vec![1.0 / logits.len() as f32; logits.len()]
+    }
+}
+
+/// One-hot gradient component: softmax(student) - one_hot(label).
+///
+/// This is the gradient of CE loss w.r.t. logits (assuming softmax-then-NLL
+/// reduces to this clean form, which is the standard derivation).
+fn ce_logit_gradient(student_logits: &[f32], label: usize) -> Vec<f32> {
+    let mut grad = softmax(student_logits);
+    if label < grad.len() {
+        grad[label] -= 1.0;
+    }
+    grad
+}
+
+/// Compute the combined KD logit gradient.
+///
+/// ```text
+///   ∂L/∂s = α · (softmax(s) - one_hot(label))
+///         + (1-α) · T · (softmax(s/T) - softmax(t/T))
+/// ```
+///
+/// where `s` is student logits, `t` is teacher logits, `T` is the
+/// distillation temperature, and `α` is the CE-vs-KD weight.
+///
+/// The T factor (instead of T²) is correct because the gradient of
+/// the T²-scaled KL with respect to student logits absorbs one of the
+/// T factors — see Hinton et al. 2015 §2 footnote 2 for the derivation.
+///
+/// **Phase 2b plug point**: this is the gradient that
+/// `CudaTransformerTrainer.forward_backward_kd_batch` will seed its
+/// backward pass with (instead of the CE-only gradient).
+pub fn kd_logit_gradient(
+    student_logits: &[f32],
+    teacher_logits: &[f32],
+    label: usize,
+    temperature: f32,
+    alpha: f32,
+) -> Vec<f32> {
+    assert_eq!(
+        student_logits.len(),
+        teacher_logits.len(),
+        "kd_logit_gradient: student and teacher logits must have the same vocab size"
+    );
+    let n = student_logits.len();
+    let ce_grad = ce_logit_gradient(student_logits, label);
+
+    if alpha >= 1.0 {
+        // Pure CE: KD term contributes nothing.
+        return ce_grad;
+    }
+
+    // Temperature-scaled softmaxes.
+    let t_safe = temperature.max(1e-6);
+    let scaled_s: Vec<f32> = student_logits.iter().map(|x| x / t_safe).collect();
+    let scaled_t: Vec<f32> = teacher_logits.iter().map(|x| x / t_safe).collect();
+    let p_s = softmax(&scaled_s);
+    let p_t = softmax(&scaled_t);
+
+    let mut out = vec![0.0_f32; n];
+    for i in 0..n {
+        let kd_term = t_safe * (p_s[i] - p_t[i]);
+        out[i] = alpha * ce_grad[i] + (1.0 - alpha) * kd_term;
+    }
+    out
+}
+
+/// Compute the scalar combined KD loss for a single (student, teacher,
+/// label) triple.
+///
+/// ```text
+///   L = α · CE(softmax(s), label)
+///     + (1-α) · T² · KL(softmax(s/T) || softmax(t/T))
+/// ```
+///
+/// Returned for logging / telemetry only — the gradient that goes back
+/// through the model is `kd_logit_gradient`, not the symbolic derivative
+/// of this scalar.
+pub fn kd_loss(
+    student_logits: &[f32],
+    teacher_logits: &[f32],
+    label: usize,
+    temperature: f32,
+    alpha: f32,
+) -> f32 {
+    let p_s_hard = softmax(student_logits);
+    let ce = if label < p_s_hard.len() {
+        -(p_s_hard[label].max(1e-9).ln())
+    } else {
+        0.0
+    };
+
+    if alpha >= 1.0 {
+        return ce;
+    }
+
+    let t_safe = temperature.max(1e-6);
+    let scaled_s: Vec<f32> = student_logits.iter().map(|x| x / t_safe).collect();
+    let scaled_t: Vec<f32> = teacher_logits.iter().map(|x| x / t_safe).collect();
+    let p_s = softmax(&scaled_s);
+    let p_t = softmax(&scaled_t);
+
+    // KL(P_s || P_t) = sum_i p_s[i] * (log p_s[i] - log p_t[i])
+    let mut kl = 0.0_f32;
+    for i in 0..p_s.len() {
+        if p_s[i] > 0.0 {
+            kl += p_s[i] * (p_s[i].max(1e-9).ln() - p_t[i].max(1e-9).ln());
+        }
+    }
+
+    alpha * ce + (1.0 - alpha) * t_safe * t_safe * kl
+}
+
+/// Run a single KD orchestration step.
+///
+/// Returns `(combined_loss, per_batch_logit_gradients)`:
+/// - `combined_loss` is the scalar `L` averaged over the batch.
+/// - `per_batch_logit_gradients` is `Vec<Vec<f32>>` shape `[batch, vocab]`
+///   — the gradient that Phase 2b will feed into the student trainer's
+///   backward pass.
+///
+/// `compute_student_logits` is a closure the caller supplies. In Phase 2a
+/// tests this is a fixture; in Phase 4 production runs it'll be backed by
+/// the student `CudaTransformerTrainer`'s `forward_logits` method.
+///
+/// # Errors
+///
+/// Propagates errors from the teacher provider. Returns
+/// `EntrenarError::Internal` if `student_compute` produces logits whose
+/// length doesn't match the teacher's vocab size.
+pub fn kd_step<F>(
+    teacher: &mut dyn TeacherLogitsProvider,
+    input_ids: &[Vec<u32>],
+    labels: &[usize],
+    temperature: f32,
+    alpha: f32,
+    mut compute_student_logits: F,
+) -> Result<(f32, Vec<Vec<f32>>)>
+where
+    F: FnMut(&[u32]) -> Vec<f32>,
+{
+    assert_eq!(
+        input_ids.len(),
+        labels.len(),
+        "kd_step: input_ids and labels must have the same batch size"
+    );
+    let teacher_logits = teacher.logits_for_batch(input_ids)?;
+    let vocab = teacher.vocab_size();
+
+    let mut total_loss = 0.0_f32;
+    let mut grads = Vec::with_capacity(input_ids.len());
+    for ((ids, t_logits), &label) in input_ids.iter().zip(teacher_logits.iter()).zip(labels.iter())
+    {
+        let s_logits = compute_student_logits(ids);
+        if s_logits.len() != vocab {
+            return Err(entrenar_common::EntrenarError::Internal {
+                message: format!(
+                    "kd_step: student logits len {} != teacher vocab_size {}",
+                    s_logits.len(),
+                    vocab
+                ),
+            });
+        }
+        total_loss += kd_loss(&s_logits, t_logits, label, temperature, alpha);
+        grads.push(kd_logit_gradient(
+            &s_logits,
+            t_logits,
+            label,
+            temperature,
+            alpha,
+        ));
+    }
+    let avg_loss = if input_ids.is_empty() {
+        0.0
+    } else {
+        total_loss / input_ids.len() as f32
+    };
+    Ok((avg_loss, grads))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::teacher_provider::FixtureTeacher;
+
+    #[test]
+    fn softmax_is_unit_sum_and_nonnegative() {
+        let logits = vec![1.0_f32, 2.0, 3.0, -1.0];
+        let p = softmax(&logits);
+        let sum: f32 = p.iter().sum();
+        assert!((sum - 1.0).abs() < 1e-6, "softmax sums to 1 (got {sum})");
+        for v in &p {
+            assert!(*v >= 0.0, "softmax outputs are non-negative");
+        }
+    }
+
+    #[test]
+    fn ce_gradient_correct_sign() {
+        // The label has probability 1; non-label tokens have ~0. After CE,
+        // the gradient at the label position should be negative (decrease
+        // logit pushes prob up, which we don't want — wait, opposite:
+        // gradient is softmax-1, so at the label, grad = p - 1 < 0; we
+        // subtract grad to MAXIMIZE p[label].
+        let logits = vec![0.0_f32, 0.0, 0.0, 0.0];
+        let g = ce_logit_gradient(&logits, 2);
+        // softmax of uniform = 0.25 everywhere; grad[label] = 0.25 - 1 = -0.75
+        assert!((g[2] - (-0.75)).abs() < 1e-6);
+        // grad at non-label = 0.25 (positive)
+        for (i, &val) in g.iter().enumerate() {
+            if i != 2 {
+                assert!((val - 0.25).abs() < 1e-6);
+            }
+        }
+    }
+
+    #[test]
+    fn falsify_kdstep_001_alpha_1_reduces_to_pure_ce() {
+        // F-DISTILL-KDSTEP-001
+        let s = vec![1.0_f32, 0.5, -0.3, 2.0];
+        let t = vec![3.0_f32, -0.1, 0.4, 0.0]; // teacher should NOT affect output when alpha=1.0
+        let g_kd = kd_logit_gradient(&s, &t, 3, 4.0, 1.0);
+        let g_ce = ce_logit_gradient(&s, 3);
+        for (a, b) in g_kd.iter().zip(g_ce.iter()) {
+            assert!(
+                (a - b).abs() < 1e-6,
+                "alpha=1 must collapse KD gradient to CE: {a} vs {b}"
+            );
+        }
+    }
+
+    #[test]
+    fn falsify_kdstep_002_perfect_agreement_zero_kl_term() {
+        // F-DISTILL-KDSTEP-002 — student == teacher → KL portion is 0.
+        // With alpha=0, the gradient is purely KL, so it must equal zero.
+        let s = vec![1.0_f32, 0.5, -0.3, 2.0, 0.1];
+        let t = s.clone();
+        let g = kd_logit_gradient(&s, &t, 0, 4.0, 0.0);
+        for &val in &g {
+            assert!(
+                val.abs() < 1e-6,
+                "student==teacher with alpha=0 must produce zero gradient, got {val}"
+            );
+        }
+    }
+
+    #[test]
+    fn falsify_kdstep_003_loss_increases_as_student_diverges() {
+        // F-DISTILL-KDSTEP-003 — KD loss increases monotonically as student
+        // logits drift further from a fixed teacher reference.
+        let t = vec![1.0_f32, 2.0, 3.0, 0.5];
+
+        let s_close = t.clone();
+        let s_far: Vec<f32> = t.iter().map(|x| -x).collect(); // mirror across zero
+
+        let loss_close = kd_loss(&s_close, &t, 0, 4.0, 0.0);
+        let loss_far = kd_loss(&s_far, &t, 0, 4.0, 0.0);
+
+        assert!(
+            loss_far > loss_close,
+            "KD loss with diverged student ({loss_far}) must exceed loss with matched student ({loss_close})"
+        );
+    }
+
+    #[test]
+    fn kd_loss_alpha_1_is_pure_ce() {
+        // Sanity: with alpha=1, loss is just CE.
+        let s = vec![0.0_f32, 0.0, 0.0, 0.0];
+        let t = vec![10.0_f32, 0.0, 0.0, 0.0]; // teacher should be ignored
+        let loss = kd_loss(&s, &t, 2, 4.0, 1.0);
+        // Uniform softmax → p[label] = 0.25 → CE = -ln(0.25) = ln(4)
+        assert!((loss - 4.0_f32.ln()).abs() < 1e-5);
+    }
+
+    #[test]
+    fn kd_step_orchestrates_teacher_and_student() {
+        let mut teacher = FixtureTeacher::new(8);
+        // Student returns the same logits regardless of input (constant model).
+        let compute_student = |_ids: &[u32]| -> Vec<f32> { vec![0.5_f32; 8] };
+
+        let input_ids = vec![vec![1, 2, 3], vec![4, 5]];
+        let labels = vec![3, 5];
+        let (loss, grads) = kd_step(
+            &mut teacher,
+            &input_ids,
+            &labels,
+            4.0,
+            0.5,
+            compute_student,
+        )
+        .unwrap();
+
+        assert!(loss.is_finite() && loss > 0.0, "loss is finite + positive");
+        assert_eq!(grads.len(), 2, "one gradient vec per batch element");
+        for g in &grads {
+            assert_eq!(g.len(), 8, "gradient is vocab-sized");
+            for &val in g {
+                assert!(val.is_finite(), "gradient is finite");
+            }
+        }
+    }
+
+    #[test]
+    fn kd_step_returns_zero_loss_on_empty_batch() {
+        let mut teacher = FixtureTeacher::new(8);
+        let compute_student = |_ids: &[u32]| vec![0.0_f32; 8];
+        let (loss, grads) = kd_step(&mut teacher, &[], &[], 4.0, 0.5, compute_student).unwrap();
+        assert_eq!(loss, 0.0);
+        assert!(grads.is_empty());
+    }
+
+    #[test]
+    fn kd_step_errors_on_vocab_size_mismatch() {
+        let mut teacher = FixtureTeacher::new(16);
+        let compute_student = |_ids: &[u32]| vec![0.0_f32; 8]; // wrong size
+        let result = kd_step(
+            &mut teacher,
+            &[vec![1]],
+            &[0],
+            4.0,
+            0.5,
+            compute_student,
+        );
+        assert!(result.is_err(), "vocab size mismatch must error, not silently corrupt");
+    }
+}
