@@ -129,7 +129,8 @@ fn apr_embed_cosine(
         ));
     }
     let stdout = std::str::from_utf8(&output.stdout).map_err(|e| format!("stdout utf8: {e}"))?;
-    let v: serde_json::Value = serde_json::from_str(stdout).map_err(|e| format!("json parse: {e}"))?;
+    let v: serde_json::Value =
+        serde_json::from_str(stdout).map_err(|e| format!("json parse: {e}"))?;
     let results = v
         .get("results")
         .and_then(|r| r.as_array())
