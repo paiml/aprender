@@ -45,13 +45,18 @@ GX10_REPO_PATH="${GX10_REPO_PATH:-/home/noah/src/aprender}"
 # PMAT-698d: gx10 has no /mnt/nvme-raid0 (that's lambda-vector layout).
 # Default to $HOME/runs which exists on most setups; override via env.
 GX10_RUN_PREFIX="${GX10_RUN_PREFIX:-/home/noah/runs}"
-# PMAT-698d: paiml/qwen2.5-coder-7b-apache-q4k-v1 is GGUF, which apr
-# distill cuda backend (CudaTrainerTeacher::for_inference) does NOT
-# load — it only handles APR + SafeTensors. The original MODEL-1
-# teacher needs an apr import GGUF->APR step before distill (deferred
-# to PMAT-698e); for the Phase 3 smoke we default to a SafeTensors
-# teacher that loads directly.
-TEACHER_REPO="${TEACHER_REPO:-Qwen/Qwen2.5-Coder-1.5B-Instruct}"
+# PMAT-698d: the original paiml/qwen2.5-coder-7b-apache-q4k-v1 GGUF
+# teacher is supported via stage_repo's apr import --preserve-q4k path
+# (further down). It does NOT load directly via for_inference. For the
+# Phase 3 smoke, default to a model size that fits the GB10 training
+# memory budget. The 1.5B teacher was tried but produced
+# CUDA_ERROR_OUT_OF_MEMORY at "Block 0 upload" — Blackwell's unified
+# 128GB pool reports correctly but training-time peak (weights +
+# gradients + Adam optimizer state + activations) overflows the
+# actual VRAM budget for >1B models. Use 0.5B for both teacher and
+# student: same architecture so the pipeline exercises every KD-loop
+# branch, while keeping memory bounded for the smoke.
+TEACHER_REPO="${TEACHER_REPO:-Qwen/Qwen2.5-Coder-0.5B-Instruct}"
 STUDENT_INIT="${STUDENT_INIT:-Qwen/Qwen2.5-Coder-0.5B-Instruct}"
 STEPS="${STEPS:-500}"
 BATCH_SIZE="${BATCH_SIZE:-4}"
