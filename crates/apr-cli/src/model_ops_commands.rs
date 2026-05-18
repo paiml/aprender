@@ -168,5 +168,13 @@ pub enum ModelOpsCommands {
         /// Distillation stage: precompute, train (logit KD), or generate (text-based, GH-455)
         #[arg(long, value_name = "STAGE")]
         stage: Option<String>,
+        /// SPEC-DISTILL-001 Phase 3-prep (PMAT-697): teacher/student backend
+        /// selector. `fixture` (default) uses the in-memory FixtureTeacher
+        /// + FixtureStudent (CPU-only, useful for plumbing tests + CI).
+        /// `cuda` constructs CudaTrainerTeacher + CudaStudentProvider from
+        /// the on-disk teacher / student checkpoints — required for the
+        /// real F-DISTILL-SMOKE-001 falsifier on GPU hardware.
+        #[arg(long, value_name = "BACKEND", default_value = "fixture")]
+        backend: String,
     },
 }
