@@ -1212,10 +1212,108 @@ milestones:
 # ─────────────────────────────────────────────────────────────────────────────
 
 status_history:
+  - date: '2026-05-18'
+    from: 'ACTIVE_RUNTIME v1.30.0 (pending merge of aprender#1735)'
+    to: 'ACTIVE_RUNTIME v1.30.0 — M224 EVIDENCE RETRACTED + M234 valid verdict + M236-M242 Branch B follow-up'
+    note: |
+      RETRACTION + Branch B addendum. The M224 evidence cited in the
+      2026-05-16 status_history entry below was built on a 4-bug harness
+      stack and is RETRACTED. The directional verdict (StaticFalsified
+      per design-audit.md §5) stands, but the supporting evidence is now
+      M234 (valid, post-harness-rework). The CCPA-008 ADVISORY status +
+      M230 soft-deprecation are unchanged — they were always justified
+      on principle ("meter validation ≠ system validation"); M234 just
+      provides the valid empirical evidence that the M224 retraction
+      removed.
+    reason: |
+      Companion-repo M234 (PR #219, squash eba20ef) discovered that the
+      M224 Arena bench result was built on FOUR stacked harness bugs:
+
+        1. apr code leaks apr serve subprocesses per-invocation
+           (M226 partial workaround per-fixture; M234 + M240 full fix
+            per-turn in SubprocessDriver)
+        2. claude invoked without --dangerously-skip-permissions →
+           tool-use denied → 20+ turns of "I'm blocked" text
+        3. claude invoked without current_dir set → "no src/lib.rs here"
+        4. claude -p returns plain prose, NOT NextTurnEnvelope JSON →
+           ArenaSession multi-turn dispatched nothing → oracle never
+           ran a real fix
+
+      All four bugs independently sufficient to produce "0/5 for both
+      systems" regardless of agent quality. M234 rewrote the bench to
+      route teacher through one-shot stream-json (claude does its own
+      tool dispatch internally) and student through ArenaSession with
+      per-turn pkill apr serve. M234 also bumped APR_MODEL default from
+      qwen2.5-coder-1.5b (1.5B params) to Qwen3-Coder-30B (canonical
+      model, 30B params) — the prior 200B+ vs 1.5B comparison was
+      apples-to-oranges.
+
+      M234 valid Arena bench result (replaces M224):
+        - claude-opus-4-7 (one-shot stream-json): 1/5 (20%) — solved
+          decy#39 (the 276 clippy errors fixture)
+        - Qwen3-Coder-30B-A3B (multi-turn): 0/5 (0%)
+        - oracle_passed_rate = 0.10
+        - evaluate_static_vs_arena(1.0, 0.1, ...) → StaticFalsified
+          (same directional verdict as M224, now on valid evidence)
+        - First measurable teacher-vs-student gap on project-scale:
+          20 percentage points
+
+      The M224 narrative below is preserved verbatim as audit trail of
+      what we believed at the time. The M236-M242 Branch B sequence
+      hardens the measurement infrastructure so this class of bug
+      cannot recur:
+
+        M236 (PR #221, squash 188a328) — FALSIFY-CCPA-019
+          calibration-required-before-verdict gate. Any final outcome
+          parity verdict (CCPA-016/017/018) MUST be preceded by a
+          successful calibration run (identity_pass AND regression_fail,
+          ≤30 days old) recorded in
+          evidence/calibration/calibration-runs.json. Test scaffold at
+          crates/ccpa-differ/tests/falsify_ccpa_019_calibration.rs
+          (7 active synthetic + 1 #[ignore]'d live-evidence).
+          PROPOSED at companion v1.31.0; ACTIVE_RUNTIME when companion
+          CI enforces this before any CCPA-016/017/018 ACTIVE_RUNTIME
+          flip. Companion-led increment — aprender upstream catch-up
+          pending; this v1.30.0 PR does NOT bump version, only records
+          the M236+ commitment in this status_history entry.
+
+        M238 (PR #223, squash e77dad4) — Phase 2 baseline confounders.
+          Per-fixture build prep in scripts/phase-5-arena-bench.sh:
+          bashrs gets cargo update -p cc (fixes rustc 1.95+ incompat);
+          depyler#1133+#1135 marked KNOWN-BROKEN (multi-repo
+          provable-contracts ^0.2 + unreleased contracts; not
+          reproducible). evidence/calibration/README.md documents
+          per-fixture prerequisites + CCPA-019 cadence policy.
+
+        M240 (PR #225, squash 352821a) — Phase 3 claude stream-json
+          parser. New crates/ccpa-arena/src/stream_json.rs (~280 LOC,
+          9 unit tests) extracts assistant_turns + any_tool_error
+          from claude's NDJSON stream → recovery_observed parity with
+          apr-side CCPA-018 signal. Closes the M234 architectural-
+          asymmetry gap (apr had multi-turn history, claude was a
+          single bool; both now expose comparable recovery signals).
+
+        M242 (PR #227, squash 53455f0) — Phase 4 corpus scale-up.
+          New fixtures/calibration-and-scale/ corpus with 15
+          self-contained deterministic Rust fixtures (5 wrong-operator
+          + 5 missing-match-arm + 5 off-by-one). Combined corpus
+          n=18 (3 project-scale + 15 calibration-and-scale)
+          tightens parity-rate CI from ~20pp → ~10pp. Synthetic vs
+          real GitHub issues — design tradeoff documented in
+          fixtures/calibration-and-scale/README.md.
+
+      Future v1.31.0 contract bump (operator-coordinated) will:
+        - Register FALSIFY-CCPA-019 in aprender's invariants[] + add
+          full falsification_conditions[] block. Companion contract
+          already has v1.31.0 with CCPA-019; pin.lock will retarget
+          to that future aprender PR's HEAD when authored.
+        - Replace the M224-citing prose below with M234-citing prose
+          (or annotate inline). Done piecemeal; not in this PR scope.
+
   - date: '2026-05-16'
     from: 'ACTIVE_RUNTIME v1.28.0'
     to: 'ACTIVE_RUNTIME v1.30.0'
-    note: 'companion-repo M224-M230 Phase 5 Popperian-verdict sequence — three changes: (1) FALSIFY-CCPA-018 (arena_recovery_rate_bound) added to gate registry at status: PROPOSED (v1.29.0 SKIPPED — see reason below); (2) FALSIFY-CCPA-008 (parity_score_bound) soft-deprecated to status: ADVISORY in its summary, threshold unchanged; (3) records M224 first-operator-dispatched Arena bench result (0/5 oracle_passed_rate for both systems on M182 project-scale corpus) + design-audit.md §5 Popperian verdict: StaticFalsified.'
+    note: 'PRESERVED FOR AUDIT TRAIL — see retraction above. companion-repo M224-M230 Phase 5 Popperian-verdict sequence — three changes: (1) FALSIFY-CCPA-018 (arena_recovery_rate_bound) added to gate registry at status: PROPOSED (v1.29.0 SKIPPED — see reason below); (2) FALSIFY-CCPA-008 (parity_score_bound) soft-deprecated to status: ADVISORY in its summary, threshold unchanged; (3) records M224 first-operator-dispatched Arena bench result (0/5 oracle_passed_rate for both systems on M182 project-scale corpus) + design-audit.md §5 Popperian verdict: StaticFalsified.'
     reason: |
       Three changes bundled because they collectively answer the
       operator-authored design-audit.md §5 Popperian test and triggered
