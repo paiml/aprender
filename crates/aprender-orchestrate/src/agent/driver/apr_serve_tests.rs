@@ -253,3 +253,79 @@ fn falsify_http_001_strips_verbose_keeps_compact() {
     assert!(c.contains("## Tools"), "compact table preserved (PMAT-176)");
     assert!(!c.contains("## Available Tools"), "verbose section stripped");
 }
+
+// PR #1781 — `compute_ready_timeout_secs` tests.
+//
+// Fixes the hardcoded 30s startup-readiness timeout that blocked
+// large MoE GGUFs (e.g. Qwen3-Coder-30B at 18.5 GB) from ever
+// becoming ready in the SubprocessDriver. Resolver supports
+// `APR_SERVE_READY_TIMEOUT_S` env override + size-aware default
+// (30s baseline + 1s per 500 MB above 2 GB).
+
+use super::compute_ready_timeout_secs;
+
+#[test]
+fn ready_timeout_env_override_takes_precedence() {
+    // Env override beats size-aware default.
+    assert_eq!(compute_ready_timeout_secs(Some(50_000_000_000), Some("5")), 5);
+    assert_eq!(compute_ready_timeout_secs(None, Some("120")), 120);
+}
+
+#[test]
+fn ready_timeout_env_override_clamped_to_minimum() {
+    // 0 → clamped to 1 (avoid pathological zero-budget case).
+    assert_eq!(compute_ready_timeout_secs(None, Some("0")), 1);
+}
+
+#[test]
+fn ready_timeout_env_override_invalid_falls_through_to_default() {
+    // Non-integer → fall back to size-aware default.
+    assert_eq!(compute_ready_timeout_secs(None, Some("abc")), 30);
+    assert_eq!(compute_ready_timeout_secs(None, Some("")), 30);
+}
+
+#[test]
+fn ready_timeout_small_model_keeps_baseline() {
+    // 1 GB ≤ 2 GB free band → baseline 30s.
+    assert_eq!(compute_ready_timeout_secs(Some(1 * 1024 * 1024 * 1024), None), 30);
+    // 2 GB exactly → baseline.
+    assert_eq!(compute_ready_timeout_secs(Some(2 * 1024 * 1024 * 1024), None), 30);
+}
+
+#[test]
+fn ready_timeout_scales_with_model_size() {
+    // 4 GB: 2 GB above free band → 4 extra seconds (4 × 500 MB) → 34s.
+    assert_eq!(compute_ready_timeout_secs(Some(4 * 1024 * 1024 * 1024), None), 34);
+    // 18 GB (Qwen3-Coder-30B Q4_K_M): 16 GB above free band → 32 extra → 62s.
+    let qwen3_size = 18_u64 * 1024 * 1024 * 1024;
+    assert_eq!(compute_ready_timeout_secs(Some(qwen3_size), None), 62);
+    // 30 GB hypothetical: 28 GB above free band ÷ 500 MB per extra second
+    // = 57 extra (integer division of 28*1024 MB / 500 MB), → 87s total.
+    assert_eq!(compute_ready_timeout_secs(Some(30 * 1024 * 1024 * 1024), None), 87);
+}
+
+#[test]
+fn ready_timeout_unknown_size_falls_back_to_baseline() {
+    // model_size_bytes = None (stat failed) → 30s baseline.
+    assert_eq!(compute_ready_timeout_secs(None, None), 30);
+}
+
+#[test]
+fn ready_timeout_env_override_works_when_size_unknown() {
+    // Env override always wins, regardless of size knowledge.
+    assert_eq!(compute_ready_timeout_secs(None, Some("60")), 60);
+}
+
+#[test]
+fn ready_timeout_qwen3_coder_30b_real_size() {
+    // Real M260 measurement: Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+    // is 18,556,689,568 bytes. Size-aware default must exceed the 30s
+    // baseline that originally blocked the CCPA calibration bench.
+    let actual_bytes = 18_556_689_568_u64;
+    let secs = compute_ready_timeout_secs(Some(actual_bytes), None);
+    assert!(
+        secs >= 50,
+        "Qwen3-Coder-30B (18.5 GB) must get >= 50s budget; got {secs}s — fix paiml/claude-code-parity-apr M260"
+    );
+    assert!(secs <= 90, "Default scaling must not exceed reasonable max; got {secs}s");
+}
