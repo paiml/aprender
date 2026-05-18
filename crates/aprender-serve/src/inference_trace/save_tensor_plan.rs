@@ -219,11 +219,12 @@ mod tests {
     }
 
     #[test]
-    fn all_keyword_expands_to_twenty_two_stages() {
+    fn all_keyword_expands_to_all_stages() {
         // 20 from parent + trace-attn-sub-stages-v1 (attn_scores, attn_softmax)
-        // + 2 from trace-moe-gpu-sub-stages-v1 v1.0.0 (moe_router, moe_ffn_out).
+        // + 2 from trace-moe-gpu-sub-stages-v1 v1.0.0 (moe_router, moe_ffn_out)
+        // + 1 from M-GPU-MOE-3 PR-3e2 (#1583) (moe_router_indices) = 23.
         let plan = SaveTensorPlan::from_cli("all", "0..1", PathBuf::from("/tmp")).unwrap();
-        assert_eq!(plan.stages.len(), 22);
+        assert_eq!(plan.stages.len(), SaveTensorStage::ALL.len());
         assert_eq!(plan.stages, SaveTensorStage::ALL.to_vec());
     }
 
@@ -232,7 +233,7 @@ mod tests {
         for variant in ["all", "ALL", "All", "aLL"] {
             let plan = SaveTensorPlan::from_cli(variant, "0..1", PathBuf::from("/tmp"))
                 .expect("case variant should parse");
-            assert_eq!(plan.stages.len(), 22);
+            assert_eq!(plan.stages.len(), SaveTensorStage::ALL.len());
         }
     }
 
