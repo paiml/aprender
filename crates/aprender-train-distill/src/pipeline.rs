@@ -55,12 +55,12 @@ pub struct Pipeline<'a> {
     /// SPEC-DISTILL-001 Phase 1 (PMAT-691): the teacher backend the
     /// training loop pulls logits from. Defaults to a `FixtureTeacher`.
     /// Phase 1b (PMAT-693) adds `CudaTrainerTeacher` for real backends.
-    teacher: Box<dyn crate::teacher_provider::TeacherLogitsProvider + Send>,
+    teacher: Box<dyn crate::teacher_provider::TeacherLogitsProvider >,
     /// SPEC-DISTILL-001 Phase 2b (PMAT-695): the student backend the
     /// training loop updates each step. Defaults to a `FixtureStudent`.
     /// Phase 2d (PMAT-696) adds `CudaStudentProvider` wrapping
     /// `CudaTransformerTrainer` for production runs.
-    student: Box<dyn crate::student_provider::StudentLogitsProvider + Send>,
+    student: Box<dyn crate::student_provider::StudentLogitsProvider >,
 }
 
 impl<'a> Pipeline<'a> {
@@ -91,7 +91,7 @@ impl<'a> Pipeline<'a> {
     #[must_use]
     pub fn with_teacher(
         mut self,
-        teacher: Box<dyn crate::teacher_provider::TeacherLogitsProvider + Send>,
+        teacher: Box<dyn crate::teacher_provider::TeacherLogitsProvider >,
     ) -> Self {
         self.teacher = teacher;
         self
@@ -104,7 +104,7 @@ impl<'a> Pipeline<'a> {
     #[must_use]
     pub fn with_student(
         mut self,
-        student: Box<dyn crate::student_provider::StudentLogitsProvider + Send>,
+        student: Box<dyn crate::student_provider::StudentLogitsProvider >,
     ) -> Self {
         self.student = student;
         self

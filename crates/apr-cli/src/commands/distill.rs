@@ -462,29 +462,41 @@ pub(crate) fn run(
     match backend {
         "fixture" => {} // default; nothing else to validate
         "cuda" => {
-            // The real backend wiring (CudaTrainerTeacher + CudaStudentProvider)
-            // requires loading APR metadata to build TransformerConfig, then
-            // constructing the providers and threading them through to
-            // Pipeline::with_teacher / with_student. That work lives in a
-            // follow-up PR; here we surface the gap explicitly so a dispatch
-            // script user sees the right error.
-            return Err(CliError::ValidationFailed(
-                "--backend cuda is registered but the CudaTrainerTeacher / \
-                 CudaStudentProvider wiring is Phase 3-prep follow-up work \
-                 (PMAT-697 second half). Until then, the distill loop runs \
-                 with FixtureTeacher (toy logits). To dispatch a real Phase 3 \
-                 smoke, either: (a) wait for the CudaXxxProvider wiring PR, or \
-                 (b) construct the Pipeline programmatically via \
-                 Pipeline::new(&config).with_teacher(...).with_student(...) \
-                 and call execute() directly. See SPEC-DISTILL-001 §Phase 3."
-                    .to_string(),
-            ));
+            // SPEC-DISTILL-001 Phase 3-prep second half (PMAT-697): construct
+            // real CudaTrainerTeacher + CudaStudentProvider, wire to Pipeline,
+            // execute. Requires --features cuda to be compiled in.
+            #[cfg(all(feature = "training", feature = "cuda"))]
+            {
+                let teacher_path = teacher_path.ok_or_else(|| {
+                    CliError::ValidationFailed(
+                        "--backend cuda requires a positional teacher path".to_string(),
+                    )
+                })?;
+                return run_cuda_backend(
+                    teacher_path,
+                    student_path,
+                    output_path,
+                    temperature,
+                    alpha,
+                    epochs,
+                    plan_only,
+                    json_output,
+                );
+            }
+            #[cfg(not(all(feature = "training", feature = "cuda")))]
+            {
+                return Err(CliError::ValidationFailed(
+                    "--backend cuda requires apr-cli built with --features cuda,training. \
+                     Rebuild: cargo install aprender --features cuda,training"
+                        .to_string(),
+                ));
+            }
         }
         other => {
             return Err(CliError::ValidationFailed(format!(
                 "--backend '{other}' not recognized. Valid: fixture, cuda. \
                  Default 'fixture' uses CPU-only stub providers; 'cuda' wires \
-                 the real GPU backends (Phase 3-prep follow-up)."
+                 the real GPU backends."
             )));
         }
     }
@@ -574,6 +586,205 @@ pub(crate) fn run(
         json_output,
     );
 
+    Ok(())
+}
+
+/// SPEC-DISTILL-001 Phase 3-prep second half (PMAT-697): real cuda backend.
+///
+/// Constructs CudaTrainerTeacher + CudaStudentProvider from on-disk
+/// `.apr` checkpoints, threads them through Pipeline::with_teacher /
+/// with_student, and runs `execute()`. Output is the trained student
+/// safetensors + a distillation_metadata.json sidecar.
+///
+/// **Why this path exists** — `--backend fixture` uses CPU stubs that
+/// produce no real learning signal (useful for plumbing tests + CI,
+/// not for distillation). `--backend cuda` is the actual production
+/// path that drives a real teacher's logits into a real student's
+/// gradient update via Phase 2a's `kd_step`.
+///
+/// **Limitations** — Phase 2d's CudaStudentProvider is batch_size=1 only.
+/// The dispatch script (`scripts/dispatch-distill-phase-3-gx10.sh`)
+/// scales by step count rather than batch parallelism. Phase 2e
+/// generalizes via a fused-step trait method.
+#[cfg(all(feature = "training", feature = "cuda"))]
+#[allow(clippy::too_many_arguments)]
+fn run_cuda_backend(
+    teacher_path: &Path,
+    student_path: Option<&Path>,
+    output_path: Option<&Path>,
+    temperature: f64,
+    alpha: f64,
+    epochs: u32,
+    plan_only: bool,
+    json_output: bool,
+) -> Result<()> {
+    use aprender::format::v2::AprV2Reader;
+    use entrenar::transformer::TransformerConfig;
+    use entrenar_distill::{
+        teacher_provider::CudaTrainerTeacher, student_provider::CudaStudentProvider,
+        DistillConfig, Pipeline,
+    };
+
+    if plan_only {
+        if json_output {
+            println!(
+                "{}",
+                serde_json::json!({
+                    "backend": "cuda",
+                    "plan": true,
+                    "teacher": teacher_path.display().to_string(),
+                    "student": student_path.map(|p| p.display().to_string()),
+                    "temperature": temperature,
+                    "alpha": alpha,
+                    "epochs": epochs,
+                })
+            );
+        } else {
+            println!("[plan] backend=cuda teacher={}", teacher_path.display());
+        }
+        return Ok(());
+    }
+
+    let student_path = student_path.ok_or_else(|| {
+        CliError::ValidationFailed(
+            "--backend cuda requires --student <path-to-student.apr>".to_string(),
+        )
+    })?;
+    let output_path = output_path.ok_or_else(|| {
+        CliError::ValidationFailed("--backend cuda requires --output <path>".to_string())
+    })?;
+
+    // Load teacher metadata → TransformerConfig.
+    let teacher_bytes = std::fs::read(teacher_path).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "read teacher {}: {e}",
+            teacher_path.display()
+        ))
+    })?;
+    let teacher_reader = AprV2Reader::from_bytes(&teacher_bytes).map_err(|e| {
+        CliError::ValidationFailed(format!("parse teacher {}: {e}", teacher_path.display()))
+    })?;
+    let teacher_meta = teacher_reader.metadata();
+    let teacher_config = TransformerConfig::from_apr_metadata(
+        teacher_meta.hidden_size,
+        teacher_meta.num_heads,
+        teacher_meta.num_kv_heads,
+        teacher_meta.intermediate_size,
+        teacher_meta.num_layers,
+        teacher_meta.vocab_size,
+        teacher_meta.max_position_embeddings,
+        teacher_meta.rms_norm_eps,
+        teacher_meta.rope_theta,
+        teacher_meta.architecture.as_deref(),
+    )
+    .ok_or_else(|| {
+        CliError::ValidationFailed(
+            "teacher .apr metadata missing required fields (hidden_size / num_heads / \
+             num_layers / vocab_size / intermediate_size). The teacher must be a fully-\
+             stamped checkpoint per SPEC-HF-PUBLISH-001."
+                .to_string(),
+        )
+    })?;
+
+    // Load student metadata → TransformerConfig (independent — student arch
+    // typically differs from teacher).
+    let student_bytes = std::fs::read(student_path).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "read student {}: {e}",
+            student_path.display()
+        ))
+    })?;
+    let student_reader = AprV2Reader::from_bytes(&student_bytes).map_err(|e| {
+        CliError::ValidationFailed(format!("parse student {}: {e}", student_path.display()))
+    })?;
+    let student_meta = student_reader.metadata();
+    let student_config = TransformerConfig::from_apr_metadata(
+        student_meta.hidden_size,
+        student_meta.num_heads,
+        student_meta.num_kv_heads,
+        student_meta.intermediate_size,
+        student_meta.num_layers,
+        student_meta.vocab_size,
+        student_meta.max_position_embeddings,
+        student_meta.rms_norm_eps,
+        student_meta.rope_theta,
+        student_meta.architecture.as_deref(),
+    )
+    .ok_or_else(|| {
+        CliError::ValidationFailed(
+            "student .apr metadata missing required fields — see teacher error message"
+                .to_string(),
+        )
+    })?;
+
+    // Construct providers. for_inference / for_training both take the
+    // checkpoint's DIRECTORY (which CudaTransformerTrainer scans for
+    // `model.safetensors` or `model.apr`). For our purposes, the parent
+    // of the .apr file is the right directory.
+    let teacher_dir = teacher_path
+        .parent()
+        .ok_or_else(|| CliError::ValidationFailed("teacher path has no parent dir".into()))?;
+    let student_dir = student_path
+        .parent()
+        .ok_or_else(|| CliError::ValidationFailed("student path has no parent dir".into()))?;
+    let teacher_provider = CudaTrainerTeacher::for_inference(teacher_dir, teacher_config)
+        .map_err(|e| CliError::ValidationFailed(format!("CudaTrainerTeacher load: {e}")))?;
+    let student_provider = CudaStudentProvider::for_training(student_dir, student_config)
+        .map_err(|e| CliError::ValidationFailed(format!("CudaStudentProvider load: {e}")))?;
+
+    // Build minimal DistillConfig pointing at on-disk paths. The pipeline
+    // uses these for the file-load passthroughs; the providers we just
+    // built do the actual forward/backward work.
+    let mut config = DistillConfig::minimal(
+        teacher_path.to_str().ok_or_else(|| {
+            CliError::ValidationFailed("teacher path is not valid UTF-8".into())
+        })?,
+        student_path.to_str().ok_or_else(|| {
+            CliError::ValidationFailed("student path is not valid UTF-8".into())
+        })?,
+    );
+    config.output.dir = output_path.to_path_buf();
+    config.distillation.temperature = temperature as f32;
+    config.distillation.alpha = alpha as f32;
+    config.training.epochs = epochs;
+
+    // Wire the providers into the pipeline and execute.
+    let mut pipeline = Pipeline::new(&config)
+        .with_teacher(Box::new(teacher_provider))
+        .with_student(Box::new(student_provider));
+    let result = pipeline.execute().map_err(|e| {
+        CliError::ValidationFailed(format!("cuda pipeline.execute failed: {e}"))
+    })?;
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::json!({
+                "backend": "cuda",
+                "teacher": teacher_path.display().to_string(),
+                "student": student_path.display().to_string(),
+                "output": result.output_path.display().to_string(),
+                "temperature": temperature,
+                "alpha": alpha,
+                "epochs": epochs,
+                "initial_loss": result.metrics.initial_loss,
+                "final_loss": result.metrics.final_loss,
+                "best_loss": result.metrics.best_loss,
+                "steps_completed": result.metrics.steps_completed,
+                "duration_seconds": result.duration_seconds,
+                "status": "completed",
+            })
+        );
+    } else {
+        println!(
+            "✓ Distillation complete: initial_loss={:.4} → final_loss={:.4} ({} steps, {:.1}s)",
+            result.metrics.initial_loss,
+            result.metrics.final_loss,
+            result.metrics.steps_completed,
+            result.duration_seconds
+        );
+        println!("  Output: {}", result.output_path.display());
+    }
     Ok(())
 }
 
