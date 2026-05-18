@@ -157,6 +157,36 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ github.token }}
+      - name: Pre-build chown — fix per-RUN root ownership
+        # Root cause (five-whys):
+        #   1. Why do fresh runs sometimes fail with "failed to create
+        #      /workspace/target/debug" / "No such file or directory"?
+        #      Cargo (running as user 1000 inside the container) can't
+        #      write to /workspace/target/debug.
+        #   2. Why can't it write? The bind-mount source dir on the host
+        #      (/mnt/nvme-raid0/targets/aprender-ci/<PR>/run-<RUN_ID>) is
+        #      owned by root:root.
+        #   3. Why is it root-owned? Docker's bind-mount creates missing
+        #      host directories with the daemon's uid (root). Per-RUN
+        #      paths are always fresh, so this fires every run.
+        #   4. Why didn't this happen before? Pre-#1693 the per-PR (not
+        #      per-RUN) path persisted across runs, and the downstream
+        #      "post-job cleanup" docker chown step fixed ownership for
+        #      the NEXT run's git-clean. Per-RUN paths invalidate that —
+        #      each run gets a brand-new root-owned dir.
+        #   5. Root cause: the chown step runs AFTER cargo, not BEFORE.
+        #      First-runs always fail; reruns appear to work only when
+        #      the previous run's belated chown fixed the now-stale dir.
+        # Fix (this step): docker run as root, chown the per-RUN target
+        # dir + cargo registry to noah:1000 BEFORE the cargo step.
+        # Idempotent — `|| true` tolerates dirs that are already
+        # noah-owned (e.g. a rerun of the same run-id).
+        run: |
+          docker run --rm \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            "$IMAGE" \
+            bash -c 'chown -R 1000:1000 /workspace/target /usr/local/cargo/registry 2>/dev/null || true'
       - name: Workspace lib tests (25,300+)
         # Excluded: aprender-gpu (cuBLAS), aprender-cuda-edge (CUDA), aprender-compute (SIMD SIGSEGV at exit)
         # Timeout: 75min (was 55, was 40).
