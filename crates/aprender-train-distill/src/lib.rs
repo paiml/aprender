@@ -15,6 +15,7 @@
 pub mod config;
 pub mod kd_step;
 pub mod pipeline;
+pub mod student_provider;
 pub mod teacher_provider;
 pub mod validation;
 pub mod weights;
@@ -22,6 +23,7 @@ pub mod weights;
 pub use config::DistillConfig;
 pub use kd_step::{kd_logit_gradient, kd_loss, kd_step};
 pub use pipeline::{Pipeline, PipelineResult};
+pub use student_provider::{FixtureStudent, StudentLogitsProvider};
 pub use teacher_provider::{FixtureTeacher, TeacherLogitsProvider};
 pub use validation::ConfigValidator;
 pub use weights::load_safetensors_weights;
