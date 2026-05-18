@@ -195,7 +195,18 @@ mod tests {
     fn pass_iff_exit_is_exactly_zero_at_canonical_codes() {
         // Every i32 must Fail except 0.
         for exit in [
-            i32::MIN, -1000, -1, 0, 1, 2, 101, 137, 143, 255, 1000, i32::MAX,
+            i32::MIN,
+            -1000,
+            -1,
+            0,
+            1,
+            2,
+            101,
+            137,
+            143,
+            255,
+            1000,
+            i32::MAX,
         ] {
             let v = verdict_from_cargo_command_exit(exit);
             let expected = if exit == 0 {

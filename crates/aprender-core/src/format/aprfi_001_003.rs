@@ -357,10 +357,10 @@ mod tests {
         let b = vec![1.0_f32];
         let test_cases: Vec<(f32, AprFiVerdict)> = vec![
             (1.0, AprFiVerdict::Pass),
-            (1.0000001, AprFiVerdict::Pass),  // 1e-7 < 1e-6
-            (1.0001, AprFiVerdict::Fail),     // 1e-4 > 1e-6
+            (1.0000001, AprFiVerdict::Pass), // 1e-7 < 1e-6
+            (1.0001, AprFiVerdict::Fail),    // 1e-4 > 1e-6
             (1.5, AprFiVerdict::Fail),
-            (0.5, AprFiVerdict::Pass),         // improvement
+            (0.5, AprFiVerdict::Pass), // improvement
         ];
         for (val, expected) in test_cases {
             let c = vec![val];
@@ -400,10 +400,10 @@ mod tests {
         // regression.
         let b = vec![1.234_567_89_f32];
         let c = vec![1.234_568_5_f32]; // ~6e-7 drift; should not regress
-        // But the bug is that c gets reported as regressed — verdict
-        // expects zero regressions.
-        // Our reference uses 1e-6 tolerance, so this case actually
-        // passes. To model the bug, simulate a 1e-3 drift instead:
+                                       // But the bug is that c gets reported as regressed — verdict
+                                       // expects zero regressions.
+                                       // Our reference uses 1e-6 tolerance, so this case actually
+                                       // passes. To model the bug, simulate a 1e-3 drift instead:
         let buggy_c = vec![1.234_5_f32, 1.235_5_f32];
         let buggy_b = vec![1.234_5_f32, 1.234_5_f32];
         assert_eq!(

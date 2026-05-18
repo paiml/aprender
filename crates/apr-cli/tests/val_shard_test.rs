@@ -40,8 +40,7 @@ fn falsify_val_shard_003_empty_dir_rejected() {
     fs::create_dir_all(&dataset).expect("mkdir dataset");
     // Stage a single .bin file so the dataset iter itself succeeds
     // (we want the val-shard error path, not the dataset error path).
-    fs::write(dataset.join("shard-0000.bin"), [0u8; 32_768])
-        .expect("write dataset shard");
+    fs::write(dataset.join("shard-0000.bin"), [0u8; 32_768]).expect("write dataset shard");
 
     let val_shard = tmp.path().join("val-empty");
     fs::create_dir_all(&val_shard).expect("mkdir val-empty");

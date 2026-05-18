@@ -59,12 +59,22 @@ pub(crate) fn run(
                     p.display()
                 ))
             })?;
-            Some(classify_layer_coverage(&body, min_layers, F11_REQUIRED_OP_PREFIXES))
+            Some(classify_layer_coverage(
+                &body,
+                min_layers,
+                F11_REQUIRED_OP_PREFIXES,
+            ))
         }
         None => None,
     };
 
-    print_report(error_file, list_file, err_outcome.as_ref(), cov_outcome.as_ref(), json);
+    print_report(
+        error_file,
+        list_file,
+        err_outcome.as_ref(),
+        cov_outcome.as_ref(),
+        json,
+    );
 
     if let Some(o) = &err_outcome {
         if !matches!(o, CheckFiniteErrorOutcome::Ok) {

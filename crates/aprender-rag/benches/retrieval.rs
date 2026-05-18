@@ -1,14 +1,14 @@
 #![allow(clippy::disallowed_methods)]
 //! Benchmarks for retrieval operations
 
-use criterion::{criterion_group, criterion_main, Criterion};
-use std::hint::black_box;
 use aprender_rag::{
     chunk::{Chunk, Chunker, RecursiveChunker},
     embed::MockEmbedder,
     index::{BM25Index, SparseIndex, VectorStore},
     Document, DocumentId, Embedder,
 };
+use criterion::{criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
 
 fn create_test_chunk(content: &str, embedding: Vec<f32>) -> Chunk {
     let mut chunk = Chunk::new(DocumentId::new(), content.to_string(), 0, content.len());

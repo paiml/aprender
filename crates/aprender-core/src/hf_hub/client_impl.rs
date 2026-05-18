@@ -366,22 +366,33 @@ impl HfHubClient {
     ) -> Result<()> {
         let url = format!("{}/api/models/{}/commit/main", self.api_base, repo_id);
 
-        let operations = serde_json::json!([{
-            "op": "addOrUpdate",
-            "path": filename,
-            "content": base64_encode(data)
-        }]);
-
-        let body = serde_json::json!({
-            "summary": commit_msg,
-            "operations": operations
+        // PMAT-690 P3-C-prep defect 5 — small-file half of the
+        // `feedback_hf_commit_ndjson_load_bearing.md` memory rule.
+        // The JSON `addOrUpdate` body returns 200 but silently drops the
+        // file (same failure mode as the LFS commit before its fix).
+        // Use NDJSON with `key: "header"` + `key: "file"` per HF Hub spec.
+        let header_line = serde_json::json!({
+            "key": "header",
+            "value": {
+                "summary": commit_msg,
+                "description": ""
+            }
         });
+        let file_line = serde_json::json!({
+            "key": "file",
+            "value": {
+                "path": filename,
+                "content": base64_encode(data),
+                "encoding": "base64"
+            }
+        });
+        let ndjson_body = format!("{}\n{}", header_line, file_line);
 
         let response = ureq::post(&url)
             .set("Authorization", &format!("Bearer {token}"))
-            .set("Content-Type", "application/json")
+            .set("Content-Type", "application/x-ndjson")
             .timeout(std::time::Duration::from_secs(120))
-            .send_json(&body);
+            .send_string(&ndjson_body);
 
         match response {
             Ok(resp) if resp.status() >= 200 && resp.status() < 300 => Ok(()),

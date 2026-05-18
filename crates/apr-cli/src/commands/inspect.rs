@@ -184,13 +184,7 @@ pub(crate) fn run(
             let metadata_info = read_metadata(&mut reader, &header);
 
             if json_output {
-                output_json_with_quality(
-                    path,
-                    file_size,
-                    &header,
-                    metadata_info,
-                    show_quality,
-                );
+                output_json_with_quality(path, file_size, &header, metadata_info, show_quality);
             } else {
                 output_text(
                     path,

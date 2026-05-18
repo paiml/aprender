@@ -45,6 +45,31 @@ impl BertLayer {
         }
     }
 
+    /// Mutable access to the self-attention block (GH-326 weight loading).
+    pub fn attention_mut(&mut self) -> &mut MultiHeadAttention {
+        &mut self.attention
+    }
+
+    /// Mutable access to the post-attention LayerNorm (GH-326 weight loading).
+    pub fn attention_norm_mut(&mut self) -> &mut LayerNorm {
+        &mut self.attention_norm
+    }
+
+    /// Mutable access to the FFN expand projection (GH-326 weight loading).
+    pub fn intermediate_mut(&mut self) -> &mut Linear {
+        &mut self.intermediate
+    }
+
+    /// Mutable access to the FFN contract projection (GH-326 weight loading).
+    pub fn output_dense_mut(&mut self) -> &mut Linear {
+        &mut self.output_dense
+    }
+
+    /// Mutable access to the post-FFN LayerNorm (GH-326 weight loading).
+    pub fn output_norm_mut(&mut self) -> &mut LayerNorm {
+        &mut self.output_norm
+    }
+
     /// Forward pass on `[seq_len, hidden_dim]`.
     ///
     /// `attn_mask` is the optional additive mask broadcast to attention scores

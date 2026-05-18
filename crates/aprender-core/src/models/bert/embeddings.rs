@@ -14,13 +14,13 @@ use crate::nn::{LayerNorm, Module};
 /// `hidden = LayerNorm(word_embed[ids] + position_embed[0..seq_len] + token_type_embed[type_ids])`
 pub struct BertEmbeddings {
     /// Word embedding table: `[vocab_size, hidden_dim]`.
-    word_embeddings: Tensor,
+    pub(crate) word_embeddings: Tensor,
     /// Position embedding table: `[max_position_embeddings, hidden_dim]`.
-    position_embeddings: Tensor,
+    pub(crate) position_embeddings: Tensor,
     /// Token-type embedding table: `[type_vocab_size, hidden_dim]`.
-    token_type_embeddings: Tensor,
+    pub(crate) token_type_embeddings: Tensor,
     /// Final LayerNorm applied to summed embeddings.
-    layer_norm: LayerNorm,
+    pub(crate) layer_norm: LayerNorm,
     /// Cached hidden_dim for slicing.
     hidden_dim: usize,
     /// Cached max_position_embeddings for bound check.

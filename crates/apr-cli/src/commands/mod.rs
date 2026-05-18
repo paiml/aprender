@@ -133,6 +133,7 @@ pub(crate) mod registry;
 pub(crate) mod registry_quota;
 pub(crate) mod registry_quota_lint;
 pub(crate) mod registry_schema;
+pub(crate) mod rerank;
 pub(crate) mod resume_paths;
 pub(crate) mod revision;
 pub(crate) mod rosetta;
