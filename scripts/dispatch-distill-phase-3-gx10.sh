@@ -42,7 +42,21 @@ set -euo pipefail
 GX10_HOST="${GX10_HOST:-gx10}"
 GX10_USER="${GX10_USER:-noah}"
 GX10_REPO_PATH="${GX10_REPO_PATH:-/home/noah/src/aprender}"
-TEACHER_REPO="${TEACHER_REPO:-paiml/qwen2.5-coder-7b-apache-q4k-v1}"
+# PMAT-698d: gx10 has no /mnt/nvme-raid0 (that's lambda-vector layout).
+# Default to $HOME/runs which exists on most setups; override via env.
+GX10_RUN_PREFIX="${GX10_RUN_PREFIX:-/home/noah/runs}"
+# PMAT-698d: the original paiml/qwen2.5-coder-7b-apache-q4k-v1 GGUF
+# teacher is supported via stage_repo's apr import --preserve-q4k path
+# (further down). It does NOT load directly via for_inference. For the
+# Phase 3 smoke, default to a model size that fits the GB10 training
+# memory budget. The 1.5B teacher was tried but produced
+# CUDA_ERROR_OUT_OF_MEMORY at "Block 0 upload" — Blackwell's unified
+# 128GB pool reports correctly but training-time peak (weights +
+# gradients + Adam optimizer state + activations) overflows the
+# actual VRAM budget for >1B models. Use 0.5B for both teacher and
+# student: same architecture so the pipeline exercises every KD-loop
+# branch, while keeping memory bounded for the smoke.
+TEACHER_REPO="${TEACHER_REPO:-Qwen/Qwen2.5-Coder-0.5B-Instruct}"
 STUDENT_INIT="${STUDENT_INIT:-Qwen/Qwen2.5-Coder-0.5B-Instruct}"
 STEPS="${STEPS:-500}"
 BATCH_SIZE="${BATCH_SIZE:-4}"
@@ -116,61 +130,128 @@ ssh "${GX10_USER}@${GX10_HOST}" "
 # Dispatch the smoke run
 # --------------------------------------------------------------------------
 echo "=== dispatching smoke run on gx10 ==="
-RUN_DIR_REMOTE="/mnt/nvme-raid0/runs/${RUN_NAME}"
+# PMAT-698d: configurable run prefix; gx10 has no /mnt/nvme-raid0/.
+RUN_DIR_REMOTE="${GX10_RUN_PREFIX}/${RUN_NAME}"
 LOG_REMOTE="${RUN_DIR_REMOTE}/launch.log"
 
-# SPEC-DISTILL-001 Phase 3 dispatch - CLI-flag-aligned invocation (PMAT-698b).
-# The post-#1797 `apr distill` surface is:
-#   - positional <TEACHER>           (PathBuf - directory containing model.apr or model.safetensors)
-#   - --student <STUDENT>            (PathBuf - same shape)
-#   - --epochs <N>                   (no --num-steps; pipeline runs ~31 steps/epoch at default batch=32)
+# SPEC-DISTILL-001 Phase 3 dispatch - CLI-flag-aligned invocation (PMAT-698b
+# + PMAT-698d cache staging).
+#
+# The post-#1797 apr distill cuda surface is:
+#   - positional <TEACHER>       (PathBuf - directory with model.apr or model.safetensors)
+#   - --student <STUDENT>        (PathBuf - same shape)
+#   - --epochs <N>               (no --num-steps; pipeline runs ~31 steps/epoch at default batch=32)
 #   - --temperature, --alpha, --backend cuda, --output <FILE>
-# Per evidence/distill-phase-3-readiness/findings.md, the earlier script used
-# aspirational flags (--num-steps/--batch-size/--learning-rate/--student-init/
-# --output-dir/--device) that do not exist on the post-Phase-3-prep CLI.
+#
+# Per evidence/distill-phase-3-readiness/findings.md, the original script used
+# aspirational flags (--num-steps / --batch-size / --learning-rate / --student-init /
+# --output-dir / --device) and an HF-cache lookup path. The real `apr pull`
+# layout is pacha-based:
+#
+#   /home/noah/.cache/pacha/models/<sha>.safetensors
+#   /home/noah/.cache/pacha/models/<sha>.tokenizer.json
+#   /home/noah/.cache/pacha/models/<sha>.config.json
+#   /home/noah/.cache/pacha/models/<sha>.tokenizer_config.json
+#
+# But `apr distill --backend cuda` expects a DIRECTORY containing model.apr or
+# model.safetensors. So PMAT-698d adds a stage_repo helper that:
+#   1. captures `apr pull` Path: from stdout
+#   2. mkdirs a stage subdir under RUN_DIR_REMOTE/teacher /student
+#   3. symlinks model.<ext> + companion tokenizer/config files
+#   4. for GGUF teachers, runs `apr import --preserve-q4k` to convert to APR
+#      (Phase 3 default avoids this by using a SafeTensors teacher.)
 #
 # Map the user-facing knobs to the real CLI:
 #   - STEPS=500 (default) → --epochs 17 (~527 steps at default batch=32)
-#   - BATCH_SIZE / LR are NOT yet exposed on the CLI; documented but unused
-#     here. A follow-up PMAT-698c adds --batch-size / --learning-rate / --max-steps.
-#   - TEACHER_REPO / STUDENT_INIT → resolved to ~/.cache/huggingface/hub snapshot
-#     dirs via shell expansion (apr pull populates the cache).
+#   - BATCH_SIZE / LR are NOT yet exposed on the CLI; documented but unused.
+#     A follow-up PMAT-698c adds --batch-size / --learning-rate / --max-steps.
 
-EPOCHS_FROM_STEPS=$(( (STEPS + 30) / 31 ))  # round up: 500 → 17 epochs
+EPOCHS_FROM_STEPS=$(( (STEPS + 30) / 31 ))  # round up: 500 -> 17 epochs
 
 ssh "${GX10_USER}@${GX10_HOST}" "
     set -e
     mkdir -p '${RUN_DIR_REMOTE}'
     cd '${GX10_REPO_PATH}'
 
-    # Resolve HF repo → local cache snapshot dir. The hub layout is
-    # models--<org>--<name>/snapshots/<sha>/, with one snapshot per pull.
-    hf_repo_to_dir() {
+    # PMAT-698d: stage pacha-cached repo into the layout the cuda backend
+    # actually wants. apr distill --backend cuda reads teacher_path AS A FILE
+    # (std::fs::read + AprV2Reader::from_bytes) and uses its parent dir for
+    # for_inference(). So we always need an APR v2 file at \$stage_dir/model.apr,
+    # whether the source was .apr / .safetensors / .gguf.
+    stage_repo() {
         local repo=\"\$1\"
-        local sanitized=\"\${repo//\\//--}\"
-        local cache_root=\"\$HOME/.cache/huggingface/hub/models--\${sanitized}\"
-        ls -td \"\${cache_root}/snapshots/\"*/ 2>/dev/null | head -1 | sed 's:/\$::'
-    }
-    TEACHER_DIR=\$(hf_repo_to_dir '${TEACHER_REPO}')
-    STUDENT_DIR=\$(hf_repo_to_dir '${STUDENT_INIT}')
-    if [ -z \"\$TEACHER_DIR\" ] || [ ! -d \"\$TEACHER_DIR\" ]; then
-        echo \"teacher cache dir not found for '${TEACHER_REPO}' - apr pull failed?\" >&2
-        exit 1
-    fi
-    if [ -z \"\$STUDENT_DIR\" ] || [ ! -d \"\$STUDENT_DIR\" ]; then
-        echo \"student cache dir not found for '${STUDENT_INIT}' - apr pull failed?\" >&2
-        exit 1
-    fi
-    echo \"teacher dir: \$TEACHER_DIR\"
-    echo \"student dir: \$STUDENT_DIR\"
+        local stage_dir=\"\$2\"
+        local arch_hint=\"\$3\"
+        mkdir -p \"\$stage_dir\"
+        local pull_out
+        pull_out=\$(./target/release/apr pull \"\$repo\" 2>&1)
+        local cache_path
+        cache_path=\$(echo \"\$pull_out\" | grep -E '^[[:space:]]+Path:' | head -1 | awk '{print \$2}')
+        if [ -z \"\$cache_path\" ] || [ ! -f \"\$cache_path\" ]; then
+            echo \"failed to resolve cache for \$repo (Path: not found in apr pull output)\" >&2
+            echo \"\$pull_out\" | tail -20 >&2
+            return 1
+        fi
+        local ext=\"\${cache_path##*.}\"
+        local sha
+        sha=\$(basename \"\$cache_path\" \".\$ext\")
+        local cache_dir
+        cache_dir=\$(dirname \"\$cache_path\")
+        local target=\"\$stage_dir/model.apr\"
 
-    nohup ./target/release/apr distill \"\$TEACHER_DIR\" \\
-        --student \"\$STUDENT_DIR\" \\
+        # PMAT-698d step 1: stage companion files (config.json, tokenizer*)
+        # alongside the source file. apr import looks for config.json next
+        # to the source path and errors out otherwise. Pacha caches them
+        # with the sha prefix; rename to the unprefixed form apr import wants.
+        for companion in config.json tokenizer.json tokenizer_config.json; do
+            local src=\"\${cache_dir}/\${sha}.\${companion}\"
+            if [ -f \"\$src\" ]; then
+                ln -sf \"\$src\" \"\$stage_dir/\${companion}\"
+            fi
+        done
+
+        case \"\$ext\" in
+            apr)
+                ln -sf \"\$cache_path\" \"\$target\"
+                ;;
+            safetensors)
+                # Place a symlink to the source safetensors in stage_dir so
+                # apr import resolves config.json next to it.
+                local src_in_stage=\"\$stage_dir/source.safetensors\"
+                ln -sf \"\$cache_path\" \"\$src_in_stage\"
+                echo \"SafeTensors detected for \$repo - converting to APR via apr import (--arch \$arch_hint)\" >&2
+                ./target/release/apr import \"\$src_in_stage\" --arch \"\$arch_hint\" -o \"\$target\" >&2
+                ;;
+            gguf)
+                local src_in_stage=\"\$stage_dir/source.gguf\"
+                ln -sf \"\$cache_path\" \"\$src_in_stage\"
+                echo \"GGUF detected for \$repo - converting to APR via apr import (--arch \$arch_hint --preserve-q4k)\" >&2
+                ./target/release/apr import \"\$src_in_stage\" --arch \"\$arch_hint\" --preserve-q4k -o \"\$target\" >&2
+                ;;
+            *)
+                echo \"unknown model file extension: \$ext (cache_path=\$cache_path)\" >&2
+                return 1
+                ;;
+        esac
+        echo \"staged \$repo -> \$target\" >&2
+    }
+
+    TEACHER_DIR=\"${RUN_DIR_REMOTE}/teacher\"
+    STUDENT_DIR=\"${RUN_DIR_REMOTE}/student\"
+    stage_repo '${TEACHER_REPO}' \"\$TEACHER_DIR\" qwen2
+    stage_repo '${STUDENT_INIT}' \"\$STUDENT_DIR\" qwen2
+    TEACHER_APR=\"\$TEACHER_DIR/model.apr\"
+    STUDENT_APR=\"\$STUDENT_DIR/model.apr\"
+    echo \"teacher: \$TEACHER_APR\"
+    echo \"student: \$STUDENT_APR\"
+
+    nohup ./target/release/apr distill \"\$TEACHER_APR\" \\
+        --student \"\$STUDENT_APR\" \\
         --epochs ${EPOCHS_FROM_STEPS} \\
         --temperature ${T} \\
         --alpha ${ALPHA} \\
         --backend cuda \\
-        --output '${RUN_DIR_REMOTE}/student.apr' \\
+        --output '${RUN_DIR_REMOTE}/student-trained.apr' \\
         > '${LOG_REMOTE}' 2>&1 &
     DISPATCH_PID=\$!
     echo \"dispatched PID \${DISPATCH_PID}\"
