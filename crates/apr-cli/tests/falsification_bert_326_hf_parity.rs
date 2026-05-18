@@ -37,38 +37,95 @@
 use std::path::Path;
 use std::process::Command;
 
-const MINILM_SAFETENSORS: &str = "/home/noah/.cache/pacha/models/57e6e922118ea840.safetensors";
-const MINILM_TOKENIZER: &str = "/home/noah/.cache/pacha/models/57e6e922118ea840.tokenizer.json";
+/// A model fixture cached on lambda-vector by `apr pull` (GH-326 Phase 4c).
+struct ModelFixture {
+    /// Display name for error messages.
+    name: &'static str,
+    /// Cached SafeTensors path.
+    safetensors: &'static str,
+    /// Cached HF Tokenizers JSON path.
+    tokenizer: &'static str,
+    /// Number of BERT layers; passed to `apr rerank --num-layers`.
+    num_layers: usize,
+    /// `(query, passage, expected_hf_score)` triples captured from
+    /// HuggingFace `AutoModelForSequenceClassification`. Aprender must
+    /// reproduce these to within `SCORE_TOL`.
+    pairs: &'static [(&'static str, &'static str, f32)],
+}
 
-/// Canonical (query, passage, expected_score) triples.
-///
-/// Expected scores were captured from HuggingFace
-/// `cross-encoder/ms-marco-MiniLM-L-6-v2` via
-/// `AutoModelForSequenceClassification` (see `/tmp/hf_ref.py` in the PR
-/// description). Aprender must reproduce these to 6 decimal places.
-const PARITY_PAIRS: &[(&str, &str, f32)] = &[
-    (
-        "what is the capital of France",
-        "Paris is the capital of France",
-        0.999805,
-    ),
-    (
-        "what is the capital of France",
-        "Cats are mammals that purr",
-        0.000015,
-    ),
-    (
-        "machine learning",
-        "neural networks are a key ML technique",
-        0.000020,
-    ),
-];
+const MINILM_L6: ModelFixture = ModelFixture {
+    name: "cross-encoder/ms-marco-MiniLM-L-6-v2",
+    safetensors: "/home/noah/.cache/pacha/models/57e6e922118ea840.safetensors",
+    tokenizer: "/home/noah/.cache/pacha/models/57e6e922118ea840.tokenizer.json",
+    num_layers: 6,
+    pairs: &[
+        (
+            "what is the capital of France",
+            "Paris is the capital of France",
+            0.999805,
+        ),
+        (
+            "what is the capital of France",
+            "Cats are mammals that purr",
+            0.000015,
+        ),
+        (
+            "machine learning",
+            "neural networks are a key ML technique",
+            0.000020,
+        ),
+        // GH-326 Phase 4d — punctuated queries lock in the Phase 6b
+        // WordPiece-punctuation-pre-tokenization fix (#1773). Without
+        // that fix, "France?" was greedy-matched as a single token,
+        // producing different input_ids than HF BertTokenizerFast and
+        // scores that drifted from HF by up to ~0.13.
+        (
+            "what is the capital of France?",
+            "Paris is the capital of France.",
+            0.999797,
+        ),
+        (
+            "what is the capital of France?",
+            "Berlin is the capital of Germany",
+            0.064269,
+        ),
+        (
+            "Why use Rust?",
+            "Rust prevents memory bugs at compile time.",
+            0.993234,
+        ),
+    ],
+};
+
+const MINILM_L12: ModelFixture = ModelFixture {
+    name: "cross-encoder/ms-marco-MiniLM-L-12-v2",
+    safetensors: "/home/noah/.cache/pacha/models/12445d2fa5ea239d.safetensors",
+    tokenizer: "/home/noah/.cache/pacha/models/12445d2fa5ea239d.tokenizer.json",
+    num_layers: 12,
+    pairs: &[
+        (
+            "what is the capital of France",
+            "Paris is the capital of France",
+            0.999919,
+        ),
+        (
+            "what is the capital of France",
+            "Berlin is the capital of Germany",
+            0.058924,
+        ),
+        (
+            "what is the capital of France",
+            "Cats are mammals that purr",
+            0.000014,
+        ),
+    ],
+};
 
 /// Tolerance for absolute score difference (`apr` − HF reference). The
-/// observed gap is < 1e-6 (sigmoid is monotonic + saturating, so the
+/// observed gap is < 5e-5 (sigmoid is monotonic + saturating, so the
 /// ~4e-4 raw-logit drift compresses to f32 round-off at the score level).
 /// 1e-4 is a generous bound that catches genuine numerical drift but
-/// tolerates the existing 4e-4 raw-logit gap.
+/// tolerates the existing raw-logit gap.
 const SCORE_TOL: f32 = 1e-4;
 
 fn extract_score_from_json(stdout: &str) -> f32 {
@@ -80,30 +137,36 @@ fn extract_score_from_json(stdout: &str) -> f32 {
         .expect("scores[0] missing") as f32
 }
 
-#[test]
-#[ignore = "requires cached MiniLM SafeTensors + apr binary; takes ~30s"]
-fn falsify_bert_326_phase4b_hf_parity() {
-    if !Path::new(MINILM_SAFETENSORS).exists() {
+/// Run one model fixture's HF parity check. Returns `Vec<failure_msg>`
+/// for any pair whose score diff exceeds `SCORE_TOL`.
+fn run_parity_check(fix: &ModelFixture) -> Vec<String> {
+    if !Path::new(fix.safetensors).exists() {
         eprintln!(
-            "FALSIFY-BERT-326-PHASE4B: skipped — no cached MiniLM at {MINILM_SAFETENSORS}.\n\
-             Run `apr pull cross-encoder/ms-marco-MiniLM-L-6-v2` first."
+            "FALSIFY-BERT-326: skipped {} — no cached SafeTensors at {}.\n\
+             Run `apr pull {}` first.",
+            fix.name, fix.safetensors, fix.name
         );
-        return;
+        return Vec::new();
     }
-    if !Path::new(MINILM_TOKENIZER).exists() {
+    if !Path::new(fix.tokenizer).exists() {
         eprintln!(
-            "FALSIFY-BERT-326-PHASE4B: skipped — no cached tokenizer.json at {MINILM_TOKENIZER}"
+            "FALSIFY-BERT-326: skipped {} — no cached tokenizer.json at {}",
+            fix.name, fix.tokenizer
         );
-        return;
+        return Vec::new();
     }
 
-    // Build `.apr` from the cached SafeTensors. We rebuild each run so the
-    // test catches future drift in either `apr import` or the loader.
-    let apr_out = std::env::temp_dir().join("falsify-bert-326-phase4b.apr");
+    let safe_name = fix
+        .name
+        .split('/')
+        .next_back()
+        .unwrap_or(fix.name)
+        .replace('.', "-");
+    let apr_out = std::env::temp_dir().join(format!("falsify-bert-326-{safe_name}.apr"));
     let import_status = Command::new("apr")
         .args([
             "import",
-            MINILM_SAFETENSORS,
+            fix.safetensors,
             "--arch",
             "bert",
             "--allow-no-config",
@@ -114,11 +177,13 @@ fn falsify_bert_326_phase4b_hf_parity() {
         .expect("spawn apr import");
     assert!(
         import_status.success(),
-        "apr import --arch bert must succeed on cached MiniLM"
+        "apr import --arch bert must succeed on {}",
+        fix.name
     );
 
+    let layers_arg = fix.num_layers.to_string();
     let mut failures: Vec<String> = Vec::new();
-    for (q, p, expected) in PARITY_PAIRS {
+    for (q, p, expected) in fix.pairs {
         let output = Command::new("apr")
             .args(["rerank"])
             .arg(&apr_out)
@@ -128,14 +193,17 @@ fn falsify_bert_326_phase4b_hf_parity() {
                 "--passage",
                 p,
                 "--vocab",
-                MINILM_TOKENIZER,
+                fix.tokenizer,
+                "--num-layers",
+                &layers_arg,
                 "--json",
             ])
             .output()
             .expect("spawn apr rerank");
         assert!(
             output.status.success(),
-            "apr rerank must succeed for ({q:?}, {p:?}); stderr:\n{}",
+            "apr rerank must succeed for ({q:?}, {p:?}) against {}; stderr:\n{}",
+            fix.name,
             String::from_utf8_lossy(&output.stderr)
         );
         let score = extract_score_from_json(
@@ -143,20 +211,45 @@ fn falsify_bert_326_phase4b_hf_parity() {
         );
         let diff = (score - expected).abs();
         eprintln!(
-            "FALSIFY-BERT-326-PHASE4B: q={q:?} p={p:?} apr={score:.6} hf={expected:.6} \
+            "FALSIFY-BERT-326: {} q={q:?} p={p:?} apr={score:.6} hf={expected:.6} \
              diff={diff:.6e}{}",
+            fix.name,
             if diff < SCORE_TOL { "" } else { "  ← FAIL" }
         );
         if diff >= SCORE_TOL {
             failures.push(format!(
-                "({q:?}, {p:?}): apr={score:.6} hf={expected:.6} diff={diff:.6e}"
+                "{} ({q:?}, {p:?}): apr={score:.6} hf={expected:.6} diff={diff:.6e}",
+                fix.name
             ));
         }
     }
+    failures
+}
 
+/// HF parity for 6-layer MiniLM cross-encoder.
+#[test]
+#[ignore = "requires cached MiniLM-L-6 SafeTensors + apr binary; takes ~10s"]
+fn falsify_bert_326_phase4b_hf_parity_l6() {
+    let failures = run_parity_check(&MINILM_L6);
     assert!(
         failures.is_empty(),
-        "FALSIFY-BERT-326-PHASE4B: {} pair(s) failed HF parity:\n{}",
+        "FALSIFY-BERT-326 L6: {} pair(s) failed HF parity:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
+/// HF parity for 12-layer MiniLM cross-encoder (GH-326 Phase 4c).
+/// Validates that the BERT pipeline generalises across depths — the
+/// same loader + forward path numerically matches HF for both 6-layer
+/// (Phase 4b) and 12-layer architectures.
+#[test]
+#[ignore = "requires cached MiniLM-L-12 SafeTensors + apr binary; takes ~20s"]
+fn falsify_bert_326_phase4c_hf_parity_l12() {
+    let failures = run_parity_check(&MINILM_L12);
+    assert!(
+        failures.is_empty(),
+        "FALSIFY-BERT-326 L12: {} pair(s) failed HF parity:\n{}",
         failures.len(),
         failures.join("\n")
     );

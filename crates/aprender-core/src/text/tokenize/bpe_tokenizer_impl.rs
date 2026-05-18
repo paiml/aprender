@@ -247,54 +247,65 @@ impl WordPieceTokenizer {
     }
 
     /// Encode text to token IDs using greedy longest-match-first.
+    ///
+    /// GH-326 Phase 6b — Pre-tokenises on punctuation BEFORE running
+    /// WordPiece. Each ASCII-punctuation character is emitted as its
+    /// own sub-token, matching HuggingFace `BertTokenizerFast` behaviour.
+    /// Without this step, "France?" would be greedy-matched as a single
+    /// word, missing the `france` + `?` split HF produces.
+    ///
+    /// Backwards compatible: clean prompts with no punctuation are
+    /// unaffected (the pre-tokenizer is identity for those).
     pub fn encode(&self, text: &str) -> Result<Vec<u32>, AprenderError> {
         let mut ids = Vec::new();
         let unk_id = self.vocab.get(&self.unk_token).copied().unwrap_or(0);
 
-        for word in text.split_whitespace() {
-            let word = word.to_lowercase();
-            if word.len() > self.max_word_len {
-                ids.push(unk_id);
-                continue;
-            }
+        for ws_word in text.split_whitespace() {
+            for word in pre_tokenize_on_punct(ws_word) {
+                let word = word.to_lowercase();
+                if word.len() > self.max_word_len {
+                    ids.push(unk_id);
+                    continue;
+                }
 
-            let mut word_ids = Vec::new();
-            let mut start = 0;
-            let chars: Vec<char> = word.chars().collect();
+                let mut word_ids = Vec::new();
+                let mut start = 0;
+                let chars: Vec<char> = word.chars().collect();
 
-            while start < chars.len() {
-                let mut end = chars.len();
-                let mut found = false;
+                while start < chars.len() {
+                    let mut end = chars.len();
+                    let mut found = false;
 
-                while start < end {
-                    let substr: String = chars[start..end].iter().collect();
-                    let token = if start == 0 {
-                        substr.clone()
-                    } else {
-                        {
-                            let prefix = &self.continuation_prefix;
-                            format!("{prefix}{substr}")
+                    while start < end {
+                        let substr: String = chars[start..end].iter().collect();
+                        let token = if start == 0 {
+                            substr.clone()
+                        } else {
+                            {
+                                let prefix = &self.continuation_prefix;
+                                format!("{prefix}{substr}")
+                            }
+                        };
+
+                        if let Some(&id) = self.vocab.get(&token) {
+                            word_ids.push(id);
+                            start = end;
+                            found = true;
+                            break;
                         }
-                    };
+                        end -= 1;
+                    }
 
-                    if let Some(&id) = self.vocab.get(&token) {
-                        word_ids.push(id);
-                        start = end;
-                        found = true;
+                    if !found {
+                        // Character not in vocab, use UNK
+                        word_ids.clear();
+                        word_ids.push(unk_id);
                         break;
                     }
-                    end -= 1;
                 }
 
-                if !found {
-                    // Character not in vocab, use UNK
-                    word_ids.clear();
-                    word_ids.push(unk_id);
-                    break;
-                }
+                ids.extend(word_ids);
             }
-
-            ids.extend(word_ids);
         }
 
         Ok(ids)
@@ -339,6 +350,52 @@ impl WordPieceTokenizer {
     pub fn vocab(&self) -> &HashMap<String, u32> {
         &self.vocab
     }
+}
+
+/// GH-326 Phase 6b — split a whitespace-separated word on ASCII punctuation
+/// boundaries, matching HuggingFace `BertTokenizerFast.tokenize` behaviour.
+///
+/// Each punctuation character becomes its own sub-token; runs of
+/// non-punctuation characters become their own sub-token. Empty buffers
+/// are skipped. Order is preserved.
+///
+/// Examples:
+/// - `"France?"`   → `["France", "?"]`
+/// - `"U.S."`      → `["U", ".", "S", "."]`
+/// - `"hello"`     → `["hello"]`
+/// - `"!!!"`       → `["!", "!", "!"]`
+/// - `""`          → `[]`
+///
+/// "Punctuation" is the ASCII set HF uses:
+/// `! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ \` { | } ~`
+/// (everything in `[!-/]`, `[:-@]`, `[\[-\`]`, `[{-~]`).
+#[must_use]
+pub fn pre_tokenize_on_punct(word: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut buf = String::new();
+    for c in word.chars() {
+        if is_bert_punct(c) {
+            if !buf.is_empty() {
+                out.push(std::mem::take(&mut buf));
+            }
+            out.push(c.to_string());
+        } else {
+            buf.push(c);
+        }
+    }
+    if !buf.is_empty() {
+        out.push(buf);
+    }
+    out
+}
+
+/// GH-326 Phase 6b — predicate matching HuggingFace's ASCII-punctuation set.
+#[inline]
+#[must_use]
+fn is_bert_punct(c: char) -> bool {
+    matches!(c,
+        '!'..='/' | ':'..='@' | '['..='`' | '{'..='~'
+    )
 }
 
 impl Tokenizer for WordPieceTokenizer {
@@ -435,4 +492,75 @@ pub struct UnigramTokenizer {
     pub(super) bos_token: String,
     /// EOS token
     pub(super) eos_token: String,
+}
+
+#[cfg(test)]
+mod pre_tokenize_on_punct_tests {
+    use super::pre_tokenize_on_punct;
+
+    /// GH-326 Phase 6b — canonical example from the doc-comment.
+    #[test]
+    fn france_question_splits_on_question_mark() {
+        assert_eq!(pre_tokenize_on_punct("France?"), vec!["France", "?"]);
+    }
+
+    /// GH-326 Phase 6b — `U.S.` becomes 4 sub-tokens.
+    #[test]
+    fn us_with_dots_splits_each_punct_separately() {
+        assert_eq!(pre_tokenize_on_punct("U.S."), vec!["U", ".", "S", "."]);
+    }
+
+    /// GH-326 Phase 6b — clean word with no punctuation passes through.
+    #[test]
+    fn clean_word_passthrough() {
+        assert_eq!(pre_tokenize_on_punct("hello"), vec!["hello"]);
+    }
+
+    /// GH-326 Phase 6b — empty input yields empty output.
+    #[test]
+    fn empty_input_yields_empty_output() {
+        let out: Vec<String> = pre_tokenize_on_punct("");
+        assert!(out.is_empty());
+    }
+
+    /// GH-326 Phase 6b — all-punctuation input yields one sub-token per character.
+    #[test]
+    fn all_punct_emits_one_per_char() {
+        assert_eq!(pre_tokenize_on_punct("!!!"), vec!["!", "!", "!"]);
+    }
+
+    /// GH-326 Phase 6b — mixed letters + punctuation in the middle of a word.
+    #[test]
+    fn mid_word_punct_splits() {
+        // "don't" — apostrophe is punct, so "don" + "'" + "t".
+        assert_eq!(pre_tokenize_on_punct("don't"), vec!["don", "'", "t"]);
+    }
+
+    /// GH-326 Phase 6b — trailing comma + period are 2 separate sub-tokens.
+    #[test]
+    fn trailing_comma_period() {
+        assert_eq!(pre_tokenize_on_punct("end.,"), vec!["end", ".", ","]);
+    }
+
+    /// GH-326 Phase 6b — Unicode letters are NOT split (they aren't ASCII punct).
+    #[test]
+    fn unicode_letters_passthrough() {
+        // "naïve" — the ï is not ASCII punctuation.
+        assert_eq!(pre_tokenize_on_punct("naïve"), vec!["naïve"]);
+    }
+
+    /// GH-326 Phase 6b — all 32 ASCII-punctuation chars in the canonical
+    /// set are correctly detected. Mirrors HF's PUNCTUATION ranges.
+    #[test]
+    fn canonical_ascii_punct_set() {
+        let punct = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
+        for c in punct.chars() {
+            let out = pre_tokenize_on_punct(&c.to_string());
+            assert_eq!(
+                out,
+                vec![c.to_string()],
+                "{c:?} must be detected as punctuation"
+            );
+        }
+    }
 }

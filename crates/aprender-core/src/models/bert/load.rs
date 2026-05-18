@@ -142,13 +142,30 @@ fn read_tensor(
     Ok(Tensor::from_vec(data, expected_shape))
 }
 
+/// GH-326 Phase 6: detect whether the APR file uses the `bert.` prefix
+/// (HuggingFace `BertForSequenceClassification` / cross-encoder convention)
+/// or no prefix (`BertModel` / sentence-transformers encoder-only).
+///
+/// Probe via the canonical word-embeddings name. Returns `"bert."` for
+/// classification-head checkpoints and `""` for encoder-only.
+pub(crate) fn detect_bert_prefix(reader: &AprV2Reader) -> &'static str {
+    if reader
+        .get_tensor("bert.embeddings.word_embeddings.weight")
+        .is_some()
+    {
+        "bert."
+    } else {
+        ""
+    }
+}
+
 /// Load weights into a previously-constructed `BertEmbeddings`.
 ///
-/// Reads:
-/// - `bert.embeddings.word_embeddings.weight`     `[vocab_size, hidden_dim]`
-/// - `bert.embeddings.position_embeddings.weight` `[max_pos, hidden_dim]`
-/// - `bert.embeddings.token_type_embeddings.weight` `[type_vocab, hidden_dim]`
-/// - `bert.embeddings.LayerNorm.{weight,bias}`    `[hidden_dim]`
+/// Reads (using the prefix detected by `detect_bert_prefix`):
+/// - `{prefix}embeddings.word_embeddings.weight`     `[vocab_size, hidden_dim]`
+/// - `{prefix}embeddings.position_embeddings.weight` `[max_pos, hidden_dim]`
+/// - `{prefix}embeddings.token_type_embeddings.weight` `[type_vocab, hidden_dim]`
+/// - `{prefix}embeddings.LayerNorm.{weight,bias}`    `[hidden_dim]`
 ///
 /// Mutates the existing zero-init tensors in `embeddings`. The
 /// `BertEmbeddings` fields are crate-private (`pub(crate)`) so this helper
@@ -159,29 +176,32 @@ pub(crate) fn load_embeddings_from_reader(
     config: &BertConfig,
 ) -> Result<(), BertLoadError> {
     let h = config.hidden_dim;
+    let p = detect_bert_prefix(reader);
     embeddings.word_embeddings = read_tensor(
         reader,
-        "bert.embeddings.word_embeddings.weight",
+        &format!("{p}embeddings.word_embeddings.weight"),
         &[config.vocab_size, h],
     )?;
     embeddings.position_embeddings = read_tensor(
         reader,
-        "bert.embeddings.position_embeddings.weight",
+        &format!("{p}embeddings.position_embeddings.weight"),
         &[config.max_position_embeddings, h],
     )?;
     embeddings.token_type_embeddings = read_tensor(
         reader,
-        "bert.embeddings.token_type_embeddings.weight",
+        &format!("{p}embeddings.token_type_embeddings.weight"),
         &[config.type_vocab_size, h],
     )?;
     embeddings.layer_norm.set_weight(read_tensor(
         reader,
-        "bert.embeddings.LayerNorm.weight",
+        &format!("{p}embeddings.LayerNorm.weight"),
         &[h],
     )?);
-    embeddings
-        .layer_norm
-        .set_bias(read_tensor(reader, "bert.embeddings.LayerNorm.bias", &[h])?);
+    embeddings.layer_norm.set_bias(read_tensor(
+        reader,
+        &format!("{p}embeddings.LayerNorm.bias"),
+        &[h],
+    )?);
     Ok(())
 }
 
@@ -198,7 +218,8 @@ pub(crate) fn load_layer_from_reader(
 ) -> Result<(), BertLoadError> {
     let h = config.hidden_dim;
     let im = config.intermediate_dim;
-    let prefix = format!("bert.encoder.layer.{idx}");
+    let bp = detect_bert_prefix(reader);
+    let prefix = format!("{bp}encoder.layer.{idx}");
 
     // Q/K/V projections — square `[h, h]` weight + `[h]` bias.
     for (proj, name) in [("query", "q"), ("key", "k"), ("value", "v")] {
@@ -317,9 +338,18 @@ pub(crate) fn load_cross_encoder_from_reader(
     load_embeddings_from_reader(model.embeddings_mut(), reader, config)?;
     load_encoder_from_reader(model.encoder_mut(), reader, config)?;
 
+    let bp = detect_bert_prefix(reader);
     if let Some(pooler) = model.pooler_mut() {
-        pooler.set_weight(read_tensor(reader, "bert.pooler.dense.weight", &[h, h])?);
-        pooler.set_bias(read_tensor(reader, "bert.pooler.dense.bias", &[h])?);
+        pooler.set_weight(read_tensor(
+            reader,
+            &format!("{bp}pooler.dense.weight"),
+            &[h, h],
+        )?);
+        pooler.set_bias(read_tensor(
+            reader,
+            &format!("{bp}pooler.dense.bias"),
+            &[h],
+        )?);
     }
 
     // Cross-encoder head — try common names. Shape is [num_labels, h] for
