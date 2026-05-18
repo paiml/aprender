@@ -499,15 +499,23 @@ pub fn moe_ffn_forward_layer(
 ///
 /// # Returns
 ///
-/// `(output, router_top_k_weights)` where `output: Vec<f32>` is the
-/// `[hidden_dim]` aggregated MoE FFN output (the `MoeFfnOut`
-/// SaveTensorStage capture target — identical to the value returned by
-/// [`moe_ffn_forward_layer`] for the same inputs), and
-/// `router_top_k_weights: Vec<f32>` is the `[num_experts_per_tok]`
-/// post-softmax + renormalize top-k expert weights (the `MoeRouter`
-/// SaveTensorStage capture target — sums to ~1.0 unless the all-zero
-/// softmax fallback path activates, in which case it sums to exactly 1.0
-/// by uniform distribution).
+/// `(output, router_top_k_weights, router_top_k_indices)` where:
+/// - `output: Vec<f32>` is the `[hidden_dim]` aggregated MoE FFN output (the
+///   `MoeFfnOut` SaveTensorStage capture target — identical to the value
+///   returned by [`moe_ffn_forward_layer`] for the same inputs).
+/// - `router_top_k_weights: Vec<f32>` is the `[num_experts_per_tok]`
+///   post-softmax + renormalize top-k expert weights (the `MoeRouter`
+///   SaveTensorStage capture target — sums to ~1.0 unless the all-zero
+///   softmax fallback path activates, in which case it sums to exactly 1.0
+///   by uniform distribution).
+/// - `router_top_k_indices: Vec<u32>` is the `[num_experts_per_tok]` expert
+///   IDs in the SAME ORDER as the weights (highest-probability first, in the
+///   range `[0, num_experts)`). Added in M-GPU-MOE-3 PR-3e2 (#1583) so the
+///   `MoeRouterIndices` SaveTensorStage can persist the routing decision
+///   alongside the weights — needed because two disjoint expert SETS can
+///   produce near-identical sorted-descending weight HISTOGRAMS (cos > 0.99)
+///   while routing to entirely different experts. See PR-3e probe verdict
+///   (#1741) for the weight-only ambiguity that motivated this addition.
 ///
 /// # Hot path safety
 ///
@@ -532,7 +540,7 @@ pub fn moe_ffn_forward_layer_with_router(
     intermediate: usize,
     hidden_dim: usize,
     data: &[u8],
-) -> Result<(Vec<f32>, Vec<f32>)> {
+) -> Result<(Vec<f32>, Vec<f32>, Vec<u32>)> {
     use crate::error::RealizarError;
 
     if hidden.len() != hidden_dim {
@@ -632,8 +640,9 @@ pub fn moe_ffn_forward_layer_with_router(
     }
 
     let router_top_k_weights: Vec<f32> = topk_renorm.iter().map(|(_, w)| *w).collect();
+    let router_top_k_indices: Vec<u32> = topk_renorm.iter().map(|(i, _)| *i as u32).collect();
 
-    Ok((output, router_top_k_weights))
+    Ok((output, router_top_k_weights, router_top_k_indices))
 }
 
 #[cfg(test)]
