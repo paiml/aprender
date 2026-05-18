@@ -52,16 +52,44 @@ impl TrainingMetrics {
 /// Distillation pipeline orchestrator.
 pub struct Pipeline<'a> {
     config: &'a DistillConfig,
+    /// SPEC-DISTILL-001 Phase 1 (PMAT-691): the teacher backend the
+    /// training loop pulls logits from. Defaults to a `FixtureTeacher`
+    /// that returns deterministic stub logits so legacy callers and unit
+    /// tests don't need to wire a real backend. Phase 1b (PMAT-692) adds
+    /// `RealizarTeacher` that delegates to `aprender-serve`.
+    teacher: Box<dyn crate::teacher_provider::TeacherLogitsProvider + Send>,
 }
 
 impl<'a> Pipeline<'a> {
     /// Create a new pipeline with the given configuration.
+    ///
+    /// Uses a fixture-teacher by default. Call [`Self::with_teacher`] to
+    /// swap in a real teacher backend for Phase 4 production runs.
     pub fn new(config: &'a DistillConfig) -> Self {
-        Self { config }
+        // The fixture vocab size matches the legacy synthetic-logits stub
+        // (num_classes = 32) so existing tests behave identically.
+        Self {
+            config,
+            teacher: Box::new(crate::teacher_provider::FixtureTeacher::new(32)),
+        }
+    }
+
+    /// Swap in a custom teacher backend.
+    ///
+    /// Phase 4 wiring point: pass a `RealizarTeacher` loaded with the
+    /// MODEL-1 7B teacher. The fixture is fine for Phase 1's unit-test
+    /// landing.
+    #[must_use]
+    pub fn with_teacher(
+        mut self,
+        teacher: Box<dyn crate::teacher_provider::TeacherLogitsProvider + Send>,
+    ) -> Self {
+        self.teacher = teacher;
+        self
     }
 
     /// Execute the complete distillation pipeline.
-    pub fn execute(&self) -> Result<PipelineResult> {
+    pub fn execute(&mut self) -> Result<PipelineResult> {
         let start = std::time::Instant::now();
 
         // Stage 1: Fetch/resolve models
@@ -121,7 +149,7 @@ impl<'a> Pipeline<'a> {
     /// are incomplete), logits are derived from loaded weight tensor slices
     /// as a demonstration of the real loss computation pipeline.
     fn train(
-        &self,
+        &mut self,
         teacher_path: &Path,
         student_path: &Path,
     ) -> Result<(
@@ -129,8 +157,11 @@ impl<'a> Pipeline<'a> {
         HashMap<String, Vec<f32>>,
         HashMap<String, Vec<usize>>,
     )> {
-        // Load weights from both models
-        let (teacher_weights, _teacher_shapes) = load_safetensors_weights(teacher_path)?;
+        // Load weights from both models. The teacher_weights byte buffer
+        // is no longer used for logits computation (Phase 1 wired it to
+        // the teacher provider instead) but we still load + drop it to
+        // validate the teacher checkpoint is well-formed before training.
+        let (_teacher_weights_validate, _teacher_shapes) = load_safetensors_weights(teacher_path)?;
         let (mut student_weights, student_shapes) = load_safetensors_weights(student_path)?;
 
         // Create distillation loss function
@@ -140,14 +171,23 @@ impl<'a> Pipeline<'a> {
 
         let lr = self.config.training.learning_rate as f32;
 
-        // Derive synthetic logits from weight tensors for loss computation.
-        // In a full pipeline, these would come from forward passes through
-        // teacher and student models. Here we use weight slices as logits
-        // and apply proper KD gradient descent in logit space.
         let batch_size = self.config.training.batch_size as usize;
-        let num_classes = 32; // Synthetic vocab slice
+        let num_classes = self.teacher.vocab_size();
 
-        let teacher_logits = build_synthetic_logits(&teacher_weights, batch_size, num_classes);
+        // SPEC-DISTILL-001 Phase 1 (PMAT-691): teacher logits now come from
+        // a real TeacherLogitsProvider, not from synthetic weight-byte
+        // derivation. The provider's output shape is [batch, vocab_size];
+        // we reshape to ndarray::Array2 to match what loss_fn.forward expects.
+        //
+        // Until Phase 2 wires a real student forward+backward, we still use
+        // a dummy input_ids batch (all zeros) — Phase 1 only proves the
+        // teacher data path. Phase 2 will replace the dummy batch with
+        // real token IDs from the dataset.
+        let dummy_batch: Vec<Vec<u32>> = vec![vec![0u32]; batch_size];
+        let teacher_logits_vv = self.teacher.logits_for_batch(&dummy_batch)?;
+        let teacher_flat: Vec<f32> = teacher_logits_vv.into_iter().flatten().collect();
+        let teacher_logits = Array2::from_shape_vec((batch_size, num_classes), teacher_flat)
+            .expect("teacher provider returned (batch, vocab) buffer");
         let labels: Vec<usize> = (0..batch_size).map(|i| i % num_classes).collect();
 
         // Maintain student logits as a mutable array for gradient descent
@@ -629,7 +669,7 @@ mod tests {
         config.training.epochs = 2;
         config.training.batch_size = 4;
 
-        let pipeline = Pipeline::new(&config);
+        let mut pipeline = Pipeline::new(&config);
         let result = pipeline.execute().expect("operation should succeed");
 
         assert!(result.output_path.exists());
@@ -688,7 +728,7 @@ mod tests {
         config.training.batch_size = 4;
         config.training.learning_rate = 0.01;
 
-        let pipeline = Pipeline::new(&config);
+        let mut pipeline = Pipeline::new(&config);
         let result = pipeline.execute().expect("operation should succeed");
 
         eprintln!(
@@ -739,7 +779,7 @@ mod tests {
         config.training.epochs = 1;
         config.training.batch_size = 4;
 
-        let pipeline = Pipeline::new(&config);
+        let mut pipeline = Pipeline::new(&config);
         let result = pipeline.execute().expect("operation should succeed");
 
         // FALSIFICATION: can we re-load the exported file?
@@ -810,7 +850,7 @@ mod tests {
         config.training.batch_size = 4;
 
         // Should NOT panic even with mismatched tensor names
-        let pipeline = Pipeline::new(&config);
+        let mut pipeline = Pipeline::new(&config);
         let result = pipeline.execute();
         // This should succeed - gradient step just won't match any names
         assert!(
@@ -849,7 +889,7 @@ mod tests {
         config.training.epochs = 1;
         config.training.batch_size = 2;
 
-        let pipeline = Pipeline::new(&config);
+        let mut pipeline = Pipeline::new(&config);
         // Should NOT panic - should fall back to synthetic logits
         let result = pipeline.execute();
         assert!(
