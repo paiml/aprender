@@ -738,6 +738,81 @@ mod q4k_divisibility_tests {
         );
         assert_eq!(bytes.len(), 2_451_456, "exact byte count for ffn_down");
     }
+
+    /// AUDIT-Q4K-SHAPE-001 — in-tree falsification of the pre-v0.34.0
+    /// shape-swap bug for the 256-divisible-on-both-dims case. See
+    /// `docs/specifications/audits/q4k-shape-swap-impact.md`.
+    ///
+    /// **Empirical finding**: when both `shape[0]` and `shape[1]` are
+    /// 256-divisible, `quantize_q4_k_matrix(data, [a, b])` and
+    /// `quantize_q4_k_matrix(data, [b, a])` produce **byte-identical**
+    /// output. Therefore Qwen2 1.5B (hidden=1536, intermediate=8960) and
+    /// Qwen2 7B (hidden=3584, intermediate=18944) Q4_K exports produced
+    /// before the v0.34.0 fix are **bit-equivalent to a post-fix re-export**
+    /// for the in-tree path — no re-export needed for correctness.
+    ///
+    /// **Why**: the function iterates `rows` times grabbing `cols`
+    /// contiguous elements per iteration, then quantizes that 1D slice as
+    /// fixed-size 256-element super-blocks via `quantize_q4_k`. When both
+    /// dims are 256-multiples, the data is consumed in the same linear
+    /// order with the same 256-aligned chunking either way — the "row"
+    /// boundary is invisible to the quantizer because it sits on a
+    /// super-block boundary.
+    ///
+    /// **The shape-swap bug bites only when `cols % 256 != 0`** because
+    /// the function then pads `cols` up to the next 256-multiple,
+    /// shifting subsequent super-blocks off-stride. That's Qwen2 0.5B
+    /// territory (hidden=896 → cols=896 when swapped wrong) — handled
+    /// by the defect-2 K-divisibility fallback (forces F32 instead of
+    /// quantizing).
+    ///
+    /// This test pins the byte-equivalence finding. If it ever fails,
+    /// trueno-quant changed its layout and the audit doc needs a revisit.
+    #[test]
+    #[allow(clippy::cast_precision_loss)]
+    fn audit_q4k_shape_swap_byte_identical_when_both_dims_divisible() {
+        use super::super::quantize_q4_k_matrix;
+
+        // 256 × 512: both 256-divisible, shape[0] != shape[1] so the swap
+        // meaningfully differs. Small enough for a fast unit test.
+        let rows = 256_usize;
+        let cols = 512_usize;
+        let n = rows * cols;
+
+        // Heterogeneous per-row distribution: row r centered at r*0.01,
+        // std 0.1. Adjacent rows differ enough that — IF the swap shifted
+        // super-block boundaries — the resulting bytes would diverge.
+        let mut data = vec![0.0_f32; n];
+        for r in 0..rows {
+            let row_mean = (r as f32) * 0.01;
+            for c in 0..cols {
+                let perturbation = ((r * 31 + c * 17) as f32).sin() * 0.1;
+                data[r * cols + c] = row_mean + perturbation;
+            }
+        }
+
+        // CORRECT (post-v0.34.0): APR-native shape.
+        let correct_bytes = quantize_q4_k_matrix(&data, &[rows, cols]);
+        // BUGGY (pre-v0.34.0): swap before passing.
+        let buggy_bytes = quantize_q4_k_matrix(&data, &[cols, rows]);
+
+        assert_eq!(
+            correct_bytes.len(),
+            buggy_bytes.len(),
+            "shape-swap audit precondition: byte counts equal"
+        );
+
+        // **Central finding**: for the 256-divisible-on-both-dims case,
+        // the bytes are IDENTICAL. The bug doesn't manifest here at all.
+        assert_eq!(
+            correct_bytes, buggy_bytes,
+            "AUDIT-Q4K-SHAPE-001: when both dims are 256-divisible, the \
+             pre-v0.34.0 shape-swap produces byte-identical output to the \
+             post-v0.34.0 correct call. Falsification of any future divergence \
+             would mean trueno-quant's layout changed — revisit the audit doc \
+             and the v0.33.0 / earlier shipped Q4_K artifacts."
+        );
+    }
 }
 
 include!("export_include_01.rs");
