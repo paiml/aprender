@@ -1,0 +1,31 @@
+  Found 291 weight tensors (APR)
+[PMAT-329] lm_head.weight: shape mismatch — got 0 elements, expected 136134656 (896x151936)
+  Detected architecture: Qwen2
+  Loaded 290 weight tensors
+[CUDA] cuBLAS initialized — forward TF32 tensor cores (41x vs SIMD)
+[CUDA] Kernel cache initialized for target: sm_121
+  GPU: NVIDIA GB10 (128.5 GB)
+  ✓ Backward rope kernel pre-warmed in forward cache
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[CUDA] Pre-warmed 27 forward kernels (JIT compiled before block upload)
+[BWD-PREWARM] Called with lora_rank=0, hidden=896, inter=4864
+[BWD-PREWARM] Skipping (lora_rank=0)
+  ✓ Backward kernels pre-warmed (silu_backward, rms_norm_backward, etc.)
+error: Validation failed: CudaTrainerTeacher load: Internal error: CudaTrainerTeacher::for_inference: Configuration error: Block 0 upload failed: KernelError("MemoryAllocation(\"CUDA driver error: CUDA_ERROR_OUT_OF_MEMORY (code: 2)\")")
+  → Please report this bug at https://github.com/paiml/entrenar/issues
+---
+  Found 339 weight tensors (APR)
+[PMAT-329] lm_head.weight: shape mismatch — got 0 elements, expected 233373696 (1536x151936)
+  Detected architecture: Qwen2
+  Loaded 338 weight tensors
+[CUDA] cuBLAS initialized — forward TF32 tensor cores (41x vs SIMD)
+[CUDA] Kernel cache initialized for target: sm_121
+  GPU: NVIDIA GB10 (128.5 GB)
+  ✓ Backward rope kernel pre-warmed in forward cache
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[CUDA] Pre-warmed 27 forward kernels (JIT compiled before block upload)
+[BWD-PREWARM] Called with lora_rank=0, hidden=1536, inter=8960
+[BWD-PREWARM] Skipping (lora_rank=0)
+  ✓ Backward kernels pre-warmed (silu_backward, rms_norm_backward, etc.)
+error: Validation failed: CudaTrainerTeacher load: Internal error: CudaTrainerTeacher::for_inference: Configuration error: Block 0 upload failed: KernelError("MemoryAllocation(\"CUDA driver error: CUDA_ERROR_OUT_OF_MEMORY (code: 2)\")")
+  → Please report this bug at https://github.com/paiml/entrenar/issues
