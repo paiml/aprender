@@ -366,8 +366,15 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
     use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
 
     println!("{}", "Loading GGUF model (mmap)...".dimmed());
-    let mapped_model = MappedGGUFModel::from_path(model_path)
-        .map_err(|e| CliError::ModelLoadFailed(format!("Failed to load GGUF: {e}")))?;
+    // aprender#1789 Option B: retain MappedGGUFModel in an Arc so it can be
+    // threaded into AppState via `.with_mapped_gguf_model()`. The chat
+    // handler's `try_qwen3_moe_backend` needs this for MoE inference; the
+    // per-expert tensors in `run_qwen3_moe_generate` borrow directly from
+    // the mmap, so the mapped model MUST outlive any inference call.
+    let mapped_model = std::sync::Arc::new(
+        MappedGGUFModel::from_path(model_path)
+            .map_err(|e| CliError::ModelLoadFailed(format!("Failed to load GGUF: {e}")))?,
+    );
 
     println!(
         "{}",
@@ -398,15 +405,15 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
 
     #[cfg(feature = "cuda")]
     if config.gpu && config.batch {
-        return start_gguf_server_gpu_batched(quantized_model, vocab, config);
+        return start_gguf_server_gpu_batched(quantized_model, vocab, mapped_model, config);
     }
 
     #[cfg(feature = "cuda")]
     if config.gpu && !config.no_gpu {
-        return start_gguf_server_cuda(quantized_model, vocab, &mapped_model, config);
+        return start_gguf_server_cuda(quantized_model, vocab, mapped_model, config);
     }
 
-    run_cpu_server(quantized_model, vocab, config)
+    run_cpu_server(quantized_model, vocab, Some(mapped_model), config)
 }
 
 /// Extract vocabulary from GGUF model, falling back to placeholder tokens.
@@ -437,7 +444,7 @@ fn extract_gguf_vocab(
 fn start_gguf_server_cuda(
     quantized_model: realizar::gguf::OwnedQuantizedModel,
     vocab: Vec<String>,
-    mapped_model: &realizar::gguf::MappedGGUFModel,
+    mapped_model: std::sync::Arc<realizar::gguf::MappedGGUFModel>,
     config: &ServerConfig,
 ) -> Result<()> {
     use realizar::api::{create_router, AppState, BatchConfig};
@@ -470,7 +477,8 @@ fn start_gguf_server_cuda(
             println!("{}", "CUDA optimized model ready".green());
 
             let state = AppState::with_cuda_model_and_vocab(cuda_model, vocab)
-                .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?;
+                .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
+                .with_mapped_gguf_model(mapped_model.clone());
 
             // PMAT-044/088: Spawn continuous batch scheduler for concurrent request handling
             // ITERATION_SCHEDULER=1 enables decode-maximal scheduling (Orca/Sarathi-Serve)
@@ -517,11 +525,11 @@ fn start_gguf_server_cuda(
                 "{}",
                 format!("CUDA init failed, falling back to CPU: {e}").yellow()
             );
-            let quantized_model = OwnedQuantizedModel::from_mapped(mapped_model).map_err(|e| {
+            let quantized_model = OwnedQuantizedModel::from_mapped(&mapped_model).map_err(|e| {
                 CliError::ModelLoadFailed(format!("Failed to rebuild quantized model: {e}"))
             })?;
-            let vocab = extract_gguf_vocab(mapped_model, quantized_model.config().vocab_size);
-            run_cpu_server(quantized_model, vocab, config)
+            let vocab = extract_gguf_vocab(&mapped_model, quantized_model.config().vocab_size);
+            run_cpu_server(quantized_model, vocab, Some(mapped_model), config)
         }
     }
 }

@@ -297,7 +297,8 @@ fn start_safetensors_server_cpu_quantized(
 
     println!("{}", "Q4K CPU inference ready (GH-99)".green());
 
-    run_cpu_server(quantized, vocab, config)
+    // aprender#1789 Option B: APR-format CPU path has no GGUF mmap.
+    run_cpu_server(quantized, vocab, None, config)
 }
 
 /// Build the axum Router for GPU inference endpoints.
