@@ -339,8 +339,23 @@ impl LlmDriver for AprServeDriver {
         let url = format!("{}/v1/chat/completions", self.base_url);
         let body = self.build_openai_body(&request);
 
+        // aprender#1789 follow-up: 120s default is too short for large MoE
+        // models without KV cache (each token is full-prefill; a 256-token
+        // generation at ~30B params can exceed 30 minutes wall). Empirical
+        // evidence: paiml/claude-code-parity-apr Phase 6 bench against
+        // Qwen3-Coder-30B-A3B saw every fixture die with "error sending
+        // request" at exactly the 120s mark. Same root-cause class as
+        // aprender#1782 (configurable + size-aware default).
+        //
+        // Override via `APR_AGENT_HTTP_TIMEOUT_S` env var. Default of 1800s
+        // (30 min) matches the bench's per-turn-timeout ceiling + leaves
+        // headroom for large MoE inference until M32d KV cache lands.
+        let http_timeout_secs = std::env::var("APR_AGENT_HTTP_TIMEOUT_S")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(1800);
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(120))
+            .timeout(std::time::Duration::from_secs(http_timeout_secs))
             .build()
             .map_err(|e| AgentError::Driver(DriverError::Network(format!("http client: {e}"))))?;
         let response = client
