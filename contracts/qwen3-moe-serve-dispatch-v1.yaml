@@ -1,5 +1,5 @@
 metadata:
-  version: "1.1.0"
+  version: "1.1.1"
   created: "2026-05-19"
   updated: "2026-05-19"
   author: PAIML Engineering
@@ -12,7 +12,7 @@ metadata:
 
 kind: KernelContract
 name: qwen3-moe-serve-dispatch
-version: "1.1.0"
+version: "1.1.1"
 scope: "crates/aprender-serve/src/api/cuda_chat_backend.rs + crates/aprender-serve/src/infer/inference_result.rs"
 
 description: |
@@ -69,7 +69,13 @@ falsification:
       request; assert response.status == 200 AND response.body.choices
       has at least one assistant message; no matmul panic, no
       "MoE inference not supported in chat handler" error.
-    evidence: "cargo test --test qwen3_moe_serve_dispatch_integration"
+    evidence: |
+      QWEN3_MOE_GGUF_PATH=/path/to/qwen3-moe.gguf \
+        cargo test --test qwen3_moe_serve_dispatch_v1 \
+        -p aprender-serve --features cuda --release -- --ignored --nocapture
+      Empirical pass against Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+      recorded 2026-05-19 (7.84s wall, non-empty assistant content,
+      no matmul guard fire).
 
   - id: FALSIFY-QWEN3_MOE_SERVE_DISPATCH_V1_002
     description: "Dense `Arc<Model>::generate()` is NOT invoked when canonical_arch == 'qwen3_moe'"
@@ -89,7 +95,13 @@ falsification:
       EMPTY data buffer" (the #1790 guard message). If the guard
       fires, the dispatch routed through the dense path — that's a
       bug per this contract.
-    evidence: "cargo test --test qwen3_moe_serve_dispatch_integration"
+    evidence: |
+      QWEN3_MOE_GGUF_PATH=/path/to/qwen3-moe.gguf \
+        cargo test --test qwen3_moe_serve_dispatch_v1 \
+        -p aprender-serve --features cuda --release -- --ignored --nocapture
+      Empirical pass against Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+      recorded 2026-05-19 (7.84s wall, non-empty assistant content,
+      no matmul guard fire).
 
   - id: FALSIFY-QWEN3_MOE_SERVE_DISPATCH_V1_004
     description: "Companion-side CCPA Phase 6 bench produces non-zero student pass rate against Qwen3-Coder-30B-MoE under contract"
@@ -161,3 +173,7 @@ status_history:
     date: "2026-05-19"
     pr: "paiml/aprender#1807 (this PR)"
     summary: "Phase 2 (Option B) ships: AppState gains mapped_gguf_model field; CLI server-command load path retains MappedGGUFModel in Arc; try_qwen3_moe_backend replaces guard with real run_qwen3_moe_generate dispatch. V1_001 + V1_003 discharged pending integration-test fixture availability."
+  - version: "1.1.1"
+    date: "2026-05-19"
+    pr: "paiml/aprender (V1_001 integration test PR)"
+    summary: "V1_001 + V1_003 formally discharged via cargo test. New integration test `crates/aprender-serve/tests/qwen3_moe_serve_dispatch_v1.rs` boots in-process axum router against real Qwen3-MoE GGUF (gated on QWEN3_MOE_GGUF_PATH env var, `#[ignore]`'d by default). Empirical pass recorded against Qwen3-Coder-30B-A3B-Instruct-Q4_K_M (7.84s wall, non-empty content, no #1790 guard fire). V1_004 remains BLOCKED on M32d KV cache."
