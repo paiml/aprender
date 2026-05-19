@@ -191,7 +191,21 @@ impl ForwardKernelCache {
 
         // 1. RMSNorm (batched: single launch for all rows via grid.y)
         // ALB-076: Use BatchedVectorizedRmsNormKernel instead of per-row RmsNormKernel
-        warm!(format!("batched_rmsnorm_fwd_{h}"), BatchedVectorizedRmsNormKernel::new(h, 1));
+        //
+        // PMAT-698k: the runtime key format includes the eps as bit-pattern
+        // suffix (normalization.rs:139:
+        //   let key = format!("batched_rmsnorm_fwd_{hidden_size}_eps{eps_bits:08x}"))
+        // Pre-warm key used to omit the eps suffix → cache miss at runtime →
+        // JIT mid-forward → Blackwell sm_121 stream poisoning. Default eps
+        // for Qwen2 is 1e-6 (RMSNorm default) but the active config may vary
+        // per model. Use the standard 1e-5 default; runtime models with
+        // different eps will still cache-miss for their specific suffix but
+        // the dominant case is covered.
+        let default_eps_bits = 1.0e-5_f32.to_bits();
+        warm!(
+            format!("batched_rmsnorm_fwd_{h}_eps{default_eps_bits:08x}"),
+            BatchedVectorizedRmsNormKernel::new(h, 1)
+        );
 
         // PMAT-700 (SPEC-BLACKWELL-FIX-001 Fix #2): when cuBLAS is available
         // and the runtime takes its fast path for the standard 2D GEMMs
@@ -225,6 +239,28 @@ impl ForwardKernelCache {
             warm!(format!("gemm_forward_{s}_{i}_{h}"), GemmKernel::naive(s, h, i));
         } else {
             eprintln!("[CUDA] Skipping PTX pre-warm for 4 GEMM kernels (cuBLAS active — PMAT-700)");
+        }
+
+        // PMAT-698k: pre-warm batched_rope_fwd for Q and KV head counts.
+        // Runtime keys (normalization.rs:339):
+        //   batched_rope_fwd_{num_heads}_{head_dim}_{seq_len}_th{theta_bits:08x}
+        // Qwen2 default theta = 1_000_000.0; runtime smoke runs at seq_len=1
+        // (single-token forward in distillation step). Pre-warm both the
+        // q-head count and kv-head count variants (GQA).
+        use trueno_gpu::kernels::BatchedRopeKernel;
+        let qwen_theta = 1_000_000.0_f32;
+        let qwen_theta_bits = qwen_theta.to_bits();
+        let rope_seq = 1_u32; // smoke uses seq_len=1; max_seq_len would JIT a different kernel
+        warm!(
+            format!("batched_rope_fwd_{nh}_{hd}_{rope_seq}_th{qwen_theta_bits:08x}"),
+            BatchedRopeKernel::new(nh, hd, rope_seq, qwen_theta)
+        );
+        let nkv = _nkv;
+        if nkv != nh {
+            warm!(
+                format!("batched_rope_fwd_{nkv}_{hd}_{rope_seq}_th{qwen_theta_bits:08x}"),
+                BatchedRopeKernel::new(nkv, hd, rope_seq, qwen_theta)
+            );
         }
 
         // 6. Fused SwiGLU
