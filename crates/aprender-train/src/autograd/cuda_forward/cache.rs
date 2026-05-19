@@ -188,19 +188,39 @@ impl ForwardKernelCache {
         // ALB-076: Use BatchedVectorizedRmsNormKernel instead of per-row RmsNormKernel
         warm!(format!("batched_rmsnorm_fwd_{h}"), BatchedVectorizedRmsNormKernel::new(h, 1));
 
-        // 2. GEMM: Q/O projections (S, H, H)
-        warm!(format!("gemm_forward_{s}_{h}_{h}"), GemmKernel::naive(s, h, h));
+        // PMAT-700 (SPEC-BLACKWELL-FIX-001 Fix #2): when cuBLAS is available
+        // and the runtime takes its fast path for the standard 2D GEMMs
+        // (Q/K/V/O/gate/up/down projections — see ALB-075 dispatch in
+        // gemm.rs:47-49 and cuda_block.rs:2895), pre-warming the PTX
+        // equivalents is wasted VRAM. On sm_121 (Blackwell GB10) the
+        // resulting JIT-cache footprint pushes block upload over the budget
+        // and CUDA_ERROR_OUT_OF_MEMORY fires at "Block 0 upload". Skipping
+        // these four pre-warms when cuBLAS is bound saves ~5-7 PTX modules
+        // per cache (more on multi-block-size models) and unblocks gx10
+        // dispatch without any runtime path change.
+        //
+        // Falsifier: F-BLACKWELL-CUBLAS-PREWARM-001 — assert the cache
+        // module count after pre_warm_for_model decreases when cuBLAS is
+        // present, and that runtime forward still produces identical
+        // results on a known input (cuBLAS path was already taken).
+        let has_cublas = self.cublas.is_some();
+        if !has_cublas {
+            // 2. GEMM: Q/O projections (S, H, H)
+            warm!(format!("gemm_forward_{s}_{h}_{h}"), GemmKernel::naive(s, h, h));
 
-        // 3. GEMM: K/V projections (S, H, kv_hidden)
-        if kv_h != h {
-            warm!(format!("gemm_forward_{s}_{h}_{kv_h}"), GemmKernel::naive(s, kv_h, h));
+            // 3. GEMM: K/V projections (S, H, kv_hidden)
+            if kv_h != h {
+                warm!(format!("gemm_forward_{s}_{h}_{kv_h}"), GemmKernel::naive(s, kv_h, h));
+            }
+
+            // 4. GEMM: gate/up projections (S, H, I)
+            warm!(format!("gemm_forward_{s}_{h}_{i}"), GemmKernel::naive(s, i, h));
+
+            // 5. GEMM: down projection (S, I, H)
+            warm!(format!("gemm_forward_{s}_{i}_{h}"), GemmKernel::naive(s, h, i));
+        } else {
+            eprintln!("[CUDA] Skipping PTX pre-warm for 4 GEMM kernels (cuBLAS active — PMAT-700)");
         }
-
-        // 4. GEMM: gate/up projections (S, H, I)
-        warm!(format!("gemm_forward_{s}_{h}_{i}"), GemmKernel::naive(s, i, h));
-
-        // 5. GEMM: down projection (S, I, H)
-        warm!(format!("gemm_forward_{s}_{i}_{h}"), GemmKernel::naive(s, h, i));
 
         // 6. Fused SwiGLU
         warm!("fused_swiglu_forward".to_string(), FusedSwigluKernel::new(si));
