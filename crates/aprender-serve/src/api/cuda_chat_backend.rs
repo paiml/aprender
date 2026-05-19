@@ -656,14 +656,13 @@ fn guard_qwen3_moe_dispatch(state: &AppState) -> Option<Response> {
     if !is_qwen3_moe_arch(&raw_arch) {
         return None;
     }
-    tracing::warn!(
-        raw_arch = %raw_arch,
-        canonical_arch = "qwen3_moe",
-        contract = "qwen3-moe-serve-dispatch-v1",
-        issue = "https://github.com/paiml/aprender/issues/1789",
-        "qwen3_moe arch detected at /v1/chat/completions; MoE dispatch \
-         via HTTP not yet wired (only `apr run` CLI routes through the \
-         MoE path). Returning NOT_IMPLEMENTED."
+    eprintln!(
+        "[WARN] aprender#1789: qwen3_moe arch detected at \
+         /v1/chat/completions (raw_arch={raw_arch}, canonical=qwen3_moe). \
+         MoE dispatch via HTTP not yet wired (only `apr run` CLI routes \
+         through the MoE path). Returning NOT_IMPLEMENTED. \
+         See contracts/qwen3-moe-serve-dispatch-v1.yaml + \
+         https://github.com/paiml/aprender/issues/1789"
     );
     Some(fail_response(
         state,
