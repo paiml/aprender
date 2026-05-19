@@ -1,16 +1,27 @@
 
 /// Run the CPU inference server
+///
+/// `mapped_model` is `None` for non-GGUF formats (APR / SafeTensors). For
+/// GGUF this MUST be `Some(Arc<MappedGGUFModel>)` retained from the loader
+/// — aprender#1789 Option B threads this into AppState so qwen3_moe chat
+/// dispatch via `try_qwen3_moe_backend` can borrow per-expert tensors
+/// directly from the mmap (the mapped model MUST outlive any inference
+/// call). For non-MoE GGUF archs this is just an extra Arc reference.
 #[cfg(feature = "inference")]
 fn run_cpu_server(
     quantized_model: realizar::gguf::OwnedQuantizedModel,
     vocab: Vec<String>,
+    mapped_model: Option<std::sync::Arc<realizar::gguf::MappedGGUFModel>>,
     config: &ServerConfig,
 ) -> Result<()> {
     use realizar::api::{create_router, AppState};
 
-    let state = AppState::with_quantized_model_and_vocab(quantized_model, vocab)
-        .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?
-        .with_verbose(config.verbose); // GH-152: Pass verbose flag to handlers
+    let mut state = AppState::with_quantized_model_and_vocab(quantized_model, vocab)
+        .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?;
+    if let Some(mapped) = mapped_model {
+        state = state.with_mapped_gguf_model(mapped);
+    }
+    let state = state.with_verbose(config.verbose); // GH-152: Pass verbose flag to handlers
 
     // Create realizar's full inference router (Ollama-parity endpoints)
     let app = create_router(state);
@@ -69,6 +80,7 @@ fn run_cpu_server(
 fn start_gguf_server_gpu_batched(
     quantized_model: realizar::gguf::OwnedQuantizedModel,
     vocab: Vec<String>,
+    mapped_model: std::sync::Arc<realizar::gguf::MappedGGUFModel>,
     config: &ServerConfig,
 ) -> Result<()> {
     use realizar::api::{create_router, spawn_batch_processor, AppState, BatchConfig};
@@ -103,8 +115,11 @@ fn start_gguf_server_gpu_batched(
     }
 
     // Create state with cached model and real vocab
+    // aprender#1789 Option B: attach mapped GGUF so qwen3_moe chat dispatch
+    // via `try_qwen3_moe_backend` can borrow per-expert tensors.
     let state = AppState::with_cached_model_and_vocab(cached_model, vocab)
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?
+        .with_mapped_gguf_model(mapped_model)
         .with_verbose(config.verbose); // GH-152: Pass verbose flag
 
     // Get Arc'd model for batch processor

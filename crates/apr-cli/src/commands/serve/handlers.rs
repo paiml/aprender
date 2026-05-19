@@ -1150,7 +1150,11 @@ fn try_apr_quantized_cpu(model_path: &Path, config: &ServerConfig) -> Result<()>
 
     println!("{}", "Q4K CPU inference ready".green());
 
-    run_cpu_server(quantized, vocab, config)
+    // aprender#1789 Option B: APR format has no GGUF mmap to retain, so
+    // pass None — the qwen3_moe dispatch guard returns NOT_IMPLEMENTED
+    // cleanly if an APR-format MoE model is ever loaded (defensive
+    // fallback path in try_qwen3_moe_backend).
+    run_cpu_server(quantized, vocab, None, config)
 }
 
 /// Build the axum Router for APR CPU inference.
