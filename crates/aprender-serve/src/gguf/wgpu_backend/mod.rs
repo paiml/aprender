@@ -41,6 +41,11 @@ use crate::error::{RealizarError, Result};
 use crate::gguf::qwen3_moe_load::Qwen3MoeQuantizedLayer;
 use crate::gguf::OwnedQuantizedModel;
 
+/// M-GPU-MOE-2.1 scaffold — fused SwiGLU WGSL compute pipeline (#1582).
+/// Element-wise post-matvec activation; cacheable on the parent model.
+/// See `swiglu_kernel.rs` for the WGSL source + pipeline builder.
+pub mod swiglu_kernel;
+
 /// wgpu-accelerated wrapper for `OwnedQuantizedModel` (M-GPU-MOE-2.0 stub).
 ///
 /// Provides GPU-accelerated forward passes via wgpu compute pipelines on
