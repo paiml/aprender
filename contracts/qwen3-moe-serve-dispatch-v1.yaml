@@ -1,0 +1,149 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-05-19"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "paiml/aprender#1789 — Qwen3-MoE F32 routing root cause"
+    - "paiml/aprender#1790 — matmul defensive guard (shallow fix that surfaced this contract gap)"
+    - "paiml/claude-code-parity-apr M260 / M270 / M280 — empirical evidence that apr serve currently dispatches MoE GGUFs through the dense path"
+  description: "apr serve chat-completions handler dispatch contract for qwen3_moe-arch GGUF models"
+
+kind: KernelContract
+name: qwen3-moe-serve-dispatch
+version: "1.0.0"
+scope: "crates/aprender-serve/src/api/cuda_chat_backend.rs + crates/aprender-serve/src/infer/inference_result.rs"
+
+description: |
+  When apr serve receives a /v1/chat/completions request and the
+  underlying model is a `qwen3_moe`-arch GGUF, the handler MUST route
+  inference through the MoE-aware path (`run_qwen3_moe_generate` via
+  `infer::run_inference`'s qwen3_moe dispatch branch at
+  inference_result.rs:225), NOT through the dense
+  `Arc<Model>::generate()` path at cuda_chat_backend.rs:361.
+
+  The dense `Arc<Model>::forward()` path expects per-layer FFN tensors
+  named `blk.{L}.ffn_up.weight` / `ffn_gate.weight` / `ffn_down.weight`
+  with populated data. Qwen3-MoE GGUFs instead provide:
+
+    blk.{L}.ffn_gate_inp.weight   [num_experts, hidden_dim]
+    blk.{L}.ffn_gate_exps.weight  [num_experts, intermediate, hidden]
+    blk.{L}.ffn_up_exps.weight    [num_experts, intermediate, hidden]
+    blk.{L}.ffn_down_exps.weight  [num_experts, hidden, intermediate]
+
+  The dense-path FFN matmul indexes into the non-existent
+  `blk.{L}.ffn_up.weight` data buffer; aprender#1790's defensive guard
+  in `fused_matmul_f32` now catches this and returns
+  `RealizarError::InvalidShape` with a clear error, but the actual
+  routing fix is to AVOID the dense path entirely for MoE models.
+
+  The MoE-aware path already exists at
+  `crates/aprender-serve/src/infer/qwen3_moe_generate.rs::run_qwen3_moe_generate`
+  and is wired into `infer::run_inference` (used by `apr run` CLI).
+  This contract codifies that `apr serve`'s chat handler must use the
+  SAME dispatch logic.
+
+equations:
+  arch_detection:
+    description: "Architecture detection at chat-completions entry"
+    formula: "canonical_arch == 'qwen3_moe' → route to MoE path; else dense"
+
+  no_dense_path_for_moe:
+    description: "Dense `Arc<Model>::generate()` MUST NOT be called for MoE models"
+    formula: "is_moe(model) → ¬(model.generate(...) called)"
+
+  moe_dispatch_correctness:
+    description: "MoE dispatch reaches forward_qwen3_moe with all required args"
+    formula: |
+      run_qwen3_moe_generate(&mapped, &model, &input_tokens, &gen_config)
+        → forward_qwen3_moe(token_ids, moe_layers, num_experts,
+                            num_experts_per_tok, moe_intermediate, data)
+
+falsification:
+  - id: FALSIFY-QWEN3_MOE_SERVE_DISPATCH_V1_001
+    description: "POST /v1/chat/completions with qwen3_moe model returns a non-error response"
+    test: |
+      Integration test in crates/aprender-serve/tests/ — boot apr serve
+      with a qwen3_moe GGUF (or a synthetic MoE fixture); POST a chat
+      request; assert response.status == 200 AND response.body.choices
+      has at least one assistant message; no matmul panic, no
+      "MoE inference not supported in chat handler" error.
+    evidence: "cargo test --test qwen3_moe_serve_dispatch_integration"
+
+  - id: FALSIFY-QWEN3_MOE_SERVE_DISPATCH_V1_002
+    description: "Dense `Arc<Model>::generate()` is NOT invoked when canonical_arch == 'qwen3_moe'"
+    test: |
+      Unit test in crates/aprender-serve/src/api/cuda_chat_backend.rs
+      tests module — mock the dispatch layer; supply a model with
+      `arch = "qwen3_moe"`; assert the MoE dispatch fn is called +
+      Arc<Model>::generate() is NOT called.
+    evidence: "cargo test -p aprender-serve --lib api::cuda_chat_backend::tests"
+
+  - id: FALSIFY-QWEN3_MOE_SERVE_DISPATCH_V1_003
+    description: "matmul defensive guard (aprender#1790) does not fire for MoE chat path"
+    test: |
+      Integration test that POSTs a chat request to apr serve with
+      a Qwen3-Coder-30B-MoE GGUF + asserts the response is produced
+      AND no log line contains the substring "matmul weight has
+      EMPTY data buffer" (the #1790 guard message). If the guard
+      fires, the dispatch routed through the dense path — that's a
+      bug per this contract.
+    evidence: "cargo test --test qwen3_moe_serve_dispatch_integration"
+
+  - id: FALSIFY-QWEN3_MOE_SERVE_DISPATCH_V1_004
+    description: "Companion-side CCPA Phase 6 bench produces non-zero student pass rate against Qwen3-Coder-30B-MoE under contract"
+    test: |
+      paiml/claude-code-parity-apr `bash scripts/phase-6-bench.sh` with
+      APR_MODEL=Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf produces
+      evidence/under-contract/scores.json with student_pass_rate > 0
+      (any value > 0 falsifies the "MoE student fails universally"
+      class). This is the empirical end-to-end discharge that closes
+      out CCPA Phase 6 suspension at companion-side M280.
+    evidence: |
+      Operator-dispatched + recorded at
+      paiml/claude-code-parity-apr evidence/under-contract/scores.json
+      (post-aprender-1789-fix re-dispatch).
+
+scope_extension:
+  out_of_scope:
+    - "MoE inference correctness (covered by existing qwen3-moe-forward-v1 + moe-router-v1 + moe-expert-dispatch-v1 contracts)"
+    - "KV cache for MoE path (covered by future qwen3-moe-kvcache-v1)"
+    - "GPU MoE dispatch (covered by qwen3-moe-forward-gpu-v1 + M-GPU-MOE-2.x/3 issues)"
+
+  in_scope:
+    - "Detection of qwen3_moe arch in cuda_chat_backend.rs::openai_chat_completions_handler"
+    - "Dispatch to run_qwen3_moe_generate (via run_inference) when MoE detected"
+    - "Clean error response when MoE model is loaded but dispatch wiring is incomplete (defensive)"
+    - "Avoid Arc<Model>::generate() for MoE models (the dense path that triggers #1790's guard)"
+
+implementation_phases:
+  phase_1:
+    name: "Detection + clear-error short-circuit"
+    description: |
+      Smallest viable step. In cuda_chat_backend.rs::openai_chat_completions_handler,
+      BEFORE calling Arc<Model>::generate(), check the model's
+      canonical architecture. If qwen3_moe, return an
+      InternalServerError with a clear message pointing at this contract
+      + #1789. This stops the cryptic matmul panic at the API surface +
+      gives operators a clear signal of what's missing. Discharges
+      FALSIFY-QWEN3_MOE_SERVE_DISPATCH_V1_002.
+    estimated_effort: "1-2 hours"
+
+  phase_2:
+    name: "Wire run_inference into chat handler for GGUF paths"
+    description: |
+      Refactor the chat handler to detect GGUF models + use
+      run_inference (which already handles MoE dispatch) instead of
+      Arc<Model>::generate() for those. Requires understanding of how
+      AppState stores GGUF state (MappedGGUFModel + OwnedQuantizedModel)
+      alongside the Model abstraction. Discharges
+      FALSIFY-QWEN3_MOE_SERVE_DISPATCH_V1_001 + 003.
+    estimated_effort: "1-2 days"
+
+  phase_3:
+    name: "End-to-end validation via CCPA Phase 6 bench"
+    description: |
+      Operator-dispatch paiml/claude-code-parity-apr Phase 6 bench
+      with Qwen3-Coder-30B-MoE GGUF + assert student_pass_rate > 0.
+      Discharges FALSIFY-QWEN3_MOE_SERVE_DISPATCH_V1_004.
+    estimated_effort: "~7 hours wall (operator-coordinated; no engineering)"

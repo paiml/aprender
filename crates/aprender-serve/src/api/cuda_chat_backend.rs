@@ -594,6 +594,10 @@ pub async fn openai_chat_completions_handler(
             .as_millis()
     );
 
+    if let Some(r) = guard_qwen3_moe_dispatch(&state) {
+        return r;
+    }
+
     #[cfg(feature = "gpu")]
     if let Some(r) = try_gpu_backend(&state, &request, &request_id, trace_level.as_deref(), start) {
         return r;
@@ -631,4 +635,95 @@ pub async fn openai_chat_completions_handler(
     }
 
     registry_fallback(&state, &request, &request_id, start)
+}
+
+/// aprender#1789: qwen3_moe dispatch guard for /v1/chat/completions.
+///
+/// The HTTP chat handler dispatches inference through `Arc<Model>::generate()`,
+/// which calls the dense FFN matmul path. For qwen3_moe GGUFs that path fails
+/// (per-expert tensors stored under `ffn_*_exps.weight`; the dense
+/// `ffn_up.weight` references zero-byte data — see aprender#1790's defensive
+/// guard). The MoE-aware path exists at `infer::run_inference` but is only
+/// wired into the `apr run` CLI today.
+///
+/// Until Option B in `docs/specifications/qwen3-moe-serve-dispatch-fix.md`
+/// lands, surface a structured `NOT_IMPLEMENTED` error so callers see a clean
+/// classification instead of a cryptic matmul shape error. Discharges
+/// FALSIFY-QWEN3_MOE_SERVE_DISPATCH_V1_002 in
+/// `contracts/qwen3-moe-serve-dispatch-v1.yaml`.
+fn guard_qwen3_moe_dispatch(state: &AppState) -> Option<Response> {
+    let raw_arch = state.model_architecture()?;
+    if !is_qwen3_moe_arch(&raw_arch) {
+        return None;
+    }
+    tracing::warn!(
+        raw_arch = %raw_arch,
+        canonical_arch = "qwen3_moe",
+        contract = "qwen3-moe-serve-dispatch-v1",
+        issue = "https://github.com/paiml/aprender/issues/1789",
+        "qwen3_moe arch detected at /v1/chat/completions; MoE dispatch \
+         via HTTP not yet wired (only `apr run` CLI routes through the \
+         MoE path). Returning NOT_IMPLEMENTED."
+    );
+    Some(fail_response(
+        state,
+        StatusCode::NOT_IMPLEMENTED,
+        "qwen3_moe-arch GGUFs are not yet supported via /v1/chat/completions. \
+         Use `apr run` CLI for MoE inference. See aprender#1789 + \
+         contracts/qwen3-moe-serve-dispatch-v1.yaml. \
+         (Discharges FALSIFY-QWEN3_MOE_SERVE_DISPATCH_V1_002.)",
+    ))
+}
+
+/// Predicate: does this raw architecture string canonicalize to qwen3_moe?
+///
+/// Extracted for unit testing the dispatch classification independently of
+/// the full handler. See contracts/qwen3-moe-serve-dispatch-v1.yaml.
+fn is_qwen3_moe_arch(raw_arch: &str) -> bool {
+    crate::tensor_names::normalize_architecture(raw_arch) == "qwen3_moe"
+}
+
+#[cfg(test)]
+mod qwen3_moe_dispatch_guard_tests {
+    use super::is_qwen3_moe_arch;
+
+    #[test]
+    fn canonical_qwen3_moe_matches() {
+        assert!(is_qwen3_moe_arch("qwen3_moe"));
+    }
+
+    #[test]
+    fn huggingface_class_names_canonicalize() {
+        assert!(is_qwen3_moe_arch("Qwen3MoeForCausalLM"));
+        assert!(is_qwen3_moe_arch("Qwen3MoEForCausalLM"));
+        assert!(is_qwen3_moe_arch("Qwen3CoderForCausalLM"));
+        assert!(is_qwen3_moe_arch("Qwen3_5MoeForCausalLM"));
+        assert!(is_qwen3_moe_arch("Qwen3_5MoeForConditionalGeneration"));
+    }
+
+    #[test]
+    fn lowercase_underscore_variants_match() {
+        assert!(is_qwen3_moe_arch("qwen3moe"));
+    }
+
+    #[test]
+    fn dense_archs_do_not_match() {
+        // FALSIFY-QWEN3_MOE_SERVE_DISPATCH_V1_002 negative cases: the guard
+        // MUST NOT fire for dense architectures, otherwise it regresses
+        // every existing chat-completions request.
+        assert!(!is_qwen3_moe_arch("qwen2"));
+        assert!(!is_qwen3_moe_arch("qwen3"));
+        assert!(!is_qwen3_moe_arch("llama"));
+        assert!(!is_qwen3_moe_arch("mistral"));
+        assert!(!is_qwen3_moe_arch("phi"));
+        assert!(!is_qwen3_moe_arch("gemma"));
+    }
+
+    #[test]
+    fn unknown_arch_does_not_match() {
+        // normalize_architecture defaults unknowns to "llama", which is not
+        // qwen3_moe — so the guard should NOT fire for unknown archs.
+        assert!(!is_qwen3_moe_arch("some-future-arch-3000"));
+        assert!(!is_qwen3_moe_arch(""));
+    }
 }
