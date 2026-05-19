@@ -213,7 +213,29 @@ impl<'a> Pipeline<'a> {
         // (loaded from the on-disk safetensors) is only retained so the
         // export step at the end can write the resulting checkpoint.
         let _ = (lr, &loss_fn); // legacy values retained for back-compat
-        let dummy_batch: Vec<Vec<u32>> = vec![vec![0u32]; batch_size];
+
+        // PMAT-698m: smoke-test batch setup. The original used
+        //   dummy_batch = vec![vec![0u32]; batch_size]
+        //   labels     = (0..batch_size).map(|i| i % num_classes)
+        // — same input (token 0) paired with N distinct labels, which is
+        // impossible to learn (identical features cannot map to distinct
+        // targets). CE loss diverges, which surfaced as Phase 3 GB10 smoke
+        // returning final_loss=8.39 > initial_loss=6.08 even though the
+        // pipeline itself was working end-to-end.
+        //
+        // Fix: per-row input matches per-row label. Each row carries a
+        // distinct token; the label is that same token. The student learns
+        // the trivial identity mapping (input → predict same token), CE
+        // decreases monotonically, KD signal is zero when teacher==student,
+        // and F-DISTILL-SMOKE-001 ("final_loss < initial_loss") becomes
+        // satisfiable on the standard smoke configuration.
+        //
+        // For real distillation with a real dataset, the caller would
+        // override the pipeline's batch construction entirely; this default
+        // exists for the smoke + fixture-path tests.
+        let dummy_batch: Vec<Vec<u32>> = (0..batch_size)
+            .map(|i| vec![(i % num_classes) as u32])
+            .collect();
         let labels: Vec<usize> = (0..batch_size).map(|i| i % num_classes).collect();
 
         let mut metrics = TrainingMetrics::default();
