@@ -162,7 +162,7 @@ pub fn pre_warm_lora_backward_kernels(
 ) -> Result<()> {
     use trueno_gpu::kernels::backward::{
         BatchedRmsNormBackwardKernel, BatchedSoftmaxBackwardKernel, GemmBackwardAKernel,
-        GemmBackwardBKernel, SiluBackwardKernel,
+        GemmBackwardBKernel, RmsNormGammaReduceKernel, SiluBackwardKernel,
     };
     use trueno_gpu::kernels::Kernel;
 
@@ -303,6 +303,21 @@ pub fn pre_warm_lora_backward_kernels(
     // RMSNorm backward (dimension-independent)
     let eps = 1e-5_f32;
     warm!("batched_rms_norm_backward".to_string(), BatchedRmsNormBackwardKernel::new(s, h, eps));
+
+    // PMAT-698h: RMSNorm backward is TWO stages — `batched_rms_norm_backward`
+    // produces a [batch_size, hidden] gamma-partial buffer, then
+    // `rms_norm_gamma_reduce` (in structured.rs:247) sums it row-by-row in
+    // deterministic fixed order to produce the final [hidden] gamma
+    // gradient. The reduce kernel was previously JIT'd on first call —
+    // discovered in Phase 3 dispatch v9 where every other backward kernel
+    // was pre-warmed but gamma_reduce still hit on-demand JIT and the
+    // sm_121 stream poisoned during it. Now: always pre-warm with the
+    // same (batch_size=max_seq_len, hidden_size) dims that structured.rs
+    // constructs at call time.
+    warm!(
+        "rms_norm_gamma_reduce".to_string(),
+        RmsNormGammaReduceKernel::new(s, h)
+    );
 
     let _ = count;
     Ok(())
