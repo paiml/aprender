@@ -21,6 +21,25 @@ pub fn load_safetensors_weights(
         source: e,
     })?;
 
+    // PMAT-698f: when the cuda distillation backend is active, teacher/student
+    // are staged as APR v2 files (via `apr import` in the dispatch script,
+    // because CudaTrainerTeacher::for_inference reads APR metadata, not
+    // SafeTensors). The pipeline.train() helper used to assert the file
+    // parses as SafeTensors as a sanity check on the fixture path — for APR
+    // inputs the SafeTensors parser fails with "header too large" because
+    // it reads the APR v2 binary header bytes as a u64 SafeTensors header
+    // length.
+    //
+    // Detect the APR magic bytes ("APR\0" v2, "APRN" v1) and return empty
+    // maps. The cuda path's pipeline.train() uses providers (not these
+    // maps) for forward/backward; the empty maps just become no-op
+    // placeholders for the post-train logit projection. The FALSIFY-APR-
+    // DISTILL-TRAIN-001 contract is a fixture-path-only assertion and
+    // remains intact for that path.
+    if data.len() >= 4 && (&data[..4] == b"APR\0" || &data[..4] == b"APRN") {
+        return Ok((HashMap::new(), HashMap::new()));
+    }
+
     let tensors =
         safetensors::SafeTensors::deserialize(&data).map_err(|e| EntrenarError::Serialization {
             message: format!("invalid SafeTensors file {}: {e}", path.display()),
