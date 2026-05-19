@@ -123,6 +123,10 @@ impl ForwardKernelCache {
         match self.modules.entry(name.to_string()) {
             Entry::Occupied(e) => Ok(e.into_mut()),
             Entry::Vacant(e) => {
+                // PMAT-698i: diagnostic logging. Surfaces every forward-cache
+                // JIT event with its kernel name so missing pre-warm entries
+                // are identifiable in O(1) instead of O(N) iterations.
+                eprintln!("[FWD-CACHE] Compiling '{name}' (ptx_len={})", ptx.len());
                 // trueno#200: Use from_ptx_direct on Blackwell
                 let (major, _) = self.ctx.compute_capability().map_err(|e| {
                     CudaTensorError::KernelError(format!("compute_capability: {e:?}"))
@@ -135,6 +139,7 @@ impl ForwardKernelCache {
                 .map_err(|err| {
                     CudaTensorError::KernelError(format!("Failed to compile {name}: {err:?}"))
                 })?;
+                eprintln!("[FWD-CACHE] OK '{name}'");
                 Ok(e.insert(module))
             }
         }
