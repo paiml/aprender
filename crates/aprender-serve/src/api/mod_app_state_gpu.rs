@@ -59,6 +59,7 @@ impl AppState {
             apr_q4k_tx: None,
             apr_transformer: None,
             cached_architecture: None,
+            mapped_gguf_model: None,
             cached_eos_token_id: None,
             verbose: false,
             trace: false,
@@ -112,6 +113,7 @@ impl AppState {
             apr_q4k_tx: None,
             apr_transformer: None,
             cached_architecture: None,
+            mapped_gguf_model: None,
             cached_eos_token_id: None,
             verbose: false,
             trace: false,
@@ -173,6 +175,7 @@ impl AppState {
             apr_q4k_tx: None,
             apr_transformer: None,
             cached_architecture: arch,
+            mapped_gguf_model: None,
             cached_eos_token_id: None,
             verbose: false,
             trace: false,
@@ -237,6 +240,7 @@ impl AppState {
             apr_q4k_tx: None,
             apr_transformer: None,
             cached_architecture: arch,
+            mapped_gguf_model: None,
             cached_eos_token_id: eos,
             verbose: false,
             trace: false,
@@ -290,6 +294,7 @@ impl AppState {
             apr_q4k_tx: None,
             apr_transformer: None,
             cached_architecture: arch,
+            mapped_gguf_model: None,
             cached_eos_token_id: eos,
             verbose: false,
             trace: false,
@@ -348,6 +353,7 @@ impl AppState {
             apr_q4k_tx: None,
             apr_transformer: Some(Arc::new(transformer)),
             cached_architecture: None,
+            mapped_gguf_model: None,
             cached_eos_token_id: None,
             verbose: false,
             trace: false,
@@ -568,6 +574,7 @@ impl AppState {
             apr_q4k_tx: Some(q4k_tx),
             apr_transformer: None,
             cached_architecture: None,
+            mapped_gguf_model: None,
             cached_eos_token_id: eos_id,
             verbose: false,
             trace: false,
@@ -613,6 +620,7 @@ impl AppState {
             apr_q4k_tx: None,
             apr_transformer: None,
             cached_architecture: None,
+            mapped_gguf_model: None,
             cached_eos_token_id: None,
             verbose: false,
             trace: false,
@@ -637,6 +645,30 @@ impl AppState {
     ) -> Self {
         self.apr_q4k_tx = Some(tx);
         self
+    }
+
+    /// aprender#1789 Option B: builder to attach the retained
+    /// `MappedGGUFModel` for MoE-aware HTTP dispatch.
+    ///
+    /// `run_qwen3_moe_generate` borrows per-expert tensors directly from
+    /// the mmap, so the mapped model must outlive any inference call. The
+    /// CLI server-command load path must retain its `MappedGGUFModel` in
+    /// an `Arc` + attach it here.
+    #[must_use]
+    pub fn with_mapped_gguf_model(
+        mut self,
+        mapped: std::sync::Arc<crate::gguf::MappedGGUFModel>,
+    ) -> Self {
+        self.mapped_gguf_model = Some(mapped);
+        self
+    }
+
+    /// aprender#1789 Option B: accessor for the retained
+    /// `MappedGGUFModel`. Used by the chat-completions handler to route
+    /// qwen3_moe inference through `run_qwen3_moe_generate`.
+    #[must_use]
+    pub fn mapped_gguf_model(&self) -> Option<std::sync::Arc<crate::gguf::MappedGGUFModel>> {
+        self.mapped_gguf_model.clone()
     }
 
     /// GH-319: Get model architecture from whichever backend is loaded.

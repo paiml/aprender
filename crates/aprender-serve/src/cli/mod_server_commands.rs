@@ -130,6 +130,13 @@ mod server_commands {
             crate::api::AppState::with_quantized_model_and_vocab(quantized_model, vocab)?
         };
 
+        // aprender#1789 Option B: retain MappedGGUFModel in AppState so the
+        // chat-completions handler can route qwen3_moe inference through
+        // `run_qwen3_moe_generate` (which borrows per-expert tensors
+        // directly from the mmap). For non-MoE archs this is just an extra
+        // Arc reference; for MoE it's the critical lifetime anchor.
+        let state = state.with_mapped_gguf_model(std::sync::Arc::new(mapped));
+
         Ok(PreparedServer {
             state,
             batch_mode_enabled: batch_mode,
