@@ -166,6 +166,13 @@ pub struct AppState {
         Option<Arc<std::sync::Mutex<crate::safetensors_cuda::SafeTensorsCudaModel>>>,
     /// GH-319: Cached model architecture string (avoids RwLock in hot path)
     cached_architecture: Option<String>,
+    /// aprender#1789 Option B: retained MappedGGUFModel for MoE-aware HTTP
+    /// dispatch. `run_qwen3_moe_generate` borrows per-expert tensors
+    /// directly from the mmap, so the mapped model must outlive any
+    /// inference call. Held in an `Arc` to share between the chat handler
+    /// + any future streaming/batch backends. See
+    /// `contracts/qwen3-moe-serve-dispatch-v1.yaml` (V1_001 + V1_003).
+    mapped_gguf_model: Option<Arc<crate::gguf::MappedGGUFModel>>,
     /// GH-330: Cached EOS token ID (avoids RwLock in hot path)
     cached_eos_token_id: Option<u32>,
     /// GH-152: Enable verbose request/response logging

@@ -594,7 +594,7 @@ pub async fn openai_chat_completions_handler(
             .as_millis()
     );
 
-    if let Some(r) = guard_qwen3_moe_dispatch(&state) {
+    if let Some(r) = try_qwen3_moe_backend(&state, &request, &request_id, start) {
         return r;
     }
 
@@ -637,40 +637,130 @@ pub async fn openai_chat_completions_handler(
     registry_fallback(&state, &request, &request_id, start)
 }
 
-/// aprender#1789: qwen3_moe dispatch guard for /v1/chat/completions.
+/// aprender#1789 Option B: qwen3_moe MoE-aware dispatch for /v1/chat/completions.
 ///
-/// The HTTP chat handler dispatches inference through `Arc<Model>::generate()`,
-/// which calls the dense FFN matmul path. For qwen3_moe GGUFs that path fails
-/// (per-expert tensors stored under `ffn_*_exps.weight`; the dense
-/// `ffn_up.weight` references zero-byte data — see aprender#1790's defensive
-/// guard). The MoE-aware path exists at `infer::run_inference` but is only
-/// wired into the `apr run` CLI today.
+/// Detects qwen3_moe architecture + dispatches inference through
+/// `run_qwen3_moe_generate` (the same path used by the `apr run` CLI),
+/// which correctly indexes per-expert FFN tensors from the mmap.
 ///
-/// Until Option B in `docs/specifications/qwen3-moe-serve-dispatch-fix.md`
-/// lands, surface a structured `NOT_IMPLEMENTED` error so callers see a clean
-/// classification instead of a cryptic matmul shape error. Discharges
-/// FALSIFY-QWEN3_MOE_SERVE_DISPATCH_V1_002 in
+/// For non-qwen3_moe archs returns `None` — handler falls through to the
+/// dense backend chain (CUDA / cached / quantized / registry-fallback).
+///
+/// For qwen3_moe archs where AppState was constructed WITHOUT
+/// `with_mapped_gguf_model` (no retained mmap), returns NOT_IMPLEMENTED
+/// with the same actionable error class Option A surfaced. The
+/// defensive guard from aprender#1790's `validate_matmul_weight_shape`
+/// will NOT fire because we never reach the dense FFN matmul.
+///
+/// Discharges FALSIFY-QWEN3_MOE_SERVE_DISPATCH_V1_001 + V1_003 in
 /// `contracts/qwen3-moe-serve-dispatch-v1.yaml`.
-fn guard_qwen3_moe_dispatch(state: &AppState) -> Option<Response> {
+fn try_qwen3_moe_backend(
+    state: &AppState,
+    request: &ChatCompletionRequest,
+    request_id: &str,
+    start: Instant,
+) -> Option<Response> {
+    use crate::gguf::QuantizedGenerateConfig;
+
     let raw_arch = state.model_architecture()?;
     if !is_qwen3_moe_arch(&raw_arch) {
         return None;
     }
-    eprintln!(
-        "[WARN] aprender#1789: qwen3_moe arch detected at \
-         /v1/chat/completions (raw_arch={raw_arch}, canonical=qwen3_moe). \
-         MoE dispatch via HTTP not yet wired (only `apr run` CLI routes \
-         through the MoE path). Returning NOT_IMPLEMENTED. \
-         See contracts/qwen3-moe-serve-dispatch-v1.yaml + \
-         https://github.com/paiml/aprender/issues/1789"
-    );
-    Some(fail_response(
+
+    let mapped = match state.mapped_gguf_model() {
+        Some(m) => m,
+        None => {
+            eprintln!(
+                "[WARN] aprender#1789: qwen3_moe arch detected at \
+                 /v1/chat/completions (raw_arch={raw_arch}, canonical=qwen3_moe) \
+                 but AppState has no retained MappedGGUFModel. This means the \
+                 CLI server-command load path didn't call \
+                 .with_mapped_gguf_model(). Returning NOT_IMPLEMENTED. \
+                 See contracts/qwen3-moe-serve-dispatch-v1.yaml + \
+                 https://github.com/paiml/aprender/issues/1789"
+            );
+            return Some(fail_response(
+                state,
+                StatusCode::NOT_IMPLEMENTED,
+                "qwen3_moe arch detected but mapped GGUF not retained in AppState. \
+                 See aprender#1789 + contracts/qwen3-moe-serve-dispatch-v1.yaml.",
+            ));
+        }
+    };
+    let quantized = match state.quantized_model() {
+        Some(q) => q.clone(),
+        None => {
+            return Some(fail_response(
+                state,
+                StatusCode::NOT_IMPLEMENTED,
+                "qwen3_moe arch detected but no OwnedQuantizedModel in AppState. \
+                 See aprender#1789.",
+            ));
+        }
+    };
+    let tokenizer = match require_tokenizer(state) {
+        Ok(t) => t,
+        Err(r) => return Some(r),
+    };
+
+    let input_ids = match tokenize_chat_prompt(
+        &tokenizer,
+        &request.messages,
+        Some(&request.model),
         state,
-        StatusCode::NOT_IMPLEMENTED,
-        "qwen3_moe-arch GGUFs are not yet supported via /v1/chat/completions. \
-         Use `apr run` CLI for MoE inference. See aprender#1789 + \
-         contracts/qwen3-moe-serve-dispatch-v1.yaml. \
-         (Discharges FALSIFY-QWEN3_MOE_SERVE_DISPATCH_V1_002.)",
+    ) {
+        Ok(ids) => ids,
+        Err(r) => return Some(r),
+    };
+    let prompt_token_count = input_ids.len();
+
+    let max_tokens = request.max_tokens.unwrap_or(256).min(4096) as usize;
+    let gen_config = QuantizedGenerateConfig {
+        max_tokens,
+        temperature: request.temperature.unwrap_or(0.0),
+        ..QuantizedGenerateConfig::default()
+    };
+
+    let tokens = match crate::infer::qwen3_moe_generate::run_qwen3_moe_generate(
+        &mapped,
+        &quantized,
+        &input_ids,
+        &gen_config,
+    ) {
+        Ok(t) => t,
+        Err(e) => {
+            state.metrics.record_failure();
+            return Some(fail_response(
+                state,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("qwen3_moe generation failed: {e}"),
+            ));
+        }
+    };
+
+    let generated_ids: Vec<u32> = tokens[input_ids.len()..].to_vec();
+    let completion_tokens = generated_ids.len();
+
+    let response_text = match tokenizer.decode(&generated_ids) {
+        Ok(t) => t,
+        Err(e) => {
+            state.metrics.record_failure();
+            return Some(fail_response(state, StatusCode::INTERNAL_SERVER_ERROR, e));
+        }
+    };
+
+    let duration = start.elapsed();
+    state.metrics.record_success(completion_tokens, duration);
+
+    Some(build_chat_response(
+        request_id.to_string(),
+        request.model.clone(),
+        response_text,
+        prompt_token_count,
+        completion_tokens,
+        max_tokens,
+        None,
+        duration,
     ))
 }
 
