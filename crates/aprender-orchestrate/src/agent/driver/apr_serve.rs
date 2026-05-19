@@ -281,7 +281,16 @@ impl AprServeDriver {
         // - File edit content (multi-line diffs)
         // - Explanation text alongside tool calls
         // Previous 512 cap truncated complex edits mid-output.
-        let max_tokens = request.max_tokens.min(1024);
+        //
+        // aprender#1789 follow-up: env-var override for large MoE models
+        // without KV cache. At ~0.5 tok/s (30B-MoE-no-KV), 1024 tokens
+        // takes ~34 min — exceeds reasonable per-turn budgets. Allow the
+        // operator (or bench harness) to dial down for slow models.
+        let max_tokens_cap = std::env::var("APR_AGENT_MAX_TOKENS_CAP")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok())
+            .unwrap_or(1024);
+        let max_tokens = request.max_tokens.min(max_tokens_cap);
 
         serde_json::json!({
             "model": self.model_name,
