@@ -1,9 +1,112 @@
 metadata:
-  version: 1.7.2
+  version: 1.8.0
   kind: kernel
   created: '2026-05-04'
   author: PAIML Engineering
   amendment_history:
+    - version: 1.8.0
+      date: '2026-05-19'
+      kind: amendment
+      title: 'M-GPU-MOE-3 cascade DISCHARGE — true root cause is CPU/CUDA activation-qtype algorithm mismatch (NOT SwiGLU intermediates as v1.7.2 claimed)'
+      description: |
+        Discharge amendment for the full M-GPU-MOE-3 cascade. Seven
+        falsifier PRs (#1801, #1805, #1811, #1816, #1818, #1821, #1822)
+        across two sessions empirically pinned the true root cause of
+        the 0.94-cos drop on real Qwen3 layers L7/L9/L12/L20/L23/L29/L46.
+
+        FALSIFIER SEQUENCE — all on lambda-vector RTX 4090 with apr 0.34.0:
+
+          #1801 FALSIFY-Q6K-FP-ACC-001        — synthetic Q6_K matvec
+                  reduction-order divergence is ULP-SCALE (~6e-7),
+                  not the 6% needed to explain the cos drop.
+          #1805 FALSIFY-Q6K-AMP-002           — activation distribution
+                  amplification is FLAT (uniform/log-normal/outlier
+                  all produce ~1e-7 to 2e-6 rel_diff).
+          #1811 FALSIFY-Q6K-CHAIN-003         — chain length compounding
+                  is FLAT (N=1 to N=48 same ulp floor).
+          #1816 FALSIFY-Q6K-REAL-WEIGHT-004   — real Qwen3 Q6_K weights
+                  match the synthetic ulp-scale floor. STRUCTURAL
+                  FINDING: 3 of 7 'problem layers' (L7/L9/L12) use
+                  Q4_K (not Q6_K) for ffn_down_exps — refutes the
+                  Q6_K-specific framing in v1.0.0..v1.7.2.
+          #1818 FALSIFY-SWIGLU-CPU-CUDA-005   — SwiGLU intrinsic precision
+                  (CPU f32::exp vs CUDA ex2.approx.f32) is ULP-SCALE
+                  across all input distributions, including extreme
+                  [-20, 20] range. **REFUTES v1.7.2's attribution of
+                  the L47 cliff to per-expert SwiGLU f32 intermediates.**
+          #1821 FALSIFY-Q4K-REAL-WEIGHT-006   — real Qwen3 Q4_K weights
+                  produce 5.47% rel_diff vs CPU on a single matvec —
+                  237,775× the Q6_K baseline. Misattributed the bug
+                  to CUDA q4k_matvec.
+          #1822 FALSIFY-Q4K-BISECT-007        — DISCHARGE. Three-path
+                  bisection (CPU fused vs CPU dequant+naive vs CUDA)
+                  INVERTED #1821: CPU dequant+naive ≈ CUDA at 5e-7,
+                  CPU fused diverges from BOTH by the SAME 2.88%.
+                  Reading parallel_k.rs:181-182 docstring confirmed:
+                  CPU fused_q4k_parallel_matvec pre-quantizes
+                  activations to Q8_K (integer math via maddubs,
+                  ~4-8× speedup); CUDA q4k_matvec uses f32 activations.
+
+        TRUE ROOT CAUSE:
+
+          CPU fused_q4k_parallel_matvec  = Q4_K(weights) × Q8_K(activations)
+          CUDA q4k_matvec                = Q4_K(weights) × f32_activations
+
+          These are DIFFERENT MATHEMATICAL OPERATIONS. The 2.88% per-matvec
+          delta is lossy Q8_K activation quantization. Compounded across
+          128 experts × 48 layers, it produces the observed ~6%
+          cumulative cos drop on the 7 problem layers.
+
+          The v1.7.2 'per-expert SwiGLU f32 intermediates' attribution
+          was refuted by #1818 and superseded by #1822's bisection.
+          The earlier 'fp-accumulator-order alignment' framing (v1.0.0..
+          v1.7.1) was also refuted (#1801/#1816 show ulp-scale Q6_K
+          per-matvec). All previous hypotheses are now FALSIFIED with
+          in-tree empirical evidence.
+
+        FIX PATHS (out-of-scope for this amendment; fix is a separate PR):
+
+          OPTION 1 — CPU uses f32 activations to match CUDA.
+                     Slows CPU significantly (loses maddubs 4-8× speedup).
+
+          OPTION 2 — CUDA uses Q8_K activations to match CPU.
+                     Requires a new CUDA kernel: f32 → Q8_K activation
+                     quantization. The downstream Q4_K × Q8_K matvec
+                     already exists in trueno-gpu as
+                     PackedDp4aQ4KQ8Kernel (DP4A integer math on
+                     Ampere+) — could be FASTER than the current
+                     q4k_matvec f32 path.
+
+          OPTION 3 — Document the algorithmic divergence; relax the
+                     cos≥0.99 gate to cos≥0.93 to reflect reality.
+                     Cheapest; defers the perf trade-off.
+
+        Recommended fix path: OPTION 2 (CUDA Q8_K activation quant).
+        Tracked as M-GPU-MOE-3 PR-4 in #1583.
+
+        STATUS CHANGE:
+
+          v1.7.2: ACTIVE_ALGORITHM_LEVEL (47/48 layers cos≥0.99,
+                  L47 KNOWN_DIVERGENCE_NOT_BENIGN attributed to
+                  SwiGLU f32 — now REFUTED).
+
+          v1.8.0: ACTIVE_ALGORITHM_LEVEL_WITH_DOCUMENTED_DIVERGENCE
+                  (47/48 layers cos≥0.99 stands; root cause is
+                  documented activation-qtype mismatch, not a
+                  per-layer kernel bug; multi-layer 0.94-cos drop
+                  on L7/L9/L12/L20/L23/L29/L46 is the natural
+                  compositional consequence and is documented here).
+
+        NEXT CASCADE STEP:
+
+          Author the CUDA f32→Q8_K activation quant kernel + wire
+          it into expert_swiglu_cuda's Q4_K matvec dispatch. Verify
+          all 48 layers cos≥0.99 via the existing
+          qwen3_moe_per_layer_gpu_parity.rs falsifier
+          (FALSIFY-QW3-MOE-PER-LAYER-001).
+
+          On success: flip status to ACTIVE_RUNTIME and close #1583.
+
     - version: 1.7.2
       date: '2026-05-17'
       kind: amendment
@@ -1044,7 +1147,7 @@ metadata:
 kind: KernelContract
 name: qwen3-moe-forward-gpu
 version: "1.7.2"
-status: ACTIVE_ALGORITHM_LEVEL   # 47/48 layers cos≥0.99; L47 KNOWN_DIVERGENCE_NOT_BENIGN (root cause: per-expert SwiGLU f32 intermediates; fix scope = PR-3h)
+status: ACTIVE_ALGORITHM_LEVEL_WITH_DOCUMENTED_DIVERGENCE   # 47/48 layers cos≥0.99; v1.7.2's L47 SwiGLU-f32 attribution REFUTED by #1818; true root cause = CPU/CUDA activation-qtype algorithm mismatch (CPU Q8K vs CUDA f32) per #1822 bisection — see v1.8.0 amendment_history
                 # plan + NaN/Inf bisection plan only; flips to
                 # ACTIVE_ALGORITHM_LEVEL when CUDA kernel + cosine
                 # parity gate (FALSIFY-QW3-MOE-GPU-PARITY-001) AND
