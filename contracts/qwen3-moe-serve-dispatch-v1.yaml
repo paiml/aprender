@@ -1,6 +1,7 @@
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   created: "2026-05-19"
+  updated: "2026-05-19"
   author: PAIML Engineering
   registry: true
   references:
@@ -11,7 +12,7 @@ metadata:
 
 kind: KernelContract
 name: qwen3-moe-serve-dispatch
-version: "1.0.0"
+version: "1.1.0"
 scope: "crates/aprender-serve/src/api/cuda_chat_backend.rs + crates/aprender-serve/src/infer/inference_result.rs"
 
 description: |
@@ -128,6 +129,7 @@ implementation_phases:
       gives operators a clear signal of what's missing. Discharges
       FALSIFY-QWEN3_MOE_SERVE_DISPATCH_V1_002.
     estimated_effort: "1-2 hours"
+    status: "SHIPPED 2026-05-19 via paiml/aprender#1806"
 
   phase_2:
     name: "Wire run_inference into chat handler for GGUF paths"
@@ -139,6 +141,7 @@ implementation_phases:
       alongside the Model abstraction. Discharges
       FALSIFY-QWEN3_MOE_SERVE_DISPATCH_V1_001 + 003.
     estimated_effort: "1-2 days"
+    status: "SHIPPING 2026-05-19 (this PR) — AppState gains mapped_gguf_model field; try_qwen3_moe_backend replaces guard with real run_qwen3_moe_generate dispatch"
 
   phase_3:
     name: "End-to-end validation via CCPA Phase 6 bench"
@@ -147,3 +150,14 @@ implementation_phases:
       with Qwen3-Coder-30B-MoE GGUF + assert student_pass_rate > 0.
       Discharges FALSIFY-QWEN3_MOE_SERVE_DISPATCH_V1_004.
     estimated_effort: "~7 hours wall (operator-coordinated; no engineering)"
+    status: "PENDING — awaits Phase 2 merge + operator-coordinated bench dispatch"
+
+status_history:
+  - version: "1.0.0"
+    date: "2026-05-19"
+    pr: "paiml/aprender#1806"
+    summary: "Initial contract registered. Phase 1 (Option A) shipped: arch-detection guard + 5 unit tests discharging V1_002."
+  - version: "1.1.0"
+    date: "2026-05-19"
+    pr: "paiml/aprender#1807 (this PR)"
+    summary: "Phase 2 (Option B) ships: AppState gains mapped_gguf_model field; CLI server-command load path retains MappedGGUFModel in Arc; try_qwen3_moe_backend replaces guard with real run_qwen3_moe_generate dispatch. V1_001 + V1_003 discharged pending integration-test fixture availability."

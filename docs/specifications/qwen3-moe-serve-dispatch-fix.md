@@ -1,6 +1,6 @@
 # Qwen3-MoE serve-dispatch fix (paiml/aprender#1789)
 
-**Status (2026-05-19)**: SCOPE + CONTRACT in place; implementation in flight on branch `fix/1789-qwen3-moe-serve-dispatch`.
+**Status (2026-05-19)**: SCOPE + CONTRACT v1.1.0 + Option A (PR #1806, in CI) + Option B (PR #1807, this PR) all in flight. Option C deferred indefinitely (architectural cleanup; not on critical path).
 
 **Cross-refs**:
 - Contract: [`contracts/qwen3-moe-serve-dispatch-v1.yaml`](../../contracts/qwen3-moe-serve-dispatch-v1.yaml)
