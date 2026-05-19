@@ -1,0 +1,133 @@
+=== Phase 3 smoke dispatch ===
+  target:        noah@gx10
+  teacher:       Qwen/Qwen2.5-Coder-0.5B-Instruct
+  student init:  Qwen/Qwen2.5-Coder-0.5B-Instruct
+  steps:         50
+  batch_size:    4
+  LR:            1.5e-5
+  T (KD temp):   4.0
+  alpha (CE wt): 0.3
+  run name:      distill-smoke-20260518-223823
+  evidence:      evidence/distill-phase-3-sanity-50-v5
+
+=== remote preflight ===
+Your branch is up to date with 'origin/main'.
+Already on 'main'
+Already up to date.
+aprender HEAD: 1c21f495d ci: pre-build chown of per-RUN target dir to fix root-owned bind mount (#1798)
+NVIDIA GB10, 590.48.01
+=== remote build (cuda) ===
+warning: `aprender-serve` (lib) generated 1 warning
+   Compiling aprender-train-distill v0.34.0 (/home/noah/src/aprender/crates/aprender-train-distill)
+   Compiling aprender-train-lora v0.34.0 (/home/noah/src/aprender/crates/aprender-train-lora)
+warning: `aprender-train` (lib) generated 9 warnings (run `cargo fix --lib -p aprender-train` to apply 2 suggestions)
+    Finished `release` profile [optimized] target(s) in 1m 03s
+apr 0.34.0 (1c21f495d)
+=== remote artifact staging ===
+=== APR Pull ===
+
+Model: hf://Qwen/Qwen2.5-Coder-0.5B-Instruct/model.safetensors
+✓ Model already cached
+  Path: /home/noah/.cache/pacha/models/1e3be9285aea6923.safetensors
+  Size: 942.3 MB
+
+Usage:
+  apr run /home/noah/.cache/pacha/models/1e3be9285aea6923.safetensors
+  apr serve /home/noah/.cache/pacha/models/1e3be9285aea6923.safetensors
+=== APR Pull ===
+
+Model: hf://Qwen/Qwen2.5-Coder-0.5B-Instruct/model.safetensors
+✓ Model already cached
+  Path: /home/noah/.cache/pacha/models/1e3be9285aea6923.safetensors
+  Size: 942.3 MB
+
+Usage:
+  apr run /home/noah/.cache/pacha/models/1e3be9285aea6923.safetensors
+  apr serve /home/noah/.cache/pacha/models/1e3be9285aea6923.safetensors
+=== dispatching smoke run on gx10 ===
+SafeTensors detected for Qwen/Qwen2.5-Coder-0.5B-Instruct - converting to APR via apr import (--arch qwen2)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  APR Import Pipeline
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+╭────────┬──────────────────────────────────────────────────────────────────────────╮
+│ Source │ /home/noah/runs/distill-smoke-20260518-223823/teacher/source.safetensors │
+├────────┼──────────────────────────────────────────────────────────────────────────┤
+│ Output │ /home/noah/runs/distill-smoke-20260518-223823/teacher/model.apr          │
+╰────────┴──────────────────────────────────────────────────────────────────────────╯
+
+╭──────────────┬───────╮
+│ Architecture │ Qwen2 │
+├──────────────┼───────┤
+│   Validation │ Basic │
+╰──────────────┴───────╯
+
+  ◉ Importing
+[PMAT-223] Extracted 1 user metadata key(s) from SafeTensors __metadata__
+[GH-353] F16/BF16 passthrough: 290 of 290 tensors (skipped F32 conversion, saving ~1.8 GB RAM)
+[BUG-EXPORT-004] Vocab: base=151643, added=22, expected=151936, final=151936
+[BUG-EXPORT-004] Read BOS/EOS from config.json: bos=Some(151643), eos=Some(151645)
+[CONTRACT] Validated 290 tensors against tensor-layout-v1.yaml (vocab=151936, hidden=896)
+[PMAT-221] Embedding 151387 BPE merge rules into APR metadata (SafeTensors path)
+[GH-205] F16 passthrough: 290 tensors written as raw F16 (no precision loss)
+
+
+  ─── Validation Report
+╭───────┬───────╮
+│ Score │ 3/100 │
+├───────┼───────┤
+│ Grade │ F     │
+╰───────┴───────╯
+
+  ⚠ Import completed with warnings
+staged Qwen/Qwen2.5-Coder-0.5B-Instruct -> /home/noah/runs/distill-smoke-20260518-223823/teacher/model.apr
+SafeTensors detected for Qwen/Qwen2.5-Coder-0.5B-Instruct - converting to APR via apr import (--arch qwen2)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  APR Import Pipeline
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+╭────────┬──────────────────────────────────────────────────────────────────────────╮
+│ Source │ /home/noah/runs/distill-smoke-20260518-223823/student/source.safetensors │
+├────────┼──────────────────────────────────────────────────────────────────────────┤
+│ Output │ /home/noah/runs/distill-smoke-20260518-223823/student/model.apr          │
+╰────────┴──────────────────────────────────────────────────────────────────────────╯
+
+╭──────────────┬───────╮
+│ Architecture │ Qwen2 │
+├──────────────┼───────┤
+│   Validation │ Basic │
+╰──────────────┴───────╯
+
+  ◉ Importing
+[PMAT-223] Extracted 1 user metadata key(s) from SafeTensors __metadata__
+[GH-353] F16/BF16 passthrough: 290 of 290 tensors (skipped F32 conversion, saving ~1.8 GB RAM)
+[BUG-EXPORT-004] Vocab: base=151643, added=22, expected=151936, final=151936
+[BUG-EXPORT-004] Read BOS/EOS from config.json: bos=Some(151643), eos=Some(151645)
+[CONTRACT] Validated 290 tensors against tensor-layout-v1.yaml (vocab=151936, hidden=896)
+[PMAT-221] Embedding 151387 BPE merge rules into APR metadata (SafeTensors path)
+[GH-205] F16 passthrough: 290 tensors written as raw F16 (no precision loss)
+
+
+  ─── Validation Report
+╭───────┬───────╮
+│ Score │ 3/100 │
+├───────┼───────┤
+│ Grade │ F     │
+╰───────┴───────╯
+
+  ⚠ Import completed with warnings
+teacher: /home/noah/runs/distill-smoke-20260518-223823/teacher/model.apr
+student: /home/noah/runs/distill-smoke-20260518-223823/student/model.apr
+staged Qwen/Qwen2.5-Coder-0.5B-Instruct -> /home/noah/runs/distill-smoke-20260518-223823/student/model.apr
+dispatched PID 153455
+PID alive after 5s - training underway
+
+=== dispatch complete ===
+  evidence/manifest: evidence/distill-phase-3-sanity-50-v5/dispatch.json
+  remote log:        ssh gx10 'tail -f /home/noah/runs/distill-smoke-20260518-223823/launch.log'
+  watch:             scripts/watch-distill-phase-3-gx10.sh distill-smoke-20260518-223823
+
+Falsifier F-DISTILL-SMOKE-001 verdict will be in /home/noah/runs/distill-smoke-20260518-223823/launch.log's
+metrics block once training completes. Plan: ~50 * ~1.5s/step on
+RTX 4090 ≈ 1min ; expect ~3min on
+Blackwell pending trueno 0.4.36 JIT fix.
