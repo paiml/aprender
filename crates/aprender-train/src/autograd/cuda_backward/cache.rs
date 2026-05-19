@@ -167,10 +167,22 @@ pub fn pre_warm_lora_backward_kernels(
     use trueno_gpu::kernels::Kernel;
 
     eprintln!("[BWD-PREWARM] Called with lora_rank={lora_rank}, hidden={hidden_size}, inter={intermediate_size}");
-    if lora_rank == 0 {
-        eprintln!("[BWD-PREWARM] Skipping (lora_rank=0)");
-        return Ok(());
-    }
+
+    // PMAT-698g: non-LoRA backward pre-warm. The original gate at
+    // `lora_rank == 0` short-circuited the entire function — leaving
+    // silu_backward, batched_softmax_backward, batched_rms_norm_backward,
+    // and rms_norm_gamma_reduce to JIT on demand mid-training. On Blackwell
+    // sm_121, on-demand JIT during the first backward step corrupts the
+    // CUDA stream (trueno#200), surfacing as
+    //   forward_backward_with_grad returned None
+    // mid-step (Phase 3 dispatch v8 confirmed this: kernels compiled
+    // successfully but stream state was poisoned afterwards).
+    //
+    // Now: only the LoRA-specific gemm_backward warmups are skipped when
+    // lora_rank == 0; the activation/norm kernels and the standard FP32
+    // GEMM backward shapes are always pre-warmed (they're needed by
+    // non-LoRA distillation training too).
+    let is_lora = lora_rank > 0;
 
     let cache = KERNEL_CACHE.get().ok_or(CudaTensorError::DeviceNotInitialized)?;
     let mut cache = cache.lock().map_err(|_err| {
@@ -200,38 +212,40 @@ pub fn pre_warm_lora_backward_kernels(
     // Tile size must match BACKWARD_TILE_SIZE in gemm.rs (C-TILE-BWD-007)
     let tile: u32 = 16;
 
-    // ── LoRA backward shapes (always needed) ──
-    // gemm_backward_b: weight gradients
-    warm!(
-        format!("gemm_backward_b_{s}_{r}_{qd}"),
-        GemmBackwardBKernel::tiled_unrolled(s, r, qd, tile)
-    );
-    if kv != qd {
+    // ── LoRA backward shapes (LoRA training only) ──
+    if is_lora {
+        // gemm_backward_b: weight gradients
         warm!(
-            format!("gemm_backward_b_{s}_{r}_{kv}"),
-            GemmBackwardBKernel::tiled_unrolled(s, r, kv, tile)
+            format!("gemm_backward_b_{s}_{r}_{qd}"),
+            GemmBackwardBKernel::tiled_unrolled(s, r, qd, tile)
         );
-    }
-    warm!(
-        format!("gemm_backward_b_{s}_{h}_{r}"),
-        GemmBackwardBKernel::tiled_unrolled(s, h, r, tile)
-    );
+        if kv != qd {
+            warm!(
+                format!("gemm_backward_b_{s}_{r}_{kv}"),
+                GemmBackwardBKernel::tiled_unrolled(s, r, kv, tile)
+            );
+        }
+        warm!(
+            format!("gemm_backward_b_{s}_{h}_{r}"),
+            GemmBackwardBKernel::tiled_unrolled(s, h, r, tile)
+        );
 
-    // gemm_backward_a: input gradients
-    warm!(
-        format!("gemm_backward_a_{s}_{qd}_{r}"),
-        GemmBackwardAKernel::tiled_unrolled(s, qd, r, tile)
-    );
-    if kv != qd {
+        // gemm_backward_a: input gradients
         warm!(
-            format!("gemm_backward_a_{s}_{kv}_{r}"),
-            GemmBackwardAKernel::tiled_unrolled(s, kv, r, tile)
+            format!("gemm_backward_a_{s}_{qd}_{r}"),
+            GemmBackwardAKernel::tiled_unrolled(s, qd, r, tile)
+        );
+        if kv != qd {
+            warm!(
+                format!("gemm_backward_a_{s}_{kv}_{r}"),
+                GemmBackwardAKernel::tiled_unrolled(s, kv, r, tile)
+            );
+        }
+        warm!(
+            format!("gemm_backward_a_{s}_{r}_{h}"),
+            GemmBackwardAKernel::tiled_unrolled(s, r, h, tile)
         );
     }
-    warm!(
-        format!("gemm_backward_a_{s}_{r}_{h}"),
-        GemmBackwardAKernel::tiled_unrolled(s, r, h, tile)
-    );
 
     // ── Full fp32 backward shapes (non-NF4 mode) ──
     if !quantize_nf4 {
