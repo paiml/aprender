@@ -594,6 +594,10 @@ pub async fn openai_chat_completions_handler(
             .as_millis()
     );
 
+    if let Some(r) = try_qwen3_moe_backend(&state, &request, &request_id, start) {
+        return r;
+    }
+
     #[cfg(feature = "gpu")]
     if let Some(r) = try_gpu_backend(&state, &request, &request_id, trace_level.as_deref(), start) {
         return r;
@@ -631,4 +635,184 @@ pub async fn openai_chat_completions_handler(
     }
 
     registry_fallback(&state, &request, &request_id, start)
+}
+
+/// aprender#1789 Option B: qwen3_moe MoE-aware dispatch for /v1/chat/completions.
+///
+/// Detects qwen3_moe architecture + dispatches inference through
+/// `run_qwen3_moe_generate` (the same path used by the `apr run` CLI),
+/// which correctly indexes per-expert FFN tensors from the mmap.
+///
+/// For non-qwen3_moe archs returns `None` — handler falls through to the
+/// dense backend chain (CUDA / cached / quantized / registry-fallback).
+///
+/// For qwen3_moe archs where AppState was constructed WITHOUT
+/// `with_mapped_gguf_model` (no retained mmap), returns NOT_IMPLEMENTED
+/// with the same actionable error class Option A surfaced. The
+/// defensive guard from aprender#1790's `validate_matmul_weight_shape`
+/// will NOT fire because we never reach the dense FFN matmul.
+///
+/// Discharges FALSIFY-QWEN3_MOE_SERVE_DISPATCH_V1_001 + V1_003 in
+/// `contracts/qwen3-moe-serve-dispatch-v1.yaml`.
+fn try_qwen3_moe_backend(
+    state: &AppState,
+    request: &ChatCompletionRequest,
+    request_id: &str,
+    start: Instant,
+) -> Option<Response> {
+    use crate::gguf::QuantizedGenerateConfig;
+
+    let raw_arch = state.model_architecture()?;
+    if !is_qwen3_moe_arch(&raw_arch) {
+        return None;
+    }
+
+    let mapped = match state.mapped_gguf_model() {
+        Some(m) => m,
+        None => {
+            eprintln!(
+                "[WARN] aprender#1789: qwen3_moe arch detected at \
+                 /v1/chat/completions (raw_arch={raw_arch}, canonical=qwen3_moe) \
+                 but AppState has no retained MappedGGUFModel. This means the \
+                 CLI server-command load path didn't call \
+                 .with_mapped_gguf_model(). Returning NOT_IMPLEMENTED. \
+                 See contracts/qwen3-moe-serve-dispatch-v1.yaml + \
+                 https://github.com/paiml/aprender/issues/1789"
+            );
+            return Some(fail_response(
+                state,
+                StatusCode::NOT_IMPLEMENTED,
+                "qwen3_moe arch detected but mapped GGUF not retained in AppState. \
+                 See aprender#1789 + contracts/qwen3-moe-serve-dispatch-v1.yaml.",
+            ));
+        }
+    };
+    let quantized = match state.quantized_model() {
+        Some(q) => q.clone(),
+        None => {
+            return Some(fail_response(
+                state,
+                StatusCode::NOT_IMPLEMENTED,
+                "qwen3_moe arch detected but no OwnedQuantizedModel in AppState. \
+                 See aprender#1789.",
+            ));
+        }
+    };
+    let tokenizer = match require_tokenizer(state) {
+        Ok(t) => t,
+        Err(r) => return Some(r),
+    };
+
+    let input_ids = match tokenize_chat_prompt(
+        &tokenizer,
+        &request.messages,
+        Some(&request.model),
+        state,
+    ) {
+        Ok(ids) => ids,
+        Err(r) => return Some(r),
+    };
+    let prompt_token_count = input_ids.len();
+
+    let max_tokens = request.max_tokens.unwrap_or(256).min(4096) as usize;
+    let gen_config = QuantizedGenerateConfig {
+        max_tokens,
+        temperature: request.temperature.unwrap_or(0.0),
+        ..QuantizedGenerateConfig::default()
+    };
+
+    let tokens = match crate::infer::qwen3_moe_generate::run_qwen3_moe_generate(
+        &mapped,
+        &quantized,
+        &input_ids,
+        &gen_config,
+    ) {
+        Ok(t) => t,
+        Err(e) => {
+            state.metrics.record_failure();
+            return Some(fail_response(
+                state,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("qwen3_moe generation failed: {e}"),
+            ));
+        }
+    };
+
+    let generated_ids: Vec<u32> = tokens[input_ids.len()..].to_vec();
+    let completion_tokens = generated_ids.len();
+
+    let response_text = match tokenizer.decode(&generated_ids) {
+        Ok(t) => t,
+        Err(e) => {
+            state.metrics.record_failure();
+            return Some(fail_response(state, StatusCode::INTERNAL_SERVER_ERROR, e));
+        }
+    };
+
+    let duration = start.elapsed();
+    state.metrics.record_success(completion_tokens, duration);
+
+    Some(build_chat_response(
+        request_id.to_string(),
+        request.model.clone(),
+        response_text,
+        prompt_token_count,
+        completion_tokens,
+        max_tokens,
+        None,
+        duration,
+    ))
+}
+
+/// Predicate: does this raw architecture string canonicalize to qwen3_moe?
+///
+/// Extracted for unit testing the dispatch classification independently of
+/// the full handler. See contracts/qwen3-moe-serve-dispatch-v1.yaml.
+fn is_qwen3_moe_arch(raw_arch: &str) -> bool {
+    crate::tensor_names::normalize_architecture(raw_arch) == "qwen3_moe"
+}
+
+#[cfg(test)]
+mod qwen3_moe_dispatch_guard_tests {
+    use super::is_qwen3_moe_arch;
+
+    #[test]
+    fn canonical_qwen3_moe_matches() {
+        assert!(is_qwen3_moe_arch("qwen3_moe"));
+    }
+
+    #[test]
+    fn huggingface_class_names_canonicalize() {
+        assert!(is_qwen3_moe_arch("Qwen3MoeForCausalLM"));
+        assert!(is_qwen3_moe_arch("Qwen3MoEForCausalLM"));
+        assert!(is_qwen3_moe_arch("Qwen3CoderForCausalLM"));
+        assert!(is_qwen3_moe_arch("Qwen3_5MoeForCausalLM"));
+        assert!(is_qwen3_moe_arch("Qwen3_5MoeForConditionalGeneration"));
+    }
+
+    #[test]
+    fn lowercase_underscore_variants_match() {
+        assert!(is_qwen3_moe_arch("qwen3moe"));
+    }
+
+    #[test]
+    fn dense_archs_do_not_match() {
+        // FALSIFY-QWEN3_MOE_SERVE_DISPATCH_V1_002 negative cases: the guard
+        // MUST NOT fire for dense architectures, otherwise it regresses
+        // every existing chat-completions request.
+        assert!(!is_qwen3_moe_arch("qwen2"));
+        assert!(!is_qwen3_moe_arch("qwen3"));
+        assert!(!is_qwen3_moe_arch("llama"));
+        assert!(!is_qwen3_moe_arch("mistral"));
+        assert!(!is_qwen3_moe_arch("phi"));
+        assert!(!is_qwen3_moe_arch("gemma"));
+    }
+
+    #[test]
+    fn unknown_arch_does_not_match() {
+        // normalize_architecture defaults unknowns to "llama", which is not
+        // qwen3_moe — so the guard should NOT fire for unknown archs.
+        assert!(!is_qwen3_moe_arch("some-future-arch-3000"));
+        assert!(!is_qwen3_moe_arch(""));
+    }
 }
