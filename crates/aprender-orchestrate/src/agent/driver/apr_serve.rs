@@ -292,13 +292,56 @@ impl AprServeDriver {
             .unwrap_or(1024);
         let max_tokens = request.max_tokens.min(max_tokens_cap);
 
-        serde_json::json!({
+        // 3-knob toolkit (qwen3-moe-sampling-v1 + qwen3-moe-repetition-penalty-v1):
+        // operator env-var overrides for sampling parameters. When set, these
+        // flow from apr code → HTTP body → apr serve's try_qwen3_moe_backend
+        // → QuantizedGenerateConfig → run_qwen3_moe_generate → sample_from_logits.
+        // When UNSET, the request still uses temperature from CompletionRequest
+        // (existing behavior); other fields default to the
+        // QuantizedGenerateConfig defaults (greedy).
+        let temperature = std::env::var("APR_AGENT_TEMPERATURE")
+            .ok()
+            .and_then(|v| v.parse::<f32>().ok())
+            .unwrap_or(request.temperature);
+        let top_k = std::env::var("APR_AGENT_TOP_K")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok());
+        let top_p = std::env::var("APR_AGENT_TOP_P")
+            .ok()
+            .and_then(|v| v.parse::<f32>().ok());
+        let repeat_penalty = std::env::var("APR_AGENT_REPEAT_PENALTY")
+            .ok()
+            .and_then(|v| v.parse::<f32>().ok());
+        let repeat_last_n = std::env::var("APR_AGENT_REPEAT_LAST_N")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok());
+        let seed = std::env::var("APR_AGENT_SEED")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok());
+
+        let mut body = serde_json::json!({
             "model": self.model_name,
             "messages": messages,
             "max_tokens": max_tokens,
-            "temperature": request.temperature,
-            "stream": false
-        })
+            "temperature": temperature,
+            "stream": false,
+        });
+        if let Some(v) = top_k {
+            body["top_k"] = serde_json::json!(v);
+        }
+        if let Some(v) = top_p {
+            body["top_p"] = serde_json::json!(v);
+        }
+        if let Some(v) = repeat_penalty {
+            body["repeat_penalty"] = serde_json::json!(v);
+        }
+        if let Some(v) = repeat_last_n {
+            body["repeat_last_n"] = serde_json::json!(v);
+        }
+        if let Some(v) = seed {
+            body["seed"] = serde_json::json!(v);
+        }
+        body
     }
 }
 
