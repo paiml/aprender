@@ -58,6 +58,14 @@ GX10_RUN_PREFIX="${GX10_RUN_PREFIX:-/home/noah/runs}"
 # branch, while keeping memory bounded for the smoke.
 TEACHER_REPO="${TEACHER_REPO:-Qwen/Qwen2.5-Coder-0.5B-Instruct}"
 STUDENT_INIT="${STUDENT_INIT:-Qwen/Qwen2.5-Coder-0.5B-Instruct}"
+# Phase 4 Stage B-2 (PR #1839): when DATASET_DIR is set, the dispatch
+# passes `--dataset <DIR>` to `apr distill`, which drives the training
+# loop from real-corpus .bin shards via ShardBatchSource instead of the
+# synthetic identity-mapping batch. The directory must contain one or
+# more `shard-*.bin` files (u32 LE tokens, format produced by
+# `apr tokenize encode-corpus`). When unset (default), the pipeline
+# falls back to SyntheticBatchSource (Phase 3 smoke semantics).
+DATASET_DIR="${DATASET_DIR:-}"
 STEPS="${STEPS:-500}"
 BATCH_SIZE="${BATCH_SIZE:-4}"
 LR="${LR:-1.5e-5}"
@@ -81,6 +89,11 @@ echo "  T (KD temp):   ${T}"
 echo "  alpha (CE wt): ${ALPHA}"
 echo "  run name:      ${RUN_NAME}"
 echo "  evidence:      ${EVIDENCE_DIR}"
+if [ -n "${DATASET_DIR}" ]; then
+    echo "  dataset:       ${DATASET_DIR} (Phase 4 Stage B-2: real corpus via --dataset)"
+else
+    echo "  dataset:       (synthetic — Phase 3 smoke semantics)"
+fi
 echo
 
 if [ "${DRY_RUN}" = "1" ]; then
@@ -245,12 +258,23 @@ ssh "${GX10_USER}@${GX10_HOST}" "
     echo \"teacher: \$TEACHER_APR\"
     echo \"student: \$STUDENT_APR\"
 
+    # Phase 4 Stage B-2: add --dataset only when DATASET_DIR is set.
+    DATASET_FLAG=''
+    if [ -n '${DATASET_DIR}' ]; then
+        if [ ! -d '${DATASET_DIR}' ]; then
+            echo 'DATASET_DIR=${DATASET_DIR} does not exist on gx10' >&2
+            exit 1
+        fi
+        DATASET_FLAG='--dataset ${DATASET_DIR}'
+        echo \"dataset:    ${DATASET_DIR}\"
+    fi
     nohup ./target/release/apr distill \"\$TEACHER_APR\" \\
         --student \"\$STUDENT_APR\" \\
         --epochs ${EPOCHS_FROM_STEPS} \\
         --temperature ${T} \\
         --alpha ${ALPHA} \\
         --backend cuda \\
+        \$DATASET_FLAG \\
         --output '${RUN_DIR_REMOTE}/student-trained.apr' \\
         > '${LOG_REMOTE}' 2>&1 &
     DISPATCH_PID=\$!
