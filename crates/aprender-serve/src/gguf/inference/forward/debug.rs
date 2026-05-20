@@ -111,7 +111,7 @@ impl OwnedQuantizedModel {
     /// Handles everything after the layer loop: cache advance, debug logging,
     /// final layer norm, LM head projection, debug logits verification,
     /// and LM head bias application.
-    fn single_cache_final_output(
+    pub(crate) fn single_cache_final_output(
         &self,
         hidden: &[f32],
         position: usize,

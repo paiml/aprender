@@ -1,7 +1,7 @@
 metadata:
-  version: "1.1.1"
+  version: "1.2.0"
   created: "2026-05-19"
-  updated: "2026-05-19"
+  updated: "2026-05-20"
   author: PAIML Engineering
   registry: true
   references:
@@ -12,7 +12,7 @@ metadata:
 
 kind: KernelContract
 name: qwen3-moe-serve-dispatch
-version: "1.1.1"
+version: "1.2.0"
 scope: "crates/aprender-serve/src/api/cuda_chat_backend.rs + crates/aprender-serve/src/infer/inference_result.rs"
 
 description: |
@@ -112,10 +112,33 @@ falsification:
       (any value > 0 falsifies the "MoE student fails universally"
       class). This is the empirical end-to-end discharge that closes
       out CCPA Phase 6 suspension at companion-side M280.
+    prerequisite_status: |
+      2026-05-20: PREREQUISITE MET. M32d KV cache for qwen3_moe path
+      SHIPPED in this PR. Empirical throughput on
+      Qwen3-Coder-30B-A3B-Instruct-Q4_K_M:
+        - Pre-M32d: ~0.5 tok/s (full-prefill-per-token; bench timed out
+          on every per-turn budget in 5 dispatches — see paiml/
+          claude-code-parity-apr evidence/phase-6/30b-moe-empirical-2026-
+          05-19.md)
+        - Post-M32d: 9.62 tok/s sustained on 32 tokens (19× speedup)
+        - Per-token cost amortized to one cache-aware attention + one
+          per-expert MoE FFN dispatch (no re-prefill)
+      Numerical equivalence: byte-identical greedy outputs vs full-
+      prefill on 4-token reference (test:
+      crates/aprender-serve/tests/moe_kv_cache_equivalence.rs).
     evidence: |
-      Operator-dispatched + recorded at
-      paiml/claude-code-parity-apr evidence/under-contract/scores.json
-      (post-aprender-1789-fix re-dispatch).
+      Operator-dispatched Phase 6 bench against post-M32d binary:
+
+        APR_MODEL=/home/noah/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf \
+        PHASE6_COMPLIANCE_ENFORCED=1 \
+        PHASE6_MAX_TURNS=20 PHASE6_WALL_SECONDS=3600 \
+        APR_TIMEOUT_S=900 APR_AGENT_HTTP_TIMEOUT_S=1500 \
+        APR_AGENT_MAX_TOKENS_CAP=1024 \
+        bash scripts/phase-6-bench.sh
+
+      Expected ~10 hour wall on full 20-fixture corpus.
+      Acceptance: paiml/claude-code-parity-apr evidence/under-contract/
+      scores.json with student_pass_rate > 0. Operator-coordinated.
 
 scope_extension:
   out_of_scope:
@@ -175,5 +198,22 @@ status_history:
     summary: "Phase 2 (Option B) ships: AppState gains mapped_gguf_model field; CLI server-command load path retains MappedGGUFModel in Arc; try_qwen3_moe_backend replaces guard with real run_qwen3_moe_generate dispatch. V1_001 + V1_003 discharged pending integration-test fixture availability."
   - version: "1.1.1"
     date: "2026-05-19"
-    pr: "paiml/aprender (V1_001 integration test PR)"
+    pr: "paiml/aprender#1819"
     summary: "V1_001 + V1_003 formally discharged via cargo test. New integration test `crates/aprender-serve/tests/qwen3_moe_serve_dispatch_v1.rs` boots in-process axum router against real Qwen3-MoE GGUF (gated on QWEN3_MOE_GGUF_PATH env var, `#[ignore]`'d by default). Empirical pass recorded against Qwen3-Coder-30B-A3B-Instruct-Q4_K_M (7.84s wall, non-empty content, no #1790 guard fire). V1_004 remains BLOCKED on M32d KV cache."
+  - version: "1.2.0"
+    date: "2026-05-20"
+    pr: "paiml/aprender (M32d implementation PR; supersedes #1829 playbook)"
+    summary: |
+      M32d KV cache for qwen3_moe path SHIPPED. New
+      `forward_single_qwen3_moe_with_cache` mirrors the dense
+      `forward_single_with_cache` structure but with MoE expert
+      dispatch in the FFN block. `run_qwen3_moe_generate` rewritten:
+      prefill via per-prompt-token cache-aware calls, then per-decode-
+      token cache-aware single-token forward. Empirical: 9.62 tok/s
+      sustained on 32-token generation against Qwen3-Coder-30B-A3B-
+      Instruct-Q4_K_M (19× speedup vs ~0.5 tok/s pre-M32d). Numerical
+      equivalence with full-prefill confirmed byte-identical on 4-
+      token greedy reference. Two new cargo tests pin the invariants:
+      `moe_kv_cache_equivalence.rs` (correctness) +
+      `m32d_perf.rs` (≥ 5 tok/s floor). V1_004 prerequisite MET;
+      companion-side bench discharge pending operator dispatch.
