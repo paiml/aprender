@@ -75,6 +75,22 @@ pub struct ChatCompletionRequest {
     /// Nucleus sampling
     #[serde(default)]
     pub top_p: Option<f32>,
+    /// Top-k sampling (aprender extension; NOT OpenAI standard but llama-style APIs include it).
+    /// qwen3-moe-sampling-v1 V1_001: top_k=1 forces greedy regardless of temperature.
+    #[serde(default)]
+    pub top_k: Option<usize>,
+    /// Repetition penalty (aprender extension; mirrors Candle's apply_repeat_penalty).
+    /// qwen3-moe-repetition-penalty-v1: 1.0 = no penalty; 1.1-1.3 = standard chat presets.
+    #[serde(default)]
+    pub repeat_penalty: Option<f32>,
+    /// Repetition penalty window (how many recent tokens get penalized).
+    /// qwen3-moe-repetition-penalty-v1: 0 = no penalty; 64-128 = standard.
+    #[serde(default)]
+    pub repeat_last_n: Option<usize>,
+    /// Random seed for reproducible sampling.
+    /// qwen3-moe-sampling-v1 V1_002: same seed → same tokens.
+    #[serde(default)]
+    pub seed: Option<u64>,
     /// Number of completions to generate
     #[serde(default = "default_n")]
     pub n: usize,
