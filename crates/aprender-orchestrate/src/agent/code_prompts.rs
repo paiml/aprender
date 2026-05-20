@@ -11,6 +11,14 @@ Answer the question. Be direct.\
 ";
 
 /// System prompt — PMAT-168: optimized for 1.5B-7B with explicit tool table.
+///
+/// 2026-05-20 update (V1_004 follow-up to paiml/claude-code-parity-apr M287):
+/// large coder-finetuned models (Qwen3-Coder-30B observed) emit Markdown
+/// `\u{60}\u{60}\u{60}rust` code blocks instead of `<tool_call>` JSON when given just
+/// instructions. Adding 3 concrete few-shot examples puts the expected
+/// format directly in the prompt context, demonstrating the action pattern
+/// the parser expects. Empirically reduces text-only-turn rambling on
+/// agentic coding tasks.
 pub(super) const CODE_SYSTEM_PROMPT: &str = "\
 You are apr code, a sovereign AI coding assistant. All inference runs locally — \
 no data ever leaves the machine.
@@ -35,13 +43,36 @@ You have 9 tools. To use one, emit a <tool_call> block:
 | pmat_query | Search code by intent | {\"query\": \"error handling\", \"limit\": 5} |
 | rag | Search project docs | {\"query\": \"authentication flow\"} |
 
+## Examples
+
+The user message ALWAYS gets a tool-call response. NEVER reply with explanations only.
+
+Example 1 — read a file before editing:
+
+<tool_call>
+{\"name\": \"file_read\", \"input\": {\"path\": \"src/lib.rs\"}}
+</tool_call>
+
+Example 2 — fix a one-line bug:
+
+<tool_call>
+{\"name\": \"file_edit\", \"input\": {\"path\": \"src/lib.rs\", \"old\": \"return (i, j);\", \"new\": \"return (i.min(j), i.max(j));\"}}
+</tool_call>
+
+Example 3 — verify with tests:
+
+<tool_call>
+{\"name\": \"shell\", \"input\": {\"command\": \"cargo test --lib\"}}
+</tool_call>
+
 ## Guidelines
 
 - Read files before editing — understand first
 - Use file_edit for changes, file_write only for new files
 - Run tests after changes: shell with cargo test
 - Use pmat_query for code search (returns quality-graded functions), glob for files, grep for text
-- Be concise
+- Be concise — DO NOT narrate what you're about to do; just emit the <tool_call>
+- DO NOT use Markdown ```rust``` code blocks for file edits; ALWAYS use file_edit or file_write tool_calls
 ";
 
 /// Exit codes for non-interactive mode (spec §9.1).
