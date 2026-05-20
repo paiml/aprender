@@ -12,6 +12,7 @@
 //! - **Heijunka**: Memory estimation enables level scheduling of GPU resources
 //! - **Kaizen**: Configurable hyperparameters enable continuous improvement
 
+pub mod batch_source;
 pub mod config;
 pub mod kd_step;
 pub mod pipeline;
@@ -20,6 +21,7 @@ pub mod teacher_provider;
 pub mod validation;
 pub mod weights;
 
+pub use batch_source::{BatchSource, SyntheticBatchSource};
 pub use config::DistillConfig;
 pub use kd_step::{kd_logit_gradient, kd_loss, kd_step};
 pub use pipeline::{Pipeline, PipelineResult};
