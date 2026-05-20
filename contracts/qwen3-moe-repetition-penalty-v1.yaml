@@ -1,0 +1,192 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-05-20"
+  updated: "2026-05-20"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "paiml/aprender#1832 — M32d KV cache (the prerequisite that makes sampling cost matter)"
+    - "paiml/aprender#1837 — qwen3-moe-sampling-v1 (sibling contract: temperature/top_k/top_p)"
+    - "paiml/aprender#1835 — qwen3-moe-streaming-sse-v1 (sibling contract: per-token SSE)"
+    - "paiml/aprender qwen3-moe-sampling-v1.yaml v1.0.0 — documented out-of-scope: 'Repetition penalty (repeat_last_n / repeat_penalty fields exist in QuantizedGenerateConfig but are dense-path-only today; separate contract qwen3-moe-repetition-penalty-v1)'"
+  description: "Repetition penalty (repeat_penalty / repeat_last_n) for the qwen3_moe inference path"
+
+kind: KernelContract
+name: qwen3-moe-repetition-penalty
+version: "1.0.0"
+scope: "crates/aprender-serve/src/infer/qwen3_moe_generate.rs::sample_from_logits"
+
+description: |
+  `sample_from_logits` (added by qwen3-moe-sampling-v1) supports
+  temperature/top_k/top_p but does NOT apply repetition penalty.
+  `QuantizedGenerateConfig` has `repeat_penalty` (f32) and
+  `repeat_last_n` (usize) fields that are silently ignored on the MoE
+  path. The dense path's `sample_advanced` (in
+  `gguf/inference/fails.rs:100`) DOES apply repetition penalty,
+  matching Candle's `apply_repeat_penalty` (PMAT-383/384).
+
+  This contract codifies that the qwen3_moe sampling pipeline MUST
+  apply repetition penalty as the FIRST step (before temperature
+  scaling), reading the last N generated tokens from the decode loop.
+
+  ## Why this matters
+
+  Empirical observation from paiml/claude-code-parity-apr Phase 6
+  bench against Qwen3-Coder-30B-A3B (M287 evidence doc): the model
+  generates ~1024 tokens per turn of mostly exploratory commentary,
+  including REPEATED restatements of the problem. Sample turn-1 from
+  fixture leetcode__01-two-sum showed the model produce the SAME Rust
+  code snippet 3 times in a single turn, separated by "let me check
+  if..." text. Repetition penalty (typically 1.1-1.3) would
+  down-weight tokens recently generated, breaking the loop and forcing
+  the model to either commit to a tool call or change tactics.
+
+  Reference operator dispatch (paiml/claude-code-parity-apr Phase 6):
+
+  ```bash
+  APR_MODEL=/home/noah/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf \
+  PHASE6_COMPLIANCE_ENFORCED=1 \
+  APR_AGENT_REPEAT_PENALTY=1.2 \
+  APR_AGENT_REPEAT_LAST_N=64 \
+  bash scripts/phase-6-bench.sh
+  ```
+
+  (Companion-side bench script would need a small mechanical update
+  to plumb these env vars through to `apr code`'s
+  `QuantizedGenerateConfig`. Listed as Phase 3 work below.)
+
+equations:
+  penalty_application:
+    description: "Repetition penalty applied per Candle convention"
+    formula: |
+      for each token in recent_tokens[len-repeat_last_n..]:
+        if logits[token] > 0:
+          logits[token] /= repeat_penalty
+        else:
+          logits[token] *= repeat_penalty
+
+  pipeline_order:
+    description: "Repetition penalty MUST be applied BEFORE temperature"
+    formula: |
+      sample_from_logits =
+        repetition_penalty(logits, recent_tokens, repeat_penalty, repeat_last_n)
+        → temperature_scale
+        → top_k_filter
+        → top_p_filter
+        → multinomial_or_greedy
+
+  default_is_noop:
+    description: "Backwards compatibility: repeat_penalty == 1.0 OR repeat_last_n == 0 → no penalty"
+    formula: |
+      if repeat_penalty == 1.0 OR repeat_last_n == 0:
+        # No penalty applied; identical to pre-contract behavior
+
+falsification:
+  - id: FALSIFY-QWEN3_MOE_REPETITION_PENALTY_V1_001
+    description: "repeat_penalty == 1.0 is a no-op (backwards compat regression check)"
+    test: |
+      Unit test: same logits + repeat_penalty=1.0 + non-empty recent_tokens
+      → same output as repeat_penalty unspecified. Discharges the
+      no-regression-on-existing-callers invariant.
+    evidence: "cargo test -p aprender-serve --lib sample_from_logits_tests::repetition_penalty"
+
+  - id: FALSIFY-QWEN3_MOE_REPETITION_PENALTY_V1_002
+    description: "repeat_penalty > 1.0 down-weights repeated tokens"
+    test: |
+      Unit test: logits = [10, 10, 10, 10, 10] (uniform); recent_tokens =
+      [2, 2, 2]; repeat_penalty=2.0; greedy decode. Without penalty,
+      argmax is index 0 (tie-break). With penalty, indices 0/1/3/4 keep
+      their logits; index 2's logit is halved → 5.0. argmax stays at
+      first non-penalized index (0). Then verify token=2 is NEVER
+      sampled when its penalized logit is the minimum.
+    evidence: "cargo test -p aprender-serve --lib sample_from_logits_tests::repetition_penalty"
+
+  - id: FALSIFY-QWEN3_MOE_REPETITION_PENALTY_V1_003
+    description: "repeat_last_n bounds the window correctly"
+    test: |
+      Unit test: same logits; recent_tokens = [2, 2, 2, 2, 2, 2, 2, 2];
+      repeat_penalty=10.0; repeat_last_n=2 (only last 2 tokens count;
+      both are token 2). Equivalent to a single penalty application on
+      token 2. With repeat_last_n=8 (all 8 tokens), token 2 gets
+      penalized 8× — penalty compounds. The two cases produce different
+      logit transformations.
+    evidence: "cargo test -p aprender-serve --lib sample_from_logits_tests::repetition_penalty"
+
+  - id: FALSIFY-QWEN3_MOE_REPETITION_PENALTY_V1_004
+    description: "Companion-side bench with APR_AGENT_REPEAT_PENALTY=1.2 reduces driver_error class"
+    test: |
+      paiml/claude-code-parity-apr Phase 6 bench dispatched with
+      APR_AGENT_REPEAT_PENALTY=1.2 + APR_AGENT_REPEAT_LAST_N=64 produces
+      a measurably DIFFERENT outcome distribution than the
+      greedy/no-penalty baseline. Specifically: at least one fixture
+      where the baseline had driver_error / turns_before_error=4 now
+      shows turns_before_error > 4 (model converged faster on a code
+      action, not stuck in a textual loop).
+    evidence: |
+      Operator-dispatched + recorded at
+      paiml/claude-code-parity-apr evidence/under-contract-rep-penalty/scores.json
+      (companion-side bench, env vars set via apr code dispatcher).
+
+scope_extension:
+  out_of_scope:
+    - "Other penalty schemes (Mirostat / DRY / etc.)"
+    - "Per-token logit biases (no current operator demand)"
+    - "Dynamic per-position penalty (only flat constant supported)"
+    - "Companion-side bench script env-var plumbing (separate companion PR; this contract is aprender-side only)"
+
+  in_scope:
+    - "Repetition penalty pipeline insertion in sample_from_logits (BEFORE temperature)"
+    - "QuantizedGenerateConfig.repeat_penalty + repeat_last_n field consumption"
+    - "Plumbing recent_tokens from run_qwen3_moe_generate's decode loop into sample_from_logits"
+    - "Backwards-compat no-op when repeat_penalty == 1.0 OR repeat_last_n == 0"
+
+implementation_phases:
+  phase_1:
+    name: "Add recent_tokens parameter to sample_from_logits"
+    description: |
+      Extend the signature:
+
+      ```rust
+      fn sample_from_logits(
+          logits: &[f32],
+          config: &QuantizedGenerateConfig,
+          rng: &mut StdRng,
+          recent_tokens: &[u32],  // NEW
+      ) -> Result<u32>
+      ```
+
+      Apply repetition penalty as Step 1 (before temperature scaling).
+      Match Candle's `apply_repeat_penalty` semantics (PMAT-383/384,
+      mirroring the dense path's `sample_advanced`).
+    estimated_effort: "1 hour"
+
+  phase_2:
+    name: "Plumb recent_tokens through run_qwen3_moe_generate"
+    description: |
+      In the decode loop, pass `&tokens` (or a tail slice if
+      `repeat_last_n` < tokens.len()) into `sample_from_logits`.
+      Cheap — `&[u32]` borrow, no allocation per token.
+    estimated_effort: "30 min"
+
+  phase_3:
+    name: "Unit tests + companion bench env-var plumbing"
+    description: |
+      Add 3 unit tests in `sample_from_logits_tests` covering V1_001-V1_003.
+      Companion-side (paiml/claude-code-parity-apr): mechanical update
+      to scripts/phase-6-bench.sh to pass APR_AGENT_REPEAT_PENALTY +
+      APR_AGENT_REPEAT_LAST_N through to apr code (which already reads
+      from env into QuantizedGenerateConfig). Operator dispatches V1_004
+      bench discharge.
+    estimated_effort: "2 hours"
+
+status_history:
+  - version: "1.0.0"
+    date: "2026-05-20"
+    pr: "paiml/aprender (repetition penalty follow-up to M32d)"
+    summary: |
+      Initial contract registered. Third sibling to qwen3-moe-sampling-v1
+      + qwen3-moe-streaming-sse-v1; completes the 3-knob toolkit
+      (sampling, streaming, repetition penalty) for tackling V1_004's
+      verbosity bottleneck. Engineer playbook: 3 phases ~3-4 hours
+      total. Operator-actionable any time post-M32d-merge (paiml/
+      aprender#1832 MERGED).
