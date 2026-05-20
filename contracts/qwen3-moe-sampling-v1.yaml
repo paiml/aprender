@@ -1,0 +1,170 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-05-20"
+  updated: "2026-05-20"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "paiml/aprender#1832 — M32d KV cache (enables sampling cost to matter)"
+    - "paiml/aprender#1835 — qwen3-moe-streaming-sse-v1 (sibling follow-up contract)"
+    - "paiml/aprender qwen3-moe-serve-dispatch-v1.yaml v1.2.0 — run_qwen3_moe_generate's documented out-of-scope item: 'Top-p / top-k / temperature sampling (greedy-only for V1_001 + V1_004 discharge; sampling is M32 follow-up)'"
+  description: "Temperature + top-k + top-p sampling for the qwen3_moe inference path"
+
+kind: KernelContract
+name: qwen3-moe-sampling
+version: "1.0.0"
+scope: "crates/aprender-serve/src/infer/qwen3_moe_generate.rs"
+
+description: |
+  `run_qwen3_moe_generate` (post-M32d, post-#1832) currently does
+  greedy argmax sampling unconditionally. The caller's
+  `QuantizedGenerateConfig` has `temperature`, `top_k`, `top_p` fields
+  that are silently ignored — meaning HTTP chat requests with
+  non-zero temperature get the SAME output every time (modulo prompt
+  variation), which is unacceptable for production chat.
+
+  This contract codifies that when the QuantizedGenerateConfig
+  specifies non-zero temperature OR top_k != 1 OR top_p < 1.0, the
+  decode loop in run_qwen3_moe_generate MUST apply standard
+  temperature scaling + top-k truncation + top-p (nucleus) truncation
+  before sampling.
+
+  ## Why this matters now (post-M32d, M286)
+
+  The bench (paiml/claude-code-parity-apr Phase 6 against
+  Qwen3-Coder-30B-A3B) hits 900s per-turn timeout because the 30B-MoE
+  is verbose — generating many tokens of exploratory commentary before
+  attempting a tool call. Lower temperature (e.g. 0.3) would
+  concentrate probability mass on confident-next-tokens and reduce
+  rambling; higher (e.g. 0.7) would give more variety on creative
+  tasks. Greedy-only forces ONE point on this spectrum (~temperature
+  0 with limited determinism due to ties).
+
+  ## Reference: dense path
+
+  The dense `run_gguf_generate` already has temperature + top_k + top_p
+  support. Mirror its sampling code path verbatim — the MoE forward
+  produces the same shape of logits as dense, so the sampling block
+  is reusable.
+
+equations:
+  temperature_scaling:
+    description: "Logit temperature scaling"
+    formula: |
+      if temperature > 0:
+        logits[i] /= temperature  for all i
+
+  top_k_filter:
+    description: "Top-k filter (keep top k logits, set rest to -inf)"
+    formula: |
+      if top_k > 0 AND top_k < vocab_size:
+        sort logits descending
+        keep top k indices; set rest to -inf
+
+  top_p_filter:
+    description: "Top-p (nucleus) filter"
+    formula: |
+      if top_p < 1.0:
+        sort logits descending
+        compute cumulative softmax
+        keep tokens up to cumulative ≤ top_p (plus first one to exceed)
+        set rest to -inf
+
+  greedy_fallback:
+    description: "Backwards compatibility: temperature == 0 OR top_k == 1 → greedy argmax"
+    formula: |
+      if temperature == 0.0 OR top_k == 1:
+        next_token = argmax(logits)
+      else:
+        next_token = multinomial(softmax(logits), seed)
+
+falsification:
+  - id: FALSIFY-QWEN3_MOE_SAMPLING_V1_001
+    description: "temperature == 0 OR top_k == 1 produces deterministic outputs across runs"
+    test: |
+      Cargo test: same prompt + same seed + temperature=0 → same tokens
+      across 3 invocations. Discharges the greedy-fallback invariant.
+    evidence: "cargo test --test qwen3_moe_sampling_v1 -- --ignored"
+
+  - id: FALSIFY-QWEN3_MOE_SAMPLING_V1_002
+    description: "temperature > 0 with fixed seed produces deterministic outputs (seeded RNG)"
+    test: |
+      Cargo test: same prompt + same seed (e.g. 42) + temperature=0.7 →
+      same tokens across 3 invocations. Sampling MUST seed from
+      QuantizedGenerateConfig.seed.
+    evidence: "cargo test --test qwen3_moe_sampling_v1 -- --ignored"
+
+  - id: FALSIFY-QWEN3_MOE_SAMPLING_V1_003
+    description: "temperature > 0 with different seeds produces different outputs"
+    test: |
+      Cargo test: same prompt + temperature=0.7 + seed=42 vs seed=43 →
+      tokens differ (at least one position differs in the first 16
+      generated tokens). Discharges the non-greedy-ness invariant.
+    evidence: "cargo test --test qwen3_moe_sampling_v1 -- --ignored"
+
+  - id: FALSIFY-QWEN3_MOE_SAMPLING_V1_004
+    description: "top_k truncation actually restricts sampling space"
+    test: |
+      Cargo test: temperature=high (e.g. 5.0; nearly-uniform sampling)
+      + top_k=1 → output IS greedy (argmax). Confirms top_k=1 is
+      equivalent to greedy regardless of temperature.
+    evidence: "cargo test --test qwen3_moe_sampling_v1 -- --ignored"
+
+scope_extension:
+  out_of_scope:
+    - "Repetition penalty (repeat_last_n / repeat_penalty fields exist in QuantizedGenerateConfig but are dense-path-only today; separate contract qwen3-moe-repetition-penalty-v1)"
+    - "Mirostat sampling (no current operator demand)"
+    - "Logit bias (no current operator demand)"
+    - "Streaming the sampled tokens (covered by qwen3-moe-streaming-sse-v1)"
+
+  in_scope:
+    - "Temperature scaling on logits"
+    - "Top-k truncation"
+    - "Top-p (nucleus) truncation"
+    - "Seeded RNG for reproducibility"
+    - "Backwards-compat greedy fallback when temperature == 0 OR top_k == 1"
+
+implementation_phases:
+  phase_1:
+    name: "Lift dense-path sampling block"
+    description: |
+      Find the existing sampling implementation in run_gguf_generate or
+      the dense decode loop. Extract into a reusable helper:
+
+      ```rust
+      pub(crate) fn sample_from_logits(
+          logits: &[f32],
+          config: &QuantizedGenerateConfig,
+          rng_state: &mut SmallRng,
+      ) -> u32
+      ```
+
+      Returns next token via temperature scale → top_k filter → top_p
+      filter → multinomial draw OR greedy argmax depending on config.
+    estimated_effort: "2 hours"
+
+  phase_2:
+    name: "Wire into run_qwen3_moe_generate decode loop"
+    description: |
+      Replace the inline `argmax` closure with `sample_from_logits(...)`.
+      Seed RNG from `gen_config.seed`. Verify the V1_001..V1_003
+      determinism gates pass on real Qwen3-Coder-30B-A3B.
+    estimated_effort: "1 hour"
+
+  phase_3:
+    name: "Cargo tests + companion bench update"
+    description: |
+      crates/aprender-serve/tests/qwen3_moe_sampling_v1.rs — env-gated
+      4-test battery covering V1_001..V1_004. Then companion-side:
+      paiml/claude-code-parity-apr could optionally add a Phase 6
+      sub-bench dispatching with temperature=0.3 to see if reduced
+      verbosity helps the agent reach oracle_passed within per-turn
+      budget. (Optional; V1_004 of qwen3-moe-serve-dispatch-v1 is
+      separately greedy-decoded.)
+    estimated_effort: "2-3 hours"
+
+status_history:
+  - version: "1.0.0"
+    date: "2026-05-20"
+    pr: "paiml/aprender (sampling follow-up to M32d)"
+    summary: "Initial contract registered. Codifies the missing temperature/top_k/top_p support in run_qwen3_moe_generate. Engineer playbook: 3 phases ~5-6 hours total. Operator-actionable any time post-M32d-merge. Independent of (but synergistic with) qwen3-moe-streaming-sse-v1."
