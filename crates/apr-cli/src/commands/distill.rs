@@ -440,6 +440,7 @@ fn print_distill_header(
     equation = "mutating_output_contract"
 )]
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn run(
     teacher_path: Option<&Path>,
     student_path: Option<&Path>,
@@ -453,6 +454,7 @@ pub(crate) fn run(
     config_path: Option<&Path>,
     stage: Option<&str>,
     backend: &str,
+    dataset_dir: Option<&Path>,
     json_output: bool,
 ) -> Result<()> {
     // SPEC-DISTILL-001 Phase 3-prep (PMAT-697): validate backend selector
@@ -480,6 +482,7 @@ pub(crate) fn run(
                     alpha,
                     epochs,
                     plan_only,
+                    dataset_dir,
                     json_output,
                 );
             }
@@ -645,6 +648,7 @@ fn run_cuda_backend(
     alpha: f64,
     epochs: u32,
     plan_only: bool,
+    dataset_dir: Option<&Path>,
     json_output: bool,
 ) -> Result<()> {
     use aprender::format::v2::AprV2Reader;
@@ -795,6 +799,40 @@ fn run_cuda_backend(
     let mut pipeline = Pipeline::new(&config)
         .with_teacher(Box::new(teacher_provider))
         .with_student(Box::new(student_provider));
+
+    // SPEC-DISTILL-001 Phase 4 Stage B-2: when `--dataset <DIR>` is set,
+    // construct a ShardBatchSource from the .bin shards. Otherwise the
+    // pipeline keeps its default SyntheticBatchSource for smoke tests.
+    // Requires the `shard-batch-source` feature on aprender-train-distill
+    // (enabled by default in apr-cli's `training` feature).
+    if let Some(dir) = dataset_dir {
+        #[cfg(feature = "training")]
+        {
+            use entrenar_distill::batch_source::ShardBatchSource;
+            let smoke_seq_len: usize = std::env::var("APR_DISTILL_SMOKE_SEQ_LEN")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(256);
+            let bs = config.training.batch_size as usize;
+            let pad_id: u32 = 0;
+            let eos_id: u32 = 0;
+            let source = ShardBatchSource::from_dir(dir, bs, smoke_seq_len, pad_id, eos_id)
+                .map_err(|e| {
+                    CliError::ValidationFailed(format!(
+                        "ShardBatchSource::from_dir({}): {e}",
+                        dir.display()
+                    ))
+                })?;
+            pipeline = pipeline.with_batch_source(Box::new(source));
+        }
+        #[cfg(not(feature = "training"))]
+        {
+            let _ = dir;
+            return Err(CliError::ValidationFailed(
+                "--dataset requires apr-cli built with --features training,cuda".to_string(),
+            ));
+        }
+    }
     let result = pipeline.execute().map_err(|e| {
         CliError::ValidationFailed(format!("cuda pipeline.execute failed: {e}"))
     })?;
