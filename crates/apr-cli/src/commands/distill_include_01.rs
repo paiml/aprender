@@ -40,6 +40,7 @@ mod tests {
             None,
             None,
             "fixture",
+            None,
             false,
         );
         assert!(result.is_err());
@@ -62,6 +63,7 @@ mod tests {
             None,
             None,
             "fixture",
+            None,
             false,
         );
         assert!(result.is_err());
@@ -87,6 +89,7 @@ mod tests {
             None,
             None,
             "fixture",
+            None,
             false,
         );
         assert!(result.is_err());
@@ -113,6 +116,7 @@ mod tests {
             None,
             None,
             "fixture",
+            None,
             false,
         );
         assert!(result.is_err());
@@ -141,6 +145,7 @@ mod tests {
             None,
             None,
             "fixture",
+            None,
             false,
         );
         assert!(result.is_err());
@@ -185,6 +190,7 @@ mod tests {
             None,
             None,
             "fixture",
+            None,
             true,
         );
         assert!(result.is_ok(), "Distill should succeed: {result:?}");
@@ -212,6 +218,7 @@ mod tests {
             None,
             None,
             "fixture",
+            None,
             false,
         );
         assert!(result.is_ok());
@@ -233,6 +240,7 @@ mod tests {
             None,
             None,
             "fixture",
+            None,
             true,
         );
         assert!(result.is_ok());
@@ -256,6 +264,7 @@ mod tests {
             None,
             None,
             "fixture",
+            None,
             true,
         );
         assert!(result.is_ok(), "Progressive should succeed: {result:?}");
