@@ -271,3 +271,131 @@ pub fn run_qwen3_moe_generate(
 
     Ok(tokens)
 }
+
+#[cfg(test)]
+mod sample_from_logits_tests {
+    //! Unit tests for the `qwen3-moe-sampling-v1.yaml` falsifiers
+    //! against `sample_from_logits` directly. Run without a real
+    //! Qwen3-MoE GGUF (uses synthetic logits arrays). Complements the
+    //! env-gated integration tests in
+    //! `crates/aprender-serve/tests/qwen3_moe_sampling_v1.rs` which
+    //! validate the same invariants on top of a real model.
+    use super::*;
+
+    fn mk_config(temperature: f32, top_k: usize, top_p: f32, seed: u64) -> QuantizedGenerateConfig {
+        QuantizedGenerateConfig {
+            max_tokens: 1,
+            temperature,
+            top_k,
+            top_p,
+            seed,
+            stop_tokens: Vec::new(),
+            ..QuantizedGenerateConfig::default()
+        }
+    }
+
+    /// V1_001: greedy fallback (temperature == 0) returns argmax deterministically.
+    #[test]
+    fn v1_001_temperature_zero_is_argmax_deterministic() {
+        let logits = vec![1.0, 5.0, 2.0, 4.0, 3.0]; // argmax = index 1
+        let cfg = mk_config(0.0, 50, 1.0, 42);
+        for _ in 0..5 {
+            let mut rng = StdRng::seed_from_u64(cfg.seed);
+            let token = sample_from_logits(&logits, &cfg, &mut rng).unwrap();
+            assert_eq!(token, 1, "V1_001: temperature=0 must return argmax");
+        }
+    }
+
+    /// V1_001: top_k == 1 ALSO triggers greedy fallback (independent path).
+    #[test]
+    fn v1_001_top_k_one_is_argmax_deterministic() {
+        let logits = vec![3.0, 1.0, 7.0, 2.0, 5.0]; // argmax = index 2
+        let cfg = mk_config(5.0 /* high temp ignored */, 1, 1.0, 42);
+        for _ in 0..5 {
+            let mut rng = StdRng::seed_from_u64(cfg.seed);
+            let token = sample_from_logits(&logits, &cfg, &mut rng).unwrap();
+            assert_eq!(token, 2, "V1_001: top_k=1 must return argmax");
+        }
+    }
+
+    /// V1_002: temperature > 0 with fixed seed returns the same token across runs.
+    #[test]
+    fn v1_002_seeded_rng_is_reproducible() {
+        let logits = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        let cfg = mk_config(0.7, 50, 0.95, 42);
+
+        let mut tokens = Vec::new();
+        for _ in 0..5 {
+            let mut rng = StdRng::seed_from_u64(cfg.seed);
+            tokens.push(sample_from_logits(&logits, &cfg, &mut rng).unwrap());
+        }
+        let first = tokens[0];
+        for (i, &t) in tokens.iter().enumerate() {
+            assert_eq!(
+                t, first,
+                "V1_002: seed=42 must produce same token; iter {i} got {t}, expected {first}"
+            );
+        }
+    }
+
+    /// V1_003: different seeds produce different tokens on average. Single-token
+    /// inevitably has collisions, so probe across 32 seeds and assert at least
+    /// 3 distinct tokens (very loose bound; collisions on 1-of-8 logits with
+    /// reasonable temp are rare).
+    #[test]
+    fn v1_003_different_seeds_diverge() {
+        let logits = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        let cfg_template = mk_config(1.5 /* spread mass */, 0, 1.0, 0);
+
+        let mut tokens = std::collections::HashSet::new();
+        for seed in 0..32u64 {
+            let mut cfg = cfg_template.clone();
+            cfg.seed = seed;
+            let mut rng = StdRng::seed_from_u64(cfg.seed);
+            tokens.insert(sample_from_logits(&logits, &cfg, &mut rng).unwrap());
+        }
+        assert!(
+            tokens.len() >= 3,
+            "V1_003: 32 seeds must produce ≥ 3 distinct tokens (got {})",
+            tokens.len()
+        );
+    }
+
+    /// V1_004: top_k=1 with HIGH temperature == greedy (regardless of RNG state).
+    #[test]
+    fn v1_004_top_k_one_equals_pure_greedy() {
+        let logits = vec![0.1, 0.2, 0.3, 0.4, 0.5, 99.0, 0.6, 0.7]; // argmax = 5
+        let high_temp_top_k_one = mk_config(50.0, 1, 1.0, 12345);
+        let pure_greedy = mk_config(0.0, 1, 1.0, 999_999);
+
+        let mut rng_a = StdRng::seed_from_u64(high_temp_top_k_one.seed);
+        let mut rng_b = StdRng::seed_from_u64(pure_greedy.seed);
+        let a = sample_from_logits(&logits, &high_temp_top_k_one, &mut rng_a).unwrap();
+        let b = sample_from_logits(&logits, &pure_greedy, &mut rng_b).unwrap();
+        assert_eq!(a, b, "V1_004: top_k=1 == pure greedy regardless of temperature");
+        assert_eq!(a, 5, "V1_004: argmax of logits is at index 5");
+    }
+
+    /// Edge case: empty logits returns InvalidShape error (no panic).
+    #[test]
+    fn empty_logits_returns_error() {
+        let cfg = mk_config(0.7, 50, 0.95, 42);
+        let mut rng = StdRng::seed_from_u64(cfg.seed);
+        let result = sample_from_logits(&[], &cfg, &mut rng);
+        assert!(result.is_err(), "empty logits must error, not panic");
+    }
+
+    /// Edge case: top_p=1.0 has no effect (just regular sampling).
+    #[test]
+    fn top_p_one_is_no_op() {
+        let logits = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let cfg_with_top_p = mk_config(0.7, 0 /* no top_k cap */, 1.0, 42);
+        let cfg_no_top_p = mk_config(0.7, 0, 0.0 /* sentinel: not active */, 42);
+
+        let mut rng_a = StdRng::seed_from_u64(cfg_with_top_p.seed);
+        let mut rng_b = StdRng::seed_from_u64(cfg_no_top_p.seed);
+        let a = sample_from_logits(&logits, &cfg_with_top_p, &mut rng_a).unwrap();
+        let b = sample_from_logits(&logits, &cfg_no_top_p, &mut rng_b).unwrap();
+        assert_eq!(a, b, "top_p=1.0 must equal top_p=0.0 (both no-op)");
+    }
+}
