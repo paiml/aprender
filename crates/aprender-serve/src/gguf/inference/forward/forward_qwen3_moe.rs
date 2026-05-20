@@ -35,7 +35,7 @@
 use crate::error::Result;
 use crate::gguf::ops;
 use crate::gguf::qwen3_moe_load::{moe_ffn_forward_layer, Qwen3MoeQuantizedLayer};
-use crate::gguf::OwnedQuantizedModel;
+use crate::gguf::{OwnedQuantizedKVCache, OwnedQuantizedModel};
 
 impl OwnedQuantizedModel {
     /// Run a single forward pass for a Qwen3-MoE-arch model.
@@ -281,5 +281,226 @@ impl OwnedQuantizedModel {
             ops::add_bias(&mut logits, bias);
         }
         Ok(logits)
+    }
+
+    /// M32d — Single-token incremental forward for Qwen3-MoE with KV cache.
+    ///
+    /// Mirrors the structure of `forward_single_with_cache` (the dense
+    /// reference at `debug.rs:441`) EXCEPT at the FFN block, where this
+    /// function calls `moe_ffn_forward_layer` per layer instead of the
+    /// dense gate/up/down dispatch. The attention block (QKV projection,
+    /// per-head Q/K RMSNorm, RoPE, cache append, GQA-aware attention,
+    /// output projection, residual) is byte-identical to the dense
+    /// reference.
+    ///
+    /// # Arguments
+    /// * `token_id` — the single token to decode.
+    /// * `cache` — KV cache; must have been populated via prefill (or be
+    ///   empty for position 0). Cache is appended to per-layer + advanced
+    ///   once at end of call.
+    /// * `position` — the absolute position of `token_id` in the full
+    ///   sequence (used by RoPE + optional absolute-position embedding).
+    /// * `moe_layers` — per-layer Qwen3MoE expert tensor descriptors.
+    /// * `num_experts`, `num_experts_per_tok`, `moe_intermediate` —
+    ///   GGUF metadata.
+    /// * `data` — mmapped GGUF bytes (per-expert tensors borrow from it).
+    ///
+    /// # Returns
+    /// Logits vector of length `vocab_size` for the next-token prediction
+    /// at this position.
+    ///
+    /// # Errors
+    /// - `moe_layers.len() != self.layers.len()` (config mismatch).
+    /// - Any matmul / norm / MoE FFN error from the underlying primitives.
+    ///
+    /// # Contract
+    /// Discharges `qwen3-moe-serve-dispatch-v1.yaml` V1_004 prerequisite
+    /// (10-30× throughput speedup vs full-prefill-per-token; target ≥ 5
+    /// tok/s on Qwen3-Coder-30B-A3B-Instruct-Q4_K_M).
+    pub fn forward_single_qwen3_moe_with_cache(
+        &self,
+        token_id: u32,
+        cache: &mut OwnedQuantizedKVCache,
+        position: usize,
+        moe_layers: &[Qwen3MoeQuantizedLayer],
+        num_experts: usize,
+        num_experts_per_tok: usize,
+        moe_intermediate: usize,
+        data: &[u8],
+    ) -> Result<Vec<f32>> {
+        if moe_layers.len() != self.layers.len() {
+            return Err(crate::error::RealizarError::InvalidShape {
+                reason: format!(
+                    "forward_single_qwen3_moe_with_cache: moe_layers.len() = {} but model has {} decoder layers",
+                    moe_layers.len(),
+                    self.layers.len()
+                ),
+            });
+        }
+        if num_experts == 0 || num_experts_per_tok == 0 || moe_intermediate == 0 {
+            return Err(crate::error::RealizarError::InvalidShape {
+                reason: format!(
+                    "forward_single_qwen3_moe_with_cache: incomplete MoE config — \
+                     num_experts={num_experts}, num_experts_per_tok={num_experts_per_tok}, \
+                     moe_intermediate={moe_intermediate}. Caller must supply all three from GGUF metadata."
+                ),
+            });
+        }
+
+        let hidden_dim = self.config.hidden_dim;
+
+        // 1. Token embedding for single token
+        let mut hidden = self.embed(&[token_id]);
+
+        // (Optional) absolute position embedding — mirrors the dense
+        // `forward_single_with_cache` for parity; qwen3_moe doesn't
+        // currently use this path but the check is cheap.
+        if self.config.constraints.uses_absolute_positions() {
+            if let Some(ref pos_emb) = self.position_embedding {
+                let start = position * hidden_dim;
+                let end = start + hidden_dim;
+                if end <= pos_emb.len() {
+                    for i in 0..hidden_dim {
+                        hidden[i] += pos_emb[start + i];
+                    }
+                }
+            }
+        }
+
+        let use_rmsnorm = self.config.constraints.uses_rmsnorm();
+        let num_kv_heads = self.config.num_kv_heads;
+        let head_dim = self.config.head_dim();
+        let q_dim = self.config.q_dim();
+        let kv_dim = self.config.kv_dim();
+
+        // Pre-allocate attention output buffer — reused across all layers
+        let mut attn_out_buffer = vec![0.0f32; q_dim];
+
+        // 2. Process through transformer layers
+        for (layer_idx, layer) in self.layers.iter().enumerate() {
+            // 2a+2b. Attention norm + QKV projection (fused for RMSNorm)
+            let mut qkv = if use_rmsnorm {
+                self.fused_rmsnorm_qkv_matmul(
+                    &hidden,
+                    &layer.attn_norm_weight,
+                    self.config.eps,
+                    &layer.qkv_weight,
+                )?
+            } else {
+                let normed = ops::layer_norm(
+                    &hidden,
+                    &layer.attn_norm_weight,
+                    layer.attn_norm_bias.as_deref(),
+                    self.config.eps,
+                );
+                self.qkv_matmul(&normed, &layer.qkv_weight)?
+            };
+
+            if let Some(ref bias) = layer.qkv_bias {
+                ops::add_bias(&mut qkv, bias);
+            }
+
+            // 2c. Per-head Q/K RMSNorm (Qwen3) — AFTER bias, BEFORE RoPE
+            if let Some(ref q_norm) = layer.attn_q_norm_weight {
+                ops::apply_per_head_rms_norm(
+                    &mut qkv[0..q_dim],
+                    q_norm,
+                    self.config.num_heads,
+                    self.config.eps,
+                );
+            }
+            if let Some(ref k_norm) = layer.attn_k_norm_weight {
+                ops::apply_per_head_rms_norm(
+                    &mut qkv[q_dim..q_dim + kv_dim],
+                    k_norm,
+                    num_kv_heads,
+                    self.config.eps,
+                );
+            }
+
+            // RoPE on Q and K (using `position` for the offset)
+            if self.config.constraints.uses_rope() {
+                self.apply_rope(&mut qkv[0..q_dim], position, self.config.num_heads);
+                self.apply_rope(&mut qkv[q_dim..q_dim + kv_dim], position, num_kv_heads);
+            }
+
+            // Slice Q, K, V (avoid copies; only K/V get copied into cache)
+            let q = &qkv[0..q_dim];
+            let k = &qkv[q_dim..q_dim + kv_dim];
+            let v = &qkv[q_dim + kv_dim..q_dim + 2 * kv_dim];
+
+            // 2d. Attention with GQA + KV cache (cache read BEFORE append)
+            let k_cache = cache.get_k(layer_idx);
+            let v_cache = cache.get_v(layer_idx);
+
+            if k_cache.is_empty() {
+                // First-token edge case: no cache yet. Output is just V
+                // expanded across Q heads. Mirrors dense reference.
+                let q_per_kv = self.config.num_heads / num_kv_heads;
+                for q_head in 0..self.config.num_heads {
+                    let kv_head = q_head / q_per_kv;
+                    let v_start = kv_head * head_dim;
+                    let out_start = q_head * head_dim;
+                    attn_out_buffer[out_start..out_start + head_dim]
+                        .copy_from_slice(&v[v_start..v_start + head_dim]);
+                }
+            } else {
+                self.attention_with_cache_gqa_into(q, k_cache, v_cache, k, v, &mut attn_out_buffer);
+            }
+
+            // 2e. Append new K/V to cache for future tokens
+            cache.append(layer_idx, k, v);
+
+            // 2f. Attention output projection + bias + residual
+            let mut attn_output = self.fused_matmul(&attn_out_buffer, &layer.attn_output_weight)?;
+            if let Some(ref bias) = layer.attn_output_bias {
+                ops::add_bias(&mut attn_output, bias);
+            }
+            for i in 0..hidden_dim {
+                hidden[i] += attn_output[i];
+            }
+
+            // 2g. Pre-FFN norm (mirrors forward_qwen3_moe's MoE path)
+            let ffn_input = if let Some(ref ffn_norm) = layer.ffn_norm_weight {
+                if use_rmsnorm {
+                    ops::rms_norm(&hidden, ffn_norm, self.config.eps)
+                } else {
+                    ops::layer_norm(
+                        &hidden,
+                        ffn_norm,
+                        layer.ffn_norm_bias.as_deref(),
+                        self.config.eps,
+                    )
+                }
+            } else {
+                hidden.clone()
+            };
+
+            // 2h. MoE FFN — single-token per-expert dispatch (M32c.2.2.2.0).
+            // This is the only step that differs from the dense
+            // `forward_single_with_cache`. Returns the full-hidden_dim
+            // post-down-projection result (gate × up SwiGLU per expert,
+            // weighted by softmax-normalized top-k router weights).
+            let ffn_output = moe_ffn_forward_layer(
+                &ffn_input,
+                &moe_layers[layer_idx],
+                num_experts,
+                num_experts_per_tok,
+                moe_intermediate,
+                hidden_dim,
+                data,
+            )?;
+
+            // 2i. Residual
+            for i in 0..hidden_dim {
+                hidden[i] += ffn_output[i];
+            }
+        }
+
+        // Advance cache position after processing all layers
+        cache.advance();
+
+        // Final norm + LM head — reuses the dense helper unchanged
+        self.single_cache_final_output(&hidden, position, use_rmsnorm)
     }
 }
