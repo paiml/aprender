@@ -1,0 +1,137 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-05-20"
+  updated: "2026-05-20"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "paiml/aprender#1832 — M32d KV cache (the prerequisite that makes streaming useful for MoE)"
+    - "paiml/aprender qwen3-moe-serve-dispatch-v1.yaml v1.2.0 — Risk #6 (streaming SSE for free post-M32d)"
+  description: "Per-token SSE streaming for the qwen3_moe chat-completions path"
+
+kind: KernelContract
+name: qwen3-moe-streaming-sse
+version: "1.0.0"
+scope: "crates/aprender-serve/src/api/cuda_chat_backend.rs::try_qwen3_moe_backend + crates/aprender-serve/src/infer/qwen3_moe_generate.rs"
+
+description: |
+  When `apr serve` receives a `/v1/chat/completions` request with
+  `stream: true` AND the underlying model is `qwen3_moe`-arch, the
+  handler MUST emit Server-Sent Events (SSE) per-token, NOT buffer the
+  full completion + emit it as a single pregenerated SSE response.
+
+  Pre-M32d, qwen3_moe chat completions buffered the full generation
+  (full-prefill-per-token mode at ~0.5 tok/s → ~30 minutes for a
+  256-token completion). That latency made streaming meaningless — the
+  client would see no output until the full completion finished, then
+  receive all tokens at once via `pregenerated_sse_response`.
+
+  Post-M32d (paiml/aprender#1832), per-token generation amortizes to
+  ~100ms each. Streaming SSE becomes valuable: the client sees the
+  first token in ~prefill_wall + 100ms, with subsequent tokens flowing
+  at ~10/sec. UX matches the dense path's existing streaming.
+
+  This contract codifies that the qwen3_moe streaming SSE path emits
+  per-token, not pregenerated.
+
+equations:
+  per_token_emit:
+    description: "Per-token SSE events emitted before generation completes"
+    formula: |
+      stream=true ∧ canonical_arch == 'qwen3_moe'
+        → for each generated token t_i:
+            emit SSE event { id, choices[0].delta.content = decode([t_i]) }
+            BEFORE generating t_{i+1}
+
+  no_pregenerated_for_moe_stream:
+    description: "qwen3_moe stream=true does NOT fall back to pregenerated_sse_response"
+    formula: |
+      stream=true ∧ canonical_arch == 'qwen3_moe' ∧ M32d_active
+        → ¬(pregenerated_sse_response called)
+
+  terminal_event:
+    description: "Final SSE event is `[DONE]` (OpenAI convention)"
+    formula: |
+      after last generated token:
+        emit SSE event { id, choices[0].finish_reason = 'stop' | 'length' }
+        emit SSE 'data: [DONE]\\n\\n'
+
+falsification:
+  - id: FALSIFY-QWEN3_MOE_STREAMING_SSE_V1_001
+    description: "POST /v1/chat/completions with qwen3_moe model + stream=true emits per-token SSE events"
+    test: |
+      Integration test: boot apr serve with a qwen3_moe GGUF, POST a
+      chat request with `stream: true` + max_tokens=8. Open the SSE
+      connection and collect events with timestamps. Assert:
+        - At least 8 distinct `data: {...}` events (one per token)
+        - Time-between-events > 0 (not all buffered at once)
+        - First event arrives within `prefill_wall + 2 * per_token_wall`
+        - Final event is `data: [DONE]`
+    evidence: "cargo test --test qwen3_moe_streaming_sse_v1 -- --ignored --nocapture"
+
+  - id: FALSIFY-QWEN3_MOE_STREAMING_SSE_V1_002
+    description: "stream=false on qwen3_moe still returns a single non-streaming response (regression check)"
+    test: |
+      Same setup, POST with `stream: false`. Assert response is a single
+      JSON ChatCompletionResponse (not SSE), with `choices[0].message.content`
+      containing all generated tokens.
+    evidence: "Existing qwen3_moe_serve_dispatch_v1 test (#1819) covers this; pinned as regression-only."
+
+  - id: FALSIFY-QWEN3_MOE_STREAMING_SSE_V1_003
+    description: "Streaming throughput is bounded below by M32d's per-token cost"
+    test: |
+      Generate 32 tokens via streaming. Measure time-between-events.
+      Assert median inter-event time < 500ms (corresponds to ≥ 2 tok/s
+      streamed; conservative floor below the M32d perf floor of 5 tok/s).
+    evidence: "Operator-dispatched; logged at evidence/ in paiml/claude-code-parity-apr if used by Phase 6 streaming bench."
+
+scope_extension:
+  out_of_scope:
+    - "MoE inference correctness (covered by qwen3-moe-serve-dispatch-v1)"
+    - "KV cache mechanics (covered by qwen3-moe-serve-dispatch-v1 V1_004 prerequisite + M32d)"
+    - "Streaming SSE for dense models (already implemented via OwnedQuantizedModelCachedSync continuous batching)"
+    - "Tool-call streaming (per-event tool_calls deltas; separate contract)"
+
+  in_scope:
+    - "Per-token callback variant of run_qwen3_moe_generate"
+    - "Wire into try_qwen3_moe_backend in cuda_chat_backend.rs"
+    - "OpenAI-compatible SSE event format (id, object, choices, delta, finish_reason)"
+    - "Terminal [DONE] event"
+
+implementation_phases:
+  phase_1:
+    name: "Callback variant of run_qwen3_moe_generate"
+    description: |
+      Add `run_qwen3_moe_generate_streaming` (or refactor the existing
+      function to accept an `&mut dyn FnMut(u32) -> bool` callback) so
+      the caller receives each token as it's generated. The callback's
+      bool return value indicates whether to continue (true) or stop
+      (false; for client disconnect handling).
+    estimated_effort: "1-2 hours"
+
+  phase_2:
+    name: "Wire into try_qwen3_moe_backend"
+    description: |
+      When `request.stream == true` AND arch is qwen3_moe:
+      - Build an axum SSE response stream
+      - Spawn `tokio::task::spawn_blocking` with the inference call
+      - Inference's per-token callback pushes events into a tokio mpsc
+        channel
+      - SSE stream pulls from the channel + emits events
+      - On stream end, emit [DONE]
+    estimated_effort: "3-4 hours"
+
+  phase_3:
+    name: "Cargo integration test"
+    description: |
+      crates/aprender-serve/tests/qwen3_moe_streaming_sse_v1.rs —
+      env-gated, #[ignore]'d. Boots in-process axum router, POSTs
+      stream=true request, collects SSE events with timestamps,
+      asserts FALSIFY-V1_001 + V1_003.
+    estimated_effort: "2 hours"
+
+status_history:
+  - version: "1.0.0"
+    date: "2026-05-20"
+    pr: "paiml/aprender (streaming SSE follow-up to M32d)"
+    summary: "Initial contract registered. Codifies the per-token SSE streaming requirement post-M32d. Engineer playbook: 3 phases ~6-8 hours total. Operator-actionable once M32d merges."
