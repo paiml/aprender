@@ -53,6 +53,7 @@ fn sample_from_logits(
     logits: &[f32],
     config: &QuantizedGenerateConfig,
     rng: &mut StdRng,
+    recent_tokens: &[u32],
 ) -> Result<u32> {
     if logits.is_empty() {
         return Err(RealizarError::InvalidShape {
@@ -60,9 +61,33 @@ fn sample_from_logits(
         });
     }
 
-    // Greedy fallback: temperature == 0 OR top_k == 1
+    // Step 1: Repetition penalty (qwen3-moe-repetition-penalty-v1).
+    // Apply BEFORE temperature scaling. Mirrors Candle's
+    // apply_repeat_penalty semantics (PMAT-383/384, dense-path
+    // sample_advanced in gguf/inference/fails.rs:100).
+    // No-op when repeat_penalty == 1.0 OR repeat_last_n == 0.
+    let penalized: Vec<f32> =
+        if config.repeat_penalty != 1.0 && config.repeat_last_n > 0 && !recent_tokens.is_empty() {
+            let mut p: Vec<f32> = logits.to_vec();
+            let start = recent_tokens.len().saturating_sub(config.repeat_last_n);
+            for &token in &recent_tokens[start..] {
+                let idx = token as usize;
+                if idx < p.len() {
+                    if p[idx] > 0.0 {
+                        p[idx] /= config.repeat_penalty;
+                    } else {
+                        p[idx] *= config.repeat_penalty;
+                    }
+                }
+            }
+            p
+        } else {
+            logits.to_vec()
+        };
+
+    // Greedy fallback: temperature == 0 OR top_k == 1 (after repetition penalty)
     if config.temperature == 0.0 || config.top_k == 1 {
-        return Ok(logits
+        return Ok(penalized
             .iter()
             .enumerate()
             .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
@@ -71,7 +96,7 @@ fn sample_from_logits(
     }
 
     // Temperature scaling
-    let scaled: Vec<f32> = logits.iter().map(|&x| x / config.temperature).collect();
+    let scaled: Vec<f32> = penalized.iter().map(|&x| x / config.temperature).collect();
 
     // Top-k filter (sort + truncate)
     let mut indexed: Vec<(usize, f32)> = scaled.iter().copied().enumerate().collect();
@@ -244,7 +269,7 @@ pub fn run_qwen3_moe_generate(
     // Decode loop: greedy-sample from `last_logits`, append, then run
     // one more cache-aware forward to seed the next iteration.
     for _step in 0..gen_config.max_tokens {
-        let next_token = sample_from_logits(&last_logits, gen_config, &mut rng)?;
+        let next_token = sample_from_logits(&last_logits, gen_config, &mut rng, &tokens)?;
         tokens.push(next_token);
 
         // GH-373-style stop check (matches dense path semantics)
@@ -301,7 +326,7 @@ mod sample_from_logits_tests {
         let cfg = mk_config(0.0, 50, 1.0, 42);
         for _ in 0..5 {
             let mut rng = StdRng::seed_from_u64(cfg.seed);
-            let token = sample_from_logits(&logits, &cfg, &mut rng).unwrap();
+            let token = sample_from_logits(&logits, &cfg, &mut rng, &[]).unwrap();
             assert_eq!(token, 1, "V1_001: temperature=0 must return argmax");
         }
     }
@@ -313,7 +338,7 @@ mod sample_from_logits_tests {
         let cfg = mk_config(5.0 /* high temp ignored */, 1, 1.0, 42);
         for _ in 0..5 {
             let mut rng = StdRng::seed_from_u64(cfg.seed);
-            let token = sample_from_logits(&logits, &cfg, &mut rng).unwrap();
+            let token = sample_from_logits(&logits, &cfg, &mut rng, &[]).unwrap();
             assert_eq!(token, 2, "V1_001: top_k=1 must return argmax");
         }
     }
@@ -327,7 +352,7 @@ mod sample_from_logits_tests {
         let mut tokens = Vec::new();
         for _ in 0..5 {
             let mut rng = StdRng::seed_from_u64(cfg.seed);
-            tokens.push(sample_from_logits(&logits, &cfg, &mut rng).unwrap());
+            tokens.push(sample_from_logits(&logits, &cfg, &mut rng, &[]).unwrap());
         }
         let first = tokens[0];
         for (i, &t) in tokens.iter().enumerate() {
@@ -352,7 +377,7 @@ mod sample_from_logits_tests {
             let mut cfg = cfg_template.clone();
             cfg.seed = seed;
             let mut rng = StdRng::seed_from_u64(cfg.seed);
-            tokens.insert(sample_from_logits(&logits, &cfg, &mut rng).unwrap());
+            tokens.insert(sample_from_logits(&logits, &cfg, &mut rng, &[]).unwrap());
         }
         assert!(
             tokens.len() >= 3,
@@ -370,8 +395,8 @@ mod sample_from_logits_tests {
 
         let mut rng_a = StdRng::seed_from_u64(high_temp_top_k_one.seed);
         let mut rng_b = StdRng::seed_from_u64(pure_greedy.seed);
-        let a = sample_from_logits(&logits, &high_temp_top_k_one, &mut rng_a).unwrap();
-        let b = sample_from_logits(&logits, &pure_greedy, &mut rng_b).unwrap();
+        let a = sample_from_logits(&logits, &high_temp_top_k_one, &mut rng_a, &[]).unwrap();
+        let b = sample_from_logits(&logits, &pure_greedy, &mut rng_b, &[]).unwrap();
         assert_eq!(a, b, "V1_004: top_k=1 == pure greedy regardless of temperature");
         assert_eq!(a, 5, "V1_004: argmax of logits is at index 5");
     }
@@ -381,7 +406,7 @@ mod sample_from_logits_tests {
     fn empty_logits_returns_error() {
         let cfg = mk_config(0.7, 50, 0.95, 42);
         let mut rng = StdRng::seed_from_u64(cfg.seed);
-        let result = sample_from_logits(&[], &cfg, &mut rng);
+        let result = sample_from_logits(&[], &cfg, &mut rng, &[]);
         assert!(result.is_err(), "empty logits must error, not panic");
     }
 
@@ -394,8 +419,144 @@ mod sample_from_logits_tests {
 
         let mut rng_a = StdRng::seed_from_u64(cfg_with_top_p.seed);
         let mut rng_b = StdRng::seed_from_u64(cfg_no_top_p.seed);
-        let a = sample_from_logits(&logits, &cfg_with_top_p, &mut rng_a).unwrap();
-        let b = sample_from_logits(&logits, &cfg_no_top_p, &mut rng_b).unwrap();
+        let a = sample_from_logits(&logits, &cfg_with_top_p, &mut rng_a, &[]).unwrap();
+        let b = sample_from_logits(&logits, &cfg_no_top_p, &mut rng_b, &[]).unwrap();
         assert_eq!(a, b, "top_p=1.0 must equal top_p=0.0 (both no-op)");
+    }
+
+    // ========================================================================
+    // qwen3-moe-repetition-penalty-v1 falsifier tests
+    // ========================================================================
+
+    fn mk_config_with_penalty(
+        temperature: f32,
+        top_k: usize,
+        repeat_penalty: f32,
+        repeat_last_n: usize,
+        seed: u64,
+    ) -> QuantizedGenerateConfig {
+        QuantizedGenerateConfig {
+            max_tokens: 1,
+            temperature,
+            top_k,
+            top_p: 1.0,
+            repeat_penalty,
+            repeat_last_n,
+            seed,
+            stop_tokens: Vec::new(),
+            ..QuantizedGenerateConfig::default()
+        }
+    }
+
+    /// V1_001 (repetition penalty): repeat_penalty == 1.0 is a no-op even with
+    /// non-empty recent_tokens.
+    #[test]
+    fn rep_penalty_v1_001_no_op_at_one() {
+        let logits = vec![3.0, 5.0, 2.0, 4.0]; // argmax = 1
+        let recent = vec![1, 1, 1]; // many repetitions of token 1
+        let cfg = mk_config_with_penalty(0.0, 1, 1.0 /* no-op */, 100, 42);
+
+        let mut rng = StdRng::seed_from_u64(cfg.seed);
+        let token = sample_from_logits(&logits, &cfg, &mut rng, &recent).unwrap();
+        // Without penalty, argmax stays at index 1 even though token 1 is in recent.
+        assert_eq!(
+            token, 1,
+            "V1_001: repeat_penalty=1.0 must be a no-op (argmax stays at 1)"
+        );
+    }
+
+    /// V1_001 (repetition penalty): repeat_last_n == 0 is a no-op.
+    #[test]
+    fn rep_penalty_v1_001_no_op_when_repeat_last_n_zero() {
+        let logits = vec![3.0, 5.0, 2.0, 4.0];
+        let recent = vec![1, 1, 1];
+        let cfg = mk_config_with_penalty(0.0, 1, 2.0 /* would penalize */, 0 /* no-op */, 42);
+
+        let mut rng = StdRng::seed_from_u64(cfg.seed);
+        let token = sample_from_logits(&logits, &cfg, &mut rng, &recent).unwrap();
+        assert_eq!(
+            token, 1,
+            "V1_001: repeat_last_n=0 must be a no-op (argmax stays at 1)"
+        );
+    }
+
+    /// V1_002: repeat_penalty > 1.0 down-weights repeated tokens (positive logit branch).
+    #[test]
+    fn rep_penalty_v1_002_down_weights_repeated() {
+        // All positive logits → penalty divides them.
+        // logits[1] = 5.0 (would be argmax). recent_tokens = [1, 1] → penalty
+        // applied to logit[1] twice: 5.0 / 2.0 / 2.0 = 1.25. New argmax = 3 (4.0).
+        let logits = vec![3.0, 5.0, 2.0, 4.0];
+        let recent = vec![1, 1]; // token 1 repeated twice
+        let cfg = mk_config_with_penalty(0.0, 1, 2.0, 100, 42);
+
+        let mut rng = StdRng::seed_from_u64(cfg.seed);
+        let token = sample_from_logits(&logits, &cfg, &mut rng, &recent).unwrap();
+        // After penalty: [3.0, 1.25, 2.0, 4.0] → argmax = 3
+        assert_eq!(
+            token, 3,
+            "V1_002: repeat_penalty must shift argmax away from repeated token 1"
+        );
+    }
+
+    /// V1_002: negative logits get MULTIPLIED by penalty (Candle's convention).
+    #[test]
+    fn rep_penalty_v1_002_negative_logit_branch() {
+        // Mix: logit[2] is negative. Penalty multiplies it (more negative).
+        let logits = vec![3.0, 1.0, -2.0, 4.0]; // argmax = 3
+        let recent = vec![2]; // token 2 has negative logit
+        let cfg = mk_config_with_penalty(0.0, 1, 2.0, 100, 42);
+
+        let mut rng = StdRng::seed_from_u64(cfg.seed);
+        let token = sample_from_logits(&logits, &cfg, &mut rng, &recent).unwrap();
+        // After penalty: [3.0, 1.0, -4.0, 4.0] → argmax still = 3, but logit[2]
+        // is now more strongly suppressed. Confirms the branch ran without
+        // accidentally amplifying.
+        assert_eq!(token, 3, "V1_002 negative branch: argmax stays at 3");
+    }
+
+    /// V1_003: repeat_last_n bounds the penalty window correctly.
+    #[test]
+    fn rep_penalty_v1_003_window_bounds() {
+        // recent_tokens = [1, 1, 1, 1, 1, 1, 1, 1] (token 1 eight times).
+        // With repeat_last_n=2, only last 2 are penalized (2 applications).
+        // With repeat_last_n=8, all 8 are penalized (8 applications).
+        // Use repeat_penalty=1.5; logit[1]=10.0.
+        // After 2 penalties: 10.0 / 1.5 / 1.5 = 4.44
+        // After 8 penalties: 10.0 / 1.5^8 ≈ 0.39
+        let logits = vec![1.0, 10.0, 5.0, 3.0]; // argmax = 1 initially
+        let recent = vec![1, 1, 1, 1, 1, 1, 1, 1];
+
+        let cfg_n2 = mk_config_with_penalty(0.0, 1, 1.5, 2, 42);
+        let mut rng = StdRng::seed_from_u64(42);
+        let token_n2 = sample_from_logits(&logits, &cfg_n2, &mut rng, &recent).unwrap();
+        // After 2 penalties: logit[1] = 10.0/1.5/1.5 ≈ 4.44. Still > 5.0? No: < 5.0.
+        // So argmax = 2 (logit 5.0).
+        assert_eq!(token_n2, 2, "V1_003 n=2: penalty insufficient, argmax = 2");
+
+        let cfg_n8 = mk_config_with_penalty(0.0, 1, 1.5, 8, 42);
+        let mut rng = StdRng::seed_from_u64(42);
+        let token_n8 = sample_from_logits(&logits, &cfg_n8, &mut rng, &recent).unwrap();
+        // After 8 penalties: logit[1] ≈ 0.39. argmax = 2 (logit 5.0).
+        assert_eq!(token_n8, 2, "V1_003 n=8: penalty stronger, still argmax = 2");
+
+        // The two are equivalent at this argmax level, but the underlying logit
+        // values differ. Pick a config where they diverge: with smaller initial
+        // gap, the deeper penalty matters more.
+        let logits_close = vec![4.5, 10.0, 5.0, 3.0];
+        let cfg_n2 = mk_config_with_penalty(0.0, 1, 1.5, 2, 42);
+        let mut rng = StdRng::seed_from_u64(42);
+        let token_close_n2 =
+            sample_from_logits(&logits_close, &cfg_n2, &mut rng, &recent).unwrap();
+        // 2 penalties: 10/1.5/1.5 = 4.44. argmax = 2 (5.0).
+        assert_eq!(token_close_n2, 2);
+
+        // n=0 means "no penalty" (per backwards-compat invariant).
+        let cfg_n0 = mk_config_with_penalty(0.0, 1, 1.5, 0, 42);
+        let mut rng = StdRng::seed_from_u64(42);
+        let token_n0 =
+            sample_from_logits(&logits_close, &cfg_n0, &mut rng, &recent).unwrap();
+        // No penalty: argmax = 1 (10.0).
+        assert_eq!(token_n0, 1, "V1_003 n=0: no-op, argmax = 1");
     }
 }

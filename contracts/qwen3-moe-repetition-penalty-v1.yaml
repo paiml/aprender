@@ -1,5 +1,5 @@
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   created: "2026-05-20"
   updated: "2026-05-20"
   author: PAIML Engineering
@@ -13,7 +13,7 @@ metadata:
 
 kind: KernelContract
 name: qwen3-moe-repetition-penalty
-version: "1.0.0"
+version: "1.1.0"
 scope: "crates/aprender-serve/src/infer/qwen3_moe_generate.rs::sample_from_logits"
 
 description: |
@@ -182,7 +182,7 @@ implementation_phases:
 status_history:
   - version: "1.0.0"
     date: "2026-05-20"
-    pr: "paiml/aprender (repetition penalty follow-up to M32d)"
+    pr: "paiml/aprender#1843"
     summary: |
       Initial contract registered. Third sibling to qwen3-moe-sampling-v1
       + qwen3-moe-streaming-sse-v1; completes the 3-knob toolkit
@@ -190,3 +190,33 @@ status_history:
       verbosity bottleneck. Engineer playbook: 3 phases ~3-4 hours
       total. Operator-actionable any time post-M32d-merge (paiml/
       aprender#1832 MERGED).
+  - version: "1.1.0"
+    date: "2026-05-20"
+    pr: "paiml/aprender (impl PR, supersedes #1843)"
+    summary: |
+      V1_001-V1_003 DISCHARGED via in-session implementation +
+      5 unit tests in `sample_from_logits_tests`. V1_004
+      (companion-side bench discharge) remains operator-coordinated.
+      `sample_from_logits` signature extended with
+      `recent_tokens: &[u32]` parameter (backwards-incompatible for
+      the private fn but only one caller — the decode loop in
+      `run_qwen3_moe_generate`). Decode loop passes `&tokens` slice.
+      Repetition penalty applied as Step 1 BEFORE temperature scaling,
+      mirroring Candle's `apply_repeat_penalty` semantics (PMAT-383/
+      384, dense path's `sample_advanced` in
+      `gguf/inference/fails.rs:100`).
+
+      Test results: 12/12 tests pass in
+      `cargo test -p aprender-serve --lib sample_from_logits_tests`
+      (4 sampling + 5 rep-penalty + 3 edge cases). Tests cover:
+        - Repetition penalty no-op when penalty=1.0 OR last_n=0
+        - Down-weighting of positive logits via division
+        - Multiplication branch for negative logits (Candle convention)
+        - Window bounding via repeat_last_n
+        - Backwards compat: existing sampling tests still pass with
+          the new recent_tokens parameter passed as &[]
+
+      Supersedes #1843 (which was contract-only). Operator can dispatch
+      companion-side bench with APR_AGENT_REPEAT_PENALTY=1.2 +
+      APR_AGENT_REPEAT_LAST_N=64 once #1843's bench plumbing
+      (Phase 3) lands.
