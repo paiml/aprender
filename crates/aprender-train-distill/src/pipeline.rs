@@ -61,6 +61,11 @@ pub struct Pipeline<'a> {
     /// Phase 2d (PMAT-696) adds `CudaStudentProvider` wrapping
     /// `CudaTransformerTrainer` for production runs.
     student: Box<dyn crate::student_provider::StudentLogitsProvider >,
+    /// SPEC-DISTILL-001 Phase 4 Stage B-2: batch source for the training
+    /// loop. Defaults to `SyntheticBatchSource` (smoke + fixture path);
+    /// Phase 4 real-corpus dispatch swaps in `ShardBatchSource` via
+    /// `with_batch_source()`.
+    batch_source: Box<dyn crate::batch_source::BatchSource>,
 }
 
 impl<'a> Pipeline<'a> {
@@ -81,7 +86,23 @@ impl<'a> Pipeline<'a> {
             config,
             teacher: Box::new(crate::teacher_provider::FixtureTeacher::new(32)),
             student: Box::new(crate::student_provider::FixtureStudent::new(32, 0.0, 0.1)),
+            batch_source: Box::new(crate::batch_source::SyntheticBatchSource::new(32)),
         }
+    }
+
+    /// Swap in a custom batch source (Phase 4 Stage B-2).
+    ///
+    /// Pass a `ShardBatchSource` to drive training from a real-corpus
+    /// `.bin` shard directory. The default `SyntheticBatchSource` is
+    /// used when this builder is not called — appropriate for smoke
+    /// + fixture-path tests.
+    #[must_use]
+    pub fn with_batch_source(
+        mut self,
+        batch_source: Box<dyn crate::batch_source::BatchSource>,
+    ) -> Self {
+        self.batch_source = batch_source;
+        self
     }
 
     /// Swap in a custom teacher backend.
@@ -249,25 +270,31 @@ impl<'a> Pipeline<'a> {
         // Fixture tests are unaffected by the longer sequence — the
         // FixtureStudent ignores input shape and emits argmax-on-label
         // logits regardless of seq_len.
+        // Phase 4 Stage B-2: pull each batch from the configured
+        // BatchSource instead of constructing inline. Synthetic source is
+        // the default (smoke + fixture path semantics unchanged);
+        // production runs swap in a ShardBatchSource via
+        // `Pipeline::with_batch_source()`. See PMAT-PHASE4-STAGE-B-2.
         let smoke_seq_len: usize = std::env::var("APR_DISTILL_SMOKE_SEQ_LEN")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(256);
-        let dummy_batch: Vec<Vec<u32>> = (0..batch_size)
-            .map(|i| vec![(i % num_classes) as u32; smoke_seq_len])
-            .collect();
-        let labels: Vec<usize> = (0..batch_size).map(|i| i % num_classes).collect();
 
         let mut metrics = TrainingMetrics::default();
         let mut best_loss = f32::MAX;
 
         // Initial loss — drives `metrics.initial_loss` for the
         // PipelineResult improvement-ratio computation.
+        // Pull an initial batch from the source so the source observes
+        // the same step count as the training loop (some sources cache
+        // state per-call).
+        let (initial_batch, initial_labels) =
+            self.batch_source.next_batch(batch_size, smoke_seq_len)?;
         let initial_loss = kd_step_loss_for_pipeline(
             &mut *self.teacher,
             &mut *self.student,
-            &dummy_batch,
-            &labels,
+            &initial_batch,
+            &initial_labels,
             temperature,
             alpha,
         )?;
@@ -276,11 +303,19 @@ impl<'a> Pipeline<'a> {
 
         let train_start = std::time::Instant::now();
         let mut step = 0u64;
+        // Track the last batch for the final-loss measurement (matches the
+        // synthetic-batch semantics: final loss is computed on the last
+        // batch consumed by the training loop). For ShardBatchSource this
+        // is the most recent real-corpus batch.
+        let mut last_batch = initial_batch;
+        let mut last_labels = initial_labels;
 
         for _epoch in 0..self.config.training.epochs {
             let steps_this_epoch = (1000 / u64::from(self.config.training.batch_size)).max(1);
 
             for _s in 0..steps_this_epoch {
+                let (dummy_batch, labels) =
+                    self.batch_source.next_batch(batch_size, smoke_seq_len)?;
                 let (loss, grads) = crate::kd_step::kd_step(
                     self.teacher.as_mut(),
                     &dummy_batch,
@@ -307,17 +342,19 @@ impl<'a> Pipeline<'a> {
                 best_loss = best_loss.min(loss);
                 self.student.apply_kd_gradient(&grads)?;
                 step += 1;
+                last_batch = dummy_batch;
+                last_labels = labels;
             }
         }
 
         let elapsed = train_start.elapsed().as_secs_f32().max(1e-6);
 
-        // Final loss measurement.
+        // Final loss measurement on the last batch consumed.
         let final_loss = kd_step_loss_for_pipeline(
             &mut *self.teacher,
             &mut *self.student,
-            &dummy_batch,
-            &labels,
+            &last_batch,
+            &last_labels,
             temperature,
             alpha,
         )?;
@@ -345,7 +382,7 @@ impl<'a> Pipeline<'a> {
         // wires into the export step. Until then, with the cuda backend
         // selected, this projection is a no-op — that's fine because
         // Phase 4 owns the real serialization path.
-        let final_logits_vv = self.student.logits_for_batch(&dummy_batch)?;
+        let final_logits_vv = self.student.logits_for_batch(&last_batch)?;
         let mut final_logits_flat: Vec<f32> = Vec::with_capacity(batch_size * num_classes);
         for row in final_logits_vv {
             final_logits_flat.extend(row);
