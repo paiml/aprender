@@ -715,10 +715,20 @@ fn try_qwen3_moe_backend(
     let prompt_token_count = input_ids.len();
 
     let max_tokens = request.max_tokens.unwrap_or(256).min(4096) as usize;
+    // 3-knob toolkit (qwen3-moe-sampling-v1 + qwen3-moe-repetition-penalty-v1):
+    // thread top_k/top_p/repeat_penalty/repeat_last_n/seed from the HTTP
+    // request through to QuantizedGenerateConfig. Defaults match the dense
+    // path's chat-completion behavior (greedy when unspecified).
+    let defaults = QuantizedGenerateConfig::default();
     let gen_config = QuantizedGenerateConfig {
         max_tokens,
-        temperature: request.temperature.unwrap_or(0.0),
-        ..QuantizedGenerateConfig::default()
+        temperature: request.temperature.unwrap_or(defaults.temperature),
+        top_k: request.top_k.unwrap_or(defaults.top_k),
+        top_p: request.top_p.unwrap_or(defaults.top_p),
+        repeat_penalty: request.repeat_penalty.unwrap_or(defaults.repeat_penalty),
+        repeat_last_n: request.repeat_last_n.unwrap_or(defaults.repeat_last_n),
+        seed: request.seed.unwrap_or(defaults.seed),
+        ..defaults
     };
 
     let tokens = match crate::infer::qwen3_moe_generate::run_qwen3_moe_generate(
