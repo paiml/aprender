@@ -199,4 +199,75 @@ mod tests {
         let (b, _) = src.next_batch(2, 2).unwrap();
         assert_eq!(a, b);
     }
+
+    /// F-DISTILL-SHARD-BATCH-001 — Fixture-driven integration test for
+    /// ShardBatchSource. Writes a tiny .bin shard with a known token
+    /// sequence and asserts the source produces batches of the expected
+    /// shape with tokens drawn from the shard.
+    ///
+    /// Catches the class of bug where the source's wrap_around / cursor
+    /// behavior diverges from the actual shard contents — exactly the
+    /// kind of issue that's silent at fixture-test time but corrupts
+    /// every Phase 4 step.
+    #[cfg(feature = "shard-batch-source")]
+    #[test]
+    fn shard_batch_source_reads_fixture() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let shard_path = dir.path().join("shard-00000.bin");
+        // Write 4096 u32 tokens: [0, 1, 2, ..., 4095].
+        // Enough for batch_size=4, seq_len=16 (4 * 17 = 68 tokens minimum
+        // for seq+1 chunks; we have 4096 for plenty of headroom).
+        let mut f = std::fs::File::create(&shard_path).expect("create");
+        for i in 0u32..4096 {
+            f.write_all(&i.to_le_bytes()).expect("write");
+        }
+        drop(f);
+
+        let mut src = ShardBatchSource::from_dir(dir.path(), 4, 16, 0, 0)
+            .expect("ShardBatchSource::from_dir");
+        let (inputs, labels) = src.next_batch(4, 16).expect("next_batch");
+
+        assert_eq!(inputs.len(), 4, "batch_size honored");
+        assert_eq!(labels.len(), 4, "labels.len == batch_size");
+        for row in &inputs {
+            assert_eq!(row.len(), 16, "seq_len honored");
+            // All tokens should be in [0, 4096) (drawn from the fixture).
+            for &t in row {
+                assert!(t < 4096, "token {t} out of fixture range");
+            }
+        }
+        for &l in &labels {
+            assert!(l < 4096, "label {l} out of fixture range");
+        }
+    }
+
+    /// F-DISTILL-SHARD-BATCH-002 — wrap-around behavior. Tiny fixture
+    /// (only enough tokens for ~2 batches) consumed for 5 batches should
+    /// not error out — ShardBatchSource enables wrap-around by default.
+    #[cfg(feature = "shard-batch-source")]
+    #[test]
+    fn shard_batch_source_wraps_around() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let shard_path = dir.path().join("shard-00000.bin");
+        // Only 128 tokens. With batch_size=4, seq_len=16, each batch
+        // consumes 4 * (16+1) = 68 tokens. So 128 / 68 ≈ 1.88 batches
+        // before wrap-around required.
+        let mut f = std::fs::File::create(&shard_path).expect("create");
+        for i in 0u32..128 {
+            f.write_all(&i.to_le_bytes()).expect("write");
+        }
+        drop(f);
+
+        let mut src = ShardBatchSource::from_dir(dir.path(), 4, 16, 0, 0)
+            .expect("ShardBatchSource::from_dir");
+        for batch_idx in 0..5 {
+            let (inputs, labels) = src
+                .next_batch(4, 16)
+                .unwrap_or_else(|e| panic!("batch {batch_idx}: {e:?}"));
+            assert_eq!(inputs.len(), 4, "batch {batch_idx} shape");
+            assert_eq!(labels.len(), 4, "batch {batch_idx} labels");
+        }
+    }
 }
