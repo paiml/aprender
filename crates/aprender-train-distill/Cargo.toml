@@ -26,6 +26,10 @@ hub = ["entrenar/hub"]
 # in inference-only mode. Without this feature, only FixtureTeacher is
 # available (sufficient for unit tests; real distillation requires `cuda`).
 cuda = ["entrenar/cuda"]
+# Phase 4 Stage B: real-corpus batch source wrapping ShardBatchIter from
+# aprender-train. Without this feature, only SyntheticBatchSource is
+# available (sufficient for smoke + fixture tests).
+shard-batch-source = []
 
 [dependencies]
 entrenar = { version = "0.34.0", path = "../aprender-train", package = "aprender-train" }
