@@ -1,0 +1,17 @@
+{
+  "ticket": "PMAT-697",
+  "phase": "SPEC-DISTILL-001 Phase 3 - E2E smoke",
+  "falsifier": "F-DISTILL-SMOKE-001",
+  "run_name": "distill-smoke-20260520-123259",
+  "host": "gx10",
+  "teacher": "Qwen/Qwen2.5-Coder-0.5B-Instruct",
+  "student_init": "Qwen/Qwen2.5-Coder-0.5B-Instruct",
+  "steps": 100,
+  "batch_size": 4,
+  "learning_rate": "1.5e-5",
+  "kd_temperature": "4.0",
+  "kd_alpha": "0.3",
+  "remote_run_dir": "/home/noah/runs/distill-smoke-20260520-123259",
+  "remote_log": "/home/noah/runs/distill-smoke-20260520-123259/launch.log",
+  "dispatched_at": "2026-05-20T10:34:17Z"
+}
