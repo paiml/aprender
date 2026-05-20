@@ -212,16 +212,27 @@ impl ForwardKernelCache {
         // suffix (normalization.rs:139:
         //   let key = format!("batched_rmsnorm_fwd_{hidden_size}_eps{eps_bits:08x}"))
         // Pre-warm key used to omit the eps suffix → cache miss at runtime →
-        // JIT mid-forward → Blackwell sm_121 stream poisoning. Default eps
-        // for Qwen2 is 1e-6 (RMSNorm default) but the active config may vary
-        // per model. Use the standard 1e-5 default; runtime models with
-        // different eps will still cache-miss for their specific suffix but
-        // the dominant case is covered.
-        let default_eps_bits = 1.0e-5_f32.to_bits();
+        // JIT mid-forward → Blackwell sm_121 stream poisoning.
+        //
+        // PMAT-698n: PMAT-698k pre-warmed at eps=1e-5 (0x3727c5ac) but the
+        // dominant model (Qwen2 / Qwen2.5) uses rms_norm_eps=1e-6
+        // (0x358637bd). Live diagnostic confirmed the runtime key on the
+        // Phase 3 dispatch was `batched_rmsnorm_fwd_896_eps358637bd`. Switch
+        // the pre-warm default to 1e-6 (Qwen2 standard) AND additionally
+        // pre-warm 1e-5 (Llama/Mistral standard) for cross-family coverage.
+        // The cost of pre-warming both is ~30 KB of cache headroom.
+        let qwen2_eps_bits = 1.0e-6_f32.to_bits(); // 0x358637bd
+        let llama_eps_bits = 1.0e-5_f32.to_bits(); // 0x3727c5ac
         warm!(
-            format!("batched_rmsnorm_fwd_{h}_eps{default_eps_bits:08x}"),
+            format!("batched_rmsnorm_fwd_{h}_eps{qwen2_eps_bits:08x}"),
             BatchedVectorizedRmsNormKernel::new(h, 1)
         );
+        if qwen2_eps_bits != llama_eps_bits {
+            warm!(
+                format!("batched_rmsnorm_fwd_{h}_eps{llama_eps_bits:08x}"),
+                BatchedVectorizedRmsNormKernel::new(h, 1)
+            );
+        }
 
         // PMAT-700 (SPEC-BLACKWELL-FIX-001 Fix #2): when cuBLAS is available
         // and the runtime takes its fast path for the standard 2D GEMMs
