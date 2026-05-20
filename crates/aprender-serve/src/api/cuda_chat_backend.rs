@@ -720,16 +720,24 @@ fn try_qwen3_moe_backend(
     // request through to QuantizedGenerateConfig. Defaults match the dense
     // path's chat-completion behavior (greedy when unspecified).
     //
-    // EOS stop-token: mirror the dense path (cuda_chat_backend.rs:113) which
-    // populates stop_tokens with the model's EOS so generation halts on
-    // natural turn-end. Without this, qwen3_moe burns the full max_tokens
-    // budget per turn, allowing self-prompted "Human:" runaway text — the
-    // root cause of paiml/claude-code-parity-apr M287's verbosity pattern.
+    // EOS stop-token: mirror the dense path's chat_gen_params fallback chain.
+    // Generation halts on natural turn-end (model EOS or ChatML boundary).
+    // Without this, qwen3_moe burns the full max_tokens budget per turn,
+    // allowing self-prompted "Human:" runaway text — the root cause of
+    // paiml/claude-code-parity-apr M287's verbosity pattern.
+    //
+    // Fallback order (matches chat_gen_params at openai_handlers.rs:97):
+    //   1. state.model_eos_token_id() — from GGUF metadata
+    //   2. tokenizer "<|im_end|>" — ChatML standard (Qwen, OpenHermes, Yi)
+    //   3. tokenizer "<|endoftext|>" — GPT-style alternative
+    //   4. None → empty stop_tokens (no behavior change from pre-fix)
     let defaults = QuantizedGenerateConfig::default();
-    let stop_tokens: Vec<u32> = state
-        .model_eos_token_id()
-        .into_iter()
-        .collect();
+    let eos_id = state.model_eos_token_id().or_else(|| {
+        tokenizer
+            .get_token_id("<|im_end|>")
+            .or_else(|| tokenizer.get_token_id("<|endoftext|>"))
+    });
+    let stop_tokens: Vec<u32> = eos_id.into_iter().collect();
     let gen_config = QuantizedGenerateConfig {
         max_tokens,
         temperature: request.temperature.unwrap_or(defaults.temperature),
@@ -762,8 +770,12 @@ fn try_qwen3_moe_backend(
     let generated_ids: Vec<u32> = tokens[input_ids.len()..].to_vec();
     let completion_tokens = generated_ids.len();
 
+    // Apply clean_chat_output to strip self-emitted "Human:" / "User:" /
+    // "<|im_end|>" / etc. prefixes from response text. Mirrors the dense
+    // path at line 295 (PMAT-088). Without this, the M287 "Human: I need..."
+    // runaway leaks into the chat response even after EOS detection.
     let response_text = match tokenizer.decode(&generated_ids) {
-        Ok(t) => t,
+        Ok(t) => clean_chat_output(&t),
         Err(e) => {
             state.metrics.record_failure();
             return Some(fail_response(state, StatusCode::INTERNAL_SERVER_ERROR, e));
