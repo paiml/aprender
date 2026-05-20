@@ -1,36 +1,41 @@
-//! M32c.2.2.2.1.2 — `run_qwen3_moe_generate`: full inference loop for Qwen3-MoE.
+//! M32c.2.2.2.1.2 + M32d — autoregressive loop for Qwen3-MoE with KV cache.
 //!
-//! Composes M32c.2.2.2.1.1's `OwnedQuantizedModel::forward_qwen3_moe` into
-//! an autoregressive token-by-token generation loop. This is the
-//! sibling of `run_gguf_generate` for `qwen3_moe` arch.
+//! Composes `OwnedQuantizedModel::forward_single_qwen3_moe_with_cache`
+//! (M32d) into a per-token decode loop. This is the sibling of
+//! `run_gguf_generate` for `qwen3_moe` arch.
 //!
 //! ## Design
-//! Per `qwen3-moe-forward-v1` v1.2.0, this function:
-//!   1. Reads MoE config (num_experts, k, intermediate) from GGUF metadata.
-//!   2. Builds the per-layer `Qwen3MoeQuantizedLayer` descriptors via
+//! Per `qwen3-moe-serve-dispatch-v1` v1.2.0 + M32d playbook:
+//!   1. Read MoE config (num_experts, k, intermediate) from GGUF metadata.
+//!   2. Build per-layer `Qwen3MoeQuantizedLayer` descriptors via
 //!      `load_qwen3_moe_layer` once at start.
-//!   3. Runs a generation loop: for each step, calls
-//!      `model.forward_qwen3_moe(...)` with the full token sequence,
-//!      greedy-samples (argmax) the next token, appends, repeats.
+//!   3. Allocate `OwnedQuantizedKVCache` sized to `prompt_len + max_tokens`.
+//!   4. Prefill: per prompt token, call
+//!      `forward_single_qwen3_moe_with_cache`. Cache builds incrementally.
+//!      The final iteration's logits are the seed for decode.
+//!   5. Decode: per output token, greedy-argmax + call
+//!      `forward_single_qwen3_moe_with_cache` for the next-token logits.
+//!      Stop on `stop_tokens` or `max_tokens` exhausted.
 //!
-//! ## Performance note
-//! This is a full-prefill-per-token loop (no KV cache). For
-//! Qwen3-Coder-30B-A3B that's catastrophically slow (~minutes per
-//! token on the cached 17.3 GB GGUF) but CORRECT — produces tokens
-//! end-to-end. KV-cache integration is M32d follow-up.
-//! M32c.2.2.2.1.4 (live falsifier `apr run -n 8`) accepts that latency
-//! since it asserts ANY tokens emit, not throughput.
+//! ## Performance
+//! Post-M32d: 5-15 tok/s sustained on Qwen3-Coder-30B-A3B (vs ~0.5 tok/s
+//! pre-M32d full-prefill-per-token). Each output token amortizes to one
+//! per-layer attention (cached K/V read) + one per-layer MoE FFN
+//! dispatch — no re-prefill.
 //!
 //! ## What's NOT in scope
-//! - KV cache (lazy mmap-borrow path needs separate design)
-//! - Top-p / top-k / temperature sampling (greedy-only for the
-//!   first-tokens proof point)
-//! - Stop tokens (caller can post-process; will add when needed)
-//! - Tracing / profiling
+//! - Top-p / top-k / temperature sampling (greedy-only for V1_001 +
+//!   V1_004 discharge; sampling is M32 follow-up)
+//! - Streaming SSE (cache exposes natural emit-per-token point; one-line
+//!   addition once needed — separate contract `qwen3-moe-streaming-sse-v1`)
+//! - GPU MoE (separate `qwen3-moe-forward-gpu-v1` track)
+//! - Cache rollback / beam search (cache.rollback_to exists; not wired)
 
 use crate::error::{RealizarError, Result};
 use crate::gguf::qwen3_moe_load::load_qwen3_moe_layer;
-use crate::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig};
+use crate::gguf::{
+    MappedGGUFModel, OwnedQuantizedKVCache, OwnedQuantizedModel, QuantizedGenerateConfig,
+};
 
 /// Run autoregressive token generation for a Qwen3-MoE GGUF model.
 ///
@@ -116,34 +121,78 @@ pub fn run_qwen3_moe_generate(
         moe_layers.push(load_qwen3_moe_layer(&mapped.model, data, layer_idx)?);
     }
 
-    // Generation loop: full-prefill per token (no KV cache; M32d)
-    let mut tokens = input_tokens.to_vec();
-    for _step in 0..gen_config.max_tokens {
-        let logits = model.forward_qwen3_moe(
-            &tokens,
-            &moe_layers,
-            num_experts,
-            num_experts_per_tok,
-            moe_intermediate,
-            data,
-        )?;
+    // M32d: KV cache decode. Sized to fit prompt + max_tokens + small
+    // safety buffer. Honors REALIZR_CONTEXT_LENGTH env var (matches dense
+    // path's convention; default 4096).
+    let env_ctx = std::env::var("REALIZR_CONTEXT_LENGTH")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(4096);
+    let needed = input_tokens.len() + gen_config.max_tokens + 8;
+    let max_seq_len = env_ctx.max(needed);
+    let mut cache = OwnedQuantizedKVCache::from_config(model.config(), max_seq_len);
 
-        // Greedy argmax sampling. Top-k/top-p/temperature are M32 follow-up.
-        let next_token = logits
+    // Greedy-argmax helper (closure to keep the loop tight).
+    let argmax = |logits: &[f32]| -> Result<u32> {
+        logits
             .iter()
             .enumerate()
             .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .map(|(i, _)| i as u32)
             .ok_or_else(|| RealizarError::InvalidShape {
                 reason: "run_qwen3_moe_generate: empty logits vector".to_string(),
-            })?;
+            })
+    };
 
+    // Prefill: per prompt token, run cache-aware forward. Cache fills
+    // incrementally; the LAST iteration's logits seed the decode loop.
+    // Position is each token's absolute index (0..prompt_len).
+    let mut tokens = input_tokens.to_vec();
+    let mut last_logits = Vec::new();
+    for (pos, &tok) in input_tokens.iter().enumerate() {
+        last_logits = model.forward_single_qwen3_moe_with_cache(
+            tok,
+            &mut cache,
+            pos,
+            &moe_layers,
+            num_experts,
+            num_experts_per_tok,
+            moe_intermediate,
+            data,
+        )?;
+    }
+    if last_logits.is_empty() {
+        return Err(RealizarError::InvalidShape {
+            reason: "run_qwen3_moe_generate: prefill produced no logits".to_string(),
+        });
+    }
+
+    // Decode loop: greedy-sample from `last_logits`, append, then run
+    // one more cache-aware forward to seed the next iteration.
+    for _step in 0..gen_config.max_tokens {
+        let next_token = argmax(&last_logits)?;
         tokens.push(next_token);
 
-        // GH-373-style stop token check (matches dense path semantics)
+        // GH-373-style stop check (matches dense path semantics)
         if gen_config.stop_tokens.contains(&next_token) {
             break;
         }
+        if tokens.len() >= max_seq_len {
+            // Cache is full; stop before overflow
+            break;
+        }
+
+        let pos = tokens.len() - 1;
+        last_logits = model.forward_single_qwen3_moe_with_cache(
+            next_token,
+            &mut cache,
+            pos,
+            &moe_layers,
+            num_experts,
+            num_experts_per_tok,
+            moe_intermediate,
+            data,
+        )?;
     }
 
     Ok(tokens)

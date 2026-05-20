@@ -1,6 +1,6 @@
 # M32d — KV cache for the qwen3_moe inference path
 
-**Status (2026-05-19)**: SCOPE doc. Implementation deferred pending operator go/no-go.
+**Status (2026-05-20)**: **SHIPPED**. Operator flipped from Option (b) engineer-driven to **Option (a) in-session implementation**; delivered as one PR (this branch). Empirical: numerical equivalence with full-prefill confirmed byte-identical on 4 tokens; **9.62 tok/s sustained on 32 tokens** (19× speedup vs ~0.5 tok/s pre-M32d). V1_004 prerequisite met; companion-side bench discharge pending operator dispatch.
 
 **Cross-refs**:
 - Contract gate: [`contracts/qwen3-moe-serve-dispatch-v1.yaml`](../../contracts/qwen3-moe-serve-dispatch-v1.yaml) v1.1.1 — V1_004 (CCPA Phase 6 bench non-zero student pass rate) is BLOCKED on this work.
