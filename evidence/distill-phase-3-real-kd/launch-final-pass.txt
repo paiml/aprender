@@ -1,0 +1,222 @@
+[PMAT-698e] capping max_position_embeddings 32768 → 2048 (override via APR_DISTILL_MAX_SEQ_LEN)
+[PMAT-698e] capping max_position_embeddings 32768 → 2048 (override via APR_DISTILL_MAX_SEQ_LEN)
+  Found 339 weight tensors (APR)
+[PMAT-329] lm_head.weight: shape mismatch — got 0 elements, expected 233373696 (1536x151936)
+  Detected architecture: Qwen2
+  Loaded 338 weight tensors
+[CUDA] cuBLAS initialized — forward TF32 tensor cores (41x vs SIMD)
+[CUDA] Kernel cache initialized for target: sm_121
+  GPU: NVIDIA GB10 (128.5 GB)
+[FWD-CACHE] Compiling 'batched_rope_bwd_12_128_2048_th49742400' (ptx_len=1980)
+[FWD-CACHE] OK 'batched_rope_bwd_12_128_2048_th49742400'
+[FWD-CACHE] Compiling 'batched_rope_bwd_2_128_2048_th49742400' (ptx_len=1979)
+[FWD-CACHE] OK 'batched_rope_bwd_2_128_2048_th49742400'
+  ✓ Backward rope kernel pre-warmed in forward cache
+[FWD-CACHE] Compiling 'batched_rmsnorm_fwd_1536_eps3727c5ac' (ptx_len=3143)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'batched_rmsnorm_fwd_1536_eps3727c5ac'
+[CUDA] Skipping PTX pre-warm for 4 GEMM kernels (cuBLAS active — PMAT-700)
+[FWD-CACHE] Compiling 'batched_rope_fwd_12_128_1_th49742400' (ptx_len=1971)
+[FWD-CACHE] OK 'batched_rope_fwd_12_128_1_th49742400'
+[FWD-CACHE] Compiling 'batched_rope_fwd_2_128_1_th49742400' (ptx_len=1970)
+[FWD-CACHE] OK 'batched_rope_fwd_2_128_1_th49742400'
+[FWD-CACHE] Compiling 'fused_swiglu_forward' (ptx_len=1186)
+[FWD-CACHE] OK 'fused_swiglu_forward'
+[FWD-CACHE] Compiling 'residual_add_forward' (ptx_len=939)
+[FWD-CACHE] OK 'residual_add_forward'
+[FWD-CACHE] Compiling 'interleaved_to_batched' (ptx_len=1302)
+[FWD-CACHE] OK 'interleaved_to_batched'
+[FWD-CACHE] Compiling 'batched_transpose' (ptx_len=1355)
+[FWD-CACHE] OK 'batched_transpose'
+[FWD-CACHE] Compiling 'batched_4d_gemm_1_12_2048_2048_128' (ptx_len=3473)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'batched_4d_gemm_1_12_2048_2048_128'
+[FWD-CACHE] Compiling 'scale_forward' (ptx_len=858)
+[FWD-CACHE] OK 'scale_forward'
+[FWD-CACHE] Compiling 'batched_softmax_forward' (ptx_len=2924)
+[GH-480] Patched 3 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'batched_softmax_forward'
+[FWD-CACHE] Compiling 'batched_4d_gemm_1_12_2048_128_2048' (ptx_len=3474)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'batched_4d_gemm_1_12_2048_128_2048'
+[FWD-CACHE] Compiling 'batched_4d_gemm_1_12_128_2048_2048' (ptx_len=3476)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'batched_4d_gemm_1_12_128_2048_2048'
+[FWD-CACHE] Compiling 'batched_to_interleaved' (ptx_len=1302)
+[FWD-CACHE] OK 'batched_to_interleaved'
+[FWD-CACHE] Compiling 'elementwise_mul_forward' (ptx_len=942)
+[FWD-CACHE] OK 'elementwise_mul_forward'
+[FWD-CACHE] Compiling 'silu_forward' (ptx_len=1031)
+[FWD-CACHE] OK 'silu_forward'
+[FWD-CACHE] Compiling 'nf4_gemm_forward_1536_1536' (ptx_len=12928)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'nf4_gemm_forward_1536_1536'
+[FWD-CACHE] Compiling 'nf4_gemm_forward_1536_256' (ptx_len=12928)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'nf4_gemm_forward_1536_256'
+[FWD-CACHE] Compiling 'nf4_gemm_forward_1536_8960' (ptx_len=12928)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'nf4_gemm_forward_1536_8960'
+[FWD-CACHE] Compiling 'nf4_gemm_forward_8960_1536' (ptx_len=12928)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'nf4_gemm_forward_8960_1536'
+[FWD-CACHE] Compiling 'fused_nf4_gate_up_1536_8960' (ptx_len=24430)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'fused_nf4_gate_up_1536_8960'
+[FWD-CACHE] Compiling 'fused_nf4_gate_up_1536_256' (ptx_len=24430)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'fused_nf4_gate_up_1536_256'
+[FWD-CACHE] Compiling 'nf4_gemm_transpose_1536_1536' (ptx_len=6004)
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'nf4_gemm_transpose_1536_1536'
+[FWD-CACHE] Compiling 'nf4_gemm_transpose_256_1536' (ptx_len=6004)
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'nf4_gemm_transpose_256_1536'
+[FWD-CACHE] Compiling 'nf4_gemm_transpose_8960_1536' (ptx_len=6004)
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'nf4_gemm_transpose_8960_1536'
+[FWD-CACHE] Compiling 'nf4_gemm_transpose_1536_8960' (ptx_len=6004)
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'nf4_gemm_transpose_1536_8960'
+[CUDA] Pre-warmed 25 forward kernels (JIT compiled before block upload)
+[BWD-PREWARM] Called with lora_rank=0, hidden=1536, inter=8960
+[BWD-CACHE] Compiling 'gemm_backward_a_2048_1536_1536' (ptx_len=3989)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[BWD-CACHE] OK 'gemm_backward_a_2048_1536_1536'
+[BWD-CACHE] Compiling 'gemm_backward_b_2048_1536_1536' (ptx_len=3990)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[BWD-CACHE] OK 'gemm_backward_b_2048_1536_1536'
+[BWD-CACHE] Compiling 'gemm_backward_a_2048_256_1536' (ptx_len=3989)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[BWD-CACHE] OK 'gemm_backward_a_2048_256_1536'
+[BWD-CACHE] Compiling 'gemm_backward_b_2048_256_1536' (ptx_len=3990)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[BWD-CACHE] OK 'gemm_backward_b_2048_256_1536'
+[BWD-CACHE] Compiling 'gemm_backward_a_2048_1536_8960' (ptx_len=3990)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[BWD-CACHE] OK 'gemm_backward_a_2048_1536_8960'
+[BWD-CACHE] Compiling 'gemm_backward_b_2048_1536_8960' (ptx_len=3991)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[BWD-CACHE] OK 'gemm_backward_b_2048_1536_8960'
+[BWD-CACHE] Compiling 'gemm_backward_a_2048_8960_1536' (ptx_len=3992)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[BWD-CACHE] OK 'gemm_backward_a_2048_8960_1536'
+[BWD-CACHE] Compiling 'gemm_backward_b_2048_8960_1536' (ptx_len=3992)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[BWD-CACHE] OK 'gemm_backward_b_2048_8960_1536'
+[BWD-CACHE] Compiling 'silu_backward' (ptx_len=1302)
+[BWD-CACHE] OK 'silu_backward'
+[BWD-CACHE] Compiling 'batched_softmax_backward' (ptx_len=2139)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[BWD-CACHE] OK 'batched_softmax_backward'
+[BWD-CACHE] Compiling 'batched_rms_norm_backward' (ptx_len=3562)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[BWD-CACHE] OK 'batched_rms_norm_backward'
+[BWD-CACHE] Compiling 'rms_norm_gamma_reduce' (ptx_len=1221)
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[BWD-CACHE] OK 'rms_norm_gamma_reduce'
+  ✓ Backward kernels pre-warmed (silu_backward, rms_norm_backward, etc.)
+  ✓ 28 transformer blocks uploaded to GPU
+  ✓ GPU training state allocated (LM head: 933.5 MB)
+  ✓ Fused gradient clipping: 1796 partials (7.0 KB)
+  Found 291 weight tensors (APR)
+[PMAT-329] lm_head.weight: shape mismatch — got 0 elements, expected 136134656 (896x151936)
+  Detected architecture: Qwen2
+  Loaded 290 weight tensors
+  GPU: NVIDIA GB10 (128.5 GB)
+[FWD-CACHE] Compiling 'batched_rope_bwd_14_64_2048_th49742400' (ptx_len=1979)
+[FWD-CACHE] OK 'batched_rope_bwd_14_64_2048_th49742400'
+[FWD-CACHE] Compiling 'batched_rope_bwd_2_64_2048_th49742400' (ptx_len=1978)
+[FWD-CACHE] OK 'batched_rope_bwd_2_64_2048_th49742400'
+  ✓ Backward rope kernel pre-warmed in forward cache
+[FWD-CACHE] Compiling 'batched_rmsnorm_fwd_896_eps3727c5ac' (ptx_len=3142)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'batched_rmsnorm_fwd_896_eps3727c5ac'
+[CUDA] Skipping PTX pre-warm for 4 GEMM kernels (cuBLAS active — PMAT-700)
+[FWD-CACHE] Compiling 'batched_rope_fwd_14_64_1_th49742400' (ptx_len=1970)
+[FWD-CACHE] OK 'batched_rope_fwd_14_64_1_th49742400'
+[FWD-CACHE] Compiling 'batched_rope_fwd_2_64_1_th49742400' (ptx_len=1969)
+[FWD-CACHE] OK 'batched_rope_fwd_2_64_1_th49742400'
+[FWD-CACHE] Compiling 'batched_4d_gemm_1_14_2048_2048_64' (ptx_len=3469)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'batched_4d_gemm_1_14_2048_2048_64'
+[FWD-CACHE] Compiling 'batched_4d_gemm_1_14_2048_64_2048' (ptx_len=3470)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'batched_4d_gemm_1_14_2048_64_2048'
+[FWD-CACHE] Compiling 'batched_4d_gemm_1_14_64_2048_2048' (ptx_len=3472)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'batched_4d_gemm_1_14_64_2048_2048'
+[FWD-CACHE] Compiling 'nf4_gemm_forward_896_896' (ptx_len=12928)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'nf4_gemm_forward_896_896'
+[FWD-CACHE] Compiling 'nf4_gemm_forward_896_128' (ptx_len=12928)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'nf4_gemm_forward_896_128'
+[FWD-CACHE] Compiling 'nf4_gemm_forward_896_4864' (ptx_len=12928)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'nf4_gemm_forward_896_4864'
+[FWD-CACHE] Compiling 'nf4_gemm_forward_4864_896' (ptx_len=12928)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'nf4_gemm_forward_4864_896'
+[FWD-CACHE] Compiling 'fused_nf4_gate_up_896_4864' (ptx_len=24430)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'fused_nf4_gate_up_896_4864'
+[FWD-CACHE] Compiling 'fused_nf4_gate_up_896_128' (ptx_len=24430)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'fused_nf4_gate_up_896_128'
+[FWD-CACHE] Compiling 'nf4_gemm_transpose_896_896' (ptx_len=6004)
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'nf4_gemm_transpose_896_896'
+[FWD-CACHE] Compiling 'nf4_gemm_transpose_128_896' (ptx_len=6004)
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'nf4_gemm_transpose_128_896'
+[FWD-CACHE] Compiling 'nf4_gemm_transpose_4864_896' (ptx_len=6004)
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'nf4_gemm_transpose_4864_896'
+[FWD-CACHE] Compiling 'nf4_gemm_transpose_896_4864' (ptx_len=6004)
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'nf4_gemm_transpose_896_4864'
+[CUDA] Pre-warmed 25 forward kernels (JIT compiled before block upload)
+[BWD-PREWARM] Called with lora_rank=0, hidden=896, inter=4864
+[BWD-CACHE] Compiling 'gemm_backward_a_2048_896_896' (ptx_len=3989)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[BWD-CACHE] OK 'gemm_backward_a_2048_896_896'
+[BWD-CACHE] Compiling 'gemm_backward_b_2048_896_896' (ptx_len=3990)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[BWD-CACHE] OK 'gemm_backward_b_2048_896_896'
+[BWD-CACHE] Compiling 'gemm_backward_a_2048_128_896' (ptx_len=3986)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[BWD-CACHE] OK 'gemm_backward_a_2048_128_896'
+[BWD-CACHE] Compiling 'gemm_backward_b_2048_128_896' (ptx_len=3988)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[BWD-CACHE] OK 'gemm_backward_b_2048_128_896'
+[BWD-CACHE] Compiling 'gemm_backward_a_2048_896_4864' (ptx_len=3990)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[BWD-CACHE] OK 'gemm_backward_a_2048_896_4864'
+[BWD-CACHE] Compiling 'gemm_backward_b_2048_896_4864' (ptx_len=3991)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[BWD-CACHE] OK 'gemm_backward_b_2048_896_4864'
+[BWD-CACHE] Compiling 'gemm_backward_a_2048_4864_896' (ptx_len=3992)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[BWD-CACHE] OK 'gemm_backward_a_2048_4864_896'
+[BWD-CACHE] Compiling 'gemm_backward_b_2048_4864_896' (ptx_len=3992)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[BWD-CACHE] OK 'gemm_backward_b_2048_4864_896'
+  ✓ Backward kernels pre-warmed (silu_backward, rms_norm_backward, etc.)
+  ✓ 24 transformer blocks uploaded to GPU
+  ✓ GPU training state allocated (LM head: 544.5 MB)
+  ✓ Fused gradient clipping: 1506 partials (5.9 KB)
+[FWD-CACHE] Compiling 'batched_rmsnorm_fwd_1536_eps358637bd' (ptx_len=3143)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'batched_rmsnorm_fwd_1536_eps358637bd'
+[FWD-CACHE] Compiling 'batched_rmsnorm_fwd_896_eps358637bd' (ptx_len=3142)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] OK 'batched_rmsnorm_fwd_896_eps358637bd'
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[FWD-CACHE] Compiling 'batched_rope_bwd_14_64_1_th49742400' (ptx_len=1979)
+[FWD-CACHE] OK 'batched_rope_bwd_14_64_1_th49742400'
+[FWD-CACHE] Compiling 'batched_rope_bwd_2_64_1_th49742400' (ptx_len=1978)
+[FWD-CACHE] OK 'batched_rope_bwd_2_64_1_th49742400'
+✓ Distillation complete: initial_loss=7.6746 → final_loss=7.2036 (62 steps, 122.7s)
+  Output: /home/noah/runs/distill-smoke-20260520-070404/student-trained.apr/model.safetensors
