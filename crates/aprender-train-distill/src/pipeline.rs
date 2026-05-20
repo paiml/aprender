@@ -233,8 +233,28 @@ impl<'a> Pipeline<'a> {
         // For real distillation with a real dataset, the caller would
         // override the pipeline's batch construction entirely; this default
         // exists for the smoke + fixture-path tests.
+        //
+        // PMAT-698o: scale the synthetic batch from seq_len=1 (Phase 3
+        // smoke) to seq_len=APR_DISTILL_SMOKE_SEQ_LEN (default 256) so the
+        // smoke exercises the same memory/kernel paths that Phase 4 real
+        // training will use. The student observes a row of `seq_len` copies
+        // of the same token and is asked to predict that token — still
+        // trivially learnable (identity from a constant signal), but now
+        // touches the attention scores tensor, batched 4D GEMMs, and rope
+        // forward at non-singleton sequence dimensions. Catches latent
+        // bugs that only surface at seq > 1 before we commit Phase 4
+        // compute.
+        //
+        // Override via env: APR_DISTILL_SMOKE_SEQ_LEN=N.
+        // Fixture tests are unaffected by the longer sequence — the
+        // FixtureStudent ignores input shape and emits argmax-on-label
+        // logits regardless of seq_len.
+        let smoke_seq_len: usize = std::env::var("APR_DISTILL_SMOKE_SEQ_LEN")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(256);
         let dummy_batch: Vec<Vec<u32>> = (0..batch_size)
-            .map(|i| vec![(i % num_classes) as u32])
+            .map(|i| vec![(i % num_classes) as u32; smoke_seq_len])
             .collect();
         let labels: Vec<usize> = (0..batch_size).map(|i| i % num_classes).collect();
 
