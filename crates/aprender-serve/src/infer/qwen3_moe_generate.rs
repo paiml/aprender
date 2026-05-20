@@ -36,6 +36,87 @@ use crate::gguf::qwen3_moe_load::load_qwen3_moe_layer;
 use crate::gguf::{
     MappedGGUFModel, OwnedQuantizedKVCache, OwnedQuantizedModel, QuantizedGenerateConfig,
 };
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+
+/// Sample the next token from logits per `QuantizedGenerateConfig`.
+///
+/// Discharges `qwen3-moe-sampling-v1.yaml`:
+/// - greedy fallback when `temperature == 0` OR `top_k == 1` (V1_001 + V1_004)
+/// - seeded RNG → deterministic across runs with same seed (V1_002)
+/// - seed differences produce different outputs (V1_003)
+///
+/// Mirrors the dense path's `Self::sample_advanced` (in
+/// `gguf/inference/fails.rs:100`) but uses a seeded `StdRng`
+/// instead of `rand::thread_rng()` for reproducibility.
+fn sample_from_logits(
+    logits: &[f32],
+    config: &QuantizedGenerateConfig,
+    rng: &mut StdRng,
+) -> Result<u32> {
+    if logits.is_empty() {
+        return Err(RealizarError::InvalidShape {
+            reason: "sample_from_logits: empty logits vector".to_string(),
+        });
+    }
+
+    // Greedy fallback: temperature == 0 OR top_k == 1
+    if config.temperature == 0.0 || config.top_k == 1 {
+        return Ok(logits
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(i, _)| i as u32)
+            .expect("non-empty logits guaranteed above"));
+    }
+
+    // Temperature scaling
+    let scaled: Vec<f32> = logits.iter().map(|&x| x / config.temperature).collect();
+
+    // Top-k filter (sort + truncate)
+    let mut indexed: Vec<(usize, f32)> = scaled.iter().copied().enumerate().collect();
+    indexed.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+    if config.top_k > 0 && config.top_k < indexed.len() {
+        indexed.truncate(config.top_k);
+    }
+
+    // Top-p (nucleus): keep smallest set with cumulative softmax >= top_p
+    if config.top_p > 0.0 && config.top_p < 1.0 {
+        let max_val = indexed.first().map_or(0.0, |(_, v)| *v);
+        let exp_vals: Vec<f32> = indexed.iter().map(|(_, v)| (v - max_val).exp()).collect();
+        let total: f32 = exp_vals.iter().sum();
+        if total > 0.0 {
+            let mut cumulative = 0.0;
+            let mut cutoff = indexed.len();
+            for (i, &ev) in exp_vals.iter().enumerate() {
+                cumulative += ev / total;
+                if cumulative >= config.top_p {
+                    cutoff = i + 1;
+                    break;
+                }
+            }
+            indexed.truncate(cutoff);
+        }
+    }
+
+    // Softmax over filtered set + multinomial draw
+    let max_val = indexed.first().map_or(0.0, |(_, v)| *v);
+    let exp_sum: f32 = indexed.iter().map(|(_, v)| (v - max_val).exp()).sum();
+    if exp_sum <= 0.0 {
+        // Degenerate softmax: fall back to argmax of filtered set
+        return Ok(indexed.first().map_or(0, |(i, _)| *i as u32));
+    }
+
+    let r: f32 = rng.gen();
+    let mut cumulative = 0.0;
+    for (idx, v) in &indexed {
+        cumulative += (v - max_val).exp() / exp_sum;
+        if cumulative >= r {
+            return Ok(*idx as u32);
+        }
+    }
+    Ok(indexed.last().map_or(0, |(i, _)| *i as u32))
+}
 
 /// Run autoregressive token generation for a Qwen3-MoE GGUF model.
 ///
@@ -132,17 +213,10 @@ pub fn run_qwen3_moe_generate(
     let max_seq_len = env_ctx.max(needed);
     let mut cache = OwnedQuantizedKVCache::from_config(model.config(), max_seq_len);
 
-    // Greedy-argmax helper (closure to keep the loop tight).
-    let argmax = |logits: &[f32]| -> Result<u32> {
-        logits
-            .iter()
-            .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(i, _)| i as u32)
-            .ok_or_else(|| RealizarError::InvalidShape {
-                reason: "run_qwen3_moe_generate: empty logits vector".to_string(),
-            })
-    };
+    // Seeded RNG for reproducible sampling (qwen3-moe-sampling-v1).
+    // Greedy fallback (temperature == 0 OR top_k == 1) doesn't touch
+    // the RNG; non-greedy paths consume from it deterministically.
+    let mut rng = StdRng::seed_from_u64(gen_config.seed);
 
     // Prefill: per prompt token, run cache-aware forward. Cache fills
     // incrementally; the LAST iteration's logits seed the decode loop.
@@ -170,7 +244,7 @@ pub fn run_qwen3_moe_generate(
     // Decode loop: greedy-sample from `last_logits`, append, then run
     // one more cache-aware forward to seed the next iteration.
     for _step in 0..gen_config.max_tokens {
-        let next_token = argmax(&last_logits)?;
+        let next_token = sample_from_logits(&last_logits, gen_config, &mut rng)?;
         tokens.push(next_token);
 
         // GH-373-style stop check (matches dense path semantics)
