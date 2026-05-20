@@ -719,7 +719,17 @@ fn try_qwen3_moe_backend(
     // thread top_k/top_p/repeat_penalty/repeat_last_n/seed from the HTTP
     // request through to QuantizedGenerateConfig. Defaults match the dense
     // path's chat-completion behavior (greedy when unspecified).
+    //
+    // EOS stop-token: mirror the dense path (cuda_chat_backend.rs:113) which
+    // populates stop_tokens with the model's EOS so generation halts on
+    // natural turn-end. Without this, qwen3_moe burns the full max_tokens
+    // budget per turn, allowing self-prompted "Human:" runaway text — the
+    // root cause of paiml/claude-code-parity-apr M287's verbosity pattern.
     let defaults = QuantizedGenerateConfig::default();
+    let stop_tokens: Vec<u32> = state
+        .model_eos_token_id()
+        .into_iter()
+        .collect();
     let gen_config = QuantizedGenerateConfig {
         max_tokens,
         temperature: request.temperature.unwrap_or(defaults.temperature),
@@ -728,6 +738,7 @@ fn try_qwen3_moe_backend(
         repeat_penalty: request.repeat_penalty.unwrap_or(defaults.repeat_penalty),
         repeat_last_n: request.repeat_last_n.unwrap_or(defaults.repeat_last_n),
         seed: request.seed.unwrap_or(defaults.seed),
+        stop_tokens,
         ..defaults
     };
 

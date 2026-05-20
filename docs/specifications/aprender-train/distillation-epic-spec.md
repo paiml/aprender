@@ -16,6 +16,22 @@ The distillation epic ships **MODEL-2 v2** — `paiml/albor-370m-v2` (or v1.1.0)
 
 The epic's strategic value: it converts the stack from "runs end-to-end" → "produces models worth using". That's the difference between an existence proof and a product.
 
+## Status (2026-05-20) — Phases 1-3 CLOSED, Phase 4 RUNNING
+
+| Phase | Status | Evidence |
+|-------|--------|----------|
+| 1 — Teacher provider | ✅ MERGED | PMAT-691/693 (#1786, #1787) |
+| 2 — Student fwd/bwd + KD | ✅ MERGED | PMAT-692/695/696/697 (#1788–#1797) |
+| 3 — E2E smoke on Blackwell GB10 | ✅ DISCHARGED | #1828 (F-DISTILL-SMOKE-001: 7.67 → 7.20) |
+| 3b — seq_len=256 scale verify | ✅ DISCHARGED | #1833 PMAT-698o |
+| **4 — 50K training (Stage D)** | 🟡 **RUNNING** | PID 196378 on gx10, ETA ~22h from 2026-05-20 13:43 UTC |
+| 5 — HumanEval pass@1 | ⏳ ready | #1847 `dispatch-phase5-humaneval-gx10.sh` |
+| 6 — Publish v2 | ⏳ ready | #1848 `dispatch-phase6-publish.sh` |
+
+**Blackwell cascade** (closed 2026-05-19, 11 PRs for first-ever aprender training on sm_121): see `blackwell-cascade-postmortem.md` for the full timeline + lessons. Root cause was a 1-char macro bug; 7 distinct defects had to be unwound to surface it.
+
+**Stage C real-corpus dispatch** (2026-05-20): first end-to-end Phase 4 trial — `initial_loss=15.61 → final_loss=6.01` (Δ=-9.60 over 124 steps, 232.4s) with codeparrot Python corpus via `ShardBatchSource` on GB10. Evidence: `evidence/distill-stage-c-trial/`.
+
 ## Current state (2026-05-18)
 
 The distillation infrastructure is **scaffolded but stubbed**:
