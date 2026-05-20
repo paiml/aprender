@@ -268,26 +268,33 @@ impl ForwardKernelCache {
             eprintln!("[CUDA] Skipping PTX pre-warm for 4 GEMM kernels (cuBLAS active — PMAT-700)");
         }
 
-        // PMAT-698k: pre-warm batched_rope_fwd for Q and KV head counts.
-        // Runtime keys (normalization.rs:339):
+        // PMAT-698k + PMAT-698p: pre-warm batched_rope_fwd at BOTH seq_len=1
+        // (Phase 3 single-token smoke) AND APR_DISTILL_SMOKE_SEQ_LEN
+        // (default 256 — Phase 4 real-corpus seq). Runtime keys
+        // (normalization.rs:339):
         //   batched_rope_fwd_{num_heads}_{head_dim}_{seq_len}_th{theta_bits:08x}
-        // Qwen2 default theta = 1_000_000.0; runtime smoke runs at seq_len=1
-        // (single-token forward in distillation step). Pre-warm both the
-        // q-head count and kv-head count variants (GQA).
+        // Stage C/D dispatch on gx10 confirmed runtime emits 2 [FWD-CACHE]
+        // Compiling events post-pre-warm for rope_fwd at seq=256 — avoidable
+        // JIT-cache pressure that PMAT-700-B closed for GEMMs.
         use trueno_gpu::kernels::BatchedRopeKernel;
         let qwen_theta = 1_000_000.0_f32;
         let qwen_theta_bits = qwen_theta.to_bits();
-        let rope_seq = 1_u32; // smoke uses seq_len=1; max_seq_len would JIT a different kernel
-        warm!(
-            format!("batched_rope_fwd_{nh}_{hd}_{rope_seq}_th{qwen_theta_bits:08x}"),
-            BatchedRopeKernel::new(nh, hd, rope_seq, qwen_theta)
-        );
+        let phase4_rope_seq: u32 = std::env::var("APR_DISTILL_SMOKE_SEQ_LEN")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(256);
         let nkv = _nkv;
-        if nkv != nh {
+        for rope_seq in [1_u32, phase4_rope_seq] {
             warm!(
-                format!("batched_rope_fwd_{nkv}_{hd}_{rope_seq}_th{qwen_theta_bits:08x}"),
-                BatchedRopeKernel::new(nkv, hd, rope_seq, qwen_theta)
+                format!("batched_rope_fwd_{nh}_{hd}_{rope_seq}_th{qwen_theta_bits:08x}"),
+                BatchedRopeKernel::new(nh, hd, rope_seq, qwen_theta)
             );
+            if nkv != nh {
+                warm!(
+                    format!("batched_rope_fwd_{nkv}_{hd}_{rope_seq}_th{qwen_theta_bits:08x}"),
+                    BatchedRopeKernel::new(nkv, hd, rope_seq, qwen_theta)
+                );
+            }
         }
 
         // 6. Fused SwiGLU
