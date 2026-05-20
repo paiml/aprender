@@ -176,5 +176,17 @@ pub enum ModelOpsCommands {
         /// real F-DISTILL-SMOKE-001 falsifier on GPU hardware.
         #[arg(long, value_name = "BACKEND", default_value = "fixture")]
         backend: String,
+        /// SPEC-DISTILL-001 Phase 4 Stage B-2: real-corpus training data.
+        /// Path to a directory containing `.bin` token shards (u32 LE,
+        /// matching the format `apr tokenize encode-corpus` produces).
+        /// When set, the distillation pipeline reads batches from this
+        /// directory via `ShardBatchSource`. When unset (the default),
+        /// the pipeline uses `SyntheticBatchSource` (identity-mapping
+        /// smoke; see PMAT-698m / PMAT-698o).
+        ///
+        /// Phase 4 50K-step dispatch sets this to a tokenized Python
+        /// corpus directory.
+        #[arg(long, value_name = "DIR")]
+        dataset: Option<PathBuf>,
     },
 }
