@@ -1,6 +1,6 @@
 # M32d — KV cache for the qwen3_moe inference path
 
-**Status (2026-05-19)**: SCOPE doc. Implementation deferred pending operator go/no-go.
+**Status (2026-05-20)**: ACTIVE — **Option (b) Engineer-driven follow-up** chosen by operator. Scheduled for 1-2 week calendar delivery. See [Engineer playbook](#engineer-playbook-option-b) below.
 
 **Cross-refs**:
 - Contract gate: [`contracts/qwen3-moe-serve-dispatch-v1.yaml`](../../contracts/qwen3-moe-serve-dispatch-v1.yaml) v1.1.1 — V1_004 (CCPA Phase 6 bench non-zero student pass rate) is BLOCKED on this work.
@@ -243,16 +243,213 @@ Expected: student_pass_rate > 0 on at least some fixtures. Total wall: ~10 hours
 - NOT a streaming SSE delivery (see Risk #6).
 - NOT a GPU acceleration (see `qwen3-moe-forward-gpu-v1` contract + M-GPU-MOE-2.x). CPU is the floor.
 
-## Operator decision required
+## Operator decision
 
-Choose ONE:
+**CHOSEN 2026-05-20: Option (b) — Engineer-driven follow-up.** Calendar target 1-2 weeks. See [Engineer playbook](#engineer-playbook-option-b) below for the day-by-day workplan, acceptance criteria, hand-off checklist, and risk gates.
 
-- **(a) Greenlight in-session implementation**: 8-hour focused work; Claude attempts steps 1-5a; ships as 1-2 PRs depending on size. Risk: numerical equivalence test may not pass cleanly on first try; iteration cycles add 2-4 hours.
-- **(b) Schedule for engineer-driven follow-up**: defer to a focused engineering session with full dense-path context. Likely 1-2 day deliverable. No risk to existing dense KV cache.
-- **(c) Skip M32d and accept V1_004 stays blocked**: rely on smaller MoE student models (7B-13B coder GGUFs, if available) or alternate measurement strategies. V1_004 contract row stays open indefinitely.
+Decision rationale (for the record):
 
-Reference numbers for decision:
+- **Option (a) Greenlight in-session** was passed over because the 8-hour focused work has numerical-equivalence risk that's hard to validate without a dedicated test fixture. Iteration cost on float-equivalence bugs (sums-of-products non-associative; subtle RoPE-position bugs) historically multiplies session time.
+- **Option (c) Skip M32d** was passed over because V1_004 is on the critical path for un-suspending the CCPA project (compliance_cost_ratio measurement). Skipping leaves the meter validated but the engine unable to drive it.
+- **Option (b) Engineer-driven** chosen: dedicated engineer with full dense-path context, multi-day calendar, in-repo CI/test cycles. Lower per-hour intensity but higher quality bar. Cleaner outcome.
+
+Historical reference numbers (kept for context):
 - Current state: 0% student pass on Phase 6 bench (no KV cache); meter validated but engine slow
-- (a) outcome if successful: V1_004 discharges with ~10 hour bench wall; companion-side suspension lifts
-- (b) outcome: same as (a) but cleaner timeline; ~1-2 weeks calendar
-- (c) outcome: V1_004 stays open; project-level milestone (compliance_cost_ratio measurement) waits for engine improvements outside this contract
+- Post-M32d expected: 5-15 tok/s on 30B-MoE; V1_004 discharges with ~10 hour bench wall; companion-side suspension lifts
+
+---
+
+## Engineer playbook (Option b)
+
+**Audience**: One engineer with familiarity with the aprender inference stack (or willing to ramp up via the dense-path reference). NOT a Claude in-session task.
+
+**Calendar target**: 1-2 weeks (5-10 working days, depending on whether numerical-equivalence iteration adds cycles).
+
+**Hand-off criteria**: M32d is "done" when ALL of the following are true:
+
+1. `forward_single_qwen3_moe_with_cache` ships in `crates/aprender-serve/src/gguf/inference/forward/forward_qwen3_moe.rs`.
+2. `run_qwen3_moe_generate` (in `crates/aprender-serve/src/infer/qwen3_moe_generate.rs`) uses the cache-aware path after initial prefill.
+3. New cargo test `moe_kv_cache_matches_full_prefill_on_first_8_tokens` passes against a real Qwen3-MoE GGUF (env-gated, `#[ignore]` by default — mirror of `qwen3_moe_serve_dispatch_v1` from #1819).
+4. Existing dense-path tests in `crates/aprender-serve/src/gguf/inference/forward/single_tests.rs` (16+ tests) still pass — no regression from Step 2's helper lift.
+5. Empirical throughput on Qwen3-Coder-30B-A3B-Instruct-Q4_K_M: ≥ 5 tok/s sustained (vs ~0.5 tok/s pre-M32d).
+6. Companion-side CCPA Phase 6 bench produces non-zero student pass rate when dispatched against post-M32d binary (V1_004 discharge — paiml/claude-code-parity-apr operator-coordinated).
+
+### Day-by-day plan
+
+**Day 1 — Ramp-up + ground truth (4-6 hours)**
+
+- Read `crates/aprender-serve/src/gguf/runtime.rs:123` (`OwnedQuantizedKVCache` struct + tests at lines 325-450).
+- Read `crates/aprender-serve/src/gguf/inference/forward/debug.rs:441-~600` (`forward_single_with_cache` — the dense reference).
+- Read `crates/aprender-serve/src/gguf/inference/forward/forward_qwen3_moe.rs:69-~280` (the existing full-prefill MoE forward).
+- Run the existing dense-path tests:
+  ```bash
+  cargo test -p aprender-serve --lib --features cuda gguf::inference::forward::single_tests
+  ```
+  Confirm 16+ tests pass. Baseline.
+- Build + run the V1_001 test (#1819) to confirm the current MoE path produces tokens:
+  ```bash
+  QWEN3_MOE_GGUF_PATH=/path/to/qwen3-moe.gguf \
+    cargo test --test qwen3_moe_serve_dispatch_v1 \
+    -p aprender-serve --features cuda --release -- --ignored --nocapture
+  ```
+  Should pass in ~10s wall.
+- Commit a `WIP: M32d ramp-up notes` private branch (not for review) with personal notes on the dense path's attention structure (RoPE handling, GQA expansion, fused norm+QKV).
+
+**Day 2 — Refactor: lift attention helper from dense path (6 hours)**
+
+- New private helper on `OwnedQuantizedModel`:
+  ```rust
+  fn attention_layer_with_cache(
+      &self,
+      hidden: &mut Vec<f32>,
+      layer: &OwnedQuantizedLayer,
+      layer_idx: usize,
+      cache: &mut OwnedQuantizedKVCache,
+      position: usize,
+      attn_out_buffer: &mut Vec<f32>,
+      use_rmsnorm: bool,
+  ) -> Result<()>
+  ```
+- Extract this from `forward_single_with_cache` (debug.rs:441). The body becomes the lifted helper; the original function reduces to: embed → loop layers calling `attention_layer_with_cache` + `ffn_block_dense` → final norm → LM head.
+- **Critical invariant**: this refactor must not change ANY output of dense `forward_single_with_cache`. Verify by running `single_tests.rs` before AND after — diff must be zero failures.
+- One PR for this refactor alone — keeps blast radius small.
+
+**Day 3 — Refactor: lift MoE FFN helper from full-prefill path (4 hours)**
+
+- New private helper on `OwnedQuantizedModel`:
+  ```rust
+  fn moe_ffn_layer(
+      &self,
+      hidden: &mut [f32],
+      moe_layer: &Qwen3MoeQuantizedLayer,
+      num_experts: usize,
+      num_experts_per_tok: usize,
+      moe_intermediate: usize,
+      data: &[u8],
+  ) -> Result<()>
+  ```
+- Extract from `forward_qwen3_moe.rs:~180-260` (the router + top-k + per-expert SwiGLU block). The body becomes the lifted helper; the original `forward_qwen3_moe` reduces to: embed → loop tokens × layers calling `attention_layer_full_prefill` (NOT cache; existing) + `moe_ffn_layer` → final norm → LM head.
+- Verify forward_qwen3_moe still returns identical logits — the V1_001 cargo test (#1819) is the regression check.
+- Second PR.
+
+**Day 4-5 — New function: `forward_single_qwen3_moe_with_cache` (8-10 hours)**
+
+- Skeleton (from scope above):
+  ```rust
+  pub fn forward_single_qwen3_moe_with_cache(
+      &self,
+      token_id: u32,
+      cache: &mut OwnedQuantizedKVCache,
+      position: usize,
+      moe_layers: &[Qwen3MoeQuantizedLayer],
+      num_experts: usize,
+      num_experts_per_tok: usize,
+      moe_intermediate: usize,
+      data: &[u8],
+  ) -> Result<Vec<f32>>
+  ```
+- Body:
+  1. Single-token embed
+  2. Optional absolute-position add
+  3. Pre-allocate `attn_out_buffer`
+  4. For each layer:
+     - `attention_layer_with_cache(...)` (Day 2 helper) — handles QKV proj, RoPE, cache append, attention with cached K/V, attn out proj, residual
+     - `moe_ffn_layer(...)` (Day 3 helper) — handles FFN norm, router, top-k expert routing, per-expert SwiGLU, residual
+  5. Final norm
+  6. LM head matmul → logits
+- The function should be ~80-120 LOC since both helpers do the heavy lifting.
+
+**Day 6 — Wire into `run_qwen3_moe_generate` (3-4 hours)**
+
+- In `crates/aprender-serve/src/infer/qwen3_moe_generate.rs`:
+  - Build cache: `let mut cache = OwnedQuantizedKVCache::from_config(model.config(), max_seq_len)`.
+  - Prefill path: call a new `forward_qwen3_moe_with_cache_prefill` adapter that runs the full prompt through `forward_qwen3_moe` AND populates the cache layer-by-layer.
+    - Simplest: have `forward_qwen3_moe` take an optional `&mut Option<&mut OwnedQuantizedKVCache>`; when Some, append K/V per layer per token during the forward pass.
+    - Alternative (heavier): N sequential calls to `forward_single_qwen3_moe_with_cache`. Slower but doesn't require touching `forward_qwen3_moe` signature.
+  - Decode loop: per token, call `forward_single_qwen3_moe_with_cache(token, &mut cache, position, ...)` + `cache.advance()`.
+- Third PR.
+
+**Day 7 — Tests (4-6 hours)**
+
+- New cargo test `crates/aprender-serve/tests/moe_kv_cache_equivalence.rs`:
+  ```rust
+  #[test]
+  #[ignore = "requires Qwen3-MoE GGUF via QWEN3_MOE_GGUF_PATH"]
+  fn moe_kv_cache_matches_full_prefill_on_first_8_tokens() {
+      let Some(path) = std::env::var("QWEN3_MOE_GGUF_PATH").ok() else {
+          eprintln!("SKIP: QWEN3_MOE_GGUF_PATH unset");
+          return;
+      };
+      // Mirror the V1_001 test's setup pattern.
+      // Generate 8 tokens twice:
+      //   (a) via run_qwen3_moe_generate (cache-on, post-M32d default)
+      //   (b) via legacy full-prefill loop (cache-off, pre-M32d behavior)
+      // Assert greedy outputs identical token-by-token.
+      // Tolerate ULP-level float drift on logits (atol=1e-3 on argmax-safe class).
+  }
+  ```
+- Sanity check: existing V1_001 test (#1819) still passes — confirms the chat-completions wire still produces tokens after KV cache wires in.
+- Perf measurement: tag a release build, dispatch a 256-token chat completion against Qwen3-Coder-30B-A3B-Instruct-Q4_K_M, log per-token wall time. Target ≥ 5 tok/s sustained.
+- Fourth PR (could combine with Day 6 if tests are tight).
+
+**Day 8-10 — V1_004 discharge dispatch (operator-coordinated; no engineer work after Day 7 PR merges)**
+
+- Operator updates `/home/noah/.local/bin/apr` to post-M32d binary.
+- Operator dispatches Phase 6 bench:
+  ```bash
+  APR_MODEL=/home/noah/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf \
+  PHASE6_COMPLIANCE_ENFORCED=1 \
+  PHASE6_MAX_TURNS=20 PHASE6_WALL_SECONDS=3600 \
+  APR_TIMEOUT_S=900 APR_AGENT_HTTP_TIMEOUT_S=1500 \
+  APR_AGENT_MAX_TOKENS_CAP=1024 \
+  bash scripts/phase-6-bench.sh 2>&1 | tee /tmp/phase-6-30b-post-m32d.log
+  ```
+- Expected wall: ~10 hours. Possibly overnight.
+- Acceptance: `evidence/under-contract/scores.json` shows `student_pass_rate > 0` on at least one fixture.
+- Repeat with `PHASE6_COMPLIANCE_ENFORCED=0` (control mode, ~10 hr) to get the ratio.
+- The pair of scores.json files lets the companion-side analyzer compute the meaningful `compliance_cost_ratio`.
+
+### PR layout (recommended)
+
+| PR | Title | Files touched | Lines |
+|----|-------|---------------|-------|
+| 1 | `refactor: lift attention helper out of forward_single_with_cache (M32d prep)` | `gguf/inference/forward/debug.rs` + new helper file | ~150 net |
+| 2 | `refactor: lift moe_ffn_layer helper out of forward_qwen3_moe (M32d prep)` | `gguf/inference/forward/forward_qwen3_moe.rs` + new helper file | ~120 net |
+| 3 | `feat(M32d): KV cache for qwen3_moe inference path` | new `forward_single_qwen3_moe_with_cache` + `run_qwen3_moe_generate` wire | ~200 net |
+| 4 | `test(M32d): numerical-equivalence + V1_001 regression + perf measurement` | `tests/moe_kv_cache_equivalence.rs` + perf-log helper | ~150 net |
+
+PRs 1-2 are pure refactors that should not change ANY observable behavior — they exist to keep PR 3's diff small and reviewable.
+
+### Risk gates
+
+Each PR must pass a gate before next PR starts:
+
+- **After PR 1**: `cargo test -p aprender-serve --lib gguf::inference::forward::single_tests --features cuda` shows zero new failures. Dense path is byte-identical.
+- **After PR 2**: V1_001 cargo test (`#1819`) passes against the real GGUF. MoE full-prefill path is byte-identical.
+- **After PR 3**: New `moe_kv_cache_equivalence` test passes greedy token-equivalence over first 8 tokens. If float drift causes a token mismatch, fix RoPE position handling first (most common cause).
+- **After PR 4**: Perf number ≥ 5 tok/s sustained on 30B-MoE. If lower, profile per-layer; expert routing should be <10% of per-token cost.
+
+### Open questions for the engineer
+
+These weren't resolved in the scope investigation; engineer should answer during Day 1 ramp-up:
+
+1. **Prefill efficiency**: option A (modify `forward_qwen3_moe` to populate cache during prefill) vs option B (N sequential `forward_single_qwen3_moe_with_cache` calls for prefill). A is faster but touches more code. B is cleaner but slower. Recommend A if the modification is small.
+2. **`forward_qwen3_moe_gpu` parity**: there's a GPU variant at `forward_qwen3_moe_gpu.rs:99`. Does it need a `_with_cache` variant too? Probably NO for this contract (V1_004 is CPU-only), but check if any caller flips to GPU after KV cache lands.
+3. **Cache rollback semantics**: `OwnedQuantizedKVCache::rollback_to` exists — relevant for resampling / beam search. Not needed for V1_004 discharge (greedy decoding only) but document if the engineer encounters it.
+4. **Multi-turn chat**: the chat handler treats each chat completion as a fresh session — cache is created per-request. Is there a place to reuse cache across turns? Not in V1_004 scope but useful for token cost reduction.
+
+### Cross-team coordination
+
+- **Reviewer for PR 1-2 (refactors)**: anyone with dense KV cache context.
+- **Reviewer for PR 3 (core M32d)**: ideally someone who's touched `OwnedQuantizedKVCache` before (commit blame `runtime.rs`).
+- **Reviewer for PR 4 (tests)**: low expertise needed; the equivalence test is self-checking.
+- **CCPA companion side**: paiml/claude-code-parity-apr operator dispatches V1_004 discharge bench. No engineer work after PR 4 merges.
+
+### Closing the loop
+
+After V1_004 discharge bench succeeds:
+
+1. Update `contracts/qwen3-moe-serve-dispatch-v1.yaml` v1.1.1 → v1.2.0 with V1_004 status: "DISCHARGED <date>".
+2. Update `docs/specifications/m32d-moe-kv-cache-scope.md` (this doc): Status → "SHIPPED + V1_004 DISCHARGED <date>".
+3. CCPA-side: ship a companion mechanical PR (M286 or similar) updating `evidence/phase-6/30b-moe-empirical-2026-05-19.md` with the post-M32d evidence + lifting the M280 suspension formally.
+4. Optional follow-up contract: `qwen3-moe-streaming-sse-v1` for the per-token SSE delivery (one-liner Risk #6 mentioned).
