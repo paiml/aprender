@@ -221,42 +221,28 @@ impl OwnedQuantizedModel {
                 hidden[i] += attn_output[i];
             }
 
-            // 2f. Pre-FFN norm
-            let ffn_input = if let Some(ref ffn_norm) = layer.ffn_norm_weight {
-                if use_rmsnorm {
-                    ops::rms_norm(&hidden, ffn_norm, self.config.eps)
-                } else {
-                    ops::layer_norm(
-                        &hidden,
-                        ffn_norm,
-                        layer.ffn_norm_bias.as_deref(),
-                        self.config.eps,
-                    )
-                }
-            } else {
-                hidden.clone()
-            };
-
-            // 2g. **MoE FFN** — the only piece that differs from the dense forward.
-            // Dispatch per-position through the M32c.2.2.2.0 single-layer kernel.
-            let mut ffn_output = vec![0.0f32; seq_len * hidden_dim];
+            // 2f+2g. Per-position MoE FFN block (norm + dispatch + residual).
+            // Lifted into `moe_ffn_layer` helper (M32d Day 1 prep refactor)
+            // so the upcoming `forward_single_qwen3_moe_with_cache` (M32d
+            // step 3) can call the SAME per-token MoE FFN implementation.
+            //
+            // Math is byte-identical to the previous batch-norm + per-position
+            // dispatch + outer residual version because rms_norm/layer_norm
+            // are per-vector ops (no cross-token interaction).
+            let mut tok_hidden = vec![0.0f32; hidden_dim];
             for s in 0..seq_len {
-                let pos_in = &ffn_input[s * hidden_dim..(s + 1) * hidden_dim];
-                let pos_out = moe_ffn_forward_layer(
-                    pos_in,
+                tok_hidden.copy_from_slice(&hidden[s * hidden_dim..(s + 1) * hidden_dim]);
+                self.moe_ffn_layer(
+                    &mut tok_hidden,
+                    layer,
                     &moe_layers[layer_idx],
                     num_experts,
                     num_experts_per_tok,
                     intermediate,
-                    hidden_dim,
                     data,
+                    use_rmsnorm,
                 )?;
-                ffn_output[s * hidden_dim..(s + 1) * hidden_dim].copy_from_slice(&pos_out);
-            }
-
-            // Residual
-            for i in 0..hidden.len() {
-                hidden[i] += ffn_output[i];
+                hidden[s * hidden_dim..(s + 1) * hidden_dim].copy_from_slice(&tok_hidden);
             }
         }
 
@@ -281,5 +267,87 @@ impl OwnedQuantizedModel {
             ops::add_bias(&mut logits, bias);
         }
         Ok(logits)
+    }
+
+    /// Per-token MoE FFN block — M32d Day 1 prep refactor.
+    ///
+    /// Mirrors the dense path's per-layer FFN block but routes the
+    /// computation through `moe_ffn_forward_layer` (per-expert dispatch)
+    /// instead of the dense gate × up × SwiGLU × down sequence.
+    ///
+    /// The body is lifted verbatim from `forward_qwen3_moe`'s per-position
+    /// FFN block (formerly at the bottom of the per-layer loop). The
+    /// outer `forward_qwen3_moe` calls this once per token in its
+    /// `for s in 0..seq_len` loop. The upcoming
+    /// `forward_single_qwen3_moe_with_cache` (M32d step 3) calls this
+    /// exactly once per layer per generated token.
+    ///
+    /// Mutates `hidden_token` via the post-MoE residual add.
+    ///
+    /// # Arguments
+    /// * `hidden_token` - Single-token hidden state, `[hidden_dim]`; mutated
+    /// * `layer` - Dense layer struct (read for `ffn_norm_weight` + bias)
+    /// * `moe_layer` - Per-layer MoE expert tensor descriptors
+    /// * `num_experts`, `num_experts_per_tok`, `moe_intermediate` - MoE config
+    /// * `data` - Mmapped GGUF byte slice (borrowed by `moe_ffn_forward_layer`
+    ///   for in-place fused dequant+matvec on each selected expert)
+    /// * `use_rmsnorm` - True for RMSNorm models; false for LayerNorm
+    ///
+    /// # Errors
+    /// Propagates errors from `moe_ffn_forward_layer` (mismatched dims,
+    /// out-of-range expert, etc.).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn moe_ffn_layer(
+        &self,
+        hidden_token: &mut [f32],
+        layer: &crate::gguf::OwnedQuantizedLayer,
+        moe_layer: &Qwen3MoeQuantizedLayer,
+        num_experts: usize,
+        num_experts_per_tok: usize,
+        moe_intermediate: usize,
+        data: &[u8],
+        use_rmsnorm: bool,
+    ) -> Result<()> {
+        let hidden_dim = self.config.hidden_dim;
+        debug_assert_eq!(
+            hidden_token.len(),
+            hidden_dim,
+            "moe_ffn_layer expects per-token hidden of length hidden_dim"
+        );
+
+        // 2f. Pre-FFN norm — per-vector, math is identical whether applied
+        // batched or per-token (rms_norm/layer_norm only mix elements
+        // within a single hidden_dim vector, never across tokens).
+        let ffn_input: Vec<f32> = if let Some(ref ffn_norm) = layer.ffn_norm_weight {
+            if use_rmsnorm {
+                ops::rms_norm(hidden_token, ffn_norm, self.config.eps)
+            } else {
+                ops::layer_norm(
+                    hidden_token,
+                    ffn_norm,
+                    layer.ffn_norm_bias.as_deref(),
+                    self.config.eps,
+                )
+            }
+        } else {
+            hidden_token.to_vec()
+        };
+
+        // 2g. MoE FFN — router + top-K experts + weighted sum.
+        let pos_out = moe_ffn_forward_layer(
+            &ffn_input,
+            moe_layer,
+            num_experts,
+            num_experts_per_tok,
+            moe_intermediate,
+            hidden_dim,
+            data,
+        )?;
+
+        // Residual add into the caller's hidden_token slice.
+        for i in 0..hidden_dim {
+            hidden_token[i] += pos_out[i];
+        }
+        Ok(())
     }
 }
