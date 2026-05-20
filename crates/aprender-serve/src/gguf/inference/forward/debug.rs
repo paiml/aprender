@@ -474,119 +474,19 @@ impl OwnedQuantizedModel {
 
         // 2. Process through transformer layers
         for (layer_idx, layer) in self.layers.iter().enumerate() {
-            // 2a+2b. Fused attention layer norm + QKV projection
-            // For RMSNorm models: fuse norm + matmul to eliminate intermediate allocation
-            // For LayerNorm models: use separate operations (has bias)
-            let mut qkv = if use_rmsnorm {
-                self.fused_rmsnorm_qkv_matmul(
-                    &hidden,
-                    &layer.attn_norm_weight,
-                    self.config.eps,
-                    &layer.qkv_weight,
-                )?
-            } else {
-                let normed = ops::layer_norm(
-                    &hidden,
-                    &layer.attn_norm_weight,
-                    layer.attn_norm_bias.as_deref(),
-                    self.config.eps,
-                );
-                self.qkv_matmul(&normed, &layer.qkv_weight)?
-            };
-
-            // PMAT-114: Trace QKV BEFORE bias (PMAT-260)
-            self.debug_trace_qkv(&qkv, layer_idx, hidden_dim);
-
-            if let Some(ref bias) = layer.qkv_bias {
-                ops::add_bias(&mut qkv, bias);
-            }
-
-            // 2c. Extract Q, K, V with GQA-aware sizes and apply RoPE
-            // Q: [hidden_dim] = [num_heads * head_dim]
-            // K: [kv_dim] = [num_kv_heads * head_dim]
-            // V: [kv_dim] = [num_kv_heads * head_dim]
-            // Optimization: apply RoPE in-place to avoid Q/K copies
-            let num_kv_heads = self.config.num_kv_heads;
-            // GH-479: Use config methods (Qwen3 head_dim != hidden/heads)
-            let head_dim = self.config.head_dim();
-            let q_dim = self.config.q_dim();
-            let kv_dim = self.config.kv_dim();
-
-            // PMAT-114: Trace QKV after bias for layer 0 (PMAT-260)
-            self.debug_trace_qkv_after_bias(&qkv, layer, layer_idx, hidden_dim);
-
-            // GH-479: Per-head QK RMSNorm (Qwen3) — after bias, before RoPE
-            if let Some(ref q_norm) = layer.attn_q_norm_weight {
-                ops::apply_per_head_rms_norm(
-                    &mut qkv[0..q_dim],
-                    q_norm,
-                    self.config.num_heads,
-                    self.config.eps,
-                );
-            }
-            if let Some(ref k_norm) = layer.attn_k_norm_weight {
-                ops::apply_per_head_rms_norm(
-                    &mut qkv[q_dim..q_dim + kv_dim],
-                    k_norm,
-                    num_kv_heads,
-                    self.config.eps,
-                );
-            }
-
-            // GH-278: Skip RoPE for models with learned position embeddings (GPT-2)
-            if self.config.constraints.uses_rope() {
-                self.apply_rope(&mut qkv[0..q_dim], position, self.config.num_heads);
-                self.apply_rope(
-                    &mut qkv[q_dim..q_dim + kv_dim],
-                    position,
-                    num_kv_heads,
-                );
-            }
-
-            // Use slices to avoid copies (only copy K for cache storage)
-            // GH-479: Use q_dim (may differ from hidden_dim for Qwen3)
-            let q = &qkv[0..q_dim];
-            let k = &qkv[q_dim..q_dim + kv_dim];
-            let v = &qkv[q_dim + kv_dim..q_dim + 2 * kv_dim];
-
-            // 2d. Get cached K/V and compute attention with GQA support
-            let k_cache = cache.get_k(layer_idx);
-            let v_cache = cache.get_v(layer_idx);
-
-            // Use pre-allocated attention output buffer (reused across layers)
-            if k_cache.is_empty() {
-                // First token - no cache yet, output is just weighted V
-                // With single query and single K/V, need to expand V for all Q heads
-                let q_per_kv = self.config.num_heads / num_kv_heads;
-                for q_head in 0..self.config.num_heads {
-                    let kv_head = q_head / q_per_kv;
-                    let v_start = kv_head * head_dim;
-                    let out_start = q_head * head_dim;
-                    attn_out_buffer[out_start..out_start + head_dim]
-                        .copy_from_slice(&v[v_start..v_start + head_dim]);
-                }
-            } else {
-                // Use cached K/V for attention with GQA
-                // Uses pre-allocated buffer to avoid 704 Vec allocations per token
-                self.attention_with_cache_gqa_into(q, k_cache, v_cache, k, v, &mut attn_out_buffer);
-
-                // CORRECTNESS-013: Debug CPU attention output (PMAT-260)
-                Self::debug_trace_attention_output(&attn_out_buffer, layer_idx, position, head_dim);
-            }
-
-            // 2e. Store K and V in cache for future tokens
-            cache.append(layer_idx, k, v);
-
-            // 2f. Attention output projection
-            let mut attn_output = self.fused_matmul(&attn_out_buffer, &layer.attn_output_weight)?;
-            if let Some(ref bias) = layer.attn_output_bias {
-                ops::add_bias(&mut attn_output, bias);
-            }
-
-            // 2g. Residual connection
-            for i in 0..hidden_dim {
-                hidden[i] += attn_output[i];
-            }
+            // 2a-2g. Attention sub-block (norm + QKV + RoPE + cache + attn + output proj + residual).
+            // Lifted into a helper (M32d Day 1 prep refactor) so the upcoming
+            // `forward_single_qwen3_moe_with_cache` can share the SAME attention
+            // implementation — only the FFN block differs between dense and MoE paths.
+            self.attention_layer_with_cache(
+                &mut hidden,
+                layer,
+                layer_idx,
+                cache,
+                position,
+                &mut attn_out_buffer,
+                use_rmsnorm,
+            )?;
 
             // 2h+2i. FFN with optional layer norm and SwiGLU/GELU activation
             let ffn_activated = self.single_cache_ffn_block(&hidden, layer_idx, use_rmsnorm)?;
@@ -611,5 +511,162 @@ impl OwnedQuantizedModel {
 
         // Final output: norm + LM head + debug verification + bias
         self.single_cache_final_output(&hidden, position, use_rmsnorm)
+    }
+
+    /// Per-layer attention sub-block with KV cache — M32d Day 1 prep refactor.
+    ///
+    /// Lifted verbatim from `forward_single_with_cache`'s inner loop body
+    /// (steps 2a–2g: fused RMSNorm+QKV → bias → per-head QK norm → RoPE →
+    /// cache.get_k/get_v → attention → cache.append → output proj +
+    /// residual). The behavior is bit-identical to the previous inline
+    /// version; this method exists so the upcoming
+    /// `forward_single_qwen3_moe_with_cache` (M32d step 1) can call the
+    /// SAME attention implementation — only the FFN block differs between
+    /// dense and MoE forward paths.
+    ///
+    /// Mutates `hidden` (residual add of the attention output) and
+    /// `attn_out_buffer` (reused across layers). Calls `cache.append`
+    /// to store this token's K/V for future calls. Caller is responsible
+    /// for `cache.advance()` after all layers are processed.
+    ///
+    /// # Arguments
+    /// * `hidden` - Per-layer hidden state; mutated by the post-attention residual add
+    /// * `layer` - Quantized layer weights (qkv, attn_norm, attn_output, optional QK norms)
+    /// * `layer_idx` - Index used for cache get/append and debug traces
+    /// * `cache` - KV cache; read for past K/V, appended with this token's K/V
+    /// * `position` - Token position used by RoPE (0-indexed from prompt start)
+    /// * `attn_out_buffer` - Pre-allocated scratch for `[q_dim]` attention output (reused)
+    /// * `use_rmsnorm` - True for RMSNorm models (Llama/Qwen family); false for LayerNorm (GPT-2)
+    ///
+    /// # Errors
+    /// Propagates errors from `fused_rmsnorm_qkv_matmul`, `qkv_matmul`,
+    /// `attention_with_cache_gqa_into`, and `fused_matmul`.
+    fn attention_layer_with_cache(
+        &self,
+        hidden: &mut Vec<f32>,
+        layer: &OwnedQuantizedLayer,
+        layer_idx: usize,
+        cache: &mut OwnedQuantizedKVCache,
+        position: usize,
+        attn_out_buffer: &mut [f32],
+        use_rmsnorm: bool,
+    ) -> Result<()> {
+        let hidden_dim = self.config.hidden_dim;
+
+        // 2a+2b. Fused attention layer norm + QKV projection
+        // For RMSNorm models: fuse norm + matmul to eliminate intermediate allocation
+        // For LayerNorm models: use separate operations (has bias)
+        let mut qkv = if use_rmsnorm {
+            self.fused_rmsnorm_qkv_matmul(
+                hidden,
+                &layer.attn_norm_weight,
+                self.config.eps,
+                &layer.qkv_weight,
+            )?
+        } else {
+            let normed = ops::layer_norm(
+                hidden,
+                &layer.attn_norm_weight,
+                layer.attn_norm_bias.as_deref(),
+                self.config.eps,
+            );
+            self.qkv_matmul(&normed, &layer.qkv_weight)?
+        };
+
+        // PMAT-114: Trace QKV BEFORE bias (PMAT-260)
+        self.debug_trace_qkv(&qkv, layer_idx, hidden_dim);
+
+        if let Some(ref bias) = layer.qkv_bias {
+            ops::add_bias(&mut qkv, bias);
+        }
+
+        // 2c. Extract Q, K, V with GQA-aware sizes and apply RoPE
+        // Q: [hidden_dim] = [num_heads * head_dim]
+        // K: [kv_dim] = [num_kv_heads * head_dim]
+        // V: [kv_dim] = [num_kv_heads * head_dim]
+        // Optimization: apply RoPE in-place to avoid Q/K copies
+        let num_kv_heads = self.config.num_kv_heads;
+        // GH-479: Use config methods (Qwen3 head_dim != hidden/heads)
+        let head_dim = self.config.head_dim();
+        let q_dim = self.config.q_dim();
+        let kv_dim = self.config.kv_dim();
+
+        // PMAT-114: Trace QKV after bias for layer 0 (PMAT-260)
+        self.debug_trace_qkv_after_bias(&qkv, layer, layer_idx, hidden_dim);
+
+        // GH-479: Per-head QK RMSNorm (Qwen3) — after bias, before RoPE
+        if let Some(ref q_norm) = layer.attn_q_norm_weight {
+            ops::apply_per_head_rms_norm(
+                &mut qkv[0..q_dim],
+                q_norm,
+                self.config.num_heads,
+                self.config.eps,
+            );
+        }
+        if let Some(ref k_norm) = layer.attn_k_norm_weight {
+            ops::apply_per_head_rms_norm(
+                &mut qkv[q_dim..q_dim + kv_dim],
+                k_norm,
+                num_kv_heads,
+                self.config.eps,
+            );
+        }
+
+        // GH-278: Skip RoPE for models with learned position embeddings (GPT-2)
+        if self.config.constraints.uses_rope() {
+            self.apply_rope(&mut qkv[0..q_dim], position, self.config.num_heads);
+            self.apply_rope(
+                &mut qkv[q_dim..q_dim + kv_dim],
+                position,
+                num_kv_heads,
+            );
+        }
+
+        // Use slices to avoid copies (only copy K for cache storage)
+        // GH-479: Use q_dim (may differ from hidden_dim for Qwen3)
+        let q = &qkv[0..q_dim];
+        let k = &qkv[q_dim..q_dim + kv_dim];
+        let v = &qkv[q_dim + kv_dim..q_dim + 2 * kv_dim];
+
+        // 2d. Get cached K/V and compute attention with GQA support
+        let k_cache = cache.get_k(layer_idx);
+        let v_cache = cache.get_v(layer_idx);
+
+        // Use pre-allocated attention output buffer (reused across layers)
+        if k_cache.is_empty() {
+            // First token - no cache yet, output is just weighted V
+            // With single query and single K/V, need to expand V for all Q heads
+            let q_per_kv = self.config.num_heads / num_kv_heads;
+            for q_head in 0..self.config.num_heads {
+                let kv_head = q_head / q_per_kv;
+                let v_start = kv_head * head_dim;
+                let out_start = q_head * head_dim;
+                attn_out_buffer[out_start..out_start + head_dim]
+                    .copy_from_slice(&v[v_start..v_start + head_dim]);
+            }
+        } else {
+            // Use cached K/V for attention with GQA
+            // Uses pre-allocated buffer to avoid 704 Vec allocations per token
+            self.attention_with_cache_gqa_into(q, k_cache, v_cache, k, v, attn_out_buffer);
+
+            // CORRECTNESS-013: Debug CPU attention output (PMAT-260)
+            Self::debug_trace_attention_output(attn_out_buffer, layer_idx, position, head_dim);
+        }
+
+        // 2e. Store K and V in cache for future tokens
+        cache.append(layer_idx, k, v);
+
+        // 2f. Attention output projection
+        let mut attn_output = self.fused_matmul(attn_out_buffer, &layer.attn_output_weight)?;
+        if let Some(ref bias) = layer.attn_output_bias {
+            ops::add_bias(&mut attn_output, bias);
+        }
+
+        // 2g. Residual connection
+        for i in 0..hidden_dim {
+            hidden[i] += attn_output[i];
+        }
+
+        Ok(())
     }
 }
