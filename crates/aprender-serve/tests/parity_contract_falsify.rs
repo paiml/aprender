@@ -12,7 +12,7 @@
 use proptest::prelude::*;
 
 /// The contract YAML — source of truth for GPU/CPU parity thresholds.
-const CONTRACT_YAML: &str = include_str!("../../aprender/contracts/layer-parity-v1.yaml");
+const CONTRACT_YAML: &str = include_str!("../../../contracts/layer-parity-v1.yaml");
 
 /// Mirror of the PARITY_GATE_COSINE_MIN constant from realizar/src/gguf/cuda/mod.rs.
 /// Test 8 verifies this matches the contract YAML.
