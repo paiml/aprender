@@ -1,0 +1,42 @@
+{
+  "contract": "qwen3-moe-streaming-sse-v1",
+  "contract_version": "1.0.0",
+  "discharge_pr": "https://github.com/paiml/aprender/pull/1854",
+  "verification": {
+    "host": "gx10 (Blackwell GB10, sm_121a)",
+    "binary_commit": "6bff4ce2c",
+    "model": "/home/noah/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
+    "model_arch": "qwen3moe",
+    "test_command": "QWEN3_MOE_GGUF_PATH=… cargo test --test qwen3_moe_streaming_sse_v1 -p aprender-serve --features cuda --release -- --ignored --nocapture",
+    "run_dir": "/home/noah/runs/sse-smoke-20260521-080640/",
+    "log": "gx10-sse-smoke.log"
+  },
+  "results": {
+    "tests_total": 3,
+    "tests_passed": 3,
+    "tests_failed": 0,
+    "wall_time_seconds": 58.65
+  },
+  "falsifiers": {
+    "FALSIFY-QWEN3_MOE_STREAMING_SSE_V1_001": {
+      "test": "v1_001_callback_fires_per_token",
+      "verdict": "PASS",
+      "evidence": "Streaming callback fired per-token; captured tokens matched non-streaming baseline (greedy, seed=42, max_tokens=8)"
+    },
+    "FALSIFY-QWEN3_MOE_STREAMING_SSE_V1_002": {
+      "test": "(covered by qwen3_moe_serve_dispatch_v1.rs)",
+      "verdict": "REGRESSION_GUARD",
+      "evidence": "Existing serve-dispatch contract pinned"
+    },
+    "FALSIFY-QWEN3_MOE_STREAMING_SSE_V1_003": {
+      "test": "v1_003_inter_token_latency_floor",
+      "verdict": "PASS",
+      "evidence": "Median inter-token gap = 338 ms over 32 callbacks (floor 500 ms; ≈3 tok/s achieved on 30B-A3B MoE). Gap distribution: min=250 ms, max=518 ms, p50=338 ms"
+    }
+  },
+  "ancillary": {
+    "callback_stop_short_circuits": "PASS — false return value short-circuited the decode loop after 3 tokens"
+  },
+  "discharged_at": "2026-05-21T08:09:04Z",
+  "discharged_by": "operator-dispatched gx10 SSE smoke (PID 256702)"
+}
