@@ -310,6 +310,17 @@ impl<'a> Pipeline<'a> {
         let mut last_batch = initial_batch;
         let mut last_labels = initial_labels;
 
+        // PMAT-699 P0 durability fix: periodic intermediate checkpointing.
+        // Stage D 2026-05-20 ran 25h with ZERO checkpoints — if it had
+        // crashed at step 49999, the full run would be lost. Default 5000
+        // steps; env-overridable via APR_DISTILL_CHECKPOINT_EVERY=N.
+        // Set N=0 to disable (smoke tests).
+        let checkpoint_every: u64 = std::env::var("APR_DISTILL_CHECKPOINT_EVERY")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(5000);
+        let checkpoint_dir = self.config.output.dir.clone();
+
         for _epoch in 0..self.config.training.epochs {
             let steps_this_epoch = (1000 / u64::from(self.config.training.batch_size)).max(1);
 
@@ -344,6 +355,26 @@ impl<'a> Pipeline<'a> {
                 step += 1;
                 last_batch = dummy_batch;
                 last_labels = labels;
+
+                // PMAT-699 P0 durability: periodic checkpoint save.
+                if checkpoint_every > 0 && step % checkpoint_every == 0 {
+                    let ckpt_path =
+                        checkpoint_dir.join(format!("ckpt-step-{step:06}.apr"));
+                    if let Err(e) = self.student.save_checkpoint(&ckpt_path) {
+                        // Don't fail training on checkpoint write error; just
+                        // log loudly. Loss progress is more valuable than
+                        // pristine intermediate snapshots.
+                        eprintln!(
+                            "[PMAT-699] checkpoint save at step {step} failed: \
+                             {e} (training continues)"
+                        );
+                    } else {
+                        eprintln!(
+                            "[PMAT-699] checkpoint saved at step {step}: {}",
+                            ckpt_path.display()
+                        );
+                    }
+                }
             }
         }
 
@@ -403,8 +434,19 @@ impl<'a> Pipeline<'a> {
     }
 
     /// Export trained student model using `save_student_checkpoint`.
+    ///
+    /// PMAT-699 P0: now ALSO calls `self.student.save_checkpoint(...)` after
+    /// the metadata-only safetensors write, so the CudaStudentProvider can
+    /// pull its trained GPU weights back to disk as an APR v2 file in the
+    /// same directory. Without this, the cuda path's 25h of training
+    /// silently produces a 200-byte empty model.safetensors (Stage D
+    /// 2026-05-20 incident).
+    ///
+    /// The fixture path's no-op default `save_checkpoint` preserves the
+    /// existing FixtureStudent behavior — only the safetensors metadata
+    /// sidecar is written, matching pre-PMAT-699 semantics.
     fn export(
-        &self,
+        &mut self,
         weights: &HashMap<String, Vec<f32>>,
         shapes: &HashMap<String, Vec<usize>>,
         metrics: &TrainingMetrics,
@@ -458,6 +500,22 @@ impl<'a> Pipeline<'a> {
                     message: format!("GGUF export failed: {e}"),
                 })?;
         }
+
+        // PMAT-699 P0: ask the student provider to persist its real
+        // weights. FixtureStudent: no-op (default trait impl). CudaStudent:
+        // delegates to trainer.save_apr() and writes an APR file alongside
+        // the metadata sidecar. Without this, the cuda path's trained GPU
+        // weights are never serialized — Stage D 2026-05-20 ran 25h and
+        // produced a 200-byte empty model.safetensors.
+        let apr_target = self.config.output.dir.join("model.apr");
+        self.student.save_checkpoint(&apr_target).map_err(|e| {
+            EntrenarError::Internal {
+                message: format!(
+                    "student.save_checkpoint({}) failed: {e}",
+                    apr_target.display()
+                ),
+            }
+        })?;
 
         Ok(output_path)
     }
