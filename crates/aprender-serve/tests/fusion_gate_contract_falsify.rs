@@ -17,7 +17,7 @@ use proptest::prelude::*;
 
 /// The kernel-fusion-v1.yaml contract, included at compile time.
 /// Path: from `realizar/tests/` up two levels to `aprender/contracts/`.
-const CONTRACT_YAML: &str = include_str!("../../aprender/contracts/kernel-fusion-v1.yaml");
+const CONTRACT_YAML: &str = include_str!("../../../contracts/kernel-fusion-v1.yaml");
 
 /// All known fused kernel names that MUST appear in the contract.
 /// Sourced from the `kernels.fused` fields in kernel-fusion-v1.yaml.
