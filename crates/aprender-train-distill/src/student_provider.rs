@@ -75,6 +75,24 @@ pub trait StudentLogitsProvider {
     /// Returns an error if the gradient shape doesn't match or the
     /// optimizer step fails.
     fn apply_kd_gradient(&mut self, gradient: &[Vec<f32>]) -> Result<()>;
+
+    /// PMAT-699 (Phase 4 P0): persist the student's current trained weights
+    /// to disk.
+    ///
+    /// Default implementation is a no-op — appropriate for FixtureStudent
+    /// where the pipeline's export step writes the placeholder
+    /// `student_weights` map directly. CudaStudentProvider MUST override
+    /// to delegate to its trainer's `save_apr` — otherwise 25h of GPU
+    /// training silently produces a 200-byte empty checkpoint
+    /// (Stage D 2026-05-20 incident).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the backend cannot serialize (e.g., GPU
+    /// download fails, disk write fails).
+    fn save_checkpoint(&mut self, _path: &std::path::Path) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// Fixture student for unit testing the orchestration layer.
@@ -289,6 +307,42 @@ mod cuda_backend {
                               returned None (CUDA stream poisoned or gradient \
                               shape mismatch)"
                         .to_string(),
+                })?;
+            Ok(())
+        }
+
+        /// PMAT-699 P0 fix: pull trained weights from GPU and write them
+        /// to the destination directory as an APR v2 checkpoint.
+        ///
+        /// Without this override, pipeline.export() serialized the empty
+        /// student_weights HashMap (PMAT-698f's APR short-circuit returns
+        /// empty), producing a 200-byte placeholder model.safetensors.
+        /// Stage D 2026-05-20 ran 25h of GB10 training and lost all
+        /// weights because of this gap.
+        ///
+        /// Delegates to the trainer's existing save_apr method.
+        fn save_checkpoint(&mut self, path: &std::path::Path) -> Result<()> {
+            // Ensure parent dir exists (trainer.save_apr writes into it).
+            if let Some(parent) = path.parent() {
+                if !parent.as_os_str().is_empty() {
+                    std::fs::create_dir_all(parent).map_err(|e| {
+                        entrenar_common::EntrenarError::Io {
+                            context: format!(
+                                "save_checkpoint mkdir parent {}",
+                                parent.display()
+                            ),
+                            source: e,
+                        }
+                    })?;
+                }
+            }
+            self.trainer
+                .save_apr(path, "albor-distilled-v2", "Qwen2ForCausalLM")
+                .map_err(|e| entrenar_common::EntrenarError::Internal {
+                    message: format!(
+                        "CudaStudentProvider.save_checkpoint: trainer.save_apr({}) failed: {e:?}",
+                        path.display()
+                    ),
                 })?;
             Ok(())
         }
