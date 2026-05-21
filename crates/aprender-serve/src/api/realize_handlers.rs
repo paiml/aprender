@@ -236,7 +236,20 @@ pub fn clean_chat_output(text: &str) -> String {
         "<|im_start|>",  // Start of new turn in ChatML
     ];
 
-    let mut result = text.to_string();
+    // V1_004 follow-up (paiml/claude-code-parity-apr M291): "\nHuman:" /
+    // "\n\nHuman:" require a preceding newline to match. When a response
+    // starts with "Human:" / "User:" / "Assistant:" with no newline before
+    // it, the truncate-at-earliest loop below misses the marker and the
+    // prefix bleeds into the captured chat reply. Strip leading turn-markers
+    // explicitly first.
+    let trimmed = text.trim_start();
+    const LEADING_PREFIXES: &[&str] = &["Human:", "User:", "Assistant:"];
+    let stripped: &str = LEADING_PREFIXES
+        .iter()
+        .find_map(|p| trimmed.strip_prefix(p))
+        .unwrap_or(trimmed);
+
+    let mut result = stripped.to_string();
 
     // Find the earliest stop sequence and truncate there
     let mut earliest_pos = result.len();

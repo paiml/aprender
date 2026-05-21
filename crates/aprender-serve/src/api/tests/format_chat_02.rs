@@ -88,6 +88,63 @@ fn test_clean_chat_output_partial_markers() {
     assert!(!result.contains("extra stuff"));
 }
 
+// V1_004 follow-up (paiml/claude-code-parity-apr M291): the start-of-string
+// "Human:" / "User:" / "Assistant:" prefix gap. Previously, the existing
+// "\nHuman:" stop-sequence required a preceding newline; a response that
+// literally began with "Human: ..." slipped through verbatim. These cases
+// pin the new explicit leading-prefix strip.
+
+#[test]
+fn test_clean_chat_output_leading_human_prefix() {
+    use crate::api::realize_handlers::clean_chat_output;
+    let result = clean_chat_output("Human: Here's what I have so far:\n\nhello");
+    assert!(!result.starts_with("Human:"), "result was: {result:?}");
+    assert!(result.contains("Here's what I have so far"));
+}
+
+#[test]
+fn test_clean_chat_output_leading_user_prefix() {
+    use crate::api::realize_handlers::clean_chat_output;
+    let result = clean_chat_output("User: please explain this code");
+    assert!(!result.starts_with("User:"), "result was: {result:?}");
+    assert!(result.contains("please explain this code"));
+}
+
+#[test]
+fn test_clean_chat_output_leading_assistant_prefix() {
+    use crate::api::realize_handlers::clean_chat_output;
+    let result = clean_chat_output("Assistant: here is my answer");
+    assert!(!result.starts_with("Assistant:"), "result was: {result:?}");
+    assert!(result.contains("here is my answer"));
+}
+
+#[test]
+fn test_clean_chat_output_leading_prefix_with_whitespace() {
+    use crate::api::realize_handlers::clean_chat_output;
+    // Whitespace before the leading prefix should not block the strip.
+    let result = clean_chat_output("  \n\tHuman: body");
+    assert!(!result.starts_with("Human:"), "result was: {result:?}");
+    assert!(result.contains("body"));
+}
+
+#[test]
+fn test_clean_chat_output_inline_human_after_leading_strip() {
+    use crate::api::realize_handlers::clean_chat_output;
+    // Leading "Human:" is stripped; later "\nHuman:" still truncates remainder.
+    let result = clean_chat_output("Human: turn body\nHuman: leak");
+    assert!(!result.contains("leak"), "result was: {result:?}");
+    assert!(result.contains("turn body"));
+}
+
+#[test]
+fn test_clean_chat_output_no_false_positive_on_human_in_middle() {
+    use crate::api::realize_handlers::clean_chat_output;
+    // "Human:" mid-sentence (no leading position, no preceding newline) must
+    // NOT be stripped — the strip is only at start-of-string.
+    let result = clean_chat_output("The word Human: is left alone.");
+    assert!(result.contains("Human:"), "result was: {result:?}");
+}
+
 // ============================================================================
 // B3: HTTP Handler Integration - Realize Endpoints
 // ============================================================================
