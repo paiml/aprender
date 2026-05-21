@@ -11,12 +11,13 @@ use super::*;
 use proptest::prelude::*;
 use std::path::Path;
 
-/// Path to the kernel-fusion-v1.yaml contract in the aprender crate.
-/// CARGO_MANIFEST_DIR for trueno-gpu is trueno/trueno-gpu, so ../../aprender/
-/// reaches the aprender crate root.
+/// Path to the kernel-fusion-v1.yaml contract at the workspace root.
+/// Post-monorepo-consolidation: CARGO_MANIFEST_DIR for aprender-gpu is
+/// `crates/aprender-gpu/`, so `/../../contracts/` reaches the workspace
+/// root `contracts/` directory.
 const CONTRACT_PATH: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../aprender/contracts/kernel-fusion-v1.yaml"
+    "/../../contracts/kernel-fusion-v1.yaml"
 );
 
 /// Helper: read the contract YAML as a string, panicking with a clear message if missing.
