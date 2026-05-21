@@ -1,0 +1,144 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-05-21"
+  updated: "2026-05-21"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "paiml/aprender#1852 — qwen3_moe EOS stop-tokens fix (M287 runaway root cause)"
+    - "paiml/aprender#1853 — clean_chat_output leading prefix strip (M291 follow-up)"
+    - "paiml/claude-code-parity-apr M287 — 'Human:' / 'User:' / 'Assistant:' verbosity pattern"
+    - "PMAT-088 — original clean_chat_output prompt-injection prevention contract"
+  description: "Chat-completion response post-processing: strip self-emitted turn markers and stop sequences"
+
+kind: KernelContract
+name: clean-chat-output
+version: "1.0.0"
+scope: "crates/aprender-serve/src/api/realize_handlers.rs::clean_chat_output"
+
+description: |
+  When a model generates a chat-completion response, the raw decoded
+  text can contain (a) self-emitted turn markers like "Human:" /
+  "User:" / "Assistant:" (especially after EOS-detection failures —
+  see M287), and (b) stop sequences like "<|im_end|>" / "</s>" that
+  should terminate the response. `clean_chat_output` is the single
+  post-decode sanitization step that:
+
+    1. Strips a leading "Human:" / "User:" / "Assistant:" prefix
+       (with any leading whitespace) — closes the M291 gap where a
+       response starting with such a marker but no preceding newline
+       slipped past the truncate-at-stop-sequence loop.
+
+    2. Truncates the output at the earliest match of any known stop
+       sequence (model-side EOS tokens, ChatML markers, conversation
+       turn boundaries).
+
+    3. Trims surrounding whitespace.
+
+  This is the last line of defense between raw model output and the
+  bytes returned to API clients. Combined with EOS stop-tokens
+  (#1852) it eliminates the "Human: I need to..." runaway class.
+
+equations:
+  strip_leading_turn_marker:
+    description: "Output never starts with a conversation turn marker"
+    formula: |
+      ∀ raw: ¬(clean_chat_output(raw).starts_with("Human:"))
+           ∧ ¬(clean_chat_output(raw).starts_with("User:"))
+           ∧ ¬(clean_chat_output(raw).starts_with("Assistant:"))
+
+  truncate_at_stop_sequence:
+    description: "Output never contains a stop sequence"
+    formula: |
+      let stops = ["<|im_end|>", "<|endoftext|>", "<|end|>", "</s>",
+                   "<|im_start|>", "\nHuman:", "\nUser:",
+                   "\n\nHuman:", "\n\nUser:"]
+      ∀ raw, ∀ s ∈ stops: ¬(clean_chat_output(raw).contains(s))
+
+  preserves_clean_input:
+    description: "Already-clean text passes through with only whitespace trim"
+    formula: |
+      ∀ raw with no marker prefix and no stop sequence:
+        clean_chat_output(raw) == raw.trim()
+
+  trim_surrounding_whitespace:
+    description: "Output has no leading or trailing whitespace"
+    formula: |
+      ∀ raw: clean_chat_output(raw).trim() == clean_chat_output(raw)
+
+falsification:
+  - id: FALSIFY-CLEAN-CHAT-OUTPUT-V1_001
+    description: "Leading 'Human:' / 'User:' / 'Assistant:' prefix is stripped"
+    test: |
+      For each marker M ∈ {"Human:", "User:", "Assistant:"}:
+        let raw = format!("{} actual content here", M)
+        assert_eq!(clean_chat_output(raw), "actual content here")
+    evidence: "Existing unit tests in crates/aprender-serve/src/api/tests/format_chat_02.rs (test_clean_chat_strips_leading_human_prefix etc.)"
+
+  - id: FALSIFY-CLEAN-CHAT-OUTPUT-V1_002
+    description: "Stop sequence inside body truncates at the first occurrence"
+    test: |
+      let raw = "Hello world<|im_end|>extra garbage"
+      assert_eq!(clean_chat_output(raw), "Hello world")
+      let raw2 = "Response\nHuman: new question"
+      assert_eq!(clean_chat_output(raw2), "Response")
+    evidence: "crates/aprender-serve/src/api/realize_handlers_clean_chat.rs unit tests"
+
+  - id: FALSIFY-CLEAN-CHAT-OUTPUT-V1_003
+    description: "Earliest stop sequence wins when multiple are present"
+    test: |
+      let raw = "Hello</s>mid<|im_end|>end"
+      assert_eq!(clean_chat_output(raw), "Hello")
+    evidence: "crates/aprender-serve/src/api/realize_handlers_clean_chat.rs::test_clean_chat_truncates_at_earliest_stop"
+
+  - id: FALSIFY-CLEAN-CHAT-OUTPUT-V1_004
+    description: "Already-clean text passes through (trim-only)"
+    test: |
+      let raw = "  A perfectly clean answer.  "
+      assert_eq!(clean_chat_output(raw), "A perfectly clean answer.")
+    evidence: "crates/aprender-serve/src/api/realize_handlers_clean_chat.rs::test_clean_chat_preserves_clean_input"
+
+  - id: FALSIFY-CLEAN-CHAT-OUTPUT-V1_005
+    description: "Empty / whitespace-only / stop-only inputs collapse to empty string"
+    test: |
+      assert_eq!(clean_chat_output(""), "")
+      assert_eq!(clean_chat_output("   "), "")
+      assert_eq!(clean_chat_output("<|im_end|>"), "")
+    evidence: "crates/aprender-serve/src/api/realize_handlers_clean_chat.rs::test_clean_chat_handles_empty"
+
+  - id: FALSIFY-CLEAN-CHAT-OUTPUT-V1_006
+    description: "Stop-sequence list is the source of truth — adding a new sequence requires both code + contract update"
+    test: |
+      Cross-reference: every literal in `clean_chat_output`'s
+      `STOP_SEQUENCES` constant must appear verbatim in this YAML's
+      `equations.truncate_at_stop_sequence.formula`. Vice-versa.
+      Asserted by a contract-coverage audit (manual review; not
+      currently automated).
+    evidence: "Manual audit; could be automated as a pv-lint check."
+
+scope_extension:
+  in_scope:
+    - "Post-decode response sanitization in `clean_chat_output`"
+    - "STOP_SEQUENCES constant maintenance"
+    - "Leading turn-marker prefix strip"
+  out_of_scope:
+    - "Stop-token *generation* control (covered by qwen3-moe-sampling-v1, eos detection in cuda_chat_backend.rs)"
+    - "ChatML template *application* (covered by chat-template handling in tokenize_chat_prompt)"
+    - "Streaming SSE chunk-level cleaning (callers can opt into `clean=true` flag on true_streaming_sse_response, but the contract here is on the batch-mode pure function)"
+
+implementation:
+  file: "crates/aprender-serve/src/api/realize_handlers.rs"
+  symbol: "pub fn clean_chat_output(text: &str) -> String"
+  status: "ACTIVE"
+  notes: |
+    Already shipped via PMAT-088 (initial impl) + #1853 (leading
+    prefix strip post-M291 surface). This contract retroactively
+    codifies the invariants those PRs established. Future changes
+    to STOP_SEQUENCES or LEADING_PREFIXES MUST update this contract
+    AND add a corresponding falsifier.
+
+status_history:
+  - version: "1.0.0"
+    date: "2026-05-21"
+    pr: "TBD"
+    summary: "Initial contract registering the M287→#1852→#1853 cascade invariants as falsifier-backed guarantees. Codifies the sanitization layer that prevents 'Human:'/'User:'/'Assistant:' / ChatML markers from leaking into chat-completion responses."
