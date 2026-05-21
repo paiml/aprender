@@ -297,6 +297,141 @@ pub fn run_qwen3_moe_generate(
     Ok(tokens)
 }
 
+/// Streaming variant of `run_qwen3_moe_generate` — discharges
+/// `qwen3-moe-streaming-sse-v1.yaml` per-token emit requirement.
+///
+/// Mirrors `run_qwen3_moe_generate` step-for-step, but invokes
+/// `on_token(next_token)` after each decode step. The callback returns
+/// `bool` — `false` short-circuits the loop (e.g. client disconnect).
+///
+/// Stop tokens and max-context guards are honored identically to the
+/// non-streaming variant. The callback fires for every appended token
+/// (including the one that triggered the stop, if any) before the loop
+/// exits — matching the dense path's streaming semantics.
+pub fn run_qwen3_moe_generate_streaming(
+    mapped: &MappedGGUFModel,
+    model: &OwnedQuantizedModel,
+    input_tokens: &[u32],
+    gen_config: &QuantizedGenerateConfig,
+    mut on_token: impl FnMut(u32) -> bool,
+) -> Result<()> {
+    if input_tokens.is_empty() {
+        return Err(RealizarError::InvalidShape {
+            reason: "run_qwen3_moe_generate_streaming: prompt cannot be empty".to_string(),
+        });
+    }
+
+    let canonical_arch = crate::tensor_names::normalize_architecture(&model.config().architecture);
+    if canonical_arch != "qwen3_moe" {
+        return Err(RealizarError::InvalidShape {
+            reason: format!(
+                "run_qwen3_moe_generate_streaming: arch '{}' (canonical '{}') is not qwen3_moe",
+                model.config().architecture,
+                canonical_arch
+            ),
+        });
+    }
+
+    let num_experts = mapped
+        .model
+        .expert_count()
+        .ok_or_else(|| RealizarError::InvalidShape {
+            reason: format!(
+                "run_qwen3_moe_generate_streaming: missing '{}.expert_count'",
+                model.config().architecture
+            ),
+        })?;
+    let num_experts_per_tok =
+        mapped
+            .model
+            .expert_used_count()
+            .ok_or_else(|| RealizarError::InvalidShape {
+                reason: format!(
+                    "run_qwen3_moe_generate_streaming: missing '{}.expert_used_count'",
+                    model.config().architecture
+                ),
+            })?;
+    let moe_intermediate =
+        mapped
+            .model
+            .expert_feed_forward_length()
+            .ok_or_else(|| RealizarError::InvalidShape {
+                reason: format!(
+                    "run_qwen3_moe_generate_streaming: missing '{}.expert_feed_forward_length'",
+                    model.config().architecture
+                ),
+            })?;
+
+    let data = mapped.data();
+    let num_layers = model.config().num_layers;
+    let mut moe_layers = Vec::with_capacity(num_layers);
+    for layer_idx in 0..num_layers {
+        moe_layers.push(load_qwen3_moe_layer(&mapped.model, data, layer_idx)?);
+    }
+
+    let env_ctx = std::env::var("REALIZR_CONTEXT_LENGTH")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(4096);
+    let needed = input_tokens.len() + gen_config.max_tokens + 8;
+    let max_seq_len = env_ctx.max(needed);
+    let mut cache = OwnedQuantizedKVCache::from_config(model.config(), max_seq_len);
+    let mut rng = StdRng::seed_from_u64(gen_config.seed);
+
+    let mut tokens = input_tokens.to_vec();
+    let mut last_logits = Vec::new();
+    for (pos, &tok) in input_tokens.iter().enumerate() {
+        last_logits = model.forward_single_qwen3_moe_with_cache(
+            tok,
+            &mut cache,
+            pos,
+            &moe_layers,
+            num_experts,
+            num_experts_per_tok,
+            moe_intermediate,
+            data,
+        )?;
+    }
+    if last_logits.is_empty() {
+        return Err(RealizarError::InvalidShape {
+            reason: "run_qwen3_moe_generate_streaming: prefill produced no logits".to_string(),
+        });
+    }
+
+    for _step in 0..gen_config.max_tokens {
+        let next_token = sample_from_logits(&last_logits, gen_config, &mut rng, &tokens)?;
+        tokens.push(next_token);
+
+        // Emit BEFORE checking stop conditions so the client sees every
+        // sampled token (matches dense path streaming semantics).
+        if !on_token(next_token) {
+            // Callback signaled stop (e.g. client disconnect).
+            return Ok(());
+        }
+
+        if gen_config.stop_tokens.contains(&next_token) {
+            break;
+        }
+        if tokens.len() >= max_seq_len {
+            break;
+        }
+
+        let pos = tokens.len() - 1;
+        last_logits = model.forward_single_qwen3_moe_with_cache(
+            next_token,
+            &mut cache,
+            pos,
+            &moe_layers,
+            num_experts,
+            num_experts_per_tok,
+            moe_intermediate,
+            data,
+        )?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod sample_from_logits_tests {
     //! Unit tests for the `qwen3-moe-sampling-v1.yaml` falsifiers
