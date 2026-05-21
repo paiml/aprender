@@ -208,7 +208,7 @@ fn pregenerated_sse_response(
 /// Build a true-streaming SSE response with keep-alive (tokens arrive via channel).
 // serde_json::json!() uses infallible unwrap
 #[allow(clippy::disallowed_methods)]
-fn true_streaming_sse_response(
+pub(crate) fn true_streaming_sse_response(
     rx: tokio::sync::mpsc::Receiver<Result<u32, String>>,
     tokenizer: Arc<BPETokenizer>,
     request_id: String,

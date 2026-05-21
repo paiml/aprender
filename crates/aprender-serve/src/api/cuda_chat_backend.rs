@@ -750,6 +750,40 @@ fn try_qwen3_moe_backend(
         ..defaults
     };
 
+    // qwen3-moe-streaming-sse-v1: per-token SSE when stream=true.
+    // Dispatches to the callback variant + builds an SSE response from
+    // a tokio mpsc channel. Non-streaming path falls through below.
+    if request.stream {
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(64);
+        let mapped_clone = mapped.clone();
+        let quantized_clone = quantized.clone();
+        let input_ids_clone = input_ids.clone();
+        let gen_config_clone = gen_config.clone();
+
+        tokio::task::spawn_blocking(move || {
+            let result = crate::infer::qwen3_moe_generate::run_qwen3_moe_generate_streaming(
+                &mapped_clone,
+                &quantized_clone,
+                &input_ids_clone,
+                &gen_config_clone,
+                |token_id| tx.blocking_send(Ok(token_id)).is_ok(),
+            );
+            if let Err(e) = result {
+                let _ = tx.blocking_send(Err(e.to_string()));
+            }
+        });
+
+        return Some(crate::api::openai_handlers::true_streaming_sse_response(
+            rx,
+            tokenizer,
+            request_id.to_string(),
+            request.model.clone(),
+            state.metrics.clone(),
+            start,
+            true,
+        ));
+    }
+
     let tokens = match crate::infer::qwen3_moe_generate::run_qwen3_moe_generate(
         &mapped,
         &quantized,
