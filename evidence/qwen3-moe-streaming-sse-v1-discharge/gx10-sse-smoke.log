@@ -1,0 +1,549 @@
+=== gx10 SSE smoke run ===
+Thu May 21 08:06:40 AM UTC 2026
+GGUF: /home/noah/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+
+--- cargo test build + run ---
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-core/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-train/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-profile/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-graph/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-orchestrate/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-compute/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-serve/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-train-wasm/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-verify/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-verify-ml/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-data/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-simulate/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-distribute/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-registry/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-db/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-rag/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-viz/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/noah/src/aprender/crates/aprender-zram/Cargo.toml
+workspace: /home/noah/src/aprender/Cargo.toml
+warning: /home/noah/src/aprender/crates/aprender-viz/Cargo.toml: `default-features` is ignored for trueno-graph, since `default-features` was not specified for `workspace.dependencies.trueno-graph`, this could become a hard error in the future
+warning: /home/noah/src/aprender/crates/aprender-serve/Cargo.toml: file `/home/noah/src/aprender/crates/aprender-serve/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `aprender-serve`
+  * `example` target `aprender-serve`
+warning: /home/noah/src/aprender/crates/aprender-train/Cargo.toml: file `/home/noah/src/aprender/crates/aprender-train/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `aprender-train`
+  * `example` target `aprender-train`
+warning: /home/noah/src/aprender/crates/apr-cli/Cargo.toml: `default-features` is ignored for batuta, since `default-features` was not specified for `workspace.dependencies.batuta`, this could become a hard error in the future
+   Compiling serde_core v1.0.228
+   Compiling hashbrown v0.16.1
+   Compiling stable_deref_trait v1.2.1
+   Compiling serde_json v1.0.149
+   Compiling arrayvec v0.7.6
+   Compiling either v1.15.0
+   Compiling mio v1.2.0
+   Compiling parking_lot_core v0.9.12
+   Compiling socket2 v0.6.3
+   Compiling profiling-procmacros v1.0.17
+   Compiling yoke v0.8.2
+   Compiling futures-util v0.3.32
+   Compiling bit-vec v0.8.0
+   Compiling regex-automata v0.4.14
+   Compiling errno v0.3.14
+   Compiling ahash v0.8.12
+   Compiling openssl-sys v0.9.112
+   Compiling khronos-egl v6.0.0
+   Compiling zstd-sys v2.0.16+zstd.1.5.7
+   Compiling equator-macro v0.4.2
+   Compiling mio v0.8.11
+   Compiling rayon v1.11.0
+   Compiling zerovec v0.11.6
+   Compiling parking_lot v0.12.5
+   Compiling signal-hook-registry v1.4.8
+   Compiling zerotrie v0.2.4
+   Compiling bit-set v0.8.0
+   Compiling tokio v1.51.1
+   Compiling signal-hook v0.3.18
+   Compiling as-slice v0.2.1
+   Compiling indexmap v2.13.1
+   Compiling openssl v0.10.76
+   Compiling built v0.8.0
+   Compiling profiling v1.0.17
+   Compiling foreign-types-shared v0.1.1
+   Compiling signal-hook-mio v0.2.5
+   Compiling tinystr v0.8.3
+   Compiling potential_utf v0.1.5
+   Compiling av-scenechange v0.14.1
+   Compiling foreign-types v0.3.2
+   Compiling crossterm v0.28.1
+   Compiling aligned v0.4.3
+   Compiling icu_collections v2.2.0
+   Compiling icu_locale_core v2.2.0
+   Compiling equator v0.4.2
+   Compiling futures-intrusive v0.5.0
+   Compiling http v0.2.12
+   Compiling openssl-macros v0.1.1
+   Compiling arg_enum_proc_macro v0.3.4
+   Compiling getrandom v0.2.17
+   Compiling core2 v0.4.0
+   Compiling nom v8.0.0
+   Compiling aligned-vec v0.6.4
+   Compiling rav1e v0.8.1
+   Compiling pastey v0.1.1
+   Compiling naga v27.0.3
+   Compiling v_frame v0.3.9
+   Compiling native-tls v0.2.18
+   Compiling y4m v0.8.0
+   Compiling weezl v0.1.12
+   Compiling quick-error v2.0.1
+   Compiling sync_wrapper v1.0.2
+   Compiling clap_builder v4.6.0
+   Compiling rand_core v0.6.4
+   Compiling bitstream-io v4.9.0
+   Compiling trueno v0.17.5
+   Compiling itertools v0.14.0
+   Compiling fax_derive v0.2.0
+   Compiling num-derive v0.4.2
+   Compiling icu_provider v2.2.0
+   Compiling serde v1.0.228
+   Compiling futures-executor v0.3.32
+   Compiling icu_normalizer v2.2.0
+   Compiling icu_properties v2.2.0
+   Compiling maybe-rayon v0.1.1
+   Compiling chrono v0.4.44
+   Compiling toml_datetime v0.6.11
+   Compiling serde_spanned v0.6.9
+   Compiling num-rational v0.4.2
+   Compiling serde_urlencoded v0.7.1
+   Compiling simd_helpers v0.1.0
+   Compiling toml_edit v0.22.27
+   Compiling zune-core v0.5.1
+   Compiling imgref v1.12.0
+   Compiling noop_proc_macro v0.3.0
+   Compiling regex v1.12.3
+   Compiling syn v1.0.109
+   Compiling openssl-probe v0.2.1
+   Compiling color_quant v1.1.0
+   Compiling new_debug_unreachable v1.0.6
+   Compiling idna_adapter v1.2.1
+   Compiling loop9 v0.1.5
+   Compiling av1-grain v0.2.5
+   Compiling zune-jpeg v0.5.15
+   Compiling fax v0.2.6
+   Compiling axum-core v0.4.5
+   Compiling uuid v1.23.0
+   Compiling arrow-array v57.3.0
+   Compiling clap v4.6.0
+   Compiling serde_path_to_error v0.1.20
+   Compiling rand_chacha v0.3.1
+   Compiling http-body v0.4.6
+   Compiling tokio-util v0.7.18
+   Compiling tower v0.5.3
+   Compiling avif-serialize v0.8.8
+   Compiling itertools v0.13.0
+   Compiling toml v0.8.23
+   Compiling zune-inflate v0.2.54
+   Compiling h2 v0.4.13
+   Compiling h2 v0.3.27
+   Compiling inotify-sys v0.1.5
+   Compiling socket2 v0.5.10
+   Compiling wait-timeout v0.2.1
+   Compiling trueno v0.14.6
+   Compiling instant v0.1.13
+   Compiling lebe v0.5.3
+   Compiling bit_field v0.10.3
+   Compiling predicates-core v1.0.10
+   Compiling plotters-backend v0.3.7
+   Compiling pxfm v0.1.28
+   Compiling byteorder-lite v0.1.0
+   Compiling rgb v0.8.53
+   Compiling ciborium-io v0.2.2
+   Compiling arrow-select v57.3.0
+   Compiling ciborium-ll v0.2.2
+   Compiling image-webp v0.2.4
+   Compiling plotters-svg v0.3.7
+   Compiling renacer-core v0.1.0
+   Compiling exr v1.74.0
+   Compiling tempfile v3.27.0
+   Compiling minijinja v2.19.0
+   Compiling serde_yaml v0.9.34+deprecated
+   Compiling notify-types v1.0.1
+   Compiling unicode-truncate v1.1.0
+   Compiling tokio-native-tls v0.3.1
+   Compiling hyper v0.14.32
+   Compiling moxcms v0.8.1
+   Compiling hyper v1.9.0
+   Compiling presentar-core v0.3.4
+   Compiling ravif v0.13.0
+   Compiling wgpu-hal v27.0.4
+   Compiling hyper-util v0.1.20
+   Compiling arrow-ord v57.3.0
+   Compiling axum v0.7.9
+   Compiling presentar-terminal v0.3.5
+   Compiling inotify v0.10.2
+   Compiling provable-contracts v0.2.2
+   Compiling aprender-serve v0.34.0 (/home/noah/src/aprender/crates/aprender-serve)
+warning: aprender-serve@0.34.0: [PMAT-228] architecture-requirements-v1.yaml not found; using hand-written arch_requirements.rs fallback
+warning: aprender-serve@0.34.0: [GH-323] arch-constraints-v1.yaml not found; using fallback arch_constraints.rs
+warning: aprender-serve@0.34.0: provable-contracts binding.yaml not found at /home/noah/src/aprender/crates/aprender-serve/../provable-contracts/contracts/realizar/binding.yaml; CONTRACT_* env vars will not be set (CI/crates.io build)
+warning: aprender-serve@0.34.0: [contract] Assertions: 0 preconditions, 0 postconditions from YAML
+   Compiling digest v0.10.7
+   Compiling tiff v0.11.3
+   Compiling tokio-stream v0.1.18
+   Compiling rand v0.8.5
+   Compiling tower v0.4.13
+   Compiling idna v1.1.0
+   Compiling gif v0.14.1
+   Compiling matchers v0.2.0
+   Compiling tracing-serde v0.2.0
+   Compiling futures v0.3.32
+   Compiling png v0.18.1
+   Compiling tower-http v0.6.8
+   Compiling itertools v0.10.5
+   Compiling qoi v0.4.1
+   Compiling float-cmp v0.10.0
+   Compiling filetime v0.2.27
+   Compiling cpufeatures v0.2.17
+   Compiling wgpu-core-deps-windows-linux-android v27.0.0
+   Compiling wgpu-core v27.0.3
+   Compiling difflib v0.4.0
+   Compiling base64 v0.21.7
+   Compiling sdd v3.0.10
+   Compiling assert_cmd v2.2.0
+   Compiling quick-error v1.2.3
+   Compiling termtree v0.5.1
+   Compiling normalize-line-endings v0.3.0
+   Compiling cast v0.3.0
+   Compiling ratatui v0.29.0
+   Compiling predicates-tree v1.0.13
+   Compiling predicates v3.1.4
+   Compiling criterion-plot v0.5.0
+   Compiling mp4 v0.14.0
+   Compiling rustls-pemfile v1.0.4
+   Compiling rusty-fork v0.3.1
+   Compiling scc v2.4.0
+   Compiling strum_macros v0.24.3
+   Compiling tracing-subscriber v0.3.23
+   Compiling notify v7.0.0
+   Compiling sha2 v0.10.9
+   Compiling arrow-cast v57.3.0
+   Compiling image v0.25.10
+   Compiling url v2.5.8
+   Compiling hyper-tls v0.5.0
+   Compiling arrow-string v57.3.0
+   Compiling plotters v0.3.7
+   Compiling ciborium v0.2.2
+   Compiling arrow-arith v57.3.0
+   Compiling arrow-row v57.3.0
+   Compiling gif v0.13.3
+   Compiling bstr v1.12.1
+   Compiling wgpu v27.0.1
+   Compiling tinytemplate v1.2.1
+   Compiling rand v0.9.2
+   Compiling rand_chacha v0.9.0
+   Compiling rand_xorshift v0.4.0
+   Compiling crossterm v0.26.1
+   Compiling serial_test_derive v3.4.0
+   Compiling console v0.15.11
+   Compiling is-terminal v0.4.17
+   Compiling encoding_rs v0.8.35
+   Compiling trueno v0.11.0
+   Compiling unarray v0.1.4
+   Compiling strum v0.24.1
+   Compiling oorandom v11.1.5
+   Compiling sync_wrapper v0.1.2
+   Compiling anes v0.1.6
+   Compiling reqwest v0.11.27
+   Compiling criterion v0.5.1
+   Compiling jugar-probar v0.4.2
+   Compiling comfy-table v6.2.0
+   Compiling proptest v1.11.0
+   Compiling zstd-safe v7.2.4
+   Compiling indicatif v0.17.11
+   Compiling zstd v0.13.3
+   Compiling serial_test v3.4.0
+   Compiling batuta-common v0.1.0
+   Compiling arrow v57.3.0
+   Compiling aprender-gpu v0.34.0 (/home/noah/src/aprender/crates/aprender-gpu)
+   Compiling trueno-cuda-edge v0.1.0
+   Compiling approx v0.5.1
+warning: unused variable: `ck`
+   --> crates/aprender-gpu/src/kernels/backward/nf4_tensor_core.rs:199:21
+    |
+199 |                 let ck = ctx.min_u32(global_k_out, k_minus_1);
+    |                     ^^ help: if this is intentional, prefix it with an underscore: `_ck`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `a_row_in_tile`
+   --> crates/aprender-gpu/src/kernels/gemm/basic/tensor_core/cta128_wmma.rs:112:17
+    |
+112 |             let a_row_in_tile = ctx.shr_u32(tid, c_2); // t/4 (covers 0..63 for first half)
+    |                 ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_a_row_in_tile`
+
+warning: unused variable: `stride_a`
+   --> crates/aprender-gpu/src/kernels/gemm/basic/tensor_core/cta128_wmma.rs:244:21
+    |
+244 |                 let stride_a = ctx.mov_u32_imm(16); // A leading dim in smem = tile_k=16
+    |                     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_stride_a`
+
+warning: unused variable: `stride_b`
+   --> crates/aprender-gpu/src/kernels/gemm/basic/tensor_core/cta128_wmma.rs:245:21
+    |
+245 |                 let stride_b = ctx.mov_u32_imm(128); // B leading dim in smem = tile_n=128
+    |                     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_stride_b`
+
+warning: unused variable: `c_63`
+  --> crates/aprender-gpu/src/kernels/gemm/basic/tensor_core/cta64_wmma.rs:76:17
+   |
+76 |             let c_63 = ctx.mov_u32_imm(63);
+   |                 ^^^^ help: if this is intentional, prefix it with an underscore: `_c_63`
+
+warning: unused variable: `smem_base`
+   --> crates/aprender-gpu/src/kernels/gemm/basic/tensor_core/cta64_wmma.rs:355:17
+    |
+355 |             let smem_base = ctx.shared_base_addr();
+    |                 ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_smem_base`
+
+warning: unused variable: `smem_base`
+   --> crates/aprender-gpu/src/kernels/gemm/basic/tensor_core/cta64_wmma.rs:662:17
+    |
+662 |             let smem_base = ctx.shared_base_addr();
+    |                 ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_smem_base`
+
+warning: unused variable: `b_row_in_tile`
+   --> crates/aprender-gpu/src/kernels/gemm/basic/tensor_core/cta64_wmma.rs:678:17
+    |
+678 |             let b_row_in_tile = ctx.shr_u32(b_local, c_3); // local/8 (32 rows across 256 threads? No...)
+    |                 ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_b_row_in_tile`
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/driver/sys/mod.rs:88:5
+   |
+88 |     pub grid_dim_y: c_uint,
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> crates/aprender-gpu/src/lib.rs:33:9
+   |
+33 | #![warn(missing_docs)]
+   |         ^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/driver/sys/mod.rs:89:5
+   |
+89 |     pub grid_dim_z: c_uint,
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/driver/sys/mod.rs:92:5
+   |
+92 |     pub block_dim_y: c_uint,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/driver/sys/mod.rs:93:5
+   |
+93 |     pub block_dim_z: c_uint,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:23:5
+   |
+23 |     pub max_seq_len: u32,
+   |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:24:5
+   |
+24 |     pub head_dim: u32,
+   |     ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:25:5
+   |
+25 |     pub num_heads: u32,
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:26:5
+   |
+26 |     pub num_kv_heads: u32,
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:27:5
+   |
+27 |     pub batch_size: u32,
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:28:5
+   |
+28 |     pub chunk_size: u32,
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:29:5
+   |
+29 |     pub scale: f32,
+   |     ^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:34:5
+   |
+34 | /     pub fn new(
+35 | |         max_seq_len: u32,
+36 | |         head_dim: u32,
+37 | |         num_heads: u32,
+38 | |         num_kv_heads: u32,
+39 | |         batch_size: u32,
+40 | |     ) -> Self {
+   | |_____________^
+
+warning: missing documentation for a method
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:54:5
+   |
+54 |     pub fn num_chunks(&self, seq_len: u32) -> u32 {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/chunk_kernel_2warp.rs:59:5
+   |
+59 |     pub fn partials_size_per_head(&self, max_chunks: u32) -> u32 {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/backward/nf4_tensor_core.rs:40:5
+   |
+40 |     pub m: u32,
+   |     ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/backward/nf4_tensor_core.rs:41:5
+   |
+41 |     pub n: u32,
+   |     ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/backward/nf4_tensor_core.rs:42:5
+   |
+42 |     pub k: u32,
+   |     ^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> crates/aprender-gpu/src/kernels/backward/nf4_tensor_core.rs:47:5
+   |
+47 |     pub fn new(m: u32, n: u32, k: u32) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> crates/aprender-gpu/src/kernels/backward/nf4_tensor_core.rs:52:5
+   |
+52 |     pub const fn num_k_blocks(&self) -> u32 {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> crates/aprender-gpu/src/kernels/quantize/fused/nf4_gate_up.rs:52:5
+   |
+52 |     pub fn new(m: u32, n: u32, k: u32) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> crates/aprender-gpu/src/kernels/quantize/fused/nf4_gate_up.rs:62:5
+   |
+62 |     pub const fn num_blocks_per_col(&self) -> u32 {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/quantize/nf4_tensor_core.rs:31:5
+   |
+31 |     pub m: u32,
+   |     ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/quantize/nf4_tensor_core.rs:32:5
+   |
+32 |     pub n: u32,
+   |     ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/aprender-gpu/src/kernels/quantize/nf4_tensor_core.rs:33:5
+   |
+33 |     pub k: u32,
+   |     ^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> crates/aprender-gpu/src/kernels/quantize/nf4_tensor_core.rs:38:5
+   |
+38 |     pub fn new(m: u32, n: u32, k: u32) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> crates/aprender-gpu/src/kernels/quantize/nf4_tensor_core.rs:43:5
+   |
+43 |     pub const fn num_k_blocks(&self) -> u32 {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `aprender-gpu` (lib) generated 34 warnings (run `cargo fix --lib -p aprender-gpu` to apply 8 suggestions)
+warning: unreachable expression
+  --> crates/aprender-serve/src/quantize/simd_backend.rs:47:5
+   |
+43 |         return SimdBackend::Neon;
+   |         ------------------------ any code following this expression is unreachable
+...
+47 |     SimdBackend::Scalar
+   |     ^^^^^^^^^^^^^^^^^^^ unreachable expression
+   |
+   = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `aprender-serve` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 1m 24s
+     Running tests/qwen3_moe_streaming_sse_v1.rs (target/release/deps/qwen3_moe_streaming_sse_v1-e0f7f2672f14afbf)
+
+running 3 tests
+[BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF — using architecture default for 'qwen3moe'
+[BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF — using architecture default for 'qwen3moe'
+[BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF — using architecture default for 'qwen3moe'
+[BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF — using architecture default for 'qwen3moe'
+[BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF — using architecture default for 'qwen3moe'
+[BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF — using architecture default for 'qwen3moe'
+test callback_stop_short_circuits ... ok
+test v1_001_callback_fires_per_token ... ok
+V1_003: 32 callbacks, median inter-token gap = 338 ms, gaps = [250, 256, 277, 279, 294, 295, 305, 326, 327, 327, 333, 335, 336, 337, 337, 338, 338, 339, 347, 347, 351, 351, 355, 375, 379, 382, 391, 419, 424, 453, 518]
+test v1_003_inter_token_latency_floor ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 58.65s
+
+
+=== exit 0 at Thu May 21 08:09:04 AM UTC 2026 ===
