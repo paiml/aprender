@@ -339,7 +339,7 @@ fn has_known_model_extension(uri: &str) -> bool {
     })
 }
 
-fn resolve_hf_model(uri: &str) -> Result<ResolvedModel> {
+pub(crate) fn resolve_hf_model(uri: &str) -> Result<ResolvedModel> {
     let uri = normalize_hf_uri(uri);
     let uri = uri.as_str();
 

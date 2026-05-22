@@ -224,8 +224,24 @@ pub(crate) struct RunResult {
 pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult> {
     let start = Instant::now();
 
+    // Resolve alias if applicable
+    let resolved_source = crate::commands::aliases::resolve_short_name(source).unwrap_or_else(|| source.to_string());
+
+    // Convert to canonical HF if it looks like org/repo
+    let hf_uri = if !resolved_source.contains("://") && resolved_source.contains('/') {
+        format!("hf://{resolved_source}")
+    } else {
+        resolved_source
+    };
+
+    // GH-213: Actually query HF to find the best GGUF file
+    let fully_resolved_source = match crate::commands::pull::resolve_hf_model(&hf_uri) {
+        Ok(crate::commands::pull::ResolvedModel::SingleFile(uri)) => uri,
+        _ => hf_uri,
+    };
+
     // Parse source
-    let model_source = ModelSource::parse(source)?;
+    let model_source = ModelSource::parse(&fully_resolved_source)?;
 
     // Resolve model path (download if needed, respecting offline mode)
     let model_path = resolve_model(&model_source, options.force, options.offline)?;
@@ -269,7 +285,7 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
 /// - Non-cached remote sources are rejected with a clear error
 ///
 /// Per Section 9.2 (Sovereign AI): "apr run --offline is mandatory for production"
-fn resolve_model(source: &ModelSource, force: bool, offline: bool) -> Result<PathBuf> {
+pub(crate) fn resolve_model(source: &ModelSource, force: bool, offline: bool) -> Result<PathBuf> {
     match source {
         ModelSource::Local(path) => Ok(path.clone()),
         ModelSource::HuggingFace { org, repo, file } => {
@@ -382,7 +398,29 @@ fn find_in_apr_cache(org: &str, repo: &str, file: Option<&str>) -> Option<PathBu
 }
 
 fn find_cached_model(org: &str, repo: &str, file: Option<&str>) -> Option<PathBuf> {
-    find_in_hf_cache(org, repo, file).or_else(|| find_in_apr_cache(org, repo, file))
+    // 1. Check HF Cache
+    if let Some(path) = find_in_hf_cache(org, repo, file) {
+        return Some(path);
+    }
+    
+    // 2. Check APR Cache
+    if let Some(path) = find_in_apr_cache(org, repo, file) {
+        return Some(path);
+    }
+    
+    // 3. Check Pacha Cache (used by `apr pull` for HF single-file streaming)
+    if let Some(filename) = file {
+        if let Ok(pacha_dir) = crate::commands::pull::get_pacha_cache_dir() {
+            // Reconstruct the original model_ref that `apr pull` would have hashed
+            let model_ref = format!("hf://{org}/{repo}/{filename}");
+            let (_, pacha_path) = crate::commands::pull::build_single_cache_path(&pacha_dir, &model_ref, filename);
+            if pacha_path.exists() {
+                return Some(pacha_path);
+            }
+        }
+    }
+    
+    None
 }
 
 /// Download model from HuggingFace and cache it
