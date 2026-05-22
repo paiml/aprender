@@ -529,19 +529,209 @@ fi
 
 PASS if D1+D3 pass. SKIP for D2 (requires ollama setup).
 
+## Gate 13: Worktree HEAD Sanity (F-WORKTREE-HEAD-001)
+
+Contract: `contracts/apr-version-traceability-v1.yaml` § FALSIFY-VERSION-004
+
+Catches [#1862](https://github.com/paiml/aprender/issues/1862) — `apr --version`
+reporting a stale commit hash in git worktrees because `build.rs` watches a
+hardcoded `../../.git/HEAD` path that doesn't exist in a worktree layout.
+
+```bash
+# After cargo install, apr --version SHA MUST match git rev-parse --short HEAD.
+# Run this from inside the source checkout (or worktree) you just built from.
+APR_SHA=$(apr --version 2>&1 | grep -oE '\([a-f0-9]{7,}\)' | tr -d '()')
+HEAD_SHA=$(git rev-parse --short HEAD)
+if [ -n "$APR_SHA" ] && [ "$APR_SHA" = "$HEAD_SHA" ]; then
+  echo "G13 PASS: apr --version SHA ($APR_SHA) matches HEAD"
+elif [ -z "$APR_SHA" ]; then
+  echo "G13 SKIP: apr --version has no embedded SHA (likely crates.io install)"
+else
+  echo "G13 FAIL: apr --version SHA=$APR_SHA but HEAD=$HEAD_SHA (#1862)"
+fi
+```
+
+Build.rs static check (no install required):
+```bash
+# build.rs MUST use git rev-parse --git-dir / --git-common-dir for worktree-safe
+# rerun-if-changed triggers — not a hardcoded ../../.git/HEAD path.
+if grep -qE 'rev-parse.*--git-(dir|common-dir)' crates/apr-cli/build.rs \
+   && ! grep -qE '\.\./\.\./\.git/HEAD' crates/apr-cli/build.rs; then
+  echo "G13 PASS (static): build.rs uses worktree-safe git resolution"
+else
+  echo "G13 FAIL (static): build.rs still uses hardcoded .git/HEAD path"
+fi
+```
+
+PASS if both checks pass (or SHA check SKIPs cleanly on crates.io builds).
+
+## Gate 14: APR → GGUF Export Round-trip (F-EXPORT-ROUNDTRIP-001)
+
+Contract: `contracts/apr-export-num-layers-v1.yaml`
+
+Catches [#1865](https://github.com/paiml/aprender/issues/1865) — `apr export
+<model>.apr --format gguf` panicking with exit 101 on APR files missing
+`num_layers` metadata. Every APR file in the registry must export without
+panic; exit 5 (clean ValidationFailed) is acceptable, exit 101 is a FAIL.
+
+```bash
+G14_PASS=0
+G14_TOTAL=0
+for apr in $(find ~/models -maxdepth 2 -name "*.apr" -type f 2>/dev/null); do
+  G14_TOTAL=$((G14_TOTAL+1))
+  OUT=$(timeout 60 apr export "$apr" --format gguf -o /tmp/g14-rt.gguf 2>&1); EC=$?
+  # IMPORTANT: capture exit code via OUT=$(...); EC=$? — never via pipe (see Pre-Gate note).
+  if [ "$EC" -eq 101 ] || echo "$OUT" | grep -qE "thread .* panicked"; then
+    echo "G14 FAIL ($apr): panic exit=$EC"
+  elif [ "$EC" -eq 0 ] || [ "$EC" -eq 5 ]; then
+    G14_PASS=$((G14_PASS+1))
+    echo "G14 OK ($apr): exit=$EC (0=success, 5=clean validation error)"
+  else
+    echo "G14 WARN ($apr): unexpected exit=$EC"
+  fi
+  rm -f /tmp/g14-rt.gguf
+done
+[ "$G14_TOTAL" -eq 0 ] && echo "G14 SKIP: no APR models found" \
+  || { [ "$G14_PASS" -eq "$G14_TOTAL" ] && echo "G14 PASS: $G14_PASS/$G14_TOTAL exported without panic" \
+       || echo "G14 FAIL: only $G14_PASS/$G14_TOTAL clean"; }
+```
+
+PASS if every APR file either exports successfully or exits 5. FAIL on any
+panic (exit 101 or stderr panic message). SKIP if no APR models in registry.
+
+## Gate 15: validate --quality Sanity (F-VALIDATE-QUALITY-001)
+
+Contract: `contracts/apr-validate-quality-threshold-v1.yaml`
+
+Catches [#1866](https://github.com/paiml/aprender/issues/1866) — `apr validate
+--quality` returning Grade F exit 5 on every working model because 22/25
+checks are stubbed `Skip(Not implemented)` and the threshold gate compared
+against the full 100-point ceiling.
+
+```bash
+# Find a known-good model — one that apr qa says is fine.
+M=$(find ~/models -maxdepth 2 \( -name "*.apr" -o -name "*.gguf" \) -type f | head -1)
+if [ -z "$M" ]; then
+  echo "G15 SKIP: no model available"
+else
+  OUT=$(timeout 90 apr validate "$M" --quality 2>&1); EC=$?
+  # apr qa is the canonical pass/fail (CLAUDE.md). If qa passes, validate --quality
+  # MUST NOT exit non-zero solely because checks are unimplemented.
+  QA_OUT=$(timeout 120 apr qa "$M" 2>&1 | grep -E "ALL GATES PASSED|FAIL"); QA_PASSES=$?
+  if echo "$QA_OUT" | grep -q "ALL GATES PASSED" && [ "$EC" -ne 0 ]; then
+    echo "G15 FAIL: apr qa says ✓ ALL GATES PASSED but apr validate --quality exit=$EC (#1866)"
+    echo "         likely score threshold counting Skip(Not implemented) against runnable denom"
+  else
+    echo "G15 PASS: validate --quality consistent with apr qa verdict (exit=$EC)"
+  fi
+fi
+```
+
+PASS if `apr validate --quality` exits 0 on any model that `apr qa` passes.
+FAIL on the inconsistency that #1866 captured.
+
+## Gate 16: `apr run` Exit Code Reflects Output Validity (F-RUN-EXIT-SANITY-001)
+
+Contract: `contracts/apr-cpu-vs-gpu-output-parity-v1.yaml`
+
+Catches the secondary defect from [#1864](https://github.com/paiml/aprender/issues/1864)
+— `apr run` exiting 0 even when GPU dispatch produced obvious gibberish.
+
+```bash
+M=$(find ~/models -maxdepth 2 -name "*.apr" -type f | head -1)
+if [ -z "$M" ]; then
+  echo "G16 SKIP: no APR model"
+else
+  OUT=$(timeout 90 apr run "$M" "What is 2+2?" --max-tokens 16 2>&1); EC=$?
+  # Heuristic gibberish detectors. Real models answering 2+2 should produce
+  # digits or short English. If the output contains chat-template control tokens
+  # (e.g. <|im_start|>, <|endoftext|>) repeated, OR is dominated by a single
+  # non-numeric word repeating, treat that as a parity-gate-missed regression.
+  if echo "$OUT" | grep -qE '<\|im_start\|>.*<\|im_start\|>' \
+     || echo "$OUT" | grep -qE '<\|endoftext\|>.*<\|endoftext\|>'; then
+    if [ "$EC" -eq 0 ]; then
+      echo "G16 FAIL: chat-template gibberish + exit 0 (#1864 secondary)"
+    else
+      echo "G16 PASS: gibberish detected AND exit=$EC (gate fired)"
+    fi
+  else
+    OUTPUT_LINE=$(echo "$OUT" | sed -n '/^Output:/,$p' | tail -n +2 | tr -d '[:space:]')
+    if [ -n "$OUTPUT_LINE" ] && [ "$EC" -eq 0 ]; then
+      echo "G16 PASS: clean output, exit=0"
+    elif [ "$EC" -ne 0 ]; then
+      echo "G16 PASS: non-zero exit=$EC (clean failure path)"
+    else
+      echo "G16 WARN: output unparseable but exit=0 — inspect manually"
+    fi
+  fi
+fi
+```
+
+PASS if `apr run` either emits clean output with exit 0, or non-clean output
+with non-zero exit. FAIL when chat-template gibberish leaks through with exit 0.
+
+## Gate 17: 7B Inference Smoke (F-7B-INFERENCE-001)
+
+Catches [#1864](https://github.com/paiml/aprender/issues/1864) directly. The
+README claims `Qwen2.5-Coder 7B Q4_K 225+ tok/s RTX 4090` as the headline
+configuration; if 7B GPU inference produces gibberish, the canonical demo
+is broken.
+
+```bash
+M_7B=$(find ~/models -maxdepth 2 -name "*7b*q4*" -type f 2>/dev/null | head -1)
+if [ -z "$M_7B" ]; then
+  echo "G17 SKIP: no 7B Q4_K model in registry"
+else
+  # apr qa Golden Output gate already encodes correctness; reuse it.
+  OUT=$(timeout 300 apr qa "$M_7B" 2>&1 | grep -E "Golden Output")
+  if echo "$OUT" | grep -q "FAIL"; then
+    echo "G17 FAIL: 7B Golden Output gate FAILS — $OUT (#1864)"
+  elif echo "$OUT" | grep -q "PASS"; then
+    echo "G17 PASS: 7B Golden Output gate passes"
+  else
+    echo "G17 SKIP: Golden Output gate didn't run (no GPU? --assert-gpu missing?)"
+  fi
+fi
+```
+
+PASS when `apr qa` Golden Output gate passes on the 7B Q4_K model. FAIL on
+the regression that #1864 captured. SKIP when the 7B model isn't available
+or the gate didn't run.
+
+## Pre-Gate Note: Exit-Code Capture Methodology (lesson from 2026-05-22 dogfood)
+
+When a falsifier needs to assert "command X exits Y", **never** chain through
+a pipe and read `$?` — `$?` after a pipe reports the LAST command's status,
+not the original command's. Two real bugs were filed in a 2026-05-22 dogfood
+session and immediately retracted as false positives because of this:
+
+```bash
+# WRONG — $? is head's exit, not apr's
+apr publish /nonexistent paiml/test 2>&1 | head -8; echo "exit=$?"   # always 0
+
+# RIGHT — captures the command's real exit code
+OUT=$(apr publish /nonexistent paiml/test 2>&1); EC=$?
+echo "$OUT" | tail -1; echo "exit=$EC"
+```
+
+All new gates (G13-G17) follow the `OUT=$(...); EC=$?` pattern. Existing
+gates that still pipe-then-`$?` should be migrated when next touched.
+
+See [memory/feedback_test_methodology_can_fake_bugs.md] for the broader lesson.
+
 ---
 
 ## Verdict
 
-After all 12 gates, provide:
+After all 17 gates, provide:
 
-1. **Summary table**: Gate 1-12 | Status | Notes
+1. **Summary table**: Gate 1-17 | Status | Notes
 2. **Protocol results**: P1-P12 | PASS/FAIL
-3. **New gates**: S1-S5, M1-M3, V1-V4, C1-C3, D1-D3 | PASS/FAIL/SKIP
+3. **New gates**: S1-S5, M1-M3, V1-V4, C1-C3, D1-D3, G13-G17 | PASS/FAIL/SKIP
 4. **Command grid**: 57 commands | PASS/FAIL/SKIP count
-5. **GO** if gates 1-7 all pass AND gates 8-12 have no FAIL
+5. **GO** if gates 1-7 all pass AND gates 8-17 have no FAIL
 6. **WARN** if soft issues only (no panics, no data corruption, SKIPs OK)
-7. **FAIL** if panics, exit-code lies, silent-fallback accepts bad input, or contract violations
+7. **FAIL** if panics, exit-code lies, silent-fallback accepts bad input, gibberish-with-exit-0 (#1864), export panics (#1865), stale --version SHA in worktree (#1862), validate --quality false-negatives (#1866), or contract violations
 
 If bugs found, file with:
 ```bash

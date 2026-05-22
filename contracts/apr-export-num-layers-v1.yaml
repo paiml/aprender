@@ -1,0 +1,88 @@
+metadata:
+  version: 1.0.0
+  created: '2026-05-22'
+  author: PAIML Engineering
+  description: "`apr export <model>.apr --format gguf` must produce a clean error (or succeed via inference) when `num_layers` is absent from APR metadata. Panicking with `.expect()` on an Option<usize> is forbidden for any user-reachable code path."
+  kind: pattern
+  references:
+    - "paiml/aprender#1865 (apr export <model>.apr --format gguf panics: 'C-07: num_layers required for GGUF export')"
+    - "crates/aprender-core/src/format/converter/metadata.rs:export_apr_to_gguf_raw"
+    - "crates/aprender-core/src/format/converter/metadata.rs:build_gguf_arch_metadata"
+  registry: true
+  tags:
+    - cli
+    - export
+    - converter
+    - panic
+    - poka-yoke
+
+five_whys:
+  symptom: "`apr export /path/to/qwen2.5-coder-1.5b-instruct-q4k.apr --format gguf -o /tmp/rt.gguf` panics with `thread 'main' panicked at metadata.rs:384: C-07: num_layers required for GGUF export`, exit 101"
+  why_1: "`build_gguf_arch_metadata` and `export_apr_to_gguf_raw` call `.expect()` on `apr_metadata.num_layers`, which is `Option<usize>`"
+  why_2: "The APR file in question was produced without a `num_layers` stamp — likely an older `apr convert` or `apr stamp` invocation that left the field as `None`"
+  why_3: "The exporter assumed the `apr stamp` step always populates `num_layers`, but had no fallback for files produced before that requirement"
+  why_4: "There is no inference path: `num_layers` is recoverable from the tensor layout (every `blk.N.*` index ≤ N), but the exporter only consults metadata"
+  why_5: "No provable contract forbids `.expect()` on Option<usize> in user-reachable code paths; CLAUDE.md bans `.unwrap()` but allows `.expect()` as a sentinel for 'genuinely impossible' invariants — and this site was misclassified as such"
+  root_cause: "Missing inference fallback + `.expect()` used as a soft error-path instead of a true never-violated invariant. Together: any APR file without a stamped `num_layers` aborts `apr export` with exit 101 instead of producing a clean failure or succeeding via inference."
+
+equations:
+  num_layers_inference:
+    formula: "infer_num_layers(tensors) = max{N : exists name like 'blk.N.*' or 'model.layers.N.*'} + 1"
+    domain: "set of tensor names in an APR file"
+    codomain: "Option<usize>"
+    invariants:
+      - "Returns Some(K) when at least one tensor matches blk.<N>.* or model.layers.<N>.*"
+      - "K equals max(N) + 1 (block_count uses 0-indexed layers)"
+      - "Returns None when no tensor matches either prefix family"
+
+  export_no_panic:
+    formula: "apr export <any-valid-apr> --format gguf returns Result, never panics"
+    domain: "Any APR file that AprV2Reader can parse"
+    codomain: "Result<ExportReport, AprenderError>"
+    invariants:
+      - "All `.expect()` calls on `apr_metadata.<dim>` are replaced with `.ok_or_else(|| FormatError)`"
+      - "`build_gguf_arch_metadata` returns `Result<Vec<(String, GgufValue)>, AprenderError>`"
+      - "Missing num_layers triggers tensor-name inference before raising an error"
+      - "Exit code on missing dim is 5 (CliError::ValidationFailed::FormatError), not 101 (panic)"
+
+proof_obligations:
+  - type: invariant
+    property: "Tensor-name inference returns max-index + 1"
+    formal: "infer_num_layers([blk.0.x, blk.1.x, blk.2.x]) = Some(3)"
+    applies_to: num_layers_inference
+  - type: invariant
+    property: "Inference returns None on non-block tensors"
+    formal: "infer_num_layers([token_embd.weight, output_norm.weight]) = None"
+    applies_to: num_layers_inference
+  - type: invariant
+    property: "Export does not panic on missing dim"
+    formal: "export_apr_to_gguf_raw(apr_with_no_num_layers) = Err | Ok (never panic)"
+    applies_to: export_no_panic
+
+falsification_tests:
+  - id: FALSIFY-EXPORT-NUM-LAYERS-001
+    rule: "infer_num_layers_from_tensor_names matches max(blk.N) + 1"
+    prediction: "Calling infer_num_layers_from_tensor_names on ['blk.0.attn_q', 'blk.5.attn_q', 'blk.27.ffn_down'] returns Some(28)"
+    test: "cargo test -p aprender-core --lib infer_num_layers_from_tensor_names"
+    if_fails: "Inference logic does not correctly find max layer index"
+
+  - id: FALSIFY-EXPORT-NUM-LAYERS-002
+    rule: "No `.expect()` on Option<usize> in user-reachable export paths"
+    prediction: "grep -n `.expect.*required for GGUF export` in metadata.rs returns no matches"
+    test: "! grep -nE '\\.expect\\(\"C-07: [a-z_]+ required for GGUF export' crates/aprender-core/src/format/converter/metadata.rs"
+    if_fails: "An `.expect()` panic site still leaks through `apr export`"
+
+  - id: FALSIFY-EXPORT-NUM-LAYERS-003
+    rule: "build_gguf_arch_metadata returns Result"
+    prediction: "build_gguf_arch_metadata signature returns `Result<Vec<...>>`, not bare `Vec<...>`"
+    test: "grep -A3 'fn build_gguf_arch_metadata' crates/aprender-core/src/format/converter/metadata.rs | grep -qE -- '-> Result<'"
+    if_fails: "Function still returns Vec — missing dims will continue to panic via downstream .expect()"
+
+qa_gate:
+  id: F-EXPORT-NUM-LAYERS-001
+  name: "apr export panic-free for missing num_layers"
+  description: "apr export must not panic when num_layers is absent from APR metadata — either infer from tensor names or return clean error"
+  checks:
+    - "num_layers_inference"
+    - "export_no_panic"
+  pass_criteria: "FALSIFY-EXPORT-NUM-LAYERS-{001,002,003} all PASS"

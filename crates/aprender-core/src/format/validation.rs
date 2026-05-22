@@ -149,6 +149,42 @@ impl ValidationReport {
     pub fn failed_checks(&self) -> Vec<&ValidationCheck> {
         self.checks.iter().filter(|c| c.status.is_fail()).collect()
     }
+
+    /// Count checks that actually ran (Pass / Fail / Warn — not Skip).
+    ///
+    /// Contract: apr-validate-quality-threshold-v1 (#1866) — the 100-point
+    /// QA checklist contains many `Skip("Not implemented")` placeholders. A
+    /// pass/fail gate computed against the full 100-point denominator marks
+    /// every working model as Grade F until every stub is filled in. This
+    /// helper exposes the implemented denominator so callers can gate on
+    /// implementation-relative percentage instead.
+    #[must_use]
+    pub fn implemented_max(&self) -> u8 {
+        self.checks
+            .iter()
+            .filter(|c| !matches!(c.status, CheckStatus::Skip(_)))
+            .count()
+            .min(u8::MAX as usize) as u8
+    }
+
+    /// Percentage of *implemented* (non-Skip) checks that passed. Returns
+    /// `None` when no checks have run (entire QA suite stubbed), in which
+    /// case callers should treat the score as informational rather than
+    /// a hard fail (#1866).
+    #[must_use]
+    pub fn implemented_score_pct(&self) -> Option<f64> {
+        let max = self.implemented_max();
+        if max == 0 {
+            return None;
+        }
+        let passed: u8 = self
+            .checks
+            .iter()
+            .filter(|c| c.status.is_pass())
+            .count()
+            .min(u8::MAX as usize) as u8;
+        Some((f64::from(passed) / f64::from(max)) * 100.0)
+    }
 }
 
 impl Default for ValidationReport {
