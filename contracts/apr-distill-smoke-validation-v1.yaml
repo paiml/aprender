@@ -1,0 +1,177 @@
+metadata:
+  version: 1.0.0
+  created: '2026-05-22'
+  author: PAIML Engineering
+  description: |
+    `apr distill --backend cuda` must support a fast smoke-validation mode
+    that runs a small fixed number of training steps, prints loss trajectory
+    + projected full-run wall time, and exits. This prevents the failure
+    mode that drove the PMAT-704 cascade -- silent 1.5 h hangs on misconfigured
+    runs that nobody could distinguish from "training silently progressing"
+    until terminal state.
+
+    With PMAT-705 ProgressCallback already wired, operators see per-step
+    loss during normal runs. Smoke mode adds an EARLY-BREAK in the training
+    loop after N steps + a single-line summary that lets the operator
+    decide "go" vs "no-go" for a long run in under 60 seconds. Methodology
+    parallel: 5-whys -> contract -> implement, NOT cascade-momentum.
+  references:
+  - 'PMAT-706 (this contract): apr distill --smoke-only / APR_DISTILL_MAX_STEPS early-break'
+  - 'PMAT-704 cascade post-mortem (#1879, #1880) -- the failure mode this prevents'
+  - 'PMAT-705 (#1881) ProgressCallback -- per-step output that smoke mode amplifies'
+  - 'memory/feedback_a_priori_theoretical_falsification.md -- 30 min of math saves 8 h of GPU; this is the runtime analog'
+  - 'memory/feedback_smoke_defaults_leak_into_production.md -- the dual problem (this fixes the verify-side; that fixes the dispatch-side)'
+
+kind: KernelContract
+name: apr-distill-smoke-validation
+version: 1.0.0
+scope: aprender-train-distill Pipeline training loop + apr-cli run_cuda_backend dispatch
+
+equations:
+  early_break_condition:
+    formula: |
+      training_loop breaks when:
+        APR_DISTILL_MAX_STEPS is set AND step >= APR_DISTILL_MAX_STEPS
+      OR the standard exit condition (epochs exhausted) OR CallbackAction::Stop.
+    domain: APR_DISTILL_MAX_STEPS in Option<u64>; step in u64
+    codomain: training_loop terminates within one step of either condition
+    invariants:
+    - 'When APR_DISTILL_MAX_STEPS is unset, behavior is unchanged from pre-PMAT-706 (no regression)'
+    - 'When APR_DISTILL_MAX_STEPS = 0, no training steps run (degenerate case; operator gets a "smoke mode: 0 steps requested" error)'
+    - 'When APR_DISTILL_MAX_STEPS = N >= 1, training_loop runs at most N steps then breaks'
+    - 'The break is INSIDE the inner step loop, after grad application -- partial epochs are valid'
+    preconditions:
+    - APR_DISTILL_MAX_STEPS env var is parsed as u64 (invalid value -> silent fallback to "unset")
+    lean_theorem: Theorems.Early_Break_Condition
+
+  smoke_summary_format:
+    formula: |
+      After early-break (smoke mode only), pipeline prints:
+        "[SMOKE] N steps in T.Ts: initial_loss=X.XXXX, final_loss=Y.YYYY, throughput=Z.Z step/s"
+        "[SMOKE] projected full-run wall time (50K steps): H.Hh / WW min / SSs"
+      where N = actual steps run, T = wall clock, X/Y = loss trajectory, Z = N/T.
+    domain: (N, T, initial_loss, final_loss) as observed during smoke
+    codomain: 2 log lines on stdout
+    invariants:
+    - 'Summary fires ONLY when the early-break path was taken (not on normal training termination)'
+    - 'Projected wall time uses simple linear extrapolation N -> 50000 (or APR_DISTILL_PROJECT_TO_STEPS if set)'
+    - 'Loss-trajectory does NOT assert improvement -- smoke mode is a plumbing check, not a quality gate'
+    preconditions:
+    - 'At least 1 step completed (else smoke-mode-0-steps error path: non-zero exit + "likely teacher or student load failure" message)'
+    lean_theorem: Theorems.Smoke_Summary_Format
+
+  no_side_effects:
+    formula: |
+      Smoke-mode runs MUST NOT write a final output.apr to disk -- they are
+      validation runs, not training runs. Intermediate checkpoint files
+      (PMAT-699 ckpt-step-NNNNN.apr) ARE allowed if APR_DISTILL_CHECKPOINT_EVERY
+      fires; operators can delete those manually post-smoke or set
+      APR_DISTILL_CHECKPOINT_EVERY=0 to disable.
+    domain: pipeline post-train phase
+    codomain: filesystem state after smoke run
+    invariants:
+    - 'config.output.dir is not written to with the final student-trained.apr in smoke mode'
+    - 'apr eval and downstream tools cannot consume a smoke-mode output by accident'
+    - 'The PipelineResult returned by execute() has steps_completed = N (not the spec total)'
+    preconditions:
+    - APR_DISTILL_MAX_STEPS triggered the early-break
+    lean_theorem: Theorems.No_Side_Effects
+
+proof_obligations:
+- type: invariant
+  property: APR_DISTILL_MAX_STEPS unset -> existing behavior preserved
+  formal: |
+    For every (teacher, student, config) with APR_DISTILL_MAX_STEPS not in env:
+    pipeline.train()'s step counter, loss trajectory, and exit point are byte-equivalent
+    to the pre-PMAT-706 implementation. The new code path is purely additive.
+- type: invariant
+  property: early-break terminates within one step of the condition
+  formal: |
+    Let M = APR_DISTILL_MAX_STEPS. For every step k: if k >= M after the
+    step increment, the inner loop breaks before reaching step k+1.
+    Total steps run is exactly M (not M+1, not M-1).
+- type: invariant
+  property: smoke summary fires iff early-break triggered
+  formal: |
+    For every pipeline.train() invocation: the "[SMOKE]" log lines appear
+    if and only if the loop exited via the APR_DISTILL_MAX_STEPS path (not
+    via normal epoch exhaustion or CallbackAction::Stop).
+- type: classification
+  property: smoke mode produces no output.apr
+  formal: |
+    For every smoke-mode invocation that completes >= 1 step:
+    the path `${OUTPUT_DIR}/model.apr` (or `${OUTPUT_DIR}` for dir-mode
+    outputs) does NOT exist after the pipeline exits.
+
+falsification_tests:
+- id: FT-SMOKE-001
+  rule: APR_DISTILL_MAX_STEPS=10 runs exactly 10 steps
+  prediction: |
+    `APR_DISTILL_MAX_STEPS=10 apr distill <teacher> --student <student> --epochs 100 --backend cuda`
+    completes after 10 training steps (not 100 x steps_per_epoch). The
+    PipelineResult.metrics.steps_completed == 10. Summary line prints.
+  if_fails: |
+    Early-break condition off-by-one (e.g. step > M instead of step >= M)
+    or the env-var parser silently dropped the value. Check pipeline.rs
+    train loop break condition + the parse-once env-var read.
+  evidence: cargo test -p aprender-train-distill --lib pipeline::tests::pmat_706_smoke
+- id: FT-SMOKE-002
+  rule: APR_DISTILL_MAX_STEPS unset -> no behavior change
+  prediction: |
+    `apr distill ... --epochs 2` without APR_DISTILL_MAX_STEPS set runs
+    the full 2 x steps_per_epoch steps as before. Summary line does NOT print.
+  if_fails: |
+    The early-break path is unconditionally engaged. Verify the
+    Option<u64> parse + branching is correct.
+  evidence: cargo test -p aprender-train-distill --lib pipeline::tests::pmat_706_no_regression
+- id: FT-SMOKE-003
+  rule: smoke summary line includes throughput + projected wall time
+  prediction: |
+    The "[SMOKE] N steps in T.Ts" line is followed by a "[SMOKE] projected
+    full-run wall time" line. Both are parseable by grep + awk for CI dashboards.
+  if_fails: |
+    Either line missing (summary truncated) or format diverged. Check
+    the println! sequence in the early-break post-step block.
+  evidence: |
+    cargo test -p aprender-train-distill --lib pipeline::tests::pmat_706_summary_format
+    asserts both lines present in captured stdout via test_log or similar.
+- id: FT-SMOKE-004
+  rule: smoke mode does not write final output.apr
+  prediction: |
+    After APR_DISTILL_MAX_STEPS=10 run: the `${OUTPUT_DIR}/student-trained.apr`
+    path does NOT exist. (Intermediate PMAT-699 checkpoints under
+    `${OUTPUT_DIR}/ckpt-step-*.apr` MAY exist; that's separate.)
+  if_fails: |
+    The smoke-mode branch is calling self.export(...) -- it shouldn't. Wire
+    a `did_smoke_break` flag and skip the export call.
+  evidence: cargo test -p aprender-train-distill --lib pipeline::tests::pmat_706_no_output_in_smoke
+
+kani_harnesses:
+- id: KANI-SMOKE-001
+  obligation: early_break_condition is tight (no off-by-one)
+  property: |
+    For all (max_steps in [1..64], steps_per_epoch in [1..64], epochs in [1..16]):
+    if APR_DISTILL_MAX_STEPS = max_steps, the training loop body executes
+    exactly min(max_steps, epochs * steps_per_epoch) times.
+  bound: 64
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_early_break_count
+- id: KANI-SMOKE-002
+  obligation: APR_DISTILL_MAX_STEPS=0 is a degenerate case, not a panic
+  property: |
+    For APR_DISTILL_MAX_STEPS=0: pipeline.train() returns Err with a
+    clear "smoke mode: 0 steps requested" message; no panic, no
+    division-by-zero in summary computation.
+  bound: 1
+  strategy: compositional
+  solver: cadical
+  harness: verify_zero_steps_handled
+
+qa_gate:
+  id: F-SMOKE-001
+  name: apr-distill-smoke-validation-v1 Contract
+  description: Distill pipeline must support APR_DISTILL_MAX_STEPS early-break + smoke summary so operators can validate the cascade in <60s before committing to a long run.
+  checks:
+  - validation
+  - falsification
