@@ -488,4 +488,75 @@ mod tests_report {
         assert_eq!(stats.min, 42.0);
         assert_eq!(stats.max, 42.0);
     }
+
+    // ========================================================================
+    // #1866: implemented_score_pct + implemented_max
+    //
+    // Contract: apr-validate-quality-threshold-v1
+    // ========================================================================
+
+    fn push_check(report: &mut ValidationReport, id: u8, status: CheckStatus) {
+        let points = if matches!(status, CheckStatus::Pass) { 1 } else { 0 };
+        report.add_check(ValidationCheck {
+            id,
+            name: "test",
+            category: Category::Structure,
+            status,
+            points,
+        });
+    }
+
+    /// FALSIFY-VALIDATE-QUALITY-001: fully-stubbed suite returns None.
+    #[test]
+    fn test_implemented_score_pct_none_when_all_stubbed() {
+        let mut report = ValidationReport::new();
+        for i in 1..=25 {
+            push_check(&mut report, i, CheckStatus::Skip("Not implemented".into()));
+        }
+        assert_eq!(report.implemented_max(), 0);
+        assert_eq!(report.implemented_score_pct(), None);
+    }
+
+    /// FALSIFY-VALIDATE-QUALITY-002: 3 Pass + 22 Skip returns 100% (matches #1866 reproducer).
+    #[test]
+    fn test_implemented_score_pct_100_when_all_pass() {
+        let mut report = ValidationReport::new();
+        for i in 1..=3 {
+            push_check(&mut report, i, CheckStatus::Pass);
+        }
+        for i in 4..=25 {
+            push_check(&mut report, i, CheckStatus::Skip("Not implemented".into()));
+        }
+        assert_eq!(report.implemented_max(), 3);
+        assert_eq!(report.implemented_score_pct(), Some(100.0));
+        // Per #1866: this is the 1.5B Q4K APR case — must not fail the gate.
+    }
+
+    /// Half-implemented half-failing: implemented_pct = 50% — gate fires at < 50.
+    #[test]
+    fn test_implemented_score_pct_mixed() {
+        let mut report = ValidationReport::new();
+        push_check(&mut report, 1, CheckStatus::Pass);
+        push_check(&mut report, 2, CheckStatus::Pass);
+        push_check(&mut report, 3, CheckStatus::Fail("bad".into()));
+        push_check(&mut report, 4, CheckStatus::Fail("bad".into()));
+        for i in 5..=25 {
+            push_check(&mut report, i, CheckStatus::Skip("Not implemented".into()));
+        }
+        assert_eq!(report.implemented_max(), 4);
+        let pct = report.implemented_score_pct().expect("some");
+        assert!((pct - 50.0).abs() < f64::EPSILON, "expected 50.0, got {pct}");
+    }
+
+    /// Below-threshold case: 1/4 pass = 25% — gate must fire.
+    #[test]
+    fn test_implemented_score_pct_below_threshold() {
+        let mut report = ValidationReport::new();
+        push_check(&mut report, 1, CheckStatus::Pass);
+        push_check(&mut report, 2, CheckStatus::Fail("bad".into()));
+        push_check(&mut report, 3, CheckStatus::Fail("bad".into()));
+        push_check(&mut report, 4, CheckStatus::Fail("bad".into()));
+        let pct = report.implemented_score_pct().expect("some");
+        assert!(pct < 50.0, "expected < 50, got {pct}");
+    }
 }
