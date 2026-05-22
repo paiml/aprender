@@ -93,11 +93,24 @@ fn run_apr_validation(
 
     // GH-647: Exit non-zero when validation shows contract violations
     // GH-642: --skip-contract bypasses the contract score threshold gate
-    if !skip_contract && report.total_score < 50 {
-        return Err(CliError::ValidationFailed(format!(
-            "Score {}/100 (below 50% threshold)",
-            report.total_score
-        )));
+    // #1866: gate on percentage of *implemented* checks (Pass/Fail/Warn),
+    //        not the full 100-point denominator. Stubbed "Pending" checks
+    //        scored as Skip — counting them against the model produced
+    //        Grade F on every valid APR file until every stub was filled in.
+    //        See apr-validate-quality-threshold-v1.yaml.
+    if !skip_contract {
+        if let Some(pct) = report.implemented_score_pct() {
+            if pct < 50.0 {
+                let max = report.implemented_max();
+                return Err(CliError::ValidationFailed(format!(
+                    "Score {}/{max} implemented checks passed ({:.0}%) — below 50% threshold",
+                    report.total_score, pct
+                )));
+            }
+        }
+        // implemented_score_pct() == None: entire QA suite is stubbed.
+        // Treat as informational, not a hard fail. (apr qa remains the
+        // canonical pass/fail gate per CLAUDE.md.)
     }
 
     Ok(())

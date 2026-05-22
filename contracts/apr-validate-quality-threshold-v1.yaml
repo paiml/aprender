@@ -1,0 +1,96 @@
+metadata:
+  version: 1.0.0
+  created: '2026-05-22'
+  author: PAIML Engineering
+  description: "`apr validate --quality` must gate pass/fail on the *implemented* check denominator, not the aspirational 100-point denominator. Stubbed `Skip(Not implemented)` checks cannot count against working models — otherwise every valid APR file scores Grade F until every placeholder is filled in."
+  kind: pattern
+  references:
+    - "paiml/aprender#1866 (apr validate --quality: 22/25 checks 'Pending — Not implemented' → working models score 3/100, exit 5)"
+    - "crates/apr-cli/src/commands/validate.rs (score-threshold gate)"
+    - "crates/aprender-core/src/format/validation.rs (ValidationReport)"
+  registry: true
+  tags:
+    - cli
+    - validate
+    - threshold
+    - five-whys
+
+five_whys:
+  symptom: "`apr validate /home/noah/models/qwen2.5-coder-1.5b-instruct-q4k.apr --quality --strict` reports 3/100 Grade F and exits 5 (ValidationFailed) on a model that `apr qa` says ✓ ALL GATES PASSED and that produces correct inference (`apr run` returns '2 + 2 equals 4.')"
+  why_1: "validate.rs:96 gates on `report.total_score < 50` against the full 100-point QA checklist"
+  why_2: "22 of 25 checks return `CheckStatus::Skip(\"Not implemented\")` with `points = 0` — they contribute nothing to total_score but also reduce the achievable max to 3 points"
+  why_3: "ValidationReport.total_score is a raw sum of awarded points; there's no `implemented_max` denominator that would let the gate compute a meaningful percentage"
+  why_4: "The QA checklist was designed as an aspirational 100-point ceiling (APR-SPEC-v2-draft.md Section 11) but the implementation grew incrementally — gate code assumed all checks would be implemented; they never were"
+  why_5: "No provable contract bound the threshold to the implementation surface — 'score thresholds are relative to runnable checks' was an unstated invariant"
+  root_cause: "Threshold gate uses the aspirational 100-point denominator instead of the runnable denominator (count of non-Skip checks). The fix moves the gate to `implemented_score_pct() < 50` and treats a fully-stubbed suite as informational (None) rather than a hard fail."
+
+equations:
+  implemented_denominator:
+    formula: "implemented_max(report) = count{ c in report.checks : c.status != Skip }"
+    domain: "validation reports"
+    codomain: "u8 count of runnable checks"
+    invariants:
+      - "Skip checks (Skip(reason)) are excluded from the denominator"
+      - "Pass, Fail, Warn checks contribute 1 to implemented_max regardless of points"
+
+  implemented_score_pct:
+    formula: "pct(report) = if implemented_max > 0 then (pass_count / implemented_max) * 100 else None"
+    domain: "validation reports"
+    codomain: "Option<f64>"
+    invariants:
+      - "When no checks ran (all Skip), returns None — caller treats as informational, not pass/fail"
+      - "When at least one check ran, returns a percentage in [0, 100]"
+      - "All-Pass with N runnable checks returns Some(100.0)"
+
+  threshold_gate_on_implemented:
+    formula: "fail_gate(report) = implemented_score_pct(report) is Some(pct) AND pct < 50"
+    domain: "any apr validate invocation without --skip-contract"
+    codomain: "boolean: should exit 5 (ValidationFailed)"
+    invariants:
+      - "Models scoring 100% on implemented checks PASS, regardless of total_score"
+      - "Models scoring 0% on implemented checks FAIL (clear breakage signal)"
+      - "Fully-stubbed reports (implemented_max == 0) PASS as informational"
+      - "apr qa is the canonical pass/fail gate per CLAUDE.md; `apr validate --quality` complements with structural integrity audit"
+
+proof_obligations:
+  - type: invariant
+    property: "Working models pass the threshold"
+    formal: "all_pass(report) AND implemented_max(report) > 0 ⟹ NOT fail_gate(report)"
+    applies_to: threshold_gate_on_implemented
+  - type: invariant
+    property: "Fully-stubbed reports do not fail"
+    formal: "implemented_max(report) == 0 ⟹ NOT fail_gate(report)"
+    applies_to: threshold_gate_on_implemented
+  - type: invariant
+    property: "Half-implemented half-failing models do fail"
+    formal: "implemented_max = 4 AND fail_count = 3 ⟹ fail_gate(report)"
+    applies_to: threshold_gate_on_implemented
+
+falsification_tests:
+  - id: FALSIFY-VALIDATE-QUALITY-001
+    rule: "implemented_score_pct returns None when entire suite is stubbed"
+    prediction: "ValidationReport with only Skip checks returns None"
+    test: "cargo test -p aprender-core --lib test_implemented_score_pct_none_when_all_stubbed"
+    if_fails: "Stubbed suites still count against the threshold"
+
+  - id: FALSIFY-VALIDATE-QUALITY-002
+    rule: "implemented_score_pct returns 100 when all runnable checks pass"
+    prediction: "ValidationReport with 3 Pass + 22 Skip returns Some(100.0)"
+    test: "cargo test -p aprender-core --lib test_implemented_score_pct_100_when_all_pass"
+    if_fails: "Working models still mis-scored against unimplemented denominator"
+
+  - id: FALSIFY-VALIDATE-QUALITY-003
+    rule: "validate.rs gates on implemented_score_pct, not total_score"
+    prediction: "validate.rs source contains implemented_score_pct call and no `total_score < 50` bare comparison in the gate"
+    test: "grep -q 'implemented_score_pct' crates/apr-cli/src/commands/validate.rs && ! grep -nE 'report\\.total_score *< *50' crates/apr-cli/src/commands/validate.rs"
+    if_fails: "Threshold gate still uses the aspirational 100-point denominator"
+
+qa_gate:
+  id: F-VALIDATE-QUALITY-001
+  name: "apr validate --quality threshold gates on implemented checks"
+  description: "Pass/fail threshold must use percentage of implemented (non-Skip) checks. A fully-stubbed suite must be treated as informational, not a hard fail."
+  checks:
+    - "implemented_denominator"
+    - "implemented_score_pct"
+    - "threshold_gate_on_implemented"
+  pass_criteria: "FALSIFY-VALIDATE-QUALITY-{001,002,003} all PASS"
