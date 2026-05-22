@@ -1,30 +1,55 @@
 
-/// Build GGUF architecture metadata from APR model metadata
+/// Infer `num_layers` from APR tensor names by counting unique `blk.N.*` prefixes.
+/// Returns `None` if the file uses a different naming convention (e.g. pre-mapping
+/// HF names like `model.layers.N.*`).
+///
+/// Contract: apr-export-num-layers-v1 (#1865).
+pub(crate) fn infer_num_layers_from_tensor_names(names: &[&str]) -> Option<usize> {
+    let mut max_idx: Option<usize> = None;
+    for name in names {
+        // Match both `blk.N.*` (GGUF) and `model.layers.N.*` (HF) conventions.
+        let stripped = name
+            .strip_prefix("blk.")
+            .or_else(|| name.strip_prefix("model.layers."));
+        if let Some(rest) = stripped {
+            if let Some(dot) = rest.find('.') {
+                if let Ok(idx) = rest[..dot].parse::<usize>() {
+                    max_idx = Some(max_idx.map_or(idx, |m| m.max(idx)));
+                }
+            }
+        }
+    }
+    max_idx.map(|i| i + 1)
+}
+
+fn missing_dim_err(field: &str) -> AprenderError {
+    AprenderError::FormatError {
+        message: format!(
+            "C-07: {field} required for GGUF export (missing in APR metadata). \
+             Re-stamp the APR file with `apr stamp` populating model dimensions, \
+             or convert from the original GGUF/SafeTensors source."
+        ),
+    }
+}
+
+/// Build GGUF architecture metadata from APR model metadata.
+///
+/// Returns `Err(AprenderError::FormatError)` instead of panicking when required
+/// dimensions are missing, so `apr export` produces a clean exit-5 instead of
+/// a panic-101 (#1865).
 fn build_gguf_arch_metadata(
     apr_metadata: &crate::format::v2::AprV2Metadata,
-) -> Vec<(String, crate::format::gguf::GgufValue)> {
+) -> Result<Vec<(String, crate::format::gguf::GgufValue)>> {
     use crate::format::gguf::GgufValue;
 
     let arch = resolve_architecture(apr_metadata);
-    // C-07 (Meyer DbC): Require dimensions from model metadata — no silent LLaMA-7B defaults.
-    // These fields are always populated during import/conversion. If missing, the APR file
-    // is malformed and exporting with wrong dimensions would produce a corrupt GGUF.
-    let hidden_size = apr_metadata
-        .hidden_size
-        .expect("C-07: hidden_size required for GGUF export (missing in APR metadata)");
-    let num_layers = apr_metadata
-        .num_layers
-        .expect("C-07: num_layers required for GGUF export (missing in APR metadata)");
-    let num_heads = apr_metadata
-        .num_heads
-        .expect("C-07: num_heads required for GGUF export (missing in APR metadata)");
+    let hidden_size = apr_metadata.hidden_size.ok_or_else(|| missing_dim_err("hidden_size"))?;
+    let num_layers = apr_metadata.num_layers.ok_or_else(|| missing_dim_err("num_layers"))?;
+    let num_heads = apr_metadata.num_heads.ok_or_else(|| missing_dim_err("num_heads"))?;
     let num_kv_heads = apr_metadata.num_kv_heads.unwrap_or(num_heads);
-    let vocab_size = apr_metadata
-        .vocab_size
-        .expect("C-07: vocab_size required for GGUF export (missing in APR metadata)");
-    let intermediate_size = apr_metadata
-        .intermediate_size
-        .expect("C-07: intermediate_size required for GGUF export (missing in APR metadata)");
+    let vocab_size = apr_metadata.vocab_size.ok_or_else(|| missing_dim_err("vocab_size"))?;
+    let intermediate_size =
+        apr_metadata.intermediate_size.ok_or_else(|| missing_dim_err("intermediate_size"))?;
     let max_pos = apr_metadata.max_position_embeddings.unwrap_or(0);
     // N-01 (Meyer DbC): rope_theta from metadata, or architecture-specific default.
     let rope_theta = apr_metadata.rope_theta.unwrap_or_else(||
@@ -107,7 +132,7 @@ fn build_gguf_arch_metadata(
         GgufValue::Uint32(vocab_size as u32),
     ));
 
-    metadata
+    Ok(metadata)
 }
 
 /// Push a string array from APR custom fields to GGUF entries.
@@ -375,23 +400,31 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
         message: format!("Failed to parse APR file: {e:?}"),
     })?;
 
-    let apr_metadata = reader.metadata().clone();
+    let mut apr_metadata = reader.metadata().clone();
+
+    // #1865: infer `num_layers` from tensor names when metadata is silent. Older
+    // APR files (and any produced without `apr stamp --num-layers`) leave this
+    // field unset; the tensor layout always carries the layer count, so derive
+    // it before raising a missing-dimension error.
+    if apr_metadata.num_layers.is_none() {
+        let names = reader.tensor_names();
+        if let Some(inferred) = infer_num_layers_from_tensor_names(&names) {
+            eprintln!(
+                "[#1865] num_layers missing from APR metadata — inferred {} from blk.N.* tensor names",
+                inferred
+            );
+            apr_metadata.num_layers = Some(inferred);
+        }
+    }
 
     let arch = resolve_architecture(&apr_metadata);
-    // C-07 (Meyer DbC): Required dimensions — no silent LLaMA-7B defaults.
-    let num_layers = apr_metadata
-        .num_layers
-        .expect("C-07: num_layers required for GGUF export");
-    let num_heads = apr_metadata
-        .num_heads
-        .expect("C-07: num_heads required for GGUF export");
+    let num_layers = apr_metadata.num_layers.ok_or_else(|| missing_dim_err("num_layers"))?;
+    let num_heads = apr_metadata.num_heads.ok_or_else(|| missing_dim_err("num_heads"))?;
     let num_kv_heads = apr_metadata.num_kv_heads.unwrap_or(num_heads);
-    let hidden_size = apr_metadata
-        .hidden_size
-        .expect("C-07: hidden_size required for GGUF export");
+    let hidden_size = apr_metadata.hidden_size.ok_or_else(|| missing_dim_err("hidden_size"))?;
 
     // Build metadata from architecture config + tokenizer custom fields
-    let mut metadata = build_gguf_arch_metadata(&apr_metadata);
+    let mut metadata = build_gguf_arch_metadata(&apr_metadata)?;
     let vocab_size = apr_metadata.vocab_size.unwrap_or(0);
     metadata.extend(extract_apr_tokenizer_for_gguf(&apr_metadata, vocab_size));
 
