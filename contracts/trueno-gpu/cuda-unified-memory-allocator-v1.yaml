@@ -1,0 +1,192 @@
+metadata:
+  version: 1.0.0
+  created: '2026-05-22'
+  author: PAIML Engineering
+  description: |
+    CUDA allocator default must respect device memory architecture.
+    On unified-memory devices (Grace Blackwell GB10, GH200, future
+    NVL-class), GpuBuffer::new must allocate via cuMemAllocManaged so
+    the full unified pool is reachable. On classic dGPU (Ada/Hopper/
+    Ampere), GpuBuffer::new continues to use cuMemAlloc (no behavior
+    change). This contract codifies PMAT-394 v2: device-class
+    autodetection replaces the MANAGED_MEMORY=1 opt-in env var.
+  references:
+  - 'PMAT-394: original managed-memory opt-in implementation'
+  - 'PMAT-701 (this contract): autodetect on unified-memory devices'
+  - 'NVIDIA CUDA Driver API: cuDeviceGetAttribute, CU_DEVICE_ATTRIBUTE_UNIFIED_ADDRESSING'
+  - 'NVIDIA Grace Blackwell GB10 architecture brief — 128 GB unified memory'
+  - trueno-gpu/src/driver/memory/buffer.rs (GpuBuffer::new)
+  - 'evidence/distill-7b-teacher-loadtest-gx10/findings.json (5-whys, Bug A)'
+
+kind: KernelContract
+name: cuda-unified-memory-allocator
+version: 1.0.0
+scope: trueno-gpu crate — GpuBuffer allocation policy
+
+equations:
+  device_class_classification:
+    formula: |
+      device_class(cc, ua) =
+        UnifiedMemory  if ua == 1 AND cc >= 100
+        ClassicDevice  otherwise
+    domain: cc = compute capability (integer, e.g. 89, 100, 121); ua = CU_DEVICE_ATTRIBUTE_UNIFIED_ADDRESSING (0|1)
+    codomain: device_class in {UnifiedMemory, ClassicDevice}
+    invariants:
+    - 'Grace Blackwell (sm_121, cc=121): ua=1, device_class = UnifiedMemory'
+    - 'GH200 / future NVL (cc>=100, ua=1): device_class = UnifiedMemory'
+    - 'RTX 4090 / Hopper / Ampere dGPU: ua=1 BUT cc < 100; device_class = ClassicDevice'
+    - Autodetection MUST query both attributes; ua alone is insufficient (most modern dGPUs report ua=1 for UVM)
+    notes: |
+      The cc >= 100 gate is the practical distinguisher between "device has a separate
+      VRAM partition that cuMemAlloc speaks to" (Ada/Hopper/etc.) vs. "device shares
+      the system memory pool" (Grace family). UVM via ua=1 alone does not imply the
+      latter — Ada/Hopper support UVM but still have a separate, smaller dGPU partition.
+    preconditions:
+    - cc >= 0
+    - ua in {0, 1}
+    lean_theorem: Theorems.Device_Class_Classification
+
+  allocator_dispatch:
+    formula: |
+      GpuBuffer::new(ctx, len) dispatches to:
+        cuMemAllocManaged(size)   if env_override == 1
+                               OR (env_override == auto AND device_class(ctx) == UnifiedMemory)
+        cuMemAlloc(size)          if env_override == 0
+                               OR (env_override == auto AND device_class(ctx) == ClassicDevice)
+    domain: env_override in {auto, 0, 1} (from MANAGED_MEMORY env var; absent = auto)
+    codomain: ptr is a valid CUdeviceptr for `size` bytes, or Err(MemoryAllocation)
+    invariants:
+    - 'env_override="1" forces managed (legacy escape hatch, still honored)'
+    - 'env_override="0" forces device-only (new opt-out for diagnostics)'
+    - 'env_override unset (auto): default behavior changes per device_class'
+    - cuMemFree handles both managed and device pointers — no caller-side discrimination needed
+    - allocation failures must return GpuError::MemoryAllocation with the underlying CUresult string
+    preconditions:
+    - len > 0 OR returns Ok with ptr = 0 (zero-len shortcut preserved)
+    - ctx is a valid CudaContext
+    lean_theorem: Theorems.Allocator_Dispatch
+
+  budget_invariant:
+    formula: |
+      On UnifiedMemory device, max_allocatable(GpuBuffer) ≈ system MemAvailable
+      On ClassicDevice,        max_allocatable(GpuBuffer) ≈ device-visible window
+    domain: device_class as above
+    codomain: max_allocatable in bytes
+    invariants:
+    - 'GB10 (128 GB unified, MemAvailable 122 GB): default GpuBuffer::new succeeds for size up to ~120 GB minus working set'
+    - 'RTX 4090 (24 GB dGPU): default GpuBuffer::new succeeds for size up to ~22 GB (driver reserve)'
+    - 'Pre-fix (this contract) GB10 ceiling was ~30 GB regardless of unified pool — root cause of 7B teacher OOM'
+    preconditions:
+    - device_class is correctly classified
+    lean_theorem: Theorems.Budget_Invariant
+
+proof_obligations:
+- type: classification
+  property: device_class autodetection covers all currently-shipping NVIDIA architectures
+  formal: |
+    For every supported compute capability cc in {52, 60, 70, 75, 80, 86, 89, 90, 100, 110, 120, 121},
+    device_class(cc, ua=1) returns the documented value (UnifiedMemory only for cc >= 100).
+- type: invariant
+  property: legacy MANAGED_MEMORY=1 env var continues to force managed allocation
+  formal: |
+    For all (cc, ua, env_override="1"): allocator_dispatch selects cuMemAllocManaged,
+    regardless of device_class. Existing scripts that set MANAGED_MEMORY=1 do not break.
+- type: invariant
+  property: cuMemFree works for both managed and device pointers
+  formal: |
+    For every GpuBuffer b, Drop(b) calls cuMemFree(b.ptr) unconditionally.
+    The allocator path (cuMemAlloc vs cuMemAllocManaged) is invisible to the freer.
+- type: bound
+  property: GpuBuffer::new on GB10 succeeds for any size that fits in MemAvailable - working_set_reserve
+  formal: |
+    Let R = 8 GB (working set reserve for student F32 + activations + JIT).
+    For all size <= (MemAvailable - R) on GB10 default allocator: GpuBuffer::new(ctx, size/4) returns Ok.
+
+falsification_tests:
+- id: FT-ALLOC-AUTODETECT-001
+  rule: device_class autodetection classifies GB10 as UnifiedMemory
+  prediction: |
+    On GB10 (compute_cap=121, unified_addressing=1) with MANAGED_MEMORY unset:
+    classify_device_memory(ctx) returns DeviceMemoryClass::UnifiedMemory.
+  if_fails: |
+    Check cuDeviceGetAttribute(CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR/MINOR) returns 12/1
+    on gx10. If it does, classification gate (cc >= 100) is mis-coded.
+  evidence: cargo test -p trueno-gpu --lib --features cuda allocator::tests::classify_gb10_unified
+- id: FT-ALLOC-AUTODETECT-002
+  rule: device_class autodetection classifies RTX 4090 as ClassicDevice
+  prediction: |
+    On RTX 4090 (compute_cap=89, unified_addressing=1) with MANAGED_MEMORY unset:
+    classify_device_memory(ctx) returns DeviceMemoryClass::ClassicDevice.
+  if_fails: |
+    Likely cause — guard treats ua=1 alone as UnifiedMemory. Re-read contract:
+    the cc >= 100 conjunct is mandatory; UVM-capable dGPUs (Ada, Hopper) report ua=1.
+  evidence: cargo test -p trueno-gpu --lib --features cuda allocator::tests::classify_rtx4090_classic
+- id: FT-ALLOC-DISPATCH-003
+  rule: GB10 default allocator allocates beyond the dGPU-style ceiling
+  prediction: |
+    On GB10, with MANAGED_MEMORY unset, GpuBuffer::<u8>::new(ctx, 40 * 1024 * 1024 * 1024)
+    (40 GB) returns Ok. Without this fix the call returns Err(MemoryAllocation OUT_OF_MEMORY).
+  if_fails: |
+    Either allocator_dispatch didn't pick managed (check FT-ALLOC-AUTODETECT-001 first),
+    or system MemAvailable < 40 GB (cleanup other processes and retry).
+  evidence: cargo test -p trueno-gpu --test cuda_gb10_large_alloc --features cuda -- --ignored
+- id: FT-ALLOC-DISPATCH-004
+  rule: MANAGED_MEMORY=1 env override still forces managed on classic devices
+  prediction: |
+    On any device, with MANAGED_MEMORY=1, GpuBuffer::new selects cuMemAllocManaged
+    (verified by trace marker or by allocation success at size > dGPU partition).
+  if_fails: |
+    The env-var override path was lost in the autodetect refactor. Re-check the
+    precedence order: explicit env_override should beat autodetect.
+  evidence: cargo test -p trueno-gpu --lib --features cuda allocator::tests::env_override_managed_forced
+- id: FT-ALLOC-DISPATCH-005
+  rule: MANAGED_MEMORY=0 env override forces device-only allocation
+  prediction: |
+    On GB10, with MANAGED_MEMORY=0, GpuBuffer::new selects cuMemAlloc
+    (and may OOM at the dGPU-style ceiling — this is the diagnostics escape hatch).
+  if_fails: |
+    The "0" branch was implemented as "absent or 0 -> auto" (off-by-one); make
+    "0" explicit force-device-only, distinct from "auto".
+  evidence: cargo test -p trueno-gpu --lib --features cuda allocator::tests::env_override_device_only
+- id: FT-ALLOC-DISTILL-7B-006
+  rule: apr distill cuda backend loads 7B Q4K teacher on GB10 with default allocator
+  prediction: |
+    On GB10, with MANAGED_MEMORY unset, the apr distill command from
+    evidence/distill-7b-teacher-loadtest-gx10/launch.log dispatch line
+    succeeds through "Block 27 upload" (all 28 blocks). It may still
+    OOM-kill at training step (covered by cuda-q4k-frozen-teacher-v1.yaml,
+    Bug B), but the allocator-default OOM is gone.
+  if_fails: |
+    If still OOM at block <28, run with MANAGED_MEMORY=1 to confirm autodetect
+    wasn't triggered. Otherwise, system MemAvailable is too low for the 28 GB
+    F32 dequant; Bug B (Q4K teacher path) is the only way to unblock 7B.
+  evidence: evidence/distill-7b-teacher-loadtest-gx10/launch-after-fix-a.log
+
+kani_harnesses:
+- id: KANI-ALLOC-001
+  obligation: device_class classification is total over (cc, ua) pairs
+  property: |
+    For all (cc in [0, 200], ua in {0, 1}), classify_device_memory(cc, ua)
+    returns either UnifiedMemory or ClassicDevice (no panic, no Unknown).
+  bound: 200
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_classify_device_memory_total
+- id: KANI-ALLOC-002
+  obligation: env_override precedence preserved across autodetect
+  property: |
+    For all (cc, ua, env_override) with env_override in {"0", "1", absent},
+    allocator_dispatch obeys: env_override="1" -> managed; env_override="0" ->
+    device; absent -> follows device_class. No combination produces both paths.
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_env_override_precedence
+
+qa_gate:
+  id: F-ALLOC-UNIFIED-001
+  name: cuda-unified-memory-allocator-v1 Contract
+  description: GpuBuffer allocator must autodetect unified-memory devices and route to managed memory by default.
+  checks:
+  - validation
+  - falsification

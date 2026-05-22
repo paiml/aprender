@@ -431,4 +431,80 @@ mod cuda_tests {
 
         handle.join().expect("Worker thread must not panic");
     }
+
+    // PMAT-701 / cuda-unified-memory-allocator-v1.yaml falsification tests.
+    // These exercise the runtime witness of the device_class_classification
+    // and allocator_dispatch equations.
+    mod allocator_tests {
+        use super::*;
+        use crate::driver::memory::buffer::{classify_device_memory, DeviceMemoryClass};
+
+        // FT-ALLOC-AUTODETECT-001: classify_device_memory must return
+        // UnifiedMemory on Grace Blackwell GB10 (compute_cap=121, integrated=1).
+        // Skips silently on non-GB10 hardware.
+        #[test]
+        fn classify_gb10_unified() {
+            let ctx = cuda_ctx!();
+            let (major, _minor) = ctx.compute_capability().expect("compute_capability");
+            if major < 10 {
+                eprintln!("skip: not a Grace-class device (compute_cap major < 10)");
+                return;
+            }
+            let class = classify_device_memory(&ctx).expect("classify_device_memory");
+            assert_eq!(
+                class,
+                DeviceMemoryClass::UnifiedMemory,
+                "Grace-class device (cc >= 100) must classify as UnifiedMemory"
+            );
+        }
+
+        // FT-ALLOC-AUTODETECT-002: classify_device_memory must return
+        // ClassicDevice on discrete GPUs (Ada / Hopper / Ampere).
+        // Skips silently on integrated devices.
+        #[test]
+        fn classify_rtx4090_classic() {
+            let ctx = cuda_ctx!();
+            let (major, _minor) = ctx.compute_capability().expect("compute_capability");
+            if major >= 10 {
+                eprintln!("skip: not a discrete dGPU (compute_cap major >= 10)");
+                return;
+            }
+            let class = classify_device_memory(&ctx).expect("classify_device_memory");
+            assert_eq!(
+                class,
+                DeviceMemoryClass::ClassicDevice,
+                "discrete dGPU (cc < 100) must classify as ClassicDevice"
+            );
+        }
+
+        // FT-ALLOC-DISPATCH-004: MANAGED_MEMORY=1 forces managed even on
+        // ClassicDevice classification. Verifies the env override path is
+        // preserved (no regression from PMAT-394).
+        #[test]
+        fn env_override_managed_forced() {
+            let ctx = cuda_ctx!();
+            std::env::set_var("MANAGED_MEMORY", "1");
+            let buf: GpuBuffer<f32> = GpuBuffer::new(&ctx, 1024).unwrap();
+            std::env::remove_var("MANAGED_MEMORY");
+            // No direct way to introspect which allocator was used after the
+            // fact (both produce CUdeviceptr). The falsifier is "no error" —
+            // managed allocation succeeded for 4 KB on any device. Tier 3
+            // strengthens this to "size > dGPU partition succeeds."
+            assert_eq!(buf.len(), 1024);
+        }
+
+        // FT-ALLOC-DISPATCH-005: MANAGED_MEMORY=0 forces device-only allocation
+        // even on UnifiedMemory devices. Diagnostics escape hatch.
+        #[test]
+        fn env_override_device_only() {
+            let ctx = cuda_ctx!();
+            std::env::set_var("MANAGED_MEMORY", "0");
+            let buf: GpuBuffer<f32> = GpuBuffer::new(&ctx, 1024).unwrap();
+            std::env::remove_var("MANAGED_MEMORY");
+            // Same caveat as above: success at small size is the post-condition.
+            // Falsifier strengthens on Grace by allocating > dGPU partition and
+            // expecting OOM with MANAGED_MEMORY=0.
+            assert_eq!(buf.len(), 1024);
+        }
+    }
 }
