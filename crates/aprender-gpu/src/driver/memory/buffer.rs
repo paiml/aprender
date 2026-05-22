@@ -12,6 +12,70 @@ use crate::driver::context::{get_driver, CudaContext};
 use crate::driver::sys::{CUcontext, CUdeviceptr, CudaDriver, CUDA_SUCCESS};
 use crate::GpuError;
 
+// CUDA driver device attribute IDs (cuda.h, CU_DEVICE_ATTRIBUTE_*).
+// Local consts keep the buffer module self-contained without growing the
+// public sys API.
+const CU_DEVICE_ATTRIBUTE_INTEGRATED: i32 = 18;
+
+/// Memory architecture class of a CUDA device.
+///
+/// Used by [`GpuBuffer::new`] to decide which allocator to dispatch to.
+/// See `contracts/trueno-gpu/cuda-unified-memory-allocator-v1.yaml` for
+/// the full contract; this enum is the runtime witness of the
+/// `device_class_classification` equation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeviceMemoryClass {
+    /// Integrated GPU sharing the system memory pool (Grace Blackwell GB10,
+    /// Tegra Jetson, future NVL-class). Default allocator must use
+    /// `cuMemAllocManaged` to access the full unified pool.
+    UnifiedMemory,
+    /// Classic discrete GPU with its own VRAM partition (Ada, Hopper,
+    /// Ampere, Turing, Volta). Default allocator uses `cuMemAlloc` —
+    /// no behavior change from pre-PMAT-701.
+    ClassicDevice,
+}
+
+/// Query the CUDA driver for the device's memory architecture class.
+///
+/// Reads `CU_DEVICE_ATTRIBUTE_INTEGRATED` via `cuDeviceGetAttribute`:
+/// returns `1` for integrated GPUs (Grace, Tegra), `0` for discrete dGPUs.
+/// This is the cleanest single-attribute classification — INTEGRATED
+/// implies the device has no separate VRAM partition and therefore the
+/// distinction between "device memory" and "system memory" collapses.
+///
+/// # Errors
+///
+/// Returns `Err(GpuError::CudaDriver)` if the attribute query fails.
+pub fn classify_device_memory(ctx: &CudaContext) -> Result<DeviceMemoryClass, GpuError> {
+    let driver = get_driver()?;
+    let mut integrated: i32 = 0;
+    // SAFETY: device handle from CudaContext is valid; out-pointer is on the
+    // stack; integrated attribute is a documented driver attribute.
+    let result = unsafe {
+        (driver.cuDeviceGetAttribute)(&mut integrated, CU_DEVICE_ATTRIBUTE_INTEGRATED, ctx.device())
+    };
+    CudaDriver::check(result)?;
+    if integrated == 1 {
+        Ok(DeviceMemoryClass::UnifiedMemory)
+    } else {
+        Ok(DeviceMemoryClass::ClassicDevice)
+    }
+}
+
+/// Allocator-selection decision after consulting env override and device class.
+///
+/// `MANAGED_MEMORY` env var values:
+///   - `"1"`         -> force `cuMemAllocManaged` (legacy opt-in, still honored)
+///   - `"0"`         -> force `cuMemAlloc` (new diagnostics escape hatch)
+///   - unset / other -> follow `classify_device_memory(ctx)` (PMAT-701 default)
+fn should_use_managed_memory(ctx: &CudaContext) -> bool {
+    match std::env::var("MANAGED_MEMORY").as_deref() {
+        Ok("1") => true,
+        Ok("0") => false,
+        _ => classify_device_memory(ctx).map(|c| c == DeviceMemoryClass::UnifiedMemory).unwrap_or(false),
+    }
+}
+
 // ============================================================================
 // GPU Buffer
 // ============================================================================
@@ -107,11 +171,11 @@ impl<T> GpuBuffer<T> {
             });
         }
 
-        // PMAT-394: Use managed memory on Grace Blackwell when MANAGED_MEMORY=1
-        static USE_MANAGED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let managed =
-            *USE_MANAGED.get_or_init(|| std::env::var("MANAGED_MEMORY").as_deref() == Ok("1"));
-        if managed {
+        // PMAT-701: Autodetect unified-memory devices (Grace Blackwell) and
+        // route to cuMemAllocManaged by default. PMAT-394's env-var opt-in
+        // is preserved for forcing/forbidding managed mode explicitly.
+        // Contract: contracts/trueno-gpu/cuda-unified-memory-allocator-v1.yaml
+        if should_use_managed_memory(ctx) {
             return Self::new_managed(ctx, len);
         }
 

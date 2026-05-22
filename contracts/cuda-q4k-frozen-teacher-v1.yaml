@@ -1,0 +1,229 @@
+metadata:
+  version: 1.0.0
+  created: '2026-05-22'
+  author: PAIML Engineering
+  description: |
+    The cuda training backend (apr distill --backend cuda) must keep frozen
+    teacher weights in their native quantization format. Today the backend
+    dequantizes Q4K teacher weights to F32 at GPU upload (7× memory inflation
+    — 4 GB Q4K → 28 GB F32 for 7B teachers), which makes the MODEL-1 teacher
+    (paiml/qwen2.5-coder-7b-apache-q4k-v1) unusable for distillation on
+    Grace Blackwell GB10 even when the allocator path is fixed (see
+    cuda-unified-memory-allocator-v1.yaml).
+
+    This contract specifies the frozen-teacher fast path: when
+    CudaTransformerTrainer::for_inference constructs the teacher in
+    frozen mode (no gradients needed for any weight), the per-block
+    upload must route to a Q4K-native variant of CudaTransformerBlock
+    that holds Q4K weights directly and uses Q4K-native forward GEMM
+    kernels (which already exist in realizar inference path).
+
+    The NF4-block branch in cuda_trainer.rs (cuda_trainer.rs:891-927) is
+    gated on lora_rank > 0 — that path is the student LoRA fine-tune case,
+    NOT applicable to frozen teachers. This contract adds a sibling Q4K
+    branch gated on the (frozen + Q4K-on-disk) precondition.
+  references:
+  - 'PMAT-333: dequantization log at apr run smoke (28282.5 MB F32 footprint)'
+  - 'PMAT-701 (this contract): Q4K-native frozen teacher path'
+  - 'evidence/distill-7b-teacher-loadtest-gx10/findings.json (5-whys, Bug B)'
+  - 'crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs:891-970 (NF4 + Fp32 block upload paths)'
+  - 'crates/aprender-train-distill/src/teacher_provider.rs (CudaTrainerTeacher)'
+  - 'realizar Q4K forward kernels (existing inference path, source for reuse)'
+  - cuda-unified-memory-allocator-v1.yaml (Bug A — prereq for this contract to be testable on GB10)
+
+kind: KernelContract
+name: cuda-q4k-frozen-teacher
+version: 1.0.0
+scope: aprender-train cuda backend — CudaTrainerTeacher / CudaTransformerBlock upload path
+
+equations:
+  teacher_residency_invariant:
+    formula: |
+      gpu_bytes(teacher) =
+        sum_over_layers(q4k_block_bytes(layer))     if teacher_mode == Frozen AND on_disk_format == Q4K
+        sum_over_layers(f32_block_bytes(layer))     otherwise (current behavior)
+    domain: teacher_mode in {Frozen, Trainable}; on_disk_format in {Q4K, Q6K, F32, F16, BF16}
+    codomain: gpu_bytes in bytes
+    invariants:
+    - 'Frozen + Q4K-on-disk: teacher block weights stay in Q4K format on GPU (no dequant at upload)'
+    - 'Frozen + F16-on-disk: weights stay in F16 (no dequant to F32)'
+    - 'Trainable (student): F32 path unchanged — gradients require F32 anyway'
+    - 'q4k_block_bytes(layer) ≈ f32_block_bytes(layer) / 7 (Q4K has ~4.5 bits/param vs 32)'
+    - 'Total teacher footprint for 7B Q4K Frozen: ≈ 4 GB (vs 28 GB current)'
+    preconditions:
+    - teacher_mode is determined at trainer construction (CudaTransformerTrainer::for_inference call site)
+    - on_disk_format is read from APR/SafeTensors header at load
+    lean_theorem: Theorems.Teacher_Residency_Invariant
+
+  forward_kernel_dispatch:
+    formula: |
+      forward(block, x) =
+        q4k_matmul_native(block.q4k, x)          if block is CudaBlock::Q4K
+        nf4_matmul(block.nf4, x)                 if block is CudaBlock::Nf4
+        fp32_matmul(block.fp32, x)               if block is CudaBlock::Fp32
+    domain: block in {CudaBlock::Q4K, CudaBlock::Nf4, CudaBlock::Fp32}; x in F32 activations
+    codomain: forward output in F32
+    invariants:
+    - Q4K-native kernel produces F32 output (dequant happens inside the kernel, fused with GEMM, never materialized as a full F32 weight tensor)
+    - Forward output of CudaBlock::Q4K must match CudaBlock::Fp32 forward output within 0.5% relative error (the dequant precision floor) for the same weights
+    - Q4K forward kernels are inference-only; no backward pass attempts to differentiate Q4K weights (frozen invariant)
+    preconditions:
+    - x.shape() matches block.hidden_size
+    - block.q4k.elements > 0
+    lean_theorem: Theorems.Forward_Kernel_Dispatch
+
+  no_grad_invariant:
+    formula: |
+      CudaBlock::Q4K has no associated gradient buffer:
+        grad(CudaBlock::Q4K) == None  (compile-time invariant via Option<GradBuffer>)
+    domain: block in {CudaBlock::Q4K}
+    codomain: grad in {None}
+    invariants:
+    - Q4K block weights are immutable — any backward step that attempts to write a Q4K block's grad is a programming error (must be a compile error or runtime panic with a clear message)
+    - This invariant is what allows the memory savings — no gradient storage AND no optimizer state for the teacher
+    - 'CudaBlock::Q4K is constructible only from CudaTrainerTeacher::for_inference (typestate guard)'
+    preconditions:
+    - Always (this is a type-level invariant)
+    lean_theorem: Theorems.No_Grad_Invariant
+
+  parity_with_realizar_inference:
+    formula: |
+      cuda_q4k_matmul_forward(W_q4k, x) ≈ realizar_q4k_matvec(W_q4k, x)
+      where ≈ means cosine similarity >= 0.999 and max_abs_diff < 1e-3 in F32
+    domain: W_q4k as a Q4K-quantized weight matrix; x as F32 activations
+    codomain: forward output as F32 vector
+    invariants:
+    - 'The Q4K forward kernel used in the cuda training backend MUST be byte-identical (or numerically equivalent within F32 noise) to the realizar inference kernel for the same weight'
+    - 'This is what guarantees that `apr distill` teacher logits == `apr run` teacher logits — the falsifier for KD signal correctness'
+    - 'Reuse, do not reimplement: link against realizar/aprender-compute fused_q4k_parallel_matvec where possible'
+    preconditions:
+    - Same Q4K block layout (super_block_size=256, block_size=32, scale/min/quants byte order)
+    - Same row-major matrix layout (per LAYOUT-001/002)
+    lean_theorem: Theorems.Parity_With_Realizar_Inference
+
+proof_obligations:
+- type: invariant
+  property: frozen teacher block memory footprint stays within Q4K bound
+  formal: |
+    For every CudaTrainerTeacher constructed from a Q4K-on-disk checkpoint:
+    sum_over_layers(gpu_bytes(block)) <= 2 * on_disk_q4k_bytes(checkpoint)
+    (factor of 2 covers per-block scratch + KV cache; never the 7× F32 inflation)
+- type: invariant
+  property: frozen teacher has no gradient buffers
+  formal: |
+    For every CudaBlock::Q4K constructed in a CudaTrainerTeacher:
+    block.grad_buffer == None at construction and throughout the trainer lifetime.
+- type: equivalence
+  property: Q4K forward matches Fp32 forward for the same weights
+  formal: |
+    For every (W_q4k, x) pair: cosine(q4k_forward(W_q4k, x), fp32_forward(dequant(W_q4k), x)) >= 0.999
+    (verified at runtime via apr trace --compare cuda-q4k cuda-fp32 on a held-out batch)
+- type: classification
+  property: teacher_mode autodetection picks Frozen for distill teacher path
+  formal: |
+    For every call site CudaTrainerTeacher::for_inference(checkpoint_dir, model_config):
+    the constructed trainer has teacher_mode = Frozen, regardless of model_config flags.
+- type: bound
+  property: 7B Q4K teacher fits within GB10 budget after this fix
+  formal: |
+    Let M = peak GPU+system memory used by `apr distill --backend cuda --epochs 1`
+    with a Q4K 7B teacher and Q4K-on-disk 0.5B student on gx10 (GB10, 122 GB MemAvailable).
+    Post-fix: M < 30 GB (vs current 50+ GB which trips OOM-killer).
+
+falsification_tests:
+- id: FT-Q4K-TEACHER-001
+  rule: CudaTrainerTeacher::for_inference does NOT dequantize Q4K teacher weights at load
+  prediction: |
+    apr distill with a Q4K teacher logs no "[PMAT-333] Dequantizing N layers" line.
+    The presence of this line in evidence/distill-7b-teacher-loadtest-gx10/launch.log
+    is the current-state falsifier — post-fix that line must be absent.
+  if_fails: |
+    Cuda backend's load path still ran dequantize_q4k_to_f32. Likely the teacher_mode
+    detection didn't trigger; check CudaTransformerTrainer::for_inference branch.
+  evidence: |
+    grep -c "PMAT-333.*Dequantizing" evidence/distill-7b-teacher-loadtest-gx10/launch-after-fix-b.log
+    Expected: 0 (current pre-fix log has 1 occurrence)
+- id: FT-Q4K-TEACHER-002
+  rule: 7B Q4K teacher GPU memory footprint <= 6 GB
+  prediction: |
+    With the fix, the 7B Q4K teacher consumes <= 6 GB of GPU memory at load
+    (vs ~28 GB F32 dequant pre-fix). Measured via nvidia-smi or cudaMemGetInfo
+    after teacher load, before student load.
+  if_fails: |
+    Some Q4K block path is still falling back to F32 (e.g. lm_head, embed_tokens).
+    Audit which weights skipped the Q4K branch. The savings come from blocks
+    holding ~95% of the weight memory; lm_head + embed_tokens together are <10%.
+  evidence: |
+    Add an instrumented log line in CudaTransformerBlock::new_q4k that prints
+    cumulative GPU bytes used post each block upload. Compare to pre-fix budget.
+- id: FT-Q4K-TEACHER-003
+  rule: Q4K forward kernel parity with realizar inference within 0.5% relative error
+  prediction: |
+    For a 7B Q4K teacher loaded into both apr distill (CudaBlock::Q4K) and apr run
+    (realizar inference), passing the same batch of input_ids through both yields
+    last-position logits with cosine similarity >= 0.999.
+  if_fails: |
+    The Q4K kernel used in the cuda distill backend has a different layout/precision
+    than realizar inference. Use apr trace --json --payload on both paths to find
+    the divergence point.
+  evidence: |
+    cargo test -p aprender-train --features cuda --test q4k_teacher_parity -- --ignored
+    Compares forward logits across both paths on a fixed input.
+- id: FT-Q4K-TEACHER-004
+  rule: backward through CudaBlock::Q4K is a compile error
+  prediction: |
+    Attempting to call backward() on a CudaBlock::Q4K (e.g. via accidentally
+    flipping the teacher to trainable) produces a compile-time error, not a
+    runtime panic. This is the typestate guarantee — no_grad_invariant lives
+    in the type system.
+  if_fails: |
+    The Frozen typestate was implemented as runtime flag instead of typestate.
+    Refactor: CudaBlock::Q4K::backward must not exist as a method (use a
+    sealed trait or impl-block constraint).
+  evidence: |
+    Negative compilation test: tests/compile-fail/q4k_backward.rs must fail to compile.
+- id: FT-Q4K-TEACHER-005
+  rule: apr distill --backend cuda with 7B Q4K teacher completes 1 epoch on GB10
+  prediction: |
+    With both this fix (Bug B) and cuda-unified-memory-allocator-v1.yaml
+    (Bug A) landed, the dispatch in evidence/distill-7b-teacher-loadtest-gx10/
+    re-run with TEACHER=paiml/qwen2.5-coder-7b-apache-q4k-v1 and STUDENT=0.5B,
+    epochs=1, completes successfully (exit code 0) with no OOM-kill and writes
+    an output.apr.
+  if_fails: |
+    Likely a downstream OOM (KV cache, activation buffers, cuBLAS workspace
+    grew under managed memory) or a Q4K kernel correctness bug surfaces as
+    NaN loss. Bisect by setting --epochs 0 (dry-init) first; then 1 micro-step.
+  evidence: |
+    evidence/distill-7b-teacher-loadtest-gx10/launch-after-fix-ab.log shows
+    "Distillation complete: initial_loss=... → final_loss=..."
+
+kani_harnesses:
+- id: KANI-Q4K-001
+  obligation: teacher_residency_invariant — Frozen + Q4K-on-disk implies Q4K block
+  property: |
+    For all teacher_mode in {Frozen, Trainable} and on_disk_format in {Q4K, Q6K, F32, F16, BF16}:
+    upload_block(teacher_mode, on_disk_format) returns CudaBlock::Q4K
+    if and only if (teacher_mode == Frozen AND on_disk_format == Q4K).
+  bound: 10
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_teacher_residency_dispatch
+- id: KANI-Q4K-002
+  obligation: no_grad_invariant — CudaBlock::Q4K has no gradient buffer
+  property: |
+    For every CudaBlock::Q4K instance: the type has no `grad_buffer` field
+    accessible from any public method. Constructible only via the Frozen
+    path. (Verified by structural type check, not solver.)
+  bound: 1
+  strategy: compositional
+  solver: cadical
+  harness: verify_q4k_no_grad_typestate
+
+qa_gate:
+  id: F-Q4K-TEACHER-001
+  name: cuda-q4k-frozen-teacher-v1 Contract
+  description: Frozen Q4K teacher path eliminates dequantization at GPU upload, enabling 7B teachers on GB10.
+  checks:
+  - validation
+  - falsification
