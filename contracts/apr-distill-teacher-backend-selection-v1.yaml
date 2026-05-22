@@ -1,0 +1,204 @@
+metadata:
+  version: 1.0.0
+  created: '2026-05-22'
+  author: PAIML Engineering
+  description: |
+    Teacher-backend selection for `apr distill --backend cuda`. PR #1869
+    (PMAT-701 Bug B) routed Q4K teachers around `CudaTransformerTrainer::for_inference`
+    on the assumption that F32 dequant would exceed device memory. With
+    PMAT-701 Bug A's unified-memory allocator (PR #1863) in effect, that
+    assumption is wrong on Grace Blackwell: the 28 GB F32 dequant fits
+    comfortably in the 128 GB unified pool, AND the cuBLAS-backed
+    `CudaTransformerTrainer` runs ~50× faster than the realizar
+    inference path which is mostly CPU.
+
+    This contract codifies the corrected dispatch:
+      - **Default** (and recommended for unified-memory devices like
+        Grace Blackwell GB10): `CudaTrainerTeacher` (cuBLAS, F32 dequant).
+        Fast teacher forward (~10-100 ms/batch on GB10 vs ~10-100 s/batch
+        on the realizar CPU path).
+      - **Fallback** (memory-constrained dGPUs without enough VRAM for the
+        F32 dequant): `RealizarQ4KTeacher`, selected by setting
+        `APR_DISTILL_TEACHER_BACKEND=realizar-q4k`.
+      - **Auto** (default): pick based on `classify_device_memory`. Unified
+        memory → `CudaTrainerTeacher`. Otherwise (ClassicDevice on a
+        constrained card) → `RealizarQ4KTeacher`.
+
+    PR #1869's `RealizarQ4KTeacher` is preserved as the constrained-device
+    fallback; this contract demotes it from default to opt-in.
+  references:
+  - 'PMAT-704 (this contract): teacher-backend selection logic'
+  - 'PMAT-701 Bug A (PR #1863): unified-memory allocator autodetect'
+  - 'PMAT-701 Bug B (PR #1869): RealizarQ4KTeacher (now demoted to fallback)'
+  - 'PMAT-703 (PR #1877): teacher vocab alignment (orthogonal — applies to both backends)'
+  - 'crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs (CudaTransformerTrainer)'
+  - 'crates/aprender-serve/src/gguf/cuda/cuda.rs:18 (OwnedQuantizedModelCuda::forward_cuda — the CPU-heavy path Bug B picked)'
+  - 'evidence/distill-7b-vocab-aligned-hang-2026-05-22/findings.json (5-whys identifying Bug B as a wrong turn)'
+  - 'feedback_smoke_defaults_leak_into_production.md (cascade-momentum anti-pattern that produced Bug B)'
+
+kind: KernelContract
+name: apr-distill-teacher-backend-selection
+version: 1.0.0
+scope: apr-cli run_cuda_backend — Q4K teacher backend dispatch
+
+equations:
+  backend_dispatch:
+    formula: |
+      teacher_backend(env_override, device_class, teacher_uses_q4k) =
+        Realizar    if env_override == "realizar-q4k"
+        CudaTrainer if env_override == "cudatrainer"
+        CudaTrainer if env_override == "auto" AND device_class == UnifiedMemory
+        Realizar    if env_override == "auto" AND device_class == ClassicDevice AND teacher_uses_q4k
+        CudaTrainer if env_override == "auto" AND device_class == ClassicDevice AND NOT teacher_uses_q4k
+    domain: env_override in {"auto", "realizar-q4k", "cudatrainer"} (from APR_DISTILL_TEACHER_BACKEND);
+            device_class in {UnifiedMemory, ClassicDevice};
+            teacher_uses_q4k in {true, false}
+    codomain: teacher_backend in {CudaTrainer, Realizar}
+    invariants:
+    - 'Default (env unset) maps to "auto"'
+    - 'On unified-memory devices (Grace Blackwell), default is ALWAYS CudaTrainer (cuBLAS, fast)'
+    - 'On classic dGPUs, Q4K teachers default to Realizar only because F32 dequant may exceed VRAM'
+    - 'On classic dGPUs with non-Q4K teacher, CudaTrainer is the only option (no realizar path for F32 teachers)'
+    - 'Explicit env override beats device-class autodetection in both directions'
+    notes: |
+      The `realizar-q4k` opt-out exists for two scenarios:
+      (1) Memory-constrained dGPUs where the F32 dequant exceeds VRAM, and
+      (2) Operators who want byte-identical forward parity with `apr run` for
+          KD-signal-vs-inference comparison studies.
+    preconditions:
+    - device_class is correctly classified per cuda-unified-memory-allocator-v1.yaml
+    - teacher_uses_q4k is determined from teacher .apr tensor dtype histogram
+    lean_theorem: Theorems.Backend_Dispatch
+
+  forward_latency_invariant:
+    formula: |
+      For (teacher = 7B Q4K Qwen2.5-Coder, batch_size = 32, seq_len = 256, on GB10):
+        CudaTrainer.forward_latency  <  500 ms / step
+        Realizar.forward_latency    >  5000 ms / step (likely much higher)
+      i.e., CudaTrainer is at least 10× faster than Realizar on this device.
+    domain: teacher = 7B Q4K; device = GB10; (batch, seq) = (32, 256)
+    codomain: forward latency in ms
+    invariants:
+    - 'CudaTrainer GPU utilization > 50% (cuBLAS-backed; nvidia-smi confirms)'
+    - 'Realizar GPU utilization ~ 0-5% (CPU-bound, only matmuls dispatch)'
+    - 'Latency gap closes only when teacher size is small enough that CPU forward is comparable (sub-1B teachers may show <2× gap)'
+    preconditions:
+    - PMAT-701 Bug A allocator autodetect in effect
+    - cuBLAS available on the device (true for sm >= 70)
+    lean_theorem: Theorems.Forward_Latency_Invariant
+
+  bug_b_demotion:
+    formula: |
+      cuda-q4k-frozen-teacher-v1.yaml's "memory savings vs F32 dequant" claim
+      remains correct as an OPTIMIZATION, not a CORRECTNESS requirement. It
+      applies to (a) classic dGPUs without enough VRAM for the dequant, OR
+      (b) future architectures where cuBLAS isn't available. On unified-memory
+      devices, the dequant is paged through 128 GB unified and the cuBLAS
+      throughput dominates the choice — Bug B's path is strictly slower.
+    domain: cuda-q4k-frozen-teacher-v1.yaml falsifiers
+    codomain: validity scope
+    invariants:
+    - 'cuda-q4k-frozen-teacher-v1.yaml FT-Q4K-TEACHER-002 (peak GPU memory <= 6 GB) remains true for the Realizar path when selected'
+    - 'cuda-q4k-frozen-teacher-v1.yaml FT-Q4K-TEACHER-005 (apr distill --epochs 1 completes) is now satisfied by CudaTrainer instead of Realizar on unified-memory devices'
+    - 'The Realizar path remains in the codebase for memory-constrained fallback'
+    notes: 'The Bug B contract is not retracted — its math is correct. Its DEFAULT-PATH claim is what changes.'
+    preconditions:
+    - this contract is in effect
+    lean_theorem: Theorems.Bug_B_Demotion
+
+proof_obligations:
+- type: classification
+  property: env_override matrix is total and unambiguous
+  formal: |
+    For every (env_override, device_class, teacher_uses_q4k) tuple in the cartesian product
+    of their domains: backend_dispatch returns exactly one of {CudaTrainer, Realizar}.
+    No undefined behavior; no precedence ambiguity.
+- type: invariant
+  property: cuBLAS path GPU utilization > 50% on unified-memory devices
+  formal: |
+    For every (teacher >= 1B Q4K, device = unified-memory):
+    nvidia-smi --query-gpu=utilization.gpu sampled mid-training-step reports >= 50%.
+    (Excludes JIT warmup and initial weight upload; samples taken during step 1+.)
+- type: equivalence
+  property: backend-selected teacher logits agree within numerical noise
+  formal: |
+    For every (input_ids, teacher.apr):
+    | CudaTrainer.logits_for_batch(input_ids) - Realizar.logits_for_batch(input_ids) | <= 1e-2
+    (element-wise; quantization-induced noise floor for Q4K-vs-F32-dequant difference).
+- type: bound
+  property: CudaTrainer training step latency <= 1 second on GB10 (7B teacher)
+  formal: |
+    For every step k of `apr distill --backend cuda` with 7B Q4K teacher + 0.5B student
+    on GB10: wall-clock(step k) < 1.0 s. (Excludes step 0 which includes JIT.)
+
+falsification_tests:
+- id: FT-BACKEND-SELECT-001
+  rule: default Q4K dispatch on GB10 routes to CudaTrainer (cuBLAS)
+  prediction: |
+    `apr distill <7B-q4k.apr> --student <0.5B.apr> --epochs 1 --backend cuda` on gx10
+    with no env vars emits the log line "Q4K teacher → CudaTrainerTeacher (cuBLAS, F32 dequant)"
+    and "cuBLAS initialized — forward TF32 tensor cores". GPU utilization observed >50%
+    during the first training step (via nvidia-smi sampling).
+  if_fails: |
+    The Q4K detection still routes to Realizar. Check that the new backend_dispatch
+    logic preserves the env override but flips the device-class default.
+  evidence: |
+    evidence/distill-7b-cublas-cudatrainer/launch.log shows the new dispatch banner;
+    nvidia-smi sample mid-step shows utilization >= 50%.
+- id: FT-BACKEND-SELECT-002
+  rule: env override `APR_DISTILL_TEACHER_BACKEND=realizar-q4k` reaches the Realizar path
+  prediction: |
+    With APR_DISTILL_TEACHER_BACKEND=realizar-q4k set: the dispatch emits
+    "[PMAT-704] env override: routing to RealizarQ4KTeacher" and constructs the realizar path.
+  if_fails: |
+    The env override was lost in the refactor; legacy users of PR #1869 lose the constrained-device fallback.
+  evidence: cargo test -p apr-cli --features cuda,training,inference --lib distill::tests::env_override_realizar
+- id: FT-BACKEND-SELECT-003
+  rule: 7B teacher 500-step run completes in < 30 minutes on GB10
+  prediction: |
+    With the new default dispatch: 500-step (17-epoch) apr distill with 7B Q4K teacher
+    completes in < 30 minutes wall clock on gx10. Per-step latency < 4 s steady-state.
+    Pre-fix (Bug B's Realizar default): the same run hangs at step 0 for > 1 hour.
+  if_fails: |
+    cuBLAS path has a different bottleneck (likely CudaStudentProvider safetensors loading
+    or KV cache allocation). Investigate via apr trace or per-step instrumentation.
+  evidence: evidence/distill-7b-cublas-cudatrainer/launch.log shows "Distillation complete" with elapsed < 1800 s.
+- id: FT-BACKEND-SELECT-004
+  rule: forward parity between cuBLAS and realizar within Q4K noise floor
+  prediction: |
+    For a held-out batch, CudaTrainer.forward_logits and Realizar.forward_cuda produce
+    logits with cosine similarity >= 0.99 (after vocab-alignment truncation per PMAT-703).
+    Element-wise max diff <= 1e-2.
+  if_fails: |
+    One of the paths has a numerical bug independent of this contract. File a separate
+    parity defect.
+  evidence: cargo test -p apr-cli --features cuda,training,inference --test teacher_backend_parity -- --ignored
+
+kani_harnesses:
+- id: KANI-BACKEND-SELECT-001
+  obligation: backend_dispatch is total over (env_override, device_class, teacher_uses_q4k)
+  property: |
+    For all (env in {"auto", "realizar-q4k", "cudatrainer"}, dc in {UM, CD}, q4k in {true, false}):
+    backend_dispatch returns Some(CudaTrainer) or Some(Realizar). No None, no panic.
+  bound: 12
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_backend_dispatch_total
+- id: KANI-BACKEND-SELECT-002
+  obligation: env_override precedence over device_class
+  property: |
+    For all (dc, q4k): backend_dispatch("realizar-q4k", dc, q4k) == Realizar
+                  AND backend_dispatch("cudatrainer", dc, q4k) == CudaTrainer
+    regardless of device_class or teacher type.
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_env_override_precedence
+
+qa_gate:
+  id: F-BACKEND-SELECT-001
+  name: apr-distill-teacher-backend-selection-v1 Contract
+  description: Default Q4K teacher dispatch on unified-memory devices routes to cuBLAS-backed CudaTrainerTeacher, not the CPU-heavy RealizarQ4KTeacher. Bug B's Realizar path is preserved as an opt-in fallback for memory-constrained devices.
+  checks:
+  - validation
+  - falsification
