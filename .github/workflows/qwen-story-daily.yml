@@ -1,0 +1,143 @@
+# Nightly Qwen-story regression cron + pmat bug-hunt manifest.
+#
+# Contract: contracts/qwen-story-v1.yaml § FALSIFY-QWEN-STORY-006.
+# Runs `scripts/qwen-story.sh` against the canonical Qwen model registry,
+# emits a pmat manifest of high-risk untested code in each beat's command
+# modules, and opens (or comments on) a tracking issue when the manifest
+# grows beyond a threshold.
+#
+# Self-hosted runners only — the story exercises ~30 GB of model files that
+# don't fit on GitHub-hosted runners. Per memory rule
+# `feedback_self_hosted_only`.
+
+name: qwen-story-daily
+
+on:
+  schedule:
+    # 04:17 UTC daily — off-peak for the self-hosted fleet.
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+    inputs:
+      pmat_hunt:
+        description: 'Run pmat bug-hunt manifest (1 = yes, 0 = skip for speed)'
+        required: false
+        default: '1'
+      file_issue:
+        description: 'File a tracking issue if manifest grows'
+        required: false
+        default: 'true'
+
+permissions:
+  contents: read
+  issues: write   # to open/comment on the tracking issue
+
+concurrency:
+  group: qwen-story-daily
+  cancel-in-progress: false
+
+jobs:
+  story:
+    name: Qwen story (apr-cli E2E)
+    runs-on: [self-hosted, gpu]
+    timeout-minutes: 30
+    env:
+      MODELS_DIR: /home/runner/models
+      PMAT_HUNT: ${{ github.event.inputs.pmat_hunt || '1' }}
+      RUST_BACKTRACE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install apr from HEAD
+        run: |
+          cargo install --path crates/apr-cli --force --features cuda 2>&1 | tail -5
+          apr --version
+
+      - name: Run scripts/qwen-story.sh
+        id: story
+        continue-on-error: true
+        run: |
+          set +e
+          bash scripts/qwen-story.sh 2>&1 | tee /tmp/story.log
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Extract pmat bug-hunt manifest
+        id: manifest
+        run: |
+          # Pull the pmat hunt lines out of the log into a structured artifact.
+          mkdir -p /tmp/qwen-story-artifacts
+          grep -E '^(    gap|    churn|    fault)' /tmp/story.log \
+            > /tmp/qwen-story-artifacts/pmat-manifest.txt || true
+          LINES=$(wc -l < /tmp/qwen-story-artifacts/pmat-manifest.txt)
+          echo "manifest_lines=$LINES" >> "$GITHUB_OUTPUT"
+          # Compare against the last successful run's manifest (artifact from prior workflow).
+          # If the manifest grew by >5 lines, flag it.
+          PREV_LINES=$(gh run list --workflow=qwen-story-daily.yml --status=success --limit=1 \
+            --json databaseId --jq '.[0].databaseId' 2>/dev/null \
+            | xargs -I {} gh run download {} -n pmat-manifest -D /tmp/prev 2>/dev/null \
+            && wc -l < /tmp/prev/pmat-manifest.txt 2>/dev/null || echo 0)
+          GROWTH=$((LINES - PREV_LINES))
+          echo "growth=$GROWTH" >> "$GITHUB_OUTPUT"
+          echo "Previous manifest: $PREV_LINES lines, current: $LINES lines, growth: $GROWTH"
+
+      - name: Upload pmat manifest artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pmat-manifest
+          path: /tmp/qwen-story-artifacts/pmat-manifest.txt
+          retention-days: 90
+
+      - name: Upload story log artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: story-log
+          path: /tmp/story.log
+          retention-days: 30
+
+      - name: File / update tracking issue on failure
+        if: |
+          (steps.story.outputs.exit_code != '0' ||
+           fromJson(steps.manifest.outputs.growth || '0') > 5) &&
+          (github.event.inputs.file_issue != 'false')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TITLE="qwen-story-daily: story exit=${{ steps.story.outputs.exit_code }} manifest_growth=${{ steps.manifest.outputs.growth }}"
+          # Look for an existing open issue with the qwen-story-daily label.
+          EXISTING=$(gh issue list --label qwen-story-daily --state open --limit 1 \
+            --json number --jq '.[0].number // empty')
+          {
+            echo "## Qwen story daily run — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo ""
+            echo "- Story exit code: \`${{ steps.story.outputs.exit_code }}\`"
+            echo "- Pmat manifest lines: \`${{ steps.manifest.outputs.manifest_lines }}\` (growth: ${{ steps.manifest.outputs.growth }})"
+            echo "- Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo ""
+            echo "### Story log (tail)"
+            echo '```'
+            tail -50 /tmp/story.log
+            echo '```'
+            echo ""
+            echo "### Manifest (top 20 lines)"
+            echo '```'
+            head -20 /tmp/qwen-story-artifacts/pmat-manifest.txt 2>/dev/null || echo "(empty)"
+            echo '```'
+          } > /tmp/issue-body.md
+          if [ -n "$EXISTING" ]; then
+            echo "Commenting on existing issue #$EXISTING"
+            gh issue comment "$EXISTING" --body-file /tmp/issue-body.md
+          else
+            echo "Filing new tracking issue"
+            gh issue create --title "$TITLE" \
+              --label qwen-story-daily,regression \
+              --body-file /tmp/issue-body.md
+          fi
+
+      - name: Fail the job if the story failed
+        if: steps.story.outputs.exit_code != '0'
+        run: |
+          echo "::error::Qwen story exited with code ${{ steps.story.outputs.exit_code }}. See artifact 'story-log' for details."
+          exit 1
