@@ -230,16 +230,6 @@ falsification_tests:
   - "Drift-prevention: cpu_vs_gpu_cosine_similarity_{parallel_returns_one,orthogonal_returns_zero,fails_closed} unit tests in gguf_gpu_generate.rs::tests lock the math; CUDA_FALLBACK_LOG_PREFIX and WGPU_FALLBACK_LOG_PREFIX const + the 3 prefix tests lock the user-facing eprintln tag shape. Future regression: a refactor that swaps the helper or the constants without bumping this contract version trips a unit-test failure."
   - "LIVE DISCHARGE 2026-05-04 on noah-Lambda-Vector (RTX 4090): `apr run /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr --prompt 'What is 2+2?' --max-tokens 8 --temperature 0.0` ran end-to-end with binary built from main @ commit 817ec0553. Stderr emitted all three predicted jidoka tags in order: (1) `[apr-cpu-vs-gpu-output-parity-v1] CUDA path rejected, attempting fallback: ...PARITY-GATE FAILED... Cosine similarity: -0.005190 ... CPU argmax: 334 | GPU argmax: 8127`; (2) `Backend: wgpu (Vulkan)`; (3) `[apr-cpu-vs-gpu-output-parity-v1] wgpu path rejected, attempting fallback: cosine vs CPU = 0.766079 (< 0.99)`. Final stdout: `2 + 2 equals 4.` (correct CPU output, NOT wgpu gibberish). All four predictions of the falsification test verified. Evidence: evidence/cpu-gpu-005-live-discharge-2026-05-04/{wgpu-smoke.log,findings.md}."
 
-proof_obligations:
-- type: invariant
-  property: "apr run greedy first-token argmax is identical between GPU and --no-gpu paths"
-- type: invariant
-  property: "apr run with .apr file MUST run parity gate (currently only .gguf path has one)"
-- type: completeness
-  property: "all 5 falsifiers (greedy argmax, cosine, CUDA gate enforced, no-gpu honored, wgpu gate enforced) cover the parity surface"
-- type: liveness
-  property: "if GPU parity gate fails on ANY backend (CUDA or wgpu), user gets either an explicit error OR a CPU fallback — never silent gibberish"
-
 - id: FALSIFY-CPU-GPU-006
   rule: wgpu parity gate runs multi-step (not just step 0), catching autoregressive drift before any user-visible generation
   prediction: |
@@ -271,13 +261,25 @@ proof_obligations:
     pre-#1864 for the N=1 case.
   if_fails: "wgpu autoregressive drift slips past the init-time gate and the user sees 'ampiezza' or similar gibberish from `apr run` while exit code is 0 — #1864 is not closed"
   binds_to: multi_step_parity_gate
-  status: LIVE_DISCHARGED
+  status: DISCHARGED
   algorithm_evidence:
   - "Five-whys for #1864 wgpu side: (1) `apr run` on 7B Q4K wgpu produces 'ampiezza' gibberish with exit 0. (2) The init-time parity gate (FALSIFY-CPU-GPU-005) compares only step 0; cosine ≥ 0.99 because the wgpu forward IS approximately correct on the very first token. (3) Subsequent autoregressive steps drift because the wgpu KV cache accumulates error each layer/step. (4) The single-step probe couldn't observe this drift because it never advanced beyond step 0. (5) Root cause: gate's domain was too narrow (single-step instead of multi-step). With N=3 steps and lockstep advancement via CPU argmax, drift becomes observable at the same threshold that caught the single-step case for 1.5B Q4K wgpu (cos=0.766 step 0)."
   - "Bonus root cause finding: the GGUF wgpu path (try_wgpu_generate, gguf_gpu_generate.rs:61) had NO parity gate at all — only the APR path (try_apr_wgpu_inference:344) had the v1.3.0 single-step gate. This is why 7B Q4K GGUF shipped 'ampiezza' straight to the user with exit 0 even after the visibility log fix in v1.4.0. The multi-step gate is added to BOTH paths in this revision."
   - "Implementation: gguf_gpu_generate.rs:128-217 (try_wgpu_generate, GGUF path — NEW gate) and gguf_gpu_generate.rs:455-560 (try_apr_wgpu_inference, APR path — multi-step extension of v1.3.0 single-step). Both reuse one CPU OwnedQuantizedKVCache + wgpu probe_kv_caches across N steps; both paths advance via CPU argmax on cpu_logits so wgpu_logits cannot influence the probe token sequence. Operator override via APR_WGPU_PARITY_STEPS env var in [1, 16]; default 3."
   - "LIVE DISCHARGE 2026-05-22 on noah-Lambda-Vector (RTX 4090): `apr run /home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf 'What is 2+2?' --max-tokens 16` emits the multi-step rejection log: `[apr-cpu-vs-gpu-output-parity-v1] wgpu path rejected, attempting fallback: cosine vs CPU = 0.722249 (< 0.99) at step 1/3` then falls back to CPU which produces the correct output `2 + 2 equals 4.` in 32.12s. Pre-fix on the same model/host: same gibberish 'ampiezza' as documented in #1864. The multi-step gate empirically catches the autoregressive drift the single-step gate missed; #1864 wgpu-side user-visible symptom is closed."
   - "Note: this closes the wgpu *visibility* + autoregressive-drift loopholes (gibberish no longer reaches the user). The underlying wgpu kernel bug that produces drift on 7B Q4K (something in attention or FFN dispatch for the specific hidden_dim=3584 dimensions) remains open as a #1864 wgpu-kernel sub-issue. After this contract revision, MODEL-1 wgpu shipability for 7B stays at 0% (correct CPU fallback), but the user-experience regression is closed."
+
+proof_obligations:
+- type: invariant
+  property: "apr run greedy first-token argmax is identical between GPU and --no-gpu paths"
+- type: invariant
+  property: "apr run with .apr file MUST run parity gate (currently only .gguf path has one)"
+- type: completeness
+  property: "all 5 falsifiers (greedy argmax, cosine, CUDA gate enforced, no-gpu honored, wgpu gate enforced) cover the parity surface"
+- type: liveness
+  property: "if GPU parity gate fails on ANY backend (CUDA or wgpu), user gets either an explicit error OR a CPU fallback — never silent gibberish"
+- type: invariant
+  property: "wgpu parity gate covers MULTIPLE autoregressive steps (default N=3), not just step 0 — single-step gate cannot detect KV-cache-accumulated drift"
 
 verification_summary:
   total_obligations: 6
