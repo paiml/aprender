@@ -47,12 +47,20 @@ fn golden_output_gguf_cpu(
 ) -> Result<(Vec<u32>, String)> {
     use realizar::gguf::{OwnedQuantizedModel, QuantizedGenerateConfig};
 
-    let bos = aprender::demo::SpecialTokens::qwen2().bos_id;
-    let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![bos, 9707]);
+    let specials = aprender::demo::SpecialTokens::qwen2();
+    let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![specials.bos_id, 9707]);
+    // #1864: without stop_tokens, the model runs for the full max_tokens
+    // budget and starts emitting in-distribution chat-template tokens like
+    // `<|im_start|>` from accumulated drift — which `verify_output` then
+    // (correctly) flags as gibberish. The actual underlying inference path
+    // (`apr serve` /v1/chat/completions) sets stop_tokens to EOS — so user
+    // traffic was never affected. This aligns the gate's gen_config with the
+    // production path. See `cuda_chat_backend.rs:113` for the symmetric setup.
     let gen_config = QuantizedGenerateConfig {
         max_tokens,
         temperature: 0.0,
         top_k: 1,
+        stop_tokens: vec![specials.eos_id],
         ..Default::default()
     };
     let model = OwnedQuantizedModel::from_mapped(mapped)
@@ -150,14 +158,18 @@ fn validate_golden_test_case(
         // Safe: format==Gguf guarantees these are Some
         let gguf_ref = gguf_model.expect("GGUF model required for GPU golden output");
         let mapped_ref = mapped.expect("GGUF mapped model required for GPU golden output");
-        let bos = aprender::demo::SpecialTokens::qwen2().bos_id;
+        let specials = aprender::demo::SpecialTokens::qwen2();
         let prompt_tokens = gguf_ref
             .encode(prompt)
-            .unwrap_or_else(|| vec![bos, 9707]);
+            .unwrap_or_else(|| vec![specials.bos_id, 9707]);
+        // #1864: GPU path mirrors the CPU gate's fix above — set stop_tokens
+        // to EOS so generation terminates at end-of-turn rather than running
+        // the full 512-token budget and drifting into `<|im_start|>` repeats.
         let gen_config = QuantizedGenerateConfig {
             max_tokens: golden_max_tokens, // GH-279-4: match CPU budget
             temperature: 0.0,
             top_k: 1,
+            stop_tokens: vec![specials.eos_id],
             ..Default::default()
         };
         if let Some(failure) = validate_gpu_golden_output(

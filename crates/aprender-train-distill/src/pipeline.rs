@@ -55,12 +55,12 @@ pub struct Pipeline<'a> {
     /// SPEC-DISTILL-001 Phase 1 (PMAT-691): the teacher backend the
     /// training loop pulls logits from. Defaults to a `FixtureTeacher`.
     /// Phase 1b (PMAT-693) adds `CudaTrainerTeacher` for real backends.
-    teacher: Box<dyn crate::teacher_provider::TeacherLogitsProvider >,
+    teacher: Box<dyn crate::teacher_provider::TeacherLogitsProvider>,
     /// SPEC-DISTILL-001 Phase 2b (PMAT-695): the student backend the
     /// training loop updates each step. Defaults to a `FixtureStudent`.
     /// Phase 2d (PMAT-696) adds `CudaStudentProvider` wrapping
     /// `CudaTransformerTrainer` for production runs.
-    student: Box<dyn crate::student_provider::StudentLogitsProvider >,
+    student: Box<dyn crate::student_provider::StudentLogitsProvider>,
     /// SPEC-DISTILL-001 Phase 4 Stage B-2: batch source for the training
     /// loop. Defaults to `SyntheticBatchSource` (smoke + fixture path);
     /// Phase 4 real-corpus dispatch swaps in `ShardBatchSource` via
@@ -112,7 +112,7 @@ impl<'a> Pipeline<'a> {
     #[must_use]
     pub fn with_teacher(
         mut self,
-        teacher: Box<dyn crate::teacher_provider::TeacherLogitsProvider >,
+        teacher: Box<dyn crate::teacher_provider::TeacherLogitsProvider>,
     ) -> Self {
         self.teacher = teacher;
         self
@@ -125,7 +125,7 @@ impl<'a> Pipeline<'a> {
     #[must_use]
     pub fn with_student(
         mut self,
-        student: Box<dyn crate::student_provider::StudentLogitsProvider >,
+        student: Box<dyn crate::student_provider::StudentLogitsProvider>,
     ) -> Self {
         self.student = student;
         self
@@ -358,8 +358,7 @@ impl<'a> Pipeline<'a> {
 
                 // PMAT-699 P0 durability: periodic checkpoint save.
                 if checkpoint_every > 0 && step % checkpoint_every == 0 {
-                    let ckpt_path =
-                        checkpoint_dir.join(format!("ckpt-step-{step:06}.apr"));
+                    let ckpt_path = checkpoint_dir.join(format!("ckpt-step-{step:06}.apr"));
                     if let Err(e) = self.student.save_checkpoint(&ckpt_path) {
                         // Don't fail training on checkpoint write error; just
                         // log loudly. Loss progress is more valuable than
@@ -508,14 +507,14 @@ impl<'a> Pipeline<'a> {
         // weights are never serialized — Stage D 2026-05-20 ran 25h and
         // produced a 200-byte empty model.safetensors.
         let apr_target = self.config.output.dir.join("model.apr");
-        self.student.save_checkpoint(&apr_target).map_err(|e| {
-            EntrenarError::Internal {
+        self.student
+            .save_checkpoint(&apr_target)
+            .map_err(|e| EntrenarError::Internal {
                 message: format!(
                     "student.save_checkpoint({}) failed: {e}",
                     apr_target.display()
                 ),
-            }
-        })?;
+            })?;
 
         Ok(output_path)
     }
@@ -959,8 +958,7 @@ mod tests {
             let p = tmp.path().join(format!("{name}.safetensors"));
             let views = vec![(
                 "layer.weight",
-                TensorView::new(Dtype::F32, vec![8, 4], &dummy_bytes)
-                    .expect("safetensors view"),
+                TensorView::new(Dtype::F32, vec![8, 4], &dummy_bytes).expect("safetensors view"),
             )];
             std::fs::write(
                 &p,
@@ -985,9 +983,7 @@ mod tests {
 
         eprintln!(
             "[F-DISTILL-PIPELINE-001] initial_loss={}, final_loss={}, steps={}",
-            result.metrics.initial_loss,
-            result.metrics.final_loss,
-            result.metrics.steps_completed
+            result.metrics.initial_loss, result.metrics.final_loss, result.metrics.steps_completed
         );
 
         assert!(

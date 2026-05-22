@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-05-22
+
+### 🎉 Dogfood-driven release — Qwen end-to-end story, multi-step parity safety net, #1864 closed (it was a 5-line config gap, not a deep numerical bug)
+
+81 commits since v0.34.0. Major work landed across three threads:
+
+1. **Distill on NVIDIA GB10 Blackwell**: Phase 1-3 of SPEC-DISTILL-001 working end-to-end on sm_121 — 62 steps in 82.1s after the 8-PR PMAT-698 cascade unwound a single one-character bug (`warm!` macro hardcoded `"silu_forward"` for every kernel cache key). Phase 4 ladder running.
+2. **MoE (Qwen3) inference**: M32d KV cache (19× speedup), streaming SSE per-token emit, full temperature/top_k/top_p sampling. New contracts `qwen3-moe-streaming-sse-v1` and `qwen3-moe-sampling-v1`. M-GPU-MOE-3 cascade identified that CPU uses Q8K activation quant while CUDA uses f32 → 237,775× Q4_K matvec divergence (still tracked as #1583).
+3. **2026-05-22 dogfood pass**: 8 bugs filed, 7 fixed (#1862 #1865 #1866 README drift + serve syntax + deny advisory). The eighth, #1864 cuBLAS FP8 "gibberish", turned out to be a **missing `stop_tokens` in the QA gate** — not a numerical bug. The user-visible `apr serve` path was never affected.
+
+### Added
+
+- **`apr` Qwen end-to-end story in README** (#1875) — 8-beat narrative (Discover → Trust → Explore → Adapt → Use → Serve → Operate → Scale) anchored on the Qwen scale ladder (0.5B safetensors → 30B-MoE GGUF). Every beat is a falsifier in `contracts/qwen-story-v1.yaml`; runnable as `scripts/qwen-story.sh`; nightly cron in `.github/workflows/qwen-story-daily.yml` with pmat bug-hunt manifest emitted per beat.
+- **Multi-step wgpu parity gate** (#1876) — closes the wgpu side of #1864. The pre-existing single-step gate passed at step 0 cosine ≥ 0.99 but missed autoregressive KV-cache drift on 7B Q4K. New `multi_step_parity_gate` equation runs CPU vs wgpu in lockstep for N=3 steps (default; configurable via `APR_WGPU_PARITY_STEPS` ∈ [1,16]). Live-discharged on 7B Q4K Vulkan: cos drops to 0.722 at step 1/3 → CPU fallback returns correct "2 + 2 equals 4." Contract `apr-cpu-vs-gpu-output-parity-v1` → v1.6.0 + FALSIFY-CPU-GPU-006.
+- **`/dogfood` Gates 13-17** (#1872) — five new falsifier gates: G13 worktree HEAD sanity, G14 APR→GGUF export round-trip, G15 `apr validate --quality` consistency vs `apr qa`, G16 `apr run` exit-code on chat-template gibberish, G17 7B inference smoke. Pre-Gate methodology note locks the `OUT=$(cmd); EC=$?` exit-code-capture pattern.
+- **M32d qwen3-moe KV cache** (#1832) — 19× speedup for qwen3-moe inference, KV reuse across decode steps.
+- **qwen3-moe streaming SSE** (#1854) — per-token emit when `stream=true` on `/v1/chat/completions`. Contract `qwen3-moe-streaming-sse-v1`.
+- **qwen3-moe sampling** (#1842) — temperature / top_k / top_p for qwen3-moe (was greedy-only).
+- **clean-chat-output sanitization contract** (#1859) — codifies the M287 cascade prefix-stripping invariants for `apr code` chat output.
+- **Blackwell GB10 distill enablement** (#1797 + #1804-#1820 cascade) — `apr distill --backend cuda` runs end-to-end on sm_121. SPEC-BLACKWELL-FIX-001 + PMAT-700 (autodetect Grace Blackwell, skip PTX GEMM pre-warm when cuBLAS bound).
+- **HTTP 3-knob wire-up** (#1846) — operator-actionable temperature/top_p/repeat_penalty env vars for `apr code`.
+- **cuBLAS FP8 reproducer + per-layer parity infrastructure** (#1884 + #1887) — general-purpose diagnostic tooling that survived the #1864 phantom investigation. The Stage A reproducer pins FP8 forward output to a bit-identical FNV-1a signature for any future numerical comparison; Stage B uncaps `CPU_DEBUG_LAYERS=1` to dump all 28 layers + ships `scripts/cublas_fp8_per_layer_diff.sh` to split CPU/GPU streams.
+
+### Fixed
+
+- **#1864 cuBLAS FP8 7B Q4K "gibberish"** (#1890) — **was not a numerical bug**. Root cause: the Golden Output gate's `gen_config` used `..Default::default()` without overriding `stop_tokens`. Default = `Vec::new()`, so generation ran the full 512-token budget. After emitting the correct answer "4", the model continued from in-distribution chat-template noise → `<|im_start|>` repeats → `verify_output` flagged as gibberish. Fix: 5 lines — add `stop_tokens: vec![specials.eos_id]` to both CPU and GPU gen_configs. User-visible `apr serve` was never affected (it populated stop_tokens correctly at `cuda_chat_backend.rs:113`). Methodology lesson saved to `memory/feedback_falsify_simple_before_deep.md`.
+- **#1862 `apr --version` stale SHA in git worktrees** (#1867) — build.rs watched a hardcoded `../../.git/HEAD` path that doesn't exist in worktree layout (`.git` is a file pointer there, not a dir). Replaced with `git rev-parse --git-dir` for per-worktree HEAD + `--git-common-dir` for shared refs. Contract `apr-version-traceability-v1` → v1.1.0 + FALSIFY-VERSION-004.
+- **#1865 `apr export <model>.apr --format gguf` panic** (#1868) — `.expect()` on `apr_metadata.num_layers` aborted the process (exit 101) on APR files that didn't carry the field. Replaced with `Result`-propagating `ok_or_else` + fallback that infers `num_layers` from `blk.N.*` tensor names. Exit code 5 (clean validation error), not 101 (panic). New contract `apr-export-num-layers-v1`.
+- **#1866 `apr validate --quality` Grade F on working models** (#1870) — gate compared `total_score` against a 100-point ceiling, but 22 of 25 quality checks were stubbed `Skip("Not implemented")`. New `ValidationReport::implemented_score_pct() -> Option<f64>` gates the threshold on the runnable denominator. Working models now exit 0; fully-stubbed suites treated as informational. New contract `apr-validate-quality-threshold-v1`.
+- **README drift + `apr serve` example syntax** (#1873) — contract claimed 1134 contracts / 82 CLI commands; actual was 1151 / 103. `apr serve model.gguf` example errored ("unrecognized subcommand"); correct usage is `apr serve run model.gguf`. Both fixed; CLAUDE.md status line bumped to reflect v0.34.0 ship.
+- **`cargo deny check advisories` blocker** (#1878) — RUSTSEC-2026-0105 (`core2` unmaintained + yanked, transitive via `bitstream-io`) started failing ALL PRs simultaneously the morning of 2026-05-22. Added to ignore list with recovery note.
+- **distill GPU checkpoint export** (#1856 / PMAT-699) — `apr distill` now saves trained GPU weights at the end of each phase + periodic checkpoints; previously the trained weights stayed on the GPU and were lost on process exit.
+- **M-GPU-MOE-3 Q4_K root cause documented** (#1822) — CPU uses Q8K activation quantization while CUDA uses f32 → different algorithms. Closed FALSIFY-Q4K-BISECT-007. Fix still tracked as #1583 (cuda f32→Q8K activation quant kernel).
+- **Eight stale-path / contract-registry fixes** (#1857 #1860 #1861) — repair stale `include_str!` paths after the monorepo consolidation; repair stale CARGO_MANIFEST_DIR in fusion contract test; register 5 missing fused kernels in `kernel-fusion-v1.yaml` (closes #1858).
+- **clean_chat_output prefix stripping** (#1853) — strip leading `Human:` / `User:` / `Assistant:` from model output before returning to chat client.
+- **try_qwen3_moe_backend EOS stop_tokens** (#1852) — populate `stop_tokens` with EOS for qwen3-moe HTTP path (fixes M287 runaway generation).
+- **qwen3_moe arch guard at /v1/chat/completions** (#1806) — guard at HTTP handler so qwen3_moe traffic routes to the MoE-aware forward; prevents `Buffer with 'layer.0.up_proj' label binding size is zero` panic.
+
+### Verification
+
+- **End-to-end 7B Q4K GGUF on RTX 4090**: `apr qa /home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf` → ✓ ALL GATES PASSED (pre-fix: ✗ FAIL Golden Output `<|im_start|>` repeats)
+- **End-to-end 7B Q4K HTTP**: `apr serve run <7B> --port 8080` + curl `/v1/chat/completions` with `{"role":"user","content":"What is 2+2?"}` → `'2+2 equals 4.'`
+- **End-to-end 1.5B Q4K APR**: `apr run` produces "2 + 2 equals 4." via the multi-step parity gate → CPU fallback safety net
+- **End-to-end 0.5B SafeTensors**: `apr pull` → `apr inspect` → `apr convert` → `apr export` round-trip; all commands clean exit, no panics
+- **`/dogfood` Gates 1-17**: all GO on this host with canonical Qwen scale ladder (0.5B / 1.5B / 7B / 30B-MoE)
+- **Tests**: 25,300+ workspace lib tests + 5968 apr-cli tests + 13,805 aprender-core tests pass; 1153 provable contracts lint-clean
+
+### Methodology notes saved to memory
+
+- `feedback_falsify_simple_before_deep` — when a test gate FAILs with a complex symptom, first check whether the user-visible path that the test purports to verify ALSO fails. Saved the session from days of phantom investigation.
+- `feedback_release_only_after_bug_hunt` — for releases, dogfood → wait for in-flight fixes → bug-hunt → THEN cut.
+- (existing `feedback_test_methodology_can_fake_bugs` and `feedback_falsifier_cascade_decomposes_magnitude` rules reinforced by this session)
+
 ## [0.34.0] - 2026-05-18
 
 ### 🎉 MODEL-2 §88 stack-existence-proof published — paiml/albor-370m-v1 LIVE on HF Hub

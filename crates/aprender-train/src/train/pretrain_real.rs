@@ -1378,10 +1378,7 @@ mod tests {
     fn qwen2_tensor_names() -> BTreeMap<String, (Vec<f32>, Vec<usize>)> {
         // Minimal Qwen2 signature: model.layers + self_attn.q_proj.bias (distinguishes from Llama)
         let mut m = BTreeMap::new();
-        m.insert(
-            "model.layers.0.self_attn.q_proj.bias".to_string(),
-            (vec![0.0_f32; 4], vec![4]),
-        );
+        m.insert("model.layers.0.self_attn.q_proj.bias".to_string(), (vec![0.0_f32; 4], vec![4]));
         m.insert(
             "model.layers.0.self_attn.q_proj.weight".to_string(),
             (vec![0.0_f32; 16], vec![4, 4]),
@@ -1396,10 +1393,7 @@ mod tests {
             "model.layers.0.self_attn.q_proj.weight".to_string(),
             (vec![0.0_f32; 16], vec![4, 4]),
         );
-        m.insert(
-            "model.layers.0.input_layernorm.weight".to_string(),
-            (vec![1.0_f32; 4], vec![4]),
-        );
+        m.insert("model.layers.0.input_layernorm.weight".to_string(), (vec![1.0_f32; 4], vec![4]));
         m
     }
 
@@ -1479,10 +1473,7 @@ mod tests {
     #[test]
     fn inv_init_arch_match_001_trusts_metadata_when_tensors_unknown() {
         let mut tensors = BTreeMap::new();
-        tensors.insert(
-            "blk.0.attn_q.weight".to_string(),
-            (vec![0.0_f32; 16], vec![4, 4]),
-        );
+        tensors.insert("blk.0.attn_q.weight".to_string(), (vec![0.0_f32; 16], vec![4, 4]));
         // GGUF names can't disambiguate; we trust the metadata.
         validate_init_arch_matches_tensor_evidence(Some("LlamaForCausalLM"), &tensors)
             .expect("unknown tensor family must skip check (trust metadata)");
@@ -1498,10 +1489,8 @@ mod tests {
         ];
         assert_eq!(family_from_tensor_names(qwen2.iter().copied()), "qwen2");
 
-        let llama: Vec<&str> = vec![
-            "model.layers.0.self_attn.q_proj.weight",
-            "model.layers.0.input_layernorm.weight",
-        ];
+        let llama: Vec<&str> =
+            vec!["model.layers.0.self_attn.q_proj.weight", "model.layers.0.input_layernorm.weight"];
         assert_eq!(family_from_tensor_names(llama.iter().copied()), "llama");
     }
 

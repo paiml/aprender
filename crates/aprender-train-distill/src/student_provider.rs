@@ -162,8 +162,7 @@ impl StudentLogitsProvider for FixtureStudent {
         // Average gradient across batch (the canonical SGD batch averaging).
         let batch_size = gradient.len() as f32;
         for j in 0..self.vocab_size {
-            let mean_grad: f32 =
-                gradient.iter().map(|row| row[j]).sum::<f32>() / batch_size;
+            let mean_grad: f32 = gradient.iter().map(|row| row[j]).sum::<f32>() / batch_size;
             self.logits[j] -= self.learning_rate * mean_grad;
         }
         Ok(())
@@ -294,12 +293,13 @@ mod cuda_backend {
             // limitation documented on the struct). Future Phase 2e fuses
             // input_ids + gradient into a single trait call so larger
             // batches can be processed correctly.
-            let last_grad = gradient
-                .last()
-                .ok_or_else(|| entrenar_common::EntrenarError::Internal {
-                    message: "CudaStudentProvider.apply_kd_gradient: empty gradient slice"
-                        .to_string(),
-                })?;
+            let last_grad =
+                gradient
+                    .last()
+                    .ok_or_else(|| entrenar_common::EntrenarError::Internal {
+                        message: "CudaStudentProvider.apply_kd_gradient: empty gradient slice"
+                            .to_string(),
+                    })?;
             self.trainer
                 .forward_backward_with_grad(&last_ids, last_grad)
                 .ok_or_else(|| entrenar_common::EntrenarError::Internal {
@@ -327,10 +327,7 @@ mod cuda_backend {
                 if !parent.as_os_str().is_empty() {
                     std::fs::create_dir_all(parent).map_err(|e| {
                         entrenar_common::EntrenarError::Io {
-                            context: format!(
-                                "save_checkpoint mkdir parent {}",
-                                parent.display()
-                            ),
+                            context: format!("save_checkpoint mkdir parent {}", parent.display()),
                             source: e,
                         }
                     })?;
@@ -401,7 +398,10 @@ mod tests {
         let grad = vec![vec![1.0_f32, 2.0], vec![-1.0_f32, -2.0]];
         s.apply_kd_gradient(&grad).unwrap();
         for &v in s.current_logits() {
-            assert!(v.abs() < 1e-6, "batch-averaged zero gradient → no logit change");
+            assert!(
+                v.abs() < 1e-6,
+                "batch-averaged zero gradient → no logit change"
+            );
         }
     }
 
