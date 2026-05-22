@@ -332,7 +332,7 @@ fn test_build_gguf_arch_metadata_gpt2_keys() {
     apr.intermediate_size = Some(3072);
     apr.rms_norm_eps = Some(1e-5);
 
-    let metadata = build_gguf_arch_metadata(&apr);
+    let metadata = build_gguf_arch_metadata(&apr).expect("required fields populated");
     let keys: Vec<&str> = metadata.iter().map(|(k, _)| k.as_str()).collect();
 
     assert!(keys.contains(&"gpt2.attention.layer_norm_epsilon"));
@@ -353,7 +353,7 @@ fn test_build_gguf_arch_metadata_qwen2_keys() {
     apr.vocab_size = Some(151936);
     apr.intermediate_size = Some(8960);
 
-    let metadata = build_gguf_arch_metadata(&apr);
+    let metadata = build_gguf_arch_metadata(&apr).expect("required fields populated");
     let keys: Vec<&str> = metadata.iter().map(|(k, _)| k.as_str()).collect();
 
     assert!(keys.contains(&"qwen2.attention.layer_norm_rms_epsilon"));
