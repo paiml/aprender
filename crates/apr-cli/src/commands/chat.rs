@@ -97,10 +97,11 @@ pub(crate) fn run(
 ) -> Result<(), CliError> {
     contract_pre_temperature_bounds!();
     contract_pre_session_state_machine!();
-    
+
     // Resolve alias/hf like `apr run`
     let source_str = path_arg.to_string_lossy();
-    let resolved_source = crate::commands::aliases::resolve_short_name(&source_str).unwrap_or_else(|| source_str.to_string());
+    let resolved_source = crate::commands::aliases::resolve_short_name(&source_str)
+        .unwrap_or_else(|| source_str.to_string());
     let hf_uri = if !resolved_source.contains("://") && resolved_source.contains('/') {
         format!("hf://{resolved_source}")
     } else {

@@ -225,10 +225,15 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
     let start = Instant::now();
 
     // Resolve alias if applicable
-    let resolved_source = crate::commands::aliases::resolve_short_name(source).unwrap_or_else(|| source.to_string());
+    let resolved_source =
+        crate::commands::aliases::resolve_short_name(source).unwrap_or_else(|| source.to_string());
 
-    // Convert to canonical HF if it looks like org/repo
-    let hf_uri = if !resolved_source.contains("://") && resolved_source.contains('/') {
+    // Convert to canonical HF if it looks like org/repo (but isn't a local path)
+    let hf_uri = if !resolved_source.contains("://")
+        && resolved_source.contains('/')
+        && !std::path::Path::new(&resolved_source).exists()
+        && !resolved_source.starts_with('/')
+    {
         format!("hf://{resolved_source}")
     } else {
         resolved_source
@@ -342,6 +347,12 @@ fn find_model_file_in_dir(dir: &Path, file: Option<&str>) -> Option<PathBuf> {
             return Some(path);
         }
     } else {
+        // Sharded model indices are preferred if present
+        let index_path = dir.join("model.safetensors.index.json");
+        if index_path.exists() {
+            return Some(index_path);
+        }
+
         for name in &["model.safetensors", "pytorch_model.bin", "model.apr"] {
             let path = dir.join(name);
             if path.exists() {
@@ -387,6 +398,12 @@ fn find_in_apr_cache(org: &str, repo: &str, file: Option<&str>) -> Option<PathBu
             return Some(path);
         }
     } else {
+        // Sharded model indices are preferred if present
+        let index_path = apr_cache.join("model.safetensors.index.json");
+        if index_path.exists() {
+            return Some(index_path);
+        }
+
         for ext in &["apr", "safetensors", "gguf"] {
             let path = apr_cache.join(format!("model.{ext}"));
             if path.exists() {
@@ -402,24 +419,25 @@ fn find_cached_model(org: &str, repo: &str, file: Option<&str>) -> Option<PathBu
     if let Some(path) = find_in_hf_cache(org, repo, file) {
         return Some(path);
     }
-    
+
     // 2. Check APR Cache
     if let Some(path) = find_in_apr_cache(org, repo, file) {
         return Some(path);
     }
-    
+
     // 3. Check Pacha Cache (used by `apr pull` for HF single-file streaming)
     if let Some(filename) = file {
         if let Ok(pacha_dir) = crate::commands::pull::get_pacha_cache_dir() {
             // Reconstruct the original model_ref that `apr pull` would have hashed
             let model_ref = format!("hf://{org}/{repo}/{filename}");
-            let (_, pacha_path) = crate::commands::pull::build_single_cache_path(&pacha_dir, &model_ref, filename);
+            let (_, pacha_path) =
+                crate::commands::pull::build_single_cache_path(&pacha_dir, &model_ref, filename);
             if pacha_path.exists() {
                 return Some(pacha_path);
             }
         }
     }
-    
+
     None
 }
 
