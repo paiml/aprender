@@ -1,6 +1,6 @@
 metadata:
   kind: schema
-  version: 1.5.0
+  version: 1.6.0
   status: ACTIVE
   created: '2026-05-03'
   author: PAIML Engineering
@@ -81,6 +81,27 @@ equations:
     - "Flag is honored: no [PMAT-082] cuBLAS init log line"
     - "Output is correct: matches HF FP16 reference argmax for canonical 7B teacher"
     - "Performance is competitive: CPU FP16 must complete within 2× GPU latency, ideally faster (current state: CPU is faster on canonical 7B)"
+
+  multi_step_parity_gate:
+    formula: |
+      For every step s in {0, 1, ..., N-1} where N = APR_WGPU_PARITY_STEPS (default 3),
+      cosine_similarity(CPU_logits_s, wgpu_logits_s) >= 0.99,
+      with both paths advancing through the SAME deterministic token sequence
+      (CPU argmax) and sharing nothing but the initial probe token.
+    domain: |
+      apr run via wgpu backend, init-time probe before the user-visible
+      autoregressive loop begins. Reuses one CPU OwnedQuantizedKVCache
+      and one set of wgpu probe_kv_caches across all N steps.
+    codomain: |
+      Pass: every step's cosine ≥ 0.99 → wgpu backend approved
+      Fail (any step): emit `WGPU_FALLBACK_LOG_PREFIX` with step index +
+      cosine value → return None → caller falls back to CPU
+    invariants:
+    - "Single-step parity (the v1.3.0..v1.5.0 design) is INSUFFICIENT for autoregressive correctness — Qwen2.5-7B Q4K shipped 'ampiezza' gibberish via wgpu in the v0.34.0..HEAD window because the first-token cosine was ≥ 0.99 but every subsequent step diverged as the KV cache accumulated error (#1864)"
+    - "N defaults to 3 (init overhead ~1s on 7B Q4K); operator can override via APR_WGPU_PARITY_STEPS env var in [1, 16]"
+    - "Both paths advance via CPU argmax on cpu_logits — wgpu_logits never feed back into wgpu's own KV cache, so a divergence at step k cannot 'hide' itself by steering the probe away from problem tokens"
+    - "Step 0 reduces to the v1.5.0 single-step gate (backward-compatible by construction)"
+    - "Probe max_seq is sized to N+1 so KV cache slots are always sufficient"
 
 falsification_tests:
 - id: FALSIFY-CPU-GPU-001
@@ -219,13 +240,52 @@ proof_obligations:
 - type: liveness
   property: "if GPU parity gate fails on ANY backend (CUDA or wgpu), user gets either an explicit error OR a CPU fallback — never silent gibberish"
 
+- id: FALSIFY-CPU-GPU-006
+  rule: wgpu parity gate runs multi-step (not just step 0), catching autoregressive drift before any user-visible generation
+  prediction: |
+    For Qwen2.5-7B-Instruct Q4K GGUF on wgpu (Vulkan) backend, the single-step
+    parity gate from FALSIFY-CPU-GPU-005 (v1.3.0..v1.5.0) PASSES at step 0
+    (cosine ≥ 0.99 on the BOS token) but the autoregressive loop drifts into
+    "ampiezza\nampiezza"-style gibberish within 2-3 tokens because the wgpu
+    KV cache accumulates error each step.
+
+    With FALSIFY-CPU-GPU-006 in place (multi_step_parity_gate, default N=3),
+    the gate runs CPU vs wgpu in lockstep for 3 steps, advancing both via
+    CPU argmax. If ANY step's cosine drops below 0.99, the gate emits
+    `WGPU_FALLBACK_LOG_PREFIX` tagged with `at step <k>/<N>` and returns
+    None — the caller falls back to CPU. User sees the CPU output, never
+    wgpu drift.
+  test: |
+    APR_WGPU_PARITY_STEPS=3 apr run /path/to/qwen2.5-coder-7b-instruct-q4_k_m.gguf \
+        "What is 2+2?" --max-tokens 8 2>&1 | tee /tmp/run.log
+    SHOULD show:
+      [apr-cpu-vs-gpu-output-parity-v1] wgpu path rejected, attempting fallback: cosine vs CPU = <c> (< 0.99) at step <k>/3
+    AND final stdout MUST be the CPU output (e.g. "2 + 2 equals 4."), NOT
+    "ampiezza\nampiezza" or any other gibberish.
+
+    Backward-compat check (single-step still works on 1.5B):
+      APR_WGPU_PARITY_STEPS=1 apr run /path/to/qwen2.5-coder-1.5b-instruct-q4k.apr \
+        "What is 2+2?" --max-tokens 4
+    SHOULD still emit either a rejection log + CPU fallback, or wgpu success,
+    depending on the model's actual cosine at step 0 — i.e. behavior matches
+    pre-#1864 for the N=1 case.
+  if_fails: "wgpu autoregressive drift slips past the init-time gate and the user sees 'ampiezza' or similar gibberish from `apr run` while exit code is 0 — #1864 is not closed"
+  binds_to: multi_step_parity_gate
+  status: LIVE_DISCHARGED
+  algorithm_evidence:
+  - "Five-whys for #1864 wgpu side: (1) `apr run` on 7B Q4K wgpu produces 'ampiezza' gibberish with exit 0. (2) The init-time parity gate (FALSIFY-CPU-GPU-005) compares only step 0; cosine ≥ 0.99 because the wgpu forward IS approximately correct on the very first token. (3) Subsequent autoregressive steps drift because the wgpu KV cache accumulates error each layer/step. (4) The single-step probe couldn't observe this drift because it never advanced beyond step 0. (5) Root cause: gate's domain was too narrow (single-step instead of multi-step). With N=3 steps and lockstep advancement via CPU argmax, drift becomes observable at the same threshold that caught the single-step case for 1.5B Q4K wgpu (cos=0.766 step 0)."
+  - "Bonus root cause finding: the GGUF wgpu path (try_wgpu_generate, gguf_gpu_generate.rs:61) had NO parity gate at all — only the APR path (try_apr_wgpu_inference:344) had the v1.3.0 single-step gate. This is why 7B Q4K GGUF shipped 'ampiezza' straight to the user with exit 0 even after the visibility log fix in v1.4.0. The multi-step gate is added to BOTH paths in this revision."
+  - "Implementation: gguf_gpu_generate.rs:128-217 (try_wgpu_generate, GGUF path — NEW gate) and gguf_gpu_generate.rs:455-560 (try_apr_wgpu_inference, APR path — multi-step extension of v1.3.0 single-step). Both reuse one CPU OwnedQuantizedKVCache + wgpu probe_kv_caches across N steps; both paths advance via CPU argmax on cpu_logits so wgpu_logits cannot influence the probe token sequence. Operator override via APR_WGPU_PARITY_STEPS env var in [1, 16]; default 3."
+  - "LIVE DISCHARGE 2026-05-22 on noah-Lambda-Vector (RTX 4090): `apr run /home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf 'What is 2+2?' --max-tokens 16` emits the multi-step rejection log: `[apr-cpu-vs-gpu-output-parity-v1] wgpu path rejected, attempting fallback: cosine vs CPU = 0.722249 (< 0.99) at step 1/3` then falls back to CPU which produces the correct output `2 + 2 equals 4.` in 32.12s. Pre-fix on the same model/host: same gibberish 'ampiezza' as documented in #1864. The multi-step gate empirically catches the autoregressive drift the single-step gate missed; #1864 wgpu-side user-visible symptom is closed."
+  - "Note: this closes the wgpu *visibility* + autoregressive-drift loopholes (gibberish no longer reaches the user). The underlying wgpu kernel bug that produces drift on 7B Q4K (something in attention or FFN dispatch for the specific hidden_dim=3584 dimensions) remains open as a #1864 wgpu-kernel sub-issue. After this contract revision, MODEL-1 wgpu shipability for 7B stays at 0% (correct CPU fallback), but the user-experience regression is closed."
+
 verification_summary:
-  total_obligations: 5
+  total_obligations: 6
   proven: 0
   tested: 0
   status: pending
 
 obligation_coverage:
-  computational_cost: 'O(1) per `apr run` invocation: one extra forward pass at init for the parity smoke (already implemented for gguf::cuda path)'
+  computational_cost: 'O(N) per `apr run` invocation where N = APR_WGPU_PARITY_STEPS (default 3): N forward passes at init for the multi-step parity smoke (extends the gguf::cuda single-step gate)'
   reproducible_seed: 'fixed prompt "What is 2+2?", greedy decode at temperature 0.0, max_tokens=1'
   reference_for_oracle: '`apr run --no-gpu` (CPU scalar-loop path; v5 evidence shows it produces correct output on canonical 7B teacher)'
