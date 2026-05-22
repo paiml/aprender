@@ -332,7 +332,7 @@ fn test_build_gguf_arch_metadata_with_all_fields_populated() {
     apr.rms_norm_eps = Some(1e-6);
     apr.name = Some("Qwen2.5-0.5B".to_string());
 
-    let entries = build_gguf_arch_metadata(&apr);
+    let entries = build_gguf_arch_metadata(&apr).expect("required fields populated");
 
     // Verify all expected keys are present
     let find = |key: &str| entries.iter().find(|(k, _)| k == key).map(|(_, v)| v);
