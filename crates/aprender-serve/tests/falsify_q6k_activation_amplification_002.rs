@@ -122,7 +122,7 @@ fn synthetic_activations(n: usize, seed: u32, kind: &str) -> Vec<f32> {
                     let u2 = (bits2 as f32) / (u32::MAX as f32) - 0.5; // ∈ [-0.5, 0.5]
                     let mag = (u2 * 4.0).exp(); // ∈ [~0.14, ~7.4]
                     u1.signum() * mag * 0.1 // scale down so most stay <1.0
-                }
+                },
                 "outlier_5x" => {
                     let bits2 = xorshift32(&mut state);
                     let pick = (bits2 as f32) / (u32::MAX as f32); // ∈ [0, 1]
@@ -132,7 +132,7 @@ fn synthetic_activations(n: usize, seed: u32, kind: &str) -> Vec<f32> {
                     } else {
                         u1
                     }
-                }
+                },
                 "outlier_100x" => {
                     let bits2 = xorshift32(&mut state);
                     let pick = (bits2 as f32) / (u32::MAX as f32);
@@ -142,7 +142,7 @@ fn synthetic_activations(n: usize, seed: u32, kind: &str) -> Vec<f32> {
                     } else {
                         u1
                     }
-                }
+                },
                 _ => unreachable!("unknown activation kind: {kind}"),
             }
         })
@@ -186,9 +186,7 @@ fn falsify_q6k_activation_amplification_sweep() {
         ("outlier_100x", "outlier_100x"),
     ];
 
-    eprintln!(
-        "FALSIFY-Q6K-AMP-002: per-matvec rel_diff vs activation distribution"
-    );
+    eprintln!("FALSIFY-Q6K-AMP-002: per-matvec rel_diff vs activation distribution");
     eprintln!("(if rel_diff scales with non-uniformity → activation-amplification confirmed)");
     eprintln!();
     eprintln!(
@@ -273,7 +271,10 @@ mod helper_tests {
         // uniform should have NO values > 1.0 in absolute terms.
         let v = synthetic_activations(1000, 1, "uniform");
         let large_count = v.iter().filter(|&&x| x.abs() > 1.001).count();
-        assert_eq!(large_count, 0, "uniform should have no outliers; got {large_count}");
+        assert_eq!(
+            large_count, 0,
+            "uniform should have no outliers; got {large_count}"
+        );
     }
 
     #[test]
@@ -288,6 +289,9 @@ mod helper_tests {
         let a = vec![0.0, 0.0];
         let b = vec![1e-10, 1e-10];
         let rel = max_rel_diff(&a, &b);
-        assert!(rel.is_finite(), "rel_diff with zero baseline must stay finite, got {rel}");
+        assert!(
+            rel.is_finite(),
+            "rel_diff with zero baseline must stay finite, got {rel}"
+        );
     }
 }

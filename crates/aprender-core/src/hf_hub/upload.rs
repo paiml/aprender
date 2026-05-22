@@ -488,7 +488,14 @@ impl HfHubClient {
         commit_msg: &str,
     ) -> Result<()> {
         let token = self.token.as_ref().ok_or(HfHubError::MissingToken)?;
-        self.commit_lfs_pointer(repo_id, alias_filename, sha256, file_size, commit_msg, token)
+        self.commit_lfs_pointer(
+            repo_id,
+            alias_filename,
+            sha256,
+            file_size,
+            commit_msg,
+            token,
+        )
     }
 
     /// Stub when feature is disabled.

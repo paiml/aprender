@@ -303,21 +303,13 @@ impl AprServeDriver {
             .ok()
             .and_then(|v| v.parse::<f32>().ok())
             .unwrap_or(request.temperature);
-        let top_k = std::env::var("APR_AGENT_TOP_K")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok());
-        let top_p = std::env::var("APR_AGENT_TOP_P")
-            .ok()
-            .and_then(|v| v.parse::<f32>().ok());
-        let repeat_penalty = std::env::var("APR_AGENT_REPEAT_PENALTY")
-            .ok()
-            .and_then(|v| v.parse::<f32>().ok());
-        let repeat_last_n = std::env::var("APR_AGENT_REPEAT_LAST_N")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok());
-        let seed = std::env::var("APR_AGENT_SEED")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok());
+        let top_k = std::env::var("APR_AGENT_TOP_K").ok().and_then(|v| v.parse::<usize>().ok());
+        let top_p = std::env::var("APR_AGENT_TOP_P").ok().and_then(|v| v.parse::<f32>().ok());
+        let repeat_penalty =
+            std::env::var("APR_AGENT_REPEAT_PENALTY").ok().and_then(|v| v.parse::<f32>().ok());
+        let repeat_last_n =
+            std::env::var("APR_AGENT_REPEAT_LAST_N").ok().and_then(|v| v.parse::<usize>().ok());
+        let seed = std::env::var("APR_AGENT_SEED").ok().and_then(|v| v.parse::<u64>().ok());
 
         let mut body = serde_json::json!({
             "model": self.model_name,

@@ -212,7 +212,10 @@ where
 
     let mut total_loss = 0.0_f32;
     let mut grads = Vec::with_capacity(input_ids.len());
-    for ((ids, t_logits), &label) in input_ids.iter().zip(teacher_logits.iter()).zip(labels.iter())
+    for ((ids, t_logits), &label) in input_ids
+        .iter()
+        .zip(teacher_logits.iter())
+        .zip(labels.iter())
     {
         let s_logits = compute_student_logits(ids);
         if s_logits.len() != vocab {
@@ -342,15 +345,8 @@ mod tests {
 
         let input_ids = vec![vec![1, 2, 3], vec![4, 5]];
         let labels = vec![3, 5];
-        let (loss, grads) = kd_step(
-            &mut teacher,
-            &input_ids,
-            &labels,
-            4.0,
-            0.5,
-            compute_student,
-        )
-        .unwrap();
+        let (loss, grads) =
+            kd_step(&mut teacher, &input_ids, &labels, 4.0, 0.5, compute_student).unwrap();
 
         assert!(loss.is_finite() && loss > 0.0, "loss is finite + positive");
         assert_eq!(grads.len(), 2, "one gradient vec per batch element");
@@ -375,14 +371,10 @@ mod tests {
     fn kd_step_errors_on_vocab_size_mismatch() {
         let mut teacher = FixtureTeacher::new(16);
         let compute_student = |_ids: &[u32]| vec![0.0_f32; 8]; // wrong size
-        let result = kd_step(
-            &mut teacher,
-            &[vec![1]],
-            &[0],
-            4.0,
-            0.5,
-            compute_student,
+        let result = kd_step(&mut teacher, &[vec![1]], &[0], 4.0, 0.5, compute_student);
+        assert!(
+            result.is_err(),
+            "vocab size mismatch must error, not silently corrupt"
         );
-        assert!(result.is_err(), "vocab size mismatch must error, not silently corrupt");
     }
 }

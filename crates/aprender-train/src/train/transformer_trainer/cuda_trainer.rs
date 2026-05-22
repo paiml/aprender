@@ -1306,10 +1306,7 @@ impl CudaTransformerTrainer {
         // replacing whatever gpu_forward wrote there. This matches the
         // KAIZEN-052 in-place gradient convention that gpu_backward expects.
         let offset = (seq_len - 1) * vocab_size;
-        self.gpu_training
-            .logits_buf
-            .copy_from_host_at(logit_gradient, offset)
-            .ok()?;
+        self.gpu_training.logits_buf.copy_from_host_at(logit_gradient, offset).ok()?;
         let stream = self.cuda_trainer.stream();
         stream.synchronize().ok()?;
 

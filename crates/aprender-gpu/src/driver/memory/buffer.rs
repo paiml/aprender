@@ -52,7 +52,11 @@ pub fn classify_device_memory(ctx: &CudaContext) -> Result<DeviceMemoryClass, Gp
     // SAFETY: device handle from CudaContext is valid; out-pointer is on the
     // stack; integrated attribute is a documented driver attribute.
     let result = unsafe {
-        (driver.cuDeviceGetAttribute)(&mut integrated, CU_DEVICE_ATTRIBUTE_INTEGRATED, ctx.device())
+        (driver.cuDeviceGetAttribute)(
+            &mut integrated,
+            CU_DEVICE_ATTRIBUTE_INTEGRATED,
+            ctx.device(),
+        )
     };
     CudaDriver::check(result)?;
     if integrated == 1 {
@@ -72,7 +76,9 @@ fn should_use_managed_memory(ctx: &CudaContext) -> bool {
     match std::env::var("MANAGED_MEMORY").as_deref() {
         Ok("1") => true,
         Ok("0") => false,
-        _ => classify_device_memory(ctx).map(|c| c == DeviceMemoryClass::UnifiedMemory).unwrap_or(false),
+        _ => classify_device_memory(ctx)
+            .map(|c| c == DeviceMemoryClass::UnifiedMemory)
+            .unwrap_or(false),
     }
 }
 

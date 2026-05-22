@@ -34,7 +34,11 @@ fn fixture_setup() -> Option<(MappedGGUFModel, OwnedQuantizedModel)> {
 const PROMPT: &[u32] = &[9707, 198]; // "Hello\n"
 const MAX_TOKENS: usize = 4;
 
-fn generate(mapped: &MappedGGUFModel, model: &OwnedQuantizedModel, cfg: QuantizedGenerateConfig) -> Vec<u32> {
+fn generate(
+    mapped: &MappedGGUFModel,
+    model: &OwnedQuantizedModel,
+    cfg: QuantizedGenerateConfig,
+) -> Vec<u32> {
     run_qwen3_moe_generate(mapped, model, PROMPT, &cfg).expect("run_qwen3_moe_generate")
 }
 
