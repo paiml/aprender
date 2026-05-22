@@ -45,18 +45,32 @@ GX10_REPO_PATH="${GX10_REPO_PATH:-/home/noah/src/aprender}"
 # PMAT-698d: gx10 has no /mnt/nvme-raid0 (that's lambda-vector layout).
 # Default to $HOME/runs which exists on most setups; override via env.
 GX10_RUN_PREFIX="${GX10_RUN_PREFIX:-/home/noah/runs}"
-# PMAT-698d: the original paiml/qwen2.5-coder-7b-apache-q4k-v1 GGUF
-# teacher is supported via stage_repo's apr import --preserve-q4k path
-# (further down). It does NOT load directly via for_inference. For the
-# Phase 3 smoke, default to a model size that fits the GB10 training
-# memory budget. The 1.5B teacher was tried but produced
-# CUDA_ERROR_OUT_OF_MEMORY at "Block 0 upload" — Blackwell's unified
-# 128GB pool reports correctly but training-time peak (weights +
-# gradients + Adam optimizer state + activations) overflows the
-# actual VRAM budget for >1B models. Use 0.5B for both teacher and
-# student: same architecture so the pipeline exercises every KD-loop
-# branch, while keeping memory bounded for the smoke.
-TEACHER_REPO="${TEACHER_REPO:-Qwen/Qwen2.5-Coder-0.5B-Instruct}"
+# PMAT-701 (Bug A + Bug B): the MODEL-1 7B Q4K teacher is the default for
+# Phase 4 production training. Earlier comments here documented a 1.5B
+# BF16 OOM at "Block 0 upload" and pinned the dispatch to a 0.5B teacher
+# (i.e. teacher == student) as a smoke-mode workaround. That workaround
+# silently leaked into Phase 4 Stage D's 50K and 10K runs (2026-05-20/21),
+# where it produced no real KD signal — the loss curve was just CE-on-batch
+# fine-tuning, not distillation, and `apr run` against the resulting
+# checkpoint produced gibberish.
+#
+# Two bugs gated the 7B teacher (both FIXED in PR #1863 + #1869):
+#   - Bug A (contracts/trueno-gpu/cuda-unified-memory-allocator-v1.yaml):
+#     trueno-gpu's GpuBuffer default used cuMemAlloc (~30 GB device-side
+#     ceiling) instead of cuMemAllocManaged (full 128 GB unified). The
+#     allocator now autodetects Grace via CU_DEVICE_ATTRIBUTE_INTEGRATED
+#     and routes to managed memory.
+#   - Bug B (contracts/cuda-q4k-frozen-teacher-v1.yaml): the cuda
+#     training backend dequantized Q4K teacher weights to F32 at GPU
+#     upload (4 GB → 28 GB inflation). The new RealizarQ4KTeacher
+#     (apr-cli/src/commands/distill_q4k_teacher.rs) routes Q4K teachers
+#     through realizar's inference path, keeping weights in Q4K on the
+#     GPU. Verified on gx10 GB10: 15 min stable training at ~36 GB.
+#
+# For the Phase 3 smoke (STEPS=500, smoke-only semantics), override:
+#   TEACHER_REPO=Qwen/Qwen2.5-Coder-0.5B-Instruct ./scripts/dispatch-...
+# Smoke runs exercise the pipeline plumbing and do not need real KD signal.
+TEACHER_REPO="${TEACHER_REPO:-paiml/qwen2.5-coder-7b-apache-q4k-v1}"
 STUDENT_INIT="${STUDENT_INIT:-Qwen/Qwen2.5-Coder-0.5B-Instruct}"
 # Phase 4 Stage B-2 (PR #1839): when DATASET_DIR is set, the dispatch
 # passes `--dataset <DIR>` to `apr distill`, which drives the training
