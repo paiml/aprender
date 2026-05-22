@@ -1,0 +1,136 @@
+metadata:
+  version: 1.0.0
+  created: '2026-05-22'
+  author: PAIML Engineering
+  description: "End-to-end Qwen narrative — an 8-beat story exercising every core apr command group (Inference, Inspection, Profiling, Model ops, Training, Registry, GPU) against the Qwen scale ladder (0.5B → 1.5B → 7B → 30B-MoE). The story is the single canonical demo in README.md AND a regression gate via `scripts/qwen-story.sh` + nightly cron + /dogfood Gate 18."
+  kind: pattern
+  references:
+    - "scripts/qwen-story.sh — the runnable story"
+    - "README.md ## A Qwen story — the user-facing narrative"
+    - ".github/workflows/qwen-story-daily.yml — nightly cron"
+    - "paiml/aprender#1864 (7B Q4K GPU regression; Beat 7 deliberately avoids apr qa on 7B)"
+    - "paiml/aprender#1865 (apr export panic; Beat 4 detects the regression)"
+    - "paiml/aprender#1866 (validate --quality threshold; Beat 2 hits the fixed gate)"
+  registry: true
+  tags:
+    - qwen
+    - dogfood
+    - end-to-end
+    - narrative
+    - regression-gate
+
+five_whys:
+  symptom: "Users couldn't tell which command groups worked end-to-end and which had regressions without running the entire 12-gate /dogfood manually; the README's CLI examples were a flat reference card, not a narrative, and several examples were broken (`apr profile --roofline` flag never existed; `apr bench --assert-tps` flag is on `apr qa` not bench)."
+  why_1: "README CLI examples were a quick-reference, not a falsifiable end-to-end demo. A user copy-pasting them hit invalid flags before discovering the framework's actual surface."
+  why_2: "No single artifact bound the user-visible demo to a runnable script. Drift between docs and CLI was easy because each example lived in isolation."
+  why_3: "Existing falsifiers tested individual commands but didn't compose them into a journey. A working 'qa' gate and a working 'export' gate don't prove the user can convert → quantize → diff in one session."
+  why_4: "PMAT-based bug-hunting was ad-hoc: developers ran `pmat query` when they remembered, not as part of regular dogfood. Untested branches in command handlers accumulated."
+  why_5: "There was no contract for 'the README story still works' — only contracts for individual commands."
+  root_cause: "Documentation and regression-detection were decoupled. The Qwen story binds README narrative + runnable script + falsification contract + nightly cron + /dogfood gate so drift in any one surface fails the others."
+
+equations:
+  story_passes:
+    formula: "scripts/qwen-story.sh exits 0 on a host with the canonical Qwen model registry"
+    domain: "any host with $MODELS_DIR containing at least the 1.5B Q4K APR + 7B Q4K GGUF + 30B-MoE GGUF"
+    codomain: "exit code of scripts/qwen-story.sh"
+    invariants:
+      - "Exit 0 means every runnable beat PASSed"
+      - "Exit 2 means at least one beat FAILed — story script must list the failed beat names"
+      - "SKIPs are informational (missing model) and do not cause non-zero exit"
+      - "Each beat captures exit via OUT=$(cmd); EC=$? to avoid pipe-then-$? methodology defect"
+
+  pmat_audit_per_beat:
+    formula: "PMAT_HUNT=1 emits a manifest of {coverage_gap, churn, fault} for each beat's command-handler module"
+    domain: "any beat that PASSed (manifest only meaningful if the command actually ran)"
+    codomain: "structured stderr manifest (gap=, churn=, fault= prefixed lines)"
+    invariants:
+      - "Each beat with PMAT_HUNT=1 emits at most 9 lines (3 gaps + 3 churn + 3 faults)"
+      - "Manifest is informational — it does not change exit code"
+      - "Manifest is consumed by the daily cron to detect drift over time"
+
+  beat_to_command_surface:
+    formula: "Beats 1..8 collectively exercise every command in apr's 8 categories"
+    domain: "the apr CLI command graph"
+    codomain: "set of distinct command names invoked across all beats"
+    invariants:
+      - "Beat 1 (Discover): pull, list — Registry"
+      - "Beat 2 (Trust): qa, validate, lint — QA"
+      - "Beat 3 (Explore): inspect, tensors, tree — Inspection"
+      - "Beat 4 (Adapt): export, diff — Model ops (convert covered by Beat 1)"
+      - "Beat 5 (Use): run, code — Inference"
+      - "Beat 6 (Serve): serve run — Inference + HTTP"
+      - "Beat 7 (Operate): profile, gpu, serve plan — Profiling + GPU"
+      - "Beat 8 (Scale): inspect, tensors — Inspection on MoE (different code path)"
+
+proof_obligations:
+  - type: invariant
+    property: "Story script exits 0 on healthy host"
+    formal: "qwen-story.sh exits 0 when all required models are present and apr is healthy"
+    applies_to: story_passes
+  - type: invariant
+    property: "Each beat captures exit codes correctly"
+    formal: "Every beat uses OUT=$(cmd); EC=$? (never pipe-then-$?)"
+    applies_to: story_passes
+  - type: invariant
+    property: "pmat audit runs against the right modules"
+    formal: "Each beat's pmat_hunt call references the apr command-handler files it just exercised"
+    applies_to: pmat_audit_per_beat
+
+falsification_tests:
+  - id: FALSIFY-QWEN-STORY-001
+    rule: "Story script exists and is executable"
+    prediction: "scripts/qwen-story.sh is a regular file with execute bit set"
+    test: "test -x scripts/qwen-story.sh"
+    if_fails: "Story script missing or not executable — README narrative cannot be reproduced"
+
+  - id: FALSIFY-QWEN-STORY-002
+    rule: "Story has 8 beats"
+    prediction: "Script contains 8 `beatN_<name>() {` function definitions"
+    test: "[ \"$(grep -cE '^beat[1-8]_[a-z]+\\(\\) \\{' scripts/qwen-story.sh)\" = '8' ]"
+    if_fails: "Beat count drift — README narrative claim doesn't match script"
+
+  - id: FALSIFY-QWEN-STORY-003
+    rule: "Every beat uses OUT=$(cmd); EC=$? pattern via run_cmd helper"
+    prediction: "Script defines run_cmd helper that captures both stdout and exit code"
+    test: "grep -qE 'RC_OUT=.*timeout.*RC_EC=' scripts/qwen-story.sh"
+    if_fails: "Methodology regression — pipe-then-$? could re-introduce false-positive bugs"
+
+  - id: FALSIFY-QWEN-STORY-004
+    rule: "PMAT audit is wired per beat"
+    prediction: "Each beat function calls pmat_hunt at the end"
+    test: "[ \"$(grep -cE 'pmat_hunt ' scripts/qwen-story.sh)\" -ge '8' ]"
+    if_fails: "Bug-hunting layer disconnected from the story"
+
+  - id: FALSIFY-QWEN-STORY-005
+    rule: "Story is referenced from README"
+    prediction: "README.md links to scripts/qwen-story.sh"
+    test: "grep -q 'scripts/qwen-story.sh' README.md"
+    if_fails: "Documentation drift — README story without runnable backing"
+
+  - id: FALSIFY-QWEN-STORY-006
+    rule: "Daily cron exists"
+    prediction: "GitHub Actions workflow .github/workflows/qwen-story-daily.yml exists"
+    test: "test -f .github/workflows/qwen-story-daily.yml"
+    if_fails: "Regression-detection cron not configured — story can drift between sessions"
+
+  - id: FALSIFY-QWEN-STORY-007
+    rule: "Bashrs lints clean"
+    prediction: "bashrs lint reports 0 errors on the story script"
+    test: "bashrs lint scripts/qwen-story.sh 2>&1 | grep -qE '0 error'"
+    if_fails: "Shell script quality regression — could shell-inject in CI"
+
+  - id: FALSIFY-QWEN-STORY-008
+    rule: "Beat 7 doesn't run apr qa on 7B (known #1864 regression)"
+    prediction: "Beat 7 calls profile/gpu/serve plan but NOT apr qa on the 7B model"
+    test: "! awk '/^beat7_/,/^}/' scripts/qwen-story.sh | grep -qE 'apr qa.*M_7B'"
+    if_fails: "Beat 7 will hit #1864 Golden Output gate failure — story becomes flaky until #1864 root-cause lands"
+
+qa_gate:
+  id: F-QWEN-STORY-001
+  name: "Qwen end-to-end story regression gate"
+  description: "scripts/qwen-story.sh exercises every core command group against the Qwen scale ladder. Drift in any beat surfaces a regression; pmat audit identifies the untested code paths most likely to introduce new ones."
+  checks:
+    - "story_passes"
+    - "pmat_audit_per_beat"
+    - "beat_to_command_surface"
+  pass_criteria: "FALSIFY-QWEN-STORY-{001..008} all PASS; nightly cron exit 0 for 7 consecutive days"
