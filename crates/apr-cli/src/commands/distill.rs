@@ -652,11 +652,15 @@ fn run_cuda_backend(
     json_output: bool,
 ) -> Result<()> {
     use aprender::format::v2::AprV2Reader;
+    use aprender::format::v2::TensorDType;
     use entrenar::transformer::TransformerConfig;
     use entrenar_distill::{
-        teacher_provider::CudaTrainerTeacher, student_provider::CudaStudentProvider,
+        student_provider::CudaStudentProvider,
+        teacher_provider::{CudaTrainerTeacher, TeacherLogitsProvider},
         DistillConfig, Pipeline,
     };
+
+    use crate::commands::distill_q4k_teacher::RealizarQ4KTeacher;
 
     if plan_only {
         if json_output {
@@ -689,10 +693,7 @@ fn run_cuda_backend(
 
     // Load teacher metadata → TransformerConfig.
     let teacher_bytes = std::fs::read(teacher_path).map_err(|e| {
-        CliError::ValidationFailed(format!(
-            "read teacher {}: {e}",
-            teacher_path.display()
-        ))
+        CliError::ValidationFailed(format!("read teacher {}: {e}", teacher_path.display()))
     })?;
     let teacher_reader = AprV2Reader::from_bytes(&teacher_bytes).map_err(|e| {
         CliError::ValidationFailed(format!("parse teacher {}: {e}", teacher_path.display()))
@@ -735,10 +736,7 @@ fn run_cuda_backend(
     // Load student metadata → TransformerConfig (independent — student arch
     // typically differs from teacher).
     let student_bytes = std::fs::read(student_path).map_err(|e| {
-        CliError::ValidationFailed(format!(
-            "read student {}: {e}",
-            student_path.display()
-        ))
+        CliError::ValidationFailed(format!("read student {}: {e}", student_path.display()))
     })?;
     let student_reader = AprV2Reader::from_bytes(&student_bytes).map_err(|e| {
         CliError::ValidationFailed(format!("parse student {}: {e}", student_path.display()))
@@ -759,8 +757,7 @@ fn run_cuda_backend(
     )
     .ok_or_else(|| {
         CliError::ValidationFailed(
-            "student .apr metadata missing required fields — see teacher error message"
-                .to_string(),
+            "student .apr metadata missing required fields — see teacher error message".to_string(),
         )
     })?;
 
@@ -774,8 +771,35 @@ fn run_cuda_backend(
     let student_dir = student_path
         .parent()
         .ok_or_else(|| CliError::ValidationFailed("student path has no parent dir".into()))?;
-    let teacher_provider = CudaTrainerTeacher::for_inference(teacher_dir, teacher_config)
-        .map_err(|e| CliError::ValidationFailed(format!("CudaTrainerTeacher load: {e}")))?;
+    // PMAT-701 Bug B: detect Q4K-quantized teacher and route to the
+    // realizar inference path which keeps weights in Q4K on the GPU.
+    // The legacy CudaTrainerTeacher dequantizes Q4K to F32 at upload
+    // (~7× memory inflation), making 7B teachers OOM-kill on GB10 even
+    // with the unified-memory allocator in effect. See contract
+    // `contracts/cuda-q4k-frozen-teacher-v1.yaml` for the full invariant.
+    let teacher_uses_quantized_weights = teacher_reader.tensor_names().iter().any(|name| {
+        teacher_reader
+            .get_tensor(name)
+            .is_some_and(|t| matches!(t.dtype, TensorDType::Q4K | TensorDType::Q6K))
+    });
+    let teacher_provider: Box<dyn TeacherLogitsProvider> = if teacher_uses_quantized_weights {
+        eprintln!(
+            "[PMAT-701] Q4K/Q6K teacher detected → RealizarQ4KTeacher (Q4K-native forward, no F32 dequant)"
+        );
+        Box::new(
+            RealizarQ4KTeacher::from_apr_path(teacher_path)
+                .map_err(|e| CliError::ValidationFailed(format!("RealizarQ4KTeacher load: {e}")))?,
+        )
+    } else {
+        eprintln!("[PMAT-701] F32/F16/BF16 teacher → CudaTrainerTeacher (legacy path)");
+        // teacher_config is unused on the Q4K branch (the metadata is read
+        // from the APR file by realizar directly); only the CudaTrainerTeacher
+        // path needs the explicit TransformerConfig.
+        Box::new(
+            CudaTrainerTeacher::for_inference(teacher_dir, teacher_config)
+                .map_err(|e| CliError::ValidationFailed(format!("CudaTrainerTeacher load: {e}")))?,
+        )
+    };
     let student_provider = CudaStudentProvider::for_training(student_dir, student_config)
         .map_err(|e| CliError::ValidationFailed(format!("CudaStudentProvider load: {e}")))?;
 
@@ -783,12 +807,12 @@ fn run_cuda_backend(
     // uses these for the file-load passthroughs; the providers we just
     // built do the actual forward/backward work.
     let mut config = DistillConfig::minimal(
-        teacher_path.to_str().ok_or_else(|| {
-            CliError::ValidationFailed("teacher path is not valid UTF-8".into())
-        })?,
-        student_path.to_str().ok_or_else(|| {
-            CliError::ValidationFailed("student path is not valid UTF-8".into())
-        })?,
+        teacher_path
+            .to_str()
+            .ok_or_else(|| CliError::ValidationFailed("teacher path is not valid UTF-8".into()))?,
+        student_path
+            .to_str()
+            .ok_or_else(|| CliError::ValidationFailed("student path is not valid UTF-8".into()))?,
     );
     config.output.dir = output_path.to_path_buf();
     config.distillation.temperature = temperature as f32;
@@ -797,7 +821,7 @@ fn run_cuda_backend(
 
     // Wire the providers into the pipeline and execute.
     let mut pipeline = Pipeline::new(&config)
-        .with_teacher(Box::new(teacher_provider))
+        .with_teacher(teacher_provider)
         .with_student(Box::new(student_provider));
 
     // SPEC-DISTILL-001 Phase 4 Stage B-2: when `--dataset <DIR>` is set,
@@ -833,9 +857,9 @@ fn run_cuda_backend(
             ));
         }
     }
-    let result = pipeline.execute().map_err(|e| {
-        CliError::ValidationFailed(format!("cuda pipeline.execute failed: {e}"))
-    })?;
+    let result = pipeline
+        .execute()
+        .map_err(|e| CliError::ValidationFailed(format!("cuda pipeline.execute failed: {e}")))?;
 
     if json_output {
         println!(
