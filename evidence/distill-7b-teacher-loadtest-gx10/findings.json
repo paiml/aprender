@@ -1,0 +1,89 @@
+{
+  "ticket": "PMAT-701 (proposed)",
+  "title": "GB10 cuda distill backend OOMs at 30 GB despite 128 GB unified memory",
+  "date": "2026-05-22",
+  "host": "gx10 (NVIDIA GB10 Grace Blackwell, sm_121, 128.5 GB unified, CUDA 13.1)",
+  "trigger": "Investigating why dispatch-distill-phase-3-gx10.sh defaults TEACHER=STUDENT=Qwen2.5-Coder-0.5B-Instruct instead of using a real teacher (e.g. paiml/qwen2.5-coder-7b-apache-q4k-v1, the MODEL-1 teacher we already shipped to HF Hub).",
+
+  "evidence": {
+    "test_1_7b_default_allocator": {
+      "command": "apr distill <7b-q4k.apr> --student <0.5b.apr> --epochs 1 --backend cuda",
+      "result": "OOM at Block 27 of 28",
+      "error": "CudaTrainerTeacher::for_inference: Configuration error: Block 27 upload failed: KernelError(\"MemoryAllocation(\\\"CUDA driver error: CUDA_ERROR_OUT_OF_MEMORY (code: 2)\\\")\")",
+      "logfile": "launch.log",
+      "interpretation": "Default cuMemAlloc path; ~26 GB of 7B F32 weights uploaded before block 27's ~933 MB pushes over device-allocatable ceiling"
+    },
+    "test_2_7b_managed_memory_env": {
+      "command": "MANAGED_MEMORY=1 apr distill <7b-q4k.apr> --student <0.5b.apr> --epochs 1 --backend cuda",
+      "result": "All 28 blocks uploaded; SIGKILL by Linux OOM killer (exit 137) before first training step",
+      "logfile": "launch-managed.log",
+      "interpretation": "cuMemAllocManaged allows allocation to succeed (unified memory), but total system memory pressure (30 GB teacher F32 + student F32+grads+Adam + activations) trips Linux OOM threshold"
+    },
+    "test_3_1.5b_default_allocator": {
+      "command": "apr distill <1.5b-q4k.apr> --student <0.5b.apr> --epochs 1 --backend cuda",
+      "result": "All 28 blocks uploaded successfully (no OOM); failed at student loading on unrelated CudaStudentProvider safetensors requirement",
+      "logfile": "launch-1.5b.log",
+      "interpretation": "1.5B F32 dequant (~6 GB) fits comfortably in default cuMemAlloc ceiling. The 7B OOM is a size-class issue, not a Phase-3-stale-default issue."
+    }
+  },
+
+  "five_whys": [
+    {
+      "why": 1,
+      "question": "Why did apr distill (7B teacher) OOM at Block 27 of 28?",
+      "answer": "cuMemAlloc returned CUDA_ERROR_OUT_OF_MEMORY when allocating ~933 MB for block 27's F32 weights",
+      "evidence": "launch.log line ~125, ERROR_OUT_OF_MEMORY at CudaTransformerBlock::new"
+    },
+    {
+      "why": 2,
+      "question": "Why was the budget exhausted at ~30 GB on a 128 GB device?",
+      "answer": "cuMemAlloc allocates device-only memory, bounded by the CUDA driver's device-visible window (~30 GB usable on GB10), NOT the full 128 GB unified pool. cuMemAllocManaged sees the full 128 GB but is not used by default.",
+      "evidence": "trueno-gpu/src/driver/memory/buffer.rs:104-117 — managed path gated behind MANAGED_MEMORY=1 env var; default falls through to cuMemAlloc at line 117"
+    },
+    {
+      "why": 3,
+      "question": "Why does the trueno cuda allocator default to cuMemAlloc?",
+      "answer": "PMAT-394 added cuMemAllocManaged as opt-in (`if std::env::var(\"MANAGED_MEMORY\").as_deref() == Ok(\"1\")`), but never wired in device-class detection. The allocator constructor `GpuBuffer::new(ctx, len)` is shape-only — no compute_cap or unified-memory check.",
+      "evidence": "trueno-gpu/src/driver/memory/buffer.rs:105-110, comment says 'Use managed memory on Grace Blackwell when MANAGED_MEMORY=1'"
+    },
+    {
+      "why": 4,
+      "question": "Why doesn't setting MANAGED_MEMORY=1 actually allow 7B training?",
+      "answer": "Even with successful managed allocations, the 7B teacher dequantized to F32 (~30 GB) PLUS student F32 + gradients + Adam optimizer state (~10-15 GB) PLUS activations + KV/softmax buffers + JIT/cuBLAS workspace push total system memory past Linux's overcommit/OOM threshold. The process is SIGKILL'd before the first training step.",
+      "evidence": "launch-managed.log: 7B blocks uploaded, exit 137 (SIGKILL). Test 1.5B with default allocator: 1.5B F32 ~6 GB fits, training-state allocation proceeds (LM head: 933.5 MB)"
+    },
+    {
+      "why": 5,
+      "question": "Why does the cuda backend need ~30 GB F32 for a 4 GB Q4K-on-disk teacher?",
+      "answer": "CudaTransformerBlock::new (cuda_trainer.rs:929-970) expects FP32 weight inputs and uploads each block as CudaBlock::Fp32 (line 970). Q4K teacher weights are dequantized to F32 at load (per the apr run smoke earlier: '[PMAT-333] Dequantized 337 weights, 28282.5 MB F32'). The NF4 branch in cuda_trainer.rs:891-927 only activates when lora_rank > 0, which is the student LoRA fine-tune case, NOT a frozen Q4K teacher.",
+      "evidence": "crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs:929-970 (FP32 block upload path); cuda_trainer.rs:891-927 (NF4 path gated on lora_rank); '[PMAT-333] Dequantized' log line from apr run smoke"
+    }
+  ],
+
+  "root_cause_summary": "Two compounding bugs prevent the MODEL-1 7B teacher from being usable in apr distill on Grace Blackwell: (1) the trueno allocator defaults to device-only cuMemAlloc instead of detecting GB10 unified memory; (2) the aprender-train cuda backend has no Q4K-native frozen-teacher forward path, so it dequantizes a 4 GB Q4K teacher into ~30 GB of F32 weights that don't fit even in managed memory once student training overhead is added.",
+
+  "fix_tree": {
+    "tier_1_workaround_1_line": {
+      "what": "Set MANAGED_MEMORY=1 in dispatch script + restrict teacher to ≤1.5B until tiers 2/3 land",
+      "unblocks": "1.5B teacher distillation today (better than 0.5B==0.5B but still smaller than 7B)",
+      "cost": "0.5 hour"
+    },
+    "tier_2_allocator_default_1_pr": {
+      "what": "trueno-gpu: detect Grace Blackwell in GpuBuffer::new (query CU_DEVICE_ATTRIBUTE_UNIFIED_ADDRESSING + compute_cap >= sm_120); default to cuMemAllocManaged on unified-memory devices. Keep opt-out via MANAGED_MEMORY=0.",
+      "unblocks": "Removes the opt-in env var trap; all GB10 workloads get full 128 GB pool by default. Still doesn't fix 7B teacher OOM-kill (that's tier 3).",
+      "cost": "~1 day. Affects trueno's allocator semantics — needs contract amendment + parity tests"
+    },
+    "tier_3_q4k_teacher_path_multi_pr": {
+      "what": "aprender-train cuda backend: add CudaBlock::Q4K variant that keeps teacher weights in Q4K and uses Q4K-native forward kernels (which already exist in realizar for inference). Branch CudaTransformerTrainer::for_inference (when constructing teacher-only mode) into this path instead of dequantizing.",
+      "unblocks": "7B Q4K teacher uses ~4 GB GPU memory instead of ~30 GB. The MODEL-1 teacher becomes usable for distillation on GB10.",
+      "cost": "~1-2 weeks. Cross-crate (trueno backward + aprender-train CudaBlock enum + realizar parity)"
+    }
+  },
+
+  "spec_amendment_implications": {
+    "SPEC-DISTILL-001_§86_revised": "Mandate teacher != student for STEPS > Phase-3-smoke-threshold (the original §86 intent is preserved). DO NOT mandate the 7B teacher until Tier 3 lands. Recommend 1.5B Qwen2.5-Coder-Instruct as the Phase 4 teacher today; it gives meaningful KD signal (3× student size, different training data, different RLHF tuning) while fitting GB10 memory.",
+    "new_PMAT-701": "Filed as new ticket: trueno-gpu auto-detect unified memory + Q4K-native teacher path. Falsifier: F-GB10-UNIFIED-001 (7B Q4K teacher must load and run 1 training step within 30 GB system memory budget)."
+  },
+
+  "decision_recommendation": "Adopt Tier 1 today (1.5B teacher + MANAGED_MEMORY=1 in dispatch). File PMAT-701 for Tier 2+3 engineering. Stop running Phase 4 with teacher=student=0.5B — the 30h Stage D 50K + 5h Stage D 10K compute proved pipeline plumbing but produced no real distilled model."
+}
