@@ -120,6 +120,77 @@ fusion_decisions:
       '
     blocking_reason: Requires weight interleaving at GGUF load + new kernel
     priority: P1 — moderate impact, complex implementation
+  fused_qkv:
+    id: FUSION-006
+    status: ACTIVE
+    description: Q/K/V projection in single kernel (3x kernel-launch reduction)
+    kernels:
+      fused: FusedQKVKernel (crates/aprender-gpu/src/kernels/fused/mod.rs:50)
+      replaces:
+      - Q projection GEMV
+      - K projection GEMV
+      - V projection GEMV
+    call_site: crates/aprender-serve/src/cuda/generate.rs:267
+    saves_per_layer: 2
+    falsification: Splitting fused Q/K/V into three separate GEMV launches must increase per-token wall.
+  fused_gate_up:
+    id: FUSION-007
+    status: ACTIVE
+    description: Gate+Up FFN projections with SwiGLU activation in single kernel (2x launch reduction; FP32-input path)
+    kernels:
+      fused: FusedGateUpKernel (crates/aprender-gpu/src/kernels/fused/mod.rs:227)
+      replaces:
+      - Gate projection GEMV
+      - Up projection GEMV
+      - SwiGLU activation
+    call_site: crates/aprender-serve/src/cuda/generate.rs:270
+    saves_per_layer: 2
+    falsification: Splitting fused Gate+Up+SwiGLU into separate launches must increase per-token wall.
+  fused_gemm_bias_gelu:
+    id: FUSION-008
+    status: ACTIVE
+    description: GEMM + bias + GELU activation in single kernel (3x launch reduction; WAPR-PERF-007)
+    kernels:
+      fused: FusedGemmBiasGeluKernel (crates/aprender-gpu/src/kernels/fused/gemm_bias_gelu.rs:25)
+      replaces:
+      - GEMM kernel
+      - Bias add
+      - GELU activation
+    call_site: crates/aprender-gpu/src/memory/resident/ops/composite/linear_bias.rs:232
+    saves_per_layer: 2
+    notes: |
+      Originally landed for Whisper encoder FFN. General-purpose: any
+      Linear(bias=true) + GELU sequence dispatches through this kernel.
+    falsification: Splitting GEMM + Bias + GELU into three separate launches must increase wall time.
+  fused_rmsnorm_q4k_gemv:
+    id: FUSION-009
+    status: ACTIVE
+    description: RMSNorm + Q4K GEMV in single pass (input normalization fused with quantized matmul)
+    kernels:
+      fused: FusedRmsNormQ4KGemvKernel (crates/aprender-gpu/src/kernels/quantize/fused/rmsnorm_gemv.rs:26)
+      replaces:
+      - RmsNormKernel
+      - Q4K GEMV (separate normalization read)
+    call_site: crates/aprender-serve/src/cuda/generate.rs:202
+    saves_per_layer: 1
+    falsification: Splitting RMSNorm and Q4K GEMV into two kernels must increase per-token wall.
+  fused_gate_up_q4k_gemv:
+    id: FUSION-010
+    status: ACTIVE
+    description: Gate + Up Q4K-quantized GEMV sharing input vector load (Q4K-input variant of FUSION-007)
+    kernels:
+      fused: FusedGateUpQ4KGemvKernel (crates/aprender-gpu/src/kernels/quantize/fused/gate_up_gemv.rs:29)
+      replaces:
+      - Gate Q4K GEMV (separate input load)
+      - Up Q4K GEMV (separate input load)
+    call_site: crates/aprender-serve/src/cuda/generate.rs:273
+    saves_per_layer: 1
+    notes: |
+      Distinct from FUSION-007 (FusedGateUpKernel = FP32 input) — this
+      one fuses the Q4K-quantized projections where the activation
+      vector load is shared between gate and up. SwiGLU is applied
+      separately downstream.
+    falsification: Splitting Gate Q4K GEMV and Up Q4K GEMV into two kernels (each reloading input) must increase wall time.
 enforcement:
   kernel_registry_complete:
     description: No orphaned fused kernels (kernel exists but decision undocumented)
