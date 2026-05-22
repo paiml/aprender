@@ -1,0 +1,30 @@
+{
+  "ticket": "PMAT-705",
+  "title": "Wire ProgressCallback into distill pipeline — close the monitoring gap surfaced by PMAT-704",
+  "date": "2026-05-22",
+
+  "background": "During PMAT-704 verification (commit fix for Bug B wrong turn), a 7B vocab-aligned distill run hung at step 0 for 1.5 h on gx10 with no log output. User correctly challenged: 'do we have any kind of training monitoring or are you guessing?' We were guessing. Investigation found that aprender-train ships full callback infrastructure (ProgressCallback, MonitorCallback, etc.) but aprender-train-distill's Pipeline had ZERO callback references — per-step loss was computed in kd_step but never surfaced.",
+
+  "fix_summary": {
+    "pipeline_changes": "crates/aprender-train-distill/src/pipeline.rs — Pipeline gains callbacks: Vec<Box<dyn TrainerCallback>> field, with_callback() builder method, full lifecycle wiring (on_train_begin, on_epoch_begin, on_step_end with current loss + step counters, on_epoch_end, on_train_end), CallbackAction::Stop honored for early termination.",
+    "cli_changes": "crates/apr-cli/src/commands/distill.rs::run_cuda_backend — attaches ProgressCallback by default; APR_DISTILL_LOG_EVERY env var (default 10) controls interval; APR_DISTILL_LOG_EVERY=0 disables per-step logging.",
+    "contract": "contracts/distill-pipeline-observability-v1.yaml — 3 equations (callback_lifecycle, progress_log_format, default_attachment), 4 falsifiers, 2 Kani harnesses, qa_gate F-OBSERV-001."
+  },
+
+  "unit_test_verification": {
+    "tests_added": [
+      "pmat_705_observability::falsify_observ_001_per_step_callback_fires",
+      "pmat_705_observability::falsify_observ_001_step_count_matches",
+      "pmat_705_observability::callback_ordering_preserved"
+    ],
+    "result": "3 passed; 0 failed (cargo test -p aprender-train-distill --lib pipeline::tests::pmat_705)"
+  },
+
+  "gx10_dispatch_marker_verification": {
+    "log": "evidence/distill-pipeline-observability-pmat-705/launch-7b-attach-marker.log",
+    "key_line": "[PMAT-705] ProgressCallback attached (log every 1 steps)",
+    "note": "The dispatch attached the callback as designed. End-to-end per-step output on gx10 requires PMAT-704's cuBLAS default to land (current main still routes Q4K teachers through Bug B's CPU-bound RealizarQ4KTeacher, which produces no per-step output because it hangs at step 0). Unit tests in this PR prove the callback wiring is correct independent of the teacher backend."
+  },
+
+  "operator_impact": "Long-running distill dispatches (Stage D 50K, Phase 4 production) now show 'Step N/M: loss: X.XXXX' lines at configurable intervals. Operators can distinguish 'training silently progressing' from 'training hung' in real time. The PMAT-704 cascade post-mortem failure mode (1.5 h silent hang) becomes immediately visible."
+}
