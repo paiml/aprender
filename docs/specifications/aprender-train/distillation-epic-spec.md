@@ -1,7 +1,7 @@
 # Specification: Distillation Epic — paiml/albor-370m-v2
 
 **Document ID:** SPEC-DISTILL-001
-**Version:** 1.1.0 (priority promoted to HIGH; Phase 1 design revised from cache → online teacher provider after the storage-math sanity check)
+**Version:** 1.2.0 (§86 amendment: PMAT-701 fixes unblock 7B teacher on Grace Blackwell; Phase 4 Stage D 50K/10K runs discharged as no-KD)
 **Status:** **Live and ACTIVE** — distillation track is the highest-priority work after MODEL-2 §88 shipped
 **Priority:** **HIGH** (per `pmat work edit`, 2026-05-18 — PMAT-683 + PMAT-684 both elevated from `medium` to `high`)
 **Parent:** [ship-model-2-spec.md §84.5](./ship-model-2-spec.md)
@@ -204,7 +204,68 @@ This matches PMAT-683's "16-40h. Δship +10. P=25%" original estimate when scale
 - Init: [`Qwen/Qwen2.5-Coder-0.5B-Instruct`](https://huggingface.co/Qwen/Qwen2.5-Coder-0.5B-Instruct) (Apache-2.0, same arch + vocab as student)
 - Audit: [audits/q4k-shape-swap-impact.md](../audits/q4k-shape-swap-impact.md) — confirms teacher's Q4_K artifact is bit-correct (no re-export needed)
 
+## §86. Phase 4 Stage D 50K + 10K runs DISCHARGED as no-KD; PMAT-701 unblocks the real 7B teacher (2026-05-22)
+
+**Finding.** The Phase 4 Stage D 50K-step (25 h) and Stage D 10K-step (5 h) runs landed on
+gx10 in 2026-05-20/21 with the dispatch script's `TEACHER_REPO` and `STUDENT_INIT`
+**both defaulting to `Qwen/Qwen2.5-Coder-0.5B-Instruct`**. The on-disk staging was
+byte-identical between teacher and student dirs (same `.apr` file, same tokenizer
+symlinks to the 0.5B safetensors cache). With teacher == student initialized from the
+same checkpoint, the KD term `KL(softmax(z_t/T) || softmax(z_s/T))` starts at ~0 and
+provides no gradient signal; the loss curve (11.01 → 3.58) reflects only the
+`α=0.3 * CE(student, hard_targets)` fine-tuning component on a synthetic / small-corpus
+batch. `apr run` against the checkpoint produced gibberish — consistent with bad SFT, not
+distillation.
+
+**Root cause (5-whys).** Documented in
+`evidence/distill-7b-teacher-loadtest-gx10/findings.json`. Two compounding bugs (PMAT-701)
+made the MODEL-1 7B teacher infeasible on Grace Blackwell GB10:
+
+- **Bug A — Allocator default.** trueno-gpu's `GpuBuffer::new` defaulted to `cuMemAlloc`
+  (device-only, ~30 GB ceiling on GB10) rather than `cuMemAllocManaged` (full 128 GB
+  unified pool). The PMAT-394 managed path existed but was gated behind opt-in
+  `MANAGED_MEMORY=1` with no device-class autodetection. The dispatch script's 1.5B
+  Block-0 OOM was a real signal of this bug.
+- **Bug B — F32 dequant at upload.** The cuda training backend dequantizes Q4K teacher
+  weights to F32 at GPU block upload (4 GB on disk → 28 GB F32 in memory). For a 7B
+  teacher this puts total system memory beyond the Linux OOM-killer threshold once student
+  grads + Adam + activations land. The dispatch script's "0.5B == 0.5B as smoke fallback"
+  comment was correct for the cuda backend as it was, but it leaked from a Phase 3 smoke
+  workaround into Phase 4 production unchanged.
+
+**Fix (landed).**
+
+- PR #1863 (`contracts/trueno-gpu/cuda-unified-memory-allocator-v1.yaml`): allocator
+  autodetects Grace Blackwell via `CU_DEVICE_ATTRIBUTE_INTEGRATED` and routes to
+  `cuMemAllocManaged` by default. `MANAGED_MEMORY=1/0` retained as explicit override.
+  Verified on gx10: 7B teacher uploads all 28 transformer blocks with no env var set
+  (was OOM at block 27/28 pre-fix).
+- PR #1869 (`contracts/cuda-q4k-frozen-teacher-v1.yaml`): new `RealizarQ4KTeacher`
+  routes Q4K teachers through realizar's inference path (`OwnedQuantizedModelCuda`).
+  Weights stay in Q4K format on the GPU; forward GEMM uses Q4K-native CUDA kernels
+  (same path as `apr run`). Verified on gx10: 15 min stable training at ~36 GB system
+  memory with no OOM-kill (was SIGKILL within seconds pre-fix).
+
+**Dispatch script change.** This spec amendment ships alongside a `chore(distill)` change
+to `scripts/dispatch-distill-phase-3-gx10.sh` flipping the default `TEACHER_REPO` from
+`Qwen/Qwen2.5-Coder-0.5B-Instruct` (smoke fallback) to
+`paiml/qwen2.5-coder-7b-apache-q4k-v1` (the MODEL-1 teacher this spec was designed
+around). Smoke runs override with `TEACHER_REPO=Qwen/Qwen2.5-Coder-0.5B-Instruct`.
+
+**Implications for AC-DISTILL-003 (`Phase 4 best val_loss < 3.0`).** The 50K and 10K
+runs do NOT count toward AC-DISTILL-003 — they're discharged as no-KD baselines. A
+re-dispatched 50K run with the 7B teacher is required for a real Phase 4 verdict.
+Compute estimate increases (~50 h vs. the original 30 h estimate) because the realizar
+7B teacher forward is slower than the original F32-dequant path the spec assumed; this
+is acceptable given the falsifier-quality improvement.
+
+**Falsifier — `F-DISTILL-V2-001-TEACHER-DIVERGENCE` (new).**
+A Phase 4 dispatch with `STEPS >= 5000` (Stage D threshold) and `TEACHER_REPO == STUDENT_INIT`
+is rejected by the dispatch preflight unless `APR_DISTILL_ALLOW_DEGENERATE_KD=1` is set
+explicitly. Implementation defers to a follow-up PR; spec-level requirement codified here.
+
 ## Changelog
 
+- **1.2.0 (2026-05-22)** — §86 amendment: Phase 4 Stage D runs (50K + 10K) discharged as no-KD due to teacher == student staging defect. PMAT-701 Bug A (PR #1863) + Bug B (PR #1869) unblock the 7B Q4K teacher on Grace Blackwell. Dispatch script's `TEACHER_REPO` default flipped to `paiml/qwen2.5-coder-7b-apache-q4k-v1`. New falsifier F-DISTILL-V2-001-TEACHER-DIVERGENCE codifies the smoke-vs-production distinction.
 - **1.1.0 (2026-05-18)** — Priority promoted to HIGH (PMAT-683 + PMAT-684 + new PMAT-691 elevated via `pmat work edit`). Phase 1 design revised from on-disk top-K cache to online teacher logits provider after the storage-math sanity check showed 1.24B tokens × 64 entries × 6 bytes ≈ 476 GB (exceeds available disk). The cache approach moves to Phase 1.5 as an optional ring-buffer optimization. Online-teacher decision matches DistilBERT/Distil-Qwen actual practice. Effort + compute totals updated accordingly.
 - **1.0.0 (2026-05-18)** — Initial publish. Scopes the 6-phase plan opening the distillation track that picks up MODEL-2 v2 from where the §88 stack-existence-proof ship left off.
