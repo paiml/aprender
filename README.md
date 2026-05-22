@@ -93,37 +93,109 @@ cargo install aprender    # installs the `apr` binary
 apr --version
 ```
 
-## CLI examples
+## A Qwen story
+
+Eight beats, one narrative, every core command group. Anchored on the Qwen
+series so the story scales from a 494-MB safetensors model to a 30 B-parameter
+MoE GGUF. Every beat is a falsifier in
+[`contracts/qwen-story-v1.yaml`](contracts/qwen-story-v1.yaml); the runnable
+form is [`scripts/qwen-story.sh`](scripts/qwen-story.sh); nightly cron is
+[`.github/workflows/qwen-story-daily.yml`](.github/workflows/qwen-story-daily.yml);
+the dogfood gate is `/dogfood` Gate 18.
 
 ```bash
-# Run inference (local or HF)
-apr run hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF "Explain quicksort"
-apr chat hf://meta-llama/Llama-3-8B-Instruct-GGUF
+# Reproduce locally (uses ~/models cache; ~3-5 min on RTX 4090):
+bash scripts/qwen-story.sh
+```
 
-# Serve
-apr serve model.gguf --port 8080
+### Beat 1 — Discover (Registry)
 
-# Inspect
-apr inspect model.gguf
-apr validate model.apr --quality --strict
-apr tensors model.gguf | head -20
+```bash
+apr pull hf://Qwen/Qwen2.5-Coder-0.5B-Instruct      # 494 MB safetensors
+apr list                                            # confirm cached
+```
 
-# Fine-tune with LoRA
-apr finetune model.gguf --adapter lora --rank 64 --data train.jsonl
+### Beat 2 — Trust (QA gates)
 
-# Convert formats
-apr convert model.safetensors --quantize q4_k -o model.gguf
-apr export model.apr --format gguf -o model.gguf
+```bash
+apr qa qwen2.5-coder-1.5b-instruct-q4k              # 12 falsifiable gates
+apr validate qwen2.5-coder-1.5b-instruct-q4k --quality   # 100-pt structural audit
+apr lint qwen2.5-coder-1.5b-instruct-q4k            # best-practice signals
+```
 
-# Profile
-apr profile model.gguf --roofline
-apr bench model.gguf --assert-tps 100
+### Beat 3 — Explore (Inspection)
 
-# Publish to HuggingFace Hub (see SPEC-HF-PUBLISH-001 for the full 12-file pipeline)
+```bash
+apr inspect --json qwen2.5-coder-1.5b-instruct-q4k  # arch, params, tensors
+apr tensors --json qwen2.5-coder-1.5b-instruct-q4k  # 339 tensors with shapes
+apr tree qwen2.5-coder-1.5b-instruct-q4k            # layer architecture
+```
+
+### Beat 4 — Adapt (Model ops)
+
+```bash
+apr export qwen2.5-coder-1.5b-instruct-q4k --format gguf -o roundtrip.gguf
+apr diff qwen2.5-coder-1.5b-instruct-q4k roundtrip.gguf  # tensor-by-tensor delta
+apr convert model.safetensors --quantize q4_k -o quantized.apr
+```
+
+### Beat 5 — Use (Inference)
+
+```bash
+apr run qwen2.5-coder-1.5b-instruct-q4k "fn sum(a: i32, b: i32) -> i32 {" --max-tokens 16
+apr chat qwen2.5-coder-1.5b-instruct-q4k            # interactive REPL
+apr code -p "review this Python function" --max-turns 1   # agent mode (PMAT-182)
+```
+
+### Beat 6 — Serve (REST API)
+
+```bash
+apr serve run qwen2.5-coder-1.5b-instruct-q4k --port 8080
+curl -s localhost:8080/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"qwen","messages":[{"role":"user","content":"What is 2+2?"}],"max_tokens":8}'
+# → {"choices":[{"message":{"content":"2 + 2 equals 4."}}],...}
+```
+
+### Beat 7 — Operate (Profiling)
+
+```bash
+apr profile qwen2.5-coder-7b-instruct-q4_k_m        # Roofline analysis
+apr gpu --json                                      # VRAM, sm_*, cuda version
+apr serve plan qwen2.5-coder-7b-instruct-q4_k_m     # capacity plan before run
+```
+
+### Beat 8 — Scale (MoE introspection)
+
+```bash
+apr inspect --json Qwen3-Coder-30B-A3B-Instruct     # arch=qwen3moe, 30 B params
+apr tensors --json Qwen3-Coder-30B-A3B-Instruct     # 579 tensors (MoE expert layout)
+```
+
+### Publish (separate flow)
+
+```bash
+# Publish a derived model to HuggingFace Hub (see SPEC-HF-PUBLISH-001 for the 12-file pipeline)
 apr stamp ckpt.apr --tokenizer /path/to/qwen-tokenizer --license Apache-2.0 -o staging/model.apr
 apr export staging/model.apr --format gguf --quantize int4 -o staging/model-q4k.gguf
 apr publish staging/ paiml/my-model-v1 --library-name aprender --license Apache-2.0
 ```
+
+> **The bug-hunt layer.** When run with `PMAT_HUNT=1` (default), each beat
+> emits a manifest of high-risk untested code in the command modules it just
+> exercised:
+>
+> ```
+> -- pmat bug-hunt manifest (run chat code) --
+>     gap   crates/apr-cli/src/commands/run.rs:resolve_model_alias (impact=42.3)
+>     churn crates/apr-cli/src/commands/code.rs:dispatch_agent (commits=11)
+>     fault crates/aprender-serve/src/api/cuda_chat_backend.rs:try_qwen3_moe (unwrap,panic)
+> ```
+>
+> The nightly cron opens an issue when this manifest grows, so untested
+> branches in command handlers can't accumulate quietly. See
+> [`contracts/qwen-story-v1.yaml`](contracts/qwen-story-v1.yaml) §
+> `pmat_audit_per_beat`.
 
 > **Publishing a model? Read [SPEC-HF-PUBLISH-001](docs/specifications/aprender-train/model-hf-publish-pipeline-spec.md).**
 > It documents the 12-file minimum (.apr/.gguf/.safetensors/model.safetensors alias/config/tokenizer/LICENSE/etc.), the YAML front-matter schema, the three-path verification protocol, and the HF API gotchas (NDJSON commits, LFS batch for 5MB-5GB, empty `model-index` rejected, Q4_K K%256==0). First applied 2026-05-18 for [paiml/albor-370m-v1](https://huggingface.co/paiml/albor-370m-v1).
