@@ -273,7 +273,7 @@ falsification_tests:
   prediction: apr validate bad-model.apr exits non-zero
 ```
 
-1151 contracts across inference, training, quantization, attention, FFN,
+1153 contracts across inference, training, quantization, attention, FFN,
 tokenization, model formats, CLI safety — and this README itself.
 
 ## Migration from old crates

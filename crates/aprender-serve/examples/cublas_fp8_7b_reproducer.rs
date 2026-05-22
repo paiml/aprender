@@ -52,16 +52,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         h
     }
 
-    let path = std::env::var("MODEL_PATH").unwrap_or_else(|_| {
-        "/home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf".to_string()
-    });
+    let path = std::env::var("MODEL_PATH")
+        .unwrap_or_else(|_| "/home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf".to_string());
 
     // Deterministic probe: same token, same position. Token 791 = canonical
     // probe from CORRECTNESS-011 / layer_by_layer_trace.
     let token_id: u32 = 791;
     let position: usize = 0;
 
-    eprintln!("[cublas_fp8_7b_reproducer] model={} token={} pos={}", path, token_id, position);
+    eprintln!(
+        "[cublas_fp8_7b_reproducer] model={} token={} pos={}",
+        path, token_id, position
+    );
 
     // Load model (CPU side).
     let mapped = MappedGGUFModel::from_path(&path)?;
@@ -69,12 +71,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // CPU forward.
     let cpu_logits = model.forward(&[token_id])?;
-    let (cpu_argmax_idx, cpu_argmax_val) = cpu_logits
-        .iter()
-        .enumerate()
-        .fold((0usize, f32::NEG_INFINITY), |(idx, v), (i, &x)| {
-            if x > v { (i, x) } else { (idx, v) }
-        });
+    let (cpu_argmax_idx, cpu_argmax_val) =
+        cpu_logits
+            .iter()
+            .enumerate()
+            .fold((0usize, f32::NEG_INFINITY), |(idx, v), (i, &x)| {
+                if x > v {
+                    (i, x)
+                } else {
+                    (idx, v)
+                }
+            });
 
     // GPU forward via cuBLAS FP8 path.
     let mut cuda_model = OwnedQuantizedModelCuda::new(model.clone(), 0)?;
@@ -88,12 +95,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let gpu_logits = cuda_model.forward_gpu_resident(token_id, &mut dummy_cache, position)?;
 
-    let (gpu_argmax_idx, gpu_argmax_val) = gpu_logits
-        .iter()
-        .enumerate()
-        .fold((0usize, f32::NEG_INFINITY), |(idx, v), (i, &x)| {
-            if x > v { (i, x) } else { (idx, v) }
-        });
+    let (gpu_argmax_idx, gpu_argmax_val) =
+        gpu_logits
+            .iter()
+            .enumerate()
+            .fold((0usize, f32::NEG_INFINITY), |(idx, v), (i, &x)| {
+                if x > v {
+                    (i, x)
+                } else {
+                    (idx, v)
+                }
+            });
 
     // Linear-fit correlation (matches layer_by_layer_trace's diagnostic).
     let n = cpu_logits.len().min(gpu_logits.len()) as f32;
@@ -134,10 +146,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
           \"correlation\":{:.6},\
           \"cpu_logits_fnv1a\":\"{:016x}\",\"gpu_logits_fnv1a\":\"{:016x}\",\
           \"agrees_with_cpu\":{}}}",
-        cpu_argmax_idx, cpu_argmax_val,
-        gpu_argmax_idx, gpu_argmax_val,
+        cpu_argmax_idx,
+        cpu_argmax_val,
+        gpu_argmax_idx,
+        gpu_argmax_val,
         correlation,
-        cpu_fp, gpu_fp,
+        cpu_fp,
+        gpu_fp,
         agrees,
     );
 
