@@ -1,16 +1,18 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-04-05'
   author: PAIML Engineering
-  description: "apr --version traceability contract — the version output must always contain an informative build identifier; never the bare '(unknown)' sentinel when a CARGO_PKG_VERSION or any alternative identifier is available"
+  description: "apr --version traceability contract — the version output must always contain an informative build identifier; never the bare '(unknown)' sentinel when a CARGO_PKG_VERSION or any alternative identifier is available; AND the embedded git SHA must match the actual HEAD of the source tree at build time (including in git worktrees)"
   references:
     - "paiml/aprender#597 (Version string shows (unknown) instead of git hash)"
+    - "paiml/aprender#1862 (build.rs misses HEAD changes in worktrees because ../../.git is a file pointer, not a directory)"
   registry: true
   tags:
     - cli
     - version
     - build
     - sentinel
+    - worktree
     - five-whys
 
 five_whys:
@@ -43,6 +45,17 @@ equations:
       - "Otherwise: try reading crates/apr-cli/.git-sha committed file"
       - "Otherwise: emit 'v{CARGO_PKG_VERSION}+no-git' as informative fallback"
 
+  worktree_head_freshness:
+    formula: "apr --version SHA == git rev-parse --short HEAD (post-rebuild, in any layout)"
+    domain: "any build location: primary checkout or git worktree"
+    codomain: "embedded APR_GIT_SHA in the apr binary"
+    invariants:
+      - "After cargo build, `apr --version` SHA matches `git rev-parse --short HEAD` run from the same directory"
+      - "Holds for primary checkouts where .git is a directory"
+      - "Holds for git worktrees where .git is a file pointer (gitdir: <common>/worktrees/<name>)"
+      - "Holds after HEAD moves (e.g. git pull, git checkout) — build.rs must declare rerun-if-changed on the resolved <git-dir>/HEAD"
+      - "Uses `git rev-parse --git-dir` (worktree-local) for HEAD and `git rev-parse --git-common-dir` for refs/heads/"
+
 proof_obligations:
   - type: invariant
     property: "No '(unknown)' sentinel in version output"
@@ -52,6 +65,10 @@ proof_obligations:
     property: "Fallback includes package version"
     formal: "git_hash = none ⟹ APR_GIT_SHA contains CARGO_PKG_VERSION"
     applies_to: fallback_hierarchy
+  - type: invariant
+    property: "Embedded SHA matches HEAD in any git layout"
+    formal: "apr --version SHA = git rev-parse --short HEAD (post-build)"
+    applies_to: worktree_head_freshness
 
 falsification_tests:
   - id: FALSIFY-VERSION-001
@@ -67,8 +84,13 @@ falsification_tests:
   - id: FALSIFY-VERSION-003
     rule: "apr --version on crates.io-style build contains version"
     prediction: "When built without git context, apr --version output contains the package version string"
-    test: "apr --version 2>&1 | grep -qE '0\\.4\\.[0-9]+'"
+    test: "apr --version 2>&1 | grep -qE '0\\.[1-9][0-9]*\\.[0-9]+'"
     if_fails: "Version string missing entirely"
+  - id: FALSIFY-VERSION-004
+    rule: "build.rs registers worktree-aware rerun-if-changed triggers"
+    prediction: "build.rs invokes `git rev-parse --git-dir` and `--git-common-dir` (not a hardcoded `../../.git/HEAD` path)"
+    test: "grep -qE 'rev-parse.*--git-(dir|common-dir)' crates/apr-cli/build.rs && ! grep -qE '\\.\\./\\.\\./\\.git/HEAD' crates/apr-cli/build.rs"
+    if_fails: "build.rs still relies on a hardcoded relative .git/HEAD path; worktree HEAD changes won't trigger rebuild"
 
 kani_harnesses:
   - id: KANI-VERSION-001
