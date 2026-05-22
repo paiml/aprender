@@ -80,3 +80,4 @@ crates/apr-cli/trace-*.json
 **/.pv/cache/
 .claude/scheduled_tasks.lock
 contracts/.pv/
+per-layer-trace/
