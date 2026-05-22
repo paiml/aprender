@@ -428,7 +428,7 @@ semicolon_if_nothing_returned = "allow"  # Style preference
 
 [package]
 name = "aprender"
-version = "0.35.0"
+version = "0.35.1"
 edition = "2021"
 rust-version = "1.89"
 authors = ["Noah Gift <noah@paiml.com>"]
@@ -467,6 +467,21 @@ default = ["cli"]
 # Pulls in apr-cli (binary CLI implementation). Required to build the `apr`
 # binary. Library-only consumers should set `default-features = false`.
 cli = ["dep:apr-cli"]
+
+# Feature passthroughs — let end users do
+#   cargo install aprender --features cuda
+# without knowing about the apr-cli intermediate crate.
+cuda = ["cli", "apr-cli/cuda"]
+cuda-batch = ["cli", "apr-cli/cuda-batch"]
+wgpu = ["cli", "apr-cli/wgpu"]
+inference = ["cli", "apr-cli/inference"]
+training = ["cli", "apr-cli/training"]
+training-gpu = ["cli", "apr-cli/training-gpu"]
+visualization = ["cli", "apr-cli/visualization"]
+zram = ["cli", "apr-cli/zram"]
+xet = ["cli", "apr-cli/xet"]
+whisper = ["cli", "apr-cli/whisper"]
+full = ["cli", "apr-cli/full"]
 
 [lib]
 name = "aprender"
