@@ -1,9 +1,9 @@
 use super::*;
 
-/// C-07 (Meyer DbC): Missing required dimensions must panic, not silently default.
+/// #1865: Missing required dimensions return a clean error, not a panic.
+/// (Pre-#1865 these used `.expect()` and were tested with `#[should_panic]`.)
 #[test]
-#[should_panic(expected = "C-07: hidden_size required")]
-fn test_build_gguf_arch_metadata_panics_on_missing_hidden_size() {
+fn test_build_gguf_arch_metadata_errors_on_missing_hidden_size() {
     use crate::format::v2::AprV2Metadata;
 
     let mut apr = AprV2Metadata::new("test");
@@ -13,13 +13,12 @@ fn test_build_gguf_arch_metadata_panics_on_missing_hidden_size() {
     apr.vocab_size = Some(32000);
     apr.intermediate_size = Some(11008);
 
-    let _ = build_gguf_arch_metadata(&apr);
+    let err = build_gguf_arch_metadata(&apr).expect_err("missing hidden_size must error");
+    assert!(err.to_string().contains("hidden_size"), "got: {err}");
 }
 
-/// C-07 (Meyer DbC): Missing required dimensions must panic, not silently default.
 #[test]
-#[should_panic(expected = "C-07: num_layers required")]
-fn test_build_gguf_arch_metadata_panics_on_missing_num_layers() {
+fn test_build_gguf_arch_metadata_errors_on_missing_num_layers() {
     use crate::format::v2::AprV2Metadata;
 
     let mut apr = AprV2Metadata::new("test");
@@ -29,13 +28,12 @@ fn test_build_gguf_arch_metadata_panics_on_missing_num_layers() {
     apr.vocab_size = Some(32000);
     apr.intermediate_size = Some(11008);
 
-    let _ = build_gguf_arch_metadata(&apr);
+    let err = build_gguf_arch_metadata(&apr).expect_err("missing num_layers must error");
+    assert!(err.to_string().contains("num_layers"), "got: {err}");
 }
 
-/// C-07 (Meyer DbC): Missing required dimensions must panic, not silently default.
 #[test]
-#[should_panic(expected = "C-07: vocab_size required")]
-fn test_build_gguf_arch_metadata_panics_on_missing_vocab_size() {
+fn test_build_gguf_arch_metadata_errors_on_missing_vocab_size() {
     use crate::format::v2::AprV2Metadata;
 
     let mut apr = AprV2Metadata::new("test");
@@ -45,7 +43,8 @@ fn test_build_gguf_arch_metadata_panics_on_missing_vocab_size() {
     apr.vocab_size = None;
     apr.intermediate_size = Some(11008);
 
-    let _ = build_gguf_arch_metadata(&apr);
+    let err = build_gguf_arch_metadata(&apr).expect_err("missing vocab_size must error");
+    assert!(err.to_string().contains("vocab_size"), "got: {err}");
 }
 
 /// C-07: With all required fields populated, export succeeds.
@@ -63,7 +62,7 @@ fn test_build_gguf_arch_metadata_succeeds_with_required_fields() {
     apr.intermediate_size = Some(11008);
     apr.name = Some("model".to_string());
 
-    let entries = build_gguf_arch_metadata(&apr);
+    let entries = build_gguf_arch_metadata(&apr).expect("required fields populated");
     let find = |key: &str| entries.iter().find(|(k, _)| k == key).map(|(_, v)| v);
 
     match find("qwen2.embedding_length") {
@@ -89,7 +88,7 @@ fn test_build_gguf_arch_metadata_zero_heads_uses_default_head_dim() {
     apr.vocab_size = Some(100);
     apr.intermediate_size = Some(256);
 
-    let entries = build_gguf_arch_metadata(&apr);
+    let entries = build_gguf_arch_metadata(&apr).expect("required fields populated");
     let find = |key: &str| entries.iter().find(|(k, _)| k == key).map(|(_, v)| v);
 
     // N-02: When num_heads=0, head_dim defaults to 0 (no hidden assumption)
@@ -114,7 +113,7 @@ fn test_build_gguf_arch_metadata_llama_architecture() {
     apr.intermediate_size = Some(11008);
     apr.name = Some("LLaMA-7B".to_string());
 
-    let entries = build_gguf_arch_metadata(&apr);
+    let entries = build_gguf_arch_metadata(&apr).expect("required fields populated");
     let find = |key: &str| entries.iter().find(|(k, _)| k == key).map(|(_, v)| v);
 
     // All arch-prefixed keys should use "llama" prefix
@@ -400,4 +399,89 @@ fn test_unfuse_qkv_tensors_no_apr_metadata_returns_original() {
     // No metadata available (file doesn't exist) -> returns original
     assert_eq!(result.len(), 1);
     assert!(result.contains_key("model.layers.0.self_attn.qkv_proj.weight"));
+}
+
+// ========================================================================
+// #1865: infer_num_layers_from_tensor_names — apr-export-num-layers-v1
+// ========================================================================
+
+#[test]
+fn test_infer_num_layers_from_blk_n_names() {
+    let names = [
+        "token_embd.weight",
+        "blk.0.attn_q.weight",
+        "blk.5.ffn_down.weight",
+        "blk.27.attn_norm.weight",
+        "output_norm.weight",
+    ];
+    assert_eq!(infer_num_layers_from_tensor_names(&names), Some(28));
+}
+
+#[test]
+fn test_infer_num_layers_from_hf_model_layers_n() {
+    let names = [
+        "model.embed_tokens.weight",
+        "model.layers.0.self_attn.q_proj.weight",
+        "model.layers.31.mlp.up_proj.weight",
+        "model.norm.weight",
+    ];
+    assert_eq!(infer_num_layers_from_tensor_names(&names), Some(32));
+}
+
+#[test]
+fn test_infer_num_layers_returns_none_when_no_block_tensors() {
+    let names = ["token_embd.weight", "output_norm.weight", "output.weight"];
+    assert_eq!(infer_num_layers_from_tensor_names(&names), None);
+}
+
+#[test]
+fn test_infer_num_layers_ignores_malformed_indices() {
+    // blk.foo.x has a non-numeric index and must be skipped without panicking.
+    let names = ["blk.0.attn_q", "blk.foo.weird", "blk.7.ffn_down"];
+    assert_eq!(infer_num_layers_from_tensor_names(&names), Some(8));
+}
+
+/// FALSIFY-EXPORT-NUM-LAYERS-001: integration smoke for the inference path.
+/// Builds an APR file with no `num_layers` metadata but well-formed `blk.N.*`
+/// tensor names; `apr export` must succeed (or fail cleanly), never panic.
+#[test]
+fn test_export_apr_to_gguf_raw_infers_num_layers_when_missing() {
+    use crate::format::v2::{AprV2Metadata, AprV2Writer};
+    use tempfile::tempdir;
+
+    let dir = tempdir().expect("create temp dir");
+    let apr_path = dir.path().join("model.apr");
+    let gguf_path = dir.path().join("model.gguf");
+
+    let mut metadata = AprV2Metadata::new("qwen2");
+    metadata.architecture = Some("qwen2".to_string());
+    metadata.hidden_size = Some(4);
+    metadata.num_layers = None; // <-- intentionally missing; must be inferred
+    metadata.num_heads = Some(2);
+    metadata.vocab_size = Some(8);
+    metadata.intermediate_size = Some(16);
+    metadata.name = Some("test".to_string());
+    metadata
+        .custom
+        .insert("tokenizer.model".to_string(), serde_json::json!("gpt2"));
+    metadata.custom.insert(
+        "tokenizer.vocabulary".to_string(),
+        serde_json::json!(["a", "b", "c", "d", "e", "f", "g", "h"]),
+    );
+
+    let mut writer = AprV2Writer::new(metadata);
+    writer.add_f32_tensor("token_embd.weight", vec![8, 4], &vec![0.1f32; 8 * 4]);
+    writer.add_f32_tensor("blk.0.attn_norm.weight", vec![4], &[1.0f32; 4]);
+    writer.add_f32_tensor("blk.1.attn_norm.weight", vec![4], &[1.0f32; 4]);
+    writer.add_f32_tensor("output_norm.weight", vec![4], &[1.0f32; 4]);
+
+    let apr_bytes = writer.write().expect("write APR");
+    std::fs::write(&apr_path, &apr_bytes).expect("write APR file");
+
+    // Critical: this must NOT panic. Pre-#1865 this aborted with exit 101.
+    let result = export_apr_to_gguf_raw(&apr_path, &gguf_path);
+    assert!(
+        result.is_ok(),
+        "export must succeed via num_layers inference; got: {result:?}"
+    );
 }
