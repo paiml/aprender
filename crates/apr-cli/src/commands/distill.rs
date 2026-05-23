@@ -914,6 +914,30 @@ fn run_cuda_backend(
         .with_teacher(teacher_provider)
         .with_student(Box::new(student_provider));
 
+    // PMAT-705: attach a ProgressCallback so per-step loss is visible
+    // during long training runs. Without this, a 30 h Stage D dispatch
+    // shows no output between "blocks uploaded" and "Distillation complete"
+    // — the failure mode that hid the PMAT-704 cascade for 1.5 h on gx10.
+    //
+    // Configuration:
+    //   APR_DISTILL_LOG_EVERY=N (default 10) — log every N steps.
+    //   APR_DISTILL_LOG_EVERY=0 — disable per-step logs (epoch boundaries still emit).
+    //
+    // Contract: contracts/distill-pipeline-observability-v1.yaml.
+    let log_every: usize = std::env::var("APR_DISTILL_LOG_EVERY")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10);
+    if log_every > 0 {
+        eprintln!("[PMAT-705] ProgressCallback attached (log every {log_every} steps)");
+        pipeline =
+            pipeline.with_callback(Box::new(entrenar::train::ProgressCallback::new(log_every)));
+    } else {
+        eprintln!(
+            "[PMAT-705] APR_DISTILL_LOG_EVERY=0 — per-step logging disabled (epoch boundaries only)"
+        );
+    }
+
     // SPEC-DISTILL-001 Phase 4 Stage B-2: when `--dataset <DIR>` is set,
     // construct a ShardBatchSource from the .bin shards. Otherwise the
     // pipeline keeps its default SyntheticBatchSource for smoke tests.
