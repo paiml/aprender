@@ -142,6 +142,43 @@ falsification_tests:
   - link_removed
   - link_404
   - link_renamed_without_sync
+- id: FALSIFY-README-005
+  name: book_cli_chapter_coverage
+  description: |
+    Per BOOK-CLOSEOUT-001 § Phase 5. The book MUST have one chapter per
+    `apr <cmd>` subcommand. If the README claims "every CLI command
+    documented", that claim is contract-enforced.
+  prediction: |
+    count(book/src/cli/*.md) == count(apr --help subcommands)
+  test: |
+    bash scripts/check_book_cli_parity.sh
+  if_fails: |
+    A CLI subcommand was added without a corresponding chapter, OR an
+    orphan chapter exists under book/src/cli/. Run
+    scripts/gen-cli-chapter-stubs.sh to regenerate missing stubs.
+  ship_blocking: true
+  counter_example_classes:
+  - new_subcommand_without_chapter
+  - chapter_removed_but_subcommand_remains
+
+- id: FALSIFY-README-006
+  name: book_lib_chapter_coverage
+  description: |
+    Per BOOK-CLOSEOUT-001 § Phase 5. The book MUST have one chapter per
+    public module in `aprender-core`. If the README claims "every public
+    library module documented", that claim is contract-enforced.
+  prediction: |
+    count(book/src/lib/*.md) == count(pub mod in aprender-core)
+  test: |
+    bash scripts/check_book_lib_parity.sh
+  if_fails: |
+    A public module was added without a corresponding chapter, OR an
+    orphan lib chapter exists. Run scripts/gen-lib-chapter-stubs.sh.
+  ship_blocking: true
+  counter_example_classes:
+  - new_pub_mod_without_chapter
+  - chapter_removed_but_pub_mod_remains
+
 kani_harnesses: []
 qa_gate:
   id: QA-README-001
@@ -152,5 +189,7 @@ qa_gate:
   - contract_count
   - cli_command_count
   - apr_cookbook_link_present
-  pass_criteria: All 4 falsification tests pass
+  - book_cli_chapter_coverage
+  - book_lib_chapter_coverage
+  pass_criteria: All 6 falsification tests pass
   falsification: Any single claim mismatch fails the gate

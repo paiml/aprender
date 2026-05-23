@@ -1,0 +1,20 @@
+<!-- PCU: lib-compute | contract: contracts/apr-page-lib-compute-v1.yaml -->
+
+# Module: `aprender::compute`
+
+Public module of the `aprender-core` crate.
+
+## Source
+
+[`crates/aprender-core/src/compute.rs`](https://github.com/paiml/aprender/blob/main/crates/aprender-core/src/compute.rs) or directory.
+
+## Example
+
+```rust
+use aprender::compute::Tensor;
+```
+
+## Full API
+
+Run `cargo doc -p aprender-core --open` for the rendered rustdoc, or browse
+[docs.rs/aprender](https://docs.rs/aprender) for the published version.
