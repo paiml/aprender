@@ -60,7 +60,7 @@ impl OwnedQuantizedModel {
             };
 
             // CORRECTNESS-011: CPU intermediate debug at L0
-            if cpu_debug_layers && layer_idx < 2 {
+            if cpu_debug_layers {
                 let norm_label = if use_rmsnorm { "RMSNorm" } else { "LayerNorm" };
                 eprintln!(
                     "[CPU-L{}] {}: first 3 = [{:.4}, {:.4}, {:.4}]",
@@ -97,7 +97,7 @@ impl OwnedQuantizedModel {
             }
 
             // CORRECTNESS-011: Q, K, V before RoPE (after bias)
-            if cpu_debug_layers && (layer_idx < 2 || layer_idx == 4 || layer_idx == 5) {
+            if cpu_debug_layers {
                 eprintln!(
                     "[CPU-L{}] Q (before RoPE): first 5 = [{:.4}, {:.4}, {:.4}, {:.4}, {:.4}]",
                     layer_idx, qkv[0], qkv[1], qkv[2], qkv[3], qkv[4]
@@ -149,7 +149,7 @@ impl OwnedQuantizedModel {
                 }
 
                 // CORRECTNESS-011: Q after RoPE at position 0
-                if cpu_debug_layers && layer_idx < 2 && s == 0 {
+                if cpu_debug_layers && s == 0 {
                     eprintln!(
                         "[CPU-L{}] Q (after RoPE): first 3 = [{:.4}, {:.4}, {:.4}]",
                         layer_idx, q[0], q[1], q[2]
@@ -173,7 +173,7 @@ impl OwnedQuantizedModel {
             let attn_out = self.causal_attention(&q_all, &k_all, &v_all, seq_len);
 
             // CORRECTNESS-011: Attention output
-            if cpu_debug_layers && layer_idx < 2 {
+            if cpu_debug_layers {
                 eprintln!(
                     "[CPU-L{}] Attn output: first 3 = [{:.4}, {:.4}, {:.4}]",
                     layer_idx, attn_out[0], attn_out[1], attn_out[2]
