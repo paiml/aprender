@@ -256,8 +256,8 @@ Mutation testing is the final arbiter of test suite quality. Use it to validate 
 
 ## See Also
 
-- [What is Mutation Testing?](./what-is-mutation-testing.md)
-- [Using cargo-mutants](./using-cargo-mutants.md)
-- [Mutation Score Targets](./mutation-score-targets.md)
-- [Killing Mutants](./killing-mutants.md)
-- [Property-Based Testing](./property-based-testing.md)
+- What is Mutation Testing?
+- Using cargo-mutants
+- Mutation Score Targets
+- Killing Mutants
+- Property-Based Testing

@@ -10,12 +10,12 @@ This chapter demonstrates EXTREME TDD implementation of SafeTensors model serial
 
 **Prerequisites:**
 - Understanding of [The RED-GREEN-REFACTOR Cycle](../methodology/red-green-refactor.md)
-- Familiarity with [Integration Tests](../red-phase/integration-tests.md)
+- Familiarity with Integration Tests
 - Knowledge of binary format design
 - Basic understanding of JSON metadata
 
 **Recommended reading order:**
-1. [Case Study: Linear Regression](./linear-regression.md) ← Foundation
+1. Case Study: Linear Regression ← Foundation
 2. This chapter (Model Serialization)
 3. [Case Study: Cross-Validation](./cross-validation.md)
 
@@ -641,13 +641,13 @@ Now that you understand SafeTensors serialization:
 1. **[Case Study: Cross-Validation](./cross-validation.md)** ← Next chapter
    Learn systematic model evaluation
 
-2. **[Case Study: Random Forest](./random-forest.md)**
+2. **Case Study: Random Forest**
    Apply serialization to ensemble models
 
 3. **[Mutation Testing](../advanced-testing/mutation-testing.md)**
    Verify test quality with cargo-mutants
 
-4. **[Performance Optimization](../refactor-phase/performance-optimization.md)**
+4. **Performance Optimization**
    Optimize serialization for large models
 
 ---
@@ -679,9 +679,9 @@ RESULT → Production-ready, industry-compatible serialization
 ---
 
 **See Implementation**:
-- Source: [`src/serialization/safetensors.rs`](../../../src/serialization/safetensors.rs)
-- Tests: [`tests/github_issue_5_safetensors_tests.rs`](../../../tests/github_issue_5_safetensors_tests.rs)
-- Spec: [`docs/specifications/model-format-spec-v1.md`](../../../docs/specifications/model-format-spec-v1.md)
+- Source: `src/serialization/safetensors.rs`
+- Tests: `tests/github_issue_5_safetensors_tests.rs`
+- Spec: `docs/specifications/model-format-spec-v1.md`
 
 ---
 

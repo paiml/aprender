@@ -57,4 +57,4 @@ All old repos are archived (read-only). Development happens here.
 - **One CI pipeline**: `cargo test --workspace` catches everything
 - **One install**: `cargo install aprender` gets the whole stack
 
-See: [APR-MONO spec](../../docs/specifications/aprender-monorepo-consolidation.md)
+See: APR-MONO spec

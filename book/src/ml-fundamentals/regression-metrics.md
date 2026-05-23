@@ -243,7 +243,7 @@ println!("RMSE = {:.2}", error);   // e.g., 3.21 (avg error)
 ```
 
 **Case Studies**:
-- [Linear Regression](../examples/linear-regression.md) - Uses R² for evaluation
+- Linear Regression - Uses R² for evaluation
 - [Cross-Validation](../examples/cross-validation.md) - Uses R² as CV score
 
 ---
@@ -260,7 +260,7 @@ println!("RMSE = {:.2}", error);   // e.g., 3.21 (avg error)
 
 ### Related Chapters
 
-- [Linear Regression Theory](./linear-regression.md) - OLS minimizes MSE
+- Linear Regression Theory - OLS minimizes MSE
 - [Cross-Validation Theory](./cross-validation.md) - Uses metrics for evaluation
 - [Classification Metrics Theory](./classification-metrics.md) - For discrete targets
 

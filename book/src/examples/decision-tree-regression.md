@@ -483,7 +483,7 @@ cargo run --example decision_tree_regression
 - [Regression Metrics](../ml-fundamentals/regression-metrics.md) - R², MSE, MAE
 
 **Other Algorithms**:
-- [Linear Regression](./linear-regression.md) - Baseline comparison
+- Linear Regression - Baseline comparison
 - [Random Forest (Future)](./random-forest-regression.md) - Ensemble of trees
 
 **Code Reference**:
@@ -516,4 +516,4 @@ cargo run --example decision_tree_regression
 
 **Next**: [Random Forest Regression (Future)](./random-forest-regression.md)
 
-**Previous**: [Decision Tree - Iris Classification](./decision-tree-iris.md)
+**Previous**: Decision Tree - Iris Classification

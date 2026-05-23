@@ -326,7 +326,7 @@ Now that you understand what EXTREME TDD is, continue your learning:
 3. **[Zero Tolerance Quality](./zero-tolerance.md)**
    Learn about enforcing quality gates
 
-4. **[Property-Based Testing](../advanced-testing/property-based-testing.md)**
+4. **Property-Based Testing**
    Advanced testing techniques for edge cases
 
 5. **[Mutation Testing](../advanced-testing/mutation-testing.md)**

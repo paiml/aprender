@@ -692,4 +692,4 @@ Objective: Maximize silhouette score
 - [Case Study: AutoML Clustering](../examples/automl-clustering.md) - Full example
 - [Grid Search Hyperparameter Tuning](../examples/grid-search-tuning.md) - Manual grid search
 - [Cross-Validation](./cross-validation.md) - CV fundamentals
-- [Random Forest](../examples/random-forest.md) - Model to tune
+- Random Forest - Model to tune

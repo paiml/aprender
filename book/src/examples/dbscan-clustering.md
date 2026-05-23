@@ -248,6 +248,6 @@ cargo run --example dbscan_clustering
 
 ## Related Topics
 
-- [K-Means Clustering](./kmeans-clustering.md)
+- K-Means Clustering
 - `UnsupervisedEstimator` trait in `aprender::traits`
 - [What is EXTREME TDD?](../methodology/what-is-extreme-tdd.md)

@@ -110,11 +110,11 @@ The example runs all test functions with all optimizers, displaying:
 
 ## Code Location
 
-See [`examples/batch_optimization.rs`](../../../examples/batch_optimization.rs) for full implementation.
+See `examples/batch_optimization.rs` for full implementation.
 
 ## Related Topics
 
 - [Gradient Descent Theory](../ml-fundamentals/gradient-descent.md)
 - [Advanced Optimizers Theory](../ml-fundamentals/advanced-optimizers.md)
-- [Optimizer Demo](./optimizer-demo.md)
+- Optimizer Demo
 - [Convex Optimization](./convex-optimization.md)

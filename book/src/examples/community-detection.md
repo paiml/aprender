@@ -168,7 +168,7 @@ Group users/items with similar preferences.
 
 - [Betweenness Centrality](../ml-fundamentals/graph-algorithms.md)
 - [PageRank](../ml-fundamentals/graph-algorithms.md)
-- [K-Means Clustering](./kmeans-clustering.md)
+- K-Means Clustering
 
 ## References
 

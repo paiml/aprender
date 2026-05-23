@@ -287,8 +287,8 @@ let kfold = KFold::new(5).with_random_state(42);
 ## Related Examples
 
 - [Cross-Validation](./cross-validation.md) - K-Fold CV fundamentals
-- [Regularized Regression](./regularized-regression.md) - Ridge, Lasso, ElasticNet
-- [Linear Regression](./linear-regression.md) - Baseline model
+- Regularized Regression - Ridge, Lasso, ElasticNet
+- Linear Regression - Baseline model
 
 ## Key Takeaways
 

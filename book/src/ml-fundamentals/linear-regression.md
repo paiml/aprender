@@ -241,7 +241,7 @@ That's **millions of possible combinations**, all verified automatically.
 
 ## Real-World Application
 
-**Case Study Reference**: See [Case Study: Linear Regression](../examples/linear-regression.md) for complete implementation.
+**Case Study Reference**: See Case Study: Linear Regression for complete implementation.
 
 **Key Takeaways**:
 1. OLS is fast (closed-form solution)
@@ -291,4 +291,4 @@ That's **millions of possible combinations**, all verified automatically.
 
 **Next Chapter**: [Regularization Theory](./regularization.md)
 
-**Previous Chapter**: [Toyota Way: Respect for People](../toyota-way/respect-for-people.md)
+**Previous Chapter**: Toyota Way: Respect for People

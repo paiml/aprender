@@ -81,10 +81,10 @@ Boyd, S., Parikh, N., Chu, E., Peleato, B., & Eckstein, J. (2011). "Distributed 
 
 ## Code Location
 
-See [`examples/admm_optimization.rs`](../../../examples/admm_optimization.rs) for full implementation.
+See `examples/admm_optimization.rs` for full implementation.
 
 ## Related Topics
 
 - [Convex Optimization (FISTA)](./convex-optimization.md)
 - [Constrained Optimization](./constrained-optimization.md)
-- [Optimizer Demo](./optimizer-demo.md)
+- Optimizer Demo

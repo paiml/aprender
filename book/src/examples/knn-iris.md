@@ -406,6 +406,6 @@ let knn15 = KNearestNeighbors::new(15); // 75% of training data
 
 ## Related Examples
 
-- [`examples/iris_clustering.rs`](./iris-clustering.md) - K-Means on same dataset
+- `examples/iris_clustering.rs` - K-Means on same dataset
 - [`book/src/ml-fundamentals/knn.md`](../ml-fundamentals/knn.md) - Full kNN theory
 - [`examples/logistic-regression.md`](./logistic-regression.md) - Parametric alternative

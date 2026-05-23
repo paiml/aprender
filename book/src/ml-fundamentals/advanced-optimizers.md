@@ -578,8 +578,8 @@ fn train_epoch<O: Optimizer>(
 ## Related Chapters
 
 - [Gradient Descent Theory](./gradient-descent.md) - Foundation for all optimizers
-- [Optimizer Demo](../examples/optimizer-demo.md) - Visual comparison of SGD and Adam
-- [Regularized Regression](../examples/regularized-regression.md) - Coordinate descent alternative
+- Optimizer Demo - Visual comparison of SGD and Adam
+- Regularized Regression - Coordinate descent alternative
 
 ## Summary
 

@@ -227,7 +227,7 @@ println!("Test Accuracy: {:.3}", accuracy); // e.g., 0.973
 // Random Forest typically outperforms single tree!
 ```
 
-**Case Study**: See [Random Forest - Iris Classification](../examples/random-forest-iris.md)
+**Case Study**: See Random Forest - Iris Classification
 
 ### Example 3: Reproducibility
 
@@ -652,6 +652,6 @@ OOB samples: ~37% per tree
 
 ---
 
-**Next Chapter**: [K-Means Clustering Theory](./kmeans-clustering.md)
+**Next Chapter**: K-Means Clustering Theory
 
 **Previous Chapter**: [Decision Trees Theory](./decision-trees.md)

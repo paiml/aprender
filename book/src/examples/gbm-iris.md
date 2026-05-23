@@ -163,7 +163,7 @@ Sample  Predicted  P(Setosa)  P(Versicolor)
 
 ## Related Examples
 
-- [`examples/random_forest_iris.rs`](./random-forest-iris.md) - Random Forest comparison
+- `examples/random_forest_iris.rs` - Random Forest comparison
 - [`examples/naive_bayes_iris.rs`](./naive-bayes-iris.md) - Naive Bayes comparison
 - [`examples/svm_iris.rs`](./svm-iris.md) - SVM comparison
 

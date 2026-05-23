@@ -21,7 +21,7 @@ Before reading this chapter, you should understand:
 **Recommended reading order:**
 1. [What is EXTREME TDD?](../methodology/what-is-extreme-tdd.md)
 2. This chapter (Logistic Regression Case Study)
-3. [Property-Based Testing](../advanced-testing/property-based-testing.md)
+3. Property-Based Testing
 
 ---
 
@@ -379,14 +379,14 @@ let intercept = model.get_tensor("intercept")?;
 Now that you've seen binary classification with Logistic Regression, explore related topics:
 
 **More Classification Algorithms:**
-1. **[Decision Tree Iris](./decision-tree-iris.md)** ← Next case study
+1. **Decision Tree Iris** ← Next case study
    Multi-class classification with decision trees
 
-2. **[Random Forest](./random-forest.md)**
+2. **Random Forest**
    Ensemble methods for improved accuracy
 
 **Advanced Testing:**
-3. **[Property-Based Testing](../advanced-testing/property-based-testing.md)**
+3. **Property-Based Testing**
    Learn how to write the 4 property tests shown in this chapter
 
 4. **[Mutation Testing](../advanced-testing/mutation-testing.md)**

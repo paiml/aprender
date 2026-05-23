@@ -160,7 +160,7 @@ These are verified in the comprehensive test suite. See **Case Study** for full 
 
 ### Related Chapters
 
-- [Linear Regression Theory](./linear-regression.md) - Model to evaluate with CV
+- Linear Regression Theory - Model to evaluate with CV
 - [Regression Metrics Theory](./regression-metrics.md) - Scores used in CV
 - [Case Study: Cross-Validation](../examples/cross-validation.md) - **REQUIRED READING**
 

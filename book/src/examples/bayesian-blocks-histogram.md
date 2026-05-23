@@ -134,7 +134,7 @@ The Bayesian Blocks algorithm is described in:
 ## Related Examples
 
 - [Descriptive Statistics](./descriptive-statistics.md) - Basic statistical analysis
-- [K-Means Clustering](./kmeans-clustering.md) - Density-based clustering
+- K-Means Clustering - Density-based clustering
 
 ## Key Takeaways
 

@@ -156,6 +156,6 @@ The offline mode implementation includes Popperian falsification tests:
 
 ## References
 
-- [Section 9.2: Sovereign AI Compliance](../../../docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md)
+- Section 9.2: Sovereign AI Compliance
 - [Local-First Software](https://www.inkandswitch.com/local-first/) (Kleppmann et al., 2019)
-- [Example: sovereign_offline.rs](../../../examples/sovereign_offline.rs)
+- Example: sovereign_offline.rs

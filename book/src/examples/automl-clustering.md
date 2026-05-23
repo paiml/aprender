@@ -207,5 +207,5 @@ For this 1D problem, grid search would work fine. TPE shines when:
 ## Related Topics
 
 - [AutoML Theory](../ml-fundamentals/automl.md) - Full AutoML documentation
-- [K-Means Clustering](./kmeans-clustering.md) - K-Means fundamentals
-- [Iris Clustering](./iris-clustering.md) - Basic clustering example
+- K-Means Clustering - K-Means fundamentals
+- Iris Clustering - Basic clustering example

@@ -439,9 +439,9 @@ for epoch in 0..num_epochs {
 
 ## Related Examples
 
-- [Optimizer Demo](../examples/optimizer-demo.md) - Visualizing SGD with momentum
+- Optimizer Demo - Visualizing SGD with momentum
 - [Logistic Regression](../examples/logistic-regression.md) - SGD for classification
-- [Regularized Regression](../examples/regularized-regression.md) - Coordinate descent vs SGD
+- Regularized Regression - Coordinate descent vs SGD
 
 ## Summary
 

@@ -186,12 +186,12 @@ The examples demonstrate:
 
 ## Code Location
 
-See [`examples/convex_optimization.rs`](../../../examples/convex_optimization.rs) for full implementation.
+See `examples/convex_optimization.rs` for full implementation.
 
 ## Related Topics
 
 - [ADMM Optimization](./admm-optimization.md)
-- [Regularized Regression](./regularized-regression.md)
+- Regularized Regression
 - [Constrained Optimization](./constrained-optimization.md)
 - [Advanced Optimizers Theory](../ml-fundamentals/advanced-optimizers.md)
 - [Gradient Descent Theory](../ml-fundamentals/gradient-descent.md)

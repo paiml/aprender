@@ -307,5 +307,5 @@ Output demonstrates:
 
 - [APR Format Specification](../tools/apr-spec.md)
 - [Case Study: APR 100-Point Quality Scoring](./apr-scoring.md)
-- [Toyota Way: Jidoka](../toyota-way/jidoka.md)
+- Toyota Way: Jidoka
 - [Case Study: Pipeline Verification](./pipeline-verification.md)
