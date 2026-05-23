@@ -131,24 +131,48 @@ pub(crate) fn run_humaneval(
         result
     });
 
+    // PMAT-702: Inference-failure handling.
+    //
+    // Contract: contracts/apr-eval-humaneval-inference-failure-handling-v1.yaml
+    //
+    // Pre-fix behavior (removed): when inference failed for ALL samples, the
+    // code "fell back to structural validation" and marked every problem with
+    // a non-empty canonical_solution as pass=1. That produced pass@1 = 1.0 /
+    // 164/164 on completely broken models — the failure mode that hid the
+    // PMAT-701 Phase 4 Stage D no-KD training run for two days.
+    //
+    // Post-fix behavior: emit a structured "inference_failed" result with
+    // pass counters all zero AND return Err so the exit code is non-zero.
+    // The dataset's structural validity is a pre-flight concern, already
+    // reported in the "Problems: N (M valid)" line above. Conflating it with
+    // pass@k is the bug this contract eliminates.
+    //
+    // MBPP's run_mbpp (this file, ~line 1513) already returned Err on the
+    // same condition. This change brings HumanEval into parity.
     if !any_ok {
-        // Fallback: structural validation
+        let err_msg = first_err
+            .clone()
+            .unwrap_or_else(|| "(no error captured)".to_string());
         if !json_output {
-            // ALB-131: Print the actual inference error instead of swallowing it
-            if let Some(ref err) = first_err {
-                println!("  Inference error: {err}");
-            }
-            println!("  Falling back to structural validation (no inference)");
+            println!("  Inference error: {err_msg}");
+            println!("  All HumanEval samples failed inference — pass counters are 0.");
         }
-        for (i, problem) in problems.iter().enumerate() {
-            if validate_humaneval_problem(problem) {
-                if let Some(ref sol) = problem.canonical_solution {
-                    if !sol.trim().is_empty() {
-                        per_problem_correct[i].2 = 1;
-                    }
-                }
-            }
-        }
+        let elapsed = start.elapsed().as_secs_f32();
+        emit_eval_results(
+            "humaneval",
+            model_path,
+            &per_problem_correct,
+            num_samples,
+            temperature,
+            k_values,
+            elapsed,
+            "inference_failed",
+            json_output,
+            Some(("inference_error", &err_msg)),
+        );
+        return Err(CliError::InferenceFailed(format!(
+            "HumanEval inference failed for all samples: {err_msg}"
+        )));
     }
 
     let elapsed = start.elapsed().as_secs_f32();
@@ -160,7 +184,7 @@ pub(crate) fn run_humaneval(
         temperature,
         k_values,
         elapsed,
-        if any_ok { "inference" } else { "structural" },
+        "inference",
         json_output,
         None,
     );
@@ -1510,10 +1534,32 @@ pub(crate) fn run_mbpp(
         result
     });
 
+    // PMAT-702: parity with HumanEval. Emit structured "inference_failed"
+    // result before returning Err so JSON-parsing tools get a usable failure
+    // signal (pass@k = 0, mode = "inference_failed", inference_error populated).
     if !any_ok {
-        return Err(CliError::ValidationFailed(format!(
-            "MBPP inference failed: {}",
-            first_err.unwrap_or_else(|| "unknown error".to_string())
+        let err_msg = first_err
+            .clone()
+            .unwrap_or_else(|| "(no error captured)".to_string());
+        if !json_output {
+            println!("  Inference error: {err_msg}");
+            println!("  All MBPP samples failed inference — pass counters are 0.");
+        }
+        let elapsed = start.elapsed().as_secs_f32();
+        emit_eval_results(
+            "mbpp-sanitized",
+            model_path,
+            &per_problem_correct,
+            num_samples,
+            temperature,
+            k_values,
+            elapsed,
+            "inference_failed",
+            json_output,
+            Some(("inference_error", &err_msg)),
+        );
+        return Err(CliError::InferenceFailed(format!(
+            "MBPP inference failed for all samples: {err_msg}"
         )));
     }
 
