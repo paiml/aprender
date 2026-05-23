@@ -783,11 +783,42 @@ fn run_cuda_backend(
             .is_some_and(|t| matches!(t.dtype, TensorDType::Q4K | TensorDType::Q6K))
     });
     let teacher_provider: Box<dyn TeacherLogitsProvider> = if teacher_uses_quantized_weights {
+        // PMAT-703: if teacher's native vocab is larger than the student's,
+        // we must truncate teacher logits to the student vocab before KD loss
+        // (see contracts/apr-distill-teacher-vocab-alignment-v1.yaml). The
+        // canonical example is Qwen2.5-Coder-7B (vocab=152064) → 0.5B
+        // (vocab=151936). Pass the student vocab as target so the teacher
+        // truncates at the boundary.
+        let student_vocab = student_meta.vocab_size.ok_or_else(|| {
+            CliError::ValidationFailed(
+                "student .apr metadata missing vocab_size — required for PMAT-703 vocab alignment"
+                    .into(),
+            )
+        })?;
+        let teacher_native_vocab = teacher_meta.vocab_size.ok_or_else(|| {
+            CliError::ValidationFailed(
+                "teacher .apr metadata missing vocab_size — required for PMAT-703 vocab alignment"
+                    .into(),
+            )
+        })?;
+        let target_vocab = if teacher_native_vocab > student_vocab {
+            eprintln!(
+                "[PMAT-703] vocab alignment: teacher native={teacher_native_vocab}, student={student_vocab} → truncating teacher logits to student vocab"
+            );
+            Some(student_vocab)
+        } else if teacher_native_vocab < student_vocab {
+            return Err(CliError::ValidationFailed(format!(
+                "vocab alignment: teacher vocab ({teacher_native_vocab}) < student vocab ({student_vocab}); \
+                 student would need to predict tokens the teacher has no embeddings for"
+            )));
+        } else {
+            None
+        };
         eprintln!(
             "[PMAT-701] Q4K/Q6K teacher detected → RealizarQ4KTeacher (Q4K-native forward, no F32 dequant)"
         );
         Box::new(
-            RealizarQ4KTeacher::from_apr_path(teacher_path)
+            RealizarQ4KTeacher::from_apr_path_with_target_vocab(teacher_path, target_vocab)
                 .map_err(|e| CliError::ValidationFailed(format!("RealizarQ4KTeacher load: {e}")))?,
         )
     } else {
