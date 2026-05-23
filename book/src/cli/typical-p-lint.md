@@ -14,6 +14,7 @@ apr typical-p-lint [OPTIONS]
 
 ## Example
 
+<!-- example-cost: trivial -->
 ```bash
 apr typical-p-lint --help
 ```
@@ -26,4 +27,3 @@ Run `apr typical-p-lint --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/typical_p_lint.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/typical_p_lint.rs)
 - Contract: [`contracts/apr-page-cli-typical-p-lint-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-typical-p-lint-v1.yaml)
-

@@ -1,12 +1,15 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   kind: schema
   description: |
-    BOOK-CLOSEOUT-001 § Phase 4. Every public surface (CLI subcommand) has
-    a book chapter with at least one runnable example. mdbook-linkcheck
-    reports zero broken file links on every CI run.
+    BOOK-CLOSEOUT-001 § Phase 4 + § Phase 6. Every public surface (CLI
+    subcommand or aprender-core module) has a book chapter with at least
+    one runnable example. Bash examples actually run end-to-end (Phase 6
+    execution gate). Rust examples actually compile (Phase 6 compile gate).
+    mdbook-linkcheck reports zero broken file links on every CI run.
   references:
     - "docs/specifications/book-completeness-spec.md"
+    - "docs/specifications/book-execution-validation-harness-spec.md"
     - "https://github.com/paiml/aprender/pull/1901"
 
 equations:
@@ -25,6 +28,29 @@ equations:
     formula: "for_all f in book/src/cli/*.md: file_contains_fenced(f, language='bash')"
     invariants:
       - "every CLI page has a runnable example"
+
+  example_executes:
+    formula: |
+      for_all (path, code) in extract(book/src/{cli,lib}/*.md, lang=bash):
+        cost(path) in {trivial, model-required, gpu, destructive, interactive}
+        and (cost == trivial -> exit_code(timeout 10 bash -c code) == 0)
+        and (cost == model-required -> (model_in_cache -> exit_code(timeout 60 bash -c code) == 0))
+        and (cost == destructive -> exit_code(timeout 10 bash -c rewrite_safe(code)) == 0)
+        and (cost in {gpu, interactive} -> may_skip(reason))
+    invariants:
+      - "every bash example has an example-cost annotation OR defaults to trivial"
+      - "every trivial example runs to exit 0 in <=10s"
+      - "every model-required example resolves a model in $APR_MODELS_DIR before execution"
+      - "destructive examples are rewritten to a safe variant (--help / --dry-run) before execution"
+      - "interactive (TUI/REPL) examples are explicitly skipped — they cannot be driven from CI"
+
+  example_compiles:
+    formula: |
+      for_all (path, code) in extract(book/src/lib/*.md, lang=rust):
+        cargo_check(generated_mod(code), features={audio, hf-hub-integration}) == ok
+    invariants:
+      - "every rust example in book/src/lib/*.md compiles against the public surface"
+      - "feature-gated modules (audio, hf_hub) are unlocked for the compile gate"
 
 falsification_tests:
   - id: FALSIFY-BOOK-CLI-PARITY-001
@@ -61,3 +87,29 @@ falsification_tests:
     test_harness: "bash scripts/check_book_lib_example_block.sh"
     expected_output: "exit 0"
     if_fails: "Add a rust fenced code block to the failing chapter."
+
+  - id: FALSIFY-BOOK-EXAMPLE-EXECUTES-001
+    name: bash_example_executes
+    prediction: |
+      every fenced bash code block in book/src/{cli,lib}/*.md either runs
+      cleanly under its declared example-cost class, or skips on a CI-acceptable
+      reason (no model in cache / no GPU / interactive REPL).
+    test_harness: "bash scripts/check_book_examples_executable.sh"
+    expected_output: "exit 0"
+    if_fails: |
+      Either fix the example (preferred — make it actually runnable, e.g. use
+      `apr <cmd> --help` instead of referring to a placeholder config file)
+      or add a more accurate `<!-- example-cost: ... -->` annotation above the
+      fenced block to declare its real cost class (model-required, gpu, etc.).
+
+  - id: FALSIFY-BOOK-EXAMPLE-COMPILES-001
+    name: rust_example_compiles
+    prediction: |
+      every fenced rust code block in book/src/lib/*.md type-checks against
+      the published public surface of aprender-core.
+    test_harness: "bash scripts/check_book_examples_compile.sh"
+    expected_output: "exit 0"
+    if_fails: |
+      Either narrow the rust example to compile (e.g. import only the module
+      path `use aprender::foo;` rather than a specific type that does not
+      yet exist) or add the missing public re-export to the lib surface.

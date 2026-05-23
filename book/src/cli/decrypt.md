@@ -14,6 +14,7 @@ apr decrypt [OPTIONS]
 
 ## Example
 
+<!-- example-cost: destructive -->
 ```bash
 apr decrypt model.enc --key my-key -o model.apr
 ```
@@ -26,4 +27,3 @@ Run `apr decrypt --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/decrypt.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/decrypt.rs)
 - Contract: [`contracts/apr-page-cli-decrypt-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-decrypt-v1.yaml)
-

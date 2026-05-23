@@ -14,6 +14,7 @@ apr finetune [OPTIONS]
 
 ## Example
 
+<!-- example-cost: model-required model: qwen2.5-coder-0.5b -->
 ```bash
 apr finetune qwen2.5-coder-0.5b --data train.jsonl --epochs 3
 ```
@@ -26,4 +27,3 @@ Run `apr finetune --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/finetune.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/finetune.rs)
 - Contract: [`contracts/apr-page-cli-finetune-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-finetune-v1.yaml)
-

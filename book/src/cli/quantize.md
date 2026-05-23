@@ -14,6 +14,7 @@ apr quantize [OPTIONS]
 
 ## Example
 
+<!-- example-cost: model-required model: model.apr -->
 ```bash
 apr quantize model.apr --to q4_k -o model-q4k.apr
 ```
@@ -26,4 +27,3 @@ Run `apr quantize --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/quantize.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/quantize.rs)
 - Contract: [`contracts/apr-page-cli-quantize-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-quantize-v1.yaml)
-

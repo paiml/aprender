@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+# FALSIFY-BOOK-EXAMPLE-EXECUTES-001 (Phase 6 of BOOK-CLOSEOUT-001).
+#
+# For every fenced bash code block in book/src/{cli,lib}/*.md, classify
+# by ``<!-- example-cost: ... -->`` annotation and either execute, skip,
+# or rewrite + execute. Exits 0 iff zero hard FAILs (skips are fine).
+#
+# Cost handling:
+#   trivial          execute with `timeout 10 bash -c $code`; exit 0 required
+#   model-required   if ~/models/<model> missing, SKIP; else `timeout 60 bash`
+#   gpu              skip unless nvidia-smi + nvcc both present
+#   destructive      rewrite mutating commands to `--help` (or --dry-run)
+#                    and assert exit 0; if rewrite fails, SKIP
+#   interactive      SKIP unconditionally
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+EXTRACT="bash scripts/extract-book-examples.sh"
+MODELS_DIR="${APR_MODELS_DIR:-$HOME/models}"
+
+pass=0
+skip=0
+fail=0
+total=0
+
+# Build the apr binary path. If `apr` is on PATH we use it; otherwise we look
+# for the canonical lambda-vector build path before giving up gracefully.
+APR_BIN=""
+if command -v apr >/dev/null 2>&1; then
+    APR_BIN="$(command -v apr)"
+elif [ -x /mnt/nvme-raid0/targets/aprender/release/apr ]; then
+    APR_BIN=/mnt/nvme-raid0/targets/aprender/release/apr
+fi
+
+# If we have no apr binary at all, all CLI examples skip — but the
+# script still scans rust blocks (none of which it runs) and reports.
+if [ -z "$APR_BIN" ]; then
+    echo "[INFO] apr binary not on PATH; all CLI examples will SKIP"
+fi
+
+# Helper: rewrite a destructive command into a safe variant (or fail).
+rewrite_destructive() {
+    local code="$1"
+    # If the command already has a flag that makes it a no-op (--help,
+    # --dry-run, --version), leave it alone.
+    case "$code" in
+        *"--help"*|*"--version"*|*"--dry-run"*)
+            echo "$code"
+            return 0
+            ;;
+    esac
+    # Strategy: replace the first apr-subcommand line with `apr <cmd> --help`.
+    # This is safe for ALL destructive ops in the catalogue (publish, encrypt,
+    # decrypt, rm, upload, stamp).
+    local first
+    first=$(printf '%s\n' "$code" | sed -n '1p')
+    if printf '%s\n' "$first" | grep -qE '^apr\s+[a-z]'; then
+        local cmd
+        cmd=$(printf '%s\n' "$first" | awk '{print $2}')
+        echo "apr $cmd --help"
+        return 0
+    fi
+    return 1
+}
+
+# Helper: rewrite model placeholders that won't resolve locally.
+# E.g. "qwen2.5-coder-1.5b" -> "$MODELS_DIR/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+# Only used when the named model file is missing in $MODELS_DIR.
+expand_model_path() {
+    local model="$1"
+    if [ -e "$MODELS_DIR/$model" ]; then
+        printf '%s' "$MODELS_DIR/$model"
+        return 0
+    fi
+    return 1
+}
+
+while IFS= read -r record; do
+    total=$((total + 1))
+    lang=$(printf '%s\n' "$record" | python3 -c "import json,sys;print(json.load(sys.stdin)['lang'])")
+    cost=$(printf '%s\n' "$record" | python3 -c "import json,sys;print(json.load(sys.stdin)['cost'])")
+    path=$(printf '%s\n' "$record" | python3 -c "import json,sys;print(json.load(sys.stdin)['path'])")
+    code=$(printf '%s\n' "$record" | python3 -c "import json,sys;print(json.load(sys.stdin)['code'])")
+    model=$(printf '%s\n' "$record" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d.get('model',''))")
+
+    # Rust blocks are not executed here — that's the compile checker's job.
+    if [ "$lang" = "rust" ]; then
+        skip=$((skip + 1))
+        echo "[SKIP] $path :: $cost rust (compile gate handles this)"
+        continue
+    fi
+
+    case "$cost" in
+        trivial)
+            if [ -z "$APR_BIN" ] && printf '%s' "$code" | grep -qE '^apr\b'; then
+                skip=$((skip + 1))
+                echo "[SKIP] $path :: trivial (apr binary not available)"
+                continue
+            fi
+            if timeout 10 bash -c "$code" >/dev/null 2>&1; then
+                pass=$((pass + 1))
+                echo "[PASS] $path :: trivial"
+            else
+                # Special-case `apr <subcmd> --help` and `apr --version` —
+                # those are guaranteed by clap to exit 0 if the binary works.
+                fail=$((fail + 1))
+                echo "[FAIL] $path :: trivial — $(printf '%s' "$code" | head -c 80)"
+            fi
+            ;;
+        model-required)
+            # Resolve the model location, accepting either a path or a name.
+            target=""
+            if [ -n "$model" ]; then
+                if [ -e "$MODELS_DIR/$model" ]; then
+                    target="$MODELS_DIR/$model"
+                elif [ -e "$model" ]; then
+                    target="$model"
+                fi
+            fi
+            if [ -z "$target" ]; then
+                skip=$((skip + 1))
+                echo "[SKIP] $path :: model-required ($model not in cache) [model not in cache]"
+                continue
+            fi
+            if [ -z "$APR_BIN" ]; then
+                skip=$((skip + 1))
+                echo "[SKIP] $path :: model-required (apr binary not available)"
+                continue
+            fi
+            # Rewrite bare model-name tokens to their equivalent in $MODELS_DIR
+            # so examples don't depend on auto-pull. Two strategies:
+            #   1. Any token ending in .gguf/.apr/.safetensors that has no path
+            #      separator AND exists in $MODELS_DIR -> prefix with $MODELS_DIR/.
+            #   2. If the annotated model is a bare name (no slash, no extension)
+            #      that exists in $MODELS_DIR -> substitute. (Common for `qwen2.5-coder-1.5b`)
+            run_code="$code"
+            while read -r tok; do
+                [ -z "$tok" ] && continue
+                # Skip tokens that contain any slash (already path-like).
+                case "$tok" in */*) continue;; esac
+                if [ -e "$MODELS_DIR/$tok" ]; then
+                    # Use word-boundary substitution to avoid double-substituting.
+                    run_code=$(printf '%s' "$run_code" | sed "s#\\b$tok\\b#$MODELS_DIR/$tok#g")
+                fi
+            done < <(printf '%s\n' "$run_code" | grep -oE '[A-Za-z0-9_.-]+\.(gguf|apr|safetensors)' | sort -u)
+            # Replace the annotated bare-name model only if it's not already substituted.
+            if [ -n "$model" ] \
+                && ! [ -e "$model" ] \
+                && [ -e "$MODELS_DIR/$model" ] \
+                && ! printf '%s' "$run_code" | grep -qF "$MODELS_DIR/$model"; then
+                run_code=$(printf '%s' "$run_code" | sed "s#\\b$model\\b#$MODELS_DIR/$model#g")
+            fi
+            if timeout 60 bash -c "$run_code" >/dev/null 2>&1; then
+                pass=$((pass + 1))
+                echo "[PASS] $path :: model-required"
+            else
+                fail=$((fail + 1))
+                echo "[FAIL] $path :: model-required — $(printf '%s' "$run_code" | head -c 80)"
+            fi
+            ;;
+        gpu)
+            if ! command -v nvidia-smi >/dev/null 2>&1; then
+                skip=$((skip + 1))
+                echo "[SKIP] $path :: gpu (no nvidia-smi)"
+                continue
+            fi
+            if ! nvidia-smi >/dev/null 2>&1; then
+                skip=$((skip + 1))
+                echo "[SKIP] $path :: gpu (nvidia-smi failed)"
+                continue
+            fi
+            if [ ! -x /usr/local/cuda/bin/nvcc ]; then
+                skip=$((skip + 1))
+                echo "[SKIP] $path :: gpu (no nvcc)"
+                continue
+            fi
+            if [ -z "$APR_BIN" ]; then
+                skip=$((skip + 1))
+                echo "[SKIP] $path :: gpu (apr binary not available)"
+                continue
+            fi
+            if timeout 30 bash -c "$code" >/dev/null 2>&1; then
+                pass=$((pass + 1))
+                echo "[PASS] $path :: gpu"
+            else
+                fail=$((fail + 1))
+                echo "[FAIL] $path :: gpu — $(printf '%s' "$code" | head -c 80)"
+            fi
+            ;;
+        destructive)
+            if [ -z "$APR_BIN" ]; then
+                skip=$((skip + 1))
+                echo "[SKIP] $path :: destructive (apr binary not available)"
+                continue
+            fi
+            if rewritten=$(rewrite_destructive "$code"); then
+                if timeout 10 bash -c "$rewritten" >/dev/null 2>&1; then
+                    pass=$((pass + 1))
+                    echo "[PASS] $path :: destructive (rewrote to --help)"
+                else
+                    fail=$((fail + 1))
+                    echo "[FAIL] $path :: destructive rewrite did not succeed: $rewritten"
+                fi
+            else
+                skip=$((skip + 1))
+                echo "[SKIP] $path :: destructive (could not rewrite safely)"
+            fi
+            ;;
+        interactive)
+            skip=$((skip + 1))
+            echo "[SKIP] $path :: interactive (CI cannot feed stdin to TUI/REPL)"
+            ;;
+        *)
+            fail=$((fail + 1))
+            echo "[FAIL] $path :: unknown cost class '$cost'"
+            ;;
+    esac
+done < <($EXTRACT)
+
+echo ""
+echo "FALSIFY-BOOK-EXAMPLE-EXECUTES-001: total=$total pass=$pass skip=$skip fail=$fail"
+if [ "$fail" -gt 0 ]; then
+    echo "FALSIFY-BOOK-EXAMPLE-EXECUTES-001: FAIL"
+    exit 1
+fi
+echo "FALSIFY-BOOK-EXAMPLE-EXECUTES-001: PASS"

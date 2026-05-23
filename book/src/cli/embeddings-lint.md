@@ -14,6 +14,7 @@ apr embeddings-lint [OPTIONS]
 
 ## Example
 
+<!-- example-cost: trivial -->
 ```bash
 apr embeddings-lint --help
 ```
@@ -26,4 +27,3 @@ Run `apr embeddings-lint --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/embeddings_lint.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/embeddings_lint.rs)
 - Contract: [`contracts/apr-page-cli-embeddings-lint-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-embeddings-lint-v1.yaml)
-

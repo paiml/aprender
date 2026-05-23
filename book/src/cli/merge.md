@@ -14,6 +14,7 @@ apr merge [OPTIONS]
 
 ## Example
 
+<!-- example-cost: model-required model: model1.apr -->
 ```bash
 apr merge model1.apr model2.apr --strategy weighted --weights 0.7,0.3 -o merged.apr
 ```
@@ -26,4 +27,3 @@ Run `apr merge --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/merge.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/merge.rs)
 - Contract: [`contracts/apr-page-cli-merge-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-merge-v1.yaml)
-

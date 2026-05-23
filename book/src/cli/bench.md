@@ -14,6 +14,7 @@ apr bench [OPTIONS]
 
 ## Example
 
+<!-- example-cost: model-required model: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -->
 ```bash
 apr bench qwen2.5-coder-1.5b-instruct-q4_k_m.gguf --iterations 10
 ```
@@ -26,4 +27,3 @@ Run `apr bench --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/bench.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/bench.rs)
 - Contract: [`contracts/apr-page-cli-bench-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-bench-v1.yaml)
-

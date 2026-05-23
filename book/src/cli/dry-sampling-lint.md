@@ -14,6 +14,7 @@ apr dry-sampling-lint [OPTIONS]
 
 ## Example
 
+<!-- example-cost: trivial -->
 ```bash
 apr dry-sampling-lint --help
 ```
@@ -26,4 +27,3 @@ Run `apr dry-sampling-lint --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/dry_sampling_lint.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/dry_sampling_lint.rs)
 - Contract: [`contracts/apr-page-cli-dry-sampling-lint-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-dry-sampling-lint-v1.yaml)
-

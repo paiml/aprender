@@ -14,6 +14,7 @@ apr ptx-map [OPTIONS]
 
 ## Example
 
+<!-- example-cost: model-required model: model.apr -->
 ```bash
 apr ptx-map model.apr --gpu-arch sm_89
 ```
@@ -26,4 +27,3 @@ Run `apr ptx-map --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/ptx_map.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/ptx_map.rs)
 - Contract: [`contracts/apr-page-cli-ptx-map-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-ptx-map-v1.yaml)
-

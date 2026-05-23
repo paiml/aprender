@@ -14,6 +14,7 @@ apr diff [OPTIONS]
 
 ## Example
 
+<!-- example-cost: model-required model: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -->
 ```bash
 apr diff qwen2.5-coder-1.5b-instruct-q4_k_m.gguf qwen2.5-coder-1.5b-instruct-q4k.apr
 ```
@@ -26,4 +27,3 @@ Run `apr diff --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/diff.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/diff.rs)
 - Contract: [`contracts/apr-page-cli-diff-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-diff-v1.yaml)
-

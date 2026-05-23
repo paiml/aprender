@@ -14,6 +14,7 @@ apr import [OPTIONS]
 
 ## Example
 
+<!-- example-cost: model-required model: hf://openai/whisper-tiny -->
 ```bash
 apr import hf://openai/whisper-tiny -o whisper.apr --arch whisper
 ```
@@ -26,4 +27,3 @@ Run `apr import --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/import.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/import.rs)
 - Contract: [`contracts/apr-page-cli-import-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-import-v1.yaml)
-

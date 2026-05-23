@@ -14,6 +14,7 @@ apr embed [OPTIONS]
 
 ## Example
 
+<!-- example-cost: trivial -->
 ```bash
 apr embed --help
 ```
@@ -26,4 +27,3 @@ Run `apr embed --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/embed.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/embed.rs)
 - Contract: [`contracts/apr-page-cli-embed-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-embed-v1.yaml)
-

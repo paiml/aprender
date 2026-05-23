@@ -14,6 +14,7 @@ apr tune [OPTIONS]
 
 ## Example
 
+<!-- example-cost: model-required model: qwen2.5-coder-0.5b -->
 ```bash
 apr tune qwen2.5-coder-0.5b --data train.jsonl
 ```
@@ -26,4 +27,3 @@ Run `apr tune --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/tune.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/tune.rs)
 - Contract: [`contracts/apr-page-cli-tune-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-tune-v1.yaml)
-

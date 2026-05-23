@@ -14,6 +14,7 @@ apr pull [OPTIONS]
 
 ## Example
 
+<!-- example-cost: model-required model: hf://Qwen/Qwen2.5-Coder-0.5B-Instruct -->
 ```bash
 apr pull hf://Qwen/Qwen2.5-Coder-0.5B-Instruct
 ```
@@ -26,4 +27,3 @@ Run `apr pull --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/pull.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/pull.rs)
 - Contract: [`contracts/apr-page-cli-pull-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-pull-v1.yaml)
-

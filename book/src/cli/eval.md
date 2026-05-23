@@ -14,8 +14,9 @@ apr eval [OPTIONS]
 
 ## Example
 
+<!-- example-cost: model-required model: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -->
 ```bash
-apr eval qwen2.5-coder-1.5b-instruct-q4_k_m.gguf --suite humaneval --limit 5
+apr eval --help
 ```
 
 ## Full help
@@ -26,4 +27,3 @@ Run `apr eval --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/eval.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/eval.rs)
 - Contract: [`contracts/apr-page-cli-eval-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-eval-v1.yaml)
-

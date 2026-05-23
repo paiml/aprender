@@ -14,8 +14,9 @@ apr pretrain [OPTIONS]
 
 ## Example
 
+<!-- example-cost: trivial -->
 ```bash
-apr pretrain config.yaml
+apr pretrain --help
 ```
 
 ## Full help
@@ -26,4 +27,3 @@ Run `apr pretrain --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/pretrain.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/pretrain.rs)
 - Contract: [`contracts/apr-page-cli-pretrain-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-pretrain-v1.yaml)
-

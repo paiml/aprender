@@ -10,6 +10,7 @@ Public module of the `aprender-core` crate.
 
 ## Example
 
+<!-- example-cost: trivial -->
 ```rust
 use aprender::logic;
 // See `cargo doc -p aprender-core --open` for full API reference.

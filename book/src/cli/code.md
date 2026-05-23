@@ -14,6 +14,7 @@ apr code [OPTIONS]
 
 ## Example
 
+<!-- example-cost: interactive -->
 ```bash
 apr code -p "review this Python function" --max-turns 1
 ```
@@ -26,4 +27,3 @@ Run `apr code --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/code.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/code.rs)
 - Contract: [`contracts/apr-page-cli-code-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-code-v1.yaml)
-
