@@ -403,7 +403,7 @@ dependencies = [
 
 [[package]]
 name = "aprender"
-version = "0.35.1"
+version = "0.35.2"
 dependencies = [
  "apr-cli",
  "aprender-core",
@@ -888,7 +888,7 @@ dependencies = [
 name = "aprender-monte-carlo"
 version = "0.35.0"
 dependencies = [
- "aprender 0.35.1",
+ "aprender 0.35.2",
  "assert_cmd",
  "chrono",
  "clap",
@@ -1789,7 +1789,7 @@ dependencies = [
 name = "aprender-tsp"
 version = "0.35.0"
 dependencies = [
- "aprender 0.35.1",
+ "aprender 0.35.2",
  "assert_cmd",
  "clap",
  "crc32fast",

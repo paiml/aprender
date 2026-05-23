@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.2] - 2026-05-23
+
+### Bug fixes + DX (last release for 3 months)
+
+Two-PR drain before the 3-month hiatus: mega-bundle PR #1898 (subsumed
+#1880/#1883/#1886/#1891/#1896/#1897, which itself subsumed #1874/#1877/#1879/#1881)
++ PR #1888 PMAT-706 smoke mode.
+
+### Fixed
+
+- **#1874 / PMAT-702**: `apr eval` no longer reports fake `pass@1=1.0` on
+  broken models. Eval now distinguishes inference failure from test failure.
+- **#1877 / PMAT-703**: distill teacher logits are vocab-aligned for the
+  Qwen2.5-Coder 7B → 0.5B KD pair (152064 → 151936). New contract
+  `apr-distill-teacher-vocab-alignment-v1.yaml`.
+- **#1879 / PMAT-704**: `apr distill --backend cuda` defaults Q4K teacher
+  to `CudaTrainerTeacher` (cuBLAS), reverting the PMAT-704 Bug B
+  slow-path. New contract `apr-distill-teacher-backend-selection-v1.yaml`.
+- **#1891**: `apr pull qwen2.5-coder-1.5b` and `apr run` short-name
+  resolution + Pacha cache alignment. Adds `qwen2.5-coder-1.5b` alias.
+  Filesystem paths that don't exist preserve the original path in the
+  FileNotFound error (regression: chat tests).
+- **#1897 (clippy)**: removed `..Default::default()` from 5 CallbackContext
+  literals in pipeline.rs where all fields are explicitly listed
+  (`clippy::needless_update`).
+
+### Added
+
+- **#1881 / PMAT-705**: `ProgressCallback` wired into distill `Pipeline`.
+  Operators can now subscribe to `on_train_begin / on_epoch_begin /
+  on_step_end / on_epoch_end / on_train_end` events. New contract
+  `distill-pipeline-observability-v1.yaml`.
+- **#1888 / PMAT-706**: `APR_DISTILL_MAX_STEPS=N` smoke-validation mode.
+  Training loop early-breaks after N steps and prints a `[SMOKE]` summary
+  with projected full-run wall time. Use case: 60s smoke before committing
+  to a 50K-step run, catching cascade defects (e.g., PMAT-704 Realizar
+  CPU-bound hang) without waiting hours. New contract
+  `apr-distill-smoke-validation-v1.yaml`.
+- **#1883 / #1886**: dispatch wrappers for `apr distill` Stage D and
+  Phase 5 HumanEval, baked with PMAT-701 lessons.
+- **#1880**: SPEC-DISTILL-001 §87 post-mortem on PMAT-704 Bug B wrong turn.
+- **#1885**: `scripts/gx10-disk-cleanup-distill-runs.sh` for the gx10 host.
+
+### Chore
+
+- **#1896**: `Cargo.lock` synced to `aprender@0.35.1` (subsumed by #1891
+  in the mega-bundle).
+- **README**: hiatus banner updated to reflect v0.35.2 as the last release.
+
+### Versioning
+
+- Root facade `aprender`: `0.35.1 → 0.35.2`
+- Sub-crates: stay at `0.35.0`
+- `aprender@0.35.2` depends on `apr-cli@0.35.0` — no transitive churn.
+- Only the root facade republishes to crates.io.
+
+### Verification (post-merge dogfood, 2026-05-23)
+
+- ✓ `apr qa <qwen2.5-coder-7b-instruct-q4_k_m.gguf>` Golden Output PASS
+  (closes #1864 confirmed live)
+- ✓ `apr run <1.5B>` produces "4" via wgpu→CPU parity-fallback safety net
+- ✓ `apr` v0.35.x stable; ~16 merged this session
+
 ## [0.35.0] - 2026-05-22
 
 ### 🎉 Dogfood-driven release — Qwen end-to-end story, multi-step parity safety net, #1864 closed (it was a 5-line config gap, not a deep numerical bug)

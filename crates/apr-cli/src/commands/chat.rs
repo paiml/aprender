@@ -104,9 +104,8 @@ pub(crate) fn run(
     // FileNotFound payload (regression test: test_run_file_not_found,
     // test_run_nonexistent_path_without_trace).
     let source_str = path_arg.to_string_lossy();
-    let looks_like_path = path_arg.is_absolute()
-        || source_str.starts_with("./")
-        || source_str.starts_with("../");
+    let looks_like_path =
+        path_arg.is_absolute() || source_str.starts_with("./") || source_str.starts_with("../");
     if looks_like_path && !path_arg.exists() {
         return Err(CliError::FileNotFound(path_arg.to_path_buf()));
     }
