@@ -43,7 +43,21 @@ falsification_tests:
 
   - id: FALSIFY-BOOK-EXAMPLE-001
     name: stub_example_block
-    prediction: "every book/src/cli/*.md has at least one ```bash fenced code block"
+    prediction: "every book/src/cli/*.md has at least one bash fenced code block"
     test_harness: "bash scripts/check_book_example_block.sh"
     expected_output: "exit 0"
-    if_fails: "Add a ```bash fenced code block to the failing chapter."
+    if_fails: "Add a bash fenced code block to the failing chapter."
+
+  - id: FALSIFY-BOOK-LIB-PARITY-001
+    name: lib_parity
+    prediction: "every public module in aprender-core has a chapter at book/src/lib/<mod>.md"
+    test_harness: "bash scripts/check_book_lib_parity.sh"
+    expected_output: "exit 0"
+    if_fails: "Run scripts/gen-lib-chapter-stubs.sh to regenerate missing stubs."
+
+  - id: FALSIFY-BOOK-LIB-EXAMPLE-001
+    name: lib_example_block
+    prediction: "every book/src/lib/*.md has at least one rust fenced code block"
+    test_harness: "bash scripts/check_book_lib_example_block.sh"
+    expected_output: "exit 0"
+    if_fails: "Add a rust fenced code block to the failing chapter."

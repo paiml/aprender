@@ -49,20 +49,16 @@ jobs:
           bash scripts/check_book_cli_parity.sh
 
       # BOOK-CLOSEOUT-001 § Phase 4: every CLI stub has a runnable example
-      - name: Example-block gate (FALSIFY-BOOK-EXAMPLE-001)
-        run: |
-          fail=0
-          for f in book/src/cli/*.md; do
-            if ! grep -qE '^[`]{3}bash' "$f"; then
-              echo "FAIL: $f has no bash example"
-              fail=1
-            fi
-          done
-          if [ "$fail" -gt 0 ]; then
-            echo "FALSIFY-BOOK-EXAMPLE-001: FAIL"
-            exit 1
-          fi
-          echo "FALSIFY-BOOK-EXAMPLE-001: PASS (all CLI chapters have runnable examples)"
+      - name: CLI example-block gate (FALSIFY-BOOK-EXAMPLE-001)
+        run: bash scripts/check_book_example_block.sh
+
+      # BOOK-CLOSEOUT-001 § Phase 3: every aprender-core public module has a chapter
+      - name: Library parity gate (FALSIFY-BOOK-LIB-PARITY-001)
+        run: bash scripts/check_book_lib_parity.sh
+
+      # BOOK-CLOSEOUT-001 § Phase 3: every lib stub has a runnable rust example
+      - name: Library example-block gate (FALSIFY-BOOK-LIB-EXAMPLE-001)
+        run: bash scripts/check_book_lib_example_block.sh
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
