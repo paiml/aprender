@@ -20,10 +20,28 @@
 ## Quick Start
 
 ```bash
-cargo install aprender
+cargo install aprender                    # CPU + wgpu (default features)
+cargo install aprender --features cuda    # GPU acceleration (NVIDIA, ~20× faster)
+cargo install aprender --features full    # everything (training, visualization, zram)
+
 apr pull qwen2.5-coder-1.5b
 apr run qwen2.5-coder-1.5b "What is 2+2?"
 ```
+
+> **⏸ 3-month hiatus: v0.35.0/v0.35.1 is the last release until 2026-08-22.**
+> Bug-fix PRs continue to merge to `main` during the hiatus; the next versioned
+> release will batch them as v0.36.0. Use `cargo install --git
+> https://github.com/paiml/aprender` to track `main` HEAD in the meantime.
+
+> **v0.35.1 — Root facade feature passthroughs.** `cargo install aprender
+> --features cuda` (and `wgpu`, `inference`, `training`, `full`, etc.) now work
+> directly. See [v0.35.1 release notes](https://github.com/paiml/aprender/releases/tag/v0.35.1).
+
+> **v0.35.0 — Dogfood-driven release.** 8-beat Qwen end-to-end story added to
+> the test contract surface; multi-step wgpu parity gate catches 7B Q4K
+> autoregressive drift; `apr qa` Golden Output gate now sets `stop_tokens`
+> (closes #1864 — was a 5-line config gap, not a deep cuBLAS bug). See
+> [v0.35.0 release notes](https://github.com/paiml/aprender/releases/tag/v0.35.0).
 
 > **v0.34.0 — MODEL-2 §88 stack-existence-proof shipped end-to-end.**
 > [`paiml/albor-370m-v1`](https://huggingface.co/paiml/albor-370m-v1) is the
@@ -53,8 +71,8 @@ publishing — all backed by YAML provable contracts that fail CI on drift.
 | Metric | Count | Source of truth |
 |-------:|------:|---|
 | Workspace crates | **80** workspace crates | `ls crates/` |
-| Provable contracts | **1134** provable contracts | `find contracts/ -name '*.yaml'` |
-| CLI commands | **82** CLI commands | `apr --help` |
+| Provable contracts | **1153** provable contracts | `find contracts/ -name '*.yaml'` |
+| CLI commands | **103** CLI commands | `apr --help` |
 
 These numbers are enforced by [`contracts/readme-claims-v1.yaml`](contracts/readme-claims-v1.yaml).
 Drift between this table and live repo state fails `bash scripts/check_readme_claims.sh`
@@ -232,7 +250,7 @@ paiml/aprender/
 ├── Cargo.toml                      # Workspace root + `cargo install aprender`
 ├── crates/
 │   ├── aprender-core/              # ML library (use aprender::*)
-│   ├── apr-cli/                    # CLI logic (80 subcommands)
+│   ├── apr-cli/                    # CLI logic (103 subcommands)
 │   ├── aprender-compute/           # SIMD/GPU compute kernels
 │   ├── aprender-gpu/               # CUDA PTX
 │   ├── aprender-serve/             # Inference server
@@ -242,7 +260,7 @@ paiml/aprender/
 │   ├── aprender-profile/           # Profiling
 │   ├── aprender-db/ aprender-graph/ aprender-rag/
 │   └── ... (80 crates total)
-├── contracts/                      # 1105 provable YAML contracts
+├── contracts/                      # 1153 provable YAML contracts
 └── book/                           # mdBook documentation
 ```
 
@@ -273,7 +291,7 @@ falsification_tests:
   prediction: apr validate bad-model.apr exits non-zero
 ```
 
-1134 contracts across inference, training, quantization, attention, FFN,
+1153 contracts across inference, training, quantization, attention, FFN,
 tokenization, model formats, CLI safety — and this README itself.
 
 ## Migration from old crates

@@ -91,7 +91,8 @@ fn moe_kv_cache_matches_full_prefill_on_first_4_tokens() {
 
     let mapped = MappedGGUFModel::from_path(&path)
         .unwrap_or_else(|e| panic!("Failed to mmap GGUF at {path}: {e}"));
-    let model = OwnedQuantizedModel::from_mapped(&mapped).expect("OwnedQuantizedModel::from_mapped");
+    let model =
+        OwnedQuantizedModel::from_mapped(&mapped).expect("OwnedQuantizedModel::from_mapped");
 
     // Same input + max_tokens for both paths.
     let input_tokens: Vec<u32> = vec![9707, 198]; // "Hello\n" — small fixed prompt
@@ -116,8 +117,7 @@ fn moe_kv_cache_matches_full_prefill_on_first_4_tokens() {
 
     // (b) cache-off path (pre-M32d legacy full-prefill).
     let cache_off_start = std::time::Instant::now();
-    let cache_off_tokens =
-        legacy_full_prefill_generate(&mapped, &model, &input_tokens, max_tokens);
+    let cache_off_tokens = legacy_full_prefill_generate(&mapped, &model, &input_tokens, max_tokens);
     let cache_off_wall = cache_off_start.elapsed();
 
     // Both runs include the prompt; compare full sequences.

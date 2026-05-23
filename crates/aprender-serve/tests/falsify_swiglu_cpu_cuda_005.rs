@@ -177,9 +177,7 @@ fn falsify_swiglu_cpu_vs_cuda_intrinsic_divergence() {
         .expect("CudaExecutor::new(0) must succeed per realizar CLAUDE.md CUDA-always rule");
 
     eprintln!("FALSIFY-SWIGLU-CPU-CUDA-005: per-distribution SwiGLU parity");
-    eprintln!(
-        "(if rel_diff blows up at extreme ranges → ex2.approx.f32 is the amplifier)"
-    );
+    eprintln!("(if rel_diff blows up at extreme ranges → ex2.approx.f32 is the amplifier)");
     eprintln!();
     eprintln!(
         "{:14}  {:>10}  {:>10}  {:>10}  {:>12}  {:>12}",

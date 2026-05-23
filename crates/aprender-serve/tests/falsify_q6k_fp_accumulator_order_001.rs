@@ -284,7 +284,10 @@ mod helper_tests {
     fn cosine_similarity_handles_identical_vectors() {
         let a = vec![1.0, 2.0, 3.0, 4.0];
         let cos = cosine_similarity(&a, &a);
-        assert!((cos - 1.0).abs() < 1e-6, "cos(a, a) should be 1.0; got {cos}");
+        assert!(
+            (cos - 1.0).abs() < 1e-6,
+            "cos(a, a) should be 1.0; got {cos}"
+        );
     }
 
     #[test]
