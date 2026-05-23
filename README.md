@@ -20,45 +20,15 @@
 ## Quick Start
 
 ```bash
-cargo install aprender                    # CPU + wgpu (default features)
-cargo install aprender --features cuda    # GPU acceleration (NVIDIA, ~20× faster)
+cargo install aprender                    # CPU + wgpu (default)
+cargo install aprender --features cuda    # NVIDIA GPU acceleration
 cargo install aprender --features full    # everything (training, visualization, zram)
 
 apr pull qwen2.5-coder-1.5b
 apr run qwen2.5-coder-1.5b "What is 2+2?"
 ```
 
-> **⏸ 3-month hiatus: v0.35.0/v0.35.1 is the last release until 2026-08-22.**
-> Bug-fix PRs continue to merge to `main` during the hiatus; the next versioned
-> release will batch them as v0.36.0. Use `cargo install --git
-> https://github.com/paiml/aprender` to track `main` HEAD in the meantime.
-
-> **v0.35.1 — Root facade feature passthroughs.** `cargo install aprender
-> --features cuda` (and `wgpu`, `inference`, `training`, `full`, etc.) now work
-> directly. See [v0.35.1 release notes](https://github.com/paiml/aprender/releases/tag/v0.35.1).
-
-> **v0.35.0 — Dogfood-driven release.** 8-beat Qwen end-to-end story added to
-> the test contract surface; multi-step wgpu parity gate catches 7B Q4K
-> autoregressive drift; `apr qa` Golden Output gate now sets `stop_tokens`
-> (closes #1864 — was a 5-line config gap, not a deep cuBLAS bug). See
-> [v0.35.0 release notes](https://github.com/paiml/aprender/releases/tag/v0.35.0).
-
-> **v0.34.0 — MODEL-2 §88 stack-existence-proof shipped end-to-end.**
-> [`paiml/albor-370m-v1`](https://huggingface.co/paiml/albor-370m-v1) is the
-> first model trained with the pure-Rust Sovereign AI Stack and published
-> to HuggingFace Hub with all three usage paths verified: `apr run` (Rust),
-> `AutoModelForCausalLM.from_pretrained` (HF Transformers), and `llama-cli`
-> (llama.cpp). The publish workflow is now codified in
-> [SPEC-HF-PUBLISH-001](docs/specifications/aprender-train/model-hf-publish-pipeline-spec.md)
-> so future model publishes follow a repeatable 12-file integration plus a
-> 13-tier crates.io cascade (see `scripts/cascade-publish.sh`). See the
-> [v0.34.0 release notes](https://github.com/paiml/aprender/releases/tag/v0.34.0)
-> for the PMAT-690 P3-C-prep defect cascade that motivated the spec.
->
-> **v0.33.0 — MODEL-1 SHIP % = 100%.** SHIP-007 (GPU dispatch on the
-> canonical 7B Q4K teacher) was LIVE-DISCHARGED. See the
-> [v0.33.0 release notes](https://github.com/paiml/aprender/releases/tag/v0.33.0)
-> and SPEC-SHIP-TWO-001 §65–§75 for the cascade detail.
+For release notes see [GitHub Releases](https://github.com/paiml/aprender/releases).
 
 ## What is Aprender?
 
@@ -71,7 +41,7 @@ publishing — all backed by YAML provable contracts that fail CI on drift.
 | Metric | Count | Source of truth |
 |-------:|------:|---|
 | Workspace crates | **80** workspace crates | `ls crates/` |
-| Provable contracts | **1153** provable contracts | `find contracts/ -name '*.yaml'` |
+| Provable contracts | **1158** provable contracts | `find contracts/ -name '*.yaml'` |
 | CLI commands | **103** CLI commands | `apr --help` |
 
 These numbers are enforced by [`contracts/readme-claims-v1.yaml`](contracts/readme-claims-v1.yaml).
@@ -199,30 +169,20 @@ apr export staging/model.apr --format gguf --quantize int4 -o staging/model-q4k.
 apr publish staging/ paiml/my-model-v1 --library-name aprender --license Apache-2.0
 ```
 
-> **The bug-hunt layer.** When run with `PMAT_HUNT=1` (default), each beat
-> emits a manifest of high-risk untested code in the command modules it just
-> exercised:
->
-> ```
-> -- pmat bug-hunt manifest (run chat code) --
->     gap   crates/apr-cli/src/commands/run.rs:resolve_model_alias (impact=42.3)
->     churn crates/apr-cli/src/commands/code.rs:dispatch_agent (commits=11)
->     fault crates/aprender-serve/src/api/cuda_chat_backend.rs:try_qwen3_moe (unwrap,panic)
-> ```
->
-> The nightly cron opens an issue when this manifest grows, so untested
-> branches in command handlers can't accumulate quietly. See
-> [`contracts/qwen-story-v1.yaml`](contracts/qwen-story-v1.yaml) §
-> `pmat_audit_per_beat`.
+When run with `PMAT_HUNT=1` (default), each beat emits a manifest of high-risk
+untested code in the command modules it just exercised. A nightly cron opens an
+issue when this manifest grows so untested branches in command handlers can't
+accumulate quietly. See [`contracts/qwen-story-v1.yaml`](contracts/qwen-story-v1.yaml).
 
-> **Publishing a model? Read [SPEC-HF-PUBLISH-001](docs/specifications/aprender-train/model-hf-publish-pipeline-spec.md).**
-> It documents the 12-file minimum (.apr/.gguf/.safetensors/model.safetensors alias/config/tokenizer/LICENSE/etc.), the YAML front-matter schema, the three-path verification protocol, and the HF API gotchas (NDJSON commits, LFS batch for 5MB-5GB, empty `model-index` rejected, Q4_K K%256==0). First applied 2026-05-18 for [paiml/albor-370m-v1](https://huggingface.co/paiml/albor-370m-v1).
+Publishing a model? See [SPEC-HF-PUBLISH-001](docs/specifications/aprender-train/model-hf-publish-pipeline-spec.md)
+for the 12-file integration pipeline, three-path verification protocol, and HF API
+gotchas (NDJSON commits, LFS batch sizing, Q4_K stride constraints).
 
 ## Library usage
 
 ```toml
 [dependencies]
-aprender = "0.34"
+aprender = "0.35"
 ```
 
 ```rust
@@ -260,7 +220,7 @@ paiml/aprender/
 │   ├── aprender-profile/           # Profiling
 │   ├── aprender-db/ aprender-graph/ aprender-rag/
 │   └── ... (80 crates total)
-├── contracts/                      # 1153 provable YAML contracts
+├── contracts/                      # 1158 provable YAML contracts
 └── book/                           # mdBook documentation
 ```
 
@@ -291,7 +251,7 @@ falsification_tests:
   prediction: apr validate bad-model.apr exits non-zero
 ```
 
-1153 contracts across inference, training, quantization, attention, FFN,
+1158 contracts across inference, training, quantization, attention, FFN,
 tokenization, model formats, CLI safety — and this README itself.
 
 ## Migration from old crates
