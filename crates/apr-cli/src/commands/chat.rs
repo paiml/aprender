@@ -81,7 +81,7 @@ impl Default for ChatConfig {
 #[allow(clippy::too_many_arguments)]
 #[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "long_running_graceful")]
 pub(crate) fn run(
-    path: &Path,
+    path_arg: &Path,
     temperature: f32,
     top_p: f32,
     max_tokens: usize,
@@ -97,9 +97,39 @@ pub(crate) fn run(
 ) -> Result<(), CliError> {
     contract_pre_temperature_bounds!();
     contract_pre_session_state_machine!();
+
+    // If path_arg looks like a filesystem path (absolute or starts with ./, ../)
+    // and doesn't exist on disk, fail fast with the original path in the error
+    // — don't run it through HF alias resolution, which would mangle the
+    // FileNotFound payload (regression test: test_run_file_not_found,
+    // test_run_nonexistent_path_without_trace).
+    let source_str = path_arg.to_string_lossy();
+    let looks_like_path = path_arg.is_absolute()
+        || source_str.starts_with("./")
+        || source_str.starts_with("../");
+    if looks_like_path && !path_arg.exists() {
+        return Err(CliError::FileNotFound(path_arg.to_path_buf()));
+    }
+
+    // Resolve alias/hf like `apr run`
+    let resolved_source = crate::commands::aliases::resolve_short_name(&source_str)
+        .unwrap_or_else(|| source_str.to_string());
+    let hf_uri = if !resolved_source.contains("://") && resolved_source.contains('/') {
+        format!("hf://{resolved_source}")
+    } else {
+        resolved_source
+    };
+    let fully_resolved_source = match crate::commands::pull::resolve_hf_model(&hf_uri) {
+        Ok(crate::commands::pull::ResolvedModel::SingleFile(uri)) => uri,
+        _ => hf_uri,
+    };
+    let model_source = crate::commands::run::ModelSource::parse(&fully_resolved_source)?;
+    let actual_path = crate::commands::run::resolve_model(&model_source, false, false)?;
+    let path = actual_path.as_path();
+
     // Validate file exists
     if !path.exists() {
-        return Err(CliError::FileNotFound(path.to_path_buf()));
+        return Err(CliError::FileNotFound(actual_path));
     }
 
     // GH-520: Warn on unimplemented trace/profile flags for chat mode

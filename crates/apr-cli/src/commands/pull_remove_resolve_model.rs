@@ -276,8 +276,19 @@ fn normalize_hf_uri(uri: &str) -> String {
 fn select_best_gguf(gguf_files: &[&str], org: &str, repo: &str) -> ResolvedModel {
     let quantization_priority = ["q4_k_m", "q4_k_s", "q4_0", "q8_0"];
     for quant in quantization_priority {
-        if let Some(file) = gguf_files.iter().find(|f| f.to_lowercase().contains(quant)) {
-            return ResolvedModel::SingleFile(format!("hf://{org}/{repo}/{file}"));
+        let matches: Vec<_> = gguf_files.iter().filter(|f| f.to_lowercase().contains(quant)).collect();
+        if matches.len() == 1 {
+            return ResolvedModel::SingleFile(format!("hf://{org}/{repo}/{}", matches[0]));
+        } else if matches.len() > 1 {
+            // For now, if there are multiple parts (sharded GGUF), just pick the first one 
+            // (Note: full sharded GGUF support in `apr pull` might require more work, but this avoids random picking).
+            // Usually the first shard contains metadata, but it's not a full model.
+            // A better fix for sharded GGUF is to download all parts, but pacha single-file streaming doesn't support that yet.
+            // We will just pick the first part so it doesn't crash on `find`.
+            if let Some(first_part) = matches.iter().find(|f| f.contains("-00001-of-")) {
+                return ResolvedModel::SingleFile(format!("hf://{org}/{repo}/{}", first_part));
+            }
+            return ResolvedModel::SingleFile(format!("hf://{org}/{repo}/{}", matches[0]));
         }
     }
     ResolvedModel::SingleFile(format!("hf://{org}/{repo}/{}", gguf_files[0]))
@@ -339,7 +350,7 @@ fn has_known_model_extension(uri: &str) -> bool {
     })
 }
 
-fn resolve_hf_model(uri: &str) -> Result<ResolvedModel> {
+pub(crate) fn resolve_hf_model(uri: &str) -> Result<ResolvedModel> {
     let uri = normalize_hf_uri(uri);
     let uri = uri.as_str();
 

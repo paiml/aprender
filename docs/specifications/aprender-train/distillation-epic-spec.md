@@ -1,7 +1,7 @@
 # Specification: Distillation Epic — paiml/albor-370m-v2
 
 **Document ID:** SPEC-DISTILL-001
-**Version:** 1.2.0 (§86 amendment: PMAT-701 fixes unblock 7B teacher on Grace Blackwell; Phase 4 Stage D 50K/10K runs discharged as no-KD)
+**Version:** 1.3.0 (§87 amendment: PMAT-704 post-mortem demotes Bug B's RealizarQ4KTeacher to opt-in fallback; cuBLAS default restored. Supersedes 1.2.0 §86.)
 **Status:** **Live and ACTIVE** — distillation track is the highest-priority work after MODEL-2 §88 shipped
 **Priority:** **HIGH** (per `pmat work edit`, 2026-05-18 — PMAT-683 + PMAT-684 both elevated from `medium` to `high`)
 **Parent:** [ship-model-2-spec.md §84.5](./ship-model-2-spec.md)
@@ -267,5 +267,56 @@ explicitly. Implementation defers to a follow-up PR; spec-level requirement codi
 ## Changelog
 
 - **1.2.0 (2026-05-22)** — §86 amendment: Phase 4 Stage D runs (50K + 10K) discharged as no-KD due to teacher == student staging defect. PMAT-701 Bug A (PR #1863) + Bug B (PR #1869) unblock the 7B Q4K teacher on Grace Blackwell. Dispatch script's `TEACHER_REPO` default flipped to `paiml/qwen2.5-coder-7b-apache-q4k-v1`. New falsifier F-DISTILL-V2-001-TEACHER-DIVERGENCE codifies the smoke-vs-production distinction.
+## §87. PMAT-701 cascade post-mortem — Bug B was a wrong turn; cuBLAS default restored via PMAT-704 (2026-05-22)
+
+> **Cross-reference:** this section refers to §86 (Phase 4 Stage D no-KD discharge + PMAT-701 fix references), introduced by PR #1871. If you're reading this on a build of main that predates #1871's merge, §86 will be missing — it appears immediately above this section once that PR lands.
+
+**Finding.** The PMAT-701 cascade fixed three real defects (allocator, vocab alignment, eval false-positive) and shipped one **wrong turn**: PR #1869 (Bug B / `RealizarQ4KTeacher`) routed Q4K teachers through realizar's inference path on the assumption that the alternative — `CudaTransformerTrainer::for_inference` — would OOM-kill on Grace Blackwell due to F32 dequant at upload. The post-mortem (PMAT-704) revealed that:
+
+1. The realizar `forward_cuda` path is **not GPU-accelerated end-to-end**: layer-norm, attention scoring, softmax, and attention output all run on CPU; only individual Q4K matmuls dispatch to GPU. The `_cuda` suffix is misleading.
+2. As a distillation teacher, that path is unusable — the 7B vocab-aligned 500-step validation on gx10 hung at step 0 for 1.5 h with GPU at **0% utilization** the entire time.
+3. The Bug B verification's `SIGKILL` exit-137 observation was never independently confirmed as kernel OOM-killer via `dmesg`. The cuBLAS path was never re-tested under PMAT-701 Bug A's autodetect default (PR #1863). The whole "F32 dequant won't fit" narrative was a phantom.
+4. With PMAT-701 Bug A's allocator autodetect in effect, the 28 GB F32 teacher dequant fits comfortably in the 128 GB unified pool on Grace Blackwell, AND the cuBLAS-backed `CudaTransformerTrainer` runs ~50× faster than realizar's CPU path. Observed on gx10: GPU utilization went from 0% (Bug B path) to **96%** (cuBLAS path) — same hardware, same teacher, same student.
+
+**Five-whys (full chain at `evidence/distill-7b-cublas-cudatrainer/findings.json`).**
+
+| # | Question | Answer |
+|---|----------|--------|
+| 1 | Why did the 7B vocab-aligned 500-step validation hang at step 0 for 1.5 h on GB10? | `RealizarQ4KTeacher.forward_cuda` is CPU-bound; nvidia-smi reported 0% GPU utilization the entire run. |
+| 2 | Why is the `_cuda` path CPU-bound? | `OwnedQuantizedModelCuda::forward_cuda` (`crates/aprender-serve/src/gguf/cuda/cuda.rs:18`) only dispatches individual Q4K matmuls to GPU; layer-norm / attention / softmax stay on CPU SIMD. |
+| 3 | Why did PR #1869 wire the teacher to that path instead of cuBLAS? | To avoid F32 dequant at upload — claimed "28 GB inflation + student → Linux OOM-killer." |
+| 4 | Why was that claim wrong post-PMAT-701 Bug A? | The Bug B verification observed a SIGKILL with `MANAGED_MEMORY=1` explicit, but never confirmed via `dmesg` that it was an OOM-killer kill (exit 137 has multiple causes), and never re-tested under the post-Bug-A autodetect default. PMAT-701 Bug A's unified-memory allocator landed *between* the original verification and the cascade write-up, but the verification wasn't redone. |
+| 5 | Why did I commit to Bug B's design before re-verifying with the cheap test? | Cascade momentum. PMAT-701 Bug A had just landed; the next defect was queued. A one-line dispatch flip would have rejected the hypothesis in 5 minutes; a multi-PR architectural detour shipped instead. See `feedback_smoke_defaults_leak_into_production.md` for the same anti-pattern in a different form. |
+
+**Root cause.** Conflated *two* failures: the `cuMemAlloc` 30 GB ceiling (real, fixed by Bug A) and a step-0 `SIGKILL` on the explicit-managed path (phantom, never verified). The F32 dequant fits in 128 GB unified memory; cuBLAS is the right path; `RealizarQ4KTeacher` is a slow-path fallback for memory-constrained dGPUs, not the default.
+
+**Fix (PR #1879, PMAT-704).** `crates/apr-cli/src/commands/distill.rs::run_cuda_backend` now:
+
+- Defaults to `CudaTrainerTeacher` (cuBLAS) for ALL teacher types (Q4K, F32, F16, BF16). On Grace Blackwell GB10 this delivers `[CUDA] cuBLAS initialized — forward TF32 tensor cores (41x vs SIMD)` and observed 96% GPU utilization during training.
+- Preserves `RealizarQ4KTeacher` as an opt-in fallback for memory-constrained dGPUs via env var `APR_DISTILL_TEACHER_BACKEND=realizar-q4k`.
+- Applies PMAT-703 vocab alignment uniformly to both backends via a generic `TruncatingTeacher` wrapper (supersedes #1877's per-backend truncation).
+
+**Contract changes.**
+
+- **New:** `contracts/apr-distill-teacher-backend-selection-v1.yaml` codifies the dispatch policy and the forward-latency falsifier (CudaTrainer < 500 ms / step on GB10 for 7B Q4K teacher).
+- **Demoted (not retracted):** `contracts/cuda-q4k-frozen-teacher-v1.yaml` from PR #1869. Its mathematical claims about memory savings remain correct as a **constrained-device optimization**; its DEFAULT-PATH claim was wrong on unified-memory devices and is superseded by the new contract.
+
+**Methodology lesson.** Codified in `memory/feedback_smoke_defaults_leak_into_production.md` and reinforced in `memory/feedback_a_priori_theoretical_falsification.md`. Pattern: when a fix hinges on a single observation interpreted as load-bearing evidence (here, exit-137 → "OOM-killer"), the cheap experiment must run before the design lands. PMAT-701 Bug A → Bug B → Bug B-postmortem-PMAT-704 cost two days because the cheap dispatch-flip experiment never ran in between.
+
+**Cascade closure.** The PMAT-701 family is now:
+
+| PR | Defect | Status |
+|---|---|---|
+| #1863 | Bug A: allocator autodetect Grace Blackwell | ✅ MERGED |
+| #1869 | Bug B: `RealizarQ4KTeacher` (now demoted to opt-in fallback) | ✅ MERGED |
+| #1871 | §86 amendment + dispatch script 7B default | ✅ auto-merge armed |
+| #1874 | PMAT-702: `apr eval` no-fake-pass on broken models | ✅ auto-merge armed |
+| #1877 | PMAT-703: teacher vocab alignment (superseded by PMAT-704's `TruncatingTeacher`) | ✅ auto-merge armed |
+| #1879 | PMAT-704: cuBLAS default + opt-in Realizar fallback | ✅ auto-merge armed |
+
+## Changelog
+
+- **1.3.0 (2026-05-22)** — §87 amendment: PMAT-704 post-mortem reveals PR #1869 (Bug B / `RealizarQ4KTeacher`) was a wrong turn — the `_cuda` path is CPU-bound and unusable as a distillation teacher on Grace Blackwell. Default dispatch now `CudaTrainerTeacher` (cuBLAS) per `apr-distill-teacher-backend-selection-v1.yaml`; Bug B's path retained as opt-in via `APR_DISTILL_TEACHER_BACKEND=realizar-q4k`. Methodology lesson added: cheap-experiment-before-design discipline.
+- **1.2.0 (2026-05-22)** — §86 amendment: Phase 4 Stage D runs (50K + 10K) discharged as no-KD due to teacher == student staging defect. PMAT-701 Bug A (PR #1863) + Bug B (PR #1869) unblock the 7B Q4K teacher on Grace Blackwell. Dispatch script's `TEACHER_REPO` default flipped to `paiml/qwen2.5-coder-7b-apache-q4k-v1`. New falsifier F-DISTILL-V2-001-TEACHER-DIVERGENCE codifies the smoke-vs-production distinction. (Lands via PR #1871.)
 - **1.1.0 (2026-05-18)** — Priority promoted to HIGH (PMAT-683 + PMAT-684 + new PMAT-691 elevated via `pmat work edit`). Phase 1 design revised from on-disk top-K cache to online teacher logits provider after the storage-math sanity check showed 1.24B tokens × 64 entries × 6 bytes ≈ 476 GB (exceeds available disk). The cache approach moves to Phase 1.5 as an optional ring-buffer optimization. Online-teacher decision matches DistilBERT/Distil-Qwen actual practice. Effort + compute totals updated accordingly.
 - **1.0.0 (2026-05-18)** — Initial publish. Scopes the 6-phase plan opening the distillation track that picks up MODEL-2 v2 from where the §88 stack-existence-proof ship left off.

@@ -1,0 +1,192 @@
+metadata:
+  version: 1.0.0
+  created: '2026-05-22'
+  author: PAIML Engineering
+  description: |
+    Distillation pipeline must surface per-step loss + step counter via the
+    existing `aprender-train::train::callback::TrainerCallback` infrastructure.
+    Without observability hooks, an operator cannot distinguish "training is
+    silently progressing" from "training has hung" in a long run — the failure
+    mode that hid the PMAT-704 cascade for 1.5 h on gx10.
+
+    `aprender-train` already ships `ProgressCallback`, `MonitorCallback`,
+    `CheckpointCallback`, `EarlyStoppingCallback`, etc. They run during the
+    `CudaTransformerTrainer::train_epoch_with_callback` loop. The distillation
+    pipeline (`aprender-train-distill::Pipeline`) maintains its own training
+    loop (`pipeline.rs::train`) and does NOT wire any callbacks — the per-step
+    loss is computed (`kd_step.rs::kd_step`) but discarded after the gradient
+    application. This contract closes that gap.
+  references:
+  - 'PMAT-705 (this contract): wire ProgressCallback into distill pipeline'
+  - 'PMAT-704 cascade (PR #1879/#1880): the case study that surfaced the observability gap'
+  - 'crates/aprender-train/src/train/callback/progress.rs — ProgressCallback impl'
+  - 'crates/aprender-train/src/train/callback/traits.rs — TrainerCallback + CallbackContext + CallbackAction'
+  - 'crates/aprender-train-distill/src/pipeline.rs:324-378 — training loop where the hook belongs'
+  - 'crates/apr-cli/src/commands/distill.rs::run_cuda_backend — where the default callback is wired'
+
+kind: KernelContract
+name: distill-pipeline-observability
+version: 1.0.0
+scope: aprender-train-distill Pipeline + apr-cli run_cuda_backend dispatch
+
+equations:
+  callback_lifecycle:
+    formula: |
+      For every Pipeline run:
+        on_train_begin called exactly once before step 0
+        on_epoch_begin called at the start of each epoch
+        on_step_end called after every step (after grad application, before checkpoint save)
+        on_epoch_end called at the end of each epoch
+        on_train_end called exactly once after the last step
+      Each call receives a CallbackContext populated with: step (global), epoch,
+      loss (current step's KD loss), elapsed_secs, lr (when available),
+      best_loss (running minimum), max_epochs, steps_per_epoch.
+    domain: (epoch, step, loss, lr, elapsed) tuple from the active training loop
+    codomain: CallbackAction in {Continue, Stop, Skip}
+    invariants:
+    - 'CallbackAction::Stop from any callback breaks the training loop after the current step (early stopping support)'
+    - 'CallbackAction::Skip is honored at epoch boundaries (skip rest of epoch)'
+    - 'on_step_end is called BEFORE the checkpoint-save block, so a callback can inspect step state without seeing partial checkpoint state'
+    - 'Callbacks are called in the order they were attached'
+    notes: |
+      The callback ordering matters for stateful callbacks (e.g., a
+      LearningRateScheduler that mutates ctx.lr must run before
+      ProgressCallback that logs ctx.lr).
+    preconditions:
+    - At least one callback is attached when the pipeline is constructed via the run_cuda_backend dispatch (the default ProgressCallback)
+    lean_theorem: Theorems.Callback_Lifecycle
+
+  progress_log_format:
+    formula: |
+      ProgressCallback::on_step_end emits a line to stdout when
+      step % log_interval == 0 AND step > 0:
+        "  Step {global_step}/{total_steps}: loss: {loss:.4}"
+      where total_steps = sum over epochs of steps_per_epoch.
+      Additionally on_epoch_end emits "Epoch {n}/{N}: loss: ... ({elapsed}s)".
+    domain: global_step in Z+; log_interval in Z+
+    codomain: log lines on stdout
+    invariants:
+    - 'Log interval is configurable via APR_DISTILL_LOG_EVERY env var (default 10)'
+    - 'When APR_DISTILL_LOG_EVERY=0, ProgressCallback emits only epoch boundaries (no per-step)'
+    - 'When APR_DISTILL_LOG_EVERY=1, every step logs (verbose mode)'
+    - 'Output goes to stdout (not stderr); piping `apr distill ... | grep loss=` captures progress'
+    preconditions:
+    - ProgressCallback is attached with the parsed log_interval
+    lean_theorem: Theorems.Progress_Log_Format
+
+  default_attachment:
+    formula: |
+      run_cuda_backend constructs a default ProgressCallback with
+      log_interval from APR_DISTILL_LOG_EVERY (default 10) and attaches it
+      to the Pipeline via `with_callback`. Operators can disable via
+      APR_DISTILL_LOG_EVERY=0 or override the interval.
+    domain: env var APR_DISTILL_LOG_EVERY in Option<String>
+    codomain: Pipeline with at least one callback attached (unless 0)
+    invariants:
+    - 'Default behavior (no env var): log every 10 steps'
+    - 'APR_DISTILL_LOG_EVERY=N for N >= 1: log every N steps'
+    - 'APR_DISTILL_LOG_EVERY=0: attach a no-op callback (or skip attach); only epoch boundaries log'
+    - 'Backwards compatible: existing scripts that did NOT set the env var see new per-step output (intentional UX improvement)'
+    preconditions:
+    - apr-cli depends on aprender-train (for TrainerCallback + ProgressCallback)
+    lean_theorem: Theorems.Default_Attachment
+
+proof_obligations:
+- type: invariant
+  property: Pipeline preserves callback ordering across the training loop
+  formal: |
+    For every (cb_a, cb_b) attached in that order to Pipeline:
+    cb_a.on_step_end is called BEFORE cb_b.on_step_end at every step.
+- type: invariant
+  property: on_step_end called exactly once per training step
+  formal: |
+    Let N = sum over epochs of steps_per_epoch. The total count of on_step_end
+    calls across the training run equals N (or fewer if CallbackAction::Stop fired).
+- type: bound
+  property: callback overhead bounded
+  formal: |
+    For every callback that returns CallbackAction::Continue: the overhead per
+    on_step_end call is O(log_lines_emitted + accumulator_updates), independent
+    of model size or batch size. Total callback overhead per training step
+    must be <= 1 ms on modern hardware.
+- type: classification
+  property: CallbackAction::Stop terminates the loop within one step
+  formal: |
+    For every callback that returns CallbackAction::Stop at step k: the training
+    loop breaks before reaching step k+1. The pipeline returns a valid
+    PipelineResult with metrics.steps_completed == k+1.
+
+falsification_tests:
+- id: FT-OBSERV-001
+  rule: apr distill with default settings emits per-step loss
+  prediction: |
+    `apr distill <teacher> --student <student> --epochs 1 --backend cuda` with
+    no env vars emits at least one "Step N/M: loss: X.XXXX" line to stdout
+    during training. Pre-fix (PMAT-704 era) the same command emits no per-step
+    output; only "Distillation complete" at the end.
+  if_fails: |
+    ProgressCallback was attached but never invoked. Check that the training
+    loop in pipeline.rs::train actually calls on_step_end after each gradient
+    application.
+  evidence: |
+    evidence/distill-pipeline-observability/launch.log shows multiple
+    "Step N/M: loss: ..." lines. Count: at least floor(total_steps / 10).
+- id: FT-OBSERV-002
+  rule: APR_DISTILL_LOG_EVERY=1 logs every step (verbose mode)
+  prediction: |
+    APR_DISTILL_LOG_EVERY=1 `apr distill ...` emits one Step line per training step.
+    For 17 epochs × 31 steps/epoch = 527 steps, expect ~527 lines.
+  if_fails: |
+    The env var parsing or the conditional log_interval check is wrong.
+    Verify with a small unit test.
+  evidence: cargo test -p apr-cli --features cuda,training,inference --lib distill::tests::progress_log_every_one
+- id: FT-OBSERV-003
+  rule: APR_DISTILL_LOG_EVERY=0 silences per-step logs
+  prediction: |
+    APR_DISTILL_LOG_EVERY=0 `apr distill ...` emits NO "Step N/M" lines but
+    DOES emit epoch boundary lines ("Epoch N/M: loss: ...").
+  if_fails: |
+    Either the silencing path isn't triggered (log_interval=0 case mis-handled)
+    or epoch_end callback is also gated by interval (which would be wrong).
+  evidence: cargo test -p apr-cli --features cuda,training,inference --lib distill::tests::progress_log_every_zero
+- id: FT-OBSERV-004
+  rule: callback overhead is minimal (no significant slowdown vs no-callback)
+  prediction: |
+    Wall-clock time for a 100-step synthetic-batch distill run with
+    ProgressCallback(log_interval=10) attached differs from the same run
+    without callbacks by less than 5% (overhead bound).
+  if_fails: |
+    Callback dispatch is doing something heavy in the hot loop (e.g.,
+    formatting strings for every step even when not logged). Check that the
+    log_interval gate happens BEFORE any string formatting.
+  evidence: cargo bench -p aprender-train-distill --bench callback_overhead
+
+kani_harnesses:
+- id: KANI-OBSERV-001
+  obligation: callback ordering invariant
+  property: |
+    For all (callback_count in [0..8], step_count in [0..32]):
+    the sequence of (callback_idx, step_idx) pairs produced by the training loop
+    is lexicographically ordered by (step_idx, callback_idx). No callback
+    fires twice for the same step; no step skipped.
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_callback_ordering
+- id: KANI-OBSERV-002
+  obligation: CallbackAction::Stop honored within one step
+  property: |
+    For all (k in [1..32]): if cb.on_step_end returns Stop at step k, then
+    the loop body for step k+1 is never executed.
+  bound: 32
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_stop_terminates
+
+qa_gate:
+  id: F-OBSERV-001
+  name: distill-pipeline-observability-v1 Contract
+  description: Distill pipeline must wire ProgressCallback by default so operators see per-step loss during training.
+  checks:
+  - validation
+  - falsification

@@ -1,0 +1,204 @@
+metadata:
+  version: 1.0.0
+  created: '2026-05-22'
+  author: PAIML Engineering
+  description: |
+    `apr eval --task humaneval` must NOT silently report pass@k=1.0 when
+    inference fails. The legacy code path falls back to "structural
+    validation" that marks every dataset problem with a non-empty
+    canonical_solution as `passed=true`, producing a 164/164 false
+    positive on broken models — the failure mode that hid the PMAT-701
+    Phase 4 Stage D no-KD training run for two days.
+
+    This contract specifies the correct behavior: when inference fails for
+    all samples, `apr eval` must (a) NOT mark any problem as passed,
+    (b) emit `mode: "inference_failed"` with `inference_error` populated
+    in the JSON output, and (c) return a non-zero exit code so scripts /
+    CI gates that depend on the exit status detect the failure.
+
+    Structural validation of the dataset (checking that problems have
+    valid canonical solutions) is a useful pre-flight check, but it MUST
+    NOT be conflated with model evaluation results. The pre-flight count
+    is already reported in the human-readable output as "N (M valid)"
+    before inference begins.
+  references:
+  - 'PMAT-702 (this contract): apr eval HumanEval structural-fallback false positive'
+  - 'evidence/distill-7b-teacher-loadtest-gx10/findings.json (5-whys Defect 3 surfaces this)'
+  - 'crates/apr-cli/src/commands/eval/inference.rs:134-152 (bug site)'
+  - 'crates/apr-cli/src/commands/eval/inference.rs:1513-1518 (MBPP — already correct)'
+  - 'OpenAI HumanEval paper (Chen et al. 2021) — pass@k definition'
+  - 'PMAT-701 SPEC-DISTILL-001 §86 — the Phase 4 cascade this defect masked'
+
+kind: KernelContract
+name: apr-eval-humaneval-inference-failure-handling
+version: 1.0.0
+scope: apr-cli eval subcommand — HumanEval (and by parity MBPP) inference-failure surface
+
+equations:
+  pass_at_k_definition:
+    formula: |
+      pass@k = E_problems[1 - C(n - c, k) / C(n, k)]
+      where n = num_samples per problem, c = correct samples per problem,
+      C(a, b) = binomial coefficient. c is computed STRICTLY from inference
+      output that passes the problem's test harness (Python exec(test)).
+    domain: n in Z+ (samples per problem), c in [0..n] (correct count), k in Z+
+    codomain: pass@k in [0.0, 1.0]
+    invariants:
+    - 'When inference fails for all samples of a problem: c = 0 for that problem'
+    - 'When inference fails for ALL problems and ALL samples: pass@k = 0.0 for every k'
+    - Per OpenAI definition (Chen et al. 2021), pass@k is a model-output metric, NOT a dataset-validity metric
+    - Marking a problem as `c=1` based on dataset-side properties (canonical_solution presence) is a category error
+    notes: |
+      The pre-fix legacy fallback path conflated "dataset has a valid canonical
+      solution" with "model produced a passing solution" — producing pass@1=1.0
+      when no inference actually ran. This contract forbids that conflation.
+    preconditions:
+    - num_samples >= 1
+    - problems.len() > 0
+    lean_theorem: Theorems.Pass_At_K_Definition
+
+  inference_failure_signal:
+    formula: |
+      result.mode =
+        "inference"        if any_sample_succeeded
+        "inference_failed" if all_samples_failed (was incorrectly "structural")
+      exit_code =
+        0  if any_sample_succeeded AND no other validation errors
+        1  if all_samples_failed
+      result.inference_error = Some(<first error string>) iff exit_code != 0
+    domain: any_sample_succeeded in {true, false}; first_err in Option<String>
+    codomain: result with (mode, exit_code, inference_error) tuple
+    invariants:
+    - 'mode "structural" is RETIRED — it is too easy to misread as "model passed via structural means"'
+    - 'mode "inference_failed" is unambiguous; downstream tools key off this string'
+    - 'exit_code non-zero on inference failure is required for CI gating'
+    - 'inference_error is the first error string captured during the multi-sample loop'
+    preconditions:
+    - run_multisample_loop has completed
+    lean_theorem: Theorems.Inference_Failure_Signal
+
+  per_problem_pass_counter_invariant:
+    formula: |
+      ∀ i in [0..problems.len()):
+        per_problem_correct[i].2 (the pass counter) is incremented ONLY when
+        run_humaneval_inference(...) returns Ok with results[i].2 == true,
+        i.e., the test harness Python exec() succeeded for the generated code.
+    domain: per_problem_correct as Vec<(task_id, entry_point, pass_count)>
+    codomain: per_problem_correct[i].2 in [0..num_samples]
+    invariants:
+    - 'No code path increments the pass counter from dataset-side data (canonical_solution presence, problem-validation, etc.)'
+    - 'The structural-fallback code that previously did `per_problem_correct[i].2 = 1` on inference failure is removed'
+    - 'Dataset pre-flight validity is reported separately as the "N (M valid)" line, not in pass counters'
+    preconditions:
+    - per_problem_correct initialized to (task_id, entry_point, 0) for every problem
+    lean_theorem: Theorems.Per_Problem_Pass_Counter_Invariant
+
+proof_obligations:
+- type: invariant
+  property: structural fallback never marks problems as passed
+  formal: |
+    For every (problems, num_samples, k_values) where run_humaneval_inference
+    returns Err for all samples: the resulting pass counters are all zero
+    AND the function returns Err to its caller.
+- type: equivalence
+  property: HumanEval inference-failure handling matches MBPP
+  formal: |
+    Both run_humaneval (humaneval) and run_mbpp (MBPP) return
+    Err(CliError::InferenceFailed) when the multi-sample loop fails entirely.
+    The pre-fix HumanEval silent-fallback was the asymmetry; this contract
+    enforces parity.
+- type: invariant
+  property: JSON output contains inference_error on failure
+  formal: |
+    For every JSON-output path with all_samples_failed:
+    result.extra contains the key "inference_error" with the first error string.
+    Downstream parsers can rely on this key's presence as the failure indicator.
+- type: bound
+  property: exit_code matches pass@k feasibility
+  formal: |
+    Let p = max(pass_at_k_for_all_k). If p == 0.0 AND inference_attempted:
+    exit_code != 0. (Eliminates the silent-zero-but-success state.)
+
+falsification_tests:
+- id: FT-EVAL-FAILURE-001
+  rule: HumanEval on a known-gibberish checkpoint returns pass@1 = 0.0
+  prediction: |
+    Run `apr eval <gibberish-checkpoint> --task humaneval --data <humaneval.jsonl>
+    --device cpu --samples 1 --json` on the 10K Stage D checkpoint
+    (which produces gibberish per the PMAT-701 5-whys). Expected:
+    pass_at_k[0].rate = 0.0, mode = "inference_failed", inference_error present,
+    exit code non-zero. Pre-fix the same command emits pass@1=1.0 / 164/164.
+  if_fails: |
+    The structural-fallback path was not fully removed. Check that
+    inference.rs:134-152 returns Err instead of marking pass counters.
+  evidence: |
+    evidence/apr-eval-inference-failure-pmat-702/launch-after-fix.json
+    must show pass@1 = 0.0 and mode = "inference_failed".
+- id: FT-EVAL-FAILURE-002
+  rule: HumanEval on a healthy model returns the actual pass@k
+  prediction: |
+    Run `apr eval <known-good-7B-q4k.apr> --task humaneval --data <humaneval.jsonl>
+    --device cuda --samples 1 --json`. Expected: pass_at_k populated with
+    real (non-zero, non-one) value, mode = "inference", exit code 0.
+    Verifies the fix doesn't break the happy path.
+  if_fails: |
+    The Err propagation is too aggressive — succeeding samples no longer count.
+    Re-check the `any_ok` branch: when ANY sample of ANY problem succeeds,
+    the eval must complete with pass counters reflecting those successes.
+  evidence: |
+    Existing evidence/ship-005-cascade/ logs (when re-run with this binary)
+    must continue to show non-trivial pass@k.
+- id: FT-EVAL-FAILURE-003
+  rule: HumanEval and MBPP have parity on inference-failure
+  prediction: |
+    For both --task humaneval and --task mbpp, running on a broken model
+    produces: exit code non-zero, mode = "inference_failed",
+    inference_error populated, pass@k = 0.0. No asymmetry between the two
+    eval flows.
+  if_fails: |
+    MBPP path was already correct (inference.rs:1513-1518 returns Err) but
+    diverges from the new humaneval pattern (different mode string or
+    extra-field layout). Align both to the same shape.
+  evidence: |
+    cargo test -p apr-cli --lib eval::tests::humaneval_mbpp_failure_parity
+- id: FT-EVAL-FAILURE-004
+  rule: no problem is marked as pass=1 from dataset-side data
+  prediction: |
+    grep -n "per_problem_correct\[.*\].2.*= 1" crates/apr-cli/src/commands/eval/inference.rs
+    returns no matches outside the inference-result-handling code path.
+    (The pre-fix line 147 set per_problem_correct[i].2 = 1 from a canonical_solution
+    check; that line must be deleted.)
+  if_fails: |
+    A regression has re-introduced dataset-side pass-marking. Remove the offending
+    line; add a comment pointing at this contract.
+  evidence: |
+    cargo test -p apr-cli --lib eval::tests::structural_fallback_removed
+
+kani_harnesses:
+- id: KANI-EVAL-FAILURE-001
+  obligation: pass_at_k_definition — pass@k = 0 when all samples fail
+  property: |
+    For all (n in [1..32], k in [1..32]):
+    compute_pass_at_k(n, c=0, k) == 0.0
+  bound: 32
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_pass_at_k_zero_on_zero_correct
+- id: KANI-EVAL-FAILURE-002
+  obligation: inference_failure_signal — mode + exit_code coupling
+  property: |
+    For all (any_ok in {true, false}): the resulting Result<()> matches the mode field:
+    any_ok == true  ↔ Ok(()) AND mode == "inference"
+    any_ok == false ↔ Err(_)  AND mode == "inference_failed"
+  bound: 2
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_mode_exit_code_coupling
+
+qa_gate:
+  id: F-EVAL-FAILURE-001
+  name: apr-eval-humaneval-inference-failure-handling-v1 Contract
+  description: HumanEval inference failure must NOT report fake pass@k=1.0; must return non-zero exit code with structured error signal.
+  checks:
+  - validation
+  - falsification
