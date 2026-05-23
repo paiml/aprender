@@ -152,36 +152,115 @@ CI step in `book.yml`:
 
 **Estimate**: 30 min.
 
+## Phase 6 — Execution validation harness (NOT in initial ship; framed honestly)
+
+**Honest status**: Phases 1-5 enforce **structural** correctness only. The example-block gates (`FALSIFY-BOOK-EXAMPLE-001` and `FALSIFY-BOOK-LIB-EXAMPLE-001`) only check that a fenced bash/rust code block EXISTS. They do NOT check that the bash actually runs, that the rust actually compiles, or that the output matches expectations.
+
+A chapter with `apr run nonexistent-model --broken-flag` would pass the current gates.
+
+This is a real limitation. Phase 6 closes it.
+
+**Goal**: every fenced code block in `book/src/cli/*.md` and `book/src/lib/*.md` is verified to compile (rust) or execute without error (bash), against a CI fixture that includes a small model cache.
+
+**Deliverable sketch**:
+
+1. **Per-example cost annotation** (HTML comment in each chapter):
+   ```markdown
+   <!-- example-cost: trivial -->                    <!-- runs in <1s, no model needed -->
+   <!-- example-cost: model-required, model: 1.5b --> <!-- needs 1.5B GGUF in cache -->
+   <!-- example-cost: gpu -->                         <!-- needs CUDA -->
+   <!-- example-cost: destructive -->                 <!-- mutates state, MOCK in CI -->
+   ```
+
+2. **Extractor**: `scripts/extract-book-examples.sh` parses every `.md` under `book/src/{cli,lib}/`, emits a JSONL stream of `{path, language, code, cost, model_needed}`.
+
+3. **Per-cost-class executor**:
+   - `trivial`: run inline (`bash -c '<code>'`), assert exit 0
+   - `model-required`: spin up Docker container with model fixture, run, assert exit 0
+   - `gpu`: skip in CPU-only CI, gate on self-hosted GPU runner
+   - `destructive`: rewrite to no-op (`apr publish` → `apr publish --dry-run`), assert exit 0
+
+4. **Rust example compilation**: `cargo +stable check --edition 2021` against a generated `examples/book-<mod>.rs` wrapping each ```rust block in a `fn main() {}`.
+
+5. **New falsifier**:
+   ```yaml
+   - id: FALSIFY-BOOK-EXAMPLE-EXECUTES-001
+     name: bash_examples_run_without_error
+     test_harness: bash scripts/check_book_examples_executable.sh
+     expected_output: "exit 0; every annotated bash example exits 0"
+     if_fails: "Fix the broken example, OR re-annotate its cost-class."
+
+   - id: FALSIFY-BOOK-EXAMPLE-COMPILES-001
+     name: rust_examples_compile
+     test_harness: bash scripts/check_book_examples_compile.sh
+     expected_output: "exit 0; every rust block compiles"
+   ```
+
+**Estimate**: 8-12 hr. Out of scope for hiatus-close window. Three pieces are missing today:
+
+1. Per-chapter cost annotation (manual or LLM-assisted classification of 172 chapters)
+2. A test harness that respects the annotation (skip-policy + sandbox + Docker fixture)
+3. A model cache fixture in CI that lets `apr run qwen2.5-coder-1.5b` succeed without a ~5min per-run download
+
+**Why it's still listed here**: so the gap is documented. Phase 1-5 enforce that every command HAS a chapter with a code-block-shaped runnable example. Phase 6 enforces that the code-block actually works. The two layers compose.
+
 ## Total estimate
 
-| Phase | Effort |
-|---|---|
-| 1. Linkcheck CI gate | 30 min |
-| 2. CLI stub generation | 1.5 hr |
-| 3. Lib stub generation | 1.5 hr |
-| 4. Completeness contract + CI gate | 1 hr |
-| 5. README contract extension | 30 min |
-| **Total** | **~5 hr** |
+| Phase | Status | Effort |
+|---|---|---|
+| 1. Linkcheck CI gate | ✓ shipped | 30 min |
+| 2. CLI stub generation (103 stubs) | ✓ shipped | 1.5 hr |
+| 3. Lib stub generation (69 stubs) | ✓ shipped | 1.5 hr |
+| 4. Completeness contract + CI gate | ✓ shipped | 1 hr |
+| 5. README contract extension | ✓ shipped | 30 min |
+| 6. Execution validation harness | NOT SHIPPED — gap documented | 8-12 hr (post-hiatus) |
+| **Total (shipped before hiatus)** | | **~5 hr** |
 
-Single sitting; deliver as one bundle PR before hiatus close.
+Phases 1-5: single sitting, delivered as one bundle PR (#1902). Phase 6 deferred to post-hiatus authoring.
+
+## Honest scope statement (per "shape vs behavior" five-whys)
+
+The shipped phases (1-5) enforce **structural** correctness:
+- ✓ Every CLI subcommand has a chapter
+- ✓ Every public module has a chapter
+- ✓ Each chapter has a fenced code block (bash for CLI, rust for lib)
+- ✓ Zero broken file links
+
+They do NOT enforce **behavioral** correctness:
+- ✗ The bash code in a chapter actually runs
+- ✗ The rust code in a chapter actually compiles
+- ✗ The output matches what the prose claims it produces
+
+This is a real shape-vs-behavior gap. Phase 6 (above) sketches the closure plan and explicitly defers it to post-hiatus authoring. Documenting the gap is itself a contract obligation — see PR #1902 description.
 
 ## Out of scope
 
-- **Authoring real content for the stub chapters**. Stubs are scaffolding. Stubs have visible `<!-- TODO: walkthrough -->` markers so content can be filled in post-hiatus without breaking the gate.
+- **Authoring real content for the stub chapters**. Stubs are scaffolding. Content can be filled in post-hiatus without breaking the gate.
 - **Cross-repo doc links** (`../../../docs/specifications/*.md`). mdbook-linkcheck can't follow outside the book root; those are inherently external links. Treated as "informational" not enforced.
 - **The 184 "Potential incomplete link" warnings** (interval notation `[0, 1]` parsed as link refs). False positives; not addressed.
 - **Re-authoring the 30 missing prose chapters** (Linear Regression tutorial, Toyota Way jidoka, etc.). These referenced names — the canonical pages exist under `ml-fundamentals/` — but #1901 stripped the link tags rather than relativize. A separate spec ("BOOK-CHAPTER-REVIVAL-001") covers reviving these via path corrections rather than scaffolding.
 
 ## Definition of done
 
-- [ ] `mdbook-linkcheck --standalone` reports 0 broken file links on every PR
-- [ ] `bash scripts/check_book_cli_parity.sh` exits 0 (every `apr <cmd>` has a chapter)
-- [ ] `bash scripts/check_book_lib_parity.sh` exits 0 (every `pub mod aprender::*` has a chapter)
-- [ ] `pv lint contracts/apr-book-completeness-v1.yaml` exits 0
-- [ ] `pmat comply check` reports `is_compliant=true` with 0 Fail-status checks
-- [ ] CI workflow `.github/workflows/book.yml` enforces all three gates on PR
-- [ ] Book builds clean: `cd book && mdbook build` exits 0
-- [ ] README claims accurate: `bash scripts/check_readme_claims.sh` exits 0
+### Structural (Phases 1-5 — SHIPPED in #1902)
+
+- [x] `mdbook-linkcheck --standalone` reports 0 broken file links on every PR
+- [x] `bash scripts/check_book_cli_parity.sh` exits 0 (every `apr <cmd>` has a chapter)
+- [x] `bash scripts/check_book_lib_parity.sh` exits 0 (every `pub mod aprender::*` has a chapter)
+- [x] `bash scripts/check_book_example_block.sh` exits 0 (every CLI chapter has a fenced bash block)
+- [x] `bash scripts/check_book_lib_example_block.sh` exits 0 (every lib chapter has a fenced rust block)
+- [x] `pv validate contracts/apr-book-completeness-v1.yaml` exits 0
+- [x] CI workflow `.github/workflows/book.yml` enforces all gates on PR
+- [x] Book builds clean: `cd book && mdbook build` exits 0
+- [x] README claims accurate: `bash scripts/check_readme_claims.sh` exits 0 (extended to 6 falsifiers)
+
+### Behavioral (Phase 6 — NOT SHIPPED)
+
+- [ ] `scripts/check_book_examples_executable.sh` exits 0 (every annotated bash example runs without error)
+- [ ] `scripts/check_book_examples_compile.sh` exits 0 (every rust example compiles)
+- [ ] Per-chapter `<!-- example-cost: ... -->` annotation present on every example
+- [ ] CI fixture cache contains `qwen2.5-coder-1.5b` for model-required examples
+- [ ] Docker sandbox image `aprender-test` exists for destructive-class examples
 
 ## Related
 
