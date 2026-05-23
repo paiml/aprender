@@ -364,7 +364,6 @@ impl<'a> Pipeline<'a> {
                 best_loss: Some(best_loss),
                 val_loss: None,
                 elapsed_secs: 0.0,
-                ..Default::default()
             };
             for cb in &mut self.callbacks {
                 let _ = cb.on_train_begin(&ctx);
@@ -390,7 +389,6 @@ impl<'a> Pipeline<'a> {
                     best_loss: Some(best_loss),
                     val_loss: None,
                     elapsed_secs: train_start.elapsed().as_secs_f64(),
-                    ..Default::default()
                 };
                 for cb in &mut self.callbacks {
                     let _ = cb.on_epoch_begin(&ctx);
@@ -448,7 +446,6 @@ impl<'a> Pipeline<'a> {
                         best_loss: Some(best_loss),
                         val_loss: None,
                         elapsed_secs: train_start.elapsed().as_secs_f64(),
-                        ..Default::default()
                     };
                     for cb in &mut self.callbacks {
                         if cb.on_step_end(&ctx) == entrenar::train::CallbackAction::Stop {
@@ -496,7 +493,6 @@ impl<'a> Pipeline<'a> {
                     best_loss: Some(best_loss),
                     val_loss: None,
                     elapsed_secs: train_start.elapsed().as_secs_f64(),
-                    ..Default::default()
                 };
                 for cb in &mut self.callbacks {
                     let _ = cb.on_epoch_end(&ctx);
@@ -526,7 +522,6 @@ impl<'a> Pipeline<'a> {
                 best_loss: Some(best_loss),
                 val_loss: None,
                 elapsed_secs: f64::from(elapsed),
-                ..Default::default()
             };
             for cb in &mut self.callbacks {
                 cb.on_train_end(&ctx);
