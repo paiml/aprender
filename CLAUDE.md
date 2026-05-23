@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Aprender is a next-generation ML framework in pure Rust — **monorepo with 80 workspace crates**. Install: `cargo install aprender` → `apr` binary (82 subcommands). 25,300+ tests, 1134 provable contracts. Core library in `crates/aprender-core/` ([lib] name = "aprender"). All 20 repos (trueno, realizar, entrenar, batuta, + 15 satellites) consolidated per APR-MONO spec. **v0.33.0 SHIPPED 2026-05-14: MODEL-1 SHIP % = 100%, all 24 crates on crates.io.**
+Aprender is a next-generation ML framework in pure Rust — **monorepo with 80 workspace crates**. Install: `cargo install aprender` → `apr` binary (103 subcommands). 25,300+ tests, 1148 provable contracts. Core library in `crates/aprender-core/` ([lib] name = "aprender"). All 20 repos (trueno, realizar, entrenar, batuta, + 15 satellites) consolidated per APR-MONO spec. **v0.34.0 SHIPPED 2026-05-18: MODEL-2 §88 stack-existence-proof, paiml/albor-370m-v1 LIVE on HF Hub.**
 
 ## Git Workflow (Branch Protection)
 

@@ -314,10 +314,7 @@ pub fn pre_warm_lora_backward_kernels(
     // sm_121 stream poisoned during it. Now: always pre-warm with the
     // same (batch_size=max_seq_len, hidden_size) dims that structured.rs
     // constructs at call time.
-    warm!(
-        "rms_norm_gamma_reduce".to_string(),
-        RmsNormGammaReduceKernel::new(s, h)
-    );
+    warm!("rms_norm_gamma_reduce".to_string(), RmsNormGammaReduceKernel::new(s, h));
 
     let _ = count;
     Ok(())

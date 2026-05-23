@@ -178,7 +178,9 @@ fn locate_gguf() -> Option<&'static str> {
 /// `[num_experts=128, hidden_dim=2048, intermediate=768]` row-major, so
 /// each expert occupies `2048 × ceil(768/256) × 210 = 1,290,240 bytes`
 /// and we slice the first `OUT_DIM_TEST` rows of expert 0.
-fn extract_real_q6k_matvec_bytes(mapped: &MappedGGUFModel) -> Option<(Vec<u8>, usize, usize, String)> {
+fn extract_real_q6k_matvec_bytes(
+    mapped: &MappedGGUFModel,
+) -> Option<(Vec<u8>, usize, usize, String)> {
     let mmap_bytes: &[u8] = mapped.data();
     let tensor_data_start = mapped.model.tensor_data_start;
 
@@ -252,8 +254,7 @@ fn falsify_q6k_real_weight_l7_matvec() {
     let mapped = MappedGGUFModel::from_path(gguf_path)
         .expect("Qwen3 GGUF must mmap cleanly (run `apr inspect` if not)");
 
-    let Some((weight_bytes, in_dim, out_dim, tensor_name)) =
-        extract_real_q6k_matvec_bytes(&mapped)
+    let Some((weight_bytes, in_dim, out_dim, tensor_name)) = extract_real_q6k_matvec_bytes(&mapped)
     else {
         panic!(
             "FALSIFY-Q6K-REAL-WEIGHT-004: no Q6_K tensor found under blk.7.* with \
@@ -298,9 +299,7 @@ fn falsify_q6k_real_weight_l7_matvec() {
 
     eprintln!();
     eprintln!("FALSIFY-Q6K-REAL-WEIGHT-004: empirical result");
-    eprintln!(
-        "  cos={cos:.6}  max_rel_diff={rel:.3e}  cpu_l2={cpu_l2:.3}  gpu_l2={gpu_l2:.3}"
-    );
+    eprintln!("  cos={cos:.6}  max_rel_diff={rel:.3e}  cpu_l2={cpu_l2:.3}  gpu_l2={gpu_l2:.3}");
     eprintln!();
     eprintln!("Compared to #1801's synthetic baseline (rel_diff ≈ 6e-7):");
     if rel < 1e-5 {
@@ -308,10 +307,16 @@ fn falsify_q6k_real_weight_l7_matvec() {
         eprintln!("  → Bug is NOT in per-matvec on real Q6_K — pivot cascade to");
         eprintln!("    Q4_K matmul, SwiGLU activation, or weighted-sum.");
     } else if rel < 1e-3 {
-        eprintln!("  → Real weights show MILD amplification ({}× synthetic).", rel / 6e-7);
+        eprintln!(
+            "  → Real weights show MILD amplification ({}× synthetic).",
+            rel / 6e-7
+        );
         eprintln!("  → Worth bisecting per-expert weight non-uniformity.");
     } else {
-        eprintln!("  → Real weights show STRONG amplification ({}× synthetic).", rel / 6e-7);
+        eprintln!(
+            "  → Real weights show STRONG amplification ({}× synthetic).",
+            rel / 6e-7
+        );
         eprintln!("  → #1801's synthetic-baseline premise was incomplete.");
         eprintln!("  → Real-weight reduction-order divergence IS in play.");
     }

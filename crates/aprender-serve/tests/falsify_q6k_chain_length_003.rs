@@ -216,9 +216,7 @@ fn falsify_q6k_chain_length_compositional_round_off() {
     let mut cuda = CudaExecutor::new(0)
         .expect("CudaExecutor::new(0) must succeed per realizar CLAUDE.md CUDA-always rule");
 
-    eprintln!(
-        "FALSIFY-Q6K-CHAIN-003: rel_diff and 1-cos vs chain depth N"
-    );
+    eprintln!("FALSIFY-Q6K-CHAIN-003: rel_diff and 1-cos vs chain depth N");
     eprintln!(
         "(if scales super-linearly with N → hypothesis #3 CONFIRMED — chain length is the amplifier)"
     );
@@ -281,8 +279,14 @@ mod helper_tests {
         // (deterministic per-step seed via wrapping_add).
         let weights = build_chain_weights(3, 42);
         assert_eq!(weights.len(), 3);
-        assert_ne!(weights[0], weights[1], "step 0 and 1 must have distinct weights");
-        assert_ne!(weights[1], weights[2], "step 1 and 2 must have distinct weights");
+        assert_ne!(
+            weights[0], weights[1],
+            "step 0 and 1 must have distinct weights"
+        );
+        assert_ne!(
+            weights[1], weights[2],
+            "step 1 and 2 must have distinct weights"
+        );
     }
 
     #[test]
