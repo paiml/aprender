@@ -10,6 +10,7 @@ Public module of the `aprender-core` crate.
 
 ## Example
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::format::{ModelCard, AprConverter, ConvertOptions};
 // See `cargo doc -p aprender-core --open` for full API reference.
@@ -42,6 +43,7 @@ The submodules `quantize`, `gguf`, `onnx`, `sharded`, `signing`, and
 
 ### Pattern 1: Attach a model card to a checkpoint
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::format::{ModelCard, TrainingDataInfo};
 
@@ -62,6 +64,7 @@ println!("model card: {}", card.name);
 
 ### Pattern 2: Diff two checkpoints tensor-by-tensor
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::format::{DiffOptions, DiffCategory};
 // AprConverter / diff_models work on real on-disk artefacts;

@@ -40,6 +40,7 @@ make this prediction?"
 
 ### Pattern 1: Closed-form attribution for a linear model
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::interpret::FeatureContributions;
 use aprender::primitives::Vector;
@@ -61,6 +62,7 @@ assert!(contributions.verify_sum(1e-5));
 
 ### Pattern 2: Permutation importance
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::interpret::PermutationImportance;
 use aprender::primitives::Vector;

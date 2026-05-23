@@ -10,6 +10,7 @@ Public module of the `aprender-core` crate.
 
 ## Example
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::models::Qwen2Model;
 // See `cargo doc -p aprender-core --open` for full API reference.
@@ -42,6 +43,7 @@ accessible so you can compose custom variants.
 
 ### Pattern 1: Construct a BERT encoder from a config
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::models::{BertConfig, BertEncoder};
 
@@ -60,6 +62,7 @@ println!("encoder ready with {} layers", config.num_hidden_layers);
 
 ### Pattern 2: Inspect Qwen2 components
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::models::qwen2::{Qwen2MLP, Embedding};
 

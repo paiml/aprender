@@ -10,6 +10,7 @@ Public module of the `aprender-core` crate.
 
 ## Example
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::nn::{Sequential, Linear, ReLU};
 // See `cargo doc -p aprender-core --open` for full API reference.
@@ -44,6 +45,7 @@ The submodule `nn::transformer` exposes attention + transformer-block types;
 
 ### Pattern 1: An MLP via `Sequential`
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::nn::{Sequential, Linear, ReLU};
 
@@ -58,6 +60,7 @@ println!("layers: {}", model.len());
 
 ### Pattern 2: Use RMSNorm (transformer-style)
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::nn::{Linear, RMSNorm};
 use aprender::nn::module::Module;

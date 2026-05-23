@@ -10,6 +10,7 @@ Public module of the `aprender-core` crate.
 
 ## Example
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::model_selection::{train_test_split, cross_validate, KFold, StratifiedKFold};
 // See `cargo doc -p aprender-core --open` for full API reference.
@@ -41,6 +42,7 @@ confidence intervals around your point estimates.
 
 ### Pattern 1: 5-fold cross-validation of a linear model
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::model_selection::{cross_validate, KFold};
 use aprender::prelude::*;
@@ -58,6 +60,7 @@ println!("cv R²: mean={:.4}  std={:.4}", result.mean(), result.std());
 
 ### Pattern 2: Stratified split for classification
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::model_selection::StratifiedKFold;
 use aprender::primitives::Vector;

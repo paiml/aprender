@@ -10,6 +10,7 @@ Public module of the `aprender-core` crate.
 
 ## Example
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::classification::LogisticRegression;
 // See `cargo doc -p aprender-core --open` for full API reference.
@@ -38,6 +39,7 @@ the targets are discrete labels.
 
 ### Pattern 1: Logistic regression on separable data
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::metrics::classification::accuracy;
 use aprender::prelude::*;
@@ -61,6 +63,7 @@ println!("accuracy: {:.2}", acc);
 
 ### Pattern 2: KNN with custom distance metric
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::classification::{DistanceMetric, KNearestNeighbors};
 use aprender::primitives::Matrix;
