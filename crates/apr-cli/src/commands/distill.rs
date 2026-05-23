@@ -771,65 +771,124 @@ fn run_cuda_backend(
     let student_dir = student_path
         .parent()
         .ok_or_else(|| CliError::ValidationFailed("student path has no parent dir".into()))?;
-    // PMAT-701 Bug B: detect Q4K-quantized teacher and route to the
-    // realizar inference path which keeps weights in Q4K on the GPU.
-    // The legacy CudaTrainerTeacher dequantizes Q4K to F32 at upload
-    // (~7× memory inflation), making 7B teachers OOM-kill on GB10 even
-    // with the unified-memory allocator in effect. See contract
-    // `contracts/cuda-q4k-frozen-teacher-v1.yaml` for the full invariant.
+    // PMAT-704: teacher backend selection.
+    //
+    // Contract: contracts/apr-distill-teacher-backend-selection-v1.yaml
+    //
+    // PR #1869 (PMAT-701 Bug B) routed Q4K teachers to RealizarQ4KTeacher to
+    // avoid an F32 dequant at upload. That was the wrong default on
+    // unified-memory devices: RealizarQ4KTeacher's forward runs layer-norm +
+    // attention + softmax on CPU (only individual Q4K matmuls dispatch to
+    // GPU), so the 7B teacher's forward took 10-100× longer than the
+    // cuBLAS-backed CudaTrainerTeacher would. The dequant memory concern
+    // was independently fixed by PMAT-701 Bug A (PR #1863) — the 28 GB F32
+    // teacher dequant fits in the 128 GB unified pool on Grace Blackwell.
+    //
+    // New dispatch (default to fast cuBLAS path):
+    //   - APR_DISTILL_TEACHER_BACKEND=cudatrainer  → CudaTrainerTeacher
+    //   - APR_DISTILL_TEACHER_BACKEND=realizar-q4k → RealizarQ4KTeacher
+    //                                                (memory-constrained-device
+    //                                                 fallback; Q4K teachers only)
+    //   - APR_DISTILL_TEACHER_BACKEND=auto (default) or unset:
+    //       CudaTrainerTeacher (assumes unified memory or sufficient VRAM)
+    //
+    // RealizarQ4KTeacher is preserved as an opt-in fallback; PR #1869's
+    // implementation is not removed.
     let teacher_uses_quantized_weights = teacher_reader.tensor_names().iter().any(|name| {
         teacher_reader
             .get_tensor(name)
             .is_some_and(|t| matches!(t.dtype, TensorDType::Q4K | TensorDType::Q6K))
     });
-    let teacher_provider: Box<dyn TeacherLogitsProvider> = if teacher_uses_quantized_weights {
-        // PMAT-703: if teacher's native vocab is larger than the student's,
-        // we must truncate teacher logits to the student vocab before KD loss
-        // (see contracts/apr-distill-teacher-vocab-alignment-v1.yaml). The
-        // canonical example is Qwen2.5-Coder-7B (vocab=152064) → 0.5B
-        // (vocab=151936). Pass the student vocab as target so the teacher
-        // truncates at the boundary.
-        let student_vocab = student_meta.vocab_size.ok_or_else(|| {
-            CliError::ValidationFailed(
-                "student .apr metadata missing vocab_size — required for PMAT-703 vocab alignment"
-                    .into(),
-            )
-        })?;
-        let teacher_native_vocab = teacher_meta.vocab_size.ok_or_else(|| {
-            CliError::ValidationFailed(
-                "teacher .apr metadata missing vocab_size — required for PMAT-703 vocab alignment"
-                    .into(),
-            )
-        })?;
-        let target_vocab = if teacher_native_vocab > student_vocab {
+    let env_backend = std::env::var("APR_DISTILL_TEACHER_BACKEND")
+        .unwrap_or_else(|_| "auto".to_string())
+        .to_lowercase();
+    let use_realizar_q4k = match env_backend.as_str() {
+        "realizar-q4k" | "realizar" => {
+            if !teacher_uses_quantized_weights {
+                return Err(CliError::ValidationFailed(
+                    "APR_DISTILL_TEACHER_BACKEND=realizar-q4k requires a Q4K/Q6K teacher; \
+                     this teacher is F32/F16/BF16 — use CudaTrainerTeacher instead."
+                        .into(),
+                ));
+            }
             eprintln!(
-                "[PMAT-703] vocab alignment: teacher native={teacher_native_vocab}, student={student_vocab} → truncating teacher logits to student vocab"
+                "[PMAT-704] env override: APR_DISTILL_TEACHER_BACKEND=realizar-q4k → RealizarQ4KTeacher"
             );
-            Some(student_vocab)
-        } else if teacher_native_vocab < student_vocab {
+            true
+        }
+        "cudatrainer" | "cublas" => {
+            eprintln!(
+                "[PMAT-704] env override: APR_DISTILL_TEACHER_BACKEND=cudatrainer → CudaTrainerTeacher (cuBLAS)"
+            );
+            false
+        }
+        "auto" | "" => {
+            eprintln!(
+                "[PMAT-704] backend=auto → CudaTrainerTeacher (cuBLAS) [override with APR_DISTILL_TEACHER_BACKEND=realizar-q4k for memory-constrained dGPU]"
+            );
+            false
+        }
+        other => {
             return Err(CliError::ValidationFailed(format!(
-                "vocab alignment: teacher vocab ({teacher_native_vocab}) < student vocab ({student_vocab}); \
-                 student would need to predict tokens the teacher has no embeddings for"
+                "APR_DISTILL_TEACHER_BACKEND={other:?} not recognized. Valid: auto, cudatrainer, realizar-q4k"
             )));
-        } else {
-            None
-        };
+        }
+    };
+    // PMAT-703 vocab alignment: applies regardless of which backend we use.
+    // When teacher's native vocab > student's, we wrap the teacher in
+    // `TruncatingTeacher` (defined below) which truncates each returned
+    // logit vector to the student's vocab BEFORE the pipeline sees it.
+    // Softmax in `kd_step.rs` then renormalizes over the shared support.
+    let student_vocab = student_meta.vocab_size.ok_or_else(|| {
+        CliError::ValidationFailed(
+            "student .apr metadata missing vocab_size — required for PMAT-703 vocab alignment"
+                .into(),
+        )
+    })?;
+    let teacher_native_vocab = teacher_meta.vocab_size.ok_or_else(|| {
+        CliError::ValidationFailed(
+            "teacher .apr metadata missing vocab_size — required for PMAT-703 vocab alignment"
+                .into(),
+        )
+    })?;
+    if teacher_native_vocab < student_vocab {
+        return Err(CliError::ValidationFailed(format!(
+            "vocab alignment: teacher vocab ({teacher_native_vocab}) < student vocab \
+             ({student_vocab}); student would need to predict tokens the teacher has no \
+             embeddings for"
+        )));
+    }
+    let needs_vocab_truncation = teacher_native_vocab > student_vocab;
+    if needs_vocab_truncation {
         eprintln!(
-            "[PMAT-701] Q4K/Q6K teacher detected → RealizarQ4KTeacher (Q4K-native forward, no F32 dequant)"
+            "[PMAT-703] vocab alignment: teacher native={teacher_native_vocab}, student={student_vocab} → truncating teacher logits to student vocab"
+        );
+    }
+
+    let raw_teacher: Box<dyn TeacherLogitsProvider> = if use_realizar_q4k {
+        eprintln!(
+            "[PMAT-701] Q4K/Q6K teacher → RealizarQ4KTeacher (Q4K-native forward, no F32 dequant) [memory-constrained-device path]"
         );
         Box::new(
-            RealizarQ4KTeacher::from_apr_path_with_target_vocab(teacher_path, target_vocab)
+            RealizarQ4KTeacher::from_apr_path(teacher_path)
                 .map_err(|e| CliError::ValidationFailed(format!("RealizarQ4KTeacher load: {e}")))?,
         )
     } else {
-        eprintln!("[PMAT-701] F32/F16/BF16 teacher → CudaTrainerTeacher (legacy path)");
-        // teacher_config is unused on the Q4K branch (the metadata is read
-        // from the APR file by realizar directly); only the CudaTrainerTeacher
-        // path needs the explicit TransformerConfig.
+        let teacher_kind = if teacher_uses_quantized_weights {
+            "Q4K/Q6K (dequant to F32 at GPU upload; cuBLAS GEMM)"
+        } else {
+            "F32/F16/BF16 (native upload; cuBLAS GEMM)"
+        };
+        eprintln!("[PMAT-704] teacher backend = CudaTrainerTeacher [{teacher_kind}]");
         Box::new(
             CudaTrainerTeacher::for_inference(teacher_dir, teacher_config)
                 .map_err(|e| CliError::ValidationFailed(format!("CudaTrainerTeacher load: {e}")))?,
         )
+    };
+    let teacher_provider: Box<dyn TeacherLogitsProvider> = if needs_vocab_truncation {
+        Box::new(TruncatingTeacher::new(raw_teacher, student_vocab))
+    } else {
+        raw_teacher
     };
     let student_provider = CudaStudentProvider::for_training(student_dir, student_config)
         .map_err(|e| CliError::ValidationFailed(format!("CudaStudentProvider load: {e}")))?;
@@ -922,6 +981,55 @@ fn run_cuda_backend(
         println!("  Output: {}", result.output_path.display());
     }
     Ok(())
+}
+
+/// PMAT-703 / PMAT-704 vocab-alignment wrapper: truncates teacher logits to
+/// the student's vocab size when the teacher's native vocab is a strict
+/// superset (e.g. Qwen2.5-Coder-7B vocab=152064 vs 0.5B vocab=151936).
+///
+/// Wrapping is generic over the underlying `TeacherLogitsProvider`, so it
+/// applies uniformly to `CudaTrainerTeacher` (cuBLAS, default) and
+/// `RealizarQ4KTeacher` (CPU-bound, opt-in). Softmax in
+/// `aprender-train-distill::kd_step` renormalizes over the truncated
+/// support; the dropped tail represents tokens the student cannot predict
+/// anyway. Contract: `contracts/apr-distill-teacher-vocab-alignment-v1.yaml`.
+#[cfg(all(feature = "cuda", feature = "training", feature = "inference"))]
+struct TruncatingTeacher {
+    inner: Box<dyn entrenar_distill::teacher_provider::TeacherLogitsProvider>,
+    effective_vocab: usize,
+}
+
+#[cfg(all(feature = "cuda", feature = "training", feature = "inference"))]
+impl TruncatingTeacher {
+    fn new(
+        inner: Box<dyn entrenar_distill::teacher_provider::TeacherLogitsProvider>,
+        effective_vocab: usize,
+    ) -> Self {
+        Self {
+            inner,
+            effective_vocab,
+        }
+    }
+}
+
+#[cfg(all(feature = "cuda", feature = "training", feature = "inference"))]
+impl entrenar_distill::teacher_provider::TeacherLogitsProvider for TruncatingTeacher {
+    fn vocab_size(&self) -> usize {
+        self.effective_vocab
+    }
+
+    fn logits_for_batch(
+        &mut self,
+        input_ids: &[Vec<u32>],
+    ) -> entrenar_common::Result<Vec<Vec<f32>>> {
+        let mut logits = self.inner.logits_for_batch(input_ids)?;
+        for v in &mut logits {
+            if v.len() > self.effective_vocab {
+                v.truncate(self.effective_vocab);
+            }
+        }
+        Ok(logits)
+    }
 }
 
 /// Config-driven distillation mode (ALB-011).

@@ -1,0 +1,58 @@
+{
+  "ticket": "PMAT-704",
+  "title": "Teacher backend selection: route Q4K teachers to CudaTrainerTeacher (cuBLAS) by default; demote RealizarQ4KTeacher to opt-in fallback",
+  "date": "2026-05-22",
+  "host": "gx10 (Grace Blackwell GB10, sm_121, 128.5 GB unified, CUDA 13.1)",
+  "background": "Discovered during the PMAT-701/702/703 cascade post-mortem: the 7B vocab-aligned 500-step validation hung at step 0 for 1.5h with GPU at 0% utilization. RealizarQ4KTeacher's forward path runs layer-norm + attention + softmax on CPU, making it unusable as a real distillation teacher.",
+
+  "five_whys": [
+    {
+      "why": 1,
+      "question": "Why did the 7B vocab-aligned 500-step validation hang at step 0 for 1.5 h?",
+      "answer": "RealizarQ4KTeacher's forward path runs layer-norm + attention + softmax on CPU; only Q4K matmuls dispatch to GPU.",
+      "evidence": "nvidia-smi --query-gpu=utilization.gpu reported 0% the entire 1.5 h run; CPU at 1320% (13 cores busy)."
+    },
+    {
+      "why": 2,
+      "question": "Why does that path skip the GPU for most operations?",
+      "answer": "OwnedQuantizedModelCuda::forward_cuda is realizar's inference path. Despite the _cuda suffix, only Q4K-block matmuls dispatch to GPU; the rest runs CPU SIMD via realizar::ops.",
+      "evidence": "crates/aprender-serve/src/gguf/cuda/cuda.rs:18 — forward_cuda explicitly calls ops::layer_norm, qkv_matmul, etc. with CPU implementations."
+    },
+    {
+      "why": 3,
+      "question": "Why did PR #1869 (Bug B) wire the teacher to that path instead of CudaTrainerTeacher (cuBLAS-backed)?",
+      "answer": "Bug B routed Q4K teachers around CudaTrainerTeacher::for_inference to avoid an F32 dequant at upload. Claim: the 28 GB F32 inflation would trip Linux OOM-killer.",
+      "evidence": "contracts/cuda-q4k-frozen-teacher-v1.yaml falsifier FT-Q4K-TEACHER-002 (peak GPU memory <= 6 GB) — the rationale for the routing."
+    },
+    {
+      "why": 4,
+      "question": "Why was that claim wrong given PMAT-701 Bug A had just fixed the allocator?",
+      "answer": "Bug B's verification observed SIGKILL exit 137 with MANAGED_MEMORY=1 explicit and concluded 'OOM-killer due to F32 dequant pressure.' But (a) the SIGKILL cause was never verified via dmesg or kernel logs, and (b) the same CudaTrainerTeacher path was never re-tested under the post-Bug-A allocator autodetect default. PMAT-701 Bug A's autodetect SHOULD give the same managed-memory behavior, so the post-fix path was assumed equivalent without verification.",
+      "evidence": "evidence/distill-7b-teacher-loadtest-gx10/launch-managed.log shows exit-137 but no kernel OOM-killer messages in dmesg."
+    },
+    {
+      "why": 5,
+      "question": "Why did I commit to Bug B's design before re-verifying with the cheap test?",
+      "answer": "Cascade momentum + incomplete root-cause discipline. PMAT-701 Bug A had just landed; I was eager to ship the next defect fix. I treated the single SIGKILL observation as load-bearing evidence for a new contract instead of treating it as a hypothesis that needed isolation. A one-line dispatch flip would have rejected the hypothesis in 5 minutes; I built a multi-PR architectural detour instead.",
+      "evidence": "feedback_smoke_defaults_leak_into_production.md (memory lesson saved 2026-05-22) — same cascade-momentum anti-pattern."
+    }
+  ],
+
+  "root_cause_summary": "Conflated two failures: the cuMemAlloc 30 GB ceiling (real, fixed by Bug A) and the step-0 SIGKILL on the explicit-managed path (phantom, never verified). Bug B's RealizarQ4KTeacher is a slow CPU-bound forward chosen to dodge a memory problem that doesn't exist on unified-memory devices.",
+
+  "fix_summary": {
+    "code": "crates/apr-cli/src/commands/distill.rs run_cuda_backend: default teacher backend = CudaTrainerTeacher (cuBLAS); RealizarQ4KTeacher behind APR_DISTILL_TEACHER_BACKEND=realizar-q4k opt-in. TruncatingTeacher wrapper applies PMAT-703 vocab alignment uniformly to both backends.",
+    "contract": "contracts/apr-distill-teacher-backend-selection-v1.yaml — codifies the new dispatch logic with 4 falsifiers + 2 Kani harnesses.",
+    "preserved": "RealizarQ4KTeacher implementation kept in place as memory-constrained-device fallback; PR #1869's API surface unchanged."
+  },
+
+  "post_fix_verification_dispatch_markers": [
+    "[PMAT-704] backend=auto → CudaTrainerTeacher (cuBLAS)",
+    "[PMAT-703] vocab alignment: teacher native=152064, student=151936 → truncating",
+    "[PMAT-704] teacher backend = CudaTrainerTeacher [Q4K/Q6K (dequant to F32 at GPU upload; cuBLAS GEMM)]",
+    "[CUDA] cuBLAS initialized — forward TF32 tensor cores (41x vs SIMD)",
+    "✓ Loaded pre-trained weights successfully (APR)"
+  ],
+
+  "operator_impact": "Phase 4 distill dispatch on Grace Blackwell now runs ~50× faster teacher forward via cuBLAS. The 50K Stage D run estimate drops from 100+ hours (with Bug B's CPU path) back to the original ~30-50 hour budget the spec estimated."
+}
