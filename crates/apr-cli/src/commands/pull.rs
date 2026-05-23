@@ -14,7 +14,7 @@ use std::path::Path;
 /// Single-file models (small SafeTensors, GGUF) use the pacha fetcher.
 /// Sharded models (3B+ SafeTensors) are downloaded directly to `~/.apr/cache/hf/`.
 #[derive(Debug)]
-enum ResolvedModel {
+pub(crate) enum ResolvedModel {
     /// Single file downloadable via pacha (existing behavior)
     SingleFile(String),
     /// Sharded SafeTensors model (multiple .safetensors files + index.json)
@@ -169,7 +169,7 @@ fn parse_hf_single_uri(model_ref: &str) -> Result<(String, String, String)> {
     ))
 }
 
-fn build_single_cache_path(
+pub(crate) fn build_single_cache_path(
     cache_dir: &std::path::Path,
     model_ref: &str,
     filename: &str,
@@ -203,7 +203,7 @@ fn report_downloaded_single(cache_path: &std::path::Path, checksum: &FileChecksu
 }
 
 /// Get the pacha model cache directory.
-fn get_pacha_cache_dir() -> Result<std::path::PathBuf> {
+pub(crate) fn get_pacha_cache_dir() -> Result<std::path::PathBuf> {
     if let Ok(cache_home) = std::env::var("XDG_CACHE_HOME") {
         return Ok(std::path::PathBuf::from(cache_home)
             .join("pacha")
