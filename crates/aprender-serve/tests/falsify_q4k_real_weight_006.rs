@@ -219,15 +219,11 @@ fn falsify_q4k_real_weight_matvec() {
     };
 
     eprintln!("FALSIFY-Q4K-REAL-WEIGHT-006: loading {gguf_path}");
-    let mapped = MappedGGUFModel::from_path(gguf_path)
-        .expect("Qwen3 GGUF must mmap cleanly");
+    let mapped = MappedGGUFModel::from_path(gguf_path).expect("Qwen3 GGUF must mmap cleanly");
 
-    let Some((weight_bytes, in_dim, out_dim, tensor_name)) =
-        extract_real_q4k_matvec_bytes(&mapped)
+    let Some((weight_bytes, in_dim, out_dim, tensor_name)) = extract_real_q4k_matvec_bytes(&mapped)
     else {
-        panic!(
-            "FALSIFY-Q4K-REAL-WEIGHT-006: no Q4_K tensor found with in_dim multiple of 256"
-        );
+        panic!("FALSIFY-Q4K-REAL-WEIGHT-006: no Q4_K tensor found with in_dim multiple of 256");
     };
 
     eprintln!(
@@ -266,9 +262,7 @@ fn falsify_q4k_real_weight_matvec() {
 
     eprintln!();
     eprintln!("FALSIFY-Q4K-REAL-WEIGHT-006: empirical result");
-    eprintln!(
-        "  cos={cos:.6}  max_rel_diff={rel:.3e}  cpu_l2={cpu_l2:.3}  gpu_l2={gpu_l2:.3}"
-    );
+    eprintln!("  cos={cos:.6}  max_rel_diff={rel:.3e}  cpu_l2={cpu_l2:.3}  gpu_l2={gpu_l2:.3}");
     eprintln!();
     eprintln!("Compared to #1816 Q6_K real-weight baseline (rel_diff = 2.281e-7):");
     if rel < 1e-5 {
@@ -277,10 +271,16 @@ fn falsify_q4k_real_weight_matvec() {
         eprintln!("  → Cascade pivots to compositional FFN-block on real weights,");
         eprintln!("    or top-K weighted-sum accumulation order.");
     } else if rel < 1e-3 {
-        eprintln!("  → Q4_K shows MILD amplification ({}× #1816 baseline).", rel / 2.3e-7);
+        eprintln!(
+            "  → Q4_K shows MILD amplification ({}× #1816 baseline).",
+            rel / 2.3e-7
+        );
         eprintln!("  → Worth bisecting which Q4_K kernel path produces the gap.");
     } else {
-        eprintln!("  → Q4_K shows STRONG amplification ({}× #1816 baseline).", rel / 2.3e-7);
+        eprintln!(
+            "  → Q4_K shows STRONG amplification ({}× #1816 baseline).",
+            rel / 2.3e-7
+        );
         eprintln!("  → **M-GPU-MOE-3 ROOT CAUSE LIKELY FOUND** in Q4_K kernel.");
         eprintln!("  → Fix scope: Q4_K reduction-order alignment in CudaExecutor::q4k_matvec.");
     }

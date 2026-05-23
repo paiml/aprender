@@ -207,9 +207,7 @@ fn locate_gguf() -> Option<&'static str> {
         .find(|p| Path::new(p).exists())
 }
 
-fn extract_q4k_slab(
-    mapped: &MappedGGUFModel,
-) -> Option<(Vec<u8>, usize, usize, String)> {
+fn extract_q4k_slab(mapped: &MappedGGUFModel) -> Option<(Vec<u8>, usize, usize, String)> {
     let mmap_bytes = mapped.data();
     let tensor_data_start = mapped.model.tensor_data_start;
     for t in &mapped.model.tensors {
@@ -288,19 +286,11 @@ fn bisect_q4k_dequant_vs_reduction() {
     let rel_bc = max_rel_diff(&path_b, &path_c);
 
     eprintln!();
-    eprintln!(
-        "FALSIFY-Q4K-BISECT-007: three-way bisection (#1583 PR-3l)"
-    );
+    eprintln!("FALSIFY-Q4K-BISECT-007: three-way bisection (#1583 PR-3l)");
     eprintln!();
-    eprintln!(
-        "  A = CPU fused_q4k_parallel_matvec  (production-MoE path)"
-    );
-    eprintln!(
-        "  B = CPU dequantize_q4_k_to_f32 → naive f32 dot (isolates dequant)"
-    );
-    eprintln!(
-        "  C = CUDA q4k_matvec                (suspected broken path)"
-    );
+    eprintln!("  A = CPU fused_q4k_parallel_matvec  (production-MoE path)");
+    eprintln!("  B = CPU dequantize_q4_k_to_f32 → naive f32 dot (isolates dequant)");
+    eprintln!("  C = CUDA q4k_matvec                (suspected broken path)");
     eprintln!();
     eprintln!("{:>15}  {:>12}  {:>12}", "pair", "rel_diff", "1-cos");
     eprintln!("{}", "-".repeat(45));
