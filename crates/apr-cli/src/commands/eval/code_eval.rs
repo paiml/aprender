@@ -423,7 +423,11 @@ where
                 }
             }
             Err(_e) if sample_idx == 0 => {
-                eprintln!("  Inference failed (falling back to structural validation)");
+                // PMAT-702: caller (run_humaneval / run_mbpp) will surface the
+                // captured error string and return Err with mode = "inference_failed".
+                // Don't print the misleading "structural validation" message here
+                // anymore — the caller path is the source of truth.
+                eprintln!("  Inference failed for first sample; aborting multi-sample loop.");
                 break;
             }
             Err(_) => {}

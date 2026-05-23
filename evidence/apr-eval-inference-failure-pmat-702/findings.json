@@ -1,0 +1,44 @@
+{
+  "ticket": "PMAT-702",
+  "title": "apr eval --task humaneval false-positive: structural-fallback marked all 164 problems as pass=1 on broken models",
+  "date": "2026-05-22",
+  "host": "gx10 (Grace Blackwell GB10)",
+  "five_whys_origin": "PMAT-701 cascade Defect 3 — the eval false-positive that hid the Phase 4 Stage D no-KD training run from operators for 2 days",
+
+  "pre_fix_reproduction": {
+    "command": "apr eval <gibberish-checkpoint> --task humaneval --data <humaneval.jsonl> --device cpu --samples 1 --json",
+    "model": "/home/noah/runs/distill-smoke-20260521-233519/student-trained.apr/model.apr (10K-step Stage D, known gibberish)",
+    "result": {
+      "passed": 164,
+      "pass_at_k_1_rate": 1.0,
+      "mode": "structural",
+      "exit_code": 0
+    },
+    "interpretation": "Inference failed because the checkpoint has no tokenizer sibling. The legacy fallback marked every problem with a non-empty canonical_solution as pass=1, producing pass@1 = 1.0 / 164/164 on a completely broken model. The `mode: structural` field was the only signal of the failure, easy to miss in automated parsing."
+  },
+
+  "fix_summary": {
+    "code": "crates/apr-cli/src/commands/eval/inference.rs (run_humaneval, run_mbpp) — return Err with structured JSON before erroring; pass counters stay at 0",
+    "contract": "contracts/apr-eval-humaneval-inference-failure-handling-v1.yaml",
+    "log_correction": "crates/apr-cli/src/commands/eval/code_eval.rs:425-428 — removed misleading 'falling back to structural validation' line"
+  },
+
+  "post_fix_verification": {
+    "command": "same as above",
+    "result": {
+      "passed": 0,
+      "pass_at_k_1_rate": 0.0,
+      "mode": "inference_failed",
+      "inference_error": "No tokenizer found (no embedded tokenizer and no sibling tokenizer.json)",
+      "exit_code": 8,
+      "stderr": "error: Inference failed: HumanEval inference failed for all samples: ..."
+    },
+    "falsifiers_passed": [
+      "FT-EVAL-FAILURE-001 (pass@1 = 0.0 on gibberish model)",
+      "FT-EVAL-FAILURE-003 (HumanEval / MBPP parity — both emit mode='inference_failed' with inference_error)",
+      "FT-EVAL-FAILURE-004 (no dataset-side pass-marking — removed lines 143-151)"
+    ]
+  },
+
+  "operator_impact": "JSON-parsing tools (CI gates, eval dashboards) can now rely on `mode != \"inference_failed\"` AND `pass_at_k[0].rate > 0` as the 'model is alive' signal. Exit code 8 (CliError::InferenceFailed) wakes shell-script-driven monitors that the prior exit-0 silence missed."
+}

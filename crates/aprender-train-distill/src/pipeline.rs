@@ -66,6 +66,11 @@ pub struct Pipeline<'a> {
     /// Phase 4 real-corpus dispatch swaps in `ShardBatchSource` via
     /// `with_batch_source()`.
     batch_source: Box<dyn crate::batch_source::BatchSource>,
+    /// PMAT-705: training-progress callbacks. Empty by default — operators
+    /// attach `entrenar::train::ProgressCallback` (or richer) via
+    /// `with_callback()` to surface per-step loss during long runs.
+    /// Contract: `contracts/distill-pipeline-observability-v1.yaml`.
+    callbacks: Vec<Box<dyn entrenar::train::TrainerCallback>>,
 }
 
 impl<'a> Pipeline<'a> {
@@ -87,7 +92,25 @@ impl<'a> Pipeline<'a> {
             teacher: Box::new(crate::teacher_provider::FixtureTeacher::new(32)),
             student: Box::new(crate::student_provider::FixtureStudent::new(32, 0.0, 0.1)),
             batch_source: Box::new(crate::batch_source::SyntheticBatchSource::new(32)),
+            callbacks: Vec::new(),
         }
+    }
+
+    /// PMAT-705: attach a training-progress callback.
+    ///
+    /// Callbacks fire in attach order at the lifecycle events defined by
+    /// `entrenar::train::TrainerCallback`:
+    /// `on_train_begin` → `on_epoch_begin` → `on_step_end` × N → `on_epoch_end` → `on_train_end`.
+    ///
+    /// The default pipeline attaches no callbacks; the `apr distill --backend cuda`
+    /// dispatch (`apr-cli::run_cuda_backend`) wires a default `ProgressCallback`
+    /// honoring the `APR_DISTILL_LOG_EVERY` env var (default 10).
+    ///
+    /// See `contracts/distill-pipeline-observability-v1.yaml`.
+    #[must_use]
+    pub fn with_callback(mut self, callback: Box<dyn entrenar::train::TrainerCallback>) -> Self {
+        self.callbacks.push(callback);
+        self
     }
 
     /// Swap in a custom batch source (Phase 4 Stage B-2).
@@ -321,8 +344,56 @@ impl<'a> Pipeline<'a> {
             .unwrap_or(5000);
         let checkpoint_dir = self.config.output.dir.clone();
 
-        for _epoch in 0..self.config.training.epochs {
-            let steps_this_epoch = (1000 / u64::from(self.config.training.batch_size)).max(1);
+        // PMAT-705: total step count across epochs (used by ProgressCallback
+        // to render Step N/M). Synthetic loop uses steps_per_epoch =
+        // max(1, 1000 / batch_size); see the inner loop below.
+        let steps_per_epoch_u64 = (1000 / u64::from(self.config.training.batch_size)).max(1);
+        let total_steps_planned = steps_per_epoch_u64 * u64::from(self.config.training.epochs);
+
+        // PMAT-705: fire on_train_begin once before the first step.
+        if !self.callbacks.is_empty() {
+            let ctx = entrenar::train::CallbackContext {
+                epoch: 0,
+                max_epochs: self.config.training.epochs as usize,
+                step: 0,
+                #[allow(clippy::cast_possible_truncation)]
+                steps_per_epoch: steps_per_epoch_u64 as usize,
+                global_step: 0,
+                loss: initial_loss,
+                lr,
+                best_loss: Some(best_loss),
+                val_loss: None,
+                elapsed_secs: 0.0,
+            };
+            for cb in &mut self.callbacks {
+                let _ = cb.on_train_begin(&ctx);
+            }
+        }
+
+        let mut stop_requested = false;
+        for epoch_idx in 0..self.config.training.epochs {
+            let steps_this_epoch = steps_per_epoch_u64;
+
+            // PMAT-705: on_epoch_begin.
+            if !self.callbacks.is_empty() {
+                let ctx = entrenar::train::CallbackContext {
+                    epoch: epoch_idx as usize,
+                    max_epochs: self.config.training.epochs as usize,
+                    step: 0,
+                    #[allow(clippy::cast_possible_truncation)]
+                    steps_per_epoch: steps_per_epoch_u64 as usize,
+                    #[allow(clippy::cast_possible_truncation)]
+                    global_step: step as usize,
+                    loss: best_loss,
+                    lr,
+                    best_loss: Some(best_loss),
+                    val_loss: None,
+                    elapsed_secs: train_start.elapsed().as_secs_f64(),
+                };
+                for cb in &mut self.callbacks {
+                    let _ = cb.on_epoch_begin(&ctx);
+                }
+            }
 
             for _s in 0..steps_this_epoch {
                 let (dummy_batch, labels) =
@@ -356,6 +427,36 @@ impl<'a> Pipeline<'a> {
                 last_batch = dummy_batch;
                 last_labels = labels;
 
+                // PMAT-705: on_step_end fires after grad application and
+                // before the checkpoint-save block so callbacks observe
+                // committed step state. CallbackAction::Stop terminates
+                // the loop after this step.
+                if !self.callbacks.is_empty() {
+                    let ctx = entrenar::train::CallbackContext {
+                        epoch: epoch_idx as usize,
+                        max_epochs: self.config.training.epochs as usize,
+                        #[allow(clippy::cast_possible_truncation)]
+                        step: step as usize,
+                        #[allow(clippy::cast_possible_truncation)]
+                        steps_per_epoch: total_steps_planned as usize,
+                        #[allow(clippy::cast_possible_truncation)]
+                        global_step: step as usize,
+                        loss,
+                        lr,
+                        best_loss: Some(best_loss),
+                        val_loss: None,
+                        elapsed_secs: train_start.elapsed().as_secs_f64(),
+                    };
+                    for cb in &mut self.callbacks {
+                        if cb.on_step_end(&ctx) == entrenar::train::CallbackAction::Stop {
+                            stop_requested = true;
+                        }
+                    }
+                }
+                if stop_requested {
+                    break;
+                }
+
                 // PMAT-699 P0 durability: periodic checkpoint save.
                 if checkpoint_every > 0 && step % checkpoint_every == 0 {
                     let ckpt_path = checkpoint_dir.join(format!("ckpt-step-{step:06}.apr"));
@@ -375,9 +476,57 @@ impl<'a> Pipeline<'a> {
                     }
                 }
             }
+
+            // PMAT-705: on_epoch_end.
+            if !self.callbacks.is_empty() {
+                let ctx = entrenar::train::CallbackContext {
+                    epoch: epoch_idx as usize,
+                    max_epochs: self.config.training.epochs as usize,
+                    #[allow(clippy::cast_possible_truncation)]
+                    step: step as usize,
+                    #[allow(clippy::cast_possible_truncation)]
+                    steps_per_epoch: steps_per_epoch_u64 as usize,
+                    #[allow(clippy::cast_possible_truncation)]
+                    global_step: step as usize,
+                    loss: best_loss,
+                    lr,
+                    best_loss: Some(best_loss),
+                    val_loss: None,
+                    elapsed_secs: train_start.elapsed().as_secs_f64(),
+                };
+                for cb in &mut self.callbacks {
+                    let _ = cb.on_epoch_end(&ctx);
+                }
+            }
+
+            if stop_requested {
+                break;
+            }
         }
 
         let elapsed = train_start.elapsed().as_secs_f32().max(1e-6);
+
+        // PMAT-705: on_train_end after the loop (final loss is computed below).
+        if !self.callbacks.is_empty() {
+            let ctx = entrenar::train::CallbackContext {
+                epoch: self.config.training.epochs.saturating_sub(1) as usize,
+                max_epochs: self.config.training.epochs as usize,
+                #[allow(clippy::cast_possible_truncation)]
+                step: step as usize,
+                #[allow(clippy::cast_possible_truncation)]
+                steps_per_epoch: steps_per_epoch_u64 as usize,
+                #[allow(clippy::cast_possible_truncation)]
+                global_step: step as usize,
+                loss: best_loss,
+                lr,
+                best_loss: Some(best_loss),
+                val_loss: None,
+                elapsed_secs: f64::from(elapsed),
+            };
+            for cb in &mut self.callbacks {
+                cb.on_train_end(&ctx);
+            }
+        }
 
         // Final loss measurement on the last batch consumed.
         let final_loss = kd_step_loss_for_pipeline(
@@ -1216,5 +1365,197 @@ mod tests {
             result.is_ok(),
             "Pipeline panicked on tiny tensor: {result:?}"
         );
+    }
+
+    // PMAT-705: callback wiring tests.
+    //
+    // Contract: contracts/distill-pipeline-observability-v1.yaml.
+    // Falsifier FT-OBSERV-001: per-step callbacks fire during training.
+    mod pmat_705_observability {
+        use super::*;
+        use std::sync::{Arc, Mutex};
+
+        /// Recording callback for tests — records every lifecycle invocation.
+        struct RecordingCallback {
+            events: Arc<Mutex<Vec<String>>>,
+        }
+
+        impl entrenar::train::TrainerCallback for RecordingCallback {
+            fn on_train_begin(
+                &mut self,
+                ctx: &entrenar::train::CallbackContext,
+            ) -> entrenar::train::CallbackAction {
+                self.events
+                    .lock()
+                    .unwrap()
+                    .push(format!("train_begin@step{}", ctx.step));
+                entrenar::train::CallbackAction::Continue
+            }
+
+            fn on_epoch_begin(
+                &mut self,
+                ctx: &entrenar::train::CallbackContext,
+            ) -> entrenar::train::CallbackAction {
+                self.events
+                    .lock()
+                    .unwrap()
+                    .push(format!("epoch_begin@{}", ctx.epoch));
+                entrenar::train::CallbackAction::Continue
+            }
+
+            fn on_step_end(
+                &mut self,
+                ctx: &entrenar::train::CallbackContext,
+            ) -> entrenar::train::CallbackAction {
+                self.events
+                    .lock()
+                    .unwrap()
+                    .push(format!("step_end@{}_loss{:.2}", ctx.step, ctx.loss));
+                entrenar::train::CallbackAction::Continue
+            }
+
+            fn on_epoch_end(
+                &mut self,
+                ctx: &entrenar::train::CallbackContext,
+            ) -> entrenar::train::CallbackAction {
+                self.events
+                    .lock()
+                    .unwrap()
+                    .push(format!("epoch_end@{}", ctx.epoch));
+                entrenar::train::CallbackAction::Continue
+            }
+
+            fn on_train_end(&mut self, ctx: &entrenar::train::CallbackContext) {
+                self.events
+                    .lock()
+                    .unwrap()
+                    .push(format!("train_end@step{}", ctx.step));
+            }
+
+            fn name(&self) -> &'static str {
+                "RecordingCallback"
+            }
+        }
+
+        fn fixture_pipeline_config(tmp_dir: &std::path::Path, epochs: u32) -> DistillConfig {
+            use safetensors::tensor::{Dtype, TensorView};
+
+            let data: Vec<f32> = (0..256).map(|i| (i as f32) * 0.01).collect();
+            let bytes: Vec<u8> = bytemuck::cast_slice(&data).to_vec();
+            for name in ["teacher", "student"] {
+                let views = vec![(
+                    "layer.weight",
+                    TensorView::new(Dtype::F32, vec![16, 16], &bytes)
+                        .expect("tensor view should construct"),
+                )];
+                let path = tmp_dir.join(format!("{name}.safetensors"));
+                std::fs::write(
+                    &path,
+                    safetensors::serialize(views, None).expect("serialize should succeed"),
+                )
+                .expect("write should succeed");
+            }
+
+            let out = tmp_dir.join("output");
+            let mut config = DistillConfig::minimal(
+                tmp_dir
+                    .join("teacher.safetensors")
+                    .to_str()
+                    .expect("path is utf-8"),
+                tmp_dir
+                    .join("student.safetensors")
+                    .to_str()
+                    .expect("path is utf-8"),
+            );
+            config.output.dir = out;
+            config.training.epochs = epochs;
+            config.training.batch_size = 4;
+            config
+        }
+
+        /// FT-OBSERV-001: per-step callbacks fire during training.
+        #[test]
+        fn falsify_observ_001_per_step_callback_fires() {
+            let tmp = tempfile::TempDir::new().expect("tempdir");
+            let config = fixture_pipeline_config(tmp.path(), 2);
+
+            let events = Arc::new(Mutex::new(Vec::<String>::new()));
+            let cb = Box::new(RecordingCallback {
+                events: Arc::clone(&events),
+            });
+            let mut pipeline = Pipeline::new(&config).with_callback(cb);
+            let _ = pipeline.execute().expect("pipeline should run");
+
+            let log = events.lock().unwrap();
+            // Must have at least one train_begin + train_end and ≥1 step_end.
+            assert!(
+                log.iter().any(|e| e.starts_with("train_begin")),
+                "expected train_begin event; got: {log:?}"
+            );
+            assert!(
+                log.iter().any(|e| e.starts_with("train_end")),
+                "expected train_end event; got: {log:?}"
+            );
+            let step_end_count = log.iter().filter(|e| e.starts_with("step_end@")).count();
+            assert!(
+                step_end_count > 0,
+                "expected ≥1 step_end events; got {step_end_count} (log: {log:?})"
+            );
+        }
+
+        /// FT-OBSERV-001 corollary: step_end called exactly once per training step.
+        #[test]
+        fn falsify_observ_001_step_count_matches() {
+            let tmp = tempfile::TempDir::new().expect("tempdir");
+            let config = fixture_pipeline_config(tmp.path(), 2);
+            let batch_size = u64::from(config.training.batch_size);
+            let steps_per_epoch = (1000 / batch_size).max(1);
+            let expected_steps = steps_per_epoch * u64::from(config.training.epochs);
+
+            let events = Arc::new(Mutex::new(Vec::<String>::new()));
+            let cb = Box::new(RecordingCallback {
+                events: Arc::clone(&events),
+            });
+            let mut pipeline = Pipeline::new(&config).with_callback(cb);
+            let result = pipeline.execute().expect("pipeline should run");
+
+            let log = events.lock().unwrap();
+            let step_end_count =
+                u64::try_from(log.iter().filter(|e| e.starts_with("step_end@")).count())
+                    .expect("count fits in u64");
+            assert_eq!(
+                step_end_count, expected_steps,
+                "expected {expected_steps} step_end events; got {step_end_count} (steps_completed={})",
+                result.metrics.steps_completed
+            );
+        }
+
+        /// Callback ordering: callbacks fire in attach order.
+        #[test]
+        fn callback_ordering_preserved() {
+            let tmp = tempfile::TempDir::new().expect("tempdir");
+            let config = fixture_pipeline_config(tmp.path(), 1);
+
+            let events_a = Arc::new(Mutex::new(Vec::<String>::new()));
+            let events_b = Arc::new(Mutex::new(Vec::<String>::new()));
+            let cb_a = Box::new(RecordingCallback {
+                events: Arc::clone(&events_a),
+            });
+            let cb_b = Box::new(RecordingCallback {
+                events: Arc::clone(&events_b),
+            });
+            let mut pipeline = Pipeline::new(&config)
+                .with_callback(cb_a)
+                .with_callback(cb_b);
+            let _ = pipeline.execute().expect("pipeline should run");
+
+            let log_a = events_a.lock().unwrap();
+            let log_b = events_b.lock().unwrap();
+            // Both callbacks see the same number of step_end events.
+            let a_steps = log_a.iter().filter(|e| e.starts_with("step_end@")).count();
+            let b_steps = log_b.iter().filter(|e| e.starts_with("step_end@")).count();
+            assert_eq!(a_steps, b_steps, "both callbacks must see the same steps");
+            assert!(a_steps > 0, "must run at least one step");
+        }
     }
 }
