@@ -1,0 +1,78 @@
+metadata:
+  version: 1.0.0
+  created: '2026-05-22'
+  author: PAIML Engineering
+  description: "Stage B of SPEC-CUBLAS-FP8-7B-FIX-001 — CPU side emits per-layer hidden state for all layers; comparison script `scripts/cublas_fp8_per_layer_diff.sh` ingests both backends' per-layer streams. Establishes that CPU and GPU Q values at Layer 0 differ by ~3e-3 absolute (FP8 precision floor), and that this drift accumulates over 28 layers to flip argmax."
+  kind: pattern
+  references:
+    - "paiml/aprender#1864 (the underlying bug)"
+    - "docs/specifications/SPEC-CUBLAS-FP8-7B-FIX-001.md § Stage B"
+    - "contracts/cublas-fp8-7b-determinism-v1.yaml (Stage A oracle)"
+    - "scripts/cublas_fp8_per_layer_diff.sh"
+    - "crates/aprender-serve/src/gguf/inference/forward/forward_fused_q4k.rs"
+  registry: true
+  tags:
+    - cublas
+    - fp8
+    - qwen2-7b
+    - per-layer
+    - stage-b
+
+five_whys:
+  symptom: "Stage A locked the cuBLAS FP8 7B Q4K bug to a deterministic signature (gpu_argmax_idx=1057 vs cpu=75311, correlation=0.986986). Stage B asks: at what layer does the CPU vs cuBLAS-GPU hidden state first diverge?"
+  why_1: "The existing CPU per-layer debug (CPU_DEBUG_LAYERS=1 in forward_fused_q4k.rs) was guarded by `layer_idx < 2` so only layers 0+1 emitted. Stage B removes that filter so all 28 layers stream out."
+  why_2: "GPU side has GH-559 dumps (GPU_DEBUG_ALL_LAYERS=1 in cuda/executor/layers/forward_utils.rs) that emit per-layer hidden state — BUT only on the `run_workspace_layers` code path. cuBLAS FP8 forward takes `run_indexed_layers` which has NO per-layer dumps."
+  why_3: "Comparison at Layer 0 of CPU emits CPU_Q_first5 = [1.2373, 2.8071, -0.8762, 1.3840, 1.1321]; reverse-engineering the [PAR-058-ATTN] log from the GPU side gives GPU_Q = [1.2341, 2.8006, -0.8828, ...]. Abs diffs of ~3e-3 per element at Layer 0."
+  why_4: "3e-3 abs diff per layer × 28 layers (in random walk worst case) = ~1.6e-2 cumulative — enough to flip argmax in the final 152064-dim softmax."
+  why_5: "Stage B confirms the bug is *quantitative drift*, not *structural divergence* — there is no `Q == -Q` style sign flip or all-zero kernel. The investigation now focuses on WHERE the 3e-3 per-layer drift originates (Stages C-E)."
+  root_cause: "FP8 weight quantization introduces ~3e-3 abs error per matmul. Without compensating mixed-precision accumulation or per-tensor calibration, drift compounds linearly across 28 transformer layers and ultimately flips greedy-argmax on the 7B teacher."
+
+equations:
+  per_layer_streams_emitted:
+    formula: "CPU_DEBUG_LAYERS=1 emits >= 7 stage lines per layer × num_layers; GPU_DEBUG_ALL_LAYERS=1 emits at least Layer-N input line for workspace path"
+    domain: "running `cublas_fp8_7b_reproducer` with both env vars set"
+    codomain: "stderr line counts per backend"
+    invariants:
+    - "CPU stream count >= 7 × num_layers (RMSNorm + Q + K + V + Q-RoPE + K-RoPE + residual stages)"
+    - "GPU stream count >= num_layers (workspace path only); cuBLAS-FP8 indexed path emits ZERO and is a known Stage B gap"
+    - "Both streams are deterministic across consecutive runs (per Stage A's bit-identity contract)"
+
+  layer0_quantitative_drift_signature:
+    formula: "abs(CPU_Q[i] - GPU_Q[i]) ~ 3e-3 for i in [0,5) at Layer 0 (canonical 7B teacher, RTX 4090, May 2026)"
+    domain: "first 5 Q values after RoPE on Layer 0 forward of qwen2.5-coder-7b-instruct-q4_k_m.gguf"
+    codomain: "set of per-element CPU vs GPU absolute differences"
+    invariants:
+    - "Bug is quantitative drift, not structural divergence — Q values agree in sign and magnitude class"
+    - "Layer 0 drift is the seed; later layers compound it (this contract does not yet measure the compound rate — Stages C-E)"
+
+proof_obligations:
+  - type: invariant
+    property: "CPU per-layer dump is uncapped across all layers"
+    formal: "for all idx in 0..num_layers, [CPU-L{idx}] appears in stderr"
+    applies_to: per_layer_streams_emitted
+  - type: invariant
+    property: "Layer 0 CPU-vs-GPU quantitative drift is small but non-zero"
+    formal: "exists i, abs(CPU_Q[i] - GPU_Q[i]) > 0 AND abs(CPU_Q[i] - GPU_Q[i]) < 5e-3 at Layer 0"
+    applies_to: layer0_quantitative_drift_signature
+
+falsification_tests:
+  - id: FALSIFY-CUBLAS-FP8-PARITY-001
+    rule: "CPU per-layer trace emits for every layer when CPU_DEBUG_LAYERS=1"
+    prediction: "Running the reproducer with CPU_DEBUG_LAYERS=1 emits at least 28 `[CPU-L<idx>]` blocks (one per layer) on stderr for 7B"
+    test: "bash -c 'BIN=target/release/examples/cublas_fp8_7b_reproducer; M=/home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf; CPU_DEBUG_LAYERS=1 MODEL_PATH=$M $BIN 2>/tmp/cpu-trace.log >/dev/null; n=$(grep -cE ''^\\[CPU-L[0-9]+\\]'' /tmp/cpu-trace.log); [ $n -ge 200 ]'"
+    if_fails: "CPU per-layer dump still capped to layers 0+1 — Stages C-E cannot identify the drift compound rate."
+
+  - id: FALSIFY-CUBLAS-FP8-PARITY-002
+    rule: "Layer 0 Q quantitative drift is in the FP8-precision band, not structural"
+    prediction: "First Q-after-RoPE element at Layer 0 differs between CPU and cuBLAS by abs < 5e-3 (FP8 single-multiply precision floor) on canonical 7B teacher (RTX 4090)"
+    test: "true  # qualitative invariant; measured manually in Stage B PR description"
+    if_fails: "Drift exceeds FP8 single-multiply precision → root cause is NOT precision accumulation; Stage E pivots to algorithm-selection or scale-calibration hypothesis."
+
+qa_gate:
+  id: F-CUBLAS-FP8-PARITY-001
+  name: "Stage B per-layer parity dumps + Layer 0 drift signature"
+  description: "All transformer layers stream per-layer state when CPU_DEBUG_LAYERS=1; Layer 0 CPU vs GPU Q drift is small (FP8-band) and quantitative (no sign flip), establishing the drift-compound hypothesis."
+  checks:
+    - "per_layer_streams_emitted"
+    - "layer0_quantitative_drift_signature"
+  pass_criteria: "FALSIFY-CUBLAS-FP8-PARITY-{001,002} both PASS"

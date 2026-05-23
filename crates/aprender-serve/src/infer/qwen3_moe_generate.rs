@@ -532,7 +532,10 @@ mod sample_from_logits_tests {
         let mut rng_b = StdRng::seed_from_u64(pure_greedy.seed);
         let a = sample_from_logits(&logits, &high_temp_top_k_one, &mut rng_a, &[]).unwrap();
         let b = sample_from_logits(&logits, &pure_greedy, &mut rng_b, &[]).unwrap();
-        assert_eq!(a, b, "V1_004: top_k=1 == pure greedy regardless of temperature");
+        assert_eq!(
+            a, b,
+            "V1_004: top_k=1 == pure greedy regardless of temperature"
+        );
         assert_eq!(a, 5, "V1_004: argmax of logits is at index 5");
     }
 
@@ -605,7 +608,11 @@ mod sample_from_logits_tests {
     fn rep_penalty_v1_001_no_op_when_repeat_last_n_zero() {
         let logits = vec![3.0, 5.0, 2.0, 4.0];
         let recent = vec![1, 1, 1];
-        let cfg = mk_config_with_penalty(0.0, 1, 2.0 /* would penalize */, 0 /* no-op */, 42);
+        let cfg = mk_config_with_penalty(
+            0.0, 1, 2.0, /* would penalize */
+            0,   /* no-op */
+            42,
+        );
 
         let mut rng = StdRng::seed_from_u64(cfg.seed);
         let token = sample_from_logits(&logits, &cfg, &mut rng, &recent).unwrap();
@@ -673,7 +680,10 @@ mod sample_from_logits_tests {
         let mut rng = StdRng::seed_from_u64(42);
         let token_n8 = sample_from_logits(&logits, &cfg_n8, &mut rng, &recent).unwrap();
         // After 8 penalties: logit[1] ≈ 0.39. argmax = 2 (logit 5.0).
-        assert_eq!(token_n8, 2, "V1_003 n=8: penalty stronger, still argmax = 2");
+        assert_eq!(
+            token_n8, 2,
+            "V1_003 n=8: penalty stronger, still argmax = 2"
+        );
 
         // The two are equivalent at this argmax level, but the underlying logit
         // values differ. Pick a config where they diverge: with smaller initial
@@ -681,16 +691,14 @@ mod sample_from_logits_tests {
         let logits_close = vec![4.5, 10.0, 5.0, 3.0];
         let cfg_n2 = mk_config_with_penalty(0.0, 1, 1.5, 2, 42);
         let mut rng = StdRng::seed_from_u64(42);
-        let token_close_n2 =
-            sample_from_logits(&logits_close, &cfg_n2, &mut rng, &recent).unwrap();
+        let token_close_n2 = sample_from_logits(&logits_close, &cfg_n2, &mut rng, &recent).unwrap();
         // 2 penalties: 10/1.5/1.5 = 4.44. argmax = 2 (5.0).
         assert_eq!(token_close_n2, 2);
 
         // n=0 means "no penalty" (per backwards-compat invariant).
         let cfg_n0 = mk_config_with_penalty(0.0, 1, 1.5, 0, 42);
         let mut rng = StdRng::seed_from_u64(42);
-        let token_n0 =
-            sample_from_logits(&logits_close, &cfg_n0, &mut rng, &recent).unwrap();
+        let token_n0 = sample_from_logits(&logits_close, &cfg_n0, &mut rng, &recent).unwrap();
         // No penalty: argmax = 1 (10.0).
         assert_eq!(token_n0, 1, "V1_003 n=0: no-op, argmax = 1");
     }
