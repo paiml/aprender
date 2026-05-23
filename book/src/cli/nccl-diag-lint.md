@@ -14,6 +14,7 @@ apr nccl-diag-lint [OPTIONS]
 
 ## Example
 
+<!-- example-cost: trivial -->
 ```bash
 apr nccl-diag-lint --help
 ```
@@ -26,4 +27,3 @@ Run `apr nccl-diag-lint --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/nccl_diag_lint.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/nccl_diag_lint.rs)
 - Contract: [`contracts/apr-page-cli-nccl-diag-lint-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-nccl-diag-lint-v1.yaml)
-

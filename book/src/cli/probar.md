@@ -14,8 +14,9 @@ apr probar [OPTIONS]
 
 ## Example
 
+<!-- example-cost: trivial -->
 ```bash
-apr probar test-suite.yaml
+apr probar --help
 ```
 
 ## Full help
@@ -26,4 +27,3 @@ Run `apr probar --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/probar.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/probar.rs)
 - Contract: [`contracts/apr-page-cli-probar-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-probar-v1.yaml)
-

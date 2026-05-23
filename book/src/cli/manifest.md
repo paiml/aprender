@@ -14,6 +14,7 @@ apr manifest [OPTIONS]
 
 ## Example
 
+<!-- example-cost: trivial -->
 ```bash
 apr manifest --help
 ```
@@ -26,4 +27,3 @@ Run `apr manifest --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/manifest.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/manifest.rs)
 - Contract: [`contracts/apr-page-cli-manifest-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-manifest-v1.yaml)
-

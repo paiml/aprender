@@ -14,6 +14,7 @@ apr stamp [OPTIONS]
 
 ## Example
 
+<!-- example-cost: trivial -->
 ```bash
 apr stamp --help
 ```
@@ -26,4 +27,3 @@ Run `apr stamp --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/stamp.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/stamp.rs)
 - Contract: [`contracts/apr-page-cli-stamp-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-stamp-v1.yaml)
-

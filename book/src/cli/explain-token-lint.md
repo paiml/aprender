@@ -14,6 +14,7 @@ apr explain-token-lint [OPTIONS]
 
 ## Example
 
+<!-- example-cost: trivial -->
 ```bash
 apr explain-token-lint --help
 ```
@@ -26,4 +27,3 @@ Run `apr explain-token-lint --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/explain_token_lint.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/explain_token_lint.rs)
 - Contract: [`contracts/apr-page-cli-explain-token-lint-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-explain-token-lint-v1.yaml)
-

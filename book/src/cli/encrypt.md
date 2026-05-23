@@ -14,6 +14,7 @@ apr encrypt [OPTIONS]
 
 ## Example
 
+<!-- example-cost: destructive -->
 ```bash
 apr encrypt model.apr --key my-key -o model.enc
 ```
@@ -26,4 +27,3 @@ Run `apr encrypt --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/encrypt.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/encrypt.rs)
 - Contract: [`contracts/apr-page-cli-encrypt-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-encrypt-v1.yaml)
-

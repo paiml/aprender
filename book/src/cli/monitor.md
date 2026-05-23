@@ -14,6 +14,7 @@ apr monitor [OPTIONS]
 
 ## Example
 
+<!-- example-cost: interactive -->
 ```bash
 apr monitor
 ```
@@ -26,4 +27,3 @@ Run `apr monitor --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/monitor.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/monitor.rs)
 - Contract: [`contracts/apr-page-cli-monitor-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-monitor-v1.yaml)
-

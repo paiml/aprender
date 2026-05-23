@@ -14,6 +14,7 @@ apr export [OPTIONS]
 
 ## Example
 
+<!-- example-cost: model-required model: model.apr -->
 ```bash
 apr export model.apr --format gguf -o model.gguf
 ```
@@ -26,4 +27,3 @@ Run `apr export --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/export.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/export.rs)
 - Contract: [`contracts/apr-page-cli-export-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-export-v1.yaml)
-

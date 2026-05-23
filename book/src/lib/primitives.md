@@ -10,8 +10,10 @@ Public module of the `aprender-core` crate.
 
 ## Example
 
+<!-- example-cost: trivial -->
 ```rust
-use aprender::primitives::{Vector, Matrix};
+use aprender::primitives;
+// See `cargo doc -p aprender-core --open` for full API reference.
 ```
 
 ## Full API

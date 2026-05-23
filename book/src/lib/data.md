@@ -10,8 +10,10 @@ Public module of the `aprender-core` crate.
 
 ## Example
 
+<!-- example-cost: trivial -->
 ```rust
-use aprender::data::DataLoader;
+use aprender::data;
+// See `cargo doc -p aprender-core --open` for full API reference.
 ```
 
 ## Full API

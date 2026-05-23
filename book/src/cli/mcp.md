@@ -14,8 +14,9 @@ apr mcp [OPTIONS]
 
 ## Example
 
+<!-- example-cost: trivial -->
 ```bash
-apr mcp serve
+apr mcp --help
 ```
 
 ## Full help
@@ -26,4 +27,3 @@ Run `apr mcp --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/mcp.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/mcp.rs)
 - Contract: [`contracts/apr-page-cli-mcp-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-mcp-v1.yaml)
-

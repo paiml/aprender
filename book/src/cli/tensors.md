@@ -14,6 +14,7 @@ apr tensors [OPTIONS]
 
 ## Example
 
+<!-- example-cost: model-required model: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -->
 ```bash
 apr tensors qwen2.5-coder-1.5b-instruct-q4_k_m.gguf --json | jq length
 ```
@@ -26,4 +27,3 @@ Run `apr tensors --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/tensors.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/tensors.rs)
 - Contract: [`contracts/apr-page-cli-tensors-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-tensors-v1.yaml)
-

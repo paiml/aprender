@@ -14,6 +14,7 @@ apr showcase [OPTIONS]
 
 ## Example
 
+<!-- example-cost: interactive -->
 ```bash
 apr showcase
 ```
@@ -26,4 +27,3 @@ Run `apr showcase --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/showcase.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/showcase.rs)
 - Contract: [`contracts/apr-page-cli-showcase-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-showcase-v1.yaml)
-

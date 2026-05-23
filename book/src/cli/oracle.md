@@ -14,8 +14,9 @@ apr oracle [OPTIONS]
 
 ## Example
 
+<!-- example-cost: trivial -->
 ```bash
-apr oracle --rag "your question here"
+apr oracle --help
 ```
 
 ## Full help
@@ -26,4 +27,3 @@ Run `apr oracle --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/oracle.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/oracle.rs)
 - Contract: [`contracts/apr-page-cli-oracle-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-oracle-v1.yaml)
-

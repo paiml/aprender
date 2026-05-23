@@ -14,6 +14,7 @@ apr shard [OPTIONS]
 
 ## Example
 
+<!-- example-cost: trivial -->
 ```bash
 apr shard --help
 ```
@@ -26,4 +27,3 @@ Run `apr shard --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/shard.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/shard.rs)
 - Contract: [`contracts/apr-page-cli-shard-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-shard-v1.yaml)
-

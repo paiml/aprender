@@ -14,8 +14,9 @@ apr data [OPTIONS]
 
 ## Example
 
+<!-- example-cost: trivial -->
 ```bash
-apr data inspect train.jsonl
+apr data --help
 ```
 
 ## Full help
@@ -26,4 +27,3 @@ Run `apr data --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/data.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/data.rs)
 - Contract: [`contracts/apr-page-cli-data-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-data-v1.yaml)
-

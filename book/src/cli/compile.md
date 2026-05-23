@@ -14,6 +14,7 @@ apr compile [OPTIONS]
 
 ## Example
 
+<!-- example-cost: model-required model: model.apr -->
 ```bash
 apr compile model.apr --target cuda -o compiled.apr
 ```
@@ -26,4 +27,3 @@ Run `apr compile --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/compile.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/compile.rs)
 - Contract: [`contracts/apr-page-cli-compile-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-compile-v1.yaml)
-

@@ -10,8 +10,10 @@ Public module of the `aprender-core` crate.
 
 ## Example
 
+<!-- example-cost: trivial -->
 ```rust
-use aprender::ensemble::RandomForest;
+use aprender::ensemble;
+// See `cargo doc -p aprender-core --open` for full API reference.
 ```
 
 ## Full API

@@ -14,8 +14,9 @@ apr help [OPTIONS]
 
 ## Example
 
+<!-- example-cost: trivial -->
 ```bash
-apr help <command>
+apr help run
 ```
 
 ## Full help
@@ -26,4 +27,3 @@ Run `apr help --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/help.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/help.rs)
 - Contract: [`contracts/apr-page-cli-help-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-help-v1.yaml)
-

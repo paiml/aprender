@@ -14,8 +14,9 @@ apr trace [OPTIONS]
 
 ## Example
 
+<!-- example-cost: model-required model: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -->
 ```bash
-apr trace qwen2.5-coder-1.5b-instruct-q4_k_m.gguf --prompt "What is 2+2?" --max-tokens 4
+apr trace --help
 ```
 
 ## Full help
@@ -26,4 +27,3 @@ Run `apr trace --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/trace.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/trace.rs)
 - Contract: [`contracts/apr-page-cli-trace-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-trace-v1.yaml)
-

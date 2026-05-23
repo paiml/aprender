@@ -14,6 +14,7 @@ apr nf4-lint [OPTIONS]
 
 ## Example
 
+<!-- example-cost: trivial -->
 ```bash
 apr nf4-lint --help
 ```
@@ -26,4 +27,3 @@ Run `apr nf4-lint --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/nf4_lint.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/nf4_lint.rs)
 - Contract: [`contracts/apr-page-cli-nf4-lint-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-nf4-lint-v1.yaml)
-

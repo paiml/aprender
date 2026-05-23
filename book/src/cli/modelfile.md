@@ -14,6 +14,7 @@ apr modelfile [OPTIONS]
 
 ## Example
 
+<!-- example-cost: trivial -->
 ```bash
 apr modelfile --help
 ```
@@ -26,4 +27,3 @@ Run `apr modelfile --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/modelfile.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/modelfile.rs)
 - Contract: [`contracts/apr-page-cli-modelfile-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-modelfile-v1.yaml)
-

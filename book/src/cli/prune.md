@@ -14,6 +14,7 @@ apr prune [OPTIONS]
 
 ## Example
 
+<!-- example-cost: model-required model: model.apr -->
 ```bash
 apr prune model.apr --ratio 0.5 -o pruned.apr
 ```
@@ -26,4 +27,3 @@ Run `apr prune --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/prune.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/prune.rs)
 - Contract: [`contracts/apr-page-cli-prune-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-prune-v1.yaml)
-

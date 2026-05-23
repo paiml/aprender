@@ -14,6 +14,7 @@ apr rosetta [OPTIONS]
 
 ## Example
 
+<!-- example-cost: interactive -->
 ```bash
 apr rosetta
 ```
@@ -26,4 +27,3 @@ Run `apr rosetta --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/rosetta.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/rosetta.rs)
 - Contract: [`contracts/apr-page-cli-rosetta-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-rosetta-v1.yaml)
-

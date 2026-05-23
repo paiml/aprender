@@ -14,6 +14,7 @@ apr unified-search-lint [OPTIONS]
 
 ## Example
 
+<!-- example-cost: trivial -->
 ```bash
 apr unified-search-lint --help
 ```
@@ -26,4 +27,3 @@ Run `apr unified-search-lint --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/unified_search_lint.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/unified_search_lint.rs)
 - Contract: [`contracts/apr-page-cli-unified-search-lint-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-unified-search-lint-v1.yaml)
-

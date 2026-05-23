@@ -14,6 +14,7 @@ apr validate [OPTIONS]
 
 ## Example
 
+<!-- example-cost: model-required model: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -->
 ```bash
 apr validate qwen2.5-coder-1.5b-instruct-q4_k_m.gguf --quality
 ```
@@ -26,4 +27,3 @@ Run `apr validate --help` for the complete option list.
 
 - Source: [`crates/apr-cli/src/commands/validate.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/validate.rs)
 - Contract: [`contracts/apr-page-cli-validate-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-validate-v1.yaml)
-
