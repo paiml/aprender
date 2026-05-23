@@ -376,5 +376,5 @@ let mut pca4 = PCA::new(4);  // 100% variance (perfect reconstruction)
 
 ## Related Examples
 
-- [`examples/iris_clustering.rs`](./iris-clustering.md) - K-Means on same dataset
+- `examples/iris_clustering.rs` - K-Means on same dataset
 - [`book/src/ml-fundamentals/pca.md`](../ml-fundamentals/pca.md) - Full PCA theory

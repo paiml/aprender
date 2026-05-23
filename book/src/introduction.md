@@ -136,11 +136,11 @@ Ready to master EXTREME TDD? Start with:
 2. [The RED-GREEN-REFACTOR Cycle](./methodology/red-green-refactor.md) - The fundamental workflow
 3. [Case Study: Cross-Validation](./examples/cross-validation.md) - A complete real-world example
 
-Or dive into [Development Environment Setup](./tools/development-environment.md) to start practicing immediately.
+Or dive into Development Environment Setup to start practicing immediately.
 
 ## Contributing to This Book
 
-This book is open source and accepts contributions. See [Contributing to This Book](./appendix/contributing.md) for guidelines.
+This book is open source and accepts contributions. See Contributing to This Book for guidelines.
 
 All book content follows the same EXTREME TDD principles it documents:
 - Every example must be test-backed

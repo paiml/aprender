@@ -683,4 +683,4 @@ This case study demonstrates EXTREME TDD in production:
 - **REFACTOR**: Quality gates + examples
 - **Result**: Zero-defect cross-validation module
 
-**Next Case Study:** [Random Forest](./random-forest.md)
+**Next Case Study:** Random Forest

@@ -233,7 +233,7 @@ The example demonstrates:
 
 ## Related Topics
 
-- [K-Means Clustering](./kmeans-clustering.md)
+- K-Means Clustering
 - [DBSCAN Clustering](./dbscan-clustering.md)
 - [Hierarchical Clustering](./hierarchical-clustering.md)
 - [What is EXTREME TDD?](../methodology/what-is-extreme-tdd.md)

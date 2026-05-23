@@ -247,7 +247,7 @@ Both scalers:
 
 - K-Nearest Neighbors - Distance-based classification (planned)
 - [Descriptive Statistics](./descriptive-statistics.md) - Computing mean and std
-- [Linear Regression](./linear-regression.md) - Model that benefits from scaling
+- Linear Regression - Model that benefits from scaling
 
 ## Key Takeaways
 

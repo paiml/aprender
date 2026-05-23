@@ -223,7 +223,7 @@ All tests passing ensures production readiness.
 
 ### Related Chapters
 
-- [Linear Regression Theory](./linear-regression.md) - Similar but for continuous targets
+- Linear Regression Theory - Similar but for continuous targets
 - [Classification Metrics Theory](./classification-metrics.md) - Evaluating logistic regression
 - [Gradient Descent Theory](./gradient-descent.md) - Optimization algorithm used
 - [Case Study: Logistic Regression](../examples/logistic-regression.md) - **REQUIRED READING**

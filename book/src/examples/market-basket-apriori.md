@@ -368,8 +368,8 @@ self.rules.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
 
 ## Related Topics
 
-- [K-Means Clustering](./kmeans-clustering.md)
-- [Decision Tree Classifier](./decision-tree-iris.md)
+- K-Means Clustering
+- Decision Tree Classifier
 - [Naive Bayes Classifier](./naive-bayes-iris.md)
 - [What is EXTREME TDD?](../methodology/what-is-extreme-tdd.md)
 

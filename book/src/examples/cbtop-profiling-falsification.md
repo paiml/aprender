@@ -117,6 +117,6 @@ The Jidoka principle applies: **do not produce more output with known-bad toolin
 
 ## Related
 
-- [Jidoka (Built-in Quality)](../toyota-way/jidoka.md) — Stop the line principle
+- Jidoka (Built-in Quality) — Stop the line principle
 - [Popperian Falsification](../advanced-testing/popperian-falsification.md) — Test methodology
 - [gpu-decode-profiling-v1](https://github.com/paiml/provable-contracts) — Formal contract

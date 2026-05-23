@@ -331,6 +331,6 @@ cargo run --example qa_serve --release
 
 ## See Also
 
-- [Case Studies](./boston-housing.md) — Detailed walkthroughs
+- Case Studies — Detailed walkthroughs
 - [APR CLI Tool](../tools/apr-cli.md) — Command-line interface
 - [APR Format Specification](../tools/apr-spec.md) — Model format details

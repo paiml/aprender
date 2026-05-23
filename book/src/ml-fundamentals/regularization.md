@@ -363,7 +363,7 @@ Regularization models have comprehensive test coverage:
 
 ### Related Chapters
 
-- [Linear Regression Theory](./linear-regression.md) - OLS foundation
+- Linear Regression Theory - OLS foundation
 - [Cross-Validation Theory](./cross-validation.md) - Hyperparameter tuning
 - [Feature Scaling Theory](./feature-scaling.md) - CRITICAL for regularization
 - [Regression Metrics Theory](./regression-metrics.md) - Evaluating regularized models
@@ -399,4 +399,4 @@ ElasticNet: minimize ||y - Xβ||² + α[ρ||β||₁ + (1-ρ)||β||²₂]
 
 **Next Chapter**: [Logistic Regression Theory](./logistic-regression.md)
 
-**Previous Chapter**: [Linear Regression Theory](./linear-regression.md)
+**Previous Chapter**: Linear Regression Theory

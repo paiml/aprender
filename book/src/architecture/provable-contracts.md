@@ -54,4 +54,4 @@ Every `apr` subcommand has a contract entry in `contracts/apr-cli-commands-v1.ya
 apr mono audit  # Runs all contract checks
 ```
 
-See: [Contract spec](../../contracts/apr-cli-commands-v1.yaml)
+See: Contract spec

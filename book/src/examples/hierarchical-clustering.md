@@ -296,6 +296,6 @@ cargo run --example hierarchical_clustering
 ## Related Topics
 
 - [DBSCAN Clustering](./dbscan-clustering.md)
-- [K-Means Clustering](./kmeans-clustering.md)
+- K-Means Clustering
 - `UnsupervisedEstimator` trait in `aprender::traits`
 - [What is EXTREME TDD?](../methodology/what-is-extreme-tdd.md)

@@ -158,11 +158,11 @@ The example demonstrates all five constrained optimization scenarios with detail
 
 ## Code Location
 
-See [`examples/constrained_optimization.rs`](../../../examples/constrained_optimization.rs) for full implementation.
+See `examples/constrained_optimization.rs` for full implementation.
 
 ## Related Topics
 
 - [ADMM Optimization](./admm-optimization.md)
 - [Convex Optimization](./convex-optimization.md)
-- [Regularized Regression](./regularized-regression.md)
+- Regularized Regression
 - [Advanced Optimizers Theory](../ml-fundamentals/advanced-optimizers.md)

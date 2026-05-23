@@ -296,5 +296,5 @@ fn test_model_regression() {
 ## See Also
 
 - [What is EXTREME TDD?](../methodology/what-is-extreme-tdd.md)
-- [Jidoka (Built-in Quality)](../toyota-way/jidoka.md)
+- Jidoka (Built-in Quality)
 - [Case Study: Model Format (.apr)](./model-format.md)

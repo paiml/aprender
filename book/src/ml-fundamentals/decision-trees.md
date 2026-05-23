@@ -259,7 +259,7 @@ let accuracy = tree.score(&x_test, &y_test);
 println!("Test Accuracy: {:.3}", accuracy); // e.g., 0.967
 ```
 
-**Case Study**: See [Decision Tree - Iris Classification](../examples/decision-tree-iris.md)
+**Case Study**: See Decision Tree - Iris Classification
 
 ### Example 3: Regression (Housing Prices)
 

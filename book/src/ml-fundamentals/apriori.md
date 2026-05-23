@@ -321,6 +321,6 @@ Association rules encode conditional probabilities:
 
 ## Related Topics
 
-- [K-Means Clustering](./kmeans-clustering.md)
+- K-Means Clustering
 - [Decision Trees](./decision-trees.md)
 - [Naive Bayes](./naive-bayes.md)

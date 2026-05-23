@@ -1073,4 +1073,4 @@ This case study demonstrates EXTREME TDD for complex algorithm integration:
 
 **Key Innovation:** Exponential decay in IDF prevents drift in streaming contexts while maintaining mathematical correctness.
 
-**Next Chapter:** [Random Forest Classifier](./random-forest-iris.md)
+**Next Chapter:** Random Forest Classifier

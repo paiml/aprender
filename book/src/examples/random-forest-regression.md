@@ -553,7 +553,7 @@ cargo run --example random_forest_regression
 
 **Other Algorithms**:
 - [Decision Tree Regression](./decision-tree-regression.md) - Single tree comparison
-- [Linear Regression](./linear-regression.md) - Linear baseline
+- Linear Regression - Linear baseline
 
 **Code Reference**:
 - Implementation: `src/tree/mod.rs` (RandomForestRegressor)
