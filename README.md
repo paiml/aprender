@@ -68,10 +68,10 @@ End-to-end recipes (data prep → train → quantize → publish → serve) live
 examples with local `book/src/` walkthroughs.
 
 ```bash
-git clone https://github.com/paiml/apr-cookbook  # ../apr-cookbook
-cd ../apr-cookbook
-apr cookbook list                              # 341 recipes
-apr cookbook run train-tiny-from-scratch       # runs end-to-end
+git clone https://github.com/paiml/apr-cookbook
+cd apr-cookbook
+cargo run --example bundle_static_model         # any example
+mdbook serve book                               # walkthrough docs
 ```
 
 ## Install
