@@ -27,4 +27,3 @@ Run `apr hang-trace-lint --help` for the complete option list.
 - Source: [`crates/apr-cli/src/commands/hang_trace_lint.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/hang_trace_lint.rs)
 - Contract: [`contracts/apr-page-cli-hang-trace-lint-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-hang-trace-lint-v1.yaml)
 
-<!-- TODO: walkthrough -->

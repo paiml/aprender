@@ -27,4 +27,3 @@ Run `apr ptx --help` for the complete option list.
 - Source: [`crates/apr-cli/src/commands/ptx.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/ptx.rs)
 - Contract: [`contracts/apr-page-cli-ptx-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-ptx-v1.yaml)
 
-<!-- TODO: walkthrough -->

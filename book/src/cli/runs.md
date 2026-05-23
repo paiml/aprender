@@ -27,4 +27,3 @@ Run `apr runs --help` for the complete option list.
 - Source: [`crates/apr-cli/src/commands/runs.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/runs.rs)
 - Contract: [`contracts/apr-page-cli-runs-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-runs-v1.yaml)
 
-<!-- TODO: walkthrough -->

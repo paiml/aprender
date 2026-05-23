@@ -27,4 +27,3 @@ Run `apr publish --help` for the complete option list.
 - Source: [`crates/apr-cli/src/commands/publish.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/publish.rs)
 - Contract: [`contracts/apr-page-cli-publish-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-publish-v1.yaml)
 
-<!-- TODO: walkthrough -->

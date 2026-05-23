@@ -27,4 +27,3 @@ Run `apr registry --help` for the complete option list.
 - Source: [`crates/apr-cli/src/commands/registry.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/registry.rs)
 - Contract: [`contracts/apr-page-cli-registry-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-registry-v1.yaml)
 
-<!-- TODO: walkthrough -->

@@ -27,4 +27,3 @@ Run `apr profile --help` for the complete option list.
 - Source: [`crates/apr-cli/src/commands/profile.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/profile.rs)
 - Contract: [`contracts/apr-page-cli-profile-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-profile-v1.yaml)
 
-<!-- TODO: walkthrough -->

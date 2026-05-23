@@ -27,4 +27,3 @@ Run `apr ollama-chat-lint --help` for the complete option list.
 - Source: [`crates/apr-cli/src/commands/ollama_chat_lint.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/ollama_chat_lint.rs)
 - Contract: [`contracts/apr-page-cli-ollama-chat-lint-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-ollama-chat-lint-v1.yaml)
 
-<!-- TODO: walkthrough -->

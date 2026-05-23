@@ -27,4 +27,3 @@ Run `apr debug --help` for the complete option list.
 - Source: [`crates/apr-cli/src/commands/debug.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/debug.rs)
 - Contract: [`contracts/apr-page-cli-debug-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-debug-v1.yaml)
 
-<!-- TODO: walkthrough -->

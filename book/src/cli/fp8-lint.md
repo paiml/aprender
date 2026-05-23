@@ -27,4 +27,3 @@ Run `apr fp8-lint --help` for the complete option list.
 - Source: [`crates/apr-cli/src/commands/fp8_lint.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/fp8_lint.rs)
 - Contract: [`contracts/apr-page-cli-fp8-lint-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-fp8-lint-v1.yaml)
 
-<!-- TODO: walkthrough -->

@@ -27,4 +27,3 @@ Run `apr parity --help` for the complete option list.
 - Source: [`crates/apr-cli/src/commands/parity.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/parity.rs)
 - Contract: [`contracts/apr-page-cli-parity-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-parity-v1.yaml)
 
-<!-- TODO: walkthrough -->

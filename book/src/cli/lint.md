@@ -27,4 +27,3 @@ Run `apr lint --help` for the complete option list.
 - Source: [`crates/apr-cli/src/commands/lint.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/lint.rs)
 - Contract: [`contracts/apr-page-cli-lint-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-lint-v1.yaml)
 
-<!-- TODO: walkthrough -->

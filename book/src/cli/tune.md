@@ -27,4 +27,3 @@ Run `apr tune --help` for the complete option list.
 - Source: [`crates/apr-cli/src/commands/tune.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/tune.rs)
 - Contract: [`contracts/apr-page-cli-tune-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-tune-v1.yaml)
 
-<!-- TODO: walkthrough -->

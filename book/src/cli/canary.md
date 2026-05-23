@@ -27,4 +27,3 @@ Run `apr canary --help` for the complete option list.
 - Source: [`crates/apr-cli/src/commands/canary.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/canary.rs)
 - Contract: [`contracts/apr-page-cli-canary-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-canary-v1.yaml)
 
-<!-- TODO: walkthrough -->

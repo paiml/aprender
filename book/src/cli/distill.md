@@ -27,4 +27,3 @@ Run `apr distill --help` for the complete option list.
 - Source: [`crates/apr-cli/src/commands/distill.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/distill.rs)
 - Contract: [`contracts/apr-page-cli-distill-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-distill-v1.yaml)
 
-<!-- TODO: walkthrough -->

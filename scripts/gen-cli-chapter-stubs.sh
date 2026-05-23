@@ -169,7 +169,6 @@ Run \`apr ${cmd} --help\` for the complete option list.
 - Source: [\`crates/apr-cli/src/commands/${cmd//-/_}.rs\`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/${cmd//-/_}.rs)
 - Contract: [\`contracts/apr-page-cli-${cmd}-v1.yaml\`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-${cmd}-v1.yaml)
 
-<!-- TODO: walkthrough -->
 MARKDOWN
   NEW_STUBS=$((NEW_STUBS+1))
 done
