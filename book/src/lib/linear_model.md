@@ -33,7 +33,7 @@ sanity check, or a feature-selection-friendly model via lasso sparsity.
 | `LinearRegression` | OLS regression via normal equations + Cholesky. Fits in O(p³). |
 | `Ridge` | OLS with L2 penalty on coefficients. Closed-form solution with a regularization parameter `alpha`. |
 | `Lasso` | OLS with L1 penalty, solved via coordinate descent. Produces sparse coefficient vectors. |
-| `ElasticNet` | Combined L1 + L2 penalty. Tunable mixing ratio `l1_ratio` ∈ [0, 1]. |
+| `ElasticNet` | Combined L1 + L2 penalty. Tunable mixing ratio `l1_ratio` between 0 and 1. |
 
 All four implement the [`Estimator`](traits.md) trait, so they share the same
 `fit` / `predict` / `score` surface.
