@@ -1,0 +1,49 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    BOOK-CLOSEOUT-001 § Phase 4. Every public surface (CLI subcommand) has
+    a book chapter with at least one runnable example. mdbook-linkcheck
+    reports zero broken file links on every CI run.
+  references:
+    - "docs/specifications/book-completeness-spec.md"
+    - "https://github.com/paiml/aprender/pull/1901"
+
+equations:
+  cli_chapter_parity:
+    formula: "count(apr_subcommands) == count(book/src/cli/*.md)"
+    invariants:
+      - "no apr <cmd> without book/src/cli/<cmd>.md"
+      - "no orphan book/src/cli/*.md without a real apr subcommand"
+
+  linkcheck_zero:
+    formula: "linkcheck.file_not_found_count == 0"
+    invariants:
+      - "no chapter references a non-existent file"
+
+  example_block_required:
+    formula: "for_all f in book/src/cli/*.md: file_contains_fenced(f, language='bash')"
+    invariants:
+      - "every CLI page has a runnable example"
+
+falsification_tests:
+  - id: FALSIFY-BOOK-CLI-PARITY-001
+    name: cli_parity
+    prediction: "every `apr <cmd>` has a chapter at book/src/cli/<cmd>.md"
+    test_harness: "bash scripts/check_book_cli_parity.sh"
+    expected_output: "exit 0"
+    if_fails: "Run scripts/gen-cli-chapter-stubs.sh to regenerate missing stubs."
+
+  - id: FALSIFY-BOOK-LINKCHECK-001
+    name: linkcheck_zero
+    prediction: "mdbook-linkcheck reports zero file-not-found errors"
+    test_harness: "bash scripts/check_book_linkcheck.sh"
+    expected_output: "exit 0"
+    if_fails: "Strip broken link tags via `[text](broken)` -> `text`, or fix the path."
+
+  - id: FALSIFY-BOOK-EXAMPLE-001
+    name: stub_example_block
+    prediction: "every book/src/cli/*.md has at least one ```bash fenced code block"
+    test_harness: "bash scripts/check_book_example_block.sh"
+    expected_output: "exit 0"
+    if_fails: "Add a ```bash fenced code block to the failing chapter."

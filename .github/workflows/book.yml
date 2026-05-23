@@ -37,6 +37,33 @@ jobs:
       - name: Build book
         run: mdbook build book
 
+      # BOOK-CLOSEOUT-001 § Phase 1: zero broken file links
+      - name: Linkcheck gate (FALSIFY-BOOK-LINKCHECK-001)
+        run: bash scripts/check_book_linkcheck.sh
+
+      # BOOK-CLOSEOUT-001 § Phase 4: every CLI subcommand has a chapter
+      - name: CLI parity gate (FALSIFY-BOOK-CLI-PARITY-001)
+        run: |
+          # apr CLI binary needed for parity check
+          cargo install --path crates/apr-cli --locked --quiet
+          bash scripts/check_book_cli_parity.sh
+
+      # BOOK-CLOSEOUT-001 § Phase 4: every CLI stub has a runnable example
+      - name: Example-block gate (FALSIFY-BOOK-EXAMPLE-001)
+        run: |
+          fail=0
+          for f in book/src/cli/*.md; do
+            if ! grep -qE '^[`]{3}bash' "$f"; then
+              echo "FAIL: $f has no bash example"
+              fail=1
+            fi
+          done
+          if [ "$fail" -gt 0 ]; then
+            echo "FALSIFY-BOOK-EXAMPLE-001: FAIL"
+            exit 1
+          fi
+          echo "FALSIFY-BOOK-EXAMPLE-001: PASS (all CLI chapters have runnable examples)"
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
         with:
