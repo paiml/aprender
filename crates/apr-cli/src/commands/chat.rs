@@ -98,8 +98,20 @@ pub(crate) fn run(
     contract_pre_temperature_bounds!();
     contract_pre_session_state_machine!();
 
-    // Resolve alias/hf like `apr run`
+    // If path_arg looks like a filesystem path (absolute or starts with ./, ../)
+    // and doesn't exist on disk, fail fast with the original path in the error
+    // — don't run it through HF alias resolution, which would mangle the
+    // FileNotFound payload (regression test: test_run_file_not_found,
+    // test_run_nonexistent_path_without_trace).
     let source_str = path_arg.to_string_lossy();
+    let looks_like_path = path_arg.is_absolute()
+        || source_str.starts_with("./")
+        || source_str.starts_with("../");
+    if looks_like_path && !path_arg.exists() {
+        return Err(CliError::FileNotFound(path_arg.to_path_buf()));
+    }
+
+    // Resolve alias/hf like `apr run`
     let resolved_source = crate::commands::aliases::resolve_short_name(&source_str)
         .unwrap_or_else(|| source_str.to_string());
     let hf_uri = if !resolved_source.contains("://") && resolved_source.contains('/') {
