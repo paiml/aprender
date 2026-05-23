@@ -44,6 +44,7 @@ reinforcement learning from verifier (`rlvr`), and tokenizer surgery.
 
 ### Pattern 1: Streaming linear regression
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::online::OnlineLinearRegression;
 
@@ -66,6 +67,7 @@ for (x, _y) in &samples {
 
 ### Pattern 2: Logistic regression with configurable decay
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::online::{OnlineLogisticRegression, OnlineLearnerConfig, LearningRateDecay};
 

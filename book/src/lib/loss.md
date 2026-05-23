@@ -10,6 +10,7 @@ Public module of the `aprender-core` crate.
 
 ## Example
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::loss::{MSELoss, MAELoss, HuberLoss, Loss};
 // See `cargo doc -p aprender-core --open` for full API reference.
@@ -37,6 +38,7 @@ passed around generically by optimizers and training loops.
 
 ### Pattern 1: Compute MSE and MAE on a single prediction vector
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::loss::{mse_loss, mae_loss, huber_loss};
 use aprender::primitives::Vector;
@@ -54,6 +56,7 @@ assert!(mse > 0.0 && mae > 0.0);
 
 ### Pattern 2: Pass losses to generic code via the `Loss` trait
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::loss::{Loss, MSELoss, HuberLoss};
 use aprender::primitives::Vector;

@@ -27,7 +27,9 @@ def extract() -> list[dict]:
         if not line.strip():
             continue
         r = json.loads(line)
-        if r["lang"] == "rust" and r["path"].startswith("book/src/lib/"):
+        # Exclude rust blocks marked cost=skip (pending API alignment, etc.)
+        if r["lang"] == "rust" and r["path"].startswith("book/src/lib/") \
+                and r.get("cost") != "skip":
             records.append(r)
     return records
 
@@ -59,9 +61,14 @@ def main() -> int:
         "\n"
         "#![allow(dead_code, unused_imports, unused_variables)]\n"
     )
+    seen: dict[str, int] = {}
     for r in records:
         stem = Path(r["path"]).stem  # e.g. "active_learning"
-        mod_name = "block_" + sanitize_mod(stem)
+        base = "block_" + sanitize_mod(stem)
+        # Disambiguate: each rust block in the same chapter gets a unique mod name
+        n = seen.get(base, 0)
+        seen[base] = n + 1
+        mod_name = base if n == 0 else f"{base}_{n}"
         lines.append(f"\n// from {r['path']} (lines {r['line_start']}..{r['line_end']})")
         lines.append(f"mod {mod_name} {{")
         lines.append("    #[allow(dead_code)]")

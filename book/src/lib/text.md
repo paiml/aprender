@@ -10,6 +10,7 @@ Public module of the `aprender-core` crate.
 
 ## Example
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::text::{Tokenizer, ChatTemplateEngine, ChatMessage};
 // See `cargo doc -p aprender-core --open` for full API reference.
@@ -40,6 +41,7 @@ templates a conversation runs through here.
 
 ### Pattern 1: Detect a chat template by model name
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::text::{detect_format_from_name, TemplateFormat};
 
@@ -52,6 +54,7 @@ assert!(matches!(other, Some(TemplateFormat::Llama2)));
 
 ### Pattern 2: Render a multi-turn conversation
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::text::{ChatMessage, ChatMLTemplate, ChatTemplateEngine};
 

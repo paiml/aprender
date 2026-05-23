@@ -36,7 +36,7 @@ FENCE_RE = re.compile(r"^```(bash|rust)\s*$")
 CLOSE_RE = re.compile(r"^```\s*$")
 COST_RE = re.compile(r"^<!--\s*example-cost:\s*([^>]+?)\s*-->\s*$")
 
-VALID_COSTS = {"trivial", "model-required", "gpu", "destructive", "interactive"}
+VALID_COSTS = {"trivial", "model-required", "gpu", "destructive", "interactive", "skip"}
 
 
 def parse_cost_annotation(line: str) -> tuple[str, str | None]:

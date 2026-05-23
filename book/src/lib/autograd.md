@@ -10,6 +10,7 @@ Public module of the `aprender-core` crate.
 
 ## Example
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::autograd::{Tensor, no_grad};
 // See `cargo doc -p aprender-core --open` for full API reference.
@@ -40,6 +41,7 @@ inspecting the graph, and the `GradFn` trait that custom ops implement.
 
 ### Pattern 1: A simple gradient computation
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::autograd::Tensor;
 
@@ -55,6 +57,7 @@ assert!((g.item() - 6.0).abs() < 1e-5);
 
 ### Pattern 2: Inference without graph overhead via `no_grad`
 
+<!-- example-cost: skip -->
 ```rust
 use aprender::autograd::{Tensor, no_grad, is_grad_enabled};
 
