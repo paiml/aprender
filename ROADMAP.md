@@ -2,21 +2,39 @@
 
 Next Generation Machine Learning in Pure Rust
 
-## Version Status
+## Current status
 
-| Version | Status | Description |
-|---------|--------|-------------|
-| v0.1.0  | ✅ **Released** | Foundation - Linear Regression + K-Means |
-| v0.2.0  | ✅ **Released** | Decision Trees, Random Forests, Cross-Validation, Serialization |
-| v0.3.0  | ✅ **Released** | Regularization & Optimization |
-| v0.4.0  | ✅ **Released** | TOP 10 ML Algorithms Complete |
-| v0.4.1  | ✅ **Released** | Graph Algorithms, Advanced Clustering, Anomaly Detection, Stats |
-| v0.5.0  | Planned | Neural Networks |
-| v1.0.0  | Planned | Production Hardening |
+> **v0.35.2** (2026-05-22) — published to crates.io: `cargo install aprender` → `apr`.
+
+Aprender is now an **80-crate monorepo** spanning model **training**, **inference**
+(realizar), **SIMD/GPU compute** (trueno), and a **103-subcommand `apr` CLI** — well
+beyond the single-algorithm releases this file originally tracked. 25,300+ tests,
+1148+ provable contracts.
+
+**This file is a high-level version overview, not the working backlog.** The
+canonical, issue-linked roadmap is
+[`docs/roadmaps/roadmap.yaml`](docs/roadmaps/roadmap.yaml); per-release detail is in
+[`CHANGELOG.md`](CHANGELOG.md) and active design specs in
+[`docs/specifications/`](docs/specifications/).
+
+| Version | Status | Headline |
+|---------|--------|----------|
+| v0.1.0 | ✅ Released | Foundation — Linear Regression + K-Means |
+| v0.2.0–v0.4.1 | ✅ Released | TOP 10 ML algorithms, trees/ensembles, cross-validation, graph algorithms, stats |
+| v0.7.x | ✅ Released | ARIMA, text processing, Bayesian inference, GLMs, ICA |
+| v0.11–v0.30 | ✅ Released | Monorepo consolidation, `apr` CLI, APR/GGUF/SafeTensors formats, quantization, inference server |
+| v0.31–v0.34 | ✅ Released | MoE serving, distillation pipeline, MODEL-1 code model, provable-contract expansion |
+| **v0.35.2** | ✅ **Current** | Hiatus close-out (eval/distill fixes, book completeness, DX) — last release before the 2026-08-22 hiatus |
+| _next_ | 📋 Planned | tracked in [`docs/roadmaps/roadmap.yaml`](docs/roadmaps/roadmap.yaml) |
 
 ---
 
-## v0.2.0: Tree Models & Cross-Validation (Current)
+**Early-version history (detail).** The per-version sections below are the
+original v0.1–v0.8 development notes, retained for historical context. They
+**predate the monorepo consolidation** and do not reflect the current
+architecture — see the canonical roadmap linked above.
+
+## v0.2.0: Tree Models & Cross-Validation
 
 **Target**: Decision Trees, Random Forests, Model Selection, Model Persistence
 
