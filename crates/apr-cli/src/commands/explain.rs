@@ -225,8 +225,10 @@ fn resolve_family_from_model_file(
     use super::kernel_explain::*;
 
     let real_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    let config_path = real_path.with_file_name("config.json");
-    if config_path.exists() {
+    // Companion lookup: find_sibling_file handles hash-prefixed / symlinked
+    // model paths robustly (CB-510 / publish-safety) and only returns Some
+    // when the file exists — subsuming the prior with_file_name + .exists().
+    if let Some(config_path) = realizar::safetensors::find_sibling_file(&real_path, "config.json") {
         resolve_from_config_json(&config_path)
     } else {
         emit_kernel_error(
@@ -335,7 +337,16 @@ fn resolve_config_mapping(
         let config_path = if p.extension().map_or(false, |e| e == "json") {
             p.to_path_buf()
         } else {
-            p.with_file_name("config.json")
+            // Companion lookup: prefer the robust sibling finder (handles
+            // hash-prefixed / symlinked model paths); fall back to the literal
+            // sibling dir so extract_config_mapping reports not-found as before
+            // (parent().join avoids with_file_name per publish-safety).
+            realizar::safetensors::find_sibling_file(p, "config.json").unwrap_or_else(|| {
+                p.parent().map_or_else(
+                    || std::path::PathBuf::from("config.json"),
+                    |d| d.join("config.json"),
+                )
+            })
         };
         extract_config_mapping(&config_path)
     })

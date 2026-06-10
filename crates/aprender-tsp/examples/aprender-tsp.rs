@@ -394,4 +394,9 @@ fn cmd_solve(
     Ok(())
 }
 
-include!("main_cmd_benchmark.rs");
+// The cmd_benchmark / cmd_info implementations live in src/ (loose,
+// not mod-declared — example-include only). The path is relative to THIS
+// example file's directory (examples/), so it must reach back into src/.
+// (Was `"main_cmd_benchmark.rs"`, which resolved to a non-existent
+// examples/main_cmd_benchmark.rs — the example never compiled. CB-510 class.)
+include!("../src/main_cmd_benchmark.rs");
