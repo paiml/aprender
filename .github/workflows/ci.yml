@@ -198,6 +198,14 @@ jobs:
         # saturation (7+ concurrent CI runs) we observed 55min hits
         # exactly at the timeout — runs 25919246467 / 25919258460 /
         # sibling PRs failed simultaneously at 55:00.0.
+        #
+        # 2026-06-10: RUSTFLAGS=-Clink-arg=-fuse-ld=mold (mold 1.10.1 ships in
+        # the sovereign-ci image) attacks the *linking* cost above — the one
+        # phase sccache cannot cache. Set IDENTICALLY on the compute +
+        # integration steps below so all three share one sccache key + target
+        # fingerprint (a differing RUSTFLAGS would force a full recompile per
+        # step). NOT applied to the `coverage` job: mold breaks LLVM coverage
+        # instrumentation (see Makefile, two-phase coverage workaround).
         timeout-minutes: 75
         run: |
           docker run --rm \
@@ -214,6 +222,7 @@ jobs:
             -e CARGO_BUILD_JOBS=8 \
             -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            -e RUSTFLAGS="-C link-arg=-fuse-ld=mold" \
             "$IMAGE" \
             cargo test --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute
       - name: Compute tests (tolerate SIGSEGV at exit — all tests pass but harness crashes on cleanup)
@@ -230,6 +239,7 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
+            -e RUSTFLAGS="-C link-arg=-fuse-ld=mold" \
             "$IMAGE" \
             bash -c 'cargo test -p aprender-compute --lib 2>&1 | tee /tmp/compute-test.log; grep -q "test result.*0 failed" /tmp/compute-test.log'
       - name: Integration tests
@@ -246,6 +256,7 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
+            -e RUSTFLAGS="-C link-arg=-fuse-ld=mold" \
             "$IMAGE" \
             bash -c 'cargo test -p aprender-core --test monorepo_invariants && cargo test -p aprender-core --test readme_contract && cargo test -p apr-cli --test cli_commands'
       - name: Build.rs crate-root escape check (v0.31.1 yank guard)
