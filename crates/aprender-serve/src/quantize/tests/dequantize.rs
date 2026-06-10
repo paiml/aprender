@@ -438,6 +438,74 @@ fn test_fused_q4k_dot_basic() {
     assert_ulp_eq(fused, reference, 4, "fused_q4k_dot basic");
 }
 
+// ===== Q3_K dequantization (issue #1892, contract q3k-dequant-v1) =====
+
+/// Assemble a single 110-byte Q3_K super-block from explicit fields.
+fn q3k_block(hmask: [u8; 32], qs: [u8; 64], scales: [u8; 12], d: f32) -> Vec<u8> {
+    let mut data = Vec::with_capacity(110);
+    data.extend_from_slice(&hmask);
+    data.extend_from_slice(&qs);
+    data.extend_from_slice(&scales);
+    data.extend_from_slice(&half::f16::from_f32(d).to_le_bytes());
+    data
+}
+
+/// FT-Q3K-001: golden hand-computed values pin the bit-unpacking.
+///
+/// `d = 2.0`; scales packed so the reconstructed `scale[0] = 0x21 = 33`
+/// (`scales[0]=0x01 | (scales[8]&3)<<4`) → `dl = 2.0*(33-32) = 2.0`. hmask is
+/// all-set (high bit present → recenter offset 0) except byte 2, cleared
+/// (offset −4). `qs[0]=1` so element 0 has low bits = 1; all other qs = 0.
+#[test]
+fn test_dequantize_q3_k_golden_values() {
+    let mut hmask = [0xFFu8; 32];
+    hmask[2] = 0x00; // clear the high bit for output element 2
+    let mut qs = [0u8; 64];
+    qs[0] = 0x01; // element 0 low bits = 1
+    let mut scales = [0u8; 12];
+    scales[0] = 0x01;
+    scales[8] = 0x02; // together → reconstructed scale[0] = 33
+    let data = q3k_block(hmask, qs, scales, 2.0);
+
+    let result = dequantize_q3_k(&data).expect("Q3_K block should dequantize");
+
+    assert_eq!(result.len(), 256, "one super-block yields 256 values");
+    // element 0: dl * (low=1 − high=0) = 2.0 * 1
+    assert!((result[0] - 2.0).abs() < 1e-4, "elem0 got {}", result[0]);
+    // element 1: low=0, high present → 0
+    assert!(result[1].abs() < 1e-4, "elem1 got {}", result[1]);
+    // element 2: low=0, high CLEARED → dl * (0 − 4) = −8.0
+    assert!((result[2] + 8.0).abs() < 1e-4, "elem2 got {}", result[2]);
+}
+
+/// FT-Q3K-002: `d = 0` zeroes the whole block (no panic, correct length).
+#[test]
+fn test_dequantize_q3_k_zero_scale() {
+    let data = q3k_block([0xAB; 32], [0xCD; 64], [0xEF; 12], 0.0);
+    let result = dequantize_q3_k(&data).expect("zero-d block dequantizes");
+    assert_eq!(result.len(), 256);
+    assert!(result.iter().all(|&v| v == 0.0), "d=0 ⇒ all outputs 0");
+}
+
+/// FT-Q3K-003: a length that is not a multiple of 110 bytes is rejected.
+#[test]
+fn test_dequantize_q3_k_invalid_length() {
+    let data = vec![0u8; 109]; // one byte short of a super-block
+    assert!(
+        dequantize_q3_k(&data).is_err(),
+        "non-multiple length must error"
+    );
+}
+
+/// FT-Q3K-004: N super-blocks yield exactly N*256 values.
+#[test]
+fn test_dequantize_q3_k_multiple_superblocks() {
+    let mut data = q3k_block([0x11; 32], [0x22; 64], [0x33; 12], 1.0);
+    data.extend(q3k_block([0x44; 32], [0x55; 64], [0x66; 12], 0.5));
+    let result = dequantize_q3_k(&data).expect("two super-blocks dequantize");
+    assert_eq!(result.len(), 512);
+}
+
 include!("fused_q4k.rs");
 include!("fused_q4k_02.rs");
 include!("phase1_acceptance.rs");
