@@ -302,6 +302,17 @@ fn run_sharded(org: &str, repo: &str, shard_files: &[String], force: bool) -> Re
     std::fs::create_dir_all(&cache_dir)?;
 
     let base_url = format!("https://huggingface.co/{org}/{repo}/resolve/main");
+
+    // #1893: sharded GGUF (`model-NNNNN-of-MMMMM.gguf`) has NO index.json and
+    // needs no SafeTensors conversion — download all parts and point usage at
+    // the first part (GGUF split loaders find the rest via split.* metadata).
+    if shard_files
+        .iter()
+        .all(|f| f.to_lowercase().ends_with(".gguf"))
+    {
+        return run_sharded_gguf(org, repo, &cache_dir, &base_url, shard_files, force);
+    }
+
     let index_path = cache_dir.join("model.safetensors.index.json");
 
     download_index_if_needed(&base_url, &index_path, force)?;
@@ -331,6 +342,47 @@ fn run_sharded(org: &str, repo: &str, shard_files: &[String], force: bool) -> Re
     println!("{}", "Usage:".cyan().bold());
     println!("  apr run {}", index_path.display());
     println!("  apr serve {}", index_path.display());
+    Ok(())
+}
+
+/// #1893: Download a sharded GGUF model. Unlike sharded SafeTensors there is no
+/// `index.json` and no format conversion — fetch all `-of-` parts and point
+/// usage at the first part (GGUF split loaders open part 1 and discover the
+/// siblings via the `split.count` / `split.no` metadata keys).
+fn run_sharded_gguf(
+    org: &str,
+    repo: &str,
+    cache_dir: &Path,
+    base_url: &str,
+    shard_files: &[String],
+    force: bool,
+) -> Result<()> {
+    let manifest_path = cache_dir.join(".apr-manifest.json");
+    let existing_manifest = load_existing_manifest(&manifest_path, force);
+
+    let file_checksums = download_all_shards(
+        cache_dir,
+        base_url,
+        shard_files,
+        force,
+        existing_manifest.as_ref(),
+    )?;
+
+    download_companion_files(cache_dir, base_url, force)?;
+    write_shard_manifest(&manifest_path, org, repo, file_checksums)?;
+
+    let first_part = cache_dir.join(shard_files.first().map_or("", String::as_str));
+    println!();
+    println!(
+        "{} Downloaded {} GGUF shards",
+        "✓".green(),
+        shard_files.len().to_string().yellow()
+    );
+    println!("  Path: {}", first_part.display().to_string().green());
+    println!();
+    println!("{}", "Usage:".cyan().bold());
+    println!("  apr run {}", first_part.display());
+    println!("  apr serve {}", first_part.display());
     Ok(())
 }
 
