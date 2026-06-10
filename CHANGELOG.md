@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **PMAT-706 re-land**: the `APR_DISTILL_MAX_STEPS=N` smoke-validation mode
+  announced in #1888 (v0.35.2) was never actually in `pipeline.rs` — commit
+  `52650c60c` squash-dropped the implementation and shipped *only* the
+  `apr-distill-smoke-validation-v1.yaml` contract. The early-break, `[SMOKE]`
+  summary, 0-steps guard, and no-export side-effect are now implemented in
+  `crates/aprender-train-distill/src/pipeline.rs` and bound to the contract's
+  four falsifiers (`pipeline::tests::pmat_706_{smoke,no_regression,summary_format,no_output_in_smoke}`,
+  all passing). `scripts/dispatch-distill-stage-d.sh` now forwards
+  `APR_DISTILL_MAX_STEPS` across the ssh/`env` boundary so the documented
+  `APR_DISTILL_MAX_STEPS=10 ./scripts/dispatch-distill-stage-d.sh` actually
+  triggers smoke mode (previously a silent no-op).
+
 ## [0.35.2] - 2026-05-23
 
 ### Bug fixes + DX (last release for 3 months)

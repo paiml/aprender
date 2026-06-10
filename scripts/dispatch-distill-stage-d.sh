@@ -15,6 +15,7 @@
 # Usage:
 #   ./scripts/dispatch-distill-stage-d.sh
 #   STEPS=10000 ./scripts/dispatch-distill-stage-d.sh   # shorter run for re-validation
+#   APR_DISTILL_MAX_STEPS=10 ./scripts/dispatch-distill-stage-d.sh  # ~60s smoke (PMAT-706, no output written)
 #   DRY_RUN=1   ./scripts/dispatch-distill-stage-d.sh   # plan only
 
 set -euo pipefail
@@ -57,6 +58,13 @@ APR_DISTILL_CHECKPOINT_EVERY="${APR_DISTILL_CHECKPOINT_EVERY:-5000}"
 # Backend selection (PMAT-704):
 APR_DISTILL_TEACHER_BACKEND="${APR_DISTILL_TEACHER_BACKEND:-auto}"  # auto, cudatrainer, realizar-q4k
 
+# Smoke-validation early-break (PMAT-706): run at most N steps, print a
+# [SMOKE] loss/throughput/projection summary, and skip the final export.
+# Empty = full run (no change). Forwarded into the remote `env` invocation so
+# `APR_DISTILL_MAX_STEPS=10 ./scripts/dispatch-distill-stage-d.sh` validates the
+# whole cascade in ~60s before committing to a 30-50h Stage D run.
+APR_DISTILL_MAX_STEPS="${APR_DISTILL_MAX_STEPS:-}"
+
 # Disk preflight threshold (GB). Stage D 50K writes ~12 GB checkpoints + 2 GB final.
 DISK_FREE_REQUIRED_GB="${DISK_FREE_REQUIRED_GB:-15}"
 
@@ -81,6 +89,7 @@ echo "  alpha (CE wt): ${ALPHA}"
 echo "  log_every:     ${APR_DISTILL_LOG_EVERY}"
 echo "  ckpt_every:    ${APR_DISTILL_CHECKPOINT_EVERY}"
 echo "  backend:       ${APR_DISTILL_TEACHER_BACKEND}"
+echo "  max_steps:     ${APR_DISTILL_MAX_STEPS:-<full run>}"
 echo "  dataset:       ${DATASET_DIR:-(synthetic -- operator must set DATASET_DIR for real Phase 4)}"
 echo "  run name:      ${RUN_NAME}"
 echo "  evidence:      ${EVIDENCE_DIR}"
@@ -172,7 +181,7 @@ ssh "${GX10_USER}@${GX10_HOST}" bash <<REMOTE_DISPATCH
         DATASET_FLAG='--dataset ${DATASET_DIR}'
     fi
 
-    nohup env APR_DISTILL_LOG_EVERY=${APR_DISTILL_LOG_EVERY} APR_DISTILL_CHECKPOINT_EVERY=${APR_DISTILL_CHECKPOINT_EVERY} APR_DISTILL_TEACHER_BACKEND=${APR_DISTILL_TEACHER_BACKEND} ./target/release/apr distill '${RUN_DIR_REMOTE}/teacher/model.apr' --student '${RUN_DIR_REMOTE}/student/model.apr' --epochs ${EPOCHS} --temperature ${T} --alpha ${ALPHA} --backend cuda \$DATASET_FLAG --output '${RUN_DIR_REMOTE}/student-trained.apr' > '${LOG_REMOTE}' 2>&1 &
+    nohup env APR_DISTILL_LOG_EVERY=${APR_DISTILL_LOG_EVERY} APR_DISTILL_CHECKPOINT_EVERY=${APR_DISTILL_CHECKPOINT_EVERY} APR_DISTILL_TEACHER_BACKEND=${APR_DISTILL_TEACHER_BACKEND} APR_DISTILL_MAX_STEPS=${APR_DISTILL_MAX_STEPS} ./target/release/apr distill '${RUN_DIR_REMOTE}/teacher/model.apr' --student '${RUN_DIR_REMOTE}/student/model.apr' --epochs ${EPOCHS} --temperature ${T} --alpha ${ALPHA} --backend cuda \$DATASET_FLAG --output '${RUN_DIR_REMOTE}/student-trained.apr' > '${LOG_REMOTE}' 2>&1 &
     DISPATCH_PID=\$!
     disown
     echo "dispatched PID \${DISPATCH_PID}"
@@ -204,6 +213,7 @@ cat > "${EVIDENCE_DIR}/dispatch.json" <<JSON
   "log_every": ${APR_DISTILL_LOG_EVERY},
   "checkpoint_every": ${APR_DISTILL_CHECKPOINT_EVERY},
   "backend": "${APR_DISTILL_TEACHER_BACKEND}",
+  "max_steps": "${APR_DISTILL_MAX_STEPS}",
   "dataset_dir": "${DATASET_DIR}",
   "remote_run_dir": "${RUN_DIR_REMOTE}",
   "remote_log": "${LOG_REMOTE}",
