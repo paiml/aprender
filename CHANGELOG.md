@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-06-10
+
+### Added
+
+- **Sharded GGUF pull (#1893, pull-side)**: `apr pull` now detects and downloads
+  COMPLETE split-GGUF model sets (`<prefix>-NNNNN-of-MMMMM.gguf`). Modern 7B+
+  GGUFs ship split with NO `index.json` (unlike sharded SafeTensors), and `apr
+  pull` previously ran them through `select_best_gguf` — silently grabbing a
+  single part and producing a broken/incomplete model. Now `resolve_hf_model`
+  detects the complete `-of-` set (rejecting single-file, multi-quant, and
+  incomplete sets) and `run_sharded_gguf` downloads all parts via a no-index
+  path (no SafeTensors conversion), pointing usage at the first part. Contract
+  `contracts/sharded-gguf-pull-v1.yaml` (6 falsifiers FT-SHGGUF-001..006 + 2
+  kani harnesses, all passing).
+  - **Scope:** this is the pull side. **Cross-shard inference** in
+    `aprender-serve` (reading `split.count` and loading tensors across parts so
+    `apr run`/`apr serve` work on a split GGUF) is the documented follow-up
+    (#1893 criterion 2) — the next release.
+
 ## [0.36.0] - 2026-06-10
 
 ### Added

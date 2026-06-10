@@ -407,6 +407,16 @@ pub(crate) fn resolve_hf_model(uri: &str) -> Result<ResolvedModel> {
         .collect();
 
     if !gguf_files.is_empty() {
+        // #1893: a complete sharded-GGUF set (`model-NNNNN-of-MMMMM.gguf`, no
+        // index.json) must download ALL parts — not a single `select_best_gguf`
+        // pick, which would silently grab one part and produce a broken model.
+        if let Some(shard_files) = detect_gguf_shards(&gguf_files) {
+            return Ok(ResolvedModel::Sharded {
+                org: org.to_string(),
+                repo: repo.to_string(),
+                shard_files,
+            });
+        }
         return Ok(select_best_gguf(&gguf_files, org, repo));
     }
 
@@ -442,6 +452,52 @@ fn resolve_hf_model_fallback(filenames: &[&str], org: &str, repo: &str) -> Resul
     )))
 }
 
+/// #1893: Parse a sharded-GGUF filename `<prefix>-NNNNN-of-MMMMM.gguf` into
+/// `(prefix_lowercased, part_no, total)`. Returns `None` for any name that
+/// isn't a shard part (single-file GGUF, multi-quant repos, etc.).
+///
+/// The `.gguf` suffix and prefix are matched case-insensitively for grouping;
+/// the caller keeps the original-case filename for download.
+fn parse_gguf_shard_name(name: &str) -> Option<(String, u32, u32)> {
+    let lower = name.to_lowercase();
+    let stem = lower.strip_suffix(".gguf")?;
+    // "<prefix>-NNNNN" + "-of-" + "MMMMM"
+    let (prefix_and_part, total_str) = stem.rsplit_once("-of-")?;
+    let total: u32 = total_str.parse().ok()?;
+    let (prefix, part_str) = prefix_and_part.rsplit_once('-')?;
+    let part: u32 = part_str.parse().ok()?;
+    Some((prefix.to_string(), part, total))
+}
+
+/// #1893: Detect a COMPLETE sharded-GGUF set among a repo's `.gguf` files.
+///
+/// Modern 7B+ GGUFs ship split as `<prefix>-NNNNN-of-MMMMM.gguf` (zero-padded,
+/// 1-indexed) with NO `index.json` (unlike sharded SafeTensors). Returns the
+/// part filenames sorted by part number IFF a single prefix has a complete set
+/// (`total >= 2` and all parts `1..=total` present). Returns `None` for a
+/// single-file GGUF, unrelated multi-quant GGUFs, or an incomplete set — so the
+/// caller falls back to single-file selection (`select_best_gguf`).
+fn detect_gguf_shards(gguf_files: &[&str]) -> Option<Vec<String>> {
+    use std::collections::BTreeMap;
+    // (prefix, total) -> { part_no -> original_filename }
+    let mut groups: BTreeMap<(String, u32), BTreeMap<u32, String>> = BTreeMap::new();
+    for &f in gguf_files {
+        if let Some((prefix, part, total)) = parse_gguf_shard_name(f) {
+            groups
+                .entry((prefix, total))
+                .or_default()
+                .insert(part, f.to_string());
+        }
+    }
+    for ((_, total), parts) in groups {
+        if total >= 2 && parts.len() as u32 == total && (1..=total).all(|n| parts.contains_key(&n)) {
+            // BTreeMap iterates by ascending part number → correctly ordered.
+            return Some(parts.into_values().collect());
+        }
+    }
+    None
+}
+
 /// GH-213: Extract unique shard filenames from index.json weight_map, sorted for deterministic order.
 ///
 /// Format: `{"metadata": {...}, "weight_map": {"tensor.name": "model-00001-of-00006.safetensors", ...}}`
@@ -459,4 +515,71 @@ fn find_brace_content(text: &str) -> Option<&str> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod sharded_gguf_tests {
+    use super::{detect_gguf_shards, parse_gguf_shard_name};
+
+    // ===== #1893: sharded-GGUF detection (contract sharded-gguf-pull-v1) =====
+
+    /// FT-SHGGUF-001: a complete 2-part set is detected and returned in part order.
+    #[test]
+    fn detects_complete_two_part_set() {
+        let files = ["m-00002-of-00002.gguf", "m-00001-of-00002.gguf"];
+        let got = detect_gguf_shards(&files).expect("complete set must be detected");
+        assert_eq!(
+            got,
+            vec!["m-00001-of-00002.gguf".to_string(), "m-00002-of-00002.gguf".to_string()],
+            "FT-SHGGUF-001: parts returned sorted by part number regardless of input order"
+        );
+    }
+
+    /// FT-SHGGUF-002: a complete 3-part set with a realistic prefix.
+    #[test]
+    fn detects_three_part_with_quant_prefix() {
+        let files = [
+            "Qwen2.5-7B-Instruct-Q4_K_M-00001-of-00003.gguf",
+            "Qwen2.5-7B-Instruct-Q4_K_M-00002-of-00003.gguf",
+            "Qwen2.5-7B-Instruct-Q4_K_M-00003-of-00003.gguf",
+        ];
+        let got = detect_gguf_shards(&files).expect("3-part set");
+        assert_eq!(got.len(), 3);
+        assert_eq!(got[0], "Qwen2.5-7B-Instruct-Q4_K_M-00001-of-00003.gguf");
+    }
+
+    /// FT-SHGGUF-003: a single non-sharded GGUF is NOT treated as sharded
+    /// (caller falls back to select_best_gguf).
+    #[test]
+    fn single_file_is_not_sharded() {
+        assert_eq!(detect_gguf_shards(&["model.gguf"]), None);
+        assert_eq!(detect_gguf_shards(&["qwen2.5-coder-1.5b-q4_k_m.gguf"]), None);
+    }
+
+    /// FT-SHGGUF-004: unrelated multi-quant GGUFs (not a shard set) → None.
+    #[test]
+    fn multi_quant_not_sharded() {
+        let files = ["model-Q4_K_M.gguf", "model-Q8_0.gguf", "model-f16.gguf"];
+        assert_eq!(detect_gguf_shards(&files), None);
+    }
+
+    /// FT-SHGGUF-005: an INCOMPLETE set (missing a part) → None, so we never
+    /// claim a model is downloadable when a part is absent.
+    #[test]
+    fn incomplete_set_rejected() {
+        let files = ["m-00001-of-00003.gguf", "m-00002-of-00003.gguf"]; // missing 00003
+        assert_eq!(detect_gguf_shards(&files), None);
+    }
+
+    /// FT-SHGGUF-006: filename parser handles case + rejects non-shard names.
+    #[test]
+    fn parser_edge_cases() {
+        assert_eq!(
+            parse_gguf_shard_name("M-00001-OF-00004.GGUF"),
+            Some(("m".to_string(), 1, 4))
+        );
+        assert_eq!(parse_gguf_shard_name("model.gguf"), None);
+        assert_eq!(parse_gguf_shard_name("foo-bar.gguf"), None);
+        assert_eq!(parse_gguf_shard_name("model.safetensors"), None);
+    }
 }
