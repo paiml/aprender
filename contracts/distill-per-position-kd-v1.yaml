@@ -1,0 +1,162 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-10'
+  author: PAIML Engineering
+  description: |
+    Full-sequence (per-position) knowledge distillation for the
+    aprender-train-distill pipeline. The per-row KD path trains on ONE target
+    per window (the next token after the window); per-position KD trains on
+    EVERY position (position p predicts token p+1), giving up to seq_len× more
+    distillation signal per forward pass.
+
+    This is an ADDITIVE capability: new trait methods (`logits_per_position`,
+    `apply_kd_gradient_per_position`, `next_batch_per_position`) default to
+    wrapping the existing per-row methods, so existing providers — including
+    the CUDA backend — compile and behave UNCHANGED. The pipeline branch is
+    opt-in via `APR_DISTILL_PER_POSITION` (default off → the production loop is
+    byte-identical). Fixture providers override the new methods so the path is
+    CPU-falsifiable end-to-end.
+
+    Scope note: the CPU/fixture path is fully verified here. The real benefit
+    requires the CUDA teacher/student to emit all-position logits (a GPU
+    forward change) — until then CUDA falls back to one position via the
+    defaults. That GPU per-position forward is a documented follow-up, NOT
+    covered by these CPU falsifiers.
+  references:
+  - 'SPEC-DISTILL-001 — distillation pipeline'
+  - 'crates/aprender-train/.../transformer_trainer/batch.rs — LMBatch causal-shift layout (target[p]=input[p+1])'
+  - 'contracts/apr-distill-smoke-validation-v1.yaml — sibling distill contract'
+  - 'kd_step.rs kd_loss / kd_logit_gradient — the per-triple primitives reused per (row, position)'
+
+kind: KernelContract
+name: distill-per-position-kd
+version: 1.0.0
+scope: aprender-train-distill kd_step_per_position + BatchSource/Provider per-position methods + Pipeline opt-in branch
+
+equations:
+  per_position_signal:
+    formula: |
+      For a batch of B rows each length L, per-position KD makes B*L
+      next-token predictions (position p predicts token p+1), vs B for the
+      per-row path. avg_loss = (1/(B*L)) * sum over (row, position) of
+      kd_loss(student[row][p], teacher[row][p], label[row][p], T, alpha).
+    domain: B >= 0, L >= 0; labels[row][p] in [0, vocab)
+    codomain: scalar avg_loss; grads shape [B][L][vocab]
+    invariants:
+    - 'per-position prediction count = sum over rows of min(teacher_pos, student_pos, label_pos)'
+    - 'grads[row] has one [vocab] vector per trained position of that row'
+    - 'when student logits == teacher logits at every position and alpha=0, loss and all grads are ~0'
+    - 'ragged rows (unequal teacher/student/label position counts) train on the min-prefix without panic'
+    lean_theorem: Theorems.Per_Position_Signal
+
+  additive_safety:
+    formula: |
+      The per-position trait methods default to wrapping the per-row methods
+      as a single position; the Pipeline per-position branch is gated on
+      `APR_DISTILL_PER_POSITION` (default false).
+    domain: any provider / batch source / pipeline config
+    codomain: behavior of the per-row path
+    invariants:
+    - 'with APR_DISTILL_PER_POSITION unset/false, train() is byte-identical to the per-row path'
+    - 'providers that do not override logits_per_position expose exactly one position (== per-row last position)'
+    - 'CUDA teacher/student compile unchanged (default methods supply the per-position shape)'
+    lean_theorem: Theorems.Additive_Safety
+
+proof_obligations:
+- type: invariant
+  property: per-position trains on all positions
+  formal: |
+    For B rows of length L with matching teacher/student/labels:
+    kd_step_per_position returns grads with sum(|grads[r]|) == B*L (not B).
+- type: invariant
+  property: math correct — zero loss/grad at perfect per-position agreement
+  formal: |
+    If student[r][p] == teacher[r][p] for all (r,p) and alpha=0, then
+    avg_loss < 1e-4 and every grad component has |.| < 1e-4.
+- type: invariant
+  property: ragged rows are safe
+  formal: |
+    For any (teacher_pos, student_pos, label_pos), the trained position count
+    per row is exactly min of the three; no panic, no out-of-bounds.
+- type: classification
+  property: opt-in additive — per-row path unchanged
+  formal: |
+    With APR_DISTILL_PER_POSITION off, Pipeline::train produces the same
+    metrics path as before this contract (per-row); with it on, the pipeline
+    reduces loss end-to-end on the fixture path.
+
+falsification_tests:
+- id: FT-PERPOS-001
+  rule: per-position KD trains on EVERY position (B*L predictions, grads [B][L])
+  prediction: |
+    kd_step_per_position on 2 rows × length 4 returns grads[0].len()==4,
+    grads[1].len()==4, total predictions==8 (not 2).
+  if_fails: |
+    The position loop is off (e.g. only last position used), or grads aren't
+    per-position. Check kd_step_per_position's inner `for p in 0..n_pos`.
+  evidence: cargo test -p aprender-train-distill --lib kd_step::tests::pmat_perpos_001_trains_on_all_positions
+- id: FT-PERPOS-002
+  rule: per-position yields strictly more signal than per-row
+  prediction: |
+    On the same single 4-token row, per-row makes 1 prediction; per-position
+    makes 4. per_pos > per_row.
+  if_fails: |
+    Per-position collapsed to per-row (e.g. only one position emitted). Check
+    the provider override + next_batch_per_position labels length.
+  evidence: cargo test -p aprender-train-distill --lib kd_step::tests::pmat_perpos_002_more_signal_than_per_row
+- id: FT-PERPOS-003
+  rule: zero loss/grad when student==teacher per position (alpha=0)
+  prediction: |
+    With student logits == teacher logits at every position and alpha=0,
+    avg_loss < 1e-4 and all grad components < 1e-4.
+  if_fails: |
+    The per-position KL/grad math diverges from kd_loss/kd_logit_gradient.
+    Verify the primitives are applied per (row, position) unchanged.
+  evidence: cargo test -p aprender-train-distill --lib kd_step::tests::pmat_perpos_003_zero_loss_when_student_equals_teacher
+- id: FT-PERPOS-004
+  rule: ragged rows train on the min-prefix without panic
+  prediction: |
+    teacher 4 positions, student 3, labels 2 → grads[0].len()==2; no panic.
+  if_fails: |
+    n_pos uses max/teacher-only instead of min → index out of bounds. Check
+    `t_rows.len().min(s_rows.len()).min(row_labels.len())`.
+  evidence: cargo test -p aprender-train-distill --lib kd_step::tests::pmat_perpos_004_ragged_rows_use_min_positions
+- id: FT-PERPOS-005
+  rule: pipeline per-position mode reduces loss end-to-end; per-row unchanged
+  prediction: |
+    Pipeline::new(..).with_per_position(true).execute() yields
+    final_loss < initial_loss; with_per_position(false) also reduces loss
+    (per-row path healthy).
+  if_fails: |
+    The opt-in branch is broken (wrong apply_kd_gradient_per_position wiring)
+    or the per-row path regressed. Check the pipeline train() branch.
+  evidence: cargo test -p aprender-train-distill --lib pipeline::tests::falsify_perpos_005_pipeline_per_position_reduces_loss
+
+kani_harnesses:
+- id: KANI-PERPOS-001
+  obligation: trained position count is the min of the three sources (no OOB)
+  property: |
+    For all (tp in [0..16], sp in [0..16], lp in [0..16]): the per-position
+    loop trains exactly min(tp, sp, lp) positions and never indexes beyond any
+    of the three vectors.
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_per_position_min_count
+- id: KANI-PERPOS-002
+  obligation: empty / zero-position batch is a no-op, not a panic
+  property: |
+    For B=0 or L=0: kd_step_per_position returns avg_loss=0.0 and empty grads;
+    apply_kd_gradient_per_position on empty input is a no-op.
+  bound: 1
+  strategy: compositional
+  solver: cadical
+  harness: verify_per_position_empty_safe
+
+qa_gate:
+  id: F-PERPOS-001
+  name: distill-per-position-kd-v1 Contract
+  description: Full-sequence per-position KD must train on every position with correct math, be additive/opt-in (per-row path unchanged), and reduce loss end-to-end on the fixture path.
+  checks:
+  - validation
+  - falsification

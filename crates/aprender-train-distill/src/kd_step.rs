@@ -244,6 +244,89 @@ where
     Ok((avg_loss, grads))
 }
 
+/// Run a per-position KD orchestration step (full-sequence distillation).
+///
+/// Where [`kd_step`] trains on ONE target per window (the next token after
+/// the window), this trains on EVERY position: position `p` of each row
+/// predicts the token at `p+1`. That is up to `seq_len`× more KD signal per
+/// forward pass.
+///
+/// - `labels` is `[batch][position]` — the shifted target sequence per row
+///   (from `BatchSource::next_batch_per_position`).
+/// - `teacher` supplies `[batch][position][vocab]` via
+///   [`TeacherLogitsProvider::logits_per_position`].
+/// - `compute_student_logits_per_position(row)` returns `[position][vocab]`
+///   for one input row (typically the student provider's per-position
+///   forward applied to that row).
+///
+/// Returns `(avg_loss, grads)` where `avg_loss` is averaged over ALL
+/// (batch × position) predictions and `grads` is `[batch][position][vocab]`
+/// (feed to [`crate::student_provider::StudentLogitsProvider::apply_kd_gradient_per_position`]).
+///
+/// Per-row position counts are reconciled as `min(teacher, student, labels)`
+/// so a row with fewer student/label positions simply trains on the prefix
+/// it has — no panic on ragged batches.
+///
+/// # Errors
+///
+/// Propagates teacher errors; returns `EntrenarError::Internal` if any
+/// student/teacher logit row length doesn't match the teacher's vocab size.
+pub fn kd_step_per_position<F>(
+    teacher: &mut dyn TeacherLogitsProvider,
+    input_ids: &[Vec<u32>],
+    labels: &[Vec<usize>],
+    temperature: f32,
+    alpha: f32,
+    mut compute_student_logits_per_position: F,
+) -> Result<(f32, Vec<Vec<Vec<f32>>>)>
+where
+    F: FnMut(&[u32]) -> Vec<Vec<f32>>,
+{
+    assert_eq!(
+        input_ids.len(),
+        labels.len(),
+        "kd_step_per_position: input_ids and labels must have the same batch size"
+    );
+    let teacher_pp = teacher.logits_per_position(input_ids)?;
+    let vocab = teacher.vocab_size();
+
+    let mut total_loss = 0.0_f32;
+    let mut prediction_count = 0usize;
+    let mut grads: Vec<Vec<Vec<f32>>> = Vec::with_capacity(input_ids.len());
+
+    for ((ids, t_rows), row_labels) in input_ids.iter().zip(teacher_pp.iter()).zip(labels.iter()) {
+        let s_rows = compute_student_logits_per_position(ids);
+        let n_pos = t_rows.len().min(s_rows.len()).min(row_labels.len());
+        let mut row_grads = Vec::with_capacity(n_pos);
+        for p in 0..n_pos {
+            let s = &s_rows[p];
+            let t = &t_rows[p];
+            if s.len() != vocab || t.len() != vocab {
+                return Err(entrenar_common::EntrenarError::Internal {
+                    message: format!(
+                        "kd_step_per_position: logit len mismatch at position {p} \
+                         (student {}, teacher {}, vocab {vocab})",
+                        s.len(),
+                        t.len()
+                    ),
+                });
+            }
+            let label = row_labels[p];
+            total_loss += kd_loss(s, t, label, temperature, alpha);
+            prediction_count += 1;
+            row_grads.push(kd_logit_gradient(s, t, label, temperature, alpha));
+        }
+        grads.push(row_grads);
+    }
+
+    let avg_loss = if prediction_count == 0 {
+        0.0
+    } else {
+        total_loss / prediction_count as f32
+    };
+    Ok((avg_loss, grads))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -376,5 +459,104 @@ mod tests {
             result.is_err(),
             "vocab size mismatch must error, not silently corrupt"
         );
+    }
+
+    // ===== Per-position (full-sequence) KD — contract distill-per-position-kd-v1 =====
+
+    /// FT-PERPOS-001: per-position KD trains on EVERY position. For a batch of
+    /// B rows each of length L, it makes B×L predictions and returns grads
+    /// shaped [B][L] — strictly more signal than the per-row path's B.
+    #[test]
+    fn pmat_perpos_001_trains_on_all_positions() {
+        let vocab = 16;
+        let mut teacher = FixtureTeacher::new(vocab);
+        // 2 rows, length 4 → 8 predictions (vs 2 for per-row).
+        let inputs = vec![vec![1u32, 2, 3, 4], vec![5u32, 6, 7, 8]];
+        let labels = vec![vec![2usize, 3, 4, 4], vec![6usize, 7, 8, 8]];
+        let student = |ids: &[u32]| vec![vec![0.0_f32; vocab]; ids.len()];
+        let (_loss, grads) =
+            kd_step_per_position(&mut teacher, &inputs, &labels, 4.0, 0.5, student)
+                .expect("per-position step");
+        assert_eq!(grads.len(), 2, "one grad-block per row");
+        assert_eq!(grads[0].len(), 4, "FT-PERPOS-001: grads at ALL 4 positions");
+        assert_eq!(grads[1].len(), 4);
+        let predictions: usize = grads.iter().map(Vec::len).sum();
+        assert_eq!(predictions, 8, "B×L = 2×4 predictions, not B=2");
+    }
+
+    /// FT-PERPOS-002: per-position yields strictly more predictions than the
+    /// per-row path on the same data (the whole point of full-sequence KD).
+    #[test]
+    fn pmat_perpos_002_more_signal_than_per_row() {
+        let vocab = 16;
+        let inputs = vec![vec![1u32, 2, 3, 4]];
+        // per-row
+        let mut t1 = FixtureTeacher::new(vocab);
+        let (_l, per_row_grads) =
+            kd_step(&mut t1, &inputs, &[4], 4.0, 0.5, |_| vec![0.0_f32; vocab]).expect("per-row");
+        // per-position
+        let mut t2 = FixtureTeacher::new(vocab);
+        let (_l2, pp_grads) = kd_step_per_position(
+            &mut t2,
+            &inputs,
+            &[vec![2usize, 3, 4, 4]],
+            4.0,
+            0.5,
+            |ids| vec![vec![0.0_f32; vocab]; ids.len()],
+        )
+        .expect("per-position");
+        let per_row: usize = per_row_grads.len();
+        let per_pos: usize = pp_grads.iter().map(Vec::len).sum();
+        assert_eq!(per_row, 1);
+        assert_eq!(per_pos, 4);
+        assert!(per_pos > per_row, "per-position must produce more signal");
+    }
+
+    /// FT-PERPOS-003: when the student equals the teacher at every position
+    /// (and alpha=0, pure KD), the loss and all gradients are ~zero — the math
+    /// is correct per-position (mirror of F-DISTILL-KDSTEP-002).
+    #[test]
+    fn pmat_perpos_003_zero_loss_when_student_equals_teacher() {
+        let vocab = 8;
+        let mut teacher = FixtureTeacher::new(vocab);
+        let inputs = vec![vec![1u32, 2, 3]];
+        let labels = vec![vec![2usize, 3, 3]];
+        // Student returns exactly the teacher's per-position logits.
+        let teacher_pp = teacher.logits_per_position(&inputs).expect("teacher pp");
+        let tp = teacher_pp.clone();
+        let (loss, grads) = kd_step_per_position(
+            &mut teacher,
+            &inputs,
+            &labels,
+            4.0,
+            0.0, // pure KD → no CE term
+            move |_ids| tp[0].clone(),
+        )
+        .expect("per-position step");
+        assert!(
+            loss.abs() < 1e-4,
+            "alpha=0 + student==teacher → ~0 loss (got {loss})"
+        );
+        for row in &grads {
+            for g in row {
+                let max = g.iter().fold(0.0_f32, |m, &x| m.max(x.abs()));
+                assert!(max < 1e-4, "KD grad ~0 when student==teacher (got {max})");
+            }
+        }
+    }
+
+    /// FT-PERPOS-004: ragged rows (fewer student/label positions) train on the
+    /// common prefix without panicking — robustness on uneven batches.
+    #[test]
+    fn pmat_perpos_004_ragged_rows_use_min_positions() {
+        let vocab = 16;
+        let mut teacher = FixtureTeacher::new(vocab);
+        let inputs = vec![vec![1u32, 2, 3, 4]]; // teacher gives 4 positions
+        let labels = vec![vec![2usize, 3]]; // only 2 labels
+        let student = |_ids: &[u32]| vec![vec![0.0_f32; vocab]; 3]; // only 3 positions
+        let (_loss, grads) =
+            kd_step_per_position(&mut teacher, &inputs, &labels, 4.0, 0.5, student)
+                .expect("ragged step must not panic");
+        assert_eq!(grads[0].len(), 2, "min(4 teacher, 3 student, 2 labels) = 2");
     }
 }

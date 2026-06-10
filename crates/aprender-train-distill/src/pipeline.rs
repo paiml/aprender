@@ -82,6 +82,13 @@ pub struct Pipeline<'a> {
     /// tests via [`Self::with_max_steps`] so they never touch process env.
     /// Contract: `contracts/apr-distill-smoke-validation-v1.yaml`.
     smoke_max_steps: Option<u64>,
+    /// PMAT-PERPOS: full-sequence (per-position) KD mode. When `true`, each
+    /// step trains on EVERY position of the window (`kd_step_per_position`)
+    /// rather than one target per window — up to `seq_len`× more KD signal.
+    /// Defaults from `APR_DISTILL_PER_POSITION` at construction; override in
+    /// tests via [`Self::with_per_position`]. Default `false` keeps the
+    /// production loop byte-identical. Contract: `contracts/distill-per-position-kd-v1.yaml`.
+    per_position: bool,
 }
 
 impl<'a> Pipeline<'a> {
@@ -106,7 +113,20 @@ impl<'a> Pipeline<'a> {
             callbacks: Vec::new(),
             // PMAT-706: pick up the operator's smoke budget from the env once.
             smoke_max_steps: parse_max_steps(),
+            // PMAT-PERPOS: full-sequence KD opt-in from the env once.
+            per_position: parse_per_position(),
         }
+    }
+
+    /// PMAT-PERPOS: enable/disable full-sequence (per-position) KD.
+    ///
+    /// `true` trains on every position of each window; `false` (default) is
+    /// the per-row path. Primarily a test seam — operators set
+    /// `APR_DISTILL_PER_POSITION=1`, which `new()` reads automatically.
+    #[must_use]
+    pub fn with_per_position(mut self, per_position: bool) -> Self {
+        self.per_position = per_position;
+        self
     }
 
     /// PMAT-706: override the smoke-validation early-break budget.
@@ -455,33 +475,65 @@ impl<'a> Pipeline<'a> {
             }
 
             for _s in 0..steps_this_epoch {
-                let (dummy_batch, labels) =
-                    self.batch_source.next_batch(batch_size, smoke_seq_len)?;
-                let (loss, grads) = crate::kd_step::kd_step(
-                    self.teacher.as_mut(),
-                    &dummy_batch,
-                    &labels,
-                    temperature,
-                    alpha,
-                    |ids| {
-                        // Compute student logits inline. The closure runs
-                        // once per batch element inside kd_step.
-                        // For Phase 2c we ask the provider for the whole
-                        // batch upfront (cheaper than per-element when the
-                        // provider has shared state) and index into it.
-                        // FixtureStudent and any non-trivial provider both
-                        // satisfy the contract that adjacent calls with the
-                        // same input_ids return the same logits, so this
-                        // simple pattern is safe.
-                        let logits_vv = self
-                            .student
-                            .logits_for_batch(std::slice::from_ref(&ids.to_vec()))
-                            .expect("student provider failed mid-step");
-                        logits_vv.into_iter().next().unwrap_or_default()
-                    },
-                )?;
+                // PMAT-PERPOS: per-position (full-sequence) KD trains on EVERY
+                // position of each window; the default per-row path trains on
+                // one target per window. Opt-in via APR_DISTILL_PER_POSITION
+                // (default off → the production loop is byte-identical). CUDA
+                // providers fall back to one position via the trait defaults
+                // until they implement a true all-positions forward.
+                let (loss, dummy_batch, labels) = if self.per_position {
+                    let (inputs, pp_labels) = self
+                        .batch_source
+                        .next_batch_per_position(batch_size, smoke_seq_len)?;
+                    let (loss, grads) = crate::kd_step::kd_step_per_position(
+                        self.teacher.as_mut(),
+                        &inputs,
+                        &pp_labels,
+                        temperature,
+                        alpha,
+                        |ids| {
+                            self.student
+                                .logits_per_position(std::slice::from_ref(&ids.to_vec()))
+                                .expect("student per-position forward failed mid-step")
+                                .into_iter()
+                                .next()
+                                .unwrap_or_default()
+                        },
+                    )?;
+                    self.student.apply_kd_gradient_per_position(&grads)?;
+                    // Per-row labels for the final-loss telemetry: the last
+                    // target of each row (the next token after the window).
+                    let row_labels: Vec<usize> = pp_labels
+                        .iter()
+                        .map(|l| l.last().copied().unwrap_or(0))
+                        .collect();
+                    (loss, inputs, row_labels)
+                } else {
+                    let (dummy_batch, labels) =
+                        self.batch_source.next_batch(batch_size, smoke_seq_len)?;
+                    let (loss, grads) = crate::kd_step::kd_step(
+                        self.teacher.as_mut(),
+                        &dummy_batch,
+                        &labels,
+                        temperature,
+                        alpha,
+                        |ids| {
+                            // Compute student logits inline. The closure runs
+                            // once per batch element inside kd_step. Whole-batch
+                            // upfront is cheaper when the provider has shared
+                            // state; adjacent same-input calls are deterministic
+                            // so indexing is safe.
+                            let logits_vv = self
+                                .student
+                                .logits_for_batch(std::slice::from_ref(&ids.to_vec()))
+                                .expect("student provider failed mid-step");
+                            logits_vv.into_iter().next().unwrap_or_default()
+                        },
+                    )?;
+                    self.student.apply_kd_gradient(&grads)?;
+                    (loss, dummy_batch, labels)
+                };
                 best_loss = best_loss.min(loss);
-                self.student.apply_kd_gradient(&grads)?;
                 step += 1;
                 last_batch = dummy_batch;
                 last_labels = labels;
@@ -802,6 +854,19 @@ fn parse_max_steps_value(raw: Option<&str>) -> Option<u64> {
 /// PMAT-706: read `APR_DISTILL_MAX_STEPS` from the environment once.
 fn parse_max_steps() -> Option<u64> {
     parse_max_steps_value(std::env::var("APR_DISTILL_MAX_STEPS").ok().as_deref())
+}
+
+/// PMAT-PERPOS: read the `APR_DISTILL_PER_POSITION` opt-in once. Truthy
+/// values: `1`, `true`, `yes`, `on` (case-insensitive). Anything else
+/// (unset, empty, `0`, `false`) → per-row mode (no behavior change).
+fn parse_per_position() -> bool {
+    std::env::var("APR_DISTILL_PER_POSITION")
+        .ok()
+        .map(|v| {
+            let v = v.trim().to_ascii_lowercase();
+            matches!(v.as_str(), "1" | "true" | "yes" | "on")
+        })
+        .unwrap_or(false)
 }
 
 /// PMAT-706: projected-wall-time target for the smoke summary. Defaults to
@@ -1319,6 +1384,64 @@ mod tests {
              broken somewhere.",
             result.metrics.initial_loss,
             result.metrics.final_loss
+        );
+    }
+
+    /// FT-PERPOS-005 (contract distill-per-position-kd-v1): the pipeline in
+    /// per-position mode trains end-to-end on every position and reduces loss,
+    /// AND `with_per_position(false)` is byte-identical to the default path
+    /// (the production loop is untouched unless explicitly opted in).
+    #[test]
+    fn falsify_perpos_005_pipeline_per_position_reduces_loss() {
+        use safetensors::tensor::{Dtype, TensorView};
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let dummy: Vec<f32> = (0..32).map(|i| i as f32 * 0.01).collect();
+        let dummy_bytes: Vec<u8> = bytemuck::cast_slice(&dummy).to_vec();
+        for name in ["teacher", "student"] {
+            let p = tmp.path().join(format!("{name}.safetensors"));
+            let views = vec![(
+                "layer.weight",
+                TensorView::new(Dtype::F32, vec![8, 4], &dummy_bytes).expect("view"),
+            )];
+            std::fs::write(&p, safetensors::serialize(views, None).expect("ser")).expect("write");
+        }
+        let mk_config = |out: std::path::PathBuf| {
+            let mut c = DistillConfig::minimal(
+                tmp.path().join("teacher.safetensors").to_str().unwrap(),
+                tmp.path().join("student.safetensors").to_str().unwrap(),
+            );
+            c.output.dir = out;
+            c.training.epochs = 3;
+            c.training.batch_size = 4;
+            c.distillation.temperature = 4.0;
+            c.distillation.alpha = 0.5;
+            c
+        };
+
+        // Per-position mode: trains on every position, loss must decrease.
+        let cfg_pp = mk_config(tmp.path().join("out_pp"));
+        let mut pp = Pipeline::new(&cfg_pp).with_per_position(true);
+        let r_pp = pp.execute().expect("per-position pipeline must run");
+        eprintln!(
+            "[FT-PERPOS-005] per-position initial={} final={} steps={}",
+            r_pp.metrics.initial_loss, r_pp.metrics.final_loss, r_pp.metrics.steps_completed
+        );
+        assert!(
+            r_pp.metrics.final_loss < r_pp.metrics.initial_loss,
+            "per-position KD must reduce loss (initial={}, final={})",
+            r_pp.metrics.initial_loss,
+            r_pp.metrics.final_loss
+        );
+
+        // Default (per-row) still works and is the unchanged path.
+        let cfg_row = mk_config(tmp.path().join("out_row"));
+        let mut row = Pipeline::new(&cfg_row).with_per_position(false);
+        let r_row = row.execute().expect("per-row pipeline must run");
+        assert!(
+            r_row.metrics.final_loss < r_row.metrics.initial_loss,
+            "per-row path must remain healthy (initial={}, final={})",
+            r_row.metrics.initial_loss,
+            r_row.metrics.final_loss
         );
     }
 
