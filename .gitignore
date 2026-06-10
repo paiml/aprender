@@ -81,3 +81,11 @@ crates/apr-cli/trace-*.json
 .claude/scheduled_tasks.lock
 contracts/.pv/
 per-layer-trace/
+
+# Dev-convenience symlinks — must NOT be tracked (publish-safety: tracked
+# symlinks break cargo package; see contracts/publish-safety-v1.yaml).
+# - aprender-present/contracts -> presentar-core/contracts (only for `pv codegen`;
+#   the build uses the checked-in src/generated_contracts.rs)
+# - aprender-train/checkpoints -> machine-local /mnt/... (package-excluded)
+/crates/aprender-present/contracts
+/crates/aprender-train/checkpoints
