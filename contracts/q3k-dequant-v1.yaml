@@ -1,0 +1,142 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-10'
+  author: PAIML Engineering
+  description: |
+    aprender-serve must dequantize GGML `Q3_K` (type 11) super-blocks to f32.
+    Before this contract, loading a Q3_K GGUF (e.g. qwen2.5-7b-instruct-q3_k_m)
+    crashed `get_tensor_f32` with "Unsupported quantization type: 11" (issue
+    #1892). This pins the byte layout + dequantization arithmetic against the
+    canonical ggml `dequantize_row_q3_K`, verified element-for-element vs
+    candle-core `BlockQ3K::to_float`.
+  references:
+  - 'issue #1892 -- the crash this fixes'
+  - 'ggml dequantize_row_q3_K -- canonical reference algorithm'
+  - 'candle-core BlockQ3K::to_float -- Rust reference cross-checked against'
+  - 'contracts/tensor-layout-v1.yaml -- dequant emits ggml-native element order; transpose stays at the GGUF->APR import boundary (LAYOUT-001/002)'
+
+kind: KernelContract
+name: q3k-dequant
+version: 1.0.0
+scope: aprender-serve quantize::dequantize_q3_k + gguf::metadata::get_tensor_f32 dispatch
+
+equations:
+  q3k_block_layout:
+    formula: |
+      A Q3_K super-block is exactly 110 bytes encoding 256 values:
+        hmask  [0..32]    -- 1 high bit per weight (256 bits)
+        qs     [32..96]   -- 2 low bits per weight (512 bits)
+        scales [96..108]  -- 16 packed 6-bit block scales
+        d      [108..110] -- f16 super-block scale
+    domain: data.len() bytes, multiple of 110
+    codomain: data.len() / 110 * 256 f32 values
+    invariants:
+    - 'data.len() not a multiple of 110 -> Err(InvalidShape), never a panic or partial read'
+    - 'output length == (data.len() / 110) * 256'
+    lean_theorem: Theorems.Q3K_Block_Layout
+
+  q3k_dequant_formula:
+    formula: |
+      For each weight: let q3 = (qs >> shift) & 3 (low 2 bits) and
+      h = (hmask & bit) (high bit). The 3-bit value [0,7] is recentered:
+        recentered = q3 - (if h == 0 { 4 } else { 0 })   in [-4, 3]
+      Output y = d * (scale - 32) * recentered, where scale is the weight's
+      6-bit block scale (one per 16 weights) and bit advances per 32-weight
+      block (8 distinct hmask bits across the 256 weights).
+    domain: (q3 in [0,3], h in {0,1}, scale in [0,63], d in f16)
+    codomain: y in f32
+    invariants:
+    - 'high bit set -> recenter offset 0; high bit clear -> recenter offset -4'
+    - 'd == 0 -> every output is 0 (degenerate but valid; no panic)'
+    - 'the hmask bit advances once per 32-weight block, never reused across blocks'
+    lean_theorem: Theorems.Q3K_Dequant_Formula
+
+proof_obligations:
+- type: invariant
+  property: Q3_K data length not a multiple of 110 is rejected
+  formal: |
+    For every data with data.len() % 110 != 0: dequantize_q3_k(data) returns
+    Err(InvalidShape); it never panics and never reads out of bounds.
+- type: invariant
+  property: output length is exactly num_super_blocks * 256
+  formal: |
+    For every data with data.len() % 110 == 0: the returned Vec has length
+    (data.len() / 110) * 256.
+- type: invariant
+  property: golden bit-unpacking is exact
+  formal: |
+    For the canonical block (d=2.0, scale[0]=33, hmask all-set except byte 2,
+    qs[0]=1): output[0]==2.0, output[1]==0.0, output[2]==-8.0. This pins low-bit
+    extraction, high-bit recentering (both branches), and scale reconstruction.
+- type: classification
+  property: get_tensor_f32 no longer rejects type 11
+  formal: |
+    For every GGUF tensor with qtype == GGUF_TYPE_Q3_K (11): get_tensor_f32
+    dispatches to dequantize_q3_k instead of returning
+    "Unsupported quantization type: 11".
+
+falsification_tests:
+- id: FT-Q3K-001
+  rule: golden hand-computed values pin the bit-unpacking
+  prediction: |
+    dequantize_q3_k of the canonical block yields output[0]=2.0, output[1]=0.0,
+    output[2]=-8.0 and length 256.
+  if_fails: |
+    Low-bit shift, high-bit recenter offset (the -4), or the scale
+    reconstruction (aux[] manipulation) is wrong. Check dequant_q4k.rs
+    dequantize_q3_k against ggml dequantize_row_q3_K.
+  evidence: cargo test -p aprender-serve --lib test_dequantize_q3_k_golden_values
+- id: FT-Q3K-002
+  rule: d == 0 zeroes the whole block without panic
+  prediction: |
+    dequantize_q3_k of a block with d=0 returns 256 values, all exactly 0.0.
+  if_fails: |
+    A division or NaN crept into the scale/recenter path, or the d=0 case
+    panics. Check the dl computation.
+  evidence: cargo test -p aprender-serve --lib test_dequantize_q3_k_zero_scale
+- id: FT-Q3K-003
+  rule: non-multiple-of-110 length is rejected
+  prediction: |
+    dequantize_q3_k(&[0u8; 109]) returns Err, not a panic or truncated output.
+  if_fails: |
+    The super-block-size guard is missing or off. Check the
+    is_multiple_of(110) check at the top of dequantize_q3_k.
+  evidence: cargo test -p aprender-serve --lib test_dequantize_q3_k_invalid_length
+- id: FT-Q3K-004
+  rule: N super-blocks yield N*256 values
+  prediction: |
+    A 220-byte input (2 super-blocks) dequantizes to exactly 512 values.
+  if_fails: |
+    The per-super-block output offset (out_start) or the result vec sizing is
+    wrong. Check num_super_blocks * QK_K allocation.
+  evidence: cargo test -p aprender-serve --lib test_dequantize_q3_k_multiple_superblocks
+
+kani_harnesses:
+- id: KANI-Q3K-001
+  obligation: output length is exactly num_super_blocks * 256, no out-of-bounds
+  property: |
+    For all n in [0..16]: dequantize_q3_k on n*110 bytes returns Ok with a Vec
+    of length n*256; every slice index (hmask[0..32], qs[0..64], scales[0..12],
+    d[108..110]) stays within each 110-byte super-block.
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_q3k_output_length
+- id: KANI-Q3K-002
+  obligation: recentered 3-bit value is always in [-4, 3]; no overflow
+  property: |
+    For all (qs_byte in [0..256], shift in {0,2,4,6}, hbit in {0,1}):
+    recentered = ((qs_byte >> shift) & 3) - (if hbit == 0 { 4 } else { 0 })
+    lies in [-4, 3]; the i8 subtraction never overflows.
+  bound: 256
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_q3k_recenter_range
+
+qa_gate:
+  id: F-Q3K-001
+  name: q3k-dequant-v1 Contract
+  description: aprender-serve must dequantize Q3_K (GGML type 11) super-blocks to f32 with byte-exact bit-unpacking so Q3_K GGUF models load instead of crashing.
+  checks:
+  - validation
+  - falsification

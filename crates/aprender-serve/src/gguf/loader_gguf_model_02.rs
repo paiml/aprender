@@ -208,6 +208,26 @@
         assert!(result.is_ok(), "Q5_K tensor failed: {:?}", result.err());
     }
 
+    /// Issue #1892 / contract q3k-dequant-v1: a Q3_K (type 11) tensor must
+    /// dispatch to dequantize_q3_k instead of crashing with "Unsupported
+    /// quantization type: 11". Also guards the get_tensor_f32 match against a
+    /// catch-all-pattern regression (a missing GGUF_TYPE_Q3_K import once
+    /// silently shadowed the Q4_K/Q5_K/Q6_K arms).
+    #[test]
+    fn test_gguf_model_get_tensor_f32_q3_k() {
+        use crate::gguf::test_factory::*;
+        let q3_k_data = create_q3_k_data(256);
+        let data = GGUFBuilder::new()
+            .architecture("llama")
+            .hidden_dim("llama", 64)
+            .add_q3_k_tensor("test_q3k", &[256], &q3_k_data)
+            .build();
+        let model = GGUFModel::from_bytes(&data).expect("model");
+        let result = model.get_tensor_f32("test_q3k", &data);
+        assert!(result.is_ok(), "Q3_K tensor failed: {:?}", result.err());
+        assert_eq!(result.expect("q3k ok").len(), 256, "Q3_K yields 256 values");
+    }
+
     #[test]
     fn test_gguf_builder_default() {
         use crate::gguf::test_factory::GGUFBuilder;

@@ -19,9 +19,9 @@
 //! ```
 
 use super::types::{
-    GGUF_ALIGNMENT, GGUF_MAGIC, GGUF_TYPE_F16, GGUF_TYPE_F32, GGUF_TYPE_Q2_K, GGUF_TYPE_Q4_0,
-    GGUF_TYPE_Q4_1, GGUF_TYPE_Q4_K, GGUF_TYPE_Q5_0, GGUF_TYPE_Q5_1, GGUF_TYPE_Q5_K, GGUF_TYPE_Q6_K,
-    GGUF_TYPE_Q8_0, GGUF_VERSION_V3,
+    GGUF_ALIGNMENT, GGUF_MAGIC, GGUF_TYPE_F16, GGUF_TYPE_F32, GGUF_TYPE_Q2_K, GGUF_TYPE_Q3_K,
+    GGUF_TYPE_Q4_0, GGUF_TYPE_Q4_1, GGUF_TYPE_Q4_K, GGUF_TYPE_Q5_0, GGUF_TYPE_Q5_1, GGUF_TYPE_Q5_K,
+    GGUF_TYPE_Q6_K, GGUF_TYPE_Q8_0, GGUF_VERSION_V3,
 };
 
 /// Builder for creating valid GGUF v3 files in memory
@@ -245,6 +245,18 @@ impl GGUFBuilder {
             name.to_string(),
             dims.to_vec(),
             GGUF_TYPE_Q2_K,
+            data.to_vec(),
+        ));
+        self
+    }
+
+    /// Add a Q3_K tensor (110 bytes per 256 elements)
+    #[must_use]
+    pub fn add_q3_k_tensor(mut self, name: &str, dims: &[u64], data: &[u8]) -> Self {
+        self.tensors.push((
+            name.to_string(),
+            dims.to_vec(),
+            GGUF_TYPE_Q3_K,
             data.to_vec(),
         ));
         self
