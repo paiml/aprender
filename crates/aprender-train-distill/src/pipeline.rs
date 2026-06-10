@@ -71,6 +71,17 @@ pub struct Pipeline<'a> {
     /// `with_callback()` to surface per-step loss during long runs.
     /// Contract: `contracts/distill-pipeline-observability-v1.yaml`.
     callbacks: Vec<Box<dyn entrenar::train::TrainerCallback>>,
+    /// PMAT-706: smoke-validation early-break budget.
+    /// `Some(N)` (N ≥ 1) runs at most N training steps then breaks, prints a
+    /// `[SMOKE]` loss/throughput/projection summary, and skips the final
+    /// export — letting operators validate the cascade end-to-end in ~60s
+    /// before committing to a 30-50h Stage D run. `Some(0)` is a degenerate
+    /// request that `train()` rejects. `None` = normal full run (no change).
+    ///
+    /// Defaults from `APR_DISTILL_MAX_STEPS` at construction; override in
+    /// tests via [`Self::with_max_steps`] so they never touch process env.
+    /// Contract: `contracts/apr-distill-smoke-validation-v1.yaml`.
+    smoke_max_steps: Option<u64>,
 }
 
 impl<'a> Pipeline<'a> {
@@ -93,7 +104,21 @@ impl<'a> Pipeline<'a> {
             student: Box::new(crate::student_provider::FixtureStudent::new(32, 0.0, 0.1)),
             batch_source: Box::new(crate::batch_source::SyntheticBatchSource::new(32)),
             callbacks: Vec::new(),
+            // PMAT-706: pick up the operator's smoke budget from the env once.
+            smoke_max_steps: parse_max_steps(),
         }
+    }
+
+    /// PMAT-706: override the smoke-validation early-break budget.
+    ///
+    /// `Some(N)` (N ≥ 1) runs at most N steps then breaks; `Some(0)` makes
+    /// `execute()`/`train()` return a clear error; `None` runs the full
+    /// configured schedule. Primarily a test seam — operators set
+    /// `APR_DISTILL_MAX_STEPS` instead, which `new()` reads automatically.
+    #[must_use]
+    pub fn with_max_steps(mut self, max_steps: Option<u64>) -> Self {
+        self.smoke_max_steps = max_steps;
+        self
     }
 
     /// PMAT-705: attach a training-progress callback.
@@ -166,8 +191,23 @@ impl<'a> Pipeline<'a> {
         let (metrics, student_weights, student_shapes) =
             self.train(&teacher_path, &student_path)?;
 
-        // Stage 3: Export student checkpoint
-        let output_path = self.export(&student_weights, &student_shapes, &metrics)?;
+        // Stage 3: Export student checkpoint — unless this is a smoke run.
+        // PMAT-706 / apr-distill-smoke-validation-v1 `no_side_effects`:
+        // smoke-validation runs MUST NOT write a final output model so that
+        // downstream tools (`apr eval`, `apr run`) can't consume a smoke
+        // result by accident. This holds whether the loop early-broke or ran
+        // to natural completion (N ≥ total planned steps). Intermediate
+        // PMAT-699 checkpoints under the output dir may still exist.
+        let smoke_mode = matches!(self.smoke_max_steps, Some(n) if n >= 1);
+        let output_path = if smoke_mode {
+            println!(
+                "[PMAT-706] smoke mode: skipping export — \
+                 no model.safetensors / output.apr written"
+            );
+            PathBuf::new()
+        } else {
+            self.export(&student_weights, &student_shapes, &metrics)?
+        };
 
         Ok(PipelineResult {
             output_path,
@@ -223,6 +263,21 @@ impl<'a> Pipeline<'a> {
         HashMap<String, Vec<f32>>,
         HashMap<String, Vec<usize>>,
     )> {
+        // PMAT-706: smoke-validation early-break budget (apr-distill-smoke-
+        // validation-v1). Read once. `Some(0)` is a degenerate request — fail
+        // fast with a clear, actionable error before any model I/O, and with
+        // no division-by-zero in the summary path (KANI-SMOKE-002).
+        let max_steps = self.smoke_max_steps;
+        if max_steps == Some(0) {
+            return Err(EntrenarError::ConfigValue {
+                field: "APR_DISTILL_MAX_STEPS".to_string(),
+                message: "0 steps requested — smoke mode needs at least 1 step".to_string(),
+                suggestion: "set APR_DISTILL_MAX_STEPS to a positive integer (e.g. 10), \
+                             or unset it to run the full configured schedule"
+                    .to_string(),
+            });
+        }
+
         // Load weights from both models. The teacher_weights byte buffer
         // is no longer used for logits computation (Phase 1 wired it to
         // the teacher provider instead) but we still load + drop it to
@@ -371,6 +426,10 @@ impl<'a> Pipeline<'a> {
         }
 
         let mut stop_requested = false;
+        // PMAT-706: set true when the smoke-validation early-break fires (as
+        // opposed to normal epoch exhaustion or a CallbackAction::Stop). The
+        // `[SMOKE]` summary fires iff this is true.
+        let mut smoke_break = false;
         for epoch_idx in 0..self.config.training.epochs {
             let steps_this_epoch = steps_per_epoch_u64;
 
@@ -475,6 +534,19 @@ impl<'a> Pipeline<'a> {
                         );
                     }
                 }
+
+                // PMAT-706: smoke-validation early-break. `step` was already
+                // incremented above, so `step >= m` means exactly `m` steps
+                // ran — never m+1 (FT-SMOKE-001 / KANI-SMOKE-001 off-by-one
+                // guard). The break is inside the inner loop, after grad
+                // application + callbacks + checkpoint for this step, so
+                // partial epochs are valid.
+                if let Some(m) = max_steps {
+                    if step >= m {
+                        smoke_break = true;
+                        break;
+                    }
+                }
             }
 
             // PMAT-705: on_epoch_end.
@@ -499,7 +571,7 @@ impl<'a> Pipeline<'a> {
                 }
             }
 
-            if stop_requested {
+            if stop_requested || smoke_break {
                 break;
             }
         }
@@ -542,6 +614,40 @@ impl<'a> Pipeline<'a> {
         metrics.best_loss = best_loss.min(final_loss);
         metrics.steps_completed = step;
         metrics.throughput = (step as f32 * batch_size as f32) / elapsed;
+
+        // PMAT-706: smoke-validation degenerate-run guard + summary.
+        if max_steps.is_some() && step == 0 {
+            // Smoke mode was requested but the loop ran nothing (e.g. epochs=0
+            // or an empty schedule). Per apr-distill-smoke-validation-v1 this
+            // is the "likely teacher or student load failure" error path — a
+            // non-zero exit, not a silent success the operator might trust.
+            return Err(EntrenarError::ConfigValue {
+                field: "APR_DISTILL_MAX_STEPS".to_string(),
+                message: "smoke mode ran 0 steps — likely teacher or student load failure"
+                    .to_string(),
+                suggestion: "verify both model paths resolve and load (try `apr inspect` on each)"
+                    .to_string(),
+            });
+        }
+        if smoke_break {
+            // Summary fires ONLY on the early-break path — never on normal
+            // epoch exhaustion or a CallbackAction::Stop (contract invariant).
+            let project_to_steps = parse_project_to_steps();
+            let (summary, projection) = smoke_summary_lines(
+                step,
+                elapsed,
+                metrics.initial_loss,
+                final_loss,
+                project_to_steps,
+            );
+            println!(
+                "[PMAT-706] smoke mode: APR_DISTILL_MAX_STEPS={} \
+                 (early-break after {step} steps; no final output.apr written)",
+                max_steps.unwrap_or(0)
+            );
+            println!("{summary}");
+            println!("{projection}");
+        }
 
         // SPEC-DISTILL-001 Phase 2c+3-prep: the student provider owns its
         // parameter buffer. To preserve the FALSIFY-APR-DISTILL-TRAIN-001
@@ -676,6 +782,72 @@ impl<'a> Pipeline<'a> {
 /// applying any gradient update. Used to bracket the training loop with
 /// initial-loss and final-loss measurements that drive
 /// `TrainingMetrics.improvement_ratio`.
+/// PMAT-706: pure parse of the `APR_DISTILL_MAX_STEPS` value.
+///
+/// Per the `apr-distill-smoke-validation-v1` env-var precondition:
+/// - unset / empty / non-integer → `None` (no smoke mode; values that fail to
+///   parse silently fall back to "unset" so there is no regression).
+/// - `"0"` → `Some(0)` (degenerate; `train()` turns this into a clear `Err`).
+/// - `"N"` for N ≥ 1 → `Some(N)` (smoke mode: early-break after N steps).
+///
+/// Split out as a pure function so the contract precondition is unit-testable
+/// without touching process env (this project has repeatedly been bitten by
+/// env-var races in parallel tests).
+fn parse_max_steps_value(raw: Option<&str>) -> Option<u64> {
+    raw.map(str::trim)
+        .filter(|v| !v.is_empty())
+        .and_then(|v| v.parse::<u64>().ok())
+}
+
+/// PMAT-706: read `APR_DISTILL_MAX_STEPS` from the environment once.
+fn parse_max_steps() -> Option<u64> {
+    parse_max_steps_value(std::env::var("APR_DISTILL_MAX_STEPS").ok().as_deref())
+}
+
+/// PMAT-706: projected-wall-time target for the smoke summary. Defaults to
+/// 50_000 steps; override with `APR_DISTILL_PROJECT_TO_STEPS=N` (N ≥ 1).
+fn parse_project_to_steps() -> u64 {
+    std::env::var("APR_DISTILL_PROJECT_TO_STEPS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .filter(|&n| n > 0)
+        .unwrap_or(50_000)
+}
+
+/// PMAT-706: build the two `[SMOKE]` summary lines printed after an
+/// early-break smoke run.
+///
+/// Pure + total: extracted so the exact wire format (FT-SMOKE-003) is
+/// unit-testable without capturing stdout. `steps` is ≥ 1 on the smoke path
+/// and `elapsed_secs` is clamped here, so there is no division-by-zero
+/// (KANI-SMOKE-002). Linear extrapolation `steps → project_to_steps`; the
+/// loss trajectory is reported, never asserted — smoke mode is a plumbing
+/// check, not a quality gate.
+fn smoke_summary_lines(
+    steps: u64,
+    elapsed_secs: f32,
+    initial_loss: f32,
+    final_loss: f32,
+    project_to_steps: u64,
+) -> (String, String) {
+    let secs = elapsed_secs.max(1e-6);
+    let throughput = steps as f32 / secs; // step/s
+    let projected_secs = project_to_steps as f32 / throughput.max(1e-9);
+    let summary = format!(
+        "[SMOKE] {steps} steps in {secs:.2}s: \
+         initial_loss={initial_loss:.4}, final_loss={final_loss:.4}, \
+         throughput={throughput:.2} step/s"
+    );
+    let projection = format!(
+        "[SMOKE] projected full-run wall time ({project_to_steps} steps): \
+         {:.2}h / {:.1} min / {:.1}s",
+        projected_secs / 3600.0,
+        projected_secs / 60.0,
+        projected_secs
+    );
+    (summary, projection)
+}
+
 fn kd_step_loss_for_pipeline(
     teacher: &mut dyn crate::teacher_provider::TeacherLogitsProvider,
     student: &mut dyn crate::student_provider::StudentLogitsProvider,
@@ -1557,5 +1729,151 @@ mod tests {
             assert_eq!(a_steps, b_steps, "both callbacks must see the same steps");
             assert!(a_steps > 0, "must run at least one step");
         }
+    }
+
+    // PMAT-706: smoke-validation early-break tests.
+    //
+    // Contract: contracts/apr-distill-smoke-validation-v1.yaml. Re-landed
+    // after #1888 (52650c60c) squash-dropped the pipeline.rs implementation —
+    // that commit shipped ONLY the contract YAML, so the gate it specifies
+    // never existed in source. Falsifiers FT-SMOKE-001..004 + KANI-SMOKE-002.
+    //
+    // Test names match the contract's `evidence:` paths exactly
+    // (`pipeline::tests::pmat_706_*`). Every test sets the budget via
+    // `with_max_steps`, never the env var, so they are deterministic under
+    // parallel execution.
+
+    /// Build a fixture teacher+student safetensors pair + config in `tmp`.
+    fn smoke_fixture_config(tmp_dir: &std::path::Path, epochs: u32) -> DistillConfig {
+        use safetensors::tensor::{Dtype, TensorView};
+        let data: Vec<f32> = (0..256).map(|i| (i as f32) * 0.01).collect();
+        let bytes: Vec<u8> = bytemuck::cast_slice(&data).to_vec();
+        for name in ["teacher", "student"] {
+            let views = vec![(
+                "layer.weight",
+                TensorView::new(Dtype::F32, vec![16, 16], &bytes)
+                    .expect("tensor view should construct"),
+            )];
+            std::fs::write(
+                tmp_dir.join(format!("{name}.safetensors")),
+                safetensors::serialize(views, None).expect("serialize should succeed"),
+            )
+            .expect("write should succeed");
+        }
+        let mut config = DistillConfig::minimal(
+            tmp_dir.join("teacher.safetensors").to_str().expect("utf-8"),
+            tmp_dir.join("student.safetensors").to_str().expect("utf-8"),
+        );
+        config.output.dir = tmp_dir.join("output");
+        config.training.epochs = epochs;
+        config.training.batch_size = 4;
+        config
+    }
+
+    /// FT-SMOKE-001: `APR_DISTILL_MAX_STEPS=10` runs exactly 10 steps,
+    /// not the configured 100 epochs × 250 steps/epoch = 25_000.
+    #[test]
+    fn pmat_706_smoke() {
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let config = smoke_fixture_config(tmp.path(), 100);
+        let mut pipeline = Pipeline::new(&config).with_max_steps(Some(10));
+        let result = pipeline.execute().expect("smoke run should succeed");
+        assert_eq!(
+            result.metrics.steps_completed, 10,
+            "FT-SMOKE-001: early-break must stop at exactly 10 steps, got {}",
+            result.metrics.steps_completed
+        );
+    }
+
+    /// FT-SMOKE-002: with the budget unset the loop runs the full configured
+    /// schedule and still exports — the path is purely additive.
+    #[test]
+    fn pmat_706_no_regression() {
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let config = smoke_fixture_config(tmp.path(), 2);
+        let batch_size = u64::from(config.training.batch_size);
+        let expected = (1000 / batch_size).max(1) * u64::from(config.training.epochs);
+        let mut pipeline = Pipeline::new(&config).with_max_steps(None);
+        let result = pipeline.execute().expect("full run should succeed");
+        assert_eq!(
+            result.metrics.steps_completed, expected,
+            "FT-SMOKE-002: unset budget must run the full {expected}-step schedule"
+        );
+        assert!(
+            result.output_path.exists(),
+            "FT-SMOKE-002: a full (non-smoke) run must still write an output model"
+        );
+    }
+
+    /// FT-SMOKE-003: the summary is two grep/awk-parseable lines carrying
+    /// throughput + projected wall time. Asserted against the pure builder so
+    /// the exact wire format is pinned without capturing stdout.
+    #[test]
+    fn pmat_706_summary_format() {
+        let (summary, projection) = smoke_summary_lines(10, 2.0, 6.0, 5.0, 50_000);
+        assert!(
+            summary.starts_with("[SMOKE] 10 steps in 2.00s:"),
+            "got: {summary}"
+        );
+        assert!(summary.contains("initial_loss=6.0000"), "got: {summary}");
+        assert!(summary.contains("final_loss=5.0000"), "got: {summary}");
+        assert!(summary.contains("throughput=5.00 step/s"), "got: {summary}");
+        assert!(
+            projection.starts_with("[SMOKE] projected full-run wall time (50000 steps):"),
+            "got: {projection}"
+        );
+        assert!(projection.contains("h /"), "got: {projection}");
+        assert!(projection.contains("min /"), "got: {projection}");
+        // 50_000 steps at 5 step/s = 10_000s.
+        assert!(projection.contains("10000.0s"), "got: {projection}");
+    }
+
+    /// FT-SMOKE-004: a smoke run writes no final output model — the returned
+    /// path is empty and no metadata sidecar appears.
+    #[test]
+    fn pmat_706_no_output_in_smoke() {
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let config = smoke_fixture_config(tmp.path(), 100);
+        let out_dir = config.output.dir.clone();
+        let mut pipeline = Pipeline::new(&config).with_max_steps(Some(5));
+        let result = pipeline.execute().expect("smoke run should succeed");
+        assert_eq!(result.metrics.steps_completed, 5);
+        assert!(
+            result.output_path.as_os_str().is_empty(),
+            "FT-SMOKE-004: smoke output_path must be empty (no artifact written)"
+        );
+        assert!(
+            !out_dir.join("distillation_metadata.json").exists(),
+            "FT-SMOKE-004: smoke mode must not write the metadata sidecar"
+        );
+    }
+
+    /// KANI-SMOKE-002 analog: `APR_DISTILL_MAX_STEPS=0` is a clear, actionable
+    /// error — never a panic or a silent zero-step success.
+    #[test]
+    fn pmat_706_zero_steps_is_clear_error() {
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let config = smoke_fixture_config(tmp.path(), 4);
+        let mut pipeline = Pipeline::new(&config).with_max_steps(Some(0));
+        let err = pipeline.execute().expect_err("0 steps must be rejected");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("APR_DISTILL_MAX_STEPS") && msg.contains("at least 1 step"),
+            "expected an actionable 0-steps error, got: {msg}"
+        );
+    }
+
+    /// Contract env-var precondition: invalid/empty → unset; a valid integer
+    /// (including 0) parses through. Pure — no process env touched.
+    #[test]
+    fn pmat_706_parse_max_steps_value() {
+        assert_eq!(parse_max_steps_value(None), None);
+        assert_eq!(parse_max_steps_value(Some("")), None);
+        assert_eq!(parse_max_steps_value(Some("   ")), None);
+        assert_eq!(parse_max_steps_value(Some("abc")), None);
+        assert_eq!(parse_max_steps_value(Some("-1")), None);
+        assert_eq!(parse_max_steps_value(Some("0")), Some(0));
+        assert_eq!(parse_max_steps_value(Some("10")), Some(10));
+        assert_eq!(parse_max_steps_value(Some("  7 ")), Some(7));
     }
 }
