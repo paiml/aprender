@@ -371,18 +371,58 @@ fn run_sharded_gguf(
     download_companion_files(cache_dir, base_url, force)?;
     write_shard_manifest(&manifest_path, org, repo, file_checksums)?;
 
-    let first_part = cache_dir.join(shard_files.first().map_or("", String::as_str));
     println!();
     println!(
         "{} Downloaded {} GGUF shards",
         "✓".green(),
         shard_files.len().to_string().yellow()
     );
-    println!("  Path: {}", first_part.display().to_string().green());
-    println!();
-    println!("{}", "Usage:".cyan().bold());
-    println!("  apr run {}", first_part.display());
-    println!("  apr serve {}", first_part.display());
+
+    // #1893 criterion 2: merge the parts into one loadable GGUF so the existing
+    // single-file loader runs the model unchanged ("without manual
+    // pre-stitching").
+    let part_paths: Vec<std::path::PathBuf> =
+        shard_files.iter().map(|f| cache_dir.join(f)).collect();
+    let merged_path = cache_dir.join("model.gguf");
+    match aprender::format::gguf::merge_gguf_shards(&part_paths, &merged_path) {
+        Ok(()) => {
+            // The merged model supersedes the parts — delete them so the model
+            // doesn't occupy ~2× its size on disk indefinitely.
+            for part in &part_paths {
+                if let Err(e) = std::fs::remove_file(part) {
+                    eprintln!(
+                        "  {} could not remove shard {} ({e})",
+                        "!".yellow(),
+                        part.display()
+                    );
+                }
+            }
+            println!(
+                "  {} merged {} parts → model.gguf",
+                "✓".green(),
+                shard_files.len().to_string().yellow()
+            );
+            println!("  Path: {}", merged_path.display().to_string().green());
+            println!();
+            println!("{}", "Usage:".cyan().bold());
+            println!("  apr run {}", merged_path.display());
+            println!("  apr serve {}", merged_path.display());
+        }
+        Err(e) => {
+            // Honest failure: the individual parts are NOT independently
+            // runnable, so do not point `apr run` at one of them.
+            eprintln!("  {} could not assemble the sharded model: {e}", "✗".red());
+            eprintln!(
+                "  The {} parts were downloaded to {} but cannot be run \
+                 individually. Please file an issue (#1893) with the model name.",
+                shard_files.len(),
+                cache_dir.display()
+            );
+            return Err(CliError::ValidationFailed(format!(
+                "sharded GGUF merge failed: {e}"
+            )));
+        }
+    }
     Ok(())
 }
 
@@ -677,3 +717,69 @@ include!("pull_remove_resolve_model.rs");
 include!("pull_extract_shard.rs");
 include!("pull_04.rs");
 include!("pull_dataset.rs");
+
+#[cfg(all(test, feature = "inference"))]
+mod sharded_gguf_interop_tests {
+    use aprender::format::gguf::{
+        export_tensors_to_gguf, merge_gguf_shards, GgmlType, GgufTensor, GgufValue,
+    };
+    use std::path::Path;
+
+    fn write_part(path: &Path, tensors: &[GgufTensor], meta: &[(String, GgufValue)]) {
+        let mut buf = Vec::new();
+        export_tensors_to_gguf(&mut buf, tensors, meta).expect("export part");
+        std::fs::write(path, &buf).expect("write part");
+    }
+
+    /// FT-MERGE-006: the merged sharded GGUF is accepted by realizar's OWN GGUF
+    /// parser (`GGUFModel::from_bytes`) — the actual inference loader, not just
+    /// aprender-core's reader. Closes the cross-parser verification gap: a merge
+    /// validated only by the writer's sibling reader could still be rejected by
+    /// the loader it exists to feed.
+    #[test]
+    fn merged_sharded_gguf_loads_in_realizar() {
+        let dir = std::env::temp_dir().join(format!("apr-merge-interop-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let p0 = dir.join("model-00001-of-00002.gguf");
+        let p1 = dir.join("model-00002-of-00002.gguf");
+        let merged = dir.join("model.gguf");
+
+        let tensor = |name: &str, fill: u8| GgufTensor {
+            name: name.into(),
+            shape: vec![4],
+            dtype: GgmlType::F32,
+            data: vec![fill; 16],
+        };
+        write_part(
+            &p0,
+            &[tensor("blk.0.weight", 1)],
+            &[
+                (
+                    "general.architecture".into(),
+                    GgufValue::String("gemma".into()),
+                ),
+                ("gemma.embedding_length".into(), GgufValue::Uint32(2048)),
+                ("gemma.block_count".into(), GgufValue::Uint32(18)),
+                ("split.no".into(), GgufValue::Uint16(0)),
+                ("split.count".into(), GgufValue::Uint16(2)),
+            ],
+        );
+        write_part(
+            &p1,
+            &[tensor("blk.1.weight", 2)],
+            &[("split.no".into(), GgufValue::Uint16(1))],
+        );
+
+        merge_gguf_shards(&[p0, p1], &merged).expect("merge");
+        let bytes = std::fs::read(&merged).expect("read merged");
+
+        let parsed = realizar::gguf::GGUFModel::from_bytes(&bytes);
+        assert!(
+            parsed.is_ok(),
+            "realizar's GGUF loader must accept the merged sharded file: {:?}",
+            parsed.err()
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}

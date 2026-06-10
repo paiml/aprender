@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-06-11
+
+### Added
+
+- **Sharded GGUF auto-merge (#1893 criterion 2)**: `apr pull` now merges a
+  downloaded split-GGUF set (`model-NNNNN-of-MMMMM.gguf`) into a single
+  `model.gguf` so the existing single-file loader runs the model unchanged —
+  no inference-hot-path refactor (which would risk *all* GGUF inference). Pulled
+  sharded models are now runnable end-to-end. `merge_gguf_shards` is
+  **type-agnostic** (copies tensor data by raw byte range → every ggml quant
+  type works), **lossless on metadata** (preserves arbitrary `<arch>.*` config
+  keys via the new `GgufReader::from_file_full` keep-all mode), **bounded in
+  memory** (streams to disk, holds ≤ one part at a time), and rejects duplicate
+  tensors across parts. Parts are deleted after a successful merge.
+
+### Verified
+
+- This release was hardened against a **multi-agent adversarial verification**
+  that found 5 release-blockers before publish — most critically that sourcing
+  metadata from the architecture-whitelisted reader silently dropped
+  `gemma.*`/`phi3.*`/`deepseek2.*`/`falcon.*`/etc. config keys, making merged
+  models of those (mainstream) architectures unloadable. Contract
+  `contracts/sharded-gguf-merge-v1.yaml` (FT-MERGE-001/004/005/006 + 2 kani
+  harnesses), including a cross-parser interop test that loads the merged file
+  with realizar's real `GGUFModel::from_bytes`.
+
 ## [0.37.0] - 2026-06-10
 
 ### Added
