@@ -371,18 +371,43 @@ fn run_sharded_gguf(
     download_companion_files(cache_dir, base_url, force)?;
     write_shard_manifest(&manifest_path, org, repo, file_checksums)?;
 
-    let first_part = cache_dir.join(shard_files.first().map_or("", String::as_str));
     println!();
     println!(
         "{} Downloaded {} GGUF shards",
         "✓".green(),
         shard_files.len().to_string().yellow()
     );
-    println!("  Path: {}", first_part.display().to_string().green());
+
+    // #1893 criterion 2: merge the parts into one loadable GGUF so the existing
+    // single-file loader runs the model unchanged ("without manual
+    // pre-stitching"). On failure, fall back to the first part — a completed
+    // download is never wasted.
+    let part_paths: Vec<std::path::PathBuf> =
+        shard_files.iter().map(|f| cache_dir.join(f)).collect();
+    let merged_path = cache_dir.join("model.gguf");
+    let usage_path = match aprender::format::gguf::merge_gguf_shards(&part_paths, &merged_path) {
+        Ok(()) => {
+            println!(
+                "  {} merged {} parts → model.gguf",
+                "✓".green(),
+                shard_files.len().to_string().yellow()
+            );
+            merged_path
+        }
+        Err(e) => {
+            eprintln!(
+                "  {} shard merge failed ({e}); leaving parts in place",
+                "!".yellow()
+            );
+            cache_dir.join(shard_files.first().map_or("", String::as_str))
+        }
+    };
+
+    println!("  Path: {}", usage_path.display().to_string().green());
     println!();
     println!("{}", "Usage:".cyan().bold());
-    println!("  apr run {}", first_part.display());
-    println!("  apr serve {}", first_part.display());
+    println!("  apr run {}", usage_path.display());
+    println!("  apr serve {}", usage_path.display());
     Ok(())
 }
 
