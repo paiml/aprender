@@ -46,6 +46,31 @@ pub trait BatchSource {
         seq_len: usize,
     ) -> Result<(Vec<Vec<u32>>, Vec<usize>)>;
 
+    /// Produce the next training batch with PER-POSITION labels.
+    ///
+    /// Returns `(inputs, labels)` where `labels` is `[batch][position]` — the
+    /// full shifted target sequence for every input window (position `p`'s
+    /// target is the token at `p+1`). This drives full-sequence KD
+    /// ([`crate::kd_step::kd_step_per_position`]), which trains on every
+    /// position instead of only the next token after the window.
+    ///
+    /// The default wraps [`Self::next_batch`] as a single trailing-position
+    /// label, so existing sources keep working; sources backed by real
+    /// shifted targets (`ShardBatchSource`) override it to expose all
+    /// positions.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`Self::next_batch`].
+    fn next_batch_per_position(
+        &mut self,
+        batch_size: usize,
+        seq_len: usize,
+    ) -> Result<(Vec<Vec<u32>>, Vec<Vec<usize>>)> {
+        let (inputs, labels) = self.next_batch(batch_size, seq_len)?;
+        Ok((inputs, labels.into_iter().map(|l| vec![l]).collect()))
+    }
+
     /// Optional: reset the source's internal cursor (e.g., for re-runs
     /// against a finite corpus). Default no-op for stateless sources.
     fn reset(&mut self) {}
@@ -79,6 +104,21 @@ impl BatchSource for SyntheticBatchSource {
             .map(|i| vec![(i % nc) as u32; seq_len])
             .collect();
         let labels: Vec<usize> = (0..batch_size).map(|i| i % nc).collect();
+        Ok((inputs, labels))
+    }
+
+    fn next_batch_per_position(
+        &mut self,
+        batch_size: usize,
+        seq_len: usize,
+    ) -> Result<(Vec<Vec<u32>>, Vec<Vec<usize>>)> {
+        // Synthetic identity rows: each position predicts the same row token,
+        // so the per-position labels are that token repeated `seq_len` times.
+        let nc = self.num_classes;
+        let inputs: Vec<Vec<u32>> = (0..batch_size)
+            .map(|i| vec![(i % nc) as u32; seq_len])
+            .collect();
+        let labels: Vec<Vec<usize>> = (0..batch_size).map(|i| vec![i % nc; seq_len]).collect();
         Ok((inputs, labels))
     }
 }
@@ -138,20 +178,22 @@ impl BatchSource for ShardBatchSource {
             .ok_or_else(|| entrenar_common::EntrenarError::Internal {
                 message: "ShardBatchSource exhausted without wrap-around".to_string(),
             })?;
-        // LMBatch packs tokens with overlap (stride > 0) or split layout.
-        // Convert to (inputs, labels) where label is the next token after
-        // each row's input window. For Phase 4-prep this Stage B PR keeps
-        // the conversion conservative: per-row predict-the-last-input-token
-        // (same identity-mapping semantics as SyntheticBatchSource so the
-        // pipeline doesn't immediately diverge on real data — Phase 4
-        // proper switches to true next-token prediction).
+        // LMBatch uses causal layout: get_target(i) is the input shifted by
+        // one (`target[p] = input[p+1]`). So `get_target(i).last()` is the
+        // GENUINE next token immediately AFTER the input window — real
+        // next-token prediction, NOT identity mapping. (An earlier comment
+        // here mislabelled this as "identity-mapping"; it never was — see
+        // crates/aprender-train/.../batch.rs causal-shift layout and the
+        // `shard_batch_source_label_is_genuine_next_token` falsifier below.)
+        // This per-row path trains on one target per window; the per-position
+        // path (next_batch_per_position) trains on every position.
         let inputs: Vec<Vec<u32>> = (0..batch_size)
             .map(|i| batch.get_input(i).map(<[u32]>::to_vec).unwrap_or_default())
             .collect();
         let labels: Vec<usize> = (0..batch_size)
             .map(|i| {
-                // Use the target's last token as the label (next-token
-                // prediction at the end of the input window).
+                // The next token after the window = last token of the
+                // causal-shifted target sequence.
                 batch
                     .get_target(i)
                     .and_then(|t| t.last())
@@ -160,6 +202,37 @@ impl BatchSource for ShardBatchSource {
             })
             .collect();
         let _ = seq_len; // shapes asserted via ShardBatchIter contract
+        Ok((inputs, labels))
+    }
+
+    fn next_batch_per_position(
+        &mut self,
+        batch_size: usize,
+        seq_len: usize,
+    ) -> Result<(Vec<Vec<u32>>, Vec<Vec<usize>>)> {
+        use std::iter::Iterator;
+        let batch = self
+            .inner
+            .next()
+            .ok_or_else(|| entrenar_common::EntrenarError::Internal {
+                message: "ShardBatchSource exhausted without wrap-around".to_string(),
+            })?;
+        // Full-sequence KD: per-position labels are the ENTIRE causal-shifted
+        // target sequence (`target[p] = input[p+1]`), so every position
+        // predicts its successor — up to `seq_len`× more KD signal per window
+        // than the per-row path.
+        let inputs: Vec<Vec<u32>> = (0..batch_size)
+            .map(|i| batch.get_input(i).map(<[u32]>::to_vec).unwrap_or_default())
+            .collect();
+        let labels: Vec<Vec<usize>> = (0..batch_size)
+            .map(|i| {
+                batch
+                    .get_target(i)
+                    .map(|t| t.iter().map(|&x| x as usize).collect())
+                    .unwrap_or_default()
+            })
+            .collect();
+        let _ = seq_len;
         Ok((inputs, labels))
     }
 }

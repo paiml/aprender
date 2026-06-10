@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-06-10
+
+### Added
+
+- **Per-position knowledge distillation** (full-sequence KD) for the
+  `aprender-train-distill` pipeline. The existing per-row path trains on ONE
+  target per window (the next token after the window); per-position KD trains
+  on EVERY position (position `p` predicts token `p+1`), giving up to
+  `seq_len`× more distillation signal per forward pass. New
+  `kd_step_per_position`, and additive trait methods `logits_per_position` /
+  `apply_kd_gradient_per_position` (teacher + student) /
+  `next_batch_per_position` (BatchSource) whose **defaults wrap the per-row
+  methods** — so existing providers, including the CUDA backend, compile and
+  behave unchanged. Opt-in via `APR_DISTILL_PER_POSITION` (default off → the
+  production loop is byte-identical). Contract:
+  `contracts/distill-per-position-kd-v1.yaml` (5 falsifiers + 2 kani
+  harnesses, all passing on the CPU/fixture path).
+  - **Scope:** the CPU/fixture path is fully verified. The real throughput
+    benefit needs the CUDA teacher/student to emit all-position logits (a GPU
+    forward change) — until then CUDA falls back to one position via the
+    defaults. That GPU per-position forward is a documented follow-up.
+  - While implementing, corrected a **misleading comment** in
+    `ShardBatchSource` that claimed "identity-mapping semantics": the per-row
+    labels were always genuine next-token (`LMBatch` causal-shifted target),
+    not identity. Pinned by a falsifier so it can't mislead again.
+
 ### Fixed
 
 - **PMAT-706 re-land**: the `APR_DISTILL_MAX_STEPS=N` smoke-validation mode
