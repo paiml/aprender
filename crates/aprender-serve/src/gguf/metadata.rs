@@ -306,6 +306,29 @@ impl GGUFModel {
                 let values = dequantize_f16(bytes)?;
                 Ok(values)
             },
+            GGUF_TYPE_BF16 => {
+                // BF16 (bfloat16): 2 bytes/elem, no block structure. Reuses the
+                // existing SIMD converter (y = from_bits((bits as u32) << 16))
+                // already used by the safetensors loaders + gguf/embedding.rs.
+                // #1893-class fix: without this arm a BF16 GGUF's
+                // embeddings/norms/lm_head hit the catch-all "Unsupported
+                // quantization type: 30".
+                let byte_size = size * 2;
+                if offset + byte_size > file_data.len() {
+                    return Err(RealizarError::UnsupportedOperation {
+                        operation: "get_tensor_f32".to_string(),
+                        reason: format!(
+                            "Data range [{}, {}) exceeds file size {}",
+                            offset,
+                            offset + byte_size,
+                            file_data.len()
+                        ),
+                    });
+                }
+                Ok(crate::inference::simd_bf16_to_f32(
+                    &file_data[offset..offset + byte_size],
+                ))
+            },
             GGUF_TYPE_Q4_1 => {
                 // Q4_1 quantized data
                 use crate::quantize::dequantize_q4_1;
