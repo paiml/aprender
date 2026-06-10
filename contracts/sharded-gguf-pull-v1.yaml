@@ -1,0 +1,153 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-10'
+  author: PAIML Engineering
+  description: |
+    `apr pull` must detect and download COMPLETE sharded-GGUF model sets
+    (`<prefix>-NNNNN-of-MMMMM.gguf`, zero-padded, 1-indexed) from HuggingFace.
+
+    Unlike sharded SafeTensors (which carry a central `model.safetensors.index.json`),
+    sharded GGUFs have NO index — the parts are discovered by filename. Before
+    this contract, `resolve_hf_model` ran the `.gguf` listing through
+    `select_best_gguf`, which picks ONE file — silently downloading a single
+    part and producing a broken/incomplete model (#1893).
+
+    Scope: this contract covers the PULL side (detection + multi-part download).
+    Cross-shard inference in aprender-serve (reading `split.count` and loading
+    tensors across parts) is the documented follow-up (issue #1893 criterion 2).
+  references:
+  - 'issue #1893 — pull + run sharded GGUF models'
+  - 'crates/apr-cli/src/commands/pull_remove_resolve_model.rs — detect_gguf_shards / parse_gguf_shard_name'
+  - 'crates/apr-cli/src/commands/pull.rs — run_sharded_gguf (no index.json, no SafeTensors conversion)'
+  - 'GH-213 (sharded SafeTensors via index.json) — the sibling path this complements'
+
+kind: KernelContract
+name: sharded-gguf-pull
+version: 1.0.0
+scope: apr-cli pull resolve_hf_model GGUF-shard detection + run_sharded_gguf download dispatch
+
+equations:
+  shard_set_completeness:
+    formula: |
+      detect_gguf_shards returns Some(parts) IFF, for a single (prefix, total),
+      total >= 2 AND exactly `total` parts are present AND every part number in
+      1..=total appears. Parts are returned sorted by ascending part number.
+      Otherwise None.
+    domain: a list of repo .gguf filenames
+    codomain: Option<Vec<String>> (the complete, ordered part set)
+    invariants:
+    - 'single non-sharded GGUF -> None (caller falls back to select_best_gguf)'
+    - 'unrelated multi-quant GGUFs (no -of- pattern) -> None'
+    - 'incomplete set (a part missing) -> None (never claim a partial model is downloadable)'
+    - 'detected set is ordered by part number 1..=total regardless of input order'
+    lean_theorem: Theorems.Shard_Set_Completeness
+
+  no_index_download:
+    formula: |
+      A detected sharded-GGUF set dispatches to run_sharded_gguf, which downloads
+      all parts WITHOUT fetching model.safetensors.index.json and WITHOUT
+      SafeTensors-format conversion; usage points at the first part.
+    domain: ResolvedModel::Sharded with all-.gguf shard_files
+    codomain: filesystem state + printed usage
+    invariants:
+    - 'no GET of model.safetensors.index.json for a GGUF shard set'
+    - 'convert_safetensors_formats is NOT called on GGUF shards'
+    - 'usage path is the first part (split loaders find siblings via split.* metadata)'
+    lean_theorem: Theorems.No_Index_Download
+
+proof_obligations:
+- type: invariant
+  property: complete shard set detected and ordered
+  formal: |
+    For any input order of a complete N-part set (N>=2), detect_gguf_shards
+    returns Some with the N filenames sorted by part number 1..=N.
+- type: invariant
+  property: non-sharded and incomplete inputs rejected
+  formal: |
+    For a single GGUF, unrelated multi-quant GGUFs, or an incomplete set,
+    detect_gguf_shards returns None.
+- type: classification
+  property: GGUF shards take the no-index download path
+  formal: |
+    resolve_hf_model returns ResolvedModel::Sharded for a detected GGUF set,
+    and run_sharded routes all-.gguf shard_files to run_sharded_gguf (no
+    index.json fetch, no SafeTensors conversion).
+
+falsification_tests:
+- id: FT-SHGGUF-001
+  rule: complete 2-part set detected, ordered by part number
+  prediction: |
+    detect_gguf_shards(["m-00002-of-00002.gguf","m-00001-of-00002.gguf"]) ==
+    Some(["m-00001-of-00002.gguf","m-00002-of-00002.gguf"]).
+  if_fails: |
+    Ordering or completeness logic wrong. Check the BTreeMap part-number
+    iteration in detect_gguf_shards.
+  evidence: cargo test -p apr-cli --lib sharded_gguf_tests::detects_complete_two_part_set
+- id: FT-SHGGUF-002
+  rule: 3-part set with realistic quant prefix
+  prediction: |
+    A Qwen2.5-7B-Instruct-Q4_K_M-NNNNN-of-00003.gguf trio detects as 3 ordered parts.
+  if_fails: |
+    parse_gguf_shard_name mishandles prefixes containing digits/dashes. Check
+    the rsplit_once('-') prefix split.
+  evidence: cargo test -p apr-cli --lib sharded_gguf_tests::detects_three_part_with_quant_prefix
+- id: FT-SHGGUF-003
+  rule: single non-sharded GGUF is not treated as sharded
+  prediction: detect_gguf_shards on one model.gguf returns None.
+  if_fails: |
+    parse_gguf_shard_name false-positives on non-shard names. Check the
+    "-of-" + numeric-part requirements.
+  evidence: cargo test -p apr-cli --lib sharded_gguf_tests::single_file_is_not_sharded
+- id: FT-SHGGUF-004
+  rule: unrelated multi-quant GGUFs are not a shard set
+  prediction: detect_gguf_shards(["model-Q4_K_M.gguf","model-Q8_0.gguf","model-f16.gguf"]) == None.
+  if_fails: |
+    Grouping treats non-"-of-" names as parts. Check parse returns None for them.
+  evidence: cargo test -p apr-cli --lib sharded_gguf_tests::multi_quant_not_sharded
+- id: FT-SHGGUF-005
+  rule: incomplete set rejected
+  prediction: |
+    A 2-of-3 set (missing part 3) returns None — never claim a partial model
+    is downloadable.
+  if_fails: |
+    The completeness check (parts.len()==total AND all 1..=total present) is
+    wrong. Check both conditions.
+  evidence: cargo test -p apr-cli --lib sharded_gguf_tests::incomplete_set_rejected
+- id: FT-SHGGUF-006
+  rule: filename parser handles case and rejects non-shards
+  prediction: |
+    parse_gguf_shard_name("M-00001-OF-00004.GGUF") == Some(("m",1,4));
+    "model.gguf" / "foo-bar.gguf" / "model.safetensors" -> None.
+  if_fails: |
+    Case folding or suffix/segment parsing wrong. Check to_lowercase +
+    strip_suffix(".gguf") + the two rsplit_once calls.
+  evidence: cargo test -p apr-cli --lib sharded_gguf_tests::parser_edge_cases
+
+kani_harnesses:
+- id: KANI-SHGGUF-001
+  obligation: completeness is exact (no off-by-one, no false complete)
+  property: |
+    For all (total in [1..16], present_count in [0..16]): detect_gguf_shards on
+    a generated set returns Some IFF total>=2 AND present_count==total AND the
+    present parts are exactly 1..=total; otherwise None. No panic.
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_shard_completeness_exact
+- id: KANI-SHGGUF-002
+  obligation: empty / malformed input is safe
+  property: |
+    For an empty list or names with no "-of-" segment, detect_gguf_shards
+    returns None without panic or out-of-bounds.
+  bound: 1
+  strategy: compositional
+  solver: cadical
+  harness: verify_shard_empty_safe
+
+qa_gate:
+  id: F-SHGGUF-001
+  name: sharded-gguf-pull-v1 Contract
+  description: apr pull must detect a complete sharded-GGUF set and download all parts via the no-index path, never a single part.
+  checks:
+  - validation
+  - falsification
