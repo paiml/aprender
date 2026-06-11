@@ -165,7 +165,7 @@ impl<D: Dataset + 'static> IntoIterator for ParallelDataLoader<D> {
 
             let mut rng = match self.seed {
                 Some(s) => rand::rngs::StdRng::seed_from_u64(s),
-                None => rand::rngs::StdRng::from_entropy(),
+                None => rand::rngs::StdRng::from_os_rng(),
             };
             indices.shuffle(&mut rng);
         }

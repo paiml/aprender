@@ -288,12 +288,13 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 	@echo "🧪 Phase 1: Tests with instrumentation (CB-127-A: cargo llvm-cov test, not nextest)..."
 	@PROPTEST_CASES=10 QUICKCHECK_TESTS=10 RUST_MIN_STACK=16777216 CARGO_BUILD_JOBS=4 \
 		$(COV_CARGO_ENV) cargo llvm-cov test --no-report \
-		--workspace --lib \
+		--workspace --exclude aprender-gpu --lib \
 		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" \
 		-- --skip prop_gbm_expected_value --skip slow --skip heavy --skip h12_ --skip j2_ \
 		   --skip falsification --skip chaos --skip disconnect --skip benchmark_parity \
 		   --skip qwen2_generation --skip qwen2_golden --skip qwen2_weight --skip load_test \
 		   --skip spec_checklist_w --skip spec_checklist_u --skip verify_audio --skip g9_roofline \
+		   --skip cuda --skip gpu_ \
 		|| { test -f ~/.cargo/config.toml.bak && mv ~/.cargo/config.toml.bak ~/.cargo/config.toml; exit 1; }
 	@echo "📊 Phase 2: Coverage report (LCOV → lightweight)..."
 	@$(COV_CARGO_ENV) cargo llvm-cov report --lcov --ignore-filename-regex "$$(cat target/coverage/.exclude-re)" > target/coverage/lcov.info

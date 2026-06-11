@@ -169,8 +169,8 @@ impl AdaptiveSampler {
         }
 
         // Probabilistic sampling for fast operations
-        let mut rng = rand::thread_rng();
-        rng.gen::<f64>() < self.sample_rate
+        let mut rng = rand::rng();
+        rng.random::<f64>() < self.sample_rate
     }
 
     /// Decide whether to trace based on operation name and estimated duration

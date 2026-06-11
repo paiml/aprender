@@ -158,8 +158,8 @@ impl OwnedQuantizedModel {
             .collect();
 
         // 6. Sample
-        let mut rng = rand::thread_rng();
-        let r: f32 = rng.gen();
+        let mut rng = rand::rng();
+        let r: f32 = rng.random();
 
         let mut cumulative = 0.0;
         for &(idx, prob) in &probs {

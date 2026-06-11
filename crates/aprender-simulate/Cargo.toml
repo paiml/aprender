@@ -26,8 +26,8 @@ thiserror = "2.0"
 # Code gated behind #[cfg(feature = "schema-validation")]
 
 # Random number generation (deterministic)
-rand = "0.8"
-rand_pcg = { version = "0.3", features = ["serde1"] }
+rand = "0.9"
+rand_pcg = { version = "0.9", features = ["serde"] }
 
 # Collections (deterministic)
 indexmap = { version = "2.0", features = ["serde"] }

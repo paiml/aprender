@@ -93,10 +93,10 @@ impl IsolationTree {
         }
 
         let num_features = samples[0].len();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         // Randomly select a feature to split on
-        let feature_idx = rng.gen_range(0..num_features);
+        let feature_idx = rng.random_range(0..num_features);
 
         // Get min/max for this feature
         let mut min_val = f64::MAX;
@@ -113,7 +113,7 @@ impl IsolationTree {
         }
 
         // Random split threshold between min and max
-        let threshold = rng.gen_range(min_val..max_val);
+        let threshold = rng.random_range(min_val..max_val);
 
         // Partition samples
         let (left_samples, right_samples): (Vec<Vec<f64>>, Vec<Vec<f64>>) =
@@ -156,7 +156,7 @@ impl IsolationForest {
 
     /// Fit the model on training data
     pub fn fit(&mut self, samples: &[Vec<f64>]) {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let max_depth = (self.subsample_size as f64).log2().ceil() as usize;
 
         for _ in 0..self.num_trees {

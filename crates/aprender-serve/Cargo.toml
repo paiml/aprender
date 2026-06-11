@@ -56,10 +56,10 @@ renacer-core = { version = "0.1" }
 aprender = { path = "../aprender-core", version = "0.42.4", package = "aprender-core", optional = true }
 
 # Data loading library (optional for data pipeline examples)
-alimentar = { version = "0.2", optional = true, default-features = false, features = ["local", "shuffle"] }
+alimentar = { version = "0.3", optional = true }
 
 # Model registry (optional for pull/push commands)
-pacha = { version = "0.2", optional = true }
+pacha = { version = "0.3", optional = true }
 
 # Terminal/PNG visualization for benchmarks and metrics
 trueno-viz = { version = "0.2", optional = true, features = ["terminal"] }
@@ -129,7 +129,7 @@ zstd = { version = "0.13", optional = true }
 rayon = "1.10"
 
 # Random number generation for sampling
-rand = "0.8"
+rand = "0.9"
 
 # Small buffer optimization (per spec Section 4.1)
 # Stack allocation for small token buffers and attention scores

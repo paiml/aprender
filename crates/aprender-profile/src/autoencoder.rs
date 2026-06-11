@@ -40,7 +40,7 @@ impl Autoencoder {
     /// Create a new autoencoder with random initialization
     pub fn new(input_dim: usize, hidden_dim: usize) -> Self {
         use rand::Rng;
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         // Xavier initialization for better convergence
         let encoder_scale = (2.0 / (input_dim as f64 + hidden_dim as f64)).sqrt();
@@ -49,7 +49,7 @@ impl Autoencoder {
         // Initialize encoder weights (input_dim x hidden_dim)
         let encoder_weights: Vec<Vec<f64>> = (0..input_dim)
             .map(|_| {
-                (0..hidden_dim).map(|_| rng.gen_range(-encoder_scale..encoder_scale)).collect()
+                (0..hidden_dim).map(|_| rng.random_range(-encoder_scale..encoder_scale)).collect()
             })
             .collect();
 
@@ -57,7 +57,9 @@ impl Autoencoder {
 
         // Initialize decoder weights (hidden_dim x input_dim)
         let decoder_weights: Vec<Vec<f64>> = (0..hidden_dim)
-            .map(|_| (0..input_dim).map(|_| rng.gen_range(-decoder_scale..decoder_scale)).collect())
+            .map(|_| {
+                (0..input_dim).map(|_| rng.random_range(-decoder_scale..decoder_scale)).collect()
+            })
             .collect();
 
         let decoder_bias: Vec<f64> = (0..input_dim).map(|_| 0.0).collect();

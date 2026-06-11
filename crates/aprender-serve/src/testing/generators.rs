@@ -39,7 +39,7 @@ impl SyntheticWeightGenerator {
         let fan_in = *shape.last().unwrap_or(&1);
         let scale = 1.0 / (fan_in as f32).sqrt();
 
-        (0..n).map(|_| rng.gen_range(-scale..scale)).collect()
+        (0..n).map(|_| rng.random_range(-scale..scale)).collect()
     }
 
     /// Generate F32 weights with specific scale
@@ -47,7 +47,7 @@ impl SyntheticWeightGenerator {
         let mut rng = StdRng::seed_from_u64(self.seed);
         let n: usize = shape.iter().product();
 
-        (0..n).map(|_| rng.gen_range(-scale..scale)).collect()
+        (0..n).map(|_| rng.random_range(-scale..scale)).collect()
     }
 
     /// Generate F16 weights
@@ -69,13 +69,13 @@ impl SyntheticWeightGenerator {
 
         for _ in 0..num_blocks {
             // Scale (f16) - random in reasonable range
-            let scale = f16::from_f32(rng.gen_range(0.01..0.1));
+            let scale = f16::from_f32(rng.random_range(0.01..0.1));
             data.extend_from_slice(&scale.to_le_bytes());
 
             // 16 bytes of quantized values (32 4-bit values)
             for _ in 0..16 {
-                let lo = rng.gen_range(0u8..16);
-                let hi = rng.gen_range(0u8..16);
+                let lo = rng.random_range(0u8..16);
+                let hi = rng.random_range(0u8..16);
                 data.push((hi << 4) | lo);
             }
         }
@@ -94,12 +94,12 @@ impl SyntheticWeightGenerator {
 
         for _ in 0..num_blocks {
             // Scale (f16)
-            let scale = f16::from_f32(rng.gen_range(0.01..0.1));
+            let scale = f16::from_f32(rng.random_range(0.01..0.1));
             data.extend_from_slice(&scale.to_le_bytes());
 
             // 32 int8 values
             for _ in 0..32 {
-                let val: i8 = rng.gen_range(-127..127);
+                let val: i8 = rng.random_range(-127..127);
                 data.push(val as u8);
             }
         }
@@ -120,22 +120,22 @@ impl SyntheticWeightGenerator {
 
         for _ in 0..num_super_blocks {
             // d (f16) - super-block scale
-            let d = f16::from_f32(rng.gen_range(0.01..0.1));
+            let d = f16::from_f32(rng.random_range(0.01..0.1));
             data.extend_from_slice(&d.to_le_bytes());
 
             // dmin (f16) - minimum scale
-            let dmin = f16::from_f32(rng.gen_range(0.001..0.01));
+            let dmin = f16::from_f32(rng.random_range(0.001..0.01));
             data.extend_from_slice(&dmin.to_le_bytes());
 
             // scales (12 bytes) - 8 6-bit scales packed
             for _ in 0..12 {
-                data.push(rng.gen_range(0u8..64));
+                data.push(rng.random_range(0u8..64));
             }
 
             // qs (128 bytes) - 4-bit quantized values
             for _ in 0..128 {
-                let lo = rng.gen_range(0u8..16);
-                let hi = rng.gen_range(0u8..16);
+                let lo = rng.random_range(0u8..16);
+                let hi = rng.random_range(0u8..16);
                 data.push((hi << 4) | lo);
             }
         }
@@ -154,18 +154,18 @@ impl SyntheticWeightGenerator {
 
         for _ in 0..num_blocks {
             // Scale (f16)
-            let scale = f16::from_f32(rng.gen_range(0.01..0.1));
+            let scale = f16::from_f32(rng.random_range(0.01..0.1));
             data.extend_from_slice(&scale.to_le_bytes());
 
             // qh (4 bytes) - high bits for 32 values
             for _ in 0..4 {
-                data.push(rng.gen_range(0u8..=255));
+                data.push(rng.random_range(0u8..=255));
             }
 
             // qs (16 bytes) - low 4-bit values
             for _ in 0..16 {
-                let lo = rng.gen_range(0u8..16);
-                let hi = rng.gen_range(0u8..16);
+                let lo = rng.random_range(0u8..16);
+                let hi = rng.random_range(0u8..16);
                 data.push((hi << 4) | lo);
             }
         }
@@ -343,7 +343,7 @@ impl TokenGenerator {
     pub fn generate(&self, seq_len: usize) -> Vec<u32> {
         let mut rng = StdRng::seed_from_u64(self.seed);
         (0..seq_len)
-            .map(|_| rng.gen_range(1..self.vocab_size as u32))
+            .map(|_| rng.random_range(1..self.vocab_size as u32))
             .collect()
     }
 
@@ -352,12 +352,12 @@ impl TokenGenerator {
         let mut rng = StdRng::seed_from_u64(self.seed);
         (0..seq_len)
             .map(|_| {
-                if rng.gen_bool(0.8) && !common_tokens.is_empty() {
+                if rng.random_bool(0.8) && !common_tokens.is_empty() {
                     // 80% common tokens
-                    common_tokens[rng.gen_range(0..common_tokens.len())]
+                    common_tokens[rng.random_range(0..common_tokens.len())]
                 } else {
                     // 20% random
-                    rng.gen_range(1..self.vocab_size as u32)
+                    rng.random_range(1..self.vocab_size as u32)
                 }
             })
             .collect()
