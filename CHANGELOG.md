@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is rank-based (Mann–Whitney, tie-averaged); log_loss is f64-accumulated clamped
   cross-entropy. Falsified against sklearn oracle values within 1e-4. Closes the
   verified-absent gap that blocked generic sklearn-style classifier evaluation.
+- **`datasets::make_classification`**: completes the `sklearn.datasets` `make_*`
+  generator parity (alongside `make_blobs`/`make_regression`) — balanced n-class
+  data with `n_informative` Gaussian-cluster features + noise features,
+  deterministic per seed. Falsifier FT-DATA-006 (shape/balance/determinism +
+  nearest-centroid learnability).
 
 ## [0.42.4] - 2026-06-11
 
