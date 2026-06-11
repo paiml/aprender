@@ -32,7 +32,13 @@ jobs:
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 75
     steps:
+      # clean: false — a coverage run builds from source and doesn't need a
+      # pristine tree, and the default git-clean choked on root-owned leftovers
+      # (e.g. contracts/.pv/cache from prior `pv` jobs → EACCES on rmdir),
+      # failing checkout before any coverage ran.
       - uses: actions/checkout@v4
+        with:
+          clean: false
 
       # Data + summary via the maintained Makefile machinery (handles the
       # mold-linker/config.toml dance + slow-test skips correctly). Non-blocking.
