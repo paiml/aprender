@@ -302,3 +302,22 @@ include!("random_forest_tests.rs");
 #[cfg(test)]
 #[path = "tests_rf_contract.rs"]
 mod tests_rf_contract;
+
+// Estimator impl so RandomForestRegressor works with generic cross_validate /
+// grid_search (Pillar 1). score is R² (regression convention).
+impl crate::traits::Estimator for RandomForestRegressor {
+    fn fit(
+        &mut self,
+        x: &crate::primitives::Matrix<f32>,
+        y: &crate::primitives::Vector<f32>,
+    ) -> crate::Result<()> {
+        self.fit(x, y)
+    }
+    fn predict(&self, x: &crate::primitives::Matrix<f32>) -> crate::primitives::Vector<f32> {
+        self.predict(x)
+    }
+    fn score(&self, x: &crate::primitives::Matrix<f32>, y: &crate::primitives::Vector<f32>) -> f32 {
+        let pred = self.predict(x);
+        crate::metrics::r2_score(y.as_slice(), pred.as_slice())
+    }
+}

@@ -124,3 +124,34 @@ fn cross_validate_over_gradient_boosting_classifier() {
         result.mean()
     );
 }
+
+#[test]
+fn cross_validate_over_random_forest_regressor() {
+    use aprender::datasets::make_regression;
+    use aprender::tree::RandomForestRegressor;
+    let (x, y) = make_regression(150, 5, 0.1, 7);
+    let model = RandomForestRegressor::new(20);
+    let result = cross_validate(&model, &x, &y, &KFold::new(5)).expect("cv over RFR");
+    assert_eq!(result.scores.len(), 5);
+    // R² (regression score); low-noise linear data -> should beat the mean baseline
+    assert!(
+        result.mean() > 0.0 && result.mean().is_finite(),
+        "RFR CV R² {} should be positive",
+        result.mean()
+    );
+}
+
+#[test]
+fn cross_validate_over_decision_tree_regressor() {
+    use aprender::datasets::make_regression;
+    use aprender::tree::DecisionTreeRegressor;
+    let (x, y) = make_regression(150, 5, 0.1, 7);
+    let model = DecisionTreeRegressor::new();
+    let result = cross_validate(&model, &x, &y, &KFold::new(5)).expect("cv over DTR");
+    assert_eq!(result.scores.len(), 5);
+    assert!(
+        result.mean().is_finite(),
+        "DTR CV R² {} must be finite",
+        result.mean()
+    );
+}
