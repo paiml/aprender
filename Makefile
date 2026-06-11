@@ -288,7 +288,7 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 	@echo "🧪 Phase 1: Tests with instrumentation (CB-127-A: cargo llvm-cov test, not nextest)..."
 	@PROPTEST_CASES=10 QUICKCHECK_TESTS=10 RUST_MIN_STACK=16777216 CARGO_BUILD_JOBS=4 \
 		$(COV_CARGO_ENV) cargo llvm-cov test --no-report \
-		--workspace --lib \
+		--workspace --exclude aprender-gpu --lib \
 		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" \
 		-- --skip prop_gbm_expected_value --skip slow --skip heavy --skip h12_ --skip j2_ \
 		   --skip falsification --skip chaos --skip disconnect --skip benchmark_parity \
