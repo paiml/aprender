@@ -116,6 +116,55 @@ pub fn make_regression(
     (x, Vector::from_vec(targets))
 }
 
+/// Generate a random `n_classes`-class classification problem.
+///
+/// Mirrors `sklearn.datasets.make_classification` (simplified): the first
+/// `n_informative` features are drawn from well-separated per-class Gaussian
+/// clusters; the remaining `n_features − n_informative` are standard-normal
+/// noise. Classes are balanced (round-robin assignment). Deterministic given
+/// `seed`. Returns `(X[n_samples × n_features], labels in 0..n_classes)`.
+///
+/// # Panics
+/// Panics if `n_informative > n_features`, `n_classes == 0`, or on bad dims.
+#[must_use]
+pub fn make_classification(
+    n_samples: usize,
+    n_features: usize,
+    n_informative: usize,
+    n_classes: usize,
+    seed: u64,
+) -> (Matrix<f32>, Vec<usize>) {
+    assert!(
+        n_informative <= n_features,
+        "make_classification: n_informative > n_features"
+    );
+    assert!(n_classes > 0, "make_classification: n_classes must be > 0");
+    let mut rng = SplitMix64::new(seed);
+    // Per-class centers in the informative subspace, separated by ~class_sep.
+    let class_sep = 2.0f32;
+    let centers: Vec<Vec<f32>> = (0..n_classes)
+        .map(|_| {
+            (0..n_informative)
+                .map(|_| class_sep * rng.next_gaussian())
+                .collect()
+        })
+        .collect();
+    let mut data = Vec::with_capacity(n_samples * n_features);
+    let mut labels = Vec::with_capacity(n_samples);
+    for i in 0..n_samples {
+        let c = i % n_classes;
+        for f in 0..n_informative {
+            data.push(centers[c][f] + rng.next_gaussian());
+        }
+        for _ in n_informative..n_features {
+            data.push(rng.next_gaussian()); // uninformative noise features
+        }
+        labels.push(c);
+    }
+    let x = Matrix::from_vec(n_samples, n_features, data).expect("make_classification: valid dims");
+    (x, labels)
+}
+
 /// The classic Iris dataset, sourced from `sklearn.datasets.load_iris` and
 /// committed (4 features, label in {0,1,2}) — no runtime dependency.
 const IRIS_CSV: &str = include_str!("iris.csv");
@@ -251,6 +300,65 @@ mod tests {
         assert!(
             var > 0.1,
             "regression target must carry signal, var = {var}"
+        );
+    }
+
+    /// FT-DATA-006: make_classification — shape, balanced classes, determinism,
+    /// and learnability (informative features actually separate the classes).
+    #[test]
+    fn make_classification_shape_balance_and_learnable() {
+        let (x, y) = make_classification(120, 10, 4, 3, 42);
+        assert_eq!(x.n_rows(), 120);
+        assert_eq!(x.n_cols(), 10);
+        assert_eq!(y.len(), 120);
+        assert!(y.iter().all(|&c| c < 3));
+        for c in 0..3 {
+            assert_eq!(
+                y.iter().filter(|&&v| v == c).count(),
+                40,
+                "class {c} balance"
+            );
+        }
+        // determinism
+        let (x2, _) = make_classification(120, 10, 4, 3, 42);
+        assert_eq!(x.as_slice(), x2.as_slice());
+        // learnability: each sample's informative features are nearest its OWN
+        // class mean (computed over informative dims) — the class structure holds.
+        let n_inf = 4;
+        let mut means = vec![[0.0f32; 4]; 3];
+        let mut counts = [0usize; 3];
+        for i in 0..x.n_rows() {
+            for f in 0..n_inf {
+                means[y[i]][f] += x.get(i, f);
+            }
+            counts[y[i]] += 1;
+        }
+        for c in 0..3 {
+            for f in 0..n_inf {
+                means[c][f] /= counts[c] as f32;
+            }
+        }
+        let mut correct = 0;
+        for i in 0..x.n_rows() {
+            let nearest = (0..3)
+                .min_by(|&a, &b| {
+                    let da: f32 = (0..n_inf)
+                        .map(|f| (x.get(i, f) - means[a][f]).powi(2))
+                        .sum();
+                    let db: f32 = (0..n_inf)
+                        .map(|f| (x.get(i, f) - means[b][f]).powi(2))
+                        .sum();
+                    da.partial_cmp(&db).unwrap()
+                })
+                .unwrap();
+            if nearest == y[i] {
+                correct += 1;
+            }
+        }
+        let acc = correct as f32 / x.n_rows() as f32;
+        assert!(
+            acc > 0.85,
+            "make_classification not learnable: nearest-centroid acc {acc} <= 0.85"
         );
     }
 }
