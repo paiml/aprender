@@ -108,3 +108,19 @@ fn cross_validate_over_gaussian_nb() {
         result.mean()
     );
 }
+
+#[test]
+fn cross_validate_over_gradient_boosting_classifier() {
+    use aprender::tree::GradientBoostingClassifier;
+    // GBM classifier is binary (sigmoid) -> use 2 classes
+    let (x, labels) = make_classification(120, 6, 4, 2, 3);
+    let y = Vector::from_vec(labels.iter().map(|&l| l as f32).collect());
+    let model = GradientBoostingClassifier::new();
+    let result = cross_validate(&model, &x, &y, &KFold::new(5)).expect("cv over gbm");
+    assert_eq!(result.scores.len(), 5);
+    assert!(
+        result.mean() > 0.6,
+        "GBM CV acc {} not learnable",
+        result.mean()
+    );
+}
