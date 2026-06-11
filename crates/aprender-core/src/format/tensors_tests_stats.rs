@@ -262,7 +262,7 @@ fn test_ggml_dtype_name_exhaustive_all_arms() {
     assert_eq!(super::ggml_dtype_name(16), "IQ2_XXS");
     assert_eq!(super::ggml_dtype_name(17), "IQ2_XS");
     assert_eq!(super::ggml_dtype_name(18), "IQ3_XXS");
-    assert_eq!(super::ggml_dtype_name(26), "BF16");
+    assert_eq!(super::ggml_dtype_name(26), "I32");
     // Newly added I-quant and integer types
     assert_eq!(super::ggml_dtype_name(19), "IQ1_S");
     assert_eq!(super::ggml_dtype_name(20), "IQ4_NL");
@@ -271,10 +271,11 @@ fn test_ggml_dtype_name_exhaustive_all_arms() {
     assert_eq!(super::ggml_dtype_name(23), "IQ4_XS");
     assert_eq!(super::ggml_dtype_name(24), "I8");
     assert_eq!(super::ggml_dtype_name(25), "I16");
-    assert_eq!(super::ggml_dtype_name(27), "I32");
-    assert_eq!(super::ggml_dtype_name(28), "I64");
-    assert_eq!(super::ggml_dtype_name(29), "F64");
-    assert_eq!(super::ggml_dtype_name(30), "IQ1_M");
+    assert_eq!(super::ggml_dtype_name(27), "I64");
+    assert_eq!(super::ggml_dtype_name(28), "F64");
+    assert_eq!(super::ggml_dtype_name(29), "IQ1_M");
+    // GGML_TYPE_BF16 = 30 (was mislabeled "IQ1_M" before the dtype-table fix).
+    assert_eq!(super::ggml_dtype_name(30), "BF16");
     // Codes with no mapping (gaps in GGML enum)
     assert_eq!(super::ggml_dtype_name(4), "unknown");
     assert_eq!(super::ggml_dtype_name(5), "unknown");
