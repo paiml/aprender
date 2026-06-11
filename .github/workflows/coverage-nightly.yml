@@ -27,7 +27,9 @@ concurrency:
 
 jobs:
   coverage:
-    runs-on: [self-hosted, X64, Linux]
+    # intel-clean-room pool (15 runners, large RAM) — right fit for a heavy
+    # full-workspace llvm-cov run. The `clean-room` label pins to that pool.
+    runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
