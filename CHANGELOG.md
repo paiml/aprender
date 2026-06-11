@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.43.0] - 2026-06-11
+
+### Added
+
+- **`metrics::roc_auc_score` + `metrics::log_loss`** (Pillar 1 — beat scikit-learn):
+  score-based binary classification metrics matching `sklearn.metrics`. roc_auc
+  is rank-based (Mann–Whitney, tie-averaged); log_loss is f64-accumulated clamped
+  cross-entropy. Falsified against sklearn oracle values within 1e-4. Closes the
+  verified-absent gap that blocked generic sklearn-style classifier evaluation.
+
 ## [0.42.4] - 2026-06-11
 
 ### Changed
