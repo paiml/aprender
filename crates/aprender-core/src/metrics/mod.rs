@@ -8,7 +8,7 @@
 
 pub mod classification;
 pub mod probabilistic;
-pub use probabilistic::{log_loss, roc_auc_score};
+pub use probabilistic::{average_precision_score, log_loss, roc_auc_score};
 pub mod drift;
 pub mod evaluator;
 pub mod grad_norm;
