@@ -208,27 +208,35 @@ pub fn dequantize_q2_k(data: &[u8]) -> Result<Vec<f32>> {
         let d = read_f16(&data[sb_start + 80..sb_start + 82]);
         let dmin = read_f16(&data[sb_start + 82..sb_start + 84]);
 
-        for j in 0..16 {
-            let sc = (scales_data[j] & 0x0F) as f32;
-            let m = (scales_data[j] >> 4) as f32;
-
-            let d_sc = d * sc;
-            let dm = dmin * m;
-
-            let qs_offset = j * 4;
-
-            for k in 0..4 {
-                let q_byte = qs[qs_offset + k];
-                let q0 = (q_byte & 0x03) as f32;
-                let q1 = ((q_byte >> 2) & 0x03) as f32;
-                let q2 = ((q_byte >> 4) & 0x03) as f32;
-                let q3 = ((q_byte >> 6) & 0x03) as f32;
-
-                let base_idx = out_start + j * 16 + k * 4;
-                result[base_idx] = d_sc * q0 - dm;
-                result[base_idx + 1] = d_sc * q1 - dm;
-                result[base_idx + 2] = d_sc * q2 - dm;
-                result[base_idx + 3] = d_sc * q3 - dm;
+        // ggml `dequantize_row_q2_K` ordering (matches candle BlockQ2K::to_float
+        // and the aprender-core format-path fix): two groups of 128 over a
+        // 32-byte qs window; 4 sub-iters at shift 0/2/4/6; two scale bytes per
+        // sub-iter (low/high 16 of the window). The prior "16 sub-blocks reading
+        // qs[j*4]" scheme applied the wrong scale to the wrong 2-bit lanes →
+        // corrupt weights → broken Q2_K inference.
+        let mut oi = out_start;
+        let mut is = 0usize;
+        for group in 0..2 {
+            let chunk = &qs[group * 32..group * 32 + 32];
+            let mut shift = 0u8;
+            for _ in 0..4 {
+                let sc = scales_data[is];
+                is += 1;
+                let dl = d * f32::from(sc & 0x0F);
+                let ml = dmin * f32::from(sc >> 4);
+                for &q in &chunk[0..16] {
+                    result[oi] = dl * f32::from((q >> shift) & 0x03) - ml;
+                    oi += 1;
+                }
+                let sc = scales_data[is];
+                is += 1;
+                let dl = d * f32::from(sc & 0x0F);
+                let ml = dmin * f32::from(sc >> 4);
+                for &q in &chunk[16..32] {
+                    result[oi] = dl * f32::from((q >> shift) & 0x03) - ml;
+                    oi += 1;
+                }
+                shift += 2;
             }
         }
     }

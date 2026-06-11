@@ -201,6 +201,56 @@ fn test_dequantize_q2_k_single_block() {
     assert_eq!(values.len(), 256); // QK_K = 256
 }
 
+/// FT-Q2K-002 (inference path): serve dequantize_q2_k must match ggml
+/// `dequantize_row_q2_K` / candle byte-for-byte. The prior scheme applied the
+/// wrong scale to the wrong 2-bit lanes (185/256 elements wrong → corrupt Q2_K
+/// inference).
+#[test]
+fn test_dequantize_q2_k_ggml_golden() {
+    fn reference(scales: &[u8], qs: &[u8], d: f32, dmin: f32) -> Vec<f32> {
+        let mut y = Vec::with_capacity(256);
+        let mut is = 0usize;
+        for group in 0..2 {
+            let chunk = &qs[group * 32..group * 32 + 32];
+            let mut shift = 0u8;
+            for _ in 0..4 {
+                let sc = scales[is];
+                is += 1;
+                let dl = d * f32::from(sc & 0x0F);
+                let ml = dmin * f32::from(sc >> 4);
+                for &q in &chunk[0..16] {
+                    y.push(dl * f32::from((q >> shift) & 0x03) - ml);
+                }
+                let sc = scales[is];
+                is += 1;
+                let dl = d * f32::from(sc & 0x0F);
+                let ml = dmin * f32::from(sc >> 4);
+                for &q in &chunk[16..32] {
+                    y.push(dl * f32::from((q >> shift) & 0x03) - ml);
+                }
+                shift += 2;
+            }
+        }
+        y
+    }
+    let scales: Vec<u8> = (0u8..16).map(|i| i.wrapping_mul(9).wrapping_add(5)).collect();
+    let qs: Vec<u8> = (0u8..64).map(|i| i.wrapping_mul(7).wrapping_add(1)).collect();
+    let mut data = Vec::with_capacity(84);
+    data.extend_from_slice(&scales);
+    data.extend_from_slice(&qs);
+    data.extend_from_slice(&0x3C00u16.to_le_bytes()); // d = 1.0
+    data.extend_from_slice(&0x3800u16.to_le_bytes()); // dmin = 0.5
+    let expected = reference(&scales, &qs, 1.0, 0.5);
+    let got = dequantize_q2_k(&data).expect("dequant");
+    assert_eq!(got.len(), 256);
+    for (i, (g, e)) in got.iter().zip(expected.iter()).enumerate() {
+        assert!(
+            (g - e).abs() < 1e-6,
+            "Q2_K elem {i}: got {g}, want {e} (ggml ordering)"
+        );
+    }
+}
+
 #[test]
 fn test_dequantize_q2_k_multiple_blocks() {
     let data = vec![0u8; 84 * 2];
