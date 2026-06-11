@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.6] - 2026-06-11
+
+### Added
+
+- **`metrics::max_error` + `median_absolute_error` + `mean_squared_log_error` +
+  `mean_absolute_percentage_error`** (Pillar 1): four more sklearn-named
+  regression metrics, each matching `sklearn.metrics` within 1e-4.
+
 ## [0.44.5] - 2026-06-11
 
 ### Added
