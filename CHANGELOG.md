@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.1] - 2026-06-11
+
+### Fixed
+
+- **`apr export --quantize q4_k` no longer rejected**: export's quantization
+  parser matched only `q4k`, while `apr convert` and `apr quantize` both accept
+  `q4k | q4_k`. A user who learned the underscored spelling hit
+  `Unknown quantization: q4_k` on export only. Export now accepts both spellings
+  (and the error message lists the alias).
+
 ## [0.40.0] - 2026-06-11
 
 ### Fixed
