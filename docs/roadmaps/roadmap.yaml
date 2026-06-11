@@ -9558,3 +9558,129 @@ roadmap:
   - integrity
   - roadmap-aligned
   notes: 'Added 2026-06-11 from roadmap evaluation (refuse-don''t-corrupt theme).'
+- id: PMAT-710
+  github_issue: null
+  item_type: epic
+  title: 'Unsloth parity: compete with Unsloth on small-model LoRA/QLoRA fine-tune + distillation (pure Rust)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-06-11T06:10:08Z
+  updated: 2026-06-11T06:10:08Z
+  spec: null
+  acceptance_criteria:
+  - 'STRATEGIC (user directive 2026-06-11): the PEFT/QLoRA fine-tune + distillation lane is an EXPLICIT competitor target vs Unsloth. Parity = end-to-end load -> QLoRA(4-bit) -> train -> merge adapter -> export GGUF/safetensors -> publish HF, in pure safe-Rust, CPU-or-single-GPU (lambda-vector). Unsloth already a benchmark in-tree (score.rs TRAINING_TOK_S=6000 unsloth-level; ch23_training_bench). Children: PMAT-711..715. Advances CRUX-D.'
+  phases: []
+  subtasks:
+  - PMAT-711
+  - PMAT-712
+  - PMAT-713
+  - PMAT-714
+  - PMAT-715
+  estimated_effort: null
+  labels:
+  - crux-d
+  - unsloth
+  - finetune
+  - roadmap-aligned
+  notes: 'New competitive epic 2026-06-11. Corrects earlier "not an Unsloth replacement" framing — this is the ONE training lane winnable in pure Rust.'
+- id: PMAT-711
+  github_issue: null
+  item_type: task
+  title: 'QLoRA 4-bit + LoRA fine-tune (apr finetune --qlora --bits 4) — CRUX-D QLoRA (currently MISSING)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-06-11T06:10:08Z
+  updated: 2026-06-11T06:10:08Z
+  spec: null
+  acceptance_criteria:
+  - 'Core Unsloth feature. qlora/qlora_default exist in aprender-train; wire the 4-bit NF4 base + LoRA adapter path into apr finetune. Falsifier: loss-monotone over N steps on a tiny fixture; 4-bit base footprint vs f16. CPU-falsifiable math + single-GPU run (lambda-vector).'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux-d
+  - unsloth
+  - qlora
+  notes: null
+- id: PMAT-712
+  github_issue: null
+  item_type: task
+  title: 'Complete LoRA-merge + export-to-GGUF (Unsloth save_pretrained_merged equivalent) — CRUX-D partial->supported'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-06-11T06:10:08Z
+  updated: 2026-06-11T06:10:08Z
+  spec: null
+  acceptance_criteria:
+  - 'aprender-train/src/lora/adapter/merge_export.rs + hf_pipeline/export/exporter.rs exist (partial). Complete: merge LoRA into base, export merged GGUF + safetensors. Falsifier: merged GGUF loads AND forward matches the LoRA-applied base within tol (golden). Fully CPU-verifiable.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux-d
+  - unsloth
+  - export
+  notes: null
+- id: PMAT-713
+  github_issue: null
+  item_type: task
+  title: 'End-to-end apr finetune Unsloth-parity single-command UX (load -> QLoRA -> train -> merge -> export -> publish)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-06-11T06:10:08Z
+  updated: 2026-06-11T06:10:08Z
+  spec: null
+  acceptance_criteria:
+  - 'The headline competitive story: one command from base model + dataset to a merged, exported, HF-published fine-tuned model. apr finetune (commands/finetune.rs) exists; wire QLoRA + merge + export + apr publish. Falsifier: e2e on a tiny fixture model produces a loadable merged artifact + the HF-commit dry-run succeeds.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux-d
+  - unsloth
+  - ux
+  notes: null
+- id: PMAT-714
+  github_issue: null
+  item_type: task
+  title: 'Gradient checkpointing for memory (CRUX-D partial) — Unsloth low-VRAM wedge'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-06-11T06:10:08Z
+  updated: 2026-06-11T06:10:08Z
+  spec: null
+  acceptance_criteria:
+  - 'Activation/gradient checkpointing to trade compute for memory, enabling larger context/batch on a single GPU. Falsifier: identical loss with vs without checkpointing on a fixture (numerical equivalence) + reduced peak activation memory.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux-d
+  - unsloth
+  - memory
+  notes: null
+- id: PMAT-715
+  github_issue: null
+  item_type: task
+  title: 'Adapter fusion (combine N LoRAs) + promote Unsloth to tracked training-throughput competitor (>=6000 tok/s bar)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-06-11T06:10:08Z
+  updated: 2026-06-11T06:10:08Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-D adapter-fusion (missing): merge N LoRA adapters with weights. AND formalize Unsloth as a tracked competitor in the training benchmark (aprender-test-lib/src/llm/score.rs + ch23_training_bench) with the >=6000 tok/s (yoga-RTX) / >=13000 (A100) bar. Falsifier: fused adapter forward == weighted sum of individual; bench reports the unsloth-relative ratio.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux-d
+  - unsloth
+  - benchmark
+  notes: null
