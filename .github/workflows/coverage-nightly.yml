@@ -49,6 +49,13 @@ jobs:
         id: cov
         run: |
           set -o pipefail
+          # The 15 intel runners aren't uniformly provisioned: cargo / cargo-llvm-cov
+          # may be off PATH (some runners lack it), which makes the Makefile's
+          # `cargo install cargo-llvm-cov || exit 1` abort immediately. Put cargo on
+          # PATH for the make subshell + pre-install the tool (non-blocking) so the
+          # Makefile's `which cargo-llvm-cov` short-circuits.
+          export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
+          command -v cargo-llvm-cov >/dev/null 2>&1 || cargo install cargo-llvm-cov --locked || true
           make coverage COV_TARGET_DIR= 2>&1 | tee /tmp/cov.log || true
           pct="$(grep -oE 'TOTAL: [0-9]+/[0-9]+ lines covered \([0-9]+%\)' /tmp/cov.log | tail -1 | grep -oE '[0-9]+%' || true)"
           echo "pct=${pct:-unknown}" >> "$GITHUB_OUTPUT"
