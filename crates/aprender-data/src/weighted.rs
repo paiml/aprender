@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use arrow::{array::RecordBatch, compute::concat_batches};
 #[cfg(feature = "shuffle")]
-use rand::{distributions::WeightedIndex, prelude::Distribution, SeedableRng};
+use rand::{distr::weighted::WeightedIndex, distr::Distribution, SeedableRng};
 
 use crate::{dataset::Dataset, error::Result, Error};
 
@@ -183,7 +183,7 @@ impl<D: Dataset> IntoIterator for WeightedDataLoader<D> {
             drop_last: self.drop_last,
             rng: match self.seed {
                 Some(seed) => rand::rngs::StdRng::seed_from_u64(seed),
-                None => rand::rngs::StdRng::from_entropy(),
+                None => rand::rngs::StdRng::from_os_rng(),
             },
             samples_yielded: 0,
         }

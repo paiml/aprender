@@ -73,7 +73,7 @@ whisper-apr = { version = "0.2", optional = true, default-features = false, feat
 # Eval: LLM-as-judge via Anthropic API (PMAT-015)
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false, optional = true }
 sha2 = { version = "0.10", optional = true }
-rand = { version = "0.8", optional = true }
+rand = { version = "0.9", optional = true }
 
 [build-dependencies]
 serde = { version = "1", features = ["derive"] }

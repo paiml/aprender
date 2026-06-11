@@ -92,7 +92,7 @@ impl SimRng {
 
     /// Generate a random f64 in [0, 1).
     pub fn gen_f64(&mut self) -> f64 {
-        self.rng.gen()
+        self.rng.random()
     }
 
     /// Generate a random f64 in the given range.
@@ -107,7 +107,7 @@ impl SimRng {
 
     /// Generate a random u64.
     pub fn gen_u64(&mut self) -> u64 {
-        self.rng.gen()
+        self.rng.random()
     }
 
     /// Generate n random f64 samples in [0, 1).
@@ -157,7 +157,7 @@ impl SimRng {
     pub fn save_state(&self) -> RngState {
         // Generate a sequence of values that can be used to verify restoration
         let mut test_rng = self.rng.clone();
-        let verification: Vec<u64> = (0..4).map(|_| test_rng.gen()).collect();
+        let verification: Vec<u64> = (0..4).map(|_| test_rng.random()).collect();
 
         RngState {
             master_seed: self.master_seed,

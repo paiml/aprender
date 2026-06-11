@@ -61,8 +61,10 @@ impl SigningKey {
     pub fn generate() -> Self {
         #[cfg(feature = "signing")]
         {
-            use rand::rngs::OsRng;
-            Self { inner: ed25519_dalek::SigningKey::generate(&mut OsRng) }
+            use rand::RngCore;
+            let mut bytes = [0u8; 32];
+            rand::rng().fill_bytes(&mut bytes);
+            Self { inner: ed25519_dalek::SigningKey::from_bytes(&bytes) }
         }
         #[cfg(not(feature = "signing"))]
         {

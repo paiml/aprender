@@ -167,7 +167,7 @@ impl ShapExplainer {
     /// Sample a random coalition (subset of features)
     fn sample_coalition(&self, n_features: usize) -> Vec<bool> {
         // Use deterministic sampling for reproducibility in tests
-        // In production, use thread_rng() instead
+        // In production, use rng() instead
         (0..n_features).map(|i| i % 2 == 0).collect()
     }
 

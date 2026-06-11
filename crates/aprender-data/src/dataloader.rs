@@ -157,7 +157,7 @@ impl<D: Dataset> IntoIterator for DataLoader<D> {
             let mut indices = indices;
             let mut rng = match self.seed {
                 Some(seed) => rand::rngs::StdRng::seed_from_u64(seed),
-                None => rand::rngs::StdRng::from_entropy(),
+                None => rand::rngs::StdRng::from_os_rng(),
             };
             indices.shuffle(&mut rng);
             indices

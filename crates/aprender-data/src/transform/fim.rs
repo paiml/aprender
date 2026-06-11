@@ -130,8 +130,8 @@ fn apply_fim_to_text(
     }
 
     // Pick two random split points to create (prefix, middle, suffix)
-    let mut a = rng.gen_range(0..len);
-    let mut b = rng.gen_range(0..len);
+    let mut a = rng.random_range(0..len);
+    let mut b = rng.random_range(0..len);
     if a > b {
         std::mem::swap(&mut a, &mut b);
     }
@@ -197,7 +197,7 @@ impl Transform for Fim {
                 if text.len() < self.min_chars {
                     return Some(text.to_string());
                 }
-                let apply_fim: bool = rng.gen_bool(self.rate);
+                let apply_fim: bool = rng.random_bool(self.rate);
                 if apply_fim {
                     Some(apply_fim_to_text(text, self.format, &self.tokens, &mut rng))
                 } else {

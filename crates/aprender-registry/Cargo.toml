@@ -43,7 +43,7 @@ clap = { version = "4", features = ["derive"], optional = true }
 
 # Ecosystem integration
 aprender = { path = "../aprender-core", version = "0.42.4", package = "aprender-core", optional = true }
-alimentar = { version = "0.2.3", optional = true }
+alimentar = { version = "0.3", optional = true }
 
 # HTTP client (optional)
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false, optional = true }
@@ -55,7 +55,7 @@ argon2 = { version = "0.5", optional = true }
 
 # Signing (proper Ed25519)
 ed25519-dalek = { version = "2.1", features = ["rand_core"], optional = true }
-rand = { version = "0.8", optional = true }
+rand = { version = "0.9", optional = true }
 
 # Graph for lineage (optional)
 trueno-graph = { workspace = true, optional = true }
