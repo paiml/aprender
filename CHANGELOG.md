@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.43.1] - 2026-06-11
+
+### Added
+
+- **`metrics::average_precision_score`** (Pillar 1): binary average precision —
+  the step-function precision–recall-curve area, matching
+  `sklearn.metrics.average_precision_score` (FT-METRIC-AVGPREC, within 1e-4).
+  Completes the score-based binary metric trio with `roc_auc_score`/`log_loss`.
+
 ## [0.43.0] - 2026-06-11
 
 ### Added
