@@ -86,6 +86,60 @@ pub fn log_loss(y_true: &[usize], y_prob: &[f32]) -> f32 {
     (sum / n as f64) as f32
 }
 
+/// Binary average precision (area under the precision–recall curve), matching
+/// `sklearn.metrics.average_precision_score`.
+///
+/// Computed as the step-function PR area `Σ (Rₙ − Rₙ₋₁)·Pₙ` over score
+/// thresholds (descending), with tied scores grouped into one threshold (so the
+/// result is rank-only, not threshold-position dependent). `y_true`: labels in
+/// {0, 1}. `y_score`: predicted scores (higher ⇒ more likely positive).
+/// Returns `NaN` if there are no positives.
+///
+/// # Panics
+/// Panics if `y_true` and `y_score` differ in length.
+#[must_use]
+pub fn average_precision_score(y_true: &[usize], y_score: &[f32]) -> f32 {
+    assert_eq!(
+        y_true.len(),
+        y_score.len(),
+        "average_precision_score: y_true/y_score length mismatch"
+    );
+    let n = y_true.len();
+    let n_pos = y_true.iter().filter(|&&y| y == 1).count();
+    if n == 0 || n_pos == 0 {
+        return f32::NAN;
+    }
+    // Sort by score descending.
+    let mut idx: Vec<usize> = (0..n).collect();
+    idx.sort_by(|&a, &b| {
+        y_score[b]
+            .partial_cmp(&y_score[a])
+            .unwrap_or(Ordering::Equal)
+    });
+    let (mut tp, mut fp) = (0usize, 0usize);
+    let mut ap = 0.0f64;
+    let mut prev_recall = 0.0f64;
+    let mut i = 0;
+    while i < n {
+        // Group tied scores into a single threshold block.
+        let mut j = i;
+        while j < n && y_score[idx[j]] == y_score[idx[i]] {
+            if y_true[idx[j]] == 1 {
+                tp += 1;
+            } else {
+                fp += 1;
+            }
+            j += 1;
+        }
+        let recall = tp as f64 / n_pos as f64;
+        let precision = tp as f64 / (tp + fp) as f64;
+        ap += (recall - prev_recall) * precision;
+        prev_recall = recall;
+        i = j;
+    }
+    ap as f32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -111,5 +165,14 @@ mod tests {
         assert!((log_loss(&YT, &YS) - 0.421_605).abs() < 1e-4);
         // near-perfect predictions -> ~0
         assert!(log_loss(&[0, 1], &[1e-9, 1.0 - 1e-9]) < 1e-3);
+    }
+
+    /// FT-METRIC-AVGPREC: matches `sklearn.metrics.average_precision_score` within 1e-4.
+    #[test]
+    fn average_precision_matches_sklearn() {
+        assert!((average_precision_score(&YT, &YS) - 0.916_667).abs() < 1e-4);
+        assert!((average_precision_score(&[0, 0, 1, 1], &[0.1, 0.2, 0.8, 0.9]) - 1.0).abs() < 1e-4);
+        assert!((average_precision_score(&[1, 1, 0, 0], &[0.9, 0.8, 0.2, 0.1]) - 1.0).abs() < 1e-4);
+        assert!(average_precision_score(&[0, 0], &[0.1, 0.2]).is_nan());
     }
 }
