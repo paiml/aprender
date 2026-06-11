@@ -29,3 +29,34 @@ fn cross_validate_over_random_forest_classifier() {
         "RandomForestClassifier 5-fold CV accuracy {mean} not learnable (random ≈ 0.33)"
     );
 }
+
+#[test]
+fn cross_validate_over_decision_tree_classifier() {
+    use aprender::tree::DecisionTreeClassifier;
+    let (x, labels) = make_classification(150, 8, 4, 3, 42);
+    let y = Vector::from_vec(labels.iter().map(|&l| l as f32).collect());
+    let model = DecisionTreeClassifier::new().with_max_depth(10);
+    let result = cross_validate(&model, &x, &y, &KFold::new(5)).expect("cv over decision tree");
+    assert_eq!(result.scores.len(), 5);
+    assert!(
+        result.mean() > 0.6,
+        "DecisionTree CV acc {} not learnable",
+        result.mean()
+    );
+}
+
+#[test]
+fn cross_validate_over_logistic_regression() {
+    use aprender::classification::LogisticRegression;
+    let (x, labels) = make_classification(150, 6, 4, 2, 7);
+    let y = Vector::from_vec(labels.iter().map(|&l| l as f32).collect());
+    let model = LogisticRegression::new().with_max_iter(300);
+    let result =
+        cross_validate(&model, &x, &y, &KFold::new(5)).expect("cv over logistic regression");
+    assert_eq!(result.scores.len(), 5);
+    assert!(
+        result.mean() > 0.6,
+        "LogReg CV acc {} not learnable",
+        result.mean()
+    );
+}
