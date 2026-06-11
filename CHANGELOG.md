@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-06-11
+
+### Added
+
+- **`aprender::datasets` module (Pillar 1 — beat scikit-learn)**: synthetic
+  generators `make_blobs` and `make_regression` mirroring `sklearn.datasets`,
+  backed by a seeded SplitMix64 RNG so output is **deterministic** (reproducible
+  benchmarks/falsifiers) with no external data files. Falsifiers FT-DATA-001..004
+  (determinism, shapes/balance, cluster separability, regression signal). First
+  step toward the four-pillar replace-and-beat mission; embedded real datasets
+  (iris/digits/california) follow.
+- **LogisticRegression convergence gate**: a standing correctness falsifier
+  confirming LogReg reaches ≥0.95 train accuracy on margin-separable data within
+  200 iters (underpins the beat-sklearn correctness claim).
+
 ## [0.41.1] - 2026-06-11
 
 ### Fixed
