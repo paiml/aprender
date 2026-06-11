@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.4] - 2026-06-11
+
+### Changed
+
+- **`Matrix::matvec` drops the per-row allocation**: dotted each row by allocating
+  a fresh `Vector` (`self.row(i)`); now slices `self.data` directly and dots in
+  place (same auto-vectorizing iterator dot). Numerically identical (13,849 tests
+  pass). **`LinearRegression::predict` (20000×50): 0.488 → 0.339 ms/call (~1.44×).**
+  With v0.42.3's matmul fit-beat, apr LinearRegression is now fast on both fit and
+  predict; matvec is shared across `linear_model`, GLMs, etc.
+
 ## [0.42.3] - 2026-06-11
 
 ### Changed
