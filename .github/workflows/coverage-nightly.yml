@@ -36,15 +36,24 @@ jobs:
 
       # Data + summary via the maintained Makefile machinery (handles the
       # mold-linker/config.toml dance + slow-test skips correctly). Non-blocking.
+      # COV_TARGET_DIR= forces the writable workspace-local ./target: the Makefile
+      # otherwise picks /mnt/nvme-raid0/targets/aprender whenever /mnt/nvme-raid0
+      # exists (it does on the runner) but it isn't writable by the runner user.
       - name: Coverage (cargo llvm-cov via make)
         id: cov
         run: |
           set -o pipefail
-          make coverage 2>&1 | tee /tmp/cov.log || true
+          make coverage COV_TARGET_DIR= 2>&1 | tee /tmp/cov.log || true
           pct="$(grep -oE 'TOTAL: [0-9]+/[0-9]+ lines covered \([0-9]+%\)' /tmp/cov.log | tail -1 | grep -oE '[0-9]+%' || true)"
           echo "pct=${pct:-unknown}" >> "$GITHUB_OUTPUT"
 
+      # pmat (crates.io) for the dogfooded gap analysis. Idempotent: ~/.cargo/bin
+      # persists on the self-hosted runner, so this compiles only on the first run.
+      - name: Ensure pmat installed
+        run: command -v pmat >/dev/null 2>&1 || cargo install pmat --locked
+
       # Dogfooded gap analysis — pmat query, NOT raw llvm-cov output (CLAUDE.md).
+      # Same default ./target as the make step so pmat finds the coverage profiles.
       - name: Gap analysis (pmat --coverage-gaps)
         id: gaps
         run: |
@@ -52,7 +61,7 @@ jobs:
             pmat query --coverage-gaps --exclude-tests --limit 30 > /tmp/gaps.txt 2>/dev/null \
               || echo "(pmat --coverage-gaps returned no data — coverage profile missing?)" > /tmp/gaps.txt
           else
-            echo "(pmat not on this runner — install paiml-mcp-agent-toolkit to enable gap ranking)" > /tmp/gaps.txt
+            echo "(pmat install failed — gap ranking unavailable this run)" > /tmp/gaps.txt
           fi
 
       - name: Job summary
