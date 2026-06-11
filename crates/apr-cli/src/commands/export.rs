@@ -358,9 +358,12 @@ fn parse_quantization(quantize: Option<&str>) -> Result<Option<QuantizationType>
         Some("int8") => Ok(Some(QuantizationType::Int8)),
         Some("int4") => Ok(Some(QuantizationType::Int4)),
         Some("fp16") => Ok(Some(QuantizationType::Fp16)),
-        Some("q4k") => Ok(Some(QuantizationType::Q4K)),
+        // Accept both spellings, consistent with `apr convert` / `apr quantize`
+        // (convert.rs / quantize.rs accept "q4k" | "q4_k"). A bare "q4k"-only
+        // export spuriously rejected the same `q4_k` those commands accept.
+        Some("q4k" | "q4_k") => Ok(Some(QuantizationType::Q4K)),
         Some(other) => Err(CliError::ValidationFailed(format!(
-            "Unknown quantization: {other}. Supported: int8, int4, fp16, q4k"
+            "Unknown quantization: {other}. Supported: int8, int4, fp16, q4k (alias q4_k)"
         ))),
         None => Ok(None),
     }
