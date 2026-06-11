@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.8] - 2026-06-12
+
+### Added
+
+- **`DecisionTreeRegressor` + `RandomForestRegressor` now implement `Estimator`**
+  (Pillar 1): both regressors drop into generic `cross_validate`/`grid_search`
+  (score = R²). CV integration test now spans 6 classifiers + 2 regressors.
+
 ## [0.44.7] - 2026-06-12
 
 ### Added
