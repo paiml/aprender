@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.43.3] - 2026-06-11
+
+### Added
+
+- **`metrics::r2_score` + `mean_squared_error` + `mean_absolute_error`** (Pillar 1):
+  sklearn-named, slice-based regression metrics in `(y_true, y_pred)` order,
+  matching `sklearn.metrics` within 1e-4. Adds the missing `r2_score` and a
+  sklearn-compatible API alongside the existing `Vector`-based `mse`/`mae`.
+
 ## [0.43.2] - 2026-06-11
 
 ### Added
