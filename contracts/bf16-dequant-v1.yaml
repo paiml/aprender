@@ -1,0 +1,102 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-11'
+  author: PAIML Engineering
+  description: |
+    BF16 (bfloat16, GGML type 30) support in the GGUF loader. Before this, any
+    BF16 GGUF hard-failed at load: get_tensor_f32 (embeddings/norms/lm_head) and
+    tensor_byte_size (per-layer weights) both lacked a BF16 dispatch arm and hit
+    the catch-all "Unsupported quantization type: 30". The matmul weight path
+    already consumed BF16, so the framework half-supported it — only the central
+    loader rejected it.
+
+    The fix is a dispatch-arm add (Q3_K/#1913 pattern) reusing the existing,
+    battle-tested converter simd_bf16_to_f32 (already used by the safetensors
+    loaders + gguf/embedding.rs). BF16 has no super-block structure: 2 bytes per
+    element, value = from_bits((bits as u32) << 16).
+  references:
+  - 'crates/aprender-serve/src/gguf/metadata.rs — get_tensor_f32 BF16 arm'
+  - 'crates/aprender-serve/src/gguf/transformer.rs — tensor_byte_size BF16 arm'
+  - 'crates/aprender-serve/src/inference/simd.rs:264 — simd_bf16_to_f32 (reused converter)'
+  - 'contracts/q3k-dequant-v1.yaml — the sibling missing-dispatch fix this mirrors'
+
+kind: KernelContract
+name: bf16-dequant
+version: 1.0.0
+scope: aprender-serve GGUF loader BF16 (type 30) dispatch — get_tensor_f32 + tensor_byte_size
+
+equations:
+  bf16_block_layout:
+    formula: |
+      BF16 has NO super-block: byte_size(n elements) = n * 2. tensor_byte_size
+      returns num_elements * 2 for GGUF_TYPE_BF16.
+    domain: num_elements >= 0
+    codomain: byte size
+    invariants:
+    - 'no QK_K / block rounding — exactly 2 bytes per element'
+    lean_theorem: Theorems.BF16_Block_Layout
+  bf16_dequant_formula:
+    formula: |
+      Each little-endian u16 b dequantizes to f32 via from_bits((b as u32) << 16):
+      BF16 is the high 16 bits of an IEEE-754 f32. get_tensor_f32 dispatches
+      GGUF_TYPE_BF16 to simd_bf16_to_f32 over the tensor's 2*n byte range.
+    domain: a 2*n byte slice of BF16 data
+    codomain: Vec<f32> of length n
+    invariants:
+    - 'output length == byte_len / 2'
+    - 'get_tensor_f32 no longer returns "Unsupported quantization type: 30" for BF16'
+    - 'out-of-range offset returns Err (bounds-checked), never panics'
+    lean_theorem: Theorems.BF16_Dequant_Formula
+
+proof_obligations:
+- type: invariant
+  property: dequant length and value
+  formal: |
+    For BF16 bytes built from f32 vals via half::bf16::from_f32, simd_bf16_to_f32
+    returns those f32s within bf16 rounding tolerance; length == bytes/2.
+- type: classification
+  property: BF16 dispatches, not rejected
+  formal: |
+    A GGUFModel with a GGUF_TYPE_BF16 tensor: get_tensor_f32 returns Ok with the
+    correct values, NOT Err "Unsupported quantization type: 30". (Byte sizing
+    n*2 is covered by the bf16_block_layout equation + tensor_byte_size arm.)
+
+falsification_tests:
+- id: FT-BF16-001
+  rule: simd BF16->F32 converter round-trips known values
+  prediction: |
+    simd_bf16_to_f32(bf16_bytes([1.5,-2.0,0.0,3.25,256.0])) == those f32s within
+    1% + 1e-3.
+  if_fails: 'the >>16 / from_bits semantics or endianness is wrong.'
+  evidence: cargo test -p aprender-serve --lib ft_bf16_001_simd_bf16_to_f32_golden
+- id: FT-BF16-002
+  rule: a BF16 GGUF tensor dispatches through get_tensor_f32 with correct values
+  prediction: |
+    A GGUFModel with one GGUF_TYPE_BF16 tensor: get_tensor_f32 is Ok, length 4,
+    values match — NOT "Unsupported quantization type: 30".
+  if_fails: 'the BF16 arm is missing from get_tensor_f32 or the byte range is wrong.'
+  evidence: cargo test -p aprender-serve --lib ft_bf16_002_get_tensor_f32_dispatches_bf16
+
+kani_harnesses:
+- id: KANI-BF16-001
+  obligation: byte-size is exactly 2n and overflow-safe
+  property: 'for all n in [0..4096]: tensor_byte_size(BF16, n) == n*2; no overflow/panic.'
+  bound: 4096
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_bf16_byte_size
+- id: KANI-BF16-002
+  obligation: out-of-range BF16 offset is a clean error
+  property: 'get_tensor_f32 with offset+2n > file_len returns Err, never OOB/panic.'
+  bound: 1
+  strategy: compositional
+  solver: cadical
+  harness: verify_bf16_bounds_safe
+
+qa_gate:
+  id: F-BF16-001
+  name: bf16-dequant-v1 Contract
+  description: BF16 GGUFs must load — get_tensor_f32 + tensor_byte_size dispatch type 30 to the SIMD converter, never the "Unsupported quantization type" catch-all.
+  checks:
+  - validation
+  - falsification

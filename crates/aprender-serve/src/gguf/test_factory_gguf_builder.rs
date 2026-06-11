@@ -173,6 +173,53 @@ mod tests {
         assert_eq!(model.tensors[0].qtype, GGUF_TYPE_Q4_0);
     }
 
+    fn bf16_bytes(vals: &[f32]) -> Vec<u8> {
+        let mut b = Vec::with_capacity(vals.len() * 2);
+        for &v in vals {
+            b.extend_from_slice(&half::bf16::from_f32(v).to_le_bytes());
+        }
+        b
+    }
+
+    /// FT-BF16-001: the SIMD BF16→F32 converter round-trips known values
+    /// (y = from_bits((bits as u32) << 16)). Pins the byte-level semantics.
+    #[test]
+    fn ft_bf16_001_simd_bf16_to_f32_golden() {
+        let vals = [1.5f32, -2.0, 0.0, 3.25, 256.0];
+        let out = crate::inference::simd_bf16_to_f32(&bf16_bytes(&vals));
+        assert_eq!(out.len(), vals.len());
+        for (got, want) in out.iter().zip(vals.iter()) {
+            assert!(
+                (got - want).abs() <= want.abs() * 0.01 + 1e-3,
+                "bf16 dequant: got {got}, want {want}"
+            );
+        }
+    }
+
+    /// FT-BF16-002 (release-blocker fix): a BF16 GGUF tensor DISPATCHES through
+    /// get_tensor_f32 with correct values — it must NOT hit the catch-all
+    /// "Unsupported quantization type: 30" that broke every BF16 GGUF load.
+    #[test]
+    fn ft_bf16_002_get_tensor_f32_dispatches_bf16() {
+        let vals = [1.5f32, -2.0, 0.0, 3.25];
+        let data = GGUFBuilder::new()
+            .add_bf16_tensor("test.bf16", &[4], &bf16_bytes(&vals))
+            .build();
+        let model = GGUFModel::from_bytes(&data).expect("parse BF16 GGUF");
+        assert_eq!(model.tensors[0].qtype, GGUF_TYPE_BF16);
+
+        let out = model
+            .get_tensor_f32("test.bf16", &data)
+            .expect("BF16 must dequantize, not error with 'Unsupported quantization type: 30'");
+        assert_eq!(out.len(), 4);
+        for (got, want) in out.iter().zip(vals.iter()) {
+            assert!(
+                (got - want).abs() < 1e-2,
+                "bf16 tensor dequant: got {got}, want {want}"
+            );
+        }
+    }
+
     #[test]
     fn test_gguf_builder_q8_0_tensor() {
         let q8_data = create_q8_0_data(64);

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-06-11
+
+### Added
+
+- **BF16 (bfloat16) GGUF loader support**: BF16 GGUFs (ggml type 30) now load.
+  Previously any BF16 GGUF hard-failed with *"Unsupported quantization type: 30"*
+  because `get_tensor_f32` (embeddings/norms/lm_head) and `tensor_byte_size`
+  (per-layer weights) lacked a BF16 dispatch arm — even though the matmul weight
+  path already consumed BF16. The fix adds the two arms (reusing the existing
+  `simd_bf16_to_f32` converter; BF16 is 2 bytes/elem, value `from_bits(b << 16)`)
+  and `GGUFBuilder::add_bf16_tensor` for fixtures. Contract
+  `contracts/bf16-dequant-v1.yaml` (FT-BF16-001 golden converter + FT-BF16-002
+  end-to-end dispatch). Dense BF16 load path complete (get_tensor_f32 +
+  tensor_byte_size + matmul); MoE/CUDA BF16 remain follow-ups.
+
 ## [0.38.0] - 2026-06-11
 
 ### Added
