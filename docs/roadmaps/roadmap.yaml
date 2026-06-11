@@ -9419,3 +9419,142 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-692
+  github_issue: 1915
+  item_type: task
+  title: 'Per-position (full-sequence) knowledge distillation for aprender-train-distill'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-06-11T06:00:06Z
+  updated: 2026-06-11T06:00:06Z
+  spec: null
+  acceptance_criteria:
+  - 'Shipped v0.36.0 (PR #1915). Contract: contracts/distill-per-position-kd-v1.yaml. Additive/opt-in (APR_DISTILL_PER_POSITION); CUDA path unchanged via trait defaults. Falsifiers FT-PERPOS-001..005.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - distill
+  - shipped
+  notes: 'Roadmap-traceability backfill 2026-06-11 (was untracked).'
+- id: PMAT-693
+  github_issue: 1893
+  item_type: task
+  title: 'Sharded GGUF pull + auto-merge — run multi-part GGUFs end-to-end (closes #1893)'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-06-11T06:00:06Z
+  updated: 2026-06-11T06:00:06Z
+  spec: null
+  acceptance_criteria:
+  - 'Shipped v0.37.0 (pull, #1917, contract sharded-gguf-pull-v1) + v0.38.0 (auto-merge, #1918, contract sharded-gguf-merge-v1). Type-agnostic, lossless-metadata, bounded-memory merge. Advances CRUX-A acquisition.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux-a
+  - gguf
+  - shipped
+  notes: 'Roadmap-traceability backfill 2026-06-11.'
+- id: PMAT-694
+  github_issue: 1919
+  item_type: task
+  title: 'BF16 (ggml type 30) GGUF loader support'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-06-11T06:00:06Z
+  updated: 2026-06-11T06:00:06Z
+  spec: null
+  acceptance_criteria:
+  - 'Shipped v0.39.0 (PR #1919). Contract: contracts/bf16-dequant-v1.yaml. get_tensor_f32 + tensor_byte_size BF16 arms; FT-BF16-001/002.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - quant
+  - gguf
+  - shipped
+  notes: 'Roadmap-traceability backfill 2026-06-11.'
+- id: PMAT-695
+  github_issue: 1922
+  item_type: task
+  title: 'APR->GGUF export rejects AprQ8 instead of corrupt-relabeling as Q8_0 (import/export symmetry)'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-06-11T06:00:06Z
+  updated: 2026-06-11T06:00:06Z
+  spec: null
+  acceptance_criteria:
+  - 'Shipped v0.40.0 (PR #1922). Contract: contracts/apr-gguf-export-symmetry-v1.yaml. Silent-corruption fix; FT-APRQ8-001/002. Gated a-priori by CRUX-M-04 (PMAT-672).'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux-m
+  - format-integrity
+  - shipped
+  notes: 'Roadmap-traceability backfill 2026-06-11. Corruption class to be walled by PMAT-671/672.'
+- id: PMAT-696
+  github_issue: 1924
+  item_type: task
+  title: 'Fix corrupt Q2_K dequantization (185/256 elements wrong) — format + inference paths'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-06-11T06:00:06Z
+  updated: 2026-06-11T06:00:06Z
+  spec: null
+  acceptance_criteria:
+  - 'Shipped v0.41.0 (PR #1924). Contract: contracts/q2k-dequant-parity-v1.yaml. Both aprender-core + aprender-serve dequant matched to ggml dequantize_row_q2_K; FT-Q2K-001/002. Directly motivates the PMAT-671 standing gate.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux-m
+  - quant-integrity
+  - shipped
+  notes: 'Roadmap-traceability backfill 2026-06-11. Strategic discharge = PMAT-671 (CRUX-M-02 stat-parity gate would have caught this a priori).'
+- id: PMAT-697
+  github_issue: 1925
+  item_type: task
+  title: 'Correct ggml dtype names 26-30 (BF16 was reported as IQ1_M in apr tensors/inspect)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-06-11T06:00:06Z
+  updated: 2026-06-11T06:00:06Z
+  spec: null
+  acceptance_criteria:
+  - 'Shipped v0.41.1 (PR #1925). ggml_dtype_name table reordered to ggml.h (I32=26..BF16=30); exhaustive test pinned. Advances CRUX-F inspect correctness.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux-f
+  - inspect
+  - shipped
+  notes: 'Roadmap-traceability backfill 2026-06-11.'
+- id: PMAT-698
+  github_issue: null
+  item_type: task
+  title: 'Hard-refuse unsupported architectures instead of silent llama fallback (replace FALSIFY-TNAME-005)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-06-11T06:00:06Z
+  updated: 2026-06-11T06:00:06Z
+  spec: null
+  acceptance_criteria:
+  - 'normalize_architecture (tensor_names_fallback.rs:73, tensor_names.rs:282) silently maps unknown arch->llama and FALSIFY-TNAME-005 PINS that garbage-producing behavior; Gemma/Phi3/Falcon run the wrong forward path. Make it return Result/Option + actionable error; INVERT the falsifier to assert clean refusal. Autonomous + CPU-verifiable. Roadmap-aligned target #2.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - arch-breadth
+  - integrity
+  - roadmap-aligned
+  notes: 'Added 2026-06-11 from roadmap evaluation (refuse-don''t-corrupt theme).'
