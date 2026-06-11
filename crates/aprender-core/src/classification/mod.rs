@@ -742,3 +742,29 @@ mod sets;
 #[cfg(test)]
 #[path = "tests_logreg_contract.rs"]
 mod tests_logreg_contract;
+
+// Estimator impl so LogisticRegression works with generic cross_validate /
+// grid_search (Pillar 1). Labels round-trip through f32; inherent API unchanged.
+impl crate::traits::Estimator for LogisticRegression {
+    fn fit(&mut self, x: &Matrix<f32>, y: &crate::primitives::Vector<f32>) -> Result<()> {
+        let labels: Vec<usize> = y.as_slice().iter().map(|&v| v.round() as usize).collect();
+        LogisticRegression::fit(self, x, &labels)
+    }
+    fn predict(&self, x: &Matrix<f32>) -> crate::primitives::Vector<f32> {
+        let labels: Vec<usize> = LogisticRegression::predict(self, x);
+        crate::primitives::Vector::from_vec(labels.into_iter().map(|l| l as f32).collect())
+    }
+    fn score(&self, x: &Matrix<f32>, y: &crate::primitives::Vector<f32>) -> f32 {
+        let preds: Vec<usize> = LogisticRegression::predict(self, x);
+        let n = y.len();
+        if n == 0 {
+            return 0.0;
+        }
+        let correct = preds
+            .iter()
+            .zip(y.as_slice())
+            .filter(|(&p, &t)| p == t.round() as usize)
+            .count();
+        correct as f32 / n as f32
+    }
+}

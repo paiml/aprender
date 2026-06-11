@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.1] - 2026-06-11
+
+### Added
+
+- **`DecisionTreeClassifier` + `LogisticRegression` now implement `Estimator`**
+  (Pillar 1): generic `cross_validate`/`grid_search` now works over all three
+  built-in classifiers (with `RandomForestClassifier`). Proven by a 5-fold CV
+  integration test across all three.
+
 ## [0.44.0] - 2026-06-11
 
 ### Added
