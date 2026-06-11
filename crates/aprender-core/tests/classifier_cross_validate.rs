@@ -60,3 +60,21 @@ fn cross_validate_over_logistic_regression() {
         result.mean()
     );
 }
+
+#[test]
+fn cross_val_score_returns_same_as_cross_validate_scores() {
+    use aprender::model_selection::cross_val_score;
+    let (x, labels) = make_classification(150, 8, 4, 3, 42);
+    let y = Vector::from_vec(labels.iter().map(|&l| l as f32).collect());
+    let model = RandomForestClassifier::new(25)
+        .with_max_depth(10)
+        .with_random_state(42);
+    let cv = KFold::new(5);
+    let scores = cross_val_score(&model, &x, &y, &cv).expect("cross_val_score");
+    let result = cross_validate(&model, &x, &y, &cv).expect("cross_validate");
+    assert_eq!(
+        scores, result.scores,
+        "cross_val_score must return exactly cross_validate().scores (sklearn parity)"
+    );
+    assert_eq!(scores.len(), 5);
+}

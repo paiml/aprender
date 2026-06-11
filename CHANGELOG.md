@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.2] - 2026-06-11
+
+### Added
+
+- **`model_selection::cross_val_score`** (Pillar 1): returns per-fold CV scores
+  directly as a `Vec<f32>`, matching `sklearn.model_selection.cross_val_score`
+  (vs `cross_validate`'s result struct). Thin wrapper; falsified as
+  `cross_val_score(...) == cross_validate(...).scores`.
+
 ## [0.44.1] - 2026-06-11
 
 ### Added

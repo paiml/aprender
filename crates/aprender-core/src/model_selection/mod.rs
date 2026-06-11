@@ -114,6 +114,26 @@ where
     Ok(CrossValidationResult { scores })
 }
 
+/// Evaluate an estimator by k-fold cross-validation, returning the per-fold
+/// scores directly as a `Vec<f32>` — matching `sklearn.model_selection`'s
+/// `cross_val_score`, which returns the score array (not a result struct).
+///
+/// Thin wrapper over [`cross_validate`]; `result.scores`.
+///
+/// # Errors
+/// Returns an error if any fold's training fails.
+pub fn cross_val_score<E>(
+    estimator: &E,
+    x: &Matrix<f32>,
+    y: &Vector<f32>,
+    cv: &KFold,
+) -> Result<Vec<f32>, String>
+where
+    E: Estimator + Clone,
+{
+    Ok(cross_validate(estimator, x, y, cv)?.scores)
+}
+
 /// Helper function to extract samples by indices
 fn extract_samples(
     x: &Matrix<f32>,
