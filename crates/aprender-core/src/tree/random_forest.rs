@@ -296,6 +296,7 @@ pub struct RandomForestClassifier {
 }
 
 include!("random_forest_classifier.rs");
+include!("random_forest_classifier_estimator.rs");
 include!("random_forest_tests.rs");
 
 #[cfg(test)]
