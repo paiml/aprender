@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.3] - 2026-06-11
+
+### Changed
+
+- **`Matrix::matmul` cache-friendly rewrite (first scikit-learn speed-beat)**:
+  replaced the naive scalar `ijk` loop (bounds-checked `get()`, strided column
+  access) with cache-friendly `ikj` ordering and a contiguous AXPY inner loop
+  that LLVM auto-vectorizes. Numerically equivalent (13,849 core tests pass).
+  **`LinearRegression` fit+predict (10000×20) dropped 3.27 ms → 1.27 ms — now
+  ~1.8× faster than scikit-learn (2.28 ms, LAPACK), at R² parity.** matmul is
+  used framework-wide, so this also accelerates PCA, tensor ops, and any
+  algorithm forming Xᵀ X.
+
 ## [0.42.2] - 2026-06-11
 
 ### Added
