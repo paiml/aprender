@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.5] - 2026-06-11
+
+### Added
+
+- **`GaussianNB` now implements `Estimator`** (Pillar 1): Gaussian Naive Bayes
+  drops into generic `cross_validate`/`grid_search`. CV integration test now
+  covers RandomForest/DecisionTree/LogReg/KNN/GaussianNB.
+
 ## [0.44.4] - 2026-06-11
 
 ### Added

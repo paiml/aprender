@@ -93,3 +93,18 @@ fn cross_validate_over_knn_classifier() {
         result.mean()
     );
 }
+
+#[test]
+fn cross_validate_over_gaussian_nb() {
+    use aprender::classification::GaussianNB;
+    let (x, labels) = make_classification(150, 6, 4, 3, 5);
+    let y = Vector::from_vec(labels.iter().map(|&l| l as f32).collect());
+    let model = GaussianNB::new();
+    let result = cross_validate(&model, &x, &y, &KFold::new(5)).expect("cv over gaussian_nb");
+    assert_eq!(result.scores.len(), 5);
+    assert!(
+        result.mean() > 0.6,
+        "GaussianNB CV acc {} not learnable",
+        result.mean()
+    );
+}
