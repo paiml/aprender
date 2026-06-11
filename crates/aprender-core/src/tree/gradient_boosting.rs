@@ -275,3 +275,36 @@ impl Default for GradientBoostingClassifier {
 #[cfg(test)]
 #[path = "tests_gbm_contract.rs"]
 mod tests_gbm_contract;
+
+// Estimator impl so GradientBoostingClassifier works with generic cross_validate /
+// grid_search (Pillar 1). Labels round-trip through f32; predict returns Result,
+// the post-fit error path falls back to zeros so scoring stays well-defined.
+impl crate::traits::Estimator for GradientBoostingClassifier {
+    fn fit(
+        &mut self,
+        x: &crate::primitives::Matrix<f32>,
+        y: &crate::primitives::Vector<f32>,
+    ) -> Result<()> {
+        let labels: Vec<usize> = y.as_slice().iter().map(|&v| v.round() as usize).collect();
+        GradientBoostingClassifier::fit(self, x, &labels)
+    }
+    fn predict(&self, x: &crate::primitives::Matrix<f32>) -> crate::primitives::Vector<f32> {
+        let labels: Vec<usize> =
+            GradientBoostingClassifier::predict(self, x).unwrap_or_else(|_| vec![0; x.shape().0]);
+        crate::primitives::Vector::from_vec(labels.into_iter().map(|l| l as f32).collect())
+    }
+    fn score(&self, x: &crate::primitives::Matrix<f32>, y: &crate::primitives::Vector<f32>) -> f32 {
+        let preds: Vec<usize> =
+            GradientBoostingClassifier::predict(self, x).unwrap_or_else(|_| vec![0; x.shape().0]);
+        let n = y.len();
+        if n == 0 {
+            return 0.0;
+        }
+        let correct = preds
+            .iter()
+            .zip(y.as_slice())
+            .filter(|(&p, &t)| p == t.round() as usize)
+            .count();
+        correct as f32 / n as f32
+    }
+}

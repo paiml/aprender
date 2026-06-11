@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.7] - 2026-06-12
+
+### Added
+
+- **`GradientBoostingClassifier` now implements `Estimator`** (Pillar 1): drops
+  into generic `cross_validate`/`grid_search`. CV integration test now covers
+  RandomForest/DecisionTree/LogReg/KNN/GaussianNB/GBM.
+
 ## [0.44.6] - 2026-06-11
 
 ### Added
