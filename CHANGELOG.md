@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.43.2] - 2026-06-11
+
+### Added
+
+- **`metrics::balanced_accuracy_score` + `metrics::matthews_corrcoef`** (Pillar 1):
+  imbalance-robust classification metrics matching `sklearn.metrics`. Balanced
+  accuracy = mean per-class recall; MCC = the multiclass confusion-matrix
+  correlation. Falsified against sklearn within 1e-4 (FT-METRIC-BALACC / -MCC).
+
 ## [0.43.1] - 2026-06-11
 
 ### Added
