@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.1] - 2026-06-11
+
+### Added
+
+- **`datasets::load_iris`**: the canonical Iris dataset (150×4, 3 balanced
+  classes) embedded from `sklearn.datasets.load_iris` (committed `iris.csv`,
+  no runtime dependency). Completes the `sklearn.datasets`-parity loader surface
+  alongside `make_blobs`/`make_regression`. Falsifier FT-DATA-005.
+
 ## [0.42.0] - 2026-06-11
 
 ### Added
