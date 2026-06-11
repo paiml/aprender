@@ -123,31 +123,11 @@ dependencies = [
 
 [[package]]
 name = "alimentar"
-version = "0.2.8"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab619ace811f204d8147d11ef71907a44ef98ba8d4ada2d3b1ea5306d5fd7a30"
+checksum = "66fcc48665554080708f40d4a06eb41cb89db2fef75ef90cf15ccb5f136386d8"
 dependencies = [
- "arrow 57.3.0",
- "arrow-csv",
- "arrow-json",
- "bytes",
- "clap",
- "crossterm 0.28.1",
- "lz4_flex 0.11.6",
- "memmap2",
- "nu-ansi-term",
- "parquet 57.3.0",
- "rand 0.8.5",
- "reedline",
- "rmp-serde",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2 0.10.9",
- "thiserror 2.0.18",
- "tokio",
- "unicode-width 0.2.0",
- "zstd",
+ "aprender-data 0.29.0",
 ]
 
 [[package]]
@@ -649,6 +629,35 @@ dependencies = [
  "bitflags 2.11.0",
  "libc",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "aprender-data"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a3c22356dace8c39fbfce6197a088ae41f233bcc37cb840027b72eca3d9eae07"
+dependencies = [
+ "arrow 57.3.0",
+ "arrow-csv",
+ "arrow-json",
+ "bytes",
+ "clap",
+ "crossterm 0.28.1",
+ "lz4_flex 0.11.6",
+ "memmap2",
+ "nu-ansi-term",
+ "parquet 57.3.0",
+ "rand 0.8.5",
+ "reedline",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
+ "tokio",
+ "unicode-width 0.2.0",
+ "zstd",
 ]
 
 [[package]]

@@ -221,7 +221,7 @@ aprender-train-common = { workspace = true, optional = true }
 dhat = { version = "0.3", optional = true }
 # Data loading, splitting, imbalance detection (apr data subcommands)
 # GH-344: path dep via .cargo/config.toml.dev-overrides; CI uses checkout+symlink
-alimentar = { version = "0.2.8", default-features = false, features = ["shuffle"] }
+alimentar = { version = "0.3" }
 half = "2.4.1"
 # YAML config parsing (distillation configs, ALB-011)
 serde_yaml = { package = "serde_yaml_ng", version = "0.10" }

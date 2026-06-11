@@ -56,7 +56,7 @@ renacer-core = { version = "0.1" }
 aprender = { path = "../aprender-core", version = "0.42.4", package = "aprender-core", optional = true }
 
 # Data loading library (optional for data pipeline examples)
-alimentar = { version = "0.2", optional = true, default-features = false, features = ["local", "shuffle"] }
+alimentar = { version = "0.3", optional = true }
 
 # Model registry (optional for pull/push commands)
 pacha = { version = "0.3", optional = true }
