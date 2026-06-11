@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.4] - 2026-06-11
+
+### Added
+
+- **`KNearestNeighbors` now implements `Estimator`** (Pillar 1): the KNN
+  classifier drops into generic `cross_validate`/`grid_search`. CV integration
+  test now covers RandomForest/DecisionTree/LogReg/KNN.
+
 ## [0.44.3] - 2026-06-11
 
 ### Added

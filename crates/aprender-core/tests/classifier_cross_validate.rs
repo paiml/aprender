@@ -78,3 +78,18 @@ fn cross_val_score_returns_same_as_cross_validate_scores() {
     );
     assert_eq!(scores.len(), 5);
 }
+
+#[test]
+fn cross_validate_over_knn_classifier() {
+    use aprender::classification::KNearestNeighbors;
+    let (x, labels) = make_classification(150, 6, 4, 3, 11);
+    let y = Vector::from_vec(labels.iter().map(|&l| l as f32).collect());
+    let model = KNearestNeighbors::new(5);
+    let result = cross_validate(&model, &x, &y, &KFold::new(5)).expect("cv over knn");
+    assert_eq!(result.scores.len(), 5);
+    assert!(
+        result.mean() > 0.6,
+        "KNN CV acc {} not learnable",
+        result.mean()
+    );
+}
