@@ -9,7 +9,7 @@
 pub mod agreement;
 pub mod classification;
 pub mod regression;
-pub use agreement::{balanced_accuracy_score, matthews_corrcoef};
+pub use agreement::{balanced_accuracy_score, cohen_kappa_score, hamming_loss, matthews_corrcoef};
 pub use regression::{mean_absolute_error, mean_squared_error, r2_score};
 pub mod probabilistic;
 pub use probabilistic::{average_precision_score, log_loss, roc_auc_score};

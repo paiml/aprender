@@ -91,6 +91,62 @@ pub fn matthews_corrcoef(y_pred: &[usize], y_true: &[usize]) -> f32 {
     }
 }
 
+/// Cohen's kappa — inter-rater agreement corrected for chance, matching
+/// `sklearn.metrics.cohen_kappa_score`. `κ = (p_o − p_e) / (1 − p_e)`, where
+/// `p_o` is observed agreement (accuracy) and `p_e` is chance agreement. Returns
+/// 0.0 when chance agreement is total (κ undefined).
+///
+/// # Panics
+/// Panics if `y_pred` and `y_true` differ in length.
+#[must_use]
+pub fn cohen_kappa_score(y_pred: &[usize], y_true: &[usize]) -> f32 {
+    assert_eq!(
+        y_pred.len(),
+        y_true.len(),
+        "cohen_kappa_score: length mismatch"
+    );
+    let n = y_true.len();
+    if n == 0 {
+        return 0.0;
+    }
+    let k = n_classes(y_pred, y_true);
+    let mut pred_count = vec![0.0f64; k];
+    let mut true_count = vec![0.0f64; k];
+    let mut agree = 0usize;
+    for (&p, &t) in y_pred.iter().zip(y_true) {
+        pred_count[p] += 1.0;
+        true_count[t] += 1.0;
+        if p == t {
+            agree += 1;
+        }
+    }
+    let nf = n as f64;
+    let p_o = agree as f64 / nf;
+    let p_e: f64 = (0..k)
+        .map(|c| (pred_count[c] / nf) * (true_count[c] / nf))
+        .sum();
+    if (1.0 - p_e).abs() < 1e-12 {
+        return 0.0;
+    }
+    ((p_o - p_e) / (1.0 - p_e)) as f32
+}
+
+/// Hamming loss — the fraction of labels predicted incorrectly, matching
+/// `sklearn.metrics.hamming_loss` for the multiclass single-label case.
+///
+/// # Panics
+/// Panics if `y_pred` and `y_true` differ in length.
+#[must_use]
+pub fn hamming_loss(y_pred: &[usize], y_true: &[usize]) -> f32 {
+    assert_eq!(y_pred.len(), y_true.len(), "hamming_loss: length mismatch");
+    let n = y_true.len();
+    if n == 0 {
+        return 0.0;
+    }
+    let mismatches = y_pred.iter().zip(y_true).filter(|(&p, &t)| p != t).count();
+    mismatches as f32 / n as f32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -114,5 +170,19 @@ mod tests {
         assert!((matthews_corrcoef(&YP, &YT) - 0.428_571).abs() < 1e-4);
         assert!((matthews_corrcoef(&[0, 1, 1, 1, 0], &[0, 0, 1, 1, 1]) - 0.166_667).abs() < 1e-4);
         assert!((matthews_corrcoef(&[0, 1, 0, 1], &[0, 1, 0, 1]) - 1.0).abs() < 1e-4);
+    }
+
+    /// FT-METRIC-KAPPA: matches `sklearn.metrics.cohen_kappa_score` within 1e-4.
+    #[test]
+    fn cohen_kappa_matches_sklearn() {
+        assert!((cohen_kappa_score(&YP, &YT) - 0.428_571).abs() < 1e-4);
+        assert!((cohen_kappa_score(&[0, 1, 0, 1], &[0, 1, 0, 1]) - 1.0).abs() < 1e-4);
+    }
+
+    /// FT-METRIC-HAMMING: matches `sklearn.metrics.hamming_loss` within 1e-6.
+    #[test]
+    fn hamming_loss_matches_sklearn() {
+        assert!((hamming_loss(&YP, &YT) - 0.375).abs() < 1e-6);
+        assert!((hamming_loss(&[0, 1, 2], &[0, 1, 2])).abs() < 1e-6);
     }
 }
