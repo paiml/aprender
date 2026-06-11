@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.0] - 2026-06-11
+
+### Added
+
+- **`RandomForestClassifier` now implements `Estimator`** (Pillar 1 — beat
+  scikit-learn): the flagship classifier drops into the generic
+  `cross_validate`/`grid_search` machinery, mirroring sklearn's
+  `cross_val_score(any_estimator, ...)`. Labels round-trip through `f32`; the
+  inherent `&[usize]` API is unchanged. Proven by a 5-fold CV integration test.
+
 ## [0.43.3] - 2026-06-11
 
 ### Added
