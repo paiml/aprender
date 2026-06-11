@@ -1,0 +1,91 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-11'
+  author: PAIML Engineering
+  description: |
+    Q2_K (GGML type 10) dequantization must match ggml `dequantize_row_q2_K`
+    (and candle `BlockQ2K::to_float`) byte-for-byte. Both aprender Q2_K dequant
+    impls previously used a "16 sub-blocks reading qs[j*4]" scheme that applied
+    the WRONG super-block scale to the WRONG 2-bit lanes, producing corrupt F32
+    output (185/256 elements wrong vs ggml on a representative block — genuinely
+    wrong values, not a reordering). That corruption reached every Q2_K/Q2_K_S
+    model via apr tensors/inspect/validate/convert (format path) and via
+    `apr run`/serve inference (inference path).
+
+    Correct ordering: 256 elements in two groups of 128, each over a 32-byte qs
+    window; within a group, 4 sub-iterations at shift 0/2/4/6, each consuming TWO
+    scale bytes (one for the window's low 16 bytes, one for its high 16), with
+    `y = d*(sc & 0xF)*q - dmin*(sc >> 4)`.
+  references:
+  - 'crates/aprender-core/src/format/gguf/dequantize.rs — dequantize_q2_k (format path)'
+  - 'crates/aprender-serve/src/quantize/dequant_q4k.rs — dequantize_q2_k (inference path)'
+  - 'ggml-quants.c dequantize_row_q2_K / candle-core k_quants.rs BlockQ2K::to_float (reference)'
+  - 'contracts/q3k-dequant-v1.yaml — sibling K-quant dequant contract'
+
+kind: KernelContract
+name: q2k-dequant-parity
+version: 1.0.0
+scope: aprender-core + aprender-serve Q2_K dequantization (GGML type 10)
+
+equations:
+  q2k_dequant_ordering:
+    formula: |
+      For a 256-element super-block (84 bytes: scales[16], qs[64], d:f16,
+      dmin:f16), output element n is produced in ggml order: group g=n/128 over
+      qs window qs[g*32 .. g*32+32]; sub-iter j=(n%128)/32 at shift 2*j; the
+      window's low/high 16 bytes use scale bytes scales[8g + 2j] / scales[8g +
+      2j + 1]; value = d*(sc & 0xF)*((q >> shift) & 3) - dmin*(sc >> 4).
+    domain: 84-byte Q2_K super-block
+    codomain: 256 f32 values
+    invariants:
+    - 'output matches ggml dequantize_row_q2_K / candle BlockQ2K::to_float elementwise'
+    - 'both the format-path and inference-path impls produce identical output'
+    - 'NOT the old "16 sub-blocks reading qs[j*4]" ordering'
+    lean_theorem: Theorems.Q2K_Dequant_Ordering
+
+proof_obligations:
+- type: invariant
+  property: format-path Q2_K dequant matches ggml
+  formal: |
+    aprender-core dequantize_q2_k on a representative block equals the ggml
+    reference elementwise within 1e-6.
+- type: invariant
+  property: inference-path Q2_K dequant matches ggml
+  formal: |
+    aprender-serve dequantize_q2_k on the same block equals the ggml reference
+    elementwise within 1e-6 (so Q2_K inference is no longer corrupt).
+
+falsification_tests:
+- id: FT-Q2K-001
+  rule: format-path Q2_K dequant matches the ggml ordering
+  prediction: |
+    aprender-core dequantize_q2_k on an 84-byte block (varied scales/qs,
+    d=1.0, dmin=0.5) equals the ggml reference; the old scheme was 185/256 off.
+  if_fails: 'the inner loop reverted to the qs[j*4] sub-block scheme.'
+  evidence: cargo test -p aprender-core --lib test_dequantize_q2_k_ggml_golden
+- id: FT-Q2K-002
+  rule: inference-path Q2_K dequant matches the ggml ordering
+  prediction: |
+    aprender-serve dequantize_q2_k on the same block equals the ggml reference.
+  if_fails: 'the serve quantize/dequant_q4k.rs Q2_K branch reverted.'
+  evidence: cargo test -p aprender-serve --lib test_dequantize_q2_k_ggml_golden
+
+kani_harnesses:
+- id: KANI-Q2K-001
+  obligation: exactly 256 outputs, no out-of-bounds
+  property: |
+    For any 84-byte block, dequantize_q2_k consumes scales[0..16], qs[0..64]
+    fully (is reaches 16, qs index reaches 64) and writes exactly 256 outputs;
+    no slice index exceeds bounds.
+  bound: 1
+  strategy: compositional
+  solver: cadical
+  harness: verify_q2k_indices_in_bounds
+
+qa_gate:
+  id: F-Q2K-001
+  name: q2k-dequant-parity-v1 Contract
+  description: Q2_K dequant (format + inference paths) must match ggml byte-for-byte, never the old corrupt qs[j*4] ordering.
+  checks:
+  - validation
+  - falsification

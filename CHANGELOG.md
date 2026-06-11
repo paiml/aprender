@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-06-11
+
+### Fixed
+
+- **Q2_K dequantization now matches ggml — fixes corrupt Q2_K output**: both
+  Q2_K dequant impls used a "16 sub-blocks reading `qs[j*4]`" scheme that applied
+  the wrong super-block scale to the wrong 2-bit lanes, producing corrupt F32
+  output (**185/256 elements wrong** vs ggml/candle on a representative block).
+  This silently corrupted every Q2_K/Q2_K_S model (common on HF) — both the
+  format path (`apr tensors`/`inspect`/`validate`/`convert`) and the **inference
+  path** (`apr run`/serve). Fixed both (`aprender-core` format dequant +
+  `aprender-serve` inference dequant) to match ggml `dequantize_row_q2_K` /
+  candle `BlockQ2K::to_float` byte-for-byte (golden falsifiers FT-Q2K-001/002,
+  contract `contracts/q2k-dequant-parity-v1.yaml`).
+
 ## [0.40.1] - 2026-06-11
 
 ### Fixed

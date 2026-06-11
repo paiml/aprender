@@ -264,6 +264,65 @@ mod tests {
         assert!(result.is_err());
     }
 
+    /// Reference Q2_K dequant matching ggml `dequantize_row_q2_K` /
+    /// candle `BlockQ2K::to_float` — the ordering the production code must
+    /// follow. Two groups of 128 over a 32-byte qs window each; 4 sub-iters at
+    /// shift 0/2/4/6; two scale bytes per sub-iter (low/high 16 of the window).
+    fn q2k_ggml_reference(scales: &[u8], qs: &[u8], d: f32, dmin: f32) -> Vec<f32> {
+        let mut y = Vec::with_capacity(256);
+        let mut is = 0usize;
+        for group in 0..2 {
+            let chunk = &qs[group * 32..group * 32 + 32];
+            let mut shift = 0u8;
+            for _ in 0..4 {
+                let sc = scales[is];
+                is += 1;
+                let dl = d * f32::from(sc & 0x0F);
+                let ml = dmin * f32::from(sc >> 4);
+                for &q in &chunk[0..16] {
+                    y.push(dl * f32::from((q >> shift) & 0x03) - ml);
+                }
+                let sc = scales[is];
+                is += 1;
+                let dl = d * f32::from(sc & 0x0F);
+                let ml = dmin * f32::from(sc >> 4);
+                for &q in &chunk[16..32] {
+                    y.push(dl * f32::from((q >> shift) & 0x03) - ml);
+                }
+                shift += 2;
+            }
+        }
+        y
+    }
+
+    /// FT-Q2K-001: Q2_K dequant must match ggml/candle byte-for-byte. The prior
+    /// "16 sub-blocks reading qs[j*4+l]" scheme applied the wrong scale to the
+    /// wrong 2-bit lanes and produced 185/256 wrong values (corrupt weights →
+    /// broken inference for Q2_K models). Pre-fix this test FAILS; post-fix PASS.
+    #[test]
+    fn test_dequantize_q2_k_ggml_golden() {
+        // 84-byte Q2_K block: [16 scales][64 qs][d:f16][dmin:f16].
+        let scales: Vec<u8> = (0u8..16).map(|i| i.wrapping_mul(9).wrapping_add(5)).collect();
+        let qs: Vec<u8> = (0u8..64).map(|i| i.wrapping_mul(7).wrapping_add(1)).collect();
+        let mut data = Vec::with_capacity(84);
+        data.extend_from_slice(&scales);
+        data.extend_from_slice(&qs);
+        data.extend_from_slice(&0x3C00u16.to_le_bytes()); // d = 1.0
+        data.extend_from_slice(&0x3800u16.to_le_bytes()); // dmin = 0.5
+        assert_eq!(data.len(), 84);
+
+        // 0x3C00 = 1.0, 0x3800 = 0.5 (exact f16 normals; safe_f16_scale agrees).
+        let expected = q2k_ggml_reference(&scales, &qs, 1.0, 0.5);
+        let got = dequantize_q2_k(&data, 0, 256).expect("dequant");
+        assert_eq!(got.len(), 256);
+        for (i, (g, e)) in got.iter().zip(expected.iter()).enumerate() {
+            assert!(
+                (g - e).abs() < 1e-6,
+                "Q2_K elem {i}: got {g}, want {e} (must match ggml dequantize_row_q2_K ordering)"
+            );
+        }
+    }
+
     // =========================================================================
     // Dequantize Q3_K
     // =========================================================================
