@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-06-11
+
+### Fixed
+
+- **APR→GGUF export no longer produces corrupt GGUF for AprQ8 tensors**: export
+  silently mapped APR-native `AprQ8` (single-whole-tensor-scale 8-bit,
+  `[f32 scale] + [i8×N]` = 4+N bytes) to GGML `Q8_0` (per-32-block,
+  `ceil(N/32)·34` bytes) and emitted the raw APR bytes **unconverted** under the
+  `Q8_0` label — a corrupt GGUF that any llama.cpp loader misreads (reachable via
+  `apr import x.gguf && apr export --format gguf` on Q4_K_M models). Export now
+  **rejects** AprQ8 with a clear error (pointing to `apr convert` → F32/F16),
+  restoring import/export symmetry (the import side already refuses GGUF `Q8_0`,
+  and AprQ4 export was already rejected). Layout-identical dtypes
+  (F32/F16/Q4K/Q6K) export unchanged. Contract
+  `contracts/apr-gguf-export-symmetry-v1.yaml` (FT-APRQ8-001/002).
+
 ## [0.39.0] - 2026-06-11
 
 ### Added
