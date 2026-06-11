@@ -9769,3 +9769,442 @@ roadmap:
   - inference
   - beat
   notes: null
+- id: PMAT-720
+  github_issue: null
+  item_type: task
+  title: 'Add aprender::datasets module (load_iris, load_digits, load_california_housing via include_str! + make_classification/make_blobs/make_regression/make…'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-06-11T06:26:41Z
+  updated: 2026-06-11T06:26:41Z
+  spec: null
+  acceptance_criteria:
+  - 'Parent PMAT-717. Falsifier: datasets::load_digits() returns (1797,64) Matrix + 1797 labels in {0..9}; load_iris() returns (150,4)+3 classes; checksums/shapes asserted in unit tests.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-sklearn
+  - beat
+  - cpu-autonomous
+  notes: 'four-pillar beat-analysis rank 1'
+- id: PMAT-721
+  github_issue: null
+  item_type: task
+  title: 'Falsify the LogisticRegression train_acc=0.505 observation: contract-gated test that LogReg reaches >=0.95 train-acc on a margin-separable 2-class se…'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-06-11T06:26:41Z
+  updated: 2026-06-11T06:26:41Z
+  spec: null
+  acceptance_criteria:
+  - 'Parent PMAT-717. Falsifier: LogisticRegression on margin-separable synthetic reaches train_acc >= 0.95 within 200 iters; currently observed 0.505 on overlapping data — confirm separable case passes or fix converges.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-sklearn
+  - beat
+  - cpu-autonomous
+  notes: 'four-pillar beat-analysis rank 2'
+- id: PMAT-722
+  github_issue: null
+  item_type: task
+  title: 'Commit the head-to-head sklearn-beat bench harness (apr vs sklearn) on digits classification + california regression, CSV/JSON out, CI-failing if apr…'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-06-11T06:26:41Z
+  updated: 2026-06-11T06:26:41Z
+  spec: null
+  acceptance_criteria:
+  - 'Parent PMAT-717. Falsifier: apr RandomForestClassifier test_acc >= 0.96 on digits AND apr_walltime_ms <= sklearn_walltime_ms; RandomForestRegressor R2 >= 0.78 on california. Fails CI otherwise.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-sklearn
+  - beat
+  - cpu-autonomous
+  notes: 'four-pillar beat-analysis rank 3'
+- id: PMAT-723
+  github_issue: null
+  item_type: task
+  title: 'Ship `apr qa --falsify` adversarial-corpus mode: bundle N>=5 deliberately-broken GGUF/APR artifacts (corrupt quant block, NaN weights, transposed lm_…'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-06-11T06:26:41Z
+  updated: 2026-06-11T06:26:41Z
+  spec: null
+  acceptance_criteria:
+  - 'Parent PMAT-719. Falsifier: On the 5-artifact corpus `apr qa <broken> --json` flags >=1 gate / exits non-zero on 5/5; llama-cli/ollama exit 0 with garbage on 5/5. Differentiator FALSIFIED if apr false-passes any OR an incumbent catches one.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-ollama
+  - beat
+  - cpu-autonomous
+  notes: 'four-pillar beat-analysis rank 4'
+- id: PMAT-724
+  github_issue: null
+  item_type: task
+  title: 'Add finite-difference gradient-correctness gate to core autograd as a proptest (perturb eps=1e-5, assert max|analytic-numeric|<1e-3 over matmul/relu/…'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-06-11T06:26:41Z
+  updated: 2026-06-11T06:26:41Z
+  spec: null
+  acceptance_criteria:
+  - 'Parent PMAT-718. Falsifier: Any op whose analytic gradient deviates from numeric by >1e-3 fails the gate; passing gate is the machine-checked correctness claim on the training benchmark.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-pytorch
+  - beat
+  - cpu-autonomous
+  notes: 'four-pillar beat-analysis rank 5'
+- id: PMAT-725
+  github_issue: null
+  item_type: task
+  title: 'Build the CPU training-time beat-benchmark harness: fixed 2-layer MLP + fixed N=1024 synthetic regression, single-thread CPU, measure wall-clock-to-t…'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-06-11T06:26:41Z
+  updated: 2026-06-11T06:26:41Z
+  spec: null
+  acceptance_criteria:
+  - 'Parent PMAT-718. Falsifier: apr reaches MSE<=0.05 on the fixed dataset within the fixed step budget single-thread CPU; if it cannot converge the beat-claim is dead on arrival.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-pytorch
+  - beat
+  - cpu-autonomous
+  notes: 'four-pillar beat-analysis rank 6'
+- id: PMAT-726
+  github_issue: null
+  item_type: task
+  title: 'PMAT-711: wire QLoRALayer (4-bit NF4 base) into the InstructPipeline CPU train loop (currently Vec<LoRALayer> f32 base, mod.rs:176); reuse the EXISTI…'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-06-11T06:26:41Z
+  updated: 2026-06-11T06:26:41Z
+  spec: null
+  acceptance_criteria:
+  - 'Parent PMAT-710. Falsifier: Qwen2-0.5B q_proj block: NF4 round-trip mean-abs-error <= 1e-3 vs bitsandbytes per 64-block; QLoRALayer 4-bit footprint <= 0.30x f16; loss monotone-decreasing over 20 CPU steps on 16-sample fixture; cargo test -p aprender-train --lib lora:…'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-unsloth
+  - beat
+  - cpu-autonomous
+  notes: 'four-pillar beat-analysis rank 7'
+- id: PMAT-727
+  github_issue: null
+  item_type: task
+  title: 'PMAT-712: merge->GGUF as a contract-gated golden test — extend run_merge to optionally emit GGUF, add #[contract] obligation that merged-GGUF forward…'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-06-11T06:26:41Z
+  updated: 2026-06-11T06:26:41Z
+  spec: null
+  acceptance_criteria:
+  - 'Parent PMAT-710. Falsifier: Load merged GGUF in realizar, forward on 8 fixed inputs; max abs diff vs in-memory base+scale*B@A < 1e-2; pv validate the new merge-export contract; fails if any tensor diverges.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-unsloth
+  - beat
+  - cpu-autonomous
+  notes: 'four-pillar beat-analysis rank 8'
+- id: PMAT-728
+  github_issue: null
+  item_type: task
+  title: 'Run pinned PyTorch-CPU baseline (single OMP thread) on the IDENTICAL fixed MLP task; record wall-clock-to-target-loss + peak RSS via /usr/bin/time -v…'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-06-11T06:26:41Z
+  updated: 2026-06-11T06:26:41Z
+  spec: null
+  acceptance_criteria:
+  - 'Parent PMAT-718. Falsifier: If apr wall-clock > PyTorch-CPU OR apr peak-RSS > PyTorch peak-RSS, the beat is FALSIFIED and reported as such — no vibes.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-pytorch
+  - beat
+  - cpu-autonomous
+  notes: 'four-pillar beat-analysis rank 9'
+- id: PMAT-729
+  github_issue: null
+  item_type: task
+  title: 'Unify classifier API onto Estimator (or add a Classifier trait with y:&[usize]) so cross_validate/grid_search work generically over LogReg/RF/GBM/SVM…'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-06-11T06:26:41Z
+  updated: 2026-06-11T06:26:41Z
+  spec: null
+  acceptance_criteria:
+  - 'Parent PMAT-717. Falsifier: cross_validate::<RandomForestClassifier>(...) compiles and returns 5-fold CV accuracy on digits matching a manual KFold loop within 1e-4.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-sklearn
+  - beat
+  - cpu-autonomous
+  notes: 'four-pillar beat-analysis rank 10'
+- id: PMAT-730
+  github_issue: null
+  item_type: task
+  title: 'Add missing metrics roc_auc_score, log_loss, roc_curve, precision_recall_curve (VERIFIED ABSENT everywhere) + GradientBoostingRegressor to complete t…'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-06-11T06:26:41Z
+  updated: 2026-06-11T06:26:41Z
+  spec: null
+  acceptance_criteria:
+  - 'Parent PMAT-717. Falsifier: roc_auc_score on a known scored set matches sklearn within 1e-4; GradientBoostingRegressor R2 on california >= 0.80.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-sklearn
+  - beat
+  - cpu-autonomous
+  notes: 'four-pillar beat-analysis rank 11'
+- id: PMAT-731
+  github_issue: null
+  item_type: task
+  title: 'PMAT-713: one-command `apr finetune --qlora --bits 4 --export gguf -o out.gguf` doing load->NF4-QLoRA->CPU-train->merge->export on a tiny fixture (no…'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-06-11T06:26:41Z
+  updated: 2026-06-11T06:26:41Z
+  spec: null
+  acceptance_criteria:
+  - 'Parent PMAT-710. Falsifier: Single CLI call on 2-layer fixture .apr + 16-line JSONL produces a loadable merged GGUF; apr qa out.gguf passes; final_loss < initial_loss; e2e integration test in apr-cli.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-unsloth
+  - beat
+  - cpu-autonomous
+  notes: 'four-pillar beat-analysis rank 12'
+- id: PMAT-732
+  github_issue: null
+  item_type: task
+  title: 'Wire apr-qa-differential-v1 ollama_parity into a real harness: `apr qa --differential --reference llama.cpp` reporting top-1 agreement >=95% + ppl-ga…'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-06-11T06:26:41Z
+  updated: 2026-06-11T06:26:41Z
+  spec: null
+  acceptance_criteria:
+  - 'Parent PMAT-719. Falsifier: `apr qa model.apr --differential` reports top1-agreement + ppl-gap vs llama.cpp on identical prompts, reproducible across 3 runs (CV<5%); falsified if agreement<95% (apr decode wrong) or harness needs GPU.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-ollama
+  - beat
+  - cpu-autonomous
+  notes: 'four-pillar beat-analysis rank 13'
+- id: PMAT-733
+  github_issue: null
+  item_type: task
+  title: 'Add preprocessing encoders + sklearn-style Pipeline: OneHotEncoder, LabelEncoder, OrdinalEncoder, PolynomialFeatures, SimpleImputer, Normalizer + Pip…'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-06-11T06:26:41Z
+  updated: 2026-06-11T06:26:41Z
+  spec: null
+  acceptance_criteria:
+  - 'Parent PMAT-717. Falsifier: Pipeline::new([StandardScaler, PCA(10)], LogisticRegression).fit(digits).score() >= 0.92; OneHotEncoder on a 3-category column yields a 3-col one-hot matrix asserted element-wise.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-sklearn
+  - beat
+  - cpu-autonomous
+  notes: 'four-pillar beat-analysis rank 14'
+- id: PMAT-734
+  github_issue: null
+  item_type: task
+  title: 'PMAT-715: promote Unsloth from static const (score.rs:777) to a tracked competitor ROW in compute_training_step_scorecard reporting apr/unsloth tok/s…'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-06-11T06:26:41Z
+  updated: 2026-06-11T06:26:41Z
+  spec: null
+  acceptance_criteria:
+  - 'Parent PMAT-710. Falsifier: Fused-adapter forward == sum_i w_i*(scale_i*B_i@A_i@x) within 1e-5 (CPU); scorecard JSON emits unsloth row + ratio (honest concession that ratio <1.0 on throughput).'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-unsloth
+  - beat
+  - cpu-autonomous
+  notes: 'four-pillar beat-analysis rank 15'
+- id: PMAT-735
+  github_issue: null
+  item_type: task
+  title: 'Add non-linear SVM (RBF/poly kernel SVC) — sklearn SVC''s signature strength; current LinearSVM cannot separate non-linear data. VERIFIED ABSENT (no …'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-06-11T06:26:41Z
+  updated: 2026-06-11T06:26:41Z
+  spec: null
+  acceptance_criteria:
+  - 'Parent PMAT-717. Falsifier: RBF-SVC on make_circles (non-linearly-separable) test_acc >= 0.95 where LinearSVM scores ~0.50.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-sklearn
+  - beat
+  - cpu-autonomous
+  notes: 'four-pillar beat-analysis rank 16'
+- id: PMAT-736
+  github_issue: null
+  item_type: task
+  title: 'Publish a curated `apr registry` short-name catalog (`apr run qwen2.5-coder-1.5b` no URL) with each entry carrying its `apr qa` verdict as a trust ba…'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-06-11T06:26:41Z
+  updated: 2026-06-11T06:26:41Z
+  spec: null
+  acceptance_criteria:
+  - 'Parent PMAT-719. Falsifier: `apr run qwen2.5-coder-1.5b` (bare short name, cold cache) downloads+runs+emits coherent output AND `apr list` shows each entry''s qa-gate verdict; falsified if a short name doesn''t resolve or catalog has no per-model correctness badge.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-ollama
+  - beat
+  - cpu-autonomous
+  notes: 'four-pillar beat-analysis rank 17'
+- id: PMAT-737
+  github_issue: null
+  item_type: task
+  title: '[GPU-GATED — flag] CPU Q4_K decode parity: implement ggml-style pre-interleaved Q4_K weight layout at APR import (documented root cause, five-whys-16…'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-06-11T06:26:41Z
+  updated: 2026-06-11T06:26:41Z
+  spec: null
+  acceptance_criteria:
+  - 'Parent PMAT-719. Falsifier: `apr bench model.apr --device cpu` 5-iter median >= `llama-cli -n 128 -t <ncores>` on SAME host, 1.5B Q4_K_M. Currently 9.9 vs 81 = 8.2x slower; clearing it is parity, not superiority.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-ollama
+  - beat
+  - cpu-autonomous
+  notes: 'four-pillar beat-analysis rank 18'
+- id: PMAT-738
+  github_issue: null
+  item_type: task
+  title: '[GPU-GATED — NOT loop-buildable] Single-GPU QLoRA throughput run on lambda-vector to populate apr-vs-unsloth tok/s bar (6715.7/13659.7) — measurement…'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-06-11T06:26:41Z
+  updated: 2026-06-11T06:26:41Z
+  spec: null
+  acceptance_criteria:
+  - 'Parent PMAT-710. Falsifier: apr finetune --qlora --gpu-backend cuda reports tok/s + peak VRAM into scorecard; expectation apr<unsloth (concede); goal quantify gap + confirm VRAM within 1.5x of 3515 MB.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-unsloth
+  - beat
+  - gpu-gated
+  notes: 'four-pillar beat-analysis rank 19'
+- id: PMAT-739
+  github_issue: null
+  item_type: task
+  title: '[GPU-GATED — multi-week stretch] Drive GPU 1.5B Q4_K_M from 1.32x to 1.5x Ollama via FUSION-004 DP4A Q8_1 (only un-falsified lever; FUSION-003 alread…'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-06-11T06:26:41Z
+  updated: 2026-06-11T06:26:41Z
+  spec: null
+  acceptance_criteria:
+  - 'Parent PMAT-719. Falsifier: `apr qa <1.5B-q4km> --json` 5-run median 128-tok decode >= 460.7 tok/s (1.5x Ollama) vs current flat ~396; requires RTX-4090-class GPU.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-ollama
+  - beat
+  - gpu-gated
+  notes: 'four-pillar beat-analysis rank 20'
+- id: PMAT-740
+  github_issue: null
+  item_type: task
+  title: 'ROADMAP GAP: add a classical-ML (scikit-learn) competitor category (CRUX-S-*) to the CRUX matrix'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-06-11T06:26:41Z
+  updated: 2026-06-11T06:26:41Z
+  spec: null
+  acceptance_criteria:
+  - 'sklearn is NOT in the CRUX competitor set (Ollama/llama.cpp/PyTorch/HF/vLLM/OpenCLAW). Add a CRUX-S classical-ML story class so datasets/encoders/RBF-SVM/roc_auc/Pipeline gaps are tracked. Unblocks Pillar 1 (PMAT-717).'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-sklearn
+  - roadmap-structure
+  notes: 'four-pillar beat-analysis roadmap gap #1'
+- id: PMAT-741
+  github_issue: null
+  item_type: task
+  title: 'ROADMAP GAP: add a beat-benchmark contract kind (committed head-to-head, CI-failing, baseline pinned)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-06-11T06:26:41Z
+  updated: 2026-06-11T06:26:41Z
+  spec: null
+  acceptance_criteria:
+  - 'No contract schema for FALSIFY-BEAT-* (apr >= incumbent on canonical task, fails CI on regression, incumbent baseline committed). Add the kind so every pillar beat-claim is a machine-checked artifact. Core mission infra.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - mission
+  - roadmap-structure
+  - beat
+  notes: 'four-pillar beat-analysis roadmap gap #2'
