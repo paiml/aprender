@@ -466,7 +466,9 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
                 message: format!("Tensor '{}' data not found", name),
             })?;
 
-        // Map APR dtype → GGUF dtype (same discriminant values)
+        // Map APR dtype → GGUF dtype. NOTE: the discriminants are NOT shared —
+        // APR-native quant types (AprQ8=129, AprQ4=128) have NO GGML equivalent
+        // despite the similar names.
         // GH-439 (poka-yoke): Exhaustive match — no silent fallbacks.
         // Adding a new TensorDType variant forces a compile error here.
         let gguf_dtype = match entry.dtype {
@@ -474,7 +476,24 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
             TensorDType::F16 => GgmlType::F16,
             TensorDType::Q4K => GgmlType::Q4K,
             TensorDType::Q6K => GgmlType::Q6K,
-            TensorDType::AprQ8 => GgmlType::Q8_0,
+            // AprQ8 is APR-native single-whole-tensor-scale 8-bit
+            // ([scale: f32 (4B)] + [i8; N] = 4+N bytes). GGML Q8_0 is a totally
+            // different per-32-block layout ([f16 scale (2B) + 32×i8] =
+            // ceil(N/32)*34 bytes). Emitting the raw APR bytes under a Q8_0
+            // label produces a CORRUPT GGUF, so reject — symmetric with the
+            // AprQ4 arm below and the import-side Q8_0 rejection
+            // (write_model_config.rs). A real AprQ8→Q8_0 requantize is a
+            // separate feature, not a silent relabel.
+            TensorDType::AprQ8 => {
+                return Err(AprenderError::FormatError {
+                    message: format!(
+                        "Tensor '{}' has dtype AprQ8 (APR-native single-scale 8-bit, \
+                         NOT GGML Q8_0) which has no GGUF equivalent. \
+                         Convert to F32/F16 first with `apr convert`.",
+                        name
+                    ),
+                });
+            }
             TensorDType::BF16 | TensorDType::F64 | TensorDType::I32
             | TensorDType::I64 | TensorDType::I8 | TensorDType::U8
             | TensorDType::AprQ4 => {
