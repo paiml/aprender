@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.3] - 2026-06-11
+
+### Added
+
+- **`metrics::cohen_kappa_score` + `metrics::hamming_loss`** (Pillar 1): Cohen's
+  kappa (chance-corrected inter-rater agreement) and Hamming loss (fraction
+  misclassified), matching `sklearn.metrics` within 1e-4 / 1e-6.
+
 ## [0.44.2] - 2026-06-11
 
 ### Added
