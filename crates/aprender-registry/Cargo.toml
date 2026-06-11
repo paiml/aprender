@@ -55,7 +55,7 @@ argon2 = { version = "0.5", optional = true }
 
 # Signing (proper Ed25519)
 ed25519-dalek = { version = "2.1", features = ["rand_core"], optional = true }
-rand = { version = "0.8", optional = true }
+rand = { version = "0.9", optional = true }
 
 # Graph for lineage (optional)
 trueno-graph = { workspace = true, optional = true }

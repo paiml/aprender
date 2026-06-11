@@ -48,7 +48,7 @@ use rand::{Rng, SeedableRng};
 ///
 /// Mirrors the dense path's `Self::sample_advanced` (in
 /// `gguf/inference/fails.rs:100`) but uses a seeded `StdRng`
-/// instead of `rand::thread_rng()` for reproducibility.
+/// instead of `rand::rng()` for reproducibility.
 fn sample_from_logits(
     logits: &[f32],
     config: &QuantizedGenerateConfig,
@@ -132,7 +132,7 @@ fn sample_from_logits(
         return Ok(indexed.first().map_or(0, |(i, _)| *i as u32));
     }
 
-    let r: f32 = rng.gen();
+    let r: f32 = rng.random();
     let mut cumulative = 0.0;
     for (idx, v) in &indexed {
         cumulative += (v - max_val).exp() / exp_sum;

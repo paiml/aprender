@@ -682,7 +682,7 @@ dependencies = [
  "parquet 57.3.0",
  "predicates",
  "proptest",
- "rand 0.8.5",
+ "rand 0.9.2",
  "rand_core 0.6.4",
  "reedline",
  "regex",
@@ -726,7 +726,7 @@ dependencies = [
  "proptest",
  "prost 0.13.5",
  "quickcheck",
- "rand 0.8.5",
+ "rand 0.9.2",
  "rayon",
  "rusqlite",
  "rustc-hash 2.1.2",
@@ -1137,7 +1137,7 @@ dependencies = [
  "opentelemetry_sdk",
  "predicates",
  "proptest",
- "rand 0.8.5",
+ "rand 0.9.2",
  "regex",
  "renacer-core",
  "reqwest 0.12.28",
@@ -1285,7 +1285,6 @@ dependencies = [
  "fastembed",
  "lz4_flex 0.11.6",
  "proptest",
- "rand 0.8.5",
  "rand 0.9.2",
  "rand_chacha 0.9.0",
  "realizar 0.7.1",
@@ -1330,7 +1329,7 @@ dependencies = [
  "criterion 0.6.0",
  "ed25519-dalek",
  "proptest",
- "rand 0.8.5",
+ "rand 0.9.2",
  "reqwest 0.12.28",
  "rmp-serde",
  "rusqlite",
@@ -1385,7 +1384,7 @@ dependencies = [
  "proptest",
  "provable-contracts 0.2.2",
  "provable-contracts-macros 0.2.2",
- "rand 0.8.5",
+ "rand 0.9.2",
  "rayon",
  "renacer-core",
  "reqwest 0.11.27",
@@ -1450,8 +1449,8 @@ dependencies = [
  "proptest",
  "provable-contracts 0.2.2",
  "provable-contracts-macros 0.2.2",
- "rand 0.8.5",
- "rand_pcg",
+ "rand 0.9.2",
+ "rand_pcg 0.9.0",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
@@ -11724,6 +11723,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rand_pcg"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b48ac3f7ffaab7fac4d2376632268aa5f89abdb55f7ebf8f4d11fffccb2320f7"
+dependencies = [
+ "rand_core 0.9.5",
+ "serde",
+]
+
+[[package]]
 name = "rand_xorshift"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13536,7 +13545,7 @@ dependencies = [
  "memmap2",
  "num-traits",
  "rand 0.8.5",
- "rand_pcg",
+ "rand_pcg 0.3.1",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -13562,7 +13571,7 @@ dependencies = [
  "memmap2",
  "num-traits",
  "rand 0.8.5",
- "rand_pcg",
+ "rand_pcg 0.3.1",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -15581,7 +15590,7 @@ version = "1.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
- "cfg-if 0.1.10",
+ "cfg-if 1.0.4",
  "static_assertions",
 ]
 

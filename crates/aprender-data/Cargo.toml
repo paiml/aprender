@@ -48,7 +48,7 @@ zstd = "0.13"
 lz4_flex = "0.11"
 
 # Random (for shuffle) - with JS support for WASM
-rand = { version = "0.8", optional = true }
+rand = { version = "0.9", optional = true }
 getrandom = { version = "0.2", features = ["js"], optional = true }
 
 # Memory mapping (not available on WASM)

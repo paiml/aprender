@@ -62,7 +62,7 @@ impl Transform for Shuffle {
         let mut indices: Vec<usize> = (0..num_rows).collect();
         let mut rng = match self.seed {
             Some(seed) => rand::rngs::StdRng::seed_from_u64(seed),
-            None => rand::rngs::StdRng::from_entropy(),
+            None => rand::rngs::StdRng::from_os_rng(),
         };
         indices.shuffle(&mut rng);
 
@@ -176,7 +176,7 @@ impl Transform for Sample {
         let mut indices: Vec<usize> = (0..num_rows).collect();
         let mut rng = match self.seed {
             Some(seed) => rand::rngs::StdRng::seed_from_u64(seed),
-            None => rand::rngs::StdRng::from_entropy(),
+            None => rand::rngs::StdRng::from_os_rng(),
         };
         indices.shuffle(&mut rng);
         indices.truncate(sample_size);

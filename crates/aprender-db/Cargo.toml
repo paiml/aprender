@@ -74,7 +74,7 @@ serde_yaml_ng = "0.10"
 criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
 proptest = "1.5"           # Property-based testing
 quickcheck = "1"           # Property-based testing (backend equivalence)
-rand = "0.8"               # Random data generation for examples
+rand = "0.9"               # Random data generation for examples
 
 # Competitive benchmarks (CORE-009) - only used when running benchmarks
 duckdb = { version = "1.1", features = ["bundled"] }  # DuckDB comparison (bundled = build from source)

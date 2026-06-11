@@ -129,7 +129,7 @@ zstd = { version = "0.13", optional = true }
 rayon = "1.10"
 
 # Random number generation for sampling
-rand = "0.8"
+rand = "0.9"
 
 # Small buffer optimization (per spec Section 4.1)
 # Stack allocation for small token buffers and attention scores
