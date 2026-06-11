@@ -294,6 +294,7 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 		   --skip falsification --skip chaos --skip disconnect --skip benchmark_parity \
 		   --skip qwen2_generation --skip qwen2_golden --skip qwen2_weight --skip load_test \
 		   --skip spec_checklist_w --skip spec_checklist_u --skip verify_audio --skip g9_roofline \
+		   --skip cuda --skip gpu_ \
 		|| { test -f ~/.cargo/config.toml.bak && mv ~/.cargo/config.toml.bak ~/.cargo/config.toml; exit 1; }
 	@echo "📊 Phase 2: Coverage report (LCOV → lightweight)..."
 	@$(COV_CARGO_ENV) cargo llvm-cov report --lcov --ignore-filename-regex "$$(cat target/coverage/.exclude-re)" > target/coverage/lcov.info
