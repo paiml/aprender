@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.1] - 2026-06-11
+
+### Fixed
+
+- **`apr tensors`/`inspect` mislabeled GGML types 26-30** (e.g. a BF16 tensor was
+  reported as "IQ1_M"): the `ggml_dtype_name` table had `BF16` misplaced at index
+  26, shifting `I32`/`I64`/`F64`/`IQ1_M`/`BF16` (codes 26-30) all by one.
+  Corrected to ggml.h order (`I32=26, I64=27, F64=28, IQ1_M=29, BF16=30`); the
+  exhaustive dtype-name test now pins codes 24-30 to ggml.h.
+
 ## [0.41.0] - 2026-06-11
 
 ### Fixed
