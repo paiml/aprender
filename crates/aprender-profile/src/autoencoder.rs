@@ -57,7 +57,9 @@ impl Autoencoder {
 
         // Initialize decoder weights (hidden_dim x input_dim)
         let decoder_weights: Vec<Vec<f64>> = (0..hidden_dim)
-            .map(|_| (0..input_dim).map(|_| rng.random_range(-decoder_scale..decoder_scale)).collect())
+            .map(|_| {
+                (0..input_dim).map(|_| rng.random_range(-decoder_scale..decoder_scale)).collect()
+            })
             .collect();
 
         let decoder_bias: Vec<f64> = (0..input_dim).map(|_| 0.0).collect();
