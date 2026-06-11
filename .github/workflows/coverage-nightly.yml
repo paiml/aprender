@@ -53,24 +53,31 @@ jobs:
           pct="$(grep -oE 'TOTAL: [0-9]+/[0-9]+ lines covered \([0-9]+%\)' /tmp/cov.log | tail -1 | grep -oE '[0-9]+%' || true)"
           echo "pct=${pct:-unknown}" >> "$GITHUB_OUTPUT"
 
-      # pmat (crates.io) for the dogfooded gap analysis. Idempotent: ~/.cargo/bin
-      # persists on the self-hosted runner, so this compiles only on the first run.
+      # pmat (crates.io) for the dogfooded gap analysis — BEST-EFFORT. cargo isn't
+      # on PATH for raw run: steps on these runners, so source the cargo env; and
+      # `|| true` keeps a pmat failure from aborting the job (the coverage % below
+      # is the core deliverable; gap ranking is a bonus).
       - name: Ensure pmat installed
-        run: command -v pmat >/dev/null 2>&1 || cargo install pmat --locked
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
+          command -v pmat >/dev/null 2>&1 || cargo install pmat --locked || true
 
       # Dogfooded gap analysis — pmat query, NOT raw llvm-cov output (CLAUDE.md).
       # Same default ./target as the make step so pmat finds the coverage profiles.
       - name: Gap analysis (pmat --coverage-gaps)
         id: gaps
+        if: always()
         run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
           if command -v pmat >/dev/null 2>&1; then
             pmat query --coverage-gaps --exclude-tests --limit 30 > /tmp/gaps.txt 2>/dev/null \
               || echo "(pmat --coverage-gaps returned no data — coverage profile missing?)" > /tmp/gaps.txt
           else
-            echo "(pmat install failed — gap ranking unavailable this run)" > /tmp/gaps.txt
+            echo "(pmat unavailable on runner — gap ranking skipped; coverage % above is authoritative)" > /tmp/gaps.txt
           fi
 
       - name: Job summary
+        if: always()
         run: |
           {
             echo "## Coverage — $(date -u +%Y-%m-%d)"
@@ -85,6 +92,7 @@ jobs:
 
       # Single self-updating tracking issue — the loop's worklist.
       - name: Update coverage tracking issue
+        if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
