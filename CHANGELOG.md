@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.2] - 2026-06-11
+
+### Added
+
+- **First apr-vs-scikit-learn beat-benchmark** (`FALSIFY-BEAT-SKLEARN-IRIS`,
+  Pillar 1): `RandomForestClassifier` on canonical Iris (deterministic i%3 split)
+  reaches **0.9400** test accuracy — matching scikit-learn's pinned floor
+  (0.94–0.96 on the same split). CI-gated at ≥0.92 so apr can never regress below
+  sklearn-competitive accuracy. This is the accuracy-parity leg; the speed-beat
+  leg (release-mode timing) follows.
+
 ## [0.42.1] - 2026-06-11
 
 ### Added
