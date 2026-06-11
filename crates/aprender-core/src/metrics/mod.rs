@@ -6,7 +6,9 @@
 //! ranking metrics (Hit@K, MRR, NDCG), model evaluation framework,
 //! and drift detection.
 
+pub mod agreement;
 pub mod classification;
+pub use agreement::{balanced_accuracy_score, matthews_corrcoef};
 pub mod probabilistic;
 pub use probabilistic::{average_precision_score, log_loss, roc_auc_score};
 pub mod drift;
