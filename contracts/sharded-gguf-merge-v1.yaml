@@ -1,0 +1,127 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-11'
+  author: PAIML Engineering
+  description: |
+    `merge_gguf_shards` combines a complete sharded-GGUF set
+    (`<prefix>-NNNNN-of-MMMMM.gguf`) into a SINGLE GGUF so the existing
+    single-file loader (`realizar GGUFModel::from_path`) runs the model unchanged
+    — no inference-hot-path refactor. This is #1893 criterion 2 ("infer across a
+    split GGUF without manual pre-stitching"), delivered as auto-merge at pull
+    time.
+
+    Hardened against a multi-agent adversarial review (5 release-blockers):
+    - METADATA must be LOSSLESS. Sourcing metadata from the architecture-
+      whitelisted reader silently dropped <arch>.* config keys (gemma.*, phi3.*,
+      deepseek2.*, …) -> merged file unloadable. The merge reads part-0 metadata
+      with the keep-all reader and re-emits every key except split.* /
+      general.alignment.
+    - MEMORY must be BOUNDED. A 7B sharded model must not need ~2x its size in
+      RAM; the merge streams output to disk and holds at most one part at a time.
+    - Tensors must be a DISJOINT union; duplicate names across parts are rejected.
+    - The merged file must be accepted by the REAL inference loader, not just the
+      writer's sibling reader.
+  references:
+  - 'issue #1893 criterion 2 — run sharded GGUF without manual pre-stitching'
+  - 'crates/aprender-core/src/format/gguf/merge.rs — merge_gguf_shards (streaming, type-agnostic)'
+  - 'crates/aprender-core/src/format/gguf/reader_parsing.rs — from_file_full / from_bytes_keep(keep_all)'
+  - 'crates/apr-cli/src/commands/pull.rs — run_sharded_gguf wiring + parts cleanup'
+  - 'contracts/sharded-gguf-pull-v1.yaml — the v0.37.0 pull-side this completes'
+
+kind: KernelContract
+name: sharded-gguf-merge
+version: 1.0.0
+scope: aprender-core merge_gguf_shards + GgufReader keep-all mode + apr-cli pull wiring
+
+equations:
+  lossless_merge:
+    formula: |
+      merge(parts) produces a single GGUF whose tensor set is the disjoint union
+      of all parts' tensors (bytes preserved), whose metadata equals part-0's
+      metadata minus {split.*, general.alignment}, and which the real loader
+      (realizar GGUFModel::from_bytes) parses successfully.
+    domain: parts = complete shard set, len >= 2, disjoint tensor names
+    codomain: one GGUF file
+    invariants:
+    - 'every tensor from every part appears exactly once, bytes identical'
+    - 'every part-0 metadata key survives except split.* and general.alignment (NO architecture whitelist)'
+    - 'duplicate tensor name across parts -> Err (never silently merged)'
+    - 'the merged file is accepted by realizar GGUFModel::from_bytes'
+    lean_theorem: Theorems.Lossless_Merge
+  bounded_memory:
+    formula: |
+      Peak heap during merge is O(largest single part), not O(total model size):
+      output is streamed to disk and parts are re-read one at a time.
+    domain: any shard set
+    codomain: peak resident heap
+    invariants:
+    - 'the whole merged model is never materialized in a single in-RAM buffer'
+    - 'at most one part''s bytes are resident at once'
+    lean_theorem: Theorems.Bounded_Memory
+
+proof_obligations:
+- type: invariant
+  property: tensors unioned with bytes preserved
+  formal: |
+    For a 2-part split, the merged file contains every source tensor with
+    byte-identical data and stripped split.* metadata.
+- type: invariant
+  property: lossless metadata for non-whitelisted architectures
+  formal: |
+    For a gemma-arch split, the merged file retains gemma.embedding_length /
+    gemma.block_count / gemma.attention.head_count.
+- type: invariant
+  property: duplicate tensor names rejected
+  formal: 'A tensor name present in two parts makes merge return Err.'
+- type: classification
+  property: real-loader acceptance
+  formal: 'realizar::gguf::GGUFModel::from_bytes(merged) is Ok.'
+
+falsification_tests:
+- id: FT-MERGE-001
+  rule: tensors unioned, split.* stripped, bytes preserved
+  prediction: 'a 2-part split round-trips with both tensors and no split.* keys.'
+  if_fails: 'offset/alignment or union logic wrong. Check the pass-1/pass-2 offset math.'
+  evidence: cargo test -p aprender-core --lib format::gguf::merge::tests::merge_two_part_roundtrip
+- id: FT-MERGE-004
+  rule: non-whitelisted arch (gemma) config metadata survives the merge
+  prediction: 'merged gemma file still has gemma.embedding_length / block_count / head_count.'
+  if_fails: 'merge is sourcing metadata from the whitelisted reader again. Use from_file_full.'
+  evidence: cargo test -p aprender-core --lib format::gguf::merge::tests::merge_preserves_nonwhitelisted_arch_metadata
+- id: FT-MERGE-005
+  rule: duplicate tensor names across parts are rejected
+  prediction: 'two parts sharing a tensor name -> merge returns Err.'
+  if_fails: 'the cross-part dedup HashSet check is missing or wrong.'
+  evidence: cargo test -p aprender-core --lib format::gguf::merge::tests::merge_rejects_duplicate_tensor_names
+- id: FT-MERGE-006
+  rule: the merged file loads in realizar's real GGUF parser
+  prediction: 'realizar::gguf::GGUFModel::from_bytes(merged gemma split) is Ok.'
+  if_fails: 'the merged byte layout diverges from what the inference loader accepts.'
+  evidence: cargo test -p apr-cli --lib sharded_gguf_interop_tests::merged_sharded_gguf_loads_in_realizar
+
+kani_harnesses:
+- id: KANI-MERGE-001
+  obligation: offsets are monotonic and alignment-correct
+  property: |
+    For any sequence of tensor block lengths, the cumulative offset written in
+    the tensor-info section equals the byte position where that tensor's data is
+    streamed (both pad each block to 32-byte alignment). No divergence.
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_merge_offsets_match
+- id: KANI-MERGE-002
+  obligation: fewer than 2 parts is a clean error
+  property: 'merge_gguf_shards with 0 or 1 parts returns Err, never panics.'
+  bound: 2
+  strategy: compositional
+  solver: cadical
+  harness: verify_merge_min_parts
+
+qa_gate:
+  id: F-MERGE-001
+  name: sharded-gguf-merge-v1 Contract
+  description: Merge must be lossless (tensors + all-arch metadata), bounded-memory, dedup-checked, and accepted by the real loader.
+  checks:
+  - validation
+  - falsification

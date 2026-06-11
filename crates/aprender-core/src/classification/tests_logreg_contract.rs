@@ -367,3 +367,32 @@ mod logreg_proptest_falsify {
         }
     }
 }
+
+/// FALSIFY-LOGREG-CONVERGE (Pillar-1 sklearn-beat correctness gate): LogReg must
+/// reach >= 0.95 train accuracy on a MARGIN-SEPARABLE 2-class set within 200
+/// iters. A classifier that can't separate cleanly-separated data is broken —
+/// this underpins every beat-sklearn claim.
+#[test]
+fn falsify_logreg_converges_on_separable_data() {
+    let x = Matrix::from_vec(
+        12,
+        2,
+        vec![
+            0.0, 0.0, 0.5, 0.5, 1.0, 0.0, 0.0, 1.0, 0.5, 0.2, 0.8, 0.9, // class 0 near origin
+            10.0, 10.0, 10.5, 10.5, 11.0, 10.0, 10.0, 11.0, 10.5, 10.2, 10.8,
+            10.9, // class 1 near (10,10)
+        ],
+    )
+    .expect("valid");
+    let y = vec![0usize, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1];
+
+    let mut lr = LogisticRegression::new().with_max_iter(200);
+    lr.fit(&x, &y).expect("fit");
+    let preds = lr.predict(&x);
+    let correct = preds.iter().zip(y.iter()).filter(|(p, t)| *p == *t).count();
+    let acc = correct as f32 / y.len() as f32;
+    assert!(
+        acc >= 0.95,
+        "FALSIFY-LOGREG-CONVERGE: train_acc {acc} < 0.95 on margin-separable data — convergence bug"
+    );
+}

@@ -9,8 +9,8 @@ use crate::quantize::QK_K;
 use super::config::{GGUFConfig, ValidatedModelConfig};
 use super::quantized::{QKVWeights, QuantizedTensorRef};
 use super::types::{
-    GGUFModel, GGUF_TYPE_F32, GGUF_TYPE_Q2_K, GGUF_TYPE_Q4_0, GGUF_TYPE_Q4_1, GGUF_TYPE_Q4_K,
-    GGUF_TYPE_Q5_0, GGUF_TYPE_Q5_K, GGUF_TYPE_Q6_K, GGUF_TYPE_Q8_0,
+    GGUFModel, GGUF_TYPE_BF16, GGUF_TYPE_F32, GGUF_TYPE_Q2_K, GGUF_TYPE_Q4_0, GGUF_TYPE_Q4_1,
+    GGUF_TYPE_Q4_K, GGUF_TYPE_Q5_0, GGUF_TYPE_Q5_K, GGUF_TYPE_Q6_K, GGUF_TYPE_Q8_0,
 };
 
 /// Quantized transformer layer weights (stored as byte references)
@@ -405,6 +405,8 @@ impl<'a> QuantizedGGUFTransformer<'a> {
 
         match qtype {
             GGUF_TYPE_F32 => Ok(num_elements * 4),
+            // BF16: 2 bytes/elem, no block structure (#1893-class loader gap).
+            GGUF_TYPE_BF16 => Ok(num_elements * 2),
             GGUF_TYPE_Q4_0 => Ok(num_elements.div_ceil(32) * 18),
             GGUF_TYPE_Q8_0 => Ok(num_elements.div_ceil(32) * 34),
             GGUF_TYPE_Q2_K => Ok(num_elements.div_ceil(QK_K) * 84),

@@ -7,8 +7,29 @@ impl GgufReader {
         Self::from_bytes(data)
     }
 
-    /// Parse GGUF from bytes
+    /// Load a GGUF file preserving ALL metadata keys (no architecture
+    /// whitelist).
+    ///
+    /// Used by the sharded-GGUF merge ([`super::merge::merge_gguf_shards`]) so
+    /// arbitrary `<arch>.*` config keys (gemma.*, phi3.*, deepseek2.*, …)
+    /// survive into the merged file — otherwise the merged model is unloadable
+    /// for any architecture outside the parse whitelist.
+    pub fn from_file_full<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let mut file = File::open(path.as_ref()).map_err(AprenderError::Io)?;
+        let mut data = Vec::new();
+        file.read_to_end(&mut data).map_err(AprenderError::Io)?;
+        Self::from_bytes_keep(data, true)
+    }
+
+    /// Parse GGUF from bytes (whitelist metadata — back-compat default).
     pub fn from_bytes(data: Vec<u8>) -> Result<Self> {
+        Self::from_bytes_keep(data, false)
+    }
+
+    /// Parse GGUF from bytes. When `keep_all` is true EVERY metadata key is
+    /// retained; otherwise only `tokenizer.` / `general.` / known-arch keys are
+    /// parsed (the rest skipped for efficiency).
+    pub fn from_bytes_keep(data: Vec<u8>, keep_all: bool) -> Result<Self> {
         if data.len() < 24 {
             return Err(AprenderError::FormatError {
                 message: "GGUF file too small (< 24 bytes)".to_string(),
@@ -68,7 +89,8 @@ impl GgufReader {
 
             // Parse value for tokenizer, general, and model architecture keys
             // We parse: tokenizer.*, general.*, and per-arch keys for full model config
-            if key.starts_with("tokenizer.")
+            if keep_all
+                || key.starts_with("tokenizer.")
                 || key.starts_with("general.")
                 || key.starts_with("llama.")
                 || key.starts_with("qwen2.")

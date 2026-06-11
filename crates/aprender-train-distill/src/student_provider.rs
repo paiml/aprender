@@ -76,6 +76,46 @@ pub trait StudentLogitsProvider {
     /// optimizer step fails.
     fn apply_kd_gradient(&mut self, gradient: &[Vec<f32>]) -> Result<()>;
 
+    /// Per-position forward pass: logits at EVERY position of each input
+    /// window, shape `[batch][position][vocab]`. Pairs with
+    /// [`TeacherLogitsProvider::logits_per_position`] for full-sequence KD.
+    ///
+    /// Default wraps `logits_for_batch` as a single trailing position so
+    /// existing students (incl. CUDA) keep working unchanged.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`Self::logits_for_batch`].
+    fn logits_per_position(&mut self, input_ids: &[Vec<u32>]) -> Result<Vec<Vec<Vec<f32>>>> {
+        Ok(self
+            .logits_for_batch(input_ids)?
+            .into_iter()
+            .map(|row| vec![row])
+            .collect())
+    }
+
+    /// Backward + optimizer step seeded by per-position KD gradients,
+    /// shape `[batch][position][vocab]`.
+    ///
+    /// Default flattens positions into independent token-level samples
+    /// (`[batch*position][vocab]`) and delegates to [`Self::apply_kd_gradient`],
+    /// which averages them — the canonical token-level batch averaging. A
+    /// student with a true per-position backward may override this.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`Self::apply_kd_gradient`].
+    fn apply_kd_gradient_per_position(&mut self, gradient: &[Vec<Vec<f32>>]) -> Result<()> {
+        let flat: Vec<Vec<f32>> = gradient
+            .iter()
+            .flat_map(|rows| rows.iter().cloned())
+            .collect();
+        if flat.is_empty() {
+            return Ok(());
+        }
+        self.apply_kd_gradient(&flat)
+    }
+
     /// PMAT-699 (Phase 4 P0): persist the student's current trained weights
     /// to disk.
     ///
@@ -139,6 +179,16 @@ impl StudentLogitsProvider for FixtureStudent {
     fn logits_for_batch(&mut self, input_ids: &[Vec<u32>]) -> Result<Vec<Vec<f32>>> {
         // The fixture is input-independent — broadcast the same logits.
         Ok(input_ids.iter().map(|_| self.logits.clone()).collect())
+    }
+
+    fn logits_per_position(&mut self, input_ids: &[Vec<u32>]) -> Result<Vec<Vec<Vec<f32>>>> {
+        // Input-independent fixture: broadcast the same logits to every
+        // position of every row, so the per-position shape matches the
+        // teacher's `[batch][position][vocab]`.
+        Ok(input_ids
+            .iter()
+            .map(|ids| (0..ids.len().max(1)).map(|_| self.logits.clone()).collect())
+            .collect())
     }
 
     fn apply_kd_gradient(&mut self, gradient: &[Vec<f32>]) -> Result<()> {

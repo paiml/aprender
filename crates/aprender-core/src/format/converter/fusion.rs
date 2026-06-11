@@ -123,9 +123,16 @@ fn apr_dtype_to_ggml(dtype: crate::format::v2::TensorDType) -> Option<crate::for
         TensorDType::F16 => Some(GgmlType::F16),
         TensorDType::Q4K => Some(GgmlType::Q4K),
         TensorDType::Q6K => Some(GgmlType::Q6K),
-        TensorDType::AprQ8 => Some(GgmlType::Q8_0),
-        TensorDType::BF16 | TensorDType::F64 | TensorDType::I32
-        | TensorDType::I64 | TensorDType::I8 | TensorDType::U8
+        // AprQ8 (APR-native single-scale 8-bit, 4+N bytes) is NOT GGML Q8_0
+        // (per-32-block, ceil(N/32)*34 bytes) — relabeling produces corrupt
+        // GGUF. Reject alongside AprQ4 (symmetric with metadata.rs export arm).
+        TensorDType::AprQ8
+        | TensorDType::BF16
+        | TensorDType::F64
+        | TensorDType::I32
+        | TensorDType::I64
+        | TensorDType::I8
+        | TensorDType::U8
         | TensorDType::AprQ4 => {
             eprintln!(
                 "[GH-439] apr_dtype_to_ggml: unsupported dtype {:?} — \

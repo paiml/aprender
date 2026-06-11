@@ -1,0 +1,102 @@
+name: Coverage Nightly
+
+# Coverage as scheduled automation (report-mode, non-blocking).
+#
+# Rationale: coverage is recurring maintenance, so it belongs in a cron job, not
+# ad-hoc work. Until this existed, coverage ran nowhere in CI — the 96.35% figure
+# was a local point-in-time number, never tracked. This job measures nightly,
+# surfaces the ranked gaps via `pmat query --coverage-gaps` (the dogfooded
+# analysis CLAUDE.md mandates), and keeps a single tracking issue up to date so
+# the autonomous loop can fix the top gaps as small `test(...)` PRs.
+#
+# Report-mode by design: never fails the nightly on a coverage dip or a transient
+# tooling hiccup. Promote to a ratchet/hard gate later once it's proven stable.
+
+on:
+  schedule:
+    - cron: '0 3 * * *' # 03:00 UTC — ahead of the 04:00 binary nightly
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write # open/update the single coverage tracking issue
+
+concurrency:
+  group: coverage-nightly
+  cancel-in-progress: true
+
+jobs:
+  coverage:
+    # intel-clean-room pool (15 runners, large RAM) — right fit for a heavy
+    # full-workspace llvm-cov run. The `clean-room` label pins to that pool.
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      # Data + summary via the maintained Makefile machinery (handles the
+      # mold-linker/config.toml dance + slow-test skips correctly). Non-blocking.
+      # COV_TARGET_DIR= forces the writable workspace-local ./target: the Makefile
+      # otherwise picks /mnt/nvme-raid0/targets/aprender whenever /mnt/nvme-raid0
+      # exists (it does on the runner) but it isn't writable by the runner user.
+      - name: Coverage (cargo llvm-cov via make)
+        id: cov
+        run: |
+          set -o pipefail
+          make coverage COV_TARGET_DIR= 2>&1 | tee /tmp/cov.log || true
+          pct="$(grep -oE 'TOTAL: [0-9]+/[0-9]+ lines covered \([0-9]+%\)' /tmp/cov.log | tail -1 | grep -oE '[0-9]+%' || true)"
+          echo "pct=${pct:-unknown}" >> "$GITHUB_OUTPUT"
+
+      # pmat (crates.io) for the dogfooded gap analysis. Idempotent: ~/.cargo/bin
+      # persists on the self-hosted runner, so this compiles only on the first run.
+      - name: Ensure pmat installed
+        run: command -v pmat >/dev/null 2>&1 || cargo install pmat --locked
+
+      # Dogfooded gap analysis — pmat query, NOT raw llvm-cov output (CLAUDE.md).
+      # Same default ./target as the make step so pmat finds the coverage profiles.
+      - name: Gap analysis (pmat --coverage-gaps)
+        id: gaps
+        run: |
+          if command -v pmat >/dev/null 2>&1; then
+            pmat query --coverage-gaps --exclude-tests --limit 30 > /tmp/gaps.txt 2>/dev/null \
+              || echo "(pmat --coverage-gaps returned no data — coverage profile missing?)" > /tmp/gaps.txt
+          else
+            echo "(pmat install failed — gap ranking unavailable this run)" > /tmp/gaps.txt
+          fi
+
+      - name: Job summary
+        run: |
+          {
+            echo "## Coverage — $(date -u +%Y-%m-%d)"
+            echo ""
+            echo "**Line coverage: ${{ steps.cov.outputs.pct }}** (target ≥ ${COV_THRESHOLD:-95}%)"
+            echo ""
+            echo "### Top uncovered functions (\`pmat query --coverage-gaps --exclude-tests\`)"
+            echo '```'
+            head -30 /tmp/gaps.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Single self-updating tracking issue — the loop's worklist.
+      - name: Update coverage tracking issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          title="Nightly coverage report"
+          body="$(printf '%s\n' \
+            "_Auto-updated by Coverage Nightly — $(date -u +%Y-%m-%dT%H:%MZ)._" \
+            "" \
+            "**Line coverage: ${{ steps.cov.outputs.pct }}** (target ≥ 95%)" \
+            "" \
+            "### Top uncovered (pmat --coverage-gaps --exclude-tests)" \
+            '```' \
+            "$(head -30 /tmp/gaps.txt)" \
+            '```' \
+            "" \
+            "The autonomous loop fixes top gaps as small \`test(...)\` PRs. Per Rule 7, coverage and contracts co-evolve — each gap fix also adds/strengthens a contract." )"
+          num="$(gh issue list --search "$title in:title" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$num" ]; then
+            gh issue edit "$num" --body "$body" && echo "updated issue #$num"
+          else
+            gh issue create --title "$title" --body "$body" && echo "created tracking issue"
+          fi

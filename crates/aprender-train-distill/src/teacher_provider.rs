@@ -49,6 +49,29 @@ pub trait TeacherLogitsProvider {
     /// missing weights). The pipeline aborts on error rather than
     /// silently fall back to non-distillation training.
     fn logits_for_batch(&mut self, input_ids: &[Vec<u32>]) -> Result<Vec<Vec<f32>>>;
+
+    /// Run the teacher and return logits at EVERY position of each input
+    /// window: shape `[batch][position][vocab]`. This is the per-position
+    /// next-token signal used by full-sequence KD — every position predicts
+    /// its successor, giving up to `seq_len`× more distillation signal per
+    /// forward pass than the last-position-only [`Self::logits_for_batch`].
+    ///
+    /// The default impl wraps `logits_for_batch` as a single trailing
+    /// position, so existing providers (including the CUDA backend) keep
+    /// working unchanged — they expose one position until they override this
+    /// with a true all-positions forward. Per-position-capable providers
+    /// (e.g. `FixtureTeacher`) override it.
+    ///
+    /// # Errors
+    ///
+    /// Propagates backend errors, same as [`Self::logits_for_batch`].
+    fn logits_per_position(&mut self, input_ids: &[Vec<u32>]) -> Result<Vec<Vec<Vec<f32>>>> {
+        Ok(self
+            .logits_for_batch(input_ids)?
+            .into_iter()
+            .map(|row| vec![row])
+            .collect())
+    }
 }
 
 /// A frozen-fixture teacher used in unit tests. Returns logits whose
@@ -92,6 +115,36 @@ impl TeacherLogitsProvider for FixtureTeacher {
             };
             logits[idx] = 10.0;
             out.push(logits);
+        }
+        Ok(out)
+    }
+
+    fn logits_per_position(&mut self, input_ids: &[Vec<u32>]) -> Result<Vec<Vec<Vec<f32>>>> {
+        // Per-position fixture: position p predicts the genuine next token
+        // within the window (ids[p+1]); the final position (no successor in
+        // the window) falls back to its own token. Each position's argmax is
+        // therefore its target, giving the student a distinct, learnable
+        // per-position signal.
+        let mut out = Vec::with_capacity(input_ids.len());
+        for ids in input_ids {
+            let mut rows = Vec::with_capacity(ids.len());
+            for p in 0..ids.len() {
+                let mut logits = vec![0.0_f32; self.vocab_size];
+                #[allow(clippy::cast_possible_truncation)]
+                let predicted = if p + 1 < ids.len() {
+                    ids[p + 1] as usize
+                } else {
+                    ids[p] as usize
+                };
+                let idx = if predicted < self.vocab_size {
+                    predicted
+                } else {
+                    0
+                };
+                logits[idx] = 10.0;
+                rows.push(logits);
+            }
+            out.push(rows);
         }
         Ok(out)
     }

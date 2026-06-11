@@ -208,27 +208,135 @@ pub fn dequantize_q2_k(data: &[u8]) -> Result<Vec<f32>> {
         let d = read_f16(&data[sb_start + 80..sb_start + 82]);
         let dmin = read_f16(&data[sb_start + 82..sb_start + 84]);
 
-        for j in 0..16 {
-            let sc = (scales_data[j] & 0x0F) as f32;
-            let m = (scales_data[j] >> 4) as f32;
+        // ggml `dequantize_row_q2_K` ordering (matches candle BlockQ2K::to_float
+        // and the aprender-core format-path fix): two groups of 128 over a
+        // 32-byte qs window; 4 sub-iters at shift 0/2/4/6; two scale bytes per
+        // sub-iter (low/high 16 of the window). The prior "16 sub-blocks reading
+        // qs[j*4]" scheme applied the wrong scale to the wrong 2-bit lanes →
+        // corrupt weights → broken Q2_K inference.
+        let mut oi = out_start;
+        let mut is = 0usize;
+        for group in 0..2 {
+            let chunk = &qs[group * 32..group * 32 + 32];
+            let mut shift = 0u8;
+            for _ in 0..4 {
+                let sc = scales_data[is];
+                is += 1;
+                let dl = d * f32::from(sc & 0x0F);
+                let ml = dmin * f32::from(sc >> 4);
+                for &q in &chunk[0..16] {
+                    result[oi] = dl * f32::from((q >> shift) & 0x03) - ml;
+                    oi += 1;
+                }
+                let sc = scales_data[is];
+                is += 1;
+                let dl = d * f32::from(sc & 0x0F);
+                let ml = dmin * f32::from(sc >> 4);
+                for &q in &chunk[16..32] {
+                    result[oi] = dl * f32::from((q >> shift) & 0x03) - ml;
+                    oi += 1;
+                }
+                shift += 2;
+            }
+        }
+    }
 
-            let d_sc = d * sc;
-            let dm = dmin * m;
+    Ok(result)
+}
 
-            let qs_offset = j * 4;
+/// Dequantize `Q3_K` format weights (GGML type 11).
+///
+/// Q3_K super-block = 110 bytes encoding 256 values:
+/// `hmask[32]` (high bit per weight) · `qs[64]` (low 2 bits per weight) ·
+/// `scales[12]` (16 packed 6-bit scales) · `d` (f16 super-block scale).
+///
+/// Each 3-bit quant `q ∈ [0, 7]` is recentered to `[-4, 3]`: the low 2 bits
+/// come from `qs >> shift`, the high bit from `hmask`; when the high bit is
+/// clear the value is `low - 4`, when set it is `low`. Per 16-element group
+/// `y = d * (scale - 32) * (recentered_q)`.
+///
+/// Ported from the canonical ggml `dequantize_row_q3_K`, verified element-for-
+/// element against `candle-core`'s `BlockQ3K::to_float`. Scales are unpacked
+/// via `to_le_bytes` rather than a raw-pointer reinterpret (the workspace
+/// forbids `unsafe`). Contract: `contracts/q3k-dequant-v1.yaml`.
+pub fn dequantize_q3_k(data: &[u8]) -> Result<Vec<f32>> {
+    const SUPER_BLOCK_BYTES: usize = 110;
+    const KMASK1: u32 = 0x0303_0303;
+    const KMASK2: u32 = 0x0f0f_0f0f;
 
-            for k in 0..4 {
-                let q_byte = qs[qs_offset + k];
-                let q0 = (q_byte & 0x03) as f32;
-                let q1 = ((q_byte >> 2) & 0x03) as f32;
-                let q2 = ((q_byte >> 4) & 0x03) as f32;
-                let q3 = ((q_byte >> 6) & 0x03) as f32;
+    if !data.len().is_multiple_of(SUPER_BLOCK_BYTES) {
+        return Err(RealizarError::InvalidShape {
+            reason: format!(
+                "Q3_K data length {} is not a multiple of super-block size {}",
+                data.len(),
+                SUPER_BLOCK_BYTES
+            ),
+        });
+    }
 
-                let base_idx = out_start + j * 16 + k * 4;
-                result[base_idx] = d_sc * q0 - dm;
-                result[base_idx + 1] = d_sc * q1 - dm;
-                result[base_idx + 2] = d_sc * q2 - dm;
-                result[base_idx + 3] = d_sc * q3 - dm;
+    let num_super_blocks = data.len() / SUPER_BLOCK_BYTES;
+    let mut result = vec![0.0f32; num_super_blocks * QK_K];
+
+    for sb_idx in 0..num_super_blocks {
+        let sb_start = sb_idx * SUPER_BLOCK_BYTES;
+        let out_start = sb_idx * QK_K;
+
+        let hmask = &data[sb_start..sb_start + 32];
+        let qs = &data[sb_start + 32..sb_start + 96];
+        let scales_raw = &data[sb_start + 96..sb_start + 108];
+        let d_all = read_f16(&data[sb_start + 108..sb_start + 110]);
+
+        // Reconstruct the 16 six-bit scales from the packed 12 bytes via the
+        // ggml aux[] manipulation. aux[3] starts at 0; the four words then
+        // hold 16 little-endian 6-bit values.
+        let mut aux = [
+            u32::from_le_bytes([scales_raw[0], scales_raw[1], scales_raw[2], scales_raw[3]]),
+            u32::from_le_bytes([scales_raw[4], scales_raw[5], scales_raw[6], scales_raw[7]]),
+            u32::from_le_bytes([scales_raw[8], scales_raw[9], scales_raw[10], scales_raw[11]]),
+            0u32,
+        ];
+        let tmp = aux[2];
+        aux[2] = ((aux[0] >> 4) & KMASK2) | (((tmp >> 4) & KMASK1) << 4);
+        aux[3] = ((aux[1] >> 4) & KMASK2) | (((tmp >> 6) & KMASK1) << 4);
+        aux[0] = (aux[0] & KMASK2) | ((tmp & KMASK1) << 4);
+        aux[1] = (aux[1] & KMASK2) | (((tmp >> 2) & KMASK1) << 4);
+
+        let mut scales = [0i8; 16];
+        for (w, word) in aux.iter().enumerate() {
+            let bytes = word.to_le_bytes();
+            for (k, &b) in bytes.iter().enumerate() {
+                #[allow(clippy::cast_possible_wrap)]
+                {
+                    scales[w * 4 + k] = b as i8;
+                }
+            }
+        }
+
+        // Two 128-element halves; qs advances 32 bytes per half. Within a half,
+        // four 32-element shift-blocks (shift = 0,2,4,6) each advance the
+        // hmask bit `m`; each 32-block carries two 16-element scale groups.
+        let mut m: u32 = 1;
+        let mut is = 0usize;
+        for half in 0..2 {
+            let qs_half = &qs[half * 32..half * 32 + 32];
+            let out_half = out_start + half * 128;
+            let mut shift: u32 = 0;
+            for blk in 0..4 {
+                let out_blk = out_half + blk * 32;
+                for scale_index in 0..2 {
+                    let dl = d_all * (f32::from(scales[is]) - 32.0);
+                    let out_grp = out_blk + scale_index * 16;
+                    for i in 0..16 {
+                        let idx = i + 16 * scale_index;
+                        #[allow(clippy::cast_possible_wrap)]
+                        let low = ((qs_half[idx] >> shift) & 3) as i8;
+                        let high = if u32::from(hmask[idx]) & m == 0 { 4i8 } else { 0i8 };
+                        result[out_grp + i] = dl * f32::from(low - high);
+                    }
+                    is += 1;
+                }
+                shift += 2;
+                m <<= 1;
             }
         }
     }

@@ -87,9 +87,9 @@ pub use types::{
 
 // Re-export dequantization functions (PMAT-802)
 pub use dequant::{
-    dequantize_f16, dequantize_q2_k, dequantize_q4_0, dequantize_q4_1, dequantize_q4_k,
-    dequantize_q5_0, dequantize_q5_1, dequantize_q5_k, dequantize_q6_k, dequantize_q8_0,
-    f16_to_f32,
+    dequantize_f16, dequantize_q2_k, dequantize_q3_k, dequantize_q4_0, dequantize_q4_1,
+    dequantize_q4_k, dequantize_q5_0, dequantize_q5_1, dequantize_q5_k, dequantize_q6_k,
+    dequantize_q8_0, f16_to_f32,
 };
 
 // Re-export fused K-quant operations (PMAT-802)

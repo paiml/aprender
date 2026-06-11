@@ -25,12 +25,14 @@
 // Submodules (PMAT-199: split from monolithic gguf.rs)
 pub mod api;
 pub mod dequant;
+pub mod merge;
 pub mod reader;
 pub mod types;
 
 // Re-exports for backward compatibility
 pub use api::*;
 pub use dequant::*;
+pub use merge::*;
 pub use reader::*;
 pub use types::*;
 

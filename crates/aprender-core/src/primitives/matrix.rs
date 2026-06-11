@@ -165,21 +165,30 @@ impl Matrix<f32> {
             return Err("Matrix dimensions don't match for multiplication");
         }
 
-        let mut result = vec![0.0; self.rows * other.cols];
-        for i in 0..self.rows {
-            for j in 0..other.cols {
-                let mut sum = 0.0;
-                for k in 0..self.cols {
-                    sum += self.get(i, k) * other.get(k, j);
+        // Cache-friendly `ikj` ordering: the inner loop is a contiguous AXPY
+        // (`c_row[j] += a_ik * b_row[j]`) over row-major memory, which LLVM
+        // auto-vectorizes — far faster than the naive `ijk` form with strided
+        // `get()` column access (which defeated both the cache and SIMD).
+        let (m, k_dim, n) = (self.rows, self.cols, other.cols);
+        let a = &self.data;
+        let b = &other.data;
+        let mut result = vec![0.0f32; m * n];
+        for i in 0..m {
+            let a_row = &a[i * k_dim..i * k_dim + k_dim];
+            let c_row = &mut result[i * n..i * n + n];
+            for k in 0..k_dim {
+                let a_ik = a_row[k];
+                let b_row = &b[k * n..k * n + n];
+                for j in 0..n {
+                    c_row[j] += a_ik * b_row[j];
                 }
-                result[i * other.cols + j] = sum;
             }
         }
 
         Ok(Self {
             data: result,
-            rows: self.rows,
-            cols: other.cols,
+            rows: m,
+            cols: n,
         })
     }
 
@@ -193,10 +202,15 @@ impl Matrix<f32> {
             return Err("Matrix columns must match vector length");
         }
 
+        // Dot each row in place — slice `self.data` directly instead of
+        // `self.row(i)`, which allocated a fresh `Vector` per row. The
+        // contiguous iterator dot auto-vectorizes just like `Vector::dot`.
+        let v = vec.as_slice();
+        let cols = self.cols;
         let result: Vec<f32> = (0..self.rows)
             .map(|i| {
-                let row = self.row(i);
-                row.dot(vec)
+                let row = &self.data[i * cols..i * cols + cols];
+                row.iter().zip(v).map(|(a, b)| a * b).sum()
             })
             .collect();
 

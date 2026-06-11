@@ -6,6 +6,23 @@ mod tests {
     use std::io::Write;
     use tempfile::NamedTempFile;
 
+    /// FT-EXPORT-ALIAS-001: `apr export --quantize q4_k` must be accepted —
+    /// consistent with `apr convert` / `apr quantize`, which both take the
+    /// underscored spelling. A bare "q4k"-only parser spuriously rejected it.
+    #[test]
+    fn parse_quantization_accepts_q4k_and_q4_k_aliases() {
+        assert!(
+            matches!(parse_quantization(Some("q4k")), Ok(Some(QuantizationType::Q4K))),
+            "q4k must parse"
+        );
+        assert!(
+            matches!(parse_quantization(Some("q4_k")), Ok(Some(QuantizationType::Q4K))),
+            "q4_k (the spelling convert/quantize accept) must ALSO parse"
+        );
+        assert!(parse_quantization(Some("bogus")).is_err(), "unknown still errors");
+        assert!(matches!(parse_quantization(None), Ok(None)), "None passes through");
+    }
+
     // ========================================================================
     // Error Path Tests
     // ========================================================================

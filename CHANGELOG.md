@@ -7,6 +7,216 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.4] - 2026-06-11
+
+### Changed
+
+- **`Matrix::matvec` drops the per-row allocation**: dotted each row by allocating
+  a fresh `Vector` (`self.row(i)`); now slices `self.data` directly and dots in
+  place (same auto-vectorizing iterator dot). Numerically identical (13,849 tests
+  pass). **`LinearRegression::predict` (20000×50): 0.488 → 0.339 ms/call (~1.44×).**
+  With v0.42.3's matmul fit-beat, apr LinearRegression is now fast on both fit and
+  predict; matvec is shared across `linear_model`, GLMs, etc.
+
+## [0.42.3] - 2026-06-11
+
+### Changed
+
+- **`Matrix::matmul` cache-friendly rewrite (first scikit-learn speed-beat)**:
+  replaced the naive scalar `ijk` loop (bounds-checked `get()`, strided column
+  access) with cache-friendly `ikj` ordering and a contiguous AXPY inner loop
+  that LLVM auto-vectorizes. Numerically equivalent (13,849 core tests pass).
+  **`LinearRegression` fit+predict (10000×20) dropped 3.27 ms → 1.27 ms — now
+  ~1.8× faster than scikit-learn (2.28 ms, LAPACK), at R² parity.** matmul is
+  used framework-wide, so this also accelerates PCA, tensor ops, and any
+  algorithm forming Xᵀ X.
+
+## [0.42.2] - 2026-06-11
+
+### Added
+
+- **First apr-vs-scikit-learn beat-benchmark** (`FALSIFY-BEAT-SKLEARN-IRIS`,
+  Pillar 1): `RandomForestClassifier` on canonical Iris (deterministic i%3 split)
+  reaches **0.9400** test accuracy — matching scikit-learn's pinned floor
+  (0.94–0.96 on the same split). CI-gated at ≥0.92 so apr can never regress below
+  sklearn-competitive accuracy. This is the accuracy-parity leg; the speed-beat
+  leg (release-mode timing) follows.
+
+## [0.42.1] - 2026-06-11
+
+### Added
+
+- **`datasets::load_iris`**: the canonical Iris dataset (150×4, 3 balanced
+  classes) embedded from `sklearn.datasets.load_iris` (committed `iris.csv`,
+  no runtime dependency). Completes the `sklearn.datasets`-parity loader surface
+  alongside `make_blobs`/`make_regression`. Falsifier FT-DATA-005.
+
+## [0.42.0] - 2026-06-11
+
+### Added
+
+- **`aprender::datasets` module (Pillar 1 — beat scikit-learn)**: synthetic
+  generators `make_blobs` and `make_regression` mirroring `sklearn.datasets`,
+  backed by a seeded SplitMix64 RNG so output is **deterministic** (reproducible
+  benchmarks/falsifiers) with no external data files. Falsifiers FT-DATA-001..004
+  (determinism, shapes/balance, cluster separability, regression signal). First
+  step toward the four-pillar replace-and-beat mission; embedded real datasets
+  (iris/digits/california) follow.
+- **LogisticRegression convergence gate**: a standing correctness falsifier
+  confirming LogReg reaches ≥0.95 train accuracy on margin-separable data within
+  200 iters (underpins the beat-sklearn correctness claim).
+
+## [0.41.1] - 2026-06-11
+
+### Fixed
+
+- **`apr tensors`/`inspect` mislabeled GGML types 26-30** (e.g. a BF16 tensor was
+  reported as "IQ1_M"): the `ggml_dtype_name` table had `BF16` misplaced at index
+  26, shifting `I32`/`I64`/`F64`/`IQ1_M`/`BF16` (codes 26-30) all by one.
+  Corrected to ggml.h order (`I32=26, I64=27, F64=28, IQ1_M=29, BF16=30`); the
+  exhaustive dtype-name test now pins codes 24-30 to ggml.h.
+
+## [0.41.0] - 2026-06-11
+
+### Fixed
+
+- **Q2_K dequantization now matches ggml — fixes corrupt Q2_K output**: both
+  Q2_K dequant impls used a "16 sub-blocks reading `qs[j*4]`" scheme that applied
+  the wrong super-block scale to the wrong 2-bit lanes, producing corrupt F32
+  output (**185/256 elements wrong** vs ggml/candle on a representative block).
+  This silently corrupted every Q2_K/Q2_K_S model (common on HF) — both the
+  format path (`apr tensors`/`inspect`/`validate`/`convert`) and the **inference
+  path** (`apr run`/serve). Fixed both (`aprender-core` format dequant +
+  `aprender-serve` inference dequant) to match ggml `dequantize_row_q2_K` /
+  candle `BlockQ2K::to_float` byte-for-byte (golden falsifiers FT-Q2K-001/002,
+  contract `contracts/q2k-dequant-parity-v1.yaml`).
+
+## [0.40.1] - 2026-06-11
+
+### Fixed
+
+- **`apr export --quantize q4_k` no longer rejected**: export's quantization
+  parser matched only `q4k`, while `apr convert` and `apr quantize` both accept
+  `q4k | q4_k`. A user who learned the underscored spelling hit
+  `Unknown quantization: q4_k` on export only. Export now accepts both spellings
+  (and the error message lists the alias).
+
+## [0.40.0] - 2026-06-11
+
+### Fixed
+
+- **APR→GGUF export no longer produces corrupt GGUF for AprQ8 tensors**: export
+  silently mapped APR-native `AprQ8` (single-whole-tensor-scale 8-bit,
+  `[f32 scale] + [i8×N]` = 4+N bytes) to GGML `Q8_0` (per-32-block,
+  `ceil(N/32)·34` bytes) and emitted the raw APR bytes **unconverted** under the
+  `Q8_0` label — a corrupt GGUF that any llama.cpp loader misreads (reachable via
+  `apr import x.gguf && apr export --format gguf` on Q4_K_M models). Export now
+  **rejects** AprQ8 with a clear error (pointing to `apr convert` → F32/F16),
+  restoring import/export symmetry (the import side already refuses GGUF `Q8_0`,
+  and AprQ4 export was already rejected). Layout-identical dtypes
+  (F32/F16/Q4K/Q6K) export unchanged. Contract
+  `contracts/apr-gguf-export-symmetry-v1.yaml` (FT-APRQ8-001/002).
+
+## [0.39.0] - 2026-06-11
+
+### Added
+
+- **BF16 (bfloat16) GGUF loader support**: BF16 GGUFs (ggml type 30) now load.
+  Previously any BF16 GGUF hard-failed with *"Unsupported quantization type: 30"*
+  because `get_tensor_f32` (embeddings/norms/lm_head) and `tensor_byte_size`
+  (per-layer weights) lacked a BF16 dispatch arm — even though the matmul weight
+  path already consumed BF16. The fix adds the two arms (reusing the existing
+  `simd_bf16_to_f32` converter; BF16 is 2 bytes/elem, value `from_bits(b << 16)`)
+  and `GGUFBuilder::add_bf16_tensor` for fixtures. Contract
+  `contracts/bf16-dequant-v1.yaml` (FT-BF16-001 golden converter + FT-BF16-002
+  end-to-end dispatch). Dense BF16 load path complete (get_tensor_f32 +
+  tensor_byte_size + matmul); MoE/CUDA BF16 remain follow-ups.
+
+## [0.38.0] - 2026-06-11
+
+### Added
+
+- **Sharded GGUF auto-merge (#1893 criterion 2)**: `apr pull` now merges a
+  downloaded split-GGUF set (`model-NNNNN-of-MMMMM.gguf`) into a single
+  `model.gguf` so the existing single-file loader runs the model unchanged —
+  no inference-hot-path refactor (which would risk *all* GGUF inference). Pulled
+  sharded models are now runnable end-to-end. `merge_gguf_shards` is
+  **type-agnostic** (copies tensor data by raw byte range → every ggml quant
+  type works), **lossless on metadata** (preserves arbitrary `<arch>.*` config
+  keys via the new `GgufReader::from_file_full` keep-all mode), **bounded in
+  memory** (streams to disk, holds ≤ one part at a time), and rejects duplicate
+  tensors across parts. Parts are deleted after a successful merge.
+
+### Verified
+
+- This release was hardened against a **multi-agent adversarial verification**
+  that found 5 release-blockers before publish — most critically that sourcing
+  metadata from the architecture-whitelisted reader silently dropped
+  `gemma.*`/`phi3.*`/`deepseek2.*`/`falcon.*`/etc. config keys, making merged
+  models of those (mainstream) architectures unloadable. Contract
+  `contracts/sharded-gguf-merge-v1.yaml` (FT-MERGE-001/004/005/006 + 2 kani
+  harnesses), including a cross-parser interop test that loads the merged file
+  with realizar's real `GGUFModel::from_bytes`.
+
+## [0.37.0] - 2026-06-10
+
+### Added
+
+- **Sharded GGUF pull (#1893, pull-side)**: `apr pull` now detects and downloads
+  COMPLETE split-GGUF model sets (`<prefix>-NNNNN-of-MMMMM.gguf`). Modern 7B+
+  GGUFs ship split with NO `index.json` (unlike sharded SafeTensors), and `apr
+  pull` previously ran them through `select_best_gguf` — silently grabbing a
+  single part and producing a broken/incomplete model. Now `resolve_hf_model`
+  detects the complete `-of-` set (rejecting single-file, multi-quant, and
+  incomplete sets) and `run_sharded_gguf` downloads all parts via a no-index
+  path (no SafeTensors conversion), pointing usage at the first part. Contract
+  `contracts/sharded-gguf-pull-v1.yaml` (6 falsifiers FT-SHGGUF-001..006 + 2
+  kani harnesses, all passing).
+  - **Scope:** this is the pull side. **Cross-shard inference** in
+    `aprender-serve` (reading `split.count` and loading tensors across parts so
+    `apr run`/`apr serve` work on a split GGUF) is the documented follow-up
+    (#1893 criterion 2) — the next release.
+
+## [0.36.0] - 2026-06-10
+
+### Added
+
+- **Per-position knowledge distillation** (full-sequence KD) for the
+  `aprender-train-distill` pipeline. The existing per-row path trains on ONE
+  target per window (the next token after the window); per-position KD trains
+  on EVERY position (position `p` predicts token `p+1`), giving up to
+  `seq_len`× more distillation signal per forward pass. New
+  `kd_step_per_position`, and additive trait methods `logits_per_position` /
+  `apply_kd_gradient_per_position` (teacher + student) /
+  `next_batch_per_position` (BatchSource) whose **defaults wrap the per-row
+  methods** — so existing providers, including the CUDA backend, compile and
+  behave unchanged. Opt-in via `APR_DISTILL_PER_POSITION` (default off → the
+  production loop is byte-identical). Contract:
+  `contracts/distill-per-position-kd-v1.yaml` (5 falsifiers + 2 kani
+  harnesses, all passing on the CPU/fixture path).
+  - **Scope:** the CPU/fixture path is fully verified. The real throughput
+    benefit needs the CUDA teacher/student to emit all-position logits (a GPU
+    forward change) — until then CUDA falls back to one position via the
+    defaults. That GPU per-position forward is a documented follow-up.
+  - While implementing, corrected a **misleading comment** in
+    `ShardBatchSource` that claimed "identity-mapping semantics": the per-row
+    labels were always genuine next-token (`LMBatch` causal-shifted target),
+    not identity. Pinned by a falsifier so it can't mislead again.
+
+### Fixed
+
+- **PMAT-706 re-land**: the `APR_DISTILL_MAX_STEPS=N` smoke-validation mode
+  announced in #1888 (v0.35.2) was never actually in `pipeline.rs` — commit
+  `52650c60c` squash-dropped the implementation and shipped *only* the
+  `apr-distill-smoke-validation-v1.yaml` contract. The early-break, `[SMOKE]`
+  summary, 0-steps guard, and no-export side-effect are now implemented in
+  `crates/aprender-train-distill/src/pipeline.rs` and bound to the contract's
+  four falsifiers (`pipeline::tests::pmat_706_{smoke,no_regression,summary_format,no_output_in_smoke}`,
+  all passing). `scripts/dispatch-distill-stage-d.sh` now forwards
+  `APR_DISTILL_MAX_STEPS` across the ssh/`env` boundary so the documented
+  `APR_DISTILL_MAX_STEPS=10 ./scripts/dispatch-distill-stage-d.sh` actually
+  triggers smoke mode (previously a silent no-op).
+
 ## [0.35.2] - 2026-05-23
 
 ### Bug fixes + DX (last release for 3 months)

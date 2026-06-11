@@ -84,6 +84,14 @@ pub fn create_q2_k_data(num_elements: usize) -> Vec<u8> {
     vec![0u8; num_super_blocks * 84]
 }
 
+/// Create valid Q3_K data for a tensor with given dimensions
+/// Q3_K: 110 bytes per 256 elements
+#[must_use]
+pub fn create_q3_k_data(num_elements: usize) -> Vec<u8> {
+    let num_super_blocks = num_elements.div_ceil(256);
+    vec![0u8; num_super_blocks * 110]
+}
+
 /// Create valid F16 data for a tensor with given dimensions
 /// F16: 2 bytes per element
 #[must_use]

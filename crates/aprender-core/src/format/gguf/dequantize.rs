@@ -108,18 +108,33 @@ pub(crate) fn dequantize_q2_k(data: &[u8], start: usize, num_elements: usize) ->
         let dmin = safe_f16_scale(u16::from_le_bytes([data[offset + 2], data[offset + 3]]));
         offset += 4;
 
-        // Dequantize 16 sub-blocks of 16 elements
-        for j in 0..16 {
-            let sc_byte = scales_bytes[j];
-            let scale = d * f32::from(sc_byte & 0x0F);
-            let min_val = dmin * f32::from(sc_byte >> 4);
-
-            for l in 0..4 {
-                let q_byte = qs[j * 4 + l];
-                for k in 0..4 {
-                    let q = (q_byte >> (k * 2)) & 0x03;
-                    result.push(f32::from(q) * scale - min_val);
+        // ggml `dequantize_row_q2_K` ordering (mirrors candle BlockQ2K::to_float
+        // and llama.cpp ggml-quants.c): two groups of 128 elements, each over a
+        // 32-byte qs window. Within a group, 4 sub-iterations at shift 0/2/4/6,
+        // each consuming TWO scale bytes — one for the window's low 16 bytes and
+        // one for its high 16 bytes. The previous "16 sub-blocks reading
+        // qs[j*4+l]" scheme applied the wrong scale to the wrong 2-bit lanes and
+        // produced corrupt output (185/256 elements wrong vs ggml).
+        let mut is = 0usize;
+        for group in 0..2 {
+            let chunk = &qs[group * 32..group * 32 + 32];
+            let mut shift = 0u8;
+            for _ in 0..4 {
+                let sc = scales_bytes[is];
+                is += 1;
+                let dl = d * f32::from(sc & 0x0F);
+                let ml = dmin * f32::from(sc >> 4);
+                for &q in &chunk[0..16] {
+                    result.push(dl * f32::from((q >> shift) & 0x03) - ml);
                 }
+                let sc = scales_bytes[is];
+                is += 1;
+                let dl = d * f32::from(sc & 0x0F);
+                let ml = dmin * f32::from(sc >> 4);
+                for &q in &chunk[16..32] {
+                    result.push(dl * f32::from((q >> shift) & 0x03) - ml);
+                }
+                shift += 2;
             }
         }
     }
