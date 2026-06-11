@@ -485,3 +485,61 @@ fn test_export_apr_to_gguf_raw_infers_num_layers_when_missing() {
         "export must succeed via num_layers inference; got: {result:?}"
     );
 }
+
+/// FT-APRQ8-001: APR→GGUF export must REJECT an AprQ8 tensor (APR-native
+/// single-whole-tensor-scale 8-bit, 4+N bytes) instead of silently relabeling
+/// it as GGML Q8_0 (per-32-block, ceil(N/32)*34 bytes) — which produced a
+/// CORRUPT GGUF that any llama.cpp loader misreads. Symmetric with the existing
+/// AprQ4 rejection and the import-side Q8_0 refusal.
+#[test]
+fn ft_aprq8_001_export_rejects_aprq8_not_silent_corruption() {
+    use crate::format::v2::{AprV2Metadata, AprV2Writer};
+    use tempfile::tempdir;
+
+    let dir = tempdir().expect("temp dir");
+    let apr_path = dir.path().join("model.apr");
+    let gguf_path = dir.path().join("model.gguf");
+
+    let mut metadata = AprV2Metadata::new("qwen2");
+    metadata.architecture = Some("qwen2".to_string());
+    metadata.hidden_size = Some(4);
+    metadata.num_layers = Some(1);
+    metadata.num_heads = Some(2);
+    metadata.num_kv_heads = Some(2);
+    metadata.vocab_size = Some(8);
+    metadata.intermediate_size = Some(16);
+    metadata.max_position_embeddings = Some(2048);
+    metadata.rope_theta = Some(10000.0);
+    metadata.rms_norm_eps = Some(1e-5);
+    metadata.name = Some("test-model".to_string());
+    metadata
+        .custom
+        .insert("tokenizer.model".to_string(), serde_json::json!("gpt2"));
+    metadata.custom.insert(
+        "tokenizer.vocabulary".to_string(),
+        serde_json::json!(["<|endoftext|>", "hello", "world", "the", "a", "is", ".", " "]),
+    );
+    metadata
+        .custom
+        .insert("tokenizer.vocab_size".to_string(), serde_json::json!(8));
+
+    let mut writer = AprV2Writer::new(metadata);
+    writer.add_f32_tensor("model.embed_tokens.weight", vec![8, 4], &vec![0.1f32; 32]);
+    writer.add_f32_tensor("model.norm.weight", vec![4], &vec![1.0f32; 4]);
+    // The offending tensor: an APR-native AprQ8 weight (NOT GGML Q8_0).
+    writer.add_q8_tensor("lm_head.weight", vec![8, 4], &vec![0.05f32; 32]);
+
+    let apr_bytes = writer.write().expect("write APR");
+    std::fs::write(&apr_path, &apr_bytes).expect("write APR file");
+
+    let result = export_apr_to_gguf_raw(&apr_path, &gguf_path);
+    assert!(
+        result.is_err(),
+        "AprQ8 export must be REJECTED, not silently relabeled as Q8_0 (corrupt GGUF)"
+    );
+    let msg = result.unwrap_err().to_string();
+    assert!(
+        msg.contains("AprQ8"),
+        "rejection must name AprQ8 to disambiguate from Q8_0; got: {msg}"
+    );
+}

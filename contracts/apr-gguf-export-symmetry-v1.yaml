@@ -1,0 +1,90 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-11'
+  author: PAIML Engineering
+  description: |
+    APR→GGUF export must NEVER relabel an APR-native quant dtype as a GGML type
+    whose byte layout differs — doing so produces a silently CORRUPT GGUF.
+
+    AprQ8 (TensorDType::AprQ8, id 129) is APR-native single-whole-tensor-scale
+    8-bit: [scale: f32 (4B)] + [i8 × N] = 4+N bytes. GGML Q8_0 (id 8) is a
+    totally different per-32-block layout: [f16 scale (2B) + 32×i8] =
+    ceil(N/32)*34 bytes. The export path mapped AprQ8 → Q8_0 and emitted the raw
+    APR bytes under the Q8_0 label, so a 256-element tensor was 260 bytes labeled
+    as a 272-byte Q8_0 block layout — any llama.cpp loader misreads it.
+
+    The fix restores import/export symmetry: AprQ8 (like AprQ4 already) has NO
+    GGUF equivalent and is REJECTED with a clear error, mirroring the import-side
+    refusal of GGUF Q8_0 (which APR cannot represent exactly). A real
+    AprQ8→Q8_0 requantize is a separate feature, not a silent relabel.
+  references:
+  - 'crates/aprender-core/src/format/converter/metadata.rs — export_apr_to_gguf_raw dtype match (AprQ8 reject arm)'
+  - 'crates/aprender-core/src/format/converter/fusion.rs — apr_dtype_to_ggml (AprQ8 None arm)'
+  - 'crates/aprender-core/src/format/v2/tensor_index_impl.rs:173 — AprQ8 layout (scale f32 + i8 x N)'
+  - 'crates/aprender-core/src/format/converter/write_model_config.rs:148 — symmetric import-side Q8_0 rejection'
+
+kind: KernelContract
+name: apr-gguf-export-symmetry
+version: 1.0.0
+scope: aprender-core APR→GGUF export dtype mapping (metadata.rs + fusion.rs)
+
+equations:
+  layout_compatible_export:
+    formula: |
+      APR→GGUF export emits a tensor under a GGML type T ONLY IF the APR dtype's
+      byte layout is byte-identical to T's. APR-native quant dtypes (AprQ8 4+N
+      bytes single-scale; AprQ4) have NO byte-compatible GGML type and MUST be
+      rejected, never relabeled.
+    domain: an APR tensor's TensorDType
+    codomain: a GgmlType or a FormatError
+    invariants:
+    - 'AprQ8 export -> Err (NOT silently mapped to Q8_0)'
+    - 'AprQ4 export -> Err (unchanged)'
+    - 'layout-identical dtypes (F32/F16/Q4K/Q6K) still export successfully'
+    - 'symmetric with the import-side rejection of GGUF Q8_0'
+    lean_theorem: Theorems.Layout_Compatible_Export
+
+proof_obligations:
+- type: classification
+  property: APR-native quant export rejected
+  formal: |
+    export_apr_to_gguf_raw on an APR file containing an AprQ8 tensor returns
+    Err whose message names "AprQ8".
+- type: invariant
+  property: layout-identical dtypes still export
+  formal: |
+    An APR file of F32 (and Q4K/Q6K) tensors still exports to a valid GGUF the
+    GgufReader can parse.
+
+falsification_tests:
+- id: FT-APRQ8-001
+  rule: AprQ8 export is rejected, not silently relabeled as Q8_0
+  prediction: |
+    export_apr_to_gguf_raw on an APR with an AprQ8 tensor returns Err containing
+    "AprQ8" (before the fix it returned Ok with a corrupt GGUF).
+  if_fails: 'the AprQ8 arm is back in the success match mapping to Q8_0.'
+  evidence: cargo test -p aprender-core --lib ft_aprq8_001_export_rejects_aprq8_not_silent_corruption
+- id: FT-APRQ8-002
+  rule: layout-identical dtypes still export successfully
+  prediction: 'an all-F32 APR exports to a GGUF that GgufReader parses (3 tensors).'
+  if_fails: 'the reject arm is over-broad and now blocks valid F32/Q4K/Q6K export.'
+  evidence: cargo test -p aprender-core --lib test_export_apr_to_gguf_raw_round_trip
+
+kani_harnesses:
+- id: KANI-APRQ8-001
+  obligation: only layout-identical dtypes map to a GgmlType
+  property: |
+    For all TensorDType d: apr_dtype_to_ggml(d) is Some(T) ONLY for d in
+    {F32,F16,Q4K,Q6K}; AprQ8/AprQ4/BF16/F64/I*/U8 -> None. No panic.
+  bound: 1
+  strategy: compositional
+  solver: cadical
+  harness: verify_export_dtype_rejects_apr_native
+
+qa_gate:
+  id: F-APRQ8-001
+  name: apr-gguf-export-symmetry-v1 Contract
+  description: APR→GGUF export must reject APR-native quant dtypes (AprQ8/AprQ4) rather than relabel them as a byte-incompatible GGML type and emit a corrupt GGUF.
+  checks:
+  - validation
+  - falsification
