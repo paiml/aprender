@@ -321,7 +321,7 @@ dependencies = [
  "humansize",
  "jugar-probar 0.4.2",
  "libc",
- "pacha",
+ "pacha 0.3.0",
  "parquet 57.3.0",
  "predicates",
  "proptest",
@@ -933,7 +933,7 @@ dependencies = [
  "indexmap 2.13.1",
  "jugar-probar 1.0.4",
  "libc",
- "pacha",
+ "pacha 0.3.0",
  "pepita",
  "pmcp",
  "predicates",
@@ -1315,6 +1315,28 @@ dependencies = [
 
 [[package]]
 name = "aprender-registry"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48d513354c3755b0acfefe9f1cef632fe29131fa02daab511efcad8abb63f648"
+dependencies = [
+ "anyhow",
+ "blake3",
+ "chrono",
+ "clap",
+ "ed25519-dalek",
+ "rand 0.8.5",
+ "rmp-serde",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "toml 0.8.23",
+ "uuid",
+ "zstd",
+]
+
+[[package]]
+name = "aprender-registry"
 version = "0.42.4"
 dependencies = [
  "alimentar",
@@ -1378,7 +1400,7 @@ dependencies = [
  "minijinja",
  "num-traits",
  "once_cell",
- "pacha",
+ "pacha 0.3.0",
  "predicates",
  "presentar-terminal",
  "proptest",
@@ -5925,7 +5947,7 @@ dependencies = [
  "dirs-next",
  "humantime",
  "nix 0.29.0",
- "pacha",
+ "pacha 0.2.5",
  "repartir 1.1.0",
  "serde",
  "serde_json",
@@ -10338,16 +10360,23 @@ dependencies = [
  "clap",
  "ed25519-dalek",
  "rand 0.8.5",
- "reqwest 0.12.28",
  "rmp-serde",
  "rusqlite",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
- "tokio",
  "toml 0.8.23",
  "uuid",
  "zstd",
+]
+
+[[package]]
+name = "pacha"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2eec51335d667de0eb3033b32ef87b3d701a4706d9998e1ada2cf5a685f4cb7"
+dependencies = [
+ "aprender-registry 0.29.0",
 ]
 
 [[package]]

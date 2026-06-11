@@ -110,7 +110,7 @@ futures-util = { version = "0.3", optional = true }
 quick-xml = { version = "0.37", optional = true }
 
 # Pacha model registry (native-only)
-pacha = { version = "0.2", optional = true }
+pacha = { version = "0.3", optional = true }
 
 # Realizar inference engine (GGUF/safetensors, native-only)
 # PMAT-159: local path dep with cuda feature for GPU-accelerated apr code

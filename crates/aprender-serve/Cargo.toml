@@ -59,7 +59,7 @@ aprender = { path = "../aprender-core", version = "0.42.4", package = "aprender-
 alimentar = { version = "0.2", optional = true, default-features = false, features = ["local", "shuffle"] }
 
 # Model registry (optional for pull/push commands)
-pacha = { version = "0.2", optional = true }
+pacha = { version = "0.3", optional = true }
 
 # Terminal/PNG visualization for benchmarks and metrics
 trueno-viz = { version = "0.2", optional = true, features = ["terminal"] }
