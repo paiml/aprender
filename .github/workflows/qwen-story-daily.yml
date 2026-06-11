@@ -83,7 +83,7 @@ jobs:
 
       - name: Upload pmat manifest artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pmat-manifest
           path: /tmp/qwen-story-artifacts/pmat-manifest.txt
@@ -91,7 +91,7 @@ jobs:
 
       - name: Upload story log artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: story-log
           path: /tmp/story.log
