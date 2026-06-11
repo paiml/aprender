@@ -202,10 +202,15 @@ impl Matrix<f32> {
             return Err("Matrix columns must match vector length");
         }
 
+        // Dot each row in place — slice `self.data` directly instead of
+        // `self.row(i)`, which allocated a fresh `Vector` per row. The
+        // contiguous iterator dot auto-vectorizes just like `Vector::dot`.
+        let v = vec.as_slice();
+        let cols = self.cols;
         let result: Vec<f32> = (0..self.rows)
             .map(|i| {
-                let row = self.row(i);
-                row.dot(vec)
+                let row = &self.data[i * cols..i * cols + cols];
+                row.iter().zip(v).map(|(a, b)| a * b).sum()
             })
             .collect();
 
