@@ -102,6 +102,7 @@ pub mod code;
 /// Compute infrastructure integration (trueno 0.8.7+)
 pub mod compute;
 pub mod data;
+pub mod datasets;
 pub mod decomposition;
 /// End-to-end demo infrastructure for Qwen2-0.5B WASM demo (spec §J)
 pub mod demo;
