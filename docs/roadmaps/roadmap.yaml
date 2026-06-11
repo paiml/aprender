@@ -9684,3 +9684,88 @@ roadmap:
   - unsloth
   - benchmark
   notes: null
+- id: PMAT-716
+  github_issue: null
+  item_type: epic
+  title: 'MISSION: one pure-Rust binary that REPLACES + BEATS sklearn + PyTorch + Unsloth + Ollama/llama.cpp at what each does best'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-06-11T06:18:26Z
+  updated: 2026-06-11T06:18:26Z
+  spec: null
+  acceptance_criteria:
+  - 'North-star (user directive 2026-06-11). Whole ML lifecycle (classical -> DL -> fine-tune -> quantize -> serve) in one safe-Rust binary, each stage beating the Python/C++ incumbent at its signature strength. BEAT = a FALSIFIABLE benchmark (apr >= incumbent on its canonical task), not parity. Cross-cutting differentiator: provable contract-gated correctness (none of the 4 have it). Pillars: PMAT-717 (sklearn), PMAT-718 (PyTorch), PMAT-710 (Unsloth), PMAT-719 (Ollama/llama.cpp). Each pillar ships FALSIFY-BEAT-* gates.'
+  phases: []
+  subtasks:
+  - PMAT-717
+  - PMAT-718
+  - PMAT-710
+  - PMAT-719
+  estimated_effort: null
+  labels:
+  - mission
+  - four-pillars
+  - beat
+  notes: 'See memory project_mission_four_pillars. Detailed beat-targets land from the four-pillar beat-analysis (in flight).'
+- id: PMAT-717
+  github_issue: null
+  item_type: epic
+  title: 'Pillar 1: BEAT scikit-learn at classical ML (pure Rust) — fit/predict faster, same accuracy, provably correct'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-06-11T06:18:26Z
+  updated: 2026-06-11T06:18:26Z
+  spec: null
+  acceptance_criteria:
+  - 'aprender-core already has the TOP-10 classical-ML surface (Estimator/Transformer; LinearRegression/LogisticRegression/DecisionTree/RandomForest/GBM/NaiveBayes/KNN/SVM/KMeans/PCA + model_selection + metrics). MOST-BUILT + MOST-WINNABLE pillar. Beat-benchmark FALSIFY-BEAT-SKLEARN: fit+predict wall-clock <= sklearn AND accuracy within tol on standard datasets (iris/digits/california). ROADMAP GAP: sklearn is NOT a tracked CRUX competitor — this pillar likely needs a new classical-ML category. Mostly CPU-autonomous. Sub-targets from the beat-analysis.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-sklearn
+  - classical-ml
+  - beat
+  notes: null
+- id: PMAT-718
+  github_issue: null
+  item_type: epic
+  title: 'Pillar 2: BEAT PyTorch at tensors + autograd + training (bounded task: train-to-loss faster / less memory)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-06-11T06:18:26Z
+  updated: 2026-06-11T06:18:26Z
+  spec: null
+  acceptance_criteria:
+  - 'HARDEST pillar (PyTorch moat = flexibility + ecosystem). Compute substrate = aprender-compute (trueno SIMD/GPU) + aprender-train. Beat on the BOUNDED canonical task, not research flexibility: FALSIFY-BEAT-PYTORCH = train a fixed small model to a target loss with apr <= time and/or <= peak memory. CPU-side pieces (autograd correctness, op coverage, a CPU training benchmark) are loop-buildable; the perf run is GPU (lambda-vector). Sub-targets from the beat-analysis.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-pytorch
+  - autograd
+  - beat
+  notes: null
+- id: PMAT-719
+  github_issue: null
+  item_type: epic
+  title: 'Pillar 4: BEAT Ollama/llama.cpp at local quantized inference — 1.5x decode tok/s AND provable output-correctness'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-06-11T06:18:26Z
+  updated: 2026-06-11T06:18:26Z
+  spec: null
+  acceptance_criteria:
+  - 'Their best: fast GGUF decode + simple pull/run UX. aprender perf-path already 440 tok/s vs ollama 307 on 1.5B Q4_K_M (~1.43x; 1.5x = 460 tok/s target). TWO beat-benchmarks: (a) FALSIFY-BEAT-OLLAMA-PERF = decode tok/s >= ollama at fixed quant (target 1.5x); (b) FALSIFY-BEAT-OLLAMA-CORRECT = provable output/dequant correctness (the CRUX-M verify wall / Q2_K-class) that ollama+llama.cpp LACK. CRUX-M-02 (PMAT-671, active) is the correctness leg. Sub-targets from the beat-analysis.'
+  phases: []
+  subtasks:
+  - PMAT-671
+  estimated_effort: null
+  labels:
+  - pillar-ollama
+  - inference
+  - beat
+  notes: null
