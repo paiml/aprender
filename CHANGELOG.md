@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.45.2] - 2026-06-12
+
+### Added
+
+- **`metrics::jaccard_score` + `metrics::fbeta_score`** (Pillar 1): Jaccard
+  similarity (IoU per class) and F-beta score, both with Macro/Micro/Weighted
+  averaging, matching `sklearn.metrics` within 1e-4.
+
 ## [0.45.1] - 2026-06-12
 
 ### Added
