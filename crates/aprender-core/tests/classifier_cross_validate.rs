@@ -155,3 +155,29 @@ fn cross_validate_over_decision_tree_regressor() {
         result.mean()
     );
 }
+
+#[test]
+fn grid_search_picks_best_hyperparameters() {
+    use aprender::model_selection::grid_search;
+    use aprender::tree::RandomForestClassifier;
+    let (x, labels) = make_classification(150, 8, 4, 3, 42);
+    let y = Vector::from_vec(labels.iter().map(|&l| l as f32).collect());
+    let depths = [2usize, 5, 12];
+    let result = grid_search(
+        &depths,
+        |&d| {
+            RandomForestClassifier::new(20)
+                .with_max_depth(d)
+                .with_random_state(42)
+        },
+        &x,
+        &y,
+        &KFold::new(5),
+    )
+    .expect("grid_search");
+    assert_eq!(result.mean_scores.len(), 3);
+    // best_score is the max over the grid, and best_params/index are consistent
+    let max = result.mean_scores.iter().copied().fold(f32::MIN, f32::max);
+    assert!((result.best_score - max).abs() < 1e-6);
+    assert_eq!(result.best_params, depths[result.best_index]);
+}
