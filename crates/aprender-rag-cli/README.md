@@ -24,6 +24,7 @@ Feature flags are forwarded to `aprender-rag`:
 
 ## Relation to the stack
 
-Part of the APR-MONO consolidation (relocated to flat layout under `crates/` per spec §S).
-The RAG engine itself lives in `crates/aprender-rag`; this crate only provides the binary
+Part of the [paiml/aprender](https://github.com/paiml/aprender) monorepo (APR-MONO
+consolidation; relocated to flat layout under `crates/` per spec §S). The RAG engine itself
+lives in [`crates/aprender-rag`](../aprender-rag); this crate only provides the binary
 entry point.
