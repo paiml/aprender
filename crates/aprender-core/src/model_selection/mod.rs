@@ -194,6 +194,60 @@ where
     })
 }
 
+/// Randomized hyperparameter search, mirroring sklearn's `RandomizedSearchCV`.
+/// Samples `min(n_iter, grid.len())` distinct candidates from `grid` (seeded
+/// shuffle, reproducible), cross-validates each, and returns the best.
+///
+/// In the returned [`GridSearchCVResult`], `mean_scores` is parallel to the
+/// sampled candidates (not the full grid) and `best_index` indexes into it.
+///
+/// # Errors
+/// Returns an error if `grid` is empty or any fold's training fails.
+pub fn randomized_search<E, P, F>(
+    grid: &[P],
+    n_iter: usize,
+    seed: u64,
+    build: F,
+    x: &Matrix<f32>,
+    y: &Vector<f32>,
+    cv: &KFold,
+) -> Result<GridSearchCVResult<P>, String>
+where
+    E: Estimator + Clone,
+    P: Clone,
+    F: Fn(&P) -> E,
+{
+    use rand::seq::SliceRandom;
+    use rand::SeedableRng;
+    if grid.is_empty() {
+        return Err("Grid cannot be empty".to_string());
+    }
+    let mut indices: Vec<usize> = (0..grid.len()).collect();
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+    indices.shuffle(&mut rng);
+    let n = n_iter.min(grid.len());
+
+    let mut mean_scores = Vec::with_capacity(n);
+    let mut best_index = 0;
+    let mut best_score = f32::NEG_INFINITY;
+    let mut best_params = grid[indices[0]].clone();
+    for (k, &gi) in indices[..n].iter().enumerate() {
+        let mean = cross_validate(&build(&grid[gi]), x, y, cv)?.mean();
+        mean_scores.push(mean);
+        if mean > best_score {
+            best_score = mean;
+            best_index = k;
+            best_params = grid[gi].clone();
+        }
+    }
+    Ok(GridSearchCVResult {
+        best_params,
+        best_score,
+        best_index,
+        mean_scores,
+    })
+}
+
 /// Helper function to extract samples by indices
 fn extract_samples(
     x: &Matrix<f32>,
