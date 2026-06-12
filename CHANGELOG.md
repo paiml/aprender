@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.0] - 2026-06-12
+
+### Added
+
+- **`classification::MultinomialNB`** (Pillar 1): Multinomial Naive Bayes for
+  count features (bag-of-words text), matching `sklearn.naive_bayes.MultinomialNB`
+  — class log-priors + Lidstone-smoothed `log P(j|c)`, `with_alpha` builder.
+  Implements `Estimator` (works with cross_validate/grid_search).
+
 ## [0.47.1] - 2026-06-12
 
 ### Added
