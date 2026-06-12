@@ -26,8 +26,10 @@
 
 mod label_encoder;
 mod one_hot_encoder;
+mod ordinal_encoder;
 pub use label_encoder::LabelEncoder;
 pub use one_hot_encoder::OneHotEncoder;
+pub use ordinal_encoder::OrdinalEncoder;
 
 use crate::error::{AprenderError, Result};
 use crate::primitives::Matrix;
