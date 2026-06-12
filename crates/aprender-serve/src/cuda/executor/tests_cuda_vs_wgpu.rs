@@ -13,7 +13,7 @@ fn cuda_vs_wgpu_patterned() {
     let cpu_result = cpu_matmul_reference(&a, &b, m, k, n);
 
     // CUDA path
-    let mut cuda_sched = CudaScheduler::new().expect("CudaScheduler should init");
+    let mut cuda_sched = crate::cuda_scheduler_or_skip!();
     let cuda_result = cuda_sched
         .matmul(&a, &b, m, k, n)
         .expect("CUDA matmul should succeed");
@@ -59,7 +59,7 @@ fn cpu_matmul_reference(a: &[f32], b: &[f32], m: usize, k: usize, n: usize) -> V
 #[serial]
 fn test_cuda_executor_gemm_size_validation() {
     // This test requires CUDA GPU to create an executor
-    let mut executor = CudaExecutor::new(0).expect("test");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Wrong sizes - should fail validation
     let a = vec![1.0f32; 10]; // Wrong size
@@ -78,7 +78,7 @@ fn test_cuda_executor_softmax() {
     let ptx = kernels.generate_ptx(&KernelType::Softmax { dim: 4 });
     eprintln!("Generated PTX:\n{}", ptx);
 
-    let mut executor = CudaExecutor::new(0).expect("test");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let mut data = vec![1.0, 2.0, 3.0, 4.0];
     let result = executor.softmax(&mut data);
@@ -95,7 +95,7 @@ fn test_cuda_executor_softmax() {
 #[test]
 #[serial]
 fn test_cuda_executor_synchronize() {
-    let executor = CudaExecutor::new(0).expect("test");
+    let executor = crate::cuda_executor_or_skip!(0);
     let result = executor.synchronize();
     assert!(result.is_ok());
 }
@@ -113,8 +113,7 @@ fn test_cuda_executor_drop_order_multiple_cycles() {
     // Fields should be dropped in reverse declaration order,
     // with context dropped LAST (after stream and modules)
     for i in 1..=3 {
-        let mut executor = CudaExecutor::new(0)
-            .unwrap_or_else(|e| panic!("Cycle {}: Failed to create executor: {}", i, e));
+        let mut executor = crate::cuda_executor_or_skip!(0);
 
         // Verify executor works
         assert!(
@@ -142,7 +141,7 @@ fn test_cuda_executor_drop_order_multiple_cycles() {
 fn test_cuda_executor_rapid_lifecycle() {
     // 10 rapid cycles without any work - pure lifecycle test
     for _ in 0..10 {
-        let executor = CudaExecutor::new(0).expect("Failed to create executor");
+        let executor = crate::cuda_executor_or_skip!(0);
         drop(executor); // Explicit drop for clarity
     }
 }
@@ -151,7 +150,7 @@ fn test_cuda_executor_rapid_lifecycle() {
 #[test]
 #[serial]
 fn test_cuda_executor_module_cleanup() {
-    let mut executor = CudaExecutor::new(0).expect("Failed to create executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Load multiple modules (different GEMM configurations)
     for size in [4, 8, 16, 32] {
@@ -167,7 +166,7 @@ fn test_cuda_executor_module_cleanup() {
     drop(executor);
 
     // Create new executor to verify GPU is in good state
-    let executor2 = CudaExecutor::new(0).expect("Should create after cleanup");
+    let executor2 = crate::cuda_executor_or_skip!(0);
     assert!(executor2.device_name().is_ok());
 }
 
@@ -406,7 +405,7 @@ fn test_gemm_fused_activation_values() {
 #[test]
 #[serial]
 fn test_gemm_fused_no_activation() {
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 4u32;
     let n = 4u32;

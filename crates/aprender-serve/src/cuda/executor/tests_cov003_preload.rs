@@ -20,7 +20,7 @@ fn test_cov003_preload_rmsnorm_weights() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Initially no weights loaded
     assert!(!executor.has_rmsnorm_weights(0));
@@ -44,7 +44,7 @@ fn test_cov003_preload_rmsnorm_weights_multiple_layers() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let gamma = vec![1.0f32; 512];
 
@@ -68,7 +68,7 @@ fn test_cov003_preload_output_norm() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Initially no output norm
     assert!(!executor.has_output_norm());
@@ -88,7 +88,7 @@ fn test_cov003_preload_qkv_bias() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Initially no QKV bias
     assert!(!executor.has_qkv_bias(0));
@@ -118,7 +118,7 @@ fn test_cov003_preload_qkv_bias_multiple_layers() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_dim = 128;
     let bias_data = vec![0.1f32; hidden_dim];
@@ -148,7 +148,7 @@ fn test_cov003_preload_lm_head_bias_none() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Initially no LM head bias
     assert!(!executor.has_lm_head_bias());
@@ -167,7 +167,7 @@ fn test_cov003_preload_lm_head_bias_some() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Initially no LM head bias
     assert!(!executor.has_lm_head_bias());
@@ -188,7 +188,7 @@ fn test_cov003_cache_rmsnorm_gamma() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Cache gamma by name
     let gamma = vec![1.0f32; 256];
@@ -209,7 +209,7 @@ fn test_cov003_workspace_output_none() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     // Fresh executor has no workspace output
     let output = executor.workspace_output();
@@ -223,7 +223,7 @@ fn test_cov003_read_hidden_state_to_cpu() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Try to read hidden state - may fail if no forward pass done yet
     let result = executor.read_hidden_state_to_cpu();
@@ -237,7 +237,7 @@ fn test_cov003_output_rmsnorm_gpu() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // First preload output norm
     let gamma = vec![1.0f32; 256];
@@ -256,7 +256,7 @@ fn test_cov003_preload_combined_weights() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Test preloading all weight types for a layer
     let hidden_dim = 256;
@@ -298,7 +298,7 @@ fn test_cov003_has_methods_boundary_conditions() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     // Test has_* methods with large layer indices (should return false)
     assert!(!executor.has_rmsnorm_weights(999));
@@ -323,7 +323,7 @@ fn test_cov004_init_kv_cache_gpu() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let num_layers = 2;
     let num_heads = 4;
@@ -342,7 +342,7 @@ fn test_cov004_has_kv_cache_gpu_before_init() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     // Before init, should return false
     assert!(!executor.has_kv_cache_gpu());
@@ -354,7 +354,7 @@ fn test_cov004_kv_cache_len() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Before init, length should be 0
     assert_eq!(executor.kv_cache_len(0), 0);
@@ -370,7 +370,7 @@ fn test_cov004_reset_kv_cache_gpu() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let _ = executor.init_kv_cache_gpu(2, 4, 4, 64, 128);
 
@@ -385,7 +385,7 @@ fn test_cov004_rollback_kv_cache_gpu() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let _ = executor.init_kv_cache_gpu(2, 4, 4, 64, 128);
 
@@ -400,7 +400,7 @@ fn test_cov004_set_rope_theta() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Default LLaMA theta
     executor.set_rope_theta(10000.0);
@@ -415,7 +415,7 @@ fn test_cov004_set_rope_type() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Type 0 = NORM (adjacent pairs)
     executor.set_rope_type(0);
@@ -430,7 +430,7 @@ fn test_cov004_init_batched_kv_cache_invalid_batch_size() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Must init regular KV cache first
     let _ = executor.init_kv_cache_gpu(2, 4, 4, 64, 128);

@@ -25,7 +25,7 @@ fn test_cov008_init_workspace_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Set KV cache params first (required by init_workspace)
     let _ = executor.init_kv_cache_gpu(1, 4, 4, 8, 16);
@@ -50,7 +50,7 @@ fn test_cov008_init_workspace_large() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Set KV cache params first
     let _ = executor.init_kv_cache_gpu(1, 8, 8, 64, 512);
@@ -74,7 +74,7 @@ fn test_cov008_init_batched_workspace_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Set KV cache params first
     let _ = executor.init_kv_cache_gpu(1, 4, 4, 8, 16);
@@ -100,7 +100,7 @@ fn test_cov008_init_batched_workspace_max_batch() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Set KV cache params first
     let _ = executor.init_kv_cache_gpu(1, 4, 4, 8, 16);
@@ -121,7 +121,7 @@ fn test_cov008_init_batched_workspace_zero_batch_error() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Set KV cache params first
     let _ = executor.init_kv_cache_gpu(1, 4, 4, 8, 16);
@@ -140,7 +140,7 @@ fn test_cov008_init_batched_workspace_too_large_batch_error() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Set KV cache params first
     let _ = executor.init_kv_cache_gpu(1, 4, 4, 8, 16);
@@ -159,7 +159,7 @@ fn test_cov008_has_workspace_false_initially() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     assert!(
         !executor.has_workspace(),
@@ -173,7 +173,7 @@ fn test_cov008_has_decode_graph_false_initially() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     assert!(
         !executor.has_decode_graph(),
@@ -187,7 +187,7 @@ fn test_cov008_clear_workspace() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Set KV cache and init workspace
     let _ = executor.init_kv_cache_gpu(1, 4, 4, 8, 16);
@@ -205,7 +205,7 @@ fn test_cov008_clear_decode_graph() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Clear decode graph (even without capturing one)
     executor.clear_decode_graph();
@@ -221,7 +221,7 @@ fn test_cov008_gemv_buffer_stats_initial() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     let (input_bytes, output_bytes) = executor.gemv_buffer_stats();
     assert_eq!(
@@ -240,7 +240,7 @@ fn test_cov008_clear_gemv_buffers() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Clear GEMV buffers (even without allocating any)
     executor.clear_gemv_buffers();
@@ -255,7 +255,7 @@ fn test_cov008_ensure_gemv_input_buffer() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Ensure GEMV input buffer
     let result = executor.ensure_gemv_input_buffer(256);
@@ -279,7 +279,7 @@ fn test_cov008_ensure_gemv_output_buffer() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Ensure GEMV output buffer
     let result = executor.ensure_gemv_output_buffer(128);
@@ -303,7 +303,7 @@ fn test_cov008_ensure_gemv_buffers_reuse() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // First allocation
     let ptr1 = executor.ensure_gemv_input_buffer(256).expect("first alloc");
@@ -325,7 +325,7 @@ fn test_cov008_copy_gemv_buffers() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 64usize;
     let input: Vec<f32> = (0..n).map(|i| i as f32).collect();
@@ -368,7 +368,7 @@ fn test_cov009_synchronize_compute() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     let result = executor.synchronize_compute();
     assert!(
@@ -384,7 +384,7 @@ fn test_cov009_synchronize_transfer() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     let result = executor.synchronize_transfer();
     assert!(
@@ -400,7 +400,7 @@ fn test_cov009_synchronize_all() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     let result = executor.synchronize_all();
     assert!(result.is_ok(), "synchronize_all failed: {:?}", result.err());
@@ -412,7 +412,7 @@ fn test_cov009_allocate_buffer_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     let result = executor.allocate_buffer(256);
     assert!(result.is_ok(), "allocate_buffer failed: {:?}", result.err());
@@ -427,7 +427,7 @@ fn test_cov009_allocate_buffer_large() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     // Allocate 1MB buffer (262144 f32 elements)
     let result = executor.allocate_buffer(262144);

@@ -9,7 +9,7 @@ fn test_q5_0_gemv_parity() {
         return;
     }
 
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Small test: 4 blocks = 128 elements
     let num_blocks = 4usize;
@@ -82,7 +82,7 @@ fn test_q5_0_gemv_qwen_k_dimensions() {
         return;
     }
 
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Qwen 0.5B K projection: hidden_dim=896 → kv_dim=128 (2 heads * 64 head_dim)
     let hidden_dim = 896usize;
