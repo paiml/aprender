@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.45.1] - 2026-06-12
+
+### Added
+
+- **`preprocessing::LabelEncoder`** (Pillar 1): encode categorical labels to
+  consecutive integers `0..n_classes` (sorted-unique order) with
+  `inverse_transform`/`classes`, matching `sklearn.preprocessing.LabelEncoder`.
+  Generic over any `Ord + Clone` label type (`&str`/`i64`/`String`).
+
 ## [0.45.0] - 2026-06-12
 
 ### Added
