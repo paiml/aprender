@@ -103,10 +103,10 @@ libc = "0.2"
 
 [dependencies]
 # Core aprender library
-aprender = { path = "../aprender-core", version = "0.47.1", package = "aprender-core", default-features = true, features = ["format-compression"] }
+aprender = { path = "../aprender-core", version = "0.48.0", package = "aprender-core", default-features = true, features = ["format-compression"] }
 
 # MCP (Model Context Protocol) server — `apr mcp` subcommand
-aprender-mcp = { path = "../aprender-mcp", version = "0.47.1" }
+aprender-mcp = { path = "../aprender-mcp", version = "0.48.0" }
 async-stream = "0.3"
 provable-contracts-macros = "0.3"
 
