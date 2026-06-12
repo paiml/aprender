@@ -16,11 +16,11 @@ use {
     crate::discover::{build_exclude_set, discover_files},
     crate::ingest::{chunk_and_embed, create_embedder, finish_load_report, load_documents},
     crate::PersistedChunk,
-    std::path::Path,
     aprender_rag::{
         chunk::{RecursiveChunker, TimestampChunker},
         loader::LoaderRegistry,
     },
+    std::path::Path,
 };
 
 /// Entry point for incremental indexing. Delegates to the feature-gated inner implementation.
@@ -96,8 +96,11 @@ pub(crate) fn diff_fingerprints(
         }
     }
 
-    let deleted: Vec<String> =
-        stored.keys().filter(|k| !current_paths.contains(k.as_str())).cloned().collect();
+    let deleted: Vec<String> = stored
+        .keys()
+        .filter(|k| !current_paths.contains(k.as_str()))
+        .cloned()
+        .collect();
 
     (changed, deleted)
 }
@@ -150,14 +153,20 @@ fn run_index_incremental_inner(
         return Ok(());
     }
 
-    println!("{} files changed/new, {} files deleted", changed.len(), deleted.len());
+    println!(
+        "{} files changed/new, {} files deleted",
+        changed.len(),
+        deleted.len()
+    );
 
     // Remove deleted files
     remove_deleted_sources(&sqlite_index, &deleted)?;
 
     if changed.is_empty() {
         println!("Only deletions — no re-indexing needed.");
-        sqlite_index.optimize().map_err(|e| anyhow::anyhow!("Failed to optimize: {e}"))?;
+        sqlite_index
+            .optimize()
+            .map_err(|e| anyhow::anyhow!("Failed to optimize: {e}"))?;
         return Ok(());
     }
 
@@ -234,12 +243,19 @@ fn remove_deleted_sources(
 /// Optimize the SQLite index and print final document/chunk counts.
 #[cfg(feature = "sqlite")]
 fn optimize_and_report(sqlite_index: &aprender_rag::SqliteIndex) -> Result<()> {
-    sqlite_index.optimize().map_err(|e| anyhow::anyhow!("Failed to optimize: {e}"))?;
-    let stats =
-        sqlite_index.document_count().map_err(|e| anyhow::anyhow!("Failed to count docs: {e}"))?;
-    let chunk_count =
-        sqlite_index.chunk_count().map_err(|e| anyhow::anyhow!("Failed to count chunks: {e}"))?;
-    println!("Incremental update complete: {} docs, {} chunks total", stats, chunk_count);
+    sqlite_index
+        .optimize()
+        .map_err(|e| anyhow::anyhow!("Failed to optimize: {e}"))?;
+    let stats = sqlite_index
+        .document_count()
+        .map_err(|e| anyhow::anyhow!("Failed to count docs: {e}"))?;
+    let chunk_count = sqlite_index
+        .chunk_count()
+        .map_err(|e| anyhow::anyhow!("Failed to count chunks: {e}"))?;
+    println!(
+        "Incremental update complete: {} docs, {} chunks total",
+        stats, chunk_count
+    );
     Ok(())
 }
 
@@ -253,8 +269,10 @@ fn incremental_insert(
     use std::collections::BTreeMap;
 
     // Build a hash lookup for changed files
-    let hash_map: HashMap<String, [u8; 32]> =
-        changed.iter().map(|(p, h)| (p.to_string_lossy().to_string(), *h)).collect();
+    let hash_map: HashMap<String, [u8; 32]> = changed
+        .iter()
+        .map(|(p, h)| (p.to_string_lossy().to_string(), *h))
+        .collect();
 
     // Group chunks by source
     let mut doc_chunks: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
@@ -263,14 +281,20 @@ fn incremental_insert(
     for (i, pc) in chunks.iter().enumerate() {
         let doc_id = pc.source.as_deref().unwrap_or("unknown").to_string();
         let chunk_id = format!("{}#{}", doc_id, i);
-        doc_chunks.entry(doc_id.clone()).or_default().push((chunk_id, pc.content.clone()));
+        doc_chunks
+            .entry(doc_id.clone())
+            .or_default()
+            .push((chunk_id, pc.content.clone()));
         doc_titles.entry(doc_id).or_insert_with(|| pc.title.clone());
     }
 
     for (doc_id, chunk_pairs) in &doc_chunks {
         let title = doc_titles.get(doc_id).and_then(|t| t.as_deref());
-        let content: String =
-            chunk_pairs.iter().map(|(_, c)| c.as_str()).collect::<Vec<_>>().join("\n");
+        let content: String = chunk_pairs
+            .iter()
+            .map(|(_, c)| c.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
 
         let fingerprint = hash_map.get(doc_id).map(|h| (doc_id.as_str(), h));
 
