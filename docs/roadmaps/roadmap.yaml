@@ -1,3 +1,27 @@
+# ============================================================================
+# CAMPAIGN PRIORITY — EV re-prioritization 2026-06-12 (highest-EV across ENTIRE
+# roadmap, not sklearn-parity breadth). Full analysis + chain-of-thought:
+#   docs/specifications/campaign-ev-reprioritization-2026-06-12.md
+# Thesis: stop manufacturing sklearn-PARITY breadth (replace half, ~0 marginal
+# EV); start manufacturing BEATS-as-CI-artifacts. EV = impact*falsifiability*
+# autonomy / effort; unattended+CPU-only campaign => GPU-gated work is operator-track.
+#
+# AUTONOMOUS TRACK (ship unattended, CPU/CI-falsifiable, EV-ordered):
+#   1. PMAT-741  BeatBenchmark ContractKind + validator + CI runner (EV 92, force multiplier)
+#   2. PMAT-741  pilot: beat_sklearn_iris.rs -> contracts/beat-baselines.yaml
+#   3. PMAT-725  PyTorch-CPU training-time beat harness (+ PMAT-724 finite-diff grad gate) (EV 88)
+#   4. PMAT-722  sklearn speed-beat harness; capture matmul 1.78x + matvec 1.44x as CI gates (EV 85)
+#   5. PMAT-577  CRUX-E-19 perplexity-per-bit-budget eval (EV 78)
+#   6. PMAT-578  CRUX-E-20 KL-divergence-vs-FP16 eval (EV 78)
+#   7. PMAT-711  Unsloth QLoRA NF4 into InstructPipeline + CPU loss-monotone falsifier (EV 72)
+#
+# GPU-GATED TRACK (surface for operator scheduling, do NOT grind unattended):
+#   FUSION-004 (Ollama 1.5x decode, EV 34); PMAT-715 (Unsloth throughput beat);
+#   PMAT-728-GPU (PyTorch-GPU baseline); Pillar-1 GPU reference timing.
+#
+# RULE: never ship a parity feature when a falsifiable BEAT is on the table.
+# PILLAR1-* items below are sklearn-PARITY (v0.44-0.48 shipped) — LOW marginal EV now.
+# ============================================================================
 roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/aprender
