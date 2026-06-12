@@ -357,3 +357,144 @@ mod tests_clustering_contract;
 #[path = "tests_ranking_contract.rs"]
 mod tests_ranking_contract;
 pub use classification::{fbeta_score, jaccard_score};
+
+/// Davies–Bouldin score (lower is better), matching `sklearn.metrics.davies_bouldin_score`.
+/// Mean over clusters of the worst-case ratio `(S_i + S_j) / d(c_i, c_j)`, where
+/// `S` is mean intra-cluster distance to centroid and `d` is centroid distance.
+#[must_use]
+pub fn davies_bouldin_score(data: &Matrix<f32>, labels: &[usize]) -> f32 {
+    let (n, nf) = data.shape();
+    let k = labels.iter().max().map_or(0, |&m| m + 1);
+    if k < 2 {
+        return 0.0;
+    }
+    let mut centroids = vec![vec![0.0f64; nf]; k];
+    let mut counts = vec![0usize; k];
+    for i in 0..n {
+        let c = labels[i];
+        counts[c] += 1;
+        for j in 0..nf {
+            centroids[c][j] += f64::from(data.get(i, j));
+        }
+    }
+    for c in 0..k {
+        if counts[c] > 0 {
+            for j in 0..nf {
+                centroids[c][j] /= counts[c] as f64;
+            }
+        }
+    }
+    let mut scatter = vec![0.0f64; k];
+    for i in 0..n {
+        let c = labels[i];
+        let mut d = 0.0f64;
+        for j in 0..nf {
+            let diff = f64::from(data.get(i, j)) - centroids[c][j];
+            d += diff * diff;
+        }
+        scatter[c] += d.sqrt();
+    }
+    for c in 0..k {
+        if counts[c] > 0 {
+            scatter[c] /= counts[c] as f64;
+        }
+    }
+    let mut db = 0.0f64;
+    for c in 0..k {
+        let mut max_r = 0.0f64;
+        for cp in 0..k {
+            if cp == c {
+                continue;
+            }
+            let mut dc = 0.0f64;
+            for j in 0..nf {
+                let diff = centroids[c][j] - centroids[cp][j];
+                dc += diff * diff;
+            }
+            let dc = dc.sqrt();
+            if dc > 0.0 {
+                let r = (scatter[c] + scatter[cp]) / dc;
+                if r > max_r {
+                    max_r = r;
+                }
+            }
+        }
+        db += max_r;
+    }
+    (db / k as f64) as f32
+}
+
+/// Calinski–Harabasz score (variance ratio; higher is better), matching
+/// `sklearn.metrics.calinski_harabasz_score`: `(B/(k-1)) / (W/(n-k))`.
+#[must_use]
+pub fn calinski_harabasz_score(data: &Matrix<f32>, labels: &[usize]) -> f32 {
+    let (n, nf) = data.shape();
+    let k = labels.iter().max().map_or(0, |&m| m + 1);
+    if k < 2 || n <= k {
+        return 0.0;
+    }
+    let mut overall = vec![0.0f64; nf];
+    let mut centroids = vec![vec![0.0f64; nf]; k];
+    let mut counts = vec![0usize; k];
+    for i in 0..n {
+        let c = labels[i];
+        counts[c] += 1;
+        for j in 0..nf {
+            let v = f64::from(data.get(i, j));
+            centroids[c][j] += v;
+            overall[j] += v;
+        }
+    }
+    for j in 0..nf {
+        overall[j] /= n as f64;
+    }
+    for c in 0..k {
+        if counts[c] > 0 {
+            for j in 0..nf {
+                centroids[c][j] /= counts[c] as f64;
+            }
+        }
+    }
+    let mut w = 0.0f64;
+    for i in 0..n {
+        let c = labels[i];
+        for j in 0..nf {
+            let diff = f64::from(data.get(i, j)) - centroids[c][j];
+            w += diff * diff;
+        }
+    }
+    let mut b = 0.0f64;
+    for c in 0..k {
+        let mut d = 0.0f64;
+        for j in 0..nf {
+            let diff = centroids[c][j] - overall[j];
+            d += diff * diff;
+        }
+        b += counts[c] as f64 * d;
+    }
+    if w == 0.0 {
+        return 0.0;
+    }
+    ((b / (k - 1) as f64) / (w / (n - k) as f64)) as f32
+}
+
+#[cfg(test)]
+mod tests_clustering_extra {
+    use super::*;
+
+    /// FT-METRIC-DBI / CHI: match sklearn clustering metrics within 1e-3.
+    #[test]
+    fn davies_bouldin_and_calinski_match_sklearn() {
+        let data = Matrix::from_vec(
+            7,
+            2,
+            vec![
+                1.0, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 7.0, 3.5, 5.0, 4.5, 5.0, 3.5, 4.5,
+            ],
+        )
+        .expect("valid");
+        let labels = [0usize, 0, 1, 1, 1, 1, 1];
+        assert!((davies_bouldin_score(&data, &labels) - 0.364_795).abs() < 1e-3);
+        assert!((calinski_harabasz_score(&data, &labels) - 16.742_773).abs() < 1e-2);
+    }
+}
