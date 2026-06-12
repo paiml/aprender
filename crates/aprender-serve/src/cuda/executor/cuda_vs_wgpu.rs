@@ -275,7 +275,7 @@ fn test_cuda_executor_new() {
 #[test]
 #[serial]
 fn test_cuda_executor_memory_info() {
-    let executor = CudaExecutor::new(0).expect("test");
+    let executor = crate::cuda_executor_or_skip!(0);
     let (free, total) = executor.memory_info().expect("test");
     assert!(total > 0);
     assert!(free <= total);
@@ -284,7 +284,7 @@ fn test_cuda_executor_memory_info() {
 #[test]
 #[serial]
 fn test_cuda_executor_gemm_small() {
-    let mut executor = CudaExecutor::new(0).expect("test");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Small 4x4 GEMM
     let a = vec![1.0f32; 16];
@@ -305,7 +305,7 @@ fn test_cuda_executor_gemm_small() {
 #[test]
 #[serial]
 fn test_cuda_executor_gemm_non_square() {
-    let mut executor = CudaExecutor::new(0).expect("test");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // First test: 32x32x32 (single tile)
     {
@@ -389,7 +389,7 @@ fn cuda_vs_wgpu_single_tile() {
     let b = vec![1.0f32; k0 * n0];
     let expected = k0 as f32;
 
-    let mut executor = CudaExecutor::new(0).expect("CudaExecutor should init");
+    let mut executor = crate::cuda_executor_or_skip!(0);
     let mut c = vec![0.0f32; m0 * n0];
     executor
         .gemm(&a, &b, &mut c, m0 as u32, n0 as u32, k0 as u32)
@@ -412,7 +412,7 @@ fn cuda_vs_wgpu_uniform_k64() {
     let b = vec![1.0f32; k * n];
     let expected = k as f32;
 
-    let mut executor = CudaExecutor::new(0).expect("CudaExecutor should init");
+    let mut executor = crate::cuda_executor_or_skip!(0);
     let mut c = vec![0.0f32; m * n];
     executor
         .gemm(&a, &b, &mut c, m as u32, n as u32, k as u32)

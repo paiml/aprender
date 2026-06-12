@@ -5,7 +5,7 @@ fn test_cov012_batched_rmsnorm_ptr_into() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_size = 32u32;
     let batch_size = 2u32;
@@ -41,7 +41,7 @@ fn test_cov012_residual_add_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 64u32;
     let input1 = vec![1.0f32; n as usize];
@@ -74,7 +74,7 @@ fn test_cov012_fused_residual_rmsnorm_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_size = 32u32;
     let residual = vec![1.0f32; hidden_size as usize];
@@ -117,7 +117,7 @@ fn test_cov012_batched_residual_add_into() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_size = 32u32;
     let batch_size = 4u32;
@@ -166,7 +166,7 @@ fn test_cov012_batched_swiglu_into() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let intermediate_dim = 64u32;
     let batch_size = 2u32;
@@ -209,7 +209,7 @@ fn test_cov012_batched_rope_into() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let num_heads = 2u32;
     let head_dim = 16u32;
@@ -266,7 +266,7 @@ fn test_cov014_load_quantized_weights_with_type_q4k() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Q4K block is 144 bytes (256 values)
     let weights = vec![0u8; 144];
@@ -286,7 +286,7 @@ fn test_cov014_load_quantized_weights_with_type_q5k() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Q5K uses different block size
     let weights = vec![0u8; 176]; // Q5K block size
@@ -306,7 +306,7 @@ fn test_cov014_load_quantized_weights_with_type_q6k() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Q6K block is 210 bytes
     let weights = vec![0u8; 210];
@@ -326,7 +326,7 @@ fn test_cov014_get_quantized_weight_type_not_found() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     // Non-existent weight should return None
     assert_eq!(executor.get_quantized_weight_type("nonexistent"), None);
@@ -338,7 +338,7 @@ fn test_cov014_has_quantized_weights_false() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     assert!(!executor.has_quantized_weights("nonexistent"));
 }
@@ -349,7 +349,7 @@ fn test_cov014_get_quantized_weight_ptr() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let weights = vec![1u8; 256];
     executor
@@ -369,7 +369,7 @@ fn test_cov014_get_quantized_weight_ptr_not_found() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     let ptr_result = executor.get_quantized_weight_ptr("nonexistent");
     assert!(ptr_result.is_err(), "Should fail for nonexistent weight");
@@ -381,7 +381,7 @@ fn test_cov014_cached_quantized_weight_count_multiple() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     assert_eq!(executor.cached_quantized_weight_count(), 0);
 
@@ -407,7 +407,7 @@ fn test_cov014_cached_quantized_weight_bytes_multiple() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     assert_eq!(executor.cached_quantized_weight_bytes(), 0);
 
@@ -430,7 +430,7 @@ fn test_cov014_clear_quantized_weights_multiple() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     executor
         .load_quantized_weights("w1", &vec![0u8; 144])

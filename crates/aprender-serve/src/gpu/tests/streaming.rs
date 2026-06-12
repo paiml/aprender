@@ -296,7 +296,7 @@ fn test_imp_1001a_cuda_executor_matmul_correctness() {
         return;
     }
 
-    let mut executor = CudaExecutor::new(0).expect("Failed to create CudaExecutor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Simple test: 4x4 @ 4x4 with all 1s -> each element = 4
     let a = vec![1.0f32; 16]; // 4x4 ones
@@ -348,7 +348,7 @@ fn test_imp_1001b_cuda_softmax_correctness() {
         return;
     }
 
-    let mut executor = CudaExecutor::new(0).expect("Failed to create CudaExecutor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let mut data = vec![1.0, 2.0, 3.0, 4.0];
     executor.softmax(&mut data).expect("Softmax failed");
@@ -381,7 +381,7 @@ fn test_imp_1001c_cuda_inference_speedup() {
         return;
     }
 
-    let mut executor = CudaExecutor::new(0).expect("Failed to create CudaExecutor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Large matmul: [512, 2048] @ [2048, 2048] - typical LLM layer size
     let m: u32 = 512;

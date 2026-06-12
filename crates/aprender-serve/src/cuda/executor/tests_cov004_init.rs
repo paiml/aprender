@@ -5,7 +5,7 @@ fn test_cov004_init_batched_kv_cache_without_regular() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Without init_kv_cache_gpu, should fail
     let result = executor.init_batched_kv_cache_gpu(2, 4);
@@ -18,7 +18,7 @@ fn test_cov004_init_batched_kv_cache_valid() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Init regular first
     let _ = executor.init_kv_cache_gpu(2, 4, 4, 64, 128);
@@ -34,7 +34,7 @@ fn test_cov004_reset_batched_kv_cache() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let _ = executor.init_kv_cache_gpu(2, 4, 4, 64, 128);
     let _ = executor.init_batched_kv_cache_gpu(2, 4);
@@ -49,7 +49,7 @@ fn test_cov004_flash_attention_cached_dimension_mismatch() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let num_heads = 4;
     let head_dim = 64;
@@ -73,7 +73,7 @@ fn test_cov004_flash_attention_cached_valid() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Use small dimensions known to work with flash_attention_multi_head
     let num_heads = 4;
@@ -103,7 +103,7 @@ fn test_cov004_flash_attention_cached_multiple_tokens() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let num_heads = 4;
     let head_dim = 8;
@@ -131,7 +131,7 @@ fn test_cov004_flash_attention_cached_overflow() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let num_heads = 2;
     let head_dim = 8;
@@ -167,7 +167,7 @@ fn test_cov004_incremental_attention_gpu_dimension_mismatch() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let num_heads = 4;
     let num_kv_heads = 2; // GQA: fewer KV heads
@@ -193,7 +193,7 @@ fn test_cov004_incremental_attention_gpu_kv_mismatch() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let num_heads = 4;
     let num_kv_heads = 2;
@@ -218,7 +218,7 @@ fn test_cov004_incremental_attention_gpu_valid() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let num_heads = 4;
     let num_kv_heads = 4; // MHA (not GQA)
@@ -247,7 +247,7 @@ fn test_cov004_incremental_attention_gpu_gqa() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // GQA: 4 Q heads, 2 KV heads
     let num_heads = 4;
@@ -277,7 +277,7 @@ fn test_cov004_incremental_attention_overflow() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let num_heads = 2;
     let head_dim = 8;
@@ -313,7 +313,7 @@ fn test_cov004_rollback_preserves_earlier_state() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let num_heads = 2;
     let head_dim = 8;
@@ -353,7 +353,7 @@ fn test_cov004_reset_after_tokens() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let num_heads = 2;
     let head_dim = 8;

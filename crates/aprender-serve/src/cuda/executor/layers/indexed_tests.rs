@@ -106,7 +106,7 @@ fn test_weight_quant_type_variants() {
 #[test]
 fn test_transformer_layer_indexed_with_harness() {
     use crate::cuda::executor::test_fixtures::{setup_executor_harness, HarnessConfig};
-    let mut exec = CudaExecutor::new(0).expect("CUDA executor - RTX 4090 MUST be available");
+    let mut exec = crate::cuda_executor_or_skip!(0);
     let config = HarnessConfig::default();
     setup_executor_harness(&mut exec, &config).expect("Harness setup MUST succeed");
 
@@ -136,7 +136,7 @@ fn test_transformer_layer_indexed_with_harness() {
 #[test]
 fn test_indexed_rejects_null_weight_pointer() {
     // H2: The Vacuum Test - null pointers must fail loudly
-    let mut exec = CudaExecutor::new(0).expect("CUDA executor");
+    let mut exec = crate::cuda_executor_or_skip!(0);
     let _ = exec.init_workspace(256, 1024);
 
     // Create weights with null pointer (0)
@@ -154,7 +154,7 @@ fn test_indexed_rejects_null_weight_pointer() {
 fn test_indexed_rejects_mismatched_dimensions() {
     // H2: Invalid dimensions must fail loudly
     use crate::cuda::executor::test_fixtures::{setup_executor_harness, HarnessConfig};
-    let mut exec = CudaExecutor::new(0).expect("CUDA executor");
+    let mut exec = crate::cuda_executor_or_skip!(0);
     let config = HarnessConfig::default();
     setup_executor_harness(&mut exec, &config).expect("Harness setup");
 
@@ -179,7 +179,7 @@ fn test_indexed_rejects_mismatched_dimensions() {
 fn test_indexed_rejects_invalid_layer_index() {
     // H2: Out-of-bounds layer index must fail
     use crate::cuda::executor::test_fixtures::{setup_executor_harness, HarnessConfig};
-    let mut exec = CudaExecutor::new(0).expect("CUDA executor");
+    let mut exec = crate::cuda_executor_or_skip!(0);
     let config = HarnessConfig::default();
     setup_executor_harness(&mut exec, &config).expect("Harness setup");
 

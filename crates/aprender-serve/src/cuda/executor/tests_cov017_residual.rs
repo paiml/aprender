@@ -5,7 +5,7 @@ fn test_cov017_residual_add_gpu_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32;
     let input1 = vec![1.0f32; n as usize];
@@ -38,7 +38,7 @@ fn test_cov017_init_kv_cache_gpu() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let result = executor.init_kv_cache_gpu(
         2,  // num_layers
@@ -69,7 +69,7 @@ fn test_cov017_init_workspace() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let result = executor.init_workspace(64, 128);
     assert!(result.is_ok(), "init_workspace failed: {:?}", result.err());
@@ -87,7 +87,7 @@ fn test_cov017_has_indexed_weights_false() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     assert!(
         !executor.has_indexed_weights(),
@@ -101,7 +101,7 @@ fn test_cov017_has_workspace_false() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     assert!(
         !executor.has_workspace(),
@@ -115,7 +115,7 @@ fn test_cov017_has_workspace_true() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     executor.init_workspace(64, 128).expect("init workspace");
     assert!(executor.has_workspace(), "Should have workspace after init");
@@ -127,7 +127,7 @@ fn test_cov017_set_rope_theta() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     executor.set_rope_theta(500000.0);
     assert_eq!(
@@ -142,7 +142,7 @@ fn test_cov017_set_rope_type() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     executor.set_rope_type(1); // NEOX style
     assert_eq!(executor.rope_type, 1, "RoPE type should be updated");
@@ -154,7 +154,7 @@ fn test_cov017_reset_kv_cache_gpu() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Init KV cache
     executor.init_kv_cache_gpu(1, 4, 4, 8, 16).expect("init kv");
@@ -177,7 +177,7 @@ fn test_cov018_q4k_gemv_cached_missing_weight() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let input = vec![1.0f32; 256];
     let mut output = vec![0.0f32; 64];
@@ -199,7 +199,7 @@ fn test_cov018_q5k_gemv_cached_missing_weight() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let input = vec![1.0f32; 256];
     let mut output = vec![0.0f32; 64];
@@ -214,7 +214,7 @@ fn test_cov018_q6k_gemv_cached_missing_weight() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let input = vec![1.0f32; 256];
     let mut output = vec![0.0f32; 64];
@@ -229,7 +229,7 @@ fn test_cov018_rmsnorm_host_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 64u32;
     let input: Vec<f32> = (0..n).map(|i| (i as f32 + 1.0) * 0.1).collect();
@@ -250,7 +250,7 @@ fn test_cov018_residual_add_host_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32;
     let input1 = vec![1.5f32; n as usize];
@@ -276,7 +276,7 @@ fn test_cov018_fused_residual_rmsnorm_host_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32;
     let residual = vec![1.0f32; n as usize];
@@ -302,7 +302,7 @@ fn test_cov018_gelu_gpu_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 64u32;
     let input: Vec<f32> = (0..n).map(|i| (i as f32 - 32.0) * 0.1).collect();
@@ -329,7 +329,7 @@ fn test_cov018_q4k_gemv_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let k = 256u32;
     let n = 32u32;
@@ -357,7 +357,7 @@ fn test_cov018_q6k_gemv_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let k = 256u32;
     let n = 32u32;
@@ -383,7 +383,7 @@ fn test_cov018_q8_0_gemv_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let k = 32u32;
     let n = 16u32;
@@ -409,7 +409,7 @@ fn test_cov018_fused_residual_rmsnorm_gpu_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 64u32;
     let residual = vec![1.0f32; n as usize];

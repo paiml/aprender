@@ -5,7 +5,7 @@ fn test_cov006_residual_add_host_large() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 1024usize;
 
@@ -33,7 +33,7 @@ fn test_cov006_fused_residual_rmsnorm_host_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_size = 32usize;
     let epsilon = 1e-5f32;
@@ -64,7 +64,7 @@ fn test_cov006_fused_residual_rmsnorm_host_large() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_size = 256usize;
     let epsilon = 1e-5f32;
@@ -89,7 +89,7 @@ fn test_cov006_residual_add_gpu_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 256u32;
 
@@ -131,7 +131,7 @@ fn test_cov006_residual_add_gpu_large() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 4096u32;
 
@@ -166,7 +166,7 @@ fn test_cov006_rmsnorm_gpu_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_size = 64u32;
     let epsilon = 1e-5f32;
@@ -197,7 +197,7 @@ fn test_cov006_rmsnorm_gpu_large() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_size = 512u32;
     let epsilon = 1e-6f32;
@@ -226,7 +226,7 @@ fn test_cov006_fused_residual_rmsnorm_gpu_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_size = 64u32;
     let epsilon = 1e-5f32;
@@ -266,7 +266,7 @@ fn test_cov006_fused_residual_rmsnorm_gpu_large() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_size = 256u32;
     let epsilon = 1e-5f32;
@@ -293,7 +293,7 @@ fn test_cov006_gelu_gpu_edge_values() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Test with edge values: very negative, zero, very positive
     let data = vec![-10.0f32, -5.0, -1.0, 0.0, 1.0, 5.0, 10.0, 100.0];
@@ -333,7 +333,7 @@ fn test_cov007_silu_gpu_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 256u32;
     let data: Vec<f32> = (0..n).map(|i| (i as f32 - 128.0) / 64.0).collect();
@@ -363,7 +363,7 @@ fn test_cov007_silu_gpu_large() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 1024u32;
     let data: Vec<f32> = (0..n).map(|i| (i as f32 - 512.0) / 256.0).collect();
@@ -379,7 +379,7 @@ fn test_cov007_gelu_async_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 256u32;
     let data: Vec<f32> = (0..n).map(|i| (i as f32 - 128.0) / 64.0).collect();
@@ -409,7 +409,7 @@ fn test_cov007_gelu_async_large() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 2048u32;
     let data: Vec<f32> = (0..n).map(|i| (i as f32 - 1024.0) / 512.0).collect();

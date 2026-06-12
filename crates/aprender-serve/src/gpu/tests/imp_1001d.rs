@@ -96,7 +96,7 @@ fn test_imp_1002b_cuda_scheduler_matmul() {
         return;
     }
 
-    let mut scheduler = CudaScheduler::new().expect("Failed to create CudaScheduler");
+    let mut scheduler = crate::cuda_scheduler_or_skip!();
 
     // Test same interface as HybridScheduler
     let a = vec![1.0f32; 16]; // 4x4
@@ -135,7 +135,7 @@ fn test_imp_1002c_cuda_scheduler_large_matmul() {
         return;
     }
 
-    let mut scheduler = CudaScheduler::new().expect("Failed to create CudaScheduler");
+    let mut scheduler = crate::cuda_scheduler_or_skip!();
 
     // Test with square matrices that are known to work: 64x64
     let m = 64;
@@ -210,7 +210,7 @@ fn test_imp_1002d_cuda_scheduler_no_m1_restriction() {
         return;
     }
 
-    let mut cuda_scheduler = CudaScheduler::new().expect("Failed to create CudaScheduler");
+    let mut cuda_scheduler = crate::cuda_scheduler_or_skip!();
     let mut hybrid_scheduler =
         HybridScheduler::with_threshold(1000).expect("Failed to create HybridScheduler");
 

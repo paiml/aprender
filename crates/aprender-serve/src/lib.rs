@@ -156,6 +156,10 @@
 #[macro_use]
 #[allow(unused_macros)]
 mod generated_contracts;
+// Test-only runtime-skip macros for portable CUDA tests (APR-MONO §S #1981).
+#[cfg(all(test, feature = "cuda"))]
+#[macro_use]
+mod test_cuda_macros;
 #[cfg(feature = "server")]
 pub mod api;
 /// Aprender .apr format support (PRIMARY inference format)
