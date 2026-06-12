@@ -1969,7 +1969,7 @@ playbook:
         // Only one step should have been executed
         assert_eq!(result.step_results.len(), 1);
         // Variable from second step should not exist
-        assert!(result.variables.get("should_not_exist").is_none());
+        assert!(!result.variables.contains_key("should_not_exist"));
     }
 
     #[test]

@@ -68,7 +68,9 @@ pub fn execute(index: &ContractIndex, params: &QueryParams) -> QueryOutput {
             {
                 std::path::Path::new(".")
             } else {
-                contracts_dir.parent().unwrap()
+                contracts_dir
+                    .parent()
+                    .expect("parent is Some: the is_none_or branch above handles None")
             };
             let extra = params.include_project.as_ref().map(std::path::Path::new);
             cross_project::CrossProjectIndex::build_with_extra(repo_root, extra)

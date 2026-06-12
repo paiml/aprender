@@ -23,6 +23,9 @@ rustdoc-args = ["--generate-link-to-definition"]
 
 [lints.rust]
 unsafe_code = "allow"
+# `internal_matrix_tests` gates the PMAT-018 disabled internal-test module
+# (src/matrix/tests/mod.rs). Declared here so it is a known cfg name.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(internal_matrix_tests)'] }
 
 
 [dependencies]

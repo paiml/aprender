@@ -113,10 +113,10 @@ fn run_app(stdout: &mut io::Stdout) -> Result<(), Box<dyn std::error::Error>> {
         stdout.flush()?;
 
         if let Event::Key(key) = event::read()? {
-            if key.kind == KeyEventKind::Press {
-                if handle_action(&mut app, input_handler.handle_key(key)) {
-                    break;
-                }
+            if key.kind == KeyEventKind::Press
+                && handle_action(&mut app, input_handler.handle_key(key))
+            {
+                break;
             }
         }
 

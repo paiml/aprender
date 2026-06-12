@@ -415,7 +415,7 @@ fn test_cpu_gpu_gqa_attention_parity_second_token() {
 /// Property: Softmax outputs sum to 1
 #[test]
 fn test_softmax_sum_property() {
-    let scores = vec![1.0f32, 2.0, 3.0, 4.0];
+    let scores = [1.0f32, 2.0, 3.0, 4.0];
 
     // Apply softmax
     let max_score = scores.iter().cloned().fold(f32::NEG_INFINITY, f32::max);

@@ -89,7 +89,7 @@ async fn falsify_crux_c_03_001_chat_completion_schema() {
         "FALSIFY-CRUX-C-03-001: created must be a positive integer, got {v}"
     );
     assert!(
-        v["model"].as_str().map_or(false, |s| !s.is_empty()),
+        v["model"].as_str().is_some_and(|s| !s.is_empty()),
         "FALSIFY-CRUX-C-03-001: model must be a non-empty string, got {v}"
     );
 

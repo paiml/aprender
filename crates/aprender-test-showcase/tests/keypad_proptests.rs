@@ -3,6 +3,7 @@
 //! Probar: Error prevention - Property tests catch edge cases that humans miss
 
 #![allow(clippy::unwrap_used)]
+#![allow(clippy::disallowed_methods)] // property test — unwrap acceptable
 
 use proptest::prelude::*;
 use showcase_calculator::wasm::{KeypadAction, WasmKeypad};

@@ -4,8 +4,8 @@
 
 #![allow(clippy::unwrap_used, clippy::disallowed_methods)]
 
-use presentar::widgets::{row::MainAxisAlignment, Button, Column, Text};
-use presentar::{Color, Constraints, RecordingCanvas, Rect, Size, Widget};
+use aprender_present_lib::widgets::{row::MainAxisAlignment, Button, Column, Text};
+use aprender_present_lib::{Color, Constraints, RecordingCanvas, Rect, Size, Widget};
 
 fn main() {
     println!("=== Presentar Hello World Example ===\n");

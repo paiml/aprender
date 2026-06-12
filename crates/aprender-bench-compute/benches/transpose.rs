@@ -13,7 +13,8 @@
 use aprender::autograd::Tensor;
 use aprender_bench_compute::deterministic_f32;
 use aprender_bench_compute::sizes::TRANSPOSE_SIZES;
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use std::hint::black_box;
 
 fn bench_transpose_aprender(c: &mut Criterion) {
     let mut group = c.benchmark_group("transpose_aprender");

@@ -57,6 +57,7 @@
 
 #![warn(missing_docs)]
 #![allow(clippy::doc_markdown)] // Allow citation names without backticks
+#![cfg_attr(test, allow(clippy::disallowed_methods))] // test assertions — unwrap acceptable
 
 pub mod builder;
 pub mod codegen;

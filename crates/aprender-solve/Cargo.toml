@@ -56,3 +56,4 @@ many_single_char_names = "allow"
 cast_lossless = "allow"
 cast_precision_loss = "allow"
 unreadable_literal = "allow"
+too_many_lines = "allow"  # ML / linear-algebra routines can be long (matches workspace policy)

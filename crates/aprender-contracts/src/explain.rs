@@ -270,6 +270,11 @@ pub fn explain_contract_markdown(
 }
 
 /// Generate a JSON explanation of the contract.
+// The `serde_json::json!` macro expands to internal `.unwrap()` calls on
+// infallible `serde_json::Value` construction. Those are not author-written
+// unwraps and cannot fail here, so the production `disallowed_methods` ban does
+// not apply to them.
+#[allow(clippy::disallowed_methods)]
 pub fn explain_contract_json(
     contract: &Contract,
     stem: &str,

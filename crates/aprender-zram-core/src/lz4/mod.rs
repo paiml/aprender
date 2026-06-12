@@ -291,13 +291,9 @@ mod tests {
 
         // Verify each counter is on separate cache line
         for i in 0..counters.len() - 1 {
-            let addr1 = &counters[i].counter as *const _ as usize;
-            let addr2 = &counters[i + 1].counter as *const _ as usize;
-            let diff = if addr2 > addr1 {
-                addr2 - addr1
-            } else {
-                addr1 - addr2
-            };
+            let addr1 = &raw const counters[i].counter as usize;
+            let addr2 = &raw const counters[i + 1].counter as usize;
+            let diff = addr2.abs_diff(addr1);
             assert!(
                 diff >= 64,
                 "Counters should be >= 64 bytes apart, got {diff}"

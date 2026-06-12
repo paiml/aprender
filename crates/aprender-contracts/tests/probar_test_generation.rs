@@ -3,6 +3,10 @@
 //! These tests verify that the full pipeline (parse → generate) produces
 //! correct probar property tests mapping obligation types to test patterns.
 
+// Test/example/bench binary: `.unwrap()` is idiomatic here; the lib`s
+// cfg(test) allow does not reach this separate crate.
+#![allow(clippy::disallowed_methods)]
+
 use std::path::Path;
 
 use provable_contracts::probar_gen::generate_probar_tests;

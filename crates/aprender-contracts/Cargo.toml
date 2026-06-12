@@ -41,3 +41,6 @@ harness = false
 
 [lints.rust]
 unsafe_code = "allow"
+# `cfg(kani)` is set by the Kani model checker harness (`cargo kani`), not by a
+# Cargo feature. Declare it so it is a known cfg name under normal builds.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }

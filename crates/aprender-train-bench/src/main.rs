@@ -1,5 +1,10 @@
 //! entrenar-bench CLI entry point.
 
+// The `serde_json::json!` macro expands to code containing `.unwrap()`, which
+// trips clippy::disallowed_methods on the macro invocation site even though no
+// author-written unwrap exists. Scope the allow to this benchmarking binary.
+#![allow(clippy::disallowed_methods)]
+
 use clap::{Parser, Subcommand};
 use entrenar_bench::{
     cost::{generate_sample_points, Constraints, CostModel, CostPerformanceAnalysis},

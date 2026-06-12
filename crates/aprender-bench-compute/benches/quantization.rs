@@ -20,7 +20,8 @@
 use aprender::format::quantize::{dequantize, quantize, QuantType};
 use aprender_bench_compute::deterministic_f32;
 use aprender_bench_compute::sizes::QUANT_SIZES;
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use std::hint::black_box;
 
 fn bench_quantize_q8_0(c: &mut Criterion) {
     let mut group = c.benchmark_group("quantize_Q8_0");

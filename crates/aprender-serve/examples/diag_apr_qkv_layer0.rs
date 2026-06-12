@@ -83,12 +83,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Path A: F32 fused qkv via helpers::f32_matmul
         // Replicate inline
         let mut qkv_f32 = vec![0.0f32; qkv_dim];
-        for o in 0..qkv_dim {
-            let mut acc = 0.0f32;
-            for i in 0..hidden_dim {
-                acc += synthetic_input[i] * layer0.qkv_weight[o * hidden_dim + i];
-            }
-            qkv_f32[o] = acc;
+        for (o, out) in qkv_f32.iter_mut().enumerate() {
+            let row = &layer0.qkv_weight[o * hidden_dim..(o + 1) * hidden_dim];
+            *out = synthetic_input
+                .iter()
+                .zip(row.iter())
+                .map(|(x, w)| x * w)
+                .sum();
         }
         println!("\nPath A: F32 fused qkv (matches forward path):");
         stats("Q-out [0..3584]", &qkv_f32[..hidden_dim]);

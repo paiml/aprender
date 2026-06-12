@@ -490,7 +490,7 @@ fn test_pb160_cuda_executor_softmax_property() {
         // Test various dimensions - focus on COVERAGE not numerical correctness
         // Known issue: softmax kernel has warp reduction artifacts for small dims
         for dim in [1024, 2048, 4096, 8192] {
-            let mut data: Vec<f32> = (0..dim).map(|_| rng.gen_range(-5.0..5.0)).collect();
+            let mut data: Vec<f32> = (0..dim).map(|_| rng.random_range(-5.0..5.0)).collect();
 
             let result = executor.softmax(&mut data);
             assert!(result.is_ok(), "softmax failed for dim={}", dim);

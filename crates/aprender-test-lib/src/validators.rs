@@ -2578,11 +2578,9 @@ mod tests {
             pixels.push((i % 4) as u8); // Only 4 unique values = low entropy
         }
         let content = ScreenshotContent::classify(&pixels);
-        match content {
-            ScreenshotContent::UiDominated { entropy } => {
-                assert!(entropy < 3.0);
-            }
-            _ => {} // Other classifications possible
+        // Other classifications possible
+        if let ScreenshotContent::UiDominated { entropy } = content {
+            assert!(entropy < 3.0);
         }
     }
 

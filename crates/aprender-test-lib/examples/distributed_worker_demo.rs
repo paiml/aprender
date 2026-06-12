@@ -7,6 +7,7 @@
 //! - PUB/SUB coordination
 //!
 //! Run with: cargo run --example distributed_worker_demo -p jugar-probar
+#![allow(clippy::disallowed_methods)] // example harness — unwrap acceptable
 
 use jugar_probar::brick::distributed::{
     Backend, BackendSelector, BrickCoordinator, BrickDataTracker, BrickInput, BrickMessage,

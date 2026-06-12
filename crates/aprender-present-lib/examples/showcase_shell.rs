@@ -5,7 +5,7 @@
 //!
 //! Run with: cargo run -p presentar --example `showcase_shell`
 
-use presentar::browser::ShellAutocomplete;
+use aprender_present_lib::browser::ShellAutocomplete;
 
 fn main() {
     let ac = ShellAutocomplete::new().expect("Failed to load model");

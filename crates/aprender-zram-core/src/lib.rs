@@ -54,6 +54,8 @@
 #![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::large_stack_arrays)]
 #![allow(unused_assignments)]
+#![cfg_attr(test, allow(clippy::disallowed_methods))] // test assertions — unwrap acceptable
+#![cfg_attr(test, allow(clippy::uninlined_format_args))]
 
 pub mod benchmark;
 pub mod compat;

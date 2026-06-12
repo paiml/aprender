@@ -4,6 +4,10 @@
 //! cargo run --example query
 //! ```
 
+// Test/example/bench binary: `.unwrap()` is idiomatic here; the lib`s
+// cfg(test) allow does not reach this separate crate.
+#![allow(clippy::disallowed_methods)]
+
 use std::path::Path;
 
 use provable_contracts::query::{self, ContractIndex, QueryParams};

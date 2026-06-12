@@ -63,12 +63,12 @@ fn falsify_h1_simd_dot_speedup() {
 #[test]
 fn falsify_h2_numerical_accuracy() {
     use rand::Rng;
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     for _ in 0..100 {
-        let size = rng.gen_range(64..2048);
-        let a: Vec<f32> = (0..size).map(|_| rng.gen_range(-10.0..10.0)).collect();
-        let b: Vec<f32> = (0..size).map(|_| rng.gen_range(-10.0..10.0)).collect();
+        let size = rng.random_range(64..2048);
+        let a: Vec<f32> = (0..size).map(|_| rng.random_range(-10.0..10.0)).collect();
+        let b: Vec<f32> = (0..size).map(|_| rng.random_range(-10.0..10.0)).collect();
 
         let scalar_result = scalar_dot(&a, &b);
         let simd_result = simd_dot(&a, &b);
@@ -103,15 +103,15 @@ fn falsify_h2_numerical_accuracy() {
 #[test]
 fn falsify_h3_attention_correctness() {
     use rand::Rng;
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     let head_dim = 64;
     let num_positions = 50;
 
     for _ in 0..10 {
-        let q: Vec<f32> = (0..head_dim).map(|_| rng.gen_range(-1.0..1.0)).collect();
+        let q: Vec<f32> = (0..head_dim).map(|_| rng.random_range(-1.0..1.0)).collect();
         let keys: Vec<Vec<f32>> = (0..num_positions)
-            .map(|_| (0..head_dim).map(|_| rng.gen_range(-1.0..1.0)).collect())
+            .map(|_| (0..head_dim).map(|_| rng.random_range(-1.0..1.0)).collect())
             .collect();
 
         // Compute attention scores both ways
@@ -141,11 +141,11 @@ fn falsify_h3_attention_correctness() {
 #[test]
 fn falsify_h4_axpy_correctness() {
     use rand::Rng;
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     for size in [64, 128, 256, 512, 1024] {
-        let weight: f32 = rng.gen_range(0.1..2.0);
-        let val: Vec<f32> = (0..size).map(|_| rng.gen_range(-10.0..10.0)).collect();
+        let weight: f32 = rng.random_range(0.1..2.0);
+        let val: Vec<f32> = (0..size).map(|_| rng.random_range(-10.0..10.0)).collect();
 
         let mut scalar_out = vec![0.0f32; size];
         let mut simd_out = vec![0.0f32; size];

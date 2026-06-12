@@ -503,17 +503,17 @@ mod determinism_tests {
     /// The SHIP-007 root cause must be at a different boundary:
     /// - H2b: Layer-3-specific upstream divergence (gate or up at L3)
     /// - H2c: Quantization dequant alignment differs at certain layer
-    ///        configs
+    ///   configs
     /// - H2d (NEW post-falsification): APR↔GGUF differ in the
-    ///        QUANTIZED matvec path (Q4K dequant + activation
-    ///        quantization to Q8K + fused matvec) NOT in F32-vs-F32
-    ///        kernels. APR's f32_matmul takes F32 weights (already
-    ///        dequantized at load time); GGUF's
-    ///        fused_q4k_q8k_parallel_matvec_into takes raw Q4K bytes
-    ///        + Q8K-quantized activations and fuses dequant +
-    ///        matvec. Different reduction order at the QUANTIZED-
-    ///        kernel level (which neither this test nor §28 falsifier
-    ///        exercises) is the remaining viable hypothesis.
+    ///   QUANTIZED matvec path (Q4K dequant + activation
+    ///   quantization to Q8K + fused matvec) NOT in F32-vs-F32
+    ///   kernels. APR's f32_matmul takes F32 weights (already
+    ///   dequantized at load time); GGUF's
+    ///   fused_q4k_q8k_parallel_matvec_into takes raw Q4K bytes
+    ///   plus Q8K-quantized activations and fuses dequant and
+    ///   matvec. Different reduction order at the QUANTIZED-
+    ///   kernel level (which neither this test nor §28 falsifier
+    ///   exercises) is the remaining viable hypothesis.
     ///
     /// REGRESSION-TEST INTENT:
     ///

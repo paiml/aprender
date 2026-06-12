@@ -4,9 +4,6 @@
 
 #[cfg(all(test, feature = "cuda"))]
 mod tests {
-    use realizar::apr_transformer::{AprTransformer, AprTransformerConfig, AprTransformerLayer};
-    use realizar::gpu::adapters::AprF32ToGpuAdapter;
-
     fn l2_norm(v: &[f32]) -> f32 {
         v.iter().map(|x| x * x).sum::<f32>().sqrt()
     }

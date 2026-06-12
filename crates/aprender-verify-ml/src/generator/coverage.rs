@@ -1067,6 +1067,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)] // 3.14 is arbitrary test data, not an approximation of PI
     fn test_extract_features_literals() {
         let int_features = NautilusGenerator::extract_features(&PythonNode::IntLit(42));
         assert!(int_features.contains(&"literal".to_string()));
@@ -1490,11 +1491,11 @@ mod tests {
             value: Box::new(PythonNode::IntLit(1)),
         };
 
-        // Mutate multiple times to exercise different mutation types
+        // Mutate multiple times to exercise different mutation types.
+        // mutate_ast may or may not produce a mutation; this is a smoke test
+        // that the call does not panic across repeated invocations.
         for _ in 0..10 {
-            let mutated = gen.mutate_ast(&ast);
-            // Should produce some mutation
-            assert!(mutated.is_some() || true); // May or may not mutate
+            let _mutated = gen.mutate_ast(&ast);
         }
     }
 
@@ -1531,6 +1532,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)] // 3.14 is arbitrary test data, not an approximation of PI
     fn test_mutate_literal() {
         let mut gen = NautilusGenerator::new(Language::Python, 2).with_seed(42);
 

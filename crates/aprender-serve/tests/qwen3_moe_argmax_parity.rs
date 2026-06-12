@@ -23,11 +23,11 @@
 //!   1. M32d.2 (`qwen3_moe_parity.rs::f_qw3_moe_parity_001_cosine_vs_hf_fp16`)
 //!      asserts `cos_sim(apr_logits, hf_fp16_logits) > 0.99`.
 //!      → apr's argmax ≈ HF FP16's argmax (any cosine > 0.99 over a
-//!        151936-dim logit vector forces argmax agreement except in
-//!        pathological near-tie cases).
+//!      151936-dim logit vector forces argmax agreement except in
+//!      pathological near-tie cases).
 //!   2. THIS test asserts `llama_cpp_first_decoded_token == hf_fp16.argmax_text`.
 //!      → llama.cpp Q4_K's argmax equals HF FP16's argmax at the decoded-
-//!        text level.
+//!      text level.
 //!   3. Composing (1) and (2): apr ≈ HF ≈ llama.cpp — the contract gate.
 //!
 //! M32d.4 (DRAFT → ACTIVE_RUNTIME) requires both axes to discharge; this

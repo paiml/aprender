@@ -186,7 +186,7 @@ fn extract_real_q4k_matvec_bytes(
         }
         let in_dim = t.dims[0] as usize;
         let total_rows = t.dims[1..].iter().product::<u64>() as usize;
-        if in_dim % Q4K_SUPER_BLOCK_SIZE != 0 || total_rows < OUT_DIM_TEST {
+        if !in_dim.is_multiple_of(Q4K_SUPER_BLOCK_SIZE) || total_rows < OUT_DIM_TEST {
             continue;
         }
 

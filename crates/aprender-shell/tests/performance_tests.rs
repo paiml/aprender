@@ -10,9 +10,21 @@
 //! Toyota Way Principle: *Genchi Genbutsu* (Go and see) - Understand performance
 //! at the source through direct measurement.
 
+#![allow(clippy::disallowed_methods)] // Tests can use unwrap/expect for simplicity
+
+use std::path::PathBuf;
 use std::process::Command;
 use std::time::{Duration, Instant};
 use tempfile::NamedTempFile;
+
+/// Resolve the path to the `aprender-shell` CLI binary for end-to-end tests.
+///
+/// The binary lives outside this library-only crate, so resolve it via
+/// `assert_cmd` (matching the other integration tests) instead of the
+/// `CARGO_BIN_EXE_*` env var, which is only defined for in-crate bin targets.
+fn shell_bin() -> PathBuf {
+    assert_cmd::cargo::cargo_bin("aprender-shell")
+}
 
 /// Helper to create a test model
 fn create_test_model() -> NamedTempFile {
@@ -27,7 +39,7 @@ fn create_test_model() -> NamedTempFile {
 
     let model = NamedTempFile::new().expect("create model file");
 
-    let status = Command::new(env!("CARGO_BIN_EXE_aprender-shell"))
+    let status = Command::new(shell_bin())
         .args([
             "train",
             history.path().to_str().unwrap(),
@@ -54,7 +66,7 @@ fn test_suggest_latency_p99() {
 
     for _ in 0..100 {
         let start = Instant::now();
-        let output = Command::new(env!("CARGO_BIN_EXE_aprender-shell"))
+        let output = Command::new(shell_bin())
             .args(["suggest", "git ", "--model", model_path])
             .output()
             .expect("Failed to run suggest");
@@ -91,7 +103,7 @@ fn test_model_load_latency_cold() {
 
     // Drop filesystem cache by using a fresh path each time
     let start = Instant::now();
-    let output = Command::new(env!("CARGO_BIN_EXE_aprender-shell"))
+    let output = Command::new(shell_bin())
         .args(["stats", "--model", model_path])
         .output()
         .expect("Failed to run stats");
@@ -116,7 +128,7 @@ fn test_suggest_warm_latency() {
     let model_path = model.path().to_str().unwrap();
 
     // Warm up (first call loads model)
-    let _ = Command::new(env!("CARGO_BIN_EXE_aprender-shell"))
+    let _ = Command::new(shell_bin())
         .args(["suggest", "git ", "--model", model_path])
         .output()
         .expect("warmup failed");
@@ -125,7 +137,7 @@ fn test_suggest_warm_latency() {
     let mut latencies = Vec::with_capacity(50);
     for _ in 0..50 {
         let start = Instant::now();
-        let output = Command::new(env!("CARGO_BIN_EXE_aprender-shell"))
+        let output = Command::new(shell_bin())
             .args(["suggest", "cargo ", "--model", model_path])
             .output()
             .expect("suggest failed");
@@ -161,16 +173,12 @@ fn test_syscall_budget() {
 
     let model = create_test_model();
     let model_path = model.path().to_str().unwrap();
+    let bin = shell_bin();
+    let bin_path = bin.to_str().expect("binary path is valid UTF-8");
 
     let output = Command::new("renacer")
         .args([
-            "-c",
-            "--",
-            env!("CARGO_BIN_EXE_aprender-shell"),
-            "suggest",
-            "git ",
-            "--model",
-            model_path,
+            "-c", "--", bin_path, "suggest", "git ", "--model", model_path,
         ])
         .output()
         .expect("renacer failed");
@@ -217,6 +225,8 @@ fn test_no_anomalies() {
 
     let model = create_test_model();
     let model_path = model.path().to_str().unwrap();
+    let bin = shell_bin();
+    let bin_path = bin.to_str().expect("binary path is valid UTF-8");
 
     let output = Command::new("renacer")
         .args([
@@ -224,7 +234,7 @@ fn test_no_anomalies() {
             "--anomaly-threshold",
             "3.0",
             "--",
-            env!("CARGO_BIN_EXE_aprender-shell"),
+            bin_path,
             "suggest",
             "git status",
             "--model",
@@ -254,7 +264,7 @@ fn test_memory_bounded() {
 
     // Run 100 suggestions and check memory doesn't grow
     for i in 0..100 {
-        let output = Command::new(env!("CARGO_BIN_EXE_aprender-shell"))
+        let output = Command::new(shell_bin())
             .args(["suggest", "git ", "--model", model_path])
             .output()
             .expect("suggest failed");
@@ -285,7 +295,7 @@ fn test_security_filter_overhead() {
 
         for _ in 0..20 {
             let start = Instant::now();
-            let _ = Command::new(env!("CARGO_BIN_EXE_aprender-shell"))
+            let _ = Command::new(shell_bin())
                 .args(["suggest", prefix, "--model", model_path])
                 .output()
                 .expect("suggest failed");

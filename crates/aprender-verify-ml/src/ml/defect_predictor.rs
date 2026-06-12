@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use crate::ml::CommitFeatures;
 
 /// Defect category based on PAIML repo analysis
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum DefectCategory {
     /// AST transformation errors (40-62% of defects)
     AstTransform,
@@ -30,13 +30,8 @@ pub enum DefectCategory {
     /// Standard library mapping errors
     StdlibMapping,
     /// Other language-specific errors
+    #[default]
     Other,
-}
-
-impl Default for DefectCategory {
-    fn default() -> Self {
-        Self::Other
-    }
 }
 
 impl DefectCategory {

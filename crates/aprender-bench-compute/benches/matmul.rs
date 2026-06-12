@@ -15,7 +15,8 @@
 
 use aprender_bench_compute::sizes::{MATMUL_SIZES, MATVEC_SIZES};
 use aprender_bench_compute::{deterministic_ndarray, deterministic_tensor};
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use std::hint::black_box;
 
 fn bench_matmul_aprender(c: &mut Criterion) {
     let mut group = c.benchmark_group("matmul_aprender");

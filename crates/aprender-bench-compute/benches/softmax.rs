@@ -15,7 +15,8 @@
 use aprender::nn::F as NnF;
 use aprender_bench_compute::sizes::SOFTMAX_SIZES;
 use aprender_bench_compute::{deterministic_f32, deterministic_ndarray_1d};
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use std::hint::black_box;
 
 fn bench_softmax_aprender(c: &mut Criterion) {
     let mut group = c.benchmark_group("softmax_aprender");

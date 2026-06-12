@@ -6,6 +6,10 @@
 //! 28 tests total: FALSIFY-ACT-001..006, FALSIFY-SI-001..006,
 //! FALSIFY-SG-001..006, FALSIFY-CE-001..006, FALSIFY-RP-001..004.
 
+// Integration-test binary (includes proptest! macros that unwrap internally):
+// `.unwrap()` is idiomatic here and the lib`s cfg(test) allow does not reach it.
+#![allow(clippy::disallowed_methods)]
+
 mod common;
 
 use proptest::prelude::*;

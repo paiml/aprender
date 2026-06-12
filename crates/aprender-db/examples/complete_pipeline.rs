@@ -204,11 +204,11 @@ fn create_sample_data(num_rows: usize) -> Result<RecordBatch, Box<dyn std::error
         Field::new("score", DataType::Float64, false),
     ]);
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     let user_ids: Vec<i32> = (0..num_rows).map(|i| i as i32).collect();
     let usernames: Vec<String> = (0..num_rows).map(|i| format!("user_{i}")).collect();
-    let scores: Vec<f64> = (0..num_rows).map(|_| rng.gen_range(0.0..1000.0)).collect();
+    let scores: Vec<f64> = (0..num_rows).map(|_| rng.random_range(0.0..1000.0)).collect();
 
     let batch = RecordBatch::try_new(
         Arc::new(schema),

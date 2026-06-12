@@ -63,15 +63,20 @@ use super::utils::verbose;
 pub struct CudaInitError {
     /// The initialization error
     pub error: RealizarError,
-    /// The unconsumed model, returned for CPU fallback
-    model: OwnedQuantizedModel,
+    /// The unconsumed model, returned for CPU fallback.
+    ///
+    /// Boxed to keep the `Err` variant small (`clippy::result_large_err`):
+    /// `OwnedQuantizedModel` is ~8 KB by value, which would bloat every
+    /// `Result<_, CudaInitError>` on the stack. Boxing is a single move (no
+    /// clone), preserving the cheap CPU-fallback recovery semantics.
+    model: Box<OwnedQuantizedModel>,
 }
 
 impl CudaInitError {
     /// Extract the unconsumed model for CPU fallback
     #[must_use]
     pub fn into_model(self) -> OwnedQuantizedModel {
-        self.model
+        *self.model
     }
 }
 
@@ -167,7 +172,7 @@ impl OwnedQuantizedModelCuda {
                     missing_ops: missing_names.join(", "),
                     suggestion: "Model will use CPU inference. To add GPU support, implement the missing kernels in trueno.".to_string(),
                 },
-                model,
+                model: Box::new(model),
             });
         }
         Ok(model)
@@ -184,7 +189,7 @@ impl OwnedQuantizedModelCuda {
         if let Err(e) = self.preload_weights_gpu() {
             return Err(CudaInitError {
                 error: e,
-                model: self.into_model(),
+                model: Box::new(self.into_model()),
             });
         }
 
@@ -288,7 +293,7 @@ impl OwnedQuantizedModelCuda {
             if let Err(e) = parity_gate(&mut self) {
                 return Err(CudaInitError {
                     error: e,
-                    model: self.into_model(),
+                    model: Box::new(self.into_model()),
                 });
             }
         }
@@ -316,7 +321,7 @@ impl OwnedQuantizedModelCuda {
         ) {
             return Err(CudaInitError {
                 error: crate::contract_gate::gate_error(e),
-                model,
+                model: Box::new(model),
             });
         }
 
@@ -331,7 +336,7 @@ impl OwnedQuantizedModelCuda {
                         operation: "CudaExecutor::new".to_string(),
                         reason: format!("CUDA initialization failed: {e}"),
                     },
-                    model,
+                    model: Box::new(model),
                 });
             },
         };
@@ -356,7 +361,7 @@ impl OwnedQuantizedModelCuda {
                     operation: "init_kv_cache_gpu".to_string(),
                     reason: format!("GPU KV cache initialization failed: {e}"),
                 },
-                model,
+                model: Box::new(model),
             });
         }
 

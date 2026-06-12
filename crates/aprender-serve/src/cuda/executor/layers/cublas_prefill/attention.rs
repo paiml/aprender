@@ -1207,7 +1207,7 @@ DONE_NORM:
             for (qtype, ptr, n, k) in weights {
                 if ptr != 0
                     && (qtype == WeightQuantType::Q4K || qtype == WeightQuantType::Q6K)
-                    && self.fp16_weight_cache.get(&ptr).is_none()
+                    && !self.fp16_weight_cache.contains_key(&ptr)
                 {
                     self.get_or_cache_fp16_weight(qtype, ptr, n, k)?;
                     cached += 1;
@@ -1222,7 +1222,7 @@ DONE_NORM:
         {
             let lm_ptr = self.lm_head_ptr;
             let lm_qtype = self.lm_head_qtype;
-            if self.fp16_weight_cache.get(&lm_ptr).is_none() {
+            if !self.fp16_weight_cache.contains_key(&lm_ptr) {
                 self.get_or_cache_fp16_weight(lm_qtype, lm_ptr, vocab_size, hidden_dim)?;
                 cached += 1;
             }

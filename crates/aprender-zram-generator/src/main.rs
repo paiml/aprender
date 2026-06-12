@@ -6,6 +6,7 @@
 #![deny(missing_docs)]
 #![deny(clippy::panic)]
 #![warn(clippy::all, clippy::pedantic)]
+#![cfg_attr(test, allow(clippy::disallowed_methods))] // test assertions — unwrap acceptable
 
 mod config;
 mod fstab;

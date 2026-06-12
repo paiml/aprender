@@ -1,7 +1,8 @@
 #![allow(clippy::expect_used, clippy::unwrap_used, missing_docs)]
 //! Benchmark for histogram rendering.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use std::hint::black_box;
 use trueno_viz::prelude::*;
 
 fn histogram_benchmark(c: &mut Criterion) {

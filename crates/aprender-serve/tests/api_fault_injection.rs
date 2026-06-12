@@ -220,7 +220,7 @@ fn test_faulty_reader_with_gguf_header() {
     use realizar::gguf::GGUFModel;
 
     // Create valid GGUF header
-    let mut data = vec![0u8; 24];
+    let mut data = [0u8; 24];
     data[0..4].copy_from_slice(&0x4655_4747u32.to_le_bytes()); // GGUF magic
     data[4..8].copy_from_slice(&3u32.to_le_bytes()); // version 3
 
@@ -331,7 +331,7 @@ fn test_gguf_from_bytes_too_small() {
 #[test]
 fn test_gguf_from_bytes_wrong_magic() {
     use realizar::gguf::GGUFModel;
-    let mut data = vec![0u8; 24];
+    let mut data = [0u8; 24];
     data[0..4].copy_from_slice(&0x12345678u32.to_le_bytes());
     let result = GGUFModel::from_bytes(&data);
     assert!(result.is_err());
@@ -340,7 +340,7 @@ fn test_gguf_from_bytes_wrong_magic() {
 #[test]
 fn test_gguf_from_bytes_wrong_version() {
     use realizar::gguf::GGUFModel;
-    let mut data = vec![0u8; 24];
+    let mut data = [0u8; 24];
     data[0..4].copy_from_slice(&0x4655_4747u32.to_le_bytes()); // GGUF magic
     data[4..8].copy_from_slice(&1u32.to_le_bytes()); // version 1 (unsupported)
     let result = GGUFModel::from_bytes(&data);

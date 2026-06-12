@@ -640,6 +640,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::clone_on_copy)] // deliberately exercises Clone on a Copy type
     fn test_phase_clone() {
         let phase = Phase::Target;
         let cloned = phase.clone();

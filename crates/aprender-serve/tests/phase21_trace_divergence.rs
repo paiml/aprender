@@ -520,12 +520,12 @@ mod tests {
         eprintln!("  3. GPU's forward_block_idx has wrong dimension ordering");
 
         // Let's compute a small manual test
-        let a = vec![1.0f32, 2.0, 3.0, 4.0]; // [1, 4]
-        let b = vec![
+        let a = [1.0f32, 2.0, 3.0, 4.0]; // [1, 4]
+        let b = [
             1.0f32, 0.0, 0.0, 1.0, // [4, 2] stored row-major
             2.0, 0.0, 0.0, 2.0,
         ];
-        let b_transposed = vec![
+        let b_transposed = [
             1.0f32, 2.0, // [2, 4] stored row-major
             0.0, 0.0, 0.0, 0.0, 1.0, 2.0,
         ];

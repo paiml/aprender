@@ -5,6 +5,7 @@
 //! - The zram module to be loaded
 //!
 //! Run with: sudo cargo test --test zram_integration -- --nocapture
+#![allow(clippy::disallowed_methods)] // integration test — unwrap acceptable
 
 use trueno_zram_core::zram::{SysfsOps, ZramConfig, ZramDevice, ZramOps};
 use trueno_zram_core::{Algorithm, CompressorBuilder, PAGE_SIZE};

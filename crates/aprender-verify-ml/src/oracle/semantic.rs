@@ -563,7 +563,7 @@ mod tests {
     #[test]
     fn test_complexity_ordering() {
         // Just verify these compile and are distinct
-        let complexities = vec![
+        let complexities = [
             Complexity::Constant,
             Complexity::Logarithmic,
             Complexity::Linear,

@@ -22,7 +22,14 @@ fn benchmark_coverage_guided_generation(c: &mut Criterion) {
     c.bench_function("coverage_guided_100_samples", |b| {
         b.iter(|| {
             generator
-                .generate(SamplingStrategy::CoverageGuided, 100)
+                .generate(
+                    SamplingStrategy::CoverageGuided {
+                        coverage_map: None,
+                        max_depth: 3,
+                        seed: 42,
+                    },
+                    100,
+                )
                 .expect("generation should succeed")
         });
     });

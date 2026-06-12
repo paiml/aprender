@@ -119,7 +119,9 @@ impl GpuProfile {
         let fp8_decode = Self::detect_fp8_decode(fp8_prefill, cc);
         let w4a16_interleaved = Self::detect_w4a16_interleaved(cc);
 
-        let profile = Self {
+        // GH-611: Suppressed — was noisy in non-verbose mode
+
+        Self {
             q4k,
             q6k,
             mwv_warps,
@@ -131,11 +133,7 @@ impl GpuProfile {
             w4a16_interleaved,
             sm_target,
             cc,
-        };
-
-        // GH-611: Suppressed — was noisy in non-verbose mode
-
-        profile
+        }
     }
 
     /// Q4K variant: env var override, else HwDp4a on sm_75+, else Mwv.

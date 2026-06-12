@@ -18,11 +18,13 @@ impl CudaExecutor {
     ) -> Result<(), GpuError> {
         // realizr#220 DIAGNOSTIC: Force sequential M=1 GEMV for all qtypes
         // to isolate whether batched GEMV kernel codegen is the root cause.
-        if qtype == WeightQuantType::Q4K && false {
+        // Flip this to `true` to re-enable the batched Q4K/Q6K GEMV paths.
+        const USE_BATCHED_GEMV: bool = false;
+        if USE_BATCHED_GEMV && qtype == WeightQuantType::Q4K {
             self.batched_q4k_gemv_into(
                 weight_ptr, packed_input, packed_output, m, n_per_seq, k_per_seq,
             )
-        } else if qtype == WeightQuantType::Q6K && false {
+        } else if USE_BATCHED_GEMV && qtype == WeightQuantType::Q6K {
             self.batched_q6k_gemv_into(
                 weight_ptr, packed_input, packed_output, m, n_per_seq, k_per_seq,
             )

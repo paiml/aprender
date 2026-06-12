@@ -1069,8 +1069,8 @@ pub fn forward_token_apr_q4k(
     output_norm_weight: &[f32],
     layer_norm_weights: &[(Vec<f32>, Vec<f32>, Option<Vec<f32>>, Option<Vec<f32>>)],
     layer_qkv_biases: &[(Option<Vec<f32>>, Option<Vec<f32>>, Option<Vec<f32>>)],
-    kv_cache_k: &mut Vec<Vec<f32>>, // [num_layers][kv_len * kv_dim]
-    kv_cache_v: &mut Vec<Vec<f32>>,
+    kv_cache_k: &mut [Vec<f32>], // [num_layers][kv_len * kv_dim]
+    kv_cache_v: &mut [Vec<f32>],
     token_id: u32,
     position: usize,
 ) -> Result<Vec<f32>> {

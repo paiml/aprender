@@ -246,6 +246,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::default_constructed_unit_structs)] // verifies Default impl
     fn test_bash_grammar_default() {
         let grammar = BashGrammar::default();
         assert_eq!(grammar.language(), Language::Bash);

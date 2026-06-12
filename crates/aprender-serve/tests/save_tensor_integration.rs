@@ -188,7 +188,7 @@ fn parse_header_on_truncated_file_errors_via_public_api() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let path = tmp.path().join("corrupted.bin");
     // Write only 8 bytes — less than the 12-byte header.
-    std::fs::write(&path, &[b'A', b'P', b'R', b'T', 0, 0, 0, 0]).expect("write partial");
+    std::fs::write(&path, [b'A', b'P', b'R', b'T', 0, 0, 0, 0]).expect("write partial");
 
     let bytes = std::fs::read(&path).expect("read");
     let result = parse_header(&bytes);

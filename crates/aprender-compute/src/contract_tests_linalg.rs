@@ -275,7 +275,7 @@ mod tests {
         let c = trueno_sparse::spgemm(&a, &b).unwrap();
         let c_dense = c.to_dense();
 
-        let expected = vec![6.0, 4.0, 3.0, 6.0];
+        let expected = [6.0, 4.0, 3.0, 6.0];
         for i in 0..4 {
             assert!(
                 (c_dense[i] - expected[i]).abs() < 1e-5,

@@ -125,8 +125,9 @@ mod tests {
     #[test]
     fn output_path_appends_bin_extension() {
         let p = output_path(Path::new("d"), 0, "ffn_swigl");
-        assert!(
-            p.to_str().expect("utf8").ends_with(".bin"),
+        assert_eq!(
+            p.extension().and_then(|e| e.to_str()),
+            Some("bin"),
             "all save-tensor files must use .bin extension"
         );
     }

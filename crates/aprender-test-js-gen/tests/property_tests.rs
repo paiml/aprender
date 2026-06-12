@@ -7,6 +7,7 @@
 //! - McKeeman (1998) "Differential Testing for Software"
 
 #![allow(clippy::unwrap_used)]
+#![allow(clippy::disallowed_methods)] // property test — unwrap acceptable
 
 use probar_js_gen::prelude::*;
 use proptest::prelude::*;

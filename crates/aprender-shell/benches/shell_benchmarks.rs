@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used)] // Benchmarks can use unwrap() for simplicity
+#![allow(clippy::disallowed_methods)] // Benchmarks can use unwrap()/expect() for simplicity
 //! aprender-shell Performance Benchmarks
 //!
 //! Modeled after bashrs benchmark patterns for consistency.

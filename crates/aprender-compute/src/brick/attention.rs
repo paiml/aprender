@@ -1039,7 +1039,7 @@ mod tests {
         let q: Vec<f32> = (0..16).map(|i| (i as f32) * 0.37).collect();
         let k: Vec<f32> = (0..32).map(|i| (i as f32) * 0.13).collect();
         // All 4 V rows are identical: [1, 2, 3, 4, 5, 6, 7, 8]
-        let v_row = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        let v_row = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         let v: Vec<f32> = v_row.iter().copied().cycle().take(32).collect();
 
         let output = op.execute((q, k, v), Backend::Scalar).unwrap();
