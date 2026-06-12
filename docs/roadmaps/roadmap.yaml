@@ -1,3 +1,33 @@
+# ============================================================================
+# CAMPAIGN PRIORITY — EV re-prioritization 2026-06-12 (highest-EV across ENTIRE
+# roadmap, not sklearn-parity breadth). Full analysis + chain-of-thought:
+#   docs/specifications/campaign-ev-reprioritization-2026-06-12.md
+# Thesis: stop manufacturing sklearn-PARITY breadth (replace half, ~0 marginal
+# EV); start manufacturing BEATS-as-CI-artifacts. EV = impact*falsifiability*
+# autonomy / effort; unattended+CPU-only campaign => GPU-gated work is operator-track.
+#
+# AUTONOMOUS TRACK (ship unattended, CPU/CI-falsifiable, EV-ordered):
+#   1. PMAT-741  BeatBenchmark ContractKind + validator + CI runner (EV 92, force multiplier)
+#   2. PMAT-741  pilot: beat_sklearn_iris.rs -> contracts/beat-baselines.yaml
+#   3. PMAT-725  PyTorch-CPU training-time beat harness (+ PMAT-724 finite-diff grad gate) (EV 88)
+#   4. PMAT-722  sklearn speed-beat harness; capture matmul 1.78x + matvec 1.44x as CI gates (EV 85)
+#   5. PMAT-577  CRUX-E-19 perplexity-per-bit-budget eval (EV 78)
+#   6. PMAT-578  CRUX-E-20 KL-divergence-vs-FP16 eval (EV 78)
+#   7. PMAT-711  Unsloth QLoRA NF4 into InstructPipeline + CPU loss-monotone falsifier (EV 72)
+#
+# CORRECTION 2026-06-12 (operator): GPU is AUTONOMOUS, not operator-gated. This host
+# = noah-Lambda-Vector RTX 4090 (sm_89, CUDA 12.8, pre-authorized); apr ships wgpu
+# (Vulkan/Metal/DX12/WASM) + CUDA backends; intel CI runners have Intel iGPU->Vulkan->
+# wgpu. So the GPU beats join the AUTONOMOUS track:
+#   8. Pillar-4 (FUSION-004) BEAT Ollama 1.5x decode — MARQUEE beat, already 1.43x on
+#      THIS RTX 4090 (4.7% gap). Wire current perf as a CI-gated BeatBenchmark + close gap.
+#   9. cuda-oxide spike — NVlabs Rust->PTX compiler (github.com/NVlabs/cuda-oxide, 2026-05);
+#      author DP4A/MoE/FFN kernels in PURE RUST (mission-aligned; escapes hand-PTX Blackwell JIT pain).
+#   10. PMAT-715 Unsloth GPU throughput beat; PMAT-728-GPU PyTorch-GPU baseline.
+#
+# RULE: never ship a parity feature when a falsifiable BEAT is on the table.
+# PILLAR1-* items below are sklearn-PARITY (v0.44-0.48 shipped) — LOW marginal EV now.
+# ============================================================================
 roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/aprender
