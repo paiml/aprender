@@ -25,7 +25,9 @@
 //! ```
 
 mod label_encoder;
+mod one_hot_encoder;
 pub use label_encoder::LabelEncoder;
+pub use one_hot_encoder::OneHotEncoder;
 
 use crate::error::{AprenderError, Result};
 use crate::primitives::Matrix;

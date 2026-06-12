@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.46.0] - 2026-06-12
+
+### Added
+
+- **`preprocessing::OneHotEncoder`** (Pillar 1): expand integer-coded categorical
+  feature columns into one-hot binary columns (each column -> k binary columns),
+  matching `sklearn.preprocessing.OneHotEncoder` (dense). Implements `Transformer`;
+  unknown categories map to an all-zero block.
+
 ## [0.45.2] - 2026-06-12
 
 ### Added
