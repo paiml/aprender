@@ -68,6 +68,9 @@ nvml = ["nvml-wrapper"]  # Real GPU monitoring via NVIDIA NVML
 parquet = ["dep:alimentar", "dep:arrow"]  # Parquet batch loading via alimentar
 hub = ["dep:hf-hub", "aprender/hf-hub-integration"]  # HuggingFace Hub model fetching
 hub-publish = ["hub", "dep:reqwest"]  # HuggingFace Hub publishing + leaderboard reading
+# Inference-path explainability visualization (re-homed from aprender-viz, APR-MONO §S #1978).
+# train→viz is the correct DAG direction; the dropped viz→entrenar edge had closed a cycle.
+viz = ["dep:batuta-common"]
 
 [dependencies]
 # Contract macros for pre/post-condition enforcement (zero cost in release)
@@ -79,6 +82,7 @@ trueno-gpu = { version = "0.49.0", path = "../aprender-gpu", package = "aprender
 realizar = { workspace = true, optional = true }
 aprender = { path = "../aprender-core", version = "0.49.0", package = "aprender-core" }  # ML interpret module + .apr format + tokenizers
 trueno-viz = { workspace = true, features = ["terminal"] }
+batuta-common = { workspace = true, optional = true }  # WithDimensions trait for `viz` feature (APR-MONO §S #1978)
 presentar-terminal = { workspace = true, optional = true }
 presentar-core = { workspace = true }
 trueno-db = { workspace = true, optional = true }
