@@ -4,10 +4,10 @@
 #![cfg(feature = "eval")]
 
 use anyhow::{Context, Result};
+use aprender_rag::{embed::Embedder, Chunk};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use aprender_rag::{embed::Embedder, Chunk};
 
 use crate::query::{
     cosine_similarity, create_query_embedder, expand_query_hyde, parse_fusion_strategy,
@@ -17,13 +17,21 @@ use crate::{EvalAction, PersistedIndex};
 
 pub(crate) fn run_eval(action: EvalAction) -> Result<()> {
     match action {
-        EvalAction::Sample { index, output, sample_size, seed } => {
-            run_eval_sample(&index, &output, sample_size, seed)
-        }
+        EvalAction::Sample {
+            index,
+            output,
+            sample_size,
+            seed,
+        } => run_eval_sample(&index, &output, sample_size, seed),
 
-        EvalAction::Generate { index, output, sample_size, seed, model, dry_run } => {
-            run_eval_generate(&index, &output, sample_size, seed, &model, dry_run)
-        }
+        EvalAction::Generate {
+            index,
+            output,
+            sample_size,
+            seed,
+            model,
+            dry_run,
+        } => run_eval_generate(&index, &output, sample_size, seed, &model, dry_run),
 
         EvalAction::Retrieve {
             index,
@@ -49,7 +57,14 @@ pub(crate) fn run_eval(action: EvalAction) -> Result<()> {
             hyde,
         ),
 
-        EvalAction::Judge { retrieval_results, ground_truth, output, cache, top_k, model } => {
+        EvalAction::Judge {
+            retrieval_results,
+            ground_truth,
+            output,
+            cache,
+            top_k,
+            model,
+        } => {
             // GH-16: Warn that --ground-truth is accepted but not yet used by the judge
             if !ground_truth.is_empty() {
                 eprintln!(
@@ -58,18 +73,31 @@ pub(crate) fn run_eval(action: EvalAction) -> Result<()> {
                 );
             }
             let rt = tokio::runtime::Runtime::new().context("Failed to create tokio runtime")?;
-            rt.block_on(run_eval_judge(&retrieval_results, &output, &cache, top_k, &model))
+            rt.block_on(run_eval_judge(
+                &retrieval_results,
+                &output,
+                &cache,
+                top_k,
+                &model,
+            ))
         }
 
-        EvalAction::Metrics { retrieval_results, judgments, output } => {
-            run_eval_metrics(&retrieval_results, &judgments, &output)
-        }
+        EvalAction::Metrics {
+            retrieval_results,
+            judgments,
+            output,
+        } => run_eval_metrics(&retrieval_results, &judgments, &output),
 
-        EvalAction::Compare { baseline, candidate } => run_eval_compare(&baseline, &candidate),
+        EvalAction::Compare {
+            baseline,
+            candidate,
+        } => run_eval_compare(&baseline, &candidate),
 
-        EvalAction::Gate { results, min_mrr, min_hit5 } => {
-            run_eval_gate(&results, min_mrr, min_hit5)
-        }
+        EvalAction::Gate {
+            results,
+            min_mrr,
+            min_hit5,
+        } => run_eval_gate(&results, min_mrr, min_hit5),
     }
 }
 
@@ -182,7 +210,12 @@ fn run_eval_generate(
         let sampled = gen.sample_chunks(&chunks);
         println!("\nDry run: would generate {} questions", sampled.len());
         for s in sampled.iter().take(10) {
-            println!("  [{}] {}: {}...", s.domain, s.course, &s.content[..s.content.len().min(80)]);
+            println!(
+                "  [{}] {}: {}...",
+                s.domain,
+                s.course,
+                &s.content[..s.content.len().min(80)]
+            );
         }
         return Ok(());
     }
@@ -191,7 +224,9 @@ fn run_eval_generate(
     let gen = GroundTruthGenerator::new(client, model, sample_size, seed);
 
     let rt = tokio::runtime::Runtime::new().context("Failed to create tokio runtime")?;
-    let results = rt.block_on(gen.generate(&chunks)).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let results = rt
+        .block_on(gen.generate(&chunks))
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     // Write JSONL output
     let mut file = std::io::BufWriter::new(fs::File::create(output_path)?);
@@ -201,7 +236,10 @@ fn run_eval_generate(
         writeln!(file)?;
     }
 
-    println!("\nGround truth saved to: {output_path} ({} entries)", results.len());
+    println!(
+        "\nGround truth saved to: {output_path} ({} entries)",
+        results.len()
+    );
     Ok(())
 }
 
@@ -241,7 +279,11 @@ fn run_eval_retrieve(
         .collect::<std::result::Result<_, _>>()
         .context("Failed to parse ground truth JSONL")?;
 
-    println!("Loaded {} queries from {}", queries.len(), ground_truth_path);
+    println!(
+        "Loaded {} queries from {}",
+        queries.len(),
+        ground_truth_path
+    );
     let hyde_label = if hyde { " | HyDE: on" } else { "" };
     println!("Mode: {mode} | Fusion: {fusion} | Candidates: {candidates} | Top-k: {top_k} | Rerank: {rerank}{hyde_label}");
 
@@ -252,7 +294,11 @@ fn run_eval_retrieve(
     println!("Loading index from {}...", index_file.display());
     let json = fs::read_to_string(&index_file)?;
     let persisted: PersistedIndex = serde_json::from_str(&json)?;
-    println!("Index: {} chunks, dim={}", persisted.chunks.len(), persisted.dimension);
+    println!(
+        "Index: {} chunks, dim={}",
+        persisted.chunks.len(),
+        persisted.dimension
+    );
 
     // Build embedder (auto-detects semantic vs TF-IDF from index metadata)
     let embedder = create_query_embedder(&persisted)?;
@@ -280,12 +326,17 @@ fn run_eval_retrieve(
     };
 
     // HyDE: pre-expand all queries if enabled (batches API calls before retrieval loop)
-    let expanded_queries: Option<Vec<String>> =
-        if hyde { Some(expand_all_queries_hyde(&queries)?) } else { None };
+    let expanded_queries: Option<Vec<String>> = if hyde {
+        Some(expand_all_queries_hyde(&queries)?)
+    } else {
+        None
+    };
 
     // Helper: get effective query (HyDE-expanded or original)
     let effective_query = |i: usize, original: &str| -> String {
-        expanded_queries.as_ref().map_or_else(|| original.to_string(), |eq| eq[i].clone())
+        expanded_queries
+            .as_ref()
+            .map_or_else(|| original.to_string(), |eq| eq[i].clone())
     };
 
     // Run queries per mode, writing results to output file
@@ -337,7 +388,10 @@ fn run_eval_retrieve(
 fn expand_all_queries_hyde(
     queries: &[aprender_rag::eval::types::GroundTruthEntry],
 ) -> Result<Vec<String>> {
-    println!("HyDE enabled — expanding {} queries via Claude API...", queries.len());
+    println!(
+        "HyDE enabled — expanding {} queries via Claude API...",
+        queries.len()
+    );
     let mut expanded = Vec::with_capacity(queries.len());
     for (i, entry) in queries.iter().enumerate() {
         eprint!("[HyDE {}/{}] ", i + 1, queries.len());
@@ -361,7 +415,12 @@ fn eval_retrieve_dense(
     use aprender_rag::eval::types::{RetrievalResultEntry, RetrievedChunk};
 
     for (i, entry) in queries.iter().enumerate() {
-        print!("[{}/{}] {}...", i + 1, queries.len(), &entry.query[..entry.query.len().min(60)]);
+        print!(
+            "[{}/{}] {}...",
+            i + 1,
+            queries.len(),
+            &entry.query[..entry.query.len().min(60)]
+        );
 
         let eq = effective_query(i, &entry.query);
         let start = std::time::Instant::now();
@@ -424,7 +483,10 @@ fn eval_retrieve_sparse(
     use aprender_rag::index::SparseIndex;
     use aprender_rag::BM25Index;
 
-    println!("Building BM25 index from {} chunks...", persisted.chunks.len());
+    println!(
+        "Building BM25 index from {} chunks...",
+        persisted.chunks.len()
+    );
     let start_build = std::time::Instant::now();
     let mut bm25 = BM25Index::new();
     let chunks = build_chunks(false);
@@ -433,10 +495,18 @@ fn eval_retrieve_sparse(
         chunk_map.insert(chunk.id, i);
         bm25.add(chunk);
     }
-    println!("BM25 index built in {:.2}s", start_build.elapsed().as_secs_f64());
+    println!(
+        "BM25 index built in {:.2}s",
+        start_build.elapsed().as_secs_f64()
+    );
 
     for (i, entry) in queries.iter().enumerate() {
-        print!("[{}/{}] {}...", i + 1, queries.len(), &entry.query[..entry.query.len().min(60)]);
+        print!(
+            "[{}/{}] {}...",
+            i + 1,
+            queries.len(),
+            &entry.query[..entry.query.len().min(60)]
+        );
 
         let eq = effective_query(i, &entry.query);
         let start = std::time::Instant::now();
@@ -502,7 +572,10 @@ fn eval_retrieve_hybrid(
     println!("Building hybrid retriever (BM25 + dense dim={dim}, fusion={fusion})...");
     let start_build = std::time::Instant::now();
 
-    let dense_store = VectorStore::new(VectorStoreConfig { dimension: dim, ..Default::default() });
+    let dense_store = VectorStore::new(VectorStoreConfig {
+        dimension: dim,
+        ..Default::default()
+    });
     let bm25 = BM25Index::new();
     let config = HybridRetrieverConfig {
         candidates_per_source: candidates,
@@ -526,7 +599,12 @@ fn eval_retrieve_hybrid(
     );
 
     for (i, entry) in queries.iter().enumerate() {
-        print!("[{}/{}] {}...", i + 1, queries.len(), &entry.query[..entry.query.len().min(60)]);
+        print!(
+            "[{}/{}] {}...",
+            i + 1,
+            queries.len(),
+            &entry.query[..entry.query.len().min(60)]
+        );
 
         let eq = effective_query(i, &entry.query);
         let start = std::time::Instant::now();
@@ -603,16 +681,30 @@ async fn run_eval_judge(
 
     // Load cache
     let cache = JudgeCache::load(Path::new(cache_path));
-    eprintln!("Cache: {} entries loaded from {}", cache.entries.len(), cache_path);
+    eprintln!(
+        "Cache: {} entries loaded from {}",
+        cache.entries.len(),
+        cache_path
+    );
 
     let client = AnthropicClient::from_env().map_err(|e| anyhow::anyhow!("{e}"))?;
     let mut judge = RelevanceJudge::new(client, model, cache);
 
-    let eval_output = judge.evaluate(&results, top_k).await.map_err(|e| anyhow::anyhow!("{e}"))?;
+    let eval_output = judge
+        .evaluate(&results, top_k)
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     // Save cache
-    judge.cache().save(Path::new(cache_path)).context("Failed to save judge cache")?;
-    eprintln!("Cache saved: {} entries to {}", judge.cache().entries.len(), cache_path);
+    judge
+        .cache()
+        .save(Path::new(cache_path))
+        .context("Failed to save judge cache")?;
+    eprintln!(
+        "Cache saved: {} entries to {}",
+        judge.cache().entries.len(),
+        cache_path
+    );
 
     // Save results
     let json = serde_json::to_string_pretty(&eval_output)?;
@@ -650,11 +742,18 @@ fn run_eval_metrics(
         .collect::<std::result::Result<_, _>>()
         .context("Failed to parse judgments JSONL")?;
 
-    println!("Loaded {} retrieval results, {} judgments", results.len(), judgments.len());
+    println!(
+        "Loaded {} retrieval results, {} judgments",
+        results.len(),
+        judgments.len()
+    );
 
     let eval_output = compute_metrics_from_judgments(&results, &judgments);
 
-    println!("\n{}", format_metrics_summary(&eval_output.aggregate, &eval_output.by_domain));
+    println!(
+        "\n{}",
+        format_metrics_summary(&eval_output.aggregate, &eval_output.by_domain)
+    );
 
     let json = serde_json::to_string_pretty(&eval_output)?;
     fs::write(output_path, json)?;

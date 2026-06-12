@@ -7,17 +7,17 @@ use anyhow::{Context, Result};
 use globset::GlobSet;
 use rayon::prelude::*;
 
-use std::collections::{HashMap, HashSet};
-use std::fs;
-use std::hash::{Hash, Hasher};
-use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use aprender_rag::{
     chunk::{RecursiveChunker, TimestampChunker},
     embed::{Embedder, TfIdfEmbedder},
     loader::LoaderRegistry,
     Chunk, Chunker, Document,
 };
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::hash::{Hash, Hasher};
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 #[cfg(feature = "embeddings")]
 use aprender_rag::{EmbeddingModelType, FastEmbedder};
@@ -78,7 +78,10 @@ fn load_documents_parallel(
     pool.install(|| {
         files.par_iter().for_each(|file| match registry.load(file) {
             Ok(doc) => {
-                documents.lock().expect("documents mutex poisoned").push(doc);
+                documents
+                    .lock()
+                    .expect("documents mutex poisoned")
+                    .push(doc);
             }
             Err(e) => {
                 eprintln!("  Warning: failed to load {}: {}", file.display(), e);
@@ -88,7 +91,9 @@ fn load_documents_parallel(
     });
 
     let documents = documents.into_inner().expect("documents mutex poisoned");
-    let load_errors = load_errors.into_inner().expect("load_errors mutex poisoned");
+    let load_errors = load_errors
+        .into_inner()
+        .expect("load_errors mutex poisoned");
     finish_load_report(documents, load_errors)
 }
 
@@ -101,7 +106,11 @@ pub(crate) fn finish_load_report(
     }
 
     if load_errors > 0 {
-        println!("Loaded {} documents ({} failed)", documents.len(), load_errors);
+        println!(
+            "Loaded {} documents ({} failed)",
+            documents.len(),
+            load_errors
+        );
     } else {
         println!("Loaded {} documents", documents.len());
     }
@@ -134,8 +143,16 @@ fn to_persisted_chunk(chunk: &Chunk, doc: &Document) -> PersistedChunk {
         content: chunk.content.clone(),
         title: chunk.metadata.title.clone(),
         source: doc.source.clone(),
-        start_secs: chunk.metadata.custom.get("start_secs").and_then(serde_json::Value::as_f64),
-        end_secs: chunk.metadata.custom.get("end_secs").and_then(serde_json::Value::as_f64),
+        start_secs: chunk
+            .metadata
+            .custom
+            .get("start_secs")
+            .and_then(serde_json::Value::as_f64),
+        end_secs: chunk
+            .metadata
+            .custom
+            .get("end_secs")
+            .and_then(serde_json::Value::as_f64),
     }
 }
 
@@ -222,7 +239,11 @@ pub(crate) fn discover_and_load(
 
     if files.is_empty() {
         let exts = registry.supported_extensions().join(", ");
-        anyhow::bail!("No supported files found at: {} (supported: {})", path.display(), exts);
+        anyhow::bail!(
+            "No supported files found at: {} (supported: {})",
+            path.display(),
+            exts
+        );
     }
 
     let classification = classify_files(&files);
@@ -246,10 +267,16 @@ pub(crate) fn discover_and_load(
 
 /// Print how many documents have timestamp metadata vs plain text.
 pub(crate) fn report_media_text_split(documents: &[Document]) {
-    let media_count = documents.iter().filter(|d| d.metadata.contains_key("subtitle_cues")).count();
+    let media_count = documents
+        .iter()
+        .filter(|d| d.metadata.contains_key("subtitle_cues"))
+        .count();
     if media_count > 0 {
         let text_count = documents.len() - media_count;
-        println!("  {} with timestamps, {} plain text", media_count, text_count);
+        println!(
+            "  {} with timestamps, {} plain text",
+            media_count, text_count
+        );
     }
 }
 
@@ -349,7 +376,10 @@ pub(crate) fn export_sqlite(persisted: &PersistedIndex, output_path: &Path) -> R
     for (i, pc) in persisted.chunks.iter().enumerate() {
         let doc_id = pc.source.as_deref().unwrap_or("unknown").to_string();
         let chunk_id = format!("{}#{}", doc_id, i);
-        doc_chunks.entry(doc_id.clone()).or_default().push((chunk_id, pc.content.clone()));
+        doc_chunks
+            .entry(doc_id.clone())
+            .or_default()
+            .push((chunk_id, pc.content.clone()));
         doc_titles.entry(doc_id).or_insert_with(|| pc.title.clone());
     }
 
@@ -359,13 +389,19 @@ pub(crate) fn export_sqlite(persisted: &PersistedIndex, output_path: &Path) -> R
     for (doc_id, chunks) in &doc_chunks {
         let title = doc_titles.get(doc_id).and_then(|t| t.as_deref());
         // Concatenate all chunk content as the document-level content
-        let content: String = chunks.iter().map(|(_, c)| c.as_str()).collect::<Vec<_>>().join("\n");
+        let content: String = chunks
+            .iter()
+            .map(|(_, c)| c.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
         sqlite_index
             .insert_document(doc_id, title, Some(doc_id.as_str()), &content, chunks, None)
             .map_err(|e| anyhow::anyhow!("Failed to insert document {doc_id}: {e}"))?;
     }
 
-    sqlite_index.optimize().map_err(|e| anyhow::anyhow!("Failed to optimize SQLite index: {e}"))?;
+    sqlite_index
+        .optimize()
+        .map_err(|e| anyhow::anyhow!("Failed to optimize SQLite index: {e}"))?;
 
     println!(
         "SQLite index saved to: {} ({} docs, {} chunks)",
@@ -423,7 +459,11 @@ pub(crate) fn run_index(
         dedup,
     )?;
 
-    println!("Indexed {} documents ({} chunks)", documents.len(), all_chunks.len());
+    println!(
+        "Indexed {} documents ({} chunks)",
+        documents.len(),
+        all_chunks.len()
+    );
 
     let persisted = PersistedIndex {
         chunks: all_chunks,
@@ -433,10 +473,21 @@ pub(crate) fn run_index(
         model_name,
     };
 
-    save_index(&persisted, output, manifest, &files, &classification, sqlite)
+    save_index(
+        &persisted,
+        output,
+        manifest,
+        &files,
+        &classification,
+        sqlite,
+    )
 }
 
 /// Build a JSON manifest of indexed files and chunks.
+// APR-MONO §S #1976: the `serde_json::json!` macro expands to an internal `.unwrap()`,
+// which the workspace `.clippy.toml` disallowed-methods lint flags at the macro call site.
+// The unwrap is inside library macro code, not author-written, so allow it locally.
+#[allow(clippy::disallowed_methods)]
 pub(crate) fn build_index_manifest(
     files: &[PathBuf],
     classification: &HashMap<String, usize>,

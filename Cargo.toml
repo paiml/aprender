@@ -59,6 +59,7 @@ members = [
     "crates/aprender-db",
     "crates/aprender-graph",
     "crates/aprender-rag",
+    "crates/aprender-rag-cli",
     "crates/aprender-viz",
     # --- APR-MONO Phase 3a: zram sub-crates (enabled) ---
     "crates/aprender-zram",
@@ -502,5 +503,30 @@ path = "src/lib.rs"
 # [patch.crates-io] — REMOVED
 # RC4 fix: cc patch removed. The upstream fix shipped in cc 1.2.x.
 # Contract: ci-infra-v1.yaml F-INFRA-004 — every patch must have tracking issue.
+
+# ----------------------------------------------------------------------------
+# proptest debug-assertion workaround (Toyota Way: root-cause flaky-test fix)
+# ----------------------------------------------------------------------------
+# proptest 1.11.0 (latest published) has an OVER-STRICT, buggy `debug_assert!`
+# in its uniform float sampler — num/float_samplers.rs:128/131:
+#     debug_assert!(self.low - result < self.intervals.step);
+# The production clamp path right above it is CORRECT (its own comment: "These
+# results could happen because the first split might overshoot one of the
+# bounds ... but for testing data this is not a problem"). The assertion wrongly
+# bounds the overshoot by the TOP-LEVEL interval step, but recursive
+# `split_interval` subdivision can overshoot by more, so on rare RNG seeds the
+# assert panics — surfacing as flaky failures in ANY proptest with a float-range
+# strategy (`a..b` for f32/f64). There is no upstream fix (1.11.0 is newest) and
+# it only fires in debug builds (which `cargo test` uses).
+#
+# Fix: disable debug-assertions for the proptest crate ONLY. This removes the
+# false panic from 3rd-party code while keeping OUR debug_asserts fully active
+# (overflow-checks left on). Verified: `PROPTEST_CASES=2000000` no longer panics.
+# Profiles must live in the workspace-root manifest, so they live here.
+[profile.test.package.proptest]
+debug-assertions = false
+
+[profile.dev.package.proptest]
+debug-assertions = false
 
 

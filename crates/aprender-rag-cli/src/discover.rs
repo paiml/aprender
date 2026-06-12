@@ -4,11 +4,11 @@
 //! and discover media files for transcription.
 
 use anyhow::{Context, Result};
+use aprender_rag::loader::LoaderRegistry;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use aprender_rag::loader::LoaderRegistry;
 
 /// Media file extensions that can be transcribed.
 pub(crate) const MEDIA_EXTENSIONS: &[&str] = &[
@@ -26,7 +26,9 @@ pub(crate) fn build_exclude_set(patterns: &[String]) -> Result<Option<GlobSet>> 
         builder
             .add(Glob::new(pattern).with_context(|| format!("Invalid exclude glob: {pattern}"))?);
     }
-    Ok(Some(builder.build().context("Failed to build exclude set")?))
+    Ok(Some(
+        builder.build().context("Failed to build exclude set")?,
+    ))
 }
 
 /// Check if a path should be excluded by glob patterns.
@@ -110,11 +112,15 @@ pub(crate) fn discover_files(
         }
         anyhow::bail!(
             "Unsupported file format: {}",
-            root.extension().and_then(|e| e.to_str()).unwrap_or("(none)")
+            root.extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("(none)")
         );
     }
 
-    walk_directory(root, recursive, exclude, |p| registry.loader_for(p).is_some())
+    walk_directory(root, recursive, exclude, |p| {
+        registry.loader_for(p).is_some()
+    })
 }
 
 /// Check if a file has a media extension.
@@ -137,7 +143,7 @@ pub(crate) fn discover_media_files(
         anyhow::bail!("Not a media file: {}", root.display());
     }
 
-    walk_directory(root, recursive, exclude, |p| is_media_file(p))
+    walk_directory(root, recursive, exclude, is_media_file)
 }
 
 /// Classify media files into those with/without existing sidecars.
@@ -160,7 +166,11 @@ pub(crate) fn classify_media_sidecar_status(files: &[PathBuf]) -> (Vec<PathBuf>,
 pub(crate) fn classify_files(files: &[PathBuf]) -> HashMap<String, usize> {
     let mut counts: HashMap<String, usize> = HashMap::new();
     for file in files {
-        let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("other").to_lowercase();
+        let ext = file
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("other")
+            .to_lowercase();
         *counts.entry(ext).or_insert(0) += 1;
     }
     counts

@@ -21,8 +21,12 @@ pub(crate) fn run_extract_frames(
     exclude_patterns: &[String],
 ) -> Result<()> {
     // Verify ffmpeg is available
-    let ffmpeg_check = std::process::Command::new("ffmpeg").arg("-version").output();
-    let ffmpeg_ok = ffmpeg_check.ok().map_or(false, |output| output.status.success());
+    let ffmpeg_check = std::process::Command::new("ffmpeg")
+        .arg("-version")
+        .output();
+    let ffmpeg_ok = ffmpeg_check
+        .ok()
+        .map_or(false, |output| output.status.success());
     if !ffmpeg_ok {
         anyhow::bail!("ffmpeg not found. Install with: apt install ffmpeg");
     }
@@ -47,11 +51,18 @@ pub(crate) fn run_extract_frames(
             }
             let frames_dir = v.with_extension("frames");
             !frames_dir.exists()
-                || frames_dir.read_dir().map(|mut d| d.next().is_none()).unwrap_or(true)
+                || frames_dir
+                    .read_dir()
+                    .map(|mut d| d.next().is_none())
+                    .unwrap_or(true)
         })
         .collect();
 
-    println!("Found {} video files ({} need frame extraction)", videos.len(), to_process.len());
+    println!(
+        "Found {} video files ({} need frame extraction)",
+        videos.len(),
+        to_process.len()
+    );
 
     if to_process.is_empty() {
         println!(
@@ -85,7 +96,10 @@ pub(crate) fn run_extract_frames(
 
             match extract_frames_ffmpeg(video, threshold, min_interval) {
                 Ok(count) => {
-                    println!("[{}/{}] Extracted {} frames from {}", idx, total, count, name);
+                    println!(
+                        "[{}/{}] Extracted {} frames from {}",
+                        idx, total, count, name
+                    );
                 }
                 Err(e) => {
                     eprintln!("[{}/{}] Failed: {}: {}", idx, total, name, e);
@@ -118,7 +132,10 @@ fn extract_frames_ffmpeg(video: &Path, threshold: f64, min_interval: f64) -> Res
     // Use ffmpeg select filter for scene detection + fps filter for minimum interval
     let select_filter = format!("select='gt(scene\\,{threshold})',fps=1/{min_interval}",);
 
-    let output_pattern = frames_dir.join("frame_%04d.png").to_string_lossy().to_string();
+    let output_pattern = frames_dir
+        .join("frame_%04d.png")
+        .to_string_lossy()
+        .to_string();
 
     let output = std::process::Command::new("ffmpeg")
         .args([
@@ -146,7 +163,12 @@ fn extract_frames_ffmpeg(video: &Path, threshold: f64, min_interval: f64) -> Res
     // Count extracted frames and rename with timestamp info
     let frame_count = fs::read_dir(&frames_dir)?
         .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map(|ext| ext == "png").unwrap_or(false))
+        .filter(|e| {
+            e.path()
+                .extension()
+                .map(|ext| ext == "png")
+                .unwrap_or(false)
+        })
         .count();
 
     Ok(frame_count)
