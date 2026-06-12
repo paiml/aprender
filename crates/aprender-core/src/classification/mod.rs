@@ -734,9 +734,11 @@ pub struct KNearestNeighbors {
 }
 
 mod bernoulli_nb;
+mod complement_nb;
 mod gaussian_nb;
 mod multinomial_nb;
 pub use bernoulli_nb::BernoulliNB;
+pub use complement_nb::ComplementNB;
 pub use gaussian_nb::*;
 pub use multinomial_nb::MultinomialNB;
 mod linear_svm;
