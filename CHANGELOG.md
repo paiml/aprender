@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.1] - 2026-06-12
+
+### Added
+
+- **`classification::BernoulliNB`** (Pillar 1): Bernoulli Naive Bayes for binary
+  features, matching `sklearn.naive_bayes.BernoulliNB` — binarizes inputs and
+  models feature absence. `with_alpha`/`with_binarize` builders; implements
+  `Estimator`.
+
 ## [0.48.0] - 2026-06-12
 
 ### Added
