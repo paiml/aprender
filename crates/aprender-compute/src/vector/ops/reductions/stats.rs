@@ -171,11 +171,22 @@ impl Vector<f32> {
         }
 
         let mean_val = self.mean()?;
-        let sum_sq = self.sum_of_squares()?;
-        let mean_sq = sum_sq / self.len() as f32;
 
-        // Var(X) = E[X²] - μ²
-        Ok(mean_sq - mean_val * mean_val)
+        // Two-pass (centered) formula: Var(X) = E[(X − μ)²].
+        // The naive Var(X) = E[X²] − μ² suffers catastrophic cancellation when E[X²]
+        // and μ² are both large (e.g. after a translation x + c), which broke
+        // translation-invariance for large offsets and made the stddev property tests
+        // flaky. Subtracting the mean first is numerically stable and exactly
+        // translation-invariant.
+        let sum_sq_dev: f32 = self
+            .data
+            .iter()
+            .map(|&x| {
+                let d = x - mean_val;
+                d * d
+            })
+            .sum();
+        Ok(sum_sq_dev / self.len() as f32)
     }
 
     /// Population standard deviation
