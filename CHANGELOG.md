@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.4] - 2026-06-12
+
+### Added
+
+- **`preprocessing::PolynomialFeatures`** (Pillar 1): generate polynomial +
+  interaction features up to `degree`, matching `sklearn.preprocessing.
+  PolynomialFeatures` column order. `with_bias` toggle; implements `Transformer`.
+
 ## [0.48.3] - 2026-06-12
 
 ### Added
