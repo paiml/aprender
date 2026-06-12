@@ -23,8 +23,8 @@ presentar-core = "0.3"
 presentar-terminal = "0.3"
 
 # Compute backends
-trueno = { version = "0.46.0", path = "../aprender-compute", package = "aprender-compute" }
-trueno-gpu = { version = "0.46.0", path = "../aprender-gpu", package = "aprender-gpu", optional = true }
+trueno = { version = "0.47.0", path = "../aprender-compute", package = "aprender-compute" }
+trueno-gpu = { version = "0.47.0", path = "../aprender-gpu", package = "aprender-gpu", optional = true }
 
 # Terminal handling
 crossterm = "0.28"
