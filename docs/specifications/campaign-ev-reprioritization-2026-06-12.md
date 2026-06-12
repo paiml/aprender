@@ -47,3 +47,30 @@ baseline, after the CPU half lands); Pillar-1 GPU reference timing where needed.
 
 **Rule going forward:** never ship a parity feature when a falsifiable *beat* is on the
 table. See [[project_10day_autonomous_release_campaign]] and the four-pillar mission.
+
+## CORRECTION (2026-06-12, operator) — GPU is autonomous; investigate cuda-oxide
+
+The survey wrongly assumed CPU-only/operator-gated GPU. **Ground truth:** the campaign
+runs ON noah-Lambda-Vector = **RTX 4090 (24GB, sm_89), CUDA 12.8, compute pre-authorized**;
+aprender already ships a **wgpu** backend (portable Vulkan/Metal/DX12/WASM) AND a CUDA
+backend (`trueno-gpu`/`aprender-cuda-edge`); the intel-clean-room CI runners have Intel
+iGPU → Vulkan → **wgpu compute** (portable GPU beats can gate in CI). So GPU work is
+**autonomy ~5**, not 2.
+
+**Re-ranking:** Pillar-4 (BEAT Ollama 1.5× decode) jumps from EV 34 → ~90 — it is the
+MARQUEE "beat" claim, already at 1.43× (4.7% gap) on the EXACT RTX 4090 the baselines
+were measured on. FUSION-004 / PMAT-715 / PMAT-728-GPU move OFF the gpu-gated track onto
+the autonomous track.
+
+**cuda-oxide (NVlabs, 2026-05-07):** a rustc backend compiling pure-Rust `#[kernel]` fns
+directly to CUDA PTX (single-source, `cargo oxide build`, builds with cargo — no C++/CMake;
+uses Pliron Rust-native MLIR). https://github.com/NVlabs/cuda-oxide . STRATEGIC: aprender's
+north-star is *pure Rust*, but the CUDA path is currently hand-PTX/CUDA-C (`trueno-cuda-edge`)
+— the source of the recurring Blackwell JIT-prewarm pain. cuda-oxide is the path to author
+DP4A/MoE/FFN-fusion kernels in pure Rust→PTX: mission-aligned AND the lever for the Pillar-4
+perf gap. Add a SPIKE: build a trivial cuda-oxide `#[kernel]` (e.g. saxpy) on this RTX 4090,
+verify PTX gen + launch, and assess porting one trueno hot kernel.
+
+**Corrected autonomous track:** PMAT-741 (backbone; `approved_compute: CPU|GPU`) →
+wire current RTX-4090 decode perf as a CI-gated BeatBenchmark + drive 1.43x→1.5x →
+cuda-oxide spike → CPU beats (Pillar-2 PyTorch, Pillar-1 sklearn) in parallel.

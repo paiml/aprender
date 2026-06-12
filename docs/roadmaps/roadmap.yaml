@@ -15,9 +15,15 @@
 #   6. PMAT-578  CRUX-E-20 KL-divergence-vs-FP16 eval (EV 78)
 #   7. PMAT-711  Unsloth QLoRA NF4 into InstructPipeline + CPU loss-monotone falsifier (EV 72)
 #
-# GPU-GATED TRACK (surface for operator scheduling, do NOT grind unattended):
-#   FUSION-004 (Ollama 1.5x decode, EV 34); PMAT-715 (Unsloth throughput beat);
-#   PMAT-728-GPU (PyTorch-GPU baseline); Pillar-1 GPU reference timing.
+# CORRECTION 2026-06-12 (operator): GPU is AUTONOMOUS, not operator-gated. This host
+# = noah-Lambda-Vector RTX 4090 (sm_89, CUDA 12.8, pre-authorized); apr ships wgpu
+# (Vulkan/Metal/DX12/WASM) + CUDA backends; intel CI runners have Intel iGPU->Vulkan->
+# wgpu. So the GPU beats join the AUTONOMOUS track:
+#   8. Pillar-4 (FUSION-004) BEAT Ollama 1.5x decode — MARQUEE beat, already 1.43x on
+#      THIS RTX 4090 (4.7% gap). Wire current perf as a CI-gated BeatBenchmark + close gap.
+#   9. cuda-oxide spike — NVlabs Rust->PTX compiler (github.com/NVlabs/cuda-oxide, 2026-05);
+#      author DP4A/MoE/FFN kernels in PURE RUST (mission-aligned; escapes hand-PTX Blackwell JIT pain).
+#   10. PMAT-715 Unsloth GPU throughput beat; PMAT-728-GPU PyTorch-GPU baseline.
 #
 # RULE: never ship a parity feature when a falsifiable BEAT is on the table.
 # PILLAR1-* items below are sklearn-PARITY (v0.44-0.48 shipped) — LOW marginal EV now.
