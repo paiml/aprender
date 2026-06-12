@@ -319,50 +319,20 @@ impl Qwen2DecoderLayer {
 }
 
 // ============================================================================
-// KV Cache
-// ============================================================================
-
-/// Key-Value cache for efficient autoregressive generation.
-#[derive(Debug)]
-pub struct KVCache {
-    /// Cached keys per layer: [batch, `num_kv_heads`, `cached_len`, `head_dim`]
-    pub keys: Vec<Option<Tensor>>,
-    /// Cached values per layer
-    pub values: Vec<Option<Tensor>>,
-    /// Number of cached positions
-    pub cached_len: usize,
-}
-
-impl KVCache {
-    /// Create a new empty KV cache.
-    #[must_use]
-    pub fn new(num_layers: usize) -> Self {
-        Self {
-            keys: vec![None; num_layers],
-            values: vec![None; num_layers],
-            cached_len: 0,
-        }
-    }
-
-    /// Clear the cache.
-    pub fn clear(&mut self) {
-        for k in &mut self.keys {
-            *k = None;
-        }
-        for v in &mut self.values {
-            *v = None;
-        }
-        self.cached_len = 0;
-    }
-}
-
-// ============================================================================
 // Qwen2 Model
 // ============================================================================
+//
+// NOTE: Autoregressive generation (and its `KVCache`) was removed when the
+// non-realizar inference path was deleted (Refs #224, #1977). All inference —
+// including KV caching — is owned exclusively by `realizar`
+// (`StreamingKVCache`). This struct provides model construction, weight
+// loading, and introspection only.
 
-/// Complete Qwen2 model for inference.
+/// Complete Qwen2 model: construction, weight loading, and introspection.
 ///
 /// Assembles embedding, decoder layers, and LM head into a complete model.
+/// Inference (forward/generate) is owned exclusively by `realizar` — this
+/// struct holds weights and metadata only.
 #[derive(Debug)]
 pub struct Qwen2Model {
     /// Token embeddings [`vocab_size`, `hidden_size`]
@@ -378,8 +348,6 @@ pub struct Qwen2Model {
     rope: RotaryPositionEmbedding,
     /// Model configuration
     config: Qwen2Config,
-    /// KV cache for generation
-    kv_cache: Option<KVCache>,
     /// Training mode flag
     training: bool,
 }
