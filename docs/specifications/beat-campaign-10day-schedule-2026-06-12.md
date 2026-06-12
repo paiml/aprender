@@ -79,14 +79,19 @@ and Day 8 = Fri 2026-06-19. GitHub release per increment.
    (6 lagging crates, dependency order, `apr-cli` last, from a clean `origin/main`) — **not** a
    new version bump. (The morning intro's "0.35.0→0.49.x" is itself stale; it's a 0.41.0 split.)
 
-6. **One NEW risk the morning plan didn't carry:** the **lint-harmonization sweep** (31
-   crates, +595/−1933, real bugs fixed incl. `await_holding_lock` + two boolean-logic bugs) is
-   **committed on `feat/apr-mono-self-containment` but has NO open PR** and is **not on main**.
-   Now that those ~30 ex-repo crates are in the workspace graph, `clippy --all-targets -D
-   warnings` (the `ci/lint` gate) will fail for them until this lands. **This is the top
-   foundation risk and the first action below — ahead of any beat work.** (Land on a fresh
-   uniquely-named branch; the original was already squash-merged as #1975, and reuse strands
-   commits — see `feedback_checkout_b_branch_reuse_noop`.)
+6. **The foundation is VERIFIED COMPLETE — there is no "lint PR" left to land.** An earlier
+   draft (and the state audit) flagged the 31-crate lint-harmonization sweep as "committed on
+   `feat/apr-mono-self-containment` but no PR → top risk," reasoning from **SHA-ancestry**.
+   That is the same false-positive that misread v0.49.0: the lint sweep **leapfrogged onto
+   main by CONTENT via the `#1975` + §S squash cascade**. Spot-verified on `origin/main`: the
+   `indexed_ffn` boolean fix (`<10||(10..=12)`→`<=12`, `indexed_ffn.rs:126`), the `deny.toml`
+   RUSTSEC-2026-0173 ignore, the `FusedQKVHwDp4aQ4KGemv` to_index fix, the §S consolidation-doc
+   section, and the 966-line `aprender-viz/src/interop/entrenar.rs` deletion are **all on
+   main**; the lint-touched crate files are **byte-identical** between main and the branch; and
+   **`ci / lint` is SUCCESS** on the latest main-based PR (`#1989`). The
+   `feat/apr-mono-self-containment` branch is therefore **fully superseded and safe to
+   delete** (cleanup, not blocking). **Net: the real action #0 is the beat-infra itself
+   (validator rules + making the iris test actually run in CI), not any foundation PR.**
 
 ### Corrected day-by-day (window 2026-06-12 → 2026-06-21)
 
@@ -97,11 +102,10 @@ Legend: **[F]** = foundation closeout, **[I]** = beat-infra, **[P1..P4]** = pill
 - ✅ [I] Day-1 prereq auto-cleared: PMAT-741 BeatBenchmark + pilot on main, v0.49.0 tagged + released.
 - ✅ [F] Foundation hardened: `#1975` self-contained DAG MERGED; §S `#1982/83/84/85` MERGED; flaky root-fixes `#1988/#1989` armed; disk-recycle live.
 - ⏳ Carried to Day 2: BeatBenchmark validator rules + tests; cuda-oxide gx10 provisioning.
-- 🔴 Surfaced: lint-sweep has **no PR** (top risk).
+- ✅ Verified: lint sweep + self-containment fully on main, `ci/lint` green; `feat/apr-mono-self-containment` is superseded (deletable). No foundation PR outstanding.
 
-**Day 2 — Sat 2026-06-13 — foundation closeout + first beat actually runs in CI**
-- [F][cpu-ci] **Open + land the lint-harmonization PR** (fresh branch) → green `clippy -D warnings` for all ~30 ex-repo crates. *Gates everything; do first.*
-- [F][cpu-ci] Land §S `#1986/#1987` (update-branch + auto-merge).
+**Day 2 — Sat 2026-06-13 — first beat actually runs in CI**
+- [F][cpu-ci] Land §S `#1986/#1987` (update-branch + auto-merge) — last foundation PRs in flight.
 - [I][cpu-ci] `validate_beat_benchmark()` in `validator.rs` (incumbent ∈ four-pillar enum, metric present, numeric `beat_threshold`, direction) + 6 negative-case validator_tests.
 - [I][cpu-ci] Make `beat_sklearn_iris` **contract-driven** (read `beat-sklearn-iris-v1.yaml`) **and add `--test beat_*` to `ci.yml`** so the gate actually executes → first beat live in CI.
 - [gx10] cuda-oxide Spike1: provision LLVM-21 + nightly-2026-04-03 + `cargo-oxide` (GPU is idle, pre-authorized).
@@ -152,7 +156,7 @@ Legend: **[F]** = foundation closeout, **[I]** = beat-infra, **[P1..P4]** = pill
 |---|---|---|
 | Day-1 PMAT-741 merge | the gating prereq, do first | **DONE** (auto via §S squash leapfrog) |
 | Real Day-1 spend | validator + beat-runner + cuda-oxide | **foundation hardening** (self-containment, flaky-kill, §S) |
-| Top risk | PMAT-741 merge slips | **lint sweep has no PR** → `ci/lint` red for ~30 crates |
+| Top risk | PMAT-741 merge slips | **none in foundation** — lint + self-containment already on main, `ci/lint` green; remaining risk is beat-infra build effort + the honest Ollama gap |
 | First WON | iris (Day 2) | iris (Day 3, after the test is made to actually RUN in CI) |
 | Ollama pin | 1.43× / 440 tok/s | **honest ~1.32× 5-run p50** (re-measure before pinning) |
 | Friday cascade | "catch up 0.35→0.49" | **finish the 0.49.0 split-cascade** (6 lagging crates, not a bump) |
