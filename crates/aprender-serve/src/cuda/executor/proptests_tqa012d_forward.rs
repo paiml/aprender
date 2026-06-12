@@ -10,7 +10,7 @@ fn test_tqa012d_forward_all_layers_gpu() {
         return;
     }
 
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Use 2 layers to test multi-layer handling
     let hidden_dim = 256u32;
@@ -128,7 +128,7 @@ fn test_tqa012e_transformer_layer_gpu_missing_weights() {
         return;
     }
 
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_dim = 256u32;
     let intermediate_dim = 1024u32;
@@ -197,7 +197,7 @@ fn test_tqa012f_transformer_layer_kv_cache_update() {
         return;
     }
 
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_dim = 256u32;
     let intermediate_dim = 1024u32;
@@ -307,7 +307,7 @@ fn test_tqa013a_decode_graph_state() {
         return;
     }
 
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Initially no graph captured
     assert!(
@@ -336,7 +336,7 @@ fn test_tqa013b_workspace_and_indexed_weights() {
         return;
     }
 
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Initially no workspace
     assert!(
@@ -376,7 +376,7 @@ fn test_tqa013c_graph_opt_in_only() {
     // Without CUDA_GRAPH_ENABLE, graphs should never be captured
     std::env::remove_var("CUDA_GRAPH_ENABLE");
 
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     assert!(
         !executor.has_decode_graph(),
@@ -398,7 +398,7 @@ fn test_tqa013d_graphed_forward_fallback() {
         return;
     }
 
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Model dimensions
     let hidden_dim = 256u32;

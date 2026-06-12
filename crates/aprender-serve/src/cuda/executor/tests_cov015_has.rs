@@ -10,7 +10,7 @@ fn test_cov015_has_rmsnorm_weights_false_initially() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     // Should return false for any layer when no weights cached
     assert!(
@@ -33,7 +33,7 @@ fn test_cov015_has_rmsnorm_weights_after_preload() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let gamma = vec![1.0f32; 64];
     let attn_norms: Vec<&[f32]> = vec![gamma.as_slice()];
@@ -59,7 +59,7 @@ fn test_cov015_forward_all_layers_missing_attn_norm() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_dim = 64u32;
     let input = vec![0.1f32; hidden_dim as usize];
@@ -91,7 +91,7 @@ fn test_cov015_forward_all_layers_missing_ffn_norm() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_dim = 64u32;
     let gamma = vec![1.0f32; hidden_dim as usize];
@@ -121,7 +121,7 @@ fn test_cov015_forward_to_logits_missing_output_norm() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_dim = 64u32;
     let vocab_size = 128u32;
@@ -164,7 +164,7 @@ fn test_cov015_forward_batched_batch_size_zero() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_dim = 64u32;
     let inputs: Vec<f32> = vec![]; // Empty - batch size 0
@@ -188,7 +188,7 @@ fn test_cov015_forward_batched_batch_size_exceeds_max() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_dim = 64u32;
     let m = 33; // Exceeds max of 32
@@ -213,7 +213,7 @@ fn test_cov015_forward_batched_wrong_input_length() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_dim = 64u32;
     let positions: Vec<u32> = vec![0, 1]; // M=2
@@ -237,7 +237,7 @@ fn test_cov015_forward_batched_workspace_not_initialized() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_dim = 64u32;
     let m = 2;
@@ -263,7 +263,7 @@ fn test_cov015_preload_lm_head_bias_empty() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Preload with empty bias (should return 0 bytes, not error)
     let empty_bias: Vec<f32> = vec![];
@@ -285,7 +285,7 @@ fn test_cov015_cache_rmsnorm_gamma_duplicate() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let gamma = vec![1.0f32; 64];
 
@@ -308,7 +308,7 @@ fn test_cov015_preload_output_norm_duplicate() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let gamma = vec![1.0f32; 64];
 
@@ -331,7 +331,7 @@ fn test_cov015_preload_rmsnorm_weights_duplicate() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let gamma = vec![1.0f32; 64];
     let attn_norms: Vec<&[f32]> = vec![gamma.as_slice()];
@@ -356,7 +356,7 @@ fn test_cov015_preload_qkv_bias_with_none_values() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // All biases are None (no bias model)
     let q_biases: Vec<Option<&[f32]>> = vec![None];
@@ -385,7 +385,7 @@ fn test_cov015_preload_qkv_bias_partial() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let q_bias_data = vec![0.1f32; 64];
     // Only Q bias present, K and V are None
@@ -406,7 +406,7 @@ fn test_cov015_forward_batched_graphed_batch_size_zero() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let inputs: Vec<f32> = vec![];
     let positions: Vec<u32> = vec![];
@@ -429,7 +429,7 @@ fn test_cov015_forward_batched_graphed_batch_size_exceeds_max() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_dim = 64u32;
     let m = 33; // > 32

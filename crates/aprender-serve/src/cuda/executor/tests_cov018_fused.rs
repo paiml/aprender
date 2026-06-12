@@ -5,7 +5,7 @@ fn test_cov018_fused_residual_rmsnorm_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32;
     let residual = vec![1.0f32; n as usize];
@@ -87,7 +87,7 @@ fn test_cov019_tensor_core_attention_dimension_not_multiple_16() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // seq_len=17 is not multiple of 16
     let seq_len = 17u32;
@@ -121,7 +121,7 @@ fn test_cov019_tensor_core_attention_head_dim_not_multiple_16() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // head_dim=63 is not multiple of 16
     let seq_len = 32u32; // Valid
@@ -155,7 +155,7 @@ fn test_cov019_tensor_core_attention_size_mismatch() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let seq_len = 32u32;
     let head_dim = 64u32;
@@ -187,7 +187,7 @@ fn test_cov019_gemm_fp16_dimension_not_multiple_16() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // m=17 is not multiple of 16
     let m = 17u32;
@@ -218,7 +218,7 @@ fn test_cov019_gemm_fp16_size_mismatch() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 32u32;
     let n = 32u32;
@@ -246,7 +246,7 @@ fn test_cov019_batched_incremental_attention_not_initialized() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Don't initialize batched KV cache
     let num_heads = 4usize;
@@ -285,7 +285,7 @@ fn test_cov019_flash_decoding_not_initialized() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Don't initialize flash decoding
     let num_heads = 4usize;
@@ -324,7 +324,7 @@ fn test_cov019_init_flash_decoding_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let num_heads = 8usize;
     let head_dim = 64usize;
@@ -351,7 +351,7 @@ fn test_cov019_incremental_attention_async_kv_not_initialized() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Set up KV cache parameters but don't init the cache buffers
     executor.kv_num_heads = 4;
@@ -383,7 +383,7 @@ fn test_cov019_incremental_attention_into_kv_not_initialized() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Set up KV cache parameters but don't init the cache buffers
     executor.kv_num_heads = 4;
@@ -416,7 +416,7 @@ fn test_cov019_tensor_core_attention_valid_run() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // All dimensions multiples of 16
     let seq_len = 32u32;

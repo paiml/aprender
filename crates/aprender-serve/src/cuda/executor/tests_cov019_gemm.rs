@@ -5,7 +5,7 @@ fn test_cov019_gemm_fp16_valid_run() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // All dimensions multiples of 16
     let m = 32u32;
@@ -41,7 +41,7 @@ fn test_cov020_synchronize_compute() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     let result = executor.synchronize_compute();
     assert!(
@@ -57,7 +57,7 @@ fn test_cov020_synchronize_transfer() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     let result = executor.synchronize_transfer();
     assert!(
@@ -73,7 +73,7 @@ fn test_cov020_synchronize_all() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     let result = executor.synchronize_all();
     assert!(
@@ -89,7 +89,7 @@ fn test_cov020_allocate_buffer() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     let result = executor.allocate_buffer(1024);
     assert!(
@@ -108,7 +108,7 @@ fn test_cov020_gemm_cached_weight_not_found() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let b = vec![0.1f32; 64 * 32];
     let mut c = vec![0.0f32; 64 * 32];
@@ -130,7 +130,7 @@ fn test_cov020_gemm_cached_size_mismatch() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Cache a weight
     let weight_data = vec![0.1f32; 64 * 64];
@@ -159,7 +159,7 @@ fn test_cov020_gemm_b_cached_weight_not_found() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let a = vec![0.1f32; 64 * 64];
     let mut c = vec![0.0f32; 64 * 32];
@@ -181,7 +181,7 @@ fn test_cov020_gemm_b_cached_size_mismatch() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Cache a weight (B matrix: k x n = 64 x 32)
     let weight_data = vec![0.1f32; 64 * 32];
@@ -210,7 +210,7 @@ fn test_cov020_gemm_size_mismatch() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 32u32;
     let n = 32u32;
@@ -238,7 +238,7 @@ fn test_cov020_gemm_valid_run() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 32u32;
     let n = 32u32;
@@ -263,7 +263,7 @@ fn test_cov020_gemm_gemv_path() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // M=1 triggers GEMV path
     let m = 1u32;
@@ -293,7 +293,7 @@ fn test_cov020_gemv_cached_input_size_mismatch() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Cache a weight
     let k = 128u32;
@@ -324,7 +324,7 @@ fn test_cov020_gemv_cached_output_size_mismatch() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Cache a weight
     let k = 128u32;
@@ -354,7 +354,7 @@ fn test_cov020_gemv_cached_weight_not_found() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let k = 128u32;
     let n = 64u32;
@@ -378,7 +378,7 @@ fn test_cov020_gemm_optimized_size_mismatch() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 64u32;
     let n = 64u32;
@@ -407,7 +407,7 @@ fn test_cov020_gemm_optimized_valid_run() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 64u32;
     let n = 64u32;

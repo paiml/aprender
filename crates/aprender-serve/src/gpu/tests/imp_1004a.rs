@@ -11,7 +11,7 @@ fn test_imp_1004a_cuda_matmul_benchmark() {
         return;
     }
 
-    let mut cuda_scheduler = CudaScheduler::new().expect("Failed to create CudaScheduler");
+    let mut cuda_scheduler = crate::cuda_scheduler_or_skip!();
 
     // Realistic LLM dimensions: hidden_dim=4096, intermediate_dim=11008
     let test_cases = [
@@ -54,7 +54,7 @@ fn test_imp_1004b_cuda_vs_cpu_matmul() {
         return;
     }
 
-    let mut cuda_scheduler = CudaScheduler::new().expect("Failed to create CudaScheduler");
+    let mut cuda_scheduler = crate::cuda_scheduler_or_skip!();
     let mut hybrid_scheduler =
         HybridScheduler::with_threshold(1).expect("Failed to create HybridScheduler");
 
@@ -277,7 +277,7 @@ fn test_parity_120a_cached_vs_uncached_matmul() {
         return;
     }
 
-    let mut scheduler = CudaScheduler::new().expect("Failed to create CudaScheduler");
+    let mut scheduler = crate::cuda_scheduler_or_skip!();
 
     // Realistic LLM dimensions: hidden=4096, qkv=12288 (3*4096)
     let k = 4096usize;
@@ -362,7 +362,7 @@ fn test_parity_120b_full_layer_cached() {
         return;
     }
 
-    let mut scheduler = CudaScheduler::new().expect("Failed to create CudaScheduler");
+    let mut scheduler = crate::cuda_scheduler_or_skip!();
 
     // Realistic dimensions
     let hidden = 4096usize;

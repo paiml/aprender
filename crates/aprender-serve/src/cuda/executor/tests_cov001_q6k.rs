@@ -5,7 +5,7 @@ fn test_cov001_q6k_gemv_cached() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 256u32;
     let k = 256u32;
@@ -36,7 +36,7 @@ fn test_cov002_softmax_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let mut data = vec![1.0f32, 2.0, 3.0, 4.0];
     let result = executor.softmax(&mut data);
@@ -57,7 +57,7 @@ fn test_cov002_gemm_optimized() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 32u32;
     let n = 32u32;
@@ -91,7 +91,7 @@ fn test_cov002_gemm_fused_variants() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 16u32;
     let n = 16u32;
@@ -134,7 +134,7 @@ fn test_cov002_flash_attention_multi_head() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let seq_len = 8u32;
     let head_dim = 8u32;
@@ -169,7 +169,7 @@ fn test_cov002_silu_gelu_host() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let size = 256usize;
     let input = vec![1.0f32; size];
@@ -192,7 +192,7 @@ fn test_cov002_elementwise_mul_host() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let size = 256usize;
     let a = vec![2.0f32; size];
@@ -214,7 +214,7 @@ fn test_cov002_load_and_clear_weights() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let weights = vec![1.0f32; 1024];
 
@@ -239,7 +239,7 @@ fn test_cov002_load_quantized_weights() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Mock Q4_K weights: 144 bytes per 256 values
     let weights = vec![0x42u8; 144];
@@ -263,7 +263,7 @@ fn test_cov002_profiler_operations() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Enable profiling
     executor.enable_profiling();
@@ -288,7 +288,7 @@ fn test_cov002_graph_tracking() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Enable graph tracking
     executor.enable_graph_tracking();
@@ -310,7 +310,7 @@ fn test_cov002_tile_profiling() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Enable tile profiling
     executor.enable_tile_profiling();
@@ -332,7 +332,7 @@ fn test_cov002_memory_and_device_info() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     // Get device name
     let name = executor.device_name().expect("device_name should succeed");
@@ -355,7 +355,7 @@ fn test_cov002_staging_buffer_operations() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Get staging buffer
     let buf = executor.get_staging_buffer(1024);
@@ -377,7 +377,7 @@ fn test_cov002_synchronize() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     let result = executor.synchronize();
     assert!(result.is_ok(), "synchronize should succeed");

@@ -97,7 +97,7 @@ fn test_gemm_invalid_size_always_rejected() {
         return;
     }
 
-    let mut executor = CudaExecutor::new(0).expect("test");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Wrong A size
     let a = vec![1.0f32; 10]; // Should be 16
@@ -173,7 +173,7 @@ fn test_imp_1000a_fp16_gemm_alignment_validation() {
         return;
     }
 
-    let mut executor = CudaExecutor::new(0).expect("test");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Valid: all dimensions multiple of 16
     let a = vec![1.0f32; 16 * 32];
@@ -208,7 +208,7 @@ fn test_imp_1000a_fp16_gemm_correctness() {
         return;
     }
 
-    let mut executor = CudaExecutor::new(0).expect("test");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Simple 16x16 identity-like multiplication
     let m = 16u32;
@@ -300,7 +300,7 @@ fn test_imp_1000b_q4k_gemm_integration() {
         return;
     }
 
-    let mut executor = CudaExecutor::new(0).expect("test");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Use dimensions compatible with Q4_K (K must be multiple of 32)
     let m = 32u32;

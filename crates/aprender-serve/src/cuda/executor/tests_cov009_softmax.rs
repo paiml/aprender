@@ -5,7 +5,7 @@ fn test_cov009_softmax_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Test softmax with small vector
     let mut data = vec![1.0f32, 2.0, 3.0, 4.0];
@@ -32,7 +32,7 @@ fn test_cov009_softmax_larger() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Test with 32-element vector (warp-aligned)
     let mut data: Vec<f32> = (0..32).map(|i| (i as f32) / 10.0).collect();
@@ -57,7 +57,7 @@ fn test_cov009_softmax_uniform() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Uniform input should give uniform output
     let n = 8;
@@ -84,7 +84,7 @@ fn test_cov009_gemm_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Small matrix multiplication: C = A * B
     // A is 4x4, B is 4x4, C is 4x4
@@ -125,7 +125,7 @@ fn test_cov009_gemm_larger() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Larger matrix: 32x32 * 32x32
     let m = 32u32;
@@ -157,7 +157,7 @@ fn test_cov009_gemm_cached_weight_not_found() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let input_buf = GpuBuffer::from_host(&executor.context, &[1.0f32; 32]).expect("input");
     let output_buf = GpuBuffer::<f32>::new(&executor.context, 32).expect("output");
@@ -193,7 +193,7 @@ fn test_cov010_make_current() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     let result = executor.make_current();
     assert!(result.is_ok(), "make_current failed: {:?}", result.err());
@@ -205,7 +205,7 @@ fn test_cov010_profiling_enable_disable() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Initially disabled
     assert!(
@@ -234,7 +234,7 @@ fn test_cov010_profiler_access() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Get profiler (immutable)
     let _profiler = executor.profiler();
@@ -252,7 +252,7 @@ fn test_cov010_profiler_summary() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     let summary = executor.profiler_summary();
     // Summary should be a string (might be empty if no profiling data)
@@ -265,7 +265,7 @@ fn test_cov010_profiler_sync_mode() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Get default sync mode
     let _mode = executor.profiler_sync_mode();
@@ -281,7 +281,7 @@ fn test_cov010_profiler_category_stats() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     // Get category stats
     let stats = executor.profiler_category_stats();
@@ -294,7 +294,7 @@ fn test_cov010_print_profiler_categories() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     // This prints to stdout, just verify it doesn't panic
     executor.print_profiler_categories();
@@ -306,7 +306,7 @@ fn test_cov010_graph_tracking_enable_disable() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Initially disabled
     assert!(
@@ -335,7 +335,7 @@ fn test_cov010_execution_graph_access() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     // Get execution graph
     let _graph = executor.execution_graph();
@@ -350,7 +350,7 @@ fn test_cov010_clear_execution_graph() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Clear graph (should not panic even when empty)
     executor.clear_execution_graph();
@@ -362,7 +362,7 @@ fn test_cov010_tile_profiling_enable_disable() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Initially disabled
     assert!(
@@ -391,7 +391,7 @@ fn test_cov010_tile_summary() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     let summary = executor.tile_summary();
     // Summary should be a string
@@ -404,7 +404,7 @@ fn test_cov010_tile_stats_json() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     let json = executor.tile_stats_json();
     // JSON should be a valid string
@@ -417,7 +417,7 @@ fn test_cov010_reset_tile_stats() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Reset tile stats (should not panic)
     executor.reset_tile_stats();
@@ -429,7 +429,7 @@ fn test_cov010_device_name() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     let result = executor.device_name();
     assert!(result.is_ok(), "device_name failed: {:?}", result.err());

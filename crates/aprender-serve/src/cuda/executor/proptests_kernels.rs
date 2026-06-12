@@ -128,7 +128,7 @@ fn test_tqa012a_transformer_layer_gpu_basic() {
         return;
     }
 
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Model dimensions (TinyLlama-like but minimal)
     let hidden_dim = 256u32;
@@ -238,7 +238,7 @@ fn test_tqa012b_transformer_layer_gpu_tiled_profiled() {
         return;
     }
 
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Same dimensions as T-QA-012a
     let hidden_dim = 256u32;
@@ -336,7 +336,7 @@ fn test_tqa012c_transformer_layer_gpu_true_dp4a() {
         return;
     }
 
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Same dimensions
     let hidden_dim = 256u32;

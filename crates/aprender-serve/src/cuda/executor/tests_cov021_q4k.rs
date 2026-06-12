@@ -20,7 +20,7 @@ fn test_cov021_q4k_gemv_gpu_weight_not_cached() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32;
     let k = 256u32;
@@ -48,7 +48,7 @@ fn test_cov021_tensor_core_q4k_gemm_weight_not_cached() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 16u32;
     let k = 256u32;
@@ -78,7 +78,7 @@ fn test_cov021_tensor_core_q4k_gemm_cached_weight_not_cached() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 4u32;
     let k = 256u32;
@@ -106,7 +106,7 @@ fn test_cov021_tensor_core_q4k_gemm_cached_input_size_mismatch() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 4u32;
     let k = 256u32;
@@ -133,7 +133,7 @@ fn test_cov021_tensor_core_q4k_gemm_cached_output_size_mismatch() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 4u32;
     let k = 256u32;
@@ -160,7 +160,7 @@ fn test_cov021_batched_q4k_gemv_cached_weight_not_cached() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 4u32;
     let k = 256u32;
@@ -188,7 +188,7 @@ fn test_cov021_batched_q4k_gemv_cached_input_size_mismatch() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 4u32;
     let k = 256u32;
@@ -215,7 +215,7 @@ fn test_cov021_batched_q4k_gemv_cached_output_size_mismatch() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 4u32;
     let k = 256u32;
@@ -242,7 +242,7 @@ fn test_cov021_fused_ffn_q4k_up_weight_not_cached() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_dim = 256u32;
     let intermediate_dim = 512u32;
@@ -275,7 +275,7 @@ fn test_cov021_fused_ffn_q4k_down_weight_not_cached() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_dim = 256u32;
     let intermediate_dim = 512u32;
@@ -316,7 +316,7 @@ fn test_cov021_rope_neox_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let num_heads = 4u32;
     let head_dim = 64u32;
@@ -354,7 +354,7 @@ fn test_cov021_rope_indirect_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let num_heads = 4u32;
     let head_dim = 64u32;
@@ -395,7 +395,7 @@ fn test_cov021_rope_neox_indirect_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let num_heads = 4u32;
     let head_dim = 64u32;

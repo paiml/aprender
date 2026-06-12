@@ -5,7 +5,7 @@ fn test_cov010_memory_info() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     let result = executor.memory_info();
     assert!(result.is_ok(), "memory_info failed: {:?}", result.err());
@@ -21,7 +21,7 @@ fn test_cov010_context() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     // Get context reference
     let _context = executor.context();
@@ -33,7 +33,7 @@ fn test_cov010_synchronize() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     let result = executor.synchronize();
     assert!(result.is_ok(), "synchronize failed: {:?}", result.err());
@@ -45,7 +45,7 @@ fn test_cov010_pool_stats() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     let stats = executor.pool_stats();
     // Stats should return valid struct (total_allocated is usize, always >= 0)
@@ -58,7 +58,7 @@ fn test_cov010_staging_pool_stats() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     let stats = executor.staging_pool_stats();
     // Stats should return valid struct (total_allocated is usize, always >= 0)
@@ -71,7 +71,7 @@ fn test_cov010_staging_buffer_roundtrip() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Get a staging buffer (minimum size is 1024)
     let buf = executor.get_staging_buffer(256);
@@ -90,7 +90,7 @@ fn test_cov010_clear_pool() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Clear pool (should not panic even when empty)
     executor.clear_pool();
@@ -108,7 +108,7 @@ fn test_cov011_preload_output_norm() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let gamma = vec![1.0f32; 64];
     let result = executor.preload_output_norm(&gamma);
@@ -130,7 +130,7 @@ fn test_cov011_has_output_norm_false_initially() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     assert!(
         !executor.has_output_norm(),
@@ -144,7 +144,7 @@ fn test_cov011_cache_rmsnorm_gamma() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let gamma = vec![1.0f32; 128];
     let result = executor.cache_rmsnorm_gamma("test_layer_0_attn_norm", &gamma);
@@ -161,7 +161,7 @@ fn test_cov011_preload_qkv_bias() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Function expects &[Option<&[f32]>] for each bias array (per-head optional biases)
     let q_bias_data = vec![0.1f32; 64];
@@ -190,7 +190,7 @@ fn test_cov011_has_qkv_bias_false_initially() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     assert!(
         !executor.has_qkv_bias(0),
@@ -208,7 +208,7 @@ fn test_cov011_preload_lm_head_bias() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Preload with Some bias
     let bias = vec![0.1f32; 1024];
@@ -231,7 +231,7 @@ fn test_cov011_preload_lm_head_bias_none() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Preload with None (no bias)
     let result = executor.preload_lm_head_bias(None);
@@ -253,7 +253,7 @@ fn test_cov011_has_lm_head_bias_false_initially() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     assert!(
         !executor.has_lm_head_bias(),
@@ -267,7 +267,7 @@ fn test_cov011_workspace_output_none_initially() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     assert!(
         executor.workspace_output().is_none(),
@@ -281,7 +281,7 @@ fn test_cov011_workspace_output_after_init() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Init KV cache and workspace
     let _ = executor.init_kv_cache_gpu(1, 4, 4, 8, 16);
@@ -301,7 +301,7 @@ fn test_cov011_gpu_argmax_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Create a simple logits buffer on GPU
     let vocab_size = 256u32;
@@ -328,7 +328,7 @@ fn test_cov011_gpu_argmax_middle() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Create logits with max in the middle
     let vocab_size = 128u32;
@@ -359,7 +359,7 @@ fn test_cov012_rmsnorm_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_size = 64u32;
     let input: Vec<f32> = (0..hidden_size).map(|i| (i as f32) * 0.01).collect();
@@ -388,7 +388,7 @@ fn test_cov012_batched_rmsnorm_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_size = 32u32;
     let batch_size = 4u32;

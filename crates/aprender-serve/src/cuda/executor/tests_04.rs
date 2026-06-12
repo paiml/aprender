@@ -23,7 +23,7 @@ fn test_cov016_silu_gpu_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 128u32;
     let input: Vec<f32> = (0..n).map(|i| (i as f32 - 64.0) * 0.1).collect();
@@ -51,7 +51,7 @@ fn test_cov016_gelu_async_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 256u32;
     let input: Vec<f32> = (0..n).map(|i| (i as f32 - 128.0) * 0.05).collect();
@@ -79,7 +79,7 @@ fn test_cov016_elementwise_mul_gpu_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 64u32;
     let input1 = vec![2.0f32; n as usize];
@@ -112,7 +112,7 @@ fn test_cov016_fused_swiglu_gpu_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 128u32;
     let gate: Vec<f32> = (0..n).map(|i| (i as f32 - 64.0) * 0.1).collect();
@@ -144,7 +144,7 @@ fn test_cov016_fused_swiglu_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 64u32;
     let gate = vec![1.0f32; n as usize]; // SiLU(1.0) = 1.0 * sigmoid(1.0) ≈ 0.731
@@ -181,7 +181,7 @@ fn test_cov016_silu_gpu_cached_module() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32;
     let input = vec![0.5f32; n as usize];
@@ -206,7 +206,7 @@ fn test_cov016_gelu_async_cached_module() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 48u32;
     let input = vec![0.5f32; n as usize];
@@ -233,7 +233,7 @@ fn test_cov016_elementwise_mul_varying_values() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32;
     let input1: Vec<f32> = (0..n).map(|i| i as f32).collect();
@@ -273,7 +273,7 @@ fn test_cov016_fused_swiglu_gpu_negative_inputs() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 64u32;
     let gate = vec![-2.0f32; n as usize]; // Negative gate values
@@ -323,7 +323,7 @@ fn test_cov017_make_current() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     // make_current should succeed
     let result = executor.make_current();
@@ -336,7 +336,7 @@ fn test_cov017_profiler_enable_disable() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Initially disabled
     assert!(
@@ -365,7 +365,7 @@ fn test_cov017_profiler_access() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Test profiler() accessor
     let _prof = executor.profiler();
@@ -380,7 +380,7 @@ fn test_cov017_profiler_reset() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     executor.reset_profiler();
     // Should not panic
@@ -392,7 +392,7 @@ fn test_cov017_profiler_summary() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     let summary = executor.profiler_summary();
     // Summary should be a non-empty string
@@ -408,7 +408,7 @@ fn test_cov017_rmsnorm_gpu_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 64u32;
     let input: Vec<f32> = (0..n).map(|i| (i as f32 + 1.0) * 0.1).collect();

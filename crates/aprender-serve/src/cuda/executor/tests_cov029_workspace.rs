@@ -6,7 +6,7 @@ fn test_cov029_workspace_batch_size() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Initially should be 0
     assert_eq!(
@@ -31,7 +31,7 @@ fn test_cov029_workspace_batch_size_batched() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     executor.init_workspace(512, 256).expect("init workspace");
     executor
@@ -48,7 +48,7 @@ fn test_cov029_profiler_mut() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Get mutable profiler access
     let profiler = executor.profiler_mut();
@@ -66,7 +66,7 @@ fn test_cov029_execution_graph_ascii() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     let ascii = executor.execution_graph_ascii();
     // Just verify the function returns without panic - the actual format varies
@@ -81,7 +81,7 @@ fn test_cov029_tile_stats() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     // Access tile stats for different levels
     let _macro_stats = executor.tile_stats(trueno::TileLevel::Macro);
@@ -101,7 +101,7 @@ fn test_cov030_workspace_output_before_init() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     // Before init, workspace_output should return None
     assert!(
@@ -117,7 +117,7 @@ fn test_cov030_workspace_output_after_init() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Initialize workspace
     executor.init_workspace(512, 256).expect("init workspace");
@@ -136,7 +136,7 @@ fn test_cov030_has_rmsnorm_weights() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Before preload
     assert!(
@@ -181,7 +181,7 @@ fn test_cov030_has_output_norm() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Before preload
     assert!(
@@ -209,7 +209,7 @@ fn test_cov030_has_qkv_bias() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Before preload
     assert!(
@@ -246,7 +246,7 @@ fn test_cov030_has_lm_head_bias() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Before preload
     assert!(
@@ -274,7 +274,7 @@ fn test_cov030_output_rmsnorm_gpu() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_dim = 512u32;
     let epsilon = 1e-5f32;
@@ -303,7 +303,7 @@ fn test_cov030_gpu_argmax_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Create logits buffer with a clear maximum
     let vocab_size = 1024u32;
@@ -330,7 +330,7 @@ fn test_cov030_gpu_argmax_large_vocab() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Typical LLM vocab size
     let vocab_size = 32000u32;
@@ -352,7 +352,7 @@ fn test_cov030_read_hidden_state_error_before_init() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Before workspace init, should return error
     let result = executor.read_hidden_state_to_cpu();
@@ -369,7 +369,7 @@ fn test_cov030_transformer_layer_batched_validation() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Create a dummy input buffer
     let input_data = vec![0.1f32; 512 * 4];
@@ -402,7 +402,7 @@ fn test_cov030_transformer_layer_batched_mismatch() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Init workspace for batch_size=2
     executor.init_workspace(512, 256).expect("init workspace");

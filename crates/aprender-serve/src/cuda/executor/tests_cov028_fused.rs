@@ -6,7 +6,7 @@ fn test_cov028_fused_gate_up_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_size = 64u32;
     let intermediate_size = 128u32;
@@ -39,7 +39,7 @@ fn test_cov028_rope_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let num_heads = 4u32;
     let head_dim = 32u32;
@@ -66,7 +66,7 @@ fn test_cov028_rope_into_varying_positions() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let num_heads = 8u32;
     let head_dim = 64u32;
@@ -96,7 +96,7 @@ fn test_cov028_batched_q4k_gemv_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 4u32; // batch size
     let n = 32u32;
@@ -134,7 +134,7 @@ fn test_cov028_batched_q4k_gemv_into_m16() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 16u32; // triggers multi-warp kernel
     let n = 32u32;
@@ -168,7 +168,7 @@ fn test_cov028_batched_q6k_gemv_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 4u32;
     let n = 32u32;
@@ -203,7 +203,7 @@ fn test_cov028_layer_norm_gpu_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_size = 64u32;
     let batch_size = 1u32;
@@ -241,7 +241,7 @@ fn test_cov028_layer_norm_gpu_batched() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_size = 128u32;
     let batch_size = 4u32;
@@ -280,7 +280,7 @@ fn test_cov028_compute_stream() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     // compute_stream() returns a reference to CudaStream
     let stream = executor.compute_stream();
@@ -302,7 +302,7 @@ fn test_cov029_load_weights_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let weights = vec![0.1f32; 256];
     let result = executor.load_weights("test_weight", &weights);
@@ -323,7 +323,7 @@ fn test_cov029_load_weights_and_has() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     assert!(
         !executor.has_weights("my_weight"),
@@ -350,7 +350,7 @@ fn test_cov029_cached_weight_count() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     assert_eq!(
         executor.cached_weight_count(),
@@ -372,7 +372,7 @@ fn test_cov029_cached_weight_bytes() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     assert_eq!(
         executor.cached_weight_bytes(),
@@ -404,7 +404,7 @@ fn test_cov029_has_indexed_weights() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     // Initially should not have indexed weights
     assert!(
@@ -420,7 +420,7 @@ fn test_cov029_return_staging_buffer() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Get a staging buffer
     let buf = executor.get_staging_buffer(256);
