@@ -185,6 +185,7 @@ fn test_kernel_type_to_index_all() {
         KernelType::RmsNorm,
         KernelType::VectorizedRmsNorm,
         KernelType::BatchedRmsNorm,
+        KernelType::FusedQKVHwDp4aQ4KGemv,
         KernelType::Generic,
         KernelType::Unknown,
     ];
