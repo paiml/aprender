@@ -30,7 +30,9 @@
 //! - [`memory`] - GPU memory management
 //! - [`backend`] - Multi-backend abstraction
 
-#![warn(missing_docs)]
+// APR-MONO: missing_docs relaxed to the workspace policy (`missing_docs = "allow"`, doc
+// coverage checked separately) now that this ex-repo crate is linted in-tree.
+#![allow(missing_docs)]
 #![warn(rust_2018_idioms)]
 #![deny(unsafe_op_in_unsafe_fn)]
 // ============================================================================
@@ -38,6 +40,9 @@
 // ============================================================================
 // Allow dead code during development - will be used as API expands
 #![allow(dead_code)]
+// APR-MONO: workspace pedantic allows (API consistency)
+#![allow(clippy::trivially_copy_pass_by_ref)]
+#![allow(clippy::unnecessary_wraps)]
 // Allow precision loss in non-critical floating point calculations
 #![allow(clippy::cast_precision_loss)]
 // Allow possible truncation - we handle 64-bit correctly

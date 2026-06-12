@@ -21,6 +21,7 @@
 #![allow(clippy::needless_lifetimes)]
 // Allow Result wrapping for API consistency
 #![allow(clippy::unnecessary_wraps)]
+#![allow(clippy::trivially_copy_pass_by_ref)] // APR-MONO: workspace policy (API consistency)
 // Allow default trait usage patterns
 #![allow(clippy::default_trait_access)]
 // Allow format string style choices

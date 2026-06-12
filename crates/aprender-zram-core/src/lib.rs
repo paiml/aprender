@@ -31,6 +31,7 @@
 #![allow(clippy::needless_range_loop)]
 #![allow(clippy::similar_names)]
 #![allow(clippy::unnecessary_wraps)]
+#![allow(clippy::trivially_copy_pass_by_ref)] // APR-MONO: workspace policy (API consistency)
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::missing_panics_doc)]
 #![allow(clippy::missing_safety_doc)]
