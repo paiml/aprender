@@ -50,12 +50,20 @@ pub(crate) fn filter_files_for_transcription(
     let to_process: Vec<PathBuf> = if skip_existing {
         needs_transcription
             .into_iter()
-            .filter(|f| !manifest.completed.contains(&f.to_string_lossy().to_string()))
+            .filter(|f| {
+                !manifest
+                    .completed
+                    .contains(&f.to_string_lossy().to_string())
+            })
             .collect()
     } else {
         media_files
             .iter()
-            .filter(|f| !manifest.completed.contains(&f.to_string_lossy().to_string()))
+            .filter(|f| {
+                !manifest
+                    .completed
+                    .contains(&f.to_string_lossy().to_string())
+            })
             .cloned()
             .collect()
     };
@@ -66,7 +74,10 @@ pub(crate) fn filter_files_for_transcription(
         to_process.len()
     );
     if previously_completed > 0 {
-        println!("  {} previously completed (from manifest)", previously_completed);
+        println!(
+            "  {} previously completed (from manifest)",
+            previously_completed
+        );
     }
     to_process
 }
@@ -180,11 +191,11 @@ fn run_transcription_batch(
     prompt: Option<&str>,
     hotwords: &[String],
 ) -> Result<()> {
-    use rayon::prelude::*;
-    use std::sync::Mutex;
     use aprender_rag::{
         DocumentLoader, TranscriptionBackend, TranscriptionConfig, TranscriptionLoader,
     };
+    use rayon::prelude::*;
+    use std::sync::Mutex;
 
     let backend = match backend_type {
         BackendType::Cpu => TranscriptionBackend::Cpu,
@@ -202,7 +213,10 @@ fn run_transcription_batch(
     let loader = TranscriptionLoader::new(config);
 
     if loader.has_model() {
-        println!("\nWhisper model loaded. Transcribing {} files...", files.len());
+        println!(
+            "\nWhisper model loaded. Transcribing {} files...",
+            files.len()
+        );
     } else {
         println!(
             "\nNo model specified (use --model <path.apr>). \
@@ -257,7 +271,9 @@ fn run_transcription_batch(
     let manifest = manifest.into_inner().expect("manifest mutex poisoned");
     manifest.save(root)?;
 
-    let success = success.into_inner().expect("success counter mutex poisoned");
+    let success = success
+        .into_inner()
+        .expect("success counter mutex poisoned");
     let errors = errors.into_inner().expect("error counter mutex poisoned");
     let elapsed = batch_start.elapsed();
     println!(
