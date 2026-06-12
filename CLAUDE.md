@@ -235,8 +235,8 @@ CONTRACT.validate_apr_shape("lm_head.weight", &[vocab, hidden], vocab, hidden)?;
 
 ### Code Scheduled for Deletion
 
-- `src/models/qwen2/mod.rs::generate()` / `forward()` - DELETE
-- `examples/qwen_inference.rs` - REWRITE to use apr CLI
+- ~~`src/models/qwen2/mod.rs::generate()` / `forward()`~~ - DELETED (Refs #224, #1977). `Qwen2Model` has no inference path; all inference (incl. KV caching) goes through `realizar`. Only construction, weight loading, and introspection remain.
+- ~~`examples/qwen_inference.rs`~~ - DELETED (Refs #224). Use the `apr` CLI / `realizar` for inference.
 
 ## Publishing Safety (CB-510 Lesson)
 

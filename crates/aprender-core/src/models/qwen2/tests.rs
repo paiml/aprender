@@ -144,30 +144,6 @@ fn test_qwen2_decoder_layer_mut_accessors() {
 }
 
 #[test]
-fn test_kv_cache_new() {
-    let cache = KVCache::new(4);
-    assert_eq!(cache.keys.len(), 4);
-    assert_eq!(cache.values.len(), 4);
-    assert_eq!(cache.cached_len, 0);
-    assert!(cache.keys.iter().all(|k| k.is_none()));
-    assert!(cache.values.iter().all(|v| v.is_none()));
-}
-
-#[test]
-fn test_kv_cache_clear() {
-    let mut cache = KVCache::new(2);
-    cache.cached_len = 10;
-    cache.keys[0] = Some(Tensor::ones(&[1, 2, 3]));
-    cache.values[0] = Some(Tensor::ones(&[1, 2, 3]));
-
-    cache.clear();
-
-    assert_eq!(cache.cached_len, 0);
-    assert!(cache.keys.iter().all(|k| k.is_none()));
-    assert!(cache.values.iter().all(|v| v.is_none()));
-}
-
-#[test]
 fn test_qwen2_model_uninitialized() {
     let config = create_tiny_config();
     let model = Qwen2Model::new_uninitialized(&config);
@@ -185,29 +161,6 @@ fn test_qwen2_model_train_eval() {
 
     model.eval();
     assert!(!model.training);
-}
-
-#[test]
-fn test_qwen2_model_cache_operations() {
-    let config = create_tiny_config();
-    let mut model = Qwen2Model::new(&config);
-
-    // Initially no cache
-    assert!(model.kv_cache.is_none());
-
-    // Enable cache
-    model.enable_cache();
-    assert!(model.kv_cache.is_some());
-
-    // Clear cache (should not panic even if empty)
-    model.clear_cache();
-
-    // Disable cache
-    model.disable_cache();
-    assert!(model.kv_cache.is_none());
-
-    // Clear on disabled cache should not panic
-    model.clear_cache();
 }
 
 #[test]
