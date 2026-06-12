@@ -124,7 +124,3 @@ mod tests {
         assert_eq!(original, cloned);
     }
 }
-
-// Integration tests require viz feature for GpuPixelRenderer
-#[cfg(all(test, feature = "viz"))]
-mod integration_tests;
