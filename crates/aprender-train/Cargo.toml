@@ -74,14 +74,14 @@ hub-publish = ["hub", "dep:reqwest"]  # HuggingFace Hub publishing + leaderboard
 provable-contracts-macros = { version = "0.2" }
 # Core PAIML stack
 ndarray = "0.16"
-trueno = { version = "0.17", features = ["parallel"] }  # SIMD-accelerated compute
+trueno = { workspace = true, features = ["parallel"] }
 trueno-gpu = { version = "0.49.0", path = "../aprender-gpu", package = "aprender-gpu", optional = true }  # CUDA compute (APR-MONO single-source-of-truth)
-realizar = { version = "0.8", optional = true }  # CUDA inference engine
+realizar = { workspace = true, optional = true }
 aprender = { path = "../aprender-core", version = "0.49.0", package = "aprender-core" }  # ML interpret module + .apr format + tokenizers
-trueno-viz = { version = "0.2", features = ["terminal"] }  # Terminal visualization
-presentar-terminal = { version = "0.3.5", optional = true }  # Sovereign TUI framework (gated by "tui" feature)
-presentar-core = "0.3.4"  # Presentar core traits (crates.io — path removed, presentar restructured)
-trueno-db = { version = "0.3.16", optional = true }  # Time-series storage
+trueno-viz = { workspace = true, features = ["terminal"] }
+presentar-terminal = { workspace = true, optional = true }
+presentar-core = { workspace = true }
+trueno-db = { workspace = true, optional = true }
 chrono = { version = "0.4", features = ["serde"] }  # Timestamps for metric storage
 renacer = { workspace = true, optional = true }  # Distributed tracing
 wasm-bindgen = { version = "0.2", optional = true }  # WASM bindings
@@ -96,7 +96,7 @@ rand = "0.9"
 clap = { version = "4.5", features = ["derive"] }
 clap_complete = "4.5"  # Shell completion generation
 dirs = "5.0"  # Cache directory resolution for HF pipeline
-trueno-rag = { version = "0.2.0", optional = true }  # RAG pipeline for CITL
+trueno-rag = { workspace = true, optional = true }
 tokio = { version = "1.41", features = ["rt", "rt-multi-thread", "macros", "net"], optional = true }  # Async runtime
 uuid = { version = "1.11", features = ["v4", "serde"], optional = true }  # UUIDs for CITL patterns
 axum = { version = "0.8", optional = true }  # HTTP server for REST API
@@ -125,7 +125,7 @@ dhat = { version = "0.3", optional = true }  # Heap profiling
 hf-hub = { version = "0.4", optional = true }  # HuggingFace Hub API (gated behind hub feature)
 reqwest = { version = "0.12", features = ["json", "blocking"], optional = true }  # HTTP client for HF Hub publishing/leaderboard
 zip = "2.2"  # RO-Crate ZIP export (requires native compression, not available on WASM)
-alimentar = { version = "0.3", optional = true }  # Dataset loading with parquet/arrow support (gated behind parquet feature)
+alimentar = { workspace = true, optional = true }  # Dataset loading with parquet/arrow support (gated behind parquet feature)
 
 [build-dependencies]
 serde = { version = "1", features = ["derive"] }

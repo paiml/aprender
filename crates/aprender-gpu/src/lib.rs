@@ -151,10 +151,6 @@ pub mod error;
 /// E2E visual testing framework for GPU kernels
 pub mod testing;
 
-/// WASM visual testing bindings (requires viz feature)
-#[cfg(feature = "viz")]
-pub mod wasm;
-
 pub use error::{GpuError, Result};
 pub use monitor::{cuda_device_count, cuda_monitoring_available, CudaDeviceInfo, CudaMemoryInfo};
 

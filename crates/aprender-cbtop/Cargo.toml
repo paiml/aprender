@@ -19,11 +19,11 @@ name = "cbtop"
 [dependencies]
 # Canonical Brick/Widget framework - ALL WIDGETS FROM HERE
 # Provides: BrailleGraph, Meter, Table, TuiApp, DirectTerminalCanvas, ColorMode
-presentar-core = "0.3"
-presentar-terminal = "0.3"
+presentar-core = { workspace = true }
+presentar-terminal = { workspace = true }
 
 # Compute backends
-trueno = { version = "0.49.0", path = "../aprender-compute", package = "aprender-compute" }
+trueno = { workspace = true }
 trueno-gpu = { version = "0.49.0", path = "../aprender-gpu", package = "aprender-gpu", optional = true }
 
 # Terminal handling
@@ -36,7 +36,7 @@ pollster = "0.4"
 clap = { version = "4", features = ["derive"] }
 
 # Batuta shared utilities (format_bytes, sys info)
-batuta-common = "0.1"
+batuta-common = { workspace = true }
 
 # Error handling
 anyhow = "1"

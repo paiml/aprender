@@ -50,23 +50,27 @@ tracing-appender = { version = "0.2", optional = true }
 dirs = { version = "5.0", optional = true }  # Hardware capability path detection (PMAT-447)
 # TUI monitoring (TRUENO-SPEC-020) — presentar-terminal
 crossterm = { version = "0.28", optional = true }
-presentar-core = { version = "0.3", optional = true }
+presentar-core = { workspace = true, optional = true }
 # Stress test reporting types compatible with renacer (TRUENO-SPEC-025)
 # Note: renacer 0.9.1 has compilation issue; using compatible local types instead
 dhat = { version = "0.3", optional = true }
-trueno-quant = { version = "0.49.0", path = "../aprender-quant", package = "aprender-quant" }
+trueno-quant = { workspace = true }
 num_cpus = "1.17.0"
 anyhow = "1.0.100"
 # Hardware capability detection (PMAT-447)
 chrono = "0.4"
 toml = "0.8"
-# ML tuner integration (SHOWCASE-BRICK-001, Section 12)
-# Uses aprender 0.24.0 RandomForest for learned optimization
-aprender = { path = "../aprender-core", version = "0.49.0", package = "aprender-core", optional = true, default-features = false }
-# Execution path graph (PAR-201, Section E.7)
-trueno-graph = { workspace = true, optional = true }
+# ML tuner integration (SHOWCASE-BRICK-001, Section 12) — aprender RandomForest is a
+# DEV-dependency only: the SIMD foundation must not depend on the ML layer (layer
+# inversion). The `ml-tuner` showcase lives in examples/ml_tuner_demo.rs + the tuner
+# falsification tests, which consume aprender directly. Dev-dep path cycles are legal
+# in cargo and dropped on publish, keeping the workspace a self-contained DAG (APR-MONO).
+# NOTE: trueno-graph (=aprender-graph) removed (APR-MONO self-containment): aprender-graph
+# depends on trueno, so compute→graph closed a cycle. The `execution-graph` feature's only
+# trueno-graph use was the thin `to_csr()`/`graph_to_csr()` CsrGraph exporters; CSR export
+# belongs in aprender-graph (which depends on compute), not the compute foundation.
 # TUI visualization for execution graphs (PAR-201)
-presentar-terminal = { version = "0.3", optional = true }
+presentar-terminal = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # Web-sys for WebGPU (auto-enabled when gpu-wasm feature is on)
@@ -87,13 +91,16 @@ tokio = { version = "1", features = ["macros", "rt"] }
 serde_json = "1.0"
 nalgebra = "0.34"  # For eigendecomposition benchmark comparison
 # Simulation testing framework (TRUENO-SPEC-012)
-simular = "0.2.0"
+simular = { workspace = true }
 regex = "1.11"  # For PTX/WGSL pattern validation in falsification tests
 # GPU edge-case test framework (TCE-001)
-trueno-cuda-edge = { version = "0.49.0", path = "../aprender-cuda-edge", package = "aprender-cuda-edge" }
+trueno-cuda-edge = { workspace = true }
 # Sparse and solver crates for contract tests
 trueno-sparse = { version = "0.49.0", path = "../aprender-sparse", package = "aprender-sparse" }
 trueno-solve = { version = "0.49.0", path = "../aprender-solve", package = "aprender-solve" }
+# ML-tuner showcase (SHOWCASE-BRICK-001): aprender RandomForest, DEV-only to avoid the
+# compute→core layer inversion. Path dev-dep cycle is legal + dropped on publish.
+aprender = { path = "../aprender-core", package = "aprender-core", default-features = false }
 ndarray = "0.17.2"
 faer = "0.24"  # For GEMM benchmark comparison (fastest pure-Rust BLAS)
 matrixmultiply = "0.3"  # Direct matrixmultiply crate benchmark (engine behind ndarray)
@@ -121,11 +128,12 @@ tui-monitor = ["presentar-core", "presentar-terminal", "crossterm", "trueno-gpu"
 # CUDA support for TUI (real hardware monitoring)
 cuda = ["trueno-gpu/cuda"]
 # ML-based kernel selection and throughput prediction (SHOWCASE-BRICK-001)
-# Uses aprender RandomForest for learned optimization
-ml-tuner = ["aprender"]
-# Execution path graph for profiling (PAR-201)
-# Tracks PTX→kernel→brick call relationships, exports to CsrGraph
-execution-graph = ["trueno-graph"]
+# Showcase: feed trueno tuner features into aprender RandomForest (example + tests only;
+# aprender is a dev-dependency, so this feature activates no lib dependency).
+ml-tuner = []
+# NOTE: `execution-graph` feature removed (APR-MONO self-containment) — its only purpose
+# was the trueno-graph CsrGraph exporters (see above). The exec-graph profiler itself
+# (to_dot/to_ascii_tree, slowest-path) is always available, no graph crate needed.
 # TUI visualization for execution graphs (PAR-201)
 # Uses presentar-terminal Tree widget for hierarchical display
 presentar-tui = ["presentar-terminal"]

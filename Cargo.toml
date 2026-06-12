@@ -188,6 +188,18 @@ aprender-gpu = { path = "crates/aprender-gpu", version = "0.49.0" }
 aprender-quant = { path = "crates/aprender-quant", version = "0.49.0" }
 aprender-serve = { path = "crates/aprender-serve", version = "0.49.0" }
 realizar = { path = "crates/aprender-serve", version = "0.49.0", package = "aprender-serve" }
+alimentar = { path = "crates/aprender-data", version = "0.49.0", package = "aprender-data" }
+pacha = { path = "crates/aprender-registry", version = "0.49.0", package = "aprender-registry" }
+# APR-MONO self-containment: legacy sibling lib-name aliases -> in-monorepo crates (2026-06-12)
+trueno-quant = { path = "crates/aprender-quant", version = "0.49.0", package = "aprender-quant" }
+trueno-db = { path = "crates/aprender-db", version = "0.49.0", package = "aprender-db" }
+trueno-viz = { path = "crates/aprender-viz", version = "0.49.0", package = "aprender-viz" }
+trueno-rag = { path = "crates/aprender-rag", version = "0.49.0", package = "aprender-rag" }
+trueno-cuda-edge = { path = "crates/aprender-cuda-edge", version = "0.49.0", package = "aprender-cuda-edge" }
+renacer-core = { path = "crates/aprender-profile-core", version = "0.49.0", package = "aprender-profile-core" }
+repartir = { path = "crates/aprender-distribute", version = "0.49.0", package = "aprender-distribute" }
+simular = { path = "crates/aprender-simulate", version = "0.49.0", package = "aprender-simulate" }
+probar = { path = "crates/aprender-test-lib", version = "0.49.0", package = "aprender-test-lib" }
 aprender-train = { path = "crates/aprender-train", version = "0.49.0" }
 entrenar = { path = "crates/aprender-train", version = "0.49.0", package = "aprender-train" }
 aprender-train-common = { path = "crates/aprender-train-common", version = "0.49.0" }
@@ -490,4 +502,5 @@ path = "src/lib.rs"
 # [patch.crates-io] — REMOVED
 # RC4 fix: cc patch removed. The upstream fix shipped in cc 1.2.x.
 # Contract: ci-infra-v1.yaml F-INFRA-004 — every patch must have tracking issue.
+
 

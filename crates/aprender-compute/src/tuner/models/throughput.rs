@@ -2,20 +2,19 @@
 
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "ml-tuner")]
-use aprender::{tree::RandomForestRegressor, Matrix, Vector};
-
 use super::super::error::TunerError;
 use super::super::features::TunerFeatures;
 use super::ThroughputPrediction;
 
 /// Simple linear regression model for throughput prediction.
 ///
-/// Uses closed-form solution: w = (X^T X)^-1 X^T y
-/// With `ml-tuner` feature: uses aprender::RandomForestRegressor (SHOWCASE-BRICK-001)
+/// Uses closed-form solution: w = (X^T X)^-1 X^T y. The `ml-tuner` showcase
+/// (SHOWCASE-BRICK-001) feeds these features into `aprender::RandomForestRegressor`
+/// from `examples/ml_tuner_demo.rs` (aprender is a dev-dependency — the SIMD foundation
+/// must not depend on the ML layer).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ThroughputRegressor {
-    /// Model weights (one per feature + bias) - fallback when ml-tuner disabled
+    /// Model weights (one per feature + bias)
     pub(crate) weights: Vec<f32>,
     /// Feature importance scores
     pub(crate) feature_importance: Vec<(String, f32)>,
@@ -23,10 +22,6 @@ pub struct ThroughputRegressor {
     pub(crate) sample_count: usize,
     /// Mean absolute percentage error on validation
     pub(crate) mape: f32,
-    /// Whether the RandomForest model is trained (ml-tuner feature)
-    #[cfg(feature = "ml-tuner")]
-    #[serde(skip)]
-    rf_model: Option<RandomForestRegressor>,
 }
 
 impl Default for ThroughputRegressor {
@@ -68,17 +63,7 @@ impl ThroughputRegressor {
             feature_importance: Self::default_feature_importance(),
             sample_count: 0,
             mape: 0.15, // 15% default MAPE
-            #[cfg(feature = "ml-tuner")]
-            rf_model: None,
         }
-    }
-
-    /// Create a new regressor using aprender RandomForest (ml-tuner feature)
-    #[cfg(feature = "ml-tuner")]
-    pub fn with_random_forest(n_estimators: usize) -> Self {
-        let mut instance = Self::new();
-        instance.rf_model = Some(RandomForestRegressor::new(n_estimators));
-        instance
     }
 
     fn default_feature_importance() -> Vec<(String, f32)> {
@@ -140,48 +125,6 @@ impl ThroughputRegressor {
         Ok(())
     }
 
-    /// Train using aprender RandomForest (ml-tuner feature)
-    ///
-    /// Provides superior throughput prediction via ensemble learning.
-    /// See: SHOWCASE-BRICK-001 Section 12.3
-    #[cfg(feature = "ml-tuner")]
-    pub fn train_random_forest(&mut self, data: &[(TunerFeatures, f32)]) -> Result<(), TunerError> {
-        if data.len() < 10 {
-            return Err(TunerError::InsufficientData(data.len()));
-        }
-
-        // Convert to aprender matrix format (f32 for RandomForestRegressor)
-        let n_samples = data.len();
-        let n_features = TunerFeatures::DIM;
-        let mut x_data = Vec::with_capacity(n_samples * n_features);
-        let mut y_data = Vec::with_capacity(n_samples);
-
-        for (features, target) in data {
-            x_data.extend(features.to_vector());
-            y_data.push(*target);
-        }
-
-        let x_matrix = Matrix::from_vec(n_samples, n_features, x_data)
-            .map_err(|e| TunerError::TrainingFailed(e.to_string()))?;
-        let y_vector = Vector::from_vec(y_data);
-
-        // Train RandomForest
-        let rf = self.rf_model.get_or_insert_with(|| RandomForestRegressor::new(100));
-        rf.fit(&x_matrix, &y_vector).map_err(|e| TunerError::TrainingFailed(e.to_string()))?;
-
-        // Calculate MAPE on training data
-        let predictions = rf.predict(&x_matrix);
-        let mut total_ape = 0.0;
-        for (i, (_, target)) in data.iter().enumerate() {
-            let pred = predictions.as_slice()[i];
-            total_ape += ((pred - target) / target.max(1.0)).abs();
-        }
-        self.mape = total_ape / data.len().max(1) as f32;
-        self.sample_count = data.len();
-
-        Ok(())
-    }
-
     pub(crate) fn predict_raw(&self, x: &[f32]) -> f32 {
         let mut result = self.weights[0]; // bias
         for (i, xi) in x.iter().enumerate() {
@@ -193,28 +136,9 @@ impl ThroughputRegressor {
         (result * 1000.0).max(1.0)
     }
 
-    /// Predict throughput for features
-    ///
-    /// With `ml-tuner` feature: uses trained RandomForest if available.
-    /// Falls back to linear model otherwise.
+    /// Predict throughput for features using the linear model.
     pub fn predict(&self, features: &TunerFeatures) -> ThroughputPrediction {
         let x = features.to_vector();
-
-        // Use RandomForest if trained (ml-tuner feature)
-        #[cfg(feature = "ml-tuner")]
-        let raw_predicted_tps = if let Some(ref rf) = self.rf_model {
-            // Use f32 matrix for RandomForestRegressor
-            if let Ok(x_matrix) = Matrix::from_vec(1, TunerFeatures::DIM, x.to_vec()) {
-                let predictions = rf.predict(&x_matrix);
-                predictions.as_slice().first().copied().unwrap_or(0.0)
-            } else {
-                self.predict_raw(&x)
-            }
-        } else {
-            self.predict_raw(&x)
-        };
-
-        #[cfg(not(feature = "ml-tuner"))]
         let raw_predicted_tps = self.predict_raw(&x);
 
         // v1.1.0: Roofline clamping - predictions must not exceed theoretical maximum

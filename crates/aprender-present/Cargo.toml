@@ -22,15 +22,15 @@ rust-version = "1.75"
 
 [workspace.dependencies]
 # Sovereign Stack
-trueno = "0.16"
-trueno-viz = "0.1.22"
+trueno = { workspace = true }
+trueno-viz = { workspace = true }
 
 # Internal crates (version + path for crates.io publishing)
-presentar-core = { version = "0.3.2", path = "crates/presentar-core" }
-presentar-widgets = { version = "0.3.2", path = "crates/presentar-widgets" }
-presentar-layout = { version = "0.3.2", path = "crates/presentar-layout" }
-presentar-yaml = { version = "0.3.2", path = "crates/presentar-yaml" }
-presentar-test = { version = "0.3.2", path = "crates/presentar-test" }
+presentar-core = { workspace = true }
+presentar-widgets = { workspace = true }
+presentar-layout = { workspace = true }
+presentar-yaml = { workspace = true }
+presentar-test = { workspace = true }
 presentar-test-macros = { version = "0.3.2", path = "crates/presentar-test-macros" }
 
 # Serialization

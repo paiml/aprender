@@ -23,13 +23,8 @@
 //! - `stress-test`: Enable randomized frame-by-frame stress testing
 //! - `tui-monitor`: Enable TUI monitoring mode via presentar
 
-#[cfg(feature = "viz")]
-mod gpu_renderer;
 pub mod stress;
 pub mod tui;
-
-#[cfg(feature = "viz")]
-pub use gpu_renderer::{compare_png_bytes, ColorPalette, GpuPixelRenderer, PixelDiffResult, Rgb};
 
 pub use stress::{
     verify_performance, Anomaly, AnomalyKind, FrameProfile, PerformanceResult,

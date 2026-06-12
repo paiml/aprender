@@ -15,7 +15,7 @@ categories = ["algorithms", "mathematics", "science"]
 # ComputeBrick is available from trueno crate directly
 # Users: `use trueno::brick::{ComputeBrick, ComputeBackend};`
 thiserror = "2.0"
-batuta-common = "0.1"
+batuta-common = { workspace = true }
 # Dynamic library loading for libcuda.so/nvcuda.dll
 # OWN THE STACK: We write our own CUDA FFI in driver/sys.rs (~400 lines)
 # Citation: RustBelt [1] proves Rust's type system safely encapsulates unsafe FFI
@@ -23,14 +23,20 @@ libloading = { version = "0.8", optional = true }
 # WASM support
 wasm-bindgen = { version = "0.2", optional = true }
 # Sovereign Stack - visual testing (optional to avoid version conflicts)
-trueno-viz = { version = "0.1.4", optional = true }
+# NOTE: trueno-viz (=aprender-viz) removed (APR-MONO self-containment): aprender-viz
+# depends on trueno, so gpu→viz→trueno closed a compute→gpu→viz→compute cycle. The `viz`
+# feature's unused-in-tree GPU visual-testing (gpu_renderer.rs + wasm.rs, 835 LOC) is
+# dropped here; re-home as a top-level visual-test crate above both gpu and viz if needed.
 # Simular for deterministic RNG and TUI monitoring (Sovereign Stack)
-simular = { version = "0.2.0", optional = true }
-# Renacer for profiling and anomaly detection (Sovereign Stack)
-renacer = { workspace = true, optional = true }
-# TUI support via presentar (optional, for stress test monitor)
-presentar-core = { version = "0.3", optional = true }
-presentar-terminal = { version = "0.3", optional = true }
+simular = { workspace = true, optional = true }
+# NOTE: renacer (=aprender-profile) removed as a normal dep (APR-MONO self-containment):
+# aprender-profile depends on trueno, so gpu→renacer→trueno would close a
+# compute→gpu→profile→compute cycle. renacer was unused in gpu src; it remains a
+# dev-dependency (dev-dep cycles are legal) for stress-test benches only.
+# NOTE: presentar-core/-terminal removed (APR-MONO self-containment): the GPU backend
+# crate must not depend on the terminal-UI layer (present-core → trueno would close a
+# compute→gpu→present-core→compute cycle). No gpu src consumed them — TUI/monitoring
+# lives in higher-level tools (apr-cli, cbtop), not the gpu backend.
 crossterm = { version = "0.28", optional = true }
 # WGPU for cross-platform WebGPU compute (Vulkan/Metal/DX12/WebGPU)
 wgpu = { version = "24", optional = true }
@@ -42,7 +48,7 @@ manzana = { version = "0.2.0", optional = true }
 [dev-dependencies]
 proptest = "1.9"
 criterion = { workspace = true }
-simular = "0.2.0"
+simular = { workspace = true }
 pollster = "0.4"
 bytemuck = { version = "1.21", features = ["derive"] }
 
@@ -61,14 +67,12 @@ default = []
 cuda = ["dep:libloading"]
 # WASM visual testing
 wasm = ["dep:wasm-bindgen"]
-# Visual testing with trueno-viz (enables gpu_renderer)
-viz = ["dep:trueno-viz"]
 # Stress testing with randomized inputs (native only)
-stress-test = ["dep:simular", "dep:renacer"]
+stress-test = ["dep:simular"]
 # TUI monitoring mode for stress tests
-tui-monitor = ["stress-test", "dep:presentar-core", "dep:presentar-terminal", "dep:crossterm"]
+tui-monitor = ["stress-test", "dep:crossterm"]
 # GPU pixel testing with probar TUI visualization
-gpu-pixels = ["dep:jugar-probar", "dep:presentar-core", "dep:presentar-terminal", "dep:crossterm"]
+gpu-pixels = ["dep:jugar-probar", "dep:crossterm"]
 # WGPU backend for cross-platform GPU compute (WebGPU via wgpu crate)
 wgpu = ["dep:wgpu"]
 # Apple Metal backend via manzana (macOS only)

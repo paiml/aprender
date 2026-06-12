@@ -111,7 +111,7 @@ async-stream = "0.3"
 provable-contracts-macros = "0.3"
 
 # Shared formatting and system utilities (Batuta stack)
-batuta-common = "0.1"
+batuta-common = { workspace = true }
 
 # Sovereign coding assistant (apr code → batuta agent engine) — PMAT-182.
 # Non-optional since claude-code-parity-apr M150 (outcome-parity Phase 3
@@ -198,13 +198,13 @@ presentar-core = { workspace = true }
 
 # Visualization (syscall tracing and charts)
 renacer = { workspace = true, optional = true }
-trueno-viz = { version = "0.3", optional = true }  # Not yet in monorepo
+trueno-viz = { workspace = true, optional = true }
 
 # ZRAM compression (SIMD-accelerated LZ4/ZSTD)
-trueno-zram-core = { version = "0.3", optional = true }
+trueno-zram-core = { workspace = true, optional = true }
 
 # Model registry and caching (Ollama-like model management)
-pacha = { version = "0.3" }
+pacha = { workspace = true }
 
 # PTX analysis and bug detection (trueno-explain: PtxAnalyzer + PtxBugAnalyzer)
 trueno-explain = { version = "0.2.2", optional = true }
@@ -221,7 +221,7 @@ aprender-train-common = { workspace = true, optional = true }
 dhat = { version = "0.3", optional = true }
 # Data loading, splitting, imbalance detection (apr data subcommands)
 # GH-344: path dep via .cargo/config.toml.dev-overrides; CI uses checkout+symlink
-alimentar = { version = "0.3" }
+alimentar = { workspace = true }
 half = "2.4.1"
 # YAML config parsing (distillation configs, ALB-011)
 serde_yaml = { package = "serde_yaml_ng", version = "0.10" }

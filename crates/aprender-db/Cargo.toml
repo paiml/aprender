@@ -16,7 +16,7 @@ name = "trueno_db"
 
 [dependencies]
 # Core compute (SIMD - always included)
-trueno = "0.17"  # SIMD-accelerated compute
+trueno = { workspace = true }
 
 # Serialization (experiment tracking schema)
 serde = { version = "1.0", features = ["derive"] }
@@ -48,7 +48,7 @@ dashmap = "6.0"  # Lock-free concurrent hashmap for MemoryKvStore
 rustc-hash = "2.0"  # Fast FxHash for SIMD-friendly key hashing
 
 # Compression for KV cache (GH-5) - via batuta-common shared module
-batuta-common = "0.1"
+batuta-common = { workspace = true }
 lz4_flex = { version = "0.11", optional = true }
 zstd = { version = "0.13", optional = true }
 

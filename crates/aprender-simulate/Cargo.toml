@@ -52,8 +52,8 @@ tokio = { version = "1.0", features = ["full"], optional = true }
 crossterm = { version = "0.28", optional = true }
 # ComputeBlocks from presentar-terminal (SIMD-optimized TUI widgets)
 # Path deps to avoid jugar-probar prod dep chain (CB-081)
-presentar-terminal = { version = "0.3", optional = true }
-presentar-core = { version = "0.3", default-features = false, optional = true }
+presentar-terminal = { workspace = true, optional = true }
+presentar-core = { workspace = true, optional = true, default-features = false }
 
 # WASM (optional)
 wasm-bindgen = { version = "0.2", optional = true }
@@ -101,7 +101,7 @@ tempfile = "3.14"
 # jugar-probar removed from dev-deps to reduce Cargo.lock (CB-081)
 # Tests in tests/probar_*.rs require jugar-probar and are gated via required-features
 # Presentar TUI testing framework (SPEC-024 Section 12 & 13)
-presentar-test = { version = "0.3" }
+presentar-test = { workspace = true }
 
 [features]
 default = []

@@ -19,7 +19,7 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-entrenar = { version = "0.49.0", path = "../aprender-train", package = "aprender-train" }
+entrenar = { workspace = true }
 entrenar-common = { version = "0.49.0", path = "../aprender-train-common", package = "aprender-train-common" }
 clap = { version = "4.5", features = ["derive"] }
 rustyline = "14"

@@ -21,8 +21,8 @@ path = "src/main.rs"
 
 [dependencies]
 # Sovereign Stack: presentar-terminal (version + path for clean-room)
-presentar-terminal = { version = "0.3.5", features = ["ptop"] }
-presentar-core = { version = "0.3.4" }
+presentar-terminal = { workspace = true, features = ["ptop"] }
+presentar-core = { workspace = true }
 
 # Terminal I/O (only non-PAIML terminal dep)
 crossterm = "0.28"
@@ -31,7 +31,7 @@ crossterm = "0.28"
 clap = { version = "4.5", features = ["derive"] }
 
 # Shared formatting/display utilities (Batuta stack)
-batuta-common = "0.1"
+batuta-common = { workspace = true }
 
 # Error handling
 thiserror = "2.0"
