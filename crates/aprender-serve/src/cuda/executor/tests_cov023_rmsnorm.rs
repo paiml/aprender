@@ -7,7 +7,7 @@ fn test_cov023_rmsnorm_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_size = 256u32;
     let epsilon = 1e-5f32;
@@ -36,7 +36,7 @@ fn test_cov023_q4k_gemv_cached_async_weight_not_cached() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32;
     let k = 256u32;
@@ -63,7 +63,7 @@ fn test_cov023_q6k_gemv_cached_async_weight_not_cached() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32;
     let k = 256u32;
@@ -94,7 +94,7 @@ fn test_cov024_q5k_matvec_dimension_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Q5_K: 176 bytes per 256 values
     let m = 32u32; // output dim
@@ -123,7 +123,7 @@ fn test_cov024_q6k_matvec_dimension_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Q6_K: 210 bytes per 256 values
     let m = 32u32; // output dim
@@ -149,7 +149,7 @@ fn test_cov024_gpu_argmax_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Create a simple logits buffer on GPU
     let vocab_size = 128u32;
@@ -170,7 +170,7 @@ fn test_cov024_gpu_argmax_with_clear_max() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Create logits with a clear maximum at position 42
     let vocab_size = 128u32;
@@ -197,7 +197,7 @@ fn test_cov024_fused_ffn_swiglu_gpu_weight_not_cached_gate() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_size = 256u32;
     let intermediate_size = 512u32;
@@ -226,7 +226,7 @@ fn test_cov024_cache_rmsnorm_gamma_empty_name() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Empty gamma array should still work
     let gamma = vec![1.0f32; 256];
@@ -252,7 +252,7 @@ fn test_cov024_output_rmsnorm_gpu_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_size = 256u32;
     let epsilon = 1e-5f32;
@@ -278,7 +278,7 @@ fn test_cov024_output_rmsnorm_gpu_with_varied_gamma() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_size = 256u32;
     let epsilon = 1e-5f32;
@@ -303,7 +303,7 @@ fn test_cov024_clear_indexed_weights_empty() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Clear should work even when nothing indexed
     executor.clear_indexed_weights();
@@ -319,7 +319,7 @@ fn test_cov024_clear_execution_graph_empty() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Clear should work even when empty
     executor.clear_execution_graph();
@@ -338,7 +338,7 @@ fn test_cov024_set_rope_type() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Set different RoPE types (0 = standard, 1 = neox)
     executor.set_rope_type(0);
@@ -352,7 +352,7 @@ fn test_cov024_set_rope_theta() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Set various rope theta values
     executor.set_rope_theta(10000.0);
@@ -370,7 +370,7 @@ fn test_cov025_device_name() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     let name = executor.device_name();
     assert!(name.is_ok(), "device_name should succeed: {:?}", name.err());
@@ -384,7 +384,7 @@ fn test_cov025_memory_info() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     let info = executor.memory_info();
     assert!(info.is_ok(), "memory_info should succeed: {:?}", info.err());
@@ -409,7 +409,7 @@ fn test_cov025_make_current() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     let result = executor.make_current();
     assert!(
@@ -425,7 +425,7 @@ fn test_cov025_clear_pool() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Clear pool should work even when empty
     executor.clear_pool();

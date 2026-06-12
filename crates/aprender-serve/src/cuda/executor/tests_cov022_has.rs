@@ -9,7 +9,7 @@ fn test_cov022_has_rmsnorm_weights_false_when_not_cached() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     // Layer 0 RMSNorm weights not cached - should return false
     assert!(
@@ -28,7 +28,7 @@ fn test_cov022_has_output_norm_false_when_not_cached() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     // Output norm not cached - should return false
     assert!(
@@ -43,7 +43,7 @@ fn test_cov022_has_qkv_bias_false_when_not_cached() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     // QKV bias not cached - should return false
     assert!(
@@ -62,7 +62,7 @@ fn test_cov022_has_lm_head_bias_false_when_not_cached() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     // LM head bias not cached - should return false
     assert!(
@@ -77,7 +77,7 @@ fn test_cov022_preload_output_norm_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Preload output norm gamma
     let gamma = vec![1.0f32; 256]; // hidden_dim = 256
@@ -107,7 +107,7 @@ fn test_cov022_preload_lm_head_bias_none() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Preload with None bias - should return 0
     let result = executor.preload_lm_head_bias(None);
@@ -126,7 +126,7 @@ fn test_cov022_preload_lm_head_bias_empty() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Preload with empty bias slice - should return 0
     let empty_bias: [f32; 0] = [];
@@ -146,7 +146,7 @@ fn test_cov022_preload_lm_head_bias_valid() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Preload with valid bias
     let bias = vec![0.1f32; 32000]; // vocab_size = 32000
@@ -176,7 +176,7 @@ fn test_cov022_cache_rmsnorm_gamma_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Cache a gamma weight
     let gamma = vec![1.0f32; 256];
@@ -202,7 +202,7 @@ fn test_cov022_workspace_output_none_initially() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     // Workspace output should be None before initialization
     assert!(
@@ -217,7 +217,7 @@ fn test_cov022_read_hidden_state_workspace_not_initialized() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Workspace not initialized - should fail
     let result = executor.read_hidden_state_to_cpu();
@@ -240,7 +240,7 @@ fn test_cov022_preload_qkv_bias_empty() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Empty biases - should succeed with 0 bytes
     let q_biases: Vec<Option<&[f32]>> = vec![None, None];
@@ -260,7 +260,7 @@ fn test_cov022_preload_rmsnorm_weights_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Create norm weights for 2 layers
     let attn_norm_0 = vec![1.0f32; 256];
@@ -306,7 +306,7 @@ fn test_cov023_q4k_gemv_cached_weight_not_cached() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32;
     let k = 256u32;
@@ -332,7 +332,7 @@ fn test_cov023_q5k_gemv_cached_weight_not_cached() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32;
     let k = 256u32;
@@ -358,7 +358,7 @@ fn test_cov023_q6k_gemv_cached_weight_not_cached() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32;
     let k = 256u32;
@@ -384,7 +384,7 @@ fn test_cov023_gelu_gpu_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 256u32;
 
@@ -408,7 +408,7 @@ fn test_cov023_rmsnorm_gpu_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_size = 256u32;
     let epsilon = 1e-5f32;

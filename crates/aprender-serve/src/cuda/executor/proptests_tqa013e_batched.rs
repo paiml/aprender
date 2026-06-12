@@ -10,7 +10,7 @@ fn test_tqa013e_batched_graph_state() {
         return;
     }
 
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     // Verify batched decode graphs map is empty initially
     // We check this indirectly via the fact that has_decode_graph returns false
@@ -34,7 +34,7 @@ fn test_tqa013f_clear_workspace_graph_state() {
         return;
     }
 
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Clear workspace and verify state
     executor.clear_workspace();
@@ -207,7 +207,7 @@ fn test_tqa014e_single_element_buffer() {
         return;
     }
 
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     // Single element buffer
     let data = vec![42.0f32];
@@ -236,7 +236,7 @@ fn test_tqa014f_large_buffer_allocation() {
         return;
     }
 
-    let executor = CudaExecutor::new(0).expect("CUDA executor");
+    let executor = crate::cuda_executor_or_skip!(0);
 
     // Large buffer (1M elements = 4MB)
     let size = 1_000_000usize;

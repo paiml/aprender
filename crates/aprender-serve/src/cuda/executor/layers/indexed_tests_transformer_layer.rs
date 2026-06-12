@@ -280,7 +280,7 @@ fn test_indexed_gpu_execution_verified() {
 #[test]
 fn test_rmsnorm_gpu_verified() {
     // Verify RMSNorm GPU kernel actually normalizes
-    let mut exec = CudaExecutor::new(0).expect("CUDA executor");
+    let mut exec = crate::cuda_executor_or_skip!(0);
     let _ = exec.init_workspace(256, 1024);
 
     // Cache gamma weights

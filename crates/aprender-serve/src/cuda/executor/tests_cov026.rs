@@ -5,7 +5,7 @@ fn test_cov026_q5_0_gemv_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Q5_0: 22 bytes per 32 values (2 scale + 4 high bits + 16 low bits)
     let n = 32u32; // output dim
@@ -45,7 +45,7 @@ fn test_cov027_q4k_gemv_into_tiled_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32;
     let k = 256u32;
@@ -80,7 +80,7 @@ fn test_cov027_tiled_q4k_gemv_cached_async_weight_not_cached() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32;
     let k = 256u32;
@@ -102,7 +102,7 @@ fn test_cov027_chunked_tiled_q4k_gemv_cached_async_weight_not_cached() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32;
     let k = 512u32; // larger K for chunked version
@@ -129,7 +129,7 @@ fn test_cov027_dp4a_q4k_gemv_cached_async_weight_not_cached() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32;
     let k = 256u32;
@@ -149,7 +149,7 @@ fn test_cov027_fused_rmsnorm_q4k_gemv_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32; // output dim
     let k = 256u32; // input dim (also hidden size for rmsnorm)
@@ -196,7 +196,7 @@ fn test_cov027_fused_gate_up_q4k_gemv_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let k = 256u32; // input dim (hidden_size)
     let n = 512u32; // output dim (intermediate_size)
@@ -247,7 +247,7 @@ fn test_cov027_q4k_gemv_cached_tiled_weight_not_cached() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32;
     let k = 256u32;
@@ -273,7 +273,7 @@ fn test_cov027_q4k_gemv_indexed_async_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32;
     let k = 256u32;
@@ -307,7 +307,7 @@ fn test_cov027_q6k_gemv_indexed_async_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32;
     let k = 256u32;
@@ -346,7 +346,7 @@ fn test_cov028_fused_qkv_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_size = 64u32;
     let kv_dim = 64u32;
@@ -394,7 +394,7 @@ fn test_cov028_fused_qkv_into_gqa() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_size = 128u32;
     let kv_dim = 32u32; // GQA: fewer KV heads

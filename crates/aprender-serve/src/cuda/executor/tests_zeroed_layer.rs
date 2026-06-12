@@ -67,7 +67,7 @@ fn test_cov026_coalesced_q4k_gemv_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Q4_K: 144 bytes per 256 values (super-block)
     let n = 32u32; // output dim
@@ -104,7 +104,7 @@ fn test_cov026_vectorized_q4k_gemv_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32; // output dim
     let k = 256u32; // input dim (must be divisible by 256)
@@ -139,7 +139,7 @@ fn test_cov026_dp4a_q4k_gemv_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32; // output dim
     let k = 256u32; // input dim (must be divisible by 256)
@@ -174,7 +174,7 @@ fn test_cov026_coalesced_q6k_gemv_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Q6_K: 210 bytes per 256 values
     let n = 32u32; // output dim
@@ -210,7 +210,7 @@ fn test_cov026_q4k_gemv_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32; // output dim
     let k = 256u32; // input dim (must be divisible by 256)
@@ -245,7 +245,7 @@ fn test_cov026_q6k_gemv_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32; // output dim
     let k = 256u32; // input dim (must be divisible by 256)
@@ -280,7 +280,7 @@ fn test_cov026_q5k_gemv_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Q5_K: 176 bytes per 256 values
     let n = 32u32; // output dim
@@ -316,7 +316,7 @@ fn test_cov026_q8_0_gemv_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Q8_0: 34 bytes per 32 values (2 bytes scale + 32 int8)
     let n = 32u32; // output dim
@@ -354,7 +354,7 @@ fn test_cov026_q4_0_gemv_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Q4_0: 18 bytes per 32 values (2 bytes scale + 16 bytes of 4-bit)
     let n = 32u32; // output dim
@@ -390,7 +390,7 @@ fn test_cov026_q4_1_gemv_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Q4_1: 20 bytes per 32 values (2 scale + 2 min + 16 data)
     let n = 32u32; // output dim

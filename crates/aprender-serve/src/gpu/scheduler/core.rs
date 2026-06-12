@@ -164,24 +164,26 @@ mod tests {
 
     #[test]
     fn test_cuda_scheduler_new() {
-        // CudaScheduler::new() should succeed on RTX 4090
-        let scheduler = CudaScheduler::new();
-        assert!(
-            scheduler.is_ok(),
-            "CudaScheduler::new() failed: {:?}",
-            scheduler.err()
-        );
+        // CudaScheduler::new() should succeed when a CUDA device is present.
+        // On a GPU-less host it returns Err (CudaNotAvailable) — skip rather
+        // than fail, so the suite is portable (APR-MONO §S #1981).
+        match CudaScheduler::new() {
+            Ok(scheduler) => assert!(scheduler.has_cuda()),
+            Err(e) => {
+                eprintln!("SKIP: CUDA scheduler unavailable: {e:?}");
+            },
+        }
     }
 
     #[test]
     fn test_cuda_scheduler_has_cuda() {
-        let scheduler = CudaScheduler::new().expect("scheduler");
+        let scheduler = crate::cuda_scheduler_or_skip!();
         assert!(scheduler.has_cuda());
     }
 
     #[test]
     fn test_cuda_scheduler_uses_cuda_for_all_dims() {
-        let scheduler = CudaScheduler::new().expect("scheduler");
+        let scheduler = crate::cuda_scheduler_or_skip!();
         // CudaScheduler ALWAYS uses CUDA, unlike HybridScheduler
         assert!(scheduler.uses_cuda_for(1, 64, 64)); // m=1 (single token)
         assert!(scheduler.uses_cuda_for(8, 256, 256)); // batch
@@ -191,7 +193,7 @@ mod tests {
 
     #[test]
     fn test_cuda_scheduler_device_name() {
-        let scheduler = CudaScheduler::new().expect("scheduler");
+        let scheduler = crate::cuda_scheduler_or_skip!();
         let name = scheduler.device_name();
         assert!(name.is_ok());
         let name = name.expect("name");
@@ -201,7 +203,7 @@ mod tests {
 
     #[test]
     fn test_cuda_scheduler_matmul_basic() {
-        let mut scheduler = CudaScheduler::new().expect("scheduler");
+        let mut scheduler = crate::cuda_scheduler_or_skip!();
 
         // 2x3 @ 3x2 = 2x2
         let a = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
@@ -214,7 +216,7 @@ mod tests {
 
     #[test]
     fn test_cuda_scheduler_matmul_single_element() {
-        let mut scheduler = CudaScheduler::new().expect("scheduler");
+        let mut scheduler = crate::cuda_scheduler_or_skip!();
 
         // 1x1 @ 1x1 = 1x1
         let a = vec![3.0];
@@ -229,7 +231,7 @@ mod tests {
 
     #[test]
     fn test_cuda_scheduler_matmul_larger() {
-        let mut scheduler = CudaScheduler::new().expect("scheduler");
+        let mut scheduler = crate::cuda_scheduler_or_skip!();
 
         // 4x64 @ 64x32 = 4x32
         let a: Vec<f32> = (0..256).map(|i| (i as f32) * 0.01).collect();
@@ -242,7 +244,7 @@ mod tests {
 
     #[test]
     fn test_cuda_scheduler_cache_weight() {
-        let mut scheduler = CudaScheduler::new().expect("scheduler");
+        let mut scheduler = crate::cuda_scheduler_or_skip!();
 
         let weight = vec![1.0f32; 256 * 128];
         let result = scheduler.cache_weight("test_weight", &weight);
@@ -253,7 +255,7 @@ mod tests {
 
     #[test]
     fn test_cuda_scheduler_cached_weight_count() {
-        let mut scheduler = CudaScheduler::new().expect("scheduler");
+        let mut scheduler = crate::cuda_scheduler_or_skip!();
 
         let initial_count = scheduler.cached_weight_count();
         let weight = vec![1.0f32; 64 * 64];
@@ -270,7 +272,7 @@ mod tests {
 
     #[test]
     fn test_cuda_scheduler_matmul_cached() {
-        let mut scheduler = CudaScheduler::new().expect("scheduler");
+        let mut scheduler = crate::cuda_scheduler_or_skip!();
 
         // Cache a 64x32 weight matrix
         let weight: Vec<f32> = (0..2048).map(|i| (i as f32) * 0.001).collect();
@@ -288,7 +290,7 @@ mod tests {
 
     #[test]
     fn test_cuda_scheduler_matmul_identity() {
-        let mut scheduler = CudaScheduler::new().expect("scheduler");
+        let mut scheduler = crate::cuda_scheduler_or_skip!();
 
         // Identity matrix test: I @ v = v
         // 4x4 identity @ 4x1 = 4x1
