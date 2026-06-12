@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.1] - 2026-06-12
+
+### Added
+
+- **`model_selection::randomized_search` (RandomizedSearchCV)** (Pillar 1):
+  samples `min(n_iter, grid.len())` candidates from the grid (seeded, reproducible),
+  cross-validates each, returns the best — mirroring sklearn's RandomizedSearchCV.
+  Completes the hyperparameter-search family with `grid_search`.
+
 ## [0.47.0] - 2026-06-12
 
 ### Added
