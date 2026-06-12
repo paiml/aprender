@@ -15,7 +15,7 @@ name = "trueno_cuda_edge"
 [dependencies]
 thiserror = "2.0"
 serde = { version = "1.0", features = ["derive"] }
-trueno-gpu = { version = "0.48.4", path = "../aprender-gpu", package = "aprender-gpu", optional = true }
+trueno-gpu = { version = "0.48.5", path = "../aprender-gpu", package = "aprender-gpu", optional = true }
 
 [dev-dependencies]
 proptest = "1.6"
