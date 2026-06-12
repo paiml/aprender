@@ -29,7 +29,7 @@ base64 = "0.22"
 thiserror = "2.0"
 
 # Optional: ML integration
-aprender = { path = "../aprender-core", version = "0.48.4", package = "aprender-core", optional = true }
+aprender = { path = "../aprender-core", version = "0.48.5", package = "aprender-core", optional = true }
 
 # Optional: Graph integration
 trueno-graph = { workspace = true, optional = true, default-features = false }

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.5] - 2026-06-12
+
+### Added
+
+- **`metrics::davies_bouldin_score` + `metrics::calinski_harabasz_score`**
+  (Pillar 1): clustering-evaluation metrics matching `sklearn.metrics`
+  (Davies-Bouldin lower-better, Calinski-Harabasz variance-ratio higher-better).
+  Complement the existing `silhouette_score`.
+
 ## [0.48.4] - 2026-06-12
 
 ### Added
