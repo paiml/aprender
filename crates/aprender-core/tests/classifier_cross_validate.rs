@@ -181,3 +181,34 @@ fn grid_search_picks_best_hyperparameters() {
     assert!((result.best_score - max).abs() < 1e-6);
     assert_eq!(result.best_params, depths[result.best_index]);
 }
+
+#[test]
+fn randomized_search_samples_subset_and_picks_best() {
+    use aprender::model_selection::randomized_search;
+    use aprender::tree::RandomForestClassifier;
+    let (x, labels) = make_classification(150, 8, 4, 3, 42);
+    let y = Vector::from_vec(labels.iter().map(|&l| l as f32).collect());
+    let depths: Vec<usize> = (1..=10).collect();
+    let result = randomized_search(
+        &depths,
+        4, // sample 4 of 10
+        7,
+        |&d| {
+            RandomForestClassifier::new(15)
+                .with_max_depth(d)
+                .with_random_state(0)
+        },
+        &x,
+        &y,
+        &KFold::new(5),
+    )
+    .expect("randomized_search");
+    assert_eq!(
+        result.mean_scores.len(),
+        4,
+        "samples exactly n_iter candidates"
+    );
+    let max = result.mean_scores.iter().copied().fold(f32::MIN, f32::max);
+    assert!((result.best_score - max).abs() < 1e-6);
+    assert_eq!(result.best_score, result.mean_scores[result.best_index]);
+}
