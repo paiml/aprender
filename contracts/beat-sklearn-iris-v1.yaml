@@ -1,0 +1,33 @@
+contract: beat-sklearn-iris
+metadata:
+  kind: beat-benchmark
+  version: "1.0.0"
+  description: >
+    Pillar-1 BEAT benchmark: aprender RandomForestClassifier must meet-or-beat
+    scikit-learn accuracy on the canonical Iris task (deterministic i%3 split).
+    The first contract under the BeatBenchmark kind (PMAT-741) — the measurement
+    backbone for the four-pillar "replace AND beat" mission.
+  references:
+  - "docs/specifications/campaign-ev-reprioritization-2026-06-12.md"
+  - "crates/aprender-core/tests/beat_sklearn_iris.rs"
+version: 1
+status: enforced
+date: 2026-06-12
+
+# Beat-benchmark parameters (machine-pinned baseline; CI fails on regression).
+beat:
+  pillar: 1
+  incumbent: scikit-learn
+  incumbent_pinned: "2026-06-11 via uv run --with scikit-learn"
+  canonical_task: >
+    RandomForestClassifier(n_estimators=100) on the canonical Iris dataset with a
+    DETERMINISTIC split (sample index i%3==0 -> test; n_train=100, n_test=50). The
+    same split is applied to both apr and sklearn (apples-to-apples).
+  metric: accuracy
+  direction: higher_is_better
+  baseline_value: 0.9560      # sklearn mean test_acc over random_state 0..4
+  baseline_floor: 0.9400      # sklearn min over random_state 0..4
+  beat_threshold: 0.9200      # apr must reach >= this (sklearn floor - 2pp impl margin)
+  baseline_sourced_date: "2026-06-11"
+  approved_compute: CPU       # one of: CPU | GPU (PMAT-741 supports both)
+  ci_gate_name: "beat_sklearn_iris"   # the test that enforces this gate
