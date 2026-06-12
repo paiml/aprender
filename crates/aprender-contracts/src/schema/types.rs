@@ -44,6 +44,57 @@ pub struct Contract {
     /// Coq verification specification.
     #[serde(default)]
     pub coq_spec: Option<CoqSpec>,
+    /// BEAT-benchmark parameters (PMAT-741) — present on `metadata.kind:
+    /// beat-benchmark` contracts; pins a machine-measured incumbent baseline so
+    /// CI fails when aprender regresses below it on the incumbent's canonical task.
+    #[serde(default)]
+    pub beat: Option<Beat>,
+}
+
+/// Parameters of a head-to-head BEAT benchmark (`metadata.kind: beat-benchmark`,
+/// PMAT-741): a falsifiable, CI-wired claim that aprender meets-or-beats an
+/// incumbent (scikit-learn / PyTorch / Unsloth / Ollama·llama.cpp) on the
+/// incumbent's own canonical task — the measurement backbone of the four-pillar
+/// "replace AND beat" mission. Required-shape is enforced by
+/// `validate_beat_benchmark` in the validator (BEAT-001..007).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Beat {
+    /// Which pillar (1=sklearn, 2=PyTorch, 3=Unsloth, 4=Ollama/llama.cpp).
+    #[serde(default)]
+    pub pillar: Option<u8>,
+    /// The incumbent being beaten — must name one of the four pillars.
+    #[serde(default)]
+    pub incumbent: String,
+    /// How/when the baseline was pinned (free-form provenance).
+    #[serde(default)]
+    pub incumbent_pinned: Option<String>,
+    /// The canonical task on which the beat is measured (apples-to-apples).
+    #[serde(default)]
+    pub canonical_task: Option<String>,
+    /// The measured metric (e.g. `accuracy`, `wall_clock_ms`, `tokens_per_sec`, `mse`).
+    #[serde(default)]
+    pub metric: String,
+    /// `higher_is_better` or `lower_is_better` — fixes the regression direction.
+    #[serde(default)]
+    pub direction: String,
+    /// The incumbent's pinned baseline value.
+    #[serde(default)]
+    pub baseline_value: Option<f64>,
+    /// Optional worst-case incumbent value (e.g. sklearn min over seeds).
+    #[serde(default)]
+    pub baseline_floor: Option<f64>,
+    /// The threshold aprender must meet/beat; CI fails on regression past it.
+    #[serde(default)]
+    pub beat_threshold: Option<f64>,
+    /// When the baseline was sourced (ISO date).
+    #[serde(default)]
+    pub baseline_sourced_date: Option<String>,
+    /// `CPU` or `GPU` — the compute approved for this gate.
+    #[serde(default)]
+    pub approved_compute: Option<String>,
+    /// The CI test/gate name that enforces this beat.
+    #[serde(default)]
+    pub ci_gate_name: String,
 }
 
 impl Contract {
