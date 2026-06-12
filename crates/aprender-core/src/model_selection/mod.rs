@@ -134,6 +134,66 @@ where
     Ok(cross_validate(estimator, x, y, cv)?.scores)
 }
 
+/// Result of a generic [`grid_search`]: the best parameter set found and its
+/// mean CV score, plus the per-candidate mean scores (parallel to the grid).
+#[derive(Debug, Clone)]
+pub struct GridSearchCVResult<P> {
+    /// The grid entry with the highest mean CV score.
+    pub best_params: P,
+    /// Mean CV score of `best_params`.
+    pub best_score: f32,
+    /// Index of `best_params` within the input grid.
+    pub best_index: usize,
+    /// Mean CV score for each grid candidate (same order as the input grid).
+    pub mean_scores: Vec<f32>,
+}
+
+/// Exhaustive grid search over hyperparameters, mirroring sklearn's
+/// `GridSearchCV`. For each candidate `params` in `grid`, `build(params)`
+/// constructs an estimator, which is k-fold cross-validated; the candidate with
+/// the highest mean score wins.
+///
+/// Closure-based by design: Rust estimators don't share a `get_params` /
+/// `set_params` reflection API, so the caller maps params to a configured
+/// estimator via `build` (e.g. `|&d| RandomForestClassifier::new(50).with_max_depth(d)`).
+///
+/// # Errors
+/// Returns an error if `grid` is empty or any fold's training fails.
+pub fn grid_search<E, P, F>(
+    grid: &[P],
+    build: F,
+    x: &Matrix<f32>,
+    y: &Vector<f32>,
+    cv: &KFold,
+) -> Result<GridSearchCVResult<P>, String>
+where
+    E: Estimator + Clone,
+    P: Clone,
+    F: Fn(&P) -> E,
+{
+    if grid.is_empty() {
+        return Err("Grid cannot be empty".to_string());
+    }
+    let mut mean_scores = Vec::with_capacity(grid.len());
+    let mut best_index = 0;
+    let mut best_score = f32::NEG_INFINITY;
+    for (i, params) in grid.iter().enumerate() {
+        let model = build(params);
+        let mean = cross_validate(&model, x, y, cv)?.mean();
+        mean_scores.push(mean);
+        if mean > best_score {
+            best_score = mean;
+            best_index = i;
+        }
+    }
+    Ok(GridSearchCVResult {
+        best_params: grid[best_index].clone(),
+        best_score,
+        best_index,
+        mean_scores,
+    })
+}
+
 /// Helper function to extract samples by indices
 fn extract_samples(
     x: &Matrix<f32>,

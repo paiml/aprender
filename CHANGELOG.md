@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.45.0] - 2026-06-12
+
+### Added
+
+- **`model_selection::grid_search` (GridSearchCV)** (Pillar 1): closure-based
+  exhaustive hyperparameter search mirroring `sklearn.model_selection.GridSearchCV`
+  — builds an estimator per grid candidate, k-fold cross-validates, returns the
+  best by mean score (`GridSearchCVResult`). Works over any `Estimator` (all 8
+  classifiers/regressors).
+
 ## [0.44.9] - 2026-06-12
 
 ### Added
