@@ -565,9 +565,9 @@ impl ActiveLearner {
                 let beta = self.success_counts.get(&c.id).copied().unwrap_or(0.0) + 1.0;
 
                 // Sample from Beta distribution
-                #[allow(clippy::unwrap_used)]
-                let beta_dist =
-                    Beta::new(alpha, beta).unwrap_or_else(|_| Beta::new(1.0, 1.0).unwrap());
+                let beta_dist = Beta::new(alpha, beta).unwrap_or_else(|_| {
+                    Beta::new(1.0, 1.0).expect("Beta(1.0, 1.0) is always valid")
+                });
                 let score = beta_dist.sample(&mut rng);
 
                 (c.id, score)

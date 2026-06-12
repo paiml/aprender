@@ -1,9 +1,11 @@
 # APR-MONO: Sovereign Stack Monorepo Consolidation
 
-**Version**: 2.4
-**Date**: 2026-04-14
-**Status**: COMPLETE — 75 workspace crates (79 dirs, 4 excluded), 0 compile failures, 14 integration tests pass
-**Layout**: FLAT `crates/aprender-*` (Polars/Burn/Nushell pattern)
+**Version**: 2.5
+**Date**: 2026-06-12 (was 2.4, 2026-04-14)
+**Status**: COMPLETE + SELF-CONTAINED — every sibling dep now resolves in-tree (§S below);
+`cargo metadata` + `cargo check --workspace` green as a self-contained DAG.
+**Layout**: FLAT `crates/aprender-*` (Polars/Burn/Nushell pattern). KNOWN VIOLATION:
+`crates/aprender-rag/crates/trueno-rag-cli` (nested orphan) pending flat relocation.
 **Priority**: P0 — Unblocks daily apr-cli releases
 **Author**: PAIML Team + Claude
 **Contracts**: `cgp-monorepo-consolidation-v1.yaml`, `cgp-monorepo-build-v1.yaml`, `apr-cli-commands-v1.yaml`, `apr-cli-command-safety-v1.yaml`, `tui-rendering-ux-v1.yaml`, `ratatui-migration-v1.yaml`
@@ -1411,3 +1413,53 @@ polars-core/Cargo.toml:
 ```
 
 This is the target state for `paiml/aprender`.
+
+---
+
+## §S. Self-Containment Pass (v2.5, 2026-06-12)
+
+**Finding.** Despite the flat-layout consolidation, ~26 crates still hard-pinned the
+*crates.io-published* siblings (`trueno = "0.17"`, `realizar = "0.8"`, `renacer = "0.9"`,
+`simular = "0.3"`, `alimentar`, `pacha`, …) instead of their in-tree copies. The
+"monorepo" was a shell: `cargo install aprender` pulled published trueno/realizar/etc.,
+reintroducing duplicate crates and the rand-0.8 dependency-cycle dependabot flagged.
+
+**Action.** Converted all 92 external sibling deps to `{ workspace = true }` and added 9
+missing legacy lib-name aliases to `[workspace.dependencies]`
+(`trueno-quant→aprender-quant`, `trueno-db→aprender-db`, `trueno-viz→aprender-viz`,
+`trueno-rag→aprender-rag`, `trueno-cuda-edge→aprender-cuda-edge`,
+`renacer-core→aprender-profile-core`, `repartir→aprender-distribute`,
+`simular→aprender-simulate`, `probar→aprender-test-lib`), plus
+`alimentar→aprender-data`, `pacha→aprender-registry`.
+
+**Cycle break.** Pointing everything in-tree closed a 16-crate SCC. The *normal*-dependency
+graph is a clean DAG; every cycle came from **optional layer-inversion back-edges** that
+only resolved when siblings were separate registry nodes. Cargo forbids path-dep cycles and
+the publish cascade forbids registry-pinning upward edges, so each inversion was removed
+or relocated (all non-default optional features):
+
+| Inversion (low→high) | Resolution |
+|---|---|
+| compute→core (`ml-tuner`) | aprender RandomForest showcase → `examples/ml_tuner_demo.rs` + tuner tests; aprender is now a **dev-dependency** (path dev-dep cycles are legal + dropped on publish) |
+| gpu→present-core/-terminal | removed vestigial (unused-in-src) UI deps |
+| gpu→renacer | removed normal dep (kept dev-dep) |
+| gpu→viz | dropped unused-in-tree `viz` GPU-visual-testing subtree (gpu_renderer + wasm), re-home above both |
+| present-core→compute (`simd`) | dropped never-enabled trueno-backed helpers; always-on f64 ComputeBlocks remain |
+| compute→graph (`execution-graph`) | removed `to_csr`/`graph_to_csr` CsrGraph exporters (belong in aprender-graph) |
+| core→rag | removed `aprender::text::rag` re-export (RAG lives in aprender-rag) |
+| viz→serve/-train | removed vestigial realizar/repartir; dropped entrenar inference-path interop (belongs in aprender-train) |
+
+**Verification.** `cargo metadata` resolves; `cargo check --workspace` is green; all
+referenced trueno features (gpu/parallel/terminal/monitor) resolve against the in-tree
+crates.
+
+**Follow-ups (tracked, not in this pass).**
+1. Flat-layout relocation of nested orphan `crates/aprender-rag/crates/trueno-rag-cli` →
+   `crates/aprender-rag-cli/` + root workspace integration (stale `0.32.0` pin corrected to
+   `0.49.0` here).
+2. Delete `qwen2::forward()/generate()` (scheduled-for-deletion in CLAUDE.md).
+3. Re-home dropped showcase code (gpu visual-test, entrenar interop) into proper
+   above-both crates if/when needed.
+4. External rand-0.8 sources remain (`axum-test`/`cookie`/`time` 0.3.48, `tower 0.4`,
+   `tungstenite 0.24`, `rust_decimal`, `num-complex`, `phf_generator`) — self-containment
+   fixed only the *sibling* sources; external upgrades are a separate pass.

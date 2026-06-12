@@ -29,6 +29,12 @@
 //! - **cli**: Command-line interface handlers
 //! - **finetune**: Fine-tuning pipeline with Popperian QA (SPEC-FT-001)
 
+// Test code uses unwrap/expect-family freely (established convention; see
+// crates/aprender-core/src/lib.rs).
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
+// Pedantic doc-formatting lints: allowed per workspace policy.
+#![allow(clippy::doc_lazy_continuation)]
+
 // Contract assertions from YAML (pv codegen)
 #[macro_use]
 #[allow(unused_macros)]

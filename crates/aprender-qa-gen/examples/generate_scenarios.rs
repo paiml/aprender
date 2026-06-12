@@ -7,7 +7,7 @@
 
 #![allow(clippy::missing_panics_doc)]
 
-use apr_qa_gen::{Backend, Format, Modality, ModelId, ScenarioGenerator};
+use aprender_qa_gen::{Backend, Format, Modality, ModelId, ScenarioGenerator};
 
 fn main() {
     // Create a model ID for a hypothetical model (org, name)

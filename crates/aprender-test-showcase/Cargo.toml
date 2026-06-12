@@ -42,6 +42,7 @@ tui = ["dep:presentar-terminal", "dep:crossterm"]
 wasm = ["dep:wasm-bindgen", "dep:web-sys", "dep:console_error_panic_hook"]
 
 [lib]
+name = "showcase_calculator"
 crate-type = ["cdylib", "rlib"]
 
 [lints]

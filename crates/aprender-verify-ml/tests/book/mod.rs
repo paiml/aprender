@@ -15,6 +15,9 @@
 //! The book build will FAIL if any test in this module fails.
 //! This is **Poka-Yoke** (error-proofing) - we cannot publish broken examples.
 
+// Book-example test code uses unwrap/expect-family freely.
+#![allow(clippy::disallowed_methods)]
+
 mod grammar_generation;
 mod integrations;
 mod ml_pipeline;

@@ -579,32 +579,6 @@ mod proptests {
     use super::*;
     use proptest::prelude::*;
 
-    fn arb_tuple() -> impl Strategy<Value = VerifiedTuple> {
-        (any::<bool>(), 1u64..1000).prop_map(|(correct, time)| VerifiedTuple {
-            source_language: Language::Python,
-            target_language: Language::Rust,
-            source_code: "x = 1".to_string(),
-            target_code: "let x = 1;".to_string(),
-            is_correct: correct,
-            execution_time_ms: time,
-        })
-    }
-
-    fn arb_features() -> impl Strategy<Value = CommitFeatures> {
-        (0u32..100, 0u32..100, 1u32..10, any::<bool>()).prop_map(
-            |(added, deleted, files, has_tests)| CommitFeatures {
-                lines_added: added,
-                lines_deleted: deleted,
-                files_changed: files,
-                churn_ratio: added as f32 / (added + deleted + 1) as f32,
-                has_test_changes: has_tests,
-                complexity_delta: 0.0,
-                author_experience: 0.5,
-                days_since_last_change: 7.0,
-            },
-        )
-    }
-
     proptest! {
         /// Corpus count always matches tuples length
         #[test]

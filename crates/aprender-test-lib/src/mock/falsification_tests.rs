@@ -305,9 +305,10 @@ impl WorkerManager {
             .any(|e| e.rule == "WASM-SS-001" && e.message.contains("state"));
 
         // VERDICT: Linter should catch the SECOND 'state' declaration
-        if !has_error {
-            panic!("🔴 FALSIFIED: Linter missed shadowed variable 'state'");
-        }
+        assert!(
+            has_error,
+            "🔴 FALSIFIED: Linter missed shadowed variable 'state'"
+        );
     }
 
     /// ATTACK: Macro-Generated Rc

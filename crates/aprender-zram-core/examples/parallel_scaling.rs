@@ -1,4 +1,5 @@
 //! Test parallel scaling to find the bottleneck
+#![allow(clippy::disallowed_methods)] // example harness — unwrap acceptable
 
 use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator};
 use rayon::prelude::*;

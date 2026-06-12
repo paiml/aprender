@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Format: {:?}", format);
 
     let model = match format {
-        realizar::format::ModelFormat::Apr { .. } => {
+        realizar::format::ModelFormat::Apr => {
             let mapped = MappedAprModel::from_path(std::path::Path::new(&path))?;
             OwnedQuantizedModel::from_apr(&mapped)?
         },

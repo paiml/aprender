@@ -277,7 +277,7 @@ fn try_gguf_gpu_generate(
     input_tokens: &[u32],
     gen_config: &crate::gguf::QuantizedGenerateConfig,
     verbose: bool,
-) -> std::result::Result<Result<(Vec<u32>, bool)>, crate::gguf::OwnedQuantizedModel> {
+) -> std::result::Result<Result<(Vec<u32>, bool)>, Box<crate::gguf::OwnedQuantizedModel>> {
     use crate::gguf::OwnedQuantizedModelCuda;
 
     let mut cuda_model = match OwnedQuantizedModelCuda::with_max_seq_len(model, 0, 2048) {
@@ -286,8 +286,9 @@ fn try_gguf_gpu_generate(
             if verbose {
                 eprintln!("Backend: CPU (GPU unavailable: {})", e);
             }
-            // Model is preserved inside CudaInitError for CPU fallback
-            return Err(e.into_model());
+            // Model is preserved inside CudaInitError for CPU fallback.
+            // Boxed to keep the `Err` variant small (clippy::result_large_err).
+            return Err(Box::new(e.into_model()));
         },
     };
 
@@ -301,7 +302,7 @@ fn try_gguf_gpu_generate(
 
     if !validate_gpu_first_token(&mut cuda_model, gen_config) {
         // Validation failed — extract model back for CPU fallback
-        return Err(cuda_model.into_model());
+        return Err(Box::new(cuda_model.into_model()));
     }
 
     // Reuse existing CUDA model — generate_gpu_resident() creates fresh KV cache
@@ -356,7 +357,7 @@ fn run_gguf_generate(
     let model = if !config.no_gpu && !has_legacy_quant {
         match try_gguf_gpu_generate(model, input_tokens, gen_config, config.verbose) {
             Ok(result) => return result,
-            Err(returned_model) => returned_model, // GPU failed, use returned model for CPU
+            Err(returned_model) => *returned_model, // GPU failed, use returned model for CPU
         }
     } else {
         model

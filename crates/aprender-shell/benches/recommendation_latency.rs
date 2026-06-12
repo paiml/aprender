@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used)] // Benchmarks can use unwrap() for simplicity
+#![allow(clippy::disallowed_methods)] // Benchmarks can use unwrap()/expect() for simplicity
 //! Benchmarks for Shell Recommendation Latency - Sub-10ms Target Verification
 //!
 //! This benchmark suite verifies that aprender-shell delivers recommendations

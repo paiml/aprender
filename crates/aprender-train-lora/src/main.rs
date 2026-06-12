@@ -1,5 +1,10 @@
 //! entrenar-lora CLI entry point.
 
+// The `serde_json::json!` macro expands to code containing `.unwrap()`, which
+// trips clippy::disallowed_methods on the macro invocation site even though no
+// author-written unwrap exists. Scope the allow to this CLI binary.
+#![allow(clippy::disallowed_methods)]
+
 use clap::{Parser, Subcommand};
 use entrenar_common::cli::{styles, CommonArgs};
 use entrenar_common::output::{format_bytes, format_number, TableBuilder};

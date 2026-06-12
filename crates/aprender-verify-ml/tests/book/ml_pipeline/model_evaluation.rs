@@ -2,8 +2,8 @@
 
 use verificar::data::CodeFeatures;
 use verificar::ml::{
-    benchmark_inference, calculate_feature_importance, BenchmarkResult, ComparisonMetrics,
-    ConfusionMatrix, ModelComparison, RocCurve,
+    benchmark_inference, calculate_feature_importance, ComparisonMetrics, ConfusionMatrix,
+    ModelComparison, RocCurve,
 };
 
 #[test]

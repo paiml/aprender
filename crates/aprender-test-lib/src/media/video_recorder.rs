@@ -798,7 +798,7 @@ impl VideoRecorder {
         let mut compressor_name = [0u8; 32];
         let name = b"Probar Video";
         compressor_name[0] = name.len() as u8;
-        compressor_name[1..1 + name.len()].copy_from_slice(name);
+        compressor_name[1..=name.len()].copy_from_slice(name);
         entry.write_all(&compressor_name)?;
         // Depth
         entry.write_all(&24u16.to_be_bytes())?;

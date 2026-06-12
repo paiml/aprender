@@ -140,6 +140,9 @@ impl MetricsCollector {
         sparkline(&self.accuracy_history)
     }
 
+    // `serde_json::json!` expands to code containing `.unwrap()`, tripping
+    // clippy::disallowed_methods on the macro site (no author-written unwrap).
+    #[allow(clippy::disallowed_methods)]
     pub fn state_json(&self) -> String {
         let state = serde_json::json!({
             "loss_mean": self.loss_mean(),
@@ -482,7 +485,7 @@ mod tests {
         // Middle value should be around index 3-4
         let middle_char = chars[2];
         assert!(
-            middle_char >= '▃' && middle_char <= '▅',
+            ('▃'..='▅').contains(&middle_char),
             "Middle char was {:?}",
             middle_char
         );

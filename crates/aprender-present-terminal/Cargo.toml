@@ -35,7 +35,7 @@ criterion = { workspace = true }
 # ttop and trueno-viz for parity testing against the reference implementation
 # See SPEC-024 Section 11 - Visual Comparison Findings
 ttop = "2.0"
-trueno-viz = { version = "0.1", features = ["monitor"] }
+trueno-viz = { workspace = true, features = ["monitor"] }
 
 [[bench]]
 name = "terminal"

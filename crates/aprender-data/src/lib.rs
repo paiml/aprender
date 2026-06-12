@@ -30,7 +30,11 @@
 //! ```
 // unsafe_code is forbidden except where explicitly allowed (e.g., mmap module)
 #![deny(unsafe_code)]
-#![deny(missing_docs)]
+// APR-MONO: missing_docs relaxed to the workspace policy (`missing_docs = "allow"`, doc
+// coverage checked separately) now that this ex-repo crate is linted in-tree.
+#![allow(missing_docs)]
+#![allow(clippy::trivially_copy_pass_by_ref)] // APR-MONO: workspace policy (API consistency)
+#![allow(clippy::unnecessary_wraps)] // APR-MONO: workspace policy (Result wrappers for API consistency)
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::expect_used)]
 #![allow(clippy::cast_precision_loss)]

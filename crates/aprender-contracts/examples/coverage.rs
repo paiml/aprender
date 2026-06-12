@@ -1,3 +1,7 @@
+// Test/example/bench binary: `.unwrap()` is idiomatic here; the lib`s
+// cfg(test) allow does not reach this separate crate.
+#![allow(clippy::disallowed_methods)]
+
 use provable_contracts::coverage::{coverage_report, overall_percentage};
 use provable_contracts::schema::parse_contract;
 fn main() {

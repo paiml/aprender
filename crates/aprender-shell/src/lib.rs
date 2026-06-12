@@ -10,6 +10,10 @@
 //! - **Input validation**: `sanitize_prefix` for safe input handling
 //! - **Security filtering**: `is_sensitive_command` for credential protection
 
+// Allow unwrap()/expect() in tests only — banned in production code.
+// (Established convention; see crates/aprender-core/src/lib.rs.)
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
+
 pub mod config;
 pub mod corpus;
 pub mod error;

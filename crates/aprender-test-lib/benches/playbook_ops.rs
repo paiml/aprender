@@ -6,6 +6,7 @@
 
 #![allow(missing_docs)]
 #![allow(clippy::unwrap_used)]
+#![allow(clippy::disallowed_methods)] // benchmark harness — unwrap acceptable
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use jugar_probar::playbook::{

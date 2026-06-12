@@ -12,7 +12,7 @@ use trueno_gpu::kernels::{
 
 /// Helper to run the trueno-explain binary
 fn run_explain(args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_trueno-explain"))
+    Command::new(env!("CARGO_BIN_EXE_aprender-explain"))
         .args(args)
         .output()
         .expect("Failed to run trueno-explain")

@@ -21,6 +21,7 @@
 #![allow(clippy::needless_raw_string_hashes)]
 // Allow common patterns in test code
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
+#![cfg_attr(test, allow(clippy::disallowed_methods))] // test assertions — unwrap acceptable
 #![cfg_attr(test, allow(clippy::redundant_closure_for_method_calls))]
 #![cfg_attr(test, allow(clippy::redundant_clone))]
 

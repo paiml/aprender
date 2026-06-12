@@ -2,6 +2,11 @@
 //!
 //! Generate verified test cases for transpiler validation.
 
+// The `serde_json::json!` macro expands to code containing `.unwrap()`, which
+// trips clippy::disallowed_methods on the macro invocation site even though no
+// author-written unwrap exists. Scope the allow to this CLI binary.
+#![allow(clippy::disallowed_methods)]
+
 use clap::{Parser, Subcommand};
 use std::io::Write;
 use verificar::generator::{

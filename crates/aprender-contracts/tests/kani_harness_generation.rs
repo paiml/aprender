@@ -4,6 +4,10 @@
 //! correct Kani harnesses for each strategy: exhaustive, `stub_float`,
 //! and compositional.
 
+// Test/example/bench binary: `.unwrap()` is idiomatic here; the lib`s
+// cfg(test) allow does not reach this separate crate.
+#![allow(clippy::disallowed_methods)]
+
 use std::path::Path;
 
 use provable_contracts::kani_gen::generate_kani_harnesses;

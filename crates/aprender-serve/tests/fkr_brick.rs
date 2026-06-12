@@ -112,7 +112,7 @@ fn fkr_brick_f004_budget_nonzero() {
 fn fkr_brick_f005_unique_names() {
     use std::collections::HashSet;
 
-    let names = vec![
+    let names = [
         RmsNormBrick::new(vec![1.0], 1e-5).name(),
         QkvBrick::new(4, 4, 4, 4).name(),
         RopeBrick::new(64, 14, 1000000.0, 2).name(),

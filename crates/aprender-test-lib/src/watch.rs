@@ -329,20 +329,19 @@ impl FileWatcher {
             watcher_config,
         )
         .map_err(|e| {
-            ProbarError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to create watcher: {e}"),
-            ))
+            ProbarError::Io(std::io::Error::other(format!(
+                "Failed to create watcher: {e}"
+            )))
         })?;
 
         // Watch configured directories
         for dir in &self.config.watch_dirs {
             if dir.exists() {
                 watcher.watch(dir, RecursiveMode::Recursive).map_err(|e| {
-                    ProbarError::Io(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("Failed to watch directory {:?}: {e}", dir),
-                    ))
+                    ProbarError::Io(std::io::Error::other(format!(
+                        "Failed to watch directory {:?}: {e}",
+                        dir
+                    )))
                 })?;
             }
         }

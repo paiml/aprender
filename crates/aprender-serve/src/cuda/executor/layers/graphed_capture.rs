@@ -322,18 +322,18 @@ impl CudaExecutor {
         vocab_size: u32,
     ) -> Result<(), GpuError> {
         // Position buffer
-        if self.position_buf.is_none() {
-            self.position_buf = Some(GpuBuffer::from_host(&self.context, &[position])?);
+        if let Some(buf) = self.position_buf.as_mut() {
+            buf.copy_from_host(&[position])?;
         } else {
-            self.position_buf.as_mut().expect("just checked").copy_from_host(&[position])?;
+            self.position_buf = Some(GpuBuffer::from_host(&self.context, &[position])?);
         }
 
         // Seq_len buffer (position + 1)
         let seq_len = position + 1;
-        if self.seq_len_buf.is_none() {
-            self.seq_len_buf = Some(GpuBuffer::from_host(&self.context, &[seq_len])?);
+        if let Some(buf) = self.seq_len_buf.as_mut() {
+            buf.copy_from_host(&[seq_len])?;
         } else {
-            self.seq_len_buf.as_mut().expect("just checked").copy_from_host(&[seq_len])?;
+            self.seq_len_buf = Some(GpuBuffer::from_host(&self.context, &[seq_len])?);
         }
 
         // Input buffer

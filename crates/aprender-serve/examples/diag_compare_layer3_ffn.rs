@@ -104,7 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .q4k_layers
         .as_ref()
         .ok_or("q4k_layers None")?
-        .get(0)
+        .first()
         .ok_or("layer 0 missing")?;
     let gguf_layer_0 = &gguf.layers()[0];
     let apr_gate0 = apr_q4k_l0

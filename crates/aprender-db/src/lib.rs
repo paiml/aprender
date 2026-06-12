@@ -38,6 +38,8 @@
 #![allow(clippy::must_use_candidate)]
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::missing_panics_doc)]
+// Pedantic/nursery: not every trivial getter needs to be `const fn`.
+#![allow(clippy::missing_const_for_fn)]
 
 pub mod backend;
 pub mod error;

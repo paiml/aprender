@@ -33,6 +33,10 @@
 //! - CUDA Toolkit 11.0+ with CUPTI
 //! - Linux (primary), Windows (experimental)
 
+// `.unwrap()` is banned in production via workspace `.clippy.toml`, but is
+// idiomatic in `#[cfg(test)]` assertions. Allow it only under `cfg(test)`.
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
+
 pub mod activity;
 pub mod callback;
 pub mod error;

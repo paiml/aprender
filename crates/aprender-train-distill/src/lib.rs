@@ -12,6 +12,10 @@
 //! - **Heijunka**: Memory estimation enables level scheduling of GPU resources
 //! - **Kaizen**: Configurable hyperparameters enable continuous improvement
 
+// Test code uses unwrap/expect-family freely (established convention; see
+// crates/aprender-core/src/lib.rs).
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
+
 pub mod batch_source;
 pub mod config;
 pub mod kd_step;

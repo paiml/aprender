@@ -24,6 +24,11 @@
 //! - [`lint`] — Contract quality gate: validate + audit + score in one pass
 //! - [`kernels`] — Scalar, AVX2, and PTX kernel implementations
 
+// `.unwrap()` is banned in production via workspace `.clippy.toml`, but is
+// idiomatic in `#[cfg(test)]` assertions (including the `include!`-ed
+// `*_tests.rs` modules). Allow it only under `cfg(test)`.
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
+
 pub mod audit;
 pub(crate) mod auto_exempt;
 pub mod binding;

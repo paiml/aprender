@@ -13,6 +13,7 @@
 #![warn(clippy::all, clippy::pedantic)]
 #![allow(clippy::cast_precision_loss)] // Entropy calculations use f64 approximations
 #![allow(clippy::doc_markdown)] // PCIe and other technical terms
+#![cfg_attr(test, allow(clippy::disallowed_methods))] // test assertions — unwrap acceptable
 
 pub mod classifier;
 pub mod entropy;

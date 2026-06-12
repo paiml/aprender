@@ -19,10 +19,10 @@
     unused_variables
 )]
 
-use presentar::widgets::{
+use aprender_present_lib::widgets::{
     row::MainAxisAlignment, Chart, Column, DataSeries, ProgressBar, Row, Text,
 };
-use presentar::{Color, Constraints, DrawCommand, RecordingCanvas, Rect, Size, Widget};
+use aprender_present_lib::{Color, Constraints, DrawCommand, RecordingCanvas, Rect, Size, Widget};
 use std::fs::File;
 use std::io::Write;
 
@@ -86,9 +86,9 @@ fn to_svg(commands: &[DrawCommand], width: f32, height: f32) -> String {
                     (style.color.b * 255.0) as u8
                 );
                 let weight = match style.weight {
-                    presentar::FontWeight::Bold => "bold",
-                    presentar::FontWeight::Medium => "500",
-                    presentar::FontWeight::Semibold => "600",
+                    aprender_present_lib::FontWeight::Bold => "bold",
+                    aprender_present_lib::FontWeight::Medium => "500",
+                    aprender_present_lib::FontWeight::Semibold => "600",
                     _ => "normal",
                 };
                 // Adjust y position for baseline

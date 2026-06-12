@@ -1,6 +1,6 @@
 //! Benchmark tests for layout engine operations.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use presentar_core::widget::{AccessibleRole, LayoutResult};
 use presentar_core::{
     Brick, BrickAssertion, BrickBudget, BrickVerification, Canvas, Constraints, Event, Rect, Size,
@@ -8,6 +8,7 @@ use presentar_core::{
 };
 use presentar_layout::LayoutEngine;
 use std::any::Any;
+use std::hint::black_box;
 use std::time::Duration;
 
 /// Test widget for benchmarking

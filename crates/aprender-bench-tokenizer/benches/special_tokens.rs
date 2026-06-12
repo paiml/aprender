@@ -11,7 +11,8 @@
 
 use aprender_bench_tokenizer::payloads;
 use aprender_bench_tokenizer::{load_aprender_tokenizer, load_hf_tokenizer, skip_no_tokenizer};
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
 
 fn bench_special_tokens_aprender(c: &mut Criterion) {
     let Some(tokenizer) = load_aprender_tokenizer() else {

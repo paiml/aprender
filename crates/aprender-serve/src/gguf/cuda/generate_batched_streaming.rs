@@ -339,7 +339,7 @@ impl OwnedQuantizedModelCuda {
 
         // PMAT-076: Set dead slot mask before forward pass so attention kernel
         // can skip KV iteration for done slots (seq_lens=0 → early exit).
-        self.executor.batched_done_mask = state.done.clone();
+        self.executor.batched_done_mask.clone_from(&state.done);
 
         timer.mark("prep");
 
@@ -626,7 +626,7 @@ impl OwnedQuantizedModelCuda {
 
         // Replace state at recycled slot index
         let last_token = prompt[prompt.len() - 1];
-        state.sequences[slot_idx] = prompt.clone();
+        state.sequences[slot_idx].clone_from(&prompt);
         state.prompts[slot_idx] = prompt;
         state.configs[slot_idx] = config;
         state.on_tokens[slot_idx] = on_token;
@@ -772,7 +772,7 @@ impl OwnedQuantizedModelCuda {
         for (slot_idx, prompt, config, on_token) in slots_and_requests {
             let last_token = prompt[prompt.len() - 1];
             let seq_len = prompt.len().saturating_sub(1);
-            state.sequences[slot_idx] = prompt.clone();
+            state.sequences[slot_idx].clone_from(&prompt);
             state.prompts[slot_idx] = prompt;
             state.configs[slot_idx] = config;
             state.on_tokens[slot_idx] = on_token;

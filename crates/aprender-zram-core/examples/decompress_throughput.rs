@@ -1,4 +1,5 @@
 //! Quick single-threaded decompression throughput test
+#![allow(clippy::disallowed_methods)] // example harness — unwrap acceptable
 
 use std::time::Instant;
 use trueno_zram_core::lz4::{compress, decompress_simd};

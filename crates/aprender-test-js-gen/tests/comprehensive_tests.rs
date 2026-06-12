@@ -3,6 +3,7 @@
 //! These tests exercise all code paths in builder.rs, codegen.rs, and hir.rs.
 
 #![allow(clippy::unwrap_used)]
+#![allow(clippy::disallowed_methods)] // integration test — unwrap acceptable
 
 use probar_js_gen::prelude::*;
 

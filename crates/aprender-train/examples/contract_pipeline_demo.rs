@@ -45,12 +45,17 @@ use ndarray::Array1;
 fn main() {
     println!("=== Entrenar Contract Pipeline Demo ===\n");
 
-    // Show build-time contract metadata
-    println!("Contract binding source: {}", env!("CONTRACT_BINDING_SOURCE"));
-    println!("Total bindings: {}", env!("CONTRACT_TOTAL"));
-    println!("Implemented: {}", env!("CONTRACT_IMPLEMENTED"));
-    println!("Partial: {}", env!("CONTRACT_PARTIAL"));
-    println!("Gaps: {}\n", env!("CONTRACT_GAPS"));
+    // Show build-time contract metadata. These vars are only set by build.rs
+    // when provable-contracts binding.yaml is present; in CI/crates.io builds
+    // it is absent, so fall back gracefully instead of failing to compile.
+    println!(
+        "Contract binding source: {}",
+        option_env!("CONTRACT_BINDING_SOURCE").unwrap_or("none")
+    );
+    println!("Total bindings: {}", option_env!("CONTRACT_TOTAL").unwrap_or("?"));
+    println!("Implemented: {}", option_env!("CONTRACT_IMPLEMENTED").unwrap_or("?"));
+    println!("Partial: {}", option_env!("CONTRACT_PARTIAL").unwrap_or("?"));
+    println!("Gaps: {}\n", option_env!("CONTRACT_GAPS").unwrap_or("?"));
 
     // ---- Matmul contract (matmul-v1.yaml / matmul) ----
     println!("--- Matmul contract (from YAML preconditions) ---");

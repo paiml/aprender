@@ -18,7 +18,8 @@ use aprender::autograd::Tensor;
 use aprender::nn::F;
 use aprender_bench_compute::sizes::ACTIVATION_SIZES;
 use aprender_bench_compute::{deterministic_f32, deterministic_ndarray_1d};
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use std::hint::black_box;
 
 fn bench_gelu_aprender(c: &mut Criterion) {
     let mut group = c.benchmark_group("gelu_aprender");

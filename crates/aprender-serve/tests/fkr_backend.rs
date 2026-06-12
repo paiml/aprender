@@ -88,7 +88,7 @@ fn fkr_backend_f043_rope_stub() {
 #[test]
 fn fkr_backend_f044_softmax_stability() {
     // Test that softmax doesn't overflow with large values
-    let large_values = vec![100.0_f32, 200.0, 300.0, 400.0];
+    let large_values = [100.0_f32, 200.0, 300.0, 400.0];
 
     // Stable softmax: exp(x - max(x)) / sum(exp(x - max(x)))
     let max_val = large_values

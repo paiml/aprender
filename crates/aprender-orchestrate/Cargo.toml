@@ -64,28 +64,28 @@ libc = { version = "0.2", optional = true }
 renacer = { workspace = true, optional = true }
 
 # High-performance compute (SIMD/GPU, native-only)
-trueno = { version = "0.17", features = ["gpu"], optional = true }
+trueno = { workspace = true, optional = true, features = ["gpu"] }
 
 # SIMD/GPU memory compression (LZ4/ZSTD, native-only)
-trueno-zram-core = { version = "0.3", optional = true }
+trueno-zram-core = { workspace = true, optional = true }
 
 # GPU-accelerated block device via ublk (native-only)
 trueno-ublk = { version = "0.3", optional = true }
 
 # Distributed compute (CPU/GPU/Remote executors, native-only)
-repartir = { version = "2.0", features = ["cpu", "remote"], optional = true }
+repartir = { workspace = true, optional = true, features = ["cpu", "remote"] }
 
 # Graph database for Oracle Mode knowledge graph (native-only)
 trueno-graph = { workspace = true, optional = true }
 
 # Vector database for similarity search (native-only)
-trueno-db = { version = "0.3.16", optional = true }
+trueno-db = { workspace = true, optional = true }
 
 # Utilities (native-only)
 dirs = { version = "5.0", optional = true }
 
 # Shared math/display utilities (sovereign stack)
-batuta-common = "0.1"
+batuta-common = { workspace = true }
 
 # Content-addressable hashing (native-only, used by playbook cache)
 blake3 = { version = "1.8", optional = true }
@@ -97,7 +97,7 @@ indexmap = { version = "2.7", features = ["serde"], optional = true }
 syntect = { version = "5.2", default-features = false, features = ["default-syntaxes", "default-themes", "regex-fancy"], optional = true }
 
 # TUI dashboard (native-only) - uses presentar-terminal (sovereign stack)
-presentar-terminal = { version = "0.3", optional = true }
+presentar-terminal = { workspace = true, optional = true }
 crossterm = { version = "0.28", optional = true }
 
 # Stack orchestration dependencies (native-only)
@@ -110,20 +110,23 @@ futures-util = { version = "0.3", optional = true }
 quick-xml = { version = "0.37", optional = true }
 
 # Pacha model registry (native-only)
-pacha = { version = "0.3", optional = true }
+pacha = { workspace = true, optional = true }
 
 # Realizar inference engine (GGUF/safetensors, native-only)
-# PMAT-159: local path dep with cuda feature for GPU-accelerated apr code
-realizar = { version = "0.8", optional = true, features = ["cuda"] }
+# APR-MONO: cuda is NOT forced here. Hardcoding realizar's `cuda` feature made orchestrate's
+# default `inference` activate the in-tree aprender-serve `cuda` feature workspace-wide,
+# which ran serve's GPU-hardware tests on the CPU CI runner. GPU is opt-in via the
+# `inference-cuda` feature below (on main this hit external realizar, masking the issue).
+realizar = { workspace = true, optional = true }
 
 # ML algorithms and training (native-only)
 aprender = { path = "../aprender-core", version = "0.49.0", package = "aprender-core", optional = true }
 entrenar = { workspace = true, optional = true }
-alimentar = { version = "0.3", optional = true }
+alimentar = { workspace = true, optional = true }
 
 # RAG and visualization (native-only)
-trueno-rag = { version = "0.2", features = ["sqlite"], optional = true }
-trueno-viz = { version = "0.2", optional = true }
+trueno-rag = { workspace = true, optional = true, features = ["sqlite"] }
+trueno-viz = { workspace = true, optional = true }
 presentar = { version = "0.3", optional = true }
 
 # Speech recognition (native-only)
@@ -133,14 +136,14 @@ whisper-apr = { version = "0.2", optional = true }
 pepita = { version = "0.1", optional = true }
 
 # Simulation engine (native-only)
-simular = { version = "0.3", optional = true }
+simular = { workspace = true, optional = true }
 
 # Transpilers (native-only)
 # depyler = { version = "3.20", optional = true }  # blocked: serde version conflict (1.0.200-1.0.219)
 bashrs = { version = "6.65", optional = true }
 
 # Testing and quality (native-only)
-probar = { version = "0.1", optional = true }
+probar = { workspace = true, optional = true }
 
 # HTTP server for Banco workbench API
 axum = { version = "0.7", features = ["json", "multipart", "ws"], optional = true }
@@ -215,6 +218,9 @@ oracle-mode = ["trueno-graph", "trueno-db", "native"]
 
 # Inference engine integration (GGUF/safetensors serving)
 inference = ["realizar", "native", "libc"]
+# Opt-in GPU inference (CUDA). Off by default so the CPU CI gate doesn't compile/run
+# aprender-serve's GPU-hardware tests (APR-MONO).
+inference-cuda = ["inference", "realizar/cuda"]
 
 # Distributed compute integration (CPU/GPU/Remote)
 distributed = ["repartir", "native"]
@@ -296,7 +302,7 @@ criterion = { version = "0.8", features = ["html_reports"] }
 proptest = "1.5"
 blake3 = "1.8"
 filetime = "0.2"
-trueno-cuda-edge = { version = "0.1" }
+trueno-cuda-edge = { workspace = true }
 jugar-probar = { version = "1.0", features = ["browser"] }
 tokio-tungstenite = "0.24"
 

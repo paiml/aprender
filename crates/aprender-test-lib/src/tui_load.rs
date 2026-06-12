@@ -1126,7 +1126,7 @@ mod tests {
     #[test]
     fn test_integration_load_test_default() {
         let test = IntegrationLoadTest::default();
-        let result = test.run(|| ComponentTimings::new());
+        let result = test.run(ComponentTimings::new);
         assert!(result.is_ok());
     }
 

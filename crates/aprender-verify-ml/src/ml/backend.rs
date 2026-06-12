@@ -40,9 +40,10 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Compute backend options
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum Backend {
     /// Scalar operations (baseline)
+    #[default]
     Scalar,
     /// SIMD vectorization (AVX2, NEON)
     Simd,
@@ -60,27 +61,16 @@ impl fmt::Display for Backend {
     }
 }
 
-impl Default for Backend {
-    fn default() -> Self {
-        Backend::Scalar
-    }
-}
-
 /// Operation complexity for MoE (Mixture-of-Experts) routing
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
 pub enum OpComplexity {
     /// Simple operations (add, mul) - O(n), prefer SIMD unless very large
+    #[default]
     Low,
     /// Moderate operations (dot, reduce) - O(n), GPU beneficial at 100K+ elements
     Medium,
     /// Complex operations (matmul, convolution) - O(n²) or O(n³), GPU beneficial at 10K+ elements
     High,
-}
-
-impl Default for OpComplexity {
-    fn default() -> Self {
-        OpComplexity::Low
-    }
 }
 
 /// Cost model for backend selection

@@ -1,3 +1,6 @@
+// Example binary: `.unwrap()` is idiomatic in example setup.
+#![allow(clippy::disallowed_methods)]
+
 use provable_contracts::flux_gen::generate_flux_annotations;
 use provable_contracts::schema::parse_contract;
 fn main() {

@@ -1022,22 +1022,6 @@ mod proptests {
     use super::*;
     use proptest::prelude::*;
 
-    /// Generate valid Python-like code snippets
-    fn python_code_strategy() -> impl Strategy<Value = String> {
-        prop::collection::vec(
-            prop_oneof![
-                // Simple assignments
-                "[a-z][a-z0-9_]{0,10} = [0-9]{1,5}".prop_map(|s| s),
-                // Comments
-                "# [a-zA-Z0-9 ]{0,20}".prop_map(|s| s),
-                // Function calls
-                "[a-z]+\\([0-9, ]*\\)".prop_map(|s| s),
-            ],
-            1..10,
-        )
-        .prop_map(|lines| lines.join("\n"))
-    }
-
     proptest! {
         /// Augmented code always passes basic syntax check
         #[test]

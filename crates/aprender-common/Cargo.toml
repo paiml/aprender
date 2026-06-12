@@ -22,3 +22,10 @@ module_name_repetitions = "allow"
 must_use_candidate = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
+# ML-specific cast allows (match the workspace policy). APR-MONO self-containment surfaced
+# these once math.rs compiles in-tree; this crate predates `[lints] workspace = true`.
+cast_precision_loss = "allow"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_sign_loss = "allow"
+float_cmp = "allow"  # ML algorithms / test assertions often compare floats (matches workspace policy)

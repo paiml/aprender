@@ -18,6 +18,8 @@
 //! ```
 
 #![allow(missing_docs)]
+// probar IS test tooling — unwrap/expect throughout is acceptable test infrastructure
+#![allow(clippy::disallowed_methods)]
 // Lints are configured in workspace Cargo.toml [workspace.lints.clippy]
 // Allow large stack arrays/frames in tests (e.g., test data generation)
 #![cfg_attr(test, allow(clippy::large_stack_arrays, clippy::large_stack_frames))]

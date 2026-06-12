@@ -119,12 +119,8 @@ impl BrickProfiler {
         self.execution_graph.to_dot()
     }
 
-    /// Export execution graph to trueno-graph CsrGraph.
-    #[cfg(feature = "execution-graph")]
-    #[must_use]
-    pub fn graph_to_csr(&self) -> trueno_graph::CsrGraph {
-        self.execution_graph.to_csr()
-    }
+    // NOTE: `graph_to_csr()` removed (APR-MONO self-containment) — see
+    // exec_graph/traversal/export.rs. CSR export belongs in aprender-graph, not compute.
 
     /// Clear the execution graph.
     pub fn graph_clear(&mut self) {

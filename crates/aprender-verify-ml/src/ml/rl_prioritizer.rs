@@ -111,8 +111,8 @@ impl RLTestPrioritizer {
 
         // Sample from Beta(alpha, beta)
         // Beta distribution creation is mathematically guaranteed with positive alpha, beta >= 1.0
-        #[allow(clippy::unwrap_used)]
-        let beta_dist = Beta::new(alpha, beta).unwrap_or_else(|_| Beta::new(1.0, 1.0).unwrap());
+        let beta_dist = Beta::new(alpha, beta)
+            .unwrap_or_else(|_| Beta::new(1.0, 1.0).expect("Beta(1.0, 1.0) is always valid"));
         beta_dist.sample(rng)
     }
 

@@ -355,8 +355,8 @@ fn f_qw3_moe_c221_001_expert_swiglu_quantized_finite_output() {
 
 /// M32c.2.2.2.0 falsifier — exercises `moe_ffn_forward_layer` against the
 /// cached Qwen3-Coder GGUF. This is the FULL single-layer MoE FFN dispatch:
-/// router (F32 matmul) + softmax + top-8 + renormalize + per-expert SwiGLU
-/// + weighted sum. The output is the layer's MoE contribution before the
+/// router (F32 matmul), softmax, top-8, renormalize, per-expert SwiGLU,
+/// and weighted sum. The output is the layer's MoE contribution before the
 /// residual addition.
 const EXPECTED_K: usize = 8;
 

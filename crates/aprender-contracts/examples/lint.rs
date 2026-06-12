@@ -12,6 +12,10 @@
 //!   cargo run --example lint -- contracts/ 0.0 text --cache-stats
 //!   cargo run --example lint -- contracts/ 0.0 text --trend
 
+// Test/example/bench binary: `.unwrap()` is idiomatic here; the lib`s
+// cfg(test) allow does not reach this separate crate.
+#![allow(clippy::disallowed_methods)]
+
 use std::path::PathBuf;
 use std::process;
 

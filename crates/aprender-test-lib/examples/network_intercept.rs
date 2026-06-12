@@ -7,6 +7,7 @@
 //! Toyota Way: Poka-Yoke (Mistake-Proofing) - Type-safe request handling
 //!
 //! PMAT-006: Added abort functionality and wait_for_response
+#![allow(clippy::disallowed_methods)] // example harness — unwrap acceptable
 
 use jugar_probar::prelude::*;
 use std::collections::HashMap;

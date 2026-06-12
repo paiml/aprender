@@ -4,6 +4,7 @@
 //! Tests actual binary execution with real inputs/outputs.
 
 #![allow(clippy::unwrap_used)] // Tests can use unwrap for simplicity
+#![allow(clippy::disallowed_methods)] // Tests can use unwrap/expect for simplicity
 #![allow(deprecated)] // cargo_bin still works, just deprecated for custom build-dir
 
 use assert_cmd::Command;

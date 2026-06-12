@@ -185,23 +185,10 @@ impl ExecutionGraph {
         dot
     }
 
-    /// Export to trueno-graph CsrGraph format.
-    #[cfg(feature = "execution-graph")]
-    pub fn to_csr(&self) -> trueno_graph::CsrGraph {
-        use trueno_graph::{CsrGraph, NodeId};
-
-        let edges: Vec<(NodeId, NodeId, f32)> =
-            self.edges.iter().map(|e| (NodeId(e.src.0), NodeId(e.dst.0), e.weight)).collect();
-
-        let mut graph = CsrGraph::from_edge_list(&edges).unwrap_or_default();
-
-        // Set node names for querying
-        for (i, node) in self.nodes.iter().enumerate() {
-            graph.set_node_name(NodeId(i as u32), node.name());
-        }
-
-        graph
-    }
+    // NOTE: `to_csr()` (export to trueno-graph CsrGraph) removed (APR-MONO
+    // self-containment): aprender-graph depends on trueno, so compute→graph closed a
+    // compute→graph→compute cycle. CSR export belongs in aprender-graph (which already
+    // depends on compute), not in the compute foundation. `to_dot`/`to_ascii_tree` remain.
 
     /// Convert to presentar-terminal TreeNode for TUI visualization.
     ///

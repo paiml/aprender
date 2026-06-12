@@ -424,8 +424,10 @@ mod tests {
     fn test_normalize_whitespace() {
         let expected = make_result("hello   world", 0);
         let actual = make_result("hello world", 0);
-        let mut options = DiffOptions::default();
-        options.normalize_whitespace = true;
+        let options = DiffOptions {
+            normalize_whitespace: true,
+            ..DiffOptions::default()
+        };
 
         let result = diff_results(&expected, &actual, &options);
         assert!(result.matches);
@@ -543,8 +545,10 @@ mod tests {
     fn test_ignore_case() {
         let expected = make_result("HELLO", 0);
         let actual = make_result("hello", 0);
-        let mut options = DiffOptions::default();
-        options.ignore_case = true;
+        let options = DiffOptions {
+            ignore_case: true,
+            ..DiffOptions::default()
+        };
 
         let result = diff_results(&expected, &actual, &options);
         assert!(result.matches);

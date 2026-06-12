@@ -849,6 +849,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)] // 3.14 is arbitrary test data, not an approximation of PI
     fn test_float_lit_to_code() {
         let node = PythonNode::FloatLit(3.14);
         assert!(node.to_code(0).starts_with("3.1"));
@@ -1010,6 +1011,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::clone_on_copy)] // deliberately exercises Clone on a Copy type
     fn test_binary_op_clone() {
         let op = BinaryOp::Add;
         let cloned = op.clone();

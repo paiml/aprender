@@ -103,32 +103,14 @@ pub trait Tokenizer {
 }
 
 // ============================================================================
-// trueno-rag integration (GH-125)
+// trueno-rag integration (GH-125) — REMOVED for APR-MONO self-containment.
 // ============================================================================
-
-/// Re-export trueno-rag types when the `rag` feature is enabled.
-///
-/// Provides document chunking, retrieval, and RAG pipeline capabilities
-/// for document-based ML workflows.
-///
-/// # Example
-///
-/// ```ignore
-/// use aprender::text::rag::{Chunker, ChunkingStrategy};
-///
-/// let chunker = Chunker::new(ChunkingStrategy::Recursive {
-///     chunk_size: 512,
-///     overlap: 64,
-/// });
-/// let chunks = chunker.chunk(&document)?;
-/// ```
-#[cfg(feature = "rag")]
-pub mod rag {
-    // RAG (Retrieval-Augmented Generation) pipeline integration.
-    // Re-exports from `trueno-rag` for document chunking, retrieval, and metrics.
-
-    pub use trueno_rag::*;
-}
+//
+// `aprender::text::rag` was a `pub use trueno_rag::*` re-export. Since aprender-rag
+// (=trueno-rag) depends on aprender-core (and aprender-serve), this re-export closed a
+// core→rag→serve→core cycle — a layer inversion (the RAG crate builds ON core). Consume
+// the RAG pipeline directly from the `aprender-rag` crate (`use aprender_rag::...`), which
+// already depends on core. No in-tree code used `aprender::text::rag`.
 
 // Text preprocessing contract falsification (FALSIFY-PP-001..006)
 // Refs: NLP spec §2.1.1, PMAT-346

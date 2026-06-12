@@ -17,7 +17,8 @@
 use aprender::autograd::Tensor;
 use aprender_bench_compute::deterministic_f32;
 use aprender_bench_compute::sizes::ACTIVATION_SIZES;
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use std::hint::black_box;
 
 fn bench_tensor_create(c: &mut Criterion) {
     let mut group = c.benchmark_group("tensor_create");

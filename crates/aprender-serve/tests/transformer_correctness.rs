@@ -51,7 +51,7 @@ fn test_layer_norm_identity() {
     let config = create_tiny_config();
     let transformer = create_transformer_with_identity_weights(&config);
 
-    let _input = vec![0.0f32; 4];
+    let _input = [0.0f32; 4];
     let embedded = transformer.embed(&[0]);
 
     // With zero embeddings and identity weights, output should be zeros
@@ -577,7 +577,7 @@ fn test_repeated_tokens() {
 #[test]
 fn test_rms_norm_computation() {
     // RMSNorm: x / sqrt(mean(x^2) + eps) * weight
-    let input = vec![1.0, 2.0, 3.0, 4.0];
+    let input = [1.0, 2.0, 3.0, 4.0];
     let weight = vec![1.0, 1.0, 1.0, 1.0];
     let eps = 1e-5;
 
@@ -599,7 +599,7 @@ fn test_rms_norm_computation() {
 
 #[test]
 fn test_rms_norm_zero_input() {
-    let input = vec![0.0, 0.0, 0.0, 0.0];
+    let input = [0.0, 0.0, 0.0, 0.0];
     let eps = 1e-5;
 
     let mean_sq: f32 = input.iter().map(|x| x * x).sum::<f32>() / input.len() as f32;

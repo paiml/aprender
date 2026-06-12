@@ -9,7 +9,7 @@
 #![allow(clippy::missing_panics_doc)]
 #![allow(clippy::expect_used)]
 
-use apr_qa_gen::{
+use aprender_qa_gen::{
     bootstrap_playbook, profile_from_constraints, to_yaml, ArchConstraints, ArchSizeVariant,
     BootstrapConfig, BootstrappedPlaybook, KernelProfile,
 };

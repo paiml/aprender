@@ -1,8 +1,9 @@
 //! Benchmark tests for widget operations.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use presentar_core::{Constraints, Size, Widget};
 use presentar_widgets::{Button, Text};
+use std::hint::black_box;
 
 fn bench_button_creation(c: &mut Criterion) {
     c.bench_function("button_new", |b| {

@@ -13,14 +13,16 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use realizar::api::{create_router, AppState};
-use std::sync::Mutex;
+use serial_test::serial;
 use tower::ServiceExt;
 
-/// Serializes every test that reads or writes `APR_TEST_FORCE_LOADING` so the
-/// process-wide env var can't bleed between parallel tokio tests.
-/// FALSIFY-001/004 tests expect the env var *unset*; FALSIFY-005 tests set it.
-/// Both sides take this lock.
-static ENV_LOCK: Mutex<()> = Mutex::new(());
+// Serialization of tests that read or write `APR_TEST_FORCE_LOADING` is handled
+// via `#[serial(env_force_loading)]` on each test below. This serializes at the
+// test-harness level (one test at a time) rather than holding a `std::sync::Mutex`
+// guard across the `.await` points inside each test — which would risk a deadlock
+// (await_holding_lock). FALSIFY-001/004 tests expect the env var *unset*;
+// FALSIFY-005 tests set it. Sharing one serial key keeps both sides mutually
+// exclusive while leaving no guard live across any await.
 
 fn router_with_model() -> axum::Router {
     let state = AppState::demo().expect("demo state should build");
@@ -55,8 +57,8 @@ async fn json_body(resp: axum::http::Response<Body>) -> serde_json::Value {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
+#[serial(env_force_loading)]
 async fn falsify_crux_c_34_001_health_schema_200() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
     let app = router_with_model();
     let resp = app.oneshot(get("/health")).await.expect("oneshot");
     assert_eq!(
@@ -88,8 +90,8 @@ async fn falsify_crux_c_34_001_health_schema_200() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
+#[serial(env_force_loading)]
 async fn falsify_crux_c_34_002_status_enum_ready() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
     let app = router_with_model();
     let resp = app.oneshot(get("/health")).await.expect("oneshot");
     let json = json_body(resp).await;
@@ -101,8 +103,8 @@ async fn falsify_crux_c_34_002_status_enum_ready() {
 }
 
 #[tokio::test]
+#[serial(env_force_loading)]
 async fn falsify_crux_c_34_002_status_enum_loading() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
     // No model resident ⇒ status must be the "loading" enum variant, not a
     // free-form string like the legacy "healthy".
     let app = router_without_model();
@@ -120,8 +122,8 @@ async fn falsify_crux_c_34_002_status_enum_loading() {
 }
 
 #[tokio::test]
+#[serial(env_force_loading)]
 async fn falsify_crux_c_34_002_loading_returns_503() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
     let app = router_without_model();
     let resp = app.oneshot(get("/health")).await.expect("oneshot");
     // Contract §health_response_schema: status==503 ⇔ body.status ∈ {loading, degraded}.
@@ -137,8 +139,8 @@ async fn falsify_crux_c_34_002_loading_returns_503() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
+#[serial(env_force_loading)]
 async fn falsify_crux_c_34_003_uptime_monotonic() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
     // Two sequential oneshots on the SAME process must see uptime_sec advance.
     // Router is rebuilt each call but the OnceLock<Instant> is process-wide,
     // so start time is shared.
@@ -176,8 +178,8 @@ async fn falsify_crux_c_34_003_uptime_monotonic() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
+#[serial(env_force_loading)]
 async fn falsify_crux_c_34_004_live_always_200_ready_server() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
     // Ready server: /health/live MUST return 200 (process is alive).
     let app = router_with_model();
     let resp = app.oneshot(get("/health/live")).await.expect("oneshot");
@@ -189,8 +191,8 @@ async fn falsify_crux_c_34_004_live_always_200_ready_server() {
 }
 
 #[tokio::test]
+#[serial(env_force_loading)]
 async fn falsify_crux_c_34_004_live_always_200_loading_server() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
     // Even when model is NOT loaded, /health/live MUST still return 200 —
     // this is what makes it a valid k8s liveness probe (process is alive
     // regardless of model readiness).
@@ -204,8 +206,8 @@ async fn falsify_crux_c_34_004_live_always_200_loading_server() {
 }
 
 #[tokio::test]
+#[serial(env_force_loading)]
 async fn falsify_crux_c_34_004_ready_200_when_model_loaded() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
     let app = router_with_model();
     let resp = app.oneshot(get("/health/ready")).await.expect("oneshot");
     assert_eq!(
@@ -216,8 +218,8 @@ async fn falsify_crux_c_34_004_ready_200_when_model_loaded() {
 }
 
 #[tokio::test]
+#[serial(env_force_loading)]
 async fn falsify_crux_c_34_004_ready_503_when_no_model() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
     let app = router_without_model();
     let resp = app.oneshot(get("/health/ready")).await.expect("oneshot");
     assert_eq!(
@@ -228,8 +230,8 @@ async fn falsify_crux_c_34_004_ready_503_when_no_model() {
 }
 
 #[tokio::test]
+#[serial(env_force_loading)]
 async fn falsify_crux_c_34_004_main_health_agrees_with_ready() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
     // If /health==200 (status=ok) then /health/ready MUST also be 200.
     let app_ready = router_with_model();
     let main = app_ready.oneshot(get("/health")).await.expect("oneshot");
@@ -257,9 +259,8 @@ async fn falsify_crux_c_34_004_main_health_agrees_with_ready() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
+#[serial(env_force_loading)]
 async fn falsify_crux_c_34_005_force_loading_env_flips_status() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
-
     let prior = std::env::var("APR_TEST_FORCE_LOADING").ok();
     // SAFETY: std::env::{set_var, remove_var} are marked unsafe as of the
     // 2024 edition due to threading concerns. We serialize access through
@@ -295,8 +296,8 @@ async fn falsify_crux_c_34_005_force_loading_env_flips_status() {
 }
 
 #[tokio::test]
+#[serial(env_force_loading)]
 async fn falsify_crux_c_34_005_force_loading_ready_is_503() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
     // The readiness probe MUST also flip to 503 under the force-loading hook.
 
     let prior = std::env::var("APR_TEST_FORCE_LOADING").ok();

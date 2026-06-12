@@ -509,7 +509,7 @@ mod tests {
         let mut extractor = CommitFeatureExtractor::new();
 
         let diff = "diff --git a/foo.rs b/foo.rs\n+line";
-        extractor.extract(diff, "alice", 1700000000.0);
+        let _ = extractor.extract(diff, "alice", 1700000000.0);
 
         assert!(extractor.total_commits > 0);
 

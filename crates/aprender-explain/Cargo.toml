@@ -20,8 +20,8 @@ colored = "2.0"
 regex = "1.10"
 
 # TUI dependencies — presentar-terminal
-presentar-core = "0.3"
-presentar-terminal = "0.3"
+presentar-core = { workspace = true }
+presentar-terminal = { workspace = true }
 crossterm = "0.28"
 
 # Internal dependency for PTX generation

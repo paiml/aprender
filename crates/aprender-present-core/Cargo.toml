@@ -15,7 +15,11 @@ name = "presentar_core"
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
-trueno = { workspace = true, optional = true }
+# NOTE: trueno (=aprender-compute) removed (APR-MONO self-containment): a terminal-UI
+# primitives crate must not depend on the SIMD compute foundation — present-core→trueno
+# closed compute→gpu→present-core→compute (and …→simulate→present-core→…) cycles. The
+# never-enabled `simd` feature's trueno-backed helpers are dropped; the always-on
+# auto-vectorized f64 ComputeBlocks (batch_sum_f64, …) remain.
 provable-contracts-macros = "0.3"
 
 [build-dependencies]
@@ -26,8 +30,7 @@ serde_yaml_ng = { workspace = true }
 # PROBAR-SPEC-009: Brick Architecture is MANDATORY, not optional
 # All widgets MUST implement Brick trait - tests define interface
 # CB-081: Brick types defined natively (no jugar-probar prod dep)
-default = ["simd"]
-simd = ["dep:trueno"]
+default = []
 
 [dev-dependencies]
 proptest = { workspace = true }

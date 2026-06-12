@@ -147,6 +147,10 @@
 #![allow(clippy::trivially_copy_pass_by_ref)] // Allow &self on small Copy types
 #![allow(clippy::used_underscore_items)] // Allow using _prefixed items
 #![allow(clippy::field_reassign_with_default)] // Allow field reassign after default
+#![allow(clippy::doc_lazy_continuation)] // Allow PMAT/GH ticket prose under doc list items
+#![allow(clippy::many_single_char_names)] // Allow a/m/k/n style names in matmul kernels
+#![allow(clippy::map_unwrap_or)] // Allow .map().unwrap_or() over .map_or()
+#![allow(clippy::ref_option)] // Allow &Option<T> params in CUDA graph capture APIs
 
 // Contract assertions from YAML (pv codegen)
 #[macro_use]

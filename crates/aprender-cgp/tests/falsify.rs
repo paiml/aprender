@@ -2,6 +2,10 @@
 //! Each test attempts to falsify a specific claim from the spec.
 //! Tests that pass mean the claim survived falsification.
 
+// Integration-test binary: `.unwrap()` is idiomatic in test assertions and the
+// lib's `cfg(test)` allow does not reach this separate crate.
+#![allow(clippy::disallowed_methods)]
+
 use std::process::Command;
 use std::time::Instant;
 
@@ -420,7 +424,7 @@ fn falsify_cgp_021_ridge_point_math() {
         let fp16 = arr.iter().find(|r| {
             r["precision"]
                 .as_str()
-                .map_or(false, |s| s.contains("FP16") || s.contains("Fp16"))
+                .is_some_and(|s| s.contains("FP16") || s.contains("Fp16"))
         });
         if let Some(fp16_ridge) = fp16 {
             let ridge = fp16_ridge["ridge_flop_per_byte"].as_f64().unwrap_or(0.0);

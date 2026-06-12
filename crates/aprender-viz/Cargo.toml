@@ -14,10 +14,10 @@ categories = ["visualization", "graphics", "science", "wasm"]
 
 [dependencies]
 # Core SIMD/GPU acceleration
-trueno = { version = "0.17", default-features = false }
+trueno = { path = "../aprender-compute", package = "aprender-compute", default-features = false }
 
 # Shared Batuta stack utilities (display traits, formatting)
-batuta-common = "0.1"
+batuta-common = { workspace = true }
 
 # PNG encoding (pure Rust, no libpng)
 png = "0.17"
@@ -32,13 +32,14 @@ thiserror = "2.0"
 aprender = { path = "../aprender-core", version = "0.49.0", package = "aprender-core", optional = true }
 
 # Optional: Graph integration
-trueno-graph = { workspace = true, optional = true, default-features = false }
+trueno-graph = { path = "../aprender-graph", package = "aprender-graph", default-features = false, optional = true }
 
 # Optional: Database integration
-trueno-db = { version = "0.3.16", optional = true }
+trueno-db = { workspace = true, optional = true }
 
-# Optional: Training integration and inference monitoring
-entrenar = { workspace = true, optional = true }
+# NOTE: entrenar (=aprender-train) removed (APR-MONO self-containment): aprender-train
+# depends on viz (train plots via viz), so viz→entrenar closed a train↔viz cycle. The
+# entrenar inference-path interop module was dropped (re-home in aprender-train if needed).
 
 # Optional: Serialization (for ML inference monitoring visualization)
 serde = { version = "1.0", features = ["derive"], optional = true }
@@ -55,10 +56,10 @@ tokio = { version = "1.0", features = ["net", "rt-multi-thread", "sync", "time"]
 rmp-serde = { version = "1.3", optional = true }
 rustls = { version = "0.23", optional = true }
 
-# Optional: Stack integration for monitoring
-realizar = { version = "0.7", optional = true }
+# NOTE: realizar (=aprender-serve) + repartir (=aprender-distribute) removed (APR-MONO
+# self-containment): both were unused in viz src, and serve→viz is the correct direction
+# (the inference server plots via viz), so viz→serve closed a viz↔serve cycle.
 # trueno-zram = { version = "0.1", optional = true }  # Not yet on crates.io
-repartir = { version = "2.0", optional = true }
 
 # Optional: WGPU multi-GPU monitoring (100% safe Rust)
 wgpu = { version = "24", optional = true }
@@ -104,7 +105,7 @@ gpu-wasm = ["trueno/gpu-wasm", "wasm"]
 parallel = ["trueno/parallel"]
 
 # ML library integration
-ml = ["dep:aprender", "dep:entrenar", "dep:serde"]
+ml = ["dep:aprender", "dep:serde"]
 
 # Graph library integration
 graph = ["dep:trueno-graph"]
@@ -134,8 +135,8 @@ monitor-remote = ["monitor", "dep:tokio", "dep:rmp-serde"]
 monitor-tls = ["monitor-remote", "dep:rustls"]
 
 # Monitor with Sovereign AI Stack integration
-# Note: trueno-zram not yet on crates.io
-monitor-stack = ["monitor", "dep:realizar", "dep:entrenar", "dep:repartir"]
+# Note: realizar/repartir removed (self-containment); entrenar visualization only
+monitor-stack = ["monitor"]
 
 # Monitor with WGPU multi-GPU support (100% safe Rust - RECOMMENDED)
 gpu-wgpu = ["monitor", "dep:wgpu"]

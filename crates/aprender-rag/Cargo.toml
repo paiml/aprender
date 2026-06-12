@@ -32,8 +32,8 @@ name = "aprender_rag"
 
 [dependencies]
 # Core compute
-trueno = "0.17"
-trueno-db = "0.3.17"
+trueno = { workspace = true }
+trueno-db = { workspace = true }
 
 # Async runtime
 tokio = { version = "1.49", features = ["full"] }
@@ -50,7 +50,7 @@ uuid = { version = "1.11", features = ["v4", "serde"] }
 async-trait = "0.1"
 
 # Compression for index storage (GH-2) - via batuta-common shared module
-batuta-common = "0.1"
+batuta-common = { workspace = true }
 lz4_flex = { version = "0.11", optional = true }
 zstd = { version = "0.13", optional = true }
 bincode = { version = "1.3", optional = true }  # Binary serialization for indices
@@ -64,7 +64,7 @@ fastembed = { version = "5", optional = true }
 
 # NVIDIA Embed Nemotron 8B via realizar GGUF infrastructure (GH-3)
 # Large model (~4-32GB depending on quantization), requires GGUF file
-realizar = { version = "0.7", optional = true, default-features = false }
+realizar = { path = "../aprender-serve", package = "aprender-serve", default-features = false, optional = true }
 
 # Speech-to-text via whisper-apr (Whisper ASR, .apr model format)
 # Sovereign stack: whisper-apr + aprender + trueno for pure-Rust transcription

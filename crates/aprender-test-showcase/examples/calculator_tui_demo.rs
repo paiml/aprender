@@ -6,6 +6,7 @@
 //! Run with: cargo run --example calculator_tui_demo --features tui
 
 #![allow(clippy::unwrap_used)]
+#![allow(clippy::disallowed_methods)] // example harness — unwrap acceptable
 
 use showcase_calculator::driver::{
     run_full_specification, verify_basic_arithmetic, verify_complex_expressions,

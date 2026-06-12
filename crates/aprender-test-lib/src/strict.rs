@@ -38,9 +38,9 @@ impl fmt::Display for ConsoleSeverity {
 }
 
 impl ConsoleSeverity {
-    /// Parse severity from string
+    /// Parse severity from string (infallible; unknown maps to `Log`)
     #[must_use]
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "error" => Self::Error,
             "warn" | "warning" => Self::Warn,
@@ -460,7 +460,7 @@ impl ConsoleCapture {
             .into_iter()
             .map(|v| {
                 ConsoleMessage::new(
-                    ConsoleSeverity::from_str(v["severity"].as_str().unwrap_or("log")),
+                    ConsoleSeverity::parse_str(v["severity"].as_str().unwrap_or("log")),
                     v["text"].as_str().unwrap_or(""),
                 )
                 .with_source(
@@ -1166,12 +1166,12 @@ mod tests {
 
     #[test]
     fn test_console_severity_from_str() {
-        assert_eq!(ConsoleSeverity::from_str("error"), ConsoleSeverity::Error);
-        assert_eq!(ConsoleSeverity::from_str("ERROR"), ConsoleSeverity::Error);
-        assert_eq!(ConsoleSeverity::from_str("warn"), ConsoleSeverity::Warn);
-        assert_eq!(ConsoleSeverity::from_str("warning"), ConsoleSeverity::Warn);
-        assert_eq!(ConsoleSeverity::from_str("info"), ConsoleSeverity::Info);
-        assert_eq!(ConsoleSeverity::from_str("unknown"), ConsoleSeverity::Log);
+        assert_eq!(ConsoleSeverity::parse_str("error"), ConsoleSeverity::Error);
+        assert_eq!(ConsoleSeverity::parse_str("ERROR"), ConsoleSeverity::Error);
+        assert_eq!(ConsoleSeverity::parse_str("warn"), ConsoleSeverity::Warn);
+        assert_eq!(ConsoleSeverity::parse_str("warning"), ConsoleSeverity::Warn);
+        assert_eq!(ConsoleSeverity::parse_str("info"), ConsoleSeverity::Info);
+        assert_eq!(ConsoleSeverity::parse_str("unknown"), ConsoleSeverity::Log);
     }
 
     #[test]

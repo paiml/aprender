@@ -166,10 +166,10 @@ impl OwnedQuantizedModelCuda {
         } else {
             config.max_tokens
         };
-        for _token_num in 0..max_decode {
+        for token_num in 0..max_decode {
             let next_token = if config.temperature == 0.0 || config.top_k == 1 {
                 let tok = self.forward_gpu_resident_to_token_id(last_token, &mut cache, position)?;
-                if _token_num == first_token_offset && prefill_first_token.is_none() {
+                if token_num == first_token_offset && prefill_first_token.is_none() {
                     ttft_mark!("first_decode");
                 }
                 tok

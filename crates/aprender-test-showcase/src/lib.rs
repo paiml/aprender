@@ -39,6 +39,8 @@
         clippy::float_cmp
     )
 )]
+// showcase test-tooling crate — unwrap/expect in the test driver is acceptable
+#![allow(clippy::disallowed_methods)]
 #![deny(missing_docs)]
 #![deny(missing_debug_implementations)]
 

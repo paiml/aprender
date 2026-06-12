@@ -45,6 +45,9 @@
 
 // Note: Lint configuration is in Cargo.toml [workspace.lints]
 #![forbid(unsafe_code)]
+// Test code uses unwrap/expect-family freely (established convention; see
+// crates/aprender-core/src/lib.rs).
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
 
 #[macro_use]
 #[allow(unused_macros, clippy::duplicated_attributes)]
@@ -135,6 +138,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::clone_on_copy)] // deliberately exercises Clone on a Copy type
     fn test_language_clone() {
         let lang = Language::Python;
         let cloned = lang.clone();

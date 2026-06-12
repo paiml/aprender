@@ -18,7 +18,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Error category taxonomy for transpilation failures
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum ErrorCategory {
     /// Type system incompatibility
     TypeMismatch,
@@ -37,13 +37,8 @@ pub enum ErrorCategory {
     /// Timeout or resource exhaustion
     ResourceExhaustion,
     /// Unknown or uncategorized error
+    #[default]
     Unknown,
-}
-
-impl Default for ErrorCategory {
-    fn default() -> Self {
-        Self::Unknown
-    }
 }
 
 impl ErrorCategory {

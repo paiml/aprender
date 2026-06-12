@@ -1,7 +1,8 @@
 //! Benchmarks for hyperparameter sweep execution.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use entrenar_bench::{SweepConfig, Sweeper};
+use std::hint::black_box;
 
 fn bench_temperature_sweep(c: &mut Criterion) {
     c.bench_function("temperature_sweep_5_points", |b| {

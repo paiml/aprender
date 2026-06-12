@@ -255,13 +255,13 @@ impl<'ast> Visit<'ast> for PanicPathVisitor {
                 node.path
                     .segments
                     .first()
-                    .map_or_else(|| proc_macro2::Span::call_site(), |s| s.ident.span()),
+                    .map_or_else(proc_macro2::Span::call_site, |s| s.ident.span()),
             );
             let column = self.span_to_column(
                 node.path
                     .segments
                     .first()
-                    .map_or_else(|| proc_macro2::Span::call_site(), |s| s.ident.span()),
+                    .map_or_else(proc_macro2::Span::call_site, |s| s.ident.span()),
             );
 
             let rule = match macro_name.as_str() {

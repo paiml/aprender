@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let vocab_size = cpu_model.config().vocab_size;
 
     // Test tokens for "2+2="
-    let tokens = vec![17, 10, 17, 28]; // Simple test
+    let tokens = [17, 10, 17, 28]; // Simple test
 
     eprintln!("\n=== CPU Generation ===");
     let mut cpu_cache = OwnedQuantizedKVCache::new(num_layers, kv_dim, 64);

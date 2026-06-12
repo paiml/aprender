@@ -778,7 +778,7 @@ fn test_qa_i08_realtime_trace_streaming() {
     eprintln!();
 
     // Create a series of metrics snapshots (simulating real-time updates)
-    let snapshots = vec![
+    let snapshots = [
         ServerMetricsResponse {
             throughput_tok_per_sec: 100.0,
             latency_p50_ms: 10.0,

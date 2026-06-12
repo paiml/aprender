@@ -195,8 +195,7 @@ mod tests {
     fn make_onsets(times: &[f64]) -> Vec<AudioOnset> {
         times
             .iter()
-            .enumerate()
-            .map(|(_i, &t)| AudioOnset {
+            .map(|&t| AudioOnset {
                 time_secs: t,
                 energy_db: -20.0,
                 sample_index: (t * 48000.0) as usize,

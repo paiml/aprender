@@ -174,6 +174,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::clone_on_copy)] // deliberately exercises Clone on a Copy type
     fn test_operator_clone_copy() {
         let op = MutationOperator::Aor;
         let cloned = op.clone();

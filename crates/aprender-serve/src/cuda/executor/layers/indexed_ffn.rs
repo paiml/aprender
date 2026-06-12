@@ -122,7 +122,8 @@ impl CudaExecutor {
         self.stream.synchronize()?;
 
         // PAR-058-DEBUG: Check layer output (skip during graph capture)
-        if !skip_debug && (layer_idx < 10 || (layer_idx >= 10 && layer_idx <= 12)) {
+        // Equivalent to the original `layer_idx < 10 || (10..=12)` which collapses to `<= 12`.
+        if !skip_debug && layer_idx <= 12 {
             self.debug_check_buf(hidden_buf2, "Layer output", layer_idx)?;
         }
 

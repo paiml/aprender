@@ -137,11 +137,11 @@ fn create_sample_batch(num_rows: usize) -> Result<RecordBatch, Box<dyn std::erro
         Field::new("score", DataType::Float64, false),
     ]);
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     // Generate random scores for realistic Top-K selection
     let user_ids: Vec<i32> = (0..num_rows).map(|i| i as i32).collect();
-    let scores: Vec<f64> = (0..num_rows).map(|_| rng.gen_range(0.0..1000.0)).collect();
+    let scores: Vec<f64> = (0..num_rows).map(|_| rng.random_range(0.0..1000.0)).collect();
 
     let batch = RecordBatch::try_new(
         Arc::new(schema),

@@ -238,6 +238,7 @@ impl HyperparametersBuilder {
 }
 
 #[cfg(test)]
+#[allow(clippy::approx_constant)] // 3.14 is an arbitrary float fixture, not PI
 mod tests {
     use super::*;
 

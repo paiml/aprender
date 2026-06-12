@@ -44,7 +44,7 @@ nix = { version = "0.30", default-features = false, features = ["ptrace", "proce
 
 # Error handling
 # PMAT-284: Core tracing primitives (extracted to break circular dep)
-renacer-core = { version = "0.1" }
+renacer-core = { workspace = true }
 
 anyhow = "1.0"
 thiserror = "2.0"
@@ -70,7 +70,7 @@ memmap2 = "0.9"
 backtrace = "0.3"
 
 # High-performance SIMD/GPU compute (sister project - published on crates.io)
-trueno = { version = "0.17" }
+trueno = { workspace = true }
 
 # Machine learning for anomaly detection (Sprint 23)
 # GH-581: Use path dep to avoid trueno version skew with local workspace
@@ -83,7 +83,7 @@ crossbeam = { version = "0.8", default-features = false, features = ["crossbeam-
 dashmap = "6.1"
 
 # Parquet storage for golden thread traces (Sprint 40)
-trueno-db = { version = "0.3.16" }
+trueno-db = { workspace = true }
 
 # Graph database for causal analysis (Sprint 41)
 trueno-graph = { workspace = true }
@@ -111,7 +111,7 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["e
 crossterm = "0.28"
 
 # SIMD-accelerated visualization primitives (sister project)
-trueno-viz = { version = "0.2", default-features = false, features = ["monitor"] }
+trueno-viz = { path = "../aprender-viz", package = "aprender-viz", default-features = false, features = ["monitor"] }
 
 # OpenTelemetry for distributed tracing (Sprint 30)
 opentelemetry = { version = "0.31.0", optional = true }

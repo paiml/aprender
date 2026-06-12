@@ -255,9 +255,13 @@ mod tests {
         eprintln!("\nFirst 10 logits:");
         eprintln!("  idx |    CPU    |    GPU    |   ratio");
         eprintln!("  ----|-----------|-----------|----------");
-        for i in 0..10 {
-            let cpu_val = cpu_trace.logits[i];
-            let gpu_val = gpu_logits[i];
+        for (i, (&cpu_val, &gpu_val)) in cpu_trace
+            .logits
+            .iter()
+            .zip(gpu_logits.iter())
+            .take(10)
+            .enumerate()
+        {
             let ratio = if gpu_val.abs() > 1e-10 {
                 cpu_val / gpu_val
             } else {

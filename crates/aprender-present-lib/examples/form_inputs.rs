@@ -2,8 +2,10 @@
 //!
 //! Run with: `cargo run --example form_inputs`
 
-use presentar::widgets::{Button, Checkbox, Column, Row, Slider, Text, TextInput, Toggle};
-use presentar::{Color, Constraints, DrawCommand, RecordingCanvas, Rect, Size, Widget};
+use aprender_present_lib::widgets::{
+    Button, Checkbox, Column, Row, Slider, Text, TextInput, Toggle,
+};
+use aprender_present_lib::{Color, Constraints, DrawCommand, RecordingCanvas, Rect, Size, Widget};
 
 fn main() {
     println!("=== Presentar Form Inputs Example ===\n");

@@ -70,7 +70,7 @@ fn test_cpu_fused_residual_rmsnorm_basic() {
     // sum = [1.5, 2.5, 3.5, 4.5]
     // sq_sum = 1.5^2 + 2.5^2 + 3.5^2 + 4.5^2 = 2.25 + 6.25 + 12.25 + 20.25 = 41.0
     // rms = sqrt(41.0/4 + eps) = sqrt(10.25 + eps) ≈ 3.2016
-    let sum = vec![1.5f32, 2.5, 3.5, 4.5];
+    let sum = [1.5f32, 2.5, 3.5, 4.5];
     let sq_sum: f32 = sum.iter().map(|x| x * x).sum();
     let rms = (sq_sum / 4.0 + epsilon).sqrt();
     let expected: Vec<f32> = sum.iter().map(|x| x / rms).collect();

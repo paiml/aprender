@@ -1,6 +1,8 @@
 //! Compression benchmarks using Criterion.
+#![allow(clippy::disallowed_methods)] // benchmark harness — unwrap acceptable
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+use std::hint::black_box;
 use trueno_zram_core::{lz4, zstd, PAGE_SIZE};
 
 fn generate_test_data() -> Vec<[u8; PAGE_SIZE]> {

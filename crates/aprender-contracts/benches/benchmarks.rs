@@ -1,4 +1,6 @@
 #![allow(clippy::format_collect)]
+// Benchmark binary: `.unwrap()` is idiomatic in bench setup.
+#![allow(clippy::disallowed_methods)]
 //! Criterion benchmarks for provable-contracts.
 //!
 //! Benchmarks YAML contract parsing, validation, and equation extraction

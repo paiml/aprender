@@ -155,7 +155,7 @@ impl WarpMetrics {
     pub fn primary_stall_reason(&self) -> Option<WarpStallReason> {
         self.stall_reasons
             .iter()
-            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .max_by(|a, b| a.1.total_cmp(b.1))
             .map(|(reason, _)| *reason)
     }
 }
@@ -306,9 +306,11 @@ mod tests {
 
     #[test]
     fn test_warp_divergence() {
-        let mut warp = WarpMetrics::default();
-        warp.execution_efficiency = 90.0;
-        warp.branch_efficiency = 95.0;
+        let mut warp = WarpMetrics {
+            execution_efficiency: 90.0,
+            branch_efficiency: 95.0,
+            ..Default::default()
+        };
         assert!(!warp.has_divergence());
 
         warp.execution_efficiency = 60.0;

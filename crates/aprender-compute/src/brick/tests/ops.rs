@@ -91,7 +91,7 @@ fn falsify_mm_002_numerical_accuracy() {
     let a = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
     let b = vec![7.0, 8.0, 9.0, 10.0, 11.0, 12.0];
     let result = op.execute((a, b), Backend::Scalar).unwrap();
-    let expected = vec![58.0, 64.0, 139.0, 154.0];
+    let expected = [58.0, 64.0, 139.0, 154.0];
     for (i, (&got, &exp)) in result.iter().zip(expected.iter()).enumerate() {
         assert!((got - exp).abs() < 1e-4, "FALSIFIED MM-002: result[{i}] = {got}, expected {exp}");
     }

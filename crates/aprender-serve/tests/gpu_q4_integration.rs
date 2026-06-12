@@ -699,7 +699,7 @@ fn test_q4_gemv_correctness_known_pattern() {
     // Expected output:
     // y[0] = sum of 32 * (1.0 * (9 - 8)) = 32 * 1.0 = 32.0
     // y[1] = sum of 32 * (2.0 * (12 - 8)) = 32 * 8.0 = 256.0
-    let expected = vec![32.0f32, 256.0f32];
+    let expected = [32.0f32, 256.0f32];
 
     // CPU reference
     let cpu_result = cpu_q4_gemv(&weights, &x, n, k);

@@ -2,6 +2,10 @@
 //! These tests run the actual cgp binary as a subprocess and verify output.
 //! Covers FALSIFY tests that require the full binary.
 
+// Integration-test binary: `.unwrap()` is idiomatic in test assertions and the
+// lib's `cfg(test)` allow does not reach this separate crate.
+#![allow(clippy::disallowed_methods)]
+
 use std::process::Command;
 
 fn cgp_cmd() -> Command {

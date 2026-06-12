@@ -384,7 +384,6 @@ mod tests {
 
     #[test]
     fn test_test_result_from_verdict_mismatch() {
-        use crate::oracle::Phase;
         let verification = crate::oracle::VerificationResult {
             source_code: "print(1)".to_string(),
             source_language: Language::Python,

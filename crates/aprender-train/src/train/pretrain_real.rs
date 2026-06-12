@@ -711,12 +711,12 @@ mod tests {
         // Verify the function signature compile-binds: takes a Path-like,
         // returns the right Result type. This is a compile-time check —
         // if the signature drifts, this test stops compiling.
-        fn _check_signature<F>(_f: F)
+        fn check_signature<F>(_f: F)
         where
             F: Fn(&Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>, String>,
         {
         }
-        _check_signature(|p| load_init_tensors_from_apr(p));
+        check_signature(|p| load_init_tensors_from_apr(p));
     }
 
     #[test]

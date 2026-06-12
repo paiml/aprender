@@ -12,10 +12,10 @@
     clippy::too_many_lines
 )]
 
-use presentar::widgets::{
+use aprender_present_lib::widgets::{
     row::MainAxisAlignment, Chart, Column, DataSeries, ProgressBar, Row, Text,
 };
-use presentar::{Color, Constraints, DrawCommand, RecordingCanvas, Rect, Size, Widget};
+use aprender_present_lib::{Color, Constraints, DrawCommand, RecordingCanvas, Rect, Size, Widget};
 
 fn main() {
     println!("=== Presentar Dashboard Example ===\n");

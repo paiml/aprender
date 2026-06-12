@@ -70,7 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         cuda_model.preload_weights_gpu()?;
 
         // Get GPU embedding via the model() accessor
-        let gpu_embedding: Vec<f32> = cuda_model.model().token_embedding
+        let gpu_embedding: Vec<f32> = cuda_model.model().token_embedding()
             [embedding_offset..embedding_offset + hidden_dim]
             .to_vec();
 

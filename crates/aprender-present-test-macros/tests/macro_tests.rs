@@ -2,7 +2,7 @@
 //!
 //! Tests that the proc macros generate correct code.
 
-use presentar_test_macros::presentar_test;
+use aprender_present_test_macros::presentar_test;
 
 // =============================================================================
 // Basic #[presentar_test] tests

@@ -31,6 +31,7 @@
 #![allow(clippy::needless_range_loop)]
 #![allow(clippy::similar_names)]
 #![allow(clippy::unnecessary_wraps)]
+#![allow(clippy::trivially_copy_pass_by_ref)] // APR-MONO: workspace policy (API consistency)
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::missing_panics_doc)]
 #![allow(clippy::missing_safety_doc)]
@@ -53,6 +54,8 @@
 #![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::large_stack_arrays)]
 #![allow(unused_assignments)]
+#![cfg_attr(test, allow(clippy::disallowed_methods))] // test assertions — unwrap acceptable
+#![cfg_attr(test, allow(clippy::uninlined_format_args))]
 
 pub mod benchmark;
 pub mod compat;
