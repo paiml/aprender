@@ -56,6 +56,11 @@ pub enum ContractKind {
     CorpusAssembly,
     Pattern,
     Schema,
+    /// A head-to-head BEAT benchmark: a committed, CI-wired claim that aprender
+    /// beats an incumbent (sklearn / PyTorch / Unsloth / Ollama) on a canonical
+    /// task, with a pinned baseline that fails CI on regression. The measurement
+    /// backbone for the four-pillar "replace AND beat" mission (PMAT-741).
+    BeatBenchmark,
 }
 
 impl std::fmt::Display for ContractKind {
@@ -72,7 +77,40 @@ impl std::fmt::Display for ContractKind {
             Self::CorpusAssembly => "corpus-assembly",
             Self::Pattern => "pattern",
             Self::Schema => "schema",
+            Self::BeatBenchmark => "beat-benchmark",
         };
         write!(f, "{s}")
+    }
+}
+
+#[cfg(test)]
+mod beat_benchmark_tests {
+    use super::*;
+    use crate::error::Severity;
+    use crate::schema::{parse_contract_str, validate_contract};
+
+    /// BeatBenchmark serde round-trips through its kebab-case "beat-benchmark".
+    #[test]
+    fn beat_benchmark_kind_round_trips() {
+        assert_eq!(ContractKind::BeatBenchmark.to_string(), "beat-benchmark");
+        let k: ContractKind = serde_yaml::from_str("beat-benchmark").unwrap();
+        assert_eq!(k, ContractKind::BeatBenchmark);
+    }
+
+    /// The pilot beat contract (contracts/beat-sklearn-iris-v1.yaml) parses as a
+    /// BeatBenchmark and validates with zero Error-severity violations (PMAT-741).
+    #[test]
+    fn pilot_beat_contract_validates() {
+        let yaml = include_str!("../../../../contracts/beat-sklearn-iris-v1.yaml");
+        let contract = parse_contract_str(yaml).expect("pilot beat contract parses");
+        assert_eq!(contract.kind(), ContractKind::BeatBenchmark);
+        let errors: Vec<_> = validate_contract(&contract)
+            .into_iter()
+            .filter(|v| v.severity == Severity::Error)
+            .collect();
+        assert!(
+            errors.is_empty(),
+            "pilot beat contract has errors: {errors:?}"
+        );
     }
 }
