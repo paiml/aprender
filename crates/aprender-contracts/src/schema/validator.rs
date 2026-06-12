@@ -35,7 +35,143 @@ pub fn validate_contract(contract: &Contract) -> Vec<Violation> {
         validate_kani_harnesses(contract, &mut violations);
     }
 
+    // BeatBenchmark-only checks (PMAT-741): the `beat:` block must pin a
+    // falsifiable, four-pillar incumbent baseline. Independent of the
+    // kernel/non-kernel split above.
+    if contract.kind() == ContractKind::BeatBenchmark {
+        validate_beat_benchmark(contract, &mut violations);
+    }
+
     violations
+}
+
+/// The four incumbents a BEAT may target (case-insensitive substring match, so
+/// `ollama` and `llama.cpp` both satisfy Pillar 4).
+const BEAT_INCUMBENTS: [&str; 5] = ["scikit-learn", "pytorch", "unsloth", "ollama", "llama.cpp"];
+
+/// Enforce the BeatBenchmark shape (PMAT-741): a `beat-benchmark` contract MUST
+/// carry a well-formed `beat:` block so the claim is a falsifiable CI gate, not
+/// prose. Rules BEAT-001..007.
+fn validate_beat_benchmark(contract: &Contract, violations: &mut Vec<Violation>) {
+    let push = |violations: &mut Vec<Violation>, rule: &str, message: String, field: &str| {
+        violations.push(Violation {
+            severity: Severity::Error,
+            rule: rule.to_string(),
+            message,
+            location: Some(format!("beat.{field}")),
+        });
+    };
+
+    let Some(beat) = contract.beat.as_ref() else {
+        violations.push(Violation {
+            severity: Severity::Error,
+            rule: "BEAT-001".to_string(),
+            message: "beat-benchmark contract must define a `beat:` block \
+                      (incumbent, metric, direction, beat_threshold, ci_gate_name)"
+                .to_string(),
+            location: Some("beat".to_string()),
+        });
+        return;
+    };
+
+    // BEAT-002: incumbent must name one of the four pillars.
+    let incumbent = beat.incumbent.trim().to_lowercase();
+    if incumbent.is_empty() {
+        push(
+            violations,
+            "BEAT-002",
+            "beat.incumbent must not be empty".to_string(),
+            "incumbent",
+        );
+    } else if !BEAT_INCUMBENTS.iter().any(|p| incumbent.contains(p)) {
+        push(
+            violations,
+            "BEAT-002",
+            format!(
+                "beat.incumbent {:?} must name one of the four pillars ({})",
+                beat.incumbent,
+                BEAT_INCUMBENTS.join(", ")
+            ),
+            "incumbent",
+        );
+    }
+
+    // BEAT-003: a measured metric is required.
+    if beat.metric.trim().is_empty() {
+        push(
+            violations,
+            "BEAT-003",
+            "beat.metric must name the measured quantity (e.g. accuracy, wall_clock_ms, \
+             tokens_per_sec)"
+                .to_string(),
+            "metric",
+        );
+    }
+
+    // BEAT-004: direction fixes which way is a regression.
+    match beat.direction.trim() {
+        "higher_is_better" | "lower_is_better" => {}
+        other => push(
+            violations,
+            "BEAT-004",
+            format!(
+                "beat.direction must be `higher_is_better` or `lower_is_better`, got {other:?}"
+            ),
+            "direction",
+        ),
+    }
+
+    // BEAT-005: a finite, machine-pinned threshold is required (the gate value).
+    match beat.beat_threshold {
+        None => push(
+            violations,
+            "BEAT-005",
+            "beat.beat_threshold is required — the pinned value CI fails below".to_string(),
+            "beat_threshold",
+        ),
+        Some(t) if !t.is_finite() => push(
+            violations,
+            "BEAT-005",
+            format!("beat.beat_threshold must be finite, got {t}"),
+            "beat_threshold",
+        ),
+        Some(_) => {}
+    }
+
+    // BEAT-006: the enforcing CI gate must be named.
+    if beat.ci_gate_name.trim().is_empty() {
+        push(
+            violations,
+            "BEAT-006",
+            "beat.ci_gate_name must name the CI test that enforces this gate".to_string(),
+            "ci_gate_name",
+        );
+    }
+
+    // BEAT-007: approved_compute is required and must be CPU or GPU (the
+    // autonomous-vs-operator track distinction depends on it).
+    match beat
+        .approved_compute
+        .as_deref()
+        .map(|c| c.trim().to_uppercase())
+    {
+        None => push(
+            violations,
+            "BEAT-007",
+            "beat.approved_compute is required — must be `CPU` or `GPU`".to_string(),
+            "approved_compute",
+        ),
+        Some(ref c) if c != "CPU" && c != "GPU" => push(
+            violations,
+            "BEAT-007",
+            format!(
+                "beat.approved_compute must be `CPU` or `GPU`, got {:?}",
+                beat.approved_compute
+            ),
+            "approved_compute",
+        ),
+        Some(_) => {}
+    }
 }
 
 /// Enforce the provability invariant: kernel contracts (non-registry) MUST have
