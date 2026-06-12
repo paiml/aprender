@@ -267,6 +267,9 @@ mod tests {
 
     #[test]
     fn enc_003_learned_position_embedding_deterministic() {
+        // Hold the global init-seed lock across both constructions so concurrent
+        // seed-setting tests can't change INIT_SEED between them (see falsify_e7e).
+        let _seed_guard = crate::transformer::init::lock_init_seed(42);
         let pe1 = LearnedPositionEmbedding::new(128, 32);
         let pe2 = LearnedPositionEmbedding::new(128, 32);
         let o1 = pe1.forward(10);
@@ -407,6 +410,11 @@ mod tests {
     /// FALSIFY-E7e: Embedding init is deterministic (reproducible)
     #[test]
     fn falsify_e7e_init_deterministic() {
+        // INIT_SEED is process-global mutable state. Parallel tests that set it (via
+        // `lock_init_seed`) would otherwise change it between these two constructions,
+        // making this (correct) determinism assertion flaky. Hold the seed lock for the
+        // whole comparison so both `Embedding::new` calls observe the same seed.
+        let _seed_guard = crate::transformer::init::lock_init_seed(42);
         let embed1 = Embedding::new(100, 64);
         let embed2 = Embedding::new(100, 64);
         let d1 = embed1.weight.data();
