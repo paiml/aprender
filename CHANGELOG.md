@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.9] - 2026-06-12
+
+### Added
+
+- **`preprocessing::MaxAbsScaler` + `preprocessing::Normalizer`** (Pillar 1):
+  MaxAbsScaler (per-feature max-abs scaling into [-1,1], sparsity-preserving) and
+  Normalizer (per-sample unit L2 norm). Both implement `Transformer` and match
+  `sklearn.preprocessing` within 1e-5.
+
 ## [0.44.8] - 2026-06-12
 
 ### Added

@@ -445,3 +445,122 @@ include!("mod_include_01.rs");
 #[cfg(test)]
 #[path = "tests_normalization_contract.rs"]
 mod tests_normalization_contract;
+
+/// Scale each feature by its maximum absolute value, mapping data into [-1, 1]
+/// without shifting/centering (preserves sparsity). Matches
+/// `sklearn.preprocessing.MaxAbsScaler`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MaxAbsScaler {
+    /// Per-feature maximum absolute value (computed during fit).
+    max_abs: Option<Vec<f32>>,
+}
+
+impl MaxAbsScaler {
+    /// Create a new `MaxAbsScaler`.
+    #[must_use]
+    pub fn new() -> Self {
+        Self { max_abs: None }
+    }
+}
+
+impl Transformer for MaxAbsScaler {
+    fn fit(&mut self, x: &Matrix<f32>) -> Result<()> {
+        let (n_samples, n_features) = x.shape();
+        if n_samples == 0 {
+            return Err("Cannot fit with zero samples".into());
+        }
+        let mut max_abs = vec![0.0f32; n_features];
+        for (j, m) in max_abs.iter_mut().enumerate() {
+            for i in 0..n_samples {
+                *m = m.max(x.get(i, j).abs());
+            }
+        }
+        self.max_abs = Some(max_abs);
+        Ok(())
+    }
+
+    fn transform(&self, x: &Matrix<f32>) -> Result<Matrix<f32>> {
+        let max_abs = self
+            .max_abs
+            .as_ref()
+            .ok_or_else(|| AprenderError::from("MaxAbsScaler not fitted"))?;
+        let (n_samples, n_features) = x.shape();
+        if n_features != max_abs.len() {
+            return Err("Feature dimension mismatch".into());
+        }
+        let mut result = vec![0.0f32; n_samples * n_features];
+        for i in 0..n_samples {
+            for j in 0..n_features {
+                // sklearn: scale_ = 1 where max_abs == 0 (leaves all-zero column unchanged)
+                let scale = if max_abs[j] == 0.0 { 1.0 } else { max_abs[j] };
+                result[i * n_features + j] = x.get(i, j) / scale;
+            }
+        }
+        Matrix::from_vec(n_samples, n_features, result).map_err(Into::into)
+    }
+}
+
+/// Normalize each *sample* (row) to unit norm (L2). Matches
+/// `sklearn.preprocessing.Normalizer` (default `norm='l2'`). Stateless: `fit`
+/// is a no-op (per-sample, no fitted parameters).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Normalizer;
+
+impl Normalizer {
+    /// Create a new L2 `Normalizer`.
+    #[must_use]
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Transformer for Normalizer {
+    fn fit(&mut self, _x: &Matrix<f32>) -> Result<()> {
+        Ok(())
+    }
+
+    fn transform(&self, x: &Matrix<f32>) -> Result<Matrix<f32>> {
+        let (n_samples, n_features) = x.shape();
+        let mut result = vec![0.0f32; n_samples * n_features];
+        for i in 0..n_samples {
+            let mut norm = 0.0f32;
+            for j in 0..n_features {
+                let v = x.get(i, j);
+                norm += v * v;
+            }
+            norm = norm.sqrt();
+            let scale = if norm == 0.0 { 1.0 } else { norm };
+            for j in 0..n_features {
+                result[i * n_features + j] = x.get(i, j) / scale;
+            }
+        }
+        Matrix::from_vec(n_samples, n_features, result).map_err(Into::into)
+    }
+}
+
+#[cfg(test)]
+mod tests_maxabs_normalizer {
+    use super::*;
+
+    /// FT-PREP-MAXABS / NORMALIZER: match sklearn.preprocessing within 1e-5.
+    #[test]
+    fn maxabs_and_normalizer_match_sklearn() {
+        let x = Matrix::from_vec(3, 3, vec![1.0, -2.0, 4.0, 3.0, 0.0, -8.0, -5.0, 2.0, 1.0])
+            .expect("valid");
+        let mut mas = MaxAbsScaler::new();
+        mas.fit(&x).expect("fit");
+        let m = mas.transform(&x).expect("transform");
+        // sklearn MaxAbsScaler oracle
+        let expect_ma = [0.2, -1.0, 0.5, 0.6, 0.0, -1.0, -1.0, 1.0, 0.125];
+        for (k, e) in expect_ma.iter().enumerate() {
+            assert!((m.get(k / 3, k % 3) - e).abs() < 1e-5, "maxabs[{k}]");
+        }
+        let norm = Normalizer::new().transform(&x).expect("transform");
+        let expect_l2 = [
+            0.218218, -0.436436, 0.872872, 0.351123, 0.0, -0.936329, -0.912871, 0.365148, 0.182574,
+        ];
+        for (k, e) in expect_l2.iter().enumerate() {
+            assert!((norm.get(k / 3, k % 3) - e).abs() < 1e-5, "l2norm[{k}]");
+        }
+    }
+}
