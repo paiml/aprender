@@ -173,6 +173,42 @@ pub fn mean_absolute_percentage_error(y_true: &[f32], y_pred: &[f32]) -> f32 {
     (s / n as f64) as f32
 }
 
+/// Explained variance regression score, matching `sklearn.metrics.explained_variance_score`.
+/// `1 - Var(y_true - y_pred) / Var(y_true)` (population variance). Differs from
+/// R² when the residuals are biased (non-zero mean).
+///
+/// # Panics
+/// Panics if `y_true` and `y_pred` differ in length.
+#[must_use]
+pub fn explained_variance_score(y_true: &[f32], y_pred: &[f32]) -> f32 {
+    assert_eq!(
+        y_true.len(),
+        y_pred.len(),
+        "explained_variance_score: length mismatch"
+    );
+    let n = y_true.len();
+    if n == 0 {
+        return f32::NAN;
+    }
+    let resid: Vec<f64> = y_true
+        .iter()
+        .zip(y_pred)
+        .map(|(&t, &p)| f64::from(t) - f64::from(p))
+        .collect();
+    let mean_r = resid.iter().sum::<f64>() / n as f64;
+    let var_r = resid.iter().map(|r| (r - mean_r).powi(2)).sum::<f64>() / n as f64;
+    let mean_t = y_true.iter().map(|&v| f64::from(v)).sum::<f64>() / n as f64;
+    let var_t = y_true
+        .iter()
+        .map(|&v| (f64::from(v) - mean_t).powi(2))
+        .sum::<f64>()
+        / n as f64;
+    if var_t == 0.0 {
+        return if var_r == 0.0 { 1.0 } else { 0.0 };
+    }
+    (1.0 - var_r / var_t) as f32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -191,6 +227,12 @@ mod tests {
         assert!((r2_score(&[1.0, 2.0, 3.0], &[1.0, 2.0, 3.0]) - 1.0).abs() < 1e-6);
         // zero-variance target, imperfect -> 0.0 (sklearn convention)
         assert!(r2_score(&[5.0, 5.0], &[4.0, 6.0]).abs() < 1e-6);
+        // explained_variance_score (differs from R² under biased residuals)
+        assert!(
+            (explained_variance_score(&[3.0, -0.5, 2.0, 7.0], &[2.5, 0.0, 2.0, 8.0]) - 0.957_173)
+                .abs()
+                < 1e-4
+        );
     }
 
     /// FT-METRIC-MAXERR/MEDAE/MSLE/MAPE: match sklearn within 1e-4.

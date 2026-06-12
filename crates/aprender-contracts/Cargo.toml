@@ -19,7 +19,7 @@ kani = []
 name = "provable_contracts"
 
 [dependencies]
-provable-contracts-macros = { path = "../aprender-contracts-macros", version = "0.48.5", package = "aprender-contracts-macros" }
+provable-contracts-macros = { path = "../aprender-contracts-macros", version = "0.48.6", package = "aprender-contracts-macros" }
 regex = "1"
 serde = { workspace = true }
 serde_json = { workspace = true }

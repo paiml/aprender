@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.6] - 2026-06-12
+
+### Added
+
+- **`metrics::explained_variance_score` + `metrics::adjusted_rand_score`** (Pillar 1):
+  explained variance regression score (differs from R² under biased residuals) and
+  the chance-corrected Adjusted Rand Index for comparing clusterings — both matching
+  `sklearn.metrics` within 1e-4.
+
 ## [0.48.5] - 2026-06-12
 
 ### Added
