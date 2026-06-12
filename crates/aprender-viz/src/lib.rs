@@ -95,7 +95,9 @@ pub mod render;
 // ============================================================================
 /// Ecosystem integrations (trueno-db, trueno-graph, aprender).
 pub mod interop;
-// monitor module removed — was ratatui-only (btop-like TUI)
+// NOTE: the `monitor` module (ttop-2.0 btop-like TUI) and its `monitor` feature were
+// removed in #1979. The module was deleted in the ttop-2.0 refactor; the feature and its
+// gated tests/examples that still imported it could no longer compile.
 /// Text prompt interface for declarative visualization DSL.
 pub mod prompt;
 /// WebAssembly bindings for browser usage.

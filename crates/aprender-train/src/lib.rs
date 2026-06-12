@@ -125,6 +125,8 @@ pub mod tracking;
 pub mod train;
 pub mod training;
 pub mod transformer;
+#[cfg(feature = "viz")]
+pub mod viz;
 pub mod yaml_mode;
 
 pub mod error;
