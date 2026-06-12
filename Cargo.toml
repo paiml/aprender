@@ -59,6 +59,7 @@ members = [
     "crates/aprender-db",
     "crates/aprender-graph",
     "crates/aprender-rag",
+    "crates/aprender-rag-cli",
     "crates/aprender-viz",
     # --- APR-MONO Phase 3a: zram sub-crates (enabled) ---
     "crates/aprender-zram",

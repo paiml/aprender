@@ -3,9 +3,6 @@
 #[cfg(feature = "embeddings")]
 use anyhow::Context;
 use anyhow::Result;
-use std::collections::HashMap;
-use std::fs;
-use std::path::Path;
 use aprender_rag::{
     chunk::RecursiveChunker,
     embed::{Embedder, TfIdfEmbedder},
@@ -14,6 +11,9 @@ use aprender_rag::{
     rerank::LexicalReranker,
     Chunk, Document,
 };
+use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
 
 #[cfg(feature = "embeddings")]
 use aprender_rag::{EmbeddingModelType, FastEmbedder};
@@ -55,7 +55,11 @@ pub(crate) fn run_demo(query: &str, top_k: usize) -> Result<()> {
 
     // Index
     let chunk_count = pipeline.index_documents(&docs)?;
-    println!("Indexed {} documents ({} chunks)\n", docs.len(), chunk_count);
+    println!(
+        "Indexed {} documents ({} chunks)\n",
+        docs.len(),
+        chunk_count
+    );
 
     // Query
     println!("Query: \"{}\"\n", query);
@@ -112,14 +116,23 @@ pub(crate) fn run_query(
     let retrieval_k = if rerank == "none" { top_k } else { top_k * 3 };
 
     // HyDE: expand query into hypothetical document
-    let effective_query = if hyde { expand_query_hyde(query)? } else { query.to_string() };
+    let effective_query = if hyde {
+        expand_query_hyde(query)?
+    } else {
+        query.to_string()
+    };
 
     let scores = match mode {
         "dense" => query_dense(&effective_query, &persisted, retrieval_k)?,
         "sparse" => query_sparse(&effective_query, &persisted, retrieval_k),
-        "hybrid" => {
-            query_hybrid(&effective_query, &persisted, retrieval_k, fusion, fusion_k, candidates)?
-        }
+        "hybrid" => query_hybrid(
+            &effective_query,
+            &persisted,
+            retrieval_k,
+            fusion,
+            fusion_k,
+            candidates,
+        )?,
         _ => unreachable!(),
     };
 
@@ -133,6 +146,10 @@ pub(crate) fn run_query(
 ///
 /// If the index was built with semantic embeddings (BGE/MiniLM), returns a
 /// `FastEmbedder`; otherwise returns a `TfIdfEmbedder` fit on the corpus.
+// APR-MONO §S #1976: under `not(feature = "embeddings")` the `if` branch diverges via
+// `bail!`, so clippy flags the `else` as redundant; but under `embeddings` the branch
+// returns a value and the `else` is required. Allow to keep both cfg paths readable.
+#[allow(clippy::redundant_else)]
 pub(crate) fn create_query_embedder(persisted: &PersistedIndex) -> Result<Box<dyn Embedder>> {
     if persisted.embedder_type == "semantic" {
         #[cfg(feature = "embeddings")]
@@ -161,7 +178,11 @@ pub(crate) fn create_query_embedder(persisted: &PersistedIndex) -> Result<Box<dy
         }
     } else {
         let mut emb = TfIdfEmbedder::new(persisted.dimension);
-        let refs: Vec<&str> = persisted.chunks.iter().map(|c| c.content.as_str()).collect();
+        let refs: Vec<&str> = persisted
+            .chunks
+            .iter()
+            .map(|c| c.content.as_str())
+            .collect();
         emb.fit(&refs);
         Ok(Box::new(emb))
     }
@@ -180,10 +201,17 @@ pub(crate) fn expand_query_hyde(query: &str) -> Result<String> {
     let generator = AnthropicHypotheticalGenerator::from_env()
         .map_err(|e| anyhow::anyhow!("HyDE requires ANTHROPIC_API_KEY: {e}"))?;
 
-    eprintln!("[HyDE] Generating hypothetical document for: {}", &query[..query.len().min(60)]);
-    let hypothetical =
-        generator.generate(query).map_err(|e| anyhow::anyhow!("HyDE generation failed: {e}"))?;
-    eprintln!("[HyDE] Generated: {}...", &hypothetical[..hypothetical.len().min(80)]);
+    eprintln!(
+        "[HyDE] Generating hypothetical document for: {}",
+        &query[..query.len().min(60)]
+    );
+    let hypothetical = generator
+        .generate(query)
+        .map_err(|e| anyhow::anyhow!("HyDE generation failed: {e}"))?;
+    eprintln!(
+        "[HyDE] Generated: {}...",
+        &hypothetical[..hypothetical.len().min(80)]
+    );
 
     // Concatenate original query + hypothetical for embedding.
     // The original query preserves keyword signal for BM25,
@@ -242,9 +270,13 @@ pub(crate) fn apply_rerank(
             Ok(reranked
                 .into_iter()
                 .map(|rr| {
-                    let idx =
-                        rr.chunk.metadata.custom.get("_idx").and_then(|v| v.as_u64()).unwrap_or(0)
-                            as usize;
+                    let idx = rr
+                        .chunk
+                        .metadata
+                        .custom
+                        .get("_idx")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0) as usize;
                     let score = rr.rerank_score.unwrap_or(rr.best_score());
                     (idx, score)
                 })
@@ -298,9 +330,13 @@ pub(crate) fn rerank_retrieved_chunks(
             Ok(reranked
                 .into_iter()
                 .map(|rr| {
-                    let idx =
-                        rr.chunk.metadata.custom.get("_idx").and_then(|v| v.as_u64()).unwrap_or(0)
-                            as usize;
+                    let idx = rr
+                        .chunk
+                        .metadata
+                        .custom
+                        .get("_idx")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0) as usize;
                     let mut rc = results[idx].clone();
                     rc.score = rr.rerank_score.unwrap_or(rr.best_score());
                     rc
@@ -349,7 +385,10 @@ pub(crate) fn query_sparse(
     }
 
     let bm25_results = bm25.search(query, top_k);
-    bm25_results.iter().map(|(chunk_id, score)| (chunk_map[chunk_id], *score)).collect()
+    bm25_results
+        .iter()
+        .map(|(chunk_id, score)| (chunk_map[chunk_id], *score))
+        .collect()
 }
 
 /// Hybrid retrieval: BM25 + dense (TF-IDF or semantic) with fusion.
@@ -370,7 +409,10 @@ pub(crate) fn query_hybrid(
     let embedder = create_query_embedder(persisted)?;
     let dim = embedder.dimension();
 
-    let dense_store = VectorStore::new(VectorStoreConfig { dimension: dim, ..Default::default() });
+    let dense_store = VectorStore::new(VectorStoreConfig {
+        dimension: dim,
+        ..Default::default()
+    });
     let bm25 = BM25Index::new();
 
     let config = HybridRetrieverConfig {
@@ -403,6 +445,10 @@ pub(crate) fn query_hybrid(
 }
 
 /// Format and print query results in text or JSON format.
+// APR-MONO §S #1976: the `serde_json::json!` macro (and `Value` IndexMut assignment) expands
+// to an internal `.unwrap()`, flagged by the workspace `.clippy.toml` disallowed-methods lint
+// at the macro call site. The unwrap is inside library macro code, so allow it locally.
+#[allow(clippy::disallowed_methods)]
 pub(crate) fn format_query_results(
     query: &str,
     scores: &[(usize, f32)],
@@ -475,8 +521,12 @@ pub(crate) fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 
 pub(crate) fn parse_fusion_strategy(fusion: &str, fusion_k: Option<f32>) -> Result<FusionStrategy> {
     match fusion {
-        "rrf" => Ok(FusionStrategy::RRF { k: fusion_k.unwrap_or(60.0) }),
-        "linear" => Ok(FusionStrategy::Linear { dense_weight: fusion_k.unwrap_or(0.5) }),
+        "rrf" => Ok(FusionStrategy::RRF {
+            k: fusion_k.unwrap_or(60.0),
+        }),
+        "linear" => Ok(FusionStrategy::Linear {
+            dense_weight: fusion_k.unwrap_or(0.5),
+        }),
         "dbsf" => Ok(FusionStrategy::DBSF),
         other => anyhow::bail!("Unknown fusion strategy: {other} (expected rrf, linear, dbsf)"),
     }
