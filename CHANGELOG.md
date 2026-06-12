@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.0] - 2026-06-12
+
+### Added
+
+- **`pipeline::Pipeline`** (Pillar 1): chain transformers then a final estimator,
+  mirroring `sklearn.pipeline.Pipeline`. `fit` fits/applies each transformer in
+  sequence then fits the estimator; `predict`/`score` re-apply the transform chain.
+  Trait-object steps (`Box<dyn Transformer>` / `Box<dyn Estimator>`) allow
+  heterogeneous pipelines (e.g. StandardScaler -> LogisticRegression).
+
 ## [0.46.0] - 2026-06-12
 
 ### Added
