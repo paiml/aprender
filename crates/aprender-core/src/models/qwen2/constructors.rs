@@ -20,7 +20,6 @@ impl Qwen2Model {
                 config.rope_theta as f32,
             ),
             config: config.clone(),
-            kv_cache: None,
             training: false,
         }
     }
@@ -45,7 +44,6 @@ impl Qwen2Model {
                 config.rope_theta as f32,
             ),
             config: config.clone(),
-            kv_cache: None,
             training: false,
         }
     }
@@ -64,23 +62,6 @@ impl Qwen2Model {
     /// Set model to training mode.
     pub fn train(&mut self) {
         self.training = true;
-    }
-
-    /// Enable KV cache for efficient generation.
-    pub fn enable_cache(&mut self) {
-        self.kv_cache = Some(KVCache::new(self.config.num_layers));
-    }
-
-    /// Disable KV cache.
-    pub fn disable_cache(&mut self) {
-        self.kv_cache = None;
-    }
-
-    /// Clear KV cache.
-    pub fn clear_cache(&mut self) {
-        if let Some(ref mut cache) = self.kv_cache {
-            cache.clear();
-        }
     }
 
     /// Get number of layers.

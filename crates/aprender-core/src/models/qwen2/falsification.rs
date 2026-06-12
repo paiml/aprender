@@ -268,30 +268,6 @@ fn test_weight_info_complete() {
 }
 
 #[test]
-fn test_kv_cache_with_some_values() {
-    let mut cache = KVCache::new(2);
-
-    // Set some values
-    cache.keys[0] = Some(Tensor::ones(&[1, 2, 4, 8]));
-    cache.keys[1] = Some(Tensor::ones(&[1, 2, 4, 8]));
-    cache.values[0] = Some(Tensor::ones(&[1, 2, 4, 8]));
-    cache.values[1] = Some(Tensor::ones(&[1, 2, 4, 8]));
-    cache.cached_len = 4;
-
-    // Verify all set
-    assert!(cache.keys.iter().all(|k| k.is_some()));
-    assert!(cache.values.iter().all(|v| v.is_some()));
-
-    // Clear
-    cache.clear();
-
-    // Verify cleared
-    assert!(cache.keys.iter().all(|k| k.is_none()));
-    assert!(cache.values.iter().all(|v| v.is_none()));
-    assert_eq!(cache.cached_len, 0);
-}
-
-#[test]
 fn test_decoder_layer_with_attention_mask() {
     let config = create_tiny_config();
     let layer = Qwen2DecoderLayer::new(&config);
