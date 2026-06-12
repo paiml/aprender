@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.2] - 2026-06-12
+
+### Added
+
+- **`classification::ComplementNB`** (Pillar 1): Complement Naive Bayes
+  (`norm=False`), matching `sklearn.naive_bayes.ComplementNB` — estimates each
+  class from its complement (robust to imbalance). Completes the Naive Bayes
+  family (Gaussian/Multinomial/Bernoulli/Complement).
+
 ## [0.48.1] - 2026-06-12
 
 ### Added

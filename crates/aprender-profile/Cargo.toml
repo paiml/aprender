@@ -74,7 +74,7 @@ trueno = { version = "0.17" }
 
 # Machine learning for anomaly detection (Sprint 23)
 # GH-581: Use path dep to avoid trueno version skew with local workspace
-aprender = { path = "../aprender-core", version = "0.48.1", package = "aprender-core" }
+aprender = { path = "../aprender-core", version = "0.48.2", package = "aprender-core" }
 
 # Lock-free data structures for ring buffer (Sprint 40)
 crossbeam = { version = "0.8", default-features = false, features = ["crossbeam-channel", "crossbeam-queue", "std"] }
