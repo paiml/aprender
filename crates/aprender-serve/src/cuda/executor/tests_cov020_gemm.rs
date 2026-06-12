@@ -5,7 +5,7 @@ fn test_cov020_gemm_fused_size_mismatch() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 32u32;
     let n = 32u32;
@@ -27,7 +27,7 @@ fn test_cov020_gemm_fused_bias_size_mismatch() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 32u32;
     let n = 32u32;
@@ -55,7 +55,7 @@ fn test_cov020_gemm_fused_valid_no_bias() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 32u32;
     let n = 32u32;
@@ -80,7 +80,7 @@ fn test_cov020_gemm_fused_with_bias_and_relu() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 32u32;
     let n = 32u32;
@@ -107,7 +107,7 @@ fn test_cov020_softmax_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let mut data = vec![1.0f32, 2.0, 3.0, 4.0];
 
@@ -139,7 +139,7 @@ fn test_cov020_gemm_cached_async_weight_not_found() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 32u32;
     let n = 32u32;
@@ -166,7 +166,7 @@ fn test_cov020_q4k_matvec_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 32u32; // Output dimension
     let k = 256u32; // Input dimension (must be divisible by 256 for Q4K)
@@ -194,7 +194,7 @@ fn test_cov020_q4k_gemv_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32; // Output dimension
     let k = 256u32; // Input dimension (must be divisible by 256)
@@ -222,7 +222,7 @@ fn test_cov020_q5k_gemv_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32;
     let k = 256u32;
@@ -250,7 +250,7 @@ fn test_cov020_q6k_gemv_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 32u32;
     let k = 256u32;

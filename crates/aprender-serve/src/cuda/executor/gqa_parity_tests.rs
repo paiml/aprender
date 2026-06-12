@@ -46,7 +46,7 @@ fn test_gqa_rmsnorm_cpu_gpu_parity() {
         return;
     }
 
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // GQA config: Qwen-style with 14 heads, 2 kv_heads
     let hidden_dim = 896usize;
@@ -118,7 +118,7 @@ fn test_gqa_rmsnorm_into_parity() {
         return;
     }
 
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let hidden_dim = 896usize;
     let epsilon = 1e-6f32;
@@ -183,7 +183,7 @@ fn test_gqa_qkv_dimension_correctness() {
         return;
     }
 
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // GQA config: 14 Q heads, 2 KV heads
     let hidden_dim = 896usize;
@@ -255,7 +255,7 @@ fn test_gqa_workspace_allocation() {
         return;
     }
 
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // GQA config
     let hidden_dim = 896usize;
@@ -330,7 +330,7 @@ fn test_gqa_transformer_layer_no_crash() {
         return;
     }
 
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // GQA config
     let hidden_dim = 896usize;
@@ -398,7 +398,7 @@ fn test_q4_0_gemv_parity() {
         return;
     }
 
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Small test: 4 blocks = 128 elements
     let num_blocks = 4usize;

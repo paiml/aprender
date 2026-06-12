@@ -6,7 +6,7 @@ fn test_cov030_transformer_layer_batched_positions_mismatch() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Init workspace for batch_size=4
     executor.init_workspace(512, 256).expect("init workspace");
@@ -44,7 +44,7 @@ fn test_cov031_rope_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let num_heads = 8u32;
     let head_dim = 64u32;
@@ -72,7 +72,7 @@ fn test_cov031_rope_into_positions() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let num_heads = 8u32;
     let head_dim = 64u32;
@@ -102,7 +102,7 @@ fn test_cov031_rope_indirect_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let num_heads = 8u32;
     let head_dim = 64u32;
@@ -132,7 +132,7 @@ fn test_cov031_rope_neox_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let num_heads = 8u32;
     let head_dim = 64u32;
@@ -159,7 +159,7 @@ fn test_cov031_rope_neox_indirect_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let num_heads = 8u32;
     let head_dim = 64u32;
@@ -193,7 +193,7 @@ fn test_cov031_fused_qkv_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Use small dimensions to avoid memory issues
     // fused_qkv_into expects: x[hidden_size], w_q[hidden_size, hidden_size],
@@ -239,7 +239,7 @@ fn test_cov031_fused_gate_up_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     // Use smaller dimensions to avoid memory issues
     let hidden_dim = 64u32;
@@ -282,7 +282,7 @@ fn test_cov031_incremental_attention_into_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let num_heads = 4usize;
     let num_kv_heads = 4usize;
@@ -319,7 +319,7 @@ fn test_cov031_batched_incremental_attention_into() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let num_heads = 4usize;
     let num_kv_heads = 4usize;
@@ -364,7 +364,7 @@ fn test_cov031_flash_decoding_not_init() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let seq_len = 16usize;
     let head_dim = 64usize;
@@ -393,7 +393,7 @@ fn test_cov031_flash_decoding_with_init() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let num_heads = 8usize;
     let head_dim = 64usize;

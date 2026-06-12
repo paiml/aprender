@@ -76,7 +76,7 @@ fn test_poison_lifecycle_trace() {
 
     // ── Phase 1: Establish healthy baseline ──────────────────────────
     eprintln!("── Phase 1: Healthy baseline ──");
-    let exec = CudaExecutor::new(0).expect("Phase 1: executor must create");
+    let exec = crate::cuda_executor_or_skip!(0);
     eprintln!("  [1a] Executor created OK");
 
     let status = ctx_sync_status(&exec.context);
@@ -103,7 +103,7 @@ fn test_poison_lifecycle_trace() {
 
     // ── Phase 3: Poison the context via flash_attention kernel ──────
     eprintln!("── Phase 3: Poison via flash_attention ──");
-    let mut exec2 = CudaExecutor::new(0).expect("Phase 3: executor must create");
+    let mut exec2 = crate::cuda_executor_or_skip!(0);
     eprintln!("  [3a] Executor #2 created OK");
     eprintln!(
         "  [3b] Context status BEFORE kernel: {}",

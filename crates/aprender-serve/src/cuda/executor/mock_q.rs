@@ -2,7 +2,7 @@
 #[test]
 #[serial]
 fn test_gemm_fused_with_bias() {
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 4u32;
     let n = 4u32;
@@ -26,7 +26,7 @@ fn test_gemm_fused_with_bias() {
 #[test]
 #[serial]
 fn test_gemm_fused_relu_activation() {
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 4u32;
     let n = 4u32;
@@ -51,7 +51,7 @@ fn test_gemm_fused_relu_activation() {
 #[test]
 #[serial]
 fn test_gemm_fused_gelu_activation() {
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 4u32;
     let n = 4u32;
@@ -74,7 +74,7 @@ fn test_gemm_fused_gelu_activation() {
 #[test]
 #[serial]
 fn test_gemm_fused_bias_size_validation() {
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let m = 4u32;
     let n = 4u32;
@@ -197,7 +197,7 @@ fn test_bias_activation_kernel_name() {
 #[test]
 #[serial]
 fn test_flash_attention_basic() {
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let seq_len = 16u32;
     let head_dim = 8u32;
@@ -224,7 +224,7 @@ fn test_flash_attention_basic() {
 #[test]
 #[serial]
 fn test_flash_attention_causal() {
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let seq_len = 16u32;
     let head_dim = 8u32;
@@ -250,7 +250,7 @@ fn test_flash_attention_causal() {
 #[test]
 #[serial]
 fn test_flash_attention_size_validation() {
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let seq_len = 16u32;
     let head_dim = 8u32;
@@ -271,7 +271,7 @@ fn test_flash_attention_size_validation() {
 #[test]
 #[serial]
 fn test_flash_attention_memory_tracking() {
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let seq_len = 16u32;
     let head_dim = 8u32;
@@ -332,7 +332,7 @@ fn test_cov001_q4k_gemv_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 256u32;
     let k = 256u32;
@@ -350,7 +350,7 @@ fn test_cov001_q5k_gemv_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 256u32;
     let k = 256u32;
@@ -368,7 +368,7 @@ fn test_cov001_q6k_gemv_basic() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 256u32;
     let k = 256u32;
@@ -386,7 +386,7 @@ fn test_cov001_q4k_gemv_cached() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 256u32;
     let k = 256u32;
@@ -414,7 +414,7 @@ fn test_cov001_q5k_gemv_cached() {
     if !CudaExecutor::is_available() {
         return;
     }
-    let mut executor = CudaExecutor::new(0).expect("CUDA executor");
+    let mut executor = crate::cuda_executor_or_skip!(0);
 
     let n = 256u32;
     let k = 256u32;
