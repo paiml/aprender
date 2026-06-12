@@ -20,14 +20,50 @@
 use aprender::datasets::load_iris;
 use aprender::tree::RandomForestClassifier;
 use aprender::Matrix;
+use serde::Deserialize;
 
-/// sklearn's pinned minimum test accuracy on this exact split (see module docs).
-const SKLEARN_IRIS_FLOOR: f64 = 0.94;
-/// apr must come within 2pp of sklearn's floor to "match/beat" on accuracy.
-const BEAT_THRESHOLD: f64 = SKLEARN_IRIS_FLOOR - 0.02;
+/// The pinned beat parameters, read from the SINGLE SOURCE OF TRUTH —
+/// `contracts/beat-sklearn-iris-v1.yaml` (the PMAT-741 BeatBenchmark contract,
+/// validated by `aprender-contracts` BEAT-001..007). The threshold is no longer
+/// hardcoded here: re-pinning the sklearn baseline is a one-line YAML edit, and
+/// the contract / the gate can never silently drift apart.
+#[derive(Deserialize)]
+struct BeatContract {
+    beat: BeatParams,
+}
+
+#[derive(Deserialize)]
+struct BeatParams {
+    /// apr must reach `>= beat_threshold` or CI fails.
+    beat_threshold: f64,
+    /// sklearn's pinned min over `random_state` 0..4 (report line only).
+    baseline_floor: f64,
+    /// sklearn's pinned mean over `random_state` 0..4 (report line only).
+    baseline_value: f64,
+    /// The CI gate this contract is enforced by — must match this test binary.
+    ci_gate_name: String,
+}
+
+/// Load the beat parameters from the contract. `include_str!` pins it at compile
+/// time (same pattern as the aprender-contracts pilot test); the path is relative
+/// to THIS file (`crates/aprender-core/tests/` → repo root → `contracts/`).
+fn load_beat() -> BeatParams {
+    const YAML: &str = include_str!("../../../contracts/beat-sklearn-iris-v1.yaml");
+    let contract: BeatContract =
+        serde_yaml::from_str(YAML).expect("parse contracts/beat-sklearn-iris-v1.yaml");
+    contract.beat
+}
 
 #[test]
 fn beat_sklearn_iris_accuracy() {
+    let beat = load_beat();
+    // Self-consistency: the contract names the gate that enforces it — guard
+    // against the contract and this test binary drifting apart.
+    assert_eq!(
+        beat.ci_gate_name, "beat_sklearn_iris",
+        "contract ci_gate_name must match this test binary (beat_sklearn_iris)"
+    );
+
     let (x, y) = load_iris();
     let n_features = x.n_cols();
 
@@ -64,11 +100,19 @@ fn beat_sklearn_iris_accuracy() {
     let acc = correct as f64 / n_test as f64;
 
     // Beat-benchmarks report their number, not just pass/fail.
-    eprintln!("BEAT-SKLEARN-IRIS: apr RandomForestClassifier test_acc = {acc:.4} (scikit-learn 0.9560 mean / 0.9400 floor on same split)");
+    eprintln!(
+        "BEAT-SKLEARN-IRIS: apr RandomForestClassifier test_acc = {acc:.4} \
+         (scikit-learn {:.4} mean / {:.4} floor on same split; contract threshold {:.4})",
+        beat.baseline_value, beat.baseline_floor, beat.beat_threshold
+    );
 
     assert!(
-        acc >= BEAT_THRESHOLD,
-        "FALSIFY-BEAT-SKLEARN-IRIS: apr RandomForestClassifier test_acc {acc:.4} < {BEAT_THRESHOLD:.2} \
-         (scikit-learn baseline 0.94-0.96 on the same deterministic i%3 split) — apr regressed below sklearn"
+        acc >= beat.beat_threshold,
+        "FALSIFY-BEAT-SKLEARN-IRIS: apr RandomForestClassifier test_acc {acc:.4} < {:.4} \
+         (contract beat-sklearn-iris-v1.yaml; scikit-learn {:.4}-{:.4} on the same deterministic \
+         i%3 split) — apr regressed below sklearn",
+        beat.beat_threshold,
+        beat.baseline_floor,
+        beat.baseline_value
     );
 }
