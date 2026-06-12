@@ -1578,6 +1578,7 @@ name = "aprender-train"
 version = "0.49.0"
 dependencies = [
  "approx",
+ "aprender-common",
  "aprender-compute",
  "aprender-core",
  "aprender-data",
