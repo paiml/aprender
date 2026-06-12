@@ -1,22 +1,21 @@
 [package]
-name = "trueno-rag-cli"
+name = "aprender-rag-cli"
 version = "0.1.5"
 edition = "2021"
 authors = ["Pragmatic AI Labs"]
 description = "CLI for Trueno-RAG pipeline"
 license = "MIT"
 repository = "https://github.com/paiml/trueno-rag"
-readme = "../../README.md"
+readme = "../aprender-rag/README.md"
 
 [[bin]]
 name = "trueno-rag"
 path = "src/main.rs"
 
 [dependencies]
-# Corrected stale 0.32.0 pin → workspace version (APR-MONO). NOTE: this crate is still in
-# a nested-layout violation (crates/aprender-rag/crates/…); flat-layout relocation to
-# crates/aprender-rag-cli/ + root workspace integration is a tracked follow-up.
-aprender-rag = { version = "0.49.0", path = "../.." }
+# APR-MONO §S #1976: flat-layout relocation from crates/aprender-rag/crates/trueno-rag-cli/
+# to crates/aprender-rag-cli/; dep now resolves via root [workspace.dependencies].
+aprender-rag = { workspace = true }
 clap = { version = "4.5", features = ["derive"] }
 tokio = { version = "1.49", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -29,17 +28,17 @@ blake3 = "1.5"
 [features]
 default = []
 # Enable production semantic embeddings via fastembed (GH-1)
-embeddings = ["trueno-rag/embeddings"]
+embeddings = ["aprender-rag/embeddings"]
 # Enable NVIDIA Embed Nemotron 8B support (GH-3)
-nemotron = ["trueno-rag/nemotron"]
+nemotron = ["aprender-rag/nemotron"]
 # Enable GPU-accelerated transcription via aprender (GH-2)
-transcription = ["trueno-rag/transcription"]
+transcription = ["aprender-rag/transcription"]
 # LLM-as-judge evaluation via Anthropic API (PMAT-015)
-eval = ["trueno-rag/eval"]
+eval = ["aprender-rag/eval"]
 # SQLite+FTS5 index export (PMAT-017)
-sqlite = ["trueno-rag/sqlite"]
+sqlite = ["aprender-rag/sqlite"]
 # Image OCR via tesseract CLI (PMAT-023)
-ocr = ["trueno-rag/ocr"]
+ocr = ["aprender-rag/ocr"]
 
 [dev-dependencies]
 assert_cmd = "2.0"
