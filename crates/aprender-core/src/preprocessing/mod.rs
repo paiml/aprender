@@ -24,6 +24,9 @@
 //! assert!(scaled.get(0, 0).abs() < 2.0);
 //! ```
 
+mod label_encoder;
+pub use label_encoder::LabelEncoder;
+
 use crate::error::{AprenderError, Result};
 use crate::primitives::Matrix;
 use crate::traits::Transformer;
