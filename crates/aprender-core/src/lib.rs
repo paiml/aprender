@@ -142,6 +142,7 @@ pub mod nn;
 /// Online learning and dynamic retraining infrastructure
 pub mod online;
 pub mod optim;
+pub mod pipeline;
 pub mod prelude;
 pub mod preprocessing;
 pub mod primitives;
