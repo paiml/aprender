@@ -1270,6 +1270,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "aprender-rag-cli"
+version = "0.1.5"
+dependencies = [
+ "anyhow",
+ "aprender-rag",
+ "assert_cmd",
+ "blake3",
+ "clap",
+ "globset",
+ "predicates",
+ "rayon",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "aprender-rand"
 version = "0.49.0"
 dependencies = [
@@ -7129,6 +7147,19 @@ name = "glob"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
+
+[[package]]
+name = "globset"
+version = "0.4.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52dfc19153a48bde0cbd630453615c8151bce3a5adfac7a0aebfbf0a1e1f57e3"
+dependencies = [
+ "aho-corasick",
+ "bstr",
+ "log",
+ "regex-automata",
+ "regex-syntax",
+]
 
 [[package]]
 name = "glow"

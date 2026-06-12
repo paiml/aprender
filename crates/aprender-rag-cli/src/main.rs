@@ -22,6 +22,11 @@
 //! trueno-rag index --path /data/ --output index/ --recursive --chunk-strategy timestamp
 //! ```
 
+// APR-MONO §S #1976: this crate joined the workspace via flat-layout relocation, so it now
+// inherits the workspace `.clippy.toml` disallowed-methods policy. Test code uses unwrap()
+// freely on fixtures; allow it in cfg(test) per aprender-core convention.
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
+
 mod discover;
 mod eval_cmd;
 mod extract;
@@ -31,9 +36,9 @@ mod query;
 mod transcribe;
 
 use anyhow::Result;
+use aprender_rag::loader::LoaderRegistry;
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
-use aprender_rag::loader::LoaderRegistry;
 
 /// Embedder type selection
 #[derive(Debug, Clone, Copy, Default, ValueEnum)]
@@ -649,11 +654,11 @@ fn run_info() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aprender_rag::fusion::FusionStrategy;
+    use aprender_rag::Document;
     use std::collections::HashMap;
     use std::fs;
     use std::path::{Path, PathBuf};
-    use aprender_rag::fusion::FusionStrategy;
-    use aprender_rag::Document;
 
     // Re-import functions from submodules for testing
     use crate::discover::*;
@@ -806,8 +811,14 @@ mod tests {
         let patterns = vec!["*/RAW".to_string(), "*/RAW/*".to_string()];
         let exclude = build_exclude_set(&patterns).unwrap();
         assert!(is_excluded(Path::new("/data/courses/aws/RAW"), &exclude));
-        assert!(is_excluded(Path::new("/data/courses/aws/RAW/video.mp4"), &exclude));
-        assert!(!is_excluded(Path::new("/data/courses/aws/build/video.srt"), &exclude));
+        assert!(is_excluded(
+            Path::new("/data/courses/aws/RAW/video.mp4"),
+            &exclude
+        ));
+        assert!(!is_excluded(
+            Path::new("/data/courses/aws/build/video.srt"),
+            &exclude
+        ));
     }
 
     #[test]
@@ -1130,8 +1141,10 @@ mod tests {
     #[test]
     fn test_report_media_text_split_with_media() {
         let mut doc = Document::new("media content".to_string());
-        doc.metadata
-            .insert("subtitle_cues".to_string(), serde_json::Value::String("cue data".to_string()));
+        doc.metadata.insert(
+            "subtitle_cues".to_string(),
+            serde_json::Value::String("cue data".to_string()),
+        );
         let docs = vec![doc, Document::new("plain text".to_string())];
         // Should print "1 with timestamps, 1 plain text"
         report_media_text_split(&docs);
@@ -1567,8 +1580,10 @@ mod tests {
 
     #[test]
     fn test_diff_fingerprints_detects_new() {
-        let current =
-            vec![(PathBuf::from("/a.md"), [1u8; 32]), (PathBuf::from("/b.md"), [2u8; 32])];
+        let current = vec![
+            (PathBuf::from("/a.md"), [1u8; 32]),
+            (PathBuf::from("/b.md"), [2u8; 32]),
+        ];
         let stored: HashMap<String, Vec<u8>> = HashMap::new();
 
         let (changed, deleted) = diff_fingerprints(&current, &stored);
