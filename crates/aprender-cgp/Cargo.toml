@@ -36,7 +36,7 @@ num_cpus = "1.17"
 comfy-table = "7"
 colored = "3"
 # GPU profiling: direct cuBLAS measurement (OWN THE STACK)
-trueno-gpu = { path = "../aprender-gpu", version = "0.48.2", features = ["cuda"], optional = true, package = "aprender-gpu" }
+trueno-gpu = { path = "../aprender-gpu", version = "0.48.3", features = ["cuda"], optional = true, package = "aprender-gpu" }
 
 [features]
 default = []

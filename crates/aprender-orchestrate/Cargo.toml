@@ -117,7 +117,7 @@ pacha = { version = "0.3", optional = true }
 realizar = { version = "0.8", optional = true, features = ["cuda"] }
 
 # ML algorithms and training (native-only)
-aprender = { path = "../aprender-core", version = "0.48.2", package = "aprender-core", optional = true }
+aprender = { path = "../aprender-core", version = "0.48.3", package = "aprender-core", optional = true }
 entrenar = { workspace = true, optional = true }
 alimentar = { version = "0.3", optional = true }
 

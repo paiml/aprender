@@ -28,7 +28,7 @@ anyhow = "1"
 thiserror = "2"
 
 # Phase 2+ dependencies
-aprender = { path = "../aprender-core", version = "0.48.2", package = "aprender-core" }                                        # Sparse matrix ops, PageRank
+aprender = { path = "../aprender-core", version = "0.48.3", package = "aprender-core" }                                        # Sparse matrix ops, PageRank
 trueno = "0.17"                                          # SIMD primitives
 trueno-db = "0.3.17"                                     # Columnar storage
 

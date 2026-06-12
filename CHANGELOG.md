@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.3] - 2026-06-12
+
+### Added
+
+- **`preprocessing::OrdinalEncoder`** (Pillar 1): encode each feature column to
+  ordinal integer codes `0..n_categories` (per-column sorted-unique), output same
+  shape as input — matching `sklearn.preprocessing.OrdinalEncoder`. Implements
+  `Transformer`.
+
 ## [0.48.2] - 2026-06-12
 
 ### Added
