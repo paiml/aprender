@@ -11,8 +11,8 @@ pub mod classification;
 pub mod regression;
 pub use agreement::{balanced_accuracy_score, cohen_kappa_score, hamming_loss, matthews_corrcoef};
 pub use regression::{
-    max_error, mean_absolute_error, mean_absolute_percentage_error, mean_squared_error,
-    mean_squared_log_error, median_absolute_error, r2_score,
+    explained_variance_score, max_error, mean_absolute_error, mean_absolute_percentage_error,
+    mean_squared_error, mean_squared_log_error, median_absolute_error, r2_score,
 };
 pub mod probabilistic;
 pub use probabilistic::{average_precision_score, log_loss, roc_auc_score};
@@ -496,5 +496,52 @@ mod tests_clustering_extra {
         let labels = [0usize, 0, 1, 1, 1, 1, 1];
         assert!((davies_bouldin_score(&data, &labels) - 0.364_795).abs() < 1e-3);
         assert!((calinski_harabasz_score(&data, &labels) - 16.742_773).abs() < 1e-2);
+    }
+}
+
+/// Adjusted Rand Index — similarity between two clusterings corrected for chance,
+/// matching `sklearn.metrics.adjusted_rand_score`. Range ~[-0.5, 1] (1 = identical).
+#[must_use]
+pub fn adjusted_rand_score(labels_true: &[usize], labels_pred: &[usize]) -> f32 {
+    assert_eq!(
+        labels_true.len(),
+        labels_pred.len(),
+        "adjusted_rand_score: length mismatch"
+    );
+    let n = labels_true.len();
+    if n == 0 {
+        return 1.0;
+    }
+    let kt = labels_true.iter().max().map_or(0, |&m| m + 1);
+    let kp = labels_pred.iter().max().map_or(0, |&m| m + 1);
+    let mut cont = vec![vec![0u64; kp]; kt];
+    for i in 0..n {
+        cont[labels_true[i]][labels_pred[i]] += 1;
+    }
+    let comb2 = |x: u64| -> f64 { (x as f64 * (x as f64 - 1.0)) / 2.0 };
+    let index: f64 = cont.iter().flat_map(|r| r.iter()).map(|&x| comb2(x)).sum();
+    let a: f64 = (0..kt).map(|i| comb2(cont[i].iter().sum::<u64>())).sum();
+    let b: f64 = (0..kp)
+        .map(|j| comb2((0..kt).map(|i| cont[i][j]).sum::<u64>()))
+        .sum();
+    let expected = a * b / comb2(n as u64);
+    let max_index = 0.5 * (a + b);
+    if (max_index - expected).abs() < 1e-12 {
+        return 1.0;
+    }
+    ((index - expected) / (max_index - expected)) as f32
+}
+
+#[cfg(test)]
+mod tests_ari {
+    use super::*;
+    /// FT-METRIC-ARI: matches sklearn.metrics.adjusted_rand_score within 1e-4.
+    #[test]
+    fn adjusted_rand_matches_sklearn() {
+        assert!(
+            (adjusted_rand_score(&[0, 0, 1, 1, 2, 2], &[0, 0, 1, 2, 2, 2]) - 0.444_444).abs()
+                < 1e-4
+        );
+        assert!((adjusted_rand_score(&[0, 0, 1, 1], &[0, 0, 1, 1]) - 1.0).abs() < 1e-6);
     }
 }
