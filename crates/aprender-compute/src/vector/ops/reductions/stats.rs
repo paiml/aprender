@@ -280,11 +280,20 @@ impl Vector<f32> {
 
         let mean_x = self.mean()?;
         let mean_y = other.mean()?;
-        let dot_xy = self.dot(other)?;
-        let mean_xy = dot_xy / self.len().max(1) as f32;
 
-        // Cov(X,Y) = E[XY] - μx·μy
-        Ok(mean_xy - mean_x * mean_y)
+        // Two-pass centered formula: Cov(X,Y) = E[(X - μx)(Y - μy)].
+        // This MUST match variance()'s two-pass formula so that Cov(X,X) ==
+        // Var(X) exactly — otherwise correlation(X,X) drifts off 1.0 (the naive
+        // E[XY] - μxμy form suffers catastrophic cancellation for large means
+        // and is inconsistent with the centered variance, breaking
+        // FALSIFY: rho(X,X) == 1).
+        let sum_cross_dev: f32 = self
+            .data
+            .iter()
+            .zip(other.data.iter())
+            .map(|(&x, &y)| (x - mean_x) * (y - mean_y))
+            .sum();
+        Ok(sum_cross_dev / self.len() as f32)
     }
 
     /// Pearson correlation coefficient
