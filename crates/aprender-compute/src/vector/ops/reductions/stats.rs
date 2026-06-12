@@ -137,12 +137,14 @@ impl Vector<f32> {
 
     /// Population variance
     ///
-    /// Computes the population variance: Var(X) = E\[(X - μ)²\] = E\[X²\] - μ²
-    /// Uses the computational formula to avoid two passes over the data.
+    /// Computes the population variance: Var(X) = E\[(X - μ)²\].
+    /// Uses the two-pass centered formula (subtract the mean, then sum squared
+    /// deviations) for numerical stability — the naive E\[X²\] - μ² loses precision via
+    /// catastrophic cancellation when the values are large (e.g. after a translation).
     ///
     /// # Performance
     ///
-    /// Uses optimized SIMD implementations via sum_of_squares() and mean().
+    /// `mean()` is SIMD-accelerated; the centered-deviation sum is a single scalar pass.
     ///
     /// # Examples
     ///
