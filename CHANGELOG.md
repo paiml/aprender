@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.49.0] - 2026-06-12
+
+### Added
+
+- **`ContractKind::BeatBenchmark`** (PMAT-741) — the measurement backbone for the
+  four-pillar "replace AND **beat**" mission: a contract kind for committed, CI-wired
+  head-to-head BEAT claims (apr ≥ incumbent on a canonical task, pinned baseline,
+  fails CI on regression). Ships the pilot `contracts/beat-sklearn-iris-v1.yaml`.
+  Marks the campaign's pivot from sklearn-parity breadth to BEATS-as-CI-artifacts.
+
 ## [0.48.6] - 2026-06-12
 
 ### Added

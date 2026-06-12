@@ -38,11 +38,11 @@ futures-intrusive = { version = "0.5", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
 # Native CUDA monitoring via trueno-gpu (TRUENO-SPEC-010)
-trueno-gpu = { version = "0.48.6", path = "../aprender-gpu", optional = true, package = "aprender-gpu" }
+trueno-gpu = { version = "0.49.0", path = "../aprender-gpu", optional = true, package = "aprender-gpu" }
 # PMAT-336: Provable contracts compile-time enforcement
 provable-contracts-macros = "0.3"
 # P1a: Sovereign GEMM microkernel codegen (compile-time shape specialization)
-trueno-gemm-codegen = { version = "0.48.6", path = "../aprender-gemm-codegen", package = "aprender-gemm-codegen" }
+trueno-gemm-codegen = { version = "0.49.0", path = "../aprender-gemm-codegen", package = "aprender-gemm-codegen" }
 # Tracing/profiling support (renacer integration)
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"], optional = true }
@@ -54,7 +54,7 @@ presentar-core = { version = "0.3", optional = true }
 # Stress test reporting types compatible with renacer (TRUENO-SPEC-025)
 # Note: renacer 0.9.1 has compilation issue; using compatible local types instead
 dhat = { version = "0.3", optional = true }
-trueno-quant = { version = "0.48.6", path = "../aprender-quant", package = "aprender-quant" }
+trueno-quant = { version = "0.49.0", path = "../aprender-quant", package = "aprender-quant" }
 num_cpus = "1.17.0"
 anyhow = "1.0.100"
 # Hardware capability detection (PMAT-447)
@@ -62,7 +62,7 @@ chrono = "0.4"
 toml = "0.8"
 # ML tuner integration (SHOWCASE-BRICK-001, Section 12)
 # Uses aprender 0.24.0 RandomForest for learned optimization
-aprender = { path = "../aprender-core", version = "0.48.6", package = "aprender-core", optional = true, default-features = false }
+aprender = { path = "../aprender-core", version = "0.49.0", package = "aprender-core", optional = true, default-features = false }
 # Execution path graph (PAR-201, Section E.7)
 trueno-graph = { workspace = true, optional = true }
 # TUI visualization for execution graphs (PAR-201)
@@ -90,10 +90,10 @@ nalgebra = "0.34"  # For eigendecomposition benchmark comparison
 simular = "0.2.0"
 regex = "1.11"  # For PTX/WGSL pattern validation in falsification tests
 # GPU edge-case test framework (TCE-001)
-trueno-cuda-edge = { version = "0.48.6", path = "../aprender-cuda-edge", package = "aprender-cuda-edge" }
+trueno-cuda-edge = { version = "0.49.0", path = "../aprender-cuda-edge", package = "aprender-cuda-edge" }
 # Sparse and solver crates for contract tests
-trueno-sparse = { version = "0.48.6", path = "../aprender-sparse", package = "aprender-sparse" }
-trueno-solve = { version = "0.48.6", path = "../aprender-solve", package = "aprender-solve" }
+trueno-sparse = { version = "0.49.0", path = "../aprender-sparse", package = "aprender-sparse" }
+trueno-solve = { version = "0.49.0", path = "../aprender-solve", package = "aprender-solve" }
 ndarray = "0.17.2"
 faer = "0.24"  # For GEMM benchmark comparison (fastest pure-Rust BLAS)
 matrixmultiply = "0.3"  # Direct matrixmultiply crate benchmark (engine behind ndarray)
