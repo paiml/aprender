@@ -356,3 +356,4 @@ mod tests_clustering_contract;
 #[cfg(test)]
 #[path = "tests_ranking_contract.rs"]
 mod tests_ranking_contract;
+pub use classification::{fbeta_score, jaccard_score};

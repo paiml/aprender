@@ -451,3 +451,117 @@ include!("classification_include_01.rs");
 #[cfg(test)]
 #[path = "tests_classification_contract.rs"]
 mod tests_classification_contract;
+
+/// Jaccard similarity score (intersection-over-union per class), matching
+/// `sklearn.metrics.jaccard_score`. Per class `J = TP / (TP + FP + FN)`,
+/// combined per the `average` strategy.
+///
+/// # Panics
+/// Panics if the inputs differ in length or are empty.
+#[must_use]
+pub fn jaccard_score(y_pred: &[usize], y_true: &[usize], average: Average) -> f32 {
+    assert_eq!(y_pred.len(), y_true.len(), "Vectors must have same length");
+    assert!(!y_true.is_empty(), "Vectors cannot be empty");
+    let n_classes = y_true
+        .iter()
+        .chain(y_pred.iter())
+        .max()
+        .map_or(0, |&m| m + 1);
+    if n_classes == 0 {
+        return 0.0;
+    }
+    let (tp, fp, fn_counts, support) = compute_tp_fp_fn(y_pred, y_true, n_classes);
+    let class_jaccard = |tp: usize, fp: usize, fnc: usize| -> f32 {
+        let denom = tp + fp + fnc;
+        if denom == 0 {
+            0.0
+        } else {
+            tp as f32 / denom as f32
+        }
+    };
+    match average {
+        Average::Micro => class_jaccard(tp.iter().sum(), fp.iter().sum(), fn_counts.iter().sum()),
+        Average::Macro => {
+            (0..n_classes)
+                .map(|i| class_jaccard(tp[i], fp[i], fn_counts[i]))
+                .sum::<f32>()
+                / n_classes as f32
+        }
+        Average::Weighted => {
+            let total: usize = support.iter().sum();
+            if total == 0 {
+                return 0.0;
+            }
+            (0..n_classes)
+                .map(|i| {
+                    class_jaccard(tp[i], fp[i], fn_counts[i]) * support[i] as f32 / total as f32
+                })
+                .sum()
+        }
+    }
+}
+
+/// F-beta score, matching `sklearn.metrics.fbeta_score`. Generalizes F1
+/// (`beta = 1`); `beta < 1` weights precision, `beta > 1` weights recall.
+/// Per class `Fβ = (1+β²)·TP / ((1+β²)·TP + β²·FN + FP)`.
+///
+/// # Panics
+/// Panics if the inputs differ in length or are empty.
+#[must_use]
+pub fn fbeta_score(y_pred: &[usize], y_true: &[usize], beta: f32, average: Average) -> f32 {
+    assert_eq!(y_pred.len(), y_true.len(), "Vectors must have same length");
+    assert!(!y_true.is_empty(), "Vectors cannot be empty");
+    let n_classes = y_true
+        .iter()
+        .chain(y_pred.iter())
+        .max()
+        .map_or(0, |&m| m + 1);
+    if n_classes == 0 {
+        return 0.0;
+    }
+    let (tp, fp, fn_counts, support) = compute_tp_fp_fn(y_pred, y_true, n_classes);
+    let b2 = beta * beta;
+    let class_fbeta = |tp: usize, fp: usize, fnc: usize| -> f32 {
+        let num = (1.0 + b2) * tp as f32;
+        let denom = (1.0 + b2) * tp as f32 + b2 * fnc as f32 + fp as f32;
+        if denom == 0.0 {
+            0.0
+        } else {
+            num / denom
+        }
+    };
+    match average {
+        Average::Micro => class_fbeta(tp.iter().sum(), fp.iter().sum(), fn_counts.iter().sum()),
+        Average::Macro => {
+            (0..n_classes)
+                .map(|i| class_fbeta(tp[i], fp[i], fn_counts[i]))
+                .sum::<f32>()
+                / n_classes as f32
+        }
+        Average::Weighted => {
+            let total: usize = support.iter().sum();
+            if total == 0 {
+                return 0.0;
+            }
+            (0..n_classes)
+                .map(|i| class_fbeta(tp[i], fp[i], fn_counts[i]) * support[i] as f32 / total as f32)
+                .sum()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests_jaccard_fbeta {
+    use super::*;
+
+    /// FT-METRIC-JACCARD / FBETA: match sklearn within 1e-4.
+    #[test]
+    fn jaccard_and_fbeta_match_sklearn() {
+        let yt = [0usize, 0, 1, 1, 1, 0, 1, 0];
+        let yp = [0usize, 1, 1, 1, 0, 0, 1, 1];
+        assert!((jaccard_score(&yp, &yt, Average::Macro) - 0.45).abs() < 1e-4);
+        assert!((jaccard_score(&yp, &yt, Average::Micro) - 0.454_545).abs() < 1e-4);
+        assert!((fbeta_score(&yp, &yt, 0.5, Average::Macro) - 0.625).abs() < 1e-4);
+        assert!((fbeta_score(&yp, &yt, 2.0, Average::Macro) - 0.620_301).abs() < 1e-4);
+    }
+}
