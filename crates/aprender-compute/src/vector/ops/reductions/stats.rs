@@ -137,12 +137,14 @@ impl Vector<f32> {
 
     /// Population variance
     ///
-    /// Computes the population variance: Var(X) = E\[(X - μ)²\] = E\[X²\] - μ²
-    /// Uses the computational formula to avoid two passes over the data.
+    /// Computes the population variance: Var(X) = E\[(X - μ)²\].
+    /// Uses the two-pass centered formula (subtract the mean, then sum squared
+    /// deviations) for numerical stability — the naive E\[X²\] - μ² loses precision via
+    /// catastrophic cancellation when the values are large (e.g. after a translation).
     ///
     /// # Performance
     ///
-    /// Uses optimized SIMD implementations via sum_of_squares() and mean().
+    /// `mean()` is SIMD-accelerated; the centered-deviation sum is a single scalar pass.
     ///
     /// # Examples
     ///
@@ -171,11 +173,22 @@ impl Vector<f32> {
         }
 
         let mean_val = self.mean()?;
-        let sum_sq = self.sum_of_squares()?;
-        let mean_sq = sum_sq / self.len() as f32;
 
-        // Var(X) = E[X²] - μ²
-        Ok(mean_sq - mean_val * mean_val)
+        // Two-pass (centered) formula: Var(X) = E[(X − μ)²].
+        // The naive Var(X) = E[X²] − μ² suffers catastrophic cancellation when E[X²]
+        // and μ² are both large (e.g. after a translation x + c), which broke
+        // translation-invariance for large offsets and made the stddev property tests
+        // flaky. Subtracting the mean first is numerically stable and exactly
+        // translation-invariant.
+        let sum_sq_dev: f32 = self
+            .data
+            .iter()
+            .map(|&x| {
+                let d = x - mean_val;
+                d * d
+            })
+            .sum();
+        Ok(sum_sq_dev / self.len() as f32)
     }
 
     /// Population standard deviation
@@ -267,11 +280,20 @@ impl Vector<f32> {
 
         let mean_x = self.mean()?;
         let mean_y = other.mean()?;
-        let dot_xy = self.dot(other)?;
-        let mean_xy = dot_xy / self.len().max(1) as f32;
 
-        // Cov(X,Y) = E[XY] - μx·μy
-        Ok(mean_xy - mean_x * mean_y)
+        // Two-pass centered formula: Cov(X,Y) = E[(X - μx)(Y - μy)].
+        // This MUST match variance()'s two-pass formula so that Cov(X,X) ==
+        // Var(X) exactly — otherwise correlation(X,X) drifts off 1.0 (the naive
+        // E[XY] - μxμy form suffers catastrophic cancellation for large means
+        // and is inconsistent with the centered variance, breaking
+        // FALSIFY: rho(X,X) == 1).
+        let sum_cross_dev: f32 = self
+            .data
+            .iter()
+            .zip(other.data.iter())
+            .map(|(&x, &y)| (x - mean_x) * (y - mean_y))
+            .sum();
+        Ok(sum_cross_dev / self.len() as f32)
     }
 
     /// Pearson correlation coefficient
