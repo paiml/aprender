@@ -140,3 +140,62 @@ fn explicit_kind_overrides_default() {
     // ModelFamily is not a registry
     assert!(!c.is_registry());
 }
+
+// ── Beat::evaluate — the falsifiable verdict (PMAT-741) ───────────────────────
+
+/// Build a minimal Beat with the given direction + threshold.
+fn beat(direction: &str, threshold: Option<f64>) -> Beat {
+    Beat {
+        direction: direction.to_string(),
+        beat_threshold: threshold,
+        ..Beat::default()
+    }
+}
+
+#[test]
+fn beat_evaluate_higher_is_better() {
+    let b = beat("higher_is_better", Some(0.92));
+    // at/above threshold = won (accuracy: bigger is better)
+    assert_eq!(b.evaluate(0.94), Some(BeatOutcome::Won));
+    assert_eq!(b.evaluate(0.92), Some(BeatOutcome::Won)); // boundary is a win
+    assert_eq!(b.evaluate(0.91), Some(BeatOutcome::Regressed));
+    assert!(b.is_won(0.99));
+    assert!(!b.is_won(0.50));
+}
+
+#[test]
+fn beat_evaluate_lower_is_better() {
+    let b = beat("lower_is_better", Some(440.0));
+    // at/below threshold = won (wall-clock ms: smaller is better)
+    assert_eq!(b.evaluate(400.0), Some(BeatOutcome::Won));
+    assert_eq!(b.evaluate(440.0), Some(BeatOutcome::Won)); // boundary is a win
+    assert_eq!(b.evaluate(441.0), Some(BeatOutcome::Regressed));
+    assert!(b.is_won(10.0));
+    assert!(!b.is_won(1000.0));
+}
+
+#[test]
+fn beat_evaluate_malformed_is_none_not_pass() {
+    // No threshold → cannot judge.
+    assert_eq!(beat("higher_is_better", None).evaluate(0.99), None);
+    // Unknown direction → cannot judge.
+    assert_eq!(beat("sideways", Some(0.9)).evaluate(0.99), None);
+    // Non-finite inputs → cannot judge.
+    assert_eq!(beat("higher_is_better", Some(f64::NAN)).evaluate(0.9), None);
+    assert_eq!(
+        beat("higher_is_better", Some(0.9)).evaluate(f64::INFINITY),
+        None
+    );
+    // A malformed contract is NOT a win.
+    assert!(!beat("sideways", Some(0.9)).is_won(0.99));
+    assert!(!beat("higher_is_better", None).is_won(0.99));
+}
+
+#[test]
+fn beat_evaluate_matches_pilot_iris_contract() {
+    // The shipped pilot: accuracy, higher_is_better, threshold 0.92. apr's
+    // measured 0.94 must read as WON, a hypothetical 0.90 as REGRESSED.
+    let b = beat("higher_is_better", Some(0.9200));
+    assert_eq!(b.evaluate(0.9400), Some(BeatOutcome::Won));
+    assert_eq!(b.evaluate(0.9000), Some(BeatOutcome::Regressed));
+}
