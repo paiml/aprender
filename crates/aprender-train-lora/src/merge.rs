@@ -459,4 +459,90 @@ mod tests {
         // merged[0] = 1.0 + 6.0 * 1.0 * 1.0 = 7.0
         assert!((merged[0] - 7.0).abs() < 0.01);
     }
+
+    /// BEAT-LORA-MERGE — Pillar-3 (Unsloth) correctness beat (PMAT-747).
+    ///
+    /// The other half of "replace Unsloth's QLoRA pipeline" (NF4 quant ≡ bitsandbytes
+    /// is PMAT-745; this is fine-tune→merge). apr's `MergeEngine::merge` folds the
+    /// LoRA delta `scale·(B@A)` into the base weight; this gate proves the MERGED
+    /// weights produce a forward pass NUMERICALLY EQUIVALENT to applying the LoRA
+    /// factors unmerged — i.e. the merge is mathematically faithful, contract-gated,
+    /// where PEFT/Unsloth ship merge_and_unload with no such equivalence guarantee.
+    ///
+    /// The reference is computed INDEPENDENTLY from the A,B factors via a different
+    /// path (x @ A @ B), so this is not tautological: a transpose/indexing bug in
+    /// `merge` would diverge. Self-contained (CPU, deterministic).
+    #[test]
+    fn beat_lora_merge_forward_equivalence() {
+        // dims chosen so d_out != d_in (unambiguous "standard" merge path).
+        let (d_in, d_out, r) = (4usize, 3usize, 2usize);
+        let n = 2usize; // batch
+
+        // A: [d_in, r] row-major; B: [r, d_out] row-major; W_base: [d_out, d_in].
+        let a: Vec<f32> = vec![0.10, -0.20, 0.05, 0.30, -0.10, 0.25, 0.40, -0.15]; // 4x2
+        let b: Vec<f32> = vec![0.20, -0.30, 0.10, 0.15, 0.05, -0.25]; // 2x3
+        let w_base: Vec<f32> = (0..d_out * d_in).map(|i| (i as f32 - 6.0) * 0.07).collect(); // 3x4
+        let x: Vec<f32> = vec![0.5, -0.2, 0.3, 0.1, -0.4, 0.6, 0.2, -0.1]; // 2x4
+        let (alpha, rank) = (4.0_f32, r as u32);
+        let scale_factor = 1.0 * alpha / rank as f32; // default scale 1.0 → 2.0
+
+        // apr merge: fold delta into base.
+        let merged = MergeEngine::new().merge(&w_base, &a, &b, alpha, rank);
+
+        // Forward with MERGED weights: y_m[i,row] = sum_col x[i,col]*merged[row,col].
+        let mut y_merged = vec![0.0f32; n * d_out];
+        for i in 0..n {
+            for row in 0..d_out {
+                let mut s = 0.0;
+                for col in 0..d_in {
+                    s += x[i * d_in + col] * merged[row * d_in + col];
+                }
+                y_merged[i * d_out + row] = s;
+            }
+        }
+
+        // INDEPENDENT reference: base forward + scale·(x @ A @ B).
+        // (x@A)[i,k] = sum_col x[i,col]*A[col,k];  then (xa@B)[i,row] = sum_k xa[i,k]*B[k,row].
+        let mut y_ref = vec![0.0f32; n * d_out];
+        for i in 0..n {
+            // base contribution
+            for row in 0..d_out {
+                let mut base = 0.0;
+                for col in 0..d_in {
+                    base += x[i * d_in + col] * w_base[row * d_in + col];
+                }
+                y_ref[i * d_out + row] = base;
+            }
+            // LoRA contribution via the factors (different computation path)
+            let mut xa = vec![0.0f32; r];
+            for (k, xa_k) in xa.iter_mut().enumerate() {
+                let mut s = 0.0;
+                for col in 0..d_in {
+                    s += x[i * d_in + col] * a[col * r + k]; // A[col,k]
+                }
+                *xa_k = s;
+            }
+            for row in 0..d_out {
+                let mut s = 0.0;
+                for (k, &xa_k) in xa.iter().enumerate() {
+                    s += xa_k * b[k * d_out + row]; // B[k,row]
+                }
+                y_ref[i * d_out + row] += scale_factor * s;
+            }
+        }
+
+        let max_abs_diff = y_merged
+            .iter()
+            .zip(y_ref.iter())
+            .map(|(m, r)| (m - r).abs())
+            .fold(0.0_f32, f32::max);
+        assert!(
+            max_abs_diff < 1e-4,
+            "LoRA merge NOT forward-equivalent: max|y_merged - y_factored|={max_abs_diff:.6} \
+             (a transpose/indexing bug in MergeEngine::merge). y_merged={y_merged:?} y_ref={y_ref:?}"
+        );
+        println!(
+            "BEAT-LORA-MERGE: merged-forward ≡ factored-LoRA-forward — max|Δ|={max_abs_diff:.2e}"
+        );
+    }
 }

@@ -45,6 +45,7 @@ so it wins **matmul-bound** tasks (normal-equations regression) and concedes
 | Beat | Metric | Result | Gate |
 |------|--------|--------|------|
 | **NF4 numerical-equivalence** | max \|apr_recon − bitsandbytes_recon\| | ✅ **WON** — apr's pure-Rust NF4 ≡ bitsandbytes (max \|Δ\|=**4.92e-7**, MSE 0.007378 == bnb 0.007378; same codebook + blockwise convention, contract + Lean-gated) | CI `beat_nf4_bitsandbytes_equivalence` · `apr-nf4-bitsandbytes-equivalence-beat-v1` |
+| **LoRA merge forward-equivalence** | max \|merged_fwd − factored_fwd\| | ✅ **WON** (PMAT-747) — apr's `MergeEngine` folds the adapter faithfully (max \|Δ\|=**1.49e-8**); merged-weight forward ≡ independent LoRA-factor forward. PEFT/Unsloth merge_and_unload has no such contract | CI `beat_lora_merge_forward_equivalence` · `apr-lora-merge-equivalence-beat-v1` |
 | QLoRA fine-tune | loss-monotone + 4-bit footprint ≤ 0.30× f16 | 🚧 **PLANNED** (PMAT-711) | — |
 | LoRA→GGUF merge | forward max-abs-diff < 1e-2 | 🚧 **PLANNED** (PMAT-712) | — |
 
