@@ -61,6 +61,20 @@ impl HeijunkaScheduler {
     }
 }
 
+/// Whether a GEMM of these dims should run serially instead of via the rayon
+/// parallel path. Pure + unit-testable so the dispatch policy can't silently
+/// regress. Serial when: tiny (`<8M` FLOP — rayon ~3µs dispatch dominates) OR a
+/// THIN NN-scale GEMM (`8M..64M` FLOP with `n < 192`), where the parallel path's
+/// per-thread B-packing + dispatch was measured 2.2x SLOWER than serial
+/// (2026-06-13, the `[1024x256]@[256x128]` MLP-layer shape — NN forward/backward
+/// is ~all such thin GEMMs). Square sub-64M (`n >= 192`) still parallelizes
+/// (~1.24x, cgp 2026-04-05). Falsifier: `tests::nn_thin_gemm_prefers_serial`.
+#[cfg(feature = "parallel")]
+pub(crate) fn gemm_should_run_serial(m: usize, n: usize, k: usize) -> bool {
+    let flops = m * n * k;
+    flops < 8_000_000 || (flops < 64_000_000 && n < 192)
+}
+
 /// Parallel BLIS GEMM using Rayon
 #[cfg(feature = "parallel")]
 pub fn gemm_blis_parallel(
@@ -83,7 +97,7 @@ pub fn gemm_blis_parallel(
     // Rayon dispatch costs ~3µs. For GEMM ≤128 (~4M FLOP, ~35µs compute),
     // rayon overhead dominates. GEMM 256+ (33M FLOP, ~300µs) benefits.
     let flops = m * n * k;
-    if flops < 8_000_000 {
+    if gemm_should_run_serial(m, n, k) {
         return gemm_blis(m, n, k, a, b, c, None);
     }
 
