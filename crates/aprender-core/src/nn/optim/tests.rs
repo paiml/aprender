@@ -453,3 +453,100 @@ mod tests_adamw_contract;
 mod tests_large_tensors;
 #[path = "tests_state_resize.rs"]
 mod tests_state_resize;
+
+/// REGRESSION (direct): after `Linear::forward` + `backward()`, the layer's WEIGHT
+/// must receive a gradient — not just the bias. This is the exact defect: the
+/// construction-time cached `weight_t` transpose edge is wiped by `clear_graph()`,
+/// leaving `weight` with no path to gradient (`get_grad(weight.id())` == None).
+/// Falsifies proof obligation GRAD-FLOW of `contracts/nn-training-gradient-path-v1.yaml`.
+#[test]
+fn nn_linear_backward_populates_weight_grad() {
+    use crate::autograd::{clear_graph, get_grad, Tensor};
+    use crate::nn::{Linear, Module};
+
+    clear_graph(); // mimics a per-step training reset that wiped the cached edge
+    let layer = Linear::with_seed(4, 3, Some(1));
+    let x = Tensor::from_vec(vec![0.5; 8], &[2, 4]);
+    let out = layer.forward(&x);
+    out.sum().backward();
+
+    assert!(
+        get_grad(layer.weight().id()).is_some(),
+        "Linear weight received NO gradient through forward — the autograd path to \
+         `weight` is broken (cached construction-time transpose wiped by clear_graph)."
+    );
+    if let Some(b) = layer.bias() {
+        assert!(get_grad(b.id()).is_some(), "Linear bias received no gradient either.");
+    }
+}
+
+/// REGRESSION: a 2-layer MLP trained with the canonical idiom (clear_graph →
+/// forward → backward → `SGD::step_with_params`) MUST converge.
+///
+/// Guards the Linear weight-gradient-path fix (linear.rs forward): a `Linear`
+/// caches `weight_t = weight.transpose()` at construction, but a training loop's
+/// per-step `clear_graph()` wipes that construction-time transpose edge. If
+/// forward reuses the cached transpose, `weight` has no path to receive gradient
+/// (`get_grad(weight.id())` is `None`), the optimizer updates only biases, and the
+/// loss is nearly frozen. forward now re-derives the transpose from the live
+/// weight while grad-tracking, so weights actually learn. Deterministic (seeded).
+#[test]
+fn nn_mlp_training_converges() {
+    use crate::autograd::{clear_graph, Tensor};
+    use crate::nn::{Linear, MSELoss, Module, ReLU, Sequential, SGD};
+
+    let (n, din, dh) = (256usize, 16usize, 8usize);
+    let mut s: u64 = 7;
+    let mut rng = || {
+        s ^= s << 13;
+        s ^= s >> 7;
+        s ^= s << 17;
+        ((s >> 40) as f32 / (1u64 << 24) as f32) - 0.5
+    };
+    let w: Vec<f32> = (0..din).map(|_| rng()).collect();
+    let (mut xd, mut yd) = (Vec::new(), Vec::new());
+    for _ in 0..n {
+        let mut t = 0.0;
+        for j in 0..din {
+            let v = rng();
+            xd.push(v);
+            t += v * w[j];
+        }
+        yd.push(t);
+    }
+    let x = Tensor::from_vec(xd, &[n, din]);
+    let y = Tensor::from_vec(yd, &[n, 1]);
+    let mut model = Sequential::new()
+        .add(Linear::with_seed(din, dh, Some(1)))
+        .add(ReLU)
+        .add(Linear::with_seed(dh, 1, Some(2)));
+    let crit = MSELoss::new();
+    let mut sgd = SGD::new(model.parameters_mut(), 0.1);
+
+    let mut first = 0.0;
+    let mut last = 0.0;
+    for step in 0..500 {
+        clear_graph();
+        let loss = crit.forward(&model.forward(&x), &y);
+        last = loss.item();
+        if step == 0 {
+            first = last;
+        }
+        loss.backward();
+        let mut p = model.parameters_mut();
+        sgd.step_with_params(&mut p);
+    }
+
+    assert!(
+        first > 0.05,
+        "sanity: initial MSE should be non-trivial, got {first}"
+    );
+    // Weights-frozen (the defect) gives only ~50% drop (biases only); a working
+    // weight gradient path drops >98%. 80% is a robust, non-flaky threshold.
+    assert!(
+        last < first * 0.2,
+        "MLP training did not converge: MSE {first:.5} -> {last:.5} (need < {:.5}). \
+         Likely a regression of the Linear live-transpose gradient-path fix.",
+        first * 0.2
+    );
+}

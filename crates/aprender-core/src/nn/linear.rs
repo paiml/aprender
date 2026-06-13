@@ -223,12 +223,29 @@ impl Module for Linear {
             (input.clone(), None)
         };
 
-        // Use cached transposed weight (computed once during set_weight, not every forward)
-        // This eliminates ~450M element copies per forward pass for Qwen2-0.5B
-        let weight_t = self.weight_t.as_ref().unwrap_or_else(|| {
-            panic!("Linear layer has no cached weight_t. Call set_weight() first or use new().");
-        });
-        let output = reshaped.matmul(weight_t);
+        // Weight transpose, gradient-aware.
+        //
+        // TRAINING (weight tracks grad): transpose the LIVE weight every forward so
+        // the transpose op (weight_t <- weight edge) is recorded on the CURRENT
+        // autograd tape. The cached `weight_t` is built once at construction; a
+        // training loop's per-step `clear_graph()` wipes that construction-time
+        // edge, so a cached transpose would leave `weight` with no path to receive
+        // gradient — get_grad(weight.id()) returns None and the optimizer silently
+        // updates nothing (frozen loss). Re-deriving here keeps the edge live.
+        //
+        // INFERENCE (no grad tracking): reuse the cached transpose to avoid
+        // re-transposing large weight matrices on every forward.
+        let output = if self.weight.requires_grad_enabled() {
+            let weight_t = self.weight.transpose();
+            reshaped.matmul(&weight_t)
+        } else {
+            let weight_t = self.weight_t.as_ref().unwrap_or_else(|| {
+                panic!(
+                    "Linear layer has no cached weight_t. Call set_weight() first or use new()."
+                );
+            });
+            reshaped.matmul(weight_t)
+        };
 
         // Add bias with autograd
         let output = match &self.bias {

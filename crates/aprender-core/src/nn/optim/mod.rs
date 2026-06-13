@@ -40,7 +40,14 @@ use crate::autograd::{get_grad, Tensor, TensorId};
 
 /// Common trait for all optimizers.
 pub trait Optimizer {
-    /// Perform a single optimization step using computed gradients.
+    /// Marks the optimizer as having stepped. **This does NOT update parameters.**
+    ///
+    /// Gradients live in a global autograd graph keyed by tensor id, so an
+    /// optimizer (which holds only parameter ids + state) cannot reach the
+    /// parameter tensors from here. To actually apply updates, call
+    /// `step_with_params(&mut params)` (e.g.
+    /// `sgd.step_with_params(&mut model.parameters_mut())`). Canonical training
+    /// loop: `clear_graph(); let loss = ...; loss.backward(); opt.step_with_params(&mut model.parameters_mut());`
     fn step(&mut self);
 
     /// Zero all parameter gradients.
