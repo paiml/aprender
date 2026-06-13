@@ -1,0 +1,43 @@
+contract: apr-nf4-bitsandbytes-equivalence-beat
+metadata:
+  kind: beat-benchmark
+  version: "1.0.0"
+  description: >
+    Pillar-3 (Unsloth) CORRECTNESS beat (PMAT-745): aprender's pure-Rust NF4
+    blockwise quantization is NUMERICALLY EQUIVALENT to bitsandbytes (Unsloth's
+    quant backend). apr concedes raw QLoRA fine-tune throughput (GPU Triton) — its
+    wedge is provably-correct, contract-gated, single-binary quantization that
+    faithfully replaces bitsandbytes, not an approximation of it. Same NF4 codebook
+    (NF4_LUT, sourced from bitsandbytes/csrc/kernels.cu) and same blockwise-absmax
+    convention (per-block absmax = max|x|, code = nf4(x/absmax), dequant =
+    LUT[code]*absmax) ⇒ bit-equivalent round-trip. Measured 2026-06-13:
+    bitsandbytes==0.49.2 (CPU, blocksize=64, nf4, compress_statistics=False) on the
+    deterministic ramp x[i]=(i-32)*0.05 → apr matches element-wise to max|Δ|=4.92e-7
+    and round-trip MSE 0.007378 == bnb MSE 0.007378.
+  references:
+  - "crates/aprender-compute/src/brick/quant_ops/nf4.rs (beat_nf4_bitsandbytes_equivalence + quantize_blockwise/dequantize_blockwise)"
+  - "crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/Quantization/NF4Dequant.lean"
+  - "evidence/pillar3-nf4-equivalence-2026-06-13/findings.md"
+version: 1
+status: enforced
+date: 2026-06-13
+
+# Beat-benchmark parameters (bitsandbytes reference pinned; CI fails on divergence).
+beat:
+  pillar: 3
+  incumbent: "bitsandbytes (Unsloth quant backend)"
+  incumbent_pinned: "2026-06-13 via uv run --with bitsandbytes==0.49.2 (CPU, bs=64, nf4, compress_statistics=False)"
+  canonical_task: >
+    NF4 blockwise quantize→dequantize round-trip on the deterministic input
+    x[i]=(i-32)*0.05 for i in 0..64 (blocksize=64, single-level absmax). apr's
+    pure-Rust quantize_blockwise/dequantize_blockwise reconstruction is compared
+    element-wise against the pinned bitsandbytes reconstruction; the metric is the
+    max absolute per-element difference apr vs bitsandbytes.
+  metric: nf4_recon_max_abs_diff_vs_bitsandbytes
+  direction: lower_is_better
+  baseline_value: 0.0000      # bitsandbytes is the reference (0 diff from itself)
+  baseline_floor: 0.0000005   # measured apr-vs-bnb max|Δ| ≈ 4.92e-7 (essentially bit-exact)
+  beat_threshold: 0.0010      # apr must stay <= 1e-3 of bnb (equivalence); measured ~5e-7
+  baseline_sourced_date: "2026-06-13"
+  approved_compute: CPU
+  ci_gate_name: "beat_nf4_bitsandbytes_equivalence"
