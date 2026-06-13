@@ -1,0 +1,73 @@
+# aprender BEAT Scoreboard
+
+The four-pillar mission: **replace _and beat_** scikit-learn, PyTorch, Unsloth, and
+Ollama/llama.cpp in one pure-Rust binary. A "beat" is never parity — it is a
+**falsifiable, CI-gated benchmark** showing apr ≥ the incumbent on the incumbent's
+own canonical task (PMAT-741).
+
+> **Honesty rule:** a beat that apr fails never ships. Where apr structurally can't
+> win, we **CONCEDE** in the open rather than publish a false claim.
+
+## Status legend
+
+| Status | Meaning |
+|--------|---------|
+| ✅ **WON** | CI-gated; apr ≥ incumbent; a regression hard-fails the gate |
+| 📊 **TRACKING** | measured, pinned baseline; gate not yet wired (or stretch target) |
+| 🚧 **PLANNED** | identified; not yet built |
+| ⚖️ **CONCEDED** | measured; apr currently loses — an optimization target, not a beat |
+
+## Pillar 1 — scikit-learn
+
+| Beat | Metric | Result | Gate |
+|------|--------|--------|------|
+| Iris classification (RandomForest) | test accuracy | ✅ **WON** — apr 0.94 ≥ sklearn floor 0.94 (threshold 0.92) | per-PR `ci.yml` · `beat_sklearn_iris` |
+| LinearRegression fit+predict | wall-clock ratio | ✅ **WON** — apr **2.0× faster** (ratio 0.50, gate ≤ 0.90) | nightly · `beat_sklearn_linreg_speed` |
+| PCA fit_transform | wall-clock ratio | ⚖️ **CONCEDED** — apr 1.79× *slower* (sklearn is LAPACK-SVD-bound) | — |
+
+**Why apr wins / loses sklearn:** apr's wedge is the cache-friendly ikj SIMD matmul,
+so it wins **matmul-bound** tasks (normal-equations regression) and concedes
+**LAPACK/SVD-bound** ones (PCA) until apr's decomposition is optimized. See
+`memory project_sklearn_speed_beat_selection`.
+
+## Pillar 2 — PyTorch
+
+| Beat | Metric | Result | Gate |
+|------|--------|--------|------|
+| 2-layer MLP training time | wall-clock ratio + MSE ≤ 0.05 | 🚧 **PLANNED** (PMAT-725; feasibility confirmed) | nightly (planned) |
+| Autograd gradient correctness | analytic vs finite-diff | 📊 **TRACKING** (needs relative-tolerance gate) | — |
+
+## Pillar 3 — Unsloth
+
+| Beat | Metric | Result | Gate |
+|------|--------|--------|------|
+| QLoRA fine-tune | loss-monotone + 4-bit footprint ≤ 0.30× f16 | 🚧 **PLANNED** (PMAT-711) | — |
+| LoRA→GGUF merge | forward max-abs-diff < 1e-2 | 🚧 **PLANNED** (PMAT-712) | — |
+
+## Pillar 4 — Ollama / llama.cpp
+
+| Beat | Metric | Result | Gate |
+|------|--------|--------|------|
+| Decode throughput | tok/s ratio (RTX-4090) | 📊 **TRACKING** — apr ~1.32× (stable 5-run median; 1.5× stretch) | — |
+
+## Beat infrastructure (PMAT-741)
+
+The machinery every beat plugs into:
+
+- **`ContractKind::BeatBenchmark`** + validator (`BEAT-001..007`) — each beat is a
+  contract under `contracts/beat-*.yaml` with a pinned incumbent baseline.
+- **`Beat::evaluate(measured) -> Won | Regressed`** — the single-source verdict
+  (`aprender-contracts`); a malformed contract is an error, never a silent pass.
+- **`apr beat-run <contract> [--measured V]`** — CLI runner; reports the pinned
+  baseline and exits non-zero on regression.
+- **`.github/workflows/beat-speed-nightly.yml`** — speed gates run nightly and time
+  apr vs the incumbent **same-host / same-run**, gating the *relative ratio* so
+  CI-host speed variance can't cause flakes.
+
+## Discipline
+
+1. Every beat ships **as** a falsifiable CI gate — a throwaway regression must turn it red.
+2. Speed gates use **same-host relative ratios** (flaky-resistant), never absolute wall-clock.
+3. **Measure before claiming.** Concede honestly where apr can't (yet) win.
+
+_Last updated: 2026-06-13 (workspace v0.49.1)._
