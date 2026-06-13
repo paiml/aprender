@@ -1,6 +1,6 @@
 metadata:
   kind: schema
-  version: 1.6.0
+  version: 1.7.0
   status: ACTIVE
   created: '2026-05-03'
   author: PAIML Engineering
@@ -13,6 +13,7 @@ metadata:
   - 'crates/aprender-serve/src/gguf/cuda/mod.rs:268-279 (gate enforcement, with SKIP_PARITY_GATE=1 bypass)'
   - 'crates/aprender-serve/src/infer/gguf_gpu_generate.rs:487-494 (load_apr_cuda_model — visible-fallback log added 2026-05-03)'
   changelog:
+  - '1.7.0 — 2026-06-13 — added FALSIFY-CPU-GPU-007 + a no-false-positive invariant (PMAT-742). The CUDA first-token parity gate (validate_gpu_first_token) used a single BOS-only probe + EXACT argmax equality, which false-rejected a CORRECT fast GPU path: default `apr run --gpu` ran at 8 tok/s (CPU fallback, BOS rel_gap=0.60) while the same correct GPU path does ~405 tok/s steady-state under SKIP_PARITY_GATE=1 (apr qa: Golden-Output PASS, Ollama-Parity 1.37, Throughput 421). Fix: probe with the REAL prompt context (peaked distribution → CPU/GPU agree) and tolerate a genuine near-tie (gpu_probe_token_acceptable, rel_gap <= 0.15); batch model-init keeps a BOS fallback. GPU-free unit falsifier in aprender-serve (pmat742_parity_gate_tests). Live-verified on RTX 4090 (qwen2.5-coder-1.5b Q4_K_M): default apr run now 8 -> ~405 tok/s, beats ollama 330 by 1.23x. total_obligations 6 -> 7.'
   - '1.5.0 — 2026-05-04 — 5-of-5 sweep close: FALSIFY-CPU-GPU-001/002/003 PARTIAL_ALGORITHM_LEVEL → DISCHARGED + FALSIFY-CPU-GPU-004 FUNCTIONAL → DISCHARGED, joining FALSIFY-CPU-GPU-005 (already DISCHARGED in v1.4.0). All 5 falsifiers now empirically verified on canonical Qwen2.5-Coder-7B teacher via two complementary live smokes on noah-Lambda-Vector RTX 4090: (a) default `apr run` produces the full jidoka chain (CUDA cos=-0.005 + argmax 8127≠334 caught → wgpu cos=0.766 caught → CPU "2 + 2 equals 4." in 67.24s); (b) `apr run --no-gpu` produces only 3 non-GPU log lines + correct output in 9.02s. The contract is now complete: every falsifier has live empirical evidence on the canonical broken-GPU model. Coverage tally: 16+36 → 20+32. MODEL-1 ship % 90% → 91% (parity contract fully discharged; only the underlying SHIP-007 GPU kernel root-cause fix remains for full GPU shipability per §40). Evidence: evidence/cpu-gpu-005-live-discharge-2026-05-04/{wgpu-smoke.log,no-gpu-smoke.log,findings.md}.'
   - '1.4.0 — 2026-05-04 — FALSIFY-CPU-GPU-005 PARTIAL_ALGORITHM_LEVEL → DISCHARGED. Live smoke on canonical Qwen2.5-Coder-7B teacher (`/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr`) executed 2026-05-04 on noah-Lambda-Vector RTX 4090 with binary built from main @ 817ec0553 (post-PR-#1442 part b impl). All 4 prediction lines verified: (1) CUDA path rejection log emits with cosine=-0.005 + argmax mismatch; (2) `Backend: wgpu (Vulkan)` log emits without --verbose; (3) wgpu cosine probe fires + emits `[apr-cpu-vs-gpu-output-parity-v1] wgpu path rejected, attempting fallback: cosine vs CPU = 0.766079 (< 0.99)`; (4) final stdout = "2 + 2 equals 4." (correct CPU output, NOT wgpu gibberish). Evidence: evidence/cpu-gpu-005-live-discharge-2026-05-04/{wgpu-smoke.log,findings.md}. The §41/§43/§44 jidoka chain is now end-to-end live-verified on the canonical broken-GPU model.'
   - '1.3.0 — 2026-05-03 — FALSIFY-CPU-GPU-005 part b implementation landed inline at try_apr_wgpu_inference (gguf_gpu_generate.rs ~line 441-510). Probe-token CPU forward via OwnedQuantizedModel::forward_single_with_cache → wgpu single-step replay using the same fwd.forward_layer code path the autoregressive loop uses → cosine compare via cpu_vs_gpu_cosine_similarity (PR #1440 helper). < 0.99 → emit WGPU_FALLBACK_LOG_PREFIX tagged log, return None, fall to CPU. Symmetric to FALSIFY-CPU-GPU-003 CUDA parity_gate. Algorithm-level discharge; live broken-GPU smoke deferred to a verification PR.'
@@ -269,7 +270,33 @@ falsification_tests:
   - "LIVE DISCHARGE 2026-05-22 on noah-Lambda-Vector (RTX 4090): `apr run /home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf 'What is 2+2?' --max-tokens 16` emits the multi-step rejection log: `[apr-cpu-vs-gpu-output-parity-v1] wgpu path rejected, attempting fallback: cosine vs CPU = 0.722249 (< 0.99) at step 1/3` then falls back to CPU which produces the correct output `2 + 2 equals 4.` in 32.12s. Pre-fix on the same model/host: same gibberish 'ampiezza' as documented in #1864. The multi-step gate empirically catches the autoregressive drift the single-step gate missed; #1864 wgpu-side user-visible symptom is closed."
   - "Note: this closes the wgpu *visibility* + autoregressive-drift loopholes (gibberish no longer reaches the user). The underlying wgpu kernel bug that produces drift on 7B Q4K (something in attention or FFN dispatch for the specific hidden_dim=3584 dimensions) remains open as a #1864 wgpu-kernel sub-issue. After this contract revision, MODEL-1 wgpu shipability for 7B stays at 0% (correct CPU fallback), but the user-experience regression is closed."
 
+- id: FALSIFY-CPU-GPU-007
+  rule: the CUDA first-token parity gate must NOT false-reject a CORRECT GPU path (no false positives)
+  prediction: |
+    PMAT-742: validate_gpu_first_token (inference_result.rs) previously probed with a
+    single BOS-only token and required EXACT CPU/GPU argmax equality. A BOS-only probe
+    has no context, so its next-token distribution is near-flat and tiny CPU/GPU
+    FP/quant differences flip the argmax — false-rejecting a CORRECT fast GPU path and
+    forcing a ~50x-slower CPU fallback. Measured 2026-06-13 on RTX 4090,
+    qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: default `apr run --gpu` = 8 tok/s
+    (CPU fallback, BOS-probe rel_gap=0.60), whereas SKIP_PARITY_GATE=1 = ~405 tok/s
+    steady-state on the SAME correct GPU path. `apr qa` independently scores the GPU
+    path as correct (Golden-Output PASS, Ollama-Parity 1.37) and fast (Throughput 421,
+    GPU-Speedup 20.68x). The pure decision helper gpu_probe_token_acceptable must
+    ACCEPT a near-tie argmax flip (near-flat distribution) and REJECT a tail token
+    (real divergence / PMAT-216 garbage).
+  test: "cargo test -p aprender-serve --lib pmat742_parity_gate"
+  if_fails: "the gate either false-rejects correct GPU output (apr run silently 50x slower — the original defect) OR accepts garbage (PMAT-216 regression)"
+  binds_to: gate_no_false_positive
+  status: DISCHARGED
+  algorithm_evidence:
+  - "Fix: validate_gpu_first_token now probes with the REAL prompt context (peaked distribution → CPU/GPU agree on the first token; verified both backends emit the same first token on a coder prompt) and tolerates a genuine near-tie via gpu_probe_token_acceptable (rel_gap <= GPU_PROBE_NEAR_TIE_REL_GAP=0.15); batch model-init with no prompt keeps the BOS-probe fallback. inference_result.rs (PMAT-742)."
+  - "LIVE 2026-06-13 on noah-Lambda-Vector (RTX 4090): default `apr run --gpu` (no SKIP_PARITY_GATE) on qwen2.5-coder-1.5b-instruct-q4_k_m.gguf now passes F2 validation, takes the cuBLAS resident path, emits a complete correct recursive fibonacci, and reaches ~405 tok/s steady-state (marginal 464 tok / 1144.6ms) — up from 8 tok/s pre-fix. Beats ollama (same GGUF, warm) at 330 tok/s by 1.23x."
+  - "GPU-free unit falsifier (pmat742_parity_gate_tests): near_tie_argmax_flip_is_accepted, real_divergence_is_rejected, out_of_range_gpu_token_is_rejected, exact_argmax_match_is_accepted, rel_gap_endpoints_are_zero_and_one — runs on non-CUDA CI."
+
 proof_obligations:
+- type: invariant
+  property: "the CUDA first-token parity gate accepts a near-tie argmax flip on a peaked real-context probe and rejects only real divergence (no false-positive CPU fallback on a correct GPU path) — PMAT-742"
 - type: invariant
   property: "apr run greedy first-token argmax is identical between GPU and --no-gpu paths"
 - type: invariant
@@ -282,9 +309,9 @@ proof_obligations:
   property: "wgpu parity gate covers MULTIPLE autoregressive steps (default N=3), not just step 0 — single-step gate cannot detect KV-cache-accumulated drift"
 
 verification_summary:
-  total_obligations: 6
+  total_obligations: 7
   proven: 0
-  tested: 0
+  tested: 1
   status: pending
 
 obligation_coverage:

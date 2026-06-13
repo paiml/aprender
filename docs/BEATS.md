@@ -24,6 +24,9 @@ own canonical task (PMAT-741).
 | Iris classification (RandomForest) | test accuracy | ✅ **WON** — apr 0.94 ≥ sklearn floor 0.94 (threshold 0.92) | per-PR `ci.yml` · `beat_sklearn_iris` |
 | LinearRegression fit+predict | wall-clock ratio | ✅ **WON** — apr **2.0× faster** (ratio 0.50, gate ≤ 0.90) | nightly · `beat_sklearn_linreg_speed` |
 | PCA fit_transform | wall-clock ratio | ⚖️ **CONCEDED** — apr 1.79× *slower* (sklearn is LAPACK-SVD-bound) | — |
+| Ridge fit+predict | wall-clock ratio | ⚖️ **CONCEDED** — apr 1.52× *slower* (sklearn Ridge defaults to fast Cholesky; the LinReg-SVD win doesn't transfer) | — |
+| Lasso fit+predict | wall-clock ratio | ⚖️ **CONCEDED** — apr 19× *slower* (apr coordinate-descent unoptimized) | — |
+| KMeans fit+predict | wall-clock ratio | ⚖️ **CONCEDED** — apr 1.02× *slower* (tied; both Lloyd) | — |
 
 **Why apr wins / loses sklearn:** apr's wedge is the cache-friendly ikj SIMD matmul,
 so it wins **matmul-bound** tasks (normal-equations regression) and concedes
@@ -34,7 +37,7 @@ so it wins **matmul-bound** tasks (normal-equations regression) and concedes
 
 | Beat | Metric | Result | Gate |
 |------|--------|--------|------|
-| 2-layer MLP training time | wall-clock ratio + MSE ≤ 0.05 | 🚧 **PLANNED** (PMAT-725; feasibility confirmed) | nightly (planned) |
+| 2-layer MLP training time | wall-clock ratio + MSE ≤ 0.05 | ⚖️ **CONCEDED** (PMAT-725) — apr ~11× *slower* (PyTorch MKL + fused autograd; apr training is correct after #2000 but autograd Tensor ops don't use the SIMD Matrix path) | — |
 | Autograd gradient correctness | analytic vs finite-diff | 📊 **TRACKING** (needs relative-tolerance gate) | — |
 
 ## Pillar 3 — Unsloth
@@ -48,7 +51,14 @@ so it wins **matmul-bound** tasks (normal-equations regression) and concedes
 
 | Beat | Metric | Result | Gate |
 |------|--------|--------|------|
-| Decode throughput | tok/s ratio (RTX-4090) | 📊 **TRACKING** — apr ~1.32× (stable 5-run median; 1.5× stretch) | — |
+| Decode throughput | tok/s ratio (RTX-4090) | 📊 **TRACKING** — apr **1.23× faster** (apr ~405 vs ollama 330 tok/s, same qwen2.5-coder-1.5b Q4_K_M GGUF, steady-state decode; `apr qa` Ollama-Parity 1.37) | — |
+
+**PMAT-742 (unblocks Pillar 4):** the default `apr run --gpu` was silently 8 tok/s — its
+CUDA first-token parity gate false-rejected the correct fast path (a single BOS-only probe
+diverges CPU-vs-GPU even when real generation is correct). Fixed by validating on the real
+prompt context + near-tie tolerance → default `apr run` now reaches the ~405 tok/s GPU path.
+*Caveat:* this is decode throughput; apr's one-shot CLI has ~2.7s startup that ollama's daemon
+avoids, so short-prompt wall-clock still favors ollama until `apr serve` (warm) is benched.
 
 ## Beat infrastructure (PMAT-741)
 
