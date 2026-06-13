@@ -1,0 +1,35 @@
+contract: beat-sklearn-linreg-speed
+metadata:
+  kind: beat-benchmark
+  version: "1.0.0"
+  description: >
+    Pillar-1 BEAT benchmark: aprender LinearRegression fit+predict must be
+    comfortably FASTER than scikit-learn (LAPACK lstsq) on the same data, same
+    host, same run. The beat is gated on the RELATIVE ratio apr_ms/sklearn_ms so
+    it is robust to CI-host speed variance (a slow runner slows both sides). Runs
+    nightly (needs uv + scikit-learn), not per-PR.
+  references:
+  - "docs/specifications/campaign-ev-reprioritization-2026-06-12.md"
+  - "crates/aprender-core/tests/beat_sklearn_linreg_speed.rs"
+  - "crates/aprender-core/src/primitives/matrix.rs"
+version: 1
+status: enforced
+date: 2026-06-13
+
+beat:
+  pillar: 1
+  incumbent: scikit-learn
+  incumbent_pinned: "2026-06-13 via uv run --with scikit-learn (LAPACK lstsq)"
+  canonical_task: >
+    LinearRegression fit+predict on make_regression(n_samples=10000,
+    n_features=20, noise=0.1, seed=42). apr and scikit-learn are timed on the
+    SAME generated data, SAME host, SAME run (median of 5 + warmup); the metric
+    is the relative ratio apr_ms / sklearn_ms.
+  metric: wall_clock_ratio_apr_over_sklearn
+  direction: lower_is_better
+  baseline_value: 1.0000      # sklearn is the 1.0 reference (apr/sklearn vs itself)
+  baseline_floor: 0.5600      # measured apr/sklearn ~0.56 (apr 1.78x faster, commit 34d61a608)
+  beat_threshold: 0.9000      # apr must stay <= 0.90 (>= ~1.11x faster) — large margin vs 0.56
+  baseline_sourced_date: "2026-06-13"
+  approved_compute: CPU
+  ci_gate_name: "beat_sklearn_linreg_speed"

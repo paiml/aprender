@@ -1,0 +1,42 @@
+# BEAT speed beats — NIGHTLY (PMAT-722)
+#
+# Runs the timing-based BEAT gates that can't live in per-PR CI (absolute
+# wall-clock is flaky across hosts, and they need `uv` + scikit-learn). These
+# tests are `#[ignore]`d in the normal suite and run only here, on a single
+# self-hosted host so apr and the incumbent are timed on the same machine in the
+# same run (the gate is the RELATIVE ratio, which cancels host-speed variance).
+#
+# Additive: a brand-new workflow that does NOT touch per-PR `ci.yml` / the merge
+# gate. A red run here flags a real speed regression; it never blocks PRs.
+name: BEAT Speed (nightly)
+
+on:
+  schedule:
+    - cron: "45 5 * * *"  # 05:45 UTC, after Nightly Bench (05:30)
+  workflow_dispatch:
+
+concurrency:
+  group: beat-speed-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  beat-speed:
+    runs-on: [self-hosted, X64, Linux]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure uv is available (for scikit-learn baselines)
+        run: |
+          if command -v uv >/dev/null 2>&1; then
+            echo "uv present: $(uv --version)"
+          else
+            echo "Installing uv to ~/.local/bin"
+            curl -LsSf https://astral.sh/uv/install.sh | sh
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: Pillar-1 — apr vs scikit-learn LinearRegression speed beat
+        run: |
+          cargo test -p aprender-core --release \
+            --test beat_sklearn_linreg_speed -- --ignored --nocapture
