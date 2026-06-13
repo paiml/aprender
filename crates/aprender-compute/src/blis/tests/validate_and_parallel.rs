@@ -258,3 +258,21 @@ fn test_gemm_parallel_shared_b_non_aligned() {
     }
     assert!(max_diff < 1e-1, "FALSIFY-SHARED-B-002: max diff {max_diff} >= 1e-1");
 }
+
+/// Falsifier for the 2026-06-13 thin-NN-GEMM serial routing fix: the dispatch
+/// MUST run thin NN-scale GEMMs serially (rayon was measured 2.2x slower) while
+/// still parallelizing square sub-64M and large GEMMs. Guards
+/// contracts/gemm-parallel-dispatch-v1.yaml (obligation THIN-SERIAL).
+#[cfg(feature = "parallel")]
+#[test]
+fn nn_thin_gemm_prefers_serial() {
+    use super::super::parallel::gemm_should_run_serial;
+    // thin MLP-layer GEMM [1024x256]@[256x128] = 33.6M FLOP, n=128 < 192 -> serial
+    assert!(gemm_should_run_serial(1024, 128, 256), "thin NN GEMM must run serial");
+    // square 256^3 = 16.7M FLOP, n=256 -> still parallel (~1.24x benefit)
+    assert!(!gemm_should_run_serial(256, 256, 256), "square sub-64M still parallelizes");
+    // tiny -> serial
+    assert!(gemm_should_run_serial(8, 8, 8), "tiny GEMM serial");
+    // large square 512^3 = 134M -> parallel
+    assert!(!gemm_should_run_serial(512, 512, 512), "large GEMM parallelizes");
+}

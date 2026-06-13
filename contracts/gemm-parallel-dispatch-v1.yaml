@@ -1,0 +1,47 @@
+contract: gemm-parallel-dispatch
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  description: >
+    trueno's parallel BLIS GEMM dispatch (gemm_blis_parallel) must route THIN
+    NN-scale GEMMs to the serial path. The rayon path splits over M and has each
+    thread redundantly pack B; for thin matrices (small n, e.g. MLP layers
+    [1024x256]@[256x128], 33.6M FLOP) that overhead dominates the small compute —
+    measured 2026-06-13 (48-core) at 2.2x SLOWER than serial. Square sub-64M
+    (n>=192) still parallelizes (~1.24x, cgp 2026-04-05). Result must be
+    bit-equivalent (within tol) regardless of the dispatch decision. Scope:
+    fixes the parallel-path defect (helps parallel-enabled training,
+    e.g. aprender-train); the serial autograd-copy overhead is a separate issue.
+  references:
+  - "crates/aprender-compute/src/blis/parallel.rs"
+  - "crates/aprender-compute/src/blis/tests/validate_and_parallel.rs"
+version: 1
+status: enforced
+date: 2026-06-13
+
+proof_obligations:
+  - type: invariant
+    property: >
+      THIN-SERIAL: gemm_should_run_serial returns true for thin NN-scale GEMMs
+      (8M <= FLOP < 64M with n < 192) and for tiny GEMMs (FLOP < 8M); it returns
+      false for square sub-64M (n >= 192) and for large GEMMs (>= 64M FLOP), which
+      keep parallelizing.
+  - type: equivalence
+    property: >
+      PARALLEL-EQUIV: gemm_blis_parallel produces results equal to the serial
+      gemm_reference within 1e-3 for all dims, regardless of whether the dispatch
+      chose the serial or parallel path — the routing is a perf decision only.
+
+falsification_tests:
+  - id: FALSIFY-GEMM-THIN-SERIAL-001
+    name: nn_thin_gemm_prefers_serial
+    prediction: "gemm_should_run_serial: true for [1024x128]@k=256 thin GEMM, false for 256^3 and 512^3"
+    test_harness: "cargo test -p aprender-compute --features parallel --lib nn_thin_gemm_prefers_serial"
+    expected_output: "test result: ok"
+    if_fails: "The thin-NN serial routing (parallel.rs gemm_should_run_serial, flops<64M && n<192) regressed — rayon is 2.2x slower than serial for thin GEMMs."
+  - id: FALSIFY-GEMM-PARALLEL-EQUIV-001
+    name: test_gemm_blis_parallel_large_matrix
+    prediction: "gemm_blis_parallel output matches gemm_reference within 1e-1 for 128^3"
+    test_harness: "cargo test -p aprender-compute --features parallel --lib test_gemm_blis_parallel_large_matrix"
+    expected_output: "test result: ok"
+    if_fails: "The parallel GEMM dispatch changed numerical results — routing must be perf-only, never alter output."
