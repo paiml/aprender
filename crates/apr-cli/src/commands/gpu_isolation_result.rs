@@ -307,13 +307,24 @@ fn run_performance_regression_gate(
     let threshold = config.regression_threshold;
     let mut regressions = Vec::new();
 
-    // Compare metrics for gates that have numeric values in both reports
-    let comparable_gates = ["throughput", "ollama_parity", "gpu_speedup"];
-    for gate_name in &comparable_gates {
+    // PMAT-748: per-metric thresholds. RATIO metrics (ollama_parity, gpu_speedup) are
+    // measured in the SAME run, so they cancel environment variance (GPU load, thermal,
+    // concurrent jobs) → a tight point-baseline gate is a real-regression signal. RAW
+    // throughput is ABSOLUTE tok/s and swings run-to-run with GPU state (measured
+    // ~367-421 = ~13% spread on an idle vs loaded RTX 4090), so a tight gate flakes by
+    // design. Give throughput a wider band so it catches catastrophic regressions
+    // (e.g. a decode hot-path win reverting) without false-failing on environment noise.
+    let throughput_threshold = throughput_regression_threshold(threshold);
+    let comparable_gates: [(&str, f64); 3] = [
+        ("throughput", throughput_threshold),
+        ("ollama_parity", threshold),
+        ("gpu_speedup", threshold),
+    ];
+    for (gate_name, gate_threshold) in &comparable_gates {
         let prev_gate = prev_report.gates.iter().find(|g| g.name == *gate_name);
         let curr_gate = current_gates.iter().find(|g| g.name == *gate_name);
 
-        if let Some(msg) = detect_regression(prev_gate, curr_gate, gate_name, threshold) {
+        if let Some(msg) = detect_regression(prev_gate, curr_gate, gate_name, *gate_threshold) {
             regressions.push(msg);
         }
     }
@@ -324,8 +335,9 @@ fn run_performance_regression_gate(
         Ok(GateResult::passed(
             "performance_regression",
             &format!(
-                "No regressions >{:.0}% vs {}",
+                "No regressions (ratios >{:.0}%, throughput >{:.0}%) vs {}",
                 threshold * 100.0,
+                throughput_threshold * 100.0,
                 prev_path.display()
             ),
             Some(0.0),
@@ -341,6 +353,14 @@ fn run_performance_regression_gate(
             duration,
         ))
     }
+}
+
+/// Wider regression band for ABSOLUTE throughput (tok/s), which is environment-sensitive
+/// (GPU load/thermal/concurrent jobs) unlike the same-run RATIO metrics (ollama_parity,
+/// gpu_speedup). 2.5× the base threshold, floored at 25%, so it flags catastrophic
+/// throughput regressions without false-failing on run-to-run GPU noise. PMAT-748.
+fn throughput_regression_threshold(base: f64) -> f64 {
+    (base * 2.5).max(0.25)
 }
 
 /// Compare a single gate's value between previous and current reports for regression.
@@ -363,4 +383,57 @@ fn detect_regression(
         "{name}: {prev_val:.1} -> {curr_val:.1} ({:.0}% regression)",
         regression * 100.0
     ))
+}
+
+#[cfg(test)]
+mod pmat748_perf_regression_gate_tests {
+    use super::{detect_regression, throughput_regression_threshold};
+    use crate::commands::qa::GateResult;
+    use std::time::Duration;
+
+    fn gate(name: &str, value: f64) -> GateResult {
+        GateResult::passed(name, "", Some(value), None, Duration::default())
+    }
+
+    #[test]
+    fn throughput_band_is_wider_than_ratio_band() {
+        // ratio metrics use the base 10% gate; throughput gets a wide env-noise band.
+        assert!((throughput_regression_threshold(0.10) - 0.25).abs() < 1e-9);
+        assert!((throughput_regression_threshold(0.20) - 0.50).abs() < 1e-9); // 2.5x dominates the 0.25 floor
+        assert!(throughput_regression_threshold(0.10) > 0.10);
+    }
+
+    #[test]
+    fn throughput_noise_does_not_false_fail() {
+        // The actual flake: 409.6 -> 367.8 is ~10.2% — real on a shared RTX 4090,
+        // must NOT trip the throughput gate (env-sensitive absolute tok/s).
+        let prev = gate("throughput", 409.6);
+        let curr = gate("throughput", 367.8);
+        let t = throughput_regression_threshold(0.10);
+        assert!(
+            detect_regression(Some(&prev), Some(&curr), "throughput", t).is_none(),
+            "GPU tok/s noise (~10%) must not false-fail the throughput regression gate"
+        );
+    }
+
+    #[test]
+    fn catastrophic_throughput_regression_is_caught() {
+        // A real hot-path revert (e.g. 2x decode win lost) must still fire.
+        let prev = gate("throughput", 400.0);
+        let curr = gate("throughput", 180.0); // 55% drop
+        let t = throughput_regression_threshold(0.10);
+        assert!(detect_regression(Some(&prev), Some(&curr), "throughput", t).is_some());
+    }
+
+    #[test]
+    fn ratio_metric_keeps_tight_gate() {
+        // ollama_parity is a same-run ratio → cancels env variance → a 12% drop is a
+        // REAL regression and must fire at the tight 10% gate.
+        let prev = gate("ollama_parity", 1.37);
+        let curr = gate("ollama_parity", 1.20); // ~12.4% drop
+        assert!(
+            detect_regression(Some(&prev), Some(&curr), "ollama_parity", 0.10).is_some(),
+            "a real ratio regression must still be caught at the tight threshold"
+        );
+    }
 }
