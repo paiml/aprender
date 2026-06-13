@@ -104,6 +104,8 @@ libc = "0.2"
 [dependencies]
 # Core aprender library
 aprender = { path = "../aprender-core", version = "0.49.0", package = "aprender-core", default-features = true, features = ["format-compression"] }
+# Provable-contracts engine — `apr beat-run` parses + evaluates BeatBenchmark contracts (PMAT-741)
+aprender-contracts = { workspace = true }
 
 # MCP (Model Context Protocol) server — `apr mcp` subcommand
 aprender-mcp = { path = "../aprender-mcp", version = "0.49.0" }

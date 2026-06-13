@@ -260,6 +260,7 @@ dependencies = [
  "anyhow",
  "aprender-common",
  "aprender-compute",
+ "aprender-contracts",
  "aprender-core",
  "aprender-data",
  "aprender-mcp",

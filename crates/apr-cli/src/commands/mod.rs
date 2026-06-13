@@ -15,6 +15,7 @@ pub(crate) mod audio_inspect_lint;
 pub(crate) mod auto_quant;
 pub(crate) mod awq_classifier;
 pub(crate) mod awq_lint;
+pub mod beat_run;
 pub mod bench;
 pub(crate) mod blob_gc;
 pub mod canary;
