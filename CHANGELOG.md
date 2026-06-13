@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.49.1] - 2026-06-13
+
+### Changed
+
+- **Dependency refresh** — updated 26 transitive/registry dependencies to their
+  latest semver-compatible versions via `cargo update`. Notable bumps:
+  `wasm-bindgen` 0.2.123 → 0.2.125 (+ futures/test/shared), `web-sys`/`js-sys`
+  0.3.100 → 0.3.102, `openssl` 0.10.80 → 0.10.81, `openssl-sys` 0.9.116 → 0.9.117,
+  `zeroize` 1.8.2 → 1.9.0, `aws-sdk-s3` 1.135 → 1.136 (+ sso/ssooidc/sts/runtime),
+  `cc` 1.2.63 → 1.2.64, `fastembed` 5.16.0 → 5.16.1, `wasmparser`/`wasm-encoder`/
+  `wast`/`wat` 251 → 252. No source changes; in-tree `trueno`/`realizar`/sibling
+  path crates untouched (APR-MONO self-contained DAG). Workspace version bumped
+  0.49.0 → 0.49.1 across all 145 crates.
+
 ## [0.49.0] - 2026-06-12
 
 ### Added
