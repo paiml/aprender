@@ -226,6 +226,25 @@ fn format_extension(format: Format) -> &'static str {
     }
 }
 
+/// Build the in-place conversion output path for `source` with `target_ext`,
+/// idempotently (PMAT-743). `Path::with_extension("converted.<ext>")` replaces only
+/// the final extension component, so a source already ending `.converted.<x>` would
+/// compound into `.converted.converted.<x>` and pollute the model cache unboundedly
+/// across re-conversions (observed in the HF cache as
+/// `*.converted.converted.safetensors`). Normalizing the stem first makes the output
+/// stable; for a source that does NOT already contain `.converted` the result is
+/// identical to the old `with_extension` form.
+fn converted_output_path(source: &Path, target_ext: &str) -> PathBuf {
+    let mut stem = source
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("model");
+    while let Some(base) = stem.strip_suffix(".converted") {
+        stem = base;
+    }
+    source.with_file_name(format!("{stem}.converted.{target_ext}"))
+}
+
 fn find_file_by_extension(dir: &Path, ext: &str) -> Option<std::path::PathBuf> {
     std::fs::read_dir(dir).ok()?.flatten().find_map(|entry| {
         let p = entry.path();
@@ -408,3 +427,38 @@ pub struct ConversionTolerance {
 include!("conversion_tolerances.rs");
 include!("semantic_conversion_test.rs");
 include!("conversion_strategies.rs");
+
+#[cfg(test)]
+mod pmat743_converted_path_tests {
+    use super::converted_output_path;
+    use std::path::Path;
+
+    #[test]
+    fn first_conversion_appends_converted_once() {
+        let out = converted_output_path(Path::new("/m/qwen-q4_k_m.gguf"), "safetensors");
+        assert_eq!(out, Path::new("/m/qwen-q4_k_m.converted.safetensors"));
+    }
+
+    #[test]
+    fn reconverting_an_artifact_does_not_compound() {
+        // The bug: with_extension on `*.converted.safetensors` produced
+        // `*.converted.converted.safetensors`. Must stay single `.converted`.
+        let out = converted_output_path(Path::new("/m/qwen-q4_k_m.converted.safetensors"), "apr");
+        assert_eq!(out, Path::new("/m/qwen-q4_k_m.converted.apr"));
+    }
+
+    #[test]
+    fn deeply_compounded_artifact_is_normalized() {
+        let out = converted_output_path(
+            Path::new("/m/qwen.converted.converted.converted.safetensors"),
+            "safetensors",
+        );
+        assert_eq!(out, Path::new("/m/qwen.converted.safetensors"));
+    }
+
+    #[test]
+    fn no_extension_source_is_handled() {
+        let out = converted_output_path(Path::new("/m/model"), "gguf");
+        assert_eq!(out, Path::new("/m/model.converted.gguf"));
+    }
+}

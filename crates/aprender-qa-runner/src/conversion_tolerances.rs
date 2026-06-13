@@ -423,8 +423,9 @@ impl ConversionTest {
 
             output_dir.output_path("basic", source_name, "converted", self.target_format)
         } else {
-            // Legacy: write to source directory (for backward compatibility in tests)
-            source_path.with_extension(format!("converted.{target_ext}"))
+            // Legacy: write to source directory (for backward compatibility in tests).
+            // PMAT-743: idempotent — never compound `.converted` on re-conversion.
+            converted_output_path(source_path, target_ext)
         };
 
         // Use apr rosetta convert: apr rosetta convert <SOURCE> <TARGET>

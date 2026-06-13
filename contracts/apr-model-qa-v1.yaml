@@ -1,10 +1,25 @@
 metadata:
-  version: 1.4.0
+  version: 1.5.0
   created: '2026-04-04'
-  updated: '2026-05-10'
+  updated: '2026-06-13'
   author: PAIML Engineering
   registry: true
   description: >
+    v1.5.0 (2026-06-13): PMAT-743 — format-parity gate robustness. Added
+    FALSIFY-QA-FMTPARITY-743 + a discovery-robustness invariant. The gate's
+    SafeTensors auto-discovery picked up apr's OWN conversion artifacts
+    (`*.converted*.safetensors`) as if they were independent references —
+    circular, and frequently stale/double-converted — producing a confusing
+    "conversion failed" on a `.converted.converted.safetensors` path. Worse, a
+    corrupt reference (down_proj 100% zeros, F-DATA-QUALITY-001) HARD-CRASHED
+    `apr qa` (exit 5, no report) because only two error substrings were handled
+    gracefully. Fix: (A) discovery excludes `.converted*` artifacts and finds the
+    genuine model.safetensors; (C) ANY reference conversion failure → graceful
+    gate FAIL with the reason, never a crash; (B, aprender-qa-runner) the
+    `.converted` output path is now idempotent (no `.converted.converted…`
+    compounding / cache pollution). Live-verified on RTX 4090, qwen2.5-coder-1.5b
+    Q4_K_M. See contracts note and forward_error.rs / conversion.rs.
+
     Model quality assurance contract — check, validate, qa, lint, probar
     commands that verify model integrity, detect regressions, and enforce
     quality gates before deployment. The defensive layer of apr-cli.
@@ -270,6 +285,20 @@ proof_obligations:
   lean:
     theorem: Theorems.GoldenOutputShipBlockerIdempotent
     status: sorry
+- type: invariant
+  property: >
+    PMAT-743: format-parity discovery ignores apr's own conversion artifacts
+    (`*.converted*.safetensors`) — they are circular references, never independent
+    ones — and a reference that cannot be loaded/converted (missing tensor,
+    unsupported arch, corrupt/zeroed weights) yields a graceful gate FAILURE with an
+    actionable message, never a hard crash of `apr qa`.
+  formal: |
+    is_synthetic_conversion_artifact(name) => name not in discovered_references
+    AND convert(reference) == Err(_) => gate_result == Failed(reason) (never panic/abort)
+  applies_to: format_parity_gate
+  lean:
+    theorem: Theorems.FormatParityDiscoveryRobust
+    status: sorry
 
 falsification_tests:
 - id: FALSIFY-QA-001
@@ -403,6 +432,42 @@ falsification_tests:
     repeatable. Forbid merging any release-blocking PR until fixed.
   spec_reference: ship-two-models-spec.md §12.1, §12.5
   ship_blocking: true
+- id: FALSIFY-QA-FMTPARITY-743
+  rule: >
+    format-parity discovery ignores synthetic `.converted` artifacts and the gate
+    never hard-crashes `apr qa` on a corrupt/unconvertible reference
+  prediction: |
+    (a) Given a snapshot dir containing a genuine shard
+        (model-00001-of-00002.safetensors) plus apr's own
+        `*.converted.safetensors` / `*.converted.converted.safetensors`
+        artifacts, find_safetensors_in_snapshot returns the GENUINE shard,
+        never a `.converted` one.
+    (b) Given a snapshot dir containing ONLY `.converted` artifacts,
+        find_safetensors_in_snapshot returns None (no circular reference).
+    (c) A reference SafeTensors that fails to convert (e.g. corrupt down_proj
+        flagged by F-DATA-QUALITY-001 DENSITY FAILURE) yields a graceful
+        format_parity GATE FAILURE with the reason in the message — `apr qa`
+        completes all gates and prints the summary table (exit reflects gate
+        failure), it does NOT abort mid-run with a bare CliError.
+    Measured 2026-06-13 (RTX 4090, qwen2.5-coder-1.5b Q4_K_M): pre-fix `apr qa`
+    converted `*.converted.converted.safetensors` (circular) → confusing
+    "conversion failed"; or aborted exit-5 with no report when the genuine
+    reference was corrupt. Post-fix: discovery finds the genuine
+    model.safetensors; corrupt reference → clean "Format Parity ✗ FAIL ...
+    DENSITY FAILURE" line + full table.
+  test: |
+    cargo test -p apr-cli --lib forward_error_tests (synthetic_artifact_detection,
+    snapshot_discovery_prefers_genuine_over_converted,
+    snapshot_discovery_skips_when_only_converted_artifacts) +
+    cargo test -p aprender-qa-runner --lib pmat743_converted_path_tests
+    (reconverting_an_artifact_does_not_compound, …)
+  if_fails: |
+    Either format_parity does a vacuous circular comparison (GGUF vs a
+    SafeTensors derived from that GGUF), or `apr qa` crashes on a corrupt
+    reference (the diagnostic tool dies instead of reporting), or the qa-runner
+    compounds `.converted.converted…` and pollutes the model cache unboundedly.
+  spec_reference: PMAT-743
+  ship_blocking: false
 
 kani_harnesses:
 - id: KANI-QA-001
