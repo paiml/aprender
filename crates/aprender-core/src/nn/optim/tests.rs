@@ -454,6 +454,32 @@ mod tests_large_tensors;
 #[path = "tests_state_resize.rs"]
 mod tests_state_resize;
 
+/// REGRESSION (direct): after `Linear::forward` + `backward()`, the layer's WEIGHT
+/// must receive a gradient — not just the bias. This is the exact defect: the
+/// construction-time cached `weight_t` transpose edge is wiped by `clear_graph()`,
+/// leaving `weight` with no path to gradient (`get_grad(weight.id())` == None).
+/// Falsifies proof obligation GRAD-FLOW of `contracts/nn-training-gradient-path-v1.yaml`.
+#[test]
+fn nn_linear_backward_populates_weight_grad() {
+    use crate::autograd::{clear_graph, get_grad, Tensor};
+    use crate::nn::{Linear, Module};
+
+    clear_graph(); // mimics a per-step training reset that wiped the cached edge
+    let layer = Linear::with_seed(4, 3, Some(1));
+    let x = Tensor::from_vec(vec![0.5; 8], &[2, 4]);
+    let out = layer.forward(&x);
+    out.sum().backward();
+
+    assert!(
+        get_grad(layer.weight().id()).is_some(),
+        "Linear weight received NO gradient through forward — the autograd path to \
+         `weight` is broken (cached construction-time transpose wiped by clear_graph)."
+    );
+    if let Some(b) = layer.bias() {
+        assert!(get_grad(b.id()).is_some(), "Linear bias received no gradient either.");
+    }
+}
+
 /// REGRESSION: a 2-layer MLP trained with the canonical idiom (clear_graph →
 /// forward → backward → `SGD::step_with_params`) MUST converge.
 ///

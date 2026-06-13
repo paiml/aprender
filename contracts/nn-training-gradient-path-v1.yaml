@@ -1,0 +1,55 @@
+contract: nn-training-gradient-path
+metadata:
+  kind: training-loop
+  version: "1.0.0"
+  description: >
+    The nn::Sequential/Linear + autograd training loop must actually learn. After
+    loss.backward(), gradients MUST reach Linear weight parameters (not only the
+    bias), so optimizers update weights and the loss converges. Guards the
+    2026-06-13 root-cause fix: Linear cached weight_t = weight.transpose() at
+    construction, and a training loop's per-step clear_graph() wiped that
+    transpose tape-edge, leaving weight with no gradient path
+    (get_grad(weight.id()) == None) — only biases learned, so training silently
+    froze. forward() now re-derives the transpose from the live weight while
+    grad-tracking (cache kept for inference).
+  references:
+  - "crates/aprender-core/src/nn/linear.rs"
+  - "crates/aprender-core/src/nn/optim/tests.rs"
+  - "crates/aprender-core/src/autograd/graph.rs"
+version: 1
+status: enforced
+date: 2026-06-13
+
+proof_obligations:
+  - type: invariant
+    property: >
+      GRAD-FLOW: after loss.backward() on a computation graph that contains
+      Linear::forward, get_grad(weight.id()) is Some for every grad-tracking
+      Linear weight — gradient reaches the weight leaf, not only the bias. This is
+      the precondition for any optimizer to update weights.
+  - type: monotonicity
+    property: >
+      TRAIN-CONVERGE: under the canonical idiom (clear_graph -> forward ->
+      backward -> SGD::step_with_params), a deterministic seeded 2-layer MLP's MSE
+      decreases by >80%. A weights-frozen regression (bias-only learning) yields
+      only ~50% and violates this obligation.
+  - type: equivalence
+    property: >
+      FORWARD-EQUIV: Linear::forward yields identical output whether it reuses the
+      cached weight_t (inference / no grad) or re-derives the transpose from the
+      live weight (training); the gradient-path fix must not change forward values
+      (guarded by the existing nn::linear forward tests).
+
+falsification_tests:
+  - id: FALSIFY-NN-GRAD-FLOW-001
+    name: nn_linear_backward_populates_weight_grad
+    prediction: "after Linear::forward + backward (post clear_graph), get_grad(weight.id()) is Some"
+    test_harness: "cargo test -p aprender-core --lib nn_linear_backward_populates_weight_grad"
+    expected_output: "test result: ok"
+    if_fails: "Linear::forward must transpose the LIVE weight while grad-tracking so the weight_t<-weight edge is on the current tape; a cached construction-time transpose is wiped by clear_graph()."
+  - id: FALSIFY-NN-TRAIN-CONVERGE-001
+    name: nn_mlp_training_converges
+    prediction: "a seeded 2-layer MLP trained via clear_graph+forward+backward+step_with_params drops MSE >80%"
+    test_harness: "cargo test -p aprender-core --lib nn_mlp_training_converges"
+    expected_output: "test result: ok"
+    if_fails: "Weights are frozen (bias-only learning, ~50% drop) — the Linear gradient path regressed; see FALSIFY-NN-GRAD-FLOW-001."
