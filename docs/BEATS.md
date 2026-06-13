@@ -7,6 +7,12 @@ own canonical task (PMAT-741).
 
 > **Honesty rule:** a beat that apr fails never ships. Where apr structurally can't
 > win, we **CONCEDE** in the open rather than publish a false claim.
+>
+> **Falsifier rule:** every beat is adversarially mutation-verified — injecting a
+> regression into its property must make the gate FAIL (a beat that can't fail is
+> theater). Verified 2026-06-14: NF4 / LoRA-merge / fail-closed each fail under a
+> targeted mutation; autograd fails by construction (pinned-reference tolerance). See
+> `evidence/beats-adversarial-verification-2026-06-14/findings.md`.
 
 ## Status legend
 
