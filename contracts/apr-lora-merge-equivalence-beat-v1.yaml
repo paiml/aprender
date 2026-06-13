@@ -1,0 +1,42 @@
+contract: apr-lora-merge-equivalence-beat
+metadata:
+  kind: beat-benchmark
+  version: "1.0.0"
+  description: >
+    Pillar-3 (Unsloth) CORRECTNESS beat (PMAT-747): aprender's LoRA merge is
+    numerically faithful — folding the adapter delta scale·(B@A) into the base weight
+    produces a forward pass EQUIVALENT to applying the LoRA factors unmerged. This is
+    the second half of "replace Unsloth's QLoRA pipeline" (NF4 quant ≡ bitsandbytes is
+    PMAT-745; this is fine-tune→merge→export). apr's MergeEngine::merge is
+    contract-gated for forward-equivalence; PEFT/Unsloth ship merge_and_unload with no
+    such guarantee. The reference is computed INDEPENDENTLY from the A,B factors via a
+    different path (x @ A @ B), so a transpose/indexing bug in the merge would diverge
+    — it is not a tautology. Measured 2026-06-14 (CPU, deterministic): merged-weight
+    forward matches the factored-LoRA forward to max|Δ|=1.49e-8.
+  references:
+  - "crates/aprender-train-lora/src/merge.rs (MergeEngine::merge + beat_lora_merge_forward_equivalence)"
+  - "evidence/pillar3-lora-merge-equivalence-2026-06-14/findings.md"
+  - "apr-nf4-bitsandbytes-equivalence-beat-v1.yaml (sibling: the quant half of the P3 pipeline)"
+version: 1
+status: enforced
+date: 2026-06-14
+
+# Beat-benchmark parameters (forward-equivalence invariant; CI fails on divergence).
+beat:
+  pillar: 3
+  incumbent: "PEFT / Unsloth (merge_and_unload — no forward-equivalence contract)"
+  incumbent_pinned: "2026-06-14 — incumbents merge but do not contract-verify merged≡factored forward"
+  canonical_task: >
+    Fold a LoRA adapter (A:[d_in,r], B:[r,d_out], scale=alpha/rank) into a base
+    weight W:[d_out,d_in] via MergeEngine::merge, then compare the merged-weight
+    forward (x @ W_merged^T) against the LoRA forward computed independently from the
+    factors (x@W_base^T + scale·(x @ A @ B)). Metric: max absolute per-element
+    difference between the two forward passes.
+  metric: merge_forward_max_abs_diff
+  direction: lower_is_better
+  baseline_value: 0.0000      # perfect forward-equivalence target
+  baseline_floor: 0.00000002  # measured merged-vs-factored max|Δ| ≈ 1.49e-8
+  beat_threshold: 0.0001      # apr merge must stay forward-equivalent within 1e-4; measured ~1.5e-8
+  baseline_sourced_date: "2026-06-14"
+  approved_compute: CPU
+  ci_gate_name: "beat_lora_merge_forward_equivalence"
