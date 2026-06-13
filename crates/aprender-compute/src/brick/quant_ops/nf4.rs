@@ -286,4 +286,68 @@ mod tests {
             assert!(code < 16, "quantize_nf4({}) = {} >= 16", x, code);
         }
     }
+
+    /// BEAT-NF4-EQUIVALENCE — Pillar-3 (Unsloth) correctness beat (PMAT-745).
+    ///
+    /// apr concedes raw QLoRA fine-tune throughput to Unsloth (GPU Triton); its
+    /// wedge is provably-correct, pure-Rust quantization. This gate proves apr's
+    /// NF4 blockwise round-trip is NUMERICALLY EQUIVALENT to bitsandbytes (Unsloth's
+    /// quant backend) — same codebook, same blockwise-absmax convention — so apr is
+    /// a faithful, contract-gated replacement, not an approximation.
+    ///
+    /// Reference PINNED from `bitsandbytes==0.49.2` (CPU, blocksize=64, nf4,
+    /// compress_statistics=False) on the deterministic ramp `x[i]=(i-32)*0.05`,
+    /// measured 2026-06-13. apr must match bnb's reconstruction element-wise and its
+    /// round-trip MSE. Contract: contracts/apr-nf4-bitsandbytes-equivalence-beat-v1.yaml.
+    #[test]
+    fn beat_nf4_bitsandbytes_equivalence() {
+        // Same deterministic input the bnb reference was pinned on.
+        let x: Vec<f32> = (0..64).map(|i| (i as f32 - 32.0) * 0.05).collect();
+
+        // bitsandbytes NF4 reference reconstruction (bnb 0.49.2, bs=64, single-level).
+        let bnb_recon: [f32; 64] = [
+            -1.600000, -1.600000, -1.600000, -1.600000, -1.600000, -1.113909, -1.113909, -1.113909,
+            -1.113909, -1.113909, -1.113909, -1.113909, -1.113909, -0.840117, -0.840117, -0.840117,
+            -0.840117, -0.840117, -0.631868, -0.631868, -0.631868, -0.631868, -0.455106, -0.455106,
+            -0.455106, -0.295637, -0.295637, -0.295637, -0.145680, -0.145680, -0.145680, 0.000000,
+            0.000000, 0.000000, 0.127328, 0.127328, 0.257488, 0.257488, 0.257488, 0.393780,
+            0.393780, 0.393780, 0.540664, 0.540664, 0.540664, 0.705136, 0.705136, 0.705136,
+            0.705136, 0.900187, 0.900187, 0.900187, 0.900187, 1.156731, 1.156731, 1.156731,
+            1.156731, 1.156731, 1.156731, 1.156731, 1.600000, 1.600000, 1.600000, 1.600000,
+        ];
+        const BNB_MSE: f32 = 0.007_377_79;
+
+        // apr pure-Rust NF4 blockwise round-trip on the same input.
+        let mut packed = vec![0u8; (x.len() + 1) / 2];
+        let mut absmax = vec![0f32; 1]; // 64 elems / blocksize 64 = 1 block
+        quantize_blockwise(&x, 64, &mut packed, &mut absmax);
+        let mut apr_recon = vec![0f32; x.len()];
+        dequantize_blockwise(&packed, &absmax, 64, &mut apr_recon);
+
+        // (1) Numerical equivalence to bitsandbytes — element-wise.
+        let max_abs_diff = apr_recon
+            .iter()
+            .zip(bnb_recon.iter())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0_f32, f32::max);
+        assert!(
+            max_abs_diff < 1e-3,
+            "NF4 NOT equivalent to bitsandbytes: max|apr-bnb|={max_abs_diff:.6} (expected ~0; \
+             same LUT + blockwise-absmax convention). apr_recon[..4]={:?}",
+            &apr_recon[..4]
+        );
+
+        // (2) Round-trip MSE matches bnb's (quality parity, not approximation).
+        let apr_mse: f32 =
+            x.iter().zip(apr_recon.iter()).map(|(a, b)| (a - b).powi(2)).sum::<f32>()
+                / x.len() as f32;
+        assert!(
+            (apr_mse - BNB_MSE).abs() < 1e-4,
+            "apr NF4 MSE {apr_mse:.6} != bitsandbytes MSE {BNB_MSE:.6} (must be quality-equivalent)"
+        );
+
+        println!(
+            "BEAT-NF4-EQUIVALENCE: apr≡bitsandbytes — max|Δrecon|={max_abs_diff:.2e}, apr_MSE={apr_mse:.6} vs bnb_MSE={BNB_MSE:.6}"
+        );
+    }
 }

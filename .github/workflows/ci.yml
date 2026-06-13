@@ -247,7 +247,7 @@ jobs:
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
             "$IMAGE" \
-            bash -c 'cargo test -p aprender-core --test monorepo_invariants && cargo test -p aprender-core --test readme_contract && cargo test -p apr-cli --test cli_commands && cargo test -p aprender-core --test beat_sklearn_iris && cargo test -p aprender-serve --test beat_fail_closed_garbage'
+            bash -c 'cargo test -p aprender-core --test monorepo_invariants && cargo test -p aprender-core --test readme_contract && cargo test -p apr-cli --test cli_commands && cargo test -p aprender-core --test beat_sklearn_iris && cargo test -p aprender-serve --test beat_fail_closed_garbage && cargo test -p aprender-compute --lib beat_nf4_bitsandbytes_equivalence'
       - name: Build.rs crate-root escape check (v0.31.1 yank guard)
         # Static Poka-Yoke: flags build.rs files that panic on files outside
         # CARGO_MANIFEST_DIR, which break `cargo install` from crates.io.
