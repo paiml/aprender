@@ -97,6 +97,58 @@ pub struct Beat {
     pub ci_gate_name: String,
 }
 
+/// The outcome of evaluating a measured value against a [`Beat`]'s pinned
+/// threshold — the falsifiable verdict at the heart of `apr beat-run`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BeatOutcome {
+    /// aprender meets-or-beats the incumbent: measured is on the winning side of
+    /// `beat_threshold` per `direction`.
+    Won,
+    /// aprender regressed below the pinned threshold — CI must fail.
+    Regressed,
+}
+
+impl Beat {
+    /// Evaluate a measured value against this beat's pinned `beat_threshold`,
+    /// honoring `direction`:
+    /// - `higher_is_better` ⇒ `Won` iff `measured >= beat_threshold`
+    /// - `lower_is_better`  ⇒ `Won` iff `measured <= beat_threshold`
+    ///
+    /// Returns `None` when the contract is too malformed to judge (no
+    /// `beat_threshold`, a non-finite threshold/measurement, or an unknown
+    /// `direction`) — the caller should treat that as a hard error, not a pass.
+    /// The validator's BEAT-004/BEAT-005 rules reject such contracts up front,
+    /// so a well-formed contract always yields `Some`.
+    #[must_use]
+    pub fn evaluate(&self, measured: f64) -> Option<BeatOutcome> {
+        let threshold = self.beat_threshold?;
+        if !threshold.is_finite() || !measured.is_finite() {
+            return None;
+        }
+        match self.direction.trim() {
+            "higher_is_better" => Some(if measured >= threshold {
+                BeatOutcome::Won
+            } else {
+                BeatOutcome::Regressed
+            }),
+            "lower_is_better" => Some(if measured <= threshold {
+                BeatOutcome::Won
+            } else {
+                BeatOutcome::Regressed
+            }),
+            _ => None,
+        }
+    }
+
+    /// Convenience: `true` iff [`evaluate`](Self::evaluate) returns
+    /// [`BeatOutcome::Won`]. A malformed contract (`None`) is **not** a win.
+    #[must_use]
+    pub fn is_won(&self, measured: f64) -> bool {
+        self.evaluate(measured) == Some(BeatOutcome::Won)
+    }
+}
+
 impl Contract {
     /// Back-compat: `metadata.registry: true` OR `metadata.kind: registry`.
     pub fn is_registry(&self) -> bool {
