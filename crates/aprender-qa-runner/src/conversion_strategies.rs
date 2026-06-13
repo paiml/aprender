@@ -423,8 +423,9 @@ fn convert_to_format(
         Format::Apr => "apr",
     };
 
-    // Create target path with new extension (format determined by extension)
-    let target_path = source_path.with_extension(format!("converted.{target_ext}"));
+    // Create target path with new extension (format determined by extension).
+    // PMAT-743: idempotent — never compound `.converted` on re-conversion.
+    let target_path = converted_output_path(source_path, target_ext);
 
     // Use apr rosetta convert: apr rosetta convert <SOURCE> <TARGET>
     // Format is inferred from output file extension

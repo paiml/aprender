@@ -218,4 +218,61 @@ mod forward_error_tests {
         assert!(result.passed, "skipped gates count as passed");
         assert!(result.message.contains("Non-GGUF"), "got: {}", result.message);
     }
+
+    // ========================================================================
+    // PMAT-743: format-parity discovery must ignore apr's own conversion
+    // artifacts (`*.converted*.safetensors`) — they are circular references,
+    // not independent SafeTensors, and are frequently stale / double-converted.
+    // ========================================================================
+
+    #[test]
+    fn synthetic_artifact_detection() {
+        assert!(is_synthetic_conversion_artifact("m-q4_k_m.converted.safetensors"));
+        assert!(is_synthetic_conversion_artifact(
+            "m-q4_k_m.converted.converted.safetensors"
+        ));
+        // Genuine HF SafeTensors never contain a `.converted.` segment.
+        assert!(!is_synthetic_conversion_artifact("model.safetensors"));
+        assert!(!is_synthetic_conversion_artifact(
+            "model-00001-of-00002.safetensors"
+        ));
+        assert!(!is_synthetic_conversion_artifact("qwen2.5-coder.safetensors"));
+    }
+
+    #[test]
+    fn snapshot_discovery_prefers_genuine_over_converted() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = dir.path();
+        // A genuine shard alongside two synthetic conversion artifacts.
+        for name in [
+            "model-00001-of-00002.safetensors",
+            "m-q4_k_m.converted.safetensors",
+            "m-q4_k_m.converted.converted.safetensors",
+        ] {
+            std::fs::write(p.join(name), b"x").expect("write");
+        }
+        let found = super::find_safetensors_in_snapshot(p).expect("a genuine shard exists");
+        assert_eq!(
+            found.file_name().unwrap().to_str().unwrap(),
+            "model-00001-of-00002.safetensors",
+            "must pick the genuine shard, never a .converted artifact"
+        );
+    }
+
+    #[test]
+    fn snapshot_discovery_skips_when_only_converted_artifacts() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = dir.path();
+        // Only synthetic artifacts exist (GGUF-only model whose cache was polluted).
+        for name in [
+            "m-q4_k_m.converted.safetensors",
+            "m-q4_k_m.converted.converted.safetensors",
+        ] {
+            std::fs::write(p.join(name), b"x").expect("write");
+        }
+        assert!(
+            super::find_safetensors_in_snapshot(p).is_none(),
+            "must find NO independent reference (artifacts ignored), not pick a circular one"
+        );
+    }
 }

@@ -484,7 +484,8 @@ impl ConversionExecutor {
     ) {
         for (source, target) in all_conversion_pairs() {
             let target_ext = format_extension(target);
-            let converted_path = model_path.with_extension(format!("converted.{target_ext}"));
+            // PMAT-743: must match the writer's idempotent path scheme.
+            let converted_path = converted_output_path(model_path, target_ext);
             if !converted_path.exists() {
                 continue;
             }

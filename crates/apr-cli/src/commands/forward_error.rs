@@ -12,6 +12,22 @@ fn strip_quant_suffix(stem: &str) -> &str {
         .trim_end_matches("-f32")
 }
 
+/// True if `filename` is one of apr's OWN conversion outputs
+/// (`<x>.converted.safetensors`, `<x>.converted.converted.safetensors`, …) rather
+/// than an INDEPENDENT SafeTensors reference (PMAT-743).
+///
+/// The format-parity gate compares a GGUF forward pass against an *independent*
+/// SafeTensors forward pass. A SafeTensors that was itself converted FROM the GGUF
+/// under test is a circular reference — comparing a model against a derivative of
+/// itself proves nothing — and in practice these artifacts are frequently stale or
+/// double-converted (`.converted.converted.…`, see the qa-runner idempotency fix),
+/// so converting them back fails with a confusing "conversion failed" message.
+/// Discovery must skip them; genuine HF SafeTensors use `-`/`model-NNNNN-of-NNNNN`
+/// naming and never contain a `.converted.` segment.
+fn is_synthetic_conversion_artifact(filename: &str) -> bool {
+    filename.contains(".converted.")
+}
+
 /// Strategy 2 helper: find a SafeTensors entry point in a sharded model directory.
 /// Returns the first shard (sorted) for sharded models. The format parity gate
 /// handles converter failures for sharded models gracefully.
@@ -27,7 +43,10 @@ fn find_sharded_safetensors(dir: &Path) -> Option<std::path::PathBuf> {
         .filter_map(|entry| {
             let name = entry.file_name();
             let name_str = name.to_string_lossy().to_string();
-            if name_str.ends_with(".safetensors") && name_str != "model.safetensors" {
+            if name_str.ends_with(".safetensors")
+                && name_str != "model.safetensors"
+                && !is_synthetic_conversion_artifact(&name_str)
+            {
                 Some(entry.path())
             } else {
                 None
@@ -66,7 +85,10 @@ fn find_safetensors_in_snapshot(snap_path: &Path) -> Option<std::path::PathBuf> 
         .filter_map(|f| {
             let fname = f.file_name();
             let name = fname.to_string_lossy();
-            if name.ends_with(".safetensors") && name != "model.safetensors" {
+            if name.ends_with(".safetensors")
+                && name != "model.safetensors"
+                && !is_synthetic_conversion_artifact(&name)
+            {
                 Some(f.path())
             } else {
                 None
@@ -430,11 +452,19 @@ fn run_safetensors_forward(
     let model = match transformer {
         Ok(t) => t,
         Err(e) => {
-            let msg = format!("{e}");
-            if msg.contains("Tensor not found") || msg.contains("not supported") {
-                return Err(ForwardError::ConversionFailed(safetensors_path.display().to_string()));
-            }
-            return Err(ForwardError::Cli(CliError::ValidationFailed(format!("SafeTensors convert failed: {e}"))));
+            // PMAT-743: ANY failure to load/convert the REFERENCE SafeTensors means
+            // the parity comparison cannot run — that is a graceful GATE failure with
+            // an actionable message, NEVER a hard crash of `apr qa`. Previously only
+            // "Tensor not found"/"not supported" were handled gracefully; other
+            // errors (e.g. a corrupt reference whose down_proj is all zeros, caught
+            // by F-DATA-QUALITY-001) propagated as a hard CliError and aborted the
+            // whole `apr qa` run (exit 5). The diagnostic tool must survive a bad
+            // reference and report it, not die. The error detail is preserved so the
+            // user knows WHY (missing tensor, unsupported arch, corrupt weights, …).
+            return Err(ForwardError::ConversionFailed(format!(
+                "{} ({e})",
+                safetensors_path.display()
+            )));
         }
     };
 
