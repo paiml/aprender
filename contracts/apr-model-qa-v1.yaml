@@ -1,10 +1,21 @@
 metadata:
-  version: 1.5.0
+  version: 1.6.0
   created: '2026-04-04'
-  updated: '2026-06-13'
+  updated: '2026-06-14'
   author: PAIML Engineering
   registry: true
   description: >
+    v1.6.0 (2026-06-14): PMAT-748 — performance_regression gate noise-robustness.
+    The gate compared current-vs-baseline throughput/ollama_parity/gpu_speedup at one
+    tight threshold (10%); raw ABSOLUTE throughput (tok/s) swings ~13% run-to-run on a
+    shared GPU (load/thermal/concurrent jobs), so it false-failed `apr qa` on
+    environment noise (observed: 409.6 -> 367.8 = 10.2% flagged). Fix: per-metric
+    thresholds — RATIO metrics (ollama_parity, gpu_speedup, measured same-run → cancel
+    env variance) keep the tight gate; raw throughput gets a wider band (2.5×, floored
+    25%) so it catches catastrophic regressions (e.g. a decode hot-path win reverting)
+    without flaking on noise. FALSIFY-QA-PERFREG-748 + a no-flaky-gate invariant.
+    Unit falsifier: gpu_isolation_result.rs pmat748_perf_regression_gate_tests.
+
     v1.5.0 (2026-06-13): PMAT-743 — format-parity gate robustness. Added
     FALSIFY-QA-FMTPARITY-743 + a discovery-robustness invariant. The gate's
     SafeTensors auto-discovery picked up apr's OWN conversion artifacts
@@ -287,6 +298,22 @@ proof_obligations:
     status: sorry
 - type: invariant
   property: >
+    PMAT-748: the performance_regression gate uses per-metric thresholds — same-run
+    RATIO metrics (ollama_parity, gpu_speedup) keep the tight base threshold (they
+    cancel environment variance), while ABSOLUTE throughput uses a wider band
+    (2.5×, floored 25%) so normal GPU tok/s noise (~10-15%) never false-fails the gate
+    but a catastrophic throughput regression (e.g. >25%) still does. A flaky quality
+    gate in the primary diagnostic tool is a defect.
+  formal: |
+    throughput_regression_threshold(base) == max(base*2.5, 0.25)
+    AND regression(throughput, ~10%) => pass  AND  regression(throughput, >25%) => fail
+    AND regression(ratio_metric, >base) => fail
+  applies_to: performance_regression_gate
+  lean:
+    theorem: Theorems.PerfRegressionGateNoiseRobust
+    status: sorry
+- type: invariant
+  property: >
     PMAT-743: format-parity discovery ignores apr's own conversion artifacts
     (`*.converted*.safetensors`) — they are circular references, never independent
     ones — and a reference that cannot be loaded/converted (missing tensor,
@@ -432,6 +459,26 @@ falsification_tests:
     repeatable. Forbid merging any release-blocking PR until fixed.
   spec_reference: ship-two-models-spec.md §12.1, §12.5
   ship_blocking: true
+- id: FALSIFY-QA-PERFREG-748
+  rule: >
+    the performance_regression gate tolerates GPU throughput noise but catches real
+    regressions — per-metric thresholds (wide for absolute throughput, tight for
+    same-run ratios)
+  prediction: |
+    (a) throughput_regression_threshold(0.10) == 0.25 (wider than the 0.10 ratio gate).
+    (b) a ~10% throughput drop (409.6 -> 367.8, real RTX-4090 run-to-run noise) does
+        NOT fire the gate (no false fail).
+    (c) a >25% throughput drop (400 -> 180) DOES fire (catastrophic regression caught).
+    (d) a >10% ollama_parity drop (1.37 -> 1.20) DOES fire at the tight ratio gate (a
+        same-run ratio regression is real, not noise).
+    Pre-fix, `apr qa` false-failed on (b) because all metrics shared the 10% threshold.
+  test: "cargo test -p apr-cli --lib pmat748_perf_regression_gate_tests"
+  if_fails: |
+    Either `apr qa` flakes on GPU throughput noise (a flaky gate in the primary
+    diagnostic tool — false NO-GO), or a real perf/ratio regression slips through
+    (silent degradation, the Bug-206 class this gate exists to catch).
+  spec_reference: PMAT-748
+  ship_blocking: false
 - id: FALSIFY-QA-FMTPARITY-743
   rule: >
     format-parity discovery ignores synthetic `.converted` artifacts and the gate
