@@ -326,6 +326,17 @@ pub enum Commands {
         #[arg(value_name = "FILE")]
         file: PathBuf,
     },
+    /// Evaluate a BeatBenchmark contract against a measured value (PMAT-741)
+    #[command(name = "beat-run")]
+    BeatRun {
+        /// Path to a beat-benchmark contract YAML (e.g. contracts/beat-sklearn-iris-v1.yaml)
+        #[arg(value_name = "CONTRACT")]
+        contract: PathBuf,
+        /// Measured metric value; when given, emit a WON/REGRESSED verdict and
+        /// exit non-zero on regression. Omit to just report the pinned baseline.
+        #[arg(long, value_name = "VALUE")]
+        measured: Option<f64>,
+    },
     /// Emit a SHA-256 manifest of input files (CRUX-G-05)
     Manifest {
         /// Files to include in the manifest (one entry per file)

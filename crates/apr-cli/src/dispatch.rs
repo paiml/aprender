@@ -242,6 +242,10 @@ fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             crate::pipe::with_stdin_support(file, |p| lint::run(p, j, q))
         }
 
+        Commands::BeatRun { contract, measured } => {
+            commands::beat_run::run(contract, *measured, cli.json)
+        }
+
         Commands::Manifest { files, output } => {
             // CRUX-G-05 — SHA-256 manifest of the input file set.
             commands::manifest::run(files, output, cli.json)

@@ -94,6 +94,12 @@ commands:
     requires_model: true
     side_effects: []
 
+  - name: beat-run
+    category: inspection
+    description: "Evaluate a BeatBenchmark contract against a measured value (PMAT-741)"
+    requires_model: false
+    side_effects: []
+
   - name: manifest
     category: model_ops
     description: "Emit SHA-256 manifest of input files (CRUX-G-05)"
