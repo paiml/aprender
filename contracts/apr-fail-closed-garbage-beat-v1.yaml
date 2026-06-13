@@ -1,0 +1,46 @@
+contract: apr-fail-closed-garbage-beat
+metadata:
+  kind: beat-benchmark
+  version: "1.0.0"
+  description: >
+    Pillar-4 CORRECTNESS beat (PMAT-744): aprender provably refuses to load a
+    semantically-broken model artifact; the incumbents (llama.cpp / Ollama)
+    silently accept and run it. This is the mission's HEADLINE Pillar-4 beat —
+    apr concedes raw CPU decode throughput but wins on "we provably never ship
+    garbage; they provably do." A tensor that PARSES (valid magic/shape/dtype)
+    but is semantically dead — all-zero, NaN, Inf, effectively-empty (L2~0), or
+    constant — is rejected by apr's Poka-Yoke validation (PMAT-234/235,
+    F-DATA-QUALITY-001..004), while llama.cpp loads it with zero error lines.
+    Measured 2026-06-13 (RTX 4090): a copy of qwen2.5-coder-1.5b-instruct-q4_k_m
+    GGUF with blk.0.ffn_down.weight zeroed → `apr validate` FAILs the tensor
+    ([F-DATA-QUALITY-001] all zero + [F-DATA-QUALITY-003] L2~0/constant);
+    `llama-cli` on the SAME file reported 0 load-error lines and ran it.
+  references:
+  - "crates/aprender-serve/tests/beat_fail_closed_garbage.rs"
+  - "crates/aprender-serve/src/safetensors/validation.rs (validate_weight/validate_embedding, F-DATA-QUALITY-001..004)"
+  - "evidence/pillar4-fail-closed-2026-06-13/findings.md"
+  - "garbage-oracle-v1.yaml (sibling: OUTPUT-garbage oracle; this contract is INPUT-artifact fail-closed)"
+version: 1
+status: enforced
+date: 2026-06-13
+
+# Beat-benchmark parameters (incumbent baseline measured; CI fails on regression).
+beat:
+  pillar: 4
+  incumbent: "llama.cpp / Ollama"
+  incumbent_pinned: "2026-06-13 — llama-cli (CUDA build) loaded a zeroed-ffn GGUF with 0 load-error lines"
+  canonical_task: >
+    Present N classes of structurally-valid but semantically-broken tensors
+    (all-zero, >80% zero, NaN, Inf, L2~0, shape-mismatch weights; all-zero,
+    constant, NaN, dead-token embeddings). A fail-closed loader must REJECT every
+    one. apr's validate_weight/validate_embedding reject all N (and accept a
+    healthy tensor — no false positive); llama.cpp/Ollama perform no such semantic
+    gate and reject 0.
+  metric: broken_artifact_classes_rejected
+  direction: higher_is_better
+  baseline_value: 0           # incumbents (llama.cpp/Ollama) reject 0 broken classes
+  baseline_floor: 0
+  beat_threshold: 10          # apr must reject ALL 10 broken classes (6 weight + 4 embedding)
+  baseline_sourced_date: "2026-06-13"
+  approved_compute: CPU       # the apr-side gate is CPU-deterministic
+  ci_gate_name: "beat_fail_closed_garbage"   # crates/aprender-serve/tests/beat_fail_closed_garbage.rs

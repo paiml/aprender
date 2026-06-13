@@ -51,7 +51,15 @@ so it wins **matmul-bound** tasks (normal-equations regression) and concedes
 
 | Beat | Metric | Result | Gate |
 |------|--------|--------|------|
+| **Fail-closed correctness** (headline) | broken-artifact classes rejected | ✅ **WON** — apr rejects **10/10** semantically-broken tensor classes (zero/NaN/Inf/L2~0/constant/shape) fail-closed; **llama.cpp accepts** the same (measured: zeroed-ffn GGUF → `apr validate` ✗ FAIL, `llama-cli` 0 errors + ran it) | CI `beat_fail_closed_garbage` · `apr-fail-closed-garbage-beat-v1` |
 | Decode throughput | tok/s ratio (RTX-4090) | 📊 **TRACKING** — apr **1.23× faster** (apr ~405 vs ollama 330 tok/s, same qwen2.5-coder-1.5b Q4_K_M GGUF, steady-state decode; `apr qa` Ollama-Parity 1.37) | — |
+
+**Headline beat — "we provably never ship garbage; they provably do":** a model that
+*parses* but is *semantically* dead (all-zero / NaN / Inf weights) loads and runs in
+llama.cpp/Ollama with exit 0 and no warning; apr's Poka-Yoke validation
+(F-DATA-QUALITY-001..004) rejects it. Measured head-to-head 2026-06-13 in
+`evidence/pillar4-fail-closed-2026-06-13/`. This is apr's structural win where it
+concedes raw decode speed — correctness is the wedge none of the four incumbents have.
 
 **PMAT-742 (unblocks Pillar 4):** the default `apr run --gpu` was silently 8 tok/s — its
 CUDA first-token parity gate false-rejected the correct fast path (a single BOS-only probe
