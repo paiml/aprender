@@ -388,16 +388,28 @@ fn log_cpu_backend(verbose: bool, is_legacy: bool) {
 
 /// F2-FIX: Validate GPU output by comparing first predicted token with CPU.
 ///
-/// Uses a single BOS token (not the full prompt) to test kernel correctness.
-/// The Q6K kernel bug is dimension-dependent, not prompt-dependent, so a
-/// single-token probe is sufficient and avoids O(n) CPU prefill overhead.
+/// Validates the GPU's first generated token against the CPU's prediction for the
+/// SAME probe context, to catch a garbage GPU path (e.g. PMAT-216 transposed
+/// weights) before committing to a full GPU generation.
 ///
-/// Uses the CUDA model's inner model reference to avoid requiring a separate model clone.
-/// Skip with SKIP_PARITY_GATE=1 (same env var as the cosine parity gate).
+/// PMAT-742: prefer the REAL prompt (`probe_context`) over a synthetic BOS token.
+/// A single BOS-only probe has no context, so its next-token distribution is
+/// near-flat — the top tokens are nearly tied and tiny CPU/GPU FP/quant
+/// differences flip the argmax. Hard argmax-equality on that degenerate probe
+/// FALSE-rejects a CORRECT GPU path and forces a ~50x-slower CPU fallback
+/// (measured: 421 -> 8 tok/s on RTX 4090, qwen2.5-coder-1.5b Q4_K_M; `apr qa`
+/// independently confirms the GPU path is correct via Golden-Output + Ollama-
+/// Parity gates). With real context the first-token distribution is peaked, so
+/// CPU and GPU agree (verified: both backends emit the same first token on a
+/// coder prompt), while genuine GPU garbage still mismatches deep in CPU's tail.
+/// When no prompt is available (batch model-init) it falls back to the BOS probe.
+///
+/// Skip entirely with SKIP_PARITY_GATE=1 (same env var as the cosine parity gate).
 #[cfg(feature = "cuda")]
 fn validate_gpu_first_token(
     cuda_model: &mut crate::gguf::OwnedQuantizedModelCuda,
     gen_config: &crate::gguf::QuantizedGenerateConfig,
+    probe_context: &[u32],
 ) -> bool {
     use crate::gguf::OwnedQuantizedKVCache;
 
@@ -413,26 +425,39 @@ fn validate_gpu_first_token(
 
     let model = cuda_model.model();
 
-    // BOS token flows from GGUF metadata → GGUFConfig → here.
-    // GGUFConfig::from_gguf() applies architecture-default fallback for weights-only GGUFs.
-    // If BOS is STILL unknown (e.g., phi architecture), skip validation.
-    let bos_id = match model.config.bos_token_id {
-        Some(id) => id,
-        None => {
-            eprintln!("[F2-VALIDATION] BOS token unknown — skipping GPU validation");
-            return true;
-        },
+    // Build the probe: real prompt context (peaked distribution) when available,
+    // else the BOS token (batch model-init has no prompt yet). Cap the context to
+    // bound the one-time CPU prefill cost. BOS flows from GGUF metadata; if it is
+    // unknown for a context-less probe there is nothing to validate against.
+    const PROBE_MAX_CTX: usize = 64;
+    let probe: Vec<u32> = if probe_context.is_empty() {
+        match model.config.bos_token_id {
+            Some(id) => vec![id],
+            None => {
+                eprintln!("[F2-VALIDATION] no prompt context and BOS unknown — skipping GPU validation");
+                return true;
+            },
+        }
+    } else {
+        let start = probe_context.len().saturating_sub(PROBE_MAX_CTX);
+        probe_context[start..].to_vec()
     };
-    let probe_token: &[u32] = &[bos_id];
 
     let kv_dim = model.config.num_kv_heads * (model.config.hidden_dim / model.config.num_heads);
     let num_layers = model.config.num_layers;
 
-    // CPU forward pass for reference
-    let mut cpu_cache = OwnedQuantizedKVCache::new(num_layers, kv_dim, 2);
-    let cpu_logits = match model.forward_single_with_cache(probe_token[0], &mut cpu_cache, 0) {
-        Ok(logits) => logits,
-        Err(_) => return true, // CPU forward failed — can't validate, assume GPU is fine
+    // CPU reference: forward the whole probe, keep the logits after the last token.
+    let mut cpu_cache = OwnedQuantizedKVCache::new(num_layers, kv_dim, probe.len().max(2));
+    let mut cpu_logits = None;
+    for (pos, &tok) in probe.iter().enumerate() {
+        match model.forward_single_with_cache(tok, &mut cpu_cache, pos) {
+            Ok(logits) => cpu_logits = Some(logits),
+            Err(_) => return true, // CPU forward failed — can't validate, assume GPU is fine
+        }
+    }
+    let cpu_logits = match cpu_logits {
+        Some(l) => l,
+        None => return true,
     };
 
     let cpu_argmax = cpu_logits
@@ -441,27 +466,117 @@ fn validate_gpu_first_token(
         .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
         .map_or(0, |(i, _)| i as u32);
 
-    // GPU: generate 1 token from same BOS probe
+    // GPU: generate 1 token from the SAME probe context.
     let gpu_first_config = crate::gguf::QuantizedGenerateConfig {
         max_tokens: 1,
         temperature: 0.0,
         top_k: 1,
         ..gen_config.clone()
     };
-    match cuda_model.generate_gpu_resident(probe_token, &gpu_first_config) {
-        Ok(gpu_tokens) if gpu_tokens.len() > 1 => {
-            let gpu_first = gpu_tokens[1];
-            if gpu_first == cpu_argmax {
+    match cuda_model.generate_gpu_resident(&probe, &gpu_first_config) {
+        Ok(gpu_tokens) if gpu_tokens.len() > probe.len() => {
+            let gpu_first = gpu_tokens[probe.len()];
+            // First-token argmax can tip on a genuine FP/quant near-tie even with
+            // real context. Accept an exact match or a near-tie in CPU's own logit
+            // space; reject real divergence (GPU garbage lands deep in CPU's tail).
+            let rel_gap = cpu_logit_rel_gap(&cpu_logits, cpu_argmax, gpu_first);
+            if gpu_probe_token_acceptable(&cpu_logits, cpu_argmax, gpu_first) {
+                if gpu_first != cpu_argmax {
+                    eprintln!(
+                        "[F2-VALIDATION] GPU token {gpu_first} != CPU argmax {cpu_argmax} but near-tie (rel_gap={rel_gap:.4} <= {GPU_PROBE_NEAR_TIE_REL_GAP}) on {}-token probe — accepting GPU path",
+                        probe.len()
+                    );
+                }
                 true
             } else {
                 eprintln!(
-                    "[F2-VALIDATION] GPU token {} != CPU token {} for BOS probe — falling back to CPU",
-                    gpu_first, cpu_argmax
+                    "[F2-VALIDATION] GPU token {gpu_first} != CPU token {cpu_argmax}; rel_gap={rel_gap:.4} > {GPU_PROBE_NEAR_TIE_REL_GAP} on {}-token probe — real divergence, falling back to CPU",
+                    probe.len()
                 );
                 false
             }
         },
         Ok(_) => true,
         Err(_) => false,
+    }
+}
+
+/// Max relative position (within CPU's logit min..max range) at which a GPU-chosen
+/// token still counts as a harmless FP/quant near-tie. Real GPU/CPU divergence
+/// (PMAT-216 garbage) lands a token deep in CPU's tail (rel_gap -> ~1.0), far above
+/// this, so it is still rejected. See PMAT-742.
+pub(crate) const GPU_PROBE_NEAR_TIE_REL_GAP: f32 = 0.15;
+
+/// Relative position of `token` within CPU's [min, max] logit range
+/// (0.0 = CPU's top token, 1.0 = CPU's least-likely token). Pure + GPU-free.
+pub(crate) fn cpu_logit_rel_gap(cpu_logits: &[f32], cpu_argmax: u32, token: u32) -> f32 {
+    let cpu_max = cpu_logits[cpu_argmax as usize];
+    let cpu_min = cpu_logits.iter().copied().fold(f32::INFINITY, f32::min);
+    let at = cpu_logits
+        .get(token as usize)
+        .copied()
+        .unwrap_or(f32::NEG_INFINITY);
+    let range = (cpu_max - cpu_min).max(f32::MIN_POSITIVE);
+    (cpu_max - at) / range
+}
+
+/// PMAT-742 parity decision: is the GPU's first probe token acceptable against
+/// CPU's reference logits? True for an exact argmax match or a genuine near-tie
+/// (GPU token within [`GPU_PROBE_NEAR_TIE_REL_GAP`] of the top of CPU's logit
+/// range); false for real divergence (GPU token deep in CPU's tail — PMAT-216
+/// garbage). Pure + GPU-free so the gate's logic is unit-testable without CUDA.
+pub(crate) fn gpu_probe_token_acceptable(cpu_logits: &[f32], cpu_argmax: u32, gpu_first: u32) -> bool {
+    gpu_first == cpu_argmax
+        || cpu_logit_rel_gap(cpu_logits, cpu_argmax, gpu_first) <= GPU_PROBE_NEAR_TIE_REL_GAP
+}
+
+#[cfg(test)]
+mod pmat742_parity_gate_tests {
+    use super::{cpu_logit_rel_gap, gpu_probe_token_acceptable, GPU_PROBE_NEAR_TIE_REL_GAP};
+
+    // A near-flat distribution (degenerate BOS-style probe): the top few tokens are
+    // nearly tied, so a CPU/GPU argmax flip among them must be ACCEPTED — this is the
+    // PMAT-742 false-positive that previously forced a ~50x-slower CPU fallback.
+    const NEAR_FLAT: [f32; 6] = [10.00, 9.99, 9.98, 9.97, 1.00, 0.50];
+
+    #[test]
+    fn near_tie_argmax_flip_is_accepted() {
+        // CPU argmax = 0; GPU picked token 1 (the next-highest, essentially tied).
+        let rel_gap = cpu_logit_rel_gap(&NEAR_FLAT, 0, 1);
+        assert!(rel_gap <= GPU_PROBE_NEAR_TIE_REL_GAP, "rel_gap {rel_gap} should be a near-tie");
+        assert!(gpu_probe_token_acceptable(&NEAR_FLAT, 0, 1));
+        // token 3 is also within the near-tied cluster → accepted.
+        assert!(gpu_probe_token_acceptable(&NEAR_FLAT, 0, 3));
+    }
+
+    #[test]
+    fn exact_argmax_match_is_accepted() {
+        assert!(gpu_probe_token_acceptable(&NEAR_FLAT, 0, 0));
+        // Even on a peaked distribution an exact match always passes.
+        let peaked = [20.0_f32, 1.0, 0.5, 0.1];
+        assert!(gpu_probe_token_acceptable(&peaked, 0, 0));
+    }
+
+    #[test]
+    fn real_divergence_is_rejected() {
+        // PMAT-216-style garbage: GPU picks a token CPU ranks at the very bottom.
+        // On a PEAKED distribution this lands deep in the tail → rejected.
+        let peaked = [20.0_f32, 5.0, 0.5, 0.0];
+        let rel_gap = cpu_logit_rel_gap(&peaked, 0, 3); // token 3 = CPU min
+        assert!(rel_gap > GPU_PROBE_NEAR_TIE_REL_GAP, "tail token rel_gap {rel_gap} must exceed tolerance");
+        assert!(!gpu_probe_token_acceptable(&peaked, 0, 3));
+    }
+
+    #[test]
+    fn rel_gap_endpoints_are_zero_and_one() {
+        let logits = [3.0_f32, 2.0, 1.0, 0.0];
+        assert!((cpu_logit_rel_gap(&logits, 0, 0) - 0.0).abs() < 1e-6); // top
+        assert!((cpu_logit_rel_gap(&logits, 0, 3) - 1.0).abs() < 1e-6); // bottom
+    }
+
+    #[test]
+    fn out_of_range_gpu_token_is_rejected() {
+        // A garbage token id outside the logit vector must never be accepted.
+        assert!(!gpu_probe_token_acceptable(&NEAR_FLAT, 0, 9999));
     }
 }

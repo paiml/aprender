@@ -300,7 +300,7 @@ fn try_gguf_gpu_generate(
         );
     }
 
-    if !validate_gpu_first_token(&mut cuda_model, gen_config) {
+    if !validate_gpu_first_token(&mut cuda_model, gen_config, input_tokens) {
         // Validation failed — extract model back for CPU fallback
         return Err(Box::new(cuda_model.into_model()));
     }
@@ -817,7 +817,7 @@ fn try_apr_cuda_inference(
     };
 
     eprintln!("[GH-480] F2 validation starting...");
-    if !validate_gpu_first_token(&mut cuda_model, &gen_config) {
+    if !validate_gpu_first_token(&mut cuda_model, &gen_config, input_tokens) {
         eprintln!("[GH-480] F2 validation FAILED — falling back to CPU");
         return None;
     }
