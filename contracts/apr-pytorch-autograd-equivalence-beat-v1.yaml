@@ -1,0 +1,43 @@
+contract: apr-pytorch-autograd-equivalence-beat
+metadata:
+  kind: beat-benchmark
+  version: "1.0.0"
+  description: >
+    Pillar-2 (PyTorch) CORRECTNESS beat (PMAT-746): aprender's reverse-mode autograd
+    computes gradients NUMERICALLY EQUIVALENT to PyTorch on a fixed 2-layer MLP. apr
+    concedes raw MLP training THROUGHPUT to PyTorch (~11× slower — MKL + fused
+    autograd vs apr's per-step graph rebuild; see docs/BEATS.md Pillar-2 CONCEDED).
+    Its defensible Pillar-2 win is the same wedge as P3/P4: provable correctness —
+    apr's training math is a faithful, contract-gated replacement, not an
+    approximation. Also hard-guards the #2000 Linear weight-gradient-path fix against
+    silent regression (a broken backward would diverge from the pinned PyTorch grads).
+    Measured 2026-06-13 (uv run --with torch) on relu(x@W1^T+b1)@W2^T+b2 with MSELoss
+    (mean): apr matches every parameter gradient to max|Δ|=5.0e-7 (dW1/db1/dW2/db2),
+    forward loss 0.100079 == PyTorch.
+  references:
+  - "crates/aprender-core/tests/beat_pytorch_autograd_grad.rs"
+  - "crates/aprender-core/src/nn/linear.rs (live-transpose weight grad path, #2000)"
+  - "evidence/pillar2-autograd-equivalence-2026-06-13/findings.md"
+version: 1
+status: enforced
+date: 2026-06-13
+
+# Beat-benchmark parameters (PyTorch reference pinned; CI fails on divergence).
+beat:
+  pillar: 2
+  incumbent: "PyTorch (torch.autograd)"
+  incumbent_pinned: "2026-06-13 via uv run --with torch (MSELoss mean, fixed 2-layer MLP)"
+  canonical_task: >
+    Reverse-mode gradients of a fixed 2-layer MLP relu(x@W1^T+b1)@W2^T+b2 under
+    MSELoss (mean reduction) on fixed inputs/weights. apr's autograd
+    (backward + get_grad) gradients for W1,b1,W2,b2 are compared element-wise against
+    the pinned PyTorch reference; the metric is the max absolute per-element gradient
+    difference apr vs PyTorch across all parameters.
+  metric: grad_max_abs_diff_vs_pytorch
+  direction: lower_is_better
+  baseline_value: 0.0000      # PyTorch is the reference (0 diff from itself)
+  baseline_floor: 0.0000005   # measured apr-vs-PyTorch max|Δgrad| ≈ 5.0e-7
+  beat_threshold: 0.0001      # apr must stay <= 1e-4 of PyTorch (equivalence); measured ~5e-7
+  baseline_sourced_date: "2026-06-13"
+  approved_compute: CPU
+  ci_gate_name: "beat_pytorch_autograd_grad"

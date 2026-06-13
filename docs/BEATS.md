@@ -37,8 +37,8 @@ so it wins **matmul-bound** tasks (normal-equations regression) and concedes
 
 | Beat | Metric | Result | Gate |
 |------|--------|--------|------|
+| **Autograd gradient equivalence** | max \|apr_grad − pytorch_grad\| | ✅ **WON** (PMAT-746) — apr's reverse-mode autograd ≡ PyTorch on a fixed 2-layer MLP (max \|Δ\|=**5.0e-7**, forward loss parity); the provable-correctness win where apr concedes training speed | CI `beat_pytorch_autograd_grad` · `apr-pytorch-autograd-equivalence-beat-v1` |
 | 2-layer MLP training time | wall-clock ratio + MSE ≤ 0.05 | ⚖️ **CONCEDED** (PMAT-725) — apr ~11× *slower* (PyTorch MKL + fused autograd; apr training is correct after #2000 but autograd Tensor ops don't use the SIMD Matrix path) | — |
-| Autograd gradient correctness | analytic vs finite-diff | 📊 **TRACKING** (needs relative-tolerance gate) | — |
 
 ## Pillar 3 — Unsloth
 
