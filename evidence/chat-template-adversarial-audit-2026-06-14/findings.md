@@ -26,19 +26,23 @@ All three in `crates/aprender-serve/src/chat_template_llama2.rs`, covered by
 
 Co-evolution (Rule 7): chat-template-v1 → 1.4.0, FALSIFY-CHAT-762.
 
-## REAL but deferred (own PRs)
+## RESOLVED after the initial triage
 
-- **[10] Missing/divergent BOS in serve chat vs CLI** (HIGH, needs TRACE). `tokenize_chat_prompt`
-  (openai_handlers.rs:74) does `encode(prompt_text)` with no explicit BOS prepend, while the
-  CLI path (`infer/mod.rs:319-330`, GH-278) prepends an arch-aware BOS. BUT the templates embed
-  a literal `<s>`/`<|im_start|>`, so a naive serve-side prepend risks DOUBLE-BOS. Resolving this
-  needs genchi-genbutsu: `apr trace` the actual token IDs for a real Llama model through serve
-  vs CLI vs llama.cpp before changing anything. Do NOT patch blind.
-- **[11] RawTemplate concatenates messages with no separators** (MEDIUM). `RawTemplate::
-  format_conversation` (chat_template_helpers.rs:11-15) is `.map(sanitize).collect::<String>()`
-  → `[user "Hello", assistant "World"]` becomes `"HelloWorld"`. Only hits unknown/None-named
-  models (recognized models get a real template). Fix is a judgment call (the doc says "raw =
-  no formatting"); at minimum it should newline-separate like the realize_handlers fallback.
+- **[11] RawTemplate concatenates messages with no separators** — **FIXED (PMAT-763)**.
+  `RawTemplate::format_conversation` was `.map(sanitize).collect::<String>()` → `[user "Hello",
+  assistant "World"]` became `"HelloWorld"`. Reachable via `format_chat_messages(Some(
+  request.model))` on the registry_fallback + chat_completions_stream paths when the model name
+  matches no template pattern (e.g. "default"). Now emits `content + '\n'` per message,
+  matching the realize_handlers raw fallback. Falsifier `falsify_ct_763_*` (mutation-verified).
+- **[10] "Missing/divergent BOS in serve chat vs CLI"** — **RESOLVED as a FALSE POSITIVE via
+  code analysis (no model needed)**. `BPETokenizer::encode` (tokenizer.rs:259) maps a template's
+  literal `<s>`/`<|im_start|>` to its special-token id (via `bpe_encode`'s special-token split
+  when merge_rules are present, else the fallback's greedy `token_to_id` match) and does NOT
+  auto-prepend BOS. So serve gets BOS exactly once VIA THE TEMPLATE; the CLI (`infer/mod.rs`)
+  prepends only because its non-templated raw-prompt path has no embedded BOS. The two are
+  different-but-both-valid mechanisms — a blind serve-side prepend would have CAUSED double-BOS.
+  **No code change. Do NOT add a serve-side BOS prepend.** (The "needs evidence, don't patch
+  blind" deferral was vindicated — the obvious fix was the wrong one.)
 
 ## FALSE POSITIVES (skeptic upheld; rejected on hand re-check)
 

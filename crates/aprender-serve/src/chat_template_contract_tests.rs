@@ -258,6 +258,29 @@ mod contract_tests {
         assert_eq!(conv.matches("<s>").count(), 1, "double-BOS for [system,user]: {conv:?}");
     }
 
+    // ═══ FALSIFY-CT-763: RawTemplate (unknown/default model fallback) separates turns ═══
+
+    #[test]
+    fn falsify_ct_763_rawtemplate_separates_messages() {
+        // The previous `.collect::<String>()` produced "HelloWorld" (no separators), an
+        // unparseable multi-turn prompt for unknown/"default"-named models. Each message's
+        // content must be newline-delimited so turns are distinguishable.
+        let conv = RawTemplate::new()
+            .format_conversation(&[
+                ChatMessage::user("Hello"),
+                ChatMessage::assistant("World"),
+                ChatMessage::user("Again"),
+            ])
+            .expect("format");
+        assert!(
+            !conv.contains("HelloWorld"),
+            "RawTemplate merged messages with no separator: {conv:?}"
+        );
+        assert!(conv.contains("Hello\n"), "missing newline separator: {conv:?}");
+        assert!(conv.contains("World\n"), "missing newline separator: {conv:?}");
+        assert!(conv.contains("Again"), "dropped a message: {conv:?}");
+    }
+
     #[test]
     fn falsify_ct_762_llama2_multiturn_round_separator_preserved() {
         // Regression the OTHER way: a genuine new round (after an assistant turn) MUST still
