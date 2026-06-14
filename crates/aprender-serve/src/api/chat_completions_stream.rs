@@ -75,9 +75,15 @@ pub async fn openai_chat_completions_stream_handler(
     let tokenizer_clone = tokenizer;
 
     let stream = async_stream::stream! {
+        // PMAT-753: pass ONLY the JSON payload to Event::data() — axum's Sse adds the
+        // `data: ` field prefix and the `\n\n` terminator itself. The previous
+        // `format!("data: {}\n", data)` produced a DOUBLE prefix on the wire
+        // (`data: data: {json}`), so spec-compliant SSE clients received the literal
+        // string "data: {json}" as the event data and JSON.parse failed → streaming
+        // was broken for every client. Matches the correct form in openai_handlers.rs.
         let initial = ChatCompletionChunk::initial(&request_id_clone, &model_name);
         let data = serde_json::to_string(&initial).unwrap_or_default();
-        yield Ok(Event::default().data(format!("data: {}\n", data)));
+        yield Ok(Event::default().data(data));
 
         for &token_id in &generated_ids {
             let text = match tokenizer_clone.decode(&[token_id]) {
@@ -87,14 +93,14 @@ pub async fn openai_chat_completions_stream_handler(
 
             let chunk = ChatCompletionChunk::content(&request_id_clone, &model_name, &text);
             let data = serde_json::to_string(&chunk).unwrap_or_default();
-            yield Ok(Event::default().data(format!("data: {}\n", data)));
+            yield Ok(Event::default().data(data));
         }
 
         let done = ChatCompletionChunk::done(&request_id_clone, &model_name);
         let data = serde_json::to_string(&done).unwrap_or_default();
-        yield Ok(Event::default().data(format!("data: {}\n", data)));
+        yield Ok(Event::default().data(data));
 
-        yield Ok(Event::default().data("data: [DONE]\n".to_string()));
+        yield Ok(Event::default().data("[DONE]"));
     };
 
     Ok(Sse::new(stream))

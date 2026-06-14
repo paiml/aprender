@@ -1,0 +1,49 @@
+contract: apr-serve-openai-compat
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  description: >
+    OpenAI-compatible serve layer (/v1/chat/completions, /v1/completions) fidelity
+    invariants. Established by an adversarial audit (2026-06-14) that found 12 confirmed
+    real bugs — see evidence/serve-api-openai-fidelity-audit-2026-06-14/findings.md.
+    This contract is the home for those obligations; they discharge as the follow-up
+    fixes land. PMAT-753 (this revision) discharges the SSE-framing obligation: the
+    streaming handler must pass a BARE JSON payload (or "[DONE]") to axum's
+    Event::data(), NOT a string already prefixed with "data: " — axum's Sse adds the
+    `data: ` field + `\n\n` terminator itself, so a manual prefix produced a DOUBLE
+    `data: data: {json}` on the wire and broke JSON.parse for every spec-compliant SSE
+    client. The correct form is used by openai_handlers.rs.
+  references:
+  - "crates/aprender-serve/src/api/chat_completions_stream.rs (fixed)"
+  - "crates/aprender-serve/src/api/openai_handlers.rs (correct SSE-framing reference)"
+  - "evidence/serve-api-openai-fidelity-audit-2026-06-14/findings.md (full 12-bug audit)"
+version: 1
+status: enforced
+date: 2026-06-14
+
+proof_obligations:
+  - type: invariant
+    property: >
+      SSE-FRAMING (PMAT-753, DISCHARGED): the streaming chat handler passes a bare JSON
+      chunk (or the literal "[DONE]") to Event::default().data(); it never manually
+      prepends "data: " or appends a newline (axum's Sse adds the field framing). So each
+      streamed event's data is parseable JSON, never the literal "data: {...}".
+  - type: invariant
+    property: >
+      STOP-APPLIED (open — audit items 3-6): every completion backend applies the
+      request's stop sequences (post-decode truncation), so generated text never contains
+      a stop string and generation halts at it. Reference: try_cuda_gguf_completions /
+      try_apr_q4k_completions already do this.
+  - type: invariant
+    property: >
+      PARAMS-PLUMBED (open — audit items 7-10): request params (n, seed, top_k,
+      temperature) are honored or explicitly rejected, never silently dropped; the
+      OpenAI-compat temperature default is 1.0 (the codebase's default_temperature()).
+
+falsification_tests:
+  - id: FALSIFY-SSE-FRAMING-753
+    name: chat_completions_stream_no_double_data_prefix
+    prediction: 'chat_completions_stream.rs yields Event::default().data(<bare json>) / .data("[DONE]") — no occurrence of Event::default().data(format!("data: ...")) (which double-prefixes the SSE wire format). Shape gate: catches re-introduction of the manual prefix.'
+    test_harness: '! grep -nE "data\(format!\\(\"data: " crates/aprender-serve/src/api/chat_completions_stream.rs'
+    expected_output: "no match (exit 1 from grep = invariant holds)"
+    if_fails: 'The streaming handler re-added a manual "data: " prefix → axum double-prefixes the SSE wire (data: data: {json}) and every spec-compliant streaming client fails to parse chunks. NOTE: shape gate (greps source); the behavioral wire-format is verified by matching openai_handlers.rs (axum Event is opaque + the test app loads no model, so no in-CI wire assertion).'
