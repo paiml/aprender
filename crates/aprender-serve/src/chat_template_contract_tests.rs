@@ -211,4 +211,65 @@ mod contract_tests {
         assert_ne!(detect_format_from_name("qwen2"), TemplateFormat::Qwen3NoThink);
         assert_eq!(detect_format_from_name("qwen2"), TemplateFormat::ChatML);
     }
+
+    // ═══ FALSIFY-CT-762: Llama2 system-message handling ═══
+    // Adversarial chat-template bug-hunt (2026-06-14) confirmed Llama2Template dropped
+    // system context when no user message followed, and overwrote multiple system messages.
+
+    #[test]
+    fn falsify_ct_762_llama2_system_only_not_dropped() {
+        // A system-only request must NOT lose the system content (previously returned "<s>").
+        let conv = Llama2Template::new()
+            .format_conversation(&[ChatMessage::system("Be terse.")])
+            .expect("format");
+        assert!(
+            conv.contains("Be terse."),
+            "system-only prompt dropped the system content: {conv:?}"
+        );
+        assert!(conv.contains("<<SYS>>"), "system block markers missing: {conv:?}");
+    }
+
+    #[test]
+    fn falsify_ct_762_llama2_multiple_system_messages_preserved() {
+        // Multiple system messages must all survive (previously only the LAST was kept).
+        let conv = Llama2Template::new()
+            .format_conversation(&[
+                ChatMessage::system("First rule."),
+                ChatMessage::system("Second rule."),
+                ChatMessage::user("hi"),
+            ])
+            .expect("format");
+        assert!(conv.contains("First rule."), "first system message dropped: {conv:?}");
+        assert!(conv.contains("Second rule."), "second system message dropped: {conv:?}");
+    }
+
+    #[test]
+    fn falsify_ct_762_llama2_system_user_still_correct() {
+        // Regression guard: the common [system, user] case stays well-formed.
+        let conv = Llama2Template::new()
+            .format_conversation(&[
+                ChatMessage::system("Be helpful."),
+                ChatMessage::user("2+2?"),
+            ])
+            .expect("format");
+        assert!(conv.starts_with("<s>[INST] <<SYS>>\nBe helpful.\n<</SYS>>\n\n2+2? [/INST]"));
+        // Exactly ONE leading <s> — no double-BOS (the system message must not trigger the
+        // new-round <s> that belongs only after a completed assistant turn).
+        assert_eq!(conv.matches("<s>").count(), 1, "double-BOS for [system,user]: {conv:?}");
+    }
+
+    #[test]
+    fn falsify_ct_762_llama2_multiturn_round_separator_preserved() {
+        // Regression the OTHER way: a genuine new round (after an assistant turn) MUST still
+        // open with <s>, so multi-turn Llama-2 format is intact.
+        let conv = Llama2Template::new()
+            .format_conversation(&[
+                ChatMessage::user("q1"),
+                ChatMessage::assistant("a1"),
+                ChatMessage::user("q2"),
+            ])
+            .expect("format");
+        assert_eq!(conv.matches("<s>").count(), 2, "missing new-round <s>: {conv:?}");
+        assert!(conv.contains("</s><s>[INST] q2 [/INST]"), "bad round boundary: {conv:?}");
+    }
 }

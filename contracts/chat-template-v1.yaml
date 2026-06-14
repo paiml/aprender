@@ -1,7 +1,7 @@
 metadata:
-  version: "1.3.0"
+  version: "1.4.0"
   created: "2026-04-13"
-  updated: "2026-05-10"
+  updated: "2026-06-14"
   author: PAIML Engineering
   registry: true
   references:
@@ -81,6 +81,19 @@ falsification:
     description: "Missing template produces error, not silent skip"
     test: "PMAT-237 lesson: process validation, not outcome validation"
     evidence: "cargo test -p aprender-core --lib chat_template"
+
+  - id: FALSIFY-CHAT-762
+    description: |
+      Llama2Template::format_conversation preserves system context and emits exactly one BOS.
+      An adversarial chat-template bug-hunt (2026-06-14) found three real defects, all fixed
+      (PMAT-762): (1) a system-only message (no following user) was silently DROPPED — output
+      was just "<s>"; (2) multiple system messages OVERWROTE each other (only the last kept);
+      (3) the [system, user] case emitted a DOUBLE "<s>" (double-BOS) because the new-round
+      "<s>" fired even though only a system message preceded the first user turn. Now: system
+      messages concatenate, an unconsumed system prompt is flushed as a trailing INST block,
+      and the new-round "<s>" only opens AFTER a completed assistant turn (turn_started guard).
+    test: "falsify_ct_762_* in chat_template_contract_tests.rs (system-only, multi-system, double-BOS, multi-turn-separator)"
+    evidence: "cargo test -p aprender-serve --lib falsify_ct_762"
 
   - id: GATE-CHAT-SHIP-008
     description: |
