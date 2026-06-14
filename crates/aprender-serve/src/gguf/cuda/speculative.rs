@@ -124,9 +124,15 @@ impl OwnedQuantizedModelCuda {
 
             total_drafts += draft_tokens.len();
 
-            // Step 2: Rollback cache to snapshot for verification
+            // Step 2: Rollback cache to snapshot for verification.
+            // PMAT-752: roll the GPU KV cache back to the snapshot LENGTH (preserving
+            // prefill + previously-accepted history), NOT reset_kv_cache_gpu() which
+            // zeros ALL history — that desyncs the GPU cache (length 0) from the CPU
+            // cache (snapshot length), so verification attends over an empty K/V and
+            // computes wrong logits → wrong acceptance. Mirrors the PAR-105 fix already
+            // applied to the two-model path below.
             cache.rollback_to(cache_snapshot, kv_dim);
-            self.executor.reset_kv_cache_gpu();
+            self.executor.rollback_kv_cache_gpu(cache_snapshot);
 
             // Step 3: Verify - use single-token GPU-resident to check each draft
             // NOTE: Batched verification would be faster but requires refactoring
@@ -162,9 +168,10 @@ impl OwnedQuantizedModelCuda {
 
             // Handle edge case: all drafts rejected
             if num_accepted == 0 && !draft_tokens.is_empty() {
-                // Just generate one token normally
+                // Just generate one token normally.
+                // PMAT-752: same fix as Step 2 — preserve history via rollback, not reset.
                 cache.rollback_to(cache_snapshot, kv_dim);
-                self.executor.reset_kv_cache_gpu();
+                self.executor.rollback_kv_cache_gpu(cache_snapshot);
                 let fallback =
                     self.forward_gpu_resident_to_token_id(last_token, &mut cache, position)?;
                 if config.stop_tokens.contains(&fallback) {

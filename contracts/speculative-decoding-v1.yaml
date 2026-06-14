@@ -1,5 +1,8 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
+  updated: '2026-06-14'
+  changelog:
+  - '1.1.0 (2026-06-14): PMAT-752 — GPU KV-cache must be ROLLED BACK (not reset) before the verification phase. generate_speculative_cuda (self-speculative) called reset_kv_cache_gpu() which zeros ALL GPU KV history, desyncing it from the CPU snapshot, so verification attended over an empty K/V and computed wrong logits → wrong acceptance → output diverged from plain greedy (violating the P_spec = P_auto equivalence). Fix: rollback_kv_cache_gpu(cache_snapshot), mirroring the already-fixed two-model path (PAR-105). Found by an adversarial bug-hunt. Latent (only throughput callers today) but a real public-API correctness bug.'
   created: '2026-03-25'
   author: PAIML Engineering
   description: Speculative decoding — draft model generates candidate tokens, target model verifies in a single batched pass.
@@ -76,6 +79,10 @@ proof_obligations:
   property: Acceptance rate increases with draft quality
   formal: E[accepted_tokens] increases as KL(p || q) decreases
   applies_to: all
+- type: invariant
+  property: GPU KV-cache rolled back (not reset) before verification (PMAT-752)
+  formal: before the verification phase, the GPU KV-cache length is rolled back to the pre-draft snapshot length (preserving prefill + previously-accepted K/V), NOT zeroed; otherwise verification attention sees an empty history and verification logits q(x) diverge from the true autoregressive distribution, breaking the P_spec = P_auto equivalence above
+  applies_to: gpu_self_speculative
 kernel_structure:
   phases:
   - name: draft_generation
@@ -91,6 +98,11 @@ kernel_structure:
     description: Emit accepted tokens plus one resampled or bonus token
     invariant: At least 1 token emitted per step; at most K+1 tokens emitted
 falsification_tests:
+- id: FALSIFY-SD-KVSYNC-752
+  rule: GPU self-speculative greedy decode is byte-identical to plain greedy decode
+  prediction: 'On a GPU host, generate_speculative_cuda(prompt, greedy) produces the SAME token sequence as generate_gpu_resident(prompt, greedy) — speculative decode changes speed, never output. Pre-fix, the verification phase reset (zeroed) the GPU KV-cache instead of rolling it back to the snapshot, so verification attended over an empty history and produced divergent tokens / 1-of-k acceptance.'
+  test: 'GPU + model parity: assert generate_speculative_cuda(greedy) == generate_gpu_resident(greedy) (runnable on an RTX 4090 host; the only in-tree callers today are throughput benchmarks). Code: rollback_kv_cache_gpu(cache_snapshot) at speculative.rs verification + all-rejected fallback, mirroring the proven PAR-105 two-model fix.'
+  if_fails: 'GPU KV-cache desync during verification → speculative output diverges from greedy (corrupted text / pathological 1/k acceptance).'
 - id: FALSIFY-SD-001
   rule: Output distribution equivalence
   prediction: Over 10000 samples, KL divergence between speculative and autoregressive output < 0.01
