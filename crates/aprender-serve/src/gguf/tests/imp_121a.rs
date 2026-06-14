@@ -294,6 +294,68 @@ fn test_imp_122a_adaptive_attention_with_cache() {
     assert!(sum > 0.0, "IMP-122a: Output should have non-zero values");
 }
 
+/// PMAT-749: adaptive_attention_with_cache must handle GQA (num_kv_heads < num_heads)
+/// at a cache length past the GPU threshold (>=64). The MHA-only path strided the KV
+/// cache by q_dim and indexed current_k/v by head*head_dim over num_heads, so at
+/// head == num_kv_heads it sliced past kv_dim → panic/garbage. Every prior test of this
+/// path was MHA (num_heads == num_kv_heads), so GQA was uncovered. This is a regression
+/// guard: it panics pre-fix and must match the GQA-correct reference post-fix.
+#[test]
+fn test_pmat749_adaptive_attention_gqa_long_cache() {
+    // GQA: 8 query heads share 2 KV heads (q_per_kv=4). head_dim=8 → q_dim=64, kv_dim=16.
+    let config = GGUFConfig {
+        architecture: "test".to_string(),
+        constraints: crate::gguf::ArchConstraints::from_architecture("test"),
+        hidden_dim: 64,
+        intermediate_dim: 128,
+        num_layers: 1,
+        num_heads: 8,
+        num_kv_heads: 2,
+        vocab_size: 100,
+        context_length: 256,
+        rope_theta: 10000.0,
+        eps: 1e-5,
+        rope_type: 0,
+        explicit_head_dim: None,
+        bos_token_id: None,
+        eos_token_id: None,
+    };
+    let model = create_test_model_with_config(&config);
+    let q_dim = 64; // num_heads * head_dim
+    let kv_dim = 16; // num_kv_heads * head_dim
+    let cache_len = 64; // >= GPU_CACHE_LEN_THRESHOLD — the path that panicked pre-fix
+
+    let q: Vec<f32> = (0..q_dim).map(|i| (i % 17) as f32 * 0.1).collect();
+    // KV cache is [cache_len, kv_dim] for GQA (NOT q_dim) — this layout is what the
+    // MHA path mis-strided.
+    let k_cache: Vec<f32> = (0..cache_len * kv_dim)
+        .map(|i| (i % 13) as f32 * 0.05)
+        .collect();
+    let v_cache: Vec<f32> = (0..cache_len * kv_dim)
+        .map(|i| (i % 11) as f32 * 0.05)
+        .collect();
+    let current_k: Vec<f32> = (0..kv_dim).map(|i| (i % 7) as f32 * 0.1).collect();
+    let current_v: Vec<f32> = (0..kv_dim).map(|i| (i % 5) as f32 * 0.1).collect();
+
+    // Must NOT panic (the bug) and must produce a q_dim-shaped output.
+    let result = model
+        .adaptive_attention_with_cache(&q, &k_cache, &v_cache, &current_k, &current_v)
+        .expect("GQA adaptive attention must not error");
+    assert_eq!(result.len(), q_dim, "PMAT-749: GQA output must be [q_dim]");
+
+    // Must equal the GQA-correct reference (proves it routed to the right kernel).
+    let reference = model.attention_with_cache_gqa(&q, &k_cache, &v_cache, &current_k, &current_v);
+    let max_diff = result
+        .iter()
+        .zip(reference.iter())
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0_f32, f32::max);
+    assert!(
+        max_diff < 1e-5,
+        "PMAT-749: adaptive GQA output must match attention_with_cache_gqa (max|Δ|={max_diff})"
+    );
+}
+
 #[test]
 #[cfg(feature = "gpu")]
 fn test_imp_122b_adaptive_matches_standard() {
