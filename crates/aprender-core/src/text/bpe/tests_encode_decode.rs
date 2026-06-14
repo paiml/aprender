@@ -459,3 +459,29 @@ fn test_bpe_merge_priority() {
     // Both merges should be applied
     assert_eq!(result.len(), 2);
 }
+
+/// PMAT-751: with add_prefix_space=true (GPT-2), the prefix space must be applied to
+/// EVERY non-special segment — including one that follows a special token — matching
+/// HuggingFace ByteLevel. Pre-fix, encode_segment gated the prefix space on
+/// `ids.is_empty()`, so a post-special segment lost its leading-space marker and
+/// produced token IDs diverging from HF. Vocab-independent falsifier: the IMPLICIT
+/// prefix space on a post-special segment must equal the EXPLICIT one.
+#[test]
+fn test_pmat751_prefix_space_after_special_token() {
+    let t = BpeTokenizer::gpt2_base(); // add_prefix_space=true, <|endoftext|> registered
+                                       // "b" after the special must be tokenized as if it were " b" (implicit prefix space).
+    let implicit = t.encode("a<|endoftext|>b");
+    let explicit = t.encode("a<|endoftext|> b");
+    assert_eq!(
+        implicit, explicit,
+        "PMAT-751: post-special segment 'b' must get the same prefix space as explicit ' b' \
+         (HF ByteLevel applies add_prefix_space per non-special chunk). implicit={implicit:?} explicit={explicit:?}"
+    );
+    // And the first segment still gets it (no regression): "a" begins with the space marker.
+    let first = t.encode("a");
+    let spaced = t.encode(" a");
+    assert_eq!(
+        first, spaced,
+        "PMAT-751: first-segment prefix space regressed"
+    );
+}

@@ -1,9 +1,16 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-03-25'
+  updated: '2026-06-14'
   author: PAIML Engineering
-  description: Byte-pair encoding (BPE) tokenization correctness — merge-based subword tokenization with roundtrip, determinism,
-    and vocabulary invariants
+  description: >
+    Byte-pair encoding (BPE) tokenization correctness — merge-based subword tokenization
+    with roundtrip, determinism, and vocabulary invariants.
+    v1.1.0 (2026-06-14): PMAT-751 — add_prefix_space must apply per non-special segment.
+    encode_segment gated the GPT-2 prefix space on ids.is_empty() (first segment only), so
+    a non-special segment AFTER a special token lost its leading-space marker
+    ("hello<|endoftext|>world" → "world" with no Ġ), diverging from HuggingFace ByteLevel.
+    Found by an adversarial tokenizer bug-hunt; fixed to prefix every non-special chunk.
   references:
   - Sennrich, Haddow & Birch (2016) Neural Machine Translation of Rare Words with Subword Units. ACL. arXiv:1508.07909
   - Radford et al. (2019) Language Models are Unsupervised Multitask Learners (GPT-2 BPE)
@@ -75,6 +82,10 @@ proof_obligations:
   property: Encoding length bounded by input bytes
   formal: len(encode(text)) <= len(bytes(text)) — at most one token per byte
   applies_to: all
+- type: invariant
+  property: add_prefix_space applies per non-special segment (PMAT-751)
+  formal: with add_prefix_space=true, EVERY non-special segment (including one following a special token) is prefixed with a space unless it already starts with one (HuggingFace ByteLevel semantics); hence encode("a<SPECIAL>b") == encode("a<SPECIAL> b")
+  applies_to: gpt2_byte_level
 kernel_structure:
   phases:
   - name: pre_tokenize
@@ -90,6 +101,11 @@ kernel_structure:
     description: Map final token strings to integer IDs
     invariant: All tokens present in vocabulary; unknown tokens handled by byte fallback
 falsification_tests:
+- id: FALSIFY-BPE-PREFIX-751
+  rule: GPT-2 prefix space is applied to every non-special segment, not just the first
+  prediction: 'With add_prefix_space=true (gpt2_base), encode("a<|endoftext|>b") == encode("a<|endoftext|> b") — the post-special segment gets the same implicit prefix space as an explicit one. Pre-fix the implicit form omitted the space marker (Ġ), so token IDs diverged from HuggingFace.'
+  test: 'cargo test -p aprender-core --lib test_pmat751_prefix_space_after_special_token'
+  if_fails: 'A non-special segment after a special token loses its leading-space marker → token IDs diverge from HuggingFace for GPT-2-style (add_prefix_space=true) tokenizers; the model is fed a wrong prompt. Qwen2/Whisper/LLaMA (add_prefix_space=false) are unaffected.'
 - id: FALSIFY-BPE-001
   rule: 'Roundtrip: decode(encode(text)) == text'
   prediction: Roundtrip holds for all valid UTF-8 strings
