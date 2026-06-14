@@ -321,6 +321,41 @@ fn test_owned_quantized_tensor_exact_bounds() {
     assert_eq!(owned.in_dim, 2);
     assert_eq!(owned.out_dim, 5);
     assert_eq!(owned.qtype, GGUF_TYPE_Q8_0);
+    // A well-formed tensor is NOT flagged truncated (no false positive).
+    assert!(
+        !owned.is_truncated(),
+        "PMAT-750: a fully-loaded tensor must not be flagged truncated"
+    );
+}
+
+/// PMAT-750: a truncated/corrupt model (tensor bytes run past the file) makes
+/// from_ref_with_dims silently substitute an empty data buffer while keeping the
+/// declared dims. is_truncated() must detect that so the load can fail closed
+/// instead of running inference on a dead weight and emitting garbage.
+#[test]
+fn test_pmat750_truncated_tensor_detected() {
+    let tensor_ref = QuantizedTensorRef {
+        offset: 0,
+        byte_size: 64, // declares 64 bytes...
+        num_elements: 64,
+        qtype: GGUF_TYPE_Q8_0,
+    };
+    let data = vec![1u8, 2, 3, 4]; // ...but the file only has 4 → truncated
+
+    let owned = OwnedQuantizedTensor::from_ref_with_dims(&tensor_ref, &data, 8, 8);
+
+    // Pre-PMAT-750 this silently loads with empty data + real dims (the bug).
+    assert!(
+        owned.data.is_empty(),
+        "truncated tensor data was silently emptied"
+    );
+    assert_eq!(owned.in_dim, 8);
+    assert_eq!(owned.out_dim, 8);
+    // The fail-closed detector must catch it.
+    assert!(
+        owned.is_truncated(),
+        "PMAT-750: truncated tensor (declared 8x8, no data) must be flagged so load fails closed"
+    );
 }
 
 #[test]
