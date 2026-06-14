@@ -991,3 +991,23 @@ impl OwnedQuantizedModelCuda {
         Ok((sequences, positions, last_tokens))
     }
 }
+
+#[cfg(test)]
+mod pmat764_select_batched_token_tests {
+    use super::select_batched_token;
+
+    #[test]
+    fn temperature_zero_is_greedy_argmax() {
+        // temp==0 must pick the max-logit index (deterministic), NOT sample.
+        assert_eq!(select_batched_token(&[1.0, 5.0, 2.0], 0.0, 40), 1);
+        assert_eq!(select_batched_token(&[9.0, 5.0, 2.0], 0.0, 40), 0);
+    }
+
+    #[test]
+    fn top_k_one_is_greedy_at_any_temperature() {
+        // top_k==1 keeps only the single best token → deterministic argmax even when
+        // temperature > 0 (the sampling branch with a 1-token nucleus).
+        assert_eq!(select_batched_token(&[1.0, 5.0, 2.0], 1.5, 1), 1);
+        assert_eq!(select_batched_token(&[9.0, 5.0, 2.0], 0.9, 1), 0);
+    }
+}
