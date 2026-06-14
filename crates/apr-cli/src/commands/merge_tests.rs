@@ -7,12 +7,18 @@ use tempfile::NamedTempFile;
 // Validation Error Tests
 // ========================================================================
 
+// NOTE: the merge precondition is a `debug_assert!` (contract_pre_merge_weight_conservation),
+// so it panics only in debug builds. In `--release` it is compiled out and `run` falls through to
+// `validate_merge_inputs`, which returns `Err(ValidationFailed)`. These tests assert the rejection
+// build-mode-agnostically: debug => panics ("Contract …"), release => Err. Either way <2 files is
+// rejected. (Without the cfg_attr these `#[should_panic]` tests fail under `cargo test --release`.)
+
 #[test]
-#[should_panic(expected = "Contract")]
+#[cfg_attr(debug_assertions, should_panic(expected = "Contract"))]
 fn test_run_insufficient_files() {
-    // Contract pre-condition panics: merge requires >= 2 files
+    // Merge requires >= 2 files.
     let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
-    let _ = run(
+    let result = run(
         &[file.path().to_path_buf()],
         "average",
         Some(Path::new("/tmp/merged.apr")),
@@ -24,13 +30,20 @@ fn test_run_insufficient_files() {
         false,
         false,
     );
+    // Debug: unreachable (panicked above). Release: must be a rejection, not a successful merge.
+    #[cfg(not(debug_assertions))]
+    assert!(
+        result.is_err(),
+        "merge with <2 files must return Err in release"
+    );
+    let _ = result;
 }
 
 #[test]
-#[should_panic(expected = "Contract")]
+#[cfg_attr(debug_assertions, should_panic(expected = "Contract"))]
 fn test_run_empty_files() {
-    // Contract pre-condition panics: merge requires non-empty file list
-    let _ = run(
+    // Merge requires a non-empty file list.
+    let result = run(
         &[],
         "average",
         Some(Path::new("/tmp/merged.apr")),
@@ -42,6 +55,13 @@ fn test_run_empty_files() {
         false,
         false,
     );
+    // Debug: unreachable (panicked above). Release: must be a rejection, not a successful merge.
+    #[cfg(not(debug_assertions))]
+    assert!(
+        result.is_err(),
+        "merge with empty file list must return Err in release"
+    );
+    let _ = result;
 }
 
 #[test]
