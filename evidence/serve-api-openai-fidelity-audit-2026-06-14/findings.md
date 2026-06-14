@@ -17,8 +17,8 @@ prioritized; fixed incrementally (one coherent cluster per PR).
    chars. Needs a cross-token byte buffer (decode longest valid UTF-8 prefix, carry rest).
 
 ## Stop sequences ignored (HIGH) — model doesn't stop / leaks stop text
-3. **[TODO]** `try_cached_completions` (realize_handlers_embed_completion.rs:315) — no stop applied.
-4. **[TODO]** `try_quantized_completions` (realize_handlers_embed_completion.rs:385) — no stop applied.
+3. **[FIXED PMAT-754]** `try_cached_completions` (realize_handlers_embed_completion.rs) — now applies stop via shared truncate_at_stop().
+4. **[FIXED PMAT-754]** `try_quantized_completions` (realize_handlers_embed_completion.rs) — now applies stop via shared truncate_at_stop().
 5. **[TODO]** `try_gpu_completions` (gpu_completions_handler.rs:39) — no stop applied.
 6. **[TODO]** chat path `openai_chat_completions_handler` (openai_handlers.rs:344) — no stop applied.
    Fix pattern exists: `try_cuda_gguf_completions` / `try_apr_q4k_completions` already do

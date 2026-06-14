@@ -260,6 +260,27 @@ async fn try_batch_completion(
     )))
 }
 
+/// PMAT-754: truncate `text` at the EARLIEST occurrence of any stop string (OpenAI
+/// behavior) — the returned text never contains a stop string. Returns `text` unchanged
+/// when there are no stops. Several completion backends previously ignored `request.stop`
+/// entirely (the model's output kept the stop text / ran to max_tokens); this is the
+/// shared, position-correct application (the prior inline form truncated at the
+/// first-LISTED stop, not the earliest-POSITION one).
+fn truncate_at_stop(text: String, stops: Option<&[String]>) -> String {
+    let Some(stops) = stops else {
+        return text;
+    };
+    let cut = stops
+        .iter()
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| text.find(s.as_str()))
+        .min();
+    match cut {
+        Some(pos) => text[..pos].to_string(),
+        None => text,
+    }
+}
+
 /// Cached model backend (includes batch path). Returns None if not available.
 #[cfg(feature = "gpu")]
 async fn try_cached_completions(
@@ -333,6 +354,8 @@ async fn try_cached_completions(
     let text = tokenizer
         .decode(&token_ids)
         .map_err(|e| rerr(state, StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    // PMAT-754: apply OpenAI stop sequences (this backend previously ignored them).
+    let text = truncate_at_stop(text, request.stop.as_deref());
     state
         .metrics
         .record_success(completion_tokens, start.elapsed());
@@ -395,6 +418,8 @@ fn try_quantized_completions(
     let text = tokenizer
         .decode(&token_ids)
         .map_err(|e| rerr(state, StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    // PMAT-754: apply OpenAI stop sequences (this backend previously ignored them).
+    let text = truncate_at_stop(text, request.stop.as_deref());
     state
         .metrics
         .record_success(completion_tokens, start.elapsed());
@@ -407,4 +432,39 @@ fn try_quantized_completions(
         completion_tokens,
         max_tokens,
     )))
+}
+
+#[cfg(test)]
+mod pmat754_stop_truncation_tests {
+    use super::truncate_at_stop;
+
+    #[test]
+    fn no_stops_returns_unchanged() {
+        assert_eq!(truncate_at_stop("hello world".to_string(), None), "hello world");
+        assert_eq!(truncate_at_stop("hello".to_string(), Some(&[])), "hello");
+    }
+
+    #[test]
+    fn truncates_at_earliest_position_not_first_listed() {
+        // "hello" (pos 0) is earlier than "world" (pos 6) despite being listed second.
+        let stops = vec!["world".to_string(), "hello".to_string()];
+        assert_eq!(truncate_at_stop("hello world".to_string(), Some(&stops)), "");
+        let one = vec!["END".to_string()];
+        assert_eq!(
+            truncate_at_stop("keep thisENDdrop that".to_string(), Some(&one)),
+            "keep this"
+        );
+    }
+
+    #[test]
+    fn stop_absent_keeps_text() {
+        let stops = vec!["XYZ".to_string()];
+        assert_eq!(truncate_at_stop("hello".to_string(), Some(&stops)), "hello");
+    }
+
+    #[test]
+    fn empty_stop_strings_ignored() {
+        let stops = vec![String::new(), "stop".to_string()];
+        assert_eq!(truncate_at_stop("a stop b".to_string(), Some(&stops)), "a ");
+    }
 }

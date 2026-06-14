@@ -1,7 +1,7 @@
 contract: apr-serve-openai-compat
 metadata:
   kind: pattern
-  version: "1.0.0"
+  version: "1.1.0"
   description: >
     OpenAI-compatible serve layer (/v1/chat/completions, /v1/completions) fidelity
     invariants. Established by an adversarial audit (2026-06-14) that found 12 confirmed
@@ -30,10 +30,14 @@ proof_obligations:
       streamed event's data is parseable JSON, never the literal "data: {...}".
   - type: invariant
     property: >
-      STOP-APPLIED (open — audit items 3-6): every completion backend applies the
-      request's stop sequences (post-decode truncation), so generated text never contains
-      a stop string and generation halts at it. Reference: try_cuda_gguf_completions /
-      try_apr_q4k_completions already do this.
+      STOP-APPLIED (PARTIAL — PMAT-754): every completion backend applies the request's
+      stop sequences (post-decode truncation at the EARLIEST stop position), so generated
+      text never contains a stop string. DISCHARGED for try_cached_completions and
+      try_quantized_completions via the shared truncate_at_stop() helper. STILL OPEN:
+      try_gpu_completions and the /v1/chat/completions path (build_chat_response needs a
+      stops param threaded through its backends — tracked follow-up). The prior inline
+      forms (gpu_completions_handler.rs) truncate at the first-LISTED stop, not the
+      earliest-POSITION one — should migrate to the helper.
   - type: invariant
     property: >
       PARAMS-PLUMBED (open — audit items 7-10): request params (n, seed, top_k,
@@ -41,6 +45,12 @@ proof_obligations:
       OpenAI-compat temperature default is 1.0 (the codebase's default_temperature()).
 
 falsification_tests:
+  - id: FALSIFY-STOP-TRUNCATE-754
+    name: pmat754_stop_truncation_tests
+    prediction: 'truncate_at_stop(text, stops) truncates at the EARLIEST stop position (not the first-listed): truncate_at_stop("hello world", ["world","hello"]) == ""; keeps text when no stop matches; ignores empty stop strings; unchanged when stops is None. try_cached_completions / try_quantized_completions apply it so their output never contains a stop string.'
+    test_harness: 'cargo test -p aprender-serve --lib pmat754_stop_truncation_tests'
+    expected_output: "test result: ok"
+    if_fails: 'A completion backend returns text containing the stop string (or runs to max_tokens past it), violating OpenAI stop semantics — the pre-PMAT-754 behavior in the cached/quantized backends.'
   - id: FALSIFY-SSE-FRAMING-753
     name: chat_completions_stream_no_double_data_prefix
     prediction: 'chat_completions_stream.rs yields Event::default().data(<bare json>) / .data("[DONE]") — no occurrence of Event::default().data(format!("data: ...")) (which double-prefixes the SSE wire format). Shape gate: catches re-introduction of the manual prefix.'
