@@ -1,5 +1,5 @@
 metadata:
-  version: "1.4.0"
+  version: "1.5.0"
   created: "2026-04-13"
   updated: "2026-06-14"
   author: PAIML Engineering
@@ -94,6 +94,32 @@ falsification:
       and the new-round "<s>" only opens AFTER a completed assistant turn (turn_started guard).
     test: "falsify_ct_762_* in chat_template_contract_tests.rs (system-only, multi-system, double-BOS, multi-turn-separator)"
     evidence: "cargo test -p aprender-serve --lib falsify_ct_762"
+
+  - id: FALSIFY-CHAT-763
+    description: |
+      RawTemplate (the fallback selected by detect_format_from_name for unknown / "default"-
+      named models) newline-separates messages instead of bare-concatenating them. The
+      previous `.map(sanitize).collect::<String>()` produced "HelloWorld" for a multi-turn
+      chat — an unparseable prompt. Reachable via format_chat_messages(Some(request.model)) on
+      the registry_fallback + chat_completions_stream paths when the model name matches no
+      template pattern. Fixed (PMAT-763) to emit `content + '\n'` per message, matching the
+      realize_handlers raw fallback. (The cuda/gpu chat backends use real-arch
+      tokenize_chat_prompt, so they were never on the Raw path.)
+    test: "falsify_ct_763_rawtemplate_separates_messages in chat_template_contract_tests.rs"
+    evidence: "cargo test -p aprender-serve --lib falsify_ct_763"
+
+  - id: NOTE-CHAT-BOS-FALSE-POSITIVE
+    description: |
+      The 2026-06-14 chat-template bug-hunt flagged "serve missing BOS vs CLI" (serve's
+      tokenize_chat_prompt does no explicit BOS prepend; CLI infer/mod.rs does, GH-278).
+      RESOLVED as a FALSE POSITIVE via code analysis: BPETokenizer::encode maps a template's
+      literal "<s>"/"<|im_start|>" to its special-token id (bpe_encode special-token split
+      when merge_rules present, else greedy token_to_id match) and does NOT auto-prepend BOS.
+      So serve gets BOS exactly once VIA THE TEMPLATE; the CLI prepends only because its
+      non-templated raw-prompt path has no embedded BOS. A blind serve-side prepend would
+      CAUSE double-BOS — DO NOT add one. No code change; recorded to prevent a harmful fix.
+    test: "n/a (analysis — see evidence/chat-template-adversarial-audit-2026-06-14/findings.md)"
+    evidence: "crates/aprender-serve/src/tokenizer.rs encode() + api/openai_handlers.rs tokenize_chat_prompt()"
 
   - id: GATE-CHAT-SHIP-008
     description: |

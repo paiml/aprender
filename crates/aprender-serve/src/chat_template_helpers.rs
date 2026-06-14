@@ -7,11 +7,18 @@ impl ChatTemplateEngine for RawTemplate {
     }
 
     fn format_conversation(&self, messages: &[ChatMessage]) -> Result<String, RealizarError> {
-        // Sanitize content to prevent prompt injection (F-SEC-220)
-        let result: String = messages
+        // Sanitize content to prevent prompt injection (F-SEC-220).
+        // PMAT-763: newline-separate messages. The previous `.collect::<String>()`
+        // concatenated content with NO separators, so a multi-turn chat sent to an
+        // unknown / "default"-named model (RawTemplate is the fallback selected by
+        // detect_format_from_name) became e.g. "HelloWorld" — a prompt the model can't parse
+        // into turns. `join("\n")` separates BETWEEN turns while leaving a single message
+        // verbatim (no spurious trailing newline).
+        let result = messages
             .iter()
             .map(|m| sanitize_special_tokens(&m.content))
-            .collect();
+            .collect::<Vec<_>>()
+            .join("\n");
         Ok(result)
     }
 

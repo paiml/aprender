@@ -335,7 +335,11 @@
             .format_conversation(&messages)
             .expect("operation failed");
 
-        assert_eq!(output, "SystemUserAssistant");
+        // PMAT-763: RawTemplate newline-separates turns. This previously asserted
+        // "SystemUserAssistant" — bare concatenation that codified the no-separator bug
+        // (an unparseable multi-turn prompt for unknown/"default"-named models). A single
+        // message is still emitted verbatim (see test_format_messages_without_model).
+        assert_eq!(output, "System\nUser\nAssistant");
     }
 
     // ========================================================================
