@@ -24,17 +24,19 @@ impl CudaExecutor {
     /// # Returns
     ///
     /// M token IDs (greedy argmax)
+    ///
+    /// PMAT-764: the embed + per-layer forward is shared via batched_forward_run_layers so a
+    /// sibling (forward_batched_to_logits) can reuse it for per-request sampling.
     #[allow(clippy::too_many_arguments)]
-    pub fn forward_batched_to_token_ids(
+    fn batched_forward_run_layers(
         &mut self,
         inputs: &[f32],
         positions: &[u32],
         num_layers: usize,
         hidden_dim: u32,
         intermediate_dim: u32,
-        vocab_size: u32,
         epsilon: f32,
-    ) -> Result<Vec<u32>, GpuError> {
+    ) -> Result<(), GpuError> {
         let m = positions.len();
         // PAR-129: Extended to M=32 via 4-warp kernel
         if m == 0 || m > 32 {
@@ -163,18 +165,72 @@ impl CudaExecutor {
             }
         }
 
+        Ok(())
+    }
+
+    /// PMAT-764: batched forward → M greedy token IDs (on-GPU argmax). Behavior is identical
+    /// to the pre-refactor single-method version.
+    #[allow(clippy::too_many_arguments)]
+    pub fn forward_batched_to_token_ids(
+        &mut self,
+        inputs: &[f32],
+        positions: &[u32],
+        num_layers: usize,
+        hidden_dim: u32,
+        intermediate_dim: u32,
+        vocab_size: u32,
+        epsilon: f32,
+    ) -> Result<Vec<u32>, GpuError> {
+        self.batched_forward_run_layers(
+            inputs,
+            positions,
+            num_layers,
+            hidden_dim,
+            intermediate_dim,
+            epsilon,
+        )?;
+        let m = positions.len();
         self.batched_output_norm_lm_head_argmax(m, hidden_dim, vocab_size, epsilon)
     }
 
-    /// Output norm → LM head projection → argmax for batched forward paths
+    /// PMAT-764: batched forward → per-slot LOGITS downloaded to host (m × vocab_size,
+    /// row-major per slot), so the batched decode loop can apply per-request temperature/top_k
+    /// sampling instead of forced greedy argmax. Used only when a slot requests temperature>0.
     #[allow(clippy::too_many_arguments)]
-    fn batched_output_norm_lm_head_argmax(
+    pub fn forward_batched_to_logits(
+        &mut self,
+        inputs: &[f32],
+        positions: &[u32],
+        num_layers: usize,
+        hidden_dim: u32,
+        intermediate_dim: u32,
+        vocab_size: u32,
+        epsilon: f32,
+    ) -> Result<Vec<f32>, GpuError> {
+        self.batched_forward_run_layers(
+            inputs,
+            positions,
+            num_layers,
+            hidden_dim,
+            intermediate_dim,
+            epsilon,
+        )?;
+        let m = positions.len();
+        self.batched_output_norm_lm_head_logits(m, hidden_dim, vocab_size, epsilon)
+    }
+
+    /// PMAT-764: output norm → LM head projection, leaving logits in workspace.logits_buf.
+    /// Returns the device pointer (u64) + element count (m × vocab_size) so the caller can
+    /// either argmax on GPU (greedy) or download for CPU sampling. Extracted unchanged from
+    /// the former batched_output_norm_lm_head_argmax body.
+    #[allow(clippy::too_many_arguments)]
+    fn batched_output_norm_lm_head_into_logits(
         &mut self,
         m: usize,
         hidden_dim: u32,
         vocab_size: u32,
         epsilon: f32,
-    ) -> Result<Vec<u32>, GpuError> {
+    ) -> Result<(u64, usize), GpuError> {
         // Output norm (PAR-115: Batched - single launch for M sequences)
         let output_norm_buf = self.rmsnorm_cache.get("output_norm.gamma").ok_or_else(|| {
             GpuError::InvalidLaunchConfig("PAR-111: output_norm not cached".to_string())
@@ -281,11 +337,43 @@ impl CudaExecutor {
         // LM head GEMV and argmax both execute on self.stream — CUDA stream
         // ordering guarantees GEMV completes before argmax reads logits.
         // batched_gpu_argmax does its own sync after all 2×M kernels (reduces.rs:370).
-        let argmax_ptr = logits_buf.as_ptr();
+        let logits_ptr = logits_buf.as_ptr();
         std::mem::forget(logits_buf); // Non-owning wrapper — prevent double-free
-        let token_ids = self.batched_gpu_argmax(argmax_ptr, vocab_size, m)?;
+        Ok((logits_ptr, m * vocab_size as usize))
+    }
 
-        Ok(token_ids)
+    /// PMAT-764: batched output norm → LM head → on-GPU argmax (greedy). Behavior identical
+    /// to the pre-refactor batched_output_norm_lm_head_argmax.
+    fn batched_output_norm_lm_head_argmax(
+        &mut self,
+        m: usize,
+        hidden_dim: u32,
+        vocab_size: u32,
+        epsilon: f32,
+    ) -> Result<Vec<u32>, GpuError> {
+        let (logits_ptr, _len) =
+            self.batched_output_norm_lm_head_into_logits(m, hidden_dim, vocab_size, epsilon)?;
+        self.batched_gpu_argmax(logits_ptr, vocab_size, m)
+    }
+
+    /// PMAT-764: batched output norm → LM head → DOWNLOAD logits to host (m × vocab_size,
+    /// slot s occupies host[s*vocab_size .. (s+1)*vocab_size]) for per-request CPU sampling.
+    fn batched_output_norm_lm_head_logits(
+        &mut self,
+        m: usize,
+        hidden_dim: u32,
+        vocab_size: u32,
+        epsilon: f32,
+    ) -> Result<Vec<f32>, GpuError> {
+        let (logits_ptr, len) =
+            self.batched_output_norm_lm_head_into_logits(m, hidden_dim, vocab_size, epsilon)?;
+        // SAFETY: logits_ptr is workspace.logits_buf (valid, `len` elements); non-owning wrapper.
+        let logits_buf = unsafe { GpuBuffer::<f32>::from_raw_parts(logits_ptr, len) };
+        let mut host = vec![0.0f32; len];
+        let dl = logits_buf.copy_to_host(&mut host);
+        std::mem::forget(logits_buf); // non-owning — prevent double-free
+        dl.map_err(|e| GpuError::Transfer(format!("PMAT-764 batched logits download: {e}")))?;
+        Ok(host)
     }
 
     /// PAR-121: Graph-captured batched forward pass for M sequences
