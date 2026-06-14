@@ -1,7 +1,7 @@
 contract: apr-serve-openai-compat
 metadata:
   kind: pattern
-  version: "1.6.0"
+  version: "1.7.0"
   description: >
     OpenAI-compatible serve layer (/v1/chat/completions, /v1/completions) fidelity
     invariants. Established by an adversarial audit (2026-06-14) that found 12 confirmed
@@ -46,8 +46,10 @@ proof_obligations:
       backends + registry fallback) now apply stop via streaming_text_deltas(). STILL OPEN:
       true_streaming_sse_response (the live mpsc-channel path) — needs incremental cross-token
       stop detection; tracked follow-up.
-      Residual nicety (non-blocking): the try_cuda_gguf_completions inline form truncates at
-      the first-LISTED stop, not the earliest-POSITION one — should migrate to the helper.
+      Residual nicety (DISCHARGED — PMAT-761): try_cuda_gguf_completions previously truncated
+      at the first-LISTED stop via an inline loop, not the earliest-POSITION one; it now uses
+      the shared truncate_at_stop() helper like every other completion backend. So EVERY
+      completion backend (cached/quantized/gpu/apr_q4k/cuda_gguf) is earliest-position-correct.
   - type: invariant
     property: >
       STREAM-UTF8 (PRE-GENERATED paths DISCHARGED — PMAT-758/759): streamed SSE deltas must be
@@ -96,6 +98,12 @@ falsification_tests:
     test_harness: 'cargo test -p aprender-serve --lib pmat760_top_k_tests'
     expected_output: "test result: ok"
     if_fails: 'A chat backend ignores request.top_k and samples with the hardcoded 40 (the pre-PMAT-760 behavior), so a client-specified top_k has no effect on the output distribution.'
+  - id: FALSIFY-CUDA-GGUF-STOP-761
+    name: gpu_completions_handler_no_first_listed_stop_loop
+    prediction: 'gpu_completions_handler.rs (try_cuda_gguf_completions) applies stop via the shared truncate_at_stop() helper (earliest-position), NOT an inline `for stop in stops { text.truncate(pos); break }` loop (which cuts at the first-LISTED stop). Shape gate: catches re-introduction of the first-listed inline form. The earliest-position behavior itself is covered by FALSIFY-STOP-TRUNCATE-754.'
+    test_harness: '! grep -nE "for stop in stops" crates/aprender-serve/src/api/gpu_completions_handler.rs'
+    expected_output: "no match (exit 1 from grep = invariant holds)"
+    if_fails: 'A completion backend re-added first-LISTED stop truncation, so stop=["world","hello"] on "hello world" keeps "hello " instead of truncating at the earliest position ("") — inconsistent with the other completion backends.'
   - id: FALSIFY-SSE-FRAMING-753
     name: chat_completions_stream_no_double_data_prefix
     prediction: 'chat_completions_stream.rs yields Event::default().data(<bare json>) / .data("[DONE]") — no occurrence of Event::default().data(format!("data: ...")) (which double-prefixes the SSE wire format). Shape gate: catches re-introduction of the manual prefix.'

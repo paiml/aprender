@@ -36,6 +36,11 @@ prioritized; fixed incrementally (one coherent cluster per PR).
    stop mid-SSE (pregenerated/true_streaming/chat_completions_stream) — remains OPEN, grouped
    with item 2's cross-token stream-buffer work (same incremental-detection machinery).
 
+**[FIXED PMAT-761]** Residual: `try_cuda_gguf_completions` (gpu_completions_handler.rs) truncated
+at the first-LISTED stop via an inline loop, not the earliest-POSITION one — now uses the shared
+`truncate_at_stop()` helper. ALL completion backends are now earliest-position-correct.
+Covered by FALSIFY-CUDA-GGUF-STOP-761 (shape gate) + FALSIFY-STOP-TRUNCATE-754 (behavior).
+
 ## Param plumbing dropped (HIGH/MEDIUM) — OpenAI fidelity
 7. **[TODO]** `n` accepted but ignored (mod_create_demo.rs:94) — n>1 silently returns 1
    choice. Min fix: reject n>1 with 400; full: generate n choices.
