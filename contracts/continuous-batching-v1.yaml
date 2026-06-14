@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-03-09'
   author: PAIML Engineering
   description: Continuous batching scheduler — unified prefill/decode with token budget
@@ -161,6 +161,22 @@ falsification_tests:
   prediction: batched_kv_lengths[i] == prefill_len for all i in 0..M
   test: Add trace after prefill_and_scatter, verify batched_kv_lengths == [S, S, S, S]
   if_fails: prefill_attention_from_packed scatter or batched_kv_lengths update buggy
+- id: FALSIFY-CB-010
+  rule: Per-request sampling honored in batched decode (PMAT-764)
+  prediction: >
+    Two batched requests with the SAME prompt but different temperature produce DIFFERENT
+    output — the batched decode applies each slot's own temperature/top_k, not a forced
+    greedy argmax for all. Restores the "Correctness under batching" equivalence
+    (batched_output(temp) ~= single_output(temp)) which the pre-fix greedy-only path violated.
+  test: >
+    cargo test -p aprender-serve --features cuda --test pmat764_batched_sampling
+    (GPU; validated 2026-06-14 on RTX 4090 / qwen2.5-coder-0.5b-instruct-q4k.apr: slot temp=0
+    and slot temp=1.5 diverge from the first generated token). Mechanism: batched_decode_step
+    routes any temp>0 slot through forward_batched_to_logits + per-slot select_batched_token.
+  if_fails: >
+    Batched decode forced greedy argmax for every slot (the pre-PMAT-764 bug) — continuous
+    batching silently ignored temperature/top_k/seed, so all requests got identical greedy
+    output regardless of their sampling params.
 kani_harnesses:
 - id: KANI-CB-001
   obligation: CB-INV-001
