@@ -47,17 +47,33 @@ impl ChatTemplateEngine for Llama2Template {
         let mut result = String::from("<s>");
         let mut system_prompt: Option<String> = None;
         let mut in_user_turn = false;
+        // PMAT-762: have we emitted any [INST] turn yet? A new Llama-2 round opens with <s>,
+        // but only AFTER a completed assistant turn — not after a leading system message.
+        let mut turn_started = false;
 
-        for (i, msg) in messages.iter().enumerate() {
+        for msg in messages.iter() {
             // Sanitize content to prevent prompt injection (F-SEC-220)
             let safe_content = sanitize_special_tokens(&msg.content);
 
             match msg.role.as_str() {
                 "system" => {
-                    system_prompt = Some(safe_content);
+                    // PMAT-762: concatenate multiple system messages instead of overwriting.
+                    // The previous `system_prompt = Some(safe_content)` silently dropped all
+                    // but the LAST system message.
+                    match system_prompt {
+                        Some(ref mut prev) => {
+                            prev.push_str("\n\n");
+                            prev.push_str(&safe_content);
+                        },
+                        None => system_prompt = Some(safe_content),
+                    }
                 },
                 "user" => {
-                    if i > 0 && !in_user_turn {
+                    // Open a new round with <s> only AFTER a completed assistant turn. The
+                    // previous `i > 0 && !in_user_turn` also fired when the only prior message
+                    // was a system one, producing a spurious DOUBLE <s> (double-BOS) for the
+                    // common [system, user] case.
+                    if turn_started && !in_user_turn {
                         result.push_str("<s>");
                     }
                     result.push_str("[INST] ");
@@ -71,6 +87,7 @@ impl ChatTemplateEngine for Llama2Template {
                     result.push_str(&safe_content);
                     result.push_str(" [/INST]");
                     in_user_turn = true;
+                    turn_started = true;
                 },
                 "assistant" => {
                     result.push(' ');
@@ -80,6 +97,19 @@ impl ChatTemplateEngine for Llama2Template {
                 },
                 _ => {},
             }
+        }
+
+        // PMAT-762: flush a system prompt never consumed by a following user message (e.g. a
+        // system-only request, or one ending on a system turn). Previously it was silently
+        // DROPPED — the entire system context was lost. Emit it as a system block inside an
+        // (empty-user) INST turn so the prompt stays well-formed Llama-2.
+        if let Some(sys) = system_prompt.take() {
+            if !in_user_turn {
+                result.push_str("[INST] ");
+            }
+            result.push_str("<<SYS>>\n");
+            result.push_str(&sys);
+            result.push_str("\n<</SYS>>\n\n [/INST]");
         }
 
         Ok(result)
