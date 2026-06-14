@@ -110,7 +110,7 @@ async fn try_cuda_backend(
     let q_config = QuantizedGenerateConfig {
         max_tokens,
         temperature,
-        top_k: if temperature == 0.0 { 1 } else { 40 },
+        top_k: resolve_chat_top_k(temperature, request.top_k),
         stop_tokens: vec![eos_token_id],
         trace: state.should_trace(trace_level),
         ..Default::default()
@@ -251,7 +251,7 @@ fn try_quantized_backend(
     let q_config = QuantizedGenerateConfig {
         max_tokens,
         temperature,
-        top_k: if temperature == 0.0 { 1 } else { 40 },
+        top_k: resolve_chat_top_k(temperature, request.top_k),
         stop_tokens: vec![eos_token_id],
         trace: state.should_trace(trace_level),
         ..Default::default()

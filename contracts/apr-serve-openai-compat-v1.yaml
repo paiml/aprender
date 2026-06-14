@@ -1,7 +1,7 @@
 contract: apr-serve-openai-compat
 metadata:
   kind: pattern
-  version: "1.5.0"
+  version: "1.6.0"
   description: >
     OpenAI-compatible serve layer (/v1/chat/completions, /v1/completions) fidelity
     invariants. Established by an adversarial audit (2026-06-14) that found 12 confirmed
@@ -60,9 +60,16 @@ proof_obligations:
       live-channel path can't precompute the full token list).
   - type: invariant
     property: >
-      PARAMS-PLUMBED (open — audit items 7-10): request params (n, seed, top_k,
-      temperature) are honored or explicitly rejected, never silently dropped; the
-      OpenAI-compat temperature default is 1.0 (the codebase's default_temperature()).
+      PARAMS-PLUMBED (PARTIAL — audit items 7-10): request params are honored or explicitly
+      rejected, never silently dropped. top_k DISCHARGED for /v1/chat/completions (PMAT-760):
+      all 4 chat backends (try_gpu/try_cached in openai_handlers, try_cuda/try_quantized in
+      cuda_chat_backend) now resolve top_k via resolve_chat_top_k(temperature, request.top_k)
+      — honor the request's top_k, default 40, temperature==0 (or top_k==1) forces greedy —
+      instead of the hardcoded `if temperature == 0.0 { 1 } else { 40 }` that dropped it
+      (drift from batch.rs which honors it). STILL OPEN: n accepted-but-ignored (should
+      reject n>1), seed not plumbed to dense backends, temperature default 0.7 vs OpenAI 1.0
+      (default_temperature()); and /v1/completions has no top_k field at all (CompletionRequest
+      would need it added — non-standard for completions, deferred).
 
 falsification_tests:
   - id: FALSIFY-STOP-TRUNCATE-754
@@ -83,6 +90,12 @@ falsification_tests:
     test_harness: 'cargo test -p aprender-serve --lib pmat758_streaming_delta_tests'
     expected_output: "test result: ok"
     if_fails: 'The streaming chat handler emits U+FFFD replacement chars for emoji/CJK that span tokens (per-token decode), or leaks the stop string into the stream — the pre-PMAT-758 behavior of openai_chat_completions_stream_handler.'
+  - id: FALSIFY-TOPK-760
+    name: pmat760_top_k_tests
+    prediction: 'resolve_chat_top_k(temperature, requested) honors the request top_k: resolve_chat_top_k(0.7, Some(10)) == 10; None => 40; temperature 0.0 => 1 (greedy) regardless of requested; explicit Some(1) => 1 at any temperature. All 4 /v1/chat/completions backends use it so a client-set top_k is no longer dropped for the hardcoded 40.'
+    test_harness: 'cargo test -p aprender-serve --lib pmat760_top_k_tests'
+    expected_output: "test result: ok"
+    if_fails: 'A chat backend ignores request.top_k and samples with the hardcoded 40 (the pre-PMAT-760 behavior), so a client-specified top_k has no effect on the output distribution.'
   - id: FALSIFY-SSE-FRAMING-753
     name: chat_completions_stream_no_double_data_prefix
     prediction: 'chat_completions_stream.rs yields Event::default().data(<bare json>) / .data("[DONE]") — no occurrence of Event::default().data(format!("data: ...")) (which double-prefixes the SSE wire format). Shape gate: catches re-introduction of the manual prefix.'
