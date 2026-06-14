@@ -338,12 +338,19 @@ impl BpeTokenizer {
 
     /// Encode a regular (non-special-token) text segment into token IDs.
     fn encode_segment(&self, segment: &str, ids: &mut Vec<u32>) {
-        let segment_text =
-            if self.config.add_prefix_space && !segment.starts_with(' ') && ids.is_empty() {
-                format!(" {segment}")
-            } else {
-                segment.to_string()
-            };
+        // PMAT-751: apply the GPT-2 prefix space to EVERY non-special segment, not just
+        // the first. encode() calls this once per non-special chunk (special tokens are
+        // split out first), and HF ByteLevel adds the prefix space per chunk. The old
+        // `ids.is_empty()` gate denied the prefix space to any segment AFTER a special
+        // token (e.g. "hello<|endoftext|>world" → "world" lost its leading-space marker),
+        // yielding token IDs that diverge from HuggingFace. The `!starts_with(' ')` guard
+        // already prevents double-spacing; add_prefix_space=false (Qwen2/Whisper/LLaMA)
+        // still short-circuits, so those tokenizers are unaffected.
+        let segment_text = if self.config.add_prefix_space && !segment.starts_with(' ') {
+            format!(" {segment}")
+        } else {
+            segment.to_string()
+        };
 
         for word in self.pre_tokenize(&segment_text) {
             let byte_word = self.bytes_to_bpe_tokens(&word);
