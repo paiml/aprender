@@ -105,6 +105,51 @@ fn chat_gen_params(
     (max_tokens, temperature, eos_token_id)
 }
 
+/// Resolve the effective top-k for a chat sampling config (PMAT-760).
+///
+/// Honors the request's `top_k` (the documented sampling control) when set, else defaults to
+/// 40; `temperature == 0.0` forces greedy (top_k = 1), and an explicit `top_k = 1` likewise
+/// forces greedy regardless of temperature (qwen3-moe-sampling-v1 V1_001). The chat backends
+/// previously hardcoded `if temperature == 0.0 { 1 } else { 40 }`, silently DROPPING
+/// request.top_k — drift from batch.rs, which honors it.
+fn resolve_chat_top_k(temperature: f32, requested: Option<usize>) -> usize {
+    if temperature == 0.0 {
+        1
+    } else {
+        requested.unwrap_or(40)
+    }
+}
+
+#[cfg(test)]
+mod pmat760_top_k_tests {
+    use super::resolve_chat_top_k;
+
+    #[test]
+    fn honors_requested_top_k() {
+        // The request's top_k must be used, not the hardcoded 40 (the pre-PMAT-760 bug).
+        assert_eq!(resolve_chat_top_k(0.7, Some(10)), 10);
+        assert_eq!(resolve_chat_top_k(1.0, Some(100)), 100);
+    }
+
+    #[test]
+    fn defaults_to_40_when_unset() {
+        assert_eq!(resolve_chat_top_k(0.7, None), 40);
+    }
+
+    #[test]
+    fn temperature_zero_forces_greedy() {
+        // temp==0 => greedy (top_k=1) regardless of the requested top_k.
+        assert_eq!(resolve_chat_top_k(0.0, None), 1);
+        assert_eq!(resolve_chat_top_k(0.0, Some(50)), 1);
+    }
+
+    #[test]
+    fn explicit_top_k_one_is_greedy_at_any_temperature() {
+        // qwen3-moe-sampling-v1 V1_001: top_k=1 forces greedy regardless of temperature.
+        assert_eq!(resolve_chat_top_k(0.9, Some(1)), 1);
+    }
+}
+
 /// PMAT-756: apply OpenAI stop sequences to a chat completion's text and compute the
 /// matching `finish_reason`. The `/v1/chat/completions` path previously ignored
 /// `request.stop` entirely — the returned message kept the stop string and ran to
@@ -332,7 +377,7 @@ fn try_gpu_backend(
     let gpu_config = GpuGenerateConfig {
         max_tokens,
         temperature,
-        top_k: if temperature == 0.0 { 1 } else { 40 },
+        top_k: resolve_chat_top_k(temperature, request.top_k),
         stop_tokens: vec![eos_token_id as usize],
         trace: state.should_trace(trace_level),
     };
@@ -422,7 +467,7 @@ fn try_cached_backend(
     let q_config = QuantizedGenerateConfig {
         max_tokens,
         temperature,
-        top_k: if temperature == 0.0 { 1 } else { 40 },
+        top_k: resolve_chat_top_k(temperature, request.top_k),
         stop_tokens: vec![eos_token_id],
         trace: state.should_trace(trace_level),
         ..Default::default()

@@ -41,7 +41,7 @@ prioritized; fixed incrementally (one coherent cluster per PR).
    choice. Min fix: reject n>1 with 400; full: generate n choices.
 8. **[TODO]** `seed` accepted but not plumbed (mod_create_demo.rs:92) — non-reproducible.
    MoE path already plumbs it (cuda_chat_backend.rs:748); mirror to dense backends.
-9. **[TODO]** `top_k` ignored, hardcoded 40/1 (cuda_chat_backend.rs:252) — mirror MoE plumbing.
+9. **[FIXED PMAT-760 (chat)]** `top_k` was ignored, hardcoded `if temperature==0.0 {1} else {40}` across the 4 chat backends — drift from batch.rs which honors it. Now resolved via the shared `resolve_chat_top_k(temperature, request.top_k)` helper (honor request, default 40, temp==0/top_k==1 => greedy). Covered by FALSIFY-TOPK-760. (/v1/completions has no top_k field on CompletionRequest — deferred, non-standard for completions.)
 10. **[TODO]** temperature default 0.7 vs OpenAI 1.0 (openai_handlers.rs:99) — the repo's
     own `default_temperature()`=1.0; chat path hardcodes 0.7. Use the canonical default.
 
