@@ -1,5 +1,21 @@
 // Batched streaming token generation with per-step lock release for concurrent scheduling.
 
+/// PMAT-764: per-slot token selection for batched decode — greedy argmax when
+/// `temperature == 0.0`, else temperature/top-k sampling (the same `sample_topk` the
+/// single-request decode uses). Defined in the cuda module so the batched loop can honor
+/// each request's temperature/top_k instead of the old forced on-GPU greedy argmax.
+fn select_batched_token(logits: &[f32], temperature: f32, top_k: usize) -> u32 {
+    if temperature == 0.0 {
+        logits
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .map_or(0, |(idx, _)| idx as u32)
+    } else {
+        crate::gguf::OwnedQuantizedModel::sample_topk(logits, temperature, top_k)
+    }
+}
+
 /// PMAT-072: Decode state for step-wise batched generation.
 ///
 /// Extracted from `generate_batched_streaming` to allow lock release between
@@ -348,7 +364,47 @@ impl OwnedQuantizedModelCuda {
         // Keep eager by default until graph replay is optimized.
         // Enable with BATCHED_GRAPH=1 for testing.
         let use_graph = std::env::var("BATCHED_GRAPH").as_deref() == Ok("1");
-        let token_ids = if use_graph {
+
+        // PMAT-764: if any live request asked for stochastic sampling (temperature > 0),
+        // download per-slot logits and sample each by its OWN config (temperature/top_k) —
+        // the batched path otherwise forces on-GPU greedy argmax for EVERY request, silently
+        // ignoring temperature/top_k/seed. All-greedy batches keep the faster on-GPU argmax.
+        let any_sampling = state
+            .configs
+            .iter()
+            .take(state.m)
+            .any(|c| c.temperature > 0.0);
+
+        let token_ids: Vec<u32> = if any_sampling {
+            let vocab = state.vocab_size;
+            let logits = self
+                .executor
+                .forward_batched_to_logits(
+                    &state.embed_buf,
+                    &state.pos_buf,
+                    state.num_layers,
+                    state.hidden_dim as u32,
+                    state.intermediate_dim as u32,
+                    vocab as u32,
+                    state.eps,
+                )
+                .map_err(|e| RealizarError::UnsupportedOperation {
+                    operation: "forward_batched_to_logits".to_string(),
+                    reason: format!("Batched forward failed: {e}"),
+                })?;
+            (0..state.m)
+                .map(|slot| {
+                    let cfg = &state.configs[slot];
+                    let base = slot * vocab;
+                    let slot_logits = &logits[base..base + vocab];
+                    select_batched_token(
+                        slot_logits,
+                        cfg.temperature,
+                        cfg.top_k,
+                    )
+                })
+                .collect()
+        } else if use_graph {
             self.executor
                 .forward_batched_to_token_ids_graphed(
                     &state.embed_buf,
