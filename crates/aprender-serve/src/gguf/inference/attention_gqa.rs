@@ -248,6 +248,19 @@ impl OwnedQuantizedModel {
         current_k: &[f32],
         current_v: &[f32],
     ) -> Result<Vec<f32>> {
+        // PMAT-749: the MHA cache-attention path (gpu_attention_with_cache /
+        // attention_with_cache) strides the KV cache by q_dim/hidden_dim and indexes
+        // current_k/current_v by head*head_dim over num_heads — correct ONLY for MHA
+        // (num_kv_heads == num_heads). For GQA models the cache is [seq, kv_dim], so at
+        // head >= num_kv_heads the current-K/V slice runs past kv_dim → panic/garbage
+        // once a sequence crosses the >=64 GPU threshold. Route GQA to the GQA-correct
+        // function (it maps each q-head to its kv-head and strides by kv_dim; it also
+        // handles MHA as q_per_kv==1, but we keep the GPU path for MHA to avoid a perf
+        // regression). Every prior test of this path was MHA, so GQA was uncovered.
+        if self.config.num_kv_heads < self.config.num_heads {
+            return Ok(self.attention_with_cache_gqa(q, k_cache, v_cache, current_k, current_v));
+        }
+
         let hidden_dim = self.config.hidden_dim;
 
         // Calculate cache length
@@ -279,6 +292,11 @@ impl OwnedQuantizedModel {
         current_k: &[f32],
         current_v: &[f32],
     ) -> Result<Vec<f32>> {
+        // PMAT-749: GQA models need the kv_dim-strided path; attention_with_cache is
+        // MHA-only and panics for num_kv_heads < num_heads. See the gpu variant above.
+        if self.config.num_kv_heads < self.config.num_heads {
+            return Ok(self.attention_with_cache_gqa(q, k_cache, v_cache, current_k, current_v));
+        }
         Ok(self.attention_with_cache(q, k_cache, v_cache, current_k, current_v))
     }
 

@@ -1,0 +1,45 @@
+contract: apr-gqa-cache-attention-dispatch
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  description: >
+    realizar's adaptive KV-cache attention (OwnedQuantizedModel::adaptive_attention_with_cache,
+    the apr serve /v1/completions decode path) must dispatch GQA models to the
+    kv_dim-strided GQA kernel. The MHA path (gpu_attention_with_cache /
+    attention_with_cache) strides the KV cache by q_dim/hidden_dim and indexes
+    current_k/current_v by head*head_dim over num_heads — correct ONLY when
+    num_kv_heads == num_heads. For GQA (num_kv_heads < num_heads) the cache is
+    [seq, kv_dim], so at head >= num_kv_heads the current-K/V slice runs past kv_dim →
+    index-out-of-bounds PANIC once a sequence crosses the >=64 GPU-dispatch threshold.
+    Every prior test of this path used MHA, so GQA was uncovered (PMAT-749). Fix:
+    route num_kv_heads < num_heads to attention_with_cache_gqa (maps each q-head to its
+    kv-head, strides by kv_dim); keep the existing path for MHA (no perf regression).
+    Verified: TinyLlama/Llama-2-3/Mistral/Qwen2 are all GQA.
+  references:
+  - "crates/aprender-serve/src/gguf/inference/attention_gqa.rs (adaptive_attention_with_cache dispatch + attention_with_cache_gqa)"
+  - "crates/aprender-serve/src/gguf/tests/imp_121a.rs (test_pmat749_adaptive_attention_gqa_long_cache)"
+version: 1
+status: enforced
+date: 2026-06-14
+
+proof_obligations:
+  - type: invariant
+    property: >
+      GQA-DISPATCH: adaptive_attention_with_cache routes models with
+      num_kv_heads < num_heads to the kv_dim-strided attention_with_cache_gqa kernel,
+      so the KV cache ([seq, kv_dim]) and current_k/current_v ([kv_dim]) are never
+      sliced past kv_dim. The q_dim-strided MHA path is used only when
+      num_kv_heads == num_heads.
+  - type: equivalence
+    property: >
+      GQA-EQUIV: for a GQA model at any cache length (including past the >=64 GPU
+      threshold), adaptive_attention_with_cache output equals
+      attention_with_cache_gqa output within 1e-5 and never panics.
+
+falsification_tests:
+  - id: FALSIFY-GQA-CACHE-001
+    name: test_pmat749_adaptive_attention_gqa_long_cache
+    prediction: "GQA config (num_heads=8, num_kv_heads=2) + cache_len=64 [seq,kv_dim] → adaptive_attention_with_cache returns a q_dim output matching attention_with_cache_gqa (no panic)"
+    test_harness: "cargo test -p aprender-serve --lib test_pmat749_adaptive_attention_gqa_long_cache"
+    expected_output: "test result: ok"
+    if_fails: "GQA cache-attention regressed to the MHA-only q_dim-strided path — it panics 'range end index out of range' at head==num_kv_heads (apr serve crashes on GQA models at ~64 tokens), or produces wrong attention output."
