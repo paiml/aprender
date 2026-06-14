@@ -202,24 +202,29 @@ fn decode_token(tokenizer: &BPETokenizer, token_id: u32, clean: bool) -> Option<
 }
 
 /// Build a pre-generated SSE streaming response (all tokens already generated).
+///
+/// PMAT-759: precompute char-safe, stop-truncated deltas (the same fix as PMAT-758's
+/// chat_completions_stream handler) — the previous per-token `decode_token()` split
+/// multi-byte UTF-8 (emoji/CJK -> U+FFFD) and ignored request.stop on the cuda/gpu/cached
+/// chat STREAMING backends (the production GPU streaming path). All three callers passed
+/// `clean = false`, so the old `clean` param is dropped in favour of `stops`.
 fn pregenerated_sse_response(
     token_ids: Vec<u32>,
     tokenizer: Arc<BPETokenizer>,
     request_id: String,
     model_name: String,
-    clean: bool,
+    stops: Option<&[String]>,
 ) -> Response {
+    let deltas = streaming_text_deltas(&tokenizer, &token_ids, stops);
     let stream = async_stream::stream! {
         if let Some(evt) = sse_event(&ChatCompletionChunk::initial(&request_id, &model_name)) {
             yield evt;
         }
 
-        for &token_id in &token_ids {
-            if let Some(text) = decode_token(&tokenizer, token_id, clean) {
-                let chunk = ChatCompletionChunk::content(&request_id, &model_name, &text);
-                if let Some(evt) = sse_event(&chunk) {
-                    yield evt;
-                }
+        for delta in &deltas {
+            let chunk = ChatCompletionChunk::content(&request_id, &model_name, delta);
+            if let Some(evt) = sse_event(&chunk) {
+                yield evt;
             }
         }
 
@@ -363,7 +368,7 @@ fn try_gpu_backend(
             tokenizer,
             request_id.to_string(),
             request.model.clone(),
-            false,
+            request.stop.as_deref(),
         ));
     }
 
@@ -443,7 +448,7 @@ fn try_cached_backend(
             tokenizer,
             request_id.to_string(),
             request.model.clone(),
-            false,
+            request.stop.as_deref(),
         ));
     }
 

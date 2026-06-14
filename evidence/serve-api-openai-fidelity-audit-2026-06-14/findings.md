@@ -17,7 +17,8 @@ prioritized; fixed incrementally (one coherent cluster per PR).
    spanning tokens emitted U+FFFD. `openai_chat_completions_stream_handler` now precomputes
    `streaming_text_deltas()` (cumulative decode, hold back until the char completes) which
    ALSO applies stop. Covered by FALSIFY-STREAM-DELTA-758. STILL OPEN: the same per-token
-   `decode_token()` in `pregenerated_sse_response` + `true_streaming_sse_response`.
+   `decode_token()` in `true_streaming_sse_response` (PMAT-759 fixed `pregenerated_sse_response`
+   — the cuda/gpu/cached chat streaming backends — by routing it through the same helper).
 
 ## Stop sequences ignored (HIGH) — model doesn't stop / leaks stop text
 3. **[FIXED PMAT-754]** `try_cached_completions` (realize_handlers_embed_completion.rs) — now applies stop via shared truncate_at_stop().
