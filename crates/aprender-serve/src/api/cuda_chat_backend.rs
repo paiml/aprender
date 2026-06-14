@@ -51,11 +51,12 @@ fn try_safetensors_cuda_backend(
     let completion_tokens = output_ids.len();
     let prompt_tokens = input_ids.len();
 
-    let finish_reason = if completion_tokens >= max_tokens {
-        "length"
-    } else {
-        "stop"
-    };
+    // PMAT-756: this backend builds the chat JSON inline (not via build_chat_response) and
+    // previously ignored request.stop entirely — the returned message kept the stop string
+    // and ran to max_tokens. Reuse the shared finalize_chat_text helper so it matches every
+    // other non-streaming chat backend (stop truncation + "stop" finish_reason precedence).
+    let (output_text, finish_reason) =
+        finalize_chat_text(output_text, request.stop.as_deref(), completion_tokens, max_tokens);
 
     let body = format!(
         r#"{{"id":"{}","object":"chat.completion","model":"{}","choices":[{{"index":0,"message":{{"role":"assistant","content":{}}},"finish_reason":"{}"}}],"usage":{{"prompt_tokens":{},"completion_tokens":{},"total_tokens":{}}}}}"#,
@@ -216,6 +217,7 @@ async fn try_cuda_backend(
         prompt_tokens,
         completion_tokens,
         max_tokens,
+        request.stop.as_deref(),
         trace_level,
         latency,
     ))
@@ -305,6 +307,7 @@ fn try_quantized_backend(
         prompt_tokens,
         completion_tokens,
         max_tokens,
+        request.stop.as_deref(),
         trace_level,
         latency,
     ))
@@ -400,6 +403,7 @@ fn registry_fallback(
         prompt_tokens,
         completion_tokens,
         max_tokens,
+        request.stop.as_deref(),
         None,
         duration,
     )
@@ -555,6 +559,7 @@ async fn try_apr_q4k_chat_backend(
         prompt_tokens,
         completion_tokens,
         max_tokens,
+        request.stop.as_deref(),
         trace_level,
         start.elapsed(),
     ))
@@ -826,6 +831,7 @@ fn try_qwen3_moe_backend(
         prompt_token_count,
         completion_tokens,
         max_tokens,
+        request.stop.as_deref(),
         None,
         duration,
     ))

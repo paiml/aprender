@@ -1,7 +1,7 @@
 contract: apr-serve-openai-compat
 metadata:
   kind: pattern
-  version: "1.1.0"
+  version: "1.3.0"
   description: >
     OpenAI-compatible serve layer (/v1/chat/completions, /v1/completions) fidelity
     invariants. Established by an adversarial audit (2026-06-14) that found 12 confirmed
@@ -30,14 +30,24 @@ proof_obligations:
       streamed event's data is parseable JSON, never the literal "data: {...}".
   - type: invariant
     property: >
-      STOP-APPLIED (PARTIAL — PMAT-754): every completion backend applies the request's
-      stop sequences (post-decode truncation at the EARLIEST stop position), so generated
-      text never contains a stop string. DISCHARGED for try_cached_completions and
-      try_quantized_completions via the shared truncate_at_stop() helper. STILL OPEN:
-      try_gpu_completions and the /v1/chat/completions path (build_chat_response needs a
-      stops param threaded through its backends — tracked follow-up). The prior inline
-      forms (gpu_completions_handler.rs) truncate at the first-LISTED stop, not the
-      earliest-POSITION one — should migrate to the helper.
+      STOP-APPLIED (DISCHARGED for NON-STREAMING — PMAT-754/755/756): every NON-STREAMING
+      completion AND chat backend applies the request's stop sequences (post-decode
+      truncation at the EARLIEST stop position) via the shared truncate_at_stop() helper, so
+      the returned (non-streamed) text never contains a stop string. /v1/completions:
+      try_cached_completions, try_quantized_completions (PMAT-754), try_gpu_completions,
+      try_apr_q4k_completions (PMAT-755). /v1/chat/completions: build_chat_response runs
+      finalize_chat_text() across ALL 7 build_chat_response call sites
+      (gpu/quantized/cached/q4k/qwen3_moe/registry), AND the inline try_safetensors_cuda_backend
+      builder (which bypasses build_chat_response) also calls finalize_chat_text — together
+      with finish_reason="stop" when a stop string truncated (precedence over "length")
+      (PMAT-756).
+      OPEN (tracked, NOT covered): the STREAMING chat paths — pregenerated_sse_response,
+      true_streaming_sse_response, chat_completions_stream.rs — decode/emit token-by-token
+      and do NOT apply stop; correct streaming stop needs incremental cross-token stop
+      detection + partial-final-chunk emission, the same cross-token buffer the UTF-8
+      stream-split fix (audit item 2) requires, so they ship as one combined follow-up.
+      Residual nicety (non-blocking): the try_cuda_gguf_completions inline form truncates at
+      the first-LISTED stop, not the earliest-POSITION one — should migrate to the helper.
   - type: invariant
     property: >
       PARAMS-PLUMBED (open — audit items 7-10): request params (n, seed, top_k,
@@ -51,6 +61,12 @@ falsification_tests:
     test_harness: 'cargo test -p aprender-serve --lib pmat754_stop_truncation_tests'
     expected_output: "test result: ok"
     if_fails: 'A completion backend returns text containing the stop string (or runs to max_tokens past it), violating OpenAI stop semantics — the pre-PMAT-754 behavior in the cached/quantized backends.'
+  - id: FALSIFY-CHAT-STOP-756
+    name: pmat756_chat_stop_tests
+    prediction: 'finalize_chat_text(text, stops, completion_tokens, max_tokens) truncates the chat message at the earliest stop position via the shared truncate_at_stop helper and sets finish_reason: a matched stop string => "stop" (even when completion_tokens >= max_tokens — stop precedence over length); no stop match + max_tokens hit => "length"; no stop match under max_tokens => "stop"; stops=None leaves text untouched. build_chat_response runs it for all 7 /v1/chat/completions backends so the returned message never contains a stop string.'
+    test_harness: 'cargo test -p aprender-serve --lib pmat756_chat_stop_tests'
+    expected_output: "test result: ok"
+    if_fails: 'The /v1/chat/completions response contains the stop string / runs to max_tokens past it (the pre-PMAT-756 behavior — the chat path ignored request.stop entirely), or finish_reason mislabels a stop-truncated message as "length".'
   - id: FALSIFY-SSE-FRAMING-753
     name: chat_completions_stream_no_double_data_prefix
     prediction: 'chat_completions_stream.rs yields Event::default().data(<bare json>) / .data("[DONE]") — no occurrence of Event::default().data(format!("data: ...")) (which double-prefixes the SSE wire format). Shape gate: catches re-introduction of the manual prefix.'

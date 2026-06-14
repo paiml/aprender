@@ -60,6 +60,8 @@ fn try_gpu_completions(
     let text = tokenizer
         .decode(&token_ids)
         .map_err(|e| rerr(state, StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    // PMAT-755: apply OpenAI stop sequences (this GPU backend previously ignored them).
+    let text = truncate_at_stop(text, request.stop.as_deref());
     state
         .metrics
         .record_success(completion_tokens, start.elapsed());
@@ -195,6 +197,8 @@ async fn try_apr_q4k_completions(
     let text = tokenizer
         .decode(&resp.output_tokens)
         .map_err(|e| rerr(state, StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    // PMAT-755: apply OpenAI stop sequences (this backend previously ignored them).
+    let text = truncate_at_stop(text, request.stop.as_deref());
     let completion_tokens = resp.tokens_generated;
     state.metrics.record_success(completion_tokens, start.elapsed());
 
