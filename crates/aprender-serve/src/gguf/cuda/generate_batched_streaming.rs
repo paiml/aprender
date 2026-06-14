@@ -458,6 +458,21 @@ impl OwnedQuantizedModelCuda {
     /// VRAM budget: FP16(2944)+KV(896)+Q4K(850)+WS(40) = 4730 MB fits 7.5 GB.
     ///
     /// Caller must hold model write lock for the duration of this call.
+    /// PMAT-765: reset batched logical state after an ABORTED setup/prefill — before any
+    /// `BatchedDecodeState` exists (so the full `batched_cleanup` can't run).
+    /// `batched_setup_and_prefill` may have already called `init_batched_kv_cache_gpu` (which
+    /// sets `batched_kv_stride != 0`) before failing; if the error path returns WITHOUT
+    /// resetting it, the next batch reuses buffers (PMAT-075 high-water mark) with a STALE
+    /// stride and prefill/scatter writes K/V to the wrong slots → cross-request KV corruption.
+    /// Mirrors the stride + decode-graph resets that `batched_cleanup` performs.
+    pub fn reset_batched_state(&mut self) {
+        self.executor.batched_kv_stride = 0;
+        self.executor.clear_decode_graph();
+    }
+
+    /// PMAT-072: Cleanup after step-wise batched generation. Preserves workspace + batched KV
+    /// buffers (PMAT-075 high-water mark for graph reuse) and resets the batched logical state
+    /// (batched_kv_stride, decode graph) so the next batch starts clean.
     pub fn batched_cleanup(&mut self, state: &BatchedDecodeState) {
         // PMAT-061: Disable HGEMM batched decode flag before cleanup.
         self.executor.hgemm_batched_decode_active = false;
@@ -597,9 +612,17 @@ impl OwnedQuantizedModelCuda {
         state.m = new_m;
         state.embed_buf.resize(new_m * state.hidden_dim, 0.0);
         state.pos_buf.resize(new_m, 0);
-        state.max_tokens_max = state
-            .max_tokens_max
-            .max(state.configs.last().expect("configs must not be empty when updating max_tokens").max_tokens);
+        // PMAT-765: a slot joining mid-batch at step `gen_idx` with `max_tokens` M must run
+        // until gen_idx + M, else it terminates ~gen_idx steps early. recycle_slot and
+        // recycle_slots_batch already add the gen_idx offset; add_slot_to_batch did not.
+        state.max_tokens_max = state.max_tokens_max.max(
+            state.gen_idx
+                + state
+                    .configs
+                    .last()
+                    .expect("configs must not be empty when updating max_tokens")
+                    .max_tokens,
+        );
 
         let prefill_ms = prefill_start.elapsed().as_secs_f64() * 1000.0;
         eprintln!(
