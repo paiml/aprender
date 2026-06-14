@@ -1,7 +1,7 @@
 contract: apr-serve-openai-compat
 metadata:
   kind: pattern
-  version: "1.4.0"
+  version: "1.5.0"
   description: >
     OpenAI-compatible serve layer (/v1/chat/completions, /v1/completions) fidelity
     invariants. Established by an adversarial audit (2026-06-14) that found 12 confirmed
@@ -41,21 +41,23 @@ proof_obligations:
       builder (which bypasses build_chat_response) also calls finalize_chat_text — together
       with finish_reason="stop" when a stop string truncated (precedence over "length")
       (PMAT-756).
-      STREAMING: chat_completions_stream.rs (the openai_chat_completions_stream_handler) now
-      applies stop via streaming_text_deltas() (PMAT-758, DISCHARGED for this handler).
-      STILL OPEN: pregenerated_sse_response + true_streaming_sse_response (the cuda/gpu/cached
-      chat streaming backends) — the live-channel path needs incremental cross-token stop
-      detection; tracked follow-up.
+      STREAMING (PRE-GENERATED paths DISCHARGED — PMAT-758/759): chat_completions_stream.rs
+      (PMAT-758) AND pregenerated_sse_response (PMAT-759, the cuda/gpu/cached chat streaming
+      backends + registry fallback) now apply stop via streaming_text_deltas(). STILL OPEN:
+      true_streaming_sse_response (the live mpsc-channel path) — needs incremental cross-token
+      stop detection; tracked follow-up.
       Residual nicety (non-blocking): the try_cuda_gguf_completions inline form truncates at
       the first-LISTED stop, not the earliest-POSITION one — should migrate to the helper.
   - type: invariant
     property: >
-      STREAM-UTF8 (PARTIAL — PMAT-758): streamed SSE deltas must be valid UTF-8 — never a
-      U+FFFD replacement char from decoding a single token that is one byte of a multi-byte
-      char. chat_completions_stream.rs decodes CUMULATIVE token prefixes and holds back a
-      delta until the trailing multi-byte char completes (the HF TextStreamer technique).
-      STILL OPEN: pregenerated_sse_response + true_streaming_sse_response apply the same
-      per-token decode_token() and need the same cumulative/byte-buffer treatment.
+      STREAM-UTF8 (PRE-GENERATED paths DISCHARGED — PMAT-758/759): streamed SSE deltas must be
+      valid UTF-8 — never a U+FFFD replacement char from decoding a single token that is one
+      byte of a multi-byte char. chat_completions_stream.rs (PMAT-758) and
+      pregenerated_sse_response (PMAT-759) decode CUMULATIVE token prefixes via
+      streaming_text_deltas() and hold back a delta until the trailing multi-byte char
+      completes (the HF TextStreamer technique). STILL OPEN: true_streaming_sse_response uses
+      the per-token decode_token() and needs an incremental cross-token byte buffer (the
+      live-channel path can't precompute the full token list).
   - type: invariant
     property: >
       PARAMS-PLUMBED (open — audit items 7-10): request params (n, seed, top_k,
@@ -77,7 +79,7 @@ falsification_tests:
     if_fails: 'The /v1/chat/completions response contains the stop string / runs to max_tokens past it (the pre-PMAT-756 behavior — the chat path ignored request.stop entirely), or finish_reason mislabels a stop-truncated message as "length".'
   - id: FALSIFY-STREAM-DELTA-758
     name: pmat758_streaming_delta_tests
-    prediction: 'streaming_text_deltas(tokenizer, token_ids, stops) decodes cumulative token prefixes and (a) holds back a delta until a multi-byte UTF-8 char completes — a 4-token 😀 (F0 9F 98 80) yields a single "😀", never U+FFFD; (b) truncates at the earliest stop and halts emission — "abXc" with stop ["X"] streams "ab", never containing "X"; (c) stops=None streams the full text. chat_completions_stream.rs streams these precomputed deltas.'
+    prediction: 'streaming_text_deltas(tokenizer, token_ids, stops) decodes cumulative token prefixes and (a) holds back a delta until a multi-byte UTF-8 char completes — a 4-token 😀 (F0 9F 98 80) yields a single "😀", never U+FFFD; (b) truncates at the earliest stop and halts emission — "abXc" with stop ["X"] streams "ab", never containing "X"; (c) stops=None streams the full text. BOTH pre-generated streaming paths — chat_completions_stream.rs (PMAT-758) and pregenerated_sse_response (PMAT-759) — stream these precomputed deltas.'
     test_harness: 'cargo test -p aprender-serve --lib pmat758_streaming_delta_tests'
     expected_output: "test result: ok"
     if_fails: 'The streaming chat handler emits U+FFFD replacement chars for emoji/CJK that span tokens (per-token decode), or leaks the stop string into the stream — the pre-PMAT-758 behavior of openai_chat_completions_stream_handler.'

@@ -383,7 +383,7 @@ fn registry_fallback(
             tokenizer,
             request_id.to_string(),
             request.model.clone(),
-            false,
+            request.stop.as_deref(),
         );
     }
 
