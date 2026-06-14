@@ -162,7 +162,7 @@ impl<M: GenerativeModel> GenerationPipeline<M> {
             rng_state = rng_state
                 .wrapping_mul(6_364_136_223_846_793_005)
                 .wrapping_add(1);
-            let rng_value = (rng_state >> 33) as f32 / (1u64 << 31) as f32;
+            let rng_value = lcg_state_to_unit_f32(rng_state);
 
             let next_token = sample_token(&logits_tensor, &self.config, rng_value)? as u32;
 
@@ -201,6 +201,22 @@ impl<M: GenerativeModel> GenerationPipeline<M> {
     pub fn config(&self) -> &GenerationConfig {
         &self.config
     }
+}
+
+/// Map a 64-bit LCG state to a uniform random float in **[0, 1)**.
+///
+/// The naive `(state >> 33) as f32 / (1u64 << 31) as f32` is wrong: its max integer
+/// numerator is `2^31 - 1 = 2_147_483_647`, but f32 has only a 24-bit mantissa, so
+/// `2_147_483_647 as f32` rounds UP to `2_147_483_648.0` — exactly the divisor — yielding
+/// `rng_value == 1.0`. A draw of `1.0` makes `rng_value < cumsum` false for every token in
+/// `sample_from_distribution`, so the cumulative-distribution loop falls through to its
+/// biased last-(lowest-prob)-token fallback instead of sampling.
+///
+/// Using the top 24 bits over `2^24` keeps the numerator in `[0, 2^24 - 1]` — exactly
+/// representable in f32 — so the quotient is always strictly `< 1.0`. This is the canonical
+/// "random float in [0,1)" construction and preserves seed determinism.
+pub(crate) fn lcg_state_to_unit_f32(state: u64) -> f32 {
+    (state >> 40) as f32 / (1u64 << 24) as f32
 }
 
 // Tests extracted to tests.rs (PMAT-802)

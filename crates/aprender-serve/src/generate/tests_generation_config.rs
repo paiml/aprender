@@ -52,6 +52,28 @@
     }
 
     #[test]
+    fn test_apply_temperature_rejects_non_finite() {
+        // A non-finite temperature must be rejected, NOT silently scaled. `NaN <= 0.0` is
+        // false (IEEE-754 unordered), so the old `temperature <= 0.0` guard let NaN/inf
+        // through and `x / NaN = NaN` poisoned every logit -> silent garbage sampling.
+        let logits = Tensor::from_vec(vec![4], vec![1.0, 2.0, 3.0, 4.0]).expect("test");
+        assert!(
+            apply_temperature(&logits, f32::NAN).is_err(),
+            "NaN temperature must be rejected"
+        );
+        assert!(
+            apply_temperature(&logits, f32::INFINITY).is_err(),
+            "+inf temperature must be rejected"
+        );
+        assert!(
+            apply_temperature(&logits, f32::NEG_INFINITY).is_err(),
+            "-inf temperature must be rejected"
+        );
+        // A positive finite temperature still succeeds (no regression).
+        assert!(apply_temperature(&logits, 0.7).is_ok());
+    }
+
+    #[test]
     fn test_sample_greedy() {
         // Clear winner at index 2
         let logits = Tensor::from_vec(vec![5], vec![1.0, 2.0, 10.0, 3.0, 4.0]).expect("test");

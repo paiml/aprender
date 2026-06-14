@@ -153,8 +153,9 @@ impl Model {
             rng_state = rng_state
                 .wrapping_mul(6_364_136_223_846_793_005)
                 .wrapping_add(1);
-            #[allow(clippy::cast_precision_loss)]
-            let rng_value = (rng_state >> 33) as f32 / (1u64 << 31) as f32;
+            // PMAT-757: f32-safe [0,1) mapping. The old `(state >> 33)/(1<<31)` rounded its
+            // max numerator UP to 2^31 in f32 -> rng_value == 1.0 -> biased last-token draw.
+            let rng_value = crate::generate::lcg_state_to_unit_f32(rng_state);
 
             // Sample next token
             let next_token = sample_token(&last_logits_tensor, config, rng_value)?;
