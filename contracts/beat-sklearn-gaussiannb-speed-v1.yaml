@@ -1,0 +1,67 @@
+contract: beat-sklearn-gaussiannb-speed
+metadata:
+  kind: beat-benchmark
+  version: "1.0.0"
+  description: >
+    Pillar-1 BEAT benchmark: aprender GaussianNB fit+predict must be comfortably
+    FASTER than scikit-learn's GaussianNB on the same data, same host, same run.
+    GaussianNB is pure O(n·d·classes) elementwise arithmetic with NO LAPACK/BLAS,
+    so the win comes from algorithmic care rather than a faster GEMM: apr hoists
+    the sample-independent `ln(2π·σ²)` normalization out of the per-sample hot
+    loop (O(n·c·d) -> O(c·d) transcendental calls) and computes class assignment
+    by argmax of the log-posterior, skipping the discarded softmax. The beat is
+    gated on the RELATIVE ratio apr_ms/sklearn_ms so it is robust to CI-host speed
+    variance (a slow runner slows both sides). Runs nightly (needs uv +
+    scikit-learn), not per-PR.
+  references:
+  - "docs/specifications/campaign-ev-reprioritization-2026-06-12.md"
+  - "crates/aprender-core/tests/beat_sklearn_gaussiannb_speed.rs"
+  - "crates/aprender-core/src/classification/linear_svm.rs"
+version: 1
+status: enforced
+date: 2026-06-14
+
+beat:
+  pillar: 1
+  incumbent: scikit-learn
+  incumbent_pinned: "2026-06-14 via uv run --with scikit-learn (sklearn.naive_bayes.GaussianNB)"
+  canonical_task: >
+    GaussianNB fit+predict on make_classification(n_samples=50000,
+    n_features=30, n_informative=20, n_classes=8, seed=42). apr and scikit-learn
+    are timed on the SAME generated data, SAME host, SAME run (median of 5 +
+    warmup); the metric is the relative ratio apr_ms / sklearn_ms.
+  metric: wall_clock_ratio_apr_over_sklearn
+  direction: lower_is_better
+  baseline_value: 1.0000      # sklearn is the 1.0 reference (apr/sklearn vs itself)
+  baseline_floor: 0.2030      # measured apr/sklearn ~0.20 (apr ~4.9x faster, ln-hoist fix)
+  beat_threshold: 0.5000      # apr must stay <= 0.50 (>= 2x faster) — large margin vs 0.20
+  baseline_sourced_date: "2026-06-14"
+  approved_compute: CPU
+  ci_gate_name: "beat_sklearn_gaussiannb_speed"
+
+proof_obligations:
+- id: OBLIG-NB-SPEED-RATIO
+  statement: >
+    On the canonical task, apr_ms / sklearn_ms <= beat_threshold (0.50) measured
+    same-host/same-run as the median of 5 timed iterations after a warmup.
+  type: bound
+
+falsification_tests:
+- id: FALSIFY-BEAT-SKLEARN-GAUSSIANNB-SPEED
+  description: >
+    The beat is FALSE if apr GaussianNB fit+predict is not at least 2x faster
+    than scikit-learn on the canonical task (ratio > 0.50). The test panics with
+    the measured apr_ms / sklearn_ms so a regression (e.g. re-introducing the
+    per-sample `ln` recomputation, or routing predict back through the full
+    softmax) is caught.
+  command: >
+    cargo test -p aprender-core --release --test beat_sklearn_gaussiannb_speed --
+    --ignored --nocapture
+  expected: "ratio <= 0.50 (apr >= 2x faster than scikit-learn GaussianNB)"
+  if_fails: >
+    A regression slowed apr GaussianNB. Most likely the per-class `ln(2π·σ²)`
+    normalization was re-introduced into the per-sample predict loop (O(n·c·d)
+    transcendental calls), or `predict` was routed back through `predict_proba`'s
+    full softmax (per-sample allocation + exp). Check
+    GaussianNB::predict / log_const_terms in
+    crates/aprender-core/src/classification/linear_svm.rs.
