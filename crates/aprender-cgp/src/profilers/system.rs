@@ -23,6 +23,12 @@ pub fn collect_system_health() -> Option<SystemHealthMetrics> {
     let cpu_freq = read_cpu_frequency().unwrap_or(0.0);
     let cpu_temp = read_cpu_temperature().unwrap_or(0.0);
 
+    // Unified-memory platforms report memory.total as N/A (parses to 0); fall back to system RAM.
+    let mut gpu_mem_total = parse_nvidia_val(fields[5]);
+    if gpu_mem_total <= 0.0 {
+        gpu_mem_total = read_system_memory_total_mb().unwrap_or(0.0);
+    }
+
     Some(SystemHealthMetrics {
         gpu_temperature_celsius: parse_nvidia_val(fields[0]),
         gpu_power_watts: parse_nvidia_val(fields[1]),
@@ -31,7 +37,7 @@ pub fn collect_system_health() -> Option<SystemHealthMetrics> {
         cpu_frequency_mhz: cpu_freq,
         cpu_temperature_celsius: cpu_temp,
         gpu_memory_used_mb: parse_nvidia_val(fields[4]),
-        gpu_memory_total_mb: parse_nvidia_val(fields[5]),
+        gpu_memory_total_mb: gpu_mem_total,
     })
 }
 
@@ -45,8 +51,14 @@ pub fn collect_vram() -> Option<VramMetrics> {
     }
 
     let used = parse_nvidia_val(fields[0]);
-    let total = parse_nvidia_val(fields[1]);
+    let mut total = parse_nvidia_val(fields[1]);
     let free = parse_nvidia_val(fields[2]);
+    // Unified-memory NVIDIA platforms (GB10/GH200/Jetson) report VRAM total as [N/A] via nvidia-smi
+    // because the GPU shares system RAM. Fall back to total system memory so the profiler reports the
+    // (unified) memory budget instead of 0.
+    if total <= 0.0 {
+        total = read_system_memory_total_mb().unwrap_or(0.0);
+    }
     let utilization = if total > 0.0 {
         used / total * 100.0
     } else {
@@ -111,6 +123,24 @@ fn parse_nvidia_val(s: &str) -> f64 {
         .next()
         .and_then(|token| token.parse::<f64>().ok())
         .unwrap_or(0.0)
+}
+
+/// Total system RAM in MB, read from `/proc/meminfo` (`MemTotal`).
+///
+/// Used as a fallback for GPU memory total on unified-memory NVIDIA platforms (GB10 / Grace-Blackwell,
+/// GH200, Jetson), where `nvidia-smi --query-gpu=memory.total` reports `[N/A]` because the GPU shares
+/// system RAM rather than exposing dedicated VRAM. On dedicated GPUs nvidia-smi returns a real value,
+/// so this fallback is never reached and behavior is unchanged.
+fn read_system_memory_total_mb() -> Option<f64> {
+    let content = std::fs::read_to_string("/proc/meminfo").ok()?;
+    for line in content.lines() {
+        // Format: "MemTotal:       65780480 kB"
+        if let Some(rest) = line.strip_prefix("MemTotal:") {
+            let kb = rest.split_whitespace().next()?.parse::<f64>().ok()?;
+            return Some(kb / 1024.0);
+        }
+    }
+    None
 }
 
 /// Read current CPU frequency from /proc/cpuinfo (MHz).
@@ -190,6 +220,15 @@ mod tests {
     #[test]
     fn test_read_cpu_frequency_no_panic() {
         let _ = read_cpu_frequency();
+    }
+
+    /// On Linux `/proc/meminfo` always reports a positive `MemTotal`. This backs the
+    /// unified-memory VRAM fallback (GB10/GH200/Jetson report memory.total = N/A).
+    #[test]
+    fn test_read_system_memory_total_mb() {
+        let total = read_system_memory_total_mb();
+        assert!(total.is_some(), "/proc/meminfo MemTotal should be readable");
+        assert!(total.unwrap() > 0.0, "system memory total should be > 0 MB");
     }
 
     #[test]
