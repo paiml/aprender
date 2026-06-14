@@ -266,7 +266,11 @@ async fn try_batch_completion(
 /// entirely (the model's output kept the stop text / ran to max_tokens); this is the
 /// shared, position-correct application (the prior inline form truncated at the
 /// first-LISTED stop, not the earliest-POSITION one).
-fn truncate_at_stop(text: String, stops: Option<&[String]>) -> String {
+///
+/// `pub(crate)` so the `/v1/chat/completions` path (PMAT-756, `openai_handlers::
+/// build_chat_response`) reuses the same earliest-position truncation as the
+/// `/v1/completions` backends rather than re-implementing it.
+pub(crate) fn truncate_at_stop(text: String, stops: Option<&[String]>) -> String {
     let Some(stops) = stops else {
         return text;
     };

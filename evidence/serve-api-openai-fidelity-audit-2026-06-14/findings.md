@@ -21,9 +21,16 @@ prioritized; fixed incrementally (one coherent cluster per PR).
 4. **[FIXED PMAT-754]** `try_quantized_completions` (realize_handlers_embed_completion.rs) — now applies stop via shared truncate_at_stop().
 5. **[FIXED PMAT-755]** `try_gpu_completions` (gpu_completions_handler.rs) — now applies stop via truncate_at_stop().
    Also **[FIXED PMAT-755]** `try_apr_q4k_completions` (the audit mis-stated it was already correct — it wasn't; now uses the helper).
-6. **[TODO]** chat path `openai_chat_completions_handler` (openai_handlers.rs:344) — no stop applied.
-   Fix pattern exists: `try_cuda_gguf_completions` / `try_apr_q4k_completions` already do
-   post-decode stop truncation — copy it to the 4 backends above.
+6. **[FIXED PMAT-756]** chat path `/v1/chat/completions` — `build_chat_response` now runs
+   `finalize_chat_text()`, applying the shared `truncate_at_stop()` helper across ALL 7
+   `build_chat_response` call sites (gpu/quantized/cached/q4k/qwen3_moe/registry) AND the
+   inline `try_safetensors_cuda_backend` builder (which bypasses `build_chat_response` and
+   was caught as a non-streaming gap by adversarial re-review) — setting `finish_reason="stop"`
+   when a stop string truncated (precedence over "length"). Helper promoted to `pub(crate)`.
+   Covered by FALSIFY-CHAT-STOP-756 (pmat756_chat_stop_tests). With this, **stop sequences
+   are honored on every NON-STREAMING completion+chat backend**. Streaming stop — applying
+   stop mid-SSE (pregenerated/true_streaming/chat_completions_stream) — remains OPEN, grouped
+   with item 2's cross-token stream-buffer work (same incremental-detection machinery).
 
 ## Param plumbing dropped (HIGH/MEDIUM) — OpenAI fidelity
 7. **[TODO]** `n` accepted but ignored (mod_create_demo.rs:94) — n>1 silently returns 1

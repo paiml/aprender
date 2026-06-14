@@ -105,6 +105,34 @@ fn chat_gen_params(
     (max_tokens, temperature, eos_token_id)
 }
 
+/// PMAT-756: apply OpenAI stop sequences to a chat completion's text and compute the
+/// matching `finish_reason`. The `/v1/chat/completions` path previously ignored
+/// `request.stop` entirely — the returned message kept the stop string and ran to
+/// `max_tokens`. Reuses the shared earliest-position [`truncate_at_stop`] helper (PMAT-754)
+/// so chat behaves identically to the `/v1/completions` backends.
+///
+/// `finish_reason` is `"stop"` whenever a stop string truncated the text (even if
+/// `max_tokens` was also reached — a matched stop sequence takes precedence per OpenAI
+/// semantics), `"length"` only when the generation hit `max_tokens` with no stop match,
+/// else `"stop"` (the model emitted EOS naturally). Pure + unit-tested.
+fn finalize_chat_text(
+    text: String,
+    stops: Option<&[String]>,
+    completion_tokens: usize,
+    max_tokens: usize,
+) -> (String, String) {
+    let orig_len = text.len();
+    let text = crate::api::realize_handlers::truncate_at_stop(text, stops);
+    let stopped = text.len() < orig_len;
+    let finish_reason = if !stopped && completion_tokens >= max_tokens {
+        "length"
+    } else {
+        "stop"
+    }
+    .to_string();
+    (text, finish_reason)
+}
+
 /// Build a non-streaming ChatCompletionResponse.
 fn build_chat_response(
     request_id: String,
@@ -113,6 +141,7 @@ fn build_chat_response(
     prompt_tokens: usize,
     completion_tokens: usize,
     max_tokens: usize,
+    stops: Option<&[String]>,
     trace_level: Option<&str>,
     latency: Duration,
 ) -> Response {
@@ -123,6 +152,7 @@ fn build_chat_response(
         completion_tokens,
         28,
     );
+    let (text, finish_reason) = finalize_chat_text(text, stops, completion_tokens, max_tokens);
     Json(ChatCompletionResponse {
         id: request_id,
         object: "chat.completion".to_string(),
@@ -135,11 +165,7 @@ fn build_chat_response(
                 content: text,
                 name: None,
             },
-            finish_reason: if completion_tokens >= max_tokens {
-                "length".to_string()
-            } else {
-                "stop".to_string()
-            },
+            finish_reason,
         }],
         usage: Usage {
             prompt_tokens,
@@ -355,6 +381,7 @@ fn try_gpu_backend(
         prompt_tokens,
         completion_tokens,
         max_tokens,
+        request.stop.as_deref(),
         trace_level,
         latency,
     ))
@@ -434,9 +461,84 @@ fn try_cached_backend(
         prompt_tokens,
         completion_tokens,
         max_tokens,
+        request.stop.as_deref(),
         trace_level,
         latency,
     ))
+}
+
+#[cfg(test)]
+mod pmat756_chat_stop_tests {
+    use super::finalize_chat_text;
+
+    fn stops(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn truncates_at_stop_and_reports_stop_reason() {
+        // A stop string in the text is removed; finish_reason is "stop".
+        let s = stops(&["<|im_end|>"]);
+        let (text, reason) = finalize_chat_text(
+            "Hello world<|im_end|>trailing".to_string(),
+            Some(&s),
+            5,
+            256,
+        );
+        assert_eq!(text, "Hello world");
+        assert_eq!(reason, "stop");
+    }
+
+    #[test]
+    fn stop_match_beats_length_when_max_tokens_also_hit() {
+        // OpenAI semantics: a matched stop sequence takes precedence over "length"
+        // even when completion_tokens >= max_tokens.
+        let s = stops(&["STOP"]);
+        let (text, reason) = finalize_chat_text("answerSTOPmore".to_string(), Some(&s), 256, 256);
+        assert_eq!(text, "answer");
+        assert_eq!(reason, "stop");
+    }
+
+    #[test]
+    fn no_stop_match_and_max_tokens_hit_is_length() {
+        let s = stops(&["<|im_end|>"]);
+        let (text, reason) = finalize_chat_text("full answer".to_string(), Some(&s), 256, 256);
+        assert_eq!(text, "full answer");
+        assert_eq!(reason, "length");
+    }
+
+    #[test]
+    fn no_stop_match_under_max_tokens_is_stop() {
+        let s = stops(&["<|im_end|>"]);
+        let (text, reason) = finalize_chat_text("short".to_string(), Some(&s), 3, 256);
+        assert_eq!(text, "short");
+        assert_eq!(reason, "stop");
+    }
+
+    #[test]
+    fn truncates_at_earliest_position_not_first_listed() {
+        // Mirrors FALSIFY-STOP-TRUNCATE-754: cut at the earliest POSITION,
+        // regardless of which stop is listed first.
+        let s = stops(&["world", "hello"]);
+        let (text, reason) = finalize_chat_text("hello world".to_string(), Some(&s), 5, 256);
+        assert_eq!(text, "");
+        assert_eq!(reason, "stop");
+    }
+
+    #[test]
+    fn none_stops_leaves_text_and_uses_length_when_maxed() {
+        let (text, reason) = finalize_chat_text("untouched".to_string(), None, 256, 256);
+        assert_eq!(text, "untouched");
+        assert_eq!(reason, "length");
+    }
+
+    #[test]
+    fn empty_stop_strings_are_ignored() {
+        let s = stops(&["", ""]);
+        let (text, reason) = finalize_chat_text("kept".to_string(), Some(&s), 1, 256);
+        assert_eq!(text, "kept");
+        assert_eq!(reason, "stop");
+    }
 }
 
 include!("cuda_chat_backend.rs");
