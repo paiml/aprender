@@ -40,3 +40,8 @@ jobs:
         run: |
           cargo test -p aprender-core --release \
             --test beat_sklearn_linreg_speed -- --ignored --nocapture
+
+      - name: Pillar-1 — apr vs scikit-learn GaussianNB speed beat
+        run: |
+          cargo test -p aprender-core --release \
+            --test beat_sklearn_gaussiannb_speed -- --ignored --nocapture
