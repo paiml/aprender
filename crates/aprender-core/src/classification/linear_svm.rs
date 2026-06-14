@@ -131,26 +131,68 @@ impl GaussianNB {
     /// Returns error if model is not fitted or dimension mismatch.
     // Contract: naive-bayes-v1, equation = "log_posterior"
     pub fn predict(&self, x: &Matrix<f32>) -> Result<Vec<usize>> {
-        let probabilities = self.predict_proba(x)?;
+        let means = self.means.as_ref().ok_or("Model not fitted")?;
+        let variances = self.variances.as_ref().ok_or("Model not fitted")?;
+        let class_priors = self.class_priors.as_ref().ok_or("Model not fitted")?;
         let classes = self.classes.as_ref().ok_or("Model not fitted")?;
 
-        let predictions: Vec<usize> = probabilities
+        let (n_samples, n_features) = x.shape();
+        let n_classes = means.len();
+
+        if n_features != means[0].len() {
+            return Err("Feature dimension mismatch".into());
+        }
+
+        // Hoist the sample-INDEPENDENT terms out of the per-sample hot loop. A naive
+        // implementation recomputes `ln(2π·σ²)` for every (sample, class, feature) — O(n·c·d)
+        // transcendental calls. These constants depend only on (class, feature), so precompute
+        // them ONCE: O(c·d). This is the dominant cost in `predict`.
+        let const_term = Self::log_const_terms(class_priors, variances);
+        let inv_2var: Vec<Vec<f32>> = variances
             .iter()
-            .map(|probs| {
-                let max_idx = probs
-                    .iter()
-                    .enumerate()
-                    .max_by(|(_, a), (_, b)| {
-                        a.partial_cmp(b)
-                            .expect("Probabilities are valid f32 (not NaN)")
-                    })
-                    .map(|(idx, _)| idx)
-                    .expect("Probabilities vector is non-empty (n_classes >= 2)");
-                classes[max_idx]
-            })
+            .map(|vc| vc.iter().map(|&v| 1.0 / (2.0 * v)).collect())
             .collect();
 
+        // For class assignment we only need argmax of the log-posterior — softmax normalization
+        // (exp / log-sum-exp / per-sample allocation) is wasted work, so skip it entirely.
+        let mut predictions = Vec::with_capacity(n_samples);
+        for sample_idx in 0..n_samples {
+            let mut best_idx = 0usize;
+            let mut best_lp = f32::NEG_INFINITY;
+            for class_idx in 0..n_classes {
+                let mean_c = &means[class_idx];
+                let inv_c = &inv_2var[class_idx];
+                let mut lp = const_term[class_idx];
+                for feature_idx in 0..n_features {
+                    let diff = x.get(sample_idx, feature_idx) - mean_c[feature_idx];
+                    lp -= diff * diff * inv_c[feature_idx];
+                }
+                if lp > best_lp {
+                    best_lp = lp;
+                    best_idx = class_idx;
+                }
+            }
+            predictions.push(classes[best_idx]);
+        }
+
         Ok(predictions)
+    }
+
+    /// Precomputes the sample-independent per-class log term
+    /// `ln(P(y=c)) + Σ_f −0.5·ln(2π·σ²_{c,f})`, hoisted out of the prediction hot loop so the
+    /// O(n·c·d) `ln` evaluations in a naive Gaussian-NB collapse to O(c·d).
+    fn log_const_terms(class_priors: &[f32], variances: &[Vec<f32>]) -> Vec<f32> {
+        variances
+            .iter()
+            .zip(class_priors)
+            .map(|(vc, &prior)| {
+                let mut t = prior.ln();
+                for &v in vc {
+                    t += -0.5 * (2.0 * std::f32::consts::PI * v).ln();
+                }
+                t
+            })
+            .collect()
     }
 
     /// Returns probability estimates for each class.
@@ -173,6 +215,9 @@ impl GaussianNB {
             return Err("Feature dimension mismatch".into());
         }
 
+        // Same hoist as `predict`: the `ln(2π·σ²)` term is sample-independent — precompute once.
+        let const_term = Self::log_const_terms(class_priors, variances);
+
         let mut probabilities = Vec::with_capacity(n_samples);
 
         for sample_idx in 0..n_samples {
@@ -180,22 +225,16 @@ impl GaussianNB {
 
             // Compute log posterior for each class
             for class_idx in 0..n_classes {
-                // Start with log prior
-                log_probs[class_idx] = class_priors[class_idx].ln();
+                // Start with the precomputed log-prior + log-normalization constant
+                let mut lp = const_term[class_idx];
 
-                // Add log likelihood for each feature (Gaussian PDF)
+                // Subtract the per-feature Mahalanobis term: (x-μ)² / (2σ²)
                 for feature_idx in 0..n_features {
-                    let x_val = x.get(sample_idx, feature_idx);
-                    let mean = means[class_idx][feature_idx];
-                    let variance = variances[class_idx][feature_idx];
-
-                    // Log of Gaussian PDF: -0.5 * log(2π*σ²) - (x-μ)² / (2σ²)
-                    let diff = x_val - mean;
-                    let log_likelihood = -0.5 * (2.0 * std::f32::consts::PI * variance).ln()
-                        - (diff * diff) / (2.0 * variance);
-
-                    log_probs[class_idx] += log_likelihood;
+                    let diff = x.get(sample_idx, feature_idx) - means[class_idx][feature_idx];
+                    lp -= (diff * diff) / (2.0 * variances[class_idx][feature_idx]);
                 }
+
+                log_probs[class_idx] = lp;
             }
 
             // Convert log probabilities to probabilities using log-sum-exp trick
