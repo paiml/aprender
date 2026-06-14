@@ -328,6 +328,9 @@ fn process_cuda_batch(
                 for req in &pending_joins {
                     let _ = req.token_tx.try_send(Err(e.to_string()));
                 }
+                // PMAT-765: reset stale batched state (batched_kv_stride) before returning, so
+                // the NEXT batch doesn't reuse buffers with a stale stride → KV corruption.
+                cuda_model.reset_batched_state();
                 return;
             },
         }

@@ -1,5 +1,5 @@
 metadata:
-  version: 1.1.0
+  version: 1.2.0
   created: '2026-03-09'
   author: PAIML Engineering
   description: Continuous batching scheduler — unified prefill/decode with token budget
@@ -177,6 +177,30 @@ falsification_tests:
     Batched decode forced greedy argmax for every slot (the pre-PMAT-764 bug) — continuous
     batching silently ignored temperature/top_k/seed, so all requests got identical greedy
     output regardless of their sampling params.
+- id: FALSIFY-CB-011
+  rule: Mid-batch slot-join budget includes gen_idx offset (PMAT-765)
+  prediction: >
+    add_slot_to_batch extends max_tokens_max by `gen_idx + new_config.max_tokens` (NOT just
+    max_tokens), consistent with recycle_slot/recycle_slots_batch. A slot joining at step N
+    with max_tokens M therefore runs until N+M and gets its full M generation steps.
+  test: >
+    Source check: add_slot_to_batch's max_tokens_max update adds state.gen_idx (matches
+    recycle_slot). A slot joined at gen_idx>0 produces max_tokens tokens, not max_tokens-gen_idx.
+  if_fails: >
+    A mid-batch-joined request terminates ~gen_idx steps early (the pre-PMAT-765 bug:
+    add_slot_to_batch used max(max_tokens) without the gen_idx offset).
+- id: FALSIFY-CB-012
+  rule: Aborted setup/prefill resets batched state (PMAT-765)
+  prediction: >
+    On batched_setup_and_prefill error, the scheduler calls reset_batched_state()
+    (batched_kv_stride = 0 + clear_decode_graph) before returning, so the NEXT batch reinits
+    cleanly instead of reusing buffers with a stale stride.
+  test: >
+    Source check: cuda_batch_scheduler.rs setup-error arm calls cuda_model.reset_batched_state()
+    before return; reset_batched_state zeroes batched_kv_stride (mirrors batched_cleanup).
+  if_fails: >
+    A failed setup leaves batched_kv_stride non-zero; the next (buffer-reusing) batch writes
+    K/V to the wrong slots -> cross-request KV corruption (the pre-PMAT-765 bug).
 kani_harnesses:
 - id: KANI-CB-001
   obligation: CB-INV-001
