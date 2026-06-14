@@ -19,7 +19,8 @@ prioritized; fixed incrementally (one coherent cluster per PR).
 ## Stop sequences ignored (HIGH) — model doesn't stop / leaks stop text
 3. **[FIXED PMAT-754]** `try_cached_completions` (realize_handlers_embed_completion.rs) — now applies stop via shared truncate_at_stop().
 4. **[FIXED PMAT-754]** `try_quantized_completions` (realize_handlers_embed_completion.rs) — now applies stop via shared truncate_at_stop().
-5. **[TODO]** `try_gpu_completions` (gpu_completions_handler.rs:39) — no stop applied.
+5. **[FIXED PMAT-755]** `try_gpu_completions` (gpu_completions_handler.rs) — now applies stop via truncate_at_stop().
+   Also **[FIXED PMAT-755]** `try_apr_q4k_completions` (the audit mis-stated it was already correct — it wasn't; now uses the helper).
 6. **[TODO]** chat path `openai_chat_completions_handler` (openai_handlers.rs:344) — no stop applied.
    Fix pattern exists: `try_cuda_gguf_completions` / `try_apr_q4k_completions` already do
    post-decode stop truncation — copy it to the 4 backends above.

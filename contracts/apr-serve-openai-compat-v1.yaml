@@ -1,7 +1,7 @@
 contract: apr-serve-openai-compat
 metadata:
   kind: pattern
-  version: "1.1.0"
+  version: "1.2.0"
   description: >
     OpenAI-compatible serve layer (/v1/chat/completions, /v1/completions) fidelity
     invariants. Established by an adversarial audit (2026-06-14) that found 12 confirmed
@@ -30,14 +30,15 @@ proof_obligations:
       streamed event's data is parseable JSON, never the literal "data: {...}".
   - type: invariant
     property: >
-      STOP-APPLIED (PARTIAL — PMAT-754): every completion backend applies the request's
-      stop sequences (post-decode truncation at the EARLIEST stop position), so generated
-      text never contains a stop string. DISCHARGED for try_cached_completions and
-      try_quantized_completions via the shared truncate_at_stop() helper. STILL OPEN:
-      try_gpu_completions and the /v1/chat/completions path (build_chat_response needs a
-      stops param threaded through its backends — tracked follow-up). The prior inline
-      forms (gpu_completions_handler.rs) truncate at the first-LISTED stop, not the
-      earliest-POSITION one — should migrate to the helper.
+      STOP-APPLIED (PARTIAL — PMAT-754/755): every completion backend applies the
+      request's stop sequences (post-decode truncation at the EARLIEST stop position) via
+      the shared truncate_at_stop() helper, so generated text never contains a stop string.
+      DISCHARGED for ALL /v1/completions backends: try_cached_completions,
+      try_quantized_completions (PMAT-754), try_gpu_completions, try_apr_q4k_completions
+      (PMAT-755). STILL OPEN: the /v1/chat/completions path (build_chat_response needs a
+      stops param threaded through its backends — a signature change, tracked follow-up);
+      and the try_cuda_gguf_completions inline form truncates at the first-LISTED stop, not
+      the earliest-POSITION one — should migrate to the helper (minor correctness nicety).
   - type: invariant
     property: >
       PARAMS-PLUMBED (open — audit items 7-10): request params (n, seed, top_k,
