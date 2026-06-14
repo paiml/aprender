@@ -277,19 +277,15 @@ async fn try_cuda_gguf_completions(
     }
 
     let completion_tokens = output_tokens.len();
-    let mut text = tokenizer
+    let text = tokenizer
         .decode(&output_tokens)
         .map_err(|e| rerr(state, StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
-    // Truncate at first stop sequence (OpenAI behavior)
-    if let Some(stops) = &request.stop {
-        for stop in stops {
-            if let Some(pos) = text.find(stop.as_str()) {
-                text.truncate(pos);
-                break;
-            }
-        }
-    }
+    // PMAT-761: truncate at the EARLIEST stop POSITION via the shared helper. The previous
+    // inline loop cut at the first-LISTED stop that matched, not the earliest-position one —
+    // e.g. stop=["world","hello"] on "hello world" wrongly kept "hello ". This makes
+    // try_cuda_gguf_completions consistent with every other completion backend (PMAT-754/755).
+    let text = truncate_at_stop(text, request.stop.as_deref());
 
     state.metrics.record_success(completion_tokens, start.elapsed());
 
