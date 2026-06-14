@@ -411,3 +411,45 @@ fn test_advanced_generation_config_with_stop_sequences() {
     let config = AdvancedGenerationConfig::new(base).with_stop_sequences(vec!["stop".to_string()]);
     assert!(config.stop_detector.is_some());
 }
+
+// ========================================================================
+// LCG unit-interval RNG tests (sampling RNG range bug)
+// ========================================================================
+
+#[test]
+fn test_lcg_state_to_unit_f32_in_half_open_unit_interval() {
+    // rng_value MUST be in [0, 1): sample_from_distribution does `rng_value < cumsum`,
+    // so a value of exactly 1.0 never matches and biases toward the last (lowest-prob)
+    // token. The boundary state u64::MAX is the case the OLD formula
+    // `(state >> 33) as f32 / (1u64 << 31) as f32` returned exactly 1.0 for, because
+    // (2^31-1) rounds UP to 2^31 in f32. This is the mutation guard.
+    assert!(
+        lcg_state_to_unit_f32(u64::MAX) < 1.0,
+        "max state must map strictly below 1.0, got {}",
+        lcg_state_to_unit_f32(u64::MAX)
+    );
+    assert_eq!(lcg_state_to_unit_f32(0), 0.0);
+
+    // Sweep a spread of states (mix high/low/patterned bits) — all in [0, 1).
+    for &s in &[
+        0u64,
+        1,
+        42,
+        1 << 40,
+        (1 << 40) - 1,
+        u64::MAX - 1,
+        u64::MAX,
+        0x8000_0000_0000_0000,
+        0xFFFF_FFFF_0000_0000,
+        12_345_678_901_234_567,
+    ] {
+        let v = lcg_state_to_unit_f32(s);
+        assert!((0.0..1.0).contains(&v), "rng_value {v} out of [0,1) for state {s}");
+    }
+}
+
+#[test]
+fn test_lcg_state_to_unit_f32_is_deterministic() {
+    // Same state => same value (seed determinism precondition).
+    assert_eq!(lcg_state_to_unit_f32(99), lcg_state_to_unit_f32(99));
+}

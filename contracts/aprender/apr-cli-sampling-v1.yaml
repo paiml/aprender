@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-04-06'
   author: PAIML Engineering
   description: >
@@ -30,8 +30,12 @@ equations:
     - Temperature must be non-negative
     - Temperature 0.0 produces deterministic output (GH-637)
     - Temperature 0.0 produces non-empty output on GPU (GH-637)
+    - Temperature must be FINITE — NaN/±inf are rejected (PMAT-757). `NaN <= 0.0` is false
+      (IEEE-754 unordered), so a bare `<= 0.0` guard lets NaN through; `logit / NaN = NaN`
+      then poisons the whole distribution and silently biases sampling to the last token.
     preconditions:
     - temperature >= 0.0
+    - temperature.is_finite()
     postconditions:
     - output tokens are non-empty for valid prompt
     lean_theorem: Theorems.TemperatureBounds
@@ -72,6 +76,12 @@ equations:
     - Same seed produces identical output (GH-570)
     - Determinism holds across runs (no external entropy)
     - --seed 0 uses random seed (convention)
+    - RNG draw value is in the HALF-OPEN interval [0, 1) (PMAT-757). sample_from_distribution
+      selects on `rng_value < cumsum`; a draw of exactly 1.0 matches no token and falls
+      through to the biased last-(lowest-prob)-token fallback. The naive
+      `(state >> 33) as f32 / (1<<31) as f32` yields 1.0 because 2^31-1 rounds UP to 2^31 in
+      f32; the f32-safe construction is `(state >> 40) as f32 / (1<<24) as f32`
+      (numerator exact in f32 -> strictly < 1.0). Determinism is preserved.
     preconditions:
     - seed is a valid u64
     postconditions:
@@ -147,6 +157,20 @@ proof_obligations:
     theorem: Theorems.SeedDeterminism
     status: sorry
 - type: invariant
+  property: Temperature must be finite (NaN/inf rejected)
+  formal: '!temperature.is_finite() => Err(_)'
+  applies_to: temperature_bounds
+  lean:
+    theorem: Theorems.TemperatureBounds
+    status: sorry
+- type: invariant
+  property: RNG draw value is in [0, 1)
+  formal: '0.0 <= lcg_state_to_unit_f32(s) < 1.0 for all s: u64'
+  applies_to: seed_determinism
+  lean:
+    theorem: Theorems.SeedDeterminism
+    status: sorry
+- type: invariant
   property: Penalty 1.0 is identity
   formal: 'apply_penalty(logits, _, 1.0, _) == logits'
   applies_to: repeat_penalty
@@ -198,6 +222,21 @@ falsification_tests:
   test: |
     Run apr train plan with bad --model-size, assert exit code != 0.
   if_fails: Train plan exits 0 on validation failure (GH-632)
+- id: FALSIFY-SAMP-007
+  rule: Non-finite temperature is rejected (PMAT-757)
+  prediction: apply_temperature rejects NaN / +inf / -inf with an error; positive finite still ok
+  test: |
+    cargo test -p aprender-serve --lib test_apply_temperature_rejects_non_finite
+  if_fails: NaN/inf temperature passes the `<= 0.0` guard and `logit / NaN = NaN` poisons the
+    distribution, silently biasing sampling to the last token with no error surfaced.
+- id: FALSIFY-SAMP-008
+  rule: RNG unit draw is in [0, 1) (PMAT-757)
+  prediction: lcg_state_to_unit_f32(state) is in [0,1) for all states incl. u64::MAX (which
+    the old (state>>33)/(1<<31) f32 formula mapped to exactly 1.0)
+  test: |
+    cargo test -p aprender-serve --lib test_lcg_state_to_unit_f32_in_half_open_unit_interval
+  if_fails: rng_value can equal 1.0, so `rng_value < cumsum` never matches and
+    sample_from_distribution falls through to its biased last-(lowest-prob)-token fallback.
 
 kani_harnesses:
 - id: KANI-SAMP-001

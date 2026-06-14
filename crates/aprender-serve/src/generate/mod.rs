@@ -40,6 +40,11 @@ pub use sampler::{
     TopPSampler,
 };
 
+// Shared [0,1) RNG-state mapper (defined in sampler_logit_chain.rs, include!d into sampler).
+// Re-exported pub(crate) so every sampling loop (here + layers::model_model) uses the one
+// f32-safe construction instead of the buggy `(state >> 33)/(1<<31)` idiom.
+pub(crate) use sampler::lcg_state_to_unit_f32;
+
 /// Sample from a probability distribution using a random value
 ///
 /// # Arguments
@@ -219,9 +224,14 @@ impl GenerationConfig {
 /// Returns error if temperature is not positive
 pub fn apply_temperature(logits: &Tensor<f32>, temperature: f32) -> Result<Tensor<f32>> {
     contract_pre_temperature!();
-    if temperature <= 0.0 {
+    // A non-finite temperature (NaN / ±inf) MUST be rejected. `NaN <= 0.0` is FALSE
+    // (IEEE-754 comparisons with NaN are unordered), so the old `temperature <= 0.0`
+    // guard let NaN through; then `x / NaN = NaN` poisons every logit -> NaN softmax ->
+    // the cumulative draw (`rng_value < cumsum`) never fires -> a silent, biased fallback
+    // to the last token, with no error surfaced. Require a positive, FINITE temperature.
+    if !temperature.is_finite() || temperature <= 0.0 {
         return Err(RealizarError::InvalidShape {
-            reason: "Temperature must be positive".to_string(),
+            reason: "Temperature must be a positive finite number".to_string(),
         });
     }
 
