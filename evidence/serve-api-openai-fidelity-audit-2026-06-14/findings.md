@@ -12,9 +12,12 @@ prioritized; fixed incrementally (one coherent cluster per PR).
    `data: ` field itself → wire was `data: data: {json}`, so spec clients `JSON.parse`
    the literal "data: {json}" and fail. **Streaming broken for every client.** Fixed to
    `Event::default().data(json)` (matches the correct `openai_handlers.rs` form).
-2. **[TODO]** Multi-byte UTF-8 split across tokens (`chat_completions_stream.rs:83`):
-   `decode(&[token_id])` per token → emoji/CJK spanning two tokens emit replacement
-   chars. Needs a cross-token byte buffer (decode longest valid UTF-8 prefix, carry rest).
+2. **[FIXED PMAT-758 (chat_completions_stream)]** Multi-byte UTF-8 split across tokens:
+   per-token `decode(&[token_id])` ran `from_utf8_lossy` on incomplete bytes → emoji/CJK
+   spanning tokens emitted U+FFFD. `openai_chat_completions_stream_handler` now precomputes
+   `streaming_text_deltas()` (cumulative decode, hold back until the char completes) which
+   ALSO applies stop. Covered by FALSIFY-STREAM-DELTA-758. STILL OPEN: the same per-token
+   `decode_token()` in `pregenerated_sse_response` + `true_streaming_sse_response`.
 
 ## Stop sequences ignored (HIGH) — model doesn't stop / leaks stop text
 3. **[FIXED PMAT-754]** `try_cached_completions` (realize_handlers_embed_completion.rs) — now applies stop via shared truncate_at_stop().
