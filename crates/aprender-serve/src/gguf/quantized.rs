@@ -127,6 +127,16 @@ impl OwnedQuantizedTensor {
             qtype: tensor_ref.qtype,
         }
     }
+
+    /// PMAT-750: true if this tensor declares real dimensions but has NO data —
+    /// the signature of a truncated/corrupt model file. `from_ref_with_dims`
+    /// silently substitutes an empty `Vec` when a tensor's `offset + byte_size`
+    /// exceeds the file, so a truncated GGUF would otherwise load and run inference
+    /// on a dead (all-zero) weight, producing garbage instead of failing at load.
+    #[must_use]
+    pub fn is_truncated(&self) -> bool {
+        self.data.is_empty() && self.in_dim > 0 && self.out_dim > 0
+    }
 }
 
 // ============================================================================

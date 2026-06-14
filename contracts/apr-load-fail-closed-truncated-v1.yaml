@@ -1,0 +1,48 @@
+contract: apr-load-fail-closed-truncated
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  description: >
+    realizar's GGUF loader must FAIL CLOSED on a truncated/corrupt model. The
+    chokepoint OwnedQuantizedTensor::from_ref_with_dims silently substitutes an empty
+    data buffer when a tensor's offset+byte_size runs past the file, while keeping the
+    declared in_dim/out_dim — so a truncated GGUF would otherwise load with a dead
+    (all-zero) quantized weight and produce GARBAGE at inference. `apr qa`'s
+    F-DATA-QUALITY density gate catches such a model, but `apr run` / `apr serve` do
+    not run those gates, so the truncated model ran silently. PMAT-750 adds
+    is_truncated() (declared dims but empty data) and a load-time
+    validate_quantized_tensors() walk (all layer weights + lm_head) called from
+    OwnedQuantizedModel::from_mapped, which returns InvalidShape naming the first
+    truncated tensor. This extends the Pillar-4 fail-closed guarantee (PMAT-744) to the
+    load path. Found by an adversarial inference bug-hunt (root cause behind a narrow
+    DIRECT_FP32_GEMV panic).
+  references:
+  - "crates/aprender-serve/src/gguf/quantized.rs (from_ref_with_dims, is_truncated)"
+  - "crates/aprender-serve/src/gguf/embedding.rs (OwnedQuantizedModel::from_mapped + validate_quantized_tensors)"
+  - "crates/aprender-serve/src/gguf/quantized_tests.rs (test_pmat750_truncated_tensor_detected)"
+version: 1
+status: enforced
+date: 2026-06-14
+
+proof_obligations:
+  - type: invariant
+    property: >
+      TRUNCATED-DETECT: OwnedQuantizedTensor::is_truncated() is true iff the tensor
+      declares real dimensions (in_dim>0 && out_dim>0) but has no data — the signature
+      of a tensor whose bytes ran past the model file. A fully-loaded tensor is never
+      flagged (no false positive).
+  - type: invariant
+    property: >
+      LOAD-FAIL-CLOSED: OwnedQuantizedModel::from_mapped runs validate_quantized_tensors
+      over every quantized weight (each layer's qkv/attn_output/ffn_up/ffn_down/ffn_gate
+      + lm_head) and returns Err(InvalidShape) if any is truncated, so a truncated GGUF
+      is rejected at load instead of producing garbage at inference. A well-formed model
+      loads unchanged.
+
+falsification_tests:
+  - id: FALSIFY-LOAD-TRUNCATED-001
+    name: test_pmat750_truncated_tensor_detected
+    prediction: "from_ref_with_dims with byte_size(64) > data.len()(4) yields empty data + declared 8x8 dims; is_truncated() == true; a well-formed tensor is_truncated() == false"
+    test_harness: "cargo test -p aprender-serve --lib test_pmat750_truncated_tensor_detected"
+    expected_output: "test result: ok"
+    if_fails: "truncated tensors are not detected → a corrupt/incomplete GGUF loads with a dead weight and apr run/serve emit garbage instead of failing closed at load."

@@ -88,7 +88,7 @@ impl OwnedQuantizedModel {
             .map(|l| OwnedQuantizedLayer::from_borrowed(l, data, config))
             .collect();
 
-        Ok(Self {
+        let model = Self {
             config: transformer.config.clone(),
             token_embedding: transformer.token_embedding,
             position_embedding: transformer.position_embedding,
@@ -112,7 +112,57 @@ impl OwnedQuantizedModel {
             cuda_kernel_count: std::sync::atomic::AtomicU64::new(0),
             #[cfg(feature = "cuda")]
             cached_weight_names: std::sync::Mutex::new(std::collections::HashSet::new()),
-        })
+        };
+        // PMAT-750: fail closed on a truncated/corrupt model (a quantized weight
+        // declares real dims but has no data because the file was incomplete) instead
+        // of silently running inference on a dead weight and emitting garbage.
+        model.validate_quantized_tensors()?;
+        Ok(model)
+    }
+
+    /// PMAT-750: reject a truncated/corrupt model at load. `from_ref_with_dims`
+    /// substitutes an empty data buffer when a tensor's bytes run past the file, so a
+    /// truncated GGUF would otherwise load and produce garbage at inference (apr qa's
+    /// density gate catches it, but `apr run` does not run those gates). This fails the
+    /// load with a clear error naming the first truncated tensor — the fail-closed
+    /// guarantee from the Pillar-4 beat (PMAT-744) extended to the load path.
+    pub(crate) fn validate_quantized_tensors(&self) -> Result<()> {
+        fn check(t: &OwnedQuantizedTensor, name: &str) -> Result<()> {
+            if t.is_truncated() {
+                return Err(crate::error::RealizarError::InvalidShape {
+                    reason: format!(
+                        "truncated/corrupt model: tensor '{name}' declares {}x{} but has no data (file is incomplete)",
+                        t.out_dim, t.in_dim
+                    ),
+                });
+            }
+            Ok(())
+        }
+        fn check_layer(layer: &OwnedQuantizedLayer, prefix: &str) -> Result<()> {
+            match &layer.qkv_weight {
+                OwnedQKVWeights::Fused(t) => check(t, &format!("{prefix}.qkv"))?,
+                OwnedQKVWeights::Separate { q, k, v } => {
+                    check(q, &format!("{prefix}.q"))?;
+                    check(k, &format!("{prefix}.k"))?;
+                    check(v, &format!("{prefix}.v"))?;
+                },
+            }
+            check(&layer.attn_output_weight, &format!("{prefix}.attn_output"))?;
+            check(&layer.ffn_up_weight, &format!("{prefix}.ffn_up"))?;
+            check(&layer.ffn_down_weight, &format!("{prefix}.ffn_down"))?;
+            if let Some(g) = &layer.ffn_gate_weight {
+                check(g, &format!("{prefix}.ffn_gate"))?;
+            }
+            Ok(())
+        }
+        for (i, layer) in self.layers.iter().enumerate() {
+            check_layer(layer, &format!("layer.{i}"))?;
+        }
+        for (i, layer) in self.encoder_layers.iter().enumerate() {
+            check_layer(layer, &format!("encoder_layer.{i}"))?;
+        }
+        check(&self.lm_head_weight, "lm_head")?;
+        Ok(())
     }
 
     /// Create a model for testing purposes
