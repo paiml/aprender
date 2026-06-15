@@ -356,11 +356,33 @@ fn write_gguf_trace(
     }
 }
 
-/// Check if a quantization type is legacy (Q4_0, Q4_1, Q5_0, Q5_1)
-/// GPU only supports Q4_K/Q5_K/Q6_K; legacy types produce garbage on GPU.
+/// Check if a quantization type lacks a correct GPU GEMV kernel, so the model
+/// MUST run on CPU for correct output.
+///
+/// PMAT-782: the legacy GGML divergence this gate guarded against was a single
+/// kernel bug, not an inherent limitation. GGML packs Q4_0/Q4_1/Q5_0 nibbles
+/// INTERLEAVED — byte `j` (0..16) holds value `j` (low nibble) and value `j+16`
+/// (high nibble) — while the original GPU kernels assumed CONSECUTIVE packing
+/// (byte = tid/2, low/high = tid&1), so every value index ≥1 mapped to the wrong
+/// nibble → garbage logits (rel_gap≈0.54). Q4_0/Q5_0 were already rewritten to the
+/// correct "candle" layout (BUG-GGUF-001/002); Q4_1 was the last one still on the
+/// broken `Q4_1GemvKernel` consecutive layout. PMAT-782 routes Q4_1 to a candle
+/// PTX generator too (`generate_q4_1_candle_ptx` in `cuda/layout.rs`). With all
+/// three fixed, the cpu↔gpu parity gate now PASSES: `qwen2-0_5b-instruct-q4_0`
+/// (Q4_0+Q4_1) cosine=0.99998 and `qwen2.5-coder-0.5b-instruct-q4_k_m` (Q5_0-heavy)
+/// cosine=0.99948 on the RTX 4090, both producing output identical to CPU. So
+/// Q4_0(2)/Q4_1(3)/Q5_0(6) are NO LONGER gated.
+///
+/// Q5_1(7) is still gated: it has NO GPU kernel at all (`WeightQuantType` has no
+/// Q5_1 variant and `from_ggml_type(7)` returns `None`), so a Q5_1 weight would
+/// silently fall through to the Q4_K GEMV and produce garbage.
+///
+/// The parity gate that runs afterwards remains the true correctness backstop and
+/// fail-closes any residual divergence to CPU.
 #[inline]
 fn is_legacy_gguf_quant(qtype: u32) -> bool {
-    matches!(qtype, 2 | 3 | 6 | 7)
+    // Q5_1 (type 7) has no GPU kernel; Q4_0/Q4_1/Q5_0 are fixed (PMAT-782).
+    matches!(qtype, 7)
 }
 
 /// Check if model uses any legacy quantization types
