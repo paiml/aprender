@@ -4,6 +4,30 @@ fn apr_qtype_to_dtype(qtype: u32) -> &'static str {
     crate::gguf::GgmlQuantType::from_id(qtype).map_or("F32", crate::gguf::GgmlQuantType::as_str)
 }
 
+/// PMAT-783/PMAT-785: GGML quant types WITHOUT a verified GPU GEMV kernel.
+///
+/// Single source of truth for the GPU-eligibility whitelist. Returns `true`
+/// (→ MUST run on CPU) for any GGML quant type that
+/// `WeightQuantType::from_ggml_type` (`cuda/types.rs`) does NOT map to a real
+/// kernel. The GPU weight upload resolves an unknown type via
+/// `resolve_qtype()`'s `.unwrap_or(WeightQuantType::Q4K)`, so anything outside
+/// this whitelist is SILENTLY decoded as Q4_K → garbage logits.
+///
+/// The whitelist of GPU-eligible types is exactly:
+///   0=F32, 2=Q4_0, 3=Q4_1, 6=Q5_0, 8=Q8_0, 12=Q4_K, 13=Q5_K, 14=Q6_K.
+/// Everything else — F16(1), Q5_1(7), Q8_1(9), Q2_K(10), Q3_K(11), Q8_K(15),
+/// the IQ* families, BF16(30), unknown — is gated to CPU.
+///
+/// `inference_result::is_legacy_gguf_quant` (the primary `apr run`/`apr serve`
+/// path gate) and `OwnedQuantizedModel::has_gpu_unsupported_quant` (the
+/// construction-time gate consumed by every `generate_gpu_resident` entry point)
+/// both delegate here so the policy can never drift between paths.
+#[inline]
+#[must_use]
+pub(crate) fn gpu_unsupported_quant_qtype(qtype: u32) -> bool {
+    !matches!(qtype, 0 | 2 | 3 | 6 | 8 | 12 | 13 | 14)
+}
+
 /// GH-321: Convert APR dtype string to byte using unified enum.
 /// GH-191 FIX: Use GGML dtype values directly so they match TensorEntry::from_binary reader.
 fn apr_dtype_to_byte(dtype: &str) -> u8 {
@@ -51,6 +75,43 @@ fn write_apr_tensor_entry(
 }
 
 impl OwnedQuantizedModel {
+    /// PMAT-785: Does this model carry ANY quant type without a verified GPU
+    /// GEMV kernel on a tensor the GPU-resident forward pass would touch?
+    ///
+    /// Inspects EVERY projection tensor the GPU path reads — lm_head, QKV
+    /// (fused or separate), attention output, and FFN gate/up/down — using the
+    /// `gpu_unsupported_quant_qtype` whitelist. Returns `true` if the model
+    /// MUST run on CPU to avoid the PMAT-781/783 silent-garbage class (an
+    /// unsupported quant decoded as Q4_K on the GPU).
+    ///
+    /// This is the centralized construction-time gate: every serve entry point
+    /// that builds an `OwnedQuantizedModelCuda` from one of these CPU models
+    /// (`OwnedQuantizedModelCuda::with_max_seq_len` → `check_quant_gpu_capability`)
+    /// is protected by this single check, so an unsupported-quant model routes
+    /// to CPU (loud) or errors rather than shipping GPU garbage.
+    #[must_use]
+    pub(crate) fn has_gpu_unsupported_quant(&self) -> bool {
+        if gpu_unsupported_quant_qtype(self.lm_head_weight.qtype) {
+            return true;
+        }
+        self.layers.iter().any(|l| {
+            let qkv_bad = match &l.qkv_weight {
+                OwnedQKVWeights::Fused(t) => gpu_unsupported_quant_qtype(t.qtype),
+                OwnedQKVWeights::Separate { q, k, v } => {
+                    gpu_unsupported_quant_qtype(q.qtype)
+                        || gpu_unsupported_quant_qtype(k.qtype)
+                        || gpu_unsupported_quant_qtype(v.qtype)
+                },
+            };
+            qkv_bad
+                || gpu_unsupported_quant_qtype(l.attn_output_weight.qtype)
+                || gpu_unsupported_quant_qtype(l.ffn_up_weight.qtype)
+                || gpu_unsupported_quant_qtype(l.ffn_down_weight.qtype)
+                || l.ffn_gate_weight
+                    .as_ref()
+                    .is_some_and(|g| gpu_unsupported_quant_qtype(g.qtype))
+        })
+    }
 
     /// Serialize model to APR format with quantized weights preserved
     ///
