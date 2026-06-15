@@ -228,36 +228,6 @@ impl GaussianMixture {
         Ok(())
     }
 
-    /// Compute Gaussian probability density.
-    #[allow(clippy::needless_range_loop)]
-    #[allow(clippy::unused_self)]
-    fn gaussian_pdf(&self, x: &[f32], mean: &[f32], cov: &Matrix<f32>) -> f32 {
-        let n_features = mean.len();
-
-        // Compute (x - mean)
-        let mut diff = vec![0.0; n_features];
-        for i in 0..n_features {
-            diff[i] = x[i] - mean[i];
-        }
-
-        // For numerical stability, use simplified calculation
-        // This is a simplified version - production code would use proper matrix inverse
-        let mut mahalanobis = 0.0;
-        for i in 0..n_features {
-            let cov_ii = cov.get(i, i).max(1e-6); // Regularization
-            mahalanobis += diff[i] * diff[i] / cov_ii;
-        }
-
-        // Compute determinant (simplified for diagonal-like structure)
-        let mut det = 1.0;
-        for i in 0..n_features {
-            det *= cov.get(i, i).max(1e-6);
-        }
-
-        let norm_const = ((2.0 * std::f32::consts::PI).powi(n_features as i32) * det).sqrt();
-        (-0.5 * mahalanobis).exp() / norm_const.max(1e-10)
-    }
-
     /// E-step: Compute responsibilities (posterior probabilities).
     #[allow(clippy::needless_range_loop)]
     fn compute_responsibilities(&self, x: &Matrix<f32>) -> Matrix<f32> {
@@ -275,22 +245,39 @@ impl GaussianMixture {
             .as_ref()
             .expect("Covariances must be initialized before computing responsibilities");
 
+        // Precompute per-component constants ONCE (hoisted out of the per-sample loop): the inverse
+        // diagonal covariance and the inverse Gaussian normalization constant. A naive impl
+        // recomputed the determinant (O(d) loop), `powi` and `sqrt` on EVERY (sample, component)
+        // call — O(n·k·d) transcendentals. These depend only on the component, so do them in O(k·d).
+        let two_pi = 2.0 * std::f32::consts::PI;
+        let mut inv_cov_diag: Vec<Vec<f32>> = Vec::with_capacity(self.n_components);
+        let mut inv_norm_const: Vec<f32> = Vec::with_capacity(self.n_components);
+        for cov in covariances.iter().take(self.n_components) {
+            let mut inv = vec![0.0f32; n_features];
+            let mut det = 1.0f32;
+            for j in 0..n_features {
+                let c = cov.get(j, j).max(1e-6);
+                inv[j] = 1.0 / c;
+                det *= c;
+            }
+            let norm = (two_pi.powi(n_features as i32) * det).sqrt().max(1e-10);
+            inv_cov_diag.push(inv);
+            inv_norm_const.push(1.0 / norm);
+        }
+
         let mut responsibilities = vec![0.0; n_samples * self.n_components];
 
         for i in 0..n_samples {
-            let mut sample = vec![0.0; n_features];
-            for j in 0..n_features {
-                sample[j] = x.get(i, j);
-            }
-
             let mut total_prob = 0.0;
             for k in 0..self.n_components {
-                let mut mean_k = vec![0.0; n_features];
+                let inv_k = &inv_cov_diag[k];
+                // Mahalanobis distance with diagonal covariance, reading x/means directly.
+                let mut mahalanobis = 0.0f32;
                 for j in 0..n_features {
-                    mean_k[j] = means.get(k, j);
+                    let diff = x.get(i, j) - means.get(k, j);
+                    mahalanobis += diff * diff * inv_k[j];
                 }
-
-                let pdf = self.gaussian_pdf(&sample, &mean_k, &covariances[k]);
+                let pdf = (-0.5 * mahalanobis).exp() * inv_norm_const[k];
                 let weighted_pdf = weights[k] * pdf;
                 responsibilities[i * self.n_components + k] = weighted_pdf;
                 total_prob += weighted_pdf;
