@@ -51,9 +51,21 @@ pub(in super::super) fn interleaved_to_batched_all(
     let input_ptr = input.as_ptr();
     let output_ptr = output.as_ptr();
 
+    // The `interleaved_to_batched` PTX kernel declares SIX params
+    // (input_ptr, output_ptr, seq_len, n_heads, head_dim, total_elems) and uses
+    // every one of them. The args slice MUST supply all six — `cuLaunchKernel`
+    // reads one pointer per declared param, so under-supplying makes the driver
+    // dereference past the end of `args` (host-side SIGSEGV inside libcuda,
+    // invisible to compute-sanitizer).
+    let total_elems = total_size as u32;
+
     let mut args: Vec<*mut std::ffi::c_void> = vec![
         std::ptr::addr_of!(input_ptr) as *mut _,
         std::ptr::addr_of!(output_ptr) as *mut _,
+        std::ptr::addr_of!(seq_len) as *mut _,
+        std::ptr::addr_of!(n_heads) as *mut _,
+        std::ptr::addr_of!(head_dim) as *mut _,
+        std::ptr::addr_of!(total_elems) as *mut _,
     ];
 
     compile_lock_launch(
@@ -101,12 +113,21 @@ pub(in super::super) fn batched_transpose_all(
     let input_ptr = input.as_ptr();
     let output_ptr = output.as_ptr();
 
+    // The `batched_transpose` PTX kernel declares SIX params
+    // (input_ptr, output_ptr, batch, rows, cols, total_per_batch) and uses
+    // `total_per_batch` for its in-bounds guard and batch stride. The args slice
+    // MUST supply all six — `cuLaunchKernel` reads one pointer per declared param,
+    // so omitting `total_per_batch` makes the driver dereference past the end of
+    // `args` (host-side SIGSEGV inside libcuda, invisible to compute-sanitizer).
+    let total_per_batch = elems_per_batch;
+
     let mut args: Vec<*mut std::ffi::c_void> = vec![
         std::ptr::addr_of!(input_ptr) as *mut _,
         std::ptr::addr_of!(output_ptr) as *mut _,
         std::ptr::addr_of!(batch) as *mut _,
         std::ptr::addr_of!(rows) as *mut _,
         std::ptr::addr_of!(cols) as *mut _,
+        std::ptr::addr_of!(total_per_batch) as *mut _,
     ];
 
     compile_lock_launch(
@@ -156,9 +177,21 @@ pub(in super::super) fn batched_to_interleaved_all(
     let input_ptr = input.as_ptr();
     let output_ptr = output.as_ptr();
 
+    // The `batched_to_interleaved` PTX kernel declares SIX params
+    // (input_ptr, output_ptr, seq_len, n_heads, head_dim, total_elems) and uses
+    // every one of them. The args slice MUST supply all six — `cuLaunchKernel`
+    // reads one pointer per declared param, so under-supplying makes the driver
+    // dereference past the end of `args` (host-side SIGSEGV inside libcuda,
+    // invisible to compute-sanitizer).
+    let total_elems = total_size as u32;
+
     let mut args: Vec<*mut std::ffi::c_void> = vec![
         std::ptr::addr_of!(input_ptr) as *mut _,
         std::ptr::addr_of!(output_ptr) as *mut _,
+        std::ptr::addr_of!(seq_len) as *mut _,
+        std::ptr::addr_of!(n_heads) as *mut _,
+        std::ptr::addr_of!(head_dim) as *mut _,
+        std::ptr::addr_of!(total_elems) as *mut _,
     ];
 
     compile_lock_launch(
