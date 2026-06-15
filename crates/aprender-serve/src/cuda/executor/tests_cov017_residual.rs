@@ -334,6 +334,12 @@ fn test_cov018_q4k_gemv_into_basic() {
     let k = 256u32;
     let n = 32u32;
 
+    // The HwDp4a Q4K variant (default on sm_75+) quantizes activations into
+    // workspace.q8_activation_buf, so the workspace must be sized for k inputs.
+    executor
+        .init_workspace(k as usize, k as usize)
+        .expect("init_workspace");
+
     // Create mock Q4K weights (simplified structure)
     // Q4K: 144 bytes per 256 elements (super_block)
     let num_superblocks = (n as usize * k as usize + 255) / 256;
@@ -361,6 +367,12 @@ fn test_cov018_q6k_gemv_into_basic() {
 
     let k = 256u32;
     let n = 32u32;
+
+    // The HwDp4a Q6K variant (default on sm_75+) quantizes activations into
+    // workspace.q8_activation_buf, so the workspace must be sized for k inputs.
+    executor
+        .init_workspace(k as usize, k as usize)
+        .expect("init_workspace");
 
     // Q6K: 210 bytes per 256 elements
     let num_superblocks = (n as usize * k as usize + 255) / 256;
