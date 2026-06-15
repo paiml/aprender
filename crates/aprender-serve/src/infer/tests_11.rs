@@ -277,9 +277,15 @@ fn test_safetensors_arch_exact_match_mistral() {
 #[test]
 fn test_safetensors_arch_exact_match_phi() {
     // Phi-3+ → "phi"
-    assert_eq!(safetensors_arch_to_template_hint("Phi3ForCausalLM", "model"), "phi");
+    assert_eq!(
+        safetensors_arch_to_template_hint("Phi3ForCausalLM", "model"),
+        "phi"
+    );
     // Phi-1.5/Phi-2 → "phi2"
-    assert_eq!(safetensors_arch_to_template_hint("PhiForCausalLM", "model"), "phi2");
+    assert_eq!(
+        safetensors_arch_to_template_hint("PhiForCausalLM", "model"),
+        "phi2"
+    );
     // Non-contract variant → "llama" default
     assert_eq!(safetensors_arch_to_template_hint("PHI_3", "model"), "llama");
 }
@@ -334,39 +340,52 @@ fn test_apr_arch_mixtral_defaults_to_llama() {
 #[test]
 fn test_apr_arch_microsoft_phi_defaults_to_llama() {
     // GH-318: "microsoft-phi2" not in contract → "llama"
-    assert_eq!(apr_arch_to_template_hint("microsoft-phi2", "model"), "llama");
+    assert_eq!(
+        apr_arch_to_template_hint("microsoft-phi2", "model"),
+        "llama"
+    );
 }
 
 #[test]
 fn test_apr_arch_no_match_defaults_to_llama() {
     // GH-318: Unknown architectures always default to "llama"
-    assert_eq!(apr_arch_to_template_hint("gpt-neo", "some-filename.gguf"), "llama");
+    assert_eq!(
+        apr_arch_to_template_hint("gpt-neo", "some-filename.gguf"),
+        "llama"
+    );
 }
 
 // ============================================================================
-// is_legacy_gguf_quant: boundary values
+// is_gpu_unsupported_quant: boundary values (PMAT-781)
 // ============================================================================
 
 #[test]
-fn test_is_legacy_quant_boundary_below() {
-    assert!(!is_legacy_gguf_quant(1)); // F16, not legacy
+fn test_gpu_unsupported_quant_boundary_below() {
+    assert!(!is_gpu_unsupported_quant(1)); // F16, GPU-compatible
 }
 
 #[test]
-fn test_is_legacy_quant_boundary_between_4_and_5() {
-    // 4 and 5 are NOT in the legacy set
-    assert!(!is_legacy_gguf_quant(4));
-    assert!(!is_legacy_gguf_quant(5));
+fn test_gpu_unsupported_quant_boundary_between_4_and_5() {
+    // 4 and 5 are not GPU-unsupported
+    assert!(!is_gpu_unsupported_quant(4));
+    assert!(!is_gpu_unsupported_quant(5));
 }
 
 #[test]
-fn test_is_legacy_quant_boundary_above() {
-    assert!(!is_legacy_gguf_quant(8)); // Q8_0, not legacy
+fn test_gpu_unsupported_quant_only_q5_1() {
+    // PMAT-781: Q5_1 (7) is the sole GPU-unsupported type; 6 (Q5_0) is supported.
+    assert!(is_gpu_unsupported_quant(7));
+    assert!(!is_gpu_unsupported_quant(6));
 }
 
 #[test]
-fn test_is_legacy_quant_u32_max() {
-    assert!(!is_legacy_gguf_quant(u32::MAX));
+fn test_gpu_unsupported_quant_boundary_above() {
+    assert!(!is_gpu_unsupported_quant(8)); // Q8_0, GPU-compatible
+}
+
+#[test]
+fn test_gpu_unsupported_quant_u32_max() {
+    assert!(!is_gpu_unsupported_quant(u32::MAX));
 }
 
 // ============================================================================

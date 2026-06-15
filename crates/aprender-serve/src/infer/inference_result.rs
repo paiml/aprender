@@ -1,4 +1,3 @@
-
 /// Result from inference
 #[derive(Debug, Clone)]
 pub struct InferenceResult {
@@ -133,9 +132,10 @@ pub fn run_inference(config: &InferenceConfig) -> Result<InferenceResult> {
     // ALB-099: Read only 8 bytes for format detection (was reading entire file)
     let magic = {
         use std::io::Read;
-        let mut file = std::fs::File::open(&config.model_path).map_err(|e| RealizarError::IoError {
-            message: format!("Failed to read model: {}", e),
-        })?;
+        let mut file =
+            std::fs::File::open(&config.model_path).map_err(|e| RealizarError::IoError {
+                message: format!("Failed to read model: {}", e),
+            })?;
         let mut buf = [0u8; 8];
         file.read_exact(&mut buf).map_err(|e| {
             if e.kind() == std::io::ErrorKind::UnexpectedEof {
@@ -213,7 +213,7 @@ fn run_gguf_inference(
         top_k: config.top_k,
         stop_tokens,
         trace: config.trace,
-            ..Default::default()
+        ..Default::default()
     };
 
     // M32c.2.2.2.1.3: dispatch qwen3_moe to the parallel MoE inference path
@@ -238,9 +238,20 @@ fn run_gguf_inference(
     let generated_tokens = &tokens[input_token_count..];
     let raw_text = mapped.model.decode(generated_tokens);
     if config.verbose {
-        eprintln!("[DEBUG] input_count={}, total_tokens={}, generated_count={}", input_token_count, tokens.len(), generated_tokens.len());
-        eprintln!("[DEBUG] generated token ids: {:?}", &generated_tokens[..generated_tokens.len().min(20)]);
-        eprintln!("[DEBUG] raw decoded: {:?}", &raw_text[..raw_text.len().min(200)]);
+        eprintln!(
+            "[DEBUG] input_count={}, total_tokens={}, generated_count={}",
+            input_token_count,
+            tokens.len(),
+            generated_tokens.len()
+        );
+        eprintln!(
+            "[DEBUG] generated token ids: {:?}",
+            &generated_tokens[..generated_tokens.len().min(20)]
+        );
+        eprintln!(
+            "[DEBUG] raw decoded: {:?}",
+            &raw_text[..raw_text.len().min(200)]
+        );
     }
     let text = clean_model_output(&raw_text);
     let generated_token_count = generated_tokens.len();
@@ -356,31 +367,70 @@ fn write_gguf_trace(
     }
 }
 
-/// Check if a quantization type is legacy (Q4_0, Q4_1, Q5_0, Q5_1)
-/// GPU only supports Q4_K/Q5_K/Q6_K; legacy types produce garbage on GPU.
+/// Check if a quantization type has NO GPU GEMV kernel and must run on CPU.
+///
+/// PMAT-781: The GPU-resident path's `gemv_dispatch` (PMAT-232 exhaustive
+/// contract) now has real kernels for Q4_0(2), Q4_1(3), Q5_0(6), Q4_K(12),
+/// Q5_K(13), Q6_K(14), Q8_0(8) and F32(0). The *only* GGUF quant type that
+/// `WeightQuantType::from_ggml_type` cannot map (so the indexed path would
+/// silently reinterpret its bytes as Q4_K → garbage) is Q5_1 (type 7).
+///
+/// Historically this predicate blocked the whole legacy family {2,3,6,7} from
+/// the GPU back when those kernels did not exist. That made `apr run --gpu`
+/// silently fall back to CPU (~3 tok/s) on real Q4_0/Q5_0 GGUFs — e.g.
+/// qwen2.5-coder-0.5b-instruct-q4_k_m, whose attn/FFN tensors are Q5_0 — while
+/// `apr bench` (which never had this gate) drove the SAME model on the GPU at
+/// ~145 tok/s. Narrowed to only the genuinely-unsupported type so the run path
+/// reaches the same working GPU kernels as bench, with no 4090 regression
+/// (Q4_K/Q6_K models were never gated and stay GPU-resident).
 #[inline]
-fn is_legacy_gguf_quant(qtype: u32) -> bool {
-    matches!(qtype, 2 | 3 | 6 | 7)
+fn is_gpu_unsupported_quant(qtype: u32) -> bool {
+    // Q5_1 (GGML type 7) — no WeightQuantType variant / no GPU GEMV kernel.
+    qtype == 7
 }
 
-/// Check if model uses any legacy quantization types
-fn model_has_legacy_quant(model: &crate::gguf::OwnedQuantizedModel) -> bool {
-    is_legacy_gguf_quant(model.lm_head_weight.qtype)
-        || model.layers.iter().any(|l| {
-            is_legacy_gguf_quant(l.ffn_down_weight.qtype)
-                || is_legacy_gguf_quant(l.ffn_up_weight.qtype)
-                || is_legacy_gguf_quant(l.attn_output_weight.qtype)
-        })
-}
-
-/// Log CPU backend selection reason
-#[inline]
-fn log_cpu_backend(verbose: bool, is_legacy: bool) {
-    if !verbose {
-        return;
+/// Check if a model uses any quantization type the GPU cannot run, forcing CPU.
+///
+/// PMAT-781: checks ALL projection tensors the GPU-resident decode would touch —
+/// QKV (fused or separate), attn output, and FFN gate/up/down — not just a
+/// subset. A single Q5_1 tensor anywhere routes the whole model to CPU, because
+/// the GPU path has no kernel for it.
+fn model_has_gpu_unsupported_quant(model: &crate::gguf::OwnedQuantizedModel) -> bool {
+    use crate::gguf::OwnedQKVWeights;
+    if is_gpu_unsupported_quant(model.lm_head_weight.qtype) {
+        return true;
     }
-    if is_legacy {
-        eprintln!("Backend: CPU (Q4_0 format - GPU Q4_K kernels incompatible)");
+    model.layers.iter().any(|l| {
+        let qkv_bad = match &l.qkv_weight {
+            OwnedQKVWeights::Fused(t) => is_gpu_unsupported_quant(t.qtype),
+            OwnedQKVWeights::Separate { q, k, v } => {
+                is_gpu_unsupported_quant(q.qtype)
+                    || is_gpu_unsupported_quant(k.qtype)
+                    || is_gpu_unsupported_quant(v.qtype)
+            },
+        };
+        qkv_bad
+            || is_gpu_unsupported_quant(l.attn_output_weight.qtype)
+            || is_gpu_unsupported_quant(l.ffn_up_weight.qtype)
+            || is_gpu_unsupported_quant(l.ffn_down_weight.qtype)
+            || l.ffn_gate_weight
+                .as_ref()
+                .is_some_and(|g| is_gpu_unsupported_quant(g.qtype))
+    })
+}
+
+/// Log CPU backend selection reason.
+///
+/// PMAT-781: a GPU→CPU fallback is a user-visible backend decision (model runs
+/// ~60x slower on aarch64 CPU). It is emitted UNCONDITIONALLY on stderr — never
+/// gated behind `--verbose` — so the silent ~3 tok/s degradation that hid the
+/// over-strict legacy-quant gate can never recur.
+#[inline]
+fn log_cpu_backend(_verbose: bool, gpu_unsupported_quant: bool) {
+    if gpu_unsupported_quant {
+        eprintln!(
+            "Backend: CPU (model contains Q5_1 weights — no GPU kernel; falling back to CPU)"
+        );
     } else {
         eprintln!("Backend: CPU (SIMD-accelerated)");
     }
@@ -434,7 +484,9 @@ fn validate_gpu_first_token(
         match model.config.bos_token_id {
             Some(id) => vec![id],
             None => {
-                eprintln!("[F2-VALIDATION] no prompt context and BOS unknown — skipping GPU validation");
+                eprintln!(
+                    "[F2-VALIDATION] no prompt context and BOS unknown — skipping GPU validation"
+                );
                 return true;
             },
         }
@@ -525,7 +577,11 @@ pub(crate) fn cpu_logit_rel_gap(cpu_logits: &[f32], cpu_argmax: u32, token: u32)
 /// (GPU token within [`GPU_PROBE_NEAR_TIE_REL_GAP`] of the top of CPU's logit
 /// range); false for real divergence (GPU token deep in CPU's tail — PMAT-216
 /// garbage). Pure + GPU-free so the gate's logic is unit-testable without CUDA.
-pub(crate) fn gpu_probe_token_acceptable(cpu_logits: &[f32], cpu_argmax: u32, gpu_first: u32) -> bool {
+pub(crate) fn gpu_probe_token_acceptable(
+    cpu_logits: &[f32],
+    cpu_argmax: u32,
+    gpu_first: u32,
+) -> bool {
     gpu_first == cpu_argmax
         || cpu_logit_rel_gap(cpu_logits, cpu_argmax, gpu_first) <= GPU_PROBE_NEAR_TIE_REL_GAP
 }
@@ -543,7 +599,10 @@ mod pmat742_parity_gate_tests {
     fn near_tie_argmax_flip_is_accepted() {
         // CPU argmax = 0; GPU picked token 1 (the next-highest, essentially tied).
         let rel_gap = cpu_logit_rel_gap(&NEAR_FLAT, 0, 1);
-        assert!(rel_gap <= GPU_PROBE_NEAR_TIE_REL_GAP, "rel_gap {rel_gap} should be a near-tie");
+        assert!(
+            rel_gap <= GPU_PROBE_NEAR_TIE_REL_GAP,
+            "rel_gap {rel_gap} should be a near-tie"
+        );
         assert!(gpu_probe_token_acceptable(&NEAR_FLAT, 0, 1));
         // token 3 is also within the near-tied cluster → accepted.
         assert!(gpu_probe_token_acceptable(&NEAR_FLAT, 0, 3));
@@ -563,7 +622,10 @@ mod pmat742_parity_gate_tests {
         // On a PEAKED distribution this lands deep in the tail → rejected.
         let peaked = [20.0_f32, 5.0, 0.5, 0.0];
         let rel_gap = cpu_logit_rel_gap(&peaked, 0, 3); // token 3 = CPU min
-        assert!(rel_gap > GPU_PROBE_NEAR_TIE_REL_GAP, "tail token rel_gap {rel_gap} must exceed tolerance");
+        assert!(
+            rel_gap > GPU_PROBE_NEAR_TIE_REL_GAP,
+            "tail token rel_gap {rel_gap} must exceed tolerance"
+        );
         assert!(!gpu_probe_token_acceptable(&peaked, 0, 3));
     }
 

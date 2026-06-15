@@ -145,21 +145,22 @@ fn test_prefault_mmap_multi_page() {
 }
 
 // ============================================================================
-// is_legacy_gguf_quant
+// is_gpu_unsupported_quant (PMAT-781: narrowed from is_legacy_gguf_quant)
 // ============================================================================
 
 #[test]
-fn test_is_legacy_gguf_quant() {
-    assert!(is_legacy_gguf_quant(2)); // Q4_0
-    assert!(is_legacy_gguf_quant(3)); // Q4_1
-    assert!(is_legacy_gguf_quant(6)); // Q5_0
-    assert!(is_legacy_gguf_quant(7)); // Q5_1
-    assert!(!is_legacy_gguf_quant(0)); // F32
-    assert!(!is_legacy_gguf_quant(1)); // F16
-    assert!(!is_legacy_gguf_quant(8)); // Q8_0
-    assert!(!is_legacy_gguf_quant(12)); // Q4_K
-    assert!(!is_legacy_gguf_quant(14)); // Q6_K
-    assert!(!is_legacy_gguf_quant(100)); // Unknown
+fn test_is_gpu_unsupported_quant() {
+    // PMAT-781: GPU now has Q4_0/Q4_1/Q5_0 gemv kernels — only Q5_1 forces CPU.
+    assert!(!is_gpu_unsupported_quant(2)); // Q4_0 — GPU supported
+    assert!(!is_gpu_unsupported_quant(3)); // Q4_1 — GPU supported
+    assert!(!is_gpu_unsupported_quant(6)); // Q5_0 — GPU supported
+    assert!(is_gpu_unsupported_quant(7)); // Q5_1 — no GPU kernel
+    assert!(!is_gpu_unsupported_quant(0)); // F32
+    assert!(!is_gpu_unsupported_quant(1)); // F16
+    assert!(!is_gpu_unsupported_quant(8)); // Q8_0
+    assert!(!is_gpu_unsupported_quant(12)); // Q4_K
+    assert!(!is_gpu_unsupported_quant(14)); // Q6_K
+    assert!(!is_gpu_unsupported_quant(100)); // Unknown
 }
 
 // ============================================================================

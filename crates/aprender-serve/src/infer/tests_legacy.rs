@@ -1,45 +1,49 @@
-
 // ============================================================================
-// is_legacy_gguf_quant tests (GH-219)
+// is_gpu_unsupported_quant tests (GH-219, narrowed by PMAT-781)
+//
+// PMAT-781: the GPU-resident gemv_dispatch now has kernels for Q4_0/Q4_1/Q5_0
+// (and all the K-quants), so only Q5_1 (no WeightQuantType variant) forces CPU.
+// Q4_0/Q4_1/Q5_0 are GPU-supported and MUST return false now — the old gate
+// blocked them and silently dropped `apr run --gpu` to ~3 tok/s CPU on GB10.
 // ============================================================================
 
 #[test]
-fn test_is_legacy_gguf_quant_q4_0_gh219() {
-    assert!(is_legacy_gguf_quant(2)); // Q4_0
+fn test_gpu_supports_q4_0_gh219() {
+    assert!(!is_gpu_unsupported_quant(2)); // Q4_0 — GPU kernel exists
 }
 
 #[test]
-fn test_is_legacy_gguf_quant_q4_1_gh219() {
-    assert!(is_legacy_gguf_quant(3)); // Q4_1
+fn test_gpu_supports_q4_1_gh219() {
+    assert!(!is_gpu_unsupported_quant(3)); // Q4_1 — GPU kernel exists
 }
 
 #[test]
-fn test_is_legacy_gguf_quant_q5_0_gh219() {
-    assert!(is_legacy_gguf_quant(6)); // Q5_0
+fn test_gpu_supports_q5_0_gh219() {
+    assert!(!is_gpu_unsupported_quant(6)); // Q5_0 — GPU kernel exists (PMAT-781)
 }
 
 #[test]
-fn test_is_legacy_gguf_quant_q5_1_gh219() {
-    assert!(is_legacy_gguf_quant(7)); // Q5_1
+fn test_q5_1_remains_gpu_unsupported_gh219() {
+    assert!(is_gpu_unsupported_quant(7)); // Q5_1 — no WeightQuantType variant
 }
 
 #[test]
-fn test_is_legacy_gguf_quant_non_legacy_types_gh219() {
+fn test_gpu_supports_modern_quant_types_gh219() {
     // Q4_K = 12, Q5_K = 13, Q6_K = 14, Q8_0 = 8, F16 = 1, F32 = 0
-    assert!(!is_legacy_gguf_quant(0));  // F32
-    assert!(!is_legacy_gguf_quant(1));  // F16
-    assert!(!is_legacy_gguf_quant(8));  // Q8_0
-    assert!(!is_legacy_gguf_quant(12)); // Q4_K
-    assert!(!is_legacy_gguf_quant(13)); // Q5_K
-    assert!(!is_legacy_gguf_quant(14)); // Q6_K
+    assert!(!is_gpu_unsupported_quant(0)); // F32
+    assert!(!is_gpu_unsupported_quant(1)); // F16
+    assert!(!is_gpu_unsupported_quant(8)); // Q8_0
+    assert!(!is_gpu_unsupported_quant(12)); // Q4_K
+    assert!(!is_gpu_unsupported_quant(13)); // Q5_K
+    assert!(!is_gpu_unsupported_quant(14)); // Q6_K
 }
 
 #[test]
-fn test_is_legacy_gguf_quant_edge_values_gh219() {
-    assert!(!is_legacy_gguf_quant(4));
-    assert!(!is_legacy_gguf_quant(5));
-    assert!(!is_legacy_gguf_quant(100));
-    assert!(!is_legacy_gguf_quant(u32::MAX));
+fn test_gpu_unsupported_quant_edge_values_gh219() {
+    assert!(!is_gpu_unsupported_quant(4));
+    assert!(!is_gpu_unsupported_quant(5));
+    assert!(!is_gpu_unsupported_quant(100));
+    assert!(!is_gpu_unsupported_quant(u32::MAX));
 }
 
 // ============================================================================
@@ -327,7 +331,11 @@ fn test_gguf_arch_matching_logic_gh219() {
             "phi" | "phi3" => "Phi",
             _ => "Transformer",
         };
-        assert_eq!(result, expected, "Arch '{}' should map to '{}'", input, expected);
+        assert_eq!(
+            result, expected,
+            "Arch '{}' should map to '{}'",
+            input, expected
+        );
     }
 }
 

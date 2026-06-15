@@ -1,4 +1,3 @@
-
 /// FALSIFY-CPU-GPU-003 jidoka tag emitted on stderr when a GPU init/parity
 /// rejection forces a fallback. Locked in by `tests::cuda_fallback_log_prefix_is_contract_tagged`
 /// to prevent regression to the verbose-only behaviour that v6 fixed.
@@ -91,8 +90,13 @@ fn try_wgpu_generate(
 
     // Create forward pass and upload dequantized weights
     let mut fwd = trueno::backends::gpu::WgslForwardPass::new(
-        gpu.device, gpu.queue,
-        hidden_dim, num_heads, num_kv_heads, head_dim, intermediate_dim,
+        gpu.device,
+        gpu.queue,
+        hidden_dim,
+        num_heads,
+        num_kv_heads,
+        head_dim,
+        intermediate_dim,
     );
 
     // C-WGPU-Q4K-001: Upload raw Q4K bytes for projection weights.
@@ -115,7 +119,8 @@ fn try_wgpu_generate(
 
     // Get output norm and LM head weights
     let output_norm = model.output_norm_weight();
-    let lm_head_f32: Vec<f32> = weights.iter()
+    let lm_head_f32: Vec<f32> = weights
+        .iter()
         .find(|(n, _, _, _)| n == "lm_head")
         .map(|(_, d, _, _)| d.clone())
         .unwrap_or_default();
@@ -123,7 +128,12 @@ fn try_wgpu_generate(
     // KV caches
     let max_seq = gen_config.max_tokens + input_tokens.len() + 16;
     let mut kv_caches: Vec<(Vec<f32>, Vec<f32>)> = (0..num_layers)
-        .map(|_| (vec![0.0f32; max_seq * kv_dim], vec![0.0f32; max_seq * kv_dim]))
+        .map(|_| {
+            (
+                vec![0.0f32; max_seq * kv_dim],
+                vec![0.0f32; max_seq * kv_dim],
+            )
+        })
         .collect();
 
     // FALSIFY-CPU-GPU-006 (#1864): multi-step CPU vs wgpu parity gate.
@@ -155,21 +165,29 @@ fn try_wgpu_generate(
         let probe_max_seq = multi_step_probe + 1;
         let mut cpu_cache = crate::gguf::OwnedQuantizedKVCache::from_config(&config, probe_max_seq);
         let mut probe_kv_caches: Vec<(Vec<f32>, Vec<f32>)> = (0..num_layers)
-            .map(|_| (vec![0.0f32; probe_max_seq * kv_dim], vec![0.0f32; probe_max_seq * kv_dim]))
+            .map(|_| {
+                (
+                    vec![0.0f32; probe_max_seq * kv_dim],
+                    vec![0.0f32; probe_max_seq * kv_dim],
+                )
+            })
             .collect();
         let mut probe_token = *input_tokens.first().unwrap_or(&0);
 
         for probe_step in 0..multi_step_probe {
-            let cpu_logits = match model.forward_single_with_cache(probe_token, &mut cpu_cache, probe_step) {
-                Ok(l) => l,
-                Err(e) => {
-                    eprintln!(
-                        "{}, attempting fallback: CPU probe step {} forward failed: {}",
-                        WGPU_FALLBACK_LOG_PREFIX, probe_step, e
-                    );
-                    return Err(RealizarError::InferenceError(format!("wgpu parity gate: CPU probe step {probe_step} failed: {e}")));
-                }
-            };
+            let cpu_logits =
+                match model.forward_single_with_cache(probe_token, &mut cpu_cache, probe_step) {
+                    Ok(l) => l,
+                    Err(e) => {
+                        eprintln!(
+                            "{}, attempting fallback: CPU probe step {} forward failed: {}",
+                            WGPU_FALLBACK_LOG_PREFIX, probe_step, e
+                        );
+                        return Err(RealizarError::InferenceError(format!(
+                            "wgpu parity gate: CPU probe step {probe_step} failed: {e}"
+                        )));
+                    },
+                };
 
             let mut hidden = model.embed(&[probe_token]);
             for layer_idx in 0..num_layers {
@@ -180,7 +198,9 @@ fn try_wgpu_generate(
                         "{}, attempting fallback: wgpu probe step {} layer {} failed: {}",
                         WGPU_FALLBACK_LOG_PREFIX, probe_step, layer_idx, e
                     );
-                    return Err(RealizarError::InferenceError(format!("wgpu parity gate: step {probe_step} layer {layer_idx} failed: {e}")));
+                    return Err(RealizarError::InferenceError(format!(
+                        "wgpu parity gate: step {probe_step} layer {layer_idx} failed: {e}"
+                    )));
                 }
             }
             let sq_sum: f32 = hidden.iter().map(|x| x * x).sum();
@@ -200,11 +220,15 @@ fn try_wgpu_generate(
             if !(cos.is_finite() && cos >= 0.99) {
                 eprintln!(
                     "{}, attempting fallback: cosine vs CPU = {:.6} (< 0.99) at step {}/{}",
-                    WGPU_FALLBACK_LOG_PREFIX, cos, probe_step + 1, multi_step_probe
+                    WGPU_FALLBACK_LOG_PREFIX,
+                    cos,
+                    probe_step + 1,
+                    multi_step_probe
                 );
                 return Err(RealizarError::InferenceError(format!(
                     "wgpu parity gate: cosine={cos:.6} < 0.99 at step {}/{}",
-                    probe_step + 1, multi_step_probe
+                    probe_step + 1,
+                    multi_step_probe
                 )));
             }
 
@@ -235,15 +259,18 @@ fn try_wgpu_generate(
         for layer_idx in 0..num_layers {
             let prefix = format!("layer.{layer_idx}");
             let (ref mut kv_k, ref mut kv_v) = kv_caches[layer_idx];
-            fwd.forward_layer(
-                &mut hidden, &prefix, position, kv_k, kv_v,
-            ).map_err(|e| RealizarError::InferenceError(format!("wgpu layer {layer_idx}: {e}")))?;
+            fwd.forward_layer(&mut hidden, &prefix, position, kv_k, kv_v)
+                .map_err(|e| {
+                    RealizarError::InferenceError(format!("wgpu layer {layer_idx}: {e}"))
+                })?;
         }
 
         // Output norm + LM head (CPU — small cost)
         let sq_sum: f32 = hidden.iter().map(|x| x * x).sum();
         let rms = (sq_sum / hidden.len() as f32 + eps).sqrt();
-        let normed: Vec<f32> = hidden.iter().zip(output_norm.iter())
+        let normed: Vec<f32> = hidden
+            .iter()
+            .zip(output_norm.iter())
             .map(|(x, g)| (x / rms) * g)
             .collect();
 
@@ -331,8 +358,7 @@ fn run_gguf_generate(
     // label binding size is zero`. M32c.2.2 will replace this guard with
     // an actual MoE forward via `moe_forward_token`. See
     // contracts/qwen3-moe-forward-v1.yaml § FALSIFY-QW3-MOE-FORWARD-003.
-    let canonical_arch =
-        crate::tensor_names::normalize_architecture(&model.config.architecture);
+    let canonical_arch = crate::tensor_names::normalize_architecture(&model.config.architecture);
     if canonical_arch == "qwen3_moe" {
         return Err(RealizarError::UnsupportedOperation {
             operation: "moe_forward_dispatch".to_string(),
@@ -350,11 +376,11 @@ fn run_gguf_generate(
         });
     }
 
-    let has_legacy_quant = model_has_legacy_quant(&model);
+    let has_gpu_unsupported_quant = model_has_gpu_unsupported_quant(&model);
 
     // GPU path: pass model by value (zero-clone) — model is returned on failure for CPU fallback
     #[cfg(feature = "cuda")]
-    let model = if !config.no_gpu && !has_legacy_quant {
+    let model = if !config.no_gpu && !has_gpu_unsupported_quant {
         match try_gguf_gpu_generate(model, input_tokens, gen_config, config.verbose) {
             Ok(result) => return result,
             Err(returned_model) => *returned_model, // GPU failed, use returned model for CPU
@@ -366,18 +392,18 @@ fn run_gguf_generate(
     // GH-559: wgpu fallback — try Vulkan compute before CPU.
     // Proven: wgpu cosine=0.999863 on Blackwell sm_121 where CUDA JIT fails.
     #[cfg(feature = "gpu")]
-    if !config.no_gpu && !has_legacy_quant {
+    if !config.no_gpu && !has_gpu_unsupported_quant {
         match try_wgpu_generate(&model, input_tokens, gen_config, config.verbose) {
             Ok(result) => return Ok(result),
             Err(e) => {
                 if config.verbose {
                     eprintln!("Backend: CPU (wgpu unavailable: {})", e);
                 }
-            }
+            },
         }
     }
 
-    log_cpu_backend(config.verbose, has_legacy_quant);
+    log_cpu_backend(config.verbose, has_gpu_unsupported_quant);
     let tokens = model
         .generate_with_cache(input_tokens, gen_config)
         .map_err(|e| RealizarError::InferenceError(format!("CPU generation failed: {}", e)))?;
@@ -421,12 +447,12 @@ fn run_apr_inference(
                 if config.verbose {
                     eprintln!("Backend: CPU (wgpu failed: {})", e);
                 }
-            }
+            },
             None => {
                 if config.verbose {
                     eprintln!("Backend: CPU (wgpu not available)");
                 }
-            }
+            },
         }
     }
 
@@ -462,7 +488,7 @@ fn try_apr_wgpu_inference(
             eprintln!("{}, attempting fallback: {}", WGPU_FALLBACK_LOG_PREFIX, e);
             eprintln!("[GH-559] wgpu init failed: {}", e);
             return None;
-        }
+        },
     };
 
     // FALSIFY-CPU-GPU-005: wgpu lifecycle visible without --verbose. Symmetric to
@@ -492,11 +518,11 @@ fn try_apr_wgpu_inference(
     let kv_dim = num_kv_heads * head_dim;
     // Resolve stop tokens from model config + sibling tokenizer
     let mut stop_toks: Vec<u32> = cfg.eos_token_id.into_iter().collect();
-    let extra = crate::infer::resolve_apr_stop_tokens(
-        cfg.eos_token_id, &[], &config.model_path,
-    );
+    let extra = crate::infer::resolve_apr_stop_tokens(cfg.eos_token_id, &[], &config.model_path);
     for t in &extra {
-        if !stop_toks.contains(t) { stop_toks.push(*t); }
+        if !stop_toks.contains(t) {
+            stop_toks.push(*t);
+        }
     }
     let gen_config = crate::gguf::QuantizedGenerateConfig {
         max_tokens: config.max_tokens,
@@ -504,7 +530,7 @@ fn try_apr_wgpu_inference(
         top_k: 1,
         stop_tokens: stop_toks,
         trace: false,
-            ..Default::default()
+        ..Default::default()
     };
 
     // Dequantize and upload weights
@@ -514,8 +540,13 @@ fn try_apr_wgpu_inference(
     };
 
     let mut fwd = trueno::backends::gpu::WgslForwardPass::new(
-        gpu.device, gpu.queue,
-        hidden_dim, num_heads, num_kv_heads, head_dim, intermediate_dim,
+        gpu.device,
+        gpu.queue,
+        hidden_dim,
+        num_heads,
+        num_kv_heads,
+        head_dim,
+        intermediate_dim,
     );
 
     for (name, data, _rows, _cols) in &weights {
@@ -524,14 +555,20 @@ fn try_apr_wgpu_inference(
     // KV cache initialized by caller (no init_kv_cache needed — API change)
 
     let output_norm = model.output_norm_weight();
-    let lm_head_f32: Vec<f32> = weights.iter()
+    let lm_head_f32: Vec<f32> = weights
+        .iter()
         .find(|(n, _, _, _)| n == "lm_head")
         .map(|(_, d, _, _)| d.clone())
         .unwrap_or_default();
 
     let max_seq = gen_config.max_tokens + input_tokens.len() + 16;
     let mut kv_caches: Vec<(Vec<f32>, Vec<f32>)> = (0..num_layers)
-        .map(|_| (vec![0.0f32; max_seq * kv_dim], vec![0.0f32; max_seq * kv_dim]))
+        .map(|_| {
+            (
+                vec![0.0f32; max_seq * kv_dim],
+                vec![0.0f32; max_seq * kv_dim],
+            )
+        })
         .collect();
 
     // FALSIFY-CPU-GPU-005 part b: wgpu cosine parity gate.
@@ -569,22 +606,28 @@ fn try_apr_wgpu_inference(
         let probe_max_seq = multi_step_probe + 1;
         let mut cpu_cache = crate::gguf::OwnedQuantizedKVCache::from_config(cfg, probe_max_seq);
         let mut probe_kv_caches: Vec<(Vec<f32>, Vec<f32>)> = (0..num_layers)
-            .map(|_| (vec![0.0f32; probe_max_seq * kv_dim], vec![0.0f32; probe_max_seq * kv_dim]))
+            .map(|_| {
+                (
+                    vec![0.0f32; probe_max_seq * kv_dim],
+                    vec![0.0f32; probe_max_seq * kv_dim],
+                )
+            })
             .collect();
         let mut probe_token = *input_tokens.first().unwrap_or(&0);
 
         for step in 0..multi_step_probe {
             // CPU reference logits at this step.
-            let cpu_logits = match model.forward_single_with_cache(probe_token, &mut cpu_cache, step) {
-                Ok(l) => l,
-                Err(e) => {
-                    eprintln!(
-                        "{}, attempting fallback: CPU probe step {} forward failed: {}",
-                        WGPU_FALLBACK_LOG_PREFIX, step, e
-                    );
-                    return None;
-                }
-            };
+            let cpu_logits =
+                match model.forward_single_with_cache(probe_token, &mut cpu_cache, step) {
+                    Ok(l) => l,
+                    Err(e) => {
+                        eprintln!(
+                            "{}, attempting fallback: CPU probe step {} forward failed: {}",
+                            WGPU_FALLBACK_LOG_PREFIX, step, e
+                        );
+                        return None;
+                    },
+                };
 
             // wgpu single-step replay at the same position.
             let mut hidden = model.embed(&[probe_token]);
@@ -617,7 +660,10 @@ fn try_apr_wgpu_inference(
             if !(cos.is_finite() && cos >= 0.99) {
                 eprintln!(
                     "{}, attempting fallback: cosine vs CPU = {:.6} (< 0.99) at step {}/{}",
-                    WGPU_FALLBACK_LOG_PREFIX, cos, step + 1, multi_step_probe
+                    WGPU_FALLBACK_LOG_PREFIX,
+                    cos,
+                    step + 1,
+                    multi_step_probe
                 );
                 return None;
             }
@@ -654,14 +700,18 @@ fn try_apr_wgpu_inference(
             let prefix = format!("layer.{layer_idx}");
             let (ref mut kv_k, ref mut kv_v) = kv_caches[layer_idx];
             if let Err(e) = fwd.forward_layer(&mut hidden, &prefix, position, kv_k, kv_v) {
-                return Some(Err(RealizarError::InferenceError(format!("wgpu layer {layer_idx}: {e}"))));
+                return Some(Err(RealizarError::InferenceError(format!(
+                    "wgpu layer {layer_idx}: {e}"
+                ))));
             }
         }
 
         // Output norm (apply RMSNorm with output_norm gamma)
         let sq_sum: f32 = hidden.iter().map(|x| x * x).sum();
         let rms = (sq_sum / hidden.len() as f32 + eps).sqrt();
-        let normed: Vec<f32> = hidden.iter().zip(output_norm.iter())
+        let normed: Vec<f32> = hidden
+            .iter()
+            .zip(output_norm.iter())
             .map(|(x, g)| (x / rms) * g)
             .collect();
 
@@ -678,14 +728,17 @@ fn try_apr_wgpu_inference(
         }
 
         output_tokens.push(best_idx);
-        if stop_tokens.contains(&best_idx) { break; }
+        if stop_tokens.contains(&best_idx) {
+            break;
+        }
     }
 
     let inference_ms = infer_start.elapsed().as_millis() as f64;
     let tokens_generated = output_tokens.len() - input_token_count;
 
     // Decode tokens
-    let text = crate::infer::decode_apr_tokens(&config.model_path, &output_tokens[input_token_count..]);
+    let text =
+        crate::infer::decode_apr_tokens(&config.model_path, &output_tokens[input_token_count..]);
 
     Some(Ok(InferenceResult {
         text,
@@ -694,7 +747,11 @@ fn try_apr_wgpu_inference(
         generated_token_count: tokens_generated,
         inference_ms,
         load_ms: model_load_ms,
-        tok_per_sec: if inference_ms > 0.0 { tokens_generated as f64 / (inference_ms / 1000.0) } else { 0.0 },
+        tok_per_sec: if inference_ms > 0.0 {
+            tokens_generated as f64 / (inference_ms / 1000.0)
+        } else {
+            0.0
+        },
         format: "APR".to_string(),
         used_gpu: true,
     }))
@@ -726,15 +783,26 @@ fn load_apr_cuda_model(
     use crate::apr::MappedAprModel;
     use crate::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
 
-    let mapped = MappedAprModel::from_path(model_path).map_err(|e| {
-        if verbose { eprintln!("[APR-CUDA] MappedAprModel::from_path failed: {}", e); }
-    }).ok()?;
+    let mapped = MappedAprModel::from_path(model_path)
+        .map_err(|e| {
+            if verbose {
+                eprintln!("[APR-CUDA] MappedAprModel::from_path failed: {}", e);
+            }
+        })
+        .ok()?;
 
-    let model = OwnedQuantizedModel::from_apr(&mapped).map_err(|e| {
-        if verbose { eprintln!("[APR-CUDA] OwnedQuantizedModel::from_apr failed: {}", e); }
-    }).ok()?;
+    let model = OwnedQuantizedModel::from_apr(&mapped)
+        .map_err(|e| {
+            if verbose {
+                eprintln!("[APR-CUDA] OwnedQuantizedModel::from_apr failed: {}", e);
+            }
+        })
+        .ok()?;
 
-    if model_has_legacy_quant(&model) {
+    if model_has_gpu_unsupported_quant(&model) {
+        // PMAT-781: a true GPU-incompatible quant (Q5_1) on the APR CUDA loader
+        // is a backend-fallback decision — surface it on stderr, never silently.
+        eprintln!("[APR-CUDA] model contains Q5_1 weights — no GPU kernel; falling back to CPU");
         return None;
     }
 
@@ -749,9 +817,11 @@ fn load_apr_cuda_model(
     // a broken GPU build, or ILLEGAL_ADDRESS during the gate's GPU forward) MUST
     // be visible without --verbose. Silent fallback was the SHIP-007 jidoka gap:
     // user saw downstream wgpu gibberish without ever knowing CUDA was rejected.
-    let cuda_model = OwnedQuantizedModelCuda::with_max_seq_len(model, 0, 2048).map_err(|e| {
-        eprintln!("{}, attempting fallback: {}", CUDA_FALLBACK_LOG_PREFIX, e);
-    }).ok()?;
+    let cuda_model = OwnedQuantizedModelCuda::with_max_seq_len(model, 0, 2048)
+        .map_err(|e| {
+            eprintln!("{}, attempting fallback: {}", CUDA_FALLBACK_LOG_PREFIX, e);
+        })
+        .ok()?;
 
     Some((cuda_model, info))
 }
@@ -799,7 +869,9 @@ fn try_apr_cuda_inference(
     if config.verbose {
         log_apr_cuda_info(&info, &cuda_model, load_ms);
     }
-    eprintln!("[GH-480-TRACE] try_apr_cuda_inference: model loaded OK, about to resolve stop tokens");
+    eprintln!(
+        "[GH-480-TRACE] try_apr_cuda_inference: model loaded OK, about to resolve stop tokens"
+    );
 
     // GH-373: EOS from model config + caller stop tokens + sibling tokenizer
     let stop_tokens = resolve_apr_stop_tokens(
@@ -813,7 +885,7 @@ fn try_apr_cuda_inference(
         top_k: 1,
         stop_tokens,
         trace: false,
-            ..Default::default()
+        ..Default::default()
     };
 
     eprintln!("[GH-480] F2 validation starting...");
@@ -921,7 +993,7 @@ fn run_apr_quantized_cpu_inference(
         top_k: config.top_k,
         stop_tokens,
         trace: config.trace,
-            ..Default::default()
+        ..Default::default()
     };
 
     let infer_start = Instant::now();

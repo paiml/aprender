@@ -107,7 +107,8 @@ impl BatchModel {
         // GH-560: wgpu fallback before CPU
         #[cfg(feature = "gpu")]
         if let Some(ref mut wgpu) = self.wgpu {
-            return wgpu.generate(input_tokens, config)
+            return wgpu
+                .generate(input_tokens, config)
                 .map(|tokens| (tokens, true));
         }
 
@@ -120,7 +121,9 @@ impl BatchModel {
                 });
         }
 
-        Err(RealizarError::InferenceError("No model available".to_string()))
+        Err(RealizarError::InferenceError(
+            "No model available".to_string(),
+        ))
     }
 }
 
@@ -140,12 +143,13 @@ where
     validate_model_path(&config.model_path)?;
 
     let format = {
-        let mut file = std::fs::File::open(&config.model_path).map_err(|e| {
-            RealizarError::IoError { message: format!("Failed to open model: {}", e) }
-        })?;
+        let mut file =
+            std::fs::File::open(&config.model_path).map_err(|e| RealizarError::IoError {
+                message: format!("Failed to open model: {}", e),
+            })?;
         let mut magic = [0u8; 8];
-        std::io::Read::read_exact(&mut file, &mut magic).map_err(|e| {
-            RealizarError::IoError { message: format!("Failed to read magic: {}", e) }
+        std::io::Read::read_exact(&mut file, &mut magic).map_err(|e| RealizarError::IoError {
+            message: format!("Failed to read magic: {}", e),
         })?;
         crate::format::detect_format(&magic).map_err(|e| RealizarError::FormatError {
             reason: format!("Format detection failed: {}", e),
@@ -175,7 +179,10 @@ where
 
     let load_start = Instant::now();
     if config.verbose {
-        eprintln!("[batch] Loading GGUF model: {}", config.model_path.display());
+        eprintln!(
+            "[batch] Loading GGUF model: {}",
+            config.model_path.display()
+        );
     }
 
     let mapped = MappedGGUFModel::from_path(&config.model_path)?;
@@ -197,16 +204,22 @@ where
     let has_gpu_gguf = {
         let mut has = false;
         #[cfg(feature = "cuda")]
-        { has = has || batch_model.gpu.is_some(); }
+        {
+            has = has || batch_model.gpu.is_some();
+        }
         #[cfg(feature = "gpu")]
-        { has = has || batch_model.wgpu.is_some(); }
+        {
+            has = has || batch_model.wgpu.is_some();
+        }
         has
     };
     let batch_model = if batch_model.cpu.is_none() && !has_gpu_gguf {
         let m = OwnedQuantizedModel::from_mapped(&mapped)?;
         BatchModel {
-            #[cfg(feature = "cuda")] gpu: None,
-            #[cfg(feature = "gpu")] wgpu: None,
+            #[cfg(feature = "cuda")]
+            gpu: None,
+            #[cfg(feature = "gpu")]
+            wgpu: None,
             cpu: Some(m),
         }
     } else {
@@ -225,7 +238,16 @@ where
     let encode = |text: &str| -> Option<Vec<u32>> { mapped.model.encode(text) };
     let decode = |tokens: &[u32]| -> String { mapped.model.decode(tokens) };
 
-    run_batch_loop(config, reader, &mut writer, &stop_tokens, model_load_ms, batch_model, &encode, &decode)
+    run_batch_loop(
+        config,
+        reader,
+        &mut writer,
+        &stop_tokens,
+        model_load_ms,
+        batch_model,
+        &encode,
+        &decode,
+    )
 }
 
 /// Batch inference for APR models.
@@ -264,16 +286,22 @@ where
     let has_gpu_backend = {
         let mut has = false;
         #[cfg(feature = "cuda")]
-        { has = has || batch_model.gpu.is_some(); }
+        {
+            has = has || batch_model.gpu.is_some();
+        }
         #[cfg(feature = "gpu")]
-        { has = has || batch_model.wgpu.is_some(); }
+        {
+            has = has || batch_model.wgpu.is_some();
+        }
         has
     };
     let batch_model = if batch_model.cpu.is_none() && !has_gpu_backend {
         let m = OwnedQuantizedModel::from_apr(&mapped_apr)?;
         BatchModel {
-            #[cfg(feature = "cuda")] gpu: None,
-            #[cfg(feature = "gpu")] wgpu: None,
+            #[cfg(feature = "cuda")]
+            gpu: None,
+            #[cfg(feature = "gpu")]
+            wgpu: None,
             cpu: Some(m),
         }
     } else {
@@ -289,15 +317,22 @@ where
     }
 
     let model_path = config.model_path.clone();
-    let encode = |text: &str| -> Option<Vec<u32>> {
-        crate::apr::AprV2Model::encode_text(&model_path, text)
-    };
+    let encode =
+        |text: &str| -> Option<Vec<u32>> { crate::apr::AprV2Model::encode_text(&model_path, text) };
     let model_path2 = config.model_path.clone();
     let decode = |tokens: &[u32]| -> String { decode_apr_tokens(&model_path2, tokens) };
 
-    run_batch_loop(config, reader, &mut writer, &stop_tokens, model_load_ms, batch_model, &encode, &decode)
+    run_batch_loop(
+        config,
+        reader,
+        &mut writer,
+        &stop_tokens,
+        model_load_ms,
+        batch_model,
+        &encode,
+        &decode,
+    )
 }
-
 
 /// Initialize batch model with GPU/CPU fallback.
 fn init_batch_model(
@@ -309,8 +344,11 @@ fn init_batch_model(
     // Try wgpu before CUDA to avoid CUDA JIT overhead + parity gate on sm_121.
     // Disable with WGPU_BATCH=0 to skip wgpu and go straight to CUDA.
     #[cfg(feature = "gpu")]
-    if !config.no_gpu && !model_has_legacy_quant(&model)
-        && std::env::var("WGPU_BATCH").map(|v| v != "0").unwrap_or(true)
+    if !config.no_gpu
+        && !model_has_gpu_unsupported_quant(&model)
+        && std::env::var("WGPU_BATCH")
+            .map(|v| v != "0")
+            .unwrap_or(true)
     {
         if let Some(wgpu_state) = try_init_wgpu_batch(&model, config) {
             return Ok(BatchModel {
@@ -324,34 +362,52 @@ fn init_batch_model(
 
     #[cfg(feature = "cuda")]
     {
-        if !config.no_gpu && !model_has_legacy_quant(&model) {
+        if !config.no_gpu && !model_has_gpu_unsupported_quant(&model) {
             use crate::gguf::{OwnedQuantizedModelCuda, QuantizedGenerateConfig};
             match OwnedQuantizedModelCuda::with_max_seq_len(model, 0, 2048) {
                 Ok(mut cuda_model) => {
                     if config.verbose {
                         eprintln!(
                             "[batch] GPU: {} ({} MB VRAM)",
-                            cuda_model.device_name(), cuda_model.vram_mb()
+                            cuda_model.device_name(),
+                            cuda_model.vram_mb()
                         );
                     }
                     let probe_config = QuantizedGenerateConfig {
-                        max_tokens: 1, temperature: 0.0, top_k: 1,
-                        stop_tokens: stop_tokens.to_vec(), trace: false,
-            ..Default::default()
+                        max_tokens: 1,
+                        temperature: 0.0,
+                        top_k: 1,
+                        stop_tokens: stop_tokens.to_vec(),
+                        trace: false,
+                        ..Default::default()
                     };
                     // batch model-init has no prompt yet → BOS-probe fallback (PMAT-742)
                     if validate_gpu_first_token(&mut cuda_model, &probe_config, &[]) {
-                        return Ok(BatchModel { gpu: Some(cuda_model), #[cfg(feature = "gpu")] wgpu: None, cpu: None });
+                        return Ok(BatchModel {
+                            gpu: Some(cuda_model),
+                            #[cfg(feature = "gpu")]
+                            wgpu: None,
+                            cpu: None,
+                        });
                     }
                     eprintln!("[batch] CUDA validation failed, trying wgpu...");
                     let model = cuda_model.into_model();
                     // GH-560 FIXED: wgpu batch works. Try wgpu before CPU fallback.
                     #[cfg(feature = "gpu")]
                     if let Some(wgpu_state) = try_init_wgpu_batch(&model, config) {
-                        return Ok(BatchModel { gpu: None, wgpu: Some(wgpu_state), cpu: None });
+                        return Ok(BatchModel {
+                            gpu: None,
+                            wgpu: Some(wgpu_state),
+                            cpu: None,
+                        });
                     }
-                    return Ok(BatchModel { gpu: None, #[cfg(feature = "gpu")] wgpu: None, cpu: Some(model) });
-                }
+                    return Ok(BatchModel {
+                        gpu: None,
+                        #[cfg(feature = "gpu")]
+                        wgpu: None,
+                        cpu: Some(model),
+                    });
+                },
                 Err(e) => {
                     if config.verbose {
                         eprintln!("[batch] CUDA unavailable: {}, trying wgpu...", e);
@@ -360,10 +416,19 @@ fn init_batch_model(
                     // GH-560 FIXED: wgpu batch works. Try wgpu before CPU fallback.
                     #[cfg(feature = "gpu")]
                     if let Some(wgpu_state) = try_init_wgpu_batch(&model, config) {
-                        return Ok(BatchModel { gpu: None, wgpu: Some(wgpu_state), cpu: None });
+                        return Ok(BatchModel {
+                            gpu: None,
+                            wgpu: Some(wgpu_state),
+                            cpu: None,
+                        });
                     }
-                    return Ok(BatchModel { gpu: None, #[cfg(feature = "gpu")] wgpu: None, cpu: Some(model) });
-                }
+                    return Ok(BatchModel {
+                        gpu: None,
+                        #[cfg(feature = "gpu")]
+                        wgpu: None,
+                        cpu: Some(model),
+                    });
+                },
             }
         }
 
@@ -394,7 +459,11 @@ fn init_batch_model(
     #[cfg(not(feature = "cuda"))]
     {
         let _ = (stop_tokens, config);
-        Ok(BatchModel { #[cfg(feature = "gpu")] wgpu: None, cpu: Some(model) })
+        Ok(BatchModel {
+            #[cfg(feature = "gpu")]
+            wgpu: None,
+            cpu: Some(model),
+        })
     }
 }
 
@@ -420,15 +489,22 @@ where
     use std::io::Write as _;
 
     let mut stats = BatchStats {
-        total_prompts: 0, successful: 0, failed: 0,
-        total_tokens_generated: 0, total_inference_ms: 0.0, model_load_ms,
+        total_prompts: 0,
+        successful: 0,
+        failed: 0,
+        total_tokens_generated: 0,
+        total_inference_ms: 0.0,
+        model_load_ms,
     };
 
     for line in reader.lines() {
         let line = match line {
             Ok(l) if l.trim().is_empty() => continue,
             Ok(l) => l,
-            Err(e) => { eprintln!("[batch] Error reading input: {}", e); break; }
+            Err(e) => {
+                eprintln!("[batch] Error reading input: {}", e);
+                break;
+            },
         };
 
         stats.total_prompts += 1;
@@ -438,15 +514,25 @@ where
             Ok(p) => p,
             Err(e) => {
                 let result = BatchResult {
-                    task_id: None, text: String::new(), tokens_generated: 0,
-                    tok_per_sec: 0.0, inference_ms: 0.0, used_gpu: false,
+                    task_id: None,
+                    text: String::new(),
+                    tokens_generated: 0,
+                    tok_per_sec: 0.0,
+                    inference_ms: 0.0,
+                    used_gpu: false,
                     error: Some(format!("JSON parse error: {}", e)),
                 };
                 stats.failed += 1;
-                writeln!(writer, "{}", serde_json::to_string(&result).unwrap_or_default())
-                    .map_err(|e| RealizarError::IoError { message: format!("Write error: {}", e) })?;
+                writeln!(
+                    writer,
+                    "{}",
+                    serde_json::to_string(&result).unwrap_or_default()
+                )
+                .map_err(|e| RealizarError::IoError {
+                    message: format!("Write error: {}", e),
+                })?;
                 continue;
-            }
+            },
         };
 
         let max_tokens = batch_prompt.max_tokens.unwrap_or(config.max_tokens);
@@ -459,21 +545,34 @@ where
             Some(tokens) => tokens,
             None => {
                 let result = BatchResult {
-                    task_id: batch_prompt.task_id, text: String::new(), tokens_generated: 0,
-                    tok_per_sec: 0.0, inference_ms: 0.0, used_gpu: false,
+                    task_id: batch_prompt.task_id,
+                    text: String::new(),
+                    tokens_generated: 0,
+                    tok_per_sec: 0.0,
+                    inference_ms: 0.0,
+                    used_gpu: false,
                     error: Some("Tokenizer encode failed".to_string()),
                 };
                 stats.failed += 1;
-                writeln!(writer, "{}", serde_json::to_string(&result).unwrap_or_default())
-                    .map_err(|e| RealizarError::IoError { message: format!("Write error: {}", e) })?;
+                writeln!(
+                    writer,
+                    "{}",
+                    serde_json::to_string(&result).unwrap_or_default()
+                )
+                .map_err(|e| RealizarError::IoError {
+                    message: format!("Write error: {}", e),
+                })?;
                 continue;
-            }
+            },
         };
         let input_token_count = input_tokens.len();
 
         let gen_config = QuantizedGenerateConfig {
-            max_tokens, temperature: config.temperature, top_k: config.top_k,
-            stop_tokens: stop_tokens.to_vec(), trace: false,
+            max_tokens,
+            temperature: config.temperature,
+            top_k: config.top_k,
+            stop_tokens: stop_tokens.to_vec(),
+            trace: false,
             ..Default::default()
         };
 
@@ -494,39 +593,56 @@ where
                 stats.total_inference_ms += inference_ms;
 
                 BatchResult {
-                    task_id: batch_prompt.task_id, text,
+                    task_id: batch_prompt.task_id,
+                    text,
                     tokens_generated: generated_count,
                     tok_per_sec: (tps * 10.0).round() / 10.0,
                     inference_ms: (inference_ms * 100.0).round() / 100.0,
-                    used_gpu, error: None,
+                    used_gpu,
+                    error: None,
                 }
-            }
+            },
             Err(e) => {
                 stats.failed += 1;
                 BatchResult {
-                    task_id: batch_prompt.task_id, text: String::new(),
-                    tokens_generated: 0, tok_per_sec: 0.0,
+                    task_id: batch_prompt.task_id,
+                    text: String::new(),
+                    tokens_generated: 0,
+                    tok_per_sec: 0.0,
                     inference_ms: (inference_ms * 100.0).round() / 100.0,
-                    used_gpu: false, error: Some(format!("{}", e)),
+                    used_gpu: false,
+                    error: Some(format!("{}", e)),
                 }
-            }
+            },
         };
 
-        writeln!(writer, "{}", serde_json::to_string(&result).unwrap_or_default())
-            .map_err(|e| RealizarError::IoError { message: format!("Write error: {}", e) })?;
-        writer.flush()
-            .map_err(|e| RealizarError::IoError { message: format!("Flush error: {}", e) })?;
+        writeln!(
+            writer,
+            "{}",
+            serde_json::to_string(&result).unwrap_or_default()
+        )
+        .map_err(|e| RealizarError::IoError {
+            message: format!("Write error: {}", e),
+        })?;
+        writer.flush().map_err(|e| RealizarError::IoError {
+            message: format!("Flush error: {}", e),
+        })?;
 
         if prompt_idx % 10 == 0 {
-            eprintln!("[batch] {prompt_idx}/? processed ({} ok, {} failed)",
-                stats.successful, stats.failed);
+            eprintln!(
+                "[batch] {prompt_idx}/? processed ({} ok, {} failed)",
+                stats.successful, stats.failed
+            );
         }
     }
 
     eprintln!(
         "[batch] Complete: {} prompts, {} ok, {} failed, {:.1}s total inference, {:.1}s model load",
-        stats.total_prompts, stats.successful, stats.failed,
-        stats.total_inference_ms / 1000.0, stats.model_load_ms / 1000.0
+        stats.total_prompts,
+        stats.successful,
+        stats.failed,
+        stats.total_inference_ms / 1000.0,
+        stats.model_load_ms / 1000.0
     );
 
     Ok(stats)
