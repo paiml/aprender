@@ -71,3 +71,8 @@ jobs:
         run: |
           cargo test -p aprender-core --release \
             --test beat_sklearn_gmm_speed -- --ignored --nocapture
+
+      - name: Pillar-2 — apr vs PyTorch one-shot cold-start training speed beat
+        run: |
+          cargo test -p aprender-core --release \
+            --test beat_pytorch_coldstart_speed -- --ignored --nocapture
