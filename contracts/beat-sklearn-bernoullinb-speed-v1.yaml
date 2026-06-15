@@ -1,0 +1,54 @@
+contract: beat-sklearn-bernoullinb-speed
+metadata:
+  kind: beat-benchmark
+  version: "1.0.0"
+  description: >
+    Pillar-1 BEAT benchmark: aprender BernoulliNB fit+predict must be comfortably
+    FASTER than scikit-learn's BernoulliNB on the same binary data, same host, same
+    run. BernoulliNB is COMPUTE-bound (per-class present/absent log-prob
+    accumulation + argmax) with NO LAPACK/BLAS. apr was 0.61x (LOSS) because predict
+    recomputed ln(p) and ln(1-p) for every (sample,class,feature) = O(n*c*d)
+    transcendentals; precomputing both logs in fit (O(c*d)) flipped it to a WIN. The
+    robust cross-platform kind. Gated on ratio apr_ms/sklearn_ms. Runs nightly.
+  references:
+  - "crates/aprender-core/tests/beat_sklearn_bernoullinb_speed.rs"
+  - "crates/aprender-core/src/classification/bernoulli_nb.rs"
+version: 1
+status: enforced
+date: 2026-06-15
+beat:
+  pillar: 1
+  incumbent: scikit-learn
+  incumbent_pinned: "2026-06-15 via uv run --with scikit-learn (sklearn.naive_bayes.BernoulliNB)"
+  canonical_task: >
+    BernoulliNB fit+predict on binary features from make_classification(50000, 30,
+    n_informative=20, n_classes=8, seed=42) binarized at 0. Same data, same host,
+    same run (median of 5 + warmup); metric is ratio apr_ms / sklearn_ms.
+  metric: wall_clock_ratio_apr_over_sklearn
+  direction: lower_is_better
+  baseline_value: 1.0000
+  baseline_floor: 0.5260
+  beat_threshold: 0.8000
+  baseline_sourced_date: "2026-06-15"
+  approved_compute: CPU
+  ci_gate_name: "beat_sklearn_bernoullinb_speed"
+proof_obligations:
+- id: OBLIG-BERNOULLINB-SPEED-RATIO
+  statement: >
+    On the canonical task, apr_ms / sklearn_ms <= beat_threshold (0.80) measured
+    same-host/same-run as the median of 5 timed iterations after a warmup.
+  type: bound
+falsification_tests:
+- id: FALSIFY-BEAT-SKLEARN-BERNOULLINB-SPEED
+  description: >
+    FALSE if apr BernoulliNB fit+predict is not >= 1.25x faster than scikit-learn on
+    the canonical task (ratio > 0.80). Catches re-introducing the per-sample ln(p) /
+    ln(1-p) recompute in predict.
+  command: >
+    cargo test -p aprender-core --release --test beat_sklearn_bernoullinb_speed --
+    --ignored --nocapture
+  expected: "ratio <= 0.80 (apr >= 1.25x faster than scikit-learn BernoulliNB)"
+  if_fails: >
+    A regression slowed apr BernoulliNB (bernoulli_nb.rs) — most likely feature_log_prob
+    / feature_log_neg_prob are no longer precomputed in fit and predict recomputes
+    ln(p)/ln(1-p) per (sample,class,feature). Compare apr vs sklearn ms in the panic.
