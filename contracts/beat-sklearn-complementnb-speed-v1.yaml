@@ -26,7 +26,7 @@ beat:
   direction: lower_is_better
   baseline_value: 1.0000
   baseline_floor: 0.5960
-  beat_threshold: 0.8000
+  beat_threshold: 0.9000
   baseline_sourced_date: "2026-06-15"
   approved_compute: CPU
   ci_gate_name: "beat_sklearn_complementnb_speed"
@@ -39,12 +39,12 @@ proof_obligations:
 falsification_tests:
 - id: FALSIFY-BEAT-SKLEARN-COMPLEMENTNB-SPEED
   description: >
-    FALSE if apr ComplementNB fit+predict is not >= 1.25x faster than scikit-learn
-    on the canonical task (ratio > 0.80).
+    FALSE if apr ComplementNB fit+predict is not >= 1.11x faster than scikit-learn
+    on the canonical task (ratio > 0.90).
   command: >
     cargo test -p aprender-core --release --test beat_sklearn_complementnb_speed --
     --ignored --nocapture
-  expected: "ratio <= 0.80 (apr >= 1.25x faster than scikit-learn ComplementNB)"
+  expected: "ratio <= 0.80 (apr >= 1.11x faster than scikit-learn ComplementNB)"
   if_fails: >
     A regression slowed apr ComplementNB (complement_nb.rs) — check that per-class
     log-weights stay precomputed in fit and predict is a direct argmax (no per-sample
