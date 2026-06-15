@@ -1,0 +1,56 @@
+contract: beat-sklearn-gmm-speed
+metadata:
+  kind: beat-benchmark
+  version: "1.0.0"
+  description: >
+    Pillar-1 BEAT benchmark: aprender GaussianMixture (diagonal) fit+predict must be
+    comfortably FASTER than scikit-learn's GaussianMixture(covariance_type='diag') on
+    the same data, same host, same run, same hyperparameters (max_iter=100, tol=1e-3,
+    n_init=1, seed=42). GMM EM is COMPUTE-bound (per-component diagonal-Gaussian
+    responsibilities, no LAPACK/BLAS) — the robust cross-platform kind of win. apr's
+    compute_responsibilities was made ~O(k·d) in its per-component normalization
+    (previously recomputed determinant+powi+sqrt per (sample,component) = O(n·k·d)).
+    Gated on ratio apr_ms/sklearn_ms. Runs nightly (needs uv + scikit-learn).
+  references:
+  - "crates/aprender-core/tests/beat_sklearn_gmm_speed.rs"
+  - "crates/aprender-core/src/cluster/gmm.rs"
+version: 1
+status: enforced
+date: 2026-06-15
+beat:
+  pillar: 1
+  incumbent: scikit-learn
+  incumbent_pinned: "2026-06-15 via uv run --with scikit-learn (sklearn.mixture.GaussianMixture diag)"
+  canonical_task: >
+    GaussianMixture(diag) fit+predict on make_classification(20000, 10,
+    n_informative=10, n_classes=5, seed=42), max_iter=100, tol=1e-3, n_init=1. Same
+    data, same host, same run (median of 5 + warmup); metric is ratio apr_ms/sklearn_ms.
+  metric: wall_clock_ratio_apr_over_sklearn
+  direction: lower_is_better
+  baseline_value: 1.0000
+  baseline_floor: 0.2500
+  beat_threshold: 0.5000
+  baseline_sourced_date: "2026-06-15"
+  approved_compute: CPU
+  ci_gate_name: "beat_sklearn_gmm_speed"
+proof_obligations:
+- id: OBLIG-GMM-SPEED-RATIO
+  statement: >
+    On the canonical task, apr_ms / sklearn_ms <= beat_threshold (0.50) measured
+    same-host/same-run as the median of 5 timed iterations after a warmup.
+  type: bound
+falsification_tests:
+- id: FALSIFY-BEAT-SKLEARN-GMM-SPEED
+  description: >
+    FALSE if apr GaussianMixture(diag) fit+predict is not >= 2x faster than
+    scikit-learn on the canonical task (ratio > 0.50). Catches re-introducing the
+    per-(sample,component) determinant/norm-const recompute or per-sample allocations
+    in compute_responsibilities.
+  command: >
+    cargo test -p aprender-core --release --test beat_sklearn_gmm_speed --
+    --ignored --nocapture
+  expected: "ratio <= 0.50 (apr >= 2x faster than scikit-learn GaussianMixture diag)"
+  if_fails: >
+    A regression slowed apr GaussianMixture (cluster/gmm.rs compute_responsibilities)
+    — most likely per-component inv_cov_diag / inv_norm_const are no longer precomputed
+    before the sample loop, or per-sample/per-component Vec allocs returned. Compare ms.
