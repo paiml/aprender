@@ -1,10 +1,18 @@
-# cuda-oxide pure-Rust GPU kernels (source-of-record)
+# cuda-oxide pure-Rust GPU kernels (source-of-record) — CAPABILITY ONLY, NOT a decode speedup
 
 Pure-Rust `#[kernel]` → PTX kernels authored with [cuda-oxide](https://github.com/NVlabs/cuda-oxide)
-(NVlabs), the rustc backend that compiles Rust device code directly to CUDA PTX. This is the
-north-star path to **replace hand-PTX GPU kernels** (escaping the recurring Blackwell sm_121 JIT
-pain) — see `memory/reference_cuda_oxide_rust_to_ptx.md` and the promotion plan
-`docs/specifications/cuda-oxide-q4k-backend-promotion-DRAFT.md`.
+(NVlabs), the rustc backend that compiles Rust device code directly to CUDA PTX. This proves the
+**capability** (pure-Rust→PTX that loads + runs parity-correct on Blackwell sm_121, with no hand-PTX
+GH-480 JIT workaround) — the north-star R&D bet.
+
+> 🚨 **HONEST PERF CORRECTION (2026-06-15): cuda-oxide is NOT a decode speedup.** The A/B table below
+> shows the oxide kernel beats `TiledQ4KGemv` ~1.4–2.85×, BUT `TiledQ4KGemv` is **NOT** the kernel
+> production decode uses. On Blackwell the dispatch auto-selects **`HwDp4a`** (Q8_1 activations +
+> half-warp DP4A hardware dot-product), and the decisive A/B vs HwDp4a shows oxide is **~4× SLOWER**
+> (oxide/HwDp4a = 3.4–4.2× at every FFN shape K=6656/8960/11008). So wiring oxide into the decode path
+> would make Q4K FFN GEMVs ~4× slower — the backend integration was **closed** (PR #2045) and the
+> "P4 decode win" claim is **retracted**. cuda-oxide's value is the capability/R&D bet only; revisit
+> only if a DP4A-class oxide kernel can beat HwDp4a. The `…-DRAFT.md` promotion plan is superseded.
 
 ⚠️ **These projects build ONLY on gx10 (GB10 Blackwell)** with the cuda-oxide toolchain
 (nightly-2026-04-03 + LLVM-21 + `cargo-oxide`). They are **isolated** from the aprender workspace
