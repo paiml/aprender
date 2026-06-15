@@ -422,31 +422,25 @@ fn execute_training(
         }
     }
 
-    // 5. Export trained LoRA adapters to APR
-    // TODO: Export trained weights from pipeline. For now, save the checkpoint dir.
-    // The trainer saves checkpoints to train_config.checkpoint_dir.
-    // A proper export would extract LoRA A/B tensors and write an APR adapter file.
+    // 5. Export trained LoRA adapters in PEFT format (§26 Phase 3, PMAT-767).
+    // Writes adapter_config.json + adapter_model.safetensors to `output_path`,
+    // loadable by `peft.PeftModel.from_pretrained()` and `apr finetune merge`.
     if !json_output {
         output::pipeline_stage("Saving", output::StageStatus::Running);
     }
 
-    // For now, touch the output file to indicate training completed.
-    // Full APR export requires reading trained LoRA weights from the pipeline
-    // and writing them via AprWriter — this is Phase 3 of §26.
-    let checkpoint_dir = output_path
-        .parent()
-        .unwrap_or(Path::new("."))
-        .join("checkpoints");
+    let base_model = model_path.file_stem().and_then(|s| s.to_str());
+    trainer
+        .export_peft(output_path, base_model)
+        .map_err(|e| CliError::ValidationFailed(format!("PEFT adapter export failed: {e}")))?;
+
     if !json_output {
         output::pipeline_stage("Saving", output::StageStatus::Done);
-        println!("  Checkpoints: {}", checkpoint_dir.display());
         println!();
         println!("  Training complete. Loss metrics reported above.");
-        println!("  APR adapter export (§26 Phase 3) not yet implemented.");
-        println!(
-            "  Checkpoint weights saved by trainer to: {}",
-            checkpoint_dir.display()
-        );
+        println!("  PEFT adapter written to: {}", output_path.display());
+        println!("    - adapter_config.json");
+        println!("    - adapter_model.safetensors");
     }
 
     Ok(())

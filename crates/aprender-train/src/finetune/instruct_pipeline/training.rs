@@ -65,7 +65,17 @@ impl InstructPipeline {
         }
 
         // 2. Forward pass → logits [seq_len, vocab_size]
-        let logits = self.model.forward(&full_ids);
+        // PMAT-767: apply LoRA adapters in the forward so the autograd graph
+        // connects to the trainable LoRA params. Using plain `model.forward()`
+        // left `lora_layers` orphaned (zero gradients → flat loss → no training).
+        // `forward_with_lora` threads in lora_layers as [Q0,V0,Q1,V1,...] and
+        // uses the gradient-correct `MultiHeadAttention::forward_with_lora` path
+        // (KAIZEN-011) so `op.backward()` populates LoRA A/B gradients.
+        let logits = if self.lora_layers.is_empty() {
+            self.model.forward(&full_ids)
+        } else {
+            self.model.forward_with_lora(&full_ids, &self.lora_layers)
+        };
         let logits_data = logits.data().as_slice().expect("contiguous logits").to_vec();
 
         // 3. Causal LM loss on response tokens only

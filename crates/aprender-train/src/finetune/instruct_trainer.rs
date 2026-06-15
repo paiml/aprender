@@ -479,6 +479,61 @@ impl InstructTrainer {
         contract_post_save_checkpoint!(());
         Ok(())
     }
+
+    /// Immutable access to the trained pipeline (model + LoRA adapters).
+    ///
+    /// Exposed so callers can read trained LoRA weights after `train()` —
+    /// e.g. to export a PEFT-compatible adapter (see `export_peft`).
+    pub fn pipeline(&self) -> &InstructPipeline {
+        &self.pipeline
+    }
+
+    /// Export trained LoRA adapters in PEFT-compatible format (PMAT-767).
+    ///
+    /// Writes `adapter_config.json` + `adapter_model.safetensors` to `output_dir`
+    /// using HuggingFace PEFT naming conventions, loadable by
+    /// `peft.PeftModel.from_pretrained()` and by `apr finetune merge`.
+    ///
+    /// LoRA layers are ordered `[Q(0), V(0), Q(1), V(1), ...]` (see
+    /// `InstructPipeline::build_lora_layers`); this maps each to the PEFT path
+    /// `model.layers.{i}.self_attn.{q,v}_proj`.
+    ///
+    /// # Errors
+    /// Returns an error if the adapter bundle fails to serialize or write.
+    pub fn export_peft(
+        &mut self,
+        output_dir: &std::path::Path,
+        base_model: Option<&str>,
+    ) -> crate::Result<()> {
+        use crate::lora::{LoRAConfig, PeftAdapterBundle};
+
+        // Sync GPU LoRA weights to CPU before reading (no-op on CPU build).
+        #[cfg(feature = "cuda")]
+        self.pipeline.sync_lora_to_cpu();
+
+        let lora_config =
+            LoRAConfig::new(self.pipeline.config.lora_rank, self.pipeline.config.lora_alpha)
+                .target_qv_projections();
+
+        let mut bundle = PeftAdapterBundle::new(lora_config);
+        if let Some(name) = base_model {
+            bundle = bundle.with_base_model(name);
+        }
+
+        for (idx, lora) in self.pipeline.lora_layers.iter().enumerate() {
+            let layer = idx / 2;
+            let proj = if idx % 2 == 0 { "q_proj" } else { "v_proj" };
+            let layer_path = format!("model.layers.{layer}.self_attn.{proj}");
+            bundle.add_adapter(layer_path, lora);
+        }
+
+        bundle.save_peft(output_dir).map_err(|e| {
+            crate::Error::Io(format!(
+                "Failed to write PEFT adapter to {}: {e}",
+                output_dir.display()
+            ))
+        })
+    }
 }
 
 #[cfg(test)]
@@ -559,5 +614,89 @@ mod tests {
         assert_eq!(train.len() + val.len(), 20);
         assert!(!train.is_empty());
         assert!(!val.is_empty());
+    }
+
+    /// PMAT-767 falsifier: end-to-end QLoRA fine-tune must reduce training loss
+    /// over several epochs AND emit a PEFT adapter that re-loads cleanly.
+    ///
+    /// This is the contained slice that proves the full QLoRA loop works:
+    /// build a tiny synthetic transformer, run the InstructTrainer loop on a toy
+    /// corpus, then export + reload the adapter. Falsifies "QLoRA fine-tuning is
+    /// stubbed" — if the loop did not train, loss would be flat; if the export
+    /// stub remained, no loadable adapter would exist.
+    #[test]
+    fn test_qlora_e2e_loss_decreases_and_adapter_exports() {
+        use crate::lora::load_adapter_peft;
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().expect("tempdir");
+
+        let model_config = TransformerConfig::tiny();
+        // Byte-level tokenizer fallback (no BPE on synthetic model): seq_len must
+        // exceed the byte length of the ChatML prompt so response tokens survive
+        // the prompt+response budget (else num_loss_tokens=0 → flat loss).
+        let instruct_config = InstructConfig {
+            lora_rank: 4,
+            lora_alpha: 8.0,
+            max_seq_len: 96,
+            learning_rate: 1e-2,
+            ..InstructConfig::default()
+        };
+        // CPU synthetic model — no model file, no GPU required.
+        let pipeline = InstructPipeline::new(&model_config, instruct_config);
+        let num_lora_layers = pipeline.lora_layers.len();
+        assert!(num_lora_layers > 0, "tiny model must build LoRA layers");
+
+        // Short system prompt + short instruction/response keep the byte-level
+        // sequence well inside max_seq_len so response tokens train.
+        let corpus: Vec<InstructSample> = (0..8)
+            .map(|i| InstructSample {
+                instruction: format!("q{i}"),
+                response: format!("a{i}"),
+                system: Some("S".to_string()),
+                metadata: None,
+            })
+            .collect();
+        let config = InstructTrainingConfig {
+            epochs: 4,
+            save_every: 1,
+            checkpoint_dir: tmp.path().join("checkpoints"),
+            ..Default::default()
+        };
+
+        let mut trainer = InstructTrainer::new(pipeline, corpus, config).expect("trainer");
+        let result = trainer.train();
+
+        // ── Falsifier 1: training loss decreases over the run ──
+        let first = result.epoch_metrics.first().expect("at least one epoch");
+        let last = result.epoch_metrics.last().expect("at least one epoch");
+        assert!(
+            last.train_loss < first.train_loss,
+            "QLoRA loss must decrease: first={:.4} last={:.4}",
+            first.train_loss,
+            last.train_loss,
+        );
+        assert!(last.train_loss.is_finite(), "final loss must be finite");
+
+        // ── Falsifier 2: PEFT adapter exports and re-loads ──
+        let adapter_dir = tmp.path().join("adapter");
+        trainer
+            .export_peft(&adapter_dir, Some("synthetic/tiny"))
+            .expect("PEFT export must succeed");
+
+        assert!(adapter_dir.join("adapter_config.json").exists());
+        assert!(adapter_dir.join("adapter_model.safetensors").exists());
+
+        let (loaded_config, weights) =
+            load_adapter_peft(&adapter_dir).expect("emitted adapter must re-load");
+        assert_eq!(loaded_config.r, 4);
+        assert!((loaded_config.lora_alpha - 8.0).abs() < f32::EPSILON);
+        // Each LoRA layer contributes A + B = 2 tensors.
+        assert_eq!(weights.len(), num_lora_layers * 2);
+        // Trained weights must be non-degenerate (B is zero-init; A is trained/random).
+        assert!(
+            weights.iter().any(|(_, w)| w.iter().any(|v| v.abs() > 0.0)),
+            "exported adapter weights must be non-zero",
+        );
     }
 }
