@@ -1,0 +1,59 @@
+contract: beat-q4k-oxide-sm121
+metadata:
+  kind: beat-benchmark
+  version: "1.0.0"
+  description: >
+    Pillar-4 BEAT benchmark: the cuda-oxide pre-generated Q4K dequant-matvec PTX
+    backend must run at least 1.25x the throughput of the existing hand-PTX
+    TiledQ4KGemv path on Blackwell sm_121 (GB10), at bit-exact-within-Q4K-eps
+    parity. The oxide PTX is a standalone .target sm_121 asset embedded in
+    aprender-serve and loaded via the existing CudaModule::from_ptx path — no
+    cuda-oxide build dependency. It also sidesteps the GH-480 sm_121 JIT
+    backward-branch workaround. Gated off by default (env APR_Q4K_OXIDE=1 +
+    cc>=120); sm_89 falls back to TiledQ4KGemv unchanged.
+  references:
+  - "docs/specifications/cuda-oxide-q4k-backend-promotion-DRAFT.md"
+  - "crates/aprender-serve/tests/q4k_gemv_oxide_parity.rs"
+  - "crates/aprender-serve/src/cuda/ptx/q4k_matvec_oxide.sm121.ptx"
+  - "crates/aprender-contracts-staging/contracts/legacy/q4k-cross-backend-parity-v1.yaml"
+version: 1
+status: enforced
+date: 2026-06-15
+
+# Beat-benchmark parameters (machine-pinned baseline; CI fails on regression).
+# Runs only where the cuda-oxide asset is applicable: gx10 GB10 Blackwell sm_121.
+beat:
+  pillar: 4
+  incumbent: ollama
+  incumbent_pinned: >
+    Pillar-4 (ollama) decode-throughput beat on Blackwell. The concrete CI
+    sub-metric pins the in-tree incumbent kernel: aprender hand-PTX
+    TiledQ4KGemv at HEAD, sm_121 cubin via CudaModule::from_ptx. Beating the
+    tiled Q4K GEMV on the decode hot path is the mechanism that advances the
+    apr-vs-ollama Blackwell throughput beat.
+  canonical_task: >
+    Single-token Q4K GEMV (M=1 decode hot path) on a real Q4_K attn_q weight
+    tensor from qwen2.5-coder-1.5b-instruct-q4_k_m, measured on gx10 (GB10
+    Blackwell sm_121). Same weights + same input fed to both the oxide
+    q4k_matvec kernel and the incumbent TiledQ4KGemv hand-PTX kernel
+    (apples-to-apples). Throughput = GEMV launches per second over a fixed
+    iteration count after a warmup; the speedup ratio is oxide_tps / tiled_tps.
+    This Q4K GEMV is the dominant per-token cost, so a >=1.25x kernel speedup
+    directly raises apr's decode tok/s toward beating ollama on Blackwell.
+  metric: speedup_vs_tiled
+  direction: higher_is_better
+  baseline_value: 1.00        # incumbent tiled Q4K GEMV path (ratio == 1.0)
+  baseline_floor: 1.00        # tiled never beats itself
+  beat_threshold: 1.25        # oxide must reach >= 1.25x tiled on sm_121
+  baseline_sourced_date: "2026-06-15"
+  approved_compute: GPU       # one of: CPU | GPU (PMAT-741 supports both)
+  ci_gate_name: "beat_q4k_oxide_sm121"   # the gate that enforces this on gx10
+
+# Correctness precondition for the beat: the oxide path is only valid if it
+# matches both the tiled hand-PTX and the CPU reference within the Q4K epsilon
+# band. A faster-but-wrong kernel does NOT count as a beat.
+parity:
+  reference: "crates/aprender-serve/tests/q4k_gemv_oxide_parity.rs"
+  epsilon_formula: "|dot_oxide - dot_ref| < sqrt(K) * 2^-23 * |dot_ref|"
+  three_way: "oxide-PTX ~= TiledQ4KGemv ~= CPU fused_q4k_parallel_matvec"
+  rel_err_max: 0.01           # 1% Q4K element-wise tolerance vs CPU/tiled

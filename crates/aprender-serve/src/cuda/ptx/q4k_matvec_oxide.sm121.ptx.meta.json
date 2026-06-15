@@ -1,0 +1,43 @@
+{
+  "ticket": "PMAT-OXIDE-Q4K-001",
+  "kernel": "q4k_matvec",
+  "entry_name": "q4k_matvec",
+  "arch": "sm_121",
+  "ptx_version": "8.8",
+  "address_size": 64,
+  "source_toolchain": "cuda-oxide (cargo-oxide ALPHA) + nightly-2026-04-03 + LLVM-21",
+  "generated_on_host": "gx10-a5b5 (NVIDIA GB10 Blackwell sm_121)",
+  "source_artifact": "gx10:/tmp/q4k_matvec.ptx",
+  "sha256": "5c062366818a1e060380a99b8d5974f9ddff0dd064a254775b806f1f85ccb16e",
+  "size_bytes": 8236,
+  "generation_date": "2026-06-15",
+  "abi": {
+    "description": "cuLaunchKernel arg array, in order. Row-major Q4K, 144-byte superblocks, K%256==0.",
+    "params": [
+      {"name": "data", "type": "*const u8",  "ptx_param": "q4k_matvec_param_0", "note": "Q4K weight bytes, row-major"},
+      {"name": "x",    "type": "*const f32", "ptx_param": "q4k_matvec_param_1", "note": "input activation vector, length k"},
+      {"name": "y",    "type": "*mut f32",   "ptx_param": "q4k_matvec_param_2", "note": "output vector, length m. MUST be zeroed before launch (kernel uses atom.global.add.f32)"},
+      {"name": "m",    "type": "u32",        "ptx_param": "q4k_matvec_param_3", "note": "output rows (== n in tiled-kernel naming)"},
+      {"name": "k",    "type": "u32",        "ptx_param": "q4k_matvec_param_4", "note": "input dimension, multiple of 256"},
+      {"name": "t",    "type": "u32",        "ptx_param": "q4k_matvec_param_5", "note": "threads per output row, fixed at 32"}
+    ]
+  },
+  "launch": {
+    "total_threads": "m * t",
+    "block": [256, 1, 1],
+    "grid": ["ceil(m*t / 256)", 1, 1],
+    "t": 32,
+    "preconditions": [
+      "y zeroed before launch (atomic accumulation)",
+      "k multiple of 256",
+      "data is row-major Q4K (144-byte superblocks)"
+    ]
+  },
+  "gating": {
+    "compute_capability_min": 120,
+    "opt_in_env_var": "APR_Q4K_OXIDE=1",
+    "default": "OFF",
+    "fallback": "TiledQ4KGemv hand-PTX (sm_89 and opt-out, unchanged)"
+  },
+  "provenance_notes": "Verified to load+launch+bit-exact through the aprender CudaModule::from_ptx path on gx10 (GB10 Blackwell sm_121). Avoids the GH-480 sm_121 JIT backward-branch workaround. Regenerate per docs/specifications/cuda-oxide-q4k-backend-promotion-DRAFT.md."
+}

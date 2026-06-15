@@ -242,6 +242,17 @@ impl CudaExecutor {
         self.optimal_tile_size
     }
 
+    /// Numeric compute capability of the device (major*10 + minor).
+    ///
+    /// E.g. 89 for RTX 4090 (Ada), 121 for GB10 (Blackwell). Read from the
+    /// auto-detected `GpuProfile`. Used by callers/tests to gate
+    /// architecture-specific backends (e.g. the sm_120+ oxide Q4K path,
+    /// PMAT-OXIDE-Q4K-001).
+    #[must_use]
+    pub fn compute_capability(&self) -> u32 {
+        self.gpu_profile.cc
+    }
+
     /// Compile PTX into a CUDA module, with process-level blocklisting.
     ///
     /// If the same PTX previously failed to compile (poisoning the CUDA

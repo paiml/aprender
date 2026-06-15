@@ -307,6 +307,14 @@ impl CudaExecutor {
         // Get cached weight buffer (ALB-098: checks pool first, then individual cache)
         let weight_ptr = self.get_quantized_weight_ptr(weight_name)?;
 
+        // PMAT-OXIDE-Q4K-001: cuda-oxide pre-generated PTX backend for Blackwell.
+        // Opt-in (env APR_Q4K_OXIDE=1) AND compute capability >= 120 (sm_120+) AND
+        // K aligned to 256. On sm_89 or opt-out, this returns None and we fall
+        // through to the EXISTING TiledQ4KGemv path UNCHANGED (hot decode path).
+        if let Some(result) = self.try_q4k_gemv_oxide_async(weight_ptr, input, n, k) {
+            return result;
+        }
+
         // CORRECTNESS-001: Use TiledQ4KGemv for aligned K (matches sync version)
         // The basic Q4KGemv kernel has the same scale extraction issue
         // PAR-502: sm_89 has 100KB shared memory limit, K * 4 bytes must fit
@@ -528,5 +536,184 @@ impl CudaExecutor {
         }
 
         Ok(buf_output)
+    }
+
+    /// PMAT-OXIDE-Q4K-001: pre-generated cuda-oxide Q4K dequant-matvec backend.
+    ///
+    /// Returns `Some(result)` only when the oxide path is selected:
+    /// - opt-in via env `APR_Q4K_OXIDE=1` (default OFF — nothing changes without it),
+    /// - device compute capability >= 120 (Blackwell sm_120+), and
+    /// - `k` is a multiple of 256 (Q4K super-block alignment).
+    ///
+    /// On sm_89 (RTX 4090, the proven hot path) or when opt-out, returns `None`
+    /// so the caller falls through to the EXISTING `TiledQ4KGemv` hand-PTX path,
+    /// which is left byte-for-byte unchanged.
+    ///
+    /// The kernel uses the verified ABI `(data: *const u8, x: *const f32,
+    /// y: *mut f32, m: u32, k: u32, t: u32)` with `t = 32` threads/row. `y` MUST
+    /// be zeroed before launch because the kernel accumulates via
+    /// `atom.global.add.f32`. Launch is `total = m * t`, block = 256,
+    /// grid = ceil(total / 256). `m` is the output dim (`n` in this method's
+    /// naming).
+    ///
+    /// The pre-generated PTX (`.target sm_121`, `.version 8.8`) is embedded as a
+    /// static asset and loaded once through the existing `compile_ptx` / cubin
+    /// cache path — no cuda-oxide build dependency.
+    fn try_q4k_gemv_oxide_async(
+        &mut self,
+        weight_ptr: u64,
+        input: &GpuBuffer<f32>,
+        n: u32,
+        k: u32,
+    ) -> Option<Result<GpuBuffer<f32>, GpuError>> {
+        // Gate 1: explicit opt-in. Default OFF → return None, no behavior change.
+        if std::env::var("APR_Q4K_OXIDE").as_deref() != Ok("1") {
+            return None;
+        }
+        // Gate 2: Blackwell sm_120+ only. The asset is `.target sm_121` and only
+        // wins / dodges GH-480 there. Preserve the sm_89 fallback exactly.
+        if self.gpu_profile.cc < 120 {
+            return None;
+        }
+        // Gate 3: Q4K super-block alignment (kernel assumes K % 256 == 0).
+        if !k.is_multiple_of(256) {
+            return None;
+        }
+
+        Some(self.q4k_gemv_oxide_async_inner(weight_ptr, input, n, k))
+    }
+
+    /// Inner implementation of the oxide backend (split out so the gated entry
+    /// point stays trivially simple). See [`Self::try_q4k_gemv_oxide_async`].
+    fn q4k_gemv_oxide_async_inner(
+        &mut self,
+        weight_ptr: u64,
+        input: &GpuBuffer<f32>,
+        n: u32,
+        k: u32,
+    ) -> Result<GpuBuffer<f32>, GpuError> {
+        // Validate weight pointer — launching with ptr=0 poisons the context.
+        if weight_ptr == 0 {
+            return Err(GpuError::InvalidLaunchConfig(
+                "null weight pointer in q4k_gemv_oxide_async".to_string(),
+            ));
+        }
+
+        // The PTX is dimension-independent (dims are runtime args), so a single
+        // cached module serves all (k, n). Cache key is stable.
+        const OXIDE_CACHE_KEY: &str = "oxide_q4k_matvec_sm121";
+        const OXIDE_ENTRY: &str = "q4k_matvec";
+        const OXIDE_PTX: &str = include_str!("../ptx/q4k_matvec_oxide.sm121.ptx");
+
+        if !self.modules.contains_key(OXIDE_CACHE_KEY) {
+            let module = self.compile_ptx(OXIDE_PTX)?;
+            self.modules.insert(OXIDE_CACHE_KEY.to_string(), module);
+        }
+        let module = self
+            .modules
+            .get_mut(OXIDE_CACHE_KEY)
+            .expect("oxide module just inserted");
+
+        // Allocate output buffer and ZERO it — the kernel accumulates with
+        // atom.global.add.f32, so a non-zeroed y produces garbage.
+        let mut buf_output = GpuBuffer::<f32>::new(&self.context, n as usize)?;
+        // Zero via the compute stream. `&self.stream` derefs PoolableStream
+        // (Deref<Target = CudaStream>) to the &CudaStream zero_async expects.
+        buf_output.zero_async(&self.stream)?;
+
+        // ABI: (data, x, y, m, k, t). t = 32 threads per output row.
+        let mut ptr_weights = weight_ptr; // data: *const u8
+        let mut ptr_input = input.as_ptr(); // x: *const f32
+        let mut ptr_output = buf_output.as_ptr(); // y: *mut f32
+        let mut m_val = n; // m: output rows
+        let mut k_val = k; // k: input dim
+        let mut t_val: u32 = 32; // t: threads/row (fixed)
+
+        // Launch: total = m * t, block = 256, grid = ceil(total / 256).
+        let total = m_val.saturating_mul(t_val);
+        let num_blocks = total.div_ceil(256);
+        let config = LaunchConfig::grid_2d(num_blocks, 1, 256, 1);
+
+        // SAFETY: pointers are valid device buffers, arg order matches the
+        // verified `q4k_matvec` ABI, and `y` was zeroed above for the atomic add.
+        unsafe {
+            self.stream.launch_kernel(
+                module,
+                OXIDE_ENTRY,
+                &config,
+                &mut [
+                    std::ptr::from_mut(&mut ptr_weights) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_input) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_output) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut m_val) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut k_val) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut t_val) as *mut std::ffi::c_void,
+                ],
+            )?;
+        }
+
+        // NO synchronization here — caller can chain operations (matches the
+        // existing async path contract).
+        Ok(buf_output)
+    }
+
+    /// PMAT-OXIDE-Q4K-001: synchronous host-in/host-out Q4K GEMV via the
+    /// cuda-oxide PTX backend. Mirrors [`Self::q4k_gemv`] but forces the oxide
+    /// kernel.
+    ///
+    /// This is the parity/bench entry point: it uploads `weight` + `input`,
+    /// runs the embedded `q4k_matvec` kernel (with `y` zeroed for the atomic
+    /// accumulation), synchronizes, and copies the result back. It deliberately
+    /// does NOT consult `APR_Q4K_OXIDE` so tests/benches are deterministic; it
+    /// only requires Blackwell (cc >= 120) since the asset is `.target sm_121`.
+    ///
+    /// # Errors
+    /// Returns `Err` if the device is not sm_120+ (the asset won't load on
+    /// sm_89), if `k` is not a multiple of 256, or on any CUDA failure.
+    pub fn q4k_gemv_oxide(
+        &mut self,
+        weight: &[u8],
+        input: &[f32],
+        output: &mut [f32],
+        n: u32,
+        k: u32,
+    ) -> Result<(), GpuError> {
+        if self.gpu_profile.cc < 120 {
+            return Err(GpuError::InvalidLaunchConfig(format!(
+                "oxide Q4K backend requires compute capability >= 120 (sm_120+), \
+                 device is cc={}",
+                self.gpu_profile.cc
+            )));
+        }
+        if !k.is_multiple_of(256) {
+            return Err(GpuError::InvalidLaunchConfig(format!(
+                "oxide Q4K backend requires k % 256 == 0, got k={k}"
+            )));
+        }
+
+        // Upload weight bytes to a fresh device buffer (test/bench path; the
+        // production path uses the cached weight pointer).
+        let buf_weights = GpuBuffer::from_host(&self.context, weight)?;
+
+        // GH-215 style padding: the kernel reads activations up to the padded
+        // super-block boundary; pad to ceil(k/256)*256 to avoid OOB reads.
+        let padded_k = ((k as usize + 255) / 256) * 256;
+        let padded_input: std::borrow::Cow<'_, [f32]> = if padded_k > input.len() {
+            let mut padded = vec![0.0f32; padded_k];
+            padded[..input.len()].copy_from_slice(input);
+            std::borrow::Cow::Owned(padded)
+        } else {
+            std::borrow::Cow::Borrowed(input)
+        };
+        let buf_input = GpuBuffer::from_host(&self.context, &padded_input)?;
+
+        let buf_output = self.q4k_gemv_oxide_async_inner(buf_weights.as_ptr(), &buf_input, n, k)?;
+        self.stream.synchronize()?;
+        buf_output.copy_to_host(output)?;
+
+        // Keep the weight/input buffers alive until after the launch+sync.
+        drop(buf_weights);
+        drop(buf_input);
+        Ok(())
     }
 }
