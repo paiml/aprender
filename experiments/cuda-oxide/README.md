@@ -47,3 +47,15 @@ cargo oxide pipeline          # emits target/.../q4k_matvec_atomic.ptx (.target 
 The emitted `.ptx` is loadable via the existing `CudaModule::from_ptx` path
 (`crates/aprender-gpu/src/driver/module.rs`) — **no cuda-oxide build dependency in aprender CI**.
 Promotion (embed PTX as a static asset, raw-pointer ABI, 3-way parity gate) is scoped in the DRAFT doc.
+
+## Generated artifacts (verified, shippable)
+
+- `generated/q4k_matvec.sm121.ptx` — trimmed standalone PTX (245 lines, `.target sm_121`, entry
+  `q4k_matvec`) emitted by `cargo oxide pipeline`. **Verified end-to-end through the exact aprender
+  consumption path** (`include_str!` → `CudaModule::from_ptx` → resolve `q4k_matvec` → `cuLaunchKernel`),
+  bit-exact vs the slice-ABI kernel + CPU reference, perf preserved (78µs/4096×2048, 125µs/1536×8960).
+- `q4k-matvec/src/main_rawptr_abi.rs` — the raw-pointer-ABI `#[kernel]` source that produced it.
+  Entry `q4k_matvec(data:*const u8, x:*const f32, y:*mut f32, m:u32, k:u32, t:u32)` — C-style ABI
+  (3 ptr + 3 u32, no fat pointers), helpers `#[inline(always)]` so the entry has zero `call`.
+  Launch: total=m*t, block=256, grid=ceil(total/256); y must be zeroed (kernel atom.global.add.f32).
+  This .ptx + signature is what the aprender backend embeds (see the promotion DRAFT doc).
