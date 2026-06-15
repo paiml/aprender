@@ -538,16 +538,83 @@ impl CudaExecutor {
         Ok(buf_output)
     }
 
+    /// PMAT-734: minimum K for the oxide Q4K backend to be a net throughput win.
+    ///
+    /// The oxide kernel uses a fixed 32-threads/row reduction. Its advantage over
+    /// the tiled shared-memory kernel GROWS with K — each thread processes K/32
+    /// super-block contributions, so a larger K amortizes the kernel's launch +
+    /// atomic-reduction overhead. The tiled kernel instead stages the activation
+    /// vector in shared memory, which keeps it competitive (or ahead) at small-K
+    /// where the oxide kernel's per-row reduction is launch-overhead bound.
+    ///
+    /// MEASURED crossover on gx10 (GB10 Blackwell sm_121, cc=121, driver
+    /// 590.48.01, CUDA 13.0), median of 7 batches x 200 async launches after 50
+    /// warmup, weights cached on GPU + input device-resident (pure launch timing
+    /// on the production async path). K-sweep at fixed N=1536, two runs (the
+    /// us/launch below are run 1; the two-run speedup band is shown):
+    ///
+    /// | N    | K    | oxide us | tiled us | speedup (run1/run2) | verdict       |
+    /// |------|------|----------|----------|---------------------|---------------|
+    /// | 4096 | 2048 | 102.6    | 103.9    | 1.01x (attn shape)  | tie/LOSE      |
+    /// | 1536 | 4096 |  85.1    |  81.1    | 0.95x / 1.02x       | tie/LOSE      |
+    /// | 1536 | 5120 | 101.0    | 106.2    | 1.05x / 1.01x       | tie           |
+    /// | 1536 | 6144 | 116.5    | 114.7    | 0.99x / 1.06x       | tie           |
+    /// | 1536 | 6656 | 122.3    | 169.1    | 1.38x / 1.47x       | WIN (crossover)|
+    /// | 1536 | 7168 | 131.3    | 186.7    | 1.42x / 1.55x       | WIN           |
+    /// | 1536 | 8192 | 147.5    | 206.7    | 1.40x / 1.50x       | WIN           |
+    /// | 1536 | 8960 | 158.9    | 304.8    | 1.92x / 2.05x       | BEAT (~2.0x)  |
+    ///
+    /// The crossover is at K=6656: below it oxide only ties tiled (~1.0-1.06x,
+    /// NOT a beat); at and above K=6656 oxide is a clear >=1.38x win, climbing to
+    /// ~2.0x at K=8960. (NB: the earlier "FFN wins at all K" reading was an
+    /// artifact of comparing the N=1536 FFN win to the N=4096 attention loss —
+    /// the N=1536 K-sweep shows oxide does NOT win until K=6656.)
+    ///
+    /// We set the threshold CONSERVATIVELY at `K >= 6656`: the lowest swept K
+    /// where BOTH runs clear the 1.25x beat threshold. Common FFN down/up/gate K
+    /// dims (1.5B: 8960; 7B: 11008/14336) clear it and route to oxide; common
+    /// attention K dims (1536/2048) and the marginal mid-K region (<=6144) stay
+    /// on the proven TiledQ4KGemv path. This makes the `APR_Q4K_OXIDE=1` opt-in a
+    /// genuine net win: FFN faster, attention unchanged. See the throughput gate
+    /// (`q4k_gemv_oxide_throughput.rs`) and `contracts/beat-q4k-oxide-sm121-v1.yaml`.
+    const OXIDE_MIN_K: u32 = 6656;
+
+    /// PMAT-734: K-based shape gate predicate for the oxide Q4K backend.
+    ///
+    /// Returns `true` iff `k` is a shape where the oxide kernel is a measured
+    /// throughput WIN over `TiledQ4KGemv` on Blackwell sm_121: `k` must be Q4K
+    /// super-block aligned (`k % 256 == 0`) AND large enough (`k >= OXIDE_MIN_K`)
+    /// to clear the measured crossover. Small-K attention GEMVs return `false`
+    /// and stay on the tiled path. Pure (no device state) so it is unit-testable
+    /// without GPU hardware. See [`Self::OXIDE_MIN_K`] for the measured crossover.
+    #[inline]
+    #[must_use]
+    pub(crate) fn oxide_k_shape_gate_passes(k: u32) -> bool {
+        k.is_multiple_of(256) && k >= Self::OXIDE_MIN_K
+    }
+
+    /// PMAT-734: the oxide Q4K K shape-gate threshold (see [`Self::OXIDE_MIN_K`]).
+    /// Exposed so the throughput gate can read the same value the dispatch uses,
+    /// keeping the test threshold and the production threshold from drifting.
+    #[inline]
+    #[must_use]
+    pub(crate) fn oxide_min_k() -> u32 {
+        Self::OXIDE_MIN_K
+    }
+
     /// PMAT-OXIDE-Q4K-001: pre-generated cuda-oxide Q4K dequant-matvec backend.
     ///
     /// Returns `Some(result)` only when the oxide path is selected:
     /// - opt-in via env `APR_Q4K_OXIDE=1` (default OFF — nothing changes without it),
-    /// - device compute capability >= 120 (Blackwell sm_120+), and
-    /// - `k` is a multiple of 256 (Q4K super-block alignment).
+    /// - device compute capability >= 120 (Blackwell sm_120+),
+    /// - `k` is a multiple of 256 (Q4K super-block alignment), and
+    /// - `k >= OXIDE_MIN_K` (large-K FFN-class shapes where oxide wins — small-K
+    ///   attention shapes stay on the tiled kernel; see [`Self::OXIDE_MIN_K`]).
     ///
-    /// On sm_89 (RTX 4090, the proven hot path) or when opt-out, returns `None`
-    /// so the caller falls through to the EXISTING `TiledQ4KGemv` hand-PTX path,
-    /// which is left byte-for-byte unchanged.
+    /// On sm_89 (RTX 4090, the proven hot path), when opt-out, OR for small-K
+    /// attention GEMVs, returns `None` so the caller falls through to the
+    /// EXISTING `TiledQ4KGemv` hand-PTX path, which is left byte-for-byte
+    /// unchanged.
     ///
     /// The kernel uses the verified ABI `(data: *const u8, x: *const f32,
     /// y: *mut f32, m: u32, k: u32, t: u32)` with `t = 32` threads/row. `y` MUST
@@ -575,8 +642,15 @@ impl CudaExecutor {
         if self.gpu_profile.cc < 120 {
             return None;
         }
-        // Gate 3: Q4K super-block alignment (kernel assumes K % 256 == 0).
-        if !k.is_multiple_of(256) {
+        // Gate 3 + 4 (PMAT-734): Q4K super-block alignment (K % 256 == 0) AND the
+        // K-based SHAPE GATE. The throughput gate measured the oxide kernel only
+        // BEATS TiledQ4KGemv at large K: it ties (~1.0x) up to K=6144 and wins
+        // >=1.38x from K=6656 (~2.0x at K=8960), while small-K attention GEMVs
+        // (K=2048) tie/lose. Route to oxide ONLY at or above the conservative
+        // crossover threshold so the opt-in is a net win (FFN faster, attention
+        // unchanged). Below the threshold → None → existing TiledQ4KGemv path.
+        // See [`Self::OXIDE_MIN_K`] for the measured per-K crossover table.
+        if !Self::oxide_k_shape_gate_passes(k) {
             return None;
         }
 

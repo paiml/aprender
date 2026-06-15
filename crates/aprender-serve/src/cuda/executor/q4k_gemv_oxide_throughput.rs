@@ -234,22 +234,34 @@ mod tests {
     /// DOCUMENTED NON-BEAT TRIPWIRE -- attention-class shape (N=4096, K=2048).
     ///
     /// SURFACED FINDING (gx10, 2026-06-15): at this small-K/large-N shape the
-    /// oxide kernel is ~0.95x tiled -- i.e. SLOWER. The contract's >=1.25x claim
-    /// does NOT hold universally on sm_121; it is scoped to FFN-class shapes.
-    /// This test asserts the *measured reality* (oxide does NOT beat tiled here),
-    /// so it PASSES today and FLIPS RED only if oxide ever starts winning at
-    /// small K -- a signal to promote attn-class into the enforced beat (and to
-    /// drop the K-based shape-gate the opt-in dispatch should add).
+    /// oxide kernel is ~0.95-1.01x tiled -- i.e. NOT a beat. The contract's
+    /// >=1.25x claim does NOT hold universally on sm_121; it is scoped to large-K
+    /// FFN-class shapes (K >= OXIDE_MIN_K). This test asserts (a) the K shape
+    /// gate routes this attention shape to the TILED path (so the APR_Q4K_OXIDE=1
+    /// opt-in leaves attention UNCHANGED), and (b) the measured reality that
+    /// oxide does NOT beat tiled here. It FLIPS RED only if oxide ever starts
+    /// winning at small K -- a signal to lower OXIDE_MIN_K and promote attn-class
+    /// into the enforced beat.
     #[test]
     #[ignore = "perf gate: needs Blackwell sm_121 (gx10); run with --ignored"]
     fn no_beat_q4k_oxide_sm121_attn_4096x2048_tripwire() {
+        use crate::cuda::CudaExecutor;
+        // K-gate MUST route this attention shape to tiled (K=2048 < OXIDE_MIN_K).
+        // This is the core PMAT-734 guarantee: attention stays on the tiled path.
+        assert!(
+            !CudaExecutor::oxide_k_shape_gate_passes(2048),
+            "[attn] K-GATE REGRESSION: K=2048 attention GEMV must NOT route to \
+             oxide (OXIDE_MIN_K={}); it ties/loses tiled here.",
+            CudaExecutor::oxide_min_k()
+        );
         // n = out_dim = 4096, k = in_dim = 2048 (both 256-aligned).
         if let Some(ratio) = measure_speedup_at_shape("attn", 4096, 2048) {
             assert!(
                 ratio < BEAT_THRESHOLD,
                 "[attn] UNEXPECTED BEAT: oxide reached {ratio:.3}x >= {BEAT_THRESHOLD}x at \
-                 N=4096 K=2048 (was ~0.95x on gx10 2026-06-15). Oxide improved at small K -- \
-                 promote attn into the enforced canonical_task in beat-q4k-oxide-sm121-v1.yaml."
+                 N=4096 K=2048 (was ~0.95-1.01x on gx10 2026-06-15). Oxide improved at small K -- \
+                 lower OXIDE_MIN_K and promote attn into the enforced canonical_task in \
+                 beat-q4k-oxide-sm121-v1.yaml."
             );
         }
     }
@@ -267,5 +279,98 @@ mod tests {
                 "Q4K weight byte count mismatch for {n}x{k}"
             );
         }
+    }
+
+    /// PMAT-734: K-SWEEP to LOCATE the oxide-vs-tiled crossover at fixed N=1536.
+    ///
+    /// This is the falsification harness for the chosen `OXIDE_MIN_K = 6656`
+    /// shape-gate threshold. It sweeps K across the crossover region, prints
+    /// per-K oxide/tiled speedups, and ENFORCES that the dispatch's threshold is
+    /// conservative: at every swept K the gate routes to oxide, the oxide kernel
+    /// must already be a clear win (>= 1.25x), so routing those shapes is sound.
+    /// Sub-threshold K values are printed (to show the crossover) but NOT
+    /// asserted, since they only tie tiled (~1.0x) and legitimately stay tiled.
+    ///
+    /// MEASURED on gx10 (GB10 sm_121, 2026-06-15), two runs: oxide TIES tiled
+    /// (1.0-1.06x) up to K=6144, then WINS from K=6656 (1.38-1.47x), climbing to
+    /// ~2.0x at K=8960. Threshold 6656 = lowest K where both runs clear 1.25x.
+    ///
+    /// Run on gx10 (GB10, sm_121):
+    /// ```bash
+    /// cargo test -p aprender-serve --features cuda --lib \
+    ///     oxide_k_sweep_crossover -- --ignored --nocapture --test-threads=1
+    /// ```
+    #[test]
+    #[ignore = "perf gate: needs Blackwell sm_121 (gx10); run with --ignored"]
+    fn oxide_k_sweep_crossover_n1536() {
+        use crate::cuda::CudaExecutor;
+        // Read the threshold straight from the dispatch so test + dispatch can
+        // never drift. The sweep ENFORCES that every K the dispatch routes to
+        // oxide (gate predicate true) is a clear win (>= BEAT_THRESHOLD).
+        let oxide_min_k = CudaExecutor::oxide_min_k();
+        let n = 1536u32;
+        // 256-aligned K sweep spanning the tie region (K<=6144, oxide ~1.0x at
+        // N=1536) through the crossover (K=6656) up to the FFN win (K=8960, 2.0x).
+        let ks: [u32; 8] = [5120, 6144, 6656, 7168, 7680, 8192, 8704, 8960];
+
+        println!("=== PMAT-734 oxide K-sweep @ N={n} (crossover location) ===");
+        let mut any_ran = false;
+        for k in ks {
+            if let Some(ratio) = measure_speedup_at_shape("sweep", n, k) {
+                any_ran = true;
+                let gated = CudaExecutor::oxide_k_shape_gate_passes(k);
+                println!(
+                    "  K={k:>5} speedup={ratio:.3}x {} (dispatch routes to oxide: {gated})",
+                    if ratio >= 1.0 { "WIN " } else { "LOSE" }
+                );
+                // Enforce the threshold is conservative: every K that the
+                // dispatch actually routes to oxide must be a clear win.
+                if gated {
+                    assert!(
+                        ratio >= BEAT_THRESHOLD,
+                        "[sweep] THRESHOLD UNSOUND: at K={k} (>= OXIDE_MIN_K={oxide_min_k}) the \
+                         dispatch routes to oxide but oxide is only {ratio:.3}x tiled \
+                         (< {BEAT_THRESHOLD}x). Raise OXIDE_MIN_K above K={k}."
+                    );
+                }
+            }
+        }
+        if !any_ran {
+            eprintln!("SKIP[sweep]: not Blackwell sm_120+ (expected on RTX 4090 sm_89).");
+        }
+    }
+
+    /// PMAT-734: pure unit test of the K shape-gate predicate (no GPU needed).
+    ///
+    /// Asserts the dispatch routes ONLY large-K (>= OXIDE_MIN_K = 6656),
+    /// 256-aligned GEMVs to oxide:
+    /// - attention K (1536, 2048) -> NOT routed (stays tiled),
+    /// - mid-K tie region (4096, 5120, 6144) -> NOT routed (only ~1.0x, no beat),
+    /// - large FFN K (6656, 8960, 11008, 14336) -> routed to oxide,
+    /// - misaligned K -> NOT routed (Q4K super-block requirement).
+    #[test]
+    fn oxide_k_shape_gate_predicate() {
+        use crate::cuda::CudaExecutor;
+
+        // Threshold is the measured crossover (lowest K where oxide clears 1.25x).
+        assert_eq!(CudaExecutor::oxide_min_k(), 6656);
+
+        // Below threshold: attention class + mid-K tie region -> tiled.
+        assert!(!CudaExecutor::oxide_k_shape_gate_passes(1536));
+        assert!(!CudaExecutor::oxide_k_shape_gate_passes(2048));
+        assert!(!CudaExecutor::oxide_k_shape_gate_passes(2560));
+        assert!(!CudaExecutor::oxide_k_shape_gate_passes(4096)); // tie at N=1536
+        assert!(!CudaExecutor::oxide_k_shape_gate_passes(5120)); // tie
+        assert!(!CudaExecutor::oxide_k_shape_gate_passes(6144)); // tie (just below crossover)
+
+        // At/above threshold and 256-aligned (FFN class) -> oxide.
+        assert!(CudaExecutor::oxide_k_shape_gate_passes(6656)); // crossover
+        assert!(CudaExecutor::oxide_k_shape_gate_passes(8960)); // 1.5B FFN
+        assert!(CudaExecutor::oxide_k_shape_gate_passes(11008)); // 7B FFN
+        assert!(CudaExecutor::oxide_k_shape_gate_passes(14336)); // 7B FFN (alt)
+
+        // Large but NOT 256-aligned -> tiled (Q4K super-block requirement).
+        assert!(!CudaExecutor::oxide_k_shape_gate_passes(6657));
+        assert!(!CudaExecutor::oxide_k_shape_gate_passes(9000));
     }
 }

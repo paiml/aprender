@@ -1,7 +1,7 @@
 contract: beat-q4k-oxide-sm121
 metadata:
   kind: beat-benchmark
-  version: "1.0.0"
+  version: "1.1.0"
   description: >
     Pillar-4 BEAT benchmark: the cuda-oxide pre-generated Q4K dequant-matvec PTX
     backend must run at least 1.25x the throughput of the existing hand-PTX
@@ -26,12 +26,15 @@ date: 2026-06-15
 # MEASURED 2026-06-15 on gx10 (GB10, cc=121, driver 590.48.01, CUDA 13.0),
 # median of 7 batches x 200 launches after 50-launch warmup, weights cached on
 # GPU + input device-resident (pure launch timing on the production async path):
-#   * FFN-class  N=1536 K=8960 : oxide ~2.0x tiled  (159.7us vs 319.2us/launch) -> BEAT
-#   * attn-class N=4096 K=2048 : oxide ~0.95x tiled (101.9us vs  97.7us/launch) -> NO BEAT
-# The beat is SHAPE-DEPENDENT: oxide's fixed 32-threads/row reduction wins on
-# large-K GEMVs (FFN down/up/gate) but LOSES the tiled shared-memory kernel on
-# small-K/large-N GEMVs (attention q/k/v/o). The contract is therefore SCOPED to
-# the large-K FFN-class shape where >=1.25x holds. See `shape_dependence` below.
+#   * FFN-class  N=1536 K=8960 : oxide ~2.0x tiled (158.9us vs 304.8us/launch) -> BEAT
+#   * attn-class N=4096 K=2048 : oxide ~1.0x tiled (102.6us vs 103.9us/launch) -> NO BEAT
+# v1.1.0 (PMAT-734): a K-sweep at N=1536 LOCATED the crossover -- oxide only TIES
+# tiled (~1.0x) up to K=6144 and WINS from K=6656 (~1.4x -> ~2.0x at K=8960). The
+# beat is SHAPE-DEPENDENT on K: the oxide kernel's fixed 32-threads/row reduction
+# only out-amortizes the tiled shared-memory kernel at LARGE K. The contract is
+# therefore SCOPED to K >= 6656 (OXIDE_MIN_K), and the opt-in dispatch now
+# K-shape-gates so attention/mid-K projections stay on TiledQ4KGemv. See
+# `shape_dependence` (+ `k_shape_gate`) below.
 beat:
   pillar: 4
   incumbent: ollama
@@ -50,8 +53,10 @@ beat:
     (apples-to-apples, pure launch timing). Speedup ratio is tiled_ms / oxide_ms,
     median of 7 batches x 200 launches after warmup. The FFN GEMVs dominate the
     per-token cost, so a >=1.25x kernel speedup here directly raises apr's decode
-    tok/s toward beating ollama on Blackwell. NOTE: the beat does NOT generalize
-    to attention-class (small-K/large-N) GEMVs -- see `shape_dependence`.
+    tok/s toward beating ollama on Blackwell. NOTE: the beat is K-dependent and
+    does NOT generalize to attention/mid-K (K < 6656) GEMVs; the opt-in dispatch
+    K-shape-gates (OXIDE_MIN_K = 6656) so only large-K FFN-class GEMVs route to
+    oxide -- see `shape_dependence` and `k_shape_gate`.
   metric: speedup_vs_tiled
   direction: higher_is_better
   baseline_value: 1.00        # incumbent tiled Q4K GEMV path (ratio == 1.0)
@@ -77,26 +82,73 @@ parity:
 shape_dependence:
   measured_host: "gx10 (GB10 Blackwell, cc=121, driver 590.48.01, CUDA 13.0)"
   method: "median of 7 batches x 200 async launches after 50 warmup, weights cached + input device-resident"
+  # K-sweep at fixed N=1536 (2 runs) LOCATES the crossover: oxide only TIES tiled
+  # (~1.0x) up to K=6144, then WINS from K=6656 (~1.4x), reaching ~2.0x at K=8960.
+  # The earlier "FFN wins at all K" reading was an artifact of comparing the
+  # N=1536 FFN win to the N=4096 attention loss. The K=4096 row below (the
+  # initially-proposed threshold) is a TIE, not a win -- which is why the chosen
+  # OXIDE_MIN_K is 6656, the lowest K where BOTH runs clear 1.25x.
   shapes:
-  - name: ffn
-    out_dim: 1536        # N
-    in_dim: 8960         # K
-    oxide_us_per_launch: 159.7
-    tiled_us_per_launch: 319.2
-    speedup: 2.00        # oxide >= 1.25x tiled -> BEAT (this is the enforced gate)
-    verdict: beat
   - name: attn
     out_dim: 4096        # N
     in_dim: 2048         # K
-    oxide_us_per_launch: 101.9
-    tiled_us_per_launch: 97.7
-    speedup: 0.95        # oxide SLOWER than tiled -> NO BEAT (kernel must shape-gate)
+    oxide_us_per_launch: 102.6
+    tiled_us_per_launch: 103.9
+    speedup: 1.01        # oxide ~ tiled (tie/loss) -> NO BEAT (stays tiled via K-gate)
     verdict: no_beat
+  - name: sweep_k4096
+    out_dim: 1536        # N
+    in_dim: 4096         # K
+    oxide_us_per_launch: 85.1
+    tiled_us_per_launch: 81.1
+    speedup: 0.95        # run1 0.95x / run2 1.02x -> TIE, below crossover (stays tiled)
+    verdict: no_beat
+  - name: sweep_k5120
+    out_dim: 1536        # N
+    in_dim: 5120         # K
+    oxide_us_per_launch: 101.0
+    tiled_us_per_launch: 106.2
+    speedup: 1.05        # run1 1.05x / run2 1.01x -> TIE, below crossover (stays tiled)
+    verdict: no_beat
+  - name: sweep_k6144
+    out_dim: 1536        # N
+    in_dim: 6144         # K
+    oxide_us_per_launch: 116.5
+    tiled_us_per_launch: 114.7
+    speedup: 0.99        # run1 0.99x / run2 1.06x -> TIE, just below crossover (stays tiled)
+    verdict: no_beat
+  - name: sweep_k6656_crossover
+    out_dim: 1536        # N
+    in_dim: 6656         # K  == OXIDE_MIN_K (the chosen shape-gate threshold)
+    oxide_us_per_launch: 122.3
+    tiled_us_per_launch: 169.1
+    speedup: 1.38        # run1 1.38x / run2 1.47x -> first clear BEAT (routes to oxide)
+    verdict: beat
+  - name: sweep_k7168
+    out_dim: 1536        # N
+    in_dim: 7168         # K
+    oxide_us_per_launch: 131.3
+    tiled_us_per_launch: 186.7
+    speedup: 1.42        # run1 1.42x / run2 1.55x -> BEAT (routes to oxide)
+    verdict: beat
+  - name: ffn
+    out_dim: 1536        # N
+    in_dim: 8960         # K  (qwen2.5-coder-1.5b FFN class) -- the enforced beat gate
+    oxide_us_per_launch: 158.9
+    tiled_us_per_launch: 304.8
+    speedup: 1.92        # run1 1.92x / run2 2.05x -> BEAT ~2.0x (routes to oxide)
+    verdict: beat
+  k_shape_gate:
+    threshold_k: 6656    # OXIDE_MIN_K: lowest swept K where both runs clear 1.25x
+    rule: "route to oxide iff (K % 256 == 0) AND (K >= 6656); else TiledQ4KGemv"
+    implemented_in: "CudaExecutor::try_q4k_gemv_oxide_async (Gate 4), predicate oxide_k_shape_gate_passes"
   follow_up: >
-    The opt-in oxide dispatch (try_q4k_gemv_oxide_async) should additionally
-    shape-gate on K so production decode only routes large-K GEMVs to oxide and
-    keeps TiledQ4KGemv for small-K attention projections. Until then the
-    APR_Q4K_OXIDE=1 path is a net regression on attention-heavy layers.
+    RESOLVED (PMAT-734): the opt-in oxide dispatch (try_q4k_gemv_oxide_async) now
+    shape-gates on K -- production decode routes only large-K GEMVs (K >= 6656) to
+    oxide and keeps TiledQ4KGemv for small-K attention/mid-K projections. The
+    APR_Q4K_OXIDE=1 path is now a genuine net win: FFN faster, attention
+    unchanged. The K-sweep falsifier (oxide_k_sweep_crossover_n1536) enforces
+    that every K the gate routes to oxide is a measured >= 1.25x win.
 
 # CI gating: there is NO sm_121 GitHub Actions runner (the [self-hosted, gpu]
 # label maps to the sm_89 RTX 4090, where the .target sm_121 asset cannot load
@@ -131,36 +183,64 @@ falsification_tests:
     export LD_LIBRARY_PATH=/usr/local/cuda/lib64;
     export CARGO_TARGET_DIR="$HOME/src/aprender/target";
     cd "$HOME/src/aprender";
-    git fetch -q origin chore/q4k-oxide-throughput-gate-pmat734;
-    git worktree add -f /tmp/q4k-oxide-wt origin/chore/q4k-oxide-throughput-gate-pmat734 2>/dev/null || true;
-    cd /tmp/q4k-oxide-wt;
-    git reset -q --hard origin/chore/q4k-oxide-throughput-gate-pmat734;
+    git fetch -q origin feat/q4k-oxide-k-shape-gate-pmat734;
+    git worktree add -f /tmp/q4k-kgate-wt origin/feat/q4k-oxide-k-shape-gate-pmat734 2>/dev/null || true;
+    cd /tmp/q4k-kgate-wt;
+    git reset -q --hard origin/feat/q4k-oxide-k-shape-gate-pmat734;
     cargo test -p aprender-serve --features cuda --lib
     beat_q4k_oxide_sm121_ffn_1536x8960 -- --ignored --nocapture --test-threads=1'
-  expected: "oxide_ms <= tiled_ms / 1.25 (oxide >= 1.25x tiled); measured ~2.0x on gx10 2026-06-15"
+  expected: "oxide_ms <= tiled_ms / 1.25 (oxide >= 1.25x tiled); measured ~1.9-2.0x on gx10 2026-06-15"
   if_fails: >
     The oxide Q4K kernel lost its FFN-shape advantage, or TiledQ4KGemv was sped
     up enough to erode the >=1.25x margin. Inspect q4k_gemv_oxide_async_inner and
     the embedded q4k_matvec_oxide.sm121.ptx asset in crates/aprender-serve.
 - id: FALSIFY-BEAT-Q4K-OXIDE-SM121-NO-UNIVERSAL-CLAIM
   description: >
-    Documents the KNOWN non-beat at the attention-class shape (N=4096, K=2048):
-    oxide measured ~0.95x tiled (SLOWER) on gx10 2026-06-15. This shape is
-    intentionally NOT part of the enforced beat; the test
-    no_beat_q4k_oxide_sm121_attn_4096x2048_tripwire records it and PASSES
-    today as a tripwire against re-asserting a blanket sm_121 win without a
-    shape-gated dispatch.
+    The K shape-gate guarantee for the attention-class shape (N=4096, K=2048):
+    (a) the gate predicate routes this shape to the TILED path (K=2048 < 6656),
+    so the APR_Q4K_OXIDE=1 opt-in leaves attention UNCHANGED, and (b) oxide does
+    NOT beat tiled here (measured ~0.95-1.01x on gx10 2026-06-15). The test
+    no_beat_q4k_oxide_sm121_attn_4096x2048_tripwire asserts both and PASSES
+    today; it FLIPS RED only if oxide starts winning at small K (signal to lower
+    OXIDE_MIN_K).
   command: >
     ssh gx10 'set -e;
     export PATH="$HOME/.cargo/bin:/usr/lib/llvm-21/bin:/usr/local/cuda/bin:$PATH";
     export LLVM_SYS_211_PREFIX=/usr/lib/llvm-21;
     export LD_LIBRARY_PATH=/usr/local/cuda/lib64;
     export CARGO_TARGET_DIR="$HOME/src/aprender/target";
-    cd /tmp/q4k-oxide-wt 2>/dev/null || (cd "$HOME/src/aprender" &&
-    git worktree add -f /tmp/q4k-oxide-wt origin/chore/q4k-oxide-throughput-gate-pmat734 && cd /tmp/q4k-oxide-wt);
+    cd "$HOME/src/aprender";
+    git fetch -q origin feat/q4k-oxide-k-shape-gate-pmat734;
+    git worktree add -f /tmp/q4k-kgate-wt origin/feat/q4k-oxide-k-shape-gate-pmat734 2>/dev/null || true;
+    cd /tmp/q4k-kgate-wt;
+    git reset -q --hard origin/feat/q4k-oxide-k-shape-gate-pmat734;
     cargo test -p aprender-serve --features cuda --lib
     no_beat_q4k_oxide_sm121_attn_4096x2048_tripwire -- --ignored --nocapture --test-threads=1'
-  expected: "KNOWN no_beat: oxide ~0.95x tiled at K=2048 -> shape-gate before claiming a universal beat"
+  expected: "K-gate routes K=2048 to tiled; oxide ~0.95-1.01x tiled (no beat) at K=2048"
   if_fails: >
-    If this shape ever PASSES, the oxide kernel improved at small-K -- promote
-    attn-class into the enforced canonical_task and shape_dependence verdict.
+    If this shape ever PASSES the beat, the oxide kernel improved at small-K --
+    lower OXIDE_MIN_K, promote attn-class into the enforced canonical_task and
+    shape_dependence verdict.
+- id: FALSIFY-BEAT-Q4K-OXIDE-SM121-K-GATE-CONSERVATIVE
+  description: >
+    The K shape-gate threshold (OXIDE_MIN_K = 6656) must be CONSERVATIVE: at
+    every swept K that the dispatch routes to oxide (K >= 6656, 256-aligned), the
+    oxide kernel must be a measured >= 1.25x win over TiledQ4KGemv on sm_121.
+    The K-sweep test (oxide_k_sweep_crossover_n1536) sweeps N=1536 across the
+    crossover region and PANICS if any routed K fails the 1.25x beat -- i.e. if
+    OXIDE_MIN_K is set too low. cc>=120-gated: SKIPs on sm_89.
+  command: >
+    ssh gx10 'set -e;
+    export PATH="$HOME/.cargo/bin:/usr/lib/llvm-21/bin:/usr/local/cuda/bin:$PATH";
+    export LLVM_SYS_211_PREFIX=/usr/lib/llvm-21;
+    export LD_LIBRARY_PATH=/usr/local/cuda/lib64;
+    export CARGO_TARGET_DIR="$HOME/src/aprender/target";
+    cd /tmp/q4k-kgate-wt 2>/dev/null || (cd "$HOME/src/aprender" &&
+    git worktree add -f /tmp/q4k-kgate-wt origin/feat/q4k-oxide-k-shape-gate-pmat734 && cd /tmp/q4k-kgate-wt);
+    cargo test -p aprender-serve --features cuda --lib
+    oxide_k_sweep_crossover_n1536 -- --ignored --nocapture --test-threads=1'
+  expected: "every K >= 6656 routed to oxide measures >= 1.25x tiled (crossover at K=6656 ~1.4x, K=8960 ~2.0x)"
+  if_fails: >
+    A routed K dropped below 1.25x -- the kernel regressed or tiled sped up at
+    that K. Raise OXIDE_MIN_K above the failing K (the panic names it) and
+    re-measure.
