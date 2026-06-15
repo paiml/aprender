@@ -102,9 +102,110 @@ fn falsify_knn_004_deterministic() {
     );
 }
 
+/// FALSIFY-KNN-005: partial-select (`select_nth_unstable_by`) preserves predictions
+/// under ties at the k-boundary.
+///
+/// PMAT-733 replaced the per-query full `sort_by(distance)` with an O(n) partial select.
+/// The only case where a partial select could differ from a stable sort is when several
+/// training points sit at *exactly* the same distance straddling index `k`. This fixture
+/// engineers that: query (0,0) is equidistant (dist 1) from FOUR points, two of class 0
+/// and two of class 1; k=3 must pick a deterministic, tie-broken k-set. The prediction
+/// must be stable across repeated calls and independent of any sort instability.
+#[test]
+fn falsify_knn_005_partial_select_ties_stable() {
+    // Four points at L2 distance 1 from the origin (two class 0, two class 1),
+    // plus one far point. With k=3 the k-set is drawn from the four tied points.
+    let x = Matrix::from_vec(
+        5,
+        2,
+        vec![
+            1.0, 0.0, // class 0, dist 1
+            -1.0, 0.0, // class 0, dist 1
+            0.0, 1.0, // class 1, dist 1
+            0.0, -1.0, // class 1, dist 1
+            9.0, 9.0, // class 1, far
+        ],
+    )
+    .expect("valid");
+    let y = vec![0_usize, 0, 1, 1, 1];
+
+    let mut knn = KNearestNeighbors::new(3);
+    knn.fit(&x, &y).expect("fit");
+
+    let query = Matrix::from_vec(1, 2, vec![0.0, 0.0]).expect("valid");
+    let p1 = knn.predict(&query).expect("predict 1");
+    let p2 = knn.predict(&query).expect("predict 2");
+
+    // Determinism is the load-bearing guarantee: the tie-break (ascending training index)
+    // must yield the same k-set, hence the same vote, on every call.
+    assert_eq!(
+        p1, p2,
+        "FALSIFIED KNN-005: tie-broken prediction not deterministic"
+    );
+    // Tie-break picks indices {0,1,2} (smallest indices among the four tied) -> classes
+    // {0,0,1} -> majority class 0. Pin the exact value so a regression in the tie-break
+    // ordering is caught.
+    assert_eq!(
+        p1[0], 0,
+        "FALSIFIED KNN-005: tie-break k-set changed (expected class 0)"
+    );
+}
+
 mod knn_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
+
+    /// Reference k-set: the multiset of `(training_index)` chosen by a *full stable sort*
+    /// keyed on `(distance, ascending index)` — i.e. the exact selection rule the old
+    /// `sort_by(distance)` produced. Returns the chosen indices, sorted, for comparison.
+    fn reference_k_set(distances: &[(f32, usize, usize)], k: usize) -> Vec<usize> {
+        let mut d = distances.to_vec();
+        d.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then(a.1.cmp(&b.1)));
+        let mut idx: Vec<usize> = d[..k].iter().map(|&(_, i, _)| i).collect();
+        idx.sort_unstable();
+        idx
+    }
+
+    // FALSIFY-KNN-005-prop: `select_k_nearest` (the O(n) partial select that replaced the
+    // full sort) picks exactly the same k-set of training points as a full stable sort,
+    // even with heavy distance ties. This is the load-bearing correctness invariant of the
+    // PMAT-733 optimization: identical k-set => identical vote => identical prediction.
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+
+        #[test]
+        fn falsify_knn_005_prop_select_matches_stable_sort(
+            // Small integer distances => many ties straddling the k boundary.
+            dists in proptest::collection::vec(0u8..4, 1usize..=16),
+            k_raw in 1usize..=16,
+        ) {
+            let n = dists.len();
+            let k = k_raw.min(n);
+            // (distance, training_index, label) — label unused by selection.
+            let buf: Vec<(f32, usize, usize)> = dists
+                .iter()
+                .enumerate()
+                .map(|(i, &d)| (d as f32, i, i % 3))
+                .collect();
+
+            let want = reference_k_set(&buf, k);
+
+            let mut buf_sel = buf.clone();
+            let chosen = super::super::select_k_nearest(&mut buf_sel, k);
+            prop_assert_eq!(chosen.len(), k, "select_k_nearest returned wrong count");
+
+            // Recover the indices the partial select kept: match each chosen (dist,label)
+            // back via the index column of buf_sel[..k] (the index survives in buf_sel).
+            let mut got: Vec<usize> = buf_sel[..k].iter().map(|&(_, i, _)| i).collect();
+            got.sort_unstable();
+
+            prop_assert_eq!(
+                got, want,
+                "FALSIFIED KNN-005-prop: partial-select k-set != stable-sort k-set (k={})",
+                k
+            );
+        }
+    }
 
     // FALSIFY-KNN-002-prop: Prediction count matches input count
     proptest! {

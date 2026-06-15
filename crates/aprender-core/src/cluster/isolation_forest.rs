@@ -370,9 +370,16 @@ impl IsolationForest {
         let (n_samples, n_features) = x.shape();
         let mut scores = vec![0.0; n_samples];
 
+        // Reuse a single row buffer across all samples instead of allocating a fresh
+        // Vec<f32> per sample in the hot loop (was n_samples allocations). The buffer is
+        // overwritten in place each iteration; tree traversal reads it synchronously.
+        let mut sample = vec![0.0f32; n_features];
+
         for i in 0..n_samples {
-            // Extract sample
-            let sample: Vec<f32> = (0..n_features).map(|j| x.get(i, j)).collect();
+            // Refill the row buffer for sample i.
+            for j in 0..n_features {
+                sample[j] = x.get(i, j);
+            }
 
             // Average path length across all trees
             let avg_path_length: f32 = self
@@ -383,7 +390,9 @@ impl IsolationForest {
                 / self.n_estimators as f32;
 
             // Anomaly score: 2^(-avg_path / c_norm)
-            // Scores close to 1 = anomaly, close to 0 = normal
+            // Scores close to 1 = anomaly, close to 0 = normal.
+            // The powf is the actual returned VALUE here, so it is kept exactly as-is
+            // (callers and predict's threshold depend on the precise score).
             let score = 2f32.powf(-avg_path_length / self.c_norm);
 
             // Invert so lower = more anomalous (for consistency with decision_function)
