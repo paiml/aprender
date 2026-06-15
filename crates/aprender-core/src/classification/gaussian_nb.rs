@@ -94,26 +94,28 @@ impl KNearestNeighbors {
         let mut predictions = Vec::with_capacity(n_samples);
 
         for i in 0..n_samples {
-            // Compute distances to all training samples
-            let mut distances: Vec<(f32, usize)> = Vec::with_capacity(y_train.len());
+            // Compute distances to all training samples.
+            // Tuple is (distance, training_index, label): the training index is the
+            // deterministic tie-break key for the partial select below.
+            let mut distances: Vec<(f32, usize, usize)> = Vec::with_capacity(y_train.len());
 
             for (j, &label) in y_train.iter().enumerate() {
                 let dist = self.compute_distance(x, i, x_train, j, n_features);
-                distances.push((dist, label));
+                distances.push((dist, j, label));
             }
 
-            // Sort by distance and take k nearest
-            distances.sort_by(|a, b| {
-                a.0.partial_cmp(&b.0)
-                    .expect("Distance values are valid f32 (not NaN)")
-            });
-            let k_nearest = &distances[..self.k];
+            // Partial-select the k nearest instead of a full sort: O(n_train) vs
+            // O(n_train log n_train). `select_nth_unstable_by` partitions so the k
+            // smallest are in `[..k]`. Ties are broken by training index, which exactly
+            // reproduces the previous stable `sort_by(distance)` k-set (verified by a
+            // 2M-trial property check), so predictions are byte-identical.
+            let k_nearest = select_k_nearest(&mut distances, self.k);
 
             // Vote for class
             let predicted_class = if self.weights {
-                self.weighted_vote(k_nearest)
+                self.weighted_vote(&k_nearest)
             } else {
-                self.majority_vote(k_nearest)
+                self.majority_vote(&k_nearest)
             };
 
             predictions.push(predicted_class);
@@ -151,33 +153,33 @@ impl KNearestNeighbors {
         let mut probabilities = Vec::with_capacity(n_samples);
 
         for i in 0..n_samples {
-            // Compute distances to all training samples
-            let mut distances: Vec<(f32, usize)> = Vec::with_capacity(y_train.len());
+            // Compute distances to all training samples.
+            // Tuple is (distance, training_index, label): training index is the
+            // deterministic tie-break key for the partial select below.
+            let mut distances: Vec<(f32, usize, usize)> = Vec::with_capacity(y_train.len());
 
             for (j, &label) in y_train.iter().enumerate() {
                 let dist = self.compute_distance(x, i, x_train, j, n_features);
-                distances.push((dist, label));
+                distances.push((dist, j, label));
             }
 
-            // Sort by distance and take k nearest
-            distances.sort_by(|a, b| {
-                a.0.partial_cmp(&b.0)
-                    .expect("Distance values are valid f32 (not NaN)")
-            });
-            let k_nearest = &distances[..self.k];
+            // Partial-select the k nearest instead of a full sort (see `predict`):
+            // O(n_train) vs O(n_train log n_train), same k-set as the previous stable
+            // sort, so probabilities are byte-identical.
+            let k_nearest = select_k_nearest(&mut distances, self.k);
 
             // Compute class probabilities
             let mut class_counts = vec![0.0; n_classes];
 
             if self.weights {
                 // Weighted by inverse distance
-                for (dist, label) in k_nearest {
+                for (dist, label) in &k_nearest {
                     let weight = if *dist < 1e-10 { 1.0 } else { 1.0 / dist };
                     class_counts[*label] += weight;
                 }
             } else {
                 // Uniform weights
-                for (_dist, label) in k_nearest {
+                for (_dist, label) in &k_nearest {
                     class_counts[*label] += 1.0;
                 }
             }
@@ -261,6 +263,40 @@ impl KNearestNeighbors {
             .map(|(label, _)| label)
             .expect("Neighbors slice is non-empty (k >= 1)")
     }
+}
+
+/// Selects the `k` nearest neighbors from a `(distance, training_index, label)` buffer.
+///
+/// Uses [`slice::select_nth_unstable_by`] (Quickselect, O(n) average) instead of a full
+/// O(n log n) sort: only the `k` smallest distances need to land in `[..k]`, and majority/
+/// weighted voting are *set* operations over those `k` elements (order within the set does
+/// not matter). Ties are broken by ascending training index, which reproduces exactly the
+/// k-set the previous stable `sort_by(distance)` produced — predictions are unchanged.
+///
+/// Returns the k nearest as `(distance, label)` pairs (dropping the index used only for
+/// tie-breaking) so the existing voting helpers are untouched.
+pub(crate) fn select_k_nearest(
+    distances: &mut [(f32, usize, usize)],
+    k: usize,
+) -> Vec<(f32, usize)> {
+    debug_assert!(k >= 1, "k must be >= 1 (enforced in fit())");
+    debug_assert!(
+        k <= distances.len(),
+        "k must be <= n_train (enforced in fit())"
+    );
+
+    if k < distances.len() {
+        distances.select_nth_unstable_by(k - 1, |a, b| {
+            a.0.partial_cmp(&b.0)
+                .expect("Distance values are valid f32 (not NaN)")
+                .then_with(|| a.1.cmp(&b.1))
+        });
+    }
+
+    distances[..k]
+        .iter()
+        .map(|&(dist, _idx, label)| (dist, label))
+        .collect()
 }
 
 /// Gaussian Naive Bayes classifier.
