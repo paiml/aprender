@@ -1,0 +1,61 @@
+contract: beat-sklearn-multinomialnb-speed
+metadata:
+  kind: beat-benchmark
+  version: "1.0.0"
+  description: >
+    Pillar-1 BEAT benchmark: aprender MultinomialNB fit+predict must be
+    comfortably FASTER than scikit-learn's MultinomialNB on the same count data,
+    same host, same run. MultinomialNB is COMPUTE-bound (per-class log-prob matvec
+    over counts + argmax) with NO LAPACK/BLAS — apr precomputes feature_log_prob in
+    fit and takes argmax of the log-posterior directly, so (unlike the elementwise
+    scaler beats) this is the ROBUST cross-platform kind of win. The beat is gated
+    on the RELATIVE ratio apr_ms/sklearn_ms so it is robust to CI-host speed
+    variance. Runs nightly (needs uv + scikit-learn), not per-PR.
+  references:
+  - "docs/specifications/campaign-ev-reprioritization-2026-06-12.md"
+  - "crates/aprender-core/tests/beat_sklearn_multinomialnb_speed.rs"
+  - "crates/aprender-core/src/classification/multinomial_nb.rs"
+version: 1
+status: enforced
+date: 2026-06-15
+
+beat:
+  pillar: 1
+  incumbent: scikit-learn
+  incumbent_pinned: "2026-06-15 via uv run --with scikit-learn (sklearn.naive_bayes.MultinomialNB)"
+  canonical_task: >
+    MultinomialNB fit+predict on count features derived from
+    make_classification(n_samples=50000, n_features=30, n_informative=20,
+    n_classes=8, seed=42) via round(|v|*4). apr and scikit-learn are timed on the
+    SAME count data, SAME host, SAME run (median of 5 + warmup); the metric is the
+    relative ratio apr_ms / sklearn_ms.
+  metric: wall_clock_ratio_apr_over_sklearn
+  direction: lower_is_better
+  baseline_value: 1.0000      # sklearn is the 1.0 reference (apr/sklearn vs itself)
+  baseline_floor: 0.6250      # measured apr/sklearn ~0.63 (apr ~1.60x faster)
+  beat_threshold: 0.8000      # apr must stay <= 0.80 (>= 1.25x faster) — margin vs 0.63
+  baseline_sourced_date: "2026-06-15"
+  approved_compute: CPU
+  ci_gate_name: "beat_sklearn_multinomialnb_speed"
+
+proof_obligations:
+- id: OBLIG-MULTINOMIALNB-SPEED-RATIO
+  statement: >
+    On the canonical task, apr_ms / sklearn_ms <= beat_threshold (0.80) measured
+    same-host/same-run as the median of 5 timed iterations after a warmup.
+  type: bound
+
+falsification_tests:
+- id: FALSIFY-BEAT-SKLEARN-MULTINOMIALNB-SPEED
+  description: >
+    The beat is FALSE if apr MultinomialNB fit+predict is not at least 1.25x faster
+    than scikit-learn on the canonical task (ratio > 0.80). The test panics with the
+    measured apr_ms / sklearn_ms so a regression is caught.
+  command: >
+    cargo test -p aprender-core --release --test beat_sklearn_multinomialnb_speed --
+    --ignored --nocapture
+  expected: "ratio <= 0.80 (apr >= 1.25x faster than scikit-learn MultinomialNB)"
+  if_fails: >
+    A regression slowed apr MultinomialNB (multinomial_nb.rs) — e.g. feature_log_prob
+    no longer precomputed in fit, or predict routed through a softmax instead of a
+    direct argmax of the log-posterior. Compare apr vs sklearn ms in the panic message.

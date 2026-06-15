@@ -55,3 +55,8 @@ jobs:
         run: |
           cargo test -p aprender-core --release \
             --test beat_sklearn_minmax_speed -- --ignored --nocapture
+
+      - name: Pillar-1 — apr vs scikit-learn MultinomialNB speed beat
+        run: |
+          cargo test -p aprender-core --release \
+            --test beat_sklearn_multinomialnb_speed -- --ignored --nocapture
