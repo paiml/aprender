@@ -183,7 +183,10 @@ impl SafetensorsToAprConverter {
         if Self::has_tensor_with_fallback_generic(source, "lm_head.weight", "output.weight") {
             let raw =
                 Self::get_tensor_with_fallback_generic(source, "lm_head.weight", "output.weight")?;
-            return Ok(Self::transpose_weight(&raw, vocab_size, hidden_dim));
+            // PMAT-787: untied lm_head — move the owned buffer (transpose is a no-op).
+            // The tied branches above must clone because `token_embedding` is
+            // borrowed and reused as a separate owned field.
+            return Ok(Self::transpose_weight_owned(raw));
         }
         // Fallback: assume tied if no lm_head tensor exists
         Ok(Self::transpose_weight(token_embedding, vocab_size, hidden_dim))
@@ -328,7 +331,8 @@ impl SafetensorsToAprConverter {
             &format!("{hf_prefix}.self_attn.o_proj.weight"),
             &format!("{gguf_prefix}.attn_output.weight"),
         )?;
-        let attn_output_weight = Self::transpose_weight(&attn_output_raw, hidden_dim, hidden_dim);
+        // PMAT-787: move the owned buffer instead of cloning it (transpose is a no-op).
+        let attn_output_weight = Self::transpose_weight_owned(attn_output_raw);
 
         let ffn_norm_weight = Self::get_tensor_with_fallback_generic(
             source,
@@ -341,21 +345,21 @@ impl SafetensorsToAprConverter {
             &format!("{hf_prefix}.mlp.gate_proj.weight"),
             &format!("{gguf_prefix}.ffn_gate.weight"),
         )?;
-        let ffn_gate_weight = Self::transpose_weight(&ffn_gate_raw, intermediate_dim, hidden_dim);
+        let ffn_gate_weight = Self::transpose_weight_owned(ffn_gate_raw);
 
         let ffn_up_raw = Self::get_tensor_with_fallback_generic(
             source,
             &format!("{hf_prefix}.mlp.up_proj.weight"),
             &format!("{gguf_prefix}.ffn_up.weight"),
         )?;
-        let ffn_up_weight = Self::transpose_weight(&ffn_up_raw, intermediate_dim, hidden_dim);
+        let ffn_up_weight = Self::transpose_weight_owned(ffn_up_raw);
 
         let ffn_down_raw = Self::get_tensor_with_fallback_generic(
             source,
             &format!("{hf_prefix}.mlp.down_proj.weight"),
             &format!("{gguf_prefix}.ffn_down.weight"),
         )?;
-        let ffn_down_weight = Self::transpose_weight(&ffn_down_raw, hidden_dim, intermediate_dim);
+        let ffn_down_weight = Self::transpose_weight_owned(ffn_down_raw);
 
         Ok(AprTransformerLayer {
             attn_norm_weight,
@@ -489,7 +493,8 @@ impl SafetensorsToAprConverter {
         // out_proj: [hidden_dim, value_dim] — GDN uses out_proj, not o_proj
         let out_proj_raw = source
             .get_tensor_auto(&format!("{hf_prefix}.{attn_sub}.out_proj.weight"))?;
-        let attn_output_weight = Self::transpose_weight(&out_proj_raw, hidden_dim, value_dim);
+        // PMAT-787: move the owned buffer instead of cloning it (transpose is a no-op).
+        let attn_output_weight = Self::transpose_weight_owned(out_proj_raw);
 
         // Conv1D weight: HF stores as [conv_dim, 1, kernel_size], squeeze middle dim
         let conv1d_weight = source
@@ -533,10 +538,11 @@ impl SafetensorsToAprConverter {
                 &format!("{hf_prefix}.mlp.down_proj.weight"),
                 &format!("blk.{layer_idx}.ffn_down.weight"),
             )?;
+            // PMAT-787: move owned buffers instead of cloning (transpose is a no-op).
             (
-                Some(Self::transpose_weight(&gate_raw, intermediate_dim, hidden_dim)),
-                Self::transpose_weight(&up_raw, intermediate_dim, hidden_dim),
-                Self::transpose_weight(&down_raw, hidden_dim, intermediate_dim),
+                Some(Self::transpose_weight_owned(gate_raw)),
+                Self::transpose_weight_owned(up_raw),
+                Self::transpose_weight_owned(down_raw),
             )
         } else {
             // MoE layer: no dense FFN
@@ -637,6 +643,11 @@ impl SafetensorsToAprConverter {
         let kv_dim = head_dim * num_kv_heads;
         let qkv_weight =
             Self::concat_qkv_transposed(&q_weight, &k_weight, &v_weight, hidden_dim, kv_dim);
+        // PMAT-787: q/k/v raws have been copied into `qkv_weight`; free them now
+        // so they don't sit resident alongside the (larger) FFN buffers loaded below.
+        drop(q_weight);
+        drop(k_weight);
+        drop(v_weight);
 
         let qkv_bias = Self::try_concat_qkv_bias_dual_generic(
             source,
@@ -651,7 +662,8 @@ impl SafetensorsToAprConverter {
             &format!("{hf_prefix}.self_attn.o_proj.weight"),
             &format!("{gguf_prefix}.attn_output.weight"),
         )?;
-        let attn_output_weight = Self::transpose_weight(&attn_output_raw, hidden_dim, hidden_dim);
+        // PMAT-787: move the owned buffer instead of cloning it (transpose is a no-op).
+        let attn_output_weight = Self::transpose_weight_owned(attn_output_raw);
 
         let ffn_norm_weight = Self::get_tensor_with_fallback_generic(
             source,
@@ -680,9 +692,9 @@ impl SafetensorsToAprConverter {
                 &format!("{gguf_prefix}.ffn_down.weight"),
             )?;
             (
-                Some(Self::transpose_weight(&gate_raw, intermediate_dim, hidden_dim)),
-                Self::transpose_weight(&up_raw, intermediate_dim, hidden_dim),
-                Self::transpose_weight(&down_raw, hidden_dim, intermediate_dim),
+                Some(Self::transpose_weight_owned(gate_raw)),
+                Self::transpose_weight_owned(up_raw),
+                Self::transpose_weight_owned(down_raw),
             )
         } else {
             // MoE layer: no dense FFN, use empty placeholders
@@ -888,6 +900,28 @@ impl SafetensorsToAprConverter {
         // PMAT-095: Keep [out_dim, in_dim] format - no transposition!
         // This eliminates the 75x performance gap vs GGUF.
         weight.to_vec()
+    }
+
+    /// Owned, zero-copy pass-through of an already-materialized weight buffer.
+    ///
+    /// PMAT-787 (peak-RSS fix): `transpose_weight` is a documented no-op
+    /// (PMAT-095 keeps HuggingFace `[out, in]` layout), but it takes `&[f32]`
+    /// and returns `weight.to_vec()` — a full second allocation of the tensor.
+    /// At load time every weight is fetched into an owned `Vec<f32>` and then
+    /// cloned by `transpose_weight`, so each tensor was transiently resident
+    /// **twice** (raw + clone) while the raw was still bound in the caller's
+    /// scope. For the 0.5B qwen2.5-coder model that roughly doubled peak RSS
+    /// at the attention/FFN extraction boundary.
+    ///
+    /// This variant takes the buffer **by value** and returns it unchanged,
+    /// so the consumer simply moves the existing allocation (no extra copy).
+    /// The byte content is identical to `transpose_weight(&buf, _, _)`, so
+    /// inference output is bit-for-bit unchanged.
+    #[inline]
+    #[must_use]
+    pub fn transpose_weight_owned(weight: Vec<f32>) -> Vec<f32> {
+        // PMAT-095 layout is already matvec-optimal — move, don't copy.
+        weight
     }
 
     /// Concatenate Q, K, V weights into combined QKV tensor (matvec-optimal)
