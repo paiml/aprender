@@ -225,6 +225,12 @@ mod tests {
         // Q6_K: 210 bytes per 256 elements
         let k = 256u32;
         let n = 64u32;
+
+        // The HwDp4a Q6K variant (default on sm_75+) quantizes activations into
+        // workspace.q8_activation_buf and would otherwise panic; size it for k.
+        exec.init_workspace(k as usize, k as usize)
+            .expect("init_workspace");
+
         let superblocks = (n as usize) * (k as usize / 256);
         let weights = vec![0u8; superblocks * 210];
 
