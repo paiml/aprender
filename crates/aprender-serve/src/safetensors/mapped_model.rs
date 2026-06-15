@@ -211,6 +211,12 @@ impl MappedSafeTensorsModel {
                 reason: format!("Tensor '{name}' not found"),
             })?;
 
+        // Integrity: declared byte length must equal product(shape) * dtype_size.
+        // Fail closed on a crafted/corrupt file rather than silently returning a
+        // wrong-sized slice (parity with the HF safetensors library). This is the
+        // shared raw-read entry point, so every dtype variant inherits the check.
+        tensor.validate_shape_matches_bytes()?;
+
         let [start, end] = tensor.data_offsets;
         let abs_start = self.data_offset + start;
         let abs_end = self.data_offset + end;
