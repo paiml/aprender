@@ -95,6 +95,78 @@ fn falsify_if_003_predictions_length() {
     );
 }
 
+/// FALSIFY-IF-004: `score_samples` returns byte-identical scores whether samples are
+/// scored as one batch or one-at-a-time.
+///
+/// PMAT-733 changed `score_samples` to reuse a single row buffer across samples instead
+/// of allocating a fresh `Vec<f32>` per sample. If buffer reuse leaked any per-sample
+/// state, a batched call would diverge from per-row calls. This pins exact equality, so
+/// the allocation hoist is proven to be a pure (value-preserving) optimization.
+#[test]
+fn falsify_if_004_batch_equals_per_row_scores() {
+    let data = Matrix::from_vec(
+        8,
+        2,
+        vec![
+            1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 0.9, 0.9, 1.1, 1.1, 5.0, 5.0, 0.9, 1.1, -4.0, 4.0,
+        ],
+    )
+    .expect("valid matrix");
+
+    let mut iforest = IsolationForest::new()
+        .with_n_estimators(64)
+        .with_random_state(7);
+    iforest.fit(&data).expect("fit succeeds");
+
+    let batch = iforest.score_samples(&data);
+
+    // Score each row in isolation (forces a fresh buffer per call) and compare bit-for-bit.
+    let (n, d) = data.shape();
+    for i in 0..n {
+        let row_vals: Vec<f32> = (0..d).map(|j| data.get(i, j)).collect();
+        let row = Matrix::from_vec(1, d, row_vals).expect("valid row");
+        let single = iforest.score_samples(&row);
+        assert_eq!(single.len(), 1);
+        assert_eq!(
+            single[0].to_bits(),
+            batch[i].to_bits(),
+            "FALSIFIED IF-004: batched score[{i}]={} != per-row score={} (buffer reuse leaked state)",
+            batch[i],
+            single[0]
+        );
+    }
+}
+
+/// FALSIFY-IF-005: `score_samples` is deterministic (the reused buffer is fully
+/// overwritten each iteration, so repeated calls yield identical scores).
+#[test]
+fn falsify_if_005_score_samples_deterministic() {
+    let data = Matrix::from_vec(
+        6,
+        3,
+        vec![
+            1.0, 2.0, 3.0, 1.1, 2.1, 2.9, 0.9, 1.9, 3.1, 10.0, -5.0, 0.0, 1.0, 2.0, 3.2, -8.0, 7.0,
+            1.0,
+        ],
+    )
+    .expect("valid matrix");
+
+    let mut iforest = IsolationForest::new()
+        .with_n_estimators(40)
+        .with_random_state(99);
+    iforest.fit(&data).expect("fit succeeds");
+
+    let a = iforest.score_samples(&data);
+    let b = iforest.score_samples(&data);
+    for (i, (&x, &y)) in a.iter().zip(b.iter()).enumerate() {
+        assert_eq!(
+            x.to_bits(),
+            y.to_bits(),
+            "FALSIFIED IF-005: score[{i}] not deterministic ({x} vs {y})"
+        );
+    }
+}
+
 mod iforest_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
