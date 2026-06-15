@@ -78,6 +78,7 @@ fn create_test_transformer(
         output_norm_bias: None,
         lm_head_weight: vec![0.01; vocab_size * hidden_dim],
         lm_head_bias: None,
+        lm_head_tied: false,
         q4k_layers: None,
         lm_head_weight_q6k: None,
         lm_head_weight_q4k: None,
@@ -441,4 +442,65 @@ fn test_large_vocab_size() {
     let transformer = create_test_transformer(64, 50000, 1);
     assert_eq!(transformer.config.vocab_size, 50000);
     assert_eq!(transformer.token_embedding.len(), 50000 * 64);
+}
+
+// ============================================================================
+// PMAT-788: tied-embedding lm_head deduplication
+// ============================================================================
+
+/// When `lm_head_tied` is set and `lm_head_weight` is empty, `lm_head_f32()`
+/// returns the (byte-identical) `token_embedding` buffer — the dedup invariant.
+#[test]
+fn test_lm_head_f32_tied_returns_embedding() {
+    let mut transformer = create_test_transformer(8, 16, 1);
+    // Simulate the tied-load outcome: drop the duplicate, mark tied.
+    transformer.lm_head_weight = Vec::new();
+    transformer.lm_head_tied = true;
+
+    let resolved = transformer.lm_head_f32();
+    assert_eq!(resolved.len(), transformer.token_embedding.len());
+    assert_eq!(resolved, transformer.token_embedding.as_slice());
+    // No duplicate is stored.
+    assert!(transformer.lm_head_weight.is_empty());
+}
+
+/// Untied models are unaffected: `lm_head_f32()` returns the separate weight,
+/// never the embedding (guarantees bit-identical behavior for non-tied models).
+#[test]
+fn test_lm_head_f32_untied_returns_own_weight() {
+    let mut transformer = create_test_transformer(8, 16, 1);
+    // Give the lm_head distinct values so we can tell it apart from embedding.
+    transformer.lm_head_weight = vec![7.0; 16 * 8];
+    transformer.lm_head_tied = false;
+
+    let resolved = transformer.lm_head_f32();
+    assert_eq!(resolved, transformer.lm_head_weight.as_slice());
+    assert!(resolved.iter().all(|&x| (x - 7.0).abs() < f32::EPSILON));
+}
+
+/// A defensive guard: even if `lm_head_tied` is true, a non-empty
+/// `lm_head_weight` is still honored (never silently overridden).
+#[test]
+fn test_lm_head_f32_tied_but_nonempty_prefers_explicit_weight() {
+    let mut transformer = create_test_transformer(8, 16, 1);
+    transformer.lm_head_weight = vec![3.0; 16 * 8];
+    transformer.lm_head_tied = true; // flag set but weight materialized
+    assert_eq!(transformer.lm_head_f32(), transformer.lm_head_weight.as_slice());
+}
+
+/// `num_parameters()` reports the logical LM-head size even when the duplicate
+/// is deduplicated, so the reported param count is unchanged by the dedup.
+#[test]
+fn test_num_parameters_counts_tied_lm_head_logically() {
+    let mut tied = create_test_transformer(8, 16, 1);
+    let untied_count = tied.num_parameters();
+
+    tied.lm_head_weight = Vec::new();
+    tied.lm_head_tied = true;
+    let tied_count = tied.num_parameters();
+
+    assert_eq!(
+        tied_count, untied_count,
+        "deduplicating the tied lm_head must not change the reported param count"
+    );
 }
