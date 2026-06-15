@@ -1,0 +1,51 @@
+contract: beat-sklearn-complementnb-speed
+metadata:
+  kind: beat-benchmark
+  version: "1.0.0"
+  description: >
+    Pillar-1 BEAT benchmark: aprender ComplementNB fit+predict must be comfortably
+    FASTER than scikit-learn's ComplementNB on the same count data, same host, same
+    run. ComplementNB is COMPUTE-bound (per-class log-weight matvec over counts +
+    argmax) with NO LAPACK/BLAS — the robust cross-platform kind of win. Gated on
+    the RELATIVE ratio apr_ms/sklearn_ms. Runs nightly (needs uv + scikit-learn).
+  references:
+  - "crates/aprender-core/tests/beat_sklearn_complementnb_speed.rs"
+  - "crates/aprender-core/src/classification/complement_nb.rs"
+version: 1
+status: enforced
+date: 2026-06-15
+beat:
+  pillar: 1
+  incumbent: scikit-learn
+  incumbent_pinned: "2026-06-15 via uv run --with scikit-learn (sklearn.naive_bayes.ComplementNB)"
+  canonical_task: >
+    ComplementNB fit+predict on count features from make_classification(50000, 30,
+    n_informative=20, n_classes=8, seed=42) via round(|v|*4). Same data, same host,
+    same run (median of 5 + warmup); metric is ratio apr_ms / sklearn_ms.
+  metric: wall_clock_ratio_apr_over_sklearn
+  direction: lower_is_better
+  baseline_value: 1.0000
+  baseline_floor: 0.5960
+  beat_threshold: 0.8000
+  baseline_sourced_date: "2026-06-15"
+  approved_compute: CPU
+  ci_gate_name: "beat_sklearn_complementnb_speed"
+proof_obligations:
+- id: OBLIG-COMPLEMENTNB-SPEED-RATIO
+  statement: >
+    On the canonical task, apr_ms / sklearn_ms <= beat_threshold (0.80) measured
+    same-host/same-run as the median of 5 timed iterations after a warmup.
+  type: bound
+falsification_tests:
+- id: FALSIFY-BEAT-SKLEARN-COMPLEMENTNB-SPEED
+  description: >
+    FALSE if apr ComplementNB fit+predict is not >= 1.25x faster than scikit-learn
+    on the canonical task (ratio > 0.80).
+  command: >
+    cargo test -p aprender-core --release --test beat_sklearn_complementnb_speed --
+    --ignored --nocapture
+  expected: "ratio <= 0.80 (apr >= 1.25x faster than scikit-learn ComplementNB)"
+  if_fails: >
+    A regression slowed apr ComplementNB (complement_nb.rs) — check that per-class
+    log-weights stay precomputed in fit and predict is a direct argmax (no per-sample
+    ln/softmax). Compare apr vs sklearn ms in the panic message.

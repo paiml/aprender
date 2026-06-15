@@ -15,7 +15,10 @@ pub struct BernoulliNB {
     alpha: f32,
     binarize: f32,
     class_log_prior: Vec<f32>,
-    feature_prob: Vec<Vec<f32>>,
+    /// Precomputed `ln(P(j=1|c))` per (class, feature) — hoisted out of the predict hot loop.
+    feature_log_prob: Vec<Vec<f32>>,
+    /// Precomputed `ln(1 - P(j=1|c))` per (class, feature) — the feature-absence term.
+    feature_log_neg_prob: Vec<Vec<f32>>,
     n_features: usize,
 }
 
@@ -33,7 +36,8 @@ impl BernoulliNB {
             alpha: 1.0,
             binarize: 0.0,
             class_log_prior: Vec::new(),
-            feature_prob: Vec::new(),
+            feature_log_prob: Vec::new(),
+            feature_log_neg_prob: Vec::new(),
             n_features: 0,
         }
     }
@@ -79,14 +83,22 @@ impl BernoulliNB {
         self.class_log_prior = (0..n_classes)
             .map(|c| (class_count[c] as f64 / n_samples as f64).ln() as f32)
             .collect();
-        self.feature_prob = (0..n_classes)
-            .map(|c| {
-                let denom = class_count[c] as f64 + 2.0 * alpha;
-                (0..n_features)
-                    .map(|j| ((present[c][j] + alpha) / denom) as f32)
-                    .collect()
-            })
-            .collect();
+        // Precompute ln(p) and ln(1-p) per (class, feature) ONCE here, instead of recomputing both
+        // logs for every (sample, class, feature) in predict (O(n·c·d) -> O(c·d) transcendentals).
+        self.feature_log_prob = Vec::with_capacity(n_classes);
+        self.feature_log_neg_prob = Vec::with_capacity(n_classes);
+        for c in 0..n_classes {
+            let denom = class_count[c] as f64 + 2.0 * alpha;
+            let mut logp = Vec::with_capacity(n_features);
+            let mut logn = Vec::with_capacity(n_features);
+            for j in 0..n_features {
+                let p = (((present[c][j] + alpha) / denom) as f32).clamp(1e-9, 1.0 - 1e-9);
+                logp.push(p.ln());
+                logn.push((1.0 - p).ln());
+            }
+            self.feature_log_prob.push(logp);
+            self.feature_log_neg_prob.push(logn);
+        }
         self.n_features = n_features;
         Ok(())
     }
@@ -101,10 +113,15 @@ impl BernoulliNB {
                 let mut best_ll = f32::NEG_INFINITY;
                 for (c, prior) in self.class_log_prior.iter().enumerate() {
                     let mut ll = *prior;
+                    let logp = &self.feature_log_prob[c];
+                    let logn = &self.feature_log_neg_prob[c];
                     for j in 0..self.n_features {
-                        let b = f32::from(x.get(i, j) > self.binarize);
-                        let p = self.feature_prob[c][j].clamp(1e-9, 1.0 - 1e-9);
-                        ll += b * p.ln() + (1.0 - b) * (1.0 - p).ln();
+                        // Precomputed logs; present feature adds ln(p), absent adds ln(1-p).
+                        if x.get(i, j) > self.binarize {
+                            ll += logp[j];
+                        } else {
+                            ll += logn[j];
+                        }
                     }
                     if ll > best_ll {
                         best_ll = ll;

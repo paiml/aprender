@@ -56,6 +56,16 @@ jobs:
           cargo test -p aprender-core --release \
             --test beat_sklearn_minmax_speed -- --ignored --nocapture
 
+      - name: Pillar-1 — apr vs scikit-learn ComplementNB speed beat
+        run: |
+          cargo test -p aprender-core --release \
+            --test beat_sklearn_complementnb_speed -- --ignored --nocapture
+
+      - name: Pillar-1 — apr vs scikit-learn BernoulliNB speed beat
+        run: |
+          cargo test -p aprender-core --release \
+            --test beat_sklearn_bernoullinb_speed -- --ignored --nocapture
+
       - name: Pillar-1 — apr vs scikit-learn MultinomialNB speed beat
         run: |
           cargo test -p aprender-core --release \
