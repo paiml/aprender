@@ -87,6 +87,11 @@ impl SafetensorsModel {
             });
         }
 
+        // Integrity: declared byte length must equal product(shape) * dtype_size.
+        // Fail closed on a crafted/corrupt file rather than silently using the
+        // byte-derived element count (parity with the HF safetensors library).
+        tensor.validate_shape_matches_bytes()?;
+
         // Extract data slice
         let [start, end] = tensor.data_offsets;
         if end > self.data.len() {
@@ -226,6 +231,9 @@ impl SafetensorsModel {
             });
         }
 
+        // Integrity: declared byte length must equal product(shape) * dtype_size.
+        tensor.validate_shape_matches_bytes()?;
+
         let [start, end] = tensor.data_offsets;
         if end > self.data.len() {
             let data_len = self.data.len();
@@ -274,6 +282,9 @@ impl SafetensorsModel {
                 reason: format!("Tensor '{name}' has dtype {dtype:?}, expected BF16"),
             });
         }
+
+        // Integrity: declared byte length must equal product(shape) * dtype_size.
+        tensor.validate_shape_matches_bytes()?;
 
         let [start, end] = tensor.data_offsets;
         if end > self.data.len() {
