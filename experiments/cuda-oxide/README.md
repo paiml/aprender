@@ -11,8 +11,19 @@ GH-480 JIT workaround) — the north-star R&D bet.
 > half-warp DP4A hardware dot-product), and the decisive A/B vs HwDp4a shows oxide is **~4× SLOWER**
 > (oxide/HwDp4a = 3.4–4.2× at every FFN shape K=6656/8960/11008). So wiring oxide into the decode path
 > would make Q4K FFN GEMVs ~4× slower — the backend integration was **closed** (PR #2045) and the
-> "P4 decode win" claim is **retracted**. cuda-oxide's value is the capability/R&D bet only; revisit
-> only if a DP4A-class oxide kernel can beat HwDp4a. The `…-DRAFT.md` promotion plan is superseded.
+> "P4 decode win" claim is **retracted**. cuda-oxide's value is the capability/R&D bet only. The
+> `…-DRAFT.md` promotion plan is superseded.
+>
+> 🔒 **DP4A REVISIT — FALSIFIED AT THE CAPABILITY LAYER (2026-06-15, gx10 GB10 sm_121).** The revisit
+> condition ("only if a DP4A-class oxide kernel can beat HwDp4a") **cannot be met** — not "we didn't
+> try", but the toolchain provides **no path to `dp4a`**. Enumerating the entire cuda-oxide intrinsic
+> universe (`cuda-device/src/` + the `dialect-nvvm/src/ops/` op set) shows **no `dp4a`/`dp2a`/`prmt`/
+> `sad`/`byte_perm`/int8-dot op** of any kind, and **no user-facing inline PTX** (`core::arch::asm!`
+> bodies are discarded in `mir-importer`; the internal `inline_asm_convergent` helper is backend-private
+> and unreachable from `#[kernel]` code). HwDp4a is built entirely on chained `dp4a.u32.s32` over Q8_1
+> int8 activations — exactly the instruction class oxide cannot reach — so oxide is confined to f32
+> accumulation (~4× slower) as a **hard, terminal capability ceiling**. This only changes if NVlabs
+> adds an integer-SIMD-dot intrinsic to `dialect-nvvm`+`cuda-device`, or exposes user inline PTX, upstream.
 
 ⚠️ **These projects build ONLY on gx10 (GB10 Blackwell)** with the cuda-oxide toolchain
 (nightly-2026-04-03 + LLVM-21 + `cargo-oxide`). They are **isolated** from the aprender workspace
