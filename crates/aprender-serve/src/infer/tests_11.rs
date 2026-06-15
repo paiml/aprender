@@ -372,10 +372,13 @@ fn test_gpu_unsupported_quant_boundary_between_4_and_5() {
 }
 
 #[test]
-fn test_gpu_unsupported_quant_only_q5_1() {
-    // PMAT-781: Q5_1 (7) is the sole GPU-unsupported type; 6 (Q5_0) is supported.
+fn test_gpu_unsupported_quant_all_legacy() {
+    // PMAT-781: the whole legacy family {Q4_0,Q4_1,Q5_0,Q5_1} = {2,3,6,7} has
+    // broken GPU kernels (diverge from CPU) and stays gated to CPU.
+    assert!(is_gpu_unsupported_quant(2));
+    assert!(is_gpu_unsupported_quant(3));
+    assert!(is_gpu_unsupported_quant(6));
     assert!(is_gpu_unsupported_quant(7));
-    assert!(!is_gpu_unsupported_quant(6));
 }
 
 #[test]

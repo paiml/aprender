@@ -800,9 +800,13 @@ fn load_apr_cuda_model(
         .ok()?;
 
     if model_has_gpu_unsupported_quant(&model) {
-        // PMAT-781: a true GPU-incompatible quant (Q5_1) on the APR CUDA loader
-        // is a backend-fallback decision — surface it on stderr, never silently.
-        eprintln!("[APR-CUDA] model contains Q5_1 weights — no GPU kernel; falling back to CPU");
+        // PMAT-781: legacy Q4_0/Q4_1/Q5_0/Q5_1 GPU kernels diverge from CPU
+        // (parity gate / Golden-Output gate fail). Routing to CPU is a
+        // backend-fallback decision — surface it on stderr, never silently.
+        eprintln!(
+            "[APR-CUDA] model uses legacy Q4_0/Q4_1/Q5_0/Q5_1 weights — GPU kernels diverge \
+             from CPU; falling back to CPU for correct output"
+        );
         return None;
     }
 

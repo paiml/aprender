@@ -1,35 +1,37 @@
 // ============================================================================
-// is_gpu_unsupported_quant tests (GH-219, narrowed by PMAT-781)
+// is_gpu_unsupported_quant tests (GH-219; renamed from is_legacy_gguf_quant
+// by PMAT-781)
 //
-// PMAT-781: the GPU-resident gemv_dispatch now has kernels for Q4_0/Q4_1/Q5_0
-// (and all the K-quants), so only Q5_1 (no WeightQuantType variant) forces CPU.
-// Q4_0/Q4_1/Q5_0 are GPU-supported and MUST return false now — the old gate
-// blocked them and silently dropped `apr run --gpu` to ~3 tok/s CPU on GB10.
+// PMAT-781: the legacy GGML families Q4_0/Q4_1/Q5_0/Q5_1 have GPU GEMV dispatch
+// entries, but those kernels diverge from CPU (parity gate + apr qa Golden-Output
+// fail; verified on RTX 4090 sm_89 AND GB10 sm_121). So they must STAY gated to
+// CPU for correct output. The modern K-quants + Q8_0 + F32 have correct GPU
+// kernels and are NOT gated.
 // ============================================================================
 
 #[test]
-fn test_gpu_supports_q4_0_gh219() {
-    assert!(!is_gpu_unsupported_quant(2)); // Q4_0 — GPU kernel exists
+fn test_gpu_unsupported_q4_0_gh219() {
+    assert!(is_gpu_unsupported_quant(2)); // Q4_0 — GPU kernel diverges from CPU
 }
 
 #[test]
-fn test_gpu_supports_q4_1_gh219() {
-    assert!(!is_gpu_unsupported_quant(3)); // Q4_1 — GPU kernel exists
+fn test_gpu_unsupported_q4_1_gh219() {
+    assert!(is_gpu_unsupported_quant(3)); // Q4_1 — GPU kernel diverges from CPU
 }
 
 #[test]
-fn test_gpu_supports_q5_0_gh219() {
-    assert!(!is_gpu_unsupported_quant(6)); // Q5_0 — GPU kernel exists (PMAT-781)
+fn test_gpu_unsupported_q5_0_gh219() {
+    assert!(is_gpu_unsupported_quant(6)); // Q5_0 — GPU kernel diverges (PMAT-781)
 }
 
 #[test]
-fn test_q5_1_remains_gpu_unsupported_gh219() {
-    assert!(is_gpu_unsupported_quant(7)); // Q5_1 — no WeightQuantType variant
+fn test_gpu_unsupported_q5_1_gh219() {
+    assert!(is_gpu_unsupported_quant(7)); // Q5_1 — GPU kernel diverges / unmapped
 }
 
 #[test]
 fn test_gpu_supports_modern_quant_types_gh219() {
-    // Q4_K = 12, Q5_K = 13, Q6_K = 14, Q8_0 = 8, F16 = 1, F32 = 0
+    // Q4_K = 12, Q5_K = 13, Q6_K = 14, Q8_0 = 8, F16 = 1, F32 = 0 — correct GPU kernels
     assert!(!is_gpu_unsupported_quant(0)); // F32
     assert!(!is_gpu_unsupported_quant(1)); // F16
     assert!(!is_gpu_unsupported_quant(8)); // Q8_0

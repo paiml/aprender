@@ -367,34 +367,40 @@ fn write_gguf_trace(
     }
 }
 
-/// Check if a quantization type has NO GPU GEMV kernel and must run on CPU.
+/// Check if a quantization type's GPU GEMV kernel is numerically broken, so the
+/// model MUST run on CPU to produce correct output.
 ///
-/// PMAT-781: The GPU-resident path's `gemv_dispatch` (PMAT-232 exhaustive
-/// contract) now has real kernels for Q4_0(2), Q4_1(3), Q5_0(6), Q4_K(12),
-/// Q5_K(13), Q6_K(14), Q8_0(8) and F32(0). The *only* GGUF quant type that
-/// `WeightQuantType::from_ggml_type` cannot map (so the indexed path would
-/// silently reinterpret its bytes as Q4_K → garbage) is Q5_1 (type 7).
+/// The legacy GGML families — Q4_0(2), Q4_1(3), Q5_0(6), Q5_1(7) — have GPU
+/// dispatch entries in `gemv_dispatch`, but those kernels compute a DIFFERENT
+/// function than the CPU reference: the cpu↔gpu parity gate rejects them and
+/// `apr qa --gpu` fails its Golden-Output gate (gibberish like `[s] [s] [s]`
+/// or `\n```python` repeats). This was reconfirmed empirically under PMAT-781 on
+/// BOTH an RTX 4090 (sm_89) and a GB10 (sm_121): a Q4_0 GGUF
+/// (`qwen2-0_5b-instruct-q4_0`) tripped `PARITY-GATE FAILED` and a Q5_0-heavy
+/// GGUF (`qwen2.5-coder-0.5b-instruct-q4_k_m`, whose attn/FFN tensors are Q5_0)
+/// produced the *same wrong* GPU token (151661 vs CPU 95456, rel_gap≈0.54) on
+/// both GPUs. The breakage is in the legacy kernels themselves, not the host.
 ///
-/// Historically this predicate blocked the whole legacy family {2,3,6,7} from
-/// the GPU back when those kernels did not exist. That made `apr run --gpu`
-/// silently fall back to CPU (~3 tok/s) on real Q4_0/Q5_0 GGUFs — e.g.
-/// qwen2.5-coder-0.5b-instruct-q4_k_m, whose attn/FFN tensors are Q5_0 — while
-/// `apr bench` (which never had this gate) drove the SAME model on the GPU at
-/// ~145 tok/s. Narrowed to only the genuinely-unsupported type so the run path
-/// reaches the same working GPU kernels as bench, with no 4090 regression
-/// (Q4_K/Q6_K models were never gated and stay GPU-resident).
+/// Q4_K(12), Q5_K(13), Q6_K(14), Q8_0(8) and F32(0) have correct GPU kernels and
+/// are NOT gated here — Q4_K/Q6_K models stay fully GPU-resident (the RTX 4090
+/// `qwen2.5-coder-1.5b-q4_k_m` decode path is unaffected, parity gate accepts).
+///
+/// NOTE: this only routes the *backend selection* away from the broken kernels;
+/// it is a defensive guard, not a substitute for the cpu↔gpu parity gate that
+/// runs afterwards (the parity gate is the true correctness backstop).
 #[inline]
 fn is_gpu_unsupported_quant(qtype: u32) -> bool {
-    // Q5_1 (GGML type 7) — no WeightQuantType variant / no GPU GEMV kernel.
-    qtype == 7
+    // Legacy GGML quants: Q4_0, Q4_1, Q5_0, Q5_1. GPU kernels diverge from CPU.
+    matches!(qtype, 2 | 3 | 6 | 7)
 }
 
-/// Check if a model uses any quantization type the GPU cannot run, forcing CPU.
+/// Check if a model uses any quantization type whose GPU kernel is broken,
+/// forcing CPU for correctness.
 ///
 /// PMAT-781: checks ALL projection tensors the GPU-resident decode would touch —
 /// QKV (fused or separate), attn output, and FFN gate/up/down — not just a
-/// subset. A single Q5_1 tensor anywhere routes the whole model to CPU, because
-/// the GPU path has no kernel for it.
+/// subset. A single broken-kernel tensor anywhere taints the whole forward pass,
+/// so it routes the entire model to CPU.
 fn model_has_gpu_unsupported_quant(model: &crate::gguf::OwnedQuantizedModel) -> bool {
     use crate::gguf::OwnedQKVWeights;
     if is_gpu_unsupported_quant(model.lm_head_weight.qtype) {
@@ -421,15 +427,18 @@ fn model_has_gpu_unsupported_quant(model: &crate::gguf::OwnedQuantizedModel) -> 
 
 /// Log CPU backend selection reason.
 ///
-/// PMAT-781: a GPU→CPU fallback is a user-visible backend decision (model runs
-/// ~60x slower on aarch64 CPU). It is emitted UNCONDITIONALLY on stderr — never
-/// gated behind `--verbose` — so the silent ~3 tok/s degradation that hid the
-/// over-strict legacy-quant gate can never recur.
+/// PMAT-781: a GPU→CPU fallback is a user-visible backend decision (the model
+/// runs much slower on CPU — ~60x on aarch64). It is emitted UNCONDITIONALLY on
+/// stderr — never gated behind `--verbose` — so the silent CPU degradation that
+/// previously hid the legacy-quant gate (and looked like a GPU bug to users) can
+/// never recur. This is the load-bearing half of the fix: the fallback itself is
+/// correct (the legacy GPU kernels are broken), the SILENCE was the defect.
 #[inline]
 fn log_cpu_backend(_verbose: bool, gpu_unsupported_quant: bool) {
     if gpu_unsupported_quant {
         eprintln!(
-            "Backend: CPU (model contains Q5_1 weights — no GPU kernel; falling back to CPU)"
+            "Backend: CPU (model uses legacy Q4_0/Q4_1/Q5_0/Q5_1 weights — GPU kernels \
+             diverge from CPU; falling back to CPU for correct output)"
         );
     } else {
         eprintln!("Backend: CPU (SIMD-accelerated)");

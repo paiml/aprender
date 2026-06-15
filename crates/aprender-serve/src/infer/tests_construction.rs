@@ -145,16 +145,16 @@ fn test_prefault_mmap_multi_page() {
 }
 
 // ============================================================================
-// is_gpu_unsupported_quant (PMAT-781: narrowed from is_legacy_gguf_quant)
+// is_gpu_unsupported_quant (PMAT-781: renamed from is_legacy_gguf_quant)
 // ============================================================================
 
 #[test]
 fn test_is_gpu_unsupported_quant() {
-    // PMAT-781: GPU now has Q4_0/Q4_1/Q5_0 gemv kernels — only Q5_1 forces CPU.
-    assert!(!is_gpu_unsupported_quant(2)); // Q4_0 — GPU supported
-    assert!(!is_gpu_unsupported_quant(3)); // Q4_1 — GPU supported
-    assert!(!is_gpu_unsupported_quant(6)); // Q5_0 — GPU supported
-    assert!(is_gpu_unsupported_quant(7)); // Q5_1 — no GPU kernel
+    // PMAT-781: legacy Q4_0/Q4_1/Q5_0/Q5_1 GPU kernels diverge from CPU → gated.
+    assert!(is_gpu_unsupported_quant(2)); // Q4_0 — broken GPU kernel
+    assert!(is_gpu_unsupported_quant(3)); // Q4_1 — broken GPU kernel
+    assert!(is_gpu_unsupported_quant(6)); // Q5_0 — broken GPU kernel
+    assert!(is_gpu_unsupported_quant(7)); // Q5_1 — broken/unmapped GPU kernel
     assert!(!is_gpu_unsupported_quant(0)); // F32
     assert!(!is_gpu_unsupported_quant(1)); // F16
     assert!(!is_gpu_unsupported_quant(8)); // Q8_0
