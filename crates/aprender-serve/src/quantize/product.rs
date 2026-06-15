@@ -116,8 +116,24 @@ impl InterleavedQ4K {
     }
 
     /// Compute dot product using scalar fallback (non-x86_64).
+    ///
+    /// Validates the activation length before dispatching, mirroring the
+    /// x86_64 path. Without this guard the scalar kernel indexes the
+    /// activation slice positionally and panics with an out-of-bounds error
+    /// on aarch64 (e.g. GB10/Grace/Jetson) instead of returning the documented
+    /// `InvalidShape` error (PMAT-780).
     #[cfg(not(target_arch = "x86_64"))]
     pub fn dot(&self, activations: &[f32]) -> Result<f32> {
+        if activations.len() != self.num_values() {
+            return Err(RealizarError::InvalidShape {
+                reason: format!(
+                    "Activation length {} doesn't match interleaved Q4_K values count {}",
+                    activations.len(),
+                    self.num_values()
+                ),
+            });
+        }
+
         self.dot_scalar(activations)
     }
 
