@@ -1,0 +1,98 @@
+contract: beat-pytorch-deploy-footprint
+metadata:
+  kind: beat-benchmark
+  version: "1.0.0"
+  description: >
+    Pillar-2 (replace+beat PyTorch) DEPLOY-FOOTPRINT beat. For the
+    INFERENCE-DEPLOYMENT scenario (ship a model to an edge box / container /
+    serverless function and serve it), the framework runtime that must live on disk
+    alongside the (identical, separate) model weights is, for aprender, a single
+    self-contained pure-Rust STATIC binary that links only the host's own
+    libc/libm/libgcc (no Python, no framework runtime, no native ML libs shipped) —
+    measured RELEASE size 56,532,392 B (~53.9 MiB), 47,105,376 B (~44.9 MiB)
+    stripped. The incumbent PyTorch / HuggingFace transformers inference stack
+    instead needs the torch wheel (CPU ~698 MiB, dominated by libtorch_cpu.so
+    ~422 MiB) + transformers (~51 MiB) + transitive deps (numpy/sympy/tokenizers/
+    hf-xet/…) = 894,938,262 B (~853 MiB) of site-packages, plus a CPython
+    interpreter (~67 MiB) to run it = 965,534,951 B (~921 MiB) full CPU inference
+    deploy (a CUDA torch wheel is 2.5–3.5 GB, so the CPU figure is the conservative,
+    apr-favorable-but-honest baseline). apr therefore WINS the inference-deployment
+    footprint by ~15.8× (site-packages) / ~17.1× (full CPU deploy) — ~50×+ vs CUDA
+    torch — host-independent. This is the deploy-size analog of the cold-start beats
+    (same static-binary wedge, metric is on-disk deploy SIZE which matters for
+    edge/container/serverless). Gated PER-PR (CPU, no network, no uv, no torch
+    install at test time): the apr side is MEASURED at the real build path via
+    CARGO_BIN_EXE_apr; the PyTorch figure is a DOCUMENTED CONSTANT pinned from the
+    measurement below. apr CONCEDES training throughput (overhead-bound; see
+    apr-pytorch-autograd-equivalence-beat-v1 for the provable-correctness win where
+    apr is ~11× slower to TRAIN). DISTINCT from the inference-stack cold-start beat
+    (beat-hf-inference-coldstart-speed-v1, Pillar-4) — that times startup wall-clock;
+    this gates on-disk deploy bytes.
+  references:
+  - "crates/apr-cli/tests/beat_pytorch_deploy_footprint.rs"
+  - "contracts/apr-pytorch-autograd-equivalence-beat-v1.yaml (sibling Pillar-2 beat — the provable-correctness win where apr CONCEDES training speed)"
+  - "contracts/beat-hf-inference-coldstart-speed-v1.yaml (sibling static-binary wedge, but on STARTUP time not deploy SIZE)"
+  - "PyTorch CPU wheel sizes: download.pytorch.org/whl/cpu (torch 2.12.0+cpu, libtorch_cpu.so ~422 MiB)"
+version: 1
+status: enforced
+date: 2026-06-15
+beat:
+  pillar: 2
+  incumbent: PyTorch (HuggingFace transformers inference deployment)
+  incumbent_pinned: >
+    2026-06-15 on noah-Lambda-Vector (x86-64 Linux): fresh `uv venv` (CPython
+    3.11.10) + `uv pip install torch --index-url
+    https://download.pytorch.org/whl/cpu` (torch 2.12.0+cpu) + `uv pip install
+    transformers` (5.12.0); `du -sb` site-packages = 894,938,262 B (~853 MiB);
+    + CPython interpreter 70,596,689 B (~67 MiB) = 965,534,951 B (~921 MiB) full
+    CPU inference deploy. CUDA torch wheel is 2.5–3.5 GB (the CPU figure is the
+    conservative incumbent).
+  canonical_task: >
+    On-disk DEPLOY FOOTPRINT of the inference framework runtime (model weights
+    excluded — identical and separate for both sides). apr = the self-contained
+    static `apr` release binary, measured at its real build path via
+    CARGO_BIN_EXE_apr. PyTorch = installed `torch` (CPU) + `transformers` + their
+    transitive deps (site-packages 894,938,262 B), or +CPython for the full deploy
+    (965,534,951 B). Metric = ratio pytorch_deploy_bytes / apr_binary_bytes; apr
+    wins by ~15.8× (site-packages) / ~17.1× (full CPU deploy), ~50×+ vs CUDA. The
+    apr side is MEASURED per-PR; the PyTorch side is a documented pinned constant,
+    so the gate is fast, network-free, and host-independent.
+  metric: deploy_footprint_ratio_pytorch_over_apr
+  direction: higher_is_better
+  baseline_value: 1.0000
+  baseline_floor: 15.8000
+  beat_threshold: 5.0000
+  baseline_sourced_date: "2026-06-15"
+  approved_compute: CPU
+  ci_gate_name: "beat_pytorch_deploy_footprint"
+proof_obligations:
+- id: OBLIG-PYTORCH-DEPLOY-FOOTPRINT-RATIO
+  statement: >
+    pytorch_site_packages_bytes (894,938,262) / apr_release_binary_bytes >=
+    beat_threshold (5.0). The apr binary size is measured at the real build path;
+    the PyTorch figure is the pinned measured constant. Measured ratio ~15.8×.
+  type: bound
+- id: OBLIG-APR-DEPLOY-CEILING
+  statement: >
+    The apr RELEASE binary stays <= 150 MiB (157,286,400 B) — well under ~1/6 of the
+    PyTorch CPU full deploy (965,534,951 B) — so the deploy artifact cannot bloat
+    toward framework-runtime size without failing the gate. Measured 56,532,392 B
+    (~53.9 MiB).
+  type: bound
+falsification_tests:
+- id: FALSIFY-BEAT-PYTORCH-DEPLOY-FOOTPRINT
+  description: >
+    FALSE if apr's deploy footprint is not at least 5× smaller than the pinned
+    PyTorch/transformers inference site-packages (ratio < 5.0), OR if the apr
+    RELEASE binary exceeds the 150 MiB ceiling. Catches apr regressing into a heavy
+    deploy artifact (a framework-runtime-sized dependency creeping into the static
+    binary), which would erase the Pillar-2 deploy-size win.
+  command: >
+    cargo test -p apr-cli --release --test beat_pytorch_deploy_footprint -- --nocapture
+  expected: "ratio >= 5.0 (measured ~15.8× site-packages / ~17.1× full deploy) and release apr binary <= 150 MiB (measured ~53.9 MiB)"
+  if_fails: >
+    apr lost its static-binary deploy-size advantage over the PyTorch/transformers
+    inference runtime — a heavy dependency bloated the binary. Inspect the apr
+    binary size (CARGO_BIN_EXE_apr) and recent dependency additions; the PyTorch CPU
+    deploy is 965,534,951 B (~921 MiB) and apr's pitch is to be ~15-20× smaller. See
+    crates/apr-cli/tests/beat_pytorch_deploy_footprint.rs.
