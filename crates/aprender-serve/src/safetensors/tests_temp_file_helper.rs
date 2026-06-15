@@ -245,7 +245,12 @@
 
     #[test]
     fn test_mapped_get_tensor_f32_not_multiple_of_4() {
-        // Create file with misaligned data
+        // Create file with misaligned data. shape [1] (F32) declares 4 bytes
+        // but data_offsets span 7 — this is BOTH a shape-vs-bytes contradiction
+        // and not a multiple of 4. The shape-vs-bytes integrity gate
+        // (validate_shape_matches_bytes) now fires first, which is the more
+        // precise rejection point (parity with the HF safetensors library);
+        // it subsumes the older "not a multiple of 4" downstream check.
         let mut file = tempfile::NamedTempFile::new().expect("temp file");
         let json = r#"{"weight":{"dtype":"F32","shape":[1],"data_offsets":[0,7]}}"#;
         file.write_all(&(json.len() as u64).to_le_bytes())
@@ -259,8 +264,8 @@
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
-            format!("{err:?}").contains("not a multiple of 4"),
-            "Expected alignment error, got: {err:?}"
+            format!("{err:?}").contains("contradicts declared shape"),
+            "Expected shape/bytes integrity error, got: {err:?}"
         );
     }
 
