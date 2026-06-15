@@ -34,6 +34,17 @@
 use crate::error::{RealizarError, Result};
 use std::fmt;
 
+/// Reject any weight whose absolute value exceeds this (F-DATA-QUALITY-005, extreme magnitude).
+///
+/// Empirically grounded: a survey of 8 real models (.safetensors/.apr/.gguf — Qwen2.5-0.5B,
+/// Albor 50M–350M, fixtures) found a global max |weight| of ~1000; real trained transformer
+/// weights are O(1)–O(100). This threshold sits ~1000× above the largest observed real weight
+/// and ~12 orders of magnitude below the f32 exponent-corruption regime (1e18–1e38), so it
+/// reliably catches corruption (bit-flips, bad dequant scales, transfer corruption) with no
+/// false positives — any weight this large would overflow f32 within a few matmul layers, i.e.
+/// the model is definitionally non-functional.
+const MAX_REASONABLE_WEIGHT: f32 = 1e6;
+
 /// Tensor validation statistics
 #[derive(Debug, Clone)]
 pub struct TensorStats {
@@ -253,6 +264,20 @@ pub fn validate_weight(
     // Gate 4: Distribution
     if stats.l2_norm < 1e-6 {
         failures.push("L2 norm ~0".to_string());
+    }
+
+    // Gate 5: Extreme magnitude (F-DATA-QUALITY-005). A finite weight whose magnitude exceeds
+    // MAX_REASONABLE_WEIGHT passes the NaN/Inf gate but is semantically broken — real trained
+    // transformer weights are O(1)-O(100) (empirically max ~1000 across 8 surveyed real
+    // .safetensors/.apr/.gguf models), and a weight this large would overflow f32 within a few
+    // matmul layers (no functioning model reaches it). Such values come from exponent bit-flips,
+    // corrupt dequant scales, or transfer corruption — the GGUF loaders run them silently.
+    let max_abs = stats.max.abs().max(stats.min.abs());
+    if max_abs > MAX_REASONABLE_WEIGHT {
+        failures.push(format!(
+            "Extreme magnitude: max|w|={max_abs:.3e} exceeds {MAX_REASONABLE_WEIGHT:.0e} \
+             (corruption — overflows inference)"
+        ));
     }
 
     let passed = failures.is_empty();

@@ -65,6 +65,13 @@ fn broken_weight_classes() -> Vec<(&'static str, Vec<f32>, usize, usize)> {
     // structurally wrong: parses as data but wrong element count for its role
     let wrong_shape = healthy_weight()[..N - 10].to_vec();
 
+    // F-DATA-QUALITY-005: extreme-magnitude FINITE weights — passes NaN/Inf/L2/density/constant
+    // gates but is corruption (exponent bit-flip / bad dequant scale). Real weights are O(1)-O(100);
+    // 1e20 would overflow inference. llama.cpp/Ollama load+run this silently.
+    let mut extreme_magnitude = healthy_weight();
+    extreme_magnitude[42] = 1e20;
+    extreme_magnitude[99] = -5e18;
+
     vec![
         ("all_zero_weight", all_zero, OUT, IN),
         ("mostly_zero_weight_>80pct", mostly_zero, OUT, IN),
@@ -72,6 +79,7 @@ fn broken_weight_classes() -> Vec<(&'static str, Vec<f32>, usize, usize)> {
         ("inf_weight", with_inf, OUT, IN),
         ("near_zero_l2_weight", near_zero_l2, OUT, IN),
         ("shape_mismatch_weight", wrong_shape, OUT, IN),
+        ("extreme_magnitude_weight", extreme_magnitude, OUT, IN),
     ]
 }
 
