@@ -418,6 +418,22 @@ impl MappedSafeTensorsModel {
     /// Get tensor as F32 with automatic dtype conversion
     ///
     /// Supports F32, F16, and BF16 dtypes with automatic conversion to F32.
+    ///
+    /// PMAT-789 (peak-RSS fix): the BF16/F16 expansion paths read the on-disk
+    /// bytes from the read-only mmap and convert them into an owned `Vec<f32>`.
+    /// Once the owned f32 copy exists the source mmap pages are no longer needed
+    /// for this tensor. Left resident, those pages accumulate (≈0.92 GiB for a
+    /// 0.5B BF16 model) alongside the ≈1.84 GiB f32 weights, inflating *peak*
+    /// RSS during conversion by ~0.9 GiB even though steady-state (post-convert)
+    /// holds only the f32 weights. After conversion we `madvise(MADV_DONTNEED)`
+    /// the tensor's page range so the kernel reclaims those clean pages
+    /// immediately. This is purely a residency hint — the returned f32 data is
+    /// byte-for-byte unchanged, so inference output stays bit-identical.
+    ///
+    /// The F32 path is intentionally NOT released: its bytes are returned as a
+    /// fresh `Vec<f32>` too, but a release there would be a no-net-win for the
+    /// common all-BF16 model and risks re-faulting if any F32 tensor is read
+    /// twice. The BF16/F16 source bytes are never re-read after load.
     pub fn get_tensor_auto(&self, name: &str) -> Result<Vec<f32>> {
         let tensor = self
             .tensors
@@ -429,12 +445,87 @@ impl MappedSafeTensorsModel {
 
         match tensor.dtype {
             SafetensorsDtype::F32 => self.get_tensor_f32(name),
-            SafetensorsDtype::F16 => self.get_tensor_f16_as_f32(name),
-            SafetensorsDtype::BF16 => self.get_tensor_bf16_as_f32(name),
+            SafetensorsDtype::F16 => {
+                let values = self.get_tensor_f16_as_f32(name)?;
+                self.release_tensor_pages(name);
+                Ok(values)
+            }
+            SafetensorsDtype::BF16 => {
+                let values = self.get_tensor_bf16_as_f32(name)?;
+                self.release_tensor_pages(name);
+                Ok(values)
+            }
             _ => Err(RealizarError::UnsupportedOperation {
                 operation: "get_tensor_auto".to_string(),
                 reason: format!("Unsupported dtype {:?} for tensor '{}'", tensor.dtype, name),
             }),
+        }
+    }
+
+    /// PMAT-789: Advise the kernel that this tensor's mmap pages are no longer
+    /// needed, so they are reclaimed from RSS immediately after the owned f32
+    /// copy has been materialized.
+    ///
+    /// `MADV_DONTNEED` on a read-only file-backed mapping drops the resident
+    /// (clean) pages; any later access transparently re-faults them from the
+    /// file. After load no consumer re-reads the BF16/F16 source bytes (the
+    /// owned f32 `Vec` is the single source of truth), so this never triggers a
+    /// re-fault on the hot path and never changes returned data.
+    ///
+    /// Best-effort: failures are silently ignored — correctness never depends on
+    /// the page being dropped, only peak RSS does. The advised range is shrunk
+    /// to page boundaries (start rounded up, end rounded down) so we never
+    /// advise-away a page partially shared with an adjacent tensor.
+    #[cfg(unix)]
+    fn release_tensor_pages(&self, name: &str) {
+        let Some(tensor) = self.tensors.get(name) else {
+            return;
+        };
+        let [start, end] = tensor.data_offsets;
+        let abs_start = self.data_offset + start;
+        let abs_end = self.data_offset + end;
+        if abs_end > self.mmap.len() || abs_start >= abs_end {
+            return;
+        }
+
+        let page = Self::page_size();
+        let aligned_start = abs_start.div_ceil(page) * page;
+        let aligned_end = (abs_end / page) * page;
+        if aligned_start >= aligned_end {
+            // Sub-page tensor span — nothing whole to drop safely.
+            return;
+        }
+
+        // SAFETY: `MADV_DONTNEED` is only memory-unsafe for *writable* mappings
+        // (it would discard un-flushed dirty data). This mapping is created
+        // read-only (`MmapOptions::map`, never `map_mut`), so every page is
+        // clean and file-backed; dropping a clean page is lossless and any later
+        // access re-faults it from disk. The range is page-aligned and
+        // bounds-checked above.
+        #[allow(unsafe_code)]
+        unsafe {
+            let _ = self.mmap.unchecked_advise_range(
+                memmap2::UncheckedAdvice::DontNeed,
+                aligned_start,
+                aligned_end - aligned_start,
+            );
+        }
+    }
+
+    /// No-op page release on non-unix platforms (no `madvise`).
+    #[cfg(not(unix))]
+    fn release_tensor_pages(&self, _name: &str) {}
+
+    /// System page size for `madvise` alignment.
+    #[cfg(unix)]
+    fn page_size() -> usize {
+        // SAFETY: `sysconf(_SC_PAGESIZE)` takes no pointers and cannot fault.
+        #[allow(unsafe_code)]
+        let p = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+        if p > 0 {
+            p as usize
+        } else {
+            4096
         }
     }
 

@@ -186,5 +186,85 @@ mod mapped_tests {
         assert_eq!(model.tensor_count(), 0);
         assert!(model.tensor_names().is_empty());
     }
+
+    // ===================================================================
+    // PMAT-789: get_tensor_auto releases BF16/F16 source pages after the
+    // f32 copy is made. These tests assert the released-page path stays
+    // value-identical (the data already lives in the returned Vec, and any
+    // re-read transparently re-faults from the file).
+    // ===================================================================
+
+    /// Build a multi-page (>1 page) BF16 tensor so `release_tensor_pages`
+    /// actually has whole pages to advise away (sub-page spans are skipped).
+    fn make_large_bf16(n: usize) -> Vec<u8> {
+        (0..n)
+            .flat_map(|i| half::bf16::from_f32(i as f32 * 0.5).to_le_bytes())
+            .collect()
+    }
+
+    #[test]
+    fn test_pmat789_bf16_auto_values_correct_after_release() {
+        // 8192 bf16 = 16 KiB = several pages on a 4 KiB system.
+        let n = 8192;
+        let data = make_large_bf16(n);
+        let file = create_temp_safetensors(&[(
+            "big_bf16",
+            SafetensorsDtype::BF16,
+            &[n],
+            &data,
+        )]);
+        let model = MappedSafeTensorsModel::load(file.path()).expect("load");
+
+        let vals = model.get_tensor_auto("big_bf16").expect("auto");
+        assert_eq!(vals.len(), n);
+        for (i, v) in vals.iter().enumerate() {
+            let expected = half::bf16::from_f32(i as f32 * 0.5).to_f32();
+            assert!((v - expected).abs() < 1e-6, "idx {i}: {v} != {expected}");
+        }
+    }
+
+    #[test]
+    fn test_pmat789_reread_after_release_is_identical() {
+        // After page release, reading the SAME tensor again must re-fault from
+        // disk and yield byte-identical values (lossless DONTNEED on read-only).
+        let n = 8192;
+        let data = make_large_bf16(n);
+        let file = create_temp_safetensors(&[(
+            "big_bf16",
+            SafetensorsDtype::BF16,
+            &[n],
+            &data,
+        )]);
+        let model = MappedSafeTensorsModel::load(file.path()).expect("load");
+
+        let first = model.get_tensor_auto("big_bf16").expect("first");
+        let second = model.get_tensor_auto("big_bf16").expect("second (re-fault)");
+        assert_eq!(first, second, "re-read after MADV_DONTNEED diverged");
+    }
+
+    #[test]
+    fn test_pmat789_adjacent_tensors_not_corrupted_by_release() {
+        // Two tensors packed back-to-back; releasing the first's pages must not
+        // corrupt the second (page-alignment shrinks the advised range so a
+        // boundary-shared page is never dropped).
+        let a = make_large_bf16(4096);
+        let b: Vec<u8> = (0..4096)
+            .flat_map(|i| half::bf16::from_f32(100.0 + i as f32).to_le_bytes())
+            .collect();
+        let file = create_temp_safetensors(&[
+            ("a", SafetensorsDtype::BF16, &[4096], &a),
+            ("b", SafetensorsDtype::BF16, &[4096], &b),
+        ]);
+        let model = MappedSafeTensorsModel::load(file.path()).expect("load");
+
+        // Read+release a, then read b — b must be intact.
+        let _ = model.get_tensor_auto("a").expect("a");
+        let bv = model.get_tensor_auto("b").expect("b");
+        for (i, v) in bv.iter().enumerate() {
+            let expected = half::bf16::from_f32(100.0 + i as f32).to_f32();
+            assert!((v - expected).abs() < 1e-3, "b idx {i}: {v} != {expected}");
+        }
+    }
+
 include!("tests_temp_file_helper.rs");
 }
