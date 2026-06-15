@@ -1,0 +1,114 @@
+contract: beat-ollama-decode-throughput-speed
+metadata:
+  kind: beat-benchmark
+  version: "1.0.0"
+  description: >
+    Pillar-4 SPEED comparison (PMAT-755 / audit gap #4): apr GPU decode tok/s vs
+    ollama warm-daemon decode (eval) tok/s for the SAME Q4_K_M GGUF, SAME
+    host/GPU (RTX 4090 sm_89), SAME prompt. Audit gap #4 asked to convert the
+    "apr ~1.23x faster than ollama" observation (PMAT-742, 2026-06-13) from
+    TRACKING into a falsifiable GATED beat.
+
+    VERDICT (2026-06-15, measured first — see step 4 of the task): STAYS TRACKING.
+    A real ~1.3x clean-decode advantage EXISTS, but apr's `apr run` decode
+    throughput is too VARIABLE on this box to form a non-flaky gate, so shipping a
+    hard 1.10x gate would produce false FAILs. Documented honestly rather than
+    asserted as a green beat.
+
+    SCOPE: STEADY-STATE GPU DECODE only — marginal token-generation rate with
+    model load + FP8-weight-cache build + CUDA-graph capture + prefill amortized
+    out. apr's one-shot CLI has a large (~3.4-3.9s) fixed per-invocation startup
+    cost that ollama's resident daemon avoids; SHORT-PROMPT one-shot WALL-CLOCK
+    still favors ollama and is a SEPARATE, conceded comparison (NOT measured here).
+
+    MEASUREMENTS (RTX 4090, qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, same GGUF on
+    both sides, warm):
+      * ollama warm eval (decode): TIGHT, ~286-329 tok/s, median ~300 tok/s.
+      * apr clean steady-state decode: ~380-500 tok/s depending on estimator
+        (768-tok whole-run minus overhead ~380; 128/384 differential ~470-500),
+        i.e. a real ~1.3x clean beat consistent with the audit's 1.23x.
+      * BUT apr exhibits HIGH VARIANCE: (a) a ~1-in-6 CATASTROPHIC STALL where a
+        run takes ~36s and stops early (matches the known "1-in-6 CUDA_ERROR"
+        FUSION-003 pattern); (b) even non-stalled runs vary widely (derived
+        240-411 tok/s at 768-tok). A naive median-of-3 gate therefore FALSELY
+        fails: an end-to-end harness run on 2026-06-15 measured apr trials
+        [391.3, 284.3, 197.4] -> median 284.3 < ollama 288.9 -> ratio 0.984 (a
+        measured NON-beat caused by the variance, not a real regression).
+
+    WHY NOT GATE: the headline Pillar-4 beat that IS robustly gateable is
+    apr-fail-closed-garbage-beat (correctness: apr provably rejects garbage
+    artifacts ollama runs). Raw decode speed is conceded as the apr weakness in
+    that contract's own description. Gating decode tok/s here would contradict the
+    fail-closed beat's honest framing and would flake on apr's ~1-in-6 stall. To
+    PROMOTE this to status=enforced, two prerequisites must be met: (1) fix/quench
+    the ~1-in-6 decode stall (own ticket; same class as FUSION-003 1-in-6
+    CUDA_ERROR), and (2) re-measure a stable distribution whose worst-case stays
+    above a conservative threshold. Until then it is TRACKING evidence.
+  references:
+  - "crates/aprender-serve/tests/beat_ollama_decode_throughput_speed.rs"
+  - "memory/project_pmat742_gpu_parity_falsepos.md (origin of the 1.23x TRACKING number)"
+  - "memory/project_fusion_003_1_5b_falsified.md (the 1-in-6 CUDA_ERROR variance class)"
+  - "contracts/apr-fail-closed-garbage-beat-v1.yaml (the robustly-gateable Pillar-4 beat)"
+version: 1
+# TRACKING (not enforced): a real clean-decode beat exists but is not robustly
+# gateable due to apr's ~1-in-6 decode-stall variance. See description VERDICT.
+status: tracking
+date: 2026-06-15
+
+# Beat-benchmark parameters. baseline_value records the measured CLEAN-decode
+# ratio (~1.3x); beat_threshold is what a future ENFORCED gate would use, but the
+# gate is NOT wired (status: tracking) until the decode-stall variance is fixed.
+beat:
+  pillar: 4
+  incumbent: ollama
+  incumbent_pinned: >
+    2026-06-15 RTX 4090 (sm_89), ollama serving qwen2.5-coder:1.5b-instruct-q4_K_M
+    (same GGUF as apr), warm daemon (100% GPU), `ollama run ... --verbose` eval
+    rate. TIGHT distribution ~286-329 tok/s, median ~300 tok/s.
+  canonical_task: >
+    Steady-state GPU decode throughput on qwen2.5-coder-1.5b-instruct-q4_k_m
+    (Q4_K_M GGUF). apr: `apr run <gguf> --gpu --benchmark`; decode rate derived by
+    amortizing the ~3.4-3.9s fixed overhead (128/384 differential, or 768-tok
+    whole-run minus overhead). ollama: `ollama run <model> --verbose` "eval rate"
+    (already decode-only). Same host, same GPU, same GGUF weights. Metric = ratio
+    apr_decode_tps / ollama_eval_tps. NOT one-shot cold wall-clock (conceded).
+  metric: decode_tps_ratio_apr_over_ollama
+  direction: higher_is_better
+  baseline_value: 1.3000      # measured CLEAN-decode ratio apr/ollama (~380-470 apr / ~300 ollama)
+  baseline_floor: 0.9840      # WITH variance: an end-to-end median-of-3 harness run measured 0.984 (a stall-induced non-beat)
+  beat_threshold: 1.1000      # the threshold a FUTURE enforced gate would use (NOT wired while status=tracking)
+  baseline_sourced_date: "2026-06-15"
+  approved_compute: GPU       # RTX 4090 (sm_89) steady-state decode; needs apr --features cuda + ollama
+  ci_gate_name: "beat_ollama_decode_throughput_speed"
+
+# CI gating: NOT wired (status: tracking). Even when promoted, it is MANUAL/
+# operator-gated (documented honestly, like the cuda-oxide throughput gate):
+# there is NO NVIDIA GitHub Actions runner, so the per-PR CPU CI cannot run it.
+# The enforcing test is `#[ignore]`d and only runs on an NVIDIA host that has BOTH
+# `apr` built `--features cuda` AND `ollama` installed with the Q4_K_M model.
+ci_gating:
+  mode: tracking        # NOT a gate yet; promote to `manual` after fixing the 1-in-6 stall
+  reason: >
+    (1) Decode-throughput variance: apr shows a ~1-in-6 catastrophic decode stall
+    (~36s, early-EOS; same class as FUSION-003 1-in-6 CUDA_ERROR) plus wide
+    non-stalled variance, so a median gate flakes (measured ratio 0.984 on one
+    harness run despite a real ~1.3x clean advantage). Fix the stall first.
+    (2) No NVIDIA CI runner: requires an RTX-class GPU, apr `--features cuda`,
+    ollama + the Q4_K_M model, and the matching GGUF on disk — none on the
+    CPU-only self-hosted CI runners. When promoted it stays manual, like the
+    cuda-oxide throughput beat.
+  run_recipe: |
+    # On an NVIDIA host with apr (--features cuda), ollama, and the model:
+    #   1. Build/locate the cuda apr binary:
+    #        cargo build --release --features cuda  # -> target/release/apr
+    #      (canonical: /mnt/nvme-raid0/targets/aprender/release/apr)
+    #   2. Ensure the GGUF + ollama model match:
+    #        ls ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+    #        ollama pull qwen2.5-coder:1.5b-instruct-q4_K_M && ollama ps
+    #   3. Run the ignored measurement harness (records the ratio; currently a
+    #      DIAGNOSTIC, not a hard gate, while status=tracking):
+    #        APR_BIN=/mnt/nvme-raid0/targets/aprender/release/apr \
+    #        APR_GGUF=$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf \
+    #        OLLAMA_MODEL=qwen2.5-coder:1.5b-instruct-q4_K_M \
+    #        cargo test -p aprender-serve --test beat_ollama_decode_throughput_speed \
+    #          -- --ignored --nocapture
