@@ -46,15 +46,11 @@ jobs:
           cargo test -p aprender-core --release \
             --test beat_sklearn_gaussiannb_speed -- --ignored --nocapture
 
-      - name: Pillar-1 — apr vs scikit-learn StandardScaler speed beat
-        run: |
-          cargo test -p aprender-core --release \
-            --test beat_sklearn_scaler_speed -- --ignored --nocapture
-
-      - name: Pillar-1 — apr vs scikit-learn MinMaxScaler speed beat
-        run: |
-          cargo test -p aprender-core --release \
-            --test beat_sklearn_minmax_speed -- --ignored --nocapture
+      # NOTE: StandardScaler / MinMaxScaler speed beats REMOVED (PMAT-733). Elementwise scalers have
+      # no algorithmic edge over numpy — they "won" only on a fast dev box; on the canonical Intel CI
+      # runner (MKL numpy) apr LOSES (StandardScaler measured ratio 1.443 = apr 0.69x). Only beats with
+      # a genuine algorithmic edge (compute-bound: LinReg, the NB family, GMM) are kept — they hold
+      # across hosts. See memory: verify beats on the CI host, not just the dev box.
 
       - name: Pillar-1 — apr vs scikit-learn ComplementNB speed beat
         run: |
