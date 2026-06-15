@@ -312,6 +312,12 @@ fn test_cov027_q6k_gemv_indexed_async_basic() {
     let n = 32u32;
     let k = 256u32;
 
+    // The HwDp4a Q6K variant (default on sm_75+) quantizes activations into
+    // workspace.q8_activation_buf, so the workspace must be sized for k inputs.
+    executor
+        .init_workspace(k as usize, k as usize)
+        .expect("init_workspace");
+
     // Load Q6_K weights and get pointer
     let weight_bytes = (n as usize) * 210; // Q6_K is 210 bytes per 256 values
     let weights = vec![0u8; weight_bytes];
