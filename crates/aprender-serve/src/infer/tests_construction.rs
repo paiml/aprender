@@ -150,10 +150,12 @@ fn test_prefault_mmap_multi_page() {
 
 #[test]
 fn test_is_legacy_gguf_quant() {
-    assert!(is_legacy_gguf_quant(2)); // Q4_0
-    assert!(is_legacy_gguf_quant(3)); // Q4_1
-    assert!(is_legacy_gguf_quant(6)); // Q5_0
-    assert!(is_legacy_gguf_quant(7)); // Q5_1
+    // PMAT-782: Q4_0/Q4_1/Q5_0 candle-layout kernels now match CPU (parity gate
+    // PASSES, cosine≈0.9998) → GPU-eligible. Only Q5_1 (no GPU kernel) stays gated.
+    assert!(!is_legacy_gguf_quant(2)); // Q4_0 — fixed (candle layout)
+    assert!(!is_legacy_gguf_quant(3)); // Q4_1 — fixed (PMAT-782 candle layout)
+    assert!(!is_legacy_gguf_quant(6)); // Q5_0 — fixed (candle layout)
+    assert!(is_legacy_gguf_quant(7)); // Q5_1 — no GPU kernel → gated
     assert!(!is_legacy_gguf_quant(0)); // F32
     assert!(!is_legacy_gguf_quant(1)); // F16
     assert!(!is_legacy_gguf_quant(8)); // Q8_0

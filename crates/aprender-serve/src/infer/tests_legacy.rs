@@ -3,24 +3,28 @@
 // is_legacy_gguf_quant tests (GH-219)
 // ============================================================================
 
+// PMAT-782: Q4_0/Q4_1/Q5_0 GPU GEMV kernels now use the correct GGML "candle"
+// interleaved nibble layout and PASS the cpu↔gpu parity gate (cosine≈0.9998), so
+// they are GPU-eligible. Q5_1 has NO GPU kernel and stays gated.
+
 #[test]
 fn test_is_legacy_gguf_quant_q4_0_gh219() {
-    assert!(is_legacy_gguf_quant(2)); // Q4_0
+    assert!(!is_legacy_gguf_quant(2)); // Q4_0 — fixed candle layout, GPU-eligible
 }
 
 #[test]
 fn test_is_legacy_gguf_quant_q4_1_gh219() {
-    assert!(is_legacy_gguf_quant(3)); // Q4_1
+    assert!(!is_legacy_gguf_quant(3)); // Q4_1 — PMAT-782 candle layout, GPU-eligible
 }
 
 #[test]
 fn test_is_legacy_gguf_quant_q5_0_gh219() {
-    assert!(is_legacy_gguf_quant(6)); // Q5_0
+    assert!(!is_legacy_gguf_quant(6)); // Q5_0 — fixed candle layout, GPU-eligible
 }
 
 #[test]
 fn test_is_legacy_gguf_quant_q5_1_gh219() {
-    assert!(is_legacy_gguf_quant(7)); // Q5_1
+    assert!(is_legacy_gguf_quant(7)); // Q5_1 — no GPU kernel → gated
 }
 
 #[test]
