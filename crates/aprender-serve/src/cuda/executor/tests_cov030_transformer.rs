@@ -335,6 +335,12 @@ fn test_cov031_batched_incremental_attention_into() {
     executor
         .init_batched_kv_cache_gpu(1, batch_size)
         .expect("init batched kv");
+    // batched_incremental_attention_into uploads positions into
+    // workspace.positions_buf, which must be sized for `batch_size` positions.
+    // init_batched_workspace allocates positions_buf with length = batch_size.
+    executor
+        .init_batched_workspace(q_dim, q_dim, batch_size)
+        .expect("init batched workspace");
 
     let q_data = vec![0.1f32; q_dim * batch_size];
     let k_data = vec![0.1f32; kv_dim * batch_size];

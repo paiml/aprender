@@ -176,7 +176,13 @@ mod tests {
             Some(WeightQuantType::Q6K)
         );
         assert_eq!(WeightQuantType::from_ggml_type(99), None);
-        assert_eq!(WeightQuantType::from_ggml_type(0), None);
+        // GH-374: ggml type 0 is F32 (unquantized). APR checkpoints may carry an
+        // F32 LM head when the source model was not quantized, so from_ggml_type
+        // maps 0 -> Some(F32) rather than None.
+        assert_eq!(
+            WeightQuantType::from_ggml_type(0),
+            Some(WeightQuantType::F32)
+        );
     }
 
     #[test]

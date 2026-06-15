@@ -49,9 +49,9 @@ mod tests {
             num_attention_heads: Some(12),
             num_key_value_heads: None, // Will default to num_attention_heads
             vocab_size: Some(50257),
-            intermediate_size: None,       // Will default to 4 * hidden_dim
-            max_position_embeddings: None, // Will default to 2048
-            rope_theta: None,              // Will default to 10000.0
+            intermediate_size: None, // Will default to 4 * hidden_dim
+            max_position_embeddings: None, // Absent => context_length defaults to 0 (unset)
+            rope_theta: None,        // Will default to 10000.0
             rms_norm_eps: None,            // Will default to 1e-6
             architectures: None,
             model_type: None,
@@ -64,7 +64,9 @@ mod tests {
         let config = SafeTensorsCudaModel::extract_config(&json).expect("config");
         assert_eq!(config.hidden_dim, 768);
         assert_eq!(config.intermediate_dim, 768 * 4); // Default
-        assert_eq!(config.context_length, 2048); // Default
+        // extract_config leaves context_length at 0 when max_position_embeddings
+        // is absent (no magic 2048 default); the actual length is resolved later.
+        assert_eq!(config.context_length, 0); // Default (unset)
         assert!((config.rope_theta - 10000.0).abs() < 0.1); // Default
         assert!((config.eps - 1e-6).abs() < 1e-9); // Default
     }
