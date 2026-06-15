@@ -585,7 +585,7 @@ impl CudaExecutor {
 
     /// Inner implementation of the oxide backend (split out so the gated entry
     /// point stays trivially simple). See [`Self::try_q4k_gemv_oxide_async`].
-    fn q4k_gemv_oxide_async_inner(
+    pub(crate) fn q4k_gemv_oxide_async_inner(
         &mut self,
         weight_ptr: u64,
         input: &GpuBuffer<f32>,

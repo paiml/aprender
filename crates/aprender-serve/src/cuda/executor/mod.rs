@@ -317,6 +317,12 @@ mod tests_cov021_q4k;
 #[path = "tests_zeroed_layer.rs"]
 mod tests_zeroed_layer;
 
+// PMAT-OXIDE-Q4K-001: throughput BEAT gate (oxide vs TiledQ4KGemv on sm_121).
+// Falsifier for contract `beat-q4k-oxide-sm121`. #[ignore]'d + cc>=120-gated.
+#[cfg(test)]
+#[path = "q4k_gemv_oxide_throughput.rs"]
+mod q4k_gemv_oxide_throughput;
+
 /// Process-level set of PTX hashes that failed compilation.
 /// Prevents re-attempting cuModuleLoadData with the same broken PTX,
 /// which would poison the CUDA context again.
