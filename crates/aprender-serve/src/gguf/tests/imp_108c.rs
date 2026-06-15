@@ -1,6 +1,7 @@
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_108c_attention_softmax_normalized() {
     // IMP-108c: Verify attention weights sum to 1 for each position
     let config = GGUFConfig {

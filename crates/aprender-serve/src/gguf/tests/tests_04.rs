@@ -20,6 +20,7 @@ use crate::gguf::{GGUFConfig, OwnedQuantizedModelCached};
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_112a_cached_scheduler_initialization() {
     // IMP-112a: Verify cached scheduler initializes lazily and is reused
     // This tests that OwnedQuantizedModelCached provides scheduler caching
@@ -79,6 +80,7 @@ fn test_imp_112a_cached_scheduler_initialization() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_112b_cached_matches_uncached() {
     // IMP-112b: Verify cached scheduler produces identical results to uncached
     //
@@ -146,6 +148,7 @@ fn test_imp_112b_cached_matches_uncached() {
 /// - Grid Y was (n+31)/32 but should be (m+31)/32 for rows
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_114_cuda_gemm_correctness() {
     let config = GGUFConfig {
         architecture: "test".to_string(),
@@ -194,6 +197,7 @@ fn test_parity_114_cuda_gemm_correctness() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_112c_multiple_operations_same_scheduler() {
     // IMP-112c: Verify multiple different operations share the same scheduler
     let config = GGUFConfig {
@@ -245,6 +249,7 @@ fn test_imp_112c_multiple_operations_same_scheduler() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_112d_cached_attention_matches_uncached() {
     // IMP-112d: Verify cached parallel attention matches uncached
     let config = GGUFConfig {

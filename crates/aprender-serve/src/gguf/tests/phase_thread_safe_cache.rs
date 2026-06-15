@@ -19,6 +19,7 @@ use crate::gguf::OwnedQuantizedModelCachedSync;
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_phase34_cached_sync_new() {
     let config = GGUFConfig {
         architecture: "llama".to_string(),
@@ -48,6 +49,7 @@ fn test_phase34_cached_sync_new() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_phase34_cached_sync_model_accessor() {
     let config = GGUFConfig {
         architecture: "llama".to_string(),
@@ -79,6 +81,7 @@ fn test_phase34_cached_sync_model_accessor() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_phase34_cached_sync_concurrent_model_access() {
     use std::sync::Arc;
     use std::thread;
@@ -127,6 +130,7 @@ fn test_phase34_cached_sync_concurrent_model_access() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_phase34_cached_sync_send_sync_bounds() {
     use std::sync::Arc;
 
@@ -164,6 +168,7 @@ fn test_phase34_cached_sync_send_sync_bounds() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_phase34_cached_sync_multiple_configs() {
     // Test with different architectures
     let configs = vec![
@@ -241,6 +246,7 @@ fn test_phase34_cached_sync_no_gpu_feature() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_phase34_cached_sync_rapid_access() {
     let config = GGUFConfig {
         architecture: "llama".to_string(),
@@ -271,6 +277,7 @@ fn test_phase34_cached_sync_rapid_access() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_phase34_cached_sync_thread_stress() {
     use std::sync::Arc;
     use std::thread;

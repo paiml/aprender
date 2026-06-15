@@ -5,6 +5,7 @@
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_114a_flattened_batched_gemm_correctness() {
     // IMP-114a: Verify flattened batched GEMM computes correct results
     // Strategy: Flatten [batch, m, k] @ [batch, k, n] into single large matmul
@@ -85,6 +86,7 @@ fn test_imp_114a_flattened_batched_gemm_correctness() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_114b_flattened_matches_loop() {
     // IMP-114b: Verify flattened approach matches loop-based approach
     let config = GGUFConfig {
@@ -146,6 +148,7 @@ fn test_imp_114b_flattened_matches_loop() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_114c_flattened_attention_correctness() {
     // IMP-114c: Verify flattened attention matches reference
     let config = GGUFConfig {
@@ -208,6 +211,7 @@ fn test_imp_114c_flattened_attention_correctness() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_114d_large_batch_flattened() {
     // IMP-114d: Test with larger batch sizes where flattening benefits
     let config = GGUFConfig {

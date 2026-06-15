@@ -20,6 +20,7 @@ use crate::gguf::GGUFConfig;
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_109a_fused_dequant_matmul_correctness() {
     // IMP-109a: Verify fused dequant+matmul matches separate operations
     // Uses model's existing quantized weights to validate correctness
@@ -93,6 +94,7 @@ fn test_imp_109a_fused_dequant_matmul_correctness() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_109b_fused_batch_matmul_gpu() {
     // IMP-109b: Verify fused batch matmul produces correct, deterministic results
     // Key optimization: dequantize weight once, reuse for all batch elements
@@ -207,6 +209,7 @@ fn test_imp_109b_fused_batch_matmul_gpu() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_109c_fused_vs_separate_performance_baseline() {
     // IMP-109c: Validate fused kernel produces same results as separate dequant+matmul
     // This establishes correctness baseline before optimizing
@@ -287,6 +290,7 @@ fn test_imp_109c_fused_vs_separate_performance_baseline() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_110a_parallel_heads_correctness() {
     // IMP-110a: Verify parallel multi-head attention matches sequential
     // Process all heads in a single batch dispatch instead of iterating
@@ -356,6 +360,7 @@ fn test_imp_110a_parallel_heads_correctness() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_110b_batched_qkv_reshape() {
     // IMP-110b: Verify Q/K/V reshaping for batched head processing
     // Input: [seq_len, hidden_dim] -> [num_heads, seq_len, head_dim]
@@ -423,6 +428,7 @@ fn test_imp_110b_batched_qkv_reshape() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_110c_parallel_batched_scores() {
     // IMP-110c: Verify batched Q@K^T scores computed correctly for all heads
     // Process all heads in single batched matmul

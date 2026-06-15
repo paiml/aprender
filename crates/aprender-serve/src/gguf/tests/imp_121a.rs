@@ -17,6 +17,7 @@ use crate::gguf::{
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_121a_cached_sync_has_adaptive_attention() {
     // IMP-121a: OwnedQuantizedModelCachedSync should expose adaptive attention
     let config = GGUFConfig {
@@ -68,6 +69,7 @@ fn test_imp_121a_cached_sync_has_adaptive_attention() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_121b_cached_sync_adaptive_multihead() {
     // IMP-121b: OwnedQuantizedModelCachedSync should expose adaptive multihead attention
     let config = GGUFConfig {
@@ -118,6 +120,7 @@ fn test_imp_121b_cached_sync_adaptive_multihead() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_121c_generate_with_adaptive_attention() {
     // IMP-121c: Cached model should have generate_with_adaptive_attention
     let config = GGUFConfig {
@@ -164,6 +167,7 @@ fn test_imp_121c_generate_with_adaptive_attention() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_121d_thread_safe_adaptive_attention() {
     // IMP-121d: Verify thread-safe access to adaptive attention
     use std::sync::Arc;
@@ -238,6 +242,7 @@ fn test_imp_121d_thread_safe_adaptive_attention() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_122a_adaptive_attention_with_cache() {
     // IMP-122a: Test attention_with_cache can use adaptive backend
     let config = GGUFConfig {
@@ -358,6 +363,7 @@ fn test_pmat749_adaptive_attention_gqa_long_cache() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_122b_adaptive_matches_standard() {
     // IMP-122b: Adaptive attention with cache should match standard implementation
     let config = GGUFConfig {
@@ -417,6 +423,7 @@ fn test_imp_122b_adaptive_matches_standard() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_122c_long_sequence_uses_gpu() {
     // IMP-122c: Long sequence should automatically use GPU path
     let config = GGUFConfig {
@@ -468,6 +475,7 @@ fn test_imp_122c_long_sequence_uses_gpu() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_123a_dispatch_metrics_struct() {
     // IMP-123a: DispatchMetrics struct should track CPU vs GPU decisions
     let metrics = DispatchMetrics::new();
@@ -479,6 +487,7 @@ fn test_imp_123a_dispatch_metrics_struct() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_123b_record_dispatch_decisions() {
     // IMP-123b: Metrics should correctly record dispatch decisions
     let metrics = DispatchMetrics::new();
@@ -494,6 +503,7 @@ fn test_imp_123b_record_dispatch_decisions() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_123c_dispatch_ratio() {
     // IMP-123c: Should calculate GPU dispatch ratio
     let metrics = DispatchMetrics::new();
