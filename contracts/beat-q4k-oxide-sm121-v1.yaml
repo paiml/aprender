@@ -125,7 +125,16 @@ falsification_tests:
     speedup that erodes the margin) is caught. cc>=120-gated: SKIPs (passes
     vacuously) on sm_89, so it is CI-safe but only ENFORCED on gx10.
   command: >
-    ssh gx10 'cd /tmp/q4k-oxide-wt &&
+    ssh gx10 'set -e;
+    export PATH="$HOME/.cargo/bin:/usr/lib/llvm-21/bin:/usr/local/cuda/bin:$PATH";
+    export LLVM_SYS_211_PREFIX=/usr/lib/llvm-21;
+    export LD_LIBRARY_PATH=/usr/local/cuda/lib64;
+    export CARGO_TARGET_DIR="$HOME/src/aprender/target";
+    cd "$HOME/src/aprender";
+    git fetch -q origin chore/q4k-oxide-throughput-gate-pmat734;
+    git worktree add -f /tmp/q4k-oxide-wt origin/chore/q4k-oxide-throughput-gate-pmat734 2>/dev/null || true;
+    cd /tmp/q4k-oxide-wt;
+    git reset -q --hard origin/chore/q4k-oxide-throughput-gate-pmat734;
     cargo test -p aprender-serve --features cuda --lib
     beat_q4k_oxide_sm121_ffn_1536x8960 -- --ignored --nocapture --test-threads=1'
   expected: "oxide_ms <= tiled_ms / 1.25 (oxide >= 1.25x tiled); measured ~2.0x on gx10 2026-06-15"
@@ -138,13 +147,19 @@ falsification_tests:
     Documents the KNOWN non-beat at the attention-class shape (N=4096, K=2048):
     oxide measured ~0.95x tiled (SLOWER) on gx10 2026-06-15. This shape is
     intentionally NOT part of the enforced beat; the test
-    beat_q4k_oxide_sm121_baseline_4096x2048 records it and currently FAILS by
-    design as a tripwire against re-asserting a blanket sm_121 win without a
+    no_beat_q4k_oxide_sm121_attn_4096x2048_tripwire records it and PASSES
+    today as a tripwire against re-asserting a blanket sm_121 win without a
     shape-gated dispatch.
   command: >
-    ssh gx10 'cd /tmp/q4k-oxide-wt &&
+    ssh gx10 'set -e;
+    export PATH="$HOME/.cargo/bin:/usr/lib/llvm-21/bin:/usr/local/cuda/bin:$PATH";
+    export LLVM_SYS_211_PREFIX=/usr/lib/llvm-21;
+    export LD_LIBRARY_PATH=/usr/local/cuda/lib64;
+    export CARGO_TARGET_DIR="$HOME/src/aprender/target";
+    cd /tmp/q4k-oxide-wt 2>/dev/null || (cd "$HOME/src/aprender" &&
+    git worktree add -f /tmp/q4k-oxide-wt origin/chore/q4k-oxide-throughput-gate-pmat734 && cd /tmp/q4k-oxide-wt);
     cargo test -p aprender-serve --features cuda --lib
-    beat_q4k_oxide_sm121_baseline_4096x2048 -- --ignored --nocapture --test-threads=1'
+    no_beat_q4k_oxide_sm121_attn_4096x2048_tripwire -- --ignored --nocapture --test-threads=1'
   expected: "KNOWN no_beat: oxide ~0.95x tiled at K=2048 -> shape-gate before claiming a universal beat"
   if_fails: >
     If this shape ever PASSES, the oxide kernel improved at small-K -- promote
