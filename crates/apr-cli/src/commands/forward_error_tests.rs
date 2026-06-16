@@ -275,4 +275,99 @@ mod forward_error_tests {
             "must find NO independent reference (artifacts ignored), not pick a circular one"
         );
     }
+
+    // ========================================================================
+    // PMAT-815: format_parity must SKIP (not FAIL) when the SafeTensors
+    // reference is genuinely ABSENT — a missing OPTIONAL input is not a format
+    // divergence. Mirrors run_ollama_parity_gate, which SKIPs when Ollama is
+    // unavailable. The SKIP must NOT mask a real divergence: an EXPLICIT
+    // --safetensors-path is still honored (returned Ok), so a present-but-
+    // diverging reference still reaches the FAIL path.
+    //
+    // resolve_safetensors_path is the locus of the SKIP-vs-FAIL decision:
+    //   Ok(path)  -> gate proceeds to actually run the parity comparison
+    //   Err(gate) -> gate short-circuits with that GateResult (SKIP or FAIL)
+    // ========================================================================
+
+    /// Falsifier case (a): GGUF with NO reference on disk → SKIP, not FAIL.
+    /// RED-on-bug: pre-fix this returned `GateResult::failed`, so `.skipped`
+    /// was false and `.passed` was false → `apr qa <gguf>` failed overall.
+    #[test]
+    fn resolve_safetensors_absent_reference_skips_not_fails() {
+        use super::QaConfig;
+
+        // Isolated tempdir + a UNIQUE base name so none of the four discovery
+        // strategies (sibling file/subdir, HF cache, APR cache — all substring-
+        // keyed on the base name) can match anything on the dev/CI machine.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let gguf = dir
+            .path()
+            .join("zzqaparitynoref8f3a1c-q4_k_m.gguf");
+        std::fs::write(&gguf, b"GGUF\0\0\0\0").expect("write gguf stub");
+
+        let config = QaConfig::default();
+        assert!(
+            config.safetensors_path.is_none(),
+            "precondition: no explicit reference path"
+        );
+
+        let result = super::resolve_safetensors_path(&gguf, &config, Duration::from_millis(0));
+
+        match result {
+            Ok(p) => panic!(
+                "absent reference must NOT resolve to a path; got Ok({})",
+                p.display()
+            ),
+            Err(gate) => {
+                assert!(
+                    gate.skipped,
+                    "absent reference must SKIP, not FAIL (got skipped={}, passed={}, msg={})",
+                    gate.skipped, gate.passed, gate.message
+                );
+                assert!(
+                    gate.passed,
+                    "a SKIPPED gate counts as passed in the summary (got passed=false, msg={})",
+                    gate.message
+                );
+                assert!(
+                    gate.message.to_lowercase().contains("no safetensors reference"),
+                    "skip reason must state the reference is unavailable, got: {}",
+                    gate.message
+                );
+            }
+        }
+    }
+
+    /// Falsifier case (b)/(c) guard: an EXPLICIT --safetensors-path is returned
+    /// verbatim (Ok), so the gate proceeds to the real comparison and a present-
+    /// but-diverging reference still reaches FAIL — the SKIP does not swallow it.
+    #[test]
+    fn resolve_safetensors_explicit_path_is_honored_not_skipped() {
+        use super::QaConfig;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let gguf = dir.path().join("model-q4_k_m.gguf");
+        let explicit = dir.path().join("reference.safetensors");
+
+        let config = QaConfig {
+            safetensors_path: Some(explicit.clone()),
+            ..QaConfig::default()
+        };
+
+        let result = super::resolve_safetensors_path(&gguf, &config, Duration::from_millis(0));
+
+        match result {
+            Ok(p) => assert_eq!(
+                p, explicit,
+                "an explicit --safetensors-path must be returned verbatim so the \
+                 parity comparison actually runs (a real divergence must still FAIL, \
+                 not be masked by the absent-reference SKIP)"
+            ),
+            Err(gate) => panic!(
+                "an explicit reference must NOT short-circuit to SKIP/FAIL here; \
+                 got skipped={}, passed={}, msg={}",
+                gate.skipped, gate.passed, gate.message
+            ),
+        }
+    }
 }
