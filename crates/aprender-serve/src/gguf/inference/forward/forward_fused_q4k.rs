@@ -47,9 +47,10 @@ impl OwnedQuantizedModel {
         // 2. Process through transformer layers with FUSED Q4_K ops
         let cpu_debug_layers = std::env::var("CPU_DEBUG_LAYERS").is_ok();
         for (layer_idx, layer) in self.layers.iter().enumerate() {
-            // 2a. Attention layer norm (RMSNorm for LLaMA, LayerNorm for others)
+            // 2a. Attention layer norm (RMSNorm for LLaMA, LayerNorm for others).
+            // PMAT-809 (b): rms_norm_arch picks (1+w) for Gemma, *w otherwise.
             let normed = if use_rmsnorm {
-                ops::rms_norm(&hidden, &layer.attn_norm_weight, self.config.eps)
+                self.rms_norm_arch(&hidden, &layer.attn_norm_weight, self.config.eps)
             } else {
                 ops::layer_norm(
                     &hidden,
@@ -194,9 +195,10 @@ impl OwnedQuantizedModel {
 
             // 2f. Pre-FFN layer norm (LLaMA uses separate ffn_norm with RMSNorm)
             let ffn_input = if let Some(ref ffn_norm) = layer.ffn_norm_weight {
-                // LLaMA-style: separate FFN layer norm (use RMSNorm for LLaMA)
+                // LLaMA-style: separate FFN layer norm (use RMSNorm for LLaMA).
+                // PMAT-809 (b): rms_norm_arch picks (1+w) for Gemma.
                 if use_rmsnorm {
-                    ops::rms_norm(&hidden, ffn_norm, self.config.eps)
+                    self.rms_norm_arch(&hidden, ffn_norm, self.config.eps)
                 } else {
                     ops::layer_norm(
                         &hidden,
@@ -225,8 +227,8 @@ impl OwnedQuantizedModel {
                         ops::add_bias(&mut ffn_gate, bias);
                     }
 
-                    // SwiGLU: down(silu(gate(x)) * up(x))
-                    ops::silu(&mut ffn_gate);
+                    // SwiGLU: down(silu(gate(x)) * up(x)); PMAT-809 (a) GeGLU for Gemma.
+                    self.gemma_gate_activation(&mut ffn_gate);
                     for i in 0..ffn_gate.len() {
                         ffn_gate[i] *= ffn_up[i];
                     }
@@ -243,7 +245,7 @@ impl OwnedQuantizedModel {
                         ops::add_bias(&mut ffn_gate, &bias[..bias_half]);
                         ops::add_bias(&mut ffn_up, &bias[bias_half..]);
                     }
-                    ops::silu(&mut ffn_gate);
+                    self.gemma_gate_activation(&mut ffn_gate);
                     for i in 0..ffn_gate.len() {
                         ffn_gate[i] *= ffn_up[i];
                     }
@@ -304,9 +306,10 @@ impl OwnedQuantizedModel {
             eprintln!("  (GPU shows: sum=466.2486, rms=39.4793)");
         }
 
-        // 3. Final layer norm (RMSNorm for LLaMA, LayerNorm for others)
+        // 3. Final layer norm (RMSNorm for LLaMA, LayerNorm for others).
+        // PMAT-809 (b): rms_norm_arch picks (1+w) for Gemma.
         let normed = if use_rmsnorm {
-            ops::rms_norm(&hidden, &self.output_norm_weight, self.config.eps)
+            self.rms_norm_arch(&hidden, &self.output_norm_weight, self.config.eps)
         } else {
             ops::layer_norm(
                 &hidden,
