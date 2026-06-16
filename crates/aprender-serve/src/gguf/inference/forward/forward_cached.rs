@@ -70,18 +70,31 @@ impl OwnedQuantizedModel {
             }
 
             // Attention block (norm → QKV → RoPE → attention → output projection)
-            let attn_output = self.cached_attention_block(
+            let mut attn_output = self.cached_attention_block(
                 &hidden, layer_idx, cache, position, use_rmsnorm,
                 debug_forward, cpu_debug,
             )?;
+            // PMAT-810: Gemma2 applies a POST-attention RMSNorm to the attention
+            // output BEFORE the residual add: `x + post_attn_norm(attn(...))`.
+            // `None` for every other architecture → residual add is unchanged.
+            // GGUF bakes the Gemma `(1 + w)` offset into the weight, so the
+            // standard `ops::rms_norm` is correct (rmsnorm_unit_offset() == false).
+            if let Some(ref post_w) = self.layers[layer_idx].post_attn_norm_weight {
+                attn_output = ops::rms_norm(&attn_output, post_w, self.config.eps);
+            }
             for i in 0..hidden_dim {
                 hidden[i] += attn_output[i];
             }
 
             // FFN block (norm → SwiGLU/GELU → down projection)
-            let ffn_output = self.cached_ffn_block(
+            let mut ffn_output = self.cached_ffn_block(
                 &hidden, layer_idx, use_rmsnorm,
             )?;
+            // PMAT-810: Gemma2 applies a POST-FFN RMSNorm to the FFN output BEFORE
+            // the residual add: `h + post_ffw_norm(ffn(...))`. `None` elsewhere.
+            if let Some(ref post_w) = self.layers[layer_idx].post_ffw_norm_weight {
+                ffn_output = ops::rms_norm(&ffn_output, post_w, self.config.eps);
+            }
             for i in 0..hidden_dim {
                 hidden[i] += ffn_output[i];
             }
