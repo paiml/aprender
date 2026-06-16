@@ -1,0 +1,61 @@
+contract: beat-unsloth-coldstart-speed
+metadata:
+  kind: beat-benchmark
+  version: "1.0.0"
+  description: >
+    Pillar-3 (Unsloth) BEAT benchmark: for a ONE-SHOT small LoRA adapter operation
+    invoked from the shell, aprender — a pure-Rust static binary with ~0 framework
+    startup — must be dramatically FASTER end-to-end than the Unsloth/torch stack,
+    whose `import unsloth` alone (torch + transformers + peft + triton + monkey-
+    patches) costs ~7s before any work. apr does a FULL rank-8 LoRA init over 4
+    attention projections + standard PEFT adapter export to disk in ~1.4ms — less
+    than the incumbent takes to finish `import`. Gated on the RELATIVE end-to-end
+    process wall-clock ratio (same host, same run). STARTUP-COST beat — the static-
+    binary advantage is architecture-independent (robust across CI hosts). apr
+    CONCEDES GPU in-loop QLoRA fine-tune throughput (Triton + bitsandbytes own it);
+    this is scoped to the common one-shot CLI adapter op. Complements the shipped
+    Pillar-3 correctness beats (NF4 == bitsandbytes; LoRA-merge equivalence).
+    Runs nightly (needs uv).
+  references:
+  - "crates/aprender-train/tests/beat_unsloth_coldstart_speed.rs"
+  - "contracts/apr-nf4-bitsandbytes-equivalence-beat-v1.yaml (sibling Pillar-3 correctness beat)"
+  - "contracts/apr-lora-merge-equivalence-beat-v1.yaml (sibling Pillar-3 correctness beat)"
+version: 1
+status: enforced
+date: 2026-06-15
+beat:
+  pillar: 3
+  incumbent: Unsloth
+  incumbent_pinned: "2026-06-15 via uv run --with unsloth (import unsloth ~7.0s; torch+transformers+peft fallback ~2.9s)"
+  canonical_task: >
+    One-shot rank-8 LoRA adapter init over 4 attention projections + PEFT export,
+    timed as END-TO-END process wall-clock: apr re-execs its own static binary
+    (cold-start + adapter op + save_peft); the incumbent's `import unsloth` is timed
+    as the floor (apr finishes before import completes). Same host, same run (median
+    of 5 + warmup); metric is ratio apr_ms / unsloth_ms.
+  metric: wall_clock_ratio_apr_over_unsloth
+  direction: lower_is_better
+  baseline_value: 1.0000
+  baseline_floor: 0.0002
+  beat_threshold: 0.1000
+  baseline_sourced_date: "2026-06-15"
+  approved_compute: CPU
+  ci_gate_name: "beat_unsloth_coldstart_speed"
+proof_obligations:
+- id: OBLIG-UNSLOTH-COLDSTART-RATIO
+  statement: >
+    On the canonical task, apr_ms / unsloth_ms <= beat_threshold (0.10) measured
+    same-host/same-run as the median of 5 timed iterations after a warmup.
+  type: bound
+falsification_tests:
+- id: FALSIFY-BEAT-UNSLOTH-COLDSTART-SPEED
+  description: >
+    FALSE if apr is not >= 10x faster than the Unsloth stack end-to-end on the
+    one-shot LoRA adapter op (ratio > 0.10). Catches apr regressing into a heavy startup.
+  command: >
+    cargo test -p aprender-train --release --test beat_unsloth_coldstart_speed --
+    --ignored --nocapture
+  expected: "ratio <= 0.10 (apr >= 10x faster end-to-end; measured ~5000x)"
+  if_fails: >
+    apr lost its static-binary cold-start advantage (heavy startup dep crept in) OR
+    the LoRA init / PEFT export path regressed. Compare apr_ms vs unsloth_ms.

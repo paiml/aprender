@@ -76,3 +76,8 @@ jobs:
         run: |
           cargo test -p aprender-core --release \
             --test beat_pytorch_coldstart_speed -- --ignored --nocapture
+
+      - name: Pillar-3 — apr vs Unsloth one-shot cold-start LoRA-adapter speed beat
+        run: |
+          cargo test -p aprender-train --release \
+            --test beat_unsloth_coldstart_speed -- --ignored --nocapture
