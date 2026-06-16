@@ -532,6 +532,30 @@ impl GGUFModel {
         }
     }
 
+    /// PMAT-810: Get Gemma2 attention-logit softcap (`{arch}.attn_logit_softcapping`).
+    /// 50.0 for gemma-2-*. Returns None when absent (non-Gemma2, or weights-only GGUF).
+    pub fn attn_logit_softcapping(&self) -> Option<f32> {
+        let arch = self.architecture()?;
+        let key = crate::gguf::keys::arch_key(arch, crate::gguf::keys::ATTN_LOGIT_SOFTCAPPING);
+        if let Some(GGUFValue::Float32(cap)) = self.metadata.get(&key) {
+            Some(*cap)
+        } else {
+            None
+        }
+    }
+
+    /// PMAT-810: Get Gemma2 final-logit softcap (`{arch}.final_logit_softcapping`).
+    /// 30.0 for gemma-2-*. Returns None when absent (non-Gemma2, or weights-only GGUF).
+    pub fn final_logit_softcapping(&self) -> Option<f32> {
+        let arch = self.architecture()?;
+        let key = crate::gguf::keys::arch_key(arch, crate::gguf::keys::FINAL_LOGIT_SOFTCAPPING);
+        if let Some(GGUFValue::Float32(cap)) = self.metadata.get(&key) {
+            Some(*cap)
+        } else {
+            None
+        }
+    }
+
     /// M32c.2.2.2.1.2: Get MoE expert count (`{arch}.expert_count`).
     /// 128 for Qwen3-Coder-30B-A3B-Instruct. Returns None for dense models.
     pub fn expert_count(&self) -> Option<usize> {

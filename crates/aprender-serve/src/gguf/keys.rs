@@ -90,6 +90,16 @@ pub(crate) const EXPERT_USED_COUNT: &str = "expert_used_count";
 /// (e.g. 768 for Qwen3-Coder-30B-A3B-Instruct).
 pub(crate) const EXPERT_FEED_FORWARD_LENGTH: &str = "expert_feed_forward_length";
 
+/// PMAT-810: `{arch}.attn_logit_softcapping` — Gemma2 attention-logit tanh
+/// softcap constant (50.0 for gemma-2-*). Applied as `cap*tanh(scores/cap)`
+/// before the attention softmax.
+pub(crate) const ATTN_LOGIT_SOFTCAPPING: &str = "attn_logit_softcapping";
+
+/// PMAT-810: `{arch}.final_logit_softcapping` — Gemma2 final lm_head tanh
+/// softcap constant (30.0 for gemma-2-*). Applied as `cap*tanh(logits/cap)`
+/// after the output projection.
+pub(crate) const FINAL_LOGIT_SOFTCAPPING: &str = "final_logit_softcapping";
+
 // ─── Key construction ────────────────────────────────────────────────────────
 
 /// Construct an architecture-parameterized GGUF metadata key.

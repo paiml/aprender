@@ -273,6 +273,31 @@ pub fn silu(input: &mut [f32]) {
     }
 }
 
+/// PMAT-810: Gemma2 tanh logit softcapping, in place.
+///
+/// Gemma2 (and Gemma3) bound both the attention logits (cap = 50.0) and the
+/// final lm_head logits (cap = 30.0) with `cap * tanh(x / cap)`. This squashes
+/// extreme values into `(-cap, cap)` while staying near-linear for small `x`.
+/// Without it, Gemma2 output diverges from the reference because the uncapped
+/// attention scores and final logits put mass on the wrong tokens.
+///
+/// llama.cpp: `ggml_tanh(ggml_scale(kq, 1/cap)) * cap` (build_attn) and the same
+/// on `cur` after the output layer when `hparams.f_logit_scale`/softcapping set.
+///
+/// # Arguments
+/// * `values` - logits / scores (modified in place)
+/// * `cap` - softcap constant (must be finite and > 0)
+#[inline]
+pub fn softcap(values: &mut [f32], cap: f32) {
+    if cap <= 0.0 || !cap.is_finite() {
+        return;
+    }
+    let inv_cap = 1.0 / cap;
+    for v in values.iter_mut() {
+        *v = cap * (*v * inv_cap).tanh();
+    }
+}
+
 // =============================================================================
 // Utility Operations
 // =============================================================================
@@ -1397,6 +1422,58 @@ mod swiglu_contract_tests {
                     );
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod softcap_tests {
+    use super::*;
+
+    /// PMAT-810: softcap(x, cap) == cap * tanh(x / cap) elementwise.
+    #[test]
+    fn softcap_matches_reference() {
+        let cap = 30.0f32;
+        let mut v = vec![-100.0, -30.0, -1.0, 0.0, 1.0, 30.0, 100.0, 1000.0];
+        let expect: Vec<f32> = v.iter().map(|&x| cap * (x / cap).tanh()).collect();
+        softcap(&mut v, cap);
+        for (got, want) in v.iter().zip(expect.iter()) {
+            assert!((got - want).abs() < 1e-4, "softcap {got} != {want}");
+        }
+    }
+
+    /// PMAT-810: softcap bounds every output into (-cap, cap).
+    #[test]
+    fn softcap_bounds_extremes() {
+        let cap = 50.0f32;
+        let mut v = vec![-1e9, -1e3, 1e3, 1e9, f32::MAX, f32::MIN];
+        softcap(&mut v, cap);
+        for &x in &v {
+            assert!(x.abs() <= cap + 1e-3, "softcap output {x} escaped ±{cap}");
+        }
+    }
+
+    /// PMAT-810: softcap is ~identity near 0 (tanh(t) ≈ t for small t).
+    #[test]
+    fn softcap_near_linear_at_origin() {
+        let cap = 30.0f32;
+        let mut v = vec![0.0, 0.01, -0.01, 0.5, -0.5];
+        let original = v.clone();
+        softcap(&mut v, cap);
+        for (got, orig) in v.iter().zip(original.iter()) {
+            // |error| grows like x^3/(3 cap^2); for |x|<=0.5, cap=30 it's ~1e-5.
+            assert!((got - orig).abs() < 1e-3, "softcap({orig}) = {got} not ≈ identity");
+        }
+    }
+
+    /// PMAT-810: a non-positive / non-finite cap is a no-op (defensive guard).
+    #[test]
+    fn softcap_zero_or_bad_cap_is_noop() {
+        for bad in [0.0f32, -1.0, f32::NAN, f32::INFINITY] {
+            let mut v = vec![1.0, 2.0, 3.0];
+            let orig = v.clone();
+            softcap(&mut v, bad);
+            assert_eq!(v, orig, "softcap with cap={bad} must be a no-op");
         }
     }
 }

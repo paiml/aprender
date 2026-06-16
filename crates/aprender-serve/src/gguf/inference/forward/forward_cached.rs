@@ -357,6 +357,12 @@ impl OwnedQuantizedModel {
             ops::add_bias(&mut logits, bias);
         }
 
+        // PMAT-810: Gemma2 final-logit tanh softcap (`cap*tanh(logits/cap)`, cap=30).
+        // `None` for every other architecture → logits untouched (byte-identical).
+        if let Some(cap) = self.config.final_logit_softcap() {
+            ops::softcap(&mut logits, cap);
+        }
+
         // PAR-052: Debug final logits
         if debug_forward && position == 0 {
             let mut indexed: Vec<(usize, f32)> = logits.iter().copied().enumerate().collect();

@@ -33,6 +33,9 @@ impl OwnedQuantizedModel {
         let q_dim = self.config.q_dim();
         let kv_dim = self.config.kv_dim();
         let scale = 1.0 / (head_dim as f32).sqrt();
+        // PMAT-810: Gemma2 caps attention logits with `cap*tanh(scores/cap)`
+        // (cap=50) BEFORE softmax. `None` for every other arch → no-op.
+        let attn_softcap = self.config.attn_logit_softcap();
 
         // Number of Q heads that share each KV head
         let q_per_kv = num_heads / num_kv_heads;
@@ -83,10 +86,13 @@ impl OwnedQuantizedModel {
                 group_scores[i * total_len + cache_len] = score;
             }
 
-            // 2. Softmax (Per Q Head)
+            // 2. Softmax (Per Q Head). PMAT-810: Gemma2 softcaps the scores first.
             for i in 0..q_per_kv {
                 let start = i * total_len;
                 let end = start + total_len;
+                if let Some(cap) = attn_softcap {
+                    crate::gguf::ops::softcap(&mut group_scores[start..end], cap);
+                }
                 crate::quantize::softmax_simd(&mut group_scores[start..end]);
             }
 
@@ -137,6 +143,8 @@ impl OwnedQuantizedModel {
         let q_dim = self.config.q_dim();
         let kv_dim = self.config.kv_dim();
         let scale = 1.0 / (head_dim as f32).sqrt();
+        // PMAT-810: Gemma2 attention-logit softcap (None elsewhere → no-op).
+        let attn_softcap = self.config.attn_logit_softcap();
 
         let q_per_kv = num_heads / num_kv_heads;
 
@@ -187,10 +195,13 @@ impl OwnedQuantizedModel {
                 group_scores[i * total_len + cache_len] = score;
             }
 
-            // 2. Softmax (Per Q Head)
+            // 2. Softmax (Per Q Head). PMAT-810: Gemma2 softcaps the scores first.
             for i in 0..q_per_kv {
                 let start = i * total_len;
                 let end = start + total_len;
+                if let Some(cap) = attn_softcap {
+                    crate::gguf::ops::softcap(&mut group_scores[start..end], cap);
+                }
                 crate::quantize::softmax_simd(&mut group_scores[start..end]);
             }
 

@@ -379,6 +379,47 @@ impl GGUFConfig {
         a == "gemma" || a == "gemmaforcausallm"
     }
 
+    /// PMAT-810: Whether this is a Gemma-**v2**-family architecture
+    /// (`gemma2`, GGUF `general.architecture == "gemma2"`).
+    ///
+    /// Gemma2 shares Gemma1's GeGLU FFN + `sqrt(hidden)` embedding scaling, and
+    /// ADDS attention- and final-logit tanh softcapping. EXACT `gemma2` only —
+    /// not `gemma3`/`gemma3n` (those have further behaviors and stay fail-loud).
+    #[must_use]
+    pub fn is_gemma2(&self) -> bool {
+        let a = self.architecture.to_ascii_lowercase();
+        a == "gemma2" || a == "gemma2forcausallm"
+    }
+
+    /// PMAT-810: Gemma2 attention-logit softcap constant, applied as
+    /// `cap * tanh(scores / cap)` before the attention softmax.
+    ///
+    /// Returns `Some(50.0)` for Gemma2 (the canonical `attn_logit_softcapping` for
+    /// every gemma-2-* checkpoint), `None` for all other architectures — `None`
+    /// disables softcapping so non-Gemma2 attention stays byte-identical.
+    #[must_use]
+    pub fn attn_logit_softcap(&self) -> Option<f32> {
+        if self.is_gemma2() {
+            Some(50.0)
+        } else {
+            None
+        }
+    }
+
+    /// PMAT-810: Gemma2 final lm_head-logit softcap constant, applied as
+    /// `cap * tanh(logits / cap)` after the output projection.
+    ///
+    /// Returns `Some(30.0)` for Gemma2 (the canonical `final_logit_softcapping`
+    /// for every gemma-2-* checkpoint), `None` otherwise.
+    #[must_use]
+    pub fn final_logit_softcap(&self) -> Option<f32> {
+        if self.is_gemma2() {
+            Some(30.0)
+        } else {
+            None
+        }
+    }
+
     /// PMAT-809 (b): Whether RMSNorm must apply the Gemma `(1 + weight)` unit
     /// offset at RUNTIME.
     ///
@@ -406,7 +447,8 @@ impl GGUFConfig {
     /// all other architectures (no scaling).
     #[must_use]
     pub fn embed_scale(&self) -> Option<f32> {
-        if self.is_gemma1() {
+        // PMAT-810: Gemma2 shares Gemma1's `sqrt(hidden)` embedding scaling.
+        if self.is_gemma1() || self.is_gemma2() {
             // sqrt(hidden_size). f64 intermediate to keep the constant exact for
             // the common power-of-two-ish hidden sizes (e.g. 2048 → 45.2548...).
             #[allow(clippy::cast_precision_loss)]
@@ -422,7 +464,8 @@ impl GGUFConfig {
     /// Gemma's `GatedMlp` uses the `gelu_tanh` activation on the gate branch.
     #[must_use]
     pub fn geglu_ffn(&self) -> bool {
-        self.is_gemma1()
+        // PMAT-810: Gemma2 shares Gemma1's GeGLU FFN (gelu_tanh gate activation).
+        self.is_gemma1() || self.is_gemma2()
     }
 
     /// Extract configuration from APR model metadata.
