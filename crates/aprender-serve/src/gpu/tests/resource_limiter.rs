@@ -260,11 +260,21 @@ fn test_gguf_model_state_small_config() {
 
 #[test]
 fn test_gguf_model_state_large_config() {
-    // Test with larger configuration
-    let result = load_gguf_to_gpu(32000, 4096, 32);
+    // Test with a larger-than-minimal configuration (multi-layer, non-trivial vocab).
+    //
+    // PMAT-772: This previously used (32000, 4096, 32) — full 7B-class dimensions —
+    // which forced `GpuModel::new` to allocate and fill ~25 GB of `vec![0.01f32; N]`
+    // weight buffers. In a debug build that fill is a per-element scalar loop, and on
+    // ARM hosts (GB10/Grace/Jetson) faulting in ~6.5M pages + the memset took >30s
+    // single-threaded at 100% CPU, gating the whole `--lib` run. x86 absorbed it via a
+    // faster fill, so CI never surfaced it. The "larger config" intent — exercising the
+    // multi-layer construction, the lm_head transpose, and vocab_size propagation — is
+    // fully preserved at these dimensions, which complete in well under a second.
+    let vocab_size = 2048;
+    let result = load_gguf_to_gpu(vocab_size, 256, 4);
     assert!(result.is_ok());
 
     let state = result.expect("test value should be present");
     assert!(state.is_ready());
-    assert_eq!(state.vocab_size(), 32000);
+    assert_eq!(state.vocab_size(), vocab_size);
 }
