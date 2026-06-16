@@ -15,3 +15,5 @@ use crate::gguf::{
 
 include!("results.rs");
 include!("forward_single_profiled.rs");
+// PMAT-809: Gemma-v1 arch dispatch helpers (rms_norm_arch, gemma_gate_activation).
+include!("gemma_dispatch.rs");
