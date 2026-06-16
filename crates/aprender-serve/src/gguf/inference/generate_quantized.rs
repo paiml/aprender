@@ -1,3 +1,45 @@
+/// Apply Candle-style repetition penalty to logits BEFORE sampling/argmax.
+///
+/// Mirrors the MoE path's `sample_from_logits` (PMAT-383/384,
+/// `qwen3-moe-repetition-penalty-v1`) so the dense quantized decode path
+/// honors `QuantizedGenerateConfig::repeat_penalty` / `repeat_last_n`
+/// instead of silently dropping them (PMAT-816).
+///
+/// Returns the (possibly penalized) logits. NEUTRAL no-op contract:
+/// when `repeat_penalty == 1.0` OR `repeat_last_n == 0` OR `recent_tokens`
+/// is empty, the input slice is returned BORROWED unchanged — no
+/// allocation, byte-identical to the pre-fix behavior.
+///
+/// Penalty convention (matches Candle's `apply_repeat_penalty`):
+/// for each token in the trailing `repeat_last_n` window, if its logit is
+/// positive it is divided by `repeat_penalty` (down-weighted), else it is
+/// multiplied by `repeat_penalty` (made more negative).
+pub(crate) fn apply_repeat_penalty<'a>(
+    logits: &'a [f32],
+    repeat_penalty: f32,
+    repeat_last_n: usize,
+    recent_tokens: &[u32],
+) -> std::borrow::Cow<'a, [f32]> {
+    // Neutral no-op: borrow the input unchanged (no allocation).
+    if repeat_penalty == 1.0 || repeat_last_n == 0 || recent_tokens.is_empty() {
+        return std::borrow::Cow::Borrowed(logits);
+    }
+
+    let mut penalized: Vec<f32> = logits.to_vec();
+    let start = recent_tokens.len().saturating_sub(repeat_last_n);
+    for &token in &recent_tokens[start..] {
+        let idx = token as usize;
+        if idx < penalized.len() {
+            if penalized[idx] > 0.0 {
+                penalized[idx] /= repeat_penalty;
+            } else {
+                penalized[idx] *= repeat_penalty;
+            }
+        }
+    }
+    std::borrow::Cow::Owned(penalized)
+}
+
 impl OwnedQuantizedModel {
     /// Get most likely next token
     ///
@@ -54,13 +96,20 @@ impl OwnedQuantizedModel {
             // Forward pass with fused Q4_K ops (1.37x faster)
             let logits = self.forward(&tokens)?;
 
+            // PMAT-816: apply repetition penalty BEFORE sampling/argmax so
+            // repeat_penalty / repeat_last_n are honored on the dense path
+            // (was silently dropped; only temperature+top_k were applied).
+            // Neutral (penalty==1.0 || last_n==0) → borrowed, byte-identical.
+            let penalized =
+                apply_repeat_penalty(&logits, config.repeat_penalty, config.repeat_last_n, &tokens);
+
             // Sample next token
             let next_token = if config.temperature == 0.0 || config.top_k == 1 {
                 // Greedy decoding
-                Self::argmax(&logits)
+                Self::argmax(&penalized)
             } else {
                 // Temperature + top-k sampling
-                Self::sample_topk(&logits, config.temperature, config.top_k)
+                Self::sample_topk(&penalized, config.temperature, config.top_k)
             };
 
             // Check stop condition
@@ -235,12 +284,16 @@ impl OwnedQuantizedModel {
                 );
             }
 
+            // PMAT-816: apply repetition penalty BEFORE sampling/argmax.
+            let penalized =
+                apply_repeat_penalty(&logits, config.repeat_penalty, config.repeat_last_n, &tokens);
+
             // Sample next token
             let next_token = if config.temperature == 0.0 || config.top_k == 1 {
-                ops::argmax(&logits)
+                ops::argmax(&penalized)
             } else {
                 crate::gguf::OwnedQuantizedModel::sample_topk(
-                    &logits,
+                    &penalized,
                     config.temperature,
                     config.top_k,
                 )
@@ -412,12 +465,15 @@ impl OwnedQuantizedModel {
         // Generate new tokens with streaming
         for gen_idx in 0..config.max_tokens {
             let token_start = std::time::Instant::now();
+            // PMAT-816: apply repetition penalty BEFORE sampling/argmax.
+            let penalized =
+                apply_repeat_penalty(&logits, config.repeat_penalty, config.repeat_last_n, &tokens);
             // Sample next token
             let next_token = if config.temperature == 0.0 || config.top_k == 1 {
-                ops::argmax(&logits)
+                ops::argmax(&penalized)
             } else {
                 crate::gguf::OwnedQuantizedModel::sample_topk(
-                    &logits,
+                    &penalized,
                     config.temperature,
                     config.top_k,
                 )

@@ -77,12 +77,20 @@ impl OwnedQuantizedModel {
         // 2. Then run forward on the new token to get logits for next iteration
         for gen_idx in 0..config.max_tokens {
             let token_start = std::time::Instant::now();
+            // PMAT-816: apply repetition penalty BEFORE sampling/argmax so
+            // repeat_penalty / repeat_last_n are honored on the dense path.
+            let penalized = apply_repeat_penalty(
+                &scratch.logits,
+                config.repeat_penalty,
+                config.repeat_last_n,
+                &tokens,
+            );
             // Sample next token from current logits (prefill logits on first iter)
             let next_token = if config.temperature == 0.0 || config.top_k == 1 {
-                ops::argmax(&scratch.logits)
+                ops::argmax(&penalized)
             } else {
                 crate::gguf::OwnedQuantizedModel::sample_topk(
-                    &scratch.logits,
+                    &penalized,
                     config.temperature,
                     config.top_k,
                 )
@@ -182,12 +190,20 @@ impl OwnedQuantizedModel {
         // Generate new tokens with adaptive attention
         for gen_idx in 0..config.max_tokens {
             let token_start = std::time::Instant::now();
+            // PMAT-816: apply repetition penalty BEFORE sampling/argmax so
+            // repeat_penalty / repeat_last_n are honored on the dense path.
+            let penalized = apply_repeat_penalty(
+                &logits,
+                config.repeat_penalty,
+                config.repeat_last_n,
+                &tokens,
+            );
             // Sample next token from current logits
             let next_token = if config.temperature == 0.0 || config.top_k == 1 {
-                ops::argmax(&logits)
+                ops::argmax(&penalized)
             } else {
                 crate::gguf::OwnedQuantizedModel::sample_topk(
-                    &logits,
+                    &penalized,
                     config.temperature,
                     config.top_k,
                 )

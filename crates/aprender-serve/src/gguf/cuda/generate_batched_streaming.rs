@@ -4,15 +4,32 @@
 /// `temperature == 0.0`, else temperature/top-k sampling (the same `sample_topk` the
 /// single-request decode uses). Defined in the cuda module so the batched loop can honor
 /// each request's temperature/top_k instead of the old forced on-GPU greedy argmax.
-fn select_batched_token(logits: &[f32], temperature: f32, top_k: usize) -> u32 {
+///
+/// PMAT-816: applies the per-slot repetition penalty (repeat_penalty / repeat_last_n)
+/// to the logits BEFORE argmax/sampling, reading the slot's accumulated sequence.
+/// Neutral (penalty == 1.0 || last_n == 0) is byte-identical (borrowed, no alloc).
+fn select_batched_token(
+    logits: &[f32],
+    temperature: f32,
+    top_k: usize,
+    repeat_penalty: f32,
+    repeat_last_n: usize,
+    recent_tokens: &[u32],
+) -> u32 {
+    let penalized = crate::gguf::inference::apply_repeat_penalty(
+        logits,
+        repeat_penalty,
+        repeat_last_n,
+        recent_tokens,
+    );
     if temperature == 0.0 {
-        logits
+        penalized
             .iter()
             .enumerate()
             .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .map_or(0, |(idx, _)| idx as u32)
     } else {
-        crate::gguf::OwnedQuantizedModel::sample_topk(logits, temperature, top_k)
+        crate::gguf::OwnedQuantizedModel::sample_topk(&penalized, temperature, top_k)
     }
 }
 
@@ -369,11 +386,15 @@ impl OwnedQuantizedModelCuda {
         // download per-slot logits and sample each by its OWN config (temperature/top_k) —
         // the batched path otherwise forces on-GPU greedy argmax for EVERY request, silently
         // ignoring temperature/top_k/seed. All-greedy batches keep the faster on-GPU argmax.
+        //
+        // PMAT-816: an active repetition penalty (repeat_penalty != 1.0 && repeat_last_n > 0)
+        // ALSO requires host-side logits so the penalty can be applied before argmax —
+        // otherwise repeat_penalty/repeat_last_n are silently dropped on the batched path.
         let any_sampling = state
             .configs
             .iter()
             .take(state.m)
-            .any(|c| c.temperature > 0.0);
+            .any(|c| c.temperature > 0.0 || (c.repeat_penalty != 1.0 && c.repeat_last_n > 0));
 
         let token_ids: Vec<u32> = if any_sampling {
             let vocab = state.vocab_size;
@@ -401,6 +422,9 @@ impl OwnedQuantizedModelCuda {
                         slot_logits,
                         cfg.temperature,
                         cfg.top_k,
+                        cfg.repeat_penalty,
+                        cfg.repeat_last_n,
+                        &state.sequences[slot],
                     )
                 })
                 .collect()
@@ -1019,18 +1043,35 @@ impl OwnedQuantizedModelCuda {
 mod pmat764_select_batched_token_tests {
     use super::select_batched_token;
 
+    // Neutral repetition penalty (no-op) for the temperature/top_k tests.
+    const NO_PEN: f32 = 1.0;
+    const NO_WIN: usize = 0;
+
     #[test]
     fn temperature_zero_is_greedy_argmax() {
         // temp==0 must pick the max-logit index (deterministic), NOT sample.
-        assert_eq!(select_batched_token(&[1.0, 5.0, 2.0], 0.0, 40), 1);
-        assert_eq!(select_batched_token(&[9.0, 5.0, 2.0], 0.0, 40), 0);
+        assert_eq!(select_batched_token(&[1.0, 5.0, 2.0], 0.0, 40, NO_PEN, NO_WIN, &[]), 1);
+        assert_eq!(select_batched_token(&[9.0, 5.0, 2.0], 0.0, 40, NO_PEN, NO_WIN, &[]), 0);
     }
 
     #[test]
     fn top_k_one_is_greedy_at_any_temperature() {
         // top_k==1 keeps only the single best token → deterministic argmax even when
         // temperature > 0 (the sampling branch with a 1-token nucleus).
-        assert_eq!(select_batched_token(&[1.0, 5.0, 2.0], 1.5, 1), 1);
-        assert_eq!(select_batched_token(&[9.0, 5.0, 2.0], 0.9, 1), 0);
+        assert_eq!(select_batched_token(&[1.0, 5.0, 2.0], 1.5, 1, NO_PEN, NO_WIN, &[]), 1);
+        assert_eq!(select_batched_token(&[9.0, 5.0, 2.0], 0.9, 1, NO_PEN, NO_WIN, &[]), 0);
+    }
+
+    /// PMAT-816: per-slot repetition penalty must change the batched greedy token.
+    /// RED before fix (penalty dropped → still token 0); GREEN after.
+    #[test]
+    fn batched_repeat_penalty_changes_greedy_token() {
+        // Token 0 is dominant AND repeated in the slot's sequence.
+        let logits = [10.0_f32, 9.0, 1.0];
+        let recent = [0u32, 0, 0];
+        // Neutral: argmax stays at the repeated token 0.
+        assert_eq!(select_batched_token(&logits, 0.0, 40, NO_PEN, NO_WIN, &recent), 0);
+        // Active penalty: 10.0 / 2.0 = 5.0 < 9.0 → moves to token 1.
+        assert_eq!(select_batched_token(&logits, 0.0, 40, 2.0, 64, &recent), 1);
     }
 }

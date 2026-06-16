@@ -1,11 +1,16 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-02-18'
+  updated: '2026-06-16'
   author: PAIML Engineering
   description: Sampling algorithm invariants for autoregressive generation
   references:
   - Holtzman et al. (2019) The Curious Case of Neural Text Degeneration
   - Qwen2.5-Coder Showcase Spec §14.5
+  - 'PMAT-816: dense quantized decode silently dropped repeat_penalty/repeat_last_n
+    (same class as top_p) — applied on the MoE path + the DEAD twin sample_advanced,
+    but the LIVE dense decode loops (generate_quantized.rs / generate_scratch.rs +
+    CUDA/cached/batched) only passed temperature+top_k to sample_topk.'
   depends_on:
   - softmax-kernel-v1
 equations:
@@ -46,6 +51,19 @@ equations:
     preconditions:
     - input.len() > 0
     lean_theorem: Theorems.Temperature
+  repetition_penalty:
+    formula: 'for t in recent[len-N..]: l[t] /= R if l[t] > 0 else l[t] *= R'
+    domain: logits ∈ ℝ^V, R (repeat_penalty) >= 1, N (repeat_last_n) >= 0
+    invariants:
+    - 'Neutral no-op: R == 1.0 OR N == 0 OR recent empty => logits unchanged
+      (byte-identical, applies to dense AND MoE decode paths)'
+    - 'Applied BEFORE temperature scaling and BEFORE greedy/argmax (PMAT-383/384,
+      Candle apply_repeat_penalty convention)'
+    - 'PMAT-816: MUST be applied on the LIVE dense decode path (sample_topk chain),
+      not only the MoE path / the dead sample_advanced twin'
+    - 'Larger N compounds the penalty (per-occurrence application within window)'
+    preconditions:
+    - input.len() > 0
 proof_obligations:
 - type: equivalence
   property: Greedy = argmax
@@ -69,6 +87,16 @@ proof_obligations:
   property: SIMD sampling equivalence
   tolerance: 0.0
   applies_to: simd
+- type: equivalence
+  property: Repetition penalty neutral no-op
+  formal: apply_repeat_penalty(l, 1.0, n, recent) == l
+  tolerance: 0.0
+  applies_to: all
+- type: bound
+  property: Repetition penalty dense-path application
+  formal: dense_decode_token(repeat_penalty>1) != dense_decode_token(repeat_penalty==1)
+    when the repeated token is the argmax
+  applies_to: all
 falsification_tests:
 - id: FALSIFY-SA-001
   rule: Greedy = argmax
@@ -95,6 +123,24 @@ falsification_tests:
   prediction: SIMD sampling matches scalar
   test: proptest
   if_fails: ' compare scalar vs SIMD sampling:SIMD sampler selects different tokens'
+- id: FALSIFY-SA-006
+  rule: Repetition penalty neutral no-op
+  prediction: 'apply_repeat_penalty(l, 1.0, n, recent) and (l, R, 0, recent) and
+    (l, R, n, []) all return the input logits BORROWED unchanged (byte-identical,
+    no allocation) — no-regression for existing callers (default config R==1.0).'
+  test: 'cargo test -p aprender-serve --lib rep_penalty_neutral_is_byte_identical_borrow'
+  if_fails: 'Neutral penalty allocated or mutated logits — breaks the byte-identical
+    no-regression invariant for the default-config decode path.'
+- id: FALSIFY-SA-007
+  rule: Dense-path repetition penalty application (PMAT-816)
+  prediction: 'repeat_penalty > 1.0 on the LIVE dense decode path (sample_topk chain,
+    including the batched select) moves the greedy/sampled token off a recently-repeated
+    argmax token; larger repeat_last_n compounds the penalty.'
+  test: 'cargo test -p aprender-serve --lib rep_penalty_changes_greedy_token
+    rep_penalty_window_is_bounded_by_repeat_last_n batched_repeat_penalty_changes_greedy_token'
+  if_fails: 'repeat_penalty / repeat_last_n silently dropped on the dense path —
+    apply_repeat_penalty not invoked before argmax/sample_topk in one of the live
+    decode loops (the original bug: only temperature+top_k reached sampling).'
 kani_harnesses:
 - id: KANI-SA-001
   obligation: SA-EQ-001

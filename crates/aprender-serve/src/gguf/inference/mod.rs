@@ -37,5 +37,10 @@ pub use cached::{
 // PMAT-395: Re-export encoder-decoder types
 pub use forward::EncoderOutput;
 
+// PMAT-816: re-export the dense-path repetition-penalty helper so the
+// CUDA / cached / batched decode loops (in sibling modules) can apply
+// repeat_penalty / repeat_last_n BEFORE sampling, matching the CPU path.
+pub(crate) use generation::apply_repeat_penalty;
+
 // Re-export impl extension for OwnedQuantizedModel
 // The actual impl blocks are in each submodule

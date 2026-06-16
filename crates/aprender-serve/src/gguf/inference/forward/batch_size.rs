@@ -92,12 +92,19 @@ impl OwnedQuantizedModel {
                 let logits =
                     self.forward_single_with_cache(last_token, &mut caches[req_idx], position)?;
 
+                // PMAT-816: apply per-request repetition penalty BEFORE sampling.
+                let penalized = crate::gguf::inference::apply_repeat_penalty(
+                    &logits,
+                    config.repeat_penalty,
+                    config.repeat_last_n,
+                    &all_tokens[req_idx],
+                );
                 // Sample next token
                 let next_token = if config.temperature == 0.0 || config.top_k == 1 {
-                    ops::argmax(&logits)
+                    ops::argmax(&penalized)
                 } else {
                     crate::gguf::OwnedQuantizedModel::sample_topk(
-                        &logits,
+                        &penalized,
                         config.temperature,
                         config.top_k,
                     )

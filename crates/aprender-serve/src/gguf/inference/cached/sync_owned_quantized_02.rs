@@ -125,10 +125,17 @@ impl OwnedQuantizedModelCachedSync {
                 // Sample and update sequences
                 for (i, &prompt_idx) in active_indices.iter().enumerate() {
                     let logits = &all_logits[i];
+                    // PMAT-816: apply per-request repetition penalty BEFORE sampling.
+                    let penalized = crate::gguf::inference::apply_repeat_penalty(
+                        logits,
+                        config.repeat_penalty,
+                        config.repeat_last_n,
+                        &sequences[prompt_idx],
+                    );
                     let next_token = if config.temperature == 0.0 || config.top_k == 1 {
-                        OwnedQuantizedModel::argmax(logits)
+                        OwnedQuantizedModel::argmax(&penalized)
                     } else {
-                        OwnedQuantizedModel::sample_topk(logits, config.temperature, config.top_k)
+                        OwnedQuantizedModel::sample_topk(&penalized, config.temperature, config.top_k)
                     };
 
                     if config.stop_tokens.contains(&next_token) {
@@ -154,10 +161,17 @@ impl OwnedQuantizedModelCachedSync {
                         position,
                     )?;
 
+                    // PMAT-816: apply per-request repetition penalty BEFORE sampling.
+                    let penalized = crate::gguf::inference::apply_repeat_penalty(
+                        &logits,
+                        config.repeat_penalty,
+                        config.repeat_last_n,
+                        &sequences[prompt_idx],
+                    );
                     let next_token = if config.temperature == 0.0 || config.top_k == 1 {
-                        OwnedQuantizedModel::argmax(&logits)
+                        OwnedQuantizedModel::argmax(&penalized)
                     } else {
-                        OwnedQuantizedModel::sample_topk(&logits, config.temperature, config.top_k)
+                        OwnedQuantizedModel::sample_topk(&penalized, config.temperature, config.top_k)
                     };
 
                     if config.stop_tokens.contains(&next_token) {

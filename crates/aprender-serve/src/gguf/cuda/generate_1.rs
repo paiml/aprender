@@ -166,8 +166,13 @@ impl OwnedQuantizedModelCuda {
         } else {
             config.max_tokens
         };
+        // PMAT-816: when repetition penalty is active the greedy argmax must run
+        // on host-side logits (so repeat_penalty/repeat_last_n can be applied);
+        // when neutral, keep the fast on-GPU argmax path.
+        let rep_active = config.repeat_penalty != 1.0 && config.repeat_last_n > 0;
         for token_num in 0..max_decode {
-            let next_token = if config.temperature == 0.0 || config.top_k == 1 {
+            let greedy = config.temperature == 0.0 || config.top_k == 1;
+            let next_token = if greedy && !rep_active {
                 let tok = self.forward_gpu_resident_to_token_id(last_token, &mut cache, position)?;
                 if token_num == first_token_offset && prefill_first_token.is_none() {
                     ttft_mark!("first_decode");
@@ -175,7 +180,17 @@ impl OwnedQuantizedModelCuda {
                 tok
             } else {
                 let logits = self.forward_gpu_resident(last_token, &mut cache, position)?;
-                OwnedQuantizedModel::sample_topk(&logits, config.temperature, config.top_k)
+                let penalized = crate::gguf::inference::apply_repeat_penalty(
+                    &logits,
+                    config.repeat_penalty,
+                    config.repeat_last_n,
+                    &tokens,
+                );
+                if greedy {
+                    OwnedQuantizedModel::argmax(&penalized)
+                } else {
+                    OwnedQuantizedModel::sample_topk(&penalized, config.temperature, config.top_k)
+                }
             };
 
             // Check stop tokens
