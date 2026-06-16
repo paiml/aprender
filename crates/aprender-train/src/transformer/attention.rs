@@ -47,6 +47,8 @@ fn apply_qk_norm(
     let total_dim = num_heads * head_dim;
     let eps = 1e-6_f32;
     let mut out = vec![0.0f32; seq_len * total_dim];
+    // PMAT-806b: cache per-(s,h) RMS so the backward op does not recompute it.
+    let mut rms_values = vec![0.0f32; seq_len * num_heads];
 
     for s in 0..seq_len {
         for h in 0..num_heads {
@@ -58,6 +60,7 @@ fn apply_qk_norm(
                 sum_sq += v * v;
             }
             let rms = (sum_sq / head_dim as f32 + eps).sqrt();
+            rms_values[s * num_heads + h] = rms;
             let inv_rms = 1.0 / rms;
             for d in 0..head_dim {
                 out[offset + d] = x_slice[offset + d] * inv_rms * w_slice[d];
@@ -65,7 +68,107 @@ fn apply_qk_norm(
         }
     }
 
-    Tensor::from_vec(out, x.requires_grad())
+    // PMAT-806b: previously this returned `Tensor::from_vec(out, x.requires_grad())`
+    // with NO backward op — an autograd LEAF. Per-head QK-norm is applied to Q and
+    // K (Qwen3-class models), so the missing backward SEVERED the graph: neither the
+    // Q/K projections (and their upstream LoRA adapters) nor the q_norm/k_norm
+    // weights themselves received any gradient. Same defect class as the RoPE leaf
+    // fixed in PMAT-805. Attach `QkNormBackward` (the standard per-head RMSNorm vjp)
+    // so the graph stays connected through QK-norm.
+    let requires_grad = x.requires_grad() || norm_weight.requires_grad();
+    let mut result = Tensor::from_vec(out, requires_grad);
+
+    if requires_grad {
+        let backward_op = Rc::new(QkNormBackward {
+            x: x.clone(),
+            weight: norm_weight.clone(),
+            rms_values,
+            seq_len,
+            num_heads,
+            head_dim,
+            total_dim,
+            result_grad: result.grad_cell(),
+        });
+        result.set_backward_op(backward_op);
+    }
+
+    result
+}
+
+/// Backward for [`apply_qk_norm`] — per-head RMSNorm with a shared `[head_dim]`
+/// weight applied independently to every `(seq, head)` slice.
+///
+/// Forward (for each `(s, h)` head-slice, `n = head_dim`, `rms = sqrt(mean(x²)+eps)`):
+///   `y[d] = x[d] / rms · w[d]`
+///
+/// The standard RMSNorm vjp (the same math as `RMSNorm::forward_batched`'s
+/// `RMSNormBatchedBackward`, but tiled per head with a weight that is *reused*
+/// across all heads, so `dw` accumulates over every `(s, h)`):
+///   `c     = Σ_i(g[i]·w[i]·x[i]) / (n · rms²)`
+///   `dx[d] = (g[d]·w[d] − x[d]·c) / rms`            (the `−x·(x·g)/(n·rms³)` correction)
+///   `dw[d] = Σ_{s,h}(g[s,h,d]·x[s,h,d] / rms_{s,h})`
+struct QkNormBackward {
+    x: Tensor,
+    weight: Tensor,
+    rms_values: Vec<f32>,
+    seq_len: usize,
+    num_heads: usize,
+    head_dim: usize,
+    total_dim: usize,
+    result_grad: Rc<RefCell<Option<Array1<f32>>>>,
+}
+
+impl BackwardOp for QkNormBackward {
+    fn backward(&self) {
+        let Some(grad_out) = self.result_grad.borrow().as_ref().cloned() else { return };
+        let go = grad_out.as_slice().expect("qk-norm grad contiguous");
+        let xd = self.x.data();
+        let x_sl = xd.as_slice().expect("qk-norm x contiguous");
+        let wd = self.weight.data();
+        let w_sl = wd.as_slice().expect("qk-norm weight contiguous");
+        let n = self.head_dim as f32;
+
+        let mut grad_x = vec![0.0f32; self.seq_len * self.total_dim];
+        // The norm weight is shared across every head and position, so its grad
+        // accumulates over all (s, h) slices.
+        let mut grad_w = vec![0.0f32; self.head_dim];
+
+        for s in 0..self.seq_len {
+            for h in 0..self.num_heads {
+                let offset = s * self.total_dim + h * self.head_dim;
+                let rms = self.rms_values[s * self.num_heads + h];
+
+                // c = Σ_i(g[i]·w[i]·x[i]) / (n · rms²)
+                let mut dot = 0.0f32;
+                for d in 0..self.head_dim {
+                    dot += go[offset + d] * w_sl[d] * x_sl[offset + d];
+                }
+                let c = dot / (n * rms * rms);
+
+                for d in 0..self.head_dim {
+                    // dx[d] = (g[d]·w[d] − x[d]·c) / rms
+                    grad_x[offset + d] = (go[offset + d] * w_sl[d] - x_sl[offset + d] * c) / rms;
+                    // dw[d] += g[d]·x[d] / rms  (accumulate over all heads/positions)
+                    grad_w[d] += go[offset + d] * x_sl[offset + d] / rms;
+                }
+            }
+        }
+
+        if self.x.requires_grad() {
+            self.x.accumulate_grad(Array1::from(grad_x));
+        }
+        if self.weight.requires_grad() {
+            self.weight.accumulate_grad(Array1::from(grad_w));
+        }
+
+        // Continue backward through the inputs (Q/K projection + norm weight).
+        if let Some(op) = self.x.backward_op() {
+            op.backward();
+        }
+        if let Some(op) = self.weight.backward_op() {
+            op.backward();
+        }
+    }
 }
 
 /// Apply Rotary Position Embedding (RoPE) to Q or K tensor (ENT-269).
@@ -1150,8 +1253,7 @@ mod tests {
         let theta = 10000.0f32;
 
         // Deterministic input + upstream gradient weights.
-        let x_data: Vec<f32> =
-            (0..total).map(|i| ((i as f32 * 0.37).sin() * 1.5) + 0.1).collect();
+        let x_data: Vec<f32> = (0..total).map(|i| ((i as f32 * 0.37).sin() * 1.5) + 0.1).collect();
         let w: Vec<f32> = (0..total).map(|i| ((i as f32 * 0.21).cos() * 0.8) - 0.05).collect();
 
         // Analytical gradient via RopeBackward.
@@ -1182,6 +1284,143 @@ mod tests {
                 numerical
             );
         }
+    }
+
+    /// PMAT-806b: per-head QK-norm must propagate gradients to its INPUT (it is
+    /// no longer an autograd leaf). Validate `QkNormBackward`'s dL/dx against
+    /// finite differences of `L = sum(qk_norm(x, w) * g)` so dL/dx is the standard
+    /// per-head RMSNorm vjp. A wrong backward silently trains in the wrong
+    /// direction, so the finite-diff check is the load-bearing falsifier.
+    #[test]
+    fn falsify_pmat806b_qk_norm_backward_dx_matches_finite_difference() {
+        let seq_len = 3usize;
+        let num_heads = 2usize;
+        let head_dim = 4usize;
+        let total = seq_len * num_heads * head_dim;
+
+        // Deterministic input, per-head norm weight, and upstream gradient.
+        let x_data: Vec<f32> = (0..total).map(|i| ((i as f32 * 0.41).sin() * 1.3) + 0.2).collect();
+        let w_data: Vec<f32> =
+            (0..head_dim).map(|d| ((d as f32 * 0.7).cos() * 0.5) + 1.0).collect();
+        let g: Vec<f32> = (0..total).map(|i| ((i as f32 * 0.23).cos() * 0.9) - 0.04).collect();
+
+        // Analytical gradient via QkNormBackward (weight requires_grad=false here so
+        // only x's grad is exercised on the dx path).
+        let x = Tensor::from_vec(x_data.clone(), true);
+        let w = Tensor::from_vec(w_data.clone(), false);
+        let y = apply_qk_norm(&x, &w, seq_len, num_heads, head_dim);
+        y.set_grad(Array1::from(g.clone()));
+        y.backward_op().expect("qk_norm must have a backward op").backward();
+        let analytical = x.grad().expect("x must have grad after qk_norm backward").to_vec();
+
+        // Numerical gradient: dL/dx_j ≈ (L(x+h) - L(x-h)) / 2h, L = sum(qk_norm(x) · g).
+        let h = 1e-3f32;
+        let loss = |xv: &[f32]| -> f32 {
+            let t = Tensor::from_vec(xv.to_vec(), false);
+            let wt = Tensor::from_vec(w_data.clone(), false);
+            let r = apply_qk_norm(&t, &wt, seq_len, num_heads, head_dim);
+            r.data().iter().zip(&g).map(|(a, b)| a * b).sum()
+        };
+        for j in 0..total {
+            let mut xp = x_data.clone();
+            let mut xm = x_data.clone();
+            xp[j] += h;
+            xm[j] -= h;
+            let numerical = (loss(&xp) - loss(&xm)) / (2.0 * h);
+            let diff = (analytical[j] - numerical).abs();
+            assert!(
+                diff < 1e-2,
+                "FALSIFIED: QK-norm dx[{j}] analytical={} numerical={} diff={diff}",
+                analytical[j],
+                numerical
+            );
+        }
+    }
+
+    /// PMAT-806b: the q_norm/k_norm WEIGHT must also receive gradient (the shared
+    /// `[head_dim]` weight accumulates over every head and position). Validate
+    /// `QkNormBackward`'s dL/dw against finite differences. This is the formula
+    /// that differs most from the per-row batched RMSNorm (weight reuse across
+    /// heads), so it gets its own falsifier.
+    #[test]
+    fn falsify_pmat806b_qk_norm_backward_dw_matches_finite_difference() {
+        let seq_len = 3usize;
+        let num_heads = 2usize;
+        let head_dim = 4usize;
+        let total = seq_len * num_heads * head_dim;
+
+        let x_data: Vec<f32> = (0..total).map(|i| ((i as f32 * 0.41).sin() * 1.3) + 0.2).collect();
+        let w_data: Vec<f32> =
+            (0..head_dim).map(|d| ((d as f32 * 0.7).cos() * 0.5) + 1.0).collect();
+        let g: Vec<f32> = (0..total).map(|i| ((i as f32 * 0.23).cos() * 0.9) - 0.04).collect();
+
+        // Analytical gradient via QkNormBackward (weight requires_grad=true).
+        let x = Tensor::from_vec(x_data.clone(), false);
+        let w = Tensor::from_vec(w_data.clone(), true);
+        let y = apply_qk_norm(&x, &w, seq_len, num_heads, head_dim);
+        y.set_grad(Array1::from(g.clone()));
+        y.backward_op().expect("qk_norm must have a backward op").backward();
+        let analytical = w.grad().expect("weight must have grad after qk_norm backward").to_vec();
+
+        // Numerical gradient w.r.t. each weight element: L = sum(qk_norm(x, w) · g).
+        let h = 1e-3f32;
+        let loss = |wv: &[f32]| -> f32 {
+            let t = Tensor::from_vec(x_data.clone(), false);
+            let wt = Tensor::from_vec(wv.to_vec(), false);
+            let r = apply_qk_norm(&t, &wt, seq_len, num_heads, head_dim);
+            r.data().iter().zip(&g).map(|(a, b)| a * b).sum()
+        };
+        for d in 0..head_dim {
+            let mut wp = w_data.clone();
+            let mut wm = w_data.clone();
+            wp[d] += h;
+            wm[d] -= h;
+            let numerical = (loss(&wp) - loss(&wm)) / (2.0 * h);
+            let diff = (analytical[d] - numerical).abs();
+            assert!(
+                diff < 1e-2,
+                "FALSIFIED: QK-norm dw[{d}] analytical={} numerical={} diff={diff}",
+                analytical[d],
+                numerical
+            );
+        }
+    }
+
+    /// PMAT-806b: RED-without-the-backward guard. Before the fix `apply_qk_norm`
+    /// returned an autograd leaf (no backward op + dropped the weight's
+    /// requires_grad), so a downstream loss produced ZERO gradient for both the
+    /// input and the norm weight. This asserts the graph is now connected: a
+    /// backward over `qk_norm(x, w)` yields a non-zero grad on x AND on w.
+    #[test]
+    fn falsify_pmat806b_qk_norm_no_longer_severs_graph() {
+        let seq_len = 2usize;
+        let num_heads = 2usize;
+        let head_dim = 4usize;
+        let total = seq_len * num_heads * head_dim;
+
+        let x_data: Vec<f32> = (0..total).map(|i| ((i as f32 * 0.3).sin()) + 0.5).collect();
+        let w_data: Vec<f32> = (0..head_dim).map(|d| 1.0 + 0.1 * d as f32).collect();
+        let g: Vec<f32> = (0..total).map(|_| 1.0).collect();
+
+        let x = Tensor::from_vec(x_data, true);
+        let w = Tensor::from_vec(w_data, true);
+        let y = apply_qk_norm(&x, &w, seq_len, num_heads, head_dim);
+
+        // The result MUST carry a backward op (not a leaf) and require grad.
+        assert!(y.requires_grad(), "qk_norm output must require grad");
+        let op =
+            y.backward_op().expect("FALSIFIED: qk_norm returned an autograd LEAF (no backward op)");
+        y.set_grad(Array1::from(g));
+        op.backward();
+
+        let gx = x.grad().expect("FALSIFIED: no grad reached qk_norm input (graph severed)");
+        let gw = w
+            .grad()
+            .expect("FALSIFIED: no grad reached qk_norm weight (weight requires_grad dropped)");
+        let max_gx = gx.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+        let max_gw = gw.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+        assert!(max_gx > 0.0, "FALSIFIED: qk_norm input grad is all-zero");
+        assert!(max_gw > 0.0, "FALSIFIED: qk_norm weight grad is all-zero");
     }
 
     #[test]

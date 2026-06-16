@@ -1,5 +1,5 @@
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-13"
   author: PAIML Engineering
   registry: true
@@ -7,17 +7,19 @@ metadata:
   references:
     - "Provable contract for lora-gradient-flow-v1"
     - "PMAT-805: CPU train_step routed through model.forward() (no LoRA) and apply_rope severed the autograd graph for the Q projection — both adapters silently untrained on the default q_proj+v_proj target set"
+    - "PMAT-806b: apply_qk_norm (per-head RMSNorm on Q/K, Qwen3-class models) was the SAME autograd-leaf-severance pattern as RoPE — it returned a leaf, so for Qwen3 QK-norm models the gradient was severed and the Q/K-norm params (and the upstream q_proj adapter) did not train. Latent under tiny() (q_norm: None). Fixed with QkNormBackward (standard per-head RMSNorm vjp), finite-diff verified for both dx and dw."
 
 kind: AlgorithmContract
 name: lora-gradient-flow
-version: "1.1.0"
+version: "1.2.0"
 scope: "crates/aprender-train/src/finetune/"
 
 description: |
   LoRA adapter gradients flow correctly: dL/dA and dL/dB computed via chain rule through frozen base.
   The CPU forward used for loss MUST route through `forward_with_lora` (not plain `model.forward`),
-  and every op between the loss and the adapters — including RoPE — MUST be autograd-connected so
-  gradients reach BOTH the q_proj and v_proj adapters (PMAT-805).
+  and every op between the loss and the adapters — including RoPE and per-head QK-norm — MUST be
+  autograd-connected so gradients reach BOTH the q_proj and v_proj adapters (PMAT-805) and, on
+  Qwen3-class models, the q_norm/k_norm weights and the q_proj adapter upstream of QK-norm (PMAT-806b).
 
 equations:
   frozen_base:
@@ -31,6 +33,10 @@ equations:
   rope_backward:
     description: "RoPE is autograd-connected: grad_x = R(-θ)·grad_out (transpose rotation)"
     formula: "grad_x[i] = g[i]·cos(θ) + g[i+half]·sin(θ); grad_x[i+half] = -g[i]·sin(θ) + g[i+half]·cos(θ)"
+
+  qk_norm_backward:
+    description: "Per-head QK-norm (Qwen3) is autograd-connected: standard per-head RMSNorm vjp for input x AND shared head_dim weight w (PMAT-806b)"
+    formula: "c = Σ_i(g[i]·w[i]·x[i])/(n·rms²); grad_x[d] = (g[d]·w[d] − x[d]·c)/rms; grad_w[d] = Σ_{s,h}(g[s,h,d]·x[s,h,d]/rms_{s,h})"
 
 falsification:
   - id: FALSIFY-LORA_GRADIENT_FLOW_V1_001
@@ -47,3 +53,18 @@ falsification:
     description: "RoPE backward matches finite-difference gradients (graph not severed at RoPE)"
     test: "crates/aprender-train/src/transformer/attention.rs::tests::falsify_pmat805_rope_backward_matches_finite_difference"
     evidence: "cargo test -p aprender-train --lib falsify_pmat805_rope_backward_matches_finite_difference"
+
+  - id: FALSIFY-LORA_GRADIENT_FLOW_V1_004
+    description: "Per-head QK-norm backward dL/dx matches finite-difference gradients (graph not severed at QK-norm input)"
+    test: "crates/aprender-train/src/transformer/attention.rs::tests::falsify_pmat806b_qk_norm_backward_dx_matches_finite_difference"
+    evidence: "cargo test -p aprender-train --lib falsify_pmat806b_qk_norm_backward_dx_matches_finite_difference"
+
+  - id: FALSIFY-LORA_GRADIENT_FLOW_V1_005
+    description: "Per-head QK-norm backward dL/dw matches finite-difference gradients (shared head_dim norm weight trains; grad accumulates over all heads/positions)"
+    test: "crates/aprender-train/src/transformer/attention.rs::tests::falsify_pmat806b_qk_norm_backward_dw_matches_finite_difference"
+    evidence: "cargo test -p aprender-train --lib falsify_pmat806b_qk_norm_backward_dw_matches_finite_difference"
+
+  - id: FALSIFY-LORA_GRADIENT_FLOW_V1_006
+    description: "On a Qwen3-class model (q_norm/k_norm set), per-head QK-norm does NOT sever the Q adapter's gradient — overfit-one-batch moves the Q adapter B params (q_delta > 0) and strictly decreases loss (RED before QkNormBackward: q_delta == 0)"
+    test: "crates/aprender-train/src/finetune/instruct_pipeline/tests.rs::falsify_pmat806b_qk_norm_does_not_sever_q_adapter_overfit_one_batch"
+    evidence: "cargo test -p aprender-train --lib falsify_pmat806b_qk_norm_does_not_sever_q_adapter_overfit_one_batch"

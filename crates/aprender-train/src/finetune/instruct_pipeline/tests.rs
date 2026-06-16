@@ -67,6 +67,81 @@ fn falsify_pmat805_cpu_train_step_trains_lora_overfit_one_batch() {
     );
 }
 
+/// PMAT-806b falsifier: per-head QK-norm (Qwen3-class) must NOT sever the
+/// autograd graph for the Q/K projections.
+///
+/// This is the QK-norm analogue of the PMAT-805 RoPE falsifier. Qwen3-family
+/// models apply a per-head RMSNorm to Q and K (`q_norm`/`k_norm`) BEFORE RoPE.
+/// Before this fix `apply_qk_norm` returned an autograd LEAF (no backward op),
+/// so on a model WITH `q_norm`/`k_norm` set the gradient was severed for the Q
+/// projection → the Q LoRA adapter received zero gradient (RED: q_delta == 0).
+/// `tiny()` has `q_norm: None` so the bug was latent; here we inject `q_norm`
+/// and `k_norm` to construct a Qwen3-class config and assert the Q adapter now
+/// trains (GREEN: q_delta > 0) and the loss strictly decreases.
+#[test]
+fn falsify_pmat806b_qk_norm_does_not_sever_q_adapter_overfit_one_batch() {
+    let model_config = TransformerConfig::tiny();
+    let head_dim = model_config.head_dim(); // tiny(): 64/2 = 32
+    let instruct_config = InstructConfig {
+        lora_rank: 8,
+        lora_alpha: 16.0,
+        learning_rate: 1e-2,
+        max_seq_len: 64,
+        gradient_clip_norm: None,
+        ..InstructConfig::default()
+    };
+    let mut pipeline = InstructPipeline::new(&model_config, instruct_config);
+
+    // Inject per-head QK-norm weights on EVERY layer → Qwen3-class model.
+    // A non-unit weight makes the qk-norm transform (and its backward) load-bearing.
+    let qk_w: Vec<f32> = (0..head_dim).map(|d| 1.0 + 0.05 * (d as f32)).collect();
+    for layer in &mut pipeline.model.layers {
+        layer.self_attn.q_norm = Some(Tensor::from_vec(qk_w.clone(), true));
+        layer.self_attn.k_norm = Some(Tensor::from_vec(qk_w.clone(), true));
+    }
+
+    let prompt_ids: Vec<u32> = vec![1, 2, 3, 4, 5];
+    let response_ids: Vec<u32> = vec![6, 7, 8, 9, 10];
+
+    // index 0 = Q0 (goes through QK-norm + RoPE), index 1 = V0 (neither).
+    let q_b_before: Vec<f32> = pipeline.lora_layers[0].lora_b().data().to_vec();
+    let v_b_before: Vec<f32> = pipeline.lora_layers[1].lora_b().data().to_vec();
+
+    let first = pipeline.train_step(&prompt_ids, &response_ids);
+    let mut last_loss = first.loss;
+    assert!(first.loss.is_finite() && first.loss > 0.0, "initial loss must be finite & positive");
+
+    for _ in 0..25 {
+        let r = pipeline.train_step(&prompt_ids, &response_ids);
+        last_loss = r.loss;
+    }
+
+    let q_b_after: Vec<f32> = pipeline.lora_layers[0].lora_b().data().to_vec();
+    let v_b_after: Vec<f32> = pipeline.lora_layers[1].lora_b().data().to_vec();
+    let q_delta =
+        q_b_before.iter().zip(&q_b_after).map(|(a, b)| (a - b).abs()).fold(0.0_f32, f32::max);
+    let v_delta =
+        v_b_before.iter().zip(&v_b_after).map(|(a, b)| (a - b).abs()).fold(0.0_f32, f32::max);
+    eprintln!("[PMAT-806b] q_delta(QK-norm+RoPE path)={q_delta} v_delta(plain path)={v_delta}");
+
+    // The Q adapter sits UPSTREAM of qk_norm; before the QkNormBackward fix the
+    // leaf severed its gradient (q_delta would be 0).
+    assert!(
+        q_delta > 1e-6,
+        "FALSIFIED: LoRA Q B params did not change after 26 steps (q_delta={q_delta}). \
+         Per-head QK-norm severs the autograd graph for the Q projection."
+    );
+    // V never goes through qk_norm; it is the control that should always train.
+    assert!(v_delta > 1e-6, "control: V adapter must train (v_delta={v_delta})");
+
+    assert!(
+        last_loss < first.loss - 1e-3,
+        "FALSIFIED: loss did not decrease ({} -> {}) on a Qwen3-class QK-norm model.",
+        first.loss,
+        last_loss
+    );
+}
+
 #[test]
 fn test_instruct_pipeline_new() {
     let model_config = TransformerConfig::tiny();
