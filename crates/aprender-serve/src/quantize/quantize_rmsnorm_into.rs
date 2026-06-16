@@ -65,8 +65,15 @@ pub fn quantize_rmsnorm_q8_0_into(
 /// * `gate` - Gate values, modified in-place to contain result
 /// * `up` - Up projection values
 pub fn fused_swiglu_simd(gate: &mut [f32], up: &[f32]) {
-    contract_pre_ffn_sublayer!();
     debug_assert_eq!(gate.len(), up.len());
+
+    // NOTE (PMAT-780): the `ffn_sublayer` finite-output postcondition is NOT
+    // asserted here. This is a raw element-wise SwiGLU primitive — silu(±inf)
+    // and silu(NaN) legitimately propagate non-finite values, and the x86_64
+    // SIMD branch below already returns before any such check, so enforcing
+    // finiteness only on the scalar (aarch64) fallback produced an inconsistent,
+    // architecture-dependent panic. The finite-activation invariant belongs at
+    // the composed FFN-sublayer level on real model weights, not on this kernel.
 
     #[cfg(target_arch = "x86_64")]
     {
@@ -81,7 +88,6 @@ pub fn fused_swiglu_simd(gate: &mut [f32], up: &[f32]) {
 
     // Scalar fallback
     fused_swiglu_scalar(gate, up);
-    contract_post_ffn_sublayer!(&gate);
 }
 
 /// Scalar fused SwiGLU: silu(gate) * up

@@ -98,6 +98,21 @@ pub enum SafetensorsDtype {
     Bool,
 }
 
+impl SafetensorsDtype {
+    /// Size in bytes of a single element of this dtype.
+    ///
+    /// Matches the official `safetensors` library element widths.
+    #[must_use]
+    pub fn size_in_bytes(&self) -> usize {
+        match self {
+            SafetensorsDtype::F32 | SafetensorsDtype::I32 => 4,
+            SafetensorsDtype::F16 | SafetensorsDtype::BF16 => 2,
+            SafetensorsDtype::I64 => 8,
+            SafetensorsDtype::U8 | SafetensorsDtype::Bool => 1,
+        }
+    }
+}
+
 /// JSON tensor metadata (internal)
 #[derive(Debug, Deserialize)]
 struct TensorMetadata {
@@ -117,6 +132,70 @@ pub struct SafetensorsTensorInfo {
     pub shape: Vec<usize>,
     /// Data offsets in file [start, end)
     pub data_offsets: [usize; 2],
+}
+
+impl SafetensorsTensorInfo {
+    /// Number of bytes occupied by this tensor's data, per `data_offsets`.
+    #[must_use]
+    pub fn byte_len(&self) -> usize {
+        self.data_offsets[1].saturating_sub(self.data_offsets[0])
+    }
+
+    /// Validate that the declared `data_offsets` byte length agrees with the
+    /// declared `shape` and `dtype` element size.
+    ///
+    /// The safetensors spec requires `byte_len == product(shape) * dtype_size`.
+    /// The official `HuggingFace` `safetensors` library rejects any file that
+    /// violates this; aprender's raw reader historically derived the element
+    /// count from the byte length and silently ignored the declared shape, so a
+    /// crafted or corrupt file whose byte length contradicts its shape would
+    /// load with a wrong-sized tensor (garbage inference / integrity hole).
+    /// This check makes the reader fail closed to reach parity with the
+    /// reference implementation (defense-in-depth, per-tensor integrity).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `shape` overflows `usize`, or if the byte length
+    /// does not equal `product(shape) * dtype_size`.
+    pub fn validate_shape_matches_bytes(&self) -> Result<()> {
+        let dtype_size = self.dtype.size_in_bytes();
+
+        let elem_count = self
+            .shape
+            .iter()
+            .try_fold(1usize, |acc, &d| acc.checked_mul(d))
+            .ok_or_else(|| RealizarError::UnsupportedOperation {
+                operation: "validate_shape_matches_bytes".to_string(),
+                reason: format!(
+                    "Tensor '{}' shape {:?} overflows usize",
+                    self.name, self.shape
+                ),
+            })?;
+
+        let expected = elem_count.checked_mul(dtype_size).ok_or_else(|| {
+            RealizarError::UnsupportedOperation {
+                operation: "validate_shape_matches_bytes".to_string(),
+                reason: format!(
+                    "Tensor '{}' byte size (shape {:?} * {dtype_size}) overflows usize",
+                    self.name, self.shape
+                ),
+            }
+        })?;
+
+        let actual = self.byte_len();
+        if actual != expected {
+            return Err(RealizarError::UnsupportedOperation {
+                operation: "validate_shape_matches_bytes".to_string(),
+                reason: format!(
+                    "Tensor '{}' byte length {actual} contradicts declared shape {:?} \
+                     ({:?}, {dtype_size} bytes/elem => expected {expected} bytes)",
+                    self.name, self.shape, self.dtype
+                ),
+            });
+        }
+
+        Ok(())
+    }
 }
 
 /// Safetensors model container

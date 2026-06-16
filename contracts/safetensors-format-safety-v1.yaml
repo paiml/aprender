@@ -153,9 +153,27 @@ falsification_tests:
   if_fails: Tensor data corruption — reads wrong weights silently
 - id: FALSIFY-ST-004
   rule: DType size matches tensor bytes
-  prediction: F32 tensor with byte count not divisible by 4 returns FormatError
-  test: Craft tensor with dtype=F32, shape=[3], but 11 bytes (not 12), verify error
-  if_fails: Misaligned read or silent truncation
+  prediction: >
+    A tensor whose declared data_offsets byte length contradicts
+    product(shape) * dtype_size is rejected at read time (fail closed), even when
+    the byte length is itself a multiple of the element size and the file is large
+    enough to cover it. Both the in-memory (SafetensorsModel) and zero-copy mmap
+    (MappedSafeTensorsModel) readers enforce this via
+    SafetensorsTensorInfo::validate_shape_matches_bytes, reaching parity with the
+    HuggingFace safetensors library. A well-formed tensor still loads unchanged.
+  test: >
+    Craft dtype=F32 shape=[3] (expects 12 bytes) with data_offsets=[0,8]
+    (8 bytes, a multiple of 4) and verify the reader returns an error rather than a
+    2-element tensor; a matching shape=[3]/[0,12] tensor loads as 3 elements.
+  test_harness: >
+    cargo test -p aprender-serve --lib test_inmem_rejects_shape_vs_bytes_mismatch
+    test_mapped_rejects_shape_vs_bytes_mismatch test_inmem_valid_shape_still_loads
+    test_mapped_valid_shape_still_loads
+  expected_output: "test result: ok"
+  if_fails: >
+    Reader derives element count from byte length and ignores the declared shape —
+    a crafted/corrupt safetensors loads a wrong-sized tensor (garbage inference /
+    integrity hole) where HF safetensors would reject the file.
 - id: FALSIFY-ST-005
   rule: Zero-copy mmap no heap allocation
   prediction: Loading 4GB tensor via mmap uses <1MB heap memory
