@@ -88,6 +88,50 @@ async fn test_deep_apicov_realize_embed_default_model() {
     assert_eq!(result.data[0].embedding.len(), 384); // 384-dim embedding
 }
 
+/// PMAT-802 FALSIFIER (e2e): a batch `input` array must yield one embedding per
+/// input, with `data[i].index == i` in request order. Pre-fix the array body was
+/// rejected at deserialization (422). Tolerates mock-state error responses (as the
+/// sibling tests do), but when OK the batch shape is asserted.
+#[tokio::test]
+async fn test_deep_apicov_embeddings_batch_array_input() {
+    let app = create_test_app_shared();
+    let json = r#"{"input":["first input","second input","third input"]}"#;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/embeddings")
+                .header("content-type", "application/json")
+                .body(Body::from(json))
+                .expect("test"),
+        )
+        .await
+        .expect("test");
+
+    // The array body must NOT be rejected as malformed (422 UNPROCESSABLE_ENTITY).
+    assert_ne!(
+        response.status(),
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "batch array input must deserialize (OpenAI contract)"
+    );
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("test");
+    let result: EmbeddingResponse = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(_) => return, // Mock state: error response, skip body assertions
+    };
+    assert_eq!(result.object, "list");
+    assert_eq!(result.data.len(), 3, "one embedding per input");
+    for (i, d) in result.data.iter().enumerate() {
+        assert_eq!(d.index, i, "data[i].index must equal i (request order)");
+        assert_eq!(d.embedding.len(), 384);
+        assert!(d.embedding.iter().all(|v| v.is_finite()));
+    }
+}
+
 #[tokio::test]
 async fn test_deep_apicov_openai_embeddings_endpoint() {
     let app = create_test_app_shared();
@@ -251,7 +295,7 @@ fn test_deep_apicov_default_functions() {
 #[test]
 fn test_deep_apicov_embedding_request_serialize() {
     let req = EmbeddingRequest {
-        input: "test input".to_string(),
+        input: "test input".to_string().into(),
         model: Some("test-model".to_string()),
     };
     let json = serde_json::to_string(&req).expect("serialize");
