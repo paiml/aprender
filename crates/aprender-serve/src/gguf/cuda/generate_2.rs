@@ -242,9 +242,30 @@ impl OwnedQuantizedModelCuda {
 
         // GH-94: Batched prefill is default (36% throughput improvement).
         // Set BATCHED_PREFILL=0 to disable (serial fallback).
-        let use_batched = std::env::var("BATCHED_PREFILL")
-            .map(|v| v != "0")
-            .unwrap_or(true);
+        //
+        // PMAT-810 (Blackwell batched-prefill KV-cache corruption): on Blackwell
+        // (cc>=120, e.g. GB10 sm_121) the batched prefill path writes a CORRUPT
+        // KV cache. The extracted first token is ~correct (near-tie vs CPU), but
+        // every subsequent decode step reads poisoned K/V and the output collapses
+        // to a single repeated token (measured: CPU/serial-prefill emit
+        // "Certainly! Below is a Rust function that", batched prefill emits
+        // "CertainlyCertainlyCertainly..."). The decode-path parity probe
+        // (PMAT-806 / F2-VALIDATION) only checks the FIRST token, so it accepts
+        // the model and the corruption ships silently. The bug is structural to
+        // batched prefill on Blackwell (it reproduces with FP8_PREFILL=0 / HGEMM
+        // too, so it is NOT the PMAT-806 activation-quant outlier), while serial
+        // prefill (per-token forward_gpu_resident, the PMAT-806 fp32-MWV decode
+        // GEMV) is byte-for-byte correct on-device. Default Blackwell to serial
+        // prefill so quantized models stay coherent; discrete GPUs (sm_89 etc.)
+        // keep the fast batched path unchanged. Explicit BATCHED_PREFILL=1 still
+        // forces batched for A/B testing the deeper KV-scatter root-cause fix.
+        // Contract: contracts/apr-cpu-vs-gpu-output-parity-v1.yaml (FALSIFY-CPU-GPU-009).
+        let is_blackwell = self.executor.gpu_profile.cc >= 120;
+        let use_batched = match std::env::var("BATCHED_PREFILL").as_deref() {
+            Ok("0") => false,
+            Ok(_) => true, // explicit opt-in forces batched even on Blackwell
+            Err(_) => !is_blackwell,
+        };
 
         let prefill_start = std::time::Instant::now();
 
