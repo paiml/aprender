@@ -17,6 +17,7 @@
 use std::os::raw::c_char;
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Once;
 
 use super::sys::{CUcontext, CUdevice, CudaDriver, CUDA_SUCCESS};
 use crate::GpuError;
@@ -25,8 +26,16 @@ use crate::GpuError;
 // Global Initialization State
 // ============================================================================
 
-/// Track whether cuInit has been called
-static CUDA_INITIALIZED: AtomicBool = AtomicBool::new(false);
+/// Serialize the one-time `cuInit` call. A bare `AtomicBool::swap` guard is a
+/// TOCTOU race: a second thread could observe the flag already `true` and call
+/// `cuDeviceGetCount` / `cuDevicePrimaryCtxRetain` *before* the first thread's
+/// `cuInit` returned, getting `count == 0` or a spurious init failure. This
+/// surfaced as flaky `num_devices()`/`CudaExecutor::new(0)` failures when GPU
+/// tests run in parallel. `Once` makes every caller block until `cuInit`
+/// completes exactly once.
+static CUDA_INIT_ONCE: Once = Once::new();
+/// Records whether the one-time `cuInit` succeeded (read after `call_once`).
+static CUDA_INIT_OK: AtomicBool = AtomicBool::new(false);
 
 /// Get the CUDA driver, initializing if needed
 ///
@@ -38,17 +47,18 @@ pub(crate) fn get_driver() -> Result<&'static CudaDriver, GpuError> {
     let driver = CudaDriver::load()
         .ok_or_else(|| GpuError::CudaNotAvailable("CUDA driver not found".to_string()))?;
 
-    // Initialize CUDA if not already done
-    if !CUDA_INITIALIZED.swap(true, Ordering::SeqCst) {
-        // SAFETY: cuInit is safe to call multiple times, we just avoid redundant calls
+    // Initialize CUDA exactly once; concurrent callers BLOCK here until the
+    // single cuInit completes, then all observe the result via CUDA_INIT_OK.
+    CUDA_INIT_ONCE.call_once(|| {
+        // SAFETY: cuInit(0) is the standard CUDA driver init entry point.
         let result = unsafe { (driver.cuInit)(0) };
-        if result != CUDA_SUCCESS {
-            CUDA_INITIALIZED.store(false, Ordering::SeqCst);
-            return Err(GpuError::DeviceInit(format!(
-                "cuInit failed with code {}",
-                result
-            )));
-        }
+        CUDA_INIT_OK.store(result == CUDA_SUCCESS, Ordering::SeqCst);
+    });
+
+    if !CUDA_INIT_OK.load(Ordering::SeqCst) {
+        return Err(GpuError::DeviceInit(
+            "cuInit failed during CUDA driver initialization".to_string(),
+        ));
     }
 
     Ok(driver)
