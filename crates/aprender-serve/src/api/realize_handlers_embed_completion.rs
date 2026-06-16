@@ -14,35 +14,45 @@ pub async fn realize_embed_handler(
         )
     })?;
 
-    // Tokenize input
-    let token_ids = tokenizer.encode(&request.input);
-    let prompt_tokens = token_ids.len();
+    // PMAT-802: OpenAI `/v1/embeddings` accepts `input` as a single string OR an array
+    // of strings, returning one embedding per input in request order. Loop over every
+    // input so a batch request yields `data[i]` with `index == i` (previously only the
+    // single-string form was supported — array input was rejected at deserialization).
+    let mut data = Vec::with_capacity(request.input.len());
+    let mut prompt_tokens = 0usize;
 
-    // Generate simple embedding from token frequencies
-    // In production, this would use the model's hidden states
-    let mut embedding = vec![0.0f32; 384]; // 384-dim embedding
+    for (index, text) in request.input.iter().enumerate() {
+        let token_ids = tokenizer.encode(text);
+        prompt_tokens += token_ids.len();
 
-    for (i, &token_id) in token_ids.iter().enumerate() {
-        let idx = (token_id as usize) % embedding.len();
-        let pos_weight = 1.0 / (1.0 + i as f32);
-        embedding[idx] += pos_weight;
-    }
+        // Generate simple embedding from token frequencies
+        // In production, this would use the model's hidden states
+        let mut embedding = vec![0.0f32; 384]; // 384-dim embedding
 
-    // L2 normalize
-    let norm: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if norm > 0.0 {
-        for v in &mut embedding {
-            *v /= norm;
+        for (i, &token_id) in token_ids.iter().enumerate() {
+            let idx = (token_id as usize) % embedding.len();
+            let pos_weight = 1.0 / (1.0 + i as f32);
+            embedding[idx] += pos_weight;
         }
+
+        // L2 normalize
+        let norm: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
+        if norm > 0.0 {
+            for v in &mut embedding {
+                *v /= norm;
+            }
+        }
+
+        data.push(EmbeddingData {
+            object: "embedding".to_string(),
+            index,
+            embedding,
+        });
     }
 
     Ok(Json(EmbeddingResponse {
         object: "list".to_string(),
-        data: vec![EmbeddingData {
-            object: "embedding".to_string(),
-            index: 0,
-            embedding,
-        }],
+        data,
         model: request.model.unwrap_or_else(|| "default".to_string()),
         usage: EmbeddingUsage {
             prompt_tokens,
