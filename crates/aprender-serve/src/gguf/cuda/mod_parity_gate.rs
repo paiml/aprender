@@ -78,6 +78,47 @@ fn parity_gate(cuda_model: &mut OwnedQuantizedModelCuda) -> Result<()> {
     // Reset KV caches so the model starts fresh for actual inference
     cuda_model.executor.reset_kv_cache_gpu();
 
+    // PMAT-798: If the default (fused HW DP4A) path narrowly misses parity,
+    // retry once on the high-precision (float MWV, non-fused) FFN path before
+    // failing closed. The fused gate+up+SwiGLU kernel quantizes activations to
+    // Q8_1, which costs ~1.5% first-token cosine on LLaMA-NORM models with
+    // massive activations (e.g. TinyLlama: 0.972 fused → 0.990 float). Without
+    // this retry such models are wrongly pushed off the GPU. Only retry when we
+    // are close (cosine already in [0.90, gate)) — a genuinely broken GPU forward
+    // (cosine < 0.5) is NOT rescued by changing the FFN precision.
+    let cosine = if cosine < PARITY_GATE_COSINE_MIN && cosine >= 0.90 {
+        let changed = cuda_model.executor.force_high_precision_ffn();
+        if changed {
+            if verbose() {
+                eprintln!(
+                    "[PARITY-GATE] fused gate+up+SwiGLU FFN cosine={:.6} < {:.2}; retrying on unfused FFN path",
+                    cosine, PARITY_GATE_COSINE_MIN,
+                );
+            }
+            cuda_model.executor.reset_kv_cache_gpu();
+            let mut cpu_cache2 = OwnedQuantizedKVCache::new(num_layers, kv_dim, 2);
+            let mut gpu_cache2 = OwnedQuantizedKVCache::new(num_layers, kv_dim, 2);
+            let cpu_logits2 = cuda_model
+                .model
+                .forward_single_with_cache(token_id, &mut cpu_cache2, position)
+                .map_err(|e| {
+                    RealizarError::InferenceError(format!("PARITY-GATE: CPU forward (retry) failed: {e}"))
+                })?;
+            let gpu_logits2 = cuda_model
+                .forward_gpu_resident(token_id, &mut gpu_cache2, position)
+                .map_err(|e| {
+                    RealizarError::InferenceError(format!("PARITY-GATE: GPU forward (retry) failed: {e}"))
+                })?;
+            let cosine2 = cosine_similarity(&cpu_logits2, &gpu_logits2);
+            cuda_model.executor.reset_kv_cache_gpu();
+            cosine2
+        } else {
+            cosine
+        }
+    } else {
+        cosine
+    };
+
     if cosine >= PARITY_GATE_COSINE_MIN {
         if verbose() {
             eprintln!(
