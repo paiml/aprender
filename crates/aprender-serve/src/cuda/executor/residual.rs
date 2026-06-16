@@ -96,6 +96,66 @@ impl CudaExecutor {
         Ok(())
     }
 
+    /// PMAT-792: RoPE NORM-style on GPU with host input/output (convenience).
+    ///
+    /// NORM (LLaMA default, `rope_type == 0`) rotates adjacent pairs
+    /// `(2*i, 2*i+1)`. This wrapper handles host↔device transfers so the
+    /// `Rope` PTX kernel can be parity-tested directly against the CPU
+    /// `OwnedQuantizedModel::apply_rope` reference. `input` must hold
+    /// `num_heads * head_dim` contiguous f32 values.
+    pub fn rope_host(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        position: u32,
+        num_heads: u32,
+        head_dim: u32,
+        theta: f32,
+    ) -> Result<(), GpuError> {
+        let input_gpu = GpuBuffer::from_host(&self.context, input)?;
+        let output_gpu = GpuBuffer::new(&self.context, input.len())?;
+        self.rope_into(
+            &input_gpu,
+            &output_gpu,
+            position,
+            num_heads,
+            head_dim,
+            theta,
+        )?;
+        self.stream.synchronize()?;
+        output_gpu.copy_to_host(output)?;
+        Ok(())
+    }
+
+    /// PMAT-792: RoPE NEOX-style on GPU with host input/output (convenience).
+    ///
+    /// NEOX (`rope_type == 2`, Qwen/GPT-NeoX) rotates split halves
+    /// `(i, i + head_dim/2)`. Wrapper for parity-testing the `RopeNeox`
+    /// PTX kernel against the CPU `apply_rope` NEOX branch.
+    pub fn rope_neox_host(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        position: u32,
+        num_heads: u32,
+        head_dim: u32,
+        theta: f32,
+    ) -> Result<(), GpuError> {
+        let input_gpu = GpuBuffer::from_host(&self.context, input)?;
+        let output_gpu = GpuBuffer::new(&self.context, input.len())?;
+        self.rope_neox_into(
+            &input_gpu,
+            &output_gpu,
+            position,
+            num_heads,
+            head_dim,
+            theta,
+        )?;
+        self.stream.synchronize()?;
+        output_gpu.copy_to_host(output)?;
+        Ok(())
+    }
+
     /// PAR-023: Residual Add on GPU with host input/output (synchronous convenience method)
     ///
     /// This is a convenience wrapper around `residual_add_gpu` that handles
