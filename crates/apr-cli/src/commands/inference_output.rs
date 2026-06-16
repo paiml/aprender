@@ -269,7 +269,17 @@ fn execute_with_realizar(
     }
     config = config
         .with_max_tokens(options.max_tokens)
-        .with_verbose(options.verbose); // NOISY-GUARD F-UX-27: explicit --verbose flag
+        .with_verbose(options.verbose) // NOISY-GUARD F-UX-27: explicit --verbose flag
+        // PMAT-823: forward ALL sampling flags. Previously only max_tokens was
+        // forwarded, so `apr run --temperature/--top-k/--top-p/--seed/
+        // --repeat-penalty/--repeat-last-n` were silently no-ops (the config
+        // defaulted to greedy argmax: temperature 0.0, top_k 1).
+        .with_temperature(options.temperature)
+        .with_top_k(options.top_k)
+        .with_top_p(options.top_p)
+        .with_seed(options.seed)
+        .with_repeat_penalty(options.repeat_penalty)
+        .with_repeat_last_n(options.repeat_last_n);
 
     if options.no_gpu {
         config = config.without_gpu();

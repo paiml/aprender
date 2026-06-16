@@ -54,6 +54,18 @@ pub struct InferenceConfig {
     pub temperature: f32,
     /// Top-k sampling (0 = disabled)
     pub top_k: usize,
+    /// Top-p (nucleus) sampling threshold (None = disabled, i.e. 1.0)
+    /// PMAT-823: previously dropped — `apr run --top-p` was a no-op.
+    pub top_p: Option<f32>,
+    /// RNG seed for stochastic sampling
+    /// PMAT-823: previously dropped — `apr run --seed` was a no-op.
+    pub seed: u64,
+    /// Repetition penalty (1.0 = no penalty)
+    /// PMAT-823: previously dropped — `apr run --repeat-penalty` was a no-op.
+    pub repeat_penalty: f32,
+    /// Context window for repetition penalty
+    /// PMAT-823: previously dropped — `apr run --repeat-last-n` was a no-op.
+    pub repeat_last_n: usize,
     /// Disable GPU acceleration
     pub no_gpu: bool,
     /// Enable inference tracing (APR-TRACE-001)
@@ -84,6 +96,13 @@ impl InferenceConfig {
             max_tokens: 32,
             temperature: 0.0, // Greedy by default
             top_k: 1,
+            // PMAT-823: defaults chosen so a config with no sampling flags
+            // forwards to the SAME greedy QuantizedGenerateConfig as before
+            // (top_p 1.0 / seed 42 / repeat_penalty 1.0 / repeat_last_n 64).
+            top_p: None,
+            seed: 42,
+            repeat_penalty: 1.0,
+            repeat_last_n: 64,
             no_gpu: false,
             trace: false,
             trace_verbose: false,
@@ -130,6 +149,34 @@ impl InferenceConfig {
         self
     }
 
+    /// Set top-p (nucleus) sampling threshold (PMAT-823).
+    #[must_use]
+    pub fn with_top_p(mut self, top_p: Option<f32>) -> Self {
+        self.top_p = top_p;
+        self
+    }
+
+    /// Set the RNG seed for stochastic sampling (PMAT-823).
+    #[must_use]
+    pub fn with_seed(mut self, seed: u64) -> Self {
+        self.seed = seed;
+        self
+    }
+
+    /// Set the repetition penalty (1.0 = no penalty) (PMAT-823).
+    #[must_use]
+    pub fn with_repeat_penalty(mut self, repeat_penalty: f32) -> Self {
+        self.repeat_penalty = repeat_penalty;
+        self
+    }
+
+    /// Set the repetition-penalty context window (PMAT-823).
+    #[must_use]
+    pub fn with_repeat_last_n(mut self, repeat_last_n: usize) -> Self {
+        self.repeat_last_n = repeat_last_n;
+        self
+    }
+
     /// Disable GPU acceleration
     #[must_use]
     pub fn without_gpu(mut self) -> Self {
@@ -163,6 +210,23 @@ impl InferenceConfig {
     pub fn with_stop_tokens(mut self, stop_tokens: Vec<u32>) -> Self {
         self.stop_tokens = stop_tokens;
         self
+    }
+
+    /// PMAT-823: Copy ALL sampling parameters from this `InferenceConfig` into a
+    /// `QuantizedGenerateConfig`, so CLI flags (`--temperature`, `--top-k`,
+    /// `--top-p`, `--seed`, `--repeat-penalty`, `--repeat-last-n`) actually reach
+    /// the decode loop instead of being silently dropped to greedy defaults.
+    ///
+    /// `top_p: None` maps to the disabled threshold `1.0` (matching
+    /// `QuantizedGenerateConfig::default().top_p`), so a default config produces
+    /// a byte-identical greedy `gen_config`.
+    pub(crate) fn apply_sampling_to(&self, gen_config: &mut crate::gguf::QuantizedGenerateConfig) {
+        gen_config.temperature = self.temperature;
+        gen_config.top_k = self.top_k;
+        gen_config.top_p = self.top_p.unwrap_or(1.0);
+        gen_config.seed = self.seed;
+        gen_config.repeat_penalty = self.repeat_penalty;
+        gen_config.repeat_last_n = self.repeat_last_n;
     }
 }
 
