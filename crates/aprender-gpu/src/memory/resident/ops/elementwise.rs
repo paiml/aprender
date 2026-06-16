@@ -425,9 +425,21 @@ impl GpuResidentTensor<f32> {
         let input_ptr = self.as_ptr();
         let output_ptr = output_buffer.as_ptr();
 
+        // The `interleaved_to_batched` PTX kernel declares SIX params
+        // (input_ptr, output_ptr, seq_len, n_heads, head_dim, total_elems) and uses
+        // every one of them. The args slice MUST supply all six — `cuLaunchKernel`
+        // reads one pointer per declared param, so under-supplying makes the driver
+        // dereference past the end of `args` (host-side SIGSEGV inside libcuda,
+        // invisible to compute-sanitizer).
+        let total_elems_u32 = total_elems as u32;
+
         let mut args: Vec<*mut std::ffi::c_void> = vec![
             std::ptr::addr_of!(input_ptr) as *mut _,
             std::ptr::addr_of!(output_ptr) as *mut _,
+            std::ptr::addr_of!(seq_len) as *mut _,
+            std::ptr::addr_of!(n_heads) as *mut _,
+            std::ptr::addr_of!(head_dim) as *mut _,
+            std::ptr::addr_of!(total_elems_u32) as *mut _,
         ];
 
         launch_cached_kernel(
