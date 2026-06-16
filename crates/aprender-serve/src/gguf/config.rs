@@ -1247,4 +1247,35 @@ mod gemma_config_tests {
         assert!(!cfg("gemma", 2048).rmsnorm_unit_offset());
         assert!(!cfg("llama", 4096).rmsnorm_unit_offset());
     }
+
+    /// PMAT-810: gemma2 softcap constants are 50 (attn) / 30 (final); None elsewhere.
+    #[test]
+    fn softcap_constants_gemma2_only() {
+        let g2 = cfg("gemma2", 2304);
+        assert_eq!(g2.attn_logit_softcap(), Some(50.0));
+        assert_eq!(g2.final_logit_softcap(), Some(30.0));
+        for arch in ["gemma", "gemma3", "llama", "qwen2"] {
+            assert_eq!(cfg(arch, 2048).attn_logit_softcap(), None, "{arch} attn softcap");
+            assert_eq!(cfg(arch, 2048).final_logit_softcap(), None, "{arch} final softcap");
+        }
+    }
+
+    /// PMAT-810: attn_scale falls back to 1/sqrt(head_dim) when
+    /// query_pre_attn_scalar is absent (== llama.cpp n_embd_head_k default), and
+    /// uses 1/sqrt(query_pre_attn_scalar) when present.
+    #[test]
+    fn attn_scale_query_pre_attn_scalar_fallback_and_override() {
+        // Default (key absent): 1/sqrt(head_dim). cfg() sets hidden=2304, heads=8
+        // → head_dim = 2304/8 = 288 (no explicit_head_dim in the helper).
+        let mut g = cfg("gemma2", 2304);
+        let hd = g.head_dim() as f32;
+        assert!(g.query_pre_attn_scalar.is_none());
+        assert!((g.attn_scale() - 1.0 / hd.sqrt()).abs() < 1e-6);
+        // Override (9b/27b style): query_pre_attn_scalar=224 → 1/sqrt(224).
+        g.query_pre_attn_scalar = Some(224.0);
+        assert!((g.attn_scale() - 1.0 / 224f32.sqrt()).abs() < 1e-6);
+        // Non-gemma config (llama): None → 1/sqrt(head_dim), unchanged.
+        let l = cfg("llama", 4096);
+        assert!((l.attn_scale() - 1.0 / (l.head_dim() as f32).sqrt()).abs() < 1e-6);
+    }
 }
