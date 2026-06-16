@@ -1,7 +1,7 @@
 contract: apr-serve-openai-compat
 metadata:
   kind: pattern
-  version: "1.7.0"
+  version: "1.8.0"
   description: >
     OpenAI-compatible serve layer (/v1/chat/completions, /v1/completions) fidelity
     invariants. Established by an adversarial audit (2026-06-14) that found 12 confirmed
@@ -72,6 +72,19 @@ proof_obligations:
       reject n>1), seed not plumbed to dense backends, temperature default 0.7 vs OpenAI 1.0
       (default_temperature()); and /v1/completions has no top_k field at all (CompletionRequest
       would need it added — non-standard for completions, deferred).
+  - type: invariant
+    property: >
+      STREAM-TEMPERATURE-ZERO (DISCHARGED — PMAT-790): the STREAMING /v1/chat/completions
+      handler must honor `temperature == 0` as a deterministic (greedy) request, exactly like
+      every NON-STREAMING backend (which forces top_k == 1 via resolve_chat_top_k). Previously
+      openai_chat_completions_stream_handler built a GenerationConfig with the raw 0.0 and ran
+      model.generate -> sample_token -> apply_temperature(0.0), which rejects a non-positive
+      temperature ("Temperature must be a positive finite number") — the handler mapped that
+      Err to HTTP 500, so EVERY streaming chat completion with `temperature: 0` was broken. The
+      config is now built by resolve_stream_generation_config(temperature, top_p, max_tokens),
+      which maps temperature 0 to SamplingStrategy::Greedy with a no-op temperature of 1.0
+      (and ignores top_p when greedy); positive temperatures are unchanged (greedy default, or
+      top-p when set).
 
 falsification_tests:
   - id: FALSIFY-STOP-TRUNCATE-754
@@ -110,3 +123,9 @@ falsification_tests:
     test_harness: '! grep -nE "data\(format!\\(\"data: " crates/aprender-serve/src/api/chat_completions_stream.rs'
     expected_output: "no match (exit 1 from grep = invariant holds)"
     if_fails: 'The streaming handler re-added a manual "data: " prefix → axum double-prefixes the SSE wire (data: data: {json}) and every spec-compliant streaming client fails to parse chunks. NOTE: shape gate (greps source); the behavioral wire-format is verified by matching openai_handlers.rs (axum Event is opaque + the test app loads no model, so no in-CI wire assertion).'
+  - id: FALSIFY-STREAM-TEMP-ZERO-790
+    name: pmat790_stream_temperature_zero_tests
+    prediction: 'resolve_stream_generation_config(temperature, top_p, max_tokens) maps temperature 0.0 to SamplingStrategy::Greedy with a positive (no-op 1.0) temperature, so sample_token() runs WITHOUT error and selects the argmax — directly exercising the model.generate -> sample_token -> apply_temperature chain the streaming handler runs. temperature 0 ignores top_p (stays Greedy). Positive temperatures are unchanged: greedy by default, top-p when set, and remain runnable.'
+    test_harness: 'cargo test -p aprender-serve --lib pmat790_stream_temperature_zero_tests'
+    expected_output: "test result: ok"
+    if_fails: 'The streaming /v1/chat/completions handler passes temperature 0.0 straight into GenerationConfig, so apply_temperature(0.0) returns Err and the handler answers HTTP 500 for every streaming chat completion with temperature 0 (the canonical OpenAI deterministic request) — the pre-PMAT-790 behavior.'
