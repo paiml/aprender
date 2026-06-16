@@ -85,6 +85,11 @@ pub use cuda::{BatchedDecodeState, CudaBackend, CudaInitError};
 #[cfg(feature = "cuda")]
 pub use cuda_model::*;
 pub use model::*;
+// PMAT-785: single-source-of-truth GPU quant whitelist predicate, shared between
+// the primary `apr run`/`apr serve` gate (infer::is_legacy_gguf_quant) and the
+// construction-time gate (OwnedQuantizedModel::has_gpu_unsupported_quant).
+// `loader.rs` include!()s `dtype.rs`, where the predicate is defined.
+pub(crate) use loader::gpu_unsupported_quant_qtype;
 pub use quantized::*;
 pub use runtime::*;
 #[cfg(feature = "gpu")]
