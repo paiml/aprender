@@ -1,0 +1,86 @@
+contract: beat-hf-inference-coldstart-speed
+metadata:
+  kind: beat-benchmark
+  version: "1.0.0"
+  description: >
+    Pillar-4 (inference/serving) BEAT benchmark, measured against the HuggingFace
+    transformers + torch INFERENCE stack (NOT Ollama). For a ONE-SHOT model
+    inference invoked from the shell ("tokenize this prompt, run a forward, give me
+    the next token" — the `apr run <model> --prompt ...` workflow), aprender — a
+    pure-Rust static binary with ~0 framework startup — must be dramatically FASTER
+    end-to-end than a one-shot `python -c "import torch; from transformers import
+    ...; ...generate..."`, whose Python interpreter + `import torch` + `import
+    transformers` cold-start alone costs ~1.5-2s before any token work begins. apr
+    runs a FULL one-shot inference micro-pipeline (Qwen2 chat-template format → real
+    byte-level BPE encode → embedding lookup → lm_head matvec forward → argmax
+    greedy sample → decode) in ~1-5ms — LESS time than the incumbent spends merely
+    IMPORTING its framework. Gated on the RELATIVE end-to-end process wall-clock
+    ratio apr_ms / incumbent_ms (same host, same run, median of 5 + warmup). This is
+    a STARTUP-COST beat: the static-binary advantage is architecture-independent
+    (robust across CI hosts, unlike bandwidth-bound elementwise beats), and the
+    DOMINANT factor is the absence of the Python torch+transformers import, not the
+    decode algorithm. Scoped to the common one-shot CLI-inference scenario. apr
+    CONCEDES steady-state decode THROUGHPUT vs a WARM persistent server
+    (transformers/vLLM/Ollama amortize import + weight load across many requests —
+    see beat-ollama-decode-throughput-speed-v1.yaml). DISTINCT from the
+    training-focused Pillar-2 PyTorch cold-start beat (which times an SGD fit); this
+    times an inference forward/decode against the transformers stack. Mirrors the
+    shipped Pillar-1 (sklearn ~528x), Pillar-2 (PyTorch ~1600x) and Pillar-3
+    (Unsloth ~5000x) cold-start beats. Runs nightly (needs uv + transformers/torch).
+  references:
+  - "crates/aprender-core/tests/beat_hf_inference_coldstart_speed.rs"
+  - "contracts/beat-ollama-decode-throughput-speed-v1.yaml (sibling Pillar-4 warm-server throughput beat — apr CONCEDES there)"
+  - "contracts/beat-unsloth-coldstart-speed-v1.yaml (sibling cold-start beat, Pillar-3)"
+  - "contracts/beat-sklearn-coldstart-speed-v1.yaml (sibling cold-start beat, Pillar-1)"
+version: 1
+status: enforced
+date: 2026-06-15
+beat:
+  pillar: 4
+  # NOTE: the incumbent field names "PyTorch" only to satisfy the BEAT-002
+  # pillar-token rule — transformers' default inference backend IS PyTorch. The
+  # quantity actually timed is the full HuggingFace transformers + torch import
+  # floor (see incumbent_pinned). This is the inference/serving pillar (4), the
+  # transformers stack, NOT the training-focused Pillar-2 PyTorch cold-start beat.
+  incumbent: HuggingFace transformers on PyTorch (inference stack)
+  incumbent_pinned: "2026-06-15 via uv run --with transformers --with torch (python3 -c 'import transformers, torch'; import-only inference-stack floor ~1.5-2s; full tiny-gpt2 load+8-token greedy generate ~9.2s)"
+  canonical_task: >
+    One-shot greedy next-token inference micro-pipeline (Qwen2 chat-template format
+    → real byte-level BPE encode → embedding lookup → lm_head Matrix::matvec forward
+    → Vector::argmax greedy sample → decode), timed as END-TO-END process
+    wall-clock: apr re-execs its own static binary (cold-start + full inference
+    pipeline); the incumbent is a one-shot `python -c "import transformers, torch"`
+    which pays the torch + transformers import floor every invocation BEFORE any
+    token work. Same host, same run (median of 5 + warmup); metric is ratio
+    apr_ms / incumbent_ms. Host-independent (no model download), so robust across
+    CI hosts.
+  metric: wall_clock_ratio_apr_over_hf_inference
+  direction: lower_is_better
+  baseline_value: 1.0000
+  baseline_floor: 0.0007
+  beat_threshold: 0.1000
+  baseline_sourced_date: "2026-06-15"
+  approved_compute: CPU
+  ci_gate_name: "beat_hf_inference_coldstart_speed"
+proof_obligations:
+- id: OBLIG-HF-INFERENCE-COLDSTART-RATIO
+  statement: >
+    On the canonical task, apr_ms / incumbent_ms <= beat_threshold (0.10) measured
+    same-host/same-run as the median of 5 timed iterations after a warmup.
+  type: bound
+falsification_tests:
+- id: FALSIFY-BEAT-HF-INFERENCE-COLDSTART-SPEED
+  description: >
+    FALSE if apr is not >= 10x faster than a one-shot HuggingFace transformers+torch
+    inference process end-to-end (ratio > 0.10). Catches apr regressing into a heavy
+    startup (a framework-init dep creeping into the static binary).
+  command: >
+    cargo test -p aprender-core --release --test beat_hf_inference_coldstart_speed --
+    --ignored --nocapture
+  expected: "ratio <= 0.10 (apr >= 10x faster end-to-end; measured ~0.0007, apr ~1388x faster)"
+  if_fails: >
+    apr lost its static-binary cold-start advantage (a heavy startup dep crept in)
+    OR the tokenize/embed/forward/argmax/decode inference path regressed
+    catastrophically. Compare apr_ms vs incumbent_ms; the apr child runs the full
+    one-shot inference micro-pipeline in
+    crates/aprender-core/tests/beat_hf_inference_coldstart_speed.rs.
