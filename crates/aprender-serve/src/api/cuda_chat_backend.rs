@@ -84,8 +84,7 @@ async fn try_cuda_backend(
     trace_level: Option<&str>,
     start: Instant,
 ) -> Option<Response> {
-    use crate::gguf::QuantizedGenerateConfig;
-
+    // PMAT-821: config now built by chat_quantized_config (in openai_handlers.rs).
     let ttft_trace = std::env::var("TTFT_TRACE").is_ok();
     let t0 = if ttft_trace { Some(std::time::Instant::now()) } else { None };
 
@@ -105,16 +104,16 @@ async fn try_cuda_backend(
         eprintln!("[TTFT] {:>20}: {:>7.2}ms ({}tok)", "tokenize", t.elapsed().as_secs_f64() * 1000.0, prompt_ids.len());
     }
     let prompt_tokens = prompt_ids.len();
-    let (max_tokens, temperature, eos_token_id) = chat_gen_params(request, &tokenizer, state.model_eos_token_id());
-
-    let q_config = QuantizedGenerateConfig {
-        max_tokens,
-        temperature,
-        top_k: resolve_chat_top_k(temperature, request.top_k),
-        stop_tokens: vec![eos_token_id],
-        trace: state.should_trace(trace_level),
-        ..Default::default()
-    };
+    // PMAT-821: build the config via chat_quantized_config so ALL request sampling
+    // params (top_p/repeat_penalty/repeat_last_n/seed) reach the sampler — the prior
+    // inline builder dropped them, leaving the chat endpoint on neutral defaults.
+    let q_config = chat_quantized_config(
+        request,
+        &tokenizer,
+        state.model_eos_token_id(),
+        state.should_trace(trace_level),
+    );
+    let max_tokens = q_config.max_tokens;
 
     if request.stream {
         let (tx, rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(16);
@@ -231,8 +230,7 @@ fn try_quantized_backend(
     trace_level: Option<&str>,
     start: Instant,
 ) -> Option<Response> {
-    use crate::gguf::QuantizedGenerateConfig;
-
+    // PMAT-821: config now built by chat_quantized_config (in openai_handlers.rs).
     let quantized_model = state.quantized_model()?;
     let tokenizer = match require_tokenizer(state) {
         Ok(t) => t,
@@ -246,16 +244,16 @@ fn try_quantized_backend(
             Err(r) => return Some(r),
         };
     let prompt_tokens = prompt_ids.len();
-    let (max_tokens, temperature, eos_token_id) = chat_gen_params(request, &tokenizer, state.model_eos_token_id());
-
-    let q_config = QuantizedGenerateConfig {
-        max_tokens,
-        temperature,
-        top_k: resolve_chat_top_k(temperature, request.top_k),
-        stop_tokens: vec![eos_token_id],
-        trace: state.should_trace(trace_level),
-        ..Default::default()
-    };
+    // PMAT-821: build the config via chat_quantized_config so ALL request sampling
+    // params (top_p/repeat_penalty/repeat_last_n/seed) reach the sampler — the prior
+    // inline builder dropped them, leaving the chat endpoint on neutral defaults.
+    let q_config = chat_quantized_config(
+        request,
+        &tokenizer,
+        state.model_eos_token_id(),
+        state.should_trace(trace_level),
+    );
+    let max_tokens = q_config.max_tokens;
 
     if request.stream {
         let (tx, rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(16);

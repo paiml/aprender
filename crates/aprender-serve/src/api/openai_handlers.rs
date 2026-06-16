@@ -150,6 +150,160 @@ mod pmat760_top_k_tests {
     }
 }
 
+/// PMAT-821: Build a [`QuantizedGenerateConfig`] for a dense chat backend, threading
+/// EVERY request sampling parameter into the config.
+///
+/// The dense `/v1/chat/completions` backends (`try_cuda_backend`,
+/// `try_quantized_backend`) previously built the config reading ONLY
+/// `max_tokens`/`temperature`/`top_k`, then `..Default::default()`. That DROPPED
+/// `top_p`, `repeat_penalty`, `repeat_last_n`, and `seed` from the HTTP request
+/// before generation — so even with the sampler fixed (#2081 top_p, #2099
+/// repeat_penalty), the dense chat endpoint silently used the neutral DEFAULTS
+/// (`top_p = 1.0`, `repeat_penalty = 1.0`). The MoE path
+/// (`try_qwen3_moe_backend`) already threaded all of these; this helper closes
+/// the dense-path gap and keeps both backends DRY.
+///
+/// Defaults fall back to [`QuantizedGenerateConfig::default`] field-by-field, so a
+/// request that omits a param produces a byte-identical config to the pre-fix
+/// behavior for that field (the no-regression invariant). `max_tokens`,
+/// `temperature`, and `top_k` keep their existing chat semantics
+/// (`chat_gen_params` / `resolve_chat_top_k`).
+///
+/// Discharges F-CHAT-HANDLER-THREADS-PARAMS-001 in `contracts/openai-compat-v1.yaml`.
+fn chat_quantized_config(
+    request: &ChatCompletionRequest,
+    tokenizer: &BPETokenizer,
+    model_eos: Option<u32>,
+    trace: bool,
+) -> crate::gguf::QuantizedGenerateConfig {
+    let defaults = crate::gguf::QuantizedGenerateConfig::default();
+    let (max_tokens, temperature, eos_token_id) = chat_gen_params(request, tokenizer, model_eos);
+    crate::gguf::QuantizedGenerateConfig {
+        max_tokens,
+        temperature,
+        top_k: resolve_chat_top_k(temperature, request.top_k),
+        top_p: request.top_p.unwrap_or(defaults.top_p),
+        repeat_penalty: request.repeat_penalty.unwrap_or(defaults.repeat_penalty),
+        repeat_last_n: request.repeat_last_n.unwrap_or(defaults.repeat_last_n),
+        seed: request.seed.unwrap_or(defaults.seed),
+        stop_tokens: vec![eos_token_id],
+        trace,
+        ..defaults
+    }
+}
+
+#[cfg(test)]
+mod pmat821_chat_handler_threading_tests {
+    use super::{chat_quantized_config, ChatCompletionRequest, ChatMessage};
+    use crate::gguf::QuantizedGenerateConfig;
+    use crate::tokenizer::BPETokenizer;
+
+    /// Minimal tokenizer for handler-level config tests (no model weights needed).
+    fn test_tokenizer() -> BPETokenizer {
+        let vocab: Vec<String> = vec!["<unk>".to_string(), "hi".to_string()];
+        BPETokenizer::new(vocab, vec![], "<unk>").expect("test tokenizer")
+    }
+
+    /// Minimal request with all sampling params unset (the no-param baseline).
+    fn base_request() -> ChatCompletionRequest {
+        ChatCompletionRequest {
+            model: "default".to_string(),
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: "hi".to_string(),
+                name: None,
+            }],
+            max_tokens: None,
+            temperature: None,
+            top_p: None,
+            top_k: None,
+            repeat_penalty: None,
+            repeat_last_n: None,
+            seed: None,
+            n: 1,
+            stream: false,
+            stop: None,
+            user: None,
+        }
+    }
+
+    #[test]
+    fn handler_threads_top_p_into_config() {
+        // RED on the PMAT-821 bug: the dense handler dropped request.top_p, so the
+        // config used the neutral default 1.0 instead of the requested 0.5.
+        // GREEN after fix: config.top_p == 0.5. This is testable WITHOUT the
+        // in-flight sampler fixes (#2081) — it asserts the HANDLER→CONFIG threading.
+        let mut request = base_request();
+        request.top_p = Some(0.5);
+        // temperature must be non-zero or resolve_chat_top_k forces greedy (top_k=1),
+        // which is orthogonal to top_p but keeps the request realistic.
+        request.temperature = Some(0.7);
+        let tokenizer = test_tokenizer();
+        let config = chat_quantized_config(&request, &tokenizer, None, false);
+        assert!(
+            (config.top_p - 0.5).abs() < f32::EPSILON,
+            "handler dropped top_p: expected 0.5, got {}",
+            config.top_p
+        );
+    }
+
+    #[test]
+    fn handler_threads_repeat_penalty_into_config() {
+        // RED on bug: request.repeat_penalty dropped → config uses default 1.0.
+        let mut request = base_request();
+        request.repeat_penalty = Some(1.3);
+        request.temperature = Some(0.7);
+        let tokenizer = test_tokenizer();
+        let config = chat_quantized_config(&request, &tokenizer, None, false);
+        assert!(
+            (config.repeat_penalty - 1.3).abs() < f32::EPSILON,
+            "handler dropped repeat_penalty: expected 1.3, got {}",
+            config.repeat_penalty
+        );
+    }
+
+    #[test]
+    fn handler_threads_repeat_last_n_and_seed_into_config() {
+        let mut request = base_request();
+        request.repeat_last_n = Some(128);
+        request.seed = Some(7);
+        request.temperature = Some(0.7);
+        let tokenizer = test_tokenizer();
+        let config = chat_quantized_config(&request, &tokenizer, None, false);
+        assert_eq!(config.repeat_last_n, 128, "handler dropped repeat_last_n");
+        assert_eq!(config.seed, 7, "handler dropped seed");
+    }
+
+    #[test]
+    fn no_param_request_uses_defaults_byte_identical() {
+        // No-regression invariant: a request that sets NONE of the sampling params
+        // produces a config whose sampling fields equal QuantizedGenerateConfig's
+        // defaults — byte-identical to the pre-PMAT-821 behavior for the no-param case.
+        let request = base_request();
+        let tokenizer = test_tokenizer();
+        let defaults = QuantizedGenerateConfig::default();
+        let config = chat_quantized_config(&request, &tokenizer, None, false);
+        assert!(
+            (config.top_p - defaults.top_p).abs() < f32::EPSILON,
+            "no-param top_p must equal default"
+        );
+        assert!(
+            (config.repeat_penalty - defaults.repeat_penalty).abs() < f32::EPSILON,
+            "no-param repeat_penalty must equal default"
+        );
+        assert_eq!(
+            config.repeat_last_n, defaults.repeat_last_n,
+            "no-param repeat_last_n must equal default"
+        );
+        assert_eq!(
+            config.seed, defaults.seed,
+            "no-param seed must equal default"
+        );
+        // temperature default for chat is 0.7 (chat_gen_params), which forces top_k=1.
+        // That is the existing chat behavior, not a regression introduced here.
+    }
+}
+
 /// PMAT-756: apply OpenAI stop sequences to a chat completion's text and compute the
 /// matching `finish_reason`. The `/v1/chat/completions` path previously ignored
 /// `request.stop` entirely — the returned message kept the stop string and ran to
