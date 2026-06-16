@@ -52,7 +52,16 @@ impl OwnedQuantizedModel {
 
         for _ in 0..config.max_tokens {
             // Forward pass with fused Q4_K ops (1.37x faster)
-            let logits = self.forward(&tokens)?;
+            let mut logits = self.forward(&tokens)?;
+
+            // PMAT-814: apply repetition penalty in place over the recent context
+            // BEFORE both greedy argmax and sampling (no-op when repeat_penalty == 1.0).
+            Self::apply_repeat_penalty(
+                &mut logits,
+                &tokens,
+                config.repeat_penalty,
+                config.repeat_last_n,
+            );
 
             // Sample next token
             let next_token = if config.temperature == 0.0 || config.top_k == 1 {
@@ -86,6 +95,46 @@ impl OwnedQuantizedModel {
             .enumerate()
             .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .map_or(0, |(idx, _)| idx as u32)
+    }
+
+    /// Apply a repetition penalty to `logits` in place (PMAT-814).
+    ///
+    /// Mirrors the live MoE path (`infer/qwen3_moe_generate.rs::sample_from_logits`)
+    /// and Candle's `apply_repeat_penalty`: every token in the recency window has its
+    /// logit divided by `penalty` when positive and multiplied by `penalty` when
+    /// non-positive, so a larger `penalty` always shrinks the chance of repeating a
+    /// recently-seen token regardless of its logit sign.
+    ///
+    /// The window is the last `last_n` entries of `recent_tokens` (the full decoded
+    /// context — prompt + generated — exactly as `repeat_last_n` is interpreted on the
+    /// MoE path and by llama.cpp's default), so callers pass the entire `tokens` vector.
+    ///
+    /// # No-op guarantee (no-regression)
+    ///
+    /// When `penalty == 1.0` (the default), `last_n == 0`, or `recent_tokens` is empty,
+    /// this returns immediately without touching `logits` — every all-default `apr run`
+    /// / `apr serve` request is byte-identical to the pre-PMAT-814 path (greedy argmax
+    /// and top-k/top-p sampling alike).
+    pub(crate) fn apply_repeat_penalty(
+        logits: &mut [f32],
+        recent_tokens: &[u32],
+        penalty: f32,
+        last_n: usize,
+    ) {
+        if penalty == 1.0 || last_n == 0 || recent_tokens.is_empty() {
+            return;
+        }
+        let start = recent_tokens.len().saturating_sub(last_n);
+        for &token in &recent_tokens[start..] {
+            let idx = token as usize;
+            if idx < logits.len() {
+                if logits[idx] <= 0.0 {
+                    logits[idx] *= penalty;
+                } else {
+                    logits[idx] /= penalty;
+                }
+            }
+        }
     }
 
     /// Top-k sampling with temperature
@@ -234,6 +283,15 @@ impl OwnedQuantizedModel {
                     &logits[..5.min(logits.len())]
                 );
             }
+
+            // PMAT-814: apply repetition penalty in place over the recent context
+            // BEFORE both greedy argmax and sampling (no-op when repeat_penalty == 1.0).
+            crate::gguf::OwnedQuantizedModel::apply_repeat_penalty(
+                &mut logits,
+                &tokens,
+                config.repeat_penalty,
+                config.repeat_last_n,
+            );
 
             // Sample next token
             let next_token = if config.temperature == 0.0 || config.top_k == 1 {
@@ -412,6 +470,14 @@ impl OwnedQuantizedModel {
         // Generate new tokens with streaming
         for gen_idx in 0..config.max_tokens {
             let token_start = std::time::Instant::now();
+            // PMAT-814: apply repetition penalty in place over the recent context
+            // BEFORE both greedy argmax and sampling (no-op when repeat_penalty == 1.0).
+            crate::gguf::OwnedQuantizedModel::apply_repeat_penalty(
+                &mut logits,
+                &tokens,
+                config.repeat_penalty,
+                config.repeat_last_n,
+            );
             // Sample next token
             let next_token = if config.temperature == 0.0 || config.top_k == 1 {
                 ops::argmax(&logits)

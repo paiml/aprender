@@ -519,14 +519,31 @@ impl OwnedQuantizedModelCuda {
             }
         }
 
+        // PMAT-814: when a repetition penalty is active we MUST have CPU-side logits to
+        // penalize, so the GPU-side fused argmax fast path (forward_gpu_resident_to_token_id)
+        // can only be used when no penalty applies. With repeat_penalty == 1.0 (the default)
+        // this is false and the greedy fast path is taken unchanged — no perf regression.
+        let penalty_active = config.repeat_penalty != 1.0 && config.repeat_last_n > 0;
         for _token_num in 0..max_decode {
             let token_start = std::time::Instant::now();
-            let next_token = if config.temperature == 0.0 || config.top_k == 1 {
+            let greedy = config.temperature == 0.0 || config.top_k == 1;
+            let next_token = if greedy && !penalty_active {
                 self.forward_gpu_resident_to_token_id(last_token, &mut cache, position)?
             } else {
-                let logits = self.forward_gpu_resident(last_token, &mut cache, position)?;
-                // entrenar#318: use simple top-k sampling (sample_advanced not yet compiled)
-                OwnedQuantizedModel::sample_topk(&logits, config.temperature, config.top_k)
+                let mut logits = self.forward_gpu_resident(last_token, &mut cache, position)?;
+                // PMAT-814: penalize recently-seen tokens before greedy/sampling.
+                OwnedQuantizedModel::apply_repeat_penalty(
+                    &mut logits,
+                    &tokens,
+                    config.repeat_penalty,
+                    config.repeat_last_n,
+                );
+                if greedy {
+                    OwnedQuantizedModel::argmax(&logits)
+                } else {
+                    // entrenar#318: use simple top-k sampling (sample_advanced not yet compiled)
+                    OwnedQuantizedModel::sample_topk(&logits, config.temperature, config.top_k)
+                }
             };
 
             if config.trace {
@@ -660,7 +677,16 @@ impl OwnedQuantizedModelCuda {
 
         for _ in 0..max_decode {
             // Always use logits path for logprob extraction
-            let logits = self.forward_gpu_resident(last_token, &mut cache, position)?;
+            let mut logits = self.forward_gpu_resident(last_token, &mut cache, position)?;
+            // PMAT-814: penalize recently-seen tokens before greedy/sampling AND before
+            // logprob extraction, so the reported logprob reflects the penalized
+            // distribution that actually selected the token (no-op when penalty == 1.0).
+            OwnedQuantizedModel::apply_repeat_penalty(
+                &mut logits,
+                &tokens,
+                config.repeat_penalty,
+                config.repeat_last_n,
+            );
             let next_token = if greedy {
                 OwnedQuantizedModel::argmax(&logits)
             } else {

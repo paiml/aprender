@@ -1,11 +1,13 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-02-18'
   author: PAIML Engineering
   description: Sampling algorithm invariants for autoregressive generation
   references:
   - Holtzman et al. (2019) The Curious Case of Neural Text Degeneration
   - Qwen2.5-Coder Showcase Spec §14.5
+  - Keskar et al. (2019) CTRL — repetition penalty
+  - PMAT-814 dense quantized decode honors repeat_penalty
   depends_on:
   - softmax-kernel-v1
 equations:
@@ -46,6 +48,19 @@ equations:
     preconditions:
     - input.len() > 0
     lean_theorem: Theorems.Temperature
+  repeat_penalty:
+    formula: 'penalize(l_i, ρ) = l_i / ρ if l_i > 0 else l_i * ρ, for i in last_n(recent)'
+    domain: logits ∈ ℝ^V, ρ >= 1 (penalty), recent ∈ ℕ*, last_n >= 0
+    invariants:
+    - 'ρ=1 is identity: logits unchanged (no-op, no allocation)'
+    - 'last_n=0 or recent empty is identity: logits unchanged'
+    - 'Applied to last_n most-recent context tokens (prompt + generated)'
+    - 'ρ>1 strictly shrinks repeated tokens'' selection chance (sign-correct: positive
+      logits divided, non-positive multiplied)'
+    - 'Applied in place BEFORE both greedy argmax and top-k/top-p sampling'
+    preconditions:
+    - input.len() > 0
+    lean_theorem: Theorems.RepeatPenalty
 proof_obligations:
 - type: equivalence
   property: Greedy = argmax
@@ -69,6 +84,16 @@ proof_obligations:
   property: SIMD sampling equivalence
   tolerance: 0.0
   applies_to: simd
+- type: equivalence
+  property: Repeat penalty identity at rho=1
+  formal: apply_repeat_penalty(l, recent, 1.0, last_n) == l
+  tolerance: 0.0
+  applies_to: all
+- type: bound
+  property: Repeat penalty demotes repeated token
+  formal: 'token T in last_n(recent) AND argmax(l)=T AND l_T>0 AND exists U!=T with
+    l_T/rho < l_U => argmax(penalize(l, recent, rho, last_n)) != T'
+  applies_to: all
 falsification_tests:
 - id: FALSIFY-SA-001
   rule: Greedy = argmax
@@ -95,6 +120,22 @@ falsification_tests:
   prediction: SIMD sampling matches scalar
   test: proptest
   if_fails: ' compare scalar vs SIMD sampling:SIMD sampler selects different tokens'
+- id: FALSIFY-SA-007
+  rule: Dense quantized decode honors repeat_penalty
+  prediction: With token T the current argmax AND in the recent window, a repeat_penalty
+    greater than 1 drops T below a runner-up so the greedy/sampled token changes away
+    from T; repeat_penalty == 1.0 is a byte-identical no-op
+  test: test_repeat_penalty_changes_greedy_argmax_away_from_repeated_token (+5 no-op
+    / sign / window tests) in gguf::inference::generation::tests
+  if_fails: Dense decode loops drop repeat_penalty (applied only temperature + top-k);
+    repetitive output silently — the PMAT-814 regression
+- id: FALSIFY-SA-008
+  rule: Repeat penalty identity at rho=1
+  prediction: apply_repeat_penalty with penalty == 1.0 (or last_n == 0, or empty recent)
+    leaves logits byte-identical — every all-default request is unchanged (no-regression)
+  test: test_repeat_penalty_unity_is_byte_identical_no_op, test_repeat_penalty_zero_window_is_no_op,
+    test_repeat_penalty_empty_recent_is_no_op in gguf::inference::generation::tests
+  if_fails: Default-config decode diverges from the pre-PMAT-814 path — a regression
 kani_harnesses:
 - id: KANI-SA-001
   obligation: SA-EQ-001
@@ -137,5 +178,6 @@ qa_gate:
   - top_k_cardinality
   - top_p_cumulative
   - temperature_identity
-  pass_criteria: All 5 falsification tests pass
+  - repeat_penalty_demotes_repeated_token
+  pass_criteria: All falsification tests pass (incl. FALSIFY-SA-007 repeat_penalty)
   falsification: Set K=0 to observe empty filtered set
