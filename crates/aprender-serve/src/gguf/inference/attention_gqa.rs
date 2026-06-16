@@ -32,7 +32,9 @@ impl OwnedQuantizedModel {
         let head_dim = self.config.head_dim();
         let q_dim = self.config.q_dim();
         let kv_dim = self.config.kv_dim();
-        let scale = 1.0 / (head_dim as f32).sqrt();
+        // PMAT-810: Gemma2 scales by 1/sqrt(query_pre_attn_scalar); every other
+        // arch (and gemma-2-2b, key absent) → 1/sqrt(head_dim), byte-identical.
+        let scale = self.config.attn_scale();
         // PMAT-810: Gemma2 caps attention logits with `cap*tanh(scores/cap)`
         // (cap=50) BEFORE softmax. `None` for every other arch → no-op.
         let attn_softcap = self.config.attn_logit_softcap();
@@ -142,7 +144,9 @@ impl OwnedQuantizedModel {
         let head_dim = self.config.head_dim();
         let q_dim = self.config.q_dim();
         let kv_dim = self.config.kv_dim();
-        let scale = 1.0 / (head_dim as f32).sqrt();
+        // PMAT-810: Gemma2 scales by 1/sqrt(query_pre_attn_scalar); every other
+        // arch (and gemma-2-2b, key absent) → 1/sqrt(head_dim), byte-identical.
+        let scale = self.config.attn_scale();
         // PMAT-810: Gemma2 attention-logit softcap (None elsewhere → no-op).
         let attn_softcap = self.config.attn_logit_softcap();
 

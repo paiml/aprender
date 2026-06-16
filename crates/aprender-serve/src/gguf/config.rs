@@ -278,6 +278,13 @@ pub struct GGUFConfig {
     ///
     /// Source: GGUF metadata `{arch}.attention.key_length`.
     pub explicit_head_dim: Option<usize>,
+    /// PMAT-810: Gemma2 pre-attention query scale denominator
+    /// (`{arch}.attention.query_pre_attn_scalar`). When `Some(d)`, the attention
+    /// scale is `1/sqrt(d)` instead of `1/sqrt(head_dim)`. `None` (every non-Gemma2
+    /// arch, and gemma-2-2b which omits the key) → fall back to `head_dim`, which
+    /// matches llama.cpp's default (`n_embd_head_k`). Equal to head_dim (256) for
+    /// gemma-2-2b (so a no-op there); 224 for gemma-2-9b/27b.
+    pub query_pre_attn_scalar: Option<f32>,
     /// BOS token ID from GGUF metadata (used for GPU validation probe)
     /// None means BOS is unknown — GPU validation will be skipped.
     pub bos_token_id: Option<u32>,
@@ -545,6 +552,7 @@ impl GGUFConfig {
             rope_type,
             context_length,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
             bos_token_id,
             eos_token_id,
         })
@@ -561,6 +569,23 @@ impl GGUFConfig {
         } else {
             self.hidden_dim
         })
+    }
+
+    /// PMAT-810: Pre-softmax attention scale `1/sqrt(d)`.
+    ///
+    /// For almost every architecture `d = head_dim`, giving the standard
+    /// `1/sqrt(head_dim)`. Gemma2 instead scales queries by
+    /// `1/sqrt(query_pre_attn_scalar)`: 256 for gemma-2-2b (== head_dim, so this
+    /// is a no-op there) but 224 for gemma-2-9b/27b. When the GGUF omits the key
+    /// (`query_pre_attn_scalar == None`) we fall back to `head_dim`, exactly like
+    /// llama.cpp's default of `n_embd_head_k`.
+    #[inline]
+    #[must_use]
+    pub fn attn_scale(&self) -> f32 {
+        let denom = self
+            .query_pre_attn_scalar
+            .unwrap_or_else(|| self.head_dim() as f32);
+        1.0 / denom.sqrt()
     }
 
     /// Total Q projection dimension: `num_heads * head_dim`.
@@ -718,6 +743,11 @@ impl GGUFConfig {
         // GH-305: Infer head_dim from GGUF metadata or tensor shapes.
         let explicit_head_dim = Self::infer_explicit_head_dim(model, hidden_dim, num_heads);
 
+        // PMAT-810: Gemma2 pre-attention query scale denominator. None for every
+        // other arch (and gemma-2-2b, which omits the key) → attn_scale() falls
+        // back to head_dim, matching llama.cpp's default (n_embd_head_k).
+        let query_pre_attn_scalar = model.query_pre_attn_scalar();
+
         // Read rope_type: 0 = NORM (adjacent pairs, default for LLaMA), 2 = NEOX (split halves)
         // LLaMA models use type 0 (adjacent pairs) per llama.cpp's LLAMA_ROPE_TYPE_NORM
         let rope_type = model.rope_type().unwrap_or(0);
@@ -756,6 +786,7 @@ impl GGUFConfig {
             eps,
             rope_type,
             explicit_head_dim,
+            query_pre_attn_scalar,
             bos_token_id,
             eos_token_id,
         })
@@ -933,6 +964,7 @@ impl ValidatedModelConfig {
             eps,
             rope_type,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
             bos_token_id: config.bos_token_id,
             eos_token_id: config.eos_token_id,
         };
@@ -1154,6 +1186,7 @@ mod gemma_config_tests {
             eps: 1e-6,
             rope_type: 2,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
             bos_token_id: Some(2),
             eos_token_id: Some(1),
         }

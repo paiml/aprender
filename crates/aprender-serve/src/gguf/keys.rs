@@ -100,6 +100,13 @@ pub(crate) const ATTN_LOGIT_SOFTCAPPING: &str = "attn_logit_softcapping";
 /// after the output projection.
 pub(crate) const FINAL_LOGIT_SOFTCAPPING: &str = "final_logit_softcapping";
 
+/// PMAT-810: `{arch}.attention.query_pre_attn_scalar` — Gemma2 pre-attention
+/// query scale denominator. The attention scale is `1/sqrt(query_pre_attn_scalar)`
+/// instead of the usual `1/sqrt(head_dim)`. Equals `head_dim` (256) for
+/// gemma-2-2b but differs for 9b/27b (224). llama.cpp defaults it to
+/// `n_embd_head_k` (= key_length = head_dim) when this key is absent.
+pub(crate) const QUERY_PRE_ATTN_SCALAR: &str = "attention.query_pre_attn_scalar";
+
 // ─── Key construction ────────────────────────────────────────────────────────
 
 /// Construct an architecture-parameterized GGUF metadata key.

@@ -556,6 +556,22 @@ impl GGUFModel {
         }
     }
 
+    /// PMAT-810: Get Gemma2 pre-attention query scale denominator
+    /// (`{arch}.attention.query_pre_attn_scalar`). The attention scale is
+    /// `1/sqrt(query_pre_attn_scalar)` rather than `1/sqrt(head_dim)`. 256 for
+    /// gemma-2-2b (== head_dim, no-op), 224 for 9b/27b. Returns None when absent
+    /// (non-Gemma2, weights-only GGUF, or older converts) so callers fall back to
+    /// `head_dim` — exactly llama.cpp's default (`n_embd_head_k`).
+    pub fn query_pre_attn_scalar(&self) -> Option<f32> {
+        let arch = self.architecture()?;
+        let key = crate::gguf::keys::arch_key(arch, crate::gguf::keys::QUERY_PRE_ATTN_SCALAR);
+        match self.metadata.get(&key) {
+            Some(GGUFValue::UInt32(v)) => Some(*v as f32),
+            Some(GGUFValue::Float32(v)) => Some(*v),
+            _ => None,
+        }
+    }
+
     /// M32c.2.2.2.1.2: Get MoE expert count (`{arch}.expert_count`).
     /// 128 for Qwen3-Coder-30B-A3B-Instruct. Returns None for dense models.
     pub fn expert_count(&self) -> Option<usize> {
