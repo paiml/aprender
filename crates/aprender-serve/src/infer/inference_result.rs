@@ -373,26 +373,57 @@ fn write_gguf_trace(
 /// cosine=0.99948 on the RTX 4090, both producing output identical to CPU. So
 /// Q4_0(2)/Q4_1(3)/Q5_0(6) are NO LONGER gated.
 ///
-/// Q5_1(7) is still gated: it has NO GPU kernel at all (`WeightQuantType` has no
-/// Q5_1 variant and `from_ggml_type(7)` returns `None`), so a Q5_1 weight would
-/// silently fall through to the Q4_K GEMV and produce garbage.
-///
-/// The parity gate that runs afterwards remains the true correctness backstop and
-/// fail-closes any residual divergence to CPU.
+/// PMAT-783: this gate now FAILS CLOSED for *every* GGML quant type that lacks a
+/// verified GPU GEMV kernel, not just Q5_1(7). The GPU weight upload resolves a
+/// tensor's GGML type via `WeightQuantType::from_ggml_type(qtype)` and then
+/// `resolve_qtype()` does `.unwrap_or(WeightQuantType::Q4K)` — so ANY type that
+/// `from_ggml_type` does not recognize (Q5_1=7, Q8_1=9, Q2_K=10, Q3_K=11,
+/// Q8_K=15, the IQ* families, and even raw F16=1 / BF16=30 reaching this path)
+/// is SILENTLY decoded as Q4_K → garbage logits. The previous `matches!(qtype, 7)`
+/// caught only Q5_1, leaving Q2_K/Q3_K-quantized GGUF models (common K-quant mixes)
+/// to ship garbage on the unguarded `generate_gpu_resident` call sites where the
+/// parity gate does not run. The whitelist below is the exact set
+/// `WeightQuantType::from_ggml_type` maps to a real kernel:
+///   0=F32, 2=Q4_0, 3=Q4_1, 6=Q5_0, 8=Q8_0, 12=Q4_K, 13=Q5_K, 14=Q6_K.
+/// (Q4_0/Q4_1/Q5_0 kernels were corrected to candle layout in BUG-GGUF-001/002 +
+/// PMAT-782; the cpu↔gpu parity gate remains the correctness backstop on the
+/// primary `apr run`/`apr serve` path.)
 #[inline]
 fn is_legacy_gguf_quant(qtype: u32) -> bool {
-    // Q5_1 (type 7) has no GPU kernel; Q4_0/Q4_1/Q5_0 are fixed (PMAT-782).
-    matches!(qtype, 7)
+    // Returns true (→ force CPU) for any GGML quant WITHOUT a verified GPU kernel.
+    // Whitelist mirrors WeightQuantType::from_ggml_type (cuda/types.rs); anything
+    // outside it would hit resolve_qtype's `.unwrap_or(Q4K)` → wrong-kernel garbage.
+    !matches!(qtype, 0 | 2 | 3 | 6 | 8 | 12 | 13 | 14)
 }
 
-/// Check if model uses any legacy quantization types
+/// Check if model uses any quant type without a verified GPU kernel.
+///
+/// PMAT-783: checks EVERY projection tensor the GPU-resident forward pass would
+/// touch — lm_head, QKV (fused or separate), attn output, and FFN gate/up/down.
+/// The prior version omitted QKV and the FFN gate, so a model carrying an
+/// unsupported quant in those tensors slipped past the gate onto the GPU.
 fn model_has_legacy_quant(model: &crate::gguf::OwnedQuantizedModel) -> bool {
-    is_legacy_gguf_quant(model.lm_head_weight.qtype)
-        || model.layers.iter().any(|l| {
-            is_legacy_gguf_quant(l.ffn_down_weight.qtype)
-                || is_legacy_gguf_quant(l.ffn_up_weight.qtype)
-                || is_legacy_gguf_quant(l.attn_output_weight.qtype)
-        })
+    use crate::gguf::OwnedQKVWeights;
+    if is_legacy_gguf_quant(model.lm_head_weight.qtype) {
+        return true;
+    }
+    model.layers.iter().any(|l| {
+        let qkv_bad = match &l.qkv_weight {
+            OwnedQKVWeights::Fused(t) => is_legacy_gguf_quant(t.qtype),
+            OwnedQKVWeights::Separate { q, k, v } => {
+                is_legacy_gguf_quant(q.qtype)
+                    || is_legacy_gguf_quant(k.qtype)
+                    || is_legacy_gguf_quant(v.qtype)
+            },
+        };
+        qkv_bad
+            || is_legacy_gguf_quant(l.attn_output_weight.qtype)
+            || is_legacy_gguf_quant(l.ffn_up_weight.qtype)
+            || is_legacy_gguf_quant(l.ffn_down_weight.qtype)
+            || l.ffn_gate_weight
+                .as_ref()
+                .is_some_and(|g| is_legacy_gguf_quant(g.qtype))
+    })
 }
 
 /// Log CPU backend selection reason
