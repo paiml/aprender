@@ -359,21 +359,23 @@ fn test_clean_chat_output_double_newline_user() {
 
 #[test]
 fn test_embedding_request_serde() {
+    use crate::api::realize_handlers::EmbeddingInput;
     let req = EmbeddingRequest {
-        input: "test".to_string(),
+        input: "test".to_string().into(),
         model: Some("default".to_string()),
     };
     let json = serde_json::to_string(&req).expect("JSON serialization failed");
     let parsed: EmbeddingRequest = serde_json::from_str(&json).expect("JSON deserialization failed");
-    assert_eq!(parsed.input, "test");
+    assert_eq!(parsed.input, EmbeddingInput::Single("test".to_string()));
     assert_eq!(parsed.model.as_deref(), Some("default"));
 }
 
 #[test]
 fn test_embedding_request_no_model() {
+    use crate::api::realize_handlers::EmbeddingInput;
     let json = r#"{"input":"hello"}"#;
     let req: EmbeddingRequest = serde_json::from_str(json).expect("JSON deserialization failed");
-    assert_eq!(req.input, "hello");
+    assert_eq!(req.input, EmbeddingInput::Single("hello".to_string()));
     assert!(req.model.is_none());
 }
 
