@@ -244,18 +244,19 @@
 
     #[test]
     fn test_embedding_request_basic() {
+        use crate::api::realize_handlers::EmbeddingInput;
         let request = EmbeddingRequest {
-            input: "Hello world".to_string(),
+            input: "Hello world".to_string().into(),
             model: Some("text-embedding-ada-002".to_string()),
         };
-        assert_eq!(request.input, "Hello world");
+        assert_eq!(request.input, EmbeddingInput::Single("Hello world".to_string()));
         assert!(request.model.is_some());
     }
 
     #[test]
     fn test_embedding_request_serialization() {
         let request = EmbeddingRequest {
-            input: "test".to_string(),
+            input: "test".to_string().into(),
             model: None,
         };
         let json = serde_json::to_string(&request).expect("serialize");
@@ -266,9 +267,10 @@
 
     #[test]
     fn test_embedding_request_deserialization() {
+        use crate::api::realize_handlers::EmbeddingInput;
         let json = r#"{"input": "hello"}"#;
         let request: EmbeddingRequest = serde_json::from_str(json).expect("deserialize");
-        assert_eq!(request.input, "hello");
+        assert_eq!(request.input, EmbeddingInput::Single("hello".to_string()));
         assert!(request.model.is_none());
     }
 

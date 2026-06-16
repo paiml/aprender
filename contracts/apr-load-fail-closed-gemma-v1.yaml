@@ -1,0 +1,93 @@
+contract: apr-load-fail-closed-gemma
+metadata:
+  kind: pattern
+  version: "2.0.0"
+  description: >
+    Gemma support is honest-by-design and version-gated. Gemma v1 (general.architecture
+    == "gemma") is now IMPLEMENTED in realizar's CPU forward path and is verified coherent
+    against the llama.cpp reference for the same GGUF (PMAT-809). Gemma2 / Gemma3 are STILL
+    refused at load because they additionally require attention/final-logit tanh-softcapping
+    which is NOT implemented; running them with uncapped LLaMA-style attention would emit
+    silently-wrong output. PMAT-809 implements the three Gemma-v1 behaviors the LLaMA-style
+    forward path lacked: (a) GeGLU FFN — gelu_tanh(gate(x)) * up(x) instead of SiLU/SwiGLU,
+    dispatched via OwnedQuantizedModel::gemma_gate_activation; (c) sqrt(hidden_size)
+    embedding scaling applied in embed()/embed_into() (GGUFConfig::embed_scale). Behavior
+    (b) — the Gemma (1 + weight) RMSNorm — is satisfied WITHOUT a runtime offset on the GGUF
+    path: llama.cpp's GGUF converter (GemmaModel.modify_tensors: data_torch + 1) pre-adds 1.0
+    to every *norm.weight at conversion time, so a GGUF gemma already stores (1 + w_hf)
+    (verified empirically: norm weight mean ≈ 1.5–2.6, not ≈ 0) and the STANDARD x_normed * w
+    norm is correct; GGUFConfig::rmsnorm_unit_offset therefore returns false. Behavior (d),
+    softcapping, remains unimplemented → gemma2/gemma3 stay fail-loud. The single
+    enforcement point is contract_gate::validate_supported_architecture (Gate 0 in
+    validate_model_load), which every inference-weight-loading path funnels through:
+    is_gemma1_supported(arch) is allowed; any other gemma-family arch is refused with a clear
+    error. apr convert / inspect / validate read metadata directly and are unaffected. This
+    extends the Pillar-4 fail-closed posture (PMAT-744, PMAT-750, PMAT-807): run what apr can
+    run CORRECTLY, refuse what it cannot, never emit garbage.
+  references:
+  - "crates/aprender-serve/src/contract_gate.rs (validate_supported_architecture, is_gemma1_supported, is_gemma_family, Gate 0 in validate_model_load)"
+  - "crates/aprender-serve/src/gguf/config.rs (GGUFConfig::is_gemma1/embed_scale/geglu_ffn/rmsnorm_unit_offset — PMAT-809)"
+  - "crates/aprender-serve/src/gguf/ops.rs (rms_norm_unit_offset / rms_norm_unit_offset_into — HF-weight variant, gated)"
+  - "crates/aprender-serve/src/gguf/inference/forward/gemma_dispatch.rs (rms_norm_arch, rms_norm_into_arch, gemma_gate_activation)"
+  - "crates/aprender-serve/src/gguf/inference/matmul_fused.rs (embed/embed_into apply sqrt(hidden) scaling — behavior (c))"
+  - "crates/aprender-serve/src/gguf/inference/forward/ffn_block.rs + forward_fused_q4k.rs + forward_single_profiled.rs (GeGLU + arch-dispatched norm)"
+  references_external:
+  - "llama.cpp convert_hf_to_gguf.py GemmaModel.modify_tensors: `data_torch = data_torch + 1` for *norm.weight (the GGUF +1 pre-shift)"
+  - "llama.cpp src/models/gemma.cpp: build_ffn(..., LLM_FFN_GELU, LLM_FFN_PAR) — GeGLU confirmation"
+version: 2
+status: enforced
+date: 2026-06-16
+
+proof_obligations:
+  - type: invariant
+    property: >
+      GEMMA1-SUPPORTED: is_gemma1_supported(arch) is true iff the lowercased architecture is
+      exactly "gemma" (or "gemmaforcausallm"); it is false for gemma2/gemma3/gemma3n and for
+      every non-gemma arch. validate_model_load returns Ok for a Gemma-v1 model so apr can run
+      it, having implemented behaviors (a) GeGLU, (b) standard norm over GGUF pre-shifted
+      weights, and (c) sqrt(hidden) embedding scaling.
+  - type: invariant
+    property: >
+      GEMMA2-FAIL-LOUD: validate_model_load / validate_model_load_basic return
+      Err(gate="architecture_supported") for every NON-v1 Gemma architecture (gemma2, gemma3,
+      gemma3n, Gemma2ForCausalLM, Gemma3ForCausalLM), so a model that needs unimplemented
+      softcapping is refused instead of running silently-wrong. Non-Gemma archs load unchanged.
+  - type: invariant
+    property: >
+      GEMMA1-FORWARD-PARITY: with Gemma-v1 behaviors active, GGUFConfig::embed_scale is
+      Some(sqrt(hidden_size)) and rmsnorm_unit_offset is false (GGUF weights pre-shifted), and
+      the runtime forward produces COHERENT output that matches the llama.cpp reference on the
+      same GGUF (e.g. "The capital of France is" -> "Paris", "2+2=" -> "4", "The sky is" ->
+      "the limit"). Non-Gemma archs are byte-identical (embed_scale None, standard norm, SiLU).
+
+falsification_tests:
+  - id: FALSIFY-LOAD-GEMMA-001
+    name: test_gemma2_gemma3_rejected_at_load
+    prediction: "validate_model_load with architecture in {gemma2, gemma3, Gemma2ForCausalLM, Gemma3ForCausalLM, gemma3n} returns Err(gate=architecture_supported) whose reason names the missing softcapping behavior"
+    test_harness: "cargo test -p aprender-serve --lib test_gemma2_gemma3_rejected_at_load"
+    expected_output: "test result: ok"
+    if_fails: "a gemma2/gemma3 model is accepted at load → apr runs it WITHOUT softcapping and emits silently-wrong output."
+  - id: FALSIFY-LOAD-GEMMA-002
+    name: test_gemma1_now_supported
+    prediction: "validate_model_load with architecture in {gemma, GEMMA, GemmaForCausalLM} is Ok (PMAT-809 implemented the v1 behaviors), while is_gemma1_supported(gemma2/gemma3/gemma3n) is false"
+    test_harness: "cargo test -p aprender-serve --lib test_gemma1_now_supported"
+    expected_output: "test result: ok"
+    if_fails: "either Gemma v1 is wrongly re-refused (no inference for a supported family) or gemma2/3 is wrongly accepted (silent garbage)."
+  - id: FALSIFY-LOAD-GEMMA-003
+    name: test_non_gemma_architectures_unaffected
+    prediction: "validate_model_load with architecture in {llama, qwen2, qwen3, mistral, phi, phi2, deepseek, gpt2, unknown_future_arch} is Ok — the Gemma gate does not regress any other family"
+    test_harness: "cargo test -p aprender-serve --lib test_non_gemma_architectures_unaffected"
+    expected_output: "test result: ok"
+    if_fails: "the Gemma gate over-triggers and refuses a non-Gemma model that apr CAN run correctly = a regression."
+  - id: FALSIFY-LOAD-GEMMA-004
+    name: gemma_config_helpers
+    prediction: "GGUFConfig helpers: is_gemma1 true only for v1; embed_scale == sqrt(hidden) for gemma1 and None otherwise; geglu_ffn true only for gemma1; rmsnorm_unit_offset false for the GGUF path (weights pre-shifted)"
+    test_harness: "cargo test -p aprender-serve --lib gemma_config_tests"
+    expected_output: "test result: ok"
+    if_fails: "a Gemma-v1 forward behavior is mis-gated (wrong embedding scale, wrong activation, or a double-counted (1+w) norm) = wrong output."
+  - id: FALSIFY-LOAD-GEMMA-005
+    name: gemma_rmsnorm_unit_offset_math
+    prediction: "rms_norm_unit_offset(x, w) == rms_norm(x, w+1) elementwise, and with zero-centered weights the offset variant yields RMS ~= 1 while plain rms_norm yields ~0 — proving the (1+w) HF-weight semantics are implemented correctly for the (future) raw-HF path"
+    test_harness: "cargo test -p aprender-serve --lib gemma_rmsnorm_tests"
+    expected_output: "test result: ok"
+    if_fails: "the (1+w) RMSNorm primitive is wrong; any raw-HF gemma loader relying on it would produce wrong output."
