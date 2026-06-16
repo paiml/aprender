@@ -138,9 +138,26 @@ impl GpuDevice {
     }
 
     /// Check if GPU is available (sync, native only)
+    ///
+    /// PMAT-773: The adapter probe is cached for the lifetime of the process via a
+    /// [`std::sync::OnceLock`]. On hosts WITHOUT a wgpu-compatible adapter (e.g.
+    /// headless NVIDIA / Jetson / Blackwell GB10, where opening
+    /// `/dev/dri/renderD128` fails with `VK_ERROR_INCOMPATIBLE_DRIVER`), the
+    /// underlying `request_adapter` call is expensive and was being re-attempted by
+    /// every test/caller, adding diffuse latency across a test suite. Caching the
+    /// result means the failing Vulkan device open is attempted at most once per
+    /// process; subsequent callers short-circuit.
+    ///
+    /// Behavior on hosts WITH a usable GPU is unchanged: the first probe succeeds,
+    /// `true` is cached, and callers proceed to acquire a real device via
+    /// [`Self::new`] exactly as before. The cache only memoizes whether an adapter
+    /// is obtainable — it never holds a device, so real-GPU acquisition is never
+    /// short-circuited.
     #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
     pub fn is_available() -> bool {
-        runtime::block_on(Self::is_available_async())
+        use std::sync::OnceLock;
+        static AVAILABLE: OnceLock<bool> = OnceLock::new();
+        *AVAILABLE.get_or_init(|| runtime::block_on(Self::is_available_async()))
     }
 
     /// Check if GPU is available (async, works on all platforms)

@@ -71,3 +71,23 @@ jobs:
         run: |
           cargo test -p aprender-core --release \
             --test beat_sklearn_gmm_speed -- --ignored --nocapture
+
+      - name: Pillar-2 — apr vs PyTorch one-shot cold-start training speed beat
+        run: |
+          cargo test -p aprender-core --release \
+            --test beat_pytorch_coldstart_speed -- --ignored --nocapture
+
+      - name: Pillar-3 — apr vs Unsloth one-shot cold-start LoRA-adapter speed beat
+        run: |
+          cargo test -p aprender-train --release \
+            --test beat_unsloth_coldstart_speed -- --ignored --nocapture
+
+      - name: Pillar-1 — apr vs scikit-learn one-shot cold-start speed beat
+        run: |
+          cargo test -p aprender-core --release \
+            --test beat_sklearn_coldstart_speed -- --ignored --nocapture
+
+      - name: Pillar-4 — apr vs HuggingFace transformers one-shot inference cold-start speed beat
+        run: |
+          cargo test -p aprender-core --release \
+            --test beat_hf_inference_coldstart_speed -- --ignored --nocapture
