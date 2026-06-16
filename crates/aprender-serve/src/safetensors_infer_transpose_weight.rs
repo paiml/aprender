@@ -38,6 +38,34 @@
     }
 
     // -------------------------------------------------------------------------
+    // transpose_weight_owned (PMAT-787: zero-copy owned move; bit-identical to
+    // the borrowing `transpose_weight`, but without the redundant allocation)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_transpose_weight_owned_identity_pmat787() {
+        let weight = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let result = SafetensorsToAprConverter::transpose_weight_owned(weight.clone());
+        assert_eq!(result, weight);
+    }
+
+    #[test]
+    fn test_transpose_weight_owned_empty_pmat787() {
+        let result = SafetensorsToAprConverter::transpose_weight_owned(Vec::new());
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_transpose_weight_owned_matches_borrowing_variant_pmat787() {
+        // The owned move MUST produce byte-identical output to the borrowing
+        // clone variant — this is what guarantees inference output is unchanged.
+        let weight: Vec<f32> = (0..256).map(|i| (i as f32) * 0.125 - 7.0).collect();
+        let via_borrow = SafetensorsToAprConverter::transpose_weight(&weight, 16, 16);
+        let via_move = SafetensorsToAprConverter::transpose_weight_owned(weight);
+        assert_eq!(via_borrow, via_move);
+    }
+
+    // -------------------------------------------------------------------------
     // concat_qkv_transposed
     // -------------------------------------------------------------------------
 

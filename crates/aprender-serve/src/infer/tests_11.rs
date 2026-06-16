@@ -349,24 +349,26 @@ fn test_apr_arch_no_match_defaults_to_llama() {
 
 #[test]
 fn test_is_legacy_quant_boundary_below() {
-    assert!(!is_legacy_gguf_quant(1)); // F16, not legacy
+    // PMAT-783: F16 has no GGUF GPU GEMV kernel → fail closed (would be Q4K garbage).
+    assert!(is_legacy_gguf_quant(1)); // F16, no GPU kernel → gated
 }
 
 #[test]
 fn test_is_legacy_quant_boundary_between_4_and_5() {
-    // 4 and 5 are NOT in the legacy set
-    assert!(!is_legacy_gguf_quant(4));
-    assert!(!is_legacy_gguf_quant(5));
+    // PMAT-783: types 4 and 5 (Q4_2/Q4_3, removed from GGML) have no kernel → gated.
+    assert!(is_legacy_gguf_quant(4));
+    assert!(is_legacy_gguf_quant(5));
 }
 
 #[test]
 fn test_is_legacy_quant_boundary_above() {
-    assert!(!is_legacy_gguf_quant(8)); // Q8_0, not legacy
+    assert!(!is_legacy_gguf_quant(8)); // Q8_0 — GPU-eligible
 }
 
 #[test]
 fn test_is_legacy_quant_u32_max() {
-    assert!(!is_legacy_gguf_quant(u32::MAX));
+    // PMAT-783: unknown type → fail closed (no kernel).
+    assert!(is_legacy_gguf_quant(u32::MAX));
 }
 
 // ============================================================================

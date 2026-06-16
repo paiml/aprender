@@ -35,6 +35,22 @@ pub fn run_gguf_inference_gpu(
     let hidden_dim = quantized_model.config.hidden_dim;
     let num_layers = quantized_model.layers.len();
 
+    // PMAT-785: fail-closed quant gate before GPU-resident construction. A model
+    // carrying a quant type without a verified GPU GEMV kernel would be silently
+    // decoded as Q4_K on the GPU → garbage. Run it on CPU (loud) instead of
+    // shipping GPU garbage from this `apr run --gpu` path.
+    if quantized_model.has_gpu_unsupported_quant() {
+        return run_gguf_cpu_fallback_for_unsupported_quant(
+            mapped,
+            quantized_model,
+            prompt,
+            max_tokens,
+            temperature,
+            format,
+            verbose,
+        );
+    }
+
     // PAR-046: Create OwnedQuantizedModelCuda wrapper for actual GPU acceleration
     // The previous implementation used OwnedQuantizedModel.enable_cuda() which only
     // initialized the executor but forward_cached still used CPU code paths.
@@ -147,6 +163,88 @@ pub fn run_gguf_inference_gpu(
 
     print_inference_output(
         "GGUF (CUDA)",
+        prompt,
+        &output_text,
+        tokens_generated,
+        gen_time.as_secs_f64() * 1000.0,
+        tokens_per_sec,
+        temperature,
+        format,
+        verbose,
+    );
+
+    Ok(())
+}
+
+/// PMAT-785: CPU fallback for `apr run --gpu` when the GGUF model carries a quant
+/// type without a verified GPU GEMV kernel. Mirrors the GPU path's tokenize →
+/// generate → decode → print flow, but runs `generate_with_cache` on CPU so the
+/// output is correct instead of silent Q4_K-decode garbage. Loud: prints why.
+#[cfg(feature = "cuda")]
+#[allow(clippy::too_many_arguments)]
+fn run_gguf_cpu_fallback_for_unsupported_quant(
+    mapped: &crate::gguf::MappedGGUFModel,
+    model: crate::gguf::OwnedQuantizedModel,
+    prompt: &str,
+    max_tokens: usize,
+    temperature: f32,
+    format: &str,
+    verbose: bool,
+) -> Result<()> {
+    use crate::gguf::QuantizedGenerateConfig;
+    use std::time::Instant;
+
+    println!(
+        "Backend: CPU — model uses a quant type without a verified GPU kernel \
+         (PMAT-785). Running on CPU to avoid silent Q4_K-decode garbage."
+    );
+
+    // Tokenize prompt using GGUF vocabulary (same as the GPU path).
+    let mut prompt_tokens: Vec<u32> = mapped
+        .model
+        .encode(prompt)
+        .unwrap_or_else(|| prompt.chars().map(|c| c as u32).collect());
+    if let Some(bos) = mapped.model.bos_token_id() {
+        prompt_tokens.insert(0, bos);
+    }
+    let prompt_len = prompt_tokens.len();
+
+    let mut stop_tokens = Vec::new();
+    if let Some(eos) = mapped.model.eos_token_id() {
+        stop_tokens.push(eos);
+    }
+
+    let gen_config = QuantizedGenerateConfig {
+        max_tokens,
+        temperature,
+        top_k: if temperature <= 0.01 { 1 } else { 40 },
+        stop_tokens,
+        trace: false,
+        ..Default::default()
+    };
+
+    let gen_start = Instant::now();
+    let generated = model
+        .generate_with_cache(&prompt_tokens, &gen_config)
+        .map_err(|e| crate::error::RealizarError::InferenceError(format!(
+            "CPU generation failed: {e}"
+        )))?;
+    let gen_time = gen_start.elapsed();
+
+    let tokens_generated = generated.len().saturating_sub(prompt_len);
+    let tokens_per_sec = if gen_time.as_secs_f64() > 0.0 {
+        tokens_generated as f64 / gen_time.as_secs_f64()
+    } else {
+        0.0
+    };
+
+    let output_text = mapped
+        .model
+        .decode(&generated[prompt_len..])
+        .replace('▁', " ");
+
+    print_inference_output(
+        "GGUF (CPU)",
         prompt,
         &output_text,
         tokens_generated,
