@@ -1,3 +1,8 @@
+> **🚨 SUPERSEDED / RETRACTED (2026-06-15).** This promotion plan is moot: the decisive A/B vs the
+> production `HwDp4a` kernel (not `TiledQ4KGemv`) shows the oxide kernel is ~4× SLOWER on Blackwell, so
+> wiring it into decode would be a regression. PR #2045 (the backend) was closed. cuda-oxide is a
+> proven *capability* only — see `experiments/cuda-oxide/README.md`. Kept for historical reference.
+
 # cuda-oxide Q4K Dequant-Matvec Backend Promotion — Design & Feasibility (DRAFT)
 
 Status: DRAFT / scope-only — NOT implemented, no PR.

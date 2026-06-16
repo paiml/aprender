@@ -170,6 +170,175 @@ $L_exit:
     )
 }
 
+/// PMAT-782 FIX: Generate Q4_1 GEMV PTX with correct candle (GGML) layout.
+///
+/// The GGUF Q4_1 format uses the same interleaved "candle layout" as Q4_0:
+/// - 16 bytes contain 32 nibbles for 32 weights
+/// - Low nibbles (byte & 0x0F) map to positions 0-15
+/// - High nibbles (byte >> 4) map to positions 16-31
+///
+/// Q4_1 differs from Q4_0 only in dequantization: it is AFFINE, `val = d*nibble + m`
+/// (a per-block fp16 min `m` at byte offset 2), with NO `- 8` centering. The block is
+/// 20 bytes: `d` (fp16 @0) + `m` (fp16 @2) + 16 packed nibble bytes (@4).
+///
+/// The trueno `Q4_1GemvKernel` incorrectly used CONSECUTIVE layout (byte = tid/2,
+/// nibble = tid&1), so every value index ≥1 mapped to the wrong nibble → garbage
+/// logits for any Q4_1 tensor (e.g. Qwen2-0.5B FFN-down). This is the same defect
+/// class BUG-GGUF-001/002 fixed for Q4_0/Q5_0; Q4_1 was simply never routed to a
+/// candle generator. This function generates correct PTX for GGUF Q4_1 weights.
+fn generate_q4_1_candle_ptx(k: u32, n: u32) -> String {
+    // k and n are used for grid size configuration in the caller, not embedded in PTX
+    let _ = (k, n);
+
+    // Q4_1 block: 2 bytes (d fp16) + 2 bytes (m fp16) + 16 bytes (qs) = 20 bytes
+    // Note: num_blocks is computed dynamically in PTX from k_dim parameter
+    String::from(
+        r"
+.version 7.5
+.target sm_70
+.address_size 64
+
+// PMAT-782 FIX: Q4_1 GEMV with candle nibble layout (affine dequant d*q + m)
+// Each warp (32 threads) computes one output element
+// Thread 0-15: use low nibbles from bytes 0-15
+// Thread 16-31: use high nibbles from bytes 0-15
+.visible .entry q4_1_gemv_warp_reduce(
+    .param .u64 y_ptr,
+    .param .u64 w_ptr,
+    .param .u64 x_ptr,
+    .param .u32 k_dim,
+    .param .u32 n_dim
+)
+{
+    .reg .u32 %r<32>;
+    .reg .u64 %rd<16>;
+    .reg .f32 %f<16>;
+    .reg .b16 %h<4>;
+    .reg .pred %p<8>;
+
+    // r0=tid, r1=ctaid, r2=n_dim, r3=k_dim
+    mov.u32 %r0, %tid.x;
+    mov.u32 %r1, %ctaid.x;
+
+    ld.param.u32 %r2, [n_dim];
+    ld.param.u32 %r3, [k_dim];
+    ld.param.u64 %rd0, [y_ptr];
+    ld.param.u64 %rd1, [w_ptr];
+    ld.param.u64 %rd2, [x_ptr];
+
+    // Bounds check: if ctaid >= n_dim, exit
+    setp.ge.u32 %p0, %r1, %r2;
+    @%p0 bra $L_exit;
+
+    // f0 = accumulator
+    mov.f32 %f0, 0f00000000;
+
+    // r4 = num_blocks = ceil(k_dim / 32)
+    add.u32 %r4, %r3, 31;
+    shr.u32 %r4, %r4, 5;
+
+    // rd3 = row_base = w_ptr + ctaid * num_blocks * 20
+    mul.lo.u32 %r5, %r4, 20;
+    mul.wide.u32 %rd3, %r1, %r5;
+    add.u64 %rd3, %rd1, %rd3;
+
+    // r6 = blk_idx (loop counter)
+    mov.u32 %r6, 0;
+
+$L_blk_loop:
+    setp.ge.u32 %p1, %r6, %r4;
+    @%p1 bra $L_blk_loop_end;
+
+    // rd4 = blk_addr = row_base + blk_idx * 20
+    mul.wide.u32 %rd4, %r6, 20;
+    add.u64 %rd4, %rd3, %rd4;
+
+    // f1 = scale d (fp16 at offset 0)
+    ld.global.b16 %h0, [%rd4];
+    cvt.f32.f16 %f1, %h0;
+
+    // f4 = min m (fp16 at offset 2)
+    add.u64 %rd5, %rd4, 2;
+    ld.global.b16 %h1, [%rd5];
+    cvt.f32.f16 %f4, %h1;
+
+    // rd6 = qs_base = blk_addr + 4
+    add.u64 %rd6, %rd4, 4;
+
+    // CANDLE LAYOUT:
+    // Thread 0-15 read bytes 0-15 (low nibbles -> positions 0-15)
+    // Thread 16-31 read bytes 0-15 (high nibbles -> positions 16-31)
+    // r8 = byte_idx = tid < 16 ? tid : tid - 16
+    setp.ge.u32 %p2, %r0, 16;
+    mov.u32 %r8, %r0;
+    @%p2 sub.u32 %r8, %r0, 16;
+
+    // Load byte from qs[byte_idx]
+    cvt.u64.u32 %rd7, %r8;
+    add.u64 %rd7, %rd6, %rd7;
+    ld.global.u8 %r9, [%rd7];
+
+    // r10 = nibble value
+    // Threads 0-15: low nibble (byte & 0xF)
+    // Threads 16-31: high nibble (byte >> 4)
+    mov.u32 %r10, %r9;
+    @%p2 shr.u32 %r10, %r9, 4;
+    and.b32 %r10, %r10, 15;
+
+    // Q4_1 affine dequant: f2 = d * nibble + m (no centering)
+    cvt.rn.f32.u32 %f2, %r10;
+    fma.rn.f32 %f2, %f1, %f2, %f4;
+
+    // r12 = x_idx = blk_idx * 32 + tid
+    shl.b32 %r12, %r6, 5;
+    add.u32 %r12, %r12, %r0;
+
+    // Bounds check for last block
+    setp.ge.u32 %p3, %r12, %r3;
+    @%p3 bra $L_skip_mul;
+
+    // f3 = x[x_idx]
+    cvt.u64.u32 %rd8, %r12;
+    shl.b64 %rd8, %rd8, 2;
+    add.u64 %rd8, %rd2, %rd8;
+    ld.global.f32 %f3, [%rd8];
+
+    // f0 += f2 * f3
+    fma.rn.f32 %f0, %f2, %f3, %f0;
+
+$L_skip_mul:
+    add.u32 %r6, %r6, 1;
+    bra $L_blk_loop;
+
+$L_blk_loop_end:
+    // Warp reduction using shfl.sync.down
+    shfl.sync.down.b32 %f5, %f0, 16, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f5;
+    shfl.sync.down.b32 %f6, %f0, 8, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f6;
+    shfl.sync.down.b32 %f7, %f0, 4, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f7;
+    shfl.sync.down.b32 %f8, %f0, 2, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f8;
+    shfl.sync.down.b32 %f9, %f0, 1, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f9;
+
+    // Thread 0 writes result
+    setp.ne.u32 %p4, %r0, 0;
+    @%p4 bra $L_exit;
+
+    // y[ctaid] = f0
+    mul.wide.u32 %rd9, %r1, 4;
+    add.u64 %rd9, %rd0, %rd9;
+    st.global.f32 [%rd9], %f0;
+
+$L_exit:
+    ret;
+}
+",
+    )
+}
+
 /// BUG-GGUF-002 FIX: Generate Q5_0 GEMV PTX with correct candle layout
 ///
 /// The GGUF Q5_0 format uses "candle layout" where:

@@ -3,43 +3,52 @@
 // is_legacy_gguf_quant tests (GH-219)
 // ============================================================================
 
+// PMAT-782: Q4_0/Q4_1/Q5_0 GPU GEMV kernels now use the correct GGML "candle"
+// interleaved nibble layout and PASS the cpu↔gpu parity gate (cosine≈0.9998), so
+// they are GPU-eligible. Q5_1 has NO GPU kernel and stays gated.
+
 #[test]
 fn test_is_legacy_gguf_quant_q4_0_gh219() {
-    assert!(is_legacy_gguf_quant(2)); // Q4_0
+    assert!(!is_legacy_gguf_quant(2)); // Q4_0 — fixed candle layout, GPU-eligible
 }
 
 #[test]
 fn test_is_legacy_gguf_quant_q4_1_gh219() {
-    assert!(is_legacy_gguf_quant(3)); // Q4_1
+    assert!(!is_legacy_gguf_quant(3)); // Q4_1 — PMAT-782 candle layout, GPU-eligible
 }
 
 #[test]
 fn test_is_legacy_gguf_quant_q5_0_gh219() {
-    assert!(is_legacy_gguf_quant(6)); // Q5_0
+    assert!(!is_legacy_gguf_quant(6)); // Q5_0 — fixed candle layout, GPU-eligible
 }
 
 #[test]
 fn test_is_legacy_gguf_quant_q5_1_gh219() {
-    assert!(is_legacy_gguf_quant(7)); // Q5_1
+    assert!(is_legacy_gguf_quant(7)); // Q5_1 — no GPU kernel → gated
 }
 
 #[test]
 fn test_is_legacy_gguf_quant_non_legacy_types_gh219() {
-    // Q4_K = 12, Q5_K = 13, Q6_K = 14, Q8_0 = 8, F16 = 1, F32 = 0
+    // GPU-eligible types (have a real WeightQuantType GEMV kernel) → NOT gated.
+    // Q4_K = 12, Q5_K = 13, Q6_K = 14, Q8_0 = 8, F32 = 0
     assert!(!is_legacy_gguf_quant(0));  // F32
-    assert!(!is_legacy_gguf_quant(1));  // F16
     assert!(!is_legacy_gguf_quant(8));  // Q8_0
     assert!(!is_legacy_gguf_quant(12)); // Q4_K
     assert!(!is_legacy_gguf_quant(13)); // Q5_K
     assert!(!is_legacy_gguf_quant(14)); // Q6_K
+    // PMAT-783: F16(1) has no GGUF GPU GEMV kernel → gated (would be Q4K garbage).
+    assert!(is_legacy_gguf_quant(1));
 }
 
 #[test]
 fn test_is_legacy_gguf_quant_edge_values_gh219() {
-    assert!(!is_legacy_gguf_quant(4));
-    assert!(!is_legacy_gguf_quant(5));
-    assert!(!is_legacy_gguf_quant(100));
-    assert!(!is_legacy_gguf_quant(u32::MAX));
+    // PMAT-783: every type WITHOUT a verified GPU kernel fails closed to CPU.
+    assert!(is_legacy_gguf_quant(4)); // Q4_2 (removed) — no kernel
+    assert!(is_legacy_gguf_quant(5)); // Q4_3 (removed) — no kernel
+    assert!(is_legacy_gguf_quant(10)); // Q2_K — no kernel
+    assert!(is_legacy_gguf_quant(11)); // Q3_K — no kernel
+    assert!(is_legacy_gguf_quant(100)); // IQ* / unknown — no kernel
+    assert!(is_legacy_gguf_quant(u32::MAX));
 }
 
 // ============================================================================
