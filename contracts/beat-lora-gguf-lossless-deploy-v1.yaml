@@ -1,0 +1,56 @@
+contract: beat-lora-gguf-lossless-deploy
+metadata:
+  kind: beat-benchmark
+  version: "1.0.0"
+  description: >
+    Pillar-3 (Unsloth) DEPLOY-CORRECTNESS beat (PMAT-712): aprender's
+    fine-tune→merge→export-to-GGUF deploy path is LOSSLESS by forward-output
+    equivalence. After folding a LoRA adapter into the base weight (run_merge →
+    merged.apr) and exporting F32 GGUF (apr_export, quantize=None → merged.gguf),
+    a forward pass through the LoRA-targeted q_proj projection loaded from the
+    GGUF is NUMERICALLY EQUIVALENT to the same forward through the apr in-memory
+    merged weight. This is the exact "lossless GGUF export" claim Unsloth markets
+    (save_pretrained_gguf) — made falsifiable. The structural falsifier
+    (test_lora_to_gguf_export_roundtrip_pmat712, PR #2052) proves the GGUF is
+    well-formed and carries the merged weights; THIS beat proves the stronger
+    claim: it carries them losslessly, verified by a real forward y = W·x rather
+    than a byte-diff (y = W·x is order-sensitive, so a lost/garbled weight, a
+    layout TRANSPOSE bug, or a shape/metadata mismatch in export diverges).
+    Weights are position-dependent and ASYMMETRIC (W ≠ Wᵀ) so a transpose bug is
+    observable; a sensitivity guard asserts y(W) vs y(Wᵀ) dwarfs the apr↔gguf gap.
+    Sibling apr-lora-merge-equivalence-beat (PMAT-747) proves merged≡factored
+    forward (the merge half); this proves merged.apr≡merged.gguf forward (the
+    export/deploy half). Measured 2026-06-15 (CPU, deterministic, hidden=256,
+    rank=8): F32 export forward equivalence max|Δy| = 0.0 (bit-exact), output
+    scale ≈ 7.244, transpose-sensitivity gap O(10) ≫ 0.
+  references:
+  - "crates/apr-cli/src/commands/finetune_tests.rs (beat_lora_gguf_lossless_deploy_pmat712)"
+  - "crates/apr-cli/src/commands/finetune_tests.rs (test_lora_to_gguf_export_roundtrip_pmat712 — structural falsifier this extends, PR #2052)"
+  - "crates/aprender-core/src/format/converter/apr_export_fn.rs (apr_export F32 GGUF path)"
+  - "apr-lora-merge-equivalence-beat-v1.yaml (sibling: the merge half of the P3 deploy pipeline)"
+version: 1
+status: enforced
+date: 2026-06-15
+
+# Beat-benchmark parameters (forward-equivalence invariant; CI fails on divergence).
+beat:
+  pillar: 3
+  incumbent: "Unsloth (save_pretrained_gguf — no forward-equivalence contract)"
+  incumbent_pinned: "2026-06-15 — Unsloth exports GGUF but does not contract-verify exported≡in-memory forward output"
+  canonical_task: >
+    Fine-tune story end to end: merge a LoRA adapter (A:[r,d_in], B:[d_out,r],
+    scale=alpha/rank) into base weight W:[d_out,d_in] via run_merge → merged.apr,
+    then export F32 GGUF (apr_export, format=Gguf, quantize=None) → merged.gguf.
+    Load the merged q_proj from BOTH the apr file (RosettaStone::load_tensor_f32)
+    and the GGUF (load_gguf_tensors — the path realizar serves through). Run the
+    forward y = W·x for the same deterministic non-constant input x on both, and
+    take the max absolute per-element difference of the output vectors. F32 export
+    must be lossless, so this difference must be ~0.
+  metric: deploy_forward_max_abs_dlogit
+  direction: lower_is_better
+  baseline_value: 0.0000      # perfect lossless-deploy target (F32, no quant)
+  baseline_floor: 0.0         # measured apr↔gguf forward max|Δy| = 0.0 (bit-exact)
+  beat_threshold: 0.0001      # F32 export must stay forward-lossless within 1e-4; measured 0.0
+  baseline_sourced_date: "2026-06-15"
+  approved_compute: CPU
+  ci_gate_name: "beat_lora_gguf_lossless_deploy_pmat712"
