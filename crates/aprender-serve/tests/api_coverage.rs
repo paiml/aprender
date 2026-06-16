@@ -771,14 +771,17 @@ fn test_predict_response_classification() {
 #[test]
 fn test_embedding_request_serialization() {
     let request = EmbeddingRequest {
-        input: "test input text".to_string(),
+        input: "test input text".to_string().into(),
         model: Some("text-embedding-ada".to_string()),
     };
 
     let json = serde_json::to_string(&request).expect("should serialize");
     let deserialized: EmbeddingRequest = serde_json::from_str(&json).expect("should deserialize");
 
-    assert_eq!(deserialized.input, "test input text");
+    assert_eq!(
+        deserialized.input,
+        realizar::api::EmbeddingInput::Single("test input text".to_string())
+    );
     assert_eq!(deserialized.model, Some("text-embedding-ada".to_string()));
 }
 
@@ -1465,7 +1468,10 @@ fn test_embedding_request_no_model() {
     let json = r#"{"input": "test text"}"#;
     let request: EmbeddingRequest = serde_json::from_str(json).expect("should deserialize");
 
-    assert_eq!(request.input, "test text");
+    assert_eq!(
+        request.input,
+        realizar::api::EmbeddingInput::Single("test text".to_string())
+    );
     assert!(request.model.is_none());
 }
 
@@ -3692,7 +3698,7 @@ fn test_shap_explanation_edge_cases() {
 fn test_embedding_request_variations() {
     // Single input string
     let request = EmbeddingRequest {
-        input: "single string".to_string(),
+        input: "single string".to_string().into(),
         model: None,
     };
     let json = serde_json::to_string(&request).expect("should serialize");
@@ -3700,7 +3706,7 @@ fn test_embedding_request_variations() {
 
     // With model specified
     let request2 = EmbeddingRequest {
-        input: "test input".to_string(),
+        input: "test input".to_string().into(),
         model: Some("text-embedding-ada-002".to_string()),
     };
     let json2 = serde_json::to_string(&request2).expect("should serialize");
@@ -5141,7 +5147,7 @@ fn test_openai_models_response_roundtrip() {
 #[test]
 fn test_embedding_request_roundtrip() {
     let original = EmbeddingRequest {
-        input: "Text to embed".to_string(),
+        input: "Text to embed".to_string().into(),
         model: Some("text-embedding-3-small".to_string()),
     };
     let json = serde_json::to_string(&original).expect("serialize");

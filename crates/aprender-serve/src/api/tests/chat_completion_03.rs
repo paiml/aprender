@@ -390,11 +390,11 @@ fn test_context_window_config_default_cov() {
 #[test]
 fn test_embedding_request_fields_cov() {
     let req = EmbeddingRequest {
-        input: "Some text to embed".to_string(),
+        input: "Some text to embed".to_string().into(),
         model: Some("text-embedding".to_string()),
     };
     assert!(req.model.is_some());
-    assert!(req.input.contains("embed"));
+    assert!(req.input.iter().any(|s| s.contains("embed")));
 }
 
 // =========================================================================

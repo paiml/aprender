@@ -313,7 +313,7 @@ fn test_clean_chat_output_with_end_tag() {
 #[test]
 fn test_embedding_request_serialization() {
     let req = EmbeddingRequest {
-        input: "Test text".to_string(),
+        input: "Test text".to_string().into(),
         model: Some("test-model".to_string()),
     };
 
@@ -322,14 +322,17 @@ fn test_embedding_request_serialization() {
     assert!(json.contains("test-model"));
 
     let parsed: EmbeddingRequest = serde_json::from_str(&json).expect("deserialize");
-    assert_eq!(parsed.input, "Test text");
+    assert_eq!(
+        parsed.input,
+        crate::api::realize_handlers::EmbeddingInput::Single("Test text".to_string())
+    );
     assert_eq!(parsed.model, Some("test-model".to_string()));
 }
 
 #[test]
 fn test_embedding_request_without_model() {
     let req = EmbeddingRequest {
-        input: "Text only".to_string(),
+        input: "Text only".to_string().into(),
         model: None,
     };
 

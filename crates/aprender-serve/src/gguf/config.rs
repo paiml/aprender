@@ -358,6 +358,73 @@ pub(crate) fn default_rope_theta_for_architecture(arch: &str) -> f32 {
 }
 
 impl GGUFConfig {
+    /// PMAT-809: Whether this is a Gemma-v1-family architecture.
+    ///
+    /// Gemma v1 (`gemma`, GGUF `general.architecture == "gemma"`) requires three
+    /// architecture-specific behaviors the LLaMA-style forward path does NOT
+    /// implement by default:
+    ///
+    /// 1. **GeGLU FFN** — `gelu_tanh(gate(x)) * up(x)` (not SiLU/SwiGLU).
+    /// 2. **`(1 + weight)` RMSNorm** — norm weights are stored centered at 0.
+    /// 3. **`sqrt(hidden_size)` embedding scaling** — token embeddings are scaled
+    ///    after lookup.
+    ///
+    /// Gemma2 / Gemma3 ALSO need attention/logit softcapping, which is NOT
+    /// implemented here — so this returns `true` ONLY for the bare `gemma`
+    /// architecture. Gemma2/Gemma3 remain fail-loud at the contract gate.
+    #[must_use]
+    pub fn is_gemma1(&self) -> bool {
+        let a = self.architecture.to_ascii_lowercase();
+        // EXACT "gemma" only — not "gemma2"/"gemma3" (those need softcapping).
+        a == "gemma" || a == "gemmaforcausallm"
+    }
+
+    /// PMAT-809 (b): Whether RMSNorm must apply the Gemma `(1 + weight)` unit
+    /// offset at RUNTIME.
+    ///
+    /// Gemma's RMSNorm is mathematically `x_normed * (1 + w_hf)` where `w_hf` is
+    /// the HuggingFace weight (centered at 0). HOWEVER, llama.cpp's GGUF converter
+    /// **pre-adds 1.0** to every `*norm.weight` at conversion time
+    /// (`GemmaModel.modify_tensors`: `data_torch + 1`), so a GGUF gemma model
+    /// already stores `w_gguf = 1 + w_hf` (verified: mean ≈ 1.5–2.6, not ≈ 0).
+    ///
+    /// realizar loads GGUF (and APR converted from GGUF) — the weights already
+    /// carry the +1 — so the runtime norm is the STANDARD `x_normed * w_gguf`,
+    /// NOT a second `(1 + w)`. Applying the offset again would double-count.
+    /// Hence this returns `false`: no extra runtime offset for the GGUF path.
+    ///
+    /// (If a future loader ingests RAW HF/safetensors gemma weights that are NOT
+    /// pre-shifted, that path — not this one — would need the runtime offset.)
+    #[must_use]
+    pub fn rmsnorm_unit_offset(&self) -> bool {
+        false
+    }
+
+    /// PMAT-809 (c): Embedding scale factor applied after token lookup.
+    ///
+    /// Gemma scales token embeddings by `sqrt(hidden_size)`; returns `None` for
+    /// all other architectures (no scaling).
+    #[must_use]
+    pub fn embed_scale(&self) -> Option<f32> {
+        if self.is_gemma1() {
+            // sqrt(hidden_size). f64 intermediate to keep the constant exact for
+            // the common power-of-two-ish hidden sizes (e.g. 2048 → 45.2548...).
+            #[allow(clippy::cast_precision_loss)]
+            Some((self.hidden_dim as f64).sqrt() as f32)
+        } else {
+            None
+        }
+    }
+
+    /// PMAT-809 (a): Whether the gated FFN uses GeGLU (`gelu(gate) * up`) instead
+    /// of SwiGLU (`silu(gate) * up`).
+    ///
+    /// Gemma's `GatedMlp` uses the `gelu_tanh` activation on the gate branch.
+    #[must_use]
+    pub fn geglu_ffn(&self) -> bool {
+        self.is_gemma1()
+    }
+
     /// Extract configuration from APR model metadata.
     ///
     /// Shared by both F32 loading (`loading.rs`) and quantized loading
@@ -1024,3 +1091,74 @@ fn check_usize_max(value: usize, max: usize, field: &str) -> Result<()> {
 }
 
 include!("config_validated.rs");
+
+#[cfg(test)]
+mod gemma_config_tests {
+    use super::*;
+
+    fn cfg(arch: &str, hidden: usize) -> GGUFConfig {
+        GGUFConfig {
+            architecture: arch.to_string(),
+            constraints: ArchConstraints::from_architecture(arch),
+            hidden_dim: hidden,
+            num_layers: 18,
+            num_heads: 8,
+            num_kv_heads: 1,
+            vocab_size: 256_128,
+            intermediate_dim: 16_384,
+            context_length: 8192,
+            rope_theta: 10_000.0,
+            eps: 1e-6,
+            rope_type: 2,
+            explicit_head_dim: None,
+            bos_token_id: Some(2),
+            eos_token_id: Some(1),
+        }
+    }
+
+    /// PMAT-809: only the bare `gemma` arch is treated as supported Gemma v1.
+    #[test]
+    fn is_gemma1_only_matches_v1() {
+        assert!(cfg("gemma", 2048).is_gemma1());
+        assert!(cfg("GEMMA", 2048).is_gemma1());
+        assert!(cfg("GemmaForCausalLM", 2048).is_gemma1());
+        // v2/v3 need softcapping → NOT v1.
+        assert!(!cfg("gemma2", 2304).is_gemma1());
+        assert!(!cfg("gemma3", 2560).is_gemma1());
+        assert!(!cfg("gemma3n", 2048).is_gemma1());
+        // unrelated archs.
+        assert!(!cfg("llama", 4096).is_gemma1());
+        assert!(!cfg("qwen2", 1536).is_gemma1());
+    }
+
+    /// (c) embed scale is `sqrt(hidden)` for gemma1, `None` otherwise.
+    #[test]
+    fn embed_scale_is_sqrt_hidden_for_gemma_only() {
+        let g = cfg("gemma", 2048);
+        let s = g.embed_scale().expect("gemma must scale embeddings");
+        assert!(
+            (s - (2048f32).sqrt()).abs() < 1e-3,
+            "scale {s} != sqrt(2048)"
+        );
+        assert!(cfg("llama", 4096).embed_scale().is_none());
+        assert!(cfg("qwen2", 1536).embed_scale().is_none());
+        assert!(cfg("gemma2", 2304).embed_scale().is_none());
+    }
+
+    /// (a) GeGLU FFN enabled for gemma1 only.
+    #[test]
+    fn geglu_enabled_for_gemma1_only() {
+        assert!(cfg("gemma", 2048).geglu_ffn());
+        assert!(!cfg("llama", 4096).geglu_ffn());
+        assert!(!cfg("gemma2", 2304).geglu_ffn());
+    }
+
+    /// (b) GGUF gemma weights are pre-shifted (+1 at conversion), so NO runtime
+    /// unit offset is applied — this MUST be false for the GGUF path to avoid
+    /// double-counting the +1.
+    #[test]
+    fn rmsnorm_unit_offset_is_false_for_gguf_gemma() {
+        assert!(!cfg("gemma", 2048).rmsnorm_unit_offset());
+        assert!(!cfg("llama", 4096).rmsnorm_unit_offset());
+    }
+}
