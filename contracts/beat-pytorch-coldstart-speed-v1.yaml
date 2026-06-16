@@ -1,0 +1,56 @@
+contract: beat-pytorch-coldstart-speed
+metadata:
+  kind: beat-benchmark
+  version: "1.0.0"
+  description: >
+    Pillar-2 (PyTorch) BEAT benchmark: for a ONE-SHOT small-model training job
+    invoked from the shell ("fit me a quick classifier"), aprender — a pure-Rust
+    static binary with ~0 framework startup — must be dramatically FASTER end-to-end
+    than PyTorch, which pays ~740ms for `import torch` + Python per-op dispatch on
+    tiny tensors. Gated on the RELATIVE end-to-end process wall-clock ratio
+    apr_ms/torch_ms (same host, same run). This is a STARTUP-COST beat — the
+    static-binary advantage is architecture-independent (robust across CI hosts,
+    unlike bandwidth-bound elementwise beats). Deliberately scoped to the small
+    one-shot regime; apr CONCEDES large-MLP in-loop throughput (PyTorch MKL + fused
+    autograd, ~11x — see beat_pytorch_autograd_grad.rs). Runs nightly (needs uv + torch).
+  references:
+  - "crates/aprender-core/tests/beat_pytorch_coldstart_speed.rs"
+  - "crates/aprender-core/tests/beat_pytorch_autograd_grad.rs (sibling Pillar-2 correctness beat)"
+version: 1
+status: enforced
+date: 2026-06-15
+beat:
+  pillar: 2
+  incumbent: PyTorch
+  incumbent_pinned: "2026-06-15 via uv run --with torch (import torch ~740ms + 100-step SGD)"
+  canonical_task: >
+    One-shot logistic-regression training (make_classification 200x5, 100-step
+    batch GD) timed as END-TO-END process wall-clock: apr re-execs its own static
+    binary (cold-start + fit); PyTorch runs the equivalent SGD via uv. Same data,
+    same host, same run (median of 5 + warmup); metric is ratio apr_ms / torch_ms.
+  metric: wall_clock_ratio_apr_over_torch
+  direction: lower_is_better
+  baseline_value: 1.0000
+  baseline_floor: 0.0007
+  beat_threshold: 0.1000
+  baseline_sourced_date: "2026-06-15"
+  approved_compute: CPU
+  ci_gate_name: "beat_pytorch_coldstart_speed"
+proof_obligations:
+- id: OBLIG-PYTORCH-COLDSTART-RATIO
+  statement: >
+    On the canonical task, apr_ms / torch_ms <= beat_threshold (0.10) measured
+    same-host/same-run as the median of 5 timed iterations after a warmup.
+  type: bound
+falsification_tests:
+- id: FALSIFY-BEAT-PYTORCH-COLDSTART-SPEED
+  description: >
+    FALSE if apr is not >= 10x faster than PyTorch end-to-end on the one-shot small
+    training task (ratio > 0.10). Catches apr regressing into a heavy startup.
+  command: >
+    cargo test -p aprender-core --release --test beat_pytorch_coldstart_speed --
+    --ignored --nocapture
+  expected: "ratio <= 0.10 (apr >= 10x faster than PyTorch end-to-end; measured ~1500x)"
+  if_fails: >
+    apr lost its static-binary cold-start advantage (e.g. a heavy startup dependency
+    crept in) OR the one-shot logreg GD path regressed. Compare apr_ms vs torch_ms.

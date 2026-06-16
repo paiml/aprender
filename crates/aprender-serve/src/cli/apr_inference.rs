@@ -57,29 +57,43 @@ pub fn run_apr_inference(
         let model = OwnedQuantizedModel::from_apr(&mapped).map_err(|e| {
             crate::error::RealizarError::FormatError { reason: format!("APR→GGUF failed: {e}") }
         })?;
-        let mut cuda_model = OwnedQuantizedModelCuda::with_max_seq_len(model, 0, 4096)
-            .map_err(|e| e.error)?;
 
-        // Tokenize using embedded APR tokenizer (same as CPU path)
-        let input_ids = crate::apr::AprV2Model::encode_text(model_path, prompt)
-            .or_else(|| crate::apr::AprV2Model::load_tokenizer(model_path).map(|t| t.encode(prompt)))
-            .unwrap_or_else(|| prompt.chars().map(|c| c as u32).collect());
+        // PMAT-785: fail-closed quant gate before GPU-resident construction. An APR
+        // model carrying a quant type without a verified GPU GEMV kernel would be
+        // silently decoded as Q4_K on the GPU → garbage. Fall through to the CPU
+        // path below (loud) instead of shipping GPU garbage from `apr run --gpu`.
+        if model.has_gpu_unsupported_quant() {
+            eprintln!(
+                "Backend: CPU — APR model uses a quant type without a verified GPU \
+                 kernel (PMAT-785). Running on CPU to avoid silent Q4_K-decode garbage."
+            );
+        } else {
+            let mut cuda_model = OwnedQuantizedModelCuda::with_max_seq_len(model, 0, 4096)
+                .map_err(|e| e.error)?;
 
-        let gen_config = QuantizedGenerateConfig {
-            max_tokens,
-            temperature,
-            top_k: 1,
-            stop_tokens: vec![151645, 151643],
-            trace: false,
-            ..Default::default()
-        };
-        let output_ids = cuda_model.generate_gpu_resident(&input_ids, &gen_config)?;
-        // Decode using APR tokenizer
-        let output_text = crate::apr::AprV2Model::load(model_path)
-            .ok()
-            .and_then(|m| m.load_embedded_tokenizer()).map_or_else(|| output_ids.iter().map(|&id| format!("[{}]", id)).collect(), |tok| tok.decode(&output_ids));
-        print!("{output_text}");
-        return Ok(());
+            // Tokenize using embedded APR tokenizer (same as CPU path)
+            let input_ids = crate::apr::AprV2Model::encode_text(model_path, prompt)
+                .or_else(|| {
+                    crate::apr::AprV2Model::load_tokenizer(model_path).map(|t| t.encode(prompt))
+                })
+                .unwrap_or_else(|| prompt.chars().map(|c| c as u32).collect());
+
+            let gen_config = QuantizedGenerateConfig {
+                max_tokens,
+                temperature,
+                top_k: 1,
+                stop_tokens: vec![151645, 151643],
+                trace: false,
+                ..Default::default()
+            };
+            let output_ids = cuda_model.generate_gpu_resident(&input_ids, &gen_config)?;
+            // Decode using APR tokenizer
+            let output_text = crate::apr::AprV2Model::load(model_path)
+                .ok()
+                .and_then(|m| m.load_embedded_tokenizer()).map_or_else(|| output_ids.iter().map(|&id| format!("[{}]", id)).collect(), |tok| tok.decode(&output_ids));
+            print!("{output_text}");
+            return Ok(());
+        }
     }
 
     let load_start = Instant::now();

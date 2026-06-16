@@ -234,8 +234,89 @@ impl<T> GpuBuffer<T> {
         })
     }
 
+    /// PMAT-769: Register host memory for GPU access, or copy into a managed
+    /// buffer on unified-memory devices that reject `cuMemHostRegister`.
+    ///
+    /// Grace-Blackwell (GB10), Grace-Hopper, and Jetson expose a single coherent
+    /// physical memory pool. On those parts `cuMemHostRegister` is both
+    /// **unnecessary** (host and device pages are already coherent) and
+    /// **unsupported** — the driver returns `CUDA_ERROR_UNKNOWN (712)` /
+    /// `CUDA_ERROR_INVALID_VALUE (1)`, which previously aborted weight loading and
+    /// left `workspace.q8_activation_buf` uninitialized (the cascade that broke
+    /// ~21 `cuda::` serve lib tests on gx10).
+    ///
+    /// Behavior, gated strictly on device class so discrete GPUs are unaffected:
+    /// - **Unified memory** (`CU_DEVICE_ATTRIBUTE_INTEGRATED == 1`): allocate a
+    ///   managed buffer via `cuMemAllocManaged` and copy the host bytes in. The
+    ///   buffer is device-accessible (plain pointer is valid on the GPU) and is
+    ///   freed via `cuMemFree` on drop. `cuMemHostRegister`/`cuMemHostUnregister`
+    ///   are skipped entirely.
+    /// - **Discrete GPU** (`INTEGRATED == 0`, e.g. RTX 4090): identical to the
+    ///   legacy [`from_host_registered`](Self::from_host_registered) — host pages
+    ///   are pinned + device-mapped (a real H2D-DMA perf win). No behavior change.
+    ///
+    /// As a belt-and-suspenders fallback, a `cuMemHostRegister` failure on a
+    /// device we classified as discrete is treated as "this host can't pin" and
+    /// also degrades to the managed-copy path rather than failing the load.
+    ///
+    /// # Safety
+    /// `host_ptr` must be valid for reads of `len * size_of::<T>()` bytes for the
+    /// duration of this call. On the discrete path it must additionally be
+    /// page-aligned and outlive the buffer (Drop does NOT free host memory); on
+    /// the unified path the bytes are copied, so the host allocation may be freed
+    /// independently afterward.
+    pub unsafe fn from_host_registered_or_managed(
+        ctx: &CudaContext,
+        host_ptr: *mut T,
+        len: usize,
+    ) -> Result<Self, GpuError>
+    where
+        T: Copy,
+    {
+        if len == 0 {
+            return Ok(Self {
+                ptr: 0,
+                len: 0,
+                host_ptr: None,
+                ctx: Some(ctx.raw()),
+                _marker: PhantomData,
+            });
+        }
+
+        // Unified-memory devices reject cuMemHostRegister — skip pinning and use
+        // a coherent managed allocation instead. Discrete GPUs keep pinning.
+        let is_unified = classify_device_memory(ctx)
+            .map(|c| c == DeviceMemoryClass::UnifiedMemory)
+            .unwrap_or(false);
+
+        if !is_unified {
+            // SAFETY: caller upholds from_host_registered's contract on the
+            // discrete path (page-aligned, valid, outlives buffer).
+            match unsafe { Self::from_host_registered(host_ptr, len) } {
+                Ok(buf) => return Ok(buf),
+                // Belt-and-suspenders: a host that reports discrete but still
+                // refuses to pin (ambiguous hardware) degrades to managed copy
+                // rather than failing the model load.
+                Err(GpuError::MemoryAllocation(_)) => {}
+                Err(e) => return Err(e),
+            }
+        }
+
+        // Unified (or pin-refusing) path: managed buffer + host copy.
+        // SAFETY: host_ptr is valid for len elements per the caller's contract.
+        let host_slice = unsafe { std::slice::from_raw_parts(host_ptr as *const T, len) };
+        let mut buf = Self::new_managed(ctx, len)?;
+        buf.copy_from_host(host_slice)?;
+        Ok(buf)
+    }
+
     /// PMAT-396: Register existing host memory for GPU access (zero-copy).
     /// On Grace Blackwell, GPU accesses same physical pages via NVLink-C2C.
+    ///
+    /// NOTE: On unified-memory parts (GB10/Jetson) `cuMemHostRegister` is
+    /// unsupported; prefer [`from_host_registered_or_managed`](Self::from_host_registered_or_managed)
+    /// which auto-detects and falls back. This raw entry point is retained for
+    /// discrete GPUs and existing callers.
     ///
     /// # Safety
     /// `host_ptr` must be page-aligned, valid for `len * size_of::<T>()`,
