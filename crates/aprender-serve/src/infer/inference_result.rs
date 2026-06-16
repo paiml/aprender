@@ -213,6 +213,11 @@ fn run_gguf_inference(
         top_k: config.top_k,
         stop_tokens,
         trace: config.trace,
+        // PMAT-818: forward the repetition penalty to BOTH the CUDA
+        // GPU-resident decode and the CPU decode (was silently dropped —
+        // QuantizedGenerateConfig defaulted repeat_penalty to 1.0).
+        repeat_penalty: config.repeat_penalty,
+        repeat_last_n: config.repeat_last_n,
             ..Default::default()
     };
 

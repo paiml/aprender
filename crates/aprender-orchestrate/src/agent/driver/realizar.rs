@@ -80,6 +80,10 @@ impl LlmDriver for RealizarDriver {
             verbose: false,
             use_mock_backend: false,
             stop_tokens: vec![],
+            // PMAT-818: agent driver uses no repetition penalty (greedy/sampled
+            // as configured by request); defaults preserve prior behavior.
+            repeat_penalty: 1.0,
+            repeat_last_n: 64,
         };
 
         // Run inference in blocking thread (realizar is sync)

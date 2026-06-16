@@ -269,6 +269,10 @@ fn execute_with_realizar(
     }
     config = config
         .with_max_tokens(options.max_tokens)
+        // PMAT-818: forward the repetition penalty (was dropped between the CLI
+        // and realizar::run_inference, so `apr run --repeat-penalty` was a no-op
+        // on both CPU and GPU).
+        .with_repeat_penalty(options.repeat_penalty, options.repeat_last_n)
         .with_verbose(options.verbose); // NOISY-GUARD F-UX-27: explicit --verbose flag
 
     if options.no_gpu {

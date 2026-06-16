@@ -921,6 +921,9 @@ fn run_apr_quantized_cpu_inference(
         top_k: config.top_k,
         stop_tokens,
         trace: config.trace,
+        // PMAT-818: forward repetition penalty on this GPU-path fallback too.
+        repeat_penalty: config.repeat_penalty,
+        repeat_last_n: config.repeat_last_n,
             ..Default::default()
     };
 

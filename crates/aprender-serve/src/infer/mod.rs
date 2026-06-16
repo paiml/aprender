@@ -68,6 +68,12 @@ pub struct InferenceConfig {
     pub verbose: bool,
     /// Stop token IDs for early termination (GH-373)
     pub stop_tokens: Vec<u32>,
+    /// PMAT-818: Repetition penalty (1.0 = no penalty, >1.0 penalizes repeats).
+    /// Applied to recently-seen tokens before greedy/sampling on CPU and GPU.
+    pub repeat_penalty: f32,
+    /// PMAT-818: Recency window (number of recent tokens checked) for the
+    /// repetition penalty. `0` disables the penalty regardless of `repeat_penalty`.
+    pub repeat_last_n: usize,
     /// INTERNAL: Use mock backend for testing (PMAT-COV-95)
     #[doc(hidden)]
     pub use_mock_backend: bool,
@@ -91,6 +97,8 @@ impl InferenceConfig {
             trace_steps: None,
             verbose: false,
             stop_tokens: Vec::new(),
+            repeat_penalty: 1.0,
+            repeat_last_n: 64,
             use_mock_backend: false,
         }
     }
@@ -127,6 +135,16 @@ impl InferenceConfig {
     #[must_use]
     pub fn with_top_k(mut self, top_k: usize) -> Self {
         self.top_k = top_k;
+        self
+    }
+
+    /// PMAT-818: Set the repetition penalty and recency window.
+    ///
+    /// `penalty == 1.0` or `last_n == 0` is a no-op (byte-identical decode).
+    #[must_use]
+    pub fn with_repeat_penalty(mut self, penalty: f32, last_n: usize) -> Self {
+        self.repeat_penalty = penalty;
+        self.repeat_last_n = last_n;
         self
     }
 

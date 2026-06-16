@@ -136,6 +136,16 @@ falsification_tests:
   test: test_repeat_penalty_unity_is_byte_identical_no_op, test_repeat_penalty_zero_window_is_no_op,
     test_repeat_penalty_empty_recent_is_no_op in gguf::inference::generation::tests
   if_fails: Default-config decode diverges from the pre-PMAT-814 path — a regression
+- id: FALSIFY-SA-009
+  rule: apr run threads repeat_penalty end-to-end into the decode config
+  prediction: A non-default --repeat-penalty / --repeat-last-n set on the CLI
+    reaches realizar::InferenceConfig and is copied into the QuantizedGenerateConfig
+    consumed by both the CUDA GPU-resident and CPU dense decode loops; an
+    InferenceConfig built with with_repeat_penalty(rho, n) carries rho/n through.
+  test: test_inference_config_with_repeat_penalty_roundtrips in infer::tests
+  if_fails: The CLI parses --repeat-penalty but run_inference drops it before the
+    decode loop (QuantizedGenerateConfig defaults repeat_penalty to 1.0) — the
+    PMAT-814 GPU/CPU decode fix is dead code for apr run (PMAT-818 plumbing gap)
 kani_harnesses:
 - id: KANI-SA-001
   obligation: SA-EQ-001

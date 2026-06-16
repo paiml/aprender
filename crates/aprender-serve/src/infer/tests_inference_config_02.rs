@@ -305,6 +305,8 @@
             verbose: false,
             stop_tokens: Vec::new(),
             use_mock_backend: false,
+            repeat_penalty: 1.0,
+            repeat_last_n: 64,
         };
         let debug_str = format!("{:?}", config);
         assert!(debug_str.contains("trace_verbose"));
@@ -329,6 +331,8 @@
             verbose: true,
             stop_tokens: Vec::new(),
             use_mock_backend: false,
+            repeat_penalty: 1.0,
+            repeat_last_n: 64,
         };
         let cloned = config.clone();
         assert_eq!(cloned.trace_verbose, config.trace_verbose);
@@ -449,4 +453,39 @@
         // Should preserve text since [INST] tokens aren't in the markers list
         assert!(cleaned.contains("user input"));
         assert!(cleaned.contains("response"));
+    }
+
+    // =========================================================================
+    // PMAT-818 / FALSIFY-SA-009: --repeat-penalty must reach InferenceConfig and
+    // thus the decode loop. Before PMAT-818, the CLI parsed --repeat-penalty but
+    // realizar::InferenceConfig had no such field, so the value was dropped before
+    // QuantizedGenerateConfig (which defaulted repeat_penalty to 1.0) — the
+    // PMAT-814 GPU/CPU decode fix was dead code for `apr run`.
+    // =========================================================================
+
+    /// FALSIFY-SA-009 (RED-on-bug / GREEN-on-fix): a non-default penalty set via
+    /// the builder is carried on the config (so run_gguf_inference can copy it
+    /// into the QuantizedGenerateConfig the CUDA/CPU decode loops consume).
+    #[test]
+    fn test_inference_config_with_repeat_penalty_roundtrips() {
+        let config = InferenceConfig::new("/model.gguf").with_repeat_penalty(1.3, 128);
+        assert!(
+            (config.repeat_penalty - 1.3).abs() < 1e-6,
+            "repeat_penalty must roundtrip: got {}",
+            config.repeat_penalty
+        );
+        assert_eq!(config.repeat_last_n, 128, "repeat_last_n must roundtrip");
+    }
+
+    /// No-regression: the default config is the byte-identical pre-PMAT-818 path
+    /// (penalty == 1.0, window == 64 → effectively a no-op penalty).
+    #[test]
+    fn test_inference_config_default_repeat_penalty_is_unity() {
+        let config = InferenceConfig::new("/model.gguf");
+        assert!(
+            (config.repeat_penalty - 1.0).abs() < 1e-6,
+            "default repeat_penalty must be 1.0 (no-op), got {}",
+            config.repeat_penalty
+        );
+        assert_eq!(config.repeat_last_n, 64);
     }

@@ -362,6 +362,8 @@
             trace_steps: Some(vec!["embed".to_string()]),
             verbose: true,
             use_mock_backend: false,
+            repeat_penalty: 1.0,
+            repeat_last_n: 64,
         };
 
         let debug = format!("{:?}", config);
@@ -395,6 +397,8 @@
             trace_steps: Some(vec!["a".to_string(), "b".to_string()]),
             verbose: true,
             use_mock_backend: false,
+            repeat_penalty: 1.0,
+            repeat_last_n: 64,
         };
 
         let cloned = original.clone();
