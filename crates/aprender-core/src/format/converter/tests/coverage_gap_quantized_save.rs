@@ -485,3 +485,88 @@ fn test_f32_slice_to_f16_le_bytes_basic() {
     assert_eq!(bytes[2], 0x00);
     assert_eq!(bytes[3], 0x00);
 }
+
+// ============================================================================
+// PMAT-787: f32_to_f16_bits must NOT flush f16 subnormals to zero, and must
+// agree bit-for-bit with the canonical f32_to_f16 used elsewhere in the
+// converter. The old local implementation flushed every |v| < 2^-14 to 0 and
+// truncated (not rounded) the mantissa, silently corrupting the SafeTensors
+// FP16 export path for small-magnitude weights.
+// ============================================================================
+
+#[test]
+fn test_f32_to_f16_bits_preserves_subnormals_pmat787() {
+    // 2^-20 ≈ 9.5e-7 is squarely inside the f16 subnormal range
+    // (f16 subnormals span 2^-24 .. 2^-14). It MUST NOT be flushed to zero.
+    let v = 2f32.powi(-20);
+    let bits = f32_to_f16_bits(v);
+    assert_ne!(
+        bits & 0x7FFF,
+        0,
+        "f16 subnormal {v:e} was flushed to zero (PMAT-787 regression)"
+    );
+    // Round-trips back to a non-zero value of the right sign/magnitude band.
+    let back = f16_to_f32(bits);
+    assert!(back > 0.0, "subnormal lost its value: {back:e}");
+    assert!(
+        (back - v).abs() < v,
+        "subnormal round-trip too far off: {v:e} -> {back:e}"
+    );
+}
+
+#[test]
+fn test_f32_to_f16_bits_smallest_normal_not_flushed_pmat787() {
+    // Smallest f16 NORMAL = 2^-14 ≈ 6.103515625e-5 must round-trip exactly.
+    let v = 2f32.powi(-14);
+    let bits = f32_to_f16_bits(v);
+    assert_eq!(bits, 0x0400, "smallest f16 normal mis-encoded");
+    assert!((f16_to_f32(bits) - v).abs() < 1e-9);
+}
+
+#[test]
+fn test_f32_to_f16_bits_matches_canonical_f32_to_f16_pmat787() {
+    // The two encoders in the converter module MUST agree bit-for-bit so the
+    // tested path and the production SafeTensors-export path can never diverge.
+    let probes: &[f32] = &[
+        0.0, 1.0, -1.0, 0.5, -0.5, 2.0, -2.0, 0.25, 1024.0, 65504.0, 0.001,
+        0.0123, 0.1, 1.001, 3.141_59, -0.0007, 6.1e-5, 3.0e-5, 1.0e-6, 5.96e-8,
+        100_000.0, 1e-10, f32::INFINITY, f32::NEG_INFINITY,
+    ];
+    for &v in probes {
+        assert_eq!(
+            f32_to_f16_bits(v),
+            f32_to_f16(v),
+            "f32_to_f16_bits diverged from canonical f32_to_f16 for {v:e}"
+        );
+    }
+}
+
+#[test]
+fn test_save_safetensors_quantized_fp16_keeps_small_weights_pmat787() {
+    use tempfile::TempDir;
+
+    let dir = TempDir::new().expect("create temp dir");
+    let output = dir.path().join("tiny_weights_fp16.safetensors");
+
+    // A weight tensor of all-subnormal-range values. With the old flush-to-zero
+    // encoder every byte would be 0x00; the round-trip would read back all-zero
+    // weights → dead layer. The corrected encoder must preserve the magnitude.
+    let small = 2f32.powi(-18); // ~3.8e-6, deep in f16 subnormal range
+    let mut tensors = BTreeMap::new();
+    tensors.insert(
+        "model.layers.0.mlp.gate_proj.weight".to_string(),
+        (vec![small; 2048], vec![32, 64]),
+    );
+
+    save_safetensors_quantized(&tensors, &output, QuantizationType::Fp16)
+        .expect("fp16 save");
+
+    // Read back the raw f16 bytes for the tensor and confirm they are NOT all zero.
+    let file = std::fs::read(&output).unwrap();
+    let header_len = u64::from_le_bytes(file[0..8].try_into().unwrap()) as usize;
+    let data = &file[8 + header_len..];
+    assert!(
+        data.iter().any(|&b| b != 0),
+        "FP16 export flushed all small weights to zero (PMAT-787 regression)"
+    );
+}
