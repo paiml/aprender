@@ -269,11 +269,75 @@ pub fn clean_chat_output(text: &str) -> String {
 // Native Realizar API Handlers (spec §5.2)
 // ============================================================================
 
+/// OpenAI `/v1/embeddings` `input` field: a single string OR an array of strings.
+///
+/// PMAT-802: the OpenAI Embeddings API contract accepts `input` as either a JSON
+/// string (`"hello"`) or a JSON array of strings (`["a", "b"]`), returning one
+/// embedding per input. Previously `input` was typed `String`, so any batch request
+/// (`["a","b"]`) was rejected at deserialization with a 4xx — every OpenAI SDK that
+/// batches embeddings failed against this server. This untagged form accepts both.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum EmbeddingInput {
+    /// Single input string.
+    Single(String),
+    /// Batch of input strings (one embedding returned per element, in order).
+    Batch(Vec<String>),
+}
+
+impl EmbeddingInput {
+    /// Number of inputs (1 for a single string, N for a batch).
+    #[must_use]
+    pub fn len(&self) -> usize {
+        match self {
+            EmbeddingInput::Single(_) => 1,
+            EmbeddingInput::Batch(v) => v.len(),
+        }
+    }
+
+    /// True when this is a `Batch` with no elements.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        match self {
+            EmbeddingInput::Single(_) => false,
+            EmbeddingInput::Batch(v) => v.is_empty(),
+        }
+    }
+
+    /// Iterate the input strings in request order (preserves index ordering).
+    pub fn iter(&self) -> impl Iterator<Item = &str> {
+        // Box to unify the two iterator types.
+        let it: Box<dyn Iterator<Item = &str>> = match self {
+            EmbeddingInput::Single(s) => Box::new(std::iter::once(s.as_str())),
+            EmbeddingInput::Batch(v) => Box::new(v.iter().map(String::as_str)),
+        };
+        it
+    }
+}
+
+impl From<String> for EmbeddingInput {
+    fn from(s: String) -> Self {
+        EmbeddingInput::Single(s)
+    }
+}
+
+impl From<&str> for EmbeddingInput {
+    fn from(s: &str) -> Self {
+        EmbeddingInput::Single(s.to_string())
+    }
+}
+
+impl From<Vec<String>> for EmbeddingInput {
+    fn from(v: Vec<String>) -> Self {
+        EmbeddingInput::Batch(v)
+    }
+}
+
 /// Request for embeddings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddingRequest {
-    /// Text to embed
-    pub input: String,
+    /// Text to embed (single string or batch array — OpenAI contract).
+    pub input: EmbeddingInput,
     /// Model ID (optional)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
