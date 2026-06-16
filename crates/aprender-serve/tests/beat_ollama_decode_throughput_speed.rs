@@ -1,24 +1,30 @@
-//! BEAT-OLLAMA-DECODE-THROUGHPUT — Pillar-4 SPEED comparison (PMAT-755, audit
-//! gap #4). **TRACKING measurement harness — NOT a hard CI gate (yet).**
+//! BEAT-OLLAMA-DECODE-THROUGHPUT — Pillar-4 SPEED beat (PMAT-755, audit gap #4).
+//! **ENFORCED manual/GPU gate (NOT a CPU-CI gate).**
 //!
 //! `#[ignore]`d: it needs an NVIDIA GPU, an `apr` binary built `--features cuda`,
 //! a resident `ollama` daemon + the Q4_K_M model, and the matching GGUF on disk.
-//! NONE of those exist on the CPU-only self-hosted CI runners, so even when this
-//! is promoted to a gate it is MANUAL/operator-gated (lambda-vector RTX 4090 or
-//! gx10 GB10), like the cuda-oxide throughput beat.
+//! NONE of those exist on the CPU-only self-hosted CI runners, so this ENFORCED
+//! gate is MANUAL/operator-gated (lambda-vector RTX 4090 or gx10 GB10), exactly
+//! like the cuda-oxide throughput beat. The CPU unit tests below DO run in CI.
 //!
-//! ## VERDICT: stays TRACKING (measure-first honesty — task step 4)
-//! A real ~1.3x CLEAN-decode advantage EXISTS (consistent with the audit's
-//! 1.23x), but apr's `apr run` decode throughput is too VARIABLE on this box to
-//! form a non-flaky median gate: there is a ~1-in-6 CATASTROPHIC STALL (a run
-//! takes ~36s and stops early — the known FUSION-003 "1-in-6 CUDA_ERROR" class),
-//! and even non-stalled runs vary widely. A naive median-of-3 gate FALSELY fails:
-//! a 2026-06-15 end-to-end harness run measured apr trials [391.3, 284.3, 197.4]
-//! -> median 284.3 < ollama 288.9 -> ratio 0.984 (a measured NON-beat caused by
-//! variance, not a real regression). So this harness MEASURES and REPORTS the
-//! ratio and asserts only the weak, non-flaky claim that apr's BEST clean decode
-//! (transient-stall-rejected) beats ollama's median — promoting to a hard gate
-//! requires first fixing the 1-in-6 stall. See the contract VERDICT.
+//! ## VERDICT: PROMOTED to ENFORCED (re-measure-first honesty — task step 1)
+//! A real ~1.3x CLEAN-decode advantage EXISTS and is now NON-FLAKY. The blocker
+//! for the prior TRACKING verdict was apr's ~1-in-6 CATASTROPHIC DECODE STALL (a
+//! run takes ~36s and stops early — the known FUSION-003 "1-in-6 CUDA_ERROR"
+//! class), which made a median gate flake. That stall is FIXED by #2049 (the
+//! FP8-warmup OOB read that poisoned the CUDA context). Re-measured on RTX 4090
+//! with #2049 (+ #2060 layout/elementwise kernel-arg fix) applied:
+//!   apr 128/384 differential [458.0, 411.2, 430.4, 421.3, 369.9, 413.4, 384.3,
+//!   402.1] tok/s, median 412.3, worst 369.9; ollama median ~300.7 tok/s;
+//!   median ratio 1.371x; worst single run 1.230x; 0 stalls / 8 trials.
+//! Every single run cleared 1.10x, and a median-of-7 >= 1.10x gate bootstraps to a
+//! ~0% false-FAIL rate. So this harness now asserts the ENFORCED gate:
+//! apr MEDIAN-OF-7 decode tok/s >= ollama median x 1.10.
+//!
+//! ## DEPENDENCY (task step 5): this gate's no-stall premise needs #2049 on main
+//! The ENFORCED 1.10x assertion is only non-flaky because the FP8-warmup OOB stall
+//! is fixed. If #2049 is reverted/absent, the ~1-in-6 stall returns and the median
+//! can flake — do NOT enforce without #2049.
 //!
 //! ## What it measures (be honest about scope)
 //! STEADY-STATE GPU DECODE throughput only — the marginal token-generation rate
@@ -32,9 +38,10 @@
 //! Time `apr run --gpu --benchmark` at two forced token counts (128 and 384) on
 //! the SAME long prompt; the marginal decode rate is
 //! `(384-128) / (ms@384 - ms@128) * 1000` tok/s. Compare to ollama's `--verbose`
-//! "eval rate" (already decode-only — it excludes prompt-eval). apr side uses
-//! BEST-of-N clean trials (rejecting the known transient stall); ollama side uses
-//! the median (it is tight). Same session, same GPU, same GGUF weights.
+//! "eval rate" (already decode-only — it excludes prompt-eval). apr side uses the
+//! MEDIAN-OF-7 clean trials (the #2049 fix removed the stall, so the median is
+//! stable); ollama side uses its median (it is tight). Same session, same GPU,
+//! same GGUF weights.
 //!
 //! ## Run recipe (NVIDIA host with apr --features cuda + ollama + model)
 //! ```text
@@ -52,28 +59,25 @@
 use std::path::Path;
 use std::process::Command;
 
-/// TRACKING assertion floor. apr's BEST clean decode (transient-stall-rejected)
-/// must at least beat ollama's median (ratio >= 1.0). This is the WEAK, non-flaky
-/// claim the variance supports today; the contract's `beat_threshold` (1.10) is
-/// the stronger value a FUTURE *enforced* gate would use after the 1-in-6 decode
-/// stall is fixed. See the contract VERDICT — this harness is status=tracking.
-const TRACKING_FLOOR: f64 = 1.00;
+/// ENFORCED gate threshold (mirrors the contract's `beat_threshold`): apr's
+/// MEDIAN-OF-7 clean decode must beat ollama's median by at least this factor. The
+/// re-measured median is 1.37x with worst single run 1.23x, so 1.10x is a wide
+/// safety margin (bootstrapped ~0% false-FAIL). This is asserted at runtime now
+/// that the #2049 FP8 stall fix makes the median non-flaky. See the contract VERDICT.
+const ENFORCED_THRESHOLD: f64 = 1.10;
 
 /// Forced token counts for the differential apr measurement (amortizes fixed cost).
 const N_LOW: u32 = 128;
 const N_HIGH: u32 = 384;
 
-/// apr attempts: collect several so we can take the best clean one (the ~1-in-6
-/// catastrophic stall and wide non-stalled variance make a median flaky).
-const APR_ATTEMPTS: usize = 5;
+/// apr trials for the ENFORCED median: median-of-7 gives extra non-flakiness margin
+/// over the validated median-of-5 now that the ~1-in-6 stall is fixed by #2049. We
+/// attempt a few extra so the median has 7 clean samples even if a trial early-EOSes.
+const APR_MEDIAN_N: usize = 7;
+const APR_ATTEMPTS: usize = 9;
 
 /// ollama trials (its distribution is tight, so a small median is stable).
-const OLLAMA_TRIALS: usize = 3;
-
-/// The threshold a FUTURE *enforced* gate would use (mirrors the contract's
-/// `beat_threshold`). Not asserted at runtime while status=tracking; recorded so
-/// the relationship `TRACKING_FLOOR < FUTURE_ENFORCED_THRESHOLD` is checkable.
-const FUTURE_ENFORCED_THRESHOLD: f64 = 1.10;
+const OLLAMA_TRIALS: usize = 5;
 
 /// A long, open-ended prompt that does NOT terminate early, so apr generates the
 /// full forced token budget at both N_LOW and N_HIGH.
@@ -188,8 +192,8 @@ fn ollama_eval_tps_once(model: &str) -> Option<f64> {
 }
 
 #[test]
-#[ignore = "manual/GPU-only TRACKING harness: needs NVIDIA GPU + apr --features cuda + ollama \
-            + Q4_K_M model (no NVIDIA CI runner; status=tracking, see contract VERDICT)"]
+#[ignore = "ENFORCED manual/GPU gate: needs NVIDIA GPU + apr --features cuda (incl. #2049 FP8 \
+            stall fix) + ollama + Q4_K_M model (no NVIDIA CI runner; status=enforced, see contract)"]
 fn beat_ollama_decode_throughput_speed() {
     let apr_bin = env_or("APR_BIN", "/mnt/nvme-raid0/targets/aprender/release/apr");
     let gguf = env_or(
@@ -207,21 +211,29 @@ fn beat_ollama_decode_throughput_speed() {
         "APR_GGUF not found: {gguf} — point APR_GGUF at the Q4_K_M GGUF (same weights ollama serves)"
     );
 
-    // --- apr: collect clean differential decode trials; the ~1-in-6 catastrophic
-    // stall and wide non-stalled variance mean we take the BEST (steady-state
-    // capability, transient-stall-rejected) rather than a flaky median. ---
+    // --- apr: collect clean differential decode trials. With the #2049 FP8 stall
+    // fix, the ~1-in-6 catastrophic stall is gone (re-measured 0/8), so the MEDIAN
+    // is the right estimator. We attempt a few extra to backfill the rare early-EOS
+    // so the gate's median has APR_MEDIAN_N clean samples. ---
     let mut apr_tps = Vec::new();
     for _ in 0..APR_ATTEMPTS {
         if let Some(t) = apr_decode_tps_once(&apr_bin, gguf_path) {
             apr_tps.push(t);
         }
+        if apr_tps.len() >= APR_MEDIAN_N {
+            break;
+        }
     }
     assert!(
-        !apr_tps.is_empty(),
-        "could not collect any clean apr decode trial (early-EOS or stalls in all {APR_ATTEMPTS} attempts)"
+        apr_tps.len() >= APR_MEDIAN_N,
+        "could not collect {APR_MEDIAN_N} clean apr decode trials for the median-of-{APR_MEDIAN_N} \
+         gate (got {} in {APR_ATTEMPTS} attempts; if many are early-EOS/stalls the #2049 FP8 fix \
+         may be missing from this binary — see contract DEPENDENCY)",
+        apr_tps.len()
     );
+    // Take exactly APR_MEDIAN_N samples for the enforced median (median-of-7).
+    let apr_med = median(&apr_tps[..APR_MEDIAN_N]);
     let apr_best = apr_tps.iter().copied().fold(f64::MIN, f64::max);
-    let apr_med = median(&apr_tps);
 
     // --- ollama: median over a few warm eval-rate measurements (tight distribution) ---
     let mut ollama_tps = Vec::new();
@@ -232,29 +244,30 @@ fn beat_ollama_decode_throughput_speed() {
     }
     let ollama_med = median(&ollama_tps);
 
-    let ratio_best = apr_best / ollama_med;
     let ratio_med = apr_med / ollama_med;
+    let ratio_best = apr_best / ollama_med;
 
     eprintln!(
-        "BEAT-OLLAMA-DECODE-THROUGHPUT [TRACKING]: \
-         apr_best={apr_best:.1} apr_median={apr_med:.1} ollama_median={ollama_med:.1} tok/s | \
-         ratio_best={ratio_best:.3}x ratio_median={ratio_med:.3}x (steady-state GPU decode) | \
+        "BEAT-OLLAMA-DECODE-THROUGHPUT [ENFORCED median-of-{APR_MEDIAN_N} >= {ENFORCED_THRESHOLD:.2}x]: \
+         apr_median7={apr_med:.1} apr_best={apr_best:.1} ollama_median={ollama_med:.1} tok/s | \
+         ratio_median={ratio_med:.3}x ratio_best={ratio_best:.3}x (steady-state GPU decode) | \
          apr trials={apr_tps:?} ollama trials={ollama_tps:?}\n\
-         NOTE: status=tracking — apr's median is variance-flaky (1-in-6 decode stall); \
-         this harness asserts only the weak claim apr_best >= ollama_median. \
-         Promote to an enforced 1.10x gate after fixing the stall \
-         (contract beat-ollama-decode-throughput-speed-v1.yaml)."
+         NOTE: status=enforced — this gate's non-flaky median premise DEPENDS on #2049 (FP8 \
+         warmup OOB stall fix) being on the decode path (contract \
+         beat-ollama-decode-throughput-speed-v1.yaml)."
     );
 
-    // TRACKING assertion: apr's BEST clean decode must beat ollama's median. This
-    // is the weak, non-flaky claim today; a real regression (apr losing its clean
-    // decode advantage entirely) still fails it, but the 1-in-6 stall does not.
+    // ENFORCED assertion: apr's MEDIAN-OF-7 clean decode must beat ollama's median
+    // by >= 1.10x. The re-measured 1.37x median with worst single run 1.23x and 0
+    // stalls makes this a wide, non-flaky margin. A real regression (apr losing its
+    // decode advantage, or the #2049 stall fix being absent) fails the build.
     assert!(
-        ratio_best >= TRACKING_FLOOR,
-        "TRACKING-REGRESSION beat-ollama-decode-throughput: even apr's BEST clean decode \
-         {apr_best:.1} tok/s no longer beats ollama median {ollama_med:.1} tok/s \
-         (ratio_best {ratio_best:.3} < {TRACKING_FLOOR:.2}) — apr's clean-decode advantage is gone, \
-         not just stall variance (contract beat-ollama-decode-throughput-speed-v1.yaml)"
+        ratio_med >= ENFORCED_THRESHOLD,
+        "BEAT-REGRESSION beat-ollama-decode-throughput: apr median-of-{APR_MEDIAN_N} decode \
+         {apr_med:.1} tok/s no longer beats ollama median {ollama_med:.1} tok/s by {ENFORCED_THRESHOLD:.2}x \
+         (ratio_median {ratio_med:.3} < {ENFORCED_THRESHOLD:.2}) — apr's clean-decode advantage \
+         regressed, OR the #2049 FP8 stall fix is missing from this binary so the median is \
+         stall-flaky (contract beat-ollama-decode-throughput-speed-v1.yaml DEPENDENCY)"
     );
 }
 
@@ -284,21 +297,35 @@ fn median_odd_and_even() {
 }
 
 #[test]
-fn tracking_floor_is_weak_non_flaky_claim() {
-    // status=tracking: the harness asserts only that apr's BEST clean decode beats
-    // ollama's median (>= 1.0), the weak claim apr's 1-in-6 stall variance allows.
-    // The contract's stronger beat_threshold (1.10) is reserved for a FUTURE
-    // enforced gate, once the decode stall is fixed.
-    // `black_box` defeats const-folding so clippy doesn't flag a constant assertion;
-    // the invariant is still meaningfully checked.
-    let floor = std::hint::black_box(TRACKING_FLOOR);
-    let enforced = std::hint::black_box(FUTURE_ENFORCED_THRESHOLD);
+fn median_of_seven_picks_middle() {
+    // The enforced gate uses median-of-7; verify the estimator is the 4th-smallest.
+    let xs = [458.0, 411.2, 430.4, 421.3, 369.9, 413.4, 384.3];
     assert!(
-        (floor - 1.0).abs() < 1e-9,
-        "tracking floor is a 1.0x beat (apr_best vs ollama_median)"
+        (median(&xs) - 413.4).abs() < 1e-9,
+        "median-of-7 is the 4th-smallest"
+    );
+}
+
+#[test]
+fn enforced_threshold_is_a_real_beat_with_margin() {
+    // status=enforced: the gate asserts apr median-of-7 >= ollama median x 1.10.
+    // 1.10 is a real beat (> 1.0) and sits well under the re-measured 1.37x median
+    // and even the worst single run's 1.23x, so the gate has a wide non-flaky margin.
+    // `black_box` defeats const-folding so clippy doesn't flag a constant assertion.
+    let thresh = std::hint::black_box(ENFORCED_THRESHOLD);
+    let measured_median_ratio = std::hint::black_box(1.371_f64);
+    let worst_single_run_ratio = std::hint::black_box(1.230_f64);
+    assert!(
+        thresh > 1.0,
+        "enforced threshold must be a real beat (> 1.0x)"
     );
     assert!(
-        floor < enforced,
-        "tracking floor must be weaker than the future enforced gate"
+        thresh < worst_single_run_ratio,
+        "enforced 1.10x threshold must sit under the worst re-measured single run (1.23x) \
+         so even worst-case single samples clear it"
+    );
+    assert!(
+        worst_single_run_ratio < measured_median_ratio,
+        "sanity: worst single run < median"
     );
 }
