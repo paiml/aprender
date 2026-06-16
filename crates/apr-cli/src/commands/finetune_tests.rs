@@ -665,3 +665,318 @@ fn test_lora_to_gguf_export_roundtrip_pmat712() {
         "F-LORA-GGUF-004: merged q_proj must differ from base (LoRA delta survived merge→GGUF)"
     );
 }
+
+// ============================================================================
+// PMAT-712 BEAT: LoRA → GGUF deploy is LOSSLESS by forward-output equivalence
+//
+// Pillar-3 deploy-correctness BEAT (incumbent: Unsloth).
+//
+// The structural falsifier above proves the exported GGUF is well-formed and
+// carries the *merged* weights. This BEAT proves the STRONGER claim Unsloth
+// markets but never makes falsifiable: the F32-exported GGUF produces
+// NUMERICALLY-EQUIVALENT forward output to the apr in-memory merged model.
+//
+//   base.apr + LoRA-adapter.apr
+//     ── run_merge ──►  merged.apr   (W = W_base + (alpha/rank)·Bᵀ@Aᵀ, row-major)
+//     ── apr_export(Gguf, quantize=None) ──►  merged.gguf   (F32, no quant)
+//
+// Forward equivalence at the q_proj projection (the LoRA-targeted layer):
+//   y_apr  = W_apr  @ x   where W_apr  = merged q_proj loaded from merged.apr
+//   y_gguf = W_gguf @ x   where W_gguf = merged q_proj loaded from merged.gguf
+//   BEAT: max_i |y_apr[i] − y_gguf[i]|  ≤  1e-4   (F32-lossless tolerance)
+//
+// Why a real forward, not a byte-diff: y = W @ x is order-sensitive. A lost or
+// garbled weight, a layout TRANSPOSE bug (q_proj written column-major), or a
+// metadata/name mismatch that re-shapes the tensor all break this equality even
+// when |W_apr| == |W_gguf| element-count matches. The weights here are
+// position-dependent and ASYMMETRIC (W ≠ Wᵀ) precisely so a transpose bug is
+// observable — a constant matrix is its own transpose and would hide it.
+//
+// Scope honesty: realizar's full decode path needs a real tokenizer/config the
+// synthetic tiny model lacks, so this BEAT proves equivalence at the q_proj
+// projection — a true forward pass through the LoRA-targeted matmul, loaded
+// from the exact GGUF realizar would serve, via the same load_gguf_tensors
+// path realizar uses. It is the strongest forward-equivalence reachable for a
+// synthetic tiny model and it directly falsifies the lossless-deploy claim.
+//
+// Falsifiers (any failure ⇒ "fine-tune in apr, deploy lossless via GGUF" is FALSE):
+//   F-LOSSLESS-001: q_proj loads back from GGUF with the apr [hidden,hidden] shape
+//   F-LOSSLESS-002: forward output is non-degenerate (W·x is not constant — the
+//                   test actually exercises ordering, so a transpose WOULD show)
+//   F-LOSSLESS-003: max|y_apr − y_gguf| ≤ 1e-4  (THE BEAT: F32 export is lossless)
+//   F-LOSSLESS-004: the apr↔gguf forward agreement is strictly TIGHTER than the
+//                   forward through a transposed W (guards the test's sensitivity)
+// ============================================================================
+
+/// Asymmetric, position-dependent base so the merged q_proj satisfies W ≠ Wᵀ.
+/// A transpose bug in export is then observable in y = W·x (a constant or
+/// symmetric matrix would be its own transpose and hide such a bug).
+#[cfg(test)]
+fn build_tiny_qwen2_base_beat(hidden: usize) -> Vec<u8> {
+    use aprender::format::v2::{AprV2Metadata, AprV2Writer};
+
+    let mut md = AprV2Metadata::new("pmat712-beat-base");
+    md.architecture = Some("qwen2".to_string());
+    md.hidden_size = Some(hidden);
+    md.vocab_size = Some(64);
+    md.num_layers = Some(1);
+    md.num_heads = Some(4);
+    md.num_kv_heads = Some(2);
+    md.intermediate_size = Some(hidden);
+    md.max_position_embeddings = Some(128);
+    md.rope_theta = Some(1_000_000.0);
+    md.rms_norm_eps = Some(1e-6);
+
+    // Deterministic, ASYMMETRIC q_proj: W[r,c] depends on (r,c) so W ≠ Wᵀ.
+    // Values kept O(1) and well-separated so f32 rounding is the only error term.
+    let mut qw = vec![0.0_f32; hidden * hidden];
+    for r in 0..hidden {
+        for c in 0..hidden {
+            // sin keeps it bounded; (2r - c) makes it genuinely asymmetric.
+            qw[r * hidden + c] = (((2 * r) as f32) - (c as f32) + 0.5).sin() * 0.5;
+        }
+    }
+    let sq = |n: usize| vec![0.02_f32; n];
+
+    let mut w = AprV2Writer::new(md);
+    w.add_f32_tensor(
+        "model.embed_tokens.weight",
+        vec![64, hidden],
+        &sq(64 * hidden),
+    );
+    w.add_f32_tensor("model.norm.weight", vec![hidden], &vec![1.0; hidden]);
+    w.add_f32_tensor(
+        "model.layers.0.self_attn.q_proj.weight",
+        vec![hidden, hidden],
+        &qw,
+    );
+    w.add_f32_tensor(
+        "model.layers.0.self_attn.k_proj.weight",
+        vec![hidden, hidden],
+        &sq(hidden * hidden),
+    );
+    w.add_f32_tensor(
+        "model.layers.0.self_attn.v_proj.weight",
+        vec![hidden, hidden],
+        &sq(hidden * hidden),
+    );
+    w.add_f32_tensor(
+        "model.layers.0.self_attn.o_proj.weight",
+        vec![hidden, hidden],
+        &sq(hidden * hidden),
+    );
+    w.add_f32_tensor(
+        "model.layers.0.input_layernorm.weight",
+        vec![hidden],
+        &vec![1.0; hidden],
+    );
+    w.add_f32_tensor(
+        "model.layers.0.post_attention_layernorm.weight",
+        vec![hidden],
+        &vec![1.0; hidden],
+    );
+    w.add_f32_tensor(
+        "model.layers.0.mlp.gate_proj.weight",
+        vec![hidden, hidden],
+        &sq(hidden * hidden),
+    );
+    w.add_f32_tensor(
+        "model.layers.0.mlp.up_proj.weight",
+        vec![hidden, hidden],
+        &sq(hidden * hidden),
+    );
+    w.add_f32_tensor(
+        "model.layers.0.mlp.down_proj.weight",
+        vec![hidden, hidden],
+        &sq(hidden * hidden),
+    );
+    w.write().expect("write beat base v2")
+}
+
+/// LoRA adapter with deterministic, position-dependent (non-constant) factors so
+/// the delta (alpha/rank)·Bᵀ@Aᵀ is itself asymmetric and order-sensitive.
+#[cfg(test)]
+fn build_tiny_lora_adapter_beat(hidden: usize, rank: usize, alpha: f64) -> Vec<u8> {
+    use aprender::format::v2::{AprV2Metadata, AprV2Writer};
+
+    let mut md = AprV2Metadata::new("pmat712-beat-adapter");
+    md.custom
+        .insert("lora_rank".to_string(), serde_json::json!(rank));
+    md.custom
+        .insert("lora_alpha".to_string(), serde_json::json!(alpha));
+
+    // lora_a: [rank, hidden], lora_b: [hidden, rank] — both non-constant.
+    let mut a = vec![0.0_f32; rank * hidden];
+    for k in 0..rank {
+        for c in 0..hidden {
+            a[k * hidden + c] = (((k + 1) as f32) * 0.013 + (c as f32) * 0.0007).cos() * 0.1;
+        }
+    }
+    let mut b = vec![0.0_f32; hidden * rank];
+    for r in 0..hidden {
+        for k in 0..rank {
+            b[r * rank + k] = (((r + 3) as f32) * 0.011 - ((k + 1) as f32) * 0.019).sin() * 0.1;
+        }
+    }
+
+    let mut w = AprV2Writer::new(md);
+    w.add_f32_tensor(
+        "model.layers.0.self_attn.q_proj.weight.lora_a",
+        vec![rank, hidden],
+        &a,
+    );
+    w.add_f32_tensor(
+        "model.layers.0.self_attn.q_proj.weight.lora_b",
+        vec![hidden, rank],
+        &b,
+    );
+    w.write().expect("write beat adapter v2")
+}
+
+/// Row-major matvec: y[r] = Σ_c W[r*cols + c] · x[c], W is [rows, cols].
+#[cfg(test)]
+fn rowmajor_matvec(w: &[f32], x: &[f32], rows: usize, cols: usize) -> Vec<f32> {
+    assert_eq!(w.len(), rows * cols, "weight element count");
+    assert_eq!(x.len(), cols, "input length must equal cols");
+    (0..rows)
+        .map(|r| {
+            let row = &w[r * cols..r * cols + cols];
+            row.iter().zip(x).map(|(wv, xv)| wv * xv).sum::<f32>()
+        })
+        .collect()
+}
+
+#[test]
+fn beat_lora_gguf_lossless_deploy_pmat712() {
+    use aprender::format::gguf::load_gguf_tensors;
+    use aprender::format::rosetta::RosettaStone;
+    use aprender::format::{apr_export, ExportFormat, ExportOptions};
+
+    // hidden=256 keeps K % 256 == 0 and stays tiny → fast CPU per-PR test.
+    let hidden = 256usize;
+    let rank = 8usize;
+    let alpha = 16.0f64;
+
+    let base_file = NamedTempFile::with_suffix(".apr").expect("base tmp");
+    std::fs::write(base_file.path(), build_tiny_qwen2_base_beat(hidden)).expect("write base");
+
+    let adapter_file = NamedTempFile::with_suffix(".apr").expect("adapter tmp");
+    std::fs::write(
+        adapter_file.path(),
+        build_tiny_lora_adapter_beat(hidden, rank, alpha),
+    )
+    .expect("write adapter");
+
+    // ── Merge: base + adapter → merged.apr (apr in-memory merged model) ──────
+    let merged_apr = NamedTempFile::with_suffix(".apr").expect("merged tmp");
+    let merge_res = run_merge(
+        Some(base_file.path()),
+        Some(adapter_file.path()),
+        Some(merged_apr.path()),
+        true,
+    );
+    assert!(merge_res.is_ok(), "LoRA merge must succeed: {merge_res:?}");
+
+    // ── Export F32 GGUF: quantize=None ⇒ true LOSSLESS export (no quant error) ─
+    let gguf_file = NamedTempFile::with_suffix(".gguf").expect("gguf tmp");
+    let opts = ExportOptions {
+        format: ExportFormat::Gguf,
+        quantize: None, // F32 — losslessness, not quant-tolerance, is the claim
+        include_tokenizer: false,
+        include_config: false,
+        skip_completeness_check: true,
+    };
+    apr_export(merged_apr.path(), gguf_file.path(), opts).expect("F32 GGUF export must succeed");
+
+    // ── Load the merged q_proj from BOTH sides ──────────────────────────────
+    // apr side: the same RosettaStone F32 loader the merge wrote through.
+    let rosetta = RosettaStone::new();
+    let w_apr = rosetta
+        .load_tensor_f32(merged_apr.path(), "model.layers.0.self_attn.q_proj.weight")
+        .expect("load merged q_proj from apr");
+
+    // gguf side: load_gguf_tensors — the exact F32 path realizar uses to serve.
+    let q_name = "blk.0.attn_q.weight";
+    let gguf_tensors =
+        load_gguf_tensors(gguf_file.path()).expect("load merged q_proj from exported GGUF");
+    let (w_gguf, gguf_shape) = gguf_tensors
+        .get(q_name)
+        .expect("exported GGUF must contain blk.0.attn_q.weight");
+
+    // F-LOSSLESS-001: q_proj loads back at the apr [hidden,hidden] element count.
+    assert_eq!(
+        w_apr.len(),
+        hidden * hidden,
+        "F-LOSSLESS-001: apr q_proj must be hidden^2"
+    );
+    assert_eq!(
+        w_gguf.len(),
+        hidden * hidden,
+        "F-LOSSLESS-001: gguf q_proj must be hidden^2"
+    );
+    assert_eq!(
+        gguf_shape.iter().product::<usize>(),
+        hidden * hidden,
+        "F-LOSSLESS-001: gguf q_proj shape product"
+    );
+
+    // ── Forward pass on BOTH: y = W @ x for the same deterministic input ─────
+    // x is non-constant so y is sensitive to weight ORDERING (catches transpose).
+    let x: Vec<f32> = (0..hidden)
+        .map(|i| ((i as f32) * 0.017 + 0.31).sin())
+        .collect();
+    let y_apr = rowmajor_matvec(&w_apr, &x, hidden, hidden);
+    let y_gguf = rowmajor_matvec(w_gguf, &x, hidden, hidden);
+
+    // F-LOSSLESS-002: forward output is non-degenerate (not a constant vector),
+    // proving the matvec actually exercises ordering — a transpose bug is
+    // therefore *observable* in this output, not silently equal.
+    let y_min = y_apr.iter().cloned().fold(f32::INFINITY, f32::min);
+    let y_max = y_apr.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    assert!(
+        (y_max - y_min) > 1e-2,
+        "F-LOSSLESS-002: forward output must be non-degenerate (spread {} too small)",
+        y_max - y_min
+    );
+
+    // F-LOSSLESS-003 — THE BEAT: max|y_apr − y_gguf| ≤ 1e-4 (F32 is lossless).
+    let max_abs_dlogit = y_apr
+        .iter()
+        .zip(&y_gguf)
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0_f32, f32::max);
+    let y_scale = y_max.abs().max(y_min.abs()).max(1.0);
+    eprintln!(
+        "[BEAT pmat712] forward equivalence: max|Δy| = {max_abs_dlogit:.3e}  \
+         (output scale ≈ {y_scale:.3}, tolerance 1e-4)"
+    );
+    assert!(
+        max_abs_dlogit <= 1e-4,
+        "F-LOSSLESS-003 (BEAT): F32 GGUF export must be forward-lossless — \
+         max|y_apr − y_gguf| = {max_abs_dlogit:.3e} exceeds 1e-4. A lost/garbled \
+         weight, layout transpose, or shape/metadata mismatch in export breaks this."
+    );
+
+    // F-LOSSLESS-004: sensitivity guard — the apr↔gguf agreement must be strictly
+    // TIGHTER than the forward through a TRANSPOSED weight. If a transpose were a
+    // no-op here (e.g. symmetric W), the BEAT above could not catch a real
+    // transpose bug. Since W ≠ Wᵀ, y(Wᵀ) diverges materially from y(W).
+    let mut w_apr_t = vec![0.0_f32; hidden * hidden];
+    for r in 0..hidden {
+        for c in 0..hidden {
+            w_apr_t[c * hidden + r] = w_apr[r * hidden + c];
+        }
+    }
+    let y_apr_t = rowmajor_matvec(&w_apr_t, &x, hidden, hidden);
+    let max_abs_transpose_gap = y_apr
+        .iter()
+        .zip(&y_apr_t)
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0_f32, f32::max);
+    assert!(
+        max_abs_transpose_gap > 100.0 * max_abs_dlogit.max(1e-6),
+        "F-LOSSLESS-004: test must be transpose-sensitive — y(W) vs y(Wᵀ) gap \
+         ({max_abs_transpose_gap:.3e}) should dwarf the apr↔gguf gap \
+         ({max_abs_dlogit:.3e}); otherwise the BEAT could not catch a transpose bug"
+    );
+}
