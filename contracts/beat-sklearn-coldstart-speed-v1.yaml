@@ -1,0 +1,70 @@
+contract: beat-sklearn-coldstart-speed
+metadata:
+  kind: beat-benchmark
+  version: "1.0.0"
+  description: >
+    Pillar-1 (scikit-learn) BEAT benchmark: for a ONE-SHOT small-model fit+predict
+    invoked from the shell, aprender — a pure-Rust static binary with ~0 framework
+    startup — must be dramatically FASTER end-to-end than a one-shot
+    `python -c "import sklearn; ...fit+predict..."`, whose Python interpreter +
+    `import numpy` + `import sklearn` cold-start alone costs hundreds of ms before
+    any model work begins. apr does a FULL GaussianNB fit+predict on a small
+    make_classification in ~1ms — less than the incumbent takes to finish `import
+    sklearn`. Gated on the RELATIVE end-to-end process wall-clock ratio (same host,
+    same run). This is a STARTUP-COST beat: the static-binary advantage is
+    architecture-independent (robust across CI hosts, unlike bandwidth-bound
+    elementwise beats), and the DOMINANT factor is the absence of the Python
+    numpy+sklearn import, not the algorithm. Scoped to the common one-shot CLI-fit
+    scenario. COMPLEMENTS — does not replace — the in-process sklearn SPEED beats
+    (LinReg ~1.78x, GaussianNB ~4.9x) which measure pure ALGORITHM time with the
+    import already paid on both sides; this measures whole-process one-shot CLI
+    cost. Mirrors the shipped Pillar-2 (PyTorch ~1600x) and Pillar-3 (Unsloth
+    ~5000x) cold-start beats. Runs nightly (needs uv + scikit-learn).
+  references:
+  - "crates/aprender-core/tests/beat_sklearn_coldstart_speed.rs"
+  - "contracts/beat-sklearn-gaussiannb-speed-v1.yaml (sibling Pillar-1 in-process algorithm-time beat)"
+  - "contracts/beat-sklearn-linreg-speed-v1.yaml (sibling Pillar-1 in-process algorithm-time beat)"
+  - "contracts/beat-unsloth-coldstart-speed-v1.yaml (sibling cold-start beat, Pillar-3)"
+version: 1
+status: enforced
+date: 2026-06-15
+beat:
+  pillar: 1
+  incumbent: scikit-learn
+  incumbent_pinned: "2026-06-15 via uv run --with scikit-learn --with numpy (python3 -c 'import sklearn; ...fit+predict...'; import-only floor ~400-700ms)"
+  canonical_task: >
+    One-shot GaussianNB fit+predict on make_classification(n_samples=500,
+    n_features=10, n_informative=8, n_classes=3, seed=42), timed as END-TO-END
+    process wall-clock: apr re-execs its own static binary (cold-start + fit +
+    predict); the incumbent is a one-shot `python -c "import sklearn; ...fit+
+    predict..."` which pays numpy + sklearn import every invocation. Same host,
+    same run (median of 5 + warmup); metric is ratio apr_ms / sklearn_ms.
+  metric: wall_clock_ratio_apr_over_sklearn
+  direction: lower_is_better
+  baseline_value: 1.0000
+  baseline_floor: 0.0019
+  beat_threshold: 0.1000
+  baseline_sourced_date: "2026-06-15"
+  approved_compute: CPU
+  ci_gate_name: "beat_sklearn_coldstart_speed"
+proof_obligations:
+- id: OBLIG-SKLEARN-COLDSTART-RATIO
+  statement: >
+    On the canonical task, apr_ms / sklearn_ms <= beat_threshold (0.10) measured
+    same-host/same-run as the median of 5 timed iterations after a warmup.
+  type: bound
+falsification_tests:
+- id: FALSIFY-BEAT-SKLEARN-COLDSTART-SPEED
+  description: >
+    FALSE if apr is not >= 10x faster than a one-shot sklearn fit+predict process
+    end-to-end (ratio > 0.10). Catches apr regressing into a heavy startup (a
+    framework-init dep creeping into the static binary).
+  command: >
+    cargo test -p aprender-core --release --test beat_sklearn_coldstart_speed --
+    --ignored --nocapture
+  expected: "ratio <= 0.10 (apr >= 10x faster end-to-end; measured ~0.0019, apr ~528x faster)"
+  if_fails: >
+    apr lost its static-binary cold-start advantage (a heavy startup dep crept in)
+    OR the GaussianNB fit/predict path regressed catastrophically. Compare apr_ms
+    vs sklearn_ms; the apr child does make_classification + GaussianNB fit+predict
+    in crates/aprender-core/tests/beat_sklearn_coldstart_speed.rs.
