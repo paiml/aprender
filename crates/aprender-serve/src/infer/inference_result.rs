@@ -388,12 +388,18 @@ fn write_gguf_trace(
 /// (Q4_0/Q4_1/Q5_0 kernels were corrected to candle layout in BUG-GGUF-001/002 +
 /// PMAT-782; the cpu↔gpu parity gate remains the correctness backstop on the
 /// primary `apr run`/`apr serve` path.)
+///
+/// PMAT-785: delegates to `gguf::gpu_unsupported_quant_qtype` (the single source
+/// of truth shared with the construction-time gate
+/// `OwnedQuantizedModel::has_gpu_unsupported_quant`) so the whitelist can never
+/// drift between the primary `apr run`/`apr serve` path and the
+/// `generate_gpu_resident` construction entry points.
 #[inline]
 fn is_legacy_gguf_quant(qtype: u32) -> bool {
     // Returns true (→ force CPU) for any GGML quant WITHOUT a verified GPU kernel.
     // Whitelist mirrors WeightQuantType::from_ggml_type (cuda/types.rs); anything
     // outside it would hit resolve_qtype's `.unwrap_or(Q4K)` → wrong-kernel garbage.
-    !matches!(qtype, 0 | 2 | 3 | 6 | 8 | 12 | 13 | 14)
+    crate::gguf::gpu_unsupported_quant_qtype(qtype)
 }
 
 /// Check if model uses any quant type without a verified GPU kernel.
@@ -402,28 +408,13 @@ fn is_legacy_gguf_quant(qtype: u32) -> bool {
 /// touch — lm_head, QKV (fused or separate), attn output, and FFN gate/up/down.
 /// The prior version omitted QKV and the FFN gate, so a model carrying an
 /// unsupported quant in those tensors slipped past the gate onto the GPU.
+///
+/// PMAT-785: delegates to `OwnedQuantizedModel::has_gpu_unsupported_quant`, the
+/// shared construction-time gate, so this `apr run`/`apr serve`-path check and
+/// the `generate_gpu_resident` construction gate apply identical tensor coverage
+/// and the same quant whitelist.
 fn model_has_legacy_quant(model: &crate::gguf::OwnedQuantizedModel) -> bool {
-    use crate::gguf::OwnedQKVWeights;
-    if is_legacy_gguf_quant(model.lm_head_weight.qtype) {
-        return true;
-    }
-    model.layers.iter().any(|l| {
-        let qkv_bad = match &l.qkv_weight {
-            OwnedQKVWeights::Fused(t) => is_legacy_gguf_quant(t.qtype),
-            OwnedQKVWeights::Separate { q, k, v } => {
-                is_legacy_gguf_quant(q.qtype)
-                    || is_legacy_gguf_quant(k.qtype)
-                    || is_legacy_gguf_quant(v.qtype)
-            },
-        };
-        qkv_bad
-            || is_legacy_gguf_quant(l.attn_output_weight.qtype)
-            || is_legacy_gguf_quant(l.ffn_up_weight.qtype)
-            || is_legacy_gguf_quant(l.ffn_down_weight.qtype)
-            || l.ffn_gate_weight
-                .as_ref()
-                .is_some_and(|g| is_legacy_gguf_quant(g.qtype))
-    })
+    model.has_gpu_unsupported_quant()
 }
 
 /// Log CPU backend selection reason
