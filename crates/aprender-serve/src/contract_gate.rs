@@ -162,6 +162,12 @@ impl From<ModelLoadError> for RealizarError {
 pub fn validate_model_load(
     config: &ModelLoadConfig,
 ) -> std::result::Result<ModelLoadProof, ModelLoadError> {
+    // Gate 0: Architecture is one realizar can run CORRECTLY (honest-by-design,
+    // PMAT-807). Fail LOUD rather than silently produce garbage for families
+    // whose architecture-specific behaviors are not yet implemented in the
+    // forward path.
+    validate_supported_architecture(&config.architecture)?;
+
     // Gate 1: Dimension plausibility
     validate_dimensions(config)?;
 
@@ -259,6 +265,62 @@ fn validate_architecture(arch_name: &str) -> std::result::Result<ArchConstraints
     // This is by design: new architectures can load with base constraints and fail later
     // at the ValidatedLayerWeights level if they have unexpected weight patterns.
     Ok(arch)
+}
+
+// ============================================================================
+// PMAT-807: Honest-by-design architecture support gate
+// ============================================================================
+
+/// Returns `true` when `arch_name` denotes a Gemma-family architecture.
+///
+/// Matches the raw GGUF arch strings (`gemma`, `gemma2`, `gemma3`), their HF
+/// `architectures[]` class names (`GemmaForCausalLM`, `Gemma2ForCausalLM`,
+/// `Gemma3ForCausalLM`), and the normalized form `gemma`. Matching is
+/// case-insensitive and prefix-based on the lowercased name so future point
+/// variants (`gemma3n`, ...) are also caught — fail-loud is the safe default.
+#[must_use]
+pub fn is_gemma_family(arch_name: &str) -> bool {
+    let lower = arch_name.to_ascii_lowercase();
+    lower.starts_with("gemma")
+}
+
+/// Fail LOUD for architectures whose required behaviors realizar's forward path
+/// does not yet implement, instead of silently producing wrong output.
+///
+/// # Why Gemma is rejected (PMAT-807)
+///
+/// Gemma / Gemma2 / Gemma3 require four architecture-specific behaviors that the
+/// LLaMA-style forward path in `apr_transformer::inference` does NOT implement:
+///
+/// 1. **GELU-gating FFN** — Gemma uses a `gelu_tanh` gated MLP (GeGLU). When a
+///    gate weight is present, the forward path hardcodes SiLU (SwiGLU).
+/// 2. **`(1 + weight)` RMSNorm** — Gemma's RMSNorm is `x_normed * (1 + w)`; the
+///    forward path applies `x_normed * w`.
+/// 3. **Embedding scaling by `sqrt(hidden_size)`** — Gemma scales token
+///    embeddings; the forward path does not.
+/// 4. **Attention / final-logit softcapping** — Gemma2 tanh-softcaps attention
+///    scores and final logits; the forward path has neither.
+///
+/// Loading such a model with LLaMA-style behavior yields silently-wrong output.
+/// Refusing is honest-by-design: the same fail-closed posture as rejecting a
+/// semantically-broken model rather than running it.
+///
+/// Non-Gemma architectures (llama, qwen2, qwen3, mistral, phi, deepseek, gpt2,
+/// ...) are unaffected.
+fn validate_supported_architecture(arch_name: &str) -> std::result::Result<(), ModelLoadError> {
+    if is_gemma_family(arch_name) {
+        return Err(ModelLoadError {
+            gate: "architecture_supported",
+            reason: format!(
+                "Gemma architecture '{arch_name}' requires GELU-gating FFN, \
+                 (1+weight) RMSNorm, sqrt(hidden_size) embedding scaling, and \
+                 attention/logit softcapping — none of which realizar's forward \
+                 path implements yet. Running it would silently produce incorrect \
+                 output, so it is refused. Track support at PMAT-807."
+            ),
+        });
+    }
+    Ok(())
 }
 
 fn validate_completeness(
@@ -578,6 +640,90 @@ mod tests {
         let proof = validate_model_load_basic("unknown_future_arch", 1, 128, 4, 4, 512, 1000)
             .expect("unknown arch should pass with base constraints");
         assert_eq!(proof.architecture(), "unknown_future_arch");
+    }
+
+    // ------------------------------------------------------------------
+    // PMAT-807: Gemma fail-loud gate
+    // ------------------------------------------------------------------
+
+    /// FALSIFIER: every Gemma-family arch string is rejected at the gate.
+    /// If any is silently accepted, this test fails (silent-garbage regression).
+    #[test]
+    fn test_gemma_family_rejected_at_load() {
+        let gemma_names = [
+            "gemma",
+            "gemma2",
+            "gemma3",
+            "GemmaForCausalLM",
+            "Gemma2ForCausalLM",
+            "Gemma3ForCausalLM",
+            "gemma3n", // future point variant — fail-loud is the safe default
+        ];
+        for name in gemma_names {
+            let mut config = valid_config();
+            config.architecture = name.to_string();
+            let err = validate_model_load(&config)
+                .expect_err(&format!("Gemma arch '{name}' must be refused, not run"));
+            assert_eq!(
+                err.gate, "architecture_supported",
+                "'{name}' rejected by wrong gate: {}",
+                err.gate
+            );
+            // The error must explain WHY (the missing Gemma behaviors).
+            assert!(
+                err.reason.contains("Gemma") && err.reason.contains("softcapping"),
+                "'{name}' error must name the missing behaviors: {}",
+                err.reason
+            );
+        }
+    }
+
+    /// `validate_model_load_basic` (the path real loaders call) also rejects Gemma.
+    #[test]
+    fn test_gemma_rejected_via_basic_loader_path() {
+        let err = validate_model_load_basic("gemma2", 26, 2304, 8, 4, 9216, 256_000)
+            .expect_err("gemma2 must be refused at the basic loader gate");
+        assert_eq!(err.gate, "architecture_supported");
+    }
+
+    /// CONTROL: non-Gemma architectures are unaffected — no regression.
+    #[test]
+    fn test_non_gemma_architectures_unaffected() {
+        for arch in [
+            "llama",
+            "qwen2",
+            "qwen3",
+            "mistral",
+            "phi",
+            "phi2",
+            "deepseek",
+            "gpt2",
+            "unknown_future_arch",
+        ] {
+            assert!(
+                !is_gemma_family(arch),
+                "'{arch}' wrongly classified as Gemma"
+            );
+            let mut config = valid_config();
+            config.architecture = arch.to_string();
+            // Dimensions in valid_config() are llama-shaped and pass; the point is
+            // that the architecture_supported gate does NOT trip for these.
+            assert!(
+                validate_model_load(&config).is_ok(),
+                "non-Gemma arch '{arch}' must still load"
+            );
+        }
+    }
+
+    /// `is_gemma_family` is case-insensitive and prefix-based.
+    #[test]
+    fn test_is_gemma_family_classification() {
+        assert!(is_gemma_family("gemma"));
+        assert!(is_gemma_family("GEMMA"));
+        assert!(is_gemma_family("Gemma2ForCausalLM"));
+        assert!(!is_gemma_family("llama"));
+        assert!(!is_gemma_family("gem")); // not a Gemma model
+        assert!(!is_gemma_family(""));
     }
 
     #[test]

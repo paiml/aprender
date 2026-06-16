@@ -1,0 +1,59 @@
+contract: apr-load-fail-closed-gemma
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  description: >
+    realizar must FAIL LOUD when asked to run a Gemma-family model (gemma / gemma2 /
+    gemma3) rather than silently producing garbage. Gemma requires four
+    architecture-specific behaviors that realizar's LLaMA-style forward path does NOT
+    implement: (a) GELU-gating FFN (GeGLU) — apr_transformer::inference hardcodes SiLU
+    when a gate weight is present; (b) (1 + weight) RMSNorm — helpers::rms_norm applies
+    x_normed * w, not x_normed * (1 + w); (c) token-embedding scaling by
+    sqrt(hidden_size) — absent from the forward path; (d) attention + final-logit
+    tanh-softcapping (Gemma2) — absent. With the arch recognized in the loader, a Gemma
+    GGUF/safetensors would otherwise load and run with LLaMA behavior = silently-wrong
+    output for a popular model family. PMAT-807 adds a fail-loud Gate 0 in
+    contract_gate::validate_model_load — THE single enforcement point every
+    inference-weight-loading path (GGUF/APR/SafeTensors, CPU + CUDA) funnels through —
+    that refuses Gemma with a clear error naming the unimplemented behaviors. The gate
+    fires ONLY when building an inference model; apr convert / apr inspect / apr validate
+    read metadata directly and are unaffected, so Gemma models can still be inspected and
+    converted. This extends the Pillar-4 fail-closed guarantee (PMAT-744, PMAT-750):
+    refuse a model apr cannot run CORRECTLY instead of emitting garbage.
+  references:
+  - "crates/aprender-serve/src/contract_gate.rs (validate_supported_architecture, is_gemma_family, Gate 0 in validate_model_load)"
+  - "crates/aprender-serve/src/apr_transformer/inference.rs (hardcoded SiLU when gate present — behavior (a))"
+  - "crates/aprender-serve/src/apr_transformer/helpers.rs (rms_norm: x_normed * w, no (1+w) — behavior (b))"
+  - "crates/aprender-serve/src/contract_gate.rs::tests (test_gemma_family_rejected_at_load, test_non_gemma_architectures_unaffected)"
+version: 1
+status: enforced
+date: 2026-06-16
+
+proof_obligations:
+  - type: invariant
+    property: >
+      GEMMA-DETECT: is_gemma_family(arch) is true iff the lowercased architecture name
+      begins with "gemma" — covering raw GGUF strings (gemma/gemma2/gemma3), HF class
+      names (GemmaForCausalLM/Gemma2ForCausalLM/Gemma3ForCausalLM), the normalized form
+      (gemma), and future point variants. Non-Gemma names (llama/qwen2/qwen3/mistral/
+      phi/phi2/deepseek/gpt2/unknown_future_arch) are never flagged (no false positive).
+  - type: invariant
+    property: >
+      GEMMA-FAIL-LOUD: validate_model_load / validate_model_load_basic return
+      Err(gate="architecture_supported") for every Gemma-family architecture, so a Gemma
+      model is refused at load instead of running with LLaMA-style behavior. A non-Gemma
+      model that is otherwise valid loads unchanged (gate is a no-op for it).
+
+falsification_tests:
+  - id: FALSIFY-LOAD-GEMMA-001
+    name: test_gemma_family_rejected_at_load
+    prediction: "validate_model_load with architecture in {gemma, gemma2, gemma3, GemmaForCausalLM, Gemma2ForCausalLM, Gemma3ForCausalLM, gemma3n} returns Err(gate=architecture_supported) whose reason names the missing Gemma behaviors (Gemma + softcapping)"
+    test_harness: "cargo test -p aprender-serve --lib test_gemma_family_rejected_at_load"
+    expected_output: "test result: ok"
+    if_fails: "a Gemma model is accepted at load → apr run/serve execute it with LLaMA-style FFN/RMSNorm/embedding/logits and emit silently-wrong output for a popular family."
+  - id: FALSIFY-LOAD-GEMMA-002
+    name: test_non_gemma_architectures_unaffected
+    prediction: "validate_model_load with architecture in {llama, qwen2, qwen3, mistral, phi, phi2, deepseek, gpt2, unknown_future_arch} is Ok — the Gemma gate does not regress any other family"
+    test_harness: "cargo test -p aprender-serve --lib test_non_gemma_architectures_unaffected"
+    expected_output: "test result: ok"
+    if_fails: "the Gemma fail-loud gate over-triggers and refuses a non-Gemma model that apr CAN run correctly = a regression for llama/qwen/mistral/etc."
