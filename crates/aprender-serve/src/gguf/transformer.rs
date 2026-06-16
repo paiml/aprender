@@ -9,8 +9,8 @@ use crate::quantize::QK_K;
 use super::config::{GGUFConfig, ValidatedModelConfig};
 use super::quantized::{QKVWeights, QuantizedTensorRef};
 use super::types::{
-    GGUFModel, GGUF_TYPE_BF16, GGUF_TYPE_F32, GGUF_TYPE_Q2_K, GGUF_TYPE_Q4_0, GGUF_TYPE_Q4_1,
-    GGUF_TYPE_Q4_K, GGUF_TYPE_Q5_0, GGUF_TYPE_Q5_K, GGUF_TYPE_Q6_K, GGUF_TYPE_Q8_0,
+    GGUFModel, GGUF_TYPE_BF16, GGUF_TYPE_F16, GGUF_TYPE_F32, GGUF_TYPE_Q2_K, GGUF_TYPE_Q4_0,
+    GGUF_TYPE_Q4_1, GGUF_TYPE_Q4_K, GGUF_TYPE_Q5_0, GGUF_TYPE_Q5_K, GGUF_TYPE_Q6_K, GGUF_TYPE_Q8_0,
 };
 
 /// Quantized transformer layer weights (stored as byte references)
@@ -405,8 +405,14 @@ impl<'a> QuantizedGGUFTransformer<'a> {
 
         match qtype {
             GGUF_TYPE_F32 => Ok(num_elements * 4),
-            // BF16: 2 bytes/elem, no block structure (#1893-class loader gap).
-            GGUF_TYPE_BF16 => Ok(num_elements * 2),
+            // F16/BF16: 2 bytes/elem, no block structure (#1893-class loader gap).
+            // PMAT-788: F16 (ggml type 1) is the most basic GGUF weight format, but
+            // its byte-size arm was missing here, so `from_gguf` (the `apr run` loader)
+            // crashed on EVERY F16 GGUF on both CPU and GPU paths — before the fail-closed
+            // GPU quant gate (PMAT-785) could even route it to CPU. The CPU forward
+            // (`fused_matmul`'s F16 branch) handles F16 fine once the tensor loads, so the
+            // fix is purely the missing size computation. Mirrors the existing BF16 arm.
+            GGUF_TYPE_F16 | GGUF_TYPE_BF16 => Ok(num_elements * 2),
             GGUF_TYPE_Q4_0 => Ok(num_elements.div_ceil(32) * 18),
             GGUF_TYPE_Q8_0 => Ok(num_elements.div_ceil(32) * 34),
             GGUF_TYPE_Q2_K => Ok(num_elements.div_ceil(QK_K) * 84),
@@ -623,6 +629,44 @@ impl<'a> QuantizedGGUFTransformer<'a> {
             attn_q_norm_weight,
             attn_k_norm_weight,
         })
+    }
+}
+
+#[cfg(test)]
+mod tensor_byte_size_tests {
+    use super::*;
+    use crate::gguf::types::{GGUF_TYPE_F16, GGUF_TYPE_Q3_K};
+
+    // PMAT-788: F16 (ggml type 1) is the most common GGUF weight format. Its
+    // byte-size arm was missing, so `from_gguf` crashed on every F16 GGUF on
+    // both CPU and GPU paths before the fail-closed quant gate could route it.
+    #[test]
+    fn f16_byte_size_is_two_bytes_per_element() {
+        let n = 1024;
+        let got = QuantizedGGUFTransformer::tensor_byte_size(GGUF_TYPE_F16, n, &[1024])
+            .expect("F16 must have a known byte size (PMAT-788)");
+        assert_eq!(got, n * 2, "F16 is 2 bytes/element");
+    }
+
+    #[test]
+    fn bf16_byte_size_is_two_bytes_per_element() {
+        let n = 768;
+        let got = QuantizedGGUFTransformer::tensor_byte_size(GGUF_TYPE_BF16, n, &[768])
+            .expect("BF16 must have a known byte size");
+        assert_eq!(got, n * 2);
+    }
+
+    // Regression guard: Q3_K (type 11) is genuinely NOT supported by the CPU
+    // forward matmul, so the loader correctly still rejects it rather than
+    // loading a tensor that would crash deeper in inference. Documents the
+    // deliberate boundary of the PMAT-788 fix (F16 only).
+    #[test]
+    fn q3_k_byte_size_still_unsupported() {
+        let res = QuantizedGGUFTransformer::tensor_byte_size(GGUF_TYPE_Q3_K, 256, &[256]);
+        assert!(
+            res.is_err(),
+            "Q3_K is intentionally not loadable (no CPU forward kernel)"
+        );
     }
 }
 
