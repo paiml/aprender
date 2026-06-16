@@ -256,7 +256,18 @@ impl AprTransformer {
     }
 
     /// Apply RoPE (delegates to helpers module)
+    ///
+    /// PMAT-797: pass the architecture-correct pairing convention. LLaMA-family
+    /// uses NORM (adjacent pairs), Qwen/NeoX/Phi/Gemma use NEOX (split halves).
     fn apply_rope_f32(&self, x: &mut [f32], position: usize, num_heads: usize, head_dim: usize) {
-        helpers::apply_rope_f32(x, position, num_heads, head_dim, self.config.rope_theta);
+        let rope_type = crate::gguf::infer_rope_type(&self.config.architecture);
+        helpers::apply_rope_f32(
+            x,
+            position,
+            num_heads,
+            head_dim,
+            self.config.rope_theta,
+            rope_type,
+        );
     }
 }

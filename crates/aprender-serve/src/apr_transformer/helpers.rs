@@ -307,12 +307,29 @@ pub(crate) fn gelu_inplace(data: &mut [f32]) {
 ///
 /// RoPE encodes position information by rotating pairs of elements
 /// with position-dependent angles.
+///
+/// # RoPE pairing convention (PMAT-797)
+///
+/// `rope_type` selects the pairing geometry, matching llama.cpp's
+/// `ggml_rope` (`GGML_ROPE_TYPE_NORM` vs `GGML_ROPE_TYPE_NEOX`):
+///
+/// - **NORM (`rope_type == 0`)** — adjacent pairs: rotate `(x[2i], x[2i+1])`.
+///   LLaMA / TinyLlama / Mistral / DeepSeek convention.
+/// - **NEOX (`rope_type == 2`)** — split halves: rotate `(x[i], x[i+head_dim/2])`.
+///   Qwen / GPT-NeoX / Phi / Gemma convention.
+///
+/// In BOTH conventions frequency-pair `i` uses
+/// `theta_i = rope_theta^(-2i/head_dim)`; only the *element pairing* differs.
+/// Applying the wrong pairing silently corrupts every position embedding,
+/// so the caller MUST pass the architecture-correct `rope_type` (derive via
+/// `crate::gguf::infer_rope_type(architecture)`).
 pub(crate) fn apply_rope_f32(
     x: &mut [f32],
     position: usize,
     num_heads: usize,
     head_dim: usize,
     rope_theta: f32,
+    rope_type: u32,
 ) {
     let half_dim = head_dim / 2;
     let pos_f32 = position as f32;
@@ -320,9 +337,8 @@ pub(crate) fn apply_rope_f32(
 
     for h in 0..num_heads {
         let head_start = h * head_dim;
-        let idx2_start = head_start + half_dim;
 
-        if idx2_start + half_dim > x.len() {
+        if head_start + head_dim > x.len() {
             continue;
         }
 
@@ -331,11 +347,19 @@ pub(crate) fn apply_rope_f32(
             let angle = pos_f32 * freq;
             let (sin_val, cos_val) = angle.sin_cos();
 
-            let x1 = x[head_start + i];
-            let x2 = x[idx2_start + i];
+            // NEOX (type 2): pair x[i] with x[i + half_dim] (split halves).
+            // NORM (type 0): pair x[2i] with x[2i+1] (adjacent).
+            let (idx1, idx2) = if rope_type == 2 {
+                (head_start + i, head_start + half_dim + i)
+            } else {
+                (head_start + 2 * i, head_start + 2 * i + 1)
+            };
 
-            x[head_start + i] = x1 * cos_val - x2 * sin_val;
-            x[idx2_start + i] = x1 * sin_val + x2 * cos_val;
+            let x1 = x[idx1];
+            let x2 = x[idx2];
+
+            x[idx1] = x1 * cos_val - x2 * sin_val;
+            x[idx2] = x1 * sin_val + x2 * cos_val;
         }
     }
 }
@@ -1840,6 +1864,158 @@ mod determinism_tests {
                  residual comes entirely from cumulative-layer interaction; \
                  M-FFN-GGUF-7 (multi-layer real-teacher) is the only remaining \
                  test for §27 closure."
+            );
+        }
+    }
+
+    // =======================================================================
+    // PMAT-797: apr_transformer CPU RoPE must honor the architecture pairing
+    // convention (NORM vs NEOX), matching llama.cpp `ggml_rope`.
+    //
+    // Before the fix, `apply_rope_f32` ALWAYS used NEOX (split-half) pairing,
+    // silently corrupting RoPE for every LLaMA-family (NORM) safetensors model
+    // on the CPU reference path. These tests pin both conventions to
+    // hand-computed reference values from the RoPE definition.
+    //
+    // Reference convention (Su et al. 2021 "RoFormer"; llama.cpp ggml_rope):
+    //   theta_i = base^(-2i/head_dim)
+    //   x'[a] = x[a]*cos(pos*theta_i) - x[b]*sin(pos*theta_i)
+    //   x'[b] = x[a]*sin(pos*theta_i) + x[b]*cos(pos*theta_i)
+    // where (a, b) = (2i, 2i+1) for NORM, (i, i+head_dim/2) for NEOX.
+    // =======================================================================
+
+    /// PMAT-797-A: NORM (rope_type 0) rotates ADJACENT pairs (LLaMA-family).
+    ///
+    /// Hand-computed reference for head_dim=4, base=10000, pos=1:
+    ///   i=0: theta_0 = 10000^0 = 1.0,  angle = 1.0 rad
+    ///   i=1: theta_1 = 10000^(-0.5) = 0.01, angle = 0.01 rad
+    /// NORM pairs (x[0],x[1]) at angle 1.0 and (x[2],x[3]) at angle 0.01.
+    #[test]
+    fn pmat_797_a_norm_matches_adjacent_pair_reference() {
+        let head_dim = 4;
+        let base = 10000.0_f32;
+        let pos = 1usize;
+        let mut x = vec![1.0_f32, 2.0, 3.0, 4.0];
+
+        apply_rope_f32(
+            &mut x, pos, 1, head_dim, base, /* rope_type = NORM */ 0,
+        );
+
+        // Reference: adjacent pairs (2i, 2i+1).
+        let a0 = pos as f32 * 1.0; // theta_0 = 1.0
+        let (s0, c0) = a0.sin_cos();
+        let a1 = pos as f32 * base.powf(-2.0 / head_dim as f32); // theta_1
+        let (s1, c1) = a1.sin_cos();
+
+        let ref0 = 1.0 * c0 - 2.0 * s0; // x[0]
+        let ref1 = 1.0 * s0 + 2.0 * c0; // x[1]
+        let ref2 = 3.0 * c1 - 4.0 * s1; // x[2]
+        let ref3 = 3.0 * s1 + 4.0 * c1; // x[3]
+
+        assert!((x[0] - ref0).abs() < 1e-5, "NORM x[0]: {} vs {ref0}", x[0]);
+        assert!((x[1] - ref1).abs() < 1e-5, "NORM x[1]: {} vs {ref1}", x[1]);
+        assert!((x[2] - ref2).abs() < 1e-5, "NORM x[2]: {} vs {ref2}", x[2]);
+        assert!((x[3] - ref3).abs() < 1e-5, "NORM x[3]: {} vs {ref3}", x[3]);
+    }
+
+    /// PMAT-797-B: NEOX (rope_type 2) rotates SPLIT HALVES (Qwen/NeoX-family).
+    ///
+    /// Same head_dim/base/pos, but NEOX pairs (x[0],x[2]) at angle 1.0 and
+    /// (x[1],x[3]) at angle 0.01.
+    #[test]
+    fn pmat_797_b_neox_matches_split_half_reference() {
+        let head_dim = 4;
+        let base = 10000.0_f32;
+        let pos = 1usize;
+        let mut x = vec![1.0_f32, 2.0, 3.0, 4.0];
+
+        apply_rope_f32(
+            &mut x, pos, 1, head_dim, base, /* rope_type = NEOX */ 2,
+        );
+
+        let a0 = pos as f32 * 1.0;
+        let (s0, c0) = a0.sin_cos();
+        let a1 = pos as f32 * base.powf(-2.0 / head_dim as f32);
+        let (s1, c1) = a1.sin_cos();
+
+        // NEOX: pair i with i+half_dim. half_dim=2.
+        let ref0 = 1.0 * c0 - 3.0 * s0; // x[0] paired with x[2]
+        let ref2 = 1.0 * s0 + 3.0 * c0; // x[2]
+        let ref1 = 2.0 * c1 - 4.0 * s1; // x[1] paired with x[3]
+        let ref3 = 2.0 * s1 + 4.0 * c1; // x[3]
+
+        assert!((x[0] - ref0).abs() < 1e-5, "NEOX x[0]: {} vs {ref0}", x[0]);
+        assert!((x[1] - ref1).abs() < 1e-5, "NEOX x[1]: {} vs {ref1}", x[1]);
+        assert!((x[2] - ref2).abs() < 1e-5, "NEOX x[2]: {} vs {ref2}", x[2]);
+        assert!((x[3] - ref3).abs() < 1e-5, "NEOX x[3]: {} vs {ref3}", x[3]);
+    }
+
+    /// PMAT-797-C: the two conventions DIFFER — proving the pairing is
+    /// load-bearing. If this fails, the rope_type branch is a no-op and the
+    /// fix is meaningless.
+    #[test]
+    fn pmat_797_c_norm_and_neox_diverge() {
+        let head_dim = 8;
+        let base = 10000.0_f32;
+        let pos = 5usize;
+        let x0: Vec<f32> = (0..head_dim).map(|i| (i as f32 + 1.0) * 0.5).collect();
+
+        let mut x_norm = x0.clone();
+        let mut x_neox = x0.clone();
+        apply_rope_f32(&mut x_norm, pos, 1, head_dim, base, 0);
+        apply_rope_f32(&mut x_neox, pos, 1, head_dim, base, 2);
+
+        let max_div = x_norm
+            .iter()
+            .zip(x_neox.iter())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0_f32, f32::max);
+        assert!(
+            max_div > 1e-3,
+            "PMAT-797: NORM and NEOX RoPE produced identical output \
+             (max divergence {max_div}); rope_type branch is a no-op"
+        );
+    }
+
+    /// PMAT-797-D: position 0 is identity for BOTH conventions
+    /// (cos(0)=1, sin(0)=0 ⇒ x' = x). Cross-checks both branches preserve
+    /// the zero-position invariant.
+    #[test]
+    fn pmat_797_d_zero_position_identity_both_conventions() {
+        let head_dim = 6;
+        let base = 10000.0_f32;
+        let x0: Vec<f32> = vec![1.5, -2.0, 0.25, 3.0, -1.0, 0.75];
+
+        for rope_type in [0u32, 2u32] {
+            let mut x = x0.clone();
+            apply_rope_f32(&mut x, 0, 1, head_dim, base, rope_type);
+            for (i, (&got, &want)) in x.iter().zip(x0.iter()).enumerate() {
+                assert!(
+                    (got - want).abs() < 1e-6,
+                    "rope_type={rope_type} pos=0 changed x[{i}]: {got} vs {want}"
+                );
+            }
+        }
+    }
+
+    /// PMAT-797-E: norm preservation — RoPE is a rotation, so ‖x'‖ ≈ ‖x‖
+    /// for BOTH conventions (sanity that the adjacent-pair NORM path didn't
+    /// introduce an index bug that breaks orthonormality).
+    #[test]
+    fn pmat_797_e_norm_preservation_both_conventions() {
+        let head_dim = 8;
+        let base = 10000.0_f32;
+        let pos = 13usize;
+        let x0: Vec<f32> = (0..head_dim).map(|i| (i as f32 * 0.37).sin()).collect();
+        let norm_in = x0.iter().map(|v| v * v).sum::<f32>().sqrt();
+
+        for rope_type in [0u32, 2u32] {
+            let mut x = x0.clone();
+            apply_rope_f32(&mut x, pos, 1, head_dim, base, rope_type);
+            let norm_out = x.iter().map(|v| v * v).sum::<f32>().sqrt();
+            assert!(
+                (norm_out - norm_in).abs() < 1e-4,
+                "rope_type={rope_type}: ‖x'‖={norm_out} != ‖x‖={norm_in}"
             );
         }
     }
