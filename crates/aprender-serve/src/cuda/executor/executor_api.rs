@@ -377,6 +377,35 @@ impl CudaExecutor {
         self.context.device_name()
     }
 
+    /// PMAT-798: Force the high-precision (non-fused, float MWV) Q4K FFN path.
+    ///
+    /// The fused gate+up+SwiGLU HW DP4A kernel quantizes RMSNorm activations to
+    /// Q8_1 before the integer dot product. For LLaMA-NORM-family models with
+    /// massive activations (e.g. TinyLlama dim-624 ~138), this Q8 step costs
+    /// enough first-token cosine (~0.972 vs the 0.98 parity gate) to force a
+    /// CPU fallback. Switching to the separate float MWV path restores parity
+    /// (cosine ~0.990) at a small throughput cost. The parity gate calls this
+    /// as a retry before failing closed, so correct models stay on the GPU.
+    ///
+    /// Returns the previous `fused_gate_up` flag so the caller can detect
+    /// whether anything actually changed.
+    pub fn force_high_precision_ffn(&mut self) -> bool {
+        let was_fused = self.gpu_profile.fused_gate_up;
+        self.gpu_profile.fused_gate_up = false;
+        // Keep HW DP4A for the separate GEMVs (it stays coherent); only the
+        // FUSED gate+up+SwiGLU kernel is the parity-costly one. Disabling just
+        // the fusion recovers cosine ~0.987 (TinyLlama) while full float MWV
+        // decode is unstable under sm_121 graph capture.
+        // Drop any captured decode graph so the next forward re-records the
+        // kernel sequence with the new (float MWV, non-fused) FFN path. Without
+        // this, a graph captured under the fused kernel would replay unchanged
+        // and the precision switch would be a no-op.
+        self.decode_graph = None;
+        self.decode_token_count = 0;
+        self.graph_capture_failed = false;
+        was_fused
+    }
+
     /// Get free and total GPU memory in bytes
     pub fn memory_info(&self) -> Result<(usize, usize), GpuError> {
         self.context.memory_info()
