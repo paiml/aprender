@@ -29,21 +29,26 @@ fn test_is_legacy_gguf_quant_q5_1_gh219() {
 
 #[test]
 fn test_is_legacy_gguf_quant_non_legacy_types_gh219() {
-    // Q4_K = 12, Q5_K = 13, Q6_K = 14, Q8_0 = 8, F16 = 1, F32 = 0
+    // GPU-eligible types (have a real WeightQuantType GEMV kernel) → NOT gated.
+    // Q4_K = 12, Q5_K = 13, Q6_K = 14, Q8_0 = 8, F32 = 0
     assert!(!is_legacy_gguf_quant(0));  // F32
-    assert!(!is_legacy_gguf_quant(1));  // F16
     assert!(!is_legacy_gguf_quant(8));  // Q8_0
     assert!(!is_legacy_gguf_quant(12)); // Q4_K
     assert!(!is_legacy_gguf_quant(13)); // Q5_K
     assert!(!is_legacy_gguf_quant(14)); // Q6_K
+    // PMAT-783: F16(1) has no GGUF GPU GEMV kernel → gated (would be Q4K garbage).
+    assert!(is_legacy_gguf_quant(1));
 }
 
 #[test]
 fn test_is_legacy_gguf_quant_edge_values_gh219() {
-    assert!(!is_legacy_gguf_quant(4));
-    assert!(!is_legacy_gguf_quant(5));
-    assert!(!is_legacy_gguf_quant(100));
-    assert!(!is_legacy_gguf_quant(u32::MAX));
+    // PMAT-783: every type WITHOUT a verified GPU kernel fails closed to CPU.
+    assert!(is_legacy_gguf_quant(4)); // Q4_2 (removed) — no kernel
+    assert!(is_legacy_gguf_quant(5)); // Q4_3 (removed) — no kernel
+    assert!(is_legacy_gguf_quant(10)); // Q2_K — no kernel
+    assert!(is_legacy_gguf_quant(11)); // Q3_K — no kernel
+    assert!(is_legacy_gguf_quant(100)); // IQ* / unknown — no kernel
+    assert!(is_legacy_gguf_quant(u32::MAX));
 }
 
 // ============================================================================
