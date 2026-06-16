@@ -72,7 +72,21 @@ impl OwnedQuantizedModel {
             profiler.start("QkvProjection");
             #[allow(unused_variables)]
             let qkv_actual_dim;
-            let mut qkv = if use_rmsnorm {
+            // PMAT-809: when the arch needs a runtime (1+w) RMSNorm offset, normalize
+            // explicitly then run the standard QKV matmul (the fused kernels bake in
+            // *w). GGUF gemma has +1 baked in (rmsnorm_unit_offset == false) → fused.
+            let mut qkv = if use_rmsnorm && self.config.rmsnorm_unit_offset() {
+                qkv_actual_dim = 0;
+                self.rms_norm_into_arch(
+                    &hidden,
+                    &layer.attn_norm_weight,
+                    self.config.eps,
+                    &mut o_proj_buffer[..hidden_dim],
+                );
+                let v = self.qkv_matmul(&o_proj_buffer[..hidden_dim], &layer.qkv_weight)?;
+                qkv_buffer[..v.len()].copy_from_slice(&v);
+                &mut qkv_buffer[..v.len()]
+            } else if use_rmsnorm {
                 match &layer.qkv_weight {
                     crate::gguf::quantized::OwnedQKVWeights::Fused(ref w) => {
                         ops::rms_norm_into(
