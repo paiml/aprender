@@ -1207,7 +1207,8 @@ mod gemma_config_tests {
         assert!(!cfg("qwen2", 1536).is_gemma1());
     }
 
-    /// (c) embed scale is `sqrt(hidden)` for gemma1, `None` otherwise.
+    /// (c) embed scale is `sqrt(hidden)` for gemma1 AND gemma2 (PMAT-810:
+    /// gemma2 shares gemma1's `sqrt(hidden)` embedding scaling), `None` otherwise.
     #[test]
     fn embed_scale_is_sqrt_hidden_for_gemma_only() {
         let g = cfg("gemma", 2048);
@@ -1216,17 +1217,26 @@ mod gemma_config_tests {
             (s - (2048f32).sqrt()).abs() < 1e-3,
             "scale {s} != sqrt(2048)"
         );
+        // PMAT-810: gemma2 also scales embeddings by sqrt(hidden).
+        let s2 = cfg("gemma2", 2304)
+            .embed_scale()
+            .expect("gemma2 must scale embeddings");
+        assert!(
+            (s2 - (2304f32).sqrt()).abs() < 1e-3,
+            "gemma2 scale {s2} != sqrt(2304)"
+        );
         assert!(cfg("llama", 4096).embed_scale().is_none());
         assert!(cfg("qwen2", 1536).embed_scale().is_none());
-        assert!(cfg("gemma2", 2304).embed_scale().is_none());
     }
 
-    /// (a) GeGLU FFN enabled for gemma1 only.
+    /// (a) GeGLU FFN enabled for gemma1 AND gemma2 (PMAT-810: gemma2 shares
+    /// gemma1's GeGLU FFN), disabled for non-Gemma archs.
     #[test]
     fn geglu_enabled_for_gemma1_only() {
         assert!(cfg("gemma", 2048).geglu_ffn());
+        assert!(cfg("gemma2", 2304).geglu_ffn());
         assert!(!cfg("llama", 4096).geglu_ffn());
-        assert!(!cfg("gemma2", 2304).geglu_ffn());
+        assert!(!cfg("qwen2", 1536).geglu_ffn());
     }
 
     /// (b) GGUF gemma weights are pre-shifted (+1 at conversion), so NO runtime

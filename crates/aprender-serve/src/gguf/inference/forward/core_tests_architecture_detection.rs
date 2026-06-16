@@ -103,6 +103,7 @@ fn test_forward_with_separate_qkv() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -133,6 +134,8 @@ fn test_forward_with_separate_qkv() {
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+        post_attn_norm_weight: None,
+        post_ffw_norm_weight: None,
     };
 
     let model = OwnedQuantizedModel {
@@ -247,6 +250,7 @@ fn test_forward_cached_separate_qkv() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -272,6 +276,8 @@ fn test_forward_cached_separate_qkv() {
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+        post_attn_norm_weight: None,
+        post_ffw_norm_weight: None,
     };
 
     let model = OwnedQuantizedModel {
