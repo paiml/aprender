@@ -150,16 +150,86 @@ fn test_prefault_mmap_multi_page() {
 
 #[test]
 fn test_is_legacy_gguf_quant() {
-    assert!(is_legacy_gguf_quant(2)); // Q4_0
-    assert!(is_legacy_gguf_quant(3)); // Q4_1
-    assert!(is_legacy_gguf_quant(6)); // Q5_0
-    assert!(is_legacy_gguf_quant(7)); // Q5_1
+    // PMAT-782: Q4_0/Q4_1/Q5_0 candle-layout kernels now match CPU (parity gate
+    // PASSES, cosine≈0.9998) → GPU-eligible.
+    // PMAT-783: the gate FAILS CLOSED for every quant WITHOUT a verified GPU kernel
+    // (anything outside the from_ggml_type whitelist), because resolve_qtype's
+    // `.unwrap_or(Q4K)` would otherwise silently decode it as Q4_K → garbage.
+
+    // GPU-eligible (have a real WeightQuantType kernel) → NOT gated:
     assert!(!is_legacy_gguf_quant(0)); // F32
-    assert!(!is_legacy_gguf_quant(1)); // F16
+    assert!(!is_legacy_gguf_quant(2)); // Q4_0 — fixed (candle layout)
+    assert!(!is_legacy_gguf_quant(3)); // Q4_1 — fixed (PMAT-782 candle layout)
+    assert!(!is_legacy_gguf_quant(6)); // Q5_0 — fixed (candle layout)
     assert!(!is_legacy_gguf_quant(8)); // Q8_0
     assert!(!is_legacy_gguf_quant(12)); // Q4_K
+    assert!(!is_legacy_gguf_quant(13)); // Q5_K
     assert!(!is_legacy_gguf_quant(14)); // Q6_K
-    assert!(!is_legacy_gguf_quant(100)); // Unknown
+
+    // No GPU kernel → MUST be gated to CPU (else silent Q4_K garbage):
+    assert!(is_legacy_gguf_quant(1)); // F16 (no GGUF f16 GEMV here)
+    assert!(is_legacy_gguf_quant(7)); // Q5_1 — no GPU kernel
+    assert!(is_legacy_gguf_quant(9)); // Q8_1
+    assert!(is_legacy_gguf_quant(10)); // Q2_K
+    assert!(is_legacy_gguf_quant(11)); // Q3_K
+    assert!(is_legacy_gguf_quant(15)); // Q8_K
+    assert!(is_legacy_gguf_quant(30)); // BF16
+    assert!(is_legacy_gguf_quant(100)); // Unknown / IQ* families
+}
+
+// PMAT-783: model_has_legacy_quant must inspect EVERY projection tensor —
+// including QKV and the FFN gate, which the pre-PMAT-783 gate omitted. A Q2_K(10)
+// tensor hidden in QKV or the gate must still force CPU (else resolve_qtype's
+// `.unwrap_or(Q4K)` decodes Q2_K bytes as Q4_K → garbage on the GPU-resident path).
+#[test]
+fn test_model_has_legacy_quant_checks_qkv_and_gate() {
+    use crate::gguf::test_helpers::create_test_model_with_config;
+    use crate::gguf::{ArchConstraints, GGUFConfig, OwnedQKVWeights};
+
+    let config = GGUFConfig {
+        architecture: "test".to_string(),
+        constraints: ArchConstraints::from_architecture("test"),
+        hidden_dim: 64,
+        intermediate_dim: 128,
+        num_layers: 1,
+        num_heads: 4,
+        num_kv_heads: 4,
+        vocab_size: 100,
+        context_length: 256,
+        rope_theta: 10000.0,
+        eps: 1e-5,
+        rope_type: 0,
+        explicit_head_dim: None,
+        bos_token_id: None,
+        eos_token_id: None,
+    };
+
+    // Baseline: an all-Q4K model is GPU-eligible.
+    let base = create_test_model_with_config(&config);
+    assert!(
+        !model_has_legacy_quant(&base),
+        "all-Q4K model must be GPU-eligible"
+    );
+
+    // Q2_K (type 10) hidden ONLY in the fused QKV tensor must still gate to CPU.
+    let mut qkv_model = create_test_model_with_config(&config);
+    if let OwnedQKVWeights::Fused(t) = &mut qkv_model.layers[0].qkv_weight {
+        t.qtype = 10; // Q2_K — no GPU kernel
+    }
+    assert!(
+        model_has_legacy_quant(&qkv_model),
+        "Q2_K in QKV must force CPU"
+    );
+
+    // Q3_K (type 11) hidden ONLY in the FFN gate must still gate to CPU.
+    let mut gate_model = create_test_model_with_config(&config);
+    if let Some(g) = gate_model.layers[0].ffn_gate_weight.as_mut() {
+        g.qtype = 11; // Q3_K — no GPU kernel
+        assert!(
+            model_has_legacy_quant(&gate_model),
+            "Q3_K in FFN gate must force CPU"
+        );
+    }
 }
 
 // ============================================================================

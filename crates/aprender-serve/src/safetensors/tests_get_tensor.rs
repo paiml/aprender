@@ -174,4 +174,132 @@ mod mapped_tests_part_02 {
         assert!(!model.has_tensor("nonexistent"));
         assert!(model.get_tensor_info("nonexistent").is_none());
     }
+
+    /// SAFETENSORS-INTEGRITY-001 (falsifier): the mmap reader must REJECT a
+    /// tensor whose declared shape contradicts its `data_offsets` byte length.
+    ///
+    /// Crafted tensor: dtype F32, shape `[3]` (expects 3 * 4 = 12 bytes) but
+    /// `data_offsets:[0,8]` declares only 8 bytes. The byte length is a
+    /// multiple of 4 (passes the old check) and the file is large enough
+    /// (passes the GH-213 truncation check), so the historical reader would
+    /// silently return a 2-element tensor instead of the declared 3.
+    /// The official HF safetensors library rejects this; aprender must too.
+    #[test]
+    fn test_mapped_rejects_shape_vs_bytes_mismatch() {
+        let mut file = tempfile::NamedTempFile::new().expect("temp file");
+        // shape [3] => 12 bytes expected, but data_offsets declare 8 bytes.
+        let json = r#"{"w":{"dtype":"F32","shape":[3],"data_offsets":[0,8]}}"#;
+        file.write_all(&(json.len() as u64).to_le_bytes())
+            .expect("header");
+        file.write_all(json.as_bytes()).expect("metadata");
+        // Provide the full 8 declared bytes so the GH-213 size gate passes.
+        file.write_all(&[0u8; 8]).expect("data");
+        file.flush().expect("flush");
+
+        let model = MappedSafeTensorsModel::load(file.path()).expect("load");
+        let result = model.get_tensor_f32("w");
+        assert!(
+            result.is_err(),
+            "Expected rejection of shape/bytes mismatch, got {} values",
+            result.map(|v| v.len()).unwrap_or(0)
+        );
+        let err = format!("{:?}", result.unwrap_err());
+        assert!(
+            err.contains("contradicts declared shape"),
+            "Expected integrity error, got: {err}"
+        );
+    }
+
+    /// False-positive guard: a well-formed tensor (byte_len == product(shape)
+    /// * dtype_size) must still load through the mmap reader unchanged.
+    #[test]
+    fn test_mapped_valid_shape_still_loads() {
+        let mut file = tempfile::NamedTempFile::new().expect("temp file");
+        // shape [3] => exactly 12 bytes. Well-formed.
+        let json = r#"{"w":{"dtype":"F32","shape":[3],"data_offsets":[0,12]}}"#;
+        file.write_all(&(json.len() as u64).to_le_bytes())
+            .expect("header");
+        file.write_all(json.as_bytes()).expect("metadata");
+        file.write_all(&1.0f32.to_le_bytes()).expect("d0");
+        file.write_all(&2.0f32.to_le_bytes()).expect("d1");
+        file.write_all(&3.0f32.to_le_bytes()).expect("d2");
+        file.flush().expect("flush");
+
+        let model = MappedSafeTensorsModel::load(file.path()).expect("load");
+        let values = model.get_tensor_f32("w").expect("valid tensor must load");
+        assert_eq!(values, vec![1.0, 2.0, 3.0]);
+    }
+}
+
+// ============================================================================
+// SAFETENSORS-INTEGRITY-001: in-memory SafetensorsModel shape-vs-bytes
+// ============================================================================
+
+/// Falsifier: the in-memory reader must REJECT a tensor whose declared shape
+/// contradicts its `data_offsets` byte length (parity with HF safetensors).
+///
+/// Crafted: dtype F32, shape `[3]` (expects 12 bytes) but offsets `[0,8]`
+/// declare 8 bytes. 8 is a multiple of 4, so the historical reader silently
+/// produced a 2-element tensor; the fix makes it fail closed.
+#[test]
+fn test_inmem_rejects_shape_vs_bytes_mismatch_f32() {
+    let json = r#"{"w":{"dtype":"F32","shape":[3],"data_offsets":[0,8]}}"#;
+    let json_bytes = json.as_bytes();
+    let mut data = Vec::new();
+    data.extend_from_slice(&(json_bytes.len() as u64).to_le_bytes());
+    data.extend_from_slice(json_bytes);
+    // 8 declared bytes of tensor data.
+    data.extend_from_slice(&1.0f32.to_le_bytes());
+    data.extend_from_slice(&2.0f32.to_le_bytes());
+
+    let model = SafetensorsModel::from_bytes(&data).expect("parse");
+    let result = model.get_tensor_f32("w");
+    assert!(
+        result.is_err(),
+        "Expected rejection of shape/bytes mismatch, got {} values",
+        result.map(|v| v.len()).unwrap_or(0)
+    );
+    let err = format!("{:?}", result.unwrap_err());
+    assert!(
+        err.contains("contradicts declared shape"),
+        "Expected integrity error, got: {err}"
+    );
+}
+
+/// Falsifier (F16 path): BF16/F16 element size is 2, so shape `[4]` expects
+/// 8 bytes; offsets declaring 6 bytes (a multiple of 2) must be rejected.
+#[test]
+fn test_inmem_rejects_shape_vs_bytes_mismatch_f16() {
+    let json = r#"{"w":{"dtype":"F16","shape":[4],"data_offsets":[0,6]}}"#;
+    let json_bytes = json.as_bytes();
+    let mut data = Vec::new();
+    data.extend_from_slice(&(json_bytes.len() as u64).to_le_bytes());
+    data.extend_from_slice(json_bytes);
+    data.extend_from_slice(&[0u8; 6]);
+
+    let model = SafetensorsModel::from_bytes(&data).expect("parse");
+    let result = model.get_tensor_f16_as_f32("w");
+    assert!(result.is_err(), "Expected rejection of F16 shape/bytes mismatch");
+    let err = format!("{:?}", result.unwrap_err());
+    assert!(
+        err.contains("contradicts declared shape"),
+        "Expected integrity error, got: {err}"
+    );
+}
+
+/// False-positive guard: a well-formed in-memory tensor still loads.
+#[test]
+fn test_inmem_valid_shape_still_loads() {
+    let json = r#"{"w":{"dtype":"F32","shape":[2,3],"data_offsets":[0,24]}}"#;
+    let json_bytes = json.as_bytes();
+    let mut data = Vec::new();
+    data.extend_from_slice(&(json_bytes.len() as u64).to_le_bytes());
+    data.extend_from_slice(json_bytes);
+    for i in 0..6 {
+        data.extend_from_slice(&(i as f32).to_le_bytes());
+    }
+
+    let model = SafetensorsModel::from_bytes(&data).expect("parse");
+    let values = model.get_tensor_f32("w").expect("valid 2x3 tensor must load");
+    assert_eq!(values, vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0]);
 }

@@ -33,9 +33,18 @@ impl CudaExecutor {
     /// Returns error if GPU allocation or transfer fails.
     pub fn load_weights(&mut self, name: &str, weights: &[f32]) -> Result<usize, GpuError> {
         contract_pre_throughput_target!();
-        // PMAT-396: On unified memory (cc>=120), register mmap'd pages directly
+        // PMAT-396/PMAT-769: On unified memory (cc>=120), pin mmap'd pages — but
+        // GB10/Jetson reject cuMemHostRegister, so from_host_registered_or_managed
+        // auto-detects and falls back to a managed copy there. Discrete GPUs keep
+        // pinning unchanged.
         let buf = if self.gpu_profile.cc >= 120 {
-            unsafe { GpuBuffer::from_host_registered(weights.as_ptr().cast_mut(), weights.len())? }
+            unsafe {
+                GpuBuffer::from_host_registered_or_managed(
+                    &self.context,
+                    weights.as_ptr().cast_mut(),
+                    weights.len(),
+                )?
+            }
         } else {
             GpuBuffer::from_host(&self.context, weights)?
         };
@@ -141,9 +150,18 @@ impl CudaExecutor {
         data: &[u8],
         qtype: u32,
     ) -> Result<usize, GpuError> {
-        // PMAT-396: On unified memory (cc>=120), register mmap'd pages directly
+        // PMAT-396/PMAT-769: On unified memory (cc>=120), pin mmap'd pages — but
+        // GB10/Jetson reject cuMemHostRegister, so from_host_registered_or_managed
+        // auto-detects and falls back to a managed copy there. Discrete GPUs keep
+        // pinning unchanged.
         let buf = if self.gpu_profile.cc >= 120 {
-            unsafe { GpuBuffer::from_host_registered(data.as_ptr().cast_mut(), data.len())? }
+            unsafe {
+                GpuBuffer::from_host_registered_or_managed(
+                    &self.context,
+                    data.as_ptr().cast_mut(),
+                    data.len(),
+                )?
+            }
         } else {
             GpuBuffer::from_host(&self.context, data)?
         };

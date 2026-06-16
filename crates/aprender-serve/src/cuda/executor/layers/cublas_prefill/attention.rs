@@ -1416,32 +1416,61 @@ DONE_NORM:
                 self.cublaslt_handle = Some(trueno_gpu::driver::CublasLtHandle::new()?);
             }
 
-            // Use smallest realistic M (padded to 16) with the first cached FP8 weight.
-            // One GEMM is enough — cuBLASLt JIT is per-handle, not per-shape.
+            // PMAT-082 / PMAT-765: One GEMM is enough — cuBLASLt JIT is per-handle,
+            // not per-shape — so we only need *a* valid FP8 GEMM, any shape.
+            //
+            // BUG (intermittent CUDA_ERROR_ILLEGAL_ADDRESS, ~1-in-6 on RTX 4090):
+            // this used to grab `fp8_weight_cache.values().next()` (an arbitrary
+            // weight, picked by non-deterministic HashMap order) while HARDCODING
+            // the GEMM dims to `hidden_dim × hidden_dim`. With `Trans` + lda=k the
+            // weight operand is read as a [k_warmup × n_warmup] matrix, i.e.
+            // `k_warmup * n_warmup = hidden_dim²` FP8 bytes. When HashMap order
+            // happened to return a weight whose buffer is smaller than that
+            // (e.g. a GQA K/V projection: kv_dim×hidden = 256×1536 = 393 KB vs
+            // the 1536×1536 = 2.36 MB the GEMM reads), the kernel read ~2 MB
+            // past the end of the buffer → illegal address → CUDA context
+            // poisoned → silent wgpu/CPU fallback at ~6-12 tok/s (the "stall").
+            //
+            // FIX: derive the warmup square dim from the CHOSEN weight's actual
+            // byte length (1 byte/elem for FP8 E4M3), so the read can never
+            // exceed the buffer regardless of which weight HashMap returns.
+            // dim = floor(sqrt(len)) ⇒ dim*dim ≤ len, always in-bounds.
             let m_warmup: i32 = 16;
-            let n_warmup = hidden_dim as i32;
-            let k_warmup = hidden_dim as i32;
-            let warmup_input_count = m_warmup as usize * k_warmup as usize;
-            let warmup_output_count = n_warmup as usize * m_warmup as usize;
 
-            // Allocate scratch BEFORE borrowing lt_handle (avoid borrow conflict)
-            self.ensure_fp8_activation_scratch(warmup_input_count)?;
-            self.ensure_fp16_activation_scratch(warmup_output_count)?;
-            let input_ptr = self
-                .fp8_activation_scratch
-                .as_ref()
-                .expect("scratch just allocated")
-                .as_ptr();
-            let output_ptr = self
-                .fp16_activation_scratch
-                .as_ref()
-                .expect("scratch just allocated")
-                .as_ptr();
+            // Pick a weight and size the GEMM to it (extract ptr + len before
+            // borrowing lt_handle to avoid a borrow conflict).
+            let fp8_weight = self
+                .fp8_weight_cache
+                .values()
+                .next()
+                .map(|b| (b.as_ptr(), b.len()));
 
-            // Extract weight ptr before borrowing lt_handle
-            let fp8_weight_ptr = self.fp8_weight_cache.values().next().map(|b| b.as_ptr());
+            if let Some((w_ptr, w_len)) = fp8_weight {
+                // Largest square that fits inside the chosen weight buffer.
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                let raw_dim = (w_len as f64).sqrt().floor() as i32;
+                // Round down to a multiple of 16 for tensor-core alignment;
+                // clamp to ≥16 so a tiny weight can't produce a degenerate GEMM.
+                let dim = (raw_dim & !15).max(16);
+                let n_warmup = dim;
+                let k_warmup = dim;
+                let warmup_input_count = m_warmup as usize * k_warmup as usize;
+                let warmup_output_count = n_warmup as usize * m_warmup as usize;
 
-            if let Some(w_ptr) = fp8_weight_ptr {
+                // Allocate scratch BEFORE borrowing lt_handle (avoid borrow conflict)
+                self.ensure_fp8_activation_scratch(warmup_input_count)?;
+                self.ensure_fp16_activation_scratch(warmup_output_count)?;
+                let input_ptr = self
+                    .fp8_activation_scratch
+                    .as_ref()
+                    .expect("scratch just allocated")
+                    .as_ptr();
+                let output_ptr = self
+                    .fp16_activation_scratch
+                    .as_ref()
+                    .expect("scratch just allocated")
+                    .as_ptr();
+
                 let lt_handle = self.cublaslt_handle.as_ref().expect("just created");
                 let _ = lt_handle.gemm_fp8_e4m3_to_f16(
                     trueno_gpu::driver::GemmOp::Trans,

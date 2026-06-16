@@ -3,6 +3,7 @@
 #[cfg(feature = "cuda")]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     fn create_executor() -> Option<CudaExecutor> {
         CudaExecutor::new(0).ok()
@@ -12,13 +13,22 @@ mod tests {
     // Constructor Tests
     // ========================================================================
 
+    // NOTE: These device-enumeration tests touch the process-global CUDA driver
+    // state (context pool / sentinel). Every kernel-launching GPU test in this
+    // suite is #[serial]; these must be too, otherwise creating a context on an
+    // invalid device (test_new_invalid_device) can race a concurrent serial test
+    // and transiently corrupt the shared driver state, making CudaExecutor::new(0)
+    // and num_devices() spuriously fail in the full parallel run (they pass in
+    // isolation).
     #[test]
+    #[serial]
     fn test_new_device_0() {
         let result = CudaExecutor::new(0);
         assert!(result.is_ok());
     }
 
     #[test]
+    #[serial]
     fn test_new_invalid_device() {
         // Device 999 almost certainly doesn't exist
         let result = CudaExecutor::new(999);
@@ -30,6 +40,7 @@ mod tests {
     // ========================================================================
 
     #[test]
+    #[serial]
     fn test_is_available() {
         // On a CUDA-enabled system, this should return true
         let available = CudaExecutor::is_available();
@@ -38,6 +49,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_num_devices() {
         let count = CudaExecutor::num_devices();
         // Should be at least 1 on CUDA system

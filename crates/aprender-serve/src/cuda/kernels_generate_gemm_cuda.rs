@@ -80,7 +80,7 @@ impl CudaKernels {
             KernelType::Q8_0Gemv { k, n } => Q8_0GemvKernel::new(*k, *n).emit_ptx_for_target(target),
             KernelType::Q5_0Gemv { k, n } => generate_q5_0_candle_ptx(*k, *n),
             KernelType::Q4_0Gemv { k, n } => generate_q4_0_candle_ptx(*k, *n),
-            KernelType::Q4_1Gemv { k, n } => Q4_1GemvKernel::new(*k, *n).emit_ptx_for_target(target),
+            KernelType::Q4_1Gemv { k, n } => generate_q4_1_candle_ptx(*k, *n),
             _ => return None,
         };
         Some(ptx)
