@@ -178,6 +178,44 @@ impl OwnedQuantizedModelCuda {
         Ok(model)
     }
 
+    /// PMAT-785: Quant-eligibility gate — refuse GPU residency for any model
+    /// carrying a GGML quant type without a verified GPU GEMV kernel.
+    ///
+    /// `OwnedQuantizedModel::has_gpu_unsupported_quant` inspects every projection
+    /// tensor (lm_head, QKV, attn output, FFN gate/up/down) against the
+    /// `gpu_unsupported_quant_qtype` whitelist {F32, Q4_0, Q4_1, Q5_0, Q8_0,
+    /// Q4_K, Q5_K, Q6_K}. Anything outside it (F16, Q5_1, Q8_1, Q2_K, Q3_K,
+    /// Q8_K, IQ*, BF16, unknown) would hit the GPU weight upload's
+    /// `resolve_qtype().unwrap_or(Q4K)` and be SILENTLY decoded as Q4_K → garbage
+    /// logits (PMAT-781/783). The model is returned unconsumed so the caller can
+    /// fall back to CPU (loud) without a 1 GB clone.
+    ///
+    /// Centralizes the fail-closed gate at the single CUDA-model constructor that
+    /// every serve `generate_gpu_resident` entry point reaches, closing the
+    /// bypass on the serve chat/completions/batch HTTP handlers (which consume
+    /// the shared `state.cuda_model()` built here) and the `apr run --gpu`
+    /// GGUF/APR CLI paths.
+    fn check_quant_gpu_capability(
+        model: OwnedQuantizedModel,
+    ) -> std::result::Result<OwnedQuantizedModel, CudaInitError> {
+        if model.has_gpu_unsupported_quant() {
+            return Err(CudaInitError {
+                error: RealizarError::CapabilityMismatch {
+                    architecture: model.config.architecture.clone(),
+                    missing_ops: "GPU GEMV kernel for the model's quantization type".to_string(),
+                    suggestion: "Model carries a quant type without a verified GPU kernel \
+                                 (e.g. Q5_1/Q8_1/Q2_K/Q3_K/Q8_K/F16/IQ*). It will use CPU \
+                                 inference to avoid silent Q4_K-decode garbage (PMAT-785). \
+                                 Requantize to a GPU-supported type (Q4_0/Q4_1/Q5_0/Q8_0/\
+                                 Q4_K/Q5_K/Q6_K) for GPU acceleration."
+                        .to_string(),
+                },
+                model: Box::new(model),
+            });
+        }
+        Ok(model)
+    }
+
     /// GH-199/PARITY-GATE: Preload GPU weights and verify correctness.
     /// Extracted to reduce cognitive complexity of `with_max_seq_len`.
     fn preload_and_verify(mut self) -> std::result::Result<Self, CudaInitError> {
@@ -327,6 +365,15 @@ impl OwnedQuantizedModelCuda {
 
         // GH-280: Capability gate — refuse GPU if model requires unsupported ops.
         let model = Self::check_gpu_capability(model)?;
+
+        // PMAT-785: Quant gate — refuse GPU for any quant type lacking a verified
+        // GPU GEMV kernel, so it cannot be silently decoded as Q4_K → garbage.
+        // Centralizes the PMAT-781/783 fail-closed gate at the single CUDA-model
+        // constructor that EVERY serve `generate_gpu_resident` entry point funnels
+        // through (serve chat/completions/batch via the shared state model, and
+        // the `apr run --gpu` GGUF/APR CLI paths). Returns the model unconsumed so
+        // callers fall back to CPU (loud) instead of shipping GPU garbage.
+        let model = Self::check_quant_gpu_capability(model)?;
 
         let mut executor = match CudaExecutor::new(device_ordinal) {
             Ok(e) => e,

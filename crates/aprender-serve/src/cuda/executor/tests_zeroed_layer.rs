@@ -215,6 +215,12 @@ fn test_cov026_q4k_gemv_into_basic() {
     let n = 32u32; // output dim
     let k = 256u32; // input dim (must be divisible by 256)
 
+    // The HwDp4a Q4K variant (default on sm_75+) quantizes activations into
+    // workspace.q8_activation_buf, so the workspace must be sized for k inputs.
+    executor
+        .init_workspace(k as usize, k as usize)
+        .expect("init_workspace");
+
     // Load quantized weights
     let weight_bytes = (n as usize) * 144;
     let weights = vec![0u8; weight_bytes];
@@ -249,6 +255,12 @@ fn test_cov026_q6k_gemv_into_basic() {
 
     let n = 32u32; // output dim
     let k = 256u32; // input dim (must be divisible by 256)
+
+    // The HwDp4a Q6K variant (default on sm_75+) quantizes activations into
+    // workspace.q8_activation_buf, so the workspace must be sized for k inputs.
+    executor
+        .init_workspace(k as usize, k as usize)
+        .expect("init_workspace");
 
     // Load quantized weights
     let weight_bytes = (n as usize) * 210;

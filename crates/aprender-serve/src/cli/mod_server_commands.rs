@@ -161,6 +161,24 @@ mod server_commands {
             };
             println!("Creating CUDA model ({source})...");
 
+            // PMAT-785: fail-closed quant gate at GPU-resident construction.
+            // The serve chat/completions/batch HTTP handlers all consume the
+            // shared `state.cuda_model()` built here, so gating at this single
+            // choke point protects every one of them. A model carrying a quant
+            // type without a verified GPU GEMV kernel (Q5_1/Q8_1/Q2_K/Q3_K/Q8_K/
+            // F16/IQ*/…) would be silently decoded as Q4_K on the GPU → garbage.
+            // Route it to a CPU-backed AppState (loud) instead of GPU garbage.
+            if quantized_model.has_gpu_unsupported_quant() {
+                println!(
+                    "  Backend: CPU — model uses a quant type without a verified GPU \
+                     kernel (PMAT-785). Serving on CPU to avoid silent Q4_K-decode garbage."
+                );
+                return crate::api::AppState::with_quantized_model_and_vocab(
+                    quantized_model,
+                    vocab,
+                );
+            }
+
             // GH-286: Configurable context length (was hardcoded 4096)
             let max_seq_len = std::env::var("REALIZR_CONTEXT_LENGTH")
                 .ok()
@@ -453,6 +471,35 @@ mod server_commands {
         println!("  Layers: {}, Hidden: {}, Vocab: {}",
             model.config.num_layers, model.config.hidden_dim, model.config.vocab_size);
 
+        // Load vocab from embedded APR metadata (needed for both GPU and CPU paths)
+        let apr_v2 = crate::apr::AprV2Model::load(path).ok();
+        let vocab = apr_v2.as_ref()
+            .and_then(|m| m.metadata().get_embedded_vocabulary())
+            .or_else(|| crate::apr::AprV2Model::load_tokenizer_from_sibling(path).map(|(v, _, _)| v))
+            .unwrap_or_else(|| {
+                println!("  Warning: No tokenizer found");
+                (0..model.config.vocab_size).map(|i| format!("token{i}")).collect()
+            });
+        println!("  Vocab size: {}", vocab.len());
+
+        // PMAT-785: fail-closed quant gate at GPU-resident construction. An APR
+        // model carrying a quant type without a verified GPU GEMV kernel would be
+        // silently decoded as Q4_K on the GPU → garbage. Serve it on CPU (loud,
+        // via the same try_quantized_generate path as the CPU APR serve branch)
+        // instead of shipping GPU garbage through the chat/completions handlers.
+        if model.has_gpu_unsupported_quant() {
+            println!(
+                "  Mode: CPU — APR model uses a quant type without a verified GPU \
+                 kernel (PMAT-785). Serving on CPU to avoid silent Q4_K-decode garbage."
+            );
+            let state = crate::api::AppState::with_quantized_model_and_vocab(model, vocab)?;
+            return Ok(PreparedServer {
+                state,
+                batch_mode_enabled: false,
+                model_type: ModelType::Apr,
+            });
+        }
+
         // GH-286: Configurable context length (was hardcoded 4096)
         let max_seq_len = std::env::var("REALIZR_CONTEXT_LENGTH")
             .ok()
@@ -462,18 +509,6 @@ mod server_commands {
             .map_err(|e| e.error)?;
 
         println!("  CUDA model on GPU: {}", cuda_model.device_name());
-
-        // Load vocab from embedded APR metadata
-        let apr_v2 = crate::apr::AprV2Model::load(path).ok();
-        let vocab = apr_v2.as_ref()
-            .and_then(|m| m.metadata().get_embedded_vocabulary())
-            .or_else(|| crate::apr::AprV2Model::load_tokenizer_from_sibling(path).map(|(v, _, _)| v))
-            .unwrap_or_else(|| {
-                println!("  Warning: No tokenizer found");
-                (0..cuda_model.model().config.vocab_size).map(|i| format!("token{i}")).collect()
-            });
-
-        println!("  Vocab size: {}", vocab.len());
 
         let state = crate::api::AppState::with_cuda_model_and_vocab(cuda_model, vocab)?;
 
