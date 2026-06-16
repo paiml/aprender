@@ -297,21 +297,23 @@ fn test_format_chat_messages_empty() {
 
 #[test]
 fn test_embedding_request_serde() {
+    use crate::api::realize_handlers::EmbeddingInput;
     let req = EmbeddingRequest {
-        input: "Hello world".to_string(),
+        input: "Hello world".to_string().into(),
         model: Some("test-model".to_string()),
     };
     let json = serde_json::to_string(&req).expect("serialize");
     let parsed: EmbeddingRequest = serde_json::from_str(&json).expect("deserialize");
-    assert_eq!(parsed.input, "Hello world");
+    assert_eq!(parsed.input, EmbeddingInput::Single("Hello world".to_string()));
     assert_eq!(parsed.model, Some("test-model".to_string()));
 }
 
 #[test]
 fn test_embedding_request_no_model() {
+    use crate::api::realize_handlers::EmbeddingInput;
     let json = r#"{"input":"test text"}"#;
     let parsed: EmbeddingRequest = serde_json::from_str(json).expect("deserialize");
-    assert_eq!(parsed.input, "test text");
+    assert_eq!(parsed.input, EmbeddingInput::Single("test text".to_string()));
     assert!(parsed.model.is_none());
 }
 
