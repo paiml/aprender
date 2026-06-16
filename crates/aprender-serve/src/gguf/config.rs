@@ -1255,8 +1255,16 @@ mod gemma_config_tests {
         assert_eq!(g2.attn_logit_softcap(), Some(50.0));
         assert_eq!(g2.final_logit_softcap(), Some(30.0));
         for arch in ["gemma", "gemma3", "llama", "qwen2"] {
-            assert_eq!(cfg(arch, 2048).attn_logit_softcap(), None, "{arch} attn softcap");
-            assert_eq!(cfg(arch, 2048).final_logit_softcap(), None, "{arch} final softcap");
+            assert_eq!(
+                cfg(arch, 2048).attn_logit_softcap(),
+                None,
+                "{arch} attn softcap"
+            );
+            assert_eq!(
+                cfg(arch, 2048).final_logit_softcap(),
+                None,
+                "{arch} final softcap"
+            );
         }
     }
 

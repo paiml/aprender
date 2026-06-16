@@ -1462,7 +1462,10 @@ mod softcap_tests {
         softcap(&mut v, cap);
         for (got, orig) in v.iter().zip(original.iter()) {
             // |error| grows like x^3/(3 cap^2); for |x|<=0.5, cap=30 it's ~1e-5.
-            assert!((got - orig).abs() < 1e-3, "softcap({orig}) = {got} not ≈ identity");
+            assert!(
+                (got - orig).abs() < 1e-3,
+                "softcap({orig}) = {got} not ≈ identity"
+            );
         }
     }
 
