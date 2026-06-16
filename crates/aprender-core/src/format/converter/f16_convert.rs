@@ -318,22 +318,24 @@ fn quantize_int4_packed(data: &[f32]) -> Vec<u8> {
 }
 
 /// Convert a single F32 value to F16 (IEEE 754 half-precision).
+///
+/// PMAT-787: Delegates to the canonical [`f32_to_f16`] (defined in
+/// `convert_report.rs`, same `converter` module scope via `include!`).
+/// The previous local implementation diverged from the tested canonical one in
+/// two ways that corrupted the SafeTensors FP16 export path
+/// (`save_safetensors_quantized` → `f32_slice_to_f16_le_bytes`):
+///
+/// 1. It **flushed every f16 subnormal to zero** (`exponent < 113 → sign`).
+///    Any weight with `|v| < 2^-14 ≈ 6.1e-5` became exactly 0 instead of the
+///    nearest f16 subnormal — silent precision loss on small-magnitude weights.
+/// 2. It **truncated** the mantissa (`mantissa >> 13`) instead of rounding to
+///    nearest-even, doubling the worst-case quantization error vs the canonical
+///    implementation.
+///
+/// Keeping one implementation removes the DRY hazard where the unit tests
+/// exercised the correct `f32_to_f16` while production shipped the lossy variant.
 fn f32_to_f16_bits(value: f32) -> u16 {
-    let bits = value.to_bits();
-    let sign = (bits >> 16) & 0x8000;
-    let exponent = ((bits >> 23) & 0xFF) as i32;
-    let mantissa = bits & 0x007F_FFFF;
-
-    let f16 = if exponent == 0xFF {
-        sign | 0x7C00 | if mantissa != 0 { 0x0200 } else { 0 }
-    } else if exponent > 142 {
-        sign | 0x7C00
-    } else if exponent < 113 {
-        sign
-    } else {
-        sign | (((exponent - 112) as u32) << 10) | ((mantissa >> 13) & 0x3FF)
-    };
-    f16 as u16
+    f32_to_f16(value)
 }
 
 /// Convert F32 slice to IEEE 754 half-precision (F16) little-endian bytes.

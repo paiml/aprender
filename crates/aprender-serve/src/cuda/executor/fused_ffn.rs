@@ -248,11 +248,14 @@ impl CudaExecutor {
             .get_mut(&cache_key)
             .expect("module just inserted");
 
-        // Grid: 1 thread per rotation pair = num_heads * (head_dim / 2)
-        let num_pairs = num_heads * (head_dim / 2);
-        let threads = 256;
-        let blocks = (num_pairs + threads - 1) / threads;
-        let config = LaunchConfig::grid_2d(blocks, 1, threads, 1);
+        // PMAT-792: The `Rope` (NORM) PTX kernel indexes head = blockIdx.x and
+        // pair = threadIdx.x (see kernels/elementwise/rope/standard.rs). It MUST
+        // be launched as (num_heads blocks) × (head_dim/2 threads) — one block
+        // per head. The previous flat `num_pairs / 256` grid collapsed every
+        // head into block 0, so only head 0 was rotated and heads 1.. were left
+        // unwritten (output 0.0) for any multi-head NORM model. Match the NEOX
+        // launch (rope_neox_into) which already uses this 2D grid.
+        let config = LaunchConfig::grid_2d(num_heads, 1, head_dim / 2, 1);
 
         let mut ptr_input = input.as_ptr();
         let mut ptr_output = output.as_ptr();
@@ -327,11 +330,10 @@ impl CudaExecutor {
             .get_mut(&cache_key)
             .expect("module just inserted");
 
-        // Grid: 1 thread per rotation pair = num_heads * (head_dim / 2)
-        let num_pairs = num_heads * (head_dim / 2);
-        let threads = 256;
-        let blocks = (num_pairs + threads - 1) / threads;
-        let config = LaunchConfig::grid_2d(blocks, 1, threads, 1);
+        // PMAT-792: Same fix as `rope_into` — the `RopeIndirect` (NORM) kernel
+        // indexes head = blockIdx.x, pair = threadIdx.x, so launch one block per
+        // head with head_dim/2 threads. The old flat grid only rotated head 0.
+        let config = LaunchConfig::grid_2d(num_heads, 1, head_dim / 2, 1);
 
         let mut ptr_input = input.as_ptr();
         let mut ptr_output = output.as_ptr();
