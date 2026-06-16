@@ -142,6 +142,32 @@ impl AprTransformer {
                 let v_pos =
                     &qkv[qkv_start + hidden_dim + kv_dim..qkv_start + hidden_dim + 2 * kv_dim];
 
+                // PMAT-799b: Per-head QK RMSNorm (Qwen3) — applied AFTER projection
+                // + bias, BEFORE RoPE (Qwen3 ordering). The trace path previously
+                // skipped this entirely, while the live cached path
+                // (`project_qkv_with_cache`, PMAT-799), the GGUF reference
+                // (`gguf/inference/forward/forward_cached.rs`), and the sibling
+                // `AprTransformer::forward` (pmat-260.rs, GH-279) all apply it.
+                // No-op when the layer lacks the weights (LLaMA/Qwen2/Mistral) →
+                // byte-identical for non-Qwen3 models. Contract: qk-norm-v1
+                // §QKN-INV-007.
+                if let Some(ref q_norm) = layer.attn_q_norm_weight {
+                    crate::gguf::ops::apply_per_head_rms_norm(
+                        &mut q_pos,
+                        q_norm,
+                        self.config.num_heads,
+                        self.config.eps,
+                    );
+                }
+                if let Some(ref k_norm) = layer.attn_k_norm_weight {
+                    crate::gguf::ops::apply_per_head_rms_norm(
+                        &mut k_pos,
+                        k_norm,
+                        num_kv_heads,
+                        self.config.eps,
+                    );
+                }
+
                 self.apply_rope_f32(&mut q_pos, s, self.config.num_heads, head_dim);
                 self.apply_rope_f32(&mut k_pos, s, num_kv_heads, head_dim);
 

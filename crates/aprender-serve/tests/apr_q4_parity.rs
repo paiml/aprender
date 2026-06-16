@@ -110,6 +110,8 @@ mod tests {
                 intermediate_dim,
             )),
             ffn_norm_weight: Some(ffn_norm_weight),
+            attn_q_norm_weight: None,
+            attn_k_norm_weight: None,
         };
 
         let output_norm_weight = vec![1.0f32; hidden_dim];

@@ -165,6 +165,8 @@ fn test_extract_qkv_weights_gqa() {
         ffn_down_weight: QuantizedAprTensorQ4::new(vec![0u8; 18], 1024, hidden_dim),
         ffn_gate_weight: None,
         ffn_norm_weight: None,
+        attn_q_norm_weight: None,
+        attn_k_norm_weight: None,
     };
 
     let config = GpuModelConfig {
@@ -210,6 +212,8 @@ fn test_extract_out_weights() {
         ffn_down_weight: QuantizedAprTensorQ4::new(vec![0u8; 18], 512, hidden_dim),
         ffn_gate_weight: None,
         ffn_norm_weight: None,
+        attn_q_norm_weight: None,
+        attn_k_norm_weight: None,
     };
 
     let config = GpuModelConfig {
@@ -266,6 +270,8 @@ fn test_extract_ffn_weights() {
         ),
         ffn_gate_weight: None,
         ffn_norm_weight: None,
+        attn_q_norm_weight: None,
+        attn_k_norm_weight: None,
     };
 
     let result = AprToGpuAdapter::extract_ffn_weights(&layer, hidden_dim, intermediate_dim);
@@ -504,6 +510,8 @@ fn test_quantized_layer_creation() {
         ffn_down_weight: QuantizedAprTensorQ4::zeros(intermediate_dim, hidden_dim),
         ffn_gate_weight: Some(QuantizedAprTensorQ4::zeros(hidden_dim, intermediate_dim)),
         ffn_norm_weight: Some(vec![1.0; hidden_dim]),
+        attn_q_norm_weight: None,
+        attn_k_norm_weight: None,
     };
 
     assert_eq!(layer.attn_norm_weight.len(), hidden_dim);

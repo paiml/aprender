@@ -103,6 +103,31 @@ impl QuantizedAprTransformerQ4 {
             scratch.v[..kv_dim]
                 .copy_from_slice(&scratch.qkv_out[q_dim + kv_dim..q_dim + 2 * kv_dim]);
 
+            // PMAT-799b: Per-head QK RMSNorm (Qwen3) — applied AFTER projection,
+            // BEFORE RoPE (Qwen3 ordering). This Q4 single-token forward previously
+            // skipped it entirely (the weights weren't even carried on the layer),
+            // while the live cached path (`project_qkv_with_cache`, PMAT-799), the
+            // GGUF reference (`gguf/inference/forward/forward_cached.rs`), and
+            // `AprTransformer::forward` (pmat-260.rs, GH-279) all apply it. No-op
+            // when the layer lacks the weights (LLaMA/Qwen2/Mistral) → byte-identical
+            // for non-Qwen3 models. Contract: qk-norm-v1 §QKN-INV-007.
+            if let Some(ref q_norm) = layer.attn_q_norm_weight {
+                crate::gguf::ops::apply_per_head_rms_norm(
+                    &mut scratch.q[..q_dim],
+                    q_norm,
+                    num_heads,
+                    eps,
+                );
+            }
+            if let Some(ref k_norm) = layer.attn_k_norm_weight {
+                crate::gguf::ops::apply_per_head_rms_norm(
+                    &mut scratch.k[..kv_dim],
+                    k_norm,
+                    num_kv_heads,
+                    eps,
+                );
+            }
+
             self.apply_rope(&mut scratch.q[..q_dim], 0, num_heads);
             self.apply_rope(&mut scratch.k[..kv_dim], 0, num_kv_heads);
 

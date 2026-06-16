@@ -24,3 +24,4 @@ mod q4k_bytes_q6k;
 mod q4_simd;
 mod q4k_forward; // T-COV-95 Phase 54: Q4K fused kernel dispatch, Q6K variants, force-F32
 mod qk_norm_cached; // PMAT-799: Qwen3 per-head QK-RMSNorm on the live cached decode path
+mod qk_norm_forward_variants; // PMAT-799b: QK-RMSNorm on trace + Q4 single-token forward variants

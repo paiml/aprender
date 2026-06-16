@@ -239,6 +239,8 @@ fn create_test_apr_model(with_gate: bool, with_ffn_norm: bool) -> QuantizedAprTr
         } else {
             None
         },
+        attn_q_norm_weight: None,
+        attn_k_norm_weight: None,
     };
 
     QuantizedAprTransformerQ4 {

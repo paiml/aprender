@@ -80,6 +80,12 @@ pub struct QuantizedAprLayerQ4 {
     pub ffn_gate_weight: Option<QuantizedAprTensorQ4>,
     /// FFN norm weight (F32, optional)
     pub ffn_norm_weight: Option<Vec<f32>>,
+    /// GH-279 / PMAT-799b: Per-head Q RMSNorm weight `[head_dim]` (Qwen3, F32).
+    /// `None` for LLaMA/Qwen2/Mistral (no QK-norm).
+    pub attn_q_norm_weight: Option<Vec<f32>>,
+    /// GH-279 / PMAT-799b: Per-head K RMSNorm weight `[head_dim]` (Qwen3, F32).
+    /// `None` for LLaMA/Qwen2/Mistral (no QK-norm).
+    pub attn_k_norm_weight: Option<Vec<f32>>,
 }
 
 /// SIMD-accelerated Quantized APR Transformer

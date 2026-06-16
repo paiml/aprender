@@ -131,6 +131,8 @@ fn test_q4_adapter_large_model() {
             ffn_down_weight: QuantizedAprTensorQ4::zeros(intermediate_dim, hidden_dim),
             ffn_gate_weight: Some(QuantizedAprTensorQ4::zeros(hidden_dim, intermediate_dim)),
             ffn_norm_weight: Some(vec![1.0; hidden_dim]),
+            attn_q_norm_weight: None,
+            attn_k_norm_weight: None,
         })
         .collect();
 
@@ -366,6 +368,8 @@ fn create_minimal_q4_transformer(num_layers: usize) -> QuantizedAprTransformerQ4
             ffn_down_weight: QuantizedAprTensorQ4::zeros(intermediate_dim, hidden_dim),
             ffn_gate_weight: None, // No gate = standard FFN
             ffn_norm_weight: Some(vec![1.0; hidden_dim]),
+            attn_q_norm_weight: None,
+            attn_k_norm_weight: None,
         })
         .collect();
 
@@ -405,6 +409,8 @@ fn create_q4_transformer_with_gate(num_layers: usize) -> QuantizedAprTransformer
             ffn_down_weight: QuantizedAprTensorQ4::zeros(intermediate_dim, hidden_dim),
             ffn_gate_weight: Some(QuantizedAprTensorQ4::zeros(hidden_dim, intermediate_dim)), // With gate = SwiGLU
             ffn_norm_weight: Some(vec![1.0; hidden_dim]),
+            attn_q_norm_weight: None,
+            attn_k_norm_weight: None,
         })
         .collect();
 
@@ -819,6 +825,8 @@ fn test_q4_forward_pass_minimal() {
             ffn_down_weight: QuantizedAprTensorQ4::new(down_weights, intermediate_dim, hidden_dim),
             ffn_gate_weight: None,
             ffn_norm_weight: Some(vec![1.0; hidden_dim]),
+            attn_q_norm_weight: None,
+            attn_k_norm_weight: None,
         }],
         output_norm_weight: vec![1.0; hidden_dim],
         lm_head_weight: QuantizedAprTensorQ4::new(

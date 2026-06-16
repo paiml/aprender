@@ -191,6 +191,8 @@ mod tests {
                     ffn_down_weight: QuantizedAprTensorQ4::zeros(512, 256),
                     ffn_gate_weight: Some(QuantizedAprTensorQ4::zeros(256, 512)),
                     ffn_norm_weight: Some(vec![1.0; 256]),
+                    attn_q_norm_weight: None,
+                    attn_k_norm_weight: None,
                 },
                 QuantizedAprLayerQ4 {
                     attn_norm_weight: vec![1.0; 256],
@@ -200,6 +202,8 @@ mod tests {
                     ffn_down_weight: QuantizedAprTensorQ4::zeros(512, 256),
                     ffn_gate_weight: Some(QuantizedAprTensorQ4::zeros(256, 512)),
                     ffn_norm_weight: Some(vec![1.0; 256]),
+                    attn_q_norm_weight: None,
+                    attn_k_norm_weight: None,
                 },
             ],
             output_norm_weight: vec![1.0; 256],

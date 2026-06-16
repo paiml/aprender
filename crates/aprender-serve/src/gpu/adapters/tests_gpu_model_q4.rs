@@ -221,6 +221,8 @@ mod gpu_model_q4_tests {
                 None
             },
             ffn_norm_weight: Some(vec![1.0; hidden_dim]),
+            attn_q_norm_weight: None,
+            attn_k_norm_weight: None,
         }
     }
 }
@@ -247,5 +249,7 @@ fn create_test_q4_layer(
         ffn_down_weight: QuantizedAprTensorQ4::zeros(intermediate_dim, hidden_dim),
         ffn_gate_weight: None,
         ffn_norm_weight: Some(vec![1.0; hidden_dim]),
+        attn_q_norm_weight: None,
+        attn_k_norm_weight: None,
     }
 }

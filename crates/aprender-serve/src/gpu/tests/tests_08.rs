@@ -154,6 +154,8 @@ fn create_q4_layer(config: &AprTransformerConfig) -> QuantizedAprLayerQ4 {
         ffn_down_weight: QuantizedAprTensorQ4::zeros(intermediate_dim, hidden_dim),
         ffn_gate_weight: Some(QuantizedAprTensorQ4::zeros(hidden_dim, intermediate_dim)),
         ffn_norm_weight: Some(vec![1.0; hidden_dim]),
+        attn_q_norm_weight: None,
+        attn_k_norm_weight: None,
     }
 }
 
@@ -174,6 +176,8 @@ fn create_q4_layer_without_gate(config: &AprTransformerConfig) -> QuantizedAprLa
         ffn_down_weight: QuantizedAprTensorQ4::zeros(intermediate_dim, hidden_dim),
         ffn_gate_weight: None,
         ffn_norm_weight: Some(vec![1.0; hidden_dim]),
+        attn_q_norm_weight: None,
+        attn_k_norm_weight: None,
     }
 }
 
@@ -499,6 +503,8 @@ fn test_apr_q4_extract_qkv_gqa() {
         ffn_down_weight: QuantizedAprTensorQ4::zeros(config.intermediate_dim, config.hidden_dim),
         ffn_gate_weight: None,
         ffn_norm_weight: Some(vec![1.0; config.hidden_dim]),
+        attn_q_norm_weight: None,
+        attn_k_norm_weight: None,
     };
 
     let result = AprToGpuAdapter::extract_qkv_weights(&layer, &gpu_config);

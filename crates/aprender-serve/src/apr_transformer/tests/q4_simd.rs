@@ -224,6 +224,8 @@ fn test_layer_q4_construction() {
         ffn_down_weight: QuantizedAprTensorQ4::zeros(intermediate_dim, hidden_dim),
         ffn_gate_weight: None,
         ffn_norm_weight: Some(vec![1.0; hidden_dim]),
+        attn_q_norm_weight: None,
+        attn_k_norm_weight: None,
     };
 
     assert_eq!(layer.attn_norm_weight.len(), hidden_dim);
@@ -245,6 +247,8 @@ fn test_layer_q4_with_swiglu_gate() {
         ffn_down_weight: QuantizedAprTensorQ4::zeros(intermediate_dim, hidden_dim),
         ffn_gate_weight: Some(QuantizedAprTensorQ4::zeros(hidden_dim, intermediate_dim)),
         ffn_norm_weight: Some(vec![1.0; hidden_dim]),
+        attn_q_norm_weight: None,
+        attn_k_norm_weight: None,
     };
 
     assert!(layer.ffn_gate_weight.is_some());

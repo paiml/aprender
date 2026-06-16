@@ -72,6 +72,11 @@ impl QuantizedAprTransformerQ4 {
                             QuantizedAprTensorQ4::new(g.data.clone(), g.in_dim, g.out_dim)
                         }),
                         ffn_norm_weight: l.ffn_norm_weight.clone(),
+                        // PMAT-799b: carry Qwen3 per-head QK-norm weights through the
+                        // Q4 quantizer (previously dropped, leaving the Q4 single-token
+                        // forward unable to apply them). `None` for non-Qwen3.
+                        attn_q_norm_weight: l.attn_q_norm_weight.clone(),
+                        attn_k_norm_weight: l.attn_k_norm_weight.clone(),
                     }
                 })
                 .collect();
