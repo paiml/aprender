@@ -175,7 +175,12 @@ impl OwnedQuantizedModelCuda {
                 tok
             } else {
                 let logits = self.forward_gpu_resident(last_token, &mut cache, position)?;
-                OwnedQuantizedModel::sample_topk(&logits, config.temperature, config.top_k)
+                OwnedQuantizedModel::sample_topk_top_p(
+                    &logits,
+                    config.temperature,
+                    config.top_k,
+                    config.top_p,
+                )
             };
 
             // Check stop tokens

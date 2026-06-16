@@ -525,8 +525,13 @@ impl OwnedQuantizedModelCuda {
                 self.forward_gpu_resident_to_token_id(last_token, &mut cache, position)?
             } else {
                 let logits = self.forward_gpu_resident(last_token, &mut cache, position)?;
-                // entrenar#318: use simple top-k sampling (sample_advanced not yet compiled)
-                OwnedQuantizedModel::sample_topk(&logits, config.temperature, config.top_k)
+                // PMAT-794: honor per-request top_p (nucleus) — sample_topk silently dropped it.
+                OwnedQuantizedModel::sample_topk_top_p(
+                    &logits,
+                    config.temperature,
+                    config.top_k,
+                    config.top_p,
+                )
             };
 
             if config.trace {
@@ -664,7 +669,13 @@ impl OwnedQuantizedModelCuda {
             let next_token = if greedy {
                 OwnedQuantizedModel::argmax(&logits)
             } else {
-                OwnedQuantizedModel::sample_topk(&logits, config.temperature, config.top_k)
+                // PMAT-794: honor per-request top_p (nucleus) — sample_topk silently dropped it.
+                OwnedQuantizedModel::sample_topk_top_p(
+                    &logits,
+                    config.temperature,
+                    config.top_k,
+                    config.top_p,
+                )
             };
             token_logprobs.push(TokenLogprob {
                 token_id: next_token,

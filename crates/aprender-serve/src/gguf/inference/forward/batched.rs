@@ -336,10 +336,11 @@ impl OwnedQuantizedModel {
             let next_token = if config.temperature == 0.0 || config.top_k == 1 {
                 ops::argmax(&logits)
             } else {
-                crate::gguf::OwnedQuantizedModel::sample_topk(
+                crate::gguf::OwnedQuantizedModel::sample_topk_top_p(
                     &logits,
                     config.temperature,
                     config.top_k,
+                    config.top_p,
                 )
             };
 
@@ -413,10 +414,11 @@ impl OwnedQuantizedModel {
             let next_token = if config.temperature == 0.0 || config.top_k == 1 {
                 ops::argmax(&logits)
             } else {
-                crate::gguf::OwnedQuantizedModel::sample_topk(
+                crate::gguf::OwnedQuantizedModel::sample_topk_top_p(
                     &logits,
                     config.temperature,
                     config.top_k,
+                    config.top_p,
                 )
             };
 

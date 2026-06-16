@@ -202,4 +202,79 @@ mod tests {
             assert!(result < 3, "Invalid token index: {}", result);
         }
     }
+
+    // ============================================================================
+    // PMAT-794: sample_topk_top_p — single-request nucleus (top-p) sampling.
+    //
+    // Mirrors the batched-decode fix (PMAT-792b / #2080). The live single-request
+    // sampler `sample_topk` silently dropped `config.top_p`, so a request asking for
+    // e.g. top_p=0.1 got the full top_k distribution sampled (low-prob tokens leaked).
+    // `sample_topk_top_p` applies temperature → top-k truncate → top-p nucleus →
+    // softmax → inverse-CDF sample, honoring the per-request top_p.
+    // ============================================================================
+
+    #[test]
+    fn test_sample_topk_top_p_restricts_nucleus_to_dominant_token() {
+        // PMAT-794 FALSIFIER (the load-bearing test). Logits [3.0, 0, 0, 0] at temp 1.0
+        // softmax to P(token0) ≈ 0.870, P(each other) ≈ 0.043. With top_p = 0.85 the
+        // nucleus (smallest prefix with cumulative prob >= top_p) is exactly {token0}
+        // (0.870 >= 0.85), so EVERY draw must return index 0. top_k = 4 keeps the whole
+        // vocabulary, so the only thing that can restrict the sample is top_p.
+        //
+        // BEFORE the fix the single-request path called `sample_topk`, which silently
+        // dropped top_p: the full 4-way distribution stayed samplable, P(non-token0) ≈
+        // 0.13 per draw, and over 512 draws a non-zero token is effectively certain
+        // (0.87^512 ≈ 0) → this loop fails (RED). AFTER the fix the nucleus collapses to
+        // {token0} and every draw is deterministic (GREEN).
+        let logits = [3.0_f32, 0.0, 0.0, 0.0];
+        for _ in 0..512 {
+            let tok = OwnedQuantizedModel::sample_topk_top_p(&logits, 1.0, 4, 0.85);
+            assert_eq!(
+                tok, 0,
+                "top_p=0.85 must collapse the nucleus to the dominant token 0, got {tok} \
+                 (top_p silently dropped → low-prob token leaked through)"
+            );
+        }
+    }
+
+    #[test]
+    fn test_sample_topk_top_p_one_is_a_noop_nucleus() {
+        // No-regression: top_p == 1.0 (and > 1.0) skips the nucleus cutoff → identical to
+        // the pure top_k path. top_k == 1 always returns the argmax, verifying equivalence.
+        assert_eq!(
+            OwnedQuantizedModel::sample_topk_top_p(&[1.0, 5.0, 2.0], 1.5, 1, 1.0),
+            1
+        );
+        assert_eq!(
+            OwnedQuantizedModel::sample_topk_top_p(&[1.0, 5.0, 2.0], 1.5, 1, 2.0),
+            1
+        );
+        assert_eq!(
+            OwnedQuantizedModel::sample_topk_top_p(&[9.0, 5.0, 2.0], 0.9, 1, 1.0),
+            0
+        );
+    }
+
+    #[test]
+    fn test_sample_topk_top_p_reachable_with_top_p_one() {
+        // No-regression: with top_p == 1.0 the result is always a valid in-range token
+        // and stays within the top_k set — same observable behavior as `sample_topk`.
+        let logits = vec![1.0, 2.0, 3.0, 0.5, 0.1];
+        for _ in 0..64 {
+            let tok = OwnedQuantizedModel::sample_topk_top_p(&logits, 1.0, 3, 1.0);
+            // top_k == 3 keeps tokens {2, 1, 0} (logits 3,2,1); top_p == 1.0 is a no-op.
+            assert!(tok < 3, "top_p=1.0 must keep the full top_k set, got {tok}");
+        }
+    }
+
+    #[test]
+    fn test_sample_topk_top_p_low_p_concentrates_on_argmax() {
+        // A very small top_p (0.05) keeps only the single most-probable token even when
+        // top_k is large — the nucleus can never be empty (always >= 1 token).
+        let logits = vec![0.0, 0.0, 8.0, 0.0, 0.0];
+        for _ in 0..128 {
+            let tok = OwnedQuantizedModel::sample_topk_top_p(&logits, 1.0, 40, 0.05);
+            assert_eq!(tok, 2, "tiny top_p must collapse to the dominant token, got {tok}");
+        }
+    }
 }

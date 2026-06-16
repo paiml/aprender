@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-02-18'
   author: PAIML Engineering
   description: Sampling algorithm invariants for autoregressive generation
@@ -95,6 +95,19 @@ falsification_tests:
   prediction: SIMD sampling matches scalar
   test: proptest
   if_fails: ' compare scalar vs SIMD sampling:SIMD sampler selects different tokens'
+- id: FALSIFY-SA-006
+  rule: Single-request quantized path honors top_p
+  prediction: >-
+    The live single-request quantized sampler (OwnedQuantizedModel::sample_topk_top_p,
+    PMAT-794) applies the per-request top_p nucleus cutoff. Logits [3,0,0,0] at temp
+    1.0, top_k 4, top_p 0.85 collapse the nucleus to {token0} so every draw returns
+    index 0. With top_p >= 1.0 the nucleus is a no-op (no regression vs sample_topk).
+  test: >-
+    aprender-serve sample_topk_top_p unit tests
+    (test_sample_topk_top_p_restricts_nucleus_to_dominant_token + no-regression cases)
+  if_fails: >-
+    top_p silently dropped (the pre-PMAT-794 bug) — low-probability tokens leak through
+    the full top_k distribution even when the request restricts the nucleus
 kani_harnesses:
 - id: KANI-SA-001
   obligation: SA-EQ-001
@@ -137,5 +150,6 @@ qa_gate:
   - top_k_cardinality
   - top_p_cumulative
   - temperature_identity
-  pass_criteria: All 5 falsification tests pass
+  - single_request_top_p
+  pass_criteria: All 6 falsification tests pass
   falsification: Set K=0 to observe empty filtered set

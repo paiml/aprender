@@ -59,8 +59,13 @@ impl OwnedQuantizedModel {
                 // Greedy decoding
                 Self::argmax(&logits)
             } else {
-                // Temperature + top-k sampling
-                Self::sample_topk(&logits, config.temperature, config.top_k)
+                // Temperature + top-k + top-p (nucleus) sampling (PMAT-794)
+                Self::sample_topk_top_p(
+                    &logits,
+                    config.temperature,
+                    config.top_k,
+                    config.top_p,
+                )
             };
 
             // Check stop condition
@@ -110,6 +115,64 @@ impl OwnedQuantizedModel {
         let mut rng = rand::rng();
         let r: f32 = rng.random();
 
+        let mut cumulative = 0.0;
+        for &(idx, prob) in &probs {
+            cumulative += prob;
+            if cumulative >= r {
+                return idx as u32;
+            }
+        }
+
+        probs.last().map_or(0, |(idx, _)| *idx as u32)
+    }
+
+    /// Top-k + top-p (nucleus) sampling with temperature (PMAT-794).
+    ///
+    /// This is the live single-request sampler. It applies the full
+    /// `temperature → top-k truncate → top-p nucleus → softmax → inverse-CDF sample`
+    /// pipeline, honoring the per-request `top_p` that plain [`sample_topk`] silently
+    /// dropped. When `top_p >= 1.0` (or out of `(0,1)`) the nucleus step is a no-op, so
+    /// every all-default and top_k-only request behaves exactly as the old `sample_topk`
+    /// path — no regression. Mirrors the batched-decode fix (`select_batched_token`,
+    /// PMAT-792b / #2080) so single-request and continuous-batching paths sample identically.
+    pub fn sample_topk_top_p(logits: &[f32], temperature: f32, top_k: usize, top_p: f32) -> u32 {
+        // 1. Temperature scaling.
+        let scaled: Vec<f32> = logits.iter().map(|&x| x / temperature).collect();
+
+        // 2. Top-k: sort descending, truncate.
+        let mut indexed: Vec<(usize, f32)> = scaled.iter().copied().enumerate().collect();
+        indexed.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+        indexed.truncate(top_k);
+
+        // 3. Top-p (nucleus): keep the smallest prefix whose cumulative probability reaches
+        //    top_p. Skipped when top_p is out of (0,1) — a no-op preserving the top_k path.
+        if top_p > 0.0 && top_p < 1.0 {
+            let max_val = indexed.first().map_or(0.0, |(_, v)| *v);
+            let exp_vals: Vec<f32> = indexed.iter().map(|(_, v)| (v - max_val).exp()).collect();
+            let total: f32 = exp_vals.iter().sum();
+            let mut cumulative = 0.0;
+            let mut cutoff = indexed.len();
+            for (i, &ev) in exp_vals.iter().enumerate() {
+                cumulative += ev / total;
+                if cumulative >= top_p {
+                    cutoff = i + 1;
+                    break;
+                }
+            }
+            indexed.truncate(cutoff);
+        }
+
+        // 4. Softmax over the surviving set.
+        let max_val = indexed.first().map_or(0.0, |(_, v)| *v);
+        let exp_sum: f32 = indexed.iter().map(|(_, v)| (v - max_val).exp()).sum();
+        let probs: Vec<(usize, f32)> = indexed
+            .iter()
+            .map(|(i, v)| (*i, (v - max_val).exp() / exp_sum))
+            .collect();
+
+        // 5. Inverse-CDF sample.
+        let mut rng = rand::rng();
+        let r: f32 = rng.random();
         let mut cumulative = 0.0;
         for &(idx, prob) in &probs {
             cumulative += prob;
@@ -239,10 +302,11 @@ impl OwnedQuantizedModel {
             let next_token = if config.temperature == 0.0 || config.top_k == 1 {
                 ops::argmax(&logits)
             } else {
-                crate::gguf::OwnedQuantizedModel::sample_topk(
+                crate::gguf::OwnedQuantizedModel::sample_topk_top_p(
                     &logits,
                     config.temperature,
                     config.top_k,
+                    config.top_p,
                 )
             };
 
@@ -416,10 +480,11 @@ impl OwnedQuantizedModel {
             let next_token = if config.temperature == 0.0 || config.top_k == 1 {
                 ops::argmax(&logits)
             } else {
-                crate::gguf::OwnedQuantizedModel::sample_topk(
+                crate::gguf::OwnedQuantizedModel::sample_topk_top_p(
                     &logits,
                     config.temperature,
                     config.top_k,
+                    config.top_p,
                 )
             };
 
