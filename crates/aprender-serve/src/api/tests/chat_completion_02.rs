@@ -110,6 +110,8 @@ fn test_context_manager_no_truncation_needed() {
         role: "user".to_string(),
         content: "Hello".to_string(),
         name: None,
+    
+        ..Default::default()
     }];
 
     let (result, truncated) = manager.truncate_messages(&messages);
@@ -126,6 +128,8 @@ fn test_context_manager_needs_truncation() {
         role: "user".to_string(),
         content: "x".repeat(500),
         name: None,
+    
+        ..Default::default()
     }];
 
     assert!(manager.needs_truncation(&messages));
@@ -142,16 +146,22 @@ fn test_context_manager_truncate_preserves_system() {
             role: "system".to_string(),
             content: "You are helpful.".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         ChatMessage {
             role: "user".to_string(),
             content: "x".repeat(200), // Large old message
             name: None,
+        
+            ..Default::default()
         },
         ChatMessage {
             role: "user".to_string(),
             content: "Recent".to_string(),
             name: None,
+        
+            ..Default::default()
         },
     ];
 
@@ -175,16 +185,22 @@ fn test_context_manager_truncate_keeps_recent() {
             role: "user".to_string(),
             content: "Old message 1".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         ChatMessage {
             role: "user".to_string(),
             content: "Old message 2".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         ChatMessage {
             role: "user".to_string(),
             content: "Recent".to_string(),
             name: None,
+        
+            ..Default::default()
         },
     ];
 
@@ -202,6 +218,8 @@ fn test_context_manager_estimate_tokens() {
         role: "user".to_string(),
         content: "Hello".to_string(),
         name: None,
+    
+        ..Default::default()
     }];
 
     let tokens = manager.estimate_total_tokens(&messages);
@@ -230,6 +248,8 @@ fn test_context_manager_single_large_message() {
         role: "user".to_string(),
         content: "x".repeat(1000),
         name: None,
+    
+        ..Default::default()
     }];
 
     let (result, truncated) = manager.truncate_messages(&messages);

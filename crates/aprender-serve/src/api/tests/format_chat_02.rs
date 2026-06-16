@@ -7,6 +7,8 @@ fn test_format_chat_messages_single_user() {
         role: "user".to_string(),
         content: "Hello!".to_string(),
         name: None,
+    
+        ..Default::default()
     }];
     let result = format_chat_messages(&messages, None);
     assert!(result.contains("Hello!"));
@@ -21,16 +23,22 @@ fn test_format_chat_messages_multi_turn() {
             role: "system".to_string(),
             content: "You are helpful.".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         crate::api::ChatMessage {
             role: "user".to_string(),
             content: "Hi".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         crate::api::ChatMessage {
             role: "assistant".to_string(),
             content: "Hello!".to_string(),
             name: None,
+        
+            ..Default::default()
         },
     ];
     let result = format_chat_messages(&messages, None);
@@ -45,6 +53,8 @@ fn test_format_chat_messages_with_model_name() {
         role: "user".to_string(),
         content: "Test".to_string(),
         name: None,
+    
+        ..Default::default()
     }];
     let result = format_chat_messages(&messages, Some("llama"));
     assert!(!result.is_empty());
@@ -408,6 +418,8 @@ fn test_chat_message_serde() {
         role: "user".to_string(),
         content: "Hello".to_string(),
         name: Some("alice".to_string()),
+    
+        ..Default::default()
     };
     let json = serde_json::to_string(&msg).expect("JSON serialization failed");
     let deserialized: crate::api::ChatMessage = serde_json::from_str(&json).expect("JSON deserialization failed");

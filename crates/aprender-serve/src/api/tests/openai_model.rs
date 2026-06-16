@@ -79,6 +79,8 @@ fn test_chat_choice_serialization() {
             role: "assistant".to_string(),
             content: "Response text".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         finish_reason: "stop".to_string(),
     };
@@ -97,6 +99,8 @@ fn test_chat_choice_finish_reason_length() {
             role: "assistant".to_string(),
             content: "Truncated response...".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         finish_reason: "length".to_string(),
     };
@@ -113,6 +117,8 @@ fn test_chat_choice_clone() {
             role: "assistant".to_string(),
             content: "Test".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         finish_reason: "stop".to_string(),
     };

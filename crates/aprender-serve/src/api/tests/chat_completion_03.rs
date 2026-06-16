@@ -12,6 +12,8 @@ fn test_chat_completion_response_serialize() {
                 role: "assistant".to_string(),
                 content: "Hello!".to_string(),
                 name: None,
+            
+                ..Default::default()
             },
             finish_reason: "stop".to_string(),
         }],
@@ -105,6 +107,8 @@ fn test_chat_message_fields_cov() {
         role: "user".to_string(),
         content: "Hello, world!".to_string(),
         name: None,
+    
+        ..Default::default()
     };
     assert_eq!(msg.role, "user");
     assert_eq!(msg.content, "Hello, world!");
@@ -119,6 +123,8 @@ fn test_chat_completion_request_defaults_cov() {
             role: "user".to_string(),
             content: "Hi".to_string(),
             name: None,
+        
+            ..Default::default()
         }],
         temperature: None,
         top_p: None,
@@ -131,6 +137,8 @@ fn test_chat_completion_request_defaults_cov() {
         stop: None,
         max_tokens: None,
         user: None,
+    
+        ..Default::default()
     };
     assert_eq!(req.model, "phi-2");
     assert!(req.temperature.is_none());
@@ -145,6 +153,8 @@ fn test_chat_choice_fields_cov() {
             role: "assistant".to_string(),
             content: "Hello!".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         finish_reason: "stop".to_string(),
     };

@@ -426,16 +426,22 @@ fn test_chat_message_roles() {
         role: "system".to_string(),
         content: "You are helpful".to_string(),
         name: None,
+    
+        ..Default::default()
     };
     let user = ChatMessage {
         role: "user".to_string(),
         content: "Hello".to_string(),
         name: Some("John".to_string()),
+    
+        ..Default::default()
     };
     let assistant = ChatMessage {
         role: "assistant".to_string(),
         content: "Hi!".to_string(),
         name: None,
+    
+        ..Default::default()
     };
     assert_eq!(system.role, "system");
     assert_eq!(user.role, "user");

@@ -184,6 +184,7 @@ fn make_msg(role: &str, content: &str) -> ChatMessage {
         role: role.to_string(),
         content: content.to_string(),
         name: None,
+        ..Default::default()
     }
 }
 
