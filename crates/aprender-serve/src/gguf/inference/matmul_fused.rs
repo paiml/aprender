@@ -56,6 +56,15 @@ impl OwnedQuantizedModel {
             }
         }
 
+        // PMAT-809 (c): Gemma scales token embeddings by sqrt(hidden_size) after
+        // lookup. Single choke point — ALL forward variants call embed(), so the
+        // scaling applies uniformly. `None` for every non-Gemma arch = byte-identical.
+        if let Some(scale) = self.config.embed_scale() {
+            for v in &mut embeddings {
+                *v *= scale;
+            }
+        }
+
         embeddings
     }
 
@@ -73,6 +82,13 @@ impl OwnedQuantizedModel {
                 token_id, self.token_embedding.len()
             );
             output[..hidden_dim].iter_mut().for_each(|x| *x = 0.0);
+        }
+        // PMAT-809 (c): Gemma embedding scaling — mirror embed() for the decode
+        // hot path. None for non-Gemma = byte-identical.
+        if let Some(scale) = self.config.embed_scale() {
+            for v in &mut output[..hidden_dim] {
+                *v *= scale;
+            }
         }
     }
 

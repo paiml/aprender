@@ -309,28 +309,30 @@
 
     #[test]
     fn test_embedding_request_empty_input() {
+        // A single empty string is still ONE input (len 1); round-trips as a JSON string.
         let request = EmbeddingRequest {
-            input: String::new(),
+            input: String::new().into(),
             model: None,
         };
         let json = serde_json::to_string(&request).expect("serialize");
         let parsed: EmbeddingRequest = serde_json::from_str(&json).expect("deserialize");
-        assert!(parsed.input.is_empty());
+        assert_eq!(parsed.input.len(), 1);
     }
 
     #[test]
     fn test_embedding_request_long_input() {
+        // input.len() is the NUMBER OF INPUTS (OpenAI semantics), not the char count.
         let request = EmbeddingRequest {
-            input: "word ".repeat(1000),
+            input: "word ".repeat(1000).into(),
             model: Some("ada".to_string()),
         };
-        assert_eq!(request.input.len(), 5000);
+        assert_eq!(request.input.len(), 1);
     }
 
     #[test]
     fn test_embedding_request_debug() {
         let request = EmbeddingRequest {
-            input: "test".to_string(),
+            input: "test".to_string().into(),
             model: None,
         };
         let debug = format!("{:?}", request);
@@ -339,13 +341,71 @@
 
     #[test]
     fn test_embedding_request_clone() {
+        use crate::api::realize_handlers::EmbeddingInput;
         let request = EmbeddingRequest {
-            input: "clone test".to_string(),
+            input: "clone test".to_string().into(),
             model: Some("model-a".to_string()),
         };
         let cloned = request.clone();
-        assert_eq!(cloned.input, "clone test");
+        assert_eq!(cloned.input, EmbeddingInput::Single("clone test".to_string()));
         assert_eq!(cloned.model, Some("model-a".to_string()));
+    }
+
+    // =========================================================================
+    // PMAT-802 FALSIFIER: OpenAI `/v1/embeddings` accepts `input` as a single
+    // string OR an array of strings. Before the fix, `input` was typed `String`,
+    // so an array request was rejected at deserialization (4xx) — every OpenAI SDK
+    // that batches embeddings failed against this server. These tests pin the
+    // string-or-array contract and the untagged serialization shape.
+    // =========================================================================
+
+    #[test]
+    fn test_embedding_request_accepts_batch_array_input() {
+        use crate::api::realize_handlers::EmbeddingInput;
+        // FALSIFIER: this JSON array body MUST deserialize. Pre-fix (`input: String`)
+        // this returned a serde error, not a request.
+        let json = r#"{"input":["alpha","beta","gamma"],"model":"m"}"#;
+        let req: EmbeddingRequest =
+            serde_json::from_str(json).expect("array input must deserialize (OpenAI contract)");
+        assert_eq!(
+            req.input,
+            EmbeddingInput::Batch(vec![
+                "alpha".to_string(),
+                "beta".to_string(),
+                "gamma".to_string(),
+            ])
+        );
+        assert_eq!(req.input.len(), 3);
+        // Index order is preserved by `iter()` (so response data[i].index == i).
+        let collected: Vec<&str> = req.input.iter().collect();
+        assert_eq!(collected, vec!["alpha", "beta", "gamma"]);
+    }
+
+    #[test]
+    fn test_embedding_request_still_accepts_single_string() {
+        use crate::api::realize_handlers::EmbeddingInput;
+        // Backward compatibility: the single-string form is unchanged.
+        let json = r#"{"input":"just one"}"#;
+        let req: EmbeddingRequest =
+            serde_json::from_str(json).expect("string input must still deserialize");
+        assert_eq!(req.input, EmbeddingInput::Single("just one".to_string()));
+        assert_eq!(req.input.len(), 1);
+    }
+
+    #[test]
+    fn test_embedding_input_untagged_serialize_roundtrip() {
+        use crate::api::realize_handlers::EmbeddingInput;
+        // Single serializes as a bare JSON string; batch as a JSON array (untagged).
+        let single = EmbeddingInput::Single("x".to_string());
+        assert_eq!(serde_json::to_string(&single).expect("ser"), r#""x""#);
+        let batch = EmbeddingInput::Batch(vec!["a".to_string(), "b".to_string()]);
+        assert_eq!(serde_json::to_string(&batch).expect("ser"), r#"["a","b"]"#);
+        // Round-trip both forms.
+        for v in [single, batch] {
+            let j = serde_json::to_string(&v).expect("ser");
+            let back: EmbeddingInput = serde_json::from_str(&j).expect("de");
+            assert_eq!(v, back);
+        }
     }
 
     // =========================================================================

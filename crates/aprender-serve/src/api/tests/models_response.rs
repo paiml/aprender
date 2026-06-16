@@ -399,7 +399,7 @@ fn test_tokenize_response_large_ext_cov() {
 #[test]
 fn test_embedding_request_serialize_ext_cov() {
     let req = EmbeddingRequest {
-        input: "Embed this text".to_string(),
+        input: "Embed this text".to_string().into(),
         model: Some("text-embedding-ada-002".to_string()),
     };
     let json = serde_json::to_string(&req).expect("serialize");
@@ -408,9 +408,10 @@ fn test_embedding_request_serialize_ext_cov() {
 
 #[test]
 fn test_embedding_request_deserialize_ext_cov() {
+    use crate::api::realize_handlers::EmbeddingInput;
     let json = r#"{"input":"Hello","model":"test-model"}"#;
     let req: EmbeddingRequest = serde_json::from_str(json).expect("deserialize");
-    assert_eq!(req.input, "Hello");
+    assert_eq!(req.input, EmbeddingInput::Single("Hello".to_string()));
     assert_eq!(req.model, Some("test-model".to_string()));
 }
 

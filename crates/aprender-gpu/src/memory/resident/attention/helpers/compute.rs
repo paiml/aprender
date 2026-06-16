@@ -218,11 +218,20 @@ pub(in super::super) fn transpose_matrix(
     let input_ptr = input.as_ptr();
     let output_ptr = output.as_ptr();
 
+    // The `transpose` PTX kernel declares FIVE params
+    // (input_ptr, output_ptr, rows, cols, total_elems) and uses `total_elems`
+    // for its in-bounds guard. The args slice MUST supply all five — `cuLaunchKernel`
+    // reads one pointer per declared param, so omitting `total_elems` makes the
+    // driver dereference past the end of `args` (host-side SIGSEGV inside libcuda,
+    // invisible to compute-sanitizer). See trueno_gpu workspace-test flake.
+    let total_elems = total;
+
     let mut args: Vec<*mut std::ffi::c_void> = vec![
         std::ptr::addr_of!(input_ptr) as *mut _,
         std::ptr::addr_of!(output_ptr) as *mut _,
         std::ptr::addr_of!(rows) as *mut _,
         std::ptr::addr_of!(cols) as *mut _,
+        std::ptr::addr_of!(total_elems) as *mut _,
     ];
 
     compile_and_launch(ctx, &cache_key, &ptx, transpose.name(), &config, &mut args)?;
