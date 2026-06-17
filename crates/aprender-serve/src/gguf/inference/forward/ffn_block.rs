@@ -23,7 +23,10 @@ impl OwnedQuantizedModel {
             // GH-306: Fused path only when separate gate weight exists
             if let Some(ref gate_weight) = layer.ffn_gate_weight {
                 // Fused RMSNorm + SwiGLU (LLaMA, TinyLlama, Mistral, etc.)
-                if use_rmsnorm {
+                // PMAT-809: the fused kernel bakes in `* weight` RMSNorm + SiLU, so
+                // it is correct ONLY for non-Gemma. Gemma-v1 needs (1+w) RMSNorm +
+                // GeGLU, so it falls through to the explicit arch-dispatched path.
+                if use_rmsnorm && !self.config.is_gemma1() {
                     if let Some(ref ffn_norm) = layer.ffn_norm_weight {
                         let (mut ffn_up, mut ffn_gate) = self.fused_rmsnorm_ffn_up_gate(
                             hidden, ffn_norm, self.config.eps,
@@ -43,10 +46,10 @@ impl OwnedQuantizedModel {
                     }
                 }
 
-                // Non-fused gated path (LayerNorm models or no FFN norm)
+                // Non-fused gated path (LayerNorm models, no FFN norm, or Gemma).
                 let ffn_input = if let Some(ref ffn_norm) = layer.ffn_norm_weight {
                     if use_rmsnorm {
-                        ops::rms_norm(hidden, ffn_norm, self.config.eps)
+                        self.rms_norm_arch(hidden, ffn_norm, self.config.eps)
                     } else {
                         ops::layer_norm(
                             hidden, ffn_norm,
@@ -70,7 +73,8 @@ impl OwnedQuantizedModel {
                 if let Some(ref bias) = layer.ffn_gate_bias {
                     ops::add_bias(&mut ffn_gate, bias);
                 }
-                ops::silu(&mut ffn_gate);
+                // PMAT-809 (a): GeGLU (Gemma) vs SwiGLU (LLaMA) on the gate branch.
+                self.gemma_gate_activation(&mut ffn_gate);
                 for i in 0..ffn_gate.len() {
                     ffn_gate[i] *= ffn_up[i];
                 }
@@ -79,7 +83,7 @@ impl OwnedQuantizedModel {
                 // GH-306: Fused gate_up weight (Phi-3.5) — single matmul, split in half
                 let ffn_input = if let Some(ref ffn_norm) = layer.ffn_norm_weight {
                     if use_rmsnorm {
-                        ops::rms_norm(hidden, ffn_norm, self.config.eps)
+                        self.rms_norm_arch(hidden, ffn_norm, self.config.eps)
                     } else {
                         ops::layer_norm(
                             hidden, ffn_norm,
@@ -100,7 +104,7 @@ impl OwnedQuantizedModel {
                     ops::add_bias(&mut ffn_gate, &bias[..bias_half]);
                     ops::add_bias(&mut ffn_up, &bias[bias_half..]);
                 }
-                ops::silu(&mut ffn_gate);
+                self.gemma_gate_activation(&mut ffn_gate);
                 for i in 0..ffn_gate.len() {
                     ffn_gate[i] *= ffn_up[i];
                 }
@@ -110,7 +114,7 @@ impl OwnedQuantizedModel {
             // GELU path (GPT-2, BERT, etc.) - no gate weight
             let ffn_input = if let Some(ref ffn_norm) = layer.ffn_norm_weight {
                 if use_rmsnorm {
-                    ops::rms_norm(hidden, ffn_norm, self.config.eps)
+                    self.rms_norm_arch(hidden, ffn_norm, self.config.eps)
                 } else {
                     ops::layer_norm(
                         hidden, ffn_norm,
@@ -174,8 +178,15 @@ impl OwnedQuantizedModel {
         }
 
         // 3+4. Fused final layer norm + LM head projection
-        // For RMSNorm models: fuse norm + matmul to eliminate intermediate allocation
-        let mut logits = if use_rmsnorm {
+        // For RMSNorm models: fuse norm + matmul to eliminate intermediate allocation.
+        // PMAT-809: the fused kernel bakes in `* weight` RMSNorm. When the arch needs
+        // a runtime (1+w) offset (rmsnorm_unit_offset), normalize explicitly via
+        // rms_norm_arch then matmul. GGUF gemma already has +1 baked into the stored
+        // weights → rmsnorm_unit_offset is false → standard fused path is correct.
+        let mut logits = if use_rmsnorm && self.config.rmsnorm_unit_offset() {
+            let normed = self.rms_norm_arch(hidden, &self.output_norm_weight, self.config.eps);
+            self.fused_matmul(&normed, &self.lm_head_weight)?
+        } else if use_rmsnorm {
             self.fused_rmsnorm_lm_head(hidden)?
         } else {
             let normed = ops::layer_norm(
@@ -195,6 +206,7 @@ impl OwnedQuantizedModel {
         if let Some(ref bias) = self.lm_head_bias {
             ops::add_bias(&mut logits, bias);
         }
+
 
         Ok(logits)
     }
@@ -530,7 +542,18 @@ impl OwnedQuantizedModel {
             // PMAT-307: Use workspace for QKV to eliminate per-layer Vec alloc.
             // For fused QKV weights: norm_into + matmul_into → qkv_buffer
             let qkv_actual_dim;
-            let mut qkv = if use_rmsnorm {
+            // PMAT-809: the fused RMSNorm+QKV kernels bake in `* weight` norm. When
+            // the arch needs a runtime (1+w) offset, normalize explicitly via
+            // rms_norm_into_arch then run the standard QKV matmul. GGUF gemma has +1
+            // baked in (rmsnorm_unit_offset == false) so it stays on the fused path.
+            let mut qkv = if use_rmsnorm && self.config.rmsnorm_unit_offset() {
+                qkv_actual_dim = 0;
+                self.rms_norm_into_arch(&hidden, &layer.attn_norm_weight, self.config.eps,
+                    &mut o_proj_buffer[..hidden_dim]);
+                let v = self.qkv_matmul(&o_proj_buffer[..hidden_dim], &layer.qkv_weight)?;
+                qkv_buffer[..v.len()].copy_from_slice(&v);
+                &mut qkv_buffer[..v.len()]
+            } else if use_rmsnorm {
                 match &layer.qkv_weight {
                     crate::gguf::quantized::OwnedQKVWeights::Fused(ref w) => {
                         // RMSNorm → o_proj_buffer (reuse as temp), matmul → qkv_buffer

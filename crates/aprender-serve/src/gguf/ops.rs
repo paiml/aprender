@@ -115,6 +115,58 @@ pub fn rms_norm_into(input: &[f32], weight: &[f32], eps: f32, output: &mut [f32]
     }
 }
 
+/// PMAT-809 (b): Gemma RMSNorm with `(1 + weight)` unit offset.
+///
+/// Gemma stores RMSNorm weights centered at 0, so the effective per-channel
+/// scale is `(1 + w[j])`, NOT `w[j]`. Formula:
+///   `output = x / sqrt(mean(x^2) + eps) * (1 + weight)`
+///
+/// This MUST only be used for Gemma-family models (`GGUFConfig::rmsnorm_unit_offset`).
+/// Applying it to LLaMA/Qwen/Mistral (whose weights are centered at 1) would add a
+/// spurious +1 and produce wrong output — hence it is a separate function gated at
+/// the call site, never a silent default.
+#[contract("forward-pass-v1", equation = "rms_norm")]
+pub fn rms_norm_unit_offset(input: &[f32], weight: &[f32], eps: f32) -> Vec<f32> {
+    contract_pre_rmsnorm!(input);
+    let hidden_dim = weight.len();
+    let seq_len = input.len() / hidden_dim;
+    let mut output = Vec::with_capacity(input.len());
+
+    for i in 0..seq_len {
+        let start = i * hidden_dim;
+        let end = start + hidden_dim;
+        let x = &input[start..end];
+
+        let sum_sq: f32 = x.iter().map(|v| v * v).sum();
+        let mean_sq = sum_sq / hidden_dim as f32;
+        let inv_rms = 1.0 / (mean_sq + eps).sqrt();
+
+        for j in 0..hidden_dim {
+            // (1 + w) unit offset — the load-bearing Gemma difference.
+            output.push(x[j] * inv_rms * (1.0 + weight[j]));
+        }
+    }
+
+    output
+}
+
+/// PMAT-809 (b): Gemma `(1 + weight)` RMSNorm into a pre-allocated buffer.
+///
+/// Zero-allocation single-position variant of [`rms_norm_unit_offset`] for the
+/// decode hot path. See that function for the formula and gating rationale.
+pub fn rms_norm_unit_offset_into(input: &[f32], weight: &[f32], eps: f32, output: &mut [f32]) {
+    let hidden_dim = weight.len();
+    let x = &input[..hidden_dim];
+
+    let sum_sq: f32 = x.iter().map(|v| v * v).sum();
+    let mean_sq = sum_sq / hidden_dim as f32;
+    let inv_rms = 1.0 / (mean_sq + eps).sqrt();
+
+    for j in 0..hidden_dim {
+        output[j] = x[j] * inv_rms * (1.0 + weight[j]);
+    }
+}
+
 /// True Layer Normalization with optional bias
 ///
 /// GH-278: Implements real LayerNorm with mean subtraction.
@@ -558,6 +610,64 @@ mod rmsnorm_contract_tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod gemma_rmsnorm_tests {
+    use super::*;
+
+    /// PMAT-809: the Gemma unit-offset RMSNorm equals the standard RMSNorm with
+    /// `(1 + w)` substituted for `w` — i.e. `rms_norm_unit_offset(x, w) ==
+    /// rms_norm(x, w+1)`. This is the load-bearing semantic difference.
+    #[test]
+    fn unit_offset_equals_standard_with_w_plus_one() {
+        let x = vec![1.0f32, -2.0, 3.0, -4.0, 0.5, -0.25, 2.5, -1.5];
+        let w = vec![0.1f32, -0.2, 0.3, 0.0, -0.5, 0.4, 0.05, -0.05];
+        let w_plus_1: Vec<f32> = w.iter().map(|v| v + 1.0).collect();
+        let eps = 1e-6;
+
+        let unit_offset = rms_norm_unit_offset(&x, &w, eps);
+        let standard_shifted = rms_norm(&x, &w_plus_1, eps);
+
+        assert_eq!(unit_offset.len(), standard_shifted.len());
+        for (a, b) in unit_offset.iter().zip(standard_shifted.iter()) {
+            assert!((a - b).abs() < 1e-5, "unit-offset {a} != standard(w+1) {b}");
+        }
+    }
+
+    /// The `_into` variant matches the allocating variant exactly (single position).
+    #[test]
+    fn unit_offset_into_matches_allocating() {
+        let x = vec![0.7f32, -1.3, 2.1, -0.9, 1.1, -2.2, 0.4, 3.3];
+        let w = vec![0.2f32, 0.0, -0.3, 0.5, -0.1, 0.6, -0.4, 0.15];
+        let eps = 1e-6;
+        let alloc = rms_norm_unit_offset(&x, &w, eps);
+        let mut buf = vec![0.0f32; x.len()];
+        rms_norm_unit_offset_into(&x, &w, eps, &mut buf);
+        for (a, b) in alloc.iter().zip(buf.iter()) {
+            assert!((a - b).abs() < 1e-6, "alloc {a} != into {b}");
+        }
+    }
+
+    /// FALSIFIER: with zero-centered weights, unit-offset normalizes to RMS ≈ 1
+    /// (since (1+0) == 1) while plain `rms_norm` would zero the output. This is
+    /// exactly why Gemma (HF, weights centered at 0) needs the offset.
+    #[test]
+    fn zero_weights_give_unit_rms_under_offset_but_zero_under_standard() {
+        let x = vec![1.0f32, 2.0, -3.0, 4.0, -1.0, 0.5, -2.5, 1.5];
+        let w0 = vec![0.0f32; x.len()];
+        let eps = 1e-6;
+
+        let offset = rms_norm_unit_offset(&x, &w0, eps);
+        let off_rms = (offset.iter().map(|v| v * v).sum::<f32>() / x.len() as f32).sqrt();
+        assert!((off_rms - 1.0).abs() < 1e-3, "offset RMS {off_rms} != 1");
+
+        let standard = rms_norm(&x, &w0, eps);
+        assert!(
+            standard.iter().all(|v| v.abs() < 1e-6),
+            "standard rms_norm with w=0 must be ~0, got {standard:?}"
+        );
     }
 }
 
