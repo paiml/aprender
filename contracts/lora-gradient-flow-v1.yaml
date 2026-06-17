@@ -1,19 +1,23 @@
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   created: "2026-04-13"
   author: PAIML Engineering
   registry: true
   description: "LoRA gradient flow correctness"
   references:
     - "Provable contract for lora-gradient-flow-v1"
+    - "PMAT-805: CPU train_step routed through model.forward() (no LoRA) and apply_rope severed the autograd graph for the Q projection — both adapters silently untrained on the default q_proj+v_proj target set"
 
 kind: AlgorithmContract
 name: lora-gradient-flow
-version: "1.0.0"
+version: "1.1.0"
 scope: "crates/aprender-train/src/finetune/"
 
 description: |
   LoRA adapter gradients flow correctly: dL/dA and dL/dB computed via chain rule through frozen base.
+  The CPU forward used for loss MUST route through `forward_with_lora` (not plain `model.forward`),
+  and every op between the loss and the adapters — including RoPE — MUST be autograd-connected so
+  gradients reach BOTH the q_proj and v_proj adapters (PMAT-805).
 
 equations:
   frozen_base:
@@ -21,16 +25,25 @@ equations:
     formula: "∇W_base == 0 during LoRA training"
 
   adapter_gradient:
-    description: "∇A, ∇B non-zero for non-zero loss"
+    description: "∇A, ∇B non-zero for non-zero loss (BOTH q_proj and v_proj adapters)"
     formula: "∇A, ∇B non-zero for non-zero loss"
+
+  rope_backward:
+    description: "RoPE is autograd-connected: grad_x = R(-θ)·grad_out (transpose rotation)"
+    formula: "grad_x[i] = g[i]·cos(θ) + g[i+half]·sin(θ); grad_x[i+half] = -g[i]·sin(θ) + g[i+half]·cos(θ)"
 
 falsification:
   - id: FALSIFY-LORA_GRADIENT_FLOW_V1_001
     description: "∇W_base == 0 during LoRA training"
-    test: "Related tests in crates/aprender-train/src/finetune/"
-    evidence: "cargo test --lib"
+    test: "crates/aprender-train/src/finetune/instruct_pipeline/tests.rs::falsify_pmat805_cpu_train_step_trains_lora_overfit_one_batch (base weights frozen; only lora_layers stepped)"
+    evidence: "cargo test -p aprender-train --lib falsify_pmat805"
 
   - id: FALSIFY-LORA_GRADIENT_FLOW_V1_002
-    description: "∇A, ∇B non-zero for non-zero loss"
-    test: "Related tests in crates/aprender-train/src/finetune/"
-    evidence: "cargo test --lib"
+    description: "∇A, ∇B non-zero for non-zero loss — overfit-one-batch moves BOTH Q and V adapters and strictly decreases loss"
+    test: "crates/aprender-train/src/finetune/instruct_pipeline/tests.rs::falsify_pmat805_cpu_train_step_trains_lora_overfit_one_batch"
+    evidence: "cargo test -p aprender-train --lib falsify_pmat805_cpu_train_step_trains_lora_overfit_one_batch"
+
+  - id: FALSIFY-LORA_GRADIENT_FLOW_V1_003
+    description: "RoPE backward matches finite-difference gradients (graph not severed at RoPE)"
+    test: "crates/aprender-train/src/transformer/attention.rs::tests::falsify_pmat805_rope_backward_matches_finite_difference"
+    evidence: "cargo test -p aprender-train --lib falsify_pmat805_rope_backward_matches_finite_difference"
