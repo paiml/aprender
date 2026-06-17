@@ -34,6 +34,38 @@ impl Model {
         })
     }
 
+    /// Forward pass returning the final-layer hidden state (residual stream output
+    /// AFTER `final_norm` but BEFORE the `lm_head` projection).
+    ///
+    /// This is exactly the tensor that `lm_head` consumes to produce logits — i.e.
+    /// the model's contextual hidden representation of each token. It is the correct
+    /// source for model-backed embeddings (PMAT-803): pool these per-token vectors
+    /// (mean-pool is the standard default) and L2-normalize.
+    ///
+    /// # Arguments
+    ///
+    /// * `token_ids` - Input token IDs
+    ///
+    /// # Returns
+    ///
+    /// Hidden-state tensor with shape `[seq_len, hidden_dim]`
+    ///
+    /// # Errors
+    ///
+    /// Returns error if input is invalid
+    pub fn forward_hidden(&self, token_ids: &[usize]) -> Result<Tensor<f32>> {
+        // Embed tokens
+        let mut hidden = self.embedding.forward(token_ids)?;
+
+        // Pass through transformer blocks
+        for block in &self.blocks {
+            hidden = block.forward(&hidden)?;
+        }
+
+        // Final layer norm — this is the residual-stream output that lm_head consumes.
+        self.final_norm.forward(&hidden)
+    }
+
     /// Forward pass through the model
     ///
     /// # Arguments
@@ -48,18 +80,8 @@ impl Model {
     ///
     /// Returns error if input is invalid
     pub fn forward(&self, token_ids: &[usize]) -> Result<Tensor<f32>> {
-        // Embed tokens
-        let mut hidden = self.embedding.forward(token_ids)?;
-
-        // Pass through transformer blocks
-        for block in &self.blocks {
-            hidden = block.forward(&hidden)?;
-        }
-
-        // Final layer norm
-        hidden = self.final_norm.forward(&hidden)?;
-
-        // Project to vocabulary
+        // Compute the pre-lm_head hidden state, then project to vocabulary.
+        let hidden = self.forward_hidden(token_ids)?;
         self.lm_head.forward(&hidden)
     }
 

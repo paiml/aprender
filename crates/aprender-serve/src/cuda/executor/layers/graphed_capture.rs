@@ -262,7 +262,25 @@ impl CudaExecutor {
             }
             None // Use CC-based default
         });
-        let graph_enabled = env_override.unwrap_or(self.gpu_profile.cc >= 89);
+        // PMAT-810 (Blackwell CUDA-graph decode corruption): on Blackwell
+        // (cc>=120, e.g. GB10 sm_121) the trueno#243 MANUAL graph construction
+        // + replay (cuGraphAddKernelNode) produces a CORRUPT decode forward —
+        // graphed logits are garbage (apr parity avg cosine ~0.19; generation
+        // emits empty/single-repeated tokens) while the IDENTICAL eager path
+        // (forward_all_layers_gpu_to_logits) is correct (parity PASS, coherent
+        // generation) and still fast (~3.6s warm, 1.5B Q4_K_M). The whole GPU
+        // path was silently falling back to CPU on GB10 because the parity /
+        // F2-VALIDATION gate (correctly) rejected the graphed garbage. The manual
+        // graph replay was built + verified for driver-570 stream-capture
+        // poisoning on Ada/Hopper (realizr#198 A/B diff=0 on RTX 4090) and was
+        // never validated on Blackwell, where it mis-binds a pointer/position on
+        // sm_121. Default Blackwell to the eager non-graphed decode so the GPU
+        // path is correct; discrete DP4A GPUs (sm_89..sm_9x) keep the fast
+        // graphed path unchanged. CUDA_GRAPH_ENABLE=1 still force-opts-in for A/B
+        // testing the deeper manual-graph root-cause fix on Blackwell.
+        // Contract: contracts/apr-cpu-vs-gpu-output-parity-v1.yaml (FALSIFY-CPU-GPU-009).
+        let cc_default = Self::graph_cc_default(self.gpu_profile.cc);
+        let graph_enabled = env_override.unwrap_or(cc_default);
         if !graph_enabled {
             return Ok(Some(self.forward_all_layers_gpu_to_logits(
                 input, logits, position, num_layers, hidden_dim,
@@ -360,5 +378,54 @@ impl CudaExecutor {
         }
 
         Ok(())
+    }
+}
+
+impl CudaExecutor {
+    /// PMAT-810: Pure cc-based default for the graphed-decode path (no device,
+    /// no env). DP4A discrete GPUs (sm_89..sm_9x, cc in [89,120)) use the fast
+    /// manual CUDA-graph decode; Blackwell (cc>=120, e.g. GB10 sm_121) defaults
+    /// to the eager non-graphed decode because the trueno#243 manual graph
+    /// replay corrupts the sm_121 forward (apr parity cosine 0.19 -> garbage,
+    /// vs eager 0.99 + coherent). Non-DP4A GPUs (cc<89) keep eager too.
+    /// Env (CUDA_GRAPH_ENABLE=1 / SKIP_CUDA_GRAPH=1) overrides this default at
+    /// the call site. Extracted as a pure fn so the gating is unit-testable
+    /// without a CUDA device.
+    #[must_use]
+    pub(crate) fn graph_cc_default(cc: u32) -> bool {
+        cc >= 89 && cc < 120
+    }
+}
+
+#[cfg(test)]
+mod pmat810_blackwell_graph_default_tests {
+    use super::CudaExecutor;
+
+    /// PMAT-810: Blackwell (cc>=120, e.g. GB10 sm_121=121) MUST default the
+    /// graphed-decode path OFF -- the manual cuGraphAddKernelNode replay corrupts
+    /// the sm_121 forward (apr parity cosine ~0.19). The eager path is correct.
+    #[test]
+    fn graph_default_off_on_blackwell() {
+        assert!(!CudaExecutor::graph_cc_default(121), "GB10 sm_121");
+        assert!(!CudaExecutor::graph_cc_default(120), "cc==120 boundary");
+        assert!(!CudaExecutor::graph_cc_default(130), "future Blackwell+");
+    }
+
+    /// PMAT-810: Discrete DP4A GPUs (RTX 4090 sm_89=89, Ampere sm_80, Hopper
+    /// sm_90) keep the fast manual CUDA-graph decode -- verified correct there
+    /// (realizr#198 A/B diff=0 on RTX 4090). The fix is a strict no-op for them.
+    #[test]
+    fn graph_default_on_for_discrete_dp4a() {
+        assert!(CudaExecutor::graph_cc_default(89), "RTX 4090 sm_89");
+        assert!(CudaExecutor::graph_cc_default(90), "H100 sm_90");
+        assert!(CudaExecutor::graph_cc_default(119), "just below Blackwell");
+    }
+
+    /// Non-DP4A GPUs (cc<89) keep eager (pre-existing behavior; graph path needs
+    /// DP4A-era kernels).
+    #[test]
+    fn graph_default_off_below_dp4a() {
+        assert!(!CudaExecutor::graph_cc_default(80 - 5), "sm_75-ish boundary low");
+        assert!(!CudaExecutor::graph_cc_default(70), "sm_70");
     }
 }
