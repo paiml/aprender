@@ -176,6 +176,236 @@ fn test_gqa_second_token_attention() {
     );
 }
 
+/// PMAT-800B: CPU vs GPU first-token attention parity at HEAD_DIM=128.
+///
+/// The existing `test_cpu_gpu_gqa_attention_parity` covers HEAD_DIM=64
+/// (TinyLlama). This extends it to HEAD_DIM=128 (Qwen2.5-coder-1.5B /
+/// Qwen3 geometry: 12 heads, 2 kv_heads, GQA=6). For a single K/V
+/// position softmax is trivially `[1.0]`, so the attention output MUST
+/// equal V expanded over the GQA q-heads — a deterministic identity the
+/// GPU kernel must honor at every head_dim.
+///
+/// PMAT-800B FINDING: this passes BIT-EXACT (cos=1.0) — the GB10 (sm_121)
+/// per-layer GGUF parity sweep
+/// (`evidence/gpu-head-dim-128-divergence-pmat800/findings.json`)
+/// CONFIRMED the GPU attention kernel is correct at head_dim=128. The real
+/// CPU↔GPU GGUF divergence is NOT in attention: it is a ~15% HwDp4a (INT8
+/// DP4A) Q4_K/Q6_K error on a single massive-activation channel (dim 408),
+/// latent until the final-layer FFN cancels the outlier. This test is the
+/// head_dim=128 attention-correctness guard that RULES OUT the attention
+/// kernel as the cause. Run with `--ignored` on CUDA hardware.
+#[test]
+#[ignore] // Run with --ignored when CUDA is available
+fn test_cpu_gpu_attention_parity_head_dim_128() {
+    use realizar::cuda::CudaExecutor;
+
+    // Qwen2.5-coder-1.5B / Qwen3 attention geometry.
+    const NH: usize = 12; // num_heads
+    const NKV: usize = 2; // num_kv_heads (GQA=6)
+    const HD: usize = 128; // head_dim
+    const HIDDEN: usize = NH * HD; // 1536
+    const KVDIM: usize = NKV * HD; // 256
+
+    let mut executor = match CudaExecutor::new(0) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("CUDA init failed, skipping: {e:?}");
+            return;
+        },
+    };
+
+    if let Err(e) = executor.init_kv_cache_gpu(1, NH, NKV, HD, 64) {
+        eprintln!("init_kv_cache_gpu failed, skipping: {e:?}");
+        return;
+    }
+
+    // Deterministic, non-trivial Q/K/V (same generator family as the
+    // head_dim=64 test). Q is unused for the first-token identity but
+    // must be supplied to the kernel.
+    let q: Vec<f32> = (0..HIDDEN)
+        .map(|i| ((i * 17) % 100) as f32 * 0.01 - 0.5)
+        .collect();
+    let current_k: Vec<f32> = (0..KVDIM)
+        .map(|i| ((i * 37) % 100) as f32 * 0.01 - 0.5)
+        .collect();
+    let current_v: Vec<f32> = (0..KVDIM).map(|i| ((i * 41) % 100) as f32 * 0.01).collect();
+
+    // CPU reference: first token over a single K/V position ⇒ softmax=[1.0]
+    // ⇒ attn_out[q_head] = current_v[kv_head], kv_head = q_head / (NH/NKV).
+    let q_per_kv = NH / NKV;
+    let mut cpu_output = vec![0.0f32; HIDDEN];
+    for q_head in 0..NH {
+        let kv_head = q_head / q_per_kv;
+        let v_start = kv_head * HD;
+        let out_start = q_head * HD;
+        cpu_output[out_start..out_start + HD].copy_from_slice(&current_v[v_start..v_start + HD]);
+    }
+
+    let mut gpu_output = vec![0.0f32; HIDDEN];
+    if let Err(e) =
+        executor.incremental_attention_gpu(0, &q, &current_k, &current_v, &mut gpu_output)
+    {
+        eprintln!("GPU attention failed, skipping: {e:?}");
+        return;
+    }
+
+    // Cosine similarity (scale-invariant, matches the sweep metric).
+    let cos = {
+        let dot: f64 = cpu_output
+            .iter()
+            .zip(&gpu_output)
+            .map(|(a, b)| f64::from(*a) * f64::from(*b))
+            .sum();
+        let na: f64 = cpu_output
+            .iter()
+            .map(|a| f64::from(*a) * f64::from(*a))
+            .sum::<f64>()
+            .sqrt();
+        let nb: f64 = gpu_output
+            .iter()
+            .map(|b| f64::from(*b) * f64::from(*b))
+            .sum::<f64>()
+            .sqrt();
+        if na == 0.0 || nb == 0.0 {
+            0.0
+        } else {
+            dot / (na * nb)
+        }
+    };
+    let max_diff = cpu_output
+        .iter()
+        .zip(&gpu_output)
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f32, f32::max);
+
+    eprintln!(
+        "[PMAT-800B] head_dim=128 first-token attn parity: cos={cos:.6} max_diff={max_diff:.6}"
+    );
+
+    // For a single K/V position the GPU MUST reproduce V exactly (within fp
+    // tolerance). Confirmed bit-exact at head_dim=128 on GB10 (sm_121) —
+    // this guards against a regression that would put a real bug in the
+    // attention kernel (the actual GGUF divergence is the dim-408 HwDp4a
+    // massive-activation error, not attention).
+    assert!(
+        cos >= 0.9999,
+        "PMAT-800B: GPU first-token attention at head_dim=128 diverges from \
+         V-identity: cos={cos:.6} (expected ≥0.9999), max_diff={max_diff:.6}. \
+         Q/K/V inputs are identical to CPU; the GPU attention kernel computes \
+         a different softmax(QKᵀ/√d)·V at head_dim=128. See \
+         evidence/gpu-head-dim-128-divergence-pmat800/findings.json."
+    );
+}
+
+/// PMAT-800B: PRODUCTION-path first-token attention parity at HEAD_DIM=128.
+///
+/// `test_cpu_gpu_attention_parity_head_dim_128` exercises
+/// `incremental_attention_gpu` (the host-upload flash-cache path). The
+/// production dense GGUF decode uses `incremental_attention_into`
+/// (GPU-resident buffers → `scatter_kv_to_cache` → `launch_attention_kernel`),
+/// a DIFFERENT path. This test drives `incremental_attention_into`
+/// directly and asserts the same single-K/V V-identity.
+///
+/// PMAT-800B FINDING: this also passes BIT-EXACT (cos=1.0) — the production
+/// scatter/launch attention path is correct at head_dim=128, ruling it out
+/// as the GGUF divergence source. See
+/// evidence/gpu-head-dim-128-divergence-pmat800/findings.json (root cause =
+/// HwDp4a dim-408 massive-activation channel error).
+#[test]
+#[ignore] // Run with --ignored when CUDA is available
+fn test_cpu_gpu_attention_into_parity_head_dim_128() {
+    use realizar::cuda::CudaExecutor;
+    use trueno_gpu::driver::GpuBuffer;
+
+    const NH: usize = 12;
+    const NKV: usize = 2;
+    const HD: usize = 128;
+    const HIDDEN: usize = NH * HD; // 1536
+    const KVDIM: usize = NKV * HD; // 256
+
+    let mut executor = match CudaExecutor::new(0) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("CUDA init failed, skipping: {e:?}");
+            return;
+        },
+    };
+    if let Err(e) = executor.init_kv_cache_gpu(1, NH, NKV, HD, 64) {
+        eprintln!("init_kv_cache_gpu failed, skipping: {e:?}");
+        return;
+    }
+
+    let q: Vec<f32> = (0..HIDDEN)
+        .map(|i| ((i * 17) % 100) as f32 * 0.01 - 0.5)
+        .collect();
+    let current_k: Vec<f32> = (0..KVDIM)
+        .map(|i| ((i * 37) % 100) as f32 * 0.01 - 0.5)
+        .collect();
+    let current_v: Vec<f32> = (0..KVDIM).map(|i| ((i * 41) % 100) as f32 * 0.01).collect();
+
+    let q_per_kv = NH / NKV;
+    let mut cpu_output = vec![0.0f32; HIDDEN];
+    for q_head in 0..NH {
+        let kv_head = q_head / q_per_kv;
+        cpu_output[q_head * HD..(q_head + 1) * HD]
+            .copy_from_slice(&current_v[kv_head * HD..(kv_head + 1) * HD]);
+    }
+
+    // Production path: GPU-resident buffers.
+    let ctx = executor.context();
+    let q_gpu = GpuBuffer::from_host(ctx, &q).expect("q upload");
+    let k_gpu = GpuBuffer::from_host(ctx, &current_k).expect("k upload");
+    let v_gpu = GpuBuffer::from_host(ctx, &current_v).expect("v upload");
+    let out_gpu = GpuBuffer::<f32>::new(ctx, HIDDEN).expect("out alloc");
+
+    if let Err(e) = executor.incremental_attention_into(0, &q_gpu, &k_gpu, &v_gpu, &out_gpu) {
+        eprintln!("incremental_attention_into failed, skipping: {e:?}");
+        return;
+    }
+    let _ = executor.synchronize_all();
+
+    let mut gpu_output = vec![0.0f32; HIDDEN];
+    out_gpu.copy_to_host(&mut gpu_output).expect("out download");
+
+    let cos = {
+        let dot: f64 = cpu_output
+            .iter()
+            .zip(&gpu_output)
+            .map(|(a, b)| f64::from(*a) * f64::from(*b))
+            .sum();
+        let na: f64 = cpu_output
+            .iter()
+            .map(|a| f64::from(*a) * f64::from(*a))
+            .sum::<f64>()
+            .sqrt();
+        let nb: f64 = gpu_output
+            .iter()
+            .map(|b| f64::from(*b) * f64::from(*b))
+            .sum::<f64>()
+            .sqrt();
+        if na == 0.0 || nb == 0.0 {
+            0.0
+        } else {
+            dot / (na * nb)
+        }
+    };
+    let max_diff = cpu_output
+        .iter()
+        .zip(&gpu_output)
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f32, f32::max);
+
+    eprintln!(
+        "[PMAT-800B] head_dim=128 incremental_attention_into parity: cos={cos:.6} max_diff={max_diff:.6}"
+    );
+    assert!(
+        cos >= 0.9999,
+        "PMAT-800B: production incremental_attention_into at head_dim=128 \
+         diverges from V-identity: cos={cos:.6} (expected ≥0.9999), \
+         max_diff={max_diff:.6}. See evidence/gpu-head-dim-128-divergence-pmat800/."
+    );
+}
+
 /// Test: CPU vs GPU attention parity for FIRST token
 /// First token case: attention over single K/V position = just V (expanded)
 #[test]
