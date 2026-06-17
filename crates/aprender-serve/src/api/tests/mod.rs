@@ -49,3 +49,4 @@ mod tests_26; // T-COV-95 Interleaved Chaos: GPU Batch Processor Saturation
 mod tests_27; // T-COV-95 Generative Falsification: Proptest API Request Assault
 mod tests_28; // Coverage: realize_handlers pure functions, ContextWindow, clean_chat, build_trace_data, serde
 mod chat_template_contract; // PMAT-187: chat-template-v1.yaml contract enforcement (FALSIFY-CT-002)
+mod embeddings_pmat803; // PMAT-803: model-backed embeddings (semantic-similarity falsifier, dim==hidden_size)
