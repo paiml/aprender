@@ -5,8 +5,8 @@
 //!
 //! 1. The YAML file exists and parses as valid YAML.
 //! 2. Top-level `status: ACTIVE`.
-//! 3. Exactly 8 entries in `falsification_conditions`, with ids
-//!    FALSIFY-MCP-001 through FALSIFY-MCP-008 (no gaps, no duplicates).
+//! 3. Exactly 9 entries in `falsification_conditions`, with ids
+//!    FALSIFY-MCP-001 through FALSIFY-MCP-009 (no gaps, no duplicates).
 //! 4. Every entry has a non-empty `test_file` that exists on disk relative
 //!    to the workspace root, plus a non-empty `test_name` and
 //!    `status: ENFORCED`.
@@ -76,28 +76,28 @@ fn apr_mcp_server_contract_is_active() {
 }
 
 #[test]
-fn apr_mcp_server_contract_has_exactly_eight_conditions() {
+fn apr_mcp_server_contract_has_exactly_nine_conditions() {
     let contract = load_contract();
     assert_eq!(
         contract.falsification_conditions.len(),
-        8,
-        "spec defines 8 FALSIFY-MCP gates; contract has {}",
+        9,
+        "spec defines 9 FALSIFY-MCP gates; contract has {}",
         contract.falsification_conditions.len()
     );
 }
 
 #[test]
-fn apr_mcp_server_contract_ids_are_falsify_mcp_001_through_008() {
+fn apr_mcp_server_contract_ids_are_falsify_mcp_001_through_009() {
     let contract = load_contract();
     let actual: Vec<String> = contract
         .falsification_conditions
         .iter()
         .map(|c| c.id.clone())
         .collect();
-    let expected: Vec<String> = (1..=8).map(|n| format!("FALSIFY-MCP-{n:03}")).collect();
+    let expected: Vec<String> = (1..=9).map(|n| format!("FALSIFY-MCP-{n:03}")).collect();
     assert_eq!(
         actual, expected,
-        "ids must be exactly FALSIFY-MCP-001..008 in order (no gaps, no duplicates)"
+        "ids must be exactly FALSIFY-MCP-001..009 in order (no gaps, no duplicates)"
     );
 }
 
