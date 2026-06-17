@@ -1,6 +1,6 @@
 metadata:
   kind: schema
-  version: 1.7.0
+  version: 1.8.0
   status: ACTIVE
   created: '2026-05-03'
   author: PAIML Engineering
@@ -8,11 +8,15 @@ metadata:
   references:
   - 'evidence/ship-007-layer-0-oracle-bisection-2026-05-03/findings-v5-gpu-path-confirmed.md'
   - 'evidence/ship-007-layer-0-oracle-bisection-2026-05-03/findings-v6-parity-gate-fires-but-fallback-is-silent.md'
+  - 'evidence/gpu-head-dim-128-divergence-pmat800/findings.json (PMAT-800B: massive-activation dim-408 root cause)'
+  - 'crates/aprender-serve/src/cuda/gpu_profile.rs detect_q4k (PMAT-806: Blackwell fp32-MWV-Q4K default)'
+  - 'crates/aprender-serve/src/cuda/executor/q6k_gemv_indexed.rs is_massive_activation_outlier + pmat806_outlier_tests'
   - 'crates/aprender-serve/src/cli/apr_inference.rs (line 46 comment: "Both ... produce garbage on GPU")'
   - 'crates/aprender-serve/src/gguf/cuda/mod_parity_gate.rs (existing gate for gguf::cuda path)'
   - 'crates/aprender-serve/src/gguf/cuda/mod.rs:268-279 (gate enforcement, with SKIP_PARITY_GATE=1 bypass)'
   - 'crates/aprender-serve/src/infer/gguf_gpu_generate.rs:487-494 (load_apr_cuda_model — visible-fallback log added 2026-05-03)'
   changelog:
+  - '1.8.0 — 2026-06-16 — added FALSIFY-CPU-GPU-008 + a Blackwell parity invariant (PMAT-806). The GPU HwDp4a Q4_K path quantizes RMSNorm activations to INT8 (Q8_1) before the DP4A dot; a massive-activation outlier channel (dim 408 of Qwen2.5-coder-1.5B, ~26× rms) collapses the per-block INT8 range and is mis-estimated ~15%, latent until a deep FFN cancels the outlier → catastrophic cancellation → CPU/GPU cosine craters (load-gate 0.9817 on the 28-layer model; deeper models drop further). Fix: detect_q4k() defaults Q4kVariant::Mwv (fp32 activations, no Q8_1 quant) on Blackwell (cc≥120); discrete GPUs (RTX 4090 cc=89) keep the fast HwDp4a path. LIVE on gx10 GB10: 0.981714→0.993891 (1.5B), 0.983273→0.999744 (Qwen3-8B), argmax matches, coherent generation. Q6K left on HwDp4a (MWV-Q6K lm_head diverges, tracked separately). GPU-free unit falsifier pmat806_outlier_tests. total_obligations 7 → 8.'
   - '1.7.0 — 2026-06-13 — added FALSIFY-CPU-GPU-007 + a no-false-positive invariant (PMAT-742). The CUDA first-token parity gate (validate_gpu_first_token) used a single BOS-only probe + EXACT argmax equality, which false-rejected a CORRECT fast GPU path: default `apr run --gpu` ran at 8 tok/s (CPU fallback, BOS rel_gap=0.60) while the same correct GPU path does ~405 tok/s steady-state under SKIP_PARITY_GATE=1 (apr qa: Golden-Output PASS, Ollama-Parity 1.37, Throughput 421). Fix: probe with the REAL prompt context (peaked distribution → CPU/GPU agree) and tolerate a genuine near-tie (gpu_probe_token_acceptable, rel_gap <= 0.15); batch model-init keeps a BOS fallback. GPU-free unit falsifier in aprender-serve (pmat742_parity_gate_tests). Live-verified on RTX 4090 (qwen2.5-coder-1.5b Q4_K_M): default apr run now 8 -> ~405 tok/s, beats ollama 330 by 1.23x. total_obligations 6 -> 7.'
   - '1.5.0 — 2026-05-04 — 5-of-5 sweep close: FALSIFY-CPU-GPU-001/002/003 PARTIAL_ALGORITHM_LEVEL → DISCHARGED + FALSIFY-CPU-GPU-004 FUNCTIONAL → DISCHARGED, joining FALSIFY-CPU-GPU-005 (already DISCHARGED in v1.4.0). All 5 falsifiers now empirically verified on canonical Qwen2.5-Coder-7B teacher via two complementary live smokes on noah-Lambda-Vector RTX 4090: (a) default `apr run` produces the full jidoka chain (CUDA cos=-0.005 + argmax 8127≠334 caught → wgpu cos=0.766 caught → CPU "2 + 2 equals 4." in 67.24s); (b) `apr run --no-gpu` produces only 3 non-GPU log lines + correct output in 9.02s. The contract is now complete: every falsifier has live empirical evidence on the canonical broken-GPU model. Coverage tally: 16+36 → 20+32. MODEL-1 ship % 90% → 91% (parity contract fully discharged; only the underlying SHIP-007 GPU kernel root-cause fix remains for full GPU shipability per §40). Evidence: evidence/cpu-gpu-005-live-discharge-2026-05-04/{wgpu-smoke.log,no-gpu-smoke.log,findings.md}.'
   - '1.4.0 — 2026-05-04 — FALSIFY-CPU-GPU-005 PARTIAL_ALGORITHM_LEVEL → DISCHARGED. Live smoke on canonical Qwen2.5-Coder-7B teacher (`/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr`) executed 2026-05-04 on noah-Lambda-Vector RTX 4090 with binary built from main @ 817ec0553 (post-PR-#1442 part b impl). All 4 prediction lines verified: (1) CUDA path rejection log emits with cosine=-0.005 + argmax mismatch; (2) `Backend: wgpu (Vulkan)` log emits without --verbose; (3) wgpu cosine probe fires + emits `[apr-cpu-vs-gpu-output-parity-v1] wgpu path rejected, attempting fallback: cosine vs CPU = 0.766079 (< 0.99)`; (4) final stdout = "2 + 2 equals 4." (correct CPU output, NOT wgpu gibberish). Evidence: evidence/cpu-gpu-005-live-discharge-2026-05-04/{wgpu-smoke.log,findings.md}. The §41/§43/§44 jidoka chain is now end-to-end live-verified on the canonical broken-GPU model.'
@@ -294,6 +298,44 @@ falsification_tests:
   - "LIVE 2026-06-13 on noah-Lambda-Vector (RTX 4090): default `apr run --gpu` (no SKIP_PARITY_GATE) on qwen2.5-coder-1.5b-instruct-q4_k_m.gguf now passes F2 validation, takes the cuBLAS resident path, emits a complete correct recursive fibonacci, and reaches ~405 tok/s steady-state (marginal 464 tok / 1144.6ms) — up from 8 tok/s pre-fix. Beats ollama (same GGUF, warm) at 330 tok/s by 1.23x."
   - "GPU-free unit falsifier (pmat742_parity_gate_tests): near_tie_argmax_flip_is_accepted, real_divergence_is_rejected, out_of_range_gpu_token_is_rejected, exact_argmax_match_is_accepted, rel_gap_endpoints_are_zero_and_one — runs on non-CUDA CI."
 
+- id: FALSIFY-CPU-GPU-008
+  rule: >
+    On Blackwell (cc≥120, e.g. GB10 sm_121), the load-time CPU-vs-GPU parity
+    gate cosine for a Q4_K_M model with a massive-activation channel MUST stay
+    ≥0.99 — the INT8 (DP4A) activation-quant path mis-estimates the outlier and
+    drops the gate below the safe band on deep models.
+  prediction: |
+    Root cause (PMAT-800B, evidence/gpu-head-dim-128-divergence-pmat800/findings.json):
+    the GPU HwDp4a Q4_K path quantizes RMSNorm activations to INT8 (Q8_1) before
+    the DP4A integer dot. A massive-activation outlier channel (dim 408 of
+    Qwen2.5-coder-1.5B, ~26× the activation rms) collapses the per-32-block INT8
+    dynamic range, mis-estimating that channel ~15%. It is latent (in-direction)
+    until a deep FFN cancels the outlier → catastrophic cancellation exposes the
+    error → CPU/GPU cosine craters.
+    PREDICTION: forcing the fp32 MWV Q4K variant (which never quantizes
+    activations) lifts the gate cosine and restores parity. On-device sweep
+    (gx10 GB10, 2026-06-16): HwDp4a gate cosine = 0.981714; fp32 MWV-Q4K =
+    0.993891 (Qwen2.5-coder-1.5B Q4_K_M). The deeper Qwen3-8B-Q4_K_M (36 layers)
+    moves 0.983273 → 0.999744. Discrete GPUs (RTX 4090 sm_89) are NOT affected
+    and keep the fast HwDp4a path (cc=89 < 120).
+  test: |
+    # On Blackwell (gx10 GB10):
+    REALIZAR_VERBOSE=1 SKIP_CUDA_GRAPH=1 \
+      apr run qwen2.5-coder-1.5b-instruct-q4_k_m.gguf --gpu \
+        --prompt "What is 2+2?" --max-tokens 1
+    # Default (Blackwell fp32-MWV-Q4K) MUST print:
+    #   [PARITY-GATE] PASS: cosine=0.9939 (was 0.9817 with HW_DP4A_Q4K=1)
+    # GPU-free unit falsifier: pmat806_outlier_tests (is_massive_activation_outlier
+    #   flags dim-408-style 26× outlier, not ordinary 5× peaks).
+  if_fails: "Quantized models with massive-activation channels CANNOT be served on Blackwell GPU (parity gate FAILs → silent CPU/wgpu fallback); the outlier-aware activation-precision fix regressed."
+  binds_to: cosine_parity
+  status: DISCHARGED
+  algorithm_evidence:
+  - "Fix: crates/aprender-serve/src/cuda/gpu_profile.rs detect_q4k() defaults Q4kVariant::Mwv (fp32 activations) on cc≥120; env overrides (HW_DP4A_Q4K=1) still force DP4A for A/B testing. fused_gate_up auto-disables under Mwv (fusion is HwDp4a-only), so QKV/gate-up also run fp32 — exactly the MWV_Q4K=1 FUSED_GATE_UP=0 config measured at 0.9939."
+  - "Q6K is deliberately left on HwDp4a: the on-device sweep showed MWV-Q6K diverges on the large-vocab lm_head (gate FAILs → wgpu fallback), and Q4K-only routing already restores parity. The MWV-Q6K lm_head defect is tracked separately."
+  - "LIVE DISCHARGE 2026-06-16 on gx10 (GB10 sm_121, cc=121): default `apr run --gpu` load-gate cosine 0.981714 → 0.993891 (Qwen2.5-coder-1.5B); Qwen3-8B 0.983273 → 0.999744; argmax matches; GPU generation coherent (`def add(a, b): return a`). Baseline reproduced exactly (HW_DP4A_Q4K=1 → 0.981714). No regression on the apr-parity manual-graph path (load-gate identical) nor RTX 4090 (cc=89 keeps HwDp4a by construction)."
+  - "Massive-activation criterion is captured as a pure, GPU-free, unit-tested helper is_massive_activation_outlier (q6k_gemv_indexed.rs, pmat806_outlier_tests) for the FUTURE device-side selective version: a per-layer fp32 fixup that keeps DP4A on non-outlier columns requires a DEVICE-side outlier-detection kernel (host readback mid-forward corrupts the CUDA graph-recording/capture paths — measured: apr parity manual-graph cosine 0.98→0.84). That selective optimization is scoped but not in this fix; the profile-level fp32-MWV-Q4K default is the contained, correctness-first Blackwell fix."
+
 proof_obligations:
 - type: invariant
   property: "the CUDA first-token parity gate accepts a near-tie argmax flip on a peaked real-context probe and rejects only real divergence (no false-positive CPU fallback on a correct GPU path) — PMAT-742"
@@ -307,9 +349,11 @@ proof_obligations:
   property: "if GPU parity gate fails on ANY backend (CUDA or wgpu), user gets either an explicit error OR a CPU fallback — never silent gibberish"
 - type: invariant
   property: "wgpu parity gate covers MULTIPLE autoregressive steps (default N=3), not just step 0 — single-step gate cannot detect KV-cache-accumulated drift"
+- type: invariant
+  property: "on Blackwell (cc≥120) the Q4_K load-time CPU/GPU parity-gate cosine stays ≥0.99 on massive-activation models (fp32-MWV-Q4K default avoids the INT8 activation-quant outlier mis-estimate) — PMAT-806"
 
 verification_summary:
-  total_obligations: 7
+  total_obligations: 8
   proven: 0
   tested: 1
   status: pending
