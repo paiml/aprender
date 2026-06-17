@@ -89,6 +89,12 @@ impl CudaExecutor {
         validate_device_ptr(weight_ptr, "q6k_gemv_into")?;
         use crate::cuda::gpu_profile::Q6kVariant;
         let can_use_advanced = k.is_multiple_of(256);
+        // PMAT-806: Q6K is deliberately NOT outlier-rerouted. On-device sweep
+        // (gx10 GB10) showed the fp32 MWV-Q6K path diverges on this model's
+        // lm_head (cosine gate FAILs → wgpu fallback), while routing only the
+        // Q4K activation-quant GEMVs to fp32 MWV already lifts the gate to
+        // 0.9939 (Q6K's HwDp4a error on the residual is tolerable). Keeping Q6K
+        // on HwDp4a avoids the MWV-Q6K defect (tracked separately).
         if can_use_advanced && self.gpu_profile.q6k == Q6kVariant::HwDp4a {
             return self.hw_dp4a_q6k_gemv_into(weight_ptr, input, output, n, k);
         }
