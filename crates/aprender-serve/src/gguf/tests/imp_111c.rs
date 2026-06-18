@@ -155,6 +155,7 @@ fn test_imp_111d_tiled_attention_various_tile_sizes() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_113a_batched_gemm_single_dispatch() {
     // IMP-113a: Verify batched GEMM processes all heads in single dispatch
     // This is the foundation for efficient multi-head attention
@@ -240,6 +241,7 @@ fn test_imp_113a_batched_gemm_single_dispatch() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_113b_single_dispatch_attention_correctness() {
     // IMP-113b: Verify single-dispatch attention matches multi-dispatch
     let config = GGUFConfig {
@@ -305,6 +307,7 @@ fn test_imp_113b_single_dispatch_attention_correctness() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_113c_single_dispatch_dispatch_count() {
     // IMP-113c: Verify single-dispatch uses fewer GPU dispatches
     // This test validates the architectural improvement
@@ -366,6 +369,7 @@ fn test_imp_113c_single_dispatch_dispatch_count() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_113d_batched_softmax_correctness() {
     // IMP-113d: Verify batched softmax with causal mask
     let config = GGUFConfig {

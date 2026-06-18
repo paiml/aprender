@@ -1,6 +1,7 @@
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_123d_thread_safe_metrics() {
     // IMP-123d: Metrics should be thread-safe
     use std::sync::Arc;
@@ -53,6 +54,7 @@ fn test_imp_123d_thread_safe_metrics() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_129a_latency_histogram_struct() {
     // IMP-129a: DispatchMetrics should track latency with histogram buckets
     let metrics = DispatchMetrics::new();
@@ -66,6 +68,7 @@ fn test_imp_129a_latency_histogram_struct() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_129b_record_latency() {
     // IMP-129b: Should record latency for CPU and GPU dispatches
     use std::time::Duration;
@@ -100,6 +103,7 @@ fn test_imp_129b_record_latency() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_129c_histogram_buckets() {
     // IMP-129c: Should have histogram bucket counts
     use std::time::Duration;
@@ -134,6 +138,7 @@ fn test_imp_129c_histogram_buckets() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_129d_thread_safe_latency() {
     // IMP-129d: Latency recording should be thread-safe
     use std::sync::Arc;
@@ -184,6 +189,7 @@ fn test_imp_129d_thread_safe_latency() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_124a_forward_single_with_cache_adaptive() {
     // IMP-124a: forward_single_with_cache_adaptive should exist and produce valid output
     let config = GGUFConfig {
@@ -236,6 +242,7 @@ fn test_imp_124a_forward_single_with_cache_adaptive() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_124b_adaptive_matches_standard() {
     // IMP-124b: Adaptive forward should match standard forward
     let config = GGUFConfig {
@@ -287,6 +294,7 @@ fn test_imp_124b_adaptive_matches_standard() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_124c_tracks_metrics_per_layer() {
     // IMP-124c: Each layer should record a dispatch decision
     let config = GGUFConfig {
@@ -343,6 +351,7 @@ fn test_imp_124c_tracks_metrics_per_layer() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_124d_long_cache_uses_gpu() {
     // IMP-124d: Long cache (>= 64 tokens) should trigger GPU dispatch
     let config = GGUFConfig {
@@ -398,6 +407,7 @@ fn test_imp_124d_long_cache_uses_gpu() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_125a_generate_with_cache_adaptive() {
     // IMP-125a: generate_with_cache_adaptive should exist and produce valid tokens
     let config = GGUFConfig {

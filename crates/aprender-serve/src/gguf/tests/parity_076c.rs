@@ -2,6 +2,7 @@
 /// PARITY-076c: Memory bandwidth summary
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_076c_bandwidth_summary() {
     println!("PARITY-076c: Memory Bandwidth Summary");
     println!("=====================================");
@@ -59,6 +60,7 @@ fn test_parity_076c_bandwidth_summary() {
 /// PARITY-076d: Integration architecture
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_076d_integration_architecture() {
     println!("PARITY-076d: Integration Architecture");
     println!("=====================================");
@@ -124,6 +126,7 @@ fn test_parity_076d_integration_architecture() {
 /// PARITY-076e: Next steps
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_076e_next_steps() {
     println!("PARITY-076e: Next Steps");
     println!("=======================");
@@ -176,6 +179,7 @@ fn test_parity_076e_next_steps() {
 /// PARITY-076f: Phase 3 completion summary
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_076f_phase3_summary() {
     println!("PARITY-076f: Phase 3 Completion Summary");
     println!("========================================");
@@ -238,6 +242,7 @@ fn test_parity_076f_phase3_summary() {
 /// PARITY-077a: Shared memory tile size optimization
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_077a_shared_memory_tile_sizing() {
     println!("PARITY-077a: Shared Memory Tile Size Optimization");
     println!("==================================================");
@@ -334,6 +339,7 @@ fn test_parity_077a_shared_memory_tile_sizing() {
 /// PARITY-077b: Tile iteration order
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_077b_tile_iteration_order() {
     println!("PARITY-077b: Tile Iteration Order");
     println!("==================================");
@@ -400,6 +406,7 @@ fn test_parity_077b_tile_iteration_order() {
 /// PARITY-077c: Multi-query attention (MQA) tile sharing
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_077c_mqa_tile_sharing() {
     println!("PARITY-077c: Multi-Query Attention Tile Sharing");
     println!("================================================");
