@@ -200,6 +200,7 @@ fn test_model_has_legacy_quant_checks_qkv_and_gate() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };

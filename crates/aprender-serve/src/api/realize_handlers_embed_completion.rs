@@ -1,11 +1,70 @@
 
+/// PMAT-803: mean-pool the per-token final-layer hidden states into one
+/// `hidden_dim`-length vector, skipping special tokens (BOS/EOS/PAD) when any are
+/// registered. This is the standard sentence-embedding pooling: it produces a
+/// representation that reflects the *model's* contextual hidden states (so cosine
+/// similarity is semantically meaningful), unlike a positional bag-of-words hash.
+///
+/// `hidden` has shape `[seq_len, hidden_dim]` (row-major: token `t` occupies
+/// `hidden[t*hidden_dim .. (t+1)*hidden_dim]`). `token_ids[t]` aligns with row `t`.
+/// Falls back to pooling over ALL tokens if every token was special (so we never
+/// return a zero vector for an all-special input).
+fn mean_pool_hidden_states(
+    hidden: &crate::tensor::Tensor<f32>,
+    token_ids: &[u32],
+    hidden_dim: usize,
+    tokenizer: &crate::tokenizer::BPETokenizer,
+) -> Vec<f32> {
+    let data = hidden.data();
+    let seq_len = token_ids.len();
+
+    let mut sum = vec![0.0f32; hidden_dim];
+    let mut counted = 0usize;
+    for (t, &tok) in token_ids.iter().enumerate().take(seq_len) {
+        if tokenizer.is_special_token(tok) {
+            continue;
+        }
+        let row = &data[t * hidden_dim..(t + 1) * hidden_dim];
+        for (s, &h) in sum.iter_mut().zip(row.iter()) {
+            *s += h;
+        }
+        counted += 1;
+    }
+
+    // Fallback: if every token was special, pool over all rows so we still return
+    // a model-derived vector rather than zeros.
+    if counted == 0 {
+        for t in 0..seq_len {
+            let row = &data[t * hidden_dim..(t + 1) * hidden_dim];
+            for (s, &h) in sum.iter_mut().zip(row.iter()) {
+                *s += h;
+            }
+        }
+        counted = seq_len;
+    }
+
+    if counted > 0 {
+        let inv = 1.0 / counted as f32;
+        for s in &mut sum {
+            *s *= inv;
+        }
+    }
+    sum
+}
+
 /// Native Realizar embedding handler (/realize/embed)
+///
+/// PMAT-803: returns REAL model-backed embeddings. The vector is the mean-pooled
+/// final-layer hidden state (the residual-stream output that `lm_head` consumes),
+/// L2-normalized, with dimension == the model's `hidden_dim`. Two semantically
+/// similar inputs therefore have higher cosine similarity than two dissimilar ones
+/// — a property the prior positional token-hash could not satisfy.
 pub async fn realize_embed_handler(
     State(state): State<AppState>,
     Json(request): Json<EmbeddingRequest>,
 ) -> Result<Json<EmbeddingResponse>, (StatusCode, Json<ErrorResponse>)> {
     let model_id = request.model.as_deref();
-    let (_model, tokenizer) = state.get_model(model_id).map_err(|e| {
+    let (model, tokenizer) = state.get_model(model_id).map_err(|e| {
         (
             StatusCode::NOT_FOUND,
             Json(ErrorResponse {
@@ -14,28 +73,47 @@ pub async fn realize_embed_handler(
         )
     })?;
 
-    // PMAT-802: OpenAI `/v1/embeddings` accepts `input` as a single string OR an array
-    // of strings, returning one embedding per input in request order. Loop over every
-    // input so a batch request yields `data[i]` with `index == i` (previously only the
-    // single-string form was supported — array input was rejected at deserialization).
+    // PMAT-802 × PMAT-803 (stacked): OpenAI `/v1/embeddings` accepts `input` as a single
+    // string OR an array of strings, returning one embedding per input in request order
+    // (PMAT-802 batch loop). EACH input is embedded via the REAL model-backed path
+    // (PMAT-803): forward_hidden → mean-pool over non-special tokens → hidden_dim vector →
+    // L2-normalize — NOT the prior positional token-hash. So a batch of N inputs yields N
+    // real model-backed embeddings with `data[i].index == i` and dim == model hidden_size.
+
+    // Dimension == model hidden_size (NOT a hardcoded 384). Constant across inputs, so
+    // hoist it out of the per-input loop.
+    let hidden_dim = model.config().hidden_dim;
+
     let mut data = Vec::with_capacity(request.input.len());
     let mut prompt_tokens = 0usize;
 
     for (index, text) in request.input.iter().enumerate() {
         let token_ids = tokenizer.encode(text);
+        if token_ids.is_empty() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!("Input at index {index} cannot be empty"),
+                }),
+            ));
+        }
         prompt_tokens += token_ids.len();
 
-        // Generate simple embedding from token frequencies
-        // In production, this would use the model's hidden states
-        let mut embedding = vec![0.0f32; 384]; // 384-dim embedding
+        // Model-backed embedding: run the forward pass and take the final-layer hidden
+        // state (pre-lm_head). The model's forward expects usize token IDs.
+        let usize_ids: Vec<usize> = token_ids.iter().map(|&t| t as usize).collect();
+        let hidden = model.forward_hidden(&usize_ids).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Embedding forward pass failed: {e}"),
+                }),
+            )
+        })?;
 
-        for (i, &token_id) in token_ids.iter().enumerate() {
-            let idx = (token_id as usize) % embedding.len();
-            let pos_weight = 1.0 / (1.0 + i as f32);
-            embedding[idx] += pos_weight;
-        }
+        // Mean-pool over non-special tokens, then L2-normalize.
+        let mut embedding = mean_pool_hidden_states(&hidden, &token_ids, hidden_dim, &tokenizer);
 
-        // L2 normalize
         let norm: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
         if norm > 0.0 {
             for v in &mut embedding {

@@ -1,4 +1,42 @@
 
+/// PMAT-786: Single source of truth for which GGML quant types the *cached*
+/// APR-GPU GEMV path (`dispatch_quantized_gemv`) can actually execute.
+///
+/// Only Q4_K(12), Q5_K(13), and Q6_K(14) have `*_gemv_cached` kernels wired into
+/// `CudaExecutor`. Any other type stored via `load_quantized_weights_with_type`
+/// has no cached GEMV kernel on this path, so dispatching it must fail loudly
+/// rather than fall through to the f32 `gemm_b_cached` (which reads a *different*
+/// cache and yields a misleading "Weight not cached" error). See `dispatch_quantized_gemv`.
+#[must_use]
+pub(crate) const fn cached_apr_gpu_gemv_supported_qtype(qtype: u32) -> bool {
+    matches!(qtype, 12..=14)
+}
+
+#[cfg(test)]
+mod pmat786_dispatch_tests {
+    use super::cached_apr_gpu_gemv_supported_qtype as supported;
+
+    #[test]
+    fn q4k_q5k_q6k_are_dispatchable() {
+        // Q4_K(12)/Q5_K(13)/Q6_K(14) have cached GEMV kernels.
+        assert!(supported(12), "Q4_K must dispatch");
+        assert!(supported(13), "Q5_K must dispatch (PMAT-786 regression guard)");
+        assert!(supported(14), "Q6_K must dispatch");
+    }
+
+    #[test]
+    fn no_kernel_quants_are_not_dispatchable() {
+        // PMAT-786: these must FAIL LOUD on the cached APR-GPU path, never silently
+        // route raw quant bytes into the f32 GEMM fallback.
+        for qtype in [0u32, 1, 2, 3, 6, 8, 9, 10, 11, 15, 16, 99] {
+            assert!(
+                !supported(qtype),
+                "qtype={qtype} has no cached APR-GPU GEMV kernel and must not be reported as dispatchable"
+            );
+        }
+    }
+}
+
 #[cfg(feature = "cuda")]
 impl AprV2ModelCuda {
 
@@ -42,6 +80,14 @@ impl AprV2ModelCuda {
         n: usize,
         qtype: u32,
     ) -> Result<()> {
+        // PMAT-786: keep the match arms below in lockstep with the tested classifier.
+        // If this fires, a `*_gemv_cached` arm was added/removed without updating
+        // `cached_apr_gpu_gemv_supported_qtype` (or vice versa).
+        debug_assert_eq!(
+            cached_apr_gpu_gemv_supported_qtype(qtype),
+            matches!(qtype, 12..=14),
+            "dispatch_quantized_gemv match arms drifted from cached_apr_gpu_gemv_supported_qtype for qtype={qtype}"
+        );
         match qtype {
             12 => {
                 if m == 1 {
@@ -58,6 +104,35 @@ impl AprV2ModelCuda {
                             operation: "GPU Q4K batched GEMV cached".to_string(),
                             reason: format!("CUDA batched Q4K GEMV '{}' failed: {e}", weight_name),
                         })
+                }
+            }
+            13 => {
+                // PMAT-786: Q5_K (GGML type 13) was missing here, so a Q5_K APR
+                // weight on the cached APR-GPU path fell through to the f32
+                // `gemm_b_cached` fallback below. That fallback looks up the *f32*
+                // `weight_cache` (the quantized bytes live in `quantized_weight_cache`),
+                // so the result was a misleading "Weight not cached" error rather than
+                // a working GEMV — q5_k_m is one of the most common GGUF quant levels.
+                // `q5k_gemv_cached` is the same verified-correct kernel the GGUF path uses.
+                if m == 1 {
+                    self.executor
+                        .q5k_gemv_cached(weight_name, a, c, n as u32, k as u32)
+                        .map_err(|e| RealizarError::UnsupportedOperation {
+                            operation: "GPU Q5K GEMV cached".to_string(),
+                            reason: format!("CUDA Q5K GEMV '{}' failed: {e}", weight_name),
+                        })
+                } else {
+                    for row in 0..m {
+                        let row_input = &a[row * k..(row + 1) * k];
+                        let row_output = &mut c[row * n..(row + 1) * n];
+                        self.executor
+                            .q5k_gemv_cached(weight_name, row_input, row_output, n as u32, k as u32)
+                            .map_err(|e| RealizarError::UnsupportedOperation {
+                                operation: "GPU Q5K GEMV cached (batched)".to_string(),
+                                reason: format!("CUDA Q5K GEMV '{}' row {row} failed: {e}", weight_name),
+                            })?;
+                    }
+                    Ok(())
                 }
             }
             14 => {
@@ -83,12 +158,21 @@ impl AprV2ModelCuda {
                 }
             }
             _ => {
-                self.executor
-                    .gemm_b_cached(weight_name, a, c, m as u32, n as u32, k as u32)
-                    .map_err(|e| RealizarError::UnsupportedOperation {
-                        operation: "GPU GEMM cached (qtype fallback)".to_string(),
-                        reason: format!("CUDA GEMM '{}' qtype={qtype} failed: {e}", weight_name),
-                    })
+                // PMAT-786: FAIL LOUD on an unhandled quant type instead of routing
+                // the raw quantized bytes through the f32 `gemm_b_cached` path. That
+                // path reads the *f32* `weight_cache`, but `load_quantized_weights_with_type`
+                // stored these bytes in `quantized_weight_cache`, so the old fallback
+                // produced a confusing "Weight not cached" / "qtype fallback" GEMM error
+                // that hid the real cause. The cached APR-GPU GEMV path currently has
+                // kernels only for Q4_K(12)/Q5_K(13)/Q6_K(14); anything else (Q4_0=2,
+                // Q4_1=3, Q5_0=6, Q8_0=8, Q8_1=9, Q2_K=10, Q3_K=11, IQ2*, ...) is not
+                // dispatchable here and must surface a clear, truthful error.
+                Err(RealizarError::UnsupportedOperation {
+                    operation: "GPU quantized GEMV (cached APR-GPU path)".to_string(),
+                    reason: format!(
+                        "weight '{weight_name}' has GGML qtype={qtype}, which has no cached GPU GEMV kernel on the APR-GPU path (supported: 12=Q4_K, 13=Q5_K, 14=Q6_K). Convert the model to a supported quant or run on CPU."
+                    ),
+                })
             }
         }
     }

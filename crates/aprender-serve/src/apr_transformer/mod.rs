@@ -415,9 +415,24 @@ pub struct AprTransformer {
     /// Output norm bias (optional) [hidden_dim]
     pub output_norm_bias: Option<Vec<f32>>,
     /// LM head weight [hidden_dim * vocab_size]
+    ///
+    /// PMAT-788: For tied-embedding models (`tie_word_embeddings = true`), this
+    /// field is left EMPTY and `lm_head_tied` is set; the f32 logits matmul
+    /// sources the (byte-identical) `token_embedding` buffer via
+    /// [`AprTransformer::lm_head_f32`]. This eliminates a full-size (≈519 MiB on
+    /// a 0.5B model) duplicate of the embedding matrix in serving RSS. When NOT
+    /// tied this holds the model's own separate `lm_head` weights unchanged.
     pub lm_head_weight: Vec<f32>,
     /// LM head bias (optional) [vocab_size]
     pub lm_head_bias: Option<Vec<f32>>,
+    /// PMAT-788: when `true`, the f32 `lm_head` weight is tied to (byte-identical
+    /// to) `token_embedding` and `lm_head_weight` is left empty to avoid storing
+    /// a redundant 519 MiB copy. Logits computation sources `token_embedding`
+    /// instead via [`AprTransformer::lm_head_f32`]. Defaults to `false` for
+    /// backward-compatible deserialization of models that always materialized a
+    /// separate `lm_head_weight`.
+    #[serde(default)]
+    pub lm_head_tied: bool,
     /// Q4K raw layer weights for fused kernel inference (F-GPU-130)
     /// When present, enables direct Q4K matmul without dequantization
     #[serde(default)]

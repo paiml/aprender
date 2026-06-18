@@ -116,6 +116,14 @@ impl AprTensorLookup<'_> {
             })
     }
 
+    /// PMAT-788: Probe whether a tensor is present without materializing it.
+    /// Used by the tied-LM-head path to preserve the original fail-fast contract
+    /// (a tied head requires a resolvable embedding) without loading a redundant
+    /// copy of the embedding buffer.
+    fn has_tensor(&self, name: &str) -> bool {
+        self.tensors.contains_key(name)
+    }
+
     /// Check if a tensor name refers to a linear weight that needs transposing.
     fn is_linear_weight(name: &str) -> bool {
         name.contains("_proj.weight")

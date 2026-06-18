@@ -23,6 +23,7 @@ mod tests {
             eps: 1e-6,
             rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
             bos_token_id: Some(0),
             eos_token_id: Some(1),
         }
@@ -60,6 +61,8 @@ mod tests {
             ffn_norm_bias: Some(vec![0.0f32; hidden_dim]),
             attn_q_norm_weight: None,
             attn_k_norm_weight: None,
+            post_attn_norm_weight: None,
+            post_ffw_norm_weight: None,
         }
     }
 
@@ -79,6 +82,7 @@ mod tests {
             eps: 1e-5,
             rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
             bos_token_id: None,
             eos_token_id: None,
         };
@@ -134,6 +138,7 @@ mod tests {
             eps: 1e-5,
             rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
             bos_token_id: None,
             eos_token_id: None,
         };

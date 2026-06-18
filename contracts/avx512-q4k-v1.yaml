@@ -1,5 +1,5 @@
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   created: "2026-04-13"
   author: PAIML Engineering
   registry: true
@@ -12,7 +12,7 @@ metadata:
 
 kind: KernelContract
 name: avx512-q4k
-version: "1.0.0"
+version: "1.1.0"
 scope: "crates/aprender-compute/src/backends/q4k/gemv/avx512.rs"
 
 description: |
@@ -35,9 +35,16 @@ equations:
     note: "16-wide vs 8-wide; overhead from zmm register management limits to ~1.5x (not 2x)"
 
   C-AVX512-Q4K-003:
-    description: "Super-block processing is complete (no elements skipped)"
-    formula: "∀ row: Σ elements_processed = in_dim (with remainder handling)"
-    note: "Scalar fallback handles remainder elements after SIMD loop"
+    description: "Super-block processing is complete (no elements skipped) AND every activation load stays within [0, in_dim) — no heap over-read"
+    formula: "∀ row: Σ elements_processed = in_dim ∧ ∀ SIMD load at base b reading w lanes: b + w ≤ in_dim"
+    note: |
+      A 64-element chunk maps low nibbles → activation [base,base+32) and high
+      nibbles → [base+32,base+64) — DIFFERENT positions, so the high-nibble loads
+      need their OWN bound. Full chunks (base+64 ≤ in_dim) use unguarded loads;
+      the partial tail uses masked loads (_mm512_maskz_loadu_ps) that read only
+      the in-bounds lanes and zero the rest. Pre-1.1.0 the high-nibble loads
+      shared the low-nibble guard (base+32 ≤ in_dim), over-reading up to 128 bytes
+      AND dropping the valid tail for in_dim ≡ 32/96/160/224 (mod 256).
 
 falsification:
   - id: FALSIFY-AVX512-Q4K-001
@@ -49,3 +56,8 @@ falsification:
     description: "Performance threshold verified by benchmark"
     test: "Q4K GEMV benchmark"
     evidence: "cargo bench -p aprender-compute -- q4k"
+
+  - id: FALSIFY-AVX512-Q4K-003
+    description: "Non-256-aligned in_dim: the AVX-512 GEMV reads only [0,in_dim) (no heap over-read) and matches the scalar reference exactly (no skipped/garbage high-nibble tail). Discharges the previously-unwired C-AVX512-Q4K-003."
+    test: "falsify_avx512_q4k_003_non_aligned_in_dim_no_oob — activation buffer carries a non-zero sentinel tail past in_dim inside the allocation; pre-fix over-read injects the sentinel (RED, e.g. in_dim=32 → SIMD 7.4e9 vs scalar 532), masked-load fix matches scalar (GREEN). Covers in_dim ∈ {32,48,96,160,224} (mod-256 mid-chunk cases) + 256 control."
+    evidence: "cargo test -p aprender-compute --lib falsify_avx512_q4k_003"

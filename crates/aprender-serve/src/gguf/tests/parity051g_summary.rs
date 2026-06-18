@@ -56,6 +56,7 @@ fn test_parity051g_summary() {
 /// PARITY-052a: Test BatchConfig default values
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity052a_batch_config_defaults() {
     use crate::api::BatchConfig;
 
@@ -99,6 +100,7 @@ fn test_parity052a_batch_config_defaults() {
 /// PARITY-052b: Test BatchConfig presets
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity052b_batch_config_presets() {
     use crate::api::BatchConfig;
 
@@ -147,6 +149,7 @@ fn test_parity052b_batch_config_presets() {
 /// PARITY-052c: Test BatchConfig decision methods
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity052c_batch_config_decisions() {
     use crate::api::BatchConfig;
 
@@ -197,6 +200,7 @@ fn test_parity052c_batch_config_decisions() {
 /// PARITY-052d: Test ContinuousBatchResponse creation
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity052d_batch_response_creation() {
     use crate::api::ContinuousBatchResponse;
 
@@ -257,6 +261,7 @@ fn test_parity052d_batch_response_creation() {
 /// PARITY-052e: Test AppState batch configuration
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity052e_appstate_batch_config() {
     println!("PARITY-052e: AppState Batch Configuration");
     println!("=========================================");
@@ -288,6 +293,7 @@ fn test_parity052e_appstate_batch_config() {
 /// PARITY-052f: Summary and integration status
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity052f_summary() {
     println!("PARITY-052f: Batch Request Queuing Summary");
     println!("==========================================");
@@ -341,6 +347,7 @@ fn test_parity052f_summary() {
 /// PARITY-053a: Document batch processor architecture
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity053a_batch_processor_architecture() {
     println!("PARITY-053a: Batch Processor Architecture");
     println!("=========================================");
@@ -373,6 +380,7 @@ fn test_parity053a_batch_processor_architecture() {
 /// PARITY-053b: Document batch processor flow
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity053b_batch_processor_flow() {
     println!("PARITY-053b: Batch Processor Flow");
     println!("=================================");
@@ -408,6 +416,7 @@ fn test_parity053b_batch_processor_flow() {
 /// PARITY-053c: Document spawn_batch_processor usage
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity053c_spawn_batch_processor_usage() {
     println!("PARITY-053c: spawn_batch_processor Usage");
     println!("========================================");

@@ -323,6 +323,10 @@ pub struct OwnedQuantizedLayer {
     pub attn_q_norm_weight: Option<Vec<f32>>,
     /// GH-279: Per-head K RMSNorm weight [head_dim] (Qwen3)
     pub attn_k_norm_weight: Option<Vec<f32>>,
+    /// PMAT-810: Gemma2 POST-attention RMSNorm weight. `None` elsewhere.
+    pub post_attn_norm_weight: Option<Vec<f32>>,
+    /// PMAT-810: Gemma2 POST-feedforward RMSNorm weight. `None` elsewhere.
+    pub post_ffw_norm_weight: Option<Vec<f32>>,
 }
 
 impl OwnedQuantizedLayer {
@@ -402,6 +406,8 @@ impl OwnedQuantizedLayer {
             ffn_norm_bias: layer.ffn_norm_bias.clone(),
             attn_q_norm_weight: layer.attn_q_norm_weight.clone(),
             attn_k_norm_weight: layer.attn_k_norm_weight.clone(),
+            post_attn_norm_weight: layer.post_attn_norm_weight.clone(),
+            post_ffw_norm_weight: layer.post_ffw_norm_weight.clone(),
         }
     }
 }

@@ -3,6 +3,7 @@
 #[test]
 #[ignore = "Performance test unreliable - depends on system load"]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity072e_performance() {
     use crate::quantize::{fused_q4k_dot, fused_q4k_q8_dot, quantize_to_q8_blocks};
     use std::time::Instant;
@@ -70,6 +71,7 @@ fn test_parity072e_performance() {
 /// PARITY-072f: Integration summary
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity072f_summary() {
     println!("PARITY-072f: Fused Q4xQ8 Kernel Summary");
     println!("=======================================");
@@ -113,6 +115,7 @@ fn test_parity072f_summary() {
 /// PARITY-073a: FusedQ4Q8Dot kernel type definition
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_073a_fused_q4q8_kernel_type() {
     use crate::cuda::{CudaKernels, KernelType};
 
@@ -162,6 +165,7 @@ fn test_parity_073a_fused_q4q8_kernel_type() {
 /// PARITY-073b: PTX generation verification (now uses trueno)
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_073b_ptx_generation() {
     use crate::cuda::{CudaKernels, KernelType};
 
@@ -217,6 +221,7 @@ fn test_parity_073b_ptx_generation() {
 /// PARITY-073c: Quantization operations (now uses trueno)
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_073c_dp4a_instructions() {
     use crate::cuda::{CudaKernels, KernelType};
 
@@ -275,6 +280,7 @@ fn test_parity_073c_dp4a_instructions() {
 /// PARITY-073d: Trueno GEMM loop structure (replaces hand-rolled super-block loops)
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_073d_superblock_loop() {
     use crate::cuda::{CudaKernels, KernelType};
 
@@ -336,6 +342,7 @@ fn test_parity_073d_superblock_loop() {
 /// PARITY-073e: Memory addressing verification
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_073e_memory_addressing() {
     use crate::cuda::{CudaKernels, KernelType};
 
@@ -388,6 +395,7 @@ fn test_parity_073e_memory_addressing() {
 /// PARITY-073f: Integration summary and next steps
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_073f_integration_summary() {
     println!("PARITY-073f: CUDA PTX Generation Summary");
     println!("=========================================");

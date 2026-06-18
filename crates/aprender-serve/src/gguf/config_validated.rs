@@ -92,6 +92,7 @@ mod tests {
             eps: 1e-6,
             rope_type: 2,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
             bos_token_id: Some(151_643),
             eos_token_id: Some(151_645),
         };
@@ -117,6 +118,7 @@ mod tests {
             eps: 1e-6,
             rope_type: 2,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
             bos_token_id: Some(151_643),
             eos_token_id: Some(151_645),
         };

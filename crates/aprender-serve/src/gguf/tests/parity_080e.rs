@@ -2,6 +2,7 @@
 /// PARITY-080e: Mixed precision attention
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_080e_mixed_precision() {
     println!("PARITY-080e: Mixed Precision Attention");
     println!("=======================================");
@@ -53,6 +54,7 @@ fn test_parity_080e_mixed_precision() {
 /// PARITY-080f: Tensor Core integration summary
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_080f_tensor_core_summary() {
     println!("PARITY-080f: Tensor Core Integration Summary");
     println!("=============================================");
@@ -100,6 +102,7 @@ fn test_parity_080f_tensor_core_summary() {
 /// PARITY-081a: Component inventory
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_081a_phase4_component_inventory() {
     println!("PARITY-081a: Phase 4 Component Inventory");
     println!("=========================================");
@@ -134,6 +137,7 @@ fn test_parity_081a_phase4_component_inventory() {
 /// PARITY-081b: Performance projection
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_081b_performance_projection() {
     println!("PARITY-081b: Phase 4 Performance Projection");
     println!("============================================");
@@ -200,6 +204,7 @@ fn test_parity_081b_performance_projection() {
 /// PARITY-081c: Implementation roadmap
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_081c_implementation_roadmap() {
     println!("PARITY-081c: Implementation Roadmap");
     println!("=====================================");
@@ -234,6 +239,7 @@ fn test_parity_081c_implementation_roadmap() {
 /// PARITY-081d: Risk assessment
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_081d_risk_assessment() {
     println!("PARITY-081d: Risk Assessment");
     println!("=============================");
@@ -264,6 +270,7 @@ fn test_parity_081d_risk_assessment() {
 /// PARITY-081e: Success criteria
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_081e_success_criteria() {
     println!("PARITY-081e: Success Criteria");
     println!("==============================");
@@ -304,6 +311,7 @@ fn test_parity_081e_success_criteria() {
 /// PARITY-081f: Phase 4 final summary
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_081f_phase4_summary() {
     println!("PARITY-081f: Phase 4 Final Summary");
     println!("===================================");
@@ -366,6 +374,7 @@ fn test_parity_081f_phase4_summary() {
 /// PARITY-082a: Stream-K algorithm overview
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_082a_streamk_overview() {
     println!("PARITY-082a: Stream-K Algorithm Overview");
     println!("=========================================");
