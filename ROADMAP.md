@@ -4,7 +4,9 @@ Next Generation Machine Learning in Pure Rust
 
 ## Current status
 
-> **v0.35.2** (2026-05-22) — published to crates.io: `cargo install aprender` → `apr`.
+> **v0.49.1** (2026-06-13) — published to crates.io: `cargo install aprender` → `apr`.
+> **Actively shipping** the four-pillar **BEAT campaign** (below). The earlier
+> "3-month hiatus" was closed out; development resumed at v0.42 and is ongoing.
 
 Aprender is now an **80-crate monorepo** spanning model **training**, **inference**
 (realizar), **SIMD/GPU compute** (trueno), and a **103-subcommand `apr` CLI** — well
@@ -24,8 +26,36 @@ canonical, issue-linked roadmap is
 | v0.7.x | ✅ Released | ARIMA, text processing, Bayesian inference, GLMs, ICA |
 | v0.11–v0.30 | ✅ Released | Monorepo consolidation, `apr` CLI, APR/GGUF/SafeTensors formats, quantization, inference server |
 | v0.31–v0.34 | ✅ Released | MoE serving, distillation pipeline, MODEL-1 code model, provable-contract expansion |
-| **v0.35.2** | ✅ **Current** | Hiatus close-out (eval/distill fixes, book completeness, DX) — last release before the 2026-08-22 hiatus |
+| v0.35.x | ✅ Released | Hiatus close-out (eval/distill fixes, book completeness, DX) |
+| v0.36–v0.41 | ✅ Released | sklearn-parity breadth — model-selection stack, 13 metrics, preprocessing, `datasets` |
+| **v0.42–v0.49** | ✅ **Current** | **Four-pillar BEAT campaign** — CI-gated falsifiable wins vs sklearn / PyTorch / Unsloth / Ollama (below) |
+| _in flight_ | 🔧 Hardening | Correctness wave — sampling params, Blackwell-GPU coherence, Gemma CPU, APR-format safety, RoPE/LoRA/MCP (each contract-backed) |
 | _next_ | 📋 Planned | tracked in [`docs/roadmaps/roadmap.yaml`](docs/roadmaps/roadmap.yaml) |
+
+### 🎯 The mission (north star)
+
+**One pure-Rust binary that REPLACES and BEATS the four incumbents at what each does
+best** — where "beat" is not parity but a *falsifiable, CI-gated benchmark* that fails
+the build if `apr` regresses below the incumbent's pinned baseline. The cross-cutting
+wedge none of the four have: **provable, contract-gated correctness.**
+
+| Pillar | Incumbent | Signature strength | ✅ WON beat (CI-gated falsifier) |
+|--------|-----------|--------------------|----------------------------------|
+| **P1** | scikit-learn | Classical-ML breadth & ergonomics | LinearRegression **2.0× faster** (LAPACK-free O(nd)), iris-RF accuracy. *(LAPACK-bound Ridge/Lasso/KMeans/PCA honestly conceded.)* |
+| **P2** | PyTorch | Tensors + autograd + training | Autograd gradients **≡ PyTorch, max\|Δ\|=5e-7**. *(Training speed conceded — ~11× MKL gap; the win is provable gradient correctness.)* |
+| **P3** | Unsloth | Fast low-VRAM PEFT (LoRA/QLoRA) | NF4 quant **≡ bitsandbytes (4.9e-7)** + LoRA-merge forward-**equivalence (1.5e-8)**. *(GPU-Triton tok/s conceded.)* |
+| **P4** | Ollama / llama.cpp | Fast local quantized inference | **Fail-closed correctness** — `apr` rejects 10/10 semantically-broken models that Ollama/llama.cpp silently run; decode **1.2–1.37× on RTX 4090**. |
+
+All four beats are **adversarially mutation-verified** — a deliberately injected
+regression must make the gate FAIL, or the gate is theater. Cross-cutting through-line:
+the model is trained → fine-tuned → distilled → served as one CODE model
+(qwen2.5-coder), measured by the apr-code-parity matrix.
+
+**Campaign mode (2026-06):** ≥10 days fully-autonomous, BEATS-as-CI-artifacts across all
+four pillars plus the `cuda-oxide` pure-Rust→PTX spike on Blackwell. Every correctness
+fix ships a named `proof_obligation` + a falsifier verified RED-on-bug / GREEN-on-fix +
+a `pv`-validated contract bump (a bug shipped green ⇔ its falsifier was missing or too
+weak).
 
 ---
 

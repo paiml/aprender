@@ -332,7 +332,79 @@ fn finalize_chat_text(
     (text, finish_reason)
 }
 
+/// PMAT-801: parse tool calls out of a chat completion's generated text.
+///
+/// Returns `(message, finish_reason)` ready for the response. The ENTIRE
+/// tool-calling path is gated by the caller on `request.tools.is_some()`; this
+/// helper additionally honours `tool_choice: "none"` by skipping parsing. When
+/// the parser finds at least one tool call, `tool_calls` is populated (id,
+/// type:"function", function:{name, arguments-as-JSON-STRING}) and
+/// `finish_reason` becomes `"tool_calls"`. Otherwise the message is a normal
+/// assistant text turn and the supplied `finish_reason` is preserved.
+fn build_tool_calling_message(
+    text: String,
+    finish_reason: String,
+    tools: &[super::OpenAiTool],
+    tool_choice: Option<&crate::grammar::ToolChoice>,
+) -> (ChatMessage, String) {
+    use crate::grammar::{ToolCallParser, ToolChoice};
+
+    // tool_choice:"none" → never parse; behave like a plain text turn.
+    if matches!(tool_choice, Some(ToolChoice::None)) {
+        return (
+            ChatMessage {
+                role: "assistant".to_string(),
+                content: text,
+                ..Default::default()
+            },
+            finish_reason,
+        );
+    }
+
+    let defs: Vec<crate::grammar::ToolDefinition> =
+        tools.iter().map(super::OpenAiTool::to_grammar).collect();
+    let mut parser = ToolCallParser::new(defs);
+    let calls = parser.parse(&text);
+
+    if calls.is_empty() {
+        return (
+            ChatMessage {
+                role: "assistant".to_string(),
+                content: text,
+                ..Default::default()
+            },
+            finish_reason,
+        );
+    }
+
+    let response_calls: Vec<super::ResponseToolCall> = calls
+        .into_iter()
+        .map(super::ResponseToolCall::from)
+        .collect();
+    (
+        ChatMessage {
+            role: "assistant".to_string(),
+            // OpenAI emits empty/null content alongside tool_calls.
+            content: String::new(),
+            tool_calls: Some(response_calls),
+            ..Default::default()
+        },
+        "tool_calls".to_string(),
+    )
+}
+
+/// PMAT-801: map a request's `tool_choice` to the `grammar::ToolChoice` library
+/// type (or `None` when the request omitted it). Centralised so every backend
+/// call site stays a one-liner.
+fn request_tool_choice(request: &ChatCompletionRequest) -> Option<crate::grammar::ToolChoice> {
+    request
+        .tool_choice
+        .as_ref()
+        .map(super::OpenAiToolChoice::to_grammar)
+}
+
 /// Build a non-streaming ChatCompletionResponse.
+#[allow(clippy::too_many_arguments)]
 fn build_chat_response(
     request_id: String,
     model: String,
@@ -343,6 +415,8 @@ fn build_chat_response(
     stops: Option<&[String]>,
     trace_level: Option<&str>,
     latency: Duration,
+    tools: Option<&[super::OpenAiTool]>,
+    tool_choice: Option<crate::grammar::ToolChoice>,
 ) -> Response {
     let (brick_trace, step_trace, layer_trace) = build_trace_data(
         trace_level,
@@ -352,6 +426,22 @@ fn build_chat_response(
         28,
     );
     let (text, finish_reason) = finalize_chat_text(text, stops, completion_tokens, max_tokens);
+
+    // PMAT-801 no-regression: the tool-calling path is reached ONLY when the
+    // request carried `tools`. Without tools the message is byte-identical to
+    // pre-PMAT-801 (a plain assistant text turn + the original finish_reason).
+    let (message, finish_reason) = match tools {
+        Some(tools) => build_tool_calling_message(text, finish_reason, tools, tool_choice.as_ref()),
+        None => (
+            ChatMessage {
+                role: "assistant".to_string(),
+                content: text,
+                ..Default::default()
+            },
+            finish_reason,
+        ),
+    };
+
     Json(ChatCompletionResponse {
         id: request_id,
         object: "chat.completion".to_string(),
@@ -359,11 +449,7 @@ fn build_chat_response(
         model,
         choices: vec![ChatChoice {
             index: 0,
-            message: ChatMessage {
-                role: "assistant".to_string(),
-                content: text,
-                name: None,
-            },
+            message,
             finish_reason,
         }],
         usage: Usage {
@@ -588,6 +674,8 @@ fn try_gpu_backend(
         request.stop.as_deref(),
         trace_level,
         latency,
+        request.tools.as_deref(),
+        request_tool_choice(request),
     ))
 }
 
@@ -668,6 +756,8 @@ fn try_cached_backend(
         request.stop.as_deref(),
         trace_level,
         latency,
+        request.tools.as_deref(),
+        request_tool_choice(request),
     ))
 }
 
@@ -742,6 +832,198 @@ mod pmat756_chat_stop_tests {
         let (text, reason) = finalize_chat_text("kept".to_string(), Some(&s), 1, 256);
         assert_eq!(text, "kept");
         assert_eq!(reason, "stop");
+    }
+}
+
+#[cfg(test)]
+mod pmat801_tool_calling_tests {
+    //! PMAT-801: wire aprender's tool-calling library into /v1/chat/completions.
+    //!
+    //! Falsifier contract (apr-serve-openai-compat-v1 §F-TOOL-CALL-801):
+    //!   - A request WITH `tools` + generated text containing a tool call →
+    //!     `tool_calls` populated + `finish_reason == "tool_calls"` (RED without wiring).
+    //!   - A request WITHOUT `tools` → message is a plain assistant text turn,
+    //!     `tool_calls` is None, `finish_reason` unchanged (regression guard).
+    //!   - `arguments` serializes as a JSON STRING, not a nested object.
+    //!   - `tool_choice: "none"` → parsing is skipped even when tools are present.
+    use super::{build_tool_calling_message, request_tool_choice};
+    use crate::api::{
+        ChatCompletionRequest, ChatMessage, OpenAiFunctionDef, OpenAiTool, OpenAiToolChoice,
+        OpenAiToolChoiceFunction,
+    };
+
+    fn weather_tool() -> OpenAiTool {
+        OpenAiTool {
+            tool_type: "function".to_string(),
+            function: OpenAiFunctionDef {
+                name: "get_weather".to_string(),
+                description: "Get the weather for a city".to_string(),
+                parameters: Some(serde_json::json!({
+                    "type": "object",
+                    "properties": { "city": { "type": "string" } },
+                    "required": ["city"],
+                })),
+            },
+        }
+    }
+
+    /// FALSIFIER (RED without wiring): tools present + a tool call in the text →
+    /// `tool_calls` populated, `finish_reason == "tool_calls"`, args is a STRING.
+    #[test]
+    fn tool_call_in_text_populates_tool_calls_and_finish_reason() {
+        let tools = vec![weather_tool()];
+        let generated = r#"{"name": "get_weather", "arguments": {"city": "NYC"}}"#.to_string();
+        let (msg, reason) = build_tool_calling_message(generated, "stop".to_string(), &tools, None);
+
+        assert_eq!(
+            reason, "tool_calls",
+            "finish_reason must flip to tool_calls"
+        );
+        let calls = msg
+            .tool_calls
+            .as_ref()
+            .expect("tool_calls must be populated when a tool call is parsed");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].call_type, "function");
+        assert_eq!(calls[0].function.name, "get_weather");
+        // arguments is a JSON STRING (not a nested object), per OpenAI wire format.
+        let parsed: serde_json::Value = serde_json::from_str(&calls[0].function.arguments)
+            .expect("arguments must itself be valid JSON when parsed as a string");
+        assert_eq!(parsed["city"], "NYC");
+    }
+
+    /// arguments must serialize as a STRING in the response JSON, not an object.
+    #[test]
+    fn arguments_serialize_as_json_string_not_object() {
+        let tools = vec![weather_tool()];
+        let generated = r#"{"name": "get_weather", "arguments": {"city": "NYC"}}"#.to_string();
+        let (msg, _) = build_tool_calling_message(generated, "stop".to_string(), &tools, None);
+        let json = serde_json::to_string(&msg).expect("serialize message");
+        // The wire form must contain an escaped string for arguments.
+        assert!(
+            json.contains(r#""arguments":"{"#) || json.contains(r#""arguments":"{\""#),
+            "arguments must be a JSON string, got: {json}"
+        );
+        // And must NOT contain a bare object: "arguments":{"city"
+        assert!(
+            !json.contains(r#""arguments":{"city""#),
+            "arguments must NOT be a nested object, got: {json}"
+        );
+    }
+
+    /// REGRESSION GUARD: text without a tool call → no tool_calls, reason unchanged.
+    #[test]
+    fn no_tool_call_in_text_leaves_message_plain() {
+        let tools = vec![weather_tool()];
+        let (msg, reason) = build_tool_calling_message(
+            "The weather is sunny.".to_string(),
+            "stop".to_string(),
+            &tools,
+            None,
+        );
+        assert_eq!(reason, "stop", "finish_reason preserved when no tool call");
+        assert!(msg.tool_calls.is_none());
+        assert_eq!(msg.content, "The weather is sunny.");
+        assert_eq!(msg.role, "assistant");
+    }
+
+    /// tool_choice "none" skips parsing even when a tool call is present in text.
+    #[test]
+    fn tool_choice_none_skips_parsing() {
+        let tools = vec![weather_tool()];
+        let choice = OpenAiToolChoice::Mode("none".to_string()).to_grammar();
+        let generated = r#"{"name": "get_weather", "arguments": {"city": "NYC"}}"#.to_string();
+        let (msg, reason) = build_tool_calling_message(
+            generated.clone(),
+            "stop".to_string(),
+            &tools,
+            Some(&choice),
+        );
+        assert_eq!(reason, "stop", "tool_choice none must NOT emit tool_calls");
+        assert!(msg.tool_calls.is_none());
+        assert_eq!(msg.content, generated);
+    }
+
+    /// Specific tool_choice maps to grammar ToolChoice::Specific(name).
+    #[test]
+    fn specific_tool_choice_maps_to_grammar() {
+        let choice = OpenAiToolChoice::Specific {
+            choice_type: "function".to_string(),
+            function: OpenAiToolChoiceFunction {
+                name: "get_weather".to_string(),
+            },
+        };
+        match choice.to_grammar() {
+            crate::grammar::ToolChoice::Specific(name) => assert_eq!(name, "get_weather"),
+            other => panic!("expected Specific, got {other:?}"),
+        }
+    }
+
+    /// Request without tools yields no grammar tool_choice (gate stays closed).
+    #[test]
+    fn request_without_tool_choice_is_none() {
+        let req: ChatCompletionRequest =
+            serde_json::from_str(r#"{"model":"m","messages":[{"role":"user","content":"hi"}]}"#)
+                .expect("deserialize bare request");
+        assert!(req.tools.is_none(), "no tools field → None");
+        assert!(request_tool_choice(&req).is_none());
+    }
+
+    /// OpenAI tools + tool_choice deserialize from the standard request JSON.
+    #[test]
+    fn openai_request_with_tools_deserializes() {
+        let body = r#"{
+            "model": "m",
+            "messages": [{"role":"user","content":"weather in NYC?"}],
+            "tools": [{
+                "type": "function",
+                "function": {
+                    "name": "get_weather",
+                    "description": "Get weather",
+                    "parameters": {"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}
+                }
+            }],
+            "tool_choice": "auto"
+        }"#;
+        let req: ChatCompletionRequest = serde_json::from_str(body).expect("deserialize");
+        let tools = req.tools.as_ref().expect("tools present");
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0].function.name, "get_weather");
+        // tool_choice "auto" maps to grammar Auto.
+        assert!(matches!(
+            request_tool_choice(&req),
+            Some(crate::grammar::ToolChoice::Auto)
+        ));
+        // The grammar ToolDefinition extracts the "city" param as required.
+        let def = tools[0].to_grammar();
+        assert_eq!(def.name, "get_weather");
+        assert!(def
+            .parameters
+            .iter()
+            .any(|p| p.name == "city" && p.required));
+    }
+
+    /// A tool RESULT message (role "tool" + tool_call_id) round-trips through serde.
+    #[test]
+    fn tool_result_message_round_trips() {
+        let body = r#"{"role":"tool","content":"{\"temp\":72}","tool_call_id":"call_0"}"#;
+        let msg: ChatMessage = serde_json::from_str(body).expect("deserialize tool result");
+        assert_eq!(msg.role, "tool");
+        assert_eq!(msg.tool_call_id.as_deref(), Some("call_0"));
+        assert_eq!(msg.content, r#"{"temp":72}"#);
+    }
+
+    /// Regression: a plain assistant message serializes WITHOUT the tool fields
+    /// (skip_serializing_if), so non-tool responses are byte-identical to before.
+    #[test]
+    fn plain_message_omits_tool_fields_in_json() {
+        let msg = ChatMessage {
+            role: "assistant".to_string(),
+            content: "hello".to_string(),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&msg).expect("serialize");
+        assert_eq!(json, r#"{"role":"assistant","content":"hello"}"#);
     }
 }
 

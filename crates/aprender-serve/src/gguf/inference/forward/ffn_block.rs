@@ -207,6 +207,11 @@ impl OwnedQuantizedModel {
             ops::add_bias(&mut logits, bias);
         }
 
+        // PMAT-810: Gemma2 final-logit tanh softcap (`cap*tanh(logits/cap)`, cap=30).
+        // `None` for every other architecture → logits untouched (byte-identical).
+        if let Some(cap) = self.config.final_logit_softcap() {
+            ops::softcap(&mut logits, cap);
+        }
 
         Ok(logits)
     }
@@ -673,6 +678,15 @@ impl OwnedQuantizedModel {
                 ops::add_bias(&mut o_proj_buffer, bias);
             }
 
+            // PMAT-810: Gemma2 POST-attention RMSNorm on the attention output,
+            // BEFORE the residual add: `x + post_attn_norm(attn(...))`. `None` for
+            // every other arch → residual add unchanged. GGUF bakes the Gemma
+            // `(1+w)` offset into the weight, so standard rms_norm is correct.
+            if let Some(ref post_w) = layer.post_attn_norm_weight {
+                let normed = ops::rms_norm(&o_proj_buffer[..hidden_dim], post_w, self.config.eps);
+                o_proj_buffer[..hidden_dim].copy_from_slice(&normed);
+            }
+
             // 2g. Residual connection
             for i in 0..hidden_dim {
                 hidden[i] += o_proj_buffer[i];
@@ -685,6 +699,13 @@ impl OwnedQuantizedModel {
             self.fused_matmul_into(&ffn_activated, &layer.ffn_down_weight, &mut ffn_down_buffer)?;
             if let Some(ref bias) = layer.ffn_down_bias {
                 ops::add_bias(&mut ffn_down_buffer, bias);
+            }
+
+            // PMAT-810: Gemma2 POST-FFN RMSNorm on the FFN output, BEFORE the
+            // residual add: `h + post_ffw_norm(ffn(...))`. `None` elsewhere.
+            if let Some(ref post_w) = layer.post_ffw_norm_weight {
+                let normed = ops::rms_norm(&ffn_down_buffer[..hidden_dim], post_w, self.config.eps);
+                ffn_down_buffer[..hidden_dim].copy_from_slice(&normed);
             }
 
             // Residual

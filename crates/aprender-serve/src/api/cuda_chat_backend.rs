@@ -219,6 +219,8 @@ async fn try_cuda_backend(
         request.stop.as_deref(),
         trace_level,
         latency,
+        request.tools.as_deref(),
+        request_tool_choice(request),
     ))
 }
 
@@ -308,6 +310,8 @@ fn try_quantized_backend(
         request.stop.as_deref(),
         trace_level,
         latency,
+        request.tools.as_deref(),
+        request_tool_choice(request),
     ))
 }
 
@@ -404,6 +408,8 @@ fn registry_fallback(
         request.stop.as_deref(),
         None,
         duration,
+        request.tools.as_deref(),
+        request_tool_choice(request),
     )
 }
 
@@ -560,6 +566,8 @@ async fn try_apr_q4k_chat_backend(
         request.stop.as_deref(),
         trace_level,
         start.elapsed(),
+        request.tools.as_deref(),
+        request_tool_choice(request),
     ))
 }
 
@@ -832,6 +840,8 @@ fn try_qwen3_moe_backend(
         request.stop.as_deref(),
         None,
         duration,
+        request.tools.as_deref(),
+        request_tool_choice(request),
     ))
 }
 

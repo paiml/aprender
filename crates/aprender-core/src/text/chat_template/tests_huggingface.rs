@@ -94,6 +94,88 @@ fn test_llama2_multi_turn() {
     assert!(result.contains("</s>"));
 }
 
+/// FALSIFY-CHAT-LLAMA2-BOS (PMAT-791): a system message followed by the first
+/// user turn must NOT emit a double-BOS (`<s><s>`) at the start. The Llama-2
+/// reference template wraps each `[INST] ... [/INST] {answer} </s>` exchange in
+/// exactly one `<s>...`, so a conversation has exactly one leading `<s>` and one
+/// additional `<s>` per assistant turn it continues past. The pre-fix code keyed
+/// the fresh-`<s>` on `i > 0 && !in_user_turn`, which mis-fired for the first user
+/// turn whenever index 0 was a *system* message — producing `<s><s>[INST] ...`.
+/// A double BOS at sequence start is off-distribution (the model never saw two
+/// BOS tokens during training) and degrades generation quality.
+#[test]
+fn falsify_llama2_system_first_no_double_bos() {
+    let template = Llama2Template::new();
+
+    // System + single user turn: exactly ONE leading <s>, no <s><s>.
+    let single = template
+        .format_conversation(&[
+            ChatMessage::system("Be terse."),
+            ChatMessage::user("Hi"),
+        ])
+        .unwrap();
+    assert!(
+        !single.starts_with("<s><s>"),
+        "FALSIFIED: system-first conversation emitted a double-BOS: {single:?}"
+    );
+    assert_eq!(
+        single.matches("<s>").count(),
+        1,
+        "system + 1 user turn must have exactly one <s>, got: {single:?}"
+    );
+    // The system prompt must still be wrapped in the first INST block.
+    assert!(single.contains("<<SYS>>\nBe terse.\n<</SYS>>"));
+    assert!(single.starts_with("<s>[INST] <<SYS>>"));
+
+    // System + multi-turn: one leading <s> + one <s> per assistant continuation.
+    // [sys, user, assistant, user] => `<s>[INST] ...[/INST] {a}</s><s>[INST] ...`
+    // => exactly TWO <s> (not three).
+    let multi = template
+        .format_conversation(&[
+            ChatMessage::system("Be terse."),
+            ChatMessage::user("Hi"),
+            ChatMessage::assistant("Hello."),
+            ChatMessage::user("Bye"),
+        ])
+        .unwrap();
+    assert!(
+        !multi.starts_with("<s><s>"),
+        "FALSIFIED: system-first multi-turn emitted a double-BOS: {multi:?}"
+    );
+    assert_eq!(
+        multi.matches("<s>").count(),
+        2,
+        "system + 2-turn conversation must have exactly two <s> (one leading, \
+         one after the assistant turn), got: {multi:?}"
+    );
+
+    // Regression guard: the existing no-system multi-turn behavior is preserved.
+    // [user, assistant, user] => two <s>.
+    let no_sys = template
+        .format_conversation(&[
+            ChatMessage::user("First"),
+            ChatMessage::assistant("Reply"),
+            ChatMessage::user("Second"),
+        ])
+        .unwrap();
+    assert_eq!(
+        no_sys.matches("<s>").count(),
+        2,
+        "no-system [user, assistant, user] must still produce two <s>, got: {no_sys:?}"
+    );
+    assert!(no_sys[1..].contains("<s>"), "second user turn must add a fresh <s>");
+
+    // Consecutive users (no assistant between) must NOT each get a fresh <s>.
+    let consec = template
+        .format_conversation(&[ChatMessage::user("A"), ChatMessage::user("B")])
+        .unwrap();
+    assert_eq!(
+        consec.matches("<s>").count(),
+        1,
+        "consecutive user turns (no assistant between) get a single <s>, got: {consec:?}"
+    );
+}
+
 #[test]
 fn test_phi_conversation_with_all_roles() {
     let template = PhiTemplate::new();

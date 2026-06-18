@@ -1,19 +1,77 @@
 // Batched streaming token generation with per-step lock release for concurrent scheduling.
 
-/// PMAT-764: per-slot token selection for batched decode — greedy argmax when
-/// `temperature == 0.0`, else temperature/top-k sampling (the same `sample_topk` the
-/// single-request decode uses). Defined in the cuda module so the batched loop can honor
-/// each request's temperature/top_k instead of the old forced on-GPU greedy argmax.
-fn select_batched_token(logits: &[f32], temperature: f32, top_k: usize) -> u32 {
+/// PMAT-764/792b: per-slot token selection for batched decode — greedy argmax when
+/// `temperature == 0.0`, else temperature/top-k/top-p sampling. Defined in the cuda module
+/// so the batched loop can honor each request's OWN sampling params instead of the old forced
+/// on-GPU greedy argmax.
+///
+/// PMAT-792b: the stochastic branch now applies the per-request `top_p` (nucleus) cutoff.
+/// Previously it called `sample_topk`, which silently dropped `top_p` — so a batched request
+/// asking for e.g. `top_p=0.1` got the full top_k distribution sampled. That is the same
+/// per-request-param-drop class as the PMAT-764 temperature bug (FALSIFY-CB-010), just the next
+/// sampling parameter, which the #2027 fix and contract both missed.
+///
+/// The pipeline (temperature → top-k truncate → top-p nucleus → softmax → sample) matches the
+/// canonical `sample_advanced` nucleus logic. With `top_p >= 1.0` the nucleus step is a no-op,
+/// so all-default and top_k-only requests behave exactly as the pre-fix `sample_topk` path.
+fn select_batched_token(logits: &[f32], temperature: f32, top_k: usize, top_p: f32) -> u32 {
+    use rand::Rng;
+
     if temperature == 0.0 {
-        logits
+        return logits
             .iter()
             .enumerate()
             .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map_or(0, |(idx, _)| idx as u32)
-    } else {
-        crate::gguf::OwnedQuantizedModel::sample_topk(logits, temperature, top_k)
+            .map_or(0, |(idx, _)| idx as u32);
     }
+
+    // 1. Temperature scaling.
+    let scaled: Vec<f32> = logits.iter().map(|&x| x / temperature).collect();
+
+    // 2. Top-k: sort descending, truncate (top_k == 0 keeps the full vocabulary).
+    let mut indexed: Vec<(usize, f32)> = scaled.iter().copied().enumerate().collect();
+    indexed.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+    if top_k > 0 {
+        indexed.truncate(top_k);
+    }
+
+    // 3. Top-p (nucleus, PMAT-792b): keep the smallest prefix whose cumulative probability
+    //    reaches top_p. Skipped when top_p is out of (0,1) — a no-op preserving the top_k path.
+    if top_p > 0.0 && top_p < 1.0 {
+        let max_val = indexed.first().map_or(0.0, |(_, v)| *v);
+        let exp_vals: Vec<f32> = indexed.iter().map(|(_, v)| (v - max_val).exp()).collect();
+        let total: f32 = exp_vals.iter().sum();
+        let mut cumulative = 0.0;
+        let mut cutoff = indexed.len();
+        for (i, &ev) in exp_vals.iter().enumerate() {
+            cumulative += ev / total;
+            if cumulative >= top_p {
+                cutoff = i + 1;
+                break;
+            }
+        }
+        indexed.truncate(cutoff);
+    }
+
+    // 4. Softmax over the surviving set.
+    let max_val = indexed.first().map_or(0.0, |(_, v)| *v);
+    let exp_sum: f32 = indexed.iter().map(|(_, v)| (v - max_val).exp()).sum();
+    let probs: Vec<(usize, f32)> = indexed
+        .iter()
+        .map(|(i, v)| (*i, (v - max_val).exp() / exp_sum))
+        .collect();
+
+    // 5. Inverse-CDF sample.
+    let mut rng = rand::rng();
+    let r: f32 = rng.random();
+    let mut cumulative = 0.0;
+    for &(idx, prob) in &probs {
+        cumulative += prob;
+        if cumulative >= r {
+            return idx as u32;
+        }
+    }
+    probs.last().map_or(0, |(idx, _)| *idx as u32)
 }
 
 /// PMAT-072: Decode state for step-wise batched generation.
@@ -397,11 +455,7 @@ impl OwnedQuantizedModelCuda {
                     let cfg = &state.configs[slot];
                     let base = slot * vocab;
                     let slot_logits = &logits[base..base + vocab];
-                    select_batched_token(
-                        slot_logits,
-                        cfg.temperature,
-                        cfg.top_k,
-                    )
+                    select_batched_token(slot_logits, cfg.temperature, cfg.top_k, cfg.top_p)
                 })
                 .collect()
         } else if use_graph {
@@ -1022,15 +1076,53 @@ mod pmat764_select_batched_token_tests {
     #[test]
     fn temperature_zero_is_greedy_argmax() {
         // temp==0 must pick the max-logit index (deterministic), NOT sample.
-        assert_eq!(select_batched_token(&[1.0, 5.0, 2.0], 0.0, 40), 1);
-        assert_eq!(select_batched_token(&[9.0, 5.0, 2.0], 0.0, 40), 0);
+        assert_eq!(select_batched_token(&[1.0, 5.0, 2.0], 0.0, 40, 1.0), 1);
+        assert_eq!(select_batched_token(&[9.0, 5.0, 2.0], 0.0, 40, 1.0), 0);
     }
 
     #[test]
     fn top_k_one_is_greedy_at_any_temperature() {
         // top_k==1 keeps only the single best token → deterministic argmax even when
         // temperature > 0 (the sampling branch with a 1-token nucleus).
-        assert_eq!(select_batched_token(&[1.0, 5.0, 2.0], 1.5, 1), 1);
-        assert_eq!(select_batched_token(&[9.0, 5.0, 2.0], 0.9, 1), 0);
+        assert_eq!(select_batched_token(&[1.0, 5.0, 2.0], 1.5, 1, 1.0), 1);
+        assert_eq!(select_batched_token(&[9.0, 5.0, 2.0], 0.9, 1, 1.0), 0);
+    }
+
+    #[test]
+    fn temperature_zero_is_greedy_at_any_top_p() {
+        // temp==0 must stay deterministic argmax regardless of top_p (greedy short-circuit).
+        assert_eq!(select_batched_token(&[1.0, 5.0, 2.0], 0.0, 40, 0.1), 1);
+        assert_eq!(select_batched_token(&[9.0, 5.0, 2.0], 0.0, 40, 0.9), 0);
+    }
+
+    #[test]
+    fn top_p_restricts_nucleus_to_dominant_token() {
+        // PMAT-792b FALSIFIER (the load-bearing test). Logits [3.0, 0, 0, 0] at temp 1.0
+        // softmax to P(token0) ≈ 0.870, P(each other) ≈ 0.043. With top_p = 0.85 the nucleus
+        // (smallest prefix with cumulative prob >= top_p) is exactly {token0} (0.870 >= 0.85),
+        // so EVERY draw must return index 0. top_k = 4 keeps the whole vocabulary, so the only
+        // thing that can restrict the sample is the per-request top_p.
+        //
+        // BEFORE the fix, select_batched_token called sample_topk, which silently dropped top_p:
+        // the full 4-way distribution stayed samplable, P(non-token0) ≈ 0.13 per draw, and over
+        // 512 draws a non-zero token is effectively certain (0.87^512 ≈ 0) → this loop fails.
+        // AFTER the fix, the nucleus collapses to {token0} and every draw is deterministic.
+        let logits = [3.0_f32, 0.0, 0.0, 0.0];
+        for _ in 0..512 {
+            let tok = select_batched_token(&logits, 1.0, 4, 0.85);
+            assert_eq!(
+                tok, 0,
+                "top_p=0.85 must collapse the nucleus to the dominant token 0, got {tok} \
+                 (top_p silently dropped → low-prob token leaked through)"
+            );
+        }
+    }
+
+    #[test]
+    fn top_p_one_is_a_noop_nucleus() {
+        // top_p==1.0 (and >1.0) skips the nucleus cutoff → identical to the pure top_k path.
+        // top_k==1 always returns the argmax, verifying the no-regression equivalence.
+        assert_eq!(select_batched_token(&[1.0, 5.0, 2.0], 1.5, 1, 1.0), 1);
+        assert_eq!(select_batched_token(&[1.0, 5.0, 2.0], 1.5, 1, 2.0), 1);
     }
 }

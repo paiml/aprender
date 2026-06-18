@@ -1,0 +1,44 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-18"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "crates/apr-cli/src/commands/prune.rs (apply_pruning, effective_prune_fraction)"
+    - "crates/apr-cli/src/model_ops_commands.rs (Prune clap args: --target-ratio default 0.5, --sparsity default 0.0)"
+  description: |
+    Correctness contract for `apr prune` magnitude-class methods. The fraction of weights
+    actually zeroed MUST equal the user's requested sparsity, and the output metadata MUST
+    not misreport it. Pillar-adjacent (model-ops CLI) provable correctness.
+
+kind: KernelContract
+name: prune-sparsity-correctness
+version: "1.0.0"
+scope: "crates/apr-cli/src/commands/prune.rs"
+
+description: |
+  `apr prune` exposes two overlapping knobs for the prune fraction: `--target-ratio`
+  (default 0.5) and `--sparsity` (default 0.0). PMAT-830 fixed apply_pruning, which fed
+  `sparsity.max(target_ratio)` to prune_magnitude: any explicit `--sparsity` BELOW the
+  0.5 `--target-ratio` default was silently raised to 0.5. So `apr prune --method
+  magnitude --sparsity 0.3` zeroed 50% of weights, not 30%, exited success, and stamped
+  `pruning_sparsity = 0.3` into the output metadata — an over-pruned model whose metadata
+  contradicts what was applied. Fix: `effective_prune_fraction` honors an explicit
+  `--sparsity` (> 0) and falls back to `--target-ratio` otherwise (no silent raise).
+
+equations:
+  C-PRUNE-001:
+    description: "Magnitude pruning zeros the user-requested fraction when --sparsity is given"
+    formula: "zeroed_count ≈ round(num_elems × sparsity) when sparsity > 0; e.g. 64 distinct magnitudes, sparsity 0.25 → 16 zeros (NOT 32)"
+    note: "prune_magnitude zeros below the value at cutoff_idx = floor(len × fraction); the fraction must be the user's sparsity, not max(sparsity, target_ratio)."
+
+  C-PRUNE-002:
+    description: "An explicit --sparsity is never silently raised toward the --target-ratio default"
+    formula: "effective_prune_fraction(target_ratio, sparsity) = sparsity if sparsity > 0 else target_ratio; never max(·)"
+    note: "Regression guard against the sparsity.max(target_ratio) override. Keeps the applied fraction consistent with the stamped pruning_sparsity metadata."
+
+falsification:
+  - id: FALSIFY-PRUNE-SPARSITY-001
+    description: "--sparsity below the target-ratio default is honored, not raised. Discharges C-PRUNE-001/002."
+    test: "test_magnitude_sparsity_below_target_ratio_not_overridden — 64 distinct magnitudes, --sparsity 0.25 (target_ratio default 0.5): RED pre-fix 32/64 zeroed (50%), GREEN post-fix 16/64 (25%)."
+    evidence: "cargo test -p apr-cli --lib test_magnitude_sparsity_below_target_ratio_not_overridden"

@@ -25,6 +25,7 @@ fn make_test_config() -> GGUFConfig {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     }
@@ -450,6 +451,102 @@ fn test_generate_streaming_empty_prompt_error() {
 
     let result = model.generate_with_cache_streaming(&[], &gen_config, |_| true);
     assert!(result.is_err(), "Empty prompt should return error");
+}
+
+// =============================================================================
+// PMAT-819: OpenAI `seed` determinism falsifiers
+//
+// The dense quantized decode loops are the production /v1/chat/completions path
+// (try_quantized_backend -> generate_with_cache). Before this fix `sample_topk`
+// drew from `rand::rng()`, silently dropping the request `seed`: identical
+// (prompt, seed, temperature, top_k) produced DIFFERENT tokens across runs —
+// breaking the OpenAI determinism contract. See
+// contracts/openai-serve-sampling-determinism-v1.yaml.
+// =============================================================================
+
+/// F-SEED-DETERMINISM-001: same seed => same sampled token.
+///
+/// RED on the bug: `rand::rng()` would make two independent draws over a
+/// non-degenerate distribution diverge with overwhelming probability.
+#[test]
+fn test_sample_topk_seeded_same_seed_is_deterministic() {
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+    // A flat-ish, non-degenerate distribution so sampling has many possible
+    // outcomes (a peaked distribution could mask non-determinism).
+    let logits: Vec<f32> = (0..64).map(|i| (i as f32) * 0.01).collect();
+
+    let mut rng_a = StdRng::seed_from_u64(12345);
+    let mut rng_b = StdRng::seed_from_u64(12345);
+    let a = OwnedQuantizedModel::sample_topk_seeded(&logits, 1.5, 50, &mut rng_a);
+    let b = OwnedQuantizedModel::sample_topk_seeded(&logits, 1.5, 50, &mut rng_b);
+    assert_eq!(
+        a, b,
+        "same seed must produce the same token (OpenAI seed contract)"
+    );
+
+    // And the whole stream is reproducible, not just the first draw.
+    let seq_a: Vec<u32> = (0..16)
+        .map(|_| OwnedQuantizedModel::sample_topk_seeded(&logits, 1.5, 50, &mut rng_a))
+        .collect();
+    let seq_b: Vec<u32> = (0..16)
+        .map(|_| OwnedQuantizedModel::sample_topk_seeded(&logits, 1.5, 50, &mut rng_b))
+        .collect();
+    assert_eq!(seq_a, seq_b, "the full seeded stream must be reproducible");
+}
+
+/// F-SEED-DETERMINISM-002: different seeds can diverge (the sampler is NOT
+/// secretly greedy — it actually uses the RNG).
+#[test]
+fn test_sample_topk_seeded_different_seeds_can_diverge() {
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+    let logits: Vec<f32> = (0..64).map(|i| (i as f32) * 0.01).collect();
+
+    // Over a 16-token stream, two distinct seeds must differ at least once;
+    // identical streams would prove the seed is ignored.
+    let stream = |seed: u64| -> Vec<u32> {
+        let mut rng = StdRng::seed_from_u64(seed);
+        (0..16)
+            .map(|_| OwnedQuantizedModel::sample_topk_seeded(&logits, 1.5, 50, &mut rng))
+            .collect()
+    };
+    assert_ne!(
+        stream(42),
+        stream(43),
+        "different seeds must be able to produce different tokens"
+    );
+}
+
+/// F-SEED-DETERMINISM-003 (end-to-end): generate_with_cache (the HTTP dense
+/// path) is reproducible across runs for the same prompt+seed+temperature.
+#[test]
+fn test_generate_with_cache_is_seed_deterministic() {
+    let cfg = make_test_config();
+    let model = create_test_model_with_config(&cfg);
+    let prompt = vec![1u32, 2, 3];
+
+    // Non-greedy config (temperature>0, top_k>1) so the sampler RNG is exercised.
+    let gen_config = QuantizedGenerateConfig {
+        max_tokens: 12,
+        temperature: 1.2,
+        top_k: 40,
+        top_p: 1.0,
+        seed: 777,
+        stop_tokens: Vec::new(),
+        ..Default::default()
+    };
+
+    let run1 = model
+        .generate_with_cache(&prompt, &gen_config)
+        .expect("gen 1");
+    let run2 = model
+        .generate_with_cache(&prompt, &gen_config)
+        .expect("gen 2");
+    assert_eq!(
+        run1, run2,
+        "same prompt+seed+params must yield identical tokens across runs"
+    );
 }
 
 include!("generation_tests_generate_streaming.rs");

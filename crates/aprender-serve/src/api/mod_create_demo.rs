@@ -60,7 +60,7 @@ pub(crate) fn create_demo_apr_model(_input_dim: usize) -> Result<AprModel, Reali
 // ============================================================================
 
 /// OpenAI-compatible chat completion request
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ChatCompletionRequest {
     /// Model ID to use
     pub model: String,
@@ -103,6 +103,17 @@ pub struct ChatCompletionRequest {
     /// User identifier
     #[serde(default)]
     pub user: Option<String>,
+    /// PMAT-801: OpenAI tool/function definitions the model may call.
+    /// When `Some`, the non-streaming chat handler runs the generated text
+    /// through `grammar::ToolCallParser` and populates `tool_calls` on the
+    /// response. When `None`, the response is byte-identical to pre-PMAT-801
+    /// behavior (the whole tool-calling path is gated on `tools.is_some()`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<OpenAiTool>>,
+    /// PMAT-801: OpenAI `tool_choice` ("auto" | "none" | "required" |
+    /// `{"type":"function","function":{"name":"..."}}`). `"none"` skips parsing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_choice: Option<OpenAiToolChoice>,
 }
 
 fn default_n() -> usize {
@@ -110,15 +121,195 @@ fn default_n() -> usize {
 }
 
 /// Chat message
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ChatMessage {
-    /// Role: "system", "user", "assistant"
+    /// Role: "system", "user", "assistant", "tool"
     pub role: String,
-    /// Message content
+    /// Message content.
+    ///
+    /// PMAT-801: kept REQUIRED on deserialize (a request message missing
+    /// `content` is rejected 422, preserving the pre-PMAT-801 contract). The
+    /// response-side assistant tool-call message sets `content: String::new()`
+    /// directly in Rust, so it does not need a serde default. (Optional/null
+    /// content for assistant tool-call history on the REQUEST side is a
+    /// follow-up — it would require relaxing this field to Option.)
     pub content: String,
     /// Optional name
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// PMAT-801: tool calls emitted by the assistant (response side) — and
+    /// echoed back by clients on a follow-up turn (request round-trip).
+    /// Serialized only when present so non-tool messages are byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ResponseToolCall>>,
+    /// PMAT-801: when this message carries a tool RESULT (role "tool"), the id
+    /// of the `tool_call` it answers. Lets tool results round-trip through the API.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+}
+
+// ============================================================================
+// PMAT-801: OpenAI tool-calling wire types (request in, response out)
+// ============================================================================
+
+/// OpenAI request tool entry: `{"type":"function","function":{...}}`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenAiTool {
+    /// Always "function" in the OpenAI spec.
+    #[serde(rename = "type", default = "default_function_type")]
+    pub tool_type: String,
+    /// The function definition.
+    pub function: OpenAiFunctionDef,
+}
+
+/// OpenAI function definition inside a tool entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenAiFunctionDef {
+    /// Function name (valid identifier).
+    pub name: String,
+    /// Human-readable description.
+    #[serde(default)]
+    pub description: String,
+    /// JSON Schema for the parameters (opaque — we only need the names for the
+    /// `ToolCallParser`; full schema-constrained decoding is a follow-up).
+    #[serde(default)]
+    pub parameters: Option<serde_json::Value>,
+}
+
+fn default_function_type() -> String {
+    "function".to_string()
+}
+
+/// OpenAI `tool_choice`: a string mode or a specific-function object.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum OpenAiToolChoice {
+    /// "auto" | "none" | "required"
+    Mode(String),
+    /// `{"type":"function","function":{"name":"..."}}`
+    Specific {
+        /// Always "function".
+        #[serde(rename = "type")]
+        choice_type: String,
+        /// The chosen function (only `name` is used).
+        function: OpenAiToolChoiceFunction,
+    },
+}
+
+/// The `function` object inside a specific `tool_choice`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenAiToolChoiceFunction {
+    /// Name of the function the model must call.
+    pub name: String,
+}
+
+impl OpenAiToolChoice {
+    /// Map to the `grammar::ToolChoice` library type.
+    #[must_use]
+    pub fn to_grammar(&self) -> crate::grammar::ToolChoice {
+        use crate::grammar::ToolChoice;
+        match self {
+            Self::Mode(m) => match m.as_str() {
+                "none" => ToolChoice::None,
+                "required" => ToolChoice::Required,
+                _ => ToolChoice::Auto,
+            },
+            Self::Specific { function, .. } => ToolChoice::Specific(function.name.clone()),
+        }
+    }
+}
+
+/// Tool call as it appears in the OpenAI response message:
+/// `{"id":"call_0","type":"function","function":{"name":"...","arguments":"<json-string>"}}`.
+///
+/// `arguments` is a JSON STRING (not a nested object) per the OpenAI spec — the
+/// `grammar::ToolCall` library already stores arguments as a string, so this
+/// passes through unchanged.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResponseToolCall {
+    /// Unique tool-call id, e.g. "call_0".
+    pub id: String,
+    /// Always "function".
+    #[serde(rename = "type")]
+    pub call_type: String,
+    /// The called function (name + arguments-as-string).
+    pub function: ResponseFunctionCall,
+}
+
+/// The `function` payload inside a response tool call.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResponseFunctionCall {
+    /// Function name.
+    pub name: String,
+    /// Arguments as a JSON-encoded STRING (OpenAI wire format).
+    pub arguments: String,
+}
+
+impl From<crate::grammar::ToolCall> for ResponseToolCall {
+    fn from(tc: crate::grammar::ToolCall) -> Self {
+        Self {
+            id: tc.id,
+            call_type: "function".to_string(),
+            function: ResponseFunctionCall {
+                name: tc.name,
+                arguments: tc.arguments,
+            },
+        }
+    }
+}
+
+impl OpenAiTool {
+    /// Map this OpenAI tool to the `grammar::ToolDefinition` library type.
+    ///
+    /// The parser only needs the tool NAME to recognise a tool call in the
+    /// generated text; parameter schema is preserved opaquely but not used for
+    /// constrained decoding (a follow-up). We extract top-level property names
+    /// from the JSON Schema when present so `required_params` is non-empty.
+    #[must_use]
+    pub fn to_grammar(&self) -> crate::grammar::ToolDefinition {
+        crate::grammar::ToolDefinition {
+            name: self.function.name.clone(),
+            description: self.function.description.clone(),
+            parameters: extract_tool_parameters(self.function.parameters.as_ref()),
+        }
+    }
+}
+
+/// Extract `ToolParameter`s from an OpenAI JSON-Schema `parameters` object.
+/// Best-effort: maps top-level `properties` keys to string params and marks
+/// those listed in `required` as required. Returns empty on absent/invalid schema.
+fn extract_tool_parameters(
+    schema: Option<&serde_json::Value>,
+) -> Vec<crate::grammar::ToolParameter> {
+    use crate::grammar::{ToolParameter, ToolParameterType};
+    let Some(schema) = schema else {
+        return Vec::new();
+    };
+    let Some(props) = schema.get("properties").and_then(|p| p.as_object()) else {
+        return Vec::new();
+    };
+    let required: std::collections::HashSet<&str> = schema
+        .get("required")
+        .and_then(|r| r.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+        .unwrap_or_default();
+    props
+        .iter()
+        .map(|(name, spec)| {
+            let description = spec
+                .get("description")
+                .and_then(|d| d.as_str())
+                .unwrap_or_default()
+                .to_string();
+            ToolParameter {
+                name: name.clone(),
+                description,
+                param_type: ToolParameterType::String,
+                required: required.contains(name.as_str()),
+                default: None,
+            }
+        })
+        .collect()
 }
 
 /// OpenAI-compatible chat completion response

@@ -131,6 +131,8 @@ fn test_chat_completion_request_minimal() {
             role: "user".to_string(),
             content: "Hello".to_string(),
             name: None,
+        
+            ..Default::default()
         }],
         max_tokens: None,
         temperature: None,
@@ -143,6 +145,8 @@ fn test_chat_completion_request_minimal() {
         stream: false,
         stop: None,
         user: None,
+    
+        ..Default::default()
     };
 
     let json = serde_json::to_string(&request).expect("serialize");
@@ -160,11 +164,15 @@ fn test_chat_completion_request_full() {
                 role: "system".to_string(),
                 content: "You are a helpful assistant.".to_string(),
                 name: None,
+            
+                ..Default::default()
             },
             ChatMessage {
                 role: "user".to_string(),
                 content: "What is 2+2?".to_string(),
                 name: Some("Alice".to_string()),
+            
+                ..Default::default()
             },
         ],
         max_tokens: Some(256),
@@ -178,6 +186,8 @@ fn test_chat_completion_request_full() {
         stream: true,
         stop: Some(vec!["stop".to_string()]),
         user: Some("test-user".to_string()),
+    
+        ..Default::default()
     };
 
     let json = serde_json::to_string(&request).expect("serialize");
@@ -212,6 +222,8 @@ fn test_chat_message_roles() {
             role: (*role).to_string(),
             content: "test".to_string(),
             name: None,
+        
+            ..Default::default()
         };
         let json = serde_json::to_string(&msg).expect("serialize");
         assert!(json.contains(role));
@@ -224,6 +236,8 @@ fn test_chat_message_with_name() {
         role: "function".to_string(),
         content: "result".to_string(),
         name: Some("get_weather".to_string()),
+    
+        ..Default::default()
     };
 
     let json = serde_json::to_string(&msg).expect("serialize");
@@ -236,6 +250,8 @@ fn test_chat_message_empty_content() {
         role: "user".to_string(),
         content: String::new(),
         name: None,
+    
+        ..Default::default()
     };
 
     let json = serde_json::to_string(&msg).expect("serialize");
@@ -260,6 +276,8 @@ fn test_chat_completion_response_structure() {
                 role: "assistant".to_string(),
                 content: "Hello!".to_string(),
                 name: None,
+            
+                ..Default::default()
             },
             finish_reason: "stop".to_string(),
         }],
@@ -406,6 +424,8 @@ fn test_chat_choice_structure() {
             role: "assistant".to_string(),
             content: "Test response".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         finish_reason: "stop".to_string(),
     };
@@ -424,6 +444,8 @@ fn test_chat_choice_length_finish_reason() {
             role: "assistant".to_string(),
             content: "...".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         finish_reason: "length".to_string(),
     };

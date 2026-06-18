@@ -61,6 +61,11 @@ pub use batch::{BufferId, GpuCommandBatch, PipelineCache};
 #[cfg(any(feature = "gpu", feature = "gpu-wasm"))]
 pub use device::GpuDevice;
 
+// PMAT-778: process-global shared wgpu instance, reused by every crate-internal
+// adapter/device enumeration so the broken freedreno ICD (GB10) is touched once.
+#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+pub(crate) use device::shared_instance;
+
 /// Re-export wgpu types for downstream crates that need to create persistent
 /// GPU buffers (KAIZEN-015: GPU-resident weights).
 #[cfg(any(feature = "gpu", feature = "gpu-wasm"))]

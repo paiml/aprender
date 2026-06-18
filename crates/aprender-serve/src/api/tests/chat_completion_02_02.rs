@@ -12,6 +12,8 @@ fn test_chat_completion_response_serialize_cov() {
                 role: "assistant".to_string(),
                 content: "Hello!".to_string(),
                 name: None,
+            
+                ..Default::default()
             },
             finish_reason: "stop".to_string(),
         }],

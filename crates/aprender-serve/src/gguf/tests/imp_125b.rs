@@ -1,6 +1,7 @@
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_125b_adaptive_matches_standard() {
     // IMP-125b: Adaptive generate should match standard generate
     let config = GGUFConfig {
@@ -17,6 +18,7 @@ fn test_imp_125b_adaptive_matches_standard() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -51,6 +53,7 @@ fn test_imp_125b_adaptive_matches_standard() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_125c_tracks_metrics_during_generation() {
     // IMP-125c: Should track metrics during full generation
     let config = GGUFConfig {
@@ -67,6 +70,7 @@ fn test_imp_125c_tracks_metrics_during_generation() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -101,6 +105,7 @@ fn test_imp_125c_tracks_metrics_during_generation() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_125d_long_generation_uses_gpu() {
     // IMP-125d: Long generation should eventually use GPU
     let config = GGUFConfig {
@@ -117,6 +122,7 @@ fn test_imp_125d_long_generation_uses_gpu() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -158,6 +164,7 @@ fn test_imp_125d_long_generation_uses_gpu() {
 /// PARITY-002a: forward_batch_with_cache should exist and process multiple tokens
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity002a_forward_batch_with_cache_exists() {
     let config = GGUFConfig {
         architecture: "phi2".to_string(),
@@ -173,6 +180,7 @@ fn test_parity002a_forward_batch_with_cache_exists() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -201,6 +209,7 @@ fn test_parity002a_forward_batch_with_cache_exists() {
 /// PARITY-002b: Batched prefill should process all tokens and populate cache
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity002b_batched_prefill_populates_cache() {
     let config = GGUFConfig {
         architecture: "phi2".to_string(),
@@ -216,6 +225,7 @@ fn test_parity002b_batched_prefill_populates_cache() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -245,6 +255,7 @@ fn test_parity002b_batched_prefill_populates_cache() {
 /// This test verifies CPU path is used (correct behavior for single-request inference).
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity002c_batched_prefill_triggers_gpu() {
     let config = GGUFConfig {
         architecture: "phi2".to_string(),
@@ -260,6 +271,7 @@ fn test_parity002c_batched_prefill_triggers_gpu() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -291,6 +303,7 @@ fn test_parity002c_batched_prefill_triggers_gpu() {
 /// PARITY-002d: Batched prefill should produce same result as sequential
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity002d_batched_matches_sequential() {
     let config = GGUFConfig {
         architecture: "phi2".to_string(),
@@ -306,6 +319,7 @@ fn test_parity002d_batched_matches_sequential() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -356,6 +370,7 @@ fn test_parity002d_batched_matches_sequential() {
 /// PARITY-002e: generate_with_batched_prefill should use batched prefill then sequential gen
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity002e_generate_with_batched_prefill() {
     let config = GGUFConfig {
         architecture: "phi2".to_string(),
@@ -371,6 +386,7 @@ fn test_parity002e_generate_with_batched_prefill() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };

@@ -1,21 +1,34 @@
 contract: apr-serve-openai-compat
 metadata:
   kind: pattern
-  version: "1.8.0"
+  version: "1.12.0"
   description: >
-    OpenAI-compatible serve layer (/v1/chat/completions, /v1/completions) fidelity
-    invariants. Established by an adversarial audit (2026-06-14) that found 12 confirmed
-    real bugs — see evidence/serve-api-openai-fidelity-audit-2026-06-14/findings.md.
-    This contract is the home for those obligations; they discharge as the follow-up
-    fixes land. PMAT-753 (this revision) discharges the SSE-framing obligation: the
-    streaming handler must pass a BARE JSON payload (or "[DONE]") to axum's
-    Event::data(), NOT a string already prefixed with "data: " — axum's Sse adds the
-    `data: ` field + `\n\n` terminator itself, so a manual prefix produced a DOUBLE
-    `data: data: {json}` on the wire and broke JSON.parse for every spec-compliant SSE
-    client. The correct form is used by openai_handlers.rs.
+    OpenAI-compatible serve layer (/v1/chat/completions, /v1/completions,
+    /v1/embeddings) fidelity invariants. Established by an adversarial audit
+    (2026-06-14) that found 12 confirmed real bugs — see
+    evidence/serve-api-openai-fidelity-audit-2026-06-14/findings.md. This contract
+    is the home for those obligations; they discharge as the follow-up fixes land.
+    PMAT-753 discharges the SSE-framing obligation: the streaming handler must pass
+    a BARE JSON payload (or "[DONE]") to axum's Event::data(), NOT a string already
+    prefixed with "data: " — axum's Sse adds the `data: ` field + `\n\n` terminator
+    itself, so a manual prefix produced a DOUBLE `data: data: {json}` on the wire and
+    broke JSON.parse for every spec-compliant SSE client. The correct form is used by
+    openai_handlers.rs. PMAT-803 (this revision, 1.8.0) discharges the
+    EMBEDDINGS-MODEL-BACKED obligation: /v1/embeddings must return REAL model-backed
+    embeddings (mean-pooled final-layer hidden state, dim == model hidden_size, then
+    L2-normalize), NOT a silent positional token-ID hash that has no semantic
+    structure. PMAT-802 × PMAT-803 (this revision, 1.9.0) adds the
+    EMBEDDINGS-BATCH-INPUT obligation: /v1/embeddings accepts `input` as a single
+    string OR an array of strings (OpenAI contract) and returns one embedding per
+    input in request order (data[i].index == i) — AND each batch element is embedded
+    via the SAME real model-backed path as the single-input form (forward_hidden →
+    mean-pool → hidden_size dim → L2-norm), never the old token-ID hash. So a batch of
+    N inputs yields N real model-backed embeddings.
   references:
   - "crates/aprender-serve/src/api/chat_completions_stream.rs (fixed)"
   - "crates/aprender-serve/src/api/openai_handlers.rs (correct SSE-framing reference)"
+  - "crates/aprender-serve/src/api/realize_handlers_embed_completion.rs (PMAT-803: real embeddings)"
+  - "crates/aprender-serve/src/layers/model_model.rs (PMAT-803: Model::forward_hidden — pre-lm_head hidden state)"
   - "evidence/serve-api-openai-fidelity-audit-2026-06-14/findings.md (full 12-bug audit)"
 version: 1
 status: enforced
@@ -95,6 +108,68 @@ proof_obligations:
       field equals QuantizedGenerateConfig::default for that field (the no-regression
       invariant). This is the HANDLER→CONFIG layer; it composes with the sampler-layer fixes
       (#2081 top_p, #2099 repeat_penalty) that APPLY the params during sampling.
+  - type: invariant
+    property: >
+      TOOL-CALLING (PMAT-801, DISCHARGED for NON-STREAMING): a /v1/chat/completions
+      request MAY carry OpenAI `tools` (a list of {type:"function", function:{name,
+      description, parameters}}) and `tool_choice` ("auto" | "none" | "required" |
+      {type:"function", function:{name}}). When `tools.is_some()`, the non-streaming
+      handler runs the generated text through grammar::ToolCallParser (the in-tree
+      tool-calling library) and, if at least one call is found, populates the response
+      message's `tool_calls` (each {id, type:"function", function:{name, arguments}})
+      and sets finish_reason:"tool_calls". The `arguments` field is a JSON STRING (not a
+      nested object), per the OpenAI wire format. `tool_choice:"none"` skips parsing.
+      build_chat_response threads tools+tool_choice through all 7 non-streaming chat
+      backends (gpu/cached/cuda/apr_q4k/quantized/qwen3_moe/registry).
+      NO-REGRESSION: the entire path is gated on `tools.is_some()` — a request WITHOUT
+      `tools` produces a byte-identical response (a plain assistant text turn + the
+      original stop/length finish_reason), and the new ChatMessage tool fields are
+      omitted from JSON (skip_serializing_if=None).
+      STILL OPEN (follow-ups): streaming tool-call deltas; schema-constrained decoding
+      via generate_tool_grammar; optional/null assistant `content` for tool-call history
+      on the REQUEST side (request `content` stays REQUIRED to preserve the 422-on-missing
+      contract); `tool_choice:"required"` is mapped but not yet enforced to FORCE a call.
+  - type: invariant
+    property: >
+      STREAM-TEMPERATURE-ZERO (DISCHARGED — PMAT-790): the STREAMING /v1/chat/completions
+      handler must honor `temperature == 0` as a deterministic (greedy) request, exactly like
+      every NON-STREAMING backend (which forces top_k == 1 via resolve_chat_top_k). Previously
+      openai_chat_completions_stream_handler built a GenerationConfig with the raw 0.0 and ran
+      model.generate -> sample_token -> apply_temperature(0.0), which rejects a non-positive
+      temperature ("Temperature must be a positive finite number") — the handler mapped that
+      Err to HTTP 500, so EVERY streaming chat completion with `temperature: 0` was broken. The
+      config is now built by resolve_stream_generation_config(temperature, top_p, max_tokens),
+      which maps temperature 0 to SamplingStrategy::Greedy with a no-op temperature of 1.0
+      (and ignores top_p when greedy); positive temperatures are unchanged (greedy default, or
+      top-p when set).
+  - type: invariant
+    property: >
+      EMBEDDINGS-MODEL-BACKED (PMAT-803, DISCHARGED): /v1/embeddings (and the native
+      /realize/embed) returns REAL model-backed embeddings, NOT a silent positional
+      token-ID hash. The handler (realize_embed_handler) tokenizes, runs
+      Model::forward_hidden() to get the final-layer hidden state (the residual-stream
+      output that lm_head consumes — pre-projection), MEAN-POOLS over the non-special
+      tokens, returns a vector whose dimension == the model's hidden_size (NOT a
+      hardcoded 384), and L2-normalizes it. Consequence: two inputs whose tokens are in
+      the same semantic cluster but have DISJOINT token IDs have higher cosine
+      similarity than two inputs from different clusters — a property the prior hash
+      (embedding[token_id % 384] += 1/(1+pos)) provably could not satisfy (disjoint IDs
+      land in disjoint buckets → cosine 0.0 for both pairs, so it cannot rank them). The
+      endpoint must never silently return a non-model-backed vector.
+  - type: invariant
+    property: >
+      EMBEDDINGS-BATCH-INPUT (PMAT-802 × PMAT-803, DISCHARGED): /v1/embeddings accepts
+      `input` as a single JSON string OR a JSON array of strings (OpenAI contract,
+      EmbeddingInput::{Single,Batch}, untagged) — a batch request is no longer rejected
+      at deserialization. The handler (realize_embed_handler) loops over every input,
+      emitting one EmbeddingData per input with index == i in request order, and
+      accumulates prompt/total token usage across the batch. CRUCIALLY each input is
+      embedded via the SAME real model-backed path as the single-input form
+      (forward_hidden → mean-pool over non-special tokens → vector of dim ==
+      model.hidden_dim → L2-normalize) — NOT the prior positional token-ID hash. So a
+      batch of N inputs returns N REAL model-backed embeddings (each per-input vector
+      equals the single-input embedding for that text), composing EMBEDDINGS-MODEL-BACKED
+      with batch input.
 
 falsification_tests:
   - id: FALSIFY-STOP-TRUNCATE-754
@@ -139,3 +214,27 @@ falsification_tests:
     test_harness: '! grep -nE "data\(format!\\(\"data: " crates/aprender-serve/src/api/chat_completions_stream.rs'
     expected_output: "no match (exit 1 from grep = invariant holds)"
     if_fails: 'The streaming handler re-added a manual "data: " prefix → axum double-prefixes the SSE wire (data: data: {json}) and every spec-compliant streaming client fails to parse chunks. NOTE: shape gate (greps source); the behavioral wire-format is verified by matching openai_handlers.rs (axum Event is opaque + the test app loads no model, so no in-CI wire assertion).'
+  - id: FALSIFY-TOOL-CALL-801
+    name: pmat801_tool_calling_tests
+    prediction: 'With a request carrying OpenAI `tools`, build_tool_calling_message runs the generated text through grammar::ToolCallParser: text containing {"name":"get_weather","arguments":{"city":"NYC"}} yields a message with tool_calls populated (id, type:"function", function:{name:"get_weather", arguments:<JSON STRING>}) and finish_reason:"tool_calls"; the arguments field serializes as a JSON string, NOT a nested object; text with no tool call leaves the message a plain assistant turn with tool_calls=None and finish_reason unchanged (regression guard); tool_choice:"none" skips parsing; OpenAI tools+tool_choice deserialize from the request JSON and map to grammar ToolDefinition/ToolChoice; a tool-result message (role "tool" + tool_call_id) round-trips; a plain assistant message omits the tool fields from JSON.'
+    test_harness: 'cargo test -p aprender-serve --lib pmat801_tool_calling_tests'
+    expected_output: "test result: ok"
+    if_fails: 'The /v1/chat/completions handler ignores request.tools (the pre-PMAT-801 behavior — the in-tree tool-calling library had ZERO call sites outside grammar/), so a tool call in the model output is never surfaced as response tool_calls / finish_reason:"tool_calls"; OR a no-tools request is no longer byte-identical; OR arguments serializes as a nested object instead of a JSON string.'
+  - id: FALSIFY-STREAM-TEMP-ZERO-790
+    name: pmat790_stream_temperature_zero_tests
+    prediction: 'resolve_stream_generation_config(temperature, top_p, max_tokens) maps temperature 0.0 to SamplingStrategy::Greedy with a positive (no-op 1.0) temperature, so sample_token() runs WITHOUT error and selects the argmax — directly exercising the model.generate -> sample_token -> apply_temperature chain the streaming handler runs. temperature 0 ignores top_p (stays Greedy). Positive temperatures are unchanged: greedy by default, top-p when set, and remain runnable.'
+    test_harness: 'cargo test -p aprender-serve --lib pmat790_stream_temperature_zero_tests'
+    expected_output: "test result: ok"
+    if_fails: 'The streaming /v1/chat/completions handler passes temperature 0.0 straight into GenerationConfig, so apply_temperature(0.0) returns Err and the handler answers HTTP 500 for every streaming chat completion with temperature 0 (the canonical OpenAI deterministic request) — the pre-PMAT-790 behavior.'
+  - id: FALSIFY-EMBEDDINGS-MODEL-BACKED-803
+    name: embeddings_pmat803
+    prediction: '/v1/embeddings returns real model-backed embeddings: (a) semantic_similarity_property — two same-cluster inputs with DISJOINT token IDs have higher cosine than two cross-cluster inputs (the positional hash returns cosine 0.0 for both disjoint-ID pairs, so it cannot satisfy this); (b) dimension_equals_hidden_size — embedding length == model hidden_dim, NOT the hardcoded 384; (c) deterministic — identical input yields identical embedding; (d) l2_normalized — unit norm; (e) no_silent_hash — realize_embed_handler returns a hidden_size-dim, finite, non-degenerate vector, not the old 384-dim token hash.'
+    test_harness: 'cargo test -p aprender-serve --lib embeddings_pmat803'
+    expected_output: "test result: ok"
+    if_fails: 'The /v1/embeddings endpoint returns the positional token-ID hash (embedding[token_id % 384] += 1/(1+pos)) instead of the model hidden state — a silent-garbage correctness bug: a client computing semantic similarity gets meaningless results (no semantic structure) and cannot tell, and the dimension is wrong (always 384 regardless of model hidden_size).'
+  - id: FALSIFY-EMBEDDINGS-BATCH-AND-REAL-803
+    name: batch_inputs_each_real_model_backed
+    prediction: 'A batch /v1/embeddings request of N inputs (EmbeddingInput::Batch) returns N embeddings in request order: data.len()==N, data[i].index==i, each vector has dim == model.hidden_dim (NOT the old 384), is L2-normalized (unit norm), and EQUALS the single-input model-backed embedding for that same text (forward_hidden → mean-pool → L2-norm). usage.prompt_tokens == usage.total_tokens == the sum of per-input token counts. This falsifies "the batch loop still uses the token-hash": the hash produced 384-dim vectors that cannot match the hidden-state path. RED on pre-stack #2087 (384-dim hash inside the loop), GREEN on the composition.'
+    test_harness: 'cargo test -p aprender-serve --lib batch_inputs_each_real_model_backed'
+    expected_output: "test result: ok"
+    if_fails: 'The batch embedding loop emits the positional token-ID hash (384-dim, no semantic structure) per input instead of the real model-backed hidden state, OR drops/reorders indices, OR fails to sum usage — i.e. PMAT-802 batch input was wired but PMAT-803 real embeddings were not composed into the per-input path.'
