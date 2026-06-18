@@ -440,4 +440,106 @@ fn test_tiled_single_head_attention_matches_standard() {
     }
 }
 
+// ============================================================================
+// PMAT-783: dequantize_weight must NOT silently reinterpret quantized bytes as
+// raw f32. Regression tests for the `_ => raw-f32` garbage fallback.
+// ============================================================================
+
+/// Build a single Q8_0 block (34 bytes: f16 scale + 32 int8 quants) from a
+/// known scale and 32 integer quants.
+#[cfg(feature = "gpu")]
+fn make_q8_0_block(scale: f32, quants: [i8; 32]) -> Vec<u8> {
+    let mut data = Vec::with_capacity(34);
+    let scale_bits = half::f16::from_f32(scale).to_bits();
+    data.extend_from_slice(&scale_bits.to_le_bytes());
+    for q in quants {
+        data.push(q as u8);
+    }
+    data
+}
+
+/// A Q8_0 weight routed through `dequantize_weight` must dequantize to the same
+/// values as the canonical `dequantize_q8_0` reference — NOT the raw-f32 garbage
+/// the old `_ =>` fallback produced.
+#[test]
+#[cfg(feature = "gpu")]
+fn test_dequantize_weight_q8_0_matches_reference_not_raw_f32() {
+    use crate::gguf::types::GGUF_TYPE_Q8_0;
+    use crate::quantize::dequantize_q8_0;
+
+    let config = test_config();
+    let model = create_test_model_with_config(&config);
+
+    // One Q8_0 block = 32 elements. Use a non-trivial scale + quants.
+    let quants: [i8; 32] = std::array::from_fn(|i| (i as i8) - 16);
+    let scale = 0.125_f32;
+    let block = make_q8_0_block(scale, quants);
+
+    let weight = crate::gguf::OwnedQuantizedTensor {
+        data: block.clone(),
+        in_dim: 32,
+        out_dim: 1,
+        qtype: GGUF_TYPE_Q8_0,
+    };
+
+    let got = model
+        .dequantize_weight(&weight)
+        .expect("Q8_0 must dequantize, not error");
+    let want = dequantize_q8_0(&block).expect("reference dequant");
+
+    // Bit-identical to the canonical CPU reference dequantizer.
+    assert_eq!(
+        got, want,
+        "dequantize_weight(Q8_0) must match dequantize_q8_0 reference"
+    );
+
+    // And it must differ from the OLD raw-f32 garbage interpretation: reading
+    // the 34 packed bytes as 8 little-endian f32s.
+    let raw_f32_garbage: Vec<f32> = block
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect();
+    assert_ne!(
+        got, raw_f32_garbage,
+        "Q8_0 must NOT be reinterpreted as raw f32 bytes (the old garbage fallback)"
+    );
+    // Sanity: the dequantized values match scale * quant exactly.
+    for (i, &q) in quants.iter().enumerate() {
+        assert!(
+            (got[i] - scale * f32::from(q)).abs() < 1e-6,
+            "element {i}: got {} want {}",
+            got[i],
+            scale * f32::from(q)
+        );
+    }
+}
+
+/// A genuinely unsupported quantization type must FAIL LOUD (Err), never be
+/// silently reinterpreted as raw f32.
+#[test]
+#[cfg(feature = "gpu")]
+fn test_dequantize_weight_unsupported_type_errors_loud() {
+    let config = test_config();
+    let model = create_test_model_with_config(&config);
+
+    // qtype 9999 has no dequantizer — must hard-error, not return f32-garbage.
+    let weight = crate::gguf::OwnedQuantizedTensor {
+        data: vec![0u8; 64],
+        in_dim: 16,
+        out_dim: 1,
+        qtype: 9999,
+    };
+
+    let result = model.dequantize_weight(&weight);
+    assert!(
+        result.is_err(),
+        "unsupported qtype must Err, not silently reinterpret bytes as f32"
+    );
+    let msg = format!("{:?}", result.unwrap_err());
+    assert!(
+        msg.contains("9999") && msg.to_lowercase().contains("unsupported"),
+        "error must name the unsupported type: {msg}"
+    );
+}
+
 include!("batch_tests_tiled_single.rs");
