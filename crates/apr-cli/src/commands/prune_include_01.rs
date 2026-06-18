@@ -422,4 +422,46 @@ mod tests {
         let meta = std::fs::metadata(output.path()).expect("output exists");
         assert!(meta.len() > 0, "Output file should not be empty");
     }
+
+    /// FALSIFY-PRUNE-SPARSITY-001 (PMAT-830): `--sparsity` below the 0.5 `--target-ratio`
+    /// default was silently raised by `sparsity.max(target_ratio)`, so
+    /// `apr prune --method magnitude --sparsity 0.25` zeroed 50% of weights, not 25% — and
+    /// stamped pruning_sparsity=0.25 into the output (a self-contradicting, over-pruned model).
+    /// Prior tests only used sparsity=0.0, where `0.0.max(0.5) = 0.5` hid the override.
+    #[test]
+    fn test_magnitude_sparsity_below_target_ratio_not_overridden() {
+        let mut writer = aprender::serialization::apr::AprWriter::new();
+        // 64 distinct non-zero magnitudes so the zeroed count == round(64 * fraction).
+        let weights: Vec<f32> = (1..=64).map(|i| i as f32).collect();
+        writer.add_tensor_f32("layers.0.self_attn.q_proj.weight", vec![8, 8], &weights);
+        let bytes = writer.to_bytes().expect("serialize");
+        let input = NamedTempFile::with_suffix(".apr").expect("input");
+        std::fs::write(input.path(), &bytes).expect("write");
+        let output = NamedTempFile::with_suffix(".apr").expect("output");
+
+        // User asks for 25% sparsity; --target-ratio left at its CLI default of 0.5.
+        let r = run(
+            input.path(),
+            "magnitude",
+            0.5,  // target_ratio (default)
+            0.25, // sparsity (explicit user request)
+            Some(output.path()),
+            None,
+            false,
+            false,
+            None,
+            false,
+        );
+        assert!(r.is_ok(), "{:?}", r.err());
+
+        let tensors =
+            aprender::format::converter::load_model_tensors(output.path()).expect("load output");
+        let zeros = tensors["layers.0.self_attn.q_proj.weight"]
+            .0
+            .iter()
+            .filter(|v| **v == 0.0)
+            .count();
+        // EXPECT 16 (25% of 64). RED pre-fix produced 32 (50%) via sparsity.max(0.5).
+        assert_eq!(zeros, 16, "expected 25% pruned (16/64), got {zeros}/64");
+    }
 }
