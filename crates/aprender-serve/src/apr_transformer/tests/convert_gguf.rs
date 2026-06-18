@@ -21,6 +21,7 @@ fn make_gguf_config(hidden: usize, layers: usize, heads: usize, kv_heads: usize)
         rope_type: 2,
         context_length: 2048,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     }

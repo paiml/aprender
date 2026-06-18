@@ -109,21 +109,75 @@ pub struct LogLikelihoodScores {
 
 /// Score multiple-choice by selecting the highest log-likelihood completion.
 ///
-/// Returns the index of the best completion and its score.
+/// Returns the index of the best completion and its (raw) summed log-likelihood.
+///
+/// # Accuracy modes (`normalize`)
+///
+/// - `normalize == false` → **acc**: argmax over the raw summed log-likelihoods
+///   `Σ log P(tokenᵢ)` exactly as supplied. This biases toward shorter
+///   completions, since every extra token contributes another negative term.
+/// - `normalize == true` → **acc_norm**: argmax over the *per-token* mean
+///   log-likelihood. This thin wrapper has no length information, so it
+///   delegates to [`score_multiple_choice_with_lengths`] with unit lengths,
+///   which makes the normalization an identity. Call
+///   [`score_multiple_choice_with_lengths`] directly with real completion token
+///   counts to obtain true acc_norm (the metric HellaSwag / ARC / MMLU require).
 #[must_use]
 pub fn score_multiple_choice(scores: &[f64], normalize: bool) -> (usize, f64) {
+    // No per-choice length information is available at this call site. When
+    // `normalize` is requested we delegate with unit lengths (normalization is
+    // then the identity), keeping the raw-argmax path byte-identical. Callers
+    // that need genuine acc_norm use `score_multiple_choice_with_lengths`.
+    let lengths = vec![1usize; scores.len()];
+    score_multiple_choice_with_lengths(scores, &lengths, normalize)
+}
+
+/// Score multiple-choice with per-choice completion lengths (true acc / acc_norm).
+///
+/// `scores[i]` is the summed completion log-likelihood `Σ log P(tokenⱼ | …)` for
+/// choice `i`; `lengths[i]` is that completion's length in tokens (the standard
+/// acc_norm denominator, matching the whitespace-token convention used by
+/// [`evaluate_perplexity`]). A byte count may be substituted when normalizing by
+/// bytes instead — the math is identical, only the denominator's units change.
+///
+/// - `normalize == false` (**acc**): argmax over the raw `scores`. Byte-identical
+///   to [`score_multiple_choice`] with `normalize == false`.
+/// - `normalize == true` (**acc_norm**): argmax over `scores[i] / lengths[i]`,
+///   the mean per-token log-likelihood. Removes the short-completion bias of raw
+///   acc. A length of `0` (or a missing entry) is guarded up to `1` to avoid
+///   division by zero, so an empty completion keeps its raw score.
+///
+/// The returned score is always the **raw** summed log-likelihood of the winning
+/// choice (never divided), so downstream reporting sees comparable magnitudes
+/// regardless of `normalize`.
+#[must_use]
+pub fn score_multiple_choice_with_lengths(
+    scores: &[f64],
+    lengths: &[usize],
+    normalize: bool,
+) -> (usize, f64) {
     if scores.is_empty() {
         return (0, f64::NEG_INFINITY);
     }
 
+    let key = |i: usize, raw: f64| -> f64 {
+        if normalize {
+            let len = lengths.get(i).copied().unwrap_or(1).max(1) as f64;
+            raw / len
+        } else {
+            raw
+        }
+    };
+
     scores
         .iter()
         .enumerate()
-        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-        .map(|(i, &s)| {
-            let _ = normalize; // Used in normalized_scores path
-            (i, s)
+        .max_by(|&(ia, &a), &(ib, &b)| {
+            key(ia, a)
+                .partial_cmp(&key(ib, b))
+                .unwrap_or(std::cmp::Ordering::Equal)
         })
+        .map(|(i, &s)| (i, s))
         .unwrap_or((0, f64::NEG_INFINITY))
 }
 
@@ -292,11 +346,16 @@ where
 }
 
 /// Evaluate multiple-choice task.
+///
+/// When `length_normalize` is `true` the per-choice log-likelihoods are divided
+/// by the completion's token count before argmax (**acc_norm**); otherwise raw
+/// summed log-likelihoods are compared (**acc**). Completion length uses the
+/// whitespace-token convention shared with [`evaluate_perplexity`].
 fn evaluate_multiple_choice<F>(
     task: &EvalTask,
     examples: &[EvalExample],
     score_fn: &F,
-    _length_normalize: bool,
+    length_normalize: bool,
 ) -> Result<TaskMetrics>
 where
     F: Fn(&str, &str) -> f64,
@@ -311,7 +370,17 @@ where
             .map(|choice| score_fn(&example.context, choice))
             .collect();
 
-        let (pred_idx, _) = score_multiple_choice(&scores, false);
+        // Completion token counts for acc_norm. `.max(1)` keeps empty
+        // completions division-safe and is the same convention used by the
+        // perplexity path. When `length_normalize` is false these lengths are
+        // ignored and the raw-argmax (acc) result is byte-identical.
+        let lengths: Vec<usize> = example
+            .choices
+            .iter()
+            .map(|choice| choice.split_whitespace().count().max(1))
+            .collect();
+
+        let (pred_idx, _) = score_multiple_choice_with_lengths(&scores, &lengths, length_normalize);
         predictions.push(pred_idx);
 
         if let Some(gold) = example.gold_idx {

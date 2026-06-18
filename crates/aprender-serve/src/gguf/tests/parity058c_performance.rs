@@ -2,6 +2,7 @@
 /// PARITY-058c: Performance characteristics
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity058c_performance_characteristics() {
     println!("PARITY-058c: Performance Characteristics");
     println!("========================================");
@@ -44,6 +45,7 @@ fn test_parity058c_performance_characteristics() {
 /// PARITY-058d: API compatibility
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity058d_api_compatibility() {
     println!("PARITY-058d: API Compatibility");
     println!("==============================");
@@ -77,6 +79,7 @@ fn test_parity058d_api_compatibility() {
 /// PARITY-058e: Configuration options
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity058e_configuration_options() {
     println!("PARITY-058e: Configuration Options");
     println!("==================================");
@@ -113,6 +116,7 @@ fn test_parity058e_configuration_options() {
 /// PARITY-058f: Final summary
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity058f_final_summary() {
     println!("PARITY-058f: Batch Inference - Final Summary");
     println!("============================================");
@@ -184,6 +188,7 @@ fn test_parity058f_final_summary() {
 /// PARITY-059a: Speculative decoding overview
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity059a_speculative_overview() {
     println!("PARITY-059a: Speculative Decoding API Integration");
     println!("=================================================");
@@ -217,6 +222,7 @@ fn test_parity059a_speculative_overview() {
 /// PARITY-059b: Speedup calculation
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity059b_speedup_calculation() {
     println!("PARITY-059b: Speculative Decoding Speedup Model");
     println!("===============================================");
@@ -263,6 +269,7 @@ fn test_parity059b_speedup_calculation() {
 /// PARITY-059c: API request format
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity059c_api_request_format() {
     println!("PARITY-059c: API Request Format");
     println!("================================");
@@ -301,6 +308,7 @@ fn test_parity059c_api_request_format() {
 /// PARITY-059d: AppState integration
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity059d_appstate_integration() {
     println!("PARITY-059d: AppState Integration");
     println!("=================================");
@@ -327,6 +335,7 @@ fn test_parity059d_appstate_integration() {
 /// PARITY-059e: Generate with speculative decoding
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity059e_generate_speculative() {
     println!("PARITY-059e: Generate with Speculative Decoding");
     println!("===============================================");
@@ -360,6 +369,7 @@ fn test_parity059e_generate_speculative() {
 /// PARITY-059f: Summary and expected performance
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity059f_summary() {
     println!("PARITY-059f: Speculative Decoding API Summary");
     println!("=============================================");
@@ -409,6 +419,7 @@ fn test_parity059f_summary() {
 /// PARITY-060a: SpeculativeStats struct
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity060a_speculative_stats() {
     println!("PARITY-060a: SpeculativeStats Struct");
     println!("====================================");

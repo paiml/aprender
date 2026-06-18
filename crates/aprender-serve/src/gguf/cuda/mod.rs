@@ -162,7 +162,18 @@ impl OwnedQuantizedModelCuda {
     fn check_gpu_capability(
         model: OwnedQuantizedModel,
     ) -> std::result::Result<OwnedQuantizedModel, CudaInitError> {
-        let required = crate::capability::required_ops(&model.config.constraints);
+        // PMAT-824: use the MODEL-AWARE op set. `required_ops(constraints)` alone
+        // cannot distinguish Gemma v1 from Gemma2/Gemma3 (the arch-constraints
+        // contract collapses all three onto one alias row), so it would report
+        // them all GPU-supported (GatedMlp→SwiGLU reads as "supported"). The
+        // model-aware variant adds the Gemma2/Gemma3 softcap + post-attn/post-FFN
+        // norm ops the CUDA forward does NOT implement, routing those models to
+        // CPU at the CAPABILITY layer (belt-and-suspenders with the runtime
+        // cosine parity gate) instead of relying solely on the parity check.
+        let required = crate::capability::required_ops_for_model(
+            &model.config.constraints,
+            &model.config.architecture,
+        );
         let supported = crate::capability::gpu_supported_ops();
         if let Err(missing) = crate::capability::check_capability(&required, &supported) {
             let missing_names: Vec<String> = missing.iter().map(ToString::to_string).collect();

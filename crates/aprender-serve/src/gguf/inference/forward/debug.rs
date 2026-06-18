@@ -583,6 +583,14 @@ impl OwnedQuantizedModel {
                 ops::add_bias(&mut attn_output, bias);
             }
 
+            // PMAT-810: Gemma2 POST-attention RMSNorm on the attention output,
+            // BEFORE the residual add: `x + post_attn_norm(attn(...))`. `None` for
+            // every other arch → unchanged. GGUF bakes the Gemma `(1+w)` offset
+            // into the weight, so standard rms_norm is correct.
+            if let Some(ref post_w) = layer.post_attn_norm_weight {
+                attn_output = ops::rms_norm(&attn_output, post_w, self.config.eps);
+            }
+
             // 2g. Residual connection
             for i in 0..hidden_dim {
                 hidden[i] += attn_output[i];
@@ -595,6 +603,12 @@ impl OwnedQuantizedModel {
             let mut ffn_output = self.fused_matmul(&ffn_activated, &layer.ffn_down_weight)?;
             if let Some(ref bias) = layer.ffn_down_bias {
                 ops::add_bias(&mut ffn_output, bias);
+            }
+
+            // PMAT-810: Gemma2 POST-FFN RMSNorm on the FFN output, BEFORE the
+            // residual add: `h + post_ffw_norm(ffn(...))`. `None` elsewhere.
+            if let Some(ref post_w) = layer.post_ffw_norm_weight {
+                ffn_output = ops::rms_norm(&ffn_output, post_w, self.config.eps);
             }
 
             // Residual

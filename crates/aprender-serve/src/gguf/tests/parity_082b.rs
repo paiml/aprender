@@ -2,6 +2,7 @@
 /// PARITY-082b: Wave quantization problem
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_082b_wave_quantization() {
     println!("PARITY-082b: Wave Quantization Problem");
     println!("=======================================");
@@ -60,6 +61,7 @@ fn test_parity_082b_wave_quantization() {
 /// PARITY-082c: Work-stealing implementation
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_082c_work_stealing() {
     println!("PARITY-082c: Work-Stealing Implementation");
     println!("==========================================");
@@ -117,6 +119,7 @@ fn test_parity_082c_work_stealing() {
 /// PARITY-082d: Partial result accumulation
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_082d_partial_accumulation() {
     println!("PARITY-082d: Partial Result Accumulation");
     println!("=========================================");
@@ -181,6 +184,7 @@ fn test_parity_082d_partial_accumulation() {
 /// PARITY-082e: Tile rasterization order
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_082e_tile_rasterization() {
     println!("PARITY-082e: Tile Rasterization Order");
     println!("======================================");
@@ -240,6 +244,7 @@ fn test_parity_082e_tile_rasterization() {
 /// PARITY-082f: Stream-K summary
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_082f_streamk_summary() {
     println!("PARITY-082f: Stream-K Summary");
     println!("==============================");
@@ -276,6 +281,7 @@ fn test_parity_082f_streamk_summary() {
 /// PARITY-083a: LLM matrix shapes
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_083a_llm_matrix_shapes() {
     println!("PARITY-083a: LLM Matrix Shapes");
     println!("===============================");
@@ -333,6 +339,7 @@ fn test_parity_083a_llm_matrix_shapes() {
 /// PARITY-083b: Padding overhead analysis
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_083b_padding_overhead() {
     println!("PARITY-083b: Padding Overhead Analysis");
     println!("=======================================");
@@ -390,6 +397,7 @@ fn test_parity_083b_padding_overhead() {
 /// PARITY-083c: Predicated execution
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_083c_predicated_execution() {
     println!("PARITY-083c: Predicated Execution");
     println!("===================================");

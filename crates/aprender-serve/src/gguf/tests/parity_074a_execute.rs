@@ -5,6 +5,7 @@
 /// PARITY-074a: Execution interface design
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_074a_execution_interface() {
     use crate::cuda::{CudaKernels, KernelType};
 
@@ -55,6 +56,7 @@ fn test_parity_074a_execution_interface() {
 /// PARITY-074b: Buffer layout requirements
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_074b_buffer_layout() {
     println!("PARITY-074b: GPU Buffer Layout Requirements");
     println!("============================================");
@@ -112,6 +114,7 @@ fn test_parity_074b_buffer_layout() {
 /// PARITY-074c: Kernel launch configuration
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_074c_launch_configuration() {
     println!("PARITY-074c: Kernel Launch Configuration");
     println!("=========================================");
@@ -171,6 +174,7 @@ fn test_parity_074c_launch_configuration() {
 /// PARITY-074d: Memory transfer patterns
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_074d_memory_transfers() {
     println!("PARITY-074d: Memory Transfer Patterns");
     println!("=====================================");
@@ -225,6 +229,7 @@ fn test_parity_074d_memory_transfers() {
 /// PARITY-074e: Performance projection
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_074e_performance_projection() {
     println!("PARITY-074e: Performance Projection");
     println!("====================================");
@@ -282,6 +287,7 @@ fn test_parity_074e_performance_projection() {
 /// PARITY-074f: Integration summary
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_074f_integration_summary() {
     println!("PARITY-074f: CUDA Kernel Execution Summary");
     println!("==========================================");
@@ -342,6 +348,7 @@ fn test_parity_074f_integration_summary() {
 /// PARITY-075a: INT8 attention score quantization
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_075a_attention_score_quantization() {
     use crate::quantize::Q8_0Block;
 
