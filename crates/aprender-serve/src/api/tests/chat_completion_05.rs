@@ -15,6 +15,8 @@ fn test_chat_completion_request_debug() {
         stream: false,
         stop: None,
         user: None,
+    
+        ..Default::default()
     };
     let debug = format!("{:?}", req);
     assert!(debug.contains("ChatCompletionRequest"));

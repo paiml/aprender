@@ -87,6 +87,8 @@ fn test_chat_completion_request_serialization() {
             role: "user".to_string(),
             content: "Hello".to_string(),
             name: None,
+        
+            ..Default::default()
         }],
         max_tokens: Some(50),
         temperature: Some(0.8),
@@ -99,6 +101,8 @@ fn test_chat_completion_request_serialization() {
         stream: false,
         stop: None,
         user: None,
+    
+        ..Default::default()
     };
 
     let json = serde_json::to_string(&req).expect("serialize");
@@ -119,6 +123,8 @@ fn test_chat_message_all_roles() {
             role: role.to_string(),
             content: "test".to_string(),
             name: None,
+        
+            ..Default::default()
         };
         assert_eq!(msg.role, role);
     }
@@ -130,6 +136,8 @@ fn test_chat_message_with_optional_name() {
         role: "user".to_string(),
         content: "Hello".to_string(),
         name: Some("Alice".to_string()),
+    
+        ..Default::default()
     };
 
     let json = serde_json::to_string(&msg).expect("serialize");
@@ -145,6 +153,8 @@ fn test_chat_message_clone() {
         role: "user".to_string(),
         content: "Hello".to_string(),
         name: Some("Bob".to_string()),
+    
+        ..Default::default()
     };
     let cloned = msg.clone();
     assert_eq!(cloned.role, msg.role);
@@ -158,6 +168,8 @@ fn test_chat_message_debug() {
         role: "user".to_string(),
         content: "Hello".to_string(),
         name: None,
+    
+        ..Default::default()
     };
     let debug = format!("{:?}", msg);
     assert!(debug.contains("ChatMessage"));
@@ -181,6 +193,8 @@ fn test_chat_completion_response_serialization() {
                 role: "assistant".to_string(),
                 content: "Hello!".to_string(),
                 name: None,
+            
+                ..Default::default()
             },
             finish_reason: "stop".to_string(),
         }],

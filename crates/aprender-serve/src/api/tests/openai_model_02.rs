@@ -411,6 +411,8 @@ fn test_chat_completion_request_serde() {
             role: "user".to_string(),
             content: "Hello".to_string(),
             name: None,
+        
+            ..Default::default()
         }],
         max_tokens: Some(100),
         temperature: Some(0.7),
@@ -423,6 +425,8 @@ fn test_chat_completion_request_serde() {
         stream: false,
         stop: Some(vec!["END".to_string()]),
         user: Some("test-user".to_string()),
+    
+        ..Default::default()
     };
     let json = serde_json::to_string(&req).expect("JSON serialization failed");
     assert!(json.contains("gpt-4"));

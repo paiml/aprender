@@ -285,6 +285,8 @@ fn test_chat_message_very_long_content() {
         role: "user".to_string(),
         content: long_content.clone(),
         name: None,
+    
+        ..Default::default()
     };
 
     let json = serde_json::to_string(&msg).expect("serialize");
@@ -298,6 +300,8 @@ fn test_chat_message_with_newlines() {
         role: "user".to_string(),
         content: "line1\nline2\nline3".to_string(),
         name: None,
+    
+        ..Default::default()
     };
 
     let json = serde_json::to_string(&msg).expect("serialize");
@@ -311,6 +315,8 @@ fn test_chat_message_with_tabs() {
         role: "user".to_string(),
         content: "col1\tcol2\tcol3".to_string(),
         name: None,
+    
+        ..Default::default()
     };
 
     let json = serde_json::to_string(&msg).expect("serialize");
@@ -378,6 +384,8 @@ fn test_chat_choice_with_empty_content() {
             role: "assistant".to_string(),
             content: String::new(),
             name: None,
+        
+            ..Default::default()
         },
         finish_reason: "stop".to_string(),
     };
@@ -394,6 +402,8 @@ fn test_chat_choice_with_large_index() {
             role: "assistant".to_string(),
             content: "test".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         finish_reason: "stop".to_string(),
     };

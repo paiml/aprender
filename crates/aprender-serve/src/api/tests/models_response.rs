@@ -44,11 +44,15 @@ fn test_chat_completion_request_full_cov() {
                 role: "system".to_string(),
                 content: "You are helpful".to_string(),
                 name: None,
+            
+                ..Default::default()
             },
             ChatMessage {
                 role: "user".to_string(),
                 content: "Hello".to_string(),
                 name: Some("Alice".to_string()),
+            
+                ..Default::default()
             },
         ],
         max_tokens: Some(100),
@@ -62,6 +66,8 @@ fn test_chat_completion_request_full_cov() {
         stream: true,
         stop: Some(vec!["###".to_string()]),
         user: Some("user-123".to_string()),
+    
+        ..Default::default()
     };
     let json = serde_json::to_string(&req).expect("serialize");
     let parsed: ChatCompletionRequest = serde_json::from_str(&json).expect("deserialize");
@@ -82,6 +88,8 @@ fn test_chat_choice_serialize_cov() {
             role: "assistant".to_string(),
             content: "Hello there!".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         finish_reason: "length".to_string(),
     };

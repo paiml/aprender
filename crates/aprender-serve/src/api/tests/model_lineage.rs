@@ -393,6 +393,8 @@ fn test_chat_message_all_roles_cov() {
             role: role.to_string(),
             content: format!("Content for {}", role),
             name: None,
+        
+            ..Default::default()
         };
         assert_eq!(msg.role, role);
     }
@@ -404,6 +406,8 @@ fn test_chat_message_long_content_cov() {
         role: "user".to_string(),
         content: "X".repeat(10000),
         name: None,
+    
+        ..Default::default()
     };
     assert_eq!(msg.content.len(), 10000);
 }
@@ -414,6 +418,8 @@ fn test_chat_message_empty_content_cov() {
         role: "assistant".to_string(),
         content: String::new(),
         name: None,
+    
+        ..Default::default()
     };
     assert!(msg.content.is_empty());
 }
@@ -424,6 +430,8 @@ fn test_chat_message_serialize_roundtrip_cov() {
         role: "user".to_string(),
         content: "Hello with \"quotes\" and \\backslash\\".to_string(),
         name: Some("test_user".to_string()),
+    
+        ..Default::default()
     };
     let json = serde_json::to_string(&msg).expect("serialize");
     let deserialized: ChatMessage = serde_json::from_str(&json).expect("deserialize");
@@ -438,6 +446,8 @@ fn test_chat_message_with_name_cov() {
         role: "function".to_string(),
         content: "Function result".to_string(),
         name: Some("my_function".to_string()),
+    
+        ..Default::default()
     };
     assert_eq!(msg.name, Some("my_function".to_string()));
     let json = serde_json::to_string(&msg).expect("serialize");
