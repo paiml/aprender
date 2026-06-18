@@ -94,8 +94,12 @@ impl LoRAAdapter {
             )));
         }
 
-        // Create layer with loaded weights
-        let mut layer = LoRALayer::new(base_weight, self.d_out, self.d_in, self.rank, self.alpha);
+        // Create layer with loaded weights. `new` recomputes scale = alpha/rank
+        // (Standard mode); restore the SERIALIZED scale so a non-Standard adapter
+        // (e.g. rsLoRA, scale = alpha/sqrt(rank)) round-trips losslessly instead of
+        // being silently re-scaled to alpha/rank.
+        let mut layer = LoRALayer::new(base_weight, self.d_out, self.d_in, self.rank, self.alpha)
+            .with_scale(self.scale);
 
         // Replace LoRA weights with loaded values
         *layer.lora_a_mut().data_mut() = ndarray::arr1(&self.lora_a);
@@ -186,6 +190,44 @@ mod tests {
         let layer = adapter.to_layer(base_weight).expect("operation should succeed");
         assert_eq!(layer.d_out(), 8);
         assert_eq!(layer.d_in(), 16);
+    }
+
+    /// FALSIFY-LORA-ADAPTER-SCALE-001: an rsLoRA adapter's scale (= alpha/sqrt(rank))
+    /// must survive a from_layer -> to_layer round-trip. `to_layer` previously rebuilt
+    /// the layer via `LoRALayer::new`, which recomputes Standard scale = alpha/rank and
+    /// discarded the serialized scale — silently re-scaling rsLoRA by a factor of
+    /// sqrt(rank) (e.g. 4x for rank=16) with no error, corrupting the reloaded model.
+    /// Every prior test used scale == alpha/rank (the Standard case the bug left intact).
+    #[test]
+    fn test_rslora_scale_survives_roundtrip() {
+        use crate::lora::LoRAScaling;
+        let (d_out, d_in, rank, alpha) = (4usize, 4usize, 16usize, 16.0f32);
+        let base = Tensor::zeros(d_out * d_in, false);
+        // rsLoRA scale = alpha / sqrt(rank) = 16 / 4 = 4.0  (Standard would be 16/16 = 1.0)
+        let layer = LoRALayer::new_with_scaling(
+            base.clone(),
+            d_out,
+            d_in,
+            rank,
+            alpha,
+            LoRAScaling::RsLoRA,
+        );
+        assert!(
+            (layer.scale() - 4.0).abs() < 1e-6,
+            "precondition: rsLoRA scale = {} (expected 4.0)",
+            layer.scale()
+        );
+
+        let adapter = LoRAAdapter::from_layer(&layer, rank, alpha);
+        assert!((adapter.metadata().scale - 4.0).abs() < 1e-6, "from_layer must capture 4.0");
+
+        let reloaded = adapter.to_layer(base).expect("to_layer should succeed");
+        // RED pre-fix: reloaded.scale() == alpha/rank == 1.0. GREEN post-fix: 4.0.
+        assert!(
+            (reloaded.scale() - 4.0).abs() < 1e-6,
+            "rsLoRA scale dropped on load: reloaded scale = {} (expected 4.0 = alpha/sqrt(rank))",
+            reloaded.scale()
+        );
     }
 
     #[test]

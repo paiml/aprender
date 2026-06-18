@@ -437,5 +437,100 @@ fn test_validated_vector_length_mismatch() {
     assert_eq!(result.unwrap_err().rule_id, "F-LAYOUT-CONTRACT-003");
 }
 
+// =============================================================================
+// F-STRUCT-001 — cross-tensor structural consistency gate (PMAT-756)
+// =============================================================================
+
+/// Build a `(name, shape-slice)` view the gate consumes.
+fn struct_view(pairs: &[(&'static str, Vec<usize>)]) -> Vec<(&'static str, Vec<usize>)> {
+    pairs.to_vec()
+}
+
+#[test]
+fn test_f_struct_001_rejects_vocab_mismatch() {
+    let pairs = struct_view(&[
+        ("model.embed_tokens.weight", vec![32, 16]),
+        ("lm_head.weight", vec![24, 16]),
+    ]);
+    let v: Vec<(&str, &[usize])> = pairs.iter().map(|(n, s)| (*n, s.as_slice())).collect();
+    let r = validate_cross_tensor_structure(v);
+    assert!(r.is_err(), "vocab mismatch must be rejected");
+    let msg = format!("{}", r.unwrap_err());
+    assert!(msg.contains("F-STRUCT-001") && msg.contains("Vocab"), "{msg}");
+}
+
+#[test]
+fn test_f_struct_001_rejects_hidden_mismatch() {
+    let pairs = struct_view(&[
+        ("model.embed_tokens.weight", vec![32, 16]),
+        ("model.layers.0.self_attn.q_proj.weight", vec![24, 24]),
+    ]);
+    let v: Vec<(&str, &[usize])> = pairs.iter().map(|(n, s)| (*n, s.as_slice())).collect();
+    let r = validate_cross_tensor_structure(v);
+    assert!(r.is_err(), "hidden-dim mismatch must be rejected");
+    assert!(format!("{}", r.unwrap_err()).contains("Hidden"));
+}
+
+#[test]
+fn test_f_struct_001_accepts_consistent_untied_model() {
+    let pairs = struct_view(&[
+        ("model.embed_tokens.weight", vec![32, 16]),
+        ("lm_head.weight", vec![32, 16]),
+        ("model.layers.0.self_attn.q_proj.weight", vec![16, 16]),
+    ]);
+    let v: Vec<(&str, &[usize])> = pairs.iter().map(|(n, s)| (*n, s.as_slice())).collect();
+    assert!(
+        validate_cross_tensor_structure(v).is_ok(),
+        "consistent untied model must pass (no false positive)"
+    );
+}
+
+#[test]
+fn test_f_struct_001_accepts_tied_embedding() {
+    // No separate lm_head -> vocab invariant vacuous -> must pass.
+    let pairs = struct_view(&[
+        ("model.embed_tokens.weight", vec![32, 16]),
+        ("model.layers.0.self_attn.q_proj.weight", vec![16, 16]),
+    ]);
+    let v: Vec<(&str, &[usize])> = pairs.iter().map(|(n, s)| (*n, s.as_slice())).collect();
+    assert!(
+        validate_cross_tensor_structure(v).is_ok(),
+        "tied-embedding model must pass (no false positive)"
+    );
+}
+
+#[test]
+fn test_f_struct_001_accepts_unknown_names() {
+    // Cannot positively identify roles -> make no assertion -> pass.
+    let pairs = struct_view(&[("foo.weight", vec![10, 4]), ("bar.weight", vec![4, 4])]);
+    let v: Vec<(&str, &[usize])> = pairs.iter().map(|(n, s)| (*n, s.as_slice())).collect();
+    assert!(validate_cross_tensor_structure(v).is_ok());
+}
+
+#[test]
+fn test_f_struct_001_llama_naming_vocab_mismatch() {
+    let pairs = struct_view(&[
+        ("tok_embeddings.weight", vec![100, 8]),
+        ("output.weight", vec![64, 8]),
+    ]);
+    let v: Vec<(&str, &[usize])> = pairs.iter().map(|(n, s)| (*n, s.as_slice())).collect();
+    assert!(
+        validate_cross_tensor_structure(v).is_err(),
+        "Llama-named vocab mismatch must be rejected"
+    );
+}
+
+#[test]
+fn test_f_struct_001_ignores_non_2d_tensors() {
+    // Only 2-D weight matrices carry the invariant; 1-D norms are ignored.
+    let pairs = struct_view(&[
+        ("model.embed_tokens.weight", vec![32, 16]),
+        ("lm_head.weight", vec![32, 16]),
+        ("model.norm.weight", vec![16]),
+    ]);
+    let v: Vec<(&str, &[usize])> = pairs.iter().map(|(n, s)| (*n, s.as_slice())).collect();
+    assert!(validate_cross_tensor_structure(v).is_ok());
+}
+
 include!("validation_tests_contract.rs");
 include!("validation_tests.rs");

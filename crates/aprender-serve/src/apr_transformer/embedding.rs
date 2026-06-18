@@ -414,7 +414,14 @@ impl AprTransformer {
     ///
     /// Tries `lm_head.weight`, `output.weight`, then falls back to embedding weights (tied).
     /// Also loads Q4K/Q6K raw bytes for fused kernel inference.
-    /// Returns (lm_head_weight_f32, q4k_bytes, q6k_bytes).
+    /// Returns `(lm_head_weight_f32, q4k_bytes, q6k_bytes, lm_head_tied)`.
+    ///
+    /// PMAT-788: when the LM head is tied to the token embedding AND no fused
+    /// quantized LM head (Q4K/Q6K) is present, the returned f32 weight is EMPTY
+    /// and `lm_head_tied = true`: the (byte-identical) `token_embedding` buffer
+    /// already in memory is reused at logits time via
+    /// `AprTransformer::lm_head_f32()`, avoiding a redundant full-size f32 copy
+    /// of the embedding (≈519 MiB on a 0.5B model). Output is bit-identical.
     #[allow(clippy::type_complexity)]
     fn load_apr_lm_head(
         lookup: &AprTensorLookup<'_>,
@@ -422,7 +429,7 @@ impl AprTransformer {
         vocab_size: usize,
         hidden_dim: usize,
         debug_enabled: bool,
-    ) -> Result<(Vec<f32>, Option<Vec<u8>>, Option<Vec<u8>>)> {
+    ) -> Result<(Vec<f32>, Option<Vec<u8>>, Option<Vec<u8>>, bool)> {
         if debug_enabled {
             for name in &["lm_head.weight", "output.weight"] {
                 if let Some((_offset, _size, dims, dtype)) = tensors.get(*name) {
@@ -435,20 +442,6 @@ impl AprTransformer {
             }
         }
 
-        let (lm_head_weight, used_tied_weights) = Self::resolve_lm_head_f32(lookup, debug_enabled)?;
-        if used_tied_weights && debug_enabled {
-            eprintln!("[APR-LOAD] Using tied weights: embedding -> lm_head");
-        }
-
-        if debug_enabled {
-            eprintln!(
-                "[APR-LOAD] LM head loaded: {} elements (hidden={} x vocab={})",
-                lm_head_weight.len(),
-                hidden_dim,
-                vocab_size
-            );
-        }
-
         let lm_head_weight_q4k =
             lookup.get_q4k("lm_head.weight").or_else(|| lookup.get_q4k("output.weight"));
         let lm_head_weight_q6k =
@@ -457,7 +450,54 @@ impl AprTransformer {
             Self::debug_log_lm_head_quant(lm_head_weight_q4k.as_deref(), lm_head_weight_q6k.as_deref());
         }
 
-        Ok((lm_head_weight, lm_head_weight_q4k, lm_head_weight_q6k))
+        // PMAT-788: only the pure-f32 tied path is deduplicated. A separate f32
+        // `lm_head.weight`/`output.weight` tensor (untied) is loaded unchanged.
+        // When a fused quantized LM head (Q4K/Q6K) is present we conservatively
+        // preserve the prior behavior of also materializing the f32 weight, so
+        // the `force_f32` projection path keeps an f32 buffer to fall back to.
+        let has_own_f32_lm_head = lookup.get_f32("lm_head.weight").is_some()
+            || lookup.get_f32("output.weight").is_some();
+        let has_quant_lm_head = lm_head_weight_q4k.is_some() || lm_head_weight_q6k.is_some();
+
+        if has_own_f32_lm_head || has_quant_lm_head {
+            // Untied (own f32 head) OR quantized head present → keep f32 as before.
+            let (lm_head_weight, used_tied_weights) =
+                Self::resolve_lm_head_f32(lookup, debug_enabled)?;
+            if used_tied_weights && debug_enabled {
+                eprintln!("[APR-LOAD] Using tied weights: embedding -> lm_head");
+            }
+            if debug_enabled {
+                eprintln!(
+                    "[APR-LOAD] LM head loaded: {} elements (hidden={} x vocab={})",
+                    lm_head_weight.len(),
+                    hidden_dim,
+                    vocab_size
+                );
+            }
+            return Ok((lm_head_weight, lm_head_weight_q4k, lm_head_weight_q6k, false));
+        }
+
+        // Pure-f32 tied head: no own LM-head tensor and no quantized head.
+        //
+        // PMAT-788: reuse the in-memory `token_embedding` instead of loading a
+        // redundant copy. Preserve the ORIGINAL fail-fast contract: tying
+        // requires an embedding resolvable under the same names the prior
+        // `resolve_lm_head_f32` tied branch used (`model.embed_tokens.weight` /
+        // `token_embd.weight`). Probe presence only — do NOT materialize a copy.
+        if !lookup.has_tensor("model.embed_tokens.weight")
+            && !lookup.has_tensor("token_embd.weight")
+        {
+            return Err(RealizarError::FormatError {
+                reason: "FATAL: No lm_head tensor found and no embedding for weight tying. \
+                        Tried: lm_head.weight, output.weight, model.embed_tokens.weight, \
+                        token_embd.weight. APR file may be corrupt."
+                    .to_string(),
+            });
+        }
+        if debug_enabled {
+            eprintln!("[APR-LOAD] Using tied weights: embedding -> lm_head (deduplicated, PMAT-788)");
+        }
+        Ok((Vec::new(), None, None, true))
     }
 
     /// Load APR transformer from bytes
@@ -590,9 +630,10 @@ impl AprTransformer {
             .unwrap_or_else(|| vec![1.0; config.hidden_dim]);
 
         // Load LM head with tied-weights fallback and quantized variants
-        let (lm_head_weight, lm_head_weight_q4k, lm_head_weight_q6k) = Self::load_apr_lm_head(
-            &lookup, &tensors, config.vocab_size, config.hidden_dim, debug_enabled,
-        )?;
+        let (lm_head_weight, lm_head_weight_q4k, lm_head_weight_q6k, lm_head_tied) =
+            Self::load_apr_lm_head(
+                &lookup, &tensors, config.vocab_size, config.hidden_dim, debug_enabled,
+            )?;
 
         // ALB-094: Use explicit head_dim when available (MoE models like Qwen3.5)
         let head_dim = config.explicit_head_dim.unwrap_or(config.hidden_dim / config.num_heads);
@@ -612,6 +653,7 @@ impl AprTransformer {
             output_norm_bias: None,
             lm_head_weight,
             lm_head_bias: None,
+            lm_head_tied,
             q4k_layers,
             lm_head_weight_q6k,
             lm_head_weight_q4k,

@@ -36,6 +36,7 @@ async fn test_imp_116d_scheduler_reuse_across_requests() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -90,6 +91,7 @@ fn test_imp_126a_appstate_has_dispatch_metrics() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -141,6 +143,7 @@ fn test_imp_126b_cached_sync_has_generate_adaptive() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -191,6 +194,7 @@ fn test_imp_126c_dispatch_metrics_integration() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -241,6 +245,7 @@ fn test_imp_126d_handler_uses_adaptive_generation() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -304,6 +309,7 @@ async fn test_imp_127a_dispatch_metrics_endpoint_exists() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -362,6 +368,7 @@ async fn test_imp_127b_dispatch_metrics_response_structure() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -428,6 +435,7 @@ async fn test_imp_127c_dispatch_metrics_starts_zero() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };

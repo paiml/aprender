@@ -1,4 +1,70 @@
 
+/// Parse and bounds-check the JSON metadata section (FALSIFY-PARSE-001).
+///
+/// All offsets/sizes here come straight from the (attacker-controllable) file
+/// header — the CRC32 checksum is computed over the header itself, so a
+/// corrupted file can carry a matching checksum. Therefore every offset+size is
+/// validated with checked arithmetic and `slice::get` (never `[start..end]`
+/// indexing, which panics on out-of-range / `start > end`).
+fn parse_metadata_section(
+    data: &[u8],
+    metadata_offset: u64,
+    metadata_size: u32,
+) -> Result<AprV2Metadata, V2FormatError> {
+    let start = usize::try_from(metadata_offset)
+        .map_err(|_| V2FormatError::InvalidHeader("metadata_offset exceeds usize".to_string()))?;
+    let end = start
+        .checked_add(metadata_size as usize)
+        .ok_or_else(|| V2FormatError::InvalidHeader("metadata offset+size overflow".to_string()))?;
+    let slice = data
+        .get(start..end)
+        .ok_or_else(|| V2FormatError::InvalidHeader("file too small for metadata".to_string()))?;
+    AprV2Metadata::from_json(slice)
+}
+
+/// Parse and bounds-check the tensor index section (FALSIFY-PARSE-001).
+///
+/// `tensor_index_offset` is attacker-controllable; previously it was used
+/// directly as `&data[pos..]`, which PANICS ("range start index out of bounds")
+/// when the offset points past EOF. Now the start offset is validated against
+/// the file length before slicing, and each entry advances `pos` with the same
+/// `slice::get` guard.
+fn parse_tensor_index_section(
+    data: &[u8],
+    tensor_index_offset: u64,
+    tensor_count: u32,
+) -> Result<Vec<TensorIndexEntry>, V2FormatError> {
+    let mut pos = usize::try_from(tensor_index_offset).map_err(|_| {
+        V2FormatError::InvalidTensorIndex("tensor_index_offset exceeds usize".to_string())
+    })?;
+
+    let mut tensor_index = Vec::with_capacity(tensor_count as usize);
+    for _ in 0..tensor_count {
+        // `data.get(pos..)` returns None only when pos > data.len(); pos == len
+        // yields an empty slice, which TensorIndexEntry::from_bytes rejects
+        // cleanly. This replaces the panicking `&data[pos..]`.
+        let remaining = data.get(pos..).ok_or_else(|| {
+            V2FormatError::InvalidTensorIndex("tensor index offset past end of file".to_string())
+        })?;
+        let (entry, consumed) = TensorIndexEntry::from_bytes(remaining)?;
+        tensor_index.push(entry);
+        pos = pos.checked_add(consumed).ok_or_else(|| {
+            V2FormatError::InvalidTensorIndex("tensor index position overflow".to_string())
+        })?;
+    }
+
+    // Verify tensor names are sorted
+    for i in 1..tensor_index.len() {
+        if tensor_index[i].name < tensor_index[i - 1].name {
+            return Err(V2FormatError::InvalidTensorIndex(
+                "tensor index not sorted".to_string(),
+            ));
+        }
+    }
+
+    Ok(tensor_index)
+}
+
 impl AprV2Reader {
     /// Read from bytes
     ///
@@ -31,37 +97,13 @@ impl AprV2Reader {
             ));
         }
 
-        // Parse metadata
-        let metadata_start = header.metadata_offset as usize;
-        let metadata_end = metadata_start + header.metadata_size as usize;
-
-        if data.len() < metadata_end {
-            return Err(V2FormatError::InvalidHeader(
-                "file too small for metadata".to_string(),
-            ));
-        }
-
-        let metadata = AprV2Metadata::from_json(&data[metadata_start..metadata_end])?;
+        // Parse metadata (FALSIFY-PARSE-001 / PMAT-822: checked arithmetic +
+        // .get() so a corrupted metadata_offset/size can never panic-slice).
+        let metadata = parse_metadata_section(data, header.metadata_offset, header.metadata_size)?;
 
         // Parse tensor index
-        let index_start = header.tensor_index_offset as usize;
-        let mut tensor_index = Vec::with_capacity(header.tensor_count as usize);
-        let mut pos = index_start;
-
-        for _ in 0..header.tensor_count {
-            let (entry, consumed) = TensorIndexEntry::from_bytes(&data[pos..])?;
-            tensor_index.push(entry);
-            pos += consumed;
-        }
-
-        // Verify tensor names are sorted
-        for i in 1..tensor_index.len() {
-            if tensor_index[i].name < tensor_index[i - 1].name {
-                return Err(V2FormatError::InvalidTensorIndex(
-                    "tensor index not sorted".to_string(),
-                ));
-            }
-        }
+        let tensor_index =
+            parse_tensor_index_section(data, header.tensor_index_offset, header.tensor_count)?;
 
         Ok(Self {
             header,
@@ -111,14 +153,14 @@ impl AprV2Reader {
     #[must_use]
     pub fn get_tensor_data(&self, name: &str) -> Option<&[u8]> {
         let entry = self.get_tensor(name)?;
-        let start = (self.header.data_offset + entry.offset) as usize;
-        let end = start + entry.size as usize;
-
-        if end <= self.data.len() {
-            Some(&self.data[start..end])
-        } else {
-            None
-        }
+        // FALSIFY-PARSE-001 / PMAT-822: data_offset + offset (u64) and
+        // start + size (usize) can both wrap for a crafted header, letting a
+        // wrapped `end <= len` check pass over an OOB region. Use checked
+        // arithmetic + `slice::get` so any overflow / past-EOF range → None.
+        let abs_offset = self.header.data_offset.checked_add(entry.offset)?;
+        let start = usize::try_from(abs_offset).ok()?;
+        let end = start.checked_add(usize::try_from(entry.size).ok()?)?;
+        self.data.get(start..end)
     }
 
     /// Get tensor as f32 slice (F32 dtype only)
@@ -241,37 +283,13 @@ impl<'a> AprV2ReaderRef<'a> {
             ));
         }
 
-        // Parse metadata
-        let metadata_start = header.metadata_offset as usize;
-        let metadata_end = metadata_start + header.metadata_size as usize;
-
-        if data.len() < metadata_end {
-            return Err(V2FormatError::InvalidHeader(
-                "file too small for metadata".to_string(),
-            ));
-        }
-
-        let metadata = AprV2Metadata::from_json(&data[metadata_start..metadata_end])?;
+        // Parse metadata (FALSIFY-PARSE-001 / PMAT-822: checked arithmetic +
+        // .get() so a corrupted metadata_offset/size can never panic-slice).
+        let metadata = parse_metadata_section(data, header.metadata_offset, header.metadata_size)?;
 
         // Parse tensor index
-        let index_start = header.tensor_index_offset as usize;
-        let mut tensor_index = Vec::with_capacity(header.tensor_count as usize);
-        let mut pos = index_start;
-
-        for _ in 0..header.tensor_count {
-            let (entry, consumed) = TensorIndexEntry::from_bytes(&data[pos..])?;
-            tensor_index.push(entry);
-            pos += consumed;
-        }
-
-        // Verify tensor names are sorted
-        for i in 1..tensor_index.len() {
-            if tensor_index[i].name < tensor_index[i - 1].name {
-                return Err(V2FormatError::InvalidTensorIndex(
-                    "tensor index not sorted".to_string(),
-                ));
-            }
-        }
+        let tensor_index =
+            parse_tensor_index_section(data, header.tensor_index_offset, header.tensor_count)?;
 
         Ok(Self {
             header,
@@ -309,14 +327,14 @@ impl<'a> AprV2ReaderRef<'a> {
     #[must_use]
     pub fn get_tensor_data(&self, name: &str) -> Option<&[u8]> {
         let entry = self.get_tensor(name)?;
-        let start = (self.header.data_offset + entry.offset) as usize;
-        let end = start + entry.size as usize;
-
-        if end <= self.data.len() {
-            Some(&self.data[start..end])
-        } else {
-            None
-        }
+        // FALSIFY-PARSE-001 / PMAT-822: data_offset + offset (u64) and
+        // start + size (usize) can both wrap for a crafted header, letting a
+        // wrapped `end <= len` check pass over an OOB region. Use checked
+        // arithmetic + `slice::get` so any overflow / past-EOF range → None.
+        let abs_offset = self.header.data_offset.checked_add(entry.offset)?;
+        let start = usize::try_from(abs_offset).ok()?;
+        let end = start.checked_add(usize::try_from(entry.size).ok()?)?;
+        self.data.get(start..end)
     }
 
     /// Get tensor as f32 Vec (copies data from mmap to `Vec<f32>`)

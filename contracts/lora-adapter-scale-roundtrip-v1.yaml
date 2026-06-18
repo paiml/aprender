@@ -1,0 +1,45 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-18"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "Kalajdzievski, 2023 — A Rank Stabilization Scaling Factor for Fine-Tuning with LoRA (rsLoRA: scale = alpha/sqrt(rank))"
+    - "Hu et al., 2021 — LoRA: Low-Rank Adaptation (Standard scale = alpha/rank)"
+  description: |
+    Correctness contract for LoRA adapter serialization round-trip (aprender-train
+    lora::adapter::LoRAAdapter). Pillar-3 (Unsloth fine-tune) provable correctness:
+    a saved adapter must reload to a numerically-identical layer.
+
+kind: KernelContract
+name: lora-adapter-scale-roundtrip
+version: "1.0.0"
+scope: "crates/aprender-train/src/lora/adapter/lora_adapter.rs"
+
+description: |
+  A LoRALayer's effective update is `scale * (B @ A)`, where `scale` depends on the
+  scaling mode: Standard = alpha/rank, rsLoRA = alpha/sqrt(rank). LoRAAdapter::from_layer
+  correctly serializes the resulting `scale` value. PMAT-828 fixed LoRAAdapter::to_layer,
+  which rebuilt the layer via `LoRALayer::new` (recomputing Standard alpha/rank) and
+  DISCARDED the serialized scale — silently re-scaling an rsLoRA adapter by sqrt(rank)
+  (e.g. 4x at rank=16) on load, with no error, corrupting every reloaded/merged rsLoRA model.
+  The bug was invisible for Standard adapters (scale == alpha/rank already), which is why
+  every prior test (make_test_adapter: scale=2.0=alpha/rank) missed it. Fix: restore the
+  serialized scale via the new LoRALayer::with_scale builder.
+
+equations:
+  C-LORA-SCALE-001:
+    description: "Adapter scale survives a from_layer -> to_layer round-trip for ALL scaling modes"
+    formula: "to_layer(from_layer(L)).scale == L.scale ∀ L (incl. rsLoRA: alpha/sqrt(rank))"
+    note: "Standard (alpha/rank) was always correct; the obligation is the GENERAL case where serialized scale != alpha/rank."
+
+  C-LORA-SCALE-002:
+    description: "Restoration uses the serialized scale value, not a recomputed mode"
+    formula: "to_layer reads self.scale (the stored value); it does NOT recompute alpha/rank or alpha/sqrt(rank)"
+    note: "The adapter stores the scale VALUE, not the scaling mode, so reconstruction must be value-based (LoRALayer::with_scale)."
+
+falsification:
+  - id: FALSIFY-LORA-ADAPTER-SCALE-001
+    description: "rsLoRA scale (alpha/sqrt(rank)) survives the adapter round-trip. Discharges C-LORA-SCALE-001/002."
+    test: "test_rslora_scale_survives_roundtrip — rank=16, alpha=16: rsLoRA scale = 4.0; RED pre-fix reloaded.scale()=1.0 (alpha/rank), GREEN post-fix 4.0."
+    evidence: "cargo test -p aprender-train --lib test_rslora_scale_survives_roundtrip"

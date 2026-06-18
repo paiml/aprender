@@ -40,6 +40,7 @@ fn build_minimal_owned_quantized_model() -> OwnedQuantizedModel {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -88,6 +89,8 @@ fn build_minimal_owned_quantized_model() -> OwnedQuantizedModel {
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+        post_attn_norm_weight: None,
+        post_ffw_norm_weight: None,
     };
 
     OwnedQuantizedModel {
@@ -133,6 +136,7 @@ fn build_fused_qkv_model() -> OwnedQuantizedModel {
         eps: 1e-5,
         rope_type: 2,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -179,6 +183,8 @@ fn build_fused_qkv_model() -> OwnedQuantizedModel {
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+        post_attn_norm_weight: None,
+        post_ffw_norm_weight: None,
     };
 
     OwnedQuantizedModel {
@@ -226,6 +232,7 @@ fn build_q4k_model() -> OwnedQuantizedModel {
         eps: 1e-6,
         rope_type: 2,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -271,6 +278,8 @@ fn build_q4k_model() -> OwnedQuantizedModel {
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+        post_attn_norm_weight: None,
+        post_ffw_norm_weight: None,
     };
 
     // Q6_K lm_head: 210 bytes per 256 elements

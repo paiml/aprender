@@ -2,6 +2,7 @@
 /// PARITY-084f: Production serving summary
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_084f_serving_summary() {
     println!("PARITY-084f: Production Serving Summary");
     println!("========================================");
@@ -40,6 +41,7 @@ fn test_parity_084f_serving_summary() {
 /// PARITY-085a: Benchmark methodology
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_085a_benchmark_methodology() {
     println!("PARITY-085a: Benchmark Methodology");
     println!("====================================");
@@ -91,6 +93,7 @@ fn test_parity_085a_benchmark_methodology() {
 /// PARITY-085b: Comparison targets
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_085b_comparison_targets() {
     println!("PARITY-085b: Comparison Targets");
     println!("================================");
@@ -138,6 +141,7 @@ fn test_parity_085b_comparison_targets() {
 /// PARITY-085c: Microbenchmarks
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_085c_microbenchmarks() {
     println!("PARITY-085c: Microbenchmarks");
     println!("=============================");
@@ -187,6 +191,7 @@ fn test_parity_085c_microbenchmarks() {
 /// PARITY-085d: End-to-end benchmarks
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_085d_e2e_benchmarks() {
     println!("PARITY-085d: End-to-End Benchmarks");
     println!("===================================");
@@ -236,6 +241,7 @@ fn test_parity_085d_e2e_benchmarks() {
 /// PARITY-085e: Regression testing
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_085e_regression_testing() {
     println!("PARITY-085e: Performance Regression Testing");
     println!("============================================");
@@ -286,6 +292,7 @@ fn test_parity_085e_regression_testing() {
 /// PARITY-085f: Benchmark validation summary
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_085f_validation_summary() {
     println!("PARITY-085f: Benchmark Validation Summary");
     println!("==========================================");
@@ -326,6 +333,7 @@ fn test_parity_085f_validation_summary() {
 /// PARITY-086a: Component inventory
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_086a_phase5_inventory() {
     println!("PARITY-086a: Phase 5 Component Inventory");
     println!("=========================================");
@@ -361,6 +369,7 @@ fn test_parity_086a_phase5_inventory() {
 /// PARITY-086b: Cumulative performance
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_086b_cumulative_performance() {
     println!("PARITY-086b: Cumulative Performance");
     println!("=====================================");

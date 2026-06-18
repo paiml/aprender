@@ -15,6 +15,7 @@ fn test_phase34_fused_matmul_q4_1() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -51,6 +52,7 @@ fn test_phase34_fused_matmul_q4_1_multi_seq() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -110,6 +112,7 @@ fn test_phase34_fused_matmul_q5_0() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -146,6 +149,7 @@ fn test_phase34_fused_matmul_q5_0_multi_seq() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -225,6 +229,7 @@ fn test_phase34_fused_matmul_q4_k_single() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -261,6 +266,7 @@ fn test_phase34_fused_matmul_q4_k_multi() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -294,6 +300,7 @@ fn test_phase34_fused_matmul_q5_k() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -329,6 +336,7 @@ fn test_phase34_fused_matmul_q5_k_multi() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -362,6 +370,7 @@ fn test_phase34_fused_matmul_q6_k() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -397,6 +406,7 @@ fn test_phase34_fused_matmul_q6_k_multi() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -433,6 +443,7 @@ fn test_phase34_fused_matmul_unsupported_qtype() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };

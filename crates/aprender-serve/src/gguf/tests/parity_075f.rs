@@ -2,6 +2,7 @@
 /// PARITY-075f: Integration summary
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_075f_integration_summary() {
     println!("PARITY-075f: INT8 Attention Summary");
     println!("====================================");
@@ -71,6 +72,7 @@ fn test_parity_075f_integration_summary() {
 /// PARITY-076a: Phase 3 component inventory
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_076a_component_inventory() {
     use crate::cuda::{CudaKernels, KernelType};
     use crate::quantize::Q8_0Block;
@@ -133,6 +135,7 @@ fn test_parity_076a_component_inventory() {
 /// PARITY-076b: Performance projections
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_076b_performance_projections() {
     println!("PARITY-076b: Performance Projections");
     println!("=====================================");
@@ -185,6 +188,7 @@ fn test_parity_076b_performance_projections() {
 /// PARITY-076c: Memory bandwidth summary
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_076c_bandwidth_summary() {
     println!("PARITY-076c: Memory Bandwidth Summary");
     println!("=====================================");
@@ -242,6 +246,7 @@ fn test_parity_076c_bandwidth_summary() {
 /// PARITY-076d: Integration architecture
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_076d_integration_architecture() {
     println!("PARITY-076d: Integration Architecture");
     println!("=====================================");
@@ -307,6 +312,7 @@ fn test_parity_076d_integration_architecture() {
 /// PARITY-076e: Next steps
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_076e_next_steps() {
     println!("PARITY-076e: Next Steps");
     println!("=======================");
@@ -359,6 +365,7 @@ fn test_parity_076e_next_steps() {
 /// PARITY-076f: Phase 3 completion summary
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_076f_phase3_summary() {
     println!("PARITY-076f: Phase 3 Completion Summary");
     println!("========================================");
