@@ -552,3 +552,128 @@ fn falsify_mcp_dogfood_001_full_client_session() {
         "full dogfood session must complete in <10s (spec budget 2s + CI slack), took {elapsed:?}"
     );
 }
+
+/// Build a JSON-RPC 2.0 *notification* — a Request object with NO `id`
+/// member. Per JSON-RPC 2.0 §4.1 this signifies the client's lack of
+/// interest in a response, and "The Server MUST NOT reply to a
+/// Notification."
+fn notification(method: &str, params: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": method,
+        "params": params,
+    })
+}
+
+/// FALSIFY-MCP-009 — the `apr mcp` binary MUST NOT reply to a JSON-RPC
+/// notification, even when the notification's method is a normally-
+/// id-bearing request method (`initialize`, an unknown method, etc.).
+///
+/// # The defect this falsifies
+///
+/// JSON-RPC 2.0 §4.1 defines a Notification purely by the *absence of an
+/// `id`* — not by the method name. The pre-fix dispatcher only suppressed
+/// responses for methods literally prefixed with `notifications/`; a
+/// no-id `initialize` or no-id unknown method fell through to the inline
+/// `handle_request` path and got a `{"jsonrpc":"2.0","id":null,...}`
+/// response written to stdout. That stray response desyncs the client:
+/// the next real request's reply is one slot behind, so the client
+/// matches the wrong id.
+///
+/// # Why this assertion catches it without racing on "no output"
+///
+/// "Assert nothing was written" is inherently a timeout/race. Instead we
+/// rely on *stream ordering*: send two notifications (no-id `initialize`,
+/// no-id unknown method), then a real id-bearing request. Stdio responses
+/// are written in order on a single mutex-guarded handle, so the FIRST
+/// line we read after the notifications MUST be the real request's
+/// response (`id == 7`). If the buggy server emitted an `id:null`
+/// response for either notification, that line arrives first and the
+/// assertion `resp["id"] == 7` fails deterministically — no timeout
+/// needed.
+#[test]
+#[cfg(unix)]
+fn falsify_mcp_009_no_reply_to_notification() {
+    let tmp = tempdir_fallback();
+    write_mock_apr_shim(&tmp);
+    let path_value = path_with_mock_first(&tmp);
+
+    let bin_path = {
+        let candidate = assert_cmd::cargo::cargo_bin("apr");
+        if candidate.is_file() {
+            candidate
+        } else {
+            build_apr_binary()
+        }
+    };
+
+    let mut cmd = Command::new(&bin_path);
+    cmd.arg("mcp")
+        .env("PATH", &path_value)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
+
+    let mut child = cmd.spawn().expect("spawn `apr mcp`");
+    let mut stdin = child.stdin.take().expect("piped stdin");
+    let stdout = child.stdout.take().expect("piped stdout");
+
+    let (tx, rx) = mpsc::channel::<String>();
+    let reader_handle = spawn_stdout_reader(stdout, tx);
+
+    // Two notifications (no `id`): a normally-id-bearing request method and
+    // an unknown method. A conformant server emits NOTHING for either.
+    send(
+        &mut stdin,
+        &notification(
+            "initialize",
+            serde_json::json!({ "protocolVersion": "2024-11-05" }),
+        ),
+    );
+    send(
+        &mut stdin,
+        &notification("this/method/does/not/exist", serde_json::json!({})),
+    );
+
+    // Now a real request. With a conformant server this is the only message
+    // that produces output, so it must be the first (and only) line read.
+    send(&mut stdin, &request(7, "tools/list", serde_json::json!({})));
+
+    let resp = recv(&rx);
+    assert_eq!(
+        resp["id"], 7,
+        "first response after two notifications must be the tools/list reply (id=7). \
+         A different id (especially null) means the server illegally replied to a \
+         notification and desynced the stream — JSON-RPC 2.0 §4.1 violation. got: {resp:?}"
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "tools/list must succeed; got: {resp:?}"
+    );
+    assert!(
+        resp["result"]["tools"].is_array(),
+        "tools/list result.tools must be an array; got: {resp:?}"
+    );
+
+    // Belt-and-braces: drain stdin, let the server exit, and confirm NO
+    // further response lines were buffered (e.g. a delayed id:null). Any
+    // extra line here is also a §4.1 violation.
+    drop(stdin);
+    let exit = child.wait().expect("apr mcp must exit cleanly");
+    assert!(
+        exit.success(),
+        "apr mcp must exit 0 on stdin EOF, got: {exit:?}"
+    );
+    reader_handle.join().expect("stdout reader joins cleanly");
+
+    let mut extra = Vec::new();
+    while let Ok(line) = rx.try_recv() {
+        extra.push(line);
+    }
+    assert!(
+        extra.is_empty(),
+        "server emitted {} response line(s) beyond the single tools/list reply; \
+         notifications must produce no response (JSON-RPC 2.0 §4.1). Extra lines: {extra:?}",
+        extra.len()
+    );
+}

@@ -50,6 +50,7 @@ fn test_config(hidden_dim: usize, intermediate_dim: usize) -> GGUFConfig {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     }
@@ -171,6 +172,8 @@ fn test_owned_quantized_layer_from_borrowed_minimal() {
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+        post_attn_norm_weight: None,
+        post_ffw_norm_weight: None,
     };
 
     let data = create_test_data(400);
@@ -222,6 +225,8 @@ fn test_owned_quantized_layer_from_borrowed_with_gate() {
         ffn_norm_bias: Some(vec![0.0; 64]),
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+        post_attn_norm_weight: None,
+        post_ffw_norm_weight: None,
     };
 
     let data = create_test_data(450);
@@ -280,6 +285,8 @@ fn test_owned_quantized_layer_from_borrowed_separate_qkv() {
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+        post_attn_norm_weight: None,
+        post_ffw_norm_weight: None,
     };
 
     let data = create_test_data(450);

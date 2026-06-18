@@ -67,12 +67,21 @@ impl ValidatedAprTransformer {
         }
 
         // lm_head_weight: [vocab_size * hidden_dim]
-        ValidatedWeight::new(
-            transformer.lm_head_weight.clone(),
-            vocab_size,
-            hidden_dim,
-            "lm_head_weight",
-        )?;
+        //
+        // PMAT-788: tied-embedding models leave `lm_head_weight` empty and reuse
+        // the (already-validated) `token_embedding` for the LM head. In that case
+        // there is no separate weight to validate — the [vocab_size, hidden_dim]
+        // shape was already enforced on `token_embedding` above, and it is the
+        // exact buffer the logits matmul consumes via `lm_head_f32()`. Only
+        // validate `lm_head_weight` when it is materialized (untied path).
+        if !transformer.lm_head_tied || !transformer.lm_head_weight.is_empty() {
+            ValidatedWeight::new(
+                transformer.lm_head_weight.clone(),
+                vocab_size,
+                hidden_dim,
+                "lm_head_weight",
+            )?;
+        }
 
         // lm_head_bias (optional)
         if let Some(ref bias) = transformer.lm_head_bias {
