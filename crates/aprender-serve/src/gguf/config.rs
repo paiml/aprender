@@ -278,6 +278,13 @@ pub struct GGUFConfig {
     ///
     /// Source: GGUF metadata `{arch}.attention.key_length`.
     pub explicit_head_dim: Option<usize>,
+    /// PMAT-810: Gemma2 pre-attention query scale denominator
+    /// (`{arch}.attention.query_pre_attn_scalar`). When `Some(d)`, the attention
+    /// scale is `1/sqrt(d)` instead of `1/sqrt(head_dim)`. `None` (every non-Gemma2
+    /// arch, and gemma-2-2b which omits the key) → fall back to `head_dim`, which
+    /// matches llama.cpp's default (`n_embd_head_k`). Equal to head_dim (256) for
+    /// gemma-2-2b (so a no-op there); 224 for gemma-2-9b/27b.
+    pub query_pre_attn_scalar: Option<f32>,
     /// BOS token ID from GGUF metadata (used for GPU validation probe)
     /// None means BOS is unknown — GPU validation will be skipped.
     pub bos_token_id: Option<u32>,
@@ -379,6 +386,47 @@ impl GGUFConfig {
         a == "gemma" || a == "gemmaforcausallm"
     }
 
+    /// PMAT-810: Whether this is a Gemma-**v2**-family architecture
+    /// (`gemma2`, GGUF `general.architecture == "gemma2"`).
+    ///
+    /// Gemma2 shares Gemma1's GeGLU FFN + `sqrt(hidden)` embedding scaling, and
+    /// ADDS attention- and final-logit tanh softcapping. EXACT `gemma2` only —
+    /// not `gemma3`/`gemma3n` (those have further behaviors and stay fail-loud).
+    #[must_use]
+    pub fn is_gemma2(&self) -> bool {
+        let a = self.architecture.to_ascii_lowercase();
+        a == "gemma2" || a == "gemma2forcausallm"
+    }
+
+    /// PMAT-810: Gemma2 attention-logit softcap constant, applied as
+    /// `cap * tanh(scores / cap)` before the attention softmax.
+    ///
+    /// Returns `Some(50.0)` for Gemma2 (the canonical `attn_logit_softcapping` for
+    /// every gemma-2-* checkpoint), `None` for all other architectures — `None`
+    /// disables softcapping so non-Gemma2 attention stays byte-identical.
+    #[must_use]
+    pub fn attn_logit_softcap(&self) -> Option<f32> {
+        if self.is_gemma2() {
+            Some(50.0)
+        } else {
+            None
+        }
+    }
+
+    /// PMAT-810: Gemma2 final lm_head-logit softcap constant, applied as
+    /// `cap * tanh(logits / cap)` after the output projection.
+    ///
+    /// Returns `Some(30.0)` for Gemma2 (the canonical `final_logit_softcapping`
+    /// for every gemma-2-* checkpoint), `None` otherwise.
+    #[must_use]
+    pub fn final_logit_softcap(&self) -> Option<f32> {
+        if self.is_gemma2() {
+            Some(30.0)
+        } else {
+            None
+        }
+    }
+
     /// PMAT-809 (b): Whether RMSNorm must apply the Gemma `(1 + weight)` unit
     /// offset at RUNTIME.
     ///
@@ -406,7 +454,8 @@ impl GGUFConfig {
     /// all other architectures (no scaling).
     #[must_use]
     pub fn embed_scale(&self) -> Option<f32> {
-        if self.is_gemma1() {
+        // PMAT-810: Gemma2 shares Gemma1's `sqrt(hidden)` embedding scaling.
+        if self.is_gemma1() || self.is_gemma2() {
             // sqrt(hidden_size). f64 intermediate to keep the constant exact for
             // the common power-of-two-ish hidden sizes (e.g. 2048 → 45.2548...).
             #[allow(clippy::cast_precision_loss)]
@@ -422,7 +471,8 @@ impl GGUFConfig {
     /// Gemma's `GatedMlp` uses the `gelu_tanh` activation on the gate branch.
     #[must_use]
     pub fn geglu_ffn(&self) -> bool {
-        self.is_gemma1()
+        // PMAT-810: Gemma2 shares Gemma1's GeGLU FFN (gelu_tanh gate activation).
+        self.is_gemma1() || self.is_gemma2()
     }
 
     /// Extract configuration from APR model metadata.
@@ -502,6 +552,7 @@ impl GGUFConfig {
             rope_type,
             context_length,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
             bos_token_id,
             eos_token_id,
         })
@@ -518,6 +569,23 @@ impl GGUFConfig {
         } else {
             self.hidden_dim
         })
+    }
+
+    /// PMAT-810: Pre-softmax attention scale `1/sqrt(d)`.
+    ///
+    /// For almost every architecture `d = head_dim`, giving the standard
+    /// `1/sqrt(head_dim)`. Gemma2 instead scales queries by
+    /// `1/sqrt(query_pre_attn_scalar)`: 256 for gemma-2-2b (== head_dim, so this
+    /// is a no-op there) but 224 for gemma-2-9b/27b. When the GGUF omits the key
+    /// (`query_pre_attn_scalar == None`) we fall back to `head_dim`, exactly like
+    /// llama.cpp's default of `n_embd_head_k`.
+    #[inline]
+    #[must_use]
+    pub fn attn_scale(&self) -> f32 {
+        let denom = self
+            .query_pre_attn_scalar
+            .unwrap_or_else(|| self.head_dim() as f32);
+        1.0 / denom.sqrt()
     }
 
     /// Total Q projection dimension: `num_heads * head_dim`.
@@ -675,6 +743,11 @@ impl GGUFConfig {
         // GH-305: Infer head_dim from GGUF metadata or tensor shapes.
         let explicit_head_dim = Self::infer_explicit_head_dim(model, hidden_dim, num_heads);
 
+        // PMAT-810: Gemma2 pre-attention query scale denominator. None for every
+        // other arch (and gemma-2-2b, which omits the key) → attn_scale() falls
+        // back to head_dim, matching llama.cpp's default (n_embd_head_k).
+        let query_pre_attn_scalar = model.query_pre_attn_scalar();
+
         // Read rope_type: 0 = NORM (adjacent pairs, default for LLaMA), 2 = NEOX (split halves)
         // LLaMA models use type 0 (adjacent pairs) per llama.cpp's LLAMA_ROPE_TYPE_NORM
         let rope_type = model.rope_type().unwrap_or(0);
@@ -713,6 +786,7 @@ impl GGUFConfig {
             eps,
             rope_type,
             explicit_head_dim,
+            query_pre_attn_scalar,
             bos_token_id,
             eos_token_id,
         })
@@ -890,6 +964,7 @@ impl ValidatedModelConfig {
             eps,
             rope_type,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
             bos_token_id: config.bos_token_id,
             eos_token_id: config.eos_token_id,
         };
@@ -1111,6 +1186,7 @@ mod gemma_config_tests {
             eps: 1e-6,
             rope_type: 2,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
             bos_token_id: Some(2),
             eos_token_id: Some(1),
         }
@@ -1131,7 +1207,8 @@ mod gemma_config_tests {
         assert!(!cfg("qwen2", 1536).is_gemma1());
     }
 
-    /// (c) embed scale is `sqrt(hidden)` for gemma1, `None` otherwise.
+    /// (c) embed scale is `sqrt(hidden)` for gemma1 AND gemma2 (PMAT-810:
+    /// gemma2 shares gemma1's `sqrt(hidden)` embedding scaling), `None` otherwise.
     #[test]
     fn embed_scale_is_sqrt_hidden_for_gemma_only() {
         let g = cfg("gemma", 2048);
@@ -1140,17 +1217,26 @@ mod gemma_config_tests {
             (s - (2048f32).sqrt()).abs() < 1e-3,
             "scale {s} != sqrt(2048)"
         );
+        // PMAT-810: gemma2 also scales embeddings by sqrt(hidden).
+        let s2 = cfg("gemma2", 2304)
+            .embed_scale()
+            .expect("gemma2 must scale embeddings");
+        assert!(
+            (s2 - (2304f32).sqrt()).abs() < 1e-3,
+            "gemma2 scale {s2} != sqrt(2304)"
+        );
         assert!(cfg("llama", 4096).embed_scale().is_none());
         assert!(cfg("qwen2", 1536).embed_scale().is_none());
-        assert!(cfg("gemma2", 2304).embed_scale().is_none());
     }
 
-    /// (a) GeGLU FFN enabled for gemma1 only.
+    /// (a) GeGLU FFN enabled for gemma1 AND gemma2 (PMAT-810: gemma2 shares
+    /// gemma1's GeGLU FFN), disabled for non-Gemma archs.
     #[test]
     fn geglu_enabled_for_gemma1_only() {
         assert!(cfg("gemma", 2048).geglu_ffn());
+        assert!(cfg("gemma2", 2304).geglu_ffn());
         assert!(!cfg("llama", 4096).geglu_ffn());
-        assert!(!cfg("gemma2", 2304).geglu_ffn());
+        assert!(!cfg("qwen2", 1536).geglu_ffn());
     }
 
     /// (b) GGUF gemma weights are pre-shifted (+1 at conversion), so NO runtime
@@ -1160,5 +1246,44 @@ mod gemma_config_tests {
     fn rmsnorm_unit_offset_is_false_for_gguf_gemma() {
         assert!(!cfg("gemma", 2048).rmsnorm_unit_offset());
         assert!(!cfg("llama", 4096).rmsnorm_unit_offset());
+    }
+
+    /// PMAT-810: gemma2 softcap constants are 50 (attn) / 30 (final); None elsewhere.
+    #[test]
+    fn softcap_constants_gemma2_only() {
+        let g2 = cfg("gemma2", 2304);
+        assert_eq!(g2.attn_logit_softcap(), Some(50.0));
+        assert_eq!(g2.final_logit_softcap(), Some(30.0));
+        for arch in ["gemma", "gemma3", "llama", "qwen2"] {
+            assert_eq!(
+                cfg(arch, 2048).attn_logit_softcap(),
+                None,
+                "{arch} attn softcap"
+            );
+            assert_eq!(
+                cfg(arch, 2048).final_logit_softcap(),
+                None,
+                "{arch} final softcap"
+            );
+        }
+    }
+
+    /// PMAT-810: attn_scale falls back to 1/sqrt(head_dim) when
+    /// query_pre_attn_scalar is absent (== llama.cpp n_embd_head_k default), and
+    /// uses 1/sqrt(query_pre_attn_scalar) when present.
+    #[test]
+    fn attn_scale_query_pre_attn_scalar_fallback_and_override() {
+        // Default (key absent): 1/sqrt(head_dim). cfg() sets hidden=2304, heads=8
+        // → head_dim = 2304/8 = 288 (no explicit_head_dim in the helper).
+        let mut g = cfg("gemma2", 2304);
+        let hd = g.head_dim() as f32;
+        assert!(g.query_pre_attn_scalar.is_none());
+        assert!((g.attn_scale() - 1.0 / hd.sqrt()).abs() < 1e-6);
+        // Override (9b/27b style): query_pre_attn_scalar=224 → 1/sqrt(224).
+        g.query_pre_attn_scalar = Some(224.0);
+        assert!((g.attn_scale() - 1.0 / 224f32.sqrt()).abs() < 1e-6);
+        // Non-gemma config (llama): None → 1/sqrt(head_dim), unchanged.
+        let l = cfg("llama", 4096);
+        assert!((l.attn_scale() - 1.0 / (l.head_dim() as f32).sqrt()).abs() < 1e-6);
     }
 }

@@ -151,6 +151,8 @@ pub fn create_test_quantized_model(
             ffn_norm_bias: None,
             attn_q_norm_weight: None,
             attn_k_norm_weight: None,
+            post_attn_norm_weight: None,
+            post_ffw_norm_weight: None,
         })
         .collect();
 

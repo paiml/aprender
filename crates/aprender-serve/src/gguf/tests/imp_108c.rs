@@ -17,6 +17,7 @@ fn test_imp_108c_attention_softmax_normalized() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
