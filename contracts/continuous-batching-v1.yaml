@@ -1,5 +1,5 @@
 metadata:
-  version: 1.2.0
+  version: 1.3.0
   created: '2026-03-09'
   author: PAIML Engineering
   description: Continuous batching scheduler — unified prefill/decode with token budget
@@ -201,6 +201,23 @@ falsification_tests:
   if_fails: >
     A failed setup leaves batched_kv_stride non-zero; the next (buffer-reusing) batch writes
     K/V to the wrong slots -> cross-request KV corruption (the pre-PMAT-765 bug).
+- id: FALSIFY-CB-013
+  rule: Per-request top_p (nucleus) honored in batched decode (PMAT-792b)
+  prediction: >
+    select_batched_token applies each slot's OWN top_p nucleus cutoff, not just temperature/top_k.
+    A batched request with top_p < 1.0 restricts sampling to the smallest set of tokens whose
+    cumulative probability reaches top_p. Completes the per-request sampling isolation that
+    FALSIFY-CB-010 (PMAT-764) restored for temperature/top_k but left incomplete for top_p.
+  test: >
+    cargo test -p aprender-serve --features cuda --lib pmat764_select_batched_token_tests
+    (top_p_restricts_nucleus_to_dominant_token: logits [3,0,0,0] at temp 1.0, top_k 4, top_p 0.85
+    → every draw is token 0; verified RED with the nucleus disabled — token 2 leaked — and GREEN
+    after the fix on RTX 4090). Mechanism: select_batched_token now applies temperature → top_k →
+    top_p nucleus → softmax → sample, matching the canonical sample_advanced pipeline.
+  if_fails: >
+    The batched decode called sample_topk, which silently dropped top_p (the pre-PMAT-792b bug):
+    a request asking for top_p=0.1 got the full top_k distribution sampled, so low-probability
+    tokens leaked through — the same per-request-param-drop class as the PMAT-764 temperature bug.
 kani_harnesses:
 - id: KANI-CB-001
   obligation: CB-INV-001

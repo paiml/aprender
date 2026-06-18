@@ -3,7 +3,7 @@
 use crate::autograd::{checkpoint, GradScaler};
 use crate::io::{save_model, Model, ModelFormat, ModelMetadata, SaveConfig};
 use crate::lora::LoRALayer;
-use crate::optim::{AdamW, Optimizer};
+use crate::optim::{clip_grad_norm_refs, AdamW, Optimizer};
 use crate::train::{CausalLMLoss, LossFn, MetricsTracker};
 use crate::transformer::Transformer;
 use crate::Tensor;
@@ -228,25 +228,6 @@ impl TransformerTrainer {
 
     /// Apply gradient clipping and run the optimizer step, then reset accumulation.
     fn clip_and_step(&mut self) {
-        if let Some(max_norm) = self.config.base.max_grad_norm {
-            let params = if let Some(ref lora) = self.lora_layers {
-                lora.iter().flat_map(|l| vec![l.lora_a(), l.lora_b()]).collect::<Vec<_>>()
-            } else {
-                self.model.parameters()
-            };
-            let total_norm: f32 = params
-                .iter()
-                .filter_map(|p| p.grad())
-                .map(|g| g.iter().map(|x| x * x).sum::<f32>())
-                .sum::<f32>()
-                .sqrt();
-
-            if total_norm > max_norm {
-                let scale = max_norm / (total_norm + 1e-6);
-                let _ = scale;
-            }
-        }
-
         // ENT-LoRA-002: Only update trainable params (LoRA A/B + norms when active)
         if let Some(ref mut lora) = self.lora_layers {
             // ENT-LoRA-006: LoRA+ gradient scaling for B matrices
@@ -268,9 +249,17 @@ impl TransformerTrainer {
                 params.push(&mut layer.post_attn_norm.weight);
             }
             params.push(&mut self.model.norm.weight);
+            // Clip the gradients ACTUALLY being optimized (torch clip_grad_norm_) BEFORE
+            // the step. Previously the clip coefficient was computed then discarded (no-op).
+            if let Some(max_norm) = self.config.base.max_grad_norm {
+                clip_grad_norm_refs(&mut params, max_norm);
+            }
             self.optimizer.step_refs(&mut params);
         } else {
             let mut params = self.model.parameters_mut();
+            if let Some(max_norm) = self.config.base.max_grad_norm {
+                clip_grad_norm_refs(&mut params, max_norm);
+            }
             self.optimizer.step_refs(&mut params);
         }
 
@@ -594,5 +583,51 @@ impl TransformerTrainer {
             }
         }
         format!("{:x}", hasher.finalize())
+    }
+}
+
+#[cfg(test)]
+mod clip_and_step_tests {
+    use super::*;
+    use crate::transformer::TransformerConfig;
+
+    /// FALSIFY-TRAINER-GRADCLIP-001 (PMAT-829): `clip_and_step` computed the clip
+    /// coefficient and then DISCARDED it (`let _ = scale;`), so `--grad-clip` /
+    /// `with_grad_clip(..)` was a silent no-op on the CPU trainer — training ran with raw,
+    /// unclipped gradients (divergence risk), while the WGPU trainer clips correctly
+    /// (silent CPU-vs-GPU divergence). Prior tests only asserted the config field
+    /// (`base.max_grad_norm`), never that gradients are actually clipped at step time.
+    #[test]
+    fn falsify_clip_and_step_actually_clips_gradients() {
+        let config = TransformerTrainConfig::new(TransformerConfig::tiny())
+            .with_lr(0.001)
+            .with_grad_clip(1.0);
+        let mut trainer = TransformerTrainer::new(config);
+
+        // Inject a known oversized gradient (global norm >> max_norm=1.0) on every param.
+        for p in trainer.model.parameters() {
+            p.set_grad(ndarray::Array1::from_elem(p.len(), 10.0_f32));
+        }
+        let norm = |t: &TransformerTrainer| -> f32 {
+            t.model
+                .parameters()
+                .iter()
+                .filter_map(|p| p.grad())
+                .map(|g| g.iter().map(|x| x * x).sum::<f32>())
+                .sum::<f32>()
+                .sqrt()
+        };
+        let before = norm(&trainer);
+        assert!(before > 1.0, "precondition: injected grad norm {before} must exceed max_norm 1.0");
+
+        trainer.clip_and_step();
+
+        // After clip_and_step the global grad norm MUST be clipped to ~max_norm (1.0).
+        // RED pre-fix: grads untouched (norm == `before` >> 1.0). GREEN post-fix: ~1.0.
+        let after = norm(&trainer);
+        assert!(
+            after <= 1.0 + 1e-2,
+            "clip_and_step did not clip gradients: global norm = {after} (expected <= 1.0); --grad-clip is a no-op"
+        );
     }
 }

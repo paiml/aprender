@@ -116,9 +116,18 @@ impl ChatTemplateEngine for Llama2Template {
     fn format_conversation(&self, messages: &[ChatMessage]) -> Result<String, AprenderError> {
         let mut result = String::from("<s>");
         let mut system_prompt: Option<String> = None;
-        let mut in_user_turn = false;
+        // Canonical Llama-2 wraps each `[INST] ... [/INST] {answer} </s>` exchange in
+        // its own `<s>...</s>`. A fresh `<s>` is therefore emitted before a user turn
+        // ONLY when that user turn opens a new block immediately after a closed
+        // assistant turn (which ended in `</s>`). The leading `<s>` (pushed above)
+        // already covers the very first block. Tracking "after an assistant turn"
+        // (not merely "index > 0 and not currently in a user turn") avoids emitting a
+        // spurious second `<s>` when index 0 is a system message — that bug produced a
+        // double-BOS (`<s><s>...`) at the start of every system-prompted conversation,
+        // which the model never sees during training and which degrades generation.
+        let mut after_assistant = false;
 
-        for (i, msg) in messages.iter().enumerate() {
+        for msg in messages {
             match msg.role.as_str() {
                 "system" => {
                     system_prompt = Some(msg.content.clone());
@@ -126,7 +135,7 @@ impl ChatTemplateEngine for Llama2Template {
                 "user" => {
                     // Sanitize user content to prevent prompt injection (GH-204)
                     let safe_content = sanitize_user_content(&msg.content);
-                    if i > 0 && !in_user_turn {
+                    if after_assistant {
                         result.push_str("<s>");
                     }
                     result.push_str("[INST] ");
@@ -140,13 +149,13 @@ impl ChatTemplateEngine for Llama2Template {
 
                     result.push_str(&safe_content);
                     result.push_str(" [/INST]");
-                    in_user_turn = true;
+                    after_assistant = false;
                 }
                 "assistant" => {
                     result.push(' ');
                     result.push_str(&msg.content);
                     result.push_str("</s>");
-                    in_user_turn = false;
+                    after_assistant = true;
                 }
                 _ => {}
             }
