@@ -201,6 +201,16 @@ proof_obligations:
   lean:
     theorem: Theorems.StrictImportValidation
     status: sorry
+- type: invariant
+  property: APR header offsets never panic-slice (PMAT-822)
+  formal: >
+    for all data, header: tensor_index_offset > data.len() => AprV2Reader::from_bytes
+    returns Err(InvalidTensorIndex) not panic; and (data_offset + offset) or
+    (start + size) overflow => get_tensor_data returns None not OOB read
+  applies_to: header_integrity
+  lean:
+    theorem: Theorems.HeaderIntegrity
+    status: sorry
 
 falsification_tests:
 - id: FALSIFY-FMT-001
@@ -243,6 +253,17 @@ falsification_tests:
   prediction: F32 value 100000.0 produces warning or error when coerced to F16
   test: Create tensor with F32::MAX, coerce to F16
   if_fails: Silent overflow to F16::INFINITY without warning
+- id: FALSIFY-FMT-009
+  rule: APR header offsets never panic-slice (PMAT-822)
+  prediction: >
+    APR file with a valid (attacker-forged) CRC32 header whose tensor_index_offset
+    points past EOF returns Err(InvalidTensorIndex), not a slice-index panic
+  test: >
+    crates/aprender-core/src/format/v2/tests_layout_reader_errors.rs ::
+    falsify_parse_001_reader_ref_index_offset_past_eof,
+    falsify_parse_001_reader_index_offset_past_eof,
+    falsify_parse_001_index_offset_overflow_usize
+  if_fails: '&data[pos..] panics "range start index out of bounds" — DoS on apr run/tensors/convert'
 
 kani_harnesses:
 - id: KANI-FMT-001
@@ -289,8 +310,8 @@ qa_gate:
   checks:
   - validation
   - falsification
-  pass_criteria: All 8 falsification tests pass
-  falsification: FALSIFY-FMT-001 through FALSIFY-FMT-008
+  pass_criteria: All 9 falsification tests pass
+  falsification: FALSIFY-FMT-001 through FALSIFY-FMT-009
 
 toyota_way_principles:
   jidoka: >
