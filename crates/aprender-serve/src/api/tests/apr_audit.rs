@@ -258,6 +258,7 @@ fn test_imp_116a_appstate_cached_model_storage() {
 
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -298,6 +299,7 @@ async fn test_imp_116b_cached_model_thread_safety() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -344,6 +346,7 @@ async fn test_imp_116c_completions_uses_cached_model() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };

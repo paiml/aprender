@@ -17,7 +17,8 @@ pub(crate) fn query_wgpu_device_info(device_index: u32) -> Result<GpuDeviceInfo,
     use crate::backends::gpu::runtime;
 
     runtime::block_on(async {
-        let instance = wgpu::Instance::default();
+        // PMAT-778: reuse the process-global instance (single freedreno enumeration).
+        let instance = crate::backends::gpu::shared_instance();
 
         // Get all adapters (wgpu 27+ returns Vec directly)
         let adapters = instance.enumerate_adapters(wgpu::Backends::all());
@@ -61,7 +62,8 @@ pub(crate) fn enumerate_wgpu_devices() -> Result<Vec<GpuDeviceInfo>, MonitorErro
     use crate::backends::gpu::runtime;
 
     runtime::block_on(async {
-        let instance = wgpu::Instance::default();
+        // PMAT-778: reuse the process-global instance (single freedreno enumeration).
+        let instance = crate::backends::gpu::shared_instance();
         let adapters = instance.enumerate_adapters(wgpu::Backends::all());
 
         if adapters.is_empty() {

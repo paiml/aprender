@@ -2,6 +2,7 @@
 /// PARITY-086c: Implementation status
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_086c_implementation_status() {
     println!("PARITY-086c: Implementation Status");
     println!("====================================");
@@ -40,6 +41,7 @@ fn test_parity_086c_implementation_status() {
 /// PARITY-086d: Test coverage summary
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_086d_test_coverage() {
     println!("PARITY-086d: Test Coverage Summary");
     println!("===================================");
@@ -107,6 +109,7 @@ fn test_parity_086d_test_coverage() {
 /// PARITY-086e: Next steps
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_086e_next_steps() {
     println!("PARITY-086e: Next Steps");
     println!("========================");
@@ -141,6 +144,7 @@ fn test_parity_086e_next_steps() {
 /// PARITY-086f: Phase 5 final summary
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_086f_phase5_summary() {
     println!("PARITY-086f: Phase 5 Final Summary");
     println!("===================================");

@@ -293,13 +293,33 @@ pub fn is_gemma_family(arch_name: &str) -> bool {
 /// the llama.cpp reference for the same GGUF (PMAT-809). It has NO softcapping, so
 /// it is correct without it.
 ///
-/// Gemma2 / Gemma3 ALSO require attention- and final-logit softcapping, which is
+/// Gemma3 / Gemma3n ALSO require behaviors beyond softcapping (e.g. per-layer
+/// embedding scaling, alternating local/global attention with QK-norm) that are
 /// NOT implemented — so they are deliberately EXCLUDED here and remain fail-loud.
 #[must_use]
 pub fn is_gemma1_supported(arch_name: &str) -> bool {
     let lower = arch_name.to_ascii_lowercase();
     // EXACT v1 only — never gemma2/gemma3/gemma3n (those need softcapping).
     lower == "gemma" || lower == "gemmaforcausallm"
+}
+
+/// PMAT-810: Returns `true` when `arch_name` is the Gemma-**v2** architecture
+/// that realizar's CPU forward path now implements CORRECTLY.
+///
+/// Gemma v2 (`gemma2`, `Gemma2ForCausalLM`) adds three behaviors on top of
+/// Gemma v1's GeGLU FFN + `(1 + weight)` RMSNorm + `sqrt(hidden)` embed scaling:
+/// attention-logit tanh softcap (`50 * tanh(scores/50)`), final-logit tanh
+/// softcap (`30 * tanh(logits/30)`), and `1/sqrt(query_pre_attn_scalar)` query
+/// scaling. All three are implemented (`ops::softcap`, `config.attn_scale`) and
+/// verified coherent against llama.cpp on gemma-2-2b-it Q4_K_M (PMAT-810):
+/// "capital of France" → "Paris", "2+2=" → "4", top-token match.
+///
+/// EXACT `gemma2` only — `gemma3`/`gemma3n` need further behaviors and stay
+/// fail-loud (honest-by-design).
+#[must_use]
+pub fn is_gemma2_supported(arch_name: &str) -> bool {
+    let lower = arch_name.to_ascii_lowercase();
+    lower == "gemma2" || lower == "gemma2forcausallm"
 }
 
 /// Fail LOUD for architectures whose required behaviors realizar's forward path
@@ -323,15 +343,21 @@ fn validate_supported_architecture(arch_name: &str) -> std::result::Result<(), M
     if is_gemma1_supported(arch_name) {
         return Ok(());
     }
+    // PMAT-810: Gemma v2 is now implemented (softcapping + query_pre_attn_scalar),
+    // verified coherent vs llama.cpp on gemma-2-2b-it Q4_K_M — allow it through.
+    if is_gemma2_supported(arch_name) {
+        return Ok(());
+    }
     if is_gemma_family(arch_name) {
         return Err(ModelLoadError {
             gate: "architecture_supported",
             reason: format!(
-                "Gemma2/Gemma3 architecture '{arch_name}' additionally requires \
-                 attention/logit tanh-softcapping, which realizar's forward path \
-                 does not implement yet. Running it would silently produce incorrect \
-                 output, so it is refused. (Gemma v1 IS supported — PMAT-809.) \
-                 Track Gemma2/3 support at PMAT-807."
+                "Gemma3/Gemma3n architecture '{arch_name}' requires behaviors \
+                 (per-layer embedding scaling, alternating local/global attention \
+                 with QK-norm) that realizar's forward path does not implement yet. \
+                 Running it would silently produce incorrect output, so it is \
+                 refused. (Gemma v1 — PMAT-809 — and Gemma v2 — PMAT-810 — ARE \
+                 supported.) Track Gemma3 support at PMAT-807."
             ),
         });
     }
@@ -664,14 +690,13 @@ mod tests {
     /// FALSIFIER: every Gemma-family arch string is rejected at the gate.
     /// If any is silently accepted, this test fails (silent-garbage regression).
     ///
-    /// PMAT-809: Gemma2/Gemma3 are STILL refused (they need softcapping). Gemma v1
-    /// is now SUPPORTED, so it is asserted separately in `test_gemma1_now_supported`.
+    /// PMAT-810: Gemma3/Gemma3n are STILL refused (further behaviors unimplemented).
+    /// Gemma v1 (PMAT-809) and Gemma v2 (PMAT-810) are now SUPPORTED, asserted
+    /// separately in `test_gemma1_now_supported` / `test_gemma2_now_supported`.
     #[test]
-    fn test_gemma2_gemma3_rejected_at_load() {
+    fn test_gemma3_rejected_at_load() {
         let gemma_names = [
-            "gemma2",
             "gemma3",
-            "Gemma2ForCausalLM",
             "Gemma3ForCausalLM",
             "gemma3n", // future point variant — fail-loud is the safe default
         ];
@@ -679,19 +704,43 @@ mod tests {
             let mut config = valid_config();
             config.architecture = name.to_string();
             let err = validate_model_load(&config)
-                .expect_err(&format!("Gemma2/3 arch '{name}' must be refused, not run"));
+                .expect_err(&format!("Gemma3 arch '{name}' must be refused, not run"));
             assert_eq!(
                 err.gate, "architecture_supported",
                 "'{name}' rejected by wrong gate: {}",
                 err.gate
             );
-            // The error must explain WHY (the missing softcapping behavior).
+            // The error must name the architecture it refused.
             assert!(
-                err.reason.contains("Gemma") && err.reason.contains("softcapping"),
-                "'{name}' error must name the missing behavior: {}",
+                err.reason.contains("Gemma3"),
+                "'{name}' error must name the refused architecture: {}",
                 err.reason
             );
         }
+    }
+
+    /// PMAT-810 FALSIFIER: Gemma v2 now LOADS (it was fail-loud under PMAT-807/809).
+    ///
+    /// If the forward path ever regresses and Gemma v2 is re-rejected, this fails.
+    /// Coherence vs llama.cpp is the separate end-to-end falsifier (PMAT-810).
+    #[test]
+    fn test_gemma2_now_supported() {
+        for name in ["gemma2", "GEMMA2", "Gemma2ForCausalLM"] {
+            assert!(
+                is_gemma2_supported(name),
+                "'{name}' must be recognized as supported Gemma v2"
+            );
+            let mut config = valid_config();
+            config.architecture = name.to_string();
+            assert!(
+                validate_model_load(&config).is_ok(),
+                "Gemma v2 arch '{name}' must now load (PMAT-810)"
+            );
+        }
+        // The exclusions: gemma3/gemma3n are NOT "supported v2".
+        assert!(!is_gemma2_supported("gemma3"));
+        assert!(!is_gemma2_supported("gemma3n"));
+        assert!(!is_gemma2_supported("gemma"));
     }
 
     /// PMAT-809 FALSIFIER: Gemma v1 now LOADS (it was fail-loud under PMAT-807).
@@ -718,12 +767,12 @@ mod tests {
         assert!(!is_gemma1_supported("gemma3n"));
     }
 
-    /// `validate_model_load_basic` (the path real loaders call) still rejects Gemma2.
+    /// PMAT-810: `validate_model_load_basic` (the path real loaders call) now
+    /// ACCEPTS Gemma v2 (gemma-2-2b-it dims: 26 layers, 2304 hidden, 8/4 heads).
     #[test]
-    fn test_gemma2_rejected_via_basic_loader_path() {
-        let err = validate_model_load_basic("gemma2", 26, 2304, 8, 4, 9216, 256_000)
-            .expect_err("gemma2 must be refused at the basic loader gate");
-        assert_eq!(err.gate, "architecture_supported");
+    fn test_gemma2_accepted_via_basic_loader_path() {
+        validate_model_load_basic("gemma2", 26, 2304, 8, 4, 9216, 256_000)
+            .expect("gemma2 must now load at the basic loader gate (PMAT-810)");
     }
 
     /// `validate_model_load_basic` now ACCEPTS Gemma v1 (PMAT-809).

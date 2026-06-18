@@ -48,6 +48,8 @@ mod tests {
             ffn_norm_bias: None,
             attn_q_norm_weight: None,
             attn_k_norm_weight: None,
+            post_attn_norm_weight: None,
+            post_ffw_norm_weight: None,
         };
 
         assert_eq!(layer.attn_norm_weight.len(), 64);
@@ -113,6 +115,8 @@ mod tests {
             ffn_norm_bias: Some(vec![0.0; 32]),
             attn_q_norm_weight: None,
             attn_k_norm_weight: None,
+            post_attn_norm_weight: None,
+            post_ffw_norm_weight: None,
         };
 
         assert!(layer.attn_norm_bias.is_some());

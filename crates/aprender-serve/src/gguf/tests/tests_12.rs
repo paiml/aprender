@@ -25,6 +25,7 @@
 /// PARITY-070a: Problem analysis - dequantize-then-compute bottleneck
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity070a_problem_analysis() {
     println!("PARITY-070a: Dequantize-Then-Compute Bottleneck");
     println!("================================================");
@@ -71,6 +72,7 @@ fn test_parity070a_problem_analysis() {
 /// PARITY-070b: Target architecture - fused MMQ
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity070b_target_architecture() {
     println!("PARITY-070b: Fused MMQ Target Architecture");
     println!("==========================================");
@@ -116,6 +118,7 @@ fn test_parity070b_target_architecture() {
 /// PARITY-070c: INT8 dot product operations (DP4A)
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity070c_int8_operations() {
     println!("PARITY-070c: INT8 Dot Product Operations");
     println!("=========================================");
@@ -168,6 +171,7 @@ fn test_parity070c_int8_operations() {
 /// PARITY-070d: Q8 activation quantization
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity070d_activation_quantization() {
     println!("PARITY-070d: Q8 Activation Quantization");
     println!("=======================================");
@@ -217,6 +221,7 @@ fn test_parity070d_activation_quantization() {
 /// PARITY-070e: Fused Q4xQ8 kernel design
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity070e_fused_kernel_design() {
     println!("PARITY-070e: Fused Q4xQ8 Kernel Design");
     println!("======================================");
@@ -287,6 +292,7 @@ fn test_parity070e_fused_kernel_design() {
 /// PARITY-070f: Phase 3 implementation roadmap
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity070f_roadmap() {
     println!("PARITY-070f: Phase 3 Implementation Roadmap");
     println!("===========================================");
@@ -367,6 +373,7 @@ fn test_parity070f_roadmap() {
 /// PARITY-071a: Q8_0Block structure verification
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity071a_q8_block_struct() {
     use crate::quantize::Q8_0Block;
 
@@ -405,6 +412,7 @@ fn test_parity071a_q8_block_struct() {
 /// PARITY-071b: Q8_0Block::quantize() function
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity071b_quantize_function() {
     use crate::quantize::Q8_0Block;
 

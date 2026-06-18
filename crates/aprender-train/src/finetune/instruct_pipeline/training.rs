@@ -65,7 +65,18 @@ impl InstructPipeline {
         }
 
         // 2. Forward pass → logits [seq_len, vocab_size]
-        let logits = self.model.forward(&full_ids);
+        //
+        // PMAT-805 (#2051-class): route through `forward_with_lora` when LoRA
+        // adapters exist. `model.forward()` runs plain attention and never
+        // touches `self.lora_layers`, so the adapter params stay orphaned from
+        // the autograd graph → `op.backward()` produces zero LoRA gradients →
+        // flat loss (the adapters never train). `forward_with_lora` wires the
+        // [Q0,V0,Q1,V1,...] adapters into the Q/V projections (KAIZEN-011 path).
+        let logits = if self.lora_layers.is_empty() {
+            self.model.forward(&full_ids)
+        } else {
+            self.model.forward_with_lora(&full_ids, &self.lora_layers)
+        };
         let logits_data = logits.data().as_slice().expect("contiguous logits").to_vec();
 
         // 3. Causal LM loss on response tokens only
@@ -455,7 +466,13 @@ impl InstructPipeline {
             let vocab_size = self.model.config().vocab_size;
             let prompt_len = prompt_len.min(seq_len);
 
-            let logits = self.model.forward(&full_ids);
+            // PMAT-805: evaluate the LoRA-adapted model so val_loss reflects the
+            // trained adapters (matches train_step's forward_with_lora path).
+            let logits = if self.lora_layers.is_empty() {
+                self.model.forward(&full_ids)
+            } else {
+                self.model.forward_with_lora(&full_ids, &self.lora_layers)
+            };
             let logits_data = logits.data().as_slice().expect("contiguous logits").to_vec();
 
             let loss_start = prompt_len.saturating_sub(1);
