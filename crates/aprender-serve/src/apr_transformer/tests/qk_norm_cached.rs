@@ -125,6 +125,7 @@ fn make_qknorm_model(qk_norm: Option<Vec<f32>>) -> AprTransformer {
         q4k_layers: None,
         lm_head_weight_q6k: None,
         lm_head_weight_q4k: None,
+        lm_head_tied: false,
     }
 }
 
