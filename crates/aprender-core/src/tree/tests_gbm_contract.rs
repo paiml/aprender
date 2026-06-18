@@ -113,6 +113,27 @@ fn falsify_gbm_004_better_than_random() {
     );
 }
 
+/// FALSIFY-GBM-005 (PMAT-831): `predict_proba` must converge to the conditional base rate,
+/// not saturate to 0/1. The weak learner previously fit a CLASSIFICATION tree to
+/// sign(residual) and added a fixed ±1 step, discarding residual magnitude → `raw` grew
+/// unbounded → P saturated. On 4 identical-feature samples with labels [1,1,1,0] the
+/// Bayes-optimal P(class=1) is 0.75 (sklearn GradientBoostingClassifier agrees). Every prior
+/// GBM test only checked hard labels on well-separated data, where saturation is invisible.
+#[test]
+fn falsify_gbm_005_proba_calibration_base_rate() {
+    let x = Matrix::from_vec(4, 1, vec![1.0, 1.0, 1.0, 1.0]).expect("valid");
+    let y = vec![1_usize, 1, 1, 0];
+    let mut gbm = GradientBoostingClassifier::new();
+    gbm.fit(&x, &y).expect("fit");
+    let p1 = gbm.predict_proba(&x).expect("proba")[0][1];
+    // sklearn => 0.75; a correct GBM converges to the base rate, never saturating to ~1.0.
+    // RED pre-fix: ~0.99998 (constant ±1 step). GREEN post-fix: ~0.75.
+    assert!(
+        (p1 - 0.75).abs() < 0.10,
+        "GBM predict_proba did not converge to base rate: P(class=1)={p1}, expected ~0.75 (sklearn)"
+    );
+}
+
 mod gbm_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
