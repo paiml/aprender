@@ -262,11 +262,26 @@ impl ARIMA {
             residual_history.push(0.0); // Assume zero future errors
         }
 
-        // Integrate (reverse differencing)
+        // Integrate (reverse differencing). The forecasts are in d-th-difference space; each
+        // un-differencing pass must be seeded with the last value of the corresponding
+        // INTERMEDIATE differenced series, not y[n] every time. Previously every pass re-seeded
+        // with original_data.last() (= y[n]) — correct only for d == 1. For d >= 2 the pass that
+        // undoes the k-th difference must be seeded with the last value of the (k-1)-th
+        // difference, so the seeding error compounded with each extra differencing order.
+        //
+        // tail[k] = last value of the k-th-order difference of the original data (tail[0] = y[n]).
+        let mut tails = Vec::with_capacity(self.d.max(1));
+        let mut series = original_data.clone();
+        tails.push(series.as_slice().last().copied().unwrap_or(0.0));
+        for _ in 1..self.d {
+            series = Self::difference(&series)?;
+            tails.push(series.as_slice().last().copied().unwrap_or(0.0));
+        }
+        // Undo from the highest difference order downward: undo the d-th difference (seed
+        // tail[d-1]) … finally undo the 1st difference (seed tail[0] = y[n]).
         let mut integrated = forecasts;
-        for _ in 0..self.d {
-            let last_value = original_data.as_slice().last().copied().unwrap_or(0.0);
-            integrated = Self::integrate(&integrated, last_value)?;
+        for k in (0..self.d).rev() {
+            integrated = Self::integrate(&integrated, tails[k])?;
         }
 
         Ok(Vector::from_vec(integrated))
