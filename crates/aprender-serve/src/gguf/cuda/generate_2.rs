@@ -242,9 +242,30 @@ impl OwnedQuantizedModelCuda {
 
         // GH-94: Batched prefill is default (36% throughput improvement).
         // Set BATCHED_PREFILL=0 to disable (serial fallback).
-        let use_batched = std::env::var("BATCHED_PREFILL")
-            .map(|v| v != "0")
-            .unwrap_or(true);
+        //
+        // PMAT-810 (Blackwell batched-prefill KV-cache corruption): on Blackwell
+        // (cc>=120, e.g. GB10 sm_121) the batched prefill path writes a CORRUPT
+        // KV cache. The extracted first token is ~correct (near-tie vs CPU), but
+        // every subsequent decode step reads poisoned K/V and the output collapses
+        // to a single repeated token (measured: CPU/serial-prefill emit
+        // "Certainly! Below is a Rust function that", batched prefill emits
+        // "CertainlyCertainlyCertainly..."). The decode-path parity probe
+        // (PMAT-806 / F2-VALIDATION) only checks the FIRST token, so it accepts
+        // the model and the corruption ships silently. The bug is structural to
+        // batched prefill on Blackwell (it reproduces with FP8_PREFILL=0 / HGEMM
+        // too, so it is NOT the PMAT-806 activation-quant outlier), while serial
+        // prefill (per-token forward_gpu_resident, the PMAT-806 fp32-MWV decode
+        // GEMV) is byte-for-byte correct on-device. Default Blackwell to serial
+        // prefill so quantized models stay coherent; discrete GPUs (sm_89 etc.)
+        // keep the fast batched path unchanged. Explicit BATCHED_PREFILL=1 still
+        // forces batched for A/B testing the deeper KV-scatter root-cause fix.
+        // Contract: contracts/apr-cpu-vs-gpu-output-parity-v1.yaml (FALSIFY-CPU-GPU-009).
+        let is_blackwell = self.executor.gpu_profile.cc >= 120;
+        let use_batched = match std::env::var("BATCHED_PREFILL").as_deref() {
+            Ok("0") => false,
+            Ok(_) => true, // explicit opt-in forces batched even on Blackwell
+            Err(_) => !is_blackwell,
+        };
 
         let prefill_start = std::time::Instant::now();
 
@@ -519,14 +540,31 @@ impl OwnedQuantizedModelCuda {
             }
         }
 
+        // PMAT-814: when a repetition penalty is active we MUST have CPU-side logits to
+        // penalize, so the GPU-side fused argmax fast path (forward_gpu_resident_to_token_id)
+        // can only be used when no penalty applies. With repeat_penalty == 1.0 (the default)
+        // this is false and the greedy fast path is taken unchanged — no perf regression.
+        let penalty_active = config.repeat_penalty != 1.0 && config.repeat_last_n > 0;
         for _token_num in 0..max_decode {
             let token_start = std::time::Instant::now();
-            let next_token = if config.temperature == 0.0 || config.top_k == 1 {
+            let greedy = config.temperature == 0.0 || config.top_k == 1;
+            let next_token = if greedy && !penalty_active {
                 self.forward_gpu_resident_to_token_id(last_token, &mut cache, position)?
             } else {
-                let logits = self.forward_gpu_resident(last_token, &mut cache, position)?;
-                // entrenar#318: use simple top-k sampling (sample_advanced not yet compiled)
-                OwnedQuantizedModel::sample_topk(&logits, config.temperature, config.top_k)
+                let mut logits = self.forward_gpu_resident(last_token, &mut cache, position)?;
+                // PMAT-814: penalize recently-seen tokens before greedy/sampling.
+                OwnedQuantizedModel::apply_repeat_penalty(
+                    &mut logits,
+                    &tokens,
+                    config.repeat_penalty,
+                    config.repeat_last_n,
+                );
+                if greedy {
+                    OwnedQuantizedModel::argmax(&logits)
+                } else {
+                    // entrenar#318: use simple top-k sampling (sample_advanced not yet compiled)
+                    OwnedQuantizedModel::sample_topk(&logits, config.temperature, config.top_k)
+                }
             };
 
             if config.trace {
@@ -660,7 +698,16 @@ impl OwnedQuantizedModelCuda {
 
         for _ in 0..max_decode {
             // Always use logits path for logprob extraction
-            let logits = self.forward_gpu_resident(last_token, &mut cache, position)?;
+            let mut logits = self.forward_gpu_resident(last_token, &mut cache, position)?;
+            // PMAT-814: penalize recently-seen tokens before greedy/sampling AND before
+            // logprob extraction, so the reported logprob reflects the penalized
+            // distribution that actually selected the token (no-op when penalty == 1.0).
+            OwnedQuantizedModel::apply_repeat_penalty(
+                &mut logits,
+                &tokens,
+                config.repeat_penalty,
+                config.repeat_last_n,
+            );
             let next_token = if greedy {
                 OwnedQuantizedModel::argmax(&logits)
             } else {

@@ -19,6 +19,7 @@ async fn test_imp_130d_prometheus_latency_has_help_and_type() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -90,6 +91,7 @@ async fn test_imp_141a_prometheus_includes_throughput_rps() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -152,6 +154,7 @@ async fn test_imp_141b_prometheus_includes_elapsed_seconds() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -206,6 +209,7 @@ async fn test_imp_141c_throughput_rps_has_help_and_type() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -263,6 +267,7 @@ async fn test_imp_141d_elapsed_seconds_has_help_and_type() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -385,6 +390,7 @@ async fn test_imp_131c_json_response_includes_percentiles() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };

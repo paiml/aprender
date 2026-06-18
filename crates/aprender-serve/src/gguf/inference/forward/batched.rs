@@ -332,6 +332,14 @@ impl OwnedQuantizedModel {
 
         // Generate new tokens one at a time (autoregressive)
         for gen_idx in 0..config.max_tokens {
+            // PMAT-814: apply repetition penalty in place over the recent context
+            // BEFORE both greedy argmax and sampling (no-op when repeat_penalty == 1.0).
+            crate::gguf::OwnedQuantizedModel::apply_repeat_penalty(
+                &mut logits,
+                &tokens,
+                config.repeat_penalty,
+                config.repeat_last_n,
+            );
             // Sample next token from logits
             let next_token = if config.temperature == 0.0 || config.top_k == 1 {
                 ops::argmax(&logits)
@@ -407,7 +415,16 @@ impl OwnedQuantizedModel {
                 reason: "Token buffer empty during generation".to_string(),
             })?;
 
-            let logits = self.forward_single_with_cache(last_token, &mut cache, position)?;
+            let mut logits = self.forward_single_with_cache(last_token, &mut cache, position)?;
+
+            // PMAT-814: apply repetition penalty in place over the recent context
+            // BEFORE both greedy argmax and sampling (no-op when repeat_penalty == 1.0).
+            crate::gguf::OwnedQuantizedModel::apply_repeat_penalty(
+                &mut logits,
+                &tokens,
+                config.repeat_penalty,
+                config.repeat_last_n,
+            );
 
             // Sample next token
             let next_token = if config.temperature == 0.0 || config.top_k == 1 {

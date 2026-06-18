@@ -22,6 +22,7 @@
 /// PARITY-026a: Verify flash_attention_tiled method exists and has correct signature
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity026a_flash_attention_exists() {
     println!("=== PARITY-026a: FlashAttention Method ===\n");
 
@@ -52,6 +53,7 @@ fn test_parity026a_flash_attention_exists() {
 /// PARITY-026b: FlashAttention memory savings analysis
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity026b_flash_attention_memory_savings() {
     println!("=== PARITY-026b: FlashAttention Memory Savings ===\n");
 
@@ -98,6 +100,7 @@ fn test_parity026b_flash_attention_memory_savings() {
 /// PARITY-026c: FlashAttention numerical equivalence
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity026c_flash_attention_numerical() {
     println!("=== PARITY-026c: FlashAttention Numerical Equivalence ===\n");
 
@@ -146,6 +149,7 @@ fn test_parity026c_flash_attention_numerical() {
 /// PARITY-026d: Batch FlashAttention throughput analysis
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity026d_batch_flash_attention_throughput() {
     println!("=== PARITY-026d: Batch FlashAttention Throughput ===\n");
 
@@ -196,6 +200,7 @@ fn test_parity026d_batch_flash_attention_throughput() {
 /// PARITY-026e: FlashAttention integration with forward pass
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity026e_flash_attention_integration() {
     println!("=== PARITY-026e: FlashAttention Integration ===\n");
 
@@ -248,6 +253,7 @@ fn test_parity026e_flash_attention_integration() {
 /// PARITY-027a: Verify FlashAttention threshold in forward pass
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity027a_flash_attention_threshold() {
     println!("=== PARITY-027a: FlashAttention Threshold ===\n");
 
@@ -282,6 +288,7 @@ fn test_parity027a_flash_attention_threshold() {
 /// PARITY-027b: Memory savings at threshold boundary
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity027b_threshold_memory_savings() {
     println!("=== PARITY-027b: Memory Savings at Threshold ===\n");
 
@@ -335,6 +342,7 @@ fn test_parity027b_threshold_memory_savings() {
 /// PARITY-027c: FlashAttention integration in forward pass structure
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity027c_forward_pass_integration() {
     println!("=== PARITY-027c: Forward Pass Integration ===\n");
 
@@ -369,6 +377,7 @@ fn test_parity027c_forward_pass_integration() {
 /// PARITY-027d: Hybrid dispatch efficiency analysis
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity027d_hybrid_dispatch_efficiency() {
     println!("=== PARITY-027d: Hybrid Dispatch Efficiency ===\n");
 

@@ -55,6 +55,35 @@ pub(crate) unsafe fn matmul_q4k_f32_avx512(
     }
 }
 
+/// Bounds-aware 16-wide activation load for the Q4_K reduction tail.
+///
+/// Contract: avx512-q4k-v1.yaml (C-AVX512-Q4K-003).
+/// Lanes whose activation index is ≥ `in_dim` are masked: they are NOT read
+/// (no heap over-read past the activation buffer) and load as `0.0` (so the
+/// downstream FMA contributes nothing for those positions). Used only on the
+/// partial-chunk tail; the full-chunk hot path uses unguarded loads.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+#[inline]
+unsafe fn load16_bounded(
+    input_ptr: *const f32,
+    base: usize,
+    in_dim: usize,
+) -> std::arch::x86_64::__m512 {
+    use std::arch::x86_64::*;
+    unsafe {
+        if base + 16 <= in_dim {
+            _mm512_loadu_ps(input_ptr.add(base))
+        } else if base < in_dim {
+            // 1..=15 valid low lanes; the rest are masked (unread, zeroed).
+            let mask: __mmask16 = ((1u32 << (in_dim - base)) - 1) as __mmask16;
+            _mm512_maskz_loadu_ps(mask, input_ptr.add(base))
+        } else {
+            _mm512_setzero_ps()
+        }
+    }
+}
+
 /// Process one Q4K super-block with AVX-512 (16-wide), fully unrolled.
 ///
 /// Each super-block = 256 elements in 4 chunks of 64.
@@ -96,6 +125,14 @@ unsafe fn process_q4k_superblock_avx512(
         for chunk_i in 0..4 {
             let chunk_start = chunk_i * 64;
             let q_start = chunk_i * 32;
+            let input_base_lo0 = input_offset + chunk_start;
+
+            // Skip chunks whose activation positions are entirely beyond the
+            // reduction dim (the original code skipped these via its bounds
+            // guard; we make it explicit so the tail branch below stays simple).
+            if input_base_lo0 >= in_dim {
+                continue;
+            }
 
             let d1 = d * f32::from(scales[chunk_i * 2]);
             let dm1 = dmin * f32::from(mins[chunk_i * 2]);
@@ -107,42 +144,60 @@ unsafe fn process_q4k_superblock_avx512(
             let d2_vec = _mm512_set1_ps(d2);
             let dm2_vec = _mm512_set1_ps(dm2);
 
-            // Low nibbles: 2×16 = 32 elements, fully unrolled
-            let input_base_lo0 = input_offset + chunk_start;
-            if input_base_lo0 + 32 <= in_dim {
-                // First 16 low nibbles
-                let q0 = _mm_loadu_si128(qs_ptr.add(q_start) as *const __m128i);
-                let q0_i32 = _mm512_cvtepu8_epi32(q0);
-                let q0_low = _mm512_and_si512(q0_i32, low_mask);
-                let q0_f32 = _mm512_cvtepi32_ps(q0_low);
+            // Dequant the 4×16 weight groups. `qs` is always fully in bounds (a
+            // super-block is always SUPER_BLOCK_BYTES). Low nibbles map to
+            // activation positions [base, base+32); high nibbles to
+            // [base+32, base+64) — DIFFERENT positions, which is why the high
+            // loads need their own bound (the bug this fixes).
+            let q0 = _mm_loadu_si128(qs_ptr.add(q_start) as *const __m128i);
+            let q0_i32 = _mm512_cvtepu8_epi32(q0);
+            let q1 = _mm_loadu_si128(qs_ptr.add(q_start + 16) as *const __m128i);
+            let q1_i32 = _mm512_cvtepu8_epi32(q1);
+            let dq0 = _mm512_fmsub_ps(
+                d1_vec,
+                _mm512_cvtepi32_ps(_mm512_and_si512(q0_i32, low_mask)),
+                dm1_vec,
+            );
+            let dq1 = _mm512_fmsub_ps(
+                d1_vec,
+                _mm512_cvtepi32_ps(_mm512_and_si512(q1_i32, low_mask)),
+                dm1_vec,
+            );
+            let dqh0 =
+                _mm512_fmsub_ps(d2_vec, _mm512_cvtepi32_ps(_mm512_srli_epi32(q0_i32, 4)), dm2_vec);
+            let dqh1 =
+                _mm512_fmsub_ps(d2_vec, _mm512_cvtepi32_ps(_mm512_srli_epi32(q1_i32, 4)), dm2_vec);
+
+            let input_base_hi0 = input_base_lo0 + 32;
+
+            if input_base_lo0 + 64 <= in_dim {
+                // FAST PATH: the whole 64-element chunk is in bounds (the common
+                // 256-aligned case) — unguarded 16-wide loads, hot-path perf
+                // preserved.
                 let x0 = _mm512_loadu_ps(input_ptr.add(input_base_lo0));
-                let dq0 = _mm512_fmsub_ps(d1_vec, q0_f32, dm1_vec);
-                *acc = _mm512_fmadd_ps(dq0, x0, *acc);
-
-                // Second 16 low nibbles
-                let q1 = _mm_loadu_si128(qs_ptr.add(q_start + 16) as *const __m128i);
-                let q1_i32 = _mm512_cvtepu8_epi32(q1);
-                let q1_low = _mm512_and_si512(q1_i32, low_mask);
-                let q1_f32 = _mm512_cvtepi32_ps(q1_low);
                 let x1 = _mm512_loadu_ps(input_ptr.add(input_base_lo0 + 16));
-                let dq1 = _mm512_fmsub_ps(d1_vec, q1_f32, dm1_vec);
-                *acc = _mm512_fmadd_ps(dq1, x1, *acc);
-
-                // High nibbles: 2×16 = 32 elements, fully unrolled
-                let input_base_hi0 = input_offset + chunk_start + 32;
-
-                // First 16 high nibbles (reuse q0 loaded above)
-                let q0_high = _mm512_srli_epi32(q0_i32, 4);
-                let q0h_f32 = _mm512_cvtepi32_ps(q0_high);
                 let xh0 = _mm512_loadu_ps(input_ptr.add(input_base_hi0));
-                let dqh0 = _mm512_fmsub_ps(d2_vec, q0h_f32, dm2_vec);
-                *acc = _mm512_fmadd_ps(dqh0, xh0, *acc);
-
-                // Second 16 high nibbles (reuse q1 loaded above)
-                let q1_high = _mm512_srli_epi32(q1_i32, 4);
-                let q1h_f32 = _mm512_cvtepi32_ps(q1_high);
                 let xh1 = _mm512_loadu_ps(input_ptr.add(input_base_hi0 + 16));
-                let dqh1 = _mm512_fmsub_ps(d2_vec, q1h_f32, dm2_vec);
+                *acc = _mm512_fmadd_ps(dq0, x0, *acc);
+                *acc = _mm512_fmadd_ps(dq1, x1, *acc);
+                *acc = _mm512_fmadd_ps(dqh0, xh0, *acc);
+                *acc = _mm512_fmadd_ps(dqh1, xh1, *acc);
+            } else {
+                // TAIL PATH: partial chunk — bounded masked loads. Lanes ≥ in_dim
+                // are NOT read (no heap over-read) and load as 0.0 (0 FMA
+                // contribution). Fixes C-AVX512-Q4K-003: the previous single
+                // `input_base_lo0 + 32 <= in_dim` guard covered only the low
+                // loads, so the high-nibble loads at [+32,+64) over-read up to
+                // 128 bytes for any non-256-aligned in_dim (32/96/160/224 mod
+                // 256). It also silently dropped the valid high-nibble tail —
+                // masked loads compute it correctly.
+                let x0 = load16_bounded(input_ptr, input_base_lo0, in_dim);
+                let x1 = load16_bounded(input_ptr, input_base_lo0 + 16, in_dim);
+                let xh0 = load16_bounded(input_ptr, input_base_hi0, in_dim);
+                let xh1 = load16_bounded(input_ptr, input_base_hi0 + 16, in_dim);
+                *acc = _mm512_fmadd_ps(dq0, x0, *acc);
+                *acc = _mm512_fmadd_ps(dq1, x1, *acc);
+                *acc = _mm512_fmadd_ps(dqh0, xh0, *acc);
                 *acc = _mm512_fmadd_ps(dqh1, xh1, *acc);
             }
         }

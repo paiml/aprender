@@ -130,6 +130,7 @@ fn test_from_gguf_transformer_preserves_layer_biases() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -200,6 +201,7 @@ fn test_from_gguf_transformer_no_biases() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -262,6 +264,7 @@ fn test_from_gguf_transformer_multi_layer() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -329,6 +332,7 @@ fn test_to_apr_bytes_header_offsets_consistent() {
         output_norm_bias: None,
         lm_head_weight: vec![0.0; 320],
         lm_head_bias: None,
+        lm_head_tied: false,
         q4k_layers: None,
         lm_head_weight_q6k: None,
         lm_head_weight_q4k: None,
@@ -394,6 +398,7 @@ fn test_to_apr_bytes_metadata_padded_to_alignment() {
         output_norm_bias: None,
         lm_head_weight: vec![0.0; 8],
         lm_head_bias: None,
+        lm_head_tied: false,
         q4k_layers: None,
         lm_head_weight_q6k: None,
         lm_head_weight_q4k: None,

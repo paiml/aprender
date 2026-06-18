@@ -39,6 +39,21 @@ equations:
     - "Exit code is non-zero (1 or 2)"
     - "Error message is human-readable"
 
+  format_parity_skips_on_missing_reference:
+    formula: |
+      apr qa GGUF_MODEL with NO SafeTensors reference on disk
+        AND no --safetensors-path given:
+          format_parity gate result == SKIP (not FAIL)
+      apr qa GGUF_MODEL with a reference present that DIVERGES:
+          format_parity gate result == FAIL  (SKIP must not mask divergence)
+    domain: "apr qa format_parity gate, GGUF primary"
+    codomain: "GateResult { skipped | passed | failed }"
+    invariants:
+    - "A genuinely ABSENT optional reference SKIPs, mirroring ollama_parity which SKIPs when Ollama is unavailable (PMAT-815)"
+    - "A diagnostic must not hard-FAIL on the absence of the input it compares against (PMAT-743 class)"
+    - "An EXPLICIT --safetensors-path that does not exist still FAILs (user requested a specific reference)"
+    - "A reference that IS present but whose outputs diverge still FAILs — the SKIP never swallows a real bug"
+
   json_validity:
     formula: |
       forall cmd in JSON_COMMANDS:
@@ -172,6 +187,18 @@ falsification_tests:
   test: "diff <(apr inspect --json M | jq .architecture) <(apr check M 2>&1 | grep -i arch)"
   if_fails: "architecture disagrees across subcommands"
 
+- id: FALSIFY-QA-011
+  rule: format_parity skips on missing reference (PMAT-815)
+  prediction: "apr qa on a GGUF with no SafeTensors reference SKIPs format_parity, never FAILs"
+  test: "cargo test -p apr-cli --lib resolve_safetensors_absent_reference_skips_not_fails"
+  if_fails: "missing optional reference hard-FAILs the gate (a diagnostic must not fail on an absent comparison input — PMAT-743 class)"
+
+- id: FALSIFY-QA-012
+  rule: format_parity SKIP must not mask a real divergence (PMAT-815)
+  prediction: "an explicit --safetensors-path is honored verbatim so a present-but-diverging reference still reaches FAIL"
+  test: "cargo test -p apr-cli --lib resolve_safetensors_explicit_path_is_honored_not_skipped"
+  if_fails: "the absent-reference SKIP swallowed a real format divergence"
+
 proof_obligations:
 - type: invariant
   property: "all 58 commands exit 0 on --help"
@@ -179,6 +206,8 @@ proof_obligations:
   property: "missing model produces non-zero exit code"
 - type: invariant
   property: "JSON output is always valid"
+- type: invariant
+  property: "format_parity SKIPs on a genuinely absent SafeTensors reference, FAILs on a present-but-diverging one (PMAT-815)"
 
 kani_harnesses:
 - id: KH-QA-001
@@ -187,7 +216,7 @@ kani_harnesses:
   bound: 4
 
 verification_summary:
-  total_obligations: 10
+  total_obligations: 11
   proven: 0
-  tested: 10
+  tested: 11
   status: tested

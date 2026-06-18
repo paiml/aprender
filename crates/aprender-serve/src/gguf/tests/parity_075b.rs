@@ -2,6 +2,7 @@
 /// PARITY-075b: INT8 Q×K^T computation
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_075b_int8_qk_computation() {
     use crate::quantize::Q8_0Block;
 
@@ -86,6 +87,7 @@ fn test_parity_075b_int8_qk_computation() {
 /// PARITY-075c: Memory bandwidth analysis for attention
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_075c_attention_bandwidth() {
     println!("PARITY-075c: Attention Memory Bandwidth Analysis");
     println!("=================================================");
@@ -167,6 +169,7 @@ fn test_parity_075c_attention_bandwidth() {
 /// PARITY-075d: Softmax with INT8 inputs
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_075d_int8_softmax() {
     println!("PARITY-075d: Softmax with INT8 Inputs");
     println!("=====================================");
@@ -247,6 +250,7 @@ fn test_parity_075d_int8_softmax() {
 /// PARITY-075e: End-to-end INT8 attention flow
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_075e_end_to_end_attention() {
     use crate::quantize::Q8_0Block;
 

@@ -271,11 +271,21 @@ fn compare_argmax_results(
 }
 
 /// Resolve the SafeTensors path from config or auto-discovery.
-/// Returns `Ok(PathBuf)` on success, or `Err(GateResult)` if discovery fails.
+/// Returns `Ok(PathBuf)` on success, or `Err(GateResult)` carrying the gate
+/// outcome to short-circuit with.
+///
+/// PMAT-815: A genuinely ABSENT reference (no `--safetensors-path` AND nothing
+/// auto-discovered) is a missing OPTIONAL input, not a format divergence — so the
+/// gate SKIPs, exactly like `run_ollama_parity_gate` SKIPs when Ollama is not
+/// available. A diagnostic must not hard-FAIL on the absence of the thing it
+/// compares against (PMAT-743 class). The critical distinction is preserved: an
+/// EXPLICIT `--safetensors-path` that does not exist still FAILs downstream (the
+/// user asked for a specific reference), and a reference that IS present but whose
+/// outputs diverge still FAILs — the SKIP only covers genuine absence.
 fn resolve_safetensors_path(
     gguf_path: &Path,
     config: &QaConfig,
-    elapsed: Duration,
+    _elapsed: Duration,
 ) -> std::result::Result<std::path::PathBuf, GateResult> {
     if let Some(p) = &config.safetensors_path {
         return Ok(p.clone());
@@ -291,13 +301,11 @@ fn resolve_safetensors_path(
             }
             Ok(p)
         }
-        None => Err(GateResult::failed(
+        None => Err(GateResult::skipped(
             "format_parity",
-            "No SafeTensors found. Provide --safetensors-path or download: \
-             huggingface-cli download <model> --include '*.safetensors'",
-            None,
-            None,
-            elapsed,
+            "No SafeTensors reference available for parity comparison \
+             (provide --safetensors-path or download: \
+             huggingface-cli download <model> --include '*.safetensors')",
         )),
     }
 }

@@ -166,16 +166,32 @@ impl OwnedQuantizedModelCuda {
         } else {
             config.max_tokens
         };
+        // PMAT-814: a repetition penalty needs CPU-side logits, so the GPU-side fused
+        // argmax fast path is only used when no penalty applies. With repeat_penalty == 1.0
+        // (the default) this is false → the greedy fast path is unchanged (no perf regression).
+        let penalty_active = config.repeat_penalty != 1.0 && config.repeat_last_n > 0;
         for token_num in 0..max_decode {
-            let next_token = if config.temperature == 0.0 || config.top_k == 1 {
+            let greedy = config.temperature == 0.0 || config.top_k == 1;
+            let next_token = if greedy && !penalty_active {
                 let tok = self.forward_gpu_resident_to_token_id(last_token, &mut cache, position)?;
                 if token_num == first_token_offset && prefill_first_token.is_none() {
                     ttft_mark!("first_decode");
                 }
                 tok
             } else {
-                let logits = self.forward_gpu_resident(last_token, &mut cache, position)?;
-                OwnedQuantizedModel::sample_topk(&logits, config.temperature, config.top_k)
+                let mut logits = self.forward_gpu_resident(last_token, &mut cache, position)?;
+                // PMAT-814: penalize recently-seen tokens before greedy/sampling.
+                OwnedQuantizedModel::apply_repeat_penalty(
+                    &mut logits,
+                    &tokens,
+                    config.repeat_penalty,
+                    config.repeat_last_n,
+                );
+                if greedy {
+                    OwnedQuantizedModel::argmax(&logits)
+                } else {
+                    OwnedQuantizedModel::sample_topk(&logits, config.temperature, config.top_k)
+                }
             };
 
             // Check stop tokens

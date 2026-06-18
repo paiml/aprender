@@ -286,6 +286,22 @@ fn execute_pruning(
     })
 }
 
+/// Effective fraction of weights to zero.
+///
+/// `--sparsity` and `--target-ratio` are two knobs for the same quantity. An explicit
+/// `--sparsity` (> 0) is the user's requested fraction and takes precedence; otherwise we
+/// fall back to `--target-ratio` (default 0.5). Previously this was
+/// `sparsity.max(target_ratio)`, which silently RAISED any `--sparsity` below the 0.5
+/// `--target-ratio` default — e.g. `--sparsity 0.3` pruned 50%, not 30%, while the output
+/// metadata still stamped `pruning_sparsity = 0.3` (a self-contradicting, over-pruned model).
+fn effective_prune_fraction(target_ratio: f32, sparsity: f32) -> f32 {
+    if sparsity > 0.0 {
+        sparsity
+    } else {
+        target_ratio
+    }
+}
+
 /// Apply the selected pruning method to the tensor map.
 #[allow(clippy::type_complexity)]
 fn apply_pruning(
@@ -295,18 +311,15 @@ fn apply_pruning(
     sparsity: f32,
     remove_layers: Option<&str>,
 ) -> Result<std::collections::BTreeMap<String, (Vec<f32>, Vec<usize>)>> {
+    let frac = effective_prune_fraction(target_ratio, sparsity);
     match prune_method {
-        PruneMethod::Magnitude => Ok(prune_magnitude(tensors, sparsity.max(target_ratio))),
+        PruneMethod::Magnitude => Ok(prune_magnitude(tensors, frac)),
         PruneMethod::Depth => {
             let layers = remove_layers.expect("validated above");
             prune_depth(tensors, layers)
         }
-        PruneMethod::Structured | PruneMethod::Width => {
-            Ok(prune_magnitude(tensors, sparsity.max(target_ratio)))
-        }
-        PruneMethod::Wanda | PruneMethod::SparseGpt => {
-            Ok(prune_magnitude(tensors, sparsity.max(target_ratio)))
-        }
+        PruneMethod::Structured | PruneMethod::Width => Ok(prune_magnitude(tensors, frac)),
+        PruneMethod::Wanda | PruneMethod::SparseGpt => Ok(prune_magnitude(tensors, frac)),
     }
 }
 

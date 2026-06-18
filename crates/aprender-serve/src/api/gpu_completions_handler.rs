@@ -1,4 +1,20 @@
 
+/// PMAT-795: OpenAI `finish_reason` for a `/v1/completions` choice.
+///
+/// `"length"` only when the generation hit `max_tokens` with no stop-string match;
+/// otherwise `"stop"` (a matched stop string takes precedence over `max_tokens`, and a
+/// model that terminated before the budget also reports `"stop"`). This mirrors the chat
+/// path's `finalize_chat_text` and the `completion_resp` helper so all completion backends
+/// agree. Pure + unit-tested so the GPU backend's behavior is falsifiable without a GPU.
+#[cfg(any(feature = "gpu", test))]
+fn completion_finish_reason(stopped: bool, completion_tokens: usize, max_tokens: usize) -> &'static str {
+    if !stopped && completion_tokens >= max_tokens {
+        "length"
+    } else {
+        "stop"
+    }
+}
+
 /// GPU model backend.
 #[cfg(feature = "gpu")]
 fn try_gpu_completions(
@@ -61,11 +77,19 @@ fn try_gpu_completions(
         .decode(&token_ids)
         .map_err(|e| rerr(state, StatusCode::INTERNAL_SERVER_ERROR, e))?;
     // PMAT-755: apply OpenAI stop sequences (this GPU backend previously ignored them).
+    let orig_text_len = text.len();
     let text = truncate_at_stop(text, request.stop.as_deref());
+    let stopped = text.len() < orig_text_len;
     state
         .metrics
         .record_success(completion_tokens, start.elapsed());
 
+    // PMAT-795: compute finish_reason instead of hardcoding "stop". This GPU backend
+    // passes an empty `stop_tokens` to `generate`, so generation always runs the full
+    // `max_tokens` budget — every token-limited completion was mislabeled "stop" when
+    // OpenAI semantics require "length". A matched stop *string* still takes precedence
+    // (returns "stop"), matching the chat path's `finalize_chat_text`.
+    let finish_reason = completion_finish_reason(stopped, completion_tokens, max_tokens);
     let response_id = format!("cmpl-{}", &uuid::Uuid::new_v4().to_string()[..8]);
     Ok(Some(CompletionResponse {
         id: response_id,
@@ -76,7 +100,7 @@ fn try_gpu_completions(
             text,
             index: 0,
             logprobs: None,
-            finish_reason: "stop".to_string(),
+            finish_reason: finish_reason.to_string(),
         }],
         usage: Usage {
             prompt_tokens,
@@ -532,4 +556,35 @@ pub async fn openai_embeddings_handler(
 ) -> Result<Json<EmbeddingResponse>, (StatusCode, Json<ErrorResponse>)> {
     // Delegate to native handler
     realize_embed_handler(State(state), Json(request)).await
+}
+
+#[cfg(test)]
+mod pmat795_finish_reason_tests {
+    use super::completion_finish_reason;
+
+    /// FALSIFIER (PMAT-795): the GPU `/v1/completions` backend passes an empty
+    /// `stop_tokens` to `generate`, so a token-limited request runs to `max_tokens`.
+    /// The handler previously HARDCODED `finish_reason: "stop"` for this case — wrong.
+    /// OpenAI requires "length" when the token budget is exhausted with no stop match.
+    #[test]
+    fn max_tokens_hit_with_no_stop_is_length() {
+        // stopped=false, completion_tokens == max_tokens => "length" (was wrongly "stop").
+        assert_eq!(completion_finish_reason(false, 256, 256), "length");
+        // Over budget (defensive) is also "length".
+        assert_eq!(completion_finish_reason(false, 300, 256), "length");
+    }
+
+    #[test]
+    fn natural_termination_before_budget_is_stop() {
+        // Model emitted fewer than max_tokens (e.g. hit EOS) => "stop".
+        assert_eq!(completion_finish_reason(false, 10, 256), "stop");
+    }
+
+    #[test]
+    fn stop_string_match_beats_length() {
+        // A matched stop string truncated the text: "stop" takes precedence over "length"
+        // even when the token budget was also reached (OpenAI semantics, matches chat path).
+        assert_eq!(completion_finish_reason(true, 256, 256), "stop");
+        assert_eq!(completion_finish_reason(true, 10, 256), "stop");
+    }
 }

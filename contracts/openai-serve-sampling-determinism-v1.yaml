@@ -1,0 +1,154 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-16"
+  updated: "2026-06-16"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "paiml/aprender#2081 — top_p silently dropped on the OpenAI chat path (sibling silent-drop)"
+    - "paiml/aprender#2099 — repeat_penalty silently dropped (sibling silent-drop)"
+    - "paiml/aprender qwen3-moe-sampling-v1.yaml v1.1.0 — the MoE path ALREADY seeds StdRng from QuantizedGenerateConfig.seed (sample_from_logits); the dense path did not"
+  description: "OpenAI `seed` determinism on the dense GGUF /v1/chat/completions decode path"
+
+kind: KernelContract
+name: openai-serve-sampling-determinism
+version: "1.0.0"
+scope: "crates/aprender-serve/src/gguf/inference/generate_quantized.rs::{sample_topk_seeded, generate, generate_with_cache, generate_with_cache_streaming}"
+
+description: |
+  PMAT-819. The OpenAI Chat Completions API defines `seed` as a
+  best-effort determinism control: "If specified, our system will make
+  a best effort to sample deterministically, such that repeated
+  requests with the same seed and parameters should return the same
+  result." `ChatCompletionRequest.seed` is accepted by aprender-serve
+  and threaded into `QuantizedGenerateConfig.seed`, but the DENSE
+  quantized decode path silently dropped it: `sample_topk` drew from
+  `rand::rng()` (fresh process entropy), so identical
+  `(prompt, seed, temperature, top_k)` produced DIFFERENT tokens every
+  run — the same class of silent-drop bug as top_p (#2081) and
+  repeat_penalty (#2099).
+
+  The qwen3_moe path (`infer/qwen3_moe_generate.rs::sample_from_logits`)
+  already does the right thing: it owns a `StdRng::seed_from_u64(seed)`
+  and advances it per token. This contract codifies that the DENSE
+  path's single-request decode loops (the production
+  `try_quantized_backend -> generate_with_cache` HTTP path, plus the
+  non-cached `generate` and the streaming
+  `generate_with_cache_streaming`) MUST sample from a `StdRng` seeded
+  from `config.seed`, so the determinism contract holds end-to-end.
+
+  ## Why this matters
+
+  Deterministic sampling is an API contract, not a nicety: eval
+  harnesses, regression snapshots, caching layers, and reproducible
+  bug reports all rely on `seed` producing stable output. A silently
+  non-deterministic `seed` is worse than an unsupported one because
+  callers cannot detect the breakage from the response.
+
+  ## Neutral value is a no-op
+
+  Greedy decode (`temperature == 0.0 || top_k == 1`, which is the
+  DEFAULT QuantizedGenerateConfig) never touches the RNG — it is pure
+  argmax and is byte-for-byte unchanged by this contract. Only the
+  sampling branch (temperature > 0 AND top_k > 1) is affected.
+
+equations:
+  seeded_draw:
+    description: "The categorical draw is a pure function of (logits, temperature, top_k, r), where r is the next value from a StdRng seeded by config.seed"
+    formula: |
+      rng = StdRng::seed_from_u64(config.seed)   # once per generate() call
+      r   = rng.next()                            # once per sampled token
+      next_token = inverse_cdf(softmax(top_k(logits / temperature)), r)
+
+  greedy_is_rng_free:
+    description: "Greedy decode does not consume the RNG (default config unchanged)"
+    formula: |
+      if temperature == 0.0 OR top_k == 1:
+        next_token = argmax(logits)   # RNG never advanced
+
+  determinism:
+    description: "Same seed + same params => identical token stream"
+    formula: |
+      generate(prompt, cfg) == generate(prompt, cfg)   for all cfg with fixed seed
+
+falsification:
+  - id: F-SEED-DETERMINISM-001
+    description: "Same seed produces the same sampled token AND the same multi-token stream"
+    test: |
+      Unit test: two StdRng seeded from the same value, sampled over a
+      flat non-degenerate distribution with temperature=1.5, top_k=50,
+      produce the same first token and the same 16-token stream. RED on
+      the bug: rand::rng() makes two independent draws diverge w.h.p.
+    evidence: "cargo test -p aprender-serve --lib gguf::inference::generation_tests::test_sample_topk_seeded_same_seed_is_deterministic"
+
+  - id: F-SEED-DETERMINISM-002
+    description: "Different seeds can diverge (the sampler is not secretly greedy — it actually consumes the RNG)"
+    test: |
+      Unit test: seed=42 vs seed=43 over a 16-token stream differ in at
+      least one position. Guards against a degenerate fix that ignores
+      the RNG entirely (which would make seed meaningless).
+    evidence: "cargo test -p aprender-serve --lib gguf::inference::generation_tests::test_sample_topk_seeded_different_seeds_can_diverge"
+
+  - id: F-SEED-DETERMINISM-003
+    description: "End-to-end: generate_with_cache (the HTTP dense path) is reproducible across runs for the same prompt+seed+temperature"
+    test: |
+      Unit test: build a small test model, call generate_with_cache
+      twice with temperature=1.2, top_k=40, seed=777; the two token
+      sequences must be identical. RED on the bug: rand::rng() makes
+      the two runs diverge.
+    evidence: "cargo test -p aprender-serve --lib gguf::inference::generation_tests::test_generate_with_cache_is_seed_deterministic"
+
+scope_extension:
+  out_of_scope:
+    - "Threading seed/top_p/repeat_penalty/repeat_last_n from ChatCompletionRequest into chat_gen_params (separate dense-chat-config-completeness ticket; this contract closes the SAMPLER determinism gap that is reachable today via the qwen3_moe MoE path and direct QuantizedGenerateConfig construction)"
+    - "Batched multi-sequence sampling (cached/sync_owned_quantized_02.rs) — a per-sequence RNG-stream design is a separate ticket"
+    - "logit_bias, n>1 completions, best_of (not in ChatCompletionRequest today — feature gaps, not silent drops)"
+    - "GPU-resident sampling kernels (decode-gpu-resident-sampling-v1)"
+
+  in_scope:
+    - "sample_topk_seeded: a seeded variant of sample_topk that draws from a caller-owned StdRng"
+    - "generate / generate_with_cache / generate_with_cache_streaming seed a StdRng from config.seed once per call and advance it per sampled token"
+    - "Backwards-compat: greedy (temperature==0 OR top_k==1) never consumes the RNG; default config output is byte-identical"
+    - "Backwards-compat: entropy-seeded sample_topk retained for existing callers/tests"
+
+implementation_phases:
+  phase_1:
+    name: "Extract pure inverse-CDF core + add seeded variant"
+    description: |
+      Refactor sample_topk into a pure `sample_topk_with_draw(logits,
+      temperature, top_k, r)` taking the uniform draw as a parameter.
+      Add `sample_topk_seeded(logits, temperature, top_k, rng: &mut
+      StdRng)` and keep `sample_topk` (entropy-seeded) delegating to the
+      same core, so all existing callers/tests are unaffected.
+    estimated_effort: "30 min"
+
+  phase_2:
+    name: "Seed the dense decode loops"
+    description: |
+      In generate, generate_with_cache, and generate_with_cache_streaming,
+      construct `StdRng::seed_from_u64(config.seed)` once before the
+      decode loop and route the sampling branch through
+      sample_topk_seeded(&mut rng).
+    estimated_effort: "30 min"
+
+  phase_3:
+    name: "Falsifier battery"
+    description: |
+      Add F-SEED-DETERMINISM-001..003 to generation_tests.rs. Verified
+      RED with the rand::rng() bug reinjected, GREEN with the fix.
+    estimated_effort: "30 min"
+
+status_history:
+  - version: "1.0.0"
+    date: "2026-06-16"
+    pr: "paiml/aprender (PMAT-819 impl PR)"
+    summary: |
+      Initial contract registered + DISCHARGED in the same PR. Closes
+      the dense-path OpenAI `seed` determinism gap surfaced by the
+      bounded API-parameter audit (sibling to #2081 top_p and #2099
+      repeat_penalty silent-drops). `sample_topk_seeded` added next to
+      `sample_topk`; the three single-request dense decode loops now
+      seed a StdRng from config.seed. F-SEED-DETERMINISM-001..003
+      verified RED-on-bug (rand::rng reinjected) / GREEN-on-fix.
+      The qwen3_moe MoE path was already seeded (qwen3-moe-sampling-v1
+      v1.1.0); this brings the dense path to parity.
