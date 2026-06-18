@@ -470,9 +470,11 @@ impl AprTransformer {
         let last_hidden_start = (seq_len - 1) * hidden_dim;
         let last_hidden = &normed[last_hidden_start..last_hidden_start + hidden_dim];
 
+        // PMAT-788: source the tied embedding buffer when `lm_head_tied`, else
+        // the model's separate `lm_head_weight` (bit-identical either way).
         let mut logits = self.matmul(
             last_hidden,
-            &self.lm_head_weight,
+            self.lm_head_f32(),
             hidden_dim,
             self.config.vocab_size,
         );

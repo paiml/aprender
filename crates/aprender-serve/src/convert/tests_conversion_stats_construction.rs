@@ -389,6 +389,7 @@ fn test_gguf_to_apr_converter_stats() {
         output_norm_bias: None,
         lm_head_weight: vec![0.0; 128 * 100],
         lm_head_bias: None,
+        lm_head_tied: false,
         q4k_layers: None,
         lm_head_weight_q6k: None,
         lm_head_weight_q4k: None,

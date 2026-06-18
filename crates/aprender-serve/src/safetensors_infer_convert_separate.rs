@@ -28,11 +28,25 @@
         assert!(result.is_ok());
         let transformer = result.expect("operation failed");
 
+        // PMAT-788: a model with a genuine separate lm_head is UNtied — its own
+        // weights are materialized and used unchanged (no dedup, no behavior
+        // change). `lm_head_f32()` returns the separate weight, not the embedding.
+        assert!(!transformer.lm_head_tied, "separate lm_head must not be tied");
+        assert!(
+            !transformer.lm_head_weight.is_empty(),
+            "untied lm_head must keep its own materialized weights"
+        );
         // lm_head_weight should NOT equal token_embedding
         assert_ne!(
             transformer.lm_head_weight[0],
             transformer.token_embedding[0]
         );
+        // `lm_head_f32()` resolves to the separate weight (untied), NOT embedding.
+        assert_eq!(
+            transformer.lm_head_f32(),
+            transformer.lm_head_weight.as_slice()
+        );
+        assert_ne!(transformer.lm_head_f32()[0], transformer.token_embedding[0]);
     }
 
     #[test]

@@ -167,6 +167,7 @@
             output_norm_bias: Some(vec![0.08; 8]), // With bias
             lm_head_weight: vec![0.01; 8 * 16],
             lm_head_bias: Some(vec![0.09; 16]), // With bias
+            lm_head_tied: false,
             q4k_layers: None,
             lm_head_weight_q6k: None,
             lm_head_weight_q4k: None,
@@ -238,6 +239,7 @@
             output_norm_bias: None,
             lm_head_weight: vec![0.01; 40],
             lm_head_bias: None,
+            lm_head_tied: false,
             q4k_layers: None,
             lm_head_weight_q6k: None,
             lm_head_weight_q4k: None,

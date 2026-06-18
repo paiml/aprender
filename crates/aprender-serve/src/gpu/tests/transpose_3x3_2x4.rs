@@ -211,6 +211,7 @@ fn test_apr_f32_to_gpu_multiple_layers() {
         output_norm_bias: None,
         lm_head_weight: vec![0.01; vocab_size * hidden_dim],
         lm_head_bias: None,
+        lm_head_tied: false,
         q4k_layers: None,
         lm_head_weight_q6k: None,
         lm_head_weight_q4k: None,

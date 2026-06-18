@@ -126,8 +126,16 @@ fn test_from_apr_bytes_weight_tying_via_embed() {
     );
 
     let apr = result.expect("test value should be present");
-    // lm_head should be same as embedding
-    assert_eq!(apr.lm_head_weight.len(), vocab * hidden);
+    // PMAT-788: tied head is deduplicated — `lm_head_weight` is NOT materialized;
+    // the model is marked tied and the resolved LM-head (via `lm_head_f32()`) is
+    // the embedding buffer, byte-identical and the same length as the embedding.
+    assert!(apr.lm_head_tied, "tied APR model should set lm_head_tied");
+    assert!(
+        apr.lm_head_weight.is_empty(),
+        "tied APR model must not store a duplicate lm_head_weight"
+    );
+    assert_eq!(apr.lm_head_f32().len(), vocab * hidden);
+    assert_eq!(apr.lm_head_f32(), apr.token_embedding.as_slice());
 }
 
 // ============================================================================
