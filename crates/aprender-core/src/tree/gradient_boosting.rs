@@ -2,7 +2,7 @@
 //!
 //! Implements gradient boosting with decision trees as weak learners.
 
-use super::DecisionTreeClassifier;
+use super::DecisionTreeRegressor;
 use crate::error::Result;
 
 /// Gradient Boosting Classifier.
@@ -29,7 +29,7 @@ pub struct GradientBoostingClassifier {
     /// Initial prediction (log-odds for class 1)
     init_prediction: f32,
     /// Ensemble of decision trees
-    estimators: Vec<DecisionTreeClassifier>,
+    estimators: Vec<DecisionTreeRegressor>,
 }
 
 impl GradientBoostingClassifier {
@@ -138,25 +138,16 @@ impl GradientBoostingClassifier {
                 .map(|(&yi, &pi)| yi - pi)
                 .collect();
 
-            // Convert residuals to discrete labels for tree fitting
-            // Positive residual -> predict 1, Negative residual -> predict 0
-            let residual_labels = self.residuals_to_labels(&residuals);
+            // Fit a REGRESSION tree to the CONTINUOUS pseudo-residuals (Friedman 2001
+            // gradient step). The previous code fit a *classification* tree to sign(residual)
+            // and added a fixed ±1 step, discarding the residual magnitude — so raw_predictions
+            // grew without bound and predict_proba saturated to 0/1 instead of converging to
+            // the conditional base rate (measured: P=0.99998 vs the correct 0.75 on a 3:1 split).
+            let mut tree = DecisionTreeRegressor::new().with_max_depth(self.max_depth);
+            tree.fit(x, &crate::primitives::Vector::from_slice(&residuals))?;
 
-            // Fit a tree to the residuals
-            let mut tree = DecisionTreeClassifier::new().with_max_depth(self.max_depth);
-            tree.fit(x, &residual_labels)?;
-
-            // Get tree predictions (these are class labels 0 or 1)
-            let tree_preds = tree.predict(x);
-
-            // Convert tree predictions back to residual estimates
-            // Map 0 -> -1, 1 -> +1 for residual direction
-            let tree_residuals: Vec<f32> = tree_preds
-                .iter()
-                .map(|&pred| if pred == 0 { -1.0 } else { 1.0 })
-                .collect();
-
-            // Update raw predictions
+            // Continuous leaf values (per-leaf mean residual) = the gradient step h_m(x).
+            let tree_residuals = tree.predict(x);
             for i in 0..n_samples {
                 raw_predictions[i] += self.learning_rate * tree_residuals[i];
             }
@@ -165,14 +156,6 @@ impl GradientBoostingClassifier {
         }
 
         Ok(())
-    }
-
-    /// Converts residuals to class labels for tree fitting.
-    ///
-    /// Positive residuals -> class 1, negative residuals -> class 0
-    #[allow(clippy::unused_self)]
-    fn residuals_to_labels(&self, residuals: &[f32]) -> Vec<usize> {
-        residuals.iter().map(|&r| usize::from(r >= 0.0)).collect()
     }
 
     /// Predicts class labels for the given samples.
@@ -213,12 +196,7 @@ impl GradientBoostingClassifier {
 
         // Sum predictions from all trees
         for tree in &self.estimators {
-            let tree_preds = tree.predict(x);
-            let tree_residuals: Vec<f32> = tree_preds
-                .iter()
-                .map(|&pred| if pred == 0 { -1.0 } else { 1.0 })
-                .collect();
-
+            let tree_residuals = tree.predict(x);
             for i in 0..n_samples {
                 raw_predictions[i] += self.learning_rate * tree_residuals[i];
             }
@@ -261,7 +239,7 @@ impl GradientBoostingClassifier {
 
     /// Returns a reference to the estimators.
     #[must_use]
-    pub fn estimators(&self) -> &[DecisionTreeClassifier] {
+    pub fn estimators(&self) -> &[DecisionTreeRegressor] {
         &self.estimators
     }
 }

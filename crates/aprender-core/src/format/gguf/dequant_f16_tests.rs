@@ -342,6 +342,54 @@ mod tests {
         assert!(result.is_err());
     }
 
+    /// FALSIFY-DEQUANT-Q3K-001 (PMAT-832): Q3_K dequant must match the GGML reference.
+    /// The prior code unpacked the super-block scales as 16 FOUR-bit values from 8 of the 12
+    /// scale bytes (offset -8), clipping every scale from the true SIX-bit range [-32,31] and
+    /// dropping the upper 2 bits, plus a wrong quant/high-bit addressing — so ~252/256 elements
+    /// were wrong (maxabs 28 vs the correct 124). Both existing Q3_K tests feed ALL-ZERO input,
+    /// where buggy and correct impls both yield zeros (the bug was invisible). Oracle: numpy GGML
+    /// reference (kmask1/kmask2 aux-shuffle, -32 offset, two-half/shift-block layout), seed-7
+    /// deterministic block, d = f16(1.0).
+    #[test]
+    fn test_dequantize_q3_k_ggml_golden() {
+        let hmask: [u8; 32] = [
+            175, 240, 136, 19, 196, 228, 50, 58, 25, 194, 168, 199, 246, 41, 168, 81, 67, 150, 59,
+            112, 211, 208, 108, 250, 151, 3, 53, 185, 103, 54, 161, 116,
+        ];
+        let qs: [u8; 64] = [
+            92, 133, 93, 250, 185, 236, 217, 78, 142, 221, 218, 137, 23, 10, 141, 67, 72, 110, 73,
+            128, 89, 209, 52, 22, 110, 241, 113, 18, 42, 250, 91, 107, 218, 106, 184, 68, 136, 179,
+            18, 4, 167, 76, 248, 127, 230, 151, 27, 135, 68, 4, 226, 173, 176, 197, 105, 222, 127,
+            215, 193, 205, 135, 225, 177, 84,
+        ];
+        let scales: [u8; 12] = [172, 91, 133, 97, 0, 222, 151, 100, 75, 52, 225, 16];
+        let mut block = Vec::with_capacity(110);
+        block.extend_from_slice(&hmask);
+        block.extend_from_slice(&qs);
+        block.extend_from_slice(&scales);
+        block.extend_from_slice(&0x3C00u16.to_le_bytes()); // f16(1.0)
+
+        let out = dequantize_q3_k(&block, 0, 256).expect("dequant");
+        assert_eq!(out.len(), 256);
+        // GGML reference, first 16 (d = 1.0). RED pre-fix: a wrong, ~4.4x-smaller vector.
+        let expected16 = [
+            0.0, -84.0, -84.0, 56.0, -84.0, -112.0, -84.0, -56.0, 56.0, -84.0, -56.0, 28.0, -28.0,
+            56.0, -84.0, 84.0,
+        ];
+        for (i, &e) in expected16.iter().enumerate() {
+            assert!(
+                (out[i] - e).abs() < 1e-3,
+                "elem {i}: got {} expected {e} (GGML reference)",
+                out[i]
+            );
+        }
+        let maxabs = out.iter().fold(0.0f32, |m, &v| m.max(v.abs()));
+        assert!(
+            (maxabs - 124.0).abs() < 1e-2,
+            "maxabs {maxabs} != 124 (GGML); the pre-fix 4-bit-scale bug gives ~28"
+        );
+    }
+
     // =========================================================================
     // Dequantize IQ approximate
     // =========================================================================
