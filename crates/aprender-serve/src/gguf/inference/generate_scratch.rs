@@ -77,6 +77,14 @@ impl OwnedQuantizedModel {
         // 2. Then run forward on the new token to get logits for next iteration
         for gen_idx in 0..config.max_tokens {
             let token_start = std::time::Instant::now();
+            // PMAT-814: apply repetition penalty in place over the recent context
+            // BEFORE both greedy argmax and sampling (no-op when repeat_penalty == 1.0).
+            crate::gguf::OwnedQuantizedModel::apply_repeat_penalty(
+                &mut scratch.logits,
+                &tokens,
+                config.repeat_penalty,
+                config.repeat_last_n,
+            );
             // Sample next token from current logits (prefill logits on first iter)
             let next_token = if config.temperature == 0.0 || config.top_k == 1 {
                 ops::argmax(&scratch.logits)
@@ -182,6 +190,14 @@ impl OwnedQuantizedModel {
         // Generate new tokens with adaptive attention
         for gen_idx in 0..config.max_tokens {
             let token_start = std::time::Instant::now();
+            // PMAT-814: apply repetition penalty in place over the recent context
+            // BEFORE both greedy argmax and sampling (no-op when repeat_penalty == 1.0).
+            crate::gguf::OwnedQuantizedModel::apply_repeat_penalty(
+                &mut logits,
+                &tokens,
+                config.repeat_penalty,
+                config.repeat_last_n,
+            );
             // Sample next token from current logits
             let next_token = if config.temperature == 0.0 || config.top_k == 1 {
                 ops::argmax(&logits)
