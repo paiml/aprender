@@ -1,6 +1,7 @@
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity021c_gpu_ffn_speedup_projection() {
     // PARITY-021c: Project GPU FFN speedup
     //
@@ -61,6 +62,7 @@ fn test_parity021c_gpu_ffn_speedup_projection() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity021d_batch_generate_gpu_integration() {
     // PARITY-021d: Verify batch_generate_gpu uses forward_batch_with_gpu_ffn
     //
@@ -110,6 +112,7 @@ fn test_parity021d_batch_generate_gpu_integration() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity021e_memory_efficiency() {
     // PARITY-021e: Verify memory efficiency of batched forward
     //
@@ -169,6 +172,7 @@ fn test_parity021e_memory_efficiency() {
 /// PARITY-023a: PendingRequest struct should track request details
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity023a_pending_request_struct() {
     use crate::gguf::PendingRequest;
 
@@ -207,6 +211,7 @@ fn test_parity023a_pending_request_struct() {
 /// PARITY-023b: RequestBatch should aggregate multiple requests
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity023b_request_batch_aggregation() {
     use crate::gguf::{PendingRequest, RequestBatch};
 
@@ -232,6 +237,7 @@ fn test_parity023b_request_batch_aggregation() {
 /// PARITY-023c: BatchRequestCollector should accumulate requests
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity023c_batch_collector_accumulation() {
     use crate::gguf::BatchRequestCollector;
 
@@ -271,6 +277,7 @@ fn test_parity023c_batch_collector_accumulation() {
 /// PARITY-023d: BatchRequestCollector should trigger on threshold
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity023d_batch_collector_threshold_trigger() {
     use crate::gguf::BatchRequestCollector;
 
@@ -310,6 +317,7 @@ fn test_parity023d_batch_collector_threshold_trigger() {
 /// PARITY-023e: BatchingConfig should have latency and throughput presets
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity023e_batching_config_presets() {
     println!("=== PARITY-023e: BatchingConfig Presets ===\n");
 
@@ -368,6 +376,7 @@ fn test_parity023e_batching_config_presets() {
 /// PARITY-024a: batch_qkv_projection_gpu method should exist
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity024a_batch_qkv_projection_exists() {
     println!("=== PARITY-024a: Batch QKV Projection ===\n");
 
@@ -409,6 +418,7 @@ fn test_parity024a_batch_qkv_projection_exists() {
 /// PARITY-024b: batch_attention_output_gpu method should exist
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity024b_batch_attention_output_exists() {
     println!("=== PARITY-024b: Batch Attention Output ===\n");
 

@@ -15,6 +15,12 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+  # Merge queue: GitHub dispatches a `merge_group` event for each batch it forms.
+  # Both required checks (`ci / gate` via the reusable sovereign-ci call, and the
+  # top-level `workspace-test` job) live in THIS workflow, so triggering here makes
+  # both run against the queued batch. Without this trigger, enabling the queue jams
+  # every PR (no checks ever run on the merge_group ref → nothing merges).
+  merge_group:
   workflow_dispatch:
 
 concurrency:

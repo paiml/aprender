@@ -68,6 +68,7 @@ fn test_imp_101a_rope_preserves_norm() {
         rope_type: 0,
         rope_theta: 10000.0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -132,6 +133,7 @@ fn test_imp_101a_rope_position_dependent() {
         rope_type: 0,
         rope_theta: 10000.0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -211,6 +213,7 @@ fn test_imp_101b_causal_attention_mask() {
         rope_type: 0,
         rope_theta: 10000.0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -288,6 +291,7 @@ fn test_imp_101b_causal_attention_softmax_normalized() {
         rope_type: 0,
         rope_theta: 10000.0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -374,6 +378,7 @@ fn test_imp_101c_kv_cache_from_config() {
         rope_type: 0,
         rope_theta: 10000.0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };

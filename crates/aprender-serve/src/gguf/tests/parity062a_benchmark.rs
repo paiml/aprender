@@ -9,6 +9,7 @@
 /// PARITY-062a: Benchmark setup
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity062a_benchmark_setup() {
     println!("PARITY-062a: Speculative Benchmark Setup");
     println!("========================================");
@@ -38,6 +39,7 @@ fn test_parity062a_benchmark_setup() {
 /// PARITY-062b: Expected acceptance rates
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity062b_expected_acceptance_rates() {
     println!("PARITY-062b: Expected Acceptance Rates");
     println!("======================================");
@@ -77,6 +79,7 @@ fn test_parity062b_expected_acceptance_rates() {
 /// PARITY-062c: Benchmark execution
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity062c_benchmark_execution() {
     println!("PARITY-062c: Benchmark Execution");
     println!("================================");
@@ -114,6 +117,7 @@ fn test_parity062c_benchmark_execution() {
 /// PARITY-062d: Results analysis
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity062d_results_analysis() {
     println!("PARITY-062d: Results Analysis");
     println!("=============================");
@@ -154,6 +158,7 @@ fn test_parity062d_results_analysis() {
 /// PARITY-062e: Comparison with batch
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity062e_comparison_with_batch() {
     println!("PARITY-062e: Speculative vs Batch Comparison");
     println!("============================================");
@@ -197,6 +202,7 @@ fn test_parity062e_comparison_with_batch() {
 /// PARITY-062f: Summary
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity062f_summary() {
     println!("PARITY-062f: Speculative Benchmark Summary");
     println!("==========================================");
@@ -251,6 +257,7 @@ fn test_parity062f_summary() {
 /// PARITY-063a: Phase 2 objectives achieved
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity063a_objectives() {
     println!("PARITY-063a: Phase 2 Objectives Achieved");
     println!("=========================================");
@@ -279,6 +286,7 @@ fn test_parity063a_objectives() {
 /// PARITY-063b: Implementation components
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity063b_components() {
     println!("PARITY-063b: Implementation Components");
     println!("======================================");
@@ -324,6 +332,7 @@ fn test_parity063b_components() {
 /// PARITY-063c: Performance metrics
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity063c_performance() {
     println!("PARITY-063c: Performance Metrics");
     println!("================================");
@@ -384,6 +393,7 @@ fn test_parity063c_performance() {
 /// PARITY-063d: API integration summary
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity063d_api_summary() {
     println!("PARITY-063d: API Integration Summary");
     println!("====================================");

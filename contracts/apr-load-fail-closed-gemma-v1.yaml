@@ -1,0 +1,179 @@
+contract: apr-load-fail-closed-gemma
+metadata:
+  kind: pattern
+  version: "3.1.0"
+  description: >
+    Gemma support is honest-by-design and version-gated. Gemma v1 (general.architecture
+    == "gemma", PMAT-809) AND Gemma v2 (general.architecture == "gemma2", PMAT-810) are now
+    IMPLEMENTED in realizar's CPU forward path and verified coherent against the llama.cpp
+    reference for the same GGUF. Gemma3 / Gemma3n are STILL refused at load because they
+    additionally require behaviors (per-layer embedding scaling, alternating local/global
+    attention with QK-norm) that are NOT implemented; running them with the gemma2 forward
+    would emit silently-wrong output. PMAT-809 implemented the three Gemma-v1 behaviors the
+    LLaMA-style forward path lacked: (a) GeGLU FFN — gelu_tanh(gate(x)) * up(x) instead of
+    SiLU/SwiGLU; (c) sqrt(hidden_size) embedding scaling (GGUFConfig::embed_scale). Behavior
+    (b) — the Gemma (1 + weight) RMSNorm — is satisfied WITHOUT a runtime offset on the GGUF
+    path: llama.cpp's GGUF converter (GemmaModel.modify_tensors: data_torch + 1) pre-adds 1.0
+    to every *norm.weight at conversion time, so a GGUF gemma already stores (1 + w_hf)
+    (verified empirically: norm weight mean ≈ 1.5–2.6, not ≈ 0) and the STANDARD x_normed * w
+    norm is correct; GGUFConfig::rmsnorm_unit_offset therefore returns false. PMAT-810 adds the
+    FOUR Gemma-v2 behaviors on top of v1: (d) attention-logit tanh softcap 50*tanh(scores/50)
+    before softmax (ops::softcap, GGUFConfig::attn_logit_softcap); (e) final lm_head-logit tanh
+    softcap 30*tanh(logits/30) after the output projection (GGUFConfig::final_logit_softcap);
+    (f) 1/sqrt(query_pre_attn_scalar) attention query scaling (GGUFConfig::attn_scale; equals
+    1/sqrt(head_dim) for gemma-2-2b where the key is absent and head_dim==256, so byte-identical
+    there, but correct for 9b/27b where query_pre_attn_scalar==224); and (g) the per-layer
+    POST-attention and POST-feedforward RMSNorms (blk.N.post_attention_norm.weight /
+    blk.N.post_ffw_norm.weight) applied to each sub-block output BEFORE its residual add —
+    Gemma2 has FOUR norms per layer, not two. Without (g) the output is INCOHERENT (verified:
+    "The capital of France is" -> "is is is is" RED; with (d)-(g) -> "...Paris" GREEN). The
+    single enforcement point is contract_gate::validate_supported_architecture (Gate 0 in
+    validate_model_load), which every inference-weight-loading path funnels through:
+    is_gemma1_supported(arch) and is_gemma2_supported(arch) are allowed; gemma3/gemma3n and any
+    other gemma-family arch are refused with a clear error. apr convert / inspect / validate read
+    metadata directly and are unaffected. This extends the Pillar-4 fail-closed posture
+    (PMAT-744, PMAT-750, PMAT-807): run what apr can run CORRECTLY, refuse what it cannot, never
+    emit garbage.
+
+    PMAT-824 (v3.1.0) adds a DEFENSE-IN-DEPTH GPU-capability-layer gate for the day Gemma2/Gemma3
+    CPU support lands (relaxing the Gate-0 arch refusal): the CUDA forward_gpu_resident path
+    implements NEITHER the tanh attention/final-logit softcapping (attn 50.0, final 30.0) NOR the
+    per-layer post-attention/post-FFN RMSNorms (Gemma2/Gemma3 use 4 norms/block vs the LLaMA-style
+    2). The GPU admission gate previously decided GPU-vs-CPU from required_ops(constraints) ONLY,
+    but the arch-constraints contract maps gemma/gemma2/gemma3 onto ONE alias row (GatedMlp→SwiGLU,
+    RMSNorm, RoPE — all GPU-supported), so constraints alone read Gemma2/Gemma3 as "GPU-OK" and the
+    ONLY thing catching the divergence was the runtime cosine parity gate (≥0.98 vs CPU) → CPU
+    fallback. PMAT-824 makes the safety EXPLICIT at the capability layer: capability::RequiredOp
+    gains AttnFinalSoftcap + PostAttnFfnNorm, capability::arch_needs_softcap_postnorm(arch) flags
+    gemma2*/gemma3* (NOT bare gemma v1) from the raw arch string, and the GPU model constructor
+    (OwnedQuantizedModelCuda::check_gpu_capability) now uses capability::required_ops_for_model
+    (constraints, arch) — adding the unsupported ops the CUDA forward lacks — so a Gemma2/Gemma3
+    model is routed to CPU at LOAD (LOUD CapabilityMismatch), belt-and-suspenders with the parity
+    gate, instead of relying solely on the runtime cosine check. Non-softcap archs (llama, qwen2/3,
+    mistral, gemma v1) are byte-identical — required_ops_for_model == required_ops for them.
+  references:
+  - "crates/aprender-serve/src/capability.rs (PMAT-824: RequiredOp::AttnFinalSoftcap/PostAttnFfnNorm, arch_needs_softcap_postnorm, required_ops_for_model — model-aware GPU admission)"
+  - "crates/aprender-serve/src/gguf/cuda/mod.rs (OwnedQuantizedModelCuda::check_gpu_capability uses required_ops_for_model(constraints, architecture) — PMAT-824)"
+  - "crates/aprender-serve/src/contract_gate.rs (validate_supported_architecture, is_gemma1_supported, is_gemma2_supported, is_gemma_family, Gate 0 in validate_model_load)"
+  - "crates/aprender-serve/src/gguf/config.rs (GGUFConfig::is_gemma1/is_gemma2/embed_scale/geglu_ffn/rmsnorm_unit_offset/attn_logit_softcap/final_logit_softcap/attn_scale)"
+  - "crates/aprender-serve/src/gguf/ops.rs (softcap — cap*tanh(x/cap) in place; rms_norm for the GGUF pre-shifted post-norms)"
+  - "crates/aprender-serve/src/gguf/inference/attention_gqa.rs (attention_with_cache_gqa{,_into}: attn_scale + attn-logit softcap before softmax)"
+  - "crates/aprender-serve/src/gguf/inference/forward/ffn_block.rs (forward_single_with_cache: post_attn_norm + post_ffw_norm before residual; single_cache_final_output: final-logit softcap)"
+  - "crates/aprender-serve/src/gguf/transformer.rs + quantized.rs + loader_apr_quantized.rs (load post_attention_norm.weight + post_ffw_norm.weight)"
+  - "crates/aprender-serve/src/gguf/metadata.rs (attn_logit_softcapping / final_logit_softcapping / query_pre_attn_scalar accessors)"
+  references_external:
+  - "llama.cpp convert_hf_to_gguf.py GemmaModel.modify_tensors: `data_torch = data_torch + 1` for *norm.weight (the GGUF +1 pre-shift, applies to all 4 gemma2 norms)"
+  - "llama.cpp src/models/gemma2.cpp: ggml_tanh(ggml_scale(kq, 1/cap))*cap softcap, post_attention_norm/post_ffw_norm, n_embd_head_k query scale default"
+version: 3
+status: enforced
+date: 2026-06-16
+
+proof_obligations:
+  - type: invariant
+    property: >
+      GEMMA1-SUPPORTED: is_gemma1_supported(arch) is true iff the lowercased architecture is
+      exactly "gemma" (or "gemmaforcausallm"); it is false for gemma2/gemma3/gemma3n and for
+      every non-gemma arch. validate_model_load returns Ok for a Gemma-v1 model.
+  - type: invariant
+    property: >
+      GEMMA2-SUPPORTED: is_gemma2_supported(arch) is true iff the lowercased architecture is
+      exactly "gemma2" (or "gemma2forcausallm"); it is false for gemma/gemma3/gemma3n and for
+      every non-gemma arch. validate_model_load / validate_model_load_basic return Ok for a
+      Gemma-v2 model so apr can run it, having implemented behaviors (d) attn-logit softcap,
+      (e) final-logit softcap, (f) query_pre_attn_scalar scaling, and (g) post-attn/post-ffn
+      RMSNorms in addition to the v1 behaviors.
+  - type: invariant
+    property: >
+      GEMMA1-FORWARD-PARITY: with Gemma-v1 behaviors active, GGUFConfig::embed_scale is
+      Some(sqrt(hidden_size)) and rmsnorm_unit_offset is false (GGUF weights pre-shifted), and
+      the runtime forward produces COHERENT output that matches the llama.cpp reference on the
+      same GGUF (e.g. "The capital of France is" -> "Paris", "2+2=" -> "4", "The sky is" ->
+      "the limit"). Non-Gemma archs are byte-identical (embed_scale None, standard norm, SiLU).
+  - type: invariant
+    property: >
+      GEMMA2-GPU-CAPABILITY-FAIL-CLOSED (PMAT-824): the GPU admission gate is model-aware.
+      capability::required_ops_for_model(constraints, arch) augments required_ops(constraints)
+      with RequiredOp::AttnFinalSoftcap and RequiredOp::PostAttnFfnNorm iff
+      arch_needs_softcap_postnorm(arch) is true (any gemma2*/gemma3* incl. gemma3n and the HF
+      class names, but NOT bare gemma/gemmaforcausallm). Because gpu_supported_ops() omits both
+      ops, check_capability returns Err for a Gemma2/Gemma3 model — so the GPU model constructor
+      refuses GPU residency at the CAPABILITY layer (CPU fallback at load), NOT solely via the
+      runtime cosine parity gate. For every non-softcap arch (llama, qwen2, qwen3, mistral, phi,
+      deepseek, gemma v1) required_ops_for_model == required_ops, so they remain GPU-supported and
+      the gate is a no-op (no false-positive CPU routing).
+  - type: invariant
+    property: >
+      GEMMA3-FAIL-LOUD: validate_model_load / validate_model_load_basic return
+      Err(gate="architecture_supported") for every Gemma architecture beyond v2 (gemma3,
+      gemma3n, Gemma3ForCausalLM), so a model that needs further-unimplemented behaviors is
+      refused instead of running silently-wrong. Non-Gemma archs load unchanged.
+  - type: invariant
+    property: >
+      GEMMA2-FORWARD-PARITY: with Gemma-v2 behaviors active, the runtime forward produces
+      COHERENT output that matches the llama.cpp reference on the same GGUF
+      (gemma-2-2b-it-Q4_K_M, greedy: "What is the capital of France?" -> "...Paris",
+      "What is 2+2?" -> "2 + 2 = 4"). The attn-logit softcap, final-logit softcap, and
+      post-attention/post-ffn RMSNorms are each necessary: removing the post-norms alone
+      collapses output to incoherent token repetition ("is is is is").
+  - type: invariant
+    property: >
+      SOFTCAP-MATH: ops::softcap(x, cap) == cap*tanh(x/cap) elementwise, bounds every output
+      into (-cap, cap), is ~identity near 0, and is a no-op for a non-positive or non-finite
+      cap. GGUFConfig::attn_logit_softcap/final_logit_softcap return Some(50.0)/Some(30.0) for
+      gemma2 and None for every other architecture (so non-gemma2 logits/scores are untouched).
+  - type: invariant
+    property: >
+      NON-GEMMA-BYTE-IDENTICAL: for every non-Gemma2 architecture the post-norms are absent
+      (loaded as None → skipped), attn_logit_softcap/final_logit_softcap are None (no softcap),
+      and query_pre_attn_scalar is None so attn_scale falls back to 1/sqrt(head_dim) — the
+      forward path is byte-identical to before PMAT-810 (e.g. qwen2/llama output unchanged).
+
+falsification_tests:
+  - id: FALSIFY-LOAD-GEMMA-001
+    name: test_gemma3_rejected_at_load
+    prediction: "validate_model_load with architecture in {gemma3, Gemma3ForCausalLM, gemma3n} returns Err(gate=architecture_supported) whose reason names the refused Gemma3 architecture"
+    test_harness: "cargo test -p aprender-serve --lib test_gemma3_rejected_at_load"
+    expected_output: "test result: ok"
+    if_fails: "a gemma3/gemma3n model is accepted at load → apr runs it with the gemma2 forward (missing further behaviors) and emits silently-wrong output."
+  - id: FALSIFY-LOAD-GEMMA-002
+    name: test_gemma2_now_supported
+    prediction: "validate_model_load with architecture in {gemma2, GEMMA2, Gemma2ForCausalLM} is Ok (PMAT-810 implemented the v2 behaviors), while is_gemma2_supported(gemma/gemma3/gemma3n) is false"
+    test_harness: "cargo test -p aprender-serve --lib test_gemma2_now_supported"
+    expected_output: "test result: ok"
+    if_fails: "either Gemma v2 is wrongly re-refused (no inference for a supported family) or gemma3/3n is wrongly accepted (silent garbage)."
+  - id: FALSIFY-LOAD-GEMMA-003
+    name: test_gemma1_now_supported
+    prediction: "validate_model_load with architecture in {gemma, GEMMA, GemmaForCausalLM} is Ok (PMAT-809), while is_gemma1_supported(gemma2/gemma3/gemma3n) is false"
+    test_harness: "cargo test -p aprender-serve --lib test_gemma1_now_supported"
+    expected_output: "test result: ok"
+    if_fails: "Gemma v1 is wrongly re-refused, or a non-v1 family is wrongly classified as v1."
+  - id: FALSIFY-LOAD-GEMMA-004
+    name: test_non_gemma_architectures_unaffected
+    prediction: "validate_model_load with architecture in {llama, qwen2, qwen3, mistral, phi, phi2, deepseek, gpt2, unknown_future_arch} is Ok — the Gemma gate does not regress any other family"
+    test_harness: "cargo test -p aprender-serve --lib test_non_gemma_architectures_unaffected"
+    expected_output: "test result: ok"
+    if_fails: "the Gemma gate over-triggers and refuses a non-Gemma model that apr CAN run correctly = a regression."
+  - id: FALSIFY-LOAD-GEMMA-005
+    name: gemma_config_helpers
+    prediction: "GGUFConfig helpers: is_gemma1/is_gemma2 true only for their exact arch; embed_scale == sqrt(hidden) for gemma1 AND gemma2 and None otherwise; geglu_ffn true for gemma1 AND gemma2; rmsnorm_unit_offset false for the GGUF path"
+    test_harness: "cargo test -p aprender-serve --lib gemma_config_tests"
+    expected_output: "test result: ok"
+    if_fails: "a Gemma forward behavior is mis-gated (wrong embedding scale, wrong activation, or a double-counted (1+w) norm) = wrong output."
+  - id: FALSIFY-LOAD-GEMMA-006
+    name: softcap_tests
+    prediction: "ops::softcap(x, cap) == cap*tanh(x/cap) within 1e-4, bounds outputs into ±cap for extreme inputs, is ~identity near 0, and is a no-op for cap<=0 or non-finite cap"
+    test_harness: "cargo test -p aprender-serve --lib softcap_tests"
+    expected_output: "test result: ok"
+    if_fails: "the gemma2 tanh softcap primitive is wrong → attention/final logits are not capped correctly → wrong sampling → divergent output."
+  - id: FALSIFY-LOAD-GEMMA-007
+    name: test_gemma2_routed_to_cpu_at_capability_layer
+    prediction: "PMAT-824: required_ops(constraints) for gemma2 passes check_capability (documents the gap — constraints alone read gemma2 as GPU-supported), but required_ops_for_model(constraints, \"gemma2\") FAILS check_capability with missing {AttnFinalSoftcap, PostAttnFfnNorm}. Same for gemma3. RED pre-fix (gate used required_ops → gemma2 GPU-OK), GREEN post-fix."
+    test_harness: "cargo test -p aprender-serve --lib capability::tests::test_gemma2_routed_to_cpu_at_capability_layer capability::tests::test_gemma3_routed_to_cpu_at_capability_layer"
+    expected_output: "test result: ok"
+    if_fails: "a Gemma2/Gemma3 model passes the GPU capability gate → reaches the uncapped/2-norm CUDA forward and relies SOLELY on the runtime cosine parity gate to avoid shipping silently-wrong logits."
+  - id: FALSIFY-LOAD-GEMMA-008
+    name: test_non_softcap_archs_still_gpu_supported
+    prediction: "PMAT-824 no-regression: required_ops_for_model(constraints, arch) == required_ops(constraints) for arch in {llama, qwen2, qwen3, mistral, gemma(v1)}, and check_capability passes — the softcap/post-norm gate is strictly scoped to gemma2*/gemma3* and never false-routes a GPU-coherent model to CPU."
+    test_harness: "cargo test -p aprender-serve --lib capability::tests::test_qwen2_still_gpu_supported_after_gate capability::tests::test_llama_still_gpu_supported_after_gate capability::tests::test_gemma_v1_not_flagged_as_softcap"
+    expected_output: "test result: ok"
+    if_fails: "the new gate over-triggers and routes a non-softcap GPU-coherent model (qwen2/llama/gemma v1) to CPU = a perf regression."

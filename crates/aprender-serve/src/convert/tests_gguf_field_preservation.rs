@@ -177,6 +177,7 @@
             eps: 1e-5,
             rope_type: 0, // NORM style (adjacent pairs)
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
             bos_token_id: None,
             eos_token_id: None,
         };
@@ -278,6 +279,7 @@
             output_norm_bias: None,
             lm_head_weight: vec![0.01; hidden_dim * vocab_size],
             lm_head_bias: None,
+            lm_head_tied: false,
             q4k_layers: None,
             lm_head_weight_q6k: None,
             lm_head_weight_q4k: None,

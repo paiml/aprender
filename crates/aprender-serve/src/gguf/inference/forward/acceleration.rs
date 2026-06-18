@@ -74,9 +74,27 @@ impl OwnedQuantizedModel {
     }
 
     /// Dequantize a weight tensor to f32
+    ///
+    /// PMAT-783: The legacy `_ => raw-f32` fallback silently reinterpreted EVERY
+    /// quant type that was not Q4_K/Q5_K/Q6_K (Q8_0, Q4_0, Q4_1, Q5_0, Q5_1,
+    /// Q2_K, Q3_K, F16, BF16, native APR q4/q8) as raw little-endian f32 bytes,
+    /// producing garbage weights on the wgpu/HybridScheduler GPU path and the
+    /// cached CPU path. This now dispatches every known ggml/APR type to its real
+    /// dequantizer and hard-errors (fail-closed + loud) on a genuinely unsupported
+    /// type — never silent f32-garbage. Mirrors `dequantize_weight_for_cuda`
+    /// (PMAT-782).
     #[cfg(feature = "gpu")]
     pub(crate) fn dequantize_weight(&self, weight: &OwnedQuantizedTensor) -> Result<Vec<f32>> {
-        use crate::quantize::{dequantize_q4_k_simd, dequantize_q5_k, dequantize_q6_k, QK_K};
+        use crate::gguf::types::{
+            APR_TYPE_Q4, APR_TYPE_Q8, GGUF_TYPE_BF16, GGUF_TYPE_F16, GGUF_TYPE_F32, GGUF_TYPE_Q2_K,
+            GGUF_TYPE_Q3_K, GGUF_TYPE_Q4_0, GGUF_TYPE_Q4_1, GGUF_TYPE_Q5_0, GGUF_TYPE_Q5_1,
+            GGUF_TYPE_Q8_0,
+        };
+        use crate::quantize::{
+            dequantize_q2_k, dequantize_q3_k, dequantize_q4_0, dequantize_q4_1, dequantize_q4_k_simd,
+            dequantize_q5_0, dequantize_q5_1, dequantize_q5_k, dequantize_q6_k, dequantize_q8_0,
+            QK_K,
+        };
 
         let in_dim = weight.in_dim;
         let out_dim = weight.out_dim;
@@ -120,8 +138,9 @@ impl OwnedQuantizedModel {
                 }
                 Ok(output)
             },
-            _ => {
-                // F32 or unsupported - interpret raw bytes as f32
+            // F32 weights are already dequantized — reinterpret raw LE bytes.
+            // This is the ONLY type for which the raw-f32 path is correct.
+            GGUF_TYPE_F32 => {
                 let num_floats = weight.data.len() / 4;
                 let mut output = vec![0.0f32; num_floats];
                 for (i, chunk) in weight.data.chunks_exact(4).enumerate() {
@@ -129,6 +148,49 @@ impl OwnedQuantizedModel {
                 }
                 Ok(output)
             },
+            // F16 weights — widen each little-endian half to f32.
+            GGUF_TYPE_F16 => Ok(weight
+                .data
+                .chunks_exact(2)
+                .map(|b| half::f16::from_le_bytes([b[0], b[1]]).to_f32())
+                .collect()),
+            // BF16 weights — left-shift the 16 mantissa/exponent bits into f32.
+            GGUF_TYPE_BF16 => Ok(weight
+                .data
+                .chunks_exact(2)
+                .map(|b| {
+                    let bits = u16::from_le_bytes([b[0], b[1]]);
+                    f32::from_bits((bits as u32) << 16)
+                })
+                .collect()),
+            // Legacy block quants (block size 32) — dispatch to the real
+            // dequantizer instead of treating the packed bytes as raw f32.
+            GGUF_TYPE_Q4_0 => dequantize_q4_0(&weight.data),
+            GGUF_TYPE_Q4_1 => dequantize_q4_1(&weight.data),
+            GGUF_TYPE_Q5_0 => dequantize_q5_0(&weight.data),
+            GGUF_TYPE_Q5_1 => dequantize_q5_1(&weight.data),
+            GGUF_TYPE_Q8_0 => dequantize_q8_0(&weight.data),
+            // Remaining K-quants (super-block size 256).
+            GGUF_TYPE_Q2_K => dequantize_q2_k(&weight.data),
+            GGUF_TYPE_Q3_K => dequantize_q3_k(&weight.data),
+            // Native APR q4/q8 — per-tensor scratch dequant.
+            APR_TYPE_Q4 => Ok(crate::apr::dequant::dequantize_apr_q4(
+                &weight.data,
+                total_elements,
+            )),
+            APR_TYPE_Q8 => Ok(crate::apr::dequant::dequantize_apr_q8(
+                &weight.data,
+                total_elements,
+            )),
+            // Fail-closed + loud: an unknown type is NEVER silently reinterpreted
+            // as raw f32 (that produced garbage weights). Hard-error instead.
+            other => Err(RealizarError::UnsupportedOperation {
+                operation: "dequantize_weight".to_string(),
+                reason: format!(
+                    "Unsupported quantization type {other}: no dequantizer available — refusing \
+                     to reinterpret quantized bytes as raw f32 (would produce garbage weights)"
+                ),
+            }),
         }
     }
 
