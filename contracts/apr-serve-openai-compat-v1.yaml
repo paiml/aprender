@@ -1,7 +1,7 @@
 contract: apr-serve-openai-compat
 metadata:
   kind: pattern
-  version: "1.11.0"
+  version: "1.12.0"
   description: >
     OpenAI-compatible serve layer (/v1/chat/completions, /v1/completions,
     /v1/embeddings) fidelity invariants. Established by an adversarial audit
@@ -81,10 +81,33 @@ proof_obligations:
       cuda_chat_backend) now resolve top_k via resolve_chat_top_k(temperature, request.top_k)
       — honor the request's top_k, default 40, temperature==0 (or top_k==1) forces greedy —
       instead of the hardcoded `if temperature == 0.0 { 1 } else { 40 }` that dropped it
-      (drift from batch.rs which honors it). STILL OPEN: n accepted-but-ignored (should
-      reject n>1), seed not plumbed to dense backends, temperature default 0.7 vs OpenAI 1.0
-      (default_temperature()); and /v1/completions has no top_k field at all (CompletionRequest
-      would need it added — non-standard for completions, deferred).
+      (drift from batch.rs which honors it). top_p / repeat_penalty / repeat_last_n / seed
+      DISCHARGED for the DENSE /v1/chat/completions backends (PMAT-821): the dense config
+      builders (try_cuda_backend, try_quantized_backend in cuda_chat_backend.rs) previously
+      read ONLY max_tokens/temperature/top_k then `..Default::default()`, silently DROPPING
+      request.top_p/repeat_penalty/repeat_last_n/seed at the HANDLER→CONFIG boundary — so even
+      with the sampler honoring them, the dense chat endpoint passed the neutral defaults
+      (top_p=1.0, repeat_penalty=1.0). They now build via the shared chat_quantized_config()
+      helper, which threads every request sampling param (defaulting field-by-field to
+      QuantizedGenerateConfig::default for the no-param case). The MoE path
+      (try_qwen3_moe_backend) already threaded these. STILL OPEN: n accepted-but-ignored
+      (should reject n>1); temperature default 0.7 vs OpenAI 1.0 (default_temperature()); the
+      APR-Q4K chat scheduler (AprQ4kRequest) carries only max_tokens/temperature/eos — extending
+      its request struct is a separate sampler-layer change; and /v1/completions has no top_k
+      field at all (CompletionRequest would need it added — non-standard for completions,
+      deferred).
+  - type: invariant
+    property: >
+      CHAT-HANDLER-THREADS-PARAMS (DISCHARGED — PMAT-821, F-CHAT-HANDLER-THREADS-PARAMS-001):
+      the dense /v1/chat/completions config builder threads EVERY request sampling parameter
+      into the QuantizedGenerateConfig before generation. Specifically chat_quantized_config()
+      sets config.top_p = request.top_p (default 1.0), config.repeat_penalty =
+      request.repeat_penalty (default 1.0), config.repeat_last_n = request.repeat_last_n
+      (default 64), config.seed = request.seed (default 42) — never leaving them on the neutral
+      default when the request set them. A request that omits a param yields a config whose
+      field equals QuantizedGenerateConfig::default for that field (the no-regression
+      invariant). This is the HANDLER→CONFIG layer; it composes with the sampler-layer fixes
+      (#2081 top_p, #2099 repeat_penalty) that APPLY the params during sampling.
   - type: invariant
     property: >
       TOOL-CALLING (PMAT-801, DISCHARGED for NON-STREAMING): a /v1/chat/completions
@@ -179,6 +202,12 @@ falsification_tests:
     test_harness: '! grep -nE "for stop in stops" crates/aprender-serve/src/api/gpu_completions_handler.rs'
     expected_output: "no match (exit 1 from grep = invariant holds)"
     if_fails: 'A completion backend re-added first-LISTED stop truncation, so stop=["world","hello"] on "hello world" keeps "hello " instead of truncating at the earliest position ("") — inconsistent with the other completion backends.'
+  - id: F-CHAT-HANDLER-THREADS-PARAMS-001
+    name: pmat821_chat_handler_threading_tests
+    prediction: 'chat_quantized_config(request, tokenizer, eos, trace) threads every request sampling param into the config: a request with top_p=0.5 => config.top_p == 0.5 (NOT the neutral default 1.0); repeat_penalty=1.3 => config.repeat_penalty == 1.3; repeat_last_n=128 / seed=7 => those values; and a request that sets NONE of them => config.top_p/repeat_penalty/repeat_last_n/seed each equal QuantizedGenerateConfig::default (no-regression). Testable at the HANDLER level independent of whether the sampler applies the param.'
+    test_harness: 'cargo test -p aprender-serve --lib pmat821_chat_handler_threading_tests'
+    expected_output: "test result: ok"
+    if_fails: 'The dense /v1/chat/completions config builder dropped a request sampling param (e.g. top_p) before generation — the pre-PMAT-821 behavior where try_cuda_backend / try_quantized_backend read only max_tokens/temperature/top_k then `..Default::default()`, so the chat endpoint silently used the neutral default (top_p=1.0, repeat_penalty=1.0) no matter what the client requested.'
   - id: FALSIFY-SSE-FRAMING-753
     name: chat_completions_stream_no_double_data_prefix
     prediction: 'chat_completions_stream.rs yields Event::default().data(<bare json>) / .data("[DONE]") — no occurrence of Event::default().data(format!("data: ...")) (which double-prefixes the SSE wire format). Shape gate: catches re-introduction of the manual prefix.'
