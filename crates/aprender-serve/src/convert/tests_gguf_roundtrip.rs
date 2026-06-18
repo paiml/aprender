@@ -188,6 +188,7 @@ mod tests {
             output_norm_bias: None,
             lm_head_weight: vec![0.01; hidden * vocab],
             lm_head_bias: None,
+            lm_head_tied: false,
             q4k_layers: None,
             lm_head_weight_q6k: None,
             lm_head_weight_q4k: None,
