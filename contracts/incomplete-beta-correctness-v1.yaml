@@ -1,0 +1,59 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-18"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "Press, Teukolsky, Vetterling, Flannery — Numerical Recipes, §6.4 betai/betacf (the reference algorithm)"
+    - "scipy.special.betainc (oracle, pinned 2026-06-18 via `uv run --with scipy`)"
+    - "scipy.stats.ttest_1samp (downstream oracle)"
+  description: |
+    Correctness contract for the regularized incomplete beta function I_x(a,b)
+    (aprender-core stats::hypothesis::incomplete_beta) and the t- / F-distribution
+    p-values that depend on it. Pillar-1 (scipy/sklearn parity) provable-correctness.
+
+kind: KernelContract
+name: incomplete-beta-correctness
+version: "1.0.0"
+scope: "crates/aprender-core/src/stats/hypothesis.rs"
+
+description: |
+  I_x(a,b) is the regularized incomplete beta. The Numerical-Recipes form is
+
+      bt          = x^a (1-x)^b / B(a,b)
+      I_x(a,b)    = bt * betacf(a,b,x) / a            if x < (a+1)/(a+b+2)
+                  = 1 - bt * betacf(b,a,1-x) / b      otherwise
+
+  The 1/a and 1/b normalizers appear ONLY in the final returns. PMAT-827 fixed a
+  defect where `bt` carried a spurious extra `/a`, double-dividing the if-branch
+  (factor 1/a too small) and `b/a`-scaling the else-branch. The error was invisible
+  ONLY at a == 1 (1/1 = identity) — and every pre-existing test used a == b == 1, so
+  the bug shipped green. It corrupted every t-test (df ≤ 30) and ANOVA F-test p-value:
+  values came out too small → falsely significant (e.g. a one-sample t-test reported
+  p = 0.1151 when scipy gives 0.2302).
+
+equations:
+  C-IBETA-001:
+    description: "I_x(a,b) matches the scipy.special.betainc oracle for general a (not only a==1)"
+    formula: "|incomplete_beta(a,b,x) - betainc(a,b,x)| < ε, ε = 1e-3; e.g. I_0.4(2,3)=0.5248, I_0.5(4,0.5)=0.022204"
+    note: "The a==1 identity case is necessary but NOT sufficient — it is the single value the historical extra-/a bug left correct."
+
+  C-IBETA-002:
+    description: "Symmetry I_0.5(a,a) = 1/2 for all a > 0"
+    formula: "incomplete_beta(a, a, 0.5) = 0.5 ∀ a > 0"
+    note: "A pure structural check independent of any external oracle; RED on the extra-/a bug (gave 0.8 at a=2.5)."
+
+  C-IBETA-003:
+    description: "Downstream: one-sample t-test p-value (df ≤ 30 beta path) matches scipy.stats.ttest_1samp"
+    formula: "ttest_1samp([2.3,2.5,2.7,2.9,3.1], 2.5).pvalue ≈ 0.2302 (scipy); 2-tail p = incomplete_beta(df/2, 1/2, df/(df+t²))"
+    note: "Guards against false-significant inference: the bug halved this p-value (0.1151) → spurious null rejection."
+
+falsification:
+  - id: FALSIFY-STATS-BETA-001
+    description: "I_x(a,b) equals the scipy oracle for a != 1 (and still for a == 1). Discharges C-IBETA-001 + C-IBETA-002."
+    test: "test_incomplete_beta_matches_scipy_oracle — I_0.4(2,3): RED 0.2624 → GREEN 0.5248; I_0.5(4,0.5): RED 0.00555 → GREEN 0.022204; I_0.5(2.5,2.5): RED 0.8 → GREEN 0.5; a==1 identity regression-guarded."
+    evidence: "cargo test -p aprender-core --lib test_incomplete_beta_matches_scipy_oracle"
+  - id: FALSIFY-STATS-BETA-002
+    description: "One-sample t-test p-value matches scipy (downstream of the beta fix). Discharges C-IBETA-003."
+    test: "test_ttest_1samp_pvalue_matches_scipy — RED 0.1151 (falsely significant) → GREEN 0.2302 == scipy.stats.ttest_1samp."
+    evidence: "cargo test -p aprender-core --lib test_ttest_1samp_pvalue_matches_scipy"

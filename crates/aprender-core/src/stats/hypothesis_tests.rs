@@ -350,6 +350,50 @@ mod tests {
         assert!(val > 0.0 && val < 1.0);
     }
 
+    /// FALSIFY-STATS-BETA-001: the regularized incomplete beta I_x(a,b) must match the
+    /// `scipy.special.betainc` oracle for a != 1. The historical extra `/a` in `bt`
+    /// (hypothesis.rs `incomplete_beta`) was invisible ONLY at a == b == 1 (1/1 = identity),
+    /// which is exactly why every prior test here used a == b == 1 and the bug shipped green.
+    /// Oracle pinned 2026-06-18 via `uv run --with scipy`.
+    #[test]
+    fn test_incomplete_beta_matches_scipy_oracle() {
+        // if-branch, a=2: RED pre-fix = 0.2624 (off by 1/a). GREEN post-fix = 0.5248.
+        assert!(
+            (incomplete_beta(2.0, 3.0, 0.4) - 0.524_800).abs() < 1e-3,
+            "I_0.4(2,3) = {} != 0.5248 (scipy)",
+            incomplete_beta(2.0, 3.0, 0.4)
+        );
+        // else-branch, a=4: RED pre-fix = 0.00555 (off by 1/a = 1/4). GREEN = 0.022204.
+        assert!(
+            (incomplete_beta(4.0, 0.5, 0.5) - 0.022_204).abs() < 1e-4,
+            "I_0.5(4,0.5) = {} != 0.022204 (scipy)",
+            incomplete_beta(4.0, 0.5, 0.5)
+        );
+        // Symmetry I_0.5(a,a) = 0.5 — RED pre-fix (0.8), GREEN post-fix.
+        assert!(
+            (incomplete_beta(2.5, 2.5, 0.5) - 0.5).abs() < 1e-3,
+            "I_0.5(2.5,2.5) = {} != 0.5 (symmetry)",
+            incomplete_beta(2.5, 2.5, 0.5)
+        );
+        // Regression guard: the a == 1 identity case the old tests used must STILL hold.
+        assert!((incomplete_beta(1.0, 1.0, 0.2) - 0.2).abs() < 1e-3);
+    }
+
+    /// FALSIFY-STATS-BETA-002 (downstream): a one-sample t-test with df <= 30 routes its
+    /// p-value through `incomplete_beta(df/2, 0.5, x)`; the extra `/a` made the p-value
+    /// WRONG (smaller → falsely significant). Oracle: `scipy.stats.ttest_1samp` = 0.23020.
+    #[test]
+    fn test_ttest_1samp_pvalue_matches_scipy() {
+        let sample = vec![2.3, 2.5, 2.7, 2.9, 3.1];
+        let result = ttest_1samp(&sample, 2.5).expect("valid t-test");
+        assert_eq!(result.df, 4.0);
+        assert!(
+            (result.pvalue - 0.230_20).abs() < 3e-3,
+            "ttest_1samp p = {} != 0.2302 (scipy.stats.ttest_1samp); extra /a halved/scaled it",
+            result.pvalue
+        );
+    }
+
     #[test]
     fn test_incomplete_gamma_zero_x() {
         let val = incomplete_gamma(1.0, 0.0);

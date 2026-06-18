@@ -418,8 +418,11 @@ fn incomplete_beta(a: f32, b: f32, x: f32) -> f32 {
         return 1.0;
     }
 
-    // Simplified approximation using continued fraction
-    let bt = (x.powf(a) * (1.0 - x).powf(b)) / (a * beta_function(a, b));
+    // Numerical-Recipes `betai` prefactor: bt = x^a (1-x)^b / B(a,b).
+    // The 1/a and 1/b normalizers belong ONLY in the final returns below — folding a
+    // `/a` in here double-divided the if-branch (and `b/a`-scaled the else-branch),
+    // making I_x(a,b) wrong for a != 1 (it was correct only at the a==1 identity).
+    let bt = (x.powf(a) * (1.0 - x).powf(b)) / beta_function(a, b);
 
     if x < (a + 1.0) / (a + b + 2.0) {
         bt * beta_continued_fraction(a, b, x) / a
