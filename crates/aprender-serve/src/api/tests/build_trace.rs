@@ -394,6 +394,8 @@ fn test_chat_message_with_name() {
         role: "user".to_string(),
         content: "Hello".to_string(),
         name: Some("Alice".to_string()),
+    
+        ..Default::default()
     };
     let json = serde_json::to_string(&msg).expect("JSON serialization failed");
     assert!(json.contains("Alice"));
@@ -407,6 +409,8 @@ fn test_chat_message_debug() {
         role: "system".to_string(),
         content: "Be helpful".to_string(),
         name: None,
+    
+        ..Default::default()
     };
     let debug = format!("{:?}", msg);
     assert!(debug.contains("system"));
@@ -419,6 +423,8 @@ fn test_chat_message_clone() {
         role: "assistant".to_string(),
         content: "Hi there".to_string(),
         name: Some("Bot".to_string()),
+    
+        ..Default::default()
     };
     let cloned = msg.clone();
     assert_eq!(cloned.content, "Hi there");
@@ -436,6 +442,8 @@ fn test_chat_choice_serde() {
             role: "assistant".to_string(),
             content: "Response".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         finish_reason: "stop".to_string(),
     };
@@ -453,6 +461,8 @@ fn test_chat_choice_debug() {
             role: "assistant".to_string(),
             content: "test".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         finish_reason: "length".to_string(),
     };

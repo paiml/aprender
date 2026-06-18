@@ -158,11 +158,15 @@ fn test_format_chat_messages_qwen_model() {
             role: "system".to_string(),
             content: "You are a helpful assistant.".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         crate::api::ChatMessage {
             role: "user".to_string(),
             content: "What is Rust?".to_string(),
             name: None,
+        
+            ..Default::default()
         },
     ];
     let result = format_chat_messages(&messages, Some("qwen2"));
@@ -178,6 +182,8 @@ fn test_format_chat_messages_phi_model() {
         role: "user".to_string(),
         content: "Hello phi".to_string(),
         name: None,
+    
+        ..Default::default()
     }];
     let result = format_chat_messages(&messages, Some("phi2"));
     assert!(!result.is_empty());
@@ -191,6 +197,8 @@ fn test_format_chat_messages_tinyllama_model() {
         role: "user".to_string(),
         content: "Hello tinyllama".to_string(),
         name: None,
+    
+        ..Default::default()
     }];
     let result = format_chat_messages(&messages, Some("tinyllama"));
     assert!(!result.is_empty());
@@ -204,6 +212,8 @@ fn test_format_chat_messages_llama_model() {
         role: "user".to_string(),
         content: "Hello llama".to_string(),
         name: None,
+    
+        ..Default::default()
     }];
     let result = format_chat_messages(&messages, Some("llama"));
     assert!(!result.is_empty());
@@ -225,6 +235,8 @@ fn test_context_window_manager_truncate_long_messages() {
             role: "user".to_string(),
             content: format!("Message number {} with some extra text", i),
             name: None,
+        
+            ..Default::default()
         })
         .collect();
 
@@ -252,21 +264,29 @@ fn test_context_window_manager_preserves_system_message() {
             role: "system".to_string(),
             content: "You are helpful.".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         crate::api::ChatMessage {
             role: "user".to_string(),
             content: "A very long message that should be long enough to cause truncation when combined with other messages".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         crate::api::ChatMessage {
             role: "assistant".to_string(),
             content: "A very long response with lots of content that should be truncated eventually if needed".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         crate::api::ChatMessage {
             role: "user".to_string(),
             content: "Another long user message for extra length to ensure truncation happens".to_string(),
             name: None,
+        
+            ..Default::default()
         },
     ];
 

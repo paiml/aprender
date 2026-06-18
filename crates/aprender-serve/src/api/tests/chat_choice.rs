@@ -7,6 +7,8 @@ fn test_chat_choice_clone_debug() {
             role: "user".to_string(),
             content: "test".to_string(),
             name: Some("John".to_string()),
+        
+            ..Default::default()
         },
         finish_reason: "length".to_string(),
     };
@@ -165,6 +167,8 @@ fn test_chat_message_with_name() {
         role: "user".to_string(),
         content: "Hello from Alice".to_string(),
         name: Some("Alice".to_string()),
+    
+        ..Default::default()
     };
 
     let json = serde_json::to_string(&msg).expect("serialize");
@@ -182,6 +186,8 @@ fn test_chat_message_all_roles() {
             role: role.to_string(),
             content: format!("Message from {}", role),
             name: None,
+        
+            ..Default::default()
         };
         let json = serde_json::to_string(&msg).expect("serialize");
         let parsed: ChatMessage = serde_json::from_str(&json).expect("deserialize");
@@ -195,6 +201,8 @@ fn test_chat_message_unicode() {
         role: "user".to_string(),
         content: "Hello 世界! 🌍 مرحبا Привет".to_string(),
         name: Some("用户".to_string()),
+    
+        ..Default::default()
     };
 
     let json = serde_json::to_string(&msg).expect("serialize");

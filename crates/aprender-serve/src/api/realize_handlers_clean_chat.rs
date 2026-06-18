@@ -91,6 +91,8 @@
             role: "user".to_string(),
             content: "Hello".to_string(),
             name: None,
+        
+            ..Default::default()
         }];
         let result = format_chat_messages(&messages, None);
         assert!(!result.is_empty());
@@ -104,11 +106,15 @@
                 role: "system".to_string(),
                 content: "You are helpful.".to_string(),
                 name: None,
+            
+                ..Default::default()
             },
             ChatMessage {
                 role: "user".to_string(),
                 content: "Hi".to_string(),
                 name: None,
+            
+                ..Default::default()
             },
         ];
         let result = format_chat_messages(&messages, None);
@@ -123,16 +129,22 @@
                 role: "user".to_string(),
                 content: "What is 2+2?".to_string(),
                 name: None,
+            
+                ..Default::default()
             },
             ChatMessage {
                 role: "assistant".to_string(),
                 content: "4".to_string(),
                 name: None,
+            
+                ..Default::default()
             },
             ChatMessage {
                 role: "user".to_string(),
                 content: "And 3+3?".to_string(),
                 name: None,
+            
+                ..Default::default()
             },
         ];
         let result = format_chat_messages(&messages, None);
@@ -154,6 +166,8 @@
             role: "user".to_string(),
             content: "Hello".to_string(),
             name: None,
+        
+            ..Default::default()
         }];
         let result = format_chat_messages(&messages, Some("qwen2"));
         assert!(!result.is_empty());

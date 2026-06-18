@@ -171,6 +171,8 @@ fn test_chat_completion_request_serde() {
             role: "user".to_string(),
             content: "Hi".to_string(),
             name: None,
+        
+            ..Default::default()
         }],
         max_tokens: Some(100),
         temperature: Some(0.7),
@@ -183,6 +185,8 @@ fn test_chat_completion_request_serde() {
         stream: false,
         stop: None,
         user: None,
+    
+        ..Default::default()
     };
     let json = serde_json::to_string(&req).expect("JSON serialization failed");
     let parsed: ChatCompletionRequest = serde_json::from_str(&json).expect("JSON deserialization failed");
@@ -203,6 +207,8 @@ fn test_chat_completion_response_serde() {
                 role: "assistant".to_string(),
                 content: "Hello!".to_string(),
                 name: None,
+            
+                ..Default::default()
             },
             finish_reason: "stop".to_string(),
         }],

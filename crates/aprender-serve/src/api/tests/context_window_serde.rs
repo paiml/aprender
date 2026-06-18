@@ -66,6 +66,8 @@ fn test_context_window_manager_default() {
         role: "user".to_string(),
         content: "Hello".to_string(),
         name: None,
+    
+        ..Default::default()
     }];
     assert!(!mgr.needs_truncation(&msgs));
 }
@@ -78,6 +80,8 @@ fn test_context_window_manager_no_truncation() {
         role: "user".to_string(),
         content: "Short message".to_string(),
         name: None,
+    
+        ..Default::default()
     }];
     let (result, truncated) = mgr.truncate_messages(&msgs);
     assert!(!truncated);
@@ -98,6 +102,8 @@ fn test_context_window_manager_truncation_needed() {
             role: "user".to_string(),
             content: format!("Message number {} with enough content to use tokens", i),
             name: None,
+        
+            ..Default::default()
         })
         .collect();
     let (result, truncated) = mgr.truncate_messages(&msgs);
@@ -118,21 +124,29 @@ fn test_context_window_manager_preserves_system() {
             role: "system".to_string(),
             content: "You are helpful".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         ChatMessage {
             role: "user".to_string(),
             content: "A".repeat(200),
             name: None,
+        
+            ..Default::default()
         },
         ChatMessage {
             role: "assistant".to_string(),
             content: "B".repeat(200),
             name: None,
+        
+            ..Default::default()
         },
         ChatMessage {
             role: "user".to_string(),
             content: "Latest question".to_string(),
             name: None,
+        
+            ..Default::default()
         },
     ];
     let (result, truncated) = mgr.truncate_messages(&msgs);
@@ -153,6 +167,8 @@ fn test_context_window_manager_needs_truncation() {
         role: "user".to_string(),
         content: "Hi".to_string(),
         name: None,
+    
+        ..Default::default()
     }];
     assert!(!mgr.needs_truncation(&short));
 
@@ -165,6 +181,8 @@ fn test_context_window_manager_needs_truncation() {
                 i
             ),
             name: None,
+        
+            ..Default::default()
         })
         .collect();
     assert!(mgr.needs_truncation(&long));
@@ -179,11 +197,15 @@ fn test_context_window_manager_estimate_total_tokens() {
             role: "user".to_string(),
             content: "Hello world".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         ChatMessage {
             role: "assistant".to_string(),
             content: "Hi there".to_string(),
             name: None,
+        
+            ..Default::default()
         },
     ];
     let tokens = mgr.estimate_total_tokens(&msgs);
@@ -212,6 +234,8 @@ fn test_format_chat_messages_basic() {
         role: "user".to_string(),
         content: "Hello".to_string(),
         name: None,
+    
+        ..Default::default()
     }];
     let result = format_chat_messages(&msgs, None);
     assert!(!result.is_empty());
@@ -225,21 +249,29 @@ fn test_format_chat_messages_multi_turn() {
             role: "system".to_string(),
             content: "You are a helpful assistant".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         ChatMessage {
             role: "user".to_string(),
             content: "What is 2+2?".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         ChatMessage {
             role: "assistant".to_string(),
             content: "4".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         ChatMessage {
             role: "user".to_string(),
             content: "Thanks!".to_string(),
             name: None,
+        
+            ..Default::default()
         },
     ];
     let result = format_chat_messages(&msgs, Some("qwen"));
@@ -262,6 +294,8 @@ fn test_format_chat_messages_model_names() {
         role: "user".to_string(),
         content: "Hi".to_string(),
         name: None,
+    
+        ..Default::default()
     }];
     // Different model name templates
     for model in &["qwen", "llama", "mistral", "phi", "unknown-model"] {

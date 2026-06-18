@@ -156,6 +156,8 @@ fn test_deep_apicov_format_chat_messages_vicuna() {
         role: "user".to_string(),
         content: "Test".to_string(),
         name: None,
+    
+        ..Default::default()
     }];
     let result = format_chat_messages(&messages, Some("vicuna-7b"));
     assert!(result.contains("USER:") || result.contains("Test"));
@@ -167,6 +169,8 @@ fn test_deep_apicov_format_chat_messages_gemma() {
         role: "user".to_string(),
         content: "Hello".to_string(),
         name: None,
+    
+        ..Default::default()
     }];
     let result = format_chat_messages(&messages, Some("gemma-2b"));
     assert!(result.contains("Hello"));
@@ -179,21 +183,29 @@ fn test_deep_apicov_format_chat_messages_multi_turn() {
             role: "system".to_string(),
             content: "You are helpful.".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         ChatMessage {
             role: "user".to_string(),
             content: "Hi".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         ChatMessage {
             role: "assistant".to_string(),
             content: "Hello!".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         ChatMessage {
             role: "user".to_string(),
             content: "How are you?".to_string(),
             name: None,
+        
+            ..Default::default()
         },
     ];
     let result = format_chat_messages(&messages, Some("TinyLlama-1.1B"));
@@ -215,11 +227,15 @@ fn test_deep_apicov_context_window_large_system_message() {
             role: "system".to_string(),
             content: "x".repeat(800), // 800/4 + 10 = 210 tokens > 150 available
             name: None,
+        
+            ..Default::default()
         },
         ChatMessage {
             role: "user".to_string(),
             content: "Hi".to_string(), // 11 tokens
             name: None,
+        
+            ..Default::default()
         },
     ];
 

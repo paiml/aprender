@@ -1,0 +1,47 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-18"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "torch.nn.utils.clip_grad_norm_ (the reference global-norm gradient-clipping semantics)"
+    - "crates/aprender-train/src/optim/clip.rs::clip_grad_norm_refs (the tested in-tree helper)"
+  description: |
+    Correctness contract for gradient clipping in the CPU TransformerTrainer
+    (aprender-train train::transformer_trainer). Pillar-2 (PyTorch-parity training)
+    provable correctness: a configured grad-clip MUST actually bound the gradients
+    used by the optimizer step.
+
+kind: KernelContract
+name: trainer-grad-clip
+version: "1.0.0"
+scope: "crates/aprender-train/src/train/transformer_trainer/trainer.rs"
+
+description: |
+  TransformerTrainer::clip_and_step must apply global-norm gradient clipping (torch
+  clip_grad_norm_) to the parameters being optimized when config.base.max_grad_norm is
+  set, BEFORE the optimizer step. PMAT-829 fixed a defect where the clip coefficient was
+  computed and then discarded (`let _ = scale;`): no gradient was ever scaled, so
+  `--grad-clip` / `with_grad_clip(..)` was a silent no-op on the CPU training path
+  (LM-pretrain and LoRA-finetune). Training ran with raw unclipped gradients (loss-spike
+  divergence risk), while the sibling WGPU trainer clips correctly — a silent CPU-vs-GPU
+  optimization divergence for identical configs. Fix: call the tested clip_grad_norm_refs
+  helper on the exact param set passed to step_refs, in both the LoRA and full-finetune
+  branches.
+
+equations:
+  C-GRADCLIP-001:
+    description: "When max_grad_norm is set, the optimizer steps on gradients whose global L2 norm <= max_grad_norm"
+    formula: "global_norm(grads_at_step) <= max_grad_norm whenever config.base.max_grad_norm = Some(max_grad_norm)"
+    note: "torch clip_grad_norm_: if ||g|| > c then g *= c/||g|| over the OPTIMIZED params; identity when ||g|| <= c."
+
+  C-GRADCLIP-002:
+    description: "Clipping is applied (not merely computed) — the clip coefficient must scale the gradients in place"
+    formula: "clip_and_step calls clip_grad_norm_refs(params, max_norm) on the same params given to step_refs; no computed scale is discarded"
+    note: "Regression guard against the `let _ = scale;` discard. CPU and WGPU trainers must agree."
+
+falsification:
+  - id: FALSIFY-TRAINER-GRADCLIP-001
+    description: "clip_and_step actually clips an oversized gradient to max_grad_norm. Discharges C-GRADCLIP-001/002."
+    test: "falsify_clip_and_step_actually_clips_gradients — inject grad norm ~4420 with max_grad_norm=1.0; RED pre-fix post-step norm 4420 (unclipped), GREEN post-fix <= 1.0."
+    evidence: "cargo test -p aprender-train --lib falsify_clip_and_step_actually_clips_gradients"

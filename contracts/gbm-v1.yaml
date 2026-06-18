@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-02-19'
   author: PAIML Engineering
   description: Gradient Boosting Machine -- sequential ensemble with gradient descent in function space
@@ -71,6 +71,12 @@ proof_obligations:
   property: Training loss non-increasing
   formal: L_m <= L_{m-1} for each boosting round m
   applies_to: all
+- type: bound
+  property: predict_proba calibrates to the base rate (PMAT-831)
+  formal: 'for inputs with identical features and class-1 fraction r in (0,1), predict_proba(x)[1]
+    -> r (not 0/1); the weak learner is a REGRESSION tree fit to the continuous pseudo-residuals
+    y - sigma(F) with leaf = mean residual, NOT a classification tree + constant ±1 step'
+  applies_to: all
 falsification_tests:
 - id: FALSIFY-GBM-001
   rule: Binary prediction
@@ -92,6 +98,15 @@ falsification_tests:
   prediction: Predictions only contain labels seen in training
   test: 'proptest: fit GBM, check prediction set is subset of training label set'
   if_fails: Label encoding error in multi-class or binary mapping
+- id: FALSIFY-GBM-005
+  rule: predict_proba calibrates to base rate (PMAT-831)
+  prediction: 'On 4 identical-feature samples with labels [1,1,1,0], predict_proba(x)[1] ~= 0.75
+    (sklearn GradientBoostingClassifier), NOT ~1.0; the regression-tree weak learner converges
+    raw -> ln(3) so sigma -> 0.75'
+  test: 'cargo test -p aprender-core --lib falsify_gbm_005_proba_calibration_base_rate'
+  if_fails: 'The weak learner fits a classification tree to sign(residual) and adds a fixed ±1
+    step (discarding residual magnitude) — raw_predictions grow unbounded and predict_proba
+    saturates to 0/1 (measured 0.99998) instead of converging to the conditional base rate'
 enforcement:
   binary:
     description: Predictions must be binary
@@ -145,5 +160,5 @@ qa_gate:
   - prediction_deterministic
   - ensemble_output_finite
   - fit_predict_consistency
-  pass_criteria: All 4 falsification tests pass + Kani harnesses verify
+  pass_criteria: All 5 falsification tests pass + Kani harnesses verify
   falsification: Ensemble accumulates Inf after many boosting rounds with large learning rate
