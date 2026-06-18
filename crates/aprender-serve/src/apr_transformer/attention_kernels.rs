@@ -206,22 +206,35 @@ impl QuantizedAprTransformerQ4 {
     ///
     /// RoPE applies position-dependent rotation to pairs of dimensions,
     /// enabling the model to learn relative positional information.
+    ///
+    /// PMAT-797: honors the architecture's pairing convention. NORM
+    /// (`rope_type == 0`, LLaMA-family) rotates adjacent pairs `(x[2i], x[2i+1])`;
+    /// NEOX (`rope_type == 2`, Qwen/NeoX/Phi/Gemma) rotates split halves
+    /// `(x[i], x[i+head_dim/2])`. Matches llama.cpp `ggml_rope`.
     fn apply_rope(&self, x: &mut [f32], position: usize, num_heads_in_x: usize) {
         let head_dim = self.config.hidden_dim / self.config.num_heads;
         let half_dim = head_dim / 2;
         let theta = self.config.rope_theta;
         let pos_f32 = position as f32;
         let head_dim_f32 = head_dim as f32;
+        let rope_type = crate::gguf::infer_rope_type(&self.config.architecture);
 
         for h in 0..num_heads_in_x {
             let head_start = h * head_dim;
-            let idx2_start = head_start + half_dim;
 
-            if idx2_start + half_dim > x.len() {
+            if head_start + head_dim > x.len() {
                 continue;
             }
 
-            apply_rope_to_head(x, head_start, idx2_start, half_dim, theta, pos_f32, head_dim_f32);
+            apply_rope_to_head(
+                x,
+                head_start,
+                half_dim,
+                theta,
+                pos_f32,
+                head_dim_f32,
+                rope_type,
+            );
         }
     }
 
@@ -323,38 +336,58 @@ impl QuantizedAprTransformerQ4 {
     }
 }
 
-/// Apply RoPE rotation to a single head's dimensions, processing 4 elements at a time.
+/// Apply RoPE rotation to a single head's dimensions (PMAT-797).
+///
+/// `rope_type == 2` (NEOX) pairs `x[head_start+i]` with `x[head_start+half_dim+i]`
+/// (split halves); any other value (NORM) pairs adjacent `x[2i]` with `x[2i+1]`.
+/// The NEOX path keeps the 4-wide ILP unroll; NORM is scalar (correctness first).
 fn apply_rope_to_head(
     x: &mut [f32],
     head_start: usize,
-    idx2_start: usize,
     half_dim: usize,
     theta: f32,
     pos_f32: f32,
     head_dim_f32: f32,
+    rope_type: u32,
 ) {
-    let mut i = 0;
-    while i + 4 <= half_dim {
-        apply_rope_quad(x, head_start, idx2_start, i, theta, pos_f32, head_dim_f32);
-        i += 4;
-    }
-    // Handle remaining elements
-    while i < half_dim {
-        let freq = 1.0 / theta.powf(2.0 * i as f32 / head_dim_f32);
-        let angle = pos_f32 * freq;
-        let (sin_val, cos_val) = angle.sin_cos();
+    if rope_type == 2 {
+        // NEOX: split halves. idx2 = head_start + half_dim + i.
+        let idx2_start = head_start + half_dim;
+        let mut i = 0;
+        while i + 4 <= half_dim {
+            apply_rope_quad(x, head_start, idx2_start, i, theta, pos_f32, head_dim_f32);
+            i += 4;
+        }
+        while i < half_dim {
+            let freq = 1.0 / theta.powf(2.0 * i as f32 / head_dim_f32);
+            let (sin_val, cos_val) = (pos_f32 * freq).sin_cos();
 
-        let x1 = x[head_start + i];
-        let x2 = x[idx2_start + i];
+            let x1 = x[head_start + i];
+            let x2 = x[idx2_start + i];
 
-        x[head_start + i] = x1 * cos_val - x2 * sin_val;
-        x[idx2_start + i] = x1 * sin_val + x2 * cos_val;
+            x[head_start + i] = x1 * cos_val - x2 * sin_val;
+            x[idx2_start + i] = x1 * sin_val + x2 * cos_val;
 
-        i += 1;
+            i += 1;
+        }
+    } else {
+        // NORM: adjacent pairs. (idx1, idx2) = (head_start+2i, head_start+2i+1).
+        for i in 0..half_dim {
+            let freq = 1.0 / theta.powf(2.0 * i as f32 / head_dim_f32);
+            let (sin_val, cos_val) = (pos_f32 * freq).sin_cos();
+
+            let idx1 = head_start + 2 * i;
+            let idx2 = idx1 + 1;
+            let x1 = x[idx1];
+            let x2 = x[idx2];
+
+            x[idx1] = x1 * cos_val - x2 * sin_val;
+            x[idx2] = x1 * sin_val + x2 * cos_val;
+        }
     }
 }
 
-/// Apply RoPE rotation to 4 consecutive dimension pairs (ILP-friendly).
+/// Apply NEOX-style RoPE rotation to 4 consecutive dimension pairs (ILP-friendly).
 fn apply_rope_quad(
     x: &mut [f32],
     head_start: usize,
