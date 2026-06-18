@@ -352,6 +352,7 @@ fn test_from_gguf_transformer_preserves_config() {
             eps: 1e-6,
             rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
             bos_token_id: None,
             eos_token_id: None,
         },

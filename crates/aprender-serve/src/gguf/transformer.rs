@@ -50,6 +50,14 @@ pub struct QuantizedGGUFTransformerLayer {
     pub attn_q_norm_weight: Option<Vec<f32>>,
     /// GH-279: Per-head K RMSNorm weight [head_dim] (Qwen3)
     pub attn_k_norm_weight: Option<Vec<f32>>,
+    /// PMAT-810: Gemma2 POST-attention RMSNorm weight (`blk.N.post_attention_norm.weight`).
+    /// Gemma2 sandwiches the attention block: `x + post_attn_norm(attn(input_norm(x)))`.
+    /// `None` for every other architecture (LLaMA/Qwen/Gemma1 have no post-norm).
+    pub post_attn_norm_weight: Option<Vec<f32>>,
+    /// PMAT-810: Gemma2 POST-feedforward RMSNorm weight (`blk.N.post_ffw_norm.weight`).
+    /// Gemma2 sandwiches the FFN block: `h + post_ffw_norm(ffn(pre_ffn_norm(h)))`.
+    /// `None` for every other architecture.
+    pub post_ffw_norm_weight: Option<Vec<f32>>,
 }
 
 /// Quantized GGUF Transformer for fused inference
@@ -369,6 +377,14 @@ impl<'a> QuantizedGGUFTransformer<'a> {
             .get_tensor_f32(&format!("{prefix}.attn_k_norm.weight"), data)
             .ok();
 
+        // PMAT-810: Gemma2 post-attention / post-FFN RMSNorm (absent elsewhere).
+        let post_attn_norm_weight = model
+            .get_tensor_f32(&format!("{prefix}.post_attention_norm.weight"), data)
+            .ok();
+        let post_ffw_norm_weight = model
+            .get_tensor_f32(&format!("{prefix}.post_ffw_norm.weight"), data)
+            .ok();
+
         Ok(QuantizedGGUFTransformerLayer {
             attn_norm_weight,
             attn_norm_bias,
@@ -386,6 +402,8 @@ impl<'a> QuantizedGGUFTransformer<'a> {
             ffn_norm_bias,
             attn_q_norm_weight,
             attn_k_norm_weight,
+            post_attn_norm_weight,
+            post_ffw_norm_weight,
         })
     }
 
@@ -611,6 +629,17 @@ impl<'a> QuantizedGGUFTransformer<'a> {
             .get_tensor_f32(&format!("{}.attn_k_norm.weight", prefix), data)
             .ok();
 
+        // PMAT-810: Gemma2 post-attention / post-FFN RMSNorm (absent for LLaMA/
+        // Qwen/Gemma1). Gemma2 sandwiches each block:
+        //   x = x + post_attn_norm(attn(attn_norm(x)))
+        //   h = h + post_ffw_norm(ffn(ffn_norm(h)))
+        let post_attn_norm_weight = model
+            .get_tensor_f32(&format!("{}.post_attention_norm.weight", prefix), data)
+            .ok();
+        let post_ffw_norm_weight = model
+            .get_tensor_f32(&format!("{}.post_ffw_norm.weight", prefix), data)
+            .ok();
+
         Ok(QuantizedGGUFTransformerLayer {
             attn_norm_weight,
             attn_norm_bias,
@@ -628,6 +657,8 @@ impl<'a> QuantizedGGUFTransformer<'a> {
             ffn_norm_bias,
             attn_q_norm_weight,
             attn_k_norm_weight,
+            post_attn_norm_weight,
+            post_ffw_norm_weight,
         })
     }
 }

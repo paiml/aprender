@@ -110,9 +110,82 @@ fn apply_rope(
         }
     }
 
-    let result = Tensor::from_vec(out, x.requires_grad());
+    let requires_grad = x.requires_grad();
+    let mut result = Tensor::from_vec(out, requires_grad);
+
+    // PMAT-805: RoPE is a fixed per-position orthogonal rotation. Without a
+    // backward op the returned tensor is an autograd leaf, which SEVERS the
+    // graph for Q/K — gradients never reach the Q/K projections (and the Q
+    // LoRA adapter never trains). Attach the transpose-rotation backward so
+    // the graph stays connected through RoPE.
+    if requires_grad {
+        let backward_op = Rc::new(RopeBackward {
+            x: x.clone(),
+            inv_freq,
+            seq_len,
+            num_heads,
+            head_dim,
+            half_dim,
+            total_dim,
+            result_grad: result.grad_cell(),
+        });
+        result.set_backward_op(backward_op);
+    }
+
     contract_post_rope!(result.data().as_slice().unwrap_or(&[]));
     result
+}
+
+/// Backward for [`apply_rope`].
+///
+/// RoPE applies a 2×2 rotation `R(θ)` to each `(x[i], x[i+half])` pair:
+///   out[i]      =  x1·cos − x2·sin
+///   out[i+half] =  x2·cos + x1·sin
+/// The rotation is orthogonal, so the Jacobian-transpose (the gradient) is the
+/// inverse rotation `R(−θ)`:
+///   ∂L/∂x1 =  g[i]·cos + g[i+half]·sin
+///   ∂L/∂x2 = −g[i]·sin + g[i+half]·cos
+struct RopeBackward {
+    x: Tensor,
+    inv_freq: Vec<f32>,
+    seq_len: usize,
+    num_heads: usize,
+    head_dim: usize,
+    half_dim: usize,
+    total_dim: usize,
+    result_grad: Rc<RefCell<Option<Array1<f32>>>>,
+}
+
+impl BackwardOp for RopeBackward {
+    fn backward(&self) {
+        if !self.x.requires_grad() {
+            return;
+        }
+        let Some(grad_out) = self.result_grad.borrow().as_ref().cloned() else { return };
+        let go = grad_out.as_slice().expect("rope grad contiguous");
+        let mut grad_x = vec![0.0f32; self.seq_len * self.total_dim];
+
+        for pos in 0..self.seq_len {
+            for h in 0..self.num_heads {
+                let offset = pos * self.total_dim + h * self.head_dim;
+                for i in 0..self.half_dim {
+                    let freq = pos as f32 * self.inv_freq[i];
+                    let cos_f = freq.cos();
+                    let sin_f = freq.sin();
+                    let g_first = go[offset + i];
+                    let g_second = go[offset + i + self.half_dim];
+                    // Inverse rotation R(-θ) = R(θ)^T
+                    grad_x[offset + i] = g_first * cos_f + g_second * sin_f;
+                    grad_x[offset + i + self.half_dim] = -g_first * sin_f + g_second * cos_f;
+                }
+            }
+        }
+
+        self.x.accumulate_grad(Array1::from(grad_x));
+        if let Some(op) = self.x.backward_op() {
+            op.backward();
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1064,6 +1137,52 @@ impl MultiHeadAttentionWithLoRA {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// PMAT-805: RoPE must propagate gradients (it is no longer an autograd
+    /// leaf). Validate `RopeBackward` against finite differences of a scalar
+    /// loss `L = sum(rope(x) * w)` so dL/dx = rope_backward(w).
+    #[test]
+    fn falsify_pmat805_rope_backward_matches_finite_difference() {
+        let seq_len = 3usize;
+        let num_heads = 2usize;
+        let head_dim = 4usize; // half_dim = 2
+        let total = seq_len * num_heads * head_dim;
+        let theta = 10000.0f32;
+
+        // Deterministic input + upstream gradient weights.
+        let x_data: Vec<f32> =
+            (0..total).map(|i| ((i as f32 * 0.37).sin() * 1.5) + 0.1).collect();
+        let w: Vec<f32> = (0..total).map(|i| ((i as f32 * 0.21).cos() * 0.8) - 0.05).collect();
+
+        // Analytical gradient via RopeBackward.
+        let x = Tensor::from_vec(x_data.clone(), true);
+        let y = apply_rope(&x, seq_len, num_heads, head_dim, theta);
+        y.set_grad(Array1::from(w.clone()));
+        y.backward_op().expect("rope must have a backward op").backward();
+        let analytical = x.grad().expect("x must have grad after rope backward").to_vec();
+
+        // Numerical gradient: dL/dx_j ≈ (L(x+h) - L(x-h)) / 2h, L = sum(rope(x) · w).
+        let h = 1e-3f32;
+        let loss = |xv: &[f32]| -> f32 {
+            let t = Tensor::from_vec(xv.to_vec(), false);
+            let r = apply_rope(&t, seq_len, num_heads, head_dim, theta);
+            r.data().iter().zip(&w).map(|(a, b)| a * b).sum()
+        };
+        for j in 0..total {
+            let mut xp = x_data.clone();
+            let mut xm = x_data.clone();
+            xp[j] += h;
+            xm[j] -= h;
+            let numerical = (loss(&xp) - loss(&xm)) / (2.0 * h);
+            let diff = (analytical[j] - numerical).abs();
+            assert!(
+                diff < 1e-2,
+                "FALSIFIED: RoPE grad[{j}] analytical={} numerical={} diff={diff}",
+                analytical[j],
+                numerical
+            );
+        }
+    }
 
     #[test]
     fn test_multi_head_attention_tiny() {

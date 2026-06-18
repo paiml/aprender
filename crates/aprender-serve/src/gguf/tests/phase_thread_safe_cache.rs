@@ -19,6 +19,7 @@ use crate::gguf::OwnedQuantizedModelCachedSync;
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_phase34_cached_sync_new() {
     let config = GGUFConfig {
         architecture: "llama".to_string(),
@@ -34,6 +35,7 @@ fn test_phase34_cached_sync_new() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -48,6 +50,7 @@ fn test_phase34_cached_sync_new() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_phase34_cached_sync_model_accessor() {
     let config = GGUFConfig {
         architecture: "llama".to_string(),
@@ -63,6 +66,7 @@ fn test_phase34_cached_sync_model_accessor() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -79,6 +83,7 @@ fn test_phase34_cached_sync_model_accessor() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_phase34_cached_sync_concurrent_model_access() {
     use std::sync::Arc;
     use std::thread;
@@ -97,6 +102,7 @@ fn test_phase34_cached_sync_concurrent_model_access() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -127,6 +133,7 @@ fn test_phase34_cached_sync_concurrent_model_access() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_phase34_cached_sync_send_sync_bounds() {
     use std::sync::Arc;
 
@@ -144,6 +151,7 @@ fn test_phase34_cached_sync_send_sync_bounds() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -164,6 +172,7 @@ fn test_phase34_cached_sync_send_sync_bounds() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_phase34_cached_sync_multiple_configs() {
     // Test with different architectures
     let configs = vec![
@@ -191,6 +200,7 @@ fn test_phase34_cached_sync_multiple_configs() {
                 0
             },
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
             bos_token_id: None,
             eos_token_id: None,
         };
@@ -227,6 +237,7 @@ fn test_phase34_cached_sync_no_gpu_feature() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -241,6 +252,7 @@ fn test_phase34_cached_sync_no_gpu_feature() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_phase34_cached_sync_rapid_access() {
     let config = GGUFConfig {
         architecture: "llama".to_string(),
@@ -256,6 +268,7 @@ fn test_phase34_cached_sync_rapid_access() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -271,6 +284,7 @@ fn test_phase34_cached_sync_rapid_access() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_phase34_cached_sync_thread_stress() {
     use std::sync::Arc;
     use std::thread;
@@ -289,6 +303,7 @@ fn test_phase34_cached_sync_thread_stress() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };

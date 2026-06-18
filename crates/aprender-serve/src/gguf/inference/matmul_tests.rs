@@ -40,6 +40,7 @@ fn test_config(hidden_dim: usize, vocab_size: usize) -> GGUFConfig {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     }
@@ -158,6 +159,8 @@ fn create_test_model(hidden_dim: usize, vocab_size: usize) -> OwnedQuantizedMode
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+        post_attn_norm_weight: None,
+        post_ffw_norm_weight: None,
     };
 
     let lm_head_weight = create_q4k_test_data(hidden_dim, vocab_size);
@@ -1229,6 +1232,8 @@ fn create_test_model_with_pos_embed(
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+        post_attn_norm_weight: None,
+        post_ffw_norm_weight: None,
     };
 
     let lm_head_weight = create_q4k_test_data(hidden_dim, vocab_size);
@@ -1323,6 +1328,8 @@ fn falsify_ap_002_additive_identity() {
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+        post_attn_norm_weight: None,
+        post_ffw_norm_weight: None,
     };
 
     let lm_head_weight = create_q4k_test_data(hidden_dim, vocab_size);

@@ -39,6 +39,7 @@ fn test_imp_106a_batch_matmul_correctness() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -107,6 +108,7 @@ fn test_imp_106b_forward_batch_correctness() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -156,6 +158,7 @@ fn test_imp_106c_prefill_with_batch() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -189,6 +192,7 @@ fn test_imp_106c_prefill_with_batch() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_107a_gpu_batch_matmul_correctness() {
     // IMP-107a: Verify GPU batch matmul produces correct results
     // Uses HybridScheduler which routes to GPU for batch_size > 1
@@ -229,6 +233,7 @@ fn test_imp_107a_gpu_batch_matmul_correctness() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_107b_forward_batch_gpu() {
     // IMP-107b: Verify forward_batch_gpu uses GPU matmul for batch ops
     let config = GGUFConfig {
@@ -245,6 +250,7 @@ fn test_imp_107b_forward_batch_gpu() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -283,6 +289,7 @@ fn test_imp_107b_forward_batch_gpu() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_107c_gpu_crossover_decision() {
     // IMP-107c: Verify HybridScheduler makes correct GPU vs CPU decisions
     use crate::gpu::HybridScheduler;
@@ -338,6 +345,7 @@ fn cpu_matmul_reference(a: &[f32], b: &[f32], m: usize, k: usize, n: usize) -> V
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_108a_batched_causal_attention_correctness() {
     // IMP-108a: Verify batched causal attention matches sequential computation
     let config = GGUFConfig {
@@ -354,6 +362,7 @@ fn test_imp_108a_batched_causal_attention_correctness() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -402,6 +411,7 @@ fn test_imp_108a_batched_causal_attention_correctness() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_108b_causal_mask_gpu() {
     // IMP-108b: Verify causal mask is correctly applied in GPU attention
     let config = GGUFConfig {
@@ -418,6 +428,7 @@ fn test_imp_108b_causal_mask_gpu() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };

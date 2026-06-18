@@ -1,6 +1,7 @@
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity018e_performance_targets() {
     use crate::gpu::HybridScheduler;
 
@@ -94,6 +95,7 @@ fn test_parity018e_performance_targets() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity019a_dequantized_ffn_weights_struct() {
     // PARITY-019a: Test DequantizedFFNWeights struct
     //
@@ -170,6 +172,7 @@ fn test_parity019a_dequantized_ffn_weights_struct() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity019b_dequantized_weight_cache_api() {
     // PARITY-019b: Test DequantizedWeightCache production API
     //
@@ -245,6 +248,7 @@ fn test_parity019b_dequantized_weight_cache_api() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity019c_warmup_with_bias() {
     // PARITY-019c: Test warmup_with_bias variant
     //
@@ -301,6 +305,7 @@ fn test_parity019c_warmup_with_bias() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity019d_concurrent_read_access() {
     // PARITY-019d: Test concurrent read access via RwLock
     //
@@ -362,6 +367,7 @@ fn test_parity019d_concurrent_read_access() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity019e_memory_scaling() {
     // PARITY-019e: Test memory scaling for phi-2 dimensions
     //
