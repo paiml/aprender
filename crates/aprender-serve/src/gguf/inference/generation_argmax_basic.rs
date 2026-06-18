@@ -202,4 +202,98 @@ mod tests {
             assert!(result < 3, "Invalid token index: {}", result);
         }
     }
+
+    // ========================================================================
+    // PMAT-814: repetition penalty falsifiers (dense quantized decode path)
+    //
+    // The dense `apr run` / `apr serve` decode loops applied only temperature
+    // + top-k (and greedy argmax) and silently dropped `repeat_penalty`. These
+    // tests pin `apply_repeat_penalty` — the helper now called in-place before
+    // EVERY dense sample/argmax — so the regression cannot re-enter unnoticed.
+    // ========================================================================
+
+    /// FALSIFY-SA-007 (RED-on-bug / GREEN-on-fix): with token T as the current
+    /// argmax AND in the recent window, a `repeat_penalty > 1` must drop T's
+    /// (positive) logit below a runner-up, so greedy argmax CHANGES away from T.
+    /// Pre-fix the penalty was never applied → argmax stayed at T (RED).
+    #[test]
+    fn test_repeat_penalty_changes_greedy_argmax_away_from_repeated_token() {
+        // Token 0 is the argmax (3.0); token 1 is the runner-up (2.0).
+        let mut logits = vec![3.0_f32, 2.0, 1.0, 0.5];
+        // Token 0 was just generated → it is in the recent context.
+        let recent = vec![0_u32];
+        // Sanity: without any penalty, greedy picks token 0.
+        assert_eq!(OwnedQuantizedModel::argmax(&logits), 0);
+
+        // penalty=2.0 → logits[0] = 3.0 / 2.0 = 1.5 < 2.0 (token 1).
+        OwnedQuantizedModel::apply_repeat_penalty(&mut logits, &recent, 2.0, 64);
+        let next = OwnedQuantizedModel::argmax(&logits);
+        assert_eq!(
+            next, 1,
+            "FALSIFY-SA-007: repeat_penalty must demote repeated token 0; \
+             penalized logits={logits:?}"
+        );
+        // The repeated logit was divided by the penalty (positive branch).
+        assert!((logits[0] - 1.5).abs() < 1e-6, "logits[0]={}", logits[0]);
+    }
+
+    /// No-regression: penalty == 1.0 (the default) is a byte-identical no-op —
+    /// logits are untouched and greedy argmax is unchanged.
+    #[test]
+    fn test_repeat_penalty_unity_is_byte_identical_no_op() {
+        let original = vec![3.0_f32, 2.0, 1.0, 0.5];
+        let mut logits = original.clone();
+        let recent = vec![0_u32, 1, 2, 3];
+        OwnedQuantizedModel::apply_repeat_penalty(&mut logits, &recent, 1.0, 64);
+        assert_eq!(
+            logits, original,
+            "penalty==1.0 must not modify logits (no-regression)"
+        );
+        assert_eq!(OwnedQuantizedModel::argmax(&logits), 0);
+    }
+
+    /// No-regression: repeat_last_n == 0 disables the penalty entirely, even
+    /// with penalty != 1.0 — matches the MoE path's V1_001 obligation.
+    #[test]
+    fn test_repeat_penalty_zero_window_is_no_op() {
+        let original = vec![3.0_f32, 2.0, 1.0];
+        let mut logits = original.clone();
+        let recent = vec![0_u32];
+        OwnedQuantizedModel::apply_repeat_penalty(&mut logits, &recent, 2.0, 0);
+        assert_eq!(logits, original, "repeat_last_n==0 must be a no-op");
+    }
+
+    /// Empty recent context (e.g. nothing generated yet) is a no-op.
+    #[test]
+    fn test_repeat_penalty_empty_recent_is_no_op() {
+        let original = vec![3.0_f32, 2.0, 1.0];
+        let mut logits = original.clone();
+        OwnedQuantizedModel::apply_repeat_penalty(&mut logits, &[], 2.0, 64);
+        assert_eq!(logits, original, "empty recent_tokens must be a no-op");
+    }
+
+    /// Non-positive logits are MULTIPLIED by the penalty (Candle / qwen3-moe
+    /// sign convention), so they are pushed further toward -inf.
+    #[test]
+    fn test_repeat_penalty_multiplies_non_positive_logits() {
+        let mut logits = vec![-1.0_f32, 0.0, 2.0];
+        let recent = vec![0_u32, 1, 2];
+        OwnedQuantizedModel::apply_repeat_penalty(&mut logits, &recent, 2.0, 64);
+        assert!((logits[0] - (-2.0)).abs() < 1e-6, "neg logit *= penalty");
+        assert!((logits[1] - 0.0).abs() < 1e-6, "zero logit *= penalty == 0");
+        assert!((logits[2] - 1.0).abs() < 1e-6, "pos logit /= penalty");
+    }
+
+    /// The window only covers the last `repeat_last_n` recent tokens; tokens
+    /// older than the window are NOT penalized.
+    #[test]
+    fn test_repeat_penalty_respects_last_n_window() {
+        let mut logits = vec![4.0_f32, 4.0, 4.0];
+        // Tokens 0 and 1 are older; only token 2 is inside the last_n=1 window.
+        let recent = vec![0_u32, 1, 2];
+        OwnedQuantizedModel::apply_repeat_penalty(&mut logits, &recent, 2.0, 1);
+        assert!((logits[0] - 4.0).abs() < 1e-6, "token 0 outside window");
+        assert!((logits[1] - 4.0).abs() < 1e-6, "token 1 outside window");
+        assert!((logits[2] - 2.0).abs() < 1e-6, "token 2 inside window penalized");
+    }
 }

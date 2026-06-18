@@ -134,6 +134,8 @@
             role: "user".to_string(),
             content: "Hello".to_string(),
             name: None,
+        
+            ..Default::default()
         }];
         let result = format_chat_messages(&messages, None);
         assert!(result.contains("Hello"));
@@ -145,6 +147,8 @@
             role: "user".to_string(),
             content: "Test".to_string(),
             name: None,
+        
+            ..Default::default()
         }];
         let result = format_chat_messages(&messages, Some("llama2"));
         // Should format without panic
@@ -162,16 +166,22 @@
                 role: "system".to_string(),
                 content: "You are a helpful assistant.".to_string(),
                 name: None,
+            
+                ..Default::default()
             },
             ChatMessage {
                 role: "user".to_string(),
                 content: "What is 2+2?".to_string(),
                 name: None,
+            
+                ..Default::default()
             },
             ChatMessage {
                 role: "assistant".to_string(),
                 content: "4".to_string(),
                 name: None,
+            
+                ..Default::default()
             },
         ];
         let result = format_chat_messages(&messages, None);
@@ -187,16 +197,22 @@
                 role: "user".to_string(),
                 content: "Hello".to_string(),
                 name: None,
+            
+                ..Default::default()
             },
             ChatMessage {
                 role: "assistant".to_string(),
                 content: "Hi there!".to_string(),
                 name: None,
+            
+                ..Default::default()
             },
             ChatMessage {
                 role: "user".to_string(),
                 content: "How are you?".to_string(),
                 name: None,
+            
+                ..Default::default()
             },
         ];
         let result = format_chat_messages(&messages, None);
@@ -211,6 +227,8 @@
             role: "user".to_string(),
             content: "Test".to_string(),
             name: None,
+        
+            ..Default::default()
         }];
         let result = format_chat_messages(&messages, Some("qwen2"));
         assert!(!result.is_empty());
@@ -222,6 +240,8 @@
             role: "user".to_string(),
             content: "Test prompt".to_string(),
             name: None,
+        
+            ..Default::default()
         }];
         let result = format_chat_messages(&messages, Some("unknown_model_xyz"));
         assert!(result.contains("Test prompt"));
@@ -233,6 +253,8 @@
             role: "system".to_string(),
             content: "System prompt only".to_string(),
             name: None,
+        
+            ..Default::default()
         }];
         let result = format_chat_messages(&messages, None);
         assert!(result.contains("System prompt only"));
@@ -341,6 +363,8 @@
                 role: "user".to_string(),
                 content: format!("Message number {}", i),
                 name: None,
+            
+                ..Default::default()
             })
             .collect();
 
@@ -371,6 +395,8 @@
             role: "user".to_string(),
             content: "x".repeat(10000),
             name: None,
+        
+            ..Default::default()
         }];
         let (result, truncated) = manager.truncate_messages(&messages);
         assert!(truncated);
@@ -398,11 +424,15 @@
                 role: "system".to_string(),
                 content: "You are helpful.".to_string(),
                 name: None,
+            
+                ..Default::default()
             },
             ChatMessage {
                 role: "user".to_string(),
                 content: "Hi".to_string(),
                 name: None,
+            
+                ..Default::default()
             },
         ];
         let total = manager.estimate_total_tokens(&messages);

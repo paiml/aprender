@@ -10,11 +10,15 @@ fn test_format_chat_messages_chatml() {
             role: "system".to_string(),
             content: "You are helpful.".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         ChatMessage {
             role: "user".to_string(),
             content: "Hi!".to_string(),
             name: None,
+        
+            ..Default::default()
         },
     ];
 
@@ -32,6 +36,8 @@ fn test_format_chat_messages_alpaca() {
         role: "user".to_string(),
         content: "Hello".to_string(),
         name: None,
+    
+        ..Default::default()
     }];
 
     let formatted = format_chat_messages(&messages, Some("alpaca"));

@@ -39,6 +39,39 @@ fn streaming_text_deltas(
     deltas
 }
 
+/// Resolve the `GenerationConfig` for a streaming chat completion (PMAT-790).
+///
+/// `temperature == 0` is the canonical OpenAI request for deterministic (greedy) output, and
+/// every non-streaming `/v1/chat/completions` backend honors it via the `top_k == 1` greedy
+/// path. The streaming handler previously passed the raw `0.0` into `GenerationConfig`, so
+/// `model.generate` -> `sample_token` -> `apply_temperature(0.0)` returned an `InvalidShape`
+/// error ("Temperature must be a positive finite number") which the handler mapped to HTTP
+/// 500 — so EVERY streaming chat completion with `temperature: 0` was broken.
+///
+/// This helper forces `Greedy` for `temperature == 0` and substitutes a no-op temperature of
+/// `1.0` so the sampler never sees a non-positive scale. For positive temperatures the
+/// behavior is unchanged: greedy by default, or top-p when `top_p` is set.
+fn resolve_stream_generation_config(
+    temperature: f32,
+    top_p: Option<f32>,
+    max_tokens: usize,
+) -> GenerationConfig {
+    if temperature == 0.0 {
+        // Deterministic: greedy argmax, with a safe (no-op) temperature scale.
+        return GenerationConfig::default()
+            .with_max_tokens(max_tokens)
+            .with_temperature(1.0);
+    }
+
+    let mut config = GenerationConfig::default()
+        .with_max_tokens(max_tokens)
+        .with_temperature(temperature);
+    if let Some(p) = top_p {
+        config.strategy = SamplingStrategy::TopP { p };
+    }
+    config
+}
+
 /// OpenAI-compatible /v1/chat/completions streaming endpoint (SSE)
 pub async fn openai_chat_completions_stream_handler(
     State(state): State<AppState>,
@@ -77,14 +110,11 @@ pub async fn openai_chat_completions_stream_handler(
 
     // GH-665: Cap max_tokens to prevent hangs on large values
     let max_tokens = request.max_tokens.unwrap_or(256).min(4096);
-    let temperature = request.temperature.unwrap_or(0.7);
-
-    let mut config = GenerationConfig::default()
-        .with_max_tokens(max_tokens)
-        .with_temperature(temperature);
-    if let Some(top_p) = request.top_p {
-        config.strategy = SamplingStrategy::TopP { p: top_p };
-    }
+    let config = resolve_stream_generation_config(
+        request.temperature.unwrap_or(0.7),
+        request.top_p,
+        max_tokens,
+    );
 
     let request_id = format!(
         "chatcmpl-{}",
@@ -184,5 +214,68 @@ mod pmat758_streaming_delta_tests {
         let t = tok(&["<unk>", "a", "b", "X", "c"]);
         let deltas = streaming_text_deltas(&t, &[1, 2, 3, 4], None);
         assert_eq!(deltas.concat(), "abXc");
+    }
+}
+
+// PMAT-790: streaming /v1/chat/completions with `temperature: 0` must not 500. The handler
+// builds a GenerationConfig and runs it through `model.generate` -> `sample_token` ->
+// `apply_temperature`, which rejects a non-positive temperature. `temperature: 0` is the
+// canonical OpenAI deterministic request and is honored by every non-streaming backend; it
+// must resolve to a runnable, greedy config here too.
+#[cfg(test)]
+mod pmat790_stream_temperature_zero_tests {
+    use super::resolve_stream_generation_config;
+    use crate::generate::{sample_token, SamplingStrategy};
+    use crate::tensor::Tensor;
+
+    #[test]
+    fn temperature_zero_resolves_to_runnable_greedy_config() {
+        // FALSIFIER: pre-fix the handler passed temperature 0.0 straight into the config, so
+        // `sample_token` -> `apply_temperature(0.0)` returned Err -> the handler answered HTTP
+        // 500 for every streaming chat completion with temperature 0. The resolved config must
+        // (a) be greedy and (b) sample without error.
+        let config = resolve_stream_generation_config(0.0, None, 16);
+        assert_eq!(
+            config.strategy,
+            SamplingStrategy::Greedy,
+            "temperature 0 must request deterministic (greedy) decoding"
+        );
+
+        // The exact chain the handler runs: sample_token applies temperature then samples.
+        // Logit index 2 is the unique argmax, so greedy must pick it.
+        let logits = Tensor::from_vec(vec![4], vec![0.1, 0.2, 0.9, 0.3]).expect("tensor");
+        let token = sample_token(&logits, &config, 0.5)
+            .expect("temperature-0 config must sample without error (was HTTP 500)");
+        assert_eq!(token, 2, "greedy must select the argmax token");
+    }
+
+    #[test]
+    fn temperature_zero_ignores_top_p_and_stays_greedy() {
+        // Even when top_p is supplied, temperature 0 means deterministic output (matches the
+        // non-streaming backends where temperature 0 forces top_k = 1 regardless of other
+        // sampling controls).
+        let config = resolve_stream_generation_config(0.0, Some(0.9), 16);
+        assert_eq!(config.strategy, SamplingStrategy::Greedy);
+    }
+
+    #[test]
+    fn positive_temperature_unchanged() {
+        // Regression guard: positive temperatures keep prior behavior — greedy by default,
+        // top-p when requested — and remain runnable.
+        let greedy = resolve_stream_generation_config(0.7, None, 16);
+        assert_eq!(greedy.strategy, SamplingStrategy::Greedy);
+        assert!((greedy.temperature - 0.7).abs() < 1e-6);
+
+        let nucleus = resolve_stream_generation_config(0.7, Some(0.8), 16);
+        assert!(matches!(
+            nucleus.strategy,
+            SamplingStrategy::TopP { p } if (p - 0.8).abs() < 1e-6
+        ));
+
+        let logits = Tensor::from_vec(vec![3], vec![0.1, 2.0, 0.3]).expect("tensor");
+        assert!(
+            sample_token(&logits, &greedy, 0.5).is_ok(),
+            "positive-temperature config must remain runnable"
+        );
     }
 }

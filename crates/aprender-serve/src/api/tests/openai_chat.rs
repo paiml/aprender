@@ -121,6 +121,8 @@ fn test_context_window_manager_large_truncation_more_cov() {
             role: "user".to_string(),
             content: format!("Message number {} with some content", i),
             name: None,
+        
+            ..Default::default()
         })
         .collect();
 
@@ -136,11 +138,15 @@ fn test_format_chat_messages_system_role_more_cov() {
             role: "system".to_string(),
             content: "You are helpful".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         ChatMessage {
             role: "user".to_string(),
             content: "Hello".to_string(),
             name: None,
+        
+            ..Default::default()
         },
     ];
     let formatted = format_chat_messages(&messages, Some("chatml"));
@@ -153,6 +159,8 @@ fn test_format_chat_messages_assistant_role_more_cov() {
         role: "assistant".to_string(),
         content: "I am here to help".to_string(),
         name: None,
+    
+        ..Default::default()
     }];
     let formatted = format_chat_messages(&messages, None);
     assert!(!formatted.is_empty());
@@ -212,6 +220,8 @@ fn test_chat_completion_request_all_fields_more_cov() {
             role: "user".to_string(),
             content: "test".to_string(),
             name: None,
+        
+            ..Default::default()
         }],
         max_tokens: Some(100),
         temperature: Some(0.5),
@@ -224,6 +234,8 @@ fn test_chat_completion_request_all_fields_more_cov() {
         stream: true,
         stop: Some(vec!["END".to_string()]),
         user: Some("test-user".to_string()),
+    
+        ..Default::default()
     };
     let json = serde_json::to_string(&req).expect("serialize");
     assert!(json.contains("gpt-4"));

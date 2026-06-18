@@ -1,0 +1,46 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-18"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "ggml dequantize_row_q3_K (llama.cpp) — the reference Q3_K dequant algorithm"
+    - "crates/aprender-serve/src/quantize/dequant_q4k.rs::dequantize_q3_k (in-repo correct reference, ported from)"
+  description: |
+    Correctness contract for GGUF Q3_K dequantization in aprender-core's import path
+    (format::gguf::dequantize::dequantize_q3_k). Pillar-4-adjacent (model import correctness):
+    a Q3_K GGUF tensor must dequantize to f32 values matching the GGML reference.
+
+kind: KernelContract
+name: q3k-dequant-correctness
+version: "1.0.0"
+scope: "crates/aprender-core/src/format/gguf/dequantize.rs"
+
+description: |
+  GGML Q3_K stores, per 256-element super-block: a 32-byte high-bit mask, 64 bytes of 2-bit
+  quants, 12 bytes packing 16 SIX-bit signed scales, and an f16 d. PMAT-832 fixed
+  dequantize_q3_k, which (a) unpacked the scales as 16 FOUR-bit values from only 8 of the 12
+  bytes with a -8 offset — clipping the true SIX-bit [-32,31] range to [-8,7] and dropping the
+  upper 2 bits — and (b) used a flat j-in-0..256 quant/high-bit addressing that does not match
+  GGML's two-128-element-half × four-shift-block (0/2/4/6) × two-16-lane-group layout. ~252/256
+  elements were wrong (maxabs ~4.4× too small), silently corrupting every imported Q3_K_S/Q3_K_M
+  model (apr import/convert/tensors/trace). Fix: reconstruct the 16 six-bit scales via the GGML
+  kmask1=0x03030303 / kmask2=0x0f0f0f0f aux shuffle (offset -32) and dequantize with the correct
+  half/shift-block layout (value = d*(scale-32)*(low-high), high = 4 iff the hmask bit is clear).
+
+equations:
+  C-Q3K-001:
+    description: "Q3_K dequant matches the GGML reference element-wise"
+    formula: "|dequantize_q3_k(block)[i] - ggml_q3k(block)[i]| < 1e-3 for all i; e.g. seed-7 block d=1.0 -> out[1] = -84 (not 12), maxabs = 124 (not 28)"
+    note: "16 six-bit scales (aux shuffle, -32 offset); two 128-elem halves, shift 0/2/4/6, hmask bit per block."
+
+  C-Q3K-002:
+    description: "Scales use the full six-bit signed range, not a clipped four-bit nibble"
+    formula: "scale in [-32, 31] (six-bit, offset -32); NOT (nibble & 0x0F) - 8 in [-8, 7]"
+    note: "Regression guard against the 4-bit nibble unpack that dropped the upper 2 bits of 8 of the 12 scale bytes."
+
+falsification:
+  - id: FALSIFY-DEQUANT-Q3K-001
+    description: "Q3_K dequant of a non-trivial block equals the GGML reference. Discharges C-Q3K-001/002."
+    test: "test_dequantize_q3_k_ggml_golden — seed-7 deterministic 110-byte block, d=1.0: RED pre-fix out[1]=12 / maxabs ~28, GREEN post-fix out[1]=-84 / maxabs 124 (numpy GGML oracle). All-zero-input tests cannot distinguish (both yield zeros)."
+    evidence: "cargo test -p aprender-core --lib test_dequantize_q3_k_ggml_golden"

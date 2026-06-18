@@ -276,8 +276,17 @@ pub(super) fn compute_multisample_pass_at_k(
         .iter()
         .map(|&k| {
             let rate = if num_samples == 1 {
+                // One deterministic (greedy) sample per problem ⇒ pass@k collapses to
+                // pass@1 = fraction of problems solved, for EVERY k. The previous code fed
+                // the problem-count (total) and solved-count (passed) into compute_pass_at_k's
+                // per-sample (n, c) slots — 1 - C(total-passed, k)/C(total, k) — which inflates
+                // pass@10/pass@100 (e.g. 50/164 → 0.977/1.000 instead of the true 0.305).
                 let passed = per_problem_correct.iter().filter(|p| p.2 > 0).count();
-                compute_pass_at_k(total, passed, k)
+                if total == 0 {
+                    0.0
+                } else {
+                    passed as f64 / total as f64
+                }
             } else {
                 let sum: f64 = per_problem_correct
                     .iter()
@@ -462,4 +471,29 @@ pub(super) fn compute_pass_at_k(n: usize, c: usize, k: usize) -> f64 {
         result *= nci / ni;
     }
     1.0 - result
+}
+
+#[cfg(test)]
+mod pass_at_k_tests {
+    use super::*;
+
+    /// FALSIFY-EVAL-PASSK-SINGLE-SAMPLE (PMAT-835): with one deterministic (greedy) sample per
+    /// problem (num_samples == 1), pass@k MUST equal pass@1 = fraction of problems solved for
+    /// EVERY k — it cannot exceed pass@1 under single-sampling. The prior code fed the
+    /// problem-count and solved-count into compute_pass_at_k's per-sample (n, c) slots,
+    /// inflating pass@10/pass@100 (50/164 → 0.977/1.000 instead of the true 0.305).
+    #[test]
+    fn single_sample_pass_at_k_collapses_to_pass_at_1() {
+        // 164 HumanEval-style problems, 50 solved.
+        let problems: Vec<(String, String, usize)> = (0..164)
+            .map(|i| (format!("t{i}"), "ep".to_string(), usize::from(i < 50)))
+            .collect();
+        let expected = 50.0 / 164.0;
+        for (k, rate) in compute_multisample_pass_at_k(&problems, 1, &[1, 10, 100]) {
+            assert!(
+                (rate - expected).abs() < 1e-9,
+                "pass@{k} = {rate}, expected {expected} (single greedy sample) — pre-fix inflated to ~0.98/1.0"
+            );
+        }
+    }
 }

@@ -66,6 +66,8 @@ fn test_context_window_manager_default() {
         role: "user".to_string(),
         content: "short".to_string(),
         name: None,
+    
+        ..Default::default()
     }];
     assert!(!mgr.needs_truncation(&messages));
 }
@@ -80,11 +82,15 @@ fn test_context_window_manager_no_truncation_needed() {
             role: "user".to_string(),
             content: "Hello world".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         crate::api::ChatMessage {
             role: "assistant".to_string(),
             content: "Hi there!".to_string(),
             name: None,
+        
+            ..Default::default()
         },
     ];
 
@@ -104,21 +110,29 @@ fn test_context_window_manager_truncation_preserves_system() {
             role: "system".to_string(),
             content: "You are a helpful assistant.".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         crate::api::ChatMessage {
             role: "user".to_string(),
             content: "A".repeat(200), // Long message
             name: None,
+        
+            ..Default::default()
         },
         crate::api::ChatMessage {
             role: "assistant".to_string(),
             content: "B".repeat(200),
             name: None,
+        
+            ..Default::default()
         },
         crate::api::ChatMessage {
             role: "user".to_string(),
             content: "Short recent message".to_string(),
             name: None,
+        
+            ..Default::default()
         },
     ];
 
@@ -137,6 +151,8 @@ fn test_context_window_manager_needs_truncation() {
         role: "user".to_string(),
         content: "A".repeat(500), // Very long message
         name: None,
+    
+        ..Default::default()
     }];
 
     assert!(mgr.needs_truncation(&messages));
@@ -152,11 +168,15 @@ fn test_context_window_manager_estimate_total_tokens() {
             role: "user".to_string(),
             content: "Hello".to_string(), // ~5 chars -> ~2 tokens + 10 overhead = ~12
             name: None,
+        
+            ..Default::default()
         },
         crate::api::ChatMessage {
             role: "assistant".to_string(),
             content: "World".to_string(),
             name: None,
+        
+            ..Default::default()
         },
     ];
 
@@ -257,6 +277,8 @@ fn test_format_chat_messages_basic() {
         role: "user".to_string(),
         content: "Hello".to_string(),
         name: None,
+    
+        ..Default::default()
     }];
 
     let formatted = format_chat_messages(&messages, None);
@@ -271,11 +293,15 @@ fn test_format_chat_messages_system_and_user() {
             role: "system".to_string(),
             content: "You are helpful.".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         crate::api::ChatMessage {
             role: "user".to_string(),
             content: "What is 2+2?".to_string(),
             name: None,
+        
+            ..Default::default()
         },
     ];
 

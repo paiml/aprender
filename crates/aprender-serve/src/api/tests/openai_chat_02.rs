@@ -344,6 +344,8 @@ fn test_chat_message_empty_content() {
         role: "user".to_string(),
         content: String::new(),
         name: None,
+    
+        ..Default::default()
     };
 
     let json = serde_json::to_string(&msg).expect("serialize");
@@ -356,6 +358,8 @@ fn test_chat_message_unicode_content() {
         role: "user".to_string(),
         content: "Hello 世界! 🌍 مرحبا".to_string(),
         name: None,
+    
+        ..Default::default()
     };
 
     let json = serde_json::to_string(&msg).expect("serialize");
@@ -369,6 +373,8 @@ fn test_chat_message_special_characters() {
         role: "user".to_string(),
         content: "Test with \"quotes\" and \\backslashes\\ and\nnewlines".to_string(),
         name: None,
+    
+        ..Default::default()
     };
 
     let json = serde_json::to_string(&msg).expect("serialize");
