@@ -9,6 +9,7 @@
 /// PARITY-077a: Shared memory tile size optimization
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_077a_shared_memory_tile_sizing() {
     println!("PARITY-077a: Shared Memory Tile Size Optimization");
     println!("==================================================");
@@ -105,6 +106,7 @@ fn test_parity_077a_shared_memory_tile_sizing() {
 /// PARITY-077b: Tile iteration order
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_077b_tile_iteration_order() {
     println!("PARITY-077b: Tile Iteration Order");
     println!("==================================");
@@ -171,6 +173,7 @@ fn test_parity_077b_tile_iteration_order() {
 /// PARITY-077c: Multi-query attention (MQA) tile sharing
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_077c_mqa_tile_sharing() {
     println!("PARITY-077c: Multi-Query Attention Tile Sharing");
     println!("================================================");
@@ -222,6 +225,7 @@ fn test_parity_077c_mqa_tile_sharing() {
 /// PARITY-077d: Warp specialization
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_077d_warp_specialization() {
     println!("PARITY-077d: Warp Specialization");
     println!("=================================");
@@ -268,6 +272,7 @@ fn test_parity_077d_warp_specialization() {
 /// PARITY-077e: Shared memory bank conflict avoidance
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_077e_bank_conflict_avoidance() {
     println!("PARITY-077e: Shared Memory Bank Conflict Avoidance");
     println!("===================================================");
@@ -329,6 +334,7 @@ fn test_parity_077e_bank_conflict_avoidance() {
 /// PARITY-077f: Shared memory tiling summary
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_077f_tiling_summary() {
     println!("PARITY-077f: Shared Memory Tiling Summary");
     println!("==========================================");

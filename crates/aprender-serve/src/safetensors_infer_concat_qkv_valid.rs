@@ -435,9 +435,18 @@
         assert!(result.is_ok());
         let transformer = result.expect("operation failed");
 
-        // lm_head_weight should have same dimensions as token_embedding (tied or separate)
-        // When tied: lm_head_weight.len() == token_embedding.len()
-        // But they may not be equal if transposed or if implementation uses separate weights
-        assert!(!transformer.lm_head_weight.is_empty());
+        // PMAT-788: tied-embedding models are deduplicated — the redundant
+        // `lm_head_weight` copy is NOT materialized. Instead `lm_head_tied` is
+        // set and the logits matmul sources `token_embedding` via
+        // `lm_head_f32()`, which returns a buffer byte-identical to (and the same
+        // length as) the embedding.
+        assert!(transformer.lm_head_tied, "tied model should set lm_head_tied");
+        assert!(
+            transformer.lm_head_weight.is_empty(),
+            "tied model must not store a duplicate lm_head_weight"
+        );
         assert!(!transformer.token_embedding.is_empty());
+        // The resolved LM-head weight is the embedding buffer (dedup, byte-equal).
+        assert_eq!(transformer.lm_head_f32().len(), transformer.token_embedding.len());
+        assert_eq!(transformer.lm_head_f32(), transformer.token_embedding.as_slice());
     }

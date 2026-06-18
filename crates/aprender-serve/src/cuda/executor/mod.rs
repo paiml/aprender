@@ -645,4 +645,10 @@ pub struct CudaExecutor {
     // release; the sentinel keeps the primary context alive, and
     // cuDevicePrimaryCtxRetain (just a refcount bump) is harmless.
     context: std::mem::ManuallyDrop<CudaContext>,
+    // PMAT-779: test-only GPU-test concurrency permit. Declared last so it is
+    // released (dropped) only AFTER the CUDA context and all GPU resources above
+    // have been torn down — a freshly-freed permit must not let another GPU test
+    // start while this executor is still releasing its context.
+    #[cfg(all(test, feature = "cuda"))]
+    _gpu_test_permit: crate::test_gpu_cap::GpuTestPermit,
 }

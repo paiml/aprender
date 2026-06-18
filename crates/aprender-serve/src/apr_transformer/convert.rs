@@ -70,6 +70,9 @@ impl From<&crate::gguf::GGUFTransformer> for AprTransformer {
             output_norm_bias: gguf.output_norm_bias.clone(),
             lm_head_weight: gguf.lm_head_weight.clone(),
             lm_head_bias: gguf.lm_head_bias.clone(),
+            // PMAT-788: GGUFTransformer always materializes a separate f32
+            // lm_head; preserve it as-is (untied).
+            lm_head_tied: false,
             q4k_layers: None,
             lm_head_weight_q6k: None,
             lm_head_weight_q4k: None,

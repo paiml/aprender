@@ -40,6 +40,7 @@ mod potemkin_village {
             eps: 1e-5,
             rope_type: 0, // 0 = NORM (standard LLaMA)
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
             bos_token_id: None,
             eos_token_id: None,
         };
