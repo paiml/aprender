@@ -212,6 +212,8 @@ mod pmat821_chat_handler_threading_tests {
                 role: "user".to_string(),
                 content: "hi".to_string(),
                 name: None,
+                tool_calls: None,
+                tool_call_id: None,
             }],
             max_tokens: None,
             temperature: None,
@@ -224,6 +226,8 @@ mod pmat821_chat_handler_threading_tests {
             stream: false,
             stop: None,
             user: None,
+            tools: None,
+            tool_choice: None,
         }
     }
 
