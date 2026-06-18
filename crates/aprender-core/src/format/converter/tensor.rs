@@ -391,18 +391,23 @@ fn extract_user_metadata(apr_path: &Path) -> UserMetadata {
         Err(_) => return UserMetadata::new(),
     };
 
-    // APR v2 format: magic(4) + version(4) + metadata_len(8) + metadata_json
-    if data.len() < 16 {
+    // Real APR v2 header (header_impl.rs::to_bytes, 64 bytes): magic[0..4], version[4..6],
+    // flags[6..8], tensor_count u32 [8..12], metadata_offset u64 [12..20], metadata_size u32
+    // [20..24]; the metadata JSON begins at `metadata_offset` (= HEADER_SIZE_V2 = 64). The prior
+    // code read an 8-byte "metadata_len" at byte 8 (= tensor_count | metadata_offset<<32 ≈ 2.7e11)
+    // and the JSON at byte 16, so the bounds guard ALWAYS failed and this returned empty — silently
+    // dropping the user's SafeTensors __metadata__ on every `apr export`.
+    if data.len() < 24 {
         return UserMetadata::new();
     }
+    let metadata_offset = u64::from_le_bytes(data[12..20].try_into().unwrap_or([0u8; 8])) as usize;
+    let metadata_size = u32::from_le_bytes(data[20..24].try_into().unwrap_or([0u8; 4])) as usize;
+    let end = match metadata_offset.checked_add(metadata_size) {
+        Some(e) if e <= data.len() => e,
+        _ => return UserMetadata::new(),
+    };
 
-    let metadata_len = u64::from_le_bytes(data[8..16].try_into().unwrap_or([0u8; 8])) as usize;
-
-    if data.len() < 16 + metadata_len {
-        return UserMetadata::new();
-    }
-
-    let metadata_json = match std::str::from_utf8(&data[16..16 + metadata_len]) {
+    let metadata_json = match std::str::from_utf8(&data[metadata_offset..end]) {
         Ok(s) => s,
         Err(_) => return UserMetadata::new(),
     };
@@ -412,10 +417,12 @@ fn extract_user_metadata(apr_path: &Path) -> UserMetadata {
         Err(_) => return UserMetadata::new(),
     };
 
-    // Look for custom.source_metadata
-    if let Some(serde_json::Value::Object(map)) =
-        parsed.get("custom").and_then(|c| c.get("source_metadata"))
-    {
+    // `custom` is #[serde(flatten)] in AprV2Metadata, so "source_metadata" is at the TOP level
+    // of the metadata JSON (not nested under a "custom" object). Accept both for robustness.
+    let source = parsed
+        .get("source_metadata")
+        .or_else(|| parsed.get("custom").and_then(|c| c.get("source_metadata")));
+    if let Some(serde_json::Value::Object(map)) = source {
         let mut result = UserMetadata::new();
         for (k, v) in map {
             if let serde_json::Value::String(s) = v {
@@ -468,4 +475,36 @@ pub(crate) fn detect_apr_quantization(apr_path: &Path) -> Option<QuantizationTyp
 
     // Q6K not yet in QuantizationType — treat as no auto-detect
     None
+}
+
+#[cfg(test)]
+mod extract_user_metadata_tests {
+    use super::*;
+
+    /// FALSIFY-EXPORT-USERMETA-001 (PMAT-836): extract_user_metadata must read the REAL APR v2
+    /// header — metadata_offset (u64 @ byte 12), metadata_size (u32 @ byte 20), JSON at
+    /// metadata_offset — and find "source_metadata" at the TOP level (AprV2Metadata.custom is
+    /// #[serde(flatten)]). The prior code read an 8-byte length at byte 8 and the JSON at byte
+    /// 16, so the bounds guard always failed and it returned empty — silently dropping the user's
+    /// SafeTensors __metadata__ on every `apr export`.
+    #[test]
+    fn reads_source_metadata_from_real_v2_header() {
+        let json = r#"{"source_metadata":{"foo":"bar","baz":"qux"}}"#;
+        let mut data = vec![0u8; 64]; // HEADER_SIZE_V2
+        data[12..20].copy_from_slice(&64u64.to_le_bytes()); // metadata_offset
+        data[20..24].copy_from_slice(&(json.len() as u32).to_le_bytes()); // metadata_size
+        data.extend_from_slice(json.as_bytes());
+
+        let tmp = tempfile::NamedTempFile::with_suffix(".apr").expect("tmp");
+        std::fs::write(tmp.path(), &data).expect("write apr");
+
+        let meta = extract_user_metadata(tmp.path());
+        // RED pre-fix: empty (wrong offsets). GREEN post-fix: both source_metadata entries.
+        assert_eq!(
+            meta.get("foo").map(String::as_str),
+            Some("bar"),
+            "source_metadata dropped on export"
+        );
+        assert_eq!(meta.get("baz").map(String::as_str), Some("qux"));
+    }
 }

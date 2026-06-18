@@ -1,0 +1,36 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-18"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "crates/aprender-core/src/format/v2/header_impl.rs::to_bytes (the real 64-byte APR v2 header layout)"
+    - "SafeTensors __metadata__ section (the user metadata preserved on import, PMAT-223)"
+  description: |
+    Correctness contract for user-metadata preservation on APR export
+    (format::converter::tensor::extract_user_metadata). Export round-trip fidelity:
+    SafeTensors __metadata__ imported into an APR file must survive re-export.
+kind: KernelContract
+name: export-user-metadata-roundtrip
+version: "1.0.0"
+scope: "crates/aprender-core/src/format/converter/tensor.rs"
+description: |
+  On import (write.rs build_f32_custom_metadata, PMAT-223) the user's SafeTensors __metadata__
+  is preserved into APR metadata.custom["source_metadata"]. PMAT-836 fixed extract_user_metadata,
+  which read the wrong header layout (an 8-byte "metadata_len" at byte 8 and the JSON at byte 16)
+  whereas the real APR v2 header is 64 bytes with metadata_offset (u64 @ 12), metadata_size (u32 @
+  20), and the JSON at metadata_offset (= 64). It also looked for "source_metadata" nested under a
+  "custom" object, but AprV2Metadata.custom is #[serde(flatten)] so the key is top-level. The
+  bounds guard therefore ALWAYS failed → empty result → every `apr export --format safetensors|mlx|
+  gguf` silently DROPPED the user's __metadata__. Fix: read the real header offsets and look at the
+  top level (with a nested fallback).
+equations:
+  C-EXPORT-META-001:
+    description: "User source_metadata survives APR export round-trip"
+    formula: "extract_user_metadata(apr) reads metadata JSON at header.metadata_offset[12..20] for header.metadata_size[20..24] bytes; returns the top-level source_metadata map (non-empty when present)"
+    note: "Real header is 64 bytes; the JSON begins at metadata_offset, NOT byte 16; custom is flattened so source_metadata is top-level."
+falsification:
+  - id: FALSIFY-EXPORT-USERMETA-001
+    description: "extract_user_metadata reads source_metadata from a real v2 header. Discharges C-EXPORT-META-001."
+    test: "reads_source_metadata_from_real_v2_header — 64-byte header (metadata_offset=64, size=len) + JSON {source_metadata:{foo:bar,baz:qux}}: RED pre-fix empty, GREEN post-fix {foo:bar, baz:qux}."
+    evidence: "cargo test -p aprender-core --lib reads_source_metadata_from_real_v2_header"
