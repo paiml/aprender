@@ -2,6 +2,7 @@
 /// PARITY-079c: Fused rescaling
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_079c_fused_rescaling() {
     println!("PARITY-079c: Fused Rescaling Operations");
     println!("========================================");
@@ -43,6 +44,7 @@ fn test_parity_079c_fused_rescaling() {
 /// PARITY-079d: Causal mask optimization
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_079d_causal_mask_optimization() {
     println!("PARITY-079d: Causal Mask Optimization");
     println!("======================================");
@@ -109,6 +111,7 @@ fn test_parity_079d_causal_mask_optimization() {
 /// PARITY-079e: Memory coalescing
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_079e_memory_coalescing() {
     println!("PARITY-079e: Memory Coalescing Analysis");
     println!("========================================");
@@ -170,6 +173,7 @@ fn test_parity_079e_memory_coalescing() {
 /// PARITY-079f: Non-matmul FLOP reduction summary
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_079f_non_matmul_summary() {
     println!("PARITY-079f: Non-matmul FLOP Reduction Summary");
     println!("===============================================");
@@ -206,6 +210,7 @@ fn test_parity_079f_non_matmul_summary() {
 /// PARITY-080a: Tensor Core specifications
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_080a_tensor_core_specs() {
     println!("PARITY-080a: Tensor Core Specifications");
     println!("========================================");
@@ -251,6 +256,7 @@ fn test_parity_080a_tensor_core_specs() {
 /// PARITY-080b: WMMA PTX instructions
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_080b_wmma_ptx_instructions() {
     use crate::cuda::CudaKernels;
 
@@ -295,6 +301,7 @@ fn test_parity_080b_wmma_ptx_instructions() {
 /// PARITY-080c: FP16 accumulation precision
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_080c_fp16_accumulation() {
     println!("PARITY-080c: FP16 Accumulation Precision");
     println!("=========================================");
@@ -368,6 +375,7 @@ fn test_parity_080c_fp16_accumulation() {
 /// PARITY-080d: BF16 for attention
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_080d_bf16_attention() {
     println!("PARITY-080d: BF16 for Attention");
     println!("================================");

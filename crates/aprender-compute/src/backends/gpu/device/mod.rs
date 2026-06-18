@@ -18,6 +18,45 @@ mod reductions;
 #[cfg(any(feature = "gpu", feature = "gpu-wasm"))]
 use super::runtime;
 
+/// Process-global lock serializing native wgpu instance/adapter/device creation.
+///
+/// PMAT-778: On hosts whose Vulkan ICD is unsafe to initialize concurrently
+/// (notably the NVIDIA GB10 / aarch64, where the Mesa freedreno "Turnip" ICD
+/// probes `/dev/dri/renderD128` and **segfaults** when multiple threads create
+/// `wgpu::Instance`s and request adapters/devices simultaneously), every sync
+/// device-creation entry point takes this lock. Device creation is a rare,
+/// one-time-per-scheduler operation off the compute hot path, so serializing it
+/// is free on healthy GPUs and turns a concurrent-init crash into ordered,
+/// correct initialization. This is the companion to the adapter-probe `OnceLock`
+/// cache (PMAT-773): the probe is memoized once, and actual device acquisition
+/// is serialized here.
+#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+static DEVICE_INIT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Process-global, lazily-created shared `wgpu::Instance`.
+///
+/// PMAT-778: Creating a fresh `wgpu::Instance` enumerates every installed Vulkan
+/// ICD. On the NVIDIA GB10 / aarch64 the host ships ~11 Mesa ICDs (freedreno
+/// "Turnip", panfrost, asahi, …) that are irrelevant to this hardware; the
+/// freedreno ICD spawns its own background Vulkan threads and **segfaults** when
+/// several instances enumerate it concurrently (each open of
+/// `/dev/dri/renderD128` returns `VK_ERROR_INCOMPATIBLE_DRIVER`). Sharing one
+/// instance for the whole process means the broken ICD is enumerated exactly
+/// once, eliminating the concurrent-init race entirely. `wgpu::Instance` is
+/// `Clone`/`Send`/`Sync`, so every adapter/device request can cheaply reuse it.
+#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+pub(crate) fn shared_instance() -> wgpu::Instance {
+    use std::sync::OnceLock;
+    static INSTANCE: OnceLock<wgpu::Instance> = OnceLock::new();
+    INSTANCE
+        .get_or_init(|| {
+            // Serialize the one-time enumeration against any other GPU init.
+            let _guard = DEVICE_INIT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            wgpu::Instance::default()
+        })
+        .clone()
+}
+
 /// GPU device manager
 #[derive(Clone)]
 pub struct GpuDevice {
@@ -29,13 +68,16 @@ impl GpuDevice {
     /// Initialize GPU device (sync, native only)
     #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
     pub fn new() -> Result<Self, String> {
+        // PMAT-778: serialize concurrent native device creation (freedreno ICD
+        // segfaults on the GB10 when instances/devices are created in parallel).
+        let _guard = DEVICE_INIT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         runtime::block_on(async { Self::new_async().await })
     }
 
     /// Initialize GPU device (async, works on all platforms)
     pub async fn new_async() -> Result<Self, String> {
         // Create instance
-        let instance = wgpu::Instance::default();
+        let instance = shared_instance();
 
         // Request adapter (GPU)
         let adapter = instance
@@ -75,6 +117,8 @@ impl GpuDevice {
     /// Adapter indices correspond to `Instance::enumerate_adapters()` ordering.
     #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
     pub fn new_with_adapter_index(index: u32) -> Result<Self, String> {
+        // PMAT-778: serialize concurrent native device creation (see DEVICE_INIT_LOCK).
+        let _guard = DEVICE_INIT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         runtime::block_on(async { Self::new_with_adapter_index_async(index).await })
     }
 
@@ -83,7 +127,7 @@ impl GpuDevice {
     /// Use this to select a specific GPU when multiple are available.
     /// Adapter indices correspond to `Instance::enumerate_adapters()` ordering.
     pub async fn new_with_adapter_index_async(index: u32) -> Result<Self, String> {
-        let instance = wgpu::Instance::default();
+        let instance = shared_instance();
         let adapters = instance.enumerate_adapters(wgpu::Backends::all());
 
         if adapters.is_empty() {
@@ -119,12 +163,15 @@ impl GpuDevice {
     /// Returns a list of (index, name, backend) tuples for each adapter.
     #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
     pub fn list_adapters() -> Vec<(u32, String, String)> {
+        // PMAT-778: serialize concurrent native instance/adapter enumeration
+        // (freedreno ICD segfaults on the GB10 under concurrent init).
+        let _guard = DEVICE_INIT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         runtime::block_on(Self::list_adapters_async())
     }
 
     /// List all available GPU adapters (async, all platforms)
     pub async fn list_adapters_async() -> Vec<(u32, String, String)> {
-        let instance = wgpu::Instance::default();
+        let instance = shared_instance();
         let adapters = instance.enumerate_adapters(wgpu::Backends::all());
 
         adapters
@@ -162,7 +209,7 @@ impl GpuDevice {
 
     /// Check if GPU is available (async, works on all platforms)
     pub async fn is_available_async() -> bool {
-        let instance = wgpu::Instance::default();
+        let instance = shared_instance();
         instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,

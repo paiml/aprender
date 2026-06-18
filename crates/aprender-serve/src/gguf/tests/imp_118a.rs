@@ -5,6 +5,7 @@
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_118a_true_batched_gemm_correctness() {
     // IMP-118a: Verify true batched GEMM produces correct results
     // Strategy: Process all batches in single kernel invocation
@@ -90,6 +91,7 @@ fn test_imp_118a_true_batched_gemm_correctness() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_118b_true_batched_gemm_matches_flattened() {
     // IMP-118b: True batched GEMM should match flattened implementation
     let config = GGUFConfig {
@@ -154,6 +156,7 @@ fn test_imp_118b_true_batched_gemm_matches_flattened() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_118c_true_batched_gemm_large_batch() {
     // IMP-118c: True batched GEMM should handle large batch sizes efficiently
     let config = GGUFConfig {
@@ -215,6 +218,7 @@ fn test_imp_118c_true_batched_gemm_large_batch() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_118d_true_batched_attention() {
     // IMP-118d: Use true batched GEMM for multi-head attention
     let config = GGUFConfig {
@@ -287,6 +291,7 @@ fn test_imp_118d_true_batched_attention() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_119a_gpu_fused_attention_correctness() {
     // IMP-119a: Verify GPU fused attention produces correct results
     // Uses GPU for long sequences where compute dominates transfer overhead
@@ -355,6 +360,7 @@ fn test_imp_119a_gpu_fused_attention_correctness() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_119b_gpu_fused_matches_cpu_fused() {
     // IMP-119b: GPU fused attention should match CPU fused attention
     let config = GGUFConfig {

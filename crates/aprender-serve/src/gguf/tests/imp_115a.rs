@@ -12,6 +12,7 @@ use crate::gguf::{GGUFConfig, OwnedQuantizedModelCached, QuantizedGenerateConfig
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_115a_fused_single_head_attention_correctness() {
     // IMP-115a: Verify fused attention matches separate operations
     let config = GGUFConfig {
@@ -78,6 +79,7 @@ fn test_imp_115a_fused_single_head_attention_correctness() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_115b_fused_multihead_attention_correctness() {
     // IMP-115b: Verify fused multi-head attention matches reference
     let config = GGUFConfig {
@@ -141,6 +143,7 @@ fn test_imp_115b_fused_multihead_attention_correctness() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_115c_fused_attention_no_intermediate_allocation() {
     // IMP-115c: Verify fused attention doesn't allocate large intermediate tensors
     // We test this by verifying output is correct for larger sequences
@@ -199,6 +202,7 @@ fn test_imp_115c_fused_attention_no_intermediate_allocation() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_imp_115d_fused_causal_mask_correctness() {
     // IMP-115d: Verify causal masking is correctly applied in fused kernel
     let config = GGUFConfig {

@@ -37,6 +37,7 @@ use crate::gguf::{DequantizedFFNWeights, DequantizedWeightCache, QuantizedGenera
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity018a_dequantized_weight_cache_production() {
     use std::collections::HashMap;
     use std::sync::RwLock;
@@ -160,6 +161,7 @@ fn test_parity018a_dequantized_weight_cache_production() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity018b_batch_ffn_gpu_method() {
     use crate::gpu::HybridScheduler;
     use std::time::Instant;
@@ -281,6 +283,7 @@ fn test_parity018b_batch_ffn_gpu_method() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity018c_batch_generate_gpu_flow() {
     // Test the batch_generate_gpu flow without actual model
 
@@ -371,6 +374,7 @@ fn test_parity018c_batch_generate_gpu_flow() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity018d_integration_with_owned_quantized_model() {
     // Verify that OwnedQuantizedModelCachedSync has the necessary infrastructure
     // for GPU batch FFN integration
