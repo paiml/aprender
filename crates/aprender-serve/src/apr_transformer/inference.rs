@@ -462,11 +462,13 @@ impl AprTransformer {
         let last_hidden = &normed[last_hidden_start..last_hidden_start + hidden_dim];
 
         // M-FFN-GGUF-5: lm_head uses Q4K when available (matches production project_lm_head)
+        // PMAT-788: f32 fallback sources `lm_head_f32()` — the tied embedding
+        // buffer when `lm_head_tied`, else the separate `lm_head_weight`.
         let mut logits = self.matmul_q4k_or_f32_traced(
             last_hidden,
             self.lm_head_weight_q4k.as_deref(),
             self.lm_head_weight_q6k.as_deref(),
-            &self.lm_head_weight,
+            self.lm_head_f32(),
             hidden_dim,
             self.config.vocab_size,
         );

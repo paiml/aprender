@@ -2,6 +2,7 @@
 /// PARITY-024c: GPU path should use batch projections
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity024c_gpu_path_uses_batch_projections() {
     println!("=== PARITY-024c: GPU Path Uses Batch Projections ===\n");
 
@@ -37,6 +38,7 @@ fn test_parity024c_gpu_path_uses_batch_projections() {
 /// PARITY-024d: Speedup analysis for batch attention projections
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity024d_batch_attention_speedup_analysis() {
     println!("=== PARITY-024d: Batch Attention Speedup Analysis ===\n");
 
@@ -123,6 +125,7 @@ fn test_parity024d_batch_attention_speedup_analysis() {
 /// PARITY-024e: Memory efficiency of batch attention
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity024e_batch_attention_memory() {
     println!("=== PARITY-024e: Batch Attention Memory ===\n");
 
@@ -159,6 +162,7 @@ fn test_parity024e_batch_attention_memory() {
 /// PARITY-025a: Verify batch_lm_head_gpu method exists and has correct signature
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity025a_batch_lm_head_exists() {
     println!("=== PARITY-025a: Batch LM Head Method ===\n");
 
@@ -197,6 +201,7 @@ fn test_parity025a_batch_lm_head_exists() {
 /// PARITY-025b: LM head GPU speedup analysis
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity025b_lm_head_speedup_analysis() {
     println!("=== PARITY-025b: LM Head Speedup Analysis ===\n");
 
@@ -244,6 +249,7 @@ fn test_parity025b_lm_head_speedup_analysis() {
 /// PARITY-025c: Forward batch uses GPU LM head when enabled
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity025c_forward_uses_batch_lm_head() {
     println!("=== PARITY-025c: Forward Batch Uses GPU LM Head ===\n");
 
@@ -289,6 +295,7 @@ fn test_parity025c_forward_uses_batch_lm_head() {
 /// PARITY-025d: Memory analysis for batch LM head
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity025d_batch_lm_head_memory() {
     println!("=== PARITY-025d: Batch LM Head Memory ===\n");
 
@@ -322,6 +329,7 @@ fn test_parity025d_batch_lm_head_memory() {
 /// PARITY-025e: Combined GPU coverage analysis
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity025e_combined_gpu_coverage() {
     println!("=== PARITY-025e: Combined GPU Coverage ===\n");
 

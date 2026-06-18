@@ -260,7 +260,9 @@ impl AprTransformer {
         } else {
             (self.lm_head_weight_q4k.as_deref(), self.lm_head_weight_q6k.as_deref())
         };
-        let mut logits = self.project_with_q4k_or_f32(q4k, q6k, &self.lm_head_weight, normed, self.config.vocab_size, hidden_dim, force_f32)?;
+        // PMAT-788: f32 weight sources `lm_head_f32()` — the tied embedding
+        // buffer when `lm_head_tied`, else the separate `lm_head_weight`.
+        let mut logits = self.project_with_q4k_or_f32(q4k, q6k, self.lm_head_f32(), normed, self.config.vocab_size, hidden_dim, force_f32)?;
         if let Some(ref bias) = self.lm_head_bias {
             self.add_bias(&mut logits, bias);
         }

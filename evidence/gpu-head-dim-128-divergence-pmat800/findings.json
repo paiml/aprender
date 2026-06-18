@@ -1,0 +1,58 @@
+{
+  "ticket": "PMAT-800B",
+  "title": "GPU GGUF parity divergence on GB10 Blackwell — DEFINITIVE per-layer sweep VERDICT: NOT uniform quant noise and NOT a layer-0 bug. It is a CONTAINED, localized divergence on a single MASSIVE-ACTIVATION CHANNEL (dim 408), introduced by the GPU HwDp4a (INT8 DP4A) Q4_K/Q6_K kernels (~15% error on that channel), latent until layer-26 FFN cancels the outlier and exposes it. fp32 MWV kernels cut the channel error from ~15% to ~0.4%.",
+  "host": "gx10 (gx10-a5b5, NVIDIA GB10 sm_121, CUDA)",
+  "date": "2026-06-16",
+  "supersedes_prior_PMAT800": "REFUTES both the original 'layer-0 GQA-hd128 forward bug' AND the corrected 'uniform 0.998/layer Q4_K/Q6_K dequant noise, FFN-onward, no contained fix'. Neither holds: the per-layer profile is FLAT-then-JUMP (0.9998 through L25, drop to 0.93/0.90 at L26/L27), driven by ONE channel.",
+  "build": {
+    "base": "origin/main d847711805485502aaaf16de0336bf6c488c2057",
+    "scratch": "/home/noah/gx10-sweep-<pid> (isolated --shared reference-clone, isolated CARGO_TARGET_DIR). Disk 37-40GB free throughout (>30GB floor; <10GB watchdog armed, never fired). df before==after==37GB. Never touched ~/src/aprender, models, data, runs.",
+    "features": "cuda",
+    "model": "Qwen2.5-coder-1.5B-instruct Q4_K_M GGUF (28 layers, hidden=1536, heads=12, kv_heads=2, head_dim=128, GQA=6). ffn_gate/up=Q4_K, ffn_down=Q6_K, attn_v=Q6_K, rest Q4_K."
+  },
+  "methodology_CRITICAL": {
+    "harness": "load-time parity gate (mod_parity_gate.rs): ONE CPU forward_single_with_cache + ONE GPU forward_gpu_resident on the SAME BOS token (151643, position 0, seq_len=1), EAGER non-graphed path (SKIP_CUDA_GRAPH=1).",
+    "trap_avoided": "FIRST attempts dumped per-layer state without a first-write guard. With `apr run -n 1` the gate forward (token A) is OVERWRITTEN by the subsequent generation forward (token B, different on CPU vs GPU code paths) => a per-layer variant of the BOS-warmup trap that FABRICATED a fake 'layer-0 cliff to 0.979 + plateau 0.95'. FIX: first-write-wins dump (skip if file exists) so the gate's same-token forward is captured and never clobbered. The clean sweep is COMPLETELY DIFFERENT from the contaminated one.",
+    "authoritative_anchor": "production parity gate prints cosine=0.981714 PASS (>=0.98), CPU argmax==GPU argmax==16. Matches the clean final-logits dump exactly.",
+    "instrumentation": "TEMPORARY env-gated (APR_PERLAYER_DUMP) first-write-wins per-layer F32 APRT dumps in forward_utils.rs/gemv_dispatch.rs/phase_attention.rs (GPU eager) + ffn_block.rs (CPU). NOT committed."
+  },
+  "clean_per_layer_sweep_SAME_TOKEN_first_write_wins": {
+    "shape": "FLAT-then-JUMP. Layers 0-25 are near-perfect and uniform; a sharp drop occurs at L26/L27. NOT uniform decay, NOT a layer-0 cliff.",
+    "post_ffn_residual_cosine": {
+      "L0": 0.994267, "L1": 0.998625, "L2": 0.999974, "L5": 0.999869, "L10": 0.999858,
+      "L15": 0.999849, "L20": 0.999835, "L24": 0.999768, "L25": 0.999753,
+      "L26": 0.932716, "L27": 0.904289
+    },
+    "final_logits": {"cos": 0.981714, "cpu_argmax": 16, "gpu_argmax": 16, "note": "PASSES the 0.98 gate; argmax agrees."}
+  },
+  "root_cause_MASSIVE_ACTIVATION_CHANNEL": {
+    "outlier_dim": 408,
+    "trace_dim408_post_ffn_residual_HwDp4a": {
+      "L0": {"cpu": -0.54, "gpu": -0.57, "ratio": 0.946},
+      "L1": {"cpu": -187.9, "gpu": -213.5, "ratio": 0.880, "note": "outlier emerges; GPU already ~14% too large"},
+      "L2": {"cpu": -1501.3, "gpu": -1823.9, "ratio": 0.823},
+      "L4_to_L25": {"ratio": "~0.848 (stable)", "note": "outlier ~1800 (CPU) vs ~2127 (GPU); |dim408| ~26x the rms (~69), so it dominates the cosine in the SAME direction => cosine stays ~0.9998 despite the constant 15% channel error"},
+      "L26_ffn": {"cpu": 91.5, "gpu": 224.0, "ratio": 0.408, "note": "the FFN/residual CANCELS the outlier (1800 -> ~90); catastrophic cancellation exposes the accumulated ~15% error => cosine craters to 0.9327"},
+      "L27": {"cpu": 58.9, "gpu": 191.8, "ratio": 0.307}
+    },
+    "mechanism": "A single massive-activation channel (dim 408) is mis-estimated by the GPU by a stable ~15% from layers 1-2 onward. It is LATENT (cosine ~0.9998) while it dominates the hidden vector in the same direction, then becomes VISIBLE at layer 26 where the FFN cancels the outlier (catastrophic cancellation amplifies the relative error). This is why the prior agent's 0.998/layer 'uniform quant noise' story (and a fatal 0.53 over 36 layers) is wrong: the depth profile is flat-then-jump, not exponential decay."
+  },
+  "kernel_isolation_controls": {
+    "single_GEMV_Q4K_Q6K": "real-weight single Q4_K/Q6_K GEMVs are ~1.0 (FALSIFY-Q6K-REAL-WEIGHT-004: cos 1.000000) — the per-GEMV math is fine; the channel error is an outlier/quantization interaction, not a broken kernel.",
+    "GPU_attention_head_dim_128": "STANDALONE attention is BIT-EXACT at head_dim=128: test_cpu_gpu_attention_parity_head_dim_128 (flash path) and test_cpu_gpu_attention_into_parity_head_dim_128 (production incremental_attention_into path) BOTH give cos=1.000000, max_diff=0.000000 on isolated clean Q/K/V. The attention kernel is NOT the bug; the prior 'attn_out cos 0.97' sub-stage reading was a padded-workspace-buffer dump artifact.",
+    "HwDp4a_vs_MWV_fp32 (DECISIVE)": {
+      "dim408_ratio_L2":  {"HwDp4a": 0.823, "MWV_fp32": 0.9964},
+      "dim408_ratio_L25": {"HwDp4a": 0.848, "MWV_fp32": 0.9959},
+      "final_logits":     {"HwDp4a": 0.981714, "MWV_fp32": 0.990881},
+      "verdict": "Forcing the fp32 MWV Q4_K/Q6_K variant (MWV_Q4K=1 MWV_Q6K=1 FUSED_GATE_UP=0) cuts the dim-408 channel error from ~15% to ~0.4% and lifts final cosine 0.9817 -> 0.9909. => the dominant contributor is the HwDp4a INT8 DP4A activation-quantization losing precision on the massive-activation channel. A residual L26 cancellation drop (~0.95) persists even in fp32 because the catastrophic cancellation amplifies any error — intrinsic to the massive-activation arithmetic.",
+      "FLASH_DECODE": "on/off identical (0.9708 in the contaminated run / no effect) — not Flash Decoding."
+    }
+  },
+  "VERDICT": "CONTAINED BUG (not pure uniform quant noise; not a layer-0 or attention-kernel bug). Root cause = the GPU HwDp4a (INT8 DP4A) Q4_K/Q6_K kernels mis-estimate a massive-activation channel (dim 408) by ~15%, latent until layer-26 FFN cancels the outlier. fp32 MWV kernels reduce it ~40x (15% -> 0.4%). For Qwen2.5-coder-1.5B this is BENIGN (final cos 0.9817, argmax correct, gate PASSES); for deeper models (Qwen3-8B, 36 layers) the same per-channel DP4A error + more cancellation events is the likely driver of its larger gap (re-measure with first-write-wins to confirm). The fail-closed parity gate is correct interim handling; the contained fix is improving HwDp4a activation-quantization precision for massive-activation channels (per-channel/outlier-aware activation scaling, or fp32 accumulation on outlier columns).",
+  "recommended_fix_direction": [
+    "Outlier-aware activation quantization in the HwDp4a Q4_K/Q6_K GEMV: detect massive-activation channels (|x| >> rms) and either keep them in fp32 or use a per-channel scale so the INT8 dynamic range is not dominated by the outlier (mirrors LLM.int8()/SmoothQuant). dim 408 of Qwen2.5-1.5B is the canonical reproducer.",
+    "Alternatively, fp32 accumulation for the residual-stream channels that exhibit catastrophic cancellation at the final layers.",
+    "Add an end-to-end regression: assert the parity-gate cosine for Qwen2.5-coder-1.5B Q4_K_M stays >= 0.98 AND that the dim-408 channel ratio (CPU/GPU post_ffn L25) stays >= 0.95 — this is the falsifiable guard for a future fix."
+  ],
+  "disk_discipline": "gx10 / stayed 37-40GB free throughout (>30GB floor; <10GB watchdog armed, never fired). df before==after (37GB). Isolated --shared reference-clone scratch (3.3GB incl. 2.7GB target) + isolated CARGO_TARGET_DIR. No models/data/runs touched."
+}

@@ -2,6 +2,7 @@
 /// PARITY-063e: Verification checklist
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity063e_checklist() {
     println!("PARITY-063e: Verification Checklist");
     println!("===================================");
@@ -47,6 +48,7 @@ fn test_parity063e_checklist() {
 /// PARITY-063f: Complete Phase 2 status
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity063f_status() {
     println!("PARITY-063f: Phase 2 Complete Status");
     println!("====================================");
