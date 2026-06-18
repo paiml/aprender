@@ -113,6 +113,26 @@ impl AprTransformer {
             Self::apply_split_qkv_bias(layer, &mut q, &mut k, &mut v, hidden_dim, kv_size);
         }
 
+        // PMAT-799: Per-head QK RMSNorm (Qwen3) — applied AFTER projection + bias,
+        // BEFORE RoPE (Qwen3 ordering). The live cached generation path
+        // (`forward_with_cache` -> here) previously SKIPPED this entirely, while
+        // the GGUF reference (`gguf/inference/forward/forward_cached.rs`) and the
+        // sibling `AprTransformer::forward` (pmat-260.rs, GH-279) both apply it.
+        // Omitting it produced silently-wrong output for Qwen3-family models on
+        // the `apr run model.safetensors` cached decode path — same arch-blindness
+        // class as the RoPE `rope_type` gap. Contract: qk-norm-v1 §QKN-INV-007.
+        if let Some(ref q_norm) = layer.attn_q_norm_weight {
+            crate::gguf::ops::apply_per_head_rms_norm(&mut q, q_norm, num_heads, self.config.eps);
+        }
+        if let Some(ref k_norm) = layer.attn_k_norm_weight {
+            crate::gguf::ops::apply_per_head_rms_norm(
+                &mut k,
+                k_norm,
+                num_kv_heads,
+                self.config.eps,
+            );
+        }
+
         // Apply RoPE to Q and K
         self.apply_rope_f32(&mut q, position, num_heads, head_dim);
         self.apply_rope_f32(&mut k, position, num_kv_heads, head_dim);
