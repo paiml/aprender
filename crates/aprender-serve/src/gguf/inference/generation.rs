@@ -11,7 +11,8 @@ use crate::gguf::DispatchMetrics;
 use crate::gguf::{
     InferenceScratchBuffer, OwnedQuantizedKVCache, OwnedQuantizedModel, QuantizedGenerateConfig,
 };
-use rand::Rng;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 
 include!("generate_scratch.rs");
 include!("generation_argmax_basic.rs");
