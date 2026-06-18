@@ -275,6 +275,18 @@ pub(crate) fn load_model_config_from_json(model_path: &Path) -> Option<GgufModel
     let rope_theta = json_f64_with_aliases(&json, &["rope_theta"], 10000.0);
     let rms_norm_eps = json_f64_with_aliases(&json, CONFIG_ALIASES_NORM_EPS, 1e-6);
 
+    // MoE + explicit head_dim — these are present in HF config.json but were previously
+    // hardcoded to None below, so a MoE SafeTensors model (Mixtral/Qwen3-MoE/DeepSeek-MoE)
+    // silently converted to a DENSE .apr (num_experts=None ⇒ realizar skips the MoE FFN),
+    // and an explicit head_dim was dropped (realizar falls back to hidden/heads → wrong
+    // RoPE/attention dims for Qwen3/Gemma2/Phi3). Read them like every other field.
+    let head_dim = json_usize_with_aliases(&json, &["head_dim"]);
+    let num_experts =
+        json_usize_with_aliases(&json, &["num_local_experts", "num_experts", "n_routed_experts"]);
+    let num_experts_per_tok =
+        json_usize_with_aliases(&json, &["num_experts_per_tok", "num_experts_per_token"]);
+    let moe_intermediate_size = json_usize_with_aliases(&json, &["moe_intermediate_size"]);
+
     let architecture = json
         .get("model_type")
         .and_then(|v| v.as_str())
@@ -318,10 +330,10 @@ pub(crate) fn load_model_config_from_json(model_path: &Path) -> Option<GgufModel
         rope_theta: Some(rope_theta as f32),
         rms_norm_eps: Some(rms_norm_eps as f32),
         rope_type,
-        head_dim: None,
-        num_experts: None,
-        num_experts_per_tok: None,
-        moe_intermediate_size: None,
+        head_dim,
+        num_experts,
+        num_experts_per_tok,
+        moe_intermediate_size,
     })
 }
 
@@ -570,6 +582,41 @@ mod load_model_config_from_json_tests {
         assert_eq!(cfg.architecture.as_deref(), Some("qwen2"));
         assert_eq!(cfg.hf_architecture.as_deref(), Some("Qwen2ForCausalLM"));
         assert_eq!(cfg.hf_model_type.as_deref(), Some("qwen2"));
+    }
+
+    /// FALSIFY-CONVERT-MOE-HEADDIM-001 (PMAT-833): `load_model_config_from_json` MUST read the
+    /// MoE keys (num_experts / num_experts_per_tok / moe_intermediate_size) and an explicit
+    /// `head_dim` from config.json. They were hardcoded to None, so a MoE SafeTensors model
+    /// (Mixtral / Qwen3-MoE / DeepSeek-MoE) silently converted to a DENSE .apr (realizar gates
+    /// the MoE FFN on `num_experts.is_some()`), and an explicit `head_dim` was dropped (realizar
+    /// falls back to hidden/heads → wrong RoPE/attention dims for Qwen3/Gemma2/Phi3).
+    #[test]
+    fn loads_moe_and_head_dim_from_config() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let model_path = tmp.path().join("model.safetensors");
+        let config_path = tmp.path().join("config.json");
+        let config_json = serde_json::json!({
+            "model_type": "mixtral",
+            "architectures": ["MixtralForCausalLM"],
+            "hidden_size": 4096,
+            "num_hidden_layers": 32,
+            "num_attention_heads": 32,
+            "num_key_value_heads": 8,
+            "vocab_size": 32000,
+            "intermediate_size": 14336,
+            "num_local_experts": 8,
+            "num_experts_per_tok": 2,
+            "head_dim": 128,
+        });
+        let mut f = std::fs::File::create(&config_path).expect("create config.json");
+        f.write_all(config_json.to_string().as_bytes())
+            .expect("write config.json");
+
+        let cfg = load_model_config_from_json(&model_path).expect("config");
+        // RED pre-fix: all None (hardcoded). GREEN post-fix: read from config.json.
+        assert_eq!(cfg.num_experts, Some(8), "num_experts dropped → MoE model silently dense");
+        assert_eq!(cfg.num_experts_per_tok, Some(2));
+        assert_eq!(cfg.head_dim, Some(128), "head_dim dropped → wrong RoPE/attention dims");
     }
 
     /// PMAT-690 P0-K: empty/missing `architectures` array means

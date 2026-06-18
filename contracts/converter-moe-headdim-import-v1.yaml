@@ -1,0 +1,40 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-18"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "HuggingFace config.json: num_local_experts/num_experts, num_experts_per_tok, moe_intermediate_size, head_dim"
+    - "crates/aprender-serve safetensors_infer_convert.rs (is_moe = num_experts.is_some()) — the downstream gate this feeds"
+  description: |
+    Correctness contract for the SafeTensors→APR import config loader
+    (format::converter::source_load_result::load_model_config_from_json). Pillar-4-adjacent
+    (model import): the converted .apr metadata must reflect the source config.json architecture.
+kind: KernelContract
+name: converter-moe-headdim-import
+version: "1.0.0"
+scope: "crates/aprender-core/src/format/converter/source_load_result.rs"
+description: |
+  load_model_config_from_json parses HF config.json into GgufModelConfig. PMAT-833 fixed a
+  defect where it hardcoded num_experts=None, num_experts_per_tok=None, moe_intermediate_size=None,
+  and head_dim=None even though these keys are present in config.json and the write path
+  propagates them. Consequence: a MoE SafeTensors model (Mixtral/Qwen3-MoE/DeepSeek-MoE)
+  converted to a DENSE .apr — realizar gates the entire MoE FFN on num_experts.is_some(), so the
+  experts were silently skipped (wrong architecture, garbage output, no error). The dropped
+  explicit head_dim caused realizar to fall back to hidden/heads, computing wrong RoPE/attention
+  dims for models where head_dim != hidden/heads (Qwen3/Gemma2/Phi3). Fix: read all four via the
+  existing json_usize_with_aliases helper (num_local_experts/num_experts/n_routed_experts, etc.).
+equations:
+  C-CONVERT-MOE-001:
+    description: "MoE keys from config.json populate the converted config"
+    formula: "config.json{num_local_experts|num_experts: E, num_experts_per_tok: T} ⇒ cfg.num_experts=Some(E), cfg.num_experts_per_tok=Some(T); NOT None"
+    note: "realizar is_moe = num_experts.is_some(); None ⇒ MoE model decoded as dense."
+  C-CONVERT-MOE-002:
+    description: "Explicit head_dim from config.json is preserved"
+    formula: "config.json{head_dim: H} ⇒ cfg.head_dim=Some(H); NOT None"
+    note: "Dropped head_dim ⇒ realizar falls back to hidden/heads ⇒ wrong RoPE/attention dims (Qwen3/Gemma2/Phi3)."
+falsification:
+  - id: FALSIFY-CONVERT-MOE-HEADDIM-001
+    description: "MoE + head_dim keys are read from config.json, not hardcoded None. Discharges C-CONVERT-MOE-001/002."
+    test: "loads_moe_and_head_dim_from_config — Mixtral-style config.json (num_local_experts=8, num_experts_per_tok=2, head_dim=128): RED pre-fix all None, GREEN post-fix Some(8)/Some(2)/Some(128)."
+    evidence: "cargo test -p aprender-core --lib loads_moe_and_head_dim_from_config"
