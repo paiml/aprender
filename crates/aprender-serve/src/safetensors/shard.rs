@@ -172,6 +172,7 @@ pub use validation::{
     // Runtime validation functions (legacy API)
     enforce_embedding_validation,
     enforce_weight_validation,
+    validate_cross_tensor_structure,
     validate_embedding,
     validate_weight,
     // Compile-time enforcement via newtypes (PMAT-235)

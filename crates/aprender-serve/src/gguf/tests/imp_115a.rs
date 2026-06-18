@@ -29,6 +29,7 @@ fn test_imp_115a_fused_single_head_attention_correctness() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -95,6 +96,7 @@ fn test_imp_115b_fused_multihead_attention_correctness() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -159,6 +161,7 @@ fn test_imp_115c_fused_attention_no_intermediate_allocation() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -216,6 +219,7 @@ fn test_imp_115d_fused_causal_mask_correctness() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -407,6 +411,7 @@ fn test_imp_117f_generate_with_token_buffer() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };

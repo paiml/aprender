@@ -23,6 +23,7 @@ fn test_imp_118a_true_batched_gemm_correctness() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -107,6 +108,7 @@ fn test_imp_118b_true_batched_gemm_matches_flattened() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -171,6 +173,7 @@ fn test_imp_118c_true_batched_gemm_large_batch() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -232,6 +235,7 @@ fn test_imp_118d_true_batched_attention() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -305,6 +309,7 @@ fn test_imp_119a_gpu_fused_attention_correctness() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -372,6 +377,7 @@ fn test_imp_119b_gpu_fused_matches_cpu_fused() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };

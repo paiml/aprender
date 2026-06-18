@@ -34,6 +34,7 @@ fn test_imp_121a_cached_sync_has_adaptive_attention() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -86,6 +87,7 @@ fn test_imp_121b_cached_sync_adaptive_multihead() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -137,6 +139,7 @@ fn test_imp_121c_generate_with_adaptive_attention() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -187,6 +190,7 @@ fn test_imp_121d_thread_safe_adaptive_attention() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -259,6 +263,7 @@ fn test_imp_122a_adaptive_attention_with_cache() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -322,6 +327,7 @@ fn test_pmat749_adaptive_attention_gqa_long_cache() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -380,6 +386,7 @@ fn test_imp_122b_adaptive_matches_standard() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -440,6 +447,7 @@ fn test_imp_122c_long_sequence_uses_gpu() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };

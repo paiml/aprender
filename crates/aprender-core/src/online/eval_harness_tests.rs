@@ -474,3 +474,184 @@ fn falsify_eval_003_report_consistency() {
         report.macro_accuracy
     );
 }
+
+/// FALSIFY-EVAL-004: `normalize` actually selects acc_norm (length-normalized),
+/// and length-normalization can FLIP the winner versus raw acc.
+///
+/// This is the acc vs acc_norm distinction required by HellaSwag / ARC / MMLU.
+/// Construct two choices where the SHORTER completion has the higher RAW summed
+/// log-likelihood (the short-completion bias of raw acc), but the LONGER
+/// completion has the higher PER-TOKEN log-likelihood:
+///
+/// - choice 0 (short, 2 tokens): raw = -1.0  → per-token = -0.50
+/// - choice 1 (long, 8 tokens):  raw = -2.0  → per-token = -0.25
+///
+/// Raw acc:      -1.0 > -2.0          → picks choice 0 (short).
+/// acc_norm:     -0.25 > -0.50        → picks choice 1 (long).
+///
+/// With the previously-ignored `normalize` param BOTH calls returned the raw
+/// winner (choice 0), so this test was RED (the two asserts could not both
+/// hold). With length-normalization wired in it is GREEN.
+#[test]
+fn falsify_eval_004_normalize_flips_winner() {
+    let scores = vec![-1.0, -2.0]; // summed completion log-likelihoods
+    let lengths = vec![2usize, 8usize]; // completion token counts
+
+    // Sanity: the flip preconditions actually hold for these numbers.
+    assert!(scores[0] > scores[1], "short must have higher RAW total");
+    assert!(
+        scores[1] / lengths[1] as f64 > scores[0] / lengths[0] as f64,
+        "long must have higher PER-TOKEN log-prob"
+    );
+
+    // acc (raw): the short completion wins on raw summed log-likelihood.
+    let (acc_idx, acc_score) = score_multiple_choice_with_lengths(&scores, &lengths, false);
+    assert_eq!(
+        acc_idx, 0,
+        "raw acc must pick the short completion (choice 0)"
+    );
+    assert!(
+        (acc_score - (-1.0)).abs() < 1e-12,
+        "returned score is always the RAW log-likelihood of the winner"
+    );
+
+    // acc_norm (length-normalized): the longer, higher-per-token choice wins.
+    let (norm_idx, norm_score) = score_multiple_choice_with_lengths(&scores, &lengths, true);
+    assert_eq!(
+        norm_idx, 1,
+        "acc_norm must pick the long completion (choice 1) after dividing by length"
+    );
+    // Returned score is still the RAW log-likelihood, not the per-token value.
+    assert!(
+        (norm_score - (-2.0)).abs() < 1e-12,
+        "acc_norm returns the winner's RAW score (-2.0), not its per-token (-0.25)"
+    );
+
+    // The core falsifiable claim: normalization changed the prediction.
+    assert_ne!(
+        acc_idx, norm_idx,
+        "length-normalization MUST be able to flip the winner (acc vs acc_norm)"
+    );
+}
+
+/// FALSIFY-EVAL-005: the `!normalize` (raw acc) path is unchanged — no regression.
+///
+/// For every test case the length-aware function with `normalize == false` and
+/// the legacy `score_multiple_choice(.., false)` wrapper must agree, and must
+/// equal a plain raw argmax. Guards against the fix perturbing the acc path.
+#[test]
+fn falsify_eval_005_raw_acc_no_regression() {
+    let cases: Vec<Vec<f64>> = vec![
+        vec![-1.0, -2.0, -3.0, -4.0],
+        vec![-5.0, -1.0, -3.0, -4.0],
+        vec![-2.5],
+        vec![-2.0, -2.0, -2.0],
+        vec![-10.0, -0.5],
+    ];
+
+    for scores in &cases {
+        // Arbitrary, varied lengths — must be ignored when normalize == false.
+        let lengths: Vec<usize> = (1..=scores.len()).collect();
+
+        let raw_argmax = scores
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+
+        let (wrapper_idx, _) = score_multiple_choice(scores, false);
+        let (lenfn_idx, lenfn_score) = score_multiple_choice_with_lengths(scores, &lengths, false);
+
+        assert_eq!(
+            wrapper_idx, raw_argmax,
+            "score_multiple_choice(.., false) must equal raw argmax for {scores:?}"
+        );
+        assert_eq!(
+            lenfn_idx, raw_argmax,
+            "score_multiple_choice_with_lengths(.., false) must equal raw argmax for {scores:?}, \
+             ignoring lengths"
+        );
+        // Returned score equals the raw value at the winning index.
+        assert!((lenfn_score - scores[raw_argmax]).abs() < 1e-12);
+    }
+}
+
+/// `normalize == true` with unit lengths is the identity (wrapper delegation).
+#[test]
+fn test_score_multiple_choice_normalize_unit_lengths_is_identity() {
+    let scores = vec![-1.0, -2.0, -3.0];
+    // The thin wrapper has no lengths → unit lengths → normalization is a no-op,
+    // so the result matches raw acc.
+    assert_eq!(score_multiple_choice(&scores, true).0, 0);
+    assert_eq!(score_multiple_choice(&scores, false).0, 0);
+}
+
+/// Empty input is handled identically on both normalize paths.
+#[test]
+fn test_score_multiple_choice_with_lengths_empty() {
+    let (idx_t, score_t) = score_multiple_choice_with_lengths(&[], &[], true);
+    let (idx_f, score_f) = score_multiple_choice_with_lengths(&[], &[], false);
+    assert_eq!(idx_t, 0);
+    assert_eq!(idx_f, 0);
+    assert!(score_t == f64::NEG_INFINITY);
+    assert!(score_f == f64::NEG_INFINITY);
+}
+
+/// Zero-length completion is guarded (no division by zero / NaN).
+#[test]
+fn test_score_multiple_choice_with_lengths_zero_len_guard() {
+    let scores = vec![-1.0, -2.0];
+    let lengths = vec![0usize, 1usize]; // choice 0 has length 0 → guarded to 1
+    let (idx, score) = score_multiple_choice_with_lengths(&scores, &lengths, true);
+    // With length guarded to 1: choice 0 = -1.0, choice 1 = -2.0 → choice 0 wins.
+    assert_eq!(idx, 0);
+    assert!(score.is_finite());
+}
+
+/// acc_norm at the harness level: a `length_normalize` task flips a prediction
+/// versus the default (raw acc) run for the same scorer.
+#[test]
+fn test_run_harness_length_normalize_changes_prediction() {
+    // One MC example: choice 0 short, choice 1 long. Scorer returns a fixed raw
+    // log-likelihood per choice such that short wins raw, long wins per-token.
+    let mut task = EvalTask::new("acc_norm_flip", TaskType::MultipleChoice);
+    task.add_example(EvalExample {
+        context: "ctx".to_string(),
+        choices: vec![
+            "aa bb".to_string(),                   // 2 whitespace tokens
+            "cc dd ee ff gg hh ii jj".to_string(), // 8 whitespace tokens
+        ],
+        gold_idx: Some(1), // the long completion is "correct"
+        reference: None,
+    });
+
+    // Raw log-likelihoods: short=-1.0 (2 tok → -0.50/tok), long=-2.0 (8 tok → -0.25/tok).
+    let scorer = |_ctx: &str, completion: &str| -> f64 {
+        match completion.split_whitespace().count() {
+            2 => -1.0,
+            8 => -2.0,
+            _ => f64::NEG_INFINITY,
+        }
+    };
+
+    // Raw acc picks the short (wrong) completion → accuracy 0.0.
+    let raw_cfg = HarnessConfig {
+        tasks: vec![task.clone()],
+        length_normalize: false,
+        max_examples: 0,
+    };
+    let raw = run_harness(&raw_cfg, scorer).unwrap();
+    assert_eq!(raw.tasks[0].predictions[0], 0);
+    assert!((raw.tasks[0].accuracy.unwrap() - 0.0).abs() < 1e-12);
+
+    // acc_norm picks the long (correct) completion → accuracy 1.0.
+    let norm_cfg = HarnessConfig {
+        tasks: vec![task],
+        length_normalize: true,
+        max_examples: 0,
+    };
+    let norm = run_harness(&norm_cfg, scorer).unwrap();
+    assert_eq!(norm.tasks[0].predictions[0], 1);
+    assert!((norm.tasks[0].accuracy.unwrap() - 1.0).abs() < 1e-12);
+}

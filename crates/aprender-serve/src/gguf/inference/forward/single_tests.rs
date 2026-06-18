@@ -26,6 +26,7 @@ fn create_llama_style_config() -> GGUFConfig {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     }
@@ -47,6 +48,7 @@ fn create_phi_style_config() -> GGUFConfig {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     }
@@ -86,6 +88,8 @@ fn create_llama_style_model() -> crate::gguf::OwnedQuantizedModel {
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+        post_attn_norm_weight: None,
+        post_ffw_norm_weight: None,
     };
 
     OwnedQuantizedModel {
@@ -141,6 +145,8 @@ fn create_phi_style_model() -> crate::gguf::OwnedQuantizedModel {
         ffn_norm_bias: Some(vec![0.0f32; hidden_dim]),
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+        post_attn_norm_weight: None,
+        post_ffw_norm_weight: None,
     };
 
     OwnedQuantizedModel {
