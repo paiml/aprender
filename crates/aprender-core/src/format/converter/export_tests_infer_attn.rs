@@ -177,14 +177,14 @@ fn test_extract_user_metadata_with_source_metadata() {
     let _ = fs::create_dir_all(&dir);
     let path = dir.join("with_meta.apr");
 
-    let json = r#"{"custom":{"source_metadata":{"key1":"val1","key2":"val2"}}}"#;
-    let mut data = Vec::new();
-    data.extend_from_slice(b"APR\x00"); // magic
-    data.extend_from_slice(&2u32.to_le_bytes()); // version
-    let json_bytes = json.as_bytes();
-    let len = json_bytes.len() as u64;
-    data.extend_from_slice(&len.to_le_bytes()); // metadata_len
-    data.extend_from_slice(json_bytes);
+    // Real APR v2 header (64 bytes): metadata_offset u64 @ 12, metadata_size u32 @ 20, JSON @ 64.
+    // source_metadata is at the TOP level (AprV2Metadata.custom is #[serde(flatten)]).
+    let json = r#"{"source_metadata":{"key1":"val1","key2":"val2"}}"#;
+    let mut data = vec![0u8; 64];
+    data[0..4].copy_from_slice(b"APR\x00");
+    data[12..20].copy_from_slice(&64u64.to_le_bytes());
+    data[20..24].copy_from_slice(&(json.len() as u32).to_le_bytes());
+    data.extend_from_slice(json.as_bytes());
 
     fs::write(&path, &data).expect("write failed");
 
@@ -206,14 +206,13 @@ fn test_extract_user_metadata_without_source_metadata() {
     let _ = fs::create_dir_all(&dir);
     let path = dir.join("no_source_meta.apr");
 
-    let json = r#"{"custom":{"other_key":"other_val"}}"#;
-    let mut data = Vec::new();
-    data.extend_from_slice(b"APR\x00");
-    data.extend_from_slice(&2u32.to_le_bytes());
-    let json_bytes = json.as_bytes();
-    let len = json_bytes.len() as u64;
-    data.extend_from_slice(&len.to_le_bytes());
-    data.extend_from_slice(json_bytes);
+    // Real APR v2 header; no source_metadata present ⇒ empty result.
+    let json = r#"{"other_key":"other_val"}"#;
+    let mut data = vec![0u8; 64];
+    data[0..4].copy_from_slice(b"APR\x00");
+    data[12..20].copy_from_slice(&64u64.to_le_bytes());
+    data[20..24].copy_from_slice(&(json.len() as u32).to_le_bytes());
+    data.extend_from_slice(json.as_bytes());
 
     fs::write(&path, &data).expect("write failed");
 
@@ -233,14 +232,13 @@ fn test_extract_user_metadata_non_string_values_skipped() {
     let _ = fs::create_dir_all(&dir);
     let path = dir.join("mixed_types.apr");
 
-    let json = r#"{"custom":{"source_metadata":{"str_key":"str_val","num_key":42,"bool_key":true,"null_key":null}}}"#;
-    let mut data = Vec::new();
-    data.extend_from_slice(b"APR\x00");
-    data.extend_from_slice(&2u32.to_le_bytes());
-    let json_bytes = json.as_bytes();
-    let len = json_bytes.len() as u64;
-    data.extend_from_slice(&len.to_le_bytes());
-    data.extend_from_slice(json_bytes);
+    // Real APR v2 header; top-level source_metadata with mixed value types.
+    let json = r#"{"source_metadata":{"str_key":"str_val","num_key":42,"bool_key":true,"null_key":null}}"#;
+    let mut data = vec![0u8; 64];
+    data[0..4].copy_from_slice(b"APR\x00");
+    data[12..20].copy_from_slice(&64u64.to_le_bytes());
+    data[20..24].copy_from_slice(&(json.len() as u32).to_le_bytes());
+    data.extend_from_slice(json.as_bytes());
 
     fs::write(&path, &data).expect("write failed");
 
