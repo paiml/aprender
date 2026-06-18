@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+Provable-correctness wave — ten shipped-green defects, each fixed with a named
+proof-obligation + a RED-on-bug / GREEN-on-fix falsifier + a `pv`-validated contract
+(PMAT-827..836). Spans all four pillars plus eval/format/export:
+
+- **`stats::incomplete_beta` extra `/a`** (PMAT-827, Pillar-1) — the regularized
+  incomplete beta was wrong for `a != 1`, so *every* t-test (df ≤ 30) and ANOVA F-test
+  p-value was too small (falsely significant). e.g. a one-sample t-test reported p=0.115
+  when scipy gives 0.230. Now matches `scipy.special.betainc`.
+- **rsLoRA adapter scale dropped on load** (PMAT-828, Pillar-3) — `LoRAAdapter::to_layer`
+  recomputed Standard `alpha/rank` and discarded the serialized rsLoRA `alpha/sqrt(rank)`
+  scale, silently re-scaling a saved adapter by `sqrt(rank)` (e.g. 4× at rank 16).
+- **`--grad-clip` silent no-op on the CPU trainer** (PMAT-829, Pillar-2) — `clip_and_step`
+  computed the clip coefficient then discarded it (`let _ = scale`); the optimizer stepped
+  on raw, unclipped gradients (divergence risk), while the WGPU path clipped correctly.
+- **`apr prune --sparsity` over-pruned** (PMAT-830) — `sparsity.max(target_ratio)` raised any
+  `--sparsity` below the 0.5 `--target-ratio` default, so `--sparsity 0.3` zeroed 50% of
+  weights (not 30%) and the output metadata misreported the sparsity actually applied.
+- **`GradientBoostingClassifier::predict_proba` saturated** (PMAT-831, Pillar-1) — the weak
+  learner fit a classification tree to `sign(residual)` and added a fixed ±1 step instead of a
+  regression tree to the continuous residuals, so probabilities saturated to 0/1 (50/164 →
+  P=0.99998 vs the correct 0.75). Now uses a `DecisionTreeRegressor` (Friedman gradient step).
+- **Q3_K GGUF dequant corrupted weights on import** (PMAT-832) — the 6-bit super-block scales
+  were unpacked as 4-bit (offset −8 instead of −32) with the wrong quant/high-bit layout, so
+  ~252/256 elements were wrong on any Q3_K_S/Q3_K_M model. Ported the correct GGML algorithm.
+- **MoE / `head_dim` dropped on SafeTensors import** (PMAT-833) — `load_model_config_from_json`
+  hardcoded `num_experts`/`num_experts_per_tok`/`moe_intermediate_size`/`head_dim` to `None`,
+  so a MoE model (Mixtral/Qwen3-MoE/DeepSeek) silently converted to a DENSE `.apr`, and an
+  explicit `head_dim` was lost (wrong RoPE/attention dims for Qwen3/Gemma2/Phi3).
+- **ARIMA forecast wrong for `d >= 2`** (PMAT-834, Pillar-1) — reverse-differencing re-seeded
+  every un-differencing pass with `y[n]` instead of the matching intermediate difference, so
+  every forecast with two or more differencing orders overshot (e.g. 165 vs the correct 110).
+- **`apr eval` pass@k inflated under single greedy sampling** (PMAT-835) — the Chen et al.
+  estimator was fed the problem-count/solved-count in its per-sample `(n, c)` slots, so a model
+  solving 50/164 HumanEval reported pass@10=98% / pass@100=100% (correct: 30% for every k under
+  one deterministic sample) in the CI-consumed JSON. Now collapses to pass@1.
+- **User `__metadata__` dropped on every `apr export`** (PMAT-836) — `extract_user_metadata`
+  read a fabricated APR v2 header layout (length @ byte 8, JSON @ 16) instead of the real
+  64-byte header (`metadata_offset` @ 12, JSON @ `metadata_offset`), always returning empty —
+  so the user's SafeTensors `__metadata__` was silently lost on re-export.
+
+Plus the post-power-outage backlog drained and merged (streaming-chat `temperature:0`,
+Llama2 double-BOS, per-request sampling isolation, dense-decode `repeat_penalty`/`top_p`/`top_k`/
+`seed`, APR-v2 reader bounds-check, Blackwell GPU coherence, Gemma1/2 CPU inference, and more).
+
+### Infrastructure
+
+- **Merge queue enabled** on `main` (squash, ALLGREEN) to batch-test and auto-merge PRs and to
+  self-recover from CI-runner outages.
+
+
 ## [0.49.1] - 2026-06-13
 
 ### Changed
