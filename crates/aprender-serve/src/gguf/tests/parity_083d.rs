@@ -2,6 +2,7 @@
 /// PARITY-083d: Split-K for tall-skinny matrices
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_083d_tall_skinny_matrices() {
     println!("PARITY-083d: Tall-Skinny Matrix Handling");
     println!("=========================================");
@@ -68,6 +69,7 @@ fn test_parity_083d_tall_skinny_matrices() {
 /// PARITY-083e: Batch dimension handling
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_083e_batch_dimension() {
     println!("PARITY-083e: Batch Dimension Handling");
     println!("======================================");
@@ -134,6 +136,7 @@ fn test_parity_083e_batch_dimension() {
 /// PARITY-083f: Irregular matrix summary
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_083f_irregular_summary() {
     println!("PARITY-083f: Irregular Matrix Handling Summary");
     println!("================================================");
@@ -169,6 +172,7 @@ fn test_parity_083f_irregular_summary() {
 /// PARITY-084a: Request batching strategy
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_084a_request_batching() {
     println!("PARITY-084a: Request Batching Strategy");
     println!("=======================================");
@@ -229,6 +233,7 @@ fn test_parity_084a_request_batching() {
 /// PARITY-084b: Memory pool management
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_084b_memory_pool() {
     println!("PARITY-084b: Memory Pool Management");
     println!("=====================================");
@@ -290,6 +295,7 @@ fn test_parity_084b_memory_pool() {
 /// PARITY-084c: Request scheduling
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_084c_request_scheduling() {
     println!("PARITY-084c: Request Scheduling");
     println!("================================");
@@ -346,6 +352,7 @@ fn test_parity_084c_request_scheduling() {
 /// PARITY-084d: Streaming response
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_084d_streaming_response() {
     println!("PARITY-084d: Streaming Response");
     println!("================================");
@@ -391,6 +398,7 @@ fn test_parity_084d_streaming_response() {
 /// PARITY-084e: Error handling
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_084e_error_handling() {
     println!("PARITY-084e: Production Error Handling");
     println!("=======================================");

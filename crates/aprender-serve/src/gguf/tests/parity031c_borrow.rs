@@ -1,6 +1,7 @@
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity031c_borrow_and_return() {
     println!("=== PARITY-031c: Borrow and Return ===\n");
 
@@ -40,6 +41,7 @@ fn test_parity031c_borrow_and_return() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity031d_zero_allocation_after_warmup() {
     println!("=== PARITY-031d: Zero Allocation After Warmup ===\n");
 
@@ -87,6 +89,7 @@ fn test_parity031d_zero_allocation_after_warmup() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity031e_memory_usage() {
     println!("=== PARITY-031e: Memory Usage ===\n");
 
@@ -154,6 +157,7 @@ fn test_parity031e_memory_usage() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity032a_async_queue_creation() {
     println!("=== PARITY-032a: Async Queue Creation ===\n");
 
@@ -177,6 +181,7 @@ fn test_parity032a_async_queue_creation() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity032b_submit_and_complete() {
     println!("=== PARITY-032b: Submit and Complete ===\n");
 
@@ -216,6 +221,7 @@ fn test_parity032b_submit_and_complete() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity032c_double_buffering() {
     println!("=== PARITY-032c: Double Buffering ===\n");
 
@@ -257,6 +263,7 @@ fn test_parity032c_double_buffering() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity032d_pipeline_efficiency() {
     println!("=== PARITY-032d: Pipeline Efficiency ===\n");
 
@@ -300,6 +307,7 @@ fn test_parity032d_pipeline_efficiency() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity032e_throughput_improvement() {
     println!("=== PARITY-032e: Throughput Improvement ===\n");
 
@@ -364,6 +372,7 @@ fn test_parity032e_throughput_improvement() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity033a_prefix_cache_creation() {
     println!("=== PARITY-033a: Prefix Cache Creation ===\n");
 
@@ -385,6 +394,7 @@ fn test_parity033a_prefix_cache_creation() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity033b_insert_and_lookup() {
     println!("=== PARITY-033b: Insert and Lookup ===\n");
 

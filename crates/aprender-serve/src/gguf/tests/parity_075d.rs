@@ -2,6 +2,7 @@
 /// PARITY-075d: Softmax with INT8 inputs
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_075d_int8_softmax() {
     println!("PARITY-075d: Softmax with INT8 Inputs");
     println!("=====================================");
@@ -82,6 +83,7 @@ fn test_parity_075d_int8_softmax() {
 /// PARITY-075e: End-to-end INT8 attention flow
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_075e_end_to_end_attention() {
     use crate::quantize::Q8_0Block;
 
@@ -233,6 +235,7 @@ fn test_parity_075e_end_to_end_attention() {
 /// PARITY-075f: Integration summary
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_075f_integration_summary() {
     println!("PARITY-075f: INT8 Attention Summary");
     println!("====================================");
@@ -302,6 +305,7 @@ fn test_parity_075f_integration_summary() {
 /// PARITY-076a: Phase 3 component inventory
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_076a_component_inventory() {
     use crate::cuda::{CudaKernels, KernelType};
     use crate::quantize::Q8_0Block;
@@ -364,6 +368,7 @@ fn test_parity_076a_component_inventory() {
 /// PARITY-076b: Performance projections
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_076b_performance_projections() {
     println!("PARITY-076b: Performance Projections");
     println!("=====================================");

@@ -166,6 +166,8 @@ impl GgufToAprConverter {
             output_norm_bias: gguf.output_norm_bias.clone(),
             lm_head_weight: gguf.lm_head_weight.clone(),
             lm_head_bias: gguf.lm_head_bias.clone(),
+            // PMAT-788: GGUF source always materializes a separate f32 lm_head.
+            lm_head_tied: false,
             q4k_layers: None,
             lm_head_weight_q6k: None,
             lm_head_weight_q4k: None,

@@ -18,6 +18,7 @@ impl AprTransformer {
             output_norm_bias: None,
             lm_head_weight: vec![0.0; hidden_dim * vocab_size],
             lm_head_bias: None,
+            lm_head_tied: false,
             q4k_layers: None,
             lm_head_weight_q6k: None,
             lm_head_weight_q4k: None,
@@ -28,6 +29,28 @@ impl AprTransformer {
     #[must_use]
     pub fn config(&self) -> &AprTransformerConfig {
         &self.config
+    }
+
+    /// PMAT-788: Resolve the f32 LM-head weight slice for the final logits
+    /// projection.
+    ///
+    /// For tied-embedding models (`lm_head_tied == true`) the `lm_head_weight`
+    /// field is intentionally left empty to avoid storing a redundant 519 MiB
+    /// copy of the embedding matrix; in that case the (byte-identical)
+    /// `token_embedding` buffer is returned instead. For untied models this
+    /// returns the model's own separate `lm_head_weight` unchanged, so behavior
+    /// is bit-identical to materializing the duplicate.
+    ///
+    /// The tied path is only taken when no fused-quantized LM head
+    /// (`lm_head_weight_q4k` / `lm_head_weight_q6k`) is present; those quantized
+    /// kernels carry their own weight bytes and are never deduplicated here.
+    #[must_use]
+    pub fn lm_head_f32(&self) -> &[f32] {
+        if self.lm_head_tied && self.lm_head_weight.is_empty() {
+            &self.token_embedding
+        } else {
+            &self.lm_head_weight
+        }
     }
 
     /// Generate tokens autoregressively (simplified version without KV cache)
@@ -79,7 +102,10 @@ impl AprTransformer {
         }
         count += self.output_norm_weight.len();
         count += self.output_norm_bias.as_ref().map_or(0, Vec::len);
-        count += self.lm_head_weight.len();
+        // PMAT-788: count the logical LM-head size. When tied, `lm_head_weight`
+        // is empty (deduplicated against the embedding) but the model still has
+        // a logical LM-head of `token_embedding.len()` parameters.
+        count += self.lm_head_f32().len();
         count += self.lm_head_bias.as_ref().map_or(0, Vec::len);
         count
     }

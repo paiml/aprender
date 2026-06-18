@@ -52,6 +52,12 @@ impl SafetensorsToAprConverter {
         source: &S,
         config: &SafetensorsConfig,
     ) -> Result<ValidatedAprTransformer> {
+        // F-STRUCT-001 (PMAT-756): fail closed on cross-tensor dimension
+        // inconsistencies (vocab/hidden mismatch) BEFORE assembly. The SafeTensors
+        // format does not enforce these — safetensors-lib / Transformers / Ollama
+        // load such artifacts and run garbage; apr rejects them at load.
+        Self::validate_structural_consistency(source)?;
+
         let apr_config = Self::build_apr_config(config)?;
         Self::log_phase2_warning(config);
         Self::log_hybrid_attention_info(config);
@@ -67,7 +73,7 @@ impl SafetensorsToAprConverter {
             &format!("{model_prefix}.norm.weight"),
             "output_norm.weight",
         )?;
-        let lm_head_weight = Self::resolve_lm_head_weight(
+        let (lm_head_weight, lm_head_tied) = Self::resolve_lm_head_weight(
             source,
             config,
             &token_embedding,
@@ -84,12 +90,35 @@ impl SafetensorsToAprConverter {
             output_norm_bias: None,
             lm_head_weight,
             lm_head_bias: None,
+            lm_head_tied,
             q4k_layers: None,
             lm_head_weight_q6k: None,
             lm_head_weight_q4k: None,
         };
 
         ValidatedAprTransformer::validate(transformer).map_err(Into::into)
+    }
+
+    /// F-STRUCT-001 (PMAT-756): cross-tensor structural consistency gate.
+    ///
+    /// Collects the declared shapes of the model's tensors and runs
+    /// [`validate_cross_tensor_structure`], which rejects a model whose embedding
+    /// and output head disagree on vocab size, or whose embedding and attention
+    /// disagree on hidden dim — structural garbage the SafeTensors container
+    /// format does not catch (and which `safetensors`-lib / Transformers / Ollama
+    /// load silently). No false positives: the gate only fires when it positively
+    /// identifies disagreeing tensors.
+    fn validate_structural_consistency<S: TensorSource>(source: &S) -> Result<()> {
+        let names = source.tensor_names();
+        let shapes: Vec<(String, Vec<usize>)> = names
+            .iter()
+            .filter_map(|n| source.tensor_shape(n).map(|s| ((*n).to_string(), s)))
+            .collect();
+        let view: Vec<(&str, &[usize])> = shapes
+            .iter()
+            .map(|(n, s)| (n.as_str(), s.as_slice()))
+            .collect();
+        crate::safetensors::validation::validate_cross_tensor_structure(view)
     }
 
     /// Build `AprTransformerConfig` from SafeTensors config.json.
@@ -170,26 +199,38 @@ impl SafetensorsToAprConverter {
     /// F-GT-002 FIX: Check `tie_word_embeddings` config FIRST, not just tensor
     /// existence — HuggingFace may store a placeholder all-zero `lm_head.weight`
     /// when tying is in effect.
+    ///
+    /// PMAT-788: returns `(lm_head_weight, tied)`. When the LM head is tied to
+    /// the token embedding the weight buffer is byte-identical to
+    /// `token_embedding` (`transpose_weight` is a documented no-op, PMAT-095), so
+    /// instead of materializing a redundant full-size copy (≈519 MiB on a 0.5B
+    /// model) we return an EMPTY `Vec` and `tied = true`. The logits matmul then
+    /// sources `token_embedding` directly via `AprTransformer::lm_head_f32()`,
+    /// producing bit-identical output. An UNtied model returns its own separate
+    /// `lm_head` weights with `tied = false` and is completely unaffected.
     fn resolve_lm_head_weight<S: TensorSource>(
         source: &S,
         config: &SafetensorsConfig,
         token_embedding: &[f32],
         vocab_size: usize,
         hidden_dim: usize,
-    ) -> Result<Vec<f32>> {
+    ) -> Result<(Vec<f32>, bool)> {
         if config.tie_word_embeddings.unwrap_or(false) {
-            return Ok(Self::transpose_weight(token_embedding, vocab_size, hidden_dim));
+            // Tied: do not duplicate the embedding — `lm_head_f32()` reuses it.
+            debug_assert_eq!(token_embedding.len(), vocab_size * hidden_dim);
+            return Ok((Vec::new(), true));
         }
         if Self::has_tensor_with_fallback_generic(source, "lm_head.weight", "output.weight") {
             let raw =
                 Self::get_tensor_with_fallback_generic(source, "lm_head.weight", "output.weight")?;
-            // PMAT-787: untied lm_head — move the owned buffer (transpose is a no-op).
-            // The tied branches above must clone because `token_embedding` is
-            // borrowed and reused as a separate owned field.
-            return Ok(Self::transpose_weight_owned(raw));
+            // Untied: a genuine separate LM head — keep its own weights. The HF
+            // [out, in] row-major layout is matvec-optimal as-is (PMAT-095:
+            // `transpose_weight` is a no-op), so MOVE the already-owned buffer
+            // (PMAT-787 `transpose_weight_owned`) rather than cloning it.
+            return Ok((Self::transpose_weight_owned(raw), false));
         }
-        // Fallback: assume tied if no lm_head tensor exists
-        Ok(Self::transpose_weight(token_embedding, vocab_size, hidden_dim))
+        // Fallback: no lm_head tensor exists → treat as tied to the embedding.
+        Ok((Vec::new(), true))
     }
 
     /// Extract all transformer layers, dispatching to the linear (Gated Delta

@@ -2,6 +2,7 @@
 /// PARITY-053d: Document concurrent batch processing
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity053d_concurrent_processing() {
     println!("PARITY-053d: Concurrent Batch Processing");
     println!("========================================");
@@ -36,6 +37,7 @@ fn test_parity053d_concurrent_processing() {
 /// PARITY-053e: Document BatchProcessResult
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity053e_batch_process_result() {
     use crate::api::BatchProcessResult;
 
@@ -87,6 +89,7 @@ fn test_parity053e_batch_process_result() {
 /// PARITY-053f: Summary and integration status
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity053f_summary() {
     println!("PARITY-053f: Batch Processor Implementation Summary");
     println!("===================================================");
@@ -139,6 +142,7 @@ fn test_parity053f_summary() {
 /// PARITY-054a: Document handler batch path integration
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity054a_handler_batch_path() {
     println!("PARITY-054a: Handler Batch Path Integration");
     println!("===========================================");
@@ -167,6 +171,7 @@ fn test_parity054a_handler_batch_path() {
 /// PARITY-054b: Document response format changes
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity054b_response_format() {
     println!("PARITY-054b: Response Format Changes");
     println!("====================================");
@@ -199,6 +204,7 @@ fn test_parity054b_response_format() {
 /// PARITY-054c: Document backward compatibility
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity054c_backward_compatibility() {
     println!("PARITY-054c: Backward Compatibility");
     println!("===================================");
@@ -226,6 +232,7 @@ fn test_parity054c_backward_compatibility() {
 /// PARITY-054d: Document batch request structure
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity054d_batch_request_structure() {
     println!("PARITY-054d: Batch Request Structure");
     println!("====================================");
@@ -258,6 +265,7 @@ fn test_parity054d_batch_request_structure() {
 /// PARITY-054e: Document error handling
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity054e_error_handling() {
     println!("PARITY-054e: Error Handling");
     println!("===========================");
@@ -288,6 +296,7 @@ fn test_parity054e_error_handling() {
 /// PARITY-054f: Summary and integration complete
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity054f_summary() {
     println!("PARITY-054f: Handler Batch Integration Summary");
     println!("==============================================");

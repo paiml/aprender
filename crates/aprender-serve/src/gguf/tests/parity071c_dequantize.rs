@@ -2,6 +2,7 @@
 /// PARITY-071c: Q8_0Block::dequantize() function
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity071c_dequantize_function() {
     use crate::quantize::Q8_0Block;
 
@@ -52,6 +53,7 @@ fn test_parity071c_dequantize_function() {
 /// PARITY-071d: Quantization error analysis
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity071d_error_analysis() {
     use crate::quantize::Q8_0Block;
 
@@ -99,6 +101,7 @@ fn test_parity071d_error_analysis() {
 /// PARITY-071e: quantize_to_q8_blocks() function
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity071e_batch_quantization() {
     use crate::quantize::{dequantize_q8_blocks, quantize_to_q8_blocks};
 
@@ -149,6 +152,7 @@ fn test_parity071e_batch_quantization() {
 /// PARITY-071f: Integration summary
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity071f_integration_summary() {
     use crate::quantize::Q8_0Block;
 
@@ -205,6 +209,7 @@ fn test_parity071f_integration_summary() {
 /// PARITY-072a: Fused kernel signature and purpose
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity072a_kernel_signature() {
     println!("PARITY-072a: Fused Q4xQ8 Kernel Signature");
     println!("==========================================");
@@ -241,6 +246,7 @@ fn test_parity072a_kernel_signature() {
 /// PARITY-072b: Verify fused kernel correctness
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity072b_correctness() {
     use crate::quantize::{fused_q4k_dot, fused_q4k_q8_dot, quantize_to_q8_blocks};
 
@@ -311,6 +317,7 @@ fn test_parity072b_correctness() {
 /// PARITY-072c: Memory traffic analysis
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity072c_memory_analysis() {
     println!("PARITY-072c: Memory Traffic Analysis");
     println!("====================================");
@@ -376,6 +383,7 @@ fn test_parity072c_memory_analysis() {
 /// PARITY-072d: Validation error handling
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity072d_validation() {
     use crate::quantize::{fused_q4k_q8_dot, Q8_0Block};
 

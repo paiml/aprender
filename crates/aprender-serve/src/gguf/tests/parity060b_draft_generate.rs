@@ -2,6 +2,7 @@
 /// PARITY-060b: Self-speculative draft generation
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity060b_draft_generation() {
     println!("PARITY-060b: Self-Speculative Draft Generation");
     println!("==============================================");
@@ -33,6 +34,7 @@ fn test_parity060b_draft_generation() {
 /// PARITY-060c: Verification with batch forward
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity060c_batch_verification() {
     println!("PARITY-060c: Batch Verification");
     println!("================================");
@@ -64,6 +66,7 @@ fn test_parity060c_batch_verification() {
 /// PARITY-060d: Full generation loop
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity060d_generation_loop() {
     println!("PARITY-060d: Full Generation Loop");
     println!("=================================");
@@ -109,6 +112,7 @@ fn test_parity060d_generation_loop() {
 /// PARITY-060e: Expected performance
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity060e_expected_performance() {
     println!("PARITY-060e: Expected Performance");
     println!("=================================");
@@ -152,6 +156,7 @@ fn test_parity060e_expected_performance() {
 /// PARITY-060f: Summary
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity060f_summary() {
     println!("PARITY-060f: generate_with_speculative() Summary");
     println!("================================================");
@@ -205,6 +210,7 @@ fn test_parity060f_summary() {
 /// PARITY-061a: Handler path selection
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity061a_handler_path_selection() {
     println!("PARITY-061a: Handler Path Selection");
     println!("===================================");
@@ -237,6 +243,7 @@ fn test_parity061a_handler_path_selection() {
 /// PARITY-061b: Request speculative field
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity061b_request_speculative_field() {
     println!("PARITY-061b: Request Speculative Field");
     println!("======================================");
@@ -269,6 +276,7 @@ fn test_parity061b_request_speculative_field() {
 /// PARITY-061c: Response speculative stats
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity061c_response_speculative_stats() {
     println!("PARITY-061c: Response Speculative Stats");
     println!("=======================================");
@@ -314,6 +322,7 @@ fn test_parity061c_response_speculative_stats() {
 /// PARITY-061d: Handler implementation
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity061d_handler_implementation() {
     println!("PARITY-061d: Handler Implementation");
     println!("===================================");
@@ -353,6 +362,7 @@ fn test_parity061d_handler_implementation() {
 /// PARITY-061e: Combined modes
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity061e_combined_modes() {
     println!("PARITY-061e: Combined Modes");
     println!("===========================");
@@ -393,6 +403,7 @@ fn test_parity061e_combined_modes() {
 /// PARITY-061f: Summary
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity061f_summary() {
     println!("PARITY-061f: Handler Speculative Path Summary");
     println!("=============================================");
