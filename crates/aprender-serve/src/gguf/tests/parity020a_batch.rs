@@ -13,6 +13,7 @@
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity020a_batch_generation_stats() {
     // PARITY-020a: Test BatchGenerationStats struct and batch_stats() method
     //
@@ -60,6 +61,7 @@ fn test_parity020a_batch_generation_stats() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity020b_batch_generate_requires_warmup() {
     // PARITY-020b: Test that batch_generate_gpu requires warmup
     //
@@ -107,6 +109,7 @@ fn test_parity020b_batch_generate_requires_warmup() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity020c_generation_config() {
     // PARITY-020c: Test QuantizedGenerateConfig for batch generation
     //
@@ -163,6 +166,7 @@ fn test_parity020c_generation_config() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity020d_batch_throughput_projection() {
     // PARITY-020d: Project batch throughput improvements
     //
@@ -239,6 +243,7 @@ fn test_parity020d_batch_throughput_projection() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity020e_integration_checklist() {
     // PARITY-020e: Verify production integration status
     //
@@ -337,6 +342,7 @@ fn test_parity020e_integration_checklist() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity021a_gpu_batch_threshold() {
     // PARITY-021a: Verify GPU batch threshold constant
     //
@@ -381,6 +387,7 @@ fn test_parity021a_gpu_batch_threshold() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity021b_forward_batch_structure() {
     // PARITY-021b: Verify forward_batch_with_gpu_ffn structure
     //

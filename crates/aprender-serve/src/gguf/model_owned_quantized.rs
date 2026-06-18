@@ -22,6 +22,7 @@ mod tests {
             eps: 1e-5,
             rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
             bos_token_id: None,
             eos_token_id: None,
         };
@@ -80,6 +81,7 @@ mod tests {
             eps: 1e-5,
             rope_type: 1,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
             bos_token_id: None,
             eos_token_id: None,
         };
@@ -129,6 +131,7 @@ mod tests {
             eps: 1e-5,
             rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
             bos_token_id: None,
             eos_token_id: None,
         };
@@ -200,6 +203,7 @@ mod tests {
             eps: 1e-5,
             rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
             bos_token_id: Some(1),
             eos_token_id: Some(2),
         };

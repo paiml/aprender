@@ -13,6 +13,7 @@
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity035a_chunked_prefill_creation() {
     println!("=== PARITY-035a: Chunked Prefill Creation ===\n");
 
@@ -36,6 +37,7 @@ fn test_parity035a_chunked_prefill_creation() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity035b_chunk_iteration() {
     println!("=== PARITY-035b: Chunk Iteration ===\n");
 
@@ -66,6 +68,7 @@ fn test_parity035b_chunk_iteration() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity035c_progress_tracking() {
     println!("=== PARITY-035c: Progress Tracking ===\n");
 
@@ -114,6 +117,7 @@ fn test_parity035c_progress_tracking() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity035d_ttft_improvement() {
     println!("=== PARITY-035d: TTFT Improvement ===\n");
 
@@ -170,6 +174,7 @@ fn test_parity035d_ttft_improvement() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity035e_stats_and_throughput() {
     println!("=== PARITY-035e: Stats and Throughput ===\n");
 

@@ -2,6 +2,7 @@
 /// PARITY-027e: Combined GPU optimization coverage
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity027e_combined_optimization_coverage() {
     println!("=== PARITY-027e: Combined GPU Optimization Coverage ===\n");
 
@@ -53,6 +54,7 @@ fn test_parity027e_combined_optimization_coverage() {
 /// PARITY-028a: Verify SlotState enum structure
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity028a_slot_state_structure() {
     println!("=== PARITY-028a: SlotState Enum ===\n");
 
@@ -103,6 +105,7 @@ fn test_parity028a_slot_state_structure() {
 /// PARITY-028b: ContinuousBatchScheduler creation and slot management
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity028b_scheduler_creation() {
     println!("=== PARITY-028b: Scheduler Creation ===\n");
 
@@ -141,6 +144,7 @@ fn test_parity028b_scheduler_creation() {
 /// PARITY-028c: Request submission and slot allocation
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity028c_request_submission() {
     println!("=== PARITY-028c: Request Submission ===\n");
 
@@ -187,6 +191,7 @@ fn test_parity028c_request_submission() {
 /// PARITY-028d: Request completion and slot recycling
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity028d_completion_and_recycling() {
     println!("=== PARITY-028d: Completion and Recycling ===\n");
 
@@ -236,6 +241,7 @@ fn test_parity028d_completion_and_recycling() {
 /// PARITY-028e: Throughput analysis with continuous batching
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity028e_continuous_batching_throughput() {
     println!("=== PARITY-028e: Continuous Batching Throughput ===\n");
 
@@ -295,6 +301,7 @@ fn test_parity028e_continuous_batching_throughput() {
 /// PARITY-029a: SpeculativeConfig default values
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity029a_speculative_config() {
     println!("=== PARITY-029a: Speculative Config ===\n");
 
@@ -327,6 +334,7 @@ fn test_parity029a_speculative_config() {
 /// PARITY-029b: SpeculativeDecoder creation and statistics
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity029b_decoder_creation() {
     println!("=== PARITY-029b: Decoder Creation ===\n");
 
@@ -363,6 +371,7 @@ fn test_parity029b_decoder_creation() {
 /// PARITY-029c: Draft verification with greedy decoding
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity029c_greedy_verification() {
     println!("=== PARITY-029c: Greedy Verification ===\n");
 

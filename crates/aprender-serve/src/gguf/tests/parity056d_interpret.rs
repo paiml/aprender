@@ -2,6 +2,7 @@
 /// PARITY-056d: Interpret benchmark output
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity056d_interpret_output() {
     println!("PARITY-056d: Interpret Benchmark Output");
     println!("=======================================");
@@ -49,6 +50,7 @@ fn test_parity056d_interpret_output() {
 /// PARITY-056e: Results recording template
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity056e_results_template() {
     println!("PARITY-056e: Results Recording Template");
     println!("=======================================");
@@ -80,6 +82,7 @@ fn test_parity056e_results_template() {
 /// PARITY-056f: Summary and validation criteria
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity056f_summary() {
     println!("PARITY-056f: Benchmark Execution Summary");
     println!("========================================");
@@ -135,6 +138,7 @@ fn test_parity056f_summary() {
 /// PARITY-057a: Live benchmark setup
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity057a_live_benchmark_setup() {
     println!("PARITY-057a: Live Benchmark Setup");
     println!("=================================");
@@ -164,6 +168,7 @@ fn test_parity057a_live_benchmark_setup() {
 /// PARITY-057b: Benchmark payload
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity057b_benchmark_payload() {
     println!("PARITY-057b: Benchmark Payload");
     println!("==============================");
@@ -192,6 +197,7 @@ fn test_parity057b_benchmark_payload() {
 /// PARITY-057c: Concurrency sweep results
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity057c_concurrency_sweep() {
     println!("PARITY-057c: Concurrency Sweep Results");
     println!("======================================");
@@ -235,6 +241,7 @@ fn test_parity057c_concurrency_sweep() {
 /// PARITY-057d: M4 parity validation
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity057d_m4_parity_validation() {
     println!("PARITY-057d: M4 Parity Validation");
     println!("=================================");
@@ -269,6 +276,7 @@ fn test_parity057d_m4_parity_validation() {
 /// PARITY-057e: Scaling efficiency
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity057e_scaling_efficiency() {
     println!("PARITY-057e: Scaling Efficiency Analysis");
     println!("========================================");
@@ -307,6 +315,7 @@ fn test_parity057e_scaling_efficiency() {
 /// PARITY-057f: Summary and conclusions
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity057f_summary() {
     println!("PARITY-057f: Live Benchmark Summary");
     println!("===================================");
@@ -356,6 +365,7 @@ fn test_parity057f_summary() {
 /// PARITY-058a: Implementation overview
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity058a_implementation_overview() {
     println!("PARITY-058a: Batch Inference Implementation Overview");
     println!("====================================================");
@@ -384,6 +394,7 @@ fn test_parity058a_implementation_overview() {
 /// PARITY-058b: Architecture summary
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity058b_architecture_summary() {
     println!("PARITY-058b: Batch Inference Architecture");
     println!("=========================================");
