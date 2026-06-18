@@ -70,6 +70,12 @@ impl LlmDriver for RealizarDriver {
             max_tokens: request.max_tokens as usize,
             temperature: request.temperature,
             top_k: 0,
+            // PMAT-823: new sampling fields default to greedy/disabled so this
+            // agent driver's behavior is unchanged (it only exposes temperature).
+            top_p: None,
+            seed: 42,
+            repeat_penalty: 1.0,
+            repeat_last_n: 64,
             // PMAT-156/158: Disable GPU only for APR models (wgpu shader bug).
             // GGUF models work fine with CUDA — keep GPU enabled for them.
             no_gpu: self.model_path.extension().is_some_and(|e| e == "apr"),

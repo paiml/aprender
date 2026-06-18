@@ -443,3 +443,128 @@
             PathBuf::from("/path/with spaces/model.gguf")
         );
     }
+
+    // =========================================================================
+    // PMAT-823: CLI run forwards ALL sampling params to the generation config.
+    //
+    // These are PLUMBING-level, sampler-INDEPENDENT falsifiers: they assert the
+    // `QuantizedGenerateConfig` built from an `InferenceConfig` carries every
+    // sampling param the user set, instead of dropping it to the greedy default.
+    //
+    // RED-on-bug: before the fix, `apply_sampling_to` did not exist and the
+    // gen_config build copied only temperature+top_k, so top_p/seed/
+    // repeat_penalty/repeat_last_n stayed at greedy defaults (1.0/42/1.0/64) and
+    // these per-param assertions would fail. GREEN: each value carries through.
+    // =========================================================================
+
+    #[test]
+    fn test_pmat823_inference_config_has_all_sampling_builders() {
+        // The struct must expose builders for EVERY sampling param.
+        let config = InferenceConfig::new("/m.gguf")
+            .with_temperature(0.7)
+            .with_top_k(40)
+            .with_top_p(Some(0.9))
+            .with_seed(42)
+            .with_repeat_penalty(1.3)
+            .with_repeat_last_n(128);
+
+        assert!((config.temperature - 0.7).abs() < f32::EPSILON);
+        assert_eq!(config.top_k, 40);
+        assert_eq!(config.top_p, Some(0.9));
+        assert_eq!(config.seed, 42);
+        assert!((config.repeat_penalty - 1.3).abs() < f32::EPSILON);
+        assert_eq!(config.repeat_last_n, 128);
+    }
+
+    #[test]
+    fn test_pmat823_apply_sampling_forwards_every_param() {
+        // RunOptions-equivalent: a user passed non-greedy sampling flags.
+        let config = InferenceConfig::new("/m.gguf")
+            .with_temperature(0.7)
+            .with_top_k(40)
+            .with_top_p(Some(0.9))
+            .with_seed(42)
+            .with_repeat_penalty(1.3)
+            .with_repeat_last_n(128);
+
+        // Build the actual decode-loop config exactly as the production paths do.
+        let mut gen_config = crate::gguf::QuantizedGenerateConfig {
+            max_tokens: config.max_tokens,
+            ..Default::default()
+        };
+        config.apply_sampling_to(&mut gen_config);
+
+        // Per-param: each set value must carry into the generation config.
+        // RED-on-bug values (greedy defaults) are 0.0 / 1 / 1.0 / 42 / 1.0 / 64.
+        assert!(
+            (gen_config.temperature - 0.7).abs() < f32::EPSILON,
+            "temperature dropped: got {}",
+            gen_config.temperature
+        );
+        assert_eq!(gen_config.top_k, 40, "top_k dropped");
+        assert!(
+            (gen_config.top_p - 0.9).abs() < f32::EPSILON,
+            "top_p dropped: got {} (greedy default is 1.0)",
+            gen_config.top_p
+        );
+        assert_eq!(
+            gen_config.seed, 42,
+            "seed dropped (greedy default is 42 — use a non-default below)"
+        );
+        assert!(
+            (gen_config.repeat_penalty - 1.3).abs() < f32::EPSILON,
+            "repeat_penalty dropped: got {} (greedy default is 1.0)",
+            gen_config.repeat_penalty
+        );
+        assert_eq!(
+            gen_config.repeat_last_n, 128,
+            "repeat_last_n dropped (greedy default is 64)"
+        );
+    }
+
+    #[test]
+    fn test_pmat823_seed_forwarded_distinct_from_default() {
+        // `seed` defaults to 42 on BOTH sides, so use a distinct value to prove
+        // the seed is actually threaded and not merely coinciding with default.
+        let config = InferenceConfig::new("/m.gguf").with_seed(123_456_789);
+        let mut gen_config = crate::gguf::QuantizedGenerateConfig::default();
+        config.apply_sampling_to(&mut gen_config);
+        assert_eq!(
+            gen_config.seed, 123_456_789,
+            "seed not forwarded to generation config"
+        );
+    }
+
+    #[test]
+    fn test_pmat823_top_p_none_maps_to_disabled_threshold() {
+        // top_p None (flag not passed) must map to the disabled threshold 1.0,
+        // matching QuantizedGenerateConfig::default().top_p.
+        let config = InferenceConfig::new("/m.gguf");
+        assert_eq!(config.top_p, None);
+        let mut gen_config = crate::gguf::QuantizedGenerateConfig::default();
+        config.apply_sampling_to(&mut gen_config);
+        assert!((gen_config.top_p - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_pmat823_default_config_is_greedy_no_regression() {
+        // CRITICAL no-regression: a DEFAULT InferenceConfig (user passes no
+        // sampling flags) must forward to the SAME greedy generation config as
+        // before the fix — byte-for-byte on every sampling field.
+        let config = InferenceConfig::new("/m.gguf");
+
+        let mut applied = crate::gguf::QuantizedGenerateConfig::default();
+        config.apply_sampling_to(&mut applied);
+
+        let greedy = crate::gguf::QuantizedGenerateConfig::default();
+        assert!((applied.temperature - greedy.temperature).abs() < f32::EPSILON);
+        assert_eq!(applied.top_k, greedy.top_k);
+        assert!((applied.top_p - greedy.top_p).abs() < f32::EPSILON);
+        assert_eq!(applied.seed, greedy.seed);
+        assert!((applied.repeat_penalty - greedy.repeat_penalty).abs() < f32::EPSILON);
+        assert_eq!(applied.repeat_last_n, greedy.repeat_last_n);
+
+        // Concretely: still greedy argmax (temperature 0.0, top_k 1).
+        assert!((applied.temperature - 0.0).abs() < f32::EPSILON);
+        assert_eq!(applied.top_k, 1);
+    }

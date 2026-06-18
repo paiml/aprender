@@ -498,14 +498,14 @@ fn try_apr_wgpu_inference(
     for t in &extra {
         if !stop_toks.contains(t) { stop_toks.push(*t); }
     }
-    let gen_config = crate::gguf::QuantizedGenerateConfig {
+    let mut gen_config = crate::gguf::QuantizedGenerateConfig {
         max_tokens: config.max_tokens,
-        temperature: 0.0,
-        top_k: 1,
         stop_tokens: stop_toks,
-        trace: false,
-            ..Default::default()
+        trace: config.trace,
+        ..Default::default()
     };
+    // PMAT-823: APR wgpu path — forward all sampling params (was hardcoded greedy).
+    config.apply_sampling_to(&mut gen_config);
 
     // Dequantize and upload weights
     let weights = match wgpu_adapter::dequant_model_weights(&model) {
@@ -807,14 +807,17 @@ fn try_apr_cuda_inference(
         &config.stop_tokens,
         &config.model_path,
     );
-    let gen_config = QuantizedGenerateConfig {
+    let mut gen_config = QuantizedGenerateConfig {
         max_tokens: config.max_tokens,
-        temperature: 0.0,
-        top_k: 1,
         stop_tokens,
-        trace: false,
-            ..Default::default()
+        trace: config.trace,
+        ..Default::default()
     };
+    // PMAT-823: APR CUDA path — forward all sampling params (was hardcoded
+    // greedy). The F2 validation probe below clones this then overrides
+    // temperature/top_k/max_tokens for a greedy argmax probe, so the probe is
+    // unaffected.
+    config.apply_sampling_to(&mut gen_config);
 
     eprintln!("[GH-480] F2 validation starting...");
     if !validate_gpu_first_token(&mut cuda_model, &gen_config, input_tokens) {
@@ -915,14 +918,15 @@ fn run_apr_quantized_cpu_inference(
         &config.model_path,
     );
 
-    let gen_config = QuantizedGenerateConfig {
+    let mut gen_config = QuantizedGenerateConfig {
         max_tokens: config.max_tokens,
-        temperature: config.temperature,
-        top_k: config.top_k,
         stop_tokens,
         trace: config.trace,
-            ..Default::default()
+        ..Default::default()
     };
+    // PMAT-823: APR quantized CPU path — forward all sampling params (was only
+    // temperature+top_k; top_p/seed/repeat_penalty/repeat_last_n were dropped).
+    config.apply_sampling_to(&mut gen_config);
 
     let infer_start = Instant::now();
     let tokens = model.generate_with_cache(input_tokens, &gen_config)?;

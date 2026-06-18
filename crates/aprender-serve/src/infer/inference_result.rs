@@ -207,14 +207,17 @@ fn run_gguf_inference(
         }
     }
 
-    let gen_config = QuantizedGenerateConfig {
+    let mut gen_config = QuantizedGenerateConfig {
         max_tokens: config.max_tokens,
-        temperature: config.temperature,
-        top_k: config.top_k,
         stop_tokens,
         trace: config.trace,
-            ..Default::default()
+        ..Default::default()
     };
+    // PMAT-823: forward EVERY sampling param (temperature/top_k/top_p/seed/
+    // repeat_penalty/repeat_last_n) — previously only temperature+top_k were
+    // copied and the rest silently fell to greedy defaults, so the GGUF/GPU
+    // decode path ran argmax regardless of `apr run` sampling flags.
+    config.apply_sampling_to(&mut gen_config);
 
     // M32c.2.2.2.1.3: dispatch qwen3_moe to the parallel MoE inference path
     // (M32c.2.2.2.1.2's run_qwen3_moe_generate). The dense path goes through
