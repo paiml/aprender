@@ -10,7 +10,7 @@ use colored::Colorize;
 use std::path::Path;
 use std::time::Instant;
 
-use super::code_eval::{compute_pass_at_k, emit_eval_results, run_multisample_loop};
+use super::code_eval::{emit_eval_results, run_multisample_loop};
 
 // --- HumanEval benchmark evaluation (R-020, survey #62/#69) ---
 
@@ -1403,7 +1403,14 @@ pub(super) fn print_humaneval_results(
 
     println!();
     for &k in k_values {
-        let rate = compute_pass_at_k(total, passed, k);
+        // Single greedy sample per problem ⇒ pass@k = pass@1 = fraction of problems solved,
+        // for every k. compute_pass_at_k(total, passed, k) wrongly fed #problems/#solved into
+        // the per-sample (n, c) slots, inflating pass@10/pass@100 (see compute_multisample_pass_at_k).
+        let rate = if total == 0 {
+            0.0
+        } else {
+            passed as f64 / total as f64
+        };
         output::kv(&format!("pass@{k}"), format!("{:.1}%", rate * 100.0));
     }
     output::kv("Time", format!("{elapsed:.2}s"));

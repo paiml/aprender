@@ -317,6 +317,8 @@ fn test_chat_message_user() {
         role: "user".to_string(),
         content: "Hello!".to_string(),
         name: None,
+
+        ..Default::default()
     };
 
     let json = serde_json::to_string(&msg).unwrap();
@@ -330,6 +332,8 @@ fn test_chat_message_assistant() {
         role: "assistant".to_string(),
         content: "Hi there!".to_string(),
         name: Some("Claude".to_string()),
+
+        ..Default::default()
     };
 
     assert_eq!(msg.role, "assistant");
@@ -341,6 +345,8 @@ fn test_chat_message_system() {
         role: "system".to_string(),
         content: "You are a helpful assistant.".to_string(),
         name: None,
+
+        ..Default::default()
     };
 
     assert_eq!(msg.role, "system");
@@ -358,6 +364,8 @@ proptest! {
             role: role.clone(),
             content: content.clone(),
             name: None,
+
+            ..Default::default()
         };
         let json = serde_json::to_string(&msg).unwrap();
         let parsed: ChatMessage = serde_json::from_str(&json).unwrap();
@@ -385,6 +393,8 @@ fn test_chat_completion_request_full() {
             role: "user".to_string(),
             content: "Hello".to_string(),
             name: None,
+
+            ..Default::default()
         }],
         max_tokens: Some(100),
         temperature: Some(0.7),
@@ -397,6 +407,8 @@ fn test_chat_completion_request_full() {
         stream: false,
         stop: None,
         user: None,
+
+        ..Default::default()
     };
 
     let json = serde_json::to_string(&req).unwrap();
@@ -411,6 +423,8 @@ fn test_chat_choice() {
             role: "assistant".to_string(),
             content: "Response".to_string(),
             name: None,
+
+            ..Default::default()
         },
         finish_reason: "stop".to_string(),
     };
@@ -432,6 +446,8 @@ fn test_chat_completion_response() {
                 role: "assistant".to_string(),
                 content: "Hello!".to_string(),
                 name: None,
+
+                ..Default::default()
             },
             finish_reason: "stop".to_string(),
         }],
@@ -724,6 +740,8 @@ fn test_context_window_manager_default() {
         role: "user".to_string(),
         content: "Hello".to_string(),
         name: None,
+
+        ..Default::default()
     }];
 
     assert!(!manager.needs_truncation(&messages));
@@ -739,6 +757,8 @@ fn test_context_window_manager_truncate() {
             role: "user".to_string(),
             content: format!("Message {} with some content that takes tokens", i),
             name: None,
+
+            ..Default::default()
         })
         .collect();
 
@@ -756,6 +776,8 @@ fn test_context_window_estimate_tokens() {
         role: "user".to_string(),
         content: "Hello world".to_string(),
         name: None,
+
+        ..Default::default()
     }];
 
     let tokens = manager.estimate_total_tokens(&messages);
@@ -816,6 +838,8 @@ fn test_empty_messages_chat() {
         stream: false,
         stop: None,
         user: None,
+
+        ..Default::default()
     };
 
     assert!(req.messages.is_empty());
@@ -827,6 +851,8 @@ fn test_unicode_content() {
         role: "user".to_string(),
         content: "Hello \u{1F600} \u{4E2D}\u{6587} \u{0410}\u{0411}\u{0412}".to_string(),
         name: None,
+
+        ..Default::default()
     };
 
     let json = serde_json::to_string(&msg).unwrap();
@@ -943,21 +969,29 @@ fn test_chat_conversation() {
             role: "system".to_string(),
             content: "You are helpful.".to_string(),
             name: None,
+
+            ..Default::default()
         },
         ChatMessage {
             role: "user".to_string(),
             content: "Hello".to_string(),
             name: None,
+
+            ..Default::default()
         },
         ChatMessage {
             role: "assistant".to_string(),
             content: "Hi there!".to_string(),
             name: None,
+
+            ..Default::default()
         },
         ChatMessage {
             role: "user".to_string(),
             content: "How are you?".to_string(),
             name: None,
+
+            ..Default::default()
         },
     ];
 
@@ -975,6 +1009,8 @@ fn test_chat_conversation() {
         stream: false,
         stop: None,
         user: None,
+
+        ..Default::default()
     };
 
     assert_eq!(req.messages.len(), 4);

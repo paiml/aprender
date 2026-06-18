@@ -229,6 +229,8 @@ fn test_chat_choice_serde() {
             role: "assistant".to_string(),
             content: "Hello!".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         finish_reason: "stop".to_string(),
     };

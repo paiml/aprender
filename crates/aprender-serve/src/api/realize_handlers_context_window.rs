@@ -82,6 +82,8 @@
             role: "user".to_string(),
             content: "Hello world".to_string(), // ~11 chars = ~3 tokens + 10 overhead = ~13
             name: None,
+        
+            ..Default::default()
         }];
         let tokens = manager.estimate_total_tokens(&messages);
         assert!(tokens > 0);
@@ -95,6 +97,8 @@
             role: "user".to_string(),
             content: "Short message".to_string(),
             name: None,
+        
+            ..Default::default()
         }];
         assert!(!manager.needs_truncation(&messages));
     }
@@ -108,6 +112,8 @@
             role: "user".to_string(),
             content: long_content,
             name: None,
+        
+            ..Default::default()
         }];
         assert!(manager.needs_truncation(&messages));
     }
@@ -119,6 +125,8 @@
             role: "user".to_string(),
             content: "Hello".to_string(),
             name: None,
+        
+            ..Default::default()
         }];
         let (result, truncated) = manager.truncate_messages(&messages);
         assert!(!truncated);
@@ -134,6 +142,8 @@
                 role: "user".to_string(),
                 content: format!("Message {} with some longer content here", i),
                 name: None,
+            
+                ..Default::default()
             })
             .collect();
         let (result, truncated) = manager.truncate_messages(&messages);
@@ -154,21 +164,29 @@
                 role: "system".to_string(),
                 content: "You are helpful".to_string(),
                 name: None,
+            
+                ..Default::default()
             },
             ChatMessage {
                 role: "user".to_string(),
                 content: "Hello ".repeat(200), // Very long message
                 name: None,
+            
+                ..Default::default()
             },
             ChatMessage {
                 role: "assistant".to_string(),
                 content: "Hi there".to_string(),
                 name: None,
+            
+                ..Default::default()
             },
             ChatMessage {
                 role: "user".to_string(),
                 content: "Another ".repeat(200), // Another very long message
                 name: None,
+            
+                ..Default::default()
             },
         ];
 

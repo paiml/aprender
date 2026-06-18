@@ -184,11 +184,15 @@ async fn test_openai_chat_completions_endpoint() {
                 role: "system".to_string(),
                 content: "You are a helpful assistant.".to_string(),
                 name: None,
+            
+                ..Default::default()
             },
             ChatMessage {
                 role: "user".to_string(),
                 content: "Hello".to_string(),
                 name: None,
+            
+                ..Default::default()
             },
         ],
         max_tokens: Some(10),
@@ -202,6 +206,8 @@ async fn test_openai_chat_completions_endpoint() {
         stream: false,
         stop: None,
         user: None,
+    
+        ..Default::default()
     };
 
     let response = app
@@ -293,6 +299,8 @@ fn test_format_chat_messages_simple_raw() {
         role: "user".to_string(),
         content: "Hello".to_string(),
         name: None,
+    
+        ..Default::default()
     }];
 
     // Raw format (None model) just concatenates content
@@ -306,6 +314,8 @@ fn test_format_chat_messages_chatml() {
         role: "user".to_string(),
         content: "Hello".to_string(),
         name: None,
+    
+        ..Default::default()
     }];
 
     // Qwen2 uses ChatML format
@@ -323,11 +333,15 @@ fn test_format_chat_messages_llama2() {
             role: "system".to_string(),
             content: "You are helpful.".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         ChatMessage {
             role: "user".to_string(),
             content: "Hi".to_string(),
             name: None,
+        
+            ..Default::default()
         },
     ];
 
@@ -346,16 +360,22 @@ fn test_format_chat_messages_mistral() {
             role: "user".to_string(),
             content: "Hello".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         ChatMessage {
             role: "assistant".to_string(),
             content: "Hi there!".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         ChatMessage {
             role: "user".to_string(),
             content: "How are you?".to_string(),
             name: None,
+        
+            ..Default::default()
         },
     ];
 
@@ -373,6 +393,8 @@ fn test_format_chat_messages_phi() {
         role: "user".to_string(),
         content: "Test".to_string(),
         name: None,
+    
+        ..Default::default()
     }];
 
     // Phi format
@@ -387,6 +409,8 @@ fn test_format_chat_messages_alpaca() {
         role: "user".to_string(),
         content: "Test".to_string(),
         name: None,
+    
+        ..Default::default()
     }];
 
     // Alpaca format
@@ -407,6 +431,8 @@ fn test_chat_message_serialization() {
         role: "user".to_string(),
         content: "Hello".to_string(),
         name: Some("test_user".to_string()),
+    
+        ..Default::default()
     };
 
     let json = serde_json::to_string(&msg).expect("test");

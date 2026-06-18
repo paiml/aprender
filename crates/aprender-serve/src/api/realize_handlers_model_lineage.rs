@@ -161,6 +161,8 @@ mod tests {
             role: "user".to_string(),
             content: "Hi".to_string(),
             name: None,
+        
+            ..Default::default()
         }];
         let tokens = manager.estimate_total_tokens(&messages);
         assert_eq!(tokens, 11);
@@ -174,6 +176,8 @@ mod tests {
             role: "user".to_string(),
             content: String::new(),
             name: None,
+        
+            ..Default::default()
         }];
         let tokens = manager.estimate_total_tokens(&messages);
         assert_eq!(tokens, 10);
@@ -187,6 +191,8 @@ mod tests {
             role: "user".to_string(),
             content: "abcd".to_string(),
             name: None,
+        
+            ..Default::default()
         }];
         let tokens = manager.estimate_total_tokens(&messages);
         assert_eq!(tokens, 11);
@@ -204,11 +210,15 @@ mod tests {
                 role: "system".to_string(),
                 content: "x".repeat(500),
                 name: None,
+            
+                ..Default::default()
             },
             ChatMessage {
                 role: "user".to_string(),
                 content: "short".to_string(),
                 name: None,
+            
+                ..Default::default()
             },
         ];
 

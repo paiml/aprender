@@ -1,0 +1,40 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-18"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "Chen et al. (2021) Evaluating Large Language Models Trained on Code — the pass@k estimator 1 - C(n-c,k)/C(n,k)"
+    - "OpenAI/human-eval pass_at_k reference"
+  description: |
+    Correctness contract for HumanEval/MBPP pass@k reporting in `apr eval`
+    (apr-cli commands::eval). Honest-by-design: pass@k under single-sample greedy decoding
+    must equal pass@1, never an inflated value.
+kind: KernelContract
+name: eval-passk-single-sample
+version: "1.0.0"
+scope: "crates/apr-cli/src/commands/eval/code_eval.rs"
+description: |
+  The Chen et al. pass@k estimator 1 - C(n-c,k)/C(n,k) takes n = samples-PER-PROBLEM and
+  c = correct-samples for ONE problem. PMAT-835 fixed compute_multisample_pass_at_k (and the
+  duplicate site print_humaneval_results), which in the num_samples==1 case fed the
+  problem-COUNT (total) and solved-COUNT (passed) into the (n, c) slots. For k>1 this is
+  dimensionally wrong: a model solving 50/164 HumanEval problems with one greedy sample reported
+  pass@1=30.5% (correct) but pass@10=97.7% and pass@100=100% — falsely presenting a mediocre
+  model as SotA in the CI-consumed JSON and the human table. With one deterministic sample per
+  problem, pass@k collapses to pass@1 = passed/total for EVERY k (it cannot exceed pass@1). Fix:
+  return passed/total for all k in the single-sample case. The multi-sample (num_samples>1) path
+  was already correct.
+equations:
+  C-PASSK-001:
+    description: "Single deterministic sample ⇒ pass@k = pass@1 for every k"
+    formula: "num_samples == 1 ⇒ pass@k = passed/total ∀ k; e.g. 50/164 ⇒ 0.3049 for k ∈ {1,10,100}, NOT 0.3049/0.977/1.0"
+    note: "pass@k is non-decreasing in samples; with one sample it cannot exceed pass@1."
+  C-PASSK-002:
+    description: "The per-sample estimator's n slot is samples-per-problem, not problem count"
+    formula: "compute_pass_at_k(n, c, k): n = samples per problem, c = correct samples; NEVER n=total_problems, c=solved_problems"
+falsification:
+  - id: FALSIFY-EVAL-PASSK-SINGLE-SAMPLE
+    description: "Single-sample pass@k collapses to pass@1. Discharges C-PASSK-001/002."
+    test: "single_sample_pass_at_k_collapses_to_pass_at_1 — 164 problems, 50 solved, num_samples=1, k=[1,10,100]: RED pre-fix 0.305/0.977/1.0, GREEN post-fix 0.305 for all."
+    evidence: "cargo test -p apr-cli --lib single_sample_pass_at_k_collapses_to_pass_at_1"

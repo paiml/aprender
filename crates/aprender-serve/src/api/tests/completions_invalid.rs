@@ -155,6 +155,8 @@ fn test_chat_completion_request_traits() {
             role: "user".to_string(),
             content: "hi".to_string(),
             name: None,
+        
+            ..Default::default()
         }],
         max_tokens: Some(10),
         temperature: Some(0.5),
@@ -167,6 +169,8 @@ fn test_chat_completion_request_traits() {
         stream: false,
         stop: Some(vec!["stop".to_string()]),
         user: Some("user".to_string()),
+    
+        ..Default::default()
     };
 
     let cloned = req.clone();

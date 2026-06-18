@@ -81,11 +81,15 @@ fn test_chat_message_formatting_multiline_cov() {
             role: "system".to_string(),
             content: "You are helpful.".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         ChatMessage {
             role: "user".to_string(),
             content: "Hello\nWorld".to_string(),
             name: None,
+        
+            ..Default::default()
         },
     ];
     // Ensure multiline content is preserved
@@ -109,11 +113,15 @@ fn test_context_window_manager_preserve_system_false_cov() {
             role: "system".to_string(),
             content: "System message".to_string(),
             name: None,
+        
+            ..Default::default()
         },
         ChatMessage {
             role: "user".to_string(),
             content: "User message".to_string(),
             name: None,
+        
+            ..Default::default()
         },
     ];
     let (truncated, _) = manager.truncate_messages(&messages);
@@ -131,6 +139,8 @@ fn test_context_window_config_available_tokens_cov() {
         role: "user".to_string(),
         content: "Short".to_string(),
         name: None,
+    
+        ..Default::default()
     }];
     assert!(!manager.needs_truncation(&messages));
 }
@@ -338,6 +348,8 @@ fn test_chat_message_with_name_ext_cov() {
         role: "system".to_string(),
         content: "You are helpful".to_string(),
         name: Some("assistant_v2".to_string()),
+    
+        ..Default::default()
     };
     let json = serde_json::to_string(&msg).expect("invalid UTF-8");
     assert!(json.contains("assistant_v2"));

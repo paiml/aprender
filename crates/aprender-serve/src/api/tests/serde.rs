@@ -405,6 +405,8 @@ fn test_context_window_manager_estimate_tokens() {
         role: "user".to_string(),
         content: "Hello world".to_string(),
         name: None,
+    
+        ..Default::default()
     }];
     let estimate = mgr.estimate_total_tokens(&messages);
     assert!(estimate > 0);
@@ -420,6 +422,8 @@ fn test_context_window_manager_truncate_short_messages() {
         role: "user".to_string(),
         content: "Short".to_string(),
         name: None,
+    
+        ..Default::default()
     }];
     let (truncated, was_truncated) = mgr.truncate_messages(&messages);
     assert!(!was_truncated);
