@@ -23,6 +23,7 @@
 /// PARITY-078a: Sequence parallelism
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_078a_sequence_parallelism() {
     println!("PARITY-078a: Sequence Parallelism");
     println!("==================================");
@@ -82,6 +83,7 @@ fn test_parity_078a_sequence_parallelism() {
 /// PARITY-078b: Batch parallelism
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_078b_batch_parallelism() {
     println!("PARITY-078b: Batch Parallelism");
     println!("===============================");
@@ -139,6 +141,7 @@ fn test_parity_078b_batch_parallelism() {
 /// PARITY-078c: Head parallelism
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_078c_head_parallelism() {
     println!("PARITY-078c: Head Parallelism");
     println!("==============================");
@@ -187,6 +190,7 @@ fn test_parity_078c_head_parallelism() {
 /// PARITY-078d: Work stealing for load balancing
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_078d_work_stealing() {
     println!("PARITY-078d: Work Stealing for Load Balancing");
     println!("==============================================");
@@ -243,6 +247,7 @@ fn test_parity_078d_work_stealing() {
 /// PARITY-078e: Split-K decomposition
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_078e_split_k_decomposition() {
     println!("PARITY-078e: Split-K Decomposition");
     println!("====================================");
@@ -302,6 +307,7 @@ fn test_parity_078e_split_k_decomposition() {
 /// PARITY-078f: Work partitioning summary
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_078f_work_partitioning_summary() {
     println!("PARITY-078f: Work Partitioning Summary");
     println!("=======================================");
@@ -338,6 +344,7 @@ fn test_parity_078f_work_partitioning_summary() {
 /// PARITY-079a: Softmax FLOP analysis
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_079a_softmax_flop_analysis() {
     println!("PARITY-079a: Softmax FLOP Analysis");
     println!("====================================");
@@ -399,6 +406,7 @@ fn test_parity_079a_softmax_flop_analysis() {
 /// PARITY-079b: Online softmax optimization
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_079b_online_softmax() {
     println!("PARITY-079b: Online Softmax Optimization");
     println!("=========================================");

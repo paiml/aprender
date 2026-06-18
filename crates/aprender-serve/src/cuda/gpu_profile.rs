@@ -107,14 +107,18 @@ impl GpuProfile {
         let has_dp4a = major > 7 || (major == 7 && minor >= 5); // sm_75+ (Turing)
         let num_sms = context.multiprocessor_count().unwrap_or(8) as u32;
 
-        let q4k = Self::detect_q4k(has_dp4a);
+        // Real device compute capability (e.g. 121 for GB10 Blackwell). Uses the
+        // true major/minor, NOT the PTX-clamped target — PMAT-806 needs the real
+        // value to gate the Blackwell fp32-MWV-Q4K default.
+        let cc = major as u32 * 10 + minor as u32;
+
+        let q4k = Self::detect_q4k(has_dp4a, cc);
         let q6k = Self::detect_q6k(has_dp4a);
         let mwv_warps = Self::detect_mwv_warps();
         let batched_prefill = Self::detect_batched_prefill();
         let hgemm_decode = Self::detect_hgemm_decode(has_dp4a, num_sms);
         let fused_gate_up = Self::detect_fused_gate_up(&q4k);
 
-        let cc = major as u32 * 10 + minor as u32;
         let fp8_prefill = Self::detect_fp8_prefill(cc);
         let fp8_decode = Self::detect_fp8_decode(fp8_prefill, cc);
         let w4a16_interleaved = Self::detect_w4a16_interleaved(cc);
@@ -137,8 +141,23 @@ impl GpuProfile {
     }
 
     /// Q4K variant: env var override, else HwDp4a on sm_75+, else Mwv.
-    fn detect_q4k(has_dp4a: bool) -> Q4kVariant {
-        // Env var overrides (for experimentation only)
+    ///
+    /// PMAT-806 (Blackwell massive-activation parity): on Blackwell (cc≥120,
+    /// e.g. GB10 sm_121) the HwDp4a path's INT8 Q8_1 *activation* quantization
+    /// mis-estimates massive-activation channels by ~15% (latent until a deep
+    /// FFN cancels the outlier → catastrophic cancellation → CPU/GPU cosine
+    /// craters; on Qwen2.5-coder-1.5B Q4_K_M the load-time parity gate FAILED →
+    /// silent CPU/wgpu fallback). The fp32 MWV variant does NOT quantize
+    /// activations, so it is immune. On-device sweep (gx10 GB10, 2026-06-16):
+    /// HwDp4a gate cosine 0.9817 (FAILs deeper models) → MWV_Q4K 0.9939 (PASS,
+    /// argmax matches). Defaulting Blackwell Q4K to fp32 MWV restores CPU/GPU
+    /// parity and unblocks GPU serving of quantized models there. Discrete GPUs
+    /// (RTX 4090 sm_89, etc.) keep the fast HwDp4a path unchanged — their
+    /// DP4A activation quant is reliable for these models.
+    /// Contract: contracts/apr-cpu-vs-gpu-output-parity-v1.yaml (FALSIFY-CPU-GPU-008).
+    fn detect_q4k(has_dp4a: bool, cc: u32) -> Q4kVariant {
+        // Env var overrides (for experimentation only) take precedence over the
+        // Blackwell default, so HW_DP4A_Q4K=1 still forces DP4A for A/B testing.
         if std::env::var("WIDE_Q4K_DISABLE").is_ok() {
             return Q4kVariant::Legacy;
         }
@@ -159,8 +178,21 @@ impl GpuProfile {
             return Q4kVariant::Mwv;
         }
 
-        // Auto-detect: HW DP4A on any GPU with DP4A support (sm_75+)
-        if has_dp4a {
+        Self::auto_q4k(has_dp4a, cc)
+    }
+
+    /// PMAT-806: Pure auto-detection mapping (no env vars) for the Q4K variant.
+    ///
+    /// Blackwell (cc≥120) → fp32 MWV (INT8 DP4A activation quant mis-estimates
+    /// massive-activation channels → CPU/GPU parity-gate failure on quantized
+    /// models). DP4A-capable discrete GPUs (sm_75+, cc<120) → HwDp4a. Otherwise
+    /// → MWV. Extracted as a pure fn so the cc-gating is unit-testable without a
+    /// device and independent of process env.
+    #[must_use]
+    pub(crate) fn auto_q4k(has_dp4a: bool, cc: u32) -> Q4kVariant {
+        if cc >= 120 {
+            Q4kVariant::Mwv
+        } else if has_dp4a {
             Q4kVariant::HwDp4a
         } else {
             Q4kVariant::Mwv
@@ -272,5 +304,36 @@ impl GpuProfile {
         // FP16 reads 3.56x more data, and cuBLAS overhead dominates at M=1.
         // Keep disabled by default — only useful for M>=4 prefill (batched path).
         false
+    }
+}
+
+#[cfg(test)]
+mod pmat806_q4k_variant_tests {
+    use super::{GpuProfile, Q4kVariant};
+
+    /// PMAT-806: Blackwell (cc≥120, e.g. GB10 sm_121=121) MUST default Q4K to
+    /// fp32 MWV — INT8 DP4A activation quant mis-estimates massive-activation
+    /// channels and FAILs the CPU/GPU parity gate on quantized models.
+    #[test]
+    fn blackwell_defaults_to_fp32_mwv() {
+        assert_eq!(GpuProfile::auto_q4k(true, 121), Q4kVariant::Mwv, "GB10 sm_121");
+        assert_eq!(GpuProfile::auto_q4k(true, 120), Q4kVariant::Mwv, "cc==120 boundary");
+    }
+
+    /// PMAT-806: Discrete DP4A GPUs (RTX 4090 sm_89=89, Ampere sm_80, Turing
+    /// sm_75) MUST keep the fast HwDp4a path — their DP4A activation quant is
+    /// reliable for these models, so the fix is a strict no-op there.
+    #[test]
+    fn discrete_dp4a_gpus_keep_hwdp4a() {
+        assert_eq!(GpuProfile::auto_q4k(true, 89), Q4kVariant::HwDp4a, "RTX 4090 sm_89");
+        assert_eq!(GpuProfile::auto_q4k(true, 80), Q4kVariant::HwDp4a, "A100 sm_80");
+        assert_eq!(GpuProfile::auto_q4k(true, 75), Q4kVariant::HwDp4a, "Turing sm_75");
+    }
+
+    /// Non-DP4A GPUs (sm<7.5) keep MWV (pre-existing behavior, unchanged).
+    #[test]
+    fn non_dp4a_gpus_use_mwv() {
+        assert_eq!(GpuProfile::auto_q4k(false, 70), Q4kVariant::Mwv);
+        assert_eq!(GpuProfile::auto_q4k(false, 60), Q4kVariant::Mwv);
     }
 }

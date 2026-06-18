@@ -147,6 +147,13 @@ pub struct HybridScheduler {
     gpu_threshold: usize,
     /// Buffer pool for memory reuse
     buffer_pool: GpuBufferPool,
+    // PMAT-779: test-only GPU-test concurrency permit. The wgpu `gpu::tests::*`
+    // cluster reaches the GPU through HybridScheduler (GpuModel / forward_gpu),
+    // NOT through CudaExecutor — so it must share the same cross-backend cap or
+    // it over-subscribes the GB10 GPU on its own (confirmed: capping CUDA alone
+    // still hung with a spinning `gpu::tests` thread).
+    #[cfg(all(test, feature = "cuda"))]
+    _gpu_test_permit: crate::test_gpu_cap::GpuTestPermit,
 }
 
 impl HybridScheduler {
@@ -156,10 +163,15 @@ impl HybridScheduler {
     ///
     /// Returns error if compute initialization fails.
     pub fn new() -> Result<Self> {
+        // PMAT-779: cap concurrently-live GPU-resident test objects (wgpu side).
+        #[cfg(all(test, feature = "cuda"))]
+        let _gpu_test_permit = crate::test_gpu_cap::GpuTestPermit::acquire();
         Ok(Self {
             gpu_compute: GpuCompute::auto()?,
             gpu_threshold: 64 * 64 * 64, // 262K elements
             buffer_pool: GpuBufferPool::new(),
+            #[cfg(all(test, feature = "cuda"))]
+            _gpu_test_permit,
         })
     }
 
@@ -173,10 +185,15 @@ impl HybridScheduler {
     ///
     /// Returns error if compute initialization fails.
     pub fn with_threshold(gpu_threshold: usize) -> Result<Self> {
+        // PMAT-779: cap concurrently-live GPU-resident test objects (wgpu side).
+        #[cfg(all(test, feature = "cuda"))]
+        let _gpu_test_permit = crate::test_gpu_cap::GpuTestPermit::acquire();
         Ok(Self {
             gpu_compute: GpuCompute::auto()?,
             gpu_threshold,
             buffer_pool: GpuBufferPool::new(),
+            #[cfg(all(test, feature = "cuda"))]
+            _gpu_test_permit,
         })
     }
 

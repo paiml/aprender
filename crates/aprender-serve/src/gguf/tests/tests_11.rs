@@ -31,6 +31,7 @@
 /// PARITY-055a: Throughput calculation methodology
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity055a_throughput_methodology() {
     println!("PARITY-055a: Throughput Calculation Methodology");
     println!("===============================================");
@@ -75,6 +76,7 @@ fn test_parity055a_throughput_methodology() {
 /// PARITY-055b: Benchmark configuration
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity055b_benchmark_config() {
     println!("PARITY-055b: Benchmark Configuration");
     println!("====================================");
@@ -120,6 +122,7 @@ fn test_parity055b_benchmark_config() {
 /// PARITY-055c: Latency vs throughput tradeoff
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity055c_latency_tradeoff() {
     println!("PARITY-055c: Latency vs Throughput Tradeoff");
     println!("==========================================");
@@ -171,6 +174,7 @@ fn test_parity055c_latency_tradeoff() {
 /// PARITY-055d: Concurrent batch estimation
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity055d_concurrent_estimation() {
     println!("PARITY-055d: Concurrent Batch Estimation");
     println!("========================================");
@@ -219,6 +223,7 @@ fn test_parity055d_concurrent_estimation() {
 /// PARITY-055e: Benchmark execution script
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity055e_benchmark_script() {
     println!("PARITY-055e: Benchmark Execution Script");
     println!("=======================================");
@@ -263,6 +268,7 @@ fn test_parity055e_benchmark_script() {
 /// PARITY-055f: Summary and M4 parity validation
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity055f_summary() {
     println!("PARITY-055f: Batch Throughput Benchmark Summary");
     println!("===============================================");
@@ -316,6 +322,7 @@ fn test_parity055f_summary() {
 /// PARITY-056a: Benchmark execution prerequisites
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity056a_benchmark_prerequisites() {
     println!("PARITY-056a: Benchmark Execution Prerequisites");
     println!("==============================================");
@@ -352,6 +359,7 @@ fn test_parity056a_benchmark_prerequisites() {
 /// PARITY-056b: Expected benchmark results
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity056b_expected_results() {
     println!("PARITY-056b: Expected Benchmark Results");
     println!("=======================================");
@@ -400,6 +408,7 @@ fn test_parity056b_expected_results() {
 /// PARITY-056c: Benchmark execution steps
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity056c_execution_steps() {
     println!("PARITY-056c: Benchmark Execution Steps");
     println!("======================================");

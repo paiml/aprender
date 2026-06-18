@@ -448,6 +448,16 @@ impl BPETokenizer {
     pub fn get_token(&self, id: u32) -> Option<&str> {
         self.id_to_token.get(&id).map(String::as_str)
     }
+
+    /// Returns true if `id` is a registered special token (e.g. BOS/EOS/PAD).
+    ///
+    /// PMAT-803: model-backed embeddings mean-pool over the *content* tokens, so the
+    /// embedding handler uses this to skip special tokens during pooling. Returns
+    /// false when no special tokens were registered (vocab-only tokenizers).
+    #[must_use]
+    pub fn is_special_token(&self, id: u32) -> bool {
+        self.special_tokens.values().any(|&v| v == id)
+    }
 }
 
 /// Viterbi algorithm state: `(best_score, best_token)` at each position

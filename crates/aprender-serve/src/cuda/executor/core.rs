@@ -23,6 +23,12 @@ impl CudaExecutor {
     ///
     /// Returns error if CUDA is not available or device doesn't exist.
     pub fn new(device_ordinal: i32) -> Result<Self, GpuError> {
+        // PMAT-779: cap concurrently-live GPU-resident test objects BEFORE
+        // touching the GPU (sentinel/context/streams), so the GB10 GPU is never
+        // over-subscribed. No-op in production builds.
+        #[cfg(all(test, feature = "cuda"))]
+        let _gpu_test_permit = crate::test_gpu_cap::GpuTestPermit::acquire();
+
         // Ensure process-level sentinel keeps the primary context alive.
         // This prevents cuDevicePrimaryCtxRelease from destroying the context
         // when individual executors drop (sentinel holds refcount ≥ 1).
@@ -189,6 +195,9 @@ impl CudaExecutor {
             batched_done_mask: Vec::new(),
             hgemm_batched_decode_active: false,
             context: std::mem::ManuallyDrop::new(context), // Last field — ManuallyDrop skips cuDevicePrimaryCtxRelease - dropped last
+            // PMAT-779: held for the executor's whole lifetime, released last.
+            #[cfg(all(test, feature = "cuda"))]
+            _gpu_test_permit,
         })
     }
 

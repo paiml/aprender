@@ -37,6 +37,7 @@
 /// PARITY-074e: Performance projection
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_074e_performance_projection() {
     println!("PARITY-074e: Performance Projection");
     println!("====================================");
@@ -94,6 +95,7 @@ fn test_parity_074e_performance_projection() {
 /// PARITY-074f: Integration summary
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_074f_integration_summary() {
     println!("PARITY-074f: CUDA Kernel Execution Summary");
     println!("==========================================");
@@ -154,6 +156,7 @@ fn test_parity_074f_integration_summary() {
 /// PARITY-075a: INT8 attention score quantization
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_075a_attention_score_quantization() {
     use crate::quantize::Q8_0Block;
 
@@ -214,6 +217,7 @@ fn test_parity_075a_attention_score_quantization() {
 /// PARITY-075b: INT8 Q×K^T computation
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_075b_int8_qk_computation() {
     use crate::quantize::Q8_0Block;
 
@@ -298,6 +302,7 @@ fn test_parity_075b_int8_qk_computation() {
 /// PARITY-075c: Memory bandwidth analysis for attention
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_075c_attention_bandwidth() {
     println!("PARITY-075c: Attention Memory Bandwidth Analysis");
     println!("=================================================");

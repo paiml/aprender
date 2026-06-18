@@ -1,6 +1,7 @@
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity033c_lru_eviction() {
     println!("=== PARITY-033c: LRU Eviction ===\n");
 
@@ -48,6 +49,7 @@ fn test_parity033c_lru_eviction() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity033d_ttft_improvement() {
     println!("=== PARITY-033d: TTFT Improvement ===\n");
 
@@ -94,6 +96,7 @@ fn test_parity033d_ttft_improvement() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity033e_memory_usage() {
     println!("=== PARITY-033e: Memory Usage ===\n");
 
@@ -152,6 +155,7 @@ fn test_parity033e_memory_usage() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity034a_scheduler_creation() {
     println!("=== PARITY-034a: Scheduler Creation ===\n");
 
@@ -175,6 +179,7 @@ fn test_parity034a_scheduler_creation() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity034b_submit_and_decode() {
     println!("=== PARITY-034b: Submit and Decode ===\n");
 
@@ -210,6 +215,7 @@ fn test_parity034b_submit_and_decode() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity034c_token_generation() {
     println!("=== PARITY-034c: Token Generation ===\n");
 
@@ -253,6 +259,7 @@ fn test_parity034c_token_generation() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity034d_scheduling_policies() {
     println!("=== PARITY-034d: Scheduling Policies ===\n");
 
@@ -300,6 +307,7 @@ fn test_parity034d_scheduling_policies() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity034e_throughput_scaling() {
     println!("=== PARITY-034e: Throughput Scaling ===\n");
 
