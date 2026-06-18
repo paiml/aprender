@@ -180,27 +180,64 @@ pub(crate) fn dequantize_q3_k(data: &[u8], start: usize, num_elements: usize) ->
         let d = safe_f16_scale(u16::from_le_bytes([data[offset], data[offset + 1]]));
         offset += 2;
 
-        // Unpack scales
+        // Reconstruct the 16 SIX-bit signed scales from the 12 packed bytes via the GGML
+        // aux[] shuffle (kmask1/kmask2). The previous code read only the low/high nibbles of
+        // the first 8 bytes — 16 FOUR-bit values with a -8 offset — clipping every scale from
+        // [-32,31] to [-8,7] and dropping the upper 2 bits, so ~252/256 elements were wrong.
+        const KMASK1: u32 = 0x0303_0303;
+        const KMASK2: u32 = 0x0f0f_0f0f;
+        let mut aux = [
+            u32::from_le_bytes([scales_bytes[0], scales_bytes[1], scales_bytes[2], scales_bytes[3]]),
+            u32::from_le_bytes([scales_bytes[4], scales_bytes[5], scales_bytes[6], scales_bytes[7]]),
+            u32::from_le_bytes([
+                scales_bytes[8],
+                scales_bytes[9],
+                scales_bytes[10],
+                scales_bytes[11],
+            ]),
+            0u32,
+        ];
+        let tmp = aux[2];
+        aux[2] = ((aux[0] >> 4) & KMASK2) | (((tmp >> 4) & KMASK1) << 4);
+        aux[3] = ((aux[1] >> 4) & KMASK2) | (((tmp >> 6) & KMASK1) << 4);
+        aux[0] = (aux[0] & KMASK2) | ((tmp & KMASK1) << 4);
+        aux[1] = (aux[1] & KMASK2) | (((tmp >> 2) & KMASK1) << 4);
         let mut scales = [0i8; 16];
-        for i in 0..8 {
-            scales[i] = (scales_bytes[i] & 0x0F) as i8 - 8;
-            scales[i + 8] = (scales_bytes[i] >> 4) as i8 - 8;
+        for (w, word) in aux.iter().enumerate() {
+            for (k, &b) in word.to_le_bytes().iter().enumerate() {
+                scales[w * 4 + k] = b as i8; // 6-bit value; the -32 offset is applied below
+            }
         }
 
-        // Dequantize
-        for j in 0..256 {
-            let sub_block = j / 16;
-            let q_idx = j / 4;
-            let q_shift = (j % 4) * 2;
-            let h_idx = j / 8;
-            let h_shift = j % 8;
-
-            let q_low = (qs[q_idx] >> q_shift) & 0x03;
-            let q_high = ((hmask[h_idx] >> h_shift) & 1) << 2;
-            let q = (q_low | q_high) as i8 - 4;
-
-            result.push(d * f32::from(scales[sub_block]) * f32::from(q));
+        // Dequantize: two 128-element halves (qs advances 32 bytes per half); within a half,
+        // four 32-element shift-blocks (shift = 0,2,4,6) each carrying two 16-lane scale
+        // groups; the high-mask bit `m` advances per shift-block. value = d*(scale-32)*(low-high)
+        // where high = 4 when the hmask bit is CLEAR, else 0.
+        let mut block_out = [0.0f32; 256];
+        let mut m: u32 = 1;
+        let mut is = 0usize;
+        for half in 0..2 {
+            let qs_half = &qs[half * 32..half * 32 + 32];
+            let out_half = half * 128;
+            let mut shift: u32 = 0;
+            for blk in 0..4 {
+                let out_blk = out_half + blk * 32;
+                for scale_index in 0..2 {
+                    let dl = d * (f32::from(scales[is]) - 32.0);
+                    let out_grp = out_blk + scale_index * 16;
+                    for i in 0..16 {
+                        let idx = i + 16 * scale_index;
+                        let low = ((qs_half[idx] >> shift) & 3) as i8;
+                        let high = if u32::from(hmask[idx]) & m == 0 { 4i8 } else { 0i8 };
+                        block_out[out_grp + i] = dl * f32::from(low - high);
+                    }
+                    is += 1;
+                }
+                shift += 2;
+                m <<= 1;
+            }
         }
+        result.extend_from_slice(&block_out);
     }
 
     result.truncate(num_elements);
