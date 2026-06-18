@@ -2,6 +2,7 @@
 /// PARITY-077d: Warp specialization
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_077d_warp_specialization() {
     println!("PARITY-077d: Warp Specialization");
     println!("=================================");
@@ -48,6 +49,7 @@ fn test_parity_077d_warp_specialization() {
 /// PARITY-077e: Shared memory bank conflict avoidance
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_077e_bank_conflict_avoidance() {
     println!("PARITY-077e: Shared Memory Bank Conflict Avoidance");
     println!("===================================================");
@@ -109,6 +111,7 @@ fn test_parity_077e_bank_conflict_avoidance() {
 /// PARITY-077f: Shared memory tiling summary
 #[test]
 #[cfg(feature = "cuda")]
+#[serial_test::serial]
 fn test_parity_077f_tiling_summary() {
     println!("PARITY-077f: Shared Memory Tiling Summary");
     println!("==========================================");

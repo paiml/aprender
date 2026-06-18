@@ -24,6 +24,7 @@ fn test_imp_132a_adaptive_attention_records_cpu_latency() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -76,6 +77,7 @@ fn test_imp_132b_latency_values_are_reasonable() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -128,6 +130,7 @@ fn test_imp_132c_latency_count_matches_dispatch_count() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -182,6 +185,7 @@ fn test_imp_132d_gpu_dispatches_record_latency() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };

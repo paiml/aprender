@@ -449,6 +449,15 @@ impl OwnedQuantizedModel {
                 &format!("model.layers.{layer_idx}.self_attn.k_norm.weight"))
                 .or_else(|| apr_try_load_f32(apr, data, data_offset,
                     &format!("blk.{layer_idx}.attn_k_norm.weight"))),
+            // PMAT-810: Gemma2 post-attention / post-FFN RMSNorm (None elsewhere).
+            post_attn_norm_weight: apr_try_load_f32(apr, data, data_offset,
+                &format!("model.layers.{layer_idx}.post_attention_layernorm.weight"))
+                .or_else(|| apr_try_load_f32(apr, data, data_offset,
+                    &format!("blk.{layer_idx}.post_attention_norm.weight"))),
+            post_ffw_norm_weight: apr_try_load_f32(apr, data, data_offset,
+                &format!("model.layers.{layer_idx}.post_feedforward_layernorm.weight"))
+                .or_else(|| apr_try_load_f32(apr, data, data_offset,
+                    &format!("blk.{layer_idx}.post_ffw_norm.weight"))),
         })
     }
 }

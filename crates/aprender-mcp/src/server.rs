@@ -342,6 +342,18 @@ impl AprMcpServer {
             "tools/call" => self.spawn_tools_call_worker(req, stdout),
             // Fast inline paths.
             _ => {
+                // FALSIFY-MCP-009: JSON-RPC 2.0 §4.1 — a Request object
+                // without an `id` member is a *Notification*, and "The Server
+                // MUST NOT reply to a Notification." The `notifications/*`
+                // method prefix is an MCP convention, but conformance is
+                // determined by the *absence of an id*, not the method name. A
+                // client that sends e.g. `{"jsonrpc":"2.0","method":"initialize"}`
+                // (no id) or an unknown method with no id is issuing a
+                // notification; emitting a response with `id:null` would
+                // corrupt the stream for a strict peer. Drop it silently.
+                if req.id.is_none() {
+                    return Ok(());
+                }
                 let resp = self.handle_request(&req);
                 write_response(stdout, &resp)
             }

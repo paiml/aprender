@@ -149,3 +149,69 @@ fn test_determinism() {
         assert_eq!(a.to_bits(), b.to_bits(), "Row {}: Non-deterministic output: {} vs {}", i, a, b);
     }
 }
+
+/// FALSIFIER C-AVX512-Q4K-003: the AVX-512 Q4_K GEMV must not read the
+/// activation buffer out of bounds for a non-256-aligned `in_dim`, and must
+/// match the scalar reference exactly.
+///
+/// The pre-fix kernel wrapped the high-nibble loads (activation positions
+/// `[base+32, base+64)`) in the low-nibble guard `base + 32 <= in_dim`, so for
+/// any `in_dim` that is `32/96/160/224 (mod 256)` the guard passed but the
+/// `_mm512_loadu_ps` over-read up to 128 bytes past the buffer (and it also
+/// silently dropped the valid high-nibble tail).
+///
+/// RED-on-bug: the activation buffer has a non-zero SENTINEL tail in the
+/// allocation past `in_dim` (len() stays == in_dim for the dispatch assert), so
+/// the pre-fix over-read injects the sentinel → divergence from scalar. The fix
+/// uses masked loads that read only `[0, in_dim)` and zero the rest → exact
+/// parity. On non-AVX-512 hosts the dispatch routes to AVX2/scalar (already
+/// correct), so this self-gates to a no-op parity check there.
+#[test]
+#[cfg(target_arch = "x86_64")]
+fn falsify_avx512_q4k_003_non_aligned_in_dim_no_oob() {
+    // All < 256 (single padded super-block, supported by the scalar reference)
+    // and each ≡ 32/96/160/224 (mod 256) or a mid-chunk tail — the cases where
+    // the pre-fix high-nibble load over-reads. 256 is the aligned control.
+    for &in_dim in &[32usize, 48, 96, 160, 224, 256] {
+        let out_dim = 3;
+        let num_blocks = in_dim.div_ceil(SUPER_BLOCK_SIZE);
+        let mut q4k_data = Vec::with_capacity(out_dim * num_blocks * SUPER_BLOCK_BYTES);
+        for row in 0..out_dim {
+            for _ in 0..num_blocks {
+                q4k_data.extend_from_slice(&[0x00, 0x3C]); // d ~ 1.0 (f16)
+                q4k_data.extend_from_slice(&[0x00, 0x38]); // dmin ~ 0.5 (f16)
+                q4k_data.extend_from_slice(&[0x21u8; 12]); // packed scales/mins
+                let mut qs = [0u8; 128];
+                for (i, q) in qs.iter_mut().enumerate() {
+                    let low = ((row + i + 3) % 16) as u8;
+                    let high = ((row * 2 + i + 7) % 16) as u8;
+                    *q = low | (high << 4);
+                }
+                q4k_data.extend_from_slice(&qs);
+            }
+        }
+
+        // Activation buffer: capacity is a full multiple of 256 (>= in_dim) with
+        // a NON-ZERO sentinel tail past in_dim still inside the allocation; then
+        // len() is truncated to in_dim so the dispatch assert holds. A pre-fix
+        // high-nibble over-read past in_dim reads the sentinel and diverges.
+        let cap = num_blocks * SUPER_BLOCK_SIZE;
+        let mut input = vec![1.0e6_f32; cap];
+        for (i, v) in input.iter_mut().enumerate().take(in_dim) {
+            *v = ((i % 17) as f32) * 0.05 - 0.3;
+        }
+        input.truncate(in_dim);
+
+        let simd = matmul_q4k_f32_dispatch(&q4k_data, &input, out_dim, in_dim);
+        let scalar = matmul_q4k_f32_scalar(&q4k_data, &input, out_dim, in_dim);
+
+        for (i, (a, s)) in simd.iter().zip(scalar.iter()).enumerate() {
+            assert!(
+                (a - s).abs() < 1e-2,
+                "in_dim={in_dim} row={i}: SIMD {a} vs scalar {s} (diff {}) — \
+                 non-256-aligned in_dim must not over-read or drop the high-nibble tail",
+                (a - s).abs()
+            );
+        }
+    }
+}

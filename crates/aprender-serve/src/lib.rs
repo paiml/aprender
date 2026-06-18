@@ -160,6 +160,9 @@ mod generated_contracts;
 #[cfg(all(test, feature = "cuda"))]
 #[macro_use]
 mod test_cuda_macros;
+// PMAT-779: process-global, cross-backend GPU-test concurrency cap (test-only).
+#[cfg(all(test, feature = "cuda"))]
+pub(crate) mod test_gpu_cap;
 #[cfg(feature = "server")]
 pub mod api;
 /// Aprender .apr format support (PRIMARY inference format)

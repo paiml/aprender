@@ -26,6 +26,8 @@ pub(crate) trait TensorSource {
     fn get_tensor_auto(&self, name: &str) -> Result<Vec<f32>>;
     fn has_tensor(&self, name: &str) -> bool;
     fn tensor_names(&self) -> Vec<&str>;
+    /// Declared shape of a tensor (for the F-STRUCT-001 structural gate).
+    fn tensor_shape(&self, name: &str) -> Option<Vec<usize>>;
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -39,6 +41,9 @@ impl TensorSource for MappedSafeTensorsModel {
     fn tensor_names(&self) -> Vec<&str> {
         MappedSafeTensorsModel::tensor_names(self)
     }
+    fn tensor_shape(&self, name: &str) -> Option<Vec<usize>> {
+        MappedSafeTensorsModel::get_tensor_info(self, name).map(|i| i.shape.clone())
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -51,6 +56,9 @@ impl TensorSource for ShardedSafeTensorsModel {
     }
     fn tensor_names(&self) -> Vec<&str> {
         ShardedSafeTensorsModel::tensor_names(self)
+    }
+    fn tensor_shape(&self, name: &str) -> Option<Vec<usize>> {
+        ShardedSafeTensorsModel::get_tensor_info(self, name).map(|i| i.shape.clone())
     }
 }
 

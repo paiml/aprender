@@ -1,0 +1,107 @@
+contract: apr-fail-closed-structural-beat
+metadata:
+  kind: beat-benchmark
+  version: "1.0.0"
+  description: >
+    Pillar-4 CORRECTNESS beat (PMAT-756) — the STRUCTURAL companion to the
+    semantic fail-closed garbage beat (PMAT-744). Where F-DATA-QUALITY-001..005
+    reject a single tensor's broken CONTENTS (all-zero / NaN / Inf / L2~0 /
+    constant / extreme-magnitude), this beat rejects CROSS-TENSOR DIMENSION
+    inconsistencies that a real transformer ALWAYS satisfies but that the
+    SafeTensors container format does NOT enforce: (1) the embedding table and
+    the output head MUST index the same vocabulary — rows(lm_head) ==
+    rows(embed_tokens); (2) attention MUST consume the embedding's hidden vector
+    — in_dim(q_proj) == hidden_dim(embed_tokens). The SafeTensors format only
+    validates each tensor's shape<->byte-length in ISOLATION; it has no
+    model-level semantics. Verified 2026-06-15 (same host): the official
+    `safetensors` library (used by HuggingFace Transformers and Ollama's
+    safetensors import) LOADS, with ZERO error, a model whose embed declares
+    vocab=10 but lm_head declares vocab=8, AND a model whose embed hidden=4 but
+    q_proj input=6 — both tensors individually well-formed (-> garbage / OOB at
+    inference). apr's validate_cross_tensor_structure (F-STRUCT-001) REJECTS both
+    at load and ACCEPTS a real, consistent model (verified no false positive on
+    Qwen2.5-Coder-0.5B: tied embeddings, vocab 151936, hidden 896). apr concedes
+    raw decode speed but wins on "we provably never load a dimensionally-broken
+    model; they provably do." HONESTY NOTE: this is specifically the CROSS-TENSOR
+    class. The same `safetensors` lib DOES reject a single-tensor
+    shape<->byte-length inconsistency, and llama.cpp's GGUF loader DOES
+    cross-check per-tensor arch dims (file bounds, n_embd, n_vocab) — so the
+    asymmetry here is the model-level invariant that a raw safetensors load leaves
+    unchecked.
+  references:
+  - "crates/aprender-serve/tests/beat_fail_closed_structural.rs"
+  - "crates/aprender-serve/src/safetensors/validation.rs (validate_cross_tensor_structure, F-STRUCT-001)"
+  - "crates/aprender-serve/src/safetensors_infer_convert.rs (validate_structural_consistency — wired into the SafeTensors load path)"
+  - "contracts/apr-fail-closed-garbage-beat-v1.yaml (sibling SEMANTIC fail-closed beat, F-DATA-QUALITY-001..005)"
+version: 1
+status: enforced
+date: 2026-06-15
+
+# Beat-benchmark parameters (incumbent baseline measured; CI fails on regression).
+beat:
+  pillar: 4
+  incumbent: "safetensors / HuggingFace Transformers / Ollama (safetensors import)"
+  incumbent_pinned: >
+    2026-06-15 — `uv run --with safetensors --with numpy` ->
+    `safetensors.numpy.load_file` LOADED both crafted-broken artifacts with NO
+    error: {embed:[10,4], lm_head:[8,4]} (vocab mismatch) and
+    {embed:[10,4], q_proj:[6,6]} (hidden mismatch).
+  canonical_task: >
+    Present N classes of structurally cross-inconsistent SafeTensors models whose
+    individual tensors are each well-formed (valid shape<->byte-length) but whose
+    dimensions are mutually inconsistent: (a) embed vocab rows != lm_head/output
+    vocab rows; (b) embed hidden dim != q_proj/qkv input dim; including Llama-style
+    naming (tok_embeddings / output / attention.wq). A fail-closed loader MUST
+    REJECT every one. apr's validate_cross_tensor_structure rejects all N AND
+    accepts every valid model (consistent untied, tied-embedding, unrecognised
+    names — no false positive); safetensors-lib / Transformers / Ollama perform no
+    such model-level cross-tensor gate and reject 0.
+  metric: broken_structural_classes_rejected
+  direction: higher_is_better
+  baseline_value: 0           # incumbents reject 0 cross-tensor-inconsistent classes
+  baseline_floor: 0
+  beat_threshold: 2           # apr must reject BOTH broken structural classes (vocab + hidden)
+  baseline_sourced_date: "2026-06-15"
+  approved_compute: CPU       # the apr-side gate is CPU-deterministic
+  ci_gate_name: "beat_fail_closed_structural"   # crates/aprender-serve/tests/beat_fail_closed_structural.rs
+
+proof_obligations:
+- id: OBLIG-STRUCT-VOCAB-CONSISTENCY
+  statement: >
+    For any SafeTensors model exposing BOTH an embedding (embed_tokens/
+    tok_embeddings) and a separate output head (lm_head/output), apr rejects it at
+    load iff rows(output) != rows(embed). A tied-embedding model (no separate
+    head) is never flagged on this invariant.
+  type: invariant
+- id: OBLIG-STRUCT-HIDDEN-CONSISTENCY
+  statement: >
+    For any SafeTensors model exposing BOTH an embedding and an attention input
+    projection (q_proj/qkv_proj/attention.wq/c_attn), apr rejects it at load iff
+    cols(embed) != cols(q_proj) (the hidden dim the attention matmul consumes).
+  type: invariant
+- id: OBLIG-STRUCT-NO-FALSE-POSITIVE
+  statement: >
+    apr accepts every structurally-consistent model and every model whose role
+    tensors cannot be positively identified — the gate asserts an invariant only
+    when it can ground both sides. Verified on Qwen2.5-Coder-0.5B (real, valid).
+  type: invariant
+
+falsification_tests:
+- id: FALSIFY-BEAT-STRUCT-FAIL-CLOSED
+  description: >
+    FALSE if apr ACCEPTS any cross-tensor-inconsistent model (vocab mismatch or
+    hidden-dim mismatch) — the structural garbage the incumbents load silently —
+    OR if apr REJECTS a structurally-consistent / tied-embedding / unrecognised
+    model (false positive). Catches a regression that drops the gate or makes it
+    over-eager.
+  command: >
+    cargo test -p aprender-serve --test beat_fail_closed_structural -- --nocapture
+  expected: >
+    apr rejected 2/2 structural-mismatch classes (incumbents: 0) and accepted all
+    valid classes (0 false positive).
+  if_fails: >
+    Either validate_cross_tensor_structure stopped rejecting a cross-tensor
+    mismatch (fail-closed regression — check the role-name matching in
+    crates/aprender-serve/src/safetensors/validation.rs), or it started flagging a
+    valid model (false positive — most likely a needle now matches a tensor it
+    shouldn't, or the tied-embedding / unknown-name pass-through broke).
