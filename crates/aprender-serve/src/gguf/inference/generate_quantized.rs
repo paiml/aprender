@@ -49,6 +49,11 @@ impl OwnedQuantizedModel {
 
         let mut tokens = prompt.to_vec();
         let max_len = prompt.len() + config.max_tokens;
+        // PMAT-819: seed the sampler RNG from config.seed so the OpenAI `seed`
+        // API contract holds (same prompt+seed+params => same tokens). Greedy
+        // (temperature==0 || top_k==1) never touches the RNG, so the default
+        // config is byte-for-byte unchanged.
+        let mut rng = StdRng::seed_from_u64(config.seed);
 
         for _ in 0..config.max_tokens {
             // Forward pass with fused Q4_K ops (1.37x faster)
@@ -59,8 +64,8 @@ impl OwnedQuantizedModel {
                 // Greedy decoding
                 Self::argmax(&logits)
             } else {
-                // Temperature + top-k sampling
-                Self::sample_topk(&logits, config.temperature, config.top_k)
+                // Temperature + top-k sampling (seeded for reproducibility)
+                Self::sample_topk_seeded(&logits, config.temperature, config.top_k, &mut rng)
             };
 
             // Check stop condition
@@ -88,8 +93,12 @@ impl OwnedQuantizedModel {
             .map_or(0, |(idx, _)| idx as u32)
     }
 
-    /// Top-k sampling with temperature
-    pub fn sample_topk(logits: &[f32], temperature: f32, top_k: usize) -> u32 {
+    /// Top-k sampling with temperature, drawing from the given uniform sample `r ∈ [0,1)`.
+    ///
+    /// Pure: the only source of randomness is the caller-supplied `r`. This lets both the
+    /// entropy-seeded [`Self::sample_topk`] and the seeded [`Self::sample_topk_seeded`]
+    /// share one inverse-CDF implementation, so a seeded RNG fully determines the token.
+    fn sample_topk_with_draw(logits: &[f32], temperature: f32, top_k: usize, r: f32) -> u32 {
         // Apply temperature
         let scaled: Vec<f32> = logits.iter().map(|&x| x / temperature).collect();
 
@@ -106,10 +115,7 @@ impl OwnedQuantizedModel {
             .map(|(i, v)| (*i, (v - max_val).exp() / exp_sum))
             .collect();
 
-        // Sample from probability distribution with proper randomness
-        let mut rng = rand::rng();
-        let r: f32 = rng.random();
-
+        // Inverse-CDF draw from the categorical distribution
         let mut cumulative = 0.0;
         for &(idx, prob) in &probs {
             cumulative += prob;
@@ -119,6 +125,35 @@ impl OwnedQuantizedModel {
         }
 
         probs.last().map_or(0, |(idx, _)| *idx as u32)
+    }
+
+    /// Top-k sampling with temperature (entropy-seeded RNG).
+    ///
+    /// Backward-compatible: uses a fresh process-entropy RNG, so output is NOT reproducible.
+    /// For deterministic / seeded sampling (the OpenAI `seed` API contract), use
+    /// [`Self::sample_topk_seeded`].
+    pub fn sample_topk(logits: &[f32], temperature: f32, top_k: usize) -> u32 {
+        let r: f32 = rand::rng().random();
+        Self::sample_topk_with_draw(logits, temperature, top_k, r)
+    }
+
+    /// Top-k sampling with temperature, drawing from a caller-owned seeded RNG.
+    ///
+    /// PMAT-819: closes the dense-path seed-determinism gap. The HTTP `/v1/chat/completions`
+    /// dense decode loops own one [`StdRng`] seeded from `QuantizedGenerateConfig.seed` and
+    /// advance it once per sampled token, so the same `(prompt, seed, temperature, top_k)`
+    /// produces byte-identical output across runs — matching the qwen3_moe path
+    /// (`infer/qwen3_moe_generate.rs::sample_from_logits`) which already seeds from config.
+    ///
+    /// Discharges `openai-serve-sampling-determinism-v1` F-SEED-DETERMINISM-001/002.
+    pub fn sample_topk_seeded(
+        logits: &[f32],
+        temperature: f32,
+        top_k: usize,
+        rng: &mut StdRng,
+    ) -> u32 {
+        let r: f32 = rng.random();
+        Self::sample_topk_with_draw(logits, temperature, top_k, r)
     }
 
     /// Generate tokens using KV cache for efficient autoregressive decoding (IMP-101)
@@ -156,6 +191,9 @@ impl OwnedQuantizedModel {
         let max_seq_len = prompt.len() + config.max_tokens;
         let mut cache = OwnedQuantizedKVCache::from_config(&self.config, max_seq_len);
         let mut tokens = prompt.to_vec();
+        // PMAT-819: seeded sampler RNG (OpenAI `seed` determinism). This is the
+        // production HTTP dense path (try_quantized_backend -> generate_with_cache).
+        let mut rng = StdRng::seed_from_u64(config.seed);
 
         // GH-104: BrickProfiler for per-operation timing in autoregressive path
         let mut profiler = if config.trace {
@@ -235,14 +273,15 @@ impl OwnedQuantizedModel {
                 );
             }
 
-            // Sample next token
+            // Sample next token (PMAT-819: seeded for OpenAI `seed` determinism)
             let next_token = if config.temperature == 0.0 || config.top_k == 1 {
                 ops::argmax(&logits)
             } else {
-                crate::gguf::OwnedQuantizedModel::sample_topk(
+                crate::gguf::OwnedQuantizedModel::sample_topk_seeded(
                     &logits,
                     config.temperature,
                     config.top_k,
+                    &mut rng,
                 )
             };
 
@@ -362,6 +401,8 @@ impl OwnedQuantizedModel {
         let max_seq_len = prompt.len() + config.max_tokens;
         let mut cache = OwnedQuantizedKVCache::from_config(&self.config, max_seq_len);
         let mut tokens = prompt.to_vec();
+        // PMAT-819: seeded sampler RNG (OpenAI `seed` determinism, streaming dense path).
+        let mut rng = StdRng::seed_from_u64(config.seed);
 
         // GH-104: BrickProfiler for per-operation timing in streaming path
         let mut profiler = if config.trace {
@@ -412,14 +453,15 @@ impl OwnedQuantizedModel {
         // Generate new tokens with streaming
         for gen_idx in 0..config.max_tokens {
             let token_start = std::time::Instant::now();
-            // Sample next token
+            // Sample next token (PMAT-819: seeded for OpenAI `seed` determinism)
             let next_token = if config.temperature == 0.0 || config.top_k == 1 {
                 ops::argmax(&logits)
             } else {
-                crate::gguf::OwnedQuantizedModel::sample_topk(
+                crate::gguf::OwnedQuantizedModel::sample_topk_seeded(
                     &logits,
                     config.temperature,
                     config.top_k,
+                    &mut rng,
                 )
             };
 

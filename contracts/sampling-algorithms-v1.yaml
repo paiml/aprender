@@ -69,6 +69,19 @@ proof_obligations:
   property: SIMD sampling equivalence
   tolerance: 0.0
   applies_to: simd
+- type: bound
+  property: APR-path sampler honors top_k / top_p (PMAT-820)
+  formal: apr_sample_from_logits(logits, {temperature, top_k, top_p}) selects only
+    from top_k_top_p_survivors(logits/temperature, top_k, top_p); excluded tokens
+    are unreachable
+  applies_to: all
+- type: equivalence
+  property: APR-path neutral params are byte-identical to temperature-only (PMAT-820
+    no-regression)
+  formal: top_k in {0} ∪ [V, ∞) ∧ top_p >= 1.0 ⇒ apr_sample_from_logits == argmax(logits/temperature);
+    temperature == 0 ⇒ argmax(logits)
+  tolerance: 0.0
+  applies_to: all
 falsification_tests:
 - id: FALSIFY-SA-001
   rule: Greedy = argmax
@@ -95,6 +108,21 @@ falsification_tests:
   prediction: SIMD sampling matches scalar
   test: proptest
   if_fails: ' compare scalar vs SIMD sampling:SIMD sampler selects different tokens'
+- id: FALSIFY-SA-006
+  rule: APR-path sampler honors top_k / top_p (PMAT-820)
+  prediction: With top_k=1 or top_p=0.1 on a peaked distribution, a low-probability
+    token reachable under neutral params is EXCLUDED from the survivor set
+  test: aprender-serve apr_transformer::generation::top_p_top_k_tests::{topk_one_excludes_low_prob_token,
+    topp_tight_nucleus_excludes_tail, sampler_honors_top_k_one}
+  if_fails: APR generation.rs sample_from_logits drops config.top_k / config.top_p
+    (full-distribution temperature sampling — the original PMAT-820 defect)
+- id: FALSIFY-SA-007
+  rule: APR-path neutral params no-regression (PMAT-820)
+  prediction: top_k in {0} or >= vocab AND top_p >= 1.0 yields byte-identical output
+    to the pre-fix temperature-only argmax; greedy (temperature==0) is unaffected
+  test: aprender-serve apr_transformer::generation::top_p_top_k_tests::{neutral_params_byte_identical_to_legacy,
+    top_k_ge_vocab_is_neutral, greedy_unaffected_by_top_k_top_p}
+  if_fails: APR truncation pruned the argmax token or altered greedy selection
 kani_harnesses:
 - id: KANI-SA-001
   obligation: SA-EQ-001

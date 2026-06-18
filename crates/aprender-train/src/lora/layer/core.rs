@@ -106,6 +106,18 @@ impl LoRALayer {
         layer
     }
 
+    /// Override the LoRA scaling factor.
+    ///
+    /// Used when restoring a serialized adapter whose `scale` was produced by a
+    /// non-Standard mode (e.g. rsLoRA, where `scale = alpha / sqrt(rank)` rather than
+    /// the `alpha / rank` that [`LoRALayer::new`] recomputes). The adapter stores the
+    /// resulting scale *value*, not the scaling mode, so restoration sets it directly.
+    #[must_use]
+    pub fn with_scale(mut self, scale: f32) -> Self {
+        self.scale = scale;
+        self
+    }
+
     /// Forward pass: y = W@x + scale * (B @ (A @ x))
     ///
     /// # Arguments
