@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-02-19'
   author: PAIML Engineering
   description: ARIMA -- Autoregressive Integrated Moving Average time series forecasting
@@ -69,6 +69,11 @@ proof_obligations:
   property: Forecast deterministic
   formal: forecast(model, n) = forecast(model, n) for same model and data
   applies_to: all
+- type: invariant
+  property: Reverse-differencing seeds each pass with the matching intermediate difference (PMAT-834)
+  formal: 'for d >= 2, the pass that undoes the k-th difference is seeded with the last value of
+    the (k-1)-th-order difference of y (tail[0] = y[n]); NOT y[n] for every pass'
+  applies_to: all
 falsification_tests:
 - id: FALSIFY-ARIMA-001
   rule: Forecast length
@@ -90,6 +95,15 @@ falsification_tests:
   prediction: forecast(model, n) = forecast(model, n)
   test: 'proptest: forecast twice with same model, compare element-wise'
   if_fails: Non-deterministic state or random initialization leak
+- id: FALSIFY-ARIMA-INTEGRATE-D2
+  rule: Reverse-differencing seeds intermediate differences for d >= 2 (PMAT-834)
+  prediction: 'ARIMA(0,2,0) on the quadratic series [10,20,35,55,80] (constant 2nd difference)
+    forecasts ~110 (continues the parabola). The pre-fix code re-seeded every un-differencing
+    pass with y[n]=80, overshooting to ~165.'
+  test: 'cargo test -p aprender-core --lib falsify_arima_integrate_d2_seeds_intermediate_difference'
+  if_fails: 'Reverse-differencing seeds every pass with y[n] instead of the last value of the
+    corresponding intermediate difference, so every ARIMA forecast with d >= 2 is numerically
+    wrong (the error compounds with the differencing order).'
 enforcement:
   forecast_length:
     description: Forecast must return exactly n_periods values
@@ -143,5 +157,5 @@ qa_gate:
   - forecast_finiteness
   - differencing_length
   - forecast_deterministic
-  pass_criteria: All 4 falsification tests pass + Kani harnesses verify
+  pass_criteria: All 5 falsification tests pass + Kani harnesses verify
   falsification: AR recursion diverges producing Inf/NaN forecasts

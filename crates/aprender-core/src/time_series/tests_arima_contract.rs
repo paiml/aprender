@@ -136,3 +136,24 @@ mod arima_proptest_falsify {
         }
     }
 }
+
+/// FALSIFY-ARIMA-INTEGRATE-D2 (PMAT-834): reverse-differencing for d >= 2 must seed each
+/// un-differencing pass with the last value of the corresponding INTERMEDIATE difference, not
+/// y[n] every time. On a perfectly quadratic series y_t (constant 2nd difference) the 1-step
+/// forecast must continue the parabola; the prior code re-seeded every pass with y[n], so for
+/// d == 2 the forecast overshoots badly. Series [10,20,35,55,80] (1st diffs 10,15,20,25; 2nd
+/// diff constant 5) continues to 110. Pre-fix (both seeds = y[n] = 80) overshoots to ~165.
+#[test]
+fn falsify_arima_integrate_d2_seeds_intermediate_difference() {
+    let data = Vector::from_slice(&[10.0, 20.0, 35.0, 55.0, 80.0]);
+    let mut arima = ARIMA::new(0, 2, 0);
+    arima.fit(&data).expect("fit");
+    let f = arima.forecast(1).expect("forecast");
+    // Correct continuation of the parabola is 110 (next 1st diff 30, plus y[n]=80).
+    // RED pre-fix: ~165 (double-counts y[n]). GREEN post-fix: ~110.
+    assert!(
+        f[0] < 135.0,
+        "ARIMA(0,2,0) forecast {} overshot — reverse-differencing re-seeded with y[n] instead of the last 1st-difference (expected ~110, pre-fix ~165)",
+        f[0]
+    );
+}
