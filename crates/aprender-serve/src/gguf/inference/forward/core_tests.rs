@@ -63,6 +63,7 @@ fn create_llama_style_model(
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -90,6 +91,8 @@ fn create_llama_style_model(
             ffn_norm_bias: None,
             attn_q_norm_weight: None,
             attn_k_norm_weight: None,
+            post_attn_norm_weight: None,
+            post_ffw_norm_weight: None,
         };
         layers.push(layer);
     }
@@ -141,6 +144,7 @@ fn create_phi2_style_model(
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -166,6 +170,8 @@ fn create_phi2_style_model(
             ffn_norm_bias: None,
             attn_q_norm_weight: None,
             attn_k_norm_weight: None,
+            post_attn_norm_weight: None,
+            post_ffw_norm_weight: None,
         };
         layers.push(layer);
     }

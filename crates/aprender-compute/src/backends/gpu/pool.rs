@@ -41,7 +41,9 @@ impl GpuDevicePool {
 
     /// Open all available non-CPU GPU adapters (async)
     pub async fn all_async() -> Result<Self, String> {
-        let instance = wgpu::Instance::default();
+        // PMAT-778: reuse the process-global instance so the broken freedreno
+        // ICD (GB10/aarch64) is enumerated exactly once, never concurrently.
+        let instance = super::device::shared_instance();
         let adapters = instance.enumerate_adapters(wgpu::Backends::all());
 
         if adapters.is_empty() {

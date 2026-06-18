@@ -2,6 +2,7 @@
 /// PARITY-029d: Acceptance rate and speedup calculation
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity029d_acceptance_rate_speedup() {
     println!("=== PARITY-029d: Acceptance Rate and Speedup ===\n");
 
@@ -76,6 +77,7 @@ fn test_parity029d_acceptance_rate_speedup() {
 /// PARITY-029e: Throughput improvement analysis
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity029e_throughput_improvement() {
     println!("=== PARITY-029e: Throughput Improvement ===\n");
 
@@ -135,6 +137,7 @@ fn test_parity029e_throughput_improvement() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity030a_wgpu_flash_attention_structure() {
     println!("=== PARITY-030a: wgpu FlashAttention Structure ===\n");
 
@@ -155,6 +158,7 @@ fn test_parity030a_wgpu_flash_attention_structure() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity030b_gpu_dispatch_threshold() {
     println!("=== PARITY-030b: GPU Dispatch Threshold ===\n");
 
@@ -187,6 +191,7 @@ fn test_parity030b_gpu_dispatch_threshold() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity030c_matmul_operations() {
     println!("=== PARITY-030c: GPU Matmul Operations ===\n");
 
@@ -223,6 +228,7 @@ fn test_parity030c_matmul_operations() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity030d_memory_efficiency() {
     println!("=== PARITY-030d: Memory Efficiency ===\n");
 
@@ -269,6 +275,7 @@ fn test_parity030d_memory_efficiency() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity030e_performance_projection() {
     println!("=== PARITY-030e: Performance Projection ===\n");
 
@@ -335,6 +342,7 @@ fn test_parity030e_performance_projection() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity031a_buffer_pool_creation() {
     println!("=== PARITY-031a: Buffer Pool Creation ===\n");
 
@@ -371,6 +379,7 @@ fn test_parity031a_buffer_pool_creation() {
 
 #[test]
 #[cfg(feature = "gpu")]
+#[serial_test::serial]
 fn test_parity031b_warmup_pre_allocation() {
     println!("=== PARITY-031b: Warmup Pre-allocation ===\n");
 

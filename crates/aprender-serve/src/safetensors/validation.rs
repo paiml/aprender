@@ -361,6 +361,151 @@ pub fn enforce_weight_validation(
 }
 
 // =============================================================================
+// F-STRUCT-001: CROSS-TENSOR STRUCTURAL CONSISTENCY GATE (PMAT-756)
+// =============================================================================
+//
+// Pillar-4 fail-closed STRUCTURAL beat (distinct from the F-DATA-QUALITY-00x
+// *semantic* gates). The per-tensor data-quality gates (all-zero / NaN / Inf /
+// L2~0 / extreme-magnitude, PMAT-744/F-DATA-QUALITY-001..005) check the CONTENTS
+// of a single tensor. This gate checks the CROSS-TENSOR DIMENSION INVARIANTS that
+// a real transformer ALWAYS satisfies but that the SafeTensors container format
+// does NOT enforce:
+//
+//   1. VOCAB CONSISTENCY:   rows(lm_head.weight) == rows(embed_tokens.weight)
+//                           (both index the SAME vocabulary).
+//   2. HIDDEN CONSISTENCY:  in_dim(q_proj/qkv) == hidden_dim(embed_tokens)
+//                           (attention consumes the embedding's hidden vector).
+//
+// WHY THIS IS A BEAT (verified 2026-06-15): the SafeTensors format has no
+// model-level semantics — it validates each tensor's shape<->byte-length in
+// isolation. The official `safetensors` library (used by HuggingFace
+// Transformers and Ollama's safetensors import) LOADS a model whose embedding
+// declares vocab=10 but whose lm_head declares vocab=8, or whose embedding
+// hidden=4 but whose q_proj input=6, with ZERO error — both tensors are
+// individually well-formed. Such a model then produces OUT-OF-RANGE token
+// lookups / a dimension-mismatched first matmul -> garbage or OOB at inference.
+// apr fails closed at load instead.
+//
+// FALSE-POSITIVE SAFETY: the gate fires ONLY when it can POSITIVELY identify the
+// relevant tensors AND they disagree. A tied-embedding model (no separate
+// lm_head) passes (invariant vacuously holds). A model that uses a name this gate
+// doesn't recognise passes (no assertion made). A real, consistent model passes.
+
+/// One side of an `(out_rows, in_cols)` 2-D tensor shape, extracted by role.
+#[derive(Debug, Clone, Copy)]
+struct Shape2D {
+    rows: usize,
+    cols: usize,
+}
+
+/// Interpret a SafeTensors shape vector as a 2-D `(rows, cols)` matrix.
+///
+/// Weight matrices in HF/SafeTensors are stored row-major `[out_features,
+/// in_features]`. Returns `None` for shapes that are not 2-D (norms, biases,
+/// scalars) — those carry no cross-tensor dimension invariant here.
+fn as_2d(shape: &[usize]) -> Option<Shape2D> {
+    if shape.len() == 2 {
+        Some(Shape2D {
+            rows: shape[0],
+            cols: shape[1],
+        })
+    } else {
+        None
+    }
+}
+
+/// Find the 2-D shape of the first tensor whose name matches any of `needles`
+/// as a trailing path-segment match (e.g. `embed_tokens.weight` matches
+/// `model.embed_tokens.weight`).
+fn find_shape<'a, I>(tensors: I, needles: &[&str]) -> Option<(&'a str, Shape2D)>
+where
+    I: IntoIterator<Item = (&'a str, &'a [usize])>,
+{
+    for (name, shape) in tensors {
+        for needle in needles {
+            if name == *needle || name.ends_with(needle) {
+                if let Some(s) = as_2d(shape) {
+                    return Some((name, s));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// F-STRUCT-001 — validate cross-tensor structural consistency from a SafeTensors
+/// tensor map (name -> shape).
+///
+/// This is the Pillar-4 STRUCTURAL fail-closed gate. It rejects a model whose
+/// individual tensors are each well-formed but whose dimensions are mutually
+/// inconsistent — the exact class of artifact that `safetensors`-lib /
+/// HuggingFace Transformers / Ollama load and run silently.
+///
+/// # Errors
+///
+/// Returns `RealizarError::FormatError` (rule id `F-STRUCT-001`) if a
+/// cross-tensor invariant is violated. Returns `Ok(())` when no violation is
+/// found OR when the relevant tensors cannot be positively identified (no false
+/// positive).
+pub fn validate_cross_tensor_structure<'a, I>(tensors: I) -> Result<()>
+where
+    I: IntoIterator<Item = (&'a str, &'a [usize])> + Clone,
+{
+    // Canonical role names. We match by trailing path segment so both bare
+    // (`lm_head.weight`) and prefixed (`model.lm_head.weight`) forms work.
+    let embed = find_shape(
+        tensors.clone(),
+        &["embed_tokens.weight", "tok_embeddings.weight"],
+    );
+    let lm_head = find_shape(tensors.clone(), &["lm_head.weight", "output.weight"]);
+    // q_proj (separate) OR a fused qkv_proj; both have in_features == hidden_dim.
+    let q_proj = find_shape(
+        tensors.clone(),
+        &[
+            "self_attn.q_proj.weight",
+            "attention.wq.weight",
+            "self_attn.qkv_proj.weight",
+            "attn.c_attn.weight",
+        ],
+    );
+
+    // Invariant 1: VOCAB CONSISTENCY — rows(lm_head) == rows(embed).
+    // Only assert when BOTH are present (untied). Tied models omit lm_head -> pass.
+    if let (Some((emb_name, emb)), Some((lm_name, lm))) = (embed, lm_head) {
+        if emb.rows != lm.rows {
+            return Err(RealizarError::FormatError {
+                reason: format!(
+                    "[F-STRUCT-001] Vocab-size mismatch: '{emb_name}' has {} rows (vocab) but \
+                     '{lm_name}' has {} rows. The embedding table and the output head MUST index \
+                     the same vocabulary; this model would emit out-of-range token ids and produce \
+                     garbage. (safetensors/Transformers/Ollama load this silently.)",
+                    emb.rows, lm.rows
+                ),
+            });
+        }
+    }
+
+    // Invariant 2: HIDDEN CONSISTENCY — in_features(q_proj) == hidden_dim(embed).
+    // embed is [vocab, hidden]; q_proj/qkv is [out, hidden]. Their hidden (cols)
+    // MUST agree — attention consumes the embedding's hidden vector.
+    if let (Some((emb_name, emb)), Some((q_name, q))) = (embed, q_proj) {
+        if emb.cols != q.cols {
+            return Err(RealizarError::FormatError {
+                reason: format!(
+                    "[F-STRUCT-001] Hidden-dim mismatch: '{emb_name}' has hidden_dim {} but \
+                     attention input '{q_name}' expects hidden_dim {}. The first attention matmul \
+                     would be dimension-mismatched (OOB / garbage). \
+                     (safetensors/Transformers/Ollama load this silently.)",
+                    emb.cols, q.cols
+                ),
+            });
+        }
+    }
+
+    Ok(())
+}
+
+// =============================================================================
 // VALIDATED NEWTYPES - Compile-Time Contract Enforcement (PMAT-235)
 // =============================================================================
 //

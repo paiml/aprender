@@ -167,14 +167,30 @@ falsification_conditions:
     test_name: migrated_tools_match_yaml_contract_byte_for_byte
     status: ENFORCED
 
+  - id: FALSIFY-MCP-009
+    description: >
+      The `apr mcp` stdio server MUST NOT reply to a JSON-RPC 2.0
+      notification. Per JSON-RPC 2.0 §4.1 a notification is defined solely
+      by the ABSENCE of an `id` member — not by a `notifications/` method
+      prefix. A no-id request whose method is otherwise id-bearing
+      (`initialize`, an unknown method, …) is a notification; emitting any
+      response for it (in particular `{"id":null,...}`) is a protocol
+      violation that desyncs the client's request/response pairing. The
+      falsifier sends two no-id requests followed by one real id-bearing
+      `tools/list`, and asserts the first (and only) response line is the
+      id-bearing reply.
+    test_file: crates/aprender-mcp/tests/falsify_mcp_dogfood_001.rs
+    test_name: falsify_mcp_009_no_reply_to_notification
+    status: ENFORCED
+
 # ── Acceptance gate ──
-# Promoting this contract out of ACTIVE requires all 8 conditions above to
+# Promoting this contract out of ACTIVE requires all 9 conditions above to
 # hold simultaneously on a clean checkout with `cargo test -p aprender-mcp`.
 
 qa_gate:
   id: F-MCP-SERVER-GATE
   name: "apr mcp end-to-end contract"
-  pass_criteria: "All 8 FALSIFY-MCP-* tests listed in falsification_conditions pass"
+  pass_criteria: "All 9 FALSIFY-MCP-* tests listed in falsification_conditions pass"
   run: "cargo test -p aprender-mcp --no-fail-fast"
   falsification: >
     Rename or delete any referenced test_file / test_name and the
@@ -183,8 +199,9 @@ qa_gate:
 
 toyota_way_principles:
   jidoka: >
-    "Automation with a human touch" — every protocol gate (001, 005, 007)
-    rejects malformed traffic BEFORE dispatching to any tool handler.
+    "Automation with a human touch" — every protocol gate (001, 005, 007,
+    009) rejects malformed or unanswerable traffic BEFORE dispatching to any
+    tool handler; 009 in particular drops JSON-RPC notifications silently.
     Schema gates (002, 008) meta-validate at test time so drift cannot
     ship. Cancellation (006) halts in-flight work within a bounded grace
     window — the subprocess cannot outlive the client's notification.

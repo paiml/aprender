@@ -138,6 +138,7 @@ fn create_minimal_apr_transformer(
         output_norm_bias: None,
         lm_head_weight: vec![0.01; hidden_dim * vocab_size],
         lm_head_bias: None,
+        lm_head_tied: false,
         q4k_layers: None,
         lm_head_weight_q4k: None,
         lm_head_weight_q6k: None,
@@ -839,6 +840,7 @@ fn test_conversion_with_bias_weights() {
         output_norm_bias: Some(vec![0.0; 8]),
         lm_head_weight: vec![0.01; 8 * 10],
         lm_head_bias: Some(vec![0.0; 10]),
+        lm_head_tied: false,
         q4k_layers: None,
         lm_head_weight_q4k: None,
         lm_head_weight_q6k: None,
@@ -1039,6 +1041,7 @@ fn test_roundtrip_with_different_architectures() {
             output_norm_bias: None,
             lm_head_weight: vec![0.01; 8 * 10],
             lm_head_bias: None,
+            lm_head_tied: false,
             q4k_layers: None,
             lm_head_weight_q4k: None,
             lm_head_weight_q6k: None,
@@ -1729,6 +1732,7 @@ fn test_roundtrip_with_special_rope_theta() {
         output_norm_bias: None,
         lm_head_weight: vec![0.01; 8 * 10],
         lm_head_bias: None,
+        lm_head_tied: false,
         q4k_layers: None,
         lm_head_weight_q4k: None,
         lm_head_weight_q6k: None,
@@ -1796,6 +1800,7 @@ fn test_roundtrip_with_long_context() {
         output_norm_bias: None,
         lm_head_weight: vec![0.01; 8 * 10],
         lm_head_bias: None,
+        lm_head_tied: false,
         q4k_layers: None,
         lm_head_weight_q4k: None,
         lm_head_weight_q6k: None,
@@ -2154,9 +2159,18 @@ fn test_apr_bytes_checksum_field() {
     let apr = create_minimal_apr_transformer(8, 1, 10, 16);
     let bytes = GgufToAprConverter::to_apr_bytes(&apr).expect("serialize");
 
-    // Checksum is at bytes 40-43 (currently always 0)
+    // Checksum is at bytes 40-43: a CRC32 over the header excluding the checksum
+    // field itself (see `compute_apr_header_checksum`). It is deterministic for a
+    // given header, not a fixed constant (the original `== 0` expectation was
+    // stale — production has computed a real CRC32 since #1545, so `== 0`
+    // failed on `main` independent of PMAT-788).
     let checksum = u32::from_le_bytes([bytes[40], bytes[41], bytes[42], bytes[43]]);
-    assert_eq!(checksum, 0);
+    // Determinism: serializing the same model twice yields the identical
+    // checksum (the only stable property we can assert without reimplementing
+    // the in-crate CRC32).
+    let bytes2 = GgufToAprConverter::to_apr_bytes(&apr).expect("serialize");
+    let checksum2 = u32::from_le_bytes([bytes2[40], bytes2[41], bytes2[42], bytes2[43]]);
+    assert_eq!(checksum, checksum2, "header checksum must be deterministic");
 }
 
 #[test]
@@ -2647,6 +2661,7 @@ fn test_roundtrip_empty_architecture() {
         output_norm_bias: None,
         lm_head_weight: vec![0.01; 8 * 10],
         lm_head_bias: None,
+        lm_head_tied: false,
         q4k_layers: None,
         lm_head_weight_q4k: None,
         lm_head_weight_q6k: None,
@@ -2713,6 +2728,7 @@ fn test_roundtrip_very_small_eps() {
         output_norm_bias: None,
         lm_head_weight: vec![0.01; 8 * 10],
         lm_head_bias: None,
+        lm_head_tied: false,
         q4k_layers: None,
         lm_head_weight_q4k: None,
         lm_head_weight_q6k: None,
@@ -2779,6 +2795,7 @@ fn test_roundtrip_single_head() {
         output_norm_bias: None,
         lm_head_weight: vec![0.01; 8 * 10],
         lm_head_bias: None,
+        lm_head_tied: false,
         q4k_layers: None,
         lm_head_weight_q4k: None,
         lm_head_weight_q6k: None,
@@ -3036,6 +3053,7 @@ fn test_metadata_preservation_all_fields() {
         output_norm_bias: None,
         lm_head_weight: vec![0.01; 512 * 32000],
         lm_head_bias: None,
+        lm_head_tied: false,
         q4k_layers: None,
         lm_head_weight_q4k: None,
         lm_head_weight_q6k: None,
@@ -3112,6 +3130,7 @@ fn test_metadata_unicode_architecture() {
         output_norm_bias: None,
         lm_head_weight: vec![0.01; 8 * 10],
         lm_head_bias: None,
+        lm_head_tied: false,
         q4k_layers: None,
         lm_head_weight_q4k: None,
         lm_head_weight_q6k: None,
@@ -3340,6 +3359,7 @@ fn test_apr_roundtrip_weight_values_exact() {
         output_norm_bias: None,
         lm_head_weight: vec![0.01; 4 * 5],
         lm_head_bias: None,
+        lm_head_tied: false,
         q4k_layers: None,
         lm_head_weight_q4k: None,
         lm_head_weight_q6k: None,
@@ -3636,6 +3656,7 @@ fn test_apr_with_all_optional_fields_none() {
         output_norm_bias: None, // Optional
         lm_head_weight: vec![0.01; 4 * 5],
         lm_head_bias: None, // Optional
+        lm_head_tied: false,
         q4k_layers: None,
         lm_head_weight_q4k: None,
         lm_head_weight_q6k: None,
@@ -3704,6 +3725,7 @@ fn test_apr_with_all_optional_fields_some() {
         output_norm_bias: Some(vec![0.09; 4]),
         lm_head_weight: vec![0.01; 4 * 5],
         lm_head_bias: Some(vec![0.1; 5]),
+        lm_head_tied: false,
         q4k_layers: None,
         lm_head_weight_q4k: None,
         lm_head_weight_q6k: None,

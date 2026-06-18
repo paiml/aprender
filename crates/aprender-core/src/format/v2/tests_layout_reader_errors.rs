@@ -67,6 +67,87 @@ fn test_reader_ref_file_too_small_for_metadata() {
 }
 
 // ---------------------------------------------------------------------------
+// FALSIFY-PARSE-001 (PMAT-822): tensor_index_offset bounds.
+//
+// A corrupted/malicious APR header can set tensor_index_offset past EOF while
+// keeping a valid (attacker-recomputed) CRC32 checksum. The reader used the
+// offset directly to slice `&data[pos..]` without bounds-checking it against
+// the file length, panicking with "range start index out of bounds".
+//
+// Falsifier: pre-fix this PANICS (DoS on any malformed model fed to `apr run`,
+// `apr tensors`, `apr convert`, ...). Post-fix it returns a clean Err.
+// ---------------------------------------------------------------------------
+
+/// Build an APR file whose header is structurally valid (in-bounds `{}` JSON
+/// metadata, forged CRC32) but whose `tensor_index_offset` points past EOF.
+///
+/// Layout: [64-byte header][2-byte "{}" metadata]. File length = 66.
+fn craft_apr_with_index_offset(index_offset: u64, tensor_count: u32) -> Vec<u8> {
+    const META: &[u8] = b"{}";
+    let mut header = AprV2Header::new();
+    // Valid, in-bounds JSON metadata → metadata bounds + JSON parse both pass.
+    header.metadata_offset = HEADER_SIZE_V2 as u64;
+    header.metadata_size = META.len() as u32;
+    // Attacker-controlled index offset (the field under test).
+    header.tensor_index_offset = index_offset;
+    header.tensor_count = tensor_count;
+    header.data_offset = (HEADER_SIZE_V2 + META.len()) as u64;
+    // Forge a valid checksum (CRC32 over the header bytes the attacker controls).
+    header.update_checksum();
+    let mut bytes = header.to_bytes().to_vec();
+    bytes.extend_from_slice(META);
+    bytes
+}
+
+#[test]
+fn falsify_parse_001_reader_ref_index_offset_past_eof() {
+    // index offset 1_000_000 >> file length 66
+    let bytes = craft_apr_with_index_offset(1_000_000, 1);
+    let result = AprV2ReaderRef::from_bytes(&bytes);
+    assert!(
+        matches!(result, Err(V2FormatError::InvalidTensorIndex(_))),
+        "FALSIFY-PARSE-001: index offset past EOF must return clean Err, got {result:?}"
+    );
+}
+
+#[test]
+fn falsify_parse_001_reader_index_offset_past_eof() {
+    let bytes = craft_apr_with_index_offset(1_000_000, 1);
+    let result = AprV2Reader::from_bytes(&bytes);
+    assert!(
+        matches!(result, Err(V2FormatError::InvalidTensorIndex(_))),
+        "FALSIFY-PARSE-001: index offset past EOF must return clean Err, got {result:?}"
+    );
+}
+
+#[test]
+fn falsify_parse_001_reader_index_offset_just_past_eof() {
+    // Offset exactly at EOF (== file len) is also out of usable range for a
+    // 1-tensor index (TensorIndexEntry::from_bytes needs >=4 bytes). Empty/short
+    // slice → Err, not panic.
+    let probe = craft_apr_with_index_offset(0, 0);
+    let file_len = probe.len() as u64;
+    let bytes = craft_apr_with_index_offset(file_len, 1);
+    let result = AprV2ReaderRef::from_bytes(&bytes);
+    assert!(
+        matches!(result, Err(V2FormatError::InvalidTensorIndex(_))),
+        "FALSIFY-PARSE-001: index offset at EOF must return clean Err, got {result:?}"
+    );
+}
+
+#[test]
+fn falsify_parse_001_index_offset_overflow_usize() {
+    // u64::MAX as usize is usize::MAX on 64-bit; `&data[pos..]` with pos=MAX
+    // panics. Must be a clean Err.
+    let bytes = craft_apr_with_index_offset(u64::MAX, 1);
+    let result = AprV2ReaderRef::from_bytes(&bytes);
+    assert!(
+        matches!(result, Err(V2FormatError::InvalidTensorIndex(_))),
+        "FALSIFY-PARSE-001: index offset u64::MAX must return clean Err, got {result:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Reader - get_tensor_data / get_f32_tensor edge cases
 // ---------------------------------------------------------------------------
 

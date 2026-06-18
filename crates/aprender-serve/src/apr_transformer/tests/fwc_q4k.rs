@@ -82,6 +82,7 @@ fn test_fwc_q4k_gelu_no_gate() {
         output_norm_bias: Some(vec![0.0; hidden]),
         lm_head_weight: vec![0.01; vocab * hidden],
         lm_head_bias: Some(vec![0.0; vocab]),
+        lm_head_tied: false,
         q4k_layers: Some(vec![q4k]),
         lm_head_weight_q6k: None,
         lm_head_weight_q4k: None,
@@ -170,6 +171,7 @@ fn test_forward_batch_q4k_gelu() {
         output_norm_bias: Some(vec![0.0; hidden]),
         lm_head_weight: vec![0.01; vocab * hidden],
         lm_head_bias: Some(vec![0.0; vocab]),
+        lm_head_tied: false,
         q4k_layers: Some(vec![q4k]),
         lm_head_weight_q6k: None,
         lm_head_weight_q4k: None,
@@ -499,6 +501,7 @@ fn test_forward_batch_gelu_f32_no_q4k() {
         output_norm_bias: Some(vec![0.0; hidden]),
         lm_head_weight: vec![0.01; vocab * hidden],
         lm_head_bias: Some(vec![0.0; vocab]),
+        lm_head_tied: false,
         q4k_layers: None, // Pure F32 — exercises F32 GELU FFN with bias
         lm_head_weight_q6k: None,
         lm_head_weight_q4k: None,
