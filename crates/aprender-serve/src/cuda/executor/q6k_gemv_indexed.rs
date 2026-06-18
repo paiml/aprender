@@ -399,3 +399,93 @@ impl CudaExecutor {
     }
 
 }
+
+/// PMAT-806: Massive-activation outlier criterion (LLM.int8()-style).
+///
+/// Returns `true` when `host` contains a channel whose magnitude exceeds
+/// `mult × rms(host)` — the signature of a massive-activation channel that
+/// collapses the per-block INT8 dynamic range of Q8_1 activation quantization.
+///
+/// Pure (no GPU, no I/O) so the criterion is unit-testable in CI without a
+/// device. The GPU path (`detect_input_outlier`) wraps this with a one-time
+/// host readback + per-pointer verdict cache.
+#[must_use]
+pub(crate) fn is_massive_activation_outlier(host: &[f32], mult: f32) -> bool {
+    if host.is_empty() {
+        return false;
+    }
+    let mut sum_sq = 0.0f64;
+    let mut max_abs = 0.0f32;
+    for &x in host {
+        let ax = x.abs();
+        if ax > max_abs {
+            max_abs = ax;
+        }
+        sum_sq += f64::from(x) * f64::from(x);
+    }
+    let rms = (sum_sq / host.len() as f64).sqrt() as f32;
+    // rms==0 (all-zero input) cannot have an outlier; guard div-by-zero.
+    rms > 0.0 && max_abs > mult * rms
+}
+
+#[cfg(test)]
+mod pmat806_outlier_tests {
+    use super::is_massive_activation_outlier;
+
+    /// The canonical reproducer: dim 408 of Qwen2.5-coder-1.5B sits at ~26× the
+    /// activation rms. With the default 8× threshold this MUST be flagged so the
+    /// GEMV reading it is routed to the fp32 MWV path.
+    #[test]
+    fn massive_outlier_26x_rms_is_flagged() {
+        let mut v = vec![1.0f32; 1536];
+        // rms of all-ones is 1.0; place a 26× outlier at index 408.
+        v[408] = 26.0;
+        assert!(
+            is_massive_activation_outlier(&v, 8.0),
+            "26× outlier must be flagged at 8× threshold"
+        );
+    }
+
+    /// Ordinary activations (max/rms typically 3–5×) MUST NOT be flagged, so the
+    /// fast DP4A path is preserved on models without massive-activation channels.
+    #[test]
+    fn ordinary_activation_5x_rms_is_not_flagged() {
+        let mut v = vec![1.0f32; 1536];
+        v[0] = 5.0; // ~5× rms — a normal peak, not a massive outlier
+        assert!(
+            !is_massive_activation_outlier(&v, 8.0),
+            "5× peak must NOT trigger fp32 routing (no regression on normal models)"
+        );
+    }
+
+    /// Empty and all-zero inputs cannot contain an outlier (div-by-zero guard).
+    #[test]
+    fn empty_and_zero_inputs_are_not_outliers() {
+        assert!(!is_massive_activation_outlier(&[], 8.0));
+        assert!(!is_massive_activation_outlier(&[0.0; 64], 8.0));
+    }
+
+    /// Threshold boundary: a max/rms ratio exactly at the threshold is NOT an
+    /// outlier (strict `>`), just above it is. Construct an N-element vector of
+    /// all-ones with one element `peak`: rms = sqrt((N-1 + peak²)/N) ≈ 1 for
+    /// large N, so max/rms ≈ peak. With N=10000 the rms≈1 approximation is tight
+    /// enough that `peak` is the ratio to ~4 decimals.
+    #[test]
+    fn threshold_is_strict() {
+        let n = 10_000usize;
+        // peak just BELOW 8 → ratio < 8 → not flagged.
+        let mut below = vec![1.0f32; n];
+        below[42] = 7.9;
+        assert!(
+            !is_massive_activation_outlier(&below, 8.0),
+            "ratio ~7.9× must NOT be flagged at 8× threshold"
+        );
+        // peak well ABOVE 8 → flagged.
+        let mut above = vec![1.0f32; n];
+        above[42] = 9.0;
+        assert!(
+            is_massive_activation_outlier(&above, 8.0),
+            "ratio ~9× must be flagged at 8× threshold"
+        );
+    }
+}

@@ -20,6 +20,7 @@ fn test_phase34_embed_different_dimensions() {
             eps: 1e-5,
             rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
             bos_token_id: None,
             eos_token_id: None,
         };
@@ -48,6 +49,7 @@ fn test_phase34_fused_matmul_all_qtypes_comprehensive() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };

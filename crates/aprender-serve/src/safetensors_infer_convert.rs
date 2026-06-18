@@ -52,6 +52,12 @@ impl SafetensorsToAprConverter {
         source: &S,
         config: &SafetensorsConfig,
     ) -> Result<ValidatedAprTransformer> {
+        // F-STRUCT-001 (PMAT-756): fail closed on cross-tensor dimension
+        // inconsistencies (vocab/hidden mismatch) BEFORE assembly. The SafeTensors
+        // format does not enforce these — safetensors-lib / Transformers / Ollama
+        // load such artifacts and run garbage; apr rejects them at load.
+        Self::validate_structural_consistency(source)?;
+
         let apr_config = Self::build_apr_config(config)?;
         Self::log_phase2_warning(config);
         Self::log_hybrid_attention_info(config);
@@ -91,6 +97,28 @@ impl SafetensorsToAprConverter {
         };
 
         ValidatedAprTransformer::validate(transformer).map_err(Into::into)
+    }
+
+    /// F-STRUCT-001 (PMAT-756): cross-tensor structural consistency gate.
+    ///
+    /// Collects the declared shapes of the model's tensors and runs
+    /// [`validate_cross_tensor_structure`], which rejects a model whose embedding
+    /// and output head disagree on vocab size, or whose embedding and attention
+    /// disagree on hidden dim — structural garbage the SafeTensors container
+    /// format does not catch (and which `safetensors`-lib / Transformers / Ollama
+    /// load silently). No false positives: the gate only fires when it positively
+    /// identifies disagreeing tensors.
+    fn validate_structural_consistency<S: TensorSource>(source: &S) -> Result<()> {
+        let names = source.tensor_names();
+        let shapes: Vec<(String, Vec<usize>)> = names
+            .iter()
+            .filter_map(|n| source.tensor_shape(n).map(|s| ((*n).to_string(), s)))
+            .collect();
+        let view: Vec<(&str, &[usize])> = shapes
+            .iter()
+            .map(|(n, s)| (n.as_str(), s.as_slice()))
+            .collect();
+        crate::safetensors::validation::validate_cross_tensor_structure(view)
     }
 
     /// Build `AprTransformerConfig` from SafeTensors config.json.

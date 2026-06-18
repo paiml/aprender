@@ -17,6 +17,7 @@ fn test_imp_119c_gpu_fused_multihead_long_sequence() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };
@@ -81,6 +82,7 @@ fn test_imp_119d_adaptive_cpu_gpu_dispatch() {
         eps: 1e-5,
         rope_type: 0,
             explicit_head_dim: None,
+            query_pre_attn_scalar: None,
         bos_token_id: None,
             eos_token_id: None,
     };

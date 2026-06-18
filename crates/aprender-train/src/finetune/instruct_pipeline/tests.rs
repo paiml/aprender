@@ -2,6 +2,71 @@
 
 use super::*;
 
+/// PMAT-805 falsifier: CPU train_step must actually train the LoRA adapters.
+///
+/// Overfit-one-batch: repeatedly step on the SAME (prompt, response) pair.
+/// A correct LoRA trainer must (a) move the LoRA A/B parameters away from their
+/// init and (b) strictly decrease the loss. The #2051-class bug routed the CPU
+/// forward through `model.forward()` (plain attention, no LoRA), orphaning the
+/// `lora_layers` from the autograd graph → zero LoRA gradients → flat loss.
+#[test]
+fn falsify_pmat805_cpu_train_step_trains_lora_overfit_one_batch() {
+    let model_config = TransformerConfig::tiny();
+    let instruct_config = InstructConfig {
+        lora_rank: 8,
+        lora_alpha: 16.0,
+        learning_rate: 1e-2,
+        max_seq_len: 64,
+        gradient_clip_norm: None,
+        ..InstructConfig::default()
+    };
+    let mut pipeline = InstructPipeline::new(&model_config, instruct_config);
+
+    let prompt_ids: Vec<u32> = vec![1, 2, 3, 4, 5];
+    let response_ids: Vec<u32> = vec![6, 7, 8, 9, 10];
+
+    // Snapshot LoRA B params before training (init: B is zeros → snapshot is zeros).
+    // index 0 = Q0 (goes through RoPE), index 1 = V0 (no RoPE).
+    let q_b_before: Vec<f32> = pipeline.lora_layers[0].lora_b().data().to_vec();
+    let b_before: Vec<f32> = pipeline.lora_layers[1].lora_b().data().to_vec();
+
+    let first = pipeline.train_step(&prompt_ids, &response_ids);
+    let mut last_loss = first.loss;
+    assert!(first.loss.is_finite() && first.loss > 0.0, "initial loss must be finite & positive");
+
+    for _ in 0..25 {
+        let r = pipeline.train_step(&prompt_ids, &response_ids);
+        last_loss = r.loss;
+    }
+
+    // (a) LoRA params must have CHANGED (B starts at zero; gradient must move it).
+    let q_b_after: Vec<f32> = pipeline.lora_layers[0].lora_b().data().to_vec();
+    let b_after: Vec<f32> = pipeline.lora_layers[1].lora_b().data().to_vec();
+    let q_delta =
+        q_b_before.iter().zip(&q_b_after).map(|(a, b)| (a - b).abs()).fold(0.0_f32, f32::max);
+    let max_delta =
+        b_before.iter().zip(&b_after).map(|(a, b)| (a - b).abs()).fold(0.0_f32, f32::max);
+    eprintln!("[PMAT-805] q_delta(RoPE path)={q_delta} v_delta(no-RoPE path)={max_delta}");
+    assert!(
+        max_delta > 1e-6,
+        "FALSIFIED: LoRA V B params did not change after 26 steps (max_delta={max_delta}). \
+         CPU train_step is not training the adapters."
+    );
+    assert!(
+        q_delta > 1e-6,
+        "FALSIFIED: LoRA Q B params did not change after 26 steps (q_delta={q_delta}). \
+         RoPE severs the autograd graph for the Q projection."
+    );
+
+    // (b) Loss must strictly decrease on overfit-one-batch.
+    assert!(
+        last_loss < first.loss - 1e-3,
+        "FALSIFIED: loss did not decrease ({} -> {}). Adapters orphaned from autograd graph.",
+        first.loss,
+        last_loss
+    );
+}
+
 #[test]
 fn test_instruct_pipeline_new() {
     let model_config = TransformerConfig::tiny();
