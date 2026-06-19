@@ -232,7 +232,11 @@ impl AgglomerativeClustering {
                     crate::nn::functional::euclidean_distance(&merged_centroid, &other_centroid);
                 let n1 = merged_cluster.len() as f32;
                 let n2 = other_cluster.len() as f32;
-                ((n1 * n2) / (n1 + n2)) * centroid_dist
+                // Lance-Williams Ward inter-cluster distance (scipy/sklearn):
+                //   d(A, B) = sqrt(2 * |A| * |B| / (|A| + |B|)) * ||c_A - c_B||_2
+                // Reduces to plain Euclidean for singleton merges (sqrt(2*1*1/2) = 1),
+                // consistent with the raw initial distance matrix. PMAT-849.
+                (2.0 * n1 * n2 / (n1 + n2)).sqrt() * centroid_dist
             }
         };
 

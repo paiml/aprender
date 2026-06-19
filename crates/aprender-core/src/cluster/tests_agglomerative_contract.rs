@@ -101,6 +101,63 @@ fn falsify_hc_003_distinct_clusters() {
     );
 }
 
+/// FALSIFY-HC-004 (PMAT-849): Ward linkage merge distance matches scipy/sklearn.
+///
+/// The Lance-Williams Ward inter-cluster distance is
+///   d(A, B) = sqrt(2 * |A| * |B| / (|A| + |B|)) * ||centroid(A) - centroid(B)||_2
+/// A prior bug used `(|A|*|B|/(|A|+|B|)) * ||..||` (no factor of 2, no outer sqrt),
+/// which under-penalizes merging into larger clusters and flips which pair merges.
+///
+/// Reference dataset (verified vs scipy.cluster.hierarchy.linkage(method='ward')
+/// and sklearn.cluster.AgglomerativeClustering(linkage='ward')):
+///   X = [[5.5,7.2],[6.0,5.4],[4.2,6.5],[4.4,8.9],[9.6,3.8],[7.9,5.3]], n_clusters=2
+/// scipy partition: {1,4,5} together and {0,2,3} together.
+/// The buggy coefficient produced {0,1,2,3} together and {4,5} alone instead.
+#[test]
+fn falsify_hc_004_ward_matches_scipy() {
+    let data = Matrix::from_vec(
+        6,
+        2,
+        vec![5.5, 7.2, 6.0, 5.4, 4.2, 6.5, 4.4, 8.9, 9.6, 3.8, 7.9, 5.3],
+    )
+    .expect("valid matrix");
+
+    let mut hc = AgglomerativeClustering::new(2, Linkage::Ward);
+    hc.fit(&data).expect("fit succeeds");
+
+    let labels = hc.labels();
+
+    // Labels are permutation-invariant, so compare the induced partition.
+    // scipy/sklearn ward groups point 1 with the high-x points {4, 5},
+    // and points {0, 2, 3} together. Point 1 must NOT be with point 0.
+    assert_eq!(
+        labels[1], labels[4],
+        "FALSIFIED HC-004: point 1 and point 4 must share a cluster (scipy ward), got {} vs {}",
+        labels[1], labels[4]
+    );
+    assert_eq!(
+        labels[4], labels[5],
+        "FALSIFIED HC-004: point 4 and point 5 must share a cluster (scipy ward), got {} vs {}",
+        labels[4], labels[5]
+    );
+    assert_ne!(
+        labels[1], labels[0],
+        "FALSIFIED HC-004: point 1 must NOT be with point 0 (scipy ward partition is {{1,4,5}} | {{0,2,3}}), both got {}",
+        labels[1]
+    );
+    // The {0,2,3} side must be internally consistent.
+    assert_eq!(
+        labels[0], labels[2],
+        "FALSIFIED HC-004: point 0 and point 2 must share a cluster (scipy ward), got {} vs {}",
+        labels[0], labels[2]
+    );
+    assert_eq!(
+        labels[2], labels[3],
+        "FALSIFIED HC-004: point 2 and point 3 must share a cluster (scipy ward), got {} vs {}",
+        labels[2], labels[3]
+    );
+}
+
 mod hc_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
