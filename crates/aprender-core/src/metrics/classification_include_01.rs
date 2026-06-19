@@ -126,6 +126,23 @@ fn compute_tp_fp_fn(
     (tp, fp, fn_counts, support)
 }
 
+/// Indices of the class labels ACTUALLY PRESENT in `y_true ∪ y_pred`.
+///
+/// `Average::Macro` averages a per-class metric only over the labels that
+/// actually occur, matching scikit-learn's
+/// `labels = unique_labels(y_true, y_pred)` default. A class index `i`
+/// (with `0 ≤ i < n_classes`) is present iff it appears in `y_true`
+/// (`support[i] > 0`) OR was predicted on a sample whose true label differs
+/// (`fp[i] > 0`); a correctly-predicted label is necessarily in `y_true`, so
+/// `support[i] > 0` already covers it. Absent intermediate indices (e.g.
+/// class 1 when labels are `{0, 2}`) are excluded so their spurious 0.0
+/// per-class scores no longer dilute the macro mean (PMAT-844).
+fn present_classes(fp: &[usize], support: &[usize]) -> Vec<usize> {
+    (0..support.len())
+        .filter(|&i| support[i] > 0 || fp[i] > 0)
+        .collect()
+}
+
 #[path = "classification_report.rs"]
 mod classification_report;
 pub use classification_report::classification_report;

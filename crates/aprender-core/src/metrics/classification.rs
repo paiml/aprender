@@ -117,16 +117,14 @@ pub fn precision(y_pred: &[usize], y_true: &[usize], average: Average) -> f32 {
             }
         }
         Average::Macro => {
-            let precisions: Vec<f32> = (0..n_classes)
-                .map(|i| {
-                    if tp[i] + fp[i] == 0 {
-                        0.0
-                    } else {
-                        tp[i] as f32 / (tp[i] + fp[i]) as f32
-                    }
-                })
-                .collect();
-            precisions.iter().sum::<f32>() / n_classes as f32
+            // Average only over labels present in y_true ∪ y_pred (PMAT-844),
+            // matching sklearn's default labels = unique_labels(y_true, y_pred).
+            let present = present_classes(&fp, &support);
+            if present.is_empty() {
+                return 0.0;
+            }
+            let sum: f32 = present.iter().map(|&i| class_precision(tp[i], fp[i])).sum();
+            sum / present.len() as f32
         }
         Average::Weighted => {
             let total_support: usize = support.iter().sum();
@@ -192,7 +190,7 @@ pub fn recall(y_pred: &[usize], y_true: &[usize], average: Average) -> f32 {
         return 0.0;
     }
 
-    let (tp, _, fn_counts, support) = compute_tp_fp_fn(y_pred, y_true, n_classes);
+    let (tp, fp, fn_counts, support) = compute_tp_fp_fn(y_pred, y_true, n_classes);
 
     match average {
         Average::Micro => {
@@ -205,16 +203,16 @@ pub fn recall(y_pred: &[usize], y_true: &[usize], average: Average) -> f32 {
             }
         }
         Average::Macro => {
-            let recalls: Vec<f32> = (0..n_classes)
-                .map(|i| {
-                    if tp[i] + fn_counts[i] == 0 {
-                        0.0
-                    } else {
-                        tp[i] as f32 / (tp[i] + fn_counts[i]) as f32
-                    }
-                })
-                .collect();
-            recalls.iter().sum::<f32>() / n_classes as f32
+            // Average only over labels present in y_true ∪ y_pred (PMAT-844).
+            let present = present_classes(&fp, &support);
+            if present.is_empty() {
+                return 0.0;
+            }
+            let sum: f32 = present
+                .iter()
+                .map(|&i| class_recall(tp[i], fn_counts[i]))
+                .sum();
+            sum / present.len() as f32
         }
         Average::Weighted => {
             let total_support: usize = support.iter().sum();
@@ -324,10 +322,16 @@ pub fn f1_score(y_pred: &[usize], y_true: &[usize], average: Average) -> f32 {
             class_f1(total_tp, total_fp, total_fn)
         }
         Average::Macro => {
-            let f1_sum: f32 = (0..n_classes)
-                .map(|i| class_f1(tp[i], fp[i], fn_counts[i]))
+            // Average only over labels present in y_true ∪ y_pred (PMAT-844).
+            let present = present_classes(&fp, &support);
+            if present.is_empty() {
+                return 0.0;
+            }
+            let f1_sum: f32 = present
+                .iter()
+                .map(|&i| class_f1(tp[i], fp[i], fn_counts[i]))
                 .sum();
-            f1_sum / n_classes as f32
+            f1_sum / present.len() as f32
         }
         Average::Weighted => {
             let total_support: usize = support.iter().sum();
@@ -482,10 +486,16 @@ pub fn jaccard_score(y_pred: &[usize], y_true: &[usize], average: Average) -> f3
     match average {
         Average::Micro => class_jaccard(tp.iter().sum(), fp.iter().sum(), fn_counts.iter().sum()),
         Average::Macro => {
-            (0..n_classes)
-                .map(|i| class_jaccard(tp[i], fp[i], fn_counts[i]))
+            // Average only over labels present in y_true ∪ y_pred (PMAT-844).
+            let present = present_classes(&fp, &support);
+            if present.is_empty() {
+                return 0.0;
+            }
+            present
+                .iter()
+                .map(|&i| class_jaccard(tp[i], fp[i], fn_counts[i]))
                 .sum::<f32>()
-                / n_classes as f32
+                / present.len() as f32
         }
         Average::Weighted => {
             let total: usize = support.iter().sum();
@@ -533,10 +543,16 @@ pub fn fbeta_score(y_pred: &[usize], y_true: &[usize], beta: f32, average: Avera
     match average {
         Average::Micro => class_fbeta(tp.iter().sum(), fp.iter().sum(), fn_counts.iter().sum()),
         Average::Macro => {
-            (0..n_classes)
-                .map(|i| class_fbeta(tp[i], fp[i], fn_counts[i]))
+            // Average only over labels present in y_true ∪ y_pred (PMAT-844).
+            let present = present_classes(&fp, &support);
+            if present.is_empty() {
+                return 0.0;
+            }
+            present
+                .iter()
+                .map(|&i| class_fbeta(tp[i], fp[i], fn_counts[i]))
                 .sum::<f32>()
-                / n_classes as f32
+                / present.len() as f32
         }
         Average::Weighted => {
             let total: usize = support.iter().sum();
@@ -563,5 +579,84 @@ mod tests_jaccard_fbeta {
         assert!((jaccard_score(&yp, &yt, Average::Micro) - 0.454_545).abs() < 1e-4);
         assert!((fbeta_score(&yp, &yt, 0.5, Average::Macro) - 0.625).abs() < 1e-4);
         assert!((fbeta_score(&yp, &yt, 2.0, Average::Macro) - 0.620_301).abs() < 1e-4);
+    }
+}
+
+#[cfg(test)]
+mod tests_macro_present_labels {
+    use super::*;
+
+    /// PMAT-844 / PO-MACRO-001: `Average::Macro` must average per-class metrics
+    /// only over the labels ACTUALLY PRESENT (sorted union of y_true ∪ y_pred),
+    /// matching `sklearn.metrics.precision_recall_fscore_support(average='macro')`
+    /// whose default `labels = unique_labels(y_true, y_pred)`.
+    ///
+    /// Before the fix, the divisor was `max(labels)+1`, so absent intermediate
+    /// class indices (e.g. class 1 when labels are {0, 2}) contributed spurious
+    /// 0.0 terms. A PERFECT classifier on {0, 2} scored 2/3 instead of 1.0.
+    ///
+    /// RED (buggy): precision/recall/f1 = 0.6667 for the perfect {0,2} case,
+    ///              precision = 0.3333 for the swapped {0,2} case.
+    /// GREEN (fixed): 1.0 and 0.5 respectively (verified against scikit-learn).
+    #[test]
+    fn macro_average_noncontiguous_labels() {
+        // Perfect classifier on non-contiguous labels {0, 2} → all metrics 1.0.
+        let yt = vec![0usize, 2, 0, 2];
+        let yp = vec![0usize, 2, 0, 2];
+        let p = precision(&yp, &yt, Average::Macro);
+        let r = recall(&yp, &yt, Average::Macro);
+        let f = f1_score(&yp, &yt, Average::Macro);
+        assert!(
+            (p - 1.0).abs() < 1e-6,
+            "FALSIFIED PMAT-844: macro precision={p} for perfect {{0,2}}, expected 1.0"
+        );
+        assert!(
+            (r - 1.0).abs() < 1e-6,
+            "FALSIFIED PMAT-844: macro recall={r} for perfect {{0,2}}, expected 1.0"
+        );
+        assert!(
+            (f - 1.0).abs() < 1e-6,
+            "FALSIFIED PMAT-844: macro f1={f} for perfect {{0,2}}, expected 1.0"
+        );
+
+        // Swapped predictions on {0, 2}: each class has precision 0.5 → macro 0.5.
+        let yt2 = vec![0usize, 0, 2, 2];
+        let yp2 = vec![0usize, 2, 2, 0];
+        let p2 = precision(&yp2, &yt2, Average::Macro);
+        assert!(
+            (p2 - 0.5).abs() < 1e-6,
+            "FALSIFIED PMAT-844: macro precision={p2} for swapped {{0,2}}, expected 0.5"
+        );
+    }
+
+    /// PMAT-844 sibling metrics: `jaccard_score` and `fbeta_score` share the
+    /// same Macro divisor and must also restrict to present labels.
+    /// Perfect classifier on {0, 2} → both 1.0 (sklearn parity).
+    #[test]
+    fn macro_average_noncontiguous_jaccard_fbeta() {
+        let yt = vec![0usize, 2, 0, 2];
+        let yp = vec![0usize, 2, 0, 2];
+        assert!((jaccard_score(&yp, &yt, Average::Macro) - 1.0).abs() < 1e-6);
+        assert!((fbeta_score(&yp, &yt, 1.0, Average::Macro) - 1.0).abs() < 1e-6);
+        assert!((fbeta_score(&yp, &yt, 0.5, Average::Macro) - 1.0).abs() < 1e-6);
+    }
+
+    /// Regression guard: contiguous labels {0, 1, 2} must be unchanged by the
+    /// present-label fix (every class is present, so divisor == n_classes).
+    #[test]
+    fn macro_average_contiguous_labels_unchanged() {
+        // Perfect classifier on dense {0, 1, 2} → all metrics 1.0.
+        let y = vec![0usize, 1, 2, 0, 1, 2];
+        assert!((precision(&y, &y, Average::Macro) - 1.0).abs() < 1e-6);
+        assert!((recall(&y, &y, Average::Macro) - 1.0).abs() < 1e-6);
+        assert!((f1_score(&y, &y, Average::Macro) - 1.0).abs() < 1e-6);
+
+        // Known imperfect dense case keeps its established value (all 3 classes
+        // present, divisor unchanged at 3).
+        let yt = vec![0usize, 1, 2, 0, 1, 2];
+        let yp = vec![0usize, 2, 1, 0, 0, 1];
+        // class0: tp=2,fp=1 → 2/3; class1: tp=0,fp=2 → 0; class2: tp=0,fp=1 → 0.
+        let expected = (2.0_f32 / 3.0) / 3.0;
+        assert!((precision(&yp, &yt, Average::Macro) - expected).abs() < 1e-6);
     }
 }
