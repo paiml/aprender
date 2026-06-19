@@ -27,11 +27,12 @@ beat:
   incumbent: "PEFT / Unsloth (merge_and_unload — no forward-equivalence contract)"
   incumbent_pinned: "2026-06-14 — incumbents merge but do not contract-verify merged≡factored forward"
   canonical_task: >
-    Fold a LoRA adapter (A:[d_in,r], B:[r,d_out], scale=alpha/rank) into a base
-    weight W:[d_out,d_in] via MergeEngine::merge, then compare the merged-weight
-    forward (x @ W_merged^T) against the LoRA forward computed independently from the
-    factors (x@W_base^T + scale·(x @ A @ B)). Metric: max absolute per-element
-    difference between the two forward passes.
+    Fold a LoRA adapter in STANDARD PEFT layout (A:[rank,d_in], B:[d_out,rank],
+    scale=alpha/rank) into a base weight W:[d_out,d_in] via MergeEngine::merge, then
+    compare the merged-weight forward (x @ W_merged^T) against the LoRA forward computed
+    independently from the factors (x@W_base^T + scale·(x @ A^T @ B^T), ΔW=B@A). Metric:
+    max absolute per-element difference between the two forward passes. (PMAT-854 fixed
+    the prior transposed indexing that read both factors in the wrong layout.)
   metric: merge_forward_max_abs_diff
   direction: lower_is_better
   baseline_value: 0.0000      # perfect forward-equivalence target

@@ -1,0 +1,165 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-19'
+  author: PAIML Engineering
+  description: |
+    PMAT-854: `MergeEngine::merge` (crates/aprender-train-lora/src/merge.rs),
+    invoked by the production `apr finetune merge` CLI, must fold a LoRA adapter
+    into the base weight using the STANDARD PEFT adapter layout that `apr finetune`
+    actually writes: `lora_a` is [rank, d_in] and `lora_b` is [d_out, rank], both
+    row-major (crates/apr-cli/src/commands/finetune.rs:842,845).
+
+    The pre-fix code computed
+      result[row*d_in+col] += scale · sum_k lora_b[k*d_out+row] · lora_a[col*r+k]
+    which assumes the TRANSPOSED layout A:[d_in,rank], B:[rank,d_out]. It therefore
+    read BOTH factors transposed and folded a scrambled delta into the base weight —
+    a silent correctness defect in fine-tune→merge.
+
+    The correct merge is ΔW = B @ A (shape [d_out, d_in]) with
+      result[row*d_in+col] += scale · sum_k lora_b[row*r+k] · lora_a[k*d_in+col]
+    the SAME indexing the in-repo correct twin `QLoRALayer::merge_to_f32`
+    (crates/aprender-train/src/lora/qlora.rs:240-245, doc at line 232
+    "A:[rank,d_in], B:[d_out,rank]") already uses. The two merge paths now agree.
+
+    Reference: PEFT `tuners/lora/layer.py` get_delta_weight/merge — lora_A:[r,in],
+    lora_B:[out,r], ΔW = scaling·(B@A). Unsloth merge_and_unload is identical.
+  references:
+  - 'crates/aprender-train-lora/src/merge.rs (MergeEngine::merge + merge_uses_peft_layout + beat_lora_merge_forward_equivalence)'
+  - 'crates/aprender-train/src/lora/qlora.rs:223-250 (QLoRALayer::merge_to_f32 — the correct in-repo twin)'
+  - 'crates/apr-cli/src/commands/finetune.rs:842,845 (producer: writes lora_a [rank,d_in], lora_b [d_out,rank])'
+  - 'PEFT tuners/lora/layer.py get_delta_weight (ΔW = scaling·(B@A), lora_A:[r,in], lora_B:[out,r])'
+  - 'Unsloth merge_and_unload (identical PEFT layout)'
+
+kind: KernelContract
+name: lora-merge-peft-layout
+version: 1.0.0
+scope: aprender-train-lora MergeEngine::merge (apr finetune merge CLI)
+
+equations:
+  delta_weight_peft:
+    formula: |
+      For the STANDARD PEFT adapter layout produced by `apr finetune`:
+        A := lora_a, shape [rank, d_in], row-major
+        B := lora_b, shape [d_out, rank], row-major
+        W := base_weights, shape [d_out, d_in], row-major
+        scale := merge_scale * alpha / rank
+      the merged weight is
+        W_merged[row, col] = W[row, col] + scale * sum_{k=0}^{rank-1} B[row, k] * A[k, col]
+      i.e. W_merged = W + scale * (B @ A), with ΔW = B @ A of shape [d_out, d_in].
+      In flat row-major indexing:
+        result[row*d_in + col] += scale * sum_k lora_b[row*rank + k] * lora_a[k*d_in + col]
+    domain: lora_a in R^{rank*d_in}; lora_b in R^{d_out*rank}; base in R^{d_out*d_in}; rank>=1
+    codomain: result in R^{d_out*d_in}, row-major [d_out, d_in]
+    invariants:
+    - 'A is indexed [rank, d_in]: A[k,col] = lora_a[k*d_in + col] (NOT lora_a[col*rank + k])'
+    - 'B is indexed [d_out, rank]: B[row,k] = lora_b[row*rank + k] (NOT lora_b[k*d_out + row])'
+    - 'The indexing is byte-identical to QLoRALayer::merge_to_f32 (the correct in-repo twin)'
+    - 'For rank=1 the transposed and PEFT indexings coincide, so legacy rank-1 tests are unaffected'
+    preconditions:
+    - lora_a.len() == rank * d_in and lora_b.len() == d_out * rank and base.len() == d_out * d_in
+    lean_theorem: Theorems.Delta_Weight_Peft
+
+  forward_equivalence:
+    formula: |
+      The merged weight must be forward-equivalent to applying the unmerged LoRA
+      factors. For an input row x in R^{d_in}:
+        x @ W_merged^T  ==  x @ W^T + scale * (x @ A^T @ B^T)
+      to within f32 tolerance (ΔW = B@A). A transpose/indexing bug in merge breaks
+      this equality because the reference is computed via an INDEPENDENT path.
+    domain: x in R^{d_in}; PEFT-layout A, B, W as above
+    codomain: y in R^{d_out}; max|y_merged - y_factored| < 1e-4
+    invariants:
+    - 'The reference forward is computed from the A,B factors, not from W_merged (non-tautological)'
+    - 'Measured CPU deterministic max|Δ| ~ 1.5e-8 << 1e-4 threshold'
+    preconditions:
+    - 'd_out != d_in chosen so the merge path is unambiguous'
+    lean_theorem: Theorems.Forward_Equivalence
+
+proof_obligations:
+- type: invariant
+  property: merge uses PEFT layout A:[rank,d_in], B:[d_out,rank]
+  formal: |
+    For the repro (d_in=3, d_out=2, rank=2, alpha=2 -> scale=1, W=zeros),
+    A = [[1,0,0],[0,2,0]] ([rank,d_in]), B = identity ([d_out,rank]):
+    MergeEngine::new().merge(&W, &A, &B, 2.0, 2) == [1,0,0, 0,2,0] (= B@A).
+    The pre-fix transposed code yields the WRONG [1,0,2, 0,0,0] (max abs error 2.0).
+- type: invariant
+  property: merge agrees with QLoRALayer::merge_to_f32
+  formal: |
+    For every (rank, d_in, d_out) and any A:[rank,d_in], B:[d_out,rank], W:[d_out,d_in]:
+    MergeEngine::merge(W, A, B, alpha, rank) with scale=alpha/rank produces the same
+    flat result as QLoRALayer::merge_to_f32 over the same dequantized W and factors.
+- type: classification
+  property: merged weight is forward-equivalent to unmerged LoRA factors
+  formal: |
+    For every input x: x @ W_merged^T equals x @ W^T + scale*(x @ A^T @ B^T)
+    within max abs diff < 1e-4, where the reference is computed from A,B independently.
+
+falsification_tests:
+- id: FT-MERGE-001
+  rule: MergeEngine::merge honors PEFT layout (A:[rank,d_in], B:[d_out,rank])
+  prediction: |
+    With A=[1,0,0, 0,2,0] ([rank2,d_in3]), B=[1,0, 0,1] ([d_out2,rank2] identity),
+    W=zeros(2x3), alpha=2, rank=2 (scale=1): merge returns [1,0,0, 0,2,0] (= B@A).
+  if_fails: |
+    The merge reads the factors transposed (assumes A:[d_in,rank], B:[rank,d_out]).
+    RED (pre-fix): returns [1,0,2, 0,0,0], max abs error 2.0. Fix the flat indexing in
+    MergeEngine::merge to lora_b[row*r+k]*lora_a[k*d_in+col] (match QLoRALayer::merge_to_f32).
+  evidence: |
+    RED:   cargo test -p aprender-train-lora --lib merge_uses_peft_layout
+           -> FAILED, got [1.0,0.0,2.0,0.0,0.0,0.0] (max abs error 2.0)
+    GREEN: cargo test -p aprender-train-lora --lib merge_uses_peft_layout
+           -> ok (returns [1.0,0.0,0.0,0.0,2.0,0.0])
+- id: FT-MERGE-002
+  rule: merged-weight forward equals unmerged-LoRA forward (PEFT layout)
+  prediction: |
+    For d_in=4, d_out=3, rank=2 with A:[rank,d_in], B:[d_out,rank]: the forward pass
+    using the merged weights matches x@W^T + scale*(x @ A^T @ B^T) to max|Δ| < 1e-4.
+  if_fails: |
+    A transpose/indexing bug in merge diverges from the independently-factored forward.
+    Check the B@A indexing matches QLoRALayer::merge_to_f32.
+  evidence: |
+    GREEN: cargo test -p aprender-train-lora --lib beat_lora_merge_forward_equivalence
+           -> ok (max|Δ| ~ 1.5e-8, after correcting the test to PEFT layout)
+- id: FT-MERGE-003
+  rule: MergeEngine::merge agrees with the QLoRALayer::merge_to_f32 twin
+  prediction: |
+    For any A:[rank,d_in], B:[d_out,rank], W:[d_out,d_in], the flat result of
+    MergeEngine::merge (scale=alpha/rank) is element-wise equal to the in-repo
+    correct twin QLoRALayer::merge_to_f32 over the same factors and dequantized base.
+  if_fails: |
+    The two production merge paths disagree — one of them transposes the factors.
+    Make MergeEngine::merge use lora_b[row*r+k]*lora_a[k*d_in+col] (the twin's indexing).
+  evidence: |
+    GREEN: both paths use result[row*d_in+col] += scale*sum_k B[row,k]*A[k,col]
+           (merge.rs main loop == qlora.rs:240-245).
+
+kani_harnesses:
+- id: KANI-MERGE-001
+  obligation: delta_weight_peft indexing is exact (no transpose)
+  property: |
+    For all (rank in [1..4], d_in in [1..4], d_out in [1..4]) and bounded f32 factors:
+    MergeEngine::merge(W, A:[rank,d_in], B:[d_out,rank], alpha, rank) yields
+    result[row*d_in+col] == W[row*d_in+col] + scale * sum_k B[row*rank+k]*A[k*d_in+col].
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_merge_peft_indexing
+- id: KANI-MERGE-002
+  obligation: rank-1 legacy indexing is invariant under the fix
+  property: |
+    For rank=1 and all (d_in in [1..4], d_out in [1..4]): the PEFT indexing
+    lora_b[row*1+0]*lora_a[0*d_in+col] equals the legacy lora_b[0*d_out+row]*lora_a[col*1+0],
+    so the fix does not regress rank-1 callers.
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_rank1_indexing_invariant
+
+qa_gate:
+  id: F-MERGE-PEFT-001
+  name: lora-merge-peft-layout-v1 Contract
+  description: MergeEngine::merge must fold ΔW=scale·(B@A) using the PEFT adapter layout A:[rank,d_in], B:[d_out,rank] that apr finetune writes, matching the QLoRALayer::merge_to_f32 twin and forward-equivalent to the unmerged factors.
+  checks:
+  - validation
+  - falsification
