@@ -229,16 +229,34 @@ pub fn save_safetensors_with_metadata<P: AsRef<Path>>(
     Ok(())
 }
 
-/// PMAT-260: Serialize F32 data as BF16 bytes.
+/// PMAT-260 / PMAT-859: Serialize F32 data as BF16 bytes.
 ///
 /// BF16 is the upper 16 bits of F32. For data that originated as BF16,
-/// the F32 representation has zeros in the lower 16 bits, so this
-/// truncation is lossless.
+/// the F32 representation has zeros in the lower 16 bits, so this is
+/// lossless.
+///
+/// PMAT-859: Earlier this function truncated (`(bits >> 16) as u16`), which
+/// (a) biased every value toward zero — not the IEEE / PyTorch / HF-safetensors
+/// behavior — and (b) silently turned f32 NaNs whose mantissa bits live only
+/// in the low 16 bits into +/-Inf. It now performs round-to-nearest-even and
+/// preserves NaN, matching `half::bf16::from_f32`.
+///
+/// Round-to-nearest-even adds a bias of `0x7FFF + (lsb of the kept half)` before
+/// the shift; this rounds halfway cases to even (the IEEE-754 default). NaN is
+/// preserved by forcing a mantissa bit in the retained half so the result stays
+/// NaN rather than collapsing to Inf.
 fn f32_slice_to_bf16_bytes(data: &[f32]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(data.len() * 2);
     for &value in data {
         let bits = value.to_bits();
-        let bf16 = (bits >> 16) as u16;
+        let bf16 = if value.is_nan() {
+            // Force a mantissa bit in the retained half so NaN stays NaN, not Inf.
+            ((bits >> 16) as u16) | 0x0040
+        } else {
+            // Round-to-nearest-even: bias by 0x7FFF plus the lsb of the kept half.
+            let rounding_bias = 0x7FFF + ((bits >> 16) & 1);
+            ((bits + rounding_bias) >> 16) as u16
+        };
         bytes.extend_from_slice(&bf16.to_le_bytes());
     }
     bytes
