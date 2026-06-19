@@ -94,18 +94,19 @@ mod tests {
 
     #[test]
     fn test_alibi_non_power_of_two_slopes() {
-        // For 6 heads: closest power of 2 is 4
-        // First 4 slopes: 2^(-8h/4) = 2^(-2h) for h=0..4
-        // Extra 2 slopes: 2^(-(2h+1)*4/4) = 2^(-2h-1) for h=0..2
+        // PMAT-858: slope[h] = 2^(-8(h+1)/n) (Press et al. 2021 / llama.cpp ggml).
+        // For 6 heads: closest power of 2 is 4, ratio = 8/4 = 2.
+        // First 4 slopes: 2^(-2(h+1)) = [0.25, 0.0625, 0.015625, 0.00390625].
+        // Extra 2 slopes: 2^(-(2i+1) * 4/4) = 2^(-(2i+1)) = [0.5, 0.125].
         let alibi = ALiBi::new(6).expect("alibi");
         let slopes = alibi.slopes();
         assert_eq!(slopes.len(), 6);
-        // First 4: [1.0, 0.25, 0.0625, 0.015625]
-        assert!((slopes[0] - 1.0).abs() < 1e-6);
-        assert!((slopes[3] - 0.015625).abs() < 1e-6);
-        // Extra 2 have different computation
-        assert!(slopes[4] > 0.0);
-        assert!(slopes[5] > 0.0);
+        // Head 0 must be 0.25, NOT the buggy 1.0.
+        assert!((slopes[0] - 0.25).abs() < 1e-6);
+        assert!((slopes[3] - 0.003_906_25).abs() < 1e-6);
+        // Extra interpolation block.
+        assert!((slopes[4] - 0.5).abs() < 1e-6);
+        assert!((slopes[5] - 0.125).abs() < 1e-6);
     }
 include!("position_rope.rs");
 }

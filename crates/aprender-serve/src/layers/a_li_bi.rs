@@ -317,8 +317,12 @@ impl ScaledRoPE {
 /// ```
 ///
 /// where m[h] is the head-specific slope computed as:
-/// - For powers of 2: m[h] = 2^(-8h/n) where n is the number of heads
+/// - For powers of 2: m[h] = 2^(-8(h+1)/n) where n is the number of heads
 /// - For non-powers of 2: interpolation between adjacent powers of 2
+///
+/// This matches the ALiBi paper (Press et al. 2021) and llama.cpp ggml
+/// `soft_max_ext` (`m0 = 2^(-8/n)`, `slope = m0^(h+1)`). For n=8 the slopes
+/// are 0.5, 0.25, ..., down to 2^(-8) = 0.00390625 (NOT 1.0 .. 2^(-7)).
 ///
 /// # References
 ///

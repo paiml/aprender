@@ -1,0 +1,114 @@
+metadata:
+  kind: kernel
+  version: 1.0.0
+  created: '2026-06-19'
+  author: PAIML Engineering
+  description: ALiBi head-slope exponent — slope[h] = 2^(-8(h+1)/n) (PMAT-858 fix).
+    Pins the head-slope formula used by aprender-serve's ALiBi positional encoding
+    so that head 0 carries slope 2^(-8/n) (e.g. 0.5 for n=8), NOT the buggy 2^0 = 1.0.
+  references:
+  - 'Press, Smith, Lewis (2021) "Train Short, Test Long: Attention with Linear Biases
+    Enables Input Length Extrapolation" — https://arxiv.org/abs/2108.12409'
+  - 'llama.cpp ggml soft_max_ext ALiBi: m0 = powf(2, -8/n); slope = powf(m0, h+1)'
+equations:
+  alibi_slope_exponent:
+    formula: m[h] = 2^(-8(h+1)/n)
+    domain: h in {0, ..., n - 1}, n >= 1
+    codomain: m[h] in (0, 1)
+    invariants:
+    - m[h] > 0 for all heads (slopes are strictly positive)
+    - m[h] < 1 for all heads (head 0 = 2^(-8/n) < 1, NOT 1.0)
+    - m[0] = 2^(-8/n) (first head slope, the (h+1) offset is load-bearing)
+    - m[n-1] = 2^(-8) for n a power of two (e.g. n=8 gives 2^-8 = 0.00390625)
+    - m[0] > m[1] > ... > m[n-1] within the power-of-two block (monotone decreasing)
+    preconditions:
+    - num_heads >= 1
+    lean_theorem: Theorems.Alibi_Slope_Exponent
+proof_obligations:
+- type: equivalence
+  property: Head-zero slope equals m0
+  formal: m[0] = 2^(-8/n) and in particular m[0] = 0.5 when n = 8
+  applies_to: all
+- type: bound
+  property: Slopes are below one
+  formal: m[h] = 2^(-8(h+1)/n) < 1 for all h in {0, ..., n-1}, n >= 1
+  applies_to: all
+- type: equivalence
+  property: Matches ggml reference exponent
+  formal: m[h] = m0^(h+1) with m0 = 2^(-8/n) (llama.cpp soft_max_ext)
+  applies_to: all
+kernel_structure:
+  phases:
+  - name: compute_slopes
+    description: Compute m[h] = 2^(-8(h+1)/n) for each attention head h
+    invariant: all slopes in (0, 1), strictly decreasing in the power-of-two block
+simd_dispatch:
+  alibi_slope_exponent:
+    scalar: ALiBi::compute_slopes
+enforcement:
+  head_zero_slope:
+    description: Head 0 slope must be 2^(-8/n), never 1.0
+    check: contract_tests::FALSIFY-AS-001
+    severity: ERROR
+  slopes_below_one:
+    description: Every ALiBi slope must be strictly below 1.0
+    check: contract_tests::FALSIFY-AS-002
+    severity: ERROR
+  reference_parity:
+    description: Slopes must match the Press et al. / ggml closed form
+    check: contract_tests::FALSIFY-AS-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-AS-001
+  rule: Head-zero slope equals m0
+  prediction: ALiBi::new(8).slopes()[0] == 0.5 (within 1e-7), NOT 1.0
+  test: 'cargo test -p aprender-serve --lib pmat_858_alibi_slope_falsifier::falsifier_alibi_slopes_power_of_two_match_reference'
+  red_state: buggy exponent -8h/n yields slopes()[0] = 2^0 = 1.0 (FAIL)
+  green_state: fixed exponent -8(h+1)/n yields slopes()[0] = 2^(-1) = 0.5 (PASS)
+  if_fails: Missing (h+1) offset in compute_slopes; every head carries an extra m0 factor
+- id: FALSIFY-AS-002
+  rule: Slopes are below one
+  prediction: every ALiBi slope < 1.0 for n in {1, 2, 4, 8, 12, 16, 32}
+  test: 'cargo test -p aprender-serve --lib pmat_858_alibi_slope_falsifier::falsifier_alibi_slopes_strictly_below_one'
+  red_state: buggy formula gives head-0 slope = 1.0 (NOT < 1.0) (FAIL)
+  green_state: all slopes strictly in (0, 1) (PASS)
+  if_fails: Exponent off-by-one re-introducing the 2^0 = 1.0 head-0 slope
+- id: FALSIFY-AS-003
+  rule: Matches ggml reference exponent
+  prediction: 'ALiBi::new(8).slopes() == [2^-1, 2^-2, ..., 2^-8]; ALiBi::new(1).slopes()[0] == 2^-8'
+  test: 'cargo test -p aprender-serve --lib pmat_858_alibi_slope_falsifier'
+  red_state: buggy slopes = [2^0, 2^-1, ..., 2^-7] diverge from ggml by a factor of m0 (FAIL)
+  green_state: slopes equal 2^(-8(h+1)/8), matching llama.cpp soft_max_ext (PASS)
+  if_fails: compute_slopes diverges from Press et al. 2021 / ggml closed form
+kani_harnesses:
+- id: KANI-AS-001
+  obligation: Head-zero slope equals m0
+  property: m[0] = 2^(-8/n), e.g. 0.5 for n = 8
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_alibi_head_zero_slope
+- id: KANI-AS-002
+  obligation: Slopes are below one
+  property: m[h] = 2^(-8(h+1)/n) < 1 for all h, n >= 1
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_alibi_slopes_below_one
+- id: KANI-AS-003
+  obligation: Matches ggml reference exponent
+  property: m[h] = m0^(h+1) with m0 = 2^(-8/n)
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_alibi_ggml_reference_exponent
+qa_gate:
+  id: F-AS-001
+  name: ALiBi Slope Exponent Contract
+  description: Pins ALiBi head-slope exponent to 2^(-8(h+1)/n) per Press et al. 2021 + ggml
+  checks:
+  - head_zero_slope
+  - slopes_below_one
+  - reference_parity
+  pass_criteria: All 3 falsification tests PASS (GREEN) on the fixed kernel
+  falsification: Drop the (h+1) offset (use -8h/n) — head 0 becomes 1.0, FALSIFY-AS-001/002/003 all FAIL

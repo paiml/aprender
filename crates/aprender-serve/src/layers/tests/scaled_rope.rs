@@ -182,15 +182,16 @@ fn test_alibi_zero_heads_error() {
 
 #[test]
 fn test_alibi_slopes_power_of_2() {
-    // For 8 heads (power of 2), slopes should follow: 2^(-8h/8) = 2^(-h)
+    // PMAT-858: m[h] = 2^(-8(h+1)/n) (Press et al. 2021 / llama.cpp ggml).
+    // For 8 heads (power of 2): 2^(-8(h+1)/8) = 2^(-(h+1))
     let alibi = ALiBi::new(8).expect("test");
     let slopes = alibi.slopes();
 
-    // Expected slopes: 2^0, 2^-1, 2^-2, 2^-3, 2^-4, 2^-5, 2^-6, 2^-7
-    assert!((slopes[0] - 1.0).abs() < 1e-6); // 2^0 = 1.0
-    assert!((slopes[1] - 0.5).abs() < 1e-6); // 2^-1 = 0.5
-    assert!((slopes[2] - 0.25).abs() < 1e-6); // 2^-2 = 0.25
-    assert!((slopes[3] - 0.125).abs() < 1e-6); // 2^-3 = 0.125
+    // Expected slopes: 2^-1, 2^-2, 2^-3, ..., 2^-8
+    assert!((slopes[0] - 0.5).abs() < 1e-6); // 2^-1 = 0.5 (NOT the buggy 1.0)
+    assert!((slopes[1] - 0.25).abs() < 1e-6); // 2^-2 = 0.25
+    assert!((slopes[2] - 0.125).abs() < 1e-6); // 2^-3 = 0.125
+    assert!((slopes[3] - 0.0625).abs() < 1e-6); // 2^-4 = 0.0625
 }
 
 #[test]
@@ -201,13 +202,13 @@ fn test_alibi_slopes_non_power_of_2() {
 
     assert_eq!(slopes.len(), 6);
 
-    // First 4 slopes follow 2^(-8h/4) = 2^(-2h)
-    assert!((slopes[0] - 1.0).abs() < 1e-6); // 2^0
-    assert!((slopes[1] - 0.25).abs() < 1e-6); // 2^-2
-    assert!((slopes[2] - 0.0625).abs() < 1e-6); // 2^-4
-    assert!((slopes[3] - 0.015_625).abs() < 1e-6); // 2^-6
+    // PMAT-858: first 4 slopes follow 2^(-8(h+1)/4) = 2^(-2(h+1))
+    assert!((slopes[0] - 0.25).abs() < 1e-6); // 2^-2 (NOT the buggy 1.0)
+    assert!((slopes[1] - 0.0625).abs() < 1e-6); // 2^-4
+    assert!((slopes[2] - 0.015_625).abs() < 1e-6); // 2^-6
+    assert!((slopes[3] - 0.003_906_25).abs() < 1e-6); // 2^-8
 
-    // Extra 2 slopes follow 2^(-4h/4) with step=2
+    // Extra 2 slopes follow 2^(-(2i+1)) with step=2
     // slopes[4] = 2^(-1) = 0.5
     // slopes[5] = 2^(-3) = 0.125
     assert!((slopes[4] - 0.5).abs() < 1e-6);
@@ -277,16 +278,17 @@ fn test_alibi_bias_computation() {
     let slopes = alibi.slopes();
     let bias = alibi.get_bias(3).expect("test");
 
-    // For 2 heads: slopes = [1.0, 0.0625]
-    // bias[0, 2, 0] = -slopes[0] * |0 - 2| = -1.0 * 2 = -2.0
+    // PMAT-858: For 2 heads, slopes = 2^(-4(h+1)) = [0.0625, 0.00390625]
+    // bias[0, 2, 0] = -slopes[0] * |0 - 2| = -0.0625 * 2 = -0.125
     let idx = 2 * 2;
+    let expected = -slopes[0] * 2.0;
     assert!(
-        (bias.data()[idx] - (-2.0)).abs() < 1e-6,
-        "Expected -2.0, got {}",
+        (bias.data()[idx] - expected).abs() < 1e-6,
+        "Expected {expected}, got {}",
         bias.data()[idx]
     );
 
-    // bias[1, 2, 1] = -slopes[1] * |1 - 2| = -0.0625 * 1 = -0.0625
+    // bias[1, 2, 1] = -slopes[1] * |1 - 2| = -slopes[1]
     let idx = 3 * 2 + 2 * 2 + 1;
     let expected = -slopes[1];
     assert!(
@@ -309,22 +311,18 @@ fn test_alibi_bias_negative() {
 
 #[test]
 fn test_alibi_bias_distance_proportional() {
-    // Bias should be proportional to distance
+    // Bias should be proportional to distance: bias[0, d] = -slope * d.
     let alibi = ALiBi::new(1).expect("test");
+    let slope = alibi.slopes()[0]; // PMAT-858: single head slope = 2^(-8) = 0.00390625
     let bias = alibi.get_bias(5).expect("test");
-
-    // For head 0, slope is 1.0
-    // bias[0, 1] = -1.0 * 1 = -1.0
-    // bias[0, 2] = -1.0 * 2 = -2.0
-    // bias[0, 3] = -1.0 * 3 = -3.0
 
     let bias_01 = bias.data()[1];
     let bias_02 = bias.data()[2];
     let bias_03 = bias.data()[3];
 
-    assert!((bias_01 - (-1.0)).abs() < 1e-6);
-    assert!((bias_02 - (-2.0)).abs() < 1e-6);
-    assert!((bias_03 - (-3.0)).abs() < 1e-6);
+    assert!((bias_01 - (-slope)).abs() < 1e-6);
+    assert!((bias_02 - (-slope * 2.0)).abs() < 1e-6);
+    assert!((bias_03 - (-slope * 3.0)).abs() < 1e-6);
 }
 
 #[test]
@@ -332,7 +330,8 @@ fn test_alibi_single_head() {
     let alibi = ALiBi::new(1).expect("test");
     assert_eq!(alibi.num_heads(), 1);
     assert_eq!(alibi.slopes().len(), 1);
-    assert!((alibi.slopes()[0] - 1.0).abs() < 1e-6); // First slope is 2^0 = 1.0
+    // PMAT-858: single-head slope is 2^(-8(0+1)/1) = 2^-8 = 0.00390625 (NOT 2^0 = 1.0).
+    assert!((alibi.slopes()[0] - 0.003_906_25).abs() < 1e-6);
 }
 
 #[test]
@@ -347,8 +346,8 @@ fn test_alibi_large_num_heads() {
         assert!(*slope > 0.0, "Slope should be positive, got {slope}");
     }
 
-    // First head should have largest slope (1.0)
-    assert!((alibi.slopes()[0] - 1.0).abs() < 1e-6);
+    // PMAT-858: head 0 of the power-of-2 block has slope 2^(-8/8) = 0.5 (NOT 1.0).
+    assert!((alibi.slopes()[0] - 0.5).abs() < 1e-6);
 }
 
 #[test]
