@@ -1,0 +1,60 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-19"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "ggml dequantize_row_q5_K (llama.cpp ggml-quants.c) — the reference Q5_K dequant algorithm"
+    - "crates/aprender-compute/src/backends/q4k/dequant.rs::dequantize_q4k_to_f32 (in-repo correct stride-32 reference for the sibling K-quant)"
+  description: |
+    Correctness contract for GGUF Q5_K dequantization in aprender-compute's transformer
+    inference helper (inference::model::dequantize_q5k_to_f32). Pillar-4-adjacent (model
+    import / weight-load correctness): a Q5_K GGUF tensor must dequantize to f32 values
+    matching the GGML reference layout. NOTE on reachability: this function lives in the
+    aprender-compute trueno-internal Llama loader (load_weight_matrix /
+    load_f32_or_dequant_tensor in the same file), NOT the canonical realizar serving path
+    (`apr serve` / `apr run`). It is the alternate/secondary inference path inside the
+    compute crate; the bug corrupts Q5_K weights wherever this loader is used.
+
+kind: KernelContract
+name: q5k-dequant-correctness
+version: "1.0.0"
+scope: "crates/aprender-compute/src/inference/model.rs"
+
+description: |
+  GGML Q5_K stores, per 256-element super-block (176 bytes): f16 d, f16 dmin, 12 bytes
+  packing 8 SIX-bit scales + 8 SIX-bit mins (Q4_K layout), 32 bytes of high bits (qh, one
+  5th-bit per element), and 128 bytes of low nibbles (qs, two 4-bit values per byte).
+  PMAT-842 fixed dequantize_q5k_to_f32, which walked the output index sequentially as
+  idx = 0..255 with low4 = (qs[idx/2] >> ((idx%2)*4)) & 0x0F and high1 = (qh[idx/8] >>
+  (idx%8)) & 0x01. That is NOT the GGML K-quant layout: it placed the HIGH nibble of qs[0]
+  at output index 1 instead of index 32, permuting the entire weight vector. The correct
+  GGML layout processes the super-block in four 64-element chunks (it = 0..4, ql_base =
+  it*32): for l in 0..32, the LOW nibble of qs[ql_base+l] lands at out[it*64+l] with
+  scale=d*scales[2*it], min=dmin*mins[2*it] and 5th bit from qh[l] bit (2*it); the HIGH
+  nibble lands at out[it*64+32+l] with scale=d*scales[2*it+1], min=dmin*mins[2*it+1] and
+  5th bit from qh[l] bit (2*it+1). i.e. the low and high nibble of the same qs byte are a
+  STRIDE OF 32 apart (u1 = 1<<(2*it), u2 = 2<<(2*it)). This matches the in-repo correct
+  Q4_K reference (backends/q4k/dequant.rs), which already uses the four-chunk stride-32
+  layout.
+
+equations:
+  C-Q5K-001:
+    description: "Q5_K dequant matches the GGML reference element-wise (stride-32 nibble layout)"
+    formula: "out[it*64 + l] = d*scales[2*it]*((qs[it*32+l] & 0xF) + (qh[l] & (1<<(2*it)) ? 16 : 0)) - dmin*mins[2*it]; out[it*64 + 32 + l] = d*scales[2*it+1]*((qs[it*32+l] >> 4) + (qh[l] & (2<<(2*it)) ? 16 : 0)) - dmin*mins[2*it+1] for it in 0..4, l in 0..32"
+    note: "Low and high nibble of qs[it*32+l] are a stride of 32 apart; the buggy sequential idx/2 indexing put them adjacent."
+
+  C-Q5K-002:
+    description: "The 5th bit comes from qh[l] using bit (2*it) for the low nibble and bit (2*it+1) for the high nibble"
+    formula: "u1 = 1 << (2*it); u2 = 2 << (2*it); low gains 16 iff qh[l] & u1; high gains 16 iff qh[l] & u2; NOT (qh[idx/8] >> (idx%8)) & 1"
+    note: "Regression guard against the per-element bit addressing that read the wrong qh byte/bit for elements 8..255."
+
+falsification:
+  - id: FALSIFY-DEQUANT-Q5K-001
+    description: "Q5_K dequant of a 176-byte block places the high nibble of qs[0] at out[32], not out[1]. Discharges C-Q5K-001."
+    test: "test_q5k_dequant_stride32_nibble_layout — d=1.0, dmin=0.0, scales=1/mins=0, qh=0, qs[0]=0x21: RED pre-fix out[1]=2.0 / out[32]=0.0; GREEN post-fix out[0]=1.0 / out[1]=0.0 / out[32]=2.0. All-zero qs cannot distinguish (both yield zeros)."
+    evidence: "cargo test -p aprender-compute --lib q5k_dequant_tests::test_q5k_dequant_stride32_nibble_layout"
+  - id: FALSIFY-DEQUANT-Q5K-002
+    description: "Q5_K dequant reads the 5th bit from qh[l] bit (2*it)/(2*it+1). Discharges C-Q5K-002."
+    test: "test_q5k_dequant_fifth_bit_placement — qh[0]=0x03 (bits 0,1 set), qs[0]=0x21: RED pre-fix out[32]=0.0; GREEN post-fix out[0]=17.0 (1+16) / out[32]=18.0 (2+16)."
+    evidence: "cargo test -p aprender-compute --lib q5k_dequant_tests::test_q5k_dequant_fifth_bit_placement"
