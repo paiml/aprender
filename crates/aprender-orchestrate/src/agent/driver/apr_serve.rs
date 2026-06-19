@@ -487,7 +487,10 @@ fn strip_thinking_blocks(text: &str) -> String {
 /// A `getppid()==1` check immediately after `prctl` closes the small race
 /// where the parent dies between fork and prctl (in which case the death
 /// signal has already missed its window).
-#[cfg(unix)]
+// PR_SET_PDEATHSIG / this `prctl` form are LINUX-ONLY — gate to `target_os = "linux"`, NOT the
+// broader `unix` (which also matches macOS/BSD, where `libc::prctl` and `libc::PR_SET_PDEATHSIG`
+// do not exist and the build fails: `cargo install aprender` was broken on macOS, PMAT-840).
+#[cfg(target_os = "linux")]
 #[allow(unsafe_code)] // pre_exec is unsafe-by-API; body uses only async-signal-safe calls
 fn configure_parent_death_signal(cmd: &mut Command) {
     use std::os::unix::process::CommandExt;
@@ -508,9 +511,11 @@ fn configure_parent_death_signal(cmd: &mut Command) {
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(not(target_os = "linux"))]
 fn configure_parent_death_signal(_cmd: &mut Command) {
-    // Windows: no equivalent — orphans on parent death still possible.
+    // Only Linux has PR_SET_PDEATHSIG (via prctl). macOS/BSD/Windows have no portable
+    // equivalent — abrupt-parent-death orphan reaping is best-effort there (Drop still runs
+    // on graceful exit). The point of this stub is to keep the crate building on those targets.
 }
 
 /// Find the `apr` binary on PATH.

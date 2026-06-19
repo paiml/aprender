@@ -1,0 +1,36 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-19"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "Linux prctl(2) PR_SET_PDEATHSIG — Linux-only; absent on macOS/BSD libc"
+    - "Nightly macOS cross-build (x86_64-apple-darwin, aarch64-apple-darwin)"
+  description: |
+    Portability contract for aprender-orchestrate's parent-death-signal helper. `cargo install
+    aprender` must build on macOS — apr-cli depends on aprender-orchestrate (as `batuta`), so a
+    non-portable orchestrate breaks the published `apr` binary on Darwin.
+kind: KernelContract
+name: orchestrate-macos-portability
+version: "1.0.0"
+scope: "crates/aprender-orchestrate/src/agent/driver/apr_serve.rs"
+description: |
+  PMAT-840: configure_parent_death_signal used `libc::prctl(libc::PR_SET_PDEATHSIG, ...)` under
+  `#[cfg(unix)]`. PR_SET_PDEATHSIG and this prctl form are LINUX-ONLY, but `unix` also matches
+  macOS/BSD, where those libc items do not exist — so `aprender-orchestrate` (lib) failed to
+  compile on *-apple-darwin (E0425: cannot find `prctl` / `PR_SET_PDEATHSIG`), breaking
+  `cargo install aprender` for every macOS user (Nightly macOS build red ≥5 consecutive days).
+  Fix: gate the prctl path to `#[cfg(target_os = "linux")]` and broaden the no-op fallback to
+  `#[cfg(not(target_os = "linux"))]` (Drop's `kill -TERM` shell path stays `#[cfg(unix)]` — that
+  is genuinely portable across Unix). Orphan reaping is Linux-only by design; the stub keeps the
+  crate building on other targets (graceful-exit Drop cleanup still runs everywhere).
+equations:
+  C-ORCHPORT-001:
+    description: "Linux-only prctl(PR_SET_PDEATHSIG) is gated to target_os=linux, not unix"
+    formula: "configure_parent_death_signal using libc::PR_SET_PDEATHSIG ⟹ #[cfg(target_os = \"linux\")]; non-Linux ⟹ no-op stub"
+    note: "PR_SET_PDEATHSIG ∉ macOS/BSD libc; `unix` gate breaks the Darwin build."
+falsification:
+  - id: FALSIFY-ORCH-MACOS-PRCTL-GATE
+    description: "The PR_SET_PDEATHSIG path is Linux-gated (shape gate; behavioral proof is the macOS cross-build). Discharges C-ORCHPORT-001."
+    test: "! grep -B2 'libc::prctl(libc::PR_SET_PDEATHSIG' crates/aprender-orchestrate/src/agent/driver/apr_serve.rs | grep -q 'cfg(unix)'  — the prctl fn must NOT be under cfg(unix); it is under cfg(target_os = \"linux\")."
+    evidence: "grep -B2 'fn configure_parent_death_signal' apr_serve.rs shows #[cfg(target_os = \"linux\")] and #[cfg(not(target_os = \"linux\"))]; Linux falsify_1712 tests still pass."

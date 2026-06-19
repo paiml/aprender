@@ -191,7 +191,7 @@ fn falsify_http_001_tool_call_format() {
 // The end-to-end behaviour is verified by spawning a `sleep` child with the
 // same hook from a short-lived parent shell and asserting the child dies.
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 #[test]
 fn falsify_1712_pdeathsig_helper_installs_pre_exec() {
     // The helper must not panic on a fresh Command.
