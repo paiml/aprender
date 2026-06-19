@@ -86,15 +86,21 @@ fn test_reduce_on_plateau_multiple_reductions() {
     let mut optimizer = MockOptimizer::new(0.1);
     let mut scheduler = ReduceLROnPlateau::new(PlateauMode::Min, 0.5, 2).min_lr(0.001);
 
-    scheduler.step_with_metric(&mut optimizer, 1.0);
+    scheduler.step_with_metric(&mut optimizer, 1.0); // baseline (num_bad_epochs = 0)
 
-    // First plateau - reduce from 0.1 to 0.05
-    scheduler.step_with_metric(&mut optimizer, 1.0);
-    scheduler.step_with_metric(&mut optimizer, 1.0);
+    // First plateau. PyTorch semantics (PMAT-850): patience=2 tolerates 2
+    // non-improving epochs and reduces only on the 3rd (num_bad_epochs > patience).
+    scheduler.step_with_metric(&mut optimizer, 1.0); // bad #1
+    scheduler.step_with_metric(&mut optimizer, 1.0); // bad #2 — still 0.1
+    assert!((optimizer.lr() - 0.1).abs() < 1e-6);
+    scheduler.step_with_metric(&mut optimizer, 1.0); // bad #3 — reduce 0.1 -> 0.05
     assert!((optimizer.lr() - 0.05).abs() < 1e-6);
 
-    // Second plateau - reduce from 0.05 to 0.025
-    scheduler.step_with_metric(&mut optimizer, 1.0);
-    scheduler.step_with_metric(&mut optimizer, 1.0);
+    // Second plateau - num_bad_epochs resets to 0 after a reduction, so another
+    // 3 non-improving epochs are required to reduce from 0.05 to 0.025.
+    scheduler.step_with_metric(&mut optimizer, 1.0); // bad #1
+    scheduler.step_with_metric(&mut optimizer, 1.0); // bad #2 — still 0.05
+    assert!((optimizer.lr() - 0.05).abs() < 1e-6);
+    scheduler.step_with_metric(&mut optimizer, 1.0); // bad #3 — reduce 0.05 -> 0.025
     assert!((optimizer.lr() - 0.025).abs() < 1e-6);
 }

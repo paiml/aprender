@@ -64,8 +64,11 @@ impl ReduceLROnPlateau {
             self.num_bad_epochs += 1;
         }
 
-        // Reduce LR if patience exceeded
-        if self.num_bad_epochs >= self.patience {
+        // Reduce LR if patience exceeded.
+        // PyTorch semantics: patience=N tolerates N non-improving epochs and
+        // reduces only on the (N+1)-th, i.e. strictly `> patience`, not `>=`.
+        // (PMAT-850 off-by-one fix; see contracts/reduce-lr-plateau-v1.yaml.)
+        if self.num_bad_epochs > self.patience {
             let new_lr = (self.current_lr * self.factor).max(self.min_lr);
             if new_lr < self.current_lr {
                 self.current_lr = new_lr;

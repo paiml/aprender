@@ -1,0 +1,120 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-19'
+  author: PAIML Engineering
+  description: |
+    PMAT-850: ReduceLROnPlateau must reduce the learning rate only when the
+    number of consecutive non-improving epochs is STRICTLY GREATER than patience
+    (num_bad_epochs > patience), matching PyTorch.
+
+    PyTorch's torch.optim.lr_scheduler.ReduceLROnPlateau documents patience as
+    "the number of allowed epochs with no improvement after which the learning
+    rate will be reduced." So patience=N tolerates N non-improving epochs and
+    reduces on the (N+1)-th. Internally PyTorch increments num_bad_epochs and
+    fires when `num_bad_epochs > patience`.
+
+    aprender's step_with_metric previously triggered on
+    `num_bad_epochs >= patience`, firing one epoch too early — with patience=N
+    it reduced on the N-th non-improving epoch instead of the (N+1)-th. This
+    over-eagerly decays the LR, harming convergence parity with PyTorch.
+
+    Verified repro (mode=Min, factor=0.5, initial lr=0.1, patience=1):
+      epoch 1: metric 1.0 -> baseline (num_bad_epochs=0), lr stays 0.1
+      epoch 2: metric 1.0 -> 1 bad epoch (num_bad_epochs=1)
+        buggy (>=): 1 >= 1 -> reduce to 0.05  (WRONG, one epoch early)
+        fixed (> ): 1 >  1  -> no reduce, lr stays 0.1  (PyTorch parity)
+      epoch 3: metric 1.0 -> 2 bad epochs (num_bad_epochs=2)
+        fixed (> ): 2 >  1  -> reduce to 0.05  (the (patience+1)-th epoch)
+  references:
+  - 'PyTorch torch.optim.lr_scheduler.ReduceLROnPlateau — patience is "the number of allowed epochs with no improvement after which the learning rate will be reduced"; reduction fires when num_bad_epochs > patience'
+  - 'crates/aprender-core/src/nn/scheduler/improvement.rs — ReduceLROnPlateau::step_with_metric reduction guard (num_bad_epochs > patience)'
+  - 'crates/aprender-core/src/nn/scheduler/tests.rs — test_reduce_on_plateau_patience_strictly_greater (PMAT-850 falsifier)'
+
+kind: KernelContract
+name: reduce-lr-plateau-patience-strictly-greater
+version: 1.0.0
+scope: aprender-core ReduceLROnPlateau patience semantics (nn/scheduler/improvement.rs)
+
+equations:
+  C-PLATEAU-PATIENCE-STRICT:
+    formula: |
+      Let p = patience and b = num_bad_epochs (count of consecutive epochs with
+      no metric improvement beyond threshold). The learning rate is reduced
+      (lr := max(lr * factor, min_lr), when that is < lr) exactly when b > p.
+      On a reduction, num_bad_epochs resets to 0. An improving epoch also resets
+      num_bad_epochs to 0. Thus patience=N tolerates N non-improving epochs and
+      reduces on the (N+1)-th.
+    domain: patience ∈ ℕ, factor ∈ (0,1), metric ∈ ℝ, threshold ≥ 0
+    codomain: lr ∈ [min_lr, lr₀]; reduction occurs iff num_bad_epochs > patience
+    invariants:
+    - 'with patience=N, exactly N consecutive non-improving epochs do NOT reduce LR'
+    - 'the (N+1)-th consecutive non-improving epoch reduces LR by factor'
+    - 'an improving epoch resets num_bad_epochs to 0 (no reduction)'
+    - 'reduction uses strict greater-than (>), never >= (which fires one epoch early)'
+    lean_theorem: Theorems.ReduceLROnPlateau_Patience_Strict
+
+proof_obligations:
+- type: invariant
+  property: PO-PATIENCE-TOLERATES-N N non-improving epochs do not reduce LR
+  formal: |
+    For mode=Min, factor=0.5, lr₀=0.1, patience=1: after the baseline epoch and
+    exactly 1 non-improving epoch (num_bad_epochs=1), 1 > 1 is false, so lr
+    remains 0.1 (NOT 0.05). Generalizes: for patience=N, N non-improving epochs
+    leave lr unchanged.
+- type: invariant
+  property: PO-REDUCE-ON-N-PLUS-1 the (N+1)-th non-improving epoch reduces LR
+  formal: |
+    Continuing the above, the 2nd non-improving epoch (num_bad_epochs=2) gives
+    2 > 1 true, so lr reduces to lr₀ * factor = 0.05. Generalizes: for
+    patience=N, the (N+1)-th non-improving epoch reduces lr by factor.
+- type: invariant
+  property: PO-IMPROVEMENT-RESETS an improving epoch prevents reduction
+  formal: |
+    For continuous improvement (each metric better than best by > threshold),
+    num_bad_epochs stays 0, so b > p is never true and lr never decreases,
+    regardless of the number of epochs.
+
+falsification_tests:
+- id: FT-PLATEAU-PATIENCE-001
+  rule: patience=1 tolerates 1 non-improving epoch without reducing LR
+  prediction: |
+    ReduceLROnPlateau(Min, factor=0.5, patience=1), lr₀=0.1: after baseline
+    (metric 1.0) and ONE non-improving epoch (metric 1.0), lr is STILL 0.1.
+    RED (pre-fix, num_bad_epochs >= patience): lr = 0.05 (reduced one epoch early).
+    GREEN (post-fix, num_bad_epochs > patience): lr = 0.1.
+  if_fails: 'the reduction guard uses >= instead of > (off-by-one, fires on the N-th not the (N+1)-th bad epoch).'
+  evidence: cargo test -p aprender-core --lib test_reduce_on_plateau_patience_strictly_greater
+- id: FT-PLATEAU-PATIENCE-002
+  rule: the (patience+1)-th non-improving epoch reduces LR by factor
+  prediction: |
+    Same scheduler: a SECOND non-improving epoch (num_bad_epochs=2 > 1) reduces
+    lr to 0.05.
+    RED (pre-fix): already reduced at epoch 1, so this asserts the wrong epoch.
+    GREEN (post-fix): lr = 0.05 exactly at the (patience+1)-th epoch.
+  if_fails: 'reduction never fires, or fires at the wrong epoch count.'
+  evidence: cargo test -p aprender-core --lib test_reduce_on_plateau_patience_strictly_greater
+- id: FT-PLATEAU-PATIENCE-003
+  rule: continuous improvement never reduces LR
+  prediction: 'a strictly-improving metric sequence leaves lr at lr₀ regardless of epoch count.'
+  if_fails: 'num_bad_epochs is not reset on improvement, or the guard fires on improving epochs.'
+  evidence: cargo test -p aprender-core --lib test_reduce_on_plateau_continuous_improvement
+
+kani_harnesses:
+- id: KANI-PLATEAU-PATIENCE-001
+  obligation: PO-PATIENCE-TOLERATES-N N non-improving epochs do not reduce LR
+  property: |
+    For all patience p in [0, P] and bad-epoch count b in [0, p]: the reduction
+    guard (b > p) is false, so lr is unchanged. The guard becomes true only at
+    b = p + 1. No panic; lr stays in [min_lr, lr₀].
+  bound: 1
+  strategy: stub_float
+  solver: cadical
+  harness: verify_plateau_patience_strictly_greater
+
+qa_gate:
+  id: F-PLATEAU-PATIENCE-001
+  name: reduce-lr-plateau-v1 Contract
+  description: ReduceLROnPlateau must reduce LR only when num_bad_epochs > patience (PyTorch parity), not >= which fires one epoch too early.
+  checks:
+  - validation
+  - falsification
