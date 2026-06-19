@@ -1,0 +1,80 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-19"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "IEEE 754-2019 §3.6 binary16 — subnormals have biased exponent field 0 and value mantissa * 2^-24"
+    - "half crate (half::f16::from_bits(bits).to_f32()) — the bit-exact conversion oracle"
+    - "crates/aprender-core/src/format/onnx/mod.rs::f16_to_f32 (ONNX import path)"
+    - "crates/aprender-core/src/format/safetensors.rs::f16_to_f32 (SafeTensors/apr tensors path)"
+  description: |
+    Correctness contract for IEEE-754 half-precision (binary16) -> single-precision
+    (binary32) conversion in the two aprender-core format readers. Pillar-4 (Ollama/serve)
+    + diagnostic correctness: apr tensors / apr inspect / apr validate --quality on F16
+    SafeTensors and ONNX models must report exact tensor statistics.
+
+kind: KernelContract
+name: f16-to-f32-subnormal
+version: "1.0.0"
+scope: "crates/aprender-core/src/format/onnx/mod.rs, crates/aprender-core/src/format/safetensors.rs"
+
+description: |
+  binary16 subnormals (biased exponent field == 0, mantissa != 0) have value
+  mantissa * 2^-24. Both f16_to_f32 implementations normalize the subnormal mantissa
+  with a shift loop, then reconstruct the f32 biased exponent. PMAT-843 fixed an
+  off-by-one in the reconstructed exponent that HALVED every subnormal value:
+
+    - onnx/mod.rs: the loop counter `e` starts at 0, so the f32 exponent needs a +1
+      bias correction. It read `let f32_exp = 127 - 15 - e;` (missing +1).
+    - safetensors.rs: the loop counter `e` starts at 1, so the f32 exponent needs a +2
+      bias correction. It read `(127 - 15 - e + 1) << 23` (only +1, i.e. +1 too low).
+
+  The ratio of buggy:correct is exactly 2.0 for ALL 2046 subnormal bit patterns
+  (exponent field 0, nonzero mantissa). Normals, +/-zero, +/-inf and NaN were already
+  correct. Impact: apr tensors / apr inspect / apr validate --quality on any F16
+  SafeTensors or ONNX model report min / mean / std with every subnormal weight at half
+  magnitude, which can flip a fail-closed near-zero / dead-weight quality threshold
+  (Pillar-4). The ONNX path also corrupts ONNX import tensor extraction.
+
+equations:
+  C-F16SUB-001:
+    description: "The smallest positive subnormal converts exactly, not halved"
+    formula: "f16_to_f32(0x0001).to_bits() == 0x33800000 (5.9604645e-8 == 2^-24); buggy gave 0x33000000 (2.9802322e-8 == 2^-25)"
+    note: "The single canonical falsifier — a dropped +1 in the reconstructed exponent halves the value."
+  C-F16SUB-002:
+    description: "Every binary16 bit pattern (NaN excluded) converts bit-exactly to the half-crate oracle"
+    formula: "∀ bits in 0..=0xFFFF \\ NaN: f16_to_f32(bits).to_bits() == half::f16::from_bits(bits).to_f32().to_bits()"
+    note: "RED mismatch count = 2046 (all subnormals halved) before fix; GREEN = 0 after fix. Holds for BOTH onnx and safetensors readers."
+  C-F16SUB-003:
+    description: "Subnormal value law: a binary16 subnormal equals mantissa * 2^-24"
+    formula: "for exponent field 0 and mantissa m != 0: f16_to_f32(bits) == (m as f32) * 2^-24"
+    note: "Structural law independent of the half crate; RED gave m * 2^-25 (off-by-one exponent)."
+
+proof_obligations:
+  - id: PO-F16SUB-001
+    type: equivalence
+    property: "f16_to_f32 matches the half-crate oracle over all non-NaN bit patterns"
+    formal: "∀ bits (non-NaN): f16_to_f32(bits).to_bits() == half::f16::from_bits(bits).to_f32().to_bits()"
+    applies_to: all
+  - id: PO-F16SUB-002
+    type: invariant
+    property: "Subnormal magnitude is preserved (not halved)"
+    formal: "f16_to_f32(0x0001).to_bits() == 0x33800000"
+    applies_to: all
+  - id: PO-F16SUB-003
+    type: bound
+    property: "Subnormal mantissa scaling is exactly 2^-24"
+    formal: "exponent field 0, mantissa m != 0 ⟹ f16_to_f32(bits) == (m as f32) * 2^-24"
+    tolerance: 0.0
+    applies_to: all
+
+falsification:
+  - id: FALSIFY-F16SUB-001
+    description: "Smallest positive subnormal is not halved (onnx + safetensors readers). Discharges C-F16SUB-001 / PO-F16SUB-002."
+    test: "smallest_subnormal_not_halved (in both format::onnx::f16_tests and format::tensors::f16_tests) — RED 0x33000000 (2.9802322e-8) → GREEN 0x33800000 (5.9604645e-8 == half::f16::from_bits(1).to_f32())."
+    evidence: "cargo test -p aprender-core --lib f16_tests::smallest_subnormal_not_halved"
+  - id: FALSIFY-F16SUB-002
+    description: "Full-range bit-exact conversion vs the half oracle (onnx + safetensors readers). Discharges C-F16SUB-002 / C-F16SUB-003 / PO-F16SUB-001 / PO-F16SUB-003."
+    test: "all_bit_patterns_match_golden (in both format::onnx::f16_tests and format::tensors::f16_tests) — loops 0..=u16::MAX, skips NaN, compares against a self-contained golden oracle bit-verified against half::f16. RED mismatch count = 2046 (all subnormals); GREEN = 0."
+    evidence: "cargo test -p aprender-core --lib f16_tests::all_bit_patterns_match_golden"
