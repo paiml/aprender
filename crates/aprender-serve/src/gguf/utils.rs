@@ -54,6 +54,33 @@ pub(crate) fn gpt2_unicode_to_byte(c: char) -> Option<u8> {
     }
 }
 
+/// Convert a raw byte to its GPT-2 style byte-level BPE unicode character.
+///
+/// This is the EXACT inverse of [`gpt2_unicode_to_byte`] (HuggingFace/GPT-2
+/// `bytes_to_unicode`). PMAT-855 uses it on the ENCODE direction so the serve
+/// HF tokenizer emits the same byte-level glyphs the vocab/merges were trained
+/// on, instead of the SentencePiece/GGUF `<0xNN>` byte-fallback form (which
+/// never exists in a GPT-2/Qwen vocab and was silently dropped).
+///
+/// Mapping (the GPT-2 staircase, inverse of `gpt2_unicode_to_byte`):
+/// - Printable ASCII `0x21-0x7E` and Latin-1 `0xA1-0xAC`, `0xAE-0xFF` map to `char(b)`.
+/// - The remaining bytes `0x00-0x20`, `0x7F-0xA0`, `0xAD` map to `U+0100 + n`,
+///   where `n` is the byte's position in the ordered set of "other" bytes:
+///   `0x00-0x20` → n=0..32, `0x7F` → n=33, `0x80-0xA0` → n=34..66, `0xAD` → n=67.
+#[inline]
+pub(crate) fn gpt2_byte_to_unicode(b: u8) -> char {
+    let cp: u32 = match b {
+        // Directly-mapped printable ranges: char == byte.
+        0x21..=0x7E | 0xA1..=0xAC | 0xAE..=0xFF => u32::from(b),
+        // "Other" bytes are remapped onto the U+0100.. staircase, in order.
+        0x00..=0x20 => 0x0100 + u32::from(b), // n = 0..32
+        0x7F => 0x0121,                       // n = 33 (DEL)
+        0x80..=0xA0 => 0x0100 + 34 + u32::from(b - 0x80), // n = 34..66
+        0xAD => 0x0143,                       // n = 67 (soft hyphen)
+    };
+    char::from_u32(cp).unwrap_or('\u{FFFD}')
+}
+
 /// Decode a GPT-2 style byte-level BPE token to raw bytes.
 ///
 /// Each character in the token may represent either a direct byte (printable ASCII/Latin-1)
@@ -207,6 +234,46 @@ mod tests {
         let first = verbose();
         let second = verbose();
         assert_eq!(first, second);
+    }
+
+    // =========================================================================
+    // PMAT-855: gpt2_byte_to_unicode is the exact inverse of gpt2_unicode_to_byte
+    // =========================================================================
+
+    /// PMAT-855 falsifier (round-trip): the ENCODE map must be the exact inverse
+    /// of the DECODE map for every byte 0..=255. Discharges C-GPT2BPE-ENC-001.
+    #[test]
+    fn falsify_gpt2_byte_to_unicode_roundtrip_all_bytes() {
+        for b in 0u8..=255 {
+            let c = gpt2_byte_to_unicode(b);
+            assert_eq!(
+                gpt2_unicode_to_byte(c),
+                Some(b),
+                "byte 0x{:02X} -> '{}' (U+{:04X}) did not invert back to itself",
+                b,
+                c,
+                c as u32,
+            );
+        }
+    }
+
+    #[test]
+    fn test_gpt2_byte_to_unicode_known_points() {
+        // Latin-1 self-mapped: 'é' = UTF-8 [0xC3, 0xA9] -> 'Ã' + '©'
+        assert_eq!(gpt2_byte_to_unicode(0xC3), 'Ã');
+        assert_eq!(gpt2_byte_to_unicode(0xA9), '©');
+        // Printable ASCII self-maps
+        assert_eq!(gpt2_byte_to_unicode(b'A'), 'A');
+        assert_eq!(gpt2_byte_to_unicode(b'!'), '!');
+        // Staircase boundaries
+        assert_eq!(gpt2_byte_to_unicode(0x00), '\u{0100}'); // NUL
+        assert_eq!(gpt2_byte_to_unicode(b' '), '\u{0120}'); // Space -> Ġ
+        assert_eq!(gpt2_byte_to_unicode(b'\n'), '\u{010A}'); // Newline -> Ċ
+        assert_eq!(gpt2_byte_to_unicode(b'\t'), '\u{0109}'); // Tab -> ĉ
+        assert_eq!(gpt2_byte_to_unicode(0x7F), '\u{0121}'); // DEL
+        assert_eq!(gpt2_byte_to_unicode(0x80), '\u{0122}'); // 0x80
+        assert_eq!(gpt2_byte_to_unicode(0xA0), '\u{0142}'); // 0xA0
+        assert_eq!(gpt2_byte_to_unicode(0xAD), '\u{0143}'); // soft hyphen
     }
 
     // =========================================================================

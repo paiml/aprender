@@ -206,21 +206,22 @@ fn split_by_special_tokens(text: &str, special_tokens: &HashMap<String, u32>) ->
     segments
 }
 
-/// Convert a character to its byte-level BPE token representation (GPT-2/Qwen style)
-fn char_to_bpe_token(c: char) -> String {
-    match c {
-        ' ' => "Ġ".to_string(),
-        '\n' => "Ċ".to_string(),
-        '\t' => "ĉ".to_string(),
-        c if c.is_ascii() => c.to_string(),
-        c => {
-            let mut buf = [0u8; 4];
-            let s = c.encode_utf8(&mut buf);
-            s.chars()
-                .map(|byte_char| byte_to_bpe_char(byte_char as u8))
-                .collect()
-        },
-    }
+/// Convert a character to its byte-level BPE token glyphs (GPT-2/Qwen style).
+///
+/// PMAT-855: maps EACH of the char's UTF-8 bytes through `byte_to_bpe_char` (the canonical
+/// `bytes_to_unicode` map), returning ONE glyph token PER BYTE. The prior body short-circuited
+/// every ASCII char to `c.to_string()` — correct only for printable ASCII — and, worse, for
+/// non-ASCII chars iterated `s.chars()` (the original single char) and cast it to `u8`, truncating
+/// a multi-byte codepoint to one wrong byte instead of mapping its real UTF-8 bytes. It also
+/// returned a SINGLE concatenated string per char, so the combined key (e.g. `Ã©` for `é`) missed
+/// the per-glyph vocab entries `Ã`/`©`. Emitting one token per byte makes `é` (0xC3,0xA9) → `[Ã, ©]`
+/// and `中` (0xE4,0xB8,0xAD) → `[ä, ¸, Ń]`, matching the HF vocab glyphs and letting merges run.
+fn char_to_bpe_tokens(c: char) -> Vec<String> {
+    let mut buf = [0u8; 4];
+    c.encode_utf8(&mut buf)
+        .bytes()
+        .map(byte_to_bpe_char)
+        .collect()
 }
 
 /// Apply a single BPE merge rule to the token list, returning true if any merge was applied
@@ -244,7 +245,11 @@ fn bpe_encode_segment(
     vocab: &HashMap<String, u32>,
     merges: &[(String, String)],
 ) -> Vec<u32> {
-    let mut tokens: Vec<String> = text.chars().map(char_to_bpe_token).collect();
+    // PMAT-855: byte-level BPE — each UTF-8 BYTE becomes its own initial token
+    // (one `bytes_to_unicode` glyph), so merges and `vocab.get` resolve per-glyph.
+    // A multi-byte char (é, 中, …) must NOT collapse into a single concatenated
+    // string, or the combined key (e.g. "Ã©") misses the per-glyph vocab entries.
+    let mut tokens: Vec<String> = text.chars().flat_map(char_to_bpe_tokens).collect();
 
     // Apply BPE merges iteratively
     for (first, second) in merges {
@@ -259,17 +264,18 @@ fn bpe_encode_segment(
         .collect()
 }
 
-/// Convert byte to BPE character representation
+/// Convert a raw byte to its GPT-2/Qwen byte-level BPE character.
+///
+/// PMAT-855: the HuggingFace merge path (`BpeTokenizer::encode`) loads a vocab keyed on the
+/// GPT-2 `bytes_to_unicode` glyphs (0xC3 → 'Ã', 0xA9 → '©', space → 'Ġ', '\n' → 'Ċ'), so EVERY
+/// byte must map to its canonical glyph — the exact inverse of `gpt2_unicode_to_byte` (the
+/// PMAT-837 decode helper). The prior body returned the SentencePiece/GGUF byte-fallback form
+/// `<0xNN>` for bytes >= 0x80; those strings never exist in a GPT-2/Qwen vocab, so every accented
+/// /CJK/emoji/smart-quote char was silently dropped by the `vocab.get` filter in
+/// `bpe_encode_segment`, vanishing from the prompt before it reached the model. The `<0xNN>` form
+/// belongs ONLY on the GGUF greedy byte-fallback path (`BPETokenizer::encode`), not here.
 pub fn byte_to_bpe_char(b: u8) -> String {
-    // GPT-2/Qwen byte-level BPE uses specific unicode mappings
-    // This is a simplified version - real tokenizers use a full byte-to-unicode table
-    match b {
-        b' ' => "Ġ".to_string(),
-        b'\n' => "Ċ".to_string(),
-        b'\t' => "ĉ".to_string(),
-        _ if b.is_ascii_graphic() || b.is_ascii_alphanumeric() => (b as char).to_string(),
-        _ => format!("<0x{:02X}>", b),
-    }
+    crate::gguf::utils::gpt2_byte_to_unicode(b).to_string()
 }
 
 include!("tokenizer_tests.rs");

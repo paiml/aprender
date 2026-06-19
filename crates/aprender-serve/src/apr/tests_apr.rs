@@ -306,9 +306,10 @@
 
     #[test]
     fn test_byte_to_bpe_char_null_more_cov() {
+        // PMAT-855: NUL maps to U+0100 under GPT-2 bytes_to_unicode (HF merge path),
+        // not the SentencePiece/GGUF `<0xNN>` byte-fallback form.
         let result = crate::apr::byte_to_bpe_char(0x00);
-        assert!(!result.is_empty());
-        assert!(result.starts_with("<0x"));
+        assert_eq!(result, "\u{0100}");
     }
 
     #[test]

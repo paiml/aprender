@@ -208,10 +208,71 @@ mod tests {
 
     #[test]
     fn test_byte_to_bpe_char_non_printable() {
-        // Non-printable bytes get hex encoding
-        assert_eq!(byte_to_bpe_char(0x00), "<0x00>");
-        assert_eq!(byte_to_bpe_char(0x7F), "<0x7F>");
-        assert_eq!(byte_to_bpe_char(0xFF), "<0xFF>");
+        // PMAT-855: the HF merge path uses GPT-2 bytes_to_unicode, NOT the
+        // SentencePiece/GGUF `<0xNN>` byte-fallback form. Non-printable bytes map
+        // onto the U+0100.. staircase; high Latin-1 bytes self-map.
+        assert_eq!(byte_to_bpe_char(0x00), "\u{0100}"); // NUL -> Ā
+        assert_eq!(byte_to_bpe_char(0x7F), "\u{0121}"); // DEL -> ġ
+        assert_eq!(byte_to_bpe_char(0xFF), "ÿ"); // 0xFF self-maps (Latin-1)
+        assert_eq!(byte_to_bpe_char(0xAD), "\u{0143}"); // soft hyphen -> ŃŃ remap
+        assert_eq!(byte_to_bpe_char(0xC3), "Ã"); // first byte of 'é'
+        assert_eq!(byte_to_bpe_char(0xA9), "©"); // second byte of 'é'
+    }
+
+    // -------------------------------------------------------------------------
+    // PMAT-855: HF byte-level BPE encode maps UTF-8 bytes via bytes_to_unicode,
+    // not the GGUF `<0xNN>` byte-fallback. The ENCODE twin of the PMAT-837 decode
+    // fix. Falsifier: a non-ASCII char must NOT vanish from the prompt.
+    // -------------------------------------------------------------------------
+
+    /// PMAT-855 falsifier: 'é' (UTF-8 0xC3 0xA9) must encode to the vocab ids for
+    /// its bytes_to_unicode glyphs "Ã" + "©", NOT silently drop to [].
+    /// RED pre-fix: byte_to_bpe_char returned "<0xC3>"/"<0xA9>" (absent from vocab)
+    /// → filter_map drops both → []. GREEN post-fix: [10, 11].
+    #[test]
+    fn falsify_bpe_encode_non_ascii_accented_latin() {
+        let mut vocab = HashMap::new();
+        vocab.insert("Ã".to_string(), 10);
+        vocab.insert("©".to_string(), 11);
+        let special: HashMap<String, u32> = HashMap::new();
+
+        let result = bpe_encode("é", &vocab, &[], &special);
+        assert_eq!(
+            result,
+            vec![10, 11],
+            "non-ASCII 'é' must map to its bytes_to_unicode glyph ids, not vanish"
+        );
+    }
+
+    /// PMAT-855: a CJK char ('中' = UTF-8 0xE4 0xB8 0xAD) maps to its three
+    /// byte-level glyphs "ä" + "¸" + "Ń" (0xAD remaps to U+0143).
+    #[test]
+    fn test_bpe_encode_cjk_byte_level() {
+        let mut vocab = HashMap::new();
+        vocab.insert("ä".to_string(), 1); // 0xE4 self-maps
+        vocab.insert("¸".to_string(), 2); // 0xB8 self-maps
+        vocab.insert("\u{0143}".to_string(), 3); // 0xAD -> U+0143
+        let special: HashMap<String, u32> = HashMap::new();
+
+        let result = bpe_encode("中", &vocab, &[], &special);
+        assert_eq!(result, vec![1, 2, 3]);
+    }
+
+    /// PMAT-855: every byte 0..=255 round-trips byte -> glyph -> byte through the
+    /// HF map, proving byte_to_bpe_char is the exact inverse of the decode path.
+    #[test]
+    fn falsify_byte_to_bpe_char_roundtrips_all_bytes() {
+        for b in 0u8..=255 {
+            let glyph = byte_to_bpe_char(b);
+            let chars: Vec<char> = glyph.chars().collect();
+            assert_eq!(chars.len(), 1, "byte 0x{b:02X} must map to a single glyph");
+            assert_eq!(
+                crate::gguf::utils::gpt2_unicode_to_byte(chars[0]),
+                Some(b),
+                "byte 0x{b:02X} -> '{}' did not invert back",
+                chars[0]
+            );
+        }
     }
 
     // -------------------------------------------------------------------------
