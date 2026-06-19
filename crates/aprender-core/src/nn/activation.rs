@@ -148,13 +148,26 @@ impl Module for GELU {
 
 /// Softmax activation: softmax(x)_i = `exp(x_i)` / `Σ_j` `exp(x_j)`
 ///
-/// Converts logits to probabilities that sum to 1.
+/// Converts logits to probabilities that sum to 1 along the configured
+/// dimension. Matches the semantics of `torch.nn.Softmax(dim)`.
 ///
 /// # Arguments
 ///
-/// * `dim` - Dimension along which to compute softmax
+/// * `dim` - Dimension along which to compute softmax. Negative values index
+///   from the end (e.g. `-1` is the last dimension), matching PyTorch.
+///
+/// # Example
+///
+/// ```ignore
+/// use aprender::nn::{Module, Softmax};
+/// use aprender::autograd::Tensor;
+///
+/// // Column softmax (each column sums to 1), like torch.nn.Softmax(0)
+/// let sm = Softmax::new(0);
+/// let x = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+/// let y = sm.forward(&x); // [[0.1192, 0.1192], [0.8808, 0.8808]]
+/// ```
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
 pub struct Softmax {
     dim: i32,
 }
@@ -175,7 +188,40 @@ impl Default for Softmax {
 
 impl Module for Softmax {
     fn forward(&self, input: &Tensor) -> Tensor {
-        input.softmax()
+        // Resolve negative dims (PyTorch semantics: -1 == last axis).
+        let ndim = input.ndim() as i32;
+        let axis = if self.dim < 0 {
+            ndim + self.dim
+        } else {
+            self.dim
+        };
+
+        // Fast path: softmax over the last dimension is the canonical
+        // (differentiable) `Tensor::softmax()` kernel — leave it untouched.
+        if axis == ndim - 1 {
+            return input.softmax();
+        }
+
+        // Dim-aware 2D path: softmax over a non-last axis. We transpose so the
+        // target axis becomes last, run the canonical last-dim softmax, then
+        // transpose back. Both `transpose` and `softmax` are autograd ops, so
+        // gradients flow correctly through this composition.
+        //
+        // SCOPE: A general n-d strided softmax over an arbitrary axis is not
+        // yet implemented; only 2D non-last (i.e. dim == 0) is supported here.
+        // This covers `torch.nn.Softmax(0)` on a 2D tensor, the common case.
+        // A higher-rank request would need a strided reduction (future work) —
+        // we assert rather than silently softmax the wrong axis.
+        assert!(
+            ndim == 2 && axis == 0,
+            "Softmax: dim={} resolved to axis={} is unsupported for a \
+             {ndim}-D tensor; only the last dim or dim=0 on a 2D tensor are \
+             implemented",
+            self.dim,
+            axis,
+        );
+
+        input.transpose().softmax().transpose()
     }
 }
 
@@ -423,5 +469,88 @@ mod tests {
         let copied = softmax;
         let _ = cloned.forward(&Tensor::new(&[1.0, 2.0], &[1, 2]));
         let _ = copied.forward(&Tensor::new(&[1.0, 2.0], &[1, 2]));
+    }
+
+    // =========================================================================
+    // PMAT-867: Softmax must honor `dim` (torch.nn.Softmax(dim) parity).
+    //
+    // FALSIFIER: `Softmax::new(0)` must softmax over the COLUMNS (axis 0), not
+    // silently over the last axis. For [[1,2],[3,4]]:
+    //   torch.nn.Softmax(0) -> [[0.1192, 0.1192], [0.8808, 0.8808]]
+    //   torch.nn.Softmax(1) -> [[0.2689, 0.7311], [0.2689, 0.7311]]
+    // RED (dim-ignored bug): col0 top == 0.2689 (row softmax). GREEN: 0.1192.
+    // =========================================================================
+
+    #[test]
+    fn test_softmax_dim0_column_pmat867() {
+        // [[1, 2], [3, 4]] — column softmax (each column sums to 1).
+        let softmax = Softmax::new(0);
+        let x = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+        let y = softmax.forward(&x);
+        let d = y.data();
+
+        // Element [0][0] must be the column-softmax value 0.1192, NOT the
+        // row-softmax value 0.2689 the dim-ignored bug produced.
+        assert!(
+            (d[0] - 0.1192).abs() < 1e-3,
+            "Softmax(0)[0][0] = {} (expected 0.1192 column-softmax, \
+             0.2689 means dim was ignored)",
+            d[0]
+        );
+        assert!((d[1] - 0.1192).abs() < 1e-3, "[0][1] = {}", d[1]);
+        assert!((d[2] - 0.8808).abs() < 1e-3, "[1][0] = {}", d[2]);
+        assert!((d[3] - 0.8808).abs() < 1e-3, "[1][1] = {}", d[3]);
+
+        // Each COLUMN must sum to 1 along axis 0.
+        let col0 = d[0] + d[2];
+        let col1 = d[1] + d[3];
+        assert!((col0 - 1.0).abs() < 1e-5, "column 0 sums to {col0}");
+        assert!((col1 - 1.0).abs() < 1e-5, "column 1 sums to {col1}");
+    }
+
+    #[test]
+    fn test_softmax_dim1_and_neg1_row_unchanged_pmat867() {
+        // dim = 1 (last axis) and dim = -1 must both be row softmax, unchanged.
+        let x = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+
+        for dim in [1, -1] {
+            let y = Softmax::new(dim).forward(&x);
+            let d = y.data();
+            // Row 0 of [1, 2] -> [0.2689, 0.7311]
+            assert!(
+                (d[0] - 0.2689).abs() < 1e-3,
+                "Softmax({dim})[0][0] = {} (expected 0.2689 row-softmax)",
+                d[0]
+            );
+            assert!((d[1] - 0.7311).abs() < 1e-3, "[0][1] = {}", d[1]);
+            // Each ROW sums to 1 along axis 1.
+            let row0 = d[0] + d[1];
+            let row1 = d[2] + d[3];
+            assert!((row0 - 1.0).abs() < 1e-5, "row 0 sums to {row0}");
+            assert!((row1 - 1.0).abs() < 1e-5, "row 1 sums to {row1}");
+        }
+    }
+
+    #[test]
+    fn test_softmax_dim0_preserves_gradients_pmat867() {
+        use crate::autograd::clear_graph;
+
+        // The dim=0 path composes differentiable ops (transpose ∘ softmax ∘
+        // transpose); gradients must still flow back to the input.
+        clear_graph();
+        let x = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]).requires_grad();
+        let x_id = x.id();
+
+        // Scalar loss = sum(softmax(x, dim=0)) so backward is well-defined.
+        let loss = Softmax::new(0).forward(&x).sum();
+        loss.backward();
+
+        let grad = crate::autograd::get_grad(x_id)
+            .expect("Softmax(0) forward must keep the input differentiable");
+        assert_eq!(grad.numel(), 4, "gradient must cover every input element");
+        // sum(softmax) is constant (== n_cols), so d(loss)/d(x) ≈ 0 everywhere.
+        for &g in grad.data() {
+            assert!(g.abs() < 1e-4, "grad {g} should be ~0 for sum-of-softmax");
+        }
     }
 }
