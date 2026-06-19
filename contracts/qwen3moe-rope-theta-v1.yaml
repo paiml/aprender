@@ -1,0 +1,85 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-19"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "GGUF spec: general.architecture string for Qwen3-MoE models (e.g. Qwen3-Coder-30B-A3B-Instruct) is the raw lowercase 'qwen3moe' (NO underscore)."
+    - "HuggingFace Qwen3 config.json: rope_theta = 1000000.0 (1e6) for the Qwen3 family (dense + MoE); LLaMA/Mistral use 10000.0."
+    - "In-repo precedent: chat_template_helpers.rs:71 matches BOTH 'qwen3_moe' || 'qwen3moe'; tensor_names_fallback.rs::normalize_architecture maps 'qwen3moe' -> 'qwen3_moe'; arch_constraints_fallback.rs matches both spellings."
+    - "PMAT-863 — this fix."
+  description: |
+    Correctness contract for the architecture-default RoPE frequency base
+    (crates/aprender-serve/src/gguf/config.rs::default_rope_theta_for_architecture).
+    Pillar-4 (correctness): the wrong RoPE base silently degrades long-context
+    inference for Qwen3-MoE models that llama.cpp/Ollama serve coherently.
+kind: KernelContract
+name: qwen3moe-rope-theta
+version: "1.0.0"
+scope: "crates/aprender-serve/src/gguf/config.rs"
+description: |
+  `default_rope_theta_for_architecture(arch)` returns the architecture-specific
+  default RoPE frequency base used when the GGUF metadata does NOT carry an
+  explicit `{arch}.rope.freq_base` key (which is the case for several Qwen3-MoE
+  GGUF builds, e.g. Qwen3-Coder-30B-A3B-Instruct).
+
+  It is called (from `GGUFConfig::from_gguf`, config.rs:~729) with the RAW,
+  un-normalized GGUF `general.architecture` string — it does NOT route through
+  `normalize_architecture`. The raw GGUF spelling for Qwen3-MoE is `"qwen3moe"`
+  (NO underscore). PMAT-863: the 1,000,000.0 (1e6) match arm only listed the
+  canonical underscored `"qwen3_moe"`, so the raw `"qwen3moe"` fell through to
+  the conservative `_ => 10_000.0` default → wrong positional encodings →
+  degraded / incoherent long-context inference.
+
+  Fix: add the raw spelling `"qwen3moe"` to the 1e6 arm (keeping `"qwen3_moe"`,
+  `"qwen3"`, `"qwen2"`), mirroring chat_template_helpers.rs:71. Non-Qwen
+  architectures (llama, mistral, gemma, phi, deepseek, unknown) remain on the
+  10,000.0 default, unchanged.
+
+equations:
+  C-QWEN3MOE-ROPE-001:
+    description: "Raw GGUF arch 'qwen3moe' (no underscore) maps to the Qwen3 1e6 RoPE base"
+    formula: "default_rope_theta_for_architecture(\"qwen3moe\") = 1_000_000.0"
+    note: "from_gguf passes the RAW general.architecture string; GGUF spells Qwen3-MoE 'qwen3moe'. Pre-fix this fell through to 10_000.0."
+  C-QWEN3MOE-ROPE-002:
+    description: "Canonical 'qwen3_moe' and dense Qwen3/Qwen2 remain on the 1e6 RoPE base"
+    formula: "default_rope_theta_for_architecture(a) = 1_000_000.0  for a ∈ {\"qwen3moe\", \"qwen3_moe\", \"qwen3\", \"qwen2\"}"
+    note: "Qwen family (dense + MoE) uses rope_theta 1e6 per HF config.json."
+  C-QWEN3MOE-ROPE-003:
+    description: "Non-Qwen architectures keep the conservative 10_000.0 default (unchanged)"
+    formula: "default_rope_theta_for_architecture(a) = 10_000.0  for a ∈ {\"llama\", \"mistral\", \"gemma\", \"deepseek\", \"phi\", <unknown>}"
+    note: "Original RoPE paper base; the fix MUST NOT alter non-Qwen arms."
+
+proof_obligations:
+- type: invariant
+  property: "PO-QWEN3MOE-ROPE-001 — the 1e6 match arm contains BOTH spellings 'qwen3moe' and 'qwen3_moe'"
+  formal: |
+    The match arm reads: "qwen2" | "qwen3" | "qwen3moe" | "qwen3_moe" => 1_000_000.0.
+    Therefore default_rope_theta_for_architecture("qwen3moe") = 1_000_000.0 AND
+    default_rope_theta_for_architecture("qwen3_moe") = 1_000_000.0.
+    Discharges C-QWEN3MOE-ROPE-001 and C-QWEN3MOE-ROPE-002.
+- type: invariant
+  property: "PO-QWEN3MOE-ROPE-002 — the fix is additive: every previously-10_000.0 architecture still returns 10_000.0"
+  formal: |
+    For every architecture a NOT in {"qwen2","qwen3","qwen3moe","qwen3_moe"}:
+    default_rope_theta_for_architecture(a) = 10_000.0 (unchanged from pre-fix).
+    In particular a = "llama" and a = "mistral" still map to 10_000.0.
+    Discharges C-QWEN3MOE-ROPE-003.
+
+falsification:
+  - id: FALSIFY-QWEN3MOE-ROPE-001
+    description: "Raw GGUF arch 'qwen3moe' resolves to 1e6, not the 10K default. Discharges C-QWEN3MOE-ROPE-001 / PO-QWEN3MOE-ROPE-001."
+    test: "qwen3moe_raw_arch_uses_1m_rope_base — default_rope_theta_for_architecture(\"qwen3moe\"): RED pre-fix = 10000.0, GREEN post-fix = 1_000_000.0. Same test asserts 'qwen3_moe'/'qwen3'/'qwen2' stay 1e6 and 'llama'/'mistral' stay 10000.0 (C-QWEN3MOE-ROPE-002/003)."
+    evidence: "cargo test -p aprender-serve --lib qwen3moe_raw_arch_uses_1m_rope_base"
+
+status_history:
+  - version: "1.0.0"
+    date: "2026-06-19"
+    pr: "fix/pmat-863-qwen3moe-rope-theta"
+    summary: |
+      Initial contract registered with the fix. PMAT-863: added the raw GGUF
+      spelling "qwen3moe" to the 1e6 RoPE-base arm of
+      default_rope_theta_for_architecture (config.rs), so Qwen3-MoE GGUF builds
+      that lack an explicit rope.freq_base key no longer fall through to the
+      10K default. Falsifier qwen3moe_raw_arch_uses_1m_rope_base verified
+      RED (10000.0) pre-fix and GREEN (1_000_000.0) post-fix.
