@@ -422,4 +422,50 @@ mod tests {
         assert!(!result.stopped_early);
         assert!(result.final_loss.is_finite());
     }
+
+    /// FALSIFY-GRAD-ACCUM-MEAN (PMAT-839): K-step gradient accumulation must step on the MEAN of
+    /// the K micro-batch gradients, not their SUM. Train the SAME problem two ways under SGD(lr=1)
+    /// with grad clipping OFF (clipping normalizes the magnitude and would mask the bug whenever
+    /// the summed norm exceeds the threshold): (A) accum=1 over one batch, (B) accum=2 over two
+    /// IDENTICAL batches. Correct mean-scaling makes the final parameter identical; the pre-fix
+    /// SUM moved it twice as far (K-fold effective-LR inflation). The forward returns the
+    /// (Rc-shared) parameter so the MSE gradient reaches it.
+    #[test]
+    fn falsify_gradient_accumulation_is_mean_not_sum() {
+        use crate::optim::SGD;
+
+        fn run(accum: usize, n_batches: usize) -> Vec<f32> {
+            let param = Tensor::from_vec(vec![1.0, 2.0], true);
+            let fwd_param = param.clone(); // shares the Rc grad cell
+            let optimizer = SGD::new(1.0, 0.0); // lr=1, no momentum → param -= grad (linear)
+            let config = TrainConfig::new()
+                .with_log_interval(100)
+                .without_grad_clip() // clipping would normalize away the SUM-vs-MEAN difference
+                .with_gradient_accumulation(accum);
+            let mut trainer = Trainer::new(vec![param], Box::new(optimizer), config);
+            trainer.set_loss(Box::new(MSELoss));
+            let batches: Vec<Batch> = (0..n_batches)
+                .map(|_| {
+                    Batch::new(
+                        Tensor::from_vec(vec![0.0, 0.0], false),
+                        Tensor::from_vec(vec![2.0, 3.0], false),
+                    )
+                })
+                .collect();
+            let fwd = move |_input: &Tensor| fwd_param.clone();
+            trainer.train(1, || batches.clone(), fwd);
+            trainer.params()[0].data().to_vec()
+        }
+
+        let a = run(1, 1); // single batch
+        let b = run(2, 2); // two identical micro-batches accumulated
+                           // RED (sum): b moved 2× as far as a. GREEN (mean): b == a.
+        assert_eq!(a.len(), b.len());
+        for (x, y) in a.iter().zip(b.iter()) {
+            assert!(
+                (x - y).abs() < 1e-5,
+                "accum=2 param {b:?} != accum=1 param {a:?} — accumulation stepped on the SUM, not the MEAN"
+            );
+        }
+    }
 }

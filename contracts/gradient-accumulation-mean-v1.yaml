@@ -1,0 +1,42 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-19"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "PyTorch gradient accumulation convention: loss = loss / accumulation_steps before backward"
+    - "crates/aprender-train/src/train/config.rs:27 (Effective batch size = batch_size * gradient_accumulation_steps)"
+  description: |
+    Correctness contract for gradient accumulation in the aprender-train Trainer. Pillar-2/3
+    (PyTorch/Unsloth training parity): K-step accumulation must reproduce a single batch of the
+    effective size, not inflate the effective learning rate.
+kind: KernelContract
+name: gradient-accumulation-mean
+version: "1.0.0"
+scope: "crates/aprender-train/src/train/trainer/train_loop/basic.rs"
+description: |
+  With gradient_accumulation_steps = K, the trainer zeroes grads only at the window start and
+  the backward ops ADD each micro-batch's gradient into the shared param grad cell, so at the
+  accumulation boundary param.grad holds the SUM over the window. PMAT-839: maybe_clip_and_step
+  clipped and stepped on that SUM, making the realized update gradient exactly K× the mean over
+  the effective batch — a silent K-fold effective-LR inflation (K=8 → 8× LR) whenever accumulation
+  is enabled, contradicting config.rs:27's "effective batch size" contract and causing
+  divergence/loss-spikes mis-attributed to the LR. (Default grad clipping at norm 1.0 partially
+  masks it: when the summed norm exceeds the threshold both sum and mean clip identically, so the
+  defect surfaces in the sub-threshold regime — late training / small gradients.) Fix: scale each
+  param.grad by 1/window before clip+step, where window = (step % accum_steps) + 1 (correct also
+  for a short final window).
+equations:
+  C-GRADACC-001:
+    description: "The optimizer steps on the MEAN of the window's micro-batch gradients"
+    formula: "g_step = (1/W)·Σ_{i in window} g_i,  W = (step % accum_steps) + 1"
+    note: "Backward accumulates the SUM; the boundary must divide by the window count."
+  C-GRADACC-002:
+    description: "K-step accumulation over K identical micro-batches equals a single batch (same LR)"
+    formula: "param(accum=K, K identical batches) == param(accum=1, 1 batch), same optimizer/LR"
+    note: "The pre-fix SUM moved the parameter K× as far."
+falsification:
+  - id: FALSIFY-GRAD-ACCUM-MEAN
+    description: "Accumulation steps on the mean, not the sum. Discharges C-GRADACC-001/002."
+    test: "falsify_gradient_accumulation_is_mean_not_sum — SGD(lr=1), clip off: accum=2 over two identical batches vs accum=1 over one. RED b=[3,4] (2× move), GREEN b=[2,3]==a."
+    evidence: "cargo test -p aprender-train --lib falsify_gradient_accumulation_is_mean_not_sum"
