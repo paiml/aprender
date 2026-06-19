@@ -826,16 +826,26 @@ fn dequantize_q5k_to_f32(data: &[u8], num_elements: usize) -> Vec<f32> {
         let qs = &block[48..176];
 
         let out_base = sb * BLOCK_SIZE;
-        for sub in 0..8usize {
-            let scale = d * scales[sub] as f32;
-            let min = dmin * mins[sub] as f32;
-            let sub_off = sub * 32;
-            for j in 0..32usize {
-                let idx = sub_off + j;
-                let low4 = (qs[idx / 2] >> ((idx % 2) * 4)) & 0x0F;
-                let high1 = (qh[idx / 8] >> (idx % 8)) & 0x01;
-                let q5 = (low4 | (high1 << 4)) as f32;
-                result[out_base + idx] = scale * q5 - min;
+        // llama.cpp `dequantize_row_q5_K` layout: process the 256-element
+        // super-block in four 64-element chunks. For each chunk `it`, the low
+        // and high nibble of the SAME `qs` byte land a STRIDE OF 32 apart, and
+        // `qh[l]` holds the 5th bit across the four chunks (u1 = 1<<(2*it),
+        // u2 = 2<<(2*it)). See contracts/q5k-dequant-correctness-v1.yaml.
+        for it in 0..4usize {
+            let ql_base = it * 32;
+            let scale_lo = d * scales[2 * it] as f32;
+            let min_lo = dmin * mins[2 * it] as f32;
+            let scale_hi = d * scales[2 * it + 1] as f32;
+            let min_hi = dmin * mins[2 * it + 1] as f32;
+            let u1 = 1u8 << (2 * it);
+            let u2 = 2u8 << (2 * it);
+            for l in 0..32usize {
+                let qsb = qs[ql_base + l];
+                let qhb = qh[l];
+                let lo = (qsb & 0x0F) + if qhb & u1 != 0 { 16 } else { 0 };
+                result[out_base + it * 64 + l] = scale_lo * (lo as f32) - min_lo;
+                let hi = (qsb >> 4) + if qhb & u2 != 0 { 16 } else { 0 };
+                result[out_base + it * 64 + 32 + l] = scale_hi * (hi as f32) - min_hi;
             }
         }
     }
@@ -945,4 +955,89 @@ fn dequantize_q4_1_to_f32(data: &[u8], num_elements: usize) -> Vec<f32> {
 
     result.truncate(num_elements);
     result
+}
+
+#[cfg(test)]
+mod q5k_dequant_tests {
+    use super::dequantize_q5k_to_f32;
+
+    /// Build a single 176-byte Q5_K super-block.
+    ///
+    /// `d` / `dmin` are f16 bit patterns. `scale_bytes` is the 12-byte packed
+    /// scales+mins. `qh` is 32 bytes (one bit per element). `qs` is 128 bytes
+    /// (two 4-bit values per byte).
+    fn build_q5k_block(
+        d: u16,
+        dmin: u16,
+        scale_bytes: [u8; 12],
+        qh: [u8; 32],
+        qs: [u8; 128],
+    ) -> Vec<u8> {
+        let mut block = Vec::with_capacity(176);
+        block.extend_from_slice(&d.to_le_bytes());
+        block.extend_from_slice(&dmin.to_le_bytes());
+        block.extend_from_slice(&scale_bytes);
+        block.extend_from_slice(&qh);
+        block.extend_from_slice(&qs);
+        assert_eq!(block.len(), 176, "Q5_K super-block must be 176 bytes");
+        block
+    }
+
+    /// Scale bytes that decode (via the Q4_K-style 6-bit unpack) to all eight
+    /// scales == 1 and all eight mins == 0.
+    fn scales_all_one_mins_zero() -> [u8; 12] {
+        // scales[0..4] low6 = bytes[0..4]; mins[0..4] low6 = bytes[4..8];
+        // scales[4..8] = (bytes[8..12] & 0x0F) | ((bytes[0..4] >> 6) << 4);
+        // mins[4..8]   = (bytes[8..12] >> 4)   | ((bytes[4..8] >> 6) << 4).
+        // bytes[0..4]=1 -> scales[0..4]=1, high-2 contribution 0.
+        // bytes[4..8]=0 -> mins[0..4]=0.
+        // bytes[8..12]=1 -> scales[4..8]=1, mins[4..8]=0.
+        [1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1]
+    }
+
+    /// FALSIFIER (PMAT-842): the GGUF/llama.cpp Q5_K layout places the low and
+    /// high nibble of the SAME `qs` byte a STRIDE OF 32 apart, NOT at adjacent
+    /// output indices. With qs[0] = 0x21, low nibble (1) -> out[0], high nibble
+    /// (2) -> out[32]; out[1] comes from qs[1] (0). The buggy sequential-index
+    /// implementation produced out[1] == 2.0 and out[32] == 0.0.
+    #[test]
+    fn test_q5k_dequant_stride32_nibble_layout() {
+        let d = 0x3C00; // f16 1.0
+        let dmin = 0x0000; // f16 0.0
+        let mut qs = [0u8; 128];
+        qs[0] = 0x21; // low nibble = 1, high nibble = 2
+        let block = build_q5k_block(d, dmin, scales_all_one_mins_zero(), [0u8; 32], qs);
+
+        let out = dequantize_q5k_to_f32(&block, 256);
+
+        // low nibble of qs[0] -> output index 0
+        assert_eq!(out[0], 1.0, "out[0] must come from qs[0] low nibble (=1)");
+        // output index 1 comes from qs[1] (=0), NOT qs[0] high nibble
+        assert_eq!(out[1], 0.0, "out[1] must come from qs[1] low nibble (=0)");
+        // high nibble of qs[0] -> output index 32 (stride of 32)
+        assert_eq!(out[32], 2.0, "out[32] must come from qs[0] high nibble (=2)");
+    }
+
+    /// FALSIFIER (PMAT-842): the 5th bit lives in `qh[l]`, with the low nibble
+    /// using bit (2*it) and the high nibble using bit (2*it+1). For the first
+    /// chunk (it=0): u1 = 0b01, u2 = 0b10. With qh[0] = 0x03 both bits are set,
+    /// so the low value gains +16 (out[0]=17) and the high value gains +16
+    /// (out[32]=18).
+    #[test]
+    fn test_q5k_dequant_fifth_bit_placement() {
+        let d = 0x3C00; // f16 1.0
+        let dmin = 0x0000; // f16 0.0
+        let mut qs = [0u8; 128];
+        qs[0] = 0x21; // low nibble = 1, high nibble = 2
+        let mut qh = [0u8; 32];
+        qh[0] = 0x03; // set bits 0 (u1) and 1 (u2) for chunk it=0
+        let block = build_q5k_block(d, dmin, scales_all_one_mins_zero(), qh, qs);
+
+        let out = dequantize_q5k_to_f32(&block, 256);
+
+        // low nibble: 1 + 16 (bit 0 set) = 17
+        assert_eq!(out[0], 17.0, "out[0] low nibble must add 16 for qh bit 0");
+        // high nibble: 2 + 16 (bit 1 set) = 18, at stride-32 index
+        assert_eq!(out[32], 18.0, "out[32] high nibble must add 16 for qh bit 1");
+    }
 }
