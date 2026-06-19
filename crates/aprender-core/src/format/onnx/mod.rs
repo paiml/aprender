@@ -160,7 +160,9 @@ fn f16_to_f32(bits: u16) -> f32 {
                 m <<= 1;
                 e += 1;
             }
-            let f32_exp = 127 - 15 - e;
+            // PMAT-843: `e` starts at 0, so the reconstructed f32 exponent
+            // needs a +1 bias correction; without it every subnormal is halved.
+            let f32_exp = 127 - 15 - e + 1;
             let f32_mant = (m & 0x3FF) << 13;
             f32::from_bits((sign << 31) | (f32_exp << 23) | f32_mant)
         }
@@ -205,3 +207,69 @@ pub struct OnnxReader {
 }
 
 include!("reader.rs");
+
+#[cfg(test)]
+mod f16_tests {
+    use super::f16_to_f32;
+
+    /// Self-contained, bit-exact IEEE-754 binary16 -> binary32 reference
+    /// (golden oracle). Verified bit-identical to `half::f16::to_f32()` across
+    /// all 65536 patterns (NaN excluded). PMAT-843.
+    fn golden_f16_to_f32(bits: u16) -> f32 {
+        let sign = (bits >> 15) & 1;
+        let exp = i32::from((bits >> 10) & 0x1F);
+        let man = u32::from(bits & 0x3FF);
+        let s = (sign as f32).mul_add(-2.0, 1.0); // +1.0 if sign=0, -1.0 if sign=1
+        if exp == 0 {
+            // zero or subnormal: value = mantissa * 2^-24
+            s * (man as f32) * 2f32.powi(-24)
+        } else if exp == 0x1F {
+            if man == 0 {
+                if sign == 1 {
+                    f32::NEG_INFINITY
+                } else {
+                    f32::INFINITY
+                }
+            } else {
+                f32::NAN
+            }
+        } else {
+            // normal: value = (1 + mantissa/1024) * 2^(exp-15)
+            s * (1.0 + (man as f32) / 1024.0) * 2f32.powi(exp - 15)
+        }
+    }
+
+    /// PMAT-843 falsifier: smallest positive subnormal must NOT be halved.
+    /// RED (buggy): 0x33000000 (2.9802322e-8) = exactly half. GREEN:
+    /// 0x33800000 (5.9604645e-8) = `half::f16::from_bits(1).to_f32()`.
+    #[test]
+    fn smallest_subnormal_not_halved() {
+        let got = f16_to_f32(0x0001).to_bits();
+        assert_eq!(
+            got, 0x3380_0000,
+            "f16_to_f32(0x0001) = {got:#010x}, expected 0x33800000 (5.9604645e-8)"
+        );
+    }
+
+    /// PMAT-843 strong falsifier: every f16 bit pattern (NaN excluded) must
+    /// convert bit-exactly to the golden oracle. RED count (buggy) = 2046
+    /// (all subnormals halved); GREEN = 0.
+    #[test]
+    fn all_bit_patterns_match_golden() {
+        let mut mismatches = 0u32;
+        for bits in 0..=u16::MAX {
+            let exp = (bits >> 10) & 0x1F;
+            let man = bits & 0x3FF;
+            if exp == 0x1F && man != 0 {
+                continue; // skip NaN (bit pattern not canonical)
+            }
+            if f16_to_f32(bits).to_bits() != golden_f16_to_f32(bits).to_bits() {
+                mismatches += 1;
+            }
+        }
+        assert_eq!(
+            mismatches, 0,
+            "{mismatches} f16->f32 conversions disagree with golden oracle"
+        );
+    }
+}
