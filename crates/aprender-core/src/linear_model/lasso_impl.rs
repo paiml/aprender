@@ -335,9 +335,15 @@ impl Estimator for Lasso {
                     rho += x_centered.get(i, j) * residual;
                 }
 
-                // Update coefficient with soft-thresholding
+                // Update coefficient with soft-thresholding.
+                //
+                // scikit-learn minimizes (1/(2*n_samples))*||y - Xb||^2 + alpha*||b||_1,
+                // whose coordinate update thresholds rho at n_samples*alpha (PMAT-848).
+                // Without the n_samples factor the effective penalty is ~n times too
+                // weak, so `alpha` would not match the scikit-learn convention.
                 let old_beta = beta[j];
-                beta[j] = Self::soft_threshold(rho, self.alpha) / col_norms_sq[j];
+                let n = n_samples as f32;
+                beta[j] = Self::soft_threshold(rho, n * self.alpha) / col_norms_sq[j];
 
                 let change = (beta[j] - old_beta).abs();
                 if change > max_change {

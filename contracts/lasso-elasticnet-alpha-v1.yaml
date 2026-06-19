@@ -1,0 +1,95 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-19"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "scikit-learn Lasso: minimize (1/(2*n_samples))*||y - Xb||^2 + alpha*||b||_1 (the alpha-convention oracle)"
+    - "scikit-learn ElasticNet: minimize (1/(2*n_samples))*||y - Xb||^2 + alpha*l1_ratio*||b||_1 + 0.5*alpha*(1-l1_ratio)*||b||^2"
+    - "Friedman, Hastie & Tibshirani (2010) Regularization Paths for Generalized Linear Models via Coordinate Descent"
+    - "crates/aprender-core/src/linear_model/lasso_impl.rs (Lasso coordinate descent fit)"
+    - "crates/aprender-core/src/linear_model/input.rs (ElasticNet coordinate descent fit)"
+  description: |
+    Correctness contract for the alpha (regularization-strength) convention of the
+    Lasso and ElasticNet coordinate-descent solvers. Pillar-1 (replace+beat
+    scikit-learn): for a given alpha/l1_ratio aprender must produce the SAME
+    coefficients and intercept as scikit-learn, otherwise users porting code silently
+    get under-regularized models.
+
+kind: KernelContract
+name: lasso-elasticnet-alpha
+version: "1.0.0"
+scope: "crates/aprender-core/src/linear_model/lasso_impl.rs, crates/aprender-core/src/linear_model/input.rs"
+
+description: |
+  scikit-learn minimizes the SAMPLE-MEAN squared error with a 1/(2*n_samples)
+  data-fit factor:
+
+    Lasso:      (1/(2*n_samples))*||y - Xb||^2 + alpha*||b||_1
+    ElasticNet: (1/(2*n_samples))*||y - Xb||^2
+                + alpha*l1_ratio*||b||_1
+                + 0.5*alpha*(1 - l1_ratio)*||b||^2
+
+  The coordinate-descent update for feature j is
+
+    rho_j   = sum_i x_centered[i][j] * residual_i           (no 1/n inside rho)
+    beta[j] = soft_threshold(rho_j, n_samples*alpha*l1_ratio)
+              / (col_norms_sq[j] + n_samples*alpha*(1 - l1_ratio))
+
+  so the L1 threshold scales with n_samples*alpha and the L2 denominator term with
+  n_samples*alpha*(1 - l1_ratio). For pure Lasso (l1_ratio == 1) this reduces to
+  beta[j] = soft_threshold(rho_j, n_samples*alpha) / col_norms_sq[j].
+
+  PMAT-848 fixed the omission of the n_samples factor in BOTH solvers. The buggy
+  update thresholded at `alpha` (Lasso) / `alpha*l1_ratio` (ElasticNet) with no
+  n_samples factor, making the effective penalty ~n_samples times too weak, so the
+  produced coefficients did not match scikit-learn's `alpha`.
+
+  Falsifier (X=[[1],[2],[3],[4],[5]], y=[2,4,6,8,10], n_samples=5):
+    - Lasso(alpha=1.0):           RED coef~1.90, intercept~0.30  -> GREEN coef=1.5, intercept=1.5
+    - ElasticNet(alpha=1.0, 0.5): RED coef~1.857, intercept      -> GREEN coef=1.4, intercept=1.8
+  scikit-learn reference (Lasso(1.0): coef_=1.5, intercept_=1.5; ElasticNet(1.0, 0.5):
+  coef_=1.4, intercept_=1.8) generated with `uv run --with scikit-learn python3`.
+
+equations:
+  C-LASSO-ALPHA-001:
+    description: "Lasso coordinate update thresholds rho at n_samples*alpha (scikit-learn convention)"
+    formula: "beta[j] = soft_threshold(rho_j, n_samples*alpha) / col_norms_sq[j], where rho_j = sum_i x_centered[i][j]*residual_i"
+    note: "Buggy version thresholded at `alpha` (dropped n_samples) -> penalty ~n times too weak."
+  C-LASSO-ALPHA-002:
+    description: "ElasticNet coordinate update uses n_samples*alpha scaling for BOTH L1 and L2 penalties"
+    formula: "beta[j] = soft_threshold(rho_j, n_samples*alpha*l1_ratio) / (col_norms_sq[j] + n_samples*alpha*(1 - l1_ratio))"
+    note: "Buggy version used alpha*l1_ratio and alpha*(1-l1_ratio) with no n_samples factor."
+  C-LASSO-ALPHA-003:
+    description: "On a perfect line, aprender matches scikit-learn coefficient/intercept to < 0.05"
+    formula: "Lasso(1.0) on (X=[[1]..[5]], y=[2..10]) => coef ~= 1.5, intercept ~= 1.5; ElasticNet(1.0, 0.5) => coef ~= 1.4, intercept ~= 1.8"
+    note: "Sample-level scikit-learn reference values; RED coef ~= 1.90 (Lasso) before the fix."
+
+proof_obligations:
+  - id: PO-LASSO-ALPHA-001
+    type: equivalence
+    property: "Lasso coefficients/intercept match scikit-learn Lasso(alpha) within tolerance"
+    formal: "Lasso(1.0).fit(X,y).coef ~= 1.5 and intercept ~= 1.5 for X=[[1],[2],[3],[4],[5]], y=[2,4,6,8,10]"
+    tolerance: 0.05
+    applies_to: all
+  - id: PO-LASSO-ALPHA-002
+    type: equivalence
+    property: "ElasticNet coefficients/intercept match scikit-learn ElasticNet(alpha, l1_ratio) within tolerance"
+    formal: "ElasticNet(1.0, 0.5).fit(X,y).coef ~= 1.4 and intercept ~= 1.8 for X=[[1],[2],[3],[4],[5]], y=[2,4,6,8,10]"
+    tolerance: 0.05
+    applies_to: all
+  - id: PO-LASSO-ALPHA-003
+    type: invariant
+    property: "Soft-threshold L1 penalty scales linearly with n_samples (alpha convention)"
+    formal: "the coordinate-descent L1 threshold equals n_samples*alpha*l1_ratio (l1_ratio == 1 for Lasso)"
+    applies_to: all
+
+falsification:
+  - id: FALSIFY-LASSO-ALPHA-001
+    description: "Lasso(1.0) matches scikit-learn (coef 1.5, intercept 1.5). Discharges C-LASSO-ALPHA-001 / C-LASSO-ALPHA-003 / PO-LASSO-ALPHA-001 / PO-LASSO-ALPHA-003."
+    test: "test_lasso_sklearn_alpha_parity (crates/aprender-core/src/linear_model/tests_lasso.rs) — RED coef=1.9, intercept=0.30 -> GREEN coef=1.5, intercept=1.5."
+    evidence: "cargo test -p aprender-core --lib test_lasso_sklearn_alpha_parity"
+  - id: FALSIFY-LASSO-ALPHA-002
+    description: "ElasticNet(1.0, 0.5) matches scikit-learn (coef 1.4, intercept 1.8). Discharges C-LASSO-ALPHA-002 / C-LASSO-ALPHA-003 / PO-LASSO-ALPHA-002."
+    test: "test_elastic_net_sklearn_alpha_parity (crates/aprender-core/src/linear_model/tests_lasso.rs) — RED coef=1.857 -> GREEN coef=1.4, intercept=1.8."
+    evidence: "cargo test -p aprender-core --lib test_elastic_net_sklearn_alpha_parity"

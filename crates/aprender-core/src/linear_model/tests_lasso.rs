@@ -163,6 +163,62 @@ fn test_lasso_with_tol() {
     assert!(model.is_fitted());
 }
 
+// PMAT-848: Lasso/ElasticNet must match scikit-learn's `alpha` convention, i.e.
+// minimize (1/(2*n_samples))*||y - Xb||^2 + alpha*||b||_1. The coordinate-descent
+// update must threshold rho at n_samples*alpha. Reference values produced with
+// `uv run --with scikit-learn python3` (scikit-learn 1.x).
+#[test]
+fn test_lasso_sklearn_alpha_parity() {
+    // X=[[1],[2],[3],[4],[5]], y=[2,4,6,8,10] (perfect y = 2x line).
+    // sklearn Lasso(alpha=1.0): coef_=[1.5], intercept_=1.5.
+    // Pre-fix (missing 1/n) this returned coef~1.90, intercept~0.30, i.e.
+    // alpha was ~n times too weak.
+    let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
+        .expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0]);
+
+    let mut model = Lasso::new(1.0);
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    let coef = model.coefficients()[0];
+    let intercept = model.intercept();
+    assert!(
+        (coef - 1.5).abs() < 0.05,
+        "Lasso(1.0) coef must match sklearn 1.5, got {coef}"
+    );
+    assert!(
+        (intercept - 1.5).abs() < 0.05,
+        "Lasso(1.0) intercept must match sklearn 1.5, got {intercept}"
+    );
+}
+
+#[test]
+fn test_elastic_net_sklearn_alpha_parity() {
+    // X=[[1],[2],[3],[4],[5]], y=[2,4,6,8,10].
+    // sklearn ElasticNet(alpha=1.0, l1_ratio=0.5): coef_=[1.4], intercept_=1.8.
+    let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
+        .expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0]);
+
+    let mut model = ElasticNet::new(1.0, 0.5);
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    let coef = model.coefficients()[0];
+    let intercept = model.intercept();
+    assert!(
+        (coef - 1.4).abs() < 0.05,
+        "ElasticNet(1.0, 0.5) coef must match sklearn 1.4, got {coef}"
+    );
+    assert!(
+        (intercept - 1.8).abs() < 0.05,
+        "ElasticNet(1.0, 0.5) intercept must match sklearn 1.8, got {intercept}"
+    );
+}
+
 #[test]
 fn test_lasso_soft_threshold() {
     // Test the soft-thresholding function
