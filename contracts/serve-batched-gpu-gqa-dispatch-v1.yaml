@@ -1,0 +1,62 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-19"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "PMAT-749: GQA serve panic — adaptive_attention_with_cache routed GQA to MHA-only kernels"
+    - "Qwen2.5-7B-Instruct: hidden=3584, num_heads=28, num_kv_heads=4, head_dim=128 (GQA)"
+    - "crates/aprender-serve/src/api/batch_processing.rs — /v1/batch/completions handler"
+  description: |
+    Dispatch-safety contract for apr's batched-GPU serving path (the "2.8x Ollama, 800+ tok/s"
+    feature). The batched path must produce correct output — or cleanly route around itself — for
+    grouped-query-attention (GQA) models, which are the entire modern-LLM class (Qwen2, Llama-3,
+    Mistral, ...). It must NEVER crash with a CUDA GEMM size mismatch.
+kind: KernelContract
+name: serve-batched-gpu-gqa-dispatch
+version: "1.0.0"
+scope: "crates/aprender-serve/src/gguf/inference/cached/sync_owned_quantized_02.rs"
+description: |
+  PMAT-841: `OwnedQuantizedModelCachedSync::batch_generate_gpu` dispatches to
+  `forward_batch_with_gpu_ffn` whenever the active batch is >= 32. That function is MHA-only —
+  it treats the fused QKV projection as `3 * hidden_dim` wide and slices Q/K/V each as
+  `hidden_dim` (its own comments say `// non-GQA code path`). For a GQA model the real QKV
+  projection is `q_dim + 2*kv_dim` wide (e.g. Qwen2.5-7B: 3584 + 2*512 = 4608, not 3*3584 =
+  10752), so the batched path crashes: the GPU GEMM rejects the weight with
+  `GEMM size mismatch: B[..] expected 3*hidden*hidden` (measured live on an RTX 4090: a 32-prompt
+  /v1/batch/completions request to a Qwen2.5-7B GGUF returned
+  `CUDA GEMM failed ... B[16515072] expected 38535168`), and the CPU branch panics slicing
+  `qkv[2*hidden..3*hidden]` past the buffer. Both reach production via the /v1/batch/completions
+  HTTP endpoint and via concurrent >=32-request batching.
+
+  Fix: gate the batched-path dispatch with an MHA-layout precondition
+  `q_dim == hidden_dim && kv_dim == hidden_dim`. When false (GQA, or any non-standard head_dim),
+  every prompt is routed through the per-prompt `forward_single_with_cache` path — the same
+  GQA-correct path used by prefill and by single `/v1/completions` requests. apr concedes the
+  batched-GPU speedup for GQA (a future optimization: a GQA-aware batched QKV/attention kernel)
+  but WINS on correctness: it returns valid completions instead of crashing, where the headline
+  batched feature was previously dead for every modern model.
+equations:
+  C-SERVE-GQA-DISPATCH-001:
+    description: "The MHA-only batched-GPU path is selected only when the MHA layout precondition holds."
+    formula: "select(forward_batch_with_gpu_ffn) ⟹ (q_dim == hidden_dim) ∧ (kv_dim == hidden_dim)"
+    note: "GQA ⟺ kv_dim < hidden_dim (num_kv_heads < num_heads) ⟹ per-prompt forward_single_with_cache path."
+  C-SERVE-GQA-DISPATCH-002:
+    description: "Batched generation on a GQA model terminates with one output sequence per prompt — never a GEMM size mismatch or slice panic."
+    formula: "batch_generate_gpu(prompts, cfg) on GQA ⟹ Ok(seqs) ∧ |seqs| == |prompts|"
+    note: "Holds for any batch size, including >= the 32-prompt GPU threshold."
+proof_obligations:
+  - id: PO-SERVE-GQA-DISPATCH-001
+    kind: safety
+    statement: "batch_generate_gpu never dispatches a GQA model (kv_dim != hidden_dim) into the MHA-only forward_batch_with_gpu_ffn batched branch."
+    discharged_by: FALSIFY-SERVE-GQA-BATCH-NO-CRASH
+falsification:
+  - id: FALSIFY-SERVE-GQA-BATCH-NO-CRASH
+    description: "A GQA model run through batch_generate_gpu with >=32 prompts returns Ok with one sequence per prompt (no CUDA GEMM mismatch, no OOB slice panic). Discharges C-SERVE-GQA-DISPATCH-001/002 and PO-SERVE-GQA-DISPATCH-001."
+    test: "cargo test -p aprender-serve --lib falsify_pmat841_batched_gpu_gqa_no_crash"
+    evidence: |
+      RED (guard stashed): Err(UnsupportedOperation { operation: "batch_matmul_gpu_prefer_cuda",
+      reason: "Matrix B size 8192 doesn't match k*n=64*192=12288" }) — the fixture-scale twin of the
+      live RTX 4090 7B crash (B[16515072] expected 38535168). GREEN (guard in place): 32 sequences,
+      each retaining its prompt tokens. Live GPU verification: 32-prompt /v1/batch/completions to a
+      Qwen2.5-7B GGUF returns completions after the fix (was a GEMM size-mismatch 500 before).

@@ -44,6 +44,19 @@ impl OwnedQuantizedModelCachedSync {
         let num_prompts = prompts.len();
         let max_seq_len = prompts.iter().map(Vec::len).max().unwrap_or(0) + config.max_tokens;
 
+        // PMAT-841 (GQA dispatch guard): `forward_batch_with_gpu_ffn` is MHA-only — it
+        // treats the fused QKV projection as `3 * hidden_dim` wide and slices Q/K/V each
+        // as `hidden_dim` (see its `// non-GQA code path` comments). For GQA models
+        // (`kv_dim != hidden_dim`, e.g. Qwen2.5-7B: q_dim 3584, kv_dim 512) the real QKV
+        // projection is `q_dim + 2*kv_dim` wide, so the batched path crashes with a CUDA
+        // GEMM size mismatch (or panics slicing past the QKV buffer on its CPU branch).
+        // Only the MHA layout (`q_dim == hidden == kv_dim`) is safe for the batched path;
+        // route everything else through the per-prompt `forward_single_with_cache` path,
+        // which is GQA-correct (the same path prefill and single requests use).
+        // Contract: contracts/serve-batched-gpu-gqa-dispatch-v1.yaml.
+        let mha_batched_layout = self.model.config.q_dim() == self.model.config.hidden_dim
+            && self.model.config.kv_dim() == self.model.config.hidden_dim;
+
         // Initialize KV caches for each prompt
         let mut caches: Vec<OwnedQuantizedKVCache> = prompts
             .iter()
@@ -83,10 +96,12 @@ impl OwnedQuantizedModelCachedSync {
             let active_count = active_indices.len();
 
             // Use batched forward when we have enough active prompts for GPU benefit
-            // GPU batch threshold is 32 (from IMP-600 analysis)
+            // GPU batch threshold is 32 (from IMP-600 analysis).
+            // PMAT-841: AND require the MHA layout — the batched path is MHA-only and
+            // crashes on GQA models, so GQA falls through to the per-prompt path below.
             const GPU_BATCH_THRESHOLD: usize = 32;
 
-            if active_count >= GPU_BATCH_THRESHOLD {
+            if active_count >= GPU_BATCH_THRESHOLD && mha_batched_layout {
                 // PARITY-021: Batched forward with GPU FFN
                 // Collect tokens, positions, and cache slices for active prompts
                 let batch_tokens: Vec<u32> = active_indices

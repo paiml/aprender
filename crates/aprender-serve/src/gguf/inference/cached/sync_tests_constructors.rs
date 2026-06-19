@@ -435,3 +435,81 @@
         // The batch_size calculation would be wrong, leading to error
         assert!(result.is_ok() || result.is_err());
     }
+
+    // ========================================================================
+    // PMAT-841: Batched-GPU GQA dispatch falsifier
+    // ========================================================================
+
+    /// Grouped-query-attention config: fewer KV heads than query heads, so the
+    /// fused QKV projection is `q_dim + 2*kv_dim` wide (NOT `3 * hidden_dim`).
+    /// num_heads=4, num_kv_heads=2, hidden=64 → head_dim=16, q_dim=64, kv_dim=32,
+    /// qkv width = 64 + 2*32 = 128 (vs the MHA assumption 3*64 = 192).
+    fn gqa_test_config() -> GGUFConfig {
+        GGUFConfig {
+            architecture: "test".to_string(),
+            constraints: crate::gguf::ArchConstraints::from_architecture("test"),
+            hidden_dim: 64,
+            intermediate_dim: 128,
+            num_heads: 4,
+            num_kv_heads: 2,
+            num_layers: 1,
+            vocab_size: 100,
+            rope_theta: 10000.0,
+            context_length: 512,
+            eps: 1e-5,
+            rope_type: 0,
+            explicit_head_dim: None,
+            query_pre_attn_scalar: None,
+            bos_token_id: None,
+            eos_token_id: None,
+        }
+    }
+
+    /// PMAT-841 falsifier: `batch_generate_gpu` must NOT crash on a GQA model.
+    ///
+    /// RED (pre-fix): with ≥32 active prompts the dispatch unconditionally enters
+    /// `forward_batch_with_gpu_ffn`, whose MHA-only QKV split (`qkv[2*hidden..3*hidden]`,
+    /// stride `3*hidden`) reads past the `hidden + 2*kv_dim`-wide GQA QKV buffer → an
+    /// out-of-bounds panic (the GPU build hits the equivalent CUDA GEMM size mismatch
+    /// `B[..] expected 3*hidden*hidden, got (hidden+2*kv_dim)*hidden`).
+    ///
+    /// GREEN (post-fix): the dispatch guard `mha_batched_layout` is false for GQA, so
+    /// every prompt is routed through the per-prompt `forward_single_with_cache` path
+    /// (GQA-correct), and generation returns one sequence per prompt with no crash.
+    #[test]
+    fn falsify_pmat841_batched_gpu_gqa_no_crash() {
+        let config = gqa_test_config();
+
+        // Document the layout invariant the MHA batched path violates for GQA.
+        let head_dim = config.hidden_dim / config.num_heads;
+        let real_qkv_width = config.q_dim() + 2 * config.kv_dim();
+        let mha_assumed_width = 3 * config.hidden_dim;
+        assert_eq!(
+            real_qkv_width,
+            config.hidden_dim + 2 * config.num_kv_heads * head_dim
+        );
+        assert!(
+            real_qkv_width < mha_assumed_width,
+            "GQA QKV width {real_qkv_width} must be < MHA assumption {mha_assumed_width}"
+        );
+        assert_ne!(config.kv_dim(), config.hidden_dim, "fixture must be GQA");
+
+        let model = OwnedQuantizedModelCachedSync::new(create_test_model_with_config(&config));
+        let _ = model.warmup_gpu_cache(); // is_gpu_cache_warm() == true (CPU dequant cache)
+
+        // ≥32 prompts crosses GPU_BATCH_THRESHOLD and would select the MHA batched path.
+        let prompts: Vec<Vec<u32>> = (0..32).map(|_| vec![1u32, 2, 3]).collect();
+        let gen_config = QuantizedGenerateConfig::deterministic(2);
+
+        let result = model.batch_generate_gpu(&prompts, &gen_config);
+
+        assert!(
+            result.is_ok(),
+            "PMAT-841: batched generation on a GQA model must not crash, got {result:?}"
+        );
+        let sequences = result.expect("GQA batch generation must succeed");
+        assert_eq!(sequences.len(), 32, "one output sequence per prompt");
+        for seq in &sequences {
+            assert!(seq.len() >= 3, "each sequence retains its prompt tokens");
+        }
+    }
