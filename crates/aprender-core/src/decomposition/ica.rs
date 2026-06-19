@@ -277,13 +277,20 @@ impl ICA {
         // Eigen decomposition (simplified - use power iteration for top components)
         let (eigenvalues, eigenvectors) = Self::eigen_decomposition(&cov_scaled, n_components)?;
 
-        // Compute whitening matrix: V Λ^(-1/2)
-        // where V are eigenvectors and Λ are eigenvalues
+        // Compute whitening matrix: W = V Λ^(-1/2), shape (p × n_components), row-major.
+        //
+        // PMAT-847: `eigen_decomposition` stores eigenvector c as ROW c of `eigenvectors`
+        // (each length-p eigenvector is appended contiguously, then wrapped row-major).
+        // So component i of eigenvector j is `eigenvectors.get(j, i)`, and W[i][j] must be
+        // built row-major (outer i over features, inner j over components). The previous
+        // code read `eigenvectors.get(i, j)` and filled column-major, producing a
+        // transposed W so that Cov(X_centered @ W) != I. The corrected form yields
+        // Cov(X_white) = I (matches scikit-learn FastICA whiten='unit-variance').
         let mut whitening_data = Vec::with_capacity(p * n_components);
-        for j in 0..n_components {
-            let scale = 1.0 / eigenvalues[j].sqrt();
-            for i in 0..p {
-                whitening_data.push(eigenvectors.get(i, j) * scale);
+        for i in 0..p {
+            for j in 0..n_components {
+                let scale = 1.0 / eigenvalues[j].sqrt();
+                whitening_data.push(eigenvectors.get(j, i) * scale);
             }
         }
         let whitening_matrix = Matrix::from_vec(p, n_components, whitening_data)
