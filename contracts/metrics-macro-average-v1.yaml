@@ -1,0 +1,114 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-19"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "scikit-learn sklearn.metrics.precision_recall_fscore_support — average='macro' averages over labels = unique_labels(y_true, y_pred)"
+    - "scikit-learn sklearn.utils.multiclass.unique_labels — sorted union of observed labels"
+    - "Sokolova & Lapalme (2009) A Systematic Analysis of Performance Measures for Classification Tasks"
+    - "paiml/aprender contracts/metrics-classification-v1.yaml — sibling contract (per-class formulas)"
+    - "PMAT-844 — macro divisor counted absent intermediate labels (max+1) instead of present labels"
+  description: "Macro averaging must average per-class metrics only over labels present in y_true ∪ y_pred (scikit-learn parity)"
+
+kind: KernelContract
+name: metrics-macro-average
+version: "1.0.0"
+scope: "crates/aprender-core/src/metrics/classification.rs::{precision,recall,f1_score,jaccard_score,fbeta_score} (Average::Macro) + classification_include_01.rs::present_classes"
+
+description: |
+  PMAT-844. The `Average::Macro` branch of every multi-class metric in
+  `classification.rs` computed `n_classes = max(y_true ∪ y_pred) + 1` and
+  divided the per-class metric sum by `n_classes`. When labels are
+  non-contiguous (e.g. {0, 2}), the absent intermediate index 1 has
+  tp = fp = fn = 0, so its per-class metric is 0.0, and that spurious zero is
+  folded into the macro mean. A PERFECT classifier on labels {0, 2} therefore
+  scored macro precision = (1.0 + 0.0 + 1.0) / 3 = 0.6667 instead of 1.0.
+
+  scikit-learn's `average='macro'` averages only over the labels ACTUALLY
+  PRESENT — its default `labels = unique_labels(y_true, y_pred)` is the sorted
+  union of observed labels. A label index i is present iff it appears in
+  y_true (`support[i] > 0`) OR was predicted on a sample whose true label
+  differs (`fp[i] > 0`); a correctly-predicted label is necessarily in y_true,
+  so `support[i] > 0` already covers it.
+
+  ## Fix
+
+  `present_classes(fp, support)` returns the indices i with
+  `support[i] > 0 || fp[i] > 0`. Each Macro branch now averages the per-class
+  metric over `present` and divides by `present.len()` (returning 0.0 when the
+  present set is empty — preserving the existing all-zero degenerate guard).
+  `Average::Micro` (pools TP/FP/FN globally) and `Average::Weighted` (divides
+  by total support, so absent classes weight 0 already) are unchanged and were
+  already correct.
+
+equations:
+  present_labels:
+    description: "Macro averages only over labels present in y_true ∪ y_pred (scikit-learn unique_labels default)"
+    formula: |
+      present = { i : support[i] > 0 OR fp[i] > 0 }
+              = unique_labels(y_true, y_pred)   (sorted union of observed labels)
+  macro_average:
+    description: "Per-class metric averaged over present labels only"
+    formula: |
+      macro(metric) = ( Σ_{i ∈ present} metric_i ) / |present|
+      # NOT  ( Σ_{i = 0..max+1} metric_i ) / (max + 1)
+  perfect_classifier_identity:
+    description: "A perfect classifier scores 1.0 under macro averaging for ANY label set, contiguous or not"
+    formula: |
+      ŷ = y  ⇒  macro_precision = macro_recall = macro_f1 = 1.0
+      # holds for non-contiguous labels e.g. {0, 2}; pre-fix this returned 2/3
+
+falsification:
+  - id: FALSIFY-METRICS_MACRO_AVERAGE_V1_001
+    description: "Perfect classifier on non-contiguous labels {0,2} scores macro precision/recall/f1 = 1.0 (was 0.6667)"
+    test: |
+      Unit test: y_true = y_pred = [0,2,0,2]. precision/recall/f1 with
+      Average::Macro must all equal 1.0 (±1e-6). RED (max+1 divisor):
+      (1.0 + 0.0 + 1.0)/3 = 0.6667. GREEN (present-label divisor):
+      (1.0 + 1.0)/2 = 1.0. Verified against scikit-learn
+      precision_recall_fscore_support(average='macro') = 1.0.
+    evidence: "cargo test -p aprender-core --lib tests_macro_present_labels::macro_average_noncontiguous_labels"
+  - id: FALSIFY-METRICS_MACRO_AVERAGE_V1_002
+    description: "Swapped predictions on {0,2} score macro precision = 0.5 (was 0.3333)"
+    test: |
+      Unit test: y_true = [0,0,2,2], y_pred = [0,2,2,0]. Each present class has
+      precision 0.5, so macro = (0.5 + 0.5)/2 = 0.5. RED (max+1 divisor):
+      (0.5 + 0.0 + 0.5)/3 = 0.3333. Verified against scikit-learn = 0.5.
+    evidence: "cargo test -p aprender-core --lib tests_macro_present_labels::macro_average_noncontiguous_labels"
+  - id: FALSIFY-METRICS_MACRO_AVERAGE_V1_003
+    description: "jaccard_score and fbeta_score share the divisor and also reach 1.0 on perfect {0,2}"
+    test: |
+      Unit test: y_true = y_pred = [0,2,0,2]. jaccard_score and fbeta_score
+      (beta=1.0 and beta=0.5) with Average::Macro all equal 1.0 (±1e-6).
+      RED: 2/3 (absent class 1 folds a 0.0 in). GREEN: 1.0.
+    evidence: "cargo test -p aprender-core --lib tests_macro_present_labels::macro_average_noncontiguous_jaccard_fbeta"
+  - id: FALSIFY-METRICS_MACRO_AVERAGE_V1_004
+    description: "Contiguous labels {0,1,2} are unchanged — every class present ⇒ divisor == n_classes"
+    test: |
+      Unit test: perfect dense {0,1,2} still scores 1.0; the known imperfect
+      dense case (y_true=[0,1,2,0,1,2], y_pred=[0,2,1,0,0,1]) keeps macro
+      precision = (2/3)/3. Guards against the fix altering already-correct
+      contiguous-label behavior.
+    evidence: "cargo test -p aprender-core --lib tests_macro_present_labels::macro_average_contiguous_labels_unchanged"
+
+scope_extension:
+  in_scope:
+    - "present_classes(fp, support) helper in classification_include_01.rs"
+    - "Average::Macro divisor for precision, recall, f1_score, jaccard_score, fbeta_score"
+  out_of_scope:
+    - "Average::Micro (pools TP/FP/FN globally — already correct, unchanged)"
+    - "Average::Weighted (divides by total support; absent classes weight 0 — already correct, unchanged)"
+    - "per-class helpers precision_per_class / recall_per_class (return one value per index 0..max; explicitly index-ordered, not macro-averaged)"
+
+status_history:
+  - version: "1.0.0"
+    date: "2026-06-19"
+    pr: "paiml/aprender fix/pmat-844-macro-average-present-labels"
+    summary: |
+      Initial contract registered alongside the PMAT-844 fix. RED proven:
+      macro precision = 0.6666667 for perfect {0,2}. GREEN after introducing
+      present_classes() and averaging over present labels: 1.0. Five Macro
+      branches corrected (precision, recall, f1_score, jaccard_score,
+      fbeta_score). Micro and Weighted unchanged. Four falsification unit
+      tests added in tests_macro_present_labels.
