@@ -212,12 +212,19 @@ pub fn inertia(data: &Matrix<f32>, centroids: &Matrix<f32>, labels: &[usize]) ->
 }
 
 /// Computes the mean distance from a point to other points in the same cluster.
+///
+/// Returns `None` when the point's cluster has size 1 (no other members), i.e. a
+/// singleton cluster. sklearn computes `intra_clust_dist = sum / (size - 1)`, which
+/// is `0 / 0 = NaN` for a singleton; it then `np.nan_to_num`s that to 0, and the
+/// docstring states "clusters of size 1 ... are assigned a value of 0". Returning
+/// `None` lets the caller assign that sample a silhouette of exactly 0, rather than
+/// the wrong `+1.0` produced by treating the intra-distance as 0.0 (PMAT-845).
 fn mean_intra_cluster_distance(
     data: &Matrix<f32>,
     point_idx: usize,
     cluster: usize,
     labels: &[usize],
-) -> f32 {
+) -> Option<f32> {
     let point = data.row(point_idx);
     let distances: Vec<f32> = labels
         .iter()
@@ -230,9 +237,10 @@ fn mean_intra_cluster_distance(
         .collect();
 
     if distances.is_empty() {
-        0.0
+        // Singleton cluster: sklearn assigns silhouette 0 to this sample.
+        None
     } else {
-        distances.iter().sum::<f32>() / distances.len() as f32
+        Some(distances.iter().sum::<f32>() / distances.len() as f32)
     }
 }
 
@@ -332,9 +340,13 @@ pub fn silhouette_score(data: &Matrix<f32>, labels: &[usize]) -> f32 {
     let silhouettes: Vec<f32> = (0..n_samples)
         .map(|i| {
             let cluster = labels[i];
-            let a_i = mean_intra_cluster_distance(data, i, cluster, labels);
             let b_i = min_inter_cluster_distance(data, i, cluster, labels, n_clusters);
-            silhouette_coefficient(a_i, b_i)
+            // PMAT-845: a singleton cluster (no intra-cluster neighbors) is assigned
+            // silhouette 0 per sklearn, not (b_i - 0)/max(0, b_i) = +1.0.
+            match mean_intra_cluster_distance(data, i, cluster, labels) {
+                None => 0.0,
+                Some(a_i) => silhouette_coefficient(a_i, b_i),
+            }
         })
         .collect();
 

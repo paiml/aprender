@@ -146,17 +146,54 @@ fn test_silhouette_score_single_sample() {
 
 #[test]
 fn test_silhouette_score_two_samples() {
-    // Test with exactly 2 samples - catches n_samples < 2 → <= 2 mutation (line 288)
+    // PMAT-845: 2 samples in 2 distinct clusters = ALL singletons.
+    // sklearn convention: a sample whose cluster has size 1 gets silhouette 0
+    // (intra_clust_dist = sum/(size-1) → 0/0 = NaN → nan_to_num → 0).
+    // So the mean over two singletons is exactly 0.0.
+    // Previously this test asserted `score.abs() > 0.0`, which ENCODED the bug
+    // (singleton wrongly scored +1.0 via (b-0)/max(0,b)).
     let data = Matrix::from_vec(2, 2, vec![0.0, 0.0, 10.0, 10.0])
         .expect("Matrix dimensions (2x2) match data length (4)");
     let labels = vec![0, 1];
     let score = silhouette_score(&data, &labels);
 
-    // With 2 samples in different clusters, silhouette should be meaningful (not 0)
-    // If mutation changes < to <=, this would return 0.0
     assert!(
-        score.abs() > 0.0,
-        "Score with 2 samples should be non-zero, got {score}"
+        score.abs() < 1e-6,
+        "All-singleton clustering must score 0.0 (sklearn convention), got {score}"
+    );
+}
+
+#[test]
+fn test_silhouette_score_singleton_cluster_pmat845() {
+    // PMAT-845 falsifier: cluster 1 is a singleton (point [10,0]).
+    // Verified against sklearn.metrics.silhouette_score:
+    //   data=[[0,0],[0.1,0],[10,0]], labels=[0,0,1]
+    //   silhouette_samples = [0.99, 0.9899..., 0.0]  (singleton → 0)
+    //   silhouette_score    = 0.6600 (mean of the three)
+    // Buggy aprender produced singleton s=1.0 → score ≈ 0.9933.
+    let data = Matrix::from_vec(3, 2, vec![0.0, 0.0, 0.1, 0.0, 10.0, 0.0])
+        .expect("Matrix dimensions (3x2) match data length (6)");
+    let labels = vec![0, 0, 1];
+    let score = silhouette_score(&data, &labels);
+
+    assert!(
+        (score - 0.6600).abs() < 1e-3,
+        "Singleton cluster must score 0.0 (sklearn parity); expected ~0.6600, got {score}"
+    );
+}
+
+#[test]
+fn test_silhouette_score_all_singletons_pmat845() {
+    // PMAT-845 falsifier: every point in its own cluster → every sample is a
+    // singleton → every per-sample silhouette is 0 → mean score is 0.0.
+    let data = Matrix::from_vec(3, 2, vec![0.0, 0.0, 1.0, 0.0, 2.0, 0.0])
+        .expect("Matrix dimensions (3x2) match data length (6)");
+    let labels = vec![0, 1, 2];
+    let score = silhouette_score(&data, &labels);
+
+    assert!(
+        score.abs() < 1e-6,
+        "All-singleton clustering must score 0.0 (sklearn convention), got {score}"
     );
 }
 
