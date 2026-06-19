@@ -1,0 +1,113 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-19'
+  author: PAIML Engineering
+  description: |
+    Mirostat 2.0 surprise unit (PMAT-857). sample_mirostat in
+    crates/aprender-serve/src/generate/algorithms.rs computed the per-token
+    "surprise" with the NATURAL log (-prob.ln(), nats) at both the truncation
+    cutoff and the mu update, while the target mu (= 2*tau) is a BITS-domain
+    target. Mirostat 2.0 (Basu et al. 2021) and llama.cpp
+    llama_sampler_mirostat_v2_apply both measure surprise in BITS, i.e.
+    surprise = -log2(p). Using ln instead of log2 scaled every surprise by
+    1/ln(2) ~= 1.4427, shifting the truncation cutoff and the perplexity target
+    relative to the (bits-based) mu, so the realized perplexity diverged from
+    the requested tau.
+
+    The fix changes both sites to -prob.log2() so the surprise domain matches
+    the mu domain, restoring parity with llama.cpp / the paper.
+  references:
+  - 'Basu, Ramachandran, Keskar, Varshney (2021) "Mirostat: A Neural Text Decoding Algorithm that Directly Controls Perplexity" (ICLR 2021) — surprise S(x) = -log2 P(x), measured in bits'
+  - 'llama.cpp src/llama-sampling.cpp llama_sampler_mirostat_v2_apply — uses -log2f(p) for both the tau-truncation and the mu update'
+  - 'crates/aprender-serve/src/generate/algorithms.rs — sample_mirostat (fixed sites: truncation surprise + observed surprise)'
+
+kind: KernelContract
+name: mirostat-bits
+version: 1.0.0
+scope: aprender-serve Mirostat 2.0 sampler — surprise measured in bits (log2), not nats (ln)
+
+equations:
+  C-MIROSTAT-SURPRISE-BITS:
+    formula: |
+      surprise(p) = -log2(p)   [bits]
+      A candidate token with probability p is truncated iff surprise(p) > mu,
+      where mu = 2*tau is the bits-domain target carried in MirostatState.
+      Using -ln(p) (nats) instead scales surprise by 1/ln(2) ~= 1.4427 and
+      shifts the truncation set relative to mu.
+    domain: p in (0, 1]
+    codomain: surprise in [0, +inf) bits
+    invariants:
+    - 'surprise(1.0) = 0 (a certain token carries zero bits of surprise)'
+    - 'surprise is measured in the same unit (bits) as mu = 2*tau'
+    - 'monotone: p1 < p2 => surprise(p1) > surprise(p2)'
+    - 'parity with llama.cpp llama_sampler_mirostat_v2_apply (-log2f)'
+    lean_theorem: Theorems.Mirostat_Surprise_Bits
+  C-MIROSTAT-MU-UPDATE-BITS:
+    formula: |
+      After selecting a token with probability p_sel, the observed surprise fed
+      to MirostatState::update is also in bits: observed = -log2(p_sel), and
+      mu <- mu - eta * (observed - tau). observed must share the bits unit with
+      tau for the feedback controller to converge to the requested perplexity.
+    domain: p_sel in (0, 1], eta > 0, tau > 0
+    codomain: updated mu in R
+    invariants:
+    - 'observed surprise unit == tau unit == bits'
+    - 'observed < tau => mu increases; observed > tau => mu decreases'
+    lean_theorem: Theorems.Mirostat_Mu_Update_Bits
+
+proof_obligations:
+- type: invariant
+  property: surprise is computed in bits (log2), not nats (ln)
+  formal: |
+    PO-MIROSTAT-001. For logits [0.0, -1.3863] (softmax ~= [0.80, 0.20]) and
+    MirostatState::new(1.0) (mu = 2.0 bits), token-1 surprise is
+    -log2(0.20) ~= 2.32 > mu=2.0, so token-1 is TRUNCATED and the only
+    candidate is token-0; sample_mirostat returns 0 for any rng in [0,1).
+    Under the nats bug, -ln(0.20) ~= 1.61 < mu=2.0, token-1 is kept and an
+    rng near 1.0 selects it (returns 1).
+- type: invariant
+  property: observed surprise drives mu in bits
+  formal: |
+    PO-MIROSTAT-002. With the bits computation, the selected token-0
+    (p=0.80) yields observed = -log2(0.80) ~= 0.3219 < tau=1.0, so
+    MirostatState::update raises mu above its initial 2.0.
+
+falsification_tests:
+- id: FT-MIROSTAT-001
+  rule: Mirostat truncation uses bits (-log2 p), not nats (-ln p)
+  prediction: |
+    sample_mirostat(logits=[0.0,-1.3863], MirostatState::new(1.0), rng=0.99)
+    == 0. token-1 surprise -log2(0.20)=2.32 > mu=2.0 => truncated, only
+    candidate is token-0. Under the nats bug -ln(0.20)=1.61 < mu so token-1
+    survives and rng=0.99 selects it (==1).
+  if_fails: 'surprise computed with .ln() (nats) instead of .log2() (bits) — the PMAT-857 bug.'
+  evidence: |
+    cargo test -p aprender-serve --lib mirostat_truncation_uses_bits_not_nats
+    RED on -prob.ln() (result==1, assertion left:1 right:0);
+    GREEN on -prob.log2() (result==0).
+- id: FT-MIROSTAT-002
+  rule: observed surprise feeding mu is in bits
+  prediction: |
+    After the same call, state.mu > 2.0 because observed = -log2(0.80)=0.32
+    < tau=1.0 raises mu. (Asserted in the same test.)
+  if_fails: 'observed surprise computed in nats, mu-controller targets the wrong perplexity.'
+  evidence: cargo test -p aprender-serve --lib mirostat_truncation_uses_bits_not_nats
+
+kani_harnesses:
+- id: KANI-MIROSTAT-001
+  obligation: surprise(1.0) == 0 and surprise is finite for p in (0,1]
+  property: 'for all p in (0,1]: -log2(p) >= 0 and finite; -log2(1.0) == 0.'
+  bound: 1
+  strategy: stub_float
+  solver: cadical
+  harness: verify_mirostat_surprise_bits
+
+qa_gate:
+  id: F-MIROSTAT-001
+  name: mirostat-bits-v1 Contract
+  description: Mirostat 2.0 must measure surprise in bits (-log2 p) at both the tau-truncation cutoff and the mu update, matching Basu et al. 2021 and llama.cpp llama_sampler_mirostat_v2_apply.
+  checks:
+  - validation
+  - falsification
+  pass_criteria: FT-MIROSTAT-001 and FT-MIROSTAT-002 pass (test GREEN on log2, RED on ln)
+  falsification: Replace -prob.log2() with -prob.ln() to break the bits truncation cutoff.
