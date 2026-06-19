@@ -396,11 +396,15 @@ fn test_apply_xtc_too_few_tokens() {
 
 #[test]
 fn test_apply_xtc_excludes_top_token() {
-    let logits = Tensor::from_vec(vec![3], vec![0.0, 0.0, 100.0]).expect("test");
-    let config = XtcConfig::new(1.0).with_threshold(0.5).with_min_keep(1);
-    // Token 2 has high probability, should be excluded
+    // PMAT-846: canonical XTC removes the strictly-most-probable above-threshold
+    // tokens but KEEPS the boundary (least-probable above-threshold) token. With
+    // logits [0,5,6] and threshold 0.05, tokens 1 and 2 are above threshold; XTC
+    // removes the top (idx 2) and keeps the boundary (idx 1).
+    let logits = Tensor::from_vec(vec![3], vec![0.0, 5.0, 6.0]).expect("test");
+    let config = XtcConfig::new(1.0).with_threshold(0.05).with_min_keep(1);
     let result = apply_xtc(&logits, &config, 0.0);
-    assert_eq!(result.data()[2], f32::NEG_INFINITY);
+    assert_eq!(result.data()[2], f32::NEG_INFINITY, "top token excluded");
+    assert!(result.data()[1].is_finite(), "boundary token kept");
 }
 
 #[test]
@@ -411,6 +415,64 @@ fn test_apply_xtc_respects_min_keep() {
     // Should keep at least 2 tokens (not NEG_INFINITY)
     let finite_count = result.data().iter().filter(|&&x| x.is_finite()).count();
     assert!(finite_count >= 2);
+}
+
+// PMAT-846 falsifier: XTC must KEEP the boundary token (the LAST token whose
+// prob >= threshold), matching llama.cpp `llama_sample_xtc_apply`. The buggy
+// implementation subtracted the excluded count from the FULL vocab length, so
+// with a real vocab + small min_keep it removed the ENTIRE above-threshold set,
+// including the boundary token it must preserve.
+//
+// Repro: logits=[4.0,3.0,2.0,-10.0,-10.0], threshold=0.1, min_keep=1, rng=0.0.
+// softmax ~= [0.665, 0.245, 0.090, ~0, ~0]; tokens 0 and 1 are >= 0.1.
+// llama.cpp: pos_last = 1 (sorted index of LAST token >= threshold) -> remove
+// only sorted index 0 (orig idx 0, the strictly-most-probable), KEEP boundary
+// (orig idx 1 = value 3.0) and the whole below-threshold tail.
+#[test]
+fn test_apply_xtc_keeps_boundary_token_pmat846() {
+    let logits = Tensor::from_vec(vec![5], vec![4.0, 3.0, 2.0, -10.0, -10.0]).expect("test");
+    let config = XtcConfig::new(1.0).with_threshold(0.1).with_min_keep(1);
+    // rng=0.0 < probability=1.0 => XTC fires deterministically.
+    let result = apply_xtc(&logits, &config, 0.0);
+    let out = result.data();
+
+    // The strictly-most-probable above-threshold token (orig idx 0) is removed.
+    assert_eq!(
+        out[0],
+        f32::NEG_INFINITY,
+        "top token (idx 0) must be excluded"
+    );
+    // The BOUNDARY token (orig idx 1, the LAST above-threshold token) must stay
+    // finite and unchanged at 3.0. The buggy impl set this to NEG_INFINITY.
+    assert!(
+        out[1].is_finite(),
+        "boundary token (idx 1) must NOT be excluded, got {}",
+        out[1]
+    );
+    assert!(
+        (out[1] - 3.0).abs() < 1e-6,
+        "boundary token must be unchanged (3.0), got {}",
+        out[1]
+    );
+    // Below-threshold tail must remain finite (XTC only touches top choices).
+    assert!(out[2].is_finite(), "below-threshold token idx 2 must stay");
+    assert!(out[3].is_finite(), "below-threshold token idx 3 must stay");
+    assert!(out[4].is_finite(), "below-threshold token idx 4 must stay");
+}
+
+// PMAT-846: canonical `threshold > 0.5` no-op guard (llama.cpp short-circuits
+// when xtc_threshold > 0.5 because at most one token can clear that bar, so
+// removing it would violate the keep-the-boundary invariant). Output == input.
+#[test]
+fn test_apply_xtc_threshold_above_half_is_noop_pmat846() {
+    let logits = Tensor::from_vec(vec![5], vec![4.0, 3.0, 2.0, -10.0, -10.0]).expect("test");
+    let config = XtcConfig::new(1.0).with_threshold(0.6).with_min_keep(1);
+    let result = apply_xtc(&logits, &config, 0.0);
+    assert_eq!(
+        result.data(),
+        logits.data(),
+        "threshold > 0.5 must be a no-op (output == input)"
+    );
 }
 
 // =============================================================================
