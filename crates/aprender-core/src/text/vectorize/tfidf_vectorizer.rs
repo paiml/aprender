@@ -423,6 +423,29 @@ impl Default for CountVectorizer {
 /// let matrix = vectorizer.fit_transform(&docs).expect("fit_transform should succeed");
 /// assert_eq!(matrix.n_rows(), 2);  // 2 documents
 /// ```
+/// Row normalization strategy for TF-IDF output (sklearn-compatible).
+///
+/// Matches scikit-learn's `TfidfVectorizer` `norm` parameter. After each
+/// document row is built as `tf * idf`, the row is rescaled according to
+/// this strategy:
+///
+/// - [`Norm::L2`] (default): divide by the Euclidean norm so each row has
+///   unit length (`sqrt(Σ x²) == 1`). This is scikit-learn's default.
+/// - [`Norm::L1`]: divide by the sum of absolute values (`Σ |x|`).
+/// - [`Norm::None`]: leave raw `tf * idf` values (sklearn `norm=None`).
+///
+/// Rows whose norm is zero are left untouched (no division by zero).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Norm {
+    /// L2 (Euclidean) normalization — unit-length rows. scikit-learn default.
+    #[default]
+    L2,
+    /// L1 (Manhattan) normalization — rows sum to 1 in absolute value.
+    L1,
+    /// No normalization — raw `tf * idf` values.
+    None,
+}
+
 #[allow(missing_debug_implementations)]
 pub struct TfidfVectorizer {
     /// Count vectorizer for term frequencies
@@ -431,4 +454,6 @@ pub struct TfidfVectorizer {
     idf_values: Vec<f64>,
     /// Use sublinear TF scaling: tf = 1 + log(tf) if tf > 0
     sublinear_tf: bool,
+    /// Row normalization strategy (sklearn `norm`, default L2)
+    norm: Norm,
 }

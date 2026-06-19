@@ -15,6 +15,7 @@ impl TfidfVectorizer {
             count_vectorizer: CountVectorizer::new(),
             idf_values: Vec::new(),
             sublinear_tf: false,
+            norm: Norm::L2,
         }
     }
 
@@ -24,6 +25,25 @@ impl TfidfVectorizer {
     #[must_use]
     pub fn with_sublinear_tf(mut self, enable: bool) -> Self {
         self.sublinear_tf = enable;
+        self
+    }
+
+    /// Set the row normalization strategy (sklearn `norm`, default L2).
+    ///
+    /// scikit-learn's `TfidfVectorizer` defaults to `norm='l2'`, dividing each
+    /// document row by its Euclidean norm so rows have unit length. Pass
+    /// [`Norm::None`] to obtain raw `tf * idf` values.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aprender::text::vectorize::{Norm, TfidfVectorizer};
+    ///
+    /// let vectorizer = TfidfVectorizer::new().with_norm(Norm::None);
+    /// ```
+    #[must_use]
+    pub fn with_norm(mut self, norm: Norm) -> Self {
+        self.norm = norm;
         self
     }
 
@@ -234,13 +254,17 @@ impl TfidfVectorizer {
         // Get count matrix (TF)
         let tf_matrix = self.count_vectorizer.transform(documents)?;
 
-        // Apply IDF weighting with optional sublinear TF scaling
+        // Apply IDF weighting with optional sublinear TF scaling, then
+        // normalize each document row per the configured strategy (sklearn
+        // `TfidfVectorizer` defaults to `norm='l2'`).
         let n_docs = tf_matrix.n_rows();
         let vocab_size = tf_matrix.n_cols();
         let mut tfidf_data = Vec::with_capacity(n_docs * vocab_size);
+        let mut row_values = vec![0.0_f64; vocab_size];
 
         for row in 0..n_docs {
-            for col in 0..vocab_size {
+            // Build the raw tf * idf row.
+            for (col, value) in row_values.iter_mut().enumerate() {
                 let raw_tf = tf_matrix.get(row, col);
                 // Apply sublinear TF: tf = 1 + log(tf) if tf > 0
                 let tf = if self.sublinear_tf && raw_tf > 0.0 {
@@ -248,9 +272,23 @@ impl TfidfVectorizer {
                 } else {
                     raw_tf
                 };
-                let idf = self.idf_values[col];
-                tfidf_data.push(tf * idf);
+                *value = tf * self.idf_values[col];
             }
+
+            // Normalize the row in place (skip when the norm is zero to avoid
+            // dividing an all-zero row by zero).
+            let scale = match self.norm {
+                Norm::L2 => row_values.iter().map(|x| x * x).sum::<f64>().sqrt(),
+                Norm::L1 => row_values.iter().map(|x| x.abs()).sum::<f64>(),
+                Norm::None => 1.0,
+            };
+            if self.norm != Norm::None && scale > 0.0 {
+                for value in &mut row_values {
+                    *value /= scale;
+                }
+            }
+
+            tfidf_data.extend_from_slice(&row_values);
         }
 
         Matrix::from_vec(n_docs, vocab_size, tfidf_data)
