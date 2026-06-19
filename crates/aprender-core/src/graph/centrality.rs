@@ -372,6 +372,13 @@ fn brandes_bfs_from_source(graph: &Graph, source: NodeId) -> Vec<f64> {
         }
     }
 
+    // PMAT-860: canonical Brandes (2001) accumulates `C_B[w] += δ_s(w)` only for
+    // `w != s`. The source's own dependency δ_s(s) is never part of any
+    // betweenness sum, so zero it before returning this per-source partial.
+    // Without this guard, pendant (degree-1) nodes get nonzero betweenness
+    // (e.g. path 0-1-2 endpoints would be 1.0 instead of networkx's 0.0).
+    dependency[source] = 0.0;
+
     dependency
 }
 

@@ -378,6 +378,61 @@ fn test_betweenness_centrality_disconnected() {
     assert!((bc[2] - bc[3]).abs() < 1e-6);
 }
 
+#[test]
+fn betweenness_pendant_must_be_zero() {
+    // PMAT-860: canonical Brandes (2001) guards `if w != s` when accumulating
+    // dependency, so a BFS source never adds its own δ_s(s). Without that guard,
+    // pendant (degree-1) nodes receive nonzero betweenness. networkx
+    // betweenness_centrality(G, normalized=False) is the reference.
+
+    // Path 0 -- 1 -- 2: endpoints are pendant -> 0, middle lies on the only
+    // shortest path between the endpoints -> 1. networkx: [0.0, 1.0, 0.0].
+    let path = Graph::from_edges(&[(0, 1), (1, 2)], false);
+    let bc = path.betweenness_centrality();
+    assert_eq!(bc.len(), 3);
+    assert!(
+        (bc[0] - 0.0).abs() < 1e-9,
+        "pendant node 0 must be 0, got {}",
+        bc[0]
+    );
+    assert!(
+        (bc[1] - 1.0).abs() < 1e-9,
+        "middle node must be 1, got {}",
+        bc[1]
+    );
+    assert!(
+        (bc[2] - 0.0).abs() < 1e-9,
+        "pendant node 2 must be 0, got {}",
+        bc[2]
+    );
+
+    // Star K_{1,3}: center on every leaf-leaf shortest path -> 3, leaves pendant
+    // -> 0. networkx: [3.0, 0.0, 0.0, 0.0].
+    let star = Graph::from_edges(&[(0, 1), (0, 2), (0, 3)], false);
+    let bc = star.betweenness_centrality();
+    assert_eq!(bc.len(), 4);
+    assert!(
+        (bc[0] - 3.0).abs() < 1e-9,
+        "star center must be 3, got {}",
+        bc[0]
+    );
+    assert!(
+        (bc[1] - 0.0).abs() < 1e-9,
+        "leaf 1 must be 0, got {}",
+        bc[1]
+    );
+    assert!(
+        (bc[2] - 0.0).abs() < 1e-9,
+        "leaf 2 must be 0, got {}",
+        bc[2]
+    );
+    assert!(
+        (bc[3] - 0.0).abs() < 1e-9,
+        "leaf 3 must be 0, got {}",
+        bc[3]
+    );
+}
+
 // Community Detection Tests
 
 #[test]
