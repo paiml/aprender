@@ -134,13 +134,59 @@ fn test_reduce_on_plateau() {
     scheduler.step_with_metric(&mut optimizer, 0.9);
     assert!((optimizer.lr() - 0.1).abs() < 1e-6);
 
-    // Plateau (no improvement for 3 epochs)
-    scheduler.step_with_metric(&mut optimizer, 0.9);
-    scheduler.step_with_metric(&mut optimizer, 0.9);
-    scheduler.step_with_metric(&mut optimizer, 0.9);
+    // Plateau. PyTorch semantics (PMAT-850): patience=3 tolerates 3
+    // non-improving epochs and reduces only on the 4th (num_bad_epochs > patience).
+    scheduler.step_with_metric(&mut optimizer, 0.9); // bad #1
+    scheduler.step_with_metric(&mut optimizer, 0.9); // bad #2
+    scheduler.step_with_metric(&mut optimizer, 0.9); // bad #3 — still 0.1 (3 > 3 is false)
+    assert!(
+        (optimizer.lr() - 0.1).abs() < 1e-6,
+        "patience=3 tolerates 3 non-improving epochs without reducing"
+    );
+
+    scheduler.step_with_metric(&mut optimizer, 0.9); // bad #4 — now reduces (4 > 3)
 
     // LR should be reduced
     assert!((optimizer.lr() - 0.01).abs() < 1e-6);
+}
+
+// PMAT-850 falsifier: PyTorch ReduceLROnPlateau reduces only when
+// num_bad_epochs > patience (strictly greater). patience=N tolerates N
+// non-improving epochs and reduces on the (N+1)-th.
+//
+// RED (buggy `>=`): one non-improving epoch reduces LR to 0.05 immediately.
+// GREEN (correct `>`): first non-improving epoch keeps LR at 0.1; the SECOND
+// non-improving epoch reduces it to 0.05.
+//
+// Reference: torch.optim.lr_scheduler.ReduceLROnPlateau — patience is "the
+// number of allowed epochs with no improvement after which the LR is reduced."
+#[test]
+fn test_reduce_on_plateau_patience_strictly_greater() {
+    let mut optimizer = MockOptimizer::new(0.1);
+    let mut scheduler = ReduceLROnPlateau::new(PlateauMode::Min, 0.5, 1);
+
+    // Epoch 1: establish baseline (best_metric = 1.0, num_bad_epochs = 0).
+    scheduler.step_with_metric(&mut optimizer, 1.0);
+    assert!(
+        (optimizer.lr() - 0.1).abs() < 1e-6,
+        "baseline epoch must not reduce LR"
+    );
+
+    // Epoch 2: first non-improving epoch (num_bad_epochs = 1). With patience=1,
+    // 1 > 1 is false, so LR MUST stay at 0.1 (this is the RED assertion under `>=`).
+    scheduler.step_with_metric(&mut optimizer, 1.0);
+    assert!(
+        (optimizer.lr() - 0.1).abs() < 1e-6,
+        "patience=1 tolerates 1 non-improving epoch: LR must remain 0.1, not reduce early"
+    );
+
+    // Epoch 3: second non-improving epoch (num_bad_epochs = 2). 2 > 1 is true,
+    // so LR reduces by factor 0.5 to 0.05.
+    scheduler.step_with_metric(&mut optimizer, 1.0);
+    assert!(
+        (optimizer.lr() - 0.05).abs() < 1e-6,
+        "LR must reduce to 0.05 on the (patience+1)-th non-improving epoch"
+    );
 }
 
 #[test]
@@ -153,9 +199,16 @@ fn test_reduce_on_plateau_max_mode() {
     scheduler.step_with_metric(&mut optimizer, 0.6);
     assert!((optimizer.lr() - 0.1).abs() < 1e-6);
 
-    // Plateau
-    scheduler.step_with_metric(&mut optimizer, 0.6);
-    scheduler.step_with_metric(&mut optimizer, 0.6);
+    // Plateau. PyTorch semantics (PMAT-850): patience=2 tolerates 2
+    // non-improving epochs and reduces only on the 3rd (num_bad_epochs > patience).
+    scheduler.step_with_metric(&mut optimizer, 0.6); // bad #1
+    scheduler.step_with_metric(&mut optimizer, 0.6); // bad #2 — still 0.1 (2 > 2 is false)
+    assert!(
+        (optimizer.lr() - 0.1).abs() < 1e-6,
+        "patience=2 tolerates 2 non-improving epochs without reducing"
+    );
+
+    scheduler.step_with_metric(&mut optimizer, 0.6); // bad #3 — now reduces (3 > 2)
 
     // LR should be reduced
     assert!((optimizer.lr() - 0.05).abs() < 1e-6);
@@ -271,12 +324,21 @@ fn test_reduce_on_plateau_min_lr_clamp() {
     let mut optimizer = MockOptimizer::new(0.001);
     let mut scheduler = ReduceLROnPlateau::new(PlateauMode::Min, 0.1, 1).min_lr(0.0005);
 
-    // First metric establishes baseline
+    // First metric establishes baseline (num_bad_epochs = 0).
     scheduler.step_with_metric(&mut optimizer, 1.0);
-    // No improvement triggers reduction
+    // PyTorch semantics (PMAT-850): patience=1 tolerates 1 non-improving epoch,
+    // so the first bad epoch does NOT reduce yet (1 > 1 is false).
+    scheduler.step_with_metric(&mut optimizer, 1.0);
+    assert!(
+        (scheduler.get_lr() - 0.001).abs() < 1e-8,
+        "patience=1 tolerates 1 non-improving epoch without reducing"
+    );
+    // Second bad epoch (2 > 1) triggers reduction: 0.001 * 0.1 = 0.0001,
+    // clamped up to min_lr = 0.0005.
     scheduler.step_with_metric(&mut optimizer, 1.0);
     // LR should be clamped at min_lr
     assert!(scheduler.get_lr() >= 0.0005);
+    assert!((scheduler.get_lr() - 0.0005).abs() < 1e-8);
 }
 
 #[test]
