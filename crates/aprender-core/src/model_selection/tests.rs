@@ -89,6 +89,75 @@ fn test_train_test_split_different_sizes() {
     assert_eq!(x_test.shape().0, 50);
 }
 
+/// PMAT-852 falsifier: `train_test_split` must size the test set with
+/// `ceil(test_size * n_samples)` to match scikit-learn's
+/// `_validate_shuffle_split` (float `test_size` -> `ceil`).
+///
+/// RED (buggy `.round()`): n=7, test_size=0.3 -> 2.1 -> round -> n_test=2.
+/// GREEN (`ceil`): n=7, test_size=0.3 -> 2.1 -> ceil -> n_test=3 (sklearn parity).
+#[test]
+fn test_train_test_split_ceil_sklearn_parity() {
+    // n=7, test_size=0.3 -> sklearn: n_test=3, n_train=4 (2.1 -> ceil -> 3)
+    let x = Matrix::from_vec(7, 1, (0..7).map(|i| i as f32).collect())
+        .expect("Matrix creation should succeed with valid test data");
+    let y = Vector::from_slice(&[0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0]);
+    let (x_train, x_test, y_train, y_test) =
+        train_test_split(&x, &y, 0.3, Some(42)).expect("7x0.3 split should succeed");
+    assert_eq!(
+        x_test.shape().0,
+        3,
+        "n=7, test_size=0.3 -> ceil(2.1)=3 test samples (sklearn parity)"
+    );
+    assert_eq!(x_train.shape().0, 4, "n=7, test_size=0.3 -> 4 train samples");
+    assert_eq!(y_test.len(), 3, "test labels must match test rows");
+    assert_eq!(y_train.len(), 4, "train labels must match train rows");
+
+    // n=11, test_size=0.1 -> sklearn: n_test=2, n_train=9 (1.1 -> ceil -> 2)
+    let x = Matrix::from_vec(11, 1, (0..11).map(|i| i as f32).collect())
+        .expect("Matrix creation should succeed with valid test data");
+    let y = Vector::from_slice(&vec![0.0; 11]);
+    let (x_train, x_test, _, _) =
+        train_test_split(&x, &y, 0.1, Some(42)).expect("11x0.1 split should succeed");
+    assert_eq!(
+        x_test.shape().0,
+        2,
+        "n=11, test_size=0.1 -> ceil(1.1)=2 test samples (sklearn parity)"
+    );
+    assert_eq!(x_train.shape().0, 9, "n=11, test_size=0.1 -> 9 train samples");
+}
+
+/// PMAT-852: the `ceil` fix must preserve the exact (non-fractional) cases
+/// that already matched sklearn under `.round()`.
+#[test]
+fn test_train_test_split_ceil_preserves_exact_cases() {
+    // n=10, test_size=0.2 -> 2.0 -> ceil -> 2 (unchanged)
+    let x = Matrix::from_vec(10, 1, (0..10).map(|i| i as f32).collect())
+        .expect("Matrix creation should succeed with valid test data");
+    let y = Vector::from_slice(&vec![0.0; 10]);
+    let (x_train, x_test, _, _) =
+        train_test_split(&x, &y, 0.2, Some(42)).expect("10x0.2 split should succeed");
+    assert_eq!(x_test.shape().0, 2, "n=10, test_size=0.2 -> exactly 2 test");
+    assert_eq!(x_train.shape().0, 8, "n=10, test_size=0.2 -> 8 train");
+
+    // n=100, test_size=0.5 -> 50.0 -> ceil -> 50 (unchanged)
+    let x = Matrix::from_vec(100, 1, (0..100).map(|i| i as f32).collect())
+        .expect("Matrix creation should succeed with valid test data");
+    let y = Vector::from_slice(&vec![0.0; 100]);
+    let (x_train, x_test, _, _) =
+        train_test_split(&x, &y, 0.5, Some(42)).expect("100x0.5 split should succeed");
+    assert_eq!(x_test.shape().0, 50, "n=100, test_size=0.5 -> exactly 50 test");
+    assert_eq!(x_train.shape().0, 50, "n=100, test_size=0.5 -> 50 train");
+
+    // n=100, test_size=0.3 -> 30.0 -> ceil -> 30 (unchanged)
+    let x = Matrix::from_vec(100, 1, (0..100).map(|i| i as f32).collect())
+        .expect("Matrix creation should succeed with valid test data");
+    let y = Vector::from_slice(&vec![0.0; 100]);
+    let (x_train, x_test, _, _) =
+        train_test_split(&x, &y, 0.3, Some(42)).expect("100x0.3 split should succeed");
+    assert_eq!(x_test.shape().0, 30, "n=100, test_size=0.3 -> exactly 30 test");
+    assert_eq!(x_train.shape().0, 70, "n=100, test_size=0.3 -> 70 train");
+}
+
 #[test]
 fn test_kfold_basic() {
     let kfold = KFold::new(5);
