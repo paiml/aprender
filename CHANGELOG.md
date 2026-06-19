@@ -9,9 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-Provable-correctness wave — ten shipped-green defects, each fixed with a named
+Provable-correctness wave — fifteen shipped-green defects, each fixed with a named
 proof-obligation + a RED-on-bug / GREEN-on-fix falsifier + a `pv`-validated contract
-(PMAT-827..836). Spans all four pillars plus eval/format/export:
+(PMAT-827..841). Spans all four pillars plus eval/format/export:
 
 - **`stats::incomplete_beta` extra `/a`** (PMAT-827, Pillar-1) — the regularized
   incomplete beta was wrong for `a != 1`, so *every* t-test (df ≤ 30) and ANOVA F-test
@@ -48,6 +48,26 @@ proof-obligation + a RED-on-bug / GREEN-on-fix falsifier + a `pv`-validated cont
   read a fabricated APR v2 header layout (length @ byte 8, JSON @ 16) instead of the real
   64-byte header (`metadata_offset` @ 12, JSON @ `metadata_offset`), always returning empty —
   so the user's SafeTensors `__metadata__` was silently lost on re-export.
+- **GPT-2 byte-level BPE decode produced mojibake** (PMAT-837, Pillar-4) — `gpt2_char_to_byte`
+  used a linear `code − 0x100` offset instead of the GPT-2 `byte_encoder` staircase, so 129/256
+  bytes failed round-trip and *all* non-ASCII serve output was garbled (中 → `ä¸Ń`). Now delegates
+  to the correct unicode→byte map.
+- **GLM IRLS swapped the link / inverse-link derivative** (PMAT-838, Pillar-1) — the IRLS working
+  response and weights used `Link::derivative` (the inverse-link derivative `dμ/dη`) where the
+  link derivative `dη/dμ` is required, so coefficients were wrong for every non-identity link
+  (logistic slope 1.033 vs the correct 1.127). Now inverts it.
+- **Gradient accumulation stepped on the SUM not the MEAN** (PMAT-839, Pillar-2) — backward ops
+  accumulate into shared grad cells, but the trainer stepped without dividing by the accumulation
+  window, inflating the effective learning rate ×window (K-fold LR inflation / divergence). Now
+  scales grads by `1/window` at the accumulation boundary.
+- **`cargo install aprender` broke on macOS** (PMAT-840) — `configure_parent_death_signal` used
+  `libc::prctl(PR_SET_PDEATHSIG)` under `#[cfg(unix)]`, but that prctl form is Linux-only, so
+  `aprender-orchestrate` (a dependency of `apr-cli`) failed to compile on `*-apple-darwin`,
+  breaking the published binary for every macOS user. Now gated to `#[cfg(target_os = "linux")]`.
+- **Batched-GPU serving crashed on every GQA model** (PMAT-841, Pillar-4) — `batch_generate_gpu`
+  dispatched ≥32-prompt batches into an MHA-only path that assumes `QKV = 3 × hidden_dim`, so
+  every grouped-query-attention model (Qwen2 / Llama-3 / Mistral) crashed with a CUDA GEMM size
+  mismatch (`B expected 3·hidden·hidden`). Now routes GQA through the per-prompt path.
 
 Plus the post-power-outage backlog drained and merged (streaming-chat `temperature:0`,
 Llama2 double-BOS, per-request sampling isolation, dense-decode `repeat_penalty`/`top_p`/`top_k`/
