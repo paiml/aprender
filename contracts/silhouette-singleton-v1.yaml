@@ -1,0 +1,111 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-19'
+  author: PAIML Engineering
+  description: |
+    PMAT-845: silhouette_score must assign exactly 0 to any sample whose cluster
+    has size 1 (a singleton), matching scikit-learn.
+
+    sklearn computes the per-sample intra-cluster distance as
+    intra_clust_dist = sum_intra / (cluster_size - 1). For a singleton cluster
+    that is 0 / 0 = NaN, which sklearn then runs through np.nan_to_num → 0, and
+    the silhouette_samples docstring states: "clusters of size 1 ... are
+    assigned a value of 0."
+
+    aprender's mean_intra_cluster_distance previously returned a_i = 0.0 for the
+    empty-distances (singleton) branch. silhouette_coefficient(0.0, b_i) then
+    computed (b_i - 0)/max(0, b_i) = +1.0 — the BEST possible value — for any
+    b_i > 0. silhouette_score averages these, biasing the score upward. The fix
+    makes mean_intra_cluster_distance return Option<f32> (None for a singleton)
+    and the per-sample map assigns 0.0 on None.
+
+    Verified repro vs sklearn:
+      data = [[0,0],[0.1,0],[10,0]], labels = [0,0,1]  (cluster 1 is a singleton)
+      sklearn silhouette_samples = [0.99, 0.9899, 0.0]  → score = 0.6600
+      aprender (buggy)            = [0.99, 0.9899, 1.0]  → score = 0.9933
+      aprender (fixed)            = [0.99, 0.9899, 0.0]  → score = 0.6600
+  references:
+  - 'scikit-learn metrics/cluster/_unsupervised.py::silhouette_samples — intra_clust_dist = sum/(size-1) → np.nan_to_num; size-1 clusters assigned 0'
+  - 'Rousseeuw (1987) Silhouettes: a graphical aid to interpretation of cluster analysis'
+  - 'crates/aprender-core/src/metrics/mod.rs — mean_intra_cluster_distance (Option<f32>), silhouette_score singleton branch'
+
+kind: KernelContract
+name: silhouette-singleton-zero
+version: 1.0.0
+scope: aprender-core silhouette_score singleton-cluster convention (metrics/mod.rs)
+
+equations:
+  C-SINGLETON-SILHOUETTE-ZERO:
+    formula: |
+      For sample i in cluster c with |c| = 1 (singleton), the per-sample
+      silhouette s(i) = 0. Equivalently a(i) is undefined (sum/(|c|-1) = 0/0)
+      and sklearn nan_to_num maps it to 0, so s(i) := 0 regardless of b(i).
+      For |c| >= 2, s(i) = (b(i) - a(i)) / max(a(i), b(i)) as usual.
+    domain: data ∈ ℝ^{n×d}, labels ∈ {0..K-1}ⁿ, K ≥ 2, n ≥ 2
+    codomain: s(i) ∈ [-1, 1]; s(i) = 0 exactly when |cluster(i)| = 1
+    invariants:
+    - 'a singleton sample contributes 0 (NOT +1.0) to the mean silhouette'
+    - 'an all-singleton clustering scores exactly 0.0'
+    - 'silhouette_score never exceeds the sklearn reference for the same input'
+    - 'non-singleton samples are unaffected (s(i) unchanged for |c| >= 2)'
+    lean_theorem: Theorems.Silhouette_Singleton_Zero
+
+proof_obligations:
+- type: invariant
+  property: PO-SINGLETON-ZERO singleton sample silhouette is zero
+  formal: |
+    For data=[[0,0],[0.1,0],[10,0]], labels=[0,0,1], the singleton cluster 1
+    contributes 0 to the mean, so silhouette_score ≈ 0.6600 (sklearn parity),
+    NOT the buggy 0.9933 produced by treating the singleton's a_i as 0.0.
+- type: invariant
+  property: PO-ALL-SINGLETON-ZERO all-singleton clustering scores zero
+  formal: |
+    For any labeling where every cluster has size 1, every per-sample silhouette
+    is 0, so silhouette_score = 0.0 exactly.
+- type: invariant
+  property: PO-NON-SINGLETON-UNAFFECTED clusters of size >= 2 unchanged
+  formal: |
+    For data with all clusters of size >= 2 (e.g. well-separated pairs), the
+    score is unchanged by the fix (no singleton branch is taken).
+
+falsification_tests:
+- id: FT-SILHOUETTE-SINGLETON-001
+  rule: a singleton cluster contributes 0 (not +1.0) to the silhouette mean
+  prediction: |
+    silhouette_score([[0,0],[0.1,0],[10,0]], [0,0,1]) ≈ 0.6600 (sklearn parity).
+    RED (pre-fix): 0.9933 — singleton scored +1.0 via (b-0)/max(0,b).
+    GREEN (post-fix): 0.6600 — singleton scored 0.
+  if_fails: 'mean_intra_cluster_distance returns 0.0 (not None) for the empty/singleton branch.'
+  evidence: cargo test -p aprender-core --lib test_silhouette_score_singleton_cluster_pmat845
+- id: FT-SILHOUETTE-SINGLETON-002
+  rule: an all-singleton clustering scores exactly 0.0
+  prediction: |
+    silhouette_score with every point in its own cluster = 0.0.
+    RED (pre-fix): 1.0. GREEN (post-fix): 0.0.
+  if_fails: 'the singleton silhouette is not forced to 0 in the per-sample map.'
+  evidence: cargo test -p aprender-core --lib test_silhouette_score_all_singletons_pmat845
+- id: FT-SILHOUETTE-SINGLETON-003
+  rule: clusters of size >= 2 are unaffected by the singleton fix
+  prediction: 'well-separated size-2 clusters still score > 0.9 (no regression).'
+  if_fails: 'the Option<f32> change altered the non-singleton path.'
+  evidence: cargo test -p aprender-core --lib test_silhouette_score_good
+
+kani_harnesses:
+- id: KANI-SILHOUETTE-SINGLETON-001
+  obligation: PO-SINGLETON-ZERO singleton sample silhouette is zero
+  property: |
+    For all b in [0, B]: silhouette_coefficient applied to a singleton sample
+    is replaced by 0, so the singleton's contribution is 0 (NOT (b-0)/max(0,b)=1
+    for b>0). No panic; result in [-1, 1].
+  bound: 1
+  strategy: stub_float
+  solver: cadical
+  harness: verify_singleton_silhouette_is_zero
+
+qa_gate:
+  id: F-SILHOUETTE-SINGLETON-001
+  name: silhouette-singleton-v1 Contract
+  description: silhouette_score must assign 0 to size-1 clusters (sklearn parity), not the +1.0 produced by treating a singleton's intra-cluster distance as 0.0.
+  checks:
+  - validation
+  - falsification
