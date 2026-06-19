@@ -1,0 +1,104 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-19"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "Ward, J.H. (1963) 'Hierarchical Grouping to Optimize an Objective Function', JASA 58(301):236-244"
+    - "Lance, G.N. & Williams, W.T. (1967) 'A general theory of classificatory sorting strategies'"
+    - "scipy.cluster.hierarchy.linkage(method='ward') — https://docs.scipy.org/doc/scipy/reference/generated/scipy.cluster.hierarchy.linkage.html"
+    - "sklearn.cluster.AgglomerativeClustering(linkage='ward')"
+  description: |
+    Ward-linkage agglomerative-clustering merge-distance contract (PMAT-849).
+    Pins the inter-cluster Ward distance to the scipy/sklearn Lance-Williams form
+    so that aprender's AgglomerativeClustering(Linkage::Ward) produces the same
+    merge order (and thus the same partition) as the reference implementations.
+
+kind: KernelContract
+name: ward-linkage
+version: "1.0.0"
+scope: "crates/aprender-core/src/cluster/agglomerative.rs"
+
+description: |
+  Ward's minimum-variance linkage for agglomerative (hierarchical) clustering.
+  The inter-cluster merge distance is the Lance-Williams Ward form, identical to
+  scipy.cluster.hierarchy.linkage(method='ward') and
+  sklearn.cluster.AgglomerativeClustering(linkage='ward').
+
+  For two clusters A and B with sizes |A|, |B| and centroids c_A, c_B:
+
+      d(A, B) = sqrt( 2 * |A| * |B| / (|A| + |B|) ) * ||c_A - c_B||_2
+
+  where ||.||_2 is the (non-squared) Euclidean distance between centroids.
+
+  A prior defect (PMAT-849) implemented the coefficient as
+  ( |A| * |B| / (|A| + |B|) ) * ||c_A - c_B||_2 — omitting the factor of 2
+  inside the radical AND the outer square root. That coefficient under-penalizes
+  merging into larger clusters, flipping which pair merges and producing a
+  partition that disagrees with scipy/sklearn on the reference dataset below.
+
+equations:
+  C-WARD-001:
+    description: "Ward inter-cluster merge distance (Lance-Williams form)"
+    formula: "d(A,B) = sqrt(2 * |A| * |B| / (|A| + |B|)) * ||c_A - c_B||_2"
+    note: |
+      Matches scipy/sklearn Ward. c_X is the arithmetic mean (centroid) of the
+      points in cluster X. ||.||_2 is the raw (non-squared) Euclidean distance.
+
+  C-WARD-002:
+    description: "Singleton-singleton merges reduce to plain Euclidean distance"
+    formula: "|A| = |B| = 1 ⟹ d(A,B) = sqrt(2*1*1/(1+1)) * ||c_A - c_B||_2 = ||c_A - c_B||_2"
+    note: |
+      The coefficient sqrt(2*n1*n2/(n1+n2)) equals 1 for n1=n2=1, so the first
+      merge step is consistent with the raw initial pairwise distance matrix
+      (which stores plain Euclidean distances). The buggy coefficient
+      (1*1/(1+1)) = 0.5 instead, halving every singleton distance — internally
+      consistent but NOT the Ward objective and NOT scipy/sklearn.
+
+  C-WARD-003:
+    description: "Partition parity with scipy/sklearn on the reference dataset"
+    formula: "ward(X, k=2) induces partition {1,4,5} | {0,2,3} for the reference X"
+    note: |
+      X = [[5.5,7.2],[6.0,5.4],[4.2,6.5],[4.4,8.9],[9.6,3.8],[7.9,5.3]] (row-major).
+      Verified against scipy.cluster.hierarchy (labels [1,2,1,1,2,2]) and
+      sklearn.cluster.AgglomerativeClustering(linkage='ward'). The buggy
+      coefficient instead grouped {0,1,2,3} | {4,5}.
+
+proof_obligations:
+- type: precondition
+  property: "Cluster sizes are positive and centroids are finite"
+  formal: "|A| >= 1 ∧ |B| >= 1 ∧ ∀k: isFinite(c_A[k]) ∧ isFinite(c_B[k])"
+- type: postcondition
+  property: "Merge distance is non-negative and finite"
+  formal: "d(A,B) >= 0 ∧ isFinite(d(A,B))"
+  requires: WARD-PRE-001
+- type: bound
+  property: "Coefficient reduces to 1 for singleton-singleton merges"
+  formal: "sqrt(2 * 1 * 1 / (1 + 1)) = 1"
+  applies_to: all
+- type: invariant
+  property: "Merge distance is symmetric in its arguments"
+  formal: "d(A,B) = d(B,A)"
+  applies_to: all
+- type: equivalence
+  property: "Ward partition matches scipy/sklearn reference partition"
+  formal: "ward(X_ref, k=2) ≡ {1,4,5} | {0,2,3} (up to label permutation)"
+  tolerance: 0.0
+
+falsification:
+  - id: FALSIFY-WARD-001
+    description: |
+      AgglomerativeClustering(Linkage::Ward) with n_clusters=2 on the reference
+      dataset induces the scipy/sklearn partition {1,4,5} | {0,2,3}. Discharges
+      C-WARD-001/002/003 by asserting the permutation-invariant partition:
+      labels[1]==labels[4]==labels[5] ∧ labels[0]==labels[2]==labels[3]
+      ∧ labels[1] != labels[0].
+    test: "falsify_hc_004_ward_matches_scipy"
+    evidence: |
+      cargo test -p aprender-core --lib falsify_hc_004_ward_matches_scipy
+      RED  (buggy coefficient (n1*n2/(n1+n2))*centroid_dist): partition
+           {0,1,2,3} | {4,5} → labels[1]==labels[0]==0, labels[4]==1 →
+           assertion "point 1 and point 4 must share a cluster" FAILS (0 vs 1).
+      GREEN (fixed coefficient sqrt(2*n1*n2/(n1+n2))*centroid_dist): partition
+           {1,4,5} | {0,2,3} → all assertions pass, matches scipy labels
+           [1,2,1,1,2,2] and sklearn ward.
