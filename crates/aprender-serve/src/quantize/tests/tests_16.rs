@@ -19,7 +19,7 @@ use crate::quantize::{
 
 // These are pub(crate), available within the crate
 use crate::quantize::{
-    extract_scale_min, extract_scale_min_from_slice, fused_q4_0_q8_0_dot_scalar,
+    extract_scale_min, fused_q4_0_q8_0_dot_scalar,
     fused_q4_0_q8_0_dot_simd, fused_q8_0_q8_0_dot_scalar,
 };
 

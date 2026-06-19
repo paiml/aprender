@@ -171,23 +171,6 @@ fn test_quantize_activations_q8_0_zeros_values() {
 // Extract Scale Min from Slice Tests (Coverage: scale extraction helpers)
 // =========================================================================
 
-#[test]
-fn test_extract_scale_min_from_slice_all_max_check() {
-    let scales: [u8; 8] = [0x3F; 8];
-    let (scale, _min) = extract_scale_min_from_slice(&scales, 0);
-    assert!((scale - 63.0).abs() < 0.001);
-}
-
-#[test]
-fn test_extract_scale_min_from_slice_alternating_check() {
-    let scales: [u8; 8] = [0x15, 0x2A, 0x15, 0x2A, 0x15, 0x2A, 0x15, 0x2A];
-    let (scale0, _min0) = extract_scale_min_from_slice(&scales, 0);
-    let (scale2, _min2) = extract_scale_min_from_slice(&scales, 2);
-    // Should be consistent
-    assert!((scale0 - 21.0).abs() < 0.001);
-    assert!((scale2 - 42.0).abs() < 0.001);
-}
-
 // =========================================================================
 // Coverage Tests: Q4_0Block struct
 // =========================================================================

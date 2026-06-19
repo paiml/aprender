@@ -9,7 +9,7 @@
 
 use proptest::prelude::*;
 
-use crate::quantize::simd::{extract_scale_min, extract_scale_min_from_slice, read_f16};
+use crate::quantize::simd::{extract_scale_min, read_f16};
 use crate::quantize::{f16_to_f32, fused_swiglu_simd, softmax_simd};
 
 // =============================================================================
@@ -198,16 +198,6 @@ fn test_extract_scale_min_all_zeros() {
         assert_eq!(s, 0.0, "Block {} scale should be 0", i);
         assert_eq!(m, 0.0, "Block {} min should be 0", i);
     }
-}
-
-#[test]
-fn test_extract_scale_min_from_slice_basic() {
-    let scales: [u8; 12] = [10, 20, 30, 40, 5, 15, 25, 35, 0, 0, 0, 0];
-
-    let (s0, m0) = extract_scale_min_from_slice(&scales, 0);
-    // idx=0: scale_idx=0, min_idx=4, using & 0x3F
-    assert_eq!(s0, 10.0);
-    assert_eq!(m0, 5.0);
 }
 
 proptest! {
