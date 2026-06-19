@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-02-19'
   author: PAIML Engineering
   description: Graph centrality measures — node importance in network structures
@@ -150,6 +150,15 @@ falsification_tests:
   prediction: x_v > 0 for all v when β > 0 and α < 1/λ_max
   test: proptest with random graphs, α drawn below spectral radius inverse
   if_fails: Attenuation factor α too large or β=0 edge case
+- id: FALSIFY-GC-009
+  rule: Betweenness pendant is zero
+  prediction: C_B(v) = 0 for every pendant (degree-1) node; path 0-1-2 yields
+    [0,1,0] and star K_{1,3} yields [3,0,0,0] under networkx
+    betweenness_centrality(G, normalized=False)
+  test: graph::tests::core::betweenness_pendant_must_be_zero
+  if_fails: Brandes accumulation is missing the `if w != s` source guard, so each
+    BFS source adds its own δ_s(s) and pendant nodes get nonzero betweenness
+    (PMAT-860)
 kani_harnesses:
 - id: KANI-GC-001
   obligation: '1'
