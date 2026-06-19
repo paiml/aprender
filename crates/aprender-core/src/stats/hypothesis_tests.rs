@@ -311,13 +311,68 @@ mod tests {
     // =========================================================================
 
     #[test]
-    fn test_t_distribution_large_df_uses_normal_approx() {
-        // df > 30 triggers the normal approximation branch
+    fn test_t_distribution_large_df_exact_path() {
+        // df > 30 routes through the EXACT incomplete-beta path (PMAT-853).
+        // Previously this branch short-circuited to a standard-normal approximation;
+        // it now uses I_x(df/2, 1/2) for ALL df, matching scipy.stats.t.sf.
         let large_sample: Vec<f32> = (0..50).map(|i| i as f32 * 0.1).collect();
         let result = ttest_1samp(&large_sample, 0.0).expect("Valid t-test with large n");
-        // df = 49, which is > 30, so normal approximation path is taken
+        // df = 49, which is > 30 — exact path is taken.
         assert!(result.df > 30.0);
         assert!(result.pvalue >= 0.0 && result.pvalue <= 1.0);
+    }
+
+    /// FALSIFY-STATS-TTEST-003 (PMAT-853): `t_distribution_pvalue` previously
+    /// short-circuited `df > 30.0` to `2 * normal_cdf(-|t|)`, the standard-normal
+    /// two-tailed tail, abandoning the exact t-distribution tail it already
+    /// computes for df <= 30 via `incomplete_beta(df/2, 1/2, x)`. The normal
+    /// approximation UNDERSTATES the moderate-df t-tail, flipping significance
+    /// decisions near alpha. scipy.stats.t.sf is the oracle (pinned 2026-06-19
+    /// via `uv run --with scipy`). The fix deletes the shortcut so ALL df use
+    /// the exact path.
+    #[test]
+    fn test_t_distribution_pvalue_exact_all_df_matches_scipy() {
+        // df = 40, t = 2.04 (> 30, hits the deleted shortcut).
+        //   RED  (normal approx 2*norm.sf(2.04)) = 0.041350
+        //   GREEN (exact 2*t.sf(2.04, 40))        = 0.047992  <- scipy oracle
+        let p_t40 = t_distribution_pvalue(2.04, 40.0);
+        assert!(
+            (p_t40 - 0.047_992).abs() < 1e-3,
+            "FALSIFIED PMAT-853: t_distribution_pvalue(2.04, 40) = {p_t40} != \
+             0.047992 (2*scipy.stats.t.sf); normal-approx RED value was 0.041350"
+        );
+        // The exact t-value must DIFFER from the normal approximation at df=40
+        // (this is the whole point — they are not interchangeable for moderate df).
+        let normal_approx = 2.0 * normal_cdf(-2.04_f32.abs());
+        assert!(
+            (p_t40 - normal_approx).abs() > 5e-3,
+            "FALSIFIED PMAT-853: exact t p-value {p_t40} collapsed onto the \
+             normal approximation {normal_approx} at df=40"
+        );
+
+        // Significance-flip witness: df = 40, t = 2.02.
+        //   normal approx = 0.043383  -> "significant" at alpha=0.05 (WRONG)
+        //   exact t.sf    = 0.050116  -> NOT significant at alpha=0.05 (scipy)
+        let p_flip = t_distribution_pvalue(2.02, 40.0);
+        assert!(
+            (p_flip - 0.050_116).abs() < 1e-3,
+            "FALSIFIED PMAT-853: t_distribution_pvalue(2.02, 40) = {p_flip} != \
+             0.050116 (2*scipy.stats.t.sf)"
+        );
+        assert!(
+            p_flip > 0.05,
+            "FALSIFIED PMAT-853: exact p {p_flip} must be > 0.05 (scipy=0.050116); \
+             the normal approx 0.043383 falsely declared significance"
+        );
+
+        // Small-df regression: the df <= 30 path must be UNCHANGED.
+        //   exact 2*scipy.stats.t.sf(2.0, 5) = 0.101939
+        let p_t5 = t_distribution_pvalue(2.0, 5.0);
+        assert!(
+            (p_t5 - 0.101_939).abs() < 1e-3,
+            "REGRESSION PMAT-853: t_distribution_pvalue(2.0, 5) = {p_t5} != \
+             0.101939 (2*scipy.stats.t.sf) — small-df path changed"
+        );
     }
 
     #[test]

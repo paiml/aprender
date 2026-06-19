@@ -345,20 +345,23 @@ pub fn f_oneway(groups: &[Vec<f32>]) -> Result<AnovaResult> {
 // Distribution p-value approximations
 // ============================================================================
 
-/// Approximates the two-tailed p-value for a t-distribution.
+/// Computes the exact two-tailed p-value for a Student's t-distribution.
 ///
-/// Uses numerical approximation for t-distribution CDF.
+/// Uses the regularized incomplete beta identity for the t-distribution tail,
+/// matching `scipy.stats.t.sf` for ALL degrees of freedom:
+///
+///   two-tailed p = I_x(df/2, 1/2),  where  x = df / (df + t²)
+///
+/// PMAT-853: a previous `df > 30.0` shortcut returned the standard-normal
+/// approximation `2 * normal_cdf(-|t|)`, which understates the moderate-df
+/// t-tail and flips significance decisions near alpha. The exact path below
+/// (now accurate after the PMAT-827 `incomplete_beta` correction) is used for
+/// every df, so the shortcut has been removed.
 fn t_distribution_pvalue(t: f32, df: f32) -> f32 {
-    // For large df, t-distribution approaches standard normal
-    if df > 30.0 {
-        return 2.0 * normal_cdf(-t.abs());
-    }
-
-    // Simple approximation using beta function relationship
-    // P(T > t) ≈ 1 - I_x(df/2, 1/2) where x = df/(df + t²)
+    // P(|T| > |t|) = I_x(df/2, 1/2) with x = df/(df + t²).
     let x = df / (df + t * t);
     let p_one_tail = 0.5 * incomplete_beta(df / 2.0, 0.5, x);
-    2.0 * p_one_tail.clamp(0.0, 1.0)
+    (2.0 * p_one_tail).clamp(0.0, 1.0)
 }
 
 /// Approximates the p-value for a chi-square distribution.
@@ -377,11 +380,18 @@ fn f_distribution_pvalue(f: f32, df1: usize, df2: usize) -> f32 {
 }
 
 /// Standard normal CDF approximation (using error function).
+///
+/// Test-only since PMAT-853 removed the `df > 30` normal-approximation
+/// shortcut from `t_distribution_pvalue`; retained as a reference oracle for
+/// the falsification tests that contrast the exact t-tail against the normal
+/// approximation.
+#[cfg(test)]
 fn normal_cdf(x: f32) -> f32 {
     0.5 * (1.0 + erf(x / 2.0_f32.sqrt()))
 }
 
 /// Error function approximation (delegates to batuta-common).
+#[cfg(test)]
 fn erf(x: f32) -> f32 {
     batuta_common::math::erf_f32(x)
 }

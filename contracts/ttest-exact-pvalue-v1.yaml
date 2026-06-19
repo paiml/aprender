@@ -1,0 +1,81 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-19"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "scipy.stats.t.sf (oracle for the one-tailed Student-t survival function, pinned 2026-06-19 via `uv run --with scipy`)"
+    - "scipy.stats.ttest_1samp / ttest_ind / ttest_rel (downstream two-tailed p-value oracles)"
+    - "Abramowitz & Stegun 26.7.1 — Student-t CDF via the regularized incomplete beta I_x(df/2, 1/2)"
+    - "Companion contract: incomplete-beta-correctness-v1 (PMAT-827) — the exact path this fix completes"
+  description: |
+    Correctness contract for the two-tailed Student-t p-value
+    (aprender-core stats::hypothesis::t_distribution_pvalue) for ALL degrees of
+    freedom. Pillar-1 (scipy/sklearn parity) provable-correctness, ticket PMAT-853.
+
+kind: KernelContract
+name: ttest-exact-pvalue
+version: "1.0.0"
+scope: "crates/aprender-core/src/stats/hypothesis.rs"
+
+description: |
+  The two-tailed p-value of a Student-t statistic t with df degrees of freedom is
+  the regularized incomplete beta tail, exact for EVERY df:
+
+      x            = df / (df + t²)
+      p_two_tailed = I_x(df/2, 1/2)          (= 2 * scipy.stats.t.sf(|t|, df))
+
+  PMAT-853 removed a defect where `t_distribution_pvalue` short-circuited
+  `df > 30.0` and returned the standard-normal two-tailed tail
+  `2 * normal_cdf(-|t|)` instead of the exact I_x(df/2, 1/2) path it already
+  implements for df <= 30. The normal approximation UNDERSTATES the moderate-df
+  t-tail (heavier tails than the Gaussian), so it reports p-values that are too
+  small and flips significance decisions near alpha. Example at df = 40, t = 2.02:
+  the normal approximation gives p = 0.043383 (falsely "significant" at 0.05)
+  while the exact t-tail gives p = 0.050116 (NOT significant) — scipy agrees with
+  the exact value. The exact path is accurate only because PMAT-827 corrected the
+  underlying `incomplete_beta`; this contract completes that correction by routing
+  ALL df through the exact tail and deleting the `df > 30` shortcut.
+
+equations:
+  C-TTEST-001:
+    description: "Two-tailed Student-t p-value uses the exact incomplete-beta tail for ALL df (no df>30 normal shortcut)"
+    formula: "t_distribution_pvalue(t, df) = clamp(I_x(df/2, 1/2), 0, 1), x = df/(df + t^2), for every df > 0"
+    note: "Matches 2*scipy.stats.t.sf(|t|, df). RED at df=40, t=2.04: normal-approx 0.041350; GREEN exact 0.047992."
+
+  C-TTEST-002:
+    description: "The exact t-tail must DIFFER from the standard-normal approximation for moderate df (they are not interchangeable)"
+    formula: "|t_distribution_pvalue(t, df) - 2*normal_cdf(-|t|)| > 5e-3 at df=40, t=2.04 (exact 0.047992 vs normal 0.041350)"
+    note: "Refutes the deleted shortcut's premise that df>30 is 'close enough' to normal near alpha."
+
+  C-TTEST-003:
+    description: "Significance-decision parity with scipy near alpha for df>30 (no false-positive null rejection)"
+    formula: "df=40, t=2.02: t_distribution_pvalue = 0.050116 > 0.05 (NOT significant), matching 2*scipy.stats.t.sf; normal-approx 0.043383 falsely rejects"
+    note: "The headline beat: apr's inference decision agrees with scipy where the normal approximation diverges."
+
+  C-TTEST-004:
+    description: "Small-df path (df <= 30, already exact) is UNCHANGED by the fix"
+    formula: "df=5, t=2.0: t_distribution_pvalue = 0.101939 == 2*scipy.stats.t.sf(2.0, 5)"
+    note: "Regression guard — deleting the df>30 branch must not perturb the df<=30 branch."
+
+proof_obligations:
+  - type: equivalence
+    property: "PO-TTEST-001 exact t-tail matches scipy for all df"
+    formal: "|t_distribution_pvalue(t, df) - 2*scipy.stats.t.sf(|t|, df)| < 1e-3 for all df > 0; df>30 routes through I_x(df/2,1/2), not the normal CDF"
+    tolerance: 0.001
+    applies_to: all
+  - type: invariant
+    property: "PO-TTEST-002 small-df path unchanged by the fix"
+    formal: "t_distribution_pvalue(2.0, 5) = 0.101939 (df<=30 incomplete-beta path stable across deletion of the df>30 branch)"
+    tolerance: 0.001
+    applies_to: "df <= 30"
+
+falsification:
+  - id: FALSIFY-STATS-TTEST-003
+    description: "Exact two-tailed t p-value matches scipy.stats.t.sf for df>30 and the small-df path is unchanged. Discharges C-TTEST-001..004 and PO-TTEST-001/002."
+    test: "test_t_distribution_pvalue_exact_all_df_matches_scipy — df=40,t=2.04: RED 0.041350 (normal approx) -> GREEN 0.047992 (scipy t.sf); df=40,t=2.02 significance-flip: RED 0.043383 (<0.05, falsely significant) -> GREEN 0.050116 (>0.05); df=5,t=2.0 regression 0.101939 unchanged."
+    command: "cargo test -p aprender-core --lib test_t_distribution_pvalue_exact_all_df_matches_scipy"
+    red: "0.041350 (2*normal_cdf(-2.04), the deleted df>30 shortcut) at df=40, t=2.04"
+    green: "0.047992 (2*scipy.stats.t.sf(2.04, 40), the exact incomplete-beta tail) at df=40, t=2.04"
+    scipy_reference: "2*scipy.stats.t.sf(2.04, 40) = 0.0479916; 2*scipy.stats.t.sf(2.02, 40) = 0.0501163; 2*scipy.stats.t.sf(2.0, 5) = 0.1019395"
+    evidence: "cargo test -p aprender-core --lib test_t_distribution_pvalue_exact_all_df_matches_scipy"
