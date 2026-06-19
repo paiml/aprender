@@ -305,18 +305,18 @@ fn test_ggml_dtype_element_size_exhaustive() {
     assert!((super::ggml_dtype_element_size(8) - 1.0625).abs() < 0.01);
     // Q8_1
     assert!((super::ggml_dtype_element_size(9) - 1.125).abs() < 0.01);
-    // Q2_K
-    assert!((super::ggml_dtype_element_size(10) - 0.3125).abs() < 0.01);
-    // Q3_K
-    assert!((super::ggml_dtype_element_size(11) - 0.4375).abs() < 0.01);
-    // Q4_K
+    // Q2_K = 84/256 (PMAT-869: was 0.3125)
+    assert!((super::ggml_dtype_element_size(10) - 0.328_125).abs() < 0.01);
+    // Q3_K = 110/256 (PMAT-869: was 0.4375)
+    assert!((super::ggml_dtype_element_size(11) - 0.429_687_5).abs() < 0.01);
+    // Q4_K = 144/256
     assert!((super::ggml_dtype_element_size(12) - 0.5625).abs() < 0.01);
-    // Q5_K
+    // Q5_K = 176/256
     assert!((super::ggml_dtype_element_size(13) - 0.6875).abs() < 0.01);
-    // Q6_K
-    assert!((super::ggml_dtype_element_size(14) - 0.8125).abs() < 0.01);
-    // Q8_K
-    assert!((super::ggml_dtype_element_size(15) - 1.0625).abs() < 0.01);
+    // Q6_K = 210/256 (PMAT-869: was 0.8125)
+    assert!((super::ggml_dtype_element_size(14) - 0.820_312_5).abs() < 0.01);
+    // Q8_K = 292/256 (PMAT-869: was 1.0625)
+    assert!((super::ggml_dtype_element_size(15) - 1.140_625).abs() < 0.01);
     // BF16
     assert!((super::ggml_dtype_element_size(26) - 2.0).abs() < 0.001);
     // I-quant types
@@ -338,6 +338,51 @@ fn test_ggml_dtype_element_size_exhaustive() {
     // Unknown defaults to F32 (4.0) — conservative size estimate
     assert!((super::ggml_dtype_element_size(99) - 4.0).abs() < 0.001);
     assert!((super::ggml_dtype_element_size(u32::MAX) - 4.0).abs() < 0.001);
+}
+
+// ====================================================================
+// PMAT-869: K-quant bytes-per-element must equal block_bytes / QK_K(256).
+// Falsifier — RED on the buggy table (Q2_K=0.3125, Q3_K=0.4375,
+// Q6_K=0.8125, Q8_K=1.0625), GREEN on the corrected exact ratios.
+// Reference ggml-common.h block sizes (QK_K=256):
+//   block_q2_K=84, block_q3_K=110, block_q4_K=144, block_q5_K=176,
+//   block_q6_K=210, block_q8_K=292.
+// Contract: contracts/gguf-kquant-element-size-v1.yaml
+// ====================================================================
+
+#[test]
+fn test_kquant_element_size_exact_block_ratio_pmat869() {
+    const QK_K: f64 = 256.0;
+    // (dtype code, block_bytes, label)
+    let cases: [(u32, f64, &str); 6] = [
+        (10, 84.0, "Q2_K"),
+        (11, 110.0, "Q3_K"),
+        (12, 144.0, "Q4_K"),
+        (13, 176.0, "Q5_K"),
+        (14, 210.0, "Q6_K"),
+        (15, 292.0, "Q8_K"),
+    ];
+    for (code, block_bytes, label) in cases {
+        let expected = block_bytes / QK_K;
+        let actual = super::ggml_dtype_element_size(code);
+        assert!(
+            (actual - expected).abs() < 1e-9,
+            "{label} (code {code}): expected {expected} (= {block_bytes}/256), got {actual}"
+        );
+    }
+
+    // Exact spec values (no tolerance slack — these are exact dyadic fractions).
+    assert_eq!(super::ggml_dtype_element_size(10), 0.328_125); // Q2_K  = 84/256
+    assert_eq!(super::ggml_dtype_element_size(11), 0.429_687_5); // Q3_K = 110/256
+    assert_eq!(super::ggml_dtype_element_size(12), 0.562_5); // Q4_K   = 144/256 (unchanged)
+    assert_eq!(super::ggml_dtype_element_size(13), 0.687_5); // Q5_K   = 176/256 (unchanged)
+    assert_eq!(super::ggml_dtype_element_size(14), 0.820_312_5); // Q6_K = 210/256
+    assert_eq!(super::ggml_dtype_element_size(15), 1.140_625); // Q8_K  = 292/256
+
+    // End-to-end: a tensor of N=256 Q2_K elements must report 84 bytes, not 80.
+    let n = 256.0_f64;
+    let q2k_bytes = (n * super::ggml_dtype_element_size(10)) as usize;
+    assert_eq!(q2k_bytes, 84, "256 Q2_K elements must report 84 bytes");
 }
 
 // ====================================================================
