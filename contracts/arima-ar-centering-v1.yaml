@@ -1,0 +1,204 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-19'
+  author: PAIML Engineering
+  description: |
+    ARIMA(p,0,q) AR-coefficient estimation MUST use the MEAN-CENTERED
+    Box-Jenkins model `y_t - mu = sum_k phi_k (y_{t-k} - mu) + e_t`, matching
+    statsmodels `ARIMA(order=(p,0,q))`, which fits the demeaned series.
+
+    PMAT-862 (HIGH severity correctness): `ARIMA::estimate_ar_parameters`
+    estimated coefficients on the UNCENTERED levels:
+      phi_lag = sum_i y_i * y_{i-1-lag} / sum_i (y_{i-1-lag})^2
+    For a stationary series with nonzero mean mu, BOTH sums are dominated by
+    n*mu^2, so every coefficient collapsed to ~1.0 regardless of the true
+    autocorrelation. Combined with a constant term stored as `mu` (rather
+    than `mu*(1 - sum phi_k)`), `ARIMA(1,0,0)` one-step forecasts diverged to
+    ~2x the series level.
+
+    Fix: center the lagged products in estimate_ar_parameters,
+      phi_lag = sum (y_i - mu)(y_{i-1-lag} - mu) / sum (y_{i-1-lag} - mu)^2,
+    and store the constant as `mu*(1 - sum phi_k)` so the forecast loop
+    `intercept + sum phi_k * y_{t-1-k}` equals `mu + sum phi_k (y_{t-1-k} - mu)`.
+
+    This is a distinct defect from PMAT-834 (reverse-differencing seeding for
+    d >= 2); the d >= 1 differencing/integration path is unchanged (for the
+    differenced series mu ~= 0, so mu*(1 - sum phi) ~= mu).
+  references:
+  - 'Box, Jenkins, Reinsel (2015) Time Series Analysis: Forecasting and Control -- ARMA mean-centering'
+  - 'statsmodels.tsa.arima.model.ARIMA(order=(p,0,q)) -- fits the demeaned model'
+  - 'PMAT-862 (this contract): ARIMA AR estimation on uncentered levels collapses phi to ~1.0'
+  - 'PMAT-834 (arima-v1.yaml FALSIFY-ARIMA-INTEGRATE-D2) -- the distinct reverse-differencing defect'
+
+kind: KernelContract
+name: arima-ar-centering
+version: 1.0.0
+scope: aprender-core time_series ARIMA::estimate_ar_parameters + fit (constant term) + forecast
+
+equations:
+  C-AR-CENTERED-PHI:
+    formula: |
+      phi_lag = sum_{i>lag} (y_i - mu)(y_{i-1-lag} - mu)
+                / sum_{i>lag} (y_{i-1-lag} - mu)^2,
+      where mu = (1/n) sum_i y_i.
+    domain: y in R^n (stationary working series), n > lag + 1, mu in R
+    codomain: phi_lag in R (the demeaned least-squares AR coefficient)
+    invariants:
+    - AR coefficients are estimated on the MEAN-CENTERED series, never on raw levels
+    - 'For a stationary AR(1) with true phi in (-1, 1), the estimated phi stays away from 1.0
+      regardless of the series mean (a nonzero mean must NOT push phi toward 1.0)'
+    - Centering is mean-translation-invariant by construction (y_i - mu unaffected by adding a constant to all y)
+    preconditions:
+    - input.len() > 1
+    - input.iter().all(|v| v.is_finite())
+  C-AR-FORECAST-CENTERED:
+    formula: |
+      y_hat_{n+1} = mu + sum_{k=1}^{p} phi_k (y_{n+1-k} - mu)
+                  = mu*(1 - sum_k phi_k) + sum_{k=1}^{p} phi_k * y_{n+1-k}.
+    domain: fitted ARIMA(p,0,q), phi in R^p, y in R^n, mu in R
+    codomain: y_hat_{n+1} in R
+    invariants:
+    - 'The stored constant term equals mu*(1 - sum_k phi_k), NOT mu'
+    - 'For a stationary series the one-step forecast sits near the series level:
+      |y_hat_{n+1} - mu| < 0.5 * (max(y) - min(y))'
+    - Forecast equals the Box-Jenkins demeaned prediction mu + sum phi_k (y_{n+1-k} - mu)
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+
+proof_obligations:
+- type: invariant
+  property: AR coefficients estimated on mean-centered data
+  formal: |
+    For every working series y with mean mu, estimate_ar_parameters computes
+    phi_lag = sum (y_i - mu)(y_{i-1-lag} - mu) / sum (y_{i-1-lag} - mu)^2.
+    Adding any constant c to every y_i leaves every phi_lag unchanged
+    (mean-translation invariance), so a nonzero series mean cannot bias phi toward 1.0.
+- type: bound
+  property: stationary AR(1) coefficient stays away from 1.0
+  formal: |
+    For a stationary AR(1) series with true phi = 0.5 and mean ~50 (range ~5),
+    the estimated AR(1) coefficient satisfies |phi - 0.37| < 0.05 and phi < 0.9.
+    (Demeaned OLS phi_hat = 0.370; statsmodels ARIMA(1,0,0) ar.L1 = 0.364.)
+- type: invariant
+  property: forecast constant reflects mean-centering
+  formal: |
+    The stored intercept equals mu*(1 - sum_k phi_k) so that the forecast loop
+    intercept + sum_k phi_k * y_{n+1-k} = mu + sum_k phi_k (y_{n+1-k} - mu).
+- type: bound
+  property: one-step forecast sits near the series level
+  formal: |
+    For a stationary series with mean mu and range R = max(y) - min(y),
+    the ARIMA(p,0,q) one-step forecast satisfies |y_hat_{n+1} - mu| < 0.5 * R.
+    (Pre-fix the forecast was ~2x the level, violating this bound.)
+- type: invariant
+  property: d >= 1 differencing/integration path unchanged
+  formal: |
+    For d >= 1 the working series is the d-th difference (mu ~= 0), so
+    mu*(1 - sum phi) ~= mu and the integrate/seed path (PMAT-834) is unaffected.
+
+falsification_tests:
+- id: FALSIFY-ARIMA-AR-CENTERING-COEF
+  rule: AR(1) coefficient equals the demeaned phi, not ~1.0
+  prediction: |
+    On a deterministic stationary AR(1) series with mu ~= 49.84, true phi = 0.5,
+    range ~= 4.74 (statsmodels seed 7), `ARIMA::new(1,0,0).fit(...)` yields an
+    AR(1) coefficient ~= 0.370 (demeaned OLS phi_hat; statsmodels ar.L1 = 0.364),
+    satisfying |phi - 0.37| < 0.05.
+    RED (pre-fix, uncentered): coef ~= 1.0000619 (collapsed to 1.0).
+    GREEN (post-fix, centered): coef ~= 0.370.
+  if_fails: |
+    AR coefficients are being estimated on UNCENTERED levels (sum y_i*y_{i-1-lag}
+    / sum y_{i-1-lag}^2), so for a nonzero-mean series the coefficient collapses
+    to ~1.0. Center the products in estimate_ar_parameters.
+  test: 'cargo test -p aprender-core --lib falsify_arima_ar_centering_nonzero_mean_ar1'
+  evidence: |
+    crates/aprender-core/src/time_series/tests_arima_contract.rs
+    ::falsify_arima_ar_centering_nonzero_mean_ar1 (coef assertion; RED pre-fix, GREEN post-fix)
+- id: FALSIFY-ARIMA-AR-CENTERING-FORECAST
+  rule: ARIMA(1,0,0) one-step forecast sits near the series level, not ~2x it
+  prediction: |
+    On the same series (mu ~= 49.84, range ~= 4.74), the one-step forecast is
+    ~= 50.30 (statsmodels reference 50.30), satisfying |forecast - mean| < 0.5*range.
+    RED (pre-fix): forecast ~= 100.93 (~2x level). GREEN (post-fix): ~= 50.30.
+  if_fails: |
+    The constant term is stored as mu instead of mu*(1 - sum phi_k), and/or AR
+    coefficients collapsed to ~1.0, so the forecast diverges to ~2x the level.
+  test: 'cargo test -p aprender-core --lib falsify_arima_ar_centering_nonzero_mean_ar1'
+  evidence: |
+    crates/aprender-core/src/time_series/tests_arima_contract.rs
+    ::falsify_arima_ar_centering_nonzero_mean_ar1 (forecast band assertion)
+- id: FALSIFY-ARIMA-AR-CENTERING-STATSMODELS
+  rule: forecast matches the statsmodels ARIMA(1,0,0) reference
+  prediction: |
+    The one-step forecast equals the statsmodels `ARIMA(order=(1,0,0))` reference
+    value 50.30 to within +/-0.5 on the seed-7 series.
+  if_fails: |
+    The fitted constant or AR coefficient diverges from the Box-Jenkins demeaned
+    model that statsmodels implements.
+  test: 'cargo test -p aprender-core --lib falsify_arima_ar_centering_nonzero_mean_ar1'
+  evidence: |
+    crates/aprender-core/src/time_series/tests_arima_contract.rs
+    ::falsify_arima_ar_centering_nonzero_mean_ar1 (statsmodels reference assertion)
+- id: FALSIFY-ARIMA-AR-MEAN-INVARIANCE
+  rule: AR coefficient is mean-translation-invariant
+  prediction: |
+    Estimating phi on y and on y + c (constant shift) gives the same coefficient,
+    because the products use (y_i - mu); a nonzero series mean cannot push phi
+    toward 1.0.
+  if_fails: |
+    AR estimation depends on the absolute level (uncentered), so adding a constant
+    to the series changes phi -- the hallmark of the uncentered defect.
+  test: 'cargo test -p aprender-core --lib falsify_arima_ar_centering_nonzero_mean_ar1'
+  evidence: |
+    crates/aprender-core/src/time_series/tests_arima_contract.rs
+    ::falsify_arima_ar_centering_nonzero_mean_ar1 (coef ~= true phi for mean ~50 series)
+- id: FALSIFY-ARIMA-AR-CENTERING-D-PRESERVED
+  rule: d >= 1 differencing/integration path is unchanged
+  prediction: |
+    ARIMA(0,2,0) on the quadratic series [10,20,35,55,80] still forecasts ~110
+    (PMAT-834 behavior) -- the mean-centering change does not regress the
+    integrate/seed path because the differenced series has mu ~= 0.
+  if_fails: |
+    The constant-term change leaked into the d >= 1 path and broke reverse
+    differencing.
+  test: 'cargo test -p aprender-core --lib falsify_arima_integrate_d2_seeds_intermediate_difference'
+  evidence: |
+    crates/aprender-core/src/time_series/tests_arima_contract.rs
+    ::falsify_arima_integrate_d2_seeds_intermediate_difference (still GREEN post-fix)
+
+kani_harnesses:
+- id: KANI-ARIMA-CENTER-001
+  obligation: AR coefficients estimated on mean-centered data
+  property: AR estimation is mean-translation-invariant (phi unchanged by adding a constant to y)
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_ar_centering_translation_invariant
+- id: KANI-ARIMA-CENTER-002
+  obligation: forecast constant reflects mean-centering
+  property: stored constant equals mu*(1 - sum phi_k) so forecast = mu + sum phi_k (y - mu)
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_forecast_constant_mean_centered
+
+enforcement:
+  ar_mean_centering:
+    description: AR coefficients must be estimated on the mean-centered series
+    check: contract_tests::FALSIFY-ARIMA-AR-CENTERING
+    severity: ERROR
+  forecast_near_level:
+    description: ARIMA(p,0,q) one-step forecast must sit near the series level, not ~2x it
+    check: contract_tests::FALSIFY-ARIMA-AR-CENTERING
+    severity: ERROR
+
+qa_gate:
+  id: F-ARIMA-CENTER-001
+  name: ARIMA AR Mean-Centering Contract
+  description: ARIMA(p,0,q) AR estimation + forecast must use the demeaned Box-Jenkins model
+  checks:
+  - ar_mean_centering
+  - forecast_near_level
+  pass_criteria: FALSIFY-ARIMA-AR-CENTERING passes (coef ~= true phi, forecast ~= level)
+  falsification: AR estimated on uncentered levels -> phi ~= 1.0 -> forecast diverges to ~2x level
