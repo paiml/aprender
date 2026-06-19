@@ -242,11 +242,15 @@
 
     #[test]
     fn test_xtc_excludes_top_tokens() {
-        let logits = Tensor::from_vec(vec![5], vec![10.0, 1.0, 0.5, 0.1, -1.0]).expect("test");
-        let config = XtcConfig::new(1.0).with_threshold(0.5); // Always exclude, high threshold
+        // PMAT-846: canonical XTC removes the strictly-most-probable above-threshold
+        // token(s) but KEEPS the boundary token. With logits [6,5,0.5,0.1,-1] and
+        // threshold 0.05, tokens 0 and 1 are above threshold; XTC removes the top
+        // (idx 0) and preserves the boundary (idx 1) and the below-threshold tail.
+        let logits = Tensor::from_vec(vec![5], vec![6.0, 5.0, 0.5, 0.1, -1.0]).expect("test");
+        let config = XtcConfig::new(1.0).with_threshold(0.05);
         let result = apply_xtc(&logits, &config, 0.0); // rng < probability
-        // Top token (index 0) should be excluded (set to NEG_INFINITY)
-        assert_eq!(result.data()[0], f32::NEG_INFINITY);
+        assert_eq!(result.data()[0], f32::NEG_INFINITY, "top token excluded");
+        assert!(result.data()[1].is_finite(), "boundary token kept");
     }
 
     #[test]

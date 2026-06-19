@@ -1,0 +1,58 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-19"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "llama.cpp src/llama-sampling.cpp llama_sample_xtc_apply"
+    - "XTC (Exclude Top Choices) sampling — text-generation-webui / llama.cpp"
+  description: |
+    Correctness contract for apr's XTC (Exclude Top Choices) sampler. XTC must remove the
+    strictly-most-probable above-threshold tokens to increase diversity while ALWAYS preserving
+    the boundary token (the least-probable token at/above the threshold) and the entire
+    below-threshold tail. apr beats Ollama/llama.cpp on parity only if it keeps that boundary.
+kind: KernelContract
+name: xtc-sampling-correctness
+version: "1.0.0"
+scope: "crates/aprender-serve/src/generate/dry_penalty.rs"
+description: |
+  PMAT-846: `apply_xtc` excluded EVERY token with `prob >= threshold` (setting it to
+  -inf), gated only by `data.len() - excluded_count > config.min_keep`. Because the guard
+  subtracts from `data.len()` (the FULL vocabulary, e.g. 32000) rather than from the number of
+  tokens that would remain, with any realistic vocab and small `min_keep` it removed the ENTIRE
+  above-threshold set — including the boundary token XTC is specifically designed to keep. It
+  also lacked the canonical `threshold > 0.5` no-op guard.
+
+  For logits `[4,3,2,-10,-10]`, threshold 0.1, min_keep 1: softmax `[0.665,0.245,0.090,~0,~0]`,
+  tokens 0 and 1 are above threshold. llama.cpp computes `pos_last = 1` (the sorted index of the
+  LAST above-threshold token) and removes only `[0, pos_last)` — i.e. drops the top token (idx 0)
+  and KEEPS the boundary (idx 1, value 3.0). apr instead set idx 1 to -inf.
+
+  Fix: reimplement to canonical XTC — early no-op when `threshold > 0.5`; scan the
+  probability-sorted-descending array for `pos_last` (last index with `p >= threshold`); and only
+  when `len - pos_last >= min_keep && pos_last > 0`, set the first `pos_last` (strictly-most-
+  probable) tokens to -inf, leaving the boundary token and the below-threshold tail finite.
+equations:
+  C-XTC-001:
+    description: "XTC preserves the boundary token (last token with p >= threshold) and the below-threshold tail."
+    formula: "apply_xtc(logits) ⟹ finite(logits[boundary]) ∧ ∀ t: p(t) < threshold ⟹ finite(logits[t])"
+    note: "boundary = argmin over {t : p(t) >= threshold} of p(t); only the strictly-more-probable above-threshold tokens are removed."
+  C-XTC-002:
+    description: "XTC is a no-op when fewer than two tokens are above threshold, or when threshold > 0.5."
+    formula: "(|{t : p(t) >= threshold}| < 2) ∨ (threshold > 0.5) ⟹ apply_xtc(logits) == logits"
+    note: "pos_last > 0 requires at least two above-threshold tokens before any removal occurs."
+proof_obligations:
+  - id: PO-XTC-001
+    kind: correctness
+    statement: "apply_xtc never sets the boundary (least-probable above-threshold) token to -inf when it fires."
+    discharged_by: FALSIFY-XTC-KEEP-BOUNDARY
+falsification:
+  - id: FALSIFY-XTC-KEEP-BOUNDARY
+    description: "On logits [4,3,2,-10,-10] with threshold 0.1, min_keep 1, XTC removes the top token (idx 0) but keeps the boundary token (idx 1 = 3.0). Discharges C-XTC-001 and PO-XTC-001."
+    test: "cargo test -p aprender-serve --lib test_apply_xtc_keeps_boundary_token_pmat846"
+    evidence: |
+      RED (pre-fix): the boundary token (idx 1) was set to -inf ("boundary token (idx 1) must NOT
+      be excluded, got -inf"). GREEN (post-fix): idx 0 == -inf (top removed), idx 1 == 3.0 finite
+      (boundary kept), idx 2/3/4 finite (tail kept). Two sibling tests that had asserted the buggy
+      remove-all behavior (test_apply_xtc_excludes_top_token, test_xtc_excludes_top_tokens) were
+      corrected to canonical XTC. Full aprender-serve lib suite: 15430 passed / 0 failed.

@@ -162,7 +162,9 @@ pub fn apply_xtc(logits: &Tensor<f32>, config: &XtcConfig, rng_value: f32) -> Te
     }
 
     let data = logits.data();
-    if data.len() <= config.min_keep {
+    // Canonical XTC no-op (llama.cpp early-returns): a threshold > 0.5 leaves at most
+    // one token above it, so there is nothing meaningful to exclude.
+    if config.threshold > 0.5 || data.len() <= config.min_keep || data.len() < 2 {
         return logits.clone();
     }
 
@@ -172,19 +174,33 @@ pub fn apply_xtc(logits: &Tensor<f32>, config: &XtcConfig, rng_value: f32) -> Te
     let sum: f32 = exp_logits.iter().sum();
     let probs: Vec<f32> = exp_logits.iter().map(|&x| x / sum).collect();
 
-    // Find tokens above threshold
-    let mut excluded_count = 0;
-    let mut modified = data.to_vec();
-
-    // Sort by probability descending to find top tokens
+    // Sort by probability descending.
     let mut indexed: Vec<(usize, f32)> = probs.iter().enumerate().map(|(i, &p)| (i, p)).collect();
     indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-    // Exclude top tokens above threshold, respecting min_keep
-    for (idx, prob) in &indexed {
-        if *prob >= config.threshold && data.len() - excluded_count > config.min_keep {
+    // PMAT-846: canonical XTC (llama.cpp `llama_sample_xtc_apply`). Scan the sorted
+    // array from the top to find `pos_last` = the index of the LAST token with
+    // `p >= threshold` (stop at the first below-threshold token). Then exclude only
+    // the strictly-most-probable tokens `[0, pos_last)`, which ALWAYS preserves the
+    // boundary token at `pos_last` and the entire below-threshold tail. The previous
+    // code excluded EVERY above-threshold token (including the boundary) because its
+    // min_keep guard subtracted the excluded count from the FULL vocab length rather
+    // than from the number of tokens that would remain.
+    let mut pos_last = 0usize;
+    for (i, (_, p)) in indexed.iter().enumerate() {
+        if *p >= config.threshold {
+            pos_last = i;
+        } else {
+            break;
+        }
+    }
+
+    let mut modified = data.to_vec();
+    // Keep at least `min_keep` tokens, and only act when there is a top token to
+    // remove (`pos_last > 0` ⟺ ≥ 2 above-threshold tokens, so the boundary survives).
+    if indexed.len() - pos_last >= config.min_keep && pos_last > 0 {
+        for (idx, _) in indexed.iter().take(pos_last) {
             modified[*idx] = f32::NEG_INFINITY;
-            excluded_count += 1;
         }
     }
 
