@@ -1,0 +1,141 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-19'
+  author: PAIML Engineering
+  description: |
+    Bayesian Logistic Regression (Laplace approximation) MAP gradient/Hessian
+    must target the SAME posterior at the DECLARED prior precision λ.
+
+    BayesianLogisticRegression::fit finds the MAP β by gradient ascent on the
+    un-normalized log-posterior
+
+        ℓ(β) = Σ_i [ y_i log p_i + (1−y_i) log(1−p_i) ] − (λ/2)‖β‖²,
+        p_i = σ(x_iᵀ β),
+
+    whose gradient is ∇ℓ = Xᵀ(y − p) − λβ, and then builds the Laplace
+    covariance from the Hessian of the negative log-posterior,
+    H = XᵀWX + λI with W = diag(p_i(1 − p_i)), evaluated at that mode.
+
+    PMAT-864 (HIGH, correctness): the fit divided ONLY the data term of the
+    gradient by n (`grad_j /= n`) while leaving the prior gradient λβ
+    un-averaged. The stationary point then satisfied (1/n)·Xᵀ(y − p) = λβ, i.e.
+    Xᵀ(y − p) = (n·λ)β — the MAP of a model with prior precision n·λ, NOT λ.
+    The posterior mean was over-shrunk ~n× toward 0, and the un-averaged
+    Hessian H = XᵀWX + λI was evaluated at the WRONG mode, corrupting BOTH the
+    posterior mean AND the credible intervals.
+
+    The fix removes the 1/n factor so the gradient is the un-averaged
+    Xᵀ(y − p) − λβ, consistent with the un-averaged Hessian. A positive scalar
+    1/n is applied to the WHOLE gradient-ascent STEP only (β ← β + (η/n)·∇ℓ) to
+    keep the fixed-LR step well-conditioned; scaling the entire gradient by a
+    positive constant does NOT move the stationary point, so the fit converges
+    to the λ-MAP where Xᵀ(y − p) = λβ.
+  references:
+  - 'Bishop, PRML §4.5 — Laplace approximation for Bayesian logistic regression'
+  - 'scikit-learn logistic-regression MAP: gradient Xᵀ(y − p) − λβ, Hessian XᵀWX + λI at the same mode'
+  - 'crates/aprender-core/src/bayesian/logistic.rs — BayesianLogisticRegression::fit (gradient ∇ℓ = Xᵀ(y − p) − λβ; Hessian H = XᵀWX + λI)'
+
+kind: KernelContract
+name: bayesian-logistic-map
+version: 1.0.0
+scope: aprender-core BayesianLogisticRegression::fit MAP estimation and Laplace covariance
+
+equations:
+  C-LOGPOST-GRADIENT:
+    formula: |
+      ∇ℓ(β) = Xᵀ(y − p) − λβ,   p_i = σ(x_iᵀ β)
+    domain: X ∈ ℝ^{n×d}, y ∈ {0,1}^n, β ∈ ℝ^d, λ > 0
+    codomain: ∇ℓ ∈ ℝ^d
+    invariants:
+    - 'The data term Xᵀ(y − p) is NOT averaged by n (no 1/n factor)'
+    - 'The prior term is exactly −λβ, with the SAME λ that scales the Hessian'
+    - 'Data and prior terms share one normalization (both un-averaged)'
+    lean_theorem: Theorems.LogPostGradient
+  C-MAP-PRECISION:
+    formula: |
+      ∇ℓ(β_MAP) = 0  ⇔  Xᵀ(y − p) = λ·β_MAP
+    domain: X ∈ ℝ^{n×d}, y ∈ {0,1}^n, λ > 0
+    codomain: β_MAP ∈ ℝ^d
+    invariants:
+    - 'β_MAP is the MAP at the DECLARED precision λ, never at n·λ'
+    - 'Doubling n with the same per-sample distribution does NOT shrink β_MAP toward 0'
+    lean_theorem: Theorems.MapPrecision
+  C-HESSIAN-SAME-POSTERIOR:
+    formula: |
+      H = XᵀWX + λI,   W = diag(p_i(1 − p_i)),   evaluated at β_MAP
+    domain: X ∈ ℝ^{n×d}, β_MAP ∈ ℝ^d, λ > 0
+    codomain: H ∈ ℝ^{d×d}, symmetric positive-definite
+    invariants:
+    - 'H is the Hessian of the SAME negative log-posterior whose gradient is C-LOGPOST-GRADIENT'
+    - 'H is un-averaged (XᵀWX, not (1/n)XᵀWX) and uses the SAME λ as the gradient'
+    - 'The Laplace covariance Σ = H⁻¹ is evaluated at the gradient''s stationary point β_MAP'
+    lean_theorem: Theorems.HessianSamePosterior
+
+proof_obligations:
+- type: invariant
+  property: Gradient and Hessian share one posterior and one normalization
+  formal: |
+    The fit gradient is Xᵀ(y − p) − λβ (un-averaged) and the Hessian is
+    XᵀWX + λI (un-averaged), with the SAME λ; neither the data term nor the
+    prior term carries a 1/n factor. (A 1/n on only the data term shifts the
+    stationary point to precision n·λ.)
+- type: classification
+  property: Fit targets the declared precision λ, not n·λ
+  formal: |
+    For data with a known MAP, BayesianLogisticRegression::new(λ).fit(X, y)
+    converges to β_MAP solving Xᵀ(y − p) = λβ_MAP, and is clearly distinct from
+    the over-shrunk mode solving Xᵀ(y − p) = (n·λ)β.
+- type: invariant
+  property: Step scaling preserves the stationary point
+  formal: |
+    The update β ← β + (η/n)·∇ℓ scales the WHOLE gradient by a positive
+    constant, so its fixed point is exactly ∇ℓ = 0; the 1/n affects step size
+    only and never the mode the fit converges to.
+
+falsification_tests:
+- id: FT-BLR-MAP-001
+  rule: Fit converges to the λ-MAP, not the over-shrunk n·λ-MAP
+  prediction: |
+    For an 8-sample monotone-ordered logistic dataset with λ = 0.2, the fitted
+    β converges to the independently-computed λ-MAP (≈ 2.316) within 1e-2 and is
+    clearly distinct from the n·λ-MAP (≈ 1.021). Before the fix the fit returned
+    ≈ 1.021 (the n·λ-MAP) — the data term was divided by n while the prior was
+    not.
+  if_fails: 'A 1/n (or any asymmetric) normalization of the data term has crept back into the gradient; the gradient and Hessian no longer describe the same posterior.'
+  evidence: cargo test -p aprender-core --lib test_pmat864_map_targets_declared_precision_not_n_lambda
+- id: FT-BLR-MAP-002
+  rule: Stronger prior precision shrinks coefficients monotonically
+  prediction: |
+    |β_MAP(λ=10)| ≤ |β_MAP(λ=0.1)| on the same data — λ controls shrinkage
+    correctly once the gradient and Hessian agree on λ.
+  if_fails: 'The prior gradient λβ is mis-scaled relative to the data term, so increasing λ no longer monotonically shrinks the MAP.'
+  evidence: cargo test -p aprender-core --lib test_prior_precision_effects
+- id: FT-BLR-MAP-003
+  rule: Replicating samples (more evidence at fixed λ) does NOT shrink the MAP
+  prediction: |
+    Doubling the dataset by replicating every sample (same per-sample
+    distribution) at fixed λ doubles the likelihood term Xᵀ(y − p), so |β_MAP|
+    grows. Under the bug (data term averaged by n) it instead shrank toward 0 —
+    the precision-n·λ signature.
+  if_fails: 'The data term still carries a 1/n (or any n-dependent) factor, so adding identical evidence weakens rather than strengthens the posterior.'
+  evidence: cargo test -p aprender-core --lib test_pmat864_replicating_samples_does_not_shrink_map
+
+kani_harnesses:
+- id: KANI-BLR-MAP-001
+  obligation: Gradient and Hessian share one normalization
+  property: |
+    For the log-posterior ℓ(β) = Σ_i ℓ_i(β) − (λ/2)‖β‖², the implemented
+    gradient equals Xᵀ(y − p) − λβ and the implemented Hessian equals
+    XᵀWX + λI: data terms un-averaged, prior terms scaled by the same λ.
+  bound: 2
+  strategy: compositional
+  solver: cadical
+  harness: verify_blr_gradient_hessian_same_posterior
+
+qa_gate:
+  id: F-BLR-MAP-001
+  name: bayesian-logistic-map-v1 Contract
+  description: Bayesian logistic regression fit must converge to the MAP at the declared prior precision λ (gradient Xᵀ(y − p) − λβ consistent with Hessian XᵀWX + λI at the same mode), never the over-shrunk precision-n·λ mode.
+  checks:
+  - validation
+  - falsification
