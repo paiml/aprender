@@ -1,0 +1,141 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-19"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "scikit-learn sklearn.model_selection._split._validate_shuffle_split — a float test_size sizes the test set as n_test = ceil(test_size * n_samples)"
+    - "scikit-learn sklearn.model_selection.train_test_split — public entry point delegating to _validate_shuffle_split"
+    - "paiml/aprender crates/aprender-core/src/model_selection/alpha.rs::validate_split_inputs — fixed site"
+    - "PMAT-852 — train_test_split rounded test set to nearest (.round()) instead of ceil, undercounting by one when the fractional part of test_size·n is in (0, 0.5)"
+  description: "train_test_split must size the test set as ceil(test_size * n_samples), matching scikit-learn _validate_shuffle_split (float test_size), not round-to-nearest"
+
+kind: KernelContract
+name: train-test-split-ceil
+version: "1.0.0"
+scope: "crates/aprender-core/src/model_selection/alpha.rs::validate_split_inputs (float test_size path)"
+
+description: |
+  PMAT-852. `validate_split_inputs` computed the test-set size as
+  `(n_samples as f32 * test_size).round() as usize`. Round-to-nearest
+  undercounts the test set by one whenever the fractional part of
+  `test_size * n_samples` lies in (0, 0.5): e.g. n=7, test_size=0.3 →
+  2.1 → round → 2, but scikit-learn returns 3.
+
+  scikit-learn's `_validate_shuffle_split` sizes a FLOAT `test_size` as
+  `n_test = ceil(test_size * n_samples)` (and `n_train = n_samples - n_test`).
+  This is a deliberate "never silently drop a test sample" rule, not a
+  rounding convention. The aprender split is the only float-`test_size` path
+  in `train_test_split`; there is no integer/count path to preserve.
+
+  ## Fix
+
+  Replace `.round()` with an f64-widened ceil guarded by a relative epsilon:
+
+      let prod = n_samples as f64 * f64::from(test_size);
+      let tol = prod.abs() * 1e-5 + 1e-9;
+      let n_test = (prod - tol).ceil() as usize;
+      let n_train = n_samples - n_test;
+
+  Widening f32 → f64 and subtracting `tol` before `ceil` absorbs the f32
+  storage error (0.3 stored as 0.30000001 would otherwise inflate an exact
+  product 30.0000001 → ceil → 31). The result matches scikit-learn on the
+  fractional cases (n=7/0.3 → 3, n=11/0.1 → 2) AND preserves every exact case
+  (n=10/0.2 → 2, n=100/0.3 → 30, n=100/0.5 → 50). The empty-train/empty-test
+  guard downstream is unchanged.
+
+equations:
+  C-NTEST-CEIL:
+    description: "Float test_size sizes the test set by ceiling (scikit-learn _validate_shuffle_split)"
+    formula: |
+      n_test  = ceil(test_size · n_samples)
+      n_train = n_samples − n_test
+      # NOT  n_test = round(test_size · n_samples)
+  C-EPSILON-GUARD:
+    description: "Relative epsilon absorbs f32→f64 widening error so exact products are not inflated"
+    formula: |
+      prod = n_samples · f64(test_size)
+      tol  = |prod| · 1e-5 + 1e-9
+      n_test = ceil(prod − tol)
+      # ⇒ exact prod = k.0 yields k (not k+1); fractional prod = k.f (f>0) yields k+1
+  C-SKLEARN-PARITY:
+    description: "Equality with scikit-learn _validate_shuffle_split on representative inputs"
+    formula: |
+      (n=7,  test_size=0.3) ⇒ n_test=3, n_train=4
+      (n=11, test_size=0.1) ⇒ n_test=2, n_train=9
+      (n=10, test_size=0.2) ⇒ n_test=2, n_train=8     (exact, unchanged)
+      (n=100,test_size=0.3) ⇒ n_test=30,n_train=70    (exact, unchanged)
+      (n=100,test_size=0.5) ⇒ n_test=50,n_train=50    (exact, unchanged)
+
+proof_obligations:
+  - id: PO-CEIL-NOT-ROUND
+    type: equivalence
+    property: "n_test equals ceil(test_size·n_samples) — scikit-learn parity, never round-to-nearest"
+    formal: "∀ n, test_size : n_test == ⌈test_size·n⌉"
+    applies_to: all
+  - id: PO-PARTITION-COMPLETE
+    type: invariant
+    property: "Train and test sizes partition the dataset with no lost samples"
+    formal: "n_train + n_test == n_samples"
+    applies_to: all
+  - id: PO-EXACT-PRESERVED
+    type: invariant
+    property: "Integral products are unchanged by the epsilon-guarded ceil"
+    formal: "test_size·n ∈ ℤ ⟹ n_test == test_size·n"
+    applies_to: all
+  - id: PO-NONEMPTY
+    type: bound
+    property: "Both splits remain non-empty for valid 0<test_size<1 and n≥2"
+    formal: "0 < test_size < 1 ∧ n ≥ 2 ⟹ n_test ≥ 1 ∧ n_train ≥ 1"
+    applies_to: all
+
+falsification:
+  - id: FALSIFY-TRAIN_TEST_SPLIT_CEIL_V1_001
+    description: "n=7, test_size=0.3 yields a 4/3 split (was 5/2 under .round())"
+    test: |
+      Unit test: x = 7×1 matrix, y len 7, train_test_split(x, y, 0.3, Some(42)).
+      x_test.shape().0 == 3 and x_train.shape().0 == 4 (y_test.len()==3,
+      y_train.len()==4). RED (.round()): 2.1 → round → n_test=2, n_train=5.
+      GREEN (ceil): 2.1 → ceil → n_test=3, n_train=4. Verified against
+      scikit-learn _validate_shuffle_split(test_size=0.3, n_samples=7) → 3.
+    evidence: "cargo test -p aprender-core --lib model_selection::tests::test_train_test_split_ceil_sklearn_parity"
+  - id: FALSIFY-TRAIN_TEST_SPLIT_CEIL_V1_002
+    description: "n=11, test_size=0.1 yields a 9/2 split (was 10/1 under .round())"
+    test: |
+      Unit test: x = 11×1 matrix, y len 11, train_test_split(x, y, 0.1, Some(42)).
+      x_test.shape().0 == 2 and x_train.shape().0 == 9. RED (.round()):
+      1.1 → round → n_test=1. GREEN (ceil): 1.1 → ceil → n_test=2. Verified
+      against scikit-learn _validate_shuffle_split(test_size=0.1, n_samples=11) → 2.
+    evidence: "cargo test -p aprender-core --lib model_selection::tests::test_train_test_split_ceil_sklearn_parity"
+  - id: FALSIFY-TRAIN_TEST_SPLIT_CEIL_V1_003
+    description: "Exact products are unchanged by the fix (n=10/0.2→2, n=100/0.5→50, n=100/0.3→30)"
+    test: |
+      Unit test: (n=10,test=0.2)→x_test 2/x_train 8; (n=100,test=0.5)→50/50;
+      (n=100,test=0.3)→30/70. These integral products give the same result
+      under .round() and ceil; the test guards against the epsilon-guarded
+      ceil inflating an exact value to k+1. Verified against scikit-learn.
+    evidence: "cargo test -p aprender-core --lib model_selection::tests::test_train_test_split_ceil_preserves_exact_cases"
+
+scope_extension:
+  in_scope:
+    - "validate_split_inputs n_test computation (float test_size path)"
+    - "train_test_split resulting set sizes (x_train/x_test/y_train/y_test)"
+  out_of_scope:
+    - "shuffle_indices / random_state reproducibility (unchanged)"
+    - "the 0 < test_size < 1 range guard (unchanged)"
+    - "the empty-train/empty-test error guard (unchanged)"
+    - "KFold / StratifiedKFold splitters (separate fold-size logic, not float test_size)"
+
+status_history:
+  - version: "1.0.0"
+    date: "2026-06-19"
+    pr: "paiml/aprender fix/pmat-852-train-test-split-ceil"
+    summary: |
+      Initial contract registered alongside the PMAT-852 fix. RED proven:
+      n=7, test_size=0.3 → n_test=2 under (n·test_size).round(). GREEN after
+      switching to epsilon-guarded f64 ceil: n_test=3 (n_train=4), and n=11/0.1
+      → n_test=2 (n_train=9), matching scikit-learn _validate_shuffle_split.
+      Exact cases (n=10/0.2→2, n=100/0.3→30, n=100/0.5→50) preserved. Two
+      falsification unit tests added in model_selection/tests.rs
+      (test_train_test_split_ceil_sklearn_parity,
+      test_train_test_split_ceil_preserves_exact_cases).

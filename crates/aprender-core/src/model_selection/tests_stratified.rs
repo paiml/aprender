@@ -363,12 +363,16 @@ fn test_train_test_split_mismatched_dimensions() {
 
 #[test]
 fn test_train_test_split_empty_result_set() {
-    // Covers n_test == 0 || n_train == 0 error (lines 636-639)
-    // With 2 samples and test_size=0.01, n_test rounds to 0
-    let x = Matrix::from_vec(2, 1, vec![1.0, 2.0]).expect("valid matrix");
-    let y = Vector::from_vec(vec![0.0, 1.0]);
+    // Covers the n_test == 0 || n_train == 0 error guard.
+    // PMAT-852: under scikit-learn ceil() semantics n_test = ceil(test_size·n)
+    // is >= 1 for any 0 < test_size < 1, so n_test can no longer be 0 (the old
+    // n=2,test_size=0.01 case now yields ceil(0.02)=1 — a VALID 1/1 split).
+    // The error branch is reached instead when n_test == n_samples leaves
+    // n_train == 0: with 1 sample, ceil(0.5·1)=1=n_test, so n_train=0.
+    let x = Matrix::from_vec(1, 1, vec![1.0]).expect("valid matrix");
+    let y = Vector::from_vec(vec![0.0]);
 
-    let result = train_test_split(&x, &y, 0.01, Some(42));
+    let result = train_test_split(&x, &y, 0.5, Some(42));
     assert!(result.is_err());
     assert!(result
         .expect_err("empty split should fail")

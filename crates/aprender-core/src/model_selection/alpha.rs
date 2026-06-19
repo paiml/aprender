@@ -189,7 +189,16 @@ fn validate_split_inputs(
         ));
     }
 
-    let n_test = (n_samples as f32 * test_size).round() as usize;
+    // PMAT-852: match scikit-learn `_validate_shuffle_split` — a float
+    // `test_size` sizes the test set as `ceil(test_size * n_samples)`, NOT a
+    // round-to-nearest. Widen to f64 and subtract a relative epsilon so f32
+    // widening error (e.g. 0.3 stored as 0.30000001) cannot inflate an exact
+    // product (30.0000001 -> 31). This preserves the exact cases
+    // (n=10/0.2->2, n=100/0.3->30, n=100/0.5->50) while fixing the fractional
+    // undercount (n=7/0.3 -> 3, n=11/0.1 -> 2).
+    let prod = n_samples as f64 * f64::from(test_size);
+    let tol = prod.abs() * 1e-5 + 1e-9;
+    let n_test = (prod - tol).ceil() as usize;
     let n_train = n_samples - n_test;
 
     if n_test == 0 || n_train == 0 {
