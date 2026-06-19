@@ -72,6 +72,7 @@ fn test_leaf_struct_fields() {
     let leaf = Leaf {
         class_label: 2,
         n_samples: 50,
+        impurity: 0.0,
     };
     assert_eq!(leaf.class_label, 2);
     assert_eq!(leaf.n_samples, 50);
@@ -82,6 +83,7 @@ fn test_regression_leaf_struct_fields() {
     let leaf = RegressionLeaf {
         value: 3.14,
         n_samples: 25,
+        impurity: 0.0,
     };
     assert!((leaf.value - 3.14).abs() < 1e-6);
     assert_eq!(leaf.n_samples, 25);
@@ -92,15 +94,19 @@ fn test_node_struct_fields() {
     let left = TreeNode::Leaf(Leaf {
         class_label: 0,
         n_samples: 5,
+        impurity: 0.0,
     });
     let right = TreeNode::Leaf(Leaf {
         class_label: 1,
         n_samples: 5,
+        impurity: 0.0,
     });
 
     let node = Node {
         feature_idx: 2,
         threshold: 1.5,
+        impurity: 0.0,
+        n_node_samples: 0,
         left: Box::new(left),
         right: Box::new(right),
     };
@@ -114,15 +120,19 @@ fn test_regression_node_struct_fields() {
     let left = RegressionTreeNode::Leaf(RegressionLeaf {
         value: 1.0,
         n_samples: 5,
+        impurity: 0.0,
     });
     let right = RegressionTreeNode::Leaf(RegressionLeaf {
         value: 2.0,
         n_samples: 5,
+        impurity: 0.0,
     });
 
     let node = RegressionNode {
         feature_idx: 1,
         threshold: 0.75,
+        impurity: 0.0,
+        n_node_samples: 0,
         left: Box::new(left),
         right: Box::new(right),
     };
@@ -136,19 +146,24 @@ fn test_tree_node_variants() {
     let leaf_node = TreeNode::Leaf(Leaf {
         class_label: 0,
         n_samples: 10,
+        impurity: 0.0,
     });
     assert_eq!(leaf_node.depth(), 0);
 
     let internal_node = TreeNode::Node(Node {
         feature_idx: 0,
         threshold: 0.5,
+        impurity: 0.0,
+        n_node_samples: 0,
         left: Box::new(TreeNode::Leaf(Leaf {
             class_label: 0,
             n_samples: 5,
+            impurity: 0.0,
         })),
         right: Box::new(TreeNode::Leaf(Leaf {
             class_label: 1,
             n_samples: 5,
+            impurity: 0.0,
         })),
     });
     assert_eq!(internal_node.depth(), 1);
@@ -159,19 +174,24 @@ fn test_regression_tree_node_variants() {
     let leaf = RegressionTreeNode::Leaf(RegressionLeaf {
         value: 5.0,
         n_samples: 10,
+        impurity: 0.0,
     });
     assert_eq!(leaf.depth(), 0);
 
     let internal = RegressionTreeNode::Node(RegressionNode {
         feature_idx: 0,
         threshold: 0.5,
+        impurity: 0.0,
+        n_node_samples: 0,
         left: Box::new(RegressionTreeNode::Leaf(RegressionLeaf {
             value: 3.0,
             n_samples: 5,
+            impurity: 0.0,
         })),
         right: Box::new(RegressionTreeNode::Leaf(RegressionLeaf {
             value: 7.0,
             n_samples: 5,
+            impurity: 0.0,
         })),
     });
     assert_eq!(internal.depth(), 1);
@@ -410,19 +430,24 @@ fn test_count_tree_samples() {
     let leaf = TreeNode::Leaf(Leaf {
         class_label: 0,
         n_samples: 42,
+        impurity: 0.0,
     });
     assert_eq!(count_tree_samples(&leaf), 42);
 
     let node = TreeNode::Node(Node {
         feature_idx: 0,
         threshold: 0.5,
+        impurity: 0.0,
+        n_node_samples: 0,
         left: Box::new(TreeNode::Leaf(Leaf {
             class_label: 0,
             n_samples: 10,
+            impurity: 0.0,
         })),
         right: Box::new(TreeNode::Leaf(Leaf {
             class_label: 1,
             n_samples: 20,
+            impurity: 0.0,
         })),
     });
     assert_eq!(count_tree_samples(&node), 30);

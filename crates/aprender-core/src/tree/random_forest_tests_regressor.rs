@@ -377,3 +377,51 @@
             );
         }
     }
+
+    // PMAT-851 end-to-end: feature importances from a FITTED forest must use MDI
+    // (variance decrease), not raw split sample-count. Feature 1 carves out a
+    // high-variance subset (0 vs 100) while feature 0 only separates a small,
+    // low-variance group. MDI must therefore rank feature 1 above feature 0.
+    #[test]
+    fn test_fitted_regressor_feature_importances_mdi_ranking() {
+        // 20 rows, 2 features. Feature 0 splits off ten low-value (1.0) rows;
+        // feature 1 separates the remaining ten into 0.0 vs 100.0.
+        let mut data = Vec::with_capacity(20 * 2);
+        let mut targets = Vec::with_capacity(20);
+        // ten rows: feature0=0, feature1=0  -> target 1.0 (low variance group)
+        for _ in 0..10 {
+            data.push(0.0);
+            data.push(0.0);
+            targets.push(1.0);
+        }
+        // five rows: feature0=1, feature1=0 -> target 0.0
+        for _ in 0..5 {
+            data.push(1.0);
+            data.push(0.0);
+            targets.push(0.0);
+        }
+        // five rows: feature0=1, feature1=1 -> target 100.0
+        for _ in 0..5 {
+            data.push(1.0);
+            data.push(1.0);
+            targets.push(100.0);
+        }
+        let x = Matrix::from_vec(20, 2, data).expect("matrix creation");
+        let y = Vector::from_vec(targets);
+
+        let mut rf = RandomForestRegressor::new(1).with_random_state(7);
+        rf.fit(&x, &y).expect("fit should succeed");
+
+        let importances = rf
+            .feature_importances()
+            .expect("fitted forest yields importances");
+        assert_eq!(importances.len(), 2);
+        // MDI ranks the high-variance-decrease feature 1 above feature 0.
+        assert!(
+            importances[1] > importances[0],
+            "MDI must rank feature 1 > feature 0; got {importances:?}"
+        );
+        // Normalized to sum 1.
+        let sum: f32 = importances.iter().sum();
+        assert!((sum - 1.0).abs() < 1e-5, "importances must sum to 1: {sum}");
+    }

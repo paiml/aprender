@@ -333,19 +333,24 @@ fn test_regression_tree_node_depth() {
     let leaf = RegressionTreeNode::Leaf(RegressionLeaf {
         value: 5.0,
         n_samples: 10,
+        impurity: 0.0,
     });
     assert_eq!(leaf.depth(), 0);
 
     let node = RegressionTreeNode::Node(RegressionNode {
         feature_idx: 0,
         threshold: 0.5,
+        impurity: 0.0,
+        n_node_samples: 0,
         left: Box::new(RegressionTreeNode::Leaf(RegressionLeaf {
             value: 3.0,
             n_samples: 5,
+            impurity: 0.0,
         })),
         right: Box::new(RegressionTreeNode::Leaf(RegressionLeaf {
             value: 7.0,
             n_samples: 5,
+            impurity: 0.0,
         })),
     });
     assert_eq!(node.depth(), 1);

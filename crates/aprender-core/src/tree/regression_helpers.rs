@@ -170,10 +170,14 @@ pub(super) fn split_regression_data_by_indices(
 }
 
 /// Create a regression leaf node from y values.
+///
+/// Stores the leaf's variance (impurity) so parent splits can use it in the MDI
+/// feature-importance formula (see `tree-feature-importances-mdi-v1`).
 pub(super) fn make_regression_leaf(y_slice: &[f32], n_samples: usize) -> RegressionTreeNode {
     RegressionTreeNode::Leaf(RegressionLeaf {
         value: mean_f32(y_slice),
         n_samples,
+        impurity: variance_f32(y_slice),
     })
 }
 
@@ -213,11 +217,12 @@ pub(super) fn build_regression_tree(
     let n_samples = y.len();
     let y_slice: Vec<f32> = y.as_slice().to_vec();
 
+    // Impurity (variance) of the samples reaching this node, computed BEFORE the
+    // split. Drives MDI feature-importance (tree-feature-importances-mdi-v1).
+    let node_impurity = variance_f32(&y_slice);
+
     // Early stopping checks
-    if n_samples < min_samples_split
-        || at_max_depth(depth, max_depth)
-        || variance_f32(&y_slice) < 1e-10
-    {
+    if n_samples < min_samples_split || at_max_depth(depth, max_depth) || node_impurity < 1e-10 {
         return make_regression_leaf(&y_slice, n_samples);
     }
 
@@ -260,6 +265,8 @@ pub(super) fn build_regression_tree(
     RegressionTreeNode::Node(RegressionNode {
         feature_idx,
         threshold,
+        impurity: node_impurity,
+        n_node_samples: n_samples,
         left: Box::new(left_child),
         right: Box::new(right_child),
     })
@@ -269,16 +276,36 @@ pub(super) fn build_regression_tree(
 // Feature Importance Helpers
 // ============================================================================
 
+/// Returns `(n_node_samples, impurity)` for any classification tree node.
+///
+/// Leaves carry their own sample count and gini impurity; internal nodes carry
+/// the values recorded at fit time for the samples reaching them.
+fn tree_node_n_and_impurity(node: &TreeNode) -> (f32, f32) {
+    match node {
+        TreeNode::Leaf(leaf) => (leaf.n_samples as f32, leaf.impurity),
+        TreeNode::Node(n) => (n.n_node_samples as f32, n.impurity),
+    }
+}
+
 /// Compute feature importances from a classification tree by traversing it.
+///
+/// Uses the sklearn Mean Decrease in Impurity (MDI) formula
+/// (`tree/_tree.pyx::compute_feature_importances`): for each split node,
+/// `importance[feature] += n_node·impurity − n_left·left_impurity − n_right·right_impurity`.
+/// Consumers normalize the accumulated importances to sum 1.
 pub(super) fn compute_tree_feature_importances(node: &TreeNode, importances: &mut [f32]) {
     match node {
         TreeNode::Leaf(_) => {
-            // Leaf nodes don't contribute to feature importance
+            // Leaf nodes don't make a split → no impurity decrease to attribute.
         }
         TreeNode::Node(n) => {
-            // Add importance for this feature based on number of samples
-            let n_samples = count_tree_samples(node) as f32;
-            importances[n.feature_idx] += n_samples;
+            let n_node = n.n_node_samples as f32;
+            let (n_left, left_impurity) = tree_node_n_and_impurity(&n.left);
+            let (n_right, right_impurity) = tree_node_n_and_impurity(&n.right);
+
+            // MDI weighted impurity decrease for the split made at this node.
+            importances[n.feature_idx] +=
+                n_node * n.impurity - n_left * left_impurity - n_right * right_impurity;
 
             // Recursively process children
             compute_tree_feature_importances(&n.left, importances);
@@ -287,7 +314,11 @@ pub(super) fn compute_tree_feature_importances(node: &TreeNode, importances: &mu
     }
 }
 
-/// Count total samples in a tree/subtree
+/// Count total samples in a tree/subtree.
+///
+/// Retained for test coverage of tree-sample accounting; MDI feature-importance
+/// (the production consumer) now reads per-node `n_node_samples` directly.
+#[cfg(test)]
 pub(super) fn count_tree_samples(node: &TreeNode) -> usize {
     match node {
         TreeNode::Leaf(leaf) => leaf.n_samples,
@@ -298,19 +329,39 @@ pub(super) fn count_tree_samples(node: &TreeNode) -> usize {
     }
 }
 
+/// Returns `(n_node_samples, impurity)` for any regression tree node.
+///
+/// Leaves carry their own sample count and variance; internal nodes carry the
+/// values recorded at fit time for the samples reaching them.
+fn regression_node_n_and_impurity(node: &RegressionTreeNode) -> (f32, f32) {
+    match node {
+        RegressionTreeNode::Leaf(leaf) => (leaf.n_samples as f32, leaf.impurity),
+        RegressionTreeNode::Node(n) => (n.n_node_samples as f32, n.impurity),
+    }
+}
+
 /// Compute feature importances from a regression tree by traversing it.
+///
+/// Uses the sklearn Mean Decrease in Impurity (MDI) formula
+/// (`tree/_tree.pyx::compute_feature_importances`): for each split node,
+/// `importance[feature] += n_node·variance − n_left·left_variance − n_right·right_variance`.
+/// Consumers normalize the accumulated importances to sum 1.
 pub(super) fn compute_regression_tree_feature_importances(
     node: &RegressionTreeNode,
     importances: &mut [f32],
 ) {
     match node {
         RegressionTreeNode::Leaf(_) => {
-            // Leaf nodes don't contribute to feature importance
+            // Leaf nodes don't make a split → no variance decrease to attribute.
         }
         RegressionTreeNode::Node(n) => {
-            // Add importance for this feature based on number of samples
-            let n_samples = count_regression_tree_samples(node) as f32;
-            importances[n.feature_idx] += n_samples;
+            let n_node = n.n_node_samples as f32;
+            let (n_left, left_impurity) = regression_node_n_and_impurity(&n.left);
+            let (n_right, right_impurity) = regression_node_n_and_impurity(&n.right);
+
+            // MDI weighted variance decrease for the split made at this node.
+            importances[n.feature_idx] +=
+                n_node * n.impurity - n_left * left_impurity - n_right * right_impurity;
 
             // Recursively process children
             compute_regression_tree_feature_importances(&n.left, importances);
@@ -319,7 +370,11 @@ pub(super) fn compute_regression_tree_feature_importances(
     }
 }
 
-/// Count total samples in a regression tree/subtree
+/// Count total samples in a regression tree/subtree.
+///
+/// Retained for test coverage of tree-sample accounting; MDI feature-importance
+/// (the production consumer) now reads per-node `n_node_samples` directly.
+#[cfg(test)]
 pub(super) fn count_regression_tree_samples(node: &RegressionTreeNode) -> usize {
     match node {
         RegressionTreeNode::Leaf(leaf) => leaf.n_samples,

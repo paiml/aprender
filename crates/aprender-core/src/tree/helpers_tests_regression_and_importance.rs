@@ -36,6 +36,7 @@
         let leaf = TreeNode::Leaf(Leaf {
             class_label: 0,
             n_samples: 42,
+            impurity: 0.0,
         });
         assert_eq!(count_tree_samples(&leaf), 42);
     }
@@ -45,13 +46,17 @@
         let tree = TreeNode::Node(Node {
             feature_idx: 0,
             threshold: 1.0,
+            impurity: 0.0,
+            n_node_samples: 0,
             left: Box::new(TreeNode::Leaf(Leaf {
                 class_label: 0,
                 n_samples: 10,
+                impurity: 0.0,
             })),
             right: Box::new(TreeNode::Leaf(Leaf {
                 class_label: 1,
                 n_samples: 20,
+                impurity: 0.0,
             })),
         });
         assert_eq!(count_tree_samples(&tree), 30);
@@ -62,6 +67,7 @@
         let leaf = TreeNode::Leaf(Leaf {
             class_label: 0,
             n_samples: 10,
+            impurity: 0.0,
         });
         let mut importances = vec![0.0; 3];
         compute_tree_feature_importances(&leaf, &mut importances);
@@ -70,23 +76,28 @@
 
     #[test]
     fn test_compute_tree_feature_importances_single_split() {
+        // MDI: feature 1 split over 8 samples, root gini 0.5, pure children.
+        // importance = 8*0.5 - 5*0.0 - 3*0.0 = 4.0
         let tree = TreeNode::Node(Node {
             feature_idx: 1,
             threshold: 2.0,
+            impurity: 0.5,
+            n_node_samples: 8,
             left: Box::new(TreeNode::Leaf(Leaf {
                 class_label: 0,
                 n_samples: 5,
+                impurity: 0.0,
             })),
             right: Box::new(TreeNode::Leaf(Leaf {
                 class_label: 1,
                 n_samples: 3,
+                impurity: 0.0,
             })),
         });
         let mut importances = vec![0.0; 3];
         compute_tree_feature_importances(&tree, &mut importances);
-        // Feature 1 used at root with 8 total samples
         assert!((importances[0] - 0.0).abs() < 1e-7);
-        assert!((importances[1] - 8.0).abs() < 1e-7);
+        assert!((importances[1] - 4.0).abs() < 1e-7);
         assert!((importances[2] - 0.0).abs() < 1e-7);
     }
 
@@ -99,6 +110,7 @@
         let leaf = RegressionTreeNode::Leaf(RegressionLeaf {
             value: 3.5,
             n_samples: 15,
+            impurity: 0.0,
         });
         assert_eq!(count_regression_tree_samples(&leaf), 15);
     }
@@ -108,13 +120,17 @@
         let tree = RegressionTreeNode::Node(RegressionNode {
             feature_idx: 0,
             threshold: 1.0,
+            impurity: 0.0,
+            n_node_samples: 0,
             left: Box::new(RegressionTreeNode::Leaf(RegressionLeaf {
                 value: 1.0,
                 n_samples: 7,
+                impurity: 0.0,
             })),
             right: Box::new(RegressionTreeNode::Leaf(RegressionLeaf {
                 value: 5.0,
                 n_samples: 13,
+                impurity: 0.0,
             })),
         });
         assert_eq!(count_regression_tree_samples(&tree), 20);
@@ -122,21 +138,27 @@
 
     #[test]
     fn test_compute_regression_tree_feature_importances() {
+        // MDI: feature 2 split over 10 samples, root variance 2.0, pure leaves.
+        // importance = 10*2.0 - 4*0.0 - 6*0.0 = 20.0
         let tree = RegressionTreeNode::Node(RegressionNode {
             feature_idx: 2,
             threshold: 3.0,
+            impurity: 2.0,
+            n_node_samples: 10,
             left: Box::new(RegressionTreeNode::Leaf(RegressionLeaf {
                 value: 1.0,
                 n_samples: 4,
+                impurity: 0.0,
             })),
             right: Box::new(RegressionTreeNode::Leaf(RegressionLeaf {
                 value: 9.0,
                 n_samples: 6,
+                impurity: 0.0,
             })),
         });
         let mut importances = vec![0.0; 4];
         compute_regression_tree_feature_importances(&tree, &mut importances);
-        assert!((importances[2] - 10.0).abs() < 1e-7);
+        assert!((importances[2] - 20.0).abs() < 1e-7);
         assert!((importances[0] - 0.0).abs() < 1e-7);
         assert!((importances[1] - 0.0).abs() < 1e-7);
         assert!((importances[3] - 0.0).abs() < 1e-7);
@@ -218,21 +240,28 @@
         let tree = TreeNode::Node(Node {
             feature_idx: 0,
             threshold: 5.0,
+            impurity: 0.0,
+            n_node_samples: 0,
             left: Box::new(TreeNode::Node(Node {
                 feature_idx: 1,
                 threshold: 2.0,
+                impurity: 0.0,
+                n_node_samples: 0,
                 left: Box::new(TreeNode::Leaf(Leaf {
                     class_label: 0,
                     n_samples: 2,
+                    impurity: 0.0,
                 })),
                 right: Box::new(TreeNode::Leaf(Leaf {
                     class_label: 1,
                     n_samples: 3,
+                    impurity: 0.0,
                 })),
             })),
             right: Box::new(TreeNode::Leaf(Leaf {
                 class_label: 2,
                 n_samples: 5,
+                impurity: 0.0,
             })),
         });
 
@@ -301,32 +330,162 @@
 
     #[test]
     fn test_compute_tree_feature_importances_nested() {
-        // Root splits on feature 0, left child splits on feature 1
+        // Root splits on feature 0 (n=10, gini 0.6), left child splits on
+        // feature 1 (n=5, gini 0.48). Children pure. MDI per split:
+        //   feature 0 = 10*0.6 - 5*0.48 - 5*0.0 = 3.6
+        //   feature 1 =  5*0.48 - 2*0.0  - 3*0.0 = 2.4
         let tree = TreeNode::Node(Node {
             feature_idx: 0,
             threshold: 5.0,
+            impurity: 0.6,
+            n_node_samples: 10,
             left: Box::new(TreeNode::Node(Node {
                 feature_idx: 1,
                 threshold: 2.0,
+                impurity: 0.48,
+                n_node_samples: 5,
                 left: Box::new(TreeNode::Leaf(Leaf {
                     class_label: 0,
                     n_samples: 2,
+                    impurity: 0.0,
                 })),
                 right: Box::new(TreeNode::Leaf(Leaf {
                     class_label: 1,
                     n_samples: 3,
+                    impurity: 0.0,
                 })),
             })),
             right: Box::new(TreeNode::Leaf(Leaf {
                 class_label: 2,
                 n_samples: 5,
+                impurity: 0.0,
             })),
         });
         let mut importances = vec![0.0; 3];
         compute_tree_feature_importances(&tree, &mut importances);
-        // feature 0 at root: total samples = 2+3+5 = 10
-        assert!((importances[0] - 10.0).abs() < 1e-7);
-        // feature 1 at left subtree: total samples = 2+3 = 5
-        assert!((importances[1] - 5.0).abs() < 1e-7);
+        assert!((importances[0] - 3.6).abs() < 1e-6);
+        assert!((importances[1] - 2.4).abs() < 1e-6);
         assert!((importances[2] - 0.0).abs() < 1e-7);
+    }
+
+    // ========================================================================
+    // PMAT-851 FALSIFIER: MDI feature-importance must reflect impurity decrease,
+    // not raw split sample-count.
+    //
+    // Repro tree (regression):
+    //   root: split feature 0 over 20 samples
+    //     left  -> leaf value=1.0 n=10 (var 0)
+    //     right -> internal split feature 1 over 10 samples (var ~2500 -> 0)
+    //                left  -> leaf value=0.0 n=5
+    //                right -> leaf value=100.0 n=5
+    //
+    // Feature 1 fully separates a high-variance subset (variance 2500 -> 0), so
+    // its impurity decrease (25000) dwarfs feature 0's (root variance is small).
+    // The OLD count-only code attributed [20.0, 10.0] -> feature 0 ranked higher.
+    // Correct MDI ranks feature 1 ABOVE feature 0.
+    // ========================================================================
+    #[test]
+    fn test_regression_mdi_outranks_by_variance_decrease_not_count() {
+        // ten 1.0, five 0.0, five 100.0
+        let y_root: Vec<f32> = std::iter::repeat_n(1.0_f32, 10)
+            .chain(std::iter::repeat_n(0.0_f32, 5))
+            .chain(std::iter::repeat_n(100.0_f32, 5))
+            .collect();
+        let root_var = variance_f32(&y_root);
+        let right_var = variance_f32(&[0.0, 0.0, 0.0, 0.0, 0.0, 100.0, 100.0, 100.0, 100.0, 100.0]);
+
+        let tree = RegressionTreeNode::Node(RegressionNode {
+            feature_idx: 0,
+            threshold: 0.5,
+            impurity: root_var,
+            n_node_samples: 20,
+            left: Box::new(RegressionTreeNode::Leaf(RegressionLeaf {
+                value: 1.0,
+                n_samples: 10,
+                impurity: 0.0,
+            })),
+            right: Box::new(RegressionTreeNode::Node(RegressionNode {
+                feature_idx: 1,
+                threshold: 50.0,
+                impurity: right_var,
+                n_node_samples: 10,
+                left: Box::new(RegressionTreeNode::Leaf(RegressionLeaf {
+                    value: 0.0,
+                    n_samples: 5,
+                    impurity: 0.0,
+                })),
+                right: Box::new(RegressionTreeNode::Leaf(RegressionLeaf {
+                    value: 100.0,
+                    n_samples: 5,
+                    impurity: 0.0,
+                })),
+            })),
+        });
+
+        let mut importances = vec![0.0_f32; 2];
+        compute_regression_tree_feature_importances(&tree, &mut importances);
+
+        // FALSIFIER: feature 1's variance drop must outrank feature 0.
+        // (Old count-only code yields [20.0, 10.0] -> feature 0 wins, FAILS this.)
+        assert!(
+            importances[1] > importances[0],
+            "MDI must rank feature 1 > feature 0; got {importances:?}"
+        );
+
+        // Weighted-decrease formula check:
+        //   feature 0 = 20*root_var - 10*0 - 10*right_var
+        //   feature 1 = 10*right_var - 5*0 - 5*0
+        let expected_f0 = 20.0 * root_var - 10.0 * right_var;
+        let expected_f1 = 10.0 * right_var;
+        assert!(
+            (importances[0] - expected_f0).abs() < 1e-1,
+            "feature 0 MDI mismatch: got {}, want {expected_f0}",
+            importances[0]
+        );
+        assert!(
+            (importances[1] - expected_f1).abs() < 1e-1,
+            "feature 1 MDI mismatch: got {}, want {expected_f1}",
+            importances[1]
+        );
+    }
+
+    // PMAT-851 classification analog: gini impurity decrease, not raw count.
+    #[test]
+    fn test_classification_mdi_uses_gini_decrease_not_count() {
+        // Root split (feature 0) over 12 samples: gini 0.5. Left child (feature 1)
+        // splits a 6-sample mixed subset (gini 0.5 -> pure). Right leaf pure.
+        //   feature 0 = 12*0.5 - 6*0.0 - 6*0.5 = 6 - 3 = 3.0
+        //   feature 1 =  6*0.5 - 3*0.0 - 3*0.0 = 3.0
+        // Count-only code would give feature 0 = 12 (the whole subtree) > feature 1 = 6.
+        let tree = TreeNode::Node(Node {
+            feature_idx: 0,
+            threshold: 0.5,
+            impurity: 0.5,
+            n_node_samples: 12,
+            left: Box::new(TreeNode::Leaf(Leaf {
+                class_label: 0,
+                n_samples: 6,
+                impurity: 0.0,
+            })),
+            right: Box::new(TreeNode::Node(Node {
+                feature_idx: 1,
+                threshold: 0.5,
+                impurity: 0.5,
+                n_node_samples: 6,
+                left: Box::new(TreeNode::Leaf(Leaf {
+                    class_label: 1,
+                    n_samples: 3,
+                    impurity: 0.0,
+                })),
+                right: Box::new(TreeNode::Leaf(Leaf {
+                    class_label: 2,
+                    n_samples: 3,
+                    impurity: 0.0,
+                })),
+            })),
+        });
+        let mut importances = vec![0.0_f32; 2];
+        compute_tree_feature_importances(&tree, &mut importances);
+        assert!((importances[0] - 3.0).abs() < 1e-6, "got {importances:?}");
+        assert!((importances[1] - 3.0).abs() < 1e-6, "got {importances:?}");
     }
