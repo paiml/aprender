@@ -153,7 +153,10 @@ pub fn sample_mirostat(
     // Calculate surprise values and find cutoff
     let mut candidates = Vec::new();
     for (idx, prob) in indexed {
-        let surprise = -prob.ln();
+        // Mirostat 2.0 (Basu et al. 2021) measures surprise in BITS (log2),
+        // matching llama.cpp `llama_sampler_mirostat_v2_apply` (-log2f(p)).
+        // Using natural log shifts the truncation cutoff by 1/ln(2) ~= 1.443.
+        let surprise = -prob.log2();
         if surprise > state.mu {
             break;
         }
@@ -174,8 +177,9 @@ pub fn sample_mirostat(
     let selected_idx = indices.iter().position(|&i| i == selected).unwrap_or(0);
     let selected_prob = candidates[selected_idx].1;
 
-    // Update mu based on observed surprise
-    let observed_surprise = -selected_prob.ln();
+    // Update mu based on observed surprise, measured in BITS (log2) per
+    // Mirostat 2.0 / llama.cpp. mu (= 2*tau) is a bits-domain target.
+    let observed_surprise = -selected_prob.log2();
     state.update(observed_surprise);
 
     Ok(selected)
