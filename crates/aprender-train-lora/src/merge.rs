@@ -32,8 +32,11 @@ impl MergeEngine {
     /// For each LoRA target module:
     /// W_merged = W_base + (scale * alpha / rank) * (B @ A)
     ///
-    /// A is [d_in, rank], B is [rank, d_out] (or transposed depending on convention).
-    /// The merge computes the outer product B×A and adds it to W_base.
+    /// Uses the STANDARD PEFT adapter layout produced by `apr finetune`
+    /// (`crates/apr-cli/src/commands/finetune.rs:842,845`):
+    /// `lora_a` is [rank, d_in] and `lora_b` is [d_out, rank], both row-major.
+    /// The merge computes ΔW = B @ A (shape [d_out, d_in]) and adds scale·ΔW to W_base.
+    /// This matches the in-repo correct twin `QLoRALayer::merge_to_f32`.
     pub fn merge(
         &self,
         base_weights: &[f32],
@@ -45,25 +48,24 @@ impl MergeEngine {
         let scale_factor = self.scale * alpha / rank as f32;
         let r = rank as usize;
 
-        // Infer matrix dimensions from flat arrays and rank
-        // A: [d_in, r] stored row-major → lora_a.len() = d_in * r
-        // B: [r, d_out] stored row-major → lora_b.len() = r * d_out
+        // Infer matrix dimensions from flat arrays and rank (PEFT layout).
+        // A: [r, d_in] stored row-major → lora_a.len() = r * d_in
+        // B: [d_out, r] stored row-major → lora_b.len() = d_out * r
         let d_in = lora_a.len() / r;
         let d_out = lora_b.len() / r;
 
-        // W_base is [d_out, d_in] stored row-major (standard weight layout)
-        // W_merged = W_base + scale * B^T @ A^T
-        // where B^T is [d_out, r] and A^T is [r, d_in]
+        // W_base is [d_out, d_in] stored row-major (standard weight layout).
+        // W_merged = W_base + scale * (B @ A)
+        // where B is [d_out, r] and A is [r, d_in]
         // Result: [d_out, d_in] — same shape as W_base
         let mut result = base_weights.to_vec();
 
         if d_out * d_in != base_weights.len() {
-            // Dimensions don't match — try transposed interpretation
-            // A: [r, d_in], B: [d_out, r]
+            // Defensive re-derivation of dims (same PEFT layout: A:[r,d_in], B:[d_out,r]).
             let d_in_alt = lora_a.len() / r;
             let d_out_alt = lora_b.len() / r;
             if d_out_alt * d_in_alt == base_weights.len() {
-                // B[d_out, r] @ A[r, d_in] = [d_out, d_in]
+                // ΔW = B[d_out, r] @ A[r, d_in] = [d_out, d_in]
                 for row in 0..d_out_alt {
                     for col in 0..d_in_alt {
                         let mut sum = 0.0f32;
@@ -87,19 +89,16 @@ impl MergeEngine {
             return result;
         }
 
-        // Standard: A[d_in, r], B[r, d_out]
-        // Compute B @ A = [r, d_out]^T @ [d_in, r]^T ...
-        // Actually: W += scale * (lora_b^T @ lora_a^T) where result is [d_out, d_in]
-        // lora_b as [r, d_out]: lora_b^T is [d_out, r]
-        // lora_a as [d_in, r]: lora_a^T is [r, d_in]
-        // [d_out, r] @ [r, d_in] = [d_out, d_in] ✓
+        // PEFT layout: A is [r, d_in], B is [d_out, r].
+        // ΔW = B @ A = [d_out, r] @ [r, d_in] = [d_out, d_in] ✓
+        // W_merged = W_base + scale · ΔW (same indexing as QLoRALayer::merge_to_f32).
         for row in 0..d_out {
             for col in 0..d_in {
                 let mut sum = 0.0f32;
                 for k in 0..r {
-                    // B^T[row, k] = B[k, row] = lora_b[k * d_out + row]
-                    // A^T[k, col] = A[col, k] = lora_a[col * r + k]
-                    sum += lora_b[k * d_out + row] * lora_a[col * r + k];
+                    // B[row, k] = lora_b[row * r + k]
+                    // A[k, col] = lora_a[k * d_in + col]
+                    sum += lora_b[row * r + k] * lora_a[k * d_in + col];
                 }
                 result[row * d_in + col] += scale_factor * sum;
             }
@@ -460,6 +459,43 @@ mod tests {
         assert!((merged[0] - 7.0).abs() < 0.01);
     }
 
+    /// PMAT-854 falsifier: `MergeEngine::merge` must honor the STANDARD PEFT
+    /// adapter layout produced by `apr finetune` — A:[rank,d_in], B:[d_out,rank]
+    /// (see `crates/apr-cli/src/commands/finetune.rs:842,845`). The merge must fold
+    /// `W += scale·(B@A)` using THAT indexing, matching the in-repo correct twin
+    /// `QLoRALayer::merge_to_f32` (`crates/aprender-train/src/lora/qlora.rs:240-245`).
+    ///
+    /// Repro (d_in=3, d_out=2, rank=2, alpha=2 → scale=alpha/rank=1, W=zeros):
+    ///   A = [[1,0,0],[0,2,0]]  ([rank,d_in])
+    ///   B = identity           ([d_out,rank])
+    ///   B@A = [[1,0,0],[0,2,0]]
+    /// Correct merge → [1,0,0, 0,2,0]. The pre-fix (transposed) code yielded
+    /// [1,0,2, 0,0,0] (max abs error 2.0) because it read BOTH factors transposed.
+    #[test]
+    fn merge_uses_peft_layout() {
+        // PEFT layout: A is [rank, d_in], B is [d_out, rank].
+        let a: Vec<f32> = vec![1.0, 0.0, 0.0, 0.0, 2.0, 0.0]; // [2,3] = [rank, d_in]
+        let b: Vec<f32> = vec![1.0, 0.0, 0.0, 1.0]; // [2,2] = [d_out, rank] identity
+        let w_base: Vec<f32> = vec![0.0; 6]; // [d_out=2, d_in=3]
+
+        // alpha=2, rank=2 → scale_factor = 1.0 * 2.0 / 2 = 1.0
+        let merged = MergeEngine::new().merge(&w_base, &a, &b, 2.0, 2);
+
+        // B@A = [[1,0,0],[0,2,0]] → W + 1.0*(B@A).
+        let expected = vec![1.0, 0.0, 0.0, 0.0, 2.0, 0.0];
+        let max_abs_diff = merged
+            .iter()
+            .zip(expected.iter())
+            .map(|(m, e)| (m - e).abs())
+            .fold(0.0_f32, f32::max);
+        assert!(
+            max_abs_diff < 1e-6,
+            "PMAT-854: MergeEngine::merge does NOT honor PEFT layout (A:[rank,d_in], \
+             B:[d_out,rank]). Got {merged:?}, expected {expected:?} (= W + scale·(B@A)). \
+             The pre-fix transposed code yields [1,0,2, 0,0,0]."
+        );
+    }
+
     /// BEAT-LORA-MERGE — Pillar-3 (Unsloth) correctness beat (PMAT-747).
     ///
     /// The other half of "replace Unsloth's QLoRA pipeline" (NF4 quant ≡ bitsandbytes
@@ -474,13 +510,14 @@ mod tests {
     /// `merge` would diverge. Self-contained (CPU, deterministic).
     #[test]
     fn beat_lora_merge_forward_equivalence() {
-        // dims chosen so d_out != d_in (unambiguous "standard" merge path).
+        // dims chosen so d_out != d_in (unambiguous merge path).
         let (d_in, d_out, r) = (4usize, 3usize, 2usize);
         let n = 2usize; // batch
 
-        // A: [d_in, r] row-major; B: [r, d_out] row-major; W_base: [d_out, d_in].
-        let a: Vec<f32> = vec![0.10, -0.20, 0.05, 0.30, -0.10, 0.25, 0.40, -0.15]; // 4x2
-        let b: Vec<f32> = vec![0.20, -0.30, 0.10, 0.15, 0.05, -0.25]; // 2x3
+        // PEFT layout (matches `apr finetune`): A:[rank,d_in] row-major (2x4),
+        // B:[d_out,rank] row-major (3x2); W_base:[d_out,d_in] (3x4).
+        let a: Vec<f32> = vec![0.10, -0.20, 0.05, 0.30, -0.10, 0.25, 0.40, -0.15]; // 2x4 [rank,d_in]
+        let b: Vec<f32> = vec![0.20, -0.30, 0.10, 0.15, 0.05, -0.25]; // 3x2 [d_out,rank]
         let w_base: Vec<f32> = (0..d_out * d_in).map(|i| (i as f32 - 6.0) * 0.07).collect(); // 3x4
         let x: Vec<f32> = vec![0.5, -0.2, 0.3, 0.1, -0.4, 0.6, 0.2, -0.1]; // 2x4
         let (alpha, rank) = (4.0_f32, r as u32);
@@ -501,8 +538,9 @@ mod tests {
             }
         }
 
-        // INDEPENDENT reference: base forward + scale·(x @ A @ B).
-        // (x@A)[i,k] = sum_col x[i,col]*A[col,k];  then (xa@B)[i,row] = sum_k xa[i,k]*B[k,row].
+        // INDEPENDENT reference: base forward + scale·(x @ A^T @ B^T) where ΔW = B@A.
+        // PEFT layout: A[k,col]=a[k*d_in+col]; B[row,k]=b[row*r+k].
+        // (x@A^T)[i,k] = sum_col x[i,col]*A[k,col]; then (..@B^T)[i,row] = sum_k xat[i,k]*B[row,k].
         let mut y_ref = vec![0.0f32; n * d_out];
         for i in 0..n {
             // base contribution
@@ -514,18 +552,18 @@ mod tests {
                 y_ref[i * d_out + row] = base;
             }
             // LoRA contribution via the factors (different computation path)
-            let mut xa = vec![0.0f32; r];
-            for (k, xa_k) in xa.iter_mut().enumerate() {
+            let mut xat = vec![0.0f32; r];
+            for (k, xat_k) in xat.iter_mut().enumerate() {
                 let mut s = 0.0;
                 for col in 0..d_in {
-                    s += x[i * d_in + col] * a[col * r + k]; // A[col,k]
+                    s += x[i * d_in + col] * a[k * d_in + col]; // A[k,col]
                 }
-                *xa_k = s;
+                *xat_k = s;
             }
             for row in 0..d_out {
                 let mut s = 0.0;
-                for (k, &xa_k) in xa.iter().enumerate() {
-                    s += xa_k * b[k * d_out + row]; // B[k,row]
+                for (k, &xat_k) in xat.iter().enumerate() {
+                    s += xat_k * b[row * r + k]; // B[row,k]
                 }
                 y_ref[i * d_out + row] += scale_factor * s;
             }
