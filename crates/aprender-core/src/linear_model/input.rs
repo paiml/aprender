@@ -65,9 +65,19 @@ impl Estimator for ElasticNet {
             }
         }
 
-        // L1 and L2 penalties
-        let l1_penalty = self.alpha * self.l1_ratio;
-        let l2_penalty = self.alpha * (1.0 - self.l1_ratio);
+        // L1 and L2 penalties.
+        //
+        // scikit-learn minimizes
+        //   (1/(2*n_samples))*||y - Xb||^2
+        //     + alpha*l1_ratio*||b||_1
+        //     + 0.5*alpha*(1 - l1_ratio)*||b||^2,
+        // whose coordinate update thresholds rho at n_samples*alpha*l1_ratio and
+        // divides by (col_norms_sq + n_samples*alpha*(1 - l1_ratio)) (PMAT-848).
+        // The n_samples factor is required for `alpha`/`l1_ratio` to match the
+        // scikit-learn convention; omitting it makes both penalties ~n times too weak.
+        let n = n_samples as f32;
+        let l1_penalty = n * self.alpha * self.l1_ratio;
+        let l2_penalty = n * self.alpha * (1.0 - self.l1_ratio);
 
         // Coordinate descent
         for _ in 0..self.max_iter {

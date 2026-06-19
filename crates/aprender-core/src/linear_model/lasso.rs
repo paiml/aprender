@@ -273,13 +273,15 @@ impl Estimator for Ridge {
 /// Lasso regression with L1 regularization.
 ///
 /// Fits a linear model with L1 penalty on coefficient magnitudes.
-/// The optimization objective is:
+/// The optimization objective matches the scikit-learn convention:
 ///
 /// ```text
-/// minimize ||y - Xβ||² + α||β||₁
+/// minimize (1/(2*n_samples))*||y - Xβ||² + α*||β||₁
 /// ```
 ///
-/// where `α` (alpha) controls the regularization strength.
+/// where `α` (alpha) controls the regularization strength. The
+/// `1/(2*n_samples)` data-fit normalization makes `α` scale-invariant in the
+/// number of samples and identical to scikit-learn's `Lasso(alpha=α)`.
 ///
 /// # Solver
 ///

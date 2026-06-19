@@ -1,11 +1,17 @@
 
 /// Elastic Net regression with combined L1 and L2 regularization.
 ///
-/// Fits a linear model with both L1 and L2 penalties:
+/// Fits a linear model with both L1 and L2 penalties, matching the
+/// scikit-learn convention:
 ///
 /// ```text
-/// minimize ||y - Xβ||² + α * l1_ratio * ||β||₁ + α * (1 - l1_ratio) * ||β||²
+/// minimize (1/(2*n_samples))*||y - Xβ||²
+///          + α * l1_ratio * ||β||₁
+///          + 0.5 * α * (1 - l1_ratio) * ||β||²
 /// ```
+///
+/// The `1/(2*n_samples)` data-fit normalization makes `α`/`l1_ratio` identical
+/// to scikit-learn's `ElasticNet(alpha=α, l1_ratio=l1_ratio)`.
 ///
 /// # Parameters
 ///
