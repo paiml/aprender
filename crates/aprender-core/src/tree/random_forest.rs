@@ -230,7 +230,13 @@ impl RandomForestRegressor {
         Some(crate::metrics::r_squared(y_train, &oob_preds))
     }
 
-    /// Returns feature importances based on mean decrease in variance.
+    /// Returns feature importances based on Mean Decrease in Impurity (MDI).
+    ///
+    /// For each split node, the contribution is the weighted variance decrease
+    /// `n_node·variance − n_left·left_variance − n_right·right_variance`
+    /// (sklearn `tree/_tree.pyx::compute_feature_importances`), averaged across
+    /// trees and normalized to sum 1. See
+    /// `contracts/tree-feature-importances-mdi-v1.yaml`.
     #[must_use]
     pub fn feature_importances(&self) -> Option<Vec<f32>> {
         if self.trees.is_empty() || self.x_train.is_none() {

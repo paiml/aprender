@@ -346,6 +346,7 @@
         let leaf = TreeNode::Leaf(Leaf {
             class_label: 2,
             n_samples: 10,
+            impurity: 0.0,
         });
 
         let mut features = Vec::new();

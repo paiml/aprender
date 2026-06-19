@@ -85,10 +85,14 @@ pub(super) fn reconstruct_tree_node(
     right_children: &[f32],
 ) -> TreeNode {
     if features[idx] < 0.0 {
-        // Leaf node
+        // Leaf node. The flat SafeTensors schema does not persist per-node
+        // impurity / n_node_samples, so they default to 0 on reconstruct. These
+        // fields only feed MDI feature-importance, which is computed on the live
+        // fitted tree, not a deserialized one.
         TreeNode::Leaf(Leaf {
             class_label: classes[idx] as usize,
             n_samples: samples[idx] as usize,
+            impurity: 0.0,
         })
     } else {
         // Internal node
@@ -98,6 +102,8 @@ pub(super) fn reconstruct_tree_node(
         TreeNode::Node(Node {
             feature_idx: features[idx] as usize,
             threshold: thresholds[idx],
+            impurity: 0.0,
+            n_node_samples: 0,
             left: Box::new(reconstruct_tree_node(
                 left_idx,
                 features,
@@ -361,6 +367,7 @@ pub(super) fn check_stopping_criteria(
         return Some(TreeNode::Leaf(Leaf {
             class_label: y[0],
             n_samples,
+            impurity: gini_impurity(y),
         }));
     }
 
@@ -370,6 +377,7 @@ pub(super) fn check_stopping_criteria(
             return Some(TreeNode::Leaf(Leaf {
                 class_label: majority_class(y),
                 n_samples,
+                impurity: gini_impurity(y),
             }));
         }
     }
@@ -413,6 +421,10 @@ pub(super) fn build_tree(
 ) -> TreeNode {
     let n_samples = y.len();
 
+    // Impurity (gini) of the samples reaching this node, computed BEFORE the
+    // split. Drives MDI feature-importance (tree-feature-importances-mdi-v1).
+    let node_impurity = gini_impurity(y);
+
     // Check stopping criteria
     if let Some(leaf) = check_stopping_criteria(y, depth, max_depth) {
         return leaf;
@@ -423,6 +435,7 @@ pub(super) fn build_tree(
         return TreeNode::Leaf(Leaf {
             class_label: majority_class(y),
             n_samples,
+            impurity: node_impurity,
         });
     };
 
@@ -433,6 +446,7 @@ pub(super) fn build_tree(
         return TreeNode::Leaf(Leaf {
             class_label: majority_class(y),
             n_samples,
+            impurity: node_impurity,
         });
     };
 
@@ -447,6 +461,8 @@ pub(super) fn build_tree(
     TreeNode::Node(Node {
         feature_idx,
         threshold,
+        impurity: node_impurity,
+        n_node_samples: n_samples,
         left: Box::new(left_child),
         right: Box::new(right_child),
     })

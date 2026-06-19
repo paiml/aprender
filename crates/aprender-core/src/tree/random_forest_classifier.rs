@@ -231,7 +231,13 @@ impl RandomForestClassifier {
         Some(correct as f32 / y_train.len() as f32)
     }
 
-    /// Returns feature importances based on mean decrease in impurity.
+    /// Returns feature importances based on Mean Decrease in Impurity (MDI).
+    ///
+    /// For each split node, the contribution is the weighted gini decrease
+    /// `n_node·gini − n_left·left_gini − n_right·right_gini`
+    /// (sklearn `tree/_tree.pyx::compute_feature_importances`), averaged across
+    /// trees and normalized to sum 1. See
+    /// `contracts/tree-feature-importances-mdi-v1.yaml`.
     #[must_use]
     pub fn feature_importances(&self) -> Option<Vec<f32>> {
         if self.trees.is_empty() || self.x_train.is_none() {
