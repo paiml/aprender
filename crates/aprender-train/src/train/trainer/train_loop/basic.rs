@@ -177,6 +177,19 @@ impl Trainer {
         let is_accum_boundary = (step + 1).is_multiple_of(accum_steps);
         let is_last_batch = step + 1 == steps_per_epoch;
         if is_accum_boundary || is_last_batch {
+            // PMAT-839: gradients accumulate ADDITIVELY across the window, so at the boundary
+            // each param.grad holds the SUM over the window's micro-batches. Scale to the MEAN
+            // before clipping/stepping, so K-step accumulation reproduces a single batch of the
+            // effective size (the PyTorch `loss /= accum_steps` convention) instead of inflating
+            // the effective learning rate K-fold. The window count is `(step % accum_steps) + 1`,
+            // which also yields the correct divisor for a short final window (is_last_batch).
+            let window = (step % accum_steps) + 1;
+            if window > 1 {
+                let inv = 1.0 / window as f32;
+                for p in self.params.iter() {
+                    p.scale_grad(inv);
+                }
+            }
             if let Some(max_norm) = self.config.max_grad_norm {
                 clip_grad_norm(&mut self.params, max_norm);
             }
