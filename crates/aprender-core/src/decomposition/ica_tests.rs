@@ -196,6 +196,100 @@ fn test_ica_whitening() {
 
     assert_eq!(whitened.n_rows(), 10);
     assert_eq!(whitened.n_cols(), 2);
+
+    // PMAT-847: whitening invariant — Cov(X_white) must be the identity matrix.
+    // (unit variance on the diagonal, zero pairwise correlation off-diagonal)
+    let n = whitened.n_rows();
+    let mut cov = [[0.0_f32; 2]; 2];
+    for r in 0..2 {
+        for c in 0..2 {
+            let mut sum = 0.0_f32;
+            for i in 0..n {
+                sum += whitened.get(i, r) * whitened.get(i, c);
+            }
+            cov[r][c] = sum / n as f32;
+        }
+    }
+    assert!(
+        (cov[0][0] - 1.0).abs() < 0.05,
+        "whitened var[0] must be ~1, got {}",
+        cov[0][0]
+    );
+    assert!(
+        (cov[1][1] - 1.0).abs() < 0.05,
+        "whitened var[1] must be ~1, got {}",
+        cov[1][1]
+    );
+    assert!(
+        cov[0][1].abs() < 0.05,
+        "whitened cross-cov must be ~0, got {}",
+        cov[0][1]
+    );
+}
+
+/// PMAT-847 falsifier: whitening must yield Cov(X_white) = I on seeded correlated data.
+///
+/// Reference: scikit-learn `FastICA` (whiten='unit-variance'); numpy:
+///   cov = (Xc.T @ Xc) / n; w, V = np.linalg.eigh(cov); W = V @ diag(1/sqrt(w));
+///   ((Xc @ W).T @ (Xc @ W)) / n == I
+///
+/// The transposed-whitening-matrix bug makes the whitened covariance non-identity
+/// (e.g. diag[0][0] ~= 5.97 instead of 1.0 on this fixture).
+#[test]
+fn test_ica_whitening_covariance_is_identity() {
+    // Build n=200 correlated rows: f0 = 2a + b, f1 = a + 3b, where (a,b) are
+    // pseudo-random in [0,1) from a deterministic LCG (reproducible fixture).
+    let n = 200usize;
+    let mut state: u64 = 42;
+    let mut next = || -> f32 {
+        // glibc LCG constants; masked to 31 bits.
+        state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345) & 0x7fff_ffff;
+        (state % 1000) as f32 / 1000.0
+    };
+    let mut data = Vec::with_capacity(n * 2);
+    for _ in 0..n {
+        let a = next();
+        let b = next();
+        let f0 = 2.0 * a + b;
+        let f1 = a + 3.0 * b;
+        data.push(f0);
+        data.push(f1);
+    }
+    let x = Matrix::from_vec(n, 2, data).expect("Valid matrix");
+
+    let (centered, _mean) = ICA::center_data(&x).expect("Should center");
+    let (whitened, _w) = ICA::whiten_data(&centered, 2).expect("Should whiten");
+
+    assert_eq!(whitened.n_rows(), n);
+    assert_eq!(whitened.n_cols(), 2);
+
+    // cov = (1/n) Xw^T Xw
+    let mut cov = [[0.0_f32; 2]; 2];
+    for r in 0..2 {
+        for c in 0..2 {
+            let mut sum = 0.0_f32;
+            for i in 0..n {
+                sum += whitened.get(i, r) * whitened.get(i, c);
+            }
+            cov[r][c] = sum / n as f32;
+        }
+    }
+
+    assert!(
+        (cov[0][0] - 1.0).abs() < 0.05,
+        "Cov(X_white)[0][0] must be ~1 (unit variance), got {}",
+        cov[0][0]
+    );
+    assert!(
+        (cov[1][1] - 1.0).abs() < 0.05,
+        "Cov(X_white)[1][1] must be ~1 (unit variance), got {}",
+        cov[1][1]
+    );
+    assert!(
+        cov[0][1].abs() < 0.05,
+        "Cov(X_white)[0][1] must be ~0 (decorrelated), got {}",
+        cov[0][1]
+    );
 }
 
 #[test]

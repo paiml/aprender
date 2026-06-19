@@ -1,0 +1,90 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-19'
+  author: PAIML Engineering
+  description: >-
+    ICA whitening invariant — the whitening matrix W = V Λ^(-1/2) built from the
+    eigendecomposition of the data covariance must decorrelate and unit-scale the
+    centered data, so that Cov(X_white) = I. Guards against the PMAT-847 transpose
+    defect where W was constructed transposed relative to the eigenvector storage
+    convention, yielding a non-identity whitened covariance.
+  references:
+  - 'Hyvarinen & Oja (2000) Independent Component Analysis: Algorithms and Applications'
+  - 'scikit-learn FastICA whiten="unit-variance" (decomposition/_fastica.py)'
+  - 'numpy: cov=(Xc.T@Xc)/n; w,V=np.linalg.eigh(cov); W=V@diag(1/sqrt(w)); ((Xc@W).T@(Xc@W))/n == I'
+  lessons_learned:
+  - 'PMAT-847: eigen_decomposition stores eigenvector c as ROW c (length-p block wrapped
+    row-major as Matrix::from_vec(p, k, ...)). whiten_data read it as COLUMN j and filled
+    the whitening matrix column-major, producing a transposed W. Measured Cov(X_white)[0][0]
+    = 5.96 instead of 1.0 on seeded correlated 2-feature data.'
+equations:
+  whitening:
+    formula: W = V Λ^(-1/2) ; X_white = X_centered W ; Cov(X_white) = (1/n) X_white^T X_white = I
+    domain: X_centered ∈ ℝ^{n×p} (zero column means), V ∈ ℝ^{p×k} eigenvectors, Λ = diag(λ_1..λ_k) > 0
+    codomain: X_white ∈ ℝ^{n×k} with identity covariance
+    invariants:
+    - 'W[i][j] = V_j[i] / sqrt(λ_j) where V_j is the j-th eigenvector (stored as ROW j)'
+    - 'Cov(X_white)[d][d] ≈ 1 for all d (unit variance)'
+    - 'Cov(X_white)[d][e] ≈ 0 for d != e (decorrelated)'
+    preconditions:
+    - x_centered.n_rows() > 0
+    - x_centered.n_cols() > 0
+    - n_components <= x_centered.n_cols()
+    lean_theorem: Theorems.IcaWhitening
+proof_obligations:
+- type: invariant
+  property: Whitened covariance is identity on the diagonal (unit variance)
+  formal: forall d, |Cov(whiten_data(center_data(X)))[d][d] - 1| < tol
+  applies_to: whitening
+- type: invariant
+  property: Whitened covariance is zero off-diagonal (decorrelated)
+  formal: forall d != e, |Cov(whiten_data(center_data(X)))[d][e]| < tol
+  applies_to: whitening
+- type: equivalence
+  property: Whitening matrix reads eigenvector j as stored ROW j
+  formal: W[i][j] == eigenvectors.get(j, i) / sqrt(eigenvalues[j])
+  applies_to: whitening
+falsification_tests:
+- id: FALSIFY-ICA-WHITEN-001
+  rule: Whitened covariance is the identity matrix
+  prediction: 'Cov(X_white) = I within tol 0.05 on seeded correlated data (f0=2a+b, f1=a+3b, n=200)'
+  test: 'cargo test -p aprender-core --lib decomposition::ica::tests::test_ica_whitening_covariance_is_identity'
+  evidence_red: 'RED (transposed W): Cov(X_white)[0][0] = 4.601778 (test_ica_whitening fixture: 5.961843)'
+  evidence_green: 'GREEN (row-major W): Cov(X_white) ≈ I; 25/25 decomposition::ica tests pass'
+  if_fails: Whitening matrix transposed relative to eigenvector storage; or eigenvalue/eigenvector misalignment
+- id: FALSIFY-ICA-WHITEN-002
+  rule: Existing whitening test enforces the covariance invariant
+  prediction: 'test_ica_whitening asserts Cov(X_white) ≈ I, not just output shape'
+  test: 'cargo test -p aprender-core --lib decomposition::ica::tests::test_ica_whitening'
+  evidence_red: 'RED: var[0] = 5.961843 (shape-only assertion would have passed silently)'
+  evidence_green: 'GREEN: var[0] ≈ 1, var[1] ≈ 1, cross-cov ≈ 0'
+  if_fails: Shape-only gate let the transpose defect through; strengthen to covariance invariant
+- id: FALSIFY-ICA-WHITEN-003
+  rule: Whitening matrix reads eigenvector j as the stored ROW j
+  prediction: 'W[i][j] = eigenvectors.get(j, i) / sqrt(eigenvalues[j]); both whitening tests pass'
+  test: 'cargo test -p aprender-core --lib decomposition::ica'
+  evidence_red: 'RED (get(i,j), column-major fill): 2 failed (test_ica_whitening, test_ica_whitening_covariance_is_identity)'
+  evidence_green: 'GREEN (get(j,i), row-major fill): 25 passed; 0 failed'
+  if_fails: Eigenvector row-vs-column storage convention mismatched between eigen_decomposition and whiten_data
+enforcement:
+  whitening_covariance:
+    description: Whitened data must have identity covariance (unit variance, decorrelated)
+    check: contract_tests::FALSIFY-ICA-WHITEN-001
+    severity: ERROR
+qa_gate:
+  id: F-ICA-WHITEN-001
+  name: ICA Whitening Contract
+  description: Whitening must yield Cov(X_white) = I (unit variance, decorrelated)
+  checks:
+  - whitened_unit_variance
+  - whitened_decorrelated
+  - eigenvector_row_read
+  pass_criteria: All 3 falsification tests pass + Kani harness verifies
+  falsification: Build the whitening matrix transposed relative to eigenvector storage
+kani_harnesses:
+- id: KANI-ICA-WHITEN-001
+  obligation: Whitened covariance diagonal is unit variance within tolerance
+  property: forall d, |Cov(whiten_data(center_data(X)))[d][d] - 1| < tol
+  bound: 8
+  strategy: stub_float
+  solver: cadical
