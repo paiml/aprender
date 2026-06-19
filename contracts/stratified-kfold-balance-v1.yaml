@@ -1,0 +1,126 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-19'
+  author: PAIML Engineering
+  description: |
+    StratifiedKFold::split must distribute each class's per-fold remainder
+    across folds with a CUMULATIVE offset, so that test-fold sizes differ by at
+    most 1 — matching scikit-learn's StratifiedKFold / _make_test_folds.
+
+    BUG (PMAT-866): each class assigned its remainder = class_size % n_splits
+    extra samples ALWAYS to the lowest-index folds (`if i < remainder`). With no
+    cumulative offset across classes, every class dumped its leftovers onto folds
+    0..remainder-1, where they accumulated. For y = [0]*10 + [1]*10, n_splits=3,
+    both classes have remainder=1 → fold 0 received +1 from BOTH → test sizes
+    [8, 6, 6] (max-min = 2), violating the k-fold balance invariant. sklearn
+    yields [7, 7, 6].
+
+    FIX: maintain a running `offset` across classes; assign each class's extras
+    to folds (offset + 0), (offset + 1), ... (mod n_splits), then advance
+    `offset` by `remainder` after each class. Classes are iterated in stable
+    sorted-label order (not HashMap order) for cross-run/platform determinism.
+    Coverage is preserved: every sample index lands in exactly one test fold.
+  references:
+  - 'crates/aprender-core/src/model_selection/mod.rs — StratifiedKFold::split (cumulative-offset remainder distribution)'
+  - 'crates/aprender-core/src/model_selection/tests_stratified.rs — FALSIFY-SKF-BAL-001..003'
+  - 'scikit-learn StratifiedKFold / _make_test_folds — per-fold sizes differ by at most 1'
+
+kind: KernelContract
+name: stratified-kfold-balance
+version: 1.0.0
+scope: aprender-core model_selection StratifiedKFold::split fold-size balance
+
+equations:
+  C-BALANCE:
+    formula: |
+      For all folds i, j in [0, n_splits):
+        | |test_fold_i| - |test_fold_j| | <= 1
+    domain: y in R^n (n labels), n_splits in [2, n], at least n_splits per class
+    codomain: n_splits (train, test) index partitions
+    invariants:
+    - 'max_i |test_fold_i| - min_i |test_fold_i| <= 1 (sklearn StratifiedKFold parity)'
+    - 'per-class remainders round-robin via a cumulative offset carried across classes'
+    - 'class iteration order is stable (sorted labels), not HashMap order'
+    preconditions:
+    - n_splits >= 2
+    - 'each class has at least n_splits samples (well-defined stratification)'
+    lean_theorem: Theorems.StratifiedKFold_Balance
+  C-COVERAGE:
+    formula: |
+      The test folds partition [0, n): every sample index appears in exactly one
+      test fold, and sum_i |test_fold_i| = n.
+    domain: y in R^n, n_splits in [2, n]
+    codomain: n_splits disjoint test-index sets whose union is [0, n)
+    invariants:
+    - 'for every index k in [0, n): exactly one fold i has k in test_fold_i'
+    - 'sum over folds of |test_fold_i| equals n (no leaks, no duplicates)'
+    - 'within a fold, train and test index sets are disjoint'
+    preconditions:
+    - n_splits >= 2
+    lean_theorem: Theorems.StratifiedKFold_Coverage
+
+proof_obligations:
+- type: bound
+  property: Fold sizes differ by at most 1
+  formal: |
+    For all i, j in [0, n_splits): abs(len(test_fold_i) - len(test_fold_j)) <= 1.
+  applies_to: all
+- type: invariant
+  property: Test folds partition the sample set exactly once
+  formal: |
+    For all k in [0, n): exactly one i has k in test_fold_i, and
+    sum_i len(test_fold_i) = n.
+  applies_to: all
+- type: invariant
+  property: Class iteration is deterministic (stable sorted-label order)
+  formal: |
+    The remainder-distribution order over classes is the ascending order of the
+    integer class labels, independent of HashMap iteration order.
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-SKF-BAL-001
+  rule: Test-fold sizes differ by at most 1 (sklearn parity)
+  prediction: |
+    For y = [0]*10 + [1]*10 with n_splits=3, sorted test-fold sizes are
+    [6, 7, 7] (max-min = 1). Before the fix they were [6, 6, 8] (max-min = 2),
+    because each class's single extra was forced onto fold 0.
+  if_fails: 'the per-class remainder offset is not carried across classes (extras pile onto the lowest-index folds).'
+  evidence: cargo test -p aprender-core --lib falsify_skf_bal_001_fold_sizes_differ_by_at_most_one
+- id: FALSIFY-SKF-BAL-002
+  rule: Test folds cover every sample index exactly once
+  prediction: |
+    For y = [0]*10 + [1]*10 with n_splits=3, the test folds sum to 20 samples and
+    every index in [0, 20) appears in exactly one test fold.
+  if_fails: 'the offset-based remainder distribution leaks or duplicates an index (coverage invariant broken).'
+  evidence: cargo test -p aprender-core --lib falsify_skf_bal_002_coverage_every_index_once
+- id: FALSIFY-SKF-BAL-003
+  rule: Balance generalizes across classes with differing remainders
+  prediction: |
+    For class sizes (7, 7, 4) with n_splits=3, overall fold sizes differ by at
+    most 1 AND each class's per-fold count differs by at most 1. Before the fix
+    the overall sizes were [5, 5, 8] (max-min = 3).
+  if_fails: 'the cumulative offset is reset per class or computed without wrap-around mod n_splits.'
+  evidence: cargo test -p aprender-core --lib falsify_skf_bal_003_general_balance
+
+kani_harnesses:
+- id: KANI-SKF-BAL-001
+  obligation: Fold sizes differ by at most 1
+  property: |
+    For a class of size c distributed over k folds with a starting offset o,
+    each fold receives floor(c/k) or floor(c/k)+1 samples, and exactly
+    (c mod k) folds — namely (o+0)..(o+(c mod k)-1) mod k — receive the +1.
+    Aggregated over all classes with the offset carried forward, no fold's total
+    exceeds another's by more than 1.
+  bound: 4
+  strategy: compositional
+  solver: cadical
+  harness: verify_stratified_kfold_balance
+
+qa_gate:
+  id: F-SKF-BAL-001
+  name: stratified-kfold-balance-v1 Contract
+  description: StratifiedKFold::split must keep test-fold sizes balanced to within 1 (sklearn parity) while preserving exact coverage, by round-robining per-class remainders with a cumulative offset.
+  checks:
+  - validation
+  - falsification

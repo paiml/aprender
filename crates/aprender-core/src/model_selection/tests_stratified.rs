@@ -441,3 +441,127 @@ fn test_stratified_kfold_with_shuffle_false() {
     let splits = skfold.split(&y);
     assert_eq!(splits.len(), 2);
 }
+
+// ==================== PMAT-866: StratifiedKFold fold-balance ====================
+//
+// FALSIFY-SKF-BAL-001: per-class remainders must round-robin across folds so
+// that test-fold sizes differ by at most 1 (sklearn StratifiedKFold parity).
+//
+// BUG (pre-fix): each class assigned its `remainder = class_size % n_splits`
+// extra samples ALWAYS to the lowest-index folds (`if i < remainder`). With
+// y = [0]*10 + [1]*10 and n_splits=3 both classes (remainder=1 each) dumped
+// their extra into fold 0 -> test sizes [8, 6, 6] (max-min = 2), violating the
+// k-fold balance invariant. sklearn yields [7, 7, 6].
+//
+// Reference: sklearn StratifiedKFold / _make_test_folds (sizes differ by <= 1).
+
+/// FALSIFY-SKF-BAL-001: test-fold sizes differ by at most 1 (sklearn parity).
+///
+/// RED (pre-fix):  sorted test sizes = [6, 6, 8] (max-min = 2) -> FAIL
+/// GREEN (fixed):  sorted test sizes = [6, 7, 7] (max-min = 1) -> PASS
+#[test]
+fn falsify_skf_bal_001_fold_sizes_differ_by_at_most_one() {
+    // 2 classes, 10 samples each -> 20 total, n_splits=3.
+    // Per class: 10 / 3 = 3 with remainder 1. Round-robin offset must push the
+    // two extras to different folds, not both to fold 0.
+    let mut labels = vec![0.0f32; 10];
+    labels.extend(std::iter::repeat(1.0f32).take(10));
+    let y = Vector::from_slice(&labels);
+
+    let skfold = StratifiedKFold::new(3);
+    let splits = skfold.split(&y);
+
+    assert_eq!(splits.len(), 3, "expected exactly 3 folds");
+
+    let mut test_sizes: Vec<usize> = splits.iter().map(|(_, test)| test.len()).collect();
+    test_sizes.sort_unstable();
+
+    let min = *test_sizes.iter().min().expect("non-empty folds");
+    let max = *test_sizes.iter().max().expect("non-empty folds");
+
+    assert!(
+        max - min <= 1,
+        "FALSIFIED SKF-BAL-001: test-fold sizes {test_sizes:?} have max-min = {} > 1 \
+         (k-fold balance invariant violated; sklearn gives [6, 7, 7])",
+        max - min
+    );
+
+    // Concretely: sorted sizes must be exactly [6, 7, 7] for this input.
+    assert_eq!(
+        test_sizes,
+        vec![6, 7, 7],
+        "FALSIFIED SKF-BAL-001: expected sorted test sizes [6, 7, 7], got {test_sizes:?}"
+    );
+}
+
+/// FALSIFY-SKF-BAL-002: coverage -- every index appears in exactly one test fold,
+/// and the test sizes sum to the sample count (no leaks, no duplicates).
+#[test]
+fn falsify_skf_bal_002_coverage_every_index_once() {
+    let mut labels = vec![0.0f32; 10];
+    labels.extend(std::iter::repeat(1.0f32).take(10));
+    let y = Vector::from_slice(&labels);
+
+    let skfold = StratifiedKFold::new(3);
+    let splits = skfold.split(&y);
+
+    // Total of all test folds equals sample count.
+    let total: usize = splits.iter().map(|(_, test)| test.len()).sum();
+    assert_eq!(total, 20, "test folds must cover all 20 samples exactly once");
+
+    // Every index in [0, 20) appears in exactly one test fold.
+    let mut counts = vec![0usize; 20];
+    for (_, test) in &splits {
+        for &idx in test {
+            assert!(idx < 20, "test index {idx} out of range");
+            counts[idx] += 1;
+        }
+    }
+    for (i, &c) in counts.iter().enumerate() {
+        assert_eq!(
+            c, 1,
+            "FALSIFIED SKF-BAL-002: index {i} appears in {c} test folds (expected 1)"
+        );
+    }
+}
+
+/// FALSIFY-SKF-BAL-003: balance generalizes -- for classes with different
+/// remainders, every class's per-fold count differs by at most 1 AND the overall
+/// fold sizes differ by at most 1 (the round-robin offset is carried across
+/// classes, not reset per class).
+#[test]
+fn falsify_skf_bal_003_general_balance() {
+    // class 0: 7 samples, class 1: 7 samples, class 2: 4 samples; n_splits = 3.
+    let mut labels = vec![0.0f32; 7];
+    labels.extend(std::iter::repeat(1.0f32).take(7));
+    labels.extend(std::iter::repeat(2.0f32).take(4));
+    let y = Vector::from_slice(&labels);
+
+    let skfold = StratifiedKFold::new(3);
+    let splits = skfold.split(&y);
+
+    let mut test_sizes: Vec<usize> = splits.iter().map(|(_, test)| test.len()).collect();
+    test_sizes.sort_unstable();
+    let min = *test_sizes.iter().min().expect("non-empty");
+    let max = *test_sizes.iter().max().expect("non-empty");
+    assert!(
+        max - min <= 1,
+        "FALSIFIED SKF-BAL-003: overall fold sizes {test_sizes:?} differ by {} > 1",
+        max - min
+    );
+
+    // Per-class balance: each class's count per fold differs by at most 1.
+    for class in [0.0f32, 1.0, 2.0] {
+        let per_fold: Vec<usize> = splits
+            .iter()
+            .map(|(_, test)| test.iter().filter(|&&idx| y[idx] == class).count())
+            .collect();
+        let cmin = *per_fold.iter().min().expect("non-empty");
+        let cmax = *per_fold.iter().max().expect("non-empty");
+        assert!(
+            cmax - cmin <= 1,
+            "FALSIFIED SKF-BAL-003: class {class} per-fold counts {per_fold:?} differ by {} > 1",
+            cmax - cmin
+        );
+    }
+}
