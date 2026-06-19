@@ -393,3 +393,156 @@ fn test_wide_credible_interval() {
         width_90
     );
 }
+
+// ========================================================================
+// PMAT-864: MAP gradient/Hessian must target the SAME posterior (precision λ)
+//
+// Falsifier for the gradient/Hessian inconsistency: the log-posterior
+// gradient must be the UN-AVERAGED ∇ = Xᵀ(y − p) − λβ so that its stationary
+// point coincides with the mode used by the un-averaged Hessian
+// H = XᵀWX + λI. If the data term is divided by n (the bug) while the prior
+// term is not, the fit converges to the MAP of a model with precision n·λ —
+// the coefficients are shrunk ~n× toward zero — and the Laplace covariance is
+// then evaluated at the WRONG mode.
+//
+// Reference: Bishop PRML §4.5 (Laplace approximation); sklearn MAP for
+// logistic regression: ∇ = Xᵀ(y − p) − λβ, H = XᵀWX + λI at the same mode.
+// ========================================================================
+
+/// Reference Newton solver for the logistic-regression MAP at a given prior
+/// precision `lambda`. Solves the stationary equation Xᵀ(y − p) = λβ exactly
+/// (full Newton on the un-averaged log-posterior), independent of the model's
+/// gradient-ascent code path under test. Single feature column, no intercept.
+fn reference_map_1d(x_col: &[f32], y: &[f32], lambda: f32) -> f32 {
+    let mut beta = 0.0_f64;
+    let lambda = f64::from(lambda);
+    for _ in 0..200 {
+        // p_i = σ(x_i β); gradient g = Σ x_i (y_i − p_i) − λβ
+        // Hessian h = Σ x_i² p_i(1 − p_i) + λ
+        let mut g = -lambda * beta;
+        let mut h = lambda;
+        for (&xi, &yi) in x_col.iter().zip(y.iter()) {
+            let xi = f64::from(xi);
+            let z = xi * beta;
+            let p = 1.0 / (1.0 + (-z).exp());
+            g += xi * (f64::from(yi) - p);
+            h += xi * xi * p * (1.0 - p);
+        }
+        let step = g / h;
+        beta += step;
+        if step.abs() < 1e-12 {
+            break;
+        }
+    }
+    beta as f32
+}
+
+/// PMAT-864 falsifier: the fitted posterior mean must equal the MAP at the
+/// DECLARED precision λ, NOT the over-shrunk MAP at precision n·λ.
+///
+/// RED (bug present, data term divided by n): `beta_fitted ≈ map(n·λ)`, badly
+/// failing the `≈ map(λ)` assertion (and the `is clearly distinct from
+/// map(n·λ)` assertion).
+/// GREEN (fix, un-averaged gradient): `beta_fitted ≈ map(λ)`.
+#[test]
+fn test_pmat864_map_targets_declared_precision_not_n_lambda() {
+    // n = 8 samples, single feature. Monotone-ordered labels give a strong
+    // signal so the (finite, regularized) λ-MAP is large; the n·λ-MAP is
+    // shrunk to ~½ of it — a clean, unambiguous separation between the two
+    // candidate modes.
+    let x_col = vec![-3.0_f32, -2.0, -1.0, -0.5, 0.5, 1.0, 2.0, 3.0];
+    let y_vec = vec![0.0_f32, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0];
+    let n = x_col.len();
+    let lambda = 0.2_f32;
+
+    let x = Matrix::from_vec(n, 1, x_col.clone()).expect("Valid matrix");
+    let y = Vector::from_vec(y_vec.clone());
+
+    let mut model = BayesianLogisticRegression::new(lambda)
+        .with_learning_rate(0.3)
+        .with_max_iter(200_000)
+        .with_tolerance(1e-5);
+    model.fit(&x, &y).expect("Fit should converge");
+    let beta_fitted = model
+        .coefficients_map
+        .as_ref()
+        .expect("MAP estimate exists")[0];
+
+    // Reference modes computed by an independent Newton solver.
+    let beta_lambda = reference_map_1d(&x_col, &y_vec, lambda);
+    let beta_n_lambda = reference_map_1d(&x_col, &y_vec, lambda * n as f32);
+
+    // Sanity: the two modes are materially different (n·λ shrinks ~toward 0).
+    assert!(
+        beta_lambda.abs() > 2.0 * beta_n_lambda.abs(),
+        "test design: λ-mode ({beta_lambda}) should be far larger in magnitude \
+         than the n·λ-mode ({beta_n_lambda})"
+    );
+
+    // PRIMARY: fitted posterior mean must match the DECLARED-precision MAP.
+    assert!(
+        (beta_fitted - beta_lambda).abs() < 1e-2,
+        "PMAT-864: fitted β ({beta_fitted}) must converge to the λ-MAP \
+         ({beta_lambda}), not the over-shrunk n·λ-MAP ({beta_n_lambda}). \
+         A match to the n·λ-MAP indicates the data term is divided by n while \
+         the prior term is not (gradient/Hessian inconsistency)."
+    );
+
+    // GUARD: fitted mean must be clearly distinct from the buggy n·λ-mode.
+    assert!(
+        (beta_fitted - beta_n_lambda).abs() > 0.5 * (beta_lambda - beta_n_lambda).abs(),
+        "PMAT-864: fitted β ({beta_fitted}) is too close to the over-shrunk \
+         n·λ-MAP ({beta_n_lambda}) — the 1/n data-term scaling has crept back in."
+    );
+}
+
+/// PMAT-864 falsifier: replicating every sample (doubling n with the SAME
+/// per-sample distribution) must NOT shrink the MAP toward 0. The likelihood
+/// term Xᵀ(y − p) doubles, so the MAP at fixed precision λ grows (more data,
+/// stronger evidence) — it MUST NOT shrink. Under the bug, the data term was
+/// averaged by n, so doubling n halved the effective evidence-to-prior ratio
+/// and shrank β toward 0 (the precision-n·λ signature).
+#[test]
+fn test_pmat864_replicating_samples_does_not_shrink_map() {
+    let base_x = [-3.0_f32, -2.0, -1.0, -0.5, 0.5, 1.0, 2.0, 3.0];
+    let base_y = [0.0_f32, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0];
+    let lambda = 0.2_f32;
+
+    let fit_beta = |reps: usize| -> f32 {
+        let mut xv = Vec::new();
+        let mut yv = Vec::new();
+        for _ in 0..reps {
+            xv.extend_from_slice(&base_x);
+            yv.extend_from_slice(&base_y);
+        }
+        let n = xv.len();
+        let x = Matrix::from_vec(n, 1, xv).expect("Valid matrix");
+        let y = Vector::from_vec(yv);
+        let mut model = BayesianLogisticRegression::new(lambda)
+            .with_learning_rate(0.3)
+            .with_max_iter(200_000)
+            .with_tolerance(1e-5);
+        model.fit(&x, &y).expect("Fit should converge");
+        model
+            .coefficients_map
+            .as_ref()
+            .expect("MAP estimate exists")[0]
+    };
+
+    let beta_1x = fit_beta(1);
+    let beta_2x = fit_beta(2);
+
+    // More (replicated) data at the same prior precision => MORE evidence =>
+    // |β| must grow, never shrink toward 0.
+    assert!(
+        beta_2x.abs() >= beta_1x.abs() - 1e-3,
+        "PMAT-864: doubling the sample count (same distribution) shrank the MAP \
+         from {beta_1x} to {beta_2x} — the data term is being averaged by n \
+         (precision-n·λ signature)."
+    );
+    assert!(
+        beta_2x.abs() > beta_1x.abs(),
+        "PMAT-864: doubling evidence at fixed λ must strictly grow |β| \
+         ({beta_1x} -> {beta_2x})."
+    );
+}
