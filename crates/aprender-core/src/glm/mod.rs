@@ -392,7 +392,19 @@ impl GLM {
         let mut z = Vec::with_capacity(n);
         let mut weights = Vec::with_capacity(n);
         for i in 0..n {
-            let deriv = self.link.derivative(eta[i]);
+            // IRLS uses the LINK derivative g'(μ) = dη/dμ, which is 1/(dμ/dη). `Link::derivative`
+            // returns the INVERSE-link derivative dμ/dη (its own doc says so), so it must be
+            // inverted here. PMAT-838: the prior code used dμ/dη directly in both the working
+            // response (z = η + (y-μ)·g'(μ)) and the weight (W = 1/(V·g'(μ)²)), swapping dμ/dη and
+            // dη/dμ — so `fit` converged to systematically wrong coefficients (and diverged for
+            // strong-signal Poisson). Guard the boundary where dμ/dη → 0 (e.g. logit at μ=0/1).
+            let dmu_deta = self.link.derivative(eta[i]);
+            let deriv = 1.0
+                / if dmu_deta.abs() < 1e-10 {
+                    1e-10_f32.copysign(dmu_deta)
+                } else {
+                    dmu_deta
+                };
             z.push(eta[i] + (y[i] - mu[i]) * deriv);
 
             let var = self.family.variance(mu[i], self.dispersion).max(1e-10);

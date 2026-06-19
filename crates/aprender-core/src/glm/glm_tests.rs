@@ -270,3 +270,29 @@ fn test_builder_pattern() {
     assert!(model.coefficients().is_none());
     assert!(model.intercept().is_none());
 }
+
+/// FALSIFY-GLM-IRLS-LINK-DERIV (PMAT-838): IRLS must use the LINK derivative g'(μ) = dη/dμ =
+/// 1/(dμ/dη) in the working response and weights, NOT the inverse-link derivative dμ/dη.
+/// With the two swapped, Binomial/logit on this data converged to slope 1.0333 (8.3% low) and
+/// P(y=1 | x=-2) = 0.1124; the correct IRLS (matching a statsmodels/scipy reference) gives
+/// slope 1.1266 and P = 0.0951.
+#[test]
+fn falsify_glm_irls_link_derivative() {
+    let x =
+        Matrix::from_vec(8, 1, vec![-2.0, -1.5, -1.0, -0.5, 0.5, 1.0, 1.5, 2.0]).expect("matrix");
+    let y = Vector::from_vec(vec![0.1, 0.15, 0.25, 0.35, 0.65, 0.75, 0.85, 0.9]);
+    let mut model = GLM::new(Family::Binomial);
+    model.fit(&x, &y).expect("fit");
+    let slope = model.coefficients().expect("coef")[0];
+    let p_at_neg2 = model.predict(&x).expect("predict").as_slice()[0];
+    // RED (link/inverse-link swapped): slope ~1.0333, P ~0.1124.
+    // GREEN (correct IRLS): slope ~1.1266, P ~0.0951.
+    assert!(
+        (slope - 1.1266).abs() < 0.01,
+        "GLM IRLS slope {slope:.4} != correct 1.1266 (link-derivative swap?)"
+    );
+    assert!(
+        (p_at_neg2 - 0.0951).abs() < 0.005,
+        "GLM predicted P(x=-2) {p_at_neg2:.4} != correct 0.0951"
+    );
+}

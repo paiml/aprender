@@ -1,0 +1,39 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-19"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "McCullagh & Nelder, Generalized Linear Models (2nd ed.) — IRLS working response & weights"
+    - "statsmodels.genmod.GLM / scipy reference IRLS"
+  description: |
+    Correctness contract for the GLM IRLS solver (aprender-core glm). Pillar-1 (sklearn/statsmodels
+    parity): GLM::fit must converge to the correct maximum-likelihood coefficients for the
+    exponential family.
+kind: KernelContract
+name: glm-irls-link-derivative
+version: "1.0.0"
+scope: "crates/aprender-core/src/glm/mod.rs"
+description: |
+  Iteratively Reweighted Least Squares (IRLS) forms a working response z and weights W each step:
+  z = η + (y - μ)·g'(μ) and W = 1/(V(μ)·g'(μ)²), where g'(μ) = dη/dμ is the LINK derivative.
+  PMAT-838: `Link::derivative` returns the INVERSE-link derivative dμ/dη (its own doc says
+  "Derivative of inverse link: dμ/dη"; Log→exp(η)=μ, Logit→μ(1-μ)). compute_working_response_and_weights
+  used that value directly for g'(μ), swapping dμ/dη and dη/dμ in BOTH z and W. Result: fit
+  converged to systematically wrong coefficients (Binomial/logit slope 1.0333 vs correct 1.1266,
+  ~8% error; predicted probabilities ~18% off) and diverged outright for strong-signal Poisson.
+  Fix: use g'(μ) = 1/(dμ/dη) (guarding the boundary dμ/dη → 0).
+equations:
+  C-GLMIRLS-001:
+    description: "IRLS uses the link derivative dη/dμ = 1/(dμ/dη), not the inverse-link derivative"
+    formula: "z = η + (y-μ)/(dμ/dη);  W = 1/(V(μ)·(1/(dμ/dη))²) = (dμ/dη)²/V(μ)"
+    note: "Link::derivative returns dμ/dη; the IRLS update must invert it."
+  C-GLMIRLS-002:
+    description: "GLM::fit recovers the correct MLE coefficients on a known logistic fit"
+    formula: "Binomial/logit on x=[-2..2], y=[0.1..0.9] ⇒ slope ≈ 1.1266, P(y|x=-2) ≈ 0.0951"
+    note: "The link-derivative swap yields slope 1.0333 / P 0.1124."
+falsification:
+  - id: FALSIFY-GLM-IRLS-LINK-DERIV
+    description: "GLM IRLS converges to the correct logistic coefficients. Discharges C-GLMIRLS-001/002."
+    test: "falsify_glm_irls_link_derivative — Binomial/logit fit: RED slope 1.0333 / P 0.1124, GREEN slope 1.1266 / P 0.0951."
+    evidence: "cargo test -p aprender-core --lib falsify_glm_irls_link_derivative"
