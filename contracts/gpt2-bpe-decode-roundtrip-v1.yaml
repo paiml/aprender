@@ -1,0 +1,40 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-19"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "HuggingFace GPT-2 bytes_to_unicode / byte_decoder (the reference byte-level-BPE map)"
+    - "crates/aprender-serve/src/gguf/utils.rs::gpt2_unicode_to_byte (the in-crate correct inverse)"
+  description: |
+    Correctness contract for GPT-2 byte-level BPE decoding in the serve tokenizer
+    (aprender-serve BPETokenizer::decode). Pillar-4 (Ollama/serve) correctness: non-ASCII
+    generated text must decode to the real characters, not mojibake.
+kind: KernelContract
+name: gpt2-bpe-decode-roundtrip
+version: "1.0.0"
+scope: "crates/aprender-serve/src/tokenizer.rs"
+description: |
+  GPT-2 byte-level BPE maps each of the 256 bytes to a printable unicode codepoint; decode must
+  invert that map. PMAT-837 fixed BPETokenizer::gpt2_char_to_byte, which treated the U+0100..
+  region as a LINEAR `code - 0x100` offset (accepting only 0..=32 | 127..=160 | 173) and omitted
+  the Latin-1 self-mapped bytes entirely. GPT-2's byte_encoder above U+0120 is a STAIRCASE
+  (U+0121→0x7F, U+0122..=U+0142→0x80..=0xA0, U+0143→0xAD), and bytes 0xA1..=0xFF map to themselves.
+  So 129 of 256 byte values returned None and decode() re-encoded the codepoint as multi-byte
+  UTF-8 — turning every non-ASCII generation from a GPT-2 / byte-level-BPE model into mojibake
+  (中 → "ä¸Ń") on the OpenAI-compatible serve path. Fix: delegate to the correct in-crate inverse
+  map gguf::utils::gpt2_unicode_to_byte.
+equations:
+  C-GPT2BPE-001:
+    description: "Every byte 0..=255 round-trips through the GPT-2 byte-level map"
+    formula: "∀ b in 0..=255: gpt2_char_to_byte(byte_encoder(b)) == Some(b); e.g. U+0121→0x7F, U+0143→0xAD, U+00E9→0xE9 (NOT None)"
+    note: "The staircase (U+0121..U+0143) and the Latin-1 self-mapped region (cp ≤ 0xFF) must both invert."
+  C-GPT2BPE-002:
+    description: "Non-ASCII generated text decodes to the real characters, not mojibake"
+    formula: "decode(byte_level_glyphs(中)) == \"中\"; NOT the UTF-8-re-encoded \"ä¸Ń\""
+    note: "decode must not fall through to char::encode_utf8 for a remapped byte glyph."
+falsification:
+  - id: FALSIFY-TOKENIZER-GPT2-NONASCII
+    description: "GPT-2 byte-level decode round-trips a non-ASCII char. Discharges C-GPT2BPE-001/002."
+    test: "falsify_gpt2_decode_non_ascii_roundtrip — vocab ['ä','¸','Ń'] (bytes 0xE4,0xB8,0xAD) decodes to 中: RED pre-fix 'ä¸Ń' (mojibake), GREEN post-fix '中'."
+    evidence: "cargo test -p aprender-serve --lib falsify_gpt2_decode_non_ascii_roundtrip"

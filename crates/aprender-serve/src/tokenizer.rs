@@ -404,27 +404,17 @@ impl BPETokenizer {
         Ok(result)
     }
 
-    /// Convert GPT-2 unicode character to original byte value
+    /// Convert a GPT-2 byte-level-BPE unicode character back to its original byte.
+    ///
+    /// PMAT-837: the prior body treated the U+0100.. region as a LINEAR `code - 0x100`
+    /// offset and only accepted `0..=32 | 127..=160 | 173`. GPT-2's byte_encoder above
+    /// U+0120 is a STAIRCASE (U+0121→0x7F, U+0122..=U+0142→0x80..=0xA0, U+0143→0xAD), and
+    /// the Latin-1 self-mapped bytes (cp ≤ 0xFF) were omitted entirely — so 129/256 byte
+    /// values returned None and `decode` re-encoded the codepoint as multi-byte UTF-8,
+    /// turning every non-ASCII generation into mojibake. Delegate to the correct in-crate
+    /// inverse map (the GGUF path's `gpt2_unicode_to_byte`).
     fn gpt2_char_to_byte(c: char) -> Option<u8> {
-        // GPT-2 maps bytes 0-255 to unicode characters
-        // Printable ASCII (33-126) maps to itself
-        // Other bytes map to unicode range starting at U+0100
-        let code = c as u32;
-        if (33..=126).contains(&code) || code == 32 {
-            Some(code as u8)
-        } else if (0x100..=0x100 + 255).contains(&code) {
-            // GPT-2 remapped bytes
-            let byte = (code - 0x100) as u8;
-            // Map back based on GPT-2's byte_encoder
-            match byte {
-                0..=32 => Some(byte),    // Control chars + space
-                127..=160 => Some(byte), // DEL + extended ASCII
-                173 => Some(173),        // Soft hyphen
-                _ => None,
-            }
-        } else {
-            None
-        }
+        crate::gguf::utils::gpt2_unicode_to_byte(c)
     }
 
     /// Get vocabulary size (cached, O(1))

@@ -211,6 +211,26 @@ mod tests {
         assert_eq!(decoded, " a");
     }
 
+    /// FALSIFY-TOKENIZER-GPT2-NONASCII (PMAT-837): GPT-2 byte-level-BPE decode must round-trip
+    /// non-ASCII. The CJK char 中 is UTF-8 [0xE4, 0xB8, 0xAD], stored byte-level as the glyphs
+    /// 'ä' (U+00E4, byte 0xE4), '¸' (U+00B8, byte 0xB8), 'Ń' (U+0143, the staircase glyph for
+    /// byte 0xAD). The buggy gpt2_char_to_byte returned None for all three (Latin-1 omitted +
+    /// linear-offset staircase), so decode re-encoded each codepoint as multi-byte UTF-8 →
+    /// mojibake instead of "中". 129/256 byte values were affected.
+    #[test]
+    fn falsify_gpt2_decode_non_ascii_roundtrip() {
+        let vocab = vec![
+            "<unk>".to_string(),
+            "\u{00E4}".to_string(), // byte 0xE4
+            "\u{00B8}".to_string(), // byte 0xB8
+            "\u{0143}".to_string(), // byte 0xAD (GPT-2 staircase)
+        ];
+        let tok = BPETokenizer::new(vocab, vec![], "<unk>").expect("tokenizer");
+        let decoded = tok.decode(&[1, 2, 3]).expect("decode");
+        // RED pre-fix: mojibake (the codepoints re-encoded as UTF-8). GREEN: the real char.
+        assert_eq!(decoded, "\u{4E2D}", "GPT-2 byte-level decode produced mojibake for non-ASCII");
+    }
+
     #[test]
     fn test_sentencepiece_vocab_size() {
         let vocab = vec![
