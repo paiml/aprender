@@ -80,7 +80,13 @@ fn find_ngram_match_length(context: &[usize], next_token: usize, min_len: usize)
         // Look for this suffix earlier in the context
         for start in 0..(context.len() - end_pos) {
             if check_ngram_match(context, suffix, start, end_pos, next_token) {
-                max_match = max_match.max(end_pos + 1);
+                // PMAT-873: `end_pos` is the length of the repeated suffix that
+                // already exists in the context (== llama.cpp `repeat_len`). It
+                // must NOT include the candidate `next_token`, otherwise the
+                // exponent `match_len - allowed_length` computed in
+                // `apply_dry_penalty` is one too large and every DRY penalty is
+                // `base`x too strong vs llama.cpp.
+                max_match = max_match.max(end_pos);
             }
         }
     }

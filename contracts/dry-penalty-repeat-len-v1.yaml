@@ -1,0 +1,59 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-20"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "llama.cpp src/llama-sampling.cpp llama_sampler_dry_apply (DRY sampler)"
+    - "DRY (Don't Repeat Yourself) sampling — penalty = dry_base ^ (repeat_len - dry_allowed_length)"
+  description: |
+    Correctness contract for apr's DRY (Don't Repeat Yourself) penalty. The DRY penalty exponent
+    must be computed from `repeat_len` — the length of the in-context repeated suffix EXCLUDING the
+    candidate token being scored — exactly as llama.cpp does. apr beats Ollama/llama.cpp on parity
+    only if its DRY penalty magnitude matches llama.cpp's `dry_base ^ (repeat_len - dry_allowed_length)`.
+kind: KernelContract
+name: dry-penalty-repeat-len
+version: "1.0.0"
+scope: "crates/aprender-serve/src/generate/dry_penalty.rs"
+description: |
+  PMAT-873: `find_ngram_match_length` returned `end_pos + 1` — the length of the repeated suffix
+  PLUS the candidate next token. `apply_dry_penalty` then computes the penalty exponent as
+  `match_len - allowed_length`. Because `match_len` already included the candidate token, the
+  exponent was one too large, so every DRY penalty was `base`x too strong vs llama.cpp.
+
+  llama.cpp's DRY sampler computes `penalty = dry_base ^ (repeat_len - dry_allowed_length)`, where
+  `repeat_len` is the length of the matched repeated suffix that ALREADY exists in the context and
+  EXCLUDES the candidate being scored. In `find_ngram_match_length`, the loop variable `end_pos` is
+  exactly that repeated-suffix length: for each `end_pos` the function takes the last `end_pos`
+  tokens of the context as the suffix and checks whether that same `end_pos`-length suffix occurs
+  earlier in the context AND is followed by the candidate `next_token`. So `end_pos == repeat_len`;
+  the `+1` double-counted the candidate.
+
+  Fix: `max_match = max_match.max(end_pos)` (drop the `+1`). This keeps the gate
+  `match_len >= allowed_length` and the exponent `match_len - allowed_length` consistent with
+  llama.cpp `repeat_len >= dry_allowed_length` and `repeat_len - dry_allowed_length`.
+equations:
+  C-DRY-001:
+    description: "DRY penalty magnitude equals llama.cpp: base raised to (repeat_len - allowed_length)."
+    formula: "fires(t) ⟹ penalty(t) = multiplier * base^(repeat_len(t) - allowed_length)"
+    note: "repeat_len(t) is the length of the repeated suffix in context that, followed by candidate t, recurs an earlier occurrence; it EXCLUDES t. This is llama.cpp dry_base ^ (repeat_len - dry_allowed_length)."
+  C-DRY-002:
+    description: "match_len equals the repeated-suffix length excluding the candidate token (== llama.cpp repeat_len)."
+    formula: "find_ngram_match_length(context, t, allowed_length) = max { end_pos : suffix_{end_pos}(context) recurs earlier followed by t }"
+    note: "end_pos counts only tokens already present in context; the candidate t is NOT counted. The penalty gate is match_len >= allowed_length and the exponent is match_len - allowed_length."
+proof_obligations:
+  - id: PO-DRY-001
+    kind: correctness
+    statement: "When DRY fires, the applied penalty exponent is (repeat_len - allowed_length), never (repeat_len + 1 - allowed_length); the penalty is not base-x too strong vs llama.cpp."
+    discharged_by: FALSIFY-DRY-REPEAT-LEN-EXPONENT
+falsification:
+  - id: FALSIFY-DRY-REPEAT-LEN-EXPONENT
+    description: "For context [7,7] with allowed_length 1, multiplier 1.0, base 1.75, the 1-token suffix [7] recurs at index 0 followed by candidate 7, so repeat_len = 1. The penalized logit for token 7 must be base_logit - multiplier*base^(1-1) = 5.0 - 1.0 = 4.0 (llama.cpp), NOT base_logit - multiplier*base^(2-1) = 5.0 - 1.75 = 3.25 (off-by-one). Discharges C-DRY-001, C-DRY-002 and PO-DRY-001."
+    test: "cargo test -p aprender-serve --lib test_dry_penalty_exponent_matches_llama_cpp_repeat_len"
+    evidence: |
+      RED (pre-fix): expected penalized logit 4 (penalty=1, repeat_len=1), got 3.25 — the penalty
+      was base=1.75x too strong because match_len = end_pos + 1 included the candidate token.
+      GREEN (post-fix): the penalized logit is 4.0, matching llama.cpp
+      dry_base ^ (repeat_len - dry_allowed_length). No sibling DRY test asserted an exact penalty
+      magnitude (existing tests only check penalty direction / config fields), so none encoded the
+      off-by-one. Full aprender-serve lib suite passes with 0 failures.
