@@ -1,0 +1,81 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-20"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "sklearn.metrics.calinski_harabasz_score (oracle — uses LabelEncoder → dense 0..n_labels)"
+    - "sklearn.metrics.davies_bouldin_score (oracle — uses LabelEncoder → dense 0..n_labels)"
+    - "Caliński & Harabasz (1974) A dendrite method for cluster analysis"
+    - "Davies & Bouldin (1979) A Cluster Separation Measure, IEEE TPAMI"
+  description: |
+    Correctness contract for the Calinski–Harabasz and Davies–Bouldin clustering
+    metrics in aprender-core (metrics::calinski_harabasz_score /
+    metrics::davies_bouldin_score). Pillar-1 (sklearn parity) provable-correctness.
+
+    PMAT-871 fixed a defect where both functions derived the cluster count as
+    `k = labels.iter().max() + 1`, treating labels as a contiguous `0..=max` range.
+    For NON-contiguous labels (a gap left by a dropped cluster, e.g. [0,0,2,2,2], or
+    DBSCAN-style sparse output) every gap index became a PHANTOM empty cluster
+    (count = 0, centroid at the origin). For CH this corrupts both the (k-1)
+    numerator and (n-k) denominator of the variance-ratio F; for DB the phantom
+    origin-centroid pollutes the centroid-distance ratios and the 1/k average.
+    The same partition therefore returned DIFFERENT scores under relabeling.
+
+    Measured on data [[1,1],[1.5,2],[3,4],[5,7],[3.5,5]] with the SAME partition
+    {0,1}|{2,3,4}: labels [0,0,1,1,1] gave CH=10.3140, but [0,0,2,2,2] gave
+    CH=3.4380 (a 3x error) and DB=0.3721 vs 0.4150. sklearn (LabelEncoder) gives
+    CH=10.3140, DB=0.4150 for BOTH encodings. The fix remaps labels to a dense
+    0..n_distinct range and sets k = |distinct labels| before computing centroids,
+    scatter, B/W, and the (k-1)/(n-k) divisors — exactly sklearn's semantics.
+
+kind: KernelContract
+name: clustering-metrics-relabel-invariant
+version: "1.0.0"
+scope: "crates/aprender-core/src/metrics/mod.rs"
+
+description: |
+  Clustering metrics depend ONLY on the partition (the equivalence relation the
+  labels induce), NOT on the particular integer names assigned to clusters. Both
+  CH and DB must therefore be INVARIANT under any relabeling (bijection on the
+  label set), and the cluster count must be the number of DISTINCT labels present,
+  never `max(labels) + 1`. Gaps in the label set must not create empty clusters.
+
+equations:
+  C-CLUSTER-RELABEL-001:
+    description: "Cluster count k is the number of distinct labels (sklearn LabelEncoder), not max+1"
+    formula: "k = |{ labels[i] : 0 ≤ i < n }|  (NOT max(labels) + 1)"
+    note: "For labels [0,0,2,2,2] the correct k is 2, not 3; index 1 must NOT become a phantom empty cluster."
+
+  C-CLUSTER-RELABEL-002:
+    description: "Calinski–Harabasz is invariant under relabeling and matches the sklearn oracle"
+    formula: "calinski_harabasz_score(X, sigma.L) = calinski_harabasz_score(X, L) for all bijections sigma; e.g. X=[[1,1],[1.5,2],[3,4],[5,7],[3.5,5]], L=[0,0,1,1,1] => CH=10.3140 == CH for L=[0,0,2,2,2]"
+    note: "RED (max+1 bug): gapped [0,0,2,2,2] => CH=3.4380 (3x error). GREEN: CH=10.3140 for both."
+
+  C-CLUSTER-RELABEL-003:
+    description: "Davies–Bouldin is invariant under relabeling and matches the sklearn oracle"
+    formula: "davies_bouldin_score(X, sigma.L) = davies_bouldin_score(X, L) for all bijections sigma; same X => DB=0.4150 for both [0,0,1,1,1] and [0,0,2,2,2]"
+    note: "RED (max+1 bug): gapped [0,0,2,2,2] => DB=0.3721 (phantom origin-centroid + inflated k). GREEN: DB=0.4150 for both."
+
+proof_obligations:
+  - type: invariant
+    property: cluster count equals number of distinct labels
+    formal: |
+      k computed by both calinski_harabasz_score and davies_bouldin_score equals
+      |distinct(labels)|; no index in (max+1 minus distinct) contributes a cluster.
+  - type: equivalence
+    property: Calinski-Harabasz invariant under relabeling
+    formal: |
+      For any bijection sigma on the label set, CH(X, sigma.L) == CH(X, L); the
+      gapped encoding [0,0,2,2,2] yields the same score (10.3140) as [0,0,1,1,1].
+  - type: equivalence
+    property: Davies-Bouldin invariant under relabeling
+    formal: |
+      For any bijection sigma on the label set, DB(X, sigma.L) == DB(X, L); the
+      gapped encoding [0,0,2,2,2] yields the same score (0.4150) as [0,0,1,1,1].
+
+falsification:
+  - id: FALSIFY-CLUSTER-RELABEL-001
+    description: "CH and DB are relabeling-invariant and match the sklearn oracle for a gapped (non-contiguous) labeling. Discharges C-CLUSTER-RELABEL-001/002/003."
+    test: "clustering_metrics_relabel_invariant_pmat_871 — CH: gapped RED 3.4380 → GREEN 10.3140 == contiguous; DB: gapped RED 0.3721 → GREEN 0.4150 == contiguous. sklearn reference: CH=10.3140, DB=0.4150 for both [0,0,1,1,1] and [0,0,2,2,2]."
+    evidence: "cargo test -p aprender-core --lib clustering_metrics_relabel_invariant_pmat_871"
