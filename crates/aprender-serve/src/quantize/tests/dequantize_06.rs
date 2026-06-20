@@ -159,36 +159,6 @@ fn test_read_f16_negative() {
 }
 
 #[test]
-fn test_extract_scale_min_from_slice_first_block() {
-    // Test extraction for index 0 (first block - simple layout)
-    let scales: [u8; 8] = [0x3F, 0x1F, 0x0F, 0x07, 0x20, 0x10, 0x08, 0x04];
-    let (scale, min) = extract_scale_min_from_slice(&scales, 0);
-    // idx=0: scale = scales[0] & 0x3F = 0x3F = 63
-    // idx=0: min = scales[4] & 0x3F = 0x20 = 32
-    assert!(
-        (scale - 63.0).abs() < 0.001,
-        "scale should be 63, got {}",
-        scale
-    );
-    assert!((min - 32.0).abs() < 0.001, "min should be 32, got {}", min);
-}
-
-#[test]
-fn test_extract_scale_min_from_slice_second_block() {
-    // Test extraction for index 2 (even, simple layout)
-    let scales: [u8; 8] = [0x3F, 0x1F, 0x0F, 0x07, 0x20, 0x10, 0x08, 0x04];
-    let (scale, min) = extract_scale_min_from_slice(&scales, 2);
-    // idx=2: scale_idx = 1, scale = scales[1] & 0x3F = 0x1F = 31
-    // idx=2: min_idx = 5, min = scales[5] & 0x3F = 0x10 = 16
-    assert!(
-        (scale - 31.0).abs() < 0.001,
-        "scale should be 31, got {}",
-        scale
-    );
-    assert!((min - 16.0).abs() < 0.001, "min should be 16, got {}", min);
-}
-
-#[test]
 fn test_extract_scale_min_first_blocks() {
     // Test extract_scale_min for first 4 blocks (simple layout)
     let scales: [u8; 12] = [

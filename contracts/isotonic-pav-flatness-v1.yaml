@@ -1,0 +1,141 @@
+# Isotonic Regression — PAV pooled-block flatness (sklearn parity)
+#
+# PMAT-870: After Pool-Adjacent-Violators (PAV) pooling, the fitted isotonic
+# function MUST be piecewise-constant (FLAT) at the pooled value across the whole
+# x-range of each pooled block. Both endpoints (x_min and x_max) of a pooled block
+# are kept as knots so that a query strictly inside a pooled block returns the
+# constant pooled value, and interpolation only happens BETWEEN the max-x edge of
+# one block and the min-x edge of the next. This matches sklearn's
+# IsotonicRegression (X_thresholds_ / y_thresholds_).
+kind: KernelContract
+metadata:
+  version: 1.0.0
+  created: '2026-06-20'
+  author: PAIML Engineering
+  description: >-
+    Isotonic Regression PAV flatness contract — the fitted calibrator is
+    piecewise-constant on pooled Pool-Adjacent-Violators blocks; both block
+    endpoints (x_min, x_max) are recorded as knots so interior queries return the
+    constant pooled value (sklearn IsotonicRegression parity).
+  references:
+  - 'Zadrozny & Elkan (2002) Transforming classifier scores into accurate multiclass probability estimates'
+  - 'Ayer et al. (1955) An empirical distribution function for sampling with incomplete information (PAV)'
+  - 'scikit-learn sklearn.isotonic.IsotonicRegression (X_thresholds_, y_thresholds_)'
+  lessons_learned:
+  - 'PMAT-870: recording only block x_min discarded x_max → interior queries inside a pooled block were linearly interpolated toward the next block instead of returning the flat pooled value.'
+equations:
+  pav_pooled_value:
+    formula: 'v_b = (1/|B|) * sum_{i in B} y_i'
+    domain: 'B = pooled PAV block of (x_i, y_i) pairs, y_i in {0, 1}'
+    codomain: v_b in [0, 1]
+    invariants:
+    - Pooled value is the mean of the labels in the block
+    - Block values are non-decreasing across blocks (monotone isotonic fit)
+    preconditions:
+    - predictions.len() == labels.len()
+  piecewise_constant_block:
+    formula: 'f(x) = v_b for all x in [x_min(B), x_max(B)]'
+    domain: 'x in [x_min(B), x_max(B)], pooled block B with x_max(B) >= x_min(B)'
+    codomain: f(x) in [0, 1]
+    invariants:
+    - The fit is FLAT (constant v_b) across the entire x-range of a pooled block
+    - Both endpoints x_min(B) and x_max(B) are kept as knots with value v_b
+    - A multi-point pooled block emits TWO equal-value knots; a single-point block emits ONE
+    preconditions:
+    - 'block knots are sorted ascending in x'
+  inter_block_interpolation:
+    formula: 'f(x) = v_a + (x - x_max(A)) / (x_min(C) - x_max(A)) * (v_c - v_a)'
+    domain: 'x in (x_max(A), x_min(C)) between adjacent blocks A and C'
+    codomain: f(x) in [v_a, v_c]
+    invariants:
+    - Interpolation occurs ONLY between the max-x edge of one block and the min-x edge of the next
+    - Degenerate equal-x knots (x_max(A) == x_min(C)) return the left value (no division by zero)
+    preconditions:
+    - 'x_min(C) - x_max(A) guarded by < 1e-10 threshold'
+proof_obligations:
+- type: invariant
+  property: Piecewise-constant on pooled blocks
+  formal: 'for all x in [x_min(B), x_max(B)], predict(x) == v_b'
+  applies_to: all
+- type: invariant
+  property: Both block endpoints kept as knots
+  formal: 'x_max(B) > x_min(B) implies (x_min(B), v_b) and (x_max(B), v_b) are both knots'
+  applies_to: all
+- type: ordering
+  property: Inter-block interpolation only
+  formal: 'predict(x) interpolates only for x in (x_max(A), x_min(C)) between adjacent blocks A, C'
+  applies_to: all
+- type: monotonicity
+  property: Monotone non-decreasing fit
+  formal: 'p1 <= p2 implies predict(p1) <= predict(p2)'
+  applies_to: all
+- type: bound
+  property: Calibrated value in unit interval
+  formal: '0 <= predict(x) <= 1'
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-ISO-PAV-001
+  rule: Flat pooled block (max-x edge)
+  prediction: 'fit X=[0.0,0.1,0.2,0.3] y=[0,1,0,1] (PAV pools x=0.1,0.2 to 0.5); predict(0.2)==0.5'
+  test: 'crates/aprender-core/src/calibration_tests.rs::test_isotonic_pav_block_is_flat_pmat_870'
+  if_fails: 'Only x_min kept as knot — interior query interpolates toward next block (RED: 0.75)'
+- id: FALSIFY-ISO-PAV-002
+  rule: Flat pooled block (interior)
+  prediction: 'same fit; predict(0.15)==0.5 (strictly inside pooled [0.1,0.2] block)'
+  test: 'crates/aprender-core/src/calibration_tests.rs::test_isotonic_pav_block_is_flat_pmat_870'
+  if_fails: 'Block max-x knot missing — interior interpolates (RED: 0.625)'
+- id: FALSIFY-ISO-PAV-003
+  rule: Inter-block interpolation
+  prediction: 'same fit; predict(0.25)==0.75 (between block edge x=0.2 v=0.5 and x=0.3 v=1.0)'
+  test: 'crates/aprender-core/src/calibration_tests.rs::test_isotonic_pav_block_is_flat_pmat_870'
+  if_fails: 'Interpolation anchored on wrong edge (RED: 0.875)'
+- id: FALSIFY-ISO-PAV-004
+  rule: No-pool guard (unchanged behavior)
+  prediction: 'fit X=[0,0.2,0.4,0.6,0.8,1.0] y=[0,0,0,1,1,1]; predict(0.5)==0.5 (interp between half blocks)'
+  test: 'crates/aprender-core/src/calibration_tests.rs::test_isotonic_no_pool_guard_pmat_870'
+  if_fails: 'Two-knot emission changed non-pooled-interior behavior (regression)'
+- id: FALSIFY-ISO-PAV-005
+  rule: Monotone non-decreasing
+  prediction: 'predict(x) is non-decreasing in x for any fitted calibrator'
+  test: 'crates/aprender-core/src/calibration_tests.rs::test_isotonic_monotonic'
+  if_fails: 'PAV merge or knot emission broke monotonicity'
+falsification:
+  command: 'cargo test -p aprender-core --lib pmat_870'
+  red:
+    description: 'Bug present (only x_min kept as knot): pooled block is not flat.'
+    predict_0_2: 0.75
+    predict_0_15: 0.625
+    predict_0_25: 0.875
+  green:
+    description: 'Fix present (both x_min and x_max kept as knots): pooled block is flat.'
+    predict_0_2: 0.5
+    predict_0_15: 0.5
+    predict_0_25: 0.75
+  sklearn_reference:
+    model: 'sklearn.isotonic.IsotonicRegression().fit([0.0,0.1,0.2,0.3], [0,1,0,1])'
+    x_thresholds: [0.0, 0.1, 0.2, 0.3]
+    y_thresholds: [0.0, 0.5, 0.5, 1.0]
+    predict_0_2: 0.5
+    predict_0_15: 0.5
+    predict_0_25: 0.75
+kani_harnesses:
+- id: KANI-ISO-PAV-001
+  obligation: Piecewise-constant on pooled blocks
+  property: 'Query inside a pooled block returns the constant pooled value'
+  bound: 4
+  strategy: stub_float
+- id: KANI-ISO-PAV-002
+  obligation: Monotone non-decreasing fit
+  property: 'predict is non-decreasing in its argument'
+  bound: 4
+  strategy: stub_float
+qa_gate:
+  id: F-ISO-PAV-001
+  name: Isotonic PAV Flatness Contract
+  description: 'PAV pooled blocks are piecewise-constant; both endpoints kept as knots (sklearn parity)'
+  checks:
+  - flat_pooled_block
+  - inter_block_interpolation_only
+  - monotone_fit
+  pass_criteria: 'All 5 falsification tests pass; predict matches sklearn X_thresholds_/y_thresholds_'
+  falsification: 'Record only block x_min as knot — pooled-block interior queries interpolate toward the next block'

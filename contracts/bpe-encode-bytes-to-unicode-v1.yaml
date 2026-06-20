@@ -1,0 +1,50 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-19"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "HuggingFace GPT-2 bytes_to_unicode (the reference byte-level-BPE byte->char map)"
+    - "crates/aprender-serve/src/gguf/utils.rs::gpt2_byte_to_unicode (the in-crate encode map)"
+    - "crates/aprender-serve/src/gguf/utils.rs::gpt2_unicode_to_byte (the inverse / decode map)"
+    - "PMAT-837 decode twin: contracts/gpt2-bpe-decode-roundtrip-v1.yaml (the same map, decode direction)"
+  description: |
+    Correctness contract for GPT-2 byte-level BPE ENCODING in the serve HF tokenizer
+    (aprender-serve BpeTokenizer::encode -> bpe_encode -> byte_to_bpe_char). Pillar-4
+    (Ollama/serve) correctness: a non-ASCII prompt must reach the model intact, not be
+    silently dropped before inference.
+kind: KernelContract
+name: bpe-encode-bytes-to-unicode
+version: "1.0.0"
+scope: "crates/aprender-serve/src/apr/tokenizer.rs"
+description: |
+  GPT-2 byte-level BPE maps each of the 256 bytes to a printable unicode codepoint; ENCODE must
+  apply that map to every UTF-8 byte of the input so the resulting glyph tokens hit the vocab keys
+  the HuggingFace tokenizer.json was trained on. PMAT-855 fixed byte_to_bpe_char (and the
+  char-level caller char_to_bpe_tokens / bpe_encode_segment), which for bytes >= 0x80 returned the
+  SentencePiece/GGUF byte-fallback string "<0xNN>" (e.g. 0xC3 -> "<0xC3>"). Those strings never
+  exist in a GPT-2/Qwen byte-level vocab, so bpe_encode_segment's `vocab.get(t)` under filter_map
+  silently DROPPED every accented-Latin / CJK / emoji / smart-quote character before it reached the
+  model. The caller also (a) cast each multi-byte char to a single truncated u8 and (b) concatenated
+  a char's glyphs into one combined vocab key, missing the per-glyph entries. Fix: map each UTF-8
+  BYTE through gpt2_byte_to_unicode (the exact inverse of the PMAT-837 decode helper
+  gpt2_unicode_to_byte), emitting one glyph token per byte. The "<0xNN>" byte-fallback belongs ONLY
+  on the GGUF greedy path (BPETokenizer::encode), which is unchanged.
+equations:
+  C-GPT2BPE-ENC-001:
+    description: "The encode byte->char map is the exact inverse of the decode char->byte map for all 256 bytes"
+    formula: "∀ b in 0..=255: gpt2_unicode_to_byte(byte_to_bpe_char(b)) == Some(b); each glyph is exactly one char; e.g. 0xC3->'Ã', 0xA9->'©', 0x00->U+0100, 0x7F->U+0121, 0xAD->U+0143, 0xFF->'ÿ'"
+    note: "Printable ASCII 0x21-0x7E and Latin-1 0xA1-0xAC/0xAE-0xFF self-map; the rest ride the U+0100.. staircase."
+  C-GPT2BPE-ENC-002:
+    description: "A non-ASCII char is encoded to its per-byte glyph token ids, not silently dropped"
+    formula: "bpe_encode(\"é\", vocab{'Ã':10,'©':11}, [], {}) == [10, 11]; NOT [] (é = UTF-8 [0xC3,0xA9])"
+    note: "Each UTF-8 byte becomes its own bytes_to_unicode glyph token so the per-glyph vocab entries resolve."
+falsification:
+  - id: FALSIFY-TOKENIZER-GPT2-ENC-NONASCII
+    description: "GPT-2 byte-level encode keeps a non-ASCII char. Discharges C-GPT2BPE-ENC-002."
+    test: "falsify_bpe_encode_non_ascii_accented_latin — vocab {'Ã':10,'©':11}, encode 'é' (bytes 0xC3,0xA9): RED pre-fix [] (byte_to_bpe_char returned absent '<0xC3>'/'<0xA9>' -> filter_map drops both), GREEN post-fix [10,11]."
+    evidence: "cargo test -p aprender-serve --lib falsify_bpe_encode_non_ascii_accented_latin"
+  - id: FALSIFY-TOKENIZER-GPT2-ENC-ROUNDTRIP
+    description: "Encode byte->glyph inverts decode glyph->byte for every byte. Discharges C-GPT2BPE-ENC-001."
+    test: "falsify_byte_to_bpe_char_roundtrips_all_bytes / falsify_gpt2_byte_to_unicode_roundtrip_all_bytes — ∀ b in 0..=255: gpt2_unicode_to_byte(byte_to_bpe_char(b)) == Some(b): RED pre-fix (bytes >=0x80 returned multi-char '<0xNN>'), GREEN post-fix all 256 round-trip."
+    evidence: "cargo test -p aprender-serve --lib falsify_byte_to_bpe_char_roundtrips_all_bytes"

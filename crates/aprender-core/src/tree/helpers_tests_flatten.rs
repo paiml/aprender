@@ -4,13 +4,17 @@
         let tree = TreeNode::Node(Node {
             feature_idx: 0,
             threshold: 2.5,
+            impurity: 0.0,
+            n_node_samples: 0,
             left: Box::new(TreeNode::Leaf(Leaf {
                 class_label: 0,
                 n_samples: 3,
+                impurity: 0.0,
             })),
             right: Box::new(TreeNode::Leaf(Leaf {
                 class_label: 1,
                 n_samples: 2,
+                impurity: 0.0,
             })),
         });
 

@@ -18,7 +18,7 @@ use crate::quantize::{
 
 // Import internal functions for direct testing
 use crate::quantize::{
-    extract_scale_min, extract_scale_min_from_slice, fused_q4_0_q8_0_dot_scalar,
+    extract_scale_min, fused_q4_0_q8_0_dot_scalar,
     fused_q8_0_q8_0_dot_scalar,
 };
 

@@ -1,16 +1,20 @@
 /// Bytes per element for GGML data types (table lookup, O(1)).
 ///
-/// Block-quantized types use approximate bytes-per-element.
+/// Block-quantized types use exact bytes-per-element = block_bytes / block_elems.
+/// K-quant super-blocks pack QK_K=256 elements (ggml-common.h):
+///   Q2_K=84, Q3_K=110, Q4_K=144, Q5_K=176, Q6_K=210, Q8_K=292 bytes
+///   → 84/256, 110/256, 144/256, 176/256, 210/256, 292/256 (all exact dyadic).
 /// Unknown dtypes default to 4.0 (F32 size) as a conservative overestimate.
+/// See contracts/gguf-kquant-element-size-v1.yaml (PMAT-869).
 fn ggml_dtype_element_size(dtype: u32) -> f64 {
     // Index: [F32, F16, Q4_0, Q4_1, (4), (5), Q5_0, Q5_1, Q8_0, Q8_1,
     //         Q2_K, Q3_K, Q4_K, Q5_K, Q6_K, Q8_K, IQ2_XXS, IQ2_XS,
     //         IQ3_XXS, IQ1_S, IQ4_NL, IQ3_S, IQ2_S, IQ4_XS, I8, I16,
     //         BF16, I32, I64, F64, IQ1_M]
     const SIZES: [f64; 31] = [
-        4.0, 2.0, 0.5625, 0.625, 4.0, 4.0, 0.6875, 0.75, 1.0625, 1.125, 0.3125, 0.4375, 0.5625,
-        0.6875, 0.8125, 1.0625, 0.5625, 0.625, 0.6875, 0.4375, 0.5625, 0.4375, 0.625, 0.5, 1.0,
-        2.0, 2.0, 4.0, 8.0, 8.0, 0.375,
+        4.0, 2.0, 0.5625, 0.625, 4.0, 4.0, 0.6875, 0.75, 1.0625, 1.125, 0.328_125, 0.429_687_5,
+        0.5625, 0.6875, 0.820_312_5, 1.140_625, 0.5625, 0.625, 0.6875, 0.4375, 0.5625, 0.4375,
+        0.625, 0.5, 1.0, 2.0, 2.0, 4.0, 8.0, 8.0, 0.375,
     ];
     SIZES.get(dtype as usize).copied().unwrap_or(4.0)
 }

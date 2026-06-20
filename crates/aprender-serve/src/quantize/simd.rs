@@ -4,7 +4,7 @@
 //!
 //! ## Contents
 //! - f16 reading: `read_f16`
-//! - Scale extraction: `extract_scale_min`, `extract_scale_min_from_slice`
+//! - Scale extraction: `extract_scale_min` (ggml `get_scale_min_k4`)
 //!
 //! Note: `f16_to_f32` is exported from `dequant.rs`.
 //! SIMD activations (`softmax_simd`, `fused_swiglu_simd`, `apply_rope_rotation_simd`)
@@ -55,24 +55,6 @@ pub fn extract_scale_min(scales: &[u8; 12], block_idx: usize) -> (f32, f32) {
     let min = f32::from(min_bits);
 
     (scale, min)
-}
-
-/// Extract scale and min from packed 6-bit scales (helper for InterleavedQ4K)
-pub fn extract_scale_min_from_slice(scales: &[u8], idx: usize) -> (f32, f32) {
-    // Same logic as extract_scale_min but works with slice
-    let scale_idx = idx / 2;
-    let min_idx = idx / 2 + 4;
-
-    let (scale_raw, min_raw) = if idx.is_multiple_of(2) {
-        (scales[scale_idx] & 0x3F, scales[min_idx] & 0x3F)
-    } else {
-        (
-            (scales[scale_idx] >> 6) | ((scales[scale_idx + 2] & 0x0F) << 2),
-            (scales[min_idx] >> 6) | ((scales[min_idx + 2] & 0x0F) << 2),
-        )
-    };
-
-    (scale_raw as f32, min_raw as f32)
 }
 
 #[cfg(test)]
@@ -186,15 +168,5 @@ mod tests {
         // min = (scales[8] >> 4) | ((scales[4] >> 6) << 4) = 3 | 0 = 3
         assert_eq!(scale, 49.0);
         assert_eq!(min, 3.0);
-    }
-
-    // ============= extract_scale_min_from_slice tests =============
-
-    #[test]
-    fn test_extract_scale_min_from_slice_even() {
-        let scales: [u8; 8] = [10, 20, 30, 40, 5, 15, 25, 35];
-        let (scale, min) = extract_scale_min_from_slice(&scales, 0);
-        assert_eq!(scale, 10.0);
-        assert_eq!(min, 5.0);
     }
 }

@@ -173,24 +173,43 @@ impl BayesianLogisticRegression {
                 predictions.push(Self::sigmoid(z));
             }
 
-            // Compute gradient: ∇ℓ = X^T(y - p) - λβ
+            // Compute gradient of the (un-normalized) log-posterior:
+            //   ℓ(β) = Σ_i [y_i log p_i + (1−y_i) log(1−p_i)] − (λ/2)‖β‖²
+            //   ∇ℓ  = Xᵀ(y − p) − λβ
+            // PMAT-864: the data term Σ_i x_ij (y_i − p_i) MUST NOT be divided
+            // by n. The Hessian used for the Laplace covariance below is the
+            // un-averaged H = XᵀWX + λI; averaging only the data term (while
+            // the prior gradient λβ stays un-averaged) would shift the
+            // stationary point to Xᵀ(y − p) = (n·λ)β — the MAP of a model with
+            // precision n·λ — so the posterior mean would be over-shrunk ~n×
+            // and the covariance would be evaluated at the wrong mode.
             let mut gradient = vec![0.0_f32; p];
             for j in 0..p {
                 let mut grad_j = 0.0_f32;
                 for i in 0..n {
                     grad_j += x.get(i, j) * (y[i] - predictions[i]);
                 }
-                // Average by number of samples for numerical stability
-                grad_j /= n as f32;
                 // Add prior gradient: -λβ_j
                 grad_j -= self.prior_precision * beta[j];
                 gradient[j] = grad_j;
             }
 
-            // Update parameters: β ← β + η∇ℓ
+            // Update parameters: β ← β + (η/n)·∇ℓ
+            //
+            // The STEP is scaled by 1/n purely to keep the gradient-ascent step
+            // magnitude in the same, well-conditioned range as before the
+            // PMAT-864 fix (the un-averaged gradient is ~n× larger, so an
+            // unscaled fixed-LR step would overshoot and oscillate). Scaling
+            // the WHOLE gradient by a positive constant does NOT move the
+            // stationary point: ∇ℓ = 0 ⇔ (1/n)·∇ℓ = 0, so the fit still
+            // converges to the λ-MAP where Xᵀ(y − p) = λβ — consistent with the
+            // un-averaged Hessian H = XᵀWX + λI used for the Laplace covariance.
+            // (This differs from the bug, which scaled ONLY the data term and
+            // thereby shifted the stationary point to precision n·λ.)
+            let step_scale = self.learning_rate / n as f32;
             let mut max_update = 0.0_f32;
             for j in 0..p {
-                let update = self.learning_rate * gradient[j];
+                let update = step_scale * gradient[j];
                 beta[j] += update;
                 max_update = max_update.max(update.abs());
             }

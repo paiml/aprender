@@ -140,6 +140,13 @@ pub fn load_auto_memory(cwd: &Path, warnings: &mut Vec<String>) -> Option<String
 #[cfg(test)]
 mod tests {
     use super::*;
+    // PMAT-876: tests below mutate the process-wide `APR_CONFIG` env var.
+    // `std::env` is process-global and `cargo test` runs tests in parallel,
+    // so they all acquire ONE crate-wide lock (env_test_support::env_lock)
+    // — shared across auto_memory + settings + instructions, all of which
+    // touch the SAME variable — and use ScopedEnv to restore the prior
+    // value on drop so the env is never left mutated for another test.
+    use crate::agent::env_test_support::{env_lock, ScopedEnv};
     use std::fs;
     use std::path::Path;
 
@@ -148,14 +155,6 @@ mod tests {
             fs::create_dir_all(p).expect("mkdir");
         }
         fs::write(path, body).expect("write");
-    }
-
-    // CI flake prevention: tests below mutate the process-wide
-    // `APR_CONFIG` env var. Same Mutex pattern as
-    // agent::settings::tests + agent::instructions::tests.
-    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        LOCK.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     // ── project_slug ───────────────────────────────────────────────
@@ -196,16 +195,15 @@ mod tests {
     fn root_honors_apr_config_env() {
         let _guard = env_lock();
         let dir = tempfile::tempdir().expect("tempdir");
-        std::env::set_var("APR_CONFIG", dir.path());
+        let _env = ScopedEnv::set("APR_CONFIG", dir.path());
         let r = auto_memory_root().expect("root resolved");
-        std::env::remove_var("APR_CONFIG");
         assert_eq!(r, dir.path().join("projects"));
     }
 
     #[test]
     fn root_uses_config_dir_when_env_unset() {
         let _guard = env_lock();
-        std::env::remove_var("APR_CONFIG");
+        let _env = ScopedEnv::remove("APR_CONFIG");
         let r = auto_memory_root().expect("root resolved on supported platform");
         // Should end in apr/projects regardless of host home.
         assert!(r.ends_with("apr/projects"), "unexpected root: {r:?}");
@@ -217,9 +215,8 @@ mod tests {
     fn project_memory_dir_layout() {
         let _guard = env_lock();
         let cfg = tempfile::tempdir().expect("cfg");
-        std::env::set_var("APR_CONFIG", cfg.path());
+        let _env = ScopedEnv::set("APR_CONFIG", cfg.path());
         let dir = project_memory_dir(Path::new("/tmp/myproj")).expect("dir");
-        std::env::remove_var("APR_CONFIG");
         assert_eq!(dir, cfg.path().join("projects").join("-tmp-myproj").join("memory"));
     }
 
@@ -229,11 +226,10 @@ mod tests {
     fn load_returns_none_when_no_dir() {
         let _guard = env_lock();
         let cfg = tempfile::tempdir().expect("cfg");
-        std::env::set_var("APR_CONFIG", cfg.path());
+        let _env = ScopedEnv::set("APR_CONFIG", cfg.path());
         let mut warns = Vec::new();
         // Project memory dir doesn't exist (no `projects/<slug>/memory/`).
         let out = load_auto_memory(Path::new("/tmp/never"), &mut warns);
-        std::env::remove_var("APR_CONFIG");
         assert!(out.is_none());
         assert!(warns.is_empty());
     }
@@ -242,12 +238,11 @@ mod tests {
     fn load_returns_none_when_dir_empty() {
         let _guard = env_lock();
         let cfg = tempfile::tempdir().expect("cfg");
-        std::env::set_var("APR_CONFIG", cfg.path());
         let mem_dir = cfg.path().join("projects").join("-tmp-x").join("memory");
         fs::create_dir_all(&mem_dir).expect("mkdir");
+        let _env = ScopedEnv::set("APR_CONFIG", cfg.path());
         let mut warns = Vec::new();
         let out = load_auto_memory(Path::new("/tmp/x"), &mut warns);
-        std::env::remove_var("APR_CONFIG");
         assert!(out.is_none(), "empty memory dir → None, got: {out:?}");
         assert!(warns.is_empty());
     }
@@ -260,10 +255,9 @@ mod tests {
         write(&mem_dir.join("MEMORY.md"), "# Top-of-memory index\n");
         write(&mem_dir.join("zzz_user.md"), "User notes\n");
         write(&mem_dir.join("feedback_x.md"), "Feedback X\n");
-        std::env::set_var("APR_CONFIG", cfg.path());
+        let _env = ScopedEnv::set("APR_CONFIG", cfg.path());
         let mut warns = Vec::new();
         let out = load_auto_memory(Path::new("/tmp/y"), &mut warns).expect("loaded");
-        std::env::remove_var("APR_CONFIG");
         assert!(warns.is_empty());
         // MEMORY.md (uppercase M) sorts before lowercase f/z.
         let memory_idx = out.find("Top-of-memory index").expect("MEMORY present");
@@ -285,10 +279,9 @@ mod tests {
         write(&mem_dir.join("note.md"), "kept\n");
         write(&mem_dir.join("note.txt"), "skipped\n");
         write(&mem_dir.join("note.json"), "skipped\n");
-        std::env::set_var("APR_CONFIG", cfg.path());
+        let _env = ScopedEnv::set("APR_CONFIG", cfg.path());
         let mut warns = Vec::new();
         let out = load_auto_memory(Path::new("/tmp/skip"), &mut warns).expect("loaded");
-        std::env::remove_var("APR_CONFIG");
         assert!(out.contains("kept"));
         assert!(!out.contains("skipped"), "non-md files must NOT be loaded");
     }
@@ -302,10 +295,9 @@ mod tests {
         // Subdirectory under memory/ — must not recurse.
         fs::create_dir_all(mem_dir.join("nested")).expect("mkdir nested");
         write(&mem_dir.join("nested").join("hidden.md"), "hidden-content\n");
-        std::env::set_var("APR_CONFIG", cfg.path());
+        let _env = ScopedEnv::set("APR_CONFIG", cfg.path());
         let mut warns = Vec::new();
         let out = load_auto_memory(Path::new("/tmp/sub"), &mut warns).expect("loaded");
-        std::env::remove_var("APR_CONFIG");
         assert!(out.contains("ok-content"));
         assert!(!out.contains("hidden-content"), "must not recurse into subdirs");
     }

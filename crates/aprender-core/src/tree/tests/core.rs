@@ -15,6 +15,7 @@ fn test_leaf_creation() {
     let leaf = Leaf {
         class_label: 1,
         n_samples: 10,
+        impurity: 0.0,
     };
     assert_eq!(leaf.class_label, 1);
     assert_eq!(leaf.n_samples, 10);
@@ -25,15 +26,19 @@ fn test_node_creation() {
     let left = TreeNode::Leaf(Leaf {
         class_label: 0,
         n_samples: 5,
+        impurity: 0.0,
     });
     let right = TreeNode::Leaf(Leaf {
         class_label: 1,
         n_samples: 5,
+        impurity: 0.0,
     });
 
     let node = Node {
         feature_idx: 0,
         threshold: 0.5,
+        impurity: 0.0,
+        n_node_samples: 0,
         left: Box::new(left),
         right: Box::new(right),
     };
@@ -48,6 +53,7 @@ fn test_tree_depth() {
     let leaf = TreeNode::Leaf(Leaf {
         class_label: 0,
         n_samples: 1,
+        impurity: 0.0,
     });
     assert_eq!(leaf.depth(), 0);
 
@@ -55,13 +61,17 @@ fn test_tree_depth() {
     let tree = TreeNode::Node(Node {
         feature_idx: 0,
         threshold: 0.5,
+        impurity: 0.0,
+        n_node_samples: 0,
         left: Box::new(TreeNode::Leaf(Leaf {
             class_label: 0,
             n_samples: 1,
+            impurity: 0.0,
         })),
         right: Box::new(TreeNode::Leaf(Leaf {
             class_label: 1,
             n_samples: 1,
+            impurity: 0.0,
         })),
     });
     assert_eq!(tree.depth(), 1);
@@ -70,10 +80,13 @@ fn test_tree_depth() {
     let deep_tree = TreeNode::Node(Node {
         feature_idx: 0,
         threshold: 0.5,
+        impurity: 0.0,
+        n_node_samples: 0,
         left: Box::new(tree),
         right: Box::new(TreeNode::Leaf(Leaf {
             class_label: 1,
             n_samples: 1,
+            impurity: 0.0,
         })),
     });
     assert_eq!(deep_tree.depth(), 2);

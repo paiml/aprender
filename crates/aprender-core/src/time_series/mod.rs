@@ -179,8 +179,20 @@ impl ARIMA {
             self.ma_coef = Some(self.estimate_ma_parameters(&working_data)?);
         }
 
-        // Calculate intercept (mean of stationary series)
-        self.intercept = working_data.as_slice().iter().sum::<f64>() / working_data.len() as f64;
+        // Calculate the constant term for the mean-centered AR model (PMAT-862,
+        // contract arima-ar-centering-v1). Box-Jenkins fits y_t - mu = sum phi_k (y_{t-k} - mu),
+        // i.e. y_t = mu*(1 - sum phi_k) + sum phi_k * y_{t-k}. The forecast loop adds
+        // `self.intercept + sum ar_coef[k]*y_{t-1-k}`, so the stored constant must be
+        // `mu * (1 - sum phi_k)`, NOT mu alone. With the previous `intercept = mu` and AR coefs
+        // that summed to ~1.0 on uncentered data, forecasts diverged to ~2x the series level.
+        // For the differenced (d >= 1) path mu ~= 0, so mu*(1 - sum phi) ~= mu and the integrated
+        // forecast path is unchanged.
+        let mu = working_data.as_slice().iter().sum::<f64>() / working_data.len() as f64;
+        let phi_sum: f64 = self
+            .ar_coef
+            .as_ref()
+            .map_or(0.0, |c| c.as_slice().iter().sum());
+        self.intercept = mu * (1.0 - phi_sum);
 
         // Calculate residuals for MA component
         self.residuals = Some(self.calculate_residuals(&working_data)?);
@@ -314,21 +326,35 @@ impl ARIMA {
     }
 
     /// Estimate AR parameters using simplified Yule-Walker equations.
+    ///
+    /// Box-Jenkins / statsmodels `ARIMA(order=(p,0,q))` fit the MEAN-CENTERED model
+    /// `y_t - mu = sum_k phi_k (y_{t-k} - mu) + e_t`. The coefficients must therefore be
+    /// estimated on the demeaned series:
+    /// `phi = sum (y_i - mu)(y_{i-1-lag} - mu) / sum (y_{i-1-lag} - mu)^2`.
+    /// Estimating on the raw (uncentered) levels makes both sums dominated by `n * mu^2` for a
+    /// series with nonzero mean, collapsing every coefficient to ~1.0 regardless of the true
+    /// autocorrelation — which in turn drives ARIMA(p,0,q) forecasts to ~2x the series level
+    /// (PMAT-862, contract arima-ar-centering-v1).
     #[allow(clippy::unnecessary_wraps)]
     fn estimate_ar_parameters(&self, data: &Vector<f64>) -> Result<Vector<f64>, AprenderError> {
-        // Simplified: use least squares on lagged values
+        // Simplified: least squares on the MEAN-CENTERED lagged values (Box-Jenkins).
         let n = data.len();
         let mut coefs = vec![0.1; self.p]; // Initialize with small values
 
-        // Simple estimation: use autocorrelations
+        // Mean-center the series before forming the lagged products/sums.
+        let mu = data.as_slice().iter().sum::<f64>() / n as f64;
+
+        // Simple estimation: use (centered) autocorrelations
         for lag in 0..self.p {
             if n > lag + 1 {
                 let mut sum_prod = 0.0;
                 let mut sum_sq = 0.0;
 
                 for i in (lag + 1)..n {
-                    sum_prod += data[i] * data[i - lag - 1];
-                    sum_sq += data[i - lag - 1] * data[i - lag - 1];
+                    let x_t = data[i] - mu;
+                    let x_lag = data[i - lag - 1] - mu;
+                    sum_prod += x_t * x_lag;
+                    sum_sq += x_lag * x_lag;
                 }
 
                 if sum_sq > 1e-10 {

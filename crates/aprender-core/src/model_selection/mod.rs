@@ -521,24 +521,39 @@ impl StratifiedKFold {
         // Initialize folds
         let mut fold_indices: Vec<Vec<usize>> = vec![Vec::new(); self.n_splits];
 
-        // Distribute each class across folds
-        for indices in class_indices.values() {
+        // PMAT-866: distribute each class across folds with a *cumulative* offset
+        // so that per-class remainders round-robin across folds instead of always
+        // piling onto the lowest-index folds. This keeps fold sizes balanced to
+        // within 1 (sklearn StratifiedKFold / _make_test_folds parity).
+        //
+        // Iterate classes in stable sorted-label order (NOT HashMap order) so the
+        // split is deterministic across runs and platforms.
+        let mut sorted_labels: Vec<i32> = class_indices.keys().copied().collect();
+        sorted_labels.sort_unstable();
+
+        // `offset` is carried across classes: each class assigns its `remainder`
+        // extra samples to folds (offset + 0), (offset + 1), ..., wrapping mod
+        // n_splits, then advances `offset` by `remainder`.
+        let mut offset = 0usize;
+        for label in sorted_labels {
+            let indices = &class_indices[&label];
             let class_size = indices.len();
             let fold_size = class_size / self.n_splits;
             let remainder = class_size % self.n_splits;
 
             let mut start = 0;
-            for (i, fold) in fold_indices.iter_mut().enumerate() {
-                let current_size = if i < remainder {
-                    fold_size + 1
-                } else {
-                    fold_size
-                };
+            for k in 0..self.n_splits {
+                // Fold k receives one extra sample iff it is among the `remainder`
+                // folds starting at the running offset (wrapping mod n_splits).
+                let gets_extra = (0..remainder).any(|r| (offset + r) % self.n_splits == k);
+                let current_size = fold_size + usize::from(gets_extra);
                 let end = start + current_size;
 
-                fold.extend_from_slice(&indices[start..end]);
+                fold_indices[k].extend_from_slice(&indices[start..end]);
                 start = end;
             }
+
+            offset = (offset + remainder) % self.n_splits;
         }
 
         // Create train/test splits

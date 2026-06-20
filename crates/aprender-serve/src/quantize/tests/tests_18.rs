@@ -9,7 +9,7 @@
 //!
 //! Focus: Edge cases, alignment requirements, and fallback paths.
 
-use crate::quantize::simd::{extract_scale_min, extract_scale_min_from_slice, read_f16};
+use crate::quantize::simd::{extract_scale_min, read_f16};
 use crate::quantize::{f16_to_f32, fused_swiglu_simd, softmax_simd};
 
 // =============================================================================
@@ -183,94 +183,6 @@ fn test_read_f16_special_values() {
 // =============================================================================
 // extract_scale_min_from_slice: Complete Branch Coverage
 // =============================================================================
-
-/// Test extract_scale_min_from_slice with all even indices 0-6
-#[test]
-fn test_extract_scale_min_from_slice_all_even() {
-    let scales: [u8; 12] = [
-        1, 2, 3, 4, // bytes 0-3 for scale indices
-        11, 12, 13, 14, // bytes 4-7 for min indices
-        0, 0, 0, 0,
-    ];
-
-    // idx=0: scale_idx=0, min_idx=4
-    let (s0, m0) = extract_scale_min_from_slice(&scales, 0);
-    assert_eq!(s0, 1.0, "idx=0 scale");
-    assert_eq!(m0, 11.0, "idx=0 min");
-
-    // idx=2: scale_idx=1, min_idx=5
-    let (s2, m2) = extract_scale_min_from_slice(&scales, 2);
-    assert_eq!(s2, 2.0, "idx=2 scale");
-    assert_eq!(m2, 12.0, "idx=2 min");
-
-    // idx=4: scale_idx=2, min_idx=6
-    let (s4, m4) = extract_scale_min_from_slice(&scales, 4);
-    assert_eq!(s4, 3.0, "idx=4 scale");
-    assert_eq!(m4, 13.0, "idx=4 min");
-
-    // idx=6: scale_idx=3, min_idx=7
-    let (s6, m6) = extract_scale_min_from_slice(&scales, 6);
-    assert_eq!(s6, 4.0, "idx=6 scale");
-    assert_eq!(m6, 14.0, "idx=6 min");
-}
-
-/// Test extract_scale_min_from_slice with all odd indices 1,3,5,7
-#[test]
-fn test_extract_scale_min_from_slice_all_odd() {
-    // For odd indices, the formula uses different bit extraction:
-    // scale = (scales[scale_idx] >> 6) | ((scales[scale_idx + 2] & 0x0F) << 2)
-    // min = (scales[min_idx] >> 6) | ((scales[min_idx + 2] & 0x0F) << 2)
-    let scales: [u8; 12] = [
-        0b11_000000, // byte 0: high bits = 3 for scale idx=1
-        0b10_000000, // byte 1: high bits = 2 for scale idx=3
-        0b00000101,  // byte 2: low nibble = 5 for scale idx=1
-        0b00000110,  // byte 3: low nibble = 6 for scale idx=3
-        0b01_000000, // byte 4: high bits = 1 for min idx=1
-        0b00_000000, // byte 5: high bits = 0 for min idx=3
-        0b00000111,  // byte 6: low nibble = 7 for min idx=1
-        0b00001000,  // byte 7: low nibble = 8 for min idx=3
-        0,
-        0,
-        0,
-        0,
-    ];
-
-    // idx=1: scale = (byte0 >> 6) | ((byte2 & 0x0F) << 2) = 3 | (5 << 2) = 3 | 20 = 23
-    //        min = (byte4 >> 6) | ((byte6 & 0x0F) << 2) = 1 | (7 << 2) = 1 | 28 = 29
-    let (s1, m1) = extract_scale_min_from_slice(&scales, 1);
-    assert_eq!(s1, 23.0, "idx=1 scale");
-    assert_eq!(m1, 29.0, "idx=1 min");
-
-    // idx=3: scale = (byte1 >> 6) | ((byte3 & 0x0F) << 2) = 2 | (6 << 2) = 2 | 24 = 26
-    //        min = (byte5 >> 6) | ((byte7 & 0x0F) << 2) = 0 | (8 << 2) = 0 | 32 = 32
-    let (s3, m3) = extract_scale_min_from_slice(&scales, 3);
-    assert_eq!(s3, 26.0, "idx=3 scale");
-    assert_eq!(m3, 32.0, "idx=3 min");
-}
-
-/// Test extract_scale_min_from_slice boundary with max 6-bit values
-#[test]
-fn test_extract_scale_min_from_slice_max_values() {
-    // Set up for idx=0 to return max value 63 (all 1s in low 6 bits)
-    let scales: [u8; 12] = [
-        0b00_111111, // byte 0: 63 for scale idx=0
-        0,
-        0,
-        0,
-        0b00_111111, // byte 4: 63 for min idx=0
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-    ];
-
-    let (s0, m0) = extract_scale_min_from_slice(&scales, 0);
-    assert_eq!(s0, 63.0, "idx=0 max scale");
-    assert_eq!(m0, 63.0, "idx=0 max min");
-}
 
 // =============================================================================
 // extract_scale_min: Extended Coverage for Blocks 4-7

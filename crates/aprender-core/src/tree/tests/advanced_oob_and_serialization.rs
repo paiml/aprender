@@ -4,19 +4,24 @@ fn test_count_regression_tree_samples() {
     let leaf = RegressionTreeNode::Leaf(RegressionLeaf {
         value: 5.0,
         n_samples: 15,
+        impurity: 0.0,
     });
     assert_eq!(count_regression_tree_samples(&leaf), 15);
 
     let node = RegressionTreeNode::Node(RegressionNode {
         feature_idx: 0,
         threshold: 0.5,
+        impurity: 0.0,
+        n_node_samples: 0,
         left: Box::new(RegressionTreeNode::Leaf(RegressionLeaf {
             value: 1.0,
             n_samples: 5,
+            impurity: 0.0,
         })),
         right: Box::new(RegressionTreeNode::Leaf(RegressionLeaf {
             value: 2.0,
             n_samples: 8,
+            impurity: 0.0,
         })),
     });
     assert_eq!(count_regression_tree_samples(&node), 13);

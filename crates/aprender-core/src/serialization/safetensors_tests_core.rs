@@ -432,3 +432,127 @@ fn test_get_tensor_raw_f32() {
 
     fs::remove_file(path).ok();
 }
+
+// ====================================================================
+// PMAT-859: f32 -> BF16 round-to-nearest-even + NaN preservation
+//
+// Falsifiers for the export encoding bug. The previous implementation
+// truncated (`(bits >> 16) as u16`), biasing every value low and turning
+// f32 NaNs whose mantissa bits live only in the low 16 bits into +/-Inf.
+// Correct behavior matches IEEE / PyTorch / HF-safetensors / half::bf16.
+// ====================================================================
+
+/// Read the first little-endian u16 produced by `f32_slice_to_bf16_bytes`.
+fn bf16_first_u16(bytes: &[u8]) -> u16 {
+    u16::from_le_bytes([bytes[0], bytes[1]])
+}
+
+/// Decode a BF16 bit pattern back into f32 (BF16 occupies the high 16 bits).
+fn bf16_bits_to_f32(bf16: u16) -> f32 {
+    f32::from_bits((bf16 as u32) << 16)
+}
+
+#[test]
+fn test_bf16_round_to_nearest_even_falsifier() {
+    // 0x3F81_C000: the discarded low half is 0xC000 (> 0x8000), so the
+    // correct round-to-nearest result is 0x3F82, NOT 0x3F81 (truncation).
+    let input = f32::from_bits(0x3F81_C000);
+    let bytes = super::super::f32_slice_to_bf16_bytes(&[input]);
+    let bf16 = bf16_first_u16(&bytes);
+    assert_eq!(
+        bf16, 0x3F82,
+        "round-to-nearest-even expected 0x3F82, got {bf16:#06X} \
+         (truncation bug yields 0x3F81)"
+    );
+}
+
+#[test]
+fn test_bf16_round_to_nearest_even_halfway_to_even() {
+    // Exact halfway (low half == 0x8000) ties to even.
+    // 0x3F80_8000: kept lsb is 0 (even) -> stays 0x3F80.
+    let down = super::super::f32_slice_to_bf16_bytes(&[f32::from_bits(0x3F80_8000)]);
+    assert_eq!(
+        bf16_first_u16(&down),
+        0x3F80,
+        "tie-to-even (even kept) stays"
+    );
+    // 0x3F81_8000: kept lsb is 1 (odd) -> rounds up to even 0x3F82.
+    let up = super::super::f32_slice_to_bf16_bytes(&[f32::from_bits(0x3F81_8000)]);
+    assert_eq!(
+        bf16_first_u16(&up),
+        0x3F82,
+        "tie-to-even (odd kept) rounds up"
+    );
+}
+
+#[test]
+fn test_bf16_preserves_nan_not_inf() {
+    // A signaling NaN whose mantissa bit lives only in the low 16 bits.
+    // Truncation drops it -> exponent all-ones + zero mantissa == +Inf.
+    // The fix must keep it a NaN.
+    let nan = f32::from_bits(0x7F80_0001);
+    assert!(nan.is_nan(), "test input must be NaN");
+    let bytes = super::super::f32_slice_to_bf16_bytes(&[nan]);
+    let decoded = bf16_bits_to_f32(bf16_first_u16(&bytes));
+    assert!(
+        decoded.is_nan(),
+        "NaN must survive BF16 encoding (truncation produced Inf): bits {:#06X}",
+        bf16_first_u16(&bytes)
+    );
+    assert!(!decoded.is_infinite(), "NaN must not become Inf");
+}
+
+#[test]
+fn test_bf16_exact_values_lossless() {
+    // Values that already fit in BF16 (zero low half) are unchanged and
+    // are NOT pushed up by the rounding bias.
+    for &(bits, expected) in &[
+        (0x3F80_0000u32, 0x3F80u16), // 1.0
+        (0x4000_0000, 0x4000),       // 2.0
+        (0x0000_0000, 0x0000),       // +0.0
+        (0x8000_0000, 0x8000),       // -0.0
+        (0xBF80_0000, 0xBF80),       // -1.0
+    ] {
+        let bytes = super::super::f32_slice_to_bf16_bytes(&[f32::from_bits(bits)]);
+        assert_eq!(
+            bf16_first_u16(&bytes),
+            expected,
+            "exact BF16 value {bits:#010X} must round-trip to {expected:#06X}"
+        );
+    }
+}
+
+#[test]
+fn test_bf16_infinity_preserved() {
+    let pos_inf = super::super::f32_slice_to_bf16_bytes(&[f32::INFINITY]);
+    assert_eq!(bf16_first_u16(&pos_inf), 0x7F80, "+Inf -> 0x7F80");
+    let neg_inf = super::super::f32_slice_to_bf16_bytes(&[f32::NEG_INFINITY]);
+    assert_eq!(bf16_first_u16(&neg_inf), 0xFF80, "-Inf -> 0xFF80");
+}
+
+#[cfg(feature = "format-quantize")]
+#[test]
+fn test_bf16_parity_with_half_crate() {
+    // Oracle parity against half::bf16::from_f32 (round-to-nearest-even).
+    // Sweep a deterministic range of representative bit patterns.
+    let samples: Vec<f32> = (0..2048)
+        .map(|i| {
+            // Mix exponent and mantissa bits to exercise rounding boundaries.
+            let bits = ((i as u32) << 13) ^ 0x3F00_0000;
+            f32::from_bits(bits)
+        })
+        .filter(|v| !v.is_nan() && v.is_finite())
+        .collect();
+
+    let bytes = super::super::f32_slice_to_bf16_bytes(&samples);
+    for (idx, &v) in samples.iter().enumerate() {
+        let ours = u16::from_le_bytes([bytes[idx * 2], bytes[idx * 2 + 1]]);
+        let oracle = half::bf16::from_f32(v).to_bits();
+        assert_eq!(
+            ours,
+            oracle,
+            "BF16 parity mismatch for f32 {:#010X}: ours {ours:#06X}, half {oracle:#06X}",
+            v.to_bits()
+        );
+    }
+}

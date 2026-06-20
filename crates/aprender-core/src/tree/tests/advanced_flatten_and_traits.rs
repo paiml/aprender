@@ -8,20 +8,27 @@ fn test_flatten_and_reconstruct_tree() {
     let original = TreeNode::Node(Node {
         feature_idx: 0,
         threshold: 0.5,
+        impurity: 0.0,
+        n_node_samples: 0,
         left: Box::new(TreeNode::Leaf(Leaf {
             class_label: 0,
             n_samples: 5,
+            impurity: 0.0,
         })),
         right: Box::new(TreeNode::Node(Node {
             feature_idx: 1,
             threshold: 0.3,
+            impurity: 0.0,
+            n_node_samples: 0,
             left: Box::new(TreeNode::Leaf(Leaf {
                 class_label: 1,
                 n_samples: 3,
+                impurity: 0.0,
             })),
             right: Box::new(TreeNode::Leaf(Leaf {
                 class_label: 2,
                 n_samples: 2,
+                impurity: 0.0,
             })),
         })),
     });
@@ -62,23 +69,31 @@ fn test_flatten_and_reconstruct_tree() {
 
 #[test]
 fn test_compute_tree_feature_importances() {
+    // MDI = n_node*impurity - n_left*left_imp - n_right*right_imp per split.
     let tree = TreeNode::Node(Node {
         feature_idx: 0,
         threshold: 0.5,
+        impurity: 0.5,
+        n_node_samples: 20,
         left: Box::new(TreeNode::Leaf(Leaf {
             class_label: 0,
             n_samples: 10,
+            impurity: 0.0,
         })),
         right: Box::new(TreeNode::Node(Node {
             feature_idx: 1,
             threshold: 0.3,
+            impurity: 0.4,
+            n_node_samples: 10,
             left: Box::new(TreeNode::Leaf(Leaf {
                 class_label: 1,
                 n_samples: 5,
+                impurity: 0.0,
             })),
             right: Box::new(TreeNode::Leaf(Leaf {
                 class_label: 2,
                 n_samples: 5,
+                impurity: 0.0,
             })),
         })),
     });
@@ -86,30 +101,37 @@ fn test_compute_tree_feature_importances() {
     let mut importances = vec![0.0; 2];
     compute_tree_feature_importances(&tree, &mut importances);
 
-    // Feature 0 splits 20 samples, feature 1 splits 10 samples
-    assert!(importances[0] > 0.0);
-    assert!(importances[1] > 0.0);
+    // Feature 0: 20*0.5 - 10*0.0 - 10*0.4 = 6.0
+    // Feature 1: 10*0.4 - 5*0.0 - 5*0.0   = 4.0
+    assert!((importances[0] - 6.0).abs() < 1e-5);
+    assert!((importances[1] - 4.0).abs() < 1e-5);
 }
 
 #[test]
 fn test_compute_regression_tree_feature_importances() {
+    // MDI = n_node*variance - n_left*left_var - n_right*right_var per split.
     let tree = RegressionTreeNode::Node(RegressionNode {
         feature_idx: 0,
         threshold: 0.5,
+        impurity: 0.25,
+        n_node_samples: 20,
         left: Box::new(RegressionTreeNode::Leaf(RegressionLeaf {
             value: 1.0,
             n_samples: 10,
+            impurity: 0.0,
         })),
         right: Box::new(RegressionTreeNode::Leaf(RegressionLeaf {
             value: 2.0,
             n_samples: 10,
+            impurity: 0.0,
         })),
     });
 
     let mut importances = vec![0.0; 2];
     compute_regression_tree_feature_importances(&tree, &mut importances);
 
-    assert!(importances[0] > 0.0);
+    // Feature 0: 20*0.25 - 10*0.0 - 10*0.0 = 5.0
+    assert!((importances[0] - 5.0).abs() < 1e-5);
     assert_eq!(importances[1], 0.0); // Feature 1 not used
 }
 

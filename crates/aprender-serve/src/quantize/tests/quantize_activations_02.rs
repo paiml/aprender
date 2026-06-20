@@ -175,25 +175,6 @@ fn test_interleaved_q4k_dot_wrong_size_ext_cov() {
 // Extended Coverage Tests for extract_scale_min_from_slice
 // =========================================================================
 
-#[test]
-fn test_extract_scale_min_from_slice_even_idx_ext_cov() {
-    let scales = [31u8, 0, 0, 0, 15, 0, 0, 0, 0, 0, 0, 0];
-    let (scale, min) = extract_scale_min_from_slice(&scales, 0);
-    assert!((scale - 31.0).abs() < 1e-6);
-    assert!((min - 15.0).abs() < 1e-6);
-}
-
-#[test]
-fn test_extract_scale_min_from_slice_odd_idx_ext_cov() {
-    let mut scales = [0u8; 12];
-    scales[0] = 0b11_000000; // high 2 bits contribute to scale[1]
-    scales[2] = 0b0000_0011; // low 4 bits contribute to scale[1]
-    let (scale, _) = extract_scale_min_from_slice(&scales, 1);
-    // scale = (scales[0] >> 6) | ((scales[2] & 0x0F) << 2)
-    // = (0b11_000000 >> 6) | ((0x03 & 0x0F) << 2) = 3 | 12 = 15
-    assert!((scale - 15.0).abs() < 1e-6);
-}
-
 // =========================================================================
 // Extended Coverage Tests for Q4_KBlock/Q5_KBlock/Q6_KBlock Clone/Debug
 // =========================================================================

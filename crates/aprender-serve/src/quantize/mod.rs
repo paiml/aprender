@@ -119,7 +119,7 @@ pub use parallel_dequant::{
 };
 
 // Re-export SIMD utilities (for tests and internal use)
-pub use simd::{extract_scale_min, extract_scale_min_from_slice, read_f16};
+pub use simd::{extract_scale_min, read_f16};
 
 // Re-export format trait and generic kernels (Contract: quantized-dot-product-v1.yaml)
 pub use format_trait::{Q4_0Fmt, Q8_0Fmt, QuantBlockFormat, QuantFamily, Q4K, Q5K, Q6K};

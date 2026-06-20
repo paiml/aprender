@@ -3,18 +3,6 @@
 // Coverage Tests: extract_scale_min_from_slice
 // =========================================================================
 
-/// Test extract_scale_min_from_slice with various block indices
-#[test]
-fn test_extract_scale_min_from_slice_all_blocks() {
-    let scales = [0u8; 12];
-    // Test all 8 blocks
-    for idx in 0..8 {
-        let (scale, min) = extract_scale_min_from_slice(&scales, idx);
-        assert!(scale >= 0.0);
-        assert!(min >= 0.0);
-    }
-}
-
 // =========================================================================
 // Coverage Tests: fused_q4_0_q8_0_parallel_matvec_into
 // =========================================================================

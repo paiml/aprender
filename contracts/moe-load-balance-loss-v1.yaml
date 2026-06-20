@@ -1,0 +1,151 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-20'
+  author: PAIML Engineering
+  description: |
+    Mixture-of-Experts (Switch Transformer) load-balancing auxiliary loss must
+    compute the per-expert router-probability term P_i as the MEAN of the FULL
+    router softmax over ALL tokens — every expert on every token — NOT only the
+    gate probabilities of the experts that landed in a token's top-k set.
+
+    PMAT-875 (BEAT campaign: beat Switch/Mixtral MoE). Before the fix,
+    MixtureOfExperts::compute_load_balance_loss accumulated P_i only when expert
+    i was inside a token's top-k:
+        for (idx, prob) in indexed.iter().take(top_k) {
+            expert_counts[idx] += 1;
+            expert_probs[idx] += prob;   // BUG: top-k-only P_i
+        }
+    So P_i summed the gate probability only over tokens ROUTED to expert i. The
+    Switch Transformer aux loss (Fedus et al. 2021, Eq. 4-6) and HF Mixtral's
+    load_balancing_loss_func instead define P_i = (1/N) * sum over ALL tokens of
+    softmax(router)_i, the mean router probability mass assigned to expert i
+    across every token, including tokens that were dispatched elsewhere. f_i (the
+    hard top-k dispatch fraction) is unchanged.
+
+    Symptom: the auxiliary loss was systematically under-counted whenever routing
+    was non-uniform (an expert that wins some tokens still receives softmax mass
+    on tokens it loses, and that mass was being dropped). The fix splits the
+    accumulation: hard top-k counting for f_i, full softmax over all experts for
+    P_i.
+  references:
+  - 'Fedus, Zoph & Shazeer (2021) Switch Transformers, Eq. 4-6 (f_i, P_i, aux loss = alpha * N * sum_i f_i * P_i)'
+  - 'Shazeer et al. (2017) Outrageously Large Neural Networks (load balancing)'
+  - 'HuggingFace transformers Mixtral load_balancing_loss_func (router_prob = mean of softmax over all tokens per expert)'
+  - 'crates/aprender-core/src/ensemble/moe.rs — MixtureOfExperts::compute_load_balance_loss'
+  - 'crates/aprender-core/src/ensemble/gating.rs — SoftmaxGating::forward (full softmax over experts)'
+
+kind: KernelContract
+name: moe-load-balance-loss
+version: 1.0.0
+scope: aprender-core MoE Switch-Transformer load-balance auxiliary loss (ensemble/moe.rs)
+
+equations:
+  switch_load_balance_loss:
+    formula: |
+      loss = alpha * N * sum_{i=1..N} f_i * P_i
+        where
+          N     = number of experts
+          alpha = load_balance_weight
+          f_i   = (number of tokens whose top-k set contains expert i)
+                  / (n_samples * top_k)        # hard top-k dispatch fraction
+          P_i   = (1 / n_samples) * sum_{t=1..n_samples} softmax(router(x_t))_i
+                  # MEAN of the FULL router softmax over ALL tokens, every expert
+    domain: |
+      n_samples >= 1 tokens, N >= 1 experts, top_k in [1, N], alpha >= 0;
+      router softmax weights for each token sum to 1 over the N experts.
+    codomain: loss in R_>=0
+    invariants:
+    - 'P_i accumulates the full softmax for EVERY expert on EVERY token, not top-k-only'
+    - 'sum_i P_i == 1 (P_i is a mean of per-token softmaxes, each summing to 1)'
+    - 'sum_i f_i == 1 when normalized by (n_samples * top_k)'
+    - 'under uniform routing (f_i = 1/N, P_i = 1/N for all i) loss == alpha (its minimum)'
+    - 'an expert with f_i > 0 contributes its FULL mean softmax mass to the loss, including mass from tokens routed elsewhere'
+    lean_theorem: Theorems.Switch_Load_Balance_Loss
+
+proof_obligations:
+- type: precondition
+  property: Hyperparameters valid, non-empty batch
+  formal: 'n_samples >= 1 ∧ N >= 1 ∧ 1 <= top_k <= N ∧ alpha >= 0'
+- type: invariant
+  property: P_i is the mean FULL router softmax over all tokens
+  formal: |
+    P_i = (1/n_samples) * Σ_t softmax(router(x_t))_i, summed over ALL N experts
+    on EVERY token (NOT restricted to a token's top-k set).
+- type: postcondition
+  property: Loss equals the Switch Transformer aux loss
+  formal: 'loss = alpha * N * Σ_i f_i * P_i  with P_i = mean full-softmax, f_i = top-k dispatch fraction'
+  requires: MOE-PRE-001
+- type: bound
+  property: Loss minimized under uniform routing
+  formal: 'uniform routing (f_i = P_i = 1/N ∀i) ⇒ loss = alpha (the minimum)'
+  applies_to: all
+- type: equivalence
+  property: Top-k-only P_i is wrong unless routing is uniform
+  formal: |
+    full-softmax P_i ≠ top-k-only P_i whenever some expert with f_i > 0 also
+    carries softmax mass on tokens where it is NOT in the top-k.
+
+falsification_tests:
+- id: FT-MOE-LB-001
+  rule: P_i uses the FULL router softmax over all tokens (top_k=1)
+  prediction: |
+    For a 4-expert MoE with top_k=1 and a batch whose tokens route to different
+    experts, compute_load_balance_loss equals alpha * N * Σ_i f_i * P_i computed
+    with P_i = mean of the full per-token softmax, and DIFFERS from the value
+    obtained with the buggy top-k-only P_i accumulation.
+  if_fails: |
+    P_i is being accumulated only over a token's top-k experts (the original
+    bug), so the aux loss is under-counted under non-uniform routing.
+  evidence: cargo test -p aprender-core --lib test_moe_load_balance_uses_full_softmax_p_topk1
+- id: FT-MOE-LB-002
+  rule: P_i uses the FULL router softmax over all tokens (top_k=2)
+  prediction: |
+    Same as FT-MOE-LB-001 but with top_k=2 across all four experts; the loss
+    equals the full-softmax reference and differs from the top-k-only value.
+  if_fails: 'top-k-only accumulation regressed for multi-expert dispatch.'
+  evidence: cargo test -p aprender-core --lib test_moe_load_balance_uses_full_softmax_p_topk2
+- id: FT-MOE-LB-003
+  rule: Loss minimized at alpha under uniform routing
+  prediction: |
+    With near-zero inputs (uniform softmax) and top_k = N, every f_i = 1/N and
+    every P_i = 1/N, so compute_load_balance_loss == alpha (the minimum).
+  if_fails: |
+    The alpha * N scaling or the f_i / P_i normalization convention is wrong, so
+    the loss does not bottom out at alpha for a perfectly balanced router.
+  evidence: cargo test -p aprender-core --lib test_moe_load_balance_minimized_under_uniform_routing
+- id: FT-MOE-LB-004
+  rule: Empty batch yields zero loss (precondition / boundary)
+  prediction: 'compute_load_balance_loss on a zero-row input matrix returns 0.0.'
+  if_fails: 'division by zero (n_samples = 0) or an unguarded accumulation on an empty batch.'
+  evidence: cargo test -p aprender-core --lib test_moe_load_balance_loss_empty
+- id: FT-MOE-LB-005
+  rule: f_i counts only the top-k dispatch (full-softmax mass does not leak into f_i)
+  prediction: |
+    The full-softmax accumulation added for P_i must NOT change the dispatch
+    counts f_i: f_i still uses the hard top-k selection, so the two terms are
+    accumulated independently and the reference (which keeps f_i top-k while
+    varying only P_i) matches the implementation.
+  if_fails: |
+    f_i was also switched to the full softmax (e.g. counting every expert per
+    token), making every f_i = 1 and breaking the dispatch-fraction semantics.
+  evidence: cargo test -p aprender-core --lib test_moe_load_balance_uses_full_softmax_p_topk2
+
+kani_harnesses:
+- id: KANI-MOE-LB-001
+  obligation: P_i is the mean FULL router softmax over all tokens
+  property: |
+    For any batch of router softmax rows (each summing to 1 over N experts), the
+    accumulated P_i equals the per-expert mean over ALL tokens, so sum_i P_i = 1
+    and no expert's mass is dropped regardless of the top-k selection.
+  bound: 2
+  strategy: compositional
+  solver: cadical
+  harness: verify_moe_load_balance_full_softmax_pi
+
+qa_gate:
+  id: F-MOE-LB-001
+  name: moe-load-balance-loss-v1 Contract
+  description: MoE Switch-Transformer load-balance aux loss must accumulate P_i as the mean FULL router softmax over all tokens (every expert), not the top-k-only gate probability.
+  checks:
+  - validation
+  - falsification

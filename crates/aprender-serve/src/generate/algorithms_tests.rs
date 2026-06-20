@@ -153,6 +153,49 @@ fn test_sample_mirostat_updates_state() {
     assert!((state.mu - initial_mu).abs() > 1e-6);
 }
 
+/// PMAT-857 falsifier: Mirostat 2.0 surprise MUST be measured in bits (log2),
+/// not nats (ln), per Basu et al. 2021 and llama.cpp
+/// `llama_sampler_mirostat_v2_apply` (which uses `-log2f(p)`).
+///
+/// Setup: logits `[0.0, -1.3863]` -> softmax ~= `[0.80, 0.20]`.
+/// `MirostatState::new(1.0)` -> mu = 2*tau = 2.0 (bits).
+///
+/// Token-1 (prob 0.20) surprise:
+///   - bits: `-log2(0.20) ~= 2.3219` > mu=2.0  => TRUNCATED (break)
+///   - nats: `-ln(0.20)   ~= 1.6094` < mu=2.0  => KEPT
+///
+/// With the correct (bits) computation the candidate set is `{token-0}` only,
+/// so even with rng_value = 0.99 the selected token is 0. With the buggy
+/// (nats) computation token-1 is also a candidate and rng=0.99 selects it.
+/// This makes the assertion RED on `ln` and GREEN on `log2`.
+#[test]
+fn mirostat_truncation_uses_bits_not_nats() {
+    // softmax([0.0, -1.3863]) = [e^0, e^-1.3863] / sum = [1.0, 0.25] / 1.25 = [0.8, 0.2]
+    let logits = Tensor::from_vec(vec![2], vec![0.0, -1.386_294_4]).expect("test");
+    let mut state = MirostatState::new(1.0); // mu = 2.0 bits
+
+    // rng=0.99 deliberately biases toward the LAST candidate. If token-1 were a
+    // candidate (nats bug), it would be selected. With bits it is truncated, so
+    // the only candidate is token-0 and the result must be 0.
+    let result = sample_mirostat(&logits, &mut state, 0.99).expect("test");
+
+    assert_eq!(
+        result, 0,
+        "Mirostat must measure surprise in bits (-log2 p): token-1 surprise \
+         -log2(0.20)=2.32 > mu=2.0 so it must be truncated. A result of 1 means \
+         surprise was computed in nats (-ln p)=1.61 < mu, the PMAT-857 bug."
+    );
+
+    // Observed surprise of the selected token-0 must also be in bits:
+    // -log2(0.8) = 0.3219, so mu update is mu -= eta*(0.3219 - tau=1.0).
+    // observed < tau => mu increases above the initial 2.0.
+    assert!(
+        state.mu > 2.0,
+        "mu must increase: observed bits surprise -log2(0.8)=0.32 < tau=1.0; got mu={}",
+        state.mu
+    );
+}
+
 // =============================================================================
 // TFS (Tail-Free Sampling) Tests
 // =============================================================================

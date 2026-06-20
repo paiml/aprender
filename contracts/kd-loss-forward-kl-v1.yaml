@@ -1,0 +1,176 @@
+kind: KernelContract
+metadata:
+  version: 1.0.0
+  created: '2026-06-19'
+  author: PAIML Engineering
+  description: >-
+    Knowledge-distillation soft-target loss must be FORWARD KL
+    KL(teacher || student) scaled by T^2 — the Hinton (2015) / PyTorch
+    KLDivLoss objective — and must be the antiderivative of the existing
+    kd_logit_gradient KD term, keeping the logged loss consistent with the
+    gradient that trains the student. PMAT-868.
+  references:
+  - 'Hinton, Vinyals & Dean (2015) Distilling the Knowledge in a Neural Network (arXiv:1503.02531)'
+  - 'PyTorch nn.KLDivLoss(log_softmax(student/T), softmax(teacher/T)) = sum p_t*(ln p_t - ln p_s)'
+  - 'In-tree sibling impls: crates/aprender-train/src/hf_pipeline/distillation/loss.rs and crates/aprender-train/src/distill/loss.rs both use KL(teacher || student)'
+equations:
+  forward_kl_soft_target:
+    formula: KL_soft = sum_i p_t[i] * (ln p_t[i] - ln p_s[i]), with p_t = softmax(t/T), p_s = softmax(s/T)
+    domain: s in R^V, t in R^V, T > 0 (vocab size V)
+    codomain: KL_soft in R_>=0
+    invariants:
+    - KL_soft >= 0 (Gibbs inequality — KL is a non-negative divergence)
+    - KL_soft = 0 iff p_t == p_s (student distribution equals teacher)
+    - Direction is FORWARD KL(teacher || student), NOT reverse KL(student || teacher)
+    preconditions:
+    - temperature > 0.0
+    - student_logits.len() == teacher_logits.len()
+    - student_logits.len() > 0
+  kd_loss_total:
+    formula: L = alpha * CE(softmax(s), label) + (1 - alpha) * T^2 * KL_soft
+    domain: alpha in [0, 1], T > 0
+    codomain: L in R_>=0
+    invariants:
+    - Soft-target term carries the T^2 temperature scaling
+    - alpha = 1 collapses L to pure cross-entropy (teacher ignored)
+    preconditions:
+    - temperature > 0.0
+    - alpha in [0.0, 1.0]
+  loss_gradient_consistency:
+    formula: d/ds_j [ T^2 * KL(p_t || p_s) ] = T * (p_s[j] - p_t[j])
+    domain: s in R^V, t in R^V, T > 0
+    codomain: gradient in R^V
+    invariants:
+    - The T^2-scaled forward KL is the antiderivative of kd_logit_gradient's KD term T*(p_s - p_t)
+    - Logged kd_loss is consistent with the gradient kd_logit_gradient that updates the model
+    - Reverse KL(p_s || p_t) does NOT have this gradient — using it makes loss and gradient inconsistent
+    preconditions:
+    - temperature > 0.0
+    - student_logits.len() == teacher_logits.len()
+proof_obligations:
+- type: precondition
+  property: Temperature positive, matching finite logit vectors of equal nonzero length
+  formal: 'T > 0 ∧ |s| = |t| ∧ |s| > 0 ∧ ∀i: isFinite(s_i) ∧ isFinite(t_i)'
+- type: postcondition
+  property: Soft-target KL term is non-negative and uses the teacher distribution as the outer measure
+  formal: 'KL_soft ≥ 0 ∧ KL_soft = Σ_i p_t_i·(ln p_t_i − ln p_s_i)'
+  requires: KD-PRE-001
+- type: bound
+  property: Forward KL is a non-negative divergence (Gibbs inequality)
+  formal: 'Σ_i p_t_i·(ln p_t_i − ln p_s_i) ≥ 0'
+  applies_to: all
+- type: invariant
+  property: Zero soft-target loss exactly when student equals teacher
+  formal: 'p_s = p_t ⟹ KL_soft = 0'
+  applies_to: all
+- type: invariant
+  property: Loss / gradient consistency — the logged loss is the antiderivative of the training gradient
+  formal: '∂/∂s_j [ T²·KL(p_t ‖ p_s) ] = T·(p_s_j − p_t_j) = kd_logit_gradient KD term'
+  applies_to: all
+- type: frame
+  property: kd_loss reads logits/label/T/alpha and returns a scalar; it mutates no inputs
+  formal: modifies(∅) ∧ preserves(s, t, label, T, alpha)
+enforcement:
+  forward_kl_direction:
+    description: Soft-target term must be forward KL(teacher || student), not reverse KL(student || teacher)
+    check: kd_step::tests::pmat_868_kd_loss_soft_term_is_forward_kl
+    severity: ERROR
+  loss_gradient_consistency:
+    description: Logged loss must be the antiderivative of kd_logit_gradient's KD term
+    check: kd_step::tests::pmat_868_kd_loss_soft_term_is_forward_kl
+    severity: ERROR
+falsification_tests:
+- id: F-KD-FORWARD-KL-001
+  rule: Soft-target term is forward KL(teacher || student) scaled by T^2
+  prediction: 'For asymmetric s != t, alpha=0: kd_loss == T^2 * sum p_t*(ln p_t - ln p_s), and != T^2 * sum p_s*(ln p_s - ln p_t)'
+  test: 'cargo test -p aprender-train-distill --lib pmat_868_kd_loss_soft_term_is_forward_kl'
+  red_state: 'Pre-fix: kd_loss returns reverse-KL value T^2*sum p_s*(ln p_s - ln p_t) (e.g. 1.2188851 on the fixture)'
+  green_state: 'Post-fix: kd_loss returns forward-KL value T^2*sum p_t*(ln p_t - ln p_s) (e.g. 1.0666926 on the fixture)'
+  if_fails: KL direction is reversed (mode-seeking reverse KL instead of mean-seeking forward KL)
+- id: F-KD-FORWARD-KL-002
+  rule: Forward KL is non-negative
+  prediction: kd_loss(s, t, label, T, 0.0) >= 0 for all finite s, t and T > 0
+  test: 'cargo test -p aprender-train-distill --lib pmat_868_kd_loss_soft_term_is_forward_kl'
+  red_state: A reversed or mis-signed KL could produce a spurious value but the divergence itself is always >= 0
+  green_state: kd_loss soft term >= 0 (asserted in the falsifier)
+  if_fails: Sign error or log-domain underflow in the KL accumulation
+- id: F-KD-FORWARD-KL-003
+  rule: Zero soft-target loss when student equals teacher
+  prediction: kd_loss(s, s, label, T, 0.0) == 0 within 1e-5
+  test: 'cargo test -p aprender-train-distill --lib pmat_868_kd_loss_soft_term_is_forward_kl'
+  red_state: Holds for both directions (KL of a distribution with itself is 0) — necessary but not sufficient
+  green_state: kd_loss(s, s, ...) ~= 0 (asserted in the falsifier)
+  if_fails: KL computation does not vanish on identical distributions
+- id: F-KD-FORWARD-KL-004
+  rule: Loss / gradient consistency
+  prediction: The T^2-scaled forward KL is the antiderivative of kd_logit_gradient's KD term T*(p_s - p_t)
+  test: 'cargo test -p aprender-train-distill --lib kd_step::'
+  red_state: 'Pre-fix: logged loss (reverse KL) is NOT the antiderivative of the gradient (forward-KL gradient) — telemetry contradicts training'
+  green_state: 'Post-fix: logged loss (forward KL) IS the antiderivative of kd_logit_gradient — telemetry matches training'
+  if_fails: Loss and gradient disagree on KL direction, so logged loss misrepresents the optimization objective
+- id: F-KD-FORWARD-KL-005
+  rule: alpha = 1 collapses loss to pure cross-entropy
+  prediction: kd_loss(s, t, label, T, 1.0) == -ln(softmax(s)[label]), independent of teacher logits t
+  test: 'cargo test -p aprender-train-distill --lib kd_loss_alpha_1_is_pure_ce'
+  red_state: A teacher-dependent value when alpha=1 would indicate the KD term leaks into pure-CE mode
+  green_state: kd_loss with alpha=1 equals the cross-entropy term only (teacher ignored)
+  if_fails: alpha weighting does not cleanly gate the soft-target term
+- id: F-KD-FORWARD-KL-006
+  rule: Soft-target term carries T^2 temperature scaling
+  prediction: The (1 - alpha) soft-target contribution equals T^2 * KL(p_t || p_s), so loss scales with T^2 at fixed distributions
+  test: 'cargo test -p aprender-train-distill --lib pmat_868_kd_loss_soft_term_is_forward_kl'
+  red_state: Missing or wrong T scaling (e.g. T instead of T^2) yields a value off by a factor of T
+  green_state: 'Falsifier asserts loss == T^2 * forward_kl exactly on the fixture'
+  if_fails: Temperature scaling on the soft-target term is incorrect (Hinton T^2 factor dropped)
+kani_harnesses:
+- id: KANI-KD-001
+  obligation: KD-PRE-001
+  property: Temperature positive, matching finite logit vectors of equal nonzero length
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_kd_loss_preconditions
+- id: KANI-KD-002
+  obligation: KD-POST-001
+  property: Soft-target KL term is non-negative and uses the teacher distribution as the outer measure
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_kd_loss_forward_kl_nonneg
+- id: KANI-KD-003
+  obligation: KD-BND-001
+  property: Forward KL is a non-negative divergence (Gibbs inequality)
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_kd_forward_kl_gibbs
+- id: KANI-KD-004
+  obligation: KD-INV-001
+  property: Zero soft-target loss exactly when student equals teacher
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_kd_zero_when_equal
+- id: KANI-KD-005
+  obligation: KD-INV-002
+  property: Loss is the antiderivative of the training gradient
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_kd_loss_gradient_consistency
+- id: KANI-KD-006
+  obligation: KD-FRAME-001
+  property: kd_loss mutates no inputs
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_kd_loss_frame
+qa_gate:
+  id: F-KD-FORWARD-KL
+  name: KD Forward-KL Loss Contract
+  description: Knowledge-distillation soft-target loss uses forward KL(teacher || student) consistent with kd_logit_gradient
+  checks:
+  - forward_kl_direction
+  - loss_gradient_consistency
+  pass_criteria: All 4 falsification tests pass; pmat_868_kd_loss_soft_term_is_forward_kl is GREEN
+  falsification: Reverse the KL direction to KL(student || teacher) — falsifier F-KD-FORWARD-KL-001 goes RED

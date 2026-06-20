@@ -424,16 +424,19 @@
 
     #[test]
     fn test_byte_to_bpe_char_non_printable() {
-        // Non-printable control character
+        // PMAT-855: the HF merge path uses GPT-2 bytes_to_unicode, NOT the
+        // SentencePiece/GGUF `<0xNN>` byte-fallback. Control byte 0x01 maps to
+        // U+0101 on the staircase and round-trips back to 0x01.
         let result = byte_to_bpe_char(0x01);
-        assert!(result.starts_with("<0x"));
-        assert!(result.ends_with('>'));
+        assert_eq!(result, "\u{0101}");
+        assert_eq!(result.chars().count(), 1);
     }
 
     #[test]
     fn test_byte_to_bpe_char_high_byte() {
+        // PMAT-855: 0xFF self-maps under bytes_to_unicode (Latin-1), not "<0xFF>".
         let result = byte_to_bpe_char(0xFF);
-        assert_eq!(result, "<0xFF>");
+        assert_eq!(result, "ÿ");
     }
 
     // =========================================================================

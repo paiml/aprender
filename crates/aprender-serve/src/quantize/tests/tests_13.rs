@@ -9,7 +9,7 @@
 //! - fused_q8_0_q8_0_parallel_matvec_into error paths
 
 use crate::quantize::{
-    dequantize_q8_blocks, extract_scale_min, extract_scale_min_from_slice,
+    dequantize_q8_blocks, extract_scale_min,
     fused_q4_0_q8_0_dot_scalar, fused_q4_0_q8_0_parallel_matvec,
     fused_q4_0_q8_0_parallel_matvec_into, fused_q8_0_q8_0_dot_scalar,
     fused_q8_0_q8_0_parallel_matvec, fused_q8_0_q8_0_parallel_matvec_into,
@@ -219,59 +219,6 @@ fn test_extract_scale_min_mod_high_bits_contribution() {
     // Block 4: d = (scales[8] & 0x0F) | ((scales[0] >> 6) << 4) = 1 | (3 << 4) = 49
     let (s4, _) = extract_scale_min(&scales, 4);
     assert_eq!(s4, 49.0, "Scale4 with high bits contribution");
-}
-
-#[test]
-fn test_extract_scale_min_from_slice_mod_all_indices() {
-    let scales: [u8; 12] = [
-        10, 20, 30, 40, // bytes 0-3
-        5, 15, 25, 35, // bytes 4-7
-        0, 0, 0, 0, // bytes 8-11
-    ];
-
-    // Even indices use simple extraction
-    // idx=0: scale_idx=0, min_idx=4
-    let (s0, m0) = extract_scale_min_from_slice(&scales, 0);
-    assert_eq!(s0, 10.0);
-    assert_eq!(m0, 5.0);
-
-    // idx=2: scale_idx=1, min_idx=5
-    let (s2, m2) = extract_scale_min_from_slice(&scales, 2);
-    assert_eq!(s2, 20.0);
-    assert_eq!(m2, 15.0);
-
-    // idx=4: scale_idx=2, min_idx=6
-    let (s4, m4) = extract_scale_min_from_slice(&scales, 4);
-    assert_eq!(s4, 30.0);
-    assert_eq!(m4, 25.0);
-
-    // idx=6: scale_idx=3, min_idx=7
-    let (s6, m6) = extract_scale_min_from_slice(&scales, 6);
-    assert_eq!(s6, 40.0);
-    assert_eq!(m6, 35.0);
-}
-
-#[test]
-fn test_extract_scale_min_from_slice_mod_odd_indices_formula() {
-    // For odd indices:
-    // scale_idx = idx / 2
-    // min_idx = scale_idx + 4
-    // scale = (scales[scale_idx] >> 6) | ((scales[scale_idx + 2] & 0x0F) << 2)
-    // min = (scales[min_idx] >> 6) | ((scales[min_idx + 2] & 0x0F) << 2)
-
-    let mut scales: [u8; 12] = [0; 12];
-    // For idx=1: scale_idx=0, uses bytes 0 and 2
-    scales[0] = 0b11_000000; // high 2 bits = 3
-    scales[2] = 0b0000_1111; // low 4 bits = 15
-                             // scale = 3 | (15 << 2) = 3 + 60 = 63
-
-    scales[4] = 0b10_000000; // high 2 bits = 2
-    scales[6] = 0b0000_0101; // low 4 bits = 5
-                             // min = 2 | (5 << 2) = 2 + 20 = 22
-
-    let (s1, m1) = extract_scale_min_from_slice(&scales, 1);
-    assert_eq!(s1, 63.0, "idx=1 scale");
-    assert_eq!(m1, 22.0, "idx=1 min");
 }
 
 // =============================================================================

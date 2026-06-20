@@ -425,23 +425,24 @@
     fn test_alibi_slopes_power_of_two() {
         let alibi = ALiBi::new(4).expect("alibi");
         let slopes = alibi.slopes();
-        // For n=4: m[h] = 2^(-8h/4) = 2^(-2h)
-        // slopes = [2^0, 2^-2, 2^-4, 2^-6] = [1.0, 0.25, 0.0625, 0.015625]
-        assert!((slopes[0] - 1.0).abs() < 1e-6);
-        assert!((slopes[1] - 0.25).abs() < 1e-6);
-        assert!((slopes[2] - 0.0625).abs() < 1e-6);
-        assert!((slopes[3] - 0.015625).abs() < 1e-6);
+        // PMAT-858: m[h] = 2^(-8(h+1)/n) (Press et al. 2021 / llama.cpp ggml).
+        // For n=4: m[h] = 2^(-2(h+1))
+        // slopes = [2^-2, 2^-4, 2^-6, 2^-8] = [0.25, 0.0625, 0.015625, 0.00390625]
+        assert!((slopes[0] - 0.25).abs() < 1e-6);
+        assert!((slopes[1] - 0.0625).abs() < 1e-6);
+        assert!((slopes[2] - 0.015625).abs() < 1e-6);
+        assert!((slopes[3] - 0.003_906_25).abs() < 1e-6);
     }
 
     #[test]
     fn test_alibi_slopes_8_heads() {
         let alibi = ALiBi::new(8).expect("alibi");
         let slopes = alibi.slopes();
-        // For n=8: m[h] = 2^(-8h/8) = 2^(-h)
-        // slopes[0] = 2^0 = 1.0
-        // slopes[1] = 2^-1 = 0.5
-        // slopes[7] = 2^-7 = 0.0078125
-        assert!((slopes[0] - 1.0).abs() < 1e-6);
-        assert!((slopes[1] - 0.5).abs() < 1e-6);
-        assert!((slopes[7] - 0.0078125).abs() < 1e-6);
+        // PMAT-858: m[h] = 2^(-8(h+1)/8) = 2^(-(h+1))
+        // slopes[0] = 2^-1 = 0.5 (NOT the buggy 2^0 = 1.0)
+        // slopes[1] = 2^-2 = 0.25
+        // slopes[7] = 2^-8 = 0.00390625
+        assert!((slopes[0] - 0.5).abs() < 1e-6);
+        assert!((slopes[1] - 0.25).abs() < 1e-6);
+        assert!((slopes[7] - 0.003_906_25).abs() < 1e-6);
     }

@@ -441,5 +441,94 @@ fn test_quantize_activations_q8k_into_valid_cov() {
     assert!(scales[0] > 0.0);
 }
 
+// =========================================================================
+// PMAT-856: InterleavedQ4K::dot must decode the packed 6-bit scales via
+// ggml get_scale_min_k4 (extract_scale_min), identically to dequantize_q4_k.
+//
+// The former extract_scale_min_from_slice decoder agreed with extract_scale_min
+// ONLY for sub-block is=0; for is=1..7 it read the wrong scale bytes and
+// returned wrong (scale, min) pairs -> InterleavedQ4K Q4_K matmul produced wrong
+// results on 7 of 8 sub-blocks. Contract: contracts/q4k-interleaved-scale-min-v1.yaml
+// =========================================================================
+
+/// Build a single valid Q4_K super-block (144 bytes) with the supplied f16 d/dmin,
+/// the ticket's adversarial 12 packed scale bytes, and a deterministic non-uniform
+/// quant pattern so that every sub-block exercises a distinct (scale, min) pair.
+#[cfg(test)]
+fn pmat856_build_superblock() -> Vec<u8> {
+    let mut data = vec![0u8; 144];
+    // d = 1.5, dmin = 0.75 (non-trivial, both nonzero so min term is exercised)
+    data[0..2].copy_from_slice(&half::f16::from_f32(1.5).to_le_bytes());
+    data[2..4].copy_from_slice(&half::f16::from_f32(0.75).to_le_bytes());
+    // Adversarial packed scales (PMAT-856 repro): the 7/8-mismatch case.
+    let scales: [u8; 12] = [
+        0xAD, 0x72, 0xC3, 0x1E, 0xB5, 0x49, 0xE6, 0x3C, 0x96, 0x6B, 0x2D, 0xD4,
+    ];
+    data[4..16].copy_from_slice(&scales);
+    // qs: 128 bytes, distinct per-byte nibbles so each of the 256 weights differs.
+    for (i, b) in data[16..144].iter_mut().enumerate() {
+        let lo = (i % 16) as u8;
+        let hi = ((i / 16 + 1) % 16) as u8;
+        *b = (hi << 4) | lo;
+    }
+    data
+}
+
+#[test]
+fn test_pmat856_interleaved_q4k_dot_matches_dequantize_q4_k() {
+    let data = pmat856_build_superblock();
+
+    // Reference: full dequant via the proven path, then a plain dot.
+    let dequant = dequantize_q4_k(&data).expect("dequantize_q4_k");
+    assert_eq!(dequant.len(), 256);
+
+    // Non-uniform activations so any wrong (scale, min) on sub-blocks 1..7
+    // (which the buggy decoder produced) cannot cancel out.
+    let activations: Vec<f32> = (0..256).map(|i| ((i as f32) - 128.0) / 37.0).collect();
+
+    let expected: f32 = dequant
+        .iter()
+        .zip(activations.iter())
+        .map(|(w, a)| w * a)
+        .sum();
+
+    let iq = InterleavedQ4K::from_q4k(&data).expect("from_q4k");
+    let got = iq.dot(&activations).expect("dot");
+
+    // The dot reuses the exact dequant arithmetic; the only allowed delta is
+    // FP accumulation order (scalar vs AVX2 lanes). The pre-fix decoder produced
+    // a gross divergence (e.g. dequant of q=15 at is=2 was 741 vs correct 7).
+    let tol = expected.abs().mul_add(1e-4, 1e-3);
+    assert!(
+        (got - expected).abs() <= tol,
+        "InterleavedQ4K::dot diverged from dequantize_q4_k: got={got} expected={expected} (tol={tol})"
+    );
+}
+
+#[test]
+fn test_pmat856_q4k_scale_min_decode_is_ggml_get_scale_min_k4() {
+    // Directly pin the ggml get_scale_min_k4 values for the repro scales so a
+    // future regression of extract_scale_min is caught even without a full dot.
+    let scales: [u8; 12] = [
+        0xAD, 0x72, 0xC3, 0x1E, 0xB5, 0x49, 0xE6, 0x3C, 0x96, 0x6B, 0x2D, 0xD4,
+    ];
+    // (scale, min) per ggml get_scale_min_k4 for sub-blocks 0..8.
+    let expected: [(f32, f32); 8] = [
+        (45.0, 53.0),
+        (50.0, 9.0),
+        (3.0, 38.0),
+        (30.0, 60.0),
+        (38.0, 41.0),
+        (27.0, 22.0),
+        (61.0, 50.0),
+        (4.0, 13.0),
+    ];
+    for (idx, &(sc, m)) in expected.iter().enumerate() {
+        let (got_sc, got_m) = extract_scale_min(&scales, idx);
+        assert_eq!(got_sc, sc, "sub-block {idx} scale (ggml get_scale_min_k4)");
+        assert_eq!(got_m, m, "sub-block {idx} min (ggml get_scale_min_k4)");
+    }
+}
+
 include!("quantize_activations_03.rs");
 include!("q4_1_matmul.rs");

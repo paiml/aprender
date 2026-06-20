@@ -180,14 +180,18 @@ impl ProjectedGradientDescent {
             }
 
             // Project onto constraint set
-            let x_new = project(&y);
+            let mut x_new = project(&y);
 
             // Line search if enabled
             if self.use_line_search {
                 let f_x = objective(&x);
                 let f_x_new = objective(&x_new);
 
-                // Backtracking: reduce step size until sufficient decrease
+                // Backtracking: reduce step size until sufficient decrease.
+                // PMAT-872: when the full step overshoots (f increases) we must
+                // ACCEPT the backtracked point, not the rejected full-step point.
+                // Otherwise the Armijo monotone non-increase guarantee
+                // f(x_{k+1}) <= f(x_k) is broken (objective can increase).
                 let mut ls_iter = 0;
                 while f_x_new > f_x && ls_iter < 20 {
                     alpha *= self.beta;
@@ -198,6 +202,7 @@ impl ProjectedGradientDescent {
                     let x_new_ls = project(&y);
 
                     if objective(&x_new_ls) <= f_x {
+                        x_new = x_new_ls;
                         break;
                     }
                     ls_iter += 1;
@@ -469,6 +474,59 @@ mod tests {
         let result = pgd.minimize(objective, gradient, project, x0);
 
         assert!(result.objective_value < 1e-4);
+    }
+
+    /// PMAT-872 falsifier: Armijo backtracking must use the BACKTRACKED point
+    /// as the accepted iterate, not the rejected full-step point.
+    ///
+    /// Setup: a 1-D box-constrained quadratic f(x) = (x - 2)^2 on x in [0, 10]
+    /// starting at x0 = 0 with a deliberately HUGE initial step (alpha = 5.0).
+    /// The full step y = 0 - 5.0 * grad = 0 - 5.0 * (-4.0) = 20.0 projects to
+    /// the box upper bound 10.0, where f(10) = 64 > f(0) = 4 — an OVERSHOOT
+    /// that INCREASES the objective. The backtracking loop must shrink alpha
+    /// until the projected point decreases f. With the bug, the optimizer keeps
+    /// the rejected full-step point (10.0) instead of the backtracked point, so
+    /// the objective INCREASES on the first iteration, violating the Armijo
+    /// monotone non-increase guarantee f(x_{k+1}) <= f(x_k).
+    #[test]
+    fn test_pgd_armijo_monotone_non_increase_overshoot() {
+        let lower = Vector::from_slice(&[0.0]);
+        let upper = Vector::from_slice(&[10.0]);
+
+        let objective = |x: &Vector<f32>| (x[0] - 2.0).powi(2);
+        let gradient = |x: &Vector<f32>| Vector::from_slice(&[2.0 * (x[0] - 2.0)]);
+        let project = move |x: &Vector<f32>| prox::project_box(x, &lower, &upper);
+
+        let x0 = Vector::from_slice(&[0.0]);
+        let f_start = objective(&x0);
+
+        // Step one iteration at a time, threading the solution forward, so we
+        // can observe the objective at every iterate and assert monotonicity.
+        let mut prev = f_start;
+        let mut x = x0.clone();
+        for _ in 0..40 {
+            let mut pgd = ProjectedGradientDescent::new(1, 5.0, 1e-9).with_line_search(0.5);
+            let result = pgd.minimize(&objective, &gradient, &project, x.clone());
+            let f_next = result.objective_value;
+            // Armijo monotone non-increase: f(x_{k+1}) <= f(x_k) + eps.
+            assert!(
+                f_next <= prev + 1e-9,
+                "Armijo violated: f increased from {prev} to {f_next} (overshoot kept rejected full step)"
+            );
+            prev = f_next;
+            x = result.solution;
+        }
+
+        // The returned minimum's objective must be <= the starting objective.
+        assert!(
+            prev <= f_start + 1e-9,
+            "final objective {prev} worse than start {f_start}"
+        );
+        // And it must actually descend toward the optimum at x = 2 (f = 0).
+        assert!(
+            prev < f_start,
+            "expected strict descent from start {f_start}"
+        );
     }
 
     #[test]

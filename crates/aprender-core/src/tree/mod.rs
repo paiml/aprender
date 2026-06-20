@@ -60,6 +60,15 @@ pub struct Node {
     pub feature_idx: usize,
     /// Threshold value for the split
     pub threshold: f32,
+    /// Gini impurity of the samples reaching this node (computed at fit time,
+    /// before the split). Drives MDI feature-importance (see
+    /// `contracts/tree-feature-importances-mdi-v1.yaml`).
+    #[serde(default)]
+    pub impurity: f32,
+    /// Number of training samples reaching this node (computed at fit time).
+    /// The MDI weight for the split made here.
+    #[serde(default)]
+    pub n_node_samples: usize,
     /// Left subtree (samples where feature <= threshold)
     pub left: Box<TreeNode>,
     /// Right subtree (samples where feature > threshold)
@@ -76,6 +85,11 @@ pub struct Leaf {
     pub class_label: usize,
     /// Number of training samples in this leaf
     pub n_samples: usize,
+    /// Gini impurity of the samples in this leaf (computed at fit time).
+    /// Used by parent splits in the MDI feature-importance formula (see
+    /// `contracts/tree-feature-importances-mdi-v1.yaml`).
+    #[serde(default)]
+    pub impurity: f32,
 }
 
 /// A node in a decision tree (either internal node or leaf).
@@ -114,6 +128,11 @@ pub struct RegressionLeaf {
     pub value: f32,
     /// Number of training samples in this leaf
     pub n_samples: usize,
+    /// Variance of the target values in this leaf (computed at fit time).
+    /// Used by parent splits in the MDI feature-importance formula (see
+    /// `contracts/tree-feature-importances-mdi-v1.yaml`).
+    #[serde(default)]
+    pub impurity: f32,
 }
 
 /// Internal node in a regression tree.
@@ -126,6 +145,15 @@ pub struct RegressionNode {
     pub feature_idx: usize,
     /// Threshold value for the split
     pub threshold: f32,
+    /// Variance of the target values reaching this node (computed at fit time,
+    /// before the split). Drives MDI feature-importance (see
+    /// `contracts/tree-feature-importances-mdi-v1.yaml`).
+    #[serde(default)]
+    pub impurity: f32,
+    /// Number of training samples reaching this node (computed at fit time).
+    /// The MDI weight for the split made here.
+    #[serde(default)]
+    pub n_node_samples: usize,
     /// Left subtree (samples where feature <= threshold)
     pub left: Box<RegressionTreeNode>,
     /// Right subtree (samples where feature > threshold)

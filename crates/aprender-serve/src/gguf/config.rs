@@ -354,9 +354,17 @@ pub(crate) fn default_eos_for_architecture(arch: &str) -> Option<u32> {
 /// rank-4 prior, 10%): added `qwen3_moe` to the Qwen3 1M arm because GGUF
 /// for Qwen3-Coder-30B-A3B-Instruct ships WITHOUT `qwen3moe.rope.freq_base`
 /// metadata, so this default fires.
+///
+/// PMAT-863: this fn is called with the RAW (un-normalized) GGUF
+/// `general.architecture` string (see `from_gguf` at config.rs:~690 — it does
+/// NOT route through `normalize_architecture`). The raw GGUF spelling for
+/// Qwen3-MoE models is `"qwen3moe"` (NO underscore), so the underscored-only
+/// `"qwen3_moe"` arm did not match and Qwen3-MoE fell through to the 10K
+/// default → wrong RoPE base → degraded long-context inference. Match BOTH
+/// spellings here, mirroring `chat_template_helpers.rs:71`.
 pub(crate) fn default_rope_theta_for_architecture(arch: &str) -> f32 {
     match arch {
-        "qwen2" | "qwen3" | "qwen3_moe" => 1_000_000.0,
+        "qwen2" | "qwen3" | "qwen3moe" | "qwen3_moe" => 1_000_000.0,
         "llama" | "mistral" | "gemma" | "gemma2" | "deepseek" | "deepseek2" => 10_000.0,
         "phi2" | "phi3" | "phi" => 10_000.0,
         // Conservative default: LLaMA's 10K is the original RoPE value
@@ -1285,5 +1293,43 @@ mod gemma_config_tests {
         // Non-gemma config (llama): None → 1/sqrt(head_dim), unchanged.
         let l = cfg("llama", 4096);
         assert!((l.attn_scale() - 1.0 / (l.head_dim() as f32).sqrt()).abs() < 1e-6);
+    }
+}
+
+#[cfg(test)]
+mod qwen3moe_rope_theta_tests {
+    use super::*;
+
+    /// PMAT-863 (falsifier): the raw GGUF `general.architecture` string for
+    /// Qwen3-MoE models (e.g. Qwen3-Coder-30B-A3B-Instruct) is `"qwen3moe"`
+    /// (NO underscore), and `from_gguf` passes that RAW string straight into
+    /// `default_rope_theta_for_architecture` WITHOUT normalization. Before the
+    /// fix this fell through to the conservative `_ => 10_000.0` default,
+    /// producing wrong RoPE positional encodings (degraded long-context
+    /// inference). Qwen3 / Qwen3-MoE use rope_theta = 1e6.
+    ///
+    /// RED (pre-fix): `default_rope_theta_for_architecture("qwen3moe")` == 10000.
+    /// GREEN (post-fix): == 1_000_000.
+    #[test]
+    fn qwen3moe_raw_arch_uses_1m_rope_base() {
+        // The raw GGUF spelling (no underscore) MUST resolve to the Qwen3 1M base.
+        assert_eq!(
+            default_rope_theta_for_architecture("qwen3moe"),
+            1_000_000.0,
+            "raw GGUF arch 'qwen3moe' must map to rope_theta 1e6 (Qwen3 family)"
+        );
+        // The normalized/canonical spelling (underscore) must STILL map to 1e6.
+        assert_eq!(
+            default_rope_theta_for_architecture("qwen3_moe"),
+            1_000_000.0,
+            "canonical arch 'qwen3_moe' must remain rope_theta 1e6"
+        );
+        // Dense Qwen3 + Qwen2 are unchanged at 1e6.
+        assert_eq!(default_rope_theta_for_architecture("qwen3"), 1_000_000.0);
+        assert_eq!(default_rope_theta_for_architecture("qwen2"), 1_000_000.0);
+        // A non-Qwen architecture must remain on the 10K default (unchanged).
+        assert_eq!(default_rope_theta_for_architecture("llama"), 10_000.0);
+        // Unknown architecture stays on the conservative 10K default.
+        assert_eq!(default_rope_theta_for_architecture("mistral"), 10_000.0);
     }
 }

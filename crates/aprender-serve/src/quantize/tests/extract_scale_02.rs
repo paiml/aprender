@@ -34,59 +34,12 @@ fn test_extract_scale_min_all_blocks_max_values() {
     }
 }
 
-// =============================================================================
-// extract_scale_min_from_slice Additional Tests
-// =============================================================================
-
-#[test]
-fn test_extract_scale_min_from_slice_odd_index_3() {
-    let mut scales = [0u8; 12];
-    // For idx=3: scale_idx=1, min_idx=5
-    // scale = (scales[1] >> 6) | ((scales[3] & 0x0F) << 2)
-    // min = (scales[5] >> 6) | ((scales[7] & 0x0F) << 2)
-    scales[1] = 0b10_000000; // high 2 bits = 2
-    scales[3] = 0b0000_0111; // low 4 bits = 7
-    scales[5] = 0b11_000000; // high 2 bits = 3
-    scales[7] = 0b0000_1010; // low 4 bits = 10
-
-    let (s, m) = extract_scale_min_from_slice(&scales, 3);
-    // scale = 2 | (7 << 2) = 2 + 28 = 30
-    assert_eq!(s, 30.0, "idx=3 scale");
-    // min = 3 | (10 << 2) = 3 + 40 = 43
-    assert_eq!(m, 43.0, "idx=3 min");
-}
-
-#[test]
-fn test_extract_scale_min_from_slice_odd_index_5() {
-    let mut scales = [0u8; 12];
-    // For idx=5: scale_idx=2, min_idx=6
-    scales[2] = 0b01_000000; // high 2 bits = 1
-    scales[4] = 0b0000_1100; // low 4 bits = 12
-    scales[6] = 0b11_000000; // high 2 bits = 3
-    scales[8] = 0b0000_0001; // low 4 bits = 1
-
-    let (s, m) = extract_scale_min_from_slice(&scales, 5);
-    // scale = 1 | (12 << 2) = 1 + 48 = 49
-    assert_eq!(s, 49.0, "idx=5 scale");
-    // min = 3 | (1 << 2) = 3 + 4 = 7
-    assert_eq!(m, 7.0, "idx=5 min");
-}
-
-#[test]
-fn test_extract_scale_min_from_slice_odd_index_7() {
-    let mut scales = [0u8; 12];
-    // For idx=7: scale_idx=3, min_idx=7
-    scales[3] = 0b00_000000; // high 2 bits = 0
-    scales[5] = 0b0000_1111; // low 4 bits = 15
-    scales[7] = 0b10_000000; // high 2 bits = 2
-    scales[9] = 0b0000_0011; // low 4 bits = 3
-
-    let (s, m) = extract_scale_min_from_slice(&scales, 7);
-    // scale = 0 | (15 << 2) = 60
-    assert_eq!(s, 60.0, "idx=7 scale");
-    // min = 2 | (3 << 2) = 2 + 12 = 14
-    assert_eq!(m, 14.0, "idx=7 min");
-}
+// NOTE (PMAT-856): The three former `test_extract_scale_min_from_slice_odd_index_*`
+// tests were DELETED. They asserted the output of `extract_scale_min_from_slice`,
+// a bespoke Q4_K 6-bit scale decoder that did NOT implement ggml's
+// `get_scale_min_k4` and returned wrong (scale, min) pairs for 7 of the 8
+// sub-blocks. Both the function and its callers (InterleavedQ4K::dot) now use the
+// proven `extract_scale_min`, so these buggy-behavior assertions are obsolete.
 
 // =============================================================================
 // InterleavedQ4K Additional Tests

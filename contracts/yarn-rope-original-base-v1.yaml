@@ -1,0 +1,133 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-20'
+  author: PAIML Engineering
+  description: |
+    PMAT-874: YaRN RoPE scaling must use the ORIGINAL rope base for the
+    extrapolated (high-frequency / short-wavelength) dimension pairs. It must NOT
+    apply the NTK-by-parts base modification `base * scale^(dim/(dim-2))` — that is
+    a DIFFERENT scaling type (RopeScalingType::Ntk / DynamicNtk).
+
+    The bug: ScaledRoPE::compute_frequencies built the YaRN inv_freq vector from
+    `scaled_base = base * scale^(dim/(dim-2))` (the NTK-modified base), so every
+    extrapolated high-frequency dim used the NTK base instead of the original base,
+    corrupting the high-frequency rotations and silently degrading long-context
+    inference. The forward() ramp then blended an NTK-based extrapolation angle with
+    an original-base interpolation angle — mixing two distinct scaling methods.
+
+    The fix (YaRN, Peng et al. 2023): the YaRN arm returns the ORIGINAL base, so
+    inv_freq derives from `1 / base^(2i/dim)` (original base) for the extrapolated
+    dims; the interpolated low-frequency dims use that frequency divided by the
+    scale factor `L_new / L_orig`; the beta_fast/beta_slow ramp blends the two per
+    dimension. mscale (attention factor) handling is unchanged.
+
+    This matches HuggingFace `modeling_rope_utils._compute_yarn_parameters`, where
+    `inv_freq_extrapolation = 1.0 / pos_freqs` (pos_freqs = base^(arange/dim),
+    ORIGINAL base) and `inv_freq_interpolation = 1.0 / (factor * pos_freqs)`.
+  references:
+  - 'Peng et al. (2023) YaRN: Efficient Context Window Extension of Large Language Models (arXiv:2309.00071)'
+  - 'HuggingFace transformers modeling_rope_utils._compute_yarn_parameters (inv_freq_extrapolation uses the original base)'
+  - 'llama.cpp ggml_rope_yarn (extrapolation = original theta; NTK-by-parts is a separate scaling mode)'
+  - 'crates/aprender-serve/src/layers/scaled_rope.rs — ScaledRoPE::compute_frequencies (YaRN arm) + ScaledRoPE::forward (YaRN ramp)'
+  depends_on:
+  - rope-extrapolation-v1
+  - rope-kernel-v1
+
+kind: KernelContract
+name: yarn-rope-original-base
+version: 1.0.0
+scope: aprender-serve ScaledRoPE YaRN frequency derivation (compute_frequencies + forward)
+
+equations:
+  C-YARN-EXTRAP-ORIGINAL-BASE:
+    formula: |
+      For YaRN scaling, inv_freq_extrapolation[i] = 1 / base^(2i/dim) using the
+      ORIGINAL rope base. The NTK base modification base*scale^(dim/(dim-2)) is
+      NOT applied. Therefore ScaledRoPE::scaled_base == base for YaRN, and
+      ScaledRoPE::inv_freq()[i] == base^(-2i/dim).
+    domain: base = original rope theta, dim = head_dim, i in [0, dim/2)
+    codomain: inv_freq[i] (extrapolated frequency) in (0, 1]
+    invariants:
+    - 'scaled_base == base for YaRN (no NTK modification)'
+    - 'inv_freq[i] == base^(-2i/dim) (original base), NOT (base*scale^(dim/(dim-2)))^(-2i/dim)'
+    - 'inv_freq[0] == 1.0'
+    - 'inv_freq strictly decreasing in i; all entries > 0'
+    lean_theorem: Theorems.Yarn_Extrap_Original_Base
+  C-YARN-INTERP-BASE-OVER-SCALE:
+    formula: |
+      For YaRN scaling, the interpolated (low-frequency / long-wavelength) dims use
+      inv_freq_interpolation[i] = (1 / base^(2i/dim)) / scale, where
+      scale = target_max_len / original_max_len. The forward() ramp blends
+      extrapolation and interpolation per dimension:
+      angle_i = (1 - ramp_i) * inv_freq[i]*pos + ramp_i * (inv_freq[i]/scale)*pos.
+    domain: scale = L_new / L_orig >= 1, ramp_i in [0, 1]
+    codomain: blended rotation angle for dim pair i
+    invariants:
+    - 'extrapolation regime (ramp=0): effective freq == original-base inv_freq[i]'
+    - 'interpolation regime (ramp=1): effective freq == inv_freq[i] / scale'
+    - 'both endpoints derive from the ORIGINAL base (NTK base never appears)'
+    lean_theorem: Theorems.Yarn_Interp_Base_Over_Scale
+
+proof_obligations:
+- type: invariant
+  property: YaRN extrapolated dims use the original base, not the NTK-modified base
+  formal: |
+    For a YaRN ScaledRoPE with base B, dim D, scale S = L_new/L_orig:
+    inv_freq[1] == B^(-2/D)  AND  inv_freq[1] != (B*S^(D/(D-2)))^(-2/D).
+    Equivalently scaled_base == B (not B*S^(D/(D-2))).
+- type: invariant
+  property: YaRN base equals the original base
+  formal: |
+    ScaledRoPE::scaled_base() == original base for RopeScalingType::Yarn (the NTK
+    base modification is a property of RopeScalingType::Ntk / DynamicNtk only).
+- type: classification
+  property: NTK base modification is exclusive to NTK scaling types
+  formal: |
+    base*scale^(dim/(dim-2)) is applied for Ntk and DynamicNtk, and NEVER for Yarn.
+
+falsification_tests:
+- id: FT-YARN-874-001
+  rule: YaRN extrapolated high-frequency dim uses the ORIGINAL base (matches HF reference)
+  prediction: |
+    For dim=64, base=10000, original_max_len=2048, target_max_len=8192 (scale=4),
+    beta_fast=32, beta_slow=1: inv_freq[1] == 10000^(-2/64) = 0.749_894_2 (original
+    base / HF YaRN). Before the fix it was (10000*4^(64/62))^(-2/64) = 0.717_098_3
+    (NTK-modified base), so the test fails RED on the bug and passes GREEN on the fix.
+  if_fails: 'the YaRN arm of compute_frequencies built inv_freq from the NTK base (scaled_base = base*scale^(dim/(dim-2))) instead of the original base.'
+  evidence: cargo test -p aprender-serve --lib test_scaled_rope_yarn_extrapolation_uses_original_base
+- id: FT-YARN-874-002
+  rule: YaRN scaled_base equals the original base (no NTK modification)
+  prediction: |
+    A YaRN ScaledRoPE(dim=64, base=10000) reports scaled_base() == 10000.0 (within
+    1e-3). Before the fix scaled_base() was the NTK-modified base (~174969 for
+    scale=16), so the assertion fails RED on the bug and passes GREEN on the fix.
+  if_fails: 'the YaRN arm returns the NTK-modified base (ntk_base) as scaled_base instead of the original base.'
+  evidence: cargo test -p aprender-serve --lib test_scaled_rope_yarn
+- id: FT-YARN-874-003
+  rule: NTK base modification stays exclusive to the NTK scaling types
+  prediction: |
+    NTK / DynamicNtk ScaledRoPE still reports scaled_base() > original base
+    (base*scale^(dim/(dim-2))), while YaRN reports scaled_base() == original base.
+    This proves the fix did not regress NTK and that the NTK base modification is
+    applied for Ntk/DynamicNtk only, never for Yarn.
+  if_fails: 'the NTK base modification was removed from the Ntk/DynamicNtk arms, or re-added to the Yarn arm.'
+  evidence: cargo test -p aprender-serve --lib test_scaled_rope_ntk_scaling test_scaled_rope_dynamic_ntk_scaling
+
+kani_harnesses:
+- id: KANI-YARN-874-001
+  obligation: YaRN extrapolated dims use the original base
+  property: |
+    For a YaRN ScaledRoPE, every inv_freq[i] equals base^(-2i/dim) (original base);
+    the NTK base never appears. No panic.
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_yarn_inv_freq_uses_original_base
+
+qa_gate:
+  id: F-YARN-874-001
+  name: yarn-rope-original-base-v1 Contract
+  description: YaRN RoPE scaling must use the original rope base for extrapolated dims (interp = base-freq/scale, ramp blends), never the NTK-by-parts base modification.
+  checks:
+  - validation
+  - falsification

@@ -1,0 +1,96 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-19"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "scikit-learn KNeighborsClassifier.predict (oracle for the tie-break rule — on a mode tie it returns the SMALLEST class label)"
+    - "scipy.stats.mode — returns the lowest value among tied modes"
+    - "numpy.argmax over np.bincount(labels) — returns the lowest index achieving the maximum count"
+    - "Cover & Hart (1967) — Nearest Neighbor Pattern Classification"
+  description: |
+    Correctness contract for the k-NN vote tie-break in
+    aprender-core classification::gaussian_nb (KNearestNeighbors::majority_vote and
+    KNearestNeighbors::weighted_vote). Pillar-1 (scikit-learn parity)
+    provable-correctness, ticket PMAT-865.
+
+kind: KernelContract
+name: knn-tie-smallest-label
+version: "1.0.0"
+scope: "crates/aprender-core/src/classification/gaussian_nb.rs"
+
+description: |
+  When two or more class labels tie for the highest k-NN vote (count, or weighted
+  inverse-distance weight), the predicted label MUST be the SMALLEST label among
+  the tied modes, deterministically on every call and every process:
+
+      predict_tie(labels) = min { c : votes(c) == max_c' votes(c') }
+
+  This matches scikit-learn KNeighborsClassifier.predict, whose tie-break reduces
+  to argmax over a bincount / scipy.stats.mode — both return the LOWEST index/value
+  among tied modes.
+
+  PMAT-865 removed a defect where `majority_vote` accumulated counts into a
+  `std::collections::HashMap` and returned `class_counts.iter().max_by_key(count)`,
+  and `weighted_vote` did the same with `max_by(weight)`. `max_by_key` / `max_by`
+  return the LAST maximal element in iteration order, and HashMap iteration order
+  is randomized per-process (Rust `RandomState`). On a vote tie the prediction was
+  therefore NON-DETERMINISTIC across runs: a 2-neighbor tie between labels 0 and 2
+  resolved to 0 in some processes and 2 in others (measured: `left: 2, right: 0`).
+  The fix replaces the HashMap with a `BTreeMap` (ascending-label iteration) and
+  keeps the FIRST label achieving the running max (strict `>`), so the smallest
+  tied label always wins. Distance-weighting logic is unchanged; `predict_proba`
+  (already a per-label `vec`, deterministic) is unaffected.
+
+equations:
+  C-KNN-TIE-001:
+    description: "Unweighted majority vote on a count tie returns the SMALLEST tied label, deterministically"
+    formula: "majority_vote(neighbors) = min { c : count(c) == max_c' count(c') }; for a 2-neighbor tie {(d,0),(d,2)} the result is 0 on every call, independent of neighbor order"
+    note: "Matches sklearn argmax(bincount). RED (HashMap+max_by_key): {0,2} tie -> 2 in some processes; GREEN (BTreeMap+keep-first): always 0."
+
+  C-KNN-TIE-002:
+    description: "Weighted (inverse-distance) vote on a weight tie returns the SMALLEST tied label, deterministically"
+    formula: "weighted_vote(neighbors) = min { c : weight(c) == max_c' weight(c') }; equal distances => equal weights => smallest label wins (0 for a {0,2} tie)"
+    note: "Same tie-break rule as the unweighted path; distance-weighting otherwise unchanged."
+
+  C-KNN-TIE-003:
+    description: "Tie-break is order-independent and deterministic across processes (no HashMap RandomState dependence)"
+    formula: "majority_vote([(d,0),(d,2)]) == majority_vote([(d,2),(d,0)]) == 0 over arbitrarily many calls and processes"
+    note: "Refutes the deleted HashMap path whose per-process iteration order made tied predictions vary run-to-run."
+
+  C-KNN-TIE-004:
+    description: "Three-way mode tie resolves to the smallest label"
+    formula: "majority_vote([(d,1),(d,2),(d,0)]) = 0 (one neighbor each of labels 0,1,2)"
+    note: "Generalizes the smallest-label rule beyond the 2-way case."
+
+  C-KNN-TIE-005:
+    description: "Non-tie (clear majority) predictions are UNCHANGED by the fix"
+    formula: "k-set {0,0,1} -> majority class 0 (2 votes vs 1); a strict winner is unaffected by the BTreeMap migration"
+    note: "Regression guard — FALSIFY-KNN-005 (k-set {0,0,1}) still predicts 0."
+
+proof_obligations:
+  - type: equivalence
+    property: "PO-KNN-TIE-001 mode tie returns the smallest tied label, matching sklearn"
+    formal: "for any neighbor set whose argmax-vote labels form a set S with |S| > 1, majority_vote / weighted_vote returns min(S) = argmax(bincount) = scipy.stats.mode lowest mode"
+    tolerance: 0.0
+    applies_to: all
+  - type: invariant
+    property: "PO-KNN-TIE-002 tie prediction is deterministic and order-independent"
+    formal: "majority_vote(p) == majority_vote(reverse(p)) for every permutation p of a tied neighbor set; result is constant across processes (no HashMap RandomState)"
+    tolerance: 0.0
+    applies_to: "tied neighbor sets"
+  - type: invariant
+    property: "PO-KNN-TIE-003 strict-winner predictions unchanged"
+    formal: "for a neighbor set with a unique argmax-vote label c*, majority_vote / weighted_vote returns c* (BTreeMap migration preserves all non-tie predictions)"
+    tolerance: 0.0
+    applies_to: "neighbor sets with a unique mode"
+
+falsification:
+  - id: FALSIFY-KNN-TIE-001
+    description: "k-NN vote ties resolve to the smallest tied label, deterministically, via majority_vote, weighted_vote, and the public predict API. Discharges C-KNN-TIE-001..005 and PO-KNN-TIE-001/002/003."
+    test: "falsify_knn_tie_001_majority_vote_smallest_label, falsify_knn_tie_002_weighted_vote_smallest_label, falsify_knn_tie_003_predict_tie_smallest_label, falsify_knn_tie_004_three_way_tie_smallest_label"
+    command: "cargo test -p aprender-core --lib falsify_knn_tie"
+    red: "majority_vote([(1.0,0),(1.0,2)]) = 2 (HashMap + max_by_key returns the LAST max in randomized iteration order — non-deterministic; observed `left: 2, right: 0`)"
+    green: "majority_vote([(1.0,0),(1.0,2)]) = 0 (BTreeMap ascending + keep-first-on-strict-greater returns the smallest tied label, deterministically, on every call and process)"
+    sklearn_reference: "KNeighborsClassifier.predict tie-break = argmax(np.bincount(labels)) = smallest tied label (0 for a {0,2} tie)"
+    evidence: "cargo test -p aprender-core --lib falsify_knn_tie"

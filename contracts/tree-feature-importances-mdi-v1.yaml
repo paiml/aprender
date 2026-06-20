@@ -1,0 +1,139 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-19"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "Breiman, L. et al. (1984) 'Classification and Regression Trees' (CART), §4.5 variable importance"
+    - "scikit-learn tree/_tree.pyx::compute_feature_importances — https://github.com/scikit-learn/scikit-learn/blob/main/sklearn/tree/_tree.pyx"
+    - "sklearn.ensemble.RandomForestRegressor.feature_importances_ / RandomForestClassifier.feature_importances_ (impurity-based / MDI)"
+  description: |
+    Decision-tree feature-importance contract (PMAT-851). Pins aprender's
+    per-tree feature importance to the scikit-learn Mean Decrease in Impurity
+    (MDI) formula so that RandomForestRegressor::feature_importances() and
+    RandomForestClassifier::feature_importances() rank features by how much each
+    split REDUCES impurity, identically to sklearn — not by the raw sample count
+    reaching each split node.
+
+kind: KernelContract
+name: tree-feature-importances-mdi
+version: "1.0.0"
+scope: "crates/aprender-core/src/tree/regression_helpers.rs"
+
+description: |
+  Mean Decrease in Impurity (MDI) feature importance for CART decision trees and
+  the random-forest ensembles built on them.
+
+  For every internal (split) node N that splits on feature f, the importance
+  contribution is the WEIGHTED IMPURITY DECREASE:
+
+      importance[f] += n_N * impurity(N)
+                     - n_L * impurity(L)
+                     - n_R * impurity(R)
+
+  where:
+    - n_N, n_L, n_R are the sample counts reaching node N and its left/right
+      children L, R (n_N = n_L + n_R),
+    - impurity(.) is gini for classification and variance for regression,
+      computed over the samples reaching that node at FIT time.
+
+  Per-tree contributions are summed over all split nodes, averaged across the
+  forest's trees, and normalized to sum 1 (the existing consumer behaviour).
+  This is exactly scikit-learn's tree/_tree.pyx::compute_feature_importances.
+
+  A prior defect (PMAT-851) accumulated only the raw sample count reaching each
+  split node:
+
+      importance[f] += n_N        # WRONG — drops the impurity-decrease factor
+
+  The Node / RegressionNode structs stored no impurity, so the decrease could not
+  be computed. This ranks features purely by where splits happen by sample
+  volume, disagreeing with sklearn whenever a split over FEWER samples removes
+  MORE impurity than a split over more samples. The fix adds per-node `impurity`
+  and `n_node_samples` (stamped at fit time, before the split, on both internal
+  nodes and leaves) and rewrites the two traversal helpers to the MDI formula.
+
+equations:
+  C-MDI-001:
+    description: "Per-split weighted impurity decrease (sklearn MDI)"
+    formula: "imp[f] += n_N*impurity(N) - n_L*impurity(L) - n_R*impurity(R)"
+    note: |
+      impurity = gini (classification) or variance (regression), measured on the
+      samples reaching the node at fit time. Accumulated over all split nodes.
+
+  C-MDI-002:
+    description: "Leaves contribute no importance (no split is made there)"
+    formula: "isLeaf(N) ⟹ Δimp = 0"
+    note: |
+      A leaf makes no split, so it has no impurity-decrease term. Its stored
+      impurity is still used by its PARENT split as impurity(L) or impurity(R).
+
+  C-MDI-003:
+    description: "Variance-decrease ranking beats raw-count ranking (the bug)"
+    formula: "feature that drives the larger impurity decrease ranks higher, even with fewer samples"
+    note: |
+      Reference regression tree: root splits feature 0 over 20 samples (root
+      variance small); right child splits feature 1 over 10 samples separating
+      0.0 vs 100.0 (variance 2500 -> 0). MDI: imp[0] = 20*var_root - 10*var_right,
+      imp[1] = 10*var_right, so imp[1] > imp[0]. The buggy count-only code yields
+      imp = [20.0, 10.0] -> feature 0 ranked higher (WRONG).
+
+proof_obligations:
+- type: precondition
+  property: "Split nodes carry the sample count and impurity of the samples reaching them"
+  formal: "isNode(N) ⟹ N.n_node_samples = n_L + n_R ∧ isFinite(N.impurity) ∧ N.impurity >= 0"
+- type: postcondition
+  property: "Each split's contribution is its weighted impurity decrease"
+  formal: "Δimp[f] = n_N*impurity(N) - n_L*impurity(L) - n_R*impurity(R)"
+  requires: MDI-PRE-001
+- type: bound
+  property: "A split's impurity decrease is non-negative under a greedy impurity criterion"
+  formal: "n_N*impurity(N) - n_L*impurity(L) - n_R*impurity(R) >= 0"
+  applies_to: all
+- type: invariant
+  property: "Leaf nodes add nothing to any feature's importance"
+  formal: "isLeaf(N) ⟹ ∀f: Δimp[f] = 0"
+  applies_to: all
+- type: equivalence
+  property: "Variance-decrease ranking outranks the high-count low-decrease feature"
+  formal: "imp[1] > imp[0] for the PMAT-851 reference regression tree"
+  tolerance: 0.1
+
+falsification:
+  - id: FALSIFY-MDI-001
+    description: |
+      compute_regression_tree_feature_importances on the PMAT-851 reference tree
+      (root split feature 0 over 20 samples; right child split feature 1 over 10
+      samples separating variance 2500 -> 0) must rank feature 1 above feature 0
+      and match the weighted-variance-decrease formula. Discharges C-MDI-001/003.
+    test: "test_regression_mdi_outranks_by_variance_decrease_not_count"
+    evidence: |
+      cargo test -p aprender-core --lib test_regression_mdi_outranks_by_variance_decrease_not_count
+      RED  (count-only: imp[f] += count_regression_tree_samples(node)): importances
+           = [20.0, 10.0] → assertion "MDI must rank feature 1 > feature 0" FAILS
+           (20.0 vs 10.0 → feature 0 wins by raw count).
+      GREEN (MDI: imp[f] += n_N*var(N) - n_L*var(L) - n_R*var(R)): imp[1] (= 10*2500
+           = 25000) > imp[0] (= 20*var_root - 10*2500) → all assertions pass.
+  - id: FALSIFY-MDI-002
+    description: |
+      compute_tree_feature_importances (classification, gini) attributes the
+      weighted gini decrease per split, not the subtree sample count. A root
+      split over 12 samples (gini 0.5) whose right child splits 6 samples
+      (gini 0.5 -> pure) must give feature 0 = 3.0 and feature 1 = 3.0, NOT
+      feature 0 = 12 and feature 1 = 6. Discharges C-MDI-001/002.
+    test: "test_classification_mdi_uses_gini_decrease_not_count"
+    evidence: |
+      cargo test -p aprender-core --lib test_classification_mdi_uses_gini_decrease_not_count
+      RED  (count-only): importances = [12.0, 6.0] → assertion (imp[0] == 3.0) FAILS.
+      GREEN (MDI): feature 0 = 12*0.5 - 6*0.0 - 6*0.5 = 3.0, feature 1 = 6*0.5 = 3.0 → pass.
+  - id: FALSIFY-MDI-003
+    description: |
+      End-to-end: a FITTED RandomForestRegressor on PMAT-851-shaped data stamps
+      per-node impurity at fit time so feature_importances() (averaged +
+      normalized) ranks the high-variance-decrease feature 1 above feature 0 and
+      sums to 1. Discharges the fit-time precondition (MDI-PRE-001) and C-MDI-003.
+    test: "test_fitted_regressor_feature_importances_mdi_ranking"
+    evidence: |
+      cargo test -p aprender-core --lib test_fitted_regressor_feature_importances_mdi_ranking
+      GREEN: importances[1] > importances[0] and sum(importances) ≈ 1.0.
+      (Under the count-only bug this fitted-path ranking flips to feature 0.)

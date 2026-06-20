@@ -1,0 +1,95 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-19"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "IEEE 754-2019 §4.3.1 roundTiesToEven (the default rounding-direction attribute)"
+    - "half::bf16::from_f32 (Rust `half` crate, round-to-nearest-even reference oracle; pinned dev-dependency)"
+    - "PyTorch torch.Tensor.bfloat16() / aten bf16 cast (round-to-nearest-even)"
+    - "HuggingFace safetensors BF16 serialization (round-to-nearest-even, NaN-preserving)"
+  description: |
+    Correctness contract for f32 -> BF16 (brain-float-16) encoding in the
+    SafeTensors export path
+    (aprender-core crates/aprender-core/src/serialization/safetensors.rs
+    f32_slice_to_bf16_bytes, reached from `apr export --format safetensors`
+    via encode_tensor_for_dtype for tensors whose dtype is BF16).
+
+    PMAT-859: the prior implementation encoded by pure truncation
+    (`let bf16 = (bits >> 16) as u16;`). This is NOT the IEEE / PyTorch /
+    HF-safetensors behavior. Two defects followed:
+      (1) every value was biased toward zero — e.g. f32 0x3F81_C000, whose
+          discarded low half (0xC000) is above the halfway point, must round
+          UP to 0x3F82 but truncation produced 0x3F81;
+      (2) an f32 NaN whose only set mantissa bits live in the low 16 bits
+          (e.g. 0x7F80_0001) silently became +Inf, because truncation kept an
+          all-ones exponent with a zero mantissa.
+    The fix performs round-to-nearest-even and preserves NaN, matching
+    half::bf16::from_f32.
+
+kind: KernelContract
+name: safetensors-bf16-round
+version: "1.0.0"
+scope: "crates/aprender-core/src/serialization/safetensors.rs"
+
+description: |
+  BF16 occupies the high 16 bits of an f32. Correct encoding is
+  round-to-nearest-even (the IEEE-754 default), implemented as
+
+      rounding_bias = 0x7FFF + ((bits >> 16) & 1)        // 0x7FFF, +1 if kept-lsb is odd
+      bf16          = ((bits + rounding_bias) >> 16) as u16   // for finite, non-NaN
+      bf16(NaN)     = ((bits >> 16) as u16) | 0x0040          // force a mantissa bit
+
+  The `| 0x0040` guarantees the retained 16-bit pattern keeps a non-zero
+  mantissa, so a NaN stays NaN instead of collapsing to Inf.
+
+equations:
+  C-BF16-001:
+    description: "f32 -> BF16 is round-to-nearest-even, matching half::bf16::from_f32 for every finite input"
+    formula: "bf16(x) = half::bf16::from_f32(x).to_bits() ; e.g. bf16(f32 0x3F81_C000) = 0x3F82 (truncation gives 0x3F81)"
+    note: "The all-zero-low-half (already-exact) case is necessary but NOT sufficient — it is exactly what the truncation bug left correct. The falsifier MUST exercise a non-zero low half (0xC000)."
+  C-BF16-002:
+    description: "Round-to-nearest-even ties (low half == 0x8000) round to the even kept value"
+    formula: "bf16(0x3F80_8000) = 0x3F80 (kept lsb even, stays) ; bf16(0x3F81_8000) = 0x3F82 (kept lsb odd, rounds up)"
+    note: "Distinguishes round-to-nearest-even from round-half-up; both tie cases are structural and oracle-independent."
+  C-BF16-003:
+    description: "NaN is preserved across the cast — a NaN f32 encodes to a NaN BF16, never Inf"
+    formula: "x.is_nan()  =>  decode_bf16(bf16(x)).is_nan() ∧ ¬decode_bf16(bf16(x)).is_infinite() ; e.g. x = f32 0x7F80_0001"
+    note: "RED on the truncation bug, which dropped the only mantissa bit (low 16 bits) and produced +Inf (0x7F80)."
+
+proof_obligations:
+- type: equivalence
+  property: "BF16 encoding equals the half::bf16 round-to-nearest-even oracle"
+  formal: "∀ finite x: f32_slice_to_bf16_bytes([x])[0..2] == half::bf16::from_f32(x).to_le_bytes()"
+  applies_to: all
+- type: bound
+  property: "Round-to-nearest-even error is at most half a BF16 ulp"
+  formal: "|decode_bf16(bf16(x)) - x| ≤ 0.5 ulp_bf16(x) for finite x (truncation can reach a full ulp)"
+  tolerance: 0.0
+  applies_to: finite
+- type: invariant
+  property: "NaN preservation (no NaN -> Inf collapse)"
+  formal: "x.is_nan() ⇒ decode_bf16(bf16(x)).is_nan()"
+  applies_to: nan
+- type: roundtrip
+  property: "Already-exact BF16 values are unchanged (no spurious round-up from the bias)"
+  formal: "(x.to_bits() & 0x0000_FFFF) == 0 ⇒ bf16(x) == (x.to_bits() >> 16) as u16"
+  applies_to: exact
+
+falsification:
+  - id: FALSIFY-BF16-ROUND-001
+    description: "Round-to-nearest-even: f32 0x3F81_C000 must encode to 0x3F82, not the truncated 0x3F81. Discharges C-BF16-001."
+    test: "test_bf16_round_to_nearest_even_falsifier — RED 0x3F81 (truncation) -> GREEN 0x3F82 (round-to-nearest-even)."
+    evidence: "cargo test -p aprender-core --lib test_bf16_round_to_nearest_even_falsifier"
+  - id: FALSIFY-BF16-ROUND-002
+    description: "Tie-to-even: 0x3F80_8000 stays 0x3F80 (even) and 0x3F81_8000 rounds up to 0x3F82 (odd). Discharges C-BF16-002."
+    test: "test_bf16_round_to_nearest_even_halfway_to_even — RED 0x3F81 for the odd tie -> GREEN 0x3F82."
+    evidence: "cargo test -p aprender-core --lib test_bf16_round_to_nearest_even_halfway_to_even"
+  - id: FALSIFY-BF16-NAN-001
+    description: "NaN preservation: f32 0x7F80_0001 (NaN, mantissa only in low 16 bits) must stay NaN, not become Inf. Discharges C-BF16-003."
+    test: "test_bf16_preserves_nan_not_inf — RED bf16 0x7F80 decodes to +Inf -> GREEN 0x7FC0 decodes to NaN."
+    evidence: "cargo test -p aprender-core --lib test_bf16_preserves_nan_not_inf"
+  - id: FALSIFY-BF16-PARITY-001
+    description: "2048-sample sweep over mixed exponent/mantissa bit patterns matches half::bf16::from_f32 bit-for-bit. Discharges C-BF16-001 (oracle parity)."
+    test: "test_bf16_parity_with_half_crate (feature = format-quantize) — every sample's BF16 bits equal half::bf16::from_f32(v).to_bits()."
+    evidence: "cargo test -p aprender-core --lib --features format-quantize test_bf16_parity_with_half_crate"
