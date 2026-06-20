@@ -370,13 +370,37 @@ mod tests_clustering_contract;
 mod tests_ranking_contract;
 pub use classification::{fbeta_score, jaccard_score};
 
+/// Remaps cluster labels to a dense `0..k` range based on the set of DISTINCT
+/// labels present, mirroring sklearn's `LabelEncoder`. Returns the dense labels
+/// and `k = n_distinct`. This makes clustering metrics invariant under relabeling
+/// and avoids phantom empty clusters when labels are non-contiguous (e.g. a cluster
+/// was dropped, leaving a gap, or DBSCAN-style sparse output).
+fn dense_relabel(labels: &[usize]) -> (Vec<usize>, usize) {
+    let mut distinct: Vec<usize> = labels.to_vec();
+    distinct.sort_unstable();
+    distinct.dedup();
+    let dense: Vec<usize> = labels
+        .iter()
+        .map(|&l| {
+            distinct
+                .binary_search(&l)
+                .expect("label present in distinct set")
+        })
+        .collect();
+    (dense, distinct.len())
+}
+
 /// Davies–Bouldin score (lower is better), matching `sklearn.metrics.davies_bouldin_score`.
 /// Mean over clusters of the worst-case ratio `(S_i + S_j) / d(c_i, c_j)`, where
 /// `S` is mean intra-cluster distance to centroid and `d` is centroid distance.
+///
+/// The score depends only on the partition and is invariant under relabeling:
+/// cluster count is `k = |distinct labels|`, so non-contiguous labels never create
+/// phantom empty clusters (sklearn `LabelEncoder` semantics).
 #[must_use]
 pub fn davies_bouldin_score(data: &Matrix<f32>, labels: &[usize]) -> f32 {
     let (n, nf) = data.shape();
-    let k = labels.iter().max().map_or(0, |&m| m + 1);
+    let (labels, k) = dense_relabel(labels);
     if k < 2 {
         return 0.0;
     }
@@ -438,10 +462,15 @@ pub fn davies_bouldin_score(data: &Matrix<f32>, labels: &[usize]) -> f32 {
 
 /// Calinski–Harabasz score (variance ratio; higher is better), matching
 /// `sklearn.metrics.calinski_harabasz_score`: `(B/(k-1)) / (W/(n-k))`.
+///
+/// The score depends only on the partition and is invariant under relabeling:
+/// cluster count is `k = |distinct labels|`, so non-contiguous labels never create
+/// phantom empty clusters that would corrupt the `(k-1)` and `(n-k)` divisors
+/// (sklearn `LabelEncoder` semantics).
 #[must_use]
 pub fn calinski_harabasz_score(data: &Matrix<f32>, labels: &[usize]) -> f32 {
     let (n, nf) = data.shape();
-    let k = labels.iter().max().map_or(0, |&m| m + 1);
+    let (labels, k) = dense_relabel(labels);
     if k < 2 || n <= k {
         return 0.0;
     }
@@ -508,6 +537,49 @@ mod tests_clustering_extra {
         let labels = [0usize, 0, 1, 1, 1, 1, 1];
         assert!((davies_bouldin_score(&data, &labels) - 0.364_795).abs() < 1e-3);
         assert!((calinski_harabasz_score(&data, &labels) - 16.742_773).abs() < 1e-2);
+    }
+
+    /// PMAT-871 falsifier: clustering metrics depend ONLY on the partition and must
+    /// be invariant under relabeling. Non-contiguous labels (a gap left by a dropped
+    /// cluster, or DBSCAN-style sparse output) must NOT create phantom empty clusters.
+    ///
+    /// data = [[1,1],[1.5,2],[3,4],[5,7],[3.5,5]]; the partition `{0,1}|{2,3,4}` is the
+    /// same whether encoded `[0,0,1,1,1]` (contiguous) or `[0,0,2,2,2]` (gap at index 1).
+    /// sklearn (LabelEncoder → dense labels) gives CH=10.3140, DB=0.4150 for BOTH.
+    ///
+    /// RED (pre-fix, `k = max+1`): gapped CH=3.4380 (3x error), gapped DB=0.3721.
+    /// GREEN (post-fix, `k = |distinct|`): both encodings give CH≈10.3140, DB≈0.4150.
+    #[test]
+    fn clustering_metrics_relabel_invariant_pmat_871() {
+        let data = Matrix::from_vec(5, 2, vec![1.0, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 7.0, 3.5, 5.0])
+            .expect("valid");
+        let contiguous = [0usize, 0, 1, 1, 1];
+        let gapped = [0usize, 0, 2, 2, 2];
+
+        let ch_contig = calinski_harabasz_score(&data, &contiguous);
+        let ch_gapped = calinski_harabasz_score(&data, &gapped);
+        let db_contig = davies_bouldin_score(&data, &contiguous);
+        let db_gapped = davies_bouldin_score(&data, &gapped);
+
+        // Invariance under relabeling.
+        assert!(
+            (ch_contig - ch_gapped).abs() < 1e-2,
+            "CH must be relabeling-invariant: contiguous={ch_contig} gapped={ch_gapped}"
+        );
+        assert!(
+            (db_contig - db_gapped).abs() < 1e-3,
+            "DB must be relabeling-invariant: contiguous={db_contig} gapped={db_gapped}"
+        );
+
+        // Absolute match to sklearn reference.
+        assert!(
+            (ch_gapped - 10.3140).abs() < 1e-2,
+            "CH must match sklearn 10.3140, got {ch_gapped}"
+        );
+        assert!(
+            (db_gapped - 0.4150).abs() < 1e-3,
+            "DB must match sklearn 0.4150, got {db_gapped}"
+        );
     }
 }
 
