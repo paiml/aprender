@@ -133,8 +133,14 @@ pub fn kd_logit_gradient(
 ///
 /// ```text
 ///   L = α · CE(softmax(s), label)
-///     + (1-α) · T² · KL(softmax(s/T) || softmax(t/T))
+///     + (1-α) · T² · KL(softmax(t/T) || softmax(s/T))
 /// ```
+///
+/// The soft-target term is FORWARD KL `KL(teacher || student)` — the
+/// knowledge-distillation objective of Hinton et al. 2015 and PyTorch
+/// `KLDivLoss(log_softmax(student/T), softmax(teacher/T))`. This is the
+/// antiderivative of `kd_logit_gradient`'s KD term `T·(p_s − p_t)`, so the
+/// logged loss is consistent with the gradient that trains the model.
 ///
 /// Returned for logging / telemetry only — the gradient that goes back
 /// through the model is `kd_logit_gradient`, not the symbolic derivative
@@ -163,11 +169,18 @@ pub fn kd_loss(
     let p_s = softmax(&scaled_s);
     let p_t = softmax(&scaled_t);
 
-    // KL(P_s || P_t) = sum_i p_s[i] * (log p_s[i] - log p_t[i])
+    // FORWARD KL — KL(P_t || P_s) = sum_i p_t[i] * (log p_t[i] - log p_s[i]).
+    // This is the knowledge-distillation objective from Hinton et al. 2015 and
+    // PyTorch `KLDivLoss(log_softmax(student/T), softmax(teacher/T))` (which
+    // computes `sum p_t·(ln p_t − ln p_s)`). It is mean-seeking — the student
+    // is pulled to cover all of the teacher's mass — whereas reverse KL
+    // `KL(P_s || P_t)` is mode-seeking and is the WRONG direction for KD.
+    // It is also the antiderivative of `kd_logit_gradient`'s KD term
+    // `T·(p_s − p_t)`, keeping the logged loss consistent with the gradient.
     let mut kl = 0.0_f32;
-    for i in 0..p_s.len() {
-        if p_s[i] > 0.0 {
-            kl += p_s[i] * (p_s[i].max(1e-9).ln() - p_t[i].max(1e-9).ln());
+    for i in 0..p_t.len() {
+        if p_t[i] > 0.0 {
+            kl += p_t[i] * (p_t[i].max(1e-9).ln() - p_s[i].max(1e-9).ln());
         }
     }
 
@@ -407,6 +420,81 @@ mod tests {
         assert!(
             loss_far > loss_close,
             "KD loss with diverged student ({loss_far}) must exceed loss with matched student ({loss_close})"
+        );
+    }
+
+    /// PMAT-868 / F-KD-FORWARD-KL-001: the soft-target term of `kd_loss`
+    /// must be FORWARD KL — `KL(teacher ‖ student) = Σ p_t·(ln p_t − ln p_s)`
+    /// scaled by T² — matching Hinton (2015) and PyTorch
+    /// `KLDivLoss(log_softmax(student/T), softmax(teacher/T))`.
+    ///
+    /// Reverse KL `KL(student ‖ teacher)` is mode-seeking and is the WRONG
+    /// objective for knowledge distillation; it also makes the logged loss
+    /// inconsistent with `kd_logit_gradient` (whose KD term is the gradient
+    /// of forward KL: `T·(p_s − p_t)`).
+    ///
+    /// RED (pre-fix): equals the reverse-KL value `T²·Σ p_s·(ln p_s − ln p_t)`.
+    /// GREEN (post-fix): equals the forward-KL value `T²·Σ p_t·(ln p_t − ln p_s)`.
+    #[test]
+    fn pmat_868_kd_loss_soft_term_is_forward_kl() {
+        // Asymmetric teacher/student so forward KL != reverse KL.
+        let s = vec![2.0_f32, 0.0, -1.0, 0.5];
+        let t = vec![0.3_f32, 1.7, -0.2, 2.4];
+        let temperature = 3.0_f32;
+
+        // Reference temperature-scaled softmaxes (independent of impl path).
+        let p_s = softmax(&s.iter().map(|x| x / temperature).collect::<Vec<_>>());
+        let p_t = softmax(&t.iter().map(|x| x / temperature).collect::<Vec<_>>());
+
+        // Hand-computed forward KL: KL(teacher ‖ student) = Σ p_t·(ln p_t − ln p_s).
+        let mut forward_kl = 0.0_f32;
+        for i in 0..p_t.len() {
+            if p_t[i] > 0.0 {
+                forward_kl += p_t[i] * (p_t[i].max(1e-9).ln() - p_s[i].max(1e-9).ln());
+            }
+        }
+        // Reverse KL: KL(student ‖ teacher) = Σ p_s·(ln p_s − ln p_t) — the BUG.
+        let mut reverse_kl = 0.0_f32;
+        for i in 0..p_s.len() {
+            if p_s[i] > 0.0 {
+                reverse_kl += p_s[i] * (p_s[i].max(1e-9).ln() - p_t[i].max(1e-9).ln());
+            }
+        }
+        let t2 = temperature * temperature;
+        let expected_forward = t2 * forward_kl;
+        let expected_reverse = t2 * reverse_kl;
+
+        // Sanity: the two directions genuinely differ on this fixture, so the
+        // assertion below actually discriminates (not a degenerate symmetric case).
+        assert!(
+            (expected_forward - expected_reverse).abs() > 1e-3,
+            "fixture must make forward != reverse KL (fwd {expected_forward}, rev {expected_reverse})"
+        );
+
+        // alpha = 0.0 → pure soft-target term, no CE contamination.
+        let loss = kd_loss(&s, &t, 0, temperature, 0.0);
+
+        assert!(
+            (loss - expected_forward).abs() < 1e-5,
+            "kd_loss soft term must be FORWARD KL·T² ({expected_forward}), got {loss} \
+             (reverse-KL·T² would be {expected_reverse})"
+        );
+        assert!(
+            (loss - expected_reverse).abs() > 1e-3,
+            "kd_loss must NOT equal reverse-KL·T² ({expected_reverse}); got {loss}"
+        );
+
+        // KL is a non-negative divergence.
+        assert!(
+            loss >= 0.0,
+            "forward KL·T² must be non-negative, got {loss}"
+        );
+
+        // Zero soft-target loss when student == teacher (KL of a dist with itself).
+        let loss_eq = kd_loss(&s, &s, 0, temperature, 0.0);
+        assert!(
+            loss_eq.abs() < 1e-5,
+            "student==teacher → zero soft-target loss, got {loss_eq}"
         );
     }
 
