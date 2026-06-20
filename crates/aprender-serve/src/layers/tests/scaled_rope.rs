@@ -56,8 +56,67 @@ fn test_scaled_rope_yarn() {
     assert!((scaled.context_length_multiplier() - 16.0).abs() < 1e-6);
     // YaRN should have mscale > 1.0 for large extensions
     assert!(scaled.mscale() > 1.0);
-    // YaRN should have modified base
-    assert!(scaled.scaled_base() > 10000.0);
+    // PMAT-874: YaRN does NOT apply the NTK base modification (that is a different
+    // scaling type). YaRN uses the ORIGINAL base for the extrapolation (high-frequency)
+    // dims; interpolation (low-frequency) dims use base-freq / scale. So scaled_base
+    // must remain the original base, NOT base * scale^(dim/(dim-2)).
+    assert!(
+        (scaled.scaled_base() - 10000.0).abs() < 1e-3,
+        "YaRN must use the original base, got {}",
+        scaled.scaled_base()
+    );
+}
+
+/// PMAT-874 falsifier: YaRN extrapolated (high-frequency) dims must use the ORIGINAL
+/// base, not the NTK-modified base `base * scale^(dim/(dim-2))`.
+///
+/// Reference: YaRN (Peng et al. 2023, arXiv:2309.00071);
+/// HuggingFace `modeling_rope_utils._compute_yarn_parameters` — in the full-extrapolation
+/// regime, `inv_freq[i] == 1.0 / base^(2i/dim)` derived from the ORIGINAL base.
+///
+/// For dim=64, base=10000, scale=8192/2048=4.0, beta_fast=32, beta_slow=1:
+///   - dim pair i=1 lies in the full-extrapolation regime (HF correction range low=8).
+///   - HF / original-base YaRN inv_freq[1] = 10000^(-2/64) = 0.749_894_2 (GREEN).
+///   - The buggy NTK-base value would be (10000 * 4^(64/62))^(-2/64) = 0.717_098_3 (RED).
+#[test]
+fn test_scaled_rope_yarn_extrapolation_uses_original_base() {
+    let dim = 64usize;
+    let base = 10000.0f32;
+    let scaling = RopeScalingType::Yarn {
+        original_max_len: 2048,
+        target_max_len: 8192,
+        attn_factor: 1.0,
+        beta_fast: 32.0,
+        beta_slow: 1.0,
+    };
+    let scaled = ScaledRoPE::new(dim, base, scaling).expect("test");
+
+    // Reference (HF / original-base YaRN) value for the high-frequency dim pair i=1.
+    #[allow(clippy::cast_precision_loss)]
+    let original_base_inv_freq_1 = base.powf(-2.0 * 1.0 / (dim as f32));
+    // The buggy NTK-modified base value (what the bug produced) for i=1.
+    #[allow(clippy::cast_precision_loss)]
+    let ntk_base = base * 4.0f32.powf((dim as f32) / ((dim as f32) - 2.0));
+    #[allow(clippy::cast_precision_loss)]
+    let ntk_inv_freq_1 = ntk_base.powf(-2.0 * 1.0 / (dim as f32));
+
+    let inv_freq = scaled.inv_freq();
+    assert!(inv_freq.len() > 1, "need at least 2 frequency pairs");
+
+    // GREEN: extrapolated dim 1 matches the ORIGINAL-base reference (HF YaRN).
+    assert!(
+        (inv_freq[1] - original_base_inv_freq_1).abs() < 1e-5,
+        "PMAT-874: YaRN extrapolated dim 1 must use the ORIGINAL base \
+         (expected {original_base_inv_freq_1}, got {})",
+        inv_freq[1]
+    );
+    // RED guard: it must NOT equal the NTK-modified-base value.
+    assert!(
+        (inv_freq[1] - ntk_inv_freq_1).abs() > 1e-4,
+        "PMAT-874: YaRN must NOT apply the NTK base modification \
+         (got {} which matches the buggy NTK value {ntk_inv_freq_1})",
+        inv_freq[1]
+    );
 }
 
 #[test]

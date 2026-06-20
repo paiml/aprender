@@ -81,14 +81,16 @@ impl ScaledRoPE {
                 beta_fast,
                 beta_slow,
             } => {
-                // YaRN combines NTK with attention scaling
+                // PMAT-874: YaRN (Peng et al. 2023, arXiv:2309.00071) does NOT apply the
+                // NTK-by-parts base modification `base * scale^(dim/(dim-2))` — that is a
+                // DIFFERENT scaling type. YaRN keeps the ORIGINAL base for the extrapolated
+                // (high-frequency / short-wavelength) dims; the interpolated (low-frequency)
+                // dims use base-freq / scale; a per-frequency ramp (driven by beta_fast /
+                // beta_slow) blends the two in the forward pass. See HuggingFace
+                // `modeling_rope_utils._compute_yarn_parameters`: `inv_freq_extrapolation`
+                // is `1 / base^(2i/dim)` (original base), `inv_freq_interpolation` is that
+                // divided by the scale factor.
                 let scale = (*target_max_len as f32) / (*original_max_len as f32);
-                let dim_f = dim as f32;
-
-                // Compute NTK-style base modification
-                // YaRN uses a smoother interpolation based on frequency
-                let exponent = dim_f / (dim_f - 2.0);
-                let ntk_base = base * scale.powf(exponent);
 
                 // Compute mscale (attention factor)
                 // Default: sqrt(1 + ln(scale) / ln(original_max_len))
@@ -104,7 +106,8 @@ impl ScaledRoPE {
                 // but are applied per-frequency in the forward pass
                 let _ = (beta_fast, beta_slow); // Used in forward
 
-                (ntk_base, mscale)
+                // YaRN's base frequency is the ORIGINAL base (no NTK modification).
+                (base, mscale)
             },
         };
 
@@ -191,20 +194,24 @@ impl ScaledRoPE {
                 let low_freq_wavelen = (*original_max_len as f32) / *beta_slow;
                 let high_freq_wavelen = (*original_max_len as f32) / *beta_fast;
 
+                // PMAT-874: YaRN ramp. ramp=0 => full extrapolation using the ORIGINAL
+                // base (inv_f is now original-base; the NTK modification is NOT applied).
+                // ramp=1 => full interpolation (original base, position scaled by 1/scale).
                 let ramp = if wavelength < high_freq_wavelen {
-                    0.0 // Full extrapolation (use NTK-scaled frequency)
+                    0.0 // Full extrapolation (original-base frequency, unscaled position)
                 } else if wavelength > low_freq_wavelen {
-                    1.0 // Full interpolation (use linear-scaled position)
+                    1.0 // Full interpolation (original-base frequency, scaled position)
                 } else {
                     // Linear ramp between extrapolation and interpolation
                     (wavelength - high_freq_wavelen) / (low_freq_wavelen - high_freq_wavelen)
                 };
 
-                // Interpolate between NTK angle and linear angle
+                // Interpolate between extrapolation angle and interpolation angle.
                 let scale = (*target_max_len as f32) / (*original_max_len as f32);
                 let linear_pos = effective_pos / scale;
 
-                // Original frequency from unscaled base
+                // Interpolation frequency: original (unscaled) base; same as inv_f here,
+                // but kept explicit for clarity / future-proofing.
                 let orig_inv_f = self
                     .original_base
                     .powf(-2.0 * (i as f32) / (self.dim as f32));
