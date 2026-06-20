@@ -1,0 +1,131 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-19'
+  author: PAIML Engineering
+  description: |
+    GGUF/GGML K-quant tensors report bytes-per-element via an O(1) lookup table
+    in ggml_dtype_element_size (crates/aprender-core/src/format/safetensors.rs).
+    Each K-quant super-block packs exactly QK_K=256 elements; bytes-per-element
+    is therefore the EXACT ratio block_bytes / 256.
+
+    Four entries were WRONG (PMAT-869): Q2_K stored 0.3125 (=80/256), Q3_K 0.4375
+    (=112/256), Q6_K 0.8125 (=208/256), Q8_K 1.0625 (=272/256) — none match the
+    real ggml-common.h super-block sizes. So `apr tensors` / size reporting
+    under-counted K-quant tensor byte sizes (e.g. a 256-element Q2_K tensor was
+    reported as 80 bytes instead of 84). Q4_K (144/256=0.5625) and Q5_K
+    (176/256=0.6875) were already correct.
+
+    Fix: correct the four entries to the exact dyadic ratios 84/256, 110/256,
+    210/256, 292/256. All six K-quant bytes/elem now equal block_bytes/256.
+  references:
+  - 'ggml-common.h: sizeof(block_q2_K) = 2*sizeof(ggml_half) + QK_K/16 + QK_K/4 = 84'
+  - 'ggml-common.h: sizeof(block_q3_K) = sizeof(ggml_half) + QK_K/4 + QK_K/8 + 12 = 110'
+  - 'ggml-common.h: sizeof(block_q4_K) = 2*sizeof(ggml_half) + 12 + QK_K/2 = 144'
+  - 'ggml-common.h: sizeof(block_q5_K) = 2*sizeof(ggml_half) + 12 + QK_K/8 + QK_K/2 = 176'
+  - 'ggml-common.h: sizeof(block_q6_K) = QK_K/2 + QK_K/4 + QK_K/16 + sizeof(ggml_half) = 210'
+  - 'ggml-common.h: sizeof(block_q8_K) = sizeof(float) + QK_K + QK_K/16*sizeof(int16_t) = 292'
+  - 'ggml-common.h: QK_K = 256'
+  - 'crates/aprender-core/src/format/safetensors.rs — ggml_dtype_element_size SIZES table (idx 10/11/14/15)'
+  - 'crates/aprender-core/src/format/tensors.rs — ggml_dtype_name GGML type enum order'
+
+kind: KernelContract
+name: gguf-kquant-element-size
+version: 1.0.0
+scope: aprender-core GGUF K-quant byte-size reporting (safetensors.rs ggml_dtype_element_size)
+
+description: |
+  K-quant (Q2_K, Q3_K, Q4_K, Q5_K, Q6_K, Q8_K) bytes-per-element MUST equal the
+  exact ratio block_bytes / QK_K, where QK_K=256 and block_bytes is the ggml.h
+  super-block size in bytes. This is the per-element weight ggml_dtype_element_size
+  must return so that total tensor byte size = num_elements * bytes_per_element is
+  reported correctly by `apr tensors` and GGUF size accounting.
+
+equations:
+  kquant_bytes_per_element:
+    description: 'bytes_per_element(dtype) = block_bytes(dtype) / 256 for every K-quant'
+    formula: |
+      Q2_K = 84/256  = 0.328125
+      Q3_K = 110/256 = 0.4296875
+      Q4_K = 144/256 = 0.5625
+      Q5_K = 176/256 = 0.6875
+      Q6_K = 210/256 = 0.8203125
+      Q8_K = 292/256 = 1.140625
+    domain: GGML dtype codes {10:Q2_K, 11:Q3_K, 12:Q4_K, 13:Q5_K, 14:Q6_K, 15:Q8_K}
+    codomain: bytes per element (f64, exact dyadic fraction)
+    invariants:
+    - 'QK_K = 256 elements per K-quant super-block'
+    - 'bytes_per_element = block_bytes / 256 (exact, no approximation)'
+    - 'Q4_K (144/256) and Q5_K (176/256) unchanged — already correct'
+    - 'monotonic in bits: Q2_K < Q3_K < Q4_K < Q5_K < Q6_K < Q8_K'
+    lean_theorem: Theorems.KQuant_Element_Size
+
+  total_tensor_bytes:
+    description: 'reported tensor size = num_elements * bytes_per_element'
+    formula: 'size_bytes = floor(num_elements * (block_bytes / 256))'
+    domain: 'num_elements a positive multiple of 256'
+    codomain: byte count (usize)
+    invariants:
+    - 'a 256-element Q2_K tensor reports 84 bytes (was 80 before the fix)'
+    - 'a 256-element Q8_K tensor reports 292 bytes (was 272 before the fix)'
+    lean_theorem: Theorems.Total_Tensor_Bytes
+
+proof_obligations:
+- type: invariant
+  property: K-quant bytes-per-element equals block_bytes/256
+  formal: |
+    For every K-quant dtype code c in {10,11,12,13,14,15} with ggml.h super-block
+    size block_bytes(c) in {84,110,144,176,210,292}:
+      ggml_dtype_element_size(c) == block_bytes(c) / 256.0  (exact).
+- type: invariant
+  property: Q4_K and Q5_K unchanged
+  formal: |
+    ggml_dtype_element_size(12) == 0.5625 AND ggml_dtype_element_size(13) == 0.6875
+    (these two were already correct and must not regress).
+- type: equivalence
+  property: total tensor byte size for a 256-element Q2_K tensor
+  formal: |
+    floor(256 * ggml_dtype_element_size(10)) == 84  (not 80).
+
+falsification_tests:
+- id: FT-KQUANT-001
+  rule: K-quant bytes-per-element equals exact block_bytes/256 ratio
+  prediction: |
+    ggml_dtype_element_size returns 0.328125 (Q2_K), 0.4296875 (Q3_K),
+    0.8203125 (Q6_K), 1.140625 (Q8_K). Before the fix it returned 0.3125,
+    0.4375, 0.8125, 1.0625 respectively.
+  test: cargo test -p aprender-core --lib test_kquant_element_size_exact_block_ratio_pmat869
+  if_fails: 'a K-quant SIZES table entry (idx 10/11/14/15) regressed to a wrong byte/elem value.'
+  evidence: |
+    RED (buggy table): panics "Q2_K (code 10): expected 0.328125 (= 84/256), got 0.3125".
+    GREEN (fixed table): test passes; 256-element Q2_K tensor reports 84 bytes.
+- id: FT-KQUANT-002
+  rule: Q4_K and Q5_K element sizes are unchanged
+  prediction: 'ggml_dtype_element_size(12)==0.5625 and (13)==0.6875 stay correct.'
+  test: cargo test -p aprender-core --lib test_kquant_element_size_exact_block_ratio_pmat869
+  if_fails: 'the fix over-reached and altered the already-correct Q4_K/Q5_K entries.'
+  evidence: cargo test -p aprender-core --lib
+- id: FT-KQUANT-003
+  rule: total reported byte size for a 256-element Q2_K tensor is 84 bytes
+  prediction: 'floor(256 * ggml_dtype_element_size(10)) == 84 (was 80 before the fix).'
+  test: cargo test -p aprender-core --lib test_kquant_element_size_exact_block_ratio_pmat869
+  if_fails: 'the Q2_K entry is under-counting, so GGUF tensor sizes are mis-reported.'
+  evidence: cargo test -p aprender-core --lib
+
+kani_harnesses:
+- id: KANI-KQUANT-001
+  obligation: K-quant bytes-per-element equals block_bytes/256
+  property: |
+    For all c in {10,11,12,13,14,15}, ggml_dtype_element_size(c) ==
+    block_bytes(c)/256.0 with block_bytes = [84,110,144,176,210,292]. No panic.
+  bound: 1
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_kquant_element_size
+
+qa_gate:
+  id: F-KQUANT-001
+  name: gguf-kquant-element-size-v1 Contract
+  description: GGUF K-quant tensors must report bytes-per-element equal to the exact ggml.h super-block ratio block_bytes/256, so total tensor byte sizes are reported correctly.
+  checks:
+  - validation
+  - falsification
