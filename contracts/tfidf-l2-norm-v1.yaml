@@ -1,0 +1,138 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-19"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "scikit-learn sklearn.feature_extraction.text.TfidfVectorizer — norm='l2' is the DEFAULT; output rows are L2-normalized to unit length"
+    - "scikit-learn TfidfVectorizer = CountVectorizer + TfidfTransformer; TfidfTransformer applies sklearn.preprocessing.normalize(X, norm) after tf*idf weighting"
+    - "scikit-learn sklearn.preprocessing.normalize — norm='l2' divides each row by sqrt(Σ xᵢ²); norm='l1' by Σ|xᵢ|; norm=None leaves raw values"
+    - "Manning, Raghavan & Schütze (2008) Introduction to Information Retrieval §6.3 — cosine normalization of tf-idf document vectors"
+    - "PMAT-861 — apr's TfidfVectorizer::transform emitted raw tf*idf with NO normalization (no `norm` field, no sqrt/L2 code), diverging from sklearn's norm='l2' default"
+  description: "TfidfVectorizer output rows must be L2-normalized by default to match scikit-learn's norm='l2' default (each document vector has unit Euclidean length)"
+
+kind: KernelContract
+name: tfidf-l2-norm
+version: "1.0.0"
+scope: "crates/aprender-core/src/text/vectorize/tfidf_vectorizer.rs::Norm + hashing_vectorizer.rs::TfidfVectorizer::{new,with_norm,transform}"
+
+description: |
+  PMAT-861 (Pillar-1 sklearn-parity correctness beat). `TfidfVectorizer::transform`
+  built each output row as raw `tf * idf` and returned it directly — there was no
+  `norm` field on the struct and no L2/sqrt normalization code anywhere in the
+  transform path. scikit-learn's `TfidfVectorizer` defaults to `norm='l2'`:
+  after tf*idf weighting, every document row is divided by its Euclidean norm so
+  the row has unit length (cosine-ready). apr therefore produced numerically
+  different TF-IDF features than sklearn for the IDENTICAL inputs and settings,
+  silently breaking downstream similarity/classification parity.
+
+  The `smooth_idf` computation (`idf = ln((N+1)/(df+1)) + 1`) was already correct
+  and is unchanged; only the missing row normalization was the defect.
+
+  ## Repro
+  docs = ["a b", "a c"], whitespace tokenizer, vocab {a:0, b:1, c:2},
+  idf = [1.0, 1.40546511, 1.40546511].
+    - apr (pre-fix, raw tf*idf):  row "a b" = [1.0,        1.4054651,  0.0]   (L2 norm = 1.724915)
+    - sklearn (norm='l2', default): row "a b" = [0.5797387, 0.8148025, 0.0]   (L2 norm = 1.0)
+  0.5797387 = 1.0 / 1.724915 ; 0.8148025 = 1.4054651 / 1.724915.
+
+  ## Fix
+  Added a `Norm` enum (`L2` default, plus `L1` and `None`) and a `norm: Norm`
+  field on `TfidfVectorizer` (defaulted to `Norm::L2` in `new()`), with a
+  `with_norm(norm)` builder. `transform()` now builds each row's tf*idf values,
+  computes the row scale (`L2 = sqrt(Σ xᵢ²)`, `L1 = Σ|xᵢ|`, `None = 1`), and
+  divides each element by the scale (skipping division when scale == 0 to leave
+  an all-zero row untouched). `Norm::None` reproduces sklearn `norm=None` =
+  apr's old raw values, used by the sublinear-TF unit test that observes raw
+  magnitudes.
+
+equations:
+  C-tfidf-row:
+    description: "Each document row is tf*idf weighted, then L2-normalized (sklearn norm='l2' default)"
+    formula: |
+      let wᵢ = tf_i · idf_i                                  (tf weighting; sublinear tf optional)
+      row(L2) = w / ‖w‖₂   where ‖w‖₂ = sqrt( Σ_i wᵢ² ),   if ‖w‖₂ > 0 else w
+      ⇒ ‖row(L2)‖₂ = 1  for every non-zero document row
+  C-tfidf-norm-variants:
+    description: "Norm strategy selects the row divisor (sklearn norm parameter)"
+    formula: |
+      scale(L2)   = sqrt( Σ_i wᵢ² )      (Euclidean)   → ‖row‖₂ = 1
+      scale(L1)   = Σ_i |wᵢ|             (Manhattan)   → Σ_i |row_i| = 1
+      scale(None) = 1                    (raw tf*idf, sklearn norm=None)
+      row_i = wᵢ / scale   (scale>0); else row_i = wᵢ
+  C-tfidf-idf-unchanged:
+    description: "smooth IDF is unchanged by this fix"
+    formula: |
+      idf_i = ln( (N + 1) / (df_i + 1) ) + 1     (N = #docs, df_i = #docs containing term i)
+
+proof_obligations:
+  - type: equivalence
+    property: "Default TfidfVectorizer output equals scikit-learn TfidfVectorizer (norm='l2') row-for-row"
+    formal: |
+      For docs = ["a b","a c"] with a whitespace tokenizer, the default
+      (norm=L2) fit_transform row for "a b" equals
+      [0.5797387, 0.8148025, 0.0] (±1e-5) at vocab indices (a,b,c),
+      matching sklearn TfidfVectorizer(token_pattern=r'\b\w+\b').fit_transform.
+  - type: invariant
+    property: "Every non-zero document row has unit L2 norm under the default norm=L2"
+    formal: |
+      ∀ row r with at least one non-zero entry:
+      sqrt( Σ_c transform(docs)[r][c]² ) = 1  (±1e-6).
+      All-zero rows (no in-vocabulary terms) are left untouched (scale skipped).
+  - type: equivalence
+    property: "Norm::None reproduces the pre-fix raw tf*idf values (sklearn norm=None)"
+    formal: |
+      with_norm(Norm::None).fit_transform(["a b","a c"]) row "a b" =
+      [1.0, 1.4054651, 0.0] (±1e-6); its L2 norm = 1.724915 — the divisor the
+      default L2 path applies.
+  - type: invariant
+    property: "Norm::L1 yields rows whose absolute values sum to 1 (sklearn norm='l1')"
+    formal: |
+      ∀ non-zero row r under Norm::L1: Σ_c |transform(docs)[r][c]| = 1 (±1e-6).
+
+falsification_tests:
+  - id: FALSIFY-TFIDF_L2_NORM_V1_001
+    rule: "Default fit_transform of ['a b','a c'] yields sklearn norm='l2' values for row 'a b'"
+    prediction: "row 'a b' = [0.5797387, 0.8148025, 0.0] (±1e-5)"
+    test: "cargo test -p aprender-core --lib text::vectorize::tests::test_tfidf_l2_normalization_sklearn_parity_pmat861"
+    notes: |
+      RED (raw tf*idf, normalization disabled): row0[a] = 1.0 (panic: expected 0.5797387).
+      GREEN (L2-normalized): row0[a] = 0.5797387, row0[b] = 0.8148025, row0[c] = 0.0.
+      sklearn reference: TfidfVectorizer(token_pattern=r'\b\w+\b').fit_transform(['a b','a c']).
+    if_fails: "Output rows are not L2-normalized; apr diverges from sklearn TfidfVectorizer default"
+  - id: FALSIFY-TFIDF_L2_NORM_V1_002
+    rule: "Every non-zero document row has unit L2 norm under the default norm"
+    prediction: "sqrt(Σ row²) = 1.0 (±1e-6) for each row of ['a b','a c']"
+    test: "cargo test -p aprender-core --lib text::vectorize::tests::test_tfidf_l2_normalization_sklearn_parity_pmat861"
+    notes: |
+      The same parity test also asserts, for every row, sqrt(Σ_c X[r][c]²) ≈ 1.0.
+      RED (raw): row L2 = 1.724915 (panic). GREEN: 1.0.
+    if_fails: "Rows are not unit-length; cosine similarity / classification parity with sklearn breaks"
+  - id: FALSIFY-TFIDF_L2_NORM_V1_003
+    rule: "Norm::None reproduces raw tf*idf (sklearn norm=None) — the documented escape hatch"
+    prediction: "with_norm(Norm::None) row 'a b' = [1.0, 1.4054651, 0.0] (±1e-6), L2 norm = 1.724915"
+    test: "cargo test -p aprender-core --lib text::vectorize::tests::test_tfidf_norm_none_matches_raw_tfidf_pmat861"
+    notes: |
+      sklearn reference: TfidfVectorizer(norm=None) = [1.0, 1.40546511, 0.0].
+    if_fails: "Norm::None does not match sklearn norm=None raw weighting; idf/tf computation regressed"
+  - id: FALSIFY-TFIDF_L2_NORM_V1_004
+    rule: "Norm::L1 yields rows whose absolute values sum to 1 (sklearn norm='l1')"
+    prediction: "Σ_c |X[r][c]| = 1.0 (±1e-6) for every non-zero row under Norm::L1"
+    test: "cargo test -p aprender-core --lib text::vectorize::tests::test_tfidf_norm_l1_unit_sum_pmat861"
+    if_fails: "L1 normalization divisor is wrong; norm='l1' parity with sklearn broken"
+
+status_history:
+  - version: "1.0.0"
+    date: "2026-06-19"
+    pr: "paiml/aprender fix/pmat-861-tfidf-l2-normalization"
+    summary: |
+      Initial contract registered alongside the PMAT-861 fix. RED proven by
+      disabling the normalization branch: fit_transform(['a b','a c']) row 'a b'
+      = [1.0, 1.4054651, 0.0] (raw tf*idf, row L2 = 1.724915) — panics against
+      the sklearn norm='l2' reference [0.5797387, 0.8148025, 0.0]. GREEN after
+      adding the Norm enum + norm:L2 default + per-row L2 division in transform():
+      row 'a b' = [0.5797387, 0.8148025, 0.0], every non-zero row L2 norm = 1.0.
+      Norm::None restores sklearn norm=None raw values; Norm::L1 gives unit-L1
+      rows. Four falsification unit tests added in text::vectorize::tests; the
+      pre-existing sublinear-TF test was repointed to Norm::None (it observes raw
+      magnitudes, which L2 normalization collapses to 1.0 for single-term docs).

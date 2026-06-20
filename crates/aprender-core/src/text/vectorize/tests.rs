@@ -118,12 +118,18 @@ fn test_max_df_filtering() {
 fn test_sublinear_tf() {
     let docs = vec!["word word word word"]; // word appears 4 times
 
-    let mut vectorizer_normal =
-        TfidfVectorizer::new().with_tokenizer(Box::new(WhitespaceTokenizer::new()));
+    // Use norm=None so the raw tf*idf magnitudes are observable. With the
+    // default L2 normalization a single-term document always collapses to a
+    // unit-length row (1.0), masking the sublinear-TF dampening this test
+    // exercises (PMAT-861).
+    let mut vectorizer_normal = TfidfVectorizer::new()
+        .with_tokenizer(Box::new(WhitespaceTokenizer::new()))
+        .with_norm(Norm::None);
 
     let mut vectorizer_sublinear = TfidfVectorizer::new()
         .with_tokenizer(Box::new(WhitespaceTokenizer::new()))
-        .with_sublinear_tf(true);
+        .with_sublinear_tf(true)
+        .with_norm(Norm::None);
 
     let matrix_normal = vectorizer_normal
         .fit_transform(&docs)
@@ -422,6 +428,120 @@ fn test_count_vectorizer_default() {
 fn test_tfidf_vectorizer_default() {
     let vectorizer = TfidfVectorizer::default();
     assert!(!vectorizer.sublinear_tf);
+    // sklearn parity: default normalization is L2 (PMAT-861).
+    assert_eq!(vectorizer.norm, Norm::L2);
+}
+
+/// PMAT-861 falsifier: `TfidfVectorizer` must L2-normalize each output row
+/// to match scikit-learn's `TfidfVectorizer` default (`norm='l2'`).
+///
+/// Reference (scikit-learn, `token_pattern=r'\b\w+\b'`):
+/// ```text
+/// docs = ["a b", "a c"]              vocab: a=0, b=1, c=2
+/// idf_ = [1.0, 1.40546511, 1.40546511]
+/// X (norm='l2'):  row "a b" = [0.57973867, 0.81480247, 0.0]
+/// X (norm=None):  row "a b" = [1.0,        1.40546511, 0.0]   (apr's old buggy output)
+/// ```
+///
+/// RED (pre-fix, raw tf*idf): row = [1.0, 1.4054651, 0.0], L2 norm = 1.7249.
+/// GREEN (L2-normalized):     row = [0.5797387, 0.8148025, 0.0], L2 norm = 1.0.
+#[test]
+fn test_tfidf_l2_normalization_sklearn_parity_pmat861() {
+    let docs = vec!["a b", "a c"];
+
+    let mut vectorizer =
+        TfidfVectorizer::new().with_tokenizer(Box::new(WhitespaceTokenizer::new()));
+
+    let matrix = vectorizer
+        .fit_transform(&docs)
+        .expect("fit_transform should succeed");
+
+    // Vocabulary is frequency-then-alphabetical: a(2), b(1), c(1) -> a=0, b=1, c=2.
+    let vocab = vectorizer.vocabulary();
+    let a = *vocab.get("a").expect("vocab has 'a'");
+    let b = *vocab.get("b").expect("vocab has 'b'");
+    let c = *vocab.get("c").expect("vocab has 'c'");
+
+    // Row 0 = "a b": sklearn norm='l2' reference values.
+    assert!(
+        (matrix.get(0, a) - 0.5797387).abs() < 1e-5,
+        "row0[a] = {} (expected 0.5797387)",
+        matrix.get(0, a)
+    );
+    assert!(
+        (matrix.get(0, b) - 0.8148025).abs() < 1e-5,
+        "row0[b] = {} (expected 0.8148025)",
+        matrix.get(0, b)
+    );
+    assert!(
+        matrix.get(0, c).abs() < 1e-5,
+        "row0[c] = {} (expected 0.0)",
+        matrix.get(0, c)
+    );
+
+    // Every row must have unit L2 norm (the defining property of norm='l2').
+    for row in 0..matrix.n_rows() {
+        let l2: f64 = (0..matrix.n_cols())
+            .map(|col| matrix.get(row, col).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        assert!(
+            (l2 - 1.0).abs() < 1e-6,
+            "row {row} L2 norm = {l2} (expected 1.0)"
+        );
+    }
+}
+
+/// PMAT-861: `Norm::None` reproduces the pre-fix raw `tf * idf` values, matching
+/// scikit-learn `TfidfVectorizer(norm=None)`.
+#[test]
+fn test_tfidf_norm_none_matches_raw_tfidf_pmat861() {
+    let docs = vec!["a b", "a c"];
+
+    let mut vectorizer = TfidfVectorizer::new()
+        .with_tokenizer(Box::new(WhitespaceTokenizer::new()))
+        .with_norm(Norm::None);
+
+    let matrix = vectorizer
+        .fit_transform(&docs)
+        .expect("fit_transform should succeed");
+
+    let vocab = vectorizer.vocabulary();
+    let a = *vocab.get("a").expect("vocab has 'a'");
+    let b = *vocab.get("b").expect("vocab has 'b'");
+
+    // Raw tf*idf: tf=1, idf(a)=1.0, idf(b)=ln(3/2)+1=1.4054651.
+    assert!((matrix.get(0, a) - 1.0).abs() < 1e-6);
+    assert!((matrix.get(0, b) - 1.4054651).abs() < 1e-6);
+
+    // The raw row's L2 norm is the 1.7249 divisor used by the L2 path.
+    let l2: f64 = (0..matrix.n_cols())
+        .map(|col| matrix.get(0, col).powi(2))
+        .sum::<f64>()
+        .sqrt();
+    assert!((l2 - 1.724915).abs() < 1e-4, "raw row0 L2 = {l2}");
+}
+
+/// PMAT-861: `Norm::L1` divides each row by the sum of absolute values, giving
+/// rows whose absolute values sum to 1 (sklearn `norm='l1'`).
+#[test]
+fn test_tfidf_norm_l1_unit_sum_pmat861() {
+    let docs = vec!["a b", "a c"];
+
+    let mut vectorizer = TfidfVectorizer::new()
+        .with_tokenizer(Box::new(WhitespaceTokenizer::new()))
+        .with_norm(Norm::L1);
+
+    let matrix = vectorizer
+        .fit_transform(&docs)
+        .expect("fit_transform should succeed");
+
+    for row in 0..matrix.n_rows() {
+        let l1: f64 = (0..matrix.n_cols())
+            .map(|col| matrix.get(row, col).abs())
+            .sum();
+        assert!((l1 - 1.0).abs() < 1e-6, "row {row} L1 sum = {l1}");
+    }
 }
 
 #[test]
