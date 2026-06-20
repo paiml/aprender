@@ -138,11 +138,38 @@ fn test_build_driver_no_model_returns_mock() {
     assert!(driver.is_ok(), "should return MockDriver when no model_path");
 }
 
+// PMAT-876: `ANTHROPIC_API_KEY` is process-global env. This test runs in
+// the BINARY test crate (cli/* is declared in main.rs, not the `batuta`
+// lib), so it cannot reach the lib-side `agent::env_test_support`. Use a
+// self-contained lock + save/restore guard with the same semantics:
+// serialize env-mutating tests in THIS test binary and never leave the
+// var clobbered for another parallel test.
+fn anthropic_key_env_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+struct RestoreEnv {
+    key: &'static str,
+    prior: Option<String>,
+}
+impl Drop for RestoreEnv {
+    fn drop(&mut self) {
+        match &self.prior {
+            Some(v) => std::env::set_var(self.key, v),
+            None => std::env::remove_var(self.key),
+        }
+    }
+}
+
 #[test]
 fn test_build_driver_remote_no_key_returns_mock() {
+    let _guard = anthropic_key_env_lock();
+    let _restore =
+        RestoreEnv { key: "ANTHROPIC_API_KEY", prior: std::env::var("ANTHROPIC_API_KEY").ok() };
+    std::env::remove_var("ANTHROPIC_API_KEY");
     let mut manifest = batuta::agent::AgentManifest::default();
     manifest.model.remote_model = Some("claude-sonnet-4-20250514".into());
-    std::env::remove_var("ANTHROPIC_API_KEY");
     let driver = build_driver(&manifest);
     assert!(driver.is_ok(), "should return mock when API key missing");
 }

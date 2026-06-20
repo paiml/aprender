@@ -165,6 +165,11 @@ impl AprSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // PMAT-876: shared crate-wide env lock + save/restore guard. All
+    // env-mutating tests across auto_memory + settings + instructions
+    // serialize on this ONE lock because they touch the same global
+    // `APR_CONFIG` variable.
+    use crate::agent::env_test_support::{env_lock, ScopedEnv};
     use std::fs;
     use std::path::Path;
 
@@ -316,24 +321,13 @@ mod tests {
         assert!(msg.contains("invalid settings JSON") || msg.contains("settings.json"));
     }
 
-    // CI flake prevention: tests below mutate the process-wide
-    // `APR_CONFIG` env var. cargo test runs `#[test]` fns in parallel
-    // by default; without serialization, two parallel tests can corrupt
-    // each other's view of the env (test A sets, test B reads, test A
-    // removes). Same fix as agent::instructions::tests (PR #1567).
-    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        LOCK.lock().unwrap_or_else(|e| e.into_inner())
-    }
-
     #[test]
     fn user_global_honors_apr_config_env() {
         let _guard = env_lock();
         let dir = tempfile::tempdir().expect("tempdir");
-        std::env::set_var("APR_CONFIG", dir.path());
+        let _env = ScopedEnv::set("APR_CONFIG", dir.path());
         let p = AprSettings::user_global_path().expect("path resolved");
         assert_eq!(p, dir.path().join("settings.json"));
-        std::env::remove_var("APR_CONFIG");
     }
 
     #[test]
@@ -351,9 +345,8 @@ mod tests {
         let proj_dir = tempfile::tempdir().expect("proj tempdir");
         write(&cfg_dir.path().join("settings.json"), r#"{"model":"user-global","max_turns":5}"#);
         write(&proj_dir.path().join(".apr").join("settings.json"), r#"{"model":"project-local"}"#);
-        std::env::set_var("APR_CONFIG", cfg_dir.path());
+        let _env = ScopedEnv::set("APR_CONFIG", cfg_dir.path());
         let s = AprSettings::load_layered(proj_dir.path()).expect("load");
-        std::env::remove_var("APR_CONFIG");
 
         assert_eq!(s.model.as_deref(), Some("project-local"), "project must win");
         assert_eq!(s.max_turns, Some(5), "user-global field passes through when project is silent");
@@ -365,9 +358,8 @@ mod tests {
         let cfg_dir = tempfile::tempdir().expect("cfg tempdir");
         let proj_dir = tempfile::tempdir().expect("proj tempdir");
         // No settings.json written anywhere.
-        std::env::set_var("APR_CONFIG", cfg_dir.path());
+        let _env = ScopedEnv::set("APR_CONFIG", cfg_dir.path());
         let s = AprSettings::load_layered(proj_dir.path()).expect("load");
-        std::env::remove_var("APR_CONFIG");
         assert_eq!(s, AprSettings::default());
     }
 }

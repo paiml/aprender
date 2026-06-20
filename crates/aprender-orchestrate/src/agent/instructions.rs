@@ -250,6 +250,11 @@ pub fn load_layered_instructions(
 #[cfg(test)]
 mod tests {
     use super::*;
+    // PMAT-876: shared crate-wide env lock + save/restore guard, shared
+    // with auto_memory + settings tests (all touch the same global
+    // `APR_CONFIG`). `std::env` is process-global and tests run in
+    // parallel, so one lock serializes them ALL.
+    use crate::agent::env_test_support::{env_lock, ScopedEnv};
     use std::fs;
 
     fn write(path: &Path, body: &str) {
@@ -453,28 +458,20 @@ mod tests {
 
     // ── find_user_global_instructions / load_layered_instructions ──
     //
-    // CI flake fix: tests below mutate the process-wide `APR_CONFIG` env
-    // var. cargo test runs `#[test]` functions in parallel by default;
-    // without serialization, two parallel tests can corrupt each other's
-    // view of the env (test A sets, test B reads, test A removes). Local
-    // runs happened to pass because of timing; CI hit the race.
-    //
-    // The Mutex below serializes all env-mutating tests in this module.
-    // The `.lock()` is held for the duration of each test so neither
-    // `set_var` nor `remove_var` can interleave.
-    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        LOCK.lock().unwrap_or_else(|e| e.into_inner())
-    }
+    // PMAT-876: tests below mutate the process-wide `APR_CONFIG` env var.
+    // `std::env` is process-global and cargo test runs `#[test]` fns in
+    // parallel by default, so they all acquire the ONE crate-wide
+    // `env_test_support::env_lock` (shared with auto_memory + settings,
+    // which touch the same variable) and use ScopedEnv to restore the
+    // prior value on drop.
 
     #[test]
     fn user_global_honors_apr_config_env_first() {
         let _guard = env_lock();
         let dir = tempfile::tempdir().expect("tempdir");
         write(&dir.path().join("CLAUDE.md"), "user-global-content");
-        std::env::set_var("APR_CONFIG", dir.path());
+        let _env = ScopedEnv::set("APR_CONFIG", dir.path());
         let p = find_user_global_instructions().expect("found");
-        std::env::remove_var("APR_CONFIG");
         assert_eq!(p, dir.path().join("CLAUDE.md"));
     }
 
@@ -484,9 +481,8 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         write(&dir.path().join("APR.md"), "apr-version");
         write(&dir.path().join("CLAUDE.md"), "claude-version");
-        std::env::set_var("APR_CONFIG", dir.path());
+        let _env = ScopedEnv::set("APR_CONFIG", dir.path());
         let p = find_user_global_instructions().expect("found");
-        std::env::remove_var("APR_CONFIG");
         assert_eq!(p, dir.path().join("APR.md"), "APR.md wins over CLAUDE.md within a layer");
     }
 
@@ -495,10 +491,9 @@ mod tests {
         let _guard = env_lock();
         let cfg = tempfile::tempdir().expect("cfg");
         let proj = tempfile::tempdir().expect("proj");
-        std::env::set_var("APR_CONFIG", cfg.path());
+        let _env = ScopedEnv::set("APR_CONFIG", cfg.path());
         let mut warns = Vec::new();
         let out = load_layered_instructions(proj.path(), 4096, &mut warns);
-        std::env::remove_var("APR_CONFIG");
         assert!(out.is_none());
     }
 
@@ -509,10 +504,9 @@ mod tests {
         let proj = tempfile::tempdir().expect("proj");
         write(&cfg.path().join("CLAUDE.md"), "USER-GLOBAL-BODY\n");
         write(&proj.path().join("CLAUDE.md"), "PROJECT-BODY\n");
-        std::env::set_var("APR_CONFIG", cfg.path());
+        let _env = ScopedEnv::set("APR_CONFIG", cfg.path());
         let mut warns = Vec::new();
         let out = load_layered_instructions(proj.path(), 65536, &mut warns).expect("loaded");
-        std::env::remove_var("APR_CONFIG");
         let user_idx = out.find("USER-GLOBAL-BODY").expect("user-global present");
         let proj_idx = out.find("PROJECT-BODY").expect("project present");
         assert!(
@@ -534,10 +528,9 @@ mod tests {
         // project: imports a sibling file
         write(&proj.path().join("CLAUDE.md"), "PROJ\n@./conv.md\n");
         write(&proj.path().join("conv.md"), "PROJ-CONV\n");
-        std::env::set_var("APR_CONFIG", cfg.path());
+        let _env = ScopedEnv::set("APR_CONFIG", cfg.path());
         let mut warns = Vec::new();
         let out = load_layered_instructions(proj.path(), 65536, &mut warns).expect("loaded");
-        std::env::remove_var("APR_CONFIG");
         assert!(out.contains("USER-SHARED"));
         assert!(out.contains("PROJ-CONV"));
         assert!(warns.is_empty(), "no warnings expected, got: {warns:?}");
