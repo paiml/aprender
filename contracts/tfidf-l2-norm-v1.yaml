@@ -94,34 +94,31 @@ falsification_tests:
   - id: FALSIFY-TFIDF_L2_NORM_V1_001
     rule: "Default fit_transform of ['a b','a c'] yields sklearn norm='l2' values for row 'a b'"
     prediction: "row 'a b' = [0.5797387, 0.8148025, 0.0] (±1e-5)"
-    test: |
-      cargo test -p aprender-core --lib \
-        text::vectorize::tests::test_tfidf_l2_normalization_sklearn_parity_pmat861
-      # RED (raw tf*idf, normalization disabled): row0[a] = 1.0 (panic: expected 0.5797387)
-      # GREEN (L2-normalized): row0[a] = 0.5797387, row0[b] = 0.8148025, row0[c] = 0.0
-      # sklearn reference: TfidfVectorizer(token_pattern=r'\b\w+\b').fit_transform(['a b','a c'])
+    test: "cargo test -p aprender-core --lib text::vectorize::tests::test_tfidf_l2_normalization_sklearn_parity_pmat861"
+    notes: |
+      RED (raw tf*idf, normalization disabled): row0[a] = 1.0 (panic: expected 0.5797387).
+      GREEN (L2-normalized): row0[a] = 0.5797387, row0[b] = 0.8148025, row0[c] = 0.0.
+      sklearn reference: TfidfVectorizer(token_pattern=r'\b\w+\b').fit_transform(['a b','a c']).
     if_fails: "Output rows are not L2-normalized; apr diverges from sklearn TfidfVectorizer default"
   - id: FALSIFY-TFIDF_L2_NORM_V1_002
     rule: "Every non-zero document row has unit L2 norm under the default norm"
     prediction: "sqrt(Σ row²) = 1.0 (±1e-6) for each row of ['a b','a c']"
-    test: |
-      Same unit test asserts, for every row, sqrt(Σ_c X[r][c]²) ≈ 1.0.
+    test: "cargo test -p aprender-core --lib text::vectorize::tests::test_tfidf_l2_normalization_sklearn_parity_pmat861"
+    notes: |
+      The same parity test also asserts, for every row, sqrt(Σ_c X[r][c]²) ≈ 1.0.
       RED (raw): row L2 = 1.724915 (panic). GREEN: 1.0.
     if_fails: "Rows are not unit-length; cosine similarity / classification parity with sklearn breaks"
   - id: FALSIFY-TFIDF_L2_NORM_V1_003
     rule: "Norm::None reproduces raw tf*idf (sklearn norm=None) — the documented escape hatch"
     prediction: "with_norm(Norm::None) row 'a b' = [1.0, 1.4054651, 0.0] (±1e-6), L2 norm = 1.724915"
-    test: |
-      cargo test -p aprender-core --lib \
-        text::vectorize::tests::test_tfidf_norm_none_matches_raw_tfidf_pmat861
-      # sklearn reference: TfidfVectorizer(norm=None) = [1.0, 1.40546511, 0.0]
+    test: "cargo test -p aprender-core --lib text::vectorize::tests::test_tfidf_norm_none_matches_raw_tfidf_pmat861"
+    notes: |
+      sklearn reference: TfidfVectorizer(norm=None) = [1.0, 1.40546511, 0.0].
     if_fails: "Norm::None does not match sklearn norm=None raw weighting; idf/tf computation regressed"
   - id: FALSIFY-TFIDF_L2_NORM_V1_004
     rule: "Norm::L1 yields rows whose absolute values sum to 1 (sklearn norm='l1')"
     prediction: "Σ_c |X[r][c]| = 1.0 (±1e-6) for every non-zero row under Norm::L1"
-    test: |
-      cargo test -p aprender-core --lib \
-        text::vectorize::tests::test_tfidf_norm_l1_unit_sum_pmat861
+    test: "cargo test -p aprender-core --lib text::vectorize::tests::test_tfidf_norm_l1_unit_sum_pmat861"
     if_fails: "L1 normalization divisor is wrong; norm='l1' parity with sklearn broken"
 
 status_history:
