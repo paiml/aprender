@@ -151,9 +151,13 @@ impl<E: Estimator, G: GatingNetwork> MixtureOfExperts<E, G> {
     /// Encourages even distribution of inputs across experts to prevent
     /// expert collapse (all inputs routed to single expert).
     ///
-    /// Loss = `sum_i(f_i` * `P_i`) where:
-    /// - `f_i` = fraction of inputs routed to expert i
-    /// - `P_i` = average gate probability for expert i
+    /// Switch Transformer (Fedus et al. 2021, Eq. 4-6) auxiliary loss:
+    /// Loss = `alpha * N * sum_i(f_i * P_i)` where:
+    /// - `N` = number of experts
+    /// - `alpha` = `load_balance_weight`
+    /// - `f_i` = fraction of tokens dispatched to expert i (hard top-k)
+    /// - `P_i` = MEAN router softmax probability for expert i over ALL tokens
+    ///   (full softmax, every expert, every token — NOT top-k-only)
     ///
     /// # Arguments
     ///
@@ -178,14 +182,22 @@ impl<E: Estimator, G: GatingNetwork> MixtureOfExperts<E, G> {
             let row = inputs.row(i);
             let weights = self.gating.forward(row.as_slice());
 
-            // Find top-k experts
+            // f_i term: hard top-k dispatch counting (fraction of tokens routed to
+            // expert i). Switch Transformer Eq. 4 counts only the top-k experts.
             let mut indexed: Vec<(usize, f32)> = weights.iter().copied().enumerate().collect();
             indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
             let top_k = self.config.top_k.min(n_experts);
-            for (idx, prob) in indexed.iter().take(top_k) {
+            for (idx, _prob) in indexed.iter().take(top_k) {
                 expert_counts[*idx] += 1;
-                expert_probs[*idx] += prob;
+            }
+
+            // P_i term: mean router softmax probability for expert i over ALL tokens.
+            // Switch Transformer Eq. 5 (and HF Mixtral `load_balancing_loss_func`):
+            // P_i accumulates the FULL softmax for EVERY expert on EVERY token, not
+            // only the top-k routed experts.
+            for (e, &w) in weights.iter().enumerate() {
+                expert_probs[e] += w;
             }
         }
 
