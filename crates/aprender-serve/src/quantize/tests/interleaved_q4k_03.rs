@@ -369,47 +369,6 @@ fn test_fused_q4_0_q8_0_dot_scalar_truncated_block_deep_qcov_020() {
 // extract_scale_min_from_slice Coverage Tests
 // -------------------------------------------------------------------------
 
-#[test]
-fn test_extract_scale_min_from_slice_odd_indices_deep_qcov_021() {
-    // Test odd index paths (different bit manipulation)
-    let mut scales = [0u8; 12];
-    // Set up for odd index extraction
-    scales[0] = 0xC0; // High 2 bits for odd scale
-    scales[2] = 0x0F; // Low 4 bits for odd scale
-    scales[4] = 0x80; // High 2 bits for odd min
-    scales[6] = 0x07; // Low 4 bits for odd min
-
-    let (scale1, min1) = extract_scale_min_from_slice(&scales, 1);
-    assert!(scale1 >= 0.0);
-    assert!(min1 >= 0.0);
-
-    // Test index 3, 5, 7
-    for idx in [3, 5, 7] {
-        let (s, m) = extract_scale_min_from_slice(&scales, idx);
-        assert!(s >= 0.0);
-        assert!(m >= 0.0);
-    }
-}
-
-#[test]
-fn test_extract_scale_min_from_slice_even_indices_deep_qcov_022() {
-    // Test even index paths
-    let mut scales = [0u8; 12];
-    scales[0] = 0x3F; // max 6-bit scale for idx=0
-    scales[4] = 0x20; // min for idx=0
-
-    let (scale0, min0) = extract_scale_min_from_slice(&scales, 0);
-    assert_eq!(scale0, 63.0);
-    assert_eq!(min0, 32.0);
-
-    // Test indices 2, 4, 6
-    for idx in [2, 4, 6] {
-        let (s, m) = extract_scale_min_from_slice(&scales, idx);
-        assert!(s >= 0.0);
-        assert!(m >= 0.0);
-    }
-}
-
 // -------------------------------------------------------------------------
 // fused_q4_0_q8_0_parallel_matvec Error Path Tests
 // -------------------------------------------------------------------------

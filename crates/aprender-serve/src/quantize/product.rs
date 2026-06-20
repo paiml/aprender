@@ -148,15 +148,22 @@ impl InterleavedQ4K {
             let scales_start = sb * 12;
             let qs_start = sb * 128;
 
+            // Decode the super-block's 12-byte packed 6-bit scales via the
+            // proven ggml get_scale_min_k4 implementation (extract_scale_min),
+            // exactly as dequantize_q4_k does. The former bespoke
+            // extract_scale_min_from_slice decoder only agreed for is=0 and
+            // returned wrong (scale, min) pairs for 7 of 8 sub-blocks (PMAT-856).
+            let sb_scales: &[u8; 12] = self.scales[scales_start..scales_start + 12]
+                .try_into()
+                .expect("super-block carries exactly 12 scale bytes");
+
             // Process 4 chunks of 64 values each
             for j in (0..QK_K).step_by(64) {
                 let q_start = qs_start + j / 2;
                 let is = j / 32;
 
-                let (sc1, m1) =
-                    simd::extract_scale_min_from_slice(&self.scales[scales_start..], is);
-                let (sc2, m2) =
-                    simd::extract_scale_min_from_slice(&self.scales[scales_start..], is + 1);
+                let (sc1, m1) = simd::extract_scale_min(sb_scales, is);
+                let (sc2, m2) = simd::extract_scale_min(sb_scales, is + 1);
 
                 // Process 32 low nibbles
                 for i in 0..32 {
@@ -214,15 +221,20 @@ impl InterleavedQ4K {
                 _mm_prefetch(self.qs.as_ptr().add(next_qs).cast::<i8>(), _MM_HINT_T0);
             }
 
+            // Decode the super-block's 12-byte packed 6-bit scales via the
+            // proven ggml get_scale_min_k4 implementation (extract_scale_min),
+            // exactly as dequantize_q4_k does (PMAT-856).
+            let sb_scales: &[u8; 12] = self.scales[scales_start..scales_start + 12]
+                .try_into()
+                .expect("super-block carries exactly 12 scale bytes");
+
             // Process 4 chunks of 64 values
             for j in (0..QK_K).step_by(64) {
                 let q_start = qs_start + j / 2;
                 let is = j / 32;
 
-                let (sc1, m1) =
-                    simd::extract_scale_min_from_slice(&self.scales[scales_start..], is);
-                let (sc2, m2) =
-                    simd::extract_scale_min_from_slice(&self.scales[scales_start..], is + 1);
+                let (sc1, m1) = simd::extract_scale_min(sb_scales, is);
+                let (sc2, m2) = simd::extract_scale_min(sb_scales, is + 1);
 
                 let d_scale1 = d * sc1;
                 let dm1 = dmin * m1;

@@ -11,7 +11,7 @@
 //! - Scalar fallback paths
 //! - Horizontal sum helpers (x86_64 specific)
 
-use crate::quantize::simd::{extract_scale_min, extract_scale_min_from_slice, read_f16};
+use crate::quantize::simd::{extract_scale_min, read_f16};
 use crate::quantize::{f16_to_f32, fused_swiglu_simd, softmax_simd};
 
 // =============================================================================
@@ -234,52 +234,6 @@ fn test_extract_scale_min_max_values() {
         assert_eq!(s, 63.0, "Block {} scale should be 63", i);
         assert_eq!(m, 63.0, "Block {} min should be 63", i);
     }
-}
-
-#[test]
-fn test_extract_scale_min_from_slice_odd_indices() {
-    // Test odd indices which use different bit extraction
-    let scales: [u8; 12] = [
-        0b11_001010, // byte 0
-        0b10_001100, // byte 1
-        0b00001111,  // byte 2: contributes to odd index extractions
-        0b00110011,  // byte 3
-        0b01_010101, // byte 4
-        0b11_011011, // byte 5
-        0b00001111,  // byte 6: contributes to odd index extractions
-        0b00110011,  // byte 7
-        0,
-        0,
-        0,
-        0,
-    ];
-
-    // idx=1 is odd: scale_idx=0, uses different formula
-    let (s1, m1) = extract_scale_min_from_slice(&scales, 1);
-    // scale = (scales[0] >> 6) | ((scales[2] & 0x0F) << 2) = 3 | (0xF << 2) = 3 | 60 = 63
-    // min = (scales[4] >> 6) | ((scales[6] & 0x0F) << 2) = 1 | (0xF << 2) = 1 | 60 = 61
-    assert_eq!(s1, 63.0, "Index 1 scale");
-    assert_eq!(m1, 61.0, "Index 1 min");
-}
-
-#[test]
-fn test_extract_scale_min_from_slice_even_indices() {
-    // Test even indices
-    let scales: [u8; 12] = [
-        10, 20, 30, 40, // scales for indices 0, 2, 4, 6
-        5, 15, 25, 35, // mins for indices 0, 2, 4, 6
-        0, 0, 0, 0,
-    ];
-
-    // idx=0 (even): scale = scales[0] & 0x3F = 10, min = scales[4] & 0x3F = 5
-    let (s0, m0) = extract_scale_min_from_slice(&scales, 0);
-    assert_eq!(s0, 10.0, "Index 0 scale");
-    assert_eq!(m0, 5.0, "Index 0 min");
-
-    // idx=2 (even): scale = scales[1] & 0x3F = 20, min = scales[5] & 0x3F = 15
-    let (s2, m2) = extract_scale_min_from_slice(&scales, 2);
-    assert_eq!(s2, 20.0, "Index 2 scale");
-    assert_eq!(m2, 15.0, "Index 2 min");
 }
 
 // =============================================================================

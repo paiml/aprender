@@ -337,60 +337,6 @@ fn test_extract_scale_min_block_7() {
 // extract_scale_min_from_slice tests
 // =============================================================================
 
-#[test]
-fn test_extract_scale_min_from_slice_even_idx() {
-    // idx = 0 (even)
-    let scales: Vec<u8> = vec![
-        0x3F, 0x1F, 0x0F, 0x07, 0x2A, 0x15, 0x0A, 0x05, 0x00, 0x00, 0x00, 0x00,
-    ];
-    let (scale, min) = extract_scale_min_from_slice(&scales, 0);
-    // scale_idx = 0, min_idx = 4
-    // scale = scales[0] & 0x3F = 0x3F = 63
-    // min = scales[4] & 0x3F = 0x2A = 42
-    assert_eq!(scale, 63.0);
-    assert_eq!(min, 42.0);
-}
-
-#[test]
-fn test_extract_scale_min_from_slice_even_idx_2() {
-    let scales: Vec<u8> = vec![
-        0x3F, 0x1F, 0x0F, 0x07, 0x2A, 0x15, 0x0A, 0x05, 0x00, 0x00, 0x00, 0x00,
-    ];
-    let (scale, min) = extract_scale_min_from_slice(&scales, 2);
-    // scale_idx = 1, min_idx = 5
-    // scale = scales[1] & 0x3F = 0x1F = 31
-    // min = scales[5] & 0x3F = 0x15 = 21
-    assert_eq!(scale, 31.0);
-    assert_eq!(min, 21.0);
-}
-
-#[test]
-fn test_extract_scale_min_from_slice_odd_idx() {
-    // idx = 1 (odd) - uses different extraction logic
-    let scales: Vec<u8> = vec![
-        0xC0, 0x00, 0x0F, 0x00, 0x00, 0x00, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x00,
-    ];
-    let (scale, min) = extract_scale_min_from_slice(&scales, 1);
-    // scale_idx = 0, min_idx = 4
-    // scale = (scales[0] >> 6) | ((scales[2] & 0x0F) << 2) = (0xC0 >> 6) | ((0x0F & 0x0F) << 2) = 3 | 60 = 63
-    // min = (scales[4] >> 6) | ((scales[6] & 0x0F) << 2) = (0 >> 6) | ((0x0F & 0x0F) << 2) = 0 | 60 = 60
-    assert_eq!(scale, 63.0);
-    assert_eq!(min, 60.0);
-}
-
-#[test]
-fn test_extract_scale_min_from_slice_odd_idx_3() {
-    let scales: Vec<u8> = vec![
-        0x00, 0xC0, 0x00, 0x0F, 0x00, 0x00, 0x00, 0x0F, 0x00, 0x00, 0x00, 0x00,
-    ];
-    let (scale, min) = extract_scale_min_from_slice(&scales, 3);
-    // scale_idx = 1, min_idx = 5
-    // scale = (scales[1] >> 6) | ((scales[3] & 0x0F) << 2) = (0xC0 >> 6) | ((0x0F) << 2) = 3 | 60 = 63
-    // min = (scales[5] >> 6) | ((scales[7] & 0x0F) << 2) = 0 | 60 = 60
-    assert_eq!(scale, 63.0);
-    assert_eq!(min, 60.0);
-}
-
 // =============================================================================
 // fused_q4_0_q8_0_dot_scalar tests
 // =============================================================================

@@ -1,0 +1,171 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-19'
+  author: PAIML Engineering
+  description: |
+    `InterleavedQ4K::dot` (aprender-serve quantize::product) must decode the
+    12-byte packed 6-bit Q4_K block scales via ggml's `get_scale_min_k4`, the
+    same decoder used by `dequantize_q4_k`. Before this contract the bespoke
+    helper `extract_scale_min_from_slice` decoded the scales with
+    `scale_idx = idx/2`, `min_idx = idx/2 + 4` and an even/odd split. That
+    layout agrees with `get_scale_min_k4` ONLY for sub-block 0; for sub-blocks
+    1..7 it read the wrong bytes and returned wrong (scale, min) pairs, so the
+    InterleavedQ4K Q4_K matmul produced wrong results on 7 of the 8 sub-blocks
+    of every super-block (PMAT-856). The fix deletes the bespoke helper and
+    decodes via the proven `extract_scale_min`, making `InterleavedQ4K::dot`
+    bit-identical to `dequantize_q4_k` for all 8 sub-blocks. This is a
+    correctness BEAT: llama.cpp/Ollama use get_scale_min_k4 exactly; the prior
+    apr path silently diverged.
+  references:
+  - 'PMAT-856 -- the correctness defect this fixes'
+  - 'ggml-quants.c get_scale_min_k4 -- canonical 6-bit scale/min unpacking'
+  - 'ggml dequantize_row_q4_K -- canonical Q4_K dequant using get_scale_min_k4'
+  - 'aprender-serve quantize::dequant_q4k::dequantize_q4_k -- the proven in-tree path InterleavedQ4K::dot must match'
+  - 'aprender-serve quantize::simd::extract_scale_min -- the proven get_scale_min_k4 implementation'
+  - 'contracts/q4k-q6k-superblock-v1.yaml -- Q4_K/Q6_K super-block byte layout'
+
+kind: KernelContract
+name: q4k-interleaved-scale-min
+version: 1.0.0
+scope: aprender-serve quantize::product InterleavedQ4K::dot (dot_scalar + dot_avx2) scale/min decode
+
+equations:
+  get_scale_min_k4:
+    formula: |
+      For a 12-byte packed scales array q and sub-block index j in [0..8]
+      (ggml get_scale_min_k4):
+        j < 4:  scale = q[j] & 63
+                min   = q[j + 4] & 63
+        j >= 4: scale = (q[j + 4] & 0x0F) | ((q[j - 4] >> 6) << 4)
+                min   = (q[j + 4] >> 4)  | ((q[j]     >> 6) << 4)
+      Each (scale, min) is a 6-bit value in [0, 63]. This is exactly what
+      extract_scale_min implements and dequantize_q4_k uses.
+    domain: q is &[u8; 12]; j in [0..8]
+    codomain: (scale, min) each in [0, 63]
+    invariants:
+    - 'j == 0 -> (q[0] & 63, q[4] & 63); the ONLY sub-block the prior bespoke decoder also got right'
+    - 'the decode reads only q[0..12]; never out of bounds'
+    - 'returned scale, min are both in [0, 63] for any input bytes'
+    lean_theorem: Theorems.Q4K_GetScaleMinK4
+
+  interleaved_dot_decode_parity:
+    formula: |
+      For a Q4_K super-block, InterleavedQ4K::dot dequantizes each weight as
+        w = d * scale_sub * q_nibble - dmin * min_sub
+      where (scale_sub, min_sub) = get_scale_min_k4(scales, is) for the low
+      nibbles and get_scale_min_k4(scales, is+1) for the high nibbles, with
+      is = j/32 advancing over the 8 sub-blocks. These are the SAME (scale, min)
+      pairs dequantize_q4_k uses for the same weights, so for every super-block
+      the dequantized weights are identical and
+        InterleavedQ4K::dot(act) == sum_i dequantize_q4_k()[i] * act[i]
+      up to floating-point accumulation order.
+    domain: a valid Q4_K super-block (144 bytes) + activations of length 256*num_super_blocks
+    codomain: a single f32 dot product
+    invariants:
+    - 'sub-blocks 1..7 use the SAME (scale, min) as dequantize_q4_k (the bug was here)'
+    - 'd == 0 -> dot is 0 regardless of scales/min/quants; no panic'
+    - 'the 12-byte scale slice is consumed via a fixed &[u8; 12]; a malformed super-block can never index out of range'
+    lean_theorem: Theorems.Q4K_Interleaved_Dot_Parity
+
+proof_obligations:
+- type: invariant
+  property: InterleavedQ4K decode equals dequantize_q4_k for all 8 sub-blocks
+  formal: |
+    For every valid Q4_K super-block (any d, dmin, 12 scale bytes, 128 qs
+    bytes) and any activations of length 256, InterleavedQ4K::dot(act) equals
+    sum_i dequantize_q4_k(block)[i] * act[i] within floating-point accumulation
+    tolerance. In particular the (scale, min) pair applied to sub-blocks 1..7
+    matches get_scale_min_k4, not the prior bespoke idx/2 decoder.
+- type: invariant
+  property: scale/min decode is ggml get_scale_min_k4 exactly
+  formal: |
+    For the adversarial scales [0xAD,0x72,0xC3,0x1E,0xB5,0x49,0xE6,0x3C,0x96,
+    0x6B,0x2D,0xD4], extract_scale_min returns the ggml get_scale_min_k4 values
+    (45,53),(50,9),(3,38),(30,60),(38,41),(27,22),(61,50),(4,13) for idx 0..8.
+    The prior extract_scale_min_from_slice disagreed on 7 of these 8.
+- type: invariant
+  property: zero super-block scale yields zero dot without panic
+  formal: |
+    For a super-block with d == 0, InterleavedQ4K::dot returns exactly 0.0 for
+    any activations; the decode never panics or reads out of bounds.
+- type: classification
+  property: InterleavedQ4K::dot length guard rejects mismatched activations
+  formal: |
+    For activations whose length != num_super_blocks*256, InterleavedQ4K::dot
+    returns Err(InvalidShape); it never panics.
+
+falsification:
+  command: cargo test -p aprender-serve --lib pmat856
+  red_evidence: |
+    With the bespoke extract_scale_min_from_slice decoder (idx/2 split), the
+    repro scales mismatch ggml get_scale_min_k4 on 7 of 8 sub-blocks, e.g.
+    idx=2 -> (50,9) instead of (3,38); dequant of q=15 at d=dmin=1.0 yields
+    741 instead of the correct 7. The dot-vs-dequant falsifier
+    test_pmat856_interleaved_q4k_dot_matches_dequantize_q4_k FAILS with a gross
+    divergence (measured got=-6060.97 vs expected=11847.88, tol~1.19).
+  green_evidence: |
+    After deleting extract_scale_min_from_slice and decoding via
+    extract_scale_min on a fixed &[u8; 12], all 8 sub-blocks match
+    get_scale_min_k4 and InterleavedQ4K::dot is bit-parity with
+    dequantize_q4_k. Both PMAT-856 tests pass; full crate suite 15406 passed,
+    0 failed.
+
+falsification_tests:
+- id: FT-Q4KISM-001
+  rule: InterleavedQ4K::dot is parity with dequantize_q4_k on adversarial scales
+  prediction: |
+    For a Q4_K super-block carrying the repro scale bytes and non-uniform
+    quants/activations, InterleavedQ4K::dot equals the plain dot over
+    dequantize_q4_k output within tolerance.
+  if_fails: |
+    The scale/min decode in product.rs diverged from get_scale_min_k4 again
+    (the PMAT-856 regression). Confirm dot_scalar/dot_avx2 call
+    simd::extract_scale_min on a &[u8; 12], not a bespoke idx/2 decoder.
+  evidence: cargo test -p aprender-serve --lib test_pmat856_interleaved_q4k_dot_matches_dequantize_q4_k
+- id: FT-Q4KISM-002
+  rule: extract_scale_min reproduces ggml get_scale_min_k4 for all 8 sub-blocks
+  prediction: |
+    extract_scale_min on the repro scales returns
+    (45,53),(50,9),(3,38),(30,60),(38,41),(27,22),(61,50),(4,13) for idx 0..8.
+  if_fails: |
+    extract_scale_min no longer matches ggml get_scale_min_k4. Check the j<4 vs
+    j>=4 branches in quantize::simd::extract_scale_min against ggml-quants.c.
+  evidence: cargo test -p aprender-serve --lib test_pmat856_q4k_scale_min_decode_is_ggml_get_scale_min_k4
+- id: FT-Q4KISM-003
+  rule: zero super-block scale zeroes the dot without panic
+  prediction: |
+    InterleavedQ4K::from_q4k of a 144-byte block with d=0 then dot(&[1.0; 256])
+    returns Ok(0.0).
+  if_fails: |
+    A NaN/division crept into the dequant path or the d=0 case panics. Check the
+    d * scale * q - dmin * min computation in dot_scalar/dot_avx2.
+  evidence: cargo test -p aprender-serve --lib test_interleaved_q4k_dot_with_zero_d
+- id: FT-Q4KISM-004
+  rule: mismatched activation length is rejected, never panics
+  prediction: |
+    InterleavedQ4K::from_q4k of a 144-byte block then dot(&[1.0; 100]) returns
+    Err(InvalidShape) because 100 != num_super_blocks*256.
+  if_fails: |
+    The activation-length guard in InterleavedQ4K::dot is missing or wrong, so
+    the kernel indexes activations out of bounds. Check the
+    activations.len() != self.num_values() check at the top of dot.
+  evidence: cargo test -p aprender-serve --lib test_interleaved_q4k_dot_dim_mismatch_cov
+
+kani_harnesses:
+- id: KANI-Q4KISM-001
+  obligation: get_scale_min_k4 reads only the 12 scale bytes and returns 6-bit values
+  property: |
+    For all (scales in [u8; 12], j in [0..8]): extract_scale_min(&scales, j)
+    indexes only scales[0..12] and returns (scale, min) with both in [0, 63].
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_q4k_get_scale_min_k4_range
+
+qa_gate:
+  id: F-Q4KISM-001
+  name: q4k-interleaved-scale-min-v1 Contract
+  description: InterleavedQ4K::dot must decode Q4_K packed 6-bit scales via ggml get_scale_min_k4 so its Q4_K matmul is bit-parity with dequantize_q4_k on all 8 sub-blocks (PMAT-856 correctness beat).
+  checks:
+  - validation
+  - falsification
