@@ -174,6 +174,74 @@ fn test_isotonic_monotonic() {
     }
 }
 
+// PMAT-870: PAV pooled-block flatness (sklearn IsotonicRegression parity).
+//
+// After Pool-Adjacent-Violators pooling, the fitted function must be FLAT at the
+// pooled value across the WHOLE x-range of a pooled block. The bug recorded only
+// the block's min-x as a knot, discarding the max-x, so a query strictly inside a
+// pooled block was linearly interpolated toward the NEXT block instead of returning
+// the constant pooled value.
+//
+// Reference: sklearn.isotonic.IsotonicRegression
+//   X=[0.0,0.1,0.2,0.3], y=[0,1,0,1] → PAV pools x=0.1,0.2 to value 0.5
+//   X_thresholds_=[0.0,0.1,0.2,0.3], y_thresholds_=[0.0,0.5,0.5,1.0]
+//   predict(0.2)=0.5, predict(0.15)=0.5, predict(0.25)=0.75
+#[test]
+fn test_isotonic_pav_block_is_flat_pmat_870() {
+    let mut iso = IsotonicRegression::new();
+    let predictions = vec![0.0, 0.1, 0.2, 0.3];
+    let labels = vec![false, true, false, true]; // y = [0, 1, 0, 1]
+
+    iso.fit(&predictions, &labels);
+
+    // Inside the pooled [0.1, 0.2] block → flat at the pooled value 0.5.
+    // RED (bug): predict(0.2)=0.75, predict(0.15)=0.625
+    // GREEN (fix): both = 0.5
+    let p_max_edge = iso.predict(0.2);
+    let p_mid = iso.predict(0.15);
+    assert!(
+        (p_max_edge - 0.5).abs() < 1e-5,
+        "PMAT-870 FALSIFIED: predict(0.2)={p_max_edge}, expected 0.5 (flat pooled block)"
+    );
+    assert!(
+        (p_mid - 0.5).abs() < 1e-5,
+        "PMAT-870 FALSIFIED: predict(0.15)={p_mid}, expected 0.5 (flat pooled block)"
+    );
+
+    // Between the pooled block (val 0.5 at x=0.2) and the final block (val 1.0 at
+    // x=0.3): linear interpolation. predict(0.25) = 0.5 + 0.5*(1.0-0.5) = 0.75.
+    // RED (bug): 0.875
+    let p_interp = iso.predict(0.25);
+    assert!(
+        (p_interp - 0.75).abs() < 1e-5,
+        "PMAT-870 FALSIFIED: predict(0.25)={p_interp}, expected 0.75 (interp between blocks)"
+    );
+}
+
+// PMAT-870: NO-POOL guard — when no adjacent violators exist, behavior must be
+// unchanged. Each x is its own block, so interpolation between distinct single-point
+// blocks still applies. X=[0,0.2,0.4,0.6,0.8,1.0], y=[0,0,0,1,1,1].
+// PAV pools the two halves: block A (x 0..0.4, val 0) and block B (x 0.6..1.0, val 1).
+// predict(0.5) interpolates between A's max-edge (x=0.4, val 0) and B's min-edge
+// (x=0.6, val 1): 0.0 + 0.5*(1.0-0.0) = 0.5.
+#[test]
+fn test_isotonic_no_pool_guard_pmat_870() {
+    let mut iso = IsotonicRegression::new();
+    let predictions = vec![0.0, 0.2, 0.4, 0.6, 0.8, 1.0];
+    let labels = vec![false, false, false, true, true, true];
+
+    iso.fit(&predictions, &labels);
+
+    let p = iso.predict(0.5);
+    assert!(
+        (p - 0.5).abs() < 1e-5,
+        "PMAT-870 FALSIFIED (no-pool guard): predict(0.5)={p}, expected 0.5"
+    );
+    // Endpoints stay clamped at the block values.
+    assert!((iso.predict(0.1) - 0.0).abs() < 1e-5);
+    assert!((iso.predict(0.9) - 1.0).abs() < 1e-5);
+}
+
 #[test]
 fn test_reliability_diagram() {
     let predictions = vec![0.1, 0.2, 0.8, 0.9];
