@@ -408,6 +408,57 @@
         assert!(result.data().iter().sum::<f32>() > 0.0);
     }
 
+    // PMAT-873 FALSIFIER (F-DRY-REPEAT-LEN-001):
+    // The DRY penalty exponent must equal `repeat_len - allowed_length`, where
+    // `repeat_len` is the length of the in-context repeated suffix EXCLUDING the
+    // candidate token being scored (== llama.cpp `repeat_len`).
+    //
+    // Construct a context where repeat_len is exactly known. Context [7, 7] with
+    // allowed_length = 1: the 1-token suffix [7] occurs earlier (at index 0) and
+    // is followed by candidate token 7. So repeat_len = 1.
+    //   Correct (llama.cpp): exponent = repeat_len - allowed_length = 1 - 1 = 0
+    //                        penalty  = multiplier * base^0 = multiplier
+    //   Off-by-one bug:      match_len = repeat_len + 1 = 2, exponent = 1
+    //                        penalty  = multiplier * base^1 = multiplier * base
+    // The buggy penalty is `base`x too strong. We pin the exact magnitude so the
+    // off-by-one is RED and the llama.cpp-parity fix is GREEN.
+    #[test]
+    fn test_dry_penalty_exponent_matches_llama_cpp_repeat_len() {
+        let base_logit = 5.0_f32;
+        let logits = Tensor::from_vec(vec![8], vec![base_logit; 8]).expect("test");
+        let multiplier = 1.0_f32;
+        let base = 1.75_f32;
+        let allowed_length = 1_usize;
+        let config = DryConfig {
+            multiplier,
+            base,
+            allowed_length,
+            penalty_last_n: 64,
+        };
+        // repeat_len for candidate 7 is 1 (suffix [7] matched at index 0).
+        let context = vec![7_usize, 7_usize];
+
+        let result = apply_dry_penalty(&logits, &context, &config);
+
+        // llama.cpp: penalty = multiplier * base^(repeat_len - allowed_length)
+        //          = 1.0 * 1.75^(1 - 1) = 1.0
+        let repeat_len = 1_i32;
+        let expected_penalty = multiplier * base.powi(repeat_len - allowed_length as i32);
+        let expected_logit = base_logit - expected_penalty;
+        let actual_logit = result.data()[7];
+
+        // Buggy value would be base_logit - multiplier*base^1 = 5.0 - 1.75 = 3.25,
+        // which is `base`x too strong and would fail this assertion.
+        let buggy_logit = base_logit - multiplier * base.powi(repeat_len + 1 - allowed_length as i32);
+        assert!(
+            (actual_logit - expected_logit).abs() < 1e-5,
+            "DRY exponent off-by-one: expected penalized logit {expected_logit} \
+             (penalty={expected_penalty}, repeat_len={repeat_len}), got {actual_logit}. \
+             A `base`x-too-strong penalty (logit {buggy_logit}) means match_len included \
+             the candidate token."
+        );
+    }
+
     // ===== Beam Search Tests =====
 
     #[test]
