@@ -1,0 +1,116 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-19'
+  author: PAIML Engineering
+  description: |
+    The `nn::Softmax` module must softmax along its configured `dim`, matching
+    `torch.nn.Softmax(dim)`. PMAT-867: `Softmax::new(dim)` stored `dim` but
+    `Module::forward` called the dim-ignoring `Tensor::softmax()` (hardcoded
+    LAST axis), so `Softmax::new(0)` silently softmaxed the WRONG axis.
+
+    For x = [[1,2],[3,4]] (shape [2,2]):
+      torch.nn.Softmax(0)  -> [[0.1192, 0.1192], [0.8808, 0.8808]]  (columns sum to 1)
+      torch.nn.Softmax(1)  -> [[0.2689, 0.7311], [0.2689, 0.7311]]  (rows sum to 1)
+    The bug produced the dim=1 (row) result for dim=0 (col0 top = 0.2689 instead
+    of 0.1192). The fix resolves negative dims (PyTorch semantics: -1 == last)
+    and, for a non-last axis on a 2D tensor, transposes -> softmax(last) ->
+    transposes back (both autograd ops, so gradients still flow). The last-dim
+    (and -1) fast path is byte-for-byte unchanged.
+  references:
+  - 'crates/aprender-core/src/nn/activation.rs — Softmax::forward (dim-aware path)'
+  - 'crates/aprender-core/src/nn/functional.rs — canonical last-dim softmax kernel'
+  - 'crates/aprender-core/src/autograd/ops/activation.rs — Tensor::softmax / Tensor::transpose (differentiable)'
+  - 'torch.nn.Softmax(dim): https://pytorch.org/docs/stable/generated/torch.nn.Softmax.html'
+
+kind: KernelContract
+name: nn-softmax-dim
+version: 1.0.0
+scope: aprender-core nn::Softmax module (Module::forward dim-awareness)
+
+equations:
+  softmax_over_dim:
+    formula: |
+      Softmax::new(d).forward(x)[..., i, ...] =
+        exp(x_i - max_d(x)) / Σ_{j over axis a} exp(x_j - max_d(x))
+      where a = (d + ndim) if d < 0 else d   (PyTorch negative-dim resolution)
+    domain: x ∈ ℝ^{shape}, finite; d an i32 in [-ndim, ndim)
+    codomain: σ ∈ (0,1)^{shape}, same shape as x
+    invariants:
+    - 'Softmax::new(-1) == Softmax::new(ndim-1): softmax over the LAST axis'
+    - 'Softmax::new(0) on a 2D tensor: every COLUMN sums to 1.0'
+    - 'Softmax::new(1) / new(-1) on a 2D tensor: every ROW sums to 1.0'
+    - 'last-dim path is unchanged from the prior canonical kernel'
+    - 'forward stays differentiable (transpose ∘ softmax ∘ transpose are autograd ops)'
+    lean_theorem: Theorems.Softmax_Over_Dim
+    float_tolerance: 1.0e-3
+
+proof_obligations:
+- type: postcondition
+  property: column-sum equals one for dim 0
+  formal: |
+    For a 2D tensor x with shape [R, C], Softmax::new(0).forward(x) satisfies
+    ∀ c: |Σ_r output[r][c] - 1.0| < 1e-5.
+  applies_to: all
+- type: classification
+  property: dim is honored (not silently last-axis)
+  formal: |
+    For x = [[1,2],[3,4]], Softmax::new(0).forward(x)[0][0] ≈ 0.1192
+    (column softmax) and NOT 0.2689 (the dim-ignored row-softmax value).
+  applies_to: all
+- type: invariant
+  property: last-dim path unchanged
+  formal: |
+    Softmax::new(-1).forward(x) and Softmax::new(ndim-1).forward(x) equal the
+    canonical last-dim softmax: each row sums to 1.0 (row[0] ≈ [0.2689, 0.7311]).
+  applies_to: all
+- type: frame
+  property: forward remains differentiable
+  formal: |
+    With grad enabled and x.requires_grad(), sum(Softmax::new(0).forward(x))
+    has a gradient w.r.t. x of the right shape (numel == x.numel()), ≈ 0
+    (since Σ softmax is constant in x).
+  applies_to: all
+
+falsification_tests:
+- id: FT-SMDIM-001
+  rule: Softmax honors dim=0 (column softmax), matching torch.nn.Softmax(0)
+  prediction: |
+    Softmax::new(0).forward([[1,2],[3,4]])[0][0] ≈ 0.1192 and each column sums
+    to 1.0. RED (dim-ignored bug): [0][0] == 0.2689 (row softmax). GREEN: 0.1192.
+  if_fails: 'forward reverted to dim-ignoring input.softmax() (hardcoded last axis).'
+  evidence: cargo test -p aprender-core --lib nn::activation::tests::test_softmax_dim0_column_pmat867
+- id: FT-SMDIM-002
+  rule: Softmax::new(1) and new(-1) stay row softmax (last-dim unchanged)
+  prediction: 'Softmax::new(1)/new(-1) on [[1,2],[3,4]] gives row[0] ≈ [0.2689, 0.7311], rows sum to 1.'
+  if_fails: 'the dim-resolution / fast-path broke the last-dim case.'
+  evidence: cargo test -p aprender-core --lib nn::activation::tests::test_softmax_dim1_and_neg1_row_unchanged_pmat867
+- id: FT-SMDIM-003
+  rule: dim-aware forward keeps gradients flowing
+  prediction: 'sum(Softmax::new(0).forward(x)).backward() yields a grad of numel 4, all ≈ 0.'
+  if_fails: 'the transpose/softmax composition dropped the autograd graph.'
+  evidence: cargo test -p aprender-core --lib nn::activation::tests::test_softmax_dim0_preserves_gradients_pmat867
+- id: FT-SMDIM-004
+  rule: Default Softmax (dim=-1) still normalizes the last axis
+  prediction: 'Softmax::default().forward([[1,2,3]]) sums to 1.0 along the last axis.'
+  if_fails: 'Default::default() no longer resolves -1 to the last axis.'
+  evidence: cargo test -p aprender-core --lib nn::activation::tests::test_softmax_default
+
+kani_harnesses:
+- id: KANI-SMDIM-001
+  obligation: dim resolution is correct for the last axis
+  property: |
+    For any dim d in {-1, ndim-1} the resolved axis equals ndim-1, so the
+    fast (last-dim) path is taken; for d == 0 on a 2D tensor the dim-aware
+    transpose path is taken. No panic for in-range dims.
+  bound: 1
+  strategy: compositional
+  solver: cadical
+  harness: verify_softmax_dim_resolution
+
+qa_gate:
+  id: F-SMDIM-001
+  name: nn-softmax-dim-v1 Contract
+  description: nn::Softmax must softmax along its configured dim (PyTorch torch.nn.Softmax(dim) parity), not silently over the last axis.
+  checks:
+  - validation
+  - falsification
