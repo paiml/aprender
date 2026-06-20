@@ -151,6 +151,114 @@ fn falsify_knn_005_partial_select_ties_stable() {
     );
 }
 
+// =========================================================================
+// FALSIFY-KNN-TIE (PMAT-865): on a VOTE-COUNT tie among modes, the predicted
+// label MUST be the smallest tied label, deterministically, matching
+// scikit-learn KNeighborsClassifier.predict (scipy.stats.mode / argmax over
+// bincount both return the lowest index on ties).
+//
+// RED (pre-fix): majority_vote/weighted_vote used a HashMap + max_by_key/max_by,
+// which return the LAST maximal element in iteration order. HashMap iteration
+// order is randomized per-process (Rust RandomState), so a tie between labels
+// 0 and 2 could resolve to EITHER 0 or 2 depending on the process.
+// GREEN (post-fix): BTreeMap (ascending labels) + keep-first-on-strict-greater
+// always returns the smallest tied label (0).
+// =========================================================================
+
+/// FALSIFY-KNN-TIE-001: a balanced 2-neighbor vote tie (label 0 vs label 2,
+/// one neighbor each) resolves to the SMALLEST label (0) via the unweighted
+/// `majority_vote` helper directly. Repeated across many calls to surface any
+/// nondeterminism.
+#[test]
+fn falsify_knn_tie_001_majority_vote_smallest_label() {
+    let knn = KNearestNeighbors::new(2);
+
+    // One neighbor of class 0, one of class 2, identical distance -> exact tie.
+    let neighbors: Vec<(f32, usize)> = vec![(1.0, 0), (1.0, 2)];
+    // Also test the reversed iteration order to prove order-independence: the
+    // result must be the smallest label regardless of neighbor ordering.
+    let neighbors_rev: Vec<(f32, usize)> = vec![(1.0, 2), (1.0, 0)];
+
+    for _ in 0..1000 {
+        assert_eq!(
+            knn.majority_vote(&neighbors),
+            0,
+            "FALSIFIED KNN-TIE-001: tie {{0,2}} did not resolve to smallest label 0"
+        );
+        assert_eq!(
+            knn.majority_vote(&neighbors_rev),
+            0,
+            "FALSIFIED KNN-TIE-001: reversed tie {{2,0}} did not resolve to smallest label 0"
+        );
+    }
+}
+
+/// FALSIFY-KNN-TIE-002: a balanced weighted vote tie (equal inverse-distance
+/// weights for labels 0 and 2) resolves to the SMALLEST label (0) via the
+/// `weighted_vote` helper directly.
+#[test]
+fn falsify_knn_tie_002_weighted_vote_smallest_label() {
+    let knn = KNearestNeighbors::new(2).with_weights(true);
+
+    // Identical distances => identical inverse-distance weights => weight tie.
+    let neighbors: Vec<(f32, usize)> = vec![(2.0, 0), (2.0, 2)];
+    let neighbors_rev: Vec<(f32, usize)> = vec![(2.0, 2), (2.0, 0)];
+
+    for _ in 0..1000 {
+        assert_eq!(
+            knn.weighted_vote(&neighbors),
+            0,
+            "FALSIFIED KNN-TIE-002: weighted tie {{0,2}} did not resolve to smallest label 0"
+        );
+        assert_eq!(
+            knn.weighted_vote(&neighbors_rev),
+            0,
+            "FALSIFIED KNN-TIE-002: reversed weighted tie {{2,0}} did not resolve to smallest label 0"
+        );
+    }
+}
+
+/// FALSIFY-KNN-TIE-003: end-to-end via the public `predict` API. A k=2 query
+/// equidistant from one class-0 point and one class-2 point is a true vote tie;
+/// the prediction MUST be the smallest label (0), deterministically across
+/// repeated `predict` calls.
+#[test]
+fn falsify_knn_tie_003_predict_tie_smallest_label() {
+    // Two training points equidistant from the query (0.0, 0.0):
+    //   (1, 0) class 0, dist 1 ; (-1, 0) class 2, dist 1.
+    let x = Matrix::from_vec(2, 2, vec![1.0, 0.0, -1.0, 0.0]).expect("valid");
+    let y = vec![0_usize, 2];
+
+    let mut knn = KNearestNeighbors::new(2);
+    knn.fit(&x, &y).expect("fit");
+
+    let query = Matrix::from_vec(1, 2, vec![0.0, 0.0]).expect("valid");
+
+    // Determinism + correctness: smallest tied label (0) on every call.
+    for _ in 0..200 {
+        let pred = knn.predict(&query).expect("predict");
+        assert_eq!(
+            pred[0], 0,
+            "FALSIFIED KNN-TIE-003: 2-way vote tie {{0,2}} did not resolve to smallest label 0"
+        );
+    }
+}
+
+/// FALSIFY-KNN-TIE-004: a three-way mode tie among labels 0, 1, 2 (k=3, one
+/// neighbor each) resolves to the smallest label (0).
+#[test]
+fn falsify_knn_tie_004_three_way_tie_smallest_label() {
+    let knn = KNearestNeighbors::new(3);
+    let neighbors: Vec<(f32, usize)> = vec![(1.0, 1), (1.0, 2), (1.0, 0)];
+    for _ in 0..1000 {
+        assert_eq!(
+            knn.majority_vote(&neighbors),
+            0,
+            "FALSIFIED KNN-TIE-004: 3-way tie {{0,1,2}} did not resolve to smallest label 0"
+        );
+    }
+}
+
 mod knn_proptest_falsify {
     use super::*;
     use proptest::prelude::*;

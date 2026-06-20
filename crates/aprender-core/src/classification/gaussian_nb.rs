@@ -232,36 +232,62 @@ impl KNearestNeighbors {
     }
 
     /// Performs majority voting among k nearest neighbors.
+    ///
+    /// On a vote tie, resolves deterministically to the **smallest class label**
+    /// among the tied modes, matching scikit-learn `KNeighborsClassifier.predict`
+    /// (scipy `stats.mode` / `argmax` over `bincount` both return the lowest index on
+    /// ties). A `BTreeMap` yields ascending-label iteration, and we keep the *first*
+    /// label that achieves the running max (`>`, not `>=`), so the smallest tied label
+    /// wins. (Refs PMAT-865: a previous `HashMap` + `max_by_key` returned the *last*
+    /// max in randomized iteration order — non-deterministic tie predictions.)
     #[allow(clippy::unused_self)]
     fn majority_vote(&self, neighbors: &[(f32, usize)]) -> usize {
-        let mut class_counts = std::collections::HashMap::new();
+        let mut class_counts = std::collections::BTreeMap::new();
 
         for (_dist, label) in neighbors {
             *class_counts.entry(*label).or_insert(0) += 1;
         }
 
-        *class_counts
-            .iter()
-            .max_by_key(|(_, count)| *count)
-            .map(|(label, _)| label)
-            .expect("Neighbors slice is non-empty (k >= 1)")
+        let mut best_label = 0;
+        let mut best_count = 0;
+        // Ascending label order (BTreeMap): strict `>` keeps the FIRST (smallest)
+        // label achieving the max count on ties.
+        for (&label, &count) in &class_counts {
+            if count > best_count {
+                best_count = count;
+                best_label = label;
+            }
+        }
+        best_label
     }
 
     /// Performs weighted voting (inverse distance weighting).
+    ///
+    /// On a weight tie, resolves deterministically to the **smallest class label**
+    /// among the tied modes (same rule as [`Self::majority_vote`], matching
+    /// scikit-learn). A `BTreeMap` yields ascending-label iteration, and we keep the
+    /// *first* label that achieves the running max (strict `>`), so the smallest tied
+    /// label wins. (Refs PMAT-865.)
     #[allow(clippy::unused_self)]
     fn weighted_vote(&self, neighbors: &[(f32, usize)]) -> usize {
-        let mut class_weights = std::collections::HashMap::new();
+        let mut class_weights = std::collections::BTreeMap::new();
 
         for (dist, label) in neighbors {
             let weight = if *dist < 1e-10 { 1.0 } else { 1.0 / dist };
             *class_weights.entry(*label).or_insert(0.0) += weight;
         }
 
-        *class_weights
-            .iter()
-            .max_by(|(_, a), (_, b)| a.total_cmp(b))
-            .map(|(label, _)| label)
-            .expect("Neighbors slice is non-empty (k >= 1)")
+        let mut best_label = 0;
+        let mut best_weight = f32::NEG_INFINITY;
+        // Ascending label order (BTreeMap): strict `>` keeps the FIRST (smallest)
+        // label achieving the max weight on ties.
+        for (&label, &weight) in &class_weights {
+            if weight > best_weight {
+                best_weight = weight;
+                best_label = label;
+            }
+        }
+        best_label
     }
 }
 
