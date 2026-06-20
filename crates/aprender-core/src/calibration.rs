@@ -251,20 +251,25 @@ impl IsotonicRegression {
             return;
         }
 
-        // PAV algorithm: merge adjacent violators
-        let mut blocks: Vec<(f32, f32, usize)> = Vec::new(); // (x_min, sum, count)
+        // PAV algorithm: merge adjacent violators.
+        // Track BOTH endpoints of each pooled block (x_min, x_max) so the fitted
+        // function is FLAT across the whole x-range of a pooled block (sklearn
+        // IsotonicRegression parity, PMAT-870). Recording only x_min would leave a
+        // pooled block as a single knot and cause interior queries to interpolate
+        // toward the next block instead of returning the constant pooled value.
+        let mut blocks: Vec<(f32, f32, f32, usize)> = Vec::new(); // (x_min, x_max, sum, count)
 
         for (x, y) in pairs {
-            blocks.push((x, y, 1));
+            blocks.push((x, x, y, 1));
 
             // While last two blocks violate monotonicity, merge them
             while blocks.len() >= 2 {
                 let len = blocks.len();
-                let avg_last = blocks[len - 1].1 / blocks[len - 1].2 as f32;
-                let avg_prev = blocks[len - 2].1 / blocks[len - 2].2 as f32;
+                let avg_last = blocks[len - 1].2 / blocks[len - 1].3 as f32;
+                let avg_prev = blocks[len - 2].2 / blocks[len - 2].3 as f32;
 
                 if avg_last < avg_prev {
-                    // Merge: keep x_min from prev, sum totals
+                    // Merge: keep x_min from prev, x_max from last, sum totals.
                     // Safe: we check blocks.len() >= 2 in the while condition
                     let last = blocks
                         .pop()
@@ -272,20 +277,28 @@ impl IsotonicRegression {
                     let prev = blocks
                         .pop()
                         .expect("blocks guaranteed to have 2+ elements by while condition");
-                    blocks.push((prev.0, prev.1 + last.1, prev.2 + last.2));
+                    blocks.push((prev.0, last.1, prev.2 + last.2, prev.3 + last.3));
                 } else {
                     break;
                 }
             }
         }
 
-        // Extract thresholds and values
+        // Extract thresholds and values. For a pooled block spanning [x_min, x_max]
+        // with x_max > x_min, emit TWO knots at the same value so predict()
+        // interpolates to the constant across the block interior; degenerate
+        // single-point blocks emit one knot.
         self.thresholds.clear();
         self.values.clear();
 
-        for (x_min, sum, count) in blocks {
+        for (x_min, x_max, sum, count) in blocks {
+            let val = sum / count as f32;
             self.thresholds.push(x_min);
-            self.values.push(sum / count as f32);
+            self.values.push(val);
+            if x_max > x_min {
+                self.thresholds.push(x_max);
+                self.values.push(val);
+            }
         }
     }
 
