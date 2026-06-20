@@ -1,0 +1,181 @@
+kind: KernelContract
+metadata:
+  version: 1.0.0
+  created: '2026-06-20'
+  author: PAIML Engineering
+  description: >-
+    Projected Gradient Descent with Armijo backtracking line search — the
+    accepted iterate must be the BACKTRACKED projected point, guaranteeing the
+    monotone non-increase property f(x_{k+1}) <= f(x_k). PMAT-872: a bug let the
+    optimizer keep the REJECTED full-step point after backtracking, breaking the
+    Armijo guarantee (objective could increase on an overshooting step).
+  references:
+  - Bertsekas (1999) Nonlinear Programming
+  - Beck & Teboulle (2009) Gradient-based algorithms with applications to signal recovery
+  - 'Nocedal & Wright (2006) Numerical Optimization, Ch. 3 (line search / sufficient decrease)'
+equations:
+  projected_gradient_step:
+    formula: x_{k+1} = P_C(x_k - alpha_k * grad_f(x_k))
+    domain: x_k in R^d, alpha_k > 0, C convex with projection P_C
+    codomain: x_{k+1} in C
+    invariants:
+    - x_{k+1} lies in the constraint set C (projection feasibility)
+    - With alpha_k from backtracking, f(x_{k+1}) <= f(x_k)
+    preconditions:
+    - step_size > 0.0
+    - x0.len() > 0
+    lean_theorem: Theorems.Projected_Gradient_Step
+  armijo_backtracking:
+    formula: accept the smallest j>=0 with alpha = beta^j * alpha0 s.t. f(P_C(x_k - alpha*grad)) <= f(x_k)
+    domain: beta in (0, 1), alpha0 > 0, x_k in C
+    codomain: accepted point x_{k+1} = P_C(x_k - alpha*grad) in C
+    invariants:
+    - The ACCEPTED iterate is the BACKTRACKED point, never the rejected full-step point
+    - Backtracking shrinks alpha geometrically by beta until sufficient decrease
+    - On acceptance f(x_{k+1}) <= f(x_k) (monotone non-increase)
+    preconditions:
+    - beta in (0.0, 1.0)
+    - step_size > 0.0
+    lean_theorem: Theorems.Armijo_Backtracking
+  monotone_non_increase:
+    formula: f(x_{k+1}) <= f(x_k) for every accepted iterate k
+    domain: f bounded below on C, line search enabled
+    codomain: non-increasing objective sequence {f(x_k)}
+    invariants:
+    - The objective sequence is monotone non-increasing across iterations
+    - The returned minimum objective is <= the starting objective
+    preconditions:
+    - use_line_search = true
+    lean_theorem: Theorems.Monotone_Non_Increase
+proof_obligations:
+- type: precondition
+  property: Valid hyperparameters and non-empty start
+  formal: 'step_size > 0 ∧ beta ∈ (0,1) ∧ x0.len() > 0'
+- type: postcondition
+  property: Accepted iterate is feasible and the backtracked point
+  formal: 'x_{k+1} ∈ C ∧ x_{k+1} = P_C(x_k - α_accepted·∇f(x_k))'
+  requires: PG-PRE-001
+- type: invariant
+  property: Armijo monotone non-increase
+  formal: 'f(x_{k+1}) ≤ f(x_k) for every accepted iterate when line search enabled'
+  applies_to: all
+- type: invariant
+  property: Backtracked point is accepted, not the rejected full step
+  formal: 'on acceptance x_new := x_new_ls (backtracked), not the full-step x_new'
+  applies_to: all
+- type: loop_invariant
+  property: Objective non-increasing across the iterate sequence
+  formal: '∀ k: f(x_{k+1}) ≤ f(x_k) + ε'
+  applies_to_phase: backtracking_line_search
+- type: loop_variant
+  property: Backtracking step halves and terminates
+  formal: V = 20 - ls_iter, V ≥ 0, V strictly decreasing
+- type: frame
+  property: Objective, gradient and projection operators are not mutated
+  formal: modifies(x, alpha) ∧ preserves(objective, gradient, project)
+- type: bound
+  property: Final objective bounded by starting objective
+  formal: 'f(x_final) ≤ f(x0) + ε'
+  applies_to: all
+kernel_structure:
+  phases:
+  - name: gradient_step
+    description: y = x - alpha * grad_f(x)
+    invariant: y is the unprojected candidate
+  - name: project
+    description: x_new = P_C(y)
+    invariant: x_new lies in the constraint set C
+  - name: backtracking_line_search
+    description: shrink alpha by beta until f(P_C(x - alpha*grad)) <= f(x); accept that point
+    invariant: accepted x_new is the backtracked point with f(x_new) <= f(x)
+  - name: update
+    description: x <- x_new (the accepted backtracked iterate)
+    invariant: f(x) is non-increasing
+enforcement:
+  accepted_iterate_is_backtracked:
+    description: The accepted iterate must be the backtracked projected point, not the rejected full step
+    check: contract_tests::FALSIFY-PG-001
+    severity: ERROR
+  monotone_non_increase:
+    description: Objective must be monotone non-increasing across iterations
+    check: contract_tests::FALSIFY-PG-002
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-PG-001
+  rule: Accepted iterate is the backtracked point
+  prediction: >-
+    On an overshooting full step (f increases), after backtracking the optimizer
+    keeps the backtracked projected point, so f(x_{k+1}) <= f(x_k), NOT the
+    rejected full-step point.
+  test: 'unit: test_pgd_armijo_monotone_non_increase_overshoot in projected_gradient.rs'
+  if_fails: x_new_ls is discarded; optimizer keeps the rejected full-step point (the PMAT-872 bug)
+- id: FALSIFY-PG-002
+  rule: Armijo monotone non-increase
+  prediction: f(x_{k+1}) <= f(x_k) + 1e-9 at every iteration with line search enabled
+  test: 'unit: single-iteration solves threaded forward, asserting f non-increasing'
+  if_fails: Objective increases on an overshooting step (Armijo guarantee broken)
+- id: FALSIFY-PG-003
+  rule: Final objective bounded by start
+  prediction: The returned minimum objective is <= the starting objective
+  test: 'unit: assert result.objective_value <= objective(x0) + 1e-9'
+  if_fails: Returned point is worse than the starting point
+- id: FALSIFY-PG-004
+  rule: Box-constrained convergence with overshoot
+  prediction: With a huge initial step on a box-constrained quadratic, PGD still descends to the optimum
+  test: 'unit: f(x)=(x-2)^2 on [0,10], alpha=5.0, with_line_search(0.5)'
+  if_fails: Overshoot is not corrected; iterate stuck at the box boundary
+- id: FALSIFY-PG-005
+  rule: Feasibility of accepted iterate
+  prediction: Every accepted iterate lies in the constraint set C
+  test: 'unit: existing box / l2-ball / nonnegative projection tests'
+  if_fails: Projection skipped or applied to the wrong candidate
+- id: FALSIFY-PG-006
+  rule: Backtracking loop terminates
+  prediction: The backtracking loop runs at most 20 iterations and then exits
+  test: 'unit: test_pgd_line_search_backtracking_exhaustion (alpha0=100, beta=0.5)'
+  if_fails: Backtracking loops forever or the loop variant is not decreasing
+- id: FALSIFY-PG-007
+  rule: Line search off is the plain projected step
+  prediction: With line search disabled, x_{k+1} = P_C(x_k - alpha*grad) using the fixed alpha
+  test: 'unit: test_pgd_nonnegative_least_squares (no line search) converges to max(c,0)'
+  if_fails: Fixed-step path regressed by the line-search acceptance change
+- id: FALSIFY-PG-008
+  rule: Precondition - non-empty start vector
+  prediction: minimize requires x0.len() > 0 and step_size > 0
+  test: 'unit: construction + minimize on a 1-D and multi-D start vector'
+  if_fails: Missing dimension/step-size guard
+- id: FALSIFY-PG-009
+  rule: Frame - objective and gradient closures unchanged
+  prediction: The objective/gradient/project closures are only read, never mutated
+  test: 'unit: closures are Fn (immutable); reuse across single-iteration solves'
+  if_fails: Optimizer mutates the supplied closures or step state incorrectly
+kani_harnesses:
+- id: KANI-PG-001
+  obligation: Armijo monotone non-increase
+  property: Accepted iterate satisfies f(x_{k+1}) <= f(x_k)
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_pgd_monotone_non_increase
+- id: KANI-PG-002
+  obligation: Backtracked point is accepted, not the rejected full step
+  property: On acceptance the iterate equals the backtracked projected point
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_pgd_accepts_backtracked_point
+- id: KANI-PG-003
+  obligation: Backtracking step halves and terminates
+  property: The backtracking loop variant strictly decreases and is bounded by 20
+  bound: 8
+  strategy: exhaustive
+  harness: verify_pgd_backtracking_terminates
+qa_gate:
+  id: F-PG-001
+  name: Projected Gradient Armijo Contract
+  description: Backtracking line search must accept the backtracked iterate and keep the objective monotone non-increasing
+  checks:
+  - accepted_iterate_is_backtracked
+  - monotone_non_increase
+  pass_criteria: All 5 falsification tests pass; test_pgd_armijo_monotone_non_increase_overshoot is RED on the bug, GREEN on the fix
+  falsification: Discard x_new_ls after backtracking (keep the rejected full-step point) — objective increases on overshoot
