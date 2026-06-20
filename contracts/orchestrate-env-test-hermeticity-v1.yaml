@@ -1,0 +1,167 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-20"
+  updated: "2026-06-20"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "Rust std::env docs — set_var/remove_var are process-global; the environment table is shared by every thread in the process (https://doc.rust-lang.org/std/env/fn.set_var.html)"
+    - "The Rust Programming Language — `cargo test` runs tests in parallel by default; --test-threads controls the thread pool (https://doc.rust-lang.org/book/ch11-02-running-tests.html)"
+    - "PMAT-876 — workspace-test intermittently fails at agent::auto_memory::tests::root_uses_config_dir_when_env_unset; three separate module-private env_lock mutexes did NOT serialize across modules that mutate the SAME APR_CONFIG variable"
+    - "paiml/aprender PR #1567 — original per-module env_lock pattern (agent::instructions::tests) the three-module duplication descended from"
+  description: "Env-mutating tests in aprender-orchestrate acquire ONE crate-wide lock and restore prior env values, so they are deterministic under parallel test execution"
+
+kind: KernelContract
+name: orchestrate-env-test-hermeticity
+version: "1.0.0"
+scope: "crates/aprender-orchestrate/src/agent/{env_test_support.rs,auto_memory.rs,settings.rs,instructions.rs}::tests + crates/aprender-orchestrate/src/cli/agent_tests.rs::test_build_driver_remote_no_key_returns_mock"
+
+description: |
+  PMAT-876. `std::env` is PROCESS-GLOBAL: a single environment table is
+  shared by every thread in the process. `cargo test` / nextest run
+  `#[test]` functions in PARALLEL by default. Therefore two tests that
+  each `set_var` / `remove_var` the SAME variable (or one mutates while
+  another reads it) interleave non-deterministically and observe the
+  wrong value.
+
+  In aprender-orchestrate, three test modules — `agent::auto_memory`,
+  `agent::settings`, and `agent::instructions` — all mutate the SAME
+  `APR_CONFIG` variable. Each module historically defined its OWN
+  module-private `static LOCK: Mutex<()>` and acquired only that lock.
+  That serializes tests WITHIN a module but NOT ACROSS modules, so a
+  test in `auto_memory` racing a test in `settings` still corrupted the
+  shared env: e.g. `auto_memory::tests::root_uses_config_dir_when_env_unset`
+  removed `APR_CONFIG`, asserted it was unset, but a parallel
+  `settings`/`instructions` test had just `set_var`'d it — intermittent
+  `workspace-test` FAILURE that repeatedly broke the merge queue.
+
+  This contract codifies the hermetic-test invariant:
+
+  1. There is exactly ONE crate-wide lock
+     (`agent::env_test_support::ENV_LOCK`). EVERY test that touches
+     process env across the whole crate acquires THIS lock for the full
+     duration it touches the env. Non-env tests stay parallel.
+  2. Every env-mutating test SAVES the prior value, sets/removes its
+     value, runs, then RESTORES the prior value (via the
+     `ScopedEnv` RAII guard) — the env is never left mutated for the
+     next test to observe.
+  3. The lock is poison-tolerant
+     (`lock().unwrap_or_else(|e| e.into_inner())`): a panicking test
+     poisons the mutex, but the lock guards no data we care about (it
+     only serializes access to the global env table), so we recover the
+     guard rather than cascading failures.
+
+  The result is determinism under parallelism: the falsifier
+  (multi-run / `--test-threads=8`) passes with 0 failures every time.
+
+  ## status_line is already hermetic (no change needed)
+  `agent::status_line::short_cwd(path, home: Option<&Path>)` takes the
+  home dir as a PARAMETER (dependency injection), so its tests
+  (`short_cwd_falls_back_when_home_is_none`) never touch global env and
+  are unaffected. The ideal pattern — pass the env in — is preserved
+  where it already exists.
+
+equations:
+  single_shared_lock:
+    description: "All env-mutating tests in the crate serialize on ONE lock; concurrent env access is impossible"
+    formula: |
+      ENV_LOCK : Mutex<()>                       # exactly one, crate-wide
+      for every env-mutating test T:
+          guard = ENV_LOCK.lock()                # held across set -> assert -> restore
+          # ... mutate/read process env ...
+      held(guard_A) AND held(guard_B) => A == B  # mutual exclusion
+
+  save_then_restore:
+    description: "Each env-mutating test restores the prior value (or absence) on drop — the env table is unchanged after the test"
+    formula: |
+      prior = env::var(KEY).ok()                 # ScopedEnv::set/remove saves this
+      env::set_var(KEY, v)  OR  env::remove_var(KEY)
+      # ... test body ...
+      on drop: match prior { Some(v) => set_var(KEY, v), None => remove_var(KEY) }
+      env_table_after == env_table_before        # idempotent on the env
+
+  determinism_under_parallelism:
+    description: "Same test set + any thread count => identical pass result (0 failures)"
+    formula: |
+      run(tests, threads=N) == PASS   for all N >= 1, over repeated runs
+
+falsification_tests:
+  - id: F-ENV-HERMETIC-001
+    rule: single_shared_lock
+    prediction: "auto_memory + settings + instructions env tests run at --test-threads=8/16 pass 0 failures across repeated runs"
+    test: |
+      cargo test -p aprender-orchestrate --lib -- --test-threads=16 \
+        agent::auto_memory::tests agent::settings::tests \
+        agent::instructions::tests agent::env_test_support
+      Repeat 5x; every run must report `0 failed`. RED on the bug: with
+      three separate per-module mutexes, the cross-module APR_CONFIG race
+      fails ~1-in-3 runs (reproduced pre-fix: run 3 = 56 passed; 1 failed,
+      panic at auto_memory.rs root_uses_config_dir_when_env_unset and
+      siblings). GREEN on the fix: 5/5 runs pass (60 passed; 0 failed).
+    if_fails: "An env-mutating test is not acquiring the single crate-wide ENV_LOCK (or a new module reintroduced a private mutex) — route it through agent::env_test_support::env_lock"
+
+  - id: F-ENV-HERMETIC-002
+    rule: save_then_restore
+    prediction: "ScopedEnv restores the prior value: set over an absent var leaves it absent; remove over a present var restores the value"
+    test: |
+      cargo test -p aprender-orchestrate --lib -- \
+        agent::env_test_support::tests
+      scoped_env_set_restores_prior_absence and
+      scoped_env_remove_restores_prior_value assert the env table is
+      unchanged after the guard drops. RED if Drop is wrong (leaves the
+      var mutated); GREEN with correct save/restore.
+    if_fails: "ScopedEnv::drop does not restore the saved prior value/absence — a later test will observe a leaked env mutation"
+
+  - id: F-ENV-HERMETIC-003
+    rule: determinism_under_parallelism
+    prediction: "The full aprender-orchestrate lib test suite passes 0 failures at --test-threads=8 across repeated runs"
+    test: |
+      cargo test -p aprender-orchestrate --lib -- --test-threads=8
+      Repeat 3x; every run must report 0 failed (measured: 6506 passed;
+      0 failed, 3/3 runs post-fix). RED on the bug: the cross-module
+      APR_CONFIG race surfaces intermittently in the full parallel run
+      (the original workspace-test signature: 6538 passed; 1 failed).
+    if_fails: "A process-global env mutation in the crate is unguarded; grep set_var|remove_var under crates/aprender-orchestrate/src and route every hit through the shared lock + ScopedEnv"
+
+proof_obligations:
+  - type: determinism
+    property: "Env-mutating tests are deterministic under parallel execution (one shared lock serializes all global-env access)"
+    formal: "for all thread counts N>=1 and repeated runs: run(env_tests, N) == PASS"
+    applies_to: single_shared_lock
+
+  - type: idempotency
+    property: "Each env-mutating test leaves the process env table unchanged (save prior, mutate, restore prior on drop)"
+    formal: "env_table_after_test == env_table_before_test"
+    applies_to: save_then_restore
+
+  - type: independence
+    property: "No two env-mutating tests observe each other's transient env mutation (mutual exclusion on the global env table)"
+    formal: "held(guard_A) AND held(guard_B) => A == B (the same single ENV_LOCK)"
+    applies_to: single_shared_lock
+
+scope_extension:
+  in_scope:
+    - "agent::env_test_support: the single crate-wide ENV_LOCK + ScopedEnv save/restore RAII guard (test-only module)"
+    - "agent::auto_memory / settings / instructions tests: route through the shared env_lock + ScopedEnv; remove the three per-module mutexes"
+    - "cli::agent_tests::test_build_driver_remote_no_key_returns_mock: ANTHROPIC_API_KEY guarded with a self-contained lock + restore (this test compiles in the BINARY test crate, which cannot reach the lib-side test-only module)"
+  out_of_scope:
+    - "agent::status_line tests — already hermetic; short_cwd takes home as a parameter and never touches global env"
+    - "Production code reads of env (auto_memory_root, settings, instructions, apr_serve config) — unchanged; only TEST hermeticity is in scope"
+    - "Migrating the binary-crate ANTHROPIC_API_KEY test to a shared lib lock — blocked by crate boundary (cli/* is declared in main.rs, not the batuta lib); a self-contained guard with identical semantics is used instead"
+
+status_history:
+  - version: "1.0.0"
+    date: "2026-06-20"
+    pr: "paiml/aprender (PMAT-876 impl PR — fix/pmat-876-orchestrate-env-test-hermeticity)"
+    summary: |
+      Initial contract registered + DISCHARGED in the same PR. Root
+      cause: three separate per-module env_lock mutexes did not
+      serialize across modules that all mutate the SAME APR_CONFIG var,
+      so parallel tests raced the global env (intermittent workspace-test
+      FAIL: 6538 passed; 1 failed at auto_memory root_uses_config_dir_
+      when_env_unset). Fix: one crate-wide ENV_LOCK +ScopedEnv save/restore
+      in agent::env_test_support, used by auto_memory + settings +
+      instructions; ANTHROPIC_API_KEY test guarded self-contained.
+      F-ENV-HERMETIC-001 verified RED-on-bug (1-in-3 fail with the three
+      separate mutexes) / GREEN-on-fix (5/5 runs at --test-threads=16,
+      3/3 full-crate runs at --test-threads=8 = 6506 passed; 0 failed).

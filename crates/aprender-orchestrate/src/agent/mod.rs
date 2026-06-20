@@ -34,6 +34,11 @@ mod code_prompts;
 pub mod contracts;
 pub mod custom_agents;
 pub mod driver;
+/// Shared test-support for env-mutating tests (PMAT-876): a single
+/// process-wide `ENV_LOCK` + save/restore guard so all env-touching
+/// tests across the crate serialize against each other.
+#[cfg(test)]
+pub(crate) mod env_test_support;
 pub mod guard;
 pub mod hooks;
 pub mod instructions;
