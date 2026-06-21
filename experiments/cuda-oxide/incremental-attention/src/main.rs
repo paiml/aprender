@@ -1769,6 +1769,16 @@ fn main() {
     }
 
     // PERF A/B/C at representative decode shapes.
+    // PMAT-884: REAL Qwen2.5-Coder-1.5B decode shape (heads=12, n_kv_heads=2,
+    // head_dim=128, GQA group=6) at the kv_len values an actual decode loop hits
+    // (1..256), to see whether oxide kernel C wins at the SMALL decode contexts a
+    // chatbot actually runs (the 882/883 perf probes used kv>=128, heads>=8).
+    println!("\n-- PMAT-884 REAL DECODE SHAPE (Qwen2.5-1.5B: heads=12 kv_heads=2 hd=128) C(warp) us --");
+    for &kvl in &[1usize, 8, 32, 64, 128, 256] {
+        let (_c, _d, _t, med_c) = parity_and_perf(&ctx, &module, kvl, head_dim, 12, 2, 77, true, 2);
+        println!("  kv_len={:>4} heads=12 kv=2 : oxide C = {:>7.3}us", kvl, med_c);
+    }
+
     println!("\n-- PERF (us/launch, GPU-event, median of 5x50) — A vs B(split) vs C(warp) --");
     let perf_shapes: &[(usize, usize, usize, &str)] = &[
         (128, 16, 8, "short ctx kv=128 heads=16"),

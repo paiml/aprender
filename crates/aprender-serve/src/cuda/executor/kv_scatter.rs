@@ -534,8 +534,19 @@ impl CudaExecutor {
         // recorded into a graph) — graph-mode go-live is a separate step.
         #[cfg(feature = "oxide-attention")]
         {
+            // Cache the env check (per-call getenv() takes a global lock).
+            static OXIDE_ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+            let oxide_on = *OXIDE_ON
+                .get_or_init(|| std::env::var("APR_OXIDE_ATTENTION").as_deref() == Ok("1"));
+            // The production Q4K decode loop is CUDA-graph-captured (PAR-054
+            // `forward_all_layers_gpu_to_logits_graphed`), where attention runs via
+            // `incremental_attention_into_for_capture` with `seq_len_buf` set
+            // (capturing=true). An immediate `cuLaunchKernel` (what this oxide path
+            // does) cannot be RECORDED into a CUDA graph, so the oxide kernel is
+            // deliberately skipped during capture — graph-mode go-live needs the
+            // oxide launch added to the captured graph (PMAT-884-STATUS S5).
             let capturing = self.seq_len_buf.is_some();
-            if !capturing && std::env::var("APR_OXIDE_ATTENTION").as_deref() == Ok("1") {
+            if !capturing && oxide_on {
                 use crate::cuda::executor::oxide_attention;
                 let num_kv_heads = self.kv_num_kv_heads;
                 const OXIDE_KEY: &str = "oxide_attn_sephead";
