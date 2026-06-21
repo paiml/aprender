@@ -103,7 +103,7 @@ trueno-sparse = { version = "0.50.0", path = "../aprender-sparse", package = "ap
 trueno-solve = { version = "0.50.0", path = "../aprender-solve", package = "aprender-solve" }
 # ML-tuner showcase (SHOWCASE-BRICK-001): aprender RandomForest, DEV-only to avoid the
 # compute→core layer inversion. Path dev-dep cycle is legal + dropped on publish.
-aprender = { path = "../aprender-core", package = "aprender-core", default-features = false }
+aprender = { version = "0.50.0", path = "../aprender-core", package = "aprender-core", default-features = false }
 ndarray = "0.17.2"
 faer = "0.24"  # For GEMM benchmark comparison (fastest pure-Rust BLAS)
 matrixmultiply = "0.3"  # Direct matrixmultiply crate benchmark (engine behind ndarray)
