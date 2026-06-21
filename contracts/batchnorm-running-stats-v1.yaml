@@ -1,0 +1,117 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-21'
+  author: PAIML Engineering
+  registry: true
+  description: |
+    BatchNorm1d running-statistics buffer update (PyTorch parity, PMAT-877).
+
+    PyTorch's torch.nn.BatchNorm1d maintains two non-learnable buffers,
+    running_mean and running_var, that are updated on EVERY training-mode
+    forward via an exponential moving average:
+
+        running = (1 - momentum) * running + momentum * batch_stat
+
+    with PyTorch's convention that `momentum` (default 0.1) weights the NEW
+    batch. running_mean uses the batch mean; running_var uses the UNBIASED
+    batch variance (divisor N-1), while the in-graph normalization itself uses
+    the BIASED batch variance (divisor N). In eval mode the buffers are frozen
+    and used for normalization.
+
+    Defect (PMAT-877): aprender's BatchNorm1d computed the batch mean/var during
+    training but NEVER wrote them back to running_mean/running_var, so the
+    buffers stayed at their init (0 / 1) forever. Consequently eval()-mode
+    normalization was wrong (it always divided by 1 and subtracted 0).
+  references:
+  - 'Ioffe & Szegedy (2015) Batch Normalization: Accelerating Deep Network Training'
+  - 'PyTorch torch.nn.BatchNorm1d — running_mean/running_var buffer semantics, momentum default 0.1'
+  - 'crates/aprender-core/src/nn/normalization/mod.rs — BatchNorm1d::forward (fix site)'
+  - 'crates/aprender-contracts/src/kernels/batchnorm.rs — reference EMA update'
+
+kind: KernelContract
+name: batchnorm-running-stats
+version: 1.0.0
+scope: crates/aprender-core/src/nn/normalization/ — BatchNorm1d running-statistics buffers
+
+description: |
+  Training-mode forward of BatchNorm1d must update the running_mean and
+  running_var buffers via a momentum EMA so that eval-mode normalization uses
+  statistics estimated over training, matching PyTorch BatchNorm1d.
+
+equations:
+  running_mean_ema:
+    formula: running_mean_c <- (1 - m) * running_mean_c + m * batch_mean_c
+    domain: momentum m in (0, 1); batch_mean_c in R per feature c
+    codomain: running_mean_c in R
+    invariants:
+    - 'Applied once per training-mode forward, per feature channel c'
+    - 'batch_mean_c = (1/N) * sum_n x_{n,c} (biased mean over batch+spatial)'
+    - 'After K forwards on a fixed batch: running_mean_c = batch_mean_c * (1 - (1-m)^K)'
+    - 'Eval mode does NOT modify running_mean (buffers frozen)'
+    preconditions:
+    - input.iter().all(|v| v.is_finite())
+    - input.len() > 0
+    lean_theorem: Theorems.Running_Mean_Ema
+  running_var_ema:
+    formula: running_var_c <- (1 - m) * running_var_c + m * unbiased_batch_var_c
+    domain: momentum m in (0, 1); unbiased_batch_var_c in R_>=0 per feature c
+    codomain: running_var_c in R_>=0
+    invariants:
+    - 'running_var uses the UNBIASED batch variance (divisor N-1), per PyTorch'
+    - 'Normalization output uses the BIASED batch variance (divisor N)'
+    - 'For N == 1 the unbiased estimate is undefined, so running_var is left unchanged'
+    - 'running_var_c >= 0 after any number of updates (EMA of non-negative quantities)'
+    preconditions:
+    - input.iter().all(|v| v.is_finite())
+    - input.len() > 0
+    lean_theorem: Theorems.Running_Var_Ema
+
+proof_obligations:
+- type: invariant
+  property: Training forward updates running_mean toward the batch mean
+  formal: |
+    For a BatchNorm1d with momentum m and a fixed batch with per-feature mean
+    mu_c != 0: after K >= 1 training-mode forwards, running_mean_c equals
+    mu_c * (1 - (1-m)^K), which is strictly between the init value 0 and mu_c.
+    In particular running_mean_c is NOT 0 (the buggy fixed point).
+  tolerance: 1.0e-04
+  applies_to: all
+- type: invariant
+  property: Training forward updates running_var off its init
+  formal: |
+    For a fixed batch with non-zero per-feature variance and N > 1: after one or
+    more training-mode forwards, running_var_c differs from its init value 1.0.
+  applies_to: all
+- type: bound
+  property: Running variance stays non-negative
+  formal: running_var_c >= 0 after any number of EMA updates when batch_var >= 0
+  applies_to: all
+- type: equivalence
+  property: Eval mode freezes and uses running stats
+  formal: |
+    In eval mode BatchNorm1d normalizes with the current running_mean/running_var
+    and does not modify them; output uses running stats, not batch statistics.
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-BN-RUNSTAT-001
+  rule: Training updates running_mean/running_var via momentum EMA
+  prediction: |
+    After 20 training-mode forwards on a fixed batch whose per-feature means are
+    250 and 25 (momentum 0.1), running_mean climbs monotonically toward those
+    means (matching batch * (1 - 0.9^20)) and running_var moves off its init of
+    1.0. Pre-fix: running_mean stays 0 forever (RED at step 0).
+  if_fails: |
+    The training branch of BatchNorm1d::forward computes batch stats but does not
+    write them back into the running_mean/running_var buffers. Add the EMA update
+    inside the `if self.training` arm, per crates/aprender-contracts batchnorm.rs.
+  test: cargo test -p aprender-core --lib falsify_bn_007_training_updates_running_stats
+  evidence: cargo test -p aprender-core --lib falsify_bn_007_training_updates_running_stats
+
+qa_gate:
+  id: F-BN-RUNSTAT-001
+  name: batchnorm-running-stats-v1 Contract
+  description: BatchNorm1d must update running_mean/running_var via momentum EMA during training (PyTorch parity).
+  checks:
+  - validation
+  - falsification

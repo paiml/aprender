@@ -87,6 +87,91 @@ fn falsify_bn_004_eval_uses_running_stats() {
     );
 }
 
+/// FALSIFY-BN-007 (PMAT-877): Training updates running stats via momentum EMA.
+///
+/// PyTorch `BatchNorm1d` updates the `running_mean`/`running_var` buffers on
+/// every training-mode forward:
+///   running = (1 - momentum) * running + momentum * batch_stat
+///
+/// Regression guard: the old aprender code computed the batch stats but NEVER
+/// wrote them back, so `running_mean` stayed at its init (0) forever, making
+/// eval-mode normalization wrong. This is RED on the buggy code (running_mean
+/// stays 0) and GREEN after the fix (running_mean moves toward the batch mean).
+#[test]
+fn falsify_bn_007_training_updates_running_stats() {
+    let momentum = 0.1_f32;
+    let norm = BatchNorm1d::new(2).with_momentum(momentum);
+
+    // Init: running_mean == 0, running_var == 1.
+    let init_mean = norm.running_mean();
+    let init_var = norm.running_var();
+    assert_eq!(init_mean, vec![0.0, 0.0], "init running_mean must be 0");
+    assert_eq!(init_var, vec![1.0, 1.0], "init running_var must be 1");
+
+    // A fixed batch whose per-feature mean is far from 0.
+    //   feature 0: [100, 200, 300, 400] -> batch_mean = 250
+    //   feature 1: [ 10,  20,  30,  40] -> batch_mean = 25
+    let x = Tensor::new(
+        &[
+            100.0, 10.0, // sample 0
+            200.0, 20.0, // sample 1
+            300.0, 30.0, // sample 2
+            400.0, 40.0, // sample 3
+        ],
+        &[4, 2],
+    );
+    let batch_mean = [250.0_f32, 25.0_f32];
+
+    // Run N training forwards on the SAME batch; running_mean must climb
+    // monotonically toward batch_mean (geometric approach with rate momentum).
+    let n_steps = 20;
+    let mut prev = init_mean.clone();
+    for step in 0..n_steps {
+        let _ = norm.forward(&x);
+        let rm = norm.running_mean();
+        for c in 0..2 {
+            assert!(
+                rm[c] > prev[c],
+                "FALSIFIED BN-007: running_mean[{c}] did not increase at step {step} \
+                 (prev={}, now={}); training never updated running stats",
+                prev[c],
+                rm[c]
+            );
+        }
+        prev = rm;
+    }
+
+    // After N updates, running_mean must have moved a long way toward batch_mean.
+    // Closed form for a fixed batch: running = batch * (1 - (1-m)^N).
+    let final_mean = norm.running_mean();
+    for c in 0..2 {
+        let expected = batch_mean[c] * (1.0 - (1.0 - momentum).powi(n_steps));
+        assert!(
+            (final_mean[c] - expected).abs() < 1e-2 * batch_mean[c].abs().max(1.0),
+            "FALSIFIED BN-007: running_mean[{c}]={} != EMA closed form {expected}",
+            final_mean[c]
+        );
+        // And it is decisively away from the buggy init value of 0.
+        assert!(
+            final_mean[c] > 0.5 * batch_mean[c],
+            "FALSIFIED BN-007: running_mean[{c}]={} stuck near init 0 (expected > {})",
+            final_mean[c],
+            0.5 * batch_mean[c]
+        );
+    }
+
+    // running_var must also have moved off its init of 1 toward the (unbiased)
+    // batch variance, which is large here (hundreds / thousands).
+    let final_var = norm.running_var();
+    for c in 0..2 {
+        assert!(
+            final_var[c] > 1.0 + 1e-3,
+            "FALSIFIED BN-007: running_var[{c}]={} did not move off init 1.0",
+            final_var[c]
+        );
+    }
+}
+
 /// FALSIFY-BN-006: Boundary batch_size=1 — zero variance yields beta
 ///
 /// With N=1, variance is 0, so output = gamma * 0 + beta = beta (= 0 by default).

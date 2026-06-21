@@ -14,6 +14,7 @@
 use super::init::{constant, zeros};
 use super::module::Module;
 use crate::autograd::Tensor;
+use std::sync::Mutex;
 
 /// Layer Normalization (Ba et al., 2016).
 ///
@@ -190,10 +191,13 @@ pub struct BatchNorm1d {
     weight: Tensor,
     /// Learnable shift
     bias: Tensor,
-    /// Running mean (not learnable)
-    running_mean: Tensor,
-    /// Running variance (not learnable)
-    running_var: Tensor,
+    /// Running mean (not learnable; PyTorch buffer). `Mutex` (a `Sync` interior-
+    /// mutability cell, required by `Module: Send + Sync`) so the EMA update can
+    /// be applied during `Module::forward(&self)` in training mode.
+    running_mean: Mutex<Vec<f32>>,
+    /// Running variance (not learnable; PyTorch buffer). Updated with the
+    /// **unbiased** batch variance per PyTorch's `BatchNorm1d` convention.
+    running_var: Mutex<Vec<f32>>,
     /// Training mode
     training: bool,
 }
@@ -212,8 +216,8 @@ impl BatchNorm1d {
             momentum: 0.1,
             weight: constant(&[num_features], 1.0).requires_grad(),
             bias: zeros(&[num_features]).requires_grad(),
-            running_mean: zeros(&[num_features]),
-            running_var: constant(&[num_features], 1.0),
+            running_mean: Mutex::new(vec![0.0; num_features]),
+            running_var: Mutex::new(vec![1.0; num_features]),
             training: true,
         }
     }
@@ -230,6 +234,30 @@ impl BatchNorm1d {
     pub fn with_eps(mut self, eps: f32) -> Self {
         self.eps = eps;
         self
+    }
+
+    /// Current running mean per feature (PyTorch `running_mean` buffer).
+    ///
+    /// Initialised to 0 and updated each training-mode `forward` via an
+    /// exponential moving average. Used (frozen) in eval mode.
+    #[must_use]
+    pub fn running_mean(&self) -> Vec<f32> {
+        self.running_mean
+            .lock()
+            .expect("BatchNorm1d running_mean lock poisoned")
+            .clone()
+    }
+
+    /// Current running variance per feature (PyTorch `running_var` buffer).
+    ///
+    /// Initialised to 1 and updated each training-mode `forward` via an
+    /// exponential moving average of the **unbiased** batch variance.
+    #[must_use]
+    pub fn running_var(&self) -> Vec<f32> {
+        self.running_var
+            .lock()
+            .expect("BatchNorm1d running_var lock poisoned")
+            .clone()
     }
 }
 
@@ -289,19 +317,45 @@ impl Module for BatchNorm1d {
         let input_data = input.data();
         let mut output_data = vec![0.0; input_data.len()];
 
+        // Interior-mutable PyTorch buffers (only written in training mode).
+        let mut running_mean = self
+            .running_mean
+            .lock()
+            .expect("BatchNorm1d running_mean lock poisoned");
+        let mut running_var = self
+            .running_var
+            .lock()
+            .expect("BatchNorm1d running_var lock poisoned");
+
         for f in 0..features {
             let indices = Self::feature_indices(shape, f);
 
             let (mean, var) = if self.training {
+                let n = indices.len() as f32;
                 let sum: f32 = indices.iter().map(|&i| input_data[i]).sum();
-                let mean = sum / indices.len() as f32;
+                let mean = sum / n;
                 let var_sum: f32 = indices
                     .iter()
                     .map(|&i| (input_data[i] - mean).powi(2))
                     .sum();
-                (mean, var_sum / indices.len() as f32)
+                // Biased variance (÷N) is used for normalization (Ioffe & Szegedy).
+                let batch_var = var_sum / n;
+
+                // PyTorch EMA update of the running buffers (training only):
+                //   running = (1 - momentum) * running + momentum * batch_stat
+                // PyTorch updates running_var with the UNBIASED batch variance
+                // (÷(N-1)). With N == 1 the unbiased estimate is undefined, so
+                // (matching PyTorch) leave running_var unchanged for that step.
+                running_mean[f] = (1.0 - self.momentum) * running_mean[f] + self.momentum * mean;
+                if indices.len() > 1 {
+                    let unbiased_var = var_sum / (n - 1.0);
+                    running_var[f] =
+                        (1.0 - self.momentum) * running_var[f] + self.momentum * unbiased_var;
+                }
+
+                (mean, batch_var)
             } else {
-                (self.running_mean.data()[f], self.running_var.data()[f])
+                (running_mean[f], running_var[f])
             };
 
             let std_inv = 1.0 / (var + self.eps).sqrt();
@@ -315,6 +369,9 @@ impl Module for BatchNorm1d {
                 self.bias.data()[f],
             );
         }
+
+        drop(running_mean);
+        drop(running_var);
 
         Tensor::new(&output_data, shape)
     }
