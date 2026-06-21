@@ -299,7 +299,7 @@ Contract: `contracts/apr-qa-metamorphic-v1.yaml`
 ### M1. Format roundtrip (GGUF→APR→GGUF tensor fidelity)
 ```bash
 if [ -n "$M_GGUF" ]; then
-  apr convert "$M_GGUF" -o /tmp/apr-qa-rt.apr 2>&1 | tail -1
+  apr convert "$M_GGUF" --quantize q4k -o /tmp/apr-qa-rt.apr 2>&1 | tail -1  # --quantize is REQUIRED
   # If convert succeeds, check tensor count matches
   if [ -f /tmp/apr-qa-rt.apr ]; then
     ORIG_TENSORS=$(apr tensors "$M_GGUF" --json 2>/dev/null | jq length 2>/dev/null || echo 0)
@@ -713,23 +713,33 @@ post-publish QA was missing (it tested `.apr` inspect/validate but never `.apr` 
 ```bash
 M_GGUF=$(find ~/models -maxdepth 2 -name "*.gguf" -type f -size -3G | head -1)
 if [ -z "$M_GGUF" ]; then echo "G18 SKIP: no GGUF model"; else
-  apr convert "$M_GGUF" -o /tmp/g18-fresh.apr 2>&1 | tail -1
+  # NB: `apr convert` REQUIRES --quantize (or --compress). Omitting it fails with
+  # "At least one of --quantize or --compress must be specified" and writes NO .apr —
+  # which a naive test misreads as empty inference output. ALWAYS pass --quantize.
+  apr convert "$M_GGUF" --quantize q4k -o /tmp/g18-fresh.apr 2>&1 | tail -1
+  [ -f /tmp/g18-fresh.apr ] || echo "G18 FAIL: apr convert produced no .apr (forgot --quantize?)"
   norm(){ sed -n '/^Output:/,$p' | tail -n +2 | tr -d '[:space:]'; }
+  # The P0 (PMAT-888) was GARBAGE, not a verbosity diff. GGUF runs may be response-CACHED
+  # (terser, e.g. "4" vs ".apr"'s fresh "2+2 equals 4."), so the gate is the .apr's
+  # COHERENCE (the real P0 signal), NOT byte-equality with GGUF.
+  coherent(){ [ -n "$1" ] && echo "$1" | grep -qE '[0-9A-Za-z]' \
+              && ! echo "$1" | grep -qE 'ä|ã|�|<\|im_start|<\|endoftext'; }
   GGUF_OUT=$(timeout 120 apr run "$M_GGUF"        --no-gpu --prompt "What is 2+2?" --max-tokens 12 2>&1 | norm)
   APR_OUT=$( timeout 120 apr run /tmp/g18-fresh.apr --no-gpu --prompt "What is 2+2?" --max-tokens 12 2>&1 | norm)
   echo "G18 gguf=[$GGUF_OUT] apr=[$APR_OUT]"
-  if [ -n "$GGUF_OUT" ] && [ "$GGUF_OUT" = "$APR_OUT" ]; then
-    echo "G18 PASS: fresh .apr CPU inference == source GGUF"
-  elif echo "$APR_OUT" | grep -qE 'ä|�|<\|im_start|<\|endoftext'; then
-    echo "G18 FAIL: fresh .apr produces garbage while GGUF coherent (PMAT-888 converter/loader regression)"
+  if coherent "$APR_OUT"; then
+    [ "$GGUF_OUT" = "$APR_OUT" ] && echo "G18 PASS: fresh .apr CPU inference coherent AND == GGUF" \
+                                 || echo "G18 PASS: fresh .apr CPU inference coherent (differs from possibly-cached GGUF; both valid answers)"
+  elif [ -z "$APR_OUT" ]; then
+    echo "G18 FAIL: fresh .apr produced NO output (broken inference, or convert wrote no model)"
   else
-    echo "G18 WARN: fresh .apr != GGUF — run 'apr diff /tmp/g18-fresh.apr $M_GGUF' to localize"
+    echo "G18 FAIL: fresh .apr produces garbage while GGUF coherent (PMAT-888 converter/loader regression)"
   fi
-  # GPU leg (if a GPU is present): the .apr GPU path must also match --no-gpu
+  # GPU leg (if a GPU is present): the .apr GPU path must also be coherent
   if apr gpu 2>&1 | grep -qiE 'cuda|gpu.*(yes|available|RTX|GB10)'; then
     APR_GPU=$(timeout 120 apr run /tmp/g18-fresh.apr --prompt "What is 2+2?" --max-tokens 12 2>&1 | norm)
-    [ -n "$APR_GPU" ] && [ "$APR_GPU" = "$GGUF_OUT" ] && echo "G18-GPU PASS: fresh .apr GPU == GGUF" \
-      || echo "G18-GPU WARN: fresh .apr GPU=[$APR_GPU] != GGUF"
+    coherent "$APR_GPU" && echo "G18-GPU PASS: fresh .apr GPU coherent" \
+      || echo "G18-GPU FAIL: fresh .apr GPU=[$APR_GPU] not coherent"
   fi
   rm -f /tmp/g18-fresh.apr
 fi
