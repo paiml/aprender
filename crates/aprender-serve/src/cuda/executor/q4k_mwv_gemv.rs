@@ -59,6 +59,31 @@ impl CudaExecutor {
             )?;
         }
 
+        // PMAT-886a: Record kernel for manual graph construction (trueno#243).
+        // ROOT CAUSE of the Blackwell (GB10 sm_121) CUDA-graph-replay corruption:
+        // the plain MWV (fp32-activation) Q4K GEMV — which is the DEFAULT Q4K
+        // variant on Blackwell (Q4kVariant::Mwv, PMAT-806) — was MISSING this
+        // graph-recording block, while the sibling mwv_dp4a variant (used on
+        // discrete sm_89 DP4A GPUs) HAS it (see realizr#198 fix below). So on
+        // Blackwell the ~7 Q4K GEMVs/layer (Q,K,V,output,gate,up,down) executed
+        // during the eager capture pass but were NEVER added to the manual graph;
+        // on cuGraphLaunch replay those kernels are absent, leaving their output
+        // buffers (q/k/v, attn-input, ffn projections, residual stream) STALE →
+        // every downstream kernel reads garbage → apr parity cosine ~0.19/0.53,
+        // empty/repeated tokens. The IDENTICAL eager (non-graphed) path is correct
+        // (cosine 0.99) because it actually launches every GEMV. RTX 4090 (sm_89)
+        // was unaffected because it routes Q4K to the (recorded) DP4A variant.
+        // Fix: record this GEMV too, mirroring mwv_dp4a_q4k_gemv_into.
+        if self.graph_recording {
+            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let func = module.get_function(kernel_name)?;
+            self.graph_recorded_kernels.push(RecordedKernel {
+                func: SendCUfunction(func),
+                config,
+                arg_data: vec![ptr_output, ptr_weights, ptr_input, k_val as u64, n_val as u64],
+            });
+        }
+
         Ok(())
     }
 

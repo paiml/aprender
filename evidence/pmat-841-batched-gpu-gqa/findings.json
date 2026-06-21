@@ -1,0 +1,12 @@
+{
+  "ticket": "PMAT-841",
+  "title": "Batched-GPU serving path crashed on every GQA model (MHA-only QKV dispatch)",
+  "host": "lambda-vector RTX 4090 (sm_89), Qwen2.5-Coder-7B-Instruct Q4_K_M (GQA: 28 q-heads, 4 kv-heads)",
+  "red_live": "POST /v1/batch/completions (32 prompts) -> 500 {\"error\":\"CUDA GEMM failed: GEMM size mismatch: B[16515072] expected 38535168\"} (16515072=3584x4608 GQA QKV; 38535168=3584x10752 MHA assumption)",
+  "red_unit": "falsify_pmat841_batched_gpu_gqa_no_crash (guard stashed) -> Err(batch_matmul_gpu_prefer_cuda: Matrix B size 8192 doesn't match k*n=64*192=12288)",
+  "green_live": "POST /v1/batch/completions (32 prompts) -> 200 {\"results\":[{\"index\":0,\"token_ids\":[...]}...]} in 261.9s (per-prompt path), no crash",
+  "green_unit": "falsify returns 32 sequences; full aprender-serve lib suite 15428 passed / 0 failed",
+  "fix": "dispatch guard in batch_generate_gpu: use batched path only when q_dim==hidden && kv_dim==hidden (MHA); route GQA to per-prompt forward_single_with_cache",
+  "contract": "contracts/serve-batched-gpu-gqa-dispatch-v1.yaml (pv-validated)",
+  "pr": 2125
+}
