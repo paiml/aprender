@@ -28,7 +28,7 @@ anyhow = "1"
 thiserror = "2"
 
 # Phase 2+ dependencies
-aprender = { path = "../aprender-core", version = "0.49.1", package = "aprender-core" }                                        # Sparse matrix ops, PageRank
+aprender = { path = "../aprender-core", version = "0.50.0", package = "aprender-core" }                                        # Sparse matrix ops, PageRank
 trueno = { workspace = true }
 trueno-db = { workspace = true }
 
