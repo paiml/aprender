@@ -231,6 +231,19 @@ impl OwnedQuantizedModel {
         // GH-479: q_dim may differ from hidden_dim (Qwen3 head_dim != hidden/heads)
         let q_dim = config.q_dim();
         let kv_dim = config.kv_dim();
+        // PMAT-888: Gemma2 POST-attention / POST-FFN RMSNorms are loaded ONLY for
+        // Gemma2. The HF tensor name `post_attention_layernorm.weight` is the
+        // *FFN (pre-feedforward) norm* for qwen2/llama/mistral/phi/deepseek/qwen3
+        // (see `tensor_names_fallback::FfnNormWeight`), NOT a post-attention norm.
+        // Loading it into the Gemma2 `post_attn_norm_weight` slot — and the
+        // `ffn_block` forward then applying it (it gates only on `is_some()`, not on
+        // arch) — injected a spurious extra RMSNorm into EVERY non-Gemma2 `.apr`,
+        // producing garbage output (PMAT-887 repro: `çļĦåıªæĺ¯…`). The GGUF loader
+        // never hit this because it reads the disambiguated `post_attention_norm`
+        // / `post_ffw_norm` names (no "layer"), which do not exist in non-Gemma2
+        // GGUFs. Gate the APR post-norm load on the architecture, mirroring GGUF's
+        // `None` for non-Gemma2.
+        let is_gemma2 = config.is_gemma2();
         let mut layers = Vec::with_capacity(num_layers);
 
         for layer_idx in 0..num_layers {
@@ -244,6 +257,7 @@ impl OwnedQuantizedModel {
                 kv_dim,
                 intermediate_dim,
                 transpose,
+                is_gemma2,
             )?);
         }
 
@@ -327,6 +341,11 @@ impl OwnedQuantizedModel {
     }
 
     /// Load a single transformer layer from APR format.
+    ///
+    /// PMAT-888: `is_gemma2` gates loading the Gemma2-only post-attention /
+    /// post-FFN RMSNorms. For non-Gemma2 archs, `post_attention_layernorm.weight`
+    /// is the FFN norm (already loaded as `ffn_norm_weight`), so it must NOT be
+    /// loaded into the post-attn-norm slot.
     #[allow(clippy::too_many_arguments)]
     fn load_apr_layer(
         apr: &crate::apr::MappedAprModel,
@@ -338,6 +357,7 @@ impl OwnedQuantizedModel {
         kv_dim: usize,
         intermediate_dim: usize,
         transpose: bool,
+        is_gemma2: bool,
     ) -> Result<OwnedQuantizedLayer> {
         // HF names (primary, from SafeTensors->APR pipeline)
         let hf_q = format!("model.layers.{layer_idx}.self_attn.q_proj.weight");
@@ -449,15 +469,30 @@ impl OwnedQuantizedModel {
                 &format!("model.layers.{layer_idx}.self_attn.k_norm.weight"))
                 .or_else(|| apr_try_load_f32(apr, data, data_offset,
                     &format!("blk.{layer_idx}.attn_k_norm.weight"))),
-            // PMAT-810: Gemma2 post-attention / post-FFN RMSNorm (None elsewhere).
-            post_attn_norm_weight: apr_try_load_f32(apr, data, data_offset,
-                &format!("model.layers.{layer_idx}.post_attention_layernorm.weight"))
-                .or_else(|| apr_try_load_f32(apr, data, data_offset,
-                    &format!("blk.{layer_idx}.post_attention_norm.weight"))),
-            post_ffw_norm_weight: apr_try_load_f32(apr, data, data_offset,
-                &format!("model.layers.{layer_idx}.post_feedforward_layernorm.weight"))
-                .or_else(|| apr_try_load_f32(apr, data, data_offset,
-                    &format!("blk.{layer_idx}.post_ffw_norm.weight"))),
+            // PMAT-810 / PMAT-888: Gemma2 post-attention / post-FFN RMSNorm
+            // (None for every other architecture). Gated on `is_gemma2` because the
+            // HF name `post_attention_layernorm.weight` is the FFN norm for
+            // qwen2/llama/mistral/phi/deepseek/qwen3 — loading it here would apply a
+            // spurious extra RMSNorm in the forward (which gates only on `is_some()`)
+            // and corrupt all output. Gemma2's true FFN norm is the distinct
+            // `pre_feedforward_layernorm`, so this name collision only harms
+            // non-Gemma2 models.
+            post_attn_norm_weight: if is_gemma2 {
+                apr_try_load_f32(apr, data, data_offset,
+                    &format!("model.layers.{layer_idx}.post_attention_layernorm.weight"))
+                    .or_else(|| apr_try_load_f32(apr, data, data_offset,
+                        &format!("blk.{layer_idx}.post_attention_norm.weight")))
+            } else {
+                None
+            },
+            post_ffw_norm_weight: if is_gemma2 {
+                apr_try_load_f32(apr, data, data_offset,
+                    &format!("model.layers.{layer_idx}.post_feedforward_layernorm.weight"))
+                    .or_else(|| apr_try_load_f32(apr, data, data_offset,
+                        &format!("blk.{layer_idx}.post_ffw_norm.weight")))
+            } else {
+                None
+            },
         })
     }
 }

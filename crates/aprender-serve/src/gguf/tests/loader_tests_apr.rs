@@ -434,3 +434,73 @@ fn test_from_apr_uses_metadata_defaults() {
 
     let _ = std::fs::remove_file(&path);
 }
+
+// ============================================================================
+// PMAT-888: .apr non-Gemma2 post-norm collision (APR-PARITY falsifier)
+// ============================================================================
+
+/// PMAT-888 RED→GREEN falsifier: `OwnedQuantizedModel::from_apr` must NOT
+/// populate the Gemma2-only `post_attn_norm_weight` / `post_ffw_norm_weight`
+/// slots for a non-Gemma2 (`llama`/`qwen2`/...) `.apr`.
+///
+/// ROOT CAUSE: the HF tensor name `post_attention_layernorm.weight` is the
+/// *FFN (pre-feedforward) norm* for llama/qwen2/mistral/phi/deepseek/qwen3 (see
+/// `tensor_names_fallback::FfnNormWeight`). PMAT-810b added a Gemma2 post-norm
+/// load to the APR loader keyed on that exact HF name, so for every non-Gemma2
+/// `.apr` the FFN norm was ALSO loaded into the post-attention-norm slot, and
+/// `ffn_block::forward_single_with_cache` — which gates only on `is_some()`, not
+/// on arch — applied a spurious extra RMSNorm to the attention output before the
+/// residual add. Result: garbage output (`çļĦåıªæĺ¯…`) for every non-Gemma2
+/// `.apr` (CPU and GPU), while the byte-identical GGUF ran coherently (the GGUF
+/// loader reads the disambiguated `post_attention_norm.weight`, no "layer").
+///
+/// `build_executable_pygmy_apr` is `architecture == "llama"` and DOES contain
+/// `model.layers.0.post_attention_layernorm.weight` (its FFN norm), so it is the
+/// exact collision fixture.
+///
+/// RED before the fix: `post_attn_norm_weight == Some(..)` (the FFN norm).
+/// GREEN after the fix: `None` (gated on `config.is_gemma2()`).
+///
+/// Contract: apr-load-fail-closed-gemma-v1.yaml §NON-GEMMA-APR-POSTNORM-NONE.
+#[test]
+fn test_pmat888_non_gemma2_apr_has_no_post_attn_norm() {
+    let apr_bytes = crate::apr::test_factory::build_executable_pygmy_apr();
+    let dir = std::env::temp_dir();
+    let path = dir.join("test_pmat888_non_gemma2_postnorm.apr");
+    std::fs::write(&path, &apr_bytes).expect("should write file");
+
+    let mapped = crate::apr::MappedAprModel::from_path(&path).expect("should load apr");
+    // Sanity: the FFN-norm tensor whose HF name collides with the Gemma2
+    // post-attn-norm name IS present in this non-Gemma2 model.
+    assert!(
+        mapped
+            .find_tensor("model.layers.0.post_attention_layernorm.weight")
+            .is_some(),
+        "fixture must contain the colliding FFN-norm tensor for the test to be load-bearing"
+    );
+
+    let model = OwnedQuantizedModel::from_apr(&mapped).expect("from_apr should succeed");
+    assert_eq!(model.config.architecture, "llama");
+    assert!(!model.config.is_gemma2(), "fixture is non-Gemma2");
+
+    for (i, layer) in model.layers.iter().enumerate() {
+        assert!(
+            layer.post_attn_norm_weight.is_none(),
+            "PMAT-888: non-Gemma2 .apr layer {i} must NOT load post_attn_norm_weight \
+             (the HF name post_attention_layernorm.weight is the FFN norm, not a \
+             post-attention norm — loading + applying it corrupts all output)"
+        );
+        assert!(
+            layer.post_ffw_norm_weight.is_none(),
+            "PMAT-888: non-Gemma2 .apr layer {i} must NOT load post_ffw_norm_weight"
+        );
+        // The FFN norm itself MUST still be loaded into its correct slot.
+        assert!(
+            layer.ffn_norm_weight.is_some(),
+            "PMAT-888: the post_attention_layernorm.weight tensor must still populate \
+             the FFN-norm slot (ffn_norm_weight) for layer {i}"
+        );
+    }
+
+    let _ = std::fs::remove_file(&path);
+}
