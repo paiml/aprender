@@ -1,5 +1,123 @@
 impl OwnedQuantizedModel {
 
+    /// PMAT-880: Fail-closed guard for GQA KV-cache dimension consistency.
+    ///
+    /// The GQA cached-attention kernels index the KV cache as
+    /// `k_cache[pos * kv_dim + kv_head * head_dim ..][..head_dim]` and the
+    /// current-position K/V as `current_k[kv_head * head_dim ..][..head_dim]`,
+    /// where `kv_dim == num_kv_heads * head_dim`. If a model/config carries
+    /// inconsistent KV dims (e.g. a KV cache that was not allocated for the
+    /// same `kv_dim`, or a `current_k`/`current_v`/`q` shorter than required),
+    /// those indices silently read the WRONG memory → garbage attention →
+    /// incoherent output, or run past the slice → out-of-bounds.
+    ///
+    /// llama.cpp validates KV-cache shape before attention. This is the same
+    /// FAIL-CLOSED class as the shipped garbage/extreme-magnitude beats
+    /// (PMAT-744 / PMAT-732): `apr` REJECTS a broken model with a clear error
+    /// where llama.cpp/Ollama silently produce garbage. It relates to the
+    /// PMAT-749 GQA cache fix — this adds the previously-missing guard.
+    ///
+    /// The check is O(1) and leaves the happy path byte-identical: a valid GQA
+    /// (or MHA) model satisfies every invariant and proceeds unchanged.
+    ///
+    /// # Errors
+    /// Returns [`RealizarError::InvalidConfiguration`] when:
+    /// - `head_dim == 0` or `num_kv_heads == 0` (degenerate KV geometry), or
+    /// - `kv_dim != num_kv_heads * head_dim` (config invariant violated), or
+    /// - `k_cache`/`v_cache` length is not a whole multiple of `kv_dim`, or the
+    ///   two caches imply different sequence lengths, or
+    /// - `current_k`/`current_v` is shorter than `kv_dim`, or
+    /// - `q` is shorter than `q_dim` (`num_heads * head_dim`).
+    pub fn validate_gqa_kv_dims(
+        &self,
+        q: &[f32],
+        k_cache: &[f32],
+        v_cache: &[f32],
+        current_k: &[f32],
+        current_v: &[f32],
+    ) -> Result<()> {
+        let num_heads = self.config.num_heads;
+        let num_kv_heads = self.config.num_kv_heads;
+        let head_dim = self.config.head_dim();
+        let q_dim = self.config.q_dim();
+        let kv_dim = self.config.kv_dim();
+
+        // Degenerate geometry: kv_dim==0 would make the cache_len division
+        // (k_cache.len() / kv_dim) panic and every KV index meaningless.
+        if head_dim == 0 || num_kv_heads == 0 {
+            return Err(RealizarError::InvalidConfiguration(format!(
+                "PMAT-880: GQA KV geometry is degenerate (head_dim={head_dim}, \
+                 num_kv_heads={num_kv_heads}); kv_dim would be 0 and the KV-cache \
+                 stride is undefined"
+            )));
+        }
+
+        // Core invariant: kv_dim must equal num_kv_heads * head_dim, otherwise the
+        // per-position stride used to index the cache is inconsistent with the
+        // per-head layout and reads the wrong memory.
+        let expected_kv_dim = num_kv_heads * head_dim;
+        if kv_dim != expected_kv_dim {
+            return Err(RealizarError::InvalidConfiguration(format!(
+                "PMAT-880: inconsistent KV dimensions — kv_dim ({kv_dim}) != \
+                 num_kv_heads * head_dim ({num_kv_heads} * {head_dim} = {expected_kv_dim}); \
+                 the KV cache stride does not match the per-head layout"
+            )));
+        }
+
+        // The KV cache is laid out as [seq, kv_dim] row-major; its length must be
+        // a whole multiple of kv_dim, and K and V must describe the same seq len.
+        if k_cache.len() % kv_dim != 0 {
+            return Err(RealizarError::InvalidConfiguration(format!(
+                "PMAT-880: k_cache length ({}) is not a multiple of kv_dim ({kv_dim}); \
+                 the KV cache was not allocated for these dimensions",
+                k_cache.len()
+            )));
+        }
+        if v_cache.len() % kv_dim != 0 {
+            return Err(RealizarError::InvalidConfiguration(format!(
+                "PMAT-880: v_cache length ({}) is not a multiple of kv_dim ({kv_dim}); \
+                 the KV cache was not allocated for these dimensions",
+                v_cache.len()
+            )));
+        }
+        if k_cache.len() != v_cache.len() {
+            return Err(RealizarError::InvalidConfiguration(format!(
+                "PMAT-880: k_cache length ({}) != v_cache length ({}); \
+                 the K and V caches imply different sequence lengths",
+                k_cache.len(),
+                v_cache.len()
+            )));
+        }
+
+        // The current position's K/V are indexed up to kv_dim; they must be long
+        // enough or the per-head slice runs out of bounds.
+        if current_k.len() < kv_dim {
+            return Err(RealizarError::InvalidConfiguration(format!(
+                "PMAT-880: current_k length ({}) < kv_dim ({kv_dim}); \
+                 the current-position key does not cover all KV heads",
+                current_k.len()
+            )));
+        }
+        if current_v.len() < kv_dim {
+            return Err(RealizarError::InvalidConfiguration(format!(
+                "PMAT-880: current_v length ({}) < kv_dim ({kv_dim}); \
+                 the current-position value does not cover all KV heads",
+                current_v.len()
+            )));
+        }
+
+        // The query is indexed up to q_dim = num_heads * head_dim.
+        if q.len() < q_dim {
+            return Err(RealizarError::InvalidConfiguration(format!(
+                "PMAT-880: q length ({}) < q_dim ({q_dim} = {num_heads} * {head_dim}); \
+                 the query does not cover all attention heads",
+                q.len()
+            )));
+        }
+
+        Ok(())
+    }
+
     /// Compute attention with Grouped Query Attention (GQA) support (IMP-105)
     ///
     /// GQA uses fewer KV heads than Q heads, with multiple Q heads sharing each KV head.
@@ -273,6 +391,8 @@ impl OwnedQuantizedModel {
         // handles MHA as q_per_kv==1, but we keep the GPU path for MHA to avoid a perf
         // regression). Every prior test of this path was MHA, so GQA was uncovered.
         if self.config.num_kv_heads < self.config.num_heads {
+            // PMAT-880: fail closed on inconsistent KV-cache dims before indexing.
+            self.validate_gqa_kv_dims(q, k_cache, v_cache, current_k, current_v)?;
             return Ok(self.attention_with_cache_gqa(q, k_cache, v_cache, current_k, current_v));
         }
 
@@ -310,6 +430,8 @@ impl OwnedQuantizedModel {
         // PMAT-749: GQA models need the kv_dim-strided path; attention_with_cache is
         // MHA-only and panics for num_kv_heads < num_heads. See the gpu variant above.
         if self.config.num_kv_heads < self.config.num_heads {
+            // PMAT-880: fail closed on inconsistent KV-cache dims before indexing.
+            self.validate_gqa_kv_dims(q, k_cache, v_cache, current_k, current_v)?;
             return Ok(self.attention_with_cache_gqa(q, k_cache, v_cache, current_k, current_v));
         }
         Ok(self.attention_with_cache(q, k_cache, v_cache, current_k, current_v))
