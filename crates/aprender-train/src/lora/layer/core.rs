@@ -8,9 +8,19 @@
 //!
 //! Forward pass: y = (W + α·B·A) @ x = W@x + α·(B@(A@x))
 //! where α is a scaling factor (typically alpha/r)
+//!
+//! Dropout placement (PMAT-879): matching HF PEFT `lora.Linear.forward`, dropout
+//! is applied to the INPUT `x` *before* the down-projection `A`:
+//!
+//! `y = W@x + scale · B(A(dropout(x)))`
+//!
+//! Dropout is active only in training mode; in eval mode (the default) it is the
+//! identity, so inference output is unchanged. Inverted dropout scales the
+//! surviving activations by `1/(1-p)` so the expected value is preserved.
 
 use crate::autograd::matmul;
 use crate::Tensor;
+use std::cell::Cell;
 
 /// LoRA scaling mode (ENT-LoRA-004)
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -54,6 +64,18 @@ pub struct LoRALayer {
     scale: f32,
     /// Whether the adapter is merged into base_weight
     merged: bool,
+    /// LoRA dropout probability applied to the input `x` in the LoRA branch
+    /// (PMAT-879). `0.0` disables dropout (identity). Active only in training mode.
+    dropout: f32,
+    /// Training mode flag. `false` (eval) is the default so inference output is
+    /// deterministic and dropout-free, matching PEFT (`nn.Dropout` is identity in eval).
+    training: bool,
+    /// Base seed for the deterministic dropout RNG (PMAT-879).
+    dropout_seed: u64,
+    /// Per-forward counter that advances the dropout RNG so successive training
+    /// steps draw fresh, but reproducible, masks. Interior mutability keeps
+    /// `forward(&self)` (shared borrow) while remaining deterministic for a seed.
+    dropout_step: Cell<u64>,
 }
 
 impl LoRALayer {
@@ -87,7 +109,20 @@ impl LoRALayer {
 
         let scale = alpha / rank as f32;
 
-        Self { base_weight, lora_a, lora_b, d_out, d_in, rank, scale, merged: false }
+        Self {
+            base_weight,
+            lora_a,
+            lora_b,
+            d_out,
+            d_in,
+            rank,
+            scale,
+            merged: false,
+            dropout: 0.0,
+            training: false,
+            dropout_seed: 0,
+            dropout_step: Cell::new(0),
+        }
     }
 
     /// Create a new LoRA layer with explicit scaling mode (ENT-LoRA-004)
@@ -118,7 +153,92 @@ impl LoRALayer {
         self
     }
 
-    /// Forward pass: y = W@x + scale * (B @ (A @ x))
+    /// Set the LoRA dropout probability (PMAT-879).
+    ///
+    /// Matches HF PEFT `lora_dropout`: dropout is applied to the input `x` before
+    /// the down-projection `A`. `p` is clamped to `[0.0, 1.0)`; `0.0` disables
+    /// dropout. Dropout is only active in training mode (see [`LoRALayer::train`]).
+    #[must_use]
+    pub fn with_dropout(mut self, p: f32) -> Self {
+        // Clamp to [0, 1): p == 1.0 would zero everything and divide by zero in
+        // the inverted-dropout scale, which is never a valid configuration.
+        self.dropout = p.clamp(0.0, 0.999_999);
+        self
+    }
+
+    /// Set the deterministic dropout RNG seed (PMAT-879).
+    ///
+    /// With a fixed seed, dropout masks are fully reproducible, which makes the
+    /// training-mode forward path testable.
+    #[must_use]
+    pub fn with_dropout_seed(mut self, seed: u64) -> Self {
+        self.dropout_seed = seed;
+        self
+    }
+
+    /// Switch the layer to training mode. Dropout is active when `dropout > 0.0`.
+    pub fn train(&mut self) {
+        self.training = true;
+    }
+
+    /// Switch the layer to evaluation mode (the default). Dropout is the identity,
+    /// so inference output is unchanged — matching PEFT `nn.Dropout` in eval.
+    pub fn eval(&mut self) {
+        self.training = false;
+    }
+
+    /// Set training/eval mode explicitly.
+    pub fn set_training(&mut self, training: bool) {
+        self.training = training;
+    }
+
+    /// Whether the layer is in training mode.
+    pub fn is_training(&self) -> bool {
+        self.training
+    }
+
+    /// LoRA dropout probability.
+    pub fn dropout(&self) -> f32 {
+        self.dropout
+    }
+
+    /// Apply inverted dropout to the LoRA-branch input (PMAT-879).
+    ///
+    /// Returns `x` unchanged when not in training mode or when `p == 0.0` (the
+    /// identity), exactly mirroring PEFT's `nn.Dropout`/`nn.Identity` placement.
+    /// Otherwise each element is independently zeroed with probability `p` and the
+    /// survivors are scaled by `1/(1-p)` so the expectation is preserved.
+    ///
+    /// Uses a deterministic RNG seeded from `(dropout_seed, dropout_step)` so the
+    /// mask is reproducible for a given seed while advancing per forward call.
+    fn apply_input_dropout(&self, x: &Tensor) -> Tensor {
+        if !self.training || self.dropout <= 0.0 {
+            return x.clone();
+        }
+
+        use rand::rngs::StdRng;
+        use rand::{Rng, SeedableRng};
+
+        let step = self.dropout_step.get();
+        self.dropout_step.set(step.wrapping_add(1));
+
+        // Mix seed and step so each forward draws a fresh, reproducible mask.
+        let mixed = self.dropout_seed ^ step.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        let mut rng = StdRng::seed_from_u64(mixed);
+
+        let keep = 1.0 - self.dropout;
+        let inv_keep = 1.0 / keep;
+
+        let dropped: Vec<f32> = x
+            .data()
+            .iter()
+            .map(|&v| if rng.random::<f32>() < self.dropout { 0.0 } else { v * inv_keep })
+            .collect();
+
+        Tensor::from_vec(dropped, x.requires_grad())
+    }
+
+    /// Forward pass: y = W@x + scale * (B @ (A @ dropout(x)))
     ///
     /// # Arguments
     /// * `x` - Input tensor `[d_in]`
@@ -135,9 +255,13 @@ impl LoRALayer {
             // If merged, W already includes LoRA adaptation
             base_output
         } else {
-            // LoRA forward: scale * (B @ (A @ x))
-            // Step 1: A @ x [r, d_in] @ [d_in, 1] -> [r, 1]
-            let lora_out_a = matmul(&self.lora_a, x, self.rank, self.d_in, 1);
+            // LoRA forward: scale * (B @ (A @ dropout(x)))
+            // PEFT placement: dropout is applied to the INPUT x before A.
+            // In eval mode (default) or with dropout == 0.0 this is the identity.
+            let dropped_x = self.apply_input_dropout(x);
+
+            // Step 1: A @ dropout(x) [r, d_in] @ [d_in, 1] -> [r, 1]
+            let lora_out_a = matmul(&self.lora_a, &dropped_x, self.rank, self.d_in, 1);
 
             // Step 2: B @ (A @ x) [d_out, r] @ [r, 1] -> [d_out, 1]
             let lora_out_b = matmul(&self.lora_b, &lora_out_a, self.d_out, self.rank, 1);

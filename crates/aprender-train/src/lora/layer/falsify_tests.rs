@@ -178,6 +178,138 @@ fn test_falsify_f_math_008_nf4_dequantize_tolerance() {
 }
 
 // ========================================================================
+// PMAT-879: LoRA DROPOUT PLACEMENT (PEFT parity)
+//
+// Reference: HF PEFT lora.Linear.forward —
+//   result = result + lora_B(lora_A(dropout(x))) * scaling
+// Dropout is applied to the INPUT x before lora_A, and is the identity in
+// eval mode. These falsifiers fail on the pre-fix code (no dropout applied).
+// ========================================================================
+
+/// Helper: build a LoRA layer with non-zero A and B so the LoRA contribution is
+/// non-trivial (B is zeroed at init, which would mask the dropout effect).
+fn lora_with_nonzero_adapter(d_out: usize, d_in: usize, rank: usize) -> LoRALayer {
+    let base = Tensor::from_vec(vec![0.0; d_out * d_in], false);
+    let mut lora = LoRALayer::new(base, d_out, d_in, rank, rank as f32);
+    let a: Vec<f32> = (0..rank * d_in).map(|i| (i as f32 * 0.13).sin() * 0.5 + 0.3).collect();
+    let b: Vec<f32> = (0..d_out * rank).map(|i| (i as f32 * 0.17).cos() * 0.5 + 0.4).collect();
+    *lora.lora_a_mut().data_mut() = ndarray::Array1::from_vec(a);
+    *lora.lora_b_mut().data_mut() = ndarray::Array1::from_vec(b);
+    lora
+}
+
+/// F-DROPOUT-001: In TRAINING mode with p > 0 and a fixed seed, the LoRA output
+/// must DIFFER from the no-dropout output. RED on pre-fix code (dropout ignored).
+#[test]
+fn test_falsify_f_dropout_001_training_dropout_changes_output() {
+    let d_out = 8;
+    let d_in = 16;
+    let rank = 4;
+    let x = Tensor::from_vec((0..d_in).map(|i| (i as f32 * 0.21).sin() + 1.0).collect(), true);
+
+    // No dropout (eval-equivalent baseline).
+    let baseline = lora_with_nonzero_adapter(d_out, d_in, rank);
+    let y_baseline = baseline.forward(&x);
+
+    // Training mode with dropout p = 0.5 and a fixed seed.
+    let mut dropped =
+        lora_with_nonzero_adapter(d_out, d_in, rank).with_dropout(0.5).with_dropout_seed(42);
+    dropped.train();
+    let y_dropped = dropped.forward(&x);
+
+    let max_diff = y_baseline
+        .data()
+        .iter()
+        .zip(y_dropped.data().iter())
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f32, f32::max);
+
+    assert!(
+        max_diff > 1e-6,
+        "F-DROPOUT-001 violated: training-mode dropout produced an IDENTICAL output to \
+         the no-dropout path (max_diff={max_diff}). Dropout is not applied in the LoRA branch."
+    );
+}
+
+/// F-DROPOUT-002: In EVAL mode, dropout is the IDENTITY — output must be byte-for-byte
+/// equal to the no-dropout output regardless of the configured p. Inference unchanged.
+#[test]
+fn test_falsify_f_dropout_002_eval_mode_is_identity() {
+    let d_out = 8;
+    let d_in = 16;
+    let rank = 4;
+    let x = Tensor::from_vec((0..d_in).map(|i| (i as f32 * 0.21).sin() + 1.0).collect(), true);
+
+    let baseline = lora_with_nonzero_adapter(d_out, d_in, rank);
+    let y_baseline = baseline.forward(&x);
+
+    // Configure dropout but stay in eval mode (default).
+    let eval_layer =
+        lora_with_nonzero_adapter(d_out, d_in, rank).with_dropout(0.5).with_dropout_seed(42);
+    assert!(!eval_layer.is_training(), "Layer must default to eval mode");
+    let y_eval = eval_layer.forward(&x);
+
+    for i in 0..d_out {
+        assert_eq!(
+            y_baseline.data()[i],
+            y_eval.data()[i],
+            "F-DROPOUT-002 violated: eval-mode dropout is NOT the identity at index {i}"
+        );
+    }
+}
+
+/// F-DROPOUT-003: Determinism — same seed ⇒ identical training-mode mask. Two
+/// freshly-constructed training layers with the same seed must produce equal output.
+#[test]
+fn test_falsify_f_dropout_003_seed_is_deterministic() {
+    let d_out = 6;
+    let d_in = 12;
+    let rank = 3;
+    let x = Tensor::from_vec((0..d_in).map(|i| (i as f32 * 0.31).cos() + 1.0).collect(), true);
+
+    let mut a = lora_with_nonzero_adapter(d_out, d_in, rank).with_dropout(0.4).with_dropout_seed(7);
+    a.train();
+    let mut b = lora_with_nonzero_adapter(d_out, d_in, rank).with_dropout(0.4).with_dropout_seed(7);
+    b.train();
+
+    let ya = a.forward(&x);
+    let yb = b.forward(&x);
+
+    for i in 0..d_out {
+        assert_eq!(
+            ya.data()[i],
+            yb.data()[i],
+            "F-DROPOUT-003 violated: identical seed produced different masks at index {i}"
+        );
+    }
+}
+
+/// F-DROPOUT-004: Inverted dropout changes the LoRA contribution in training. With
+/// p>0 some contributions are zeroed and survivors amplified by 1/(1-p); the
+/// resulting output must differ from the un-dropped contribution.
+#[test]
+fn test_falsify_f_dropout_004_some_inputs_zeroed_in_training() {
+    let d_out = 4;
+    let d_in = 32;
+    let rank = 2;
+    let x = Tensor::from_vec(vec![1.0; d_in], true);
+
+    let baseline = lora_with_nonzero_adapter(d_out, d_in, rank);
+    let y_baseline = baseline.forward(&x);
+
+    let mut dropped =
+        lora_with_nonzero_adapter(d_out, d_in, rank).with_dropout(0.5).with_dropout_seed(99);
+    dropped.train();
+    let y_dropped = dropped.forward(&x);
+
+    let differs = (0..d_out).any(|i| (y_baseline.data()[i] - y_dropped.data()[i]).abs() > 1e-6);
+    assert!(
+        differs,
+        "F-DROPOUT-004 violated: inverted dropout did not change the LoRA contribution"
+    );
+}
+
+// ========================================================================
 // LAYER 1: WEIGHT FREEZING
 // ========================================================================
 
