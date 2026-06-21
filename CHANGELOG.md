@@ -7,11 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.50.0] - 2026-06-21
+
 ### Fixed
 
-Provable-correctness wave — fifteen shipped-green defects, each fixed with a named
-proof-obligation + a RED-on-bug / GREEN-on-fix falsifier + a `pv`-validated contract
-(PMAT-827..841). Spans all four pillars plus eval/format/export:
+Provable-correctness wave — **fifty shipped-green correctness defects** (PMAT-827..876),
+each fixed with a named proof-obligation + a RED-on-bug / GREEN-on-fix falsifier + a
+`pv`-validated contract. Spans all four pillars (replace+beat scikit-learn / PyTorch /
+Unsloth / Ollama) plus eval/format/export and CI determinism. The first fifteen:
 
 - **`stats::incomplete_beta` extra `/a`** (PMAT-827, Pillar-1) — the regularized
   incomplete beta was wrong for `a != 1`, so *every* t-test (df ≤ 30) and ANOVA F-test
@@ -68,6 +71,46 @@ proof-obligation + a RED-on-bug / GREEN-on-fix falsifier + a `pv`-validated cont
   dispatched ≥32-prompt batches into an MHA-only path that assumes `QKV = 3 × hidden_dim`, so
   every grouped-query-attention model (Qwen2 / Llama-3 / Mistral) crashed with a CUDA GEMM size
   mismatch (`B expected 3·hidden·hidden`). Now routes GQA through the per-prompt path.
+
+The remaining thirty-five (PMAT-842..876), each with a falsifier + `pv`-validated contract:
+
+**Pillar-1 — scikit-learn parity:** macro precision/recall/f1/jaccard/fbeta averaged over
+`max(label)+1` instead of present labels (844); `silhouette_score` scored singleton clusters
++1.0 instead of 0 (845); FastICA whitening matrix transposed → `Cov(X_white) ≠ I` (847);
+Lasso/ElasticNet `alpha` ignored the `1/(2·n)` loss normalization (848); Ward linkage used the
+wrong Lance-Williams coefficient (849); tree/RandomForest `feature_importances` used raw sample
+counts not impurity decrease/MDI (851); `train_test_split` used `round` not `ceil` for float
+`test_size` (852); two-tailed t-test used a normal approximation for `df>30` (853); Brandes
+betweenness counted the source's own dependency (860); `TfidfVectorizer` omitted L2 row
+normalization (861); ARIMA AR coefficients estimated on uncentered data (862); Bayesian-logistic
+MAP converged to precision `n·λ` not `λ` (864); KNN tie-break used randomized HashMap order not
+smallest-label (865); `StratifiedKFold` dumped every class remainder into the low folds (866);
+isotonic regression interpolated inside pooled PAV blocks (870); Calinski-Harabasz/Davies-Bouldin
+counted phantom empty clusters / not relabel-invariant (871).
+
+**Pillar-2 — PyTorch parity:** `ReduceLROnPlateau` reduced one epoch too early (850);
+`nn::Softmax` ignored its `dim` argument (867); projected-gradient line search discarded the
+backtracked step and took the rejected full step (872).
+
+**Pillar-3 — Unsloth/PEFT parity:** `MergeEngine::merge` read PEFT adapters transposed, folding
+the wrong delta in `apr finetune merge` (854); KD distillation loss used reverse KL instead of
+forward KL(teacher‖student) (868); MoE load-balance aux loss computed `P_i` over top-k only, not
+the full router softmax (875).
+
+**Pillar-4 — Ollama/llama.cpp parity:** Q5_K dequant used sequential nibble packing not the
+stride-32 K-quant layout (842); XTC sampling removed the boundary token it must keep (846); HF
+byte-level BPE *encode* dropped every non-ASCII char (855); `InterleavedQ4K` mis-decoded 6-bit
+scales for 7/8 sub-blocks (856); Mirostat 2.0 surprise used `ln` not `log2` (857); ALiBi head
+slopes off-by-one in the exponent (858); Qwen3-MoE got the wrong RoPE base (raw arch `qwen3moe`
+unmatched) (863); DRY penalty exponent off-by-one (873); YaRN RoPE used the NTK-modified base for
+extrapolated dims (874).
+
+**Format / export:** f16→f32 conversion halved every subnormal (843); SafeTensors BF16 export
+truncated instead of round-to-nearest-even and turned NaN into +Inf (859); GGUF K-quant
+bytes-per-element table wrong for Q2_K/Q3_K/Q6_K/Q8_K (869).
+
+**CI determinism:** orchestrate `auto_memory`/`settings`/`instructions` tests raced on the
+process-global config env var → flaky `workspace-test`; unified under one crate-wide lock (876).
 
 Plus the post-power-outage backlog drained and merged (streaming-chat `temperature:0`,
 Llama2 double-BOS, per-request sampling isolation, dense-decode `repeat_penalty`/`top_p`/`top_k`/
