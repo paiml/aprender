@@ -7,7 +7,7 @@
 //! - Glorot, X., & Bengio, Y. (2010). Understanding the difficulty of training
 //!   deep feedforward neural networks. AISTATS.
 
-use super::init::{xavier_uniform, zeros};
+use super::init::{uniform, xavier_uniform, zeros};
 use super::module::Module;
 use crate::autograd::Tensor;
 
@@ -80,7 +80,26 @@ impl Linear {
         )
         .requires_grad();
         let weight_t = Some(weight.transpose());
-        let bias = zeros(&[out_features]).requires_grad();
+
+        // Bias init matches PyTorch `torch.nn.Linear.reset_parameters`:
+        // bias ~ U(-bound, +bound) where bound = 1/sqrt(fan_in), fan_in = in_features.
+        // (PMAT-878: was previously `zeros()`, which diverges from PyTorch.)
+        // A distinct-but-deterministic seed (`seed + 1`) keeps the bias stream
+        // reproducible while decorrelated from the weight stream.
+        let bias = if in_features == 0 {
+            // Degenerate fan_in: bound = 1/sqrt(0) is undefined; fall back to zeros
+            // (avoids an empty `U(0, 0)` range, which would panic).
+            zeros(&[out_features]).requires_grad()
+        } else {
+            let bound = 1.0 / (in_features as f32).sqrt();
+            uniform(
+                &[out_features],
+                -bound,
+                bound,
+                seed.map(|s| s.wrapping_add(1)),
+            )
+            .requires_grad()
+        };
 
         Self {
             weight,
