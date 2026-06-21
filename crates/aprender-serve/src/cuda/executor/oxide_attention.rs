@@ -70,6 +70,20 @@ pub const OXIDE_ATTN_PTX: &str = include_str!(concat!(
 /// Entry-point name in the emitted PTX.
 pub const OXIDE_ATTN_ENTRY: &str = "attn_warp_rawptr";
 
+/// PMAT-884: source-of-record PTX for the SEPARATE-HEAD oxide kernel
+/// (`attn_warp_sephead_rawptr`). Same compute as `attn_warp_rawptr` but indexes
+/// the LIVE serve KV-cache layout `[num_kv_heads, max_len, head_dim]` directly
+/// (kv_stride = max_len*head_dim) — NO interleave/gather adapter. This is the
+/// promotion-candidate that wires into `incremental_attention_async`.
+/// Emitted by `experiments/cuda-oxide/incremental-attention/emit_ptx_sephead.sh`.
+pub const OXIDE_ATTN_SEPHEAD_PTX: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../experiments/cuda-oxide/generated/attn_warp_sephead.sm121.ptx"
+));
+
+/// Entry-point name in the emitted separate-head PTX.
+pub const OXIDE_ATTN_SEPHEAD_ENTRY: &str = "attn_warp_sephead_rawptr";
+
 /// Warps-per-head baked into the kernel (NW=32 -> block = 32*32 = 1024 threads).
 pub const OXIDE_ATTN_NW: u32 = 32;
 
@@ -142,6 +156,82 @@ pub fn launch_oxide_attention(
     Ok(())
 }
 
+/// PMAT-884: compile the embedded SEPARATE-HEAD oxide attention PTX.
+///
+/// Self-contained PTX (libdevice `expf` inlined), so no cuda-oxide build dep.
+/// Loaded via the same `CudaModule::from_ptx` path the live executor uses
+/// (GH-480 sm_121 patch + disk cache).
+///
+/// # Errors
+/// Returns `GpuError::ModuleLoad` if the PTX fails to JIT.
+pub fn compile_oxide_attention_sephead(exec: &CudaExecutor) -> Result<CudaModule, GpuError> {
+    CudaModule::from_ptx(exec.context(), OXIDE_ATTN_SEPHEAD_PTX)
+}
+
+/// PMAT-884: launch the SEPARATE-HEAD oxide incremental-attention kernel against
+/// the LIVE serve KV cache (`[num_kv_heads, max_len, head_dim]`).
+///
+/// This is the promotion path wired into `incremental_attention_async` (behind
+/// `cfg(feature="oxide-attention")` + `APR_OXIDE_ATTENTION=1`). `k`/`v` are the
+/// live cache buffers (NOT repacked); `kv_stride = max_len*head_dim`. `out` is
+/// fully written (no pre-zero required). The live-cache 3-way parity gate
+/// (PMAT-884) proves this ≡ CPU `causal_attention_cached` at all 9 decode shapes.
+///
+/// # Errors
+/// Returns `GpuError` if the launch fails.
+#[allow(clippy::too_many_arguments)]
+pub fn launch_oxide_attention_sephead(
+    exec: &CudaExecutor,
+    module: &mut CudaModule,
+    q: &GpuBuffer<f32>,
+    k_cache: &GpuBuffer<f32>,
+    v_cache: &GpuBuffer<f32>,
+    out: &GpuBuffer<f32>,
+    kv_len: u32,
+    head_dim: u32,
+    n_heads: u32,
+    n_kv_heads: u32,
+    kv_stride: u32,
+    scale: f32,
+) -> Result<(), GpuError> {
+    let config = LaunchConfig::grid_2d(n_heads, 1, 32 * OXIDE_ATTN_NW, 1);
+
+    let mut ptr_q = q.as_ptr();
+    let mut ptr_k = k_cache.as_ptr();
+    let mut ptr_v = v_cache.as_ptr();
+    let mut ptr_out = out.as_ptr();
+    let mut kv_len_v = kv_len;
+    let mut head_dim_v = head_dim;
+    let mut n_heads_v = n_heads;
+    let mut n_kv_heads_v = n_kv_heads;
+    let mut kv_stride_v = kv_stride;
+    let mut scale_v = scale;
+
+    // SAFETY: device pointers + scalars in the exact 10-param order of the emitted
+    // sephead PTX entry; bounds enforced by the kernel's `head < n_heads` guard and
+    // the `pos < kv_len` loop (positions [kv_len..max_len) in the slab unread).
+    unsafe {
+        exec.compute_stream().launch_kernel(
+            module,
+            OXIDE_ATTN_SEPHEAD_ENTRY,
+            &config,
+            &mut [
+                std::ptr::from_mut(&mut ptr_q) as *mut std::ffi::c_void,
+                std::ptr::from_mut(&mut ptr_k) as *mut std::ffi::c_void,
+                std::ptr::from_mut(&mut ptr_v) as *mut std::ffi::c_void,
+                std::ptr::from_mut(&mut ptr_out) as *mut std::ffi::c_void,
+                std::ptr::from_mut(&mut kv_len_v) as *mut std::ffi::c_void,
+                std::ptr::from_mut(&mut head_dim_v) as *mut std::ffi::c_void,
+                std::ptr::from_mut(&mut n_heads_v) as *mut std::ffi::c_void,
+                std::ptr::from_mut(&mut n_kv_heads_v) as *mut std::ffi::c_void,
+                std::ptr::from_mut(&mut kv_stride_v) as *mut std::ffi::c_void,
+                std::ptr::from_mut(&mut scale_v) as *mut std::ffi::c_void,
+            ],
+        )?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -165,6 +255,31 @@ mod tests {
         assert!(
             body.contains(OXIDE_ATTN_ENTRY),
             "entry name must be {OXIDE_ATTN_ENTRY}"
+        );
+        assert!(
+            !body.contains("__nv_") && !body.contains(".extern .func"),
+            "PTX must be self-contained (libdevice inlined, no extern calls)"
+        );
+    }
+
+    /// PMAT-884: the embedded separate-head PTX is the self-contained source-of-
+    /// record (sm_121, 1 entry). GPU-free CI guard against a bad re-emit.
+    #[test]
+    fn embedded_sephead_ptx_is_self_contained_single_entry() {
+        let body: String = OXIDE_ATTN_SEPHEAD_PTX
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(body.contains(".target sm_121"), "must target sm_121");
+        assert_eq!(
+            body.matches(".visible .entry").count(),
+            1,
+            "exactly one entry"
+        );
+        assert!(
+            body.contains(OXIDE_ATTN_SEPHEAD_ENTRY),
+            "entry name must be {OXIDE_ATTN_SEPHEAD_ENTRY}"
         );
         assert!(
             !body.contains("__nv_") && !body.contains(".extern .func"),

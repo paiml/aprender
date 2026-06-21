@@ -22,7 +22,10 @@ set -euo pipefail
 
 OUT="${1:-generated/attn_warp.sm121.ptx}"
 ARCH="${ARCH:-sm_121}"
-ENTRY="attn_warp_rawptr"
+# ENTRY overridable so the SAME pipeline emits either the interleaved
+# `attn_warp_rawptr` (PMAT-883) or the separate-head `attn_warp_sephead_rawptr`
+# (PMAT-884 live-cache) standalone PTX. See emit_ptx_sephead.sh.
+ENTRY="${ENTRY:-attn_warp_rawptr}"
 LIBDEVICE="${LIBDEVICE:-/usr/local/cuda-13.0/nvvm/libdevice/libdevice.10.bc}"
 
 export PATH="${HOME}/.cargo/bin:/usr/lib/llvm-21/bin:${PATH}"
@@ -44,9 +47,9 @@ echo "[2/6] llvm-link ${LL} + libdevice"
 test -f "${LIBDEVICE}" || { printf 'ERROR: libdevice not found at %s\n' "${LIBDEVICE}" >&2; exit 1; }
 llvm-link "${LL}" "${LIBDEVICE}" -o "${WORK}/linked.bc"
 
-echo "[3/6] opt: internalize (keep all 5 entries) + nvvm-reflect + globaldce + O3"
+echo "[3/6] opt: internalize (keep all kernel entries) + nvvm-reflect + globaldce + O3"
 opt -passes="internalize,nvvm-reflect,globaldce" \
-    -internalize-public-api-list="attn_warp,${ENTRY},attn_chunk,attn_reduce,incremental_attention" \
+    -internalize-public-api-list="attn_warp,attn_warp_rawptr,attn_warp_sephead_rawptr,attn_chunk,attn_reduce,incremental_attention" \
     "${WORK}/linked.bc" -o "${WORK}/int.bc"
 opt -O3 "${WORK}/int.bc" -o "${WORK}/opt.bc"
 
@@ -58,12 +61,19 @@ mkdir -p "$(dirname "${OUT}")"
 SCRIPT_DIR="$(cd "$(dirname "$0")" || exit 1; pwd)"
 {
   echo "//"
-  echo "// PMAT-883 oxide ${ENTRY} decode-attention kernel, source-of-record."
+  echo "// oxide ${ENTRY} decode-attention kernel, source-of-record."
   echo "// sm_121 (GB10 Blackwell). Self-contained (libdevice exp call inlined)."
   echo "// Emitted by emit_ptx.sh: cargo oxide pipeline -> llvm-link libdevice ->"
   echo "// opt internalize/nvvm-reflect/O3 -> llc nvptx64 -> trim -> ptxas-verified."
-  echo "// ABI: ${ENTRY}(q,k,v:*const f32, out:*mut f32, kv_len,head_dim,n_heads,"
-  echo "//      n_kv_heads:u32, scale:f32). Launch grid=(n_heads,1,1) block=(1024,1,1)."
+  if [ "${ENTRY}" = "attn_warp_sephead_rawptr" ]; then
+    echo "// PMAT-884 SEPARATE-HEAD ABI (LIVE cache [num_kv_heads, max_len, head_dim]):"
+    echo "//   ${ENTRY}(q,k,v:*const f32, out:*mut f32, kv_len,head_dim,n_heads,"
+    echo "//   n_kv_heads,kv_stride:u32, scale:f32). Launch grid=(n_heads,1,1) block=(1024,1,1)."
+  else
+    echo "// PMAT-883 INTERLEAVED ABI ([seq, kv_dim] cache):"
+    echo "//   ${ENTRY}(q,k,v:*const f32, out:*mut f32, kv_len,head_dim,n_heads,"
+    echo "//   n_kv_heads:u32, scale:f32). Launch grid=(n_heads,1,1) block=(1024,1,1)."
+  fi
   echo "//"
   awk -v entry="${ENTRY}" -f "${SCRIPT_DIR}/trim_entry.awk" "${WORK}/full.ptx"
 } > "${OUT}.raw"

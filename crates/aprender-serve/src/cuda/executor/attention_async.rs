@@ -82,6 +82,56 @@ impl CudaExecutor {
         // Allocate output buffer (same size as Q)
         let out_buf = GpuBuffer::<f32>::new(&self.context, q_dim)?;
 
+        // PMAT-884: optional cuda-oxide pure-Rust attention kernel (separate-head
+        // layout, indexes the live cache directly — no gather). Default OFF; only
+        // active when BOTH the `oxide-attention` feature is built AND the runtime
+        // env guard `APR_OXIDE_ATTENTION=1` is set. With either off, the path below
+        // is byte-identical to the hand-PTX default. Promotion-gated by the on-device
+        // live-cache 3-way parity gate (cos=1.0, all 9 decode shapes) + e2e tok/s.
+        #[cfg(feature = "oxide-attention")]
+        {
+            if std::env::var("APR_OXIDE_ATTENTION").as_deref() == Ok("1") {
+                use crate::cuda::executor::oxide_attention;
+                const OXIDE_KEY: &str = "oxide_attn_sephead";
+                // Compile + cache the sephead module once (same loader the live path
+                // uses). Take it out of the map so `&self` (for the launch) and the
+                // `&mut CudaModule` don't overlap-borrow `self.modules`.
+                if !self.modules.contains_key(OXIDE_KEY) {
+                    let m = oxide_attention::compile_oxide_attention_sephead(self)?;
+                    self.modules.insert(OXIDE_KEY.to_string(), m);
+                }
+                let mut oxide_module = self
+                    .modules
+                    .remove(OXIDE_KEY)
+                    .expect("oxide module just inserted");
+                let k_buf = self.kv_cache_gpu.get(&k_key).ok_or_else(|| {
+                    GpuError::InvalidLaunchConfig("K cache not found (oxide)".to_string())
+                })?;
+                let v_buf = self.kv_cache_gpu.get(&v_key).ok_or_else(|| {
+                    GpuError::InvalidLaunchConfig("V cache not found (oxide)".to_string())
+                })?;
+                let scale = 1.0f32 / (head_dim as f32).sqrt();
+                let launch_res = oxide_attention::launch_oxide_attention_sephead(
+                    self,
+                    &mut oxide_module,
+                    q_gpu,
+                    k_buf,
+                    v_buf,
+                    &out_buf,
+                    new_len as u32,
+                    head_dim as u32,
+                    num_heads as u32,
+                    num_kv_heads as u32,
+                    (max_len * head_dim) as u32, // kv_stride = per-kv-head slab stride
+                    scale,
+                );
+                // Re-insert the module regardless of launch outcome (keep the cache warm).
+                self.modules.insert(OXIDE_KEY.to_string(), oxide_module);
+                launch_res?;
+                return Ok((out_buf, new_len));
+            }
+        }
+
         // Get kernel module (PAR-021: includes n_kv_heads for GQA)
         let kernel_type = KernelType::IncrementalAttention {
             max_seq_len: max_len as u32,
