@@ -88,6 +88,10 @@ safetensors-compare = ["aprender/safetensors-compare"]
 inference = ["realizar", "trueno", "tokio", "axum", "futures-util"]
 cuda = ["inference", "realizar/cuda", "entrenar/cuda", "aprender-train-distill?/cuda"]
 cuda-batch = ["cuda"]
+# PMAT-884: cuda-oxide separate-head decode-attention kernel. Default OFF and
+# additionally runtime-gated by APR_OXIDE_ATTENTION=1 (production default path
+# unchanged). Forwards to realizar (aprender-serve).
+oxide-attention = ["cuda", "realizar/oxide-attention"]
 # PMAT-335: WGPU backend for AMD/Intel/Apple GPU inference via Vulkan/Metal/WebGPU
 wgpu = ["inference"]
 visualization = ["renacer", "trueno-viz"]

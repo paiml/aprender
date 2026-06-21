@@ -486,6 +486,9 @@ cli = ["dep:apr-cli"]
 # without knowing about the apr-cli intermediate crate.
 cuda = ["cli", "apr-cli/cuda"]
 cuda-batch = ["cli", "apr-cli/cuda-batch"]
+# PMAT-884: cuda-oxide separate-head decode-attention kernel (default OFF, also
+# runtime-gated by APR_OXIDE_ATTENTION=1; production default path unchanged).
+oxide-attention = ["cli", "apr-cli/oxide-attention"]
 wgpu = ["cli", "apr-cli/wgpu"]
 inference = ["cli", "apr-cli/inference"]
 training = ["cli", "apr-cli/training"]
