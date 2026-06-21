@@ -53,7 +53,7 @@ pollster = "0.4"
 bytemuck = { version = "1.21", features = ["derive"] }
 
 # NOTE: renacer (=aprender-profile) dev-dep removed — unused (0 references) and its
-# ^0.50.0 version pin closed a crates.io publish cycle
+# ^0.51.0 version pin closed a crates.io publish cycle
 # (aprender-compute → aprender-gpu → aprender-profile → aprender-core → aprender-compute).
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
