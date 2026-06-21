@@ -342,3 +342,61 @@ fn falsify_lp_002b_zero_preservation_no_bias() {
         );
     }
 }
+
+// =========================================================================
+// PMAT-878: PyTorch-parity bias initialization
+//
+// torch.nn.Linear.reset_parameters initializes the bias from
+//   U(-bound, +bound),  bound = 1/sqrt(fan_in),  fan_in = in_features
+// NOT from zeros. This falsifier is RED on the old `zeros()` init (every
+// bias component is exactly 0.0) and GREEN once the uniform init lands.
+//
+// Reference: torch.nn.Linear.reset_parameters
+//   contracts/linear-bias-init-v1.yaml
+// =========================================================================
+
+/// FALSIFY-LP-BIAS-878: seeded bias is NOT all-zero and lies in [-1/sqrt(fan_in), +1/sqrt(fan_in)]
+#[test]
+fn falsify_lp_bias_878_uniform_init() {
+    let in_features = 64usize;
+    let out_features = 32usize;
+    let bound = 1.0 / (in_features as f32).sqrt();
+
+    let layer = Linear::with_seed(in_features, out_features, Some(42));
+    let bias = layer.bias().expect("seeded Linear has bias");
+    let data = bias.data();
+
+    assert_eq!(
+        data.len(),
+        out_features,
+        "FALSIFIED LP-BIAS-878: bias len {} != out_features {out_features}",
+        data.len()
+    );
+
+    // NOT all-zero (RED on the old `zeros()` init).
+    let any_nonzero = data.iter().any(|&v| v.abs() > 0.0);
+    assert!(
+        any_nonzero,
+        "FALSIFIED LP-BIAS-878: bias is all-zero (expected U(-{bound}, {bound}) per torch.nn.Linear)"
+    );
+
+    // Every component within the PyTorch bound.
+    for (i, &v) in data.iter().enumerate() {
+        assert!(
+            v >= -bound && v <= bound,
+            "FALSIFIED LP-BIAS-878: bias[{i}] = {v} outside [-{bound}, {bound}]"
+        );
+    }
+}
+
+/// FALSIFY-LP-BIAS-878-repro: seeded bias is reproducible across constructions
+#[test]
+fn falsify_lp_bias_878_reproducible() {
+    let a = Linear::with_seed(16, 8, Some(7));
+    let b = Linear::with_seed(16, 8, Some(7));
+    assert_eq!(
+        a.bias().expect("bias a").data(),
+        b.bias().expect("bias b").data(),
+        "FALSIFIED LP-BIAS-878-repro: same seed produced different bias"
+    );
+}

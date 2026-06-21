@@ -1,0 +1,98 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-21'
+  author: PAIML Engineering
+  description: |
+    PMAT-878: aprender's Linear layer must initialize its bias the way PyTorch's
+    torch.nn.Linear.reset_parameters does — sampled from U(-bound, +bound) where
+    bound = 1/sqrt(fan_in) and fan_in = in_features — NOT from zeros.
+
+    The previous init used `zeros(&[out_features])`, so every seeded Linear shipped
+    a bias of exactly 0.0. That diverges from PyTorch parity (Pillar-2): a model
+    trained or evaluated against PyTorch reference weights starts from a different
+    bias prior, and zero-bias initialization is a measurable correctness defect for
+    any pre-bias-update forward pass and for reproducing PyTorch training dynamics.
+
+    The fix samples the bias from U(-1/sqrt(fan_in), +1/sqrt(fan_in)) using the same
+    seeded StdRng mechanism as the weights (seed + 1, so the bias stream stays
+    deterministic but decorrelated from the weight stream). The degenerate fan_in = 0
+    case falls back to zeros to avoid an empty U(0, 0) sampling range.
+  references:
+  - 'torch.nn.Linear.reset_parameters (PyTorch reference): bias ~ U(-1/sqrt(fan_in), +1/sqrt(fan_in))'
+  - 'crates/aprender-core/src/nn/linear.rs — Linear::with_seed bias init'
+  - 'crates/aprender-core/src/nn/init.rs — uniform(shape, low, high, seed)'
+
+kind: KernelContract
+name: linear-bias-init
+version: 1.0.0
+scope: aprender-core Linear layer bias initialization (nn/linear.rs Linear::with_seed)
+
+equations:
+  linear_bias_init:
+    formula: |
+      bias[i] ~ U(-bound, +bound)  for all i in [0, out_features),
+      where bound = 1 / sqrt(fan_in) and fan_in = in_features (in_features > 0).
+    domain: in_features in N_{>0}, out_features in N_{>0}, seed in Option<u64>
+    codomain: bias in R^{out_features}
+    invariants:
+    - 'Bounded: -1/sqrt(fan_in) <= bias[i] <= 1/sqrt(fan_in) for all i'
+    - 'Not degenerate: bias is NOT identically zero for in_features > 0'
+    - 'Reproducible: same seed produces the same bias vector'
+    - 'Shape: bias.len() = out_features'
+    lean_theorem: Theorems.Linear_Bias_Init
+
+proof_obligations:
+- type: invariant
+  property: bias is within the PyTorch bound
+  formal: |
+    for all i: bias[i] in [-1/sqrt(in_features), +1/sqrt(in_features)] when in_features > 0.
+- type: invariant
+  property: bias is not all-zero
+  formal: |
+    exists i: bias[i] != 0  for a seeded Linear with in_features > 0
+    (falsifies the old zeros() initialization).
+- type: invariant
+  property: bias initialization is reproducible
+  formal: |
+    with_seed(in, out, Some(s)).bias() == with_seed(in, out, Some(s)).bias().
+
+falsification_tests:
+- id: FT-LBI-001
+  rule: every bias component lies within +/- 1/sqrt(fan_in)
+  prediction: |
+    Linear::with_seed(64, 32, Some(42)).bias() has every component in [-1/8, +1/8]
+    (1/sqrt(64) = 0.125).
+  if_fails: 'the bias init uses the wrong bound (not 1/sqrt(fan_in)).'
+  test: cargo test -p aprender-core --lib falsify_lp_bias_878_uniform_init
+- id: FT-LBI-002
+  rule: seeded bias is not all-zero
+  prediction: |
+    Linear::with_seed(64, 32, Some(42)).bias() has at least one non-zero component.
+    Before the fix the bias was all 0.0.
+  if_fails: 'the bias init reverted to zeros().'
+  test: cargo test -p aprender-core --lib falsify_lp_bias_878_uniform_init
+- id: FT-LBI-003
+  rule: seeded bias is reproducible across constructions
+  prediction: |
+    Two Linear::with_seed(16, 8, Some(7)) layers produce byte-identical bias vectors.
+  if_fails: 'the bias seed is non-deterministic or derived from entropy.'
+  test: cargo test -p aprender-core --lib falsify_lp_bias_878_reproducible
+
+kani_harnesses:
+- id: KANI-LBI-001
+  obligation: bias is within the PyTorch bound
+  property: |
+    For all i in [0, out_features): |bias[i]| <= 1/sqrt(in_features) when
+    in_features > 0. The uniform sampler never emits a value outside [low, high).
+  bound: 1
+  strategy: stub_float
+  solver: cadical
+  harness: verify_linear_bias_within_bound
+
+qa_gate:
+  id: F-LBI-001
+  name: linear-bias-init-v1 Contract
+  description: aprender Linear bias must be initialized from U(-1/sqrt(fan_in), +1/sqrt(fan_in)) for PyTorch torch.nn.Linear parity, never from zeros.
+  checks:
+  - validation
+  - falsification
