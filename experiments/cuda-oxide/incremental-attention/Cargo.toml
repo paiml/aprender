@@ -1,0 +1,11 @@
+[package]
+name = "incremental_attention_spike"
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+
+[dependencies]
+cuda-device = { git = "https://github.com/NVlabs/cuda-oxide.git" }
+cuda-host = { git = "https://github.com/NVlabs/cuda-oxide.git" }
+cuda-core = { git = "https://github.com/NVlabs/cuda-oxide.git" }
