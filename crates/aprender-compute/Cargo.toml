@@ -94,16 +94,16 @@ tokio = { version = "1", features = ["macros", "rt"] }
 serde_json = "1.0"
 nalgebra = "0.34"  # For eigendecomposition benchmark comparison
 # Simulation testing framework (TRUENO-SPEC-012)
-simular = { workspace = true }
+simular = { path = "../aprender-simulate", package = "aprender-simulate" }
 regex = "1.11"  # For PTX/WGSL pattern validation in falsification tests
 # GPU edge-case test framework (TCE-001)
-trueno-cuda-edge = { workspace = true }
+trueno-cuda-edge = { path = "../aprender-cuda-edge", package = "aprender-cuda-edge" }
 # Sparse and solver crates for contract tests
-trueno-sparse = { version = "0.50.0", path = "../aprender-sparse", package = "aprender-sparse" }
-trueno-solve = { version = "0.50.0", path = "../aprender-solve", package = "aprender-solve" }
+trueno-sparse = { path = "../aprender-sparse", package = "aprender-sparse" }
+trueno-solve = { path = "../aprender-solve", package = "aprender-solve" }
 # ML-tuner showcase (SHOWCASE-BRICK-001): aprender RandomForest, DEV-only to avoid the
 # compute→core layer inversion. Path dev-dep cycle is legal + dropped on publish.
-aprender = { version = "0.50.0", path = "../aprender-core", package = "aprender-core", default-features = false }
+aprender = { path = "../aprender-core", package = "aprender-core", default-features = false }
 ndarray = "0.17.2"
 faer = "0.24"  # For GEMM benchmark comparison (fastest pure-Rust BLAS)
 matrixmultiply = "0.3"  # Direct matrixmultiply crate benchmark (engine behind ndarray)

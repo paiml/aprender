@@ -166,14 +166,14 @@ criterion = { workspace = true }
 # aprender-core's publish requires entrenar/renacer at workspace 0.32.0 on
 # crates.io BEFORE aprender-core itself ships, but those crates can't ship
 # until aprender-core does).
-renacer = { workspace = true }
+renacer = { path = "../aprender-profile", package = "aprender-profile" }
 tempfile = "3.14"  # For format module tests
 jugar-probar = "0.5"  # TUI/GUI testing framework with coverage tracking (spec §8)
 ctrlc = "3.4"  # Signal handling for SIGINT/SIGTERM (PMAT-098-PF: zombie process mitigation)
 provable-contracts = "0.3"  # Contract enforcement (dev-only)
 # Integration tests for InferenceMonitor (GH-305: was runtime dep, now dev-only).
 # Same publish-time cycle break as renacer above.
-entrenar = { workspace = true }
+entrenar = { path = "../aprender-train", package = "aprender-train" }
 serde_yaml = "0.9"  # YAML contract binding in tests (FALSIFY-SHIP-009 GATE-APR-PROV-004)
 
 [features]
