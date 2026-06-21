@@ -437,4 +437,197 @@ fn test_qkv_out_dim_matches_gqa_formula() {
     assert_eq!(weights.out_dim(), 96);
 }
 
+// =============================================================================
+// PMAT-880: Fail-closed guard for GQA KV-cache dimension consistency
+//
+// A model/config with KV dims inconsistent with the supplied KV cache (cache
+// length not a multiple of kv_dim, current_k/current_v shorter than kv_dim, or
+// a q shorter than q_dim) makes the GQA kernel index the WRONG memory →
+// garbage attention (incoherent output), or run out of bounds. llama.cpp
+// validates cache shape; apr must REJECT with a clear error (FAIL CLOSED).
+//
+// RED (before guard): validate_gqa_kv_dims did not exist; the kernel silently
+// proceeded (truncated cache_len → garbage) or panicked OOB on the current K/V.
+// GREEN (after guard): validate_gqa_kv_dims returns Err on every violation and
+// the adaptive cached-attention entry point propagates it; valid GQA models are
+// unaffected (zero false-positives).
+// =============================================================================
+
+/// FALSIFIER (RED→GREEN): k_cache length not a multiple of kv_dim is rejected.
+///
+/// GQA 4:1, hidden_dim=64, head_dim=8, kv_dim=16. A cache that was allocated
+/// for a DIFFERENT kv_dim leaves a length that is not a whole multiple of 16.
+/// Without the guard the kernel truncates cache_len and silently produces
+/// garbage attention; with the guard it fails closed.
+#[test]
+fn test_pmat880_kcache_not_multiple_of_kv_dim_rejected() {
+    let model = create_gqa_model(64, 8, 2);
+    let q_dim = 64;
+    let kv_dim = 16;
+
+    let q = vec![0.1f32; q_dim];
+    // 3 full rows (48) + 5 extra = 53: NOT a multiple of kv_dim (16).
+    let k_cache = vec![0.1f32; 3 * kv_dim + 5];
+    let v_cache = vec![0.1f32; 3 * kv_dim + 5];
+    let current_k = vec![0.1f32; kv_dim];
+    let current_v = vec![0.1f32; kv_dim];
+
+    let result = model.validate_gqa_kv_dims(&q, &k_cache, &v_cache, &current_k, &current_v);
+    assert!(
+        result.is_err(),
+        "PMAT-880: a k_cache length that is not a multiple of kv_dim must be REJECTED \
+         (fail-closed), not silently truncated into garbage attention"
+    );
+    let msg = format!("{}", result.unwrap_err());
+    assert!(
+        msg.contains("PMAT-880") && msg.contains("kv_dim"),
+        "error must clearly explain the KV-dim violation, got: {msg}"
+    );
+}
+
+/// FALSIFIER (RED→GREEN): current_k shorter than kv_dim is rejected.
+///
+/// The kernel reads `current_k[kv_head * head_dim ..][..head_dim]` for every
+/// KV head, so a current_k shorter than kv_dim runs out of bounds (panic) for
+/// the last head. The guard rejects it with a clear error instead.
+#[test]
+fn test_pmat880_current_k_shorter_than_kv_dim_rejected() {
+    let model = create_gqa_model(64, 8, 2);
+    let q_dim = 64;
+    let kv_dim = 16;
+
+    let q = vec![0.1f32; q_dim];
+    let k_cache = vec![0.1f32; 2 * kv_dim];
+    let v_cache = vec![0.1f32; 2 * kv_dim];
+    // current_k covers only ONE kv head (8) instead of all heads (kv_dim=16).
+    let current_k = vec![0.1f32; kv_dim - 8];
+    let current_v = vec![0.1f32; kv_dim];
+
+    let result = model.validate_gqa_kv_dims(&q, &k_cache, &v_cache, &current_k, &current_v);
+    assert!(
+        result.is_err(),
+        "PMAT-880: a current_k shorter than kv_dim must be REJECTED (fail-closed), \
+         not indexed out of bounds"
+    );
+}
+
+/// FALSIFIER (RED→GREEN): k_cache and v_cache implying different seq lens rejected.
+#[test]
+fn test_pmat880_kv_cache_length_mismatch_rejected() {
+    let model = create_gqa_model(64, 8, 2);
+    let q_dim = 64;
+    let kv_dim = 16;
+
+    let q = vec![0.1f32; q_dim];
+    let k_cache = vec![0.1f32; 3 * kv_dim];
+    let v_cache = vec![0.1f32; 2 * kv_dim]; // different seq len than K
+    let current_k = vec![0.1f32; kv_dim];
+    let current_v = vec![0.1f32; kv_dim];
+
+    let result = model.validate_gqa_kv_dims(&q, &k_cache, &v_cache, &current_k, &current_v);
+    assert!(
+        result.is_err(),
+        "PMAT-880: K and V caches with different sequence lengths must be REJECTED"
+    );
+}
+
+/// FALSIFIER (RED→GREEN): the fail-closed error PROPAGATES through the public
+/// adaptive cached-attention entry point (production path), not just the helper.
+#[test]
+fn test_pmat880_adaptive_attention_propagates_fail_closed() {
+    let model = create_gqa_model(64, 8, 2);
+    let q_dim = 64;
+    let kv_dim = 16;
+
+    let q = vec![0.1f32; q_dim];
+    // Malformed cache: not a multiple of kv_dim.
+    let k_cache = vec![0.1f32; 2 * kv_dim + 3];
+    let v_cache = vec![0.1f32; 2 * kv_dim + 3];
+    let current_k = vec![0.1f32; kv_dim];
+    let current_v = vec![0.1f32; kv_dim];
+
+    let result =
+        model.adaptive_attention_with_cache(&q, &k_cache, &v_cache, &current_k, &current_v);
+    assert!(
+        result.is_err(),
+        "PMAT-880: adaptive_attention_with_cache must propagate the fail-closed error \
+         for a GQA model with an inconsistent KV cache"
+    );
+}
+
+// =============================================================================
+// PMAT-880: POSITIVE tests — zero false-positives on VALID models
+// =============================================================================
+
+/// A valid GQA config + consistent cache must PASS the guard (no false-positive).
+#[test]
+fn test_pmat880_valid_gqa_passes_no_false_positive() {
+    let model = create_gqa_model(64, 8, 2);
+    let q_dim = 64;
+    let kv_dim = 16;
+
+    // cache_len = 3 → exact multiple of kv_dim; current K/V exactly kv_dim.
+    let q = vec![0.1f32; q_dim];
+    let k_cache = vec![0.1f32; 3 * kv_dim];
+    let v_cache = vec![0.1f32; 3 * kv_dim];
+    let current_k = vec![0.1f32; kv_dim];
+    let current_v = vec![0.1f32; kv_dim];
+
+    let result = model.validate_gqa_kv_dims(&q, &k_cache, &v_cache, &current_k, &current_v);
+    assert!(
+        result.is_ok(),
+        "PMAT-880: a valid GQA config with a consistent KV cache must PASS the guard \
+         (zero false-positives), got: {result:?}"
+    );
+
+    // And the happy path still produces correctly-shaped, finite output.
+    let out = model.attention_with_cache_gqa(&q, &k_cache, &v_cache, &current_k, &current_v);
+    assert_eq!(out.len(), q_dim, "valid GQA output must be q_dim long");
+    assert!(
+        out.iter().all(|x| x.is_finite()),
+        "valid GQA output must be finite"
+    );
+}
+
+/// An empty KV cache (first token: cache_len=0) is valid and must PASS.
+#[test]
+fn test_pmat880_empty_cache_first_token_passes() {
+    let model = create_gqa_model(64, 8, 2);
+    let q_dim = 64;
+    let kv_dim = 16;
+
+    let q = vec![0.1f32; q_dim];
+    let k_cache: Vec<f32> = vec![]; // 0 is a multiple of kv_dim
+    let v_cache: Vec<f32> = vec![];
+    let current_k = vec![0.1f32; kv_dim];
+    let current_v = vec![0.1f32; kv_dim];
+
+    let result = model.validate_gqa_kv_dims(&q, &k_cache, &v_cache, &current_k, &current_v);
+    assert!(
+        result.is_ok(),
+        "PMAT-880: an empty cache (first token) is valid and must PASS, got: {result:?}"
+    );
+}
+
+/// A valid MHA config (num_kv_heads == num_heads) must also PASS the guard.
+#[test]
+fn test_pmat880_valid_mha_passes_no_false_positive() {
+    // MHA: 4 Q heads, 4 KV heads, hidden_dim=64 → head_dim=16, kv_dim=q_dim=64.
+    let model = create_gqa_model(64, 4, 4);
+    let q_dim = 64;
+    let kv_dim = 64;
+
+    let q = vec![0.1f32; q_dim];
+    let k_cache = vec![0.1f32; 2 * kv_dim];
+    let v_cache = vec![0.1f32; 2 * kv_dim];
+    let current_k = vec![0.1f32; kv_dim];
+    let current_v = vec![0.1f32; kv_dim];
+
+    let result = model.validate_gqa_kv_dims(&q, &k_cache, &v_cache, &current_k, &current_v);
+    assert!(
+        result.is_ok(),
+        "PMAT-880: a valid MHA config must PASS the guard (zero false-positives), got: {result:?}"
+    );
+}
+
 include!("attention_gqa_tests_forward_cached.rs");

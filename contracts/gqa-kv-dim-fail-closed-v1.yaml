@@ -1,0 +1,148 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-21'
+  author: PAIML Engineering
+  description: |
+    PMAT-880 — Pillar-4 fail-closed CORRECTNESS beat for GQA KV-cache
+    dimension consistency. The GQA cached-attention kernel
+    (attention_with_cache_gqa / _into in
+    crates/aprender-serve/src/gguf/inference/attention_gqa.rs) indexes the KV
+    cache as k_cache[pos * kv_dim + kv_head * head_dim ..][..head_dim] and the
+    current-position K/V as current_k[kv_head * head_dim ..][..head_dim], where
+    kv_dim == num_kv_heads * head_dim. A model/config whose supplied KV cache is
+    inconsistent with these dims (cache length not a whole multiple of kv_dim,
+    current_k/current_v shorter than kv_dim, or q shorter than q_dim) makes the
+    kernel silently read the WRONG memory — garbage attention, incoherent output
+    — or run past the slice (out of bounds). llama.cpp validates KV-cache shape
+    before attention; apr must REJECT with a clear error. This is the same
+    fail-closed class as the shipped garbage / extreme-magnitude beats
+    (PMAT-744 / PMAT-732) and complements the PMAT-749 GQA cache fix by adding
+    the previously-missing dimension guard. The guard is O(1) and leaves the
+    happy path byte-identical: valid GQA and MHA models pass unchanged
+    (zero false-positives).
+  references:
+  - 'PMAT-880 (this contract): GQA KV-dim fail-closed guard'
+  - 'crates/aprender-serve/src/gguf/inference/attention_gqa.rs (validate_gqa_kv_dims + adaptive_attention_with_cache wiring)'
+  - 'crates/aprender-serve/src/gguf/inference/attention_gqa_tests.rs (PMAT-880 falsifiers + positive tests)'
+  - 'apr-gqa-cache-attention-dispatch-v1.yaml (PMAT-749: GQA cache dispatch; this adds the missing guard)'
+  - 'apr-fail-closed-garbage-beat-v1.yaml (PMAT-744: sibling Pillar-4 fail-closed beat)'
+  - 'llama.cpp llama_kv_cache shape validation (reference: incumbents validate cache shape)'
+
+kind: KernelContract
+name: gqa-kv-dim-fail-closed
+version: 1.0.0
+scope: aprender-serve GQA cached-attention KV-dimension consistency guard
+
+equations:
+  kv_dim_consistency:
+    formula: kv_dim = num_kv_heads * head_dim
+    domain: num_kv_heads > 0, head_dim > 0, num_heads >= num_kv_heads
+    codomain: kv_dim in Z+
+    invariants:
+    - 'kv_dim equals num_kv_heads * head_dim (per-position cache stride matches per-head layout)'
+    - 'k_cache.len() and v_cache.len() are whole multiples of kv_dim (cache is [seq, kv_dim] row-major)'
+    - 'k_cache.len() == v_cache.len() (K and V describe the same sequence length)'
+    - 'current_k.len() >= kv_dim and current_v.len() >= kv_dim (current K/V cover all KV heads)'
+    - 'q.len() >= q_dim where q_dim = num_heads * head_dim (query covers all attention heads)'
+    preconditions:
+    - num_kv_heads >= 1
+    - head_dim >= 1
+    postconditions:
+    - kv_dim == num_kv_heads * head_dim
+    - validate_gqa_kv_dims returns Ok iff every kv_dim_consistency invariant holds
+    lean_theorem: Theorems.Gqa_Kv_Dim_Consistency
+
+proof_obligations:
+- type: invariant
+  property: reject-on-violation — inconsistent KV dims are rejected (fail-closed)
+  formal: |
+    For every (q, k_cache, v_cache, current_k, current_v) that violates any
+    kv_dim_consistency invariant (kv_dim != num_kv_heads * head_dim, cache length
+    not a multiple of kv_dim, K/V length mismatch, current_k/current_v shorter
+    than kv_dim, or q shorter than q_dim), validate_gqa_kv_dims returns
+    Err(RealizarError::InvalidConfiguration) and adaptive_attention_with_cache
+    propagates that error rather than indexing the wrong memory or panicking.
+- type: invariant
+  property: no-false-positive-on-valid — valid GQA/MHA models pass unchanged
+  formal: |
+    For every (q, k_cache, v_cache, current_k, current_v) that satisfies every
+    kv_dim_consistency invariant (including the empty-cache first-token case and
+    the MHA degenerate case num_kv_heads == num_heads), validate_gqa_kv_dims
+    returns Ok(()) and the attention output is identical to the pre-guard
+    behavior (the guard is a pure precondition check with no side effects).
+
+falsification_tests:
+- id: FT-GQA-KVDIM-001
+  rule: k_cache length not a multiple of kv_dim is rejected
+  prediction: validate_gqa_kv_dims with k_cache.len() not divisible by kv_dim returns Err (pre-guard the kernel truncated cache_len into garbage attention)
+  test: cargo test -p aprender-serve --lib test_pmat880_kcache_not_multiple_of_kv_dim_rejected
+  if_fails: the multiple-of-kv_dim check was removed; the cache is silently truncated and attention is garbage
+- id: FT-GQA-KVDIM-002
+  rule: current_k shorter than kv_dim is rejected
+  prediction: validate_gqa_kv_dims with current_k.len() < kv_dim returns Err (pre-guard the per-head slice ran out of bounds and panicked)
+  test: cargo test -p aprender-serve --lib test_pmat880_current_k_shorter_than_kv_dim_rejected
+  if_fails: the current_k length check was removed; the kernel indexes out of bounds for the last KV head
+- id: FT-GQA-KVDIM-003
+  rule: K and V caches with different sequence lengths are rejected
+  prediction: validate_gqa_kv_dims with k_cache.len() != v_cache.len() returns Err
+  test: cargo test -p aprender-serve --lib test_pmat880_kv_cache_length_mismatch_rejected
+  if_fails: the K/V length-equality check was removed; K and V imply different seq lengths and attention is garbage
+- id: FT-GQA-KVDIM-004
+  rule: fail-closed error propagates through the public adaptive cached-attention entry point
+  prediction: adaptive_attention_with_cache on a GQA model with an inconsistent KV cache returns Err (production path fails closed, not just the helper)
+  test: cargo test -p aprender-serve --lib test_pmat880_adaptive_attention_propagates_fail_closed
+  if_fails: the guard was not wired into adaptive_attention_with_cache; production silently produces garbage
+- id: FT-GQA-KVDIM-005
+  rule: valid GQA config with a consistent cache passes (zero false-positive)
+  prediction: validate_gqa_kv_dims on a valid GQA model returns Ok and attention output is q_dim long and finite
+  test: cargo test -p aprender-serve --lib test_pmat880_valid_gqa_passes_no_false_positive
+  if_fails: the guard is too strict and rejects a legitimate GQA model (false positive)
+- id: FT-GQA-KVDIM-006
+  rule: empty KV cache (first token, cache_len == 0) passes
+  prediction: validate_gqa_kv_dims with an empty k_cache/v_cache returns Ok (0 is a multiple of kv_dim)
+  test: cargo test -p aprender-serve --lib test_pmat880_empty_cache_first_token_passes
+  if_fails: the guard rejects the first-token empty-cache case, breaking generation start
+- id: FT-GQA-KVDIM-007
+  rule: valid MHA config (num_kv_heads == num_heads) passes
+  prediction: validate_gqa_kv_dims on a valid MHA model returns Ok (no false positive on the degenerate case)
+  test: cargo test -p aprender-serve --lib test_pmat880_valid_mha_passes_no_false_positive
+  if_fails: the guard mishandles the MHA degenerate case and rejects a valid model
+
+kani_harnesses:
+- id: KANI-GQA-KVDIM-001
+  obligation: kv_dim_consistency — kv_dim equals num_kv_heads * head_dim
+  property: |
+    For all (num_kv_heads in [1..16], head_dim in [1..256]):
+    expected_kv_dim = num_kv_heads * head_dim, and validate_gqa_kv_dims rejects
+    any supplied kv_dim != expected_kv_dim.
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_kv_dim_equals_num_kv_heads_times_head_dim
+- id: KANI-GQA-KVDIM-002
+  obligation: reject-on-violation — cache length not a multiple of kv_dim is rejected
+  property: |
+    For all (kv_dim in [1..256], extra in [1..kv_dim-1]):
+    a cache length of (n * kv_dim + extra) makes validate_gqa_kv_dims return Err.
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_non_multiple_cache_length_rejected
+- id: KANI-GQA-KVDIM-003
+  obligation: no-false-positive-on-valid — consistent dims pass
+  property: |
+    For all (num_kv_heads in [1..16], head_dim in [1..256], seq in [0..8]):
+    a cache of length seq * kv_dim with current_k/current_v of length kv_dim and
+    q of length q_dim makes validate_gqa_kv_dims return Ok.
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_consistent_dims_pass
+
+qa_gate:
+  id: F-GQA-KVDIM-001
+  name: gqa-kv-dim-fail-closed-v1 Contract
+  description: GQA cached-attention must REJECT a KV cache inconsistent with kv_dim = num_kv_heads * head_dim (fail-closed), with zero false-positives on valid GQA/MHA models.
+  checks:
+  - validation
+  - falsification
