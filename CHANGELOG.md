@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.51.0] - 2026-06-21
+
+Hotfix-driven release (brought forward from the Friday cadence by a P0). Each fix ships a named
+proof-obligation + a RED-on-bug / GREEN-on-fix falsifier + a `pv`-validated contract.
+
+### Fixed
+
+- **P0 — non-Gemma2 `.apr` inference produced garbage** (PMAT-888, regressed in 0.50.0 via PMAT-810b)
+  — every non-Gemma2 `.apr` (qwen2/llama/mistral/phi/deepseek/qwen3 — the majority of models) generated
+  garbage on inference (CPU **and** GPU) while the same model as GGUF was coherent. PMAT-810b added a
+  Gemma2 post-attention-norm load keyed on the HF name `post_attention_layernorm.weight` — which is the
+  **FFN norm** for all those architectures — **un-gated by architecture**, so a spurious extra RMSNorm
+  was applied. Now gated on `config.is_gemma2()`, mirroring the GGUF loader. GGUF was never affected.
+- **`BatchNorm1d` never updated `running_mean`/`running_var`** (PMAT-877, Pillar-2) — they stayed at
+  init (0/1) forever, so eval-mode normalization was wrong vs PyTorch. Now EMA-updated each training
+  forward (`running = (1-momentum)·running + momentum·batch`).
+- **`Linear` bias initialized to zeros** (PMAT-878, Pillar-2) — PyTorch uses `U(±1/√fan_in)`; now matches
+  (seed-deterministic).
+- **LoRA dropout never applied** (PMAT-879, Pillar-3) — `LoRALayer::forward` ignored the configured
+  dropout, so fine-tuning trained with zero regularization. Now applies dropout to the input
+  (`y = Wx + s·B(A(dropout(x)))`, train-only), matching HF PEFT.
+- **Batched-GPU GQA fail-closed** (PMAT-880, Pillar-4) — `attention_with_cache_gqa` did not validate
+  `kv_dim == num_kv_heads·head_dim`/cache consistency, silently reading wrong memory on a corrupt config;
+  now returns a clear error (zero false-positives on valid models), where llama.cpp/Ollama run garbage.
+
+### Performance — GPU (Blackwell / GB10)
+
+- **First pure-Rust cuda-oxide `#[kernel]` to BEAT hand-PTX** (PMAT-882) — the incremental KV-cache
+  attention kernel: bit-exact (cos = 1.0) and **1.7–2.9× faster** than the production hand-PTX kernel on
+  GB10 (true on-device A/B). FMA/softmax kernels are not DP4A-bound, so pure-Rust competes and wins.
+- **Blackwell CUDA-graph replay fixed + re-enabled** (PMAT-886a) — the default sm_121 Q4K GEMV variant
+  was not recorded into the manual graph, so graph replay dropped ~6 GEMVs/layer → stale buffers →
+  garbage (cosine 0.53). Now recorded; parity 0.53→0.9934 (== eager, token-for-token), graph decode
+  re-defaulted ON for Blackwell, **+16% decode** (96→112 tok/s).
+- **Blackwell decode throughput-floor guard** (PMAT-885) — a stale-binary / F2-false-fallback that
+  silently drops the GPU path to ~10 tok/s CPU is now a falsifiable invariant (≥100 tok/s on GB10).
+
+### Infrastructure
+
+- **Pre-release Gate 11** (`cargo publish -p aprender --dry-run`) — catches the two classes that broke
+  the 0.50.0 cascade mid-publish (sibling path-deps missing a `version`; version-pinned sibling dev-deps
+  forming publish cycles) which `cargo metadata` does not detect.
+- **Dogfood Gate 18** (fresh-convert `.apr` inference parity vs GGUF, CPU+GPU) — catches the PMAT-888
+  class that `inspect`/`validate`/`tensors` and a stale pre-existing `.apr` all pass through.
+
 ## [0.50.0] - 2026-06-21
 
 ### Fixed
