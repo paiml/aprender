@@ -26,6 +26,7 @@ which is ephemeral).
 |-----|--------|--------|
 | `q4k-matvec/` | `q4k_matvec_atomic` — T=32 threads/row + `DeviceAtomicF32` reduction | **beats hand-PTX `TiledQ4KGemv` 1.23×–2.85× across decode-hotpath shapes** on GB10, bit-exact (maxrel 1.46e-5) |
 | `q4k-matvec-reference/` | `q4k_matvec` — naive 1-thread/row (clean bit-exact reference) | correctness reference; bit-matches realizar `dequantize_q4_k` |
+| `ffn-fusion/` | `fused_gate_up_swiglu` — port of hand-PTX `FusedGateUpSwigluHwDp4aQ4KGemvKernel` (dual gate+up accumulators, in-register SwiGLU, single launch) | **PARITY PASS on GB10** (CPU fused reference), but **~1.58× SLOWER** than the documented hand-PTX ~120µs @ 1536×8960 → **NO-GO** (f32 path, no DP4A). See `PMAT-881-STATUS.md` (PMAT-881) |
 
 ### A/B vs hand-PTX `TiledQ4KGemv` (GB10 Blackwell sm_121, same-data/same-run median; 2026-06-15)
 
