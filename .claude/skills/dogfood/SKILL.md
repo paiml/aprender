@@ -698,6 +698,46 @@ PASS when `apr qa` Golden Output gate passes on the 7B Q4_K model. FAIL on
 the regression that #1864 captured. SKIP when the 7B model isn't available
 or the gate didn't run.
 
+## Gate 18: Fresh-Convert `.apr` Inference Parity (F-APR-INFERENCE-PARITY-001)
+
+Contract: `contracts/apr-cpu-vs-gpu-output-parity-v1.yaml` (the `.apr`↔GGUF inference invariant)
+
+Catches the PMAT-888 class: a `.apr` **converted by the CURRENT binary** produces garbage on
+inference (mojibake / cosine ~0.7) while the source GGUF is coherent — a converter/loader
+regression. Gate 16 only runs a PRE-EXISTING `~/models/*.apr` (converted by an OLD binary, so it
+still works), and `inspect`/`validate`/`tensors` (Gate 2a) all pass on a broken-for-inference `.apr`
+— so none of them catch it. The native `.apr` format is the whole project; its inference path MUST
+be gated on a FRESH convert against the GGUF, on BOTH CPU and GPU. This is the gate the 0.50.0
+post-publish QA was missing (it tested `.apr` inspect/validate but never `.apr` *run*).
+
+```bash
+M_GGUF=$(find ~/models -maxdepth 2 -name "*.gguf" -type f -size -3G | head -1)
+if [ -z "$M_GGUF" ]; then echo "G18 SKIP: no GGUF model"; else
+  apr convert "$M_GGUF" -o /tmp/g18-fresh.apr 2>&1 | tail -1
+  norm(){ sed -n '/^Output:/,$p' | tail -n +2 | tr -d '[:space:]'; }
+  GGUF_OUT=$(timeout 120 apr run "$M_GGUF"        --no-gpu --prompt "What is 2+2?" --max-tokens 12 2>&1 | norm)
+  APR_OUT=$( timeout 120 apr run /tmp/g18-fresh.apr --no-gpu --prompt "What is 2+2?" --max-tokens 12 2>&1 | norm)
+  echo "G18 gguf=[$GGUF_OUT] apr=[$APR_OUT]"
+  if [ -n "$GGUF_OUT" ] && [ "$GGUF_OUT" = "$APR_OUT" ]; then
+    echo "G18 PASS: fresh .apr CPU inference == source GGUF"
+  elif echo "$APR_OUT" | grep -qE 'ä|�|<\|im_start|<\|endoftext'; then
+    echo "G18 FAIL: fresh .apr produces garbage while GGUF coherent (PMAT-888 converter/loader regression)"
+  else
+    echo "G18 WARN: fresh .apr != GGUF — run 'apr diff /tmp/g18-fresh.apr $M_GGUF' to localize"
+  fi
+  # GPU leg (if a GPU is present): the .apr GPU path must also match --no-gpu
+  if apr gpu 2>&1 | grep -qiE 'cuda|gpu.*(yes|available|RTX|GB10)'; then
+    APR_GPU=$(timeout 120 apr run /tmp/g18-fresh.apr --prompt "What is 2+2?" --max-tokens 12 2>&1 | norm)
+    [ -n "$APR_GPU" ] && [ "$APR_GPU" = "$GGUF_OUT" ] && echo "G18-GPU PASS: fresh .apr GPU == GGUF" \
+      || echo "G18-GPU WARN: fresh .apr GPU=[$APR_GPU] != GGUF"
+  fi
+  rm -f /tmp/g18-fresh.apr
+fi
+```
+
+PASS if a freshly-converted `.apr`'s CPU (and GPU, when present) inference matches the source GGUF
+token-for-token. FAIL on garbage (the PMAT-888 regression). SKIP if no GGUF model is available.
+
 ## Pre-Gate Note: Exit-Code Capture Methodology (lesson from 2026-05-22 dogfood)
 
 When a falsifier needs to assert "command X exits Y", **never** chain through
@@ -723,15 +763,15 @@ See [memory/feedback_test_methodology_can_fake_bugs.md] for the broader lesson.
 
 ## Verdict
 
-After all 17 gates, provide:
+After all 18 gates, provide:
 
-1. **Summary table**: Gate 1-17 | Status | Notes
+1. **Summary table**: Gate 1-18 | Status | Notes
 2. **Protocol results**: P1-P12 | PASS/FAIL
-3. **New gates**: S1-S5, M1-M3, V1-V4, C1-C3, D1-D3, G13-G17 | PASS/FAIL/SKIP
+3. **New gates**: S1-S5, M1-M3, V1-V4, C1-C3, D1-D3, G13-G18 | PASS/FAIL/SKIP
 4. **Command grid**: 57 commands | PASS/FAIL/SKIP count
-5. **GO** if gates 1-7 all pass AND gates 8-17 have no FAIL
+5. **GO** if gates 1-7 all pass AND gates 8-18 have no FAIL
 6. **WARN** if soft issues only (no panics, no data corruption, SKIPs OK)
-7. **FAIL** if panics, exit-code lies, silent-fallback accepts bad input, gibberish-with-exit-0 (#1864), export panics (#1865), stale --version SHA in worktree (#1862), validate --quality false-negatives (#1866), or contract violations
+7. **FAIL** if panics, exit-code lies, silent-fallback accepts bad input, gibberish-with-exit-0 (#1864), export panics (#1865), stale --version SHA in worktree (#1862), validate --quality false-negatives (#1866), fresh-convert `.apr` inference garbage (PMAT-888), or contract violations
 
 If bugs found, file with:
 ```bash

@@ -124,6 +124,29 @@ If sibling repos are present, verify their versions are compatible:
 make check-siblings 2>&1
 ```
 
+### Gate 11: crates.io Cascade Publishability (v0.50.0 dev-dep cycle + missing-version)
+
+The v0.50.0 cascade FAILED MID-PUBLISH (29/68 crates live, then stuck) on two classes that
+path-deps mask and `cargo metadata` does NOT catch:
+(a) **sibling path-deps with NO `version` field** — `cargo publish` requires a version on every
+non-dev dep (locally the path resolves, so it builds fine; publishing errors `dependency X does
+not specify a version`);
+(b) **version-pinned sibling DEV-dependencies forming publish CYCLES** — cargo tolerates dev-dep
+cycles when building locally, but crates.io rejects them (`failed to select a version ... candidate
+versions found which didn't match`). Two unused dev-deps (trueno-viz, renacer) closed real cycles.
+
+Only a real publish dry-run of the FLAGSHIP resolves the whole 68-crate tree against the registry:
+
+```
+cargo publish -p aprender --dry-run --allow-dirty --no-verify 2>&1 | tail -6
+```
+
+PASS if it reaches `Packaged`/`Uploading` with NO `does not specify a version` and NO `candidate
+versions found which didn't match`. FAIL on either: a sibling path-dep needs a `version` field, or a
+sibling **dev**-dep must be made path-only (no version) so cargo strips it from the published manifest
+and the cycle breaks. Also dry-run `apr-cli`, `aprender-core`, `aprender-serve` if `aprender` passes,
+to confirm the foundational tier. See memory/feedback_crates_io_devdep_publish_cycles.md.
+
 ## Verdict
 
 After running all gates, provide:
