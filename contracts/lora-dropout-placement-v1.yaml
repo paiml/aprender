@@ -1,0 +1,122 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-21'
+  author: PAIML Engineering
+  description: LoRA dropout placement — dropout applied to the INPUT x before the down-projection
+    A, matching HuggingFace PEFT lora.Linear.forward (PMAT-879)
+  references:
+  - 'HF PEFT lora.Linear.forward: result = result + lora_B(lora_A(dropout(x))) * scaling'
+  - Hu et al. (2021) LoRA — Low-Rank Adaptation of Large Language Models
+  - Srivastava et al. (2014) Dropout — A Simple Way to Prevent Overfitting
+equations:
+  lora_forward_with_dropout:
+    formula: y = W x + s * B (A (dropout(x)))
+    domain: x in R^d_in, W in R^(d_out x d_in), A in R^(r x d_in), B in R^(d_out x r), s > 0, p in [0, 1)
+    codomain: y in R^d_out
+    invariants:
+    - Dropout is applied to the input x before A, never to A@x or B@(A@x)
+    - In eval mode dropout is the identity so inference output is unchanged
+    - Training-mode inverted dropout preserves expectation E[dropout(x)] = x
+    preconditions:
+    - x.len() == d_in
+    - p in [0, 1)
+    postconditions:
+    - y.len() == d_out
+    - '!training || p == 0 implies y == W x + s B (A x)'
+    lean_theorem: Theorems.LoRA_Dropout_Placement
+  inverted_dropout:
+    formula: dropout(x)_i = 0 with prob p, else x_i / (1 - p)
+    domain: x in R^d, p in [0, 1)
+    codomain: dropout(x) in R^d
+    invariants:
+    - Survivors scaled by 1/(1-p) so expectation is preserved
+    - Identity when p == 0 or in eval mode
+    preconditions:
+    - p in [0, 1)
+    postconditions:
+    - dropout(x).len() == x.len()
+    - 'E[dropout(x)] == x (expectation preserved)'
+    lean_theorem: Theorems.Inverted_Dropout
+proof_obligations:
+- type: postcondition
+  property: Dropout on input is train-only; eval is identity (dropout-on-input-train-only)
+  formal: 'training ∧ p > 0 ⇒ y_lora = s·B(A(dropout(x))) ; ¬training ∨ p = 0 ⇒ y_lora = s·B(A(x))'
+- type: invariant
+  property: Eval-mode forward is deterministic and dropout-free (inference parity)
+  formal: ¬training ⇒ forward(x) byte-identical to no-dropout forward(x)
+  applies_to: all
+- type: invariant
+  property: Deterministic mask for a fixed seed
+  formal: same dropout_seed ⇒ same mask sequence
+  applies_to: all
+- type: bound
+  property: Inverted-dropout scale finite
+  formal: p ∈ [0, 1) ⇒ 1/(1-p) is finite
+  applies_to: all
+falsification_tests:
+- id: F-DROPOUT-001
+  rule: Dropout changes training output
+  prediction: With p>0, fixed seed, training mode, LoRA output differs from no-dropout path
+  test: test_falsify_f_dropout_001_training_dropout_changes_output
+  if_fails: Dropout is not applied to the LoRA-branch input (pre-fix bug)
+- id: F-DROPOUT-002
+  rule: Eval mode is identity
+  prediction: In eval mode the dropout-configured output equals the no-dropout output exactly
+  test: test_falsify_f_dropout_002_eval_mode_is_identity
+  if_fails: Dropout leaks into inference (eval mode not the identity)
+- id: F-DROPOUT-003
+  rule: Deterministic seeded mask
+  prediction: Two training layers with the same seed produce identical output
+  test: test_falsify_f_dropout_003_seed_is_deterministic
+  if_fails: Dropout RNG is not seeded deterministically
+- id: F-DROPOUT-004
+  rule: Inverted dropout alters contribution
+  prediction: With p=0.5 in training, the LoRA contribution differs from the un-dropped one
+  test: test_falsify_f_dropout_004_some_inputs_zeroed_in_training
+  if_fails: Inverted dropout is a no-op (mask or scale not applied)
+kani_harnesses:
+- id: KANI-LDP-001
+  obligation: Dropout on input is train-only; eval is identity
+  property: Training-mode dropout changes the LoRA output relative to no-dropout
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_lora_dropout_train_only
+- id: KANI-LDP-002
+  obligation: Eval-mode forward is deterministic and dropout-free
+  property: Eval-mode forward equals the no-dropout forward
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_lora_dropout_eval_identity
+- id: KANI-LDP-003
+  obligation: Deterministic mask for a fixed seed
+  property: Same seed yields same mask
+  bound: 4
+  strategy: exhaustive
+  harness: verify_lora_dropout_seed_determinism
+- id: KANI-LDP-004
+  obligation: Inverted-dropout scale finite
+  property: 1/(1-p) is finite for p in [0, 1)
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_lora_dropout_inv_scale_finite
+enforcement:
+  dropout_on_input_train_only:
+    description: Dropout must be applied to input x before A, and only in training mode
+    check: contract_tests::F-DROPOUT-001
+    severity: ERROR
+  eval_identity:
+    description: Eval-mode forward must be dropout-free (inference parity)
+    check: contract_tests::F-DROPOUT-002
+    severity: ERROR
+qa_gate:
+  id: F-LDP-001
+  name: LoRA Dropout Placement Contract
+  description: PEFT-parity dropout placement quality gate
+  checks:
+  - dropout_on_input_train_only
+  - eval_identity
+  pass_criteria: All 4 falsification tests pass
+  falsification: Apply dropout to A@x instead of x, or apply dropout in eval mode
