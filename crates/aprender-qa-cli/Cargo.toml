@@ -23,10 +23,10 @@ serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 clap = { workspace = true }
 chrono = { workspace = true }
-aprender-qa-gen = { path = "../aprender-qa-gen" }
-aprender-qa-runner = { path = "../aprender-qa-runner" }
-aprender-qa-report = { path = "../aprender-qa-report" }
-aprender-qa-certify = { path = "../aprender-qa-certify" }
+aprender-qa-gen = { version = "0.50.0", path = "../aprender-qa-gen" }
+aprender-qa-runner = { version = "0.50.0", path = "../aprender-qa-runner" }
+aprender-qa-report = { version = "0.50.0", path = "../aprender-qa-report" }
+aprender-qa-certify = { version = "0.50.0", path = "../aprender-qa-certify" }
 ctrlc = "3.4"
 safetensors = { workspace = true }
 colored = "2.2"

@@ -112,7 +112,7 @@ crossterm = "0.28"
 
 # SIMD-accelerated visualization primitives (sister project)
 # NOTE: `monitor` feature removed upstream (#1979); this crate uses only viz primitives.
-trueno-viz = { path = "../aprender-viz", package = "aprender-viz", default-features = false }
+trueno-viz = { version = "0.50.0", path = "../aprender-viz", package = "aprender-viz", default-features = false }
 
 # OpenTelemetry for distributed tracing (Sprint 30)
 opentelemetry = { version = "0.31.0", optional = true }

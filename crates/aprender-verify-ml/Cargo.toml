@@ -68,7 +68,7 @@ pest_derive = { version = "2.7", optional = true }
 [dev-dependencies]
 proptest = "1.6"
 criterion = { workspace = true }
-renacer = { workspace = true }
+renacer = { path = "../aprender-profile", package = "aprender-profile" }
 tempfile = "3.14"
 
 [features]

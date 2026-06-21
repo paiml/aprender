@@ -163,7 +163,7 @@ provable-contracts = { version = "0.2" }
 jugar-probar = { version = "0.4", features = ["tui", "gpu"] }
 
 # GPU edge-case test framework (null fuzzing, boundary probing, lifecycle chaos)
-trueno-cuda-edge = { workspace = true }
+trueno-cuda-edge = { path = "../aprender-cuda-edge", package = "aprender-cuda-edge" }
 
 # Benchmarking
 criterion = { version = "0.5", features = ["html_reports"] }
