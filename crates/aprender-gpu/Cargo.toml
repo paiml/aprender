@@ -52,9 +52,9 @@ simular = { workspace = true }
 pollster = "0.4"
 bytemuck = { version = "1.21", features = ["derive"] }
 
-# renacer is Linux-only (uses ptrace syscalls)
-[target.'cfg(target_os = "linux")'.dev-dependencies]
-renacer = { workspace = true }
+# NOTE: renacer (=aprender-profile) dev-dep removed — unused (0 references) and its
+# ^0.50.0 version pin closed a crates.io publish cycle
+# (aprender-compute → aprender-gpu → aprender-profile → aprender-core → aprender-compute).
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # GPU pixel testing with TUI visualization (Sovereign Stack)
