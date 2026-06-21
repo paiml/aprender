@@ -42,6 +42,21 @@ launched on the same GB10 with the same Q/K/V data + timing — a decisive on-de
 A/B, not a documented baseline. Attention is f32 FMA + softmax (NOT DP4A-bound), so
 the oxide port competes and wins — the opposite of the FFN-fusion NO-GO (PMAT-881).
 
+### incremental-attention (PMAT-883): embeddable PTX artifact + 3-way parity gate
+
+PMAT-883 is the SAFE integration-prep step on top of the 882 GO. It adds a
+raw-pointer-ABI entry `attn_warp_rawptr` (bit-identical compute to kernel C) and
+emits a standalone, self-contained `.ptx` source-of-record:
+`generated/attn_warp.sm121.ptx` (548 lines, `.target sm_121`, 1 entry, 0 extern
+`__nv_*`, ptxas-verified). Because kernel C uses libdevice `__nv_expf` (softmax),
+the emit path links libdevice + lowers via llc — see
+`incremental-attention/emit_ptx.sh`. A **3-way parity gate** (oxide-PTX ==
+hand-PTX == CPU) PASSES on all 9 decode configs (cos=1.000000, maxdiff < 1e-5).
+A default-OFF integration scaffold lives at
+`crates/aprender-serve/src/cuda/executor/oxide_attention.rs` (feature
+`oxide-attention`, NOT wired into live decode). The live default decode path is
+UNCHANGED. See `PMAT-883-STATUS.md`.
+
 ### A/B vs hand-PTX `TiledQ4KGemv` (GB10 Blackwell sm_121, same-data/same-run median; 2026-06-15)
 
 | Shape (M×K) | Role | cuda-oxide T=32 (µs) | hand-PTX (µs) | speedup |

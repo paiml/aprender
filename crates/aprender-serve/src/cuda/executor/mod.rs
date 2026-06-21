@@ -276,6 +276,11 @@ mod quantized;
 mod weights;
 mod workspace;
 
+/// PMAT-883: cuda-oxide incremental-attention integration SCAFFOLD (default OFF,
+/// NOT wired into the live decode path). Gated on `cuda` + `oxide-attention`.
+#[cfg(all(feature = "cuda", feature = "oxide-attention"))]
+mod oxide_attention;
+
 // Test modules
 #[cfg(test)]
 mod tests;

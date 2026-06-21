@@ -207,6 +207,7 @@ default = ["server", "cli", "gpu"]
 # Core features
 gpu = ["trueno/gpu"]  # Enable GPU acceleration via Trueno (wgpu)
 cuda = ["dep:trueno-gpu", "dep:tracing"]  # Enable CUDA PTX generation for NVIDIA GPUs
+oxide-attention = ["cuda"]  # PMAT-883: cuda-oxide incremental-attention scaffold (default OFF, NOT wired into live decode)
 kv-cache = ["dep:trueno-db"]  # KV cache for attention optimization
 apr-compression = ["dep:lz4_flex", "dep:zstd"]  # LZ4/ZSTD decompression for APR v2 (GH-35)
 
