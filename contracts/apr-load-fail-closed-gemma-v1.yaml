@@ -1,7 +1,7 @@
 contract: apr-load-fail-closed-gemma
 metadata:
   kind: pattern
-  version: "3.1.0"
+  version: "3.2.0"
   description: >
     Gemma support is honest-by-design and version-gated. Gemma v1 (general.architecture
     == "gemma", PMAT-809) AND Gemma v2 (general.architecture == "gemma2", PMAT-810) are now
@@ -59,14 +59,16 @@ metadata:
   - "crates/aprender-serve/src/gguf/ops.rs (softcap — cap*tanh(x/cap) in place; rms_norm for the GGUF pre-shifted post-norms)"
   - "crates/aprender-serve/src/gguf/inference/attention_gqa.rs (attention_with_cache_gqa{,_into}: attn_scale + attn-logit softcap before softmax)"
   - "crates/aprender-serve/src/gguf/inference/forward/ffn_block.rs (forward_single_with_cache: post_attn_norm + post_ffw_norm before residual; single_cache_final_output: final-logit softcap)"
-  - "crates/aprender-serve/src/gguf/transformer.rs + quantized.rs + loader_apr_quantized.rs (load post_attention_norm.weight + post_ffw_norm.weight)"
+  - "crates/aprender-serve/src/gguf/transformer.rs + quantized.rs (GGUF load post_attention_norm.weight + post_ffw_norm.weight — disambiguated names, None for non-Gemma2)"
+  - "crates/aprender-serve/src/gguf/loader_apr_quantized.rs (PMAT-888: APR post-norm load gated on config.is_gemma2() — the HF name post_attention_layernorm.weight is the FFN norm for non-Gemma2)"
+  - "crates/aprender-serve/src/tensor_names_fallback.rs (FfnNormWeight: post_attention_layernorm.weight is the FFN norm for llama/qwen2/qwen3/mistral/phi/deepseek)"
   - "crates/aprender-serve/src/gguf/metadata.rs (attn_logit_softcapping / final_logit_softcapping / query_pre_attn_scalar accessors)"
   references_external:
   - "llama.cpp convert_hf_to_gguf.py GemmaModel.modify_tensors: `data_torch = data_torch + 1` for *norm.weight (the GGUF +1 pre-shift, applies to all 4 gemma2 norms)"
   - "llama.cpp src/models/gemma2.cpp: ggml_tanh(ggml_scale(kq, 1/cap))*cap softcap, post_attention_norm/post_ffw_norm, n_embd_head_k query scale default"
-version: 3
+version: 4
 status: enforced
-date: 2026-06-16
+date: 2026-06-21
 
 proof_obligations:
   - type: invariant
@@ -127,6 +129,24 @@ proof_obligations:
       (loaded as None → skipped), attn_logit_softcap/final_logit_softcap are None (no softcap),
       and query_pre_attn_scalar is None so attn_scale falls back to 1/sqrt(head_dim) — the
       forward path is byte-identical to before PMAT-810 (e.g. qwen2/llama output unchanged).
+  - type: invariant
+    property: >
+      NON-GEMMA-APR-POSTNORM-NONE (PMAT-888): OwnedQuantizedModel::from_apr loads the
+      Gemma2-only post_attn_norm_weight / post_ffw_norm_weight slots ONLY when
+      config.is_gemma2(); for every non-Gemma2 architecture both slots are None on every
+      layer. This is REQUIRED because the HF tensor name post_attention_layernorm.weight is
+      the FFN (pre-feedforward) norm for llama/qwen2/qwen3/mistral/phi/deepseek (see
+      tensor_names_fallback::FfnNormWeight) — the same tensor the loader already loads into
+      ffn_norm_weight. Without the arch gate the APR loader populated post_attn_norm_weight
+      from that FFN-norm tensor, and ffn_block::forward_single_with_cache (which gates the
+      post-norm apply on is_some(), not on arch) applied a SPURIOUS extra RMSNorm to the
+      attention output before the residual add, producing garbage output (PMAT-887 repro:
+      the mojibake token stream from qwen2.5-coder-1.5b) on EVERY non-Gemma2 .apr, CPU and
+      GPU. The byte-identical GGUF stayed coherent because the GGUF loader (transformer.rs)
+      reads the disambiguated post_attention_norm.weight / post_ffw_norm.weight (no "layer"),
+      which do not exist in non-Gemma2 GGUFs. The FFN norm MUST still populate ffn_norm_weight.
+      This restores the NON-GEMMA-BYTE-IDENTICAL guarantee for the .apr inference path
+      (regression introduced by PMAT-810b #2100, shipped in v0.50.0; fixed by PMAT-888).
 
 falsification_tests:
   - id: FALSIFY-LOAD-GEMMA-001
@@ -177,3 +197,9 @@ falsification_tests:
     test_harness: "cargo test -p aprender-serve --lib capability::tests::test_qwen2_still_gpu_supported_after_gate capability::tests::test_llama_still_gpu_supported_after_gate capability::tests::test_gemma_v1_not_flagged_as_softcap"
     expected_output: "test result: ok"
     if_fails: "the new gate over-triggers and routes a non-softcap GPU-coherent model (qwen2/llama/gemma v1) to CPU = a perf regression."
+  - id: FALSIFY-LOAD-GEMMA-009
+    name: test_pmat888_non_gemma2_apr_has_no_post_attn_norm
+    prediction: "PMAT-888: OwnedQuantizedModel::from_apr on a non-Gemma2 (.apr arch=llama) model that DOES contain model.layers.0.post_attention_layernorm.weight (its FFN norm) leaves post_attn_norm_weight==None and post_ffw_norm_weight==None on every layer, while ffn_norm_weight stays Some. RED pre-fix (post_attn_norm_weight==Some(ffn-norm) → ffn_block applies a spurious extra RMSNorm → garbage output for every non-Gemma2 .apr, CPU and GPU). GREEN post-fix (post-norm load gated on config.is_gemma2())."
+    test_harness: "cargo test -p aprender-serve --lib test_pmat888_non_gemma2_apr_has_no_post_attn_norm"
+    expected_output: "test result: ok"
+    if_fails: "the .apr loader populates the Gemma2 post-attention-norm slot from the non-Gemma2 FFN-norm tensor (post_attention_layernorm.weight); ffn_block then applies it, corrupting all output of every non-Gemma2 .apr (the v0.50.0 PMAT-887 regression)."
