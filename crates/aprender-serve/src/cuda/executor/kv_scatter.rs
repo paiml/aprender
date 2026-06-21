@@ -525,6 +525,57 @@ impl CudaExecutor {
         // Update cache length
         self.kv_cache_lengths.insert(layer_idx, new_len);
 
+        // PMAT-884: optional cuda-oxide pure-Rust attention kernel (separate-head
+        // layout, reads the live cache directly — no gather). Default OFF; active
+        // only when the `oxide-attention` feature is built AND APR_OXIDE_ATTENTION=1.
+        // This is the LIVE decode path (`incremental_attention_into_inner`); with
+        // either off the path below (flash-decoding / multi-warp hand-PTX) is
+        // unchanged. Skipped during CUDA-graph capture (immediate launch can't be
+        // recorded into a graph) — graph-mode go-live is a separate step.
+        #[cfg(feature = "oxide-attention")]
+        {
+            let capturing = self.seq_len_buf.is_some();
+            if !capturing && std::env::var("APR_OXIDE_ATTENTION").as_deref() == Ok("1") {
+                use crate::cuda::executor::oxide_attention;
+                let num_kv_heads = self.kv_num_kv_heads;
+                const OXIDE_KEY: &str = "oxide_attn_sephead";
+                if !self.modules.contains_key(OXIDE_KEY) {
+                    let m = oxide_attention::compile_oxide_attention_sephead(self)?;
+                    self.modules.insert(OXIDE_KEY.to_string(), m);
+                }
+                let mut oxide_module = self
+                    .modules
+                    .remove(OXIDE_KEY)
+                    .expect("oxide module just inserted");
+                let k_key = format!("kv_{}_k", layer_idx);
+                let v_key = format!("kv_{}_v", layer_idx);
+                let k_buf = self.kv_cache_gpu.get(&k_key).ok_or_else(|| {
+                    GpuError::InvalidLaunchConfig("K cache not found (oxide)".to_string())
+                })?;
+                let v_buf = self.kv_cache_gpu.get(&v_key).ok_or_else(|| {
+                    GpuError::InvalidLaunchConfig("V cache not found (oxide)".to_string())
+                })?;
+                let scale = 1.0f32 / (head_dim as f32).sqrt();
+                let launch_res = oxide_attention::launch_oxide_attention_sephead(
+                    self,
+                    &mut oxide_module,
+                    q_gpu,
+                    k_buf,
+                    v_buf,
+                    out_gpu,
+                    new_len as u32,
+                    head_dim as u32,
+                    num_heads as u32,
+                    num_kv_heads as u32,
+                    (max_len * head_dim) as u32, // kv_stride = per-kv-head slab stride
+                    scale,
+                );
+                self.modules.insert(OXIDE_KEY.to_string(), oxide_module);
+                launch_res?;
+                return Ok(new_len);
+            }
+        }
+
         // PAR-058-DEBUG: Trace attention parameters for layer 0 (only first 3 tokens)
         // PAR-054-FIX: Skip during graph capture to avoid sync breaking capture
         if !skip_debug && layer_idx == 0 && new_len <= 3 {
