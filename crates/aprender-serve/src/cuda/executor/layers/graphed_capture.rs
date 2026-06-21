@@ -382,18 +382,32 @@ impl CudaExecutor {
 }
 
 impl CudaExecutor {
-    /// PMAT-810: Pure cc-based default for the graphed-decode path (no device,
-    /// no env). DP4A discrete GPUs (sm_89..sm_9x, cc in [89,120)) use the fast
-    /// manual CUDA-graph decode; Blackwell (cc>=120, e.g. GB10 sm_121) defaults
-    /// to the eager non-graphed decode because the trueno#243 manual graph
-    /// replay corrupts the sm_121 forward (apr parity cosine 0.19 -> garbage,
-    /// vs eager 0.99 + coherent). Non-DP4A GPUs (cc<89) keep eager too.
+    /// PMAT-886a (supersedes the PMAT-810 Blackwell carve-out): Pure cc-based
+    /// default for the graphed-decode path (no device, no env). ALL DP4A-era
+    /// GPUs (cc>=89), INCLUDING Blackwell (cc>=120, e.g. GB10 sm_121), now use
+    /// the fast manual CUDA-graph decode.
+    ///
+    /// PMAT-810 had defaulted Blackwell to eager because the trueno#243 manual
+    /// graph replay corrupted the sm_121 forward (apr parity cosine ~0.19,
+    /// empty/repeated tokens). PMAT-886a found and fixed the ROOT CAUSE: the
+    /// plain MWV (fp32-activation) Q4K GEMV — the DEFAULT Q4K variant on
+    /// Blackwell (Q4kVariant::Mwv, PMAT-806) — was missing its graph-recording
+    /// block in `mwv_q4k_gemv_into`, so the ~7 Q4K GEMVs/layer executed during
+    /// the eager capture pass but were NEVER added to the manual graph. On
+    /// replay those kernels were absent → stale buffers → garbage. The sibling
+    /// DP4A variant (used on discrete sm_89) HAD recording, which is why RTX 4090
+    /// was unaffected. With the recording restored, gx10 GB10 sm_121 graph replay
+    /// is byte-equivalent to eager (apr parity avg cosine 0.9934, argmax matches,
+    /// CPU/GPU token-for-token on 3+ prompts) AND faster: apr bench 96.4 (eager)
+    /// -> 112.1 tok/s (graph), +16%.
+    ///
+    /// Non-DP4A GPUs (cc<89) keep eager (the graph path needs DP4A-era kernels).
     /// Env (CUDA_GRAPH_ENABLE=1 / SKIP_CUDA_GRAPH=1) overrides this default at
     /// the call site. Extracted as a pure fn so the gating is unit-testable
     /// without a CUDA device.
     #[must_use]
     pub(crate) fn graph_cc_default(cc: u32) -> bool {
-        cc >= 89 && cc < 120
+        cc >= 89
     }
 }
 
@@ -401,19 +415,23 @@ impl CudaExecutor {
 mod pmat810_blackwell_graph_default_tests {
     use super::CudaExecutor;
 
-    /// PMAT-810: Blackwell (cc>=120, e.g. GB10 sm_121=121) MUST default the
-    /// graphed-decode path OFF -- the manual cuGraphAddKernelNode replay corrupts
-    /// the sm_121 forward (apr parity cosine ~0.19). The eager path is correct.
+    /// PMAT-886a: Blackwell (cc>=120, e.g. GB10 sm_121=121) now defaults the
+    /// graphed-decode path ON. The root-cause fix (record the MWV Q4K GEMV into
+    /// the manual graph, q4k_mwv_gemv.rs) makes sm_121 graph replay byte-
+    /// equivalent to eager (apr parity avg cosine 0.9934, argmax matches) and
+    /// +16% faster (apr bench 96.4 -> 112.1 tok/s). This REPLACES the PMAT-810
+    /// carve-out that had defaulted Blackwell OFF because the path was corrupt.
     #[test]
-    fn graph_default_off_on_blackwell() {
-        assert!(!CudaExecutor::graph_cc_default(121), "GB10 sm_121");
-        assert!(!CudaExecutor::graph_cc_default(120), "cc==120 boundary");
-        assert!(!CudaExecutor::graph_cc_default(130), "future Blackwell+");
+    fn graph_default_on_on_blackwell() {
+        assert!(CudaExecutor::graph_cc_default(121), "GB10 sm_121");
+        assert!(CudaExecutor::graph_cc_default(120), "cc==120 boundary");
+        assert!(CudaExecutor::graph_cc_default(130), "future Blackwell+");
     }
 
-    /// PMAT-810: Discrete DP4A GPUs (RTX 4090 sm_89=89, Ampere sm_80, Hopper
+    /// PMAT-810/886a: Discrete DP4A GPUs (RTX 4090 sm_89=89, Ampere sm_80, Hopper
     /// sm_90) keep the fast manual CUDA-graph decode -- verified correct there
-    /// (realizr#198 A/B diff=0 on RTX 4090). The fix is a strict no-op for them.
+    /// (realizr#198 A/B diff=0 on RTX 4090). The PMAT-886a fix is a strict no-op
+    /// for them (their Q4K path already recorded via the DP4A variant).
     #[test]
     fn graph_default_on_for_discrete_dp4a() {
         assert!(CudaExecutor::graph_cc_default(89), "RTX 4090 sm_89");
