@@ -1,6 +1,6 @@
 metadata:
   kind: schema
-  version: 1.10.0
+  version: 1.11.0
   status: ACTIVE
   created: '2026-05-03'
   author: PAIML Engineering
@@ -11,11 +11,14 @@ metadata:
   - 'evidence/gpu-head-dim-128-divergence-pmat800/findings.json (PMAT-800B: massive-activation dim-408 root cause)'
   - 'crates/aprender-serve/src/cuda/gpu_profile.rs detect_q4k (PMAT-806: Blackwell fp32-MWV-Q4K default)'
   - 'crates/aprender-serve/src/cuda/executor/q6k_gemv_indexed.rs is_massive_activation_outlier + pmat806_outlier_tests'
+  - 'crates/aprender-serve/src/cuda/executor/q4k_mwv_gemv.rs mwv_q4k_gemv_into (PMAT-886a: MWV Q4K GEMV graph-recording fix)'
+  - 'crates/aprender-serve/src/cuda/executor/layers/graphed_capture.rs graph_cc_default (PMAT-886a: cc>=89 re-includes Blackwell)'
   - 'crates/aprender-serve/src/cli/apr_inference.rs (line 46 comment: "Both ... produce garbage on GPU")'
   - 'crates/aprender-serve/src/gguf/cuda/mod_parity_gate.rs (existing gate for gguf::cuda path)'
   - 'crates/aprender-serve/src/gguf/cuda/mod.rs:268-279 (gate enforcement, with SKIP_PARITY_GATE=1 bypass)'
   - 'crates/aprender-serve/src/infer/gguf_gpu_generate.rs:487-494 (load_apr_cuda_model — visible-fallback log added 2026-05-03)'
   changelog:
+  - '1.11.0 - 2026-06-21 - added FALSIFY-CPU-GPU-011 + a Blackwell GRAPH-replay-parity invariant (PMAT-886a), and FIXED the PMAT-810 root cause so Blackwell now uses the fast graphed decode. ROOT CAUSE (gx10 GB10 sm_121, on-device GRAPH_AB_TEST per-buffer scan): the plain MWV (fp32-activation) Q4K GEMV mwv_q4k_gemv_into — the DEFAULT Q4K variant on Blackwell (Q4kVariant::Mwv, PMAT-806) — was MISSING its `if self.graph_recording { graph_recorded_kernels.push(...) }` block, while the sibling mwv_dp4a/hw_dp4a variants (used on discrete sm_89 DP4A GPUs) HAVE it (realizr#198). So on Blackwell the ~6 Q4K GEMVs/layer (Q,K,V,output,gate-or-fused,up,down) executed during the eager capture pass but were NEVER added to the manual graph; on cuGraphLaunch replay those kernels were ABSENT, leaving q/k/v + residual + ffn buffers STALE -> garbage (apr parity avg cosine 0.5336/0.1912). RTX 4090 (sm_89) was unaffected because it routes Q4K to the recorded DP4A variant. The CUDA graph mechanism itself is correct on sm_121 (a manual add_kernel_node reproducer + the stream-capture test both pass). Fix: record mwv_q4k_gemv_into too (5 LOC mirroring mwv_dp4a). Recorded kernel count 451 -> 619 (the previously-dropped ~168 MWV GEMVs). VERIFIED LIVE on gx10 sm_121: GRAPH_AB_TEST per-buffer diff 0.000000 across the whole transformer stack (hidden_buf1/2, q/k/v, attn, ffn_gate/up/act); apr parity (CUDA_GRAPH_ENABLE) 0.5336 -> 0.993437 (== eager, argmax matches 6/6 positions); default apr run (no env) now fires the graph AND matches --no-gpu token-for-token on Qwen2.5-coder-1.5B (3 prompts) and Qwen3-8B; apr bench 96.4 (eager) -> 112.1 tok/s (graph), +16%. graph_cc_default re-defaulted cc>=89 (was cc>=89 && cc<120), so PMAT-810 supersedes the Blackwell carve-out; CUDA_GRAPH_ENABLE/SKIP_CUDA_GRAPH escape hatches kept. total_obligations 10 -> 11.'
   - '1.10.0 - 2026-06-21 - added FALSIFY-CPU-GPU-010 + a Blackwell decode-throughput-floor invariant (PMAT-885). PMAT-884 found attention is <0.3% of the per-token budget, so the ~10.4 tok/s gx10 GB10 decode was elsewhere. On-device diagnosis: the deployed gx10 `apr` was the April-6 v0.4.11 binary (4b030b0c), which PREDATES PMAT-742 (Jun 13). Its validate_gpu_first_token used hard BOS-argmax-equality, so a harmless Blackwell FP near-tie flipped the first-token argmax and F2 FALSE-rejected the correct GPU path (`[GH-480] F2 validation FAILED — falling back to CPU`, no [F2-VALIDATION] reason line = pre-PMAT-742 gate). Default apr run then fell to CPU (wgpu also dead: VK_ERROR_INCOMPATIBLE_DRIVER) and decoded ~10.4 tok/s; nvidia-smi dmon SM peak ~8%. ISOLATION: SKIP_PARITY_GATE=1 on the SAME stale binary -> F2 PASSED -> 647-kernel CUDA graph -> 125.7 tok/s; apr qa (gate-free) PASSED golden_output at 97.6 tok/s. So the GPU kernels are fine on GB10; the F2 gate was the sole blocker. FIX is operational (NOT a code defect on main): current main already fixes this via PMAT-742 (near-tie) + PMAT-806/810 (Blackwell eager-decode/serial-prefill). Verified: v0.49.1 (7966da8ee) with NO env vars passes F2, runs ON GPU (SM peak 95%), coherent output, 112.9 tok/s (10.9x). Remediated: reinstalled v0.49.1 as gx10 default apr (backup ~/.cargo/bin/apr.v0.4.11.bak.pmat885). total_obligations 9 to 10.'
   - '1.9.0 - 2026-06-16 - added FALSIFY-CPU-GPU-009 + a Blackwell GPU-generation-parity invariant (PMAT-810). On-device sweep (gx10 GB10 sm_121, binary from PMAT-806 #2095 base) found the ENTIRE GPU path unusable on Blackwell via TWO stacked defects PMAT-806 did not cover: (1) PRIMARY the trueno#243 MANUAL CUDA-graph decode (graphed_capture, default-on cc>=89) corrupts the sm_121 forward (apr parity avg cosine 0.1912, generation empty/single-token) while the IDENTICAL eager path is correct (0.9929, coherent); (2) SECONDARY (the originally-flagged prefill divergence) once graph is fixed BATCHED prefill still diverges on Blackwell (NOT the activation-quant outlier: reproduces with FP8_PREFILL=0/HGEMM; 2 of 4 prompts wrong incl. one to Chinese) while SERIAL prefill is byte-exact (6 of 6). Fix: graphed_fast_path cc-default = cc>=89 && cc<120 (eager decode on Blackwell; CUDA_GRAPH_ENABLE=1 opts in); run_prefill defaults Blackwell to serial (BATCHED_PREFILL=1 opts in). LIVE: default apr run matches --no-gpu 5 of 5 and runs ON GPU; discrete sm_89 unchanged by construction. total_obligations 8 to 9.'
   - '1.8.0 — 2026-06-16 — added FALSIFY-CPU-GPU-008 + a Blackwell parity invariant (PMAT-806). The GPU HwDp4a Q4_K path quantizes RMSNorm activations to INT8 (Q8_1) before the DP4A dot; a massive-activation outlier channel (dim 408 of Qwen2.5-coder-1.5B, ~26× rms) collapses the per-block INT8 range and is mis-estimated ~15%, latent until a deep FFN cancels the outlier → catastrophic cancellation → CPU/GPU cosine craters (load-gate 0.9817 on the 28-layer model; deeper models drop further). Fix: detect_q4k() defaults Q4kVariant::Mwv (fp32 activations, no Q8_1 quant) on Blackwell (cc≥120); discrete GPUs (RTX 4090 cc=89) keep the fast HwDp4a path. LIVE on gx10 GB10: 0.981714→0.993891 (1.5B), 0.983273→0.999744 (Qwen3-8B), argmax matches, coherent generation. Q6K left on HwDp4a (MWV-Q6K lm_head diverges, tracked separately). GPU-free unit falsifier pmat806_outlier_tests. total_obligations 7 → 8.'
@@ -394,6 +397,59 @@ falsification_tests:
   - "LIVE DISCHARGE 2026-06-16 on gx10 (GB10 sm_121, cc=121): default `apr run --gpu` load-gate cosine 0.981714 → 0.993891 (Qwen2.5-coder-1.5B); Qwen3-8B 0.983273 → 0.999744; argmax matches; GPU generation coherent (`def add(a, b): return a`). Baseline reproduced exactly (HW_DP4A_Q4K=1 → 0.981714). No regression on the apr-parity manual-graph path (load-gate identical) nor RTX 4090 (cc=89 keeps HwDp4a by construction)."
   - "Massive-activation criterion is captured as a pure, GPU-free, unit-tested helper is_massive_activation_outlier (q6k_gemv_indexed.rs, pmat806_outlier_tests) for the FUTURE device-side selective version: a per-layer fp32 fixup that keeps DP4A on non-outlier columns requires a DEVICE-side outlier-detection kernel (host readback mid-forward corrupts the CUDA graph-recording/capture paths — measured: apr parity manual-graph cosine 0.98→0.84). That selective optimization is scoped but not in this fix; the profile-level fp32-MWV-Q4K default is the contained, correctness-first Blackwell fix."
 
+- id: FALSIFY-CPU-GPU-011
+  rule: >
+    On Blackwell (cc>=120, e.g. GB10 sm_121) the trueno#243 manual CUDA-graph
+    decode REPLAY MUST be byte-equivalent to the eager (non-graphed) decode and
+    match `apr run --no-gpu` token-for-token — every Q4_K GEMV variant the
+    decode forward can take MUST record itself into the manual graph, so the
+    replayed graph contains the COMPLETE kernel sequence (no silently-dropped
+    kernels leaving stale workspace buffers).
+  prediction: |
+    Root cause (PMAT-886a, on-device GRAPH_AB_TEST per-buffer scan, gx10 GB10
+    sm_121, 2026-06-21): the plain MWV (fp32-activation) Q4K GEMV
+    mwv_q4k_gemv_into — the DEFAULT Q4K variant on Blackwell (Q4kVariant::Mwv,
+    PMAT-806) — was MISSING its `if self.graph_recording { graph_recorded_kernels
+    .push(RecordedKernel{..}) }` block, while the sibling mwv_dp4a / hw_dp4a
+    variants (used on discrete sm_89 DP4A GPUs) HAVE it (realizr#198). So on
+    Blackwell the ~6 Q4K GEMVs per layer (Q, K, V, output proj, FFN gate/up,
+    FFN down) executed during the eager capture pass but were NEVER added to the
+    manual graph. On cuGraphLaunch replay those kernels are ABSENT, so q/k/v,
+    the attention input, the FFN projections and the residual stream keep STALE
+    values → every downstream kernel reads garbage. Symptoms: apr parity
+    (CUDA_GRAPH_ENABLE=1) avg cosine 0.5336 (min -0.26), argmax mismatch on all
+    positions, generation empty/single-repeated tokens. The IDENTICAL eager path
+    (SKIP_CUDA_GRAPH=1) is correct: avg cosine 0.993437, argmax matches 6/6
+    decode positions. RTX 4090 (sm_89) was unaffected because it routes Q4K to
+    the recorded DP4A variant; that is why realizr#198's A/B test showed diff=0
+    there. The CUDA graph mechanism itself is fine on sm_121 — a manual
+    add_kernel_node 3-node-chain reproducer replays correctly (got 31.0), and the
+    stream-capture graph test passes (101.0).
+    PREDICTION: adding the graph-recording block to mwv_q4k_gemv_into makes the
+    Blackwell manual-graph replay byte-equivalent to eager, so default `apr run`
+    (no env) fires the graph AND matches --no-gpu token-for-token, while gaining
+    throughput (graph collapses the per-token launch overhead). Discrete sm_89
+    GPUs are unchanged (their Q4K path already recorded).
+  test: |
+    # On Blackwell (gx10 GB10 sm_121), graph forced on, compared to eager:
+    #   CUDA_GRAPH_ENABLE=1 apr parity qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+    #     --prompt "What is 2+2?"
+    # MUST report avg cosine >= 0.99 (positions 1..N) with argmax MATCH, equal to
+    # the SKIP_CUDA_GRAPH=1 (eager) run. Default `apr run` (no env vars) MUST emit
+    # the "[trueno#243] Manual graph" + "Graph replay" logs AND produce output
+    # identical to `apr run --no-gpu`.
+    # GPU-free unit falsifier: pmat810_blackwell_graph_default_tests in
+    #   aprender-serve (graph_default_on_on_blackwell / on_for_discrete /
+    #   off_below_dp4a) — graph_cc_default(cc) == (cc >= 89).
+  if_fails: "A Q4_K GEMV variant the decode path can take does not record into the manual graph → Blackwell (or any GPU defaulting to that variant) gets a graph replay that silently drops kernels → stale-buffer garbage; the parity gate then forces a CPU fallback and the Blackwell graph perf-beat is lost."
+  binds_to: greedy_argmax_parity
+  status: DISCHARGED
+  algorithm_evidence:
+  - "Fix: crates/aprender-serve/src/cuda/executor/q4k_mwv_gemv.rs mwv_q4k_gemv_into now records into graph_recorded_kernels under `if self.graph_recording`, mirroring mwv_dp4a_q4k_gemv_into. 5 LOC + comment. Recorded kernel count went 451 -> 619 on Qwen2.5-coder-1.5B (the previously-dropped ~168 = ~6 MWV GEMVs/layer x 28 layers)."
+  - "Re-default: crates/aprender-serve/src/cuda/executor/layers/graphed_capture.rs graph_cc_default(cc) = cc >= 89 (was cc >= 89 && cc < 120). Blackwell (cc>=120) now defaults the graphed decode ON; this SUPERSEDES the PMAT-810 / FALSIFY-CPU-GPU-009 Blackwell-graph carve-out (the PMAT-810 prefill-serial default is unrelated and unchanged). CUDA_GRAPH_ENABLE=1 / SKIP_CUDA_GRAPH=1 escape hatches retained."
+  - "LIVE DISCHARGE 2026-06-21 on gx10 (GB10 sm_121, cc=121): GRAPH_AB_TEST per-buffer eager-vs-replay scan reports diff=0.000000 across the ENTIRE transformer stack (hidden_buf1, hidden_buf2, q_buf, k_buf, v_buf, attn_out_buf, ffn_gate_buf, ffn_up_buf, ffn_act_buf) — pre-fix the same scan showed hidden_buf2 diff=414, k_buf 385, q_buf 38. apr parity CUDA_GRAPH_ENABLE=1: avg cosine 0.5336 -> 0.993437 (== eager SKIP_CUDA_GRAPH=1), argmax matches 6/6 decode positions (pos 0 is the pre-existing warmup-dump artifact, present in eager too). Default `apr run` (no env) emits the Manual-graph + Graph-replay logs and matches --no-gpu token-for-token on Qwen2.5-coder-1.5B (3 prompts: factorial/colors/capital) and Qwen3-8B (Paris). apr bench --fast: 96.4 tok/s (eager) -> 112.1 tok/s (graph), +16%. RTX 4090 (cc=89) unaffected by construction (already recorded via DP4A variant)."
+  - "GPU-free unit falsifier (pmat810_blackwell_graph_default_tests): graph_default_on_on_blackwell (cc 120/121/130 -> true), graph_default_on_for_discrete_dp4a (89/90/119 -> true), graph_default_off_below_dp4a (75/70 -> false). RED before fix (the prior assertion was !graph_cc_default(121)); GREEN after (graph_cc_default(121)==true). Runs on non-CUDA CI."
+  - "Mechanism control: a manual add_kernel_node 3-node linear-chain reproducer (mirroring end_graph_recording's u64 arg encoding + dropped-local backing) replays correctly on sm_121 (got 31.0), and the stream-capture graph test passes (101.0) — proving the CUDA graph mechanism and the arg-lifetime pattern are NOT the bug; the missing GEMV recording was."
 - id: FALSIFY-CPU-GPU-010
   rule: >
     On Blackwell (cc>=120, e.g. GB10 sm_121) the default `apr run --gpu` decode
@@ -441,7 +497,7 @@ proof_obligations:
 - type: invariant
   property: "apr run with .apr file MUST run parity gate (currently only .gguf path has one)"
 - type: completeness
-  property: "all 9 falsifiers (greedy argmax, cosine, CUDA gate enforced, no-gpu honored, wgpu gate enforced, multi-step wgpu, no-false-positive, PMAT-810 Blackwell graph+prefill, PMAT-885 Blackwell decode-throughput floor) cover the parity surface"
+  property: "all 11 falsifiers (greedy argmax, cosine, CUDA gate enforced, no-gpu honored, wgpu gate enforced, multi-step wgpu, no-false-positive, PMAT-806 Blackwell outlier, PMAT-810 Blackwell graph+prefill default, PMAT-885 Blackwell decode-throughput floor, PMAT-886a Blackwell graph-replay GEMV-recording) cover the parity surface"
 - type: liveness
   property: "if GPU parity gate fails on ANY backend (CUDA or wgpu), user gets either an explicit error OR a CPU fallback — never silent gibberish"
 - type: invariant
@@ -453,10 +509,12 @@ proof_obligations:
   property: "on Blackwell (cc>=120) default apr run greedy GPU generation matches --no-gpu token-for-token AND runs on GPU - the manual CUDA-graph decode (graphed_capture) and batched prefill (run_prefill) both corrupt the Blackwell forward and default to eager / serial respectively (PMAT-810)"
 
 - type: invariant
+  property: "every Q4_K GEMV variant the decode forward can take records itself into the trueno#243 manual graph, so on Blackwell (cc>=120) the graph REPLAY is byte-equivalent to eager (GRAPH_AB_TEST per-buffer diff=0) and default apr run uses the fast graphed decode while matching --no-gpu token-for-token; graph_cc_default(cc)==(cc>=89) re-includes Blackwell (PMAT-886a, supersedes the PMAT-810 graph carve-out)"
+- type: invariant
   property: "on Blackwell (cc>=120) default apr run --gpu decode throughput for a 1.5B Q4_K_M model is >= 100 tok/s (on-GPU resident path, no silent CPU/wgpu fallback); ~10 tok/s falsifies it as an F2 false-fallback / stale binary (PMAT-885)"
 
 verification_summary:
-  total_obligations: 10
+  total_obligations: 11
   proven: 0
   tested: 1
   status: pending
