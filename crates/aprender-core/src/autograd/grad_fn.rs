@@ -267,6 +267,42 @@ impl GradFn for SqrtBackward {
     }
 }
 
+/// Gradient function for abs: z = |x|
+///
+/// PMAT-896: without this grad_fn, `abs()` severed the autograd graph and
+/// `L1Loss` (which is `mean(|pred - target|)`) produced no input gradient,
+/// silently training to zero. ∂|x|/∂x = sign(x), with sign(0) = 0 to match
+/// PyTorch's subgradient convention at the non-differentiable point.
+pub(crate) struct AbsBackward {
+    pub(crate) x: Tensor,
+}
+
+impl GradFn for AbsBackward {
+    fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
+        // ∂|x|/∂x = sign(x); sign(0) = 0 (PyTorch subgradient convention)
+        let grad_data: Vec<f32> = grad_output
+            .data()
+            .iter()
+            .zip(self.x.data().iter())
+            .map(|(&g, &x)| {
+                let sign = if x > 0.0 {
+                    1.0
+                } else if x < 0.0 {
+                    -1.0
+                } else {
+                    0.0
+                };
+                g * sign
+            })
+            .collect();
+        vec![Tensor::new(&grad_data, grad_output.shape())]
+    }
+
+    fn name(&self) -> &'static str {
+        "AbsBackward"
+    }
+}
+
 // ============================================================================
 // Reduction Operations
 // ============================================================================

@@ -36,9 +36,13 @@ impl NLLLoss {
 // ============================================================================
 
 /// Element-wise absolute value.
+///
+/// PMAT-896: delegates to the autograd-aware `Tensor::abs` so the
+/// computation graph stays connected. The previous `Tensor::from_vec`
+/// implementation severed autograd, which silently zeroed every
+/// `L1Loss` gradient (`L1Loss = mean(|pred - target|)`).
 pub(super) fn abs(x: &Tensor) -> Tensor {
-    let data: Vec<f32> = x.data().iter().map(|&v| v.abs()).collect();
-    Tensor::from_vec(data, x.shape())
+    x.abs()
 }
 
 /// Softmax computation for gradient tracking.

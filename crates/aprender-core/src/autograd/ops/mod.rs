@@ -9,10 +9,10 @@
 use std::sync::Arc;
 
 use super::grad_fn::{
-    AddBackward, BroadcastAddBackward, DivBackward, ExpBackward, GeluBackward, LeakyReluBackward,
-    LogBackward, MatmulBackward, MeanBackward, MulBackward, NegBackward, PowBackward, ReluBackward,
-    SigmoidBackward, SoftmaxBackward, SqrtBackward, SubBackward, SumBackward, TanhBackward,
-    TransposeBackward, ViewBackward,
+    AbsBackward, AddBackward, BroadcastAddBackward, DivBackward, ExpBackward, GeluBackward,
+    LeakyReluBackward, LogBackward, MatmulBackward, MeanBackward, MulBackward, NegBackward,
+    PowBackward, ReluBackward, SigmoidBackward, SoftmaxBackward, SqrtBackward, SubBackward,
+    SumBackward, TanhBackward, TransposeBackward, ViewBackward,
 };
 use super::tensor::Tensor;
 use super::{is_grad_enabled, with_graph};
@@ -272,6 +272,31 @@ impl Tensor {
             let grad_fn = Arc::new(SqrtBackward {
                 output: result.clone(),
             });
+            result.set_grad_fn(grad_fn.clone());
+
+            with_graph(|graph| {
+                graph.register_tensor(self.clone());
+                graph.record(result.id(), grad_fn, vec![self.id()]);
+            });
+        }
+
+        result
+    }
+
+    /// Element-wise absolute value: z = |self|
+    ///
+    /// PMAT-896: this is the autograd-aware `abs`. ∂|x|/∂x = sign(x)
+    /// (with sign(0) = 0, PyTorch subgradient convention). Without the
+    /// recorded `AbsBackward` grad_fn, `L1Loss` = `mean(|pred - target|)`
+    /// produced no input gradient and trained silently to zero.
+    #[must_use]
+    pub fn abs(&self) -> Tensor {
+        let data: Vec<f32> = self.data().iter().map(|&a| a.abs()).collect();
+        let mut result = Tensor::from_vec(data, self.shape());
+
+        if is_grad_enabled() && self.requires_grad_enabled() {
+            result.requires_grad_(true);
+            let grad_fn = Arc::new(AbsBackward { x: self.clone() });
             result.set_grad_fn(grad_fn.clone());
 
             with_graph(|graph| {
