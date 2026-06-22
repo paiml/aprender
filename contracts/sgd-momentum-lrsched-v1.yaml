@@ -1,0 +1,128 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-22'
+  author: PAIML Engineering
+  registry: true
+  description: |
+    SGD-with-momentum learning-rate-schedule parity (PyTorch parity, PMAT-898).
+
+    PyTorch's torch.optim.SGD with momentum keeps an UNSCALED velocity buffer
+    and applies the learning rate FRESH at update time on every step:
+
+        b   <- momentum * b + grad        (buffer, lr-free)
+        theta <- theta - lr * b           (lr read fresh each step)
+
+    Because lr is never baked into b, changing lr mid-training (an LR schedule,
+    e.g. via Optimizer::set_lr or a scheduler) takes effect on the very next
+    step without dragging a stale lr through the momentum term.
+
+    Defect (PMAT-898): aprender's SGD baked lr INTO the velocity buffer
+    (b <- momentum*b - lr*grad; theta <- theta + b) in BOTH the scalar
+    fallback path and the SIMD path. After a set_lr() the momentum component
+    still carried the OLD lr, so the trajectory diverged from PyTorch under any
+    LR schedule. Closed-form witness (g=1.0, mu=0.9, theta0=0, lr 0.1 -> 0.01):
+    PyTorch theta2 = -0.119; buggy aprender theta2 = -0.200 (~40% off).
+  references:
+  - 'PyTorch torch.optim.SGD — momentum buffer is lr-free; lr applied per step (b = mu*b + g; p -= lr*b)'
+  - 'Sutskever et al. (2013) On the importance of initialization and momentum in deep learning'
+  - 'crates/aprender-train/src/optim/sgd.rs — SGD::step scalar + SIMD paths (fix site)'
+  - 'crates/aprender-train/src/optim/simd/axpy.rs — simd_axpy fused y += a*x'
+
+kind: KernelContract
+name: sgd-momentum-lrsched
+version: 1.0.0
+scope: crates/aprender-train/src/optim/sgd.rs — SGD momentum velocity buffer + lr application
+
+description: |
+  SGD-with-momentum must keep an UNSCALED velocity buffer (b = momentum*b + grad)
+  and apply the learning rate fresh at parameter-update time (theta -= lr*b), so a
+  mid-training learning-rate change (LR schedule) matches PyTorch exactly. The
+  scalar fallback path and the SIMD path must produce identical results.
+
+equations:
+  momentum_buffer_update:
+    formula: b_c <- momentum * b_c + grad_c
+    domain: momentum in [0, 1); grad_c in R per parameter c; b initialized to 0
+    codomain: b_c in R
+    invariants:
+    - 'Buffer is lr-FREE: no learning rate appears in the buffer recurrence'
+    - 'First step (b init 0): b_c = grad_c'
+    - 'Applied once per SGD::step per parameter element c'
+    - 'Scalar path (len < 16) and SIMD path (len >= 16) compute identical b_c'
+    preconditions:
+    - grad.iter().all(|v| v.is_finite())
+    - grad.len() > 0
+    lean_theorem: Theorems.Sgd_Momentum_Buffer_Update
+  parameter_update_fresh_lr:
+    formula: theta_c <- theta_c - lr * b_c
+    domain: lr in R_>0 read at update time; b_c in R; theta_c in R
+    codomain: theta_c in R
+    invariants:
+    - 'lr is read FRESH on every step, never baked into b'
+    - 'A set_lr(lr2) between steps applies lr2 to the next theta update immediately'
+    - 'Constant lr is unchanged: lr-baked and lr-fresh rules coincide when lr never changes'
+    - 'Closed-form (g=1, mu=0.9, theta0=0, lr 0.1->0.01): theta2 = -0.119 (PyTorch)'
+    preconditions:
+    - grad.iter().all(|v| v.is_finite())
+    - grad.len() > 0
+    lean_theorem: Theorems.Sgd_Parameter_Update_Fresh_Lr
+
+proof_obligations:
+- type: equivalence
+  property: SGD momentum matches PyTorch under an LR schedule
+  formal: |
+    For one parameter with grad g=1.0, momentum mu=0.9, theta0=0.0: stepping at
+    lr=0.1, then set_lr(0.01), then stepping again yields theta2 = -0.119 (the
+    PyTorch closed form b=mu*b+g, theta-=lr*b), NOT the lr-baked -0.200.
+  tolerance: 1.0e-06
+  applies_to: all
+- type: equivalence
+  property: Scalar and SIMD paths agree under an LR schedule
+  formal: |
+    The scalar fallback (length < 16) and SIMD (length >= 16) paths produce the
+    same per-element result for identical inputs; both give theta2 = -0.119 on the
+    lr-scheduled witness above.
+  tolerance: 1.0e-06
+  applies_to: all
+- type: invariant
+  property: Constant-lr behavior is preserved (no regression)
+  formal: |
+    With lr fixed (never changed), two steps of (g=1.0, mu=0.9, theta0=0.0) give
+    theta2 = -0.29, identical for the lr-baked and lr-fresh rules. The fix changes
+    behavior ONLY when lr changes mid-training.
+  tolerance: 1.0e-06
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-SGD-LRSCHED-001
+  rule: SGD momentum keeps an lr-free buffer and applies lr fresh per step
+  prediction: |
+    Stepping a single parameter (g=1.0, mu=0.9, theta0=0.0) at lr=0.1, calling
+    set_lr(0.01), then stepping again gives theta2 = -0.119 (PyTorch). Pre-fix the
+    scalar path baked lr into the velocity buffer and produced theta2 = -0.200.
+  if_fails: |
+    SGD::step's momentum branch bakes lr into the velocity buffer
+    (b = mu*b - lr*grad; theta += b) instead of keeping b = mu*b + grad and
+    applying theta -= lr*b with lr read fresh. Fix both the scalar fallback and
+    the SIMD axpy path in crates/aprender-train/src/optim/sgd.rs.
+  test: cargo test -p aprender-train --lib falsify_sgd_momentum_lrsched_scalar
+  evidence: cargo test -p aprender-train --lib falsify_sgd_momentum_lrsched_scalar
+- id: FALSIFY-SGD-LRSCHED-002
+  rule: SIMD path matches the scalar path under an LR schedule
+  prediction: |
+    The 16-element SIMD path on the same lr-scheduled witness gives each element
+    theta2 = -0.119. Pre-fix the SIMD path also baked lr into the buffer and gave
+    -0.200.
+  if_fails: |
+    The SIMD branch of SGD::step still scales the velocity by momentum and adds
+    -lr*grad (baking lr). Change it to b += grad then theta += -lr*b.
+  test: cargo test -p aprender-train --lib falsify_sgd_momentum_lrsched_simd
+  evidence: cargo test -p aprender-train --lib falsify_sgd_momentum_lrsched_simd
+
+qa_gate:
+  id: F-SGD-MOMENTUM-LRSCHED-001
+  name: sgd-momentum-lrsched-v1 Contract
+  description: SGD momentum must keep an lr-free buffer and apply lr fresh per step (PyTorch parity under an LR schedule).
+  checks:
+  - validation
+  - falsification
