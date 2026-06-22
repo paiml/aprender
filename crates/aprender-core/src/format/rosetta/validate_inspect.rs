@@ -53,7 +53,14 @@ impl RosettaStone {
         for name in reader.tensor_names() {
             // Use get_tensor_as_f32 which handles dequantization
             if let Some(f32_data) = reader.get_tensor_as_f32(name) {
-                let tv = self.compute_tensor_validation(name, &f32_data);
+                // PMAT-889: pass the on-disk 2-D shape so the dead-output-row gate
+                // (F-DATA-QUALITY-007) can scan per-output-row L2 for output-projection
+                // tensors. Falls back to the shape-free gates for non-2-D tensors.
+                let shape: Vec<usize> = reader
+                    .get_tensor(name)
+                    .map(|e| e.shape.clone())
+                    .unwrap_or_default();
+                let tv = self.compute_tensor_validation_with_shape(name, &f32_data, &shape);
 
                 total_nan += tv.nan_count;
                 total_inf += tv.inf_count;
@@ -101,6 +108,85 @@ impl RosettaStone {
     /// Clamp infinite min/max to 0.0 for reporting.
     fn clamp_infinite(v: f32) -> f32 {
         if v.is_infinite() { 0.0 } else { v }
+    }
+
+    /// Shape-aware tensor validation (PMAT-889).
+    ///
+    /// Runs the whole-tensor data-quality gates (`compute_tensor_validation`) and,
+    /// when the tensor is a 2-D output projection (lm_head / embed / output), ALSO
+    /// runs the per-output-row dead-row gate (F-DATA-QUALITY-007). The flat row-major
+    /// `data` is interpreted as `[shape[0], shape[1]]` = `[out_units, in_dim]`.
+    fn compute_tensor_validation_with_shape(
+        &self,
+        name: &str,
+        data: &[f32],
+        shape: &[usize],
+    ) -> TensorValidation {
+        let mut tv = self.compute_tensor_validation(name, data);
+        Self::check_dead_output_row(name, data, shape, &mut tv.failures);
+        tv.is_valid = tv.failures.is_empty();
+        tv
+    }
+
+    /// F-DATA-QUALITY-007 (PMAT-889): reject a 2-D output-projection weight that
+    /// has at least one fully-zero (L2 ~ 0) OUTPUT ROW.
+    ///
+    /// For an `lm_head`/`output` `[vocab, hidden]` a zero row makes that token's
+    /// logit structurally a constant (its dot-product against any hidden state is
+    /// 0) — a dead token that can never be emitted with positive evidence. For an
+    /// `embed_tokens` `[vocab, hidden]` a zero row is a dead/unreachable token
+    /// vector. The whole-tensor density / L2 / constant gates MISS this because a
+    /// single zero row is a tiny fraction of a large tensor. llama.cpp / Ollama
+    /// load and run such a model silently; apr fails closed.
+    ///
+    /// Scope (false-positive safety): the gate fires ONLY when (a) the shape is
+    /// 2-D and (b) the tensor's ROLE is an output projection whose zero row is
+    /// unambiguously corrupt — `lm_head` / `embed` / `output`. Other roles (q/k/v,
+    /// gate/up/down, norms, biases, generic buffers) are intentionally excluded to
+    /// avoid false positives on tensors where a structurally-zero row may be valid.
+    fn check_dead_output_row(
+        name: &str,
+        data: &[f32],
+        shape: &[usize],
+        failures: &mut Vec<String>,
+    ) {
+        // Gate only on 2-D output-projection roles.
+        if shape.len() != 2 || !Self::is_output_projection_role(name) {
+            return;
+        }
+        let (out_units, in_dim) = (shape[0], shape[1]);
+        // Guard against shape/data inconsistency (a separate concern handled by
+        // shape gates elsewhere) — only scan when the flat length matches.
+        if in_dim == 0 || out_units == 0 || out_units * in_dim != data.len() {
+            return;
+        }
+        for row in 0..out_units {
+            let start = row * in_dim;
+            let slice = &data[start..start + in_dim];
+            let sum_sq: f64 = slice.iter().map(|&v| f64::from(v) * f64::from(v)).sum();
+            let row_l2 = sum_sq.sqrt() as f32;
+            if row_l2 < 1e-6 {
+                failures.push(format!(
+                    "[F-DATA-QUALITY-007] DEAD OUTPUT ROW: output row {row}/{out_units} has \
+                     L2~0 (dead token — logit is structurally constant; the incumbents load \
+                     and run this silently)"
+                ));
+                // One representative dead row is sufficient to fail closed.
+                break;
+            }
+        }
+    }
+
+    /// Roles whose fully-zero output row is unambiguously corrupt (PMAT-889).
+    /// Conservative allow-list: lm_head / output head and the token embedding.
+    fn is_output_projection_role(name: &str) -> bool {
+        let n = name.to_lowercase();
+        n.contains("lm_head")
+            || n == "output.weight"
+            || n.ends_with("output.weight")
+            || n.contains("embed")
+            || n.contains("tok_embeddings")
+            || n.contains("wte")
     }
 
     fn compute_tensor_validation(&self, name: &str, data: &[f32]) -> TensorValidation {
