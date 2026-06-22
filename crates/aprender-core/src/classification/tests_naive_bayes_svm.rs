@@ -147,6 +147,90 @@ fn test_gaussian_nb_probabilities_sum_to_one() {
     }
 }
 
+/// F-GAUSSIANNB-EPSILON-003 (PMAT-890): variance smoothing must scale `var_smoothing`
+/// by the largest *feature* variance, matching scikit-learn:
+///   `epsilon = var_smoothing * X.var(axis=0).max()`
+/// then add that single `epsilon` to EVERY per-class feature variance.
+///
+/// On `main` the code added a raw additive `var_smoothing` (1e-9) directly — on a
+/// mixed-scale dataset the smoothed variance for a tiny-variance feature is thousands of
+/// times too small, distorting the Gaussian log-likelihood / Mahalanobis term. This is a
+/// LIVE wrong-answer bug vs the provably-correct sklearn reference.
+///
+/// Fixture (no Python required): 2 features on wildly different scales, 2 classes (2 rows
+/// each). Per-class population variance (`/n`, biased) and the global per-feature variance
+/// (over all 4 rows) are computed below in closed form, so the expected sklearn `epsilon`
+/// is exact.
+#[test]
+fn test_gaussian_nb_var_smoothing_scaled_by_max_feature_var() {
+    // Rows are (feature0_large_scale, feature1_tiny_scale).
+    //   class 0: (0, 0.00), (2000, 0.02)
+    //   class 1: (3000, 0.50), (5000, 0.52)
+    let x = Matrix::from_vec(
+        4,
+        2,
+        vec![
+            0.0, 0.00, // class 0
+            2000.0, 0.02, // class 0
+            3000.0, 0.50, // class 1
+            5000.0, 0.52, // class 1
+        ],
+    )
+    .expect("4x2 mixed-scale fixture");
+    let y = vec![0, 0, 1, 1];
+
+    let var_smoothing = 1e-9_f64;
+    let mut model = GaussianNB::new().with_var_smoothing(var_smoothing as f32);
+    model.fit(&x, &y).expect("fit on mixed-scale data");
+
+    // --- Closed-form sklearn reference (all in f64) ---
+    // Per-class population variance (biased, /n) for the TINY feature (feature1):
+    //   class 0 feature1: mean=0.01, var = ((-0.01)^2 + (0.01)^2)/2 = 1e-4
+    let raw_var_small_feature_class0 = 1.0e-4_f64;
+    // Global per-feature population variance over ALL 4 rows:
+    //   feature0 = var([0,2000,3000,5000]) = 3.25e6  (the MAX feature variance)
+    //   feature1 = var([0,0.02,0.5,0.52])  = 0.0626
+    let max_feature_var = 3.25e6_f64; // = X.var(axis=0).max()
+    let sklearn_epsilon = var_smoothing * max_feature_var; // = 3.25e-3
+    let expected_smoothed_small = raw_var_small_feature_class0 + sklearn_epsilon;
+
+    // What `main` (buggy) would store: raw_var + var_smoothing (epsilon NOT scaled by max_var)
+    let buggy_smoothed_small = raw_var_small_feature_class0 + var_smoothing; // ~= 1.000001e-4
+
+    let variances = model
+        .variances
+        .as_ref()
+        .expect("fitted model exposes per-class variances");
+    // class 0 (index 0), feature1 (index 1) — the small-variance feature.
+    let stored_small = f64::from(variances[0][1]);
+
+    // The sklearn value and the buggy value differ by a factor of ~33.5x — any tolerance
+    // far below that distinguishes them. Use a tight relative tolerance.
+    let rel_err = (stored_small - expected_smoothed_small).abs() / expected_smoothed_small;
+    assert!(
+        rel_err < 1e-4,
+        "F-GAUSSIANNB-EPSILON-003: stored smoothed variance for the small feature must equal \
+         raw_var + var_smoothing*max_feature_var (sklearn). \
+         stored={stored_small:.9e}, sklearn_expected={expected_smoothed_small:.9e} \
+         (epsilon={sklearn_epsilon:.9e}), buggy_main_would_store={buggy_smoothed_small:.9e}, \
+         rel_err={rel_err:.6e}"
+    );
+
+    // predict_proba rows must be finite and sum to ~1.
+    let proba = model.predict_proba(&x).expect("predict_proba succeeds");
+    for row in &proba {
+        let sum: f32 = row.iter().sum();
+        assert!(
+            row.iter().all(|p| p.is_finite()),
+            "all predict_proba entries must be finite, got {row:?}"
+        );
+        assert!(
+            (sum - 1.0).abs() < 1e-5,
+            "predict_proba row must sum to ~1, got sum={sum}"
+        );
+    }
+}
+
 #[test]
 fn test_gaussian_nb_default() {
     let model1 = GaussianNB::new();

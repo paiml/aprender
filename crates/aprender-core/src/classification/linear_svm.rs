@@ -26,7 +26,10 @@ impl GaussianNB {
 
     /// Sets the variance smoothing parameter.
     ///
-    /// Adds this value to variances to avoid numerical instability.
+    /// Matches scikit-learn: the smoothing added to every per-class feature variance is
+    /// `epsilon = var_smoothing * X.var(axis=0).max()` (this value scaled by the largest
+    /// feature variance), not a raw additive constant. Avoids numerical instability while
+    /// staying scale-aware on mixed-scale data.
     ///
     /// # Example
     ///
@@ -74,6 +77,32 @@ impl GaussianNB {
 
         let n_classes = classes.len();
 
+        // scikit-learn `GaussianNB` defines the variance-smoothing term as the single scalar
+        //   epsilon = var_smoothing * X.var(axis=0).max()
+        // i.e. `var_smoothing` is SCALED by the largest *feature* variance (computed over ALL
+        // training rows, biased/population variance `/n`), then that one `epsilon` is added to
+        // EVERY per-class feature variance. A raw additive `var_smoothing` would be thousands
+        // of times too small on mixed-scale data, distorting the Gaussian log-likelihood.
+        // Refs PMAT-890 / F-GAUSSIANNB-EPSILON-003.
+        let mut max_feature_var = 0.0_f32;
+        for feature_idx in 0..n_features {
+            let mut sum = 0.0_f32;
+            for sample_idx in 0..n_samples {
+                sum += x.get(sample_idx, feature_idx);
+            }
+            let mean = sum / n_samples as f32;
+            let mut sum_sq_diff = 0.0_f32;
+            for sample_idx in 0..n_samples {
+                let diff = x.get(sample_idx, feature_idx) - mean;
+                sum_sq_diff += diff * diff;
+            }
+            let feature_var = sum_sq_diff / n_samples as f32;
+            if feature_var > max_feature_var {
+                max_feature_var = feature_var;
+            }
+        }
+        let epsilon = self.var_smoothing * max_feature_var;
+
         // Initialize storage
         let mut class_priors = vec![0.0; n_classes];
         let mut means = vec![vec![0.0; n_features]; n_classes];
@@ -110,7 +139,7 @@ impl GaussianNB {
                         diff * diff
                     })
                     .sum();
-                *variance_val = sum_sq_diff / n_class_samples + self.var_smoothing;
+                *variance_val = sum_sq_diff / n_class_samples + epsilon;
             }
         }
 
