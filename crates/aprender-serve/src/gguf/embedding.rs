@@ -5,6 +5,62 @@ fn transpose_f32_matrix(data: &[f32], rows: usize, cols: usize) -> Vec<f32> {
     crate::contract_gate::transpose_f32(data, rows, cols)
 }
 
+/// PMAT-895 (OBLIG-GGUF-LOAD-NANINF): scan the f16 scale field(s) of a quantized
+/// tensor's raw bytes for a non-finite value (NaN/Inf). Returns the first offending
+/// scale value if any, else `None`.
+///
+/// The block / super-block scale layouts mirror the dequant code
+/// (`quantize/dequant.rs`, `quantize/dequant_q4k.rs`): each block leads with (or, for
+/// Q6_K/Q2_K/Q3_K, ends with) one or two f16 scales. We read ONLY those f16 fields —
+/// O(num_blocks), not O(num_elements). A non-finite `d`/`dmin` poisons every element
+/// of its block at dequant, so checking the scales is both cheap and sufficient. F32
+/// tensors (embeddings/norms) are stored separately and are not handled here.
+fn quant_scale_first_nonfinite(data: &[u8], qtype: u32) -> Option<f32> {
+    use crate::gguf::types::{
+        GGUF_TYPE_Q2_K, GGUF_TYPE_Q3_K, GGUF_TYPE_Q4_0, GGUF_TYPE_Q4_1, GGUF_TYPE_Q4_K,
+        GGUF_TYPE_Q5_0, GGUF_TYPE_Q5_1, GGUF_TYPE_Q5_K, GGUF_TYPE_Q6_K, GGUF_TYPE_Q8_0,
+    };
+    use crate::quantize::read_f16;
+
+    if data.is_empty() {
+        return None;
+    }
+
+    // (block_bytes, &[scale_offsets_within_block]) for each supported quant type.
+    // Each offset marks a 2-byte little-endian f16 scale field.
+    let (block_bytes, scale_offsets): (usize, &[usize]) = match qtype {
+        // 32-element blocks (one or two leading f16 scales).
+        t if t == GGUF_TYPE_Q4_0 => (18, &[0]),
+        t if t == GGUF_TYPE_Q8_0 => (34, &[0]),
+        t if t == GGUF_TYPE_Q4_1 => (20, &[0, 2]),
+        t if t == GGUF_TYPE_Q5_0 => (22, &[0]),
+        t if t == GGUF_TYPE_Q5_1 => (24, &[0, 2]),
+        // 256-element K-quant super-blocks.
+        t if t == GGUF_TYPE_Q4_K => (144, &[0, 2]),    // d, dmin
+        t if t == GGUF_TYPE_Q5_K => (176, &[0, 2]),    // d, dmin
+        t if t == GGUF_TYPE_Q6_K => (210, &[208]),     // d (trailing)
+        t if t == GGUF_TYPE_Q2_K => (84, &[80, 82]),   // d, dmin (trailing)
+        t if t == GGUF_TYPE_Q3_K => (110, &[108]),     // d_all (trailing)
+        // F16/F32/BF16/unknown: not a scaled-block layout — skip here.
+        _ => return None,
+    };
+
+    if block_bytes == 0 || !data.len().is_multiple_of(block_bytes) {
+        // Malformed block size for this qtype: leave to the existing shape gates.
+        return None;
+    }
+
+    for block in data.chunks_exact(block_bytes) {
+        for &off in scale_offsets {
+            let scale = read_f16(&block[off..off + 2]);
+            if !scale.is_finite() {
+                return Some(scale);
+            }
+        }
+    }
+    None
+}
+
 /// Dequantize token embedding from APR format to f32 based on dtype.
 ///
 /// Refs realizar#85: Added BF16/F16 support for aprender's GH-205/GH-353 passthrough.
@@ -126,6 +182,16 @@ impl OwnedQuantizedModel {
     /// density gate catches it, but `apr run` does not run those gates). This fails the
     /// load with a clear error naming the first truncated tensor — the fail-closed
     /// guarantee from the Pillar-4 beat (PMAT-744) extended to the load path.
+    ///
+    /// PMAT-895 (OBLIG-GGUF-LOAD-NANINF): also reject a model whose quantized weights
+    /// dequantize to NaN/Inf. A super-block whose f16 scale `d`/`dmin` is f16 +Inf
+    /// (`0x7C00`) or NaN (`0x7E00`) makes EVERY element of that block non-finite at
+    /// dequant; inference then emits garbage. llama.cpp / Ollama load such a model
+    /// (their `check_tensors` defaults to false), so apr failing closed here is a
+    /// genuine Pillar-4 BEAT. The same NaN/Inf guarantee already exists on the
+    /// SafeTensors path (F-DATA-QUALITY-002, `safetensors/validation.rs`); this wires
+    /// it into the quantized load path. We scan only the f16 scale field(s) per block
+    /// (O(num_blocks), not O(num_elements)) — the scales are what corrupt the dequant.
     pub(crate) fn validate_quantized_tensors(&self) -> Result<()> {
         fn check(t: &OwnedQuantizedTensor, name: &str) -> Result<()> {
             if t.is_truncated() {
@@ -133,6 +199,17 @@ impl OwnedQuantizedModel {
                     reason: format!(
                         "truncated/corrupt model: tensor '{name}' declares {}x{} but has no data (file is incomplete)",
                         t.out_dim, t.in_dim
+                    ),
+                });
+            }
+            // PMAT-895: fail closed on a non-finite quant scale (NaN/Inf dequant).
+            if let Some(bad) = quant_scale_first_nonfinite(&t.data, t.qtype) {
+                return Err(crate::error::RealizarError::InvalidShape {
+                    reason: format!(
+                        "OBLIG-GGUF-LOAD-NANINF: tensor '{name}' (qtype {}) has a non-finite \
+                         f16 quant scale (value {bad}); it dequantizes to NaN/Inf and produces \
+                         garbage at inference — apr fails closed at load (F-DATA-QUALITY-002)",
+                        t.qtype
                     ),
                 });
             }

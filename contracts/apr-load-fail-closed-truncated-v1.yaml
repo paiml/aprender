@@ -1,7 +1,7 @@
 contract: apr-load-fail-closed-truncated
 metadata:
   kind: pattern
-  version: "1.0.0"
+  version: "1.1.0"
   description: >
     realizar's GGUF loader must FAIL CLOSED on a truncated/corrupt model. The
     chokepoint OwnedQuantizedTensor::from_ref_with_dims silently substitutes an empty
@@ -16,13 +16,25 @@ metadata:
     truncated tensor. This extends the Pillar-4 fail-closed guarantee (PMAT-744) to the
     load path. Found by an adversarial inference bug-hunt (root cause behind a narrow
     DIRECT_FP32_GEMV panic).
+    PMAT-895 (v1.1.0) extends the same validate_quantized_tensors load-time walk to
+    reject NaN/Inf quantized weights: a quantized super-block whose f16 scale d/dmin is
+    f16 +Inf (0x7C00) or NaN (0x7E00) dequantizes to NaN/Inf at every element of that
+    block, so inference emits garbage. Before PMAT-895, from_mapped accepted such a
+    model — validate_quantized_tensors only called is_truncated, with no finiteness
+    check. llama.cpp / Ollama also load it (their check_tensors defaults to false,
+    common.h:441; --check-tensors is opt-in), so apr rejecting it at load is a genuine
+    Pillar-4 BEAT, not parity. The NaN/Inf guarantee already existed on the SafeTensors
+    path (F-DATA-QUALITY-002, safetensors/validation.rs); PMAT-895 wires it into the
+    quantized load path by scanning the f16 scale field(s) per block (O(num_blocks)).
   references:
   - "crates/aprender-serve/src/gguf/quantized.rs (from_ref_with_dims, is_truncated)"
-  - "crates/aprender-serve/src/gguf/embedding.rs (OwnedQuantizedModel::from_mapped + validate_quantized_tensors)"
+  - "crates/aprender-serve/src/gguf/embedding.rs (OwnedQuantizedModel::from_mapped + validate_quantized_tensors + quant_scale_first_nonfinite)"
   - "crates/aprender-serve/src/gguf/quantized_tests.rs (test_pmat750_truncated_tensor_detected)"
+  - "crates/aprender-serve/src/gguf/tests/beat_fail_closed_naninf.rs (PMAT-895 gguf_naninf_quant_scale_rejected_at_load)"
+  - "crates/aprender-serve/src/safetensors/validation.rs (F-DATA-QUALITY-002 NaN/Inf gate, mirrored)"
 version: 1
 status: enforced
-date: 2026-06-14
+date: 2026-06-22
 
 proof_obligations:
   - type: invariant
@@ -38,6 +50,18 @@ proof_obligations:
       + lm_head) and returns Err(InvalidShape) if any is truncated, so a truncated GGUF
       is rejected at load instead of producing garbage at inference. A well-formed model
       loads unchanged.
+  - type: invariant
+    property: >
+      OBLIG-GGUF-LOAD-NANINF (PMAT-895): validate_quantized_tensors also scans each
+      quantized weight's f16 scale field(s) per block (quant_scale_first_nonfinite) and
+      OwnedQuantizedModel::from_mapped returns Err(InvalidShape) naming the first tensor
+      whose f16 scale d/dmin is non-finite (NaN/Inf, e.g. f16 +Inf 0x7C00 or NaN 0x7E00),
+      because such a scale dequantizes every element of its block to NaN/Inf and produces
+      garbage at inference. A model with all-finite scales (incl. legitimate all-zero or
+      f16(0.1) scales) loads unchanged — the finiteness check is orthogonal to the
+      density/zero gates and raises no false positive. This wires the SafeTensors
+      F-DATA-QUALITY-002 NaN/Inf guarantee into the quantized load path; llama.cpp /
+      Ollama load such a model by default, so apr fails closed where they do not.
 
 falsification_tests:
   - id: FALSIFY-LOAD-TRUNCATED-001
@@ -46,3 +70,9 @@ falsification_tests:
     test_harness: "cargo test -p aprender-serve --lib test_pmat750_truncated_tensor_detected"
     expected_output: "test result: ok"
     if_fails: "truncated tensors are not detected → a corrupt/incomplete GGUF loads with a dead weight and apr run/serve emit garbage instead of failing closed at load."
+  - id: FALSIFY-GGUF-LOAD-NANINF-001
+    name: gguf_naninf_quant_scale_rejected_at_load
+    prediction: "a pygmy GGUF with one Q4_0 super-block f16 scale set to f16 +Inf (0x7C00) or NaN (0x7E00) makes OwnedQuantizedModel::from_mapped return Err(InvalidShape) naming OBLIG-GGUF-LOAD-NANINF; the unmodified (all-finite-scale) pygmy still loads Ok"
+    test_harness: "cargo test -p aprender-serve --lib gguf_naninf_quant_scale_rejected_at_load"
+    expected_output: "test result: ok"
+    if_fails: "a quantized GGUF with a non-finite f16 scale loads silently → apr dequantizes it to NaN/Inf and emits garbage at inference instead of failing closed at load (Pillar-4 beat regressed to parity with llama.cpp/Ollama)."
