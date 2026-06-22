@@ -66,6 +66,8 @@ equations:
     - L1 = 0 iff ŷ = y
     - L1(y, ŷ) = L1(ŷ, y) (symmetry)
     - L1 = MAE (identical function)
+    - 'gradient: ∂L1/∂ŷ = sign(ŷ-y)/n (mean), sign(ŷ-y) (sum); sign(0)=0'
+    - 'autograd: loss.backward() yields get_grad(pred.id()) = Some (graph not severed)'
     preconditions:
     - predicted.len() == target.len()
     - predicted.len() > 0
@@ -103,6 +105,12 @@ proof_obligations:
   property: L1 symmetry
   formal: L1(y, ŷ) = L1(ŷ, y)
   applies_to: l1_loss
+- type: equivalence
+  property: F-L1LOSS-BACKWARD-GRAD-001 L1 backward propagates gradient
+  formal: 'after loss.backward(): get_grad(pred.id()) = Some, and equals sign(pred-target)/n
+    for mean reduction (sign(pred-target) for sum); sign(0)=0. abs() must register an
+    AbsBackward grad_fn so the autograd graph is not severed (PMAT-896).'
+  applies_to: l1_loss
 - type: bound
   property: NLL lower bound
   formal: NLL ≥ 0
@@ -138,6 +146,11 @@ falsification_tests:
   prediction: NLL ≥ 0 for random logits and valid class indices
   test: proptest with random logits and uniform class labels
   if_fails: Softmax normalization error or log of non-positive value
+- id: F-L1LOSS-BACKWARD-GRAD-001
+  rule: L1 backward propagates gradient (PMAT-896)
+  prediction: 'L1Loss(mean).forward(pred,target).backward() => get_grad(pred.id()) = Some([-1/3,0,1/3]) for pred=[1,2,3], target=[2,2,2]'
+  test: cargo test -p aprender-core --lib test_l1_loss_gradient
+  if_fails: abs() severs autograd (no AbsBackward grad_fn) so L1Loss yields no input gradient and trains silently to zero
 kani_harnesses:
 - id: KANI-LF-001
   obligation: '1'

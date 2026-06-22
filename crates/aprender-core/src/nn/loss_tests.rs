@@ -61,6 +61,62 @@ mod tests {
         assert!((loss.item() - 2.0 / 3.0).abs() < 1e-5);
     }
 
+    /// F-L1LOSS-BACKWARD-GRAD-001 falsifier (PMAT-896).
+    ///
+    /// `L1Loss::forward(...).backward()` MUST propagate a gradient to `pred`.
+    /// For mean reduction, ∂mean(|pred - target|)/∂pred = sign(pred - target) / N.
+    /// Before the `AbsBackward` fix, `abs()` severed the autograd graph
+    /// (built its result with `Tensor::from_vec`, no grad_fn), so
+    /// `get_grad(pred.id())` returned `None` and every model trained with
+    /// L1Loss silently did not learn.
+    #[test]
+    fn test_l1_loss_gradient() {
+        clear_graph();
+
+        let pred = Tensor::from_slice(&[1.0, 2.0, 3.0]).requires_grad();
+        let pred_id = pred.id();
+        let target = Tensor::from_slice(&[2.0, 2.0, 2.0]);
+
+        let criterion = L1Loss::new();
+        let loss = criterion.forward(&pred, &target);
+        loss.backward();
+
+        // Gradient MUST exist — None means the autograd graph is severed.
+        let grad = crate::autograd::get_grad(pred_id)
+            .expect("L1Loss must propagate a gradient to pred (F-L1LOSS-BACKWARD-GRAD-001)");
+
+        // ∂mean(|pred - target|)/∂pred = sign(pred - target) / N
+        // diff = [-1, 0, 1] -> sign = [-1, 0, 1] -> /3 = [-1/3, 0, 1/3]
+        let expected = [-1.0 / 3.0, 0.0, 1.0 / 3.0];
+        for (g, e) in grad.data().iter().zip(expected.iter()) {
+            assert!((g - e).abs() < 1e-5, "Expected {e}, got {g}");
+        }
+    }
+
+    /// F-L1LOSS-BACKWARD-GRAD-001: Sum reduction has no 1/N factor.
+    /// ∂sum(|pred - target|)/∂pred = sign(pred - target).
+    #[test]
+    fn test_l1_loss_gradient_sum_reduction() {
+        clear_graph();
+
+        let pred = Tensor::from_slice(&[1.0, 2.0, 3.0]).requires_grad();
+        let pred_id = pred.id();
+        let target = Tensor::from_slice(&[2.0, 2.0, 2.0]);
+
+        let criterion = L1Loss::with_reduction(Reduction::Sum);
+        let loss = criterion.forward(&pred, &target);
+        loss.backward();
+
+        let grad = crate::autograd::get_grad(pred_id)
+            .expect("L1Loss (sum) must propagate a gradient (F-L1LOSS-BACKWARD-GRAD-001)");
+
+        // diff = [-1, 0, 1] -> sign = [-1, 0, 1] (no /N for sum reduction)
+        let expected = [-1.0, 0.0, 1.0];
+        for (g, e) in grad.data().iter().zip(expected.iter()) {
+            assert!((g - e).abs() < 1e-5, "Expected {e}, got {g}");
+        }
+    }
+
     #[test]
     fn test_smooth_l1_loss() {
         let pred = Tensor::from_slice(&[0.0]);

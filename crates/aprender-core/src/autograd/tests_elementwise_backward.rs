@@ -43,6 +43,19 @@
         assert_eq!(grads[0].data(), &[0.0, 0.0, 1.0, 1.0]);
     }
 
+    /// PMAT-896: ∂|x|/∂x = sign(x), with sign(0) = 0 (PyTorch convention).
+    #[test]
+    fn test_abs_backward() {
+        let x = Tensor::from_slice(&[-3.0, 0.0, 2.0, -1.0]);
+        let grad_fn = AbsBackward { x };
+
+        let grad_out = Tensor::from_slice(&[1.0, 1.0, 1.0, 1.0]);
+        let grads = grad_fn.backward(&grad_out);
+
+        // grad = grad_out * sign(x) = [-1, 0, 1, -1]
+        assert_eq!(grads[0].data(), &[-1.0, 0.0, 1.0, -1.0]);
+    }
+
     #[test]
     fn test_sum_backward() {
         let grad_fn = SumBackward {
