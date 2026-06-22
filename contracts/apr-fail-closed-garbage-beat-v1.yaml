@@ -9,9 +9,11 @@ metadata:
     apr concedes raw CPU decode throughput but wins on "we provably never ship
     garbage; they provably do." A tensor that PARSES (valid magic/shape/dtype)
     but is semantically dead — all-zero, NaN, Inf, effectively-empty (L2~0),
-    constant, or extreme-magnitude (max|w| > 1e6, PMAT-732/F-DATA-QUALITY-005) —
-    is rejected by apr's Poka-Yoke validation (PMAT-234/235,
-    F-DATA-QUALITY-001..005), while llama.cpp loads it with zero error lines.
+    constant, extreme-magnitude (max|w| > 1e6, PMAT-732/F-DATA-QUALITY-005), or
+    a DEAD OUTPUT ROW (one fully-zero row of an lm_head/embed/output projection,
+    PMAT-889/F-DATA-QUALITY-007) — is rejected by apr's Poka-Yoke validation
+    (PMAT-234/235, F-DATA-QUALITY-001..007), while llama.cpp loads it with zero
+    error lines.
     Measured 2026-06-13 (RTX 4090): a copy of qwen2.5-coder-1.5b-instruct-q4_k_m
     GGUF with blk.0.ffn_down.weight zeroed → `apr validate` FAILs the tensor
     ([F-DATA-QUALITY-001] all zero + [F-DATA-QUALITY-003] L2~0/constant);
@@ -19,6 +21,8 @@ metadata:
   references:
   - "crates/aprender-serve/tests/beat_fail_closed_garbage.rs"
   - "crates/aprender-serve/src/safetensors/validation.rs (validate_weight/validate_embedding, F-DATA-QUALITY-001..005)"
+  - "crates/aprender-core/src/format/rosetta/validate_inspect.rs (compute_tensor_validation_with_shape/check_dead_output_row, F-DATA-QUALITY-007)"
+  - "crates/aprender-core/src/format/rosetta/computation.rs (pmat889_* falsifier + FP-bound tests)"
   - "evidence/pillar4-fail-closed-2026-06-13/findings.md"
   - "garbage-oracle-v1.yaml (sibling: OUTPUT-garbage oracle; this contract is INPUT-artifact fail-closed)"
 version: 1
@@ -45,3 +49,48 @@ beat:
   baseline_sourced_date: "2026-06-13"
   approved_compute: CPU       # the apr-side gate is CPU-deterministic
   ci_gate_name: "beat_fail_closed_garbage"   # crates/aprender-serve/tests/beat_fail_closed_garbage.rs
+
+# PMAT-889: F-DATA-QUALITY-007 dead-output-row gate. The whole-tensor gates
+# (F-DATA-QUALITY-001..005) check tensor CONTENTS in aggregate (density / NaN /
+# Inf / L2 / constant / extreme magnitude). They all MISS a single fully-zero
+# OUTPUT ROW of an lm_head/embed/output projection because one zero row is a tiny
+# fraction of a large tensor — yet that row is a structurally-dead token (its
+# logit can never carry positive evidence; its embedding is unreachable).
+# llama.cpp / Ollama load and run such a model silently. apr fails closed via the
+# per-output-row L2 scan in compute_tensor_validation_with_shape (apr validate).
+proof_obligations:
+- id: OBLIG-DATA-QUALITY-007-DEAD-OUTPUT-ROW
+  statement: >
+    For a 2-D output-projection weight (lm_head / output head / token embedding)
+    interpreted row-major as [out_units, in_dim], apr rejects it at validate iff
+    at least one output row has L2 ~ 0 (< 1e-6). This catches a dead token whose
+    logit is structurally constant / whose embedding vector is zero — corruption
+    that passes every whole-tensor density / L2 / constant gate.
+  type: invariant
+- id: OBLIG-DATA-QUALITY-007-NO-FALSE-POSITIVE
+  statement: >
+    apr accepts a healthy output-projection tensor with no zero rows, and the
+    dead-row gate is SCOPED to output-projection roles only — a structurally-zero
+    row in a non-output tensor (generic intermediate / q/k/v / gate/up/down) does
+    NOT trip F-DATA-QUALITY-007. The gate asserts only where a zero row is
+    unambiguously corrupt, so it raises no false positive on legitimate models.
+  type: invariant
+
+falsification_tests:
+- id: FALSIFY-BEAT-DATA-QUALITY-007-DEAD-ROW
+  description: >
+    FALSE if apr ACCEPTS an lm_head/embed with a fully-zero output row (the dead
+    token garbage the incumbents load silently) OR if apr REJECTS a healthy
+    output-projection tensor / fires on a non-output role (false positive).
+  command: cargo test -p aprender-core --lib pmat889
+  expected: >
+    4 passed; 0 failed — both dead-row classes (lm_head, embed) rejected with
+    F-DATA-QUALITY-007, and both FP-bound cases (healthy lm_head, non-output-role
+    zero row) accepted.
+  if_fails: >
+    Either check_dead_output_row stopped scanning per-output-row L2 (fail-closed
+    regression — verify compute_tensor_validation_with_shape is wired into
+    validate_apr and the role allow-list still matches lm_head/embed/output), or
+    the gate became over-eager (false positive — the role allow-list or the 1e-6
+    row-L2 threshold widened) in
+    crates/aprender-core/src/format/rosetta/validate_inspect.rs.

@@ -439,3 +439,134 @@ fn p070h_compute_validation_inf_mixed_with_valid() {
     assert!((tv.min - 2.0).abs() < 1e-6);
     assert!((tv.max - 6.0).abs() < 1e-6);
 }
+
+// ========================================================================
+// PMAT-889: F-DATA-QUALITY-007 — DEAD OUTPUT ROW
+// ========================================================================
+//
+// Pillar-4 fail-closed BEAT. A weight tensor whose individual entries are all
+// finite, whose whole-tensor zero density is well under the 50%/80% gate, and
+// whose global L2 norm is large can STILL be semantically corrupt if one
+// OUTPUT ROW is entirely zero. For an lm_head `[vocab, hidden]` that means one
+// token's logit is structurally a constant (its dot-product against any hidden
+// state is 0) -> that token can never be emitted with positive evidence (dead
+// token). For an embedding `[vocab, hidden]` a zero row is a dead/unreachable
+// token vector. The whole-tensor gates (F-DATA-QUALITY-001..005) all MISS this
+// because a single zero row is a tiny fraction of the tensor. llama.cpp / Ollama
+// load and run such a model silently. apr must fail closed.
+
+/// Build a healthy `[out, in]` row-major weight: dense, finite, varied, L2 >> 0,
+/// no exact zeros, mean ~ 0.
+fn healthy_rowmajor(out: usize, in_dim: usize) -> Vec<f32> {
+    (0..out * in_dim)
+        .map(|i| {
+            let x = ((i % 17) as f32) - 8.0;
+            if x == 0.0 {
+                0.5
+            } else {
+                x * 0.01
+            }
+        })
+        .collect()
+}
+
+/// RED (PMAT-889): an lm_head `[256, 64]` that is healthy EXCEPT one fully-zero
+/// output row must be REJECTED with rule id `F-DATA-QUALITY-007`. On current
+/// main this fails — the whole-tensor gates do not scan rows, so the dead row
+/// passes clean. The fix is the shape-aware `compute_tensor_validation_with_shape`.
+#[test]
+fn pmat889_red_dead_output_row_lm_head_rejected() {
+    let rosetta = RosettaStone::new();
+    let (out, in_dim) = (256usize, 64usize);
+    let mut data = healthy_rowmajor(out, in_dim);
+    // Force output row 7 fully zero (one dead vocab token).
+    let dead = 7usize;
+    for v in data.iter_mut().skip(dead * in_dim).take(in_dim) {
+        *v = 0.0;
+    }
+
+    let tv = rosetta.compute_tensor_validation_with_shape("lm_head.weight", &data, &[out, in_dim]);
+    assert!(
+        !tv.is_valid,
+        "FAIL-CLOSED VIOLATION: apr ACCEPTED an lm_head with a fully-zero output row \
+         (dead token logit -> -inf). This is the garbage llama.cpp/Ollama ship silently. \
+         failures={:?}",
+        tv.failures
+    );
+    assert!(
+        tv.failures
+            .iter()
+            .any(|f| f.contains("F-DATA-QUALITY-007")),
+        "Dead output row must be reported as F-DATA-QUALITY-007: {:?}",
+        tv.failures
+    );
+}
+
+/// RED (PMAT-889): same dead-row gate for `embed_tokens.weight`.
+#[test]
+fn pmat889_red_dead_output_row_embed_rejected() {
+    let rosetta = RosettaStone::new();
+    let (vocab, hidden) = (200usize, 48usize);
+    let mut data = healthy_rowmajor(vocab, hidden);
+    let dead = 3usize;
+    for v in data.iter_mut().skip(dead * hidden).take(hidden) {
+        *v = 0.0;
+    }
+    let tv =
+        rosetta.compute_tensor_validation_with_shape("model.embed_tokens.weight", &data, &[vocab, hidden]);
+    assert!(
+        !tv.is_valid,
+        "FAIL-CLOSED VIOLATION: apr ACCEPTED an embedding with a dead token row. failures={:?}",
+        tv.failures
+    );
+    assert!(
+        tv.failures.iter().any(|f| f.contains("F-DATA-QUALITY-007")),
+        "Dead embedding row must be F-DATA-QUALITY-007: {:?}",
+        tv.failures
+    );
+}
+
+/// FALSE-POSITIVE BOUND (PMAT-889): a fully healthy lm_head with NO zero rows
+/// must still validate clean — fail-closed must not block legitimate models.
+#[test]
+fn pmat889_fp_bound_healthy_lm_head_accepted() {
+    let rosetta = RosettaStone::new();
+    let (out, in_dim) = (256usize, 64usize);
+    let data = healthy_rowmajor(out, in_dim);
+    let tv = rosetta.compute_tensor_validation_with_shape("lm_head.weight", &data, &[out, in_dim]);
+    assert!(
+        tv.is_valid,
+        "FALSE POSITIVE: apr rejected a healthy lm_head (no dead rows). failures={:?}",
+        tv.failures
+    );
+    assert!(
+        !tv.failures.iter().any(|f| f.contains("F-DATA-QUALITY-007")),
+        "Healthy lm_head must not trigger the dead-row gate: {:?}",
+        tv.failures
+    );
+}
+
+/// FALSE-POSITIVE BOUND (PMAT-889): a non-output-role tensor (e.g. a generic
+/// intermediate buffer) with a zero row must NOT trip the dead-row gate — the
+/// gate is intentionally scoped to lm_head/embed/output roles to avoid FPs on
+/// roles where a structurally-zero row is not unambiguously corrupt.
+#[test]
+fn pmat889_fp_bound_non_output_role_zero_row_accepted_by_dead_row_gate() {
+    let rosetta = RosettaStone::new();
+    let (out, in_dim) = (64usize, 32usize);
+    let mut data = healthy_rowmajor(out, in_dim);
+    for v in data.iter_mut().skip(5 * in_dim).take(in_dim) {
+        *v = 0.0;
+    }
+    // A name that does NOT match the output-projection role allow-list.
+    let tv = rosetta.compute_tensor_validation_with_shape(
+        "model.layers.0.mlp.intermediate_buffer",
+        &data,
+        &[out, in_dim],
+    );
+    assert!(
+        !tv.failures.iter().any(|f| f.contains("F-DATA-QUALITY-007")),
+        "Dead-row gate must be scoped to output roles, not fire on a generic tensor: {:?}",
+        tv.failures
+    );
+}
