@@ -1,0 +1,85 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-22"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "Kalajdzievski, 2023 — A Rank Stabilization Scaling Factor for Fine-Tuning with LoRA (rsLoRA: scale = alpha/sqrt(rank))"
+    - "Hu et al., 2021 — LoRA: Low-Rank Adaptation (Standard scale = alpha/rank)"
+    - "PEFT tuners/lora/layer.py merge_and_unload — ΔW = scaling·(B@A), lora_A:[r,in], lora_B:[out,r]"
+    - "Unsloth merge_and_unload (identical PEFT layout; adapters default BF16)"
+  description: |
+    Pillar-3 (Unsloth/PEFT interop) correctness contract for the CLI LoRA-adapter
+    merge path `run_lora_adapter_merge` / `build_lora_pairs`
+    (crates/aprender-train/src/cli/commands/merge.rs), invoked by
+    `apr merge --method lora-adapter`. PMAT-897 fixed two silent defects in that
+    path that corrupt merged weights for standard PEFT/Unsloth adapters.
+
+kind: KernelContract
+name: lora-adapter-merge-cli
+version: "1.0.0"
+scope: "crates/aprender-train/src/cli/commands/merge.rs (run_lora_adapter_merge, build_lora_pairs)"
+
+description: |
+  `apr merge --method lora-adapter` folds W_merged = W_base + scale·(B @ A).
+  Two correctness obligations on the inputs it reads:
+
+  F-LORA-MERGE-RSLORA-001 (scaling): the merge scale MUST honor the adapter's
+  `use_rslora` flag from adapter_config.json. rsLoRA scale = alpha/sqrt(rank);
+  Standard scale = alpha/rank. PMAT-897 fixed run_lora_adapter_merge, which
+  hardcoded scale = alpha/rank and IGNORED use_rslora — silently scaling every
+  rsLoRA adapter by 1/sqrt(rank) (4x too small at rank=16), corrupting the merged
+  model with no error. Fix: select crate::lora::LoRAScaling::{RsLoRA,Standard} and
+  compute scale from the enum (matching LoRALayer's training-time scaling).
+
+  F-LORA-MERGE-ADAPTER-DTYPE-001 (dtype): the adapter lora_A/lora_B safetensors
+  tensors MUST be decoded with their ACTUAL per-tensor dtype. PMAT-897 fixed
+  build_lora_pairs, which dropped the dtype so the consumer decoded both factors
+  with a hardcoded Dtype::F32, while the BASE correctly used base_t.dtype(). A
+  BF16/FP16 adapter (Unsloth default is BF16) was reinterpreted as f32 → garbage
+  weights (and length/shape overruns). Fix: thread the per-tensor dtype through
+  build_lora_pairs and decode each factor via bytes_to_f32(data, dtype) (which
+  already handles F16/BF16).
+
+equations:
+  C-LORA-MERGE-RSLORA-001:
+    description: "use_rslora selects the rsLoRA scale alpha/sqrt(rank); else Standard alpha/rank"
+    formula: "scale = if use_rslora { alpha / sqrt(rank) } else { alpha / rank }"
+    note: "rank=16, alpha=16, use_rslora=true ⇒ scale = 16/sqrt(16) = 4.0 (NOT alpha/rank = 1.0)."
+    postconditions:
+      - "scale > 0.0"
+
+  C-LORA-MERGE-DTYPE-001:
+    description: "Adapter factors are decoded by their real safetensors dtype, not hardcoded f32"
+    formula: "a_f32 = bytes_to_f32(a_data, a_dtype); b_f32 = bytes_to_f32(b_data, b_dtype)"
+    note: "A BF16 adapter [4,1] decodes to 4 f32 values; reading the bytes as f32 yields only 2 → garbage/overrun."
+    postconditions:
+      - "a_f32.len() == rank * d_in"
+
+proof_obligations:
+  - id: F-LORA-MERGE-RSLORA-001
+    type: invariant
+    property: "run_lora_adapter_merge honors use_rslora (rsLoRA scale = alpha/sqrt(rank))"
+    formal: |
+      For adapter_config.json {r:16, lora_alpha:16, use_rslora:true}, base=0, B@A=1:
+      the merged weight equals scale = alpha/sqrt(rank) = 4.0.
+      RED (pre-fix): scale = alpha/rank = 1.0 → merged 4x too small.
+
+  - id: F-LORA-MERGE-ADAPTER-DTYPE-001
+    type: invariant
+    property: "build_lora_pairs preserves per-tensor dtype; BF16 adapters decode correctly"
+    formal: |
+      For a BF16 adapter A=[2,0,0,0]:[4,1], B=[3,0,0,0]:[1,4] (B@A = 6.0), f32 base 0.5,
+      Standard scale 1.0: merged = 0.5 + 1.0*6.0 = 6.5.
+      RED (pre-fix): BF16 bytes decoded as f32 → wrong length/garbage (index out of bounds).
+
+falsification:
+  - id: FALSIFY-LORA-MERGE-RSLORA-001
+    description: "rsLoRA scaling honored in the CLI merge. Discharges F-LORA-MERGE-RSLORA-001."
+    test: "cargo test -p aprender-train --lib test_lora_merge_rslora_scaling_pmat897"
+    evidence: "RED on main: merged=1.0 (alpha/rank); GREEN: merged=4.0 (alpha/sqrt(rank))."
+
+  - id: FALSIFY-LORA-MERGE-ADAPTER-DTYPE-001
+    description: "BF16 adapter tensors decoded by real dtype. Discharges F-LORA-MERGE-ADAPTER-DTYPE-001."
+    test: "cargo test -p aprender-train --lib test_lora_merge_bf16_adapter_dtype_pmat897"
+    evidence: "RED on main: index out of bounds (BF16 read as f32); GREEN: merged=6.5 = base+scale*(B@A)."

@@ -264,9 +264,22 @@ fn run_lora_adapter_merge(args: &MergeArgs, level: LogLevel) -> Result<(), Strin
     let rank = config.get("r").and_then(serde_json::Value::as_u64).unwrap_or(8) as usize;
     let alpha =
         config.get("lora_alpha").and_then(serde_json::Value::as_f64).unwrap_or(rank as f64 * 2.0);
-    let scale = alpha as f32 / rank as f32;
+    // F-LORA-MERGE-RSLORA-001: honor PEFT/Unsloth `use_rslora`.
+    // rsLoRA scale = alpha/sqrt(rank); Standard = alpha/rank. Use the in-tree
+    // LoRAScaling enum so the merge matches LoRALayer's training-time scaling.
+    let use_rslora = config.get("use_rslora").and_then(serde_json::Value::as_bool).unwrap_or(false);
+    let scaling = if use_rslora {
+        crate::lora::LoRAScaling::RsLoRA
+    } else {
+        crate::lora::LoRAScaling::Standard
+    };
+    let scale = scaling.compute(alpha as f32, rank);
 
-    log(level, LogLevel::Normal, &format!("  Rank: {rank}, Alpha: {alpha}, Scale: {scale:.4}"));
+    log(
+        level,
+        LogLevel::Normal,
+        &format!("  Rank: {rank}, Alpha: {alpha}, rsLoRA: {use_rslora}, Scale: {scale:.4}"),
+    );
 
     // Load base model
     let base_data = std::fs::read(base_path).map_err(|e| format!("Read base model: {e}"))?;
@@ -295,11 +308,15 @@ fn run_lora_adapter_merge(args: &MergeArgs, level: LogLevel) -> Result<(), Strin
         let shape: Vec<usize> = base_t.shape().to_vec();
 
         // Check if this weight has a LoRA adapter
-        if let Some((a_data, b_data, a_shape, b_shape)) = lora_pairs.get(name.as_str()) {
+        if let Some(((a_data, a_shape, a_dtype), (b_data, b_shape, b_dtype))) =
+            lora_pairs.get(name.as_str())
+        {
             // W_merged = W_base + scale * B @ A
+            // F-LORA-MERGE-ADAPTER-DTYPE-001: decode each factor with its OWN dtype
+            // (PEFT/Unsloth adapters are typically BF16/FP16), not a hardcoded f32.
             let base_f32 = bytes_to_f32(base_t.data(), base_t.dtype());
-            let a_f32 = bytes_to_f32(a_data, safetensors::tensor::Dtype::F32);
-            let b_f32 = bytes_to_f32(b_data, safetensors::tensor::Dtype::F32);
+            let a_f32 = bytes_to_f32(a_data, *a_dtype);
+            let b_f32 = bytes_to_f32(b_data, *b_dtype);
 
             let d_out = b_shape[0];
             let r = b_shape[1];
@@ -372,13 +389,21 @@ fn run_lora_adapter_merge(args: &MergeArgs, level: LogLevel) -> Result<(), Strin
     Ok(())
 }
 
-/// Build a map of base weight name -> (A_data, B_data, A_shape, B_shape)
+/// Per-tensor adapter factor: raw bytes, shape, and the ACTUAL safetensors dtype.
+///
+/// F-LORA-MERGE-ADAPTER-DTYPE-001: the dtype MUST be preserved (PEFT/Unsloth
+/// adapters are commonly BF16/FP16); decoding everything as f32 produces garbage.
+type LoraFactor = (Vec<u8>, Vec<usize>, safetensors::tensor::Dtype);
+
+/// A matched A/B adapter pair: (A_factor, B_factor).
+type LoraPair = (LoraFactor, LoraFactor);
+
+/// Build a map of base weight name -> (A_factor, B_factor), each carrying its dtype.
 fn build_lora_pairs<'a>(
     names: &[String],
     tensors: &'a SafeTensors<'a>,
-) -> Result<HashMap<&'a str, (Vec<u8>, Vec<u8>, Vec<usize>, Vec<usize>)>, String> {
-    let mut pairs: HashMap<String, (Option<(Vec<u8>, Vec<usize>)>, Option<(Vec<u8>, Vec<usize>)>)> =
-        HashMap::new();
+) -> Result<HashMap<&'a str, LoraPair>, String> {
+    let mut pairs: HashMap<String, (Option<LoraFactor>, Option<LoraFactor>)> = HashMap::new();
 
     for name in names {
         // PEFT naming: base_model.model.{path}.lora_A.weight / lora_B.weight
@@ -393,22 +418,23 @@ fn build_lora_pairs<'a>(
         let tensor = tensors.tensor(name).map_err(|e| format!("Get adapter tensor {name}: {e}"))?;
         let data = tensor.data().to_vec();
         let shape = tensor.shape().to_vec();
+        let dtype = tensor.dtype();
 
         let entry = pairs.entry(base_name).or_insert((None, None));
         if is_a {
-            entry.0 = Some((data, shape));
+            entry.0 = Some((data, shape, dtype));
         } else {
-            entry.1 = Some((data, shape));
+            entry.1 = Some((data, shape, dtype));
         }
     }
 
     let mut result = HashMap::new();
     for (base_name, (a, b)) in &pairs {
-        if let (Some((a_data, a_shape)), Some((b_data, b_shape))) = (a, b) {
+        if let (Some(a_factor), Some(b_factor)) = (a, b) {
             // Leak the base_name string to get a &'a str — safe in this context
             // as the result lives only for the merge duration
             let key: &str = Box::leak(base_name.clone().into_boxed_str());
-            result.insert(key, (a_data.clone(), b_data.clone(), a_shape.clone(), b_shape.clone()));
+            result.insert(key, (a_factor.clone(), b_factor.clone()));
         }
     }
     Ok(result)
@@ -1904,5 +1930,168 @@ mod tests {
         assert_eq!(parsed["big"].len(), 1000);
         assert!((parsed["big"][500] - 0.5).abs() < 1e-3);
         let _ = std::fs::remove_file(&t);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // PMAT-897: LoRA-adapter merge correctness falsifiers
+    //   F-LORA-MERGE-RSLORA-001       — use_rslora scaling honored
+    //   F-LORA-MERGE-ADAPTER-DTYPE-001 — adapter tensors decoded by real dtype
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// Serialize a single-tensor safetensors file with the given dtype/bytes.
+    fn write_st(path: &Path, tensors: &[(&str, safetensors::tensor::Dtype, Vec<usize>, Vec<u8>)]) {
+        let views: Vec<(&str, safetensors::tensor::TensorView<'_>)> = tensors
+            .iter()
+            .map(|(name, dt, shape, bytes)| {
+                (*name, safetensors::tensor::TensorView::new(*dt, shape.clone(), bytes).unwrap())
+            })
+            .collect();
+        let bytes = safetensors::serialize(views, None).unwrap();
+        std::fs::write(path, bytes).unwrap();
+    }
+
+    fn f32_bytes(vals: &[f32]) -> Vec<u8> {
+        vals.iter().flat_map(|x| x.to_le_bytes()).collect()
+    }
+
+    fn bf16_bytes(vals: &[f32]) -> Vec<u8> {
+        vals.iter().flat_map(|x| half::bf16::from_f32(*x).to_le_bytes()).collect()
+    }
+
+    /// F-LORA-MERGE-RSLORA-001: `use_rslora: true` must select scale = alpha/sqrt(rank).
+    ///
+    /// rank=16, alpha=16 ⇒ rsLoRA scale = 16/sqrt(16) = 4.0 (NOT alpha/rank = 1.0).
+    /// With a base of zeros and B@A == 1.0 in one cell, the merged weight there must
+    /// equal scale (4.0). RED on main: scale hardcoded to alpha/rank = 1.0 → 4× too small.
+    #[test]
+    fn test_lora_merge_rslora_scaling_pmat897() {
+        let dir = tempfile::tempdir().unwrap();
+        let adapter_dir = dir.path();
+
+        // adapter_config.json: rank=16, alpha=16, use_rslora=true
+        std::fs::write(
+            adapter_dir.join("adapter_config.json"),
+            r#"{"r": 16, "lora_alpha": 16, "use_rslora": true}"#,
+        )
+        .unwrap();
+
+        // Base weight "w.weight": shape [d_out=1, d_in=1], value 0.0
+        let base_path = adapter_dir.join("base.safetensors");
+        write_st(
+            &base_path,
+            &[("w.weight", safetensors::tensor::Dtype::F32, vec![1, 1], f32_bytes(&[0.0]))],
+        );
+
+        // Adapter: lora_A [rank=16, d_in=1] all 0 except A[0]=1 ; lora_B [d_out=1, rank=16] all 0 except B[0]=1
+        // ⇒ (B@A)[0,0] = sum_k B[0,k]*A[k,0] = 1*1 = 1.0
+        let mut a_vals = vec![0.0f32; 16];
+        a_vals[0] = 1.0;
+        let mut b_vals = vec![0.0f32; 16];
+        b_vals[0] = 1.0;
+        write_st(
+            &adapter_dir.join("adapter_model.safetensors"),
+            &[
+                (
+                    "base_model.model.w.lora_A.weight",
+                    safetensors::tensor::Dtype::F32,
+                    vec![16, 1],
+                    f32_bytes(&a_vals),
+                ),
+                (
+                    "base_model.model.w.lora_B.weight",
+                    safetensors::tensor::Dtype::F32,
+                    vec![1, 16],
+                    f32_bytes(&b_vals),
+                ),
+            ],
+        );
+
+        let out = dir.path().join("merged.safetensors");
+        let args = MergeArgs {
+            output: out.clone(),
+            base: Some(base_path),
+            adapter: Some(adapter_dir.to_path_buf()),
+            ..mk_args(MergeMethod::LoraAdapter)
+        };
+        run_lora_adapter_merge(&args, LogLevel::Quiet).unwrap();
+
+        // Read back merged "w.weight"
+        let data = std::fs::read(&out).unwrap();
+        let st = SafeTensors::deserialize(&data).unwrap();
+        let merged =
+            bytes_to_f32(st.tensor("w.weight").unwrap().data(), safetensors::tensor::Dtype::F32);
+        // rsLoRA scale = alpha/sqrt(rank) = 16/4 = 4.0; base 0.0 + 4.0*(B@A=1.0) = 4.0
+        assert!(
+            (merged[0] - 4.0).abs() < 1e-4,
+            "rsLoRA scale must be alpha/sqrt(rank)=4.0; got merged={} (main: 1.0 = alpha/rank)",
+            merged[0]
+        );
+    }
+
+    /// F-LORA-MERGE-ADAPTER-DTYPE-001: BF16 adapter tensors must be decoded as BF16,
+    /// not reinterpreted as f32.
+    ///
+    /// Standard scaling (rank=4, alpha=4 ⇒ scale=1.0). Adapter lora_A/lora_B are BF16.
+    /// merged = base + 1.0*(B@A). RED on main: BF16 bytes read via hardcoded Dtype::F32
+    /// → garbage (and len mismatch / wrong magnitude).
+    #[test]
+    fn test_lora_merge_bf16_adapter_dtype_pmat897() {
+        let dir = tempfile::tempdir().unwrap();
+        let adapter_dir = dir.path();
+
+        std::fs::write(
+            adapter_dir.join("adapter_config.json"),
+            r#"{"r": 4, "lora_alpha": 4, "use_rslora": false}"#,
+        )
+        .unwrap();
+
+        // Base [d_out=1, d_in=1] = 0.5
+        let base_path = adapter_dir.join("base.safetensors");
+        write_st(
+            &base_path,
+            &[("w.weight", safetensors::tensor::Dtype::F32, vec![1, 1], f32_bytes(&[0.5]))],
+        );
+
+        // BF16 adapter: A [4,1] = [2,0,0,0], B [1,4] = [3,0,0,0] ⇒ (B@A)[0,0] = 6.0
+        let a_vals = [2.0f32, 0.0, 0.0, 0.0];
+        let b_vals = [3.0f32, 0.0, 0.0, 0.0];
+        write_st(
+            &adapter_dir.join("adapter_model.safetensors"),
+            &[
+                (
+                    "base_model.model.w.lora_A.weight",
+                    safetensors::tensor::Dtype::BF16,
+                    vec![4, 1],
+                    bf16_bytes(&a_vals),
+                ),
+                (
+                    "base_model.model.w.lora_B.weight",
+                    safetensors::tensor::Dtype::BF16,
+                    vec![1, 4],
+                    bf16_bytes(&b_vals),
+                ),
+            ],
+        );
+
+        let out = dir.path().join("merged.safetensors");
+        let args = MergeArgs {
+            output: out.clone(),
+            base: Some(base_path),
+            adapter: Some(adapter_dir.to_path_buf()),
+            ..mk_args(MergeMethod::LoraAdapter)
+        };
+        run_lora_adapter_merge(&args, LogLevel::Quiet).unwrap();
+
+        let data = std::fs::read(&out).unwrap();
+        let st = SafeTensors::deserialize(&data).unwrap();
+        let merged =
+            bytes_to_f32(st.tensor("w.weight").unwrap().data(), safetensors::tensor::Dtype::F32);
+        // scale=1.0, base 0.5 + 1.0*(B@A=6.0) = 6.5
+        assert_eq!(merged.len(), 1, "merged w.weight must be 1 element");
+        assert!(
+            (merged[0] - 6.5).abs() < 1e-2,
+            "BF16 adapter must decode to base+scale*(B@A)=6.5; got {} (main: BF16 read as f32 → garbage)",
+            merged[0]
+        );
     }
 }
