@@ -302,6 +302,7 @@
         let grad_fn = CrossEntropyBackward {
             softmax_output,
             targets,
+            reduction: crate::nn::loss::Reduction::Mean,
         };
         let grad_out = Tensor::from_slice(&[1.0]); // scalar after mean reduction
         let grads = grad_fn.backward(&grad_out);

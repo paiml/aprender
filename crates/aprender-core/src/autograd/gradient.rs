@@ -1,25 +1,53 @@
 
 impl GradFn for CrossEntropyBackward {
     fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
+        use crate::nn::loss::Reduction;
+
         let (batch, num_classes) = (
             self.softmax_output.shape()[0],
             self.softmax_output.shape()[1],
         );
+
+        // Base per-sample gradient: grad = softmax - one_hot(targets).
+        // This is the EXACT closed-form gradient of softmax+NLL (Bishop 2006),
+        // BEFORE any reduction scaling.
         let mut grad_input = self.softmax_output.data().to_vec();
-
-        // grad = softmax - one_hot(targets)
-        // Then multiply by upstream gradient (for reduction)
-        let grad_scale = grad_output.data()[0]; // scalar after mean reduction
-
         for b in 0..batch {
             let target = self.targets[b];
             let idx = b * num_classes + target;
             grad_input[idx] -= 1.0;
         }
 
-        // Scale by upstream gradient and divide by batch size (for mean reduction)
-        for g in &mut grad_input {
-            *g *= grad_scale / batch as f32;
+        // Apply reduction-aware upstream scaling (PyTorch parity,
+        // F-AUTOGRAD-CE-REDUCTION-001). For Mean/Sum the loss is a scalar and
+        // `grad_output` is `[1]`; for None it is the per-sample upstream `[batch]`.
+        let upstream = grad_output.data();
+        match self.reduction {
+            // Mean: divide by batch (loss = sum(per_sample) / batch).
+            Reduction::Mean => {
+                let scale = upstream[0] / batch as f32;
+                for g in &mut grad_input {
+                    *g *= scale;
+                }
+            }
+            // Sum: NO division by batch (loss = sum(per_sample)).
+            Reduction::Sum => {
+                let scale = upstream[0];
+                for g in &mut grad_input {
+                    *g *= scale;
+                }
+            }
+            // None: scale each sample's row by its OWN per-sample upstream
+            // gradient — broadcast `upstream[b]` across that sample's classes,
+            // NOT `upstream[0]`.
+            Reduction::None => {
+                for b in 0..batch {
+                    let scale = upstream[b];
+                    for i in 0..num_classes {
+                        grad_input[b * num_classes + i] *= scale;
+                    }
+                }
+            }
         }
 
         vec![Tensor::new(&grad_input, self.softmax_output.shape())]

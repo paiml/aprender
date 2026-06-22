@@ -435,12 +435,19 @@ impl GradFn for SoftmaxBackward {
 }
 
 /// Gradient function for Cross-Entropy Loss (combined softmax + NLL)
-/// For L = -log(softmax(x)[target]), the gradient is:
+/// For L = -log(softmax(x)[target]), the per-sample gradient is:
 /// ∂`L/∂x_i` = softmax(x)_i - 1 if i == target else softmax(x)_i
-/// This is simply: grad = softmax(logits) - `one_hot(targets)`
+/// i.e. grad = softmax(logits) - `one_hot(targets)`.
+///
+/// The final input gradient depends on the loss `reduction` mode (PyTorch parity,
+/// F-AUTOGRAD-CE-REDUCTION-001):
+/// - `Mean`: grad = (softmax - onehot) / batch   (upstream is a scalar)
+/// - `Sum`:  grad = (softmax - onehot)            (upstream is a scalar; NO /batch)
+/// - `None`: grad = (softmax - onehot) * upstream\[b]  (per-sample upstream row-scale)
 pub(crate) struct CrossEntropyBackward {
-    pub(crate) softmax_output: Tensor, // softmax(logits)
-    pub(crate) targets: Vec<usize>,    // target class indices
+    pub(crate) softmax_output: Tensor,                // softmax(logits)
+    pub(crate) targets: Vec<usize>,                   // target class indices
+    pub(crate) reduction: crate::nn::loss::Reduction, // loss reduction mode
 }
 
 include!("gradient.rs");

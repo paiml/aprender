@@ -138,6 +138,137 @@ mod tests {
         }
     }
 
+    /// Analytic CE-with-softmax input gradient: `softmax(logits) - onehot(targets)`.
+    ///
+    /// This is the EXACT gradient of the combined softmax+NLL with NO reduction
+    /// scaling. Needs no PyTorch — it is the closed-form gradient (Bishop 2006,
+    /// eq. 4.108). Returned flat in row-major `[batch * num_classes]` order.
+    fn softmax_minus_onehot(
+        logits: &[f32],
+        targets: &[usize],
+        batch: usize,
+        nc: usize,
+    ) -> Vec<f32> {
+        let mut out = Vec::with_capacity(batch * nc);
+        for b in 0..batch {
+            let row = &logits[b * nc..(b + 1) * nc];
+            let max = row.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            let exps: Vec<f32> = row.iter().map(|&x| (x - max).exp()).collect();
+            let sum: f32 = exps.iter().sum();
+            for (i, &e) in exps.iter().enumerate() {
+                let mut g = e / sum;
+                if i == targets[b] {
+                    g -= 1.0;
+                }
+                out.push(g);
+            }
+        }
+        out
+    }
+
+    /// FALSIFY-CE-REDUCTION-001 (Sum): backward under `Reduction::Sum` MUST equal
+    /// `softmax(logits) - onehot(targets)` EXACTLY (no division by batch).
+    ///
+    /// PyTorch reference: `nn.CrossEntropyLoss(reduction="sum").backward()` yields
+    /// `softmax - onehot` (un-normalized). On the buggy main, every element is
+    /// divided by batch=2 → exactly HALF the correct value → this FALSIFIES.
+    #[test]
+    fn falsify_ce_reduction_001_sum_grad_not_divided_by_batch() {
+        let logits_data = vec![1.0_f32, 2.0, 0.5, 0.1, 3.0, 0.2];
+        let targets_idx = vec![1_usize, 2_usize];
+        let batch = 2;
+        let nc = 3;
+
+        let criterion = CrossEntropyLoss::with_reduction(Reduction::Sum);
+        let logits = Tensor::new(&logits_data, &[batch, nc]).requires_grad();
+        let logits_id = logits.id();
+        let targets = Tensor::new(&[1.0_f32, 2.0], &[batch]);
+
+        let loss = criterion.forward(&logits, &targets);
+        loss.backward();
+
+        let grad = crate::autograd::get_grad(logits_id).expect("logits must have a gradient");
+        let expected = softmax_minus_onehot(&logits_data, &targets_idx, batch, nc);
+
+        for (i, (&g, &e)) in grad.data().iter().zip(expected.iter()).enumerate() {
+            assert!(
+                (g - e).abs() < 1e-6,
+                "FALSIFIED CE-REDUCTION-001 (Sum)[{i}]: grad = {g}, expected (softmax-onehot) = {e}; \
+                 buggy main divides by batch → {} (half)",
+                e / batch as f32
+            );
+        }
+    }
+
+    /// FALSIFY-CE-REDUCTION-001 (Mean): backward under `Reduction::Mean` (the
+    /// default) MUST equal `(softmax - onehot) / batch`. Proves the fix does NOT
+    /// regress the historical Mean behavior.
+    #[test]
+    fn falsify_ce_reduction_001_mean_grad_divided_by_batch() {
+        let logits_data = vec![1.0_f32, 2.0, 0.5, 0.1, 3.0, 0.2];
+        let targets_idx = vec![1_usize, 2_usize];
+        let batch = 2;
+        let nc = 3;
+
+        let criterion = CrossEntropyLoss::with_reduction(Reduction::Mean);
+        let logits = Tensor::new(&logits_data, &[batch, nc]).requires_grad();
+        let logits_id = logits.id();
+        let targets = Tensor::new(&[1.0_f32, 2.0], &[batch]);
+
+        let loss = criterion.forward(&logits, &targets);
+        loss.backward();
+
+        let grad = crate::autograd::get_grad(logits_id).expect("logits must have a gradient");
+        let raw = softmax_minus_onehot(&logits_data, &targets_idx, batch, nc);
+
+        for (i, (&g, &r)) in grad.data().iter().zip(raw.iter()).enumerate() {
+            let expected = r / batch as f32;
+            assert!(
+                (g - expected).abs() < 1e-6,
+                "FALSIFIED CE-REDUCTION-001 (Mean)[{i}]: grad = {g}, expected (softmax-onehot)/batch = {expected}"
+            );
+        }
+    }
+
+    /// FALSIFY-CE-REDUCTION-001 (None): backward under `Reduction::None` MUST
+    /// scale each sample's gradient row by its OWN per-sample upstream gradient
+    /// `g_b`, not by `upstream[0]`. With distinct per-sample upstreams, the buggy
+    /// main (which reads only element[0]) mis-broadcasts row 1.
+    #[test]
+    fn falsify_ce_reduction_001_none_per_sample_upstream() {
+        let logits_data = vec![1.0_f32, 2.0, 0.5, 0.1, 3.0, 0.2];
+        let targets_idx = vec![1_usize, 2_usize];
+        let batch = 2;
+        let nc = 3;
+
+        let criterion = CrossEntropyLoss::with_reduction(Reduction::None);
+        let logits = Tensor::new(&logits_data, &[batch, nc]).requires_grad();
+        let logits_id = logits.id();
+        let targets = Tensor::new(&[1.0_f32, 2.0], &[batch]);
+
+        let loss = criterion.forward(&logits, &targets);
+        // Distinct per-sample upstream gradients: row 0 scaled by 2.0, row 1 by 5.0.
+        let upstream = Tensor::new(&[2.0_f32, 5.0], &[batch]);
+        loss.backward_with_grad(upstream);
+
+        let grad = crate::autograd::get_grad(logits_id).expect("logits must have a gradient");
+        let raw = softmax_minus_onehot(&logits_data, &targets_idx, batch, nc);
+        let per_sample = [2.0_f32, 5.0];
+
+        for b in 0..batch {
+            for i in 0..nc {
+                let idx = b * nc + i;
+                let expected = raw[idx] * per_sample[b];
+                let g = grad.data()[idx];
+                assert!(
+                    (g - expected).abs() < 1e-6,
+                    "FALSIFIED CE-REDUCTION-001 (None)[{b},{i}]: grad = {g}, \
+                     expected (softmax-onehot)*upstream[{b}] = {expected}"
+                );
+            }
+        }
+    }
+
     mod ce_proptest_falsify {
         use super::super::super::*;
         use proptest::prelude::*;

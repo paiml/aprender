@@ -80,9 +80,24 @@ proof_obligations:
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd
+- type: equivalence
+  property: Backward gradient respects reduction mode (PyTorch parity)
+  formal: >-
+    dCE/dlogits = (softmax(logits) - onehot(targets)) * s, where the upstream
+    scale s is: 1/batch for Reduction::Mean, 1 for Reduction::Sum, and the
+    per-sample upstream gradient upstream[b] broadcast across sample b's classes
+    for Reduction::None. Sum MUST NOT divide by batch.
+  tolerance: 1.0e-06
+  applies_to: all
+  id: F-AUTOGRAD-CE-REDUCTION-001
+  notes: >-
+    Before PMAT-891 the backward unconditionally divided by batch (Mean-only) and
+    read only grad_output[0], so Sum grad was batch× too small and None
+    mis-broadcast the per-sample upstream. Closed-form softmax+NLL gradient is
+    softmax-onehot, requiring no PyTorch reference (Bishop 2006, eq. 4.108).
 verification_summary:
-  total_obligations: 5
-  l2_property_tested: 5
+  total_obligations: 6
+  l2_property_tested: 6
   l3_kani_proved: 3
   l4_lean_proved: 2
   l4_sorry_count: 0
@@ -146,6 +161,21 @@ falsification_tests:
   prediction: CE(one_hot(k), logits) approaches 0 as logits_k >> logits_j
   test: proptest with dominant logit at target index
   if_fails: Loss not approaching zero for confident predictions
+- id: F-AUTOGRAD-CE-REDUCTION-001-SUM
+  rule: Sum-reduction backward grad is softmax-onehot (NOT divided by batch)
+  prediction: 'dCE/dlogits under Reduction::Sum == softmax(logits) - onehot(targets)'
+  test: cargo test -p aprender-core --lib falsify_ce_reduction_001_sum_grad_not_divided_by_batch
+  if_fails: Backward divides Sum-reduction grad by batch (PyTorch divergence, batch× too small)
+- id: F-AUTOGRAD-CE-REDUCTION-001-MEAN
+  rule: Mean-reduction backward grad is (softmax-onehot)/batch (no regression)
+  prediction: 'dCE/dlogits under Reduction::Mean == (softmax(logits) - onehot(targets)) / batch'
+  test: cargo test -p aprender-core --lib falsify_ce_reduction_001_mean_grad_divided_by_batch
+  if_fails: Mean-reduction default behavior regressed
+- id: F-AUTOGRAD-CE-REDUCTION-001-NONE
+  rule: None-reduction backward scales each sample row by its own per-sample upstream
+  prediction: 'dCE/dlogits[b] under Reduction::None == (softmax-onehot)[b] * upstream[b]'
+  test: cargo test -p aprender-core --lib falsify_ce_reduction_001_none_per_sample_upstream
+  if_fails: Backward reads only grad_output[0] and mis-broadcasts the per-sample upstream
 kani_harnesses:
 - id: KANI-CE-001
   obligation: CE-INV-001
