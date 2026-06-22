@@ -27,6 +27,7 @@ which is ephemeral).
 | `q4k-matvec/` | `q4k_matvec_atomic` — T=32 threads/row + `DeviceAtomicF32` reduction | **beats hand-PTX `TiledQ4KGemv` 1.23×–2.85× across decode-hotpath shapes** on GB10, bit-exact (maxrel 1.46e-5) |
 | `q4k-matvec-reference/` | `q4k_matvec` — naive 1-thread/row (clean bit-exact reference) | correctness reference; bit-matches realizar `dequantize_q4_k` |
 | `incremental-attention/` | `attn_warp` (kernel C) — warp-coalesced incremental (KV-cache) attention, NW=32 warps/head, online softmax + cross-warp merge | **GO: matches-or-beats hand-PTX `multi_warp_attention` (0.34–1.01× across decode shapes)** on GB10, parity cos=1.0000 vs CPU `causal_attention_cached`. PMAT-882. See `PMAT-882-STATUS.md`. |
+| `rmsnorm/` | `rmsnorm_warp` (A, 1 warp/row) + `rmsnorm_block` (B, 256 thr/row) — sum-of-squares FMA, shfl warp-reduce, `rsqrt(meansq+eps)`, scale by gamma | **GO: matches-or-beats hand-PTX `RmsNormKernel` (matched A 0.64–0.70×, occupancy B 0.11–0.18× across hidden 2048/4096/8192)** on GB10, parity cos=1.0000000 vs f64 CPU ref. f32 FMA + rsqrt (NOT DP4A) = GO class. PMAT-893. See `rmsnorm/RESULTS.md`. |
 
 ### incremental-attention (PMAT-882): TRUE hand-PTX A/B (GB10 Blackwell sm_121, GPU-event median 5×50)
 
