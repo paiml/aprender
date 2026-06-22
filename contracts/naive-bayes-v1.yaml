@@ -63,6 +63,10 @@ proof_obligations:
   property: Fit-predict class range
   formal: predict(x) ∈ training_classes for all x
   applies_to: all
+- type: invariant
+  property: F-GAUSSIANNB-EPSILON-003 — variance smoothing scaled by max feature variance (sklearn parity)
+  formal: 'epsilon = var_smoothing · max_j Var(X[:,j]); σ²_jk_smoothed = σ²_jk + epsilon for all j,k'
+  applies_to: all
 falsification_tests:
 - id: FALSIFY-NB-001
   rule: Prior sums to 1
@@ -89,6 +93,18 @@ falsification_tests:
   prediction: accuracy > 0.9 on well-separated Gaussian clusters
   test: 'proptest: generate K well-separated clusters, fit and predict'
   if_fails: Likelihood computation error or variance estimation bug
+- id: F-GAUSSIANNB-EPSILON-003
+  rule: Variance smoothing equals var_smoothing × max feature variance (scikit-learn GaussianNB parity)
+  prediction: |
+    On a mixed-scale fixture (feature0 var ~3.25e6, feature1 var ~1e-4, two classes), the stored
+    smoothed variance for the small-variance feature equals raw_var + var_smoothing·max_feature_var
+    = 1e-4 + 1e-9·3.25e6 = 3.35e-3. Before the fix it stored raw_var + var_smoothing = ~1.0e-4
+    (epsilon NOT scaled by max feature variance), a ~33.5× error in the smoothed variance.
+  test: cargo test -p aprender-core --lib test_gaussian_nb_var_smoothing_scaled_by_max_feature_var
+  if_fails: 'GaussianNB::fit added a raw additive var_smoothing instead of epsilon = var_smoothing·X.var(axis=0).max(); the Gaussian log-likelihood / Mahalanobis term is mis-scaled on mixed-scale data and predict can flip.'
+  evidence: |
+    RED (raw 1e-9): panics "stored=1.000009943e-4, sklearn_expected=3.350000000e-3, rel_err=9.70e-1".
+    GREEN (epsilon = var_smoothing·max_var): test passes; predict_proba rows finite and sum to ~1.
 enforcement:
   valid_distribution:
     description: Priors must form valid probability distribution
