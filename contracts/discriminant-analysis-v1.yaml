@@ -1,0 +1,147 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-22'
+  author: PAIML Engineering
+  description: Linear and Quadratic Discriminant Analysis — Gaussian classifiers with sklearn parity (LAPACK-free Cholesky)
+  references:
+  - 'Hastie, Tibshirani, Friedman (2009) ESL, §4.3 Linear Discriminant Analysis'
+  - 'Murphy (2012) Machine Learning: A Probabilistic Perspective, §4.2'
+  - 'scikit-learn discriminant_analysis: LinearDiscriminantAnalysis(solver=lsqr), QuadraticDiscriminantAnalysis(reg_param=0)'
+equations:
+  qda_log_likelihood:
+    formula: log P(x | C_k) = -0.5 (d ln(2π) + ln|Σ_k| + (x-μ_k)ᵀ Σ_k⁻¹ (x-μ_k))
+    domain: x ∈ ℝ^d, μ_k ∈ ℝ^d, Σ_k ∈ ℝ^{d×d} positive-definite
+    codomain: log-likelihood ∈ ℝ (finite for finite x and PSD Σ_k)
+    invariants:
+    - ln|Σ_k| computed as 2·Σ ln(L_ii) from the Cholesky factor Σ_k = L Lᵀ
+    - Mahalanobis term (x-μ_k)ᵀ Σ_k⁻¹ (x-μ_k) ≥ 0 via the triangular solve L z = (x-μ_k), ‖z‖²
+    - Log-likelihood is finite when Σ_k is positive-definite
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Qda_Log_Likelihood
+  qda_class_covariance:
+    formula: 'Σ_k = Σ_{i where y_i=k} (x_i - μ_k)(x_i - μ_k)ᵀ / (n_k - 1)'
+    domain: class k with n_k ≥ 2 samples in ℝ^d
+    codomain: Σ_k ∈ ℝ^{d×d} symmetric positive-semidefinite
+    invariants:
+    - Σ_k is symmetric
+    - Cholesky factor of Σ_k exists (PSD), with a small diagonal ridge retried if non-PD
+    - Unbiased estimator (denominator n_k - 1) matches sklearn QDA reg_param=0
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Qda_Class_Covariance
+  lda_decision_function:
+    formula: f_k(x) = w_kᵀ x + b_k, with Σ_pooled w_k = μ_k and b_k = -0.5 w_kᵀ μ_k + ln P(C_k)
+    domain: x ∈ ℝ^d, pooled within-class covariance Σ_pooled ∈ ℝ^{d×d} positive-definite
+    codomain: decision values ∈ ℝ^K
+    invariants:
+    - w_k solved via Cholesky factorization of Σ_pooled (LAPACK-free, no SVD/BLAS)
+    - Σ_pooled is the biased pooled within-class covariance (/n), matching sklearn solver=lsqr
+    - Predicted class = argmax_k f_k(x)
+    - Deterministic for same input
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Lda_Decision_Function
+proof_obligations:
+- type: invariant
+  property: QDA predict-parity with scikit-learn
+  formal: F-QDA-PARITY-001 — QDA.predict equals sklearn QuadraticDiscriminantAnalysis(reg_param=0) labels exactly and predict_proba within 1e-4 on the pinned fixture
+  applies_to: all
+- type: invariant
+  property: QDA per-class covariance positive-definite (Cholesky exists)
+  formal: F-QDA-FIT-PSD-002 — every fitted class covariance admits a Cholesky factor (PSD), so log-likelihood and predict_proba are finite
+  applies_to: all
+- type: invariant
+  property: LDA predict-parity with scikit-learn
+  formal: F-LDA-PARITY-004 — LDA(lsqr).predict equals sklearn LinearDiscriminantAnalysis(solver=lsqr) labels exactly and coef_/intercept_/predict_proba match the pinned fixture
+  applies_to: all
+- type: invariant
+  property: Prediction deterministic
+  formal: predict(x) = predict(x) for all x (both LDA and QDA)
+  applies_to: all
+- type: invariant
+  property: Posterior probability valid
+  formal: predict_proba rows sum to 1 and each entry ∈ [0, 1]
+  applies_to: all
+falsification_tests:
+- id: F-QDA-PARITY-001
+  rule: QDA predict + predict_proba match pinned scikit-learn QDA(reg_param=0)
+  prediction: QDA.predict equals sklearn labels exactly; predict_proba within 1e-4 on ambiguous rows
+  test: cargo test -p aprender-core --lib falsify_qda_parity_001_predict_and_proba_match_sklearn
+  if_fails: Per-class covariance denominator wrong (n vs n-1), Cholesky/log-det error, or softmax bug
+- id: F-QDA-FIT-PSD-002
+  rule: Each fitted QDA class covariance is positive-definite (Cholesky factor exists)
+  prediction: fit succeeds and predict_proba is finite for every class on the fixture
+  test: cargo test -p aprender-core --lib falsify_qda_fit_psd_002_per_class_cholesky_finite_loglik
+  if_fails: Covariance non-PSD without ridge retry, or NaN/Inf log-likelihood from a bad log-det
+- id: F-LDA-PARITY-004
+  rule: LDA(lsqr) predict + coef_/intercept_ + predict_proba match pinned scikit-learn
+  prediction: LDA.predict equals sklearn labels exactly; coef_/intercept_/proba match the fixture
+  test: cargo test -p aprender-core --lib falsify_lda_parity_004_predict_coef_proba_match_sklearn
+  if_fails: Pooled covariance denominator wrong, cholesky_solve misuse, or intercept formula error
+- id: F-LDA-DECISION-005
+  rule: LDA decision_function matches sklearn and its argmax equals predict
+  prediction: decision values match pinned sklearn; argmax over decision equals the predicted class
+  test: cargo test -p aprender-core --lib falsify_lda_decision_function_matches_sklearn
+  if_fails: Decision function or argmax tie-break diverges from sklearn
+- id: F-DA-SEPARABLE-006
+  rule: Both estimators perfectly classify well-separated cluster centers
+  prediction: LDA and QDA both recover the class of each well-separated cluster center
+  test: cargo test -p aprender-core --lib falsify_da_separable_clusters_perfect_recall
+  if_fails: Likelihood/decision computation error or class-label mapping bug
+enforcement:
+  parity:
+    description: LDA and QDA predictions must match scikit-learn on the pinned fixture
+    check: contract_tests::F-QDA-PARITY-001, F-LDA-PARITY-004
+    severity: ERROR
+  psd_covariance:
+    description: Every fitted class covariance must be positive-definite
+    check: contract_tests::F-QDA-FIT-PSD-002
+    severity: ERROR
+kani_harnesses:
+- id: KANI-DA-001
+  obligation: F-QDA-PARITY-001
+  property: QDA predict matches scikit-learn labels on the pinned fixture
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_qda_predict_parity
+- id: KANI-DA-002
+  obligation: F-QDA-FIT-PSD-002
+  property: Each fitted QDA class covariance is positive-definite (Cholesky exists)
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_qda_covariance_psd
+- id: KANI-DA-003
+  obligation: F-LDA-PARITY-004
+  property: LDA predict matches scikit-learn labels on the pinned fixture
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_lda_predict_parity
+- id: KANI-DA-004
+  obligation: Posterior probability valid
+  property: predict_proba rows sum to 1 and each entry in [0, 1]
+  bound: 8
+  strategy: exhaustive
+- id: KANI-DA-005
+  obligation: Prediction deterministic
+  property: predict(x) = predict(x) for all x
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-DA-001
+  name: Discriminant Analysis Contract
+  description: LDA + QDA sklearn-parity and PSD-covariance quality gate
+  checks:
+  - qda_predict_parity
+  - qda_covariance_psd
+  - lda_predict_parity
+  - lda_decision_function
+  - separable_perfect_recall
+  pass_criteria: All 5 falsification tests pass (predict-parity + per-class Cholesky PSD)
+  falsification: Use biased covariance for QDA or unbiased pooled covariance for LDA (breaks sklearn parity)
