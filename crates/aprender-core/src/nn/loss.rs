@@ -332,6 +332,7 @@ impl CrossEntropyLoss {
             let grad_fn = Arc::new(CrossEntropyBackward {
                 softmax_output: softmax_output.clone(),
                 targets: target_indices,
+                reduction: self.reduction,
             });
             loss.set_grad_fn(grad_fn.clone());
 

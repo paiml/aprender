@@ -87,6 +87,7 @@
         let grad_fn = CrossEntropyBackward {
             softmax_output,
             targets,
+            reduction: crate::nn::loss::Reduction::Mean,
         };
         let grad_out = Tensor::from_slice(&[1.0]);
         let grads = grad_fn.backward(&grad_out);
@@ -141,6 +142,7 @@
             CrossEntropyBackward {
                 softmax_output: Tensor::from_slice(&[1.0]),
                 targets: vec![0],
+                reduction: crate::nn::loss::Reduction::Mean,
             }
             .name(),
             SigmoidBackward {
