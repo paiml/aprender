@@ -31,6 +31,7 @@
 //! - `part_24.rs`: Phase 52 - GGUF Loader Metadata Types (state-space exhaustion)
 //! - `part_25.rs`: Phase 54 - Fixture-Based Loader Tests (ModelFixture pattern)
 
+mod beat_fail_closed_naninf; // PMAT-895 OBLIG-GGUF-LOAD-NANINF (reject non-finite quant scales at load)
 mod bytes; // T-COV-95 Coverage Bridge B6 (loader.rs metadata, parsing, transformer)
 mod bytes_02; // T-COV-95 Synthetic Falsification (loader.rs via Pygmy GGUF models)
 mod config;
