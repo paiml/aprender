@@ -539,11 +539,13 @@ impl GGUFConfig {
             .rope_type
             .unwrap_or_else(|| infer_rope_type(&architecture));
         let context_length = apr.metadata.max_position_embeddings.unwrap_or(0);
-        // GH-330: EOS from APR metadata, with architecture contract fallback
-        let eos_token_id = apr
-            .metadata
-            .get_embedded_eos_token_id()
-            .or_else(|| default_eos_for_architecture(&architecture));
+        // GH-330: EOS from APR metadata, with architecture contract fallback.
+        // OBLIG-SPECIAL-TOKEN-WITHIN-VOCAB (PMAT-908): only fall back to the
+        // architecture default when it is a reachable logit (< vocab_size); a
+        // small-vocab model must not inherit a large arch-default eos.
+        let eos_token_id = apr.metadata.get_embedded_eos_token_id().or_else(|| {
+            default_eos_for_architecture(&architecture).filter(|&id| (id as usize) < vocab_size)
+        });
         let bos_token_id = apr.metadata.get_embedded_bos_token_id();
 
         Ok(Self {
@@ -763,8 +765,11 @@ impl GGUFConfig {
         // BOS token ID from GGUF metadata, with architecture-based fallback.
         // Weights-only GGUFs (e.g., from pacha) lack tokenizer.ggml.bos_token_id.
         // Without a BOS token, GPU validation (F2-VALIDATION) is skipped entirely.
+        // OBLIG-SPECIAL-TOKEN-WITHIN-VOCAB (PMAT-908): the architecture default is
+        // only a valid fallback when it is a reachable logit (< vocab_size).
         let bos_token_id = model.bos_token_id().or_else(|| {
-            let fallback = default_bos_for_architecture(&architecture);
+            let fallback =
+                default_bos_for_architecture(&architecture).filter(|&id| (id as usize) < vocab_size);
             if fallback.is_some() {
                 eprintln!(
                     "[BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF — using architecture default for '{architecture}'"
@@ -776,9 +781,11 @@ impl GGUFConfig {
         // GH-330: EOS token ID from GGUF metadata.
         // Design by Contract: this is the class invariant — the config carries
         // the model's own EOS token. No hardcoded fallback (Meyer 1992).
-        let eos_token_id = model
-            .eos_token_id()
-            .or_else(|| default_eos_for_architecture(&architecture));
+        // OBLIG-SPECIAL-TOKEN-WITHIN-VOCAB (PMAT-908): arch-default eos must be
+        // within vocab to be a usable stop token.
+        let eos_token_id = model.eos_token_id().or_else(|| {
+            default_eos_for_architecture(&architecture).filter(|&id| (id as usize) < vocab_size)
+        });
 
         Ok(Self {
             architecture,
@@ -884,6 +891,13 @@ impl ValidatedModelConfig {
 
         // Upper-bound + range checks from model-metadata-bounds-v1.yaml
         validate_metadata_bounds(&config)?;
+
+        // OBLIG-SPECIAL-TOKEN-WITHIN-VOCAB (PMAT-908): every PRESENT special-token
+        // id must be a reachable logit, i.e. < vocab_size. A stop-token id >=
+        // vocab_size can never be produced by sampling, so generation never stops
+        // (runs to max_tokens) or OOB-indexes. apr fail-closes here where
+        // llama.cpp / Ollama silently load+run. Absent (None) ids are not checked.
+        validate_special_tokens_within_vocab(&config)?;
 
         Ok(Self { inner: config })
     }
@@ -1169,6 +1183,35 @@ fn check_usize_max(value: usize, max: usize, field: &str) -> Result<()> {
         return Err(RealizarError::InvalidShape {
             reason: format!("{field} {value} exceeds max {max} (model-metadata-bounds-v1)"),
         });
+    }
+    Ok(())
+}
+
+/// OBLIG-SPECIAL-TOKEN-WITHIN-VOCAB (PMAT-908): reject a config whose present
+/// special-token id is `>= vocab_size`.
+///
+/// Valid token ids span `0..vocab_size`; an id `>= vocab_size` is unreachable as
+/// a logit. A stop-token (eos/bos) at such an id can never match during sampling,
+/// so generation runs to `max_tokens` every time (or OOB-indexes the vocab). This
+/// is a Pillar-4 fail-closed gate: apr REJECTS at load where llama.cpp / Ollama
+/// silently accept the model. Absent (`None`) ids are not checked.
+fn validate_special_tokens_within_vocab(config: &GGUFConfig) -> Result<()> {
+    check_token_within_vocab(config.eos_token_id, config.vocab_size, "eos_token_id")?;
+    check_token_within_vocab(config.bos_token_id, config.vocab_size, "bos_token_id")?;
+    Ok(())
+}
+
+/// Check a single optional special-token id is `< vocab_size` when present.
+fn check_token_within_vocab(token_id: Option<u32>, vocab_size: usize, field: &str) -> Result<()> {
+    if let Some(id) = token_id {
+        if id as usize >= vocab_size {
+            return Err(RealizarError::InvalidShape {
+                reason: format!(
+                    "{field} {id} >= vocab_size {vocab_size}: special token is an unreachable \
+                     logit, so generation cannot stop (OBLIG-SPECIAL-TOKEN-WITHIN-VOCAB)"
+                ),
+            });
+        }
     }
     Ok(())
 }

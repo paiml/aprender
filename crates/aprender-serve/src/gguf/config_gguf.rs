@@ -428,8 +428,9 @@
             rope_type: 0,
             explicit_head_dim: None,
             query_pre_attn_scalar: None,
-            bos_token_id: Some(128_000),
-            eos_token_id: Some(128_001),
+            // In-vocab special tokens (vocab_size = 32000). TinyLlama-style.
+            bos_token_id: Some(1),
+            eos_token_id: Some(2),
         }
     }
 
@@ -455,7 +456,7 @@
         assert!((v.rope_theta() - 10000.0).abs() < f32::EPSILON);
         assert!((v.eps() - 1e-5).abs() < f32::EPSILON);
         assert_eq!(v.rope_type(), 0);
-        assert_eq!(v.bos_token_id(), Some(128_000));
+        assert_eq!(v.bos_token_id(), Some(1));
     }
 
     #[test]
@@ -508,4 +509,71 @@
         let debug = format!("{v:?}");
         assert!(debug.contains("ValidatedModelConfig"));
         assert!(debug.contains("llama"));
+    }
+
+    // -----------------------------------------------------------------------
+    // OBLIG-SPECIAL-TOKEN-WITHIN-VOCAB (PMAT-908): fail-closed reject a model
+    // config whose special-token id (eos/bos) is >= vocab_size. Such a token is
+    // an unreachable logit, so the stop-token never matches → generation never
+    // stops (runs to max_tokens) or OOB-indexes. apr REJECTS where llama.cpp /
+    // Ollama silently load+run.
+    // -----------------------------------------------------------------------
+
+    /// F-SPECIAL-TOKEN-EOS-001: eos_token_id == vocab_size (just past the last
+    /// valid id, since valid ids are 0..vocab_size) must be rejected at load.
+    #[test]
+    fn test_validated_config_rejects_eos_ge_vocab() {
+        let mut cfg = valid_llama_config();
+        cfg.eos_token_id = Some(cfg.vocab_size as u32); // == vocab_size → OOB
+        let err = ValidatedModelConfig::validate(cfg).unwrap_err();
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains("eos_token_id"),
+            "error must name the offending token, got: {msg}"
+        );
+    }
+
+    /// F-SPECIAL-TOKEN-EOS-002: eos_token_id far above vocab_size rejected.
+    #[test]
+    fn test_validated_config_rejects_eos_far_above_vocab() {
+        let mut cfg = valid_llama_config();
+        cfg.eos_token_id = Some(999_999); // vocab is 32000
+        assert!(ValidatedModelConfig::validate(cfg).is_err());
+    }
+
+    /// F-SPECIAL-TOKEN-BOS-001: bos_token_id >= vocab_size rejected at load.
+    #[test]
+    fn test_validated_config_rejects_bos_ge_vocab() {
+        let mut cfg = valid_llama_config();
+        cfg.bos_token_id = Some(cfg.vocab_size as u32 + 5);
+        let err = ValidatedModelConfig::validate(cfg).unwrap_err();
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains("bos_token_id"),
+            "error must name the offending token, got: {msg}"
+        );
+    }
+
+    /// F-SPECIAL-TOKEN-NEG-001 (no false-positive): a config whose special tokens
+    /// are all < vocab_size still loads Ok, and a config with absent (None) token
+    /// ids is NOT rejected by this check.
+    #[test]
+    fn test_validated_config_accepts_special_tokens_within_vocab() {
+        // Boundary: vocab_size - 1 is the largest valid id.
+        let mut cfg = valid_llama_config();
+        cfg.eos_token_id = Some(cfg.vocab_size as u32 - 1);
+        cfg.bos_token_id = Some(0);
+        assert!(
+            ValidatedModelConfig::validate(cfg).is_ok(),
+            "tokens within vocab must load"
+        );
+
+        // Absent token ids must not trip the check.
+        let mut cfg_none = valid_llama_config();
+        cfg_none.eos_token_id = None;
+        cfg_none.bos_token_id = None;
+        assert!(
+            ValidatedModelConfig::validate(cfg_none).is_ok(),
+            "absent token ids must not be rejected"
+        );
     }
