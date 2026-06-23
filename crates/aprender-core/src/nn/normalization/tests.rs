@@ -448,6 +448,8 @@ fn test_batch_norm_1d_parameters_mut() {
 mod tests_batchnorm_contract;
 #[path = "tests_batchnorm_groupnorm.rs"]
 mod tests_batchnorm_groupnorm;
+#[path = "tests_batchnorm_groupnorm_backward.rs"]
+mod tests_batchnorm_groupnorm_backward;
 #[path = "tests_layernorm_contract.rs"]
 mod tests_layernorm_contract;
 #[path = "tests_norm_backward_gradflow.rs"]

@@ -271,6 +271,28 @@ impl BatchNorm1d {
             .expect("BatchNorm1d running_var lock poisoned")
             .clone()
     }
+
+    /// Set the affine scale (γ / weight) tensor (e.g. to attach `requires_grad`).
+    pub fn set_weight(&mut self, weight: Tensor) {
+        self.weight = weight;
+    }
+
+    /// Set the affine shift (β / bias) tensor.
+    pub fn set_bias(&mut self, bias: Tensor) {
+        self.bias = bias;
+    }
+
+    /// Get a reference to the affine scale (γ / weight) tensor.
+    #[must_use]
+    pub fn weight(&self) -> &Tensor {
+        &self.weight
+    }
+
+    /// Get a reference to the affine shift (β / bias) tensor.
+    #[must_use]
+    pub fn bias(&self) -> &Tensor {
+        &self.bias
+    }
 }
 
 impl BatchNorm1d {
@@ -288,6 +310,38 @@ impl BatchNorm1d {
                 }
             }
             indices
+        }
+    }
+
+    /// Record the BatchNorm1d (train-mode) backward edge on the autograd tape
+    /// (PMAT-911 / OBLIG-BATCHNORM1D-BACKWARD-GRAD-FLOW).
+    fn record_batchnorm_backward(&self, input: &Tensor, result: &mut Tensor) {
+        use crate::autograd::{is_grad_enabled, with_graph};
+        use std::sync::Arc;
+
+        if is_grad_enabled()
+            && (input.requires_grad_enabled()
+                || self.weight.requires_grad_enabled()
+                || self.bias.requires_grad_enabled())
+        {
+            result.requires_grad_(true);
+            let grad_fn = Arc::new(crate::autograd::grad_fn::BatchNorm1dBackward {
+                x: input.clone(),
+                gamma: self.weight.clone(),
+                eps: self.eps,
+            });
+            result.set_grad_fn(grad_fn.clone());
+
+            with_graph(|graph| {
+                graph.register_tensor(input.clone());
+                graph.register_tensor(self.weight.clone());
+                graph.register_tensor(self.bias.clone());
+                graph.record(
+                    result.id(),
+                    grad_fn,
+                    vec![input.id(), self.weight.id(), self.bias.id()],
+                );
+            });
         }
     }
 
@@ -385,7 +439,19 @@ impl Module for BatchNorm1d {
         drop(running_mean);
         drop(running_var);
 
-        Tensor::new(&output_data, shape)
+        let mut result = Tensor::new(&output_data, shape);
+
+        // PMAT-911 / OBLIG-BATCHNORM1D-BACKWARD-GRAD-FLOW: wire the autograd
+        // backward so gradients flow to the affine params (gamma=weight,
+        // beta=bias) AND the input x. Without this the layer is non-fine-tunable
+        // (graph severed by Tensor::new). Train-mode uses BATCH statistics for
+        // the gradient (the eval-mode running-stat path is a frozen affine and
+        // is intentionally not differentiated through here).
+        if self.training {
+            self.record_batchnorm_backward(input, &mut result);
+        }
+
+        result
     }
 
     fn parameters(&self) -> Vec<&Tensor> {

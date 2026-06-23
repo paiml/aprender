@@ -66,6 +66,61 @@ impl GroupNorm {
     pub fn num_channels(&self) -> usize {
         self.num_channels
     }
+
+    /// Set the affine scale (γ / weight) tensor (e.g. to attach `requires_grad`).
+    pub fn set_weight(&mut self, weight: Tensor) {
+        self.weight = weight;
+    }
+
+    /// Set the affine shift (β / bias) tensor.
+    pub fn set_bias(&mut self, bias: Tensor) {
+        self.bias = bias;
+    }
+
+    /// Get a reference to the affine scale (γ / weight) tensor.
+    #[must_use]
+    pub fn weight(&self) -> &Tensor {
+        &self.weight
+    }
+
+    /// Get a reference to the affine shift (β / bias) tensor.
+    #[must_use]
+    pub fn bias(&self) -> &Tensor {
+        &self.bias
+    }
+
+    /// Record the GroupNorm backward edge on the autograd tape
+    /// (PMAT-911 / OBLIG-GROUPNORM-BACKWARD-GRAD-FLOW).
+    fn record_groupnorm_backward(&self, input: &Tensor, result: &mut Tensor) {
+        use crate::autograd::{is_grad_enabled, with_graph};
+        use std::sync::Arc;
+
+        if is_grad_enabled()
+            && (input.requires_grad_enabled()
+                || self.weight.requires_grad_enabled()
+                || self.bias.requires_grad_enabled())
+        {
+            result.requires_grad_(true);
+            let grad_fn = Arc::new(crate::autograd::grad_fn::GroupNormBackward {
+                x: input.clone(),
+                gamma: self.weight.clone(),
+                num_groups: self.num_groups,
+                eps: self.eps,
+            });
+            result.set_grad_fn(grad_fn.clone());
+
+            with_graph(|graph| {
+                graph.register_tensor(input.clone());
+                graph.register_tensor(self.weight.clone());
+                graph.register_tensor(self.bias.clone());
+                graph.record(
+                    result.id(),
+                    grad_fn,
+                    vec![input.id(), self.weight.id(), self.bias.id()],
+                );
+            });
+        }
+    }
 }
 
 impl Module for GroupNorm {
@@ -136,7 +191,17 @@ impl Module for GroupNorm {
             }
         }
 
-        Tensor::new(&output_data, shape)
+        let mut result = Tensor::new(&output_data, shape);
+
+        // PMAT-911 / OBLIG-GROUPNORM-BACKWARD-GRAD-FLOW: wire the autograd backward
+        // so gradients flow to the per-channel affine params (gamma=weight,
+        // beta=bias) AND the input x. Only the affine path is differentiable
+        // (non-affine GroupNorm has no learnable params and a frozen output).
+        if self.affine {
+            self.record_groupnorm_backward(input, &mut result);
+        }
+
+        result
     }
 
     fn parameters(&self) -> Vec<&Tensor> {

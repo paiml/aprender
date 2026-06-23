@@ -1,24 +1,30 @@
 contract: norm-backward-gradflow
 metadata:
   kind: training-loop
-  version: "1.0.0"
+  version: "1.1.0"
   description: >
-    LayerNorm and RMSNorm backward MUST flow gradient to their AFFINE parameters
-    (LayerNorm: scale gamma=weight + shift beta=bias; RMSNorm: scale gamma=weight)
-    AND to the input x. Guards the PMAT-907 root-cause fix: the canonical
-    nn::functional::layer_norm / rms_norm built their output via Tensor::from_vec,
-    which severs the autograd graph — after loss.backward(), get_grad(weight.id())
-    / get_grad(bias.id()) were None, so the norm scale/shift never updated. Every
-    transformer using LayerNorm/RMSNorm was therefore NON-FINE-TUNABLE. The
-    functional norms now record LayerNormBackward / RmsNormBackward on the tape,
-    wiring x, gamma, beta as graph inputs.
+    The whole NORM FAMILY backward MUST flow gradient to its AFFINE parameters
+    (LayerNorm: scale gamma=weight + shift beta=bias; RMSNorm: scale gamma=weight;
+    BatchNorm1d: per-feature gamma+beta; GroupNorm: per-channel gamma+beta) AND to
+    the input x. Guards the PMAT-907 (LayerNorm/RMSNorm) and PMAT-911
+    (BatchNorm1d/GroupNorm) root-cause fixes: the canonical forwards built their
+    output via Tensor::from_vec / Tensor::new, which severs the autograd graph —
+    after loss.backward(), get_grad(weight.id()) / get_grad(bias.id()) were None,
+    so the norm scale/shift never updated. Every model using these norms was
+    therefore NON-FINE-TUNABLE. The forwards now record LayerNormBackward /
+    RmsNormBackward / BatchNorm1dBackward / GroupNormBackward on the tape, wiring
+    x, gamma, (beta) as graph inputs. BatchNorm1d differentiates through the BATCH
+    statistics (train mode), the trickiest of the four.
   references:
   - "crates/aprender-core/src/nn/functional.rs"
   - "crates/aprender-core/src/autograd/grad_fn.rs"
+  - "crates/aprender-core/src/nn/normalization/mod.rs"
+  - "crates/aprender-core/src/nn/normalization/group_norm.rs"
   - "crates/aprender-core/src/nn/normalization/tests_norm_backward_gradflow.rs"
+  - "crates/aprender-core/src/nn/normalization/tests_batchnorm_groupnorm_backward.rs"
 version: 1
 status: enforced
-date: 2026-06-23
+date: 2026-06-24
 
 proof_obligations:
   - type: invariant
@@ -37,12 +43,34 @@ proof_obligations:
       gradcheck within tolerance: dL/dgamma_i = sum_batch g_i * x_hat_i (x_hat =
       x/rms); dL/dx_j = (1/rms) * (g'_j - x_hat_j * mean_i(g'_i * x_hat_i)), with
       NO mean-subtraction term (unlike LayerNorm).
+  - type: invariant
+    property: >
+      OBLIG-BATCHNORM1D-BACKWARD-GRAD-FLOW: after loss.backward() on a graph
+      containing the affine BatchNorm1d forward in TRAIN mode, get_grad is Some
+      for gamma (weight), beta (bias), and the input x. The backward uses the
+      BATCH statistics (mean/biased var over the N*spatial elements per feature,
+      matching the forward's normalization). The analytic gradients match a
+      central finite-difference gradcheck within tolerance: dL/dgamma_j =
+      sum_set g * x_hat; dL/dbeta_j = sum_set g; and the standard batchnorm-backward
+      dL/dx_k = (gamma_j*std_inv/m) * (m*g_k - sum_set(g) - x_hat_k*sum_set(g*x_hat)).
+  - type: invariant
+    property: >
+      OBLIG-GROUPNORM-BACKWARD-GRAD-FLOW: after loss.backward() on a graph
+      containing the affine GroupNorm forward, get_grad is Some for the per-channel
+      gamma (weight), per-channel beta (bias), and the input x. Each (sample, group)
+      normalizes over channels_per_group*spatial. The analytic gradients match a
+      central finite-difference gradcheck within tolerance: dL/dgamma_c =
+      sum_{n,spatial} g*x_hat; dL/dbeta_c = sum_{n,spatial} g; and dL/dx like
+      LayerNorm but within each group (std_inv*(g' - mean_grp(g') - x_hat*mean_grp(g'*x_hat))).
   - type: equivalence
     property: >
       GRADCHECK-NON-TAUTOLOGICAL: the falsifier is a finite-difference gradcheck,
       not an is_some assertion on a hardcoded value. Re-severing or scaling any one
       parameter's backward edge makes the central-difference comparison go RED for
-      that parameter (mutation-verified: gamma += g*xhat*1.5 fails the gradcheck).
+      that parameter (mutation-verified for all four norms: gamma/beta/x edge
+      *= 1.5 fails the corresponding gradcheck). For BatchNorm1d the loss
+      coefficient varies across the BATCH reduction so dL/dgamma is genuinely
+      nonzero (a feature-constant coefficient gives sum_b x_hat == 0, vacuous).
 
 falsification_tests:
   - id: FALSIFY-LAYERNORM-BACKWARD-GRAD-FLOW-001
@@ -69,3 +97,27 @@ falsification_tests:
     test_harness: "cargo test -p aprender-core --lib rmsnorm_backward_flows_grad_to_input"
     expected_output: "test result: ok"
     if_fails: "RMSNorm dL/dx must use r_inv*(g' - x_hat*mean(g'*x_hat)) with NO mean-subtraction term."
+  - id: FALSIFY-BATCHNORM1D-BACKWARD-GRAD-FLOW-001
+    name: batchnorm1d_train_backward_flows_grad_to_gamma_and_beta
+    prediction: "BatchNorm1d (train) gamma+beta grads are Some and match the finite-difference gradcheck within tol"
+    test_harness: "cargo test -p aprender-core --lib batchnorm1d_train_backward_flows_grad_to_gamma_and_beta"
+    expected_output: "test result: ok"
+    if_fails: "BatchNorm1d::forward severed the autograd graph (Tensor::new). Record BatchNorm1dBackward on the tape with inputs [x, weight, bias] using BATCH stats in train mode."
+  - id: FALSIFY-BATCHNORM1D-BACKWARD-GRAD-FLOW-002
+    name: batchnorm1d_train_backward_flows_grad_to_input
+    prediction: "BatchNorm1d (train) input x grad is Some and matches the finite-difference gradcheck within tol"
+    test_harness: "cargo test -p aprender-core --lib batchnorm1d_train_backward_flows_grad_to_input"
+    expected_output: "test result: ok"
+    if_fails: "BatchNorm1d dL/dx must use the standard batchnorm-backward (m*g - sum(g) - x_hat*sum(g*x_hat)) scaled by gamma*std_inv/m over the batch set."
+  - id: FALSIFY-GROUPNORM-BACKWARD-GRAD-FLOW-001
+    name: groupnorm_backward_flows_grad_to_gamma_and_beta
+    prediction: "GroupNorm gamma+beta grads are Some and match the finite-difference gradcheck within tol"
+    test_harness: "cargo test -p aprender-core --lib groupnorm_backward_flows_grad_to_gamma_and_beta"
+    expected_output: "test result: ok"
+    if_fails: "GroupNorm::forward severed the autograd graph (Tensor::new). Record GroupNormBackward on the tape with inputs [x, weight, bias]; gamma/beta are per-channel."
+  - id: FALSIFY-GROUPNORM-BACKWARD-GRAD-FLOW-002
+    name: groupnorm_backward_flows_grad_to_input
+    prediction: "GroupNorm input x grad is Some and matches the finite-difference gradcheck within tol"
+    test_harness: "cargo test -p aprender-core --lib groupnorm_backward_flows_grad_to_input"
+    expected_output: "test result: ok"
+    if_fails: "GroupNorm dL/dx is LayerNorm-like WITHIN each group: std_inv*(g' - mean_grp(g') - x_hat*mean_grp(g'*x_hat))."

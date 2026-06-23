@@ -640,5 +640,216 @@ impl GradFn for RmsNormBackward {
     }
 }
 
+/// Gradient function for affine BatchNorm1d in TRAIN mode: y = x_hat * gamma + beta,
+/// where x_hat = (x - mu_batch) / sqrt(var_batch + eps), with mu/var computed over the
+/// BATCH (and spatial) dimension per feature using the BIASED (÷N) variance — matching
+/// the forward used for normalization (Ioffe & Szegedy).
+///
+/// Obligation: OBLIG-BATCHNORM1D-BACKWARD-GRAD-FLOW.
+///
+/// Before PMAT-911 the `BatchNorm1d::forward` built its output via `Tensor::new`,
+/// severing the autograd graph: gamma/beta/x received no gradient, making every
+/// BatchNorm layer non-fine-tunable. This grad_fn flows gradient to ALL THREE inputs
+/// (x, gamma, beta), in that input order.
+///
+/// Layout: input is `[N, C]` (2D) or `[N, C, L]` (3D); feature axis is dim 1. For
+/// each feature `j`, the reduction set is every (n, l) index with channel `j`
+/// (size `m = N * L`). With std_inv = 1/sqrt(var+eps):
+/// - dL/dgamma_j = sum_set g * x_hat
+/// - dL/dbeta_j  = sum_set g
+/// - dL/dx_k     = (gamma_j * std_inv / m) * (m*g_k - sum_set(g) - x_hat_k * sum_set(g*x_hat))
+///   (the standard batchnorm-backward; mean over the BATCH set, not the feature dim).
+pub(crate) struct BatchNorm1dBackward {
+    pub(crate) x: Tensor,
+    pub(crate) gamma: Tensor,
+    pub(crate) eps: f32,
+}
+
+impl BatchNorm1dBackward {
+    /// Indices for one feature across batch (and spatial) dims — mirrors
+    /// `BatchNorm1d::feature_indices`.
+    fn feature_indices(shape: &[usize], feature: usize) -> Vec<usize> {
+        let (batch_size, features) = (shape[0], shape[1]);
+        if shape.len() == 2 {
+            (0..batch_size).map(|b| b * features + feature).collect()
+        } else {
+            let length = shape[2];
+            let mut indices = Vec::with_capacity(batch_size * length);
+            for b in 0..batch_size {
+                for l in 0..length {
+                    indices.push(b * features * length + feature * length + l);
+                }
+            }
+            indices
+        }
+    }
+}
+
+impl GradFn for BatchNorm1dBackward {
+    fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
+        let shape = self.x.shape();
+        let features = shape[1];
+        let x_data = self.x.data();
+        let gamma_data = self.gamma.data();
+        let g_data = grad_output.data();
+
+        let mut grad_x = vec![0.0f32; x_data.len()];
+        let mut grad_gamma = vec![0.0f32; features];
+        let mut grad_beta = vec![0.0f32; features];
+
+        for f in 0..features {
+            let indices = Self::feature_indices(shape, f);
+            let m = indices.len() as f32;
+
+            // Batch statistics (train mode), biased variance (÷N) as in forward.
+            let mean: f32 = indices.iter().map(|&i| x_data[i]).sum::<f32>() / m;
+            let var: f32 = indices
+                .iter()
+                .map(|&i| (x_data[i] - mean).powi(2))
+                .sum::<f32>()
+                / m;
+            let std_inv = 1.0 / (var + self.eps).sqrt();
+
+            // x_hat and the two reductions over the batch set.
+            let mut sum_g = 0.0f32;
+            let mut sum_g_xhat = 0.0f32;
+            for &i in &indices {
+                let xh = (x_data[i] - mean) * std_inv;
+                let g = g_data[i];
+                sum_g += g;
+                sum_g_xhat += g * xh;
+                grad_gamma[f] += g * xh;
+                grad_beta[f] += g;
+            }
+
+            let scale = gamma_data[f] * std_inv / m;
+            for &i in &indices {
+                let xh = (x_data[i] - mean) * std_inv;
+                grad_x[i] = scale * (m * g_data[i] - sum_g - xh * sum_g_xhat);
+            }
+        }
+
+        vec![
+            Tensor::new(&grad_x, self.x.shape()),
+            Tensor::new(&grad_gamma, self.gamma.shape()),
+            Tensor::new(&grad_beta, self.gamma.shape()),
+        ]
+    }
+
+    fn name(&self) -> &'static str {
+        "BatchNorm1dBackward"
+    }
+}
+
+/// Gradient function for affine GroupNorm: y = x_hat * gamma_c + beta_c,
+/// where x_hat normalizes within each (sample, group) over the
+/// `channels_per_group * spatial` elements (biased ÷group_size variance).
+///
+/// Obligation: OBLIG-GROUPNORM-BACKWARD-GRAD-FLOW.
+///
+/// Before PMAT-911 `GroupNorm::forward` built its output via `Tensor::new`,
+/// severing the autograd graph. This grad_fn flows gradient to ALL THREE inputs
+/// (x, gamma, beta), in that input order. gamma/beta are PER-CHANNEL.
+///
+/// Math (per (n, group), group of size `gs`, std_inv = 1/sqrt(var+eps)):
+/// - dL/dgamma_c = sum_{n, spatial} g * x_hat   (accumulated over the channel c)
+/// - dL/dbeta_c  = sum_{n, spatial} g
+/// - dL/dx_k     = std_inv * (g'_k - mean_grp(g') - x_hat_k * mean_grp(g'*x_hat))
+///   where g'_k = g_k * gamma_{c(k)}, and the means are over the whole group
+///   (channels_per_group * spatial), like LayerNorm but within each group.
+pub(crate) struct GroupNormBackward {
+    pub(crate) x: Tensor,
+    pub(crate) gamma: Tensor,
+    pub(crate) num_groups: usize,
+    pub(crate) eps: f32,
+}
+
+impl GradFn for GroupNormBackward {
+    fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
+        let shape = self.x.shape();
+        let batch_size = shape[0];
+        let channels = shape[1];
+        let channels_per_group = channels / self.num_groups;
+        let spatial_size: usize = shape[2..].iter().product();
+        let group_size = channels_per_group * spatial_size;
+        let gs = group_size as f32;
+
+        let x_data = self.x.data();
+        let gamma_data = self.gamma.data();
+        let g_data = grad_output.data();
+
+        let mut grad_x = vec![0.0f32; x_data.len()];
+        let mut grad_gamma = vec![0.0f32; channels];
+        let mut grad_beta = vec![0.0f32; channels];
+
+        for n in 0..batch_size {
+            for grp in 0..self.num_groups {
+                // Group mean / biased variance.
+                let mut sum = 0.0f32;
+                for c in 0..channels_per_group {
+                    let channel_idx = grp * channels_per_group + c;
+                    for s in 0..spatial_size {
+                        let idx = n * channels * spatial_size + channel_idx * spatial_size + s;
+                        sum += x_data[idx];
+                    }
+                }
+                let mean = sum / gs;
+                let mut var_sum = 0.0f32;
+                for c in 0..channels_per_group {
+                    let channel_idx = grp * channels_per_group + c;
+                    for s in 0..spatial_size {
+                        let idx = n * channels * spatial_size + channel_idx * spatial_size + s;
+                        var_sum += (x_data[idx] - mean).powi(2);
+                    }
+                }
+                let var = var_sum / gs;
+                let std_inv = 1.0 / (var + self.eps).sqrt();
+
+                // First pass: x_hat, g' = g*gamma, group reductions, affine grads.
+                let mut sum_gp = 0.0f32;
+                let mut sum_gp_xhat = 0.0f32;
+                for c in 0..channels_per_group {
+                    let channel_idx = grp * channels_per_group + c;
+                    let gamma_c = gamma_data[channel_idx];
+                    for s in 0..spatial_size {
+                        let idx = n * channels * spatial_size + channel_idx * spatial_size + s;
+                        let xh = (x_data[idx] - mean) * std_inv;
+                        let g = g_data[idx];
+                        let gp = g * gamma_c;
+                        sum_gp += gp;
+                        sum_gp_xhat += gp * xh;
+                        grad_gamma[channel_idx] += g * xh;
+                        grad_beta[channel_idx] += g;
+                    }
+                }
+                let mean_gp = sum_gp / gs;
+                let mean_gp_xhat = sum_gp_xhat / gs;
+
+                // Second pass: dx within the group.
+                for c in 0..channels_per_group {
+                    let channel_idx = grp * channels_per_group + c;
+                    let gamma_c = gamma_data[channel_idx];
+                    for s in 0..spatial_size {
+                        let idx = n * channels * spatial_size + channel_idx * spatial_size + s;
+                        let xh = (x_data[idx] - mean) * std_inv;
+                        let gp = g_data[idx] * gamma_c;
+                        grad_x[idx] = std_inv * (gp - mean_gp - xh * mean_gp_xhat);
+                    }
+                }
+            }
+        }
+
+        vec![
+            Tensor::new(&grad_x, self.x.shape()),
+            Tensor::new(&grad_gamma, self.gamma.shape()),
+            Tensor::new(&grad_beta, self.gamma.shape()),
+        ]
+    }
+
+    fn name(&self) -> &'static str {
+        "GroupNormBackward"
+    }
+}
+
 include!("gradient.rs");
 include!("grad_fn_tests.rs");
