@@ -556,3 +556,163 @@ fn test_bf16_parity_with_half_crate() {
         );
     }
 }
+
+// ====================================================================
+// PMAT-905: f32 -> F16 (IEEE half-precision) round-to-nearest-even +
+// subnormal-aware export falsifiers. F16 occupies a 5-bit exponent /
+// 10-bit mantissa, so unlike BF16 it has its own (sub)normal range. The
+// prior encoder truncated the mantissa (`mantissa >> 13`) and flushed the
+// entire subnormal range to signed zero — neither matches the IEEE /
+// PyTorch / HF-safetensors / half::f16::from_f32 round-to-nearest-even
+// reference. OBLIG-SAFETENSORS-F16-EXPORT-RNE.
+// ====================================================================
+
+/// Read the first little-endian u16 produced by `f32_slice_to_f16_bytes`.
+fn f16_first_u16(bytes: &[u8]) -> u16 {
+    u16::from_le_bytes([bytes[0], bytes[1]])
+}
+
+#[cfg(feature = "format-quantize")]
+#[test]
+fn test_f16_round_to_nearest_even_falsifier() {
+    // 1.0 + 3 ulp_f16 then +0.75 ulp: choose an f32 whose 13 discarded
+    // mantissa bits exceed the halfway point so RNE must round UP while
+    // truncation rounds DOWN.
+    // f32 1.0009765625 + a bit: mantissa 0x0019 << 13 region.
+    // Concretely use 0x3C01_2000: kept mantissa bit 0, discarded 0x1200
+    // (low 13 bits 0x1200 > 0x1000 halfway) -> round up.
+    let input = f32::from_bits(0x3C01_2000);
+    let ours = f16_first_u16(&super::super::f32_slice_to_f16_bytes(&[input]));
+    let oracle = half::f16::from_f32(input).to_bits();
+    assert_eq!(
+        ours, oracle,
+        "round-to-nearest-even expected {oracle:#06X}, got {ours:#06X} \
+         (truncation rounds the wrong way)"
+    );
+}
+
+#[cfg(feature = "format-quantize")]
+#[test]
+fn test_f16_subnormal_not_flushed_to_zero() {
+    // The smallest positive f16 subnormal is 2^-24 ≈ 5.9605e-8 (bits 0x0001).
+    // The old encoder flushed everything below the normal range to signed
+    // zero. The fix must produce the correct subnormal, matching half.
+    for &x in &[
+        2.0f32.powi(-24),               // smallest f16 subnormal -> 0x0001
+        2.0f32.powi(-24) * 3.0,         // 0x0003
+        2.0f32.powi(-15),               // mid subnormal
+        2.0f32.powi(-14) * 0.9999,      // just below smallest normal
+    ] {
+        let ours = f16_first_u16(&super::super::f32_slice_to_f16_bytes(&[x]));
+        let oracle = half::f16::from_f32(x).to_bits();
+        assert_eq!(
+            ours, oracle,
+            "subnormal f32 {:#010X} must encode to {oracle:#06X}, got {ours:#06X} \
+             (flush-to-zero bug yields 0x0000)",
+            x.to_bits()
+        );
+        assert_ne!(oracle, 0x0000, "test input must be a nonzero subnormal");
+    }
+}
+
+#[cfg(feature = "format-quantize")]
+#[test]
+fn test_f16_round_subnormal_ties_to_even() {
+    // Rounding into the subnormal range must also be round-to-nearest-even,
+    // not truncate. Sweep a band of tiny f32 values straddling subnormal
+    // ulp boundaries and compare bit-for-bit with the oracle.
+    let base = 2.0f32.powi(-24);
+    for i in 0..512u32 {
+        let x = base * (i as f32) * 0.5;
+        let ours = f16_first_u16(&super::super::f32_slice_to_f16_bytes(&[x]));
+        let oracle = half::f16::from_f32(x).to_bits();
+        assert_eq!(
+            ours, oracle,
+            "subnormal RNE mismatch at i={i} (f32 {:#010X}): ours {ours:#06X}, half {oracle:#06X}",
+            x.to_bits()
+        );
+    }
+}
+
+#[cfg(feature = "format-quantize")]
+#[test]
+fn test_f16_preserves_nan_not_inf() {
+    // A NaN whose mantissa bits live only in the discarded low region must
+    // stay a NaN, never collapse to Inf.
+    let nan = f32::from_bits(0x7F80_0001);
+    assert!(nan.is_nan(), "test input must be NaN");
+    let bits = f16_first_u16(&super::super::f32_slice_to_f16_bytes(&[nan]));
+    let decoded = half::f16::from_bits(bits);
+    assert!(
+        decoded.is_nan(),
+        "NaN must survive F16 encoding: bits {bits:#06X}"
+    );
+    assert!(!decoded.is_infinite(), "NaN must not become Inf");
+}
+
+#[cfg(feature = "format-quantize")]
+#[test]
+fn test_f16_overflow_to_infinity() {
+    // Values above the largest finite f16 (65504) round to Inf, matching half.
+    for &x in &[70000.0f32, f32::MAX, f32::INFINITY] {
+        let ours = f16_first_u16(&super::super::f32_slice_to_f16_bytes(&[x]));
+        let oracle = half::f16::from_f32(x).to_bits();
+        assert_eq!(ours, oracle, "overflow f32 {x} -> {oracle:#06X}, got {ours:#06X}");
+    }
+    // Rounding near the overflow boundary: 65520 rounds to Inf under RNE.
+    let near = 65520.0f32;
+    assert_eq!(
+        f16_first_u16(&super::super::f32_slice_to_f16_bytes(&[near])),
+        half::f16::from_f32(near).to_bits(),
+        "near-overflow RNE boundary must match half"
+    );
+}
+
+#[cfg(feature = "format-quantize")]
+#[test]
+fn test_f16_signed_zero_and_inf_preserved() {
+    for &x in &[0.0f32, -0.0f32, f32::INFINITY, f32::NEG_INFINITY] {
+        let ours = f16_first_u16(&super::super::f32_slice_to_f16_bytes(&[x]));
+        let oracle = half::f16::from_f32(x).to_bits();
+        assert_eq!(ours, oracle, "f32 {:#010X} -> {oracle:#06X}, got {ours:#06X}", x.to_bits());
+    }
+}
+
+#[cfg(feature = "format-quantize")]
+#[test]
+fn test_f16_parity_with_half_crate() {
+    // Oracle parity against half::f16::from_f32 (round-to-nearest-even) over a
+    // wide sweep: normals, subnormals, ties, large/overflow, and signs.
+    let mut samples: Vec<f32> = Vec::new();
+    // Bit-pattern sweep mixing exponent + mantissa boundaries.
+    for i in 0..4096u32 {
+        let bits = ((i) << 11) ^ 0x3800_0000;
+        let v = f32::from_bits(bits);
+        if v.is_finite() {
+            samples.push(v);
+        }
+    }
+    // Explicit subnormal + boundary band.
+    let base = 2.0f32.powi(-24);
+    for i in 0..256u32 {
+        samples.push(base * (i as f32) * 0.5);
+        samples.push(-base * (i as f32) * 0.5);
+    }
+    // Large / overflow band.
+    for i in 0..256u32 {
+        let x = 60000.0 + (i as f32) * 30.0;
+        samples.push(x);
+        samples.push(-x);
+    }
+
+    let bytes = super::super::f32_slice_to_f16_bytes(&samples);
+    for (idx, &v) in samples.iter().enumerate() {
+        let ours = u16::from_le_bytes([bytes[idx * 2], bytes[idx * 2 + 1]]);
+        let oracle = half::f16::from_f32(v).to_bits();
+        assert_eq!(
+            ours, oracle,
+            "F16 parity mismatch for f32 {:#010X}: ours {ours:#06X}, half {oracle:#06X}",
+            v.to_bits()
+        );
+    }
+}
