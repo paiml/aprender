@@ -145,12 +145,127 @@ impl AprV2Model {
             }
         }
 
-        Ok(Self {
+        let model = Self {
             header,
             metadata,
             tensors,
             data,
-        })
+        };
+
+        // PMAT-906 / Pillar-4 fail-closed: reject a structurally-inconsistent model
+        // at LOAD rather than producing garbage at inference. llama.cpp / Ollama
+        // silently load such a model; apr fails closed.
+        //   - OBLIG-APR-VOCAB-EMBED-CONSISTENT: config.vocab_size == embedding rows
+        //   - OBLIG-APR-WEIGHT-SHAPE-MATCHES-CONFIG: weight cols == config.hidden_size
+        model.validate_config_consistency()?;
+
+        Ok(model)
+    }
+
+    /// PMAT-906 — Pillar-4 fail-closed: verify the declared transformer config
+    /// is structurally consistent with the loaded weight tensors.
+    ///
+    /// Two checks, mirroring the GGUF/SafeTensors fail-closed gates
+    /// (OBLIG-GGUF-LOAD-NANINF, F-DATA-QUALITY-*):
+    ///
+    /// - **OBLIG-APR-VOCAB-EMBED-CONSISTENT**: `config.vocab_size` MUST equal the
+    ///   row count of the token-embedding matrix (and of `lm_head` when present
+    ///   and untied). A mismatch means token IDs index past the embedding table
+    ///   (or logits are projected to the wrong vocabulary) → garbage / OOB.
+    /// - **OBLIG-APR-WEIGHT-SHAPE-MATCHES-CONFIG**: the inner (column) dimension of
+    ///   the token-embedding / `lm_head` matrix MUST equal `config.hidden_size`.
+    ///   A mismatch means every matmul reads the hidden vector with the wrong
+    ///   stride → garbage.
+    ///
+    /// Only enforced for transformer models that declare BOTH `vocab_size` and
+    /// `hidden_size`; non-transformer / simple `predict` models are untouched.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RealizarError::FormatError`] naming the inconsistent tensor and
+    /// the declared-vs-actual dimensions.
+    fn validate_config_consistency(&self) -> Result<()> {
+        let Some(vocab_size) = self.metadata.vocab_size else {
+            return Ok(());
+        };
+        let Some(hidden_size) = self.metadata.hidden_size else {
+            return Ok(());
+        };
+
+        // Token-embedding matrix is [vocab_size, hidden_size] (row-major).
+        const EMBED_NAMES: &[&str] = &[
+            "model.embed_tokens.weight",
+            "embed_tokens.weight",
+            "transformer.wte.weight",
+            "embeddings.word_embeddings.weight",
+            "tok_embeddings.weight",
+            "token_embd.weight",
+        ];
+        if let Some(embed) = EMBED_NAMES.iter().find_map(|n| self.get_tensor(n)) {
+            if embed.shape.len() == 2 {
+                let (rows, cols) = (embed.shape[0], embed.shape[1]);
+                // Embedding may be stored as [vocab, hidden] (HF/SafeTensors) or
+                // [hidden, vocab] (some tied/GGUF layouts). Accept either
+                // orientation, but vocab_size MUST be one of the two dims and
+                // hidden_size the other.
+                let vocab_ok = rows == vocab_size || cols == vocab_size;
+                let hidden_ok = rows == hidden_size || cols == hidden_size;
+                if !vocab_ok {
+                    return Err(RealizarError::FormatError {
+                        reason: format!(
+                            "OBLIG-APR-VOCAB-EMBED-CONSISTENT: config vocab_size={vocab_size} \
+                             does not match embedding tensor '{}' shape {:?} — neither dim is \
+                             {vocab_size}. The declared vocabulary is inconsistent with the \
+                             embedding matrix; token IDs would index out of bounds and inference \
+                             would produce garbage. Re-convert the model.",
+                            embed.name, embed.shape
+                        ),
+                    });
+                }
+                if !hidden_ok {
+                    return Err(RealizarError::FormatError {
+                        reason: format!(
+                            "OBLIG-APR-WEIGHT-SHAPE-MATCHES-CONFIG: config hidden_size={hidden_size} \
+                             does not match embedding tensor '{}' shape {:?} — neither dim is \
+                             {hidden_size}. The hidden vector would be read with the wrong stride \
+                             and inference would produce garbage. Re-convert the model.",
+                            embed.name, embed.shape
+                        ),
+                    });
+                }
+            }
+        }
+
+        // Separate (untied) lm_head, when present, is [vocab_size, hidden_size].
+        if let Some(lm_head) = self.get_tensor("lm_head.weight") {
+            if lm_head.shape.len() == 2 {
+                let (rows, cols) = (lm_head.shape[0], lm_head.shape[1]);
+                if rows != vocab_size && cols != vocab_size {
+                    return Err(RealizarError::FormatError {
+                        reason: format!(
+                            "OBLIG-APR-VOCAB-EMBED-CONSISTENT: config vocab_size={vocab_size} \
+                             does not match lm_head tensor '{}' shape {:?}. The output projection \
+                             targets the wrong vocabulary; inference would produce garbage. \
+                             Re-convert the model.",
+                            lm_head.name, lm_head.shape
+                        ),
+                    });
+                }
+                if rows != hidden_size && cols != hidden_size {
+                    return Err(RealizarError::FormatError {
+                        reason: format!(
+                            "OBLIG-APR-WEIGHT-SHAPE-MATCHES-CONFIG: config hidden_size={hidden_size} \
+                             does not match lm_head tensor '{}' shape {:?}. The output projection \
+                             reads the hidden vector with the wrong stride; inference would produce \
+                             garbage. Re-convert the model.",
+                            lm_head.name, lm_head.shape
+                        ),
+                    });
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Decompress APR data based on compression flags (GH-35)

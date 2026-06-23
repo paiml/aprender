@@ -232,6 +232,11 @@ mod apr_tests_part_03;
 #[path = "tests_pygmy_apr.rs"]
 mod apr_tests_pygmy_apr;
 
+// PMAT-906 Pillar-4 fail-closed: reject vocab/weight-shape config mismatch at APR load
+#[cfg(test)]
+#[path = "beat_fail_closed_config.rs"]
+mod apr_beat_fail_closed_config;
+
 // T-COV-95 Coverage Bridge (Part 05 - AprFlags, AprHeader, TensorEntry, AprMetadata, dtype_to_qtype)
 #[cfg(test)]
 #[path = "tests_apr_flags_02.rs"]

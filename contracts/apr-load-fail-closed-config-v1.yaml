@@ -1,0 +1,79 @@
+contract: apr-load-fail-closed-config
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  description: >
+    realizar's APR loader (AprV2Model::from_model_data, reached via load() and
+    from_bytes()) must FAIL CLOSED on a structurally-INCONSISTENT model whose
+    declared transformer config (the .apr metadata block: vocab_size, hidden_size)
+    disagrees with the SHAPES of the loaded weight tensors. Before PMAT-906,
+    from_model_data parsed the tensor index and returned Ok with NO config<->shape
+    cross-check: an APR whose metadata declares vocab_size=99 while the embedding /
+    lm_head matrix has only 10 rows would load fine, and token IDs in [10,99) would
+    index PAST the embedding table at inference (garbage / OOB); an APR whose
+    metadata declares hidden_size=64 while the embedding matrix has only 8 columns
+    would load fine, and every matmul would read the hidden vector with the wrong
+    stride (garbage). This is the same Pillar-4 fail-closed CLASS as the GGUF
+    truncated/NaN-Inf load gate (apr-load-fail-closed-truncated, OBLIG-GGUF-LOAD-NANINF)
+    and the SafeTensors cross-tensor structural beat (apr-fail-closed-structural-beat,
+    OBLIG-STRUCT-*), but applied to the APR config<->tensor-shape boundary. PMAT-906
+    adds AprV2Model::validate_config_consistency(), called from from_model_data, which
+    returns Err(FormatError) naming the inconsistent tensor and the declared-vs-actual
+    dims. llama.cpp / Ollama load mismatched-metadata models silently (check_tensors
+    defaults to off), so apr rejecting it at load is a genuine Pillar-4 BEAT, not parity.
+    The gate is enforced only for transformer models that declare BOTH vocab_size and
+    hidden_size; non-transformer / simple predict() models and models that omit the
+    config are untouched (no false positive).
+  references:
+  - "crates/aprender-serve/src/apr/loading_mmap.rs (AprV2Model::from_model_data + validate_config_consistency)"
+  - "crates/aprender-serve/src/apr/beat_fail_closed_config.rs (PMAT-906 falsifiers)"
+  - "contracts/apr-load-fail-closed-truncated-v1.yaml (sibling GGUF-load fail-closed gate, OBLIG-GGUF-LOAD-NANINF)"
+  - "contracts/apr-fail-closed-structural-beat-v1.yaml (sibling SafeTensors cross-tensor structural beat, OBLIG-STRUCT-*)"
+version: 1
+status: enforced
+date: 2026-06-23
+
+proof_obligations:
+  - type: invariant
+    property: >
+      OBLIG-APR-VOCAB-EMBED-CONSISTENT: when the .apr metadata declares both
+      vocab_size and hidden_size, AprV2Model::validate_config_consistency (called from
+      from_model_data) returns Err(FormatError) iff config.vocab_size is not one of the
+      two dims of the 2-D token-embedding matrix (model.embed_tokens.weight /
+      embed_tokens.weight / transformer.wte.weight / embeddings.word_embeddings.weight /
+      tok_embeddings.weight / token_embd.weight) — or, when a separate untied lm_head.weight
+      is present, not one of its two dims. A vocab mismatch means token IDs would index out
+      of bounds in the embedding table (or logits target the wrong vocabulary) and inference
+      would produce garbage, so apr fails closed at load. A model whose embedding rows match
+      the declared vocab_size loads unchanged (no false positive).
+  - type: invariant
+    property: >
+      OBLIG-APR-WEIGHT-SHAPE-MATCHES-CONFIG: when the .apr metadata declares both
+      vocab_size and hidden_size, AprV2Model::validate_config_consistency returns
+      Err(FormatError) iff config.hidden_size is not one of the two dims of the 2-D
+      token-embedding matrix (or, when present, the untied lm_head.weight). A hidden-dim
+      mismatch means every matmul would read the hidden vector with the wrong stride and
+      inference would produce garbage, so apr fails closed at load. A model whose embedding
+      columns match the declared hidden_size loads unchanged (no false positive). Only
+      transformer models declaring BOTH config dims are gated; models omitting the config
+      (e.g. simple predict() models) are never flagged.
+
+falsification_tests:
+  - id: FALSIFY-APR-LOAD-VOCAB-001
+    name: vocab_embed_mismatch_rejected_at_load
+    prediction: "an APR whose metadata declares vocab_size=99 but whose embedding/lm_head matrices have 10 rows makes AprV2Model::from_bytes return Err(FormatError) naming OBLIG-APR-VOCAB-EMBED-CONSISTENT; a self-consistent APR (vocab=10, hidden=8) still loads Ok"
+    test_harness: "cargo test -p aprender-serve --lib vocab_embed_mismatch_rejected_at_load"
+    expected_output: "test result: ok"
+    if_fails: "an APR whose declared vocab_size disagrees with its embedding rows loads silently → token IDs index out of bounds and apr run/serve emit garbage instead of failing closed at load (Pillar-4 beat regressed to parity with llama.cpp/Ollama)."
+  - id: FALSIFY-APR-LOAD-HIDDEN-001
+    name: weight_shape_hidden_mismatch_rejected_at_load
+    prediction: "an APR whose metadata declares hidden_size=64 but whose embedding/lm_head matrices have 8 columns makes AprV2Model::from_bytes return Err(FormatError) naming OBLIG-APR-WEIGHT-SHAPE-MATCHES-CONFIG; a self-consistent APR (vocab=10, hidden=8) still loads Ok"
+    test_harness: "cargo test -p aprender-serve --lib weight_shape_hidden_mismatch_rejected_at_load"
+    expected_output: "test result: ok"
+    if_fails: "an APR whose declared hidden_size disagrees with its weight columns loads silently → every matmul reads the hidden vector with the wrong stride and apr run/serve emit garbage instead of failing closed at load."
+  - id: FALSIFY-APR-LOAD-NO-FALSE-POSITIVE-001
+    name: consistent_apr_still_loads_ok
+    prediction: "a fully self-consistent pygmy APR (vocab_size=10 matching 10 embedding rows, hidden_size=8 matching 8 embedding columns) loads Ok — the config-consistency gate raises no false positive"
+    test_harness: "cargo test -p aprender-serve --lib consistent_apr_still_loads_ok"
+    expected_output: "test result: ok"
+    if_fails: "the config-consistency gate became over-eager and rejects a valid, self-consistent APR model → apr fails to load legitimate models at load time."
