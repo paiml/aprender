@@ -450,6 +450,8 @@ mod tests_batchnorm_contract;
 mod tests_batchnorm_groupnorm;
 #[path = "tests_layernorm_contract.rs"]
 mod tests_layernorm_contract;
+#[path = "tests_norm_backward_gradflow.rs"]
+mod tests_norm_backward_gradflow;
 #[path = "tests_norm_edge_cases.rs"]
 mod tests_norm_edge_cases;
 #[path = "tests_rmsnorm_contract.rs"]

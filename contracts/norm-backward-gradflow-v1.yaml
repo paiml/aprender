@@ -1,0 +1,71 @@
+contract: norm-backward-gradflow
+metadata:
+  kind: training-loop
+  version: "1.0.0"
+  description: >
+    LayerNorm and RMSNorm backward MUST flow gradient to their AFFINE parameters
+    (LayerNorm: scale gamma=weight + shift beta=bias; RMSNorm: scale gamma=weight)
+    AND to the input x. Guards the PMAT-907 root-cause fix: the canonical
+    nn::functional::layer_norm / rms_norm built their output via Tensor::from_vec,
+    which severs the autograd graph — after loss.backward(), get_grad(weight.id())
+    / get_grad(bias.id()) were None, so the norm scale/shift never updated. Every
+    transformer using LayerNorm/RMSNorm was therefore NON-FINE-TUNABLE. The
+    functional norms now record LayerNormBackward / RmsNormBackward on the tape,
+    wiring x, gamma, beta as graph inputs.
+  references:
+  - "crates/aprender-core/src/nn/functional.rs"
+  - "crates/aprender-core/src/autograd/grad_fn.rs"
+  - "crates/aprender-core/src/nn/normalization/tests_norm_backward_gradflow.rs"
+version: 1
+status: enforced
+date: 2026-06-23
+
+proof_obligations:
+  - type: invariant
+    property: >
+      OBLIG-LAYERNORM-BACKWARD-GRAD-FLOW: after loss.backward() on a graph
+      containing the affine LayerNorm forward, get_grad is Some for gamma
+      (weight), beta (bias), and the input x. The analytic gradients match a
+      central finite-difference gradcheck within tolerance: dL/dgamma_i =
+      sum_batch g_i * x_hat_i; dL/dbeta_i = sum_batch g_i; and dL/dx flows through
+      the mean/var normalization (std_inv * (g' - mean(g') - x_hat*mean(g'*x_hat))).
+  - type: invariant
+    property: >
+      OBLIG-RMSNORM-BACKWARD-GRAD-FLOW: after loss.backward() on a graph
+      containing the affine RMSNorm forward, get_grad is Some for gamma (weight)
+      and the input x. The analytic gradients match a central finite-difference
+      gradcheck within tolerance: dL/dgamma_i = sum_batch g_i * x_hat_i (x_hat =
+      x/rms); dL/dx_j = (1/rms) * (g'_j - x_hat_j * mean_i(g'_i * x_hat_i)), with
+      NO mean-subtraction term (unlike LayerNorm).
+  - type: equivalence
+    property: >
+      GRADCHECK-NON-TAUTOLOGICAL: the falsifier is a finite-difference gradcheck,
+      not an is_some assertion on a hardcoded value. Re-severing or scaling any one
+      parameter's backward edge makes the central-difference comparison go RED for
+      that parameter (mutation-verified: gamma += g*xhat*1.5 fails the gradcheck).
+
+falsification_tests:
+  - id: FALSIFY-LAYERNORM-BACKWARD-GRAD-FLOW-001
+    name: layernorm_backward_flows_grad_to_gamma_and_beta
+    prediction: "LayerNorm gamma+beta grads are Some and match the finite-difference gradcheck within tol"
+    test_harness: "cargo test -p aprender-core --lib layernorm_backward_flows_grad_to_gamma_and_beta"
+    expected_output: "test result: ok"
+    if_fails: "nn::functional::layer_norm severed the autograd graph (Tensor::from_vec). Record LayerNormBackward on the tape with inputs [x, weight, bias]."
+  - id: FALSIFY-LAYERNORM-BACKWARD-GRAD-FLOW-002
+    name: layernorm_backward_flows_grad_to_input
+    prediction: "LayerNorm input x grad is Some and matches the finite-difference gradcheck within tol"
+    test_harness: "cargo test -p aprender-core --lib layernorm_backward_flows_grad_to_input"
+    expected_output: "test result: ok"
+    if_fails: "LayerNorm dL/dx must include the mean/var coupling terms; a missing edge freezes stacked norm layers."
+  - id: FALSIFY-RMSNORM-BACKWARD-GRAD-FLOW-001
+    name: rmsnorm_backward_flows_grad_to_gamma
+    prediction: "RMSNorm gamma grad is Some and matches the finite-difference gradcheck within tol"
+    test_harness: "cargo test -p aprender-core --lib rmsnorm_backward_flows_grad_to_gamma"
+    expected_output: "test result: ok"
+    if_fails: "nn::functional::rms_norm severed the autograd graph. Record RmsNormBackward on the tape with inputs [x, weight]."
+  - id: FALSIFY-RMSNORM-BACKWARD-GRAD-FLOW-002
+    name: rmsnorm_backward_flows_grad_to_input
+    prediction: "RMSNorm input x grad is Some and matches the finite-difference gradcheck within tol"
+    test_harness: "cargo test -p aprender-core --lib rmsnorm_backward_flows_grad_to_input"
+    expected_output: "test result: ok"
+    if_fails: "RMSNorm dL/dx must use r_inv*(g' - x_hat*mean(g'*x_hat)) with NO mean-subtraction term."

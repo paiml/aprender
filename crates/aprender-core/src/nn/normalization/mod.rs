@@ -111,6 +111,18 @@ impl LayerNorm {
     pub fn set_bias(&mut self, bias: Tensor) {
         self.bias = bias;
     }
+
+    /// Get a reference to the affine scale (γ / weight) tensor.
+    #[must_use]
+    pub fn weight(&self) -> &Tensor {
+        &self.weight
+    }
+
+    /// Get a reference to the affine shift (β / bias) tensor.
+    #[must_use]
+    pub fn bias(&self) -> &Tensor {
+        &self.bias
+    }
 }
 
 impl Module for LayerNorm {
