@@ -242,7 +242,8 @@ mod tests {
     fn test_validated_config_eos_token_id_getter() {
         let cfg = valid_llama_config();
         let v = ValidatedModelConfig::validate(cfg).expect("valid");
-        assert_eq!(v.eos_token_id(), Some(128_001));
+        // valid_llama_config uses an in-vocab eos (vocab_size = 32000).
+        assert_eq!(v.eos_token_id(), Some(2));
     }
 
     // -- FALSIFY: Verify Rust bounds match YAML contract --

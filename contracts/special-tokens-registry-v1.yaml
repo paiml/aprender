@@ -219,6 +219,10 @@ proof_obligations:
   property: Architecture mapping complete
   formal: all architecture_mapping values reference valid families
   applies_to: all
+- type: bound
+  property: OBLIG-SPECIAL-TOKEN-WITHIN-VOCAB
+  formal: "for every present special-token id t in {eos, bos}: t < vocab_size, enforced at ValidatedModelConfig::validate (PMAT-908)"
+  applies_to: all
 
 kani_harnesses:
 - id: st-kani-001
@@ -264,6 +268,14 @@ falsification_tests:
     status: "IMPLEMENTED"
     implementation: "src/format/special_tokens_contract_falsify.rs"
     if_fails: "YAML has invalid token ID (>= vocab_size)"
+
+  - id: FALSIFY-ST-005
+    rule: "OBLIG-SPECIAL-TOKEN-WITHIN-VOCAB: config load fail-closes a present special-token id >= vocab_size (PMAT-908)"
+    prediction: "ValidatedModelConfig::validate() returns Err naming the offending token when eos/bos id >= vocab_size, and Ok when all present ids < vocab_size or absent"
+    status: "IMPLEMENTED"
+    test: "cargo test -p aprender-serve --lib test_validated_config_rejects_eos_ge_vocab"
+    implementation: "crates/aprender-serve/src/gguf/config_gguf.rs::test_validated_config_rejects_eos_ge_vocab"
+    if_fails: "A model with a stop-token id >= vocab_size loads silently — generation can never stop (runs to max_tokens) or OOB-indexes the vocab; apr must reject where llama.cpp/Ollama silently load+run"
 
 qa_gate:
   id: F-SPECIAL-TOKENS-GATE
