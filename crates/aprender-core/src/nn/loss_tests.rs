@@ -566,6 +566,64 @@ mod tests {
         );
     }
 
+    /// Falsifier for OBLIG-CE-LABEL-SMOOTHING-UNIFORM-MASS (PMAT-910).
+    ///
+    /// PyTorch parity: the smoothed target distribution must put eps/C of the
+    /// probability mass on EACH class (so q_target = 1-eps+eps/C, q_{i!=t} = eps/C).
+    /// The previous code used (1-eps)/C as the per-class off-target mass, giving a
+    /// loss ~3.2x too large. This test pins the analytic oracle:
+    ///   smoothed CE = -(1-eps)*log p_target - (eps/C) * sum_i log p_i
+    /// which equals torch.nn.CrossEntropyLoss(label_smoothing=eps) exactly.
+    #[test]
+    fn test_cross_entropy_label_smoothing_uniform_mass_oracle() {
+        // C=5, target=0, eps=0.1. torch gives 0.7244379 for these logits.
+        let logits = Tensor::new(&[2.0, 1.0, 0.0, -1.0, 0.5], &[1, 5]);
+        let targets = Tensor::from_slice(&[0.0]);
+        let eps = 0.1_f32;
+        let c = 5usize;
+        let target = 0usize;
+
+        let criterion = CrossEntropyLoss::with_label_smoothing(eps);
+        let loss = criterion.forward(&logits, &targets);
+
+        // Analytic oracle (self-contained, == torch CrossEntropyLoss(label_smoothing)).
+        let lp = log_softmax(&logits);
+        let lp = lp.data();
+        let sum_lp: f32 = (0..c).map(|i| lp[i]).sum();
+        let oracle = -(1.0 - eps) * lp[target] - (eps / c as f32) * sum_lp;
+
+        assert!(
+            (loss.item() - oracle).abs() < 1e-5,
+            "label-smoothed CE must match analytic/torch oracle: got {} expected {} (eps/C off-target mass)",
+            loss.item(),
+            oracle
+        );
+
+        // Hard pin to the torch reference value to defend against drift.
+        assert!(
+            (loss.item() - 0.724_437_9).abs() < 1e-4,
+            "label-smoothed CE must equal torch reference 0.7244379, got {}",
+            loss.item()
+        );
+    }
+
+    /// eps=0 must reduce exactly to plain cross-entropy (no regression).
+    #[test]
+    fn test_cross_entropy_label_smoothing_zero_equals_plain() {
+        let logits = Tensor::new(&[2.0, 1.0, 0.0, -1.0, 0.5], &[1, 5]);
+        let targets = Tensor::from_slice(&[0.0]);
+
+        let plain = CrossEntropyLoss::new().forward(&logits, &targets);
+        let smoothed_zero = CrossEntropyLoss::with_label_smoothing(0.0).forward(&logits, &targets);
+
+        assert!(
+            (plain.item() - smoothed_zero.item()).abs() < 1e-6,
+            "eps=0 must equal plain CE: plain={} smoothed_zero={}",
+            plain.item(),
+            smoothed_zero.item()
+        );
+    }
+
     #[test]
     fn test_cross_entropy_forward_label_smoothing_multi_class() {
         // 1 sample, 5 classes - exercises the inner loop over all classes

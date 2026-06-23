@@ -476,7 +476,10 @@ fn nn_linear_backward_populates_weight_grad() {
          `weight` is broken (cached construction-time transpose wiped by clear_graph)."
     );
     if let Some(b) = layer.bias() {
-        assert!(get_grad(b.id()).is_some(), "Linear bias received no gradient either.");
+        assert!(
+            get_grad(b.id()).is_some(),
+            "Linear bias received no gradient either."
+        );
     }
 }
 
