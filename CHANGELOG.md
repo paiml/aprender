@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.52.0] - 2026-06-22
+
+Correctness-beat wave (PMAT-889..898) across all four pillars + the cuda-oxide marquee. Each fix ships
+a named proof-obligation + a RED-on-bug / GREEN-on-fix falsifier + a `pv`-validated contract.
+
+### Fixed
+
+- **`GaussianNB` `var_smoothing` diverged from scikit-learn** (PMAT-890, Pillar-1, `F-GAUSSIANNB-EPSILON-003`)
+  — added a raw `1e-9` instead of `var_smoothing · max(var across features)`; on mixed-scale data the
+  smoothed variance was thousands of times too small (able to flip `predict`). Now matches sklearn's
+  `epsilon = var_smoothing · X.var(axis=0).max()`.
+- **`CrossEntropyLoss` backward ignored the reduction mode** (PMAT-891, Pillar-2, `F-AUTOGRAD-CE-REDUCTION-001`)
+  — always divided the gradient by batch, so `Sum`-reduction grads were `batch×` too small (learns at
+  1/batch the intended rate) and `None` mis-broadcast. Now: Mean `/batch`, Sum no `/batch`, None per-sample.
+- **`L1Loss` backward was severed** (PMAT-896, Pillar-2, `F-L1LOSS-BACKWARD-GRAD-001`) — `loss.backward()`
+  produced **no** gradient (silent zero-learning); `abs()` built its result without a `grad_fn`. Added
+  `AbsBackward` (`d|x|/dx = sign(x)`).
+- **`apr merge --method lora-adapter` mis-merged PEFT/Unsloth adapters** (PMAT-897, Pillar-3,
+  `F-LORA-MERGE-RSLORA-001` + `F-LORA-MERGE-ADAPTER-DTYPE-001`) — ignored `use_rslora` (applied scale `1.0`
+  instead of `alpha/√rank`) and decoded BF16/FP16 adapter tensors as hardcoded f32 (garbage). Now honors
+  `use_rslora` and threads per-tensor dtype.
+- **SGD-with-momentum diverged from PyTorch under an LR schedule** (PMAT-898, Pillar-2,
+  `F-SGD-MOMENTUM-LRSCHED-001`) — baked the learning rate into the velocity buffer, so a mid-training
+  `set_lr` used a stale lr (~40% off). Now stores the unscaled buffer and applies lr fresh each step
+  (scalar + SIMD paths).
+
+### Added
+
+- **Fail-closed: reject a dead output row** (PMAT-889, Pillar-4, `F-DATA-QUALITY-007`) — `apr validate`
+  now rejects a model with a fully-zero `lm_head`/embed output row (a structurally-unreachable logit)
+  that llama.cpp/Ollama silently load+run.
+- **Fail-closed: reject NaN/Inf quantized weights at load** (PMAT-895, Pillar-4, `OBLIG-GGUF-LOAD-NANINF`)
+  — `OwnedQuantizedModel::from_mapped` now rejects a Q4_0/Q4_K block whose f16 scale is NaN/+Inf (poisons
+  every dequantized element); llama.cpp loads it by default (`check_tensors=false`).
+- **`LinearDiscriminantAnalysis` + `QuadraticDiscriminantAnalysis`** (PMAT-892, Pillar-1,
+  `F-QDA-PARITY-001` / `F-LDA-PARITY-004`) — new estimators with scikit-learn predict-parity via a
+  LAPACK-free per-class / pooled-covariance Cholesky fit.
+- **cuda-oxide pure-Rust `#[kernel]` ports — RMSNorm + SwiGLU** (PMAT-893/894, GB10 Blackwell sm_121) —
+  bit-parity (cos=1.0) vs hand-PTX; RMSNorm beats hand-PTX 1.4–8.9×, SwiGLU a parity tie (migrate-free).
+  Experiment harnesses; production promotion gated behind a 3-way parity gate.
+
 ## [0.51.0] - 2026-06-21
 
 Hotfix-driven release (brought forward from the Friday cadence by a P0). Each fix ships a named
