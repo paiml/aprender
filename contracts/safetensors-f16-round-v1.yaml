@@ -64,7 +64,7 @@ equations:
   C-F16-004:
     description: "NaN is preserved across the cast — a NaN f32 encodes to a NaN F16, never Inf"
     formula: "x.is_nan() => half::f16::from_bits(f16(x)).is_nan() ; e.g. x = f32 0x7F80_0001"
-    note: "RED on a truncation/flush that drops the only mantissa bit and yields an all-ones-exponent zero-mantissa = Inf."
+    note: "Forward invariant on the RNE encoder: a future flush/refactor must not collapse NaN to Inf. This is NOT a discharged regression — the prior truncation code already preserved NaN (its Inf/NaN branch ORed 0x0200 for non-zero mantissa) — so this pins NaN-preservation against future change rather than fixing a past bug."
 
 proof_obligations:
 - type: equivalence
@@ -87,9 +87,9 @@ proof_obligations:
 
 falsification:
   - id: FALSIFY-F16-ROUND-001
-    description: "Round-to-nearest-even on normals: a non-zero discarded mantissa rounds to the half oracle, not truncated. Discharges C-F16-001."
+    description: "Round-to-nearest-even on normals: f32 0x476A_7E00 (discarded low 13 bits 0x1E00 > 0x1000 halfway) rounds UP to the half oracle, not truncated. Discharges C-F16-001."
     test: "cargo test -p aprender-core --lib --features format-quantize test_f16_round_to_nearest_even_falsifier"
-    evidence: "RED truncated bits -> GREEN half::f16::from_f32 bits"
+    evidence: "RED 0x7B53 (truncation >>13) -> GREEN 0x7B54 (half::f16::from_f32 RNE oracle)"
   - id: FALSIFY-F16-SUBNORMAL-001
     description: "Subnormal magnitudes (e.g. 2^-24 -> 0x0001) are not flushed to zero. Discharges C-F16-002."
     test: "cargo test -p aprender-core --lib --features format-quantize test_f16_subnormal_not_flushed_to_zero"
@@ -103,9 +103,9 @@ falsification:
     test: "cargo test -p aprender-core --lib --features format-quantize test_f16_overflow_to_infinity"
     evidence: "RED 0x7BFF (finite, truncation) -> GREEN 0x7C00 (+Inf)"
   - id: FALSIFY-F16-NAN-001
-    description: "NaN preservation: f32 0x7F80_0001 stays NaN, not Inf. Discharges C-F16-004."
+    description: "NaN preservation FORWARD INVARIANT: f32 0x7F80_0001 stays NaN (never Inf) under the RNE encoder. Guards C-F16-004 — NOT a discharged regression (the prior code already preserved NaN); pins it against a future flush-to-Inf change."
     test: "cargo test -p aprender-core --lib --features format-quantize test_f16_preserves_nan_not_inf"
-    evidence: "RED decodes to +Inf -> GREEN decodes to NaN"
+    evidence: "GREEN: NaN -> NaN under the RNE encoder; would go RED if a future change collapsed NaN to Inf or zero"
   - id: FALSIFY-F16-PARITY-001
     description: "Wide sweep (normals, subnormals, ties, overflow, signs) matches half::f16::from_f32 bit-for-bit. Discharges C-F16-001 (oracle parity)."
     test: "cargo test -p aprender-core --lib --features format-quantize test_f16_parity_with_half_crate"

@@ -575,13 +575,16 @@ fn f16_first_u16(bytes: &[u8]) -> u16 {
 #[cfg(feature = "format-quantize")]
 #[test]
 fn test_f16_round_to_nearest_even_falsifier() {
-    // 1.0 + 3 ulp_f16 then +0.75 ulp: choose an f32 whose 13 discarded
-    // mantissa bits exceed the halfway point so RNE must round UP while
-    // truncation rounds DOWN.
-    // f32 1.0009765625 + a bit: mantissa 0x0019 << 13 region.
-    // Concretely use 0x3C01_2000: kept mantissa bit 0, discarded 0x1200
-    // (low 13 bits 0x1200 > 0x1000 halfway) -> round up.
-    let input = f32::from_bits(0x3C01_2000);
+    // Choose an f32 whose 13 discarded mantissa bits exceed the halfway
+    // point so RNE must round UP while the old truncation rounds DOWN.
+    // f32 0x476A_7E00: mantissa 0x6A_7E00, discarded low 13 bits = 0x1E00
+    // (> 0x1000 halfway) -> RNE rounds up to 0x7B54; truncation (>>13)
+    // keeps 0x7B53. So this input is RED on the old truncation code and
+    // GREEN on the RNE fix — a genuine, non-tautological falsifier.
+    // (The earlier input 0x3C01_2000 was tautological: its low 13 discarded
+    //  bits are 0x0000, so truncation and RNE agree and the buggy old code
+    //  would also pass — it tested nothing.)
+    let input = f32::from_bits(0x476A_7E00);
     let ours = f16_first_u16(&super::super::f32_slice_to_f16_bytes(&[input]));
     let oracle = half::f16::from_f32(input).to_bits();
     assert_eq!(
