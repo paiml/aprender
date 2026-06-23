@@ -1,5 +1,5 @@
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   created: "2026-06-19"
   author: PAIML Engineering
   registry: true
@@ -8,15 +8,21 @@ metadata:
     - "scipy.stats.mode — returns the lowest value among tied modes"
     - "numpy.argmax over np.bincount(labels) — returns the lowest index achieving the maximum count"
     - "Cover & Hart (1967) — Nearest Neighbor Pattern Classification"
+    - "scikit-learn neighbors._base._get_weights — a zero-distance neighbor receives infinite weight; if any neighbor has distance 0, ONLY zero-distance neighbors vote (oracle for OBLIG-KNN-WEIGHTED-ZERO-DISTANCE)"
   description: |
     Correctness contract for the k-NN vote tie-break in
     aprender-core classification::gaussian_nb (KNearestNeighbors::majority_vote and
     KNearestNeighbors::weighted_vote). Pillar-1 (scikit-learn parity)
     provable-correctness, ticket PMAT-865.
 
+    v1.1.0 (PMAT-909) adds OBLIG-KNN-WEIGHTED-ZERO-DISTANCE: the weighted
+    (weights="distance") path must give a zero-distance neighbor INFINITE weight,
+    matching scikit-learn — when the query exactly equals a training point, only the
+    zero-distance neighbors vote.
+
 kind: KernelContract
 name: knn-tie-smallest-label
-version: "1.0.0"
+version: "1.1.0"
 scope: "crates/aprender-core/src/classification/gaussian_nb.rs"
 
 description: |
@@ -68,6 +74,21 @@ equations:
     formula: "k-set {0,0,1} -> majority class 0 (2 votes vs 1); a strict winner is unaffected by the BTreeMap migration"
     note: "Regression guard — FALSIFY-KNN-005 (k-set {0,0,1}) still predicts 0."
 
+  C-KNN-WEIGHTED-ZERO-DISTANCE-001:
+    description: "OBLIG-KNN-WEIGHTED-ZERO-DISTANCE: a zero-distance neighbor gets infinite weight; only zero-distance neighbors vote"
+    formula: "weighted_vote(N) where exists (d,_) in N with d==0  =>  majority over { label : (0, label) in N }; finite-distance neighbors are ignored. predict([0,0]) with X=[[0,0],[1,0],[0,1],[1,1]], y=[1,0,0,0], k=3, weights=distance -> 1 (exact match), NOT 0"
+    note: "Matches scikit-learn _get_weights (1/d => inf at d=0). RED (weight capped at 1.0): two label-0 neighbors at d=1 sum to 2.0 > 1.0 => predict 0. GREEN (only d==0 votes): predict 1."
+
+  C-KNN-WEIGHTED-ZERO-DISTANCE-002:
+    description: "predict_proba concentrates all mass on the zero-distance label(s)"
+    formula: "predict_proba([0,0]) = [0.0, 1.0] (only the d==0 neighbor of label 1 contributes), matching sklearn predict_proba"
+    note: "RED: capped weights give [2/3, 1/3]; GREEN: [0.0, 1.0]."
+
+  C-KNN-WEIGHTED-ZERO-DISTANCE-003:
+    description: "Normal (no exact match) weighted path is UNCHANGED — regression guard"
+    formula: "predict([0.1,0.1]) with the same fit -> 1 (closest point [0,0] dominates by 1/d weight); the zero-distance special case does not perturb the ordinary 1/d weighting"
+    note: "Refutes any over-broad rewrite that breaks the normal weighted vote."
+
 proof_obligations:
   - type: equivalence
     property: "PO-KNN-TIE-001 mode tie returns the smallest tied label, matching sklearn"
@@ -84,6 +105,16 @@ proof_obligations:
     formal: "for a neighbor set with a unique argmax-vote label c*, majority_vote / weighted_vote returns c* (BTreeMap migration preserves all non-tie predictions)"
     tolerance: 0.0
     applies_to: "neighbor sets with a unique mode"
+  - type: equivalence
+    property: "OBLIG-KNN-WEIGHTED-ZERO-DISTANCE: a zero-distance neighbor gets infinite weight, matching sklearn"
+    formal: "for the weighted (weights=distance) path, if any neighbor has distance 0 then weighted_vote / predict_proba use ONLY the zero-distance neighbors (each equal weight); else weight = 1/distance. predict([0,0]) = 1 and predict_proba([0,0]) = [0,1] for X=[[0,0],[1,0],[0,1],[1,1]], y=[1,0,0,0], k=3"
+    tolerance: 0.000001
+    applies_to: "weighted KNN with an exact-duplicate query"
+  - type: invariant
+    property: "OBLIG-KNN-WEIGHTED-ZERO-DISTANCE regression guard: the normal weighted path is unchanged"
+    formal: "for a weighted query with NO exact match (all distances > 0), weighted_vote returns the same prediction as plain 1/distance weighting; predict([0.1,0.1]) = 1"
+    tolerance: 0.0
+    applies_to: "weighted KNN without an exact-duplicate query"
 
 falsification:
   - id: FALSIFY-KNN-TIE-001
@@ -94,3 +125,12 @@ falsification:
     green: "majority_vote([(1.0,0),(1.0,2)]) = 0 (BTreeMap ascending + keep-first-on-strict-greater returns the smallest tied label, deterministically, on every call and process)"
     sklearn_reference: "KNeighborsClassifier.predict tie-break = argmax(np.bincount(labels)) = smallest tied label (0 for a {0,2} tie)"
     evidence: "cargo test -p aprender-core --lib falsify_knn_tie"
+
+  - id: FALSIFY-KNN-WEIGHTED-ZERO-DISTANCE
+    description: "OBLIG-KNN-WEIGHTED-ZERO-DISTANCE: a zero-distance (exact-duplicate) neighbor gets infinite weight in the weighted path, so only zero-distance neighbors vote — predict and predict_proba match scikit-learn. The companion non-zero test guards the ordinary 1/d path. Discharges C-KNN-WEIGHTED-ZERO-DISTANCE-001..003."
+    test: "falsify_knn_weighted_zero_distance_dominates, falsify_knn_weighted_nonzero_distance_parity"
+    command: "cargo test -p aprender-core --lib falsify_knn_weighted"
+    red: "predict([0,0]) = 0 and predict_proba([0,0]) = [2/3, 1/3] — the zero-distance weight was capped at 1.0, so two label-0 neighbors at d=1 (weight 1.0 each) outvote the exact match (weight 1.0)"
+    green: "predict([0,0]) = 1 and predict_proba([0,0]) = [0.0, 1.0] — only the zero-distance neighbor of label 1 votes (infinite weight); the non-zero query [0.1,0.1] still predicts 1 via 1/d weighting"
+    sklearn_reference: "KNeighborsClassifier(weights='distance'): _get_weights gives 1/d => inf at d=0; predict([[0,0]])=[1], predict_proba([[0,0]])=[[0,1]] for X=[[0,0],[1,0],[0,1],[1,1]], y=[1,0,0,0], k=3"
+    evidence: "cargo test -p aprender-core --lib falsify_knn_weighted"

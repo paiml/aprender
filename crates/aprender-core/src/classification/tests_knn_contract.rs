@@ -259,6 +259,71 @@ fn falsify_knn_tie_004_three_way_tie_smallest_label() {
     }
 }
 
+/// FALSIFY-KNN-WEIGHTED-ZERO-DISTANCE: with `weights="distance"`, an exact
+/// duplicate of a training point (distance == 0) must dominate the vote — sklearn
+/// gives a zero-distance neighbor INFINITE weight, so only zero-distance neighbors
+/// vote. apr previously capped the zero-distance weight at 1.0, letting a cluster of
+/// near (but non-zero) neighbors of a *different* label override the exact match,
+/// diverging from sklearn.
+///
+/// Oracle (sklearn, pinned):
+///   X=[[0,0],[1,0],[0,1],[1,1]], y=[1,0,0,0], KNeighborsClassifier(k=3, weights="distance")
+///   predict([[0,0]]) -> [1]   predict_proba([[0,0]]) -> [[0, 1]]
+/// (label 1 is the exact-match point; the other 2 of the k=3 neighbors are label 0.)
+///
+/// OBLIG-KNN-WEIGHTED-ZERO-DISTANCE.
+#[test]
+fn falsify_knn_weighted_zero_distance_dominates() {
+    let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0]).expect("valid");
+    let y = vec![1_usize, 0, 0, 0];
+
+    let mut knn = KNearestNeighbors::new(3).with_weights(true);
+    knn.fit(&x, &y).expect("fit");
+
+    // Query == training point [0,0] (label 1). Its k=3 neighbors are
+    // [0,0] (d=0, label 1), [1,0] (d=1, label 0), [0,1] (d=1, label 0).
+    let q = Matrix::from_vec(1, 2, vec![0.0, 0.0]).expect("valid");
+
+    // sklearn oracle: exact-match label dominates.
+    let pred = knn.predict(&q).expect("predict")[0];
+    assert_eq!(
+        pred, 1,
+        "FALSIFIED KNN-WEIGHTED-ZERO-DISTANCE: predict={pred}, sklearn oracle=1 \
+         (zero-distance neighbor must get infinite weight, not capped at 1.0)"
+    );
+
+    // predict_proba must be [0, 1] (only the zero-distance neighbor votes).
+    let proba = knn.predict_proba(&q).expect("proba");
+    assert!(
+        (proba[0][0] - 0.0).abs() < 1e-6 && (proba[0][1] - 1.0).abs() < 1e-6,
+        "FALSIFIED KNN-WEIGHTED-ZERO-DISTANCE: proba={:?}, sklearn oracle=[0.0, 1.0]",
+        proba[0]
+    );
+}
+
+/// FALSIFY-KNN-WEIGHTED-NONZERO-DISTANCE: a query with NO exact match still uses the
+/// ordinary 1/d weighting and must match sklearn (guards against the zero-distance
+/// special case regressing the normal weighted path).
+///
+/// Oracle (sklearn, pinned):
+///   X=[[0,0],[1,0],[0,1],[1,1]], y=[1,0,0,0], KNeighborsClassifier(k=3, weights="distance")
+///   predict([[0.1,0.1]]) -> [1]  (closest point [0,0] label 1 dominates by 1/d weight)
+#[test]
+fn falsify_knn_weighted_nonzero_distance_parity() {
+    let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0]).expect("valid");
+    let y = vec![1_usize, 0, 0, 0];
+
+    let mut knn = KNearestNeighbors::new(3).with_weights(true);
+    knn.fit(&x, &y).expect("fit");
+
+    let q = Matrix::from_vec(1, 2, vec![0.1, 0.1]).expect("valid");
+    let pred = knn.predict(&q).expect("predict")[0];
+    assert_eq!(
+        pred, 1,
+        "FALSIFIED KNN-WEIGHTED-NONZERO: predict={pred}, sklearn oracle=1"
+    );
+}
+
 mod knn_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
