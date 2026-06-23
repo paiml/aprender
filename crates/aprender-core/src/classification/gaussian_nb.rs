@@ -172,10 +172,22 @@ impl KNearestNeighbors {
             let mut class_counts = vec![0.0; n_classes];
 
             if self.weights {
-                // Weighted by inverse distance
-                for (dist, label) in &k_nearest {
-                    let weight = if *dist < 1e-10 { 1.0 } else { 1.0 / dist };
-                    class_counts[*label] += weight;
+                // OBLIG-KNN-WEIGHTED-ZERO-DISTANCE: scikit-learn gives a zero-distance
+                // neighbor INFINITE weight (1/0). When any neighbor exactly matches the
+                // query (distance == 0), ONLY the zero-distance neighbors vote — each
+                // with equal weight — and all finite-distance neighbors are ignored.
+                // Otherwise, weight = 1/distance as usual.
+                let has_zero_distance = k_nearest.iter().any(|(dist, _)| *dist < 1e-10);
+                if has_zero_distance {
+                    for (dist, label) in &k_nearest {
+                        if *dist < 1e-10 {
+                            class_counts[*label] += 1.0;
+                        }
+                    }
+                } else {
+                    for (dist, label) in &k_nearest {
+                        class_counts[*label] += 1.0 / dist;
+                    }
                 }
             } else {
                 // Uniform weights
@@ -272,9 +284,22 @@ impl KNearestNeighbors {
     fn weighted_vote(&self, neighbors: &[(f32, usize)]) -> usize {
         let mut class_weights = std::collections::BTreeMap::new();
 
-        for (dist, label) in neighbors {
-            let weight = if *dist < 1e-10 { 1.0 } else { 1.0 / dist };
-            *class_weights.entry(*label).or_insert(0.0) += weight;
+        // OBLIG-KNN-WEIGHTED-ZERO-DISTANCE: scikit-learn gives a zero-distance neighbor
+        // INFINITE weight (1/0). When the query exactly matches a training point
+        // (distance == 0), ONLY the zero-distance neighbors vote (each with equal
+        // weight) — finite-distance neighbors cannot override the exact match.
+        // Otherwise, weight = 1/distance as usual.
+        let has_zero_distance = neighbors.iter().any(|(dist, _)| *dist < 1e-10);
+        if has_zero_distance {
+            for (dist, label) in neighbors {
+                if *dist < 1e-10 {
+                    *class_weights.entry(*label).or_insert(0.0) += 1.0;
+                }
+            }
+        } else {
+            for (dist, label) in neighbors {
+                *class_weights.entry(*label).or_insert(0.0) += 1.0 / dist;
+            }
         }
 
         let mut best_label = 0;
