@@ -486,5 +486,159 @@ pub(crate) struct CrossEntropyBackward {
     pub(crate) reduction: crate::nn::loss::Reduction, // loss reduction mode
 }
 
+// ============================================================================
+// Normalization Operations (PMAT-907)
+// ============================================================================
+
+/// Gradient function for affine LayerNorm: y = x_hat * gamma + beta,
+/// where x_hat = (x - mean) / sqrt(var + eps) per normalized row.
+///
+/// Obligation: OBLIG-LAYERNORM-BACKWARD-GRAD-FLOW.
+///
+/// Before PMAT-907 the canonical functional `layer_norm` built its output via
+/// `Tensor::from_vec`, severing the autograd graph: gamma/beta/x received no
+/// gradient, making every LayerNorm transformer non-fine-tunable. This grad_fn
+/// flows gradient to ALL THREE inputs (x, gamma, beta), in that input order.
+///
+/// Math (per row of width `norm_dim`, with std_inv = 1/sqrt(var+eps)):
+/// - dL/dgamma_i = sum_batch g_i * x_hat_i
+/// - dL/dbeta_i  = sum_batch g_i
+/// - dL/dx_i     = std_inv * (g'_i - mean_j(g'_j) - x_hat_i * mean_j(g'_j * x_hat_j))
+///   where g'_i = g_i * gamma_i  (the gradient scaled by the affine weight).
+pub(crate) struct LayerNormBackward {
+    pub(crate) x: Tensor,
+    pub(crate) gamma: Tensor,
+    pub(crate) eps: f32,
+}
+
+impl GradFn for LayerNormBackward {
+    fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
+        let norm_dim = self.gamma.data().len();
+        let x_data = self.x.data();
+        let gamma_data = self.gamma.data();
+        let g_data = grad_output.data();
+        let batch = x_data.len() / norm_dim;
+        let n = norm_dim as f32;
+
+        let mut grad_x = vec![0.0f32; x_data.len()];
+        let mut grad_gamma = vec![0.0f32; norm_dim];
+        let mut grad_beta = vec![0.0f32; norm_dim];
+
+        for b in 0..batch {
+            let off = b * norm_dim;
+            let xs = &x_data[off..off + norm_dim];
+            let gs = &g_data[off..off + norm_dim];
+
+            let mean: f32 = xs.iter().sum::<f32>() / n;
+            let var: f32 = xs.iter().map(|&v| (v - mean) * (v - mean)).sum::<f32>() / n;
+            let std_inv = 1.0 / (var + self.eps).sqrt();
+
+            // x_hat and g' = g * gamma; accumulate affine-param grads.
+            let mut x_hat = vec![0.0f32; norm_dim];
+            let mut g_prime = vec![0.0f32; norm_dim];
+            for i in 0..norm_dim {
+                let xh = (xs[i] - mean) * std_inv;
+                x_hat[i] = xh;
+                g_prime[i] = gs[i] * gamma_data[i];
+                grad_gamma[i] += gs[i] * xh;
+                grad_beta[i] += gs[i];
+            }
+
+            let mean_gp: f32 = g_prime.iter().sum::<f32>() / n;
+            let mean_gp_xhat: f32 = g_prime
+                .iter()
+                .zip(x_hat.iter())
+                .map(|(&a, &b)| a * b)
+                .sum::<f32>()
+                / n;
+
+            for i in 0..norm_dim {
+                grad_x[off + i] = std_inv * (g_prime[i] - mean_gp - x_hat[i] * mean_gp_xhat);
+            }
+        }
+
+        vec![
+            Tensor::new(&grad_x, self.x.shape()),
+            Tensor::new(&grad_gamma, self.gamma.shape()),
+            Tensor::new(&grad_beta, self.gamma.shape()),
+        ]
+    }
+
+    fn name(&self) -> &'static str {
+        "LayerNormBackward"
+    }
+}
+
+/// Gradient function for affine RMSNorm: y = x_hat * gamma,
+/// where x_hat = x / rms and rms = sqrt(mean(x^2) + eps) per normalized row.
+///
+/// Obligation: OBLIG-RMSNORM-BACKWARD-GRAD-FLOW.
+///
+/// Flows gradient to BOTH inputs (x, gamma), in that input order. RMSNorm has
+/// no mean-subtraction term (unlike LayerNorm).
+///
+/// Math (per row, with r = rms, x_hat_i = x_i / r):
+/// - dL/dgamma_i = sum_batch g_i * x_hat_i
+/// - dL/dx_j     = (1/r) * (g'_j - x_hat_j * mean_i(g'_i * x_hat_i))
+///   where g'_i = g_i * gamma_i.
+pub(crate) struct RmsNormBackward {
+    pub(crate) x: Tensor,
+    pub(crate) gamma: Tensor,
+    pub(crate) eps: f32,
+}
+
+impl GradFn for RmsNormBackward {
+    fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
+        let norm_dim = self.gamma.data().len();
+        let x_data = self.x.data();
+        let gamma_data = self.gamma.data();
+        let g_data = grad_output.data();
+        let batch = x_data.len() / norm_dim;
+        let n = norm_dim as f32;
+
+        let mut grad_x = vec![0.0f32; x_data.len()];
+        let mut grad_gamma = vec![0.0f32; norm_dim];
+
+        for b in 0..batch {
+            let off = b * norm_dim;
+            let xs = &x_data[off..off + norm_dim];
+            let gs = &g_data[off..off + norm_dim];
+
+            let ms: f32 = xs.iter().map(|&v| v * v).sum::<f32>() / n;
+            let r = (ms + self.eps).sqrt();
+            let r_inv = 1.0 / r;
+
+            let mut x_hat = vec![0.0f32; norm_dim];
+            let mut g_prime = vec![0.0f32; norm_dim];
+            for i in 0..norm_dim {
+                let xh = xs[i] * r_inv;
+                x_hat[i] = xh;
+                g_prime[i] = gs[i] * gamma_data[i];
+                grad_gamma[i] += gs[i] * xh;
+            }
+
+            let mean_gp_xhat: f32 = g_prime
+                .iter()
+                .zip(x_hat.iter())
+                .map(|(&a, &b)| a * b)
+                .sum::<f32>()
+                / n;
+
+            for i in 0..norm_dim {
+                grad_x[off + i] = r_inv * (g_prime[i] - x_hat[i] * mean_gp_xhat);
+            }
+        }
+
+        vec![
+            Tensor::new(&grad_x, self.x.shape()),
+            Tensor::new(&grad_gamma, self.gamma.shape()),
+        ]
+    }
+
+    fn name(&self) -> &'static str {
+        "RmsNormBackward"
+    }
+}
+
 include!("gradient.rs");
 include!("grad_fn_tests.rs");

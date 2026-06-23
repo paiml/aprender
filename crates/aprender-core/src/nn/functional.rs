@@ -377,23 +377,63 @@ pub fn layer_norm(x: &Tensor, weight: &Tensor, bias: &Tensor, eps: f32) -> Tenso
 
     // Delegate to trueno's AVX2+FMA SIMD layer_norm per row.
     // Contract: provable-contracts/contracts/layernorm-kernel-v1.yaml
-    if batch_size == 1 {
+    let output = if batch_size == 1 {
         // Fast path: single row, use alloc variant (no zero-fill)
-        let output = trueno::blis::norms::layer_norm_alloc(data, weight_data, bias_data, eps);
-        return Tensor::from_vec(output, shape);
+        trueno::blis::norms::layer_norm_alloc(data, weight_data, bias_data, eps)
+    } else {
+        let mut out = vec![0.0f32; data.len()];
+        for b in 0..batch_size {
+            let start = b * norm_dim;
+            let slice = &data[start..start + norm_dim];
+            let out_slice = &mut out[start..start + norm_dim];
+
+            trueno::blis::norms::layer_norm(slice, weight_data, bias_data, eps, out_slice)
+                .expect("layer_norm: dimension mismatch (should be impossible)");
+        }
+        out
+    };
+
+    let mut result = Tensor::from_vec(output, shape);
+
+    // PMAT-907 / OBLIG-LAYERNORM-BACKWARD-GRAD-FLOW: wire the autograd backward
+    // so gradients flow to the affine params (gamma=weight, beta=bias) AND the
+    // input x. Without this the layer is non-fine-tunable (graph severed).
+    record_layer_norm_backward(x, weight, bias, eps, &mut result);
+
+    result
+}
+
+/// Record the LayerNorm backward edge on the autograd tape (PMAT-907).
+fn record_layer_norm_backward(
+    x: &Tensor,
+    weight: &Tensor,
+    bias: &Tensor,
+    eps: f32,
+    result: &mut Tensor,
+) {
+    use crate::autograd::{is_grad_enabled, with_graph};
+    use std::sync::Arc;
+
+    if is_grad_enabled()
+        && (x.requires_grad_enabled()
+            || weight.requires_grad_enabled()
+            || bias.requires_grad_enabled())
+    {
+        result.requires_grad_(true);
+        let grad_fn = Arc::new(crate::autograd::grad_fn::LayerNormBackward {
+            x: x.clone(),
+            gamma: weight.clone(),
+            eps,
+        });
+        result.set_grad_fn(grad_fn.clone());
+
+        with_graph(|graph| {
+            graph.register_tensor(x.clone());
+            graph.register_tensor(weight.clone());
+            graph.register_tensor(bias.clone());
+            graph.record(result.id(), grad_fn, vec![x.id(), weight.id(), bias.id()]);
+        });
     }
-
-    let mut output = vec![0.0f32; data.len()];
-    for b in 0..batch_size {
-        let start = b * norm_dim;
-        let slice = &data[start..start + norm_dim];
-        let out_slice = &mut output[start..start + norm_dim];
-
-        trueno::blis::norms::layer_norm(slice, weight_data, bias_data, eps, out_slice)
-            .expect("layer_norm: dimension mismatch (should be impossible)");
-    }
-
-    Tensor::from_vec(output, shape)
 }
 
 /// RMS normalization over the last dimension of an ND tensor.
@@ -418,23 +458,51 @@ pub fn rms_norm(x: &Tensor, weight: &Tensor, eps: f32) -> Tensor {
 
     // Delegate to trueno's AVX2+FMA SIMD rms_norm per row.
     // Contract: provable-contracts/contracts/rmsnorm-kernel-v1.yaml
-    if batch_size == 1 {
+    let output = if batch_size == 1 {
         // Fast path: single row, use alloc variant (no zero-fill)
-        let output = trueno::blis::norms::rms_norm_alloc(data, weight_data, eps);
-        return Tensor::from_vec(output, shape);
+        trueno::blis::norms::rms_norm_alloc(data, weight_data, eps)
+    } else {
+        let mut out = vec![0.0f32; data.len()];
+        for b in 0..batch_size {
+            let start = b * norm_dim;
+            let slice = &data[start..start + norm_dim];
+            let out_slice = &mut out[start..start + norm_dim];
+
+            trueno::blis::norms::rms_norm(slice, weight_data, eps, out_slice)
+                .expect("rms_norm: dimension mismatch (should be impossible)");
+        }
+        out
+    };
+
+    let mut result = Tensor::from_vec(output, shape);
+
+    // PMAT-907 / OBLIG-RMSNORM-BACKWARD-GRAD-FLOW: wire the autograd backward so
+    // gradients flow to the affine scale (gamma=weight) AND the input x.
+    record_rms_norm_backward(x, weight, eps, &mut result);
+
+    result
+}
+
+/// Record the RMSNorm backward edge on the autograd tape (PMAT-907).
+fn record_rms_norm_backward(x: &Tensor, weight: &Tensor, eps: f32, result: &mut Tensor) {
+    use crate::autograd::{is_grad_enabled, with_graph};
+    use std::sync::Arc;
+
+    if is_grad_enabled() && (x.requires_grad_enabled() || weight.requires_grad_enabled()) {
+        result.requires_grad_(true);
+        let grad_fn = Arc::new(crate::autograd::grad_fn::RmsNormBackward {
+            x: x.clone(),
+            gamma: weight.clone(),
+            eps,
+        });
+        result.set_grad_fn(grad_fn.clone());
+
+        with_graph(|graph| {
+            graph.register_tensor(x.clone());
+            graph.register_tensor(weight.clone());
+            graph.record(result.id(), grad_fn, vec![x.id(), weight.id()]);
+        });
     }
-
-    let mut output = vec![0.0f32; data.len()];
-    for b in 0..batch_size {
-        let start = b * norm_dim;
-        let slice = &data[start..start + norm_dim];
-        let out_slice = &mut output[start..start + norm_dim];
-
-        trueno::blis::norms::rms_norm(slice, weight_data, eps, out_slice)
-            .expect("rms_norm: dimension mismatch (should be impossible)");
-    }
-
-    Tensor::from_vec(output, shape)
 }
 
 /// Linear transformation: y = x @ weight^T + bias
