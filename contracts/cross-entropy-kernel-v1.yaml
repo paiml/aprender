@@ -95,8 +95,27 @@ proof_obligations:
     read only grad_output[0], so Sum grad was batch× too small and None
     mis-broadcast the per-sample upstream. Closed-form softmax+NLL gradient is
     softmax-onehot, requiring no PyTorch reference (Bishop 2006, eq. 4.108).
+- type: equivalence
+  property: Label smoothing distributes eps/C off-target mass (PyTorch parity)
+  formal: >-
+    For CrossEntropyLoss(label_smoothing=eps) on C classes the smoothed target
+    distribution is q_target = 1 - eps + eps/C and q_{i!=target} = eps/C, so
+    loss = -sum_i q_i * log_softmax(logits)_i
+         = -(1 - eps) * log p_target - (eps/C) * sum_i log p_i.
+    This equals torch.nn.CrossEntropyLoss(label_smoothing=eps) exactly, and
+    reduces to plain cross-entropy at eps = 0.
+  tolerance: 1.0e-05
+  applies_to: all
+  id: OBLIG-CE-LABEL-SMOOTHING-UNIFORM-MASS
+  notes: >-
+    Before PMAT-910 the off-target per-class mass was (1-eps)/C instead of eps/C,
+    inflating the smoothed loss by ~3.2x for typical eps/C (e.g. eps=0.1, C=5 gave
+    2.384 vs the correct 0.7244). The uniform smoothing mass is eps/C per class
+    (Szegedy et al. 2016, Rethinking the Inception Architecture, eq. label
+    smoothing); backward is unaffected because autograd is only recorded when
+    label_smoothing == 0.0.
 verification_summary:
-  total_obligations: 6
+  total_obligations: 7
   l2_property_tested: 6
   l3_kani_proved: 3
   l4_lean_proved: 2
@@ -176,6 +195,16 @@ falsification_tests:
   prediction: 'dCE/dlogits[b] under Reduction::None == (softmax-onehot)[b] * upstream[b]'
   test: cargo test -p aprender-core --lib falsify_ce_reduction_001_none_per_sample_upstream
   if_fails: Backward reads only grad_output[0] and mis-broadcasts the per-sample upstream
+- id: OBLIG-CE-LABEL-SMOOTHING-UNIFORM-MASS-ORACLE
+  rule: Label-smoothed CE equals the analytic/torch eps/C-mass oracle
+  prediction: 'CrossEntropyLoss(eps).forward == -(1-eps)*log p_t - (eps/C)*sum_i log p_i (== torch)'
+  test: cargo test -p aprender-core --lib test_cross_entropy_label_smoothing_uniform_mass_oracle
+  if_fails: Off-target per-class mass is not eps/C (e.g. the (1-eps)/C bug, ~3.2x too large)
+- id: OBLIG-CE-LABEL-SMOOTHING-UNIFORM-MASS-EPS0
+  rule: eps=0 label smoothing reduces to plain cross-entropy
+  prediction: 'CrossEntropyLoss(0.0).forward == CrossEntropyLoss::new().forward'
+  test: cargo test -p aprender-core --lib test_cross_entropy_label_smoothing_zero_equals_plain
+  if_fails: Smoothing branch does not reduce to plain CE at eps=0 (regression)
 kani_harnesses:
 - id: KANI-CE-001
   obligation: CE-INV-001

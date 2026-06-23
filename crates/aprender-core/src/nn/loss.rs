@@ -293,14 +293,20 @@ impl CrossEntropyLoss {
 
         for (b, &target_class) in target_indices.iter().enumerate() {
             if self.label_smoothing > 0.0 {
-                // Label smoothing: distribute some probability mass to other classes
-                let smooth_target = (1.0 - self.label_smoothing) / num_classes as f32;
+                // Label smoothing (PyTorch parity, OBLIG-CE-LABEL-SMOOTHING-UNIFORM-MASS):
+                // distribute eps/C of the probability mass to EVERY class, so the
+                // smoothed target distribution is
+                //   q_target      = 1 - eps + eps/C
+                //   q_{i!=target} = eps/C
+                // giving loss = -sum_i q_i * log p_i. This matches
+                // torch.nn.CrossEntropyLoss(label_smoothing=eps) exactly.
+                let off_target_mass = self.label_smoothing / num_classes as f32;
                 let mut loss = 0.0;
                 for c in 0..num_classes {
                     let target_prob = if c == target_class {
-                        1.0 - self.label_smoothing + smooth_target
+                        1.0 - self.label_smoothing + off_target_mass
                     } else {
-                        smooth_target
+                        off_target_mass
                     };
                     loss -= target_prob * log_probs.data()[b * num_classes + c];
                 }
