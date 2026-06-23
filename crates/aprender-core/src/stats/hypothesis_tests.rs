@@ -572,4 +572,73 @@ mod tests {
             "t-stat should be 0 for identical samples"
         );
     }
+
+
+    /// FALSIFY-STATS-PVALUE-FINITE-DF72 (PMAT-904): chi-square, two-tailed t, and
+    /// one-way ANOVA F p-values must be FINITE and scipy-accurate for large df
+    /// (df >= 72), where the raw-space `gamma()` overflowed f32 (z >= ~36) and
+    /// poisoned `incomplete_gamma` / `beta_function` -> NaN p-values.
+    ///
+    /// scipy oracle (pinned via `uv run --with scipy python3`):
+    ///   chi2.sf(df, df):  df=72 -> 0.4778333327, df=100 -> 0.4811916845, df=200 -> 0.4867012017
+    ///   2*t.sf(2.0, df):  df=72 -> 0.0492731583, df=100 -> 0.0482121787, df=200 -> 0.0468531862
+    ///   f.sf(2.0,df1,df2): (2,72) -> 0.1427843305, (3,100) -> 0.1188424679, (4,200) -> 0.0959540406
+    ///
+    /// Discharges OBLIG-CHISQUARE-PVALUE-FINITE + OBLIG-HYPOTHESIS-PVALUE-FINITE.
+    #[test]
+    fn test_pvalue_finite_for_large_df_matches_scipy() {
+        // --- chi-square: P(chi2 > x) at x = df (near the mean) ---
+        let chi_cases = [
+            (72usize, 0.477_833_33_f32),
+            (100, 0.481_191_68),
+            (200, 0.486_701_2),
+        ];
+        for (df, scipy_p) in chi_cases {
+            let p = chi_square_pvalue(df as f32, df);
+            assert!(
+                p.is_finite(),
+                "chi-square p-value NaN/Inf at df={df} (raw-space gamma overflow)"
+            );
+            assert!(
+                (p - scipy_p).abs() < 1e-3,
+                "chi-square df={df}: apr p={p} vs scipy {scipy_p}"
+            );
+        }
+
+        // --- two-tailed Student-t ---
+        let t_cases = [
+            (72.0f32, 0.049_273_16_f32),
+            (100.0, 0.048_212_18),
+            (200.0, 0.046_853_19),
+        ];
+        for (df, scipy_p) in t_cases {
+            let p = t_distribution_pvalue(2.0, df);
+            assert!(
+                p.is_finite(),
+                "t-test p-value NaN/Inf at df={df} (incomplete_beta gamma overflow)"
+            );
+            assert!(
+                (p - scipy_p).abs() < 1e-3,
+                "t-test df={df}: apr p={p} vs scipy {scipy_p}"
+            );
+        }
+
+        // --- one-way ANOVA F survival ---
+        let f_cases = [
+            (2usize, 72usize, 0.142_784_33_f32),
+            (3, 100, 0.118_842_47),
+            (4, 200, 0.095_954_04),
+        ];
+        for (df1, df2, scipy_p) in f_cases {
+            let p = f_distribution_pvalue(2.0, df1, df2);
+            assert!(
+                p.is_finite(),
+                "ANOVA F p-value NaN/Inf at df1={df1} df2={df2} (incomplete_beta gamma overflow)"
+            );
+            assert!(
+                (p - scipy_p).abs() < 1e-3,
+                "ANOVA F df1={df1} df2={df2}: apr p={p} vs scipy {scipy_p}"
+            );
+        }
+    }
 }

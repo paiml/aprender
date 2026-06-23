@@ -405,7 +405,11 @@ fn incomplete_gamma(a: f32, x: f32) -> f32 {
         return 1.0;
     }
 
-    // Series expansion: γ(a,x) = e^(-x) * x^a * Σ x^n / Γ(a+n+1)
+    // Series expansion: γ(a,x)/Γ(a) = e^(-x) * x^a * Σ x^n / Γ(a+n+1).
+    // The bounded `sum` factors Γ(a) back out; the e^(-x) x^a / Γ(a) prefactor
+    // is combined in LOG space (PMAT-904) so that for large `a` (df ≳ 72) the
+    // x^a and Γ(a) terms — each individually Inf in raw f32 — never materialize:
+    //   prefactor = exp(-x + a·ln(x) − ln Γ(a)).
     let mut sum = 1.0 / a;
     let mut term = 1.0 / a;
     for n in 1..100 {
@@ -416,7 +420,8 @@ fn incomplete_gamma(a: f32, x: f32) -> f32 {
         }
     }
 
-    ((-x).exp() * x.powf(a) * sum / gamma(a)).clamp(0.0, 1.0)
+    let ln_prefactor = -x + a * x.ln() - ln_gamma(a);
+    (ln_prefactor.exp() * sum).clamp(0.0, 1.0)
 }
 
 /// Incomplete beta function approximation.
@@ -432,7 +437,14 @@ fn incomplete_beta(a: f32, b: f32, x: f32) -> f32 {
     // The 1/a and 1/b normalizers belong ONLY in the final returns below — folding a
     // `/a` in here double-divided the if-branch (and `b/a`-scaled the else-branch),
     // making I_x(a,b) wrong for a != 1 (it was correct only at the a==1 identity).
-    let bt = (x.powf(a) * (1.0 - x).powf(b)) / beta_function(a, b);
+    //
+    // PMAT-904: combine the whole prefactor in LOG space. With B(a,b) =
+    // Γ(a)Γ(b)/Γ(a+b), ln(bt) = a·ln(x) + b·ln(1−x) + ln Γ(a+b) − ln Γ(a) − ln Γ(b).
+    // For large df (a or b ≳ 36) each raw Γ overflows f32 to Inf, so the old
+    // `x^a/B(a,b)` form yielded Inf/Inf = NaN p-values; the log-space form does
+    // a single bounded `exp` at the end and never overflows.
+    let ln_bt = a * x.ln() + b * (1.0 - x).ln() + ln_gamma(a + b) - ln_gamma(a) - ln_gamma(b);
+    let bt = ln_bt.exp();
 
     if x < (a + 1.0) / (a + b + 2.0) {
         bt * beta_continued_fraction(a, b, x) / a
@@ -442,6 +454,12 @@ fn incomplete_beta(a: f32, b: f32, x: f32) -> f32 {
 }
 
 /// Beta function B(a, b) = Γ(a)Γ(b)/Γ(a+b).
+///
+/// PMAT-904: production `incomplete_beta` now builds its prefactor in log space
+/// via `ln_gamma`, so the raw-space `beta_function`/`gamma` pair (which overflows
+/// f32 for large arguments) is retained only as a small-argument reference for
+/// the unit tests.
+#[cfg(test)]
 fn beta_function(a: f32, b: f32) -> f32 {
     gamma(a) * gamma(b) / gamma(a + b)
 }

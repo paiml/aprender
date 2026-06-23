@@ -1,5 +1,5 @@
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   created: "2026-06-18"
   author: PAIML Engineering
   registry: true
@@ -14,7 +14,7 @@ metadata:
 
 kind: KernelContract
 name: incomplete-beta-correctness
-version: "1.0.0"
+version: "1.1.0"
 scope: "crates/aprender-core/src/stats/hypothesis.rs"
 
 description: |
@@ -48,6 +48,21 @@ equations:
     formula: "ttest_1samp([2.3,2.5,2.7,2.9,3.1], 2.5).pvalue ≈ 0.2302 (scipy); 2-tail p = incomplete_beta(df/2, 1/2, df/(df+t²))"
     note: "Guards against false-significant inference: the bug halved this p-value (0.1151) → spurious null rejection."
 
+  C-IBETA-004:
+    description: "Large-df p-value finiteness: prefactors are combined in LOG space so no intermediate overflows f32 (PMAT-904)"
+    formula: "∀ df ∈ {72,100,200}: chi_square_pvalue, t_distribution_pvalue, f_distribution_pvalue are FINITE and within 1e-3 of scipy"
+    note: "Raw-space gamma(z) overflows f32 at z ≳ 36 (Γ(36) ≈ 1e40); df ≥ 72 ⟹ a = df/2 ≥ 36 ⟹ incomplete_gamma / beta_function returned Inf/Inf = NaN. Fix: ln_gamma in log space, single bounded exp at the end."
+
+proof_obligations:
+  - type: invariant
+    property: "OBLIG-CHISQUARE-PVALUE-FINITE: chi-square survival p-value is finite for all degrees of freedom"
+    formal: "∀ df > 0, χ² ≥ 0: chi_square_pvalue(χ², df) ∈ [0,1] ∧ is_finite (in particular finite for df ≥ 72 where raw-space gamma(df/2) overflowed f32)"
+    applies_to: C-IBETA-004
+  - type: invariant
+    property: "OBLIG-HYPOTHESIS-PVALUE-FINITE: t- and F-distribution p-values are finite for all degrees of freedom"
+    formal: "∀ df ≥ 1: t_distribution_pvalue(t, df) ∈ [0,1] ∧ is_finite; ∀ df1,df2 ≥ 1: f_distribution_pvalue(f, df1, df2) ∈ [0,1] ∧ is_finite (finite for df ≥ 72 where the incomplete_beta gamma prefactor overflowed f32)"
+    applies_to: C-IBETA-004
+
 falsification:
   - id: FALSIFY-STATS-BETA-001
     description: "I_x(a,b) equals the scipy oracle for a != 1 (and still for a == 1). Discharges C-IBETA-001 + C-IBETA-002."
@@ -57,3 +72,15 @@ falsification:
     description: "One-sample t-test p-value matches scipy (downstream of the beta fix). Discharges C-IBETA-003."
     test: "test_ttest_1samp_pvalue_matches_scipy — RED 0.1151 (falsely significant) → GREEN 0.2302 == scipy.stats.ttest_1samp."
     evidence: "cargo test -p aprender-core --lib test_ttest_1samp_pvalue_matches_scipy"
+  - id: FALSIFY-HT-CHI2-FINITE
+    description: "Discharges OBLIG-CHISQUARE-PVALUE-FINITE (C-IBETA-004): chi-square p-value is finite and scipy-accurate for df in {72,100,200}. RED on the raw-space gamma overflow (NaN), GREEN after ln_gamma."
+    test: "cargo test -p aprender-core --lib falsify_ht_chi2_pvalue_finite_large_df"
+    evidence: "cargo test -p aprender-core --lib falsify_ht_chi2_pvalue_finite_large_df"
+  - id: FALSIFY-HT-T-FINITE
+    description: "Discharges OBLIG-HYPOTHESIS-PVALUE-FINITE (C-IBETA-004): two-tailed t p-value is finite and scipy-accurate for df in {72,100,200}."
+    test: "cargo test -p aprender-core --lib falsify_ht_t_pvalue_finite_large_df"
+    evidence: "cargo test -p aprender-core --lib falsify_ht_t_pvalue_finite_large_df"
+  - id: FALSIFY-HT-F-FINITE
+    description: "Discharges OBLIG-HYPOTHESIS-PVALUE-FINITE (C-IBETA-004): one-way ANOVA F p-value is finite and scipy-accurate for df2 in {72,100,200}."
+    test: "cargo test -p aprender-core --lib falsify_ht_f_pvalue_finite_large_df"
+    evidence: "cargo test -p aprender-core --lib falsify_ht_f_pvalue_finite_large_df"
