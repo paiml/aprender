@@ -262,33 +262,91 @@ fn f32_slice_to_bf16_bytes(data: &[f32]) -> Vec<u8> {
     bytes
 }
 
-/// PMAT-260: Serialize F32 data as F16 bytes.
+/// PMAT-905: Encode a single f32 as IEEE 754 half-precision (F16) bits using
+/// round-to-nearest-even, with full subnormal handling and NaN preservation.
 ///
-/// Uses IEEE 754 half-precision format. For data that originated as F16,
-/// the F32 representation is exact, so this round-trip is lossless.
+/// This is the IEEE / PyTorch / HuggingFace-safetensors / `half::f16::from_f32`
+/// reference behavior. The prior implementation (PMAT-260) truncated the
+/// mantissa (`mantissa >> 13`) and flushed the entire subnormal range to signed
+/// zero — both biased the cast and lost the smallest representable magnitudes.
+///
+/// F16 layout: 1 sign / 5 exponent (bias 15) / 10 mantissa.
+///
+/// Algorithm (matches `half::f16::from_f32` / IEEE-754 default rounding):
+/// re-bias the f32 exponent to f16, then round the 23-bit mantissa down to 10
+/// bits using round-to-nearest-even. An exact halfway case (discarded low bits
+/// == `0x1000`) rounds toward the even mantissa; anything above halfway rounds
+/// up. Values that land in the f16 subnormal range build the full significand
+/// (with the implicit leading 1) and shift it into the subnormal field with the
+/// same RNE rule, rather than flushing to zero. Overflow saturates to Inf and a
+/// mantissa carry-out bumps the exponent (potentially to Inf), exactly as in
+/// `half::f16`. NaN is preserved by forcing a mantissa bit.
+fn f32_to_f16_bits_rne(value: f32) -> u16 {
+    let bits = value.to_bits();
+    let sign = ((bits >> 16) & 0x8000) as u16;
+    let exponent = ((bits >> 23) & 0xFF) as i32;
+    let mantissa = bits & 0x007F_FFFF;
+
+    if exponent == 0xFF {
+        // Inf or NaN. Preserve NaN (force a mantissa bit so it never becomes
+        // Inf); Inf keeps a zero mantissa.
+        if mantissa != 0 {
+            return sign | 0x7C00 | ((mantissa >> 13) as u16) | 0x0200;
+        }
+        return sign | 0x7C00;
+    }
+
+    // Re-bias exponent from f32 (bias 127) to f16 (bias 15).
+    let f16_exp = exponent - 127 + 15;
+
+    if f16_exp >= 0x1F {
+        // Overflow → Inf.
+        return sign | 0x7C00;
+    }
+
+    if f16_exp <= 0 {
+        // Subnormal f16 (or underflow to signed zero). Build the significand
+        // with its implicit leading 1, then shift it right into the 10-bit
+        // subnormal field, rounding to nearest even on the discarded bits.
+        if f16_exp < -10 {
+            // Below half the smallest subnormal → rounds to signed zero.
+            return sign;
+        }
+        let significand = mantissa | 0x0080_0000;
+        let shift = (14 - f16_exp) as u32; // 14..=24
+        let half = 1u32 << (shift - 1);
+        let mask = (1u32 << shift) - 1;
+        let low = significand & mask;
+        let mut frac = significand >> shift;
+        if low > half || (low == half && (frac & 1) == 1) {
+            frac += 1;
+        }
+        return sign | (frac as u16);
+    }
+
+    // Normal f16. Round the 23-bit mantissa to 10 bits, round-to-nearest-even.
+    let low = mantissa & 0x1FFF; // 13 discarded bits
+    let half = 0x1000u32; // 2^12 = exact halfway
+    let mut frac = mantissa >> 13;
+    if low > half || (low == half && (frac & 1) == 1) {
+        frac += 1;
+    }
+    // A mantissa carry-out (frac == 0x400) propagates into the exponent via the
+    // `+` below; if that pushes the exponent to 0x1F the result is Inf, exactly
+    // as half::f16 produces near the overflow boundary.
+    let assembled = ((f16_exp as u32) << 10) + frac;
+    sign | (assembled as u16)
+}
+
+/// PMAT-260 / PMAT-905: Serialize F32 data as F16 bytes.
+///
+/// Uses IEEE 754 half-precision round-to-nearest-even, matching
+/// `half::f16::from_f32`. For data that originated as F16, the F32
+/// representation is exact, so this round-trip is lossless.
 fn f32_slice_to_f16_bytes(data: &[f32]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(data.len() * 2);
     for &value in data {
-        let bits = value.to_bits();
-        let sign = (bits >> 16) & 0x8000;
-        let exponent = ((bits >> 23) & 0xFF) as i32;
-        let mantissa = bits & 0x007F_FFFF;
-
-        let f16_bits = if exponent == 0xFF {
-            // Inf/NaN
-            sign | 0x7C00 | if mantissa != 0 { 0x0200 } else { 0 }
-        } else if exponent > 142 {
-            // Overflow → Inf
-            sign | 0x7C00
-        } else if exponent < 113 {
-            // Underflow → zero (or denorm, but we simplify)
-            sign
-        } else {
-            let e = (exponent - 112) as u32;
-            let m = mantissa >> 13;
-            sign | (e << 10) | (m & 0x3FF)
-        };
-        bytes.extend_from_slice(&(f16_bits as u16).to_le_bytes());
+        bytes.extend_from_slice(&f32_to_f16_bits_rne(value).to_le_bytes());
     }
     bytes
 }

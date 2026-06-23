@@ -1,0 +1,112 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-23"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "IEEE 754-2019 §4.3.1 roundTiesToEven (the default rounding-direction attribute)"
+    - "IEEE 754-2019 §3.4 binary16 (1 sign / 5 exponent / 10 mantissa; subnormals to 2^-24)"
+    - "half::f16::from_f32 (Rust `half` crate, round-to-nearest-even reference oracle; feature format-quantize)"
+    - "PyTorch torch.Tensor.half() / aten f16 cast (round-to-nearest-even, subnormal-aware)"
+    - "HuggingFace safetensors F16 serialization (round-to-nearest-even, NaN-preserving)"
+  description: |
+    Correctness contract for f32 -> F16 (IEEE half-precision) encoding in the
+    SafeTensors export path
+    (aprender-core crates/aprender-core/src/serialization/safetensors.rs
+    f32_slice_to_f16_bytes / f32_to_f16_bits_rne, reached from
+    `apr export --format safetensors` via encode_tensor_for_dtype for tensors
+    whose dtype is F16).
+
+    PMAT-905 (F16 sibling of the PMAT-859 BF16 fix): the prior implementation
+    truncated the mantissa (`let m = mantissa >> 13;`) and flushed the ENTIRE
+    subnormal range to signed zero (`else if exponent < 113 { sign }`). Unlike
+    BF16, F16 has its own 5-bit exponent and a real subnormal range
+    (2^-24 .. 2^-14), so two distinct defects followed:
+      (1) every value with a non-zero discarded mantissa was biased toward
+          zero instead of round-to-nearest-even — e.g. f32 0x476A_7E00
+          encodes to 0x7B54 but truncation produced 0x7B53; and the
+          near-overflow boundary 65520.0 must round UP to +Inf (0x7C00) but
+          truncation kept it finite (0x7BFF);
+      (2) the smallest representable magnitudes (f16 subnormals 0x0001..0x03FF,
+          i.e. f32 |x| in [2^-24, 2^-14)) were silently destroyed —
+          f32 2^-24 must encode to 0x0001 but the flush-to-zero branch produced
+          0x0000.
+    The fix performs round-to-nearest-even across the normal AND subnormal
+    grids, carries rounding into the exponent (incl. overflow to Inf), and
+    preserves NaN — matching half::f16::from_f32 bit-for-bit.
+
+kind: KernelContract
+name: safetensors-f16-round
+version: "1.0.0"
+scope: "crates/aprender-core/src/serialization/safetensors.rs"
+
+description: |
+  F16 is IEEE binary16: 1 sign / 5 exponent (bias 15) / 10 mantissa, with
+  subnormals down to 2^-24. Correct encoding is round-to-nearest-even (the
+  IEEE-754 default) applied to BOTH the normal mantissa (drop 13 low bits) and
+  the subnormal grid (variable right-shift), with rounding carry propagating
+  into the exponent field (and onward to Inf on overflow), and NaN preserved
+  (never collapsed to Inf).
+
+equations:
+  C-F16-001:
+    description: "f32 -> F16 is round-to-nearest-even on normals, matching half::f16::from_f32"
+    formula: "f16(x) = half::f16::from_f32(x).to_bits() ; e.g. f16(f32 0x476A_7E00) = 0x7B54 (truncation gives 0x7B53)"
+    note: "The already-exact case is what the truncation bug left correct; the falsifier MUST exercise a non-zero discarded mantissa."
+  C-F16-002:
+    description: "Subnormal f32 magnitudes in [2^-24, 2^-14) encode to nonzero f16 subnormals, not flushed to zero, with RNE"
+    formula: "f16(2^-24) = 0x0001 (smallest subnormal) ; the flush-to-zero bug produced 0x0000"
+    note: "F16-specific: BF16 has no distinct subnormal range, so this obligation has no BF16 analogue."
+  C-F16-003:
+    description: "Rounding carry: a value just below the overflow threshold rounds UP to +Inf"
+    formula: "f16(65520.0) = 0x7C00 (+Inf) ; truncation kept it finite 0x7BFF"
+    note: "RNE carry must propagate through the 10-bit mantissa into the 5-bit exponent and overflow to Inf."
+  C-F16-004:
+    description: "NaN is preserved across the cast — a NaN f32 encodes to a NaN F16, never Inf"
+    formula: "x.is_nan() => half::f16::from_bits(f16(x)).is_nan() ; e.g. x = f32 0x7F80_0001"
+    note: "Forward invariant on the RNE encoder: a future flush/refactor must not collapse NaN to Inf. This is NOT a discharged regression — the prior truncation code already preserved NaN (its Inf/NaN branch ORed 0x0200 for non-zero mantissa) — so this pins NaN-preservation against future change rather than fixing a past bug."
+
+proof_obligations:
+- type: equivalence
+  property: "F16 encoding equals the half::f16 round-to-nearest-even oracle (OBLIG-SAFETENSORS-F16-EXPORT-RNE)"
+  formal: "∀ finite x: f32_slice_to_f16_bytes([x])[0..2] == half::f16::from_f32(x).to_le_bytes()"
+  applies_to: all
+- type: invariant
+  property: "Subnormal magnitudes are not flushed to zero"
+  formal: "2^-24 ≤ |x| < 2^-14 ⇒ (f16(x) & 0x7FFF) != 0"
+  applies_to: finite
+- type: bound
+  property: "Round-to-nearest-even error is at most half an F16 ulp"
+  formal: "|half::f16::from_bits(f16(x)).to_f32() - x| ≤ 0.5 ulp_f16(x) for finite, in-range x (truncation can reach a full ulp)"
+  tolerance: 0.0
+  applies_to: finite
+- type: invariant
+  property: "NaN preservation (no NaN -> Inf collapse)"
+  formal: "x.is_nan() ⇒ half::f16::from_bits(f16(x)).is_nan()"
+  applies_to: nan
+
+falsification:
+  - id: FALSIFY-F16-ROUND-001
+    description: "Round-to-nearest-even on normals: f32 0x476A_7E00 (discarded low 13 bits 0x1E00 > 0x1000 halfway) rounds UP to the half oracle, not truncated. Discharges C-F16-001."
+    test: "cargo test -p aprender-core --lib --features format-quantize test_f16_round_to_nearest_even_falsifier"
+    evidence: "RED 0x7B53 (truncation >>13) -> GREEN 0x7B54 (half::f16::from_f32 RNE oracle)"
+  - id: FALSIFY-F16-SUBNORMAL-001
+    description: "Subnormal magnitudes (e.g. 2^-24 -> 0x0001) are not flushed to zero. Discharges C-F16-002."
+    test: "cargo test -p aprender-core --lib --features format-quantize test_f16_subnormal_not_flushed_to_zero"
+    evidence: "RED 0x0000 (flush-to-zero) -> GREEN 0x0001 (smallest subnormal)"
+  - id: FALSIFY-F16-SUBNORMAL-RNE-001
+    description: "Round-to-nearest-even into the subnormal grid over a 512-sample band matches half. Discharges C-F16-002."
+    test: "cargo test -p aprender-core --lib --features format-quantize test_f16_round_subnormal_ties_to_even"
+    evidence: "RED truncated/flushed subnormals -> GREEN half oracle parity"
+  - id: FALSIFY-F16-OVERFLOW-001
+    description: "Rounding carry overflows to +Inf at the 65520.0 boundary. Discharges C-F16-003."
+    test: "cargo test -p aprender-core --lib --features format-quantize test_f16_overflow_to_infinity"
+    evidence: "RED 0x7BFF (finite, truncation) -> GREEN 0x7C00 (+Inf)"
+  - id: FALSIFY-F16-NAN-001
+    description: "NaN preservation FORWARD INVARIANT: f32 0x7F80_0001 stays NaN (never Inf) under the RNE encoder. Guards C-F16-004 — NOT a discharged regression (the prior code already preserved NaN); pins it against a future flush-to-Inf change."
+    test: "cargo test -p aprender-core --lib --features format-quantize test_f16_preserves_nan_not_inf"
+    evidence: "GREEN: NaN -> NaN under the RNE encoder; would go RED if a future change collapsed NaN to Inf or zero"
+  - id: FALSIFY-F16-PARITY-001
+    description: "Wide sweep (normals, subnormals, ties, overflow, signs) matches half::f16::from_f32 bit-for-bit. Discharges C-F16-001 (oracle parity)."
+    test: "cargo test -p aprender-core --lib --features format-quantize test_f16_parity_with_half_crate"
+    evidence: "every sample's F16 bits equal half::f16::from_f32(v).to_bits()"
