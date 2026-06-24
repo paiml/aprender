@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.53.0] - 2026-06-24
+
+Correctness-beat wave (PMAT-904..911) across all four pillars — the headline is the autograd
+norm-backward family (LayerNorm / RMSNorm / BatchNorm1d / GroupNorm), which makes every
+normalization-using transformer and CNN **fine-tunable** (their affine γ/β had been receiving zero
+gradient). Each fix ships a named proof-obligation + a RED-on-bug / GREEN-on-fix falsifier
+(adversarially mutation-verified) + a `pv`-validated contract.
+
+### Fixed
+
+- **Autograd: LayerNorm + RMSNorm backward severed the affine gradient** (PMAT-907, Pillar-2,
+  `OBLIG-{LAYERNORM,RMSNORM}-BACKWARD-GRAD-FLOW`) — `nn::functional::layer_norm`/`rms_norm` built
+  their output via `Tensor::from_vec` (a leaf with no `grad_fn`), so after `backward()` the scale γ,
+  shift β, and input x all received **zero** gradient. Every transformer using these norms was
+  non-fine-tunable. Added `LayerNormBackward`/`RmsNormBackward` with correct dγ/dβ/dx; gradients now
+  match a finite-difference gradcheck.
+- **Autograd: BatchNorm1d + GroupNorm backward severed the affine gradient** (PMAT-911, Pillar-2,
+  `OBLIG-{BATCHNORM1D,GROUPNORM}-BACKWARD-GRAD-FLOW`) — same severed-graph bug as PMAT-907 for the
+  remaining norms (train-mode BatchNorm batch-stat backward + per-group GroupNorm backward). Completes
+  the norm family: all four norms now flow gradient to γ/β.
+- **`CrossEntropyLoss` label smoothing distributed the off-target mass as `(1-eps)/C`** (PMAT-910,
+  Pillar-2, `OBLIG-CE-LABEL-SMOOTHING-UNIFORM-MASS`) — should be `eps/C` per non-target class
+  (so q_target = 1-eps+eps/C). On eps=0.1/C=5 the smoothed loss was 3.29× too large (2.384 vs the
+  0.7244 PyTorch/analytic value). Now matches `torch.nn.CrossEntropyLoss(label_smoothing=...)`.
+- **t-test / ANOVA / chi-square returned NaN p-values for df ≳ 72** (PMAT-904, Pillar-1,
+  `OBLIG-{CHISQUARE,HYPOTHESIS}-PVALUE-FINITE`) — a raw-space Lanczos `gamma()` overflowed f32 at
+  z ≥ ~36, so the incomplete-gamma/beta prefactors went Inf/Inf = NaN. Rebuilt in log-space
+  (`ln_gamma` + single bounded `exp`); p-values now finite + match scipy within 1e-5.
+- **f16 export truncated instead of round-to-nearest-even** (PMAT-905, Pillar-4,
+  `OBLIG-SAFETENSORS-F16-EXPORT-RNE`) — `f32_slice_to_f16_bytes` dropped the low 13 mantissa bits and
+  flushed the entire subnormal range to ±0, diverging from `half::f16::from_f32` (e.g. 65520.0 stayed
+  finite instead of rounding up to +Inf; 2^-24 became 0 instead of the smallest subnormal). Now true
+  RNE across normal + subnormal grids (the F16 sibling of the PMAT-859 BF16 fix).
+- **Weighted KNN capped a zero-distance neighbor at weight 1.0** (PMAT-909, Pillar-1,
+  `OBLIG-KNN-WEIGHTED-ZERO-DISTANCE`) — sklearn `weights="distance"` gives an exact-duplicate neighbor
+  infinite weight (only the zero-distance neighbors vote); apr let farther neighbors outvote the exact
+  match, flipping predictions. Now matches sklearn.
+
+### Added
+
+- **Fail-closed: reject special-token id ≥ vocab_size at load** (PMAT-908, Pillar-4,
+  `OBLIG-SPECIAL-TOKEN-WITHIN-VOCAB`) — a config whose eos/bos id is ≥ vocab_size loaded silently; the
+  stop token is then an unreachable logit so generation never stops. Now rejected with an actionable
+  error (and the arch-default EOS fallback no longer injects an out-of-vocab id into a small-vocab
+  model). llama.cpp/Ollama load these silently.
+- **Fail-closed: reject APR config↔tensor shape mismatch at load** (PMAT-906, Pillar-4,
+  `OBLIG-APR-{VOCAB-EMBED-CONSISTENT,WEIGHT-SHAPE-MATCHES-CONFIG}`) — `AprV2Model::from_model_data`
+  accepted a model whose declared `vocab_size`/`hidden_size` disagreed with the embedding/lm_head
+  tensor shape (garbage / OOB at inference). Now rejected fail-closed.
+
 ## [0.52.0] - 2026-06-22
 
 Correctness-beat wave (PMAT-889..898) across all four pillars + the cuda-oxide marquee. Each fix ships
