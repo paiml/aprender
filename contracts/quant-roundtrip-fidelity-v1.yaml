@@ -1,0 +1,140 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-24'
+  author: PAIML Engineering
+  registry: true
+  description: |
+    K-quant quantize -> dequantize round-trip FIDELITY gate (PMAT-917, Pillar-4 /
+    CRUX-M verify-wall).
+
+    For each k-quant scheme (Q4_K, Q5_K, Q6_K), a representative super-block of 256
+    f32 weights — spanning large-magnitude, near-zero, the block-scale sign
+    boundary, and a smoothly-varying tail — is quantized then dequantized, and the
+    reconstructed block must stay within the scheme's THEORETICAL per-element
+    quantization bound.
+
+    For an affine (min + scale) uniform quantizer with L representable levels
+    covering a value range R, the worst-case round-to-nearest reconstruction error
+    per element is R / (L - 1) / 2. The per-block d/dmin scales are stored as f16,
+    so we inflate the ideal step by a 1.30x slack to absorb f16 scale rounding
+    without making the gate vacuous (a one-bit-too-coarse scheme would need 2x).
+
+        | scheme | bits | levels L | bound = R/(L-1)/2 * 1.30 |
+        | Q4_K   | 4    | 16       | R / 15 / 2 * 1.30        |
+        | Q5_K   | 5    | 32       | R / 31 / 2 * 1.30        |
+        | Q6_K   | 6    | 64       | R / 63 / 2 * 1.30        |
+
+    Measured on the representative block (range 7.875) at the time this gate landed:
+    Q4_K err 0.162 <= bound 0.341, Q5_K err 0.077 <= bound 0.165, Q6_K err 0.056 <=
+    bound 0.081 — ALL schemes round-trip WITHIN bound (no RED scheme; this is a
+    forward-invariant standing gate, not a bug fix).
+
+    A cross-scheme monotonicity obligation additionally pins Q6_K err <= Q5_K err <=
+    Q4_K err: a scale/offset bug in one scheme that still keeps it under its own
+    (looser) bound is caught by the ordering.
+
+    This supports the mission invariant that apr provably never ships garbage where
+    llama.cpp does: a future regression in scale, offset/min, or sub-block handling
+    blows the round-trip error past the bound the bit-width can possibly achieve and
+    trips this gate immediately. Mutation-verified: halving the Q4_K dequant scale
+    drives error to 2.48 (>> 0.341) and dropping the min/offset term drives it to
+    4.16 — both RED — confirming the falsifier is non-tautological.
+  references:
+  - GGML Q4_K_M / Q5_K / Q6_K super-block format specification
+  - 'crates/aprender-quant/src/quantize.rs — quantize_q4_k / quantize_q5_k / quantize_q6_k'
+  - 'crates/aprender-quant/src/dequantize.rs — dequantize_q4_k_to_f32 / q5 / q6 (fix site if RED)'
+  - 'crates/aprender-quant/src/roundtrip_fidelity_tests.rs — falsifiers'
+
+kind: KernelContract
+name: quant-roundtrip-fidelity
+version: 1.0.0
+scope: crates/aprender-quant — k-quant quantize/dequantize round-trip fidelity
+
+equations:
+  quant_error_bound:
+    formula: max_i |dequant(quant(x))_i - x_i| <= R / (L - 1) / 2 * slack
+    domain: 256-element super-block, R = range(x), L levels, slack = 1.30 (f16 scale)
+    invariants:
+    - Affine uniform quantizer round-to-nearest worst case is half a step
+    - L = 16 (Q4_K), 32 (Q5_K), 64 (Q6_K)
+    - Reconstructed values are finite
+    preconditions:
+    - input.len() == 256
+    - 'block is not near-constant (R > 0)'
+    lean_theorem: Theorems.Quant_Roundtrip_Fidelity
+  bitwidth_monotonicity:
+    formula: err_q6k <= err_q5k <= err_q4k (on the same block, within f16 jitter)
+    domain: identical 256-element block quantized by each scheme
+    invariants:
+    - More bits cannot round-trip worse than fewer bits
+    preconditions:
+    - input.len() == 256
+    lean_theorem: Theorems.Quant_Bitwidth_Monotonic
+
+proof_obligations:
+- type: invariant
+  property: Q4_K round-trip within theoretical fidelity bound
+  formal: max_i |dq4(q4(x))_i - x_i| <= R/15/2 * 1.30
+  applies_to: all
+- type: invariant
+  property: Q5_K round-trip within theoretical fidelity bound
+  formal: max_i |dq5(q5(x))_i - x_i| <= R/31/2 * 1.30
+  applies_to: all
+- type: invariant
+  property: Q6_K round-trip within theoretical fidelity bound
+  formal: max_i |dq6(q6(x))_i - x_i| <= R/63/2 * 1.30
+  applies_to: all
+- type: invariant
+  property: Reconstructed values are finite
+  formal: dequant(quant(x))_i is finite for all i
+  applies_to: all
+- type: monotonicity
+  property: Round-trip error decreases with bit width
+  formal: err_q6k <= err_q5k <= err_q4k (+ f16 tie tolerance)
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-QRT-001
+  rule: Q4_K round-trip within theoretical fidelity bound
+  prediction: |
+    On the representative block (range 7.875) Q4_K reconstructs with max error
+    0.162 <= bound 0.341 (16 levels). Halving the dequant scale -> err 2.48 RED;
+    dropping the min/offset term -> err 4.16 RED.
+  if_fails: |
+    Q4_K scale (d * scale_6bit), offset (dmin * min_6bit), or sub-block packing in
+    dequantize_q4_k_to_f32 / quantize_q4_k is wrong. Recompute the affine
+    reconstruction per crates/aprender-quant/src/dequantize.rs.
+  test: cargo test -p aprender-quant --lib falsify_q4k_roundtrip_fidelity
+  evidence: cargo test -p aprender-quant --lib falsify_q4k_roundtrip_fidelity
+- id: FALSIFY-QRT-002
+  rule: Q5_K round-trip within theoretical fidelity bound
+  prediction: 'Q5_K reconstructs with max error 0.077 <= bound 0.165 (32 levels).'
+  if_fails: |
+    Q5_K high-bit (qh) packing or affine scale/offset in dequantize_q5_k_to_f32 /
+    quantize_q5_k is wrong.
+  test: cargo test -p aprender-quant --lib falsify_q5k_roundtrip_fidelity
+  evidence: cargo test -p aprender-quant --lib falsify_q5k_roundtrip_fidelity
+- id: FALSIFY-QRT-003
+  rule: Q6_K round-trip within theoretical fidelity bound
+  prediction: 'Q6_K reconstructs with max error 0.056 <= bound 0.081 (64 levels).'
+  if_fails: |
+    Q6_K 6-bit split (ql low 4 + qh high 2), the -32 zero point, or per-sub-block
+    int8 scale in dequantize_q6_k_to_f32 / quantize_q6_k is wrong.
+  test: cargo test -p aprender-quant --lib falsify_q6k_roundtrip_fidelity
+  evidence: cargo test -p aprender-quant --lib falsify_q6k_roundtrip_fidelity
+- id: FALSIFY-QRT-004
+  rule: Round-trip error is monotonic in bit width
+  prediction: 'On the same block err_q6k <= err_q5k <= err_q4k (within f16 jitter).'
+  if_fails: |
+    A higher-bit scheme reconstructs worse than a lower-bit one — a scale/offset
+    regression in the wider scheme that stays under its own looser bound.
+  test: cargo test -p aprender-quant --lib falsify_kquant_bitwidth_error_monotonic
+  evidence: cargo test -p aprender-quant --lib falsify_kquant_bitwidth_error_monotonic
+
+qa_gate:
+  id: F-QRT-001
+  name: quant-roundtrip-fidelity-v1 Contract
+  description: K-quant quantize/dequantize must round-trip within the scheme's theoretical per-element quantization bound (Pillar-4 verify-wall, PMAT-917).
+  checks:
+  - validation
+  - falsification
