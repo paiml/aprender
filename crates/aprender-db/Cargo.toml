@@ -143,6 +143,15 @@ distributed = ["tonic", "prost"]
 # Phase 4: WASM build (no tokio/rayon - not WASM compatible)
 wasm = []
 
+# Competitive benchmarks vs DuckDB + SQLite (CORE-009). OFF by default: the
+# `duckdb` dev-dep uses features=["bundled"], compiling DuckDB's entire C++ from
+# source (~7-8 min). Built under `--all-targets` (ci.yml lint, workspace-test),
+# its cold C++ build is the recurring merge_group flake that ejects PRs from the
+# queue. Gating the bench behind this feature keeps duckdb/rusqlite (used ONLY by
+# competitive_benchmarks) out of the normal CI build. Run the comparison with:
+#   cargo bench -p aprender-db --features competitive-benchmarks --bench competitive_benchmarks
+competitive-benchmarks = []
+
 [[bench]]
 name = "storage_benchmarks"
 harness = false
@@ -158,6 +167,7 @@ harness = false
 [[bench]]
 name = "competitive_benchmarks"
 harness = false
+required-features = ["competitive-benchmarks"]
 
 [[bench]]
 name = "kernel_fusion"
