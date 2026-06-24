@@ -493,11 +493,6 @@ pub(crate) fn reshape_from_attention(
     result
 }
 
-/// ONE PATH: Delegates to `nn::functional::gelu` (UCBD §4).
-pub(super) fn gelu(x: &Tensor) -> Tensor {
-    crate::nn::functional::gelu(x)
-}
-
 /// Compute sinusoidal positional encoding.
 fn compute_positional_encoding(d_model: usize, max_len: usize) -> Tensor {
     let mut pe = vec![0.0; max_len * d_model];
