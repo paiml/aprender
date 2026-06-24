@@ -1,0 +1,62 @@
+contract: attention-backward-gradflow
+metadata:
+  kind: training-loop
+  version: "1.0.0"
+  description: >
+    MultiHeadAttention backward MUST flow gradient to the Q/K/V/out projection
+    weights — the CAPSTONE of the severed-graph sweep that establishes
+    end-to-end transformer fine-tunability. Guards the PMAT-914 root-cause fix.
+    The scaled-dot-product attention core built EVERY intermediate via
+    Tensor::from_vec / Tensor::new, severing the autograd graph: matmul_batched
+    (4D QK^T and attn@V), transpose_last_two (K^T), nn::functional::softmax
+    (attn weights), reshape_for_attention (split heads), reshape_from_attention
+    (concat heads). After loss.backward(), get_grad(q_proj.weight.id()) was None
+    — the Q/K/V projection weights (and the attention-side path to the out
+    projection) never received gradient, so a transformer attention block was
+    NON-FINE-TUNABLE despite the earlier norm (PMAT-907/911) and
+    embedding/flatten/pool (PMAT-913) gradflow fixes. The attention helpers now
+    record SoftmaxLastDimBackward, TransposeLastTwoBackward,
+    BatchedMatmul4dBackward, ReshapeForAttentionBackward, and
+    ReshapeFromAttentionBackward on the tape, keeping the chain
+    loss -> out_proj -> sdpa -> reshape -> {q,k,v}_proj unbroken.
+  references:
+  - "crates/aprender-core/src/nn/transformer/positional_encoding.rs"
+  - "crates/aprender-core/src/nn/transformer/mod.rs"
+  - "crates/aprender-core/src/autograd/grad_fn.rs"
+  - "crates/aprender-core/src/nn/transformer/tests_attention_backward_gradflow.rs"
+version: 1
+status: enforced
+date: 2026-06-24
+
+proof_obligations:
+  - type: invariant
+    property: >
+      OBLIG-ATTENTION-BACKWARD-GRAD-FLOW: after loss.backward() on a graph
+      containing a MultiHeadAttention self-attention forward with grad-tracked
+      Q/K/V/out projection weights, get_grad is Some AND finite-nonzero for all
+      four projection weights. The analytic gradients match a central
+      finite-difference gradcheck (every weight entry probed) within tolerance.
+      The backward composes the per-helper edges: BatchedMatmul4dBackward
+      (dA = grad @ B^T, dB = A^T @ grad per batch,head) for both QK^T and attn@V;
+      SoftmaxLastDimBackward (y * (g - <g,y>) over the last dim) for the attention
+      weights; TransposeLastTwoBackward (its own inverse) for K^T; and the
+      head split/concat reshapes (mutually-inverse permutations). Without the
+      recorded edges the graph is severed and the projection weights are frozen.
+  - type: equivalence
+    property: >
+      GRADCHECK-NON-TAUTOLOGICAL: the falsifier is a finite-difference gradcheck,
+      not an is_some assertion on a hardcoded value. The input/weight magnitudes
+      are chosen so the QK^T scores have wide spread (softmax strongly
+      non-uniform), making the Q/K gradient edges well above tolerance.
+      Mutation-verified: zeroing the BatchedMatmul4dBackward dA edge makes the
+      q_proj grad all-zero (RED); scaling that dA edge by 1.5 OR dropping the
+      SoftmaxLastDimBackward Jacobian dot term makes the k_proj central-difference
+      comparison go RED. The correct math is GREEN.
+
+falsification_tests:
+  - id: FALSIFY-ATTENTION-BACKWARD-GRAD-FLOW-001
+    name: attention_backward_flows_grad_to_qkv_and_out_proj
+    prediction: "MHA Q/K/V/out projection grads are Some + finite-nonzero and match the finite-difference gradcheck within tol"
+    test_harness: "cargo test -p aprender-core --lib attention_backward_flows_grad_to_qkv_and_out_proj"
+    expected_output: "test result: ok"
+    if_fails: "The scaled-dot-product attention helpers severed the autograd graph (Tensor::from_vec). Record SoftmaxLastDimBackward / TransposeLastTwoBackward / BatchedMatmul4dBackward / ReshapeFor+FromAttentionBackward on the tape so gradient flows back to the Q/K/V/out projection weights."

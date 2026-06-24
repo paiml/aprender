@@ -254,7 +254,54 @@ pub(crate) fn transpose_last_two(x: &Tensor) -> Tensor {
         }
     }
 
-    Tensor::from_vec(output, &new_shape)
+    let mut result = Tensor::from_vec(output, &new_shape);
+
+    // PMAT-914 / OBLIG-ATTENTION-BACKWARD-GRAD-FLOW: record the transpose edge so
+    // gradient flows back through K^T to the key projection.
+    record_attention_grad(x, &mut result, || {
+        std::sync::Arc::new(crate::autograd::grad_fn::TransposeLastTwoBackward {
+            input_shape: shape.to_vec(),
+        })
+    });
+
+    result
+}
+
+/// Record a single-input attention helper backward edge on the autograd tape
+/// (PMAT-914). No-op unless grad tracking is on AND the input requires grad.
+fn record_attention_grad<F>(input: &Tensor, result: &mut Tensor, make: F)
+where
+    F: FnOnce() -> std::sync::Arc<dyn crate::autograd::GradFn>,
+{
+    use crate::autograd::{is_grad_enabled, with_graph};
+    if is_grad_enabled() && input.requires_grad_enabled() {
+        result.requires_grad_(true);
+        let grad_fn = make();
+        result.set_grad_fn(grad_fn.clone());
+        with_graph(|graph| {
+            graph.register_tensor(input.clone());
+            graph.record(result.id(), grad_fn, vec![input.id()]);
+        });
+    }
+}
+
+/// Record a two-input attention helper backward edge (PMAT-914).
+/// No-op unless grad tracking is on AND at least one input requires grad.
+fn record_attention_grad2<F>(a: &Tensor, b: &Tensor, result: &mut Tensor, make: F)
+where
+    F: FnOnce() -> std::sync::Arc<dyn crate::autograd::GradFn>,
+{
+    use crate::autograd::{is_grad_enabled, with_graph};
+    if is_grad_enabled() && (a.requires_grad_enabled() || b.requires_grad_enabled()) {
+        result.requires_grad_(true);
+        let grad_fn = make();
+        result.set_grad_fn(grad_fn.clone());
+        with_graph(|graph| {
+            graph.register_tensor(a.clone());
+            graph.register_tensor(b.clone());
+            graph.record(result.id(), grad_fn, vec![a.id(), b.id()]);
+        });
+    }
 }
 
 /// Batched matrix multiplication using SIMD-accelerated Trueno.
@@ -286,7 +333,18 @@ pub(crate) fn matmul_batched(a: &Tensor, b: &Tensor) -> Tensor {
         let output = Matrix::batched_matmul_4d(a.data(), b.data(), batch, heads, m, k1, n)
             .expect("batched_matmul_4d failed: dimensions validated but operation failed");
 
-        Tensor::from_vec(output, &[batch, heads, m, n])
+        let mut result = Tensor::from_vec(output, &[batch, heads, m, n]);
+
+        // PMAT-914 / OBLIG-ATTENTION-BACKWARD-GRAD-FLOW: record the 4D matmul edge
+        // (QK^T and attn@V) so gradient flows to Q, K, and V.
+        record_attention_grad2(a, b, &mut result, || {
+            std::sync::Arc::new(crate::autograd::grad_fn::BatchedMatmul4dBackward {
+                a: a.clone(),
+                b: b.clone(),
+            })
+        });
+
+        result
     } else {
         // Fallback for 2D/3D - uses Tensor's SIMD matmul
         a.matmul(b)
@@ -319,7 +377,18 @@ pub(super) fn add_mask(scores: &Tensor, mask: &Tensor) -> Tensor {
 ///
 /// ONE PATH: Delegates to `nn::functional::softmax` (UCBD §4).
 pub(super) fn softmax_last_dim(x: &Tensor) -> Tensor {
-    crate::nn::functional::softmax(x, -1)
+    let mut result = crate::nn::functional::softmax(x, -1);
+
+    // PMAT-914 / OBLIG-ATTENTION-BACKWARD-GRAD-FLOW: record the softmax edge so
+    // gradient flows back through the attention weights to Q and K.
+    let out_for_grad = Tensor::from_vec(result.data().to_vec(), result.shape());
+    record_attention_grad(x, &mut result, move || {
+        std::sync::Arc::new(crate::autograd::grad_fn::SoftmaxLastDimBackward {
+            output: out_for_grad,
+        })
+    });
+
+    result
 }
 
 /// ONE PATH: Delegates to `nn::functional::dropout` (UCBD §4).
@@ -357,7 +426,19 @@ pub(super) fn reshape_for_attention(
         }
     }
 
-    Tensor::from_vec(output, &[batch, num_heads, seq_len, head_dim])
+    let mut result = Tensor::from_vec(output, &[batch, num_heads, seq_len, head_dim]);
+
+    // PMAT-914 / OBLIG-ATTENTION-BACKWARD-GRAD-FLOW: record the head-split edge.
+    record_attention_grad(x, &mut result, || {
+        std::sync::Arc::new(crate::autograd::grad_fn::ReshapeForAttentionBackward {
+            batch,
+            seq_len,
+            num_heads,
+            head_dim,
+        })
+    });
+
+    result
 }
 
 /// Reshape from multi-head attention: [batch, heads, seq, `head_dim`] -> [batch, seq, embed]
@@ -391,7 +472,19 @@ pub(crate) fn reshape_from_attention(
         }
     }
 
-    Tensor::from_vec(output, &[batch, seq_len, embed_dim])
+    let mut result = Tensor::from_vec(output, &[batch, seq_len, embed_dim]);
+
+    // PMAT-914 / OBLIG-ATTENTION-BACKWARD-GRAD-FLOW: record the head-concat edge.
+    record_attention_grad(x, &mut result, || {
+        std::sync::Arc::new(crate::autograd::grad_fn::ReshapeFromAttentionBackward {
+            batch,
+            seq_len,
+            num_heads,
+            head_dim,
+        })
+    });
+
+    result
 }
 
 /// ONE PATH: Delegates to `nn::functional::gelu` (UCBD §4).

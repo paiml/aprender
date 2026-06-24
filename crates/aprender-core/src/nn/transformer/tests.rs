@@ -438,6 +438,8 @@ fn test_alibi_creation() {
 mod tests_alibi_contract;
 #[path = "tests_alibi_mha.rs"]
 mod tests_alibi_mha;
+#[path = "tests_attention_backward_gradflow.rs"]
+mod tests_attention_backward_gradflow;
 #[path = "tests_attention_contract.rs"]
 mod tests_attention_contract;
 #[path = "tests_attention_scaling_contract.rs"]
