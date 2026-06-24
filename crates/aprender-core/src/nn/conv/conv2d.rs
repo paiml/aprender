@@ -444,7 +444,20 @@ impl Module for MaxPool1d {
             }
         }
 
-        Tensor::new(&output, &[batch_size, channels, out_length])
+        let mut result = Tensor::new(&output, &[batch_size, channels, out_length]);
+
+        // PMAT-913 / OBLIG-MAXPOOL1D-BACKWARD-GRAD-FLOW: route grad to argmax.
+        super::record_single_input_backward(
+            input,
+            &mut result,
+            std::sync::Arc::new(crate::autograd::grad_fn::MaxPool1dBackward {
+                input: input.clone(),
+                kernel_size: self.kernel_size,
+                stride: self.stride,
+            }),
+        );
+
+        result
     }
 }
 

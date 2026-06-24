@@ -1,0 +1,131 @@
+contract: pool-flatten-embedding-backward-gradflow
+metadata:
+  kind: training-loop
+  version: "1.0.0"
+  description: >
+    The shape/pooling/lookup layers (Flatten, MaxPool1d, MaxPool2d, AvgPool2d,
+    GlobalAvgPool2d) MUST flow gradient to their INPUT, and the token Embedding
+    MUST flow gradient to its weight TABLE. Guards the PMAT-913 root-cause fix:
+    these forwards built their output via Tensor::new, which severs the autograd
+    graph — after loss.backward(), get_grad(input.id()) / get_grad(weight.id())
+    were None, so any network with a pooling/flatten layer in the middle could
+    not propagate gradient to the upstream conv/linear weights, and the token
+    embeddings were NON-TRAINABLE. The forwards now record FlattenBackward /
+    MaxPool1dBackward / MaxPool2dBackward / AvgPool2dBackward /
+    GlobalAvgPool2dBackward / EmbeddingBackward on the tape. Embedding backward is
+    a SCATTER-ADD (dW[idx[i]] += grad_out[i]) so repeated token ids accumulate.
+  references:
+  - "crates/aprender-core/src/nn/conv/mod.rs"
+  - "crates/aprender-core/src/nn/conv/conv2d.rs"
+  - "crates/aprender-core/src/nn/conv/maxpool2d.rs"
+  - "crates/aprender-core/src/autograd/grad_fn.rs"
+  - "crates/aprender-core/src/models/qwen2/mod.rs"
+  - "crates/aprender-core/src/nn/conv/tests_pool_flatten_backward_gradflow.rs"
+  - "crates/aprender-core/src/models/qwen2/tests_embedding_backward_gradflow.rs"
+version: 1
+status: enforced
+date: 2026-06-24
+
+proof_obligations:
+  - type: invariant
+    property: >
+      OBLIG-FLATTEN-BACKWARD-GRAD-FLOW: after loss.backward() on a graph
+      containing Flatten::forward, get_grad is Some for the input x, has the input
+      shape, and equals grad_output reshaped to the input shape (Flatten is a pure
+      view: dL/dx = reshape(grad_output, input_shape)). Matches a central
+      finite-difference gradcheck within tolerance.
+  - type: invariant
+    property: >
+      OBLIG-MAXPOOL1D-BACKWARD-GRAD-FLOW: after loss.backward() on a graph
+      containing MaxPool1d::forward, get_grad is Some for the input x. The
+      gradient is routed to the argmax position of each pooling window (subgradient
+      of max; ties to the first max). dL/dx[argmax(window)] += grad_out[window].
+      Matches a central finite-difference gradcheck within tolerance (distinct
+      per-window maxima so argmax is unambiguous).
+  - type: invariant
+    property: >
+      OBLIG-MAXPOOL2D-BACKWARD-GRAD-FLOW: after loss.backward() on a graph
+      containing MaxPool2d::forward, get_grad is Some for the input x. The gradient
+      is routed to the argmax position of each 2D window per channel.
+      dL/dx[argmax(window)] += grad_out[window]. Matches a central
+      finite-difference gradcheck within tolerance.
+  - type: invariant
+    property: >
+      OBLIG-AVGPOOL2D-BACKWARD-GRAD-FLOW: after loss.backward() on a graph
+      containing AvgPool2d::forward, get_grad is Some for the input x. The gradient
+      is distributed evenly: each input element in a window receives
+      grad_out[window] / (kernel_h*kernel_w). Matches a central finite-difference
+      gradcheck within tolerance.
+  - type: invariant
+    property: >
+      OBLIG-GLOBALAVGPOOL2D-BACKWARD-GRAD-FLOW: after loss.backward() on a graph
+      containing GlobalAvgPool2d::forward, get_grad is Some for the input x. Each
+      input element in plane (n,c) receives grad_out[n,c] / (H*W). Matches a
+      central finite-difference gradcheck within tolerance.
+  - type: invariant
+    property: >
+      OBLIG-EMBEDDING-BACKWARD-GRAD-FLOW: after loss.backward() on a graph
+      containing Embedding::forward, get_grad is Some for the weight TABLE, shaped
+      [vocab, hidden]. The backward SCATTER-ADDs each upstream row into the
+      corresponding table row by index: dW[idx[i]] += grad_out[i]. Repeated token
+      ids ACCUMULATE (ADD, not overwrite). Rows for never-referenced ids stay zero.
+      Matches a central finite-difference gradcheck of the table within tolerance.
+  - type: equivalence
+    property: >
+      GRADCHECK-NON-TAUTOLOGICAL: every falsifier is a finite-difference gradcheck
+      (plus a severed-graph is_some guard and an all-zero guard), not an is_some
+      assertion on a hardcoded value. Mutation-verified: AvgPool2d grad/area ->
+      grad*area, MaxPool2d argmax -> fixed window corner, Flatten backward -> zeros,
+      and Embedding scatter ADD -> overwrite each make the corresponding gradcheck
+      go RED. The Embedding additive test uses a REPEATED index so an overwrite
+      (last-write-wins) is observably wrong.
+
+falsification_tests:
+  - id: FALSIFY-FLATTEN-BACKWARD-GRAD-FLOW-001
+    name: flatten_backward_flows_grad_to_input
+    prediction: "Flatten input grad is Some and matches the finite-difference gradcheck within tol"
+    test_harness: "cargo test -p aprender-core --lib flatten_backward_flows_grad_to_input"
+    expected_output: "test result: ok"
+    if_fails: "Flatten::forward severed the autograd graph (Tensor::new). Record FlattenBackward (pure reshape) on the tape with input [x]."
+  - id: FALSIFY-MAXPOOL1D-BACKWARD-GRAD-FLOW-001
+    name: maxpool1d_backward_routes_grad_to_argmax
+    prediction: "MaxPool1d input grad is Some, routed to argmax, and matches the finite-difference gradcheck within tol"
+    test_harness: "cargo test -p aprender-core --lib maxpool1d_backward_routes_grad_to_argmax"
+    expected_output: "test result: ok"
+    if_fails: "MaxPool1d::forward severed the autograd graph. Record MaxPool1dBackward routing grad to the argmax position per window."
+  - id: FALSIFY-MAXPOOL2D-BACKWARD-GRAD-FLOW-001
+    name: maxpool2d_backward_routes_grad_to_argmax
+    prediction: "MaxPool2d input grad is Some, routed to argmax, and matches the finite-difference gradcheck within tol"
+    test_harness: "cargo test -p aprender-core --lib maxpool2d_backward_routes_grad_to_argmax"
+    expected_output: "test result: ok"
+    if_fails: "MaxPool2d::forward severed the autograd graph. Record MaxPool2dBackward routing grad to the argmax position per 2D window."
+  - id: FALSIFY-MAXPOOL2D-BACKWARD-GRAD-FLOW-002
+    name: maxpool2d_two_channel_independent_argmax
+    prediction: "MaxPool2d routes grad to the correct per-channel argmax for a 2-channel input"
+    test_harness: "cargo test -p aprender-core --lib maxpool2d_two_channel_independent_argmax"
+    expected_output: "test result: ok"
+    if_fails: "MaxPool2d backward must index per (n,c) plane; a channel-blind index lands grad in the wrong channel."
+  - id: FALSIFY-AVGPOOL2D-BACKWARD-GRAD-FLOW-001
+    name: avgpool2d_backward_distributes_grad
+    prediction: "AvgPool2d input grad is Some, distributes grad/area, and matches the finite-difference gradcheck within tol"
+    test_harness: "cargo test -p aprender-core --lib avgpool2d_backward_distributes_grad"
+    expected_output: "test result: ok"
+    if_fails: "AvgPool2d::forward severed the autograd graph. Record AvgPool2dBackward distributing grad_out/(kh*kw) to each window element."
+  - id: FALSIFY-GLOBALAVGPOOL2D-BACKWARD-GRAD-FLOW-001
+    name: globalavgpool2d_backward_distributes_grad
+    prediction: "GlobalAvgPool2d input grad is Some, distributes grad/(H*W), and matches the finite-difference gradcheck within tol"
+    test_harness: "cargo test -p aprender-core --lib globalavgpool2d_backward_distributes_grad"
+    expected_output: "test result: ok"
+    if_fails: "GlobalAvgPool2d::forward severed the autograd graph. Record GlobalAvgPool2dBackward distributing grad_out[n,c]/(H*W)."
+  - id: FALSIFY-EMBEDDING-BACKWARD-GRAD-FLOW-001
+    name: embedding_backward_scatter_add_gradcheck
+    prediction: "Embedding weight-table grad is Some and matches the finite-difference gradcheck within tol"
+    test_harness: "cargo test -p aprender-core --lib embedding_backward_scatter_add_gradcheck"
+    expected_output: "test result: ok"
+    if_fails: "Embedding::forward severed the autograd graph (Tensor::new). Record EmbeddingBackward scatter-adding grad_out rows into the weight table by token index."
+  - id: FALSIFY-EMBEDDING-BACKWARD-GRAD-FLOW-002
+    name: embedding_backward_is_additive_for_repeated_index
+    prediction: "Embedding backward ACCUMULATES (ADD) gradient across repeated token ids"
+    test_harness: "cargo test -p aprender-core --lib embedding_backward_is_additive_for_repeated_index"
+    expected_output: "test result: ok"
+    if_fails: "Embedding scatter must be ADD (dW[idx] += g), not overwrite; an overwrite loses gradient from all but the last occurrence of a repeated token."
