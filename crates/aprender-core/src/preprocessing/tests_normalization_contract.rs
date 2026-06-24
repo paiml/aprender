@@ -126,6 +126,65 @@ fn falsify_pn_004_minmax_inverse_roundtrip() {
     }
 }
 
+/// FALSIFY-PN-007: StandardScaler accumulates mean/variance in f64 (OBLIG-SCALER-F64-ACCUM).
+///
+/// On large-magnitude, ill-conditioned data (values ≈ 1e6 with tiny variance) an f32
+/// accumulator suffers catastrophic cancellation: the variance collapses to noise and the
+/// reported std is off by ~40×. numpy/sklearn accumulate the reduction in float64 even for
+/// float32 input. This test pins the f64 reference (mean ≈ 999999.99, std ≈ 0.4941, computed
+/// via `np.var(x.astype(np.float64))`) and asserts apr matches within a tight relative
+/// tolerance — which only holds if the accumulator is f64.
+#[test]
+fn falsify_pn_007_standard_scaler_f64_accumulation() {
+    // n=4096 values centered at 1e6 with a deterministic, small-amplitude wobble.
+    let n = 4096usize;
+    let base = 1.0e6_f64;
+    let data: Vec<f32> = (0..n)
+        .map(|i| {
+            let t = i as f64;
+            // wobble amplitude ~0.5 around base; std of this exact sequence is well-defined.
+            (base + 0.5 * (t * 0.7).sin() + 0.25 * (t * 0.13).cos()) as f32
+        })
+        .collect();
+
+    // f64 reference computed over the SAME f32 values (two-pass, like numpy float64).
+    let xs: Vec<f64> = data.iter().map(|&v| f64::from(v)).collect();
+    let mean_ref = xs.iter().sum::<f64>() / n as f64;
+    let var_ref = xs
+        .iter()
+        .map(|v| (v - mean_ref) * (v - mean_ref))
+        .sum::<f64>()
+        / n as f64;
+    let std_ref = var_ref.sqrt();
+
+    // Sanity: the input must be genuinely ill-conditioned (tiny variance vs huge magnitude),
+    // otherwise the test is vacuous.
+    assert!(
+        std_ref < 1.0 && mean_ref > 1.0e5,
+        "test input not ill-conditioned: mean={mean_ref}, std={std_ref}"
+    );
+
+    let x = Matrix::from_vec(n, 1, data).expect("valid");
+    let mut scaler = StandardScaler::new();
+    scaler.fit(&x).expect("fit");
+
+    let mean_apr = f64::from(scaler.mean()[0]);
+    let std_apr = f64::from(scaler.std()[0]);
+
+    // Relative tolerance: f64-accumulated apr matches numpy-style f64 ref to within 1e-3.
+    // An f32 accumulator would report std ≈ 20+ (rel error > 4000%), failing this hard.
+    let mean_rel = (mean_apr - mean_ref).abs() / mean_ref.abs();
+    let std_rel = (std_apr - std_ref).abs() / std_ref.abs();
+    assert!(
+        mean_rel < 1e-6,
+        "FALSIFIED PN-007: mean f64-accum drift: apr={mean_apr}, ref={mean_ref}, rel={mean_rel}"
+    );
+    assert!(
+        std_rel < 1e-3,
+        "FALSIFIED PN-007: std f64-accum collapse: apr={std_apr}, ref={std_ref}, rel={std_rel}"
+    );
+}
+
 mod pn_proptest_falsify {
     use super::*;
     use proptest::prelude::*;

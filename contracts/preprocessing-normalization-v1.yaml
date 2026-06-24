@@ -65,6 +65,14 @@ proof_obligations:
   property: StandardScaler inverse
   formal: inverse_transform(transform(X)) ≈ X
   applies_to: all
+- type: invariant
+  property: OBLIG-SCALER-F64-ACCUM mean and variance accumulate in f64
+  formal: 'StandardScaler.fit accumulates the per-feature mean and the sum-of-squared
+    deviations in float64 (numpy/sklearn semantics) so that on large-magnitude data
+    (|x| ~ 1e6 with sub-unit variance) the fitted mean matches the float64 reference within
+    relative tolerance 1e-6 and the fitted std within 1e-3; an f32 accumulator drifts the
+    mean and collapses the variance (std off by ~40x)'
+  applies_to: all
 falsification_tests:
 - id: FALSIFY-PP-001
   rule: StandardScaler zero mean
@@ -96,6 +104,12 @@ falsification_tests:
   prediction: inverse_transform(transform(X)) ≈ X
   test: proptest with random matrices
   if_fails: Inverse formula incorrect
+- id: FALSIFY-PP-007
+  rule: OBLIG-SCALER-F64-ACCUM mean and variance accumulate in f64
+  prediction: on ill-conditioned data (~1e6, sub-unit variance) fitted mean matches the
+    float64 reference within rel tol 1e-6 and fitted std within rel tol 1e-3
+  test: cargo test -p aprender-core --lib falsify_pn_007_standard_scaler_f64_accumulation
+  if_fails: f32 accumulator in mean or variance causes catastrophic cancellation
 enforcement:
   bounded:
     description: MinMax must produce values in [min, max]

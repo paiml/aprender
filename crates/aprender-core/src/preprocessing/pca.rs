@@ -290,34 +290,41 @@ impl Transformer for PCA {
             return Err("n_components cannot exceed number of features".into());
         }
 
-        // Compute mean
-        let mut mean = vec![0.0; n_features];
+        // Compute mean.
+        // OBLIG-PCA-F64-ACCUM: accumulate the per-feature sum in f64 (numpy/sklearn use a
+        // float64 accumulator even for float32 input) so the mean of large-magnitude data
+        // does not lose precision. The stored mean stays f32 (public API unchanged).
+        let mut mean = vec![0.0_f32; n_features];
         #[allow(clippy::needless_range_loop)]
         for j in 0..n_features {
-            let mut sum = 0.0;
+            let mut sum = 0.0_f64;
             for i in 0..n_samples {
-                sum += x.get(i, j);
+                sum += f64::from(x.get(i, j));
             }
-            mean[j] = sum / n_samples as f32;
+            mean[j] = (sum / n_samples as f64) as f32;
         }
 
-        // Center the data
-        let mut centered = vec![0.0; n_samples * n_features];
+        // Center the data in f64 against the f64-derived mean so the centered residuals
+        // (which can be tiny relative to the raw values) keep full precision before the
+        // covariance cross-products are formed.
+        let mut centered = vec![0.0_f64; n_samples * n_features];
         for i in 0..n_samples {
             for j in 0..n_features {
-                centered[i * n_features + j] = x.get(i, j) - mean[j];
+                centered[i * n_features + j] = f64::from(x.get(i, j)) - f64::from(mean[j]);
             }
         }
 
-        // Compute covariance matrix: Σ = (X^T X) / (n-1)
-        let mut cov = vec![0.0; n_features * n_features];
+        // Compute covariance matrix: Σ = (X^T X) / (n-1).
+        // OBLIG-PCA-F64-ACCUM: accumulate the cross-products in f64; without this the
+        // covariance of ill-conditioned data collapses to noise (or goes negative) in f32.
+        let mut cov = vec![0.0_f32; n_features * n_features];
         for i in 0..n_features {
             for j in 0..n_features {
-                let mut sum = 0.0;
+                let mut sum = 0.0_f64;
                 for k in 0..n_samples {
                     sum += centered[k * n_features + i] * centered[k * n_features + j];
                 }
-                cov[i * n_features + j] = sum / (n_samples - 1) as f32;
+                cov[i * n_features + j] = (sum / (n_samples - 1) as f64) as f32;
             }
         }
 

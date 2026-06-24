@@ -139,3 +139,45 @@ fn falsify_pca_004_deterministic() {
         }
     }
 }
+
+/// FALSIFY-PCA-005: PCA mean/covariance accumulate in f64 (OBLIG-PCA-F64-ACCUM).
+///
+/// PCA centers the data and forms a covariance matrix Σ = (XᵀX)/(n-1). When the raw
+/// features are large-magnitude with tiny variance (≈ 1e6 ± 0.5), an f32 mean loses the
+/// low bits and the f32 cross-product accumulation blows the covariance up to ~1e8 of pure
+/// rounding noise — so the explained variances (eigenvalues of Σ) are garbage. numpy
+/// computes the covariance in float64. This test pins the f64 reference total variance
+/// (trace Σ = Σλᵢ ≈ 0.1924, computed via `np.linalg.eigvalsh((C.T@C)/(n-1)).sum()`) and
+/// asserts apr's summed explained_variance matches within a tight relative tolerance — which
+/// only holds if both the mean and the covariance accumulate in f64.
+#[test]
+fn falsify_pca_005_f64_covariance_accumulation() {
+    let n = 4096usize;
+    let base = 1.0e6_f64;
+    // Two correlated features ≈ 1e6 with sub-unit variance.
+    let mut data = Vec::with_capacity(n * 2);
+    for i in 0..n {
+        let t = i as f64;
+        let f0 = base + 0.5 * (t * 0.7).sin();
+        let f1 = base + 0.3 * (t * 0.7).sin() + 0.2 * (t * 0.11).cos();
+        data.push(f0 as f32);
+        data.push(f1 as f32);
+    }
+
+    // Population sanity: features are genuinely ill-conditioned.
+    let x = Matrix::from_vec(n, 2, data).expect("valid");
+
+    let mut pca = PCA::new(2);
+    pca.fit(&x).expect("fit");
+    let ev = pca.explained_variance().expect("explained variance");
+
+    // Sum of eigenvalues of Σ == trace Σ == total variance. f64 reference: 0.19244017.
+    let total_var: f64 = ev.iter().map(|&v| f64::from(v)).sum();
+    let total_ref = 0.192_440_17_f64;
+    let rel = (total_var - total_ref).abs() / total_ref;
+    assert!(
+        rel < 5e-2,
+        "FALSIFIED PCA-005: total explained variance f64-accum collapse: \
+         apr={total_var}, ref={total_ref}, rel={rel} (f32 accum gives ~1e8)"
+    );
+}
