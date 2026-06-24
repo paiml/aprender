@@ -446,6 +446,8 @@ mod tests_attention_contract;
 mod tests_attention_scaling_contract;
 #[path = "tests_decoder_rope.rs"]
 mod tests_decoder_rope;
+#[path = "tests_e2e_training_smoke.rs"]
+mod tests_e2e_training_smoke;
 #[path = "tests_gqa_contract.rs"]
 mod tests_gqa_contract;
 #[path = "tests_position_contract.rs"]
