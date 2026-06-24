@@ -355,7 +355,14 @@ impl TransformerEncoderLayer {
         // Feed-forward block
         let src_norm = self.norm2.forward(&src);
         let ff_out = self.linear1.forward(&src_norm);
-        let ff_out = gelu(&ff_out);
+        // PMAT-921: use the autograd-aware Tensor::gelu (NOT nn::functional::gelu,
+        // which builds its output via Tensor::from_vec and SEVERS the graph). The
+        // functional path froze linear1 + norm2 in any end-to-end training run —
+        // the per-layer attention gradcheck never exercised the FFN composition,
+        // so the severed FFN GELU went unnoticed until the e2e training proof.
+        // Both paths use the identical tanh GELU approximation, so forward
+        // numerics are unchanged; only the backward edge is restored.
+        let ff_out = ff_out.gelu();
         let ff_out = self.dropout.forward(&ff_out);
         let ff_out = self.linear2.forward(&ff_out);
         let ff_out = self.dropout2.forward(&ff_out);

@@ -1,0 +1,65 @@
+contract: transformer-end-to-end-trainable
+metadata:
+  kind: training-loop
+  version: "1.0.0"
+  description: >
+    END-TO-END capability proof for the autograd severed-graph sweep
+    (PMAT-907/911/913/914): a tiny transformer assembled from apr's own nn
+    modules (one-hot embedding -> TransformerEncoderLayer {LayerNorm + MHA +
+    LayerNorm + FFN} -> lm_head) MUST train a fixed deterministic memorize task
+    to a DECREASING loss AND every trainable parameter group MUST update. The
+    sweep's per-layer finite-difference gradchecks (attention-backward-gradflow,
+    norm-backward-gradflow, pool-flatten-embedding-backward-gradflow) each verify
+    ONE layer in isolation; a composition can still freeze a parameter on the
+    INTEGRATION path that no per-layer gradcheck exercises. PMAT-921 surfaced
+    exactly such a bug: TransformerEncoderLayer's FFN called
+    nn::functional::gelu, which builds its output via Tensor::from_vec and SEVERS
+    the autograd graph, freezing ffn.linear1 (weight+bias) and norm2 (gamma+beta)
+    in every real training run while the isolated attention gradcheck stayed
+    green. The fix routes the FFN through the autograd-aware Tensor::gelu (the
+    identical tanh GELU approximation, so forward numerics are unchanged; only
+    the backward edge is restored). This contract guards the composed graph, not
+    a single layer.
+  references:
+  - "crates/aprender-core/src/nn/transformer/mod.rs"
+  - "crates/aprender-core/src/autograd/ops/activation.rs"
+  - "crates/aprender-core/src/nn/transformer/tests_e2e_training_smoke.rs"
+version: 1
+status: enforced
+date: 2026-06-24
+
+proof_obligations:
+  - type: invariant
+    property: >
+      OBLIG-TRANSFORMER-END-TO-END-TRAINABLE: after N=200 Adam steps on a fixed
+      deterministic (input -> next-token) memorize task, a tiny transformer built
+      from apr's nn modules satisfies BOTH guards. Guard (a): the final
+      cross-entropy loss collapses far below the initial near-uniform loss
+      (final < 0.2 * initial AND final < 0.5; observed init ~3.57 ~= ln(vocab),
+      final ~1e-5). Guard (b): for EVERY trainable param group — embedding
+      weight, attention q/k/v/out projection weight+bias, both LayerNorm
+      gamma+beta, FFN linear1+linear2 weight+bias, and lm_head weight+bias — the
+      parameter genuinely CHANGED from init (||p_final - p_init|| > 1e-6) AND
+      received a finite non-zero gradient on at least one step. A severed edge
+      anywhere on the composed live path freezes the upstream parameter (||Δp||=0,
+      no gradient), which guard (b) catches independently of the loss.
+  - type: equivalence
+    property: >
+      E2E-FALSIFIER-NON-TAUTOLOGICAL: the test is a real end-to-end guard, not an
+      is_some assertion. Everything is LCG-seeded so the loss trajectory and
+      per-param deltas are deterministic and CI-stable. RED-confirmed two ways:
+      (1) the original nn::functional::gelu FFN path (Tensor::from_vec) makes
+      ffn.linear1.weight, ffn.linear1.bias, norm2.gamma, norm2.beta report NO
+      gradient (guard b RED); (2) detaching the attention output edge freezes all
+      attention q/k/v/out weight+bias and norm1 gamma+beta (guard b RED) even
+      though the loss still drops via the FFN+lm_head — proving guard (b) is an
+      independent severed-graph detector that per-layer gradchecks miss in
+      composition. The correct autograd-aware Tensor::gelu path is GREEN.
+
+falsification_tests:
+  - id: FALSIFY-TRANSFORMER-END-TO-END-TRAINABLE-001
+    name: tiny_transformer_trains_to_decreasing_loss_all_params_update
+    prediction: "A tiny transformer trains the fixed memorize task to final loss < 0.2*initial AND every trainable param group changes from init and receives a finite non-zero gradient"
+    test_harness: "cargo test -p aprender-core --lib tiny_transformer_trains_to_decreasing_loss_all_params_update"
+    expected_output: "test result: ok"
+    if_fails: "A layer's gradient is severed in composition (e.g. an FFN GELU or residual-add built via Tensor::from_vec). Route the offending op through its autograd-aware Tensor method so the backward edge is recorded and the upstream parameter is trainable end-to-end."
