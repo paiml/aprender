@@ -60,6 +60,13 @@ proof_obligations:
   property: Perfect reconstruction at full rank
   formal: k = d ⟹ ||X - reconstruct(PCA(X, d))|| < ε
   applies_to: all
+- type: invariant
+  property: OBLIG-PCA-F64-ACCUM mean and covariance accumulate in f64
+  formal: 'PCA.fit accumulates the per-feature mean and the covariance cross-products in
+    float64 (numpy/sklearn semantics) so that on large-magnitude data (|x| ~ 1e6 with
+    sub-unit variance) the trace of the covariance matches the float64 reference within
+    relative tolerance 5e-2; an f32 accumulator inflates it ~10000x'
+  applies_to: all
 falsification_tests:
 - id: FALSIFY-PCA-001
   rule: Dimensionality reduction
@@ -81,6 +88,12 @@ falsification_tests:
   prediction: transform(X) = transform(X) for same X
   test: 'proptest: transform twice, compare'
   if_fails: Non-deterministic random state
+- id: FALSIFY-PCA-005
+  rule: OBLIG-PCA-F64-ACCUM mean and covariance accumulate in f64
+  prediction: on ill-conditioned data (~1e6, sub-unit variance) summed explained_variance
+    (= trace of covariance) matches the float64 reference 0.19244 within rel tol 5e-2
+  test: cargo test -p aprender-core --lib falsify_pca_005_f64_covariance_accumulation
+  if_fails: f32 accumulator in mean or covariance causes catastrophic cancellation
 enforcement:
   bounded:
     description: Explained variance ratios must be in [0, 1]

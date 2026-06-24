@@ -296,26 +296,32 @@ impl Transformer for StandardScaler {
             return Err("Cannot fit with zero samples".into());
         }
 
-        // Compute mean for each feature
-        let mut mean = vec![0.0; n_features];
+        // Compute mean for each feature.
+        // OBLIG-SCALER-F64-ACCUM: accumulate the reduction in f64 (like numpy/sklearn,
+        // which use float64 accumulators even for float32 input) to avoid catastrophic
+        // cancellation on large-magnitude / ill-conditioned data. The public API stays f32.
+        let mut mean = vec![0.0_f32; n_features];
         for (j, mean_j) in mean.iter_mut().enumerate() {
-            let mut sum = 0.0;
+            let mut sum = 0.0_f64;
             for i in 0..n_samples {
-                sum += x.get(i, j);
+                sum += f64::from(x.get(i, j));
             }
-            *mean_j = sum / n_samples as f32;
+            *mean_j = (sum / n_samples as f64) as f32;
         }
 
-        // Compute standard deviation for each feature
-        let mut std = vec![0.0; n_features];
+        // Compute standard deviation for each feature.
+        // OBLIG-SCALER-F64-ACCUM: the sum-of-squared-deviations is accumulated in f64
+        // against the f64-derived mean so the variance does not collapse to noise in f32.
+        let mut std = vec![0.0_f32; n_features];
         for (j, std_j) in std.iter_mut().enumerate() {
-            let mut sum_sq = 0.0;
+            let mean_j = f64::from(mean[j]);
+            let mut sum_sq = 0.0_f64;
             for i in 0..n_samples {
-                let diff = x.get(i, j) - mean[j];
+                let diff = f64::from(x.get(i, j)) - mean_j;
                 sum_sq += diff * diff;
             }
             // Use population std (divide by n, not n-1) like sklearn
-            *std_j = (sum_sq / n_samples as f32).sqrt();
+            *std_j = (sum_sq / n_samples as f64).sqrt() as f32;
         }
 
         self.mean = Some(mean);
