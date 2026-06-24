@@ -1,0 +1,151 @@
+metadata:
+  id: C-GPU-CPU-PARITY-GATE-V2
+  version: 2.0.0
+  created: '2026-04-17'
+  author: PAIML Engineering
+  kind: pattern
+  status: DRAFT_RED
+  pmat: [PMAT-919, PMAT-PARITY-GATE-V2]
+  description: >
+    Fixes the F2-VALIDATION per-inference GPU parity gate (and the `apr parity`
+    diagnostic) to use cosine similarity on the FULL logit vectors instead of
+    top-1 argmax equality / bit-exactness. Argmax-exact is brittle when the CPU
+    top-2 logits are within FP/quant noise; the winner is decided by epsilon and
+    differs between CPU and GPU even though the distributions are nearly identical
+    and generation quality is unaffected. A correct Q4_K DP4A GPU path (Blackwell
+    sm_121: cosine 0.97-0.99 vs CPU, coherent, 6.3x faster) was FALSE-rejected and
+    forced a ~50x-slower CPU fallback, while the genuinely-broken fp32
+    Mwv/Vectorized/Wide Q4_K kernels (cosine ~0, garbage) must STAY rejected.
+  references:
+  - 'crates/aprender-serve/src/infer/inference_result.rs (the F2 gate
+    `validate_gpu_first_token`, now cosine-based)'
+  - 'crates/aprender-serve/src/gguf/cuda/mod_parity_gate.rs (the load-time gate,
+    already cosine-based — pattern emulated)'
+  - 'crates/apr-cli/src/commands/parity.rs (the `apr parity` diagnostic
+    thresholds, now quant-aware)'
+  - contracts/apr-gpu-parity-consistency-v1.yaml
+  - contracts/apr-cpu-vs-gpu-output-parity-v1.yaml
+
+five_whys:
+  why_1: >
+    `apr run --gpu` silently falls back to CPU on coherent GPU paths
+    ("[F2-VALIDATION] GPU token 4740 != CPU token 16 for BOS probe") even though
+    the GPU is computing the correct function.
+  why_2: >
+    `validate_gpu_first_token` generated ONE token on the GPU and decided parity
+    from where that token-id landed in CPU's own logit range (rel_gap) — it never
+    compared the GPU's actual computed function (its full logit vector) to CPU's.
+  why_3: >
+    On a context-less BOS probe the next-token distribution is near-flat, so a
+    CORRECT GPU path can pick a different-but-essentially-tied token whose id sits
+    deep in CPU's tail (rel_gap -> 1.0). The token-index heuristic cannot tell that
+    apart from genuine divergence.
+  why_4: >
+    We already have the correct pattern in the load-time `parity_gate`
+    (mod_parity_gate.rs: cosine_similarity on the full logit vectors, threshold
+    0.98 dense). It passes on these same models. The F2 gate re-gated the same
+    path with a stricter, structurally-different (argmax/rel_gap) criterion.
+  why_5: >
+    F2 was added as a fast sanity check and chose argmax because it avoided
+    downloading the GPU logits. The correct fast check is cosine on the logits the
+    GPU already computed in `forward_gpu_resident` (which returns the full vector).
+
+equations:
+  f2_cosine_gate:
+    formula: |
+      cos(θ) = (Σᵢ cpu_logitsᵢ · gpu_logitsᵢ) / (‖cpu_logits‖₂ · ‖gpu_logits‖₂)
+      validate_gpu_first_token(M) passes ⟺ cos(θ) ≥ τ_f2,   τ_f2 = 0.95
+      ∀ M where load-time parity_gate(M) passed with τ_load = 0.98:
+        τ_f2 ≤ τ_load  ⟹  F2 (subordinate) never rejects what load-time accepted.
+    domain: dense models with bos_token_id known (else validation is skipped)
+    codomain: bool
+    invariants:
+    - τ_f2 (0.95) < τ_load (0.98) so F2 never rejects a model the load-time gate
+      accepted.
+    - Cosine uses f64 accumulators (matches mod_parity_gate.rs cosine_similarity).
+    - Denominator guard `< 1e-12` ⟹ a degenerate/zero-norm GPU logit vector → 0.0
+      → rejected.
+    preconditions:
+    - '`forward_gpu_resident` and `forward_single_with_cache` both return a logit
+      vector of length = vocab_size.'
+
+  apr_parity_quant_aware:
+    formula: |
+      apr parity PASS  ⟺ cosine ≥ COSINE_SIM_MIN (0.95) ∧ max_abs_diff ≤ 4.0
+      apr parity FAIL  ⟺ cosine < 0.90 (catastrophic / different function)
+      a high-cosine argmax disagreement is a WARN, not a FAIL.
+    domain: '`apr parity <model>` SPC verdict on Q4_K GPU vs CPU logits'
+    codomain: Verdict
+    invariants:
+    - A correct Q4_K DP4A path (cosine 0.97-0.99) is NOT labelled "different
+      function"; bit-exactness (cosine ≥ 0.999, abs ≤ 1.0) is the wrong spec for a
+      quantized kernel.
+    - cosine < 0.90 (garbage) is STILL a hard FAIL.
+    preconditions: []
+
+  argmax_exact_is_false_negative:
+    formula: |
+      ∃ models M: cosine(cpu_logits, gpu_logits) = 1 − ε (ε < 1e-2)
+      AND argmax(cpu_logits) ≠ argmax(gpu_logits).
+    domain: Any model where CPU top-1 and top-2 are within FP/quant noise (common
+      for a context-less BOS probe).
+    codomain: bool
+    invariants:
+    - 'Existence proof: Qwen2.5-Coder-1.5B-Instruct Q4_K_M BOS probe on Blackwell
+      sm_121, cpu_argmax≠gpu_argmax, cosine 0.97-0.99, load-time parity_gate
+      PASSES, output coherent.'
+    preconditions: []
+
+proof_obligations:
+- id: PO-F2-EQUIVALENCE
+  type: equivalence
+  property: F2 cosine gate accepts any model the load-time gate accepts (τ_f2 ≤ τ_load).
+  applies_to: all
+- id: PO-F2-SAFETY
+  type: safety
+  property: >
+    F2 gate still rejects PMAT-216-class / broken-fp32-kernel regressions:
+    gpu_logits = garbage ⟹ cosine ≈ 0 ⟹ reject.
+  applies_to: all
+- id: PO-F2-BOUND
+  type: bound
+  property: Threshold hierarchy τ_f2 (0.95) < τ_load (0.98) ≤ 1.0.
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-F2-COSINE-ACCEPT
+  rule: F2 gate accepts a correct DP4A path (quant-noise logits, argmax flip) at cosine ≥ τ_f2.
+  prediction: >
+    A logit pair differing only by ~1% quant noise (with a flipped argmax) scores
+    cosine ≥ 0.95 and is accepted by the F2 gate.
+  test: cargo test -p aprender-serve --lib correct_dp4a_quant_noise_logits_are_accepted
+  if_fails: τ_f2 is set too high — lower F2_GATE_COSINE_MIN below the observed cosine.
+- id: FALSIFY-F2-COSINE-REJECT
+  rule: F2 gate still rejects broken fp32 garbage logits (cosine ≈ 0) — fail-closed.
+  prediction: >
+    A garbage GPU logit vector uncorrelated with CPU scores cosine < 0.95 and is
+    rejected by the F2 gate.
+  test: cargo test -p aprender-serve --lib broken_fp32_garbage_logits_are_rejected
+  if_fails: Gate is permissive — tighten F2_GATE_COSINE_MIN.
+- id: FALSIFY-F2-COSINE-HIERARCHY
+  rule: τ_f2 < load-time τ_load so F2 never rejects what the load-time gate accepts.
+  prediction: F2_GATE_COSINE_MIN (0.95) < PARITY_GATE_COSINE_MIN (0.98).
+  test: cargo test -p aprender-serve --lib f2_threshold_below_load_time_gate
+  if_fails: τ_f2 > τ_load — correct the threshold constants.
+
+qa_gate:
+  id: F-F2-COSINE-001
+  name: F2 Per-Inference GPU Parity Gate (Cosine)
+  description: >
+    Replaces top-1 argmax / rel_gap with cosine similarity on the full logit
+    vectors. τ_f2 = 0.95, strictly below the load-time τ_load = 0.98. The
+    load-time `parity_gate` remains the primary gate; F2 is a cheap subordinate
+    re-check on the actual `forward_gpu_resident` dispatch path.
+  checks:
+  - f2_accepts_correct_dp4a
+  - f2_rejects_garbage_gpu_logits
+  - threshold_hierarchy_maintained
+  pass_criteria: >
+    All 3 falsifications pass + apr run --gpu uses the GPU on known-coherent dense
+    Q4_K models (no false CPU fallback).
+  falsification: BOS/prompt-probe full-logit cosine similarity ≥ τ_f2

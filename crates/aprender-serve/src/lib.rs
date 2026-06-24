@@ -161,8 +161,6 @@ mod generated_contracts;
 #[macro_use]
 mod test_cuda_macros;
 // PMAT-779: process-global, cross-backend GPU-test concurrency cap (test-only).
-#[cfg(all(test, feature = "cuda"))]
-pub(crate) mod test_gpu_cap;
 #[cfg(feature = "server")]
 pub mod api;
 /// Aprender .apr format support (PRIMARY inference format)
@@ -421,6 +419,8 @@ pub mod stats;
 pub mod tensor;
 /// GH-311: Contract-driven tensor name resolution (tensor-names-v1.yaml codegen)
 pub mod tensor_names;
+#[cfg(all(test, feature = "cuda"))]
+pub(crate) mod test_gpu_cap;
 /// Model fixture testing infrastructure with PyTorch-style patterns.
 ///
 /// Provides standardized testing for model formats (GGUF, APR, SafeTensors)

@@ -79,16 +79,26 @@ mod spc_tests {
 
     #[test]
     fn test_verdict_fail_divergent() {
-        // cosine >= 0.9 but < COSINE_SIM_MIN (0.999)
-        let m = make_metrics(0.995, 0.0, 0.0, 0.0, 0.0, 99.0, 42, 42, 0, 0, 0, 32000);
+        // PMAT-919: cosine >= 0.9 (not catastrophic) but < COSINE_SIM_MIN (0.95).
+        let m = make_metrics(0.92, 0.0, 0.0, 0.0, 0.0, 99.0, 42, 42, 0, 0, 0, 32000);
         assert_eq!(m.verdict(), Verdict::FailDivergent);
         assert!(m.verdict().is_fail());
     }
 
     #[test]
+    fn test_verdict_correct_dp4a_quant_path_is_not_fail() {
+        // PMAT-919 headline fix: a correct Q4_K DP4A path scores cosine 0.97-0.99
+        // (NOT bit-exact) and often flips the argmax on a near-tie. With the old
+        // bit-exact COSINE_SIM_MIN=0.999 this was FailDivergent ("different
+        // function") → false CPU fallback. Quant-aware thresholds must NOT fail it.
+        let m = make_metrics(0.97, 0.0, 2.5, 0.0, 0.0, 99.0, 42, 43, 0, 0, 0, 32000);
+        assert!(!m.verdict().is_fail(), "correct DP4A path must not be a FAIL");
+    }
+
+    #[test]
     fn test_verdict_warn_out_of_spec() {
-        // cosine good, but max_abs_diff > TOLERANCE_ABS (1.0)
-        let m = make_metrics(0.9999, 0.0, 1.5, 0.0, 0.0, 99.0, 42, 42, 0, 0, 0, 32000);
+        // PMAT-919: cosine good, but max_abs_diff > TOLERANCE_ABS (4.0).
+        let m = make_metrics(0.9999, 0.0, 5.0, 0.0, 0.0, 99.0, 42, 42, 0, 0, 0, 32000);
         assert_eq!(m.verdict(), Verdict::WarnOutOfSpec);
         assert!(!m.verdict().is_pass());
         assert!(!m.verdict().is_fail());
@@ -111,10 +121,10 @@ mod spc_tests {
 
     #[test]
     fn test_cpk_normal() {
-        // rmse = 0.1, mean_abs_diff = 0.01
-        // cpk = (1.0 - 0.01) / (3.0 * 0.1) = 0.99 / 0.3 = 3.3
+        // PMAT-919: TOLERANCE_ABS relaxed 1.0 → 4.0. rmse = 0.1, mean_abs_diff = 0.01
+        // cpk = (4.0 - 0.01) / (3.0 * 0.1) = 3.99 / 0.3 = 13.3
         let m = make_metrics(0.9999, 0.0, 0.5, 0.01, 0.1, 3.0, 42, 42, 0, 0, 0, 32000);
-        assert!((m.cpk() - 3.3).abs() < 0.01);
+        assert!((m.cpk() - 13.3).abs() < 0.01);
     }
 
     // ── color_lower_is_better / color_higher_is_better ─────────────────────
