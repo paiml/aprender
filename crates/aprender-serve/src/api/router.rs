@@ -101,7 +101,12 @@ pub fn create_router_with_config(state: AppState, config: RouterConfig) -> Route
             .route("/v1/gpu/status", get(gpu_status_handler))
             .route("/v1/batch/completions", post(gpu_batch_completions_handler))
             // TUI monitoring API (PARITY-107)
-            .route("/v1/metrics", get(server_metrics_handler));
+            .route("/v1/metrics", get(server_metrics_handler))
+            // PMAT-923: Ollama-native HTTP API (/api/* prefix) — makes `apr serve`
+            // a drop-in Ollama HTTP replacement. Both delegate to the OpenAI chat
+            // generation path. Discharges OBLIG-OLLAMA-API-CHAT-GENERATE-ROUTED.
+            .route("/api/chat", post(ollama_chat_handler))
+            .route("/api/generate", post(ollama_generate_handler));
     }
 
     // realizr#191: Logprobs + perplexity endpoints (CUDA only, F-QUALITY-01)
