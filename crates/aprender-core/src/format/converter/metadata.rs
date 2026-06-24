@@ -32,6 +32,79 @@ fn missing_dim_err(field: &str) -> AprenderError {
     }
 }
 
+/// PMAT-920 (OBLIG-APR-GGUF-EXPORT-INFER-METADATA): fill missing GGUF-required
+/// dimensions on `apr_metadata` by inferring them from the APR tensor shapes.
+///
+/// Older / training-produced / `apr convert`-without-full-header `.apr` files
+/// leave `num_heads`, `hidden_size`, `vocab_size`, and/or `intermediate_size`
+/// unset. The tensor layout still carries these dimensions unambiguously
+/// (embedding `[vocab, hidden]`; q/k/v projections imply head counts via
+/// `head_dim`; gate/up project to `intermediate_size`). Reuse the existing
+/// shape-inference engine (`infer_model_config_from_tensors`) — which only
+/// reads shapes — to derive them so `apr export --format gguf` succeeds on
+/// metadata-light files instead of hard-failing with C-07.
+///
+/// Only fills fields that are currently `None`; explicit metadata always wins.
+/// LAYOUT-001: APR tensor shapes are row-major, which is exactly the layout
+/// `infer_model_config_from_tensors` expects.
+fn infer_missing_gguf_dims_from_shapes(
+    reader: &crate::format::v2::AprV2Reader,
+    apr_metadata: &mut crate::format::v2::AprV2Metadata,
+) {
+    let needs_inference = apr_metadata.num_heads.is_none()
+        || apr_metadata.hidden_size.is_none()
+        || apr_metadata.vocab_size.is_none()
+        || apr_metadata.intermediate_size.is_none()
+        || apr_metadata.num_kv_heads.is_none();
+    if !needs_inference {
+        return;
+    }
+
+    // Build a shape-only tensor map (empty data — the inference engine reads
+    // shapes only) so we can reuse the SafeTensors shape-inference path.
+    let mut shape_map: BTreeMap<String, (Vec<f32>, Vec<usize>)> = BTreeMap::new();
+    for name in reader.tensor_names() {
+        if let Some(entry) = reader.get_tensor(name) {
+            shape_map.insert(name.to_string(), (Vec::new(), entry.shape.clone()));
+        }
+    }
+
+    let Some(inferred) = super::import::infer_model_config_from_tensors(&shape_map) else {
+        return;
+    };
+
+    if apr_metadata.hidden_size.is_none() {
+        if let Some(v) = inferred.hidden_size {
+            eprintln!("[PMAT-920] hidden_size missing from APR metadata — inferred {v} from tensor shapes");
+            apr_metadata.hidden_size = Some(v);
+        }
+    }
+    if apr_metadata.num_heads.is_none() {
+        if let Some(v) = inferred.num_heads {
+            eprintln!("[PMAT-920] num_heads missing from APR metadata — inferred {v} from attention tensor shapes");
+            apr_metadata.num_heads = Some(v);
+        }
+    }
+    if apr_metadata.num_kv_heads.is_none() {
+        if let Some(v) = inferred.num_kv_heads {
+            eprintln!("[PMAT-920] num_kv_heads missing from APR metadata — inferred {v} from attention tensor shapes");
+            apr_metadata.num_kv_heads = Some(v);
+        }
+    }
+    if apr_metadata.vocab_size.is_none() {
+        if let Some(v) = inferred.vocab_size {
+            eprintln!("[PMAT-920] vocab_size missing from APR metadata — inferred {v} from embedding tensor shape");
+            apr_metadata.vocab_size = Some(v);
+        }
+    }
+    if apr_metadata.intermediate_size.is_none() {
+        if let Some(v) = inferred.intermediate_size {
+            eprintln!("[PMAT-920] intermediate_size missing from APR metadata — inferred {v} from FFN tensor shapes");
+            apr_metadata.intermediate_size = Some(v);
+        }
+    }
+}
+
 /// Build GGUF architecture metadata from APR model metadata.
 ///
 /// Returns `Err(AprenderError::FormatError)` instead of panicking when required
@@ -416,6 +489,17 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
             apr_metadata.num_layers = Some(inferred);
         }
     }
+
+    // PMAT-920 (OBLIG-APR-GGUF-EXPORT-INFER-METADATA): when the APR metadata
+    // block is "light" (no explicit num_heads / hidden_size / vocab_size /
+    // intermediate_size — e.g. a .apr produced by training or `apr convert`
+    // without a fully-populated header), the tensor shapes still carry these
+    // GGUF-required dimensions unambiguously. Infer them from the shapes
+    // before the C-07 missing-dimension error fires, so apr→gguf works on
+    // arbitrary metadata-light .apr files (llama.cpp / ollama interop) instead
+    // of hard-failing. Shapes are APR-native row-major (LAYOUT-001), exactly
+    // what `infer_model_config_from_tensors` expects.
+    infer_missing_gguf_dims_from_shapes(&reader, &mut apr_metadata);
 
     let arch = resolve_architecture(&apr_metadata);
     let num_layers = apr_metadata.num_layers.ok_or_else(|| missing_dim_err("num_layers"))?;
