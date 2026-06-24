@@ -44,7 +44,9 @@ impl GpuDevicePool {
         // PMAT-778: reuse the process-global instance so the broken freedreno
         // ICD (GB10/aarch64) is enumerated exactly once, never concurrently.
         let instance = super::device::shared_instance();
-        let adapters = instance.enumerate_adapters(wgpu::Backends::all());
+        // PMAT-925: exclude GLES so the broken GLES/EGL adapter (SIGABRT-in-Drop
+        // on Linux/AMD-RADV) is never instantiated (see `device::gpu_backends`).
+        let adapters = instance.enumerate_adapters(super::device::gpu_backends());
 
         if adapters.is_empty() {
             return Err("No GPU adapters found".to_string());

@@ -20,8 +20,9 @@ pub(crate) fn query_wgpu_device_info(device_index: u32) -> Result<GpuDeviceInfo,
         // PMAT-778: reuse the process-global instance (single freedreno enumeration).
         let instance = crate::backends::gpu::shared_instance();
 
-        // Get all adapters (wgpu 27+ returns Vec directly)
-        let adapters = instance.enumerate_adapters(wgpu::Backends::all());
+        // Get all adapters (wgpu 27+ returns Vec directly).
+        // PMAT-925: exclude GLES (SIGABRT-in-Drop on Linux/AMD-RADV).
+        let adapters = instance.enumerate_adapters(crate::backends::gpu::gpu_backends());
 
         if adapters.is_empty() {
             return Err(MonitorError::NoDevice);
@@ -64,7 +65,8 @@ pub(crate) fn enumerate_wgpu_devices() -> Result<Vec<GpuDeviceInfo>, MonitorErro
     runtime::block_on(async {
         // PMAT-778: reuse the process-global instance (single freedreno enumeration).
         let instance = crate::backends::gpu::shared_instance();
-        let adapters = instance.enumerate_adapters(wgpu::Backends::all());
+        // PMAT-925: exclude GLES (SIGABRT-in-Drop on Linux/AMD-RADV).
+        let adapters = instance.enumerate_adapters(crate::backends::gpu::gpu_backends());
 
         if adapters.is_empty() {
             return Err(MonitorError::NoDevice);

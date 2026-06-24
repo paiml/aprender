@@ -1,0 +1,70 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-24'
+  author: PAIML Engineering
+  description: "wgpu adapter-enumeration backend mask MUST exclude GLES/EGL — on Linux hosts with both Vulkan and GLES (intel AMD-RADV cross-silicon baseline), wgpu::Backends::all() instantiates a GLES adapter whose EglContext::make_current panics inside Drop (wgpu-hal-27.0.4 gles/egl.rs:305) → SIGABRT 'panic in a destructor during cleanup' aborting the whole process; the enumeration mask must be platform-appropriate (PRIMARY = VULKAN|METAL|DX12|BROWSER_WEBGPU) and NEVER include GL"
+  references:
+    - "PMAT-925 (wgpu GLES adapter SIGABRT-in-Drop on Linux/AMD-RADV)"
+    - "intel AMD-Vulkan/RADV cross-silicon baseline finding"
+    - "wgpu-hal-27.0.4 src/gles/egl.rs:305 (EglContext::make_current unwrap in Drop)"
+    - "wgpu-types-27.0.1 src/lib.rs:275 (Backends::PRIMARY excludes GL; GL is SECONDARY only)"
+  registry: true
+  tags:
+    - gpu
+    - wgpu
+    - cross-silicon
+    - enumeration
+    - five-whys
+  kind: kernel
+
+five_whys:
+  symptom: "On the intel AMD-RADV (Linux, Vulkan+GLES) cross-silicon baseline host, aprender-compute GPU adapter enumeration (list_adapters / is_available / pool::all / monitor enumerate) aborts the whole process with SIGABRT: 'panic in a destructor during cleanup', backtrace at wgpu-hal-27.0.4 gles/egl.rs:305"
+  why_1: "enumerate_adapters / Instance creation used wgpu::Backends::all(), which includes wgpu::Backends::GL"
+  why_2: "Including GL makes wgpu instantiate a GLES/EGL adapter on Linux hosts that expose EGL alongside Vulkan"
+  why_3: "That GLES adapter's EglContext::make_current() calls .unwrap() and fails on this host's EGL config; the failure occurs while the adapter/context is being dropped"
+  why_4: "A panic inside a Drop implementation during cleanup is a double-panic → the Rust runtime aborts the entire process (SIGABRT), not just the enumeration call"
+  why_5: "No contract bound GPU adapter enumeration to a non-GLES backend mask — the compute kernels are correct, but enumeration was free to touch the broken GLES/EGL path"
+  root_cause: "Adapter enumeration used the all-backends mask (incl. GL); the platform-appropriate mask must exclude GLES so the broken EGL Drop path is never instantiated, while still finding the real Vulkan/Metal/DX12 GPU."
+
+equations:
+  enumeration_mask_excludes_gles:
+    formula: "gpu_backends() ∩ Backends::GL = ∅ ∧ real_backend(platform) ⊆ gpu_backends()"
+    domain: "the backend mask used for every wgpu Instance construction and enumerate_adapters call in aprender-compute"
+    codomain: "boolean — whether enumeration can ever touch the GLES/EGL adapter"
+    invariants:
+      - "gpu_backends() MUST NOT contain wgpu::Backends::GL (no GLES/EGL adapter is ever instantiated)"
+      - "On Linux, gpu_backends() MUST contain wgpu::Backends::VULKAN (the real GPU, e.g. AMD-RADV / NVIDIA, is still found)"
+      - "On macOS, gpu_backends() MUST contain wgpu::Backends::METAL (Apple Silicon GPU is still found)"
+      - "On Windows, gpu_backends() MUST contain wgpu::Backends::VULKAN or wgpu::Backends::DX12"
+      - "The shared wgpu::Instance is constructed with this mask so the GLES backend is never registered, and every enumerate_adapters call passes this mask"
+
+proof_obligations:
+  - type: invariant
+    property: "OBLIG-WGPU-ADAPTER-ENUMERATION-EXCLUDES-GLES: enumeration mask never includes GLES"
+    formal: "gpu_backends() ∩ Backends::GL = ∅"
+    applies_to: enumeration_mask_excludes_gles
+  - type: invariant
+    property: "Real platform GPU backend is still enumerable"
+    formal: "real_backend(platform) ⊆ gpu_backends()"
+    applies_to: enumeration_mask_excludes_gles
+
+falsification_tests:
+  - id: FALSIFY-WGPU-ENUM-GLES-001
+    rule: "gpu_backends() excludes GLES and includes the platform GPU backend"
+    prediction: "The backend mask used by aprender-compute GPU enumeration does NOT contain Backends::GL but DOES contain the platform's real backend; RED on Backends::all() (contains GL), GREEN on Backends::PRIMARY"
+    test: "cargo test -p aprender-compute --features gpu --lib test_gpu_backends_excludes_gles"
+    if_fails: "Enumeration mask still includes GLES (or dropped the real backend) — Linux/AMD-RADV will SIGABRT in the GLES Drop path again"
+
+kani_harnesses:
+  - id: KANI-WGPU-ENUM-GLES-001
+    obligation: "gpu_backends() ∩ Backends::GL = ∅"
+    bound: 4
+    strategy: bounded_int
+
+qa_gate:
+  id: F-WGPU-ENUM-GLES-001
+  name: "wgpu adapter enumeration excludes GLES"
+  description: "Every wgpu Instance construction and enumerate_adapters call in aprender-compute uses a platform-appropriate backend mask (Backends::PRIMARY) that excludes GLES/EGL, so the broken GLES Drop path is never instantiated on Linux/AMD-RADV while the real Vulkan/Metal/DX12 GPU is still found."
+  checks:
+    - "enumeration_mask_excludes_gles"
+  pass_criteria: "FALSIFY-WGPU-ENUM-GLES-001 PASSES; on intel (AMD-RADV) the enumeration no longer SIGABRTs and the Vulkan adapter is still found; on mini (Apple Metal) the Metal adapter is still enumerated and parity tests still pass."

@@ -66,6 +66,12 @@ pub use device::GpuDevice;
 #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
 pub(crate) use device::shared_instance;
 
+// PMAT-925: non-GLES backend mask, reused by every crate-internal
+// `enumerate_adapters` call so the broken GLES/EGL adapter (SIGABRT-in-Drop on
+// Linux/AMD-RADV) is never instantiated.
+#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+pub(crate) use device::gpu_backends;
+
 /// Re-export wgpu types for downstream crates that need to create persistent
 /// GPU buffers (KAIZEN-015: GPU-resident weights).
 #[cfg(any(feature = "gpu", feature = "gpu-wasm"))]
