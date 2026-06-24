@@ -86,13 +86,16 @@ mod spc_tests {
     }
 
     #[test]
-    fn test_verdict_correct_dp4a_quant_path_is_not_fail() {
-        // PMAT-919 headline fix: a correct Q4_K DP4A path scores cosine 0.97-0.99
-        // (NOT bit-exact) and often flips the argmax on a near-tie. With the old
-        // bit-exact COSINE_SIM_MIN=0.999 this was FailDivergent ("different
-        // function") → false CPU fallback. Quant-aware thresholds must NOT fail it.
+    fn test_verdict_correct_quant_path_is_not_fail() {
+        // PMAT-919 (reconciled): a CORRECT quantized GPU Q4_K path (the production
+        // fp32-Mwv default on Blackwell, or HwDp4a on discrete sm_89+) scores cosine
+        // ~0.97-1.0 (NOT bit-exact) and may flip the argmax on a near-tie. With the
+        // old bit-exact COSINE_SIM_MIN=0.999 this aggregate verdict was FailDivergent
+        // ("different function"). Quant-aware thresholds must NOT fail it. (The
+        // degraded-HwDp4a mid-context divergence is caught by the F2 per-position
+        // gate's argmax assertion, not by this coarse aggregate SPC verdict.)
         let m = make_metrics(0.97, 0.0, 2.5, 0.0, 0.0, 99.0, 42, 43, 0, 0, 0, 32000);
-        assert!(!m.verdict().is_fail(), "correct DP4A path must not be a FAIL");
+        assert!(!m.verdict().is_fail(), "correct quantized path must not be a FAIL");
     }
 
     #[test]
