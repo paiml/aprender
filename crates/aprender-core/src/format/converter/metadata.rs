@@ -32,36 +32,93 @@ fn missing_dim_err(field: &str) -> AprenderError {
     }
 }
 
-/// PMAT-920 (OBLIG-APR-GGUF-EXPORT-INFER-METADATA): fill missing GGUF-required
-/// dimensions on `apr_metadata` by inferring them from the APR tensor shapes.
+/// PMAT-920: actionable error for the one dimension that is NOT inferable from
+/// tensor shapes alone — `num_heads`.
 ///
-/// Older / training-produced / `apr convert`-without-full-header `.apr` files
-/// leave `num_heads`, `hidden_size`, `vocab_size`, and/or `intermediate_size`
-/// unset. The tensor layout still carries these dimensions unambiguously
-/// (embedding `[vocab, hidden]`; q/k/v projections imply head counts via
-/// `head_dim`; gate/up project to `intermediate_size`). Reuse the existing
-/// shape-inference engine (`infer_model_config_from_tensors`) — which only
-/// reads shapes — to derive them so `apr export --format gguf` succeeds on
-/// metadata-light files instead of hard-failing with C-07.
+/// `q_dim = num_heads * head_dim` cannot be factored without knowing `head_dim`
+/// (a 1536-wide projection is 12×128 OR 24×64 OR 16×96 — all valid). The old
+/// exporter GUESSED `head_dim` from a hardcoded `[64, 128, 96, 80]` list and
+/// took the first divisor, which silently MIS-STAMPED real models: Qwen2-1.5B
+/// (hidden=1536, head_dim=128, 12 heads) got `1536/64 = 24` heads written into
+/// a valid-looking GGUF, no error. A silently-wrong head count is worse than an
+/// honest failure, so when neither `num_heads` nor `head_dim` is present we
+/// hard-fail and tell the user exactly how to supply the missing dimension.
+fn missing_num_heads_err() -> AprenderError {
+    AprenderError::FormatError {
+        message:
+            "C-07: num_heads required for GGUF export and NOT inferable from tensor shapes \
+             alone — q_dim = num_heads × head_dim has no unique factorization without head_dim \
+             (a 1536-wide projection is 12×128 OR 24×64 OR 16×96, all valid). \
+             To supply the missing dimension, populate the APR metadata header so the export \
+             can derive it exactly: set an explicit `head_dim` (then num_heads = q_dim / head_dim, \
+             num_kv_heads = kv_dim / head_dim) or an explicit `num_heads`/`num_kv_heads` via \
+             `apr stamp`, or re-`apr convert` from the original GGUF/SafeTensors source whose \
+             config.json carries head_dim / num_attention_heads. \
+             Refusing to guess head_dim (the old [64,128,96,80] first-divisor guess silently \
+             mis-stamped models like Qwen2-1.5B as 24 heads instead of 12 — a wrong-but-valid \
+             GGUF is worse than an honest failure)."
+            .to_string(),
+    }
+}
+
+/// PMAT-920: smaller dimension of the first 2D projection tensor matching any
+/// of the given name patterns. For a row-major `[out, in]` projection this is
+/// the model/projection width (`q_dim`/`kv_dim`), which together with an
+/// EXPLICIT `head_dim` yields an exact, sound head count.
+fn projection_dim_from_shapes(
+    reader: &crate::format::v2::AprV2Reader,
+    name_patterns: &[&str],
+) -> Option<usize> {
+    for name in reader.tensor_names() {
+        if name_patterns.iter().any(|p| name.contains(p)) {
+            if let Some(entry) = reader.get_tensor(name) {
+                if entry.shape.len() == 2 {
+                    return Some(entry.shape[0].min(entry.shape[1]));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// PMAT-920 (OBLIG-APR-GGUF-EXPORT-INFER-METADATA): fill missing GGUF-required
+/// dimensions on `apr_metadata` for metadata-light `.apr` files.
+///
+/// CORRECTNESS CONTRACT — which dimensions are inferable from shapes:
+///   - `hidden_size`, `vocab_size` — UNAMBIGUOUS from the embedding shape
+///     `[vocab, hidden]`. Inferred from shapes.
+///   - `intermediate_size` — UNAMBIGUOUS from the FFN gate/up shapes. Inferred.
+///   - `num_heads` / `num_kv_heads` — **NOT** inferable from shapes alone:
+///     `q_dim = num_heads × head_dim` has no unique factorization without
+///     `head_dim`. We derive them ONLY from an EXPLICIT `head_dim`
+///     (`num_heads = q_dim / head_dim`, EXACT and sound). If `head_dim` is
+///     absent and `num_heads` is absent, we DO NOT guess — the export
+///     hard-fails with an actionable error (`missing_num_heads_err`).
+///
+/// This deliberately drops the old `[64,128,96,80]` first-divisor head_dim
+/// guess, which silently mis-stamped real models (e.g. Qwen2-1.5B as 24 heads
+/// instead of 12). An honest error (or a user `--head-dim`/`--num-heads`
+/// override) beats a silently-wrong head count.
 ///
 /// Only fills fields that are currently `None`; explicit metadata always wins.
-/// LAYOUT-001: APR tensor shapes are row-major, which is exactly the layout
-/// `infer_model_config_from_tensors` expects.
+/// LAYOUT-001: APR tensor shapes are row-major.
 fn infer_missing_gguf_dims_from_shapes(
     reader: &crate::format::v2::AprV2Reader,
     apr_metadata: &mut crate::format::v2::AprV2Metadata,
 ) {
-    let needs_inference = apr_metadata.num_heads.is_none()
-        || apr_metadata.hidden_size.is_none()
+    // Head counts: ONLY from an explicit head_dim. No shape guessing.
+    fill_head_counts_from_explicit_head_dim(reader, apr_metadata);
+
+    let needs_shape_inference = apr_metadata.hidden_size.is_none()
         || apr_metadata.vocab_size.is_none()
-        || apr_metadata.intermediate_size.is_none()
-        || apr_metadata.num_kv_heads.is_none();
-    if !needs_inference {
+        || apr_metadata.intermediate_size.is_none();
+    if !needs_shape_inference {
         return;
     }
 
     // Build a shape-only tensor map (empty data — the inference engine reads
-    // shapes only) so we can reuse the SafeTensors shape-inference path.
+    // shapes only) so we can reuse the SafeTensors shape-inference path for the
+    // dimensions that ARE unambiguous (hidden/vocab/intermediate).
     let mut shape_map: BTreeMap<String, (Vec<f32>, Vec<usize>)> = BTreeMap::new();
     for name in reader.tensor_names() {
         if let Some(entry) = reader.get_tensor(name) {
@@ -75,20 +132,8 @@ fn infer_missing_gguf_dims_from_shapes(
 
     if apr_metadata.hidden_size.is_none() {
         if let Some(v) = inferred.hidden_size {
-            eprintln!("[PMAT-920] hidden_size missing from APR metadata — inferred {v} from tensor shapes");
+            eprintln!("[PMAT-920] hidden_size missing from APR metadata — inferred {v} from embedding tensor shape");
             apr_metadata.hidden_size = Some(v);
-        }
-    }
-    if apr_metadata.num_heads.is_none() {
-        if let Some(v) = inferred.num_heads {
-            eprintln!("[PMAT-920] num_heads missing from APR metadata — inferred {v} from attention tensor shapes");
-            apr_metadata.num_heads = Some(v);
-        }
-    }
-    if apr_metadata.num_kv_heads.is_none() {
-        if let Some(v) = inferred.num_kv_heads {
-            eprintln!("[PMAT-920] num_kv_heads missing from APR metadata — inferred {v} from attention tensor shapes");
-            apr_metadata.num_kv_heads = Some(v);
         }
     }
     if apr_metadata.vocab_size.is_none() {
@@ -101,6 +146,61 @@ fn infer_missing_gguf_dims_from_shapes(
         if let Some(v) = inferred.intermediate_size {
             eprintln!("[PMAT-920] intermediate_size missing from APR metadata — inferred {v} from FFN tensor shapes");
             apr_metadata.intermediate_size = Some(v);
+        }
+    }
+    // NOTE: deliberately NOT copying inferred.num_heads / inferred.num_kv_heads
+    // here — those come from the [64,128,96,80] head_dim guess in
+    // infer_head_counts and are silently-wrong. Head counts are filled only by
+    // fill_head_counts_from_explicit_head_dim above.
+}
+
+/// PMAT-920: derive `num_heads` / `num_kv_heads` from an EXPLICIT `head_dim`.
+///
+/// SOUND because `head_dim` is given: `num_heads = q_dim / head_dim`,
+/// `num_kv_heads = kv_dim / head_dim`. Only fills fields that are `None`;
+/// explicit metadata always wins. Returns without touching head counts when
+/// `head_dim` is absent — the caller then hard-fails via `missing_num_heads_err`
+/// rather than guessing.
+fn fill_head_counts_from_explicit_head_dim(
+    reader: &crate::format::v2::AprV2Reader,
+    apr_metadata: &mut crate::format::v2::AprV2Metadata,
+) {
+    if apr_metadata.num_heads.is_some() && apr_metadata.num_kv_heads.is_some() {
+        return;
+    }
+    let Some(head_dim) = apr_metadata.head_dim else {
+        // No explicit head_dim → NOT inferable. Do not guess.
+        return;
+    };
+    if head_dim == 0 {
+        return;
+    }
+
+    let q_dim =
+        projection_dim_from_shapes(reader, &["q_proj.weight", "query.weight", "attn_q.weight"]);
+    let kv_dim =
+        projection_dim_from_shapes(reader, &["k_proj.weight", "key.weight", "attn_k.weight"]);
+
+    if apr_metadata.num_heads.is_none() {
+        if let Some(q) = q_dim {
+            if q.is_multiple_of(head_dim) {
+                let n = q / head_dim;
+                eprintln!(
+                    "[PMAT-920] num_heads missing — derived {n} = q_dim({q}) / explicit head_dim({head_dim})"
+                );
+                apr_metadata.num_heads = Some(n);
+            }
+        }
+    }
+    if apr_metadata.num_kv_heads.is_none() {
+        if let Some(kv) = kv_dim {
+            if kv.is_multiple_of(head_dim) {
+                let n = kv / head_dim;
+                eprintln!(
+                    "[PMAT-920] num_kv_heads missing — derived {n} = kv_dim({kv}) / explicit head_dim({head_dim})"
+                );
+                apr_metadata.num_kv_heads = Some(n);
+            }
         }
     }
 }
@@ -118,7 +218,7 @@ fn build_gguf_arch_metadata(
     let arch = resolve_architecture(apr_metadata);
     let hidden_size = apr_metadata.hidden_size.ok_or_else(|| missing_dim_err("hidden_size"))?;
     let num_layers = apr_metadata.num_layers.ok_or_else(|| missing_dim_err("num_layers"))?;
-    let num_heads = apr_metadata.num_heads.ok_or_else(|| missing_dim_err("num_heads"))?;
+    let num_heads = apr_metadata.num_heads.ok_or_else(missing_num_heads_err)?;
     let num_kv_heads = apr_metadata.num_kv_heads.unwrap_or(num_heads);
     let vocab_size = apr_metadata.vocab_size.ok_or_else(|| missing_dim_err("vocab_size"))?;
     let intermediate_size =
@@ -503,7 +603,7 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
 
     let arch = resolve_architecture(&apr_metadata);
     let num_layers = apr_metadata.num_layers.ok_or_else(|| missing_dim_err("num_layers"))?;
-    let num_heads = apr_metadata.num_heads.ok_or_else(|| missing_dim_err("num_heads"))?;
+    let num_heads = apr_metadata.num_heads.ok_or_else(missing_num_heads_err)?;
     let num_kv_heads = apr_metadata.num_kv_heads.unwrap_or(num_heads);
     let hidden_size = apr_metadata.hidden_size.ok_or_else(|| missing_dim_err("hidden_size"))?;
 
