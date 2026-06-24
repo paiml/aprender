@@ -64,6 +64,9 @@ mod transpose;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod roundtrip_fidelity_tests;
+
 // Re-export all public functions so the public API doesn't change
 pub use dequantize::{dequantize_q4_k_to_f32, dequantize_q5_k_to_f32, dequantize_q6_k_to_f32};
 pub use quantize::{
