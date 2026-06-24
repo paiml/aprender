@@ -623,6 +623,9 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
 
             let state_health = wgpu_state.clone();
             let state_chat = wgpu_state.clone();
+            // PMAT-923: Ollama endpoints reuse the SAME wgpu chat backend.
+            let state_ollama_chat = wgpu_state.clone();
+            let state_ollama_generate = wgpu_state.clone();
 
             let app = Router::new()
                 .route(
@@ -640,6 +643,32 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
                     post(move |body: Json<serde_json::Value>| {
                         let state = state_chat.clone();
                         async move { wgpu_chat_completion(state, body).await }
+                    }),
+                )
+                // PMAT-923: Ollama native chat endpoint (drop-in Ollama client).
+                .route(
+                    "/api/chat",
+                    post(move |Json(req): Json<super::ollama::OllamaChatRequest>| {
+                        let state = state_ollama_chat.clone();
+                        async move {
+                            let model = super::ollama::model_label(&req.model);
+                            let openai_body = super::ollama::ollama_chat_to_openai(&req);
+                            let inner = wgpu_chat_completion(state, Json(openai_body)).await;
+                            super::ollama::reshape_openai_to_ollama_chat(model, inner).await
+                        }
+                    }),
+                )
+                // PMAT-923: Ollama native single-prompt generate endpoint.
+                .route(
+                    "/api/generate",
+                    post(move |Json(req): Json<super::ollama::OllamaGenerateRequest>| {
+                        let state = state_ollama_generate.clone();
+                        async move {
+                            let model = super::ollama::model_label(&req.model);
+                            let openai_body = super::ollama::ollama_generate_to_openai(&req);
+                            let inner = wgpu_chat_completion(state, Json(openai_body)).await;
+                            super::ollama::reshape_openai_to_ollama_generate(model, inner).await
+                        }
                     }),
                 );
 
@@ -1177,8 +1206,14 @@ fn build_apr_cpu_router(state: AprServerState, auth_gate: super::auth::AuthGate)
     use std::sync::Mutex;
 
     let state_for_health = state.clone();
+    let model_name_for_tags = state.model_name.clone();
     let state_for_completions = Arc::new(Mutex::new(state.clone()));
     let state_for_chat = Arc::new(Mutex::new(state));
+    // PMAT-923: Ollama `/api/chat` + `/api/generate` reuse the SAME chat backend
+    // as `/v1/chat/completions` (handle_apr_cpu_chat_completion), then re-shape
+    // the OpenAI response into Ollama's wire schema.
+    let state_for_ollama_chat = state_for_chat.clone();
+    let state_for_ollama_generate = state_for_chat.clone();
 
     let router = Router::new()
         .route(
@@ -1212,10 +1247,54 @@ fn build_apr_cpu_router(state: AprServerState, auth_gate: super::auth::AuthGate)
                 },
             ),
         )
+        // PMAT-923: Ollama native chat endpoint — drop-in for an Ollama client.
+        .route(
+            "/api/chat",
+            post(move |Json(req): Json<super::ollama::OllamaChatRequest>| {
+                let state = state_for_ollama_chat.clone();
+                async move {
+                    let model = super::ollama::model_label(&req.model);
+                    let openai_body = super::ollama::ollama_chat_to_openai(&req);
+                    let inner = handle_apr_cpu_chat_completion(
+                        &state,
+                        &axum::http::HeaderMap::new(),
+                        &openai_body,
+                    )
+                    .await;
+                    super::ollama::reshape_openai_to_ollama_chat(model, inner).await
+                }
+            }),
+        )
+        // PMAT-923: Ollama native single-prompt generate endpoint.
+        .route(
+            "/api/generate",
+            post(move |Json(req): Json<super::ollama::OllamaGenerateRequest>| {
+                let state = state_for_ollama_generate.clone();
+                async move {
+                    let model = super::ollama::model_label(&req.model);
+                    let openai_body = super::ollama::ollama_generate_to_openai(&req);
+                    let inner = handle_apr_cpu_chat_completion(
+                        &state,
+                        &axum::http::HeaderMap::new(),
+                        &openai_body,
+                    )
+                    .await;
+                    super::ollama::reshape_openai_to_ollama_generate(model, inner).await
+                }
+            }),
+        )
+        // PMAT-923: Ollama model-list — clients enumerate models before chatting.
+        .route(
+            "/api/tags",
+            get(move || {
+                let model = model_name_for_tags.clone();
+                async move { Json(super::ollama::ollama_tags_body(&model)) }
+            }),
+        )
         .route(
             "/",
             get(|| async {
-                "APR v2 Inference Server - POST /v1/completions, /v1/chat/completions"
+                "APR v2 Inference Server - POST /v1/completions, /v1/chat/completions, /api/chat, /api/generate"
             }),
         )
         // GH-672: Return JSON error body for unmatched routes (not empty 404)
@@ -1224,11 +1303,35 @@ fn build_apr_cpu_router(state: AprServerState, auth_gate: super::auth::AuthGate)
                 StatusCode::NOT_FOUND,
                 Json(serde_json::json!({
                     "error": "not_found",
-                    "message": "Route not found. Available: /health, /v1/completions, /v1/chat/completions"
+                    "message": "Route not found. Available: /health, /v1/completions, /v1/chat/completions, /api/chat, /api/generate, /api/tags"
                 })),
             )
         });
     super::auth::layer(auth_gate, router)
+}
+
+/// PMAT-923 e2e test seam: build the REAL `apr serve` APR-CPU router with a
+/// no-transformer demo state, exercising the exact router `apr serve <model.apr>`
+/// mounts (including the `/api/chat` + `/api/generate` Ollama routes).
+///
+/// With `transformer: None`, generation returns a backend error which the chat
+/// path surfaces as a 200 JSON `{error:...}` body — the Ollama adapter re-shapes
+/// that into a terminal (`done:true`) Ollama body. A wired Ollama route is thus
+/// observably distinct from the axum 404 fallback (which has no `done` field)
+/// even with no model loaded, which is exactly what the falsifier asserts.
+#[doc(hidden)]
+#[cfg(feature = "inference")]
+pub fn build_demo_apr_cpu_router_for_test() -> axum::Router {
+    let state = AprServerState {
+        transformer: None,
+        model_type: "demo".to_string(),
+        architecture: "demo".to_string(),
+        is_transformer: false,
+        tokenizer: None,
+        embedded_tokenizer: None,
+        model_name: "apr".to_string(),
+    };
+    build_apr_cpu_router(state, super::auth::AuthGate::disabled())
 }
 
 include!("handler_apr_cpu_completion.rs");

@@ -345,6 +345,38 @@ pub(crate) async fn safetensors_chat_completions_handler(
     )
 }
 
+/// SafeTensors Ollama `/api/chat` handler (PMAT-923).
+///
+/// Reuses the SAME generation backend as `/v1/chat/completions`
+/// ([`safetensors_chat_completions_handler`]): translate the Ollama request to
+/// the OpenAI-chat JSON that handler already consumes, run it, then re-shape the
+/// OpenAI response into Ollama's `{message:{role,content}, done}` schema.
+#[cfg(feature = "inference")]
+pub(crate) async fn safetensors_ollama_chat_handler(
+    state: axum::extract::State<SafeTensorsState>,
+    axum::Json(req): axum::Json<super::ollama::OllamaChatRequest>,
+) -> axum::response::Response {
+    let model = super::ollama::model_label(&req.model);
+    let openai_body = super::ollama::ollama_chat_to_openai(&req);
+    let inner = safetensors_chat_completions_handler(state, axum::Json(openai_body)).await;
+    super::ollama::reshape_openai_to_ollama_chat(model, inner).await
+}
+
+/// SafeTensors Ollama `/api/generate` handler (PMAT-923).
+///
+/// Same backend as `/v1/chat/completions`, emitting Ollama's flat
+/// `{response, done}` schema.
+#[cfg(feature = "inference")]
+pub(crate) async fn safetensors_ollama_generate_handler(
+    state: axum::extract::State<SafeTensorsState>,
+    axum::Json(req): axum::Json<super::ollama::OllamaGenerateRequest>,
+) -> axum::response::Response {
+    let model = super::ollama::model_label(&req.model);
+    let openai_body = super::ollama::ollama_generate_to_openai(&req);
+    let inner = safetensors_chat_completions_handler(state, axum::Json(openai_body)).await;
+    super::ollama::reshape_openai_to_ollama_generate(model, inner).await
+}
+
 /// Generate a unique request ID for OpenAI-compatible responses.
 #[cfg(feature = "inference")]
 fn generate_request_id() -> String {
