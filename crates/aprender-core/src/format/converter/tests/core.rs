@@ -403,3 +403,4 @@ include!("core_convert.rs");
 include!("core_rosetta_gqa.rs");
 include!("core_q4k_q6k_roundtrip.rs");
 include!("streaming_quantize_test.rs");
+include!("convert_tied_lmhead.rs");
