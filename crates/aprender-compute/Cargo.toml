@@ -112,6 +112,11 @@ matrixmultiply = "0.3"  # Direct matrixmultiply crate benchmark (engine behind n
 default = []
 parallel = ["rayon"]
 gpu = ["wgpu", "pollster", "bytemuck", "futures-intrusive"]
+# Opt-in: builds the cooperative-matrix GEMM bench example. The underlying
+# cooperative-matrix capability was a Vulkan-specific extension dropped by wgpu 27
+# (cooperative_matrix_properties / COOPERATIVE_GEMM_SHADER are gone), so this
+# example does not compile against wgpu 27 and is gated off by default.
+cooperative-matrix = ["gpu"]
 # GPU for WASM (WebGPU) - uses wasm-bindgen-futures instead of pollster
 gpu-wasm = ["wgpu", "bytemuck", "futures-intrusive", "wasm-bindgen-futures", "wasm-bindgen", "web-sys"]
 # Native CUDA monitoring via trueno-gpu (TRUENO-SPEC-010)
@@ -203,7 +208,9 @@ required-features = ["gpu"]
 
 [[example]]
 name = "coop_gemm_bench"
-required-features = ["gpu"]
+# Requires the opt-in cooperative-matrix feature: relies on the wgpu Vulkan
+# cooperative-matrix extension that wgpu 27 removed (does not build otherwise).
+required-features = ["cooperative-matrix"]
 
 [[example]]
 name = "gpu_monitor_demo"
