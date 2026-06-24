@@ -1,0 +1,98 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-24'
+  author: PAIML Engineering
+  kind: kernel
+  description: >-
+    cuda-oxide pure-Rust RoPE (adjacent-pair) #[kernel] -> PTX port — on-device
+    parity + matched-launch perf vs the hand-PTX RopeKernel on GB10 Blackwell
+    sm_121 (PMAT-921). Falsifier F-OXIDE-ROPE-PARITY-001 asserts the oxide kernel
+    is bit-parity-correct (cos>=0.9999, maxdiff<1e-3 vs f64 CPU) AND ties the
+    hand-PTX (oxide_us/handptx_us<=1.2) at every decode shape, with no hand-PTX
+    and no GH-480 Blackwell-JIT workaround. RoPE is f32 FMA + sin/cos/ex2 (ZERO
+    DP4A) = the established GO class (PMAT-882/893/894); only DP4A-bound Q4K
+    GEMV/FFN (PMAT-881) is NO-GO.
+  references:
+  - 'Su et al. (2021) RoFormer: Enhanced Transformer with Rotary Position Embedding'
+  - 'NVlabs cuda-oxide: pure-Rust #[kernel] -> CUDA PTX'
+equations:
+  oxide_rope:
+    formula: out_{2p} = x_{2p}·cos(pos·θ_p) - x_{2p+1}·sin(pos·θ_p) ; out_{2p+1} = x_{2p}·sin(pos·θ_p) + x_{2p+1}·cos(pos·θ_p)
+    domain: x ∈ ℝ^{heads×head_dim}, pos ∈ ℕ, θ_p = theta^(-2p/head_dim), p < head_dim/2
+    codomain: ℝ^{heads×head_dim}
+    invariants:
+    - ‖oxide_rope(x_head, pos)‖ = ‖x_head‖ (per-head norm preservation)
+    - cos_sim(oxide_out, cpu_f64_out) = 1.0 (bit-parity on GB10 sm_121)
+    preconditions:
+    - head_dim % 2 == 0
+    - head_dim > 0
+    postconditions:
+    - out.len() == x.len()
+    - out.iter().all(|v| v.is_finite())
+    guarantees:
+      shapes:
+        output: { dims: ["heads", "head_dim"] }
+      constraints:
+      - "output.len() == input.len()"
+      - "output is finite"
+      - "cos_sim(oxide, cpu_f64) >= 0.9999"
+      - "oxide_us / handptx_us <= 1.2"
+proof_obligations:
+- type: precondition
+  property: head_dim even and positive
+  formal: 'head_dim mod 2 = 0 ∧ head_dim > 0'
+- type: postcondition
+  property: Output shape preserved, all finite
+  formal: 'len(out) = len(x) ∧ ∀i: isFinite(out_i)'
+- type: invariant
+  property: F-OXIDE-ROPE-PARITY-001 — oxide kernel bit-parity vs f64 CPU on GB10 sm_121
+  formal: 'cos_sim(oxide_out, cpu_f64_out) ≥ 0.9999 ∧ maxdiff(oxide_out, cpu_f64_out) < 1e-3'
+  tolerance: 1.0e-03
+  applies_to: all
+- type: invariant
+  property: F-OXIDE-ROPE-PARITY-001 — matched single-launch perf tie vs hand-PTX RopeKernel
+  formal: 'oxide_us / handptx_us ≤ 1.2 (grid=heads × block=head_dim/2, same data, GPU-event median 5×100)'
+  tolerance: 1.2
+  applies_to: all
+- type: frame
+  property: Input tensor and position unchanged
+  formal: modifies(output) ∧ preserves(x, pos, theta)
+falsification_tests:
+- id: F-OXIDE-ROPE-PARITY-001
+  rule: oxide RoPE is bit-parity-correct AND ties hand-PTX on GB10 sm_121
+  prediction: cos_sim(oxide, cpu_f64)=1.0 AND oxide_us/handptx_us<=1.2 at heads∈{32,14,128}, theta∈{10000,1000000}
+  test: cargo oxide run --manifest-path experiments/cuda-oxide/rope/Cargo.toml
+  if_fails: sin/cos/ex2 lowering error, pair indexing bug, or DP4A-class slowdown (would flip RoPE to NO-GO)
+- id: F-OXIDE-ROPE-PARITY-002
+  rule: theta=1M (Qwen2.5) high-frequency parity holds
+  prediction: cos_sim(oxide, cpu_f64)=1.0 at heads=14 head_dim=128 theta=1000000
+  test: cargo oxide run --manifest-path experiments/cuda-oxide/rope/Cargo.toml
+  if_fails: high-freq trig precision loss in the oxide lowering vs the hand-PTX cos.approx/sin.approx
+- id: F-OXIDE-ROPE-PARITY-003
+  rule: zero position is identity
+  prediction: oxide_rope(x, pos=0) = x
+  test: cargo oxide run --manifest-path experiments/cuda-oxide/rope/Cargo.toml
+  if_fails: off-by-one in position or frequency indexing
+- id: F-OXIDE-ROPE-PARITY-004
+  rule: per-head norm preservation
+  prediction: ‖oxide_rope(x_head, pos)‖ ≈ ‖x_head‖ for every head
+  test: cargo oxide run --manifest-path experiments/cuda-oxide/rope/Cargo.toml
+  if_fails: rotation matrix not orthonormal (sin/cos mismatch) — norm drifts
+- id: F-OXIDE-ROPE-PARITY-005
+  rule: output finite and shape-preserving
+  prediction: len(out)=len(x) ∧ all out finite (no NaN/Inf from ex2/sin/cos lowering)
+  test: cargo oxide run --manifest-path experiments/cuda-oxide/rope/Cargo.toml
+  if_fails: transcendental lowering produced NaN/Inf or wrong output length
+qa_gate:
+  certeza:
+    falsification: F-OXIDE-ROPE-PARITY-001
+    command: cargo oxide run --manifest-path experiments/cuda-oxide/rope/Cargo.toml
+    pass_criteria: cos>=0.9999 AND maxdiff<1e-3 AND oxide_us/handptx_us<=1.2 at every shape (GB10 sm_121, manual)
+kani_harnesses:
+- id: KANI-OXIDE-ROPE-001
+  obligation: F-OXIDE-ROPE-PARITY-001
+  property: oxide RoPE output finite and parity-correct vs CPU f64 reference
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_oxide_rope_parity

@@ -1,0 +1,63 @@
+{
+  "ticket": "PMAT-921",
+  "title": "cuda-oxide pure-Rust RoPE (adjacent-pair) port — GB10 sm_121 A/B vs hand-PTX",
+  "date": "2026-06-24",
+  "track": "cuda-oxide marquee (pure-Rust #[kernel] -> PTX on Blackwell)",
+  "verdict": "GO",
+  "falsifier": "F-OXIDE-ROPE-PARITY-001",
+  "host": {
+    "name": "gx10-a5b5",
+    "gpu": "NVIDIA GB10",
+    "compute_cap": "12.1",
+    "arch": "sm_121a",
+    "cuda": "13.0",
+    "toolchain": "nightly-2026-04-03 + LLVM-21.1.8 + cargo-oxide 0.2.1"
+  },
+  "target_kernel": {
+    "name": "rope",
+    "struct": "RopeKernel",
+    "file": "crates/aprender-gpu/src/kernels/elementwise/rope/standard.rs",
+    "class": "f32 FMA + sin/cos/ex2 transcendental (ZERO DP4A) = GO class",
+    "abi": "(x_ptr: u64, out_ptr: u64, pos: u32)",
+    "launch": "grid = num_heads blocks, block = head_dim/2 threads, one rotation pair per thread",
+    "why_candidate": "RoPE apply is decode-hot (Q and K, every layer, every token), pure trig+FMA, NOT DP4A/INT8-bound, and not yet ported (attention/RMSNorm/SwiGLU already GO; only Q4K GEMV/FFN stay hand-PTX)"
+  },
+  "oxide_port": {
+    "source": "experiments/cuda-oxide/rope/src/main.rs",
+    "variants": {
+      "A_rope_approx": "freq_base = ex2(power) (exact hand-PTX mirror), .sin()/.cos()",
+      "B_rope_libdev": "freq_base = exp(power*ln2) (libdevice), .sin()/.cos()"
+    }
+  },
+  "baselines": {
+    "method": "RopeKernel::new(128,128,theta).emit_ptx_for_target(\"sm_121\") — pure string-gen, no GPU",
+    "files": [
+      "experiments/cuda-oxide/rope/baseline-ptx/rope_hd128_t10000.sm121.ptx",
+      "experiments/cuda-oxide/rope/baseline-ptx/rope_hd128_t1000000.sm121.ptx"
+    ],
+    "loaded_via": "ctx.load_module_from_ptx_src + cuda_core::launch_kernel_on_stream (true on-device A/B, same data + grid + GPU-event timing)"
+  },
+  "parity": {
+    "reference": "f64 CPU adjacent-pair RoPE",
+    "gate": "cos >= 0.9999 AND maxdiff < 1e-3",
+    "result": "PASS (both variants, all shapes)",
+    "rows": [
+      {"heads": 32, "head_dim": 128, "theta": 10000, "pos": 17, "cos": 1.0000000, "maxdiff_A": 1.073e-6, "maxdiff_B": 6.855e-7},
+      {"heads": 14, "head_dim": 128, "theta": 1000000, "pos": 53, "cos": 1.0000000, "maxdiff_A": 2.831e-6, "maxdiff_B": 2.831e-6, "note": "Qwen2.5 high-freq theta=1M"},
+      {"heads": 128, "head_dim": 128, "theta": 10000, "pos": 256, "cos": 1.0000000, "maxdiff_A": 1.648e-5, "maxdiff_B": 7.465e-6}
+    ]
+  },
+  "perf": {
+    "method": "FAIR matched single-launch A/B; grid=num_heads x block=head_dim/2 BOTH sides, one launch each; GPU-event median of 5x100; no launch-count confound",
+    "gate": "best(oxide_A,oxide_B)_us / handPTX_us <= 1.2 = GO",
+    "representative_run_us": [
+      {"heads": 32, "head_dim": 128, "theta": 10000, "oxA_us": 2.070, "oxB_us": 2.073, "handptx_us": 1.863, "best_ratio": 1.111, "best": "A", "verdict": "GO"},
+      {"heads": 14, "head_dim": 128, "theta": 1000000, "oxA_us": 2.032, "oxB_us": 2.052, "handptx_us": 2.030, "best_ratio": 1.001, "best": "A", "verdict": "GO"},
+      {"heads": 128, "head_dim": 128, "theta": 10000, "oxA_us": 2.215, "oxB_us": 2.159, "handptx_us": 2.041, "best_ratio": 1.058, "best": "B", "verdict": "GO"}
+    ],
+    "run_to_run": "best ratio swings 0.984x-1.116x over 4 runs, centered ~1.00-1.05x = statistical tie at the DRAM-bandwidth roofline (~2us both sides)",
+    "interpretation": "adjacent-pair RoPE is DRAM-bandwidth-bound (1 load + 1 store per element); neither hand-PTX nor oxide can beat the memory wall, both sit at roofline; the GO is a TIE, not a speedup"
+  },
+  "conclusion": "GO — pure-Rust cuda-oxide RoPE is bit-parity-correct (cos=1.0) and matches hand-PTX RopeKernel at every decode shape (incl. Qwen2.5 theta=1M) with NO hand-PTX and NO GH-480 Blackwell-JIT workaround. Confirms the rule: FMA/softmax/transcendental kernels = GO class (alongside PMAT-882/893/894); only DP4A-bound Q4K GEMV/FFN (PMAT-881) is NO-GO. Production migration is a follow-up.",
+  "stable_across_runs": 4
+}
