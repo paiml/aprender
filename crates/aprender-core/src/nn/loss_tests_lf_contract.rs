@@ -16,6 +16,50 @@
 mod tests {
     use super::super::*;
 
+    /// OBLIG-BCE-POSWEIGHT-PYTORCH-PARITY (PMAT-915).
+    ///
+    /// PyTorch `binary_cross_entropy_with_logits` applies `pos_weight` ONLY to the
+    /// positive (log σ(x)) term, not the whole loss:
+    ///   log_weight = 1 + (w - 1) * y
+    ///   loss = (1 - y) * x + log_weight * (log(1 + exp(-|x|)) + max(-x, 0))
+    ///
+    /// The previous aprender impl scaled the WHOLE loss by `y*(w-1)+1`, which only
+    /// coincides with PyTorch for hard targets y ∈ {0,1}. With SOFT targets the two
+    /// diverge — this falsifier uses soft targets so the bug is observable.
+    ///
+    /// Reference (torch 2.x, CPU):
+    ///   logits = [0.5, -1.2, 2.0, 0.1], y = [0.7, 0.2, 0.9, 0.4], pos_weight = 3.0
+    ///   F.binary_cross_entropy_with_logits(..., reduction="mean") == 1.0379231
+    #[test]
+    #[allow(clippy::float_cmp)]
+    fn falsify_lf_007_bce_pos_weight_pytorch_parity() {
+        let logits = Tensor::from_slice(&[0.5, -1.2, 2.0, 0.1]);
+        let soft = Tensor::from_slice(&[0.7, 0.2, 0.9, 0.4]);
+
+        // Mean reduction (with_pos_weight forces Mean).
+        let mean = BCEWithLogitsLoss::with_pos_weight(3.0)
+            .forward(&logits, &soft)
+            .data()[0];
+        let torch_mean = 1.037_923_1_f32;
+        assert!(
+            (mean - torch_mean).abs() < 1e-5,
+            "FALSIFIED OBLIG-BCE-POSWEIGHT-PYTORCH-PARITY (mean): apr={mean} torch={torch_mean}"
+        );
+
+        // Hard targets must STILL match PyTorch after the fix (regression guard:
+        // the new positive-term weighting reduces to the old behaviour for y ∈ {0,1}).
+        // torch(pos_weight=3, hard, mean) = 0.7026735
+        let hard = Tensor::from_slice(&[1.0, 0.0, 1.0, 0.0]);
+        let hard_mean = BCEWithLogitsLoss::with_pos_weight(3.0)
+            .forward(&logits, &hard)
+            .data()[0];
+        let torch_hard_mean = 0.702_673_5_f32;
+        assert!(
+            (hard_mean - torch_hard_mean).abs() < 1e-5,
+            "FALSIFIED OBLIG-BCE-POSWEIGHT-PYTORCH-PARITY (hard): apr={hard_mean} torch={torch_hard_mean}"
+        );
+    }
+
     /// FALSIFY-LF-001: MSE is non-negative
     #[test]
     fn falsify_lf_001_mse_non_negative() {

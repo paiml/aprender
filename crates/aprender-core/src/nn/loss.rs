@@ -406,17 +406,22 @@ impl BCEWithLogitsLoss {
             .iter()
             .zip(targets.data().iter())
             .map(|(&x, &y)| {
-                let max_val = x.max(0.0);
-                let base_loss = max_val - x * y + (1.0 + (-x.abs()).exp()).ln();
-
-                // Apply positive weight if specified
+                // Numerically stable log(1 + exp(-|x|)) + max(-x, 0).
+                let log_term = (1.0 + (-x.abs()).exp()).ln() + (-x).max(0.0);
                 match self.pos_weight {
                     Some(w) => {
-                        // weight positive samples more
-                        let weight = y * (w - 1.0) + 1.0;
-                        base_loss * weight
+                        // PyTorch BCEWithLogits pos_weight: the weight multiplies ONLY
+                        // the positive (log σ(x)) term, NOT the whole loss. This matters
+                        // for soft targets 0 < y < 1; it coincides with the previous
+                        // whole-loss scaling only for hard 0/1 targets.
+                        //   log_weight = 1 + (pos_weight - 1) * y
+                        //   loss = (1 - y) * x + log_weight * log_term
+                        let log_weight = 1.0 + (w - 1.0) * y;
+                        (1.0 - y) * x + log_weight * log_term
                     }
-                    None => base_loss,
+                    // None reduces to standard stable BCE:
+                    // (1 - y) * x + log_term == max(x,0) - x*y + log(1 + exp(-|x|)).
+                    None => (1.0 - y) * x + log_term,
                 }
             })
             .collect();
