@@ -851,5 +851,283 @@ impl GradFn for GroupNormBackward {
     }
 }
 
+// ============================================================================
+// Shape / Pooling / Embedding Operations (PMAT-913)
+//
+// Before PMAT-913 the canonical nn Flatten / MaxPool1d / MaxPool2d / AvgPool2d /
+// GlobalAvgPool2d forwards built their output via `Tensor::new`, severing the
+// autograd graph: `input.grad` was `None` after `backward()`, so any model with
+// a pooling/flatten layer in the middle could not propagate gradient to the
+// upstream conv/linear weights. Likewise the token `Embedding` forward built its
+// lookup output via `Tensor::new`, so the embedding TABLE never received
+// gradient (non-trainable token embeddings). These grad_fns wire the missing
+// backward edges.
+// ============================================================================
+
+/// Gradient function for `Flatten` (and any pure reshape view).
+///
+/// Obligation: OBLIG-FLATTEN-BACKWARD-GRAD-FLOW.
+///
+/// Flatten is a pure view: it only changes the shape, not the values. The
+/// backward is therefore the identity on values, reshaped back to the input
+/// shape: `dL/dx = reshape(grad_output, input_shape)`.
+pub(crate) struct FlattenBackward {
+    pub(crate) input_shape: Vec<usize>,
+}
+
+impl GradFn for FlattenBackward {
+    fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
+        // Pure reshape: same data, original shape.
+        vec![Tensor::new(grad_output.data(), &self.input_shape)]
+    }
+
+    fn name(&self) -> &'static str {
+        "FlattenBackward"
+    }
+}
+
+/// Gradient function for `MaxPool1d`: route grad_output to the argmax position
+/// within each pooling window (subgradient of max). Ties go to the FIRST max
+/// (matching the forward `max()` left-to-right scan).
+///
+/// Obligation: OBLIG-MAXPOOL1D-BACKWARD-GRAD-FLOW.
+///
+/// Input `[N, C, L]`, output `[N, C, L_out]`, `L_out = (L - k)/s + 1`.
+pub(crate) struct MaxPool1dBackward {
+    pub(crate) input: Tensor,
+    pub(crate) kernel_size: usize,
+    pub(crate) stride: usize,
+}
+
+impl GradFn for MaxPool1dBackward {
+    fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
+        let shape = self.input.shape();
+        let (batch, channels, in_len) = (shape[0], shape[1], shape[2]);
+        let out_len = (in_len - self.kernel_size) / self.stride + 1;
+        let x = self.input.data();
+        let g = grad_output.data();
+        let mut grad_x = vec![0.0f32; x.len()];
+
+        for n in 0..batch {
+            for c in 0..channels {
+                let base = n * channels * in_len + c * in_len;
+                for ol in 0..out_len {
+                    let mut max_val = f32::NEG_INFINITY;
+                    let mut argmax = 0usize;
+                    for k in 0..self.kernel_size {
+                        let il = ol * self.stride + k;
+                        let v = x[base + il];
+                        if v > max_val {
+                            max_val = v;
+                            argmax = il;
+                        }
+                    }
+                    let out_idx = n * channels * out_len + c * out_len + ol;
+                    grad_x[base + argmax] += g[out_idx];
+                }
+            }
+        }
+
+        vec![Tensor::new(&grad_x, shape)]
+    }
+
+    fn name(&self) -> &'static str {
+        "MaxPool1dBackward"
+    }
+}
+
+/// Gradient function for `MaxPool2d`: route grad_output to the argmax position
+/// within each 2D window. Ties go to the FIRST max in row-major (kh, kw) scan.
+///
+/// Obligation: OBLIG-MAXPOOL2D-BACKWARD-GRAD-FLOW.
+///
+/// Input `[N, C, H, W]`, output `[N, C, H_out, W_out]`.
+pub(crate) struct MaxPool2dBackward {
+    pub(crate) input: Tensor,
+    pub(crate) kernel_h: usize,
+    pub(crate) kernel_w: usize,
+    pub(crate) stride_h: usize,
+    pub(crate) stride_w: usize,
+}
+
+impl GradFn for MaxPool2dBackward {
+    fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
+        let shape = self.input.shape();
+        let (batch, channels, in_h, in_w) = (shape[0], shape[1], shape[2], shape[3]);
+        let out_h = (in_h - self.kernel_h) / self.stride_h + 1;
+        let out_w = (in_w - self.kernel_w) / self.stride_w + 1;
+        let x = self.input.data();
+        let g = grad_output.data();
+        let mut grad_x = vec![0.0f32; x.len()];
+
+        for n in 0..batch {
+            for c in 0..channels {
+                let plane = n * channels * in_h * in_w + c * in_h * in_w;
+                for oh in 0..out_h {
+                    for ow in 0..out_w {
+                        let mut max_val = f32::NEG_INFINITY;
+                        let mut argmax = 0usize;
+                        for kh in 0..self.kernel_h {
+                            for kw in 0..self.kernel_w {
+                                let ih = oh * self.stride_h + kh;
+                                let iw = ow * self.stride_w + kw;
+                                let idx = plane + ih * in_w + iw;
+                                if x[idx] > max_val {
+                                    max_val = x[idx];
+                                    argmax = idx;
+                                }
+                            }
+                        }
+                        let out_idx =
+                            n * channels * out_h * out_w + c * out_h * out_w + oh * out_w + ow;
+                        grad_x[argmax] += g[out_idx];
+                    }
+                }
+            }
+        }
+
+        vec![Tensor::new(&grad_x, shape)]
+    }
+
+    fn name(&self) -> &'static str {
+        "MaxPool2dBackward"
+    }
+}
+
+/// Gradient function for `AvgPool2d`: distribute `grad_output / kernel_area`
+/// evenly to every input element in the pooling window.
+///
+/// Obligation: OBLIG-AVGPOOL2D-BACKWARD-GRAD-FLOW.
+pub(crate) struct AvgPool2dBackward {
+    pub(crate) input_shape: Vec<usize>,
+    pub(crate) kernel_h: usize,
+    pub(crate) kernel_w: usize,
+    pub(crate) stride_h: usize,
+    pub(crate) stride_w: usize,
+}
+
+impl GradFn for AvgPool2dBackward {
+    fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
+        let (batch, channels, in_h, in_w) = (
+            self.input_shape[0],
+            self.input_shape[1],
+            self.input_shape[2],
+            self.input_shape[3],
+        );
+        let out_h = (in_h - self.kernel_h) / self.stride_h + 1;
+        let out_w = (in_w - self.kernel_w) / self.stride_w + 1;
+        let g = grad_output.data();
+        let area = (self.kernel_h * self.kernel_w) as f32;
+        let mut grad_x = vec![0.0f32; batch * channels * in_h * in_w];
+
+        for n in 0..batch {
+            for c in 0..channels {
+                let plane = n * channels * in_h * in_w + c * in_h * in_w;
+                for oh in 0..out_h {
+                    for ow in 0..out_w {
+                        let out_idx =
+                            n * channels * out_h * out_w + c * out_h * out_w + oh * out_w + ow;
+                        let share = g[out_idx] / area;
+                        for kh in 0..self.kernel_h {
+                            for kw in 0..self.kernel_w {
+                                let ih = oh * self.stride_h + kh;
+                                let iw = ow * self.stride_w + kw;
+                                grad_x[plane + ih * in_w + iw] += share;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        vec![Tensor::new(&grad_x, &self.input_shape)]
+    }
+
+    fn name(&self) -> &'static str {
+        "AvgPool2dBackward"
+    }
+}
+
+/// Gradient function for `GlobalAvgPool2d`: each output `[n, c]` is the mean of
+/// the whole `H x W` plane, so every input element in that plane receives
+/// `grad_output[n, c] / (H * W)`.
+///
+/// Obligation: OBLIG-GLOBALAVGPOOL2D-BACKWARD-GRAD-FLOW.
+pub(crate) struct GlobalAvgPool2dBackward {
+    pub(crate) input_shape: Vec<usize>,
+}
+
+impl GradFn for GlobalAvgPool2dBackward {
+    fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
+        let (batch, channels, in_h, in_w) = (
+            self.input_shape[0],
+            self.input_shape[1],
+            self.input_shape[2],
+            self.input_shape[3],
+        );
+        let spatial = (in_h * in_w) as f32;
+        let g = grad_output.data();
+        let mut grad_x = vec![0.0f32; batch * channels * in_h * in_w];
+
+        for n in 0..batch {
+            for c in 0..channels {
+                let share = g[n * channels + c] / spatial;
+                let plane = n * channels * in_h * in_w + c * in_h * in_w;
+                for k in 0..(in_h * in_w) {
+                    grad_x[plane + k] = share;
+                }
+            }
+        }
+
+        vec![Tensor::new(&grad_x, &self.input_shape)]
+    }
+
+    fn name(&self) -> &'static str {
+        "GlobalAvgPool2dBackward"
+    }
+}
+
+/// Gradient function for the token `Embedding` lookup table.
+///
+/// Obligation: OBLIG-EMBEDDING-BACKWARD-GRAD-FLOW.
+///
+/// Forward gathers row `idx[i]` of the `[vocab, hidden]` weight into output row
+/// `i`. The backward SCATTER-ADDs each upstream gradient row back into the
+/// corresponding weight row: `dW[idx[i]] += grad_output[i]`. Because multiple
+/// positions can reference the SAME token id, the accumulation MUST be additive
+/// (not an overwrite) — otherwise repeated tokens would lose gradient. The token
+/// indices themselves are integers and carry no gradient.
+pub(crate) struct EmbeddingBackward {
+    pub(crate) indices: Vec<u32>,
+    pub(crate) vocab_size: usize,
+    pub(crate) hidden_size: usize,
+}
+
+impl GradFn for EmbeddingBackward {
+    fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
+        let g = grad_output.data();
+        let h = self.hidden_size;
+        let mut grad_w = vec![0.0f32; self.vocab_size * h];
+
+        for (i, &tok) in self.indices.iter().enumerate() {
+            let row = tok as usize;
+            if row >= self.vocab_size {
+                continue; // OOB token contributes no gradient (matches forward N-09 escape).
+            }
+            let g_off = i * h;
+            let w_off = row * h;
+            for j in 0..h {
+                grad_w[w_off + j] += g[g_off + j];
+            }
+        }
+
+        vec![Tensor::new(&grad_w, &[self.vocab_size, h])]
+    }
+
+    fn name(&self) -> &'static str {
+        "EmbeddingBackward"
+    }
+}
+
 include!("gradient.rs");
 include!("grad_fn_tests.rs");

@@ -408,3 +408,27 @@ mod conv2d;
 pub use conv2d::*;
 mod maxpool2d;
 pub use maxpool2d::*;
+
+#[cfg(test)]
+#[path = "tests_pool_flatten_backward_gradflow.rs"]
+mod tests_pool_flatten_backward_gradflow;
+
+/// Record a single-input autograd backward edge for shape/pooling layers
+/// (PMAT-913). Only runs when grad is enabled and the input requires grad; the
+/// supplied `grad_fn` MUST return exactly one gradient (w.r.t. the input).
+pub(crate) fn record_single_input_backward(
+    input: &Tensor,
+    result: &mut Tensor,
+    grad_fn: std::sync::Arc<dyn crate::autograd::grad_fn::GradFn>,
+) {
+    use crate::autograd::{is_grad_enabled, with_graph};
+
+    if is_grad_enabled() && input.requires_grad_enabled() {
+        result.requires_grad_(true);
+        result.set_grad_fn(grad_fn.clone());
+        with_graph(|graph| {
+            graph.register_tensor(input.clone());
+            graph.record(result.id(), grad_fn, vec![input.id()]);
+        });
+    }
+}
