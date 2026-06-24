@@ -1,0 +1,27 @@
+== PMAT-921 cuda-oxide RoPE (adjacent-pair) — parity + perf (GB10 sm_121) ==
+   out[2p]=x0*cos(a)-x1*sin(a); out[2p+1]=x0*sin(a)+x1*cos(a); a=pos*theta^(-2p/hd)
+   (A) rope_approx (hw sin/cos/ex2 approx)  (B) rope_libdev (libdevice sin/cos)
+
+-- PARITY approx (A) vs f64 CPU reference --
+  heads= 32 hd=128 theta=    10000 pos=  17 : cos=1.0000000 maxdiff=1.073e-6 -> PASS
+  heads= 14 hd=128 theta=  1000000 pos=  53 : cos=1.0000000 maxdiff=2.831e-6 -> PASS
+  heads=128 hd=128 theta=    10000 pos= 256 : cos=1.0000000 maxdiff=1.648e-5 -> PASS
+PARITY approx (A): PASS
+
+-- PARITY libdev (B) vs f64 CPU reference --
+  heads= 32 hd=128 theta=    10000 pos=  17 : cos=1.0000000 maxdiff=6.855e-7 -> PASS
+  heads= 14 hd=128 theta=  1000000 pos=  53 : cos=1.0000000 maxdiff=2.831e-6 -> PASS
+  heads=128 hd=128 theta=    10000 pos= 256 : cos=1.0000000 maxdiff=7.465e-6 -> PASS
+PARITY libdev (B): PASS
+
+-- PRIMARY GATE: FAIR matched single-launch A/B (oxide vs hand-PTX, GB10 sm_121) --
+   grid=num_heads x block=head_dim/2 BOTH sides, one launch each; GPU-event median 5x100
+   F-OXIDE-ROPE-PARITY-001: cos>=0.9999 AND maxdiff<1e-3 AND oxide_us/handptx_us<=1.2
+
+  heads   hd     theta |    oxA us    oxB us |  handPTX us |   ratioA   ratioB |    cos(ox)   maxdiff | verdict
+     32  128     10000 |     2.070     2.073 |       1.863 |    1.111    1.113 |  1.0000000   1.09e-6 | GO (best=A 1.111x; handPTX cos=1.00000 md=1.79e-6)
+     14  128   1000000 |     2.032     2.052 |       2.030 |    1.001    1.011 |  1.0000000   2.97e-6 | GO (best=A 1.001x; handPTX cos=1.00000 md=6.30e-6)
+    128  128     10000 |     2.215     2.159 |       2.041 |    1.085    1.058 |  1.0000000   7.48e-6 | GO (best=B 1.058x; handPTX cos=1.00000 md=3.72e-5)
+
+PMAT-921 VERDICT (F-OXIDE-ROPE-PARITY-001, fair matched-launch gate): GO
+PMAT-921 DONE
