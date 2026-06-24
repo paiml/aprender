@@ -24,7 +24,7 @@ presentar-terminal = { workspace = true }
 
 # Compute backends
 trueno = { workspace = true }
-trueno-gpu = { version = "0.52.0", path = "../aprender-gpu", package = "aprender-gpu", optional = true }
+trueno-gpu = { version = "0.53.0", path = "../aprender-gpu", package = "aprender-gpu", optional = true }
 
 # Terminal handling
 crossterm = "0.28"
