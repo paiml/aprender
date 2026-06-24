@@ -20,10 +20,22 @@ metadata:
     identical tanh GELU approximation, so forward numerics are unchanged; only
     the backward edge is restored). This contract guards the composed graph, not
     a single layer.
+    PMAT-922 extends this contract with the severed-graph CLASS sweep: the SAME
+    Tensor::from_vec sever pattern recurs in (1) TransformerDecoderLayer's FFN
+    (the decoder twin of the PMAT-921 encoder gelu), (2) the Dropout layer's
+    training-mode forward, and (3) nn::functional::dropout (used by attention's
+    apply_dropout) — each rebuilt its output as a fresh leaf with no grad_fn,
+    freezing every parameter upstream of it in any real training run. Fixes route
+    gelu through Tensor::gelu and dropout through a constant mask applied via the
+    autograd-aware Tensor::mul (identical forward numerics, backward edge restored).
   references:
   - "crates/aprender-core/src/nn/transformer/mod.rs"
+  - "crates/aprender-core/src/nn/transformer/positional_encoding.rs"
+  - "crates/aprender-core/src/nn/dropout/mod.rs"
+  - "crates/aprender-core/src/nn/functional.rs"
   - "crates/aprender-core/src/autograd/ops/activation.rs"
   - "crates/aprender-core/src/nn/transformer/tests_e2e_training_smoke.rs"
+  - "crates/aprender-core/src/nn/transformer/tests_decoder_grad_flow.rs"
 version: 1
 status: enforced
 date: 2026-06-24
@@ -55,6 +67,26 @@ proof_obligations:
       though the loss still drops via the FFN+lm_head — proving guard (b) is an
       independent severed-graph detector that per-layer gradchecks miss in
       composition. The correct autograd-aware Tensor::gelu path is GREEN.
+  - type: invariant
+    property: >
+      OBLIG-FUNCTIONAL-GELU-BACKWARD-GRAD (PMAT-922 decoder twin): in
+      TransformerDecoderLayer::forward_with_memory with dropout disabled, the FFN
+      activation is the only non-autograd op left on the FFN path. Routing it
+      through Tensor::gelu (NOT nn::functional::gelu / the local gelu helper, which
+      build the output via Tensor::from_vec) MUST let gradient reach linear1.weight
+      and norm3.gamma (both UPSTREAM of the FFN gelu) while linear2.weight
+      (downstream) also receives gradient. A severed gelu gives linear2 a gradient
+      but leaves linear1/norm3 frozen.
+  - type: invariant
+    property: >
+      OBLIG-FUNCTIONAL-DROPOUT-BACKWARD-GRAD (PMAT-922): in TRAINING mode with
+      p>0, both the Dropout layer's forward and nn::functional::dropout MUST route
+      gradient back to their input. The inverted-dropout mask is built as a CONSTANT
+      tensor (0 where dropped, 1/(1-p) where kept) and applied via the autograd-aware
+      Tensor::mul, recording a MulBackward edge. The previous Tensor::new /
+      Tensor::from_vec path produced a fresh leaf with no grad_fn, severing the
+      graph and freezing every parameter upstream of any training-mode dropout.
+      Forward numerics are identical (per-element input * mask = the old scaled value).
 
 falsification_tests:
   - id: FALSIFY-TRANSFORMER-END-TO-END-TRAINABLE-001
@@ -63,3 +95,21 @@ falsification_tests:
     test_harness: "cargo test -p aprender-core --lib tiny_transformer_trains_to_decreasing_loss_all_params_update"
     expected_output: "test result: ok"
     if_fails: "A layer's gradient is severed in composition (e.g. an FFN GELU or residual-add built via Tensor::from_vec). Route the offending op through its autograd-aware Tensor method so the backward edge is recorded and the upstream parameter is trainable end-to-end."
+  - id: FALSIFY-FUNCTIONAL-GELU-BACKWARD-GRAD-002
+    name: decoder_ffn_gelu_grad_flows_to_linear1_and_norm3
+    prediction: "With dropout off, TransformerDecoderLayer's FFN gelu routes gradient to linear1.weight and norm3.gamma (upstream) as well as linear2.weight (downstream)"
+    test_harness: "cargo test -p aprender-core --lib decoder_ffn_gelu_grad_flows_to_linear1_and_norm3"
+    expected_output: "test result: ok"
+    if_fails: "The decoder FFN gelu is severing the graph (Tensor::from_vec). Route it through Tensor::gelu like the PMAT-921 encoder fix."
+  - id: FALSIFY-FUNCTIONAL-DROPOUT-BACKWARD-GRAD-003
+    name: dropout_layer_grad_flows_to_input_in_training_mode
+    prediction: "Dropout layer forward in training mode (p>0) routes a finite non-zero gradient back to its input"
+    test_harness: "cargo test -p aprender-core --lib dropout_layer_grad_flows_to_input_in_training_mode"
+    expected_output: "test result: ok"
+    if_fails: "Dropout::forward is severing the graph (Tensor::new). Apply the inverted-dropout mask via Tensor::mul so a MulBackward edge is recorded."
+  - id: FALSIFY-FUNCTIONAL-DROPOUT-BACKWARD-GRAD-004
+    name: functional_dropout_grad_flows_to_input
+    prediction: "nn::functional::dropout (training=true, p>0) routes a finite non-zero gradient back to its input"
+    test_harness: "cargo test -p aprender-core --lib functional_dropout_grad_flows_to_input"
+    expected_output: "test result: ok"
+    if_fails: "nn::functional::dropout is severing the graph (Tensor::from_vec). Apply the inverted-dropout mask via Tensor::mul so a MulBackward edge is recorded."

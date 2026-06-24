@@ -55,7 +55,13 @@ impl TransformerDecoderLayer {
         // Feed-forward
         let tgt_norm = self.norm3.forward(&tgt);
         let ff_out = self.linear1.forward(&tgt_norm);
-        let ff_out = gelu(&ff_out);
+        // PMAT-922 (decoder twin of PMAT-921): use the autograd-aware Tensor::gelu,
+        // NOT the local `gelu` helper / nn::functional::gelu, which builds its
+        // output via Tensor::from_vec and SEVERS the graph — freezing linear1 +
+        // norm3 in any end-to-end decoder training run. Both paths use the
+        // identical tanh GELU approximation, so forward numerics are unchanged;
+        // only the backward edge is restored.
+        let ff_out = ff_out.gelu();
         let ff_out = self.dropout.forward(&ff_out);
         let ff_out = self.linear2.forward(&ff_out);
         let ff_out = self.dropout3.forward(&ff_out);
@@ -485,11 +491,6 @@ pub(crate) fn reshape_from_attention(
     });
 
     result
-}
-
-/// ONE PATH: Delegates to `nn::functional::gelu` (UCBD §4).
-pub(super) fn gelu(x: &Tensor) -> Tensor {
-    crate::nn::functional::gelu(x)
 }
 
 /// Compute sinusoidal positional encoding.

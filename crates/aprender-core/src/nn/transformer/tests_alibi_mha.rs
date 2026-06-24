@@ -264,7 +264,10 @@ fn test_add_tensors() {
 #[test]
 fn test_gelu_activation() {
     let x = Tensor::new(&[0.0, 1.0, -1.0], &[3]);
-    let y = gelu(&x);
+    // PMAT-922: the local `gelu` wrapper was removed (its sole production caller
+    // now uses the autograd-aware Tensor::gelu). Exercise the canonical functional
+    // GELU directly — identical tanh approximation, same numerics.
+    let y = crate::nn::functional::gelu(&x);
     // GELU(0) ≈ 0
     assert!((y.data()[0] - 0.0).abs() < 0.01);
     // GELU(1) ≈ 0.841
