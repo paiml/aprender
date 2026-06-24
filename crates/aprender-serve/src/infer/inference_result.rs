@@ -433,36 +433,46 @@ fn log_cpu_backend(verbose: bool, is_legacy: bool) {
     }
 }
 
-/// F2-FIX: Validate GPU output by comparing first predicted token with CPU.
+/// F2-FIX: Validate the GPU path with a SHORT MULTI-TOKEN probe, asserting
+/// per-position argmax agreement AND a per-position cosine floor for every REAL
+/// (≥1) position, not just the last token.
 ///
-/// Validates the GPU's first generated token against the CPU's prediction for the
-/// SAME probe context, to catch a garbage GPU path (e.g. PMAT-216 transposed
-/// weights) before committing to a full GPU generation.
+/// RECONCILED GROUND TRUTH (gx10 Blackwell study, 2026-06-24): on Blackwell the
+/// production default is fp32 **Mwv** Q4K (`auto_q4k(cc≥120) = Mwv`). It is
+/// byte-identical to CPU-Q4K and to llama.cpp token-for-token; every real position
+/// argmax-matches at cosine ≥ 0.9998. The **HwDp4a** path is the GENUINELY DEGRADED
+/// one: its INT8 Q8_1 *activation* quantization mis-estimates massive-activation
+/// channels, producing a real argmax MISMATCH at mid-context (measured: pos3 @ 0.9705
+/// on qwen2.5-coder-1.5B, pos6 @ 0.9398 on the 7B). A last-token-only cosine gate
+/// MISSES that — the divergence is mid-sequence and the *final* token can still be
+/// fine — so the gate forwards the WHOLE probe on both backends and checks EVERY
+/// position.
 ///
-/// PMAT-742: prefer the REAL prompt (`probe_context`) over a synthetic BOS token.
-/// A single BOS-only probe has no context, so its next-token distribution is
-/// near-flat — the top tokens are nearly tied and tiny CPU/GPU FP/quant
-/// differences flip the argmax. Hard argmax-equality on that degenerate probe
-/// FALSE-rejects a CORRECT GPU path and forces a ~50x-slower CPU fallback
-/// (measured: 421 -> 8 tok/s on RTX 4090, qwen2.5-coder-1.5b Q4_K_M; `apr qa`
-/// independently confirms the GPU path is correct via Golden-Output + Ollama-
-/// Parity gates). With real context the first-token distribution is peaked, so
-/// CPU and GPU agree (verified: both backends emit the same first token on a
-/// coder prompt), while genuine GPU garbage still mismatches deep in CPU's tail.
-/// When no prompt is available (batch model-init) it falls back to the BOS probe.
+/// Decision (see [`f2_multi_position_acceptable`]):
+///   ACCEPT ⟺ ∀ p ≥ 1: argmax(cpu[p]) == argmax(gpu[p])
+///            ∧ min_{p≥1} cosine(cpu[p], gpu[p]) ≥ F2_GATE_COSINE_MIN (0.95)
+///            ∧ no NaN / zero-norm (catastrophic floor)
 ///
+/// Position 0 is EXCLUDED: a context-less BOS / first-token distribution is
+/// near-flat, so an argmax flip there is a benign FP near-tie (PMAT-742 / #1864 —
+/// the correct fp32-Mwv default itself flips pos0 at cosine ~0.945). Including pos0
+/// would FALSE-REJECT the correct production path. Every REAL position (≥1) on the
+/// correct fp32-Mwv path argmax-matches at ≥0.9998, while HwDp4a's mid-position
+/// argmax mismatch is caught regardless of where its cosine lands.
+///
+/// When no prompt is available (batch model-init) only a single BOS token exists;
+/// there are no positions ≥1 to validate, so the gate is a no-op (returns true) —
+/// the load-time `parity_gate` is the primary defense in that case.
 /// Skip entirely with SKIP_PARITY_GATE=1 (same env var as the cosine parity gate).
 #[cfg(feature = "cuda")]
 fn validate_gpu_first_token(
     cuda_model: &mut crate::gguf::OwnedQuantizedModelCuda,
-    gen_config: &crate::gguf::QuantizedGenerateConfig,
+    _gen_config: &crate::gguf::QuantizedGenerateConfig,
     probe_context: &[u32],
 ) -> bool {
     use crate::gguf::OwnedQuantizedKVCache;
 
     // SKIP_PARITY_GATE=1 bypasses both this F2 check and the cosine parity gate.
-    // Used for forward-compatible GPUs (e.g., Blackwell sm_121) where minor FP
-    // differences cause argmax disagreement but inference quality is unaffected.
     if std::env::var("SKIP_PARITY_GATE")
         .map(|v| v == "1")
         .unwrap_or(false)
@@ -470,88 +480,243 @@ fn validate_gpu_first_token(
         return true;
     }
 
-    let model = cuda_model.model();
-
     // Build the probe: real prompt context (peaked distribution) when available,
     // else the BOS token (batch model-init has no prompt yet). Cap the context to
-    // bound the one-time CPU prefill cost. BOS flows from GGUF metadata; if it is
-    // unknown for a context-less probe there is nothing to validate against.
+    // bound the one-time CPU/GPU prefill cost. BOS flows from GGUF metadata; if it
+    // is unknown for a context-less probe there is nothing to validate against.
     const PROBE_MAX_CTX: usize = 64;
-    let probe: Vec<u32> = if probe_context.is_empty() {
-        match model.config.bos_token_id {
-            Some(id) => vec![id],
-            None => {
-                eprintln!("[F2-VALIDATION] no prompt context and BOS unknown — skipping GPU validation");
-                return true;
-            },
-        }
-    } else {
-        let start = probe_context.len().saturating_sub(PROBE_MAX_CTX);
-        probe_context[start..].to_vec()
+    let (kv_dim, num_layers, probe): (usize, usize, Vec<u32>) = {
+        let model = cuda_model.model();
+        let kv_dim =
+            model.config.num_kv_heads * (model.config.hidden_dim / model.config.num_heads);
+        let num_layers = model.config.num_layers;
+        let probe: Vec<u32> = if probe_context.is_empty() {
+            match model.config.bos_token_id {
+                Some(id) => vec![id],
+                None => {
+                    eprintln!("[F2-VALIDATION] no prompt context and BOS unknown — skipping GPU validation");
+                    return true;
+                },
+            }
+        } else {
+            let start = probe_context.len().saturating_sub(PROBE_MAX_CTX);
+            probe_context[start..].to_vec()
+        };
+        (kv_dim, num_layers, probe)
     };
 
-    let kv_dim = model.config.num_kv_heads * (model.config.hidden_dim / model.config.num_heads);
-    let num_layers = model.config.num_layers;
+    // A single-token probe (context-less BOS) has NO real position (≥1) to validate
+    // — the pos0 distribution is a benign near-tie. The load-time parity gate is the
+    // primary defense there; skip the per-position F2 check.
+    if probe.len() < 2 {
+        return true;
+    }
 
-    // CPU reference: forward the whole probe, keep the logits after the last token.
-    let mut cpu_cache = OwnedQuantizedKVCache::new(num_layers, kv_dim, probe.len().max(2));
-    let mut cpu_logits = None;
-    for (pos, &tok) in probe.iter().enumerate() {
-        match model.forward_single_with_cache(tok, &mut cpu_cache, pos) {
-            Ok(logits) => cpu_logits = Some(logits),
-            Err(_) => return true, // CPU forward failed — can't validate, assume GPU is fine
+    // CPU reference: forward the whole probe, KEEP THE LOGITS AT EVERY POSITION.
+    let mut cpu_logits_per_pos: Vec<Vec<f32>> = Vec::with_capacity(probe.len());
+    {
+        let model = cuda_model.model();
+        let mut cpu_cache = OwnedQuantizedKVCache::new(num_layers, kv_dim, probe.len().max(2));
+        for (pos, &tok) in probe.iter().enumerate() {
+            match model.forward_single_with_cache(tok, &mut cpu_cache, pos) {
+                Ok(logits) => cpu_logits_per_pos.push(logits),
+                Err(_) => return true, // CPU forward failed — can't validate, assume GPU is fine
+            }
         }
     }
-    let cpu_logits = match cpu_logits {
-        Some(l) => l,
-        None => return true,
-    };
 
-    let cpu_argmax = cpu_logits
+    // GPU reference: forward the SAME probe on the GPU-resident path (the same
+    // `forward_gpu_resident` the load-time `parity_gate` compares), keeping the full
+    // logit vector at EVERY position so we can catch a mid-context divergence.
+    cuda_model.executor.reset_kv_cache_gpu();
+    let mut gpu_logits_per_pos: Vec<Vec<f32>> = Vec::with_capacity(probe.len());
+    let mut gpu_cache = OwnedQuantizedKVCache::new(num_layers, kv_dim, probe.len().max(2));
+    for (pos, &tok) in probe.iter().enumerate() {
+        match cuda_model.forward_gpu_resident(tok, &mut gpu_cache, pos) {
+            Ok(logits) => gpu_logits_per_pos.push(logits),
+            Err(_) => {
+                cuda_model.executor.reset_kv_cache_gpu();
+                return false; // GPU forward failed — fail closed.
+            },
+        }
+    }
+    cuda_model.executor.reset_kv_cache_gpu();
+
+    // Per-position decision over REAL positions (≥1). Excludes pos0 (BOS near-tie).
+    let report = f2_multi_position_report(&cpu_logits_per_pos, &gpu_logits_per_pos);
+    if report.accepted {
+        if report.pos0_argmax_flip {
+            eprintln!(
+                "[F2-VALIDATION] pos0 argmax flip (benign BOS near-tie) ignored; all {} real positions match (min cosine {:.4} >= {F2_GATE_COSINE_MIN}) — accepting GPU path",
+                probe.len() - 1,
+                report.min_cosine_real,
+            );
+        }
+        true
+    } else {
+        eprintln!(
+            "[F2-VALIDATION] GPU diverges from CPU at real position {} (argmax {} != {}, cosine {:.4}); min real-position cosine {:.4} — HwDp4a-class mid-context degradation, falling back to CPU",
+            report.first_bad_pos,
+            report.first_bad_gpu_argmax,
+            report.first_bad_cpu_argmax,
+            report.first_bad_cosine,
+            report.min_cosine_real,
+        );
+        false
+    }
+}
+
+/// PMAT-919 F2 per-position cosine floor. For every REAL probe position (≥1) the
+/// GPU's logits must score `cosine ≥ F2_GATE_COSINE_MIN` against CPU's regardless of
+/// argmax. Set strictly below the load-time `PARITY_GATE_COSINE_MIN` (0.98 in
+/// `cuda/mod.rs`) so this subordinate gate never rejects a model the load-time gate
+/// accepted. Backstops the degraded HwDp4a 7B case (pos6 @ 0.9398 → reject).
+pub(crate) const F2_GATE_COSINE_MIN: f32 = 0.95;
+
+/// PMAT-919 F2 argmax-mismatch cosine threshold. A per-position argmax MISMATCH is
+/// only fatal when the cosine is ALSO degraded below this (a genuine divergence,
+/// e.g. degraded HwDp4a 1.5B pos3 @ 0.9705). A high-cosine (≥ this) argmax flip is a
+/// benign FP/quant NEAR-TIE — two logits within epsilon, the distributions are
+/// essentially identical — and must be ACCEPTED (the CORRECT fp32-Mwv default flips a
+/// late-position argmax at cosine 0.9995; rejecting that is the PMAT-742/#1864
+/// false-positive at a non-zero position). Set to the load-time τ_load (0.98) so the
+/// "argmax flip below 0.98" reject window is exactly the degraded-cosine band.
+pub(crate) const F2_ARGMAX_MISMATCH_COSINE: f32 = 0.98;
+
+/// Catastrophic cosine floor (orthogonal garbage / NaN). Anything below this is a
+/// hard reject regardless of argmax, matching the `apr parity` catastrophic floor.
+pub(crate) const F2_CATASTROPHIC_COSINE: f32 = 0.90;
+
+/// Per-position F2 decision report. Pure + GPU-free → unit-testable without CUDA.
+#[derive(Debug, Clone)]
+pub(crate) struct F2PositionReport {
+    /// Accept the GPU path?
+    pub accepted: bool,
+    /// Was position 0's argmax flipped (benign BOS near-tie, ignored)?
+    pub pos0_argmax_flip: bool,
+    /// Minimum cosine over REAL positions (≥1); 1.0 if there are none.
+    pub min_cosine_real: f32,
+    /// First REAL position that caused a reject (0 if accepted).
+    pub first_bad_pos: usize,
+    pub first_bad_cpu_argmax: u32,
+    pub first_bad_gpu_argmax: u32,
+    pub first_bad_cosine: f32,
+}
+
+/// PMAT-919 (reconciled) F2 decision over a multi-token probe. For every REAL
+/// position (index ≥ 1) the GPU path is REJECTED iff:
+///   • cosine < `F2_GATE_COSINE_MIN` (0.95) — quant/catastrophic floor (degraded
+///     HwDp4a 7B pos6 @ 0.9398, orthogonal garbage cos≈0), OR
+///   • argmax mismatch AND cosine < `F2_ARGMAX_MISMATCH_COSINE` (0.98) — a genuine
+///     mid-context divergence (degraded HwDp4a 1.5B pos3, argmax flip @ 0.9705).
+/// A high-cosine (≥0.98) argmax flip is a BENIGN near-tie and is ACCEPTED (the
+/// correct fp32-Mwv default flips a late-position argmax at cosine 0.9995). Position 0
+/// (the context-less BOS near-tie) is EXCLUDED entirely so the correct path is never
+/// false-rejected there (PMAT-742/#1864). Pure + GPU-free.
+pub(crate) fn f2_multi_position_report(
+    cpu_per_pos: &[Vec<f32>],
+    gpu_per_pos: &[Vec<f32>],
+) -> F2PositionReport {
+    let n = cpu_per_pos.len().min(gpu_per_pos.len());
+    let mut min_cosine_real = 1.0_f32;
+    let mut pos0_argmax_flip = false;
+
+    // Detect the benign pos0 near-tie purely for diagnostics (it never causes reject).
+    if n > 0 {
+        pos0_argmax_flip = argmax_u32(&cpu_per_pos[0]) != argmax_u32(&gpu_per_pos[0]);
+    }
+
+    // No real position to validate → no-op accept (load-time gate is primary).
+    if n < 2 {
+        return F2PositionReport {
+            accepted: true,
+            pos0_argmax_flip,
+            min_cosine_real: 1.0,
+            first_bad_pos: 0,
+            first_bad_cpu_argmax: 0,
+            first_bad_gpu_argmax: 0,
+            first_bad_cosine: 1.0,
+        };
+    }
+
+    for pos in 1..n {
+        let cpu = &cpu_per_pos[pos];
+        let gpu = &gpu_per_pos[pos];
+        let cosine = logits_cosine_similarity(cpu, gpu);
+        if cosine < min_cosine_real {
+            min_cosine_real = cosine;
+        }
+        let cpu_argmax = argmax_u32(cpu);
+        let gpu_argmax = argmax_u32(gpu);
+        let argmax_mismatch = cpu_argmax != gpu_argmax;
+        // Reject on: cosine below the quant-aware floor (degraded HwDp4a 7B /
+        // orthogonal garbage), OR a real-position argmax mismatch AT a degraded
+        // cosine (< 0.98 — degraded HwDp4a 1.5B). A high-cosine (≥0.98) argmax flip
+        // is a benign FP/quant near-tie → NOT a reject (correct fp32-Mwv flips a
+        // late argmax at cosine 0.9995).
+        let bad = cosine < F2_GATE_COSINE_MIN
+            || (argmax_mismatch && cosine < F2_ARGMAX_MISMATCH_COSINE);
+        if bad {
+            return F2PositionReport {
+                accepted: false,
+                pos0_argmax_flip,
+                min_cosine_real,
+                first_bad_pos: pos,
+                first_bad_cpu_argmax: cpu_argmax,
+                first_bad_gpu_argmax: gpu_argmax,
+                first_bad_cosine: cosine,
+            };
+        }
+    }
+
+    F2PositionReport {
+        accepted: true,
+        pos0_argmax_flip,
+        min_cosine_real,
+        first_bad_pos: 0,
+        first_bad_cpu_argmax: 0,
+        first_bad_gpu_argmax: 0,
+        first_bad_cosine: 1.0,
+    }
+}
+
+/// Cosine similarity between two logit vectors, f64-accumulated (matches the
+/// load-time gate's `cosine_similarity` in `mod_parity_gate.rs`). Pure + GPU-free
+/// so the F2 gate's decision logic is unit-testable without CUDA. Returns 0.0 when
+/// either vector has ~zero norm (a degenerate/garbage logit vector → rejected).
+pub(crate) fn logits_cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    let mut dot: f64 = 0.0;
+    let mut norm_a: f64 = 0.0;
+    let mut norm_b: f64 = 0.0;
+    for (x, y) in a.iter().zip(b.iter()) {
+        let x = f64::from(*x);
+        let y = f64::from(*y);
+        dot += x * y;
+        norm_a += x * x;
+        norm_b += y * y;
+    }
+    let denom = norm_a.sqrt() * norm_b.sqrt();
+    if denom < 1e-12 {
+        0.0
+    } else {
+        (dot / denom) as f32
+    }
+}
+
+/// argmax of a logit vector as a token id (0 on empty / all-NaN). Pure + GPU-free.
+pub(crate) fn argmax_u32(logits: &[f32]) -> u32 {
+    logits
         .iter()
         .enumerate()
         .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
-        .map_or(0, |(i, _)| i as u32);
-
-    // GPU: generate 1 token from the SAME probe context.
-    let gpu_first_config = crate::gguf::QuantizedGenerateConfig {
-        max_tokens: 1,
-        temperature: 0.0,
-        top_k: 1,
-        ..gen_config.clone()
-    };
-    match cuda_model.generate_gpu_resident(&probe, &gpu_first_config) {
-        Ok(gpu_tokens) if gpu_tokens.len() > probe.len() => {
-            let gpu_first = gpu_tokens[probe.len()];
-            // First-token argmax can tip on a genuine FP/quant near-tie even with
-            // real context. Accept an exact match or a near-tie in CPU's own logit
-            // space; reject real divergence (GPU garbage lands deep in CPU's tail).
-            let rel_gap = cpu_logit_rel_gap(&cpu_logits, cpu_argmax, gpu_first);
-            if gpu_probe_token_acceptable(&cpu_logits, cpu_argmax, gpu_first) {
-                if gpu_first != cpu_argmax {
-                    eprintln!(
-                        "[F2-VALIDATION] GPU token {gpu_first} != CPU argmax {cpu_argmax} but near-tie (rel_gap={rel_gap:.4} <= {GPU_PROBE_NEAR_TIE_REL_GAP}) on {}-token probe — accepting GPU path",
-                        probe.len()
-                    );
-                }
-                true
-            } else {
-                eprintln!(
-                    "[F2-VALIDATION] GPU token {gpu_first} != CPU token {cpu_argmax}; rel_gap={rel_gap:.4} > {GPU_PROBE_NEAR_TIE_REL_GAP} on {}-token probe — real divergence, falling back to CPU",
-                    probe.len()
-                );
-                false
-            }
-        },
-        Ok(_) => true,
-        Err(_) => false,
-    }
+        .map_or(0, |(i, _)| i as u32)
 }
 
 /// Max relative position (within CPU's logit min..max range) at which a GPU-chosen
 /// token still counts as a harmless FP/quant near-tie. Real GPU/CPU divergence
 /// (PMAT-216 garbage) lands a token deep in CPU's tail (rel_gap -> ~1.0), far above
-/// this, so it is still rejected. See PMAT-742.
+/// this, so it is still rejected. See PMAT-742. (Retained for the legacy
+/// token-index helpers + their unit tests; the live F2 gate now uses cosine.)
 pub(crate) const GPU_PROBE_NEAR_TIE_REL_GAP: f32 = 0.15;
 
 /// Relative position of `token` within CPU's [min, max] logit range
@@ -575,6 +740,257 @@ pub(crate) fn cpu_logit_rel_gap(cpu_logits: &[f32], cpu_argmax: u32, token: u32)
 pub(crate) fn gpu_probe_token_acceptable(cpu_logits: &[f32], cpu_argmax: u32, gpu_first: u32) -> bool {
     gpu_first == cpu_argmax
         || cpu_logit_rel_gap(cpu_logits, cpu_argmax, gpu_first) <= GPU_PROBE_NEAR_TIE_REL_GAP
+}
+
+#[cfg(test)]
+mod pmat919_cosine_gate_tests {
+    use super::{
+        argmax_u32, f2_multi_position_report, logits_cosine_similarity, F2_ARGMAX_MISMATCH_COSINE,
+        F2_CATASTROPHIC_COSINE, F2_GATE_COSINE_MIN,
+    };
+
+    /// A realistic vocab-head logit vector with a clear leader at `leader`.
+    fn vocab_logits(leader: usize, seed: f32) -> Vec<f32> {
+        (0..256)
+            .map(|i| {
+                if i == leader {
+                    20.0
+                } else {
+                    6.0 + ((i as f32 + seed) * 0.013).sin() * 4.0
+                }
+            })
+            .collect()
+    }
+
+    /// CRITICAL FALSIFIER (i) ACCEPT — the CORRECT fp32-Mwv production default.
+    /// Multi-position probe where EVERY real position (≥1) argmax-matches at cosine
+    /// ≥ 0.9998 (only quant noise). pos0 is a benign BOS near-tie (argmax flip) that
+    /// must be IGNORED. The reconciled-truth correct path → ACCEPT.
+    #[test]
+    fn correct_fp32_mwv_multi_position_logits_are_accepted() {
+        // 4-position probe. CPU = clean leaders 5, 12, 33, 71 at positions 0..4.
+        let cpu: Vec<Vec<f32>> = vec![
+            vocab_logits(5, 0.0),
+            vocab_logits(12, 1.0),
+            vocab_logits(33, 2.0),
+            vocab_logits(71, 3.0),
+        ];
+        // GPU = CPU + ~0.5% quant noise on every real position (cosine ≥ 0.9998,
+        // argmax preserved). pos0 gets a deliberate benign argmax flip (near-tie).
+        let mut gpu = cpu.clone();
+        for (pos, v) in gpu.iter_mut().enumerate() {
+            for (i, g) in v.iter_mut().enumerate() {
+                *g += ((i as f32 * 0.37 + pos as f32).cos()) * (g.abs() * 0.002);
+            }
+        }
+        // pos0 benign BOS near-tie: flip the argmax to a near-tied token.
+        gpu[0][5] = 19.99;
+        gpu[0][6] = 20.01;
+
+        let report = f2_multi_position_report(&cpu, &gpu);
+        assert!(report.pos0_argmax_flip, "test must reproduce the benign pos0 flip");
+        // All REAL positions match.
+        for pos in 1..4 {
+            assert_eq!(
+                argmax_u32(&cpu[pos]),
+                argmax_u32(&gpu[pos]),
+                "real position {pos} argmax must match for the correct fp32-Mwv path"
+            );
+        }
+        assert!(
+            report.min_cosine_real >= 0.9998,
+            "correct fp32-Mwv min real-position cosine {} must be >= 0.9998",
+            report.min_cosine_real
+        );
+        assert!(
+            report.accepted,
+            "the F2 gate MUST accept the correct fp32-Mwv default despite the pos0 BOS flip"
+        );
+    }
+
+    /// CRITICAL FALSIFIER (ii) REJECT at the REAL margin — the degraded HwDp4a path.
+    /// A mid-position (pos2) argmax MISMATCH at cosine ~0.94 (the measured 7B pos6 @
+    /// 0.9398 symptom). Last-token-only cosine would MISS this; the per-position gate
+    /// catches it → REJECT. This is the headline fail-closed requirement.
+    #[test]
+    fn hwdp4a_mid_position_argmax_mismatch_is_rejected() {
+        let cpu: Vec<Vec<f32>> = vec![
+            vocab_logits(5, 0.0),
+            vocab_logits(12, 1.0),
+            vocab_logits(33, 2.0), // pos2: the mid-context divergence position
+            vocab_logits(71, 3.0),
+        ];
+        let mut gpu = cpu.clone();
+        // pos2: HwDp4a's INT8 activation-quant error flips the argmax to a different
+        // token (40) and degrades cosine into the [0.95, 0.98) band — the measured
+        // 1.5B pos3 @ 0.9705 symptom: a genuine mid-context divergence, NOT a benign
+        // near-tie (whose cosine would be ≥ 0.98). Built by adding ~25%-of-magnitude
+        // structured noise (enough angular deviation to land ~0.96) plus the flip.
+        gpu[2] = cpu[2]
+            .iter()
+            .enumerate()
+            .map(|(i, &c)| match i {
+                33 => 16.0,        // demote CPU's leader
+                40 => 21.0,        // GPU now argmaxes a *different* token
+                _ => c + ((i as f32 * 1.7).sin() * 0.30 * c.abs().max(2.0)), // ~cosine 0.96
+            })
+            .collect();
+
+        let report = f2_multi_position_report(&cpu, &gpu);
+        assert_ne!(
+            argmax_u32(&cpu[2]),
+            argmax_u32(&gpu[2]),
+            "test must reproduce the HwDp4a mid-position argmax mismatch"
+        );
+        let pos2_cos = logits_cosine_similarity(&cpu[2], &gpu[2]);
+        assert!(
+            pos2_cos > F2_CATASTROPHIC_COSINE && pos2_cos < F2_ARGMAX_MISMATCH_COSINE,
+            "this is a REAL-margin (degraded but not catastrophic) case: pos2 cosine {pos2_cos} \
+             must be in (0.90, 0.98) — argmax mismatch at degraded cosine, the 1.5B symptom"
+        );
+        assert!(
+            !report.accepted,
+            "the F2 gate MUST REJECT the degraded HwDp4a path (mid-position argmax mismatch at degraded cosine)"
+        );
+        assert_eq!(report.first_bad_pos, 2, "the reject must be attributed to pos2");
+    }
+
+    /// CRITICAL FALSIFIER (ii-b) ACCEPT — a HIGH-cosine late-position argmax flip is a
+    /// BENIGN near-tie, NOT a degradation. The CORRECT fp32-Mwv default flips a
+    /// late-position argmax at cosine 0.9995 (measured on lambda 4090 pos11: argmax
+    /// 12669 != 71341 @ 0.9995). An argmax mismatch ABOVE F2_ARGMAX_MISMATCH_COSINE
+    /// (0.98) must be ACCEPTED — else the correct path is false-rejected (the
+    /// PMAT-742/#1864 false-positive, recurring at a non-zero position).
+    #[test]
+    fn high_cosine_late_argmax_flip_is_accepted() {
+        let cpu: Vec<Vec<f32>> = vec![
+            vocab_logits(5, 0.0),
+            vocab_logits(12, 1.0),
+            // pos2: two near-tied leaders (33 and 34) within FP noise.
+            (0..256)
+                .map(|i| match i {
+                    33 => 20.00,
+                    34 => 19.99,
+                    _ => 6.0 + ((i as f32 + 2.0) * 0.013).sin() * 4.0,
+                })
+                .collect(),
+        ];
+        let mut gpu = cpu.clone();
+        // pos2: the near-tie tips the OTHER way under quant noise (argmax 33 -> 34),
+        // but the distributions are essentially identical → cosine ~0.9999.
+        gpu[2][33] = 19.99;
+        gpu[2][34] = 20.00;
+
+        let report = f2_multi_position_report(&cpu, &gpu);
+        assert_ne!(
+            argmax_u32(&cpu[2]),
+            argmax_u32(&gpu[2]),
+            "test must reproduce a late-position argmax flip"
+        );
+        let pos2_cos = logits_cosine_similarity(&cpu[2], &gpu[2]);
+        assert!(
+            pos2_cos >= F2_ARGMAX_MISMATCH_COSINE,
+            "benign near-tie pos2 cosine {pos2_cos} must be >= {F2_ARGMAX_MISMATCH_COSINE}"
+        );
+        assert!(
+            report.accepted,
+            "the F2 gate MUST ACCEPT a high-cosine ({pos2_cos}) argmax flip — it is a benign \
+             near-tie (the correct fp32-Mwv path), NOT a degradation"
+        );
+    }
+
+    /// CRITICAL FALSIFIER (iii) NO FALSE-REJECT — pos0-ONLY BOS near-tie.
+    /// An argmax flip at pos0 (cosine ~0.945) with EVERY real position matching is the
+    /// benign FP near-tie (PMAT-742/#1864). The gate must NOT false-reject it → ACCEPT.
+    #[test]
+    fn pos0_only_bos_near_tie_is_not_false_rejected() {
+        // Near-flat pos0 (BOS): top tokens essentially tied → cosine ~0.945 + flip.
+        let near_flat: Vec<f32> = (0..256)
+            .map(|i| match i {
+                5 => 10.00,
+                6 => 9.99,
+                _ => 9.0 + (i as f32 * 0.5).sin() * 0.4,
+            })
+            .collect();
+        let mut gpu_pos0 = near_flat.clone();
+        gpu_pos0[5] = 9.99;
+        gpu_pos0[6] = 10.00; // flip argmax 5 -> 6 (benign near-tie)
+
+        let cpu: Vec<Vec<f32>> = vec![near_flat, vocab_logits(12, 1.0), vocab_logits(33, 2.0)];
+        let mut gpu = cpu.clone();
+        gpu[0] = gpu_pos0;
+        // Real positions: tiny quant noise only, argmax preserved.
+        for pos in 1..3 {
+            for (i, g) in gpu[pos].iter_mut().enumerate() {
+                *g += ((i as f32 * 0.21).cos()) * (g.abs() * 0.002);
+            }
+        }
+
+        let report = f2_multi_position_report(&cpu, &gpu);
+        assert!(report.pos0_argmax_flip, "test must reproduce the pos0 argmax flip");
+        assert!(
+            report.accepted,
+            "pos0-only BOS near-tie must NOT be false-rejected (all real positions match)"
+        );
+    }
+
+    /// CRITICAL FALSIFIER (iv) REJECT orthogonal garbage (cosine ~0) — PMAT-216-class
+    /// transposed-weight garbage on a real position → catastrophic floor → REJECT.
+    #[test]
+    fn orthogonal_garbage_logits_are_rejected() {
+        let cpu: Vec<Vec<f32>> = vec![vocab_logits(5, 0.0), vocab_logits(12, 1.0)];
+        let mut gpu = cpu.clone();
+        // pos1: uncorrelated pseudo-random garbage (transposed-weight class).
+        gpu[1] = (0..256)
+            .map(|i| ((i as f32 * 12.9898).sin() * 43758.547).fract() * 20.0 - 10.0)
+            .collect();
+        let pos1_cos = logits_cosine_similarity(&cpu[1], &gpu[1]);
+        assert!(
+            pos1_cos < F2_CATASTROPHIC_COSINE,
+            "garbage pos1 cosine {pos1_cos} must be below the catastrophic floor"
+        );
+        let report = f2_multi_position_report(&cpu, &gpu);
+        assert!(
+            !report.accepted,
+            "the F2 gate MUST reject orthogonal garbage (cosine ~0) — fail-closed"
+        );
+    }
+
+    /// Threshold hierarchy: τ_cat (0.90) < τ_f2 (0.95) < τ_argmax (0.98) ≤ load-time
+    /// PARITY_GATE_COSINE_MIN (0.98), so the subordinate F2 gate can never reject what
+    /// the load-time gate accepted.
+    #[test]
+    fn f2_threshold_below_load_time_gate() {
+        const LOAD_TIME_PARITY_GATE_COSINE_MIN: f32 = 0.98;
+        assert!(
+            F2_GATE_COSINE_MIN < LOAD_TIME_PARITY_GATE_COSINE_MIN,
+            "F2 tau {F2_GATE_COSINE_MIN} must be < load-time tau {LOAD_TIME_PARITY_GATE_COSINE_MIN}"
+        );
+        assert!(F2_CATASTROPHIC_COSINE < F2_GATE_COSINE_MIN);
+        assert!(F2_GATE_COSINE_MIN < F2_ARGMAX_MISMATCH_COSINE);
+        assert!(F2_ARGMAX_MISMATCH_COSINE <= LOAD_TIME_PARITY_GATE_COSINE_MIN);
+    }
+
+    /// Identical logits across all positions → accepted (sanity).
+    #[test]
+    fn identical_multi_position_logits_are_accepted() {
+        let cpu: Vec<Vec<f32>> = vec![vocab_logits(5, 0.0), vocab_logits(12, 1.0), vocab_logits(33, 2.0)];
+        let report = f2_multi_position_report(&cpu, &cpu.clone());
+        assert!(report.accepted);
+        assert!((report.min_cosine_real - 1.0).abs() < 1e-5);
+    }
+
+    /// Single-token probe (context-less BOS) has no real position → no-op accept
+    /// (load-time gate is primary). Must NOT false-reject on a pos0-only near-tie.
+    #[test]
+    fn single_token_probe_is_noop_accept() {
+        let cpu: Vec<Vec<f32>> = vec![vocab_logits(5, 0.0)];
+        let mut gpu = cpu.clone();
+        gpu[0][5] = 19.0;
+        gpu[0][6] = 21.0; // pos0 flip
+        let report = f2_multi_position_report(&cpu, &gpu);
+        assert!(report.accepted, "single-token probe must be a no-op accept");
+    }
 }
 
 #[cfg(test)]

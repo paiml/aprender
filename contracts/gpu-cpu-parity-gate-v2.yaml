@@ -1,0 +1,213 @@
+metadata:
+  id: C-GPU-CPU-PARITY-GATE-V2
+  version: 2.2.0
+  created: '2026-04-17'
+  author: PAIML Engineering
+  kind: pattern
+  status: DRAFT_RED
+  pmat: [PMAT-919, PMAT-PARITY-GATE-V2]
+  description: >
+    Fixes the F2-VALIDATION per-inference GPU parity gate (and the `apr parity`
+    diagnostic) to validate a SHORT MULTI-TOKEN probe per-position instead of a
+    top-1 argmax on a context-less BOS probe (v1 false-positive) or a last-token-
+    only cosine (v2.0, insufficient). RECONCILED GROUND TRUTH (gx10 Blackwell
+    study, 2026-06-24): on Blackwell the production default is fp32 Mwv Q4K
+    (auto_q4k(cc>=120)=Mwv) — byte-identical to CPU-Q4K and llama.cpp, every real
+    position argmax-matches at cosine >= 0.9998. The HwDp4a path is the GENUINELY
+    DEGRADED one: its INT8 Q8_1 activation quantization mis-estimates massive-
+    activation channels, producing a real argmax MISMATCH at mid-context (measured:
+    pos3 @ 0.9705 on qwen2.5-coder-1.5B, pos6 @ 0.9398 on the 7B). A last-token-only
+    cosine gate misses that, so the gate now forwards the whole probe on both
+    backends and asserts, for every REAL position (index >= 1): matching argmax AND
+    cosine >= 0.95, with a catastrophic floor (< 0.90 / NaN / zero-norm) for
+    orthogonal garbage. Position 0 (the benign context-less BOS near-tie) is
+    EXCLUDED so the correct fp32-Mwv default (pos0 @ ~0.945, argmax flip) is not
+    false-rejected (PMAT-742 / #1864 lesson).
+  references:
+  - 'crates/aprender-serve/src/infer/inference_result.rs (the F2 gate
+    `validate_gpu_first_token` + the pure `f2_multi_position_report`)'
+  - 'crates/aprender-serve/src/gguf/cuda/mod_parity_gate.rs (the load-time gate,
+    cosine-based — pattern emulated)'
+  - 'crates/aprender-serve/src/cuda/gpu_profile.rs (auto_q4k: cc>=120 -> fp32 Mwv is
+    the CORRECT Blackwell default; HwDp4a kept on discrete sm_89+ where its DP4A
+    activation quant is reliable)'
+  - 'crates/apr-cli/src/commands/parity.rs (the `apr parity` diagnostic thresholds,
+    quant-aware)'
+  - contracts/apr-gpu-parity-consistency-v1.yaml
+  - contracts/apr-cpu-vs-gpu-output-parity-v1.yaml
+
+five_whys:
+  why_1: >
+    `apr run --gpu` either false-rejected the correct GPU path (v1, BOS argmax) or
+    could silently accept the degraded HwDp4a path whose mid-context argmax diverges
+    from CPU while the final-token cosine still looked fine (v2.0, last-token only).
+  why_2: >
+    v1 `validate_gpu_first_token` decided parity from where ONE GPU token's id landed
+    in CPU's logit range (rel_gap); v2.0 compared only the LAST position's full logit
+    vector. Neither inspected the per-position computed function across the sequence.
+  why_3: >
+    On a context-less BOS probe the next-token distribution is near-flat, so a CORRECT
+    path flips the pos0 argmax (benign near-tie). Conversely HwDp4a's degradation is
+    MID-sequence — a single last-token or aggregate metric cannot localize it.
+  why_4: >
+    The load-time `parity_gate` (mod_parity_gate.rs) uses full-vector cosine and
+    passes these models; the per-inference gate must be at least as strong AND add the
+    per-position argmax assertion that catches HwDp4a's mid-context argmax mismatch
+    (which can occur even at cosine ~0.97, above a pure cosine floor).
+  why_5: >
+    The fast, correct per-inference check forwards the same short probe on both
+    backends (the GPU already computes per-position logits in `forward_gpu_resident`)
+    and asserts per-position argmax + a quant-aware cosine floor over real positions.
+
+equations:
+  f2_per_position_gate:
+    formula: |
+      Let cpu_p, gpu_p be the logit vectors at probe position p (0-indexed),
+      cos_p = (Σ cpu_p · gpu_p) / (‖cpu_p‖₂ ‖gpu_p‖₂)  [f64-accumulated]
+      validate_gpu_first_token REJECTS ⟺ ∃ p ≥ 1 such that
+          cos_p < τ_f2                                  (τ_f2 = F2_GATE_COSINE_MIN = 0.95)
+        ∨ ( argmax(cpu_p) ≠ argmax(gpu_p) ∧ cos_p < τ_argmax )
+                                                        (τ_argmax = F2_ARGMAX_MISMATCH_COSINE = 0.98)
+      i.e. an argmax mismatch is only fatal at a DEGRADED cosine (< 0.98); a
+      high-cosine (≥ 0.98) argmax flip is a benign FP/quant near-tie → ACCEPT.
+      Position 0 is EXCLUDED (benign context-less BOS near-tie).
+      A single-token probe (no p ≥ 1) is a no-op accept (load-time gate is primary).
+    domain: dense Q4_K models with a >=2-token probe context
+    codomain: bool
+    invariants:
+    - Position 0 is never used for the accept/reject decision (else the correct
+      fp32-Mwv default is false-rejected at pos0 ~0.945 — PMAT-742/#1864).
+    - 'A real-position argmax MISMATCH at a DEGRADED cosine (< τ_argmax = 0.98)
+      rejects (degraded HwDp4a 1.5B symptom: pos3 argmax flip @ 0.9705). A
+      high-cosine (≥ 0.98) argmax flip is a benign near-tie → ACCEPT (the correct
+      fp32-Mwv default flips a late argmax @ cosine 0.9995 — measured lambda 4090
+      pos11).'
+    - τ_cat (0.90) ≤ τ_f2 (0.95) < τ_argmax (0.98) = τ_load (0.98) so F2 never
+      rejects a model the load-time gate accepted, and degraded HwDp4a / orthogonal
+      garbage (cos < 0.95 on any real position) is rejected.
+    - Cosine uses f64 accumulators; zero-norm vector → cos 0.0 → rejected.
+    preconditions:
+    - '`forward_gpu_resident` and `forward_single_with_cache` both return a
+      length=vocab_size logit vector at every probe position.'
+
+  apr_parity_quant_aware:
+    formula: |
+      apr parity PASS  ⟺ cosine ≥ COSINE_SIM_MIN (0.95) ∧ max_abs_diff ≤ 4.0
+      apr parity FAIL  ⟺ cosine < 0.90 (catastrophic / different function)
+      a high-cosine argmax disagreement is a WARN, not a FAIL.
+    domain: '`apr parity <model>` aggregate SPC verdict on Q4_K GPU vs CPU logits'
+    codomain: Verdict
+    invariants:
+    - A correct quantized Q4_K path (fp32-Mwv default on Blackwell, or HwDp4a on
+      discrete sm_89+; cosine ~0.97-1.0) is NOT labelled "different function";
+      bit-exactness (cosine ≥ 0.999, abs ≤ 1.0) is the wrong spec for a quantized
+      kernel.
+    - cosine < 0.90 (garbage) is STILL a hard FAIL.
+    - This aggregate verdict is coarser than the F2 per-position gate; the F2 gate's
+      per-position argmax assertion is the authoritative mid-context defense.
+    preconditions: []
+
+  hwdp4a_mid_context_argmax_mismatch:
+    formula: |
+      ∃ probe positions p ≥ 1 on the HwDp4a path:
+        argmax(cpu_p) ≠ argmax(gpu_p)   AND   cos_p ∈ [0.94, 0.98]
+      while the correct fp32-Mwv path has ∀ p ≥ 1: argmax match ∧ cos_p ≥ 0.9998.
+    domain: Blackwell sm_121 Q4_K decode, HW_DP4A_Q4K=1 vs fp32-Mwv default.
+    codomain: bool
+    invariants:
+    - 'Existence proof: qwen2.5-coder-1.5B-instruct Q4_K_M, HwDp4a pos3 argmax
+      mismatch @ cosine 0.9705; 7B pos6 @ 0.9398. fp32-Mwv: all real positions match,
+      cosine ≥ 0.9998, token-for-token with llama.cpp.'
+    preconditions: []
+
+proof_obligations:
+- id: PO-F2-EQUIVALENCE
+  type: equivalence
+  property: >
+    F2 per-position gate accepts the correct fp32-Mwv default (all real positions
+    argmax-match at cosine ≥ 0.9998), which the load-time gate also accepts.
+  applies_to: all
+- id: PO-F2-SAFETY
+  type: safety
+  property: >
+    F2 gate rejects the degraded HwDp4a path (a real-position argmax mismatch at the
+    real margin, cosine ~0.94) AND orthogonal garbage (cosine ≈ 0). Fail-closed.
+  applies_to: all
+- id: PO-F2-NO-FALSE-REJECT
+  type: safety
+  property: >
+    A pos0-only BOS near-tie (argmax flip, cosine ~0.945, all real positions match)
+    is ACCEPTED — position 0 is excluded from the decision.
+  applies_to: all
+- id: PO-F2-NEAR-TIE-ACCEPT
+  type: safety
+  property: >
+    A high-cosine (≥ τ_argmax = 0.98) real-position argmax flip is a benign near-tie
+    and is ACCEPTED (the correct fp32-Mwv default flips a late argmax @ cosine 0.9995).
+  applies_to: all
+- id: PO-F2-BOUND
+  type: bound
+  property: Threshold hierarchy τ_cat (0.90) < τ_f2 (0.95) < τ_argmax (0.98) ≤ τ_load (0.98) ≤ 1.0.
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-F2-ACCEPT-FP32MWV
+  rule: F2 gate accepts the correct fp32-Mwv default (all real positions argmax-match, cosine >= 0.9998).
+  prediction: >
+    A multi-position probe whose every real position (>=1) argmax-matches with <1%
+    quant noise (and a benign pos0 flip) is accepted by the per-position F2 gate.
+  test: cargo test -p aprender-serve --lib correct_fp32_mwv_multi_position_logits_are_accepted
+  if_fails: The per-position decision wrongly counts pos0 or sets τ_f2 too high.
+- id: FALSIFY-F2-REJECT-HWDP4A
+  rule: F2 gate rejects the degraded HwDp4a path on a real-position argmax mismatch at a degraded cosine (0.95..0.98).
+  prediction: >
+    A multi-position probe with a mid-position (>=1) argmax mismatch at cosine ~0.96
+    (degraded but above the catastrophic floor) is rejected.
+  test: cargo test -p aprender-serve --lib hwdp4a_mid_position_argmax_mismatch_is_rejected
+  if_fails: The gate ignores per-position argmax or only checks the last token.
+- id: FALSIFY-F2-ACCEPT-NEAR-TIE
+  rule: F2 gate accepts a HIGH-cosine (>=0.98) late-position argmax flip — a benign near-tie, NOT a degradation.
+  prediction: >
+    A multi-position probe with a late (>=1) argmax flip at cosine ~0.9999 is
+    accepted (the correct fp32-Mwv default; rejecting it is the PMAT-742/#1864
+    false-positive at a non-zero position).
+  test: cargo test -p aprender-serve --lib high_cosine_late_argmax_flip_is_accepted
+  if_fails: The argmax-mismatch reject window extends above τ_argmax (0.98).
+- id: FALSIFY-F2-NO-FALSE-REJECT-POS0
+  rule: A pos0-only BOS near-tie (argmax flip, cosine ~0.945, all real positions match) is accepted.
+  prediction: Excluding position 0 makes the pos0-only near-tie accepted.
+  test: cargo test -p aprender-serve --lib pos0_only_bos_near_tie_is_not_false_rejected
+  if_fails: Position 0 is incorrectly included in the decision.
+- id: FALSIFY-F2-REJECT-GARBAGE
+  rule: F2 gate rejects orthogonal garbage (cosine ~0) on any real position — fail-closed.
+  prediction: A garbage real-position logit vector uncorrelated with CPU is rejected by the catastrophic floor.
+  test: cargo test -p aprender-serve --lib orthogonal_garbage_logits_are_rejected
+  if_fails: The catastrophic floor is missing or too low.
+- id: FALSIFY-F2-COSINE-HIERARCHY
+  rule: τ_cat <= τ_f2 < load-time τ_load so F2 never rejects what the load-time gate accepts.
+  prediction: F2_CATASTROPHIC_COSINE (0.90) < F2_GATE_COSINE_MIN (0.95) < PARITY_GATE_COSINE_MIN (0.98).
+  test: cargo test -p aprender-serve --lib f2_threshold_below_load_time_gate
+  if_fails: A threshold constant is out of order — correct the constants.
+
+qa_gate:
+  id: F-F2-PER-POSITION-001
+  name: F2 Per-Inference GPU Parity Gate (Per-Position)
+  description: >
+    Replaces top-1 argmax / rel_gap (v1) and last-token-only cosine (v2.0) with a
+    per-position check over a short multi-token probe: every real position (>=1) must
+    argmax-match AND clear the quant-aware cosine floor. Position 0 (BOS near-tie) is
+    excluded. τ_f2 = 0.95, τ_cat = 0.90, both below the load-time τ_load = 0.98. The
+    load-time `parity_gate` remains the primary gate; F2 is the per-inference
+    re-check on the actual `forward_gpu_resident` dispatch path.
+  checks:
+  - f2_accepts_correct_fp32_mwv
+  - f2_rejects_degraded_hwdp4a
+  - f2_accepts_high_cosine_near_tie_flip
+  - f2_no_false_reject_pos0_bos_near_tie
+  - f2_rejects_orthogonal_garbage
+  - threshold_hierarchy_maintained
+  pass_criteria: >
+    All 5 falsifications pass + on real qwen2.5-coder models: the production fp32-Mwv
+    path is ACCEPTED (coherent), HW_DP4A_Q4K=1 is REJECTED (mid-position argmax
+    mismatch), with no pos0 false-reject — verified on Blackwell (gx10) and 4090.
+  falsification: per-position (>=1) argmax-match AND cosine >= τ_f2 over a multi-token probe

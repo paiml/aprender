@@ -316,8 +316,16 @@ mod pmat806_q4k_variant_tests {
     /// channels and FAILs the CPU/GPU parity gate on quantized models.
     #[test]
     fn blackwell_defaults_to_fp32_mwv() {
-        assert_eq!(GpuProfile::auto_q4k(true, 121), Q4kVariant::Mwv, "GB10 sm_121");
-        assert_eq!(GpuProfile::auto_q4k(true, 120), Q4kVariant::Mwv, "cc==120 boundary");
+        assert_eq!(
+            GpuProfile::auto_q4k(true, 121),
+            Q4kVariant::Mwv,
+            "GB10 sm_121"
+        );
+        assert_eq!(
+            GpuProfile::auto_q4k(true, 120),
+            Q4kVariant::Mwv,
+            "cc==120 boundary"
+        );
     }
 
     /// PMAT-806: Discrete DP4A GPUs (RTX 4090 sm_89=89, Ampere sm_80, Turing
@@ -325,9 +333,21 @@ mod pmat806_q4k_variant_tests {
     /// reliable for these models, so the fix is a strict no-op there.
     #[test]
     fn discrete_dp4a_gpus_keep_hwdp4a() {
-        assert_eq!(GpuProfile::auto_q4k(true, 89), Q4kVariant::HwDp4a, "RTX 4090 sm_89");
-        assert_eq!(GpuProfile::auto_q4k(true, 80), Q4kVariant::HwDp4a, "A100 sm_80");
-        assert_eq!(GpuProfile::auto_q4k(true, 75), Q4kVariant::HwDp4a, "Turing sm_75");
+        assert_eq!(
+            GpuProfile::auto_q4k(true, 89),
+            Q4kVariant::HwDp4a,
+            "RTX 4090 sm_89"
+        );
+        assert_eq!(
+            GpuProfile::auto_q4k(true, 80),
+            Q4kVariant::HwDp4a,
+            "A100 sm_80"
+        );
+        assert_eq!(
+            GpuProfile::auto_q4k(true, 75),
+            Q4kVariant::HwDp4a,
+            "Turing sm_75"
+        );
     }
 
     /// Non-DP4A GPUs (sm<7.5) keep MWV (pre-existing behavior, unchanged).
