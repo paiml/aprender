@@ -1,13 +1,17 @@
 metadata:
-  version: 1.0.0
+  version: 1.2.0
   created: '2026-05-22'
   author: PAIML Engineering
-  description: "`apr export <model>.apr --format gguf` must produce a clean error (or succeed via inference) when `num_layers` is absent from APR metadata. Panicking with `.expect()` on an Option<usize> is forbidden for any user-reachable code path."
+  description: "`apr export <model>.apr --format gguf` must produce a clean error (or succeed via inference) when GGUF-required dimensions are absent from APR metadata, and must NEVER stamp a silently-wrong dimension. `num_layers`, `hidden_size`, `vocab_size`, and `intermediate_size` are UNAMBIGUOUS from tensor shapes and MUST be inferred rather than hard-failed. `num_heads`/`num_kv_heads` are NOT inferable from shapes alone (q_dim = num_heads × head_dim has no unique factorization without head_dim): they are derived EXACTLY from an explicit head_dim (num_heads = q_dim/head_dim) or explicit num_heads; when head_dim AND num_heads are both absent the export MUST hard-fail with an actionable error naming the missing dimension and a working remedy (stamp head_dim/num_heads via `apr stamp`, or re-convert from the source config), NOT guess. Panicking with `.expect()` on an Option<usize> is forbidden for any user-reachable code path."
   kind: pattern
   references:
     - "paiml/aprender#1865 (apr export <model>.apr --format gguf panics: 'C-07: num_layers required for GGUF export')"
+    - "PMAT-920 (apr export --format gguf: infer unambiguous dims from shapes; derive num_heads from EXPLICIT head_dim only; honest hard-fail when absent — no [64,128,96,80] head_dim guess that silently mis-stamped Qwen2-1.5B as 24 heads instead of 12)"
     - "crates/aprender-core/src/format/converter/metadata.rs:export_apr_to_gguf_raw"
     - "crates/aprender-core/src/format/converter/metadata.rs:build_gguf_arch_metadata"
+    - "crates/aprender-core/src/format/converter/metadata.rs:infer_missing_gguf_dims_from_shapes"
+    - "crates/aprender-core/src/format/converter/metadata.rs:fill_head_counts_from_explicit_head_dim"
+    - "crates/aprender-core/src/format/converter/metadata.rs:missing_num_heads_err"
   registry: true
   tags:
     - cli
@@ -45,6 +49,19 @@ equations:
       - "Missing num_layers triggers tensor-name inference before raising an error"
       - "Exit code on missing dim is 5 (CliError::ValidationFailed::FormatError), not 101 (panic)"
 
+  attn_dim_inference:
+    formula: "head counts require an explicit head_dim: num_heads = q_dim/head_dim, num_kv_heads = kv_dim/head_dim (EXACT). hidden_size, vocab_size, intermediate_size are inferred from embedding/FFN shapes (unambiguous). When head_dim AND num_heads are both absent → honest hard-fail, NOT a guess."
+    domain: "set of tensor shapes + (optional) explicit head_dim/num_heads in a metadata-light APR file (PMAT-920)"
+    codomain: "AprV2Metadata with the unambiguous dims filled; head counts filled only when soundly derivable; otherwise Err"
+    invariants:
+      - "num_heads is NOT inferred from shapes alone (q_dim = num_heads × head_dim is unfactorable without head_dim); the old [64,128,96,80] first-divisor guess is removed"
+      - "When num_heads is None but head_dim is explicit, num_heads = q_dim/head_dim EXACTLY (e.g. q_dim=256, head_dim=128 → 2, NOT the guess's 256/64 = 4)"
+      - "When num_kv_heads is None but head_dim is explicit, num_kv_heads = kv_dim/head_dim EXACTLY"
+      - "When head_dim AND num_heads are both absent, export_apr_to_gguf_raw returns Err with an actionable message (names num_heads + head_dim + a working remedy: apr stamp / re-convert from source), and NO GGUF is written — never a silently-wrong head count"
+      - "hidden_size/vocab_size/intermediate_size are inferred from embedding + FFN tensor shapes (these ARE unambiguous)"
+      - "Explicit APR metadata always wins; inference only fills None fields"
+      - "Shapes are interpreted row-major (LAYOUT-001) consistently with import"
+
 proof_obligations:
   - type: invariant
     property: "Tensor-name inference returns max-index + 1"
@@ -58,6 +75,14 @@ proof_obligations:
     property: "Export does not panic on missing dim"
     formal: "export_apr_to_gguf_raw(apr_with_no_num_layers) = Err | Ok (never panic)"
     applies_to: export_no_panic
+  - type: invariant
+    property: "With explicit head_dim, num_heads is derived EXACTLY (not guessed) (PMAT-920)"
+    formal: "export_apr_to_gguf_raw(apr{head_dim=128, q_dim=256}) = Ok AND gguf.<arch>.attention.head_count = 256/128 = 2 (NOT the [64,...] guess's 4)"
+    applies_to: attn_dim_inference
+  - type: invariant
+    property: "Absent head_dim AND num_heads → actionable hard-fail, no silently-wrong head count (PMAT-920)"
+    formal: "export_apr_to_gguf_raw(apr{head_dim=None, num_heads=None}) = Err(msg naming num_heads + head_dim + a working remedy: apr stamp / re-convert) AND no GGUF written"
+    applies_to: attn_dim_inference
 
 falsification_tests:
   - id: FALSIFY-EXPORT-NUM-LAYERS-001
@@ -78,6 +103,18 @@ falsification_tests:
     test: "grep -A3 'fn build_gguf_arch_metadata' crates/aprender-core/src/format/converter/metadata.rs | grep -qE -- '-> Result<'"
     if_fails: "Function still returns Vec — missing dims will continue to panic via downstream .expect()"
 
+  - id: FALSIFY-EXPORT-INFER-METADATA-001
+    rule: "Explicit head_dim yields the EXACT head count (q_dim/head_dim), never the [64,128,96,80] guess (PMAT-920)"
+    prediction: "export_apr_to_gguf_raw on a metadata-light APR with explicit head_dim=128 and q_dim=256 succeeds AND the re-read GGUF has attention.head_count = 2 (NOT the old guess's 256/64 = 4)"
+    test: "cargo test -p aprender-core --lib ft_apr_gguf_export_uses_explicit_head_dim_exactly_not_guess"
+    if_fails: "Exporter is guessing head_dim from a hardcoded list and silently mis-stamping the head count"
+
+  - id: FALSIFY-EXPORT-INFER-METADATA-002
+    rule: "Absent head_dim AND num_heads → actionable hard-fail, no silently-wrong head count, no GGUF written (PMAT-920)"
+    prediction: "export_apr_to_gguf_raw on a metadata-light APR with no head_dim and no num_heads returns Err naming num_heads + head_dim + a working remedy (apr stamp / re-convert), and writes no GGUF"
+    test: "cargo test -p aprender-core --lib ft_apr_gguf_export_hard_fails_when_head_dim_and_num_heads_absent"
+    if_fails: "Exporter guesses a head count and emits a silently-wrong GGUF instead of failing honestly"
+
 qa_gate:
   id: F-EXPORT-NUM-LAYERS-001
   name: "apr export panic-free for missing num_layers"
@@ -85,4 +122,5 @@ qa_gate:
   checks:
     - "num_layers_inference"
     - "export_no_panic"
-  pass_criteria: "FALSIFY-EXPORT-NUM-LAYERS-{001,002,003} all PASS"
+    - "attn_dim_inference"
+  pass_criteria: "FALSIFY-EXPORT-NUM-LAYERS-{001,002,003} and FALSIFY-EXPORT-INFER-METADATA-{001,002} all PASS"
