@@ -656,7 +656,12 @@ mod tests {
         let data = Int32Array::from(vec![1, 2, 3, 4, 5]);
 
         // Create mock device/queue (not used by count())
-        let instance = wgpu::Instance::default();
+        // PMAT-927: non-GLES mask (Instance::default() == Backends::all() includes
+        // GL → SIGABRT-in-Drop on Linux/AMD-RADV).
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: crate::gpu::gpu_backends(),
+            ..Default::default()
+        });
         let Some(adapter) = instance.request_adapter(&wgpu::RequestAdapterOptions::default()).await
         else {
             eprintln!("Skipping GPU test (no GPU available)");
@@ -677,7 +682,12 @@ mod tests {
     async fn test_count_empty_array() {
         let data = Int32Array::from(vec![] as Vec<i32>);
 
-        let instance = wgpu::Instance::default();
+        // PMAT-927: non-GLES mask (Instance::default() == Backends::all() includes
+        // GL → SIGABRT-in-Drop on Linux/AMD-RADV).
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: crate::gpu::gpu_backends(),
+            ..Default::default()
+        });
         let Some(adapter) = instance.request_adapter(&wgpu::RequestAdapterOptions::default()).await
         else {
             eprintln!("Skipping GPU test (no GPU available)");
@@ -699,7 +709,12 @@ mod tests {
         // sum_f32 is placeholder - should return error
         let data = Float32Array::from(vec![1.0, 2.0, 3.0]);
 
-        let instance = wgpu::Instance::default();
+        // PMAT-927: non-GLES mask (Instance::default() == Backends::all() includes
+        // GL → SIGABRT-in-Drop on Linux/AMD-RADV).
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: crate::gpu::gpu_backends(),
+            ..Default::default()
+        });
         let Some(adapter) = instance.request_adapter(&wgpu::RequestAdapterOptions::default()).await
         else {
             eprintln!("Skipping GPU test (no GPU available)");

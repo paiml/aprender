@@ -23,6 +23,32 @@ pub mod jit;
 pub mod kernels;
 pub mod multigpu;
 
+/// Platform-appropriate wgpu backend mask for adapter enumeration.
+///
+/// PMAT-927 (class follow-up to PMAT-925): `wgpu::Backends::all()` includes
+/// [`wgpu::Backends::GL`], which on Linux hosts that expose both Vulkan and
+/// GLES/EGL (notably the intel AMD-RADV cross-silicon baseline box) instantiates
+/// a GLES adapter whose `EglContext::make_current` **panics inside `Drop`**. A
+/// panic in a destructor during cleanup aborts the whole process with SIGABRT
+/// ("panic in a destructor during cleanup"); standalone enumeration can also
+/// spin/hang on the broken EGL path. The compute kernels themselves are correct
+/// — the fragility is purely in adapter *enumeration* and the GLES `Drop` path.
+///
+/// We return [`wgpu::Backends::PRIMARY`], which in wgpu 22 (this crate's pin) is
+/// `VULKAN | METAL | DX12 | BROWSER_WEBGPU` and **excludes** `GL` (GL lives only
+/// in `Backends::SECONDARY`). This keeps the real GPU on every platform — Vulkan
+/// on Linux/AMD-RADV, Metal on Apple, DX12 on Windows — while guaranteeing the
+/// broken GLES/EGL adapter is never created.
+///
+/// The mask is applied at BOTH the `wgpu::Instance` construction site (so the
+/// GLES backend is never even registered on the instance) and every
+/// `enumerate_adapters` call site.
+#[must_use]
+pub const fn gpu_backends() -> wgpu::Backends {
+    // PRIMARY = VULKAN | METAL | DX12 | BROWSER_WEBGPU (never GL/GLES).
+    wgpu::Backends::PRIMARY
+}
+
 /// GPU compute engine for aggregations
 pub struct GpuEngine {
     /// GPU device handle (public for benchmarking)
@@ -39,9 +65,11 @@ impl GpuEngine {
     /// # Errors
     /// Returns error if GPU initialization fails (no GPU available, driver issues, etc.)
     pub async fn new() -> Result<Self> {
-        // Request GPU adapter
+        // Request GPU adapter.
+        // PMAT-927: constrain to a non-GLES backend mask so the broken GLES/EGL
+        // adapter (SIGABRT-in-Drop on Linux/AMD-RADV) is never registered.
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
+            backends: gpu_backends(),
             ..Default::default()
         });
 
@@ -302,6 +330,42 @@ impl GpuEngine {
 mod tests {
     use super::*;
     use arrow::array::Int32Array;
+
+    /// PMAT-927 FALSIFIER: the wgpu adapter-enumeration backend mask used by
+    /// aprender-db MUST NOT contain GLES (`wgpu::Backends::GL`), and MUST contain
+    /// the platform's real backend.
+    ///
+    /// RED on `Backends::all()` (contains GL → GLES/EGL adapter → SIGABRT-in-Drop
+    /// on Linux/AMD-RADV). GREEN on `Backends::PRIMARY`. Host-independent: it
+    /// inspects the bitmask, it does not create any adapter.
+    #[test]
+    fn test_gpu_backends_excludes_gles() {
+        let mask = gpu_backends();
+
+        // The whole point: GLES/EGL must never be enumerated.
+        assert!(
+            !mask.contains(wgpu::Backends::GL),
+            "gpu_backends() must NOT include Backends::GL (GLES/EGL panics in Drop \
+             on Linux/AMD-RADV → SIGABRT). mask = {mask:?}"
+        );
+
+        // The real GPU backend on each platform must still be present.
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        assert!(
+            mask.contains(wgpu::Backends::VULKAN),
+            "gpu_backends() must include VULKAN on Linux (AMD-RADV/NVIDIA). mask = {mask:?}"
+        );
+        #[cfg(target_os = "macos")]
+        assert!(
+            mask.contains(wgpu::Backends::METAL),
+            "gpu_backends() must include METAL on macOS (Apple Silicon). mask = {mask:?}"
+        );
+        #[cfg(target_os = "windows")]
+        assert!(
+            mask.contains(wgpu::Backends::VULKAN) || mask.contains(wgpu::Backends::DX12),
+            "gpu_backends() must include VULKAN or DX12 on Windows. mask = {mask:?}"
+        );
+    }
 
     #[tokio::test]
     async fn test_gpu_init() {
