@@ -109,19 +109,28 @@ impl Module for Dropout {
         let mut rng = self.rng.lock().expect("Dropout RNG lock poisoned");
         let scale = 1.0 / (1.0 - self.p);
 
-        let data: Vec<f32> = input
+        // PMAT-922 (severed-graph sweep): build the inverted-dropout mask as a
+        // CONSTANT tensor (0 where dropped, `scale` where kept) and apply it via
+        // the autograd-aware `Tensor::mul`. The previous `Tensor::new(&data, ...)`
+        // path baked the scaled values into a fresh leaf with no grad_fn, SEVERING
+        // the graph and freezing every parameter upstream of any training-mode
+        // dropout. The mask is a non-grad constant, so `input.mul(&mask)` is
+        // numerically identical (per-element x*mask) but records a MulBackward edge
+        // routing gradient straight through the kept elements.
+        let mask_data: Vec<f32> = input
             .data()
             .iter()
-            .map(|&x| {
+            .map(|_| {
                 if rng.random::<f32>() < self.p {
                     0.0
                 } else {
-                    x * scale
+                    scale
                 }
             })
             .collect();
 
-        Tensor::new(&data, input.shape())
+        let mask = Tensor::new(&mask_data, input.shape());
+        input.mul(&mask)
     }
 
     fn train(&mut self) {

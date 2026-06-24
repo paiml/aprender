@@ -339,19 +339,22 @@ pub fn dropout(x: &Tensor, p: f32, training: bool) -> Tensor {
     let mut rng = rand::rng();
     let scale = 1.0 / (1.0 - p);
 
-    let data: Vec<f32> = x
+    // PMAT-922 (severed-graph sweep): build the inverted-dropout mask as a
+    // CONSTANT tensor and apply it via the autograd-aware `Tensor::mul`. The
+    // previous `Tensor::from_vec` path produced a fresh leaf with no grad_fn,
+    // SEVERING the graph (and freezing everything upstream) whenever dropout ran
+    // inside a training forward pass — e.g. attention's `apply_dropout`. The mask
+    // is a non-grad constant, so `x.mul(&mask)` is numerically identical (per-
+    // element v*mask) yet records a MulBackward edge that routes gradient through
+    // the kept elements.
+    let mask_data: Vec<f32> = x
         .data()
         .iter()
-        .map(|&v| {
-            if rng.random::<f32>() < p {
-                0.0
-            } else {
-                v * scale
-            }
-        })
+        .map(|_| if rng.random::<f32>() < p { 0.0 } else { scale })
         .collect();
 
-    Tensor::from_vec(data, x.shape())
+    let mask = Tensor::from_vec(mask_data, x.shape());
+    x.mul(&mask)
 }
 
 /// Layer normalization over the last dimension of an ND tensor.

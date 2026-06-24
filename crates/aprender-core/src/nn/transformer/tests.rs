@@ -444,6 +444,8 @@ mod tests_attention_backward_gradflow;
 mod tests_attention_contract;
 #[path = "tests_attention_scaling_contract.rs"]
 mod tests_attention_scaling_contract;
+#[path = "tests_decoder_grad_flow.rs"]
+mod tests_decoder_grad_flow;
 #[path = "tests_decoder_rope.rs"]
 mod tests_decoder_rope;
 #[path = "tests_e2e_training_smoke.rs"]
