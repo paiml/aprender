@@ -36,6 +36,10 @@ proof_obligations:
   property: Finite output
   formal: x finite and W_embed finite implies logits finite
   applies_to: all
+- type: invariant
+  property: OBLIG-CONVERT-TIED-EMBEDDING-LMHEAD — apr convert synthesizes a runnable LM head for tied-embedding models
+  formal: apr_convert(M) where M has embed_tokens and no lm_head/output implies output APR contains lm_head.weight with shape = embed_tokens.shape (row-major [vocab, hidden]) for every quant path (f32/int8/int4/fp16/Q4K)
+  applies_to: all
 kernel_structure:
   phases:
   - name: transpose_embed
@@ -79,6 +83,16 @@ falsification_tests:
   prediction: All logits elements are finite when x and W_embed are finite
   test: proptest with finite x and W_embed, check logits.is_finite() element-wise
   if_fails: Accumulation overflow in matmul for large d_model
+- id: FALSIFY-CONVERT-TIED-LMHEAD-001
+  rule: OBLIG-CONVERT-TIED-EMBEDDING-LMHEAD — convert synthesizes a runnable LM head
+  prediction: apr convert of a tied-embedding model (embed_tokens, no lm_head) yields an APR whose tensor index contains lm_head.weight on every quant path
+  test: cargo test -p aprender-core --lib test_convert_tied_synthesizes_lm_head_f32
+  if_fails: convert path drops the tied output projection, producing a non-runnable APR (tensor not found lm_head.weight)
+- id: FALSIFY-CONVERT-TIED-LMHEAD-002
+  rule: Synthesized LM head keeps embedding shape (row-major, LAYOUT-001)
+  prediction: synthesized lm_head.weight shape equals embed_tokens.weight shape [vocab, hidden]
+  test: cargo test -p aprender-core --lib test_convert_tied_lm_head_shape_matches_embedding
+  if_fails: convert transposed or reshaped the tied head, breaking row-major projection
 kani_harnesses:
 - id: KANI-TE-001
   obligation: TE-SHP-001

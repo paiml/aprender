@@ -39,7 +39,7 @@ use std::path::Path;
 /// Returns (possibly modified tensor map, whether tied embeddings were detected).
 /// ALB-099: Only clones tensor map when tied embeddings need synthesis.
 /// Previously cloned unconditionally (~1.4 GB for 350M model).
-fn resolve_f32_tied_embeddings(
+pub(crate) fn resolve_f32_tied_embeddings(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
 ) -> (
     std::borrow::Cow<'_, BTreeMap<String, (Vec<f32>, Vec<usize>)>>,

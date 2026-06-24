@@ -392,6 +392,23 @@ pub fn apr_convert<P: AsRef<Path>>(
         tensors
     };
 
+    // Step 1c: PMAT-918 — synthesize a tied lm_head BEFORE dispatching to the
+    // various save paths. For tied-embedding models (qwen2/gemma/llama small
+    // LLMs with `tie_word_embeddings: true`) the source has no separate
+    // `lm_head.weight`/`output.weight`; without this step `apr convert` would
+    // emit a non-self-describing `.apr` that relies entirely on a loader
+    // heuristic (and the Q4K save path emitted an artifact with NO output
+    // projection at all). `apr import`/`write_apr_file` already synthesize the
+    // tie via `resolve_f32_tied_embeddings`; this brings `apr convert` (the
+    // distinct user-facing CLI entry point) to parity so EVERY quant path
+    // (f32/int8/int4/fp16/Q4K) produces a runnable model. The synthesized
+    // `lm_head.weight` is bit-for-bit identical to the embedding (row-major,
+    // [vocab, hidden] — LAYOUT-001). Contract: OBLIG-CONVERT-TIED-EMBEDDING-LMHEAD.
+    let tensors = match resolve_f32_tied_embeddings(&tensors) {
+        (std::borrow::Cow::Owned(synthesized), true) => synthesized,
+        _ => tensors,
+    };
+
     // Step 2: Handle Q4K specially - store raw Q4K bytes in APR format
     // PMAT-154: Pass tokenizer so APR files are self-contained (Jidoka)
     if options.quantize == Some(QuantizationType::Q4K) {

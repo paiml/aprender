@@ -176,7 +176,7 @@ fn save_model_tensors_q4k(
 
 // Write functions extracted to write.rs (PMAT-197)
 mod write;
-pub(crate) use write::{write_apr_file, write_apr_file_raw};
+pub(crate) use write::{resolve_f32_tied_embeddings, write_apr_file, write_apr_file_raw};
 
 // Import pipeline extracted to import.rs (PMAT-197)
 mod import;
