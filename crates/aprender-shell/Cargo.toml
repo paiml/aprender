@@ -24,7 +24,7 @@ harness = false
 
 [dependencies]
 # Use path for local dev, crates.io for release
-aprender = { path = "../aprender-core", version = "0.53.0", package = "aprender-core", features = ["format-encryption", "format-compression", "format-homomorphic"] }
+aprender = { path = "../aprender-core", version = "0.54.0", package = "aprender-core", features = ["format-encryption", "format-compression", "format-homomorphic"] }
 clap = { version = "4", features = ["derive"] }
 dirs = "5"
 serde = { version = "1", features = ["derive"] }

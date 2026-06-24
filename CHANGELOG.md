@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.54.0] - 2026-06-24
+
+Correctness-beat wave (PMAT-913..917) — the headline **completes the autograd severed-graph sweep**:
+following the v0.53.0 norm-backward fixes, the Embedding / pooling / attention layers were *also*
+building their forward output via `Tensor::from_vec` / `Tensor::new` (a leaf with no `grad_fn`), so
+their parameters + input received **zero** gradient. With these fixes the full transformer (and CNN)
+autograd graph is intact end-to-end — transformers are now genuinely fine-tunable. Plus numerical
+(f32→f64), loss, and quantization correctness. Each fix ships a named proof-obligation + an
+adversarially-mutation-verified RED-on-bug / GREEN-on-fix falsifier + a `pv`-validated contract.
+
+### Fixed
+
+- **Autograd: attention backward was severed — Q/K/V got no gradient** (PMAT-914, Pillar-2,
+  `OBLIG-ATTENTION-BACKWARD-GRAD-FLOW`) — the scaled-dot-product attention core (batched-matmul-4D,
+  `transpose_last_two`, `softmax_last_dim`, head reshape) built its intermediates via `Tensor::new`,
+  severing the chain so `q_proj.weight.grad == None`. **This was the last link: despite the v0.53.0
+  norm fixes + the Embedding/pool fixes below, transformers were still NOT end-to-end trainable.** Added
+  5 grad_fns (softmax Jacobian, batched-matmul, transpose/reshape) — attention now flows gradient,
+  finite-diff gradcheck-verified.
+- **Autograd: Embedding / Flatten / MaxPool / AvgPool backward were severed** (PMAT-913, Pillar-2,
+  `OBLIG-{EMBEDDING,FLATTEN,MAXPOOL1D,MAXPOOL2D,AVGPOOL2D,GLOBALAVGPOOL2D}-BACKWARD-GRAD-FLOW`) — all six
+  built output via `Tensor::new`; a severed **Embedding** meant token embeddings were non-trainable.
+  Added each backward (Embedding scatter-ADD, pool argmax/area routing, Flatten reshape); 8 gradchecks.
+- **`BCEWithLogitsLoss(pos_weight)` weighted the whole loss instead of the positive term** (PMAT-915,
+  Pillar-2, `OBLIG-BCE-POSWEIGHT-PYTORCH-PARITY`) — coincided with PyTorch only for hard 0/1 targets
+  (which every existing test used), so on soft targets the loss diverged (1.096 vs torch 1.038). Now
+  matches `torch.nn.BCEWithLogitsLoss`.
+- **StandardScaler + PCA accumulated mean/variance/covariance in f32** (PMAT-916, Pillar-1,
+  `OBLIG-{SCALER,PCA}-F64-ACCUM`) — catastrophic cancellation on large-magnitude data: StandardScaler
+  std was ~75× wrong and PCA explained-variance ~10000× wrong vs the numpy/sklearn f64 reference. Now
+  reduces in f64 (stored as f32; public API unchanged).
+
+### Added
+
+- **Quantization round-trip fidelity gate (Q4_K / Q5_K / Q6_K)** (PMAT-917, Pillar-4,
+  `OBLIG-QUANT-ROUNDTRIP-FIDELITY`) — a standing contract + falsifier pinning that `quantize→dequantize`
+  reconstruction stays within the per-scheme affine half-step error bound (err/bound ratios 0.46–0.69;
+  mutation-verified — halving the scale or dropping the block offset trips it). Supports the
+  "provably-correct dequant" pillar: a future quant regression is now caught a-priori.
+
 ## [0.53.0] - 2026-06-24
 
 Correctness-beat wave (PMAT-904..911) across all four pillars — the headline is the autograd
