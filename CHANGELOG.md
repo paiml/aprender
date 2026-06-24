@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.55.0] - 2026-06-24
+
+User-facing correctness + a reconciled GPU-parity gate + the autograd training story *proven*, not
+just asserted. The headline pair: (1) `apr convert`/`apr export` now produce **runnable** models for
+tied-embedding architectures (a converted `.apr` was missing its `lm_head`; an exported GGUF
+mis-stamped `num_heads`); (2) an **end-to-end training proof** caught that the transformer FFN was
+*still* severing the autograd graph (`functional::gelu`) after the v0.53/v0.54 "complete" sweep —
+per-layer gradchecks never saw it; a real train-to-loss test did. Plus the Blackwell GPU/CPU parity
+gate, reconciled against ground truth (llama.cpp, per-position). Each ships a named proof-obligation +
+a mutation-verified RED-on-bug / GREEN-on-fix falsifier + a `pv`-validated contract.
+
+### Fixed
+
+- **`apr convert --quantize q4k` produced a non-runnable `.apr` for tied-embedding models** (PMAT-918,
+  Pillar-4, `OBLIG-CONVERT-TIED-EMBEDDING-LMHEAD`) — the Q4K save path iterated the raw tensor map and
+  never synthesized the tied `lm_head` (the f32/int8 path did), so a converted model failed at load with
+  "tensor not found: lm_head.weight". Tie-synthesis is now hoisted before the quant dispatch; verified
+  end-to-end on Blackwell (`def add(a,b): return a+b`).
+- **`apr export --format gguf` silently mis-inferred `num_heads` (or hard-failed) on metadata-light
+  `.apr`** (PMAT-920, Pillar-4, `OBLIG-APR-GGUF-EXPORT-INFER-METADATA`) — a `[64,128,96,80]`
+  first-divisor guess would stamp e.g. Qwen2-1.5B as 24 heads (true 12) into a valid-looking GGUF. Now
+  uses the explicit `head_dim` for exact `num_heads = q_dim/head_dim`, and hard-fails with an actionable
+  error (no GGUF written) when it's genuinely absent — never a silently-wrong model.
+- **GPU/CPU parity gate falsely rejected the correct Blackwell kernel (and used a known-insufficient
+  metric)** (PMAT-919, Pillar-4, `gpu-cpu-parity-gate-v2`) — reconciled against ground truth
+  (llama.cpp + CPU-Q4K, per-position, on 1.5B/7B/8B): fp32-`Mwv` is the **correct** Blackwell default
+  (matches token-for-token); `HwDp4a` is genuinely degraded (INT8-activation quant → mid-context argmax
+  errors). The F2 gate now checks **per-position** argmax-match + min-cosine over positions ≥1 (excluding
+  the benign BOS near-tie), replacing the last-token-only check that let a 0.94-min kernel pass. Verified
+  on-device on lambda (Ada) + gx10 (Blackwell): accepts fp32-Mwv, rejects HwDp4a.
+- **Autograd: the transformer FFN `gelu` severed the graph** (PMAT-921, Pillar-2,
+  `OBLIG-TRANSFORMER-END-TO-END-TRAINABLE`) — `TransformerEncoderLayer` (and the decoder twin) called
+  `nn::functional::gelu`, which builds output via `Tensor::from_vec` (no `grad_fn`), **freezing
+  `ffn.linear1` + `norm2` γ/β in every real training run** while the isolated per-layer gradchecks
+  stayed green. Routed through autograd-aware `Tensor::gelu` (identical forward). **Caught by a new
+  end-to-end train-to-loss test** (loss 3.565 → 1.4e-5, every param group updates) — the proof that
+  per-layer gradchecks can't give.
+
+### Added
+
+- **End-to-end tiny-transformer training proof** (PMAT-921) — a fast, seeded, CI-stable test that
+  trains a real transformer (embedding → norm+MHA+norm+FFN → lm_head) to decreasing loss and asserts
+  **every** trainable param-group received a non-zero gradient and moved. Falsifier is non-tautological:
+  severing any one edge (gelu, attention, a norm) freezes the corresponding params and trips it. This is
+  the end-to-end guard the severed-graph class needed.
+
+### Build / CI
+
+- **Gate the duckdb competitive bench behind a feature** (#2208) — `merge_group` builds are cold and
+  recompiled bundled duckdb C++ under load, intermittently failing the merge queue while PR heads were
+  green. The bench is now `required-features`-gated; the cold-build flake is eliminated.
+- **Gate the `coop_gemm_bench` example behind opt-in `cooperative-matrix`** (#2211, PMAT) — wgpu 27
+  dropped the Vulkan cooperative-matrix path the example used, breaking `--all-targets` builds (found by
+  the Apple-Metal verification on `mini`). The dead example is now opt-in; `--all-targets` is clean.
+
 ## [0.54.0] - 2026-06-24
 
 Correctness-beat wave (PMAT-913..917) — the headline **completes the autograd severed-graph sweep**:
