@@ -89,7 +89,22 @@ impl Module for MaxPool2d {
             }
         }
 
-        Tensor::new(&output, &[batch_size, channels, out_h, out_w])
+        let mut result = Tensor::new(&output, &[batch_size, channels, out_h, out_w]);
+
+        // PMAT-913 / OBLIG-MAXPOOL2D-BACKWARD-GRAD-FLOW: route grad to argmax.
+        super::record_single_input_backward(
+            input,
+            &mut result,
+            std::sync::Arc::new(crate::autograd::grad_fn::MaxPool2dBackward {
+                input: input.clone(),
+                kernel_h: self.kernel_h,
+                kernel_w: self.kernel_w,
+                stride_h: self.stride_h,
+                stride_w: self.stride_w,
+            }),
+        );
+
+        result
     }
 }
 
@@ -182,7 +197,22 @@ impl Module for AvgPool2d {
             }
         }
 
-        Tensor::new(&output, &[batch_size, channels, out_h, out_w])
+        let mut result = Tensor::new(&output, &[batch_size, channels, out_h, out_w]);
+
+        // PMAT-913 / OBLIG-AVGPOOL2D-BACKWARD-GRAD-FLOW: distribute grad/area.
+        super::record_single_input_backward(
+            input,
+            &mut result,
+            std::sync::Arc::new(crate::autograd::grad_fn::AvgPool2dBackward {
+                input_shape: input.shape().to_vec(),
+                kernel_h: self.kernel_h,
+                kernel_w: self.kernel_w,
+                stride_h: self.stride_h,
+                stride_w: self.stride_w,
+            }),
+        );
+
+        result
     }
 }
 
@@ -232,7 +262,18 @@ impl Module for GlobalAvgPool2d {
             }
         }
 
-        Tensor::new(&output, &[batch_size, channels])
+        let mut result = Tensor::new(&output, &[batch_size, channels]);
+
+        // PMAT-913 / OBLIG-GLOBALAVGPOOL2D-BACKWARD-GRAD-FLOW: spread grad/(H*W).
+        super::record_single_input_backward(
+            input,
+            &mut result,
+            std::sync::Arc::new(crate::autograd::grad_fn::GlobalAvgPool2dBackward {
+                input_shape: input.shape().to_vec(),
+            }),
+        );
+
+        result
     }
 }
 
@@ -277,7 +318,19 @@ impl Module for Flatten {
         let flattened_size: usize = shape[self.start_dim..].iter().product();
         new_shape.push(flattened_size);
 
-        Tensor::new(input.data(), &new_shape)
+        let mut result = Tensor::new(input.data(), &new_shape);
+
+        // PMAT-913 / OBLIG-FLATTEN-BACKWARD-GRAD-FLOW: wire the autograd backward
+        // (pure reshape) so gradient flows to the upstream tensor.
+        super::record_single_input_backward(
+            input,
+            &mut result,
+            std::sync::Arc::new(crate::autograd::grad_fn::FlattenBackward {
+                input_shape: shape.to_vec(),
+            }),
+        );
+
+        result
     }
 }
 

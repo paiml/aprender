@@ -127,10 +127,41 @@ impl Embedding {
         let batch_size = 1;
         let mut output = vec![0.0f32; batch_size * input_ids.len() * self.hidden_size];
         self.forward_into(input_ids, &mut output);
-        let result = Tensor::new(&output, &[batch_size, input_ids.len(), self.hidden_size]);
+        let mut result = Tensor::new(&output, &[batch_size, input_ids.len(), self.hidden_size]);
+
+        // PMAT-913 / OBLIG-EMBEDDING-BACKWARD-GRAD-FLOW: scatter-add the upstream
+        // gradient back into the embedding TABLE rows by token index so the
+        // token embeddings are trainable (previously severed via Tensor::new).
+        self.record_embedding_backward(input_ids, &mut result);
+
         contract_post_embedding_lookup!(result.data());
         contract_post_inference_determinism!(result.data());
         result
+    }
+
+    /// Record the Embedding backward edge on the autograd tape (PMAT-913).
+    ///
+    /// Wires the embedding `weight` table as the sole graph input. The backward
+    /// scatter-adds `grad_output[i]` into `dW[input_ids[i]]`; repeated token ids
+    /// accumulate (ADD, not overwrite). Only runs when grad is enabled and the
+    /// weight requires grad.
+    fn record_embedding_backward(&self, input_ids: &[u32], result: &mut Tensor) {
+        use crate::autograd::{is_grad_enabled, with_graph};
+        use std::sync::Arc;
+
+        if is_grad_enabled() && self.weight.requires_grad_enabled() {
+            result.requires_grad_(true);
+            let grad_fn = Arc::new(crate::autograd::grad_fn::EmbeddingBackward {
+                indices: input_ids.to_vec(),
+                vocab_size: self.vocab_size,
+                hidden_size: self.hidden_size,
+            });
+            result.set_grad_fn(grad_fn.clone());
+            with_graph(|graph| {
+                graph.register_tensor(self.weight.clone());
+                graph.record(result.id(), grad_fn, vec![self.weight.id()]);
+            });
+        }
     }
 
     /// Set weights from external tensor.
@@ -355,6 +386,10 @@ pub struct Qwen2Model {
 #[cfg(test)]
 #[path = "tests_embedding_contract.rs"]
 mod tests_embedding_contract;
+
+#[cfg(test)]
+#[path = "tests_embedding_backward_gradflow.rs"]
+mod tests_embedding_backward_gradflow;
 
 include!("constructors.rs");
 include!("element-wise.rs");
