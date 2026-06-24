@@ -523,6 +523,28 @@ path = "src/lib.rs"
 # false panic from 3rd-party code while keeping OUR debug_asserts fully active
 # (overflow-checks left on). Verified: `PROPTEST_CASES=2000000` no longer panics.
 # Profiles must live in the workspace-root manifest, so they live here.
+
+# ----------------------------------------------------------------------------
+# CI link-time speedup (perf/ci-nextest): line-tables-only debuginfo
+# ----------------------------------------------------------------------------
+# `workspace-test` was profiled at ~40min: ~80% is serial test EXECUTION +
+# linking, not codegen (sccache covers codegen). Full debuginfo (`debug = 2`,
+# the default for dev/test profiles) makes the linker emit + the test binaries
+# carry megabytes of DWARF per crate, which dominates link time across ~80
+# crates and bloats the on-disk test binaries.
+#
+# `line-tables-only` keeps file:line in backtraces (so panics + `RUST_BACKTRACE`
+# still point at the right source line) while dropping variable/type DWARF.
+# This cuts link debuginfo without hurting test diagnosability. Applies to all
+# `cargo test` / `cargo nextest` builds, locally and in CI (the workspace-test
+# step previously set this via CARGO_PROFILE_*_DEBUG env vars; hoisting it into
+# the manifest makes it consistent everywhere).
+[profile.test]
+debug = "line-tables-only"
+
+[profile.dev]
+debug = "line-tables-only"
+
 [profile.test.package.proptest]
 debug-assertions = false
 
