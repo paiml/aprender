@@ -1,6 +1,6 @@
 metadata:
   id: C-GPU-CPU-PARITY-GATE-V2
-  version: 2.1.0
+  version: 2.2.0
   created: '2026-04-17'
   author: PAIML Engineering
   kind: pattern
@@ -64,10 +64,12 @@ equations:
     formula: |
       Let cpu_p, gpu_p be the logit vectors at probe position p (0-indexed),
       cos_p = (Σ cpu_p · gpu_p) / (‖cpu_p‖₂ ‖gpu_p‖₂)  [f64-accumulated]
-      validate_gpu_first_token passes ⟺
-        ∀ p ≥ 1:  argmax(cpu_p) = argmax(gpu_p)
-              ∧   cos_p ≥ τ_f2            (τ_f2 = F2_GATE_COSINE_MIN = 0.95)
-              ∧   cos_p ≥ τ_cat           (τ_cat = F2_CATASTROPHIC_COSINE = 0.90)
+      validate_gpu_first_token REJECTS ⟺ ∃ p ≥ 1 such that
+          cos_p < τ_f2                                  (τ_f2 = F2_GATE_COSINE_MIN = 0.95)
+        ∨ ( argmax(cpu_p) ≠ argmax(gpu_p) ∧ cos_p < τ_argmax )
+                                                        (τ_argmax = F2_ARGMAX_MISMATCH_COSINE = 0.98)
+      i.e. an argmax mismatch is only fatal at a DEGRADED cosine (< 0.98); a
+      high-cosine (≥ 0.98) argmax flip is a benign FP/quant near-tie → ACCEPT.
       Position 0 is EXCLUDED (benign context-less BOS near-tie).
       A single-token probe (no p ≥ 1) is a no-op accept (load-time gate is primary).
     domain: dense Q4_K models with a >=2-token probe context
@@ -75,11 +77,14 @@ equations:
     invariants:
     - Position 0 is never used for the accept/reject decision (else the correct
       fp32-Mwv default is false-rejected at pos0 ~0.945 — PMAT-742/#1864).
-    - 'A real-position argmax MISMATCH rejects even when cos_p ≥ τ_f2 (the HwDp4a
-      1.5B symptom: pos3 argmax mismatch at cosine 0.9705).'
-    - τ_cat (0.90) ≤ τ_f2 (0.95) < τ_load (0.98) so F2 never rejects a model the
-      load-time gate accepted, and orthogonal garbage (cos ≈ 0) is rejected on any
-      real position.
+    - 'A real-position argmax MISMATCH at a DEGRADED cosine (< τ_argmax = 0.98)
+      rejects (degraded HwDp4a 1.5B symptom: pos3 argmax flip @ 0.9705). A
+      high-cosine (≥ 0.98) argmax flip is a benign near-tie → ACCEPT (the correct
+      fp32-Mwv default flips a late argmax @ cosine 0.9995 — measured lambda 4090
+      pos11).'
+    - τ_cat (0.90) ≤ τ_f2 (0.95) < τ_argmax (0.98) = τ_load (0.98) so F2 never
+      rejects a model the load-time gate accepted, and degraded HwDp4a / orthogonal
+      garbage (cos < 0.95 on any real position) is rejected.
     - Cosine uses f64 accumulators; zero-norm vector → cos 0.0 → rejected.
     preconditions:
     - '`forward_gpu_resident` and `forward_single_with_cache` both return a
@@ -134,9 +139,15 @@ proof_obligations:
     A pos0-only BOS near-tie (argmax flip, cosine ~0.945, all real positions match)
     is ACCEPTED — position 0 is excluded from the decision.
   applies_to: all
+- id: PO-F2-NEAR-TIE-ACCEPT
+  type: safety
+  property: >
+    A high-cosine (≥ τ_argmax = 0.98) real-position argmax flip is a benign near-tie
+    and is ACCEPTED (the correct fp32-Mwv default flips a late argmax @ cosine 0.9995).
+  applies_to: all
 - id: PO-F2-BOUND
   type: bound
-  property: Threshold hierarchy τ_cat (0.90) ≤ τ_f2 (0.95) < τ_load (0.98) ≤ 1.0.
+  property: Threshold hierarchy τ_cat (0.90) < τ_f2 (0.95) < τ_argmax (0.98) ≤ τ_load (0.98) ≤ 1.0.
   applies_to: all
 
 falsification_tests:
@@ -148,12 +159,20 @@ falsification_tests:
   test: cargo test -p aprender-serve --lib correct_fp32_mwv_multi_position_logits_are_accepted
   if_fails: The per-position decision wrongly counts pos0 or sets τ_f2 too high.
 - id: FALSIFY-F2-REJECT-HWDP4A
-  rule: F2 gate rejects the degraded HwDp4a path on a real-position argmax mismatch at cosine ~0.94.
+  rule: F2 gate rejects the degraded HwDp4a path on a real-position argmax mismatch at a degraded cosine (0.95..0.98).
   prediction: >
-    A multi-position probe with a mid-position (>=1) argmax mismatch at cosine ~0.94
-    is rejected even though it is above the catastrophic floor.
+    A multi-position probe with a mid-position (>=1) argmax mismatch at cosine ~0.96
+    (degraded but above the catastrophic floor) is rejected.
   test: cargo test -p aprender-serve --lib hwdp4a_mid_position_argmax_mismatch_is_rejected
   if_fails: The gate ignores per-position argmax or only checks the last token.
+- id: FALSIFY-F2-ACCEPT-NEAR-TIE
+  rule: F2 gate accepts a HIGH-cosine (>=0.98) late-position argmax flip — a benign near-tie, NOT a degradation.
+  prediction: >
+    A multi-position probe with a late (>=1) argmax flip at cosine ~0.9999 is
+    accepted (the correct fp32-Mwv default; rejecting it is the PMAT-742/#1864
+    false-positive at a non-zero position).
+  test: cargo test -p aprender-serve --lib high_cosine_late_argmax_flip_is_accepted
+  if_fails: The argmax-mismatch reject window extends above τ_argmax (0.98).
 - id: FALSIFY-F2-NO-FALSE-REJECT-POS0
   rule: A pos0-only BOS near-tie (argmax flip, cosine ~0.945, all real positions match) is accepted.
   prediction: Excluding position 0 makes the pos0-only near-tie accepted.
@@ -183,6 +202,7 @@ qa_gate:
   checks:
   - f2_accepts_correct_fp32_mwv
   - f2_rejects_degraded_hwdp4a
+  - f2_accepts_high_cosine_near_tie_flip
   - f2_no_false_reject_pos0_bos_near_tie
   - f2_rejects_orthogonal_garbage
   - threshold_hierarchy_maintained

@@ -567,14 +567,21 @@ fn validate_gpu_first_token(
 }
 
 /// PMAT-919 F2 per-position cosine floor. For every REAL probe position (≥1) the
-/// GPU's logits must score `cosine ≥ F2_GATE_COSINE_MIN` against CPU's. Set strictly
-/// below the load-time `PARITY_GATE_COSINE_MIN` (0.98 in `cuda/mod.rs`) so this
-/// subordinate gate never rejects a model the load-time gate accepted, yet far above
-/// the cosine ≈ 0 produced by orthogonal garbage (PMAT-216 transposed weights). The
-/// PRIMARY catch for the degraded HwDp4a path is the per-position argmax MISMATCH
-/// (HwDp4a flips a mid-context argmax even at cosine ~0.97); this floor backstops the
-/// 7B case (pos6 @ 0.9398) and any catastrophic kernel.
+/// GPU's logits must score `cosine ≥ F2_GATE_COSINE_MIN` against CPU's regardless of
+/// argmax. Set strictly below the load-time `PARITY_GATE_COSINE_MIN` (0.98 in
+/// `cuda/mod.rs`) so this subordinate gate never rejects a model the load-time gate
+/// accepted. Backstops the degraded HwDp4a 7B case (pos6 @ 0.9398 → reject).
 pub(crate) const F2_GATE_COSINE_MIN: f32 = 0.95;
+
+/// PMAT-919 F2 argmax-mismatch cosine threshold. A per-position argmax MISMATCH is
+/// only fatal when the cosine is ALSO degraded below this (a genuine divergence,
+/// e.g. degraded HwDp4a 1.5B pos3 @ 0.9705). A high-cosine (≥ this) argmax flip is a
+/// benign FP/quant NEAR-TIE — two logits within epsilon, the distributions are
+/// essentially identical — and must be ACCEPTED (the CORRECT fp32-Mwv default flips a
+/// late-position argmax at cosine 0.9995; rejecting that is the PMAT-742/#1864
+/// false-positive at a non-zero position). Set to the load-time τ_load (0.98) so the
+/// "argmax flip below 0.98" reject window is exactly the degraded-cosine band.
+pub(crate) const F2_ARGMAX_MISMATCH_COSINE: f32 = 0.98;
 
 /// Catastrophic cosine floor (orthogonal garbage / NaN). Anything below this is a
 /// hard reject regardless of argmax, matching the `apr parity` catastrophic floor.
@@ -596,14 +603,16 @@ pub(crate) struct F2PositionReport {
     pub first_bad_cosine: f32,
 }
 
-/// PMAT-919 (reconciled) F2 decision over a multi-token probe: ACCEPT iff every REAL
-/// position (index ≥ 1) has matching CPU/GPU argmax AND cosine ≥ `F2_GATE_COSINE_MIN`,
-/// with a catastrophic floor (`F2_CATASTROPHIC_COSINE`) that rejects orthogonal
-/// garbage on ANY position. Position 0 (the context-less BOS near-tie) is EXCLUDED
-/// from the argmax/cosine assertions so the correct fp32-Mwv default (pos0 @ ~0.945,
-/// argmax flip, all real positions ≥ 0.9998) is NOT false-rejected. The degraded
-/// HwDp4a path (mid-context argmax mismatch — pos3 @ 0.9705 on 1.5B, pos6 @ 0.9398 on
-/// 7B) is rejected. Pure + GPU-free.
+/// PMAT-919 (reconciled) F2 decision over a multi-token probe. For every REAL
+/// position (index ≥ 1) the GPU path is REJECTED iff:
+///   • cosine < `F2_GATE_COSINE_MIN` (0.95) — quant/catastrophic floor (degraded
+///     HwDp4a 7B pos6 @ 0.9398, orthogonal garbage cos≈0), OR
+///   • argmax mismatch AND cosine < `F2_ARGMAX_MISMATCH_COSINE` (0.98) — a genuine
+///     mid-context divergence (degraded HwDp4a 1.5B pos3, argmax flip @ 0.9705).
+/// A high-cosine (≥0.98) argmax flip is a BENIGN near-tie and is ACCEPTED (the
+/// correct fp32-Mwv default flips a late-position argmax at cosine 0.9995). Position 0
+/// (the context-less BOS near-tie) is EXCLUDED entirely so the correct path is never
+/// false-rejected there (PMAT-742/#1864). Pure + GPU-free.
 pub(crate) fn f2_multi_position_report(
     cpu_per_pos: &[Vec<f32>],
     gpu_per_pos: &[Vec<f32>],
@@ -639,12 +648,14 @@ pub(crate) fn f2_multi_position_report(
         }
         let cpu_argmax = argmax_u32(cpu);
         let gpu_argmax = argmax_u32(gpu);
-        // Reject on: orthogonal garbage (catastrophic floor), cosine below the
-        // quant-aware floor, OR a real-position argmax mismatch (the HwDp4a symptom,
-        // which can occur even at cosine ~0.97).
-        let bad = cosine < F2_CATASTROPHIC_COSINE
-            || cosine < F2_GATE_COSINE_MIN
-            || cpu_argmax != gpu_argmax;
+        let argmax_mismatch = cpu_argmax != gpu_argmax;
+        // Reject on: cosine below the quant-aware floor (degraded HwDp4a 7B /
+        // orthogonal garbage), OR a real-position argmax mismatch AT a degraded
+        // cosine (< 0.98 — degraded HwDp4a 1.5B). A high-cosine (≥0.98) argmax flip
+        // is a benign FP/quant near-tie → NOT a reject (correct fp32-Mwv flips a
+        // late argmax at cosine 0.9995).
+        let bad = cosine < F2_GATE_COSINE_MIN
+            || (argmax_mismatch && cosine < F2_ARGMAX_MISMATCH_COSINE);
         if bad {
             return F2PositionReport {
                 accepted: false,
@@ -734,8 +745,8 @@ pub(crate) fn gpu_probe_token_acceptable(cpu_logits: &[f32], cpu_argmax: u32, gp
 #[cfg(test)]
 mod pmat919_cosine_gate_tests {
     use super::{
-        argmax_u32, f2_multi_position_report, logits_cosine_similarity, F2_CATASTROPHIC_COSINE,
-        F2_GATE_COSINE_MIN,
+        argmax_u32, f2_multi_position_report, logits_cosine_similarity, F2_ARGMAX_MISMATCH_COSINE,
+        F2_CATASTROPHIC_COSINE, F2_GATE_COSINE_MIN,
     };
 
     /// A realistic vocab-head logit vector with a clear leader at `leader`.
@@ -811,13 +822,17 @@ mod pmat919_cosine_gate_tests {
         ];
         let mut gpu = cpu.clone();
         // pos2: HwDp4a's INT8 activation-quant error flips the argmax to a different
-        // token (40) and degrades cosine to ~0.94 — above the catastrophic floor but
-        // a genuine mid-context divergence.
-        gpu[2] = (0..256)
-            .map(|i| match i {
-                33 => 17.0,        // demote CPU's leader
-                40 => 20.5,        // GPU now argmaxes a *different* token
-                _ => 6.0 + ((i as f32 + 2.0) * 0.013).sin() * 4.0 + 3.5, // shift → cosine ~0.94
+        // token (40) and degrades cosine into the [0.95, 0.98) band — the measured
+        // 1.5B pos3 @ 0.9705 symptom: a genuine mid-context divergence, NOT a benign
+        // near-tie (whose cosine would be ≥ 0.98). Built by adding ~25%-of-magnitude
+        // structured noise (enough angular deviation to land ~0.96) plus the flip.
+        gpu[2] = cpu[2]
+            .iter()
+            .enumerate()
+            .map(|(i, &c)| match i {
+                33 => 16.0,        // demote CPU's leader
+                40 => 21.0,        // GPU now argmaxes a *different* token
+                _ => c + ((i as f32 * 1.7).sin() * 0.30 * c.abs().max(2.0)), // ~cosine 0.96
             })
             .collect();
 
@@ -829,14 +844,59 @@ mod pmat919_cosine_gate_tests {
         );
         let pos2_cos = logits_cosine_similarity(&cpu[2], &gpu[2]);
         assert!(
-            pos2_cos > F2_CATASTROPHIC_COSINE,
-            "this is a REAL-margin (not cosine~0) case: pos2 cosine {pos2_cos} must be > {F2_CATASTROPHIC_COSINE}"
+            pos2_cos > F2_CATASTROPHIC_COSINE && pos2_cos < F2_ARGMAX_MISMATCH_COSINE,
+            "this is a REAL-margin (degraded but not catastrophic) case: pos2 cosine {pos2_cos} \
+             must be in (0.90, 0.98) — argmax mismatch at degraded cosine, the 1.5B symptom"
         );
         assert!(
             !report.accepted,
-            "the F2 gate MUST REJECT the degraded HwDp4a path (mid-position argmax mismatch)"
+            "the F2 gate MUST REJECT the degraded HwDp4a path (mid-position argmax mismatch at degraded cosine)"
         );
         assert_eq!(report.first_bad_pos, 2, "the reject must be attributed to pos2");
+    }
+
+    /// CRITICAL FALSIFIER (ii-b) ACCEPT — a HIGH-cosine late-position argmax flip is a
+    /// BENIGN near-tie, NOT a degradation. The CORRECT fp32-Mwv default flips a
+    /// late-position argmax at cosine 0.9995 (measured on lambda 4090 pos11: argmax
+    /// 12669 != 71341 @ 0.9995). An argmax mismatch ABOVE F2_ARGMAX_MISMATCH_COSINE
+    /// (0.98) must be ACCEPTED — else the correct path is false-rejected (the
+    /// PMAT-742/#1864 false-positive, recurring at a non-zero position).
+    #[test]
+    fn high_cosine_late_argmax_flip_is_accepted() {
+        let cpu: Vec<Vec<f32>> = vec![
+            vocab_logits(5, 0.0),
+            vocab_logits(12, 1.0),
+            // pos2: two near-tied leaders (33 and 34) within FP noise.
+            (0..256)
+                .map(|i| match i {
+                    33 => 20.00,
+                    34 => 19.99,
+                    _ => 6.0 + ((i as f32 + 2.0) * 0.013).sin() * 4.0,
+                })
+                .collect(),
+        ];
+        let mut gpu = cpu.clone();
+        // pos2: the near-tie tips the OTHER way under quant noise (argmax 33 -> 34),
+        // but the distributions are essentially identical → cosine ~0.9999.
+        gpu[2][33] = 19.99;
+        gpu[2][34] = 20.00;
+
+        let report = f2_multi_position_report(&cpu, &gpu);
+        assert_ne!(
+            argmax_u32(&cpu[2]),
+            argmax_u32(&gpu[2]),
+            "test must reproduce a late-position argmax flip"
+        );
+        let pos2_cos = logits_cosine_similarity(&cpu[2], &gpu[2]);
+        assert!(
+            pos2_cos >= F2_ARGMAX_MISMATCH_COSINE,
+            "benign near-tie pos2 cosine {pos2_cos} must be >= {F2_ARGMAX_MISMATCH_COSINE}"
+        );
+        assert!(
+            report.accepted,
+            "the F2 gate MUST ACCEPT a high-cosine ({pos2_cos}) argmax flip — it is a benign \
+             near-tie (the correct fp32-Mwv path), NOT a degradation"
+        );
     }
 
     /// CRITICAL FALSIFIER (iii) NO FALSE-REJECT — pos0-ONLY BOS near-tie.
@@ -896,8 +956,9 @@ mod pmat919_cosine_gate_tests {
         );
     }
 
-    /// Threshold hierarchy: τ_f2 (0.95) < load-time PARITY_GATE_COSINE_MIN (0.98),
-    /// so the subordinate F2 gate can never reject what the load-time gate accepted.
+    /// Threshold hierarchy: τ_cat (0.90) < τ_f2 (0.95) < τ_argmax (0.98) ≤ load-time
+    /// PARITY_GATE_COSINE_MIN (0.98), so the subordinate F2 gate can never reject what
+    /// the load-time gate accepted.
     #[test]
     fn f2_threshold_below_load_time_gate() {
         const LOAD_TIME_PARITY_GATE_COSINE_MIN: f32 = 0.98;
@@ -906,6 +967,8 @@ mod pmat919_cosine_gate_tests {
             "F2 tau {F2_GATE_COSINE_MIN} must be < load-time tau {LOAD_TIME_PARITY_GATE_COSINE_MIN}"
         );
         assert!(F2_CATASTROPHIC_COSINE < F2_GATE_COSINE_MIN);
+        assert!(F2_GATE_COSINE_MIN < F2_ARGMAX_MISMATCH_COSINE);
+        assert!(F2_ARGMAX_MISMATCH_COSINE <= LOAD_TIME_PARITY_GATE_COSINE_MIN);
     }
 
     /// Identical logits across all positions → accepted (sanity).
