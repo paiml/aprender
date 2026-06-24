@@ -1129,5 +1129,238 @@ impl GradFn for EmbeddingBackward {
     }
 }
 
+// ============================================================================
+// Attention Operations (PMAT-914) — OBLIG-ATTENTION-BACKWARD-GRAD-FLOW
+//
+// The scaled-dot-product attention core built its intermediates via
+// `Tensor::from_vec` / `Tensor::new`, severing the autograd graph so the
+// Q/K/V/out projection weights received no gradient (transformer attention
+// non-fine-tunable). These grad_fns flow gradient through each helper so the
+// chain loss -> out_proj -> sdpa -> reshape -> {q,k,v}_proj stays unbroken.
+// ============================================================================
+
+/// Backward for softmax over the LAST dimension of an N-D tensor.
+///
+/// Treats the tensor as (rows = product of all leading dims) × (features = last
+/// dim). For each row: dL/dx = y * (g - <g, y>), the standard softmax Jacobian.
+pub(crate) struct SoftmaxLastDimBackward {
+    pub(crate) output: Tensor, // softmax output y (same shape as input)
+}
+
+impl GradFn for SoftmaxLastDimBackward {
+    fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
+        let shape = self.output.shape();
+        let ndim = shape.len();
+        let features = if ndim == 0 { 1 } else { shape[ndim - 1] };
+        let total = self.output.numel();
+        let rows = if features == 0 { 0 } else { total / features };
+
+        let out_data = self.output.data();
+        let grad_data = grad_output.data();
+        let mut grad_input = vec![0.0; total];
+
+        for r in 0..rows {
+            let base = r * features;
+            let mut dot = 0.0;
+            for j in 0..features {
+                dot += grad_data[base + j] * out_data[base + j];
+            }
+            for j in 0..features {
+                let idx = base + j;
+                grad_input[idx] = out_data[idx] * (grad_data[idx] - dot);
+            }
+        }
+
+        vec![Tensor::new(&grad_input, shape)]
+    }
+
+    fn name(&self) -> &'static str {
+        "SoftmaxLastDimBackward"
+    }
+}
+
+/// Backward for `transpose_last_two`: the operation is its own inverse, so the
+/// incoming gradient is transposed back along the last two dims.
+pub(crate) struct TransposeLastTwoBackward {
+    pub(crate) input_shape: Vec<usize>, // shape of the ORIGINAL (pre-transpose) input
+}
+
+impl GradFn for TransposeLastTwoBackward {
+    fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
+        let g = transpose_last_two_raw(grad_output);
+        // g now has the original input's shape.
+        vec![Tensor::new(g.data(), &self.input_shape)]
+    }
+
+    fn name(&self) -> &'static str {
+        "TransposeLastTwoBackward"
+    }
+}
+
+/// Backward for 4D batched matmul C = A @ B where
+/// A:[B,H,M,K], B:[B,H,K,N], C:[B,H,M,N].
+/// dA = grad @ B^T  (per batch,head);  dB = A^T @ grad  (per batch,head).
+pub(crate) struct BatchedMatmul4dBackward {
+    pub(crate) a: Tensor,
+    pub(crate) b: Tensor,
+}
+
+impl GradFn for BatchedMatmul4dBackward {
+    fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
+        let a_shape = self.a.shape();
+        let b_shape = self.b.shape();
+        let (batch, heads, m, k) = (a_shape[0], a_shape[1], a_shape[2], a_shape[3]);
+        let n = b_shape[3];
+
+        let a = self.a.data();
+        let b = self.b.data();
+        let g = grad_output.data();
+
+        let mut grad_a = vec![0.0f32; batch * heads * m * k];
+        let mut grad_b = vec![0.0f32; batch * heads * k * n];
+
+        for bh in 0..(batch * heads) {
+            let a_off = bh * m * k;
+            let b_off = bh * k * n;
+            let g_off = bh * m * n;
+
+            // dA[m,k] = sum_n grad[m,n] * B[k,n]
+            for i in 0..m {
+                for kk in 0..k {
+                    let mut acc = 0.0;
+                    for j in 0..n {
+                        acc += g[g_off + i * n + j] * b[b_off + kk * n + j];
+                    }
+                    grad_a[a_off + i * k + kk] = acc;
+                }
+            }
+
+            // dB[k,n] = sum_m A[m,k] * grad[m,n]
+            for kk in 0..k {
+                for j in 0..n {
+                    let mut acc = 0.0;
+                    for i in 0..m {
+                        acc += a[a_off + i * k + kk] * g[g_off + i * n + j];
+                    }
+                    grad_b[b_off + kk * n + j] = acc;
+                }
+            }
+        }
+
+        vec![Tensor::new(&grad_a, a_shape), Tensor::new(&grad_b, b_shape)]
+    }
+
+    fn name(&self) -> &'static str {
+        "BatchedMatmul4dBackward"
+    }
+}
+
+/// Backward for `reshape_for_attention`: [b,s,embed] -> [b,heads,s,head_dim].
+/// The inverse permutation is exactly `reshape_from_attention`.
+pub(crate) struct ReshapeForAttentionBackward {
+    pub(crate) batch: usize,
+    pub(crate) seq_len: usize,
+    pub(crate) num_heads: usize,
+    pub(crate) head_dim: usize,
+}
+
+impl GradFn for ReshapeForAttentionBackward {
+    fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
+        // grad_output: [b, heads, s, head_dim]; produce [b, s, embed].
+        let embed = self.num_heads * self.head_dim;
+        let g = grad_output.data();
+        let mut out = vec![0.0f32; self.batch * self.seq_len * embed];
+        for b in 0..self.batch {
+            for s in 0..self.seq_len {
+                for h in 0..self.num_heads {
+                    for d in 0..self.head_dim {
+                        let in_idx = b * self.num_heads * self.seq_len * self.head_dim
+                            + h * self.seq_len * self.head_dim
+                            + s * self.head_dim
+                            + d;
+                        let out_idx = b * self.seq_len * embed + s * embed + h * self.head_dim + d;
+                        out[out_idx] = g[in_idx];
+                    }
+                }
+            }
+        }
+        vec![Tensor::new(&out, &[self.batch, self.seq_len, embed])]
+    }
+
+    fn name(&self) -> &'static str {
+        "ReshapeForAttentionBackward"
+    }
+}
+
+/// Backward for `reshape_from_attention`: [b,heads,s,head_dim] -> [b,s,embed].
+/// The inverse permutation is exactly `reshape_for_attention`.
+pub(crate) struct ReshapeFromAttentionBackward {
+    pub(crate) batch: usize,
+    pub(crate) seq_len: usize,
+    pub(crate) num_heads: usize,
+    pub(crate) head_dim: usize,
+}
+
+impl GradFn for ReshapeFromAttentionBackward {
+    fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
+        // grad_output: [b, s, embed]; produce [b, heads, s, head_dim].
+        let embed = self.num_heads * self.head_dim;
+        let g = grad_output.data();
+        let mut out = vec![0.0f32; self.batch * self.num_heads * self.seq_len * self.head_dim];
+        for b in 0..self.batch {
+            for s in 0..self.seq_len {
+                for h in 0..self.num_heads {
+                    for d in 0..self.head_dim {
+                        let out_idx = b * self.num_heads * self.seq_len * self.head_dim
+                            + h * self.seq_len * self.head_dim
+                            + s * self.head_dim
+                            + d;
+                        let in_idx = b * self.seq_len * embed + s * embed + h * self.head_dim + d;
+                        out[out_idx] = g[in_idx];
+                    }
+                }
+            }
+        }
+        vec![Tensor::new(
+            &out,
+            &[self.batch, self.num_heads, self.seq_len, self.head_dim],
+        )]
+    }
+
+    fn name(&self) -> &'static str {
+        "ReshapeFromAttentionBackward"
+    }
+}
+
+/// Pure (non-autograd) transpose of the last two dims of an N-D tensor.
+/// Shared by the forward helper and `TransposeLastTwoBackward`.
+pub(crate) fn transpose_last_two_raw(x: &Tensor) -> Tensor {
+    let shape = x.shape();
+    let ndim = shape.len();
+    if ndim < 2 {
+        return Tensor::new(x.data(), shape);
+    }
+    let last = shape[ndim - 1];
+    let second_last = shape[ndim - 2];
+    let mut new_shape = shape.to_vec();
+    new_shape[ndim - 2] = last;
+    new_shape[ndim - 1] = second_last;
+
+    let batch_size: usize = shape[..ndim - 2].iter().product();
+    let matrix_size = last * second_last;
+    let src = x.data();
+    let mut output = vec![0.0; src.len()];
+    for b in 0..batch_size {
+        let offset = b * matrix_size;
+        for i in 0..second_last {
+            let src_base = offset + i * last;
+            for j in 0..last {
+                output[offset + j * second_last + i] = src[src_base + j];
+            }
+        }
+    }
+    Tensor::from_vec(output, &new_shape)
+}
+
 include!("gradient.rs");
 include!("grad_fn_tests.rs");
