@@ -7,6 +7,8 @@
 pub mod auth;
 #[cfg(feature = "inference")]
 pub mod handlers;
+#[cfg(feature = "inference")]
+pub mod ollama;
 pub mod routes;
 #[cfg(feature = "inference")]
 pub mod safetensors;

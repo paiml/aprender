@@ -1,7 +1,7 @@
 contract: apr-serve-openai-compat
 metadata:
   kind: pattern
-  version: "1.12.0"
+  version: "1.14.0"
   description: >
     OpenAI-compatible serve layer (/v1/chat/completions, /v1/completions,
     /v1/embeddings) fidelity invariants. Established by an adversarial audit
@@ -170,6 +170,38 @@ proof_obligations:
       batch of N inputs returns N REAL model-backed embeddings (each per-input vector
       equals the single-input embedding for that text), composing EMBEDDINGS-MODEL-BACKED
       with batch input.
+  - type: invariant
+    property: >
+      OLLAMA-API-ROUTED-ON-APR-SERVE (PMAT-923, DISCHARGED, non-streaming only):
+      `apr serve <model>` does NOT mount realizar's create_router — it builds its
+      OWN bespoke axum routers in crates/apr-cli/src/commands/serve/ (the APR-CPU
+      router build_apr_cpu_router, the CUDA-fallback build_gpu_router, the WGPU
+      router, and the single-file + sharded SafeTensors routers). Ollama's native
+      HTTP endpoints `POST /api/chat` and `POST /api/generate` (plus `GET /api/tags`)
+      are therefore wired at EACH of those routers, alongside their existing
+      `/v1/chat/completions` route — verified by `grep '"/api/'
+      crates/apr-cli/src/commands/serve/` returning > 0 (and by the apr-cli e2e
+      falsifier below, which drives the REAL build_apr_cpu_router). Each Ollama route
+      delegates generation to the SAME chat backend that router uses for
+      `/v1/chat/completions` (apr-cli adapters in serve/ollama.rs translate the Ollama
+      request into the OpenAI-chat JSON the existing chat handler consumes, then
+      re-shape the OpenAI response): `/api/chat` returns
+      `{model, created_at, message:{role:"assistant", content}, done:true,
+      prompt_eval_count, eval_count}`; `/api/generate` returns the flat
+      `{model, created_at, response, done:true, prompt_eval_count, eval_count}` (no
+      nested message). A wired route is observably distinct from the axum `not_found`
+      fallback (which carries no `done` field) even when no model is loaded, because
+      the Ollama handler always emits a terminal (`done:true`) Ollama-shaped body.
+      SCOPE (HONEST): the Ollama endpoints return a single COALESCED non-streaming
+      body today (the underlying chat path is driven with stream:false regardless of
+      the client's `stream` flag). NDJSON `stream:true` Ollama streaming is a
+      documented FOLLOW-UP and is NOT claimed here — this obligation covers
+      "Ollama /api/chat + /api/generate routed on the apr serve routers + correct
+      non-streaming Ollama wire shape", not full drop-in streaming parity. The
+      reusable realizar-side handlers (aprender-serve/src/api/ollama_handlers.rs) and
+      their wiring into create_router_with_config remain for any caller that DOES
+      mount realizar's router (e.g. `realizar serve`), but are NOT the path
+      `apr serve` exercises.
 
 falsification_tests:
   - id: FALSIFY-STOP-TRUNCATE-754
@@ -238,3 +270,15 @@ falsification_tests:
     test_harness: 'cargo test -p aprender-serve --lib batch_inputs_each_real_model_backed'
     expected_output: "test result: ok"
     if_fails: 'The batch embedding loop emits the positional token-ID hash (384-dim, no semantic structure) per input instead of the real model-backed hidden state, OR drops/reorders indices, OR fails to sum usage — i.e. PMAT-802 batch input was wired but PMAT-803 real embeddings were not composed into the per-input path.'
+  - id: FALSIFY-OLLAMA-API-CHAT-ROUTED-923
+    name: api_chat_is_routed_and_returns_ollama_shape
+    prediction: 'POST /api/chat on the REAL apr-cli serve router (build_demo_apr_cpu_router_for_test — the exact router apr serve mounts for a .apr model, NOT realizar create_router) is ROUTED — it does NOT return the axum 404 not_found fallback — and answers 200 with an Ollama-shaped JSON body: done==true, message.role=="assistant", message.content present, NO flat response field. RED on the unwired router (404, no done/message fields); GREEN once build_apr_cpu_router wires /api/chat to the serve::ollama adapter over its own chat backend.'
+    test_harness: 'cargo test -p apr-cli --test ollama_api_serve_compat api_chat_is_routed_and_returns_ollama_shape'
+    expected_output: "test result: ok"
+    if_fails: 'POST /api/chat returns the axum 404 not_found fallback on the router apr serve actually mounts (the bug the review caught — the first PMAT-923 attempt wired only realizar create_router, which apr serve does NOT mount), or the body is not Ollama-shaped (missing done / message.role / message.content).'
+  - id: FALSIFY-OLLAMA-API-GENERATE-ROUTED-923
+    name: api_generate_is_routed_and_returns_ollama_shape
+    prediction: 'POST /api/generate on the REAL apr-cli serve router (build_demo_apr_cpu_router_for_test — the router apr serve mounts, NOT realizar create_router) is ROUTED — not the axum 404 fallback — and answers 200 with Ollama generate schema: done==true, a flat `response` string field present, NO nested `message`. RED on the unwired router (404); GREEN once build_apr_cpu_router wires /api/generate to the serve::ollama adapter over its own chat backend.'
+    test_harness: 'cargo test -p apr-cli --test ollama_api_serve_compat api_generate_is_routed_and_returns_ollama_shape'
+    expected_output: "test result: ok"
+    if_fails: 'POST /api/generate returns the axum 404 not_found fallback on the router apr serve actually mounts, or the body is not Ollama generate-shaped (missing done / flat response, or it nests a message object).'

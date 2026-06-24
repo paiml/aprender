@@ -164,6 +164,10 @@ pub(crate) fn start_safetensors_server(model_path: &Path, config: &ServerConfig)
             .route("/tensors", get(move || async move { Json(info.clone()) }));
 
         // Build inference routes with state (PAR-301)
+        // PMAT-923: Ollama `/api/chat` + `/api/generate` + `/api/tags` reuse the
+        // SAME generation backend as `/v1/chat/completions` so `apr serve` is a
+        // drop-in Ollama HTTP replacement (non-streaming coalesced bodies today).
+        let tags_model = model_path_str.clone();
         let inference_routes: Router = if inference_enabled {
             Router::new()
                 .route(
@@ -171,6 +175,15 @@ pub(crate) fn start_safetensors_server(model_path: &Path, config: &ServerConfig)
                     post(safetensors_chat_completions_handler),
                 )
                 .route("/generate", post(safetensors_generate_handler))
+                .route("/api/chat", post(safetensors_ollama_chat_handler))
+                .route("/api/generate", post(safetensors_ollama_generate_handler))
+                .route(
+                    "/api/tags",
+                    get(move || {
+                        let model = tags_model.clone();
+                        async move { Json(super::ollama::ollama_tags_body(&model)) }
+                    }),
+                )
                 .with_state(state)
         } else {
             Router::new()
@@ -348,6 +361,8 @@ pub(crate) fn start_sharded_safetensors_server(
             .route("/tensors", get(move || async move { Json(info.clone()) }));
 
         // Build inference routes with state (same handlers as single-file)
+        // PMAT-923: Ollama endpoints reuse the same backend (drop-in Ollama).
+        let tags_model = model_path_str.clone();
         let inference_routes: Router = if inference_enabled {
             Router::new()
                 .route(
@@ -355,6 +370,15 @@ pub(crate) fn start_sharded_safetensors_server(
                     post(safetensors_chat_completions_handler),
                 )
                 .route("/generate", post(safetensors_generate_handler))
+                .route("/api/chat", post(safetensors_ollama_chat_handler))
+                .route("/api/generate", post(safetensors_ollama_generate_handler))
+                .route(
+                    "/api/tags",
+                    get(move || {
+                        let model = tags_model.clone();
+                        async move { Json(super::ollama::ollama_tags_body(&model)) }
+                    }),
+                )
                 .with_state(state)
         } else {
             Router::new()

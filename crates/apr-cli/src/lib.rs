@@ -49,6 +49,15 @@ pub mod serve_auth {
     pub use crate::commands::serve::auth::{apply, AuthGate};
 }
 
+// PMAT-923: e2e seam so `tests/ollama_api_serve_compat.rs` can build the REAL
+// `apr serve` APR-CPU router (the one mounted for a `.apr` model) and prove the
+// Ollama `/api/chat` + `/api/generate` routes are wired — not realizar's
+// `create_router`.
+#[cfg(feature = "inference")]
+pub mod serve_test_support {
+    pub use crate::commands::serve::handlers::build_demo_apr_cpu_router_for_test;
+}
+
 #[cfg(feature = "inference")]
 pub mod federation;
 

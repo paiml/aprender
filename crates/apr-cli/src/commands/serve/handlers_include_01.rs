@@ -323,12 +323,23 @@ fn build_gpu_router(
         Json, Router,
     };
 
+    let model_name_for_tags = cpu_state
+        .lock()
+        .map(|s| s.model_name.clone())
+        .unwrap_or_else(|_| "apr".to_string());
     let cuda_for_completions = cuda_model.clone();
     let tok_for_completions = tokenizer.clone();
     let cpu_for_completions = cpu_state.clone();
-    let cuda_for_chat = cuda_model;
-    let tok_for_chat = tokenizer;
-    let cpu_for_chat = cpu_state;
+    let cuda_for_chat = cuda_model.clone();
+    let tok_for_chat = tokenizer.clone();
+    let cpu_for_chat = cpu_state.clone();
+    // PMAT-923: Ollama endpoints reuse the SAME GPU chat backend.
+    let cuda_for_ochat = cuda_model.clone();
+    let tok_for_ochat = tokenizer.clone();
+    let cpu_for_ochat = cpu_state.clone();
+    let cuda_for_ogen = cuda_model;
+    let tok_for_ogen = tokenizer;
+    let cpu_for_ogen = cpu_state;
 
     let router = Router::new()
         .route(
@@ -359,10 +370,50 @@ fn build_gpu_router(
                 }
             }),
         )
+        // PMAT-923: Ollama native chat endpoint (drop-in Ollama client).
+        .route(
+            "/api/chat",
+            post(move |Json(req): Json<super::ollama::OllamaChatRequest>| {
+                let cuda = cuda_for_ochat.clone();
+                let tok_info = tok_for_ochat.clone();
+                let cpu = cpu_for_ochat.clone();
+                async move {
+                    let model = super::ollama::model_label(&req.model);
+                    let openai_body = super::ollama::ollama_chat_to_openai(&req);
+                    let inner =
+                        handle_gpu_chat_completion(cuda, tok_info, openai_body, cpu).await;
+                    super::ollama::reshape_openai_to_ollama_chat(model, inner).await
+                }
+            }),
+        )
+        // PMAT-923: Ollama native single-prompt generate endpoint.
+        .route(
+            "/api/generate",
+            post(move |Json(req): Json<super::ollama::OllamaGenerateRequest>| {
+                let cuda = cuda_for_ogen.clone();
+                let tok_info = tok_for_ogen.clone();
+                let cpu = cpu_for_ogen.clone();
+                async move {
+                    let model = super::ollama::model_label(&req.model);
+                    let openai_body = super::ollama::ollama_generate_to_openai(&req);
+                    let inner =
+                        handle_gpu_chat_completion(cuda, tok_info, openai_body, cpu).await;
+                    super::ollama::reshape_openai_to_ollama_generate(model, inner).await
+                }
+            }),
+        )
+        // PMAT-923: Ollama model-list — clients enumerate models before chatting.
+        .route(
+            "/api/tags",
+            get(move || {
+                let model = model_name_for_tags.clone();
+                async move { Json(super::ollama::ollama_tags_body(&model)) }
+            }),
+        )
         .route(
             "/",
             get(|| async {
-                "APR v2 GPU Inference Server - POST /v1/completions, /v1/chat/completions"
+                "APR v2 GPU Inference Server - POST /v1/completions, /v1/chat/completions, /api/chat, /api/generate"
             }),
         );
     super::auth::layer(auth_gate, router)
