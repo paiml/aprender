@@ -1,9 +1,16 @@
 # aprender BEAT Scoreboard
 
-The four-pillar mission: **replace _and beat_** scikit-learn, PyTorch, Unsloth, and
-Ollama/llama.cpp in one pure-Rust binary. A "beat" is never parity — it is a
-**falsifiable, CI-gated benchmark** showing apr ≥ the incumbent on the incumbent's
-own canonical task (PMAT-741).
+The five-pillar mission: **replace _and beat_** scikit-learn, PyTorch, Unsloth,
+Ollama/llama.cpp, **and Claude Code** (`apr code` agentic coding) in one pure-Rust
+binary. A "beat" is never parity — it is a **falsifiable, CI-gated benchmark**
+showing apr ≥ the incumbent on the incumbent's own canonical task (PMAT-741).
+
+> **Pillar 5 (Claude Code) is TRACKED, not yet a clean WON.** Unlike pillars 1–4,
+> the Claude-Code pillar splits into two scales with two different verdicts:
+> function-scale outcome parity is **WON (1.0000)**, project-scale agentic
+> multi-turn Arena is an **OPEN GAP (0.20)**. The honesty rule below forbids
+> reporting the function-scale win as a project-scale win — see the dedicated
+> Pillar 5 section.
 
 > **Honesty rule:** a beat that apr fails never ships. We do **not** make a blanket
 > "speed conceded" claim — apr wins speed in many measured, CI-gated cases (see the
@@ -140,6 +147,59 @@ diverges CPU-vs-GPU even when real generation is correct). Fixed by validating o
 prompt context + near-tie tolerance → default `apr run` reaches the GPU fast path that the
 re-measured 412.3 tok/s decode beat is built on.
 
+## Pillar 5 — Claude Code parity (`apr code`)
+
+The fifth incumbent: **Claude Code** (Anthropic's agentic coding agent). The beat
+is `apr code` — aprender's pure-Rust, sovereign agentic coding agent — measured
+against Claude Code at the **action-stream level** by the CCPA harness (record →
+replay → distill). This pillar is **TRACKED, not yet a clean WON**: it splits into
+two scales with two honest verdicts.
+
+| Beat | Scale / Metric | Result | Gate |
+|------|----------------|--------|------|
+| **Function-scale outcome parity** | aggregate parity score on 30 canonical fixtures + HumanEval | ✅ **WON** — apr code ≡ Claude Code, **1.0000** (corpus **30/30**, HumanEval **5/5**, cross-swap **test-survival 1.0000**); the two are outcome-interchangeable at function scale | CCPA `ccpa corpus fixtures/canonical/` (FALSIFY-CCPA-008/013/016) · `claude-code-parity-apr-v1.yaml` v1.32.0 · `fixtures/canonical/measured-parity.json` |
+| **Project-scale Arena** (live multi-turn) | oracle-pass rate, 5 real GitHub-issue fixtures | 📊 **TRACKED GAP** — claude teacher **0.20 (1/5)**, apr code student **0.00 (0/5)**; the static-fixture predictor is **Popperian-falsified** at project scale (StaticFalsified, M224 §5). This is the **open work** to advance in parallel | CCPA `ccpa arena fixtures/project-scale/` (FALSIFY-CCPA-017/018, PROPOSED) · `evidence/phase-5/arena-scores.json` |
+| **Sovereignty on replay** | zero `api.anthropic.com` egress | ✅ **WON** — `apr code` replay opens **0** outbound sockets to Anthropic; pure-Rust local model, no Claude API | CCPA `FALSIFY-CCPA-006` · `claude-code-parity-apr-v1.yaml` |
+
+**Honest split — function-scale WON, project-scale GAP (do NOT conflate):** at
+**function scale** the two systems are functionally interchangeable — the CCPA
+canonical corpus aggregates to **1.0000** (30/30 fixtures, 0 drift), the
+real-binary HumanEval bilateral bench (claude 2.1.139 + apr 0.32.0 +
+Qwen2.5-Coder-1.5B-Instruct-Q4_K_M) scores **1.0000** on MultiPL-E-Rust 5/5, and
+cross-swap **test-survival is 1.0000** (10/10). That leg is a real, measured WON.
+At **project scale**, the live multi-turn Arena (claude teacher vs `apr code`
+student over real GitHub-issue fixtures) is the **OPEN GAP**: the claude teacher
+itself only clears **0.20 (1/5)** and `apr code` clears **0.00 (0/5)**
+(`evidence/phase-5/arena-scores.json`, M234). CCPA self-describes its
+static-fixture approach as **Popperian-falsified** as a *project-scale* predictor
+(M224 `design-audit.md` §5, verdict `StaticFalsified`) — the 1.0000 corpus number
+validates **the meter** (the differ recognizes equivalent traces), **not**
+system-level project-scale parity. Per the honesty rule, the specific gap is
+**project-scale agentic multi-turn**, NOT function-scale code quality.
+
+**Leading hypothesis for the gap (V1_004 chain, M286–M294):** the load-bearing
+variable for 0% tool-call emission is the **model family**, not the inference
+stack, active-param count, or MoE-vs-dense architecture. The **Qwen-Coder
+finetune family emits 0 tool_calls**, while the non-Coder
+**Qwen3-30B-A3B-Instruct** emits them (`{"name":"file_read",...}` in 20 tokens).
+So the project-scale gap is an **agentic-emission / model-family** gap, not a
+function-scale code-quality gap — the leading lever to advance Pillar 5 is to swap
+the Qwen-Coder finetune for a tool-call-emitting non-Coder model.
+
+**Source-of-truth split (monorepo policy):** the authoritative parity contract is
+[`contracts/claude-code-parity-apr-v1.yaml`](../contracts/claude-code-parity-apr-v1.yaml)
+(**v1.32.0**, 20 gates = 16 ACTIVE_RUNTIME + 4 PROPOSED) — aprender stays canonical
+for contract TEXT. The thin aprender-side **tracking pointer** is
+[`contracts/beat-claude-code-parity-v1.yaml`](../contracts/beat-claude-code-parity-v1.yaml),
+which owns the obligation *"project-scale Arena parity must reach the CCPA-018
+floor"* and points at the CCPA arena evidence as the measurement. Runtime
+**enforcement** (CI, coverage, the live Arena bench) lives in the companion repo
+**[paiml/claude-code-parity-apr](https://github.com/paiml/claude-code-parity-apr)**.
+(`paiml/aprender#1078` authored the M0 spec + DRAFT contract; its body — 12 gates,
+pre-v1.0.0 — is now **stale** vs the current v1.32.0 / 20-gate contract in-tree,
+which is the authoritative, up-to-date copy. aprender-side tracking only; the CCPA
+repo is not rewritten here.)
+
 ## Compute kernels — trueno / cuda-oxide
 
 apr's compute foundation (trueno SIMD + cuda-oxide pure-Rust GPU kernels) wins on raw
@@ -177,8 +237,14 @@ The machinery every beat plugs into:
    scoreboard above); where it loses, name the **specific case** and root cause — never
    a blanket "speed conceded" stance.
 
-_Last updated: 2026-06-25 — promoted the Ollama GPU-decode beat from TRACKING to
-ENFORCED (1.371× median, 412.3 vs 300.7 tok/s); asserted the evidence-backed cold-start
-(~528–5000×), LAPACK-free ML (1.6–4.9×), cuda-oxide/SIMD (1.4–17×), and footprint
-(15.8–17.1×) speed wins; replaced blanket-concession wording with specific, sourced
-narrow-loss cases._
+_Last updated: 2026-06-25 — promoted the mission from FOUR-pillar to FIVE-pillar:
+added Pillar 5 (Claude Code / `apr code`) with the honest split — function-scale
+outcome parity WON (1.0000, corpus 30/30 + HumanEval + test-survival), project-scale
+Arena TRACKED GAP (0.20, 1/5), per the CCPA harness (claude-code-parity-apr-v1.yaml
+v1.32.0, 20 gates) + the new aprender-side tracking pointer
+beat-claude-code-parity-v1.yaml; V1_004 model-family finding noted as the leading
+hypothesis for the gap. Earlier 2026-06-25 edit promoted the Ollama GPU-decode beat
+from TRACKING to ENFORCED (1.371× median, 412.3 vs 300.7 tok/s); asserted the
+evidence-backed cold-start (~528–5000×), LAPACK-free ML (1.6–4.9×), cuda-oxide/SIMD
+(1.4–17×), and footprint (15.8–17.1×) speed wins; replaced blanket-concession wording
+with specific, sourced narrow-loss cases._
