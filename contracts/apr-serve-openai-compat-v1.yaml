@@ -1,7 +1,7 @@
 contract: apr-serve-openai-compat
 metadata:
   kind: pattern
-  version: "1.14.0"
+  version: "1.15.0"
   description: >
     OpenAI-compatible serve layer (/v1/chat/completions, /v1/completions,
     /v1/embeddings) fidelity invariants. Established by an adversarial audit
@@ -192,16 +192,39 @@ proof_obligations:
       nested message). A wired route is observably distinct from the axum `not_found`
       fallback (which carries no `done` field) even when no model is loaded, because
       the Ollama handler always emits a terminal (`done:true`) Ollama-shaped body.
-      SCOPE (HONEST): the Ollama endpoints return a single COALESCED non-streaming
-      body today (the underlying chat path is driven with stream:false regardless of
-      the client's `stream` flag). NDJSON `stream:true` Ollama streaming is a
-      documented FOLLOW-UP and is NOT claimed here — this obligation covers
-      "Ollama /api/chat + /api/generate routed on the apr serve routers + correct
-      non-streaming Ollama wire shape", not full drop-in streaming parity. The
-      reusable realizar-side handlers (aprender-serve/src/api/ollama_handlers.rs) and
-      their wiring into create_router_with_config remain for any caller that DOES
-      mount realizar's router (e.g. `realizar serve`), but are NOT the path
-      `apr serve` exercises.
+      SCOPE: this obligation covers the NON-STREAMING (`stream:false`) Ollama wire
+      shape on the apr serve routers. The `stream:true` NDJSON path is now covered
+      by OLLAMA-NDJSON-STREAMING (PMAT-928) below. The reusable realizar-side
+      handlers (aprender-serve/src/api/ollama_handlers.rs) and their wiring into
+      create_router_with_config remain for any caller that DOES mount realizar's
+      router (e.g. `realizar serve`), but are NOT the path `apr serve` exercises.
+  - type: invariant
+    property: >
+      OLLAMA-NDJSON-STREAMING (PMAT-928, DISCHARGED): an Ollama `/api/chat` or
+      `/api/generate` request with `stream != false` (Ollama's WIRE DEFAULT is
+      stream:true, so an ABSENT `stream` field MUST stream — the apr-cli adapter
+      uses serde default_stream()==true, not bool::default()==false) responds with
+      a CHUNKED newline-delimited-JSON body (Content-Type: application/x-ndjson),
+      NOT a single coalesced JSON object: one INTERMEDIATE `{...,done:false}`
+      object per generated token followed by a single TERMINAL `{...,done:true,
+      done_reason:"stop", prompt_eval_count, eval_count, total_duration,
+      eval_duration}` object. For `/api/chat` each token chunk nests
+      `message:{role:"assistant", content:<token>}`; for `/api/generate` each
+      chunk carries the flat `response:<token>` field. The terminal object's
+      eval_count equals the number of token chunks emitted, and concatenating the
+      token chunks' content/response reproduces the full generation.
+      The streaming path on the APR-CPU router REUSES the SAME incremental token
+      stream the OpenAI `/v1/chat/completions` SSE path uses
+      (spawn_cpu_streaming_task / generate_with_cache_streaming → mpsc channel);
+      only the wire framing differs (NDJSON lines vs SSE `data:` events) — it is
+      NOT a re-decode of a coalesced batch result. Backends that have only a batch
+      generation API (GPU-fallback, SafeTensors generate_with_cache) still honor
+      `stream:true` with correct NDJSON framing (one content chunk + terminal
+      done:true) over their coalesced result. `stream:false` is UNCHANGED: a single
+      coalesced (`done:true`) JSON object (application/json), preserving the
+      OLLAMA-API-ROUTED-ON-APR-SERVE non-streaming shape (no-regression). On a
+      backend error the stream still terminates with a well-formed `done:true`
+      object, never a bare error object lacking `done`.
 
 falsification_tests:
   - id: FALSIFY-STOP-TRUNCATE-754
@@ -282,3 +305,21 @@ falsification_tests:
     test_harness: 'cargo test -p apr-cli --test ollama_api_serve_compat api_generate_is_routed_and_returns_ollama_shape'
     expected_output: "test result: ok"
     if_fails: 'POST /api/generate returns the axum 404 not_found fallback on the router apr serve actually mounts, or the body is not Ollama generate-shaped (missing done / flat response, or it nests a message object).'
+  - id: FALSIFY-OLLAMA-NDJSON-CHAT-STREAM-928
+    name: api_chat_stream_true_is_ndjson_multi_chunk
+    prediction: 'POST /api/chat with stream:true on the REAL apr-cli streaming serve router (build_demo_streaming_apr_cpu_router_for_test — the exact APR-CPU router apr serve mounts, driven by a scripted token sequence through the SAME mpsc + NDJSON reshape pipeline the transformer uses) responds with Content-Type application/x-ndjson AND a body that parses as MULTIPLE newline-delimited JSON objects: >=1 intermediate {done:false, message:{role:"assistant", content:<token>}} chunk PLUS a final {done:true, eval_count:..} object — NOT a single coalesced object. Concatenating the token chunks reproduces the full generation. RED on the pre-PMAT-928 code (the adapter forced stream:false → one application/json object → lines.len()==1); GREEN once the NDJSON path is wired.'
+    test_harness: 'cargo test -p apr-cli --test ollama_ndjson_streaming api_chat_stream_true_is_ndjson_multi_chunk'
+    expected_output: "test result: ok"
+    if_fails: 'POST /api/chat with stream:true returns a single coalesced JSON object (application/json) instead of an NDJSON stream of per-token done:false chunks + a terminal done:true — the pre-PMAT-928 behavior where the Ollama adapter forced the chat path non-streaming regardless of the client stream flag, so a default (stream:true) Ollama client saw a non-streaming body.'
+  - id: FALSIFY-OLLAMA-NDJSON-GENERATE-STREAM-928
+    name: api_generate_stream_true_is_ndjson_multi_chunk
+    prediction: 'POST /api/generate with stream:true on the REAL apr-cli streaming serve router responds Content-Type application/x-ndjson with MULTIPLE newline-delimited objects: intermediate {done:false, response:<token>} chunks (flat response, NO nested message) + a terminal {done:true} object. RED on the pre-PMAT-928 coalesced behavior (single object); GREEN once wired.'
+    test_harness: 'cargo test -p apr-cli --test ollama_ndjson_streaming api_generate_stream_true_is_ndjson_multi_chunk'
+    expected_output: "test result: ok"
+    if_fails: 'POST /api/generate with stream:true returns a single coalesced object instead of an NDJSON token stream + terminal done:true, or the token chunks nest a message object instead of using the flat response field.'
+  - id: FALSIFY-OLLAMA-NDJSON-STREAM-FALSE-COALESCED-928
+    name: api_chat_stream_false_is_single_coalesced_object
+    prediction: 'POST /api/chat with stream:false on the REAL apr-cli streaming serve router returns EXACTLY ONE coalesced JSON object (application/json) with done:true — the no-regression guard proving stream:true (NDJSON multi-chunk) and stream:false (single coalesced object) are genuinely distinguished, not "everything streams". RED if the stream-false path were also forced to NDJSON; GREEN on the branch.'
+    test_harness: 'cargo test -p apr-cli --test ollama_ndjson_streaming api_chat_stream_false_is_single_coalesced_object'
+    expected_output: "test result: ok"
+    if_fails: 'POST /api/chat with explicit stream:false no longer returns a single coalesced object (it streams NDJSON), breaking the OLLAMA-API-ROUTED-ON-APR-SERVE non-streaming wire shape — the stream flag is not honored.'

@@ -370,7 +370,10 @@ fn build_gpu_router(
                 }
             }),
         )
-        // PMAT-923: Ollama native chat endpoint (drop-in Ollama client).
+        // PMAT-923/928: Ollama native chat endpoint (drop-in Ollama client).
+        // GPU backend is batch (no per-token callback) so `stream:true` emits
+        // NDJSON framing over the coalesced result (intermediate done:false +
+        // terminal done:true); `stream:false` keeps a single object.
         .route(
             "/api/chat",
             post(move |Json(req): Json<super::ollama::OllamaChatRequest>| {
@@ -379,14 +382,24 @@ fn build_gpu_router(
                 let cpu = cpu_for_ochat.clone();
                 async move {
                     let model = super::ollama::model_label(&req.model);
+                    let stream = req.stream;
                     let openai_body = super::ollama::ollama_chat_to_openai(&req);
                     let inner =
                         handle_gpu_chat_completion(cuda, tok_info, openai_body, cpu).await;
-                    super::ollama::reshape_openai_to_ollama_chat(model, inner).await
+                    if stream {
+                        super::ollama::reshape_openai_to_ollama_ndjson(
+                            super::ollama::OllamaStreamKind::Chat,
+                            model,
+                            inner,
+                        )
+                        .await
+                    } else {
+                        super::ollama::reshape_openai_to_ollama_chat(model, inner).await
+                    }
                 }
             }),
         )
-        // PMAT-923: Ollama native single-prompt generate endpoint.
+        // PMAT-923/928: Ollama native single-prompt generate endpoint.
         .route(
             "/api/generate",
             post(move |Json(req): Json<super::ollama::OllamaGenerateRequest>| {
@@ -395,10 +408,20 @@ fn build_gpu_router(
                 let cpu = cpu_for_ogen.clone();
                 async move {
                     let model = super::ollama::model_label(&req.model);
+                    let stream = req.stream;
                     let openai_body = super::ollama::ollama_generate_to_openai(&req);
                     let inner =
                         handle_gpu_chat_completion(cuda, tok_info, openai_body, cpu).await;
-                    super::ollama::reshape_openai_to_ollama_generate(model, inner).await
+                    if stream {
+                        super::ollama::reshape_openai_to_ollama_ndjson(
+                            super::ollama::OllamaStreamKind::Generate,
+                            model,
+                            inner,
+                        )
+                        .await
+                    } else {
+                        super::ollama::reshape_openai_to_ollama_generate(model, inner).await
+                    }
                 }
             }),
         )
