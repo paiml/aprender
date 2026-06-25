@@ -1171,4 +1171,609 @@ mod serve_plan_tests {
         assert!(!hw.gpu_name.is_empty());
         assert!(hw.bandwidth_gbps > 0.0);
     }
+
+    // ====================================================================
+    // PMAT-125 B3: additional coverage for serve_plan pure helpers
+    // ====================================================================
+
+    use aprender::format::model_family::ModelSizeConfig;
+    use aprender::format::rosetta::{FormatType, InspectionReport, TensorInfo};
+    use std::collections::BTreeMap;
+
+    fn make_size_config(hidden_dim: usize, num_layers: usize, num_heads: usize) -> ModelSizeConfig {
+        ModelSizeConfig {
+            parameters: "1.5B".to_string(),
+            hidden_dim,
+            num_layers,
+            num_heads,
+            num_kv_heads: num_heads,
+            intermediate_dim: hidden_dim * 4,
+            vocab_size: 32_000,
+            max_position_embeddings: 4096,
+            head_dim: if num_heads > 0 {
+                hidden_dim / num_heads
+            } else {
+                128
+            },
+            rope_theta: 10_000.0,
+            norm_eps: 1e-5,
+        }
+    }
+
+    fn empty_report() -> InspectionReport {
+        InspectionReport {
+            format: FormatType::Gguf,
+            file_size: 0,
+            metadata: BTreeMap::new(),
+            tensors: Vec::new(),
+            total_params: 0,
+            quantization: None,
+            architecture: None,
+        }
+    }
+
+    fn tensor(name: &str, shape: Vec<usize>) -> TensorInfo {
+        TensorInfo {
+            name: name.to_string(),
+            dtype: "F16".to_string(),
+            shape,
+            size_bytes: 0,
+            stats: None,
+        }
+    }
+
+    fn make_kernels(tps_cpu: Option<f64>) -> KernelCompatibility {
+        KernelCompatibility {
+            supported_quantizations: Vec::new(),
+            attention_kernel: "flash".to_string(),
+            ffn_kernel: "swiglu".to_string(),
+            estimated_tps_cpu: tps_cpu,
+            estimated_tps_gpu: None,
+            memory_required_mb: 0.0,
+            notes: Vec::new(),
+        }
+    }
+
+    // ---- PlanVerdict Display ------------------------------------------
+
+    #[test]
+    fn plan_verdict_display_strings() {
+        assert_eq!(PlanVerdict::Ready.to_string(), "READY");
+        assert_eq!(PlanVerdict::Warnings.to_string(), "WARNINGS");
+        assert_eq!(PlanVerdict::Blocked.to_string(), "BLOCKED");
+    }
+
+    // ---- parse_model_source -------------------------------------------
+
+    #[test]
+    fn parse_model_source_explicit_hf_prefix() {
+        match parse_model_source("hf://org/model-7b") {
+            ServePlanSource::HuggingFace { repo_id } => assert_eq!(repo_id, "org/model-7b"),
+            ServePlanSource::Local(_) => panic!("expected HuggingFace source"),
+        }
+    }
+
+    #[test]
+    fn parse_model_source_bare_org_repo_is_hf() {
+        match parse_model_source("Qwen/Qwen2.5-1.5B") {
+            ServePlanSource::HuggingFace { repo_id } => assert_eq!(repo_id, "Qwen/Qwen2.5-1.5B"),
+            ServePlanSource::Local(_) => panic!("bare org/repo should resolve to HuggingFace"),
+        }
+    }
+
+    #[test]
+    fn parse_model_source_path_with_model_extension_is_local() {
+        // A slash + a known model extension must stay local even if absent on disk.
+        match parse_model_source("models/qwen.gguf") {
+            ServePlanSource::Local(p) => assert_eq!(p, PathBuf::from("models/qwen.gguf")),
+            ServePlanSource::HuggingFace { .. } => panic!("model file extension must stay local"),
+        }
+    }
+
+    #[test]
+    fn parse_model_source_no_slash_is_local() {
+        match parse_model_source("model.gguf") {
+            ServePlanSource::Local(p) => assert_eq!(p, PathBuf::from("model.gguf")),
+            ServePlanSource::HuggingFace { .. } => panic!("no slash → local"),
+        }
+    }
+
+    #[test]
+    fn parse_model_source_parent_traversal_stays_local() {
+        match parse_model_source("../weights/foo") {
+            ServePlanSource::Local(p) => assert_eq!(p, PathBuf::from("../weights/foo")),
+            ServePlanSource::HuggingFace { .. } => panic!(".. traversal must stay local"),
+        }
+    }
+
+    #[test]
+    fn parse_model_source_three_segment_path_is_local() {
+        // More than two non-empty segments is not a bare org/repo → local.
+        match parse_model_source("a/b/c") {
+            ServePlanSource::Local(p) => assert_eq!(p, PathBuf::from("a/b/c")),
+            ServePlanSource::HuggingFace { .. } => panic!("3-segment path is not org/repo"),
+        }
+    }
+
+    // ---- json_usize_or / json_f64_or ----------------------------------
+
+    #[test]
+    fn json_usize_or_picks_first_present_alias() {
+        let v = serde_json::json!({"hidden_size": 4096, "n_embd": 1024});
+        assert_eq!(json_usize_or(&v, &["n_embd", "hidden_size"], 0), 1024);
+        assert_eq!(json_usize_or(&v, &["hidden_size"], 0), 4096);
+    }
+
+    #[test]
+    fn json_usize_or_returns_default_when_missing() {
+        let v = serde_json::json!({"other": 1});
+        assert_eq!(json_usize_or(&v, &["absent", "missing"], 777), 777);
+    }
+
+    #[test]
+    fn json_usize_or_default_on_non_integer() {
+        let v = serde_json::json!({"x": "not-a-number"});
+        assert_eq!(json_usize_or(&v, &["x"], 42), 42);
+    }
+
+    #[test]
+    fn json_f64_or_reads_float_and_default() {
+        let v = serde_json::json!({"rope_theta": 1_000_000.0});
+        assert!((json_f64_or(&v, &["rope_theta"], 10_000.0) - 1_000_000.0).abs() < 1e-6);
+        assert!((json_f64_or(&v, &["absent"], 10_000.0) - 10_000.0).abs() < 1e-6);
+    }
+
+    // ---- estimate_param_string ----------------------------------------
+
+    #[test]
+    fn estimate_param_string_scales_to_billions() {
+        // ~7B-class architecture should land in the "B" range.
+        let s = estimate_param_string(4096, 32, 11_008, 32_000);
+        assert!(s.ends_with('B'), "expected billions, got {s}");
+    }
+
+    #[test]
+    fn estimate_param_string_small_model_is_millions_or_less() {
+        let s = estimate_param_string(256, 2, 512, 1_000);
+        assert!(
+            s.ends_with('M') || s.chars().all(|c| c.is_ascii_digit()),
+            "expected millions or raw count, got {s}"
+        );
+    }
+
+    // ---- infer_quant_from_repo_name -----------------------------------
+
+    #[test]
+    fn infer_quant_from_repo_name_specific_quant() {
+        assert_eq!(
+            infer_quant_from_repo_name("TheBloke/Llama-2-7B-GGUF-q4_k_m"),
+            Some("Q4_K_M".to_string())
+        );
+        assert_eq!(
+            infer_quant_from_repo_name("foo-q8_0-bar"),
+            Some("Q8_0".to_string())
+        );
+    }
+
+    #[test]
+    fn infer_quant_from_repo_name_gguf_default_q4km() {
+        assert_eq!(
+            infer_quant_from_repo_name("org/some-model-GGUF"),
+            Some("Q4_K_M".to_string())
+        );
+    }
+
+    #[test]
+    fn infer_quant_from_repo_name_none_when_unknown() {
+        assert_eq!(
+            infer_quant_from_repo_name("org/plain-safetensors-model"),
+            None
+        );
+    }
+
+    // ---- resolve_quantization -----------------------------------------
+
+    #[test]
+    fn resolve_quantization_prefers_report_field() {
+        let mut report = empty_report();
+        report.quantization = Some("Q6_K".to_string());
+        assert_eq!(
+            resolve_quantization(&report, Path::new("ignored.gguf")),
+            Some("Q6_K".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_quantization_ignores_zero_quant_field() {
+        let mut report = empty_report();
+        report.quantization = Some("0".to_string());
+        // Falls back to filename pattern.
+        assert_eq!(
+            resolve_quantization(&report, Path::new("model-q5_k_m.gguf")),
+            Some("Q5_K_M".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_quantization_filename_fallback() {
+        let report = empty_report();
+        assert_eq!(
+            resolve_quantization(&report, Path::new("/tmp/llama-q4_0.gguf")),
+            Some("Q4_0".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_quantization_none_when_no_hint() {
+        let report = empty_report();
+        assert_eq!(
+            resolve_quantization(&report, Path::new("plain-model.bin")),
+            None
+        );
+    }
+
+    // ---- infer_from_metadata / infer_hidden_dim / infer_num_layers ----
+
+    #[test]
+    fn infer_from_metadata_first_match_wins() {
+        let mut report = empty_report();
+        report
+            .metadata
+            .insert("n_embd".to_string(), "2048".to_string());
+        report
+            .metadata
+            .insert("llama.embedding_length".to_string(), "4096".to_string());
+        assert_eq!(
+            infer_from_metadata(&report, &["n_embd", "llama.embedding_length"]),
+            Some(2048)
+        );
+    }
+
+    #[test]
+    fn infer_from_metadata_none_when_absent_or_unparsable() {
+        let mut report = empty_report();
+        report.metadata.insert("k".to_string(), "abc".to_string());
+        assert_eq!(infer_from_metadata(&report, &["k"]), None);
+        assert_eq!(infer_from_metadata(&report, &["missing"]), None);
+    }
+
+    #[test]
+    fn infer_hidden_dim_from_metadata() {
+        let mut report = empty_report();
+        report
+            .metadata
+            .insert("qwen2.embedding_length".to_string(), "1536".to_string());
+        assert_eq!(infer_hidden_dim(&report), 1536);
+    }
+
+    #[test]
+    fn infer_hidden_dim_from_embedding_tensor() {
+        let mut report = empty_report();
+        report
+            .tensors
+            .push(tensor("token_embd.weight", vec![151936, 1536]));
+        // min(shape) is the hidden dim.
+        assert_eq!(infer_hidden_dim_from_tensors(&report), 1536);
+        assert_eq!(infer_hidden_dim(&report), 1536);
+    }
+
+    #[test]
+    fn infer_hidden_dim_zero_when_no_signal() {
+        assert_eq!(infer_hidden_dim_from_tensors(&empty_report()), 0);
+        assert_eq!(infer_hidden_dim(&empty_report()), 0);
+    }
+
+    #[test]
+    fn infer_num_layers_from_metadata() {
+        let mut report = empty_report();
+        report
+            .metadata
+            .insert("llama.block_count".to_string(), "28".to_string());
+        assert_eq!(infer_num_layers(&report), 28);
+    }
+
+    #[test]
+    fn infer_num_layers_from_tensor_indices() {
+        let mut report = empty_report();
+        report
+            .tensors
+            .push(tensor("blk.0.attn_q.weight", vec![1, 1]));
+        report
+            .tensors
+            .push(tensor("blk.5.attn_q.weight", vec![1, 1]));
+        report.tensors.push(tensor("blk.3.ffn.weight", vec![1, 1]));
+        // max index 5 → 6 layers.
+        assert_eq!(infer_num_layers(&report), 6);
+    }
+
+    #[test]
+    fn infer_num_layers_zero_when_no_layer_tensors() {
+        let mut report = empty_report();
+        report.tensors.push(tensor("token_embd.weight", vec![1, 1]));
+        assert_eq!(infer_num_layers(&report), 0);
+    }
+
+    // ---- build_inferred_size_config -----------------------------------
+
+    #[test]
+    fn build_inferred_size_config_uses_metadata_and_defaults() {
+        let mut report = empty_report();
+        report.total_params = 1_500_000_000;
+        report
+            .metadata
+            .insert("n_heads".to_string(), "16".to_string());
+        report
+            .metadata
+            .insert("n_ff".to_string(), "8960".to_string());
+        let cfg = build_inferred_size_config(&report, 1536, 28);
+        assert_eq!(cfg.hidden_dim, 1536);
+        assert_eq!(cfg.num_layers, 28);
+        assert_eq!(cfg.num_heads, 16);
+        assert_eq!(cfg.intermediate_dim, 8960);
+        // num_kv_heads defaults to num_heads when not provided.
+        assert_eq!(cfg.num_kv_heads, 16);
+        // head_dim = hidden_dim / num_heads.
+        assert_eq!(cfg.head_dim, 1536 / 16);
+        assert!(cfg.parameters.ends_with('B'));
+    }
+
+    #[test]
+    fn build_inferred_size_config_defaults_when_metadata_absent() {
+        let report = empty_report();
+        let cfg = build_inferred_size_config(&report, 1024, 12);
+        assert_eq!(cfg.num_heads, 32); // default
+        assert_eq!(cfg.intermediate_dim, 1024 * 4); // hidden*4 default
+        assert_eq!(cfg.vocab_size, 32_000); // default
+        assert_eq!(cfg.max_position_embeddings, 4096); // default
+        assert!((cfg.rope_theta - 10_000.0).abs() < 1e-6);
+    }
+
+    // ---- compute_memory_budget ----------------------------------------
+
+    #[test]
+    fn compute_memory_budget_cpu_has_no_gpu_fields() {
+        let stats = make_test_stats(2000.0, 1_000_000, 2_000_000);
+        let size = make_size_config(1536, 28, 12);
+        let budget = compute_memory_budget(&stats, &size, None, 1, 2048);
+        assert!((budget.weights_mb - 2000.0).abs() < 1e-6);
+        assert!(budget.kv_cache_mb >= 0.0);
+        assert!(
+            (budget.overhead_mb).abs() < f64::EPSILON,
+            "no CUDA overhead on CPU"
+        );
+        assert!(budget.gpu_total_mb.is_none());
+        assert!(budget.utilization_pct.is_none());
+        assert!(budget.max_batch.is_none());
+        assert_eq!(budget.batch_size, 1);
+        assert_eq!(budget.seq_len, 2048);
+        // total = weights + kv + activations (no overhead).
+        let expected = budget.weights_mb + budget.kv_cache_mb + budget.activations_mb;
+        assert!((budget.total_mb - expected).abs() < 1e-6);
+    }
+
+    #[test]
+    fn compute_memory_budget_gpu_populates_utilization() {
+        let stats = make_test_stats(2000.0, 1_000_000, 2_000_000);
+        let size = make_size_config(1536, 28, 12);
+        let hw = ServePlanHardware {
+            gpu_name: "GPU".to_string(),
+            vram_mb: 24_000.0,
+            bandwidth_gbps: 900.0,
+            peak_tflops: 80.0,
+        };
+        let budget = compute_memory_budget(&stats, &size, Some(&hw), 4, 4096);
+        assert_eq!(budget.gpu_total_mb, Some(24_000.0));
+        assert!(
+            (budget.overhead_mb - 512.0).abs() < 1e-6,
+            "CUDA overhead present"
+        );
+        let util = budget.utilization_pct.expect("utilization on GPU");
+        assert!((util - budget.total_mb / 24_000.0 * 100.0).abs() < 1e-6);
+        assert!(budget.max_batch.is_some());
+    }
+
+    #[test]
+    fn compute_memory_budget_gpu_zero_vram_no_utilization() {
+        let stats = make_test_stats(1000.0, 1, 1);
+        let size = make_size_config(1024, 12, 8);
+        let hw = ServePlanHardware {
+            gpu_name: "GPU".to_string(),
+            vram_mb: 0.0,
+            bandwidth_gbps: 100.0,
+            peak_tflops: 1.0,
+        };
+        let budget = compute_memory_budget(&stats, &size, Some(&hw), 1, 1024);
+        assert!(
+            budget.utilization_pct.is_none(),
+            "zero VRAM → no utilization"
+        );
+        assert_eq!(budget.max_batch, Some(0), "no room → max batch 0");
+    }
+
+    // ---- compute_throughput -------------------------------------------
+
+    #[test]
+    fn compute_throughput_cpu_uses_kernel_estimate() {
+        let kernels = make_kernels(Some(42.0));
+        let t = compute_throughput(&kernels, None, 1);
+        assert!((t.single_decode_tps - 42.0).abs() < 1e-6);
+        assert!(t.batched_tps.is_none(), "batch=1 has no batched estimate");
+        assert_eq!(t.batch_size, 1);
+    }
+
+    #[test]
+    fn compute_throughput_cpu_default_tps_when_absent() {
+        let kernels = make_kernels(None);
+        let t = compute_throughput(&kernels, None, 1);
+        assert!((t.single_decode_tps - 50.0).abs() < 1e-6, "default 50 tps");
+    }
+
+    #[test]
+    fn compute_throughput_batched_scales_sqrt() {
+        let kernels = make_kernels(Some(100.0));
+        let t = compute_throughput(&kernels, None, 4);
+        let batched = t.batched_tps.expect("batched estimate for batch>1");
+        assert!((batched - 100.0 * 2.0).abs() < 1e-6, "sqrt(4)=2 scaling");
+    }
+
+    #[test]
+    fn compute_throughput_gpu_uses_roofline_ceiling() {
+        let kernels = make_kernels(Some(10.0));
+        let roof = RooflineEstimate {
+            bandwidth_gbps: 900.0,
+            bandwidth_ceiling_tps: 333.0,
+            compute_ceiling_tps: 500.0,
+            bottleneck: "MEMORY-BOUND".to_string(),
+        };
+        let t = compute_throughput(&kernels, Some(&roof), 1);
+        assert!(
+            (t.single_decode_tps - 333.0).abs() < 1e-6,
+            "GPU uses roofline, not cpu kernel"
+        );
+    }
+
+    // ---- compute_roofline bottleneck classification -------------------
+
+    #[test]
+    fn compute_roofline_compute_bound_when_huge_model() {
+        // Big model_size_q4 → tiny bandwidth ceiling; tiny flops → huge compute ceiling.
+        let stats = make_test_stats(100_000.0, 1, 1);
+        let hw = make_test_hw();
+        let roof = compute_roofline(&stats, &hw);
+        assert_eq!(roof.bottleneck, "MEMORY-BOUND");
+    }
+
+    #[test]
+    fn compute_roofline_zero_flops_compute_ceiling_zero() {
+        let stats = make_test_stats(10.0, 0, 0);
+        let hw = make_test_hw();
+        let roof = compute_roofline(&stats, &hw);
+        assert!((roof.compute_ceiling_tps).abs() < f64::EPSILON);
+    }
+
+    // ---- run_contract_checks + determine_verdict ----------------------
+
+    fn budget_fixture(total_mb: f64, weights_mb: f64, batch_size: usize) -> MemoryBudget {
+        MemoryBudget {
+            weights_mb,
+            kv_cache_mb: 100.0,
+            activations_mb: 50.0,
+            overhead_mb: 512.0,
+            total_mb,
+            gpu_total_mb: Some(24_000.0),
+            utilization_pct: Some(total_mb / 24_000.0 * 100.0),
+            max_batch: Some(8),
+            batch_size,
+            seq_len: 4096,
+        }
+    }
+
+    #[test]
+    fn run_contract_checks_cpu_only_single_check_passes() {
+        let budget = budget_fixture(2000.0, 1500.0, 1);
+        let checks = run_contract_checks(&budget, None);
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0].id, "BUDGET-003");
+        assert!(checks[0].passed);
+    }
+
+    #[test]
+    fn run_contract_checks_gpu_all_pass_within_budget() {
+        let hw = ServePlanHardware {
+            gpu_name: "GPU".to_string(),
+            vram_mb: 24_000.0,
+            bandwidth_gbps: 900.0,
+            peak_tflops: 80.0,
+        };
+        let budget = budget_fixture(2000.0, 1500.0, 1);
+        let checks = run_contract_checks(&budget, Some(&hw));
+        // batch_size 1 → no BUDGET-004; expect 001/002/003.
+        let ids: Vec<&str> = checks.iter().map(|c| c.id.as_str()).collect();
+        assert!(ids.contains(&"BUDGET-001"));
+        assert!(ids.contains(&"BUDGET-002"));
+        assert!(ids.contains(&"BUDGET-003"));
+        assert!(!ids.contains(&"BUDGET-004"));
+        assert!(checks.iter().all(|c| c.passed), "all should fit in 24GB");
+    }
+
+    #[test]
+    fn run_contract_checks_gpu_batch_adds_budget_004() {
+        let hw = ServePlanHardware {
+            gpu_name: "GPU".to_string(),
+            vram_mb: 24_000.0,
+            bandwidth_gbps: 900.0,
+            peak_tflops: 80.0,
+        };
+        let budget = budget_fixture(3000.0, 1500.0, 8);
+        let checks = run_contract_checks(&budget, Some(&hw));
+        assert!(checks.iter().any(|c| c.id == "BUDGET-004"));
+    }
+
+    #[test]
+    fn run_contract_checks_gpu_oversized_fails_budget_001() {
+        let hw = ServePlanHardware {
+            gpu_name: "tiny".to_string(),
+            vram_mb: 1000.0,
+            bandwidth_gbps: 100.0,
+            peak_tflops: 1.0,
+        };
+        // total well above 95% of 1000 MB.
+        let budget = budget_fixture(5000.0, 4000.0, 1);
+        let checks = run_contract_checks(&budget, Some(&hw));
+        let b001 = checks
+            .iter()
+            .find(|c| c.id == "BUDGET-001")
+            .expect("BUDGET-001");
+        assert!(!b001.passed, "5000 MB must not fit in 1000 MB");
+    }
+
+    #[test]
+    fn determine_verdict_ready_when_all_pass() {
+        let checks = vec![ContractCheck {
+            id: "BUDGET-001".to_string(),
+            name: "x".to_string(),
+            passed: true,
+            detail: String::new(),
+        }];
+        assert_eq!(determine_verdict(&checks), PlanVerdict::Ready);
+    }
+
+    #[test]
+    fn determine_verdict_blocked_on_critical_failure() {
+        let checks = vec![ContractCheck {
+            id: "BUDGET-002".to_string(),
+            name: "x".to_string(),
+            passed: false,
+            detail: String::new(),
+        }];
+        assert_eq!(determine_verdict(&checks), PlanVerdict::Blocked);
+    }
+
+    #[test]
+    fn determine_verdict_warnings_on_noncritical_failure() {
+        let checks = vec![
+            ContractCheck {
+                id: "BUDGET-001".to_string(),
+                name: "x".to_string(),
+                passed: true,
+                detail: String::new(),
+            },
+            ContractCheck {
+                id: "BUDGET-004".to_string(),
+                name: "x".to_string(),
+                passed: false,
+                detail: String::new(),
+            },
+        ];
+        assert_eq!(determine_verdict(&checks), PlanVerdict::Warnings);
+    }
+
+    // ---- contracts_candidate_paths ------------------------------------
+
+    #[test]
+    fn contracts_candidate_paths_includes_ancestors() {
+        let paths = contracts_candidate_paths();
+        assert!(paths.iter().any(|p| p == &PathBuf::from("./contracts")));
+        assert!(paths.iter().any(|p| p.ends_with("contracts")));
+    }
 }

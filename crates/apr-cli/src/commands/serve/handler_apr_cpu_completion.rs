@@ -652,4 +652,216 @@ struct GpuCompletionResponse {
     tok_per_sec: f64,
 }
 
+// ============================================================================
+// PMAT-125 B3: unit tests for APR-CPU completion pure helpers
+//
+// These functions are `include!`d into the `serve::handlers` module, so this
+// test module exercises them at that scope (CPU-only; no transformer/GPU).
+// ============================================================================
+#[cfg(all(test, feature = "inference"))]
+mod apr_cpu_completion_tests {
+    use super::*;
+
+    // ---- validate_request_model ---------------------------------------
+
+    #[test]
+    fn validate_request_model_accepts_missing_field() {
+        let req = serde_json::json!({"messages": []});
+        assert!(validate_request_model(&req, "qwen2.5-1.5b").is_none());
+    }
+
+    #[test]
+    fn validate_request_model_accepts_exact_match() {
+        let req = serde_json::json!({"model": "qwen2.5-1.5b"});
+        assert!(validate_request_model(&req, "qwen2.5-1.5b").is_none());
+    }
+
+    #[test]
+    fn validate_request_model_accepts_apr_wildcard() {
+        let req = serde_json::json!({"model": "apr"});
+        assert!(validate_request_model(&req, "anything").is_none());
+    }
+
+    #[test]
+    fn validate_request_model_rejects_mismatch() {
+        let req = serde_json::json!({"model": "gpt-4"});
+        let resp = validate_request_model(&req, "qwen2.5-1.5b");
+        assert!(
+            resp.is_some(),
+            "mismatched model name must produce a 404 response"
+        );
+        assert_eq!(
+            resp.expect("response").status(),
+            axum::http::StatusCode::NOT_FOUND
+        );
+    }
+
+    #[test]
+    fn validate_request_model_non_string_model_field_accepted() {
+        // as_str() yields None for a numeric model field → accept.
+        let req = serde_json::json!({"model": 123});
+        assert!(validate_request_model(&req, "loaded").is_none());
+    }
+
+    // ---- insert_trace_data --------------------------------------------
+
+    #[test]
+    fn insert_trace_data_none_level_is_noop() {
+        let mut resp = serde_json::json!({"a": 1});
+        insert_trace_data(&mut resp, None, serde_json::json!({"x": 1}));
+        assert!(resp.get("brick_trace").is_none());
+        assert!(resp.get("step_trace").is_none());
+        assert!(resp.get("layer_trace").is_none());
+    }
+
+    #[test]
+    fn insert_trace_data_unknown_level_is_noop() {
+        let mut resp = serde_json::json!({"a": 1});
+        insert_trace_data(&mut resp, Some("garbage"), serde_json::json!({"x": 1}));
+        assert_eq!(resp.as_object().expect("obj").len(), 1);
+    }
+
+    #[test]
+    fn insert_trace_data_maps_levels_to_keys() {
+        for (level, key) in [
+            ("brick", "brick_trace"),
+            ("step", "step_trace"),
+            ("layer", "layer_trace"),
+        ] {
+            let mut resp = serde_json::json!({});
+            insert_trace_data(&mut resp, Some(level), serde_json::json!({"layers": 28}));
+            assert_eq!(resp[key]["layers"], 28, "level {level} → key {key}");
+        }
+    }
+
+    // ---- ollama_sampling ----------------------------------------------
+
+    #[test]
+    fn ollama_sampling_defaults_when_none() {
+        let (max_tokens, temp) = ollama_sampling(&None);
+        assert_eq!(max_tokens, 32);
+        assert!((temp).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn ollama_sampling_reads_options() {
+        let opts = super::super::ollama::OllamaOptions {
+            temperature: Some(0.7),
+            num_predict: Some(128),
+            ..Default::default()
+        };
+        let (max_tokens, temp) = ollama_sampling(&Some(opts));
+        assert_eq!(max_tokens, 128);
+        assert!((temp - 0.7).abs() < 1e-6);
+    }
+
+    #[test]
+    fn ollama_sampling_clamps_max_tokens_to_4096() {
+        let opts = super::super::ollama::OllamaOptions {
+            num_predict: Some(100_000),
+            ..Default::default()
+        };
+        let (max_tokens, _) = ollama_sampling(&Some(opts));
+        assert_eq!(max_tokens, 4096, "max_tokens is capped at 4096");
+    }
+
+    // ---- eos_token_id -------------------------------------------------
+
+    #[test]
+    fn eos_token_id_uses_default_when_no_tokenizer() {
+        assert_eq!(eos_token_id(None, 2), 2);
+    }
+
+    // ---- extract_new_tokens -------------------------------------------
+
+    #[test]
+    fn extract_new_tokens_slices_after_prompt() {
+        let output = [1u32, 2, 3, 4, 5];
+        assert_eq!(extract_new_tokens(&output, 2), &[3, 4, 5]);
+    }
+
+    #[test]
+    fn extract_new_tokens_returns_all_when_not_longer() {
+        let output = [1u32, 2, 3];
+        // input_len >= output.len() → return whole slice (defensive).
+        assert_eq!(extract_new_tokens(&output, 3), &[1, 2, 3]);
+        assert_eq!(extract_new_tokens(&output, 10), &[1, 2, 3]);
+    }
+
+    #[test]
+    fn extract_new_tokens_empty_output() {
+        let output: [u32; 0] = [];
+        assert!(extract_new_tokens(&output, 0).is_empty());
+    }
+
+    // ---- compute_tok_per_sec ------------------------------------------
+
+    #[test]
+    fn compute_tok_per_sec_positive_duration() {
+        let tps = compute_tok_per_sec(100, std::time::Duration::from_secs(2));
+        assert!((tps - 50.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn compute_tok_per_sec_zero_duration_is_zero() {
+        let tps = compute_tok_per_sec(100, std::time::Duration::ZERO);
+        assert!((tps).abs() < f64::EPSILON, "no divide-by-zero blowup");
+    }
+
+    #[test]
+    fn compute_tok_per_sec_zero_tokens() {
+        let tps = compute_tok_per_sec(0, std::time::Duration::from_secs(1));
+        assert!((tps).abs() < f64::EPSILON);
+    }
+
+    // ---- generate_request_id ------------------------------------------
+
+    #[test]
+    fn generate_request_id_has_chatcmpl_prefix_and_pid() {
+        let id = generate_request_id();
+        assert!(id.starts_with("chatcmpl-"), "got {id}");
+        // Format is chatcmpl-<nanos>-<pid>; three dash-separated parts.
+        let parts: Vec<&str> = id.split('-').collect();
+        assert_eq!(parts.len(), 3, "id should be chatcmpl-<nanos>-<pid>: {id}");
+        assert!(parts[1].chars().all(|c| c.is_ascii_digit()));
+        assert!(parts[2].chars().all(|c| c.is_ascii_digit()));
+    }
+
+    // ---- format_chatml ------------------------------------------------
+
+    #[test]
+    fn format_chatml_wraps_messages_and_appends_assistant() {
+        let msgs = vec![
+            serde_json::json!({"role": "system", "content": "be brief"}),
+            serde_json::json!({"role": "user", "content": "hi"}),
+        ];
+        let prompt = format_chatml(&msgs);
+        assert!(prompt.contains("<|im_start|>system\nbe brief<|im_end|>\n"));
+        assert!(prompt.contains("<|im_start|>user\nhi<|im_end|>\n"));
+        assert!(prompt.ends_with("<|im_start|>assistant\n"));
+    }
+
+    #[test]
+    fn format_chatml_defaults_role_and_content() {
+        // Missing role defaults to "user"; missing content defaults to "".
+        let msgs = vec![serde_json::json!({})];
+        let prompt = format_chatml(&msgs);
+        assert!(prompt.contains("<|im_start|>user\n<|im_end|>\n"));
+        assert!(prompt.ends_with("<|im_start|>assistant\n"));
+    }
+
+    #[test]
+    fn format_chatml_empty_messages_just_assistant_header() {
+        let prompt = format_chatml(&[]);
+        assert_eq!(prompt, "<|im_start|>assistant\n");
+    }
+
+    // ---- default_max_tokens_gpu ---------------------------------------
+
+    #[test]
+    fn default_max_tokens_gpu_is_32() {
+        assert_eq!(default_max_tokens_gpu(), 32);
+    }
+}
+
 include!("handlers_include_01.rs");

@@ -477,3 +477,288 @@ fn build_chat_response(
         .into_response()
     }
 }
+
+// ============================================================================
+// PMAT-125 B3: unit tests for SafeTensors chat/tokenizer pure helpers.
+//
+// `chat.rs` is `include!`d into the `serve::safetensors` module, so these
+// helpers (plus `parse_special_token` / `classify_bos_eos` /
+// `merge_special_tokens_into_vocab` defined in `safetensors.rs` itself) are all
+// in that scope. The `types` module is a sibling under `serve`, reached via
+// `super::super::types`. CPU-only: no transformer, no GPU.
+// ============================================================================
+#[cfg(all(test, feature = "inference"))]
+mod chat_helper_tests {
+    use super::*;
+
+    // ---- classify_bos_eos ---------------------------------------------
+
+    #[test]
+    fn classify_bos_eos_detects_bos_markers() {
+        assert_eq!(classify_bos_eos("<s>"), (true, false));
+        assert_eq!(classify_bos_eos("<|bos|>"), (true, false));
+    }
+
+    #[test]
+    fn classify_bos_eos_detects_eos_markers() {
+        assert_eq!(classify_bos_eos("</s>"), (false, true));
+        assert_eq!(classify_bos_eos("<|eos|>"), (false, true));
+        assert_eq!(classify_bos_eos("<|im_end|>"), (false, true));
+    }
+
+    #[test]
+    fn classify_bos_eos_plain_token_is_neither() {
+        assert_eq!(classify_bos_eos("hello"), (false, false));
+    }
+
+    // ---- parse_special_token ------------------------------------------
+
+    #[test]
+    fn parse_special_token_extracts_id_and_content() {
+        let tok = serde_json::json!({"id": 5, "content": "<|im_end|>"});
+        assert_eq!(
+            parse_special_token(&tok),
+            Some((5, "<|im_end|>".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_special_token_none_when_missing_fields() {
+        assert!(parse_special_token(&serde_json::json!({"id": 1})).is_none());
+        assert!(parse_special_token(&serde_json::json!({"content": "x"})).is_none());
+        assert!(parse_special_token(&serde_json::json!({"id": "nan", "content": "x"})).is_none());
+    }
+
+    // ---- merge_special_tokens_into_vocab ------------------------------
+
+    #[test]
+    fn merge_special_tokens_none_added_tokens_keeps_vocab() {
+        let mut vocab = vec!["a".to_string(), "b".to_string()];
+        let (bos, eos) = merge_special_tokens_into_vocab(None, &mut vocab);
+        assert_eq!(vocab, vec!["a", "b"]);
+        assert!(bos.is_none());
+        assert!(eos.is_none());
+    }
+
+    #[test]
+    fn merge_special_tokens_overwrites_in_range_and_detects_eos() {
+        let added = vec![serde_json::json!({"id": 1, "content": "<|im_end|>"})];
+        let mut vocab = vec!["a".to_string(), "b".to_string()];
+        let (bos, eos) = merge_special_tokens_into_vocab(Some(&added), &mut vocab);
+        assert_eq!(vocab[1], "<|im_end|>");
+        assert!(bos.is_none());
+        assert_eq!(eos, Some(1));
+    }
+
+    #[test]
+    fn merge_special_tokens_resizes_vocab_for_high_id() {
+        let added = vec![
+            serde_json::json!({"id": 4, "content": "</s>"}),
+            serde_json::json!({"id": 3, "content": "<s>"}),
+        ];
+        let mut vocab = vec!["a".to_string()];
+        let (bos, eos) = merge_special_tokens_into_vocab(Some(&added), &mut vocab);
+        // resized to max_id (4) + 1 = 5 entries; gap filled with "<unused>".
+        assert_eq!(vocab.len(), 5);
+        assert_eq!(vocab[2], "<unused>");
+        assert_eq!(vocab[3], "<s>");
+        assert_eq!(vocab[4], "</s>");
+        assert_eq!(bos, Some(3));
+        assert_eq!(eos, Some(4));
+    }
+
+    // ---- parse_chat_completion_request --------------------------------
+
+    #[test]
+    fn parse_chat_completion_structured_path() {
+        let req = serde_json::json!({
+            "model": "apr",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 16,
+            "stream": true,
+            "temperature": 0.3
+        });
+        let parsed = parse_chat_completion_request(&req).expect("structured parse");
+        assert_eq!(parsed.messages.len(), 1);
+        assert_eq!(parsed.messages[0].role, "user");
+        assert_eq!(parsed.max_tokens, Some(16));
+        assert!(parsed.stream);
+        assert_eq!(parsed.temperature, Some(0.3));
+    }
+
+    #[test]
+    fn parse_chat_completion_missing_messages_is_err() {
+        let req = serde_json::json!({"model": "apr"});
+        let result = parse_chat_completion_request(&req);
+        assert!(result.is_err(), "missing messages must yield a 400 response");
+        let resp = result.err().expect("error response");
+        assert_eq!(resp.status(), axum::http::StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn parse_chat_completion_fallback_extracts_fields() {
+        // A messages entry whose `content` is non-string forces the structured
+        // deserialize to fail (content must be Option<String>), exercising the
+        // raw-JSON fallback path.
+        let req = serde_json::json!({
+            "messages": [
+                {"role": "user", "content": 12345},
+                {"role": "assistant", "content": "ok"}
+            ],
+            "max_tokens": 8
+        });
+        let parsed = parse_chat_completion_request(&req).expect("fallback parse");
+        assert!(parsed.messages.iter().any(|m| m.role == "assistant"));
+        assert_eq!(
+            parsed.model, "default",
+            "model defaults to 'default' in fallback"
+        );
+        assert_eq!(parsed.max_tokens, Some(8));
+    }
+
+    // ---- build_chatml_prompt ------------------------------------------
+
+    fn user_request(content: &str) -> ChatCompletionRequest {
+        ChatCompletionRequest {
+            model: "apr".to_string(),
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: Some(content.to_string()),
+                tool_calls: None,
+                tool_call_id: None,
+                name: None,
+            }],
+            tools: None,
+            tool_choice: None,
+            max_tokens: None,
+            stream: false,
+            temperature: None,
+            top_p: None,
+        }
+    }
+
+    #[test]
+    fn build_chatml_prompt_no_tools_basic() {
+        let req = user_request("hello");
+        let prompt = build_chatml_prompt(&req, false);
+        assert!(prompt.contains("<|im_start|>user\nhello<|im_end|>\n"));
+        assert!(prompt.ends_with("<|im_start|>assistant\n"));
+    }
+
+    #[test]
+    fn build_chatml_prompt_with_tools_injects_system() {
+        let mut req = user_request("weather?");
+        req.tools = Some(vec![super::super::types::Tool {
+            tool_type: "function".to_string(),
+            function: super::super::types::FunctionDef {
+                name: "get_weather".to_string(),
+                description: Some("Look up weather".to_string()),
+                parameters: None,
+            },
+        }]);
+        let prompt = build_chatml_prompt(&req, true);
+        // No system message present → synthesized system block carrying tools.
+        assert!(prompt.contains("<|im_start|>system\n"));
+        assert!(prompt.contains("get_weather"), "tool definition injected");
+    }
+
+    #[test]
+    fn build_chatml_prompt_tool_role_renders_tool_result() {
+        let mut req = user_request("ignored");
+        req.messages = vec![ChatMessage {
+            role: "tool".to_string(),
+            content: Some("sunny".to_string()),
+            tool_calls: None,
+            tool_call_id: Some("call_42".to_string()),
+            name: None,
+        }];
+        let prompt = build_chatml_prompt(&req, false);
+        assert!(prompt.contains("[Tool Result for call_42]"));
+        assert!(prompt.contains("sunny"));
+    }
+
+    // ---- generate_request_id (chat.rs variant) ------------------------
+
+    #[test]
+    fn chat_generate_request_id_prefix() {
+        let id = generate_request_id();
+        assert!(id.starts_with("chatcmpl-"));
+        assert_eq!(id.split('-').count(), 3);
+    }
+
+    // ---- build_chat_response ------------------------------------------
+
+    #[tokio::test]
+    async fn build_chat_response_non_streaming_json_body() {
+        use axum::body::to_bytes;
+        let resp = build_chat_response(
+            "the answer".to_string(),
+            None,
+            false,
+            5,
+            3,
+            std::time::Duration::from_millis(10),
+            300.0,
+        );
+        let bytes = to_bytes(resp.into_body(), 64 * 1024).await.expect("body");
+        let v: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(v["object"], "chat.completion");
+        assert_eq!(v["choices"][0]["message"]["content"], "the answer");
+        assert_eq!(v["choices"][0]["finish_reason"], "stop");
+        assert_eq!(v["usage"]["prompt_tokens"], 5);
+        assert_eq!(v["usage"]["completion_tokens"], 3);
+        assert_eq!(v["usage"]["total_tokens"], 8);
+    }
+
+    #[tokio::test]
+    async fn build_chat_response_with_tool_calls_sets_finish_reason() {
+        use axum::body::to_bytes;
+        let tool_calls = vec![super::super::types::ToolCall {
+            id: "call_1".to_string(),
+            tool_type: "function".to_string(),
+            function: super::super::types::FunctionCall {
+                name: "f".to_string(),
+                arguments: "{}".to_string(),
+            },
+        }];
+        let resp = build_chat_response(
+            String::new(),
+            Some(tool_calls),
+            false,
+            2,
+            0,
+            std::time::Duration::from_millis(1),
+            0.0,
+        );
+        let bytes = to_bytes(resp.into_body(), 64 * 1024).await.expect("body");
+        let v: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(v["choices"][0]["finish_reason"], "tool_calls");
+        assert!(v["choices"][0]["message"]["content"].is_null());
+        assert_eq!(
+            v["choices"][0]["message"]["tool_calls"][0]["function"]["name"],
+            "f"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_chat_response_streaming_is_sse() {
+        let resp = build_chat_response(
+            "hi".to_string(),
+            None,
+            true,
+            1,
+            1,
+            std::time::Duration::from_millis(1),
+            1.0,
+        );
+        let ct = resp
+            .headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        assert!(
+            ct.contains("text/event-stream"),
+            "streaming mode is SSE, got {ct}"
+        );
+    }
+}

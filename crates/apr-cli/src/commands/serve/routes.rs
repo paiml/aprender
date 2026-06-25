@@ -366,3 +366,72 @@ pub fn create_router_with_auth(
         .with_state(state);
     super::auth::layer(auth_gate, router)
 }
+
+// ============================================================================
+// PMAT-125 B3: unit tests for the request-body validation seam.
+// ============================================================================
+#[cfg(all(test, feature = "inference"))]
+mod routes_tests {
+    use super::super::types::{GenerateRequest, ServerMetrics};
+    use super::*;
+
+    #[test]
+    fn validate_and_parse_success_parses_typed_body() {
+        let metrics = ServerMetrics::new();
+        let body = br#"{"prompt": "hi", "max_tokens": 8}"#;
+        let parsed: GenerateRequest =
+            validate_and_parse(body, &metrics).expect("valid JSON parses");
+        assert_eq!(parsed.prompt, "hi");
+        assert_eq!(parsed.max_tokens, 8);
+        // No client error recorded on success.
+        assert_eq!(
+            metrics
+                .requests_client_error
+                .load(std::sync::atomic::Ordering::Relaxed),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn validate_and_parse_oversized_body_is_413_and_counts_error() {
+        let metrics = ServerMetrics::new();
+        let big = vec![b'x'; MAX_REQUEST_SIZE + 1];
+        let result: std::result::Result<serde_json::Value, _> = validate_and_parse(&big, &metrics);
+        let resp = result.err().expect("oversized body must be rejected");
+        assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(
+            metrics
+                .requests_client_error
+                .load(std::sync::atomic::Ordering::Relaxed),
+            1,
+            "client error counter incremented"
+        );
+    }
+
+    #[tokio::test]
+    async fn validate_and_parse_invalid_json_is_400_and_counts_error() {
+        let metrics = ServerMetrics::new();
+        let body = b"{not valid json";
+        let result: std::result::Result<GenerateRequest, _> = validate_and_parse(body, &metrics);
+        let resp = result.err().expect("invalid JSON must be rejected");
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            metrics
+                .requests_client_error
+                .load(std::sync::atomic::Ordering::Relaxed),
+            1
+        );
+    }
+
+    #[test]
+    fn validate_and_parse_at_size_limit_boundary_still_parses() {
+        // Exactly MAX_REQUEST_SIZE bytes (not > limit) is allowed through to
+        // the JSON parser; padded whitespace keeps it valid JSON.
+        let metrics = ServerMetrics::new();
+        let mut body = br#"{"prompt":"x"}"#.to_vec();
+        body.resize(MAX_REQUEST_SIZE, b' ');
+        let parsed: GenerateRequest =
+            validate_and_parse(&body, &metrics).expect("boundary-size valid JSON parses");
+        assert_eq!(parsed.prompt, "x");
+    }
+}
