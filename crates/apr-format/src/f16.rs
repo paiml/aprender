@@ -2,9 +2,18 @@
 //!
 //! These replace the `trueno::f32_to_f16` / `trueno::f16_to_f32` calls that the
 //! v2 reader/writer used (`format/v2/mod.rs:105` / `:112`). The `half` crate is
-//! a tiny, dependency-free, well-audited binary16 implementation that uses the
-//! same IEEE round-to-nearest-even semantics as the previous hand-rolled trueno
-//! bit-twiddling, so the on-disk f16 bytes are unchanged.
+//! a tiny, dependency-free, well-audited binary16 implementation that performs
+//! IEEE-754 round-to-nearest-even and is therefore the **correct** conversion.
+//! The legacy hand-rolled `trueno::f32_to_f16` was round-half-up and carried a
+//! mantissa-overflow carry bug that emitted the WRONG exponent (e.g.
+//! `255.99 -> 0xD800` instead of the correct `0xDC00`).
+//!
+//! Because of this, **v2 f16-written tensor bytes change** relative to the
+//! pre-extraction writer — this is a documented PMAT-905-class bug-fix, pinned
+//! by `test_f16_parity_with_trueno_ref_known_divergence` (31 divergences) below.
+//! On-disk byte-identity is preserved for F32 (the dominant case) but is
+//! intentionally corrected for f16. See `crate::falsifiers` for the F32-scoped
+//! byte-identity oracle.
 
 use half::f16;
 
