@@ -34,6 +34,9 @@ serde_yaml = "0.9"
 tempfile = "3"
 proptest = "1"
 criterion = { version = "0.5", features = ["html_reports"] }
+# Oracle for f16-conversion falsifiers (PMAT-905). `half` is a workspace leaf crate
+# (no aprender dependency) → dev-dep introduces no cycle. Used only in tests.
+half = { workspace = true }
 
 [[bench]]
 name = "benchmarks"
