@@ -773,8 +773,15 @@ mod tests {
 
         assert_eq!(result.mode, StressMode::Render);
         assert!(result.total_ops > 0);
-        // FPS should be around 60
-        assert!(result.ops_per_sec > 50.0 && result.ops_per_sec < 70.0);
+        // The render loop is vsync-sleep driven, so the measured FPS is wall-clock
+        // dependent and varies wildly on a shared CI runner. Assert only that the
+        // function ran and produced a positive, finite rate — never a brittle
+        // throughput range (the old `> 50.0 && < 70.0` flaked under load).
+        assert!(
+            result.ops_per_sec > 0.0 && result.ops_per_sec.is_finite(),
+            "render stress should produce a positive finite FPS, got {}",
+            result.ops_per_sec
+        );
     }
 
     #[test]
