@@ -1876,3 +1876,238 @@ fn run_mbpp_inference_cuda(
 ) -> std::result::Result<(usize, Vec<(String, String, bool)>), String> {
     Err("CUDA not available (compile with --features cuda)".to_string())
 }
+
+#[cfg(test)]
+mod inference_helper_tests {
+    use super::*;
+
+    fn he_problem(prompt: &str, test: &str, canonical: Option<&str>) -> HumanEvalProblem {
+        HumanEvalProblem {
+            task_id: "HumanEval/0".to_string(),
+            prompt: prompt.to_string(),
+            canonical_solution: canonical.map(String::from),
+            test: test.to_string(),
+            entry_point: None,
+        }
+    }
+
+    // ── sample_token ───────────────────────────────────────────────────────
+
+    #[test]
+    fn sample_token_greedy_on_zero_temperature() {
+        // temperature <= 0 ⇒ argmax.
+        let logits = [0.1f32, 0.5, 0.2, 9.0, 0.3];
+        let mut rng = 42u64;
+        assert_eq!(sample_token(&logits, 0.0, &mut rng), 3);
+    }
+
+    #[test]
+    fn sample_token_greedy_on_negative_temperature() {
+        let logits = [5.0f32, 1.0, 2.0];
+        let mut rng = 1u64;
+        assert_eq!(sample_token(&logits, -1.0, &mut rng), 0);
+    }
+
+    #[test]
+    fn sample_token_empty_logits_returns_zero() {
+        let logits: [f32; 0] = [];
+        let mut rng = 7u64;
+        assert_eq!(sample_token(&logits, 1.0, &mut rng), 0);
+        assert_eq!(sample_token(&logits, 0.0, &mut rng), 0);
+    }
+
+    #[test]
+    fn sample_token_temperature_in_valid_range() {
+        // With temperature > 0, result must be a valid index into logits.
+        let logits = [1.0f32, 2.0, 3.0, 4.0];
+        let mut rng = 0x1234_5678_9abc_def0u64;
+        for _ in 0..50 {
+            let tok = sample_token(&logits, 0.8, &mut rng);
+            assert!((tok as usize) < logits.len(), "out of range: {tok}");
+        }
+    }
+
+    #[test]
+    fn sample_token_dominant_logit_usually_wins() {
+        // One overwhelmingly large logit ⇒ low-temperature sampling should
+        // almost always select it.
+        let logits = [0.0f32, 0.0, 50.0, 0.0];
+        let mut rng = 0xdead_beef_0000_0001u64;
+        let mut hits = 0;
+        for _ in 0..100 {
+            if sample_token(&logits, 0.1, &mut rng) == 2 {
+                hits += 1;
+            }
+        }
+        assert!(
+            hits >= 95,
+            "dominant logit should win nearly always: {hits}"
+        );
+    }
+
+    #[test]
+    fn sample_token_is_deterministic_for_seed() {
+        let logits = [1.0f32, 2.0, 3.0, 0.5, 1.5];
+        let mut a = 999u64;
+        let mut b = 999u64;
+        let seq_a: Vec<u32> = (0..10)
+            .map(|_| sample_token(&logits, 0.9, &mut a))
+            .collect();
+        let seq_b: Vec<u32> = (0..10)
+            .map(|_| sample_token(&logits, 0.9, &mut b))
+            .collect();
+        assert_eq!(seq_a, seq_b);
+    }
+
+    // ── validate_humaneval_problem ─────────────────────────────────────────
+
+    #[test]
+    fn validate_rejects_empty_prompt() {
+        let p = he_problem("   ", "assert f()", Some("return 1"));
+        assert!(!validate_humaneval_problem(&p));
+    }
+
+    #[test]
+    fn validate_rejects_empty_test() {
+        let p = he_problem("def f():", "  \n ", Some("return 1"));
+        assert!(!validate_humaneval_problem(&p));
+    }
+
+    #[test]
+    fn validate_accepts_with_canonical_solution() {
+        let p = he_problem("anything", "assert True", Some("return 42"));
+        assert!(validate_humaneval_problem(&p));
+    }
+
+    #[test]
+    fn validate_rejects_empty_canonical_without_def() {
+        // canonical present but blank ⇒ falls through to def-check, no "def ".
+        let p = he_problem("no function here", "assert True", Some("   "));
+        assert!(!validate_humaneval_problem(&p));
+    }
+
+    #[test]
+    fn validate_accepts_def_without_canonical() {
+        let p = he_problem("def foo():\n    pass", "assert foo() is None", None);
+        assert!(validate_humaneval_problem(&p));
+    }
+
+    #[test]
+    fn validate_rejects_no_def_no_canonical() {
+        let p = he_problem("just some text", "assert True", None);
+        assert!(!validate_humaneval_problem(&p));
+    }
+
+    // ── extract_function_name ──────────────────────────────────────────────
+
+    #[test]
+    fn extract_function_name_simple() {
+        assert_eq!(extract_function_name("def add(a, b):"), Some("add"));
+    }
+
+    #[test]
+    fn extract_function_name_with_leading_lines() {
+        let prompt = "from typing import List\n\ndef has_close_elements(nums: List[float], t: float) -> bool:\n    pass";
+        assert_eq!(extract_function_name(prompt), Some("has_close_elements"));
+    }
+
+    #[test]
+    fn extract_function_name_indented_def() {
+        // The function picks up the first `def ` even when indented.
+        let prompt = "    def inner(x):\n        return x";
+        assert_eq!(extract_function_name(prompt), Some("inner"));
+    }
+
+    #[test]
+    fn extract_function_name_none_when_no_def() {
+        assert_eq!(extract_function_name("x = 1\ny = 2"), None);
+    }
+
+    #[test]
+    fn extract_function_name_none_when_def_has_no_paren() {
+        assert_eq!(extract_function_name("def malformed:"), None);
+    }
+
+    #[test]
+    fn extract_function_name_first_of_many() {
+        let prompt = "def first():\n    pass\ndef second():\n    pass";
+        assert_eq!(extract_function_name(prompt), Some("first"));
+    }
+
+    // ── truncate_at_function_boundary ──────────────────────────────────────
+
+    #[test]
+    fn truncate_stops_at_next_def() {
+        let c = "    return a + b\n\ndef other():\n    pass";
+        assert_eq!(truncate_at_function_boundary(c), "    return a + b\n");
+    }
+
+    #[test]
+    fn truncate_stops_at_next_class() {
+        let c = "    return 1\nclass Foo:\n    pass";
+        assert_eq!(truncate_at_function_boundary(c), "    return 1");
+    }
+
+    #[test]
+    fn truncate_passthrough_when_no_boundary() {
+        let c = "    return a + b";
+        assert_eq!(truncate_at_function_boundary(c), c);
+    }
+
+    #[test]
+    fn truncate_prefers_earliest_def_over_class() {
+        // \ndef appears before \nclass ⇒ cut at def.
+        let c = "x\ndef d():\n y\nclass C:\n z";
+        assert_eq!(truncate_at_function_boundary(c), "x");
+    }
+
+    // ── print_humaneval_results: smoke + zero-division guard ───────────────
+
+    #[test]
+    fn print_humaneval_results_smoke() {
+        let results = vec![
+            ("HumanEval/0".to_string(), "f".to_string(), true),
+            ("HumanEval/1".to_string(), "g".to_string(), false),
+        ];
+        // Should not panic.
+        print_humaneval_results(&results, 2, 1, &[1, 10], 3.5, "inference");
+    }
+
+    #[test]
+    fn print_humaneval_results_zero_total_no_panic() {
+        let results: Vec<(String, String, bool)> = vec![];
+        print_humaneval_results(&results, 0, 0, &[1], 0.0, "structural");
+    }
+
+    // ── write_apr_eval_debug: writes a JSON debug file ─────────────────────
+
+    #[test]
+    fn write_apr_eval_debug_creates_file() {
+        let exec = PythonExecResult {
+            success: false,
+            exit_code: Some(1),
+            stderr_capture: "AssertionError".to_string(),
+            timed_out: false,
+            spawn_error: None,
+        };
+        let task = format!("dbgtest/{}", std::process::id());
+        write_apr_eval_debug(
+            &task,
+            "def f(): pass",
+            "response text",
+            "    return 1",
+            "def f():\n    return 1",
+            &exec,
+        );
+        let safe = task.replace(['/', '\\', ' '], "_");
+        let path = std::env::temp_dir().join(format!("apr_eval_debug_{safe}.json"));
+        assert!(path.exists(), "debug file not written: {}", path.display());
+        let content = std::fs::read_to_string(&path).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(json["exit_code"], 1);
+        assert_eq!(json["success"], false);
+        assert_eq!(json["stderr"], "AssertionError");
+        assert_eq!(json["response_len"], "response text".len());
+        let _ = std::fs::remove_file(&path);
+    }
+}
