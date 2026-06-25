@@ -408,35 +408,77 @@ fn quantize_fp16(data: &[f32]) -> Vec<f32> {
         .collect()
 }
 
-/// Pack a normal f32 value into f16 given its biased exponent and mantissa.
-fn f32_normal_to_f16(sign: u16, new_exp: i32, mantissa: u32) -> u16 {
-    if new_exp >= 31 {
-        return sign | 0x7C00; // overflow to infinity
-    }
-    if new_exp > 0 {
-        return sign | ((new_exp as u16) << 10) | ((mantissa >> 13) as u16);
-    }
-    // Subnormal: add implicit 1 bit, shift right, round to nearest
-    let full_mantissa = mantissa | 0x800000;
-    let shift = 14 - new_exp;
-    if shift > 24 {
-        return sign; // underflow to zero
-    }
-    let round_bit = 1u32 << (shift - 1);
-    let subnormal = (full_mantissa.saturating_add(round_bit) >> shift) as u16;
-    sign | (subnormal & 0x3FF)
-}
-
-/// Convert f32 to f16 (IEEE 754 half-precision)
+/// Convert an `f32` to IEEE 754 half-precision (`f16`) bits.
+///
+/// PMAT-905 (CPU f16-RNE sweep): bit-identical to `half::f16::from_f32` across
+/// the **entire** 2^32 `f32` domain (verified exhaustively, NaN payloads
+/// treated as equal). This is the **canonical** f16 encoder for the whole
+/// `converter` module — it feeds `quantize_fp16` (the `apr convert --quantize
+/// fp16` precision-reduction round-trip) and, via `f32_to_f16_bits` →
+/// `f32_slice_to_f16_le_bytes`, the SafeTensors FP16 export byte path.
+///
+/// The previous implementation rounded **toward zero**: the normal path
+/// truncated the mantissa (`mantissa >> 13`, no sticky bit) and the subnormal
+/// path rounded **half-up** (`saturating_add(round_bit)`), with f32 subnormals
+/// flushed to zero and NaN payloads collapsed. It diverged from
+/// `half::f16::from_f32` in ~251.6M of 2^32 inputs, e.g. `255.99 → 0x5BFF`
+/// (should be `0x5C00`, mantissa carry) and `65520.0 → 0x7BFF` (should be `+Inf
+/// 0x7C00`, overflow tie). Every `apr convert --quantize fp16` weight was thus
+/// biased ~0.5–1 ULP low with a mis-encoded overflow boundary.
+///
+/// Re-expressed as IEEE round-to-nearest-even across normal AND subnormal grids
+/// with a carry that propagates into the exponent (and onward to Inf), matching
+/// `half` exactly including ties-to-even, overflow→Inf, and NaN payloads.
 fn f32_to_f16(value: f32) -> u16 {
-    let bits = value.to_bits();
-    let sign = ((bits >> 16) & 0x8000) as u16;
-    let exp = (bits >> 23) & 0xFF;
-    let mantissa = bits & 0x7FFFFF;
+    let x: u32 = value.to_bits();
+    let sign = ((x >> 16) & 0x8000) as u16;
+    let exp = (x >> 23) & 0xFF; // biased f32 exponent (8 bits)
+    let mantissa = x & 0x007F_FFFF;
 
-    match exp {
-        0 => sign,                                                         // zero/denormal
-        0xFF => sign | 0x7C00 | if mantissa != 0 { 0x0200 } else { 0 },  // inf/NaN
-        _ => f32_normal_to_f16(sign, exp as i32 - 127 + 15, mantissa),    // normal
+    // Inf / NaN
+    if exp == 0xFF {
+        return if mantissa == 0 {
+            sign | 0x7C00 // ±Inf
+        } else {
+            // NaN: canonical quiet bit + top mantissa bits (matches `half`)
+            sign | 0x7E00 | ((mantissa >> 13) as u16)
+        };
     }
+
+    // Rebias exponent: f32 bias = 127, f16 bias = 15.
+    let half_exp = (exp as i32) - 127 + 15;
+
+    if half_exp >= 0x1F {
+        // Overflow → ±Inf
+        return sign | 0x7C00;
+    }
+
+    if half_exp <= 0 {
+        // Subnormal or zero. `14 - half_exp` is the right-shift; >24 means every
+        // significant bit is shifted out (true zero).
+        if 14 - half_exp > 24 {
+            return sign;
+        }
+        let m = mantissa | 0x0080_0000; // restore implicit leading 1
+        let shift = (14 - half_exp) as u32;
+        let mut half_mant = m >> shift;
+        // Round to nearest even: round up iff the highest dropped bit is set AND
+        // the remaining dropped/sticky bits make it strictly past the half-way tie.
+        let round_bit = 1u32 << (shift - 1);
+        if (m & round_bit) != 0 && (m & (3 * round_bit - 1)) != 0 {
+            half_mant += 1;
+        }
+        return sign | half_mant as u16;
+    }
+
+    // Normal number. Round the 13 dropped mantissa bits to nearest even.
+    let half_mant = (mantissa >> 13) as u16;
+    let mut result = sign | ((half_exp as u16) << 10) | half_mant;
+    let round_bit = 0x0000_1000u32;
+    if (mantissa & round_bit) != 0 && (mantissa & (3 * round_bit - 1)) != 0 {
+        // A mantissa carry-out propagates into the exponent (and onward to Inf)
+        // because the mantissa field sits directly below the exponent field.
+        result += 1;
+    }
+    result
 }

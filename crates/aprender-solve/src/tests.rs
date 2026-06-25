@@ -1196,6 +1196,34 @@ fn falsify_f32_to_f16_ties_to_even() {
     assert_eq!(f32_to_f16(2049.0), half::f16::from_f32(2049.0).to_bits());
     assert_eq!(f32_to_f16(2048.5), half::f16::from_f32(2048.5).to_bits());
     assert_eq!(f32_to_f16(1000.5), half::f16::from_f32(1000.5).to_bits());
+
+    // STRENGTHENED (PMAT-905 review HOLD): the three cases above all have a kept
+    // mantissa LSB that is *even* (2049.0, low13==0x1000) or no discarded bits at
+    // all (1000.5, low13==0) — so round-toward-zero (truncate) and IEEE
+    // round-to-even AGREE on them, and the test was GREEN on the BUGGY impl too.
+    //
+    // These cases have the discarded low 13 bits == exactly 0x1000 (an exact tie)
+    // AND the kept LSB odd, so round-to-EVEN goes UP one ULP while truncation goes
+    // DOWN. They are RED on the old `mantissa >> 13` truncating encoder.
+    let tie_up_cases: &[(u32, u16)] = &[
+        // 0.12689209 → truncate 0x300F, RNE 0x3010
+        (0x3E01_F000, 0x3010),
+        // 8332.0 → truncate 0x7011, RNE 0x7012
+        (0x4602_3000, 0x7012),
+        // -0.13079834 → truncate 0xB02F, RNE 0xB030
+        (0xBE05_F000, 0xB030),
+    ];
+    for &(bits, want) in tie_up_cases {
+        let v = f32::from_bits(bits);
+        let got = f32_to_f16(v);
+        assert_eq!(got, half::f16::from_f32(v).to_bits());
+        assert_eq!(
+            got, want,
+            "tie {v} (bits={bits:#010x}) must round-to-even UP to {want:#06x}, not truncate"
+        );
+        // Round-toward-zero would have produced want-1; assert we did NOT.
+        assert_ne!(got, want - 1, "round-toward-zero bug would yield {:#06x}", want - 1);
+    }
 }
 
 #[test]
