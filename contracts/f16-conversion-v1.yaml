@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-02-18'
   author: PAIML Engineering
   description: IEEE 754 half-precision (F16) to single-precision (F32) conversion invariants
@@ -48,6 +48,11 @@ proof_obligations:
   property: SIMD conversion equivalence
   tolerance: 0.0
   applies_to: simd
+- type: equivalence
+  property: F32-to-F16 round-to-nearest-even (PMAT-905)
+  formal: f32_to_f16_single(v) == half::f16::from_f32(v).to_bits() for all v in f32
+  tolerance: 0.0
+  applies_to: all
 falsification_tests:
 - id: FALSIFY-F16-001
   rule: Bias trick
@@ -67,8 +72,13 @@ falsification_tests:
 - id: FALSIFY-F16-004
   rule: SIMD conversion equivalence
   prediction: SIMD f16 conversion matches scalar
-  test: proptest
-  if_fails: ' compare scalar vs SIMD f16 conversion:SIMD conversion rounding differs'
+  test: cargo test -p aprender-contracts --lib test_f32_to_f16_simd_scalar_consistency
+  if_fails: AVX2 f32-to-f16 path diverges from the scalar RNE reference
+- id: FALSIFY-F16-005
+  rule: F32-to-F16 round-to-nearest-even (PMAT-905)
+  prediction: f32_to_f16_single is bit-identical to half::f16::from_f32 over the full f32 domain (RNE, ties-to-even, subnormals, overflow to Inf, NaN payloads)
+  test: cargo test -p aprender-contracts --lib test_f32_to_f16_oracle_wide_grid
+  if_fails: Reference encoder truncates (mantissa >> 13) instead of IEEE round-to-nearest-even — 255.99 yields 0x5BFF not 0x5C00, 65520 yields finite 0x7BFF not Inf 0x7C00
 kani_harnesses:
 - id: KANI-F16-001
   obligation: F16-INV-001
@@ -105,5 +115,6 @@ qa_gate:
   - bias_trick_correct
   - roundtrip_identity
   - sign_preserved
-  pass_criteria: All 4 falsification tests pass
-  falsification: Pass subnormal f16 to observe precision loss
+  - f32_to_f16_round_to_nearest_even
+  pass_criteria: All 5 falsification tests pass
+  falsification: Truncating f32-to-f16 (mantissa >> 13) diverges from half on >440M of the 2^32 inputs

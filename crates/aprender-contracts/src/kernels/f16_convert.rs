@@ -46,42 +46,77 @@ pub fn f16_to_f32_single(bits: u16) -> f32 {
     f32::from_bits(f32_bits)
 }
 
-/// Convert an f32 value to f16 bit pattern.
+/// Convert an f32 value to f16 bit pattern using IEEE 754 round-to-nearest-even.
 ///
-/// Truncates mantissa (no rounding). Only handles normal range.
+/// This is the **reference** f32→f16 encoder that [`f32_to_f16_scalar`] and the
+/// AVX2 path wrap. It is **bit-identical to `half::f16::from_f32`** over the full
+/// 2³² f32 domain: round-to-nearest-ties-to-even with a full sticky bit, correct
+/// subnormal rounding (round-up into the smallest normal), overflow → ±Inf (e.g.
+/// `255.99 → 0x5C00`, `65520.0 → 0x7C00`), and quiet-NaN payload preservation.
+///
+/// PMAT-905: previously this truncated (`mantissa >> 13`, round-toward-zero) which
+/// diverged from IEEE RNE on >440M of the 2³² inputs (e.g. emitted `0x5BFF` for
+/// `255.99`, `0x7BFF` for `65520.0`). Its falsifier was tautological (SIMD vs its
+/// own truncating reference); the obligation is now oracle-vs-`half`.
 #[inline]
 pub fn f32_to_f16_single(val: f32) -> u16 {
     let bits = val.to_bits();
-    let sign = ((bits >> 31) & 1) as u16;
+    // Sign bit shifted into f16 position (0x8000).
+    let sign = ((bits >> 16) & 0x8000) as u16;
     let exp = ((bits >> 23) & 0xFF) as i32;
     let mant = bits & 0x007F_FFFF;
 
-    if exp == 0 {
-        // Zero or f32 subnormal → f16 zero
-        return sign << 15;
-    }
-
     if exp == 0xFF {
-        // Inf or NaN
+        // Inf or NaN.
         if mant == 0 {
-            return (sign << 15) | 0x7C00;
+            return sign | 0x7C00;
         }
-        return (sign << 15) | 0x7C00 | ((mant >> 13) as u16 & 0x3FF).max(1);
+        // NaN: set the quiet bit and preserve the top mantissa bits (matches `half`).
+        return sign | 0x7E00 | ((mant >> 13) as u16);
     }
 
-    // Normal: rebias exponent (f32 bias 127 → f16 bias 15)
-    let f16_exp = exp - 112;
-    if f16_exp <= 0 {
-        // Underflow to zero
-        return sign << 15;
-    }
-    if f16_exp >= 31 {
-        // Overflow to infinity
-        return (sign << 15) | 0x7C00;
+    // Unbiased f32 exponent.
+    let unbiased = exp - 127;
+
+    // Overflow: anything that rounds to ≥ 2¹⁶ saturates to ±Inf.
+    if unbiased > 15 {
+        return sign | 0x7C00;
     }
 
-    let f16_mant = (mant >> 13) as u16;
-    (sign << 15) | ((f16_exp as u16) << 10) | f16_mant
+    if unbiased >= -14 {
+        // Normalized f16 range. Drop the low 13 mantissa bits with RNE.
+        let half_exp = (unbiased + 15) as u16;
+        let m = mant >> 13;
+        let round_bit = (mant >> 12) & 1;
+        let sticky = (mant & 0x0FFF) != 0;
+        let mut h = (half_exp << 10) | (m as u16);
+        if round_bit == 1 && (sticky || (m & 1) == 1) {
+            // Carry propagates into the exponent; a max-mantissa carry yields the
+            // 0x7C00 Inf encoding, exactly as IEEE requires.
+            h += 1;
+        }
+        return sign | h;
+    }
+
+    // Subnormal / underflow range (unbiased < -14). Below 2⁻²⁵ rounds to ±0.
+    if unbiased < -25 {
+        return sign;
+    }
+    // Restore the implicit leading 1, then shift into f16-subnormal alignment.
+    let mant_with_implicit = mant | 0x0080_0000;
+    let shift = (-14 - unbiased) + 13;
+    if shift >= 32 {
+        return sign;
+    }
+    let m = mant_with_implicit >> shift;
+    let round_bit = (mant_with_implicit >> (shift - 1)) & 1;
+    let sticky = (mant_with_implicit & ((1u32 << (shift - 1)) - 1)) != 0;
+    let mut h = m as u16;
+    if round_bit == 1 && (sticky || (m & 1) == 1) {
+        // May round up into the smallest normal — correct per IEEE.
+        h += 1;
+    }
+    sign | h
 }
 
 /// Batch convert f16 bit patterns to f32 (scalar reference).
@@ -370,5 +405,167 @@ mod tests {
         f16_to_f32_scalar(&input, &mut scalar_out);
         unsafe { f16_to_f32_avx2(&input, &mut avx2_out) };
         assert_eq!(scalar_out, avx2_out);
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // PMAT-905: ORACLE-vs-`half` f32→f16 round-to-nearest-even falsifiers.
+    //
+    // The previous f32→f16 reference TRUNCATED the mantissa (round-toward-zero)
+    // and its only falsifier asserted SIMD matched that same truncating
+    // reference — a tautology (apr-vs-apr) that could never catch the rounding
+    // bug. These tests assert BIT-IDENTITY against the trusted `half` crate
+    // (IEEE 754) across the named hard cases plus a wide stride of the full
+    // 2³² f32 domain. MUTATION CHECK: reverting `f32_to_f16_single` to
+    // `mantissa >> 13` truncation makes `test_f32_to_f16_oracle_*` go RED.
+    // ────────────────────────────────────────────────────────────────────────
+
+    /// ORACLE falsifier: the named hard RNE cases that truncation gets wrong.
+    /// 255.99 must round UP to 0x5C00 (truncation gives 0x5BFF); 65520.0 must
+    /// overflow to Inf 0x7C00 (truncation gives the finite 0x7BFF); a tie with a
+    /// non-zero discarded sticky bit must round up; the smallest f32 above the
+    /// f16-subnormal midpoint must round to the smallest subnormal 0x0001.
+    #[test]
+    fn test_f32_to_f16_oracle_named_cases() {
+        let cases: &[f32] = &[
+            255.99,                      // → 0x5C00 (round up across exponent)
+            65520.0,                     // → 0x7C00 (overflow to +Inf)
+            -65520.0,                    // → 0xFC00 (overflow to -Inf)
+            65504.0,                     // → 0x7BFF (largest finite f16, exact)
+            f32::from_bits(0x3300_0001), // tiny → 0x0001 (subnormal round-up)
+            f32::from_bits(0x3F80_2000), // exact 1 + 2⁻¹⁰ (representable f16)
+        ];
+        for &v in cases {
+            let ours = f32_to_f16_single(v);
+            let oracle = half::f16::from_f32(v).to_bits();
+            assert_eq!(
+                ours, oracle,
+                "f32_to_f16({v}) = 0x{ours:04X}, half = 0x{oracle:04X}"
+            );
+        }
+        // Spell out the two headline regressions explicitly.
+        assert_eq!(
+            f32_to_f16_single(255.99),
+            0x5C00,
+            "255.99 must RNE up to 0x5C00"
+        );
+        assert_eq!(
+            f32_to_f16_single(65520.0),
+            0x7C00,
+            "65520 must overflow to Inf"
+        );
+    }
+
+    /// ORACLE falsifier: ties-to-even with a non-zero discarded mantissa.
+    /// A value exactly on a representable midpoint with sticky bits set must
+    /// always round up (sticky beats round-half-to-even), and an exact midpoint
+    /// with no sticky bits must round to the even neighbour.
+    #[test]
+    fn test_f32_to_f16_oracle_ties_to_even() {
+        // 13-bit mantissa drop. Build a value whose dropped bits are exactly the
+        // midpoint (0x1000) plus a sticky bit, then exactly the midpoint.
+        let base = 1.0f32.to_bits(); // 0x3F80_0000
+        let midpoint_sticky = f32::from_bits(base | 0x1001); // round bit + sticky → up
+        let exact_midpoint = f32::from_bits(base | 0x1000); // tie → to even (down, mant LSB 0)
+        for v in [midpoint_sticky, exact_midpoint] {
+            assert_eq!(
+                f32_to_f16_single(v),
+                half::f16::from_f32(v).to_bits(),
+                "tie-to-even mismatch for {v}"
+            );
+        }
+    }
+
+    /// ORACLE falsifier (wide grid): bit-identical to `half` over a deterministic
+    /// stride across the full 2³² f32 domain — normals, subnormals, ties,
+    /// overflow, Inf and NaN payloads. This is the de-tautologized replacement
+    /// for FALSIFY-F16-002/004.
+    #[test]
+    fn test_f32_to_f16_oracle_wide_grid() {
+        // Coprime-with-2 stride hits every exponent and a dense set of mantissas.
+        let mut b: u32 = 0;
+        let stride: u32 = 0x0001_0003;
+        loop {
+            let v = f32::from_bits(b);
+            let ours = f32_to_f16_single(v);
+            let oracle = half::f16::from_f32(v).to_bits();
+            assert_eq!(
+                ours, oracle,
+                "f32 bits 0x{b:08X} (v={v}): ours=0x{ours:04X} half=0x{oracle:04X}"
+            );
+            let (next, overflow) = b.overflowing_add(stride);
+            if overflow {
+                break;
+            }
+            b = next;
+        }
+    }
+
+    /// ORACLE falsifier: every subnormal and zero f16 target reached from f32.
+    /// Exhaustively check that each f16 subnormal's exact f32 value, and the
+    /// midpoints around it, round bit-identically to `half`.
+    #[test]
+    fn test_f32_to_f16_oracle_subnormals() {
+        for h in 0u16..0x0400 {
+            // h is a (positive) zero or subnormal f16 pattern.
+            let exact = half::f16::from_bits(h).to_f32();
+            assert_eq!(
+                f32_to_f16_single(exact),
+                half::f16::from_f32(exact).to_bits(),
+                "subnormal exact roundtrip mismatch for h=0x{h:04X} (v={exact})"
+            );
+            // Negative twin.
+            assert_eq!(
+                f32_to_f16_single(-exact),
+                half::f16::from_f32(-exact).to_bits(),
+                "negative subnormal mismatch for h=0x{h:04X}"
+            );
+        }
+    }
+
+    proptest! {
+        /// ORACLE property: f32_to_f16_single is bit-identical to `half` for
+        /// every f32 bit pattern. Replaces the tautological SIMD-vs-self check.
+        #[test]
+        fn prop_f32_to_f16_matches_half(bits in any::<u32>()) {
+            let v = f32::from_bits(bits);
+            prop_assert_eq!(
+                f32_to_f16_single(v),
+                half::f16::from_f32(v).to_bits(),
+                "mismatch at f32 bits 0x{:08X} (v={})", bits, v
+            );
+        }
+    }
+
+    /// CONSISTENCY (not oracle): the scalar batch path and the AVX2 path must
+    /// agree with each other and with the single-value reference. This is the
+    /// legitimate SIMD-vs-scalar check, kept distinct from the oracle gate.
+    #[test]
+    fn test_f32_to_f16_simd_scalar_consistency() {
+        let input: Vec<f32> = vec![
+            255.99,
+            65520.0,
+            1.0,
+            2.0,
+            0.5,
+            -1.0,
+            1e-8,
+            1e8,
+            f32::from_bits(0x3300_0001),
+        ];
+        let mut scalar_out = vec![0u16; input.len()];
+        f32_to_f16_scalar(&input, &mut scalar_out);
+        for (v, &got) in input.iter().zip(scalar_out.iter()) {
+            assert_eq!(
+                got,
+                f32_to_f16_single(*v),
+                "batch vs single mismatch for {v}"
+            );
+        }
+        #[cfg(target_arch = "x86_64")]
+        if is_x86_feature_detected!("avx2") {
+            let mut avx2_out = vec![0u16; input.len()];
+            unsafe { f32_to_f16_avx2(&input, &mut avx2_out) };
+            assert_eq!(scalar_out, avx2_out, "AVX2 f32→f16 diverges from scalar");
+        }
     }
 }
