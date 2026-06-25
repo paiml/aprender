@@ -1789,4 +1789,7 @@ fn format_archive_size(bytes: u64) -> String {
     }
 }
 
+#[cfg(test)]
+mod eval_mod_tests;
+
 include!("../using.rs");
