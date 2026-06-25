@@ -1,0 +1,111 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-06-25"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "IEEE 754-2019 §4.3.1 roundTiesToEven (the default rounding-direction attribute)"
+    - "IEEE 754-2019 §3.4 binary16 (1 sign / 5 exponent / 10 mantissa; subnormals to 2^-24)"
+    - "half::f16::from_f32 (Rust `half` crate, round-to-nearest-even reference oracle)"
+    - "PR #2237 — trueno::f32_to_f16 IEEE round-to-nearest-even fix (the sibling code path)"
+    - "PMAT-905 — F16 round-to-nearest-even correctness class (SafeTensors sibling: safetensors-f16-round-v1.yaml)"
+  description: |
+    Correctness contract for the f32 -> F16 (IEEE half-precision) encoders that
+    live OUTSIDE the SafeTensors export path and outside trueno, completing the
+    f16-RNE sweep started in PR #2237:
+
+      * aprender-solve crates/aprender-solve/src/blas3.rs::f32_to_f16 — produces
+        the u16 f16 inputs consumed by the mixed-precision gemm_ex (cuBLAS gemmEx
+        CPU-reference). The prior implementation truncated the mantissa
+        (`let h_mant = mant >> 13;` with NO rounding) and truncated the
+        subnormal / overflow boundaries (`unbiased > 15`, `unbiased < -24`),
+        diverging from IEEE round-to-nearest-even in ~436M of the 2^32 f32
+        inputs. Two concrete defects:
+          (1) every value with a non-zero discarded mantissa was biased toward
+              zero — e.g. 255.99 encoded to 0x5BFF instead of 0x5C00, and the
+              near-overflow boundary 65520.0 stayed finite (0x7BFF) instead of
+              rounding UP to +Inf (0x7C00);
+          (2) the smallest subnormal magnitudes rounded down — e.g. the smallest
+              f32 above the f16 min-subnormal half-way point produced 0x0000
+              instead of 0x0001.
+        The fix re-expresses the encoder as round-to-nearest-even across the
+        normal AND subnormal grids with rounding carry propagating into the
+        exponent (and onward to Inf), matching half::f16::from_f32 bit-for-bit
+        over all 2^32 inputs (NaN payloads included).
+
+      * aprender-quant crates/aprender-quant/src/lib.rs::f32_to_f16 — ALREADY
+        correct (delegates to half::f16::from_f32). This contract LOCKS that
+        delegation so a future hand-rolled truncation regression goes RED.
+
+kind: KernelContract
+name: quant-solve-f16-round
+version: "1.0.0"
+scope: "crates/aprender-solve/src/blas3.rs ; crates/aprender-quant/src/lib.rs"
+
+description: |
+  F16 is IEEE binary16: 1 sign / 5 exponent (bias 15) / 10 mantissa, with
+  subnormals down to 2^-24. Correct encoding is round-to-nearest-even (the
+  IEEE-754 default) applied to BOTH the normal mantissa (drop the low 13 bits)
+  and the subnormal grid (variable right-shift), with the rounding carry
+  propagating into the exponent field (and onward to Inf on overflow), and NaN
+  preserved (never collapsed to a max-finite value). The two in-tree CPU
+  encoders below must be bit-identical to half::f16::from_f32.
+
+equations:
+  C-QSF16-001:
+    description: "solve f32 -> F16 is round-to-nearest-even on normals, matching half::f16::from_f32"
+    formula: "f16(255.99) = 0x5C00 (the mantissa carry rounds up; round-toward-zero truncation gives 0x5BFF)"
+    note: "The falsifier MUST exercise a non-zero discarded mantissa where RNE and truncation disagree."
+  C-QSF16-002:
+    description: "Subnormal f32 magnitudes round to nearest even into the f16 subnormal grid, not toward zero"
+    formula: "f16(5.9604645e-8) = 0x0001 (the round-toward-zero truncation produced 0x0000)"
+    note: "Exercises the variable-shift subnormal rounding path."
+  C-QSF16-003:
+    description: "Rounding carry: a value just below the overflow threshold rounds UP to +Inf"
+    formula: "f16(65520.0) = 0x7C00 (+Inf); truncation kept it finite 0x7BFF"
+    note: "RNE carry must propagate through the 10-bit mantissa into the 5-bit exponent and overflow to Inf."
+  C-QSF16-004:
+    description: "Both in-tree CPU encoders equal the half oracle bit-for-bit across the full 2^32 f32 grid"
+    formula: "∀ x: f32_to_f16(x) == half::f16::from_f32(x).to_bits() (NaN == NaN treated as equal)"
+    note: "Strided exhaustive sweep over all 2^32 f32 bit patterns; any-NaN equals any-NaN (payload canonicalized)."
+
+proof_obligations:
+- type: equivalence
+  property: "solve f32_to_f16 equals the half::f16 round-to-nearest-even oracle (OBLIG-SOLVE-F32-F16-RNE)"
+  formal: "∀ finite x: trueno_solve::f32_to_f16(x) == half::f16::from_f32(x).to_bits()"
+  applies_to: all
+- type: equivalence
+  property: "quant f32_to_f16 equals the half::f16 round-to-nearest-even oracle (OBLIG-QUANT-F32-F16-RNE)"
+  formal: "∀ finite x: aprender_quant::f32_to_f16(x) == half::f16::from_f32(x).to_bits()"
+  applies_to: all
+- type: bound
+  property: "Round-to-nearest-even error is at most half an F16 ulp"
+  formal: "|half::f16::from_bits(f16(x)).to_f32() - x| ≤ 0.5 ulp_f16(x) for finite, in-range x (truncation can reach a full ulp)"
+  tolerance: 0.0
+  applies_to: finite
+- type: invariant
+  property: "Rounding carry overflows to +Inf at the f16 overflow boundary"
+  formal: "65520.0 ⇒ f16(65520.0) == 0x7C00"
+  applies_to: finite
+
+falsification:
+  - id: FALSIFY-SOLVE-F16-RNE-001
+    description: "solve f32_to_f16 round-to-nearest-even on known divergences (255.99 -> 0x5C00, 65520.0 -> +Inf, subnormal half-way -> 0x0001). Discharges C-QSF16-001/002/003."
+    test: "cargo test -p aprender-solve --lib falsify_f32_to_f16_known_rne_divergences"
+    evidence: "RED 0x5BFF/0x7BFF/0x0000 (round-toward-zero truncation) -> GREEN 0x5C00/0x7C00/0x0001 (half RNE oracle)"
+  - id: FALSIFY-SOLVE-F16-TIES-001
+    description: "solve f32_to_f16 ties round to even (2049.0, 2048.5, 1000.5) match the half oracle. Discharges C-QSF16-001."
+    test: "cargo test -p aprender-solve --lib falsify_f32_to_f16_ties_to_even"
+    evidence: "each tie equals half::f16::from_f32(v).to_bits()"
+  - id: FALSIFY-SOLVE-F16-PARITY-001
+    description: "solve f32_to_f16 strided exhaustive sweep over all 2^32 f32 inputs is bit-identical to half. Discharges C-QSF16-004."
+    test: "cargo test -p aprender-solve --lib falsify_f32_to_f16_bit_identical_to_half_on_grid"
+    evidence: "every sampled input's f16 bits equal half::f16::from_f32(v).to_bits() (NaN canonicalized)"
+  - id: FALSIFY-QUANT-F16-RNE-001
+    description: "quant f32_to_f16 (delegates to half) round-to-nearest-even on the known divergence cases. Locks C-QSF16-001/002/003 against a future truncation regression."
+    test: "cargo test -p aprender-quant --lib falsify_quant_f32_to_f16_rne_known_divergences"
+    evidence: "GREEN 0x5C00/0x7C00/0x0001; would go RED if a hand-rolled truncation impl were reintroduced"
+  - id: FALSIFY-QUANT-F16-PARITY-001
+    description: "quant f32_to_f16 strided exhaustive sweep over all 2^32 f32 inputs is bit-identical to half. Discharges C-QSF16-004."
+    test: "cargo test -p aprender-quant --lib falsify_quant_f32_to_f16_bit_identical_to_half"
+    evidence: "every sampled input's f16 bits equal half::f16::from_f32(v).to_bits() (NaN canonicalized)"

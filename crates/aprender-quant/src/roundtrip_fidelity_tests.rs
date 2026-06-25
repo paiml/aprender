@@ -126,7 +126,7 @@ fn falsify_q6k_roundtrip_fidelity() {
 }
 
 /// Cross-scheme monotonicity: more bits must NOT round-trip worse than fewer bits on
-/// the same block (Q6_K ≤ Q5_K ≤ Q4_K error). A scale/offset bug in one scheme that
+/// the same block (`Q6_K` ≤ `Q5_K` ≤ `Q4_K` error). A scale/offset bug in one scheme that
 /// keeps it under its own (looser) bound is still caught here by the ordering.
 #[test]
 fn falsify_kquant_bitwidth_error_monotonic() {
