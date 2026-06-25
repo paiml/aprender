@@ -1,0 +1,177 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-25'
+  author: PAIML Engineering
+  kind: kernel
+  description: >
+    APR-2231 — sovereign `apr-format` leaf extraction contract. The `.apr`
+    container read/write (v1 APRN + v2 APR\0) is being factored out of
+    `aprender-core` into a minimal `apr-format` leaf crate with zero ML / GPU /
+    tokenizer dependencies, so downstream consumers (realizar inference, xpile,
+    external tooling) can read and write `.apr` without pulling the framework.
+    This contract binds the six correctness obligations the extraction MUST
+    preserve: byte-identical on-disk format, dependency sovereignty, CRC32
+    integrity, metadata fidelity, the no-API-break re-export seam, and the
+    Poka-yoke quality gate. Stage 1 ships the foundation (error seam, dedup
+    CRC/f16, representative v1 slice, golden byte-identity fixtures) and the
+    falsifiers as RED stubs; Stage 2 discharges them with the full git-mv.
+  references:
+  - 'issue #2231 — extract a sovereign apr-format leaf crate'
+  - 'crates/apr-format/ — the leaf (error.rs seam, crc32.rs, f16.rs, types.rs, core_io.rs, validate.rs)'
+  - 'crates/aprender-core/src/error.rs — impl From<AprFormatError> for AprenderError (wrapper seam)'
+  - 'crates/apr-format/tests/fixtures/golden_v1.apr + golden_v2.apr — byte-identity oracle'
+  - 'apr-format-leaf-sovereignty-v1.yaml — companion dependency-sovereignty contract'
+equations:
+  byte_identity:
+    formula: |
+      save_v1(model, pinned_options) -> bytes : the extracted apr-format save()
+      reproduces the pre-extraction aprender-core save() bytes exactly, including
+      the trailing CRC32. golden_v1.apr / golden_v2.apr are the captured oracle.
+    domain: a fixed deterministic model + pinned SaveOptions (fixed created_at, version, empty maps)
+    codomain: Vec<u8> (full .apr file bytes)
+    invariants:
+    - 'leaf load(golden_v1.apr) deserializes to the captured model'
+    - 'leaf save of the same model+options equals the golden bytes byte-for-byte'
+    preconditions:
+    - 'data.len() > 0'
+  sovereign_deps:
+    formula: |
+      deps(apr-format) ∩ {trueno, wgpu, cuda*, candle, tch} = ∅ : the leaf's
+      dependency graph contains no ML/GPU/tokenizer crate.
+    domain: the apr-format cargo dependency graph (all feature combinations)
+    codomain: bool (sovereign / not)
+    invariants:
+    - 'no trueno / wgpu / cuda* / candle / tch in `cargo tree -p apr-format`'
+    - 'enabling mmap/compression adds only memmap2/lz4_flex/zstd'
+    preconditions:
+    - 'data.len() > 0'
+  crc_integrity:
+    formula: |
+      crc32_leaf(data) == crc32_core(data) == crc32_v2(data) for all data : the
+      single deduplicated IEEE-0xEDB88320 crc32 is byte-identical to both legacy
+      implementations (core_io.rs runtime-table + v2/mod.rs const-table).
+    domain: arbitrary &[u8]
+    codomain: u32 checksum
+    invariants:
+    - 'crc32(b"123456789") == 0xCBF43926 (canonical check vector)'
+    - 'crc32 of the golden trailer body equals the stored trailer'
+    preconditions:
+    - 'data.len() >= 0'
+  metadata_fidelity:
+    formula: |
+      load(save(meta)) == meta : a v1 save->load round-trip preserves every
+      populated metadata field (created_at, aprender_version, hyperparameters,
+      metrics, custom, license) exactly.
+    domain: Metadata with all fields populated
+    codomain: Metadata (deserialized)
+    invariants:
+    - 'all populated metadata fields survive the round-trip unchanged'
+    - 'license presence sets the LICENSED header flag'
+    preconditions:
+    - 'data.len() > 0'
+  api_compat_reexport:
+    formula: |
+      aprender_core::format::* keeps resolving : core re-exports the leaf and
+      From-wraps AprFormatError into AprenderError, so no downstream aprender API
+      changes and the full aprender suite stays green.
+    domain: existing aprender-core public format paths + the From seam
+    codomain: bool (compiles + tests green)
+    invariants:
+    - 'impl From<AprFormatError> for AprenderError covers every leaf variant'
+    - 'the ? operator lifts a leaf error into AprenderError'
+    preconditions:
+    - 'data.len() > 0'
+  quality_gate_preserved:
+    formula: |
+      save(score=Some(0)) == Err AND save(score=Some(85)) == Ok : the Jidoka
+      Poka-yoke gate still refuses a quality_score==0 save and accepts a
+      known-good save, identically to the pre-extraction behavior.
+    domain: SaveOptions.quality_score in {Some(0), Some(85), None}
+    codomain: Result<(), AprFormatError>
+    invariants:
+    - 'Some(0) is REFUSED (ValidationError)'
+    - 'Some(85) is ACCEPTED'
+    preconditions:
+    - 'data.len() > 0'
+proof_obligations:
+- type: equivalence
+  property: Byte-identity of the extracted save path against the golden oracle
+  formal: save_leaf(model, pinned) == golden_v1.apr bytes
+  tolerance: 0.0
+  applies_to: all
+- type: invariant
+  property: Dependency sovereignty (no ML/GPU/tokenizer crate in the leaf graph)
+  formal: deps(apr-format) ∩ {trueno,wgpu,cuda*,candle,tch} = empty
+  applies_to: all
+- type: equivalence
+  property: CRC32 dedup is byte-identical to both legacy implementations
+  formal: crc32_leaf == crc32_core == crc32_v2
+  tolerance: 0.0
+  applies_to: all
+- type: equivalence
+  property: Metadata round-trip fidelity
+  formal: load(save(meta)) == meta
+  tolerance: 0.0
+  applies_to: all
+- type: postcondition
+  property: No API break via the core re-export + From-wrap seam
+  formal: aprender_core::format re-exports resolve and From<AprFormatError> is total
+  applies_to: all
+- type: invariant
+  property: Poka-yoke quality gate preserved
+  formal: save(Some(0)) is Err and save(Some(85)) is Ok
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-APRF-BYTE-IDENTITY
+  rule: extracted save reproduces the golden bytes
+  prediction: the leaf loads golden_v1.apr and re-saving the same model+pinned options equals it byte-for-byte
+  test: cargo test -p apr-format --lib test_falsify_aprf_byte_identity_golden_roundtrip
+  if_fails: the extraction changed the on-disk encoding (serializer order, padding, or header layout drifted)
+- id: FALSIFY-APRF-SOVEREIGN-DEPS
+  rule: the leaf dependency graph excludes ML/GPU/tokenizer crates
+  prediction: cargo tree for apr-format contains no trueno/wgpu/cuda*/candle/tch
+  test: cargo test -p apr-format --lib test_falsify_aprf_sovereign_deps_no_ml_gpu
+  if_fails: a transitive ML/GPU dep leaked into the leaf and consumers must pull the framework again
+- id: FALSIFY-APRF-CRC-INTEGRITY
+  rule: the deduplicated crc32 matches both legacy implementations
+  prediction: crc32 of the canonical vector is 0xCBF43926 and matches core/v2 over a shared corpus
+  test: cargo test -p apr-format --lib test_falsify_aprf_crc_integrity_matches_legacy
+  if_fails: the dedup diverged from the legacy table/fold convention and existing .apr files fail integrity
+- id: FALSIFY-APRF-METADATA-FIDELITY
+  rule: save->load preserves every metadata field
+  prediction: load(save(meta)) equals the original metadata for all populated fields
+  test: cargo test -p apr-format --lib test_falsify_aprf_metadata_fidelity_roundtrip
+  if_fails: a metadata field was dropped or reordered during the extraction
+- id: FALSIFY-APRF-API-COMPAT
+  rule: the core re-export + From-wrap keeps the aprender API stable
+  prediction: aprender_core re-exports resolve and a leaf error lifts into AprenderError via ?
+  test: cargo test -p aprender-core --lib test_from_apr_format_question_mark_ergonomics
+  if_fails: the From-wrap is non-total or the re-export path broke, breaking downstream aprender consumers
+- id: FALSIFY-APRF-QUALITY-GATE
+  rule: the Poka-yoke quality gate is preserved
+  prediction: save(Some(0)) is Err and save(Some(85)) is Ok, matching captured verdicts
+  test: cargo test -p apr-format --lib test_falsify_aprf_quality_gate_preserved
+  if_fails: the Jidoka gate was lost in extraction and a broken model can be written silently
+kani_harnesses:
+- id: KANI-APRF-CRC-001
+  obligation: CRC32 dedup is byte-identical to both legacy implementations
+  property: crc32_leaf(data) == crc32_reference(data)
+  bound: 8
+  strategy: exhaustive
+- id: KANI-APRF-HEADER-002
+  obligation: Header to_bytes/from_bytes round-trip
+  property: from_bytes(to_bytes(h)) preserves all header fields
+  bound: 16
+  strategy: exhaustive
+- id: KANI-APRF-QGATE-003
+  obligation: Poka-yoke quality gate preserved
+  property: save with quality_score == Some(0) always returns Err
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-APRF-EXTRACT-001
+  name: apr-format-extraction-v1 Contract
+  description: Quality gate for the sovereign apr-format leaf extraction (issue #2231)
+  checks:
+  - validation
+  - falsification

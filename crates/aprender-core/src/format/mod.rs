@@ -563,6 +563,12 @@ pub use types::*;
 // Re-export core I/O (PMAT-198 - backward compatibility)
 pub use core_io::*;
 
+// APR-2231: re-export the sovereign `apr-format` leaf so external consumers can
+// reach it via `aprender_core::format::apr_format::*` while the bulk migration
+// (Stage 2) lands. `aprender-core` From-wraps `apr_format::AprFormatError` into
+// `AprenderError` (see `crate::error`), so the leaf's results compose with `?`.
+pub use apr_format;
+
 // Re-export signing functions (PMAT-198 - backward compatibility)
 #[cfg(feature = "format-signing")]
 pub use signing::*;

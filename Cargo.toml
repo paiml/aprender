@@ -2,6 +2,8 @@
 members = [
     ".",
     "crates/aprender-core",
+    # --- APR-2231: sovereign `.apr` container leaf crate ---
+    "crates/apr-format",
     # --- Pre-existing aprender crates ---
     "crates/aprender-shell",
     "crates/aprender-tsp",

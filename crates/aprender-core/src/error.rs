@@ -194,6 +194,40 @@ impl From<std::io::Error> for AprenderError {
     }
 }
 
+/// APR-2231 wrapper error seam: the sovereign `apr-format` leaf owns its own
+/// `AprFormatError`; here `aprender-core` From-wraps it into `AprenderError` so
+/// the leaf's `?`-results flow transparently into framework code and the leaf
+/// stays free of any dependency on this error type. Variant set mirrors the
+/// leaf's `AprFormatError`; the leaf-only `InvalidOffset` / `HeaderTooLarge`
+/// fold into `FormatError` (no information loss — the Display text is preserved).
+impl From<apr_format::AprFormatError> for AprenderError {
+    fn from(err: apr_format::AprFormatError) -> Self {
+        use apr_format::AprFormatError as E;
+        match err {
+            E::ChecksumMismatch { expected, actual } => {
+                AprenderError::ChecksumMismatch { expected, actual }
+            }
+            E::FormatError { message } => AprenderError::FormatError { message },
+            E::Serialization(message) => AprenderError::Serialization(message),
+            E::ValidationError { message } => AprenderError::ValidationError { message },
+            E::Io(e) => AprenderError::Io(e),
+            E::UnsupportedVersion { found, supported } => {
+                AprenderError::UnsupportedVersion { found, supported }
+            }
+            other @ (E::InvalidOffset | E::HeaderTooLarge) => AprenderError::FormatError {
+                message: other.to_string(),
+            },
+            // `AprFormatError` is `#[non_exhaustive]`: any future leaf variant
+            // folds into a generic FormatError carrying its Display text, so the
+            // seam never loses the leaf's diagnostic and never fails to compile
+            // when the leaf grows a variant.
+            other => AprenderError::FormatError {
+                message: other.to_string(),
+            },
+        }
+    }
+}
+
 impl From<&str> for AprenderError {
     fn from(msg: &str) -> Self {
         AprenderError::Other(msg.to_string())
@@ -472,5 +506,67 @@ mod tests {
             message: "test".to_string(),
         };
         assert!(err.source().is_none());
+    }
+
+    // =========================================================================
+    // APR-2231: wrapper error-seam (From<AprFormatError>) tests
+    // =========================================================================
+
+    #[test]
+    fn test_from_apr_format_checksum_mismatch() {
+        let leaf = apr_format::AprFormatError::ChecksumMismatch {
+            expected: 0x1234_5678,
+            actual: 0x8765_4321,
+        };
+        let core: AprenderError = leaf.into();
+        assert!(matches!(
+            core,
+            AprenderError::ChecksumMismatch {
+                expected: 0x1234_5678,
+                actual: 0x8765_4321
+            }
+        ));
+    }
+
+    #[test]
+    fn test_from_apr_format_format_error_preserves_message() {
+        let leaf = apr_format::AprFormatError::FormatError {
+            message: "bad magic".to_string(),
+        };
+        let core: AprenderError = leaf.into();
+        assert!(core.to_string().contains("bad magic"));
+    }
+
+    #[test]
+    fn test_from_apr_format_invalid_offset_folds_to_format_error() {
+        let leaf = apr_format::AprFormatError::InvalidOffset;
+        let core: AprenderError = leaf.into();
+        assert!(matches!(core, AprenderError::FormatError { .. }));
+        assert!(core.to_string().contains("Invalid offset"));
+    }
+
+    #[test]
+    fn test_from_apr_format_unsupported_version() {
+        let leaf = apr_format::AprFormatError::UnsupportedVersion {
+            found: (2, 0),
+            supported: (1, 0),
+        };
+        let core: AprenderError = leaf.into();
+        assert!(matches!(core, AprenderError::UnsupportedVersion { .. }));
+    }
+
+    #[test]
+    fn test_from_apr_format_question_mark_ergonomics() {
+        // Proves the seam supports `?` in a core function returning AprenderError.
+        fn wrap() -> Result<()> {
+            let r: std::result::Result<(), apr_format::AprFormatError> =
+                Err(apr_format::AprFormatError::ValidationError {
+                    message: "quality gate".to_string(),
+                });
+            r?;
+            Ok(())
+        }
+        let err = wrap().unwrap_err();
+        assert!(matches!(err, AprenderError::ValidationError { .. }));
     }
 }
