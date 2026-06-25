@@ -1,12 +1,15 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-06-24'
   author: PAIML Engineering
-  description: "wgpu adapter-enumeration backend mask MUST exclude GLES/EGL — on Linux hosts with both Vulkan and GLES (intel AMD-RADV cross-silicon baseline), wgpu::Backends::all() instantiates a GLES adapter whose EglContext::make_current panics inside Drop (wgpu-hal-27.0.4 gles/egl.rs:305) → SIGABRT 'panic in a destructor during cleanup' aborting the whole process; the enumeration mask must be platform-appropriate (PRIMARY = VULKAN|METAL|DX12|BROWSER_WEBGPU) and NEVER include GL"
+  description: "wgpu adapter-enumeration backend mask MUST exclude GLES/EGL — on Linux hosts with both Vulkan and GLES (intel AMD-RADV cross-silicon baseline), wgpu::Backends::all() instantiates a GLES adapter whose EglContext::make_current panics inside Drop → SIGABRT 'panic in a destructor during cleanup' aborting the whole process; the enumeration mask must be platform-appropriate (PRIMARY = VULKAN|METAL|DX12|BROWSER_WEBGPU) and NEVER include GL. v1.1.0 (PMAT-927) extends the obligation from aprender-compute to ALL workspace crates that enumerate wgpu adapters: aprender-db, aprender-graph (wgpu 22) and aprender-distribute (wgpu 23) — PRIMARY excludes GL in every pinned wgpu version (22/23/27)."
   references:
-    - "PMAT-925 (wgpu GLES adapter SIGABRT-in-Drop on Linux/AMD-RADV)"
+    - "PMAT-925 (wgpu GLES adapter SIGABRT-in-Drop on Linux/AMD-RADV — aprender-compute)"
+    - "PMAT-927 (class follow-up: aprender-db / aprender-graph / aprender-distribute had the same latent Backends::all()/Instance::default() enumeration)"
     - "intel AMD-Vulkan/RADV cross-silicon baseline finding"
     - "wgpu-hal-27.0.4 src/gles/egl.rs:305 (EglContext::make_current unwrap in Drop)"
+    - "wgpu-types-22.0.0 src/lib.rs:181 (Backends::PRIMARY = VULKAN|METAL|DX12|BROWSER_WEBGPU; GL is SECONDARY only)"
+    - "wgpu-types-23.0.0 src/lib.rs:183 (Backends::PRIMARY excludes GL; GL is SECONDARY only)"
     - "wgpu-types-27.0.1 src/lib.rs:275 (Backends::PRIMARY excludes GL; GL is SECONDARY only)"
   registry: true
   tags:
@@ -37,6 +40,7 @@ equations:
       - "On macOS, gpu_backends() MUST contain wgpu::Backends::METAL (Apple Silicon GPU is still found)"
       - "On Windows, gpu_backends() MUST contain wgpu::Backends::VULKAN or wgpu::Backends::DX12"
       - "The shared wgpu::Instance is constructed with this mask so the GLES backend is never registered, and every enumerate_adapters call passes this mask"
+      - "This invariant holds in EVERY workspace crate that enumerates wgpu adapters: aprender-compute (wgpu 27), aprender-db and aprender-graph (wgpu 22), aprender-distribute (wgpu 23); Backends::PRIMARY excludes GL in all of those wgpu versions"
 
 proof_obligations:
   - type: invariant
@@ -50,10 +54,25 @@ proof_obligations:
 
 falsification_tests:
   - id: FALSIFY-WGPU-ENUM-GLES-001
-    rule: "gpu_backends() excludes GLES and includes the platform GPU backend"
+    rule: "aprender-compute gpu_backends() excludes GLES and includes the platform GPU backend"
     prediction: "The backend mask used by aprender-compute GPU enumeration does NOT contain Backends::GL but DOES contain the platform's real backend; RED on Backends::all() (contains GL), GREEN on Backends::PRIMARY"
     test: "cargo test -p aprender-compute --features gpu --lib test_gpu_backends_excludes_gles"
     if_fails: "Enumeration mask still includes GLES (or dropped the real backend) — Linux/AMD-RADV will SIGABRT in the GLES Drop path again"
+  - id: FALSIFY-WGPU-ENUM-GLES-002
+    rule: "aprender-db gpu_backends() excludes GLES and includes the platform GPU backend"
+    prediction: "The backend mask used by aprender-db GpuEngine / MultiGpuManager enumeration does NOT contain Backends::GL but DOES contain the platform's real backend; RED on Backends::all(), GREEN on Backends::PRIMARY (wgpu 22)"
+    test: "cargo test -p aprender-db --features gpu --lib test_gpu_backends_excludes_gles"
+    if_fails: "aprender-db enumeration still includes GLES — Linux/AMD-RADV SIGABRT in the GLES Drop path"
+  - id: FALSIFY-WGPU-ENUM-GLES-003
+    rule: "aprender-graph gpu_backends() excludes GLES and includes the platform GPU backend"
+    prediction: "The backend mask used by aprender-graph GpuDevice enumeration does NOT contain Backends::GL but DOES contain the platform's real backend; RED on Backends::all(), GREEN on Backends::PRIMARY (wgpu 22)"
+    test: "cargo test -p aprender-graph --features gpu --lib test_gpu_backends_excludes_gles"
+    if_fails: "aprender-graph enumeration still includes GLES — Linux/AMD-RADV SIGABRT in the GLES Drop path"
+  - id: FALSIFY-WGPU-ENUM-GLES-004
+    rule: "aprender-distribute gpu_backends() excludes GLES and includes the platform GPU backend"
+    prediction: "The backend mask used by the aprender-distribute GpuExecutor does NOT contain Backends::GL but DOES contain the platform's real backend; RED on Instance::default()/Backends::all(), GREEN on Backends::PRIMARY (wgpu 23)"
+    test: "cargo test -p aprender-distribute --features gpu --lib test_gpu_backends_excludes_gles"
+    if_fails: "aprender-distribute enumeration still includes GLES — Linux/AMD-RADV SIGABRT in the GLES Drop path"
 
 kani_harnesses:
   - id: KANI-WGPU-ENUM-GLES-001
@@ -64,7 +83,7 @@ kani_harnesses:
 qa_gate:
   id: F-WGPU-ENUM-GLES-001
   name: "wgpu adapter enumeration excludes GLES"
-  description: "Every wgpu Instance construction and enumerate_adapters call in aprender-compute uses a platform-appropriate backend mask (Backends::PRIMARY) that excludes GLES/EGL, so the broken GLES Drop path is never instantiated on Linux/AMD-RADV while the real Vulkan/Metal/DX12 GPU is still found."
+  description: "Every wgpu Instance construction and enumerate_adapters call across the workspace (aprender-compute, aprender-db, aprender-graph, aprender-distribute) uses a platform-appropriate backend mask (Backends::PRIMARY) that excludes GLES/EGL, so the broken GLES Drop path is never instantiated on Linux/AMD-RADV while the real Vulkan/Metal/DX12 GPU is still found."
   checks:
     - "enumeration_mask_excludes_gles"
-  pass_criteria: "FALSIFY-WGPU-ENUM-GLES-001 PASSES; on intel (AMD-RADV) the enumeration no longer SIGABRTs and the Vulkan adapter is still found; on mini (Apple Metal) the Metal adapter is still enumerated and parity tests still pass."
+  pass_criteria: "FALSIFY-WGPU-ENUM-GLES-001..004 PASS; on intel (AMD-RADV) enumeration in all four crates no longer SIGABRTs and the Vulkan adapter is still found; on mini (Apple Metal) the Metal adapter is still enumerated and parity/gpu tests still pass."

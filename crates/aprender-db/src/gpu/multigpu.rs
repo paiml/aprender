@@ -41,13 +41,16 @@ impl MultiGpuManager {
     /// # Errors
     /// Returns error if GPU enumeration fails
     pub fn new() -> Result<Self> {
+        // PMAT-927: constrain to a non-GLES backend mask (see `super::gpu_backends`)
+        // so the broken GLES/EGL adapter (SIGABRT-in-Drop on Linux/AMD-RADV) is
+        // never registered, at BOTH the instance and the enumerate_adapters site.
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
+            backends: super::gpu_backends(),
             ..Default::default()
         });
 
-        // Enumerate all adapters
-        let adapters = instance.enumerate_adapters(wgpu::Backends::all());
+        // Enumerate all adapters (non-GLES mask).
+        let adapters = instance.enumerate_adapters(super::gpu_backends());
 
         // Convert adapters to device info
         let devices: Vec<GpuDeviceInfo> = adapters

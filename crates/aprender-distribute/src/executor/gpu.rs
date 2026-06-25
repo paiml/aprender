@@ -46,6 +46,27 @@ use std::sync::Arc;
 use tracing::{debug, info, warn};
 use wgpu::{util::DeviceExt, Device, Instance, Queue};
 
+/// Platform-appropriate wgpu backend mask for adapter enumeration.
+///
+/// PMAT-927 (class follow-up to PMAT-925): `Instance::default()` uses
+/// `wgpu::Backends::all()`, which includes [`wgpu::Backends::GL`]. On Linux hosts
+/// that expose both Vulkan and GLES/EGL (notably the intel AMD-RADV cross-silicon
+/// baseline box) this instantiates a GLES adapter whose `EglContext::make_current`
+/// **panics inside `Drop`**, aborting the whole process with SIGABRT ("panic in a
+/// destructor during cleanup"); standalone enumeration can also spin/hang on the
+/// broken EGL path.
+///
+/// We return [`wgpu::Backends::PRIMARY`], which in wgpu 23 (this crate's pin) is
+/// `VULKAN | METAL | DX12 | BROWSER_WEBGPU` and **excludes** `GL` (GL lives only
+/// in `Backends::SECONDARY`). This keeps the real GPU on every platform — Vulkan
+/// on Linux/AMD-RADV, Metal on Apple, DX12 on Windows — while guaranteeing the
+/// broken GLES/EGL adapter is never created.
+#[must_use]
+pub const fn gpu_backends() -> wgpu::Backends {
+    // PRIMARY = VULKAN | METAL | DX12 | BROWSER_WEBGPU (never GL/GLES).
+    wgpu::Backends::PRIMARY
+}
+
 /// GPU executor using wgpu for cross-platform compute.
 ///
 /// This executor provides GPU-accelerated task execution using WebGPU/wgpu.
@@ -92,8 +113,14 @@ impl GpuExecutor {
     pub async fn new() -> Result<Self> {
         info!("Initializing GPU executor with wgpu");
 
-        // Create wgpu instance
-        let instance = Instance::default();
+        // Create wgpu instance.
+        // PMAT-927: constrain to a non-GLES backend mask (see `gpu_backends`) so
+        // the broken GLES/EGL adapter (SIGABRT-in-Drop on Linux/AMD-RADV) is never
+        // registered. `Instance::default()` would use `Backends::all()`.
+        let instance = Instance::new(wgpu::InstanceDescriptor {
+            backends: gpu_backends(),
+            ..Default::default()
+        });
 
         // Request adapter (GPU)
         let adapter = instance
@@ -495,6 +522,40 @@ impl Executor for GpuExecutor {
 )]
 mod tests {
     use super::*;
+
+    /// PMAT-927 FALSIFIER: the wgpu adapter-enumeration backend mask used by the
+    /// GPU executor MUST NOT contain GLES (`wgpu::Backends::GL`), and MUST contain
+    /// the platform's real backend.
+    ///
+    /// RED on `Backends::all()` / `Instance::default()` (contains GL → GLES/EGL
+    /// adapter → SIGABRT-in-Drop on Linux/AMD-RADV). GREEN on `Backends::PRIMARY`.
+    /// Host-independent: it inspects the bitmask, it does not create any adapter.
+    #[test]
+    fn test_gpu_backends_excludes_gles() {
+        let mask = gpu_backends();
+
+        assert!(
+            !mask.contains(wgpu::Backends::GL),
+            "gpu_backends() must NOT include Backends::GL (GLES/EGL panics in Drop \
+             on Linux/AMD-RADV → SIGABRT). mask = {mask:?}"
+        );
+
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        assert!(
+            mask.contains(wgpu::Backends::VULKAN),
+            "gpu_backends() must include VULKAN on Linux (AMD-RADV/NVIDIA). mask = {mask:?}"
+        );
+        #[cfg(target_os = "macos")]
+        assert!(
+            mask.contains(wgpu::Backends::METAL),
+            "gpu_backends() must include METAL on macOS (Apple Silicon). mask = {mask:?}"
+        );
+        #[cfg(target_os = "windows")]
+        assert!(
+            mask.contains(wgpu::Backends::VULKAN) || mask.contains(wgpu::Backends::DX12),
+            "gpu_backends() must include VULKAN or DX12 on Windows. mask = {mask:?}"
+        );
+    }
 
     #[tokio::test]
     async fn test_gpu_executor_creation() {

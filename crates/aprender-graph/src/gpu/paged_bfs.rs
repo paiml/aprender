@@ -44,7 +44,7 @@ use std::collections::VecDeque;
 /// Process a single node's neighbors within its tile, updating distances
 #[allow(clippy::cast_possible_truncation)]
 fn process_node_neighbors(
-    coordinator: &PagingCoordinator<'_>,
+    coordinator: &PagingCoordinator,
     node: NodeId,
     distances: &mut [u32],
     current_level: u32,
@@ -70,6 +70,15 @@ fn process_node_neighbors(
     Ok(())
 }
 
+/// Run GPU breadth-first search over a graph that may exceed VRAM.
+///
+/// When the graph fits in GPU memory this delegates to the in-VRAM
+/// [`super::gpu_bfs`]; otherwise it tiles the graph via [`PagingCoordinator`] and
+/// processes each tile in turn.
+///
+/// # Errors
+///
+/// Returns an error if GPU paging setup or any tile traversal fails.
 #[allow(clippy::cast_possible_truncation)]
 pub async fn gpu_bfs_paged(
     device: &GpuDevice,

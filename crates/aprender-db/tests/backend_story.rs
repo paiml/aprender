@@ -229,7 +229,6 @@ fn test_backend_equivalence_large_dataset() {
 
 #[cfg(feature = "gpu")]
 mod gpu_tests {
-    use super::*;
     use arrow::array::Int32Array;
     use trueno_db::gpu::GpuEngine;
 

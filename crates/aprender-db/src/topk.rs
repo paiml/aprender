@@ -493,9 +493,7 @@ mod tests {
         let values: Vec<f64> = (0..1_000_000).map(|i| f64::from(i)).collect();
         let batch = create_test_batch(values);
 
-        let start = std::time::Instant::now();
         let result = batch.top_k(1, 10, SortOrder::Descending).unwrap();
-        let duration = start.elapsed();
 
         assert_eq!(result.num_rows(), 10);
 
