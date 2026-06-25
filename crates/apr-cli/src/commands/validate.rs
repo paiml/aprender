@@ -5,6 +5,7 @@
 
 use crate::error::CliError;
 use crate::output;
+use aprender::error::AprenderError;
 use aprender::format::rosetta::{
     FormatType, RosettaStone, ValidationReport as RosettaValidationReport,
 };
@@ -58,7 +59,23 @@ pub(crate) fn run(
     result
 }
 
-/// APR validation via 100-point QA checklist (existing path)
+/// APR validation via 100-point QA checklist + fail-closed content gates.
+///
+/// PMAT-926: the 100-point structural report (`AprValidator`) only covers
+/// magic / header / version / flags on the `.apr` path — every Section-A
+/// structural check 5-25 and every Section-B physics check is a
+/// `Skip("Not implemented")` stub, and `--strict` was a no-op. The REAL
+/// fail-closed content gates (F-DATA-QUALITY-001..007: all-zero, NaN/Inf,
+/// L2~0, constant, density, dead output row) already exist in
+/// `RosettaStone::validate_apr` but were UNREACHABLE from the CLI.
+///
+/// We now run BOTH:
+///   1. the structural 100-point report (for the human-readable table), and
+///   2. the Rosetta content gates on the dequantized `.apr` tensors,
+/// and gate the exit code on the content gates so a content-broken `.apr`
+/// (e.g. an all-zero `lm_head.weight`, or a NaN/Inf tensor) is REJECTED at
+/// parity with the GGUF / SafeTensors path. `--strict` is now honored:
+/// any NaN / Inf / all-zero finding escalates to a hard non-zero exit.
 fn run_apr_validation(
     path: &Path,
     quality: bool,
@@ -71,12 +88,18 @@ fn run_apr_validation(
     let mut validator = AprValidator::new();
     let report = validator.validate_bytes(&data);
 
+    // PMAT-926: run the real fail-closed content gates on the .apr tensors.
+    // If the structural parse fails (bad magic / truncated / checksum
+    // mismatch), `content` is the parse error — surfaced below so the
+    // existing "invalid file" behavior is preserved.
+    let content = RosettaStone::new().validate(path);
+
     if json {
-        return print_apr_validation_json(path, report, strict, min_score);
+        return print_apr_validation_json(path, report, &content, strict, min_score, skip_contract);
     }
 
     print_check_results(report);
-    print_summary(report, strict)?;
+    print_summary(report)?;
 
     if quality {
         print_quality_assessment(report);
@@ -113,7 +136,83 @@ fn run_apr_validation(
         // canonical pass/fail gate per CLAUDE.md.)
     }
 
-    Ok(())
+    // PMAT-926: fail-closed content gate (F-DATA-QUALITY-001..007) +
+    // --strict wiring, applied identically to the Rosetta GGUF/ST path.
+    gate_apr_content(&content, strict, skip_contract)
+}
+
+/// PMAT-926: gate the `.apr` exit code on the Rosetta content gates.
+///
+/// `--skip-contract` bypasses the content gate entirely (matches the
+/// GGUF/SafeTensors path). Otherwise:
+///   * `--strict` escalates any NaN / Inf / all-zero / L2~0 finding to a
+///     hard non-zero exit (F-VALIDATE-STRICT-001), and
+///   * any tensor that fails a data-quality gate (constant weight, density,
+///     dead output row, NaN/Inf) fails closed (F-VALIDATE-APR-DISPATCH-001).
+///
+/// A clean, valid model produces an empty failure set → `Ok(())` (no false
+/// positives). A structural parse error (bad magic / truncated / checksum
+/// mismatch) surfaces as `ValidationFailed`.
+fn gate_apr_content(
+    content: &Result<RosettaValidationReport, AprenderError>,
+    strict: bool,
+    skip_contract: bool,
+) -> Result<(), CliError> {
+    if skip_contract {
+        return Ok(());
+    }
+
+    let report = match content {
+        Ok(report) => report,
+        Err(e) => {
+            // Structural parse failure (magic / header / checksum / truncated).
+            return Err(CliError::ValidationFailed(format!(
+                "APR content validation failed: {e}"
+            )));
+        }
+    };
+
+    if strict {
+        if let Some(issues) = strict_blocking_issues(report) {
+            return Err(CliError::ValidationFailed(format!("Strict mode: {issues}")));
+        }
+    }
+
+    if report.is_valid {
+        Ok(())
+    } else {
+        Err(CliError::ValidationFailed(format!(
+            "{} tensors failed data-quality validation (F-DATA-QUALITY)",
+            report.failed_tensor_count
+        )))
+    }
+}
+
+/// Summarize the strict-blocking findings (NaN / Inf / all-zero) for a
+/// Rosetta report, or `None` if there are none. Shared by the APR and the
+/// GGUF/SafeTensors `--strict` gates so both paths behave identically
+/// (F-VALIDATE-STRICT-001).
+fn strict_blocking_issues(report: &RosettaValidationReport) -> Option<String> {
+    if report.total_nan_count == 0
+        && report.total_inf_count == 0
+        && report.all_zero_tensors.is_empty()
+    {
+        return None;
+    }
+    let mut issues = Vec::new();
+    if report.total_nan_count > 0 {
+        issues.push(format!("{} NaN values", report.total_nan_count));
+    }
+    if report.total_inf_count > 0 {
+        issues.push(format!("{} Inf values", report.total_inf_count));
+    }
+    if !report.all_zero_tensors.is_empty() {
+        issues.push(format!(
+            "{} all-zero tensors",
+            report.all_zero_tensors.len()
+        ));
+    }
+    Some(issues.join(", "))
 }
 
 /// GGUF/SafeTensors validation via RosettaStone (physics constraints)
@@ -132,31 +231,12 @@ fn run_rosetta_validation(
 
     if json {
         // GH-610: Apply strict checks before JSON output (was previously skipped)
-        if strict
-            && !skip_contract
-            && (report.total_nan_count > 0
-                || report.total_inf_count > 0
-                || !report.all_zero_tensors.is_empty())
-        {
-            let mut issues = Vec::new();
-            if report.total_nan_count > 0 {
-                issues.push(format!("{} NaN values", report.total_nan_count));
+        if strict && !skip_contract {
+            if let Some(issues) = strict_blocking_issues(&report) {
+                // Still print the JSON report before returning error
+                let _ = print_rosetta_validation_json(path, &report, format, quality);
+                return Err(CliError::ValidationFailed(format!("Strict mode: {issues}")));
             }
-            if report.total_inf_count > 0 {
-                issues.push(format!("{} Inf values", report.total_inf_count));
-            }
-            if !report.all_zero_tensors.is_empty() {
-                issues.push(format!(
-                    "{} all-zero tensors",
-                    report.all_zero_tensors.len()
-                ));
-            }
-            // Still print the JSON report before returning error
-            let _ = print_rosetta_validation_json(path, &report, format, quality);
-            return Err(CliError::ValidationFailed(format!(
-                "Strict mode: {}",
-                issues.join(", ")
-            )));
         }
         return print_rosetta_validation_json(path, &report, format, quality);
     }
@@ -194,29 +274,10 @@ fn run_rosetta_validation(
 
     // GH-507: --strict fails on warnings (NaN, Inf, all-zero tensors)
     // GH-642: --skip-contract bypasses strict contract checks
-    if strict
-        && !skip_contract
-        && (report.total_nan_count > 0
-            || report.total_inf_count > 0
-            || !report.all_zero_tensors.is_empty())
-    {
-        let mut issues = Vec::new();
-        if report.total_nan_count > 0 {
-            issues.push(format!("{} NaN values", report.total_nan_count));
+    if strict && !skip_contract {
+        if let Some(issues) = strict_blocking_issues(&report) {
+            return Err(CliError::ValidationFailed(format!("Strict mode: {issues}")));
         }
-        if report.total_inf_count > 0 {
-            issues.push(format!("{} Inf values", report.total_inf_count));
-        }
-        if !report.all_zero_tensors.is_empty() {
-            issues.push(format!(
-                "{} all-zero tensors",
-                report.all_zero_tensors.len()
-            ));
-        }
-        return Err(CliError::ValidationFailed(format!(
-            "Strict mode: {}",
-            issues.join(", ")
-        )));
     }
 
     // GH-658: A model with 0 tensors is invalid (truncated/corrupt).
@@ -301,15 +362,15 @@ fn print_contract_violations(failures: &[(&str, &str)]) {
 fn print_apr_validation_json(
     path: &Path,
     report: &ValidationReport,
+    content: &Result<RosettaValidationReport, AprenderError>,
     strict: bool,
     min_score: Option<u8>,
+    skip_contract: bool,
 ) -> Result<(), CliError> {
-    // GH-531: Warn that --strict is not yet implemented for APR JSON output
-    if strict {
-        eprintln!(
-            "Warning: --strict is not yet implemented for APR JSON validation. Flag ignored."
-        );
-    }
+    // PMAT-926: --strict is now honored on the APR JSON path. The structural
+    // 100-point report still drives `passed`, but the fail-closed content
+    // gate (F-DATA-QUALITY) is applied AFTER the JSON is printed so machine
+    // consumers always get a report, and the exit code fails closed.
     let passed =
         report.failed_checks().is_empty() && min_score.is_none_or(|min| report.total_score >= min);
     // GH-251: Only include executed checks (PASS/FAIL) — SKIP/WARN are not actionable
@@ -334,6 +395,19 @@ fn print_apr_validation_json(
             })
         })
         .collect();
+    // PMAT-926: surface the fail-closed content-gate summary in the JSON so
+    // machine consumers can see WHY the .apr was rejected (parity with the
+    // human-readable path).
+    let (content_passed, content_nan, content_inf, content_zero, content_failed) = match content {
+        Ok(r) => (
+            r.is_valid,
+            r.total_nan_count,
+            r.total_inf_count,
+            r.all_zero_tensors.len(),
+            r.failed_tensor_count,
+        ),
+        Err(_) => (false, 0, 0, 0, 0),
+    };
     let output = serde_json::json!({
         "model": path.display().to_string(),
         "format": "apr",
@@ -342,7 +416,12 @@ fn print_apr_validation_json(
         "checks": checks_json,
         "total_checks": report.checks.len(),
         "failed": report.failed_checks().len(),
-        "passed": passed,
+        "passed": passed && content_passed,
+        "content_passed": content_passed,
+        "content_total_nan": content_nan,
+        "content_total_inf": content_inf,
+        "content_all_zero_tensors": content_zero,
+        "content_failed_tensors": content_failed,
     });
     println!(
         "{}",
@@ -354,7 +433,8 @@ fn print_apr_validation_json(
             report.total_score
         )));
     }
-    Ok(())
+    // PMAT-926: fail-closed content gate + --strict, after the JSON is printed.
+    gate_apr_content(content, strict, skip_contract)
 }
 
 /// Print Rosetta validation report as JSON (GH-240/GH-251: machine-parseable output).
@@ -463,13 +543,10 @@ fn print_check_results(report: &ValidationReport) {
     );
 }
 
-fn print_summary(report: &ValidationReport, strict: bool) -> Result<(), CliError> {
-    // GH-531: Warn that --strict is not yet implemented for APR validation summary
-    if strict {
-        eprintln!(
-            "Warning: --strict is not yet implemented for APR validation summary. Flag ignored."
-        );
-    }
+fn print_summary(report: &ValidationReport) -> Result<(), CliError> {
+    // PMAT-926: --strict is now honored via the fail-closed content gate
+    // (`gate_apr_content`), not ignored here. This function prints only the
+    // structural 100-point summary table.
     println!();
 
     let failed_checks = report.failed_checks();
