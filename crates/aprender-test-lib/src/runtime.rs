@@ -351,6 +351,9 @@ impl MemoryView {
         }
         // SAFETY: bounds check above guarantees offset + size_of::<T>() <= memory.len()
         let ptr = unsafe { memory.as_ptr().add(offset) as *const T };
+        // SAFETY: `ptr` points within `memory` (bounds-checked above) and the next
+        // `size_of::<T>()` bytes are readable; `read_unaligned` imposes no alignment
+        // requirement on `ptr`, so reading a `T: Copy` value here is sound.
         Ok(unsafe { core::ptr::read_unaligned(ptr) })
     }
 

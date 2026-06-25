@@ -331,6 +331,7 @@ impl CudaExecutor {
             let mut length_val = vocab_size;
 
             // Pass 1: block-level reduction
+            // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
             unsafe {
                 let module = self
                     .modules
@@ -351,6 +352,7 @@ impl CudaExecutor {
 
             // Pass 2: final reduction → writes to batched_results[seq_idx]
             let mut nb_val = num_blocks;
+            // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
             unsafe {
                 let final_module = self
                     .modules
@@ -378,6 +380,7 @@ impl CudaExecutor {
         // (e.g., allocated for M=4 but current batch M=2). Create exact-M view.
         let mut results = vec![0u32; m];
         let results_ptr = self.batched_argmax_results.as_ref().expect("batched_argmax_results buffer must be allocated before argmax reduction").as_ptr();
+        // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
         let results_view = unsafe { GpuBuffer::<u32>::from_raw_parts(results_ptr, m) };
         results_view.copy_to_host(&mut results[..m])?;
         std::mem::forget(results_view);

@@ -124,6 +124,7 @@ pub fn fused_q4k_q8k_parallel_matvec_into(
     if use_lean {
         #[cfg(target_arch = "x86_64")]
         {
+            // SAFETY: SIMD intrinsic call reachable only after the caller verified the required CPU feature; all pointer/slice arguments are in-bounds for the block length being processed.
             let bsums_i16 = unsafe {
                 super::fused_k::precompute_q8k_bsums_i16(q8k_quants, super_blocks_per_row)
             };
@@ -147,6 +148,7 @@ pub fn fused_q4k_q8k_parallel_matvec_into(
                 .enumerate()
                 .for_each(|(ci, chunk)| {
                     let row_start = ci * 64;
+                    // SAFETY: per-rayon-chunk SIMD dispatch. Buffer base addresses were captured as `usize` to cross the closure boundary; here they are rebuilt into `*const` and each chunk indexes a disjoint output sub-range, so no two threads touch overlapping rows. Pointer arithmetic stays within the validated row/super-block bounds.
                     unsafe {
                         let w = w_addr as *const u8;
                         let sc = sc_addr as *const f32;
@@ -270,6 +272,7 @@ pub fn fused_q4k_q8k_parallel_matvec_into(
                         let next_base = midi_start + (micro_idx + 1) * MICRO_TILE_M;
                         for r in 0..4 {
                             let p = weight_data.as_ptr().wrapping_add((next_base + r) * bytes_per_row);
+                            // SAFETY: `_mm_prefetch` is a pure performance hint on x86_64; the address is computed with `wrapping_add` and prefetching an arbitrary (even out-of-bounds) address has no architectural side effects.
                             unsafe {
                                 std::arch::x86_64::_mm_prefetch(p.cast::<i8>(), std::arch::x86_64::_MM_HINT_T1);
                             }
@@ -284,6 +287,7 @@ pub fn fused_q4k_q8k_parallel_matvec_into(
                     ];
 
                     #[cfg(target_arch = "x86_64")]
+                    // SAFETY: SIMD intrinsic call reachable only after the caller verified the required CPU feature; all pointer/slice arguments are in-bounds for the block length being processed.
                     let outputs = unsafe {
                         fused_q4k_q8k_dot_4rows_avx512vnni(
                             row_ptrs, bytes_per_row, q8k_scales, q8k_quants,

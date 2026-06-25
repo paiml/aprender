@@ -267,6 +267,7 @@ impl CudaExecutor {
             .expect("q8_activation_buf must be initialized")
             .len();
 
+        // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
         let q8_buf = unsafe { GpuBuffer::<u8>::from_raw_parts(q8_ptr, q8_len) };
 
         // Step 1: Quantize activations to Q8_1 (skip if already valid — PMAT-027)
@@ -304,6 +305,7 @@ impl CudaExecutor {
         let mut k_val = k;
         let mut n_val = n;
 
+        // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
         unsafe {
             self.stream.launch_kernel(
                 module,
@@ -360,6 +362,7 @@ impl CudaExecutor {
             .expect("q8_activation_buf must be initialized")
             .len();
 
+        // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
         let q8_buf = unsafe { GpuBuffer::<u8>::from_raw_parts(q8_ptr, q8_len) };
 
         if !self.q8_activation_valid {
@@ -393,6 +396,7 @@ impl CudaExecutor {
         let mut k_val = k;
         let mut n_val = n;
 
+        // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
         unsafe {
             self.stream.launch_kernel(
                 module,

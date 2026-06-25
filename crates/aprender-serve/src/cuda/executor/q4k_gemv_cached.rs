@@ -230,6 +230,7 @@ impl CudaExecutor {
             .get_mut(&cache_key)
             .expect("module just inserted");
 
+        // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
         unsafe {
             self.stream.launch_kernel(
                 module,

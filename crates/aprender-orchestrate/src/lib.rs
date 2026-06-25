@@ -1,5 +1,7 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
+// PMAT-143: enforce `// SAFETY:` on every unsafe block (none in lib/bins today).
+#![deny(clippy::undocumented_unsafe_blocks)]
 // Production code: warn on unwrap (enforced here, allowed at workspace level for tests)
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 #![cfg_attr(

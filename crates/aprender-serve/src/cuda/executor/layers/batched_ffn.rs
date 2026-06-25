@@ -186,18 +186,21 @@ impl CudaExecutor {
                     q_dim as usize,
                 )
             };
+            // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
             let k_view = unsafe {
                 GpuBuffer::<f32>::from_raw_parts(
                     k_buf_ptr + (kv_offset * std::mem::size_of::<f32>()) as u64,
                     kv_dim as usize,
                 )
             };
+            // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
             let v_view = unsafe {
                 GpuBuffer::<f32>::from_raw_parts(
                     v_buf_ptr + (kv_offset * std::mem::size_of::<f32>()) as u64,
                     kv_dim as usize,
                 )
             };
+            // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
             let attn_out_view = unsafe {
                 GpuBuffer::<f32>::from_raw_parts(
                     attn_out_ptr + (attn_offset * std::mem::size_of::<f32>()) as u64,
