@@ -72,14 +72,20 @@ jobs:
       #
       # Tightening procedure: read the "Measured line coverage: NN%" line printed
       # by the coverage job's "Enforce coverage floor" step, then bump
-      # .pmat/coverage-baseline.txt to that value in a follow-up PR. The effective
-      # floor is max(coverage_min, baseline), so the baseline ratchets the real
-      # protection up over time while coverage_min stays the conservative backstop.
+      # .github/coverage-baseline.txt to that value in a follow-up PR. The
+      # effective floor is max(coverage_min, baseline), so the baseline ratchets
+      # the real protection up over time while coverage_min stays the
+      # conservative backstop.
+      #
+      # NOTE: the sovereign-ci default baseline path is .pmat/coverage-baseline.txt,
+      # but aprender gitignores .pmat/, so the committed baseline lives at
+      # .github/coverage-baseline.txt and is wired via coverage_baseline_file below.
       #
       # DEFAULT FOR ALL OTHER REPOS IS UNCHANGED: any repo that does NOT set
       # coverage_min keeps the exact advisory behavior (coverage measured + sent
       # to codecov, never gating). Fleet-wide enablement is intentionally NOT done.
       coverage_min: "90.0"
+      coverage_baseline_file: ".github/coverage-baseline.txt"
     secrets: inherit
 
   # APR-MONO: Workspace-wide test (all 75 crates)
