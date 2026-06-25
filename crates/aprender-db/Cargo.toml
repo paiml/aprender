@@ -69,16 +69,22 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde = { version = "1", features = ["derive"] }
 serde_yaml_ng = "0.10"
 
+# Competitive benchmarks (CORE-009) — OPTIONAL on purpose. The `bundled` DuckDB dep
+# compiles DuckDB's entire C++ from source (~7-8 min) and was the recurring
+# merge_group flake that ejects PRs from the queue. As plain dev-deps they compiled
+# on EVERY `cargo test --workspace` (dev-deps are unconditional). As optional deps
+# tied to the competitive-benchmarks feature they are built ONLY when benchmarking
+# (the competitive_benchmarks bench `required-features` gates it). Run with:
+#   cargo bench -p aprender-db --features competitive-benchmarks --bench competitive_benchmarks
+duckdb = { version = "1.1", features = ["bundled"], optional = true }
+rusqlite = { version = "0.32", optional = true }
+
 [dev-dependencies]
 # Testing
 criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
 proptest = "1.5"           # Property-based testing
 quickcheck = "1"           # Property-based testing (backend equivalence)
 rand = "0.9"               # Random data generation for examples
-
-# Competitive benchmarks (CORE-009) - only used when running benchmarks
-duckdb = { version = "1.1", features = ["bundled"] }  # DuckDB comparison (bundled = build from source)
-rusqlite = "0.32"  # SQLite comparison
 
 # Coverage
 cargo-llvm-cov = "0.6"
@@ -150,7 +156,7 @@ wasm = []
 # queue. Gating the bench behind this feature keeps duckdb/rusqlite (used ONLY by
 # competitive_benchmarks) out of the normal CI build. Run the comparison with:
 #   cargo bench -p aprender-db --features competitive-benchmarks --bench competitive_benchmarks
-competitive-benchmarks = []
+competitive-benchmarks = ["dep:duckdb", "dep:rusqlite"]
 
 [[bench]]
 name = "storage_benchmarks"
