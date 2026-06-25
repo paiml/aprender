@@ -475,6 +475,7 @@ dependencies = [
  "dirs 5.0.1",
  "faer",
  "futures-intrusive",
+ "half",
  "hostname",
  "matrixmultiply",
  "nalgebra",
