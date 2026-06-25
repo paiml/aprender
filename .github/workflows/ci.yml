@@ -307,11 +307,79 @@ jobs:
             "$IMAGE" \
             bash -c 'chown -R 1000:1000 /workspace || true; chown -R 1000:1000 /usr/local/cargo/registry || true; chown -R 1000:1000 /workspace/target || true'
 
+  # F-DUCKDB: PERMANENT guard — libduckdb-sys must NEVER re-enter the DEFAULT build.
+  #
+  # CORE-009 / PMAT-125: `duckdb` (features=["bundled"]) compiles all of DuckDB's
+  # C++ from source (~7-8 min) and OOMs/times-out the shared runner. PR #2224 made
+  # it OPTIONAL behind aprender-db's `competitive-benchmarks` feature so it stays out
+  # of `cargo test --workspace`. This job is the Poka-Yoke that fails CI the instant a
+  # future edit re-adds duckdb/libduckdb-sys to the DEFAULT (non-optional) dep tree.
+  #
+  # Why a standalone job (not a step in workspace-test): a `cargo tree` is seconds —
+  # we want this signal FAST and attributable, not buried in the ~26min workspace-test.
+  # It's wired into `gate` (the org-ruleset-required context) via `needs`, so a leak is
+  # a HARD, REQUIRED failure on every PR.
+  #
+  # Detection: `cargo tree -e normal,build -i <crate>` exits 0 iff <crate> IS in the
+  # DEFAULT-feature tree (NO --all-features). Exit 0 == present == leak == fail.
+  duckdb-guard:
+    runs-on: [self-hosted, X64, Linux]
+    timeout-minutes: 10
+    env:
+      IMAGE: localhost:5000/sovereign-ci:stable
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pull sovereign-ci image (with retry + local-cache fallback)
+        # Same two-layer resilience as workspace-test — see that job for full context.
+        run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "Image $IMAGE already cached locally — skipping pull"
+            exit 0
+          fi
+          max_attempts=15
+          delay=4
+          for i in $(seq 1 $max_attempts); do
+            if docker pull "$IMAGE"; then
+              echo "Image pulled successfully on attempt $i"
+              exit 0
+            fi
+            if [ $i -eq $max_attempts ]; then
+              echo "::error::Registry localhost:5000 unreachable after $max_attempts attempts AND image not in local cache"
+              exit 1
+            fi
+            echo "Pull attempt $i/$max_attempts failed; sleeping ${delay}s"
+            sleep "$delay"
+            delay=$((delay + 6))
+          done
+      - name: Assert libduckdb-sys absent from the DEFAULT build (CORE-009 / PMAT-125)
+        run: |
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace \
+            "$IMAGE" \
+            bash -c '
+              set -o pipefail
+              leaked=0
+              # DEFAULT feature set only — NO --all-features. Exit 0 from `cargo tree -i`
+              # means the crate IS in the normal+build dep tree => it leaked into the gate.
+              for crate in libduckdb-sys duckdb; do
+                if cargo tree -e normal,build -i "$crate" >/dev/null 2>&1; then
+                  echo "::error::$crate leaked into the DEFAULT build (DuckDB ~8min C++). duckdb MUST stay optional behind aprender-db/competitive-benchmarks (CORE-009 / PMAT-125)."
+                  leaked=1
+                fi
+              done
+              if [ "$leaked" -eq 1 ]; then
+                exit 1
+              fi
+              echo "OK: duckdb/libduckdb-sys are NOT in the default dependency tree (still optional behind competitive-benchmarks)."
+            '
+
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".
   gate:
     runs-on: [self-hosted, X64, Linux]
-    needs: [ci, workspace-test]
+    needs: [ci, workspace-test, duckdb-guard]
     if: always()
     steps:
       - name: Check required jobs
@@ -322,6 +390,10 @@ jobs:
           fi
           if [ "${{ needs.workspace-test.result }}" != "success" ]; then
             echo "workspace-test failed: ${{ needs.workspace-test.result }}"
+            exit 1
+          fi
+          if [ "${{ needs.duckdb-guard.result }}" != "success" ]; then
+            echo "duckdb-guard failed: ${{ needs.duckdb-guard.result }} — libduckdb-sys leaked into the DEFAULT build (CORE-009 / PMAT-125)"
             exit 1
           fi
           echo "All required jobs passed"
