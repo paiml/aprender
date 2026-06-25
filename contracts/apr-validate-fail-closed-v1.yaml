@@ -1,0 +1,121 @@
+contract: apr-validate-fail-closed
+metadata:
+  version: 1.0.0
+  created: '2026-06-24'
+  author: PAIML Engineering
+  description: >
+    PMAT-926 Pillar-4 fail-closed parity for the `.apr` path of `apr validate`.
+    Before this contract, `apr validate <file.apr>` routed to the stubbed
+    `AprValidator`, whose `validate_bytes -> validate_structure` only checks
+    magic / header size / version / flags (4 real checks) — every Section-A
+    structural check 5-25 and every Section-B physics check is a
+    `Skip("Not implemented")` placeholder, and `--strict` printed
+    "not yet implemented, flag ignored." A semantically-broken `.apr`
+    (all-zero `lm_head.weight`, NaN/Inf tensor, constant/dead-row weight) was
+    reported `VALID 4/100` and ran silently — exactly the garbage llama.cpp /
+    Ollama load and run (PMAT-744 class). The fully-implemented `.apr` content
+    validator (`RosettaStone::validate_apr -> compute_tensor_validation_with_shape`,
+    F-DATA-QUALITY-001..007) already existed but was UNREACHABLE from the CLI.
+    This contract binds the fix: `apr validate <file.apr>` now ALSO runs the
+    Rosetta content gates and gates its exit code on them (parity with the
+    GGUF/SafeTensors path), and `--strict` is honored — any NaN / Inf /
+    all-zero finding escalates to a hard non-zero exit. A healthy `.apr` still
+    validates clean (no false positives); `--skip-contract` bypasses the gate.
+  kind: pattern
+  references:
+    - "paiml/aprender PMAT-926 (apr validate .apr fail-closed + --strict wiring)"
+    - "crates/apr-cli/src/commands/validate.rs (run_apr_validation/gate_apr_content/strict_blocking_issues)"
+    - "crates/aprender-core/src/format/rosetta/validate_inspect.rs (validate_apr/compute_tensor_validation_with_shape, F-DATA-QUALITY-001..007)"
+    - "crates/aprender-core/src/format/rosetta/arch_inference.rs (RosettaStone::validate dispatch)"
+    - "contracts/apr-fail-closed-garbage-beat-v1.yaml (F-DATA-QUALITY-001..007 obligations reused via the dispatch)"
+    - "contracts/apr-validate-quality-threshold-v1.yaml (structural 100-point report still drives the human-readable summary)"
+  registry: true
+  tags:
+    - cli
+    - validate
+    - fail-closed
+    - pillar-4
+    - strict
+
+five_whys:
+  symptom: "`apr validate model.apr` on a model whose lm_head.weight is entirely zero (a dead model) reports `VALID 4/100 points` and exits 0 — the same artifact llama.cpp / Ollama load and run silently."
+  why_1: "validate.rs dispatched FormatType::Apr to the stubbed AprValidator, whose validate_bytes only runs validate_structure (magic/header/version/flags)."
+  why_2: "Section-A structural checks 5-25 and the Section-B physics checks (NaN/Inf/all-zero/layernorm) live in validate_tensors(), which the CLI never calls — no add_tensor_stats() is populated, so on the .apr path they are no-ops."
+  why_3: "The REAL content gates (F-DATA-QUALITY-001..007) exist in RosettaStone::validate_apr but the CLI only routed GGUF/SafeTensors to RosettaStone — the .apr branch never reached them (dead code from the entry point)."
+  why_4: "--strict was explicitly a no-op on the .apr path (print_apr_validation_json / print_summary eprintln 'not yet implemented, flag ignored'), so even an operator opting into strict mode got VALID on garbage."
+  why_5: "No contract bound the .apr validate exit code to the data-quality gates — 'apr validate is fail-closed for every format it accepts' was an unstated, unenforced invariant; it held for GGUF/ST but silently not for .apr."
+  root_cause: "The .apr CLI path never ran content validation. The fix runs RosettaStone::validate(path) for .apr and gates the exit code via gate_apr_content (fail-closed) + strict_blocking_issues (--strict), reaching parity with the GGUF/SafeTensors path while preserving the structural 100-point report for the human-readable table."
+
+equations:
+  apr_content_gate:
+    formula: "fail_closed(report) = NOT skip_contract AND ((strict AND strict_blocking(report)) OR NOT report.is_valid)"
+    domain: "apr validate <file.apr> invocation; report = RosettaStone.validate(file.apr)"
+    codomain: "boolean: should exit non-zero (ValidationFailed)"
+    invariants:
+      - "A content-broken .apr (any tensor failing an F-DATA-QUALITY gate) fails closed when skip_contract is false"
+      - "A healthy .apr (report.is_valid, no strict-blocking findings) passes — no false positive"
+      - "--skip-contract bypasses the gate entirely (parity with GGUF/SafeTensors)"
+      - "A structural parse failure (bad magic / truncated / checksum mismatch) surfaces as ValidationFailed"
+
+  strict_blocking:
+    formula: "strict_blocking(report) = report.total_nan_count > 0 OR report.total_inf_count > 0 OR report.all_zero_tensors non-empty"
+    domain: "RosettaStone validation reports (APR and GGUF/SafeTensors identically)"
+    codomain: "boolean: --strict must escalate to non-zero exit"
+    invariants:
+      - "A NaN, Inf, or all-zero finding is strict-blocking on BOTH the .apr and the GGUF/SafeTensors path"
+      - "A report with zero NaN, zero Inf, and no all-zero tensors is NOT strict-blocking"
+      - "strict_blocking_issues() returns None iff strict_blocking(report) is false"
+
+proof_obligations:
+  - type: invariant
+    property: "Content-broken .apr is rejected from the CLI (dispatch re-route)"
+    formal: "all_zero(lm_head) OR has_nan(tensor) ⟹ fail_closed(validate(file.apr))"
+    applies_to: apr_content_gate
+  - type: invariant
+    property: "Healthy .apr still validates clean (no false positive)"
+    formal: "healthy(file.apr) ⟹ NOT fail_closed(validate(file.apr))"
+    applies_to: apr_content_gate
+  - type: invariant
+    property: "--strict escalates an all-zero / NaN / Inf finding to non-zero exit on the .apr path"
+    formal: "strict AND strict_blocking(report) ⟹ fail_closed(report)"
+    applies_to: strict_blocking
+  - type: invariant
+    property: "--skip-contract bypasses the content gate"
+    formal: "skip_contract ⟹ NOT fail_closed(report)"
+    applies_to: apr_content_gate
+
+falsification_tests:
+  - id: FALSIFY-VALIDATE-APR-DISPATCH-001
+    rule: "apr validate REJECTS an all-zero lm_head .apr (content gate now reachable)"
+    prediction: "run() on a valid-header .apr with an all-zero lm_head.weight returns Err"
+    test: "cargo test -p apr-cli --lib pmat926_falsifier_all_zero_lm_head_apr_rejected"
+    if_fails: "The .apr path still routes to the stubbed AprValidator and accepts garbage"
+  - id: FALSIFY-VALIDATE-APR-DISPATCH-002
+    rule: "apr validate REJECTS a NaN tensor in a .apr"
+    prediction: "run() on a .apr with NaN weights returns Err"
+    test: "cargo test -p apr-cli --lib pmat926_falsifier_nan_tensor_apr_rejected"
+    if_fails: "NaN .apr content is never inspected from the CLI"
+  - id: FALSIFY-VALIDATE-APR-NOFALSEPOS-001
+    rule: "apr validate ACCEPTS a healthy .apr (no false positive)"
+    prediction: "run() on a .apr of varied finite non-zero weights returns Ok"
+    test: "cargo test -p apr-cli --lib pmat926_valid_apr_still_passes"
+    if_fails: "The fail-closed gate rejects good models"
+  - id: FALSIFY-VALIDATE-STRICT-001
+    rule: "--strict escalates an all-zero-tensor .apr to a non-zero exit"
+    prediction: "run() with strict=true on a .apr with an all-zero tensor returns Err"
+    test: "cargo test -p apr-cli --lib pmat926_falsifier_strict_apr_all_zero_nonzero_exit"
+    if_fails: "--strict remains a no-op on the .apr path"
+  - id: FALSIFY-VALIDATE-SKIP-001
+    rule: "--skip-contract bypasses the .apr content gate"
+    prediction: "run() with skip_contract=true on a content-broken .apr returns Ok"
+    test: "cargo test -p apr-cli --lib pmat926_skip_contract_bypasses_content_gate"
+    if_fails: "--skip-contract no longer bypasses the gate (regression vs GGUF/ST parity)"
+
+qa_gate:
+  id: F-VALIDATE-APR-FAIL-CLOSED-001
+  name: "apr validate is fail-closed on the .apr path with --strict honored"
+  description: "A content-broken .apr (all-zero/NaN/Inf/constant/dead-row) is REJECTED at parity with the GGUF/SafeTensors path; a healthy .apr passes; --strict escalates warn-level findings to a non-zero exit; --skip-contract bypasses the gate."
+  checks:
+    - "apr_content_gate"
+    - "strict_blocking"
+  pass_criteria: "FALSIFY-VALIDATE-APR-DISPATCH-{001,002}, FALSIFY-VALIDATE-APR-NOFALSEPOS-001, FALSIFY-VALIDATE-STRICT-001, FALSIFY-VALIDATE-SKIP-001 all PASS"

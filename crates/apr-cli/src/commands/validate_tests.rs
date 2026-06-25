@@ -203,7 +203,7 @@ fn test_print_summary_valid_report() {
         category_scores: HashMap::new(),
     };
 
-    let result = print_summary(&report, false);
+    let result = print_summary(&report);
     assert!(result.is_ok());
 }
 
@@ -346,4 +346,169 @@ fn test_run_gguf_with_physics_violations() {
     // Should fail due to NaN physics violation
     let result = run(file.path(), false, false, None, false, false);
     assert!(result.is_err(), "Should fail with NaN tensors");
+}
+
+// ========================================================================
+// PMAT-926: APR fail-closed content gates + --strict wiring
+//
+// Contract: apr-validate-fail-closed-v1.yaml
+//   - F-VALIDATE-APR-DISPATCH-001 (content-broken .apr REJECTED)
+//   - F-VALIDATE-STRICT-001        (--strict escalates warn → non-zero exit)
+//
+// Before PMAT-926 the `.apr` path routed to the stubbed `AprValidator`
+// (magic/header/version/flags only) and `--strict` printed
+// "not yet implemented, flag ignored" — so a semantically-broken `.apr`
+// (all-zero lm_head, NaN/Inf, constant weight) was reported VALID and ran
+// silently, exactly the class of garbage llama.cpp / Ollama load and run.
+// These falsifiers go RED on the stub and GREEN on the fix; a valid model
+// still passes (no false positives).
+// ========================================================================
+
+/// Build a syntactically-valid `.apr` file from `(name, shape, data)` tensors.
+/// Header checksum + offsets are computed by `AprV2Writer`, so the file is a
+/// genuinely-parseable model — only the *content* of the tensors varies.
+fn write_apr_fixture(tensors: &[(&str, Vec<usize>, Vec<f32>)]) -> NamedTempFile {
+    use aprender::format::v2::{AprV2Metadata, AprV2Writer};
+
+    let metadata = AprV2Metadata::new("test");
+    let mut writer = AprV2Writer::new(metadata);
+    for (name, shape, data) in tensors {
+        writer.add_tensor_f32_owned(*name, shape.clone(), data.clone());
+    }
+    let mut apr_bytes = Vec::new();
+    writer.write_to(&mut apr_bytes).expect("write APR fixture");
+
+    let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+    file.write_all(&apr_bytes).expect("write apr bytes");
+    file
+}
+
+/// A healthy weight column with variation (passes all data-quality gates).
+fn healthy_weights(n: usize) -> Vec<f32> {
+    (0..n).map(|i| ((i as f32) * 0.013 - 0.5) * 0.2).collect()
+}
+
+/// FALSIFIER (F-VALIDATE-APR-DISPATCH-001): a valid-header `.apr` whose
+/// `lm_head.weight` is entirely zero must be REJECTED. RED on the stub
+/// (`AprValidator` never inspects tensor content → returns VALID), GREEN
+/// after re-routing through the Rosetta content gates.
+#[test]
+fn pmat926_falsifier_all_zero_lm_head_apr_rejected() {
+    // 8x4 lm_head, every weight zero (dead model). 4x4 healthy embed so the
+    // file is otherwise well-formed.
+    let file = write_apr_fixture(&[
+        ("lm_head.weight", vec![8, 4], vec![0.0; 32]),
+        ("model.embed_tokens.weight", vec![4, 4], healthy_weights(16)),
+    ]);
+
+    let result = run(file.path(), false, false, None, false, false);
+    assert!(
+        result.is_err(),
+        "all-zero lm_head .apr must be REJECTED (F-VALIDATE-APR-DISPATCH-001), got Ok"
+    );
+}
+
+/// FALSIFIER (F-VALIDATE-APR-DISPATCH-001): a `.apr` with NaN weights is
+/// REJECTED. The incumbents load and run NaN weights silently.
+#[test]
+fn pmat926_falsifier_nan_tensor_apr_rejected() {
+    let mut nan_block = healthy_weights(32);
+    nan_block[5] = f32::NAN;
+    nan_block[17] = f32::NAN;
+    let file = write_apr_fixture(&[
+        ("lm_head.weight", vec![8, 4], healthy_weights(32)),
+        ("model.layers.0.mlp.down_proj.weight", vec![8, 4], nan_block),
+    ]);
+
+    let result = run(file.path(), false, false, None, false, false);
+    assert!(
+        result.is_err(),
+        "NaN .apr must be REJECTED (F-VALIDATE-APR-DISPATCH-001), got Ok"
+    );
+}
+
+/// NO-FALSE-POSITIVE: a healthy `.apr` (varied, non-zero, finite weights)
+/// must still validate clean. Guards the fail-closed gate against rejecting
+/// good models.
+#[test]
+fn pmat926_valid_apr_still_passes() {
+    let file = write_apr_fixture(&[
+        ("lm_head.weight", vec![8, 4], healthy_weights(32)),
+        ("model.embed_tokens.weight", vec![8, 4], healthy_weights(32)),
+        (
+            "model.layers.0.mlp.down_proj.weight",
+            vec![8, 4],
+            healthy_weights(32),
+        ),
+    ]);
+
+    let result = run(file.path(), false, false, None, false, false);
+    assert!(
+        result.is_ok(),
+        "healthy .apr must still PASS (no false positives), got {result:?}"
+    );
+}
+
+/// FALSIFIER (F-VALIDATE-STRICT-001): `--strict` escalates a warn-level
+/// finding to a hard non-zero exit on the `.apr` path. Before PMAT-926
+/// `--strict` was a documented no-op for APR ("flag ignored").
+#[test]
+fn pmat926_falsifier_strict_apr_all_zero_nonzero_exit() {
+    // A standalone all-zero tensor (not an output-projection role) lands in
+    // `all_zero_tensors` — a strict-blocking finding.
+    let file = write_apr_fixture(&[
+        ("lm_head.weight", vec![8, 4], healthy_weights(32)),
+        (
+            "model.layers.0.self_attn.q_proj.bias",
+            vec![8],
+            vec![0.0; 8],
+        ),
+    ]);
+
+    // strict = true must fail closed.
+    let strict_result = run(file.path(), false, true, None, false, false);
+    assert!(
+        strict_result.is_err(),
+        "--strict on an all-zero-tensor .apr must exit non-zero (F-VALIDATE-STRICT-001), got Ok"
+    );
+}
+
+/// `--skip-contract` bypasses the fail-closed content gate (parity with the
+/// GGUF/SafeTensors path) — a broken `.apr` is accepted when the operator
+/// explicitly opts out.
+#[test]
+fn pmat926_skip_contract_bypasses_content_gate() {
+    let file = write_apr_fixture(&[
+        ("lm_head.weight", vec![8, 4], vec![0.0; 32]),
+        ("model.embed_tokens.weight", vec![4, 4], healthy_weights(16)),
+    ]);
+
+    let result = run(
+        file.path(),
+        false,
+        false,
+        None,
+        false,
+        /* skip_contract */ true,
+    );
+    assert!(
+        result.is_ok(),
+        "--skip-contract must bypass the content gate, got {result:?}"
+    );
+}
+
+/// JSON path also fails closed on a content-broken `.apr` (the report is
+/// still printed, but the exit code is non-zero).
+#[test]
+fn pmat926_json_apr_all_zero_lm_head_rejected() {
+    let file = write_apr_fixture(&[
+        ("lm_head.weight", vec![8, 4], vec![0.0; 32]),
+        ("model.embed_tokens.weight", vec![4, 4], healthy_weights(16)),
+    ]);
+
+    let result = run(file.path(), false, false, None, /* json */ true, false);
+    assert!(
+        result.is_err(),
+        "JSON .apr path must fail closed on content-broken model, got Ok"
+    );
 }
