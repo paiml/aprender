@@ -116,4 +116,574 @@ mod tests {
             _ => panic!("Expected ValidationFailed"),
         }
     }
+
+    // ========================================================================
+    // PMAT-125 B1: lcg_f64 — deterministic LCG PRNG
+    // ========================================================================
+
+    #[test]
+    fn lcg_f64_is_deterministic_for_same_seed() {
+        let mut s1 = 42u64;
+        let mut s2 = 42u64;
+        for _ in 0..10 {
+            assert_eq!(lcg_f64(&mut s1), lcg_f64(&mut s2));
+        }
+    }
+
+    #[test]
+    fn lcg_f64_in_unit_range() {
+        let mut state = 1u64;
+        for _ in 0..1000 {
+            let v = lcg_f64(&mut state);
+            assert!((0.0..1.0).contains(&v), "value {v} out of [0,1)");
+        }
+    }
+
+    #[test]
+    fn lcg_f64_different_seeds_diverge() {
+        let mut a = 7u64;
+        let mut b = 999u64;
+        // First draw from distinct seeds should differ (overwhelmingly likely).
+        assert_ne!(lcg_f64(&mut a), lcg_f64(&mut b));
+    }
+
+    // ========================================================================
+    // PMAT-125 B1: set_yaml_f64 / set_yaml_u64 — nested YAML mutation
+    // ========================================================================
+
+    #[test]
+    fn set_yaml_f64_sets_existing_nested_key() {
+        let mut root: serde_yaml::Value =
+            serde_yaml::from_str("optimizer:\n  lr: 0.1\n").unwrap();
+        set_yaml_f64(&mut root, &["optimizer", "lr"], 3e-4);
+        let got = root["optimizer"]["lr"].as_f64().unwrap();
+        assert!((got - 3e-4).abs() < 1e-12);
+    }
+
+    #[test]
+    fn set_yaml_f64_creates_missing_intermediate_maps() {
+        let mut root = serde_yaml::Value::Mapping(serde_yaml::Mapping::new());
+        set_yaml_f64(&mut root, &["optimizer", "weight_decay"], 0.05);
+        assert!((root["optimizer"]["weight_decay"].as_f64().unwrap() - 0.05).abs() < 1e-12);
+    }
+
+    #[test]
+    fn set_yaml_u64_sets_and_creates() {
+        let mut root = serde_yaml::Value::Mapping(serde_yaml::Mapping::new());
+        set_yaml_u64(&mut root, &["data", "batch_size"], 16);
+        assert_eq!(root["data"]["batch_size"].as_u64(), Some(16));
+        // Overwrite existing value.
+        set_yaml_u64(&mut root, &["data", "batch_size"], 4);
+        assert_eq!(root["data"]["batch_size"].as_u64(), Some(4));
+    }
+
+    // ========================================================================
+    // PMAT-125 B1: build_distributed_yaml — DDP config section
+    // ========================================================================
+
+    #[test]
+    fn build_distributed_yaml_coordinator_role_for_rank0() {
+        let v = build_distributed_yaml(Some(4), Some(0), Some("10.0.0.1:9000"));
+        assert_eq!(v["world_size"].as_u64(), Some(4));
+        assert_eq!(v["rank"].as_u64(), Some(0));
+        assert_eq!(v["coordinator_addr"].as_str(), Some("10.0.0.1:9000"));
+        assert_eq!(v["role"].as_str(), Some("coordinator"));
+    }
+
+    #[test]
+    fn build_distributed_yaml_worker_role_for_nonzero_rank() {
+        let v = build_distributed_yaml(Some(8), Some(3), None);
+        assert_eq!(v["rank"].as_u64(), Some(3));
+        assert_eq!(v["role"].as_str(), Some("worker"));
+        // Default coordinator address when None.
+        assert_eq!(v["coordinator_addr"].as_str(), Some("0.0.0.0:9000"));
+    }
+
+    #[test]
+    fn build_distributed_yaml_defaults_when_all_none() {
+        let v = build_distributed_yaml(None, None, None);
+        assert_eq!(v["world_size"].as_u64(), Some(2));
+        assert_eq!(v["rank"].as_u64(), Some(0));
+        assert_eq!(v["role"].as_str(), Some("coordinator"));
+    }
+
+    // ========================================================================
+    // PMAT-125 B1: patch_yaml_config — overlay CLI flags onto a YAML config
+    // ========================================================================
+
+    #[test]
+    fn patch_yaml_config_writes_distributed_and_seed() {
+        let dir = std::env::temp_dir().join(format!("apr-pmat125-patch-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = dir.join("base.yaml");
+        std::fs::write(&cfg, "training:\n  epochs: 1\n").unwrap();
+
+        let out = patch_yaml_config(&cfg, true, Some(2), Some(0), Some("a:1"), true, Some(123))
+            .expect("patch should succeed");
+        let patched = std::fs::read_to_string(&out).unwrap();
+        let yaml: serde_yaml::Value = serde_yaml::from_str(&patched).unwrap();
+        assert_eq!(yaml["training"]["distributed"]["world_size"].as_u64(), Some(2));
+        assert_eq!(yaml["training"]["deterministic"].as_bool(), Some(true));
+        assert_eq!(yaml["training"]["seed"].as_u64(), Some(123));
+
+        let _ = std::fs::remove_file(&out);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn patch_yaml_config_missing_training_section_errors() {
+        let dir = std::env::temp_dir().join(format!("apr-pmat125-patch2-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = dir.join("notraining.yaml");
+        std::fs::write(&cfg, "model:\n  path: foo\n").unwrap();
+
+        let err = patch_yaml_config(&cfg, false, None, None, None, true, None).unwrap_err();
+        match err {
+            CliError::ValidationFailed(m) => assert!(m.contains("training")),
+            _ => panic!("expected ValidationFailed for missing training section"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn patch_yaml_config_invalid_yaml_errors() {
+        let dir = std::env::temp_dir().join(format!("apr-pmat125-patch3-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = dir.join("bad.yaml");
+        std::fs::write(&cfg, "training: [unterminated\n").unwrap();
+        let err = patch_yaml_config(&cfg, false, None, None, None, false, Some(1)).unwrap_err();
+        assert!(matches!(err, CliError::ValidationFailed(_)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ========================================================================
+    // PMAT-125 B1: generate_grid_configs — grid search over hyperparameters
+    // ========================================================================
+
+    #[test]
+    fn generate_grid_configs_respects_max_cap() {
+        let base: serde_yaml::Value = serde_yaml::from_str("model:\n  path: m\n").unwrap();
+        let configs = generate_grid_configs(&base, 7);
+        assert_eq!(configs.len(), 7, "should stop at max_configs");
+    }
+
+    #[test]
+    fn generate_grid_configs_sets_distinct_hyperparams() {
+        let base: serde_yaml::Value = serde_yaml::from_str("model:\n  path: m\n").unwrap();
+        let configs = generate_grid_configs(&base, 3);
+        // The grid varies weight_decay fastest, so the first three differ in wd.
+        let wds: Vec<f64> = configs
+            .iter()
+            .map(|c| c["optimizer"]["weight_decay"].as_f64().unwrap())
+            .collect();
+        assert_eq!(wds, vec![0.0, 0.01, 0.1]);
+        // All share the first lr (1e-5) and first batch size (2).
+        for c in &configs {
+            assert!((c["optimizer"]["lr"].as_f64().unwrap() - 1e-5).abs() < 1e-12);
+            assert_eq!(c["data"]["batch_size"].as_u64(), Some(2));
+        }
+    }
+
+    #[test]
+    fn generate_grid_configs_full_grid_is_45() {
+        let base: serde_yaml::Value = serde_yaml::from_str("{}").unwrap();
+        // 5 lr × 3 bs × 3 wd = 45 combinations.
+        let configs = generate_grid_configs(&base, 1000);
+        assert_eq!(configs.len(), 45);
+    }
+
+    // ========================================================================
+    // PMAT-125 B1: generate_random_configs — random search via LCG
+    // ========================================================================
+
+    #[test]
+    fn generate_random_configs_count_and_ranges() {
+        let base: serde_yaml::Value = serde_yaml::from_str("model:\n  path: m\n").unwrap();
+        let configs = generate_random_configs(&base, 20, 1234);
+        assert_eq!(configs.len(), 20);
+        for c in &configs {
+            let lr = c["optimizer"]["lr"].as_f64().unwrap();
+            assert!((1e-5..=1e-2).contains(&lr), "lr {lr} out of log-uniform range");
+            let bs = c["data"]["batch_size"].as_u64().unwrap();
+            assert!([1, 2, 4, 8, 16].contains(&bs), "bs {bs} not a valid choice");
+            let warmup = c["training"]["warmup_steps"].as_u64().unwrap();
+            assert!((50..=2000).contains(&warmup), "warmup {warmup} out of range");
+        }
+    }
+
+    #[test]
+    fn generate_random_configs_is_seed_deterministic() {
+        let base: serde_yaml::Value = serde_yaml::from_str("{}").unwrap();
+        let a = generate_random_configs(&base, 5, 77);
+        let b = generate_random_configs(&base, 5, 77);
+        for (ca, cb) in a.iter().zip(b.iter()) {
+            assert_eq!(
+                ca["optimizer"]["lr"].as_f64(),
+                cb["optimizer"]["lr"].as_f64()
+            );
+        }
+    }
+
+    // ========================================================================
+    // PMAT-125 B1: parse_best_ppl — extract val_ppl from training logs
+    // ========================================================================
+
+    #[test]
+    fn parse_best_ppl_picks_minimum() {
+        let log = "[eval] step=1 val_loss=2.0 val_ppl=7.39\n\
+                   [eval] step=2 val_loss=1.5 val_ppl=4.48\n\
+                   [eval] step=3 val_loss=1.8 val_ppl=6.05\n";
+        let best = parse_best_ppl(log);
+        assert!((best - 4.48).abs() < 1e-9, "expected 4.48, got {best}");
+    }
+
+    #[test]
+    fn parse_best_ppl_no_matches_returns_infinity() {
+        let best = parse_best_ppl("nothing useful here\nstep=1 loss=2.0\n");
+        assert!(best.is_infinite());
+    }
+
+    #[test]
+    fn parse_best_ppl_handles_trailing_text() {
+        let best = parse_best_ppl("val_ppl=3.14 (done)\n");
+        assert!((best - 3.14).abs() < 1e-9);
+    }
+
+    // ========================================================================
+    // PMAT-125 B1: discover_sweep_configs — find sweep-*.yaml files
+    // ========================================================================
+
+    #[test]
+    fn discover_sweep_configs_finds_and_sorts() {
+        let dir = std::env::temp_dir().join(format!("apr-pmat125-sweep-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("sweep-002.yaml"), "{}").unwrap();
+        std::fs::write(dir.join("sweep-000.yaml"), "{}").unwrap();
+        std::fs::write(dir.join("sweep-001.yaml"), "{}").unwrap();
+        std::fs::write(dir.join("ignore.txt"), "x").unwrap();
+        std::fs::write(dir.join("other.yaml"), "{}").unwrap();
+
+        let configs = discover_sweep_configs(&dir).unwrap();
+        assert_eq!(configs.len(), 3, "only sweep-*.yaml files counted");
+        let names: Vec<String> = configs
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        assert_eq!(
+            names,
+            vec!["sweep-000.yaml", "sweep-001.yaml", "sweep-002.yaml"]
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn discover_sweep_configs_empty_dir_errors() {
+        let dir = std::env::temp_dir().join(format!("apr-pmat125-empty-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let err = discover_sweep_configs(&dir).unwrap_err();
+        match err {
+            CliError::ValidationFailed(m) => assert!(m.contains("No sweep")),
+            _ => panic!("expected ValidationFailed"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ========================================================================
+    // PMAT-125 B1: parse_sweep_config_params — pull HP fields from sweep YAML
+    // ========================================================================
+
+    #[test]
+    fn parse_sweep_config_params_reads_fields() {
+        let dir = std::env::temp_dir().join(format!("apr-pmat125-parse-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("sweep-000.yaml");
+        std::fs::write(
+            &p,
+            "optimizer:\n  lr: 0.0003\n  weight_decay: 0.01\ntraining:\n  warmup_steps: 500\n",
+        )
+        .unwrap();
+        let entries = parse_sweep_config_params(&[p.clone()]).unwrap();
+        assert_eq!(entries.len(), 1);
+        let e = &entries[0];
+        assert!((e.lr - 0.0003).abs() < 1e-12);
+        assert!((e.weight_decay - 0.01).abs() < 1e-12);
+        assert_eq!(e.warmup_steps, 500);
+        assert!(e.best_ppl.is_infinite());
+        assert!(e.eliminated_round.is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn parse_sweep_config_params_missing_fields_default_to_zero() {
+        let dir = std::env::temp_dir().join(format!("apr-pmat125-parse2-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("sweep-001.yaml");
+        std::fs::write(&p, "model:\n  path: m\n").unwrap();
+        let entries = parse_sweep_config_params(&[p]).unwrap();
+        assert_eq!(entries[0].lr, 0.0);
+        assert_eq!(entries[0].weight_decay, 0.0);
+        assert_eq!(entries[0].warmup_steps, 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ========================================================================
+    // PMAT-125 B1: build_halving_json — winner + all-results serialization
+    // ========================================================================
+
+    #[test]
+    fn build_halving_json_includes_winner_and_mutransfer_lr() {
+        let dir = std::env::temp_dir().join(format!("apr-pmat125-halve-{}", std::process::id()));
+        let winner = HalvingEntry {
+            path: dir.join("sweep-000.yaml"),
+            best_ppl: 4.2,
+            lr: 1e-3,
+            weight_decay: 0.01,
+            warmup_steps: 100,
+            eliminated_round: None,
+        };
+        let other = HalvingEntry {
+            path: dir.join("sweep-001.yaml"),
+            best_ppl: f64::INFINITY,
+            lr: 2e-3,
+            weight_decay: 0.0,
+            warmup_steps: 50,
+            eliminated_round: Some(0),
+        };
+        let results = vec![winner, other];
+        // μTransfer scales the LR by source/target width.
+        let target_lr = results[0].lr * (256.0 / 1024.0);
+        let json = build_halving_json(
+            &results,
+            "sweep-000.yaml",
+            &results[0],
+            target_lr,
+            256,
+            1024,
+            2,
+            100,
+        );
+        assert_eq!(json["winner"]["config"].as_str(), Some("sweep-000.yaml"));
+        assert!((json["winner"]["proxy_lr"].as_f64().unwrap() - 1e-3).abs() < 1e-12);
+        assert!((json["winner"]["target_lr"].as_f64().unwrap() - target_lr).abs() < 1e-12);
+        assert_eq!(json["winner"]["source_width"].as_u64(), Some(256));
+        assert_eq!(json["winner"]["target_width"].as_u64(), Some(1024));
+        // Non-finite best_ppl serializes as null.
+        assert!(json["all_results"][1]["best_ppl"].is_null());
+        assert_eq!(json["all_results"][1]["eliminated_round"].as_u64(), Some(0));
+        assert_eq!(json["settings"]["rounds"].as_u64(), Some(2));
+    }
+
+    // ========================================================================
+    // PMAT-125 B1: copy_checkpoint_files — copy + BLAKE3 hash manifest
+    // ========================================================================
+
+    #[test]
+    fn copy_checkpoint_files_hashes_and_totals() {
+        let base = std::env::temp_dir().join(format!("apr-pmat125-ckpt-{}", std::process::id()));
+        let src = base.join("src");
+        let dst = base.join("dst");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::create_dir_all(&dst).unwrap();
+        std::fs::write(src.join("a.bin"), b"hello").unwrap();
+        std::fs::write(src.join("b.bin"), b"world!!").unwrap();
+        std::fs::create_dir_all(src.join("subdir")).unwrap(); // ignored (not a file)
+
+        let (entries, total) = copy_checkpoint_files(&src, &dst, true).unwrap();
+        assert_eq!(entries.len(), 2, "two files copied, subdir skipped");
+        assert_eq!(total, 5 + 7);
+        // Files actually copied to dst with identical bytes.
+        assert_eq!(std::fs::read(dst.join("a.bin")).unwrap(), b"hello");
+        // Manifest entries carry a blake3 hash.
+        for e in &entries {
+            assert!(e["blake3"].as_str().unwrap().len() == 64);
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    // ========================================================================
+    // PMAT-125 B1: high-level dispatch — run_plan / run_apply task routing
+    // ========================================================================
+
+    #[test]
+    fn run_plan_unknown_task_errors() {
+        let out_dir = std::path::Path::new(".");
+        let err = run_plan(
+            None, "small", None, 2, "bogus-task", None, out_dir, "auto", 1, false, 1, None, None,
+            None, None, None, "apr", false,
+        )
+        .unwrap_err();
+        match err {
+            CliError::ValidationFailed(m) => assert!(m.contains("Unknown task type")),
+            _ => panic!("expected ValidationFailed"),
+        }
+    }
+
+    #[test]
+    fn run_plan_classify_task_not_available() {
+        let out_dir = std::path::Path::new(".");
+        let err = run_plan(
+            None, "small", None, 2, "classify", None, out_dir, "auto", 1, false, 1, None, None,
+            None, None, None, "apr", false,
+        )
+        .unwrap_err();
+        match err {
+            CliError::ValidationFailed(m) => assert!(m.contains("classify")),
+            _ => panic!("expected ValidationFailed"),
+        }
+    }
+
+    #[test]
+    fn run_plan_pretrain_without_config_errors() {
+        let out_dir = std::path::Path::new(".");
+        let err = run_plan(
+            None, "small", None, 2, "pretrain", None, out_dir, "auto", 1, false, 1, None, None,
+            None, None, None, "apr", false,
+        )
+        .unwrap_err();
+        match err {
+            CliError::ValidationFailed(m) => assert!(m.contains("--config")),
+            _ => panic!("expected ValidationFailed about missing config"),
+        }
+    }
+
+    #[test]
+    fn run_apply_unknown_task_errors() {
+        let out_dir = std::path::Path::new(".");
+        let err = run_apply(
+            None, None, "nope", None, "small", None, 2, out_dir, "auto", 1, false, 1, None, None,
+            None, false, false, None, None, None, false, None,
+        )
+        .unwrap_err();
+        assert!(matches!(err, CliError::ValidationFailed(_)));
+    }
+
+    #[test]
+    fn run_apply_pretrain_missing_config_errors() {
+        let out_dir = std::path::Path::new(".");
+        let err = run_apply(
+            None, None, "pretrain", None, "small", None, 2, out_dir, "auto", 1, false, 1, None,
+            None, None, false, false, None, None, None, false, None,
+        )
+        .unwrap_err();
+        match err {
+            CliError::ValidationFailed(m) => assert!(m.contains("--config")),
+            _ => panic!("expected missing config error"),
+        }
+    }
+
+    #[test]
+    fn run_apply_pretrain_nonexistent_config_is_file_not_found() {
+        let out_dir = std::path::Path::new(".");
+        let missing = std::path::Path::new("/nonexistent/apr-pmat125/config.yaml");
+        let err = run_apply(
+            None,
+            Some(missing),
+            "pretrain",
+            None,
+            "small",
+            None,
+            2,
+            out_dir,
+            "auto",
+            1,
+            false,
+            1,
+            None,
+            None,
+            None,
+            false,
+            false,
+            None,
+            None,
+            None,
+            false,
+            None,
+        )
+        .unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+
+    // ========================================================================
+    // PMAT-125 B1: run_sweep / run_halving / run_archive — path validation
+    // ========================================================================
+
+    #[test]
+    fn run_sweep_missing_config_is_file_not_found() {
+        let err = run_sweep(
+            std::path::Path::new("/nonexistent/apr-pmat125/base.yaml"),
+            "grid",
+            4,
+            std::path::Path::new("/tmp/apr-pmat125-out"),
+            0,
+            true,
+        )
+        .unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+
+    #[test]
+    fn run_halving_missing_dir_is_file_not_found() {
+        let err = run_halving(
+            std::path::Path::new("/nonexistent/apr-pmat125/sweeps"),
+            2,
+            10,
+            256,
+            1024,
+            std::path::Path::new("/tmp/apr-pmat125-halving.json"),
+            true,
+        )
+        .unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+
+    #[test]
+    fn run_archive_non_directory_errors() {
+        let err = run_archive(
+            std::path::Path::new("/nonexistent/apr-pmat125/ckpt"),
+            std::path::Path::new("/tmp/apr-pmat125-arch-out"),
+            Some("1.0.0"),
+            None,
+            true,
+        )
+        .unwrap_err();
+        match err {
+            CliError::ValidationFailed(m) => assert!(m.contains("Not a directory")),
+            _ => panic!("expected ValidationFailed for non-directory source"),
+        }
+    }
+
+    #[test]
+    fn run_sweep_generates_grid_files() {
+        let base = std::env::temp_dir().join(format!("apr-pmat125-rsweep-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let cfg = base.join("base.yaml");
+        std::fs::write(
+            &cfg,
+            "optimizer:\n  lr: 0.1\ndata:\n  batch_size: 2\ntraining:\n  warmup_steps: 10\n",
+        )
+        .unwrap();
+        let out = base.join("out");
+        run_sweep(&cfg, "grid", 3, &out, 0, true).expect("sweep should succeed");
+        // Three sweep-NNN.yaml files were generated.
+        let generated = discover_sweep_configs(&out).unwrap();
+        assert_eq!(generated.len(), 3);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn run_archive_copies_files_and_writes_manifest() {
+        let base = std::env::temp_dir().join(format!("apr-pmat125-rarch-{}", std::process::id()));
+        let ckpt = base.join("ckpt");
+        let out = base.join("out");
+        std::fs::create_dir_all(&ckpt).unwrap();
+        std::fs::write(ckpt.join("model.bin"), b"weights").unwrap();
+        run_archive(&ckpt, &out, Some("2.1.0"), Some("note"), true).expect("archive ok");
+        let manifest = std::fs::read_to_string(out.join("MANIFEST.json")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&manifest).unwrap();
+        assert_eq!(v["version"].as_str(), Some("2.1.0"));
+        assert_eq!(v["notes"].as_str(), Some("note"));
+        assert_eq!(v["total_bytes"].as_u64(), Some(7));
+        assert!(out.join("model.bin").exists());
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }

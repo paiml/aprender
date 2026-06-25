@@ -1983,4 +1983,66 @@ mod tests {
             "APRN magic must pass validate_init_apr_path; got {result:?}"
         );
     }
+
+    // ── PMAT-125 B1: additional CPU-only coverage ──────────────────────────
+
+    /// `estimate_param_count` must not panic on zero/degenerate dims — it uses
+    /// saturating arithmetic throughout, so an all-zero arch returns 0.
+    #[test]
+    fn estimate_param_count_zero_dims_is_saturating() {
+        let mut cfg = TransformerConfig::llama2_7b();
+        cfg.vocab_size = 0;
+        cfg.hidden_size = 0;
+        cfg.intermediate_size = 0;
+        cfg.num_hidden_layers = 0;
+        assert_eq!(estimate_param_count(&cfg), 0);
+    }
+
+    /// `estimate_param_count` counts the embedding term `vocab × hidden` once
+    /// even with zero layers (no per-layer contribution).
+    #[test]
+    fn estimate_param_count_zero_layers_is_embedding_plus_norm() {
+        let mut cfg = TransformerConfig::llama2_7b();
+        cfg.vocab_size = 100;
+        cfg.hidden_size = 8;
+        cfg.intermediate_size = 32;
+        cfg.num_hidden_layers = 0;
+        // embed = 100*8 = 800; + final norm (hidden) = 8 → 808.
+        assert_eq!(estimate_param_count(&cfg), 808);
+    }
+
+    /// `checkpoint_name_and_arch` honors `hf_model_type` for the name suffix
+    /// while falling back to `LlamaForCausalLM` when `hf_architecture` is unset.
+    #[test]
+    fn checkpoint_name_and_arch_model_type_without_architecture() {
+        let mut cfg = TransformerConfig::llama2_7b();
+        cfg.hf_model_type = Some("gpt2".to_string());
+        cfg.hf_architecture = None;
+        let (name, arch) = checkpoint_name_and_arch(Some(&cfg));
+        assert_eq!(name, "gpt2-pretrain");
+        assert_eq!(arch, "LlamaForCausalLM");
+    }
+
+    /// `validate_init_apr_path` on a directory (not a file) fails fast with a
+    /// FALSIFY-tagged validation error rather than panicking.
+    #[test]
+    fn validate_init_apr_path_directory_errors() {
+        let tmp = TempDir::new().expect("tempdir");
+        let err = validate_init_apr_path(tmp.path()).unwrap_err();
+        assert!(matches!(err, CliError::ValidationFailed(_)));
+    }
+
+    /// `validate_init_apr_path` on a 3-byte file (too short for the 4-byte
+    /// magic) surfaces the INIT-004 short-file error.
+    #[test]
+    fn validate_init_apr_path_three_bytes_too_short() {
+        let tmp = TempDir::new().expect("tempdir");
+        let p = tmp.path().join("short.apr");
+        std::fs::write(&p, b"APR").expect("write");
+        let err = validate_init_apr_path(&p).unwrap_err();
+        match err {
+            CliError::ValidationFailed(m) => assert!(m.contains("INIT-004")),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
 }

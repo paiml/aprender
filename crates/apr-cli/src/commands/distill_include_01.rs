@@ -863,4 +863,190 @@ mod tests {
             "FALSIFY-APR-DISTILL-TRAIN-002 (strict): final_loss {final_loss:.6} ≥ initial_loss {initial_loss:.6} — no measurable training progress"
         );
     }
+
+    // ========================================================================
+    // PMAT-125 B1: additional CPU-only coverage for distill helper logic
+    // ========================================================================
+
+    #[test]
+    fn distill_strategy_parse_aliases() {
+        assert!(matches!(
+            "gradual".parse::<DistillStrategy>(),
+            Ok(DistillStrategy::Progressive)
+        ));
+        assert!(matches!(
+            "multi".parse::<DistillStrategy>(),
+            Ok(DistillStrategy::Ensemble)
+        ));
+        // Case-insensitive.
+        assert!(matches!(
+            "ENSEMBLE".parse::<DistillStrategy>(),
+            Ok(DistillStrategy::Ensemble)
+        ));
+    }
+
+    #[test]
+    fn distill_strategy_default_is_standard() {
+        assert!(matches!(DistillStrategy::default(), DistillStrategy::Standard));
+    }
+
+    #[test]
+    fn validate_distill_params_accepts_valid() {
+        assert!(validate_distill_params(4.0, 0.7).is_ok());
+        assert!(validate_distill_params(0.5, 0.0).is_ok());
+        assert!(validate_distill_params(10.0, 1.0).is_ok());
+    }
+
+    #[test]
+    fn validate_distill_params_rejects_nonpositive_temperature() {
+        let err = validate_distill_params(0.0, 0.5).unwrap_err();
+        match err {
+            CliError::ValidationFailed(m) => assert!(m.contains("Temperature")),
+            _ => panic!("expected ValidationFailed"),
+        }
+        assert!(validate_distill_params(-1.0, 0.5).is_err());
+    }
+
+    #[test]
+    fn validate_distill_params_rejects_out_of_range_alpha() {
+        let too_high = validate_distill_params(4.0, 1.5).unwrap_err();
+        match too_high {
+            CliError::ValidationFailed(m) => assert!(m.contains("Alpha")),
+            _ => panic!("expected ValidationFailed"),
+        }
+        assert!(validate_distill_params(4.0, -0.1).is_err());
+    }
+
+    #[test]
+    fn validate_optional_paths_all_none_ok() {
+        assert!(validate_optional_paths(None, None).is_ok());
+    }
+
+    #[test]
+    fn validate_optional_paths_missing_student_errors() {
+        let missing = Path::new("/nonexistent/apr-pmat125-student.apr");
+        let err = validate_optional_paths(Some(missing), None).unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+
+    #[test]
+    fn validate_optional_paths_missing_data_errors() {
+        let missing = Path::new("/nonexistent/apr-pmat125-data.jsonl");
+        let err = validate_optional_paths(None, Some(missing)).unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+
+    #[test]
+    fn validate_optional_paths_existing_paths_ok() {
+        let f = NamedTempFile::new().unwrap();
+        assert!(validate_optional_paths(Some(f.path()), Some(f.path())).is_ok());
+    }
+
+    #[test]
+    fn extract_layer_number_various_patterns() {
+        assert_eq!(extract_layer_number("model.layers.5.self_attn"), Some(5));
+        assert_eq!(extract_layer_number("blk.12.attn_q.weight"), Some(12));
+        assert_eq!(extract_layer_number("h.0.ln_1.weight"), Some(0));
+        assert_eq!(extract_layer_number("embed_tokens.weight"), None);
+        assert_eq!(extract_layer_number("lm_head"), None);
+    }
+
+    #[test]
+    fn dir_size_counts_file_bytes() {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(b"0123456789").unwrap();
+        f.flush().unwrap();
+        assert_eq!(dir_size(f.path()), 10);
+    }
+
+    #[test]
+    fn dir_size_sums_directory_files() {
+        let dir = std::env::temp_dir().join(format!("apr-pmat125-dirsize-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a"), b"abc").unwrap();
+        std::fs::write(dir.join("b"), b"defgh").unwrap();
+        assert_eq!(dir_size(&dir), 8);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dir_size_nonexistent_is_zero() {
+        assert_eq!(dir_size(Path::new("/nonexistent/apr-pmat125-nope")), 0);
+    }
+
+    #[test]
+    fn read_prompts_jsonl_parses_and_skips_blank_lines() {
+        let mut f = NamedTempFile::new().unwrap();
+        writeln!(f, "{{\"prompt\": \"hello\"}}").unwrap();
+        writeln!(f).unwrap(); // blank line skipped
+        writeln!(f, "{{\"prompt\": \"world\"}}").unwrap();
+        f.flush().unwrap();
+        let prompts = read_prompts_jsonl(f.path()).unwrap();
+        assert_eq!(prompts.len(), 2);
+        assert_eq!(prompts[0]["prompt"].as_str(), Some("hello"));
+        assert_eq!(prompts[1]["prompt"].as_str(), Some("world"));
+    }
+
+    #[test]
+    fn read_prompts_jsonl_invalid_json_errors() {
+        let mut f = NamedTempFile::new().unwrap();
+        writeln!(f, "{{not valid json").unwrap();
+        f.flush().unwrap();
+        let err = read_prompts_jsonl(f.path()).unwrap_err();
+        match err {
+            CliError::ValidationFailed(m) => assert!(m.contains("Invalid prompt JSONL")),
+            _ => panic!("expected ValidationFailed"),
+        }
+    }
+
+    #[test]
+    fn distill_run_unknown_backend_errors() {
+        let teacher = NamedTempFile::new().unwrap();
+        let err = run(
+            Some(teacher.path()),
+            None,
+            None,
+            None,
+            "standard",
+            4.0,
+            0.7,
+            1,
+            true,  // plan_only
+            None,  // config_path
+            None,  // stage
+            "cda", // bogus backend (typo of cuda)
+            None,  // dataset_dir
+            true,  // json_output
+        )
+        .unwrap_err();
+        assert!(matches!(err, CliError::ValidationFailed(_)));
+    }
+
+    #[test]
+    fn distill_run_invalid_strategy_errors() {
+        let teacher = make_test_model();
+        // backend "fixture" passes the selector check so we reach the
+        // strategy parse, which then rejects the bogus strategy name.
+        let err = run(
+            Some(teacher.path()),
+            None,
+            None,
+            None,
+            "not-a-strategy",
+            4.0,
+            0.7,
+            1,
+            true,
+            None,
+            None,
+            "fixture",
+            None,
+            true,
+        )
+        .unwrap_err();
+        match err {
+            CliError::ValidationFailed(m) => assert!(m.contains("strategy")),
+            _ => panic!("expected ValidationFailed for unknown strategy"),
+        }
+    }
 }

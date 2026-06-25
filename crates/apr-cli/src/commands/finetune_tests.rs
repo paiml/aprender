@@ -980,3 +980,223 @@ fn beat_lora_gguf_lossless_deploy_pmat712() {
          ({max_abs_dlogit:.3e}); otherwise the BEAT could not catch a transpose bug"
     );
 }
+
+// ============================================================================
+// PMAT-125 B1: additional CPU-only coverage for finetune helper logic
+// ============================================================================
+
+#[test]
+fn finetune_method_parse_is_case_insensitive() {
+    assert!(matches!(
+        "LoRA".parse::<FinetuneMethod>(),
+        Ok(FinetuneMethod::LoRA)
+    ));
+    assert!(matches!(
+        "QLORA".parse::<FinetuneMethod>(),
+        Ok(FinetuneMethod::QLoRA)
+    ));
+    assert!(matches!(
+        "Full".parse::<FinetuneMethod>(),
+        Ok(FinetuneMethod::Full)
+    ));
+}
+
+#[test]
+fn finetune_method_parse_unknown_reports_options() {
+    let err = "bogus".parse::<FinetuneMethod>().unwrap_err();
+    assert!(err.contains("bogus"));
+    assert!(err.contains("auto"));
+    assert!(err.contains("qlora"));
+}
+
+#[test]
+fn finetune_method_default_is_auto() {
+    assert!(matches!(FinetuneMethod::default(), FinetuneMethod::Auto));
+}
+
+#[test]
+fn finetune_method_into_entrenar_method_all_variants() {
+    assert!(matches!(Method::from(FinetuneMethod::Auto), Method::Auto));
+    assert!(matches!(Method::from(FinetuneMethod::Full), Method::Full));
+    assert!(matches!(Method::from(FinetuneMethod::LoRA), Method::LoRA));
+    assert!(matches!(Method::from(FinetuneMethod::QLoRA), Method::QLoRA));
+}
+
+// ── parse_model_size ────────────────────────────────────────────────────────
+
+#[test]
+fn parse_model_size_billions_and_millions() {
+    assert_eq!(parse_model_size("7B").unwrap(), 7_000_000_000);
+    assert_eq!(parse_model_size("1.5B").unwrap(), 1_500_000_000);
+    assert_eq!(parse_model_size("370M").unwrap(), 370_000_000);
+    // Lowercase is upcased internally.
+    assert_eq!(parse_model_size("70b").unwrap(), 70_000_000_000);
+}
+
+#[test]
+fn parse_model_size_missing_suffix_errors() {
+    let err = parse_model_size("7000").unwrap_err();
+    match err {
+        CliError::ValidationFailed(m) => assert!(m.contains("Invalid model size format")),
+        _ => panic!("expected ValidationFailed"),
+    }
+}
+
+#[test]
+fn parse_model_size_non_numeric_errors() {
+    let err = parse_model_size("abcB").unwrap_err();
+    match err {
+        CliError::ValidationFailed(m) => assert!(m.contains("Invalid number")),
+        _ => panic!("expected ValidationFailed"),
+    }
+}
+
+// ── format_params ───────────────────────────────────────────────────────────
+
+#[test]
+fn format_params_buckets() {
+    assert_eq!(format_params(7_000_000_000), "7.0B");
+    assert_eq!(format_params(1_500_000_000), "1.5B");
+    assert_eq!(format_params(370_000_000), "370.0M");
+    assert_eq!(format_params(500), "500");
+}
+
+// ── resolve_model_params ────────────────────────────────────────────────────
+
+#[test]
+fn resolve_model_params_prefers_explicit_size() {
+    // When --model-size is given it is parsed directly (no file touch).
+    let n = resolve_model_params(Some("3B"), None).unwrap();
+    assert_eq!(n, 3_000_000_000);
+}
+
+#[test]
+fn resolve_model_params_requires_size_or_path() {
+    let err = resolve_model_params(None, None).unwrap_err();
+    match err {
+        CliError::ValidationFailed(m) => assert!(m.contains("model path or --model-size")),
+        _ => panic!("expected ValidationFailed"),
+    }
+}
+
+// ── build_distributed_config ────────────────────────────────────────────────
+
+#[test]
+fn build_distributed_config_role_is_unsupported() {
+    let err = build_distributed_config(Some("coordinator"), None, None, None).unwrap_err();
+    match err {
+        CliError::ValidationFailed(m) => assert!(m.contains("unreleased entrenar")),
+        _ => panic!("expected ValidationFailed when --role is set"),
+    }
+}
+
+#[test]
+fn build_distributed_config_without_role_warns_but_ok() {
+    // No --role: stray distributed flags only warn (stderr) and return Ok.
+    let r = build_distributed_config(None, Some("0.0.0.0:9000"), Some("1.2.3.4"), Some(4));
+    assert!(r.is_ok());
+}
+
+// ── parse_adapter_specs ─────────────────────────────────────────────────────
+
+#[test]
+fn parse_adapter_specs_bad_format_errors() {
+    let specs = vec!["no-colon-here".to_string()];
+    let err = parse_adapter_specs(&specs).unwrap_err();
+    match err {
+        CliError::ValidationFailed(m) => assert!(m.contains("Invalid --adapters format")),
+        _ => panic!("expected ValidationFailed for missing colon"),
+    }
+}
+
+#[test]
+fn parse_adapter_specs_missing_data_file_is_file_not_found() {
+    let specs = vec!["/nonexistent/apr-pmat125-data.jsonl:checkpoints/a".to_string()];
+    let err = parse_adapter_specs(&specs).unwrap_err();
+    assert!(matches!(err, CliError::FileNotFound(_)));
+}
+
+#[test]
+fn parse_adapter_specs_valid_pair_resolves_paths() {
+    let mut data = NamedTempFile::new().unwrap();
+    writeln!(data, "{{}}").unwrap();
+    let spec = format!("{}:checkpoints/adapter-a", data.path().display());
+    let specs = parse_adapter_specs(&[spec]).unwrap();
+    assert_eq!(specs.len(), 1);
+    assert_eq!(specs[0].0, data.path());
+    assert_eq!(
+        specs[0].1,
+        std::path::PathBuf::from("checkpoints/adapter-a")
+    );
+}
+
+// ── merge_adapters_config ───────────────────────────────────────────────────
+
+#[test]
+fn merge_adapters_config_no_file_returns_cli_only() {
+    let cli = vec!["a:1".to_string(), "b:2".to_string()];
+    let merged = merge_adapters_config(&cli, None, true).unwrap();
+    assert_eq!(merged, cli);
+}
+
+// ── build_classify_config ───────────────────────────────────────────────────
+
+#[test]
+fn build_classify_config_maps_cli_args() {
+    let model_cfg = entrenar::transformer::TransformerConfig::llama2_7b();
+    let cfg = build_classify_config(&model_cfg, 5, 16, 3, 1e-4, Some(256), false);
+    assert_eq!(cfg.num_classes, 5);
+    assert_eq!(cfg.lora_rank, 16);
+    assert!((cfg.lora_alpha - 16.0).abs() < 1e-6);
+    assert_eq!(cfg.epochs, 3);
+    assert_eq!(cfg.max_seq_len, 256);
+    assert!((cfg.learning_rate - 1e-4).abs() < 1e-9);
+}
+
+#[test]
+fn build_classify_config_defaults_max_seq_len_when_none() {
+    use entrenar::finetune::classify_pipeline::ClassifyConfig;
+    let model_cfg = entrenar::transformer::TransformerConfig::llama2_7b();
+    let cfg = build_classify_config(&model_cfg, 2, 8, 1, 5e-5, None, false);
+    assert_eq!(cfg.max_seq_len, ClassifyConfig::default().max_seq_len);
+}
+
+// ── run (top-level dispatch) error paths ────────────────────────────────────
+
+#[test]
+fn run_with_missing_model_file_errors() {
+    let missing = std::path::Path::new("/nonexistent/apr-pmat125-model.apr");
+    let result = run(
+        Some(missing), // model_path
+        "lora",        // method
+        Some(16),      // rank
+        32.0,          // vram_gb
+        true,          // plan_only — avoid any training
+        None,          // data_path
+        None,          // output_path
+        None,          // adapter_path
+        false,         // merge_mode
+        1,             // epochs
+        1e-4,          // learning_rate
+        None,          // model_size
+        None,          // task
+        2,             // num_classes
+        "apr",         // checkpoint_format
+        false,         // oversample
+        None,          // max_seq_len
+        false,         // quantize_nf4
+        None,          // gpus
+        "auto",        // gpu_backend
+        None,          // role
+        None,          // bind
+        None,          // coordinator
+        None,          // expect_workers
+        0,             // wait_gpu
+        &[],           // adapters
+        None,          // adapters_config
+        true,          // json_output
+        false,         // experimental_mps
+        0,             // gpu_share
+    );
+    assert!(result.is_err());
+}
