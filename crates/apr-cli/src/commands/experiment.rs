@@ -505,3 +505,141 @@ fn truncate(s: &str, max: usize) -> &str {
         &s[..max]
     }
 }
+
+// =============================================================================
+// PMAT-125 B4: pure-helper coverage
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use entrenar::storage::ParameterValue;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_truncate_shorter_unchanged() {
+        assert_eq!(truncate("hi", 10), "hi");
+        assert_eq!(truncate("exact", 5), "exact");
+    }
+
+    #[test]
+    fn test_truncate_longer_clipped() {
+        assert_eq!(truncate("hello world", 5), "hello");
+        assert_eq!(truncate("abcdef", 0), "");
+    }
+
+    #[test]
+    fn test_param_to_json_scalars() {
+        assert_eq!(
+            param_to_json(&ParameterValue::String("adam".into())),
+            serde_json::json!("adam")
+        );
+        assert_eq!(param_to_json(&ParameterValue::Int(7)), serde_json::json!(7));
+        assert_eq!(
+            param_to_json(&ParameterValue::Float(0.5)),
+            serde_json::json!(0.5)
+        );
+        assert_eq!(
+            param_to_json(&ParameterValue::Bool(true)),
+            serde_json::json!(true)
+        );
+    }
+
+    #[test]
+    fn test_param_to_json_nested() {
+        let list = ParameterValue::List(vec![
+            ParameterValue::Int(1),
+            ParameterValue::String("x".into()),
+        ]);
+        assert_eq!(param_to_json(&list), serde_json::json!([1, "x"]));
+
+        let mut d = HashMap::new();
+        d.insert("lr".to_string(), ParameterValue::Float(0.01));
+        let dict = ParameterValue::Dict(d);
+        assert_eq!(param_to_json(&dict), serde_json::json!({"lr": 0.01}));
+    }
+
+    #[test]
+    fn test_param_map_json_unwraps_all_keys() {
+        let mut params = HashMap::new();
+        params.insert("opt".to_string(), ParameterValue::String("adam".into()));
+        params.insert("epochs".to_string(), ParameterValue::Int(3));
+        let json = param_map_json(&params);
+        assert_eq!(json["opt"], serde_json::json!("adam"));
+        assert_eq!(json["epochs"], serde_json::json!(3));
+    }
+
+    #[test]
+    fn test_param_map_json_empty() {
+        let params = HashMap::new();
+        let json = param_map_json(&params);
+        assert_eq!(json, serde_json::json!({}));
+    }
+
+    #[test]
+    fn test_render_braille_empty_inputs() {
+        assert!(render_braille(&[], 10, 4).is_empty());
+        assert!(render_braille(&[1.0, 2.0], 0, 4).is_empty());
+        assert!(render_braille(&[1.0, 2.0], 10, 0).is_empty());
+    }
+
+    #[test]
+    fn test_render_braille_dimensions() {
+        let data: Vec<f64> = (0..40).map(|i| (i as f64).sin()).collect();
+        let rows = render_braille(&data, 16, 4);
+        assert_eq!(rows.len(), 4);
+        for row in &rows {
+            assert_eq!(row.chars().count(), 16);
+            assert!(row.chars().all(|c| (0x2800..=0x28FF).contains(&(c as u32))));
+        }
+    }
+
+    #[test]
+    fn test_build_braille_grid_shape() {
+        let data: Vec<f64> = vec![0.0, 1.0, 2.0, 3.0];
+        let grid = build_braille_grid(&data, 8, 4);
+        assert_eq!(grid.len(), 16);
+        assert!(grid.iter().all(|r| r.len() == 16));
+        assert!(grid.iter().any(|r| r.iter().any(|&b| b)));
+    }
+
+    #[test]
+    fn test_build_braille_grid_empty() {
+        assert!(build_braille_grid(&[], 8, 4).is_empty());
+        assert!(build_braille_grid(&[1.0], 0, 4).is_empty());
+    }
+
+    #[test]
+    fn test_build_braille_grid_constant_data_no_div_by_zero() {
+        let data = vec![5.0; 10];
+        let grid = build_braille_grid(&data, 8, 4);
+        assert_eq!(grid.len(), 16);
+    }
+
+    #[test]
+    fn test_encode_braille_cell_all_unset_is_base() {
+        let grid = vec![vec![false; 4]; 8];
+        let ch = encode_braille_cell(&grid, 0, 0, 4, 8);
+        assert_eq!(ch, '\u{2800}');
+    }
+
+    #[test]
+    fn test_encode_braille_cell_top_left_dot() {
+        let mut grid = vec![vec![false; 4]; 8];
+        grid[0][0] = true; // dot 1 → +0x01
+        let ch = encode_braille_cell(&grid, 0, 0, 4, 8);
+        assert_eq!(ch as u32, 0x2800 + 0x01);
+    }
+
+    #[test]
+    fn test_encode_braille_cell_full_cell() {
+        let mut grid = vec![vec![false; 2]; 4];
+        for row in grid.iter_mut() {
+            for cell in row.iter_mut() {
+                *cell = true;
+            }
+        }
+        let ch = encode_braille_cell(&grid, 0, 0, 2, 4);
+        assert_eq!(ch as u32, 0x28FF);
+    }
+}

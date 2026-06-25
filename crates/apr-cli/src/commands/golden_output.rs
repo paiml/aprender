@@ -484,5 +484,44 @@ fn throughput_apr(
     ))
 }
 
+// =============================================================================
+// PMAT-125 B4: golden_test_cases fixture coverage
+// =============================================================================
+
+#[cfg(test)]
+mod golden_output_tests {
+    use super::*;
+
+    #[test]
+    fn test_golden_test_cases_nonempty_and_structured() {
+        let cases = golden_test_cases();
+        assert!(!cases.is_empty());
+        for (prompt, patterns) in &cases {
+            assert!(prompt.contains("<|im_start|>assistant"));
+            assert!(prompt.contains("<|im_start|>user"));
+            assert!(!patterns.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_golden_test_cases_arithmetic_case_present() {
+        let cases = golden_test_cases();
+        let arith = cases
+            .iter()
+            .find(|(p, _)| p.contains("2+2"))
+            .expect("arithmetic golden case must exist");
+        assert!(arith.1.contains(&"4"));
+    }
+
+    #[test]
+    fn test_golden_test_cases_deterministic() {
+        let a = golden_test_cases();
+        let b = golden_test_cases();
+        assert_eq!(a.len(), b.len());
+        for ((pa, _), (pb, _)) in a.iter().zip(b.iter()) {
+            assert_eq!(pa, pb);
+        }
+    }
+}
 
 include!("throughput.rs");
