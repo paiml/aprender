@@ -124,3 +124,37 @@ fn print_report(
         println!("  layer_coverage: {o:?}");
     }
 }
+
+#[cfg(test)]
+mod cov_tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+    fn w(s: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(s.as_bytes()).unwrap();
+        f.flush().unwrap();
+        f
+    }
+    #[test]
+    fn no_inputs_is_validation_failed() {
+        let err = run(None, None, 0, false).unwrap_err();
+        assert!(matches!(err, CliError::ValidationFailed(_)));
+    }
+    #[test]
+    fn missing_error_file_is_file_not_found() {
+        let err = run(Some(Path::new("/no/such/err.json")), None, 0, false).unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+    #[test]
+    fn missing_list_file_is_file_not_found() {
+        let err = run(None, Some(Path::new("/no/such/list.txt")), 0, false).unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+    #[test]
+    fn invalid_error_json_errors() {
+        let f = w("nope");
+        let err = run(Some(f.path()), None, 0, false);
+        assert!(err.is_err());
+    }
+}

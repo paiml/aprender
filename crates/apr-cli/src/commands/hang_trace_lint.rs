@@ -119,3 +119,35 @@ fn print_report(
         println!("  exit_code       : {o:?}");
     }
 }
+
+#[cfg(test)]
+mod cov_tests {
+    use super::*;
+    #[test]
+    fn missing_trace_dir_is_file_not_found() {
+        let err = run(
+            Path::new("/no/such/tracedir"),
+            HangMode::Timeout,
+            2,
+            Some(124),
+            Some(124),
+            false,
+        )
+        .unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+
+    #[test]
+    fn missing_trace_dir_success_mode_is_file_not_found() {
+        let err = run(
+            Path::new("/no/such/tracedir2"),
+            HangMode::Success,
+            1,
+            Some(0),
+            Some(0),
+            true,
+        )
+        .unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+}

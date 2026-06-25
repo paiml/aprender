@@ -291,3 +291,112 @@ fn run_permission_gate(v: &Value) -> (GateReport, Option<String>) {
         err,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    fn write_obs(json: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(json.as_bytes()).unwrap();
+        f.flush().unwrap();
+        f
+    }
+
+    fn args_for(f: &NamedTempFile) -> SharedCacheLintArgs {
+        SharedCacheLintArgs {
+            observation_file: f.path().to_string_lossy().into_owned(),
+            json: false,
+        }
+    }
+
+    #[test]
+    fn missing_file_is_falsify_error() {
+        let args = SharedCacheLintArgs {
+            observation_file: "/no/such/cache.json".to_string(),
+            json: false,
+        };
+        let err = run(args).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-A-21"));
+        assert!(err.contains("not found"));
+    }
+
+    #[test]
+    fn empty_file_is_error() {
+        let f = write_obs(" ");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("observation file is empty"));
+    }
+
+    #[test]
+    fn invalid_json_is_error() {
+        let f = write_obs("@@@");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("not valid JSON"));
+    }
+
+    #[test]
+    fn empty_object_has_no_gates() {
+        let f = write_obs("{}");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("none of dedup/permission"));
+    }
+
+    #[test]
+    fn dedup_gate_resolves_explicit_root() {
+        // Explicit APR_MODELS root → resolved root must equal expected_root.
+        let f = write_obs(
+            r#"{"dedup": {"apr_models_env": "/var/lib/apr/models",
+                "home": "/home/user",
+                "expected_root": "/var/lib/apr/models"}}"#,
+        );
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn dedup_gate_wrong_expected_root_fails() {
+        let f = write_obs(
+            r#"{"dedup": {"apr_models_env": "/var/lib/apr/models",
+                "home": "/home/user",
+                "expected_root": "/somewhere/else"}}"#,
+        );
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-A-21-001"));
+    }
+
+    #[test]
+    fn permission_gate_eacces_classifies_permission_denied() {
+        let f = write_obs(
+            r#"{"permission": {"kind": "permission_denied", "expected_outcome": "permission_denied"}}"#,
+        );
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn permission_gate_unknown_kind_fails() {
+        let f = write_obs(r#"{"permission": {"kind": "banana"}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-A-21-002"));
+    }
+
+    #[test]
+    fn permission_gate_outcome_mismatch_fails() {
+        let f =
+            write_obs(r#"{"permission": {"kind": "permission_denied", "expected_outcome": "ok"}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-A-21-002"));
+    }
+
+    #[test]
+    fn json_mode_ok() {
+        let f =
+            write_obs(r#"{"permission": {"kind": "not_found", "expected_outcome": "not_found"}}"#);
+        let args = SharedCacheLintArgs {
+            observation_file: f.path().to_string_lossy().into_owned(),
+            json: true,
+        };
+        assert!(run(args).is_ok());
+    }
+}

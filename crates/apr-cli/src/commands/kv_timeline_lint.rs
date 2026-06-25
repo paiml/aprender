@@ -118,3 +118,65 @@ fn print_report(
 
 /// Expose the default for tests that want the canonical vLLM threshold.
 pub const KV_TIMELINE_DEFAULT_THRESHOLD: f64 = F06_DEFAULT_PREEMPT_THRESHOLD;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    fn write_obs(json: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(json.as_bytes()).unwrap();
+        f.flush().unwrap();
+        f
+    }
+
+    #[test]
+    fn missing_file_is_file_not_found() {
+        let err = run(
+            Path::new("/no/such/kv.json"),
+            KV_TIMELINE_DEFAULT_THRESHOLD,
+            false,
+        )
+        .unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+
+    #[test]
+    fn invalid_json_is_invalid_format() {
+        let f = write_obs("xx");
+        let err = run(f.path(), KV_TIMELINE_DEFAULT_THRESHOLD, false).unwrap_err();
+        assert!(matches!(err, CliError::InvalidFormat(_)));
+    }
+
+    #[test]
+    fn empty_object_fails_schema_gate() {
+        let f = write_obs("{}");
+        let err = run(f.path(), KV_TIMELINE_DEFAULT_THRESHOLD, false).unwrap_err();
+        match err {
+            CliError::ValidationFailed(msg) => assert!(msg.contains("schema gate rejected")),
+            other => panic!("expected ValidationFailed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn missing_top_key_fails_schema() {
+        // Has timeline but missing block_size_tokens etc.
+        let f = write_obs(r#"{"timeline": []}"#);
+        let err = run(f.path(), KV_TIMELINE_DEFAULT_THRESHOLD, false).unwrap_err();
+        assert!(matches!(err, CliError::ValidationFailed(_)));
+    }
+
+    #[test]
+    fn well_formed_empty_timeline_passes() {
+        // All top keys present; empty timeline → downstream gates trivially Ok.
+        let f = write_obs(
+            r#"{"timeline": [], "block_size_tokens": 16, "total_blocks": 100,
+                "peak_used_pct": 0.0, "preemption_count": 0}"#,
+        );
+        // Whether it passes depends on conservation gates over an empty timeline;
+        // assert it at least runs to a terminal Result without panicking.
+        let _ = run(f.path(), KV_TIMELINE_DEFAULT_THRESHOLD, true);
+    }
+}

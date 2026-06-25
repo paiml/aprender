@@ -294,3 +294,121 @@ fn run_ceiling_gate(v: &Value) -> (GateReport, Option<String>) {
         err,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    fn write_obs(json: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(json.as_bytes()).unwrap();
+        f.flush().unwrap();
+        f
+    }
+
+    fn args_for(f: &NamedTempFile) -> RegistryQuotaLintArgs {
+        RegistryQuotaLintArgs {
+            observation_file: f.path().to_string_lossy().into_owned(),
+            json: false,
+        }
+    }
+
+    #[test]
+    fn missing_file_is_falsify_error() {
+        let args = RegistryQuotaLintArgs {
+            observation_file: "/no/such/quota.json".to_string(),
+            json: false,
+        };
+        let err = run(args).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-A-22"));
+        assert!(err.contains("not found"));
+    }
+
+    #[test]
+    fn empty_file_is_error() {
+        let f = write_obs("");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("observation file is empty"));
+    }
+
+    #[test]
+    fn invalid_json_is_error() {
+        let f = write_obs("not json at all");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("not valid JSON"));
+    }
+
+    #[test]
+    fn empty_object_has_no_gates() {
+        let f = write_obs("{}");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("none of quota/atomic/ceiling"));
+    }
+
+    #[test]
+    fn quota_reject_passes_when_expected_reject() {
+        // used+incoming = 1001 > quota 1000 → Reject, as expected.
+        let f = write_obs(
+            r#"{"quota": {"quota": 1000, "used": 600, "incoming": 401, "expected_outcome": "reject"}}"#,
+        );
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn quota_mismatch_fails() {
+        // Reject classified but observer expected allow.
+        let f = write_obs(
+            r#"{"quota": {"quota": 1000, "used": 600, "incoming": 401, "expected_outcome": "allow"}}"#,
+        );
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-A-22-001"));
+    }
+
+    #[test]
+    fn quota_parse_error_fails() {
+        let f = write_obs(r#"{"quota": {"used": 600, "incoming": 401}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-A-22-001"));
+        assert!(err.contains("parse error"));
+    }
+
+    #[test]
+    fn atomic_deterministic_reject_passes() {
+        let f = write_obs(
+            r#"{"atomic": {"quota": 1000, "used": 600, "incoming": 401, "expected_outcome": "reject"}}"#,
+        );
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn ceiling_allow_passes_with_invariant() {
+        // used+incoming = 500 <= quota 1000 → Allow, post_used_le_quota true.
+        let f = write_obs(
+            r#"{"ceiling": {"quota": 1000, "used": 200, "incoming": 300, "expected_outcome": "allow", "expected_post_used_le_quota": true}}"#,
+        );
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn ceiling_wrong_invariant_fails() {
+        let f = write_obs(
+            r#"{"ceiling": {"quota": 1000, "used": 200, "incoming": 300, "expected_outcome": "allow", "expected_post_used_le_quota": false}}"#,
+        );
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-A-22-003"));
+    }
+
+    #[test]
+    fn json_mode_all_gates_ok() {
+        let f = write_obs(
+            r#"{"atomic": {"quota": 100, "used": 10, "incoming": 5, "expected_outcome": "allow"}}"#,
+        );
+        let args = RegistryQuotaLintArgs {
+            observation_file: f.path().to_string_lossy().into_owned(),
+            json: true,
+        };
+        assert!(run(args).is_ok());
+    }
+}

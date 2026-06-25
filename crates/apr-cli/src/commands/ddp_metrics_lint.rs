@@ -104,3 +104,59 @@ fn print_report(
 /// classifier module.
 pub const DDP_METRICS_DEFAULT_SCALING_FLOOR: f64 = D11_DEFAULT_SCALING_FLOOR;
 pub const DDP_METRICS_DEFAULT_LOSS_TOLERANCE: f64 = D11_DEFAULT_LOSS_TOLERANCE;
+
+#[cfg(test)]
+mod cov_tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+    fn w(s: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(s.as_bytes()).unwrap();
+        f.flush().unwrap();
+        f
+    }
+    #[test]
+    fn missing_first_file_is_file_not_found() {
+        let b = w("{}");
+        let err = run(
+            Path::new("/no/such/1gpu.json"),
+            b.path(),
+            2,
+            DDP_METRICS_DEFAULT_SCALING_FLOOR,
+            DDP_METRICS_DEFAULT_LOSS_TOLERANCE,
+            false,
+        )
+        .unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+    #[test]
+    fn missing_second_file_is_file_not_found() {
+        let a = w("{}");
+        let err = run(
+            a.path(),
+            Path::new("/no/such/ngpu.json"),
+            2,
+            DDP_METRICS_DEFAULT_SCALING_FLOOR,
+            DDP_METRICS_DEFAULT_LOSS_TOLERANCE,
+            false,
+        )
+        .unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+    #[test]
+    fn invalid_json_is_invalid_format() {
+        let a = w("xx");
+        let b = w("{}");
+        let err = run(
+            a.path(),
+            b.path(),
+            2,
+            DDP_METRICS_DEFAULT_SCALING_FLOOR,
+            DDP_METRICS_DEFAULT_LOSS_TOLERANCE,
+            false,
+        )
+        .unwrap_err();
+        assert!(matches!(err, CliError::InvalidFormat(_)));
+    }
+}

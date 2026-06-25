@@ -179,3 +179,38 @@ fn print_stream_report(
         println!("  ndjson_outcome: {outcome:?}");
     }
 }
+
+#[cfg(test)]
+mod cov_tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+    fn w(s: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(s.as_bytes()).unwrap();
+        f.flush().unwrap();
+        f
+    }
+    #[test]
+    fn missing_response_is_file_not_found() {
+        let err = run(Path::new("/no/such/resp.json"), None, false, false).unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+    #[test]
+    fn missing_request_file_errors() {
+        let resp = w("{}");
+        let err = run(
+            resp.path(),
+            Some(Path::new("/no/such/req.json")),
+            false,
+            false,
+        );
+        assert!(err.is_err());
+    }
+    #[test]
+    fn malformed_response_errors() {
+        let f = w("not a json response");
+        let err = run(f.path(), None, false, false);
+        assert!(err.is_err());
+    }
+}

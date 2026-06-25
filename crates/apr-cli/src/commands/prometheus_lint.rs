@@ -83,3 +83,31 @@ fn print_report(
         println!("  content_type    : {c:?}");
     }
 }
+
+#[cfg(test)]
+mod cov_tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+    fn w(s: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(s.as_bytes()).unwrap();
+        f.flush().unwrap();
+        f
+    }
+    #[test]
+    fn missing_file_is_file_not_found() {
+        let err = run(Path::new("/no/such/metrics.txt"), None, false, false).unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+    #[test]
+    fn empty_metrics_runs() {
+        let f = w("");
+        let _ = run(f.path(), None, false, true);
+    }
+    #[test]
+    fn some_metrics_runs() {
+        let f = w("# HELP foo bar\nfoo 1\n");
+        let _ = run(f.path(), Some("text/plain"), false, false);
+    }
+}

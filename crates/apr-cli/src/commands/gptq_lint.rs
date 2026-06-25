@@ -258,3 +258,117 @@ fn run_flags_gate(v: &Value) -> (GateReport, Option<String>) {
         err,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    fn write_obs(json: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(json.as_bytes()).unwrap();
+        f.flush().unwrap();
+        f
+    }
+
+    fn args_for(f: &NamedTempFile) -> GptqLintArgs {
+        GptqLintArgs {
+            observation_file: f.path().to_string_lossy().into_owned(),
+            json: false,
+        }
+    }
+
+    #[test]
+    fn missing_file_is_falsify_error() {
+        let args = GptqLintArgs {
+            observation_file: "/no/such/gptq.json".to_string(),
+            json: false,
+        };
+        let err = run(args).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-B-09"));
+        assert!(err.contains("not found"));
+    }
+
+    #[test]
+    fn empty_file_is_error() {
+        let f = write_obs(" ");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("observation file is empty"));
+    }
+
+    #[test]
+    fn invalid_json_is_error() {
+        let f = write_obs("not-json");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("not valid JSON"));
+    }
+
+    #[test]
+    fn empty_object_has_no_gates() {
+        let f = write_obs("{}");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("none of compression/cosine/flags"));
+    }
+
+    #[test]
+    fn compression_gate_compressed_passes() {
+        let f = write_obs(r#"{"compression": {"fp16_bytes": 1000000, "gptq_bytes": 200000}}"#);
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn compression_gate_insufficient_fails() {
+        let f = write_obs(r#"{"compression": {"fp16_bytes": 1000000, "gptq_bytes": 950000}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-B-09-001"));
+    }
+
+    #[test]
+    fn cosine_gate_identical_vectors_pass() {
+        let f = write_obs(
+            r#"{"cosine": {"pairs": [{"fp16": [1.0, 2.0, 3.0], "gptq": [1.0, 2.0, 3.0]}]}}"#,
+        );
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn cosine_gate_missing_pairs_fails() {
+        let f = write_obs(r#"{"cosine": {}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-B-09-002"));
+    }
+
+    #[test]
+    fn flags_gate_valid_gptq_passes() {
+        let f = write_obs(
+            r#"{"flags": {"argv": ["--method", "gptq", "--bits", "4", "--group-size", "128"], "expected_outcome": "ok"}}"#,
+        );
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn flags_gate_missing_bits_classified() {
+        let f = write_obs(
+            r#"{"flags": {"argv": ["--method", "gptq"], "expected_outcome": "missing_bits"}}"#,
+        );
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn flags_gate_mismatch_fails() {
+        let f = write_obs(r#"{"flags": {"argv": ["--method", "gptq"], "expected_outcome": "ok"}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-B-09-003"));
+    }
+
+    #[test]
+    fn json_mode_ok() {
+        let f = write_obs(r#"{"compression": {"fp16_bytes": 100, "gptq_bytes": 10}}"#);
+        let args = GptqLintArgs {
+            observation_file: f.path().to_string_lossy().into_owned(),
+            json: true,
+        };
+        assert!(run(args).is_ok());
+    }
+}

@@ -224,3 +224,117 @@ fn run_flags_gate(v: &Value) -> (GateReport, Option<String>) {
         err,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    fn write_obs(json: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(json.as_bytes()).unwrap();
+        f.flush().unwrap();
+        f
+    }
+
+    fn args_for(f: &NamedTempFile) -> AwqLintArgs {
+        AwqLintArgs {
+            observation_file: f.path().to_string_lossy().into_owned(),
+            json: false,
+        }
+    }
+
+    #[test]
+    fn missing_file_is_falsify_error() {
+        let args = AwqLintArgs {
+            observation_file: "/no/such/awq.json".to_string(),
+            json: false,
+        };
+        let err = run(args).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-B-08"));
+        assert!(err.contains("not found"));
+    }
+
+    #[test]
+    fn empty_file_is_error() {
+        let f = write_obs("  \n");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("observation file is empty"));
+    }
+
+    #[test]
+    fn invalid_json_is_error() {
+        let f = write_obs("xx");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("not valid JSON"));
+    }
+
+    #[test]
+    fn empty_object_has_no_gates() {
+        let f = write_obs("{}");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("none of quality/compression/flags"));
+    }
+
+    #[test]
+    fn quality_gate_retained_passes() {
+        // ratio = 0.85/0.90 = 0.944 >= default 0.80.
+        let f = write_obs(r#"{"quality": {"p_fp16": 0.90, "p_awq": 0.85}}"#);
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn quality_gate_degraded_fails() {
+        let f = write_obs(r#"{"quality": {"p_fp16": 0.90, "p_awq": 0.50}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-B-08-001"));
+    }
+
+    #[test]
+    fn compression_gate_compressed_passes() {
+        // ratio = 200000/1000000 = 0.2 <= default 0.30.
+        let f = write_obs(r#"{"compression": {"fp16_bytes": 1000000, "awq_bytes": 200000}}"#);
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn compression_gate_insufficient_fails() {
+        let f = write_obs(r#"{"compression": {"fp16_bytes": 1000000, "awq_bytes": 900000}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-B-08-003"));
+    }
+
+    #[test]
+    fn flags_gate_valid_awq_passes() {
+        let f = write_obs(
+            r#"{"flags": {"argv": ["--method", "awq", "--bits", "4", "--group-size", "128"], "expected_outcome": "ok"}}"#,
+        );
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn flags_gate_missing_method_classified() {
+        let f = write_obs(
+            r#"{"flags": {"argv": ["--bits", "4"], "expected_outcome": "missing_method"}}"#,
+        );
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn flags_gate_mismatch_fails() {
+        let f = write_obs(r#"{"flags": {"argv": ["--bits", "4"], "expected_outcome": "ok"}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-B-08-002"));
+    }
+
+    #[test]
+    fn json_mode_ok() {
+        let f = write_obs(r#"{"quality": {"p_fp16": 1.0, "p_awq": 1.0}}"#);
+        let args = AwqLintArgs {
+            observation_file: f.path().to_string_lossy().into_owned(),
+            json: true,
+        };
+        assert!(run(args).is_ok());
+    }
+}

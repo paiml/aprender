@@ -128,3 +128,44 @@ fn print_report(
         }
     }
 }
+
+#[cfg(test)]
+mod cov_tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    fn write_obs(s: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(s.as_bytes()).unwrap();
+        f.flush().unwrap();
+        f
+    }
+
+    #[test]
+    fn missing_report_is_file_not_found() {
+        let err = run(Path::new("/no/such/oom.json"), None, false).unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+
+    #[test]
+    fn invalid_json_is_invalid_format() {
+        let f = write_obs("not json");
+        let err = run(f.path(), None, false).unwrap_err();
+        assert!(matches!(err, CliError::InvalidFormat(_)));
+    }
+
+    #[test]
+    fn missing_stderr_file_is_file_not_found() {
+        let report = write_obs("{}");
+        let err = run(report.path(), Some(Path::new("/no/such/stderr.log")), false).unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+
+    #[test]
+    fn empty_report_fails_schema_gate() {
+        let f = write_obs("{}");
+        let err = run(f.path(), None, false).unwrap_err();
+        assert!(matches!(err, CliError::ValidationFailed(_)));
+    }
+}

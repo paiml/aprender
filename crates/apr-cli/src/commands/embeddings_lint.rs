@@ -267,3 +267,119 @@ fn run_flag_gate(v: &Value) -> (GateReport, Option<String>) {
         err,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    fn write_obs(json: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(json.as_bytes()).unwrap();
+        f.flush().unwrap();
+        f
+    }
+
+    fn args_for(f: &NamedTempFile) -> EmbeddingsLintArgs {
+        EmbeddingsLintArgs {
+            observation_file: f.path().to_string_lossy().into_owned(),
+            json: false,
+        }
+    }
+
+    #[test]
+    fn missing_file_is_falsify_error() {
+        let args = EmbeddingsLintArgs {
+            observation_file: "/no/such/emb.json".to_string(),
+            json: false,
+        };
+        let err = run(args).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-C-13"));
+        assert!(err.contains("not found"));
+    }
+
+    #[test]
+    fn empty_file_is_error() {
+        let f = write_obs("  ");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("observation file is empty"));
+    }
+
+    #[test]
+    fn invalid_json_is_error() {
+        let f = write_obs("][");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("not valid JSON"));
+    }
+
+    #[test]
+    fn empty_object_has_no_gates() {
+        let f = write_obs("{}");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("none of shape/determinism/usage/flag"));
+    }
+
+    #[test]
+    fn shape_gate_well_formed_passes() {
+        let f = write_obs(
+            r#"{"shape": {"input_len": 2, "hidden_size": 3,
+                "data": [{"index": 0, "embedding": [0.1, 0.2, 0.3]},
+                         {"index": 1, "embedding": [0.4, 0.5, 0.6]}]}}"#,
+        );
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn shape_gate_row_count_mismatch_fails() {
+        let f = write_obs(
+            r#"{"shape": {"input_len": 5, "hidden_size": 3,
+                "data": [{"index": 0, "embedding": [0.1, 0.2, 0.3]}]}}"#,
+        );
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-C-13-001"));
+    }
+
+    #[test]
+    fn determinism_gate_identical_vectors_pass() {
+        let f = write_obs(r#"{"determinism": {"v1": [0.1, 0.2, 0.3], "v2": [0.1, 0.2, 0.3]}}"#);
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn usage_gate_matching_tokens_pass() {
+        let f = write_obs(r#"{"usage": {"prompt": 8, "total": 8}}"#);
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn usage_gate_mismatch_fails() {
+        let f = write_obs(r#"{"usage": {"prompt": 8, "total": 9}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-C-13-003"));
+    }
+
+    #[test]
+    fn flag_gate_enabled_passes() {
+        let f = write_obs(
+            r#"{"flag": {"argv": ["apr", "serve", "--embeddings-enabled"], "expected": "enabled"}}"#,
+        );
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn flag_gate_disabled_default_passes() {
+        let f = write_obs(r#"{"flag": {"argv": ["apr", "serve"], "expected": "disabled"}}"#);
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn json_mode_ok() {
+        let f = write_obs(r#"{"usage": {"prompt": 4, "total": 4}}"#);
+        let args = EmbeddingsLintArgs {
+            observation_file: f.path().to_string_lossy().into_owned(),
+            json: true,
+        };
+        assert!(run(args).is_ok());
+    }
+}

@@ -305,3 +305,126 @@ fn run_dryrun_gate(v: &Value) -> (GateReport, Option<String>) {
         err,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    fn write_obs(json: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(json.as_bytes()).unwrap();
+        f.flush().unwrap();
+        f
+    }
+
+    fn args_for(f: &NamedTempFile) -> RmGcLintArgs {
+        RmGcLintArgs {
+            observation_file: f.path().to_string_lossy().into_owned(),
+            json: false,
+        }
+    }
+
+    #[test]
+    fn missing_file_is_falsify_error() {
+        let args = RmGcLintArgs {
+            observation_file: "/no/such/gc.json".to_string(),
+            json: false,
+        };
+        let err = run(args).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-A-25"));
+        assert!(err.contains("not found"));
+    }
+
+    #[test]
+    fn empty_file_is_error() {
+        let f = write_obs("\t\n ");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("observation file is empty"));
+    }
+
+    #[test]
+    fn invalid_json_is_error() {
+        let f = write_obs("{nope");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("not valid JSON"));
+    }
+
+    #[test]
+    fn empty_object_has_no_gates() {
+        let f = write_obs("{}");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("none of rm/safety/dryrun"));
+    }
+
+    #[test]
+    fn rm_gate_frees_unreferenced_blobs() {
+        let f = write_obs(
+            r#"{"rm": {"manifests": [{"tag": "gpt2:latest", "blobs": ["sha1", "sha2"]}],
+                     "tag_to_rm": "gpt2:latest",
+                     "all_blobs": ["sha1", "sha2"],
+                     "expected_freed": ["sha1", "sha2"]}}"#,
+        );
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn rm_gate_mismatch_fails() {
+        let f = write_obs(
+            r#"{"rm": {"manifests": [{"tag": "gpt2:latest", "blobs": ["sha1", "sha2"]}],
+                     "tag_to_rm": "gpt2:latest",
+                     "all_blobs": ["sha1", "sha2"],
+                     "expected_freed": []}}"#,
+        );
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-A-25-001"));
+    }
+
+    #[test]
+    fn rm_gate_bad_manifests_is_parse_error() {
+        let f = write_obs(r#"{"rm": {"manifests": "not-an-array"}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-A-25-001"));
+        assert!(err.contains("parse error"));
+    }
+
+    #[test]
+    fn safety_gate_protects_still_referenced_blob() {
+        // gpt2:dup still references sha1 after removing gpt2:latest, so nothing is freed.
+        let f = write_obs(
+            r#"{"safety": {"manifests": [
+                     {"tag": "gpt2:latest", "blobs": ["sha1"]},
+                     {"tag": "gpt2:dup", "blobs": ["sha1"]}],
+                     "tag_to_rm": "gpt2:latest",
+                     "all_blobs": ["sha1"],
+                     "expected_freed": []}}"#,
+        );
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn dryrun_gate_idempotent_passes() {
+        let f = write_obs(
+            r#"{"dryrun": {"manifests": [{"tag": "x", "blobs": []}],
+                     "all_blobs": ["sha-orphan"],
+                     "expected_idempotent": true}}"#,
+        );
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn json_mode_ok() {
+        let f = write_obs(
+            r#"{"rm": {"manifests": [{"tag": "a:1", "blobs": ["b1"]}],
+                     "tag_to_rm": "a:1",
+                     "all_blobs": ["b1"],
+                     "expected_freed": ["b1"]}}"#,
+        );
+        let args = RmGcLintArgs {
+            observation_file: f.path().to_string_lossy().into_owned(),
+            json: true,
+        };
+        assert!(run(args).is_ok());
+    }
+}

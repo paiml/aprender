@@ -92,3 +92,32 @@ fn print_report(
         println!("  scratchpad_grammar: {o:?}");
     }
 }
+
+#[cfg(test)]
+mod cov_tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+    fn w(s: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(s.as_bytes()).unwrap();
+        f.flush().unwrap();
+        f
+    }
+    #[test]
+    fn missing_file_is_file_not_found() {
+        let err = run(Path::new("/no/such/react.json"), None, false, false).unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+    #[test]
+    fn invalid_json_is_invalid_format() {
+        let f = w("xx");
+        let err = run(f.path(), None, false, false).unwrap_err();
+        assert!(matches!(err, CliError::InvalidFormat(_)));
+    }
+    #[test]
+    fn empty_object_runs() {
+        let f = w("{}");
+        let _ = run(f.path(), None, false, true);
+    }
+}
