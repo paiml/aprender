@@ -3,7 +3,7 @@
 # Spec: docs/specifications/unified-ci-pipeline.md
 
 [profile.ci]
-retries = 0
+retries = 2
 fail-fast = true
 slow-warning = "60s"
 status-level = "fail"
