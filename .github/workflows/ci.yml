@@ -204,6 +204,20 @@ jobs:
         # saturation (7+ concurrent CI runs) we observed 55min hits
         # exactly at the timeout — runs 25919246467 / 25919258460 /
         # sibling PRs failed simultaneously at 55:00.0.
+        #
+        # 2026-06-24 (perf/ci-nextest, EXPERIMENT): switched from
+        # `cargo test --workspace --lib` to `cargo nextest run`. Profiling the
+        # ~40min job showed ~80% is SERIAL test EXECUTION (cargo's libtest runs
+        # one test binary at a time; ~27min of the wall clock is just running
+        # tests), not codegen (sccache already covers that). nextest runs every
+        # test in its own process across a thread pool, so the ~25,300 tests
+        # execute in PARALLEL across crates — the big lever. The exact
+        # `--exclude` list is preserved verbatim (aprender-compute stays
+        # excluded; its SIGSEGV-at-exit is handled by the dedicated "Compute
+        # tests" step below). `--profile ci` uses .config/nextest.toml
+        # ([profile.ci]: retries=0, fail-fast). line-tables-only debuginfo now
+        # comes from root Cargo.toml [profile.test]; the CARGO_PROFILE_*_DEBUG
+        # env vars are kept as belt-and-suspenders.
         timeout-minutes: 75
         run: |
           docker run --rm \
@@ -221,7 +235,7 @@ jobs:
             -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             "$IMAGE" \
-            cargo test --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute
+            cargo nextest run --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute
       - name: Compute tests (tolerate SIGSEGV at exit — all tests pass but harness crashes on cleanup)
         run: |
           docker run --rm \
@@ -239,6 +253,19 @@ jobs:
             "$IMAGE" \
             bash -c 'cargo test -p aprender-compute --lib 2>&1 | tee /tmp/compute-test.log; grep -q "test result.*0 failed" /tmp/compute-test.log'
       - name: Integration tests
+        # perf/ci-nextest (rank 3 — integration collapse): INTENTIONALLY SKIPPED.
+        # The investigation ranked collapsing these 8 `cargo test -p X --test Y`
+        # invocations into ONE `cargo nextest run -E '...'` as rank 3 (low lever:
+        # this step is NOT the ~27min bottleneck — the lib step is). It also
+        # carries a real risk: this chain includes
+        # `cargo test -p aprender-compute --lib beat_nf4_bitsandbytes_equivalence`,
+        # and aprender-compute SIGSEGVs at harness EXIT. Under cargo's libtest a
+        # single-name filter exits cleanly here, but nextest's per-test process
+        # model would observe the segfaulting process exit code and could fail
+        # the run. Per the experiment brief ("if fiddly/risky, SKIP — don't block
+        # the experiment"), this step is left AS-IS so the nextest signal stays
+        # attributable to the lib step alone. Revisit after the lib-step
+        # measurement lands.
         run: |
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \

@@ -12,3 +12,29 @@ status-level = "fail"
 path = "target/nextest/ci/junit.xml"
 store-success-output = false
 store-failure-output = true
+
+# Empirical FLOPS / memory-bandwidth / roofline tests derive a RATE
+# (work ÷ wall-clock-elapsed) and assert a lower bound on it. Under nextest's
+# global thread pool the wall-clock inflates when many test threads contend for
+# CPU, dragging the derived rate below the assertion floor (passes serially,
+# races in parallel). They genuinely measure MACHINE THROUGHPUT, so the correct
+# fix is to run them ISOLATED rather than weaken the assertions:
+#   - serial-timing group (max-threads = 1) → these tests never run alongside
+#     EACH OTHER.
+#   - threads-required = "num-test-threads" (override below) → each one reserves
+#     the entire pool, so it runs with NO other test concurrent → its wall-clock
+#     reflects real single-core throughput, not contention.
+# Everything else still parallelizes, preserving the workspace-test speedup
+# (the 4 isolated tests run back-to-back in <2s total).
+[test-groups.serial-timing]
+max-threads = 1
+
+[[profile.default.overrides]]
+filter = "test(/empirical_flops/) | test(/empirical_bandwidth/) | test(/empirical_ridge/) | test(/triad_bandwidth/)"
+test-group = "serial-timing"
+threads-required = "num-test-threads"
+
+[[profile.ci.overrides]]
+filter = "test(/empirical_flops/) | test(/empirical_bandwidth/) | test(/empirical_ridge/) | test(/triad_bandwidth/)"
+test-group = "serial-timing"
+threads-required = "num-test-threads"
