@@ -19,6 +19,7 @@
 //! surviving activations by `1/(1-p)` so the expected value is preserved.
 
 use crate::autograd::matmul;
+use crate::autograd::ops::{add, scale};
 use crate::Tensor;
 use std::cell::Cell;
 
@@ -266,19 +267,20 @@ impl LoRALayer {
             // Step 2: B @ (A @ x) [d_out, r] @ [r, 1] -> [d_out, 1]
             let lora_out_b = matmul(&self.lora_b, &lora_out_a, self.d_out, self.rank, 1);
 
-            // Step 3: scale * LoRA output
-            let mut scaled_lora_data = lora_out_b.data().to_owned();
-            for val in &mut scaled_lora_data {
-                *val *= self.scale;
-            }
-            let scaled_lora = Tensor::new(scaled_lora_data, false);
+            // Step 3: scale * LoRA output.
+            //
+            // PMAT-931: route the scale through the autograd-aware `scale` op
+            // instead of rebuilding the tensor with `Tensor::new(.., false)`,
+            // which SEVERS the backward edge to lora_a/lora_b (the same
+            // graph-severing class as the PMAT-921/922 sweep). Without this the
+            // adapter receives no gradient and LoRA fine-tuning silently fails
+            // to train.
+            let scaled_lora = scale(&lora_out_b, self.scale);
 
-            // Step 4: base + LoRA
-            let mut result_data = base_output.data().to_owned();
-            for (i, val) in result_data.iter_mut().enumerate() {
-                *val += scaled_lora.data()[i];
-            }
-            Tensor::new(result_data, base_output.requires_grad())
+            // Step 4: base + LoRA, again through the autograd-aware `add` op so
+            // the result keeps a live backward op reaching both the frozen base
+            // matmul (no-grad, dropped) AND the trainable LoRA branch.
+            add(&base_output, &scaled_lora)
         }
     }
 
