@@ -1,0 +1,172 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-25'
+  author: PAIML Engineering
+  description: RBF-kernel Support Vector Classifier — non-linear binary classification with sklearn parity
+  references:
+  - Cortes & Vapnik (1995) Support-Vector Networks
+  - Platt (1998) Sequential Minimal Optimization (SMO)
+  - 'Scholkopf & Smola (2002) Learning with Kernels, §7'
+  - libsvm / scikit-learn SVC(kernel='rbf') dual formulation
+equations:
+  rbf_kernel:
+    formula: K(x, z) = exp(-gamma * ||x - z||^2)
+    domain: x ∈ ℝ^d, z ∈ ℝ^d, gamma > 0
+    codomain: K ∈ (0, 1]
+    invariants:
+    - K(x, z) ∈ (0, 1] (strictly positive, ≤ 1)
+    - K(x, x) = 1 (self-similarity is maximal)
+    - K is symmetric — K(x, z) = K(z, x)
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Rbf_Kernel
+  dual_objective:
+    formula: max_alpha Σ alpha_i - 0.5 Σ Σ alpha_i alpha_j y_i y_j K(x_i, x_j)
+    domain: 0 ≤ alpha_i ≤ C, Σ alpha_i y_i = 0, y_i ∈ {-1, +1}
+    codomain: optimized dual coefficients alpha ∈ [0, C]^n
+    invariants:
+    - 0 ≤ alpha_i ≤ C for every sample (box constraint)
+    - Σ_i alpha_i y_i = 0 (equality constraint preserved by SMO)
+    - support vectors are exactly the samples with alpha_i > 0
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Dual_Objective
+  decision_function:
+    formula: f(x) = Σ_i alpha_i y_i K(x_i, x) + b
+    domain: x ∈ ℝ^d, fitted support vectors and dual coefficients
+    codomain: f ∈ ℝ
+    invariants:
+    - sign(f(x)) determines the predicted class
+    - Deterministic for the same input and fitted model
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Decision_Function
+  svc_predict:
+    formula: y_hat = sign(f(x)), mapped to the two training labels
+    domain: x ∈ ℝ^d, fitted model
+    codomain: y_hat ∈ {neg_label, pos_label}
+    invariants:
+    - Prediction is one of the two labels seen during fit
+    - Prediction is deterministic
+    - RBF kernel separates non-linearly-separable data (e.g. XOR)
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Svc_Predict
+proof_obligations:
+- type: invariant
+  property: RBF kernel bounded
+  formal: K(x, z) ∈ (0, 1] for all finite x, z and gamma > 0
+  applies_to: all
+- type: invariant
+  property: Binary prediction in training labels
+  formal: predict(x) ∈ {neg_label, pos_label} for all x
+  applies_to: all
+- type: invariant
+  property: Prediction deterministic
+  formal: predict(x) = predict(x) for all x
+  applies_to: all
+- type: invariant
+  property: RBF SVC sklearn parity
+  formal: OBLIG-RBF-SVC-SKLEARN-PARITY — predict(grid) agrees with pinned sklearn SVC(kernel='rbf') on >= 90% of held-out grid points
+  applies_to: all
+- type: invariant
+  property: Non-linear separation
+  formal: XOR-structured data ⟹ train accuracy >= 0.95 (linear SVM provably cannot)
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-SVC-RBF-001
+  rule: RBF SVC sklearn parity (OBLIG-RBF-SVC-SKLEARN-PARITY)
+  prediction: predict(grid) agrees with pinned sklearn SVC(rbf) on >= 90% of grid points
+  test: cargo test -p aprender-core --lib falsify_svc_rbf_001_sklearn_parity_grid
+  if_fails: RBF decision boundary diverges from scikit-learn reference
+- id: FALSIFY-SVC-RBF-002
+  rule: Non-linear separation (XOR)
+  prediction: train accuracy >= 0.95 on XOR-structured data
+  test: cargo test -p aprender-core --lib falsify_svc_rbf_002_xor_train_accuracy
+  if_fails: RBF kernel not separating non-linear classes
+- id: FALSIFY-SVC-RBF-003
+  rule: Canonical XOR classified exactly
+  prediction: all 4 canonical XOR points classified correctly
+  test: cargo test -p aprender-core --lib falsify_svc_rbf_003_canonical_xor
+  if_fails: Kernel or SMO solver cannot fit the minimal non-linear problem
+- id: FALSIFY-SVC-RBF-004
+  rule: Prediction deterministic
+  prediction: predict(X) = predict(X) for identical params
+  test: cargo test -p aprender-core --lib falsify_svc_rbf_004_deterministic
+  if_fails: Non-deterministic SMO ordering or state
+- id: FALSIFY-SVC-RBF-005
+  rule: Label subset and sign consistency
+  prediction: predicted labels ∈ training labels and match sign(decision_function)
+  test: cargo test -p aprender-core --lib falsify_svc_rbf_005_label_subset_and_sign
+  if_fails: Label mapping error or sign convention mismatch
+- id: FALSIFY-SVC-RBF-006
+  rule: Error handling
+  prediction: single-class fit, shape mismatch, and predict-before-fit all error
+  test: cargo test -p aprender-core --lib falsify_svc_rbf_006_error_handling
+  if_fails: Missing validation panics instead of returning Err
+- id: FALSIFY-SVC-RBF-007
+  rule: Estimator-trait parity
+  prediction: Estimator-trait predict matches sklearn grid parity >= 90%
+  test: cargo test -p aprender-core --lib falsify_svc_rbf_007_estimator_trait_parity
+  if_fails: f32 label round-trip breaks generic cross_validate / grid_search
+enforcement:
+  sklearn_parity:
+    description: RBF SVC predictions must match scikit-learn SVC(kernel='rbf') within tolerance
+    check: contract_tests::FALSIFY-SVC-RBF-001
+    severity: ERROR
+kani_harnesses:
+- id: KANI-SVC-RBF-001
+  obligation: SVC-RBF-INV-001
+  property: RBF kernel is bounded in (0, 1] for all finite inputs
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_rbf_kernel_bounded
+- id: KANI-SVC-RBF-002
+  obligation: SVC-RBF-INV-002
+  property: SVC predictions are one of the two training labels
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_svc_binary_prediction
+- id: KANI-SVC_RBF_V1-003
+  obligation: RBF kernel bounded
+  property: RBF kernel bounded
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SVC_RBF_V1-004
+  obligation: Binary prediction in training labels
+  property: Binary prediction in training labels
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SVC_RBF_V1-005
+  obligation: Prediction deterministic
+  property: Prediction deterministic
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SVC_RBF_V1-006
+  obligation: RBF SVC sklearn parity
+  property: RBF SVC sklearn parity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SVC_RBF_V1-007
+  obligation: Non-linear separation
+  property: Non-linear separation
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-SVC-RBF-001
+  name: RBF SVC Contract
+  description: RBF-kernel SVC sklearn-parity quality gate
+  checks:
+  - rbf_kernel_bounded
+  - sklearn_parity
+  - non_linear_separation
+  - prediction_deterministic
+  - label_subset
+  pass_criteria: All 7 falsification tests pass + sklearn grid parity >= 90%
+  falsification: Use a linear kernel (a.b) instead of exp(-gamma||a-b||^2) — collapses XOR parity
