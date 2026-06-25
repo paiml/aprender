@@ -10,6 +10,7 @@
 
 use async_trait::async_trait;
 use std::path::PathBuf;
+use tracing::info;
 
 use super::chat_template::{format_prompt_with_template, ChatTemplate};
 use super::validate::validate_model_file;
@@ -132,6 +133,14 @@ impl LlmDriver for RealizarDriver {
 /// 2. `<tool_call>{"name":...}` — unclosed XML (small model fallback)
 /// 3. `` ```json\n{"name":...}\n``` `` — markdown code block (Qwen native)
 ///
+/// CCPA-m296 SALVAGE: if the envelope parser above finds NOTHING but the
+/// text is recoverably tool-call-shaped — a generically-fenced block
+/// (`` ```...{"name":..,"input":..}... ``` ``, any language tag or none) or a
+/// bare top-level `{"name":..,"input":..}` JSON object — [`salvage_tool_calls`]
+/// recovers it. This converts "the model almost emitted a tool_call" near-misses
+/// into real tool calls instead of letting the raw Markdown re-prime prose mode
+/// across turns (the self-reinforcing text loop that defeats tool-calling).
+///
 /// Returns the remaining text (with tool call blocks removed)
 /// and the extracted tool calls.
 /// Public wrapper for tool call parsing (used by AprServeDriver).
@@ -140,6 +149,21 @@ pub fn parse_tool_calls_pub(text: &str) -> (String, Vec<ToolCall>) {
 }
 
 fn parse_tool_calls(text: &str) -> (String, Vec<ToolCall>) {
+    let (remaining, calls) = parse_tool_calls_envelope(text);
+    if !calls.is_empty() {
+        return (remaining, calls);
+    }
+    // CCPA-m296: envelope parser found no tool call — try the conservative
+    // salvage parser before scoring this turn as inert prose text.
+    let (salvaged_remaining, salvaged) = salvage_tool_calls(&remaining);
+    if !salvaged.is_empty() {
+        info!(count = salvaged.len(), "salvaged tool call(s) from non-envelope output (CCPA-m296)");
+        return (salvaged_remaining, salvaged);
+    }
+    (remaining, calls)
+}
+
+fn parse_tool_calls_envelope(text: &str) -> (String, Vec<ToolCall>) {
     let mut tool_calls = Vec::new();
     let mut remaining = String::new();
     let mut call_counter = 0u32;
@@ -202,6 +226,117 @@ fn parse_tool_calls(text: &str) -> (String, Vec<ToolCall>) {
     }
 
     (remaining.trim().to_string(), tool_calls)
+}
+
+/// CCPA-m296 salvage parser: recover a tool call the model emitted OUTSIDE the
+/// exact `<tool_call>` / ```json envelope, but in an unambiguous, recoverable
+/// shape. Two recoverable shapes are accepted, in priority order:
+///
+/// 1. A generically-fenced code block — `` ```<anylang>\n{...}\n``` `` — whose
+///    inner content parses as a tool-call-shaped JSON object. (The envelope
+///    parser only recognises the exact `` ```json `` tag; coder-finetuned models
+///    routinely emit `` ```tool_call ``, `` ```rust ``, or a bare `` ``` ``.)
+/// 2. A bare top-level `{"name": "...", "input": {...}}` JSON object embedded in
+///    prose (no fence, no tags).
+///
+/// CONSERVATIVE BY DESIGN: only JSON objects that (a) parse cleanly and (b) have
+/// a string `name` field AND an `input` field are salvaged. Plain JSON examples
+/// (e.g. `{"key": "value"}`) and prose are never mistaken for tool calls. This
+/// directly recovers the "model almost emitted a tool_call" near-misses that
+/// would otherwise be scored as inert text and re-prime prose mode next turn.
+///
+/// Returns the remaining text (with the salvaged span removed) and the
+/// recovered calls (`salvage-{n}` ids so salvage events stay traceable).
+fn salvage_tool_calls(text: &str) -> (String, Vec<ToolCall>) {
+    // Shape 1: a generic fenced block ```<tag>\n ... \n```
+    if let Some((before, inner, after)) = extract_first_fenced_block(text) {
+        if let Some(call) = tool_call_from_json_str(inner.trim(), 1) {
+            let remaining = format!("{before}{after}");
+            return (remaining.trim().to_string(), vec![call]);
+        }
+    }
+
+    // Shape 2: a bare top-level {"name":..,"input":..} object embedded in prose.
+    if let Some((start, end)) = find_balanced_json_object(text) {
+        if let Some(call) = tool_call_from_json_str(text[start..end].trim(), 1) {
+            let remaining = format!("{}{}", &text[..start], &text[end..]);
+            return (remaining.trim().to_string(), vec![call]);
+        }
+    }
+
+    (text.trim().to_string(), Vec::new())
+}
+
+/// Parse a JSON string into a tool call iff it is unambiguously tool-call-shaped:
+/// a JSON object with a string `name` field AND an `input` field. Returns `None`
+/// otherwise (plain JSON, arrays, scalars, prose).
+fn tool_call_from_json_str(json_str: &str, idx: u32) -> Option<ToolCall> {
+    let parsed = serde_json::from_str::<serde_json::Value>(json_str).ok()?;
+    let obj = parsed.as_object()?;
+    // Require BOTH name (string) and an explicit input field — stricter than the
+    // envelope parser (which defaults input to {}) so prose/JSON examples that
+    // merely contain a "name" key are never salvaged.
+    let name = obj.get("name")?.as_str()?.to_string();
+    if name.is_empty() {
+        return None;
+    }
+    let input = obj.get("input")?.clone();
+    Some(ToolCall { id: format!("salvage-{idx}"), name, input })
+}
+
+/// Extract the first ```...``` fenced block: returns (text-before, inner, text-after).
+/// Accepts any language tag (or none); the inner content is everything between the
+/// opening fence's newline and the closing fence.
+fn extract_first_fenced_block(text: &str) -> Option<(&str, &str, &str)> {
+    let open = text.find("```")?;
+    let before = &text[..open];
+    let rest = &text[open + 3..];
+    // Skip the optional language tag up to (and including) the first newline.
+    let inner_start = rest.find('\n').map(|i| i + 1)?;
+    let body = &rest[inner_start..];
+    let close = body.find("```")?;
+    let inner = &body[..close];
+    let after = &body[close + 3..];
+    Some((before, inner, after))
+}
+
+/// Find the first balanced top-level `{...}` JSON object span in `text`.
+/// Returns `(start, end)` byte indices (end exclusive) of the object including
+/// braces, tracking string literals + escapes so braces inside strings don't
+/// unbalance the scan. Returns `None` if no balanced object is found.
+fn find_balanced_json_object(text: &str) -> Option<(usize, usize)> {
+    let bytes = text.as_bytes();
+    let start = text.find('{')?;
+    let mut depth = 0i32;
+    let mut in_str = false;
+    let mut escaped = false;
+    let mut i = start;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if in_str {
+            if escaped {
+                escaped = false;
+            } else if c == b'\\' {
+                escaped = true;
+            } else if c == b'"' {
+                in_str = false;
+            }
+        } else {
+            match c {
+                b'"' => in_str = true,
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some((start, i + 1));
+                    }
+                }
+                _ => {}
+            }
+        }
+        i += 1;
+    }
+    None
 }
 
 /// Sanitize model output: strip echoed system prompt and chat template markers.
@@ -392,5 +527,72 @@ not valid json
         let output = "assistant\nHere is my response.";
         let cleaned = sanitize_output(output, None);
         assert_eq!(cleaned, "Here is my response.");
+    }
+
+    // ── CCPA-m296 salvage parser tests ──
+
+    #[test]
+    fn test_salvage_bare_top_level_json_tool_call() {
+        // Model emitted a bare {"name","input"} object with NO envelope/fence.
+        // Without salvage this scores as inert prose and re-primes prose mode.
+        let input =
+            "Sure, I'll read it.\n{\"name\": \"file_read\", \"input\": {\"path\": \"src/lib.rs\"}}";
+        let (text, calls) = parse_tool_calls(input);
+        assert_eq!(calls.len(), 1, "salvage must recover a bare tool-call JSON object");
+        assert_eq!(calls[0].name, "file_read");
+        assert_eq!(calls[0].input["path"], "src/lib.rs");
+        assert!(calls[0].id.starts_with("salvage-"), "salvaged calls carry a traceable id");
+        assert!(text.contains("Sure, I'll read it"), "prose around the call is preserved");
+        assert!(!text.contains("file_read"), "the salvaged JSON span is removed from text");
+    }
+
+    #[test]
+    fn test_salvage_generic_fenced_block_non_json_tag() {
+        // Coder models fence tool calls with ```tool_call / ```rust, not ```json.
+        // The envelope parser only knows ```json; salvage must catch the rest.
+        let input =
+            "```tool_call\n{\"name\": \"shell\", \"input\": {\"command\": \"cargo test\"}}\n```";
+        let (_text, calls) = parse_tool_calls(input);
+        assert_eq!(calls.len(), 1, "salvage must recover a generically-fenced tool call");
+        assert_eq!(calls[0].name, "shell");
+        assert_eq!(calls[0].input["command"], "cargo test");
+    }
+
+    #[test]
+    fn test_salvage_conservative_rejects_plain_json() {
+        // A bare JSON object WITHOUT name+input is NOT a tool call — never salvage it.
+        let input = "Here is some config:\n{\"key\": \"value\", \"count\": 3}";
+        let (text, calls) = parse_tool_calls(input);
+        assert!(calls.is_empty(), "plain JSON (no name+input) must not be salvaged");
+        assert!(text.contains("config"));
+    }
+
+    #[test]
+    fn test_salvage_conservative_rejects_name_without_input() {
+        // Stricter than the envelope parser: salvage requires an explicit `input`.
+        let input = "{\"name\": \"file_read\"}";
+        let (_text, calls) = parse_tool_calls(input);
+        assert!(calls.is_empty(), "name without input is too ambiguous to salvage");
+    }
+
+    #[test]
+    fn test_salvage_handles_braces_inside_strings() {
+        // The balanced-object scanner must not unbalance on braces inside strings.
+        let input = "{\"name\": \"shell\", \"input\": {\"command\": \"echo ${HOME} and }{\"}}";
+        let (_text, calls) = parse_tool_calls(input);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "shell");
+        assert_eq!(calls[0].input["command"], "echo ${HOME} and }{");
+    }
+
+    #[test]
+    fn test_envelope_takes_precedence_over_salvage() {
+        // A proper <tool_call> envelope must be parsed by the envelope path
+        // (id "local-1"), never falling through to salvage.
+        let input =
+            "<tool_call>\n{\"name\": \"glob\", \"input\": {\"pattern\": \"*.rs\"}}\n</tool_call>";
+        let (_text, calls) = parse_tool_calls(input);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].id, "local-1", "envelope parser owns this, not salvage");
     }
 }
