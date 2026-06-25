@@ -497,3 +497,421 @@ mod pass_at_k_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod code_eval_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    // ── compute_pass_at_k: the unbiased estimator ──────────────────────────
+
+    #[test]
+    fn pass_at_k_zero_problems_is_zero() {
+        assert_eq!(compute_pass_at_k(0, 0, 1), 0.0);
+        assert_eq!(compute_pass_at_k(0, 5, 3), 0.0);
+    }
+
+    #[test]
+    fn pass_at_k_zero_k_is_zero() {
+        assert_eq!(compute_pass_at_k(10, 5, 0), 0.0);
+    }
+
+    #[test]
+    fn pass_at_k_all_correct_is_one() {
+        // c >= n ⇒ certain to find a correct sample.
+        assert_eq!(compute_pass_at_k(5, 5, 1), 1.0);
+        assert_eq!(compute_pass_at_k(5, 7, 3), 1.0);
+    }
+
+    #[test]
+    fn pass_at_k_none_correct_is_zero() {
+        // c == 0 ⇒ impossible to draw a correct sample.
+        assert_eq!(compute_pass_at_k(10, 0, 1), 0.0);
+        assert_eq!(compute_pass_at_k(10, 0, 5), 0.0);
+    }
+
+    #[test]
+    fn pass_at_k_k_greater_than_n() {
+        // k > n with some correct ⇒ 1.0; with none ⇒ 0.0.
+        assert_eq!(compute_pass_at_k(3, 1, 5), 1.0);
+        assert_eq!(compute_pass_at_k(3, 0, 5), 0.0);
+    }
+
+    #[test]
+    fn pass_at_k_partial_matches_closed_form() {
+        // n=5, c=1, k=1 ⇒ pass@1 = c/n = 1/5 = 0.2
+        let p = compute_pass_at_k(5, 1, 1);
+        assert!((p - 0.2).abs() < 1e-9, "got {p}");
+        // n=5, c=2, k=2 ⇒ 1 - C(3,2)/C(5,2) = 1 - 3/10 = 0.7
+        let p2 = compute_pass_at_k(5, 2, 2);
+        assert!((p2 - 0.7).abs() < 1e-9, "got {p2}");
+    }
+
+    #[test]
+    fn pass_at_k_monotonic_in_k() {
+        // pass@k is non-decreasing in k for fixed (n, c).
+        let a = compute_pass_at_k(10, 3, 1);
+        let b = compute_pass_at_k(10, 3, 3);
+        let c = compute_pass_at_k(10, 3, 5);
+        assert!(a <= b + 1e-12);
+        assert!(b <= c + 1e-12);
+    }
+
+    // ── compute_multisample_pass_at_k ──────────────────────────────────────
+
+    #[test]
+    fn multisample_empty_is_zero_for_all_k() {
+        let problems: Vec<(String, String, usize)> = vec![];
+        for (_k, rate) in compute_multisample_pass_at_k(&problems, 1, &[1, 5, 10]) {
+            assert_eq!(rate, 0.0);
+        }
+    }
+
+    #[test]
+    fn multisample_all_solved_single_sample_is_one() {
+        let problems: Vec<(String, String, usize)> = (0..4)
+            .map(|i| (format!("t{i}"), String::new(), 1))
+            .collect();
+        for (_k, rate) in compute_multisample_pass_at_k(&problems, 1, &[1, 10]) {
+            assert!((rate - 1.0).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn multisample_multi_sample_averages_per_problem() {
+        // 2 problems, n=4 samples each. p0 solved 4/4, p1 solved 0/4.
+        // pass@1 = avg( pass@1(4,4), pass@1(4,0) ) = (1.0 + 0.0)/2 = 0.5
+        let problems = vec![
+            ("p0".to_string(), "e".to_string(), 4usize),
+            ("p1".to_string(), "e".to_string(), 0usize),
+        ];
+        let rates = compute_multisample_pass_at_k(&problems, 4, &[1]);
+        assert_eq!(rates.len(), 1);
+        assert!((rates[0].1 - 0.5).abs() < 1e-9, "got {}", rates[0].1);
+    }
+
+    // ── build_passk_json ───────────────────────────────────────────────────
+
+    #[test]
+    fn build_passk_json_core_fields() {
+        let problems = vec![
+            ("HumanEval/0".to_string(), "foo".to_string(), 2usize),
+            ("HumanEval/1".to_string(), "bar".to_string(), 0usize),
+        ];
+        let model = PathBuf::from("/models/m.apr");
+        let json = build_passk_json(
+            "humaneval",
+            &model,
+            &problems,
+            5,
+            0.8,
+            &[1, 10],
+            12.5,
+            "inference",
+            None,
+        );
+        assert_eq!(json["benchmark"], "humaneval");
+        assert_eq!(json["problems"], 2);
+        assert_eq!(json["passed"], 1); // only p0 has correct>0
+        assert_eq!(json["samples_per_problem"], 5);
+        assert_eq!(json["mode"], "inference");
+        // pass_at_k array present with two entries
+        assert_eq!(json["pass_at_k"].as_array().unwrap().len(), 2);
+        // per-problem entry_point populated when non-empty
+        let per = json["per_problem_results"].as_array().unwrap();
+        assert_eq!(per[0]["entry_point"], "foo");
+        assert_eq!(per[0]["passed"], true);
+        assert_eq!(per[1]["passed"], false);
+    }
+
+    #[test]
+    fn build_passk_json_omits_empty_entry_point() {
+        let problems = vec![("t".to_string(), String::new(), 1usize)];
+        let model = PathBuf::from("m.apr");
+        let json = build_passk_json(
+            "mbpp",
+            &model,
+            &problems,
+            1,
+            0.0,
+            &[1],
+            1.0,
+            "structural",
+            None,
+        );
+        let per = json["per_problem_results"].as_array().unwrap();
+        assert!(per[0].get("entry_point").is_none());
+    }
+
+    #[test]
+    fn build_passk_json_includes_extra_kv() {
+        let problems = vec![("t".to_string(), "e".to_string(), 0usize)];
+        let model = PathBuf::from("m.apr");
+        let json = build_passk_json(
+            "humaneval",
+            &model,
+            &problems,
+            1,
+            0.0,
+            &[1],
+            1.0,
+            "inference_failed",
+            Some(("error", "spawn failed")),
+        );
+        assert_eq!(json["error"], "spawn failed");
+    }
+
+    // ── evaluate_code_problem ──────────────────────────────────────────────
+
+    fn problem(prompt: &str, test: &str, canonical: Option<&str>) -> CodeBenchProblem {
+        CodeBenchProblem {
+            prompt: prompt.to_string(),
+            test: test.to_string(),
+            task_id: None,
+            canonical_solution: canonical.map(String::from),
+        }
+    }
+
+    #[test]
+    fn evaluate_empty_prompt_fails() {
+        let p = problem("   ", "assert f() == 1", Some("return 1"));
+        let r = evaluate_code_problem(Path::new("m.apr"), &p, 64).unwrap();
+        assert!(!r.passed);
+        assert_eq!(r.error.as_deref(), Some("Empty prompt"));
+    }
+
+    #[test]
+    fn evaluate_empty_test_fails() {
+        let p = problem("def f(): pass", "  ", Some("return 1"));
+        let r = evaluate_code_problem(Path::new("m.apr"), &p, 64).unwrap();
+        assert!(!r.passed);
+        assert_eq!(r.error.as_deref(), Some("Empty test assertion"));
+    }
+
+    #[test]
+    fn evaluate_valid_canonical_solution_passes() {
+        let p = problem("def add(a,b):", "assert add(1,2)==3", Some("return a + b"));
+        let r = evaluate_code_problem(Path::new("m.apr"), &p, 64).unwrap();
+        assert!(r.passed);
+        assert!(r.error.is_none());
+    }
+
+    #[test]
+    fn evaluate_canonical_without_code_markers_fails() {
+        // Non-empty solution but no return/print/= ⇒ validation fails.
+        let p = problem("def f():", "assert f()", Some("pass"));
+        let r = evaluate_code_problem(Path::new("m.apr"), &p, 64).unwrap();
+        assert!(!r.passed);
+        assert_eq!(
+            r.error.as_deref(),
+            Some("Canonical solution validation failed")
+        );
+    }
+
+    #[test]
+    fn evaluate_no_canonical_requires_inference() {
+        let p = problem("def f():", "assert f()", None);
+        let r = evaluate_code_problem(Path::new("m.apr"), &p, 64).unwrap();
+        assert!(!r.passed);
+        assert!(r.error.unwrap().contains("Inference required"));
+    }
+
+    #[test]
+    fn evaluate_canonical_with_print_passes() {
+        let p = problem("def f():", "assert True", Some("print('hi')"));
+        let r = evaluate_code_problem(Path::new("m.apr"), &p, 64).unwrap();
+        assert!(r.passed);
+    }
+
+    // ── print_code_eval_results: smoke + JSON-mode return ──────────────────
+
+    #[test]
+    fn print_code_eval_results_json_mode_ok() {
+        let problems = vec![problem("def a():", "assert True", Some("return 1"))];
+        let results = vec![CodeBenchResult {
+            passed: true,
+            error: None,
+        }];
+        // json_output true: should produce no panic and Ok(()).
+        let r = print_code_eval_results(
+            Path::new("m.apr"),
+            Path::new("bench.jsonl"),
+            &problems,
+            &results,
+            1.5,
+            50.0,
+            true,
+        );
+        assert!(r.is_ok());
+    }
+
+    #[test]
+    fn print_code_eval_results_human_mode_ok() {
+        let problems = vec![
+            problem("def a():", "assert True", None),
+            problem("def b():", "assert True", None),
+        ];
+        let results = vec![
+            CodeBenchResult {
+                passed: true,
+                error: None,
+            },
+            CodeBenchResult {
+                passed: false,
+                error: Some("boom".to_string()),
+            },
+        ];
+        let r = print_code_eval_results(
+            Path::new("m.apr"),
+            Path::new("bench.jsonl"),
+            &problems,
+            &results,
+            2.0,
+            90.0,
+            false,
+        );
+        assert!(r.is_ok());
+    }
+
+    #[test]
+    fn print_code_eval_results_empty_is_zero_rate() {
+        let problems: Vec<CodeBenchProblem> = vec![];
+        let results: Vec<CodeBenchResult> = vec![];
+        let r = print_code_eval_results(
+            Path::new("m.apr"),
+            Path::new("bench.jsonl"),
+            &problems,
+            &results,
+            0.0,
+            0.0,
+            true,
+        );
+        assert!(r.is_ok());
+    }
+
+    // ── print_multisample_table: smoke ─────────────────────────────────────
+
+    #[test]
+    fn print_multisample_table_smoke() {
+        let problems = vec![
+            ("p0".to_string(), "e".to_string(), 2usize),
+            ("p1".to_string(), "e".to_string(), 0usize),
+        ];
+        // Should not panic.
+        print_multisample_table(&problems, 4, 0.7, &[1, 4]);
+    }
+
+    // ── run_multisample_loop ───────────────────────────────────────────────
+
+    #[test]
+    fn multisample_loop_accumulates_correct_counts() {
+        let mut acc = vec![
+            ("p0".to_string(), "e".to_string(), 0usize),
+            ("p1".to_string(), "e".to_string(), 0usize),
+        ];
+        // Each sample: p0 passes, p1 fails.
+        let ok = run_multisample_loop::<_, ()>(&mut acc, 3, true, || {
+            Ok((
+                1,
+                vec![
+                    ("p0".to_string(), "e".to_string(), true),
+                    ("p1".to_string(), "e".to_string(), false),
+                ],
+            ))
+        });
+        assert!(ok);
+        assert_eq!(acc[0].2, 3); // p0 passed all 3 samples
+        assert_eq!(acc[1].2, 0); // p1 never passed
+    }
+
+    #[test]
+    fn multisample_loop_first_sample_error_aborts() {
+        let mut acc = vec![("p0".to_string(), "e".to_string(), 0usize)];
+        let ok = run_multisample_loop::<_, &str>(&mut acc, 5, true, || Err("boom"));
+        assert!(!ok); // never succeeded
+        assert_eq!(acc[0].2, 0);
+    }
+
+    #[test]
+    fn multisample_loop_later_errors_tolerated() {
+        let mut acc = vec![("p0".to_string(), "e".to_string(), 0usize)];
+        let mut call = 0;
+        let ok = run_multisample_loop::<_, &str>(&mut acc, 3, true, || {
+            call += 1;
+            if call == 1 {
+                Ok((1, vec![("p0".to_string(), "e".to_string(), true)]))
+            } else {
+                Err("transient")
+            }
+        });
+        assert!(ok); // first sample succeeded
+        assert_eq!(acc[0].2, 1); // only the first sample counted
+    }
+
+    // ── run_code_eval: error paths (no inference required) ─────────────────
+
+    #[test]
+    fn run_code_eval_missing_data_path_errors() {
+        let r = run_code_eval(Path::new("m.apr"), None, 64, 50.0, true);
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn run_code_eval_nonexistent_data_errors() {
+        let r = run_code_eval(
+            Path::new("/models/m.apr"),
+            Some(Path::new("/nonexistent/bench.jsonl")),
+            64,
+            50.0,
+            true,
+        );
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn run_code_eval_nonexistent_model_errors() {
+        let dir = std::env::temp_dir().join(format!("apr_codeeval_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let bench = dir.join("bench.jsonl");
+        std::fs::write(
+            &bench,
+            "{\"prompt\":\"def f():\",\"test\":\"assert f()\"}\n",
+        )
+        .unwrap();
+        let r = run_code_eval(
+            Path::new("/definitely/missing/model.apr"),
+            Some(&bench),
+            64,
+            50.0,
+            true,
+        );
+        assert!(r.is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_code_eval_empty_benchmark_errors() {
+        let dir = std::env::temp_dir().join(format!("apr_codeeval_empty_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let bench = dir.join("bench.jsonl");
+        std::fs::write(&bench, "\n   \n").unwrap();
+        let model = dir.join("m.apr");
+        std::fs::write(&model, b"x").unwrap();
+        let r = run_code_eval(&model, Some(&bench), 64, 50.0, true);
+        assert!(r.is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_code_eval_invalid_json_errors() {
+        let dir = std::env::temp_dir().join(format!("apr_codeeval_badjson_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let bench = dir.join("bench.jsonl");
+        std::fs::write(&bench, "not json at all\n").unwrap();
+        let model = dir.join("m.apr");
+        std::fs::write(&model, b"x").unwrap();
+        let r = run_code_eval(&model, Some(&bench), 64, 50.0, true);
+        assert!(r.is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
