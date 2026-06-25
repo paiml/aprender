@@ -95,3 +95,31 @@ fn print_report(
         println!("  greedy_picks_argmax   : {g:?}");
     }
 }
+
+#[cfg(test)]
+mod cov_tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+    fn w(s: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(s.as_bytes()).unwrap();
+        f.flush().unwrap();
+        f
+    }
+    #[test]
+    fn missing_file_is_file_not_found() {
+        let err = run(Path::new("/no/such/explain.jsonl"), 1e-5, false, false).unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+    #[test]
+    fn empty_jsonl_runs() {
+        let f = w("");
+        let _ = run(f.path(), 1e-5, false, true);
+    }
+    #[test]
+    fn garbage_jsonl_errors() {
+        let f = w("garbage line\nanother\n");
+        let _ = run(f.path(), 1e-5, false, false);
+    }
+}

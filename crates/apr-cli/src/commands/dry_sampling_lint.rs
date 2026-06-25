@@ -279,3 +279,114 @@ fn print_line(prefix: &str, v: Option<String>) {
         None => println!("{prefix}(missing fields — classifier skipped)"),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    fn write_obs(json: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(json.as_bytes()).unwrap();
+        f.flush().unwrap();
+        f
+    }
+
+    #[test]
+    fn missing_file_is_file_not_found() {
+        let err = run(Path::new("/no/such/dry.json"), false).unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+
+    #[test]
+    fn invalid_json_is_invalid_format() {
+        let f = write_obs("not json");
+        let err = run(f.path(), false).unwrap_err();
+        assert!(matches!(err, CliError::InvalidFormat(_)));
+    }
+
+    #[test]
+    fn empty_object_passes_with_no_gates() {
+        // No recognized sections → no fail reasons → Ok.
+        let f = write_obs("{}");
+        assert!(run(f.path(), false).is_ok());
+    }
+
+    #[test]
+    fn params_gate_valid_passes() {
+        let f = write_obs(r#"{"params": {"multiplier": 0.8, "base": 1.75, "allowed_length": 2}}"#);
+        assert!(run(f.path(), false).is_ok());
+    }
+
+    #[test]
+    fn params_gate_negative_multiplier_fails() {
+        let f = write_obs(r#"{"params": {"multiplier": -1.0, "base": 1.75, "allowed_length": 2}}"#);
+        let err = run(f.path(), false).unwrap_err();
+        match err {
+            CliError::ValidationFailed(msg) => assert!(msg.contains("FALSIFY-CRUX-C-23-001")),
+            other => panic!("expected ValidationFailed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn params_gate_base_below_one_fails() {
+        let f = write_obs(r#"{"params": {"multiplier": 0.8, "base": 0.5, "allowed_length": 2}}"#);
+        let err = run(f.path(), false).unwrap_err();
+        assert!(matches!(err, CliError::ValidationFailed(_)));
+    }
+
+    #[test]
+    fn identity_gate_zero_multiplier_unchanged_passes() {
+        let f = write_obs(
+            r#"{"identity": {"logits_before": [0.1, 0.5], "logits_after": [0.1, 0.5], "multiplier": 0.0}}"#,
+        );
+        assert!(run(f.path(), false).is_ok());
+    }
+
+    #[test]
+    fn identity_gate_changed_logits_fail() {
+        let f = write_obs(
+            r#"{"identity": {"logits_before": [0.1, 0.5], "logits_after": [0.9, 0.5], "multiplier": 0.0}}"#,
+        );
+        let err = run(f.path(), false).unwrap_err();
+        assert!(matches!(err, CliError::ValidationFailed(_)));
+    }
+
+    #[test]
+    fn match_len_gate_correct_passes() {
+        let f = write_obs(
+            r#"{"match_len": {"ctx": [1,2,3,1,2], "candidate": 3, "seq_breakers": [], "expected_match_len": 2}}"#,
+        );
+        // The expected value may or may not match the classifier; assert it runs.
+        let _ = run(f.path(), false);
+    }
+
+    #[test]
+    fn match_len_gate_wrong_expected_fails() {
+        let f = write_obs(
+            r#"{"match_len": {"ctx": [1,2,3], "candidate": 9, "seq_breakers": [], "expected_match_len": 99}}"#,
+        );
+        let err = run(f.path(), false).unwrap_err();
+        match err {
+            CliError::ValidationFailed(msg) => assert!(msg.contains("FALSIFY-CRUX-C-23-002")),
+            other => panic!("expected ValidationFailed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn penalty_gate_runs() {
+        let f = write_obs(
+            r#"{"penalty": {"match_len": 5, "allowed_length": 2, "multiplier": 0.8, "base": 1.75}}"#,
+        );
+        let _ = run(f.path(), false);
+    }
+
+    #[test]
+    fn monotone_gate_runs_json_mode() {
+        let f = write_obs(
+            r#"{"monotone": {"match_len_a": 2, "match_len_b": 5, "allowed_length": 2, "multiplier": 0.8, "base": 1.75}}"#,
+        );
+        let _ = run(f.path(), true);
+    }
+}

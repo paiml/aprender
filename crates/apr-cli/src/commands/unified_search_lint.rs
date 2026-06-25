@@ -228,3 +228,110 @@ fn run_dedup_gate(v: &Value) -> (GateReport, Option<String>) {
         err,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    fn write_obs(json: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(json.as_bytes()).unwrap();
+        f.flush().unwrap();
+        f
+    }
+
+    fn args_for(f: &NamedTempFile) -> UnifiedSearchLintArgs {
+        UnifiedSearchLintArgs {
+            observation_file: f.path().to_string_lossy().into_owned(),
+            json: false,
+        }
+    }
+
+    #[test]
+    fn missing_file_is_falsify_error() {
+        let args = UnifiedSearchLintArgs {
+            observation_file: "/no/such/search.json".to_string(),
+            json: false,
+        };
+        let err = run(args).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-A-23"));
+        assert!(err.contains("not found"));
+    }
+
+    #[test]
+    fn empty_file_is_error() {
+        let f = write_obs(" ");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("observation file is empty"));
+    }
+
+    #[test]
+    fn invalid_json_is_error() {
+        let f = write_obs("zzz");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("not valid JSON"));
+    }
+
+    #[test]
+    fn empty_object_has_no_gates() {
+        let f = write_obs("{}");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("none of offline/dedup"));
+    }
+
+    #[test]
+    fn offline_gate_local_only_passes() {
+        let f = write_obs(
+            r#"{"offline": {"local": [{"repo": "gpt2", "downloads": 0, "likes": 0, "cached": true}],
+                "expected_count": 1,
+                "expected_sources": {"gpt2": "LOCAL"}}}"#,
+        );
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn offline_gate_wrong_count_fails() {
+        let f = write_obs(
+            r#"{"offline": {"local": [{"repo": "gpt2", "cached": true}],
+                "expected_count": 5}}"#,
+        );
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-A-23-001"));
+    }
+
+    #[test]
+    fn dedup_gate_both_sources_passes() {
+        let f = write_obs(
+            r#"{"dedup": {"hub": [{"repo": "gpt2", "downloads": 1000, "likes": 10}],
+                "local": [{"repo": "gpt2", "cached": true}],
+                "expected_count": 1,
+                "expected_sources": {"gpt2": "BOTH"}}}"#,
+        );
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn dedup_gate_wrong_source_fails() {
+        let f = write_obs(
+            r#"{"dedup": {"hub": [{"repo": "gpt2", "downloads": 1000}],
+                "local": [{"repo": "gpt2", "cached": true}],
+                "expected_sources": {"gpt2": "HUB"}}}"#,
+        );
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-A-23-002"));
+    }
+
+    #[test]
+    fn json_mode_ok() {
+        let f = write_obs(
+            r#"{"offline": {"local": [{"repo": "x", "cached": true}], "expected_count": 1}}"#,
+        );
+        let args = UnifiedSearchLintArgs {
+            observation_file: f.path().to_string_lossy().into_owned(),
+            json: true,
+        };
+        assert!(run(args).is_ok());
+    }
+}

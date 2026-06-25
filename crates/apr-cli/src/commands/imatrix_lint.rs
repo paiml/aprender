@@ -291,3 +291,145 @@ fn run_provenance_gate(v: &Value) -> (GateReport, Option<String>) {
         err,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    fn write_obs(json: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(json.as_bytes()).unwrap();
+        f.flush().unwrap();
+        f
+    }
+
+    fn args_for(f: &NamedTempFile) -> ImatrixLintArgs {
+        ImatrixLintArgs {
+            observation_file: f.path().to_string_lossy().into_owned(),
+            json: false,
+        }
+    }
+
+    #[test]
+    fn missing_file_is_falsify_error() {
+        let args = ImatrixLintArgs {
+            observation_file: "/no/such/im.json".to_string(),
+            json: false,
+        };
+        let err = run(args).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-B-07"));
+        assert!(err.contains("not found"));
+    }
+
+    #[test]
+    fn empty_file_is_error() {
+        let f = write_obs("  ");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("observation file is empty"));
+    }
+
+    #[test]
+    fn invalid_json_is_error() {
+        let f = write_obs("##");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("not valid JSON"));
+    }
+
+    #[test]
+    fn empty_object_has_no_gates() {
+        let f = write_obs("{}");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("none of improvement/leakage/flags/provenance"));
+    }
+
+    #[test]
+    fn improvement_gate_better_ppl_passes() {
+        // delta = (100-90)/100 = 0.1 >= 0.005.
+        let f = write_obs(r#"{"improvement": {"ppl_naive": 100.0, "ppl_calib": 90.0}}"#);
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn improvement_gate_no_gain_fails() {
+        let f = write_obs(r#"{"improvement": {"ppl_naive": 100.0, "ppl_calib": 100.0}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-B-07-001"));
+    }
+
+    #[test]
+    fn leakage_gate_disjoint_passes() {
+        let f =
+            write_obs(r#"{"leakage": {"calib_hashes": ["a", "b"], "eval_hashes": ["c", "d"]}}"#);
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn leakage_gate_overlap_fails() {
+        let f =
+            write_obs(r#"{"leakage": {"calib_hashes": ["a", "b"], "eval_hashes": ["b", "c"]}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-B-07-001"));
+        assert!(err.contains("leakage"));
+    }
+
+    #[test]
+    fn flags_gate_present_path_passes() {
+        let f = write_obs(
+            r#"{"flags": {"argv": ["quantize", "model.apr", "--imatrix", "calib.jsonl"], "expected_path": "calib.jsonl"}}"#,
+        );
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn flags_gate_absent_path_passes_when_null_expected() {
+        let f =
+            write_obs(r#"{"flags": {"argv": ["quantize", "model.apr"], "expected_path": null}}"#);
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn flags_gate_mismatch_fails() {
+        let f = write_obs(r#"{"flags": {"argv": ["quantize"], "expected_path": "calib.jsonl"}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-B-07-002"));
+    }
+
+    #[test]
+    fn provenance_gate_matching_sha_passes() {
+        let sha = "a".repeat(64);
+        let obs = serde_json::json!({
+            "provenance": { "expected_sha256": sha, "recorded": sha }
+        });
+        let f = write_obs(&obs.to_string());
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn provenance_gate_mismatch_fails() {
+        let obs = serde_json::json!({
+            "provenance": { "expected_sha256": "a".repeat(64), "recorded": "b".repeat(64) }
+        });
+        let f = write_obs(&obs.to_string());
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-B-07-003"));
+    }
+
+    #[test]
+    fn provenance_gate_missing_input_fails() {
+        let f = write_obs(r#"{"provenance": {}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-B-07-003"));
+    }
+
+    #[test]
+    fn json_mode_ok() {
+        let f = write_obs(r#"{"improvement": {"ppl_naive": 50.0, "ppl_calib": 40.0}}"#);
+        let args = ImatrixLintArgs {
+            observation_file: f.path().to_string_lossy().into_owned(),
+            json: true,
+        };
+        assert!(run(args).is_ok());
+    }
+}

@@ -298,3 +298,143 @@ fn run_parity_gate(v: &Value) -> (GateReport, Option<String>) {
         err,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    fn write_obs(json: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(json.as_bytes()).unwrap();
+        f.flush().unwrap();
+        f
+    }
+
+    fn args_for(f: &NamedTempFile) -> Nf4LintArgs {
+        Nf4LintArgs {
+            observation_file: f.path().to_string_lossy().into_owned(),
+            json: false,
+        }
+    }
+
+    #[test]
+    fn missing_file_is_falsify_error() {
+        let args = Nf4LintArgs {
+            observation_file: "/nonexistent/path/nf4.json".to_string(),
+            json: false,
+        };
+        let err = run(args).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-B-10"));
+        assert!(err.contains("not found"));
+    }
+
+    #[test]
+    fn empty_file_is_error() {
+        let f = write_obs("   \n  ");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("observation file is empty"));
+    }
+
+    #[test]
+    fn invalid_json_is_error() {
+        let f = write_obs("{ this is not json ");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("not valid JSON"));
+    }
+
+    #[test]
+    fn empty_object_has_no_gates() {
+        let f = write_obs("{}");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("none of codebook/roundtrip/storage/parity"));
+    }
+
+    #[test]
+    fn codebook_default_passes_when_empty_expected() {
+        // Empty `expected` → gate checks NF4_CODEBOOK.len()==16, which passes.
+        let f = write_obs(r#"{"codebook": {}}"#);
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn codebook_matching_expected_passes() {
+        let expected: Vec<f32> = NF4_CODEBOOK.to_vec();
+        let obs = serde_json::json!({ "codebook": { "expected": expected } });
+        let f = write_obs(&obs.to_string());
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn codebook_wrong_length_fails() {
+        let f = write_obs(r#"{"codebook": {"expected": [0.0, 1.0]}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-B-10-001"));
+    }
+
+    #[test]
+    fn roundtrip_empty_weights_fails() {
+        let f = write_obs(r#"{"roundtrip": {"weights": []}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-B-10-003"));
+    }
+
+    #[test]
+    fn roundtrip_well_scaled_weights_pass() {
+        // Weights whose extremes hit codebook values roundtrip with low error.
+        let f = write_obs(
+            r#"{"roundtrip": {"weights": [1.0, -1.0, 0.0, 0.5, -0.5], "max_rel_l2": 0.5}}"#,
+        );
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn storage_invalid_dimensions_fail() {
+        let f = write_obs(r#"{"storage": {"n_weights": 0, "block_size": 64}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-B-10-002"));
+    }
+
+    #[test]
+    fn storage_envelope_passes_on_large_tensor() {
+        let obs = serde_json::json!({
+            "storage": {
+                "n_weights": 1_000_000_000u64,
+                "block_size": 64,
+                "double_quant": false,
+                "expected_min_bytes_per_weight": 0.50,
+                "expected_max_bytes_per_weight": 0.65
+            }
+        });
+        let f = write_obs(&obs.to_string());
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn parity_matching_index_passes() {
+        let f = write_obs(r#"{"parity": {"target": 0.0, "expected_index": 7}}"#);
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn parity_wrong_index_fails() {
+        let f = write_obs(r#"{"parity": {"target": 0.0, "expected_index": 3}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-B-10-004"));
+    }
+
+    #[test]
+    fn json_mode_renders_all_gates_ok() {
+        let obs = serde_json::json!({
+            "codebook": {},
+            "parity": { "target": 1.0, "expected_index": 15 }
+        });
+        let f = write_obs(&obs.to_string());
+        let args = Nf4LintArgs {
+            observation_file: f.path().to_string_lossy().into_owned(),
+            json: true,
+        };
+        assert!(run(args).is_ok());
+    }
+}

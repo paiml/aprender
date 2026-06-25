@@ -131,3 +131,39 @@ fn print_report(
         println!("  html_heatmaps : {o:?}");
     }
 }
+
+#[cfg(test)]
+mod cov_tests {
+    use super::*;
+    #[test]
+    fn no_inputs_is_validation_failed() {
+        let err = run(None, None, 0, 1e-3, 1e-9, false).unwrap_err();
+        assert!(matches!(err, CliError::ValidationFailed(_)));
+    }
+    #[test]
+    fn missing_attn_file_is_file_not_found() {
+        let err = run(
+            Some(Path::new("/no/such/attn.json")),
+            None,
+            0,
+            1e-3,
+            1e-9,
+            false,
+        )
+        .unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+    #[test]
+    fn missing_html_file_is_file_not_found() {
+        let err = run(
+            None,
+            Some(Path::new("/no/such/viz.html")),
+            0,
+            1e-3,
+            1e-9,
+            true,
+        )
+        .unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+}

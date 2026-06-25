@@ -159,3 +159,96 @@ fn run_capability_gate(v: &Value) -> (GateReport, Option<String>) {
         err,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    fn write_obs(json: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(json.as_bytes()).unwrap();
+        f.flush().unwrap();
+        f
+    }
+
+    fn args_for(f: &NamedTempFile) -> Fp8LintArgs {
+        Fp8LintArgs {
+            observation_file: f.path().to_string_lossy().into_owned(),
+            json: false,
+        }
+    }
+
+    #[test]
+    fn missing_file_is_falsify_error() {
+        let args = Fp8LintArgs {
+            observation_file: "/no/such/fp8.json".to_string(),
+            json: false,
+        };
+        let err = run(args).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-B-11"));
+        assert!(err.contains("not found"));
+    }
+
+    #[test]
+    fn empty_file_is_error() {
+        let f = write_obs("");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("observation file is empty"));
+    }
+
+    #[test]
+    fn invalid_json_is_error() {
+        let f = write_obs("nope");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("not valid JSON"));
+    }
+
+    #[test]
+    fn empty_object_has_no_gates() {
+        let f = write_obs("{}");
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("neither frobenius nor capability"));
+    }
+
+    #[test]
+    fn frobenius_gate_identical_passes() {
+        let f = write_obs(
+            r#"{"frobenius": {"original": [1.0, 2.0, 3.0], "reconstructed": [1.0, 2.0, 3.0]}}"#,
+        );
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn frobenius_gate_large_error_fails() {
+        let f = write_obs(
+            r#"{"frobenius": {"original": [1.0, 2.0, 3.0], "reconstructed": [10.0, 20.0, 30.0]}}"#,
+        );
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-B-11-001"));
+    }
+
+    #[test]
+    fn capability_gate_hopper_passes() {
+        let f = write_obs(r#"{"capability": {"sm": 90}}"#);
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn capability_gate_old_arch_fails() {
+        let f = write_obs(r#"{"capability": {"sm": 80}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("FALSIFY-CRUX-B-11-002"));
+    }
+
+    #[test]
+    fn json_mode_ok() {
+        let f = write_obs(r#"{"capability": {"sm": 100}}"#);
+        let args = Fp8LintArgs {
+            observation_file: f.path().to_string_lossy().into_owned(),
+            json: true,
+        };
+        assert!(run(args).is_ok());
+    }
+}

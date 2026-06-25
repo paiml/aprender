@@ -232,3 +232,42 @@ fn print_line(prefix: &str, v: Option<String>) {
         None => println!("{prefix}(missing fields — classifier skipped)"),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    fn write_obs(json: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(json.as_bytes()).unwrap();
+        f.flush().unwrap();
+        f
+    }
+
+    #[test]
+    fn missing_file_is_file_not_found() {
+        let err = run(Path::new("/no/such/tool.json"), false).unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+
+    #[test]
+    fn invalid_json_is_invalid_format() {
+        let f = write_obs("not json");
+        let err = run(f.path(), false).unwrap_err();
+        assert!(matches!(err, CliError::InvalidFormat(_)));
+    }
+
+    #[test]
+    fn empty_object_passes_no_gates() {
+        let f = write_obs("{}");
+        assert!(run(f.path(), false).is_ok());
+    }
+
+    #[test]
+    fn empty_object_json_mode_passes() {
+        let f = write_obs("{}");
+        assert!(run(f.path(), true).is_ok());
+    }
+}

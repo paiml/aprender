@@ -252,3 +252,93 @@ fn print_line(prefix: &str, v: Option<String>) {
         None => println!("{prefix}(missing fields — classifier skipped)"),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    fn write_obs(json: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(json.as_bytes()).unwrap();
+        f.flush().unwrap();
+        f
+    }
+
+    #[test]
+    fn missing_file_is_file_not_found() {
+        let err = run(Path::new("/no/such/tp.json"), false).unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+
+    #[test]
+    fn invalid_json_is_invalid_format() {
+        let f = write_obs("nope");
+        let err = run(f.path(), false).unwrap_err();
+        assert!(matches!(err, CliError::InvalidFormat(_)));
+    }
+
+    #[test]
+    fn empty_object_passes_no_gates() {
+        let f = write_obs("{}");
+        assert!(run(f.path(), false).is_ok());
+    }
+
+    #[test]
+    fn range_gate_valid_p_passes() {
+        let f = write_obs(r#"{"range": {"p": 0.95}}"#);
+        assert!(run(f.path(), false).is_ok());
+    }
+
+    #[test]
+    fn range_gate_above_one_fails() {
+        let f = write_obs(r#"{"range": {"p": 1.5}}"#);
+        let err = run(f.path(), false).unwrap_err();
+        match err {
+            CliError::ValidationFailed(msg) => assert!(msg.contains("FALSIFY-CRUX-C-22-001")),
+            other => panic!("expected ValidationFailed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn range_gate_zero_p_fails() {
+        let f = write_obs(r#"{"range": {"p": 0.0}}"#);
+        let err = run(f.path(), false).unwrap_err();
+        assert!(matches!(err, CliError::ValidationFailed(_)));
+    }
+
+    #[test]
+    fn identity_gate_keep_all_passes() {
+        let f =
+            write_obs(r#"{"identity": {"kept_indices": [0,1,2], "total_tokens": 3, "p": 1.0}}"#);
+        assert!(run(f.path(), false).is_ok());
+    }
+
+    #[test]
+    fn identity_gate_dropped_tokens_fail() {
+        let f = write_obs(r#"{"identity": {"kept_indices": [0], "total_tokens": 3, "p": 1.0}}"#);
+        let err = run(f.path(), false).unwrap_err();
+        assert!(matches!(err, CliError::ValidationFailed(_)));
+    }
+
+    #[test]
+    fn mass_gate_runs() {
+        let f = write_obs(r#"{"mass": {"kept_probs": [0.5, 0.3, 0.15], "p": 0.9}}"#);
+        let _ = run(f.path(), false);
+    }
+
+    #[test]
+    fn sort_gate_runs() {
+        let f = write_obs(
+            r#"{"sort": {"all_probs": [0.5, 0.3, 0.2], "kept_probs_in_sort_order": [0.3, 0.2]}}"#,
+        );
+        let _ = run(f.path(), false);
+    }
+
+    #[test]
+    fn renorm_gate_runs_json_mode() {
+        let f = write_obs(r#"{"renorm": {"filtered_probs": [0.6, 0.4]}}"#);
+        let _ = run(f.path(), true);
+    }
+}

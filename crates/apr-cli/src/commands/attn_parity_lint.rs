@@ -141,3 +141,47 @@ fn print_report(
 
 pub const ATTN_PARITY_DEFAULT_MAX_ABS_DIFF: f64 = L02_DEFAULT_MAX_ABS_DIFF;
 pub const ATTN_PARITY_DEFAULT_MIN_COSINE_SIM: f64 = L02_DEFAULT_MIN_COSINE_SIM;
+
+#[cfg(test)]
+mod cov_tests {
+    use super::*;
+    #[test]
+    fn no_inputs_is_validation_failed() {
+        let err = run(
+            None,
+            None,
+            None,
+            ATTN_PARITY_DEFAULT_MAX_ABS_DIFF,
+            ATTN_PARITY_DEFAULT_MIN_COSINE_SIM,
+            false,
+        )
+        .unwrap_err();
+        assert!(matches!(err, CliError::ValidationFailed(_)));
+    }
+    #[test]
+    fn missing_parity_file_is_file_not_found() {
+        let err = run(
+            Some(Path::new("/no/such/parity.json")),
+            None,
+            None,
+            ATTN_PARITY_DEFAULT_MAX_ABS_DIFF,
+            ATTN_PARITY_DEFAULT_MIN_COSINE_SIM,
+            false,
+        )
+        .unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+    #[test]
+    fn missing_provenance_file_is_file_not_found() {
+        let err = run(
+            None,
+            Some(Path::new("/no/such/prov.json")),
+            None,
+            ATTN_PARITY_DEFAULT_MAX_ABS_DIFF,
+            ATTN_PARITY_DEFAULT_MIN_COSINE_SIM,
+            true,
+        )
+        .unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+}

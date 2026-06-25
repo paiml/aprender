@@ -97,3 +97,32 @@ fn print_report(
         println!("  determinism: {o:?}");
     }
 }
+
+#[cfg(test)]
+mod cov_tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+    fn w(s: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(s.as_bytes()).unwrap();
+        f.flush().unwrap();
+        f
+    }
+    #[test]
+    fn missing_file_is_file_not_found() {
+        let err = run(Path::new("/no/such/embed.csv"), None, None, false).unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+    #[test]
+    fn missing_second_file_is_file_not_found() {
+        let a = w("token,x,y\n");
+        let err = run(a.path(), None, Some(Path::new("/no/such/b.csv")), false);
+        assert!(err.is_err());
+    }
+    #[test]
+    fn empty_csv_runs() {
+        let f = w("");
+        let _ = run(f.path(), None, None, true);
+    }
+}

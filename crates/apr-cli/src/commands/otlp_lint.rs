@@ -107,3 +107,32 @@ fn print_report(
         println!("  trace_propagation: {t:?}");
     }
 }
+
+#[cfg(test)]
+mod cov_tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+    fn w(s: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(s.as_bytes()).unwrap();
+        f.flush().unwrap();
+        f
+    }
+    #[test]
+    fn missing_file_is_file_not_found() {
+        let err = run(Path::new("/no/such/otlp.json"), false, false, None, false).unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+    #[test]
+    fn malformed_content_errors() {
+        let f = w("definitely not otlp json");
+        let err = run(f.path(), false, false, None, false);
+        assert!(err.is_err());
+    }
+    #[test]
+    fn empty_json_object_runs() {
+        let f = w("{}");
+        let _ = run(f.path(), false, false, None, true);
+    }
+}

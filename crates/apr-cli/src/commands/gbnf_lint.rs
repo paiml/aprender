@@ -187,3 +187,78 @@ fn print_line(prefix: &str, v: Option<String>) {
         None => println!("{prefix}(missing fields — classifier skipped)"),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    fn write_obs(json: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(json.as_bytes()).unwrap();
+        f.flush().unwrap();
+        f
+    }
+
+    #[test]
+    fn missing_file_is_file_not_found() {
+        let err = run(Path::new("/no/such/gbnf.json"), false).unwrap_err();
+        assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+
+    #[test]
+    fn invalid_json_is_invalid_format() {
+        let f = write_obs("garbage");
+        let err = run(f.path(), false).unwrap_err();
+        assert!(matches!(err, CliError::InvalidFormat(_)));
+    }
+
+    #[test]
+    fn empty_object_passes_no_gates() {
+        let f = write_obs("{}");
+        assert!(run(f.path(), false).is_ok());
+    }
+
+    #[test]
+    fn json_gate_valid_json_stop_passes() {
+        let f = write_obs(r#"{"output": "{\"x\": 1}", "finish_reason": "stop"}"#);
+        assert!(run(f.path(), false).is_ok());
+    }
+
+    #[test]
+    fn json_gate_non_json_output_fails() {
+        let f = write_obs(r#"{"output": "not json at all", "finish_reason": "stop"}"#);
+        let err = run(f.path(), false).unwrap_err();
+        match err {
+            CliError::ValidationFailed(msg) => assert!(msg.contains("FALSIFY-CRUX-C-10-001")),
+            other => panic!("expected ValidationFailed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn masking_gate_legal_finite_illegal_neg_inf_passes() {
+        // logits: legal positions finite, illegal position is null (-inf).
+        let f = write_obs(
+            r#"{"masking": {"logits": [1.0, null, 2.0], "legal_mask": [true, false, true]}}"#,
+        );
+        assert!(run(f.path(), false).is_ok());
+    }
+
+    #[test]
+    fn masking_gate_illegal_token_not_masked_fails() {
+        // An illegal token (mask false) left at a finite logit violates masking.
+        let f = write_obs(r#"{"masking": {"logits": [1.0, 2.0], "legal_mask": [true, false]}}"#);
+        let err = run(f.path(), false).unwrap_err();
+        match err {
+            CliError::ValidationFailed(msg) => assert!(msg.contains("masking: illegal token")),
+            other => panic!("expected ValidationFailed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn json_mode_runs() {
+        let f = write_obs(r#"{"output": "{}", "finish_reason": "stop"}"#);
+        assert!(run(f.path(), true).is_ok());
+    }
+}
