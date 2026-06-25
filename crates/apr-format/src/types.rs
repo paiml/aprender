@@ -1,12 +1,18 @@
-//! v1 (`APRN`) container type definitions — spike slice for issue #2231 Stage 1.
+//! v1 (`APRN`) container type definitions — sovereign leaf (issue #2231).
 //!
-//! This is the **representative cut** moved out of `aprender-core/src/format/`
-//! (`types.rs` + `spec.rs`) to prove the error-seam works at a crate boundary.
-//! It uses [`crate::error::AprFormatError`] instead of `aprender_core::AprenderError`.
-//! `aprender-core` wraps these errors via `impl From<AprFormatError> for AprenderError`
-//! and re-exports the moved API so existing `aprender_core::format::*` paths keep working.
+//! Moved out of `aprender-core/src/format/` (`types.rs` + `spec.rs`). Uses
+//! [`crate::error::AprFormatError`] instead of `aprender_core::AprenderError`;
+//! `aprender-core` wraps these errors via `impl From<AprFormatError> for
+//! AprenderError` and re-exports the moved API so existing `aprender_core::
+//! format::*` paths keep working unchanged.
+//!
+//! Byte-identity (issue #2231): the field set and serde derives mirror the
+//! pre-extraction `aprender-core` types EXACTLY so the on-disk MessagePack
+//! metadata + bincode payload encodings are unchanged (the golden fixtures pin
+//! this for v1 F32).
 
 use crate::error::{AprFormatError, Result};
+use crate::model_card::ModelCard;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -134,7 +140,7 @@ impl Flags {
     pub const STREAMING: u8 = 0b0000_0100;
     /// Has commercial license block
     pub const LICENSED: u8 = 0b0000_1000;
-    /// 64-byte aligned tensors for zero-copy SIMD
+    /// 64-byte aligned tensors for zero-copy SIMD (trueno-native)
     pub const TRUENO_NATIVE: u8 = 0b0001_0000;
     /// Payload contains quantized tensors
     pub const QUANTIZED: u8 = 0b0010_0000;
@@ -147,10 +153,52 @@ impl Flags {
         Self(0)
     }
 
+    /// Set encrypted flag.
+    #[must_use]
+    pub fn with_encrypted(mut self) -> Self {
+        self.0 |= Self::ENCRYPTED;
+        self
+    }
+
+    /// Set signed flag.
+    #[must_use]
+    pub fn with_signed(mut self) -> Self {
+        self.0 |= Self::SIGNED;
+        self
+    }
+
+    /// Set streaming flag.
+    #[must_use]
+    pub fn with_streaming(mut self) -> Self {
+        self.0 |= Self::STREAMING;
+        self
+    }
+
     /// Set licensed flag.
     #[must_use]
     pub fn with_licensed(mut self) -> Self {
         self.0 |= Self::LICENSED;
+        self
+    }
+
+    /// Set trueno-native flag.
+    #[must_use]
+    pub fn with_trueno_native(mut self) -> Self {
+        self.0 |= Self::TRUENO_NATIVE;
+        self
+    }
+
+    /// Set quantized flag.
+    #[must_use]
+    pub fn with_quantized(mut self) -> Self {
+        self.0 |= Self::QUANTIZED;
+        self
+    }
+
+    /// Set model card flag.
+    #[must_use]
+    pub fn with_model_card(mut self) -> Self {
+        self.0 |= Self::HAS_MODEL_CARD;
         self
     }
 
@@ -176,6 +224,18 @@ impl Flags {
     #[must_use]
     pub fn is_licensed(self) -> bool {
         self.0 & Self::LICENSED != 0
+    }
+
+    /// Check if trueno-native.
+    #[must_use]
+    pub fn is_trueno_native(self) -> bool {
+        self.0 & Self::TRUENO_NATIVE != 0
+    }
+
+    /// Check if quantized.
+    #[must_use]
+    pub fn is_quantized(self) -> bool {
+        self.0 & Self::QUANTIZED != 0
     }
 
     /// Check if has model card.
@@ -216,7 +276,8 @@ pub struct Header {
     pub compression: Compression,
     /// Feature flags
     pub flags: Flags,
-    /// Quality score (0-100, Poka-yoke validation)
+    /// Quality score (0-100, Poka-yoke validation) - APR-POKA-001
+    /// 0 = no validation (F), 1-59 = failing, 60-100 = passing grades
     pub quality_score: u8,
 }
 
@@ -257,6 +318,10 @@ impl Header {
     }
 
     /// Parse header from bytes.
+    ///
+    /// # Errors
+    /// Returns an error on short input, bad magic, unsupported version, unknown
+    /// model type, unknown compression, or a compression-bomb-sized payload.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         if bytes.len() < HEADER_SIZE {
             return Err(AprFormatError::FormatError {
@@ -343,6 +408,84 @@ pub struct TrainingInfo {
     pub source: Option<String>,
 }
 
+// ============================================================================
+// Knowledge Distillation Types (spec §6.3)
+// ============================================================================
+
+/// Distillation method used (spec §6.3.1)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DistillMethod {
+    /// KL divergence on final logits (Hinton2015)
+    Standard,
+    /// Intermediate layer matching
+    Progressive,
+    /// Multiple teachers weighted average
+    Ensemble,
+}
+
+/// Teacher model provenance for audit trails (spec §6.3.2)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TeacherProvenance {
+    /// SHA256 hash of teacher .apr file
+    pub hash: String,
+    /// Ed25519 signature of teacher (if signed)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+    /// Teacher model type
+    pub model_type: ModelType,
+    /// Teacher parameter count
+    pub param_count: u64,
+    /// For ensemble: multiple teachers
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ensemble_teachers: Option<Vec<TeacherProvenance>>,
+}
+
+/// Distillation hyperparameters (spec §6.3.2)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DistillationParams {
+    /// Temperature for softening distributions (typically 2.0-5.0)
+    pub temperature: f32,
+    /// Weight for soft vs hard loss (α in loss formula)
+    pub alpha: f32,
+    /// For progressive: weight for hidden vs logit loss (β)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub beta: Option<f32>,
+    /// Training epochs for distillation
+    pub epochs: u32,
+    /// Final distillation loss achieved
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub final_loss: Option<f32>,
+}
+
+/// Layer mapping for progressive distillation (spec §6.3.2)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LayerMapping {
+    /// Student layer index
+    pub student_layer: usize,
+    /// Teacher layer index
+    pub teacher_layer: usize,
+    /// Weight for this layer's loss
+    pub weight: f32,
+}
+
+/// Complete distillation provenance (spec §6.3.2)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DistillationInfo {
+    /// Distillation method used
+    pub method: DistillMethod,
+    /// Teacher model provenance
+    pub teacher: TeacherProvenance,
+    /// Distillation hyperparameters
+    pub params: DistillationParams,
+    /// Optional: layer mapping for progressive distillation
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer_mapping: Option<Vec<LayerMapping>>,
+}
+
+// ============================================================================
+// Commercial License Types (spec §9)
+// ============================================================================
+
 /// License tier levels (spec §9.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LicenseTier {
@@ -361,7 +504,7 @@ pub enum LicenseTier {
 pub struct LicenseInfo {
     /// Unique license identifier (UUID v4)
     pub uuid: String,
-    /// Hash of the license certificate
+    /// Hash of the license certificate (cryptographically bound)
     pub hash: String,
     /// License expiration date (ISO 8601) — None for perpetual
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -377,13 +520,9 @@ pub struct LicenseInfo {
 }
 
 /// Model metadata (MessagePack-encoded).
-///
-/// Spike slice keeps the load-bearing fields (`created_at`, `aprender_version`,
-/// hyperparameters, training, license). The full distillation/model-card
-/// provenance types stay in `aprender-core` for now and move in Stage 2.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Metadata {
-    /// Creation timestamp (ISO 8601 — seconds since epoch in spike form)
+    /// Creation timestamp (ISO 8601)
     pub created_at: String,
     /// Aprender version that created this model
     pub aprender_version: String,
@@ -405,9 +544,18 @@ pub struct Metadata {
     /// Custom user data
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub custom: HashMap<String, serde_json::Value>,
+    /// Distillation teacher hash (spec §6.3) - simple form
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distillation: Option<String>,
+    /// Full distillation provenance (spec §6.3.2) - structured form
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distillation_info: Option<DistillationInfo>,
     /// Commercial license information (spec §9.1)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub license: Option<LicenseInfo>,
+    /// Model card metadata (spec §11)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_card: Option<ModelCard>,
 }
 
 impl Default for Metadata {
@@ -421,19 +569,23 @@ impl Default for Metadata {
             hyperparameters: HashMap::new(),
             metrics: HashMap::new(),
             custom: HashMap::new(),
+            distillation: None,
+            distillation_info: None,
             license: None,
+            model_card: None,
         }
     }
 }
 
-/// Simple ISO-8601-ish timestamp (seconds since epoch, no chrono dependency).
+/// Simple ISO 8601 timestamp (no chrono dependency).
 #[must_use]
 pub fn chrono_lite_now() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
+    let duration = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+        .unwrap_or_default();
+    let secs = duration.as_secs();
+    // Convert to rough ISO 8601 (good enough for metadata)
     format!("{secs}")
 }
 
@@ -458,4 +610,88 @@ impl SaveOptions {
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// Set compression algorithm.
+    #[must_use]
+    pub fn with_compression(mut self, compression: Compression) -> Self {
+        self.compression = compression;
+        self
+    }
+
+    /// Set model name.
+    #[must_use]
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.metadata.model_name = Some(name.into());
+        self
+    }
+
+    /// Set description.
+    #[must_use]
+    pub fn with_description(mut self, desc: impl Into<String>) -> Self {
+        self.metadata.description = Some(desc.into());
+        self
+    }
+
+    /// Set distillation info (spec §6.3).
+    #[must_use]
+    pub fn with_distillation_info(mut self, info: DistillationInfo) -> Self {
+        self.metadata.distillation_info = Some(info);
+        self
+    }
+
+    /// Set license info (spec §9.1).
+    #[must_use]
+    pub fn with_license(mut self, license: LicenseInfo) -> Self {
+        self.metadata.license = Some(license);
+        self
+    }
+
+    /// Set model card (spec §11).
+    #[must_use]
+    pub fn with_model_card(mut self, card: ModelCard) -> Self {
+        self.metadata.model_card = Some(card);
+        self
+    }
+
+    /// Set quality score from Poka-yoke validation (APR-POKA-001).
+    ///
+    /// # Jidoka (Stop the Line)
+    /// - Score 0 will cause `save()` to REFUSE the write
+    /// - Score 1-59 allows save with warning
+    /// - Score 60-100 is passing
+    #[must_use]
+    pub fn with_quality_score(mut self, score: u8) -> Self {
+        self.quality_score = Some(score);
+        self
+    }
+}
+
+/// Model information (from inspection).
+#[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)] // Bools represent independent flag states
+pub struct ModelInfo {
+    /// Model type
+    pub model_type: ModelType,
+    /// Format version
+    pub format_version: (u8, u8),
+    /// Metadata
+    pub metadata: Metadata,
+    /// Compressed payload size
+    pub payload_size: usize,
+    /// Uncompressed payload size
+    pub uncompressed_size: usize,
+    /// Is encrypted
+    pub encrypted: bool,
+    /// Is signed
+    pub signed: bool,
+    /// Is streaming
+    pub streaming: bool,
+    /// Has commercial license block
+    pub licensed: bool,
+    /// Uses trueno-native 64-byte aligned tensors
+    pub trueno_native: bool,
+    /// Contains quantized tensors
+    pub quantized: bool,
+    /// Has model card metadata (spec §11)
+    pub has_model_card: bool,
 }

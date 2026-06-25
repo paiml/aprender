@@ -13,6 +13,7 @@ mod tests_gh200_q4k_roundtrip {
         build_pygmy_apr_gguf_names, build_pygmy_apr_q4k, build_pygmy_apr_q6k,
     };
     use crate::format::v2::AprV2Reader;
+    use crate::format::AprV2DequantExt; // issue #2231 re-attached accessor
 
     /// GH-200: Q4K APR tensors can be loaded and dequantized to f32.
     ///

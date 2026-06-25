@@ -23,6 +23,8 @@ serde_json = { version = "1.0", default-features = false, features = ["std"] }
 # IEEE-754 half precision — replaces the trueno::f32_to_f16 / f16_to_f32 calls.
 half = { version = "2.4", default-features = false, features = ["std"] }
 thiserror = "2"
+# Constant-memory streaming v2 writer spills tensor data to a temp file.
+tempfile = "3.14"
 
 # --- Optional, off-by-default ---
 # Zero-copy memory-mapped loading (v2 container).
@@ -32,7 +34,11 @@ lz4_flex = { version = "0.11", optional = true }
 zstd = { version = "0.13", optional = true }
 
 [dev-dependencies]
-tempfile = "3.14"
+# Property tests for the model-card JSON round-trip (generating.rs).
+proptest = "1"
+# Sovereignty falsifier parses the leaf's own dependency graph (match the
+# workspace's existing 0.19 to avoid a duplicate cargo_metadata in the lock).
+cargo_metadata = "0.19"
 
 [features]
 default = []
@@ -74,3 +80,7 @@ module_name_repetitions = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 must_use_candidate = "allow"
+# Moved doc comments reference identifiers/paths (e.g. `config.json::architectures[0]`,
+# `Qwen2ForCausalLM`, `LAYOUT_ROW_MAJOR`) that doc_markdown wants in backticks but
+# read fine as-is; mirror aprender-core's allowance for domain identifiers in docs.
+doc_markdown = "allow"

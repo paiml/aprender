@@ -18,6 +18,8 @@ use crate::format::converter::{
     apr_export, apr_import, ExportFormat, ExportOptions, ImportOptions,
 };
 use crate::format::v2::AprV2Reader;
+// issue #2231: `get_tensor_as_f32` is the re-attached `AprV2DequantExt` method.
+use crate::format::AprV2DequantExt;
 use crate::serialization::safetensors::MappedSafeTensors;
 use std::fs;
 use std::path::{Path, PathBuf};

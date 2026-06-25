@@ -1,12 +1,15 @@
 // Tests legitimately use expect/unwrap/panic and exact-float asserts on known
-// values; mirror the workspace convention of allowing these in test code only.
+// values; mirror the workspace convention (aprender-core/src/lib.rs) of allowing
+// these — including the `.clippy.toml` disallowed-methods `.unwrap()` ban — in
+// test code only.
 #![cfg_attr(
     test,
     allow(
         clippy::expect_used,
         clippy::unwrap_used,
         clippy::panic,
-        clippy::float_cmp
+        clippy::float_cmp,
+        clippy::disallowed_methods
     )
 )]
 
@@ -45,16 +48,22 @@ pub mod crc32;
 pub mod error;
 pub mod f16;
 pub mod falsifiers;
+pub mod model_card;
 pub mod types;
+pub mod v2;
 pub mod validate;
 
 // --- Convenience re-exports (the public surface aprender-core re-exports) ---
-pub use core_io::{load, load_from_bytes, save};
+pub use core_io::{
+    inspect, inspect_bytes, load, load_auto, load_from_bytes, load_mmap, save, MMAP_THRESHOLD,
+};
 pub use crc32::crc32;
 pub use error::{AprFormatError, Result};
 pub use f16::{f16_to_f32, f32_to_f16};
+pub use model_card::{ModelCard, TrainingDataInfo};
 pub use types::{
-    Compression, Flags, Header, LicenseInfo, LicenseTier, Metadata, ModelType, SaveOptions,
+    Compression, DistillMethod, DistillationInfo, DistillationParams, Flags, Header, LayerMapping,
+    LicenseInfo, LicenseTier, Metadata, ModelInfo, ModelType, SaveOptions, TeacherProvenance,
     TrainingInfo, FORMAT_VERSION, HEADER_SIZE, MAGIC, MAX_UNCOMPRESSED_SIZE,
 };
 pub use validate::{validate_structure, StructureCheck};

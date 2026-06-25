@@ -27,11 +27,21 @@ equations:
       save_v1(model, pinned_options) -> bytes : the extracted apr-format save()
       reproduces the pre-extraction aprender-core save() bytes exactly, including
       the trailing CRC32. golden_v1.apr / golden_v2.apr are the captured oracle.
-    domain: a fixed deterministic model + pinned SaveOptions (fixed created_at, version, empty maps)
+
+      F16 SCOPING (issue #2231 / PMAT-905 class): byte-identity is asserted for
+      F32 payloads ONLY. The leaf adopts the IEEE-correct `half` crate for
+      f32->f16, which differs from the legacy non-RNE `trueno::f32_to_f16`
+      (round-half-up + a mantissa-overflow carry bug that emitted the WRONG
+      exponent, e.g. 255.99 -> 0xD800 instead of 0xDC00). v2 tensors WRITTEN as
+      f16 therefore change bytes — this is a DOCUMENTED bug-fix, not a regression.
+      The golden fixtures use F32 weights, so they are unaffected; v2 f16 tensors
+      now use IEEE round-to-nearest-even.
+    domain: a fixed deterministic model + pinned SaveOptions (fixed created_at, version, empty maps), F32 payload
     codomain: Vec<u8> (full .apr file bytes)
     invariants:
     - 'leaf load(golden_v1.apr) deserializes to the captured model'
-    - 'leaf save of the same model+options equals the golden bytes byte-for-byte'
+    - 'leaf save of the same F32 model+options equals the golden bytes byte-for-byte'
+    - 'f16-written v2 tensors use IEEE round-to-nearest-even (half crate), NOT trueno non-RNE'
     preconditions:
     - 'data.len() > 0'
   sovereign_deps:
@@ -95,8 +105,8 @@ equations:
     - 'data.len() > 0'
 proof_obligations:
 - type: equivalence
-  property: Byte-identity of the extracted save path against the golden oracle
-  formal: save_leaf(model, pinned) == golden_v1.apr bytes
+  property: Byte-identity of the extracted F32 save path against the golden oracle
+  formal: save_leaf(F32_model, pinned) == golden_v1.apr bytes (f16 writes excepted — IEEE-RNE bug-fix)
   tolerance: 0.0
   applies_to: all
 - type: invariant
@@ -123,8 +133,8 @@ proof_obligations:
   applies_to: all
 falsification_tests:
 - id: FALSIFY-APRF-BYTE-IDENTITY
-  rule: extracted save reproduces the golden bytes
-  prediction: the leaf loads golden_v1.apr and re-saving the same model+pinned options equals it byte-for-byte
+  rule: extracted save reproduces the golden F32 bytes
+  prediction: the leaf loads golden_v1.apr (F32 payload) and re-saving the same model+pinned options equals it byte-for-byte; f16 v2 writes are excepted (IEEE-RNE bug-fix)
   test: cargo test -p apr-format --lib test_falsify_aprf_byte_identity_golden_roundtrip
   if_fails: the extraction changed the on-disk encoding (serializer order, padding, or header layout drifted)
 - id: FALSIFY-APRF-SOVEREIGN-DEPS

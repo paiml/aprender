@@ -29,6 +29,8 @@
 
 use crate::autograd::Tensor;
 use crate::format::v2::AprV2Reader;
+// issue #2231: `get_tensor_as_f32` is the re-attached `AprV2DequantExt` method.
+use crate::format::AprV2DequantExt;
 use crate::models::bert::{BertConfig, BertEmbeddings, BertEncoder, BertLayer, CrossEncoder};
 
 /// Build the canonical set of HuggingFace BERT tensor names this loader

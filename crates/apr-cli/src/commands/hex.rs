@@ -17,6 +17,8 @@ use crate::output;
 #[cfg(test)]
 use aprender::format::v2::TensorDType;
 use aprender::format::v2::{AprV2Reader, TensorIndexEntry};
+// issue #2231: `get_tensor_as_f32` is the re-attached `AprV2DequantExt` method.
+use aprender::format::AprV2DequantExt;
 use colored::Colorize;
 use std::path::{Path, PathBuf};
 

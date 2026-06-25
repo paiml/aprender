@@ -8,9 +8,11 @@ use ed25519_dalek::{SigningKey, VerifyingKey};
 use serde::{de::DeserializeOwned, Serialize};
 
 use super::core_io::{
-    compress_payload, crc32, decompress_and_deserialize, parse_and_validate_header,
-    read_file_content, verify_file_checksum, verify_payload_boundary, verify_signed_flag,
+    compress_payload, decompress_and_deserialize, parse_and_validate_header, read_file_content,
+    verify_file_checksum, verify_payload_boundary, verify_signed_flag,
 };
+// issue #2231: crc32 deduplicated into the leaf; reach it via the format re-export.
+use super::crc32;
 use super::{Header, ModelType, SaveOptions, HEADER_SIZE, PUBLIC_KEY_SIZE, SIGNATURE_SIZE};
 use crate::error::{AprenderError, Result};
 

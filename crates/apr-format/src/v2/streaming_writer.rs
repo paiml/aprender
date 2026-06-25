@@ -1,3 +1,17 @@
+//! Streaming v2 writer — constant-memory import for large models (issue #2231).
+//!
+//! Formerly `include!`d into `v2/mod.rs`; now a real module. The
+//! `AprV2StreamingWriter` struct lives here next to its `impl` (private fields).
+//! f16 conversion routes through [`crate::f16`] (IEEE round-to-nearest-even,
+//! `half` crate), NOT `trueno::f32_to_f16`.
+
+use super::{
+    align_64, AprV2Flags, AprV2Header, AprV2Metadata, TensorDType, TensorIndexEntry, V2FormatError,
+    HEADER_SIZE_V2,
+};
+use crate::f16::f32_to_f16;
+use std::io::{Read, Write};
+
 /// Streaming APR v2 writer — writes tensors to disk incrementally (realizar#136).
 ///
 /// Unlike `AprV2Writer` which accumulates all tensor data in RAM,
@@ -12,6 +26,17 @@
 ///
 /// Index entries are sorted by name during `finalize()` (APR v2 contract).
 /// Data in the temp file stays in insertion order; index offsets point correctly.
+#[allow(missing_debug_implementations)]
+pub struct AprV2StreamingWriter {
+    header: AprV2Header,
+    metadata: AprV2Metadata,
+    /// Index entries only — tensor data is on disk
+    index_entries: Vec<TensorIndexEntry>,
+    /// Temp file for tensor data
+    data_writer: std::io::BufWriter<std::fs::File>,
+    /// Current offset in the data section
+    data_offset: u64,
+}
 
 impl AprV2StreamingWriter {
     /// Create a new streaming writer.
@@ -279,10 +304,7 @@ impl AprV2StreamingWriter {
 
         // Write output file
         let out_file = std::fs::File::create(output_path).map_err(|e| {
-            V2FormatError::IoError(format!(
-                "Failed to create {}: {e}",
-                output_path.display()
-            ))
+            V2FormatError::IoError(format!("Failed to create {}: {e}", output_path.display()))
         })?;
         let mut out = BufWriter::new(out_file);
 
@@ -361,8 +383,7 @@ fn streaming_crc32_file(path: &std::path::Path) -> Result<u32, V2FormatError> {
         table
     };
 
-    let mut file =
-        std::fs::File::open(path).map_err(|e| V2FormatError::IoError(e.to_string()))?;
+    let mut file = std::fs::File::open(path).map_err(|e| V2FormatError::IoError(e.to_string()))?;
     let mut crc = 0xFFFF_FFFF_u32;
     let mut buf = vec![0u8; 256 * 1024];
     loop {

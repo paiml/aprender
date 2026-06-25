@@ -1,6 +1,6 @@
-//! APR Format Module (GH-119)
+//! APR Format Module (v2 `APR\0`) — sovereign leaf (issue #2231)
 //!
-//! Implements the APR format specification with:
+//! Implements the APR v2 container format with:
 //! - 64-byte tensor alignment for zero-copy mmap
 //! - LZ4 block compression (64KB blocks)
 //! - JSON metadata section
@@ -36,133 +36,25 @@
 //! # Example
 //!
 //! ```rust
-//! use aprender::format::v2::{AprV2Header, AprV2Flags, MAGIC_V2, ALIGNMENT};
+//! use apr_format::v2::{AprV2Header, AprV2Flags, MAGIC_V2, ALIGNMENT};
 //!
 //! let header = AprV2Header::new();
 //! assert_eq!(header.magic, MAGIC_V2);
 //! assert!(header.is_valid());
 //! ```
 //!
-//! # PMAT Compliance
+//! # Sovereignty (issue #2231)
 //!
-//! - Zero `unwrap()` calls
-//! - All public APIs return `Result<T, E>`
-//! - 64-byte alignment enforced at type level
-
-use crate::format::f16_safety::F16_MIN_NORMAL;
-use crate::format::gguf::dequant::{dequantize_q4_k, dequantize_q6_k};
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::io::{Read, Write};
-
-// ============================================================================
-// CRC32 (IEEE polynomial, matching format/mod.rs)
-// ============================================================================
-
-/// CRC32 checksum (IEEE polynomial 0xEDB88320)
-fn crc32(data: &[u8]) -> u32 {
-    const TABLE: [u32; 256] = {
-        let mut table = [0u32; 256];
-        let mut i = 0;
-        while i < 256 {
-            let mut crc = i as u32;
-            let mut j = 0;
-            while j < 8 {
-                if crc & 1 != 0 {
-                    crc = (crc >> 1) ^ 0xEDB8_8320;
-                } else {
-                    crc >>= 1;
-                }
-                j += 1;
-            }
-            table[i] = crc;
-            i += 1;
-        }
-        table
-    };
-
-    let mut crc = 0xFFFF_FFFF_u32;
-    for &byte in data {
-        let idx = ((crc ^ u32::from(byte)) & 0xFF) as usize;
-        crc = (crc >> 8) ^ TABLE[idx];
-    }
-    !crc
-}
-
-// ============================================================================
-// IEEE 754 Half-Precision (f16) Conversion
-// ============================================================================
-
-/// Convert f32 to f16 (IEEE 754 half-precision)
-///
-/// Half-precision format:
-/// - Sign: 1 bit
-/// - Exponent: 5 bits (bias 15)
-/// - Mantissa: 10 bits
-///
-/// ONE PATH: Delegates to `trueno::f32_to_f16` (UCBD §4).
-fn f32_to_f16(value: f32) -> u16 {
-    trueno::f32_to_f16(value)
-}
-
-/// Convert f16 to f32
-///
-/// ONE PATH: Delegates to `trueno::f16_to_f32` (UCBD §4).
-fn f16_to_f32(bits: u16) -> f32 {
-    trueno::f16_to_f32(bits)
-}
-
-/// Dequantize Q4 block-quantized data to f32
-///
-/// Format: blocks of [scale: f16 (2 bytes)] + [packed nibbles: 16 bytes]
-/// Each block contains 32 values.
-fn dequantize_q4(data: &[u8], element_count: usize) -> Vec<f32> {
-    const BLOCK_SIZE: usize = 32;
-
-    let mut result = Vec::with_capacity(element_count);
-    let mut pos = 0;
-    let mut remaining = element_count;
-
-    while remaining > 0 && pos + 2 <= data.len() {
-        // Read scale (f16)
-        // GH-186 FIX: Clamp NaN/Inf/subnormal to prevent propagation
-        // Uses shared F16_MIN_NORMAL from crate::format::f16_safety (P2 fix)
-        let scale_bits = u16::from_le_bytes([data[pos], data[pos + 1]]);
-        let scale_raw = f16_to_f32(scale_bits);
-        let scale =
-            if scale_raw.is_nan() || scale_raw.is_infinite() || scale_raw.abs() < F16_MIN_NORMAL {
-                0.0
-            } else {
-                scale_raw
-            };
-        pos += 2;
-
-        // Read packed nibbles (16 bytes max)
-        let values_in_block = remaining.min(BLOCK_SIZE);
-
-        for i in 0..values_in_block {
-            let byte_idx = pos + i / 2;
-            if byte_idx >= data.len() {
-                break;
-            }
-
-            let byte = data[byte_idx];
-            let nibble = if i % 2 == 0 { byte & 0x0F } else { byte >> 4 };
-
-            // Convert back from unsigned nibble (0-15) to signed (-8 to 7)
-            let q = (nibble as i8) - 8;
-            result.push(f32::from(q) * scale);
-        }
-
-        // Move to next block (always 18 bytes per block in storage)
-        pos += 16;
-        remaining = remaining.saturating_sub(BLOCK_SIZE);
-    }
-
-    // Pad with zeros if needed (partial last block)
-    result.resize(element_count, 0.0);
-    result
-}
+//! This module contains ONLY the container I/O — pure bytes, shapes, and
+//! dtypes. It carries **no** ML/GPU/tokenizer dependency:
+//!   - CRC32 routes through the single [`crate::crc32::crc32`].
+//!   - f16 conversion routes through [`crate::f16`] (the IEEE-correct `half`
+//!     crate), NOT `trueno::f32_to_f16`. See the f16 note in `crate::f16`.
+//!   - The dequantizing `get_tensor_as_f32` accessor (which needs the GGUF
+//!     Q4_K/Q6_K dequant + f32 physics) is **severed** from the leaf reader and
+//!     re-attached in `aprender-core` as an extension trait (`AprV2DequantExt`).
+//!     The leaf exposes the raw bytes via [`AprV2Reader::get_tensor_data`] and
+//!     the typed-but-trivial [`AprV2Reader::get_f32_tensor`] (F32 dtype only).
 
 // ============================================================================
 // Constants
@@ -354,16 +246,32 @@ impl Default for AprV2Header {
     }
 }
 
-include!("header_impl.rs");
-include!("tensor_index_impl.rs");
-include!("writer.rs");
-include!("streaming_writer.rs");
-include!("reader_impl.rs");
-include!("v2format_error.rs");
+// --- Split modules (was include!(); now real `mod`s, issue #2231 Stage 2) ----
+// Each formerly-`include!`d file is a real module that re-derives its own `use`
+// block and reaches the parent-scope structs/consts via `super::`. The public
+// items are re-exported into the `v2` namespace below so the historical flat
+// paths (`aprender::format::v2::AprV2Reader`, …) keep resolving unchanged.
+mod header_impl;
+mod reader_impl;
+mod streaming_writer;
+mod tensor_index_impl;
+mod v2format_error;
+mod writer;
+
+pub use header_impl::{
+    AprV2Metadata, ChatSpecialTokens, QuantizationMetadata, ShardingMetadata, TensorIndexEntry,
+};
+pub use reader_impl::{AprV2Reader, AprV2ReaderRef, ShardInfo, ShardManifest};
+pub use streaming_writer::AprV2StreamingWriter;
+pub use tensor_index_impl::{align_64, align_up, is_aligned_64, padding_to_align, TensorDType};
+pub use v2format_error::V2FormatError;
+pub use writer::AprV2Writer;
 
 // Provenance stamping — SHIP-009 full-discharge enabler (task #141).
 // Lives as a real submodule (not `include!`) so its inline tests nest
-// cleanly under `v2::stamp::tests` rather than colliding with the
-// flat-scope tests already in `v2::tests`.
+// cleanly under `v2::stamp::tests`.
 pub mod stamp;
 pub use stamp::{stamp_provenance_bytes, ProvenancePatch};
+
+#[cfg(test)]
+mod tests;

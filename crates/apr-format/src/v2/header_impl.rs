@@ -1,3 +1,15 @@
+//! v2 header impl + JSON metadata + tensor-index entry types (issue #2231).
+//!
+//! Formerly `include!`d into `v2/mod.rs`; now a real module. Reaches the
+//! parent-scope header/flag/const definitions via `super::` and the sibling
+//! [`super::TensorDType`] via the `v2` namespace re-export.
+
+use super::{
+    AprV2Flags, AprV2Header, TensorDType, V2FormatError, HEADER_SIZE_V2, MAGIC_V2, VERSION_V2,
+};
+use crate::crc32::crc32;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 impl AprV2Header {
     /// Create new v2 header with defaults
@@ -344,8 +356,8 @@ impl AprV2Metadata {
         // Entrenar checkpoints (v1-v9) may have duplicate fields like rms_norm_eps
         // due to #[serde(flatten)] serializing both struct field (null) and custom
         // map entry. Value::Object deduplicates (last value wins).
-        let value: serde_json::Value =
-            serde_json::from_slice(data).map_err(|e| V2FormatError::MetadataError(e.to_string()))?;
+        let value: serde_json::Value = serde_json::from_slice(data)
+            .map_err(|e| V2FormatError::MetadataError(e.to_string()))?;
         serde_json::from_value(value).map_err(|e| V2FormatError::MetadataError(e.to_string()))
     }
 }

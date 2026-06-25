@@ -448,9 +448,8 @@ fn test_flags_all_bits() {
     assert!(flags.is_quantized());
 }
 
-#[path = "tests_shard_provenance.rs"]
-mod tests_shard_provenance;
-#[path = "tests_pygmy_tensors.rs"]
-mod tests_pygmy_tensors;
-#[path = "tests_q6k_ref_reader.rs"]
-mod tests_q6k_ref_reader;
+// issue #2231: the dequant-coupled test sub-chain (tests_shard_provenance /
+// tests_pygmy_tensors / tests_q6k_ref_reader / tests_layout*) exercised the
+// SEVERED `get_tensor_as_f32` + `dequantize_q4` + the core-only `test_factory`,
+// so it moved to `aprender-core/src/format/v2_dequant_tests/` where the
+// `AprV2DequantExt` extension lives. The leaf keeps only pure-container tests.

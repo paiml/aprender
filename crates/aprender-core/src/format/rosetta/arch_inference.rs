@@ -341,6 +341,7 @@ impl RosettaStone {
     fn load_tensor_f32_apr(&self, path: &Path, tensor_name: &str) -> Result<Vec<f32>> {
         use crate::bundle::MappedFile;
         use crate::format::v2::AprV2ReaderRef;
+        use crate::format::AprV2DequantExt; // issue #2231 re-attached accessor
 
         // PERF (PMAT-APR-DIFF-MMAP): use mmap instead of std::fs::read so callers
         // that invoke this fn N times (e.g. `apr diff --values --limit N` walking

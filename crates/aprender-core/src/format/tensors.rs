@@ -28,6 +28,8 @@ use crate::error::{AprenderError, Result};
 use crate::format::gguf::reader::GgufReader;
 use crate::format::rosetta::FormatType;
 use crate::format::v2::{AprV2Reader, AprV2ReaderRef, TensorIndexEntry};
+// issue #2231: `get_tensor_as_f32` is the re-attached `AprV2DequantExt` method.
+use crate::format::AprV2DequantExt;
 use crate::format::HEADER_SIZE;
 use std::collections::HashMap;
 use std::fs::File;

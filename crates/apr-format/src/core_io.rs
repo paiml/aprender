@@ -7,11 +7,17 @@
 
 use crate::crc32::crc32;
 use crate::error::{AprFormatError, Result};
-use crate::types::{Compression, Header, ModelType, SaveOptions, HEADER_SIZE};
+use crate::types::{Compression, Header, Metadata, ModelInfo, ModelType, SaveOptions, HEADER_SIZE};
 use serde::{de::DeserializeOwned, Serialize};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
+
+/// Threshold for switching to mmap loading (1MB).
+///
+/// Files larger than this use memory-mapped I/O (when the `mmap` feature is on);
+/// smaller files use standard read-to-heap (lower overhead for small data).
+pub const MMAP_THRESHOLD: u64 = 1024 * 1024;
 
 /// Compress payload based on algorithm (spec §3.3).
 ///
@@ -192,10 +198,135 @@ pub fn load_from_bytes<M: DeserializeOwned>(data: &[u8], expected_type: ModelTyp
         .map_err(|e| AprFormatError::Serialization(format!("Failed to deserialize model: {e}")))
 }
 
+/// Build a [`ModelInfo`] from a parsed header + decoded metadata.
+fn model_info_from(header: &Header, metadata: Metadata) -> ModelInfo {
+    ModelInfo {
+        model_type: header.model_type,
+        format_version: header.version,
+        metadata,
+        payload_size: header.payload_size as usize,
+        uncompressed_size: header.uncompressed_size as usize,
+        encrypted: header.flags.is_encrypted(),
+        signed: header.flags.is_signed(),
+        streaming: header.flags.is_streaming(),
+        licensed: header.flags.is_licensed(),
+        trueno_native: header.flags.is_trueno_native(),
+        quantized: header.flags.is_quantized(),
+        has_model_card: header.flags.has_model_card(),
+    }
+}
+
+/// Inspect model data without loading the payload (spec §1.1).
+///
+/// Useful for validating embedded models or checking metadata without
+/// deserializing the full model.
+///
+/// # Errors
+/// Returns an error on a too-small buffer, a bad header, or metadata that
+/// extends past the data boundary.
+pub fn inspect_bytes(data: &[u8]) -> Result<ModelInfo> {
+    if data.len() < HEADER_SIZE {
+        return Err(AprFormatError::FormatError {
+            message: format!("Data too small: {} bytes", data.len()),
+        });
+    }
+    let header = Header::from_bytes(&data[..HEADER_SIZE])?;
+    let metadata_end = HEADER_SIZE + header.metadata_size as usize;
+    if metadata_end > data.len() {
+        return Err(AprFormatError::FormatError {
+            message: "Metadata extends beyond data boundary".to_string(),
+        });
+    }
+    let metadata_bytes = &data[HEADER_SIZE..metadata_end];
+    let metadata: Metadata = rmp_serde::from_slice(metadata_bytes)
+        .map_err(|e| AprFormatError::Serialization(format!("Failed to parse metadata: {e}")))?;
+    Ok(model_info_from(&header, metadata))
+}
+
+/// Inspect a model file without loading the payload.
+///
+/// # Errors
+/// Returns an error on I/O failure or a format error.
+pub fn inspect(path: impl AsRef<Path>) -> Result<ModelInfo> {
+    let path = path.as_ref();
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+
+    let mut header_bytes = [0u8; HEADER_SIZE];
+    reader.read_exact(&mut header_bytes)?;
+    let header = Header::from_bytes(&header_bytes)?;
+
+    let mut metadata_bytes = vec![0u8; header.metadata_size as usize];
+    reader.read_exact(&mut metadata_bytes)?;
+    let metadata: Metadata = rmp_serde::from_slice(&metadata_bytes)
+        .map_err(|e| AprFormatError::Serialization(format!("Failed to parse metadata: {e}")))?;
+
+    Ok(model_info_from(&header, metadata))
+}
+
+/// Load a model using memory-mapped I/O (zero-copy where possible).
+///
+/// Maps the file directly into the address space (via `memmap2`) and parses
+/// from the mapped slice, avoiding a read-to-heap copy. Falls back to standard
+/// [`load`] when the `mmap` feature is disabled, preserving the same API.
+///
+/// # Safety
+/// Uses OS-level memory mapping; the file must not be modified while loaded.
+///
+/// # Errors
+/// Returns an error on file-not-found, a format error, a type mismatch, or a
+/// checksum failure.
+#[cfg(feature = "mmap")]
+pub fn load_mmap<M: DeserializeOwned>(
+    path: impl AsRef<Path>,
+    expected_type: ModelType,
+) -> Result<M> {
+    let file = File::open(path.as_ref())?;
+    // SAFETY: standard memmap2 usage; the caller upholds the no-concurrent-write
+    // contract documented above (same precondition as the pre-extraction core).
+    let mmap = unsafe { memmap2::Mmap::map(&file)? };
+    load_from_bytes(&mmap, expected_type)
+}
+
+/// Load a model using memory-mapped I/O — `mmap`-feature-disabled fallback.
+///
+/// Without the `mmap` feature this delegates to the standard heap-backed
+/// [`load`], keeping the public API identical.
+///
+/// # Errors
+/// Returns an error on file-not-found, a format error, a type mismatch, or a
+/// checksum failure.
+#[cfg(not(feature = "mmap"))]
+pub fn load_mmap<M: DeserializeOwned>(
+    path: impl AsRef<Path>,
+    expected_type: ModelType,
+) -> Result<M> {
+    load(path, expected_type)
+}
+
+/// Load a model with automatic strategy selection based on file size.
+///
+/// Files larger than [`MMAP_THRESHOLD`] use [`load_mmap`]; smaller files use
+/// [`load`] (lower overhead for small files).
+///
+/// # Errors
+/// Returns an error on file-not-found, a format error, a type mismatch, or a
+/// checksum failure.
+pub fn load_auto<M: DeserializeOwned>(
+    path: impl AsRef<Path>,
+    expected_type: ModelType,
+) -> Result<M> {
+    let metadata = std::fs::metadata(path.as_ref())?;
+    if metadata.len() > MMAP_THRESHOLD {
+        load_mmap(path, expected_type)
+    } else {
+        load(path, expected_type)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::Metadata;
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

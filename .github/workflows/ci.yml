@@ -292,6 +292,19 @@ jobs:
             -w /workspace \
             "$IMAGE" \
             bash scripts/check_build_rs_paths.sh
+      - name: apr-format leaf sovereignty guard (#2231)
+        # Poka-Yoke: prove the extracted `apr-format` leaf pulls no ML/GPU/
+        # tokenizer/framework crate (so consumers `cargo add apr-format` without
+        # aprender-core + trueno/wgpu). Discriminating: PASSES on apr-format +
+        # aprender-quant, FAILS on aprender-core. Also runs a publish dry-run to
+        # catch dev-dep cycles. See scripts/check_format_sovereignty.sh.
+        run: |
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace \
+            "$IMAGE" \
+            bash scripts/check_format_sovereignty.sh
       - name: Fix file ownership (container runs as root, runner as noah:1000)
         if: always()
         run: |

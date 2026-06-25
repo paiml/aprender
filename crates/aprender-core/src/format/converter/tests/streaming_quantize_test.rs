@@ -11,6 +11,7 @@ mod tests_streaming_quantize {
     };
     use crate::format::test_factory::build_pygmy_apr_gguf_names;
     use crate::format::v2::{AprV2Reader, AprV2ReaderRef};
+    use crate::format::AprV2DequantExt; // issue #2231 re-attached accessor
 
     #[test]
     fn streaming_quantize_roundtrips_all_tensors() {

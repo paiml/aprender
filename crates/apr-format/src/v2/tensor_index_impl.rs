@@ -1,3 +1,7 @@
+//! Tensor-index entry impl, `TensorDType`, and 64-byte alignment utilities
+//! (issue #2231). Formerly `include!`d into `v2/mod.rs`; now a real module.
+
+use super::{TensorIndexEntry, V2FormatError, ALIGNMENT, MAX_TENSOR_NAME_LEN};
 
 impl TensorIndexEntry {
     /// Create new tensor index entry
@@ -208,11 +212,23 @@ impl std::fmt::Display for TensorDType {
 const _: () = assert!(TensorDType::F32 as u8 == 0, "F32 must be GGML type 0");
 const _: () = assert!(TensorDType::F16 as u8 == 1, "F16 must be GGML type 1");
 const _: () = assert!(TensorDType::BF16 as u8 == 30, "BF16 must be GGML type 30");
-const _: () = assert!(TensorDType::Q4K as u8 == 12, "Q4K must be GGML type 12 (Q4_K)");
-const _: () = assert!(TensorDType::Q6K as u8 == 14, "Q6K must be GGML type 14 (Q6_K)");
+const _: () = assert!(
+    TensorDType::Q4K as u8 == 12,
+    "Q4K must be GGML type 12 (Q4_K)"
+);
+const _: () = assert!(
+    TensorDType::Q6K as u8 == 14,
+    "Q6K must be GGML type 14 (Q6_K)"
+);
 // APR-native types must be outside GGML range (>=128)
-const _: () = assert!(TensorDType::AprQ4 as u8 >= 128, "AprQ4 must be outside GGML range");
-const _: () = assert!(TensorDType::AprQ8 as u8 >= 128, "AprQ8 must be outside GGML range");
+const _: () = assert!(
+    TensorDType::AprQ4 as u8 >= 128,
+    "AprQ4 must be outside GGML range"
+);
+const _: () = assert!(
+    TensorDType::AprQ8 as u8 >= 128,
+    "AprQ8 must be outside GGML range"
+);
 
 impl TensorDType {
     /// Convert from u8.
@@ -300,31 +316,7 @@ pub const fn is_aligned_64(value: usize) -> bool {
     value.is_multiple_of(ALIGNMENT)
 }
 
-// ============================================================================
-// Writer
-// ============================================================================
-
-/// APR v2 format writer
-#[derive(Debug)]
-pub struct AprV2Writer {
-    header: AprV2Header,
-    metadata: AprV2Metadata,
-    tensors: Vec<(TensorIndexEntry, Vec<u8>)>,
-}
-
-/// Streaming APR v2 writer — constant-memory import for large models (realizar#136).
-///
-/// Tensor data is written to a temp file incrementally. Only index entries
-/// (~100 bytes each) are kept in RAM. For a 1811-tensor model, the index
-/// is ~180 KB vs 67+ GB of tensor data.
-#[allow(missing_debug_implementations)]
-pub struct AprV2StreamingWriter {
-    header: AprV2Header,
-    metadata: AprV2Metadata,
-    /// Index entries only — tensor data is on disk
-    index_entries: Vec<TensorIndexEntry>,
-    /// Temp file for tensor data
-    data_writer: std::io::BufWriter<std::fs::File>,
-    /// Current offset in the data section
-    data_offset: u64,
-}
+// The `AprV2Writer` / `AprV2StreamingWriter` / `AprV2Reader` / `AprV2ReaderRef`
+// struct declarations now live alongside their `impl` blocks (in `writer.rs` and
+// `streaming_writer.rs`) so private-field access stays module-local after the
+// include!()→mod split (issue #2231).

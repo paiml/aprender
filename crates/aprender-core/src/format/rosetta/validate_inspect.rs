@@ -2,6 +2,7 @@ impl RosettaStone {
 
     fn validate_apr(&self, path: &Path) -> Result<ValidationReport> {
         use crate::format::v2::AprV2Reader;
+        use crate::format::AprV2DequantExt; // issue #2231 re-attached accessor
 
         let data = std::fs::read(path).map_err(|e| AprenderError::FormatError {
             message: format!("Cannot read APR file: {e}"),

@@ -11,9 +11,9 @@
 //! lived in core — i.e. they are the byte-identity oracle produced by the
 //! pre-extraction code. These tests prove the EXTRACTED leaf reads the SAME bytes.
 //!
-//! Stage 1 scope: the v1 (`APRN`) slice is moved, so the leaf reads `golden_v1.apr`.
-//! The v2 (`APR\0`) reader lands in Stage 2; here we only assert the v2 fixture
-//! exists and carries the `APR\0` magic so the oracle is pinned for Stage 2.
+//! Stage 2 scope: the v1 (`APRN`) container AND the v2 (`APR\0`) container both
+//! live in the leaf now, so the leaf reads `golden_v1.apr` AND `golden_v2.apr`
+//! and round-trips their F32 tensors against the captured oracle bytes.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -67,10 +67,62 @@ fn golden_v1_crc_and_header_are_consistent() {
 }
 
 #[test]
-fn golden_v2_fixture_is_pinned_for_stage2() {
-    // v2 reader is Stage 2; assert the fixture exists with the APR\0 magic so the
-    // byte-identity oracle is captured now (while format is still in core).
+fn golden_v2_loads_in_leaf() {
+    // Stage 2: the leaf's v2 reader parses the pre-extraction golden_v2.apr bytes
+    // and round-trips its F32 tensors against the captured oracle values.
     let bytes = std::fs::read(fixtures().join("golden_v2.apr")).expect("read v2");
     assert_eq!(&bytes[0..4], &[0x41, 0x50, 0x52, 0x00], "APR\\0 magic");
     assert_eq!(bytes.len(), 1092, "v2 golden size pinned");
+
+    let reader = apr_format::v2::AprV2Reader::from_bytes(&bytes).expect("leaf parses golden v2");
+    assert!(reader.header().verify_checksum(), "v2 header CRC valid");
+    assert_eq!(reader.metadata().model_type, "linear_regression");
+    assert_eq!(reader.metadata().name.as_deref(), Some("golden-v2"));
+
+    let mut names = reader.tensor_names();
+    names.sort_unstable();
+    assert_eq!(names, vec!["bias", "weights"]);
+
+    // F32 tensors read back exactly (no dequant needed — leaf's get_f32_tensor).
+    assert_eq!(reader.get_f32_tensor("bias").expect("bias"), vec![0.125]);
+    assert_eq!(
+        reader.get_f32_tensor("weights").expect("weights"),
+        vec![1.0, 2.0, 0.5, -0.5, 4.0, -2.0, 0.25, 8.0]
+    );
+}
+
+#[test]
+fn golden_v2_f32_writer_is_byte_identical() {
+    // v2 byte-identity (F32 scope, issue #2231): re-writing the same F32 tensors
+    // + pinned metadata via the leaf's AprV2Writer reproduces golden_v2.apr
+    // byte-for-byte. F32 payload is unaffected by the f16 IEEE-RNE write change.
+    use apr_format::v2::{AprV2Metadata, AprV2Writer};
+
+    let golden = std::fs::read(fixtures().join("golden_v2.apr")).expect("read v2");
+
+    let mut metadata = AprV2Metadata::new("linear_regression");
+    metadata.name = Some("golden-v2".to_string());
+    metadata.version = Some("0.0.0-golden".to_string());
+    metadata.created_at = Some("1700000000".to_string());
+    metadata.param_count = 8;
+
+    let mut writer = AprV2Writer::new(metadata);
+    // Index is sorted by name on write; insertion order does not matter.
+    writer.add_f32_tensor(
+        "weights",
+        vec![8],
+        &[1.0, 2.0, 0.5, -0.5, 4.0, -2.0, 0.25, 8.0],
+    );
+    writer.add_f32_tensor("bias", vec![1], &[0.125]);
+    let produced = writer.write().expect("v2 write");
+
+    assert_eq!(
+        produced.len(),
+        golden.len(),
+        "v2 F32 byte length drifted from golden_v2.apr"
+    );
+    assert_eq!(
+        produced, golden,
+        "leaf AprV2Writer F32 output is NOT byte-identical to golden_v2.apr"
+    );
 }

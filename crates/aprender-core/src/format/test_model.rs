@@ -3,6 +3,10 @@
 mod tests {
     use super::*;
     use serde::{Deserialize, Serialize};
+    // issue #2231: these moved to the sovereign leaf; pull them from the
+    // re-export seam so the byte-identity tests still compile in core.
+    use crate::format::{Compression, Header, Metadata, ModelType, SaveOptions, HEADER_SIZE};
+    use apr_format::crc32;
 
     // ============================================================================
     // CRC32 Tests

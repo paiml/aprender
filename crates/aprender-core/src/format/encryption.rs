@@ -7,9 +7,11 @@ use std::path::Path;
 use serde::{de::DeserializeOwned, Serialize};
 
 use super::core_io::{
-    compress_payload, crc32, decompress_payload, parse_and_validate_header, read_file_content,
+    compress_payload, decompress_payload, parse_and_validate_header, read_file_content,
     verify_encrypted_flag, verify_file_checksum, verify_payload_boundary,
 };
+// issue #2231: crc32 deduplicated into the leaf; reach it via the format re-export.
+use super::crc32;
 use super::{
     Header, ModelType, SaveOptions, HEADER_SIZE, HKDF_INFO, KEY_SIZE, NONCE_SIZE,
     RECIPIENT_HASH_SIZE, SALT_SIZE, X25519_PUBLIC_KEY_SIZE,

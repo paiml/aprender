@@ -79,8 +79,15 @@ pub mod homomorphic;
 // Weight comparison module (GH-121, HuggingFace/SafeTensors comparison)
 pub mod compare;
 
-// APR format module (GH-119, 64-byte alignment, JSON metadata, sharding)
-pub mod v2;
+// APR v2 container (`APR\0`): moved to the sovereign `apr-format` leaf (#2231).
+// Re-exported here so `aprender::format::v2::*` keeps resolving unchanged.
+pub use apr_format::v2;
+
+// APR v2 dequantizing accessor (`get_tensor_as_f32`) re-attached as an
+// extension trait — the GGUF Q4_K/Q6_K dequant + f16-scaled Q4 path is
+// framework/quant concern that was SEVERED from the sovereign leaf (#2231).
+pub mod dequant_ext;
+pub use dequant_ext::AprV2DequantExt;
 
 // GGUF export module (spec §7.2)
 pub mod gguf;
@@ -91,8 +98,9 @@ pub mod onnx;
 // Hex dump and data flow visualization (GH-122, Toyota Principle 12: Genchi Genbutsu)
 pub mod hexdump;
 
-// Model card module (spec §11)
-pub mod model_card;
+// Model card module (spec §11): moved to the sovereign `apr-format` leaf
+// (#2231). Re-exported so `aprender::format::model_card::*` keeps resolving.
+pub use apr_format::model_card;
 
 // Validation module (spec §11 - 100-Point QA Checklist)
 #[allow(clippy::case_sensitive_file_extension_comparisons)]
@@ -139,8 +147,9 @@ pub mod rosetta;
 // ML-powered format conversion diagnostics using aprender's own algorithms
 pub mod rosetta_ml;
 
-// Type definitions (spec §2-§9, PMAT-198)
-pub mod types;
+// Type definitions (spec §2-§9): moved to the sovereign `apr-format` leaf
+// (#2231). Re-exported so `aprender::format::types::*` keeps resolving.
+pub use apr_format::types;
 
 // F16 safety constants and helpers (GH-186 - prevent NaN propagation)
 pub mod f16_safety;
@@ -564,10 +573,16 @@ pub use types::*;
 pub use core_io::*;
 
 // APR-2231: re-export the sovereign `apr-format` leaf so external consumers can
-// reach it via `aprender_core::format::apr_format::*` while the bulk migration
-// (Stage 2) lands. `aprender-core` From-wraps `apr_format::AprFormatError` into
-// `AprenderError` (see `crate::error`), so the leaf's results compose with `?`.
+// reach it via `aprender_core::format::apr_format::*`. `aprender-core` From-wraps
+// `apr_format::AprFormatError` into `AprenderError` (see `crate::error`), so the
+// leaf's results compose with `?`.
 pub use apr_format;
+
+// APR-2231: the deduplicated CRC32 + IEEE f16 conversions live in the leaf now;
+// re-export them at the format level so `aprender::format::{crc32, f16_to_f32,
+// f32_to_f16}` (and the byte-identity tests that reach them via `super::*`)
+// keep resolving unchanged.
+pub use apr_format::{crc32, f16_to_f32, f32_to_f16};
 
 // Re-export signing functions (PMAT-198 - backward compatibility)
 #[cfg(feature = "format-signing")]
@@ -576,6 +591,13 @@ pub use signing::*;
 // Re-export encryption functions (PMAT-198 - backward compatibility)
 #[cfg(feature = "format-encryption")]
 pub use encryption::*;
+
+// APR-2231: the dequant-coupled v2 tests (exercising the SEVERED
+// `get_tensor_as_f32` + the f16-scaled `dequantize_q4` + the core-only
+// `test_factory`) moved here from the leaf, where the `AprV2DequantExt`
+// extension that re-attaches them lives.
+#[cfg(test)]
+mod v2_dequant_tests;
 
 #[cfg(test)]
 mod tests;
