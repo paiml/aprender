@@ -1122,4 +1122,192 @@ mod runs_tests {
         let result = braille_chart(&[1.0], 10, 3);
         assert!(!result.is_empty());
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // PMAT-125 B4: additional coverage for braille / metric / param helpers
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_sparkline_truncates_to_width() {
+        let data: Vec<f64> = (0..100).map(|i| i as f64).collect();
+        let result = sparkline(&data, 12);
+        assert_eq!(result.chars().count(), 12);
+    }
+
+    #[test]
+    fn test_sparkline_descending_endpoints() {
+        let data: Vec<f64> = (0..8).rev().map(|i| i as f64).collect();
+        let result = sparkline(&data, 8);
+        let chars: Vec<char> = result.chars().collect();
+        assert!(chars[0] >= chars[7]);
+    }
+
+    #[test]
+    fn test_sample_braille_data_fewer_points_than_dots() {
+        let data = vec![0.0, 1.0, 2.0];
+        let samples = sample_braille_data(&data, 8, 8, 0.0, 2.0);
+        assert_eq!(samples.len(), 8);
+        assert!(samples.iter().all(|&y| y < 8));
+        assert_eq!(samples[2], 0); // value 2.0 normalized=1.0 → top row
+        assert_eq!(samples[0], 7); // value 0.0 normalized=0.0 → bottom row
+    }
+
+    #[test]
+    fn test_sample_braille_data_more_points_than_dots() {
+        let data: Vec<f64> = (0..50).map(|i| i as f64).collect();
+        let samples = sample_braille_data(&data, 10, 8, 0.0, 49.0);
+        assert_eq!(samples.len(), 10);
+        assert!(samples.iter().all(|&y| y < 8));
+    }
+
+    #[test]
+    fn test_render_braille_row_produces_braille_chars() {
+        let samples = vec![0usize, 1, 2, 3, 4, 5, 6, 7];
+        let dot_bits: [[u8; 4]; 2] = [[0, 1, 2, 6], [3, 4, 5, 7]];
+        let row = render_braille_row(&samples, 0, 4, &dot_bits);
+        assert_eq!(row.chars().count(), 4);
+        assert!(row.chars().all(|c| (0x2800..=0x28FF).contains(&(c as u32))));
+    }
+
+    #[test]
+    fn test_render_braille_row_blank_when_no_dots_in_range() {
+        let samples = vec![7usize; 8];
+        let dot_bits: [[u8; 4]; 2] = [[0, 1, 2, 6], [3, 4, 5, 7]];
+        let row = render_braille_row(&samples, 0, 4, &dot_bits);
+        assert!(row.chars().all(|c| c == '\u{2800}'));
+    }
+
+    #[test]
+    fn test_braille_chart_multiline_structure() {
+        let data: Vec<f64> = (0..20).map(|i| (i as f64).sin()).collect();
+        let chart = braille_chart(&data, 16, 4);
+        let lines: Vec<&str> = chart.lines().collect();
+        assert_eq!(lines.len(), 4 + 2);
+        assert!(lines[0].contains('│'));
+        assert!(lines[4].contains('└'));
+        assert!(lines[5].contains("20"));
+    }
+
+    #[test]
+    fn test_metric_values_extracts_values_in_order() {
+        use entrenar::storage::MetricPoint;
+        let points = vec![
+            MetricPoint::new(0, 1.5),
+            MetricPoint::new(1, 0.9),
+            MetricPoint::new(2, 0.4),
+        ];
+        assert_eq!(metric_values(&points), vec![1.5, 0.9, 0.4]);
+    }
+
+    #[test]
+    fn test_metric_values_empty() {
+        assert!(metric_values(&[]).is_empty());
+    }
+
+    #[test]
+    fn test_min_val_negative_and_mixed() {
+        assert_eq!(min_val(&[2.0, -5.0, 0.0, 3.0]), Some(-5.0));
+        assert_eq!(min_val(&[42.0]), Some(42.0));
+    }
+
+    #[test]
+    fn test_format_duration_long_boundaries() {
+        assert_eq!(format_duration_long(60), "60s");
+        assert_eq!(format_duration_long(3600), "60m 0s");
+        assert_eq!(format_duration_long(86400), "24h 0m 0s");
+        assert_eq!(format_duration_long(0), "0s");
+    }
+
+    #[test]
+    fn test_param_display_scalar_variants() {
+        use entrenar::storage::ParameterValue;
+        assert_eq!(
+            param_display(&ParameterValue::String("adam".into())),
+            "adam"
+        );
+        assert_eq!(param_display(&ParameterValue::Int(42)), "42");
+        assert_eq!(param_display(&ParameterValue::Bool(true)), "true");
+        assert_eq!(param_display(&ParameterValue::Float(0.001)), "0.001");
+    }
+
+    #[test]
+    fn test_param_display_list_falls_back_to_json() {
+        use entrenar::storage::ParameterValue;
+        let pv = ParameterValue::List(vec![ParameterValue::Int(1), ParameterValue::Int(2)]);
+        let s = param_display(&pv);
+        assert!(s.contains("Int") || s.contains('1'));
+    }
+
+    #[test]
+    fn test_param_to_value_scalars() {
+        use entrenar::storage::ParameterValue;
+        assert_eq!(
+            param_to_value(&ParameterValue::String("x".into())),
+            serde_json::json!("x")
+        );
+        assert_eq!(
+            param_to_value(&ParameterValue::Int(7)),
+            serde_json::json!(7)
+        );
+        assert_eq!(
+            param_to_value(&ParameterValue::Bool(false)),
+            serde_json::json!(false)
+        );
+        assert_eq!(
+            param_to_value(&ParameterValue::Float(2.5)),
+            serde_json::json!(2.5)
+        );
+    }
+
+    #[test]
+    fn test_param_to_value_nested_list_and_dict() {
+        use entrenar::storage::ParameterValue;
+        use std::collections::HashMap;
+        let list = ParameterValue::List(vec![ParameterValue::Int(1), ParameterValue::Bool(true)]);
+        assert_eq!(param_to_value(&list), serde_json::json!([1, true]));
+
+        let mut d = HashMap::new();
+        d.insert("lr".to_string(), ParameterValue::Float(0.01));
+        let dict = ParameterValue::Dict(d);
+        assert_eq!(param_to_value(&dict), serde_json::json!({"lr": 0.01}));
+    }
+
+    #[test]
+    fn test_config_diff_detects_differences_and_skips_equal() {
+        use entrenar::storage::ParameterValue;
+        use std::collections::HashMap;
+        let mut a = HashMap::new();
+        a.insert("lr".to_string(), ParameterValue::Float(0.01));
+        a.insert("opt".to_string(), ParameterValue::String("adam".into()));
+        a.insert("only_a".to_string(), ParameterValue::Int(1));
+
+        let mut b = HashMap::new();
+        b.insert("lr".to_string(), ParameterValue::Float(0.02));
+        b.insert("opt".to_string(), ParameterValue::String("adam".into()));
+        b.insert("only_b".to_string(), ParameterValue::Int(2));
+
+        let diffs = config_diff(&a, &b);
+        let keys: Vec<&str> = diffs.iter().map(|(k, _, _)| k.as_str()).collect();
+        assert!(!keys.contains(&"opt"));
+        assert!(keys.contains(&"lr"));
+        assert!(keys.contains(&"only_a"));
+        assert!(keys.contains(&"only_b"));
+        let mut sorted = keys.clone();
+        sorted.sort_unstable();
+        assert_eq!(keys, sorted);
+        let only_a = diffs.iter().find(|(k, _, _)| k == "only_a").unwrap();
+        assert_eq!(only_a.2, "—");
+        let only_b = diffs.iter().find(|(k, _, _)| k == "only_b").unwrap();
+        assert_eq!(only_b.1, "—");
+    }
+
+    #[test]
+    fn test_config_diff_identical_maps_empty() {
+        use entrenar::storage::ParameterValue;
+        use std::collections::HashMap;
+        let mut a = HashMap::new();
+        a.insert("x".to_string(), ParameterValue::Int(1));
+        let b = a.clone();
+        assert!(config_diff(&a, &b).is_empty());
+    }
 }

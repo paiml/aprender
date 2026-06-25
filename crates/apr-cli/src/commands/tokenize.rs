@@ -3273,4 +3273,195 @@ mod tests {
             other => panic!("unexpected error variant: {other:?}"),
         }
     }
+
+    // ════════════════════════════════════════════════════════════════════
+    // PMAT-125 B4: pure validator / formatter coverage
+    // ════════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_validate_algorithm_supported() {
+        assert!(validate_algorithm("bpe").is_ok());
+        assert!(validate_algorithm("wordpiece").is_ok());
+        assert!(validate_algorithm("unigram").is_ok());
+    }
+
+    #[test]
+    fn test_validate_algorithm_rejects_unknown() {
+        let err = validate_algorithm("sentencepiece").unwrap_err();
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(msg.contains("sentencepiece"));
+                assert!(msg.contains("bpe"));
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+        assert!(validate_algorithm("").is_err());
+        assert!(validate_algorithm("BPE").is_err()); // case-sensitive
+    }
+
+    #[test]
+    fn test_validate_vocab_size_bounds() {
+        assert!(validate_vocab_size(10).is_ok());
+        assert!(validate_vocab_size(32_000).is_ok());
+        assert!(validate_vocab_size(1_000_000).is_ok());
+    }
+
+    #[test]
+    fn test_validate_vocab_size_too_small() {
+        let err = validate_vocab_size(9).unwrap_err();
+        match err {
+            CliError::ValidationFailed(msg) => assert!(msg.contains("at least 10")),
+            other => panic!("unexpected: {other:?}"),
+        }
+        assert!(validate_vocab_size(0).is_err());
+    }
+
+    #[test]
+    fn test_validate_vocab_size_too_large() {
+        let err = validate_vocab_size(1_000_001).unwrap_err();
+        match err {
+            CliError::ValidationFailed(msg) => assert!(msg.contains("unreasonably large")),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_validate_normalization_ok_and_err() {
+        assert!(validate_normalization("none").is_ok());
+        assert!(validate_normalization("nfc").is_ok());
+        let err = validate_normalization("nfkc").unwrap_err();
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(msg.contains("nfkc"));
+                assert!(msg.contains("none, nfc"));
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_estimate_training_time_scales_with_vocab() {
+        let one_mb = 1024 * 1024;
+        let base = estimate_training_time(one_mb, 16_000);
+        assert!((base - (1.0 / 60.0)).abs() < 1e-6);
+        let big = estimate_training_time(one_mb, 64_000);
+        assert!((big - base * 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_estimate_training_time_zero_bytes() {
+        assert_eq!(estimate_training_time(0, 32_000), 0.0);
+    }
+
+    #[test]
+    fn test_plan_verdict_blocked_empty() {
+        let stats = CorpusStats {
+            lines: 0,
+            bytes: 0,
+            unique_chars: 0,
+        };
+        assert_eq!(plan_verdict(&stats, 32_000), "blocked");
+    }
+
+    #[test]
+    fn test_plan_verdict_warning_vocab_too_large_for_chars() {
+        let stats = CorpusStats {
+            lines: 5,
+            bytes: 100,
+            unique_chars: 10,
+        };
+        assert_eq!(plan_verdict(&stats, 5_000), "warning"); // 5000 > 1000
+    }
+
+    #[test]
+    fn test_plan_verdict_ready() {
+        let stats = CorpusStats {
+            lines: 100,
+            bytes: 10_000,
+            unique_chars: 80,
+        };
+        assert_eq!(plan_verdict(&stats, 5_000), "ready"); // 5000 <= 8000
+    }
+
+    #[test]
+    fn test_format_number_thresholds() {
+        assert_eq!(format_number(999), "999");
+        assert_eq!(format_number(1_000), "1.0K");
+        assert_eq!(format_number(1_500), "1.5K");
+        assert_eq!(format_number(999_999), "1000.0K");
+        assert_eq!(format_number(1_000_000), "1.0M");
+        assert_eq!(format_number(2_500_000), "2.5M");
+        assert_eq!(format_number(0), "0");
+    }
+
+    #[test]
+    fn test_format_bytes_tokenize_units() {
+        assert_eq!(format_bytes(0), "0 B");
+        assert_eq!(format_bytes(512), "512 B");
+        assert_eq!(format_bytes(1024), "1.0 KB");
+        assert_eq!(format_bytes(1_048_576), "1.0 MB");
+        assert_eq!(format_bytes(1_073_741_824), "1.0 GB");
+        assert_eq!(format_bytes(5 * 1_073_741_824), "5.0 GB");
+    }
+
+    #[test]
+    fn test_format_duration_buckets() {
+        assert_eq!(format_duration(0.5), "30 sec");
+        assert_eq!(format_duration(1.0), "1.0 min");
+        assert_eq!(format_duration(45.0), "45.0 min");
+        assert_eq!(format_duration(90.0), "1.5 hours");
+        assert_eq!(format_duration(120.0), "2.0 hours");
+    }
+
+    #[test]
+    fn test_resolve_num_workers_explicit() {
+        assert_eq!(resolve_num_workers(Some(4)).unwrap(), 4);
+        assert_eq!(resolve_num_workers(Some(1)).unwrap(), 1);
+    }
+
+    #[test]
+    fn test_resolve_num_workers_zero_is_error() {
+        let err = resolve_num_workers(Some(0)).unwrap_err();
+        match err {
+            CliError::ValidationFailed(msg) => assert!(msg.contains(">= 1")),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_num_workers_none_uses_parallelism() {
+        let n = resolve_num_workers(None).unwrap();
+        assert!(n >= 1);
+    }
+
+    #[test]
+    fn test_is_jsonl_extension() {
+        assert!(is_jsonl(Path::new("corpus.jsonl")));
+        assert!(is_jsonl(Path::new("/a/b/data.jsonl")));
+        assert!(!is_jsonl(Path::new("corpus.json")));
+        assert!(!is_jsonl(Path::new("corpus.parquet")));
+        assert!(!is_jsonl(Path::new("corpus")));
+        assert!(!is_jsonl(Path::new("corpus.JSONL"))); // case-sensitive
+    }
+
+    #[test]
+    fn test_format_eta_iso8601_utc_shape_and_determinism() {
+        let s = format_eta_iso8601_utc(0);
+        assert_eq!(s.len(), 20); // YYYY-MM-DDTHH:MM:SSZ
+        assert!(s.ends_with('Z'));
+        assert_eq!(&s[4..5], "-");
+        assert_eq!(&s[7..8], "-");
+        assert_eq!(&s[10..11], "T");
+        assert_eq!(&s[13..14], ":");
+        let later = format_eta_iso8601_utc(3600);
+        assert!(later >= s);
+    }
+
+    #[test]
+    fn test_format_eta_iso8601_utc_known_epoch_offset() {
+        let a = format_eta_iso8601_utc(0);
+        let b = format_eta_iso8601_utc(86_400);
+        assert_ne!(&a[0..10], &b[0..10]); // date advances by a day
+        assert_eq!(&a[11..19], &b[11..19]); // same HH:MM:SS
+    }
 }

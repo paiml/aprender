@@ -958,4 +958,143 @@ mod tests {
         app.select_prev();
         assert_eq!(app.selected, 0);
     }
+
+    // ── PMAT-125 B4: additional coverage ──────────────────────────────────
+
+    #[test]
+    fn test_tab_all_titles_distinct() {
+        let titles: Vec<&str> = Tab::ALL.iter().map(|t| t.title()).collect();
+        assert_eq!(titles, [" Overview ", " Tensors ", " Stats ", " Help "]);
+    }
+
+    #[test]
+    fn test_tab_from_index_wraps_modulo_four() {
+        // from_index uses i % 4, so out-of-range indices wrap.
+        assert_eq!(Tab::from_index(4), Tab::Overview);
+        assert_eq!(Tab::from_index(5), Tab::Tensors);
+        assert_eq!(Tab::from_index(6), Tab::Stats);
+        assert_eq!(Tab::from_index(7), Tab::Help);
+    }
+
+    #[test]
+    fn test_truncate_name_tiny_max_len() {
+        // max_len < 4 → raw char-take, no ellipsis.
+        assert_eq!(truncate_name("abcdef", 3), "abc");
+        assert_eq!(truncate_name("abcdef", 1), "a");
+        assert_eq!(truncate_name("abcdef", 0), "");
+    }
+
+    #[test]
+    fn test_truncate_name_exact_boundary() {
+        // name.len() == max_len → unchanged.
+        assert_eq!(truncate_name("exactly10!", 10), "exactly10!");
+    }
+
+    #[test]
+    fn test_truncate_name_multibyte_char_boundary() {
+        // Multi-byte chars must not be split mid-codepoint.
+        let name = "αβγδεζηθικλμν"; // each Greek letter is 2 bytes
+        let out = truncate_name(name, 8);
+        assert!(out.ends_with("..."));
+        // Result must be valid UTF-8 (no panic on slicing).
+        assert!(out.chars().count() > 0);
+    }
+
+    #[test]
+    fn test_build_sparkline_zero_width() {
+        let stats = sample_stats();
+        assert_eq!(build_sparkline(&stats, 0), "");
+    }
+
+    #[test]
+    fn test_build_sparkline_is_bell_shaped() {
+        let stats = sample_stats();
+        let spark = build_sparkline(&stats, 21);
+        let chars: Vec<char> = spark.chars().collect();
+        assert_eq!(chars.len(), 21);
+        // Gaussian peaks in the middle: center char should be the tallest block.
+        let center = chars[10];
+        assert_eq!(center, '█');
+        // Edges are the shortest.
+        assert!(chars[0] < center);
+        assert!(chars[20] < center);
+    }
+
+    #[test]
+    fn test_text_style_sets_color_default_weight() {
+        let c = Color {
+            r: 0.5,
+            g: 0.6,
+            b: 0.7,
+            a: 1.0,
+        };
+        let s = text_style(c);
+        assert_eq!(s.color.r, 0.5);
+        assert_eq!(s.weight, presentar_core::FontWeight::Normal);
+    }
+
+    #[test]
+    fn test_bold_style_sets_bold_weight() {
+        let c = Color {
+            r: 1.0,
+            g: 1.0,
+            b: 1.0,
+            a: 1.0,
+        };
+        let s = bold_style(c);
+        assert_eq!(s.color.r, 1.0);
+        assert_eq!(s.weight, presentar_core::FontWeight::Bold);
+    }
+
+    #[test]
+    fn test_selected_tensor_none_when_empty() {
+        let app = App::new(None);
+        assert!(app.selected_tensor().is_none());
+    }
+
+    #[test]
+    fn test_handle_key_home_end_and_help() {
+        let mut app = App::new(None);
+        // Help via '?' and '4'.
+        assert!(!app.handle_key(KeyCode::Char('?')));
+        assert_eq!(app.current_tab, Tab::Help);
+        assert!(!app.handle_key(KeyCode::Char('1')));
+        assert_eq!(app.current_tab, Tab::Overview);
+        // Home/End on an empty tensor list keep selection sane.
+        assert!(!app.handle_key(KeyCode::Home));
+        assert_eq!(app.selected, 0);
+        assert!(!app.handle_key(KeyCode::End));
+        assert_eq!(app.selected, 0); // saturating_sub on empty list
+    }
+
+    #[test]
+    fn test_handle_key_unmapped_is_noop() {
+        let mut app = App::new(None);
+        let before = app.current_tab;
+        assert!(!app.handle_key(KeyCode::Char('z')));
+        assert_eq!(app.current_tab, before);
+    }
+
+    #[test]
+    fn test_handle_key_tab_and_backtab() {
+        let mut app = App::new(None);
+        assert!(!app.handle_key(KeyCode::Tab));
+        assert_eq!(app.current_tab, Tab::Tensors);
+        assert!(!app.handle_key(KeyCode::BackTab));
+        assert_eq!(app.current_tab, Tab::Overview);
+    }
+
+    fn sample_stats() -> TensorStats {
+        TensorStats {
+            name: "w".to_string(),
+            count: 100,
+            min: -1.0,
+            max: 1.0,
+            mean: 0.0,
+            std: 0.5,
+            zero_count: 0,
+            nan_count: 0,
+            inf_count: 0,
+        }
+    }
 }

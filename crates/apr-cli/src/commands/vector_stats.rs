@@ -463,3 +463,72 @@ fn format_std_colored(std_dev: f32) -> colored::ColoredString {
         formatted.green()
     }
 }
+
+// =============================================================================
+// PMAT-125 B4: compute_vector_stats / format_std_colored coverage
+// =============================================================================
+
+#[cfg(test)]
+mod vector_stats_tests {
+    use super::*;
+
+    #[test]
+    fn test_compute_vector_stats_basic() {
+        let stats = compute_vector_stats(&[1.0, 2.0, 3.0, 4.0]);
+        assert!((stats.mean - 2.5).abs() < 1e-5);
+        assert!((stats.min - 1.0).abs() < 1e-5);
+        assert!((stats.max - 4.0).abs() < 1e-5);
+        assert!((stats.l2_norm - 30.0_f32.sqrt()).abs() < 1e-3);
+        assert_eq!(stats.nan_count, 0);
+        assert_eq!(stats.inf_count, 0);
+    }
+
+    #[test]
+    fn test_compute_vector_stats_empty() {
+        let stats = compute_vector_stats(&[]);
+        assert_eq!(stats.mean, 0.0);
+        assert_eq!(stats.min, 0.0);
+        assert_eq!(stats.max, 0.0);
+        assert_eq!(stats.l2_norm, 0.0);
+        assert_eq!(stats.nan_count, 0);
+        assert_eq!(stats.inf_count, 0);
+    }
+
+    #[test]
+    fn test_compute_vector_stats_counts_nan_and_inf() {
+        let data = [1.0, f32::NAN, 2.0, f32::INFINITY, f32::NEG_INFINITY, 3.0];
+        let stats = compute_vector_stats(&data);
+        assert_eq!(stats.nan_count, 1);
+        assert_eq!(stats.inf_count, 2);
+        assert!((stats.mean - 2.0).abs() < 1e-5);
+        assert!((stats.min - 1.0).abs() < 1e-5);
+        assert!((stats.max - 3.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_compute_vector_stats_all_nan_no_valid() {
+        let data = [f32::NAN, f32::NAN];
+        let stats = compute_vector_stats(&data);
+        assert_eq!(stats.nan_count, 2);
+        assert_eq!(stats.mean, 0.0);
+        assert_eq!(stats.min, 0.0);
+        assert_eq!(stats.max, 0.0);
+    }
+
+    #[test]
+    fn test_compute_vector_stats_negative_values() {
+        let stats = compute_vector_stats(&[-5.0, -1.0, -3.0]);
+        assert!((stats.min - (-5.0)).abs() < 1e-5);
+        assert!((stats.max - (-1.0)).abs() < 1e-5);
+        assert!((stats.mean - (-3.0)).abs() < 1e-5);
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_format_std_colored_thresholds() {
+        for v in [5.0_f32, 25.0, 75.0, 150.0] {
+            let s = format_std_colored(v);
+            assert!(s.to_string().contains(&format!("{v:.4}")));
+        }
+    }
+}
