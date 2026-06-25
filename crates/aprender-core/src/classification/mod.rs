@@ -745,7 +745,11 @@ pub use gaussian_nb::*;
 pub use multinomial_nb::MultinomialNB;
 mod linear_svm;
 pub use linear_svm::*;
+mod svc_rbf;
+pub use svc_rbf::SVCRbf;
 mod sets;
+#[cfg(test)]
+mod svc_rbf_sklearn_fixture;
 
 #[cfg(test)]
 #[path = "tests_logreg_contract.rs"]
