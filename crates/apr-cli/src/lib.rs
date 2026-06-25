@@ -56,6 +56,10 @@ pub mod serve_auth {
 #[cfg(feature = "inference")]
 pub mod serve_test_support {
     pub use crate::commands::serve::handlers::build_demo_apr_cpu_router_for_test;
+    // PMAT-928: streaming-capable demo router whose NDJSON path is driven by a
+    // scripted token sequence, so the streaming falsifier observes real
+    // multi-chunk NDJSON without loading a model.
+    pub use crate::commands::serve::handlers::build_demo_streaming_apr_cpu_router_for_test;
 }
 
 #[cfg(feature = "inference")]

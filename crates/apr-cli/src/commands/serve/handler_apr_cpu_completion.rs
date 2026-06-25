@@ -155,6 +155,79 @@ fn spawn_cpu_streaming_task(
     });
 }
 
+/// PMAT-928: spawn the per-token generation task, sending each token's DECODED
+/// TEXT through `tx`. Reuses the exact incremental stream the OpenAI SSE path
+/// uses (`generate_with_cache_streaming`); only the channel payload differs
+/// (already-decoded `String` instead of a raw `u32`) so the Ollama NDJSON
+/// reshaper stays decoupled from the tokenizer.
+///
+/// The test seam path (`demo_scripted_tokens`) feeds a deterministic token
+/// sequence through the SAME channel + reshape pipeline, so a falsifier can
+/// observe true multi-chunk NDJSON without a real transformer.
+#[cfg(feature = "inference")]
+fn spawn_cpu_token_text_stream(
+    s: AprServerState,
+    prompt: String,
+    max_tokens: usize,
+    temperature: f32,
+    tx: tokio::sync::mpsc::Sender<std::result::Result<String, String>>,
+) {
+    // Test seam: replay a scripted token sequence through the channel.
+    if let Some(scripted) = s.demo_scripted_tokens.clone() {
+        tokio::task::spawn_blocking(move || {
+            for tok in scripted {
+                if tx.blocking_send(Ok(tok)).is_err() {
+                    break; // client disconnected
+                }
+            }
+            // Dropping tx closes the channel → terminal `done:true` chunk.
+        });
+        return;
+    }
+
+    let tokenizer = s.tokenizer.clone();
+    tokio::task::spawn_blocking(move || {
+        let Some(transformer) = s.transformer.as_ref() else {
+            if tx
+                .blocking_send(Err("Transformer not loaded".to_string()))
+                .is_err()
+            {
+                eprintln!("Warning: failed to send error to client (channel closed)");
+            }
+            return;
+        };
+
+        let input_tokens: Vec<u32> = match &s.tokenizer {
+            Some(tok) => tok.tokenizer.encode(&prompt),
+            None => prompt.chars().map(|c| c as u32).collect(),
+        };
+
+        let gen_config = realizar::apr_transformer::GenerateConfig {
+            max_tokens,
+            temperature,
+            top_p: 0.9,
+            top_k: 0,
+            repetition_penalty: 1.0,
+            trace: false,
+            stop_tokens: vec![],
+        };
+
+        let Ok(t) = transformer.lock() else {
+            if tx.blocking_send(Err("Lock poisoned".to_string())).is_err() {
+                eprintln!("Warning: failed to send error to client (channel closed)");
+            }
+            return;
+        };
+
+        if let Err(e) = t.generate_with_cache_streaming(&input_tokens, &gen_config, |token_id| {
+            let text = decode_single_token(tokenizer.as_ref(), token_id);
+            tx.blocking_send(Ok(text)).is_ok()
+        }) {
+            eprintln!("Warning: streaming generation failed: {e}");
+        }
+    });
+}
+
 /// Build an SSE stream from a token receiver channel.
 #[cfg(feature = "inference")]
 #[allow(clippy::disallowed_methods)] // serde_json::json!() macro uses infallible unwrap
@@ -313,6 +386,139 @@ async fn handle_apr_cpu_chat_completion(
     insert_trace_data(&mut response, trace_level.as_deref(), trace_data);
 
     Json(response).into_response()
+}
+
+/// PMAT-928: count prompt tokens the way generation will, for the streamed
+/// final object's `prompt_eval_count`. Mirrors the encode in
+/// `spawn_cpu_token_text_stream` / `run_apr_cpu_inference`.
+#[cfg(feature = "inference")]
+fn count_prompt_tokens(s: &AprServerState, prompt: &str) -> usize {
+    if let Some(ref tok) = s.embedded_tokenizer {
+        tok.encode(prompt).len()
+    } else if let Some(ref tok) = s.tokenizer {
+        tok.tokenizer.encode(prompt).len()
+    } else {
+        prompt.chars().count()
+    }
+}
+
+/// PMAT-928: handle Ollama `/api/chat` on the APR-CPU router.
+///
+/// `stream != false` (Ollama default) ⇒ NDJSON streaming body reusing the SAME
+/// per-token stream `/v1/chat/completions` uses; `stream:false` ⇒ the existing
+/// coalesced single-object body via the shared chat handler.
+#[cfg(feature = "inference")]
+async fn handle_apr_cpu_ollama_chat(
+    state: &std::sync::Mutex<AprServerState>,
+    req: &super::ollama::OllamaChatRequest,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+
+    let model = super::ollama::model_label(&req.model);
+
+    if req.stream {
+        let s = match state.lock() {
+            Ok(guard) => guard.clone(),
+            Err(_) => return ollama_stream_error(super::ollama::OllamaStreamKind::Chat, model),
+        };
+        let msgs: Vec<serde_json::Value> = req
+            .messages
+            .iter()
+            .map(|m| serde_json::json!({"role": m.role, "content": m.content}))
+            .collect();
+        let prompt = format_chatml(&msgs);
+        let (max_tokens, temperature) = ollama_sampling(&req.options);
+        let prompt_eval_count = count_prompt_tokens(&s, &prompt);
+        let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, String>>(16);
+        spawn_cpu_token_text_stream(s, prompt, max_tokens, temperature, tx);
+        return super::ollama::ollama_ndjson_stream(
+            super::ollama::OllamaStreamKind::Chat,
+            model,
+            prompt_eval_count,
+            rx,
+        );
+    }
+
+    // Coalesced path: reuse the existing shared chat backend + reshape.
+    let openai_body = super::ollama::ollama_chat_to_openai(req);
+    let inner =
+        handle_apr_cpu_chat_completion(state, &axum::http::HeaderMap::new(), &openai_body).await;
+    super::ollama::reshape_openai_to_ollama_chat(model, inner)
+        .await
+        .into_response()
+}
+
+/// PMAT-928: handle Ollama `/api/generate` on the APR-CPU router (flat
+/// `response` field; same streaming/coalescing rules as chat).
+#[cfg(feature = "inference")]
+async fn handle_apr_cpu_ollama_generate(
+    state: &std::sync::Mutex<AprServerState>,
+    req: &super::ollama::OllamaGenerateRequest,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+
+    let model = super::ollama::model_label(&req.model);
+
+    if req.stream {
+        let s = match state.lock() {
+            Ok(guard) => guard.clone(),
+            Err(_) => return ollama_stream_error(super::ollama::OllamaStreamKind::Generate, model),
+        };
+        let mut msgs: Vec<serde_json::Value> = Vec::new();
+        if let Some(system) = req.system.as_ref().filter(|sys| !sys.is_empty()) {
+            msgs.push(serde_json::json!({"role": "system", "content": system}));
+        }
+        msgs.push(serde_json::json!({"role": "user", "content": req.prompt}));
+        let prompt = format_chatml(&msgs);
+        let (max_tokens, temperature) = ollama_sampling(&req.options);
+        let prompt_eval_count = count_prompt_tokens(&s, &prompt);
+        let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, String>>(16);
+        spawn_cpu_token_text_stream(s, prompt, max_tokens, temperature, tx);
+        return super::ollama::ollama_ndjson_stream(
+            super::ollama::OllamaStreamKind::Generate,
+            model,
+            prompt_eval_count,
+            rx,
+        );
+    }
+
+    let openai_body = super::ollama::ollama_generate_to_openai(req);
+    let inner =
+        handle_apr_cpu_chat_completion(state, &axum::http::HeaderMap::new(), &openai_body).await;
+    super::ollama::reshape_openai_to_ollama_generate(model, inner)
+        .await
+        .into_response()
+}
+
+/// PMAT-928: translate an Ollama `options` block to `(max_tokens, temperature)`.
+#[cfg(feature = "inference")]
+fn ollama_sampling(options: &Option<super::ollama::OllamaOptions>) -> (usize, f32) {
+    let mut max_tokens = 32usize;
+    let mut temperature = 0.0f32;
+    if let Some(opts) = options {
+        if let Some(n) = opts.num_predict {
+            max_tokens = n as usize;
+        }
+        if let Some(t) = opts.temperature {
+            temperature = t;
+        }
+    }
+    (max_tokens.min(4096), temperature)
+}
+
+/// PMAT-928: a degenerate NDJSON stream that emits only the terminal
+/// `done:true` object, used when state can't be acquired. Keeps the wire shape
+/// NDJSON (never an error JSON object lacking `done`).
+#[cfg(feature = "inference")]
+fn ollama_stream_error(
+    kind: super::ollama::OllamaStreamKind,
+    model: String,
+) -> axum::response::Response {
+    let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, String>>(1);
+    // Send an error to immediately terminate with the `done:true` object.
+    let _ = tx.try_send(Err("server state unavailable".to_string()));
+    drop(tx);
+    super::ollama::ollama_ndjson_stream(kind, model, 0, rx)
 }
 
 /// Print APR CPU server startup banner.

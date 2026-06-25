@@ -19,13 +19,20 @@
 //! 3. [`reshape_openai_to_ollama_chat`] / [`reshape_openai_to_ollama_generate`]
 //!    re-shape that response into Ollama's wire schema.
 //!
-//! Streaming is scoped HONESTLY: the Ollama endpoints always return a single
-//! coalesced (`done:true`) body today; NDJSON `stream:true` is a documented
-//! follow-up. The handlers always emit a terminal Ollama-shaped body (even on a
-//! backend error), so a wired route is observably distinct from the axum 404
-//! fallback (which has no `done` field).
+//! Streaming (PMAT-928): an Ollama request with `stream != false` (Ollama's
+//! default) gets a true newline-delimited-JSON body (`application/x-ndjson`) —
+//! one `{...,message:{role,content:<token>},done:false}` object PER TOKEN, then
+//! a terminal `{...,done:true,eval_count,...}` object. This reuses the SAME
+//! incremental token stream the OpenAI `/v1/chat/completions` SSE path uses
+//! (the APR-CPU router's `spawn_cpu_streaming_task` → mpsc `Result<u32,String>`
+//! channel driven by `generate_with_cache_streaming`); only the wire framing
+//! differs (NDJSON lines instead of `data:` SSE events). `stream:false` keeps
+//! the single coalesced (`done:true`) body. The handlers always emit a terminal
+//! Ollama-shaped object (even on a backend error), so a wired route is
+//! observably distinct from the axum 404 fallback (which has no `done` field).
 //!
-//! Discharges OBLIG-OLLAMA-API-ROUTED-ON-APR-SERVE in
+//! Discharges OBLIG-OLLAMA-API-ROUTED-ON-APR-SERVE and
+//! OBLIG-OLLAMA-NDJSON-STREAMING in
 //! `contracts/apr-serve-openai-compat-v1.yaml`.
 
 use axum::{
@@ -48,8 +55,10 @@ pub(crate) struct OllamaChatRequest {
     /// Conversation messages.
     #[serde(default)]
     pub messages: Vec<OllamaMessage>,
-    /// Stream tokens (currently coalesced into a single final message).
-    #[serde(default)]
+    /// Stream tokens. Ollama's default is `true`; absent ⇒ stream (PMAT-928).
+    /// When true the response is newline-delimited JSON (one chunk per token);
+    /// when explicitly false the response is a single coalesced object.
+    #[serde(default = "default_stream")]
     pub stream: bool,
     /// Optional Ollama `options` block (temperature, num_predict, top_k, ...).
     #[serde(default)]
@@ -94,8 +103,8 @@ pub(crate) struct OllamaGenerateRequest {
     /// Optional system preamble.
     #[serde(default)]
     pub system: Option<String>,
-    /// Stream tokens (currently coalesced into a single final response).
-    #[serde(default)]
+    /// Stream tokens. Ollama's default is `true`; absent ⇒ stream (PMAT-928).
+    #[serde(default = "default_stream")]
     pub stream: bool,
     /// Optional Ollama `options` block.
     #[serde(default)]
@@ -134,6 +143,13 @@ pub(crate) struct OllamaGenerateResponse {
     pub prompt_eval_count: usize,
     /// Generated token count.
     pub eval_count: usize,
+}
+
+/// Ollama's wire default for `stream` is `true` — a client that omits the field
+/// expects a streamed (NDJSON) response. serde's `bool::default()` is `false`,
+/// which would WRONGLY coalesce by default, so we override it (PMAT-928).
+fn default_stream() -> bool {
+    true
 }
 
 // ============================================================================
@@ -307,6 +323,219 @@ pub(crate) async fn reshape_openai_to_ollama_generate(model: String, inner: Resp
     .into_response()
 }
 
+// ============================================================================
+// NDJSON streaming (PMAT-928)
+// ============================================================================
+
+/// Which Ollama endpoint a streamed chunk belongs to: `/api/chat` nests the
+/// token under `message:{role,content}`; `/api/generate` puts it on a flat
+/// `response` field. Both share the rest of the NDJSON envelope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OllamaStreamKind {
+    /// `/api/chat` — nested `message:{role:"assistant",content:<token>}`.
+    Chat,
+    /// `/api/generate` — flat `response:<token>`.
+    Generate,
+}
+
+/// Build ONE intermediate NDJSON chunk (`done:false`) carrying a single token's
+/// text. Pure + unit-tested so the per-token wire shape is locked down
+/// independently of the async streaming plumbing.
+pub(crate) fn ollama_stream_chunk(
+    kind: OllamaStreamKind,
+    model: &str,
+    created_at: &str,
+    token_text: &str,
+) -> serde_json::Value {
+    match kind {
+        OllamaStreamKind::Chat => serde_json::json!({
+            "model": model,
+            "created_at": created_at,
+            "message": {"role": "assistant", "content": token_text},
+            "done": false,
+        }),
+        OllamaStreamKind::Generate => serde_json::json!({
+            "model": model,
+            "created_at": created_at,
+            "response": token_text,
+            "done": false,
+        }),
+    }
+}
+
+/// Build the TERMINAL NDJSON object (`done:true`) carrying generation stats.
+///
+/// Ollama's final streamed object echoes an empty content/response plus
+/// `done_reason` and the timing/count fields clients read for tok/s. Pure +
+/// unit-tested.
+pub(crate) fn ollama_stream_final(
+    kind: OllamaStreamKind,
+    model: &str,
+    created_at: &str,
+    prompt_eval_count: usize,
+    eval_count: usize,
+    total_duration_ns: u64,
+) -> serde_json::Value {
+    let mut obj = serde_json::Map::new();
+    obj.insert("model".to_string(), serde_json::json!(model));
+    obj.insert("created_at".to_string(), serde_json::json!(created_at));
+    match kind {
+        OllamaStreamKind::Chat => {
+            obj.insert(
+                "message".to_string(),
+                serde_json::json!({"role": "assistant", "content": ""}),
+            );
+        }
+        OllamaStreamKind::Generate => {
+            obj.insert("response".to_string(), serde_json::json!(""));
+        }
+    }
+    obj.insert("done".to_string(), serde_json::json!(true));
+    obj.insert("done_reason".to_string(), serde_json::json!("stop"));
+    obj.insert(
+        "total_duration".to_string(),
+        serde_json::json!(total_duration_ns),
+    );
+    obj.insert(
+        "prompt_eval_count".to_string(),
+        serde_json::json!(prompt_eval_count),
+    );
+    obj.insert("eval_count".to_string(), serde_json::json!(eval_count));
+    obj.insert(
+        "eval_duration".to_string(),
+        serde_json::json!(total_duration_ns),
+    );
+    serde_json::Value::Object(obj)
+}
+
+/// Build a streaming NDJSON [`Response`] (`Content-Type: application/x-ndjson`)
+/// from an incremental token-text channel.
+///
+/// This is THE reuse point: the caller feeds `rx` from the SAME per-token
+/// stream the OpenAI `/v1/chat/completions` SSE path uses (each `u32` decoded to
+/// text), and this function reshapes each token into an Ollama NDJSON line —
+/// `{...,done:false}` per token — then appends a terminal `{...,done:true}`
+/// object with stats. One JSON object per line, newline-terminated, in arrival
+/// order, so an Ollama client streams tokens as they are generated.
+///
+/// On a backend error (the channel yields `Err`), the stream still terminates
+/// with a well-formed `done:true` object, so the client always sees a terminal
+/// chunk and the body is never an SSE/coalesced shape.
+pub(crate) fn ollama_ndjson_stream(
+    kind: OllamaStreamKind,
+    model: String,
+    prompt_eval_count: usize,
+    rx: tokio::sync::mpsc::Receiver<std::result::Result<String, String>>,
+) -> Response {
+    use axum::body::Body;
+
+    let created_at = created_at_now();
+    let started = std::time::Instant::now();
+
+    // unfold state: receiver (None once drained), running token count, and the
+    // pieces needed to build the terminal object after the last token.
+    let stream = futures_util::stream::unfold(
+        (
+            Some(rx),
+            0usize,
+            kind,
+            model,
+            created_at,
+            prompt_eval_count,
+            started,
+        ),
+        |(maybe_rx, count, kind, model, created_at, prompt_eval_count, started)| async move {
+            let mut rx = maybe_rx?;
+            match rx.recv().await {
+                Some(Ok(token_text)) => {
+                    let chunk = ollama_stream_chunk(kind, &model, &created_at, &token_text);
+                    let mut line = chunk.to_string();
+                    line.push('\n');
+                    Some((
+                        Ok::<_, std::convert::Infallible>(line),
+                        (
+                            Some(rx),
+                            count + 1,
+                            kind,
+                            model,
+                            created_at,
+                            prompt_eval_count,
+                            started,
+                        ),
+                    ))
+                }
+                // Channel closed (generation done) or backend error: emit the
+                // terminal object and stop. We drop the receiver (None) so the
+                // next poll ends the stream.
+                Some(Err(_)) | None => {
+                    let final_obj = ollama_stream_final(
+                        kind,
+                        &model,
+                        &created_at,
+                        prompt_eval_count,
+                        count,
+                        started.elapsed().as_nanos() as u64,
+                    );
+                    let mut line = final_obj.to_string();
+                    line.push('\n');
+                    Some((
+                        Ok::<_, std::convert::Infallible>(line),
+                        (
+                            None,
+                            count,
+                            kind,
+                            model,
+                            created_at,
+                            prompt_eval_count,
+                            started,
+                        ),
+                    ))
+                }
+            }
+        },
+    );
+
+    let body = Body::from_stream(stream);
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(axum::http::header::CONTENT_TYPE, "application/x-ndjson")
+        .body(body)
+        .map_or_else(
+            |_| {
+                // Builder failure is unreachable for a static content-type, but
+                // never panic in a request handler.
+                (StatusCode::INTERNAL_SERVER_ERROR, "stream init failed").into_response()
+            },
+            IntoResponse::into_response,
+        )
+}
+
+/// Reshape a COALESCED OpenAI-chat [`Response`] into an Ollama NDJSON stream.
+///
+/// Used by routers whose generation backend has no per-token callback (GPU
+/// fallback, SafeTensors `generate_with_cache`): we still honor `stream:true`
+/// with the correct Ollama NDJSON wire shape — one `done:false` object carrying
+/// the (whole) generated content followed by a terminal `done:true` object —
+/// rather than a single coalesced JSON object. This is NOT per-token streaming
+/// (the APR-CPU router does that); it is NDJSON framing over a batch result, so
+/// an Ollama client parses it as a stream and sees the terminal `done:true`.
+pub(crate) async fn reshape_openai_to_ollama_ndjson(
+    kind: OllamaStreamKind,
+    model: String,
+    inner: Response,
+) -> Response {
+    let (status, body) = split_response(inner).await;
+    let (content, prompt_tokens, eval_count) = openai_response_to_parts(status, &body);
+    let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, String>>(2);
+    // One content chunk, then close the channel → terminal `done:true` object.
+    if !content.is_empty() {
+        let _ = tx.try_send(Ok(content));
+    }
+    drop(tx);
+    let _ = eval_count; // eval_count is recomputed from emitted chunks downstream
+    ollama_ndjson_stream(kind, model, prompt_tokens, rx)
+}
+
 /// `GET /api/tags` — Ollama model-list endpoint.
 ///
 /// `apr serve` serves a single model, so we report exactly that model. Clients
@@ -449,5 +678,115 @@ mod tests {
         let models = body["models"].as_array().expect("models");
         assert_eq!(models.len(), 1);
         assert_eq!(models[0]["name"], "qwen");
+    }
+
+    // ------------------------------------------------------------------
+    // PMAT-928: NDJSON streaming wire-shape unit tests
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn default_stream_is_true_matching_ollama() {
+        // Ollama's default is stream:true; serde must inherit that, not false.
+        assert!(default_stream());
+        let req: OllamaChatRequest =
+            serde_json::from_value(serde_json::json!({"messages": []})).expect("deserialize");
+        assert!(req.stream, "absent stream field must default to true");
+        let req_off: OllamaChatRequest =
+            serde_json::from_value(serde_json::json!({"messages": [], "stream": false}))
+                .expect("deserialize");
+        assert!(!req_off.stream, "explicit stream:false must coalesce");
+    }
+
+    #[test]
+    fn stream_chunk_chat_is_intermediate_nested_message() {
+        let chunk = ollama_stream_chunk(OllamaStreamKind::Chat, "m", "t0", "Hel");
+        assert_eq!(chunk["done"], false, "per-token chunk is not terminal");
+        assert_eq!(chunk["message"]["role"], "assistant");
+        assert_eq!(chunk["message"]["content"], "Hel");
+        assert!(chunk.get("response").is_none(), "chat uses nested message");
+    }
+
+    #[test]
+    fn stream_chunk_generate_is_intermediate_flat_response() {
+        let chunk = ollama_stream_chunk(OllamaStreamKind::Generate, "m", "t0", "Hel");
+        assert_eq!(chunk["done"], false);
+        assert_eq!(chunk["response"], "Hel");
+        assert!(
+            chunk.get("message").is_none(),
+            "generate uses flat response"
+        );
+    }
+
+    #[test]
+    fn stream_final_is_terminal_with_stats() {
+        let fin = ollama_stream_final(OllamaStreamKind::Chat, "m", "t0", 3, 4, 1_000);
+        assert_eq!(fin["done"], true, "terminal object carries done:true");
+        assert_eq!(fin["prompt_eval_count"], 3);
+        assert_eq!(fin["eval_count"], 4);
+        assert_eq!(fin["eval_duration"], 1_000);
+        assert_eq!(fin["done_reason"], "stop");
+    }
+
+    /// Drive `ollama_ndjson_stream` over a 3-token channel and assert the body
+    /// is application/x-ndjson with 3 intermediate `done:false` lines + 1 final
+    /// `done:true` line — the core streaming contract.
+    #[tokio::test]
+    async fn ndjson_stream_emits_per_token_then_terminal() {
+        use axum::body::to_bytes;
+
+        let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, String>>(8);
+        for t in ["Hello", ", ", "world"] {
+            tx.send(Ok(t.to_string())).await.expect("send");
+        }
+        drop(tx); // close → terminal done:true
+
+        let resp = ollama_ndjson_stream(OllamaStreamKind::Chat, "m".to_string(), 2, rx);
+        let ct = resp
+            .headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        assert_eq!(ct, "application/x-ndjson", "Ollama stream is NDJSON");
+
+        let bytes = to_bytes(resp.into_body(), 64 * 1024).await.expect("body");
+        let text = String::from_utf8(bytes.to_vec()).expect("utf8");
+        let lines: Vec<&str> = text.lines().filter(|l| !l.is_empty()).collect();
+        assert_eq!(lines.len(), 4, "3 token chunks + 1 terminal. body={text}");
+
+        let objs: Vec<serde_json::Value> = lines
+            .iter()
+            .map(|l| serde_json::from_str(l).expect("each line is one JSON object"))
+            .collect();
+        assert_eq!(objs[0]["done"], false);
+        assert_eq!(objs[0]["message"]["content"], "Hello");
+        assert_eq!(objs[1]["message"]["content"], ", ");
+        assert_eq!(objs[2]["message"]["content"], "world");
+        let last = &objs[3];
+        assert_eq!(last["done"], true, "final object is done:true");
+        assert_eq!(last["eval_count"], 3, "eval_count = tokens emitted");
+        assert_eq!(last["prompt_eval_count"], 2);
+    }
+
+    /// A backend error still terminates the stream with a well-formed
+    /// `done:true` object (never a bare error object lacking `done`).
+    #[tokio::test]
+    async fn ndjson_stream_error_still_terminates_done_true() {
+        use axum::body::to_bytes;
+
+        let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, String>>(2);
+        tx.send(Err("boom".to_string())).await.expect("send");
+        drop(tx);
+
+        let resp = ollama_ndjson_stream(OllamaStreamKind::Generate, "m".to_string(), 0, rx);
+        let bytes = to_bytes(resp.into_body(), 64 * 1024).await.expect("body");
+        let text = String::from_utf8(bytes.to_vec()).expect("utf8");
+        let lines: Vec<&str> = text.lines().filter(|l| !l.is_empty()).collect();
+        assert_eq!(
+            lines.len(),
+            1,
+            "error → only the terminal object. body={text}"
+        );
+        let obj: serde_json::Value = serde_json::from_str(lines[0]).expect("json");
+        assert_eq!(obj["done"], true);
     }
 }

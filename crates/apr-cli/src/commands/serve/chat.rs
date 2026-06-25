@@ -357,9 +357,22 @@ pub(crate) async fn safetensors_ollama_chat_handler(
     axum::Json(req): axum::Json<super::ollama::OllamaChatRequest>,
 ) -> axum::response::Response {
     let model = super::ollama::model_label(&req.model);
+    let stream = req.stream;
     let openai_body = super::ollama::ollama_chat_to_openai(&req);
     let inner = safetensors_chat_completions_handler(state, axum::Json(openai_body)).await;
-    super::ollama::reshape_openai_to_ollama_chat(model, inner).await
+    // PMAT-928: the SafeTensors backend is batch (`generate_with_cache`), so
+    // `stream:true` emits NDJSON framing over the coalesced result (intermediate
+    // done:false + terminal done:true); `stream:false` keeps a single object.
+    if stream {
+        super::ollama::reshape_openai_to_ollama_ndjson(
+            super::ollama::OllamaStreamKind::Chat,
+            model,
+            inner,
+        )
+        .await
+    } else {
+        super::ollama::reshape_openai_to_ollama_chat(model, inner).await
+    }
 }
 
 /// SafeTensors Ollama `/api/generate` handler (PMAT-923).
@@ -372,9 +385,20 @@ pub(crate) async fn safetensors_ollama_generate_handler(
     axum::Json(req): axum::Json<super::ollama::OllamaGenerateRequest>,
 ) -> axum::response::Response {
     let model = super::ollama::model_label(&req.model);
+    let stream = req.stream;
     let openai_body = super::ollama::ollama_generate_to_openai(&req);
     let inner = safetensors_chat_completions_handler(state, axum::Json(openai_body)).await;
-    super::ollama::reshape_openai_to_ollama_generate(model, inner).await
+    // PMAT-928: NDJSON framing over the batch result when `stream:true`.
+    if stream {
+        super::ollama::reshape_openai_to_ollama_ndjson(
+            super::ollama::OllamaStreamKind::Generate,
+            model,
+            inner,
+        )
+        .await
+    } else {
+        super::ollama::reshape_openai_to_ollama_generate(model, inner).await
+    }
 }
 
 /// Generate a unique request ID for OpenAI-compatible responses.

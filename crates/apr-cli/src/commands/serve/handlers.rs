@@ -645,29 +645,51 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
                         async move { wgpu_chat_completion(state, body).await }
                     }),
                 )
-                // PMAT-923: Ollama native chat endpoint (drop-in Ollama client).
+                // PMAT-923/928: Ollama native chat endpoint (drop-in Ollama
+                // client). WGPU backend is batch, so `stream:true` emits NDJSON
+                // framing over the coalesced result; `stream:false` coalesces.
                 .route(
                     "/api/chat",
                     post(move |Json(req): Json<super::ollama::OllamaChatRequest>| {
                         let state = state_ollama_chat.clone();
                         async move {
                             let model = super::ollama::model_label(&req.model);
+                            let stream = req.stream;
                             let openai_body = super::ollama::ollama_chat_to_openai(&req);
                             let inner = wgpu_chat_completion(state, Json(openai_body)).await;
-                            super::ollama::reshape_openai_to_ollama_chat(model, inner).await
+                            if stream {
+                                super::ollama::reshape_openai_to_ollama_ndjson(
+                                    super::ollama::OllamaStreamKind::Chat,
+                                    model,
+                                    inner,
+                                )
+                                .await
+                            } else {
+                                super::ollama::reshape_openai_to_ollama_chat(model, inner).await
+                            }
                         }
                     }),
                 )
-                // PMAT-923: Ollama native single-prompt generate endpoint.
+                // PMAT-923/928: Ollama native single-prompt generate endpoint.
                 .route(
                     "/api/generate",
                     post(move |Json(req): Json<super::ollama::OllamaGenerateRequest>| {
                         let state = state_ollama_generate.clone();
                         async move {
                             let model = super::ollama::model_label(&req.model);
+                            let stream = req.stream;
                             let openai_body = super::ollama::ollama_generate_to_openai(&req);
                             let inner = wgpu_chat_completion(state, Json(openai_body)).await;
-                            super::ollama::reshape_openai_to_ollama_generate(model, inner).await
+                            if stream {
+                                super::ollama::reshape_openai_to_ollama_ndjson(
+                                    super::ollama::OllamaStreamKind::Generate,
+                                    model,
+                                    inner,
+                                )
+                                .await
+                            } else {
+                                super::ollama::reshape_openai_to_ollama_generate(model, inner).await
+                            }
                         }
                     }),
                 );
@@ -801,6 +823,11 @@ struct AprServerState {
     embedded_tokenizer: Option<realizar::apr::BpeTokenizer>,
     /// GH-283: Model name for request validation (derived from filename stem)
     model_name: String,
+    /// PMAT-928 test seam ONLY: a scripted per-token text sequence used to drive
+    /// the NDJSON streaming path without a real transformer. Production state
+    /// always leaves this `None`; only `build_demo_apr_cpu_router_for_test` sets
+    /// it, so the streaming falsifier can observe real multi-chunk NDJSON.
+    demo_scripted_tokens: Option<Vec<String>>,
 }
 
 /// Output from a successful APR inference run
@@ -999,6 +1026,7 @@ fn load_apr_model_state(model_path: &Path, config: &ServerConfig) -> Result<AprS
         tokenizer: bpe_tokenizer,
         embedded_tokenizer,
         model_name,
+        demo_scripted_tokens: None,
     })
 }
 
@@ -1247,40 +1275,22 @@ fn build_apr_cpu_router(state: AprServerState, auth_gate: super::auth::AuthGate)
                 },
             ),
         )
-        // PMAT-923: Ollama native chat endpoint — drop-in for an Ollama client.
+        // PMAT-923/928: Ollama native chat endpoint — drop-in for an Ollama
+        // client. `stream != false` (Ollama default) ⇒ NDJSON token stream;
+        // `stream:false` ⇒ coalesced single object.
         .route(
             "/api/chat",
             post(move |Json(req): Json<super::ollama::OllamaChatRequest>| {
                 let state = state_for_ollama_chat.clone();
-                async move {
-                    let model = super::ollama::model_label(&req.model);
-                    let openai_body = super::ollama::ollama_chat_to_openai(&req);
-                    let inner = handle_apr_cpu_chat_completion(
-                        &state,
-                        &axum::http::HeaderMap::new(),
-                        &openai_body,
-                    )
-                    .await;
-                    super::ollama::reshape_openai_to_ollama_chat(model, inner).await
-                }
+                async move { handle_apr_cpu_ollama_chat(&state, &req).await }
             }),
         )
-        // PMAT-923: Ollama native single-prompt generate endpoint.
+        // PMAT-923/928: Ollama native single-prompt generate endpoint.
         .route(
             "/api/generate",
             post(move |Json(req): Json<super::ollama::OllamaGenerateRequest>| {
                 let state = state_for_ollama_generate.clone();
-                async move {
-                    let model = super::ollama::model_label(&req.model);
-                    let openai_body = super::ollama::ollama_generate_to_openai(&req);
-                    let inner = handle_apr_cpu_chat_completion(
-                        &state,
-                        &axum::http::HeaderMap::new(),
-                        &openai_body,
-                    )
-                    .await;
-                    super::ollama::reshape_openai_to_ollama_generate(model, inner).await
-                }
+                async move { handle_apr_cpu_ollama_generate(&state, &req).await }
             }),
         )
         // PMAT-923: Ollama model-list — clients enumerate models before chatting.
@@ -1330,6 +1340,38 @@ pub fn build_demo_apr_cpu_router_for_test() -> axum::Router {
         tokenizer: None,
         embedded_tokenizer: None,
         model_name: "apr".to_string(),
+        demo_scripted_tokens: None,
+    };
+    build_apr_cpu_router(state, super::auth::AuthGate::disabled())
+}
+
+/// PMAT-928 e2e test seam: build the REAL `apr serve` APR-CPU router whose
+/// streaming path is driven by a deterministic scripted token sequence (in
+/// place of a real transformer). This lets the NDJSON-streaming falsifier
+/// observe MULTIPLE per-token `done:false` chunks plus a terminal `done:true`
+/// over the SAME router `apr serve <model.apr>` mounts — proving real
+/// incremental (not coalesced) streaming without loading a model.
+///
+/// The scripted tokens flow through the IDENTICAL `spawn_cpu_token_text_stream`
+/// → mpsc channel → NDJSON-reshape path the production transformer uses; only
+/// the token *source* is faked, never the streaming wire format.
+#[doc(hidden)]
+#[cfg(feature = "inference")]
+pub fn build_demo_streaming_apr_cpu_router_for_test() -> axum::Router {
+    let state = AprServerState {
+        transformer: None,
+        model_type: "demo".to_string(),
+        architecture: "demo".to_string(),
+        is_transformer: false,
+        tokenizer: None,
+        embedded_tokenizer: None,
+        model_name: "apr".to_string(),
+        demo_scripted_tokens: Some(vec![
+            "Hello".to_string(),
+            ", ".to_string(),
+            "world".to_string(),
+            "!".to_string(),
+        ]),
     };
     build_apr_cpu_router(state, super::auth::AuthGate::disabled())
 }
