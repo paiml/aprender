@@ -57,35 +57,17 @@ jobs:
       # (sccache 0.14.0), shared cache at `/home/noah/data/sccache` (warm, ~11GB).
       enable_sccache: true
       use_nextest: true
-      # PMAT build-system audit gap #1 — coverage was advisory (continue-on-error),
-      # so a coverage regression merged silently despite the 95%/ZERO-tolerance rule.
-      # aprender is the PILOT for the opt-in coverage ratchet (sovereign-ci.yml).
-      #
-      # This is a RATCHET floor, NOT the 95% target: it blocks a coverage DROP on
-      # this repo without demanding an immediate jump. The number is deliberately
-      # conservative (well below the documented achieved 96.94% line coverage in
-      # .pmat-gates.toml / .pmat-metrics.toml) so that enabling the gate cannot
-      # break the currently-green build on its first run — the CI coverage job is
-      # `--lib`-scoped and its measured % is not identical to the certeza
-      # full-suite number, so we floor conservatively and tighten via the
-      # committed baseline once a real CI-measured value is observed.
-      #
-      # Tightening procedure: read the "Measured line coverage: NN%" line printed
-      # by the coverage job's "Enforce coverage floor" step, then bump
-      # .github/coverage-baseline.txt to that value in a follow-up PR. The
-      # effective floor is max(coverage_min, baseline), so the baseline ratchets
-      # the real protection up over time while coverage_min stays the
-      # conservative backstop.
-      #
-      # NOTE: the sovereign-ci default baseline path is .pmat/coverage-baseline.txt,
-      # but aprender gitignores .pmat/, so the committed baseline lives at
-      # .github/coverage-baseline.txt and is wired via coverage_baseline_file below.
-      #
-      # DEFAULT FOR ALL OTHER REPOS IS UNCHANGED: any repo that does NOT set
-      # coverage_min keeps the exact advisory behavior (coverage measured + sent
-      # to codecov, never gating). Fleet-wide enablement is intentionally NOT done.
-      coverage_min: "90.0"
-      coverage_baseline_file: ".github/coverage-baseline.txt"
+      # NOTE: coverage_min (the opt-in coverage ratchet from the build-system audit)
+      # is intentionally NOT set on aprender. The pilot run exposed that aprender's
+      # ROOT crate is a facade — the sovereign-ci coverage job runs `--lib` on the
+      # root and exercises 0 tests ("test result: ok. 0 passed"); all real code +
+      # tests live in workspace members, run by the separate `workspace-test` job.
+      # So coverage_min has no lcov data to gate on. Making it meaningful here needs
+      # test_workspace: true + GPU-member test_args exclusions first (the PMAT-159
+      # workspace blind-spot). Tracked as a follow-up. The coverage ratchet
+      # MECHANISM is live fleet-wide via sovereign-ci (#37); a single-crate repo is
+      # the natural first coverage pilot. aprender's blocking-quality pilot is the
+      # diff-scoped mutation gate below.
     secrets: inherit
 
   # APR-MONO: Workspace-wide test (all 75 crates)
