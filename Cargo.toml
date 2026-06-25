@@ -96,6 +96,7 @@ members = [
     # "crates/aprender-test",
 ]
 exclude = [
+    "tools/ccpa-sft-export",
     "fuzz",
     # Old workspace root shells (no package, just held sub-crates):
     "crates/aprender-viz-ttop",
