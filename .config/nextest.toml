@@ -38,3 +38,35 @@ threads-required = "num-test-threads"
 filter = "test(/empirical_flops/) | test(/empirical_bandwidth/) | test(/empirical_ridge/) | test(/triad_bandwidth/)"
 test-group = "serial-timing"
 threads-required = "num-test-threads"
+
+# Compile/build-running tests SHELL OUT to `cargo build` / `cargo run --example`
+# in scratch temp dirs (aprender-orchestrate pipeline BuildStage + releaser
+# preflight examples checks). Under nextest's global thread pool, many of these
+# run CONCURRENTLY → they contend for the cargo target lock and disk, and the
+# nested `cargo` invocations themselves saturate every core. The result is
+# timeouts / lock contention that flake merge_group CI (run 28163348728) even
+# though they pass under the old one-binary-at-a-time `cargo test --lib`.
+#
+# Fix (same pattern as serial-timing above): run them ISOLATED.
+#   - serial-build group (max-threads = 1) → no two compile-running tests run
+#     alongside EACH OTHER (so only ONE nested cargo build at a time).
+#   - threads-required = "num-test-threads" → each reserves the whole pool, so
+#     no OTHER (non-build) test runs concurrent with a nested compile either,
+#     giving the nested `cargo` all cores and removing target/disk contention.
+# Everything else still parallelizes, preserving the nextest speedup.
+#
+# CONTRACT: any new test that invokes `cargo build` / `cargo run` / `rustc`
+# (i.e. compiles in a scratch dir) MUST be added to this serial-build group,
+# and MUST use a per-process-unique temp dir (append std::process::id()).
+[test-groups.serial-build]
+max-threads = 1
+
+[[profile.default.overrides]]
+filter = "test(/build_stage_execute_debug_build/) | test(/build_stage_execute_release_build/) | test(/build_stage_execute_with_target/) | test(/build_stage_execute_cargo_build_fails/) | test(/build_stage_execute_wasm_flag/) | test(/check_examples_all_pass/) | test(/check_examples_compilation_error/) | test(/check_examples_run_non_blocking/) | test(/check_examples_run_with_rs_files/) | test(/check_examples_runtime_nonzero_exit/)"
+test-group = "serial-build"
+threads-required = "num-test-threads"
+
+[[profile.ci.overrides]]
+filter = "test(/build_stage_execute_debug_build/) | test(/build_stage_execute_release_build/) | test(/build_stage_execute_with_target/) | test(/build_stage_execute_cargo_build_fails/) | test(/build_stage_execute_wasm_flag/) | test(/check_examples_all_pass/) | test(/check_examples_compilation_error/) | test(/check_examples_run_non_blocking/) | test(/check_examples_run_with_rs_files/) | test(/check_examples_runtime_nonzero_exit/)"
+test-group = "serial-build"
+threads-required = "num-test-threads"

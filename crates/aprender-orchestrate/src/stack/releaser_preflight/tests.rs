@@ -988,7 +988,8 @@ fn test_run_check_command_stderr_access() {
 fn test_check_examples_run_with_rs_files() {
     // Create a temp project that has examples/ dir with .rs files
     // but no actual cargo project, so compilation fails
-    let dir = std::env::temp_dir().join("test_rp_examples_rs_files");
+    let dir =
+        std::env::temp_dir().join(format!("test_rp_examples_rs_files_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let examples_dir = dir.join("examples");
     std::fs::create_dir_all(&examples_dir).unwrap();
@@ -1006,7 +1007,8 @@ fn test_check_examples_run_with_rs_files() {
 
 #[test]
 fn test_check_examples_run_non_blocking() {
-    let dir = std::env::temp_dir().join("test_rp_examples_nonblock");
+    let dir =
+        std::env::temp_dir().join(format!("test_rp_examples_nonblock_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let examples_dir = dir.join("examples");
     std::fs::create_dir_all(&examples_dir).unwrap();
@@ -1316,7 +1318,8 @@ fn test_check_satd_with_alt_key() {
 #[test]
 fn test_check_examples_all_pass() {
     // All examples succeed -> pass message with count
-    let dir = std::env::temp_dir().join("test_rp_examples_all_pass");
+    let dir =
+        std::env::temp_dir().join(format!("test_rp_examples_all_pass_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let examples_dir = dir.join("examples");
     std::fs::create_dir_all(&examples_dir).unwrap();
@@ -1388,7 +1391,8 @@ name = "broken"
 #[test]
 fn test_check_examples_compilation_error_non_blocking() {
     // Same broken project, but fail_on_examples=false triggers lines 445-451
-    let dir = std::env::temp_dir().join("test_rp_examples_compile_warn");
+    let dir =
+        std::env::temp_dir().join(format!("test_rp_examples_compile_warn_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let src_dir = dir.join("src");
     let examples_dir = dir.join("examples");
@@ -1432,7 +1436,8 @@ fn test_check_examples_runtime_nonzero_exit() {
     // Since --help is passed, the example might exit non-zero. If the stderr
     // doesn't contain "error[E" or "could not compile", it hits the
     // "runtime exit with non-zero is OK" path (line 418-419).
-    let dir = std::env::temp_dir().join("test_rp_examples_runtime_exit");
+    let dir =
+        std::env::temp_dir().join(format!("test_rp_examples_runtime_exit_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let src_dir = dir.join("src");
     let examples_dir = dir.join("examples");
