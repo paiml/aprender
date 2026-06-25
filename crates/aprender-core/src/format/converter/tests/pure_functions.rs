@@ -444,3 +444,4 @@ include!("pure_functions_int4.rs");
 include!("pure_functions_bf16.rs");
 include!("pure_functions_infer_q4k.rs");
 include!("pure_functions_skip_quant.rs");
+include!("pure_functions_f16_rne.rs");

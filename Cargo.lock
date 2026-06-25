@@ -1454,6 +1454,7 @@ name = "aprender-solve"
 version = "0.55.0"
 dependencies = [
  "criterion 0.7.0",
+ "half",
  "proptest",
  "thiserror 2.0.18",
 ]

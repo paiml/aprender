@@ -18,6 +18,8 @@ thiserror = "2"
 [dev-dependencies]
 proptest = "1"
 criterion = { workspace = true }
+# RNE reference for the f32_to_f16 falsifier (OBLIG-SOLVE-F32-F16-RNE). Test-only.
+half = { workspace = true }
 
 [[bench]]
 name = "solve_bench"

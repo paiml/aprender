@@ -253,3 +253,58 @@ fn test_q6k_simd_scaling_roundtrip() {
         range
     );
 }
+
+// ============================================================================
+// OBLIG-QUANT-F32-F16-RNE: f32_to_f16 IEEE round-to-nearest-even
+//
+// `aprender_quant::f32_to_f16` delegates to `half::f16::from_f32`, so it is
+// IEEE RNE by construction. This falsifier LOCKS that delegation: if anyone
+// re-introduces a hand-rolled round-toward-zero impl (the bug fixed in the
+// trueno / aprender-solve paths), these known-divergence cases go RED.
+// ============================================================================
+
+#[test]
+fn falsify_quant_f32_to_f16_rne_known_divergences() {
+    use crate::f32_to_f16;
+    // 255.99 rounds UP across the mantissa-carry boundary (truncation gives 0x5BFF).
+    assert_eq!(
+        f32_to_f16(255.99),
+        0x5C00,
+        "255.99 must round up (mantissa carry)"
+    );
+    // 65520.0 rounds the tie UP to +Inf (truncation gives max-finite 0x7BFF).
+    assert_eq!(f32_to_f16(65520.0), 0x7C00, "65520.0 must round to +Inf");
+    // Smallest subnormal half-way case rounds to nearest even (truncation gives 0).
+    assert_eq!(
+        f32_to_f16(5.960_464_5e-8),
+        0x0001,
+        "subnormal half-way rounds to 0x0001"
+    );
+    // Max finite f16 preserved.
+    assert_eq!(f32_to_f16(65504.0), 0x7BFF, "max finite f16 preserved");
+}
+
+#[test]
+fn falsify_quant_f32_to_f16_bit_identical_to_half() {
+    use crate::f32_to_f16;
+    let step = 0x29u32;
+    let mut u: u32 = 0;
+    loop {
+        let v = f32::from_bits(u);
+        let got = f32_to_f16(v);
+        let want = half::f16::from_f32(v).to_bits();
+        if got != want {
+            let both_nan =
+                half::f16::from_bits(got).is_nan() && half::f16::from_bits(want).is_nan();
+            assert!(
+                both_nan,
+                "quant f32_to_f16 diverges from half at bits={u:#010x}: got={got:#06x} want={want:#06x}"
+            );
+        }
+        let (next, overflow) = u.overflowing_add(step);
+        if overflow {
+            break;
+        }
+        u = next;
+    }
+}

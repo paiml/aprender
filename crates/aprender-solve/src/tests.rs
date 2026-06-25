@@ -1158,3 +1158,123 @@ fn test_falsify_batched_independence() -> Result<(), Box<dyn std::error::Error>>
     }
     Ok(())
 }
+
+// ============================================================================
+// OBLIG-SOLVE-F32-F16-RNE: f32_to_f16 IEEE round-to-nearest-even
+//
+// The old hand-rolled f32_to_f16 truncated the mantissa (round-toward-zero)
+// and truncated the subnormal/overflow boundaries. These falsifiers are RED on
+// that implementation and GREEN on the RNE fix (bit-identical to half).
+// ============================================================================
+
+#[test]
+fn falsify_f32_to_f16_known_rne_divergences() {
+    // Each case is a value where round-toward-zero (old) and round-to-nearest-even
+    // (correct) disagree. The asserted bits are `half::f16::from_f32`'s output.
+    // 255.99: old truncated to 0x5BFF; RNE rounds the carry up to 0x5C00.
+    assert_eq!(
+        f32_to_f16(255.99),
+        0x5C00,
+        "255.99 must round up (mantissa carry)"
+    );
+    // 65520.0: old truncated to max-finite 0x7BFF; RNE rounds the tie up to +Inf.
+    assert_eq!(f32_to_f16(65520.0), 0x7C00, "65520.0 must round to +Inf");
+    // Smallest f32 above the f16 min-subnormal half-way point: old gave 0x0000.
+    assert_eq!(
+        f32_to_f16(5.9604645e-8),
+        0x0001,
+        "subnormal half-way must round to nearest even (0x0001)"
+    );
+    // 65504.0 is exactly the max finite f16 — must NOT overflow.
+    assert_eq!(f32_to_f16(65504.0), 0x7BFF, "max finite f16 preserved");
+}
+
+#[test]
+fn falsify_f32_to_f16_ties_to_even() {
+    // Exact ties round to the even mantissa. 2049.0 sits on a tie boundary in f16;
+    // half encodes it as 0x6800 (mantissa rounds to even).
+    assert_eq!(f32_to_f16(2049.0), half::f16::from_f32(2049.0).to_bits());
+    assert_eq!(f32_to_f16(2048.5), half::f16::from_f32(2048.5).to_bits());
+    assert_eq!(f32_to_f16(1000.5), half::f16::from_f32(1000.5).to_bits());
+
+    // STRENGTHENED (PMAT-905 review HOLD): the three cases above all have a kept
+    // mantissa LSB that is *even* (2049.0, low13==0x1000) or no discarded bits at
+    // all (1000.5, low13==0) — so round-toward-zero (truncate) and IEEE
+    // round-to-even AGREE on them, and the test was GREEN on the BUGGY impl too.
+    //
+    // These cases have the discarded low 13 bits == exactly 0x1000 (an exact tie)
+    // AND the kept LSB odd, so round-to-EVEN goes UP one ULP while truncation goes
+    // DOWN. They are RED on the old `mantissa >> 13` truncating encoder.
+    let tie_up_cases: &[(u32, u16)] = &[
+        // 0.12689209 → truncate 0x300F, RNE 0x3010
+        (0x3E01_F000, 0x3010),
+        // 8332.0 → truncate 0x7011, RNE 0x7012
+        (0x4602_3000, 0x7012),
+        // -0.13079834 → truncate 0xB02F, RNE 0xB030
+        (0xBE05_F000, 0xB030),
+    ];
+    for &(bits, want) in tie_up_cases {
+        let v = f32::from_bits(bits);
+        let got = f32_to_f16(v);
+        assert_eq!(got, half::f16::from_f32(v).to_bits());
+        assert_eq!(
+            got, want,
+            "tie {v} (bits={bits:#010x}) must round-to-even UP to {want:#06x}, not truncate"
+        );
+        // Round-toward-zero would have produced want-1; assert we did NOT.
+        assert_ne!(got, want - 1, "round-toward-zero bug would yield {:#06x}", want - 1);
+    }
+}
+
+#[test]
+fn falsify_f32_to_f16_bit_identical_to_half_on_grid() {
+    // Strided exhaustive sweep over the full 2^32 f32 space (step keeps it fast).
+    // Asserts bit-identity to half::f16::from_f32 (the IEEE RNE reference),
+    // treating any-NaN == any-NaN as equal (NaN payload is canonicalized).
+    let step = 0x29u32; // odd, coprime-ish stride to hit every exponent/mantissa region
+    let mut u: u32 = 0;
+    loop {
+        let v = f32::from_bits(u);
+        let got = f32_to_f16(v);
+        let want = half::f16::from_f32(v).to_bits();
+        if got != want {
+            let both_nan =
+                half::f16::from_bits(got).is_nan() && half::f16::from_bits(want).is_nan();
+            assert!(
+                both_nan,
+                "f32_to_f16 diverges from half at bits={u:#010x} (v={v:e}): got={got:#06x} want={want:#06x}"
+            );
+        }
+        let (next, overflow) = u.overflowing_add(step);
+        if overflow {
+            break;
+        }
+        u = next;
+    }
+}
+
+#[test]
+fn falsify_f32_to_f16_edge_values_match_half() {
+    for &v in &[
+        0.0f32,
+        -0.0,
+        1.0,
+        -1.0,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        6.1035156e-5, // smallest normal f16
+        5.9604645e-8, // smallest subnormal f16
+        3.0e-8,
+        255.99,
+        65504.0,
+        65520.0,
+        70000.0, // overflow
+        1e-10,   // underflow to zero
+    ] {
+        assert_eq!(
+            f32_to_f16(v),
+            half::f16::from_f32(v).to_bits(),
+            "f32_to_f16({v:e}) must equal half"
+        );
+    }
+}
