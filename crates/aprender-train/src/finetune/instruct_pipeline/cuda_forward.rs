@@ -110,6 +110,7 @@ impl InstructPipeline {
             }
 
             for (i, block) in cuda_blocks.iter_mut().enumerate() {
+                // SAFETY: ping-pong double-buffering. The two raw pointers reference distinct, non-overlapping device buffers (the `_a`/`_b` scratch pair); the boolean flag picks one as `&` input and the other as `&mut` output, so the resulting references never alias the same allocation.
                 let (gpu_input, gpu_output) = unsafe {
                     if input_is_a {
                         (&*scratch_a_ptr, &mut *scratch_b_ptr)
@@ -171,6 +172,7 @@ impl InstructPipeline {
             }
         }
 
+        // SAFETY: ping-pong double-buffering. The two raw pointers reference distinct, non-overlapping device buffers (the `_a`/`_b` scratch pair); the boolean flag picks one as `&` input and the other as `&mut` output, so the resulting references never alias the same allocation.
         let final_output = unsafe {
             if input_is_a {
                 &*scratch_a_ptr

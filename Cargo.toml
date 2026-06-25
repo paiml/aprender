@@ -312,6 +312,30 @@ elided_lifetimes_in_paths = "allow"  # aprender#1638 / M150 — see PMAT-ORCHEST
 all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 
+# Safety documentation: every `unsafe { ... }` block MUST carry a `// SAFETY:`
+# comment stating the invariant that makes it sound (SIMD #[target_feature]
+# detection + bounds/len/alignment; CUDA/FFI device & pointer contracts;
+# transmute layout/lifetime). See PMAT-124/132/134/139/142/143.
+#
+# Enforcement model:
+#   * "warn" here is the workspace-wide baseline inherited by every member crate
+#     that uses `[lints] workspace = true`. Combined with the CI lint gate
+#     (`cargo clippy --all-targets -- -D warnings`) this already fails the build
+#     on ANY undocumented unsafe block fleet-wide.
+#   * The crates fully cleared by this cluster promote it to a hard "deny" that
+#     does not depend on the `-D warnings` flag:
+#       - aprender (facade)   src/lib.rs + src/bin/apr.rs   #![deny(...)]  (PMAT-124)
+#       - aprender-core       crates/aprender-core/src/lib.rs #![deny(...)] (PMAT-124)
+#       - aprender-train      crates/aprender-train/src/{lib,main}.rs       (PMAT-132)
+#       - aprender-serve      crates/aprender-serve/Cargo.toml [lints.clippy] (PMAT-134)
+#       - aprender-profile    crates/aprender-profile/src/lib.rs            (PMAT-139)
+#       - aprender-data       crates/aprender-data/Cargo.toml [lints.clippy] (PMAT-142)
+#       - aprender-orchestrate crates/aprender-orchestrate/src/lib.rs       (PMAT-143)
+#   * "warn" remains the tracked fallback for not-yet-cleared crates (e.g. the
+#     aprender-compute/aprender-gpu root-src SIMD/CUDA kernels, which carry their
+#     own `[lints.rust]` and are out of scope for this cluster).
+undocumented_unsafe_blocks = "warn"
+
 # Correctness (high priority)
 checked_conversions = "warn"
 missing_errors_doc = "allow"  # We have comprehensive error docs

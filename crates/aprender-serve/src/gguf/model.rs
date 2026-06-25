@@ -89,6 +89,7 @@ impl MappedGGUFModel {
         //
         // Reference: llama.cpp llama-mmap.cpp line 424: flags |= MAP_POPULATE
         //            llama.cpp llama-mmap.cpp line 438: POSIX_MADV_RANDOM
+        // SAFETY: memory-maps the weight file read-only for the lifetime of the returned `Mmap`; the file handle is kept open and the file is not mutated while mapped, so the mapped pages remain valid for reads.
         let mmap = unsafe {
             memmap2::MmapOptions::new()
                 .populate()
@@ -100,6 +101,7 @@ impl MappedGGUFModel {
         };
 
         #[cfg(target_os = "linux")]
+        // SAFETY: `madvise` over the already-validated mmap region (`mmap.as_ptr()`, `mmap.len()`); it only advises the kernel about access patterns (HUGEPAGE/RANDOM) and never changes the mapping's validity.
         unsafe {
             libc::madvise(
                 mmap.as_ptr() as *mut libc::c_void,

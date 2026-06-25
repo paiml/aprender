@@ -24,6 +24,9 @@
 //! entrenar merge model1.gguf model2.gguf --output merged.gguf
 //! ```
 
+// PMAT-132: enforce `// SAFETY:` on every unsafe block in the binary target too.
+#![deny(clippy::undocumented_unsafe_blocks)]
+
 use clap::Parser;
 use entrenar::cli::{run_command, Cli};
 use std::process::ExitCode;
