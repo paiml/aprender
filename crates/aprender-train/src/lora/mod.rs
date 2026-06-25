@@ -16,6 +16,8 @@ mod qlora;
 mod benchmarks;
 #[cfg(test)]
 mod gradient_tests;
+#[cfg(test)]
+mod train_to_loss_tests;
 
 pub use adapter::{
     load_adapter, load_adapter_peft, merge_and_collect, merge_qlora_and_collect, save_adapter,

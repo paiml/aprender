@@ -1,0 +1,79 @@
+contract: lora-adapter-trains-base-frozen
+metadata:
+  kind: training-loop
+  version: "1.0.0"
+  description: >
+    P3 / Unsloth-pillar END-TO-END capability proof for LoRA fine-tuning,
+    extending the PMAT-921 end-to-end-training-proof methodology (a real model
+    trained to a DECREASING loss with the right params updating) from a full
+    transformer to the LoRA adapter path (PMAT-931).
+    A tiny frozen base weight wrapped in a LoRALayer (low-rank A/B) MUST train a
+    fixed deterministic regression task to a substantially decreasing loss while
+    obeying the LoRA invariant: the adapter params A and B update from init and
+    receive finite non-zero gradients, and the BASE weight stays EXACTLY frozen.
+    The pre-existing LoRA gradient tests (lora/gradient_tests.rs) only check the
+    STATIC requires_grad flags and MANUALLY-injected gradients — they never run a
+    real backward pass through LoRALayer::forward, so a severed integration path
+    stays green. PMAT-931 surfaced exactly such a bug: LoRALayer::forward rebuilt
+    its output via `Tensor::new(scaled_lora_data, false)` for the scaled LoRA
+    branch and `Tensor::new(result_data, ..)` for the base+LoRA sum, which SEVERS
+    the autograd graph (the same Tensor::from_vec/Tensor::new sever class as the
+    PMAT-921/922 sweep). The forward output dropped requires_grad and had no
+    backward op, so NO gradient ever reached lora_a/lora_b — the adapter was
+    silently frozen and LoRA fine-tuning could not train at all, while every
+    static requires_grad/manual-gradient test passed. The fix routes the scaled
+    LoRA branch through the autograd-aware `scale` op and the base+LoRA sum
+    through the autograd-aware `add` op (identical forward numerics; only the
+    backward edge is restored). This contract guards the composed LoRA training
+    graph, not a static flag.
+  references:
+  - "crates/aprender-train/src/lora/layer/core.rs"
+  - "crates/aprender-train/src/lora/train_to_loss_tests.rs"
+  - "crates/aprender-train/src/autograd/ops/basic.rs"
+  - "crates/aprender-train/src/autograd/ops/matmul.rs"
+version: 1
+status: enforced
+date: 2026-06-25
+
+proof_obligations:
+  - type: invariant
+    property: >
+      OBLIG-LORA-ADAPTER-TRAINS-BASE-FROZEN: after N gradient-descent steps on a
+      fixed deterministic regression target, a tiny LoRALayer (frozen base + rank-r
+      A/B adapter, scale=1) satisfies THREE guards. Guard (a): the final
+      squared-error loss collapses far below the initial (final < 0.5 * initial;
+      observed final ~= 0 as the rank-r branch reaches the target). Guard (b): both
+      adapter params A and B genuinely CHANGED from init (Σ|Δ| > 1e-4) AND received
+      a finite non-zero gradient on at least one step. Guard (c): the BASE weight is
+      EXACTLY unchanged (|w_final - w_init| < 1e-12 elementwise) and stays
+      requires_grad=false. A severed edge in LoRALayer::forward freezes the adapter
+      (||Δ||=0, no gradient — guard b RED) independently of the loss; a backward
+      path that leaked into the base would move it (guard c RED).
+  - type: equivalence
+    property: >
+      LORA-FALSIFIER-NON-TAUTOLOGICAL: the test is a real end-to-end LoRA-training
+      guard, not an is_some / requires_grad flag assertion. Everything is LCG-seeded
+      so the loss trajectory and per-param deltas are deterministic and CI-stable.
+      RED-confirmed by reverting LoRALayer::forward to the graph-severing
+      `Tensor::new(scaled_lora_data, false)` + `Tensor::new(result_data, ..)` path:
+      the forward output reports requires_grad=false and no backward op, lora_a and
+      lora_b receive NO gradient (guard b RED), and the loss does not decrease
+      because the adapter cannot move. The autograd-aware `scale`+`add` path is
+      GREEN. A second minimal structural guard
+      (lora_forward_backward_reaches_adapter_not_base) asserts the forward output
+      keeps a live backward op, the adapter gets a gradient, and the frozen base
+      does NOT — catching a re-sever in one forward/backward.
+
+falsification_tests:
+  - id: FALSIFY-LORA-ADAPTER-TRAINS-BASE-FROZEN-001
+    name: falsify_lora_adapter_trains_to_decreasing_loss_base_frozen
+    prediction: "A tiny LoRA adapter trains the fixed regression task to final loss < 0.5*initial AND both adapter params A/B change from init with a finite non-zero gradient while the base weight stays exactly frozen"
+    test_harness: "cargo test -p aprender-train --lib falsify_lora_adapter_trains_to_decreasing_loss_base_frozen"
+    expected_output: "test result: ok"
+    if_fails: "LoRALayer::forward is severing the autograd graph (Tensor::new on the scaled LoRA branch or the base+LoRA sum). Route the scale through the autograd-aware `scale` op and the sum through `add` so the backward edge reaches lora_a/lora_b and the adapter is trainable end-to-end."
+  - id: FALSIFY-LORA-FORWARD-BACKWARD-REACHES-ADAPTER-002
+    name: lora_forward_backward_reaches_adapter_not_base
+    prediction: "LoRALayer::forward output keeps a live backward op; after backward the adapter A/B receive gradient and the frozen base does not"
+    test_harness: "cargo test -p aprender-train --lib lora_forward_backward_reaches_adapter_not_base"
+    expected_output: "test result: ok"
+    if_fails: "LoRALayer::forward dropped the backward op (Tensor::new with requires_grad=false). Build the LoRA output via autograd-aware ops so the result carries a backward op reaching the adapter while leaving the frozen base ungraded."
