@@ -1,0 +1,104 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-25'
+  author: PAIML Engineering
+  description: |
+    trueno::f32_to_f16 (crates/aprender-compute, [lib] name = "trueno") must be
+    IEEE-754 round-to-nearest-even (RNE), bit-identical to half::f16::from_f32.
+
+    Root fix (PMAT-905 class) for the prior round-half-UP implementation. The old
+    code had two defects: (1) it used a single round bit `(mantissa >> 12) & 1`
+    with NO sticky bits, so every exact tie rounded UP instead of to even; and
+    (2) it masked the rounded mantissa with `& 0x03FF`, dropping the carry that an
+    overflowing mantissa must propagate into the EXPONENT. The combination emitted
+    the wrong exponent on carry: 255.99 -> 0x5800 (correct 0x5C00), 65520 -> 0x7800
+    (correct 0x7C00 Inf), -7.998071 -> 0xC400 (correct 0xC800). 31+ inputs (and
+    thousands of ties under stride scan) diverged from IEEE RNE / half::f16.
+
+    PMAT-905 fixed only the f16 EXPORT path (aprender-core f32_slice_to_f16_bytes,
+    which uses the half crate); this contract pins the ROOT trueno function that
+    other callers (aprender-core format::v2 APR writers, aprender-train
+    autograd::precision conversions) delegate to. The decode f16_to_f32 was already
+    exact for normals and is unchanged.
+
+    The fix is a pure-Rust bit-twiddle (no `half` runtime dependency on the
+    foundation): a round_shift_rne(value, shift) helper that inspects the round bit
+    + sticky bits + result LSB for ties-to-even, applied to both the normal-mantissa
+    (shift 13) and f16-subnormal (shift -unbiased-1) paths, with the carry added via
+    `+` so it propagates into the exponent (and to Inf on max-normal carry).
+  references:
+  - 'crates/aprender-compute/src/activations.rs — f32_to_f16 + round_shift_rne (RNE fix)'
+  - 'crates/aprender-core/src/format/v2/mod.rs — f32_to_f16 delegates to trueno::f32_to_f16'
+  - 'crates/aprender-train/src/autograd/precision/conversions.rs — delegates to trueno::f32_to_f16'
+  - 'half::f16::from_f32 — the IEEE-754 binary16 RNE reference oracle'
+
+kind: KernelContract
+name: trueno-f16-rne
+version: 1.0.0
+scope: trueno::f32_to_f16 IEEE round-to-nearest-even (== half::f16::from_f32)
+
+equations:
+  f32_to_f16_rne:
+    formula: |
+      f32_to_f16(x) == half::f16::from_f32(x).to_bits() for all x in f32.
+      Rounding is round-to-nearest, ties-to-even: result = round_half_even(
+      x / ulp16) where ulp16 is the binary16 spacing at x's exponent. A mantissa
+      carry propagates into the exponent (and to ±Inf on max-normal carry).
+    domain: 'x in f32 (all 2^32 bit patterns: normals, subnormals, +-0, +-Inf, NaN)'
+    codomain: u16 (IEEE-754 binary16 bits)
+    invariants:
+    - 'ties round to even, never always-up (no biased round-half-up)'
+    - 'mantissa-overflow carry increments the exponent (NOT masked with & 0x03FF)'
+    - 'max-normal carry (e.g. 65520) -> 0x7C00 (Inf), not a wrong finite exponent'
+    - '+-0, +-Inf preserved exactly; NaN maps to a quiet f16 NaN (exp all ones, mantissa != 0)'
+    - 'f16 subnormals are produced with RNE; f32 subnormals flush to +-0'
+    lean_theorem: Theorems.F32_To_F16_RNE
+
+proof_obligations:
+- type: invariant
+  property: f32_to_f16 is bit-identical to half::f16::from_f32 across the f32 domain
+  formal: |
+    For all x sampled across all 256 f32 exponents x strided mantissas x both signs,
+    f32_to_f16(x) == half::f16::from_f32(x).to_bits() (NaN compared as both-NaN).
+    Includes the 31+ known round-half-up divergences (255.99 -> 0x5C00, 65520 ->
+    0x7C00, -7.998071 -> 0xC800), exact ties-to-even, and f16 subnormals.
+
+falsification_tests:
+- id: FT-F16RNE-001
+  rule: f32_to_f16 matches half::f16 bit-for-bit on the known round-half-up divergences
+  prediction: |
+    f32_to_f16(255.99) == 0x5C00, f32_to_f16(65520.0) == 0x7C00 (Inf),
+    f32_to_f16(-7.998071) == 0xC800 — NOT the buggy 0x5800 / 0x7800 / 0xC400.
+  if_fails: 'the round bit lacks sticky/even handling or the carry is masked with & 0x03FF.'
+  evidence: cargo test -p aprender-compute --lib test_f32_to_f16_known_divergences_rne
+- id: FT-F16RNE-002
+  rule: f32_to_f16 == half::f16::from_f32 across the full strided f32 grid
+  prediction: |
+    Over all 256 exponents x strided mantissas x both signs, zero divergences from
+    half::f16::from_f32 (NaN compared as both-NaN).
+  if_fails: 'f32_to_f16 is not IEEE round-to-nearest-even somewhere in the domain.'
+  evidence: cargo test -p aprender-compute --lib test_f32_to_f16_matches_half_across_grid_rne
+
+kani_harnesses:
+- id: KANI-F16RNE-001
+  obligation: f32_to_f16 never panics and emits a valid binary16 bit pattern
+  property: 'for all x: f32, f32_to_f16(x) terminates, no overflow/panic, and the result is a well-formed u16 (Inf/NaN have exponent 0x1F, finite results have a coherent exponent+mantissa).'
+  bound: 1
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_f32_to_f16_total
+- id: KANI-F16RNE-002
+  obligation: round_shift_rne is round-to-nearest-even and carry-safe
+  property: 'for all value in [0..2^24), shift in [1..24]: round_shift_rne(value, shift) == round_half_even(value / 2^shift); the +1 carry is bounded by value>>shift + 1 and never wraps.'
+  bound: 24
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_round_shift_rne_ties_even
+
+qa_gate:
+  id: F-F16RNE-001
+  name: trueno-f16-rne-v1 Contract
+  description: trueno::f32_to_f16 must be IEEE round-to-nearest-even, bit-identical to half::f16::from_f32 (root fix for the wrong-exponent round-half-up bug; PMAT-905 class).
+  checks:
+  - validation
+  - falsification
