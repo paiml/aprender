@@ -1,0 +1,268 @@
+# ─────────────────────────────────────────────────────────────
+# Contract: apr-import-config-fidelity-v1
+# GGUF→APR import preserves forward-affecting config metadata.
+# ─────────────────────────────────────────────────────────────
+# The GGUF→APR Q4K import path (`apr import <model>.gguf --preserve-q4k`,
+# default for GGUF imports) MUST stamp into the `.apr` metadata the SAME
+# forward-affecting config the `.gguf` inference path (GGUFConfig::from_gguf)
+# would compute — so `apr run model.apr` and `apr run model.gguf` apply an
+# IDENTICAL forward pass (RMSNorm epsilon, RoPE theta/type, attention dims)
+# at EVERY position.
+#
+# Motivation: a P4 correctness investigation (2026-06-25, reproduced on real
+# GB10 sm_121) chased a reported `.apr`-vs-`.gguf` GPU F2 per-position
+# divergence (pos-11 argmax mismatch → silent CPU fallback). The decisive
+# CPU-side finding: for qwen2.5-coder-1.5b the two loaders' GGUFConfig is
+# ALREADY byte-identical (architecture, dims, num_heads=12, num_kv_heads=2,
+# head_dim=128, rope_theta=1e6, rope_type=2 NEOX, eps=1e-6, context_length=
+# 32768 all match), and the gx10 GPU run behaves IDENTICALLY for both formats
+# (same PARITY-GATE cosine 0.9817, same F2 result, same coherent output under
+# SKIP_PARITY_GATE=1). So the reported divergence is NOT a format/config
+# divergence. BUT the audit surfaced a LATENT config-fidelity gap in the same
+# import boundary: the eps fallback was hard-coded `unwrap_or(1e-5)` (LLaMA's
+# epsilon) for EVERY architecture, while from_gguf falls back to the
+# architecture-specific `ArchConstraints::default_eps` (1e-6 for Qwen2/Qwen3).
+# For any 1e-6-eps model whose GGUF OMITS the epsilon key (e.g. a weights-only
+# Qwen2 export) the old code would stamp 1e-5 into the `.apr` → a real forward
+# divergence vs the same model run as `.gguf`. This contract ratchets the
+# fidelity invariant so the producer can never silently diverge again.
+#
+# Peer:   contracts/apr-cpu-vs-gpu-output-parity-v1.yaml
+# Peer:   contracts/apr-convert-hf-arch-v1.yaml
+# Peer:   contracts/apr-inspect-metadata-propagation-v1.yaml
+
+metadata:
+  version: "1.0.0"
+  created: "2026-06-25"
+  updated: "2026-06-25"
+  kind: schema
+  author: PAIML Engineering
+  description: >
+    The GGUF→APR Q4K import (`GgufToAprQ4KConverter::convert`) MUST stamp the
+    forward-affecting config — rms_norm_eps, rope_theta, rope_type — using the
+    SAME source-of-truth the `.gguf` inference path (GGUFConfig::from_gguf)
+    uses: the GGUF metadata value verbatim when present, else the
+    ARCHITECTURE-SPECIFIC default (ArchConstraints::default_eps,
+    default_rope_theta_for_architecture, infer_rope_type). A hard-coded
+    cross-architecture fallback (e.g. eps `unwrap_or(1e-5)`) is FORBIDDEN
+    because it silently diverges a converted `.apr` from its source `.gguf`
+    on every layer for architectures whose default differs.
+  changelog:
+    - "1.0.0 (2026-06-25): Initial authoring. Fixes the eps `unwrap_or(1e-5)`
+       latent gap in q4k_converter_helpers.rs::convert by routing through a new
+       resolve_rms_eps() helper that mirrors from_gguf's arch-specific default.
+       Adds oracle-based unit falsifiers (FALSIFY-APR-IMPORT-EPS-001..004) and
+       a GGUFConfig from_apr-vs-from_gguf equality integration test."
+  peer_contracts:
+    - contracts/apr-cpu-vs-gpu-output-parity-v1.yaml
+    - contracts/apr-convert-hf-arch-v1.yaml
+    - contracts/apr-inspect-metadata-propagation-v1.yaml
+  references:
+    - "crates/aprender-serve/src/convert/q4k_converter_helpers.rs::resolve_rms_eps"
+    - "crates/aprender-serve/src/gguf/config.rs::GGUFConfig::from_gguf (oracle, eps via ArchConstraints::default_eps)"
+    - "crates/aprender-serve/src/gguf/config.rs::GGUFConfig::from_apr"
+    - "crates/aprender-serve/src/gguf/arch_constraints_fallback.rs (default_eps: qwen2=1e-6, llama=1e-5)"
+    - "crates/aprender-serve/tests/apr_import_config_fidelity.rs (from_apr == from_gguf integration falsifier)"
+
+summary: >
+  `apr import <gguf>` is the producer of the `.apr` forward-affecting config.
+  rms_norm_eps / rope_theta / rope_type stamped into the `.apr` MUST equal the
+  value GGUFConfig::from_gguf would use for the same GGUF: the file's metadata
+  value verbatim if present, else the ARCHITECTURE default (never a hard-coded
+  cross-arch constant). This guarantees `apr run model.apr` and
+  `apr run model.gguf` run the identical forward pass.
+
+motivation: >
+  pos-0 of a transformer forward is RoPE-rotation-invariant and norm-dominated
+  by the first token, so a config divergence (e.g. a per-layer RMSNorm epsilon
+  mismatch) is small at pos-0 and COMPOUNDS position-by-position — exactly the
+  "pos-0 clean, pos-11 divergent" signature of a silent GPU F2 fallback. The
+  only robust defense is to make the import preserve the GGUF's forward config
+  EXACTLY, with arch-aware (not hard-coded) fallbacks identical to from_gguf.
+
+# ─── REQUIRED FIELDS in the stamped .apr metadata ────────────
+
+required_fields:
+  - name: rms_norm_eps
+    type: f32
+    constraint: |
+      Equals the GGUF `{arch}.attention.layer_norm_rms_epsilon` verbatim when
+      present; otherwise the architecture default
+      `ArchConstraints::from_architecture(arch).default_eps` (1e-6 for
+      Qwen2/Qwen3, 1e-5 for LLaMA/Mistral/Phi/Gemma). MUST equal the value
+      GGUFConfig::from_gguf computes for the same GGUF. A hard-coded
+      cross-architecture fallback is FORBIDDEN.
+    ship_blocker: true
+  - name: rope_theta
+    type: f32
+    constraint: |
+      Equals the GGUF `{arch}.rope.freq_base` verbatim when present; otherwise
+      `default_rope_theta_for_architecture(arch)`. MUST match from_gguf.
+    ship_blocker: true
+  - name: rope_type
+    type: u32
+    constraint: |
+      0 = NORM (adjacent pairs), 2 = NEOX (split halves). Derived via the
+      shared `infer_rope_type(arch)` single-source-of-truth, identical to
+      from_gguf. Qwen2/Qwen3/Phi/Gemma = 2; LLaMA/Mistral = 0.
+    ship_blocker: true
+
+# ─── INVARIANTS ──────────────────────────────────────────────
+
+invariants:
+
+- id: INV-APR-IMPORT-CONFIG-001
+  description: >
+    For a GGUF that OMITS `{arch}.attention.layer_norm_rms_epsilon`, the
+    import stamps the ARCHITECTURE default into the `.apr`, NOT a hard-coded
+    constant. Qwen2/Qwen3 → 1e-6; LLaMA → 1e-5. This matches
+    GGUFConfig::from_gguf's `unwrap_or(constraints.default_eps)`.
+  falsifier: >
+    Call resolve_rms_eps("qwen2", empty_metadata) and assert it equals
+    ArchConstraints::from_architecture("qwen2").default_eps == 1e-6 (NOT the
+    old 1e-5). Mutation: revert to unwrap_or(1e-5) → assertion fails.
+
+- id: INV-APR-IMPORT-CONFIG-002
+  description: >
+    When the GGUF DOES carry the epsilon key, the import uses it VERBATIM
+    (file truth, not an inferred default). Real qwen2.5-coder GGUFs store
+    1e-6 here.
+  falsifier: >
+    Insert `qwen2.attention.layer_norm_rms_epsilon = 7.5e-6` into metadata,
+    call resolve_rms_eps("qwen2", md), assert == 7.5e-6.
+
+- id: INV-APR-IMPORT-CONFIG-003
+  description: >
+    The arch-specific default is NOT a blanket 1e-6: LLaMA correctly stays at
+    1e-5 when its GGUF omits the key. The fix is arch-aware, mirroring
+    from_gguf for ALL architectures.
+  falsifier: >
+    resolve_rms_eps("llama", empty_metadata) == 1e-5; resolve_rms_eps("qwen2",
+    empty_metadata) == 1e-6.
+
+- id: INV-APR-IMPORT-CONFIG-004
+  description: >
+    End-to-end: the GGUFConfig built by from_apr (the `.apr` loader) on a
+    round-tripped GGUF→APR model MUST equal the GGUFConfig built by from_gguf
+    (the oracle, `.gguf` loader) on every forward-affecting field
+    (architecture, dims, num_heads, num_kv_heads, head_dim, intermediate_dim,
+    rope_theta, rope_type, eps, attn_scale, context_length).
+  falsifier: >
+    Build both configs from the same qwen2.5-coder-1.5b model (.gguf via
+    from_gguf, freshly-imported .apr via from_apr) and assert field equality.
+    Host-gated; auto-skips where the fixture is absent.
+
+# ─── GATES ───────────────────────────────────────────────────
+
+gates:
+
+- id: GATE-APR-IMPORT-CONFIG-001
+  invariant: INV-APR-IMPORT-CONFIG-001
+  check: |
+    Unit test: resolve_rms_eps("qwen2", empty) == arch default 1e-6, NOT 1e-5.
+    Mutation-verified RED on the old unwrap_or(1e-5).
+  enforcement: ci
+  severity: high
+
+- id: GATE-APR-IMPORT-CONFIG-002
+  invariant: INV-APR-IMPORT-CONFIG-002
+  check: |
+    Unit test: explicit GGUF epsilon value is used verbatim (not overridden by
+    a default).
+  enforcement: ci
+  severity: high
+
+- id: GATE-APR-IMPORT-CONFIG-003
+  invariant: INV-APR-IMPORT-CONFIG-003
+  check: |
+    Unit test: llama default stays 1e-5; qwen3 default is 1e-6. Arch-aware.
+  enforcement: ci
+  severity: high
+
+- id: GATE-APR-IMPORT-CONFIG-004
+  invariant: INV-APR-IMPORT-CONFIG-004
+  check: |
+    Integration test: from_apr's GGUFConfig == from_gguf's GGUFConfig on every
+    forward-affecting field for qwen2.5-coder-1.5b (host-gated).
+  enforcement: ci
+  severity: medium
+
+# ─── FALSIFICATION TESTS ─────────────────────────────────────
+
+falsification_tests:
+
+- id: FALSIFY-APR-IMPORT-EPS-001
+  invariant: INV-APR-IMPORT-CONFIG-001
+  rule: qwen2-missing-eps-uses-arch-default-1e6
+  prediction: >
+    resolve_rms_eps("qwen2", empty_metadata) == 1e-6 (the Qwen2 arch default),
+    matching GGUFConfig::from_gguf. The old hard-coded 1e-5 is the bug.
+  test_kind: unit
+  site: crates/aprender-serve/src/convert/tests_infer_rope.rs::tests::test_resolve_rms_eps_qwen2_missing_key_uses_arch_default_1e6
+  if_fails: import stamps LLaMA's epsilon into a Qwen2 .apr — forward diverges vs the same model as .gguf
+
+- id: FALSIFY-APR-IMPORT-EPS-002
+  invariant: INV-APR-IMPORT-CONFIG-003
+  rule: qwen3-missing-eps-uses-arch-default-1e6
+  prediction: >
+    resolve_rms_eps("qwen3", empty_metadata) == 1e-6.
+  test_kind: unit
+  site: crates/aprender-serve/src/convert/tests_infer_rope.rs::tests::test_resolve_rms_eps_qwen3_missing_key_uses_arch_default_1e6
+  if_fails: qwen3 .apr import uses wrong epsilon
+
+- id: FALSIFY-APR-IMPORT-EPS-003
+  invariant: INV-APR-IMPORT-CONFIG-003
+  rule: llama-missing-eps-stays-1e5
+  prediction: >
+    resolve_rms_eps("llama", empty_metadata) == 1e-5 — the fix is arch-aware,
+    not a blanket 1e-6.
+  test_kind: unit
+  site: crates/aprender-serve/src/convert/tests_infer_rope.rs::tests::test_resolve_rms_eps_llama_missing_key_uses_arch_default_1e5
+  if_fails: over-correction — LLaMA epsilon wrongly changed to 1e-6
+
+- id: FALSIFY-APR-IMPORT-EPS-004
+  invariant: INV-APR-IMPORT-CONFIG-002
+  rule: explicit-gguf-eps-used-verbatim
+  prediction: >
+    With `qwen2.attention.layer_norm_rms_epsilon = 7.5e-6` in metadata,
+    resolve_rms_eps("qwen2", md) == 7.5e-6 (file truth, not a default).
+  test_kind: unit
+  site: crates/aprender-serve/src/convert/tests_infer_rope.rs::tests::test_resolve_rms_eps_uses_explicit_gguf_value_verbatim
+  if_fails: import ignores the GGUF's stored epsilon
+
+- id: FALSIFY-APR-IMPORT-CONFIG-005
+  invariant: INV-APR-IMPORT-CONFIG-004
+  rule: from_apr-config-equals-from_gguf-oracle
+  prediction: >
+    GGUFConfig::from_apr (round-tripped .apr) equals GGUFConfig::from_gguf
+    (.gguf oracle) on every forward-affecting field for qwen2.5-coder-1.5b.
+  test_kind: integration
+  site: crates/aprender-serve/tests/apr_import_config_fidelity.rs::apr_import_preserves_forward_affecting_config
+  if_fails: a forward-affecting config field diverges between the .apr and .gguf loaders
+
+# ─── EQUATIONS ───────────────────────────────────────────────
+
+equations:
+  EQ-APR-IMPORT-EPS-001:
+    name: import_rms_eps_resolution
+    latex: '\epsilon_{apr} = \text{gguf}[\text{eps\_key}] \;\lor\; \text{default\_eps}(\text{arch})'
+    description: >
+      The eps stamped into the .apr is the GGUF metadata epsilon when present,
+      else the architecture-specific default — identical to from_gguf. Never a
+      hard-coded cross-architecture constant.
+    runtime_check: |
+      let eps = Self::get_f32(metadata, &arch_key(arch, RMS_EPSILON))
+          .unwrap_or_else(|| ArchConstraints::from_architecture(arch).default_eps);
+    domain: "GGUF metadata map M + architecture slug arch"
+    codomain: "f32 epsilon equal to GGUFConfig::from_gguf(M).eps"
+    preconditions:
+      - "!arch.is_empty()"
+    postconditions:
+      - "result > 0.0"
+
+proof_obligations:
+  - id: OBLIG-APR-IMPORT-CONFIG-FIDELITY
+    type: invariant
+    property: "GGUF→APR import preserves the forward-affecting config (eps/rope_theta/rope_type) using arch-aware defaults identical to GGUFConfig::from_gguf, so from_apr's config equals from_gguf's config field-for-field"
+    formal: "∀ gguf M, arch a: resolve_rms_eps(a, M) = from_gguf(M).eps ∧ stamped_rope_theta(a, M) = from_gguf(M).rope_theta ∧ stamped_rope_type(a, M) = from_gguf(M).rope_type"
+    applies_to: import_rms_eps_resolution
