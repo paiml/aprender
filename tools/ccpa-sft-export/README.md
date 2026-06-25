@@ -94,6 +94,22 @@ apr code --model merged.apr --project HELDOUT --max-turns 1 --emit-trace lora_tr
 #  SUCCESS = tool_use_count(lora_trace) >= 1  vs  tool_use_count(base_trace) == 0
 ```
 
+### Flip-test status (measured, this spike)
+
+- **BASE = 0 tool_calls** (measured): `apr code` on the held-out fix task emits prose
+  *"Sure, please provide the code for the `src/lib.rs` file."* — no `<tool_call>` block.
+- **Merge→run leg = mechanically verified**: a synthetic remapped adapter merged
+  (`Layers merged: 56/339` = 28 layers × q+v) into a runnable `merged.apr` that loads
+  and generates in `apr code`. So `safetensors → remap → merge → run → trace` all work.
+- **LoRA training did NOT complete** in the spike window: on this host the CUDA
+  `InstructPipeline::from_apr` for the 1.5B model stayed in F32-dequant + PTX-JIT
+  pre-warm for 15+ minutes **without reaching a single training step** (GPU never
+  sustained load; the one-time JIT pre-warm is the wall). The CPU `--features training`
+  path has the same InstructPipeline-construction bottleneck. So the measured flip is
+  **BASE=0 / LoRA=blocked-on-training-build**, not a completed 0→1 flip. The dataset +
+  full runbook are ready to run once the build cost is addressed (pre-compiled cubins /
+  smaller base / longer GPU budget).
+
 ### Known pipeline blockers (measured, in the existing apr finetune/merge/run plumbing — NOT this converter)
 
 1. `apr code`/`apr run` have **no inference-time LoRA adapter flag** — the trained adapter must
