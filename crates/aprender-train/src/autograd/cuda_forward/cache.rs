@@ -12,7 +12,7 @@ use std::sync::{Mutex, OnceLock};
 use trueno_gpu::driver::{CublasHandle, CudaContext, CudaModule, CudaStream};
 #[cfg(feature = "cuda")]
 use trueno_gpu::kernels::{
-    Batched4DGemmKernel, BatchedRopeBackwardKernel, BatchedSoftmaxKernel,
+    Batched4DGemmKernel, BatchedRopeNeoxBackwardKernel, BatchedSoftmaxKernel,
     BatchedToInterleavedKernel, BatchedTransposeKernel, BatchedVectorizedRmsNormKernel,
     ElementwiseMulKernel, FusedSwigluKernel, GemmKernel, InterleavedToBatchedKernel, Kernel,
     Nf4GemmKernel, Nf4GemmTransposeKernel, ResidualAddKernel, ScaleKernel, SiluKernel,
@@ -292,7 +292,7 @@ impl ForwardKernelCache {
         // Stage C/D dispatch on gx10 confirmed runtime emits 2 [FWD-CACHE]
         // Compiling events post-pre-warm for rope_fwd at seq=256 — avoidable
         // JIT-cache pressure that PMAT-700-B closed for GEMMs.
-        use trueno_gpu::kernels::BatchedRopeKernel;
+        use trueno_gpu::kernels::BatchedRopeNeoxKernel;
         let qwen_theta = 1_000_000.0_f32;
         let qwen_theta_bits = qwen_theta.to_bits();
         let phase4_rope_seq: u32 = std::env::var("APR_DISTILL_SMOKE_SEQ_LEN")
@@ -302,13 +302,13 @@ impl ForwardKernelCache {
         let nkv = _nkv;
         for rope_seq in [1_u32, phase4_rope_seq] {
             warm!(
-                format!("batched_rope_fwd_{nh}_{hd}_{rope_seq}_th{qwen_theta_bits:08x}"),
-                BatchedRopeKernel::new(nh, hd, rope_seq, qwen_theta)
+                format!("batched_rope_neox_fwd_{nh}_{hd}_{rope_seq}_th{qwen_theta_bits:08x}"),
+                BatchedRopeNeoxKernel::new(nh, hd, rope_seq, qwen_theta)
             );
             if nkv != nh {
                 warm!(
-                    format!("batched_rope_fwd_{nkv}_{hd}_{rope_seq}_th{qwen_theta_bits:08x}"),
-                    BatchedRopeKernel::new(nkv, hd, rope_seq, qwen_theta)
+                    format!("batched_rope_neox_fwd_{nkv}_{hd}_{rope_seq}_th{qwen_theta_bits:08x}"),
+                    BatchedRopeNeoxKernel::new(nkv, hd, rope_seq, qwen_theta)
                 );
             }
         }
@@ -603,13 +603,13 @@ fn pre_warm_backward_kernels_in_forward_cache(
     let s = max_seq_len as u32;
     let qwen_theta_bits = 1_000_000.0_f32.to_bits();
     warm!(
-        format!("batched_rope_bwd_{nh}_{hd}_{s}_th{qwen_theta_bits:08x}"),
-        BatchedRopeBackwardKernel::new(nh, hd, s, 1_000_000.0)
+        format!("batched_rope_neox_bwd_{nh}_{hd}_{s}_th{qwen_theta_bits:08x}"),
+        BatchedRopeNeoxBackwardKernel::new(nh, hd, s, 1_000_000.0)
     );
     if nkv != nh {
         warm!(
-            format!("batched_rope_bwd_{nkv}_{hd}_{s}_th{qwen_theta_bits:08x}"),
-            BatchedRopeBackwardKernel::new(nkv, hd, s, 1_000_000.0)
+            format!("batched_rope_neox_bwd_{nkv}_{hd}_{s}_th{qwen_theta_bits:08x}"),
+            BatchedRopeNeoxBackwardKernel::new(nkv, hd, s, 1_000_000.0)
         );
     }
 

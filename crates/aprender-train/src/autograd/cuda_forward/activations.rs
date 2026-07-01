@@ -246,9 +246,19 @@ pub fn batched_softmax_forward(
         }
     };
 
-    // One warp (32 threads) per row, one block per row
-    let config =
-        LaunchConfig { grid: (total_rows, 1, 1), block: (32.min(row_size), 1, 1), shared_mem: 72 };
+    // One FULL warp (32 threads) per row, one block per row.
+    //
+    // FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001: this was `32.min(row_size)`.
+    // The kernel's max/sum reductions use `shfl.sync` with membermask
+    // 0xFFFFFFFF — every lane of the warp MUST be active or the shuffle
+    // result is undefined (PTX ISA). With row_size < 32 (e.g. short
+    // sequences: 15 tokens → 15 threads) lanes 15-31 named in the mask
+    // did not exist, so `row_max` picked up garbage data-dependently →
+    // exp(x - garbage) rows summing to 0 → 0/0 = NaN in softmax output.
+    // The per-lane loops already guard `i < row_size`; idle lanes carry
+    // the reduction identities (-inf for max, 0.0 for sum), so a full
+    // warp is correct for every row_size.
+    let config = LaunchConfig { grid: (total_rows, 1, 1), block: (32, 1, 1), shared_mem: 72 };
 
     let input_ptr = input.as_ptr();
     let output_ptr = output.as_ptr();

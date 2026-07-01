@@ -1,0 +1,225 @@
+metadata:
+  id: C-CUDA-NF4-TRAIN-LOSS-PARITY
+  version: 1.0.0
+  created: '2026-07-02'
+  author: PAIML Engineering
+  kind: pattern
+  status: ACTIVE_ALGORITHM_LEVEL
+  description: |
+    Pins functional parity between the NF4 QLoRA CUDA training forward
+    (CudaNf4TransformerBlock path + GPU-resident lm_head/fused causal CE)
+    and a quantization-matched CPU oracle: on the same tokens the GPU
+    training loss must equal the CPU loss computed through NF4-round-
+    tripped weights within tolerance, and the full [seq, vocab] logits
+    must agree within NF4 noise.
+
+    BACKGROUND (cascade defect #4). After the stream-ordering fix
+    (cuda-nf4-forward-stream-ordering-v1) `apr finetune -m qlora`
+    trained end-to-end but the loss sat FLAT at CE 13-14 — ABOVE
+    ln(151936)=11.93, i.e. worse than a uniform distribution — on
+    apr-code SFT data whose responses the base model emits correctly in
+    inference, and on trivial toy data ("What is 2+2?" -> "4"). After
+    ~125 optimizer steps at lr 2e-4/rank 256 the garbage gradients blew
+    the adapters into permanent NaN. The forward was FINITE but WRONG.
+
+    ROOT CAUSES (oracle-based bisection: pure-CPU CE vs GPU-forward+CPU-CE
+    vs GPU-forward+fused-GPU-CE localized the defect to the transformer
+    forward; per-op layer-0 bisection against a manual CPU replay
+    localized the ops). FOUR stacked defects:
+
+    1. WRONG ROPE PAIRING (dominant). entrenar's batched_rope_neox_forward
+       / _backward wrappers (ALB-119 batched launch) instantiated
+       BatchedRopeKernel, which rotates ADJACENT pairs (2i, 2i+1) — the
+       GPT-J convention that realizar reserves for non-NeoX rope types.
+       Qwen2/LLaMA weights require NEOX split-half pairs (i, i+d/2)
+       (CORRECTNESS-011), which the CPU apply_rope and realizar use.
+       Every layer's Q/K were rotated in the wrong basis: post-rope Q/K
+       relL2 vs oracle = 0.42/0.65 while un-roped V matched at 0.09
+       (pure quant noise). Fix: new BatchedRopeNeoxKernel /
+       BatchedRopeNeoxBackwardKernel (precise trig, CORRECTNESS-013)
+       wired into the wrappers; BatchedRopeKernel semantics preserved
+       for realizar's non-NeoX consumers.
+
+    2. DROPPED Q/K/V BIASES. CudaNf4TransformerBlock never received or
+       applied the attention projection biases (Qwen2 use_bias=true;
+       blk.N.attn_{q,k,v}.bias exist in the model and the CPU path adds
+       them). The FP32 block had bias support since
+       FALSIFY-CUDA-FORWARD-PARITY-002 but the instruct init site passed
+       None and the NF4 block had no bias fields at all. Dropping them
+       alone shifts toy causal CE 2.13 -> 4.49. Fix: replicated bias
+       buffers + cuda_add_inplace after each projection GEMM (before
+       QK-norm/RoPE, matching CPU order), threaded from all three NF4
+       construction sites and the instruct FP32 site.
+
+    3. PARTIAL-WARP SHFL UB IN SOFTMAX. batched_softmax_forward (and the
+       softmax backward wrappers) launched block=(32.min(row_size)); the
+       kernels' max/sum reductions use shfl.sync with membermask
+       0xFFFFFFFF, which is UNDEFINED when named lanes are inactive
+       (PTX ISA). For seq < 32 the row max/sum picked up garbage data-
+       dependently -> exp(x - garbage) rows summing to 0 -> 0/0 = NaN.
+       Surfaced the moment defects 1-2 were fixed (bias-included scores
+       changed register contents). Fix: always launch a FULL 32-lane
+       warp — the per-lane loops already guard i < row_size and idle
+       lanes carry the reduction identities (-inf/0.0).
+
+    4. NON-CAUSAL CPU ORACLE (label leakage). autograd::ops::attention
+       applied NO causal mask — softmax over ALL positions. The CPU
+       train/eval path for decoder-only models attended bidirectionally,
+       leaking future (label) tokens backwards: toy causal CE is 2.13,
+       but the leaky CPU forward reported 0.17. This both corrupted the
+       CPU training/eval path (deceptively low losses, wrong gradients)
+       and masked GPU defects during comparison. Fix: attention_causal
+       (masked scores, shared softmax backward — masked weights are
+       exactly 0 so the gradient math is unchanged) selected for
+       ModelArchitecture::Decoder; encoders (BERT/RoBERTa) remain
+       bidirectional.
+
+    RED-then-GREEN (live on RTX 4090, sm_89, Qwen2.5-Coder-1.5B q4k):
+      RED  (pre-fix): GPU toy loss 6.54 vs causal-CPU 2.13 / NF4-CPU
+           oracle 0.66; production runs flat at CE 13-14 then NaN.
+      GREEN (post-fix): GPU fused loss 0.6820 vs NF4-matched CPU oracle
+           0.6557 (|delta| = 0.026 < 0.5); fused GPU CE vs CPU CE on the
+           SAME logits |delta| = 0.0005; full-logits relL2 = 0.047.
+      MUTATION-VERIFIED (each fix reverted individually -> RED):
+        rope revert    -> logits relL2 0.183 (> 0.10)   RED
+        bias drop      -> loss 5.17 vs 0.66, relL2 0.97 RED
+        partial warp   -> fused loss NaN                RED
+
+  references:
+    - 'crates/aprender-gpu/src/kernels/elementwise/rope/neox.rs (BatchedRopeNeoxKernel + BatchedRopeNeoxBackwardKernel)'
+    - 'crates/aprender-train/src/autograd/cuda_forward/normalization.rs (batched_rope_neox_forward/_backward rewired to NEOX kernels)'
+    - 'crates/aprender-train/src/autograd/cuda_forward/cache.rs (pre-warm keys track the NEOX kernels)'
+    - 'crates/aprender-train/src/transformer/cuda_block.rs (NF4 b_q/b_k/b_v replicated buffers + forward bias adds)'
+    - 'crates/aprender-train/src/finetune/instruct_pipeline/cuda_init.rs (bias threading, NF4 + FP32 sites)'
+    - 'crates/aprender-train/src/finetune/classify_pipeline/gpu.rs (bias threading)'
+    - 'crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs (bias threading)'
+    - 'crates/aprender-train/src/autograd/cuda_forward/activations.rs (full-warp batched softmax launch)'
+    - 'crates/aprender-train/src/autograd/cuda_backward/structured.rs (full-warp softmax backward launches)'
+    - 'crates/aprender-train/src/autograd/ops/attention.rs (attention_causal)'
+    - 'crates/aprender-train/src/transformer/attention.rs (Decoder -> attention_causal dispatch)'
+    - 'crates/aprender-train/src/finetune/instruct_pipeline/parity_probe.rs (falsifier + layer bisect probes)'
+    - 'crates/aprender-train/src/transformer/cuda_block_parity_probe.rs (per-op layer-0 bisect probe)'
+  depends_on:
+    - 'cuda-nf4-forward-stream-ordering-v1'
+
+equations:
+  gpu_cpu_loss_parity:
+    formula: |
+      |CE_gpu(x) - CE_cpu_nf4(x)| < 0.5  ∧  CE_gpu(x_toy) < 6.0
+      where CE_cpu_nf4 uses dequantize_nf4(quantize_nf4(W)) weights
+    domain: |
+      Same tokens, same loss window, LoRA B = 0 (base model). The CPU
+      oracle round-trips every projection weight through the SAME NF4
+      quantizer the GPU blocks use, so quantization noise is common to
+      both sides and any residual gap is STRUCTURAL (rope convention,
+      biases, masking, reductions, layout).
+    invariants:
+    - 'GPU training loss within 0.5 nats of the NF4-matched causal CPU oracle'
+    - 'toy-sample CE far below ln(vocab): a finite-garbage forward cannot hide'
+    - 'fused GPU causal CE equals CPU CE on identical logits within 0.05'
+    preconditions:
+    - 'cuda-nf4-forward-stream-ordering-v1 holds (finite forward)'
+
+  gpu_cpu_logits_parity:
+    formula: |
+      relL2(logits_gpu, logits_cpu_nf4) < 0.10 over the full [seq, vocab]
+    domain: |
+      The scalar loss on a short response window is too weak to falsify
+      every structural defect (a consistently-wrong rope pairing moved
+      toy CE by only ~0.05 nats). The full logits compare the ENTIRE
+      function surface: rope mutation -> 0.183, bias drop -> 0.97,
+      correct -> 0.047.
+    invariants:
+    - 'full-logits relL2 vs the NF4-matched CPU oracle below 0.10'
+    preconditions:
+    - 'gpu_cpu_loss_parity preconditions hold'
+
+  decoder_attention_causality:
+    formula: |
+      ∀ decoder model, positions i, j:  j > i ⇒ attn_weight[i][j] = 0
+    domain: |
+      Causal LM training and evaluation. The CPU tape attention
+      (autograd::ops::attention) must mask future positions for
+      ModelArchitecture::Decoder; encoder models remain bidirectional.
+      Unmasked decoder attention leaks label tokens backwards, reporting
+      deceptively low train/val losses and mis-training adapters.
+    invariants:
+    - 'CPU decoder forward attends only to j <= i (attention_causal)'
+    - 'masked positions carry exactly 0 weight, so the shared softmax backward is unchanged'
+    - 'encoder (BERT/RoBERTa) paths keep bidirectional attention'
+    preconditions:
+    - 'model config architecture is Decoder'
+
+proof_obligations:
+- type: invariant
+  property: GPU training loss matches the NF4-matched CPU oracle within 0.5 nats
+  formal: '|CE_gpu(x) - CE_cpu_nf4(x)| < 0.5'
+  applies_to: gpu_cpu_loss_parity
+- type: invariant
+  property: GPU logits match the NF4-matched CPU oracle within relL2 0.10
+  formal: 'relL2(logits_gpu, logits_cpu_nf4) < 0.10'
+  applies_to: gpu_cpu_logits_parity
+- type: invariant
+  property: fused GPU causal CE equals CPU CE on identical logits
+  formal: '|CE_fused(logits) - CE_cpu(logits)| < 0.05'
+  applies_to: gpu_cpu_loss_parity
+- type: invariant
+  property: decoder CPU attention is causal
+  formal: '∀ i, j > i: softmax_row_i[j] = 0'
+  applies_to: decoder_attention_causality
+
+falsification_tests:
+- id: FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001
+  rule: |
+    On the same tokens (toy instruction sample, LoRA B = 0), the NF4
+    QLoRA GPU training forward + fused causal CE must produce the same
+    loss and logits as a causal CPU forward through NF4-round-tripped
+    weights, within quantization-free tolerances (|dCE| < 0.5, logits
+    relL2 < 0.10, toy CE < 6.0, fused-vs-CPU CE on identical logits
+    < 0.05).
+  prediction: |
+    GREEN (all four fixes): GPU fused CE 0.6820 vs oracle 0.6557,
+    logits relL2 0.047. RED under any single reverted fix (mutation-
+    verified live): GPT-J rope pairing -> relL2 0.183; dropped Q/K/V
+    biases -> CE 5.17 / relL2 0.97; partial-warp softmax launch ->
+    NaN loss. Pre-fix production signature: CE flat at 13-14 (worse
+    than uniform), adapters NaN after ~125 steps. Skips vacuously
+    without a CUDA device or when APR_PARITY_MODEL is unset.
+  test: cargo test -p aprender-train --features cuda --lib falsify_cuda_nf4_train_loss_parity_001
+  if_fails: |
+    The GPU training forward is computing a DIFFERENT FUNCTION than the
+    model being fine-tuned. Bisect with the companion probes:
+    parity_probe_layer_bisect (per-layer, NF4-matched CPU replay) and
+    parity_probe_layer0_per_op (per-op layer-0). Known defect classes:
+    rope pairing convention (NEOX split-half vs GPT-J adjacent — check
+    batched_rope_neox_* wrappers instantiate the *Neox* kernels),
+    dropped Q/K/V projection biases (Qwen2 use_bias), partial-warp
+    shfl.sync launches (block must be a full 32-lane warp), non-causal
+    CPU oracle (decoder must dispatch attention_causal), layout/
+    transpose (LAYOUT-001/002). Do NOT loosen the tolerances: they are
+    calibrated so quantization noise passes and every known structural
+    defect fails.
+  ship_blocking: true
+  counter_example_classes:
+  - rope_pairing_convention_mismatch
+  - qkv_projection_bias_dropped
+  - partial_warp_shfl_sync_undefined
+  - noncausal_decoder_attention_label_leakage
+  - finite_garbage_forward_worse_than_uniform
+
+qa_gate:
+  id: QA-CUDA-NF4-TRAIN-LOSS-PARITY-001
+  name: NF4 QLoRA training forward/loss functional parity gate
+  description: |
+    The falsifier passes on a CUDA host with APR_PARITY_MODEL set: the
+    QLoRA GPU training forward computes the SAME function as the model
+    being fine-tuned (NF4-matched CPU oracle), so training losses start
+    at the model's true CE (~1-4 on apr-code SFT) instead of
+    worse-than-uniform 13-14, gradients are meaningful, and adapters do
+    not blow up. Unblocks apr finetune -m qlora learning (Pillar 3).
+  checks:
+  - gpu_cpu_loss_parity
+  - gpu_cpu_logits_parity
+  - decoder_attention_causality
+  pass_criteria: FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001 passes
+  falsification: Any failure fails the gate (ship-blocking)

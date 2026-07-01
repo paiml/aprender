@@ -898,6 +898,23 @@ impl CudaTransformerTrainer {
                     .as_ref()
                     .map(|t| t.data().as_slice().expect("contiguous k_norm").to_vec());
 
+                // FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001: thread Q/K/V biases
+                let b_q_data = layer
+                    .self_attn
+                    .b_q
+                    .as_ref()
+                    .map(|t| t.data().as_slice().expect("contiguous b_q").to_vec());
+                let b_k_data = layer
+                    .self_attn
+                    .b_k
+                    .as_ref()
+                    .map(|t| t.data().as_slice().expect("contiguous b_k").to_vec());
+                let b_v_data = layer
+                    .self_attn
+                    .b_v
+                    .as_ref()
+                    .map(|t| t.data().as_slice().expect("contiguous b_v").to_vec());
+
                 let block = crate::transformer::CudaNf4TransformerBlock::new(
                     mc,
                     i,
@@ -918,6 +935,9 @@ impl CudaTransformerTrainer {
                     lora_rank,
                     q_norm_data.as_deref(),
                     k_norm_data.as_deref(),
+                    b_q_data.as_deref(),
+                    b_k_data.as_deref(),
+                    b_v_data.as_deref(),
                 )
                 .map_err(|e| {
                     crate::error::Error::ConfigError(format!("NF4 block {i} upload failed: {e:?}"))

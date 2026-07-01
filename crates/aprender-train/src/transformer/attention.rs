@@ -9,7 +9,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use super::config::TransformerConfig;
+use super::config::{ModelArchitecture, TransformerConfig};
 
 /// Add a bias vector to a projected tensor: output[s] += bias for each sequence position.
 /// Input shape: (seq_len × dim) flattened. Bias shape: (dim).
@@ -556,9 +556,20 @@ impl MultiHeadAttention {
             let k_tensor = Tensor::from_vec(k_head, requires_grad);
             let v_tensor = Tensor::from_vec(v_head, requires_grad);
 
-            let attn_out = crate::autograd::attention(
-                &q_tensor, &k_tensor, &v_tensor, seq_len, head_dim, seq_len, head_dim,
-            );
+            // FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001: decoder-only models
+            // MUST use causal attention. The unmasked path let every position
+            // attend to FUTURE tokens, leaking the training labels backwards
+            // (deceptively low train/eval loss) and diverging from the
+            // causal CUDA training forward. Encoders stay bidirectional.
+            let attn_out = if self.config.architecture == ModelArchitecture::Decoder {
+                crate::autograd::attention_causal(
+                    &q_tensor, &k_tensor, &v_tensor, seq_len, head_dim, seq_len, head_dim,
+                )
+            } else {
+                crate::autograd::attention(
+                    &q_tensor, &k_tensor, &v_tensor, seq_len, head_dim, seq_len, head_dim,
+                )
+            };
 
             head_q_tensors.push(q_tensor);
             head_k_tensors.push(k_tensor);
@@ -731,9 +742,20 @@ impl MultiHeadAttention {
             let k_tensor = Tensor::from_vec(k_head, requires_grad);
             let v_tensor = Tensor::from_vec(v_head, requires_grad);
 
-            let attn_out = crate::autograd::attention(
-                &q_tensor, &k_tensor, &v_tensor, seq_len, head_dim, seq_len, head_dim,
-            );
+            // FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001: decoder-only models
+            // MUST use causal attention. The unmasked path let every position
+            // attend to FUTURE tokens, leaking the training labels backwards
+            // (deceptively low train/eval loss) and diverging from the
+            // causal CUDA training forward. Encoders stay bidirectional.
+            let attn_out = if self.config.architecture == ModelArchitecture::Decoder {
+                crate::autograd::attention_causal(
+                    &q_tensor, &k_tensor, &v_tensor, seq_len, head_dim, seq_len, head_dim,
+                )
+            } else {
+                crate::autograd::attention(
+                    &q_tensor, &k_tensor, &v_tensor, seq_len, head_dim, seq_len, head_dim,
+                )
+            };
 
             head_q_tensors.push(q_tensor);
             head_k_tensors.push(k_tensor);
@@ -1070,9 +1092,20 @@ impl MultiHeadAttentionWithLoRA {
             let k_tensor = Tensor::from_vec(k_head, false);
             let v_tensor = Tensor::from_vec(v_head, false);
 
-            let attn_out = crate::autograd::attention(
-                &q_tensor, &k_tensor, &v_tensor, seq_len, head_dim, seq_len, head_dim,
-            );
+            // FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001: decoder-only models
+            // MUST use causal attention. The unmasked path let every position
+            // attend to FUTURE tokens, leaking the training labels backwards
+            // (deceptively low train/eval loss) and diverging from the
+            // causal CUDA training forward. Encoders stay bidirectional.
+            let attn_out = if self.config.architecture == ModelArchitecture::Decoder {
+                crate::autograd::attention_causal(
+                    &q_tensor, &k_tensor, &v_tensor, seq_len, head_dim, seq_len, head_dim,
+                )
+            } else {
+                crate::autograd::attention(
+                    &q_tensor, &k_tensor, &v_tensor, seq_len, head_dim, seq_len, head_dim,
+                )
+            };
 
             attn_outputs.extend_from_slice(
                 attn_out.data().as_slice().expect("contiguous attention output"),
@@ -1150,8 +1183,7 @@ mod tests {
         let theta = 10000.0f32;
 
         // Deterministic input + upstream gradient weights.
-        let x_data: Vec<f32> =
-            (0..total).map(|i| ((i as f32 * 0.37).sin() * 1.5) + 0.1).collect();
+        let x_data: Vec<f32> = (0..total).map(|i| ((i as f32 * 0.37).sin() * 1.5) + 0.1).collect();
         let w: Vec<f32> = (0..total).map(|i| ((i as f32 * 0.21).cos() * 0.8) - 0.05).collect();
 
         // Analytical gradient via RopeBackward.

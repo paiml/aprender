@@ -29,8 +29,42 @@ pub fn attention(
     v: &Tensor,
     seq_len: usize,
     d_k: usize,
+    k_seq_len: usize,
+    d_v: usize,
+) -> Tensor {
+    attention_impl(q, k, v, seq_len, d_k, k_seq_len, d_v, false)
+}
+
+/// Causal (masked) Scaled Dot-Product Attention.
+///
+/// FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001: decoder-only causal LM training
+/// MUST mask future positions (`j > i`) before the softmax. The unmasked
+/// [`attention`] leaks the label tokens' embeddings backwards through the
+/// sequence, so CPU train/eval losses were deceptively LOW (label leakage)
+/// and diverged from the (correctly causal) CUDA training forward.
+/// Bidirectional [`attention`] remains for encoder models (BERT/RoBERTa).
+pub fn attention_causal(
+    q: &Tensor,
+    k: &Tensor,
+    v: &Tensor,
+    seq_len: usize,
+    d_k: usize,
+    k_seq_len: usize,
+    d_v: usize,
+) -> Tensor {
+    attention_impl(q, k, v, seq_len, d_k, k_seq_len, d_v, true)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn attention_impl(
+    q: &Tensor,
+    k: &Tensor,
+    v: &Tensor,
+    seq_len: usize,
+    d_k: usize,
     _k_seq_len: usize, // Kept for API compatibility, assumes same as seq_len
     d_v: usize,
+    causal: bool,
 ) -> Tensor {
     let scale = (d_k as f32).sqrt();
 
@@ -47,7 +81,19 @@ pub fn attention(
         *score /= scale;
     }
 
+    // Causal mask: position i may attend only to j <= i.
+    if causal {
+        for i in 0..seq_len {
+            for j in (i + 1)..seq_len {
+                scores[i * seq_len + j] = f32::NEG_INFINITY;
+            }
+        }
+    }
+
     // Step 2: Apply softmax row-wise (CPU for numerical stability)
+    // Masked entries carry exactly 0.0 weight, so the shared softmax
+    // backward (AttentionBackward) stays correct: grad w.r.t. a masked
+    // score is w_j * (…) = 0.
     let mut attention_weights = vec![0.0; seq_len * seq_len];
     for i in 0..seq_len {
         let row_start = i * seq_len;

@@ -52,6 +52,8 @@ pub use elementwise::{
     BatchedResidualAddKernel,
     BatchedRopeBackwardKernel,
     BatchedRopeKernel,
+    BatchedRopeNeoxBackwardKernel,
+    BatchedRopeNeoxKernel,
     BatchedScaleKernel,
     BatchedSoftmaxKernel,
     BatchedSwigluKernel,

@@ -68,8 +68,9 @@ pub use residual::{
     ResidualAddKernel,
 };
 pub use rope::{
-    BatchedRopeBackwardKernel, BatchedRopeKernel, PreciseRopeIndirectKernel, PreciseRopeKernel,
-    RopeIndirectKernel, RopeKernel, RopeNeoxIndirectKernel, RopeNeoxKernel,
+    BatchedRopeBackwardKernel, BatchedRopeKernel, BatchedRopeNeoxBackwardKernel,
+    BatchedRopeNeoxKernel, PreciseRopeIndirectKernel, PreciseRopeKernel, RopeIndirectKernel,
+    RopeKernel, RopeNeoxIndirectKernel, RopeNeoxKernel,
 };
 pub use swiglu::{BatchedSwigluKernel, FusedSwigluKernel};
 pub use transform::{
