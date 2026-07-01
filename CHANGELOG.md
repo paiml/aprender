@@ -7,7 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.56.0] - 2026-07-01
+
+Sovereign-leaf refactor + a correctness wave. Headlines: (1) the `.apr` container is extracted into a
+**dependency-sovereign `apr-format` crate** (no ML/GPU/tokenizer deps, CI-guarded) so a consumer can
+`cargo add apr-format` without pulling the framework; (2) a **complete CPU f16 round-to-nearest-even
+sweep** (trueno → solve → quant → convert), now bit-identical to `half` across all 2^32 f32 inputs;
+(3) `apr finetune` **stops lying about the GPU** (plain `-m lora` is CPU-only by design — the banner
+said cuBLAS) and now honors `--max-seq-len` + emits per-step progress; (4) `apr serve` is a true
+Ollama **`/api/chat` + `/api/generate` NDJSON-streaming drop-in**; (5) apr-code tool-call structure is
+preserved across turns; plus sklearn-parity metrics (NMI/MI) and an RBF-kernel SVC. Each user-facing
+fix ships a named proof-obligation + mutation-verified RED→GREEN falsifier + `pv`-validated contract.
+
 ### Added
+- **`apr serve` Ollama `/api/chat` + `/api/generate` NDJSON streaming (#2216, #2222, PMAT-923/928).**
+  `apr serve` is now a drop-in Ollama HTTP replacement — true token-by-token NDJSON streaming on both
+  endpoints, so existing Ollama clients work unchanged against local `realizar` inference.
+- **sklearn-parity metrics + SVM (#2241, #2229, #2228, PMAT-933/930/929).**
+  `normalized_mutual_info_score` + `mutual_info_score`, an RBF-kernel `SVC` with sklearn-parity
+  predictions, and finfo-eps clamping for `log_loss`/`MAPE` + `average_precision` no-positive → 0.0.
+- **`apr finetune` per-step progress + honored `--max-seq-len` (#2247).** The instruct/LoRA training
+  loop emits low-noise per-step progress (step/total, loss, lr) so a slow CPU epoch is no longer
+  mistaken for a hang, and `--max-seq-len` is threaded into the instruct config instead of hardcoded 512.
 - **`apr-format` sovereign-leaf crate (#2231).** The `.apr` model-container read/write
   (v1 `APRN` + v2 `APR\0`: header/metadata/flags, tensor index, reader/writer, streaming
   writer, shard manifest, provenance stamping, CRC32, IEEE f16) is extracted from
@@ -31,6 +52,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the `aprender::format::AprV2DequantExt` extension trait.
 
 ### Fixed
+- **`apr finetune -m lora --gpu-backend cuda` falsely claimed GPU while running on CPU (#2247).** The
+  banner printed `CUDA selected — using cuBLAS backward path` off the flag alone, but `init_cuda` runs
+  only for QLoRA (`quantize_nf4`), so plain LoRA silently trained on CPU. The banner is now truthful —
+  it claims cuBLAS only for QLoRA and otherwise warns that plain LoRA runs on CPU (use `-m qlora`) —
+  behind a testable pure `gpu_backend_notice()` helper (7 falsifiers).
+- **apr-code lost tool-call structure across turns (#2245, CCPA m296).** `render_history` re-rendered a
+  prior turn's Markdown and appended "### Continue:", collapsing a format-correct model back to a text
+  loop; added `retain_assistant_text` + a Markdown→`<tool_call>` salvage parser so tool-calling
+  survives multi-turn (contract `apr-code-toolcall-retention-v1`, mutation-verified).
+- **`apr convert` dropped forward-affecting config metadata on GGUF→APR import (#2244, PMAT class).**
+  The converter hard-coded `rms_norm_eps=1e-5`/LLaMA for all arches instead of arch-aware `1e-6` for
+  Qwen; now preserves per-arch config so the `.apr` matches the GGUF byte-for-byte (config-fidelity
+  contract).
+- **nn-layer `functional::*` activations severed the autograd graph (#2214, PMAT-922).** A sever-graph
+  sweep routed the remaining `functional::{gelu,…}` calls in nn layers through autograd-aware `Tensor`
+  ops, completing the training-graph integrity work from 0.55.0.
 - **`apr convert --quantize fp16` produced weights biased ~0.5–1 ULP low with a mis-encoded overflow
   boundary** (PMAT-905, Pillar-4, `OBLIG-CONVERT-FP16-F32-F16-RNE`,
   `contracts/quant-solve-f16-round-v1.yaml`) — the `converter` module's canonical f32→f16 encoder
