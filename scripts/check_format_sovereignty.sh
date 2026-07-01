@@ -13,15 +13,14 @@
 # PASS) and a known-non-sovereign crate (`aprender-core`, must FAIL -- it really
 # does pull trueno/wgpu). If the guard cannot tell those two apart it is broken.
 #
-# The dependency-closure computation lives in scripts/format_sovereignty_closure.py
-# (kept out of this shell so bashrs lints the shell cleanly).
+# The dependency-closure computation uses `cargo tree` (normal+build edges) — the
+# sovereign-ci image ships cargo but not python3, so no external interpreter.
 #
 # Usage: bash scripts/check_format_sovereignty.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-CLOSURE_PY="${SCRIPT_DIR}/format_sovereignty_closure.py"
 cd "${REPO_ROOT}" || exit 1
 
 # Forbidden = any ML / GPU / tokenizer / framework crate. A match means the leaf
@@ -31,12 +30,17 @@ FORBIDDEN="trueno aprender-compute aprender-gpu aprender-core wgpu naga cudarc c
 PUBLISH_LOG="$(mktemp)"
 trap 'rm -f "${PUBLISH_LOG}"' EXIT
 
-# Emit one crate name per line for the transitive closure of crate $1.
+# Emit one crate name per line for the transitive consumer closure of crate $1.
+# Uses `cargo tree` (normal + build edges = exactly what a downstream `cargo add`
+# pulls; dev-deps excluded) rather than `cargo metadata | python3`, because the
+# sovereign-ci image ships cargo but NOT python3 (a python3 dependency silently
+# no-opped the detector and broke the negative-control fixture, #2236).
 closure_of() {
   local crate="$1"
-  local meta
-  meta="$(cargo metadata --format-version 1 --all-features 2>/dev/null)"
-  printf '%s' "${meta}" | python3 "${CLOSURE_PY}" "${crate}"
+  cargo tree --package "${crate}" --all-features --edges normal,build --prefix none 2>/dev/null \
+    | sed 's/[[:space:]].*//' \
+    | grep -v '^$' \
+    | sort -u
 }
 
 # Return the forbidden crates present in crate $1's closure (space-separated).
