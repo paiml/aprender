@@ -1,0 +1,125 @@
+metadata:
+  id: C-FINETUNE-CUDA-LOSS-WINDOW
+  version: 1.0.0
+  created: '2026-07-01'
+  author: PAIML Engineering
+  kind: pattern
+  status: ACTIVE_ALGORITHM_LEVEL
+  description: |
+    Pins the invariant that the CUDA instruct-training loss window clamps
+    to the SAME sequence capacity as the forward pass (GPU-scratch-driven,
+    i.e. the `--max-seq-len` the user configured), never a hardcoded 512.
+
+    BACKGROUND. Discovered live on the apr-code tool_call flip
+    (2026-07-01, first training run after the NF4 QLoRA deadlock fix,
+    cuda-fused-residual-rmsnorm-v1.yaml). `apr finetune -m qlora
+    --max-seq-len` threading was fixed in PR #2247 (buffers size from
+    `InstructConfig::max_seq_len`), and `forward_cuda_training` clamps to
+    the scratch capacity — but `cuda_train_step` had a SECOND, older
+    hardcoded clamp (entrenar#318):
+
+      let max_pos = self.model.config().max_position_embeddings.min(512);
+
+    For any sample whose PROMPT exceeded 512 tokens, prompt_len and
+    seq_len both clamped to 512 → loss_start == loss_end →
+    num_loss_tokens == 0 → the step silently returned loss=0.0 with zero
+    gradient. On the apr-code SFT corpus (CODE_SYSTEM_PROMPT alone ≫ 512
+    tokens) that was essentially EVERY sample: a full epoch "trained"
+    with no learning — observed as steps printing loss=0.0000, epoch
+    avg_loss=93.87 (dominated by NaN sentinels), and 559 loss tokens
+    across 160 samples (~3.5/sample for 30-60-token responses).
+
+    FIX. Window math extracted to the pure function `cuda_loss_window`
+    (single correctness surface): effective capacity = scratch capacity
+    when CUDA scratch exists, `max_position_embeddings.min(512)` only as
+    the no-scratch fallback — mirroring forward_cuda_training exactly.
+    Zero-token samples (prompt overflows even the configured window) now
+    skip LOUDLY with a per-sample stderr warning instead of silently
+    contributing a 0.0 loss.
+
+    RED-then-GREEN: falsifier verified RED under the pre-fix behavior by
+    mutation (restore the hardcoded `.min(512)` → the scratch-capacity
+    assertion fails), GREEN on the fix.
+
+  references:
+    - 'crates/aprender-train/src/finetune/instruct_pipeline/training.rs (cuda_loss_window + cuda_train_step)'
+    - 'crates/aprender-train/src/finetune/instruct_pipeline/cuda_forward.rs:27 (forward capacity derivation, mirrored)'
+    - 'crates/aprender-train/src/finetune/instruct_pipeline/cuda_init.rs:130 (scratch sized from config.max_seq_len)'
+    - 'crates/apr-cli/src/commands/finetune.rs:331 (PR #2247 --max-seq-len threading)'
+  depends_on:
+    - 'cuda-fused-residual-rmsnorm-v1'
+
+equations:
+  loss_window_capacity_parity:
+    formula: |
+      effective_max(loss_window) == effective_max(forward)
+      where effective_max = scratch_capacity if scratch exists
+                            else min(max_position_embeddings, 512)
+    domain: |
+      The loss window and the forward pass MUST clamp the sequence to the
+      same capacity. A window clamped tighter than the forward silently
+      drops response tokens from training; looser would index past the
+      forward's computed logits.
+    invariants:
+    - 'scratch present ⇒ loss window honors scratch capacity (not 512)'
+    - 'no scratch ⇒ conservative min(max_position_embeddings, 512) fallback'
+    preconditions:
+    - 'scratch buffers sized from InstructConfig::max_seq_len (cuda_init.rs)'
+
+  zero_token_samples_are_loud:
+    formula: |
+      num_loss_tokens == 0 ⇒ stderr warning emitted ∧ step excluded from
+      token-weighted epoch loss
+    domain: |
+      A sample whose prompt fills the whole window cannot train; it must
+      be visibly skipped, never silently averaged as loss=0.0.
+    invariants:
+    - 'per-sample skip warning names prompt_len, window, and the --max-seq-len remedy'
+    preconditions:
+    - 'epoch aggregation is token-weighted (instruct_trainer.rs)'
+
+proof_obligations:
+- type: invariant
+  property: loss window honors configured scratch capacity
+  formal: 'cuda_loss_window(p, s, Some(cap), mpe).seq_len == min(s, cap)'
+  applies_to: loss_window_capacity_parity
+- type: invariant
+  property: zero-token samples skip loudly
+  formal: 'num_loss_tokens == 0 ⇒ eprintln(sample skipped)'
+  applies_to: zero_token_samples_are_loud
+
+falsification_tests:
+- id: FALSIFY-CUDA-LOSS-WINDOW-512-001
+  rule: |
+    With a scratch sized for 2048 rows, a 600-token prompt + 100-token
+    response keeps all 100 response tokens in the loss window.
+  prediction: |
+    cuda_loss_window(600, 700, Some(2048), 32768) returns
+    num_loss_tokens=100 with seq_len=700 unclamped. Pre-fix (hardcoded
+    .min(512), verified by mutation) both clamp to 512 and
+    num_loss_tokens=0.
+  test: cargo test -p aprender-train --features cuda --lib falsify_cuda_loss_window_honors_scratch_capacity
+  if_fails: |
+    The hardcoded 512 clamp regressed into cuda_train_step (or
+    cuda_loss_window lost its scratch_capacity argument). Long-prompt
+    corpora silently train nothing; check the epoch log for loss=0.0000
+    floods and tokens/samples ratios far below the corpus response
+    length.
+  ship_blocking: true
+  counter_example_classes:
+  - hardcoded_seq_clamp_reintroduced
+  - loss_window_diverges_from_forward_capacity
+  - silent_zero_loss_on_prompt_overflow
+
+qa_gate:
+  id: QA-FINETUNE-CUDA-LOSS-WINDOW-001
+  name: CUDA instruct loss-window capacity gate
+  description: |
+    Loss window honors the configured --max-seq-len (scratch capacity);
+    prompt-overflow samples skip loudly. Makes long-system-prompt SFT
+    corpora (apr-code tool_call) trainable.
+  checks:
+  - loss_window_capacity_parity
+  - zero_token_samples_are_loud
+  pass_criteria: FALSIFY-CUDA-LOSS-WINDOW-512-001 passes
+  falsification: Failure fails the gate (ship-blocking)

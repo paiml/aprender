@@ -130,15 +130,30 @@ impl InstructPipeline {
         seq_len: usize,
         vocab_size: usize,
     ) -> InstructStepResult {
-        // entrenar#318: truncate seq_len to match forward_cuda_training's max
-        let max_pos = self.model.config().max_position_embeddings.min(512);
-        let seq_len = seq_len.min(max_pos);
-        let prompt_len = prompt_len.min(seq_len);
-        let loss_start = prompt_len.saturating_sub(1);
-        let loss_end = seq_len - 1;
-        let num_loss_tokens = loss_end.saturating_sub(loss_start);
+        // FALSIFY-CUDA-LOSS-WINDOW-512-001: clamp the loss window to the SAME
+        // capacity the forward uses (scratch-driven), not a hardcoded 512.
+        // Pre-fix this was `max_position_embeddings.min(512)` regardless of
+        // `--max-seq-len`, so any sample whose prompt exceeded 512 tokens had
+        // its ENTIRE response clamped out of the window — silent loss=0.0,
+        // zero gradient. On the apr-code SFT corpus (system prompt ≫ 512
+        // tokens) that was ~all samples: an epoch "trained" with no learning.
+        let hidden_size = self.model.config().hidden_size;
+        let scratch_capacity = self.shared_scratch.as_ref().map(|s| s.max_seq_len(hidden_size));
+        let (loss_start, loss_end, num_loss_tokens, seq_len, prompt_len) = cuda_loss_window(
+            prompt_len,
+            seq_len,
+            scratch_capacity,
+            self.model.config().max_position_embeddings,
+        );
 
         if num_loss_tokens == 0 {
+            // Loud skip: silent 0.0 made a no-op epoch look like training.
+            // Token-weighted epoch aggregation ignores this step (0 tokens).
+            eprintln!(
+                "[CUDA] sample skipped: prompt ({prompt_len} tokens) fills the \
+                 {seq_len}-token training window — 0 response tokens to train on \
+                 (raise --max-seq-len)"
+            );
             return InstructStepResult { loss: 0.0, num_response_tokens: 0, perplexity: 1.0 };
         }
 
@@ -549,5 +564,94 @@ impl InstructPipeline {
         let avg_loss = if num_loss_tokens > 0 { total_loss / num_loss_tokens as f32 } else { 0.0 };
 
         (avg_loss, grad_logits)
+    }
+}
+
+/// Compute the causal-LM loss window for a CUDA training step.
+///
+/// FALSIFY-CUDA-LOSS-WINDOW-512-001: the effective sequence capacity is the
+/// GPU scratch's row capacity when CUDA scratch exists (sized from
+/// `config.max_seq_len` at init — the value `--max-seq-len` threads through),
+/// with `max_position_embeddings.min(512)` ONLY as the no-scratch fallback.
+/// This mirrors `forward_cuda_training` (cuda_forward.rs) exactly — the loss
+/// window and the forward MUST clamp to the same capacity or response tokens
+/// silently fall outside the trained window.
+///
+/// Pre-fix `cuda_train_step` hardcoded `.min(512)` unconditionally: with
+/// `--max-seq-len 2048` the buffers held 2048 rows but the loss window was
+/// still cut at 512, so any prompt longer than 512 tokens yielded
+/// `num_loss_tokens == 0` → silent `loss=0.0`, zero gradient, no learning.
+///
+/// Returns `(loss_start, loss_end, num_loss_tokens, clamped_seq_len,
+/// clamped_prompt_len)`.
+#[cfg(feature = "cuda")]
+pub(crate) fn cuda_loss_window(
+    prompt_len: usize,
+    seq_len: usize,
+    scratch_capacity: Option<usize>,
+    max_position_embeddings: usize,
+) -> (usize, usize, usize, usize, usize) {
+    let max_pos = scratch_capacity.unwrap_or_else(|| max_position_embeddings.min(512));
+    let seq_len = seq_len.min(max_pos);
+    let prompt_len = prompt_len.min(seq_len);
+    let loss_start = prompt_len.saturating_sub(1);
+    let loss_end = seq_len.saturating_sub(1);
+    let num_loss_tokens = loss_end.saturating_sub(loss_start);
+    (loss_start, loss_end, num_loss_tokens, seq_len, prompt_len)
+}
+
+#[cfg(all(test, feature = "cuda"))]
+mod loss_window_tests {
+    use super::cuda_loss_window;
+
+    /// FALSIFY-CUDA-LOSS-WINDOW-512-001: with a scratch sized for 2048 rows
+    /// (`--max-seq-len 2048`), a 600-token prompt + 100-token response MUST
+    /// produce a non-empty loss window. Pre-fix the hardcoded `.min(512)`
+    /// clamped seq AND prompt to 512 → `num_loss_tokens == 0` → the step
+    /// silently returned loss=0.0 and the epoch trained nothing (observed
+    /// live on the apr-code SFT corpus: every step 0.0/NaN, avg_loss=93.87
+    /// from NaN sentinels, 559 loss tokens across 160 samples).
+    #[test]
+    fn falsify_cuda_loss_window_honors_scratch_capacity() {
+        let (loss_start, loss_end, num_loss_tokens, seq_len, prompt_len) =
+            cuda_loss_window(600, 700, Some(2048), 32768);
+        assert_eq!(seq_len, 700, "seq must not be clamped below scratch capacity");
+        assert_eq!(prompt_len, 600);
+        assert_eq!(loss_start, 599);
+        assert_eq!(loss_end, 699);
+        assert_eq!(
+            num_loss_tokens, 100,
+            "FALSIFY-CUDA-LOSS-WINDOW-512-001: a 600-token prompt with a \
+             2048-capacity scratch must keep all 100 response tokens in the \
+             loss window (pre-fix: hardcoded .min(512) clamp yielded 0)"
+        );
+    }
+
+    /// No-scratch fallback preserves the conservative entrenar#318 clamp.
+    #[test]
+    fn cuda_loss_window_no_scratch_falls_back_to_512() {
+        let (_, _, num_loss_tokens, seq_len, prompt_len) = cuda_loss_window(600, 700, None, 32768);
+        assert_eq!(seq_len, 512);
+        assert_eq!(prompt_len, 512);
+        assert_eq!(num_loss_tokens, 0, "prompt fills the fallback window — nothing to train");
+    }
+
+    /// Prompt overflowing even the scratch capacity yields an empty window
+    /// (the caller must skip LOUDLY, never train on it silently).
+    #[test]
+    fn cuda_loss_window_prompt_overflow_is_empty() {
+        let (_, _, num_loss_tokens, seq_len, prompt_len) =
+            cuda_loss_window(3000, 3050, Some(2048), 32768);
+        assert_eq!(seq_len, 2048);
+        assert_eq!(prompt_len, 2048);
+        assert_eq!(num_loss_tokens, 0);
+    }
+
+    /// max_position_embeddings below 512 still bounds the fallback.
+    #[test]
+    fn cuda_loss_window_small_model_fallback() {
+        let (_, _, num_loss_tokens, seq_len, _) = cuda_loss_window(10, 40, None, 128);
+        assert_eq!(seq_len, 40);
+        assert_eq!(num_loss_tokens, 30);
     }
 }
