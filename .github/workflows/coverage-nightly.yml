@@ -36,7 +36,7 @@ jobs:
       # pristine tree, and the default git-clean choked on root-owned leftovers
       # (e.g. contracts/.pv/cache from prior `pv` jobs → EACCES on rmdir),
       # failing checkout before any coverage ran.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           clean: false
 
