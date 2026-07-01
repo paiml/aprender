@@ -31,8 +31,10 @@ pub struct OwnedQuantizedModelCachedSync {
 
 // Explicitly implement Send + Sync for HTTP server usage
 #[cfg(feature = "gpu")]
+// SAFETY: every field is a `Mutex`/`RwLock`-guarded GPU scheduler or weight cache; the contained CUDA/wgpu state is only ever touched while the lock is held, so concurrent `Send` use across HTTP worker threads cannot race.
 unsafe impl Send for OwnedQuantizedModelCachedSync {}
 #[cfg(feature = "gpu")]
+// SAFETY: every field is a `Mutex`/`RwLock`-guarded GPU scheduler or weight cache; the contained CUDA/wgpu state is only ever touched while the lock is held, so concurrent `Sync` use across HTTP worker threads cannot race.
 unsafe impl Sync for OwnedQuantizedModelCachedSync {}
 
 include!("sync_owned_quantized.rs");

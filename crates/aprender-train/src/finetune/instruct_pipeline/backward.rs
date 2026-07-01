@@ -165,6 +165,7 @@ impl InstructPipeline {
         }
 
         for layer_idx in (0..num_layers).rev() {
+            // SAFETY: ping-pong double-buffering. The two raw pointers reference distinct, non-overlapping device buffers (the `_a`/`_b` scratch pair); the boolean flag picks one as `&` input and the other as `&mut` output, so the resulting references never alias the same allocation.
             let (grad_output, grad_input) = unsafe {
                 if grad_output_is_a {
                     (&*grad_a_ptr, &mut *grad_b_ptr)
@@ -181,6 +182,7 @@ impl InstructPipeline {
                     &training_state.layer_inputs[layer_idx],
                     grad_output,
                     grad_input,
+                    // SAFETY: dereferences a raw pointer to the output scratch buffer that outlives this call and is not aliased by any other live reference; the GPU kernel is the sole writer for the duration of the launch.
                     unsafe { &mut *output_scratch_ptr },
                     seq_len,
                     stream,

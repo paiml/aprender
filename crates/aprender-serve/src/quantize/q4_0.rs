@@ -19,7 +19,11 @@ use std::arch::x86_64::{
 // SAFETY: caller guarantees q4_ptr points to valid Q4_0 block with 18 readable bytes
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-unsafe fn expand_q4_raw_avx2(q4_ptr: *const u8) -> __m256i { unsafe {
+unsafe fn expand_q4_raw_avx2(q4_ptr: *const u8) -> __m256i {
+    // SAFETY: body of a `#[target_feature(enable = "avx2")]`-gated fn; the caller's
+    // `unsafe fn` contract (AVX2 verified via `is_x86_feature_detected!`, `q4_ptr`
+    // pointing at a Q4_0 block with 18 readable bytes) makes the load below sound.
+    unsafe {
     // SAFETY: caller guarantees q4_ptr + 2..+18 is valid
     let raw = _mm_loadu_si128(q4_ptr.add(2).cast());
     let hi = _mm_srli_epi16(raw, 4);
@@ -33,7 +37,11 @@ unsafe fn expand_q4_raw_avx2(q4_ptr: *const u8) -> __m256i { unsafe {
 // SAFETY: caller guarantees q4_ptr points to valid Q4_0 block with 18 readable bytes
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-unsafe fn expand_q4_nibbles_avx2(q4_ptr: *const u8) -> __m256i { unsafe {
+unsafe fn expand_q4_nibbles_avx2(q4_ptr: *const u8) -> __m256i {
+    // SAFETY: body of a `#[target_feature(enable = "avx2")]`-gated fn; the caller's
+    // `unsafe fn` contract (AVX2 verified, `q4_ptr` a valid 18-byte Q4_0 block) makes
+    // the inner `expand_q4_raw_avx2` call and AVX2 ops below sound.
+    unsafe {
     // SAFETY: caller guarantees q4_ptr + 2..+18 is valid
     let combined = expand_q4_raw_avx2(q4_ptr);
     let nibbles = _mm256_and_si256(combined, _mm256_set1_epi8(0x0F));
@@ -51,8 +59,12 @@ unsafe fn avx2_block_dot_accumulate(
     q4_signed: __m256i,
     q8_ptr: *const i8,
     combined_scale: __m256,
-    acc: __m256, // SAFETY: all args validated by caller, q8_ptr..+32 readable
-) -> __m256 { unsafe {
+    acc: __m256,
+) -> __m256 {
+    // SAFETY: `#[target_feature(avx2,fma)]`-gated body; the caller verified AVX2+FMA via
+    // `is_x86_feature_detected!` and guarantees `q8_ptr..+32` is readable and `q4_signed`
+    // is well-formed, so every intrinsic below operates on valid lanes.
+    unsafe {
     // SAFETY: caller guarantees q8_ptr..+32 is valid
     let q8_vec = _mm256_loadu_si256(q8_ptr.cast());
     let q4_abs = _mm256_sign_epi8(q4_signed, q4_signed);
@@ -82,7 +94,11 @@ unsafe fn hsum_avx2(v: __m256) -> f32 {
 /// SAFETY: Caller must guarantee `q4_ptr..q4_ptr+2` is valid readable memory.
 #[cfg(target_arch = "x86_64")]
 #[inline]
-unsafe fn read_q4_scale(q4_ptr: *const u8) -> f32 { unsafe {
+unsafe fn read_q4_scale(q4_ptr: *const u8) -> f32 {
+    // SAFETY: body of an `unsafe fn` whose contract requires `q4_ptr..q4_ptr+2` to be
+    // valid readable memory; the two `*q4_ptr` / `*q4_ptr.add(1)` byte reads below
+    // stay within that documented 2-byte range.
+    unsafe {
     // SAFETY: caller guarantees q4_ptr..+2 is valid
     f16_to_f32_lut(u16::from_le_bytes([*q4_ptr, *q4_ptr.add(1)]))
 }}
@@ -102,9 +118,13 @@ unsafe fn avx2_accumulate_block(
     q4_data: &[u8],
     q8_scales: &[f32],
     q8_quants: &[i8],
-    block_idx: usize, // SAFETY: all indices bounds-checked by caller
+    block_idx: usize,
     acc: __m256,
-) -> __m256 { unsafe {
+) -> __m256 {
+    // SAFETY: `#[target_feature(avx2,fma)]`-gated body; the caller verified AVX2+FMA and
+    // guarantees `block_idx` indexes valid 18-byte / 32-element / scalar regions of
+    // `q4_data` / `q8_quants` / `q8_scales`, so the pointer math below stays in bounds.
+    unsafe {
     const Q4_0_BLOCK_BYTES: usize = 18;
     const Q4_0_BLOCK_SIZE: usize = 32;
     // SAFETY: caller guarantees all indices are in-bounds
@@ -129,9 +149,13 @@ unsafe fn avx512_pair_dot_accumulate(
     scale_lo: f32,
     scale_hi: f32,
     low_mask: __m512i,
-    offset: __m512i, // SAFETY: all pointers validated by caller, VNNI feature verified at dispatch
+    offset: __m512i,
     acc: __m256,
-) -> __m256 { unsafe {
+) -> __m256 {
+    // SAFETY: `#[target_feature(avx512f,bw,vnni)]`-gated body; the dispatcher verified
+    // those features and the caller guarantees `q4_ptr_lo`/`q4_ptr_hi`/`q8_ptr` each
+    // address a valid block, so the 512-bit loads and dpbusd below are sound.
+    unsafe {
     // SAFETY: caller guarantees both q4 pointers and q8_ptr are valid
     let q4_expanded_lo = expand_q4_raw_avx2(q4_ptr_lo);
     let q4_expanded_hi = expand_q4_raw_avx2(q4_ptr_hi);
@@ -176,9 +200,13 @@ unsafe fn avx512_pair_dot_accumulate(
 unsafe fn fused_q4_0_q8_0_dot_avx512_vnni(
     q4_data: &[u8],
     q8_scales: &[f32],
-    q8_quants: &[i8], // SAFETY: slices valid for in_dim elements, VNNI feature verified
+    q8_quants: &[i8],
     in_dim: usize,
-) -> f32 { unsafe {
+) -> f32 {
+    // SAFETY: `#[target_feature(avx512f,bw,vnni)]`-gated body; the caller verified those
+    // features and guarantees `q4_data`/`q8_quants`/`q8_scales` are sized for `in_dim`
+    // elements, so all block-strided loads below stay within the slices.
+    unsafe {
     // SAFETY: Memory safety ensured by bounds checking and alignment
     const Q4_0_BLOCK_BYTES: usize = 18;
     const Q4_0_BLOCK_SIZE: usize = 32;
@@ -280,9 +308,13 @@ unsafe fn fused_q4_0_q8_0_dot_avx512_vnni(
 unsafe fn fused_q4_0_q8_0_dot_avx2(
     q4_data: &[u8],
     q8_scales: &[f32],
-    q8_quants: &[i8], // SAFETY: slices valid for in_dim elements, AVX2 feature verified
+    q8_quants: &[i8],
     in_dim: usize,
-) -> f32 { unsafe {
+) -> f32 {
+    // SAFETY: `#[target_feature(avx2)]`-gated body; the caller verified AVX2 and
+    // guarantees `q4_data`/`q8_quants`/`q8_scales` are sized for `in_dim` elements, so
+    // all block-strided loads below stay within the slices.
+    unsafe {
     // SAFETY: Memory safety ensured by bounds checking and alignment
     const Q4_0_BLOCK_BYTES: usize = 18;
     const Q4_0_BLOCK_SIZE: usize = 32;

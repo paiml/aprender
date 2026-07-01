@@ -38,6 +38,7 @@ impl CudaExecutor {
         // auto-detects and falls back to a managed copy there. Discrete GPUs keep
         // pinning unchanged.
         let buf = if self.gpu_profile.cc >= 120 {
+            // SAFETY: registers (or, on GB10/Jetson where cuMemHostRegister is rejected, copies into managed memory) the host weight slice as a device-accessible buffer. `as_ptr().cast_mut()` + `len()` describe a live, correctly-sized host allocation that outlives the buffer.
             unsafe {
                 GpuBuffer::from_host_registered_or_managed(
                     &self.context,
@@ -155,6 +156,7 @@ impl CudaExecutor {
         // auto-detects and falls back to a managed copy there. Discrete GPUs keep
         // pinning unchanged.
         let buf = if self.gpu_profile.cc >= 120 {
+            // SAFETY: registers (or, on GB10/Jetson where cuMemHostRegister is rejected, copies into managed memory) the host weight slice as a device-accessible buffer. `as_ptr().cast_mut()` + `len()` describe a live, correctly-sized host allocation that outlives the buffer.
             unsafe {
                 GpuBuffer::from_host_registered_or_managed(
                     &self.context,

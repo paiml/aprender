@@ -229,6 +229,7 @@ pub fn per_head_rmsnorm_forward(
         &gamma_ptr as *const _ as *mut _,
     ];
 
+    // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
     unsafe {
         stream.launch_kernel(module, "per_head_rmsnorm", &config, &mut args).map_err(|e| {
             CudaTensorError::KernelError(format!("PerHeadRmsNorm forward failed: {e:?}"))
@@ -299,6 +300,7 @@ pub fn rope_neox_forward(
         &pos as *const _ as *mut _,
     ];
 
+    // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
     unsafe {
         stream.launch_kernel(module, "rope_neox", &config, &mut args).map_err(|e| {
             CudaTensorError::KernelError(format!("RoPE NeoX forward failed: {e:?}"))
@@ -358,6 +360,7 @@ pub fn batched_rope_neox_forward(
         &positions_ptr as *const _ as *mut _,
     ];
 
+    // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
     unsafe {
         stream.launch_kernel(module, "batched_rope", &config, &mut args).map_err(|e| {
             CudaTensorError::KernelError(format!("Batched RoPE NeoX forward failed: {e:?}"))
@@ -415,6 +418,7 @@ pub fn batched_rope_neox_backward(
         &positions_ptr as *const _ as *mut _,
     ];
 
+    // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
     unsafe {
         stream.launch_kernel(module, "batched_rope_backward", &config, &mut args).map_err(|e| {
             CudaTensorError::KernelError(format!("Batched RoPE NeoX backward failed: {e:?}"))
@@ -497,6 +501,7 @@ pub fn fused_residual_rmsnorm_forward(
     }
 
     // Launch fused kernel: output = RMSNorm(residual + input) * gamma
+    // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
     unsafe {
         stream.launch_kernel(module, "fused_residual_rmsnorm", &config, &mut args).map_err(
             |e| {

@@ -345,6 +345,7 @@ pub fn fused_q4k_preq8k_matvec_into(
             .enumerate()
             .for_each(|(ci, chunk)| {
                 let row_start = ci * 64;
+                // SAFETY: per-rayon-chunk SIMD dispatch. Buffer base addresses were captured as `usize` to cross the closure boundary; here they are rebuilt into `*const` and each chunk indexes a disjoint output sub-range, so no two threads touch overlapping rows. Pointer arithmetic stays within the validated row/super-block bounds.
                 unsafe {
                     let w = w_addr as *const u8;
                     let sc = sc_addr as *const f32;
@@ -386,6 +387,7 @@ pub fn quantize_for_q4k_matvec(
     super::quantize_activations_q8k_into(&acts, &mut scales, &mut quants)?;
 
     #[cfg(target_arch = "x86_64")]
+    // SAFETY: SIMD intrinsic call reachable only after the caller verified the required CPU feature; all pointer/slice arguments are in-bounds for the block length being processed.
     let bsums = unsafe { super::fused_k::precompute_q8k_bsums_i16(&quants, num_superblocks) };
     #[cfg(not(target_arch = "x86_64"))]
     let bsums = vec![0i16; num_superblocks * 16];

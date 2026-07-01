@@ -5,6 +5,8 @@
 //! and comprehensive filtering.
 // Allow unwrap/expect in test code — production code is lint-clean
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::unwrap_in_result))]
+// PMAT-139: enforce `// SAFETY:` on every unsafe block (none in lib/bins today).
+#![deny(clippy::undocumented_unsafe_blocks)]
 // Pedantic lints carried over from pre-monorepo renacer crate.
 // Follow-up: fix per-lint in dedicated PRs (out of scope for APR-MONO sibling-alias MUDA fix).
 #![allow(

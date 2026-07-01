@@ -552,6 +552,7 @@ pub fn gemm_nf4_tc_forward(
         &k as *const _ as *mut _,
     ];
 
+    // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
     unsafe {
         stream.launch_kernel(module, "nf4_tensor_core_gemm", &config, &mut args).map_err(|e| {
             CudaTensorError::KernelError(format!(
@@ -628,6 +629,7 @@ pub fn gemm_nf4_gate_up_forward(
         &k as *const _ as *mut _,
     ];
 
+    // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
     unsafe {
         stream.launch_kernel(module, "fused_nf4_gate_up_gemm", &config, &mut args).map_err(
             |e| CudaTensorError::KernelError(format!("Fused NF4 gate+up launch: {e:?}")),
@@ -1097,6 +1099,7 @@ pub fn gemm_nf4_tc_backward_a(
         &k as *const _ as *mut _,
     ];
 
+    // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
     unsafe {
         stream
             .launch_kernel(module, "nf4_tensor_core_gemm_backward_a", &config, &mut args)

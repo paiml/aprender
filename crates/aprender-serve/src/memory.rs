@@ -39,6 +39,7 @@ pub struct PinnedRegion {
 
 // Safety: PinnedRegion only holds a pointer for tracking, doesn't access it
 unsafe impl Send for PinnedRegion {}
+// SAFETY: holds the pinned-region `*const u8` purely for bookkeeping (ptr + len + locked flag) and never dereferences it, so it carries no thread-affine state and is safe to mark `Sync`.
 unsafe impl Sync for PinnedRegion {}
 
 impl PinnedRegion {

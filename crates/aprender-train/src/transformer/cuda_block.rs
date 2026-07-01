@@ -941,12 +941,14 @@ impl CudaTransformerBlock {
         // raw pointer reborrow to allow the same buffer as both input and output.
         if let Some(ref q_norm) = self.q_norm_weight {
             for pos in 0..seq_len {
+                // SAFETY: reborrows `self.scratch.q` as `&` while the same buffer is also passed `&mut` to the in-place GPU kernel below. Sound because the CUDA kernel reads every input element before writing any output element, so the read and write views never alias a live access.
                 let q_ref = unsafe { &*(std::ptr::addr_of!(self.scratch.q)) };
                 per_head_rmsnorm_forward(q_ref, q_norm, &mut self.scratch.q, nh, hd, pos, stream)?;
             }
         }
         if let Some(ref k_norm) = self.k_norm_weight {
             for pos in 0..seq_len {
+                // SAFETY: reborrows `self.scratch.k` as `&` while the same buffer is also passed `&mut` to the in-place GPU kernel below. Sound because the CUDA kernel reads every input element before writing any output element, so the read and write views never alias a live access.
                 let k_ref = unsafe { &*(std::ptr::addr_of!(self.scratch.k)) };
                 per_head_rmsnorm_forward(k_ref, k_norm, &mut self.scratch.k, nkv, hd, pos, stream)?;
             }
@@ -956,6 +958,7 @@ impl CudaTransformerBlock {
         // ALB-119: Batched launch (2 kernels) replaces per-position loop (2*seq_len kernels)
         let rope_theta = self.config.rope_theta;
         {
+            // SAFETY: reborrows `self.scratch.q` as `&` while the same buffer is also passed `&mut` to the in-place GPU kernel below. Sound because the CUDA kernel reads every input element before writing any output element, so the read and write views never alias a live access.
             let q_ref = unsafe { &*(std::ptr::addr_of!(self.scratch.q)) };
             batched_rope_neox_forward(
                 q_ref,
@@ -967,6 +970,7 @@ impl CudaTransformerBlock {
                 rope_theta,
                 stream,
             )?;
+            // SAFETY: reborrows `self.scratch.k` as `&` while the same buffer is also passed `&mut` to the in-place GPU kernel below. Sound because the CUDA kernel reads every input element before writing any output element, so the read and write views never alias a live access.
             let k_ref = unsafe { &*(std::ptr::addr_of!(self.scratch.k)) };
             batched_rope_neox_forward(
                 k_ref,
@@ -1099,7 +1103,9 @@ impl CudaTransformerBlock {
                 // output aliases scores_slice — safe for element-wise add (read before write).
                 // Views are leaked to prevent double-free of GPU memory.
                 let mask_view = unsafe { GpuBuffer::<f32>::from_raw_parts(mask_ptr, seq_sq) };
+                // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
                 let scores_view = unsafe { GpuBuffer::<f32>::from_raw_parts(head_ptr, seq_sq) };
+                // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
                 let mut out_view = unsafe { GpuBuffer::<f32>::from_raw_parts(head_ptr, seq_sq) };
                 residual_add_forward(&mask_view, &scores_view, &mut out_view, seq * seq, stream)?;
                 leak(mask_view);
@@ -1810,6 +1816,7 @@ impl CudaTransformerBlock {
         let rope_theta = self.config.rope_theta;
         {
             // grad_Q in o_proj_out [seq, q_dim] — apply inverse rotation in-place
+            // SAFETY: reborrows `self.scratch.o_proj_out` as `&` while the same buffer is also passed `&mut` to the in-place GPU kernel below. Sound because the CUDA kernel reads every input element before writing any output element, so the read and write views never alias a live access.
             let q_ref = unsafe { &*(std::ptr::addr_of!(self.scratch.o_proj_out)) };
             batched_rope_neox_backward(
                 q_ref,
@@ -1822,6 +1829,7 @@ impl CudaTransformerBlock {
                 stream,
             )?;
             // grad_K in norm2_out [seq, kv_hidden] — apply inverse rotation in-place
+            // SAFETY: reborrows `self.scratch.norm2_out` as `&` while the same buffer is also passed `&mut` to the in-place GPU kernel below. Sound because the CUDA kernel reads every input element before writing any output element, so the read and write views never alias a live access.
             let k_ref = unsafe { &*(std::ptr::addr_of!(self.scratch.norm2_out)) };
             batched_rope_neox_backward(
                 k_ref,
@@ -3370,12 +3378,14 @@ impl CudaNf4TransformerBlock {
         // SAFETY: In-place GPU operations — CUDA kernels read all input before writing output.
         if let Some(ref q_norm) = self.q_norm_weight {
             for pos in 0..seq_len {
+                // SAFETY: reborrows `scratch.q` as `&` while the same buffer is also passed `&mut` to the in-place GPU kernel below. Sound because the CUDA kernel reads every input element before writing any output element, so the read and write views never alias a live access.
                 let q_ref = unsafe { &*(std::ptr::addr_of!(scratch.q)) };
                 per_head_rmsnorm_forward(q_ref, q_norm, &mut scratch.q, nh, hd, pos, stream)?;
             }
         }
         if let Some(ref k_norm) = self.k_norm_weight {
             for pos in 0..seq_len {
+                // SAFETY: reborrows `scratch.k` as `&` while the same buffer is also passed `&mut` to the in-place GPU kernel below. Sound because the CUDA kernel reads every input element before writing any output element, so the read and write views never alias a live access.
                 let k_ref = unsafe { &*(std::ptr::addr_of!(scratch.k)) };
                 per_head_rmsnorm_forward(k_ref, k_norm, &mut scratch.k, nkv, hd, pos, stream)?;
             }
@@ -3385,6 +3395,7 @@ impl CudaNf4TransformerBlock {
         // ALB-119: Batched launch (2 kernels) replaces per-position loop (2*seq_len kernels)
         let rope_theta = self.config.rope_theta;
         {
+            // SAFETY: reborrows `scratch.q` as `&` while the same buffer is also passed `&mut` to the in-place GPU kernel below. Sound because the CUDA kernel reads every input element before writing any output element, so the read and write views never alias a live access.
             let q_ref = unsafe { &*(std::ptr::addr_of!(scratch.q)) };
             batched_rope_neox_forward(
                 q_ref,
@@ -3396,6 +3407,7 @@ impl CudaNf4TransformerBlock {
                 rope_theta,
                 stream,
             )?;
+            // SAFETY: reborrows `scratch.k` as `&` while the same buffer is also passed `&mut` to the in-place GPU kernel below. Sound because the CUDA kernel reads every input element before writing any output element, so the read and write views never alias a live access.
             let k_ref = unsafe { &*(std::ptr::addr_of!(scratch.k)) };
             batched_rope_neox_forward(
                 k_ref,
@@ -3464,6 +3476,7 @@ impl CudaNf4TransformerBlock {
         // Scale by 1/sqrt(head_dim)
         let scale_factor = 1.0 / (head_dim as f32).sqrt();
         let total_scores = num_heads * seq_len * seq_len;
+        // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
         let scores_view = unsafe {
             GpuBuffer::<f32>::from_raw_parts(
                 scratch.attn_scores.as_ptr(),
@@ -3491,8 +3504,11 @@ impl CudaNf4TransformerBlock {
             for head in 0..num_heads {
                 let byte_offset = (head * seq_sq * 4) as u64;
                 let head_ptr = scores_base + byte_offset;
+                // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
                 let mask_view = unsafe { GpuBuffer::<f32>::from_raw_parts(mask_ptr, seq_sq) };
+                // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
                 let scores_view = unsafe { GpuBuffer::<f32>::from_raw_parts(head_ptr, seq_sq) };
+                // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
                 let mut out_view = unsafe { GpuBuffer::<f32>::from_raw_parts(head_ptr, seq_sq) };
                 residual_add_forward(
                     &mask_view,
@@ -4108,6 +4124,7 @@ impl CudaNf4TransformerBlock {
         let nh = saturating_u32(num_heads);
         let hd = saturating_u32(head_dim);
         {
+            // SAFETY: reborrows `scratch.q` as `&` while the same buffer is also passed `&mut` to the in-place GPU kernel below. Sound because the CUDA kernel reads every input element before writing any output element, so the read and write views never alias a live access.
             let q_ref = unsafe { &*(std::ptr::addr_of!(scratch.q)) };
             batched_rope_neox_backward(
                 q_ref,
@@ -4119,6 +4136,7 @@ impl CudaNf4TransformerBlock {
                 rope_theta,
                 stream,
             )?;
+            // SAFETY: reborrows `scratch.k` as `&` while the same buffer is also passed `&mut` to the in-place GPU kernel below. Sound because the CUDA kernel reads every input element before writing any output element, so the read and write views never alias a live access.
             let k_ref = unsafe { &*(std::ptr::addr_of!(scratch.k)) };
             batched_rope_neox_backward(
                 k_ref,
@@ -4372,6 +4390,7 @@ impl CudaNf4TransformerBlock {
         scratch.op_end(_t, OP_QKV_BWD);
 
         // Step 6: Accumulated grad_norm1 is in scratch.o_proj_out → move to scratch.grad_hidden
+        // SAFETY: stream-ordered device-to-device copy between two distinct `GpuBuffer`s of matching element length on the same context; both allocations outlive the async copy on `stream`.
         unsafe {
             scratch.grad_hidden.copy_from_buffer_async(&scratch.o_proj_out, stream).map_err(
                 |e| {
@@ -4448,6 +4467,7 @@ impl CudaNf4TransformerBlock {
                 stream,
             )?;
         } else {
+            // SAFETY: stream-ordered device-to-device copy between two distinct `GpuBuffer`s of matching element length on the same context; both allocations outlive the async copy on `stream`.
             unsafe {
                 scratch
                     .attn_kv_temp2
@@ -4527,6 +4547,7 @@ impl CudaNf4TransformerBlock {
         // In-place: grad_attn_scores is both input and output.
         let total_rows = nh * s;
         {
+            // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
             let grad_scores_view = unsafe {
                 GpuBuffer::<f32>::from_raw_parts(
                     scratch.grad_attn_scores.as_ptr(),
@@ -4547,6 +4568,7 @@ impl CudaNf4TransformerBlock {
         // === Step 5: Scale backward (1/√d) ===
         let total_scores = saturating_u32(num_heads * seq_len * seq_len);
         {
+            // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
             let scores_view = unsafe {
                 GpuBuffer::<f32>::from_raw_parts(
                     scratch.grad_attn_scores.as_ptr(),
@@ -4567,6 +4589,7 @@ impl CudaNf4TransformerBlock {
         interleaved_to_batched_forward(&scratch.k, &mut scratch.attn_kv_temp2, s, nkv, hd, stream)?;
 
         if heads_per_kv > 1 {
+            // SAFETY: stream-ordered device-to-device copy between two distinct `GpuBuffer`s of matching element length on the same context; both allocations outlive the async copy on `stream`.
             unsafe {
                 scratch
                     .attn_q_batched
@@ -4691,12 +4714,14 @@ impl CudaNf4TransformerBlock {
             let src_off = g * heads_per_kv * chunk;
             // Copy first head
             {
+                // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
                 let src = unsafe {
                     GpuBuffer::<f32>::from_raw_parts(
                         scratch.attn_kv_temp2.as_ptr() + (src_off * 4) as u64,
                         chunk,
                     )
                 };
+                // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
                 let mut dst = unsafe {
                     GpuBuffer::<f32>::from_raw_parts(
                         scratch.attn_kv_temp2.as_ptr() + (dst_off * 4) as u64,
@@ -4704,6 +4729,7 @@ impl CudaNf4TransformerBlock {
                     )
                 };
                 if src_off != dst_off {
+                    // SAFETY: stream-ordered device-to-device copy between two distinct `GpuBuffer`s of matching element length on the same context; both allocations outlive the async copy on `stream`.
                     unsafe {
                         dst.copy_from_buffer_async(&src, stream).map_err(|e| {
                             crate::autograd::cuda_tensor::CudaTensorError::TransferFailed(format!(
@@ -4718,12 +4744,14 @@ impl CudaNf4TransformerBlock {
             // Accumulate remaining heads
             for h in 1..heads_per_kv {
                 let add_off = (g * heads_per_kv + h) * chunk;
+                // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
                 let src = unsafe {
                     GpuBuffer::<f32>::from_raw_parts(
                         scratch.attn_kv_temp2.as_ptr() + (add_off * 4) as u64,
                         chunk,
                     )
                 };
+                // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
                 let mut dst = unsafe {
                     GpuBuffer::<f32>::from_raw_parts(
                         scratch.attn_kv_temp2.as_ptr() + (dst_off * 4) as u64,
@@ -4736,12 +4764,14 @@ impl CudaNf4TransformerBlock {
             }
             // Same for grad_V (in attn_kv_temp)
             {
+                // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
                 let src = unsafe {
                     GpuBuffer::<f32>::from_raw_parts(
                         scratch.attn_kv_temp.as_ptr() + (src_off * 4) as u64,
                         chunk,
                     )
                 };
+                // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
                 let mut dst = unsafe {
                     GpuBuffer::<f32>::from_raw_parts(
                         scratch.attn_kv_temp.as_ptr() + (dst_off * 4) as u64,
@@ -4749,6 +4779,7 @@ impl CudaNf4TransformerBlock {
                     )
                 };
                 if src_off != dst_off {
+                    // SAFETY: stream-ordered device-to-device copy between two distinct `GpuBuffer`s of matching element length on the same context; both allocations outlive the async copy on `stream`.
                     unsafe {
                         dst.copy_from_buffer_async(&src, stream).map_err(|e| {
                             crate::autograd::cuda_tensor::CudaTensorError::TransferFailed(format!(
@@ -4762,12 +4793,14 @@ impl CudaNf4TransformerBlock {
             }
             for h in 1..heads_per_kv {
                 let add_off = (g * heads_per_kv + h) * chunk;
+                // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
                 let src = unsafe {
                     GpuBuffer::<f32>::from_raw_parts(
                         scratch.attn_kv_temp.as_ptr() + (add_off * 4) as u64,
                         chunk,
                     )
                 };
+                // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
                 let mut dst = unsafe {
                     GpuBuffer::<f32>::from_raw_parts(
                         scratch.attn_kv_temp.as_ptr() + (dst_off * 4) as u64,
