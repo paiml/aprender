@@ -216,6 +216,7 @@ impl CudaExecutor {
         // PMAT-088: Buffers may be over-sized from high-water-mark allocation.
         // Create exact-sized views via from_raw_parts for copy_from_host_async.
         let m = seq_lens.len();
+        // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
         unsafe {
             let mut k_view = GpuBuffer::<u64>::from_raw_parts(k_ptrs_buf.as_ptr(), m);
             let mut v_view = GpuBuffer::<u64>::from_raw_parts(v_ptrs_buf.as_ptr(), m);

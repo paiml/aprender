@@ -766,6 +766,7 @@ impl CudaExecutor {
         let mut src = src_ptr;
         let mut cnt = count;
 
+        // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
         unsafe {
             self.stream.launch_kernel(
                 module,
@@ -807,6 +808,7 @@ impl CudaExecutor {
         let mut cnt = count;
         let mut act_deq = act_dequant_ptr;
 
+        // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
         unsafe {
             self.stream.launch_kernel(
                 module,
@@ -852,6 +854,7 @@ impl CudaExecutor {
         let mut cnt = count;
         let mut scale = quant_scale;
 
+        // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
         unsafe {
             self.stream.launch_kernel(
                 module,
@@ -898,6 +901,7 @@ impl CudaExecutor {
         let mut src = src_ptr;
         let mut cnt = count;
 
+        // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
         unsafe {
             self.stream.launch_kernel(
                 module,
@@ -942,6 +946,7 @@ impl CudaExecutor {
         // SAFETY: zero_val lives until stream.synchronize or kernel completion.
         // The zero is consumed by absmax_reduce (same stream, ordered after).
         let zero_val = [0u32; 1];
+        // SAFETY: stream-ordered host-to-device copy; the host slice and the destination device buffer have matching element counts and both outlive the async transfer on the CUDA stream.
         unsafe {
             absmax_buf.copy_from_host_async(&zero_val, &self.stream)?;
         }
@@ -961,6 +966,7 @@ impl CudaExecutor {
         let mut src = src_ptr;
         let mut cnt = count;
 
+        // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
         unsafe {
             self.stream.launch_kernel(
                 module,
@@ -1010,6 +1016,7 @@ impl CudaExecutor {
         let mut abs_ptr = absmax_ptr;
         let mut deq_ptr = dequant_ptr;
 
+        // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
         unsafe {
             self.stream.launch_kernel(
                 module,

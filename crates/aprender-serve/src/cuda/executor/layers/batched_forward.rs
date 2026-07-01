@@ -112,8 +112,10 @@ impl CudaExecutor {
             // SAFETY: Pointers valid from allocation, length verified, used within scope
             let layer_input_buf = if layer_idx == 0 {
                 // PMAT-086: Use pre-allocated input buffer pointer (same pattern as hidden_buf2)
+                // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
                 unsafe { GpuBuffer::<f32>::from_raw_parts(input_buf_ptr, input_buf_len) }
             } else {
+                // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
                 unsafe { GpuBuffer::<f32>::from_raw_parts(hidden_buf2_ptr, hidden_buf2_len) }
             };
 
@@ -151,6 +153,7 @@ impl CudaExecutor {
             if layer_idx == 0 && m >= 3 {
                 self.stream.synchronize()?;
                 let debug_len = m * hidden_dim as usize;
+                // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
                 let debug_buf = unsafe { GpuBuffer::<f32>::from_raw_parts(hidden_buf2_ptr, debug_len) };
                 let mut debug_host = vec![0.0f32; debug_len];
                 debug_buf.copy_to_host(&mut debug_host)?;

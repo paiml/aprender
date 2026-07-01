@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`apr convert --quantize fp16` produced weights biased ~0.5–1 ULP low with a mis-encoded overflow
+  boundary** (PMAT-905, Pillar-4, `OBLIG-CONVERT-FP16-F32-F16-RNE`,
+  `contracts/quant-solve-f16-round-v1.yaml`) — the `converter` module's canonical f32→f16 encoder
+  (`convert_report.rs::f32_to_f16`, which backs `quantize_fp16` **and**, via `f32_to_f16_bits` →
+  `f32_slice_to_f16_le_bytes`, the SafeTensors FP16 export byte path) rounded **toward zero**: the
+  normal path truncated the mantissa (`mantissa >> 13`, no sticky bit), the subnormal path rounded
+  half-up, f32 subnormals were flushed to zero, and NaN payloads were collapsed. It diverged from
+  `half::f16::from_f32` in **~251.6M of 2^32** inputs (e.g. `255.99 → 0x5BFF` should be `0x5C00`;
+  `65520.0 → 0x7BFF` should be `+Inf 0x7C00`). Re-expressed as IEEE round-to-nearest-even (the same
+  full-sticky-bit pattern as the solve fix) with rounding carry propagating into the exponent (and
+  onward to Inf); now **bit-identical to `half::f16::from_f32` across the entire 2^32 f32 domain**
+  (verified exhaustively, NaN payloads included). This completes the CPU f16-RNE sweep
+  (trueno #2237 → aprender-solve → aprender-quant → aprender-core/convert).
+  **Byte-impact:** `apr convert --quantize fp16` output bytes now CHANGE for the ~251.6M mis-rounded
+  inputs — the previous output was biased/wrong; the new output is the correct IEEE-RNE encoding.
+  Falsifiers (RED on the old truncating impl, GREEN on the fix; mutation-verified):
+  `falsify_convert_f32_to_f16_known_rne_divergences`, `..._ties_to_even_nonzero_discard`,
+  `..._subnormal_rne`, `..._bit_identical_to_half_on_grid` (aprender-core). Also **strengthened** the
+  previously-weak `falsify_f32_to_f16_ties_to_even` (aprender-solve), whose tie values had a zero
+  discarded mantissa (so it passed on the buggy impl too) — added ties with a non-zero discarded
+  mantissa (low 13 bits == 0x1000, kept LSB odd) where round-to-even and truncation genuinely disagree.
+  **Follow-up (recommended):** consolidate all hand-rolled f16 encoders (trueno, solve, convert, and the
+  on-device GPU PTX/wgpu encoders) into ONE canonical correct encoder so this round-toward-zero bug
+  class cannot recur; the GPU encoders remain a separate on-device follow-up.
+
 ## [0.55.0] - 2026-06-24
 
 User-facing correctness + a reconciled GPU-parity gate + the autograd training story *proven*, not

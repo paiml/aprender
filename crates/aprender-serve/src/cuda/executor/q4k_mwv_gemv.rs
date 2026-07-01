@@ -472,6 +472,7 @@ impl CudaExecutor {
             .as_ref()
             .expect("q8_activation_buf must be initialized")
             .len();
+        // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
         let q8_buf = unsafe { GpuBuffer::<u8>::from_raw_parts(q8_ptr, q8_len) };
 
         if !self.q8_activation_valid {
@@ -613,6 +614,7 @@ impl CudaExecutor {
             .as_ref()
             .expect("q8_activation_buf must be initialized")
             .len();
+        // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
         let q8_buf = unsafe { GpuBuffer::<u8>::from_raw_parts(q8_ptr, q8_len) };
 
         if !self.q8_activation_valid {

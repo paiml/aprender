@@ -1,0 +1,128 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-25'
+  author: PAIML Engineering
+  description: >-
+    Pillar-1 (beat scikit-learn) clustering-metric PARITY — normalized mutual
+    information. apr previously shipped adjusted_rand_score but had NO
+    information-theoretic clustering metric. This beat adds
+    normalized_mutual_info_score (sklearn default average_method="arithmetic")
+    and the underlying mutual_info_score (nats), pinned bit-for-bit to the
+    scikit-learn 1.9.0 oracle on a SMALL FIXED fixture (no Python at CI time).
+    NMI = MI / ((H_true + H_pred)/2). The arithmetic normalizer is sklearn's
+    default and is strictly larger than the geometric mean, so a normalizer
+    that collapses to MI, to max(H), or to the geometric mean is detectable.
+    Degenerate-case convention matches sklearn: exactly one single-cluster
+    labelling => 0.0; both single-cluster => 1.0.
+  references:
+  - 'crates/aprender-core/src/metrics/mod.rs (normalized_mutual_info_score, mutual_info_score, contingency_and_entropies)'
+  - 'crates/aprender-core/tests/beat_sklearn_nmi.rs (contract pin-test)'
+  - 'scikit-learn 1.9.0 sklearn.metrics.normalized_mutual_info_score / mutual_info_score'
+equations:
+  mutual_info:
+    formula: 'MI = sum_ij (n_ij/n) * ln(n * n_ij / (a_i * b_j)), natural log (nats)'
+    domain: 'labels_true, labels_pred in {0..k}, n >= 1, same length'
+    codomain: MI in [0, min(H_true, H_pred)]
+    invariants:
+    - MI >= 0 (tiny negative round-off clamped to 0, as in sklearn)
+    - MI == 0 when either clustering is a single cluster (statistically independent)
+    - 'mutual_info_score([0,0,1,1,2,2],[0,0,1,2,2,2]) == 0.7803552045207032 (sklearn 1.9.0)'
+    preconditions:
+    - labels_true.len() == labels_pred.len()
+    postconditions:
+    - result >= 0.0
+  normalized_mutual_info:
+    formula: 'NMI = MI / ((H_true + H_pred) / 2), arithmetic normalizer (sklearn default)'
+    domain: 'labels_true, labels_pred in {0..k}, n >= 1, same length'
+    codomain: NMI in [0, 1]
+    invariants:
+    - NMI in [0, 1] for all inputs
+    - NMI == 1.0 iff clusterings are identical up to a relabeling (relabel-invariant)
+    - exactly one single-cluster labelling => NMI == 0.0; both single-cluster => NMI == 1.0
+    - 'normalized_mutual_info_score([0,0,1,1,2,2],[0,0,1,2,2,2]) == 0.7396673768007592 (sklearn 1.9.0, arithmetic)'
+    - uses arithmetic mean of entropies, strictly >= geometric mean => arithmetic NMI <= geometric NMI
+    preconditions:
+    - labels_true.len() == labels_pred.len()
+    postconditions:
+    - result >= 0.0 && result <= 1.0
+proof_obligations:
+- type: invariant
+  property: NMI matches sklearn arithmetic on a partial-agreement fixture
+  formal: '|normalized_mutual_info_score([0,0,1,1,2,2],[0,0,1,2,2,2]) - 0.7396673768007592| < 1e-4'
+  applies_to: normalized_mutual_info_score
+- type: invariant
+  property: NMI is relabel-invariant and honours sklearn degenerate conventions
+  formal: 'NMI(t, permute(t)) == 1.0; one-single-cluster => 0.0; both-single-cluster => 1.0'
+  applies_to: normalized_mutual_info_score
+- type: invariant
+  property: mutual_info_score matches sklearn (nats)
+  formal: '|mutual_info_score([0,0,1,1,2,2],[0,0,1,2,2,2]) - 0.7803552045207032| < 1e-4'
+  applies_to: mutual_info_score
+falsification_tests:
+- id: FALSIFY-METRIC-NMI-001
+  rule: normalized_mutual_info_score matches sklearn 1.9.0 (arithmetic) and is relabel-invariant + degenerate-correct
+  prediction: NMI([0,0,1,1,2,2],[0,0,1,2,2,2]) == 0.7396673768007592; relabel => 1.0; one-trivial => 0.0; both-trivial => 1.0
+  test: cargo test -p aprender-core --lib metrics::tests_nmi::nmi_matches_sklearn
+  if_fails: apr uses a non-arithmetic normalizer (max/min/geometric/MI) or mishandles a single-cluster labelling
+- id: FALSIFY-METRIC-NMI-002
+  rule: mutual_info_score matches sklearn 1.9.0 in nats
+  prediction: MI([0,0,1,1,2,2],[0,0,1,2,2,2]) == 0.7803552045207032; MI with a trivial clustering == 0.0
+  test: cargo test -p aprender-core --lib metrics::tests_nmi::mutual_info_matches_sklearn
+  if_fails: MI uses log2 instead of ln, wrong contingency normalization, or leaks negative round-off
+- id: FALSIFY-METRIC-NMI-003
+  rule: NMI is bounded in [0,1] and strictly below 1 (and below geometric NMI) for an imperfect clustering
+  prediction: NMI([0,0,1,1,2,2],[0,0,1,2,2,2]) in [0,1] and < 0.7403 (arithmetic < geometric)
+  test: cargo test -p aprender-core --lib metrics::tests_nmi::nmi_bounded_and_imperfect_below_one
+  if_fails: normalizer collapses to MI (>1 possible) or to max/geometric (loosens the < bound)
+- id: FALSIFY-METRIC-NMI-004
+  rule: the contract-pinned oracle constants equal the Rust-pinned oracle constants (no drift)
+  prediction: contract YAML literals 0.7396673768007592 and 0.7803552045207032 are present and match the Rust consts
+  test: cargo test -p aprender-core --test beat_sklearn_nmi contract_oracle_constants_pinned
+  if_fails: the contract threshold drifted from the implementation's pinned sklearn oracle
+enforcement:
+  nmi_matches_sklearn:
+    description: NMI must match sklearn arithmetic within 1e-4 and be relabel/degenerate correct
+    check: contract_tests::FALSIFY-METRIC-NMI-001
+    severity: ERROR
+  mutual_info_matches_sklearn:
+    description: mutual_info_score must match sklearn (nats) within 1e-4
+    check: contract_tests::FALSIFY-METRIC-NMI-002
+    severity: ERROR
+  nmi_bounded:
+    description: NMI must lie in [0,1] and below geometric NMI on the imperfect fixture
+    check: contract_tests::FALSIFY-METRIC-NMI-003
+    severity: ERROR
+  oracle_no_drift:
+    description: contract-pinned constants must equal the Rust-pinned constants
+    check: contract_tests::FALSIFY-METRIC-NMI-004
+    severity: ERROR
+kani_harnesses:
+- id: KANI-METRIC-NMI-001
+  obligation: NMI is bounded in [0, 1]
+  property: normalized_mutual_info_score returns a value in [0.0, 1.0] for all label assignments
+  bound: 6
+  strategy: exhaustive
+  harness: verify_nmi_bounded_unit_interval
+- id: KANI-METRIC-NMI-002
+  obligation: mutual_info_score is non-negative
+  property: mutual_info_score returns a value >= 0.0 (negative round-off clamped) for all label assignments
+  bound: 6
+  strategy: exhaustive
+  harness: verify_mutual_info_nonnegative
+- id: KANI-METRIC-NMI-003
+  obligation: degenerate single-cluster convention
+  property: exactly one single-cluster labelling => NMI == 0.0; both single-cluster => NMI == 1.0
+  bound: 6
+  strategy: exhaustive
+  harness: verify_nmi_single_cluster_convention
+qa_gate:
+  id: F-METRIC-NMI-001
+  name: sklearn NMI Clustering-Metric Parity Contract
+  description: normalized_mutual_info_score / mutual_info_score pinned to scikit-learn 1.9.0 on a fixed fixture
+  checks:
+  - nmi_matches_sklearn
+  - mutual_info_matches_sklearn
+  - nmi_bounded
+  - oracle_no_drift
+  pass_criteria: All 4 falsification tests pass (apr matches sklearn 1.9.0 NMI/MI; no oracle drift)
+  falsification: apr uses a non-arithmetic normalizer, log2 instead of ln, or the pinned oracle drifts

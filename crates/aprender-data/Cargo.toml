@@ -168,6 +168,9 @@ redundant_closure = "allow"
 redundant_closure_for_method_calls = "allow"
 bool_comparison = "allow"
 approx_constant = "allow"
+# Every `unsafe { ... }` block must carry a `// SAFETY:` comment (PMAT-142).
+# No unsafe in lib/bins today; enforced as a hard error to keep it that way.
+undocumented_unsafe_blocks = "deny"
 
 [[bench]]
 name = "dataset_bench"

@@ -89,6 +89,10 @@ serde_yaml_ng = "0.10"
 
 [dev-dependencies]
 proptest = "1.9"
+# Reference IEEE-754 binary16 oracle for the f32_to_f16 RNE falsifier
+# (OBLIG-TRUENO-F32-F16-RNE). Dev-only: the foundation stays dependency-lean;
+# f32_to_f16 is a self-contained pure-Rust bit-twiddle that must MATCH `half`.
+half = { workspace = true }
 criterion = { workspace = true }
 tokio = { version = "1", features = ["macros", "rt"] }
 serde_json = "1.0"

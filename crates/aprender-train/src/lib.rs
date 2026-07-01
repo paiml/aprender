@@ -34,6 +34,10 @@
 #![cfg_attr(test, allow(clippy::disallowed_methods))]
 // Pedantic doc-formatting lints: allowed per workspace policy.
 #![allow(clippy::doc_lazy_continuation)]
+// PMAT-132: every `unsafe { ... }` block (incl. the CUDA forward/backward paths)
+// carries a `// SAFETY:` comment. Promote the workspace `warn` to a hard error for
+// this crate now that the lib is fully cleared, so regressions fail the build.
+#![deny(clippy::undocumented_unsafe_blocks)]
 
 // Contract assertions from YAML (pv codegen)
 #[macro_use]

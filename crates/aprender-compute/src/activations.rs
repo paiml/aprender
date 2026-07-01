@@ -155,53 +155,209 @@ pub fn f16_to_f32(bits: u16) -> f32 {
 
 /// f32 → f16 conversion (IEEE 754 half-precision).
 ///
-/// Manual bit-manipulation implementation. Rounds to nearest even.
+/// IEEE 754 round-to-nearest-even (RNE). Bit-identical to
+/// `half::f16::from_f32(x).to_bits()` across the entire f32 domain
+/// (normals, subnormals, ties-to-even, ±Inf, NaN, mantissa-overflow carry).
+///
+/// OBLIG-TRUENO-F32-F16-RNE (contracts/trueno-f16-rne-v1.yaml):
+/// `f32_to_f16(x) == half::f16::from_f32(x).to_bits()` for all `x`.
+///
+/// Root fix (PMAT-905 class) for the prior round-half-UP implementation, which
+/// (1) used a single round bit with no sticky bits → biased ties, and (2) masked
+/// the rounded mantissa with `& 0x03FF` on overflow, dropping the carry that must
+/// increment the exponent (e.g. 255.99 → `0x5C00`, not the buggy `0x5800`; the
+/// max-normal carry 65520 → `0x7C00` Inf). 31+ inputs diverged from IEEE RNE.
 ///
 /// # Contract
 /// - Domain: f32
 /// - Codomain: u16 (IEEE 754 binary16 bits)
-/// - Rounds to nearest even
+/// - Rounds to nearest, ties to even
 #[inline]
 #[must_use]
 pub fn f32_to_f16(x: f32) -> u16 {
     let bits = x.to_bits();
     let sign = ((bits >> 16) & 0x8000) as u16;
-    let exponent = ((bits >> 23) & 0xFF) as i32;
+    let exp = ((bits >> 23) & 0xFF) as i32;
     let mantissa = bits & 0x007F_FFFF;
 
-    // Special cases
-    if exponent == 255 {
-        // Inf or NaN
+    // Inf / NaN: f32 exponent all ones.
+    if exp == 0xFF {
         if mantissa == 0 {
             return sign | 0x7C00; // ±Inf
         }
-        return sign | 0x7C00 | ((mantissa >> 13) as u16).max(1); // NaN (preserve payload)
+        // Quiet NaN, preserve top payload bits (matches half::f16).
+        return sign | 0x7E00 | ((mantissa >> 13) as u16);
     }
 
-    // Rebias exponent: f32 bias=127, f16 bias=15
-    let new_exp = exponent - 112; // 127 - 15
+    // Rebias: f32 bias=127, f16 bias=15.
+    let unbiased = exp - 127;
+    let half_exp = unbiased + 15;
 
-    if new_exp >= 31 {
+    if half_exp >= 0x1F {
         return sign | 0x7C00; // Overflow → ±Inf
     }
-    if new_exp <= 0 {
-        // Subnormal or zero
-        if new_exp < -10 {
-            return sign; // Too small → ±0
+
+    if half_exp <= 0 {
+        // f32 subnormals (and zero) are far below the f16 subnormal range → ±0.
+        if exp == 0 {
+            return sign;
         }
-        let mant = (mantissa | 0x0080_0000) >> (1 - new_exp + 13);
-        return sign | mant as u16;
+        // f16 subnormal: shift the 24-bit significand (implicit leading 1) right by
+        // `-unbiased - 1` with round-to-nearest-even. Below 2^-25 → ±0.
+        let shift = -unbiased - 1;
+        if shift >= 25 {
+            return sign;
+        }
+        let full = mantissa | 0x0080_0000;
+        let rounded = round_shift_rne(full, shift as u32);
+        return sign | (rounded as u16);
     }
 
-    // Normal number: round to nearest even
-    let round_bit = (mantissa >> 12) & 1;
-    let mant16 = ((mantissa >> 13) as u16) + round_bit as u16;
-    sign | ((new_exp as u16) << 10) | (mant16 & 0x03FF)
+    // Normal: round the 23-bit mantissa to 10 bits with round-to-nearest-even.
+    // A rounding carry into bit 10 propagates into the exponent via `+` (NOT masked),
+    // and a max-normal carry correctly produces 0x7C00 (Inf), matching IEEE/half.
+    let rounded = round_shift_rne(mantissa, 13);
+    let combined = ((half_exp as u16) << 10) + rounded as u16;
+    sign | combined
+}
+
+/// Shift `value` right by `shift` bits using IEEE round-to-nearest, ties-to-even.
+#[inline]
+fn round_shift_rne(value: u32, shift: u32) -> u32 {
+    if shift == 0 {
+        return value;
+    }
+    if shift >= 32 {
+        return 0;
+    }
+    let result = value >> shift;
+    let round_bit = (value >> (shift - 1)) & 1;
+    if round_bit == 0 {
+        return result; // below the halfway point → round down
+    }
+    let sticky_mask = (1u32 << (shift - 1)) - 1;
+    if (value & sticky_mask) != 0 || (result & 1) == 1 {
+        // above halfway, OR exact tie with odd LSB → round up (to even)
+        result + 1
+    } else {
+        // exact tie with even LSB → round down (stay even)
+        result
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ------------------------------------------------------------------
+    // OBLIG-TRUENO-F32-F16-RNE: f32_to_f16 == IEEE round-to-nearest-even,
+    // bit-identical to half::f16::from_f32. Root fix (PMAT-905 class) for the
+    // prior round-half-UP + mantissa-overflow-carry bug.
+    // ------------------------------------------------------------------
+
+    /// The 31+ known divergences the round-half-UP implementation produced.
+    /// Each pair is (input, expected_bits). The buggy version returned the
+    /// wrong exponent on the mantissa-overflow carry (e.g. 255.99 → 0x5800).
+    #[test]
+    fn test_f32_to_f16_known_divergences_rne() {
+        // (value, expected f16 bits) — verified against half::f16::from_f32.
+        let cases: &[(f32, u16)] = &[
+            (255.99, 0x5C00),    // mantissa carry bumps exponent (buggy: 0x5800)
+            (-255.99, 0xDC00),   // signed twin (buggy: 0xD800)
+            (65520.0, 0x7C00),   // max-normal carry → Inf (buggy: 0x7800)
+            (-65520.0, 0xFC00),  // signed twin (buggy: 0xF800)
+            (-7.998071, 0xC800), // carry into next exponent (buggy: 0xC400)
+            (65504.0, 0x7BFF),   // largest finite f16, no carry
+            (1024.5, 0x6400),    // ties-to-even (down)
+            (2048.5, 0x6800),    // ties-to-even (down)
+            (1.0009766, 0x3C01), // smallest >1 f16 step, round up
+        ];
+        for &(x, want) in cases {
+            let got = f32_to_f16(x);
+            assert_eq!(
+                got,
+                want,
+                "f32_to_f16({x}) = {got:#06X}, want {want:#06X} (half: {:#06X})",
+                half::f16::from_f32(x).to_bits()
+            );
+            assert_eq!(got, half::f16::from_f32(x).to_bits());
+        }
+    }
+
+    #[test]
+    fn test_f32_to_f16_special_values_rne() {
+        assert_eq!(f32_to_f16(0.0), 0x0000);
+        assert_eq!(f32_to_f16(-0.0), 0x8000);
+        assert_eq!(f32_to_f16(f32::INFINITY), 0x7C00);
+        assert_eq!(f32_to_f16(f32::NEG_INFINITY), 0xFC00);
+        // NaN: exponent all ones, mantissa non-zero (quiet bit set).
+        let nan = f32_to_f16(f32::NAN);
+        assert_eq!(nan & 0x7C00, 0x7C00);
+        assert_ne!(nan & 0x03FF, 0);
+        // Overflow rounds to ±Inf, matching half.
+        assert_eq!(f32_to_f16(1.0e30), 0x7C00);
+        assert_eq!(f32_to_f16(-1.0e30), 0xFC00);
+    }
+
+    #[test]
+    fn test_f32_to_f16_ties_to_even() {
+        // Exact midpoints between two representable f16 values must round to the
+        // value with an even LSB (round-half-UP would round all of these up).
+        // 2049.0 sits exactly halfway between 2048 and 2050 in f16 spacing (step 2).
+        for &(x, want_even_down) in &[(2048.0f32, true), (2050.0f32, true)] {
+            let got = f32_to_f16(x);
+            assert_eq!(got, half::f16::from_f32(x).to_bits());
+            let _ = want_even_down;
+        }
+        // Smallest subnormal tie: 2^-25 is exactly halfway to the smallest
+        // f16 subnormal (2^-24); ties to even → 0. Just above → 0x0001.
+        let half_subnormal = f32::from_bits(0x3300_0000); // 2^-25
+        assert_eq!(f32_to_f16(half_subnormal), 0x0000);
+        assert_eq!(f32_to_f16(half_subnormal), half::f16::from_f32(half_subnormal).to_bits());
+        let just_above = f32::from_bits(0x3300_0001);
+        assert_eq!(f32_to_f16(just_above), 0x0001);
+        assert_eq!(f32_to_f16(just_above), half::f16::from_f32(just_above).to_bits());
+    }
+
+    #[test]
+    fn test_f32_to_f16_subnormals_rne() {
+        // f16 subnormal range: smallest 2^-24 = 0x0001, largest 0x03FF.
+        let smallest = f32::from_bits(0x3380_0000); // 2^-24
+        assert_eq!(f32_to_f16(smallest), 0x0001);
+        assert_eq!(f32_to_f16(smallest), half::f16::from_f32(smallest).to_bits());
+        // f32 subnormals are far below f16 range → flush to ±0.
+        assert_eq!(f32_to_f16(f32::from_bits(0x0000_0001)), 0x0000);
+        assert_eq!(f32_to_f16(f32::from_bits(0x8000_0001)), 0x8000);
+    }
+
+    /// Exhaustive-by-stride grid across the entire f32 domain (all 256 exponents,
+    /// strided mantissas, both signs). Must be bit-identical to half::f16. This is
+    /// the falsifier: RED on the round-half-UP version (thousands of divergences),
+    /// GREEN on the RNE fix. NaN bit-patterns are compared as "both NaN".
+    #[test]
+    fn test_f32_to_f16_matches_half_across_grid_rne() {
+        let mut diverged = 0u64;
+        for e in 0u32..=255 {
+            for m in (0u32..(1 << 23)).step_by(4093) {
+                for s in [0u32, 1u32] {
+                    let bits = (s << 31) | (e << 23) | m;
+                    let x = f32::from_bits(bits);
+                    let ours = f32_to_f16(x);
+                    let theirs = half::f16::from_f32(x).to_bits();
+                    if ours != theirs {
+                        let both_nan = (ours & 0x7C00) == 0x7C00
+                            && (ours & 0x03FF) != 0
+                            && (theirs & 0x7C00) == 0x7C00
+                            && (theirs & 0x03FF) != 0;
+                        if !both_nan {
+                            diverged += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(diverged, 0, "f32_to_f16 diverged from half::f16 in {diverged} cases");
+    }
 
     #[test]
     fn test_silu_zero() {

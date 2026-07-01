@@ -1,0 +1,133 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-25'
+  author: PAIML Engineering
+  description: >-
+    Pillar-1 (beat scikit-learn) metric EDGE-CASE parity — finfo(float64).eps
+    clamping for log_loss and mean_absolute_percentage_error, and the
+    no-positive-samples average_precision_score = 0.0 convention (PMAT-929).
+    sklearn clips/floors with eps = np.finfo(float64).eps = 2.220446049250313e-16
+    (Rust f64::EPSILON), NOT a hand-rolled 1e-15. On boundary inputs apr
+    previously diverged from sklearn 1.9.0: log_loss([0,1],[0.0,1.0]) returned
+    9.99e-16 vs sklearn 2.22e-16 (>4x); MAPE([0.0],[0.5]) returned 5.0e14 vs
+    sklearn 2.25e15 (~78%); and average_precision_score with no positives
+    returned NaN instead of sklearn's 0.0 (which poisons downstream means).
+  references:
+  - 'crates/aprender-core/src/metrics/probabilistic.rs (log_loss, average_precision_score, FINFO_F64_EPS)'
+  - 'crates/aprender-core/src/metrics/regression.rs (mean_absolute_percentage_error)'
+  - 'scikit-learn 1.9.0 sklearn.metrics.log_loss / mean_absolute_percentage_error / average_precision_score'
+  - 'numpy: np.finfo(np.float64).eps = 2.220446049250313e-16'
+equations:
+  log_loss_eps_clamp:
+    formula: 'p_clamped = clamp(p, eps, 1 - eps), eps = finfo(float64).eps; loss = -mean(y*ln(p_clamped) + (1-y)*ln(1-p_clamped))'
+    domain: y in {0,1}, p in [0,1], n >= 1
+    codomain: loss in [0, inf), finite
+    invariants:
+    - log_loss output is always finite (clamp prevents ln(0) = -inf)
+    - clamp uses eps = finfo(float64).eps (2.220446049250313e-16), matching sklearn
+    - 'log_loss([0,1],[0.0,1.0]) = -ln(1-eps) = 2.220446049250313e-16'
+    preconditions:
+    - y_true.len() == y_prob.len()
+    - y_true.len() > 0
+    postconditions:
+    - result.is_finite()
+    - result >= 0.0
+  mape_eps_floor:
+    formula: 'MAPE = mean(|y_true - y_pred| / max(eps, |y_true|)), eps = finfo(float64).eps'
+    domain: y_true, y_pred real, n >= 1
+    codomain: MAPE in [0, inf), finite
+    invariants:
+    - MAPE output is always finite (denominator floored at eps prevents div-by-zero)
+    - denominator floor uses eps = finfo(float64).eps, matching sklearn max(eps, |y_true|)
+    - 'MAPE([0.0],[0.5]) = 0.5 / eps = 2251799813685248.0'
+    preconditions:
+    - y_true.len() == y_pred.len()
+    - y_true.len() > 0
+    postconditions:
+    - result.is_finite()
+    - result >= 0.0
+  average_precision_no_positive:
+    formula: 'AP = 0.0 when sum(y_true) == 0 (no positive samples), else step-function PR area'
+    domain: y_true in {0,1}, y_score real
+    codomain: AP in [0, 1]
+    invariants:
+    - average_precision_score with zero positive samples returns 0.0 (sklearn convention), never NaN
+    - average_precision_score on empty input returns 0.0
+    preconditions:
+    - y_true.len() == y_score.len()
+    postconditions:
+    - '!result.is_nan()'
+    - result >= 0.0 && result <= 1.0
+proof_obligations:
+- type: invariant
+  property: log_loss clamps with finfo eps
+  formal: 'log_loss([0,1],[0.0,1.0]) == -ln(1 - finfo_eps) == 2.220446049250313e-16, finite'
+  applies_to: log_loss
+- type: invariant
+  property: MAPE floors denominator with finfo eps
+  formal: 'MAPE([0.0],[0.5]) == 0.5 / finfo_eps == 2251799813685248.0, finite (no div-by-zero)'
+  applies_to: mean_absolute_percentage_error
+- type: invariant
+  property: average_precision no-positive equals zero
+  formal: 'sum(y_true) == 0 implies average_precision_score(y_true, y_score) == 0.0 (not NaN)'
+  applies_to: average_precision_score
+falsification_tests:
+- id: FALSIFY-METRIC-EPS-001
+  rule: log_loss clamps predictions by finfo(float64).eps, matching sklearn
+  prediction: log_loss([0,1],[0.0,1.0]) equals 2.220446049250313e-16 (finite), not the 1e-15-floor 9.99e-16
+  test: cargo test -p aprender-core --lib log_loss_clamps_finfo_eps_at_bounds
+  if_fails: log_loss uses a non-finfo eps floor (e.g. legacy 1e-15) or ln(0) leaks inf/nan
+- id: FALSIFY-METRIC-EPS-002
+  rule: MAPE floors the per-sample denominator at finfo(float64).eps, matching sklearn max(eps, |y_true|)
+  prediction: MAPE([0.0],[0.5]) equals 2251799813685248.0 (finite), not the 1e-15-floor 5.0e14
+  test: cargo test -p aprender-core --lib mape_floors_denominator_at_finfo_eps
+  if_fails: MAPE uses a non-finfo eps floor (e.g. legacy 1e-15) or divides by zero on a zero target
+- id: FALSIFY-METRIC-EPS-003
+  rule: average_precision_score with no positive samples returns 0.0 (sklearn convention)
+  prediction: average_precision_score([0,0,0], scores) equals 0.0, never NaN
+  test: cargo test -p aprender-core --lib average_precision_no_positives_is_zero
+  if_fails: average_precision_score returns NaN with no positives, poisoning downstream means
+enforcement:
+  log_loss_finite_finfo_eps:
+    description: log_loss must clamp with finfo eps and stay finite
+    check: contract_tests::FALSIFY-METRIC-EPS-001
+    severity: ERROR
+  mape_finite_finfo_eps:
+    description: MAPE must floor the denominator at finfo eps and stay finite
+    check: contract_tests::FALSIFY-METRIC-EPS-002
+    severity: ERROR
+  ap_no_positive_zero:
+    description: average_precision_score must return 0.0 with no positives
+    check: contract_tests::FALSIFY-METRIC-EPS-003
+    severity: ERROR
+kani_harnesses:
+- id: KANI-METRIC-EPS-001
+  obligation: log_loss clamps with finfo eps
+  property: log_loss output is finite for all p in [0,1] (clamp prevents ln(0))
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_log_loss_finite
+- id: KANI-METRIC-EPS-002
+  obligation: MAPE floors denominator with finfo eps
+  property: MAPE output is finite for all y_true incl. zero (denominator floored at eps)
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_mape_finite
+- id: KANI-METRIC-EPS-003
+  obligation: average_precision no-positive equals zero
+  property: average_precision_score returns 0.0 (not NaN) when sum(y_true) == 0
+  bound: 8
+  strategy: exhaustive
+  harness: verify_ap_no_positive_zero
+qa_gate:
+  id: F-METRIC-EPS-001
+  name: sklearn Metric Eps-Parity Contract
+  description: Edge-case parity for log_loss/MAPE finfo-eps clamping and average_precision no-positive convention
+  checks:
+  - log_loss_finite_finfo_eps
+  - mape_finite_finfo_eps
+  - ap_no_positive_zero
+  pass_criteria: All 3 falsification tests pass (apr matches sklearn 1.9.0 on each edge case)
+  falsification: log_loss/MAPE use a non-finfo eps floor, or average_precision returns NaN with no positives

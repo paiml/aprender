@@ -686,6 +686,7 @@ impl ClassifyPipeline {
             input_is_a = !input_is_a;
         }
         // After loop: the buffer indicated by input_is_a holds the final output
+        // SAFETY: ping-pong double-buffering. The two raw pointers reference distinct, non-overlapping device buffers (the `_a`/`_b` scratch pair); the boolean flag picks one as `&` input and the other as `&mut` output, so the resulting references never alias the same allocation.
         let final_output = unsafe {
             if input_is_a {
                 &*scratch_a_ptr
@@ -962,6 +963,7 @@ impl ClassifyPipeline {
                     &training_state.layer_inputs[layer_idx],
                     grad_output,
                     grad_input,
+                    // SAFETY: dereferences a raw pointer to the output scratch buffer that outlives this call and is not aliased by any other live reference; the GPU kernel is the sole writer for the duration of the launch.
                     unsafe { &mut *output_scratch_ptr },
                     seq_len,
                     stream,

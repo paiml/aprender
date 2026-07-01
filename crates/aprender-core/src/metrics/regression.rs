@@ -148,8 +148,11 @@ pub fn mean_squared_log_error(y_true: &[f32], y_pred: &[f32]) -> f32 {
 }
 
 /// Mean absolute percentage error, matching
-/// `sklearn.metrics.mean_absolute_percentage_error` (denominator floored at
-/// machine epsilon to avoid division by zero, as sklearn does).
+/// `sklearn.metrics.mean_absolute_percentage_error`. The per-sample denominator
+/// is floored at `finfo(float64).eps` (≈2.22e-16) — sklearn's
+/// `max(eps, |y_true|)` — so a zero target never causes a division by zero.
+/// PMAT-929: the legacy `1e-15` floor diverged from sklearn by ~78% on
+/// zero-target inputs.
 ///
 /// # Panics
 /// Panics if `y_true` and `y_pred` differ in length.
@@ -164,11 +167,12 @@ pub fn mean_absolute_percentage_error(y_true: &[f32], y_pred: &[f32]) -> f32 {
     if n == 0 {
         return 0.0;
     }
-    const EPS: f64 = 1e-15;
+    // sklearn floors the denominator at finfo(float64).eps = f64::EPSILON.
+    const FINFO_F64_EPS: f64 = f64::EPSILON;
     let s: f64 = y_true
         .iter()
         .zip(y_pred)
-        .map(|(&t, &p)| (f64::from(t) - f64::from(p)).abs() / f64::from(t).abs().max(EPS))
+        .map(|(&t, &p)| (f64::from(t) - f64::from(p)).abs() / f64::from(t).abs().max(FINFO_F64_EPS))
         .sum();
     (s / n as f64) as f32
 }
@@ -244,5 +248,24 @@ mod tests {
         let ypp = [2.5f32, 5.0, 3.0, 8.0, 1.2];
         assert!((mean_squared_log_error(&ytp, &ypp) - 0.011_724).abs() < 1e-4);
         assert!((mean_absolute_percentage_error(&ytp, &ypp) - 0.141_905).abs() < 1e-4);
+    }
+
+    /// FT-METRIC-MAPE-EPS (PMAT-929): the per-sample denominator must be
+    /// floored at `finfo(float64).eps` (≈2.220446e-16), matching sklearn's
+    /// `max(eps, |y_true|)`, NOT the legacy 1e-15. With `y_true=[0.0]`,
+    /// `y_pred=[0.5]` sklearn 1.9.0 returns `2251799813685248.0` (= 0.5/eps).
+    /// A 1e-15 floor gave ≈4.99e14 — a ~78% relative divergence. Must never
+    /// divide by zero (no inf/nan).
+    #[test]
+    fn mape_floors_denominator_at_finfo_eps() {
+        let got = mean_absolute_percentage_error(&[0.0], &[0.5]);
+        assert!(got.is_finite(), "MAPE div-by-zero leaked inf/nan: {got}");
+        // sklearn oracle: 0.5 / finfo_eps = 2251799813685248.0 (exact in f32).
+        let sklearn = 2_251_799_813_685_248.0_f32;
+        let rel = (got - sklearn).abs() / sklearn;
+        assert!(
+            rel < 1e-4,
+            "MAPE eps-floor diverges from sklearn: apr={got}, sklearn={sklearn}, rel={rel}"
+        );
     }
 }

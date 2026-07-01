@@ -475,6 +475,7 @@ dependencies = [
  "dirs 5.0.1",
  "faer",
  "futures-intrusive",
+ "half",
  "hostname",
  "matrixmultiply",
  "nalgebra",
@@ -519,6 +520,7 @@ version = "0.55.0"
 dependencies = [
  "aprender-contracts-macros",
  "criterion 0.5.1",
+ "half",
  "proptest",
  "regex",
  "serde",
@@ -1453,6 +1455,7 @@ name = "aprender-solve"
 version = "0.55.0"
 dependencies = [
  "criterion 0.7.0",
+ "half",
  "proptest",
  "thiserror 2.0.18",
 ]
