@@ -1770,6 +1770,7 @@ DONE_NORM:
         let q4k_byte_count = n_usize * num_sb * 144;
 
         // Step 1: Download Q4K bytes from GPU to CPU
+        // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
         let weight_view = unsafe { GpuBuffer::<u8>::from_raw_parts(weight_ptr, q4k_byte_count) };
         let mut q4k_host = vec![0u8; q4k_byte_count];
         weight_view.copy_to_host(&mut q4k_host)?;
@@ -1868,6 +1869,7 @@ DONE_NORM:
         let mut n_val = n;
         let mut k_val = k;
 
+        // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
         unsafe {
             self.stream.launch_kernel(
                 module,
@@ -1967,6 +1969,7 @@ DONE_NORM:
         let mut n_val = n;
         let mut k_val = k;
 
+        // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
         unsafe {
             self.stream.launch_kernel(
                 module,

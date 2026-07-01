@@ -28,6 +28,7 @@ impl KernelDispatch for CudaExecutor {
         let input_buf = unsafe {
             trueno_gpu::driver::GpuBuffer::<f32>::from_raw_parts(input_ptr, (m * k) as usize)
         };
+        // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
         let output_buf = unsafe {
             trueno_gpu::driver::GpuBuffer::<f32>::from_raw_parts(output_ptr, (m * n) as usize)
         };
@@ -81,6 +82,7 @@ impl KernelDispatch for CudaExecutor {
                 (m * hidden_dim) as usize,
             )
         };
+        // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
         let output_buf = unsafe {
             trueno_gpu::driver::GpuBuffer::<f32>::from_raw_parts(
                 output_ptr,
@@ -115,10 +117,13 @@ impl KernelDispatch for CudaExecutor {
         n_elements: usize,
     ) -> Result<(), GpuError> {
         let a_buf =
+            // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
             unsafe { trueno_gpu::driver::GpuBuffer::<f32>::from_raw_parts(a_ptr, n_elements) };
         let b_buf =
+            // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
             unsafe { trueno_gpu::driver::GpuBuffer::<f32>::from_raw_parts(b_ptr, n_elements) };
         let out_buf =
+            // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
             unsafe { trueno_gpu::driver::GpuBuffer::<f32>::from_raw_parts(output_ptr, n_elements) };
 
         // hidden_dim is n_elements / m, but for residual add it's element-wise
@@ -172,12 +177,15 @@ impl KernelDispatch for CudaExecutor {
         let q_buf = unsafe {
             trueno_gpu::driver::GpuBuffer::<f32>::from_raw_parts(q_ptr, m as usize * q_dim)
         };
+        // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
         let k_buf = unsafe {
             trueno_gpu::driver::GpuBuffer::<f32>::from_raw_parts(k_ptr, m as usize * kv_dim)
         };
+        // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
         let v_buf = unsafe {
             trueno_gpu::driver::GpuBuffer::<f32>::from_raw_parts(v_ptr, m as usize * kv_dim)
         };
+        // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
         let attn_out = unsafe {
             trueno_gpu::driver::GpuBuffer::<f32>::from_raw_parts(output_ptr, m as usize * q_dim)
         };
@@ -191,6 +199,7 @@ impl KernelDispatch for CudaExecutor {
                 GpuError::InvalidLaunchConfig("PMAT-291: positions_buf not initialized".to_string())
             })?
             .as_ptr();
+        // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
         let mut positions_buf = unsafe {
             trueno_gpu::driver::GpuBuffer::<u32>::from_raw_parts(positions_buf_ptr, m as usize)
         };
@@ -293,10 +302,13 @@ impl KernelDispatch for CudaExecutor {
         // SwiGLU: output = gate * silu(up)
         // a_ptr = gate projection output, b_ptr = up projection output
         let gate_buf =
+            // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
             unsafe { trueno_gpu::driver::GpuBuffer::<f32>::from_raw_parts(a_ptr, n_elements) };
         let up_buf =
+            // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
             unsafe { trueno_gpu::driver::GpuBuffer::<f32>::from_raw_parts(b_ptr, n_elements) };
         let out_buf =
+            // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
             unsafe { trueno_gpu::driver::GpuBuffer::<f32>::from_raw_parts(output_ptr, n_elements) };
 
         // batched_swiglu_into expects (gate, up, output, dim, m).

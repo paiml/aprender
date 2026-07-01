@@ -629,3 +629,187 @@ mod tests_ari {
         assert!((adjusted_rand_score(&[0, 0, 1, 1], &[0, 0, 1, 1]) - 1.0).abs() < 1e-6);
     }
 }
+
+/// Builds the `kt x kp` contingency table and the natural-log entropy of each
+/// label assignment from its marginal totals. Shared kernel for the
+/// mutual-information clustering metrics.
+fn contingency_and_entropies(
+    labels_true: &[usize],
+    labels_pred: &[usize],
+) -> (Vec<Vec<u64>>, f64, f64, usize) {
+    let n = labels_true.len();
+    let kt = labels_true.iter().max().map_or(0, |&m| m + 1);
+    let kp = labels_pred.iter().max().map_or(0, |&m| m + 1);
+    let mut cont = vec![vec![0u64; kp]; kt];
+    for i in 0..n {
+        cont[labels_true[i]][labels_pred[i]] += 1;
+    }
+    // Entropy (natural log) of a marginal: H = -sum_i (n_i/n) ln(n_i/n).
+    let nf = n as f64;
+    let entropy = |totals: &[u64]| -> f64 {
+        let mut h = 0.0f64;
+        for &t in totals {
+            if t > 0 {
+                let p = t as f64 / nf;
+                h -= p * p.ln();
+            }
+        }
+        h
+    };
+    let row_totals: Vec<u64> = cont.iter().map(|r| r.iter().sum()).collect();
+    let col_totals: Vec<u64> = (0..kp).map(|j| (0..kt).map(|i| cont[i][j]).sum()).collect();
+    let h_true = entropy(&row_totals);
+    let h_pred = entropy(&col_totals);
+    (cont, h_true, h_pred, n)
+}
+
+/// Mutual information (natural log, nats) between two clusterings, matching
+/// `sklearn.metrics.mutual_info_score`. MI = sum_ij (n_ij/n) ln(n*n_ij /
+/// (a_i * b_j)).
+#[must_use]
+pub fn mutual_info_score(labels_true: &[usize], labels_pred: &[usize]) -> f32 {
+    assert_eq!(
+        labels_true.len(),
+        labels_pred.len(),
+        "mutual_info_score: length mismatch"
+    );
+    if labels_true.is_empty() {
+        return 0.0;
+    }
+    let (cont, _, _, n) = contingency_and_entropies(labels_true, labels_pred);
+    let nf = n as f64;
+    let row_totals: Vec<u64> = cont.iter().map(|r| r.iter().sum()).collect();
+    let kp = cont.first().map_or(0, Vec::len);
+    let col_totals: Vec<u64> = (0..kp).map(|j| cont.iter().map(|r| r[j]).sum()).collect();
+    let mut mi = 0.0f64;
+    for (i, row) in cont.iter().enumerate() {
+        for (j, &nij) in row.iter().enumerate() {
+            if nij > 0 {
+                let pij = nij as f64 / nf;
+                // ln(n * n_ij / (a_i * b_j)) computed stably.
+                let term = (nij as f64 * nf) / (row_totals[i] as f64 * col_totals[j] as f64);
+                mi += pij * term.ln();
+            }
+        }
+    }
+    // Clamp tiny negative round-off to zero (sklearn does likewise).
+    if mi < 0.0 {
+        mi = 0.0;
+    }
+    mi as f32
+}
+
+/// Normalized mutual information between two clusterings with the arithmetic
+/// normalizer (sklearn default `average_method="arithmetic"`), matching
+/// `sklearn.metrics.normalized_mutual_info_score`. NMI = MI / ((H_true +
+/// H_pred) / 2). Range [0, 1] (1 = clusterings identical up to relabeling).
+///
+/// Follows sklearn's degenerate-case convention: if exactly one clustering has a
+/// single cluster (zero entropy), the metric is 0.0; if *both* are trivially a
+/// single cluster, it returns 1.0.
+#[must_use]
+pub fn normalized_mutual_info_score(labels_true: &[usize], labels_pred: &[usize]) -> f32 {
+    assert_eq!(
+        labels_true.len(),
+        labels_pred.len(),
+        "normalized_mutual_info_score: length mismatch"
+    );
+    if labels_true.is_empty() {
+        return 1.0;
+    }
+    let (_, h_true, h_pred, _) = contingency_and_entropies(labels_true, labels_pred);
+    // A clustering is "trivial" (single cluster) iff every label is identical.
+    let single_true = labels_true.iter().all(|&x| x == labels_true[0]);
+    let single_pred = labels_pred.iter().all(|&x| x == labels_pred[0]);
+    if single_true || single_pred {
+        return if single_true && single_pred { 1.0 } else { 0.0 };
+    }
+    let mi = f64::from(mutual_info_score(labels_true, labels_pred));
+    let normalizer = (h_true + h_pred) / 2.0;
+    if normalizer == 0.0 {
+        return 0.0;
+    }
+    (mi / normalizer).clamp(0.0, 1.0) as f32
+}
+
+#[cfg(test)]
+mod tests_nmi {
+    use super::*;
+    // ─────────────────────────────────────────────────────────────────────────
+    // sklearn 1.9.0 oracle (PINNED OFFLINE — no Python at CI time).
+    // Generation recipe (re-run to regenerate the constants below):
+    //   uv run --with scikit-learn --with numpy python3 -c "
+    //   from sklearn.metrics import normalized_mutual_info_score as nmi, mutual_info_score
+    //   print(nmi([0,0,1,1,2,2],[0,0,1,2,2,2],average_method='arithmetic'))  # 0.7396673768007592
+    //   print(mutual_info_score([0,0,1,1,2,2],[0,0,1,2,2,2]))                # 0.7803552045207032
+    //   print(nmi([0,0,1,1,2,2],[2,2,0,0,1,1],average_method='arithmetic'))  # 1.0  (relabel-invariant)
+    //   print(nmi([0,0,1,1],[0,0,0,0],average_method='arithmetic'))          # 0.0  (one trivial)
+    //   print(nmi([0,0,0,0],[0,0,0,0],average_method='arithmetic'))          # 1.0  (both trivial)
+    //   print(nmi([0,0,0,1,1,1,2,2],[0,0,1,1,1,2,2,2],average_method='arithmetic')) # 0.5588730382170324
+    //   print(mutual_info_score([0,0,0,1,1,1,2,2],[0,0,1,1,1,2,2,2]))        # 0.6048099038176575
+    //   "
+    // sklearn 1.9.0, numpy float64. Tolerance 1e-4 (f32 round-off of an f64 ratio).
+    const SK_NMI_PARTIAL: f32 = 0.739_667_4;
+    const SK_MI_PARTIAL: f32 = 0.780_355_2;
+    const SK_NMI_E: f32 = 0.558_873_04;
+    const SK_MI_E: f32 = 0.604_809_9;
+
+    /// FT-METRIC-NMI-001: NMI matches sklearn (arithmetic) on a partial-agreement
+    /// fixture, is relabel-invariant (=1.0), and honours both degenerate cases.
+    #[test]
+    fn nmi_matches_sklearn() {
+        let t = [0, 0, 1, 1, 2, 2];
+        let p = [0, 0, 1, 2, 2, 2];
+        assert!(
+            (normalized_mutual_info_score(&t, &p) - SK_NMI_PARTIAL).abs() < 1e-4,
+            "NMI partial: got {}",
+            normalized_mutual_info_score(&t, &p)
+        );
+        // Relabel invariance: a permutation of cluster ids is a perfect match.
+        assert!(
+            (normalized_mutual_info_score(&[0, 0, 1, 1, 2, 2], &[2, 2, 0, 0, 1, 1]) - 1.0).abs()
+                < 1e-6
+        );
+        // One trivial clustering (single cluster) => 0.0.
+        assert!((normalized_mutual_info_score(&[0, 0, 1, 1], &[0, 0, 0, 0])).abs() < 1e-6);
+        // Both trivial => 1.0 (sklearn convention).
+        assert!((normalized_mutual_info_score(&[0, 0, 0, 0], &[0, 0, 0, 0]) - 1.0).abs() < 1e-6);
+        // Asymmetric overlap fixture E.
+        let te = [0, 0, 0, 1, 1, 1, 2, 2];
+        let pe = [0, 0, 1, 1, 1, 2, 2, 2];
+        assert!((normalized_mutual_info_score(&te, &pe) - SK_NMI_E).abs() < 1e-4);
+    }
+
+    /// FT-METRIC-NMI-002: raw mutual_info_score (nats) matches sklearn.
+    #[test]
+    fn mutual_info_matches_sklearn() {
+        let t = [0, 0, 1, 1, 2, 2];
+        let p = [0, 0, 1, 2, 2, 2];
+        assert!(
+            (mutual_info_score(&t, &p) - SK_MI_PARTIAL).abs() < 1e-4,
+            "MI partial: got {}",
+            mutual_info_score(&t, &p)
+        );
+        let te = [0, 0, 0, 1, 1, 1, 2, 2];
+        let pe = [0, 0, 1, 1, 1, 2, 2, 2];
+        assert!((mutual_info_score(&te, &pe) - SK_MI_E).abs() < 1e-4);
+        // Independent labelling (pred trivial) has zero mutual information.
+        assert!((mutual_info_score(&[0, 0, 1, 1], &[0, 0, 0, 0])).abs() < 1e-6);
+    }
+
+    /// FT-METRIC-NMI-003 (mutation guard): NMI must lie in [0,1] and be bounded
+    /// strictly below 1 for a genuinely imperfect clustering, and below the
+    /// geometric-mean normalizer (catches a normalizer that collapses to MI or
+    /// to max/min averaging).
+    #[test]
+    fn nmi_bounded_and_imperfect_below_one() {
+        let t = [0, 0, 1, 1, 2, 2];
+        let p = [0, 0, 1, 2, 2, 2];
+        let v = normalized_mutual_info_score(&t, &p);
+        assert!((0.0..=1.0).contains(&v), "NMI out of [0,1]: {v}");
+        assert!(v < 0.999, "imperfect clustering must score < 1: {v}");
+        // Arithmetic mean >= geometric mean, so arithmetic NMI (0.7397) is
+        // strictly below geometric NMI (0.7403) on this fixture.
+        assert!(v < 0.740_3, "arithmetic NMI should be < geometric NMI: {v}");
+    }
+}

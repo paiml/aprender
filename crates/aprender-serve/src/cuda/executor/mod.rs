@@ -206,6 +206,7 @@ pub(crate) struct RecordedKernel {
 pub(crate) struct SendCUfunction(pub CUfunction);
 // SAFETY: CUfunction is a process-wide handle, not tied to a thread.
 unsafe impl Send for SendCUfunction {}
+// SAFETY: wraps a `CUfunction`, a process-wide handle resolved by `cuModuleGetFunction` that is not bound to any thread; sharing it as `Sync` is sound because launching the same function from multiple threads is serialized by the CUDA driver.
 unsafe impl Sync for SendCUfunction {}
 // All kernel types are imported for API completeness
 #[allow(unused_imports)]

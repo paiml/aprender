@@ -1,0 +1,174 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# beat-claude-code-parity-v1
+#
+# Pillar-5 (Claude Code / `apr code` agentic coding) TRACKING beat. This is a
+# THIN aprender-side POINTER, NOT a duplicate of the full CCPA harness contract.
+# The authoritative, byte-for-byte parity contract is
+# `contracts/claude-code-parity-apr-v1.yaml` (v1.32.0, 20 gates, kind: pattern),
+# whose runtime ENFORCEMENT lives in the companion repo
+# https://github.com/paiml/claude-code-parity-apr (the CCPA harness).
+#
+# Why a separate tracking contract: the four-pillar BEAT machinery
+# (kind: beat-benchmark, validator BEAT-002) is hardcoded to the four incumbents
+# scikit-learn / PyTorch / Unsloth / Ollama·llama.cpp. Claude Code is the FIFTH
+# incumbent; rather than widen the hardcoded BEAT_INCUMBENTS list (a schema PR of
+# its own — PMAT-CONTRACTS-CCPA-002), this contract registers the 5th-pillar beat
+# as a `kind: pattern` parity-tracking pointer — the same kind the authoritative
+# CCPA contract and its siblings (apr-code-parity-v1, apr-claude-proxy-v1) use.
+#
+# HONEST STATE (do NOT overclaim — the BEATS.md honesty rule applies):
+#   * FUNCTION-SCALE outcome parity = 1.0000 — WON / interchangeable.
+#     Canonical corpus 30/30 (fixtures/canonical/measured-parity.json),
+#     HumanEval n=5 (evidence/phase-3/multipl-e-rust-scores.json), and
+#     cross-swap test-survival 1.0000 (evidence/phase-3/test-survival.json).
+#   * PROJECT-SCALE Arena = 0.20 (1/5) — the OPEN GAP, tracked here as the
+#     parallel work to advance. Live multi-turn, claude teacher = 0.20
+#     (teacher_pass_rate 1/5), apr code student = 0.00 (0/5), measured in
+#     evidence/phase-5/arena-scores.json (companion-repo M234).
+#   * The static-fixture approach is self-described as Popperian-FALSIFIED as a
+#     project-scale predictor (companion-repo M224 design-audit.md §5,
+#     StaticFalsified). The 1.0000 corpus number is METER validation (the differ
+#     recognizes equivalent traces), NOT system-level project-scale parity.
+#   * Leading hypothesis for the project-scale gap (V1_004 chain, M286-M294):
+#     model-family choice is load-bearing for agentic tool-calling. The
+#     Qwen-Coder finetune family emits 0 tool_calls, while non-Coder
+#     Qwen3-30B-A3B-Instruct emits them — so the gap is a model/agentic-emission
+#     gap at project scale, NOT a function-scale code-quality gap.
+# ─────────────────────────────────────────────────────────────────────────────
+contract: beat-claude-code-parity
+metadata:
+  kind: pattern   # parity-tracking pointer, not a mathematical kernel and not a
+                  # four-pillar beat-benchmark (Claude Code is the 5th incumbent).
+  version: "1.0.0"
+  created: '2026-06-25'
+  last_modified: '2026-06-25'
+  author: PAIML Engineering
+  description: >
+    Pillar-5 (Claude Code) parity TRACKING pointer. Registers `apr code` agentic
+    coding as the fifth parity pillar alongside sklearn / PyTorch / Unsloth /
+    Ollama·llama.cpp, and records the honest split measured by the CCPA harness:
+    FUNCTION-SCALE outcome parity = 1.0000 (WON — canonical corpus 30/30 +
+    HumanEval n=5 + cross-swap test-survival 1.0000), and PROJECT-SCALE live
+    multi-turn Arena = 0.20 (1/5, claude teacher) = the OPEN GAP this contract
+    tracks. The authoritative full parity contract is
+    claude-code-parity-apr-v1.yaml (v1.32.0, 20 gates); the runtime harness lives
+    in the companion repo paiml/claude-code-parity-apr. This is a thin pointer
+    that does NOT duplicate the CCPA contract; its single obligation is that the
+    project-scale Arena oracle-pass parity must reach a threshold, with the CCPA
+    Arena bench (evidence/phase-5/arena-scores.json) as the measurement.
+  references:
+    - 'contracts/claude-code-parity-apr-v1.yaml — AUTHORITATIVE full CCPA parity contract (v1.32.0, 20 gates) this pointer tracks'
+    - 'contracts/apr-code-parity-v1.yaml — sibling: STATIC apr-code↔Claude-Code feature matrix'
+    - 'contracts/apr-claude-proxy-v1.yaml — sibling: Anthropic Messages-API request/response shape'
+    - 'https://github.com/paiml/claude-code-parity-apr — companion repo (CCPA harness, runtime enforcement)'
+    - 'companion-repo fixtures/canonical/measured-parity.json — function-scale corpus 30/30 aggregate 1.0000'
+    - 'companion-repo evidence/phase-3/multipl-e-rust-scores.json — HumanEval n=5 outcome parity 1.0000'
+    - 'companion-repo evidence/phase-5/arena-scores.json — project-scale Arena 0.20 (1/5) = the OPEN GAP'
+    - 'companion-repo book / The V1_004 chain (M286-M294) — model-family is load-bearing for agentic tool-calling'
+    - 'docs/BEATS.md § "Pillar 5 — Claude Code parity (`apr code`)"'
+    - 'paiml/aprender#1078 — CCPA M0 spec + DRAFT contract (now stale vs v1.32.0; see status note)'
+    - 'Cassano et al. 2022 (arXiv:2208.08227) — MultiPL-E (function-scale outcome-parity benchmark)'
+    - 'Jimenez et al. 2023 (arXiv:2310.06770) — SWE-bench (project-scale Arena corpus design)'
+
+name: beat-claude-code-parity
+version: "1.0.0"
+# TRACKING: the function-scale leg is WON (1.0000); the project-scale Arena leg
+# (0.20, 1/5) is the OPEN GAP this pointer tracks so the 5th pillar is advanced in
+# parallel with the four-pillar beat queue. Enforcement is companion-repo-side.
+status: TRACKING
+
+scope: >
+  The aprender-side registration of Claude Code as the 5th parity pillar. This
+  contract OWNS the tracking obligation (project-scale Arena parity must reach a
+  threshold) and POINTS at claude-code-parity-apr-v1.yaml for the full,
+  authoritative parity surface. It does NOT re-specify the CCPA trace schema,
+  per-tool equivalence rules, sovereignty constraint, or the 20 CCPA gates —
+  those live in the authoritative contract and are enforced by the companion repo
+  CI. Out of scope: re-implementing or duplicating any CCPA gate here.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Authoritative-contract pointer + measured split (audit anchor)
+# ─────────────────────────────────────────────────────────────────────────────
+authoritative_contract:
+  file: 'contracts/claude-code-parity-apr-v1.yaml'
+  version: '1.32.0'
+  gates: 20            # 16 ACTIVE_RUNTIME + 4 PROPOSED
+  enforcement_repo: 'https://github.com/paiml/claude-code-parity-apr'
+
+measured_split:
+  function_scale:
+    verdict: WON
+    outcome_parity: 1.0000
+    corpus: '30/30 canonical (fixtures/canonical/measured-parity.json)'
+    humaneval: '5/5 (evidence/phase-3/multipl-e-rust-scores.json)'
+    test_survival_cross_swap: 1.0000
+  project_scale:
+    verdict: OPEN_GAP
+    arena_oracle_pass_teacher: 0.20      # claude teacher 1/5
+    arena_oracle_pass_student: 0.00      # apr code student 0/5
+    source: 'evidence/phase-5/arena-scores.json (companion-repo M234)'
+    popperian_verdict: StaticFalsified   # static fixtures falsified as a project-scale predictor
+    leading_hypothesis: >
+      V1_004 chain (M286-M294): model-family choice is load-bearing for agentic
+      tool-calling. Qwen-Coder finetunes emit 0 tool_calls; non-Coder
+      Qwen3-30B-A3B-Instruct emits them. Project-scale gap is an agentic-emission
+      / model-family gap, not a function-scale code-quality gap.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Proof obligations (schema-validated even on kind: pattern)
+# ─────────────────────────────────────────────────────────────────────────────
+proof_obligations:
+  - id: OBLIG-CCPA-FUNCTION-SCALE-WON
+    type: equivalence
+    property: >
+      At FUNCTION scale, `apr code` and Claude Code are outcome-interchangeable:
+      the CCPA canonical-corpus aggregate parity score is >= 0.95 (measured
+      1.0000 on 30/30 fixtures) and HumanEval cross-swap test-survival is 1.0000.
+      This leg is WON and is the FLOOR, not the claim — it does NOT imply
+      project-scale parity (see the project-scale obligation, which is the gap).
+  - id: OBLIG-CCPA-PROJECT-SCALE-PARITY-GAP
+    type: bound
+    property: >
+      At PROJECT scale, the live multi-turn CCPA Arena oracle-pass parity must
+      reach a threshold. The TRACKED GAP: current claude-teacher Arena oracle
+      pass-rate is 0.20 (1/5) and apr-code-student is 0.00 (0/5) per
+      evidence/phase-5/arena-scores.json. The obligation is that a future
+      operator-dispatched Arena bench lifts the student oracle-pass parity to
+      >= the CCPA-018 floor (oracle_passed_rate >= 0.3); until then this leg is
+      an OPEN GAP, NOT a win. This is the load-bearing 5th-pillar work to advance
+      in parallel; the leading hypothesis is the V1_004 model-family finding.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Falsification tests — single-line `test:` ref into the CCPA Arena evidence.
+# These point at the companion-repo harness (the authoritative measurement); they
+# do NOT re-implement any CCPA gate.
+# ─────────────────────────────────────────────────────────────────────────────
+falsification_tests:
+  - id: FALSIFY-BEAT-CCPA-FUNCTION-SCALE
+    rule: >
+      FALSE if the CCPA function-scale corpus parity regresses below the
+      aggregate floor (0.95) — i.e. if `apr code` stops being outcome-equivalent
+      to Claude Code on the 30 canonical fixtures + HumanEval cross-swap.
+    test: ccpa corpus fixtures/canonical/ --json
+    prediction: 'aggregate_score >= 0.95 and every per-fixture score >= 0.80 (measured 1.0000, 30/30); function-scale leg stays WON.'
+    if_fails: >
+      Function-scale outcome parity regressed — inspect the drift_category in the
+      ccpa-differ ParityReport; a per-tool equivalence rule or the apr-code agent
+      loop changed. Root-cause in the companion repo (paiml/claude-code-parity-apr)
+      crates/ccpa-differ; this is the WON leg, so any drop is a regression.
+  - id: FALSIFY-BEAT-CCPA-PROJECT-SCALE-ARENA
+    rule: >
+      FALSE-as-a-WIN-claim while the project-scale Arena oracle-pass parity stays
+      below the CCPA-018 floor. This is the OPEN GAP: apr-code student
+      oracle_passed_rate is 0.00 (0/5) vs claude teacher 0.20 (1/5). The gate is
+      DISCHARGED only when a fresh operator-dispatched Arena bench records
+      student oracle_passed_rate >= 0.3 in evidence/phase-5/arena-scores.json.
+    test: ccpa arena fixtures/project-scale/ --json
+    prediction: 'TRACKED GAP — student oracle_passed_rate currently 0.00 (< 0.3 floor); claude teacher 0.20 (1/5). NOT yet a win; advance via the V1_004 model-family fix.'
+    if_fails: >
+      Expected while the gap is open. Discharge requires lifting the apr-code
+      student project-scale Arena oracle-pass parity to >= 0.3 — leading lever is
+      the V1_004 finding (swap the Qwen-Coder finetune, which emits 0 tool_calls,
+      for a tool-call-emitting non-Coder model such as Qwen3-30B-A3B-Instruct).
+      Re-run scripts/phase-5-arena-bench.sh in the companion repo and update
+      evidence/phase-5/arena-scores.json.

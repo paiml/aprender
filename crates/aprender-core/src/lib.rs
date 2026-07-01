@@ -68,6 +68,9 @@
 // GH-41: unwrap() banned in production code via .clippy.toml.
 // Tests use unwrap() freely — scoped allow for test builds only.
 #![cfg_attr(test, allow(clippy::disallowed_methods))]
+// PMAT-124: every `unsafe { ... }` block must carry a `// SAFETY:` comment.
+// Lib is clear today; enforce as a hard error so it stays that way.
+#![deny(clippy::undocumented_unsafe_blocks)]
 
 // Contract assertions from YAML (pv codegen)
 #[macro_use]

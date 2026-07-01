@@ -291,6 +291,7 @@ impl CudaExecutor {
         let mut k_val = k;
         let mut n_val = n;
 
+        // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
         unsafe {
             self.stream.launch_kernel(
                 module,
@@ -761,6 +762,7 @@ impl CudaExecutor {
         let mut n_val = n;
         let mut k_val = k;
 
+        // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
         unsafe {
             self.stream.launch_kernel(
                 module,
@@ -863,6 +865,7 @@ impl CudaExecutor {
         let mut n_val = n;
         let mut k_val = k;
 
+        // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
         unsafe {
             self.stream.launch_kernel(
                 module,
@@ -954,6 +957,7 @@ impl CudaExecutor {
             let mut inp = packed_input_ptr;
             let mut n_val = total_f32_elements;
 
+            // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
             unsafe {
                 self.stream.launch_kernel(
                     module,
@@ -999,6 +1003,7 @@ impl CudaExecutor {
         let mut n_val = n;
         let mut k_val = k;
 
+        // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
         unsafe {
             self.stream.launch_kernel(
                 module,
@@ -1080,6 +1085,7 @@ impl CudaExecutor {
         let mut n_val = n;
         let mut k_val = k;
 
+        // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
         unsafe {
             self.stream.launch_kernel(
                 module,

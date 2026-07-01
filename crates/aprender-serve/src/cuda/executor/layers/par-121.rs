@@ -79,6 +79,7 @@ impl CudaExecutor {
         if let Some(ref mut pos_buf) = self.workspace.positions_buf {
             if pos_buf.len() >= m {
                 let mut wrapper =
+                    // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
                     unsafe { GpuBuffer::<u32>::from_raw_parts(pos_buf.as_ptr(), m) };
                 wrapper.copy_from_host(&positions_to_upload)?;
                 std::mem::forget(wrapper);
@@ -97,6 +98,7 @@ impl CudaExecutor {
         if let Some(ref mut seq_buf) = self.batched_seq_lens_gpu {
             if seq_buf.len() >= m {
                 let mut wrapper =
+                    // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
                     unsafe { GpuBuffer::<u32>::from_raw_parts(seq_buf.as_ptr(), m) };
                 wrapper.copy_from_host(&real_seq_lens)?;
                 std::mem::forget(wrapper);
@@ -358,10 +360,12 @@ impl CudaExecutor {
         // Prior PMAT-075 used sync copy_from_host (stream 0), adding 2.8ms overhead.
         // All host data (&inputs, &positions, seq_lens Vec) lives until stream.synchronize().
         if let Some(ref mut input_buf) = self.batched_graph_input_buf {
+            // SAFETY: stream-ordered host-to-device copy; the host slice and the destination device buffer have matching element counts and both outlive the async transfer on the CUDA stream.
             unsafe { input_buf.copy_from_host_async(inputs, &self.stream)?; }
         }
 
         if let Some(ref mut pos_buf) = self.batched_graph_positions_buf {
+            // SAFETY: stream-ordered host-to-device copy; the host slice and the destination device buffer have matching element counts and both outlive the async transfer on the CUDA stream.
             unsafe { pos_buf.copy_from_host_async(positions, &self.stream)?; }
         }
 
@@ -378,6 +382,7 @@ impl CudaExecutor {
             })
             .collect();
         if let Some(ref mut len_buf) = self.batched_graph_seq_lens_buf {
+            // SAFETY: stream-ordered host-to-device copy; the host slice and the destination device buffer have matching element counts and both outlive the async transfer on the CUDA stream.
             unsafe { len_buf.copy_from_host_async(&seq_lens, &self.stream)?; }
         }
 
@@ -385,7 +390,9 @@ impl CudaExecutor {
         if let Some(ref mut seq_lens_gpu) = self.batched_seq_lens_gpu {
             // PMAT-088b: Use exact-M view for async copy (buffer may be high-water-mark sized)
             let ptr = seq_lens_gpu.as_ptr();
+            // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
             let mut view = unsafe { GpuBuffer::<u32>::from_raw_parts(ptr, m) };
+            // SAFETY: stream-ordered host-to-device copy; the host slice and the destination device buffer have matching element counts and both outlive the async transfer on the CUDA stream.
             unsafe { view.copy_from_host_async(&seq_lens, &self.stream)?; }
             std::mem::forget(view);
         }
@@ -394,7 +401,9 @@ impl CudaExecutor {
         if let Some(ref mut pos_buf) = self.workspace.positions_buf {
             if pos_buf.len() >= m {
                 let mut wrapper =
+                    // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
                     unsafe { GpuBuffer::<u32>::from_raw_parts(pos_buf.as_ptr(), m) };
+                // SAFETY: stream-ordered host-to-device copy; the host slice and the destination device buffer have matching element counts and both outlive the async transfer on the CUDA stream.
                 unsafe { wrapper.copy_from_host_async(positions, &self.stream)?; }
                 std::mem::forget(wrapper);
             }

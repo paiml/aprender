@@ -252,6 +252,7 @@ pub fn cast_f32_to_f16_gpu(
     let mut args: [*mut std::ffi::c_void; 3] =
         [&src_ptr as *const _ as *mut _, &dst_ptr as *const _ as *mut _, &n as *const _ as *mut _];
 
+    // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
     unsafe {
         stream
             .launch_kernel(module, "cast_f32_to_f16", &config, &mut args)

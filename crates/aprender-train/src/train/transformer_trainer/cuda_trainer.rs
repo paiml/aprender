@@ -1179,6 +1179,7 @@ impl CudaTransformerTrainer {
             // SAFETY: input_ptr and output_ptr point to disjoint fwd_scratch_{a,b}.
             // ENT-263: Pass shared scratch for NF4 blocks (C-SCRATCH-001).
             self.profiler.begin_layer();
+            // SAFETY: `input_ptr` and `output_ptr` point to disjoint scratch buffers (distinct `fwd_scratch_{a,b}` / `layer_inputs` slots), so reborrowing one as `&` and the other as `&mut` for the GPU forward never creates aliasing references.
             unsafe {
                 block
                     .forward(
@@ -1202,6 +1203,7 @@ impl CudaTransformerTrainer {
         // Save blocks output for final norm backward
         // SAFETY: Disjoint GPU buffers with matching max_seq_len sizes.
         self.profiler.begin(StepProfiler::NORM_LM);
+        // SAFETY: stream-ordered device-to-device copy between two distinct `GpuBuffer`s of matching element length on the same context; both allocations outlive the async copy on `stream`.
         unsafe {
             self.gpu_training.blocks_output.copy_from_buffer_async(final_output, stream).ok()?;
         }
@@ -1388,6 +1390,7 @@ impl CudaTransformerTrainer {
         // Copy checkpoint input to recompute_buf as starting point.
         // SAFETY: recompute_buf and layer_inputs are disjoint allocations.
         let recompute_buf = gpu_training.recompute_buf.as_mut()?;
+        // SAFETY: stream-ordered device-to-device copy between two distinct `GpuBuffer`s of matching element length on the same context; both allocations outlive the async copy on `stream`.
         unsafe {
             recompute_buf
                 .copy_from_buffer_async(&gpu_training.layer_inputs[seg_start], stream)
@@ -1409,6 +1412,7 @@ impl CudaTransformerTrainer {
                 // Input is in recompute_buf, output goes to layer_inputs[i+1]
                 let recompute_ptr: *const GpuBuffer<f32> = recompute_buf;
                 let li = &mut gpu_training.layer_inputs;
+                // SAFETY: `input_ptr` and `output_ptr` point to disjoint scratch buffers (distinct `fwd_scratch_{a,b}` / `layer_inputs` slots), so reborrowing one as `&` and the other as `&mut` for the GPU forward never creates aliasing references.
                 unsafe {
                     cuda_blocks[i]
                         .forward(
@@ -1608,6 +1612,7 @@ impl CudaTransformerTrainer {
                 )?;
             }
 
+            // SAFETY: ping-pong double-buffering. The two raw pointers reference distinct, non-overlapping device buffers (the `_a`/`_b` scratch pair); the boolean flag picks one as `&` input and the other as `&mut` output, so the resulting references never alias the same allocation.
             let (grad_output, grad_input) = unsafe {
                 if grad_output_is_a {
                     (&*grad_a_ptr, &mut *grad_b_ptr)
@@ -2168,6 +2173,7 @@ impl CudaTransformerTrainer {
         // The final backward output is in whichever buffer was last written
         let grad_a_ptr: *const GpuBuffer<f32> = &raw const self.gpu_training.grad_buf_a;
         let grad_b_ptr: *const GpuBuffer<f32> = &raw const self.gpu_training.grad_buf_b;
+        // SAFETY: ping-pong double-buffering. The two raw pointers reference distinct, non-overlapping device buffers (the `_a`/`_b` scratch pair); the boolean flag picks one as `&` input and the other as `&mut` output, so the resulting references never alias the same allocation.
         let embed_grad_buf = unsafe {
             if grad_output_is_a {
                 &*grad_a_ptr

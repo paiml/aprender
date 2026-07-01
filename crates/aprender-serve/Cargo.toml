@@ -29,6 +29,14 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)', 'cfg(feature, 
 [lints.rust]
 unsafe_code = "allow"
 
+[lints.clippy]
+# Every `unsafe { ... }` block must carry a `// SAFETY:` comment (PMAT-134).
+# Fully cleared at the `full` feature set (server+cli+gpu+cuda+registry) — enforced
+# as a hard error. NOTE: the broken `visualization` feature (pre-existing trueno-viz
+# `WithDimensions` breakage, unrelated to safety docs) is excluded from CI's feature
+# matrix; `--all-features` does not compile here for that reason.
+undocumented_unsafe_blocks = "deny"
+
 [lib]
 name = "realizar"
 
