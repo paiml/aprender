@@ -10,6 +10,8 @@
 // `quantize_q4_k_matrix`).
 
 use crate::format::v2::{AprV2ReaderRef, AprV2StreamingWriter};
+// issue #2231: `get_tensor_as_f32` is the re-attached `AprV2DequantExt` method.
+use crate::format::AprV2DequantExt;
 
 /// Streaming threshold: inputs at or above this size take the streaming path.
 ///

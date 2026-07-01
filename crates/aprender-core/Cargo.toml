@@ -93,6 +93,11 @@ trueno = { workspace = true }
 # Path dependency until published to crates.io
 trueno-quant = { workspace = true }
 
+# APR-2231: sovereign `.apr` container leaf. aprender-core From-wraps its
+# AprFormatError into AprenderError and re-exports it (no API break). Leaf has
+# no dependency back on core, so this introduces no publish cycle.
+apr-format = { path = "../apr-format", version = "0.55" }
+
 # NOTE: trueno-rag (=aprender-rag) removed (APR-MONO self-containment): aprender-rag
 # depends on aprender-core + aprender-serve, so core→rag closed a core→rag→serve→core
 # cycle. RAG lives in the aprender-rag crate (which depends on core), not the reverse.
@@ -181,7 +186,7 @@ half = { workspace = true }  # IEEE f16 oracle for the convert_report f32_to_f16
 default = ["parallel"]
 parallel = ["rayon"]  # Enable parallel graph algorithms (disable for WASM)
 datasets = ["alimentar"]  # Enable data loading from alimentar
-format-compression = ["lz4_flex", "zstd"]  # Enable LZ4/ZSTD compression for .apr format (spec §3.3, GH-146)
+format-compression = ["lz4_flex", "zstd", "apr-format/compression"]  # Enable LZ4/ZSTD compression for .apr format (spec §3.3, GH-146); forward to apr-format so container I/O actually compresses
 format-signing = ["ed25519-dalek"]  # Enable Ed25519 signatures for .apr format (spec §4.2)
 format-encryption = ["aes-gcm", "argon2", "x25519-dalek", "hkdf", "sha2"]  # Enable encryption for .apr format (spec §4.1)
 format-quantize = ["half"]  # Enable quantization for .apr format (spec §6.2)

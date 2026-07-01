@@ -181,6 +181,7 @@ fn load_tensor_data_gguf(path: &Path) -> Result<TensorDataMap> {
 /// Load tensor data from APR v2 format.
 fn load_tensor_data_apr(path: &Path) -> Result<TensorDataMap> {
     use aprender::format::v2::AprV2Reader;
+    use aprender::format::AprV2DequantExt; // issue #2231 re-attached accessor
 
     let data = fs::read(path)?;
     let reader = AprV2Reader::from_bytes(&data)

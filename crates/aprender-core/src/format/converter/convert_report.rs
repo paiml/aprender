@@ -168,6 +168,7 @@ fn load_gguf_tensors_f32(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<
 /// Handles all APR dtypes: F32, F16, BF16, Q4_K, Q6_K, Q8_0
 fn load_apr_tensors_f32(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>> {
     use crate::format::v2::AprV2Reader;
+    use crate::format::AprV2DequantExt; // issue #2231 re-attached accessor
 
     let data = fs::read(path).map_err(|e| AprenderError::FormatError {
         message: format!("Failed to read APR file: {e}"),

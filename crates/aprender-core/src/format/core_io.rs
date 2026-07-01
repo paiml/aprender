@@ -1,19 +1,108 @@
-//! APR format core I/O operations (save, load, inspect)
+//! APR format core I/O — re-export seam over the sovereign `apr-format` leaf.
+//!
+//! Issue #2231: the v1 container save/load/inspect path moved to the `apr-format`
+//! leaf crate. This module re-exports the leaf's public API so existing
+//! `aprender::format::*` paths keep resolving, and keeps the framework-only bits
+//! that genuinely depend on `aprender-core` (the `bundle::MappedFile`-backed
+//! `load_mmap`, and the feature-gated encryption/signing helpers, which pull
+//! `aes_gcm` / `argon2` / `ed25519_dalek`).
 
-use super::{Compression, Header, Metadata, ModelInfo, ModelType, SaveOptions, HEADER_SIZE};
+use super::{Compression, ModelInfo, ModelType, SaveOptions};
 use crate::error::{AprenderError, Result};
-use serde::{de::DeserializeOwned, Serialize};
-use std::fs::File;
-#[cfg(feature = "format-compression")]
-use std::io::Cursor;
-use std::io::{BufReader, BufWriter, Read, Write};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use std::path::Path;
+
+// Imports used only by the feature-gated signing/encryption helpers below.
+#[cfg(any(feature = "format-signing", feature = "format-encryption"))]
+use super::{Header, HEADER_SIZE};
+#[cfg(any(feature = "format-signing", feature = "format-encryption"))]
+use std::fs::File;
+#[cfg(any(feature = "format-signing", feature = "format-encryption"))]
+use std::io::{BufReader, Read};
+
+// The leaf's `MMAP_THRESHOLD` re-exports byte-identically.
+pub use apr_format::core_io::MMAP_THRESHOLD;
+
+// Thin wrappers over the leaf's container I/O so the public signatures keep
+// returning `aprender::Result<_>` (i.e. `AprenderError`), NOT the leaf's
+// `apr_format::Result`. This preserves the EXACT pre-extraction API for every
+// downstream caller (a bare `crate::format::save(...)` tail expression must
+// still type-check as `Result<(), AprenderError>`); the `?` lifts the leaf
+// error via `impl From<AprFormatError> for AprenderError` (issue #2231).
+
+/// Save a model to `.apr` (v1 `APRN`) format. Delegates to the sovereign leaf.
+///
+/// # Errors
+/// Returns an error on I/O failure, serialization error, or a refused quality gate.
+#[allow(clippy::needless_pass_by_value)]
+pub fn save<M: Serialize>(
+    model: &M,
+    model_type: ModelType,
+    path: impl AsRef<Path>,
+    options: SaveOptions,
+) -> Result<()> {
+    Ok(apr_format::core_io::save(model, model_type, path, options)?)
+}
+
+/// Load a model from a `.apr` (v1 `APRN`) file. Delegates to the sovereign leaf.
+///
+/// # Errors
+/// Returns an error on I/O failure, format error, checksum failure, or type mismatch.
+pub fn load<M: DeserializeOwned>(path: impl AsRef<Path>, expected_type: ModelType) -> Result<M> {
+    Ok(apr_format::core_io::load(path, expected_type)?)
+}
+
+/// Load a model from a byte slice. Delegates to the sovereign leaf.
+///
+/// # Errors
+/// Returns an error on format error, type mismatch, or checksum failure.
+pub fn load_from_bytes<M: DeserializeOwned>(data: &[u8], expected_type: ModelType) -> Result<M> {
+    Ok(apr_format::core_io::load_from_bytes(data, expected_type)?)
+}
+
+/// Load with automatic strategy selection based on file size. Delegates to the leaf.
+///
+/// # Errors
+/// Returns an error on file-not-found, format error, type mismatch, or checksum failure.
+pub fn load_auto<M: DeserializeOwned>(
+    path: impl AsRef<Path>,
+    expected_type: ModelType,
+) -> Result<M> {
+    Ok(apr_format::core_io::load_auto(path, expected_type)?)
+}
+
+/// Inspect model bytes without loading the payload. Delegates to the leaf.
+///
+/// # Errors
+/// Returns an error on a too-small buffer, a bad header, or out-of-bounds metadata.
+pub fn inspect_bytes(data: &[u8]) -> Result<ModelInfo> {
+    Ok(apr_format::core_io::inspect_bytes(data)?)
+}
+
+/// Inspect a model file without loading the payload. Delegates to the leaf.
+///
+/// # Errors
+/// Returns an error on I/O failure or a format error.
+pub fn inspect(path: impl AsRef<Path>) -> Result<ModelInfo> {
+    Ok(apr_format::core_io::inspect(path)?)
+}
 
 #[cfg(feature = "format-encryption")]
 use super::{KEY_SIZE, NONCE_SIZE, SALT_SIZE};
 
-/// Compress payload based on algorithm (spec 3.3)
-#[allow(clippy::unnecessary_wraps)] // Returns Result to handle compression errors when feature enabled
+// ============================================================================
+// Feature-gated helpers retained in core for the signing / encryption modules.
+// These pull `aes_gcm` / `argon2` / `ed25519_dalek` and so cannot live in the
+// sovereign leaf. They are byte-identical to the pre-extraction core helpers.
+// ============================================================================
+
+/// Compress payload based on algorithm (spec §3.3).
+///
+/// Retained in core (not the leaf) because it switches on the optional
+/// `format-compression` zstd/lz4 deps; used by signing/encryption and the
+/// compression unit tests. Byte-identical to the pre-extraction core helper.
+#[allow(clippy::unnecessary_wraps, dead_code)]
 pub(crate) fn compress_payload(
     data: &[u8],
     compression: Compression,
@@ -22,46 +111,43 @@ pub(crate) fn compress_payload(
         Compression::None => Ok((data.to_vec(), Compression::None)),
         #[cfg(feature = "format-compression")]
         Compression::ZstdDefault => {
-            // Zstd level 3 (good balance of speed and ratio)
-            let compressed = zstd::encode_all(Cursor::new(data), 3).map_err(|e| {
+            let compressed = zstd::encode_all(std::io::Cursor::new(data), 3).map_err(|e| {
                 AprenderError::Serialization(format!("Zstd compression failed: {e}"))
             })?;
             Ok((compressed, Compression::ZstdDefault))
         }
         #[cfg(feature = "format-compression")]
         Compression::ZstdMax => {
-            // Zstd level 19 (maximum compression for archival)
-            let compressed = zstd::encode_all(Cursor::new(data), 19).map_err(|e| {
+            let compressed = zstd::encode_all(std::io::Cursor::new(data), 19).map_err(|e| {
                 AprenderError::Serialization(format!("Zstd compression failed: {e}"))
             })?;
             Ok((compressed, Compression::ZstdMax))
         }
         #[cfg(not(feature = "format-compression"))]
-        Compression::ZstdDefault | Compression::ZstdMax => {
-            // Feature not enabled, fall back to no compression
-            Ok((data.to_vec(), Compression::None))
-        }
+        Compression::ZstdDefault | Compression::ZstdMax => Ok((data.to_vec(), Compression::None)),
         #[cfg(feature = "format-compression")]
         Compression::Lz4 => {
-            // LZ4 compression using lz4_flex with prepended size (GH-146)
             let compressed = lz4_flex::compress_prepend_size(data);
             Ok((compressed, Compression::Lz4))
         }
         #[cfg(not(feature = "format-compression"))]
-        Compression::Lz4 => {
-            // Feature not enabled, fall back to no compression
-            Ok((data.to_vec(), Compression::None))
-        }
+        Compression::Lz4 => Ok((data.to_vec(), Compression::None)),
     }
 }
 
-/// Decompress payload based on algorithm (spec 3.3)
+/// Decompress payload based on algorithm (spec §3.3).
+///
+/// Retained in core for the same reason as [`compress_payload`].
+#[allow(dead_code)]
 pub(crate) fn decompress_payload(data: &[u8], compression: Compression) -> Result<Vec<u8>> {
     match compression {
         Compression::None => Ok(data.to_vec()),
         #[cfg(feature = "format-compression")]
-        Compression::ZstdDefault | Compression::ZstdMax => zstd::decode_all(Cursor::new(data))
-            .map_err(|e| AprenderError::Serialization(format!("Zstd decompression failed: {e}"))),
+        Compression::ZstdDefault | Compression::ZstdMax => {
+            zstd::decode_all(std::io::Cursor::new(data)).map_err(|e| {
+                AprenderError::Serialization(format!("Zstd decompression failed: {e}"))
+            })
+        }
         #[cfg(not(feature = "format-compression"))]
         Compression::ZstdDefault | Compression::ZstdMax => Err(AprenderError::FormatError {
             message: "Zstd compression not supported (enable format-compression feature)"
@@ -77,41 +163,6 @@ pub(crate) fn decompress_payload(data: &[u8], compression: Compression) -> Resul
         }),
     }
 }
-
-/// CRC32 checksum (IEEE polynomial)
-pub(crate) fn crc32(data: &[u8]) -> u32 {
-    // CRC32 lookup table (IEEE polynomial 0xEDB88320)
-    const TABLE: [u32; 256] = {
-        let mut table = [0u32; 256];
-        let mut i = 0;
-        while i < 256 {
-            let mut crc = i as u32;
-            let mut j = 0;
-            while j < 8 {
-                if crc & 1 != 0 {
-                    crc = (crc >> 1) ^ 0xEDB8_8320;
-                } else {
-                    crc >>= 1;
-                }
-                j += 1;
-            }
-            table[i] = crc;
-            i += 1;
-        }
-        table
-    };
-
-    let mut crc = 0xFFFF_FFFF_u32;
-    for &byte in data {
-        let idx = ((crc ^ u32::from(byte)) & 0xFF) as usize;
-        crc = (crc >> 8) ^ TABLE[idx];
-    }
-    !crc
-}
-
-// ============================================================================
-// FILE LOADING HELPER FUNCTIONS (Refactored for reduced complexity)
-// ============================================================================
 
 /// Read entire file content into a buffer.
 #[cfg(any(feature = "format-signing", feature = "format-encryption"))]
@@ -137,7 +188,7 @@ pub(crate) fn verify_file_checksum(content: &[u8]) -> Result<()> {
         content[content.len() - 2],
         content[content.len() - 1],
     ]);
-    let computed_checksum = crc32(&content[..content.len() - 4]);
+    let computed_checksum = apr_format::crc32(&content[..content.len() - 4]);
     if stored_checksum != computed_checksum {
         return Err(AprenderError::ChecksumMismatch {
             expected: stored_checksum,
@@ -153,7 +204,11 @@ pub(crate) fn parse_and_validate_header(
     content: &[u8],
     expected_type: ModelType,
 ) -> Result<Header> {
-    contract_pre_header_size_validation!();
+    if content.len() < HEADER_SIZE {
+        return Err(AprenderError::FormatError {
+            message: format!("File too small for header: {} bytes", content.len()),
+        });
+    }
     let header = Header::from_bytes(&content[..HEADER_SIZE])?;
     if header.model_type != expected_type {
         return Err(AprenderError::FormatError {
@@ -163,7 +218,6 @@ pub(crate) fn parse_and_validate_header(
             ),
         });
     }
-    contract_post_header_size_validation!(&header);
     Ok(header)
 }
 
@@ -211,207 +265,66 @@ pub(crate) fn decompress_and_deserialize<M: DeserializeOwned>(
         .map_err(|e| AprenderError::Serialization(format!("Failed to deserialize model: {e}")))
 }
 
-/// Save a model to .apr format
+/// Load a model using memory-mapped I/O via `aprender`'s `bundle::MappedFile`.
 ///
-/// # Arguments
-/// * `model` - The model to save (must implement Serialize)
-/// * `model_type` - Model type identifier
-/// * `path` - Output file path
-/// * `options` - Save options (compression, metadata)
+/// This is the framework-side `load_mmap` (distinct from the leaf's
+/// `memmap2`-direct one): it uses `aprender-core`'s bundle abstraction. Existing
+/// `aprender::format::load_mmap` callers resolve here.
 ///
 /// # Errors
-/// Returns error on I/O failure or serialization error
-#[allow(clippy::needless_pass_by_value)] // SaveOptions is small and passed by value for ergonomics
-pub fn save<M: Serialize>(
-    model: &M,
-    model_type: ModelType,
+/// Returns an error on file-not-found, a format error, a type mismatch, or a
+/// checksum failure.
+pub fn load_mmap<M: DeserializeOwned>(
     path: impl AsRef<Path>,
-    options: SaveOptions,
-) -> Result<()> {
-    let path = path.as_ref();
+    expected_type: ModelType,
+) -> Result<M> {
+    use crate::bundle::MappedFile;
+    let mapped = MappedFile::open(path.as_ref())?;
+    load_from_bytes(mapped.as_slice(), expected_type)
+}
 
-    // APR-POKA-001: Jidoka gate - refuse to write if validation explicitly failed
-    // Score 0 means "validation rules exist but model failed all of them"
-    if options.quality_score == Some(0) {
-        return Err(AprenderError::ValidationError {
-            message: "Jidoka: Refusing to save model with quality_score=0. \
-                      Fix validation errors or use score=None to skip validation."
-                .to_string(),
+// ============================================================================
+// ENCRYPTION HELPER FUNCTIONS
+// ============================================================================
+
+/// Verify encrypted data has minimum required size.
+#[cfg(feature = "format-encryption")]
+pub(crate) fn verify_encrypted_data_size(data: &[u8]) -> Result<()> {
+    if data.len() < HEADER_SIZE + SALT_SIZE + NONCE_SIZE + 4 {
+        return Err(AprenderError::FormatError {
+            message: format!("Data too small for encrypted model: {} bytes", data.len()),
         });
     }
-
-    // Serialize payload with bincode
-    let payload_uncompressed = bincode::serialize(model)
-        .map_err(|e| AprenderError::Serialization(format!("Failed to serialize model: {e}")))?;
-
-    // Compress payload
-    let (payload_compressed, compression) =
-        compress_payload(&payload_uncompressed, options.compression)?;
-
-    // Serialize metadata as MessagePack with named fields (spec 2)
-    // Must use to_vec_named() for map mode to preserve field names with skip_serializing_if
-    let metadata_bytes = rmp_serde::to_vec_named(&options.metadata)
-        .map_err(|e| AprenderError::Serialization(format!("Failed to serialize metadata: {e}")))?;
-
-    // Build header
-    let mut header = Header::new(model_type);
-    header.compression = compression;
-    header.metadata_size = metadata_bytes.len() as u32;
-    header.payload_size = payload_compressed.len() as u32;
-    header.uncompressed_size = payload_uncompressed.len() as u32;
-
-    // Set LICENSED flag if license info present (spec 9.1)
-    if options.metadata.license.is_some() {
-        header.flags = header.flags.with_licensed();
-    }
-
-    // APR-POKA-001: Set quality score in header (0 = no validation performed)
-    header.quality_score = options.quality_score.unwrap_or(0);
-
-    // Assemble file content (without checksum)
-    let mut content = Vec::new();
-    content.extend_from_slice(&header.to_bytes());
-    content.extend_from_slice(&metadata_bytes);
-    content.extend_from_slice(&payload_compressed);
-
-    // Calculate and append checksum
-    let checksum = crc32(&content);
-    content.extend_from_slice(&checksum.to_le_bytes());
-
-    // Write to file
-    let file = File::create(path)?;
-    let mut writer = BufWriter::new(file);
-    writer.write_all(&content)?;
-    writer.flush()?;
-
     Ok(())
 }
 
-/// Load a model from .apr format
-///
-/// # Arguments
-/// * `path` - Input file path
-/// * `expected_type` - Expected model type (for type safety)
-///
-/// # Errors
-/// Returns error on I/O failure, format error, or type mismatch
-pub fn load<M: DeserializeOwned>(path: impl AsRef<Path>, expected_type: ModelType) -> Result<M> {
-    let path = path.as_ref();
-
-    // Read entire file
-    let file = File::open(path)?;
-    let mut reader = BufReader::new(file);
-    let mut content = Vec::new();
-    reader.read_to_end(&mut content)?;
-
-    // Verify minimum size
-    if content.len() < HEADER_SIZE + 4 {
-        return Err(AprenderError::FormatError {
-            message: format!("File too small: {} bytes", content.len()),
-        });
-    }
-
-    // Verify checksum (Jidoka: stop the line on corruption)
-    let stored_checksum = u32::from_le_bytes([
-        content[content.len() - 4],
-        content[content.len() - 3],
-        content[content.len() - 2],
-        content[content.len() - 1],
-    ]);
-    let computed_checksum = crc32(&content[..content.len() - 4]);
-    if stored_checksum != computed_checksum {
-        return Err(AprenderError::ChecksumMismatch {
-            expected: stored_checksum,
-            actual: computed_checksum,
-        });
-    }
-
-    // Parse header
-    let header = Header::from_bytes(&content[..HEADER_SIZE])?;
-
-    // Verify model type
-    if header.model_type != expected_type {
-        return Err(AprenderError::FormatError {
-            message: format!(
-                "Model type mismatch: file contains {:?}, expected {:?}",
-                header.model_type, expected_type
-            ),
-        });
-    }
-
-    // Extract payload
-    let metadata_end = HEADER_SIZE + header.metadata_size as usize;
-    let payload_end = metadata_end + header.payload_size as usize;
-
-    if payload_end > content.len() - 4 {
-        return Err(AprenderError::FormatError {
-            message: "Payload extends beyond file boundary".to_string(),
-        });
-    }
-
-    let payload_compressed = &content[metadata_end..payload_end];
-
-    // Decompress payload
-    let payload_uncompressed = decompress_payload(payload_compressed, header.compression)?;
-
-    // Deserialize model
-    bincode::deserialize(&payload_uncompressed)
-        .map_err(|e| AprenderError::Serialization(format!("Failed to deserialize model: {e}")))
-}
-
-/// Load a model from a byte slice (spec 1.1 - Single Binary Deployment)
-///
-/// Enables the `include_bytes!()` pattern for embedding models directly
-/// in executables. This is the key function for zero-dependency ML deployment.
-///
-/// # Arguments
-/// * `data` - Raw .apr file bytes (e.g., from `include_bytes!()`)
-/// * `expected_type` - Expected model type (for type safety)
-///
-/// # Example
-///
-/// ```rust,ignore
-/// use aprender::format::{load_from_bytes, ModelType};
-///
-/// // Embed model at compile time
-/// const MODEL: &[u8] = include_bytes!("sentiment.apr");
-///
-/// fn main() -> Result<()> {
-///     let model: LogisticRegression = load_from_bytes(MODEL, ModelType::LogisticRegression)?;
-///     let prediction = model.predict(&input)?;
-///     Ok(())
-/// }
-/// ```
-///
-/// # Errors
-/// Returns error on format error, type mismatch, or checksum failure
-pub fn load_from_bytes<M: DeserializeOwned>(data: &[u8], expected_type: ModelType) -> Result<M> {
-    // Verify minimum size
-    if data.len() < HEADER_SIZE + 4 {
-        return Err(AprenderError::FormatError {
-            message: format!("Data too small: {} bytes", data.len()),
-        });
-    }
-
-    // Verify checksum (Jidoka: stop the line on corruption)
+/// Verify encrypted data checksum.
+#[cfg(feature = "format-encryption")]
+pub(crate) fn verify_encrypted_checksum(data: &[u8]) -> Result<()> {
     let stored_checksum = u32::from_le_bytes([
         data[data.len() - 4],
         data[data.len() - 3],
         data[data.len() - 2],
         data[data.len() - 1],
     ]);
-    let computed_checksum = crc32(&data[..data.len() - 4]);
+    let computed_checksum = apr_format::crc32(&data[..data.len() - 4]);
     if stored_checksum != computed_checksum {
         return Err(AprenderError::ChecksumMismatch {
             expected: stored_checksum,
             actual: computed_checksum,
         });
     }
+    Ok(())
+}
 
-    // Parse header
-    let header = Header::from_bytes(&data[..HEADER_SIZE])?;
-
-    // Verify model type
+/// Verify header has ENCRYPTED flag and correct model type.
+#[cfg(feature = "format-encryption")]
+pub(crate) fn verify_encrypted_header(header: &Header, expected_type: ModelType) -> Result<()> {
+    if !header.flags.is_encrypted() {
+        return Err(AprenderError::FormatError {
+            message: "Data is not encrypted (ENCRYPTED flag not set)".to_string(),
+        });
+    }
     if header.model_type != expected_type {
         return Err(AprenderError::FormatError {
             message: format!(
@@ -420,32 +333,95 @@ pub fn load_from_bytes<M: DeserializeOwned>(data: &[u8], expected_type: ModelTyp
             ),
         });
     }
+    Ok(())
+}
 
-    // Extract payload
+/// Extract salt, nonce, and ciphertext from encrypted data.
+#[cfg(feature = "format-encryption")]
+pub(crate) fn extract_encrypted_components<'a>(
+    data: &'a [u8],
+    header: &Header,
+) -> Result<([u8; SALT_SIZE], [u8; NONCE_SIZE], &'a [u8])> {
     let metadata_end = HEADER_SIZE + header.metadata_size as usize;
+    let salt_end = metadata_end + SALT_SIZE;
+    let nonce_end = salt_end + NONCE_SIZE;
     let payload_end = metadata_end + header.payload_size as usize;
 
     if payload_end > data.len() - 4 {
         return Err(AprenderError::FormatError {
-            message: "Payload extends beyond data boundary".to_string(),
+            message: "Encrypted payload extends beyond data boundary".to_string(),
         });
     }
 
-    let payload_compressed = &data[metadata_end..payload_end];
+    let salt: [u8; SALT_SIZE] =
+        data[metadata_end..salt_end]
+            .try_into()
+            .map_err(|_| AprenderError::FormatError {
+                message: "Invalid salt size".to_string(),
+            })?;
+    let nonce: [u8; NONCE_SIZE] =
+        data[salt_end..nonce_end]
+            .try_into()
+            .map_err(|_| AprenderError::FormatError {
+                message: "Invalid nonce size".to_string(),
+            })?;
+    let ciphertext = &data[nonce_end..payload_end];
 
-    // Decompress payload
-    let payload_uncompressed = decompress_payload(payload_compressed, header.compression)?;
+    Ok((salt, nonce, ciphertext))
+}
 
-    // Deserialize model
+/// Decrypt payload using password and extracted components.
+#[cfg(feature = "format-encryption")]
+pub(crate) fn decrypt_encrypted_payload(
+    password: &str,
+    salt: &[u8; SALT_SIZE],
+    nonce_bytes: &[u8; NONCE_SIZE],
+    ciphertext: &[u8],
+) -> Result<Vec<u8>> {
+    use aes_gcm::{
+        aead::{Aead, KeyInit},
+        Aes256Gcm, Nonce,
+    };
+    use argon2::Argon2;
+
+    let mut key = [0u8; KEY_SIZE];
+    Argon2::default()
+        .hash_password_into(password.as_bytes(), salt, &mut key)
+        .map_err(|e| AprenderError::Other(format!("Key derivation failed: {e}")))?;
+
+    let cipher = Aes256Gcm::new_from_slice(&key)
+        .map_err(|e| AprenderError::Other(format!("Failed to create cipher: {e}")))?;
+    let nonce = Nonce::from_slice(nonce_bytes);
+
+    cipher
+        .decrypt(nonce, ciphertext)
+        .map_err(|_| AprenderError::DecryptionFailed {
+            message: "Decryption failed (wrong password or corrupted data)".to_string(),
+        })
+}
+
+/// Load an encrypted model from a byte slice (spec §1.1 + §4.1.2).
+///
+/// # Errors
+/// Returns an error on a format error, a type mismatch, or a decryption failure.
+#[cfg(feature = "format-encryption")]
+pub fn load_from_bytes_encrypted<M: DeserializeOwned>(
+    data: &[u8],
+    expected_type: ModelType,
+    password: &str,
+) -> Result<M> {
+    verify_encrypted_data_size(data)?;
+    verify_encrypted_checksum(data)?;
+
+    let header = Header::from_bytes(&data[..HEADER_SIZE])?;
+    verify_encrypted_header(&header, expected_type)?;
+
+    let (salt, nonce, ciphertext) = extract_encrypted_components(data, &header)?;
+    let payload_compressed = decrypt_encrypted_payload(password, &salt, &nonce, ciphertext)?;
+
+    let payload_uncompressed = decompress_payload(&payload_compressed, header.compression)?;
     bincode::deserialize(&payload_uncompressed)
         .map_err(|e| AprenderError::Serialization(format!("Failed to deserialize model: {e}")))
 }
 
-/// Threshold for switching to mmap loading (1MB)
-///
-/// Files larger than this will use memory-mapped I/O for better performance.
-/// Smaller files use standard read-to-heap which has lower overhead for small data.
-pub const MMAP_THRESHOLD: u64 = 1024 * 1024;
-
-include!("core_io_mmap.rs");
 include!("test_model.rs");

@@ -22,7 +22,7 @@ use std::collections::HashMap;
 /// # Example
 ///
 /// ```rust
-/// use aprender::format::model_card::{ModelCard, TrainingDataInfo};
+/// use apr_format::model_card::{ModelCard, TrainingDataInfo};
 ///
 /// let card = ModelCard::new("my-model", "1.0.0")
 ///     .with_author("user@host")

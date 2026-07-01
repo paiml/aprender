@@ -7,8 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+### Added
+- **`apr-format` sovereign-leaf crate (#2231).** The `.apr` model-container read/write
+  (v1 `APRN` + v2 `APR\0`: header/metadata/flags, tensor index, reader/writer, streaming
+  writer, shard manifest, provenance stamping, CRC32, IEEE f16) is extracted from
+  `aprender-core` into a minimal `apr-format` crate with **zero ML/GPU/tokenizer dependencies**
+  (only `serde`/`rmp-serde`/`bincode`/`serde_json`/`half`/`thiserror`, plus opt-in
+  `memmap2`/`lz4_flex`/`zstd`). Downstream consumers (realizar inference, xpile, external
+  tooling) can now `cargo add apr-format` and read/write `.apr` without pulling the framework.
+  A CI guard (`scripts/check_format_sovereignty.sh`) parses `cargo metadata` and fails if any
+  ML/GPU/framework crate leaks into the leaf's dependency closure; it is discriminating (passes
+  on `apr-format` + `aprender-quant`, fails on `aprender-core`). Two `pv`-validated contracts
+  (`apr-format-extraction-v1`, `apr-format-leaf-sovereignty-v1`) bind the six correctness
+  obligations: F32 byte-identity, dependency sovereignty, CRC integrity, metadata fidelity, the
+  no-API-break re-export seam, and the Jidoka quality gate.
 
+### Changed
+- **No API break.** `aprender-core` re-exports the leaf under `aprender::format::*`
+  (`types`, `v2`, `model_card`, `core_io`, `crc32`, `f16_to_f32`/`f32_to_f16`) and From-wraps
+  `apr_format::AprFormatError` into `AprenderError`, so every existing `aprender::format::…`
+  import keeps working unchanged. The dequantizing `AprV2Reader::get_tensor_as_f32` accessor
+  (which needs the GGUF Q4_K/Q6_K dequant + f32 physics) stays in `aprender-core`, re-attached as
+  the `aprender::format::AprV2DequantExt` extension trait.
+
+### Fixed
 - **`apr convert --quantize fp16` produced weights biased ~0.5–1 ULP low with a mis-encoded overflow
   boundary** (PMAT-905, Pillar-4, `OBLIG-CONVERT-FP16-F32-F16-RNE`,
   `contracts/quant-solve-f16-round-v1.yaml`) — the `converter` module's canonical f32→f16 encoder
@@ -33,6 +55,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **Follow-up (recommended):** consolidate all hand-rolled f16 encoders (trueno, solve, convert, and the
   on-device GPU PTX/wgpu encoders) into ONE canonical correct encoder so this round-toward-zero bug
   class cannot recur; the GPU encoders remain a separate on-device follow-up.
+- **v2 f16 tensors now use IEEE round-to-nearest-even (PMAT-905 class).** The `apr-format` leaf
+  writes f16 via the IEEE-correct `half` crate instead of the legacy non-RNE `trueno::f32_to_f16`
+  (which used round-half-up **and** dropped a mantissa-overflow carry, emitting the *wrong*
+  exponent — e.g. `255.99 → 0xD800` instead of the correct `0xDC00`). v2 tensors written as f16
+  therefore change bytes — a documented bug-fix, not a regression. **F32 byte-identity is
+  preserved** (the golden fixtures use F32, asserted byte-for-byte against the pre-extraction
+  oracle for both the v1 file and the v2 writer).
 
 ## [0.55.0] - 2026-06-24
 

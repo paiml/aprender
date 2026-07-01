@@ -1,0 +1,109 @@
+metadata:
+  version: 1.0.0
+  created: '2026-06-25'
+  author: PAIML Engineering
+  kind: kernel
+  description: >
+    APR-2231 companion — dependency sovereignty of the `apr-format` leaf crate.
+    The whole point of extracting the `.apr` container is that a consumer can
+    `cargo add apr-format` and read/write `.apr` files with `aprender-core`
+    (and its ~138 deps + GPU/CUDA stack) ABSENT from its dependency graph. This
+    contract binds the structural guarantee: the leaf's transitive graph must
+    contain only the format's own serialization deps (serde, rmp-serde, bincode,
+    serde_json, half, thiserror) plus the opt-in mmap/compression deps, and never
+    an ML / GPU / tokenizer / framework crate. It also binds the std-only and
+    error-seam decisions so they cannot silently regress.
+  references:
+  - 'issue #2231 — depend on the format, not the framework'
+  - 'crates/apr-format/Cargo.toml — the leaf manifest (sovereign deps + feature gates)'
+  - 'apr-format-extraction-v1.yaml — the parent extraction-correctness contract'
+  - 'precedent: trueno consolidated as aprender-compute ([lib] name = trueno) via workspace alias'
+equations:
+  leaf_dep_closure:
+    formula: |
+      deps*(apr-format) ⊆ {serde, serde_core, serde_derive, serde_json, rmp-serde,
+      rmp, bincode, half, thiserror, + opt-in {memmap2, lz4_flex, zstd}} : the
+      transitive normal-dependency closure of the leaf is exactly the format's
+      serialization surface, with no ML/GPU/tokenizer/framework crate.
+    domain: the apr-format cargo dependency graph under any feature set
+    codomain: set of crate names
+    invariants:
+    - 'no trueno / wgpu / cuda* / candle / tch / aprender-core in the closure'
+    - 'the leaf has NO path or registry dependency on aprender-core'
+    preconditions:
+    - 'data.len() > 0'
+  std_only_surface:
+    formula: |
+      apr-format is std-only (v1) : no #![no_std], and the std surface is kept
+      thin (fs/io confined to core_io). no_std is explicitly deferred.
+    domain: the apr-format crate source
+    codomain: bool (std-only as designed)
+    invariants:
+    - 'the crate compiles on the workspace MSRV with default (std) features'
+    - 'no_std is a deferred decision, not a silent regression'
+    preconditions:
+    - 'data.len() > 0'
+  error_seam_wrapper:
+    formula: |
+      AprFormatError is owned by the leaf; aprender-core wraps it : the leaf does
+      not depend on aprender_core::AprenderError; instead core provides
+      impl From<AprFormatError> for AprenderError. No shared error crate.
+    domain: the leaf error type + the core From impl
+    codomain: bool (seam holds)
+    invariants:
+    - 'AprFormatError is #[non_exhaustive] and defined in apr-format'
+    - 'the From-wrap in aprender-core is total over the leaf variants'
+    preconditions:
+    - 'data.len() > 0'
+proof_obligations:
+- type: invariant
+  property: Leaf dependency closure is sovereign (no ML/GPU/tokenizer/framework crate)
+  formal: deps*(apr-format) excludes {trueno,wgpu,cuda*,candle,tch,aprender-core}
+  applies_to: all
+- type: invariant
+  property: The leaf is std-only by design (no_std deferred)
+  formal: no #![no_std]; compiles on MSRV with std default features
+  applies_to: all
+- type: postcondition
+  property: Wrapper error seam — leaf owns its error, core From-wraps it
+  formal: AprFormatError defined in leaf; impl From<AprFormatError> for AprenderError total
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-APRF-SOV-DEPS-CLOSURE
+  rule: the leaf transitive graph excludes ML/GPU/tokenizer/framework crates
+  prediction: cargo tree for apr-format (all features) contains no trueno/wgpu/cuda*/candle/tch/aprender-core
+  test: cargo test -p apr-format --lib test_falsify_aprf_sovereign_deps_no_ml_gpu
+  if_fails: a forbidden transitive dep leaked in and the leaf is no longer sovereign
+- id: FALSIFY-APRF-SOV-ERROR-SEAM
+  rule: the wrapper error seam holds (leaf-owned error, total From-wrap)
+  prediction: a leaf AprFormatError lifts into AprenderError via ? in core code
+  test: cargo test -p aprender-core --lib test_from_apr_format_question_mark_ergonomics
+  if_fails: the seam regressed to a shared error crate or the From-wrap became non-total
+- id: FALSIFY-APRF-SOV-STD-ONLY
+  rule: the leaf is std-only (v1) and the std surface stays available
+  prediction: the leaf's std fs/io save+load round-trip links and runs (no half-no_std regression)
+  test: cargo test -p apr-format --lib test_std_only_surface_available
+  if_fails: the std surface was partially removed without committing to a full no_std build
+kani_harnesses:
+- id: KANI-APRF-SOV-001
+  obligation: Leaf dependency closure is sovereign
+  property: the apr-format graph excludes ML/GPU/tokenizer/framework crates
+  bound: 4
+  strategy: exhaustive
+- id: KANI-APRF-SOV-002
+  obligation: Wrapper error seam is total
+  property: every AprFormatError variant maps into an AprenderError variant
+  bound: 8
+  strategy: exhaustive
+- id: KANI-APRF-SOV-003
+  obligation: std-only surface available
+  property: save/load link against std fs/io
+  bound: 4
+  strategy: exhaustive
+qa_gate:
+  id: F-APRF-SOV-001
+  name: apr-format-leaf-sovereignty-v1 Contract
+  description: Dependency-sovereignty and error-seam gate for the apr-format leaf
+  checks:
+  - validation
+  - falsification

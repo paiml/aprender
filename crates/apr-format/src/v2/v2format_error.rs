@@ -1,3 +1,10 @@
+//! `ShardManifest` impl + the `V2FormatError` type (issue #2231).
+//!
+//! Formerly `include!`d into `v2/mod.rs`; now a real module. `ShardManifest` /
+//! `ShardInfo` are declared in `reader_impl.rs` (all-pub fields), impl here.
+
+use super::{ShardInfo, ShardManifest};
+use std::collections::HashMap;
 
 impl ShardManifest {
     /// Create new empty manifest
@@ -94,9 +101,5 @@ impl std::fmt::Display for V2FormatError {
 
 impl std::error::Error for V2FormatError {}
 
-// ============================================================================
-// Tests
-// ============================================================================
-
-#[cfg(test)]
-mod tests;
+// The flat-scope `v2::tests` module is declared in `v2/mod.rs` (it uses
+// `super::*` over the whole `v2` namespace), not here.

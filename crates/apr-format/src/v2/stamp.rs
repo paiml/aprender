@@ -38,8 +38,11 @@ use super::{AprV2Reader, AprV2Writer, V2FormatError};
 /// salvages the entire run without a 53-min retrain.
 #[derive(Debug, Clone, Default)]
 pub struct ProvenancePatch {
+    /// SPDX license identifier to stamp into the metadata.
     pub license: Option<String>,
+    /// Training-data source (dataset identifier or "teacher-only").
     pub data_source: Option<String>,
+    /// SPDX license for `data_source`.
     pub data_license: Option<String>,
     /// HuggingFace class name from `config.json::architectures[0]`
     /// (e.g., "Qwen2ForCausalLM"). PMAT-690 P0-K extension.

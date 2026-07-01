@@ -322,6 +322,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "apr-format"
+version = "0.55.0"
+dependencies = [
+ "bincode",
+ "cargo_metadata",
+ "half",
+ "lz4_flex 0.11.6",
+ "memmap2",
+ "proptest",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "zstd",
+]
+
+[[package]]
 name = "aprender"
 version = "0.25.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -557,6 +575,7 @@ version = "0.55.0"
 dependencies = [
  "aes-gcm",
  "alsa",
+ "apr-format",
  "aprender-common",
  "aprender-compute",
  "aprender-data",
@@ -14960,7 +14979,7 @@ version = "1.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
- "cfg-if 0.1.10",
+ "cfg-if 1.0.4",
  "static_assertions",
 ]
 

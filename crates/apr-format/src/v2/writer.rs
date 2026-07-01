@@ -1,3 +1,26 @@
+//! v2 in-memory writer + the reader struct declarations (issue #2231).
+//!
+//! Formerly `include!`d into `v2/mod.rs`; now a real module. The `AprV2Writer`
+//! struct lives here next to its `impl` (private fields). f16 conversion routes
+//! through [`crate::f16`] (IEEE round-to-nearest-even, `half` crate), NOT
+//! `trueno::f32_to_f16`.
+
+use super::{
+    align_64, AprV2Flags, AprV2Header, AprV2Metadata, ShardingMetadata, TensorDType,
+    TensorIndexEntry, V2FormatError, HEADER_SIZE_V2,
+};
+use crate::crc32::crc32;
+use crate::f16::f32_to_f16;
+use std::io::Write;
+
+/// APR v2 format writer
+#[derive(Debug)]
+pub struct AprV2Writer {
+    header: AprV2Header,
+    metadata: AprV2Metadata,
+    tensors: Vec<(TensorIndexEntry, Vec<u8>)>,
+}
+
 impl AprV2Writer {
     /// Create new writer
     ///
@@ -377,38 +400,5 @@ impl AprV2Writer {
     }
 }
 
-// ============================================================================
-// Reader
-// ============================================================================
-
-/// APR v2 format reader (owns data - copies input)
-#[derive(Debug)]
-pub struct AprV2Reader {
-    header: AprV2Header,
-    metadata: AprV2Metadata,
-    tensor_index: Vec<TensorIndexEntry>,
-    data: Vec<u8>,
-}
-
-/// APR v2 format reader with zero-copy (borrows data - for mmap)
-///
-/// This reader borrows the data slice instead of copying it, enabling
-/// true zero-copy access when used with memory-mapped files.
-///
-/// # Example
-///
-/// ```ignore
-/// use aprender::bundle::MappedFile;
-/// use aprender::format::v2::AprV2ReaderRef;
-///
-/// let mmap = MappedFile::open("model.apr")?;
-/// let reader = AprV2ReaderRef::from_bytes(mmap.as_slice())?;
-/// let weights = reader.get_f32_tensor("embed_tokens.weight")?;
-/// ```
-#[derive(Debug)]
-pub struct AprV2ReaderRef<'a> {
-    header: AprV2Header,
-    metadata: AprV2Metadata,
-    tensor_index: Vec<TensorIndexEntry>,
-    data: &'a [u8],
-}
+// The `AprV2Reader` / `AprV2ReaderRef` struct declarations now live in
+// `reader_impl.rs` alongside their `impl` blocks (private-field access).

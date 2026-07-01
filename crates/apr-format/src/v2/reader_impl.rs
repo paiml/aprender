@@ -1,3 +1,57 @@
+//! v2 reader impls + shard manifest (issue #2231).
+//!
+//! Formerly `include!`d into `v2/mod.rs`; now a real module. The `AprV2Reader`
+//! and `AprV2ReaderRef` struct declarations live here next to their `impl`s
+//! (private fields).
+//!
+//! # Sovereignty seam (issue #2231)
+//!
+//! The dequantizing `get_tensor_as_f32` accessor (which needed the GGUF Q4_K /
+//! Q6_K dequant kernels + the local f16-scaled `dequantize_q4`) is **severed**
+//! from the leaf: it pulls quantization/physics that belongs to the framework.
+//! The leaf exposes only the raw container bytes ([`AprV2Reader::get_tensor_data`])
+//! and the trivial F32-only typed view ([`AprV2Reader::get_f32_tensor`]).
+//! `aprender-core` re-attaches the dequantizing accessor as the `AprV2DequantExt`
+//! extension trait.
+
+use super::{
+    is_aligned_64, AprV2Header, AprV2Metadata, TensorDType, TensorIndexEntry, V2FormatError,
+    HEADER_SIZE_V2,
+};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::io::Read;
+
+/// APR v2 format reader (owns data - copies input)
+#[derive(Debug)]
+pub struct AprV2Reader {
+    header: AprV2Header,
+    metadata: AprV2Metadata,
+    tensor_index: Vec<TensorIndexEntry>,
+    data: Vec<u8>,
+}
+
+/// APR v2 format reader with zero-copy (borrows data - for mmap)
+///
+/// This reader borrows the data slice instead of copying it, enabling
+/// true zero-copy access when used with memory-mapped files.
+///
+/// # Example
+///
+/// ```ignore
+/// use apr_format::v2::AprV2ReaderRef;
+///
+/// let bytes: &[u8] = /* mmap'd slice */;
+/// let reader = AprV2ReaderRef::from_bytes(bytes)?;
+/// let weights = reader.get_f32_tensor("embed_tokens.weight")?;
+/// ```
+#[derive(Debug)]
+pub struct AprV2ReaderRef<'a> {
+    header: AprV2Header,
+    metadata: AprV2Metadata,
+    tensor_index: Vec<TensorIndexEntry>,
+    data: &'a [u8],
+}
 
 /// Parse and bounds-check the JSON metadata section (FALSIFY-PARSE-001).
 ///
@@ -180,63 +234,10 @@ impl AprV2Reader {
         Some(floats)
     }
 
-    /// Get tensor as f32 Vec, dequantizing if necessary
-    ///
-    /// Supports all tensor types:
-    /// - F32: direct copy
-    /// - F16: IEEE 754 half-precision → f32
-    /// - Q8: 8-bit symmetric dequantization
-    /// - Q4: 4-bit block dequantization
-    /// - Q4K: GGUF Q4_K super-block dequantization (GH-200)
-    /// - Q6K: GGUF Q6_K super-block dequantization (GH-200)
-    #[must_use]
-    pub fn get_tensor_as_f32(&self, name: &str) -> Option<Vec<f32>> {
-        let entry = self.get_tensor(name)?;
-        let data = self.get_tensor_data(name)?;
-        let element_count = entry.element_count();
-
-        match entry.dtype {
-            TensorDType::F32 => {
-                let floats: Vec<f32> = data
-                    .chunks_exact(4)
-                    .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-                    .collect();
-                Some(floats)
-            }
-            TensorDType::F16 => {
-                let floats: Vec<f32> = data
-                    .chunks_exact(2)
-                    .map(|chunk| f16_to_f32(u16::from_le_bytes([chunk[0], chunk[1]])))
-                    .collect();
-                Some(floats)
-            }
-            TensorDType::AprQ8 => {
-                if data.len() < 4 {
-                    return None;
-                }
-                let scale = f32::from_le_bytes([data[0], data[1], data[2], data[3]]);
-                let floats: Vec<f32> = data[4..]
-                    .iter()
-                    .map(|&b| f32::from(b as i8) * scale)
-                    .collect();
-                Some(floats)
-            }
-            TensorDType::AprQ4 => Some(dequantize_q4(data, element_count)),
-            TensorDType::BF16 => {
-                let floats: Vec<f32> = data
-                    .chunks_exact(2)
-                    .map(|chunk| {
-                        let bits = u16::from_le_bytes([chunk[0], chunk[1]]);
-                        f32::from_bits(u32::from(bits) << 16)
-                    })
-                    .collect();
-                Some(floats)
-            }
-            TensorDType::Q4K => dequantize_q4_k(data, 0, element_count).ok(),
-            TensorDType::Q6K => dequantize_q6_k(data, 0, element_count).ok(),
-            _ => None, // Other types not yet supported
-        }
-    }
+    // NOTE (issue #2231): `get_tensor_as_f32` (the dequantizing accessor) is
+    // SEVERED from the sovereign leaf — it needed the GGUF Q4_K/Q6_K dequant
+    // kernels + the f16-scaled `dequantize_q4`, all framework/quant concerns.
+    // `aprender-core` re-attaches it via the `AprV2DequantExt` extension trait.
 
     /// Check if all tensors are 64-byte aligned
     #[must_use]
@@ -245,6 +246,12 @@ impl AprV2Reader {
         self.tensor_index
             .iter()
             .all(|e| is_aligned_64(data_offset + e.offset as usize))
+    }
+
+    /// Borrow the parsed tensor index (used by the core dequant extension).
+    #[must_use]
+    pub fn tensor_index(&self) -> &[TensorIndexEntry] {
+        &self.tensor_index
     }
 }
 
@@ -357,63 +364,8 @@ impl<'a> AprV2ReaderRef<'a> {
         Some(floats)
     }
 
-    /// Get tensor as f32 Vec, dequantizing if necessary
-    ///
-    /// Supports all tensor types:
-    /// - F32: direct copy
-    /// - F16: IEEE 754 half-precision → f32
-    /// - Q8: 8-bit symmetric dequantization
-    /// - Q4: 4-bit block dequantization
-    /// - Q4K: GGUF Q4_K super-block dequantization (GH-200)
-    /// - Q6K: GGUF Q6_K super-block dequantization (GH-200)
-    #[must_use]
-    pub fn get_tensor_as_f32(&self, name: &str) -> Option<Vec<f32>> {
-        let entry = self.get_tensor(name)?;
-        let data = self.get_tensor_data(name)?;
-        let element_count = entry.element_count();
-
-        match entry.dtype {
-            TensorDType::F32 => {
-                let floats: Vec<f32> = data
-                    .chunks_exact(4)
-                    .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-                    .collect();
-                Some(floats)
-            }
-            TensorDType::F16 => {
-                let floats: Vec<f32> = data
-                    .chunks_exact(2)
-                    .map(|chunk| f16_to_f32(u16::from_le_bytes([chunk[0], chunk[1]])))
-                    .collect();
-                Some(floats)
-            }
-            TensorDType::AprQ8 => {
-                if data.len() < 4 {
-                    return None;
-                }
-                let scale = f32::from_le_bytes([data[0], data[1], data[2], data[3]]);
-                let floats: Vec<f32> = data[4..]
-                    .iter()
-                    .map(|&b| f32::from(b as i8) * scale)
-                    .collect();
-                Some(floats)
-            }
-            TensorDType::AprQ4 => Some(dequantize_q4(data, element_count)),
-            TensorDType::BF16 => {
-                let floats: Vec<f32> = data
-                    .chunks_exact(2)
-                    .map(|chunk| {
-                        let bits = u16::from_le_bytes([chunk[0], chunk[1]]);
-                        f32::from_bits(u32::from(bits) << 16)
-                    })
-                    .collect();
-                Some(floats)
-            }
-            TensorDType::Q4K => dequantize_q4_k(data, 0, element_count).ok(),
-            TensorDType::Q6K => dequantize_q6_k(data, 0, element_count).ok(),
-            _ => None, // Other types not yet supported
-        }
-    }
+    // NOTE (issue #2231): `get_tensor_as_f32` severed from the leaf — see the
+    // owning-reader note above. Re-attached in core via `AprV2DequantExt`.
 
     /// Check if all tensors are 64-byte aligned
     #[must_use]
@@ -422,6 +374,12 @@ impl<'a> AprV2ReaderRef<'a> {
         self.tensor_index
             .iter()
             .all(|e| is_aligned_64(data_offset + e.offset as usize))
+    }
+
+    /// Borrow the parsed tensor index (used by the core dequant extension).
+    #[must_use]
+    pub fn tensor_index(&self) -> &[TensorIndexEntry] {
+        &self.tensor_index
     }
 }
 
