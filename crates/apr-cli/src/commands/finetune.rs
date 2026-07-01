@@ -229,6 +229,111 @@ fn display_memory_breakdown(req: &MemoryRequirement, vram_gb: f64) {
     }
 }
 
+/// Effective compute backend plus a *truthful* user-facing notice for a run.
+///
+/// Root cause (Defect 1): the old banner printed
+/// `[gpu-backend] CUDA selected — using cuBLAS backward path` purely off the
+/// `--gpu-backend` flag. But `InstructPipeline::from_apr` only calls `init_cuda`
+/// when `quantize_nf4 == true` (i.e. QLoRA — see
+/// `aprender-train/src/finetune/instruct_pipeline/constructors.rs`). For plain
+/// `-m lora` the model trains on the CPU F32 path, so the CUDA banner was a
+/// false claim that cost real debugging time. This keeps the GPU/cuBLAS claim
+/// gated on `quantize_nf4`, and otherwise warns that plain LoRA runs on CPU.
+#[cfg(feature = "training")]
+#[derive(Debug, PartialEq, Eq)]
+struct GpuBackendPlan {
+    /// Whether to route to the WGPU pipeline (`execute_training_wgpu`).
+    use_wgpu: bool,
+    /// Human-readable, accurate notice describing the effective backend.
+    notice: String,
+}
+
+/// Decide the effective training backend and an accurate notice.
+///
+/// * `quantize_nf4` — true only for QLoRA; the sole condition under which
+///   `InstructPipeline::from_apr` initializes CUDA/cuBLAS.
+/// * `wgpu_available` — pass `cfg!(feature = "wgpu")` from the call site.
+#[cfg(feature = "training")]
+fn gpu_backend_notice(
+    gpu_backend: &str,
+    quantize_nf4: bool,
+    wgpu_available: bool,
+) -> GpuBackendPlan {
+    match gpu_backend {
+        "wgpu" => GpuBackendPlan {
+            use_wgpu: true,
+            notice: "[gpu-backend] WGPU selected — using WGSL compute shader path".to_string(),
+        },
+        "cuda" => {
+            if quantize_nf4 {
+                GpuBackendPlan {
+                    use_wgpu: false,
+                    notice: "[gpu-backend] CUDA selected — using cuBLAS backward path (QLoRA/NF4)"
+                        .to_string(),
+                }
+            } else {
+                GpuBackendPlan {
+                    use_wgpu: false,
+                    notice: "[gpu-backend] WARNING: plain LoRA (-m lora) runs on the CPU F32 \
+                             path — --gpu-backend cuda does NOT engage the GPU here \
+                             (CUDA is only initialized for QLoRA/NF4). Use -m qlora for the \
+                             cuBLAS backward path."
+                        .to_string(),
+                }
+            }
+        }
+        _ => {
+            // "auto": prefer WGPU for NF4 (fast Q4K load) when compiled in;
+            // full/plain LoRA has no GPU init, so it stays on the CPU F32 path.
+            if quantize_nf4 && wgpu_available {
+                GpuBackendPlan {
+                    use_wgpu: true,
+                    notice: "[gpu-backend] auto → WGPU (NF4 fast load path)".to_string(),
+                }
+            } else if quantize_nf4 {
+                GpuBackendPlan {
+                    use_wgpu: false,
+                    notice: "[gpu-backend] auto → CUDA cuBLAS backward path (QLoRA/NF4)"
+                        .to_string(),
+                }
+            } else {
+                GpuBackendPlan {
+                    use_wgpu: false,
+                    notice: "[gpu-backend] auto → plain LoRA (-m lora) runs on the CPU F32 \
+                             path. Use -m qlora for GPU (CUDA cuBLAS / WGPU) training."
+                        .to_string(),
+                }
+            }
+        }
+    }
+}
+
+/// Build the `InstructConfig` for the default LoRA/QLoRA training path.
+///
+/// Root cause (Defect 2): the old inline construction hardcoded
+/// `max_seq_len: 512`, silently dropping the CLI `--max-seq-len` value on the
+/// instruct path (only the `classify`/multi-adapter paths honored it). This
+/// threads the flag through, falling back to entrenar's default (512) when the
+/// flag is absent.
+#[cfg(feature = "training")]
+fn build_instruct_config(
+    config: &OptimalConfig,
+    learning_rate: f64,
+    epochs: u32,
+    max_seq_len: Option<usize>,
+) -> entrenar::finetune::instruct_pipeline::InstructConfig {
+    use entrenar::finetune::instruct_pipeline::InstructConfig;
+    InstructConfig {
+        lora_rank: config.rank as usize,
+        lora_alpha: config.alpha,
+        learning_rate: learning_rate as f32,
+        epochs: epochs as usize,
+        max_seq_len: max_seq_len.unwrap_or(InstructConfig::default().max_seq_len),
+        gradient_clip_norm: Some(1.0),
+        quantize_nf4: matches!(config.method, Method::QLoRA),
+    }
+}
+
 /// Execute LoRA adapter creation from model tensors.
 /// §26: Execute QLoRA training via entrenar InstructPipeline bridge.
 ///
@@ -250,9 +355,9 @@ fn execute_training(
     json_output: bool,
     model_size: Option<&str>,
     gpu_backend: &str,
+    max_seq_len: Option<usize>,
 ) -> Result<()> {
     use entrenar::finetune::instruct_corpus::InstructSample;
-    use entrenar::finetune::instruct_pipeline::InstructConfig;
     use entrenar::finetune::instruct_pipeline::InstructPipeline;
     use entrenar::finetune::instruct_trainer::{InstructTrainer, InstructTrainingConfig};
 
@@ -300,16 +405,9 @@ fn execute_training(
         println!("  Training samples: {}", corpus.len());
     }
 
-    // 3. Create InstructPipeline from APR model
-    let instruct_config = InstructConfig {
-        lora_rank: config.rank as usize,
-        lora_alpha: config.alpha,
-        learning_rate: learning_rate as f32,
-        epochs: epochs as usize,
-        max_seq_len: 512,
-        gradient_clip_norm: Some(1.0),
-        quantize_nf4: matches!(config.method, Method::QLoRA),
-    };
+    // 3. Create InstructPipeline from APR model.
+    // Defect 2 fix: thread the CLI --max-seq-len through instead of hardcoding 512.
+    let instruct_config = build_instruct_config(config, learning_rate, epochs, max_seq_len);
 
     if !json_output {
         output::pipeline_stage("Training", output::StageStatus::Running);
@@ -319,31 +417,17 @@ fn execute_training(
         println!("  Data: {} samples", corpus.len());
     }
 
-    // PMAT-494 FIX: Route based on --gpu-backend flag.
-    // "cuda" → InstructPipeline with cuBLAS backward (proper per-layer backward with
-    //   RMSNorm, SiLU, attention backward + cuBLAS GEMM = 15-40x faster LoRA backward)
-    // "wgpu" → WgpuInstructPipeline (portable but 336 WGSL dispatches/step)
-    // "auto" → WGPU for NF4 (fast load), CUDA for full FT
-    let use_wgpu = match gpu_backend {
-        "cuda" => {
-            eprintln!("[gpu-backend] CUDA selected — using cuBLAS backward path");
-            false
-        }
-        "wgpu" => {
-            eprintln!("[gpu-backend] WGPU selected — using WGSL compute shader path");
-            true
-        }
-        _ => {
-            // "auto": prefer WGPU for NF4 (fast Q4K load), CUDA for full FT
-            if instruct_config.quantize_nf4 && cfg!(feature = "wgpu") {
-                eprintln!("[gpu-backend] auto → WGPU (NF4 fast load path)");
-                true
-            } else {
-                eprintln!("[gpu-backend] auto → CUDA (full FT path)");
-                false
-            }
-        }
-    };
+    // PMAT-494 FIX / Defect 1: Route based on --gpu-backend flag with a TRUTHFUL
+    // notice. The CUDA/cuBLAS backward path is only engaged when NF4 (QLoRA) is
+    // active, since InstructPipeline::from_apr only calls init_cuda then; for
+    // plain LoRA we must NOT claim GPU — gpu_backend_notice warns it runs on CPU.
+    let backend_plan = gpu_backend_notice(
+        gpu_backend,
+        instruct_config.quantize_nf4,
+        cfg!(feature = "wgpu"),
+    );
+    eprintln!("{}", backend_plan.notice);
+    let use_wgpu = backend_plan.use_wgpu;
 
     #[cfg(feature = "wgpu")]
     if use_wgpu {
@@ -1157,10 +1241,12 @@ pub(crate) fn run(
         json_output,
         model_size,
         gpu_backend,
+        max_seq_len,
     )
 }
 
 /// Validate inputs and execute the LoRA training pipeline.
+#[allow(clippy::too_many_arguments)]
 fn run_finetune_training(
     model_path: Option<&Path>,
     data_path: Option<&Path>,
@@ -1171,6 +1257,7 @@ fn run_finetune_training(
     json_output: bool,
     model_size: Option<&str>,
     gpu_backend: &str,
+    max_seq_len: Option<usize>,
 ) -> Result<()> {
     let data = match data_path {
         Some(d) if d.exists() => d,
@@ -1207,6 +1294,7 @@ fn run_finetune_training(
         json_output,
         model_size,
         gpu_backend,
+        max_seq_len,
     )
 }
 

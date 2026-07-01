@@ -193,8 +193,15 @@ impl InstructTrainer {
             // ── Train ──
             let mut epoch_loss = 0.0f32;
             let mut epoch_tokens = 0usize;
+            let n_steps = train_prepared.len();
 
-            for sample in &train_prepared {
+            // Per-step progress so a slow CPU epoch does not look like a frozen
+            // hang. Low-noise: emit on every 10th step, on the final step, and
+            // at least once every ~10s. Pure stderr logging — the training math
+            // (loss/token accumulation, scheduler) is unchanged.
+            let mut last_step_log = std::time::Instant::now();
+
+            for (step, sample) in train_prepared.iter().enumerate() {
                 let lr = scheduler.get_lr();
                 self.pipeline.set_learning_rate(lr);
 
@@ -202,6 +209,20 @@ impl InstructTrainer {
                 epoch_loss += result.loss * result.num_response_tokens as f32;
                 epoch_tokens += result.num_response_tokens;
                 scheduler.step();
+
+                let is_last_step = step + 1 == n_steps;
+                if (step + 1) % 10 == 0 || is_last_step || last_step_log.elapsed().as_secs() >= 10 {
+                    eprintln!(
+                        "  Epoch {}/{} step {}/{}: loss={:.4} lr={:.2e}",
+                        epoch + 1,
+                        self.config.epochs,
+                        step + 1,
+                        n_steps,
+                        result.loss,
+                        lr,
+                    );
+                    last_step_log = std::time::Instant::now();
+                }
             }
 
             let train_loss = if epoch_tokens > 0 { epoch_loss / epoch_tokens as f32 } else { 0.0 };
