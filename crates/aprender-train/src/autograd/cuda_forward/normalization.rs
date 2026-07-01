@@ -7,8 +7,8 @@
 use trueno_gpu::driver::{CudaStream, GpuBuffer, LaunchConfig};
 #[cfg(feature = "cuda")]
 use trueno_gpu::kernels::{
-    BatchedRopeBackwardKernel, BatchedRopeKernel, BatchedVectorizedRmsNormKernel,
-    FusedResidualRmsNormKernel, Kernel, LayerNormKernel, PerHeadRmsNormKernel, RopeNeoxKernel,
+    BatchedFusedResidualRmsNormKernel, BatchedRopeBackwardKernel, BatchedRopeKernel,
+    BatchedVectorizedRmsNormKernel, Kernel, LayerNormKernel, PerHeadRmsNormKernel, RopeNeoxKernel,
 };
 
 use crate::autograd::cuda_tensor::{CudaTensorError, Result};
@@ -453,63 +453,80 @@ pub fn fused_residual_rmsnorm_forward(
     gamma: &GpuBuffer<f32>,
     batch_size: u32,
     hidden_size: u32,
+    eps: f32,
     stream: &CudaStream,
 ) -> Result<()> {
+    // FALSIFY-CUDA-FUSED-RMSNORM-DEADLOCK-001 (wave of 4, all fixed here):
+    //
+    // 1. Self-deadlock: this function held the FORWARD_KERNEL_CACHE mutex
+    //    guard while calling the public `residual_add_forward`, which
+    //    re-locks the SAME non-reentrant `std::sync::Mutex` on the same
+    //    thread — `Mutex::lock_contended` futex-waited forever and froze
+    //    every `apr finetune -m qlora` run on the first transformer block
+    //    forward. Fixed structurally: the batched kernel writes
+    //    `residual_out` itself, so the nested call is gone entirely.
+    // 2. Single-row kernel launched as batched: the old
+    //    `FusedResidualRmsNormKernel` has no ctaid indexing (one warp, one
+    //    row) but was launched with grid.y = batch_size — every block
+    //    redundantly computed row 0 and rows 1.. were never written.
+    //    `BatchedFusedResidualRmsNormKernel` (PMAT-092) indexes rows via
+    //    ctaid.y.
+    // 3. eps not threaded: the kernel default (1e-5, Llama) was silently
+    //    used for Qwen2 models (1e-6). Callers now pass
+    //    `config.rms_norm_eps`, and the cache key includes the eps bits
+    //    (PMAT-698k lesson: eps-less keys shadow stale PTX).
+    // 4. Missing pre-warm: this kernel JIT-compiled mid-training
+    //    (Blackwell stream-poisoning class, PMAT-698). pre_warm_for_model
+    //    now warms it at both Qwen2 (1e-6) and Llama (1e-5) eps.
     let cache = FORWARD_KERNEL_CACHE.get().ok_or(CudaTensorError::DeviceNotInitialized)?;
     let mut cache = cache.lock().map_err(|_err| {
         CudaTensorError::KernelError("Failed to acquire kernel cache lock".to_string())
     })?;
 
-    let key = format!("fused_residual_rmsnorm_{hidden_size}");
+    let eps_bits = eps.to_bits();
+    let key = format!("batched_fused_residual_rmsnorm_{hidden_size}_eps{eps_bits:08x}");
     let module = match cache.get_cached(&key) {
         Some(m) => m,
         None => {
-            let kernel = FusedResidualRmsNormKernel::new(hidden_size);
+            let kernel =
+                BatchedFusedResidualRmsNormKernel::new(hidden_size, batch_size).with_epsilon(eps);
             let ptx = kernel.emit_ptx_for_target(cache.sm_target());
             cache.get_or_compile(&key, &ptx)?
         }
     };
 
-    // Grid: (1, batch_size, 1) — one block per row
-    // Block: (32, 1, 1) — single warp for reduction
-    let config = LaunchConfig { grid: (1, batch_size, 1), block: (32, 1, 1), shared_mem: 0 };
+    // Grid: (1, batch_size, 1) — one block per row via ctaid.y
+    // Block: (256, 1, 1) — 8 warps; shared: 8 warp partial sums (f32)
+    let config = LaunchConfig { grid: (1, batch_size, 1), block: (256, 1, 1), shared_mem: 8 * 4 };
 
     let residual_ptr = residual.as_ptr();
     let input_ptr = input.as_ptr();
+    let residual_out_ptr = residual_out.as_ptr();
     let output_ptr = output.as_ptr();
     let gamma_ptr = gamma.as_ptr();
 
-    let mut args: [*mut std::ffi::c_void; 4] = [
+    let mut args: [*mut std::ffi::c_void; 5] = [
         &residual_ptr as *const _ as *mut _,
         &input_ptr as *const _ as *mut _,
+        &residual_out_ptr as *const _ as *mut _,
         &output_ptr as *const _ as *mut _,
         &gamma_ptr as *const _ as *mut _,
     ];
 
-    // Also store the un-normalized residual sum for backward pass
-    // The fused kernel writes residual+input to output before normalizing,
-    // so we need to save it separately if residual_out != output
-    if residual_out.as_ptr() != residual.as_ptr() {
-        // First do the residual add into residual_out
-        crate::autograd::cuda_forward::residual_add_forward(
-            residual,
-            input,
-            residual_out,
-            batch_size * hidden_size,
-            stream,
-        )?;
-    }
-
-    // Launch fused kernel: output = RMSNorm(residual + input) * gamma
+    // Launch fused kernel:
+    //   residual_out = residual + input
+    //   output       = RMSNorm(residual + input) * gamma
+    // (`residual_out` may alias `residual`: pass 1 reads each element before
+    // writing it back, per-thread, so the aliased store is ordered safely.)
     // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
     unsafe {
-        stream.launch_kernel(module, "fused_residual_rmsnorm", &config, &mut args).map_err(
-            |e| {
+        stream
+            .launch_kernel(module, "batched_fused_residual_rmsnorm", &config, &mut args)
+            .map_err(|e| {
                 CudaTensorError::KernelError(format!(
                     "Fused residual+RMSNorm forward failed: {e:?}"
                 ))
-            },
-        )?;
+            })?;
     }
 
     Ok(())
@@ -610,6 +627,159 @@ mod tests {
              `rms_norm_forward_with_eps(.., eps, ..)` threads `config.rms_norm_eps` \
              into the kernel and the cache key includes eps bits to avoid stale \
              PTX shadowing. See contract apr-pretrain-cuda-rmsnorm-eps-parity-v1.yaml."
+        );
+    }
+
+    /// FALSIFY-CUDA-FUSED-RMSNORM-DEADLOCK-001: `fused_residual_rmsnorm_forward`
+    /// with a `residual_out` buffer DISTINCT from `residual` must complete
+    /// (liveness) and produce correct results (oracle).
+    ///
+    /// On main pre-fix this test DEADLOCKS: the function acquired the
+    /// `FORWARD_KERNEL_CACHE` mutex guard for its whole body, then called the
+    /// public `residual_add_forward` (normalization.rs:494) which re-locks the
+    /// SAME non-reentrant `std::sync::Mutex` on the same thread →
+    /// `Mutex::lock_contended` futex-waits forever. This froze every
+    /// `apr finetune -m qlora` run on the first `CudaNf4TransformerBlock::
+    /// forward` (gdb: thread 1 stuck in lock_contended ← residual_add_forward
+    /// ← fused_residual_rmsnorm_forward ← CudaNf4TransformerBlock::forward).
+    ///
+    /// The watchdog thread converts the pre-fix deadlock into a bounded test
+    /// failure instead of a hung test binary.
+    ///
+    /// Oracle (not just liveness): `residual_out == residual + input`
+    /// element-wise, and `output` matches the CPU RMSNorm reference of
+    /// `residual + input` at the threaded eps=1e-6 (Qwen2). The output
+    /// oracle also caught the single-row kernel being launched as batched
+    /// (rows 1.. never written, max_diff=2.36 vs reference) — see the
+    /// wave-of-4 fix note in `fused_residual_rmsnorm_forward`.
+    #[test]
+    fn falsify_cuda_fused_rmsnorm_distinct_residual_out_no_deadlock() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let hidden_size = 1536usize; // Qwen2.5-Coder-1.5B hidden (live repro dims)
+        let batch_size = 4u32;
+        let total = batch_size as usize * hidden_size;
+
+        let residual_data: Vec<f32> =
+            (0..total).map(|i| (((i as f32) * 0.017).sin()) * 0.02).collect();
+        let input_data: Vec<f32> =
+            (0..total).map(|i| (((i as f32) * 0.011).cos()) * 0.02).collect();
+        let gamma_data: Vec<f32> =
+            (0..hidden_size).map(|i| 1.0 + ((i as f32) * 0.007).cos() * 0.1).collect();
+
+        enum Outcome {
+            NoCuda(String),
+            Done { residual_out: Vec<f32>, output: Vec<f32> },
+        }
+
+        let (tx, rx) = mpsc::channel();
+        let res_clone = residual_data.clone();
+        let inp_clone = input_data.clone();
+        let gam_clone = gamma_data.clone();
+        // Detached worker: on the pre-fix deadlock it blocks forever and the
+        // watchdog below fails the test after the timeout instead of hanging.
+        std::thread::spawn(move || {
+            let device = match CudaDevice::default_device() {
+                Ok(d) => d,
+                Err(e) => {
+                    let _ = tx.send(Outcome::NoCuda(format!("{e}")));
+                    return;
+                }
+            };
+            let ctx = device.context().clone();
+            let stream = device.stream();
+            if let Err(e) = init_forward_kernel_cache(ctx.clone()) {
+                let _ = tx.send(Outcome::NoCuda(format!("cache init: {e}")));
+                return;
+            }
+
+            let residual_gpu = GpuBuffer::from_host(&ctx, &res_clone).expect("residual");
+            let input_gpu = GpuBuffer::from_host(&ctx, &inp_clone).expect("input");
+            let gamma_gpu = GpuBuffer::from_host(&ctx, &gam_clone).expect("gamma");
+            // DISTINCT residual_out buffer — the deadlock precondition.
+            let mut residual_out_gpu =
+                GpuBuffer::<f32>::new(&ctx, res_clone.len()).expect("residual_out alloc");
+            let mut output_gpu =
+                GpuBuffer::<f32>::new(&ctx, res_clone.len()).expect("output alloc");
+
+            fused_residual_rmsnorm_forward(
+                &residual_gpu,
+                &input_gpu,
+                &mut residual_out_gpu,
+                &mut output_gpu,
+                &gamma_gpu,
+                batch_size,
+                hidden_size as u32,
+                1e-6, // Qwen2 rms_norm_eps (the live repro model family)
+                stream,
+            )
+            .expect("fused_residual_rmsnorm_forward");
+            stream.synchronize().expect("sync");
+
+            let mut residual_out = vec![0.0f32; res_clone.len()];
+            let mut output = vec![0.0f32; res_clone.len()];
+            residual_out_gpu.copy_to_host(&mut residual_out).expect("download residual_out");
+            output_gpu.copy_to_host(&mut output).expect("download output");
+            let _ = tx.send(Outcome::Done { residual_out, output });
+        });
+
+        let outcome = rx.recv_timeout(Duration::from_secs(120)).unwrap_or_else(|_| {
+            panic!(
+                "FALSIFY-CUDA-FUSED-RMSNORM-DEADLOCK-001: \
+                 fused_residual_rmsnorm_forward did not complete within 120s with a \
+                 distinct residual_out buffer. Pre-fix root cause: the function held \
+                 the FORWARD_KERNEL_CACHE mutex guard while calling the public \
+                 residual_add_forward, which re-locks the same non-reentrant mutex \
+                 on the same thread (self-deadlock). Fix: enqueue the residual add \
+                 BEFORE acquiring the cache lock."
+            )
+        });
+
+        let (residual_out, output) = match outcome {
+            Outcome::NoCuda(reason) => {
+                eprintln!(
+                    "[falsify-cuda-fused-rmsnorm-deadlock-001] skipping (no CUDA host): {reason}"
+                );
+                return;
+            }
+            Outcome::Done { residual_out, output } => (residual_out, output),
+        };
+
+        // Oracle 1: residual_out = residual + input (single f32 add — exact).
+        let max_add_diff = residual_data
+            .iter()
+            .zip(input_data.iter())
+            .zip(residual_out.iter())
+            .map(|((r, i), out)| (r + i - out).abs())
+            .fold(0.0f32, f32::max);
+        assert!(
+            max_add_diff == 0.0,
+            "FALSIFY-CUDA-FUSED-RMSNORM-DEADLOCK-001: residual_out != residual + input \
+             (max_diff={max_add_diff})"
+        );
+
+        // Oracle 2: output = RMSNorm(residual + input) * gamma at the eps the
+        // caller threads through (1e-6, Qwen2). Pre-fix the kernel silently
+        // used its 1e-5 default AND only ever wrote row 0 (single-row kernel
+        // launched with grid.y = batch_size), so this oracle also falsifies
+        // the batched-row and eps-threading defects, not just liveness.
+        let summed: Vec<f32> =
+            residual_data.iter().zip(input_data.iter()).map(|(r, i)| r + i).collect();
+        let mut cpu_out = Vec::with_capacity(total);
+        for b in 0..batch_size as usize {
+            let row = &summed[b * hidden_size..(b + 1) * hidden_size];
+            cpu_out.extend(cpu_rmsnorm_reference(row, &gamma_data, 1e-6));
+        }
+        let max_norm_diff = cpu_out
+            .iter()
+            .zip(output.iter())
+            .map(|(c, g)| (c - g).abs())
+            .fold(0.0f32, f32::max);
+        assert!(
+            max_norm_diff < 1e-4,
+            "FALSIFY-CUDA-FUSED-RMSNORM-DEADLOCK-001: output disagrees with CPU \
+             RMSNorm(residual+input) reference (max_diff={max_norm_diff})"
         );
     }
 }

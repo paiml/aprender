@@ -1,0 +1,174 @@
+metadata:
+  id: C-CUDA-FUSED-RESIDUAL-RMSNORM
+  version: 1.0.0
+  created: '2026-07-01'
+  author: PAIML Engineering
+  kind: pattern
+  status: ACTIVE_ALGORITHM_LEVEL
+  description: |
+    Pins liveness and correctness of the fused residual-add + RMSNorm
+    CUDA forward (`fused_residual_rmsnorm_forward`), the post-attention
+    norm of the NF4 QLoRA transformer block.
+
+    BACKGROUND. Every `apr finetune -m qlora` run on RTX 4090 froze on
+    the FIRST `CudaNf4TransformerBlock::forward` — GPU 0% util, process
+    cputime frozen, all threads in futex_wait. gdb thread-apply-all-bt
+    (2026-07-01, live deadlock capture) showed thread 1:
+
+      #1 std::sys::sync::mutex::futex::Mutex::lock_contended
+      #2 entrenar::..::elementwise::residual_add_forward
+      #3 entrenar::..::normalization::fused_residual_rmsnorm_forward
+      #4 CudaNf4TransformerBlock::forward
+
+    Root-cause audit surfaced a WAVE OF 4 defects, all latent because
+    the path had never once executed to completion (defect 1 fired on
+    first ever use):
+
+      1. SELF-DEADLOCK: the function held the FORWARD_KERNEL_CACHE
+         mutex guard for its whole body, then called the public
+         `residual_add_forward`, which re-locks the SAME non-reentrant
+         std::sync::Mutex on the same thread. Permanent futex wait.
+      2. SINGLE-ROW KERNEL LAUNCHED AS BATCHED: the old
+         `FusedResidualRmsNormKernel` has no ctaid indexing (one warp,
+         one row) but was launched with grid.y = batch_size. Every
+         block redundantly computed row 0; rows 1.. were never
+         written (verified: max_diff=2.36 vs CPU reference).
+      3. EPS NOT THREADED: kernel default eps=1e-5 (Llama) silently
+         used for Qwen2 models (rms_norm_eps=1e-6). Same defect class
+         as C-APR-PRETRAIN-CUDA-RMSNORM-EPS-PARITY, one function down.
+      4. NO PRE-WARM ENTRY: the kernel JIT-compiled mid-training
+         ([FWD-CACHE] Compiling at first block forward) — the
+         Blackwell sm_121 stream-poisoning class from PMAT-698.
+
+    FIX (all four in one structural change): switch to
+    `BatchedFusedResidualRmsNormKernel` (PMAT-092), which indexes rows
+    via ctaid.y AND writes `residual_out` itself — the nested
+    `residual_add_forward` call is gone entirely (deadlock eliminated
+    structurally, not by lock-scope reordering); thread `eps` from
+    `config.rms_norm_eps` with eps-bits in the cache key; pre-warm at
+    both Qwen2 (1e-6) and Llama (1e-5) eps.
+
+    RED-then-GREEN cycle (verified live on RTX 4090, sm_89):
+      RED  (pre-fix): falsifier deadlocks — 120s watchdog fires with
+           the exact production signature ([FWD-CACHE] OK
+           'fused_residual_rmsnorm_1536' then freeze). After fix #1
+           alone, oracle 2 still RED at max_diff=2.36 (defect #2).
+      GREEN (post-fix): completes in <0.2s; residual_out exactly
+           residual+input; output within 1e-4 of CPU RMSNorm
+           reference at eps=1e-6 across ALL batch rows.
+
+  references:
+    - 'crates/aprender-train/src/autograd/cuda_forward/normalization.rs:448 (fused_residual_rmsnorm_forward, rewritten)'
+    - 'crates/aprender-train/src/autograd/cuda_forward/cache.rs:237 (pre_warm_for_model, fused-residual warm added)'
+    - 'crates/aprender-train/src/transformer/cuda_block.rs:3262 (NF4 post-attn callsite, eps threaded)'
+    - 'crates/aprender-gpu/src/kernels/elementwise/residual.rs:359 (BatchedFusedResidualRmsNormKernel, PMAT-092)'
+    - 'crates/aprender-gpu/src/kernels/elementwise/residual.rs:201 (single-row FusedResidualRmsNormKernel, no longer used here)'
+  depends_on:
+    - 'apr-pretrain-cuda-rmsnorm-eps-parity-v1'
+
+equations:
+  fused_rmsnorm_liveness:
+    formula: |
+      fused_residual_rmsnorm_forward(residual_out ≠ residual) terminates
+    domain: |
+      The forward MUST NOT acquire FORWARD_KERNEL_CACHE and then call
+      another public cuda_forward entry point that re-locks it. The
+      batched kernel writes residual_out itself, so no nested public
+      call exists on this path.
+    invariants:
+    - 'no nested FORWARD_KERNEL_CACHE lock acquisition on the same thread'
+    - 'call completes for distinct residual_out buffers (the NF4 block always passes distinct)'
+    preconditions:
+    - 'kernel cache initialized (init_forward_kernel_cache)'
+
+  fused_rmsnorm_batched_row_parity:
+    formula: |
+      ∀ row m < batch_size:
+        residual_out[m] = residual[m] + input[m]
+        output[m] = rmsnorm(residual[m] + input[m], gamma, eps)
+    domain: |
+      Every batch row is computed, not just row 0. The kernel indexes
+      rows via ctaid.y; the launch supplies grid.y = batch_size. CPU
+      reference parity within 1e-4 max abs diff on Qwen-magnitude
+      activations (std~0.02); residual_out exact (single f32 add).
+    invariants:
+    - 'rows 1..batch_size written (pre-fix: only row 0)'
+    - 'max abs diff vs CPU reference < 1e-4 at threaded eps'
+    - 'residual_out == residual + input exactly'
+    preconditions:
+    - 'fused_rmsnorm_liveness holds'
+
+  fused_rmsnorm_eps_threading:
+    formula: |
+      fused_residual_rmsnorm_forward(eps = config.rms_norm_eps)
+      ⇒ kernel_eps == config.rms_norm_eps
+    domain: |
+      Same invariant as C-APR-PRETRAIN-CUDA-RMSNORM-EPS-PARITY but for
+      the fused residual+norm path: eps is a function parameter, the
+      kernel is constructed via .with_epsilon(eps), and the PTX cache
+      key includes eps bits so modules at different eps cannot shadow
+      each other. Pre-warm covers both 1e-6 (Qwen2) and 1e-5 (Llama).
+    invariants:
+    - 'kernel_eps == provided_eps (no hardcoded 1e-5 default)'
+    - 'cache_key includes eps_bits'
+    - 'pre_warm_for_model warms both Qwen2 and Llama eps variants'
+    preconditions:
+    - 'caller passes config.rms_norm_eps (cuda_block.rs NF4 post-attn site)'
+
+proof_obligations:
+- type: invariant
+  property: fused residual RMSNorm forward terminates with distinct residual_out
+  formal: 'terminates(fused_residual_rmsnorm_forward) ∧ ¬self_deadlock(FORWARD_KERNEL_CACHE)'
+  applies_to: fused_rmsnorm_liveness
+- type: invariant
+  property: all batch rows match CPU reference
+  formal: '∀m<M: |output[m] - cpu_rmsnorm(residual[m]+input[m], gamma, eps)|_∞ < 1e-4'
+  applies_to: fused_rmsnorm_batched_row_parity
+- type: invariant
+  property: kernel epsilon equals caller-provided epsilon
+  formal: 'BatchedFusedResidualRmsNormKernel.epsilon == eps_arg'
+  applies_to: fused_rmsnorm_eps_threading
+
+falsification_tests:
+- id: FALSIFY-CUDA-FUSED-RMSNORM-DEADLOCK-001
+  rule: |
+    `fused_residual_rmsnorm_forward` with a residual_out buffer
+    DISTINCT from residual completes within the watchdog window AND
+    produces row-complete, eps-correct output.
+  prediction: |
+    Build 4 rows × 1536 hidden (Qwen2.5-Coder-1.5B dims — the live
+    repro), Qwen-magnitude activations, distinct residual_out.
+    Run the call in a worker thread; a 120s watchdog converts the
+    pre-fix deadlock into a bounded failure. On completion assert
+    (a) residual_out == residual + input exactly, and
+    (b) output matches CPU rmsnorm(residual+input, gamma, 1e-6)*gamma
+    within 1e-4 on ALL rows.
+  test: cargo test -p aprender-train --features cuda --lib falsify_cuda_fused_rmsnorm_distinct_residual_out_no_deadlock
+  if_fails: |
+    Timeout ⇒ a nested FORWARD_KERNEL_CACHE lock re-entered this path
+    (someone re-added a public cuda_forward call inside the guard
+    scope). Row mismatch ⇒ the single-row kernel was reintroduced or
+    the batched kernel's ctaid indexing regressed. Eps mismatch ⇒
+    .with_epsilon dropped or cache key lost its eps bits (stale PTX
+    shadowing).
+  ship_blocking: true
+  counter_example_classes:
+  - nested_lock_self_deadlock
+  - single_row_kernel_launched_as_batched
+  - eps_hardcoded_at_construction
+  - cache_key_collision_across_eps
+
+qa_gate:
+  id: QA-CUDA-FUSED-RESIDUAL-RMSNORM-001
+  name: Fused residual RMSNorm liveness + parity gate
+  description: |
+    The falsifier passes on a CUDA host: no self-deadlock, all batch
+    rows written, CPU-reference parity at the threaded eps, exact
+    residual_out materialization. Unblocks apr finetune -m qlora GPU
+    training (Pillar 3).
+  checks:
+  - fused_rmsnorm_liveness
+  - fused_rmsnorm_batched_row_parity
+  - fused_rmsnorm_eps_threading
+  pass_criteria: FALSIFY-CUDA-FUSED-RMSNORM-DEADLOCK-001 passes
+  falsification: Any failure fails the gate (ship-blocking)

@@ -3267,6 +3267,7 @@ impl CudaNf4TransformerBlock {
             &self.post_attn_norm_weight,
             saturating_u32(seq_len),
             saturating_u32(hidden_size),
+            self.config.rms_norm_eps,
             stream,
         )?;
 

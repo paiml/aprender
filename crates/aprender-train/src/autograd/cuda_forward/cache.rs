@@ -234,6 +234,22 @@ impl ForwardKernelCache {
             );
         }
 
+        // 1b. Fused residual add + RMSNorm (post-attention norm in the NF4
+        // QLoRA block). FALSIFY-CUDA-FUSED-RMSNORM-DEADLOCK-001 fix #4: this
+        // kernel previously had NO pre-warm entry and JIT-compiled
+        // mid-training (Blackwell stream-poisoning class, PMAT-698). Warm at
+        // both Qwen2 (1e-6) and Llama (1e-5) eps like batched_rmsnorm_fwd.
+        {
+            use trueno_gpu::kernels::BatchedFusedResidualRmsNormKernel;
+            for eps in [1.0e-6_f32, 1.0e-5_f32] {
+                let eps_bits = eps.to_bits();
+                warm!(
+                    format!("batched_fused_residual_rmsnorm_{h}_eps{eps_bits:08x}"),
+                    BatchedFusedResidualRmsNormKernel::new(h, 1).with_epsilon(eps)
+                );
+            }
+        }
+
         // PMAT-700 (SPEC-BLACKWELL-FIX-001 Fix #2): when cuBLAS is available
         // and the runtime takes its fast path for the standard 2D GEMMs
         // (Q/K/V/O/gate/up/down projections — see ALB-075 dispatch in
