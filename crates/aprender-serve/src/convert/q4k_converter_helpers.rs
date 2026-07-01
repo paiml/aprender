@@ -135,6 +135,33 @@ impl GgufToAprQ4KConverter {
         crate::gguf::infer_rope_type(architecture)
     }
 
+    /// Resolve the RMSNorm epsilon to stamp into the `.apr` metadata.
+    ///
+    /// OBLIG-APR-IMPORT-CONFIG-FIDELITY: a converted `.apr` MUST use the same
+    /// epsilon the `.gguf` inference path (`GGUFConfig::from_gguf`) would, so
+    /// `apr run model.apr` and `apr run model.gguf` apply the SAME RMSNorm at
+    /// every layer. When the GGUF carries `{arch}.attention.layer_norm_rms_epsilon`
+    /// we use it verbatim; otherwise we fall back to the architecture-specific
+    /// default (`ArchConstraints::default_eps`: 1e-6 for Qwen2/Qwen3, 1e-5 for
+    /// LLaMA/Mistral/Phi/Gemma) — exactly like `from_gguf`. The old hard-coded
+    /// `1e-5` fallback silently stamped LLaMA's epsilon into every architecture,
+    /// a latent forward divergence for any 1e-6-eps model whose GGUF omits the key.
+    fn resolve_rms_eps(
+        architecture: &str,
+        metadata: &std::collections::HashMap<String, crate::gguf::GGUFValue>,
+    ) -> f32 {
+        Self::get_f32(
+            metadata,
+            &crate::gguf::keys::arch_key(
+                architecture,
+                crate::gguf::keys::ATTENTION_LAYER_NORM_RMS_EPSILON,
+            ),
+        )
+        .unwrap_or_else(|| {
+            crate::gguf::ArchConstraints::from_architecture(architecture).default_eps
+        })
+    }
+
     /// Convert GGUF file to APR v2 with preserved Q4K quantization
     ///
     /// # Arguments
@@ -214,11 +241,8 @@ impl GgufToAprQ4KConverter {
             &keys::arch_key(&architecture, keys::ROPE_FREQ_BASE),
         )
         .unwrap_or_else(|| crate::gguf::default_rope_theta_for_architecture(&architecture));
-        let eps = Self::get_f32(
-            &gguf_model.metadata,
-            &keys::arch_key(&architecture, keys::ATTENTION_LAYER_NORM_RMS_EPSILON),
-        )
-        .unwrap_or(1e-5);
+        // OBLIG-APR-IMPORT-CONFIG-FIDELITY: stamp the eps the `.gguf` path would use.
+        let eps = Self::resolve_rms_eps(&architecture, &gguf_model.metadata);
 
         // PMAT-107: Infer rope_type from architecture (matches llama.cpp llama-model.cpp:7763-7811)
         // NEOX style (type 2) uses split-halves, NORM style (type 0) uses adjacent pairs

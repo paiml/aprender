@@ -197,6 +197,89 @@
     }
 
     // =========================================================================
+    // GgufToAprQ4KConverter::resolve_rms_eps
+    //
+    // OBLIG-APR-IMPORT-CONFIG-FIDELITY — the GGUF→APR Q4K import must stamp the
+    // SAME rms_norm_eps the `.gguf` inference path (GGUFConfig::from_gguf) would
+    // use, so `apr run model.apr` and `apr run model.gguf` apply identical
+    // RMSNorm at every layer (a per-layer epsilon mismatch shifts every hidden
+    // state and compounds position-by-position — the F2-divergence signature).
+    //
+    // ORACLE: ArchConstraints::from_architecture(arch).default_eps — the exact
+    // fallback `from_gguf` uses when the GGUF omits the epsilon key.
+    // =========================================================================
+
+    /// FALSIFY-APR-IMPORT-EPS-001 (mutation-verified): when the GGUF OMITS
+    /// `qwen2.attention.layer_norm_rms_epsilon`, the import MUST fall back to
+    /// Qwen2's architecture default 1e-6 — NOT the old hard-coded 1e-5.
+    ///
+    /// RED before the fix: `resolve_rms_eps` returned the literal `1e-5`,
+    /// silently stamping LLaMA's epsilon into a Qwen2 `.apr` → a forward
+    /// divergence vs the same model run as `.gguf` (which uses 1e-6).
+    /// MUTATION-VERIFY: revert the fallback to `unwrap_or(1e-5)` → this goes RED.
+    #[test]
+    fn test_resolve_rms_eps_qwen2_missing_key_uses_arch_default_1e6() {
+        let metadata = HashMap::new(); // GGUF without the epsilon key
+        let eps = GgufToAprQ4KConverter::resolve_rms_eps("qwen2", &metadata);
+        let oracle =
+            crate::gguf::ArchConstraints::from_architecture("qwen2").default_eps;
+        assert_eq!(
+            eps, oracle,
+            "qwen2 import eps must equal from_gguf's arch default {oracle:e}, got {eps:e}"
+        );
+        assert!(
+            (eps - 1e-6).abs() < 1e-12,
+            "qwen2 default_eps must be 1e-6 (the old 1e-5 fallback is the bug), got {eps:e}"
+        );
+    }
+
+    /// FALSIFY-APR-IMPORT-EPS-002: qwen3 also defaults to 1e-6 (NOT 1e-5).
+    #[test]
+    fn test_resolve_rms_eps_qwen3_missing_key_uses_arch_default_1e6() {
+        let metadata = HashMap::new();
+        let eps = GgufToAprQ4KConverter::resolve_rms_eps("qwen3", &metadata);
+        assert!(
+            (eps - 1e-6).abs() < 1e-12,
+            "qwen3 default_eps must be 1e-6, got {eps:e}"
+        );
+    }
+
+    /// FALSIFY-APR-IMPORT-EPS-003: LLaMA correctly stays at 1e-5 when the GGUF
+    /// omits the key (proves the fix is arch-aware, not a blanket 1e-6).
+    #[test]
+    fn test_resolve_rms_eps_llama_missing_key_uses_arch_default_1e5() {
+        let metadata = HashMap::new();
+        let eps = GgufToAprQ4KConverter::resolve_rms_eps("llama", &metadata);
+        let oracle =
+            crate::gguf::ArchConstraints::from_architecture("llama").default_eps;
+        assert_eq!(eps, oracle, "llama import eps must equal arch default");
+        assert!(
+            (eps - 1e-5).abs() < 1e-12,
+            "llama default_eps must be 1e-5, got {eps:e}"
+        );
+    }
+
+    /// FALSIFY-APR-IMPORT-EPS-004: when the GGUF DOES carry the epsilon key, the
+    /// import uses it VERBATIM (the stamped value must be the file's truth, not a
+    /// default). Real qwen2.5-coder GGUFs store 1e-6 here, so this also pins the
+    /// production-path invariant.
+    #[test]
+    fn test_resolve_rms_eps_uses_explicit_gguf_value_verbatim() {
+        use crate::gguf::GGUFValue;
+        let mut metadata = HashMap::new();
+        // A deliberately non-default value to prove it is read, not inferred.
+        metadata.insert(
+            "qwen2.attention.layer_norm_rms_epsilon".to_string(),
+            GGUFValue::Float32(7.5e-6),
+        );
+        let eps = GgufToAprQ4KConverter::resolve_rms_eps("qwen2", &metadata);
+        assert!(
+            (eps - 7.5e-6).abs() < 1e-12,
+            "explicit GGUF epsilon must be used verbatim, got {eps:e}"
+        );
+    }
+
+    // =========================================================================
     // GgufToAprQ4KConverter helper methods
     // =========================================================================
 
