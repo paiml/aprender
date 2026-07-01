@@ -1,0 +1,176 @@
+metadata:
+  id: C-CUDA-NF4-FORWARD-STREAM-ORDERING
+  version: 1.0.0
+  created: '2026-07-01'
+  author: PAIML Engineering
+  kind: pattern
+  status: ACTIVE_ALGORITHM_LEVEL
+  description: |
+    Pins cross-stream ordering for the NF4 QLoRA CUDA training forward:
+    every cuBLAS GEMM must execute on the SAME stream as the PTX kernels
+    that produce its inputs and consume its outputs.
+
+    BACKGROUND. `apr finetune -m qlora` on RTX 4090 (sm_89) returned
+    loss=NaN from `fused_causal_cross_entropy_cuda` on the FIRST training
+    step — before any optimizer update — on ~ALL steps at seq 512-2048
+    and ~1/3 of steps at seq ~30. Every individual kernel (rmsnorm,
+    softmax, rope, NF4 GEMM, fused residual rmsnorm) passed direct
+    numeric parity tests; the batched fused residual RMSNorm was
+    explicitly exonerated (0 NaN, 2.6e-6 CPU parity at 512/2048/30 rows).
+
+    ROOT CAUSE (5-whys). The trainer's stream is created with
+    CU_STREAM_NON_BLOCKING (driver/stream.rs), which opts OUT of implicit
+    synchronization with the legacy default stream. A fresh cuBLAS handle
+    (cublasCreate) issues its GEMMs on that legacy DEFAULT stream until
+    cublasSetStream binds it elsewhere. The finetune instruct pipeline's
+    `autograd::cuda_training::CudaTrainer` initialized the forward and
+    backward kernel caches (which create the cuBLAS handles) but nothing
+    on the QLoRA path ever bound them — the per-step binding exists only
+    in the PRETRAINING path (train/transformer_trainer/cuda_trainer.rs).
+    Result: every PTX→cuBLAS and cuBLAS→PTX boundary in the block forward
+    (rmsnorm→QKV GEMM, Q@K^T→scale/mask/softmax, softmax→scores@V,
+    final-norm→lm_head GEMM, lm_head→cross-entropy kernel) was an
+    unsynchronized data race — cuBLAS read activations while the
+    producer kernel was still writing them. Longer sequences widen the
+    race window (bigger kernels ⇒ more overlap), explaining the
+    seq-length-dependent NaN rate. The same class also affected the
+    NULL-stream cuMemcpyDtoD `copy_from_buffer` snapshots of
+    layer_inputs/blocks_output in `forward_cuda_training` (backward
+    inputs), fixed by stream-ordered `copy_from_buffer_async`.
+
+    FIX. Per-call stream binding: every cuBLAS dispatch site binds the
+    handle to the CALLER's stream via `bind_cublas_stream` before the
+    GEMM (cuda_forward::matmul, matmul_f16; cuda_backward::gemm). A
+    bind-once-at-trainer-construction variant was tried first and
+    REJECTED: the process-global handle dangles on the DESTROYED stream
+    after the owning trainer drops — SIGSEGV in any process that creates
+    multiple CudaTrainers (the full aprender-train test suite). Per-call
+    binding is ~100ns (handle field write) per GEMM, executed under the
+    kernel-cache mutex so bind+launch is atomic across threads, and the
+    caller's stream is alive by construction (&CudaStream argument).
+
+    DIAGNOSIS EVIDENCE (Heisenbug signature). An env-gated per-op NaN
+    scanner (APR_NAN_SCAN=1, cuda_block.rs) that synchronizes the trainer
+    stream and downloads each intermediate buffer made ALL NaN vanish
+    (3/3 clean toy runs, zero non-finite intermediates) while unscanned
+    runs produced NaN on the same data — the defect disappears exactly
+    when per-op synchronization is inserted, which is only consistent
+    with a stream-ordering race, not kernel math.
+
+    RED-then-GREEN cycle (verified live on RTX 4090, sm_89):
+      RED  (binding removed): falsifier worst |Δ| = 401,408 of expected
+           413,696 — the cuBLAS row-sum GEMM observed the producer chain
+           at ~3% progress. E2E: 15/16 steps NaN at --max-seq-len 2048
+           on apr_code_sft_balanced; 1/2 toy steps NaN at seq ~30.
+      GREEN (binding present): falsifier exact (3/3 runs); toy epoch
+           3/3 runs 0 NaN with DETERMINISTIC losses (14.1996, 14.0399);
+           2048-run 16/16 finite losses in [12.62, 14.11], 0 NaN lines.
+
+  references:
+    - 'crates/aprender-train/src/autograd/cuda_forward/matmul.rs:32 (bind_cublas_stream helper + gemm_forward/gemm_forward_bt/batched_4d/NF4-cuBLAS sites)'
+    - 'crates/aprender-train/src/autograd/cuda_forward/matmul_f16.rs:51 (fp16 GEMM sites bound per call)'
+    - 'crates/aprender-train/src/autograd/cuda_backward/gemm.rs:55 (backward GEMM sites bound per call)'
+    - 'crates/aprender-train/src/finetune/instruct_pipeline/cuda_forward.rs:139 (layer_inputs stream-ordered D2D copy)'
+    - 'crates/aprender-train/src/finetune/instruct_pipeline/cuda_forward.rs:214 (blocks_output stream-ordered D2D copy)'
+    - 'crates/aprender-gpu/src/driver/stream.rs:64 (CU_STREAM_NON_BLOCKING creation)'
+    - 'crates/aprender-train/src/transformer/cuda_block.rs:81 (APR_NAN_SCAN per-op forward NaN scanner)'
+  depends_on:
+    - 'cuda-fused-residual-rmsnorm-v1'
+
+equations:
+  cublas_per_call_stream_binding:
+    formula: |
+      ∀ cuBLAS dispatch site f(..., stream):
+        cublasSetStream(handle, stream) happens-before gemm_launch(f)
+    domain: |
+      Both global kernel caches own a cuBLAS handle created on the
+      legacy default stream. Every dispatch site receives the caller's
+      stream and MUST bind the handle to it before launching, under the
+      kernel-cache mutex (bind+launch atomic). Bind-once designs dangle
+      when the bound stream is destroyed before the handle.
+    invariants:
+    - 'bind_cublas_stream(cublas, stream) precedes every cublas.gemm_* launch'
+    - 'no cuBLAS launch on the legacy default stream from training paths'
+    - 'handle never left bound to a destroyed stream across trainer drops'
+    preconditions:
+    - 'kernel caches initialized (init_forward_kernel_cache / init_kernel_cache)'
+
+  forward_single_stream_ordering:
+    formula: |
+      ∀ producer p, consumer c in forward_cuda_training:
+        writes(p, buf) ∧ reads(c, buf) ⇒ stream(p) == stream(c)
+        ∨ explicit_sync(p, c)
+    domain: |
+      The NF4 block forward interleaves PTX kernels (trainer stream)
+      with cuBLAS GEMMs and D2D copies. All work touching shared
+      activation buffers within one step must be stream-ordered on the
+      trainer stream; the legacy default stream provides NO implicit
+      ordering against a non-blocking stream.
+    invariants:
+    - 'cuBLAS GEMMs execute on the trainer stream (per-call binding)'
+    - 'layer_inputs/blocks_output snapshots use copy_from_buffer_async on the trainer stream, not NULL-stream cuMemcpyDtoD'
+    - 'first-step loss is finite at any seq_len that fits the scratch capacity'
+    preconditions:
+    - 'cublas_per_call_stream_binding holds'
+
+proof_obligations:
+- type: invariant
+  property: every cuBLAS GEMM launch is preceded by binding to the caller stream
+  formal: '∀ site: cublasSetStream(handle, caller_stream) ≺ gemm_launch(site)'
+  applies_to: cublas_per_call_stream_binding
+- type: invariant
+  property: cuBLAS consumer observes fully-written producer output
+  formal: '∀ buf: gemm_read(buf) happens-after producer_write(buf) (single-stream order)'
+  applies_to: forward_single_stream_ordering
+- type: invariant
+  property: QLoRA forward loss finite on first step
+  formal: 'is_finite(fused_causal_cross_entropy_cuda(forward_logits_gpu_resident(x))) at step 0'
+  applies_to: forward_single_stream_ordering
+
+falsification_tests:
+- id: FALSIFY-CUDA-NF4-FORWARD-NAN-001
+  rule: |
+    A cuBLAS GEMM issued immediately after a long chain of PTX kernels
+    on the trainer's non-blocking stream must observe the CHAIN-FINAL
+    values of its input buffer, never intermediate ones.
+  prediction: |
+    Warm up cuBLAS (first-call lazy init would otherwise mask the race),
+    then run 100 chained elementwise adds (4096x4096, ~20ms GPU) on the
+    trainer stream so X = 101.0 everywhere, and issue the cuBLAS row-sum
+    GEMM out = X @ ones right behind it from the host. Bound per call
+    (GREEN): every out[i] == 101*4096 = 413,696 exactly. Unbound (RED):
+    the GEMM overlaps the add chain on the default stream and reads X
+    mid-chain — measured worst |Δ| = 401,408 (~3% progress). Skips
+    vacuously without CUDA/cuBLAS (PTX fallback is single-stream).
+  test: cargo test -p aprender-train --features cuda --lib falsify_cuda_nf4_forward_nan_001_cublas_stream_ordering
+  if_fails: |
+    A cuBLAS dispatch site lost its per-call bind_cublas_stream call —
+    someone removed the bind from cuda_forward::matmul / matmul_f16 /
+    cuda_backward::gemm, or added a NEW cuBLAS dispatch site without the
+    bind, or reverted to a bind-once-at-construction design (which also
+    SIGSEGVs multi-trainer test processes via dangling streams). The
+    QLoRA forward will NaN on the first step at seq >= 512. Diagnose
+    with APR_NAN_SCAN=1 (per-op scanner in cuda_block.rs): if NaN
+    vanishes under the scanner, it is this stream-ordering class.
+  ship_blocking: true
+  counter_example_classes:
+  - cublas_handle_unbound_default_stream
+  - nonblocking_stream_no_implicit_sync
+  - null_stream_d2d_copy_races_producer
+  - lazy_cublas_init_masks_race_in_test
+  - bind_once_dangles_after_trainer_drop
+
+qa_gate:
+  id: QA-CUDA-NF4-FORWARD-STREAM-ORDERING-001
+  name: NF4 QLoRA forward cross-stream ordering gate
+  description: |
+    The falsifier passes on a CUDA host: cuBLAS GEMMs are stream-ordered
+    with their PTX producers/consumers via per-call handle binding, so
+    the QLoRA training forward produces finite first-step losses at all
+    supported sequence lengths. Unblocks apr finetune -m qlora GPU
+    training (Pillar 3).
+  checks:
+  - cublas_per_call_stream_binding
+  - forward_single_stream_ordering
+  pass_criteria: FALSIFY-CUDA-NF4-FORWARD-NAN-001 passes
+  falsification: Any failure fails the gate (ship-blocking)

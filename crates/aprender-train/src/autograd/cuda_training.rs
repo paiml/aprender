@@ -75,6 +75,12 @@ impl CudaTrainer {
         init_kernel_cache(ctx.clone())?;
         init_optim_kernel_cache(ctx.clone())?;
 
+        // FALSIFY-CUDA-NF4-FORWARD-NAN-001: no bind-once cuBLAS stream setup
+        // here. Every cuBLAS dispatch site binds the handle to the CALLER's
+        // stream per call (see cuda_forward::bind_cublas_stream) — a global
+        // bind-once would dangle when the owning trainer (and its stream)
+        // drops while the process-global handle lives on.
+
         Ok(Self { ctx, stream, step: 0 })
     }
 
@@ -290,6 +296,93 @@ mod tests {
         let trainer = trainer.expect("operation should succeed");
         assert!(!trainer.device_name().is_empty());
         assert!(trainer.total_memory() > 0);
+    }
+
+    /// FALSIFY-CUDA-NF4-FORWARD-NAN-001
+    /// (contract: cuda-nf4-forward-stream-ordering-v1.yaml)
+    ///
+    /// Cross-stream ordering oracle: PTX kernels enqueue on the trainer's
+    /// CU_STREAM_NON_BLOCKING stream while cuBLAS GEMMs execute on whatever
+    /// stream the handle is bound to. Every cuBLAS dispatch site MUST bind
+    /// the handle to the caller's stream (`bind_cublas_stream`); otherwise
+    /// cuBLAS runs on the legacy default stream, which a non-blocking
+    /// stream does NOT implicitly synchronize with — the GEMM reads its
+    /// input while the producer kernels are still writing it.
+    ///
+    /// This is the root cause of the `apr finetune -m qlora` NaN-loss
+    /// defect: rmsnorm→QKV-GEMM, softmax→scores@V and final-norm→lm_head
+    /// all raced, producing NaN on the FIRST training step (~all steps at
+    /// seq≥512, ~1/3 at seq~30). The oracle below makes the race
+    /// deterministic: a ~20ms chain of elementwise adds on the trainer
+    /// stream produces X = 1+STEPS everywhere; the cuBLAS row-sum GEMM
+    /// issued right behind it reads X mid-chain when unbound (RED) and
+    /// the exact final value when bound (GREEN).
+    ///
+    /// Skips (passes vacuously) when CUDA or cuBLAS is unavailable —
+    /// without cuBLAS `gemm_forward` falls back to a PTX kernel on the
+    /// trainer stream and no cross-stream boundary exists.
+    #[test]
+    #[cfg(feature = "cuda")]
+    fn falsify_cuda_nf4_forward_nan_001_cublas_stream_ordering() {
+        use crate::autograd::cuda_forward::{gemm_forward, residual_add_forward};
+
+        if !cuda_training_available() {
+            return;
+        }
+        let trainer = CudaTrainer::new().expect("CUDA trainer");
+        let stream = trainer.stream();
+
+        const DIM: usize = 4096;
+        const STEPS: usize = 100; // ~20ms of producer work on the trainer stream
+        let n = DIM * DIM;
+
+        let mut buf_x = trainer.upload(&vec![1.0f32; n]).expect("upload x");
+        let mut buf_y = trainer.zeros(n).expect("alloc y");
+        let delta = trainer.upload(&vec![1.0f32; n]).expect("upload delta");
+        let ones_col = trainer.upload(&vec![1.0f32; DIM]).expect("upload ones");
+        let mut out = trainer.zeros(DIM).expect("alloc out");
+
+        // Pre-warm cuBLAS + the PTX add kernel OUTSIDE the timed race:
+        // the first SGEMM per handle pays lazy kernel-selection cost
+        // (tens of ms host-side) that would otherwise let the producer
+        // chain drain before the consumer is even issued, masking the
+        // missing stream binding. Quiesce both streams afterwards.
+        gemm_forward(&buf_x, &ones_col, &mut out, DIM as u32, DIM as u32, 1, stream)
+            .expect("cuBLAS warm-up gemm");
+        residual_add_forward(&buf_x, &delta, &mut buf_y, n as u32, stream).expect("warm-up add");
+        trainer.synchronize().expect("trainer stream quiesce");
+        let _ = trainer.download(&out).expect("NULL stream quiesce");
+        // Reset X to 1.0 after warm-up (buf_y holds warm-up garbage; the
+        // chain below overwrites it on the first iteration).
+        buf_x.copy_from_host(&vec![1.0f32; n]).expect("reset x");
+
+        // Producer chain on the trainer stream: X ends as (1 + STEPS) everywhere.
+        for _ in 0..STEPS {
+            residual_add_forward(&buf_x, &delta, &mut buf_y, n as u32, stream)
+                .expect("residual add");
+            std::mem::swap(&mut buf_x, &mut buf_y);
+        }
+
+        // Consumer: cuBLAS row-sum GEMM, out[DIM,1] = X[DIM,DIM] @ ones[DIM,1].
+        // Issued from the host immediately — if the handle is unbound this
+        // overlaps the still-running add chain on the default stream.
+        gemm_forward(&buf_x, &ones_col, &mut out, DIM as u32, DIM as u32, 1, stream)
+            .expect("cuBLAS gemm");
+
+        trainer.synchronize().expect("stream sync");
+        let result = trainer.download(&out).expect("download out");
+
+        let expected = (1.0 + STEPS as f32) * DIM as f32; // 413,696
+        let worst = result.iter().fold(0.0f32, |acc, &v| acc.max((v - expected).abs()));
+        assert!(
+            worst <= expected * 1e-3,
+            "FALSIFY-CUDA-NF4-FORWARD-NAN-001: cuBLAS GEMM read the activation \
+             matrix while the producer stream was still writing it \
+             (worst |Δ|={worst}, expected {expected}). The cuBLAS handle is not \
+             bound to the caller's CU_STREAM_NON_BLOCKING stream — restore the \
+             per-call bind_cublas_stream() at the cuBLAS dispatch sites \
+             (cuda_forward::matmul / matmul_f16, cuda_backward::gemm)."
+        );
     }
 
     #[test]

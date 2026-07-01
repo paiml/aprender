@@ -35,6 +35,13 @@ impl InstructPipeline {
         let hidden_data = hidden.data();
         let hidden_slice = hidden_data.as_slice().expect("contiguous hidden");
 
+        if crate::transformer::cuda_block::nan_scan_enabled() {
+            let bad = hidden_slice.iter().filter(|v| !v.is_finite()).count();
+            if bad > 0 {
+                eprintln!("[NAN-SCAN] embed (CPU): {bad}/{} non-finite", hidden_slice.len());
+            }
+        }
+
         // PMAT-420 / entrenar#316: Use seq_len-sized fresh buffers (like inference forward).
         training_state.fwd_scratch_a = trainer
             .upload(hidden_slice)
@@ -119,10 +126,20 @@ impl InstructPipeline {
                     }
                 };
 
-                training_state.layer_inputs[i]
-                    .copy_from_buffer(gpu_input)
-                    .map_err(|e| eprintln!("[CUDA] layer_input copy L{i}: {e}"))
-                    .ok()?;
+                // FALSIFY-CUDA-NF4-FORWARD-NAN-001: stream-ordered D2D copy.
+                // The sync `copy_from_buffer` (cuMemcpyDtoD) issues on the
+                // legacy default stream, which does NOT wait for this
+                // CU_STREAM_NON_BLOCKING stream — it can snapshot gpu_input
+                // before the previous layer finished writing it.
+                // SAFETY: both buffers outlive the stream-ordered copy
+                // (training_state and the ping-pong scratch live for the
+                // whole step); subsequent use is on the same stream.
+                unsafe {
+                    training_state.layer_inputs[i]
+                        .copy_from_buffer_async(gpu_input, stream)
+                        .map_err(|e| eprintln!("[CUDA] layer_input copy L{i}: {e}"))
+                        .ok()?;
+                }
 
                 // PMAT-483: Per-layer forward profiling
                 training_state.profiler_layer_start = Some(std::time::Instant::now());
@@ -188,11 +205,16 @@ impl InstructPipeline {
                 .map_err(|e| eprintln!("[CUDA] blocks_output realloc failed: {e}"))
                 .ok()?;
         }
-        training_state
-            .blocks_output
-            .copy_from_buffer(final_output)
-            .map_err(|e| eprintln!("[CUDA] blocks_output copy: {e}"))
-            .ok()?;
+        // FALSIFY-CUDA-NF4-FORWARD-NAN-001: stream-ordered D2D copy (see above).
+        // SAFETY: both buffers outlive the stream-ordered copy; subsequent
+        // reads (RMSNorm backward) run on the same stream.
+        unsafe {
+            training_state
+                .blocks_output
+                .copy_from_buffer_async(final_output, stream)
+                .map_err(|e| eprintln!("[CUDA] blocks_output copy: {e}"))
+                .ok()?;
+        }
 
         crate::autograd::cuda_backward::rms_norm_forward(
             final_output,
@@ -204,6 +226,13 @@ impl InstructPipeline {
         )
         .map_err(|e| eprintln!("[CUDA] GPU RMSNorm forward failed: {e}"))
         .ok()?;
+
+        crate::transformer::cuda_block::nan_scan_f32(
+            "final-norm",
+            &training_state.lm_head_hidden_buf,
+            seq_len * hidden_size,
+            stream,
+        );
 
         Some(())
     }
@@ -501,6 +530,13 @@ impl InstructPipeline {
             eprintln!("[RES-FALSE] BT GEMM failed");
             return false;
         }
+
+        crate::transformer::cuda_block::nan_scan_f32(
+            "lm-head-logits",
+            &training.logits_buf,
+            seq_len * vocab_size,
+            stream,
+        );
 
         true
     }

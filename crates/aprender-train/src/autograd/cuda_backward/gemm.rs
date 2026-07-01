@@ -16,7 +16,9 @@ use super::cache::KERNEL_CACHE;
 
 // cuBLAS backward dispatch (ALB-075)
 #[cfg(feature = "cuda")]
-use crate::autograd::cuda_forward::{cublas_gemm_backward_a, cublas_gemm_backward_b};
+use crate::autograd::cuda_forward::{
+    bind_cublas_stream, cublas_gemm_backward_a, cublas_gemm_backward_b,
+};
 
 /// Tile size for backward GEMM kernels (C-TILE-BWD-001).
 ///
@@ -50,6 +52,7 @@ pub fn gemm_backward_a(
     // on transposed GEMMs with gradient magnitudes ~1e5. Forward GEMMs remain
     // on tensor cores since NoTrans/NoTrans is unaffected.
     if let Some(cublas) = cache.cublas() {
+        bind_cublas_stream(cublas, stream)?;
         return cublas_gemm_backward_a(cublas, grad_output, b, grad_a, m, k, n);
     }
 
@@ -127,6 +130,7 @@ pub fn gemm_backward_b(
     // on transposed GEMMs with gradient magnitudes ~1e5. Forward GEMMs remain
     // on tensor cores since NoTrans/NoTrans is unaffected.
     if let Some(cublas) = cache.cublas() {
+        bind_cublas_stream(cublas, stream)?;
         return cublas_gemm_backward_b(cublas, a, grad_output, grad_b, m, k, n);
     }
 
@@ -190,7 +194,7 @@ pub fn gemm_backward_a_accumulate(
     m: u32,
     k: u32,
     n: u32,
-    _stream: &CudaStream,
+    stream: &CudaStream,
 ) -> Result<()> {
     let cache = KERNEL_CACHE.get().ok_or(CudaTensorError::DeviceNotInitialized)?;
     let cache = cache.lock().map_err(|_err| {
@@ -200,6 +204,7 @@ pub fn gemm_backward_a_accumulate(
     // cuBLAS accumulate path (beta=1.0) — this is the only path that matters
     // in production since cuBLAS is always initialized for NF4 QLoRA training.
     if let Some(cublas) = cache.cublas() {
+        bind_cublas_stream(cublas, stream)?;
         return crate::autograd::cuda_forward::cublas_gemm_backward_a_accumulate(
             cublas,
             grad_output,

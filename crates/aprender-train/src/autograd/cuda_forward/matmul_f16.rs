@@ -48,7 +48,7 @@ pub fn gemm_forward_f16(
     let cublas = cache.cublas().ok_or_else(|| {
         CudaTensorError::KernelError("cuBLAS handle required for fp16 GEMM".to_string())
     })?;
-    let _ = stream; // cuBLAS handle already bound to stream
+    super::matmul::bind_cublas_stream(cublas, stream)?;
     cublas
         .gemm_f16(
             GemmOp::NoTrans,
@@ -160,7 +160,7 @@ pub fn gemm_f16_to_f32_backward_a(
     let cublas = cache.cublas().ok_or_else(|| {
         CudaTensorError::KernelError("cuBLAS handle required for fp16→fp32 backward".to_string())
     })?;
-    let _ = stream;
+    super::matmul::bind_cublas_stream(cublas, stream)?;
     cublas
         .gemm_f16_to_f32(
             GemmOp::Trans,
@@ -206,7 +206,7 @@ pub fn gemm_f16_to_f32_forward(
     let cublas = cache.cublas().ok_or_else(|| {
         CudaTensorError::KernelError("cuBLAS handle required for fp16→fp32 GEMM".to_string())
     })?;
-    let _ = stream;
+    super::matmul::bind_cublas_stream(cublas, stream)?;
     cublas
         .gemm_f16_to_f32(
             GemmOp::NoTrans,
