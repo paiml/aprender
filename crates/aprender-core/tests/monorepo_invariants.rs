@@ -39,8 +39,10 @@ fn test_all_crate_names_use_aprender_prefix() {
             continue;
         }
 
-        // Package names must start with "aprender" or be "apr-cli"
-        if !name.starts_with("aprender") && name != "apr-cli" {
+        // Package names must start with "aprender" or be an allowlisted `apr-*`
+        // family member (the CLI binary crate and the sovereign leaf format crate).
+        const APR_ALLOWLIST: [&str; 2] = ["apr-cli", "apr-format"];
+        if !name.starts_with("aprender") && !APR_ALLOWLIST.contains(&name) {
             violations.push(name.to_string());
         }
     }
@@ -48,7 +50,7 @@ fn test_all_crate_names_use_aprender_prefix() {
     assert!(
         violations.is_empty(),
         "FALSIFY-MONO-010: Crates with non-aprender names found: {:?}\n\
-         All workspace crates must use `aprender-*` naming (except `apr-cli`).",
+         All workspace crates must use `aprender-*` naming (except `apr-cli`, `apr-format`).",
         violations
     );
 }
