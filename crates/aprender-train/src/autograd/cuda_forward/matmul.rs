@@ -16,6 +16,25 @@ use crate::autograd::cuda_tensor::{CudaTensorError, Result};
 #[cfg(feature = "cuda")]
 use super::cache::FORWARD_KERNEL_CACHE;
 
+/// Bind a cuBLAS handle to the caller's stream before dispatching a GEMM.
+///
+/// FALSIFY-CUDA-NF4-FORWARD-NAN-001 (cuda-nf4-forward-stream-ordering-v1):
+/// a fresh cuBLAS handle issues its GEMMs on the legacy DEFAULT stream, and a
+/// `CU_STREAM_NON_BLOCKING` trainer stream never implicitly synchronizes with
+/// it — so an unbound GEMM races the PTX producer/consumer kernels around it
+/// (rmsnorm→QKV, softmax→scores@V, final-norm→lm_head), yielding NaN losses
+/// on the FIRST QLoRA training step. Binding per call (instead of bind-once
+/// at trainer construction) also keeps the process-global handle off
+/// DESTROYED streams after a trainer drops. `cublasSetStream_v2` is a handle
+/// field write (~100ns) — negligible next to any GEMM. Callers hold the
+/// kernel-cache mutex, so bind+launch is atomic across threads.
+#[cfg(feature = "cuda")]
+pub(crate) fn bind_cublas_stream(cublas: &CublasHandle, stream: &CudaStream) -> Result<()> {
+    cublas
+        .set_stream(stream)
+        .map_err(|e| CudaTensorError::KernelError(format!("cuBLAS set_stream failed: {e:?}")))
+}
+
 /// Fused SwiGLU forward pass on GPU (ENT-150)
 ///
 /// Computes: output = SiLU(gate) * up
@@ -88,6 +107,7 @@ pub fn gemm_forward(
         CudaTensorError::KernelError("Failed to acquire kernel cache lock".to_string())
     })?;
     if let Some(cublas) = cache.cublas() {
+        bind_cublas_stream(cublas, stream)?;
         return cublas_gemm_forward(cublas, a, b, c, m, k, n);
     }
 
@@ -147,11 +167,12 @@ pub fn gemm_forward_bt(
     m: u32,
     k: u32,
     n: u32,
-    _stream: &CudaStream,
+    stream: &CudaStream,
 ) -> Result<()> {
     let cache = FORWARD_KERNEL_CACHE.get().ok_or(CudaTensorError::DeviceNotInitialized)?;
     let cache = cache.lock().map_err(|_| CudaTensorError::KernelError("cache lock".to_string()))?;
     if let Some(cublas) = cache.cublas() {
+        bind_cublas_stream(cublas, stream)?;
         return cublas_gemm_forward_bt(cublas, a, b, c, m, k, n);
     }
     Err(CudaTensorError::KernelError("gemm_forward_bt requires cuBLAS".to_string()))
@@ -344,6 +365,7 @@ pub fn batched_4d_gemm_forward(
 
     // ALB-075 Phase 4: cuBLAS strided batched GEMM for attention (16x faster than PTX)
     if let Some(cublas) = cache.cublas() {
+        bind_cublas_stream(cublas, stream)?;
         let batch_count = (batch * heads) as i32;
         let stride_a = i64::from(m) * i64::from(k);
         let stride_b = i64::from(k) * i64::from(n);
@@ -852,8 +874,6 @@ pub fn gemm_nf4_dequant_cublas(
     n: u32,
     stream: &CudaStream,
 ) -> Result<()> {
-    let _ = stream; // cuBLAS uses its own stream (set via set_forward_cublas_stream)
-
     let cache = FORWARD_KERNEL_CACHE.get().ok_or(CudaTensorError::DeviceNotInitialized)?;
     let cache = cache.lock().map_err(|_err| {
         CudaTensorError::KernelError("Failed to acquire kernel cache lock".to_string())
@@ -862,6 +882,7 @@ pub fn gemm_nf4_dequant_cublas(
     let cublas = cache.cublas().ok_or_else(|| {
         CudaTensorError::KernelError("cuBLAS not available for NF4 dequant GEMM".to_string())
     })?;
+    bind_cublas_stream(cublas, stream)?;
 
     // C[M,N] = A[M,K] @ W[N,K]^T
     // col-major: C_cm[N,M] = W_cm_transposed[N,K] @ A_cm[K,M]
@@ -925,8 +946,6 @@ pub fn gemm_nf4_backward_a_cublas(
     n: u32,
     stream: &CudaStream,
 ) -> Result<()> {
-    let _ = stream; // cuBLAS uses its own stream (set via set_forward_cublas_stream)
-
     let cache = FORWARD_KERNEL_CACHE.get().ok_or(CudaTensorError::DeviceNotInitialized)?;
     let cache = cache.lock().map_err(|_err| {
         CudaTensorError::KernelError("Failed to acquire kernel cache lock".to_string())
@@ -935,6 +954,7 @@ pub fn gemm_nf4_backward_a_cublas(
     let cublas = cache.cublas().ok_or_else(|| {
         CudaTensorError::KernelError("cuBLAS not available for NF4 backward GEMM".to_string())
     })?;
+    bind_cublas_stream(cublas, stream)?;
 
     // grad_in[M,K] = grad_out[M,N] @ W[N,K]
     // col-major: C_cm[K,M] = W_cm[K,N] @ A_cm[N,M]

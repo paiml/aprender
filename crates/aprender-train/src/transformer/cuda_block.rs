@@ -72,6 +72,50 @@ fn leak<T>(val: T) {
     let _ = std::mem::ManuallyDrop::new(val);
 }
 
+/// APR_NAN_SCAN=1: env-gated per-op NaN/Inf bisection for the CUDA forward.
+///
+/// Diagnostic only — synchronizes the stream and downloads buffers, so it is
+/// slow. Do NOT combine with CUDA_GRAPH=1 (sync inside capture is invalid).
+#[cfg(feature = "cuda")]
+#[inline]
+pub(crate) fn nan_scan_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("APR_NAN_SCAN").as_deref() == Ok("1"))
+}
+
+/// Download the first `n` elements of `buf` and report non-finite values.
+/// Returns the non-finite count (0 when APR_NAN_SCAN is unset).
+#[cfg(feature = "cuda")]
+pub(crate) fn nan_scan_f32(
+    tag: &str,
+    buf: &GpuBuffer<f32>,
+    n: usize,
+    stream: &CudaStream,
+) -> usize {
+    if !nan_scan_enabled() {
+        return 0;
+    }
+    if let Err(e) = stream.synchronize() {
+        eprintln!("[NAN-SCAN] {tag}: sync failed: {e:?}");
+        return 0;
+    }
+    let n = n.min(buf.len());
+    let mut host = vec![0.0f32; n];
+    if let Err(e) = buf.copy_to_host(&mut host) {
+        eprintln!("[NAN-SCAN] {tag}: download failed: {e:?}");
+        return 0;
+    }
+    let bad = host.iter().filter(|v| !v.is_finite()).count();
+    if bad > 0 {
+        let first_idx = host.iter().position(|v| !v.is_finite()).unwrap_or(0);
+        eprintln!(
+            "[NAN-SCAN] {tag}: {bad}/{n} non-finite (first at [{first_idx}]={})",
+            host[first_idx]
+        );
+    }
+    bad
+}
+
 #[cfg(feature = "cuda")]
 use trueno_gpu::driver::{CudaContext, CudaStream, GpuBuffer};
 
@@ -3128,6 +3172,12 @@ impl CudaNf4TransformerBlock {
         )?;
         scratch.op_end(_t, OP_RMSNORM_ATTN);
 
+        if nan_scan_enabled() {
+            let l = self.layer_idx;
+            nan_scan_f32(&format!("L{l} input"), input, seq_len * hidden_size, stream);
+            nan_scan_f32(&format!("L{l} norm1"), &scratch.norm1_out, seq_len * hidden_size, stream);
+        }
+
         // === Q, K, V Projections ===
         // Backend selection:
         //   FP16_GEMM=1: fp16 tensor core GEMM (Tier 2 parity, 2x BW savings)
@@ -3226,10 +3276,22 @@ impl CudaNf4TransformerBlock {
             cuda_add_inplace(&mut scratch.v, &scratch.lora_temp, seq_len * kv_hidden_size, stream)?;
         }
 
+        if nan_scan_enabled() {
+            let l = self.layer_idx;
+            nan_scan_f32(&format!("L{l} q-proj"), &scratch.q, seq_len * q_dim, stream);
+            nan_scan_f32(&format!("L{l} k-proj"), &scratch.k, seq_len * kv_hidden_size, stream);
+            nan_scan_f32(&format!("L{l} v-proj"), &scratch.v, seq_len * kv_hidden_size, stream);
+        }
+
         // === Multi-Head Attention (GPU-only, zero CPU transfers) ===
         let _t = scratch.op_begin();
         self.compute_attention_cuda(seq_len, stream, scratch)?;
         scratch.op_end(_t, OP_ATTENTION);
+
+        if nan_scan_enabled() {
+            let l = self.layer_idx;
+            nan_scan_f32(&format!("L{l} attn-out"), &scratch.attn_out, seq_len * q_dim, stream);
+        }
 
         // === Output Projection ===
         let _t = scratch.op_begin();
@@ -3254,6 +3316,11 @@ impl CudaNf4TransformerBlock {
 
         scratch.op_end(_t, OP_O_PROJ);
 
+        if nan_scan_enabled() {
+            let l = self.layer_idx;
+            nan_scan_f32(&format!("L{l} o-proj"), &scratch.o_proj_out, seq_len * hidden_size, stream);
+        }
+
         // === Fused Residual Add + RMSNorm (entrenar#321: eliminates NaN cascade) ===
         let _t = scratch.op_begin();
         // The separate cuda_add + rms_norm_forward allows activation explosion between
@@ -3272,6 +3339,12 @@ impl CudaNf4TransformerBlock {
         )?;
 
         scratch.op_end(_t, OP_RMSNORM_FFN); // Fused residual + RMSNorm
+
+        if nan_scan_enabled() {
+            let l = self.layer_idx;
+            nan_scan_f32(&format!("L{l} residual1"), &scratch.residual1, seq_len * hidden_size, stream);
+            nan_scan_f32(&format!("L{l} norm2"), &scratch.norm2_out, seq_len * hidden_size, stream);
+        }
 
         // === FFN: Gate + Up + SwiGLU + Down ===
         let _t = scratch.op_begin(); // Gate+Up GEMM timing
@@ -3310,11 +3383,22 @@ impl CudaNf4TransformerBlock {
 
         scratch.op_end(_t, OP_GATE_UP_GEMM);
 
+        if nan_scan_enabled() {
+            let l = self.layer_idx;
+            nan_scan_f32(&format!("L{l} gate"), &scratch.gate_out, seq_len * intermediate_size, stream);
+            nan_scan_f32(&format!("L{l} up"), &scratch.up_out, seq_len * intermediate_size, stream);
+        }
+
         // === FFN: Fused SwiGLU ===
         let _t = scratch.op_begin();
         fused_swiglu_forward(&scratch.gate_out, &scratch.up_out, &mut scratch.swiglu_out,
             saturating_u32(seq_len * intermediate_size), stream)?;
         scratch.op_end(_t, OP_SILU);
+
+        if nan_scan_enabled() {
+            let l = self.layer_idx;
+            nan_scan_f32(&format!("L{l} swiglu"), &scratch.swiglu_out, seq_len * intermediate_size, stream);
+        }
 
         // === FFN: Down Projection ===
         let _t = scratch.op_begin();
@@ -3339,8 +3423,18 @@ impl CudaNf4TransformerBlock {
 
         scratch.op_end(_t, OP_DOWN_GEMM);
 
+        if nan_scan_enabled() {
+            let l = self.layer_idx;
+            nan_scan_f32(&format!("L{l} down"), &scratch.ffn_out, seq_len * hidden_size, stream);
+        }
+
         // === Final Residual Add ===
         cuda_add(&scratch.residual1, &scratch.ffn_out, output, seq_len * hidden_size, stream)?;
+
+        if nan_scan_enabled() {
+            let l = self.layer_idx;
+            nan_scan_f32(&format!("L{l} block-out"), output, seq_len * hidden_size, stream);
+        }
 
         Ok(())
     }
@@ -3422,6 +3516,22 @@ impl CudaNf4TransformerBlock {
             )?;
         }
 
+        if nan_scan_enabled() {
+            let l = self.layer_idx;
+            nan_scan_f32(
+                &format!("L{l} attn.rope-q"),
+                &scratch.q,
+                seq_len * num_heads * head_dim,
+                stream,
+            );
+            nan_scan_f32(
+                &format!("L{l} attn.rope-k"),
+                &scratch.k,
+                seq_len * num_kv_heads * head_dim,
+                stream,
+            );
+        }
+
         // Q: interleaved → batched layout
         interleaved_to_batched_forward(&scratch.q, &mut scratch.attn_q_batched, s, nh, hd, stream)?;
 
@@ -3474,6 +3584,28 @@ impl CudaNf4TransformerBlock {
             stream,
         )?;
 
+        if nan_scan_enabled() {
+            let l = self.layer_idx;
+            nan_scan_f32(
+                &format!("L{l} attn.q-batched"),
+                &scratch.attn_q_batched,
+                num_heads * seq_len * head_dim,
+                stream,
+            );
+            nan_scan_f32(
+                &format!("L{l} attn.kT"),
+                &scratch.attn_kv_temp,
+                num_heads * seq_len * head_dim,
+                stream,
+            );
+            nan_scan_f32(
+                &format!("L{l} attn.scores-raw"),
+                &scratch.attn_scores,
+                num_heads * seq_len * seq_len,
+                stream,
+            );
+        }
+
         // Scale by 1/sqrt(head_dim)
         let scale_factor = 1.0 / (head_dim as f32).sqrt();
         let total_scores = num_heads * seq_len * seq_len;
@@ -3524,6 +3656,21 @@ impl CudaNf4TransformerBlock {
             }
         }
 
+        if nan_scan_enabled() {
+            let l = self.layer_idx;
+            // -inf from the causal mask is expected here; only NaN is a defect.
+            if stream.synchronize().is_ok() {
+                let n = num_heads * seq_len * seq_len;
+                let mut host = vec![0.0f32; n.min(scratch.attn_scores.len())];
+                if scratch.attn_scores.copy_to_host(&mut host).is_ok() {
+                    let nan = host.iter().filter(|v| v.is_nan()).count();
+                    if nan > 0 {
+                        eprintln!("[NAN-SCAN] L{l} attn.scores-masked: {nan}/{n} NaN");
+                    }
+                }
+            }
+        }
+
         // SAFETY: The softmax kernel reads each row completely into shared memory / registers
         // before writing output. The view is forgotten to prevent double-free.
         let scores_view = unsafe {
@@ -3540,6 +3687,16 @@ impl CudaNf4TransformerBlock {
             stream,
         )?;
         leak(scores_view);
+
+        if nan_scan_enabled() {
+            let l = self.layer_idx;
+            nan_scan_f32(
+                &format!("L{l} attn.softmax"),
+                &scratch.attn_scores,
+                num_heads * seq_len * seq_len,
+                stream,
+            );
+        }
 
         // V: interleaved → batched, then GQA expand
         interleaved_to_batched_forward(&scratch.v, &mut scratch.attn_kv_temp, s, nkv, hd, stream)?;
@@ -3569,6 +3726,16 @@ impl CudaNf4TransformerBlock {
             }
         }
 
+        if nan_scan_enabled() {
+            let l = self.layer_idx;
+            nan_scan_f32(
+                &format!("L{l} attn.v-expanded"),
+                &scratch.attn_kv_temp2,
+                num_heads * seq_len * head_dim,
+                stream,
+            );
+        }
+
         // attn_scores @ V → attention output
         batched_4d_gemm_forward(
             &scratch.attn_scores,
@@ -3581,6 +3748,16 @@ impl CudaNf4TransformerBlock {
             s,
             stream,
         )?;
+
+        if nan_scan_enabled() {
+            let l = self.layer_idx;
+            nan_scan_f32(
+                &format!("L{l} attn.scoresV"),
+                &scratch.attn_q_batched,
+                num_heads * seq_len * head_dim,
+                stream,
+            );
+        }
 
         // Batched → interleaved layout
         batched_to_interleaved_forward(
