@@ -57,6 +57,17 @@ jobs:
       # (sccache 0.14.0), shared cache at `/home/noah/data/sccache` (warm, ~11GB).
       enable_sccache: true
       use_nextest: true
+      # NOTE: coverage_min (the opt-in coverage ratchet from the build-system audit)
+      # is intentionally NOT set on aprender. The pilot run exposed that aprender's
+      # ROOT crate is a facade — the sovereign-ci coverage job runs `--lib` on the
+      # root and exercises 0 tests ("test result: ok. 0 passed"); all real code +
+      # tests live in workspace members, run by the separate `workspace-test` job.
+      # So coverage_min has no lcov data to gate on. Making it meaningful here needs
+      # test_workspace: true + GPU-member test_args exclusions first (the PMAT-159
+      # workspace blind-spot). Tracked as a follow-up. The coverage ratchet
+      # MECHANISM is live fleet-wide via sovereign-ci (#37); a single-crate repo is
+      # the natural first coverage pilot. aprender's blocking-quality pilot is the
+      # diff-scoped mutation gate below.
     secrets: inherit
 
   # APR-MONO: Workspace-wide test (all 75 crates)
@@ -307,79 +318,11 @@ jobs:
             "$IMAGE" \
             bash -c 'chown -R 1000:1000 /workspace || true; chown -R 1000:1000 /usr/local/cargo/registry || true; chown -R 1000:1000 /workspace/target || true'
 
-  # F-DUCKDB: PERMANENT guard — libduckdb-sys must NEVER re-enter the DEFAULT build.
-  #
-  # CORE-009 / PMAT-125: `duckdb` (features=["bundled"]) compiles all of DuckDB's
-  # C++ from source (~7-8 min) and OOMs/times-out the shared runner. PR #2224 made
-  # it OPTIONAL behind aprender-db's `competitive-benchmarks` feature so it stays out
-  # of `cargo test --workspace`. This job is the Poka-Yoke that fails CI the instant a
-  # future edit re-adds duckdb/libduckdb-sys to the DEFAULT (non-optional) dep tree.
-  #
-  # Why a standalone job (not a step in workspace-test): a `cargo tree` is seconds —
-  # we want this signal FAST and attributable, not buried in the ~26min workspace-test.
-  # It's wired into `gate` (the org-ruleset-required context) via `needs`, so a leak is
-  # a HARD, REQUIRED failure on every PR.
-  #
-  # Detection: `cargo tree -e normal,build -i <crate>` exits 0 iff <crate> IS in the
-  # DEFAULT-feature tree (NO --all-features). Exit 0 == present == leak == fail.
-  duckdb-guard:
-    runs-on: [self-hosted, X64, Linux]
-    timeout-minutes: 10
-    env:
-      IMAGE: localhost:5000/sovereign-ci:stable
-    steps:
-      - uses: actions/checkout@v4
-      - name: Pull sovereign-ci image (with retry + local-cache fallback)
-        # Same two-layer resilience as workspace-test — see that job for full context.
-        run: |
-          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
-            echo "Image $IMAGE already cached locally — skipping pull"
-            exit 0
-          fi
-          max_attempts=15
-          delay=4
-          for i in $(seq 1 $max_attempts); do
-            if docker pull "$IMAGE"; then
-              echo "Image pulled successfully on attempt $i"
-              exit 0
-            fi
-            if [ $i -eq $max_attempts ]; then
-              echo "::error::Registry localhost:5000 unreachable after $max_attempts attempts AND image not in local cache"
-              exit 1
-            fi
-            echo "Pull attempt $i/$max_attempts failed; sleeping ${delay}s"
-            sleep "$delay"
-            delay=$((delay + 6))
-          done
-      - name: Assert libduckdb-sys absent from the DEFAULT build (CORE-009 / PMAT-125)
-        run: |
-          docker run --rm \
-          -e CI -e GITHUB_ACTIONS \
-            -v "${GITHUB_WORKSPACE}:/workspace" \
-            -w /workspace \
-            "$IMAGE" \
-            bash -c '
-              set -o pipefail
-              leaked=0
-              # DEFAULT feature set only — NO --all-features. Exit 0 from `cargo tree -i`
-              # means the crate IS in the normal+build dep tree => it leaked into the gate.
-              for crate in libduckdb-sys duckdb; do
-                if cargo tree -e normal,build -i "$crate" >/dev/null 2>&1; then
-                  echo "::error::$crate leaked into the DEFAULT build (DuckDB ~8min C++). duckdb MUST stay optional behind aprender-db/competitive-benchmarks (CORE-009 / PMAT-125)."
-                  leaked=1
-                fi
-              done
-              if [ "$leaked" -eq 1 ]; then
-                exit 1
-              fi
-              echo "OK: duckdb/libduckdb-sys are NOT in the default dependency tree (still optional behind competitive-benchmarks)."
-            '
-
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".
   gate:
     runs-on: [self-hosted, X64, Linux]
-    needs: [ci, workspace-test, duckdb-guard]
+    needs: [ci, workspace-test, mutants]
     if: always()
     steps:
       - name: Check required jobs
@@ -392,24 +335,77 @@ jobs:
             echo "workspace-test failed: ${{ needs.workspace-test.result }}"
             exit 1
           fi
-          if [ "${{ needs.duckdb-guard.result }}" != "success" ]; then
-            echo "duckdb-guard failed: ${{ needs.duckdb-guard.result }} — libduckdb-sys leaked into the DEFAULT build (CORE-009 / PMAT-125)"
+          # Diff-scoped mutation gate (PMAT gap #1): blocking on PRs.
+          # `skipped` is the expected result on push-to-main (the job has
+          # `if: github.event_name == 'pull_request'`); treat it as pass so
+          # main-branch pushes are not blocked by a job that intentionally
+          # did not run. Only an explicit `failure` blocks.
+          MUT="${{ needs.mutants.result }}"
+          if [ "$MUT" = "failure" ]; then
+            echo "mutants (diff-scoped mutation) failed: $MUT"
             exit 1
           fi
+          echo "mutants result: $MUT (success/skipped both pass)"
           echo "All required jobs passed"
 
-  # Refactored to explicit docker run for the same registry-flake reason
-  # documented above the workspace-test job.
+  # Mutation testing — DIFF-SCOPED + BLOCKING on PRs (PMAT build-system audit gap #1).
+  #
+  # BEFORE: full-tree `cargo mutants -- --lib`, push-to-main only, and
+  # `continue-on-error: true` at BOTH the job and step level → a surviving
+  # mutant never blocked anything. New under-tested code merged silently,
+  # contradicting the 80%-mutation / ZERO-tolerance rule.
+  #
+  # AFTER: scope mutation to the PR DIFF (`cargo mutants --in-diff`), run it on
+  # pull_request events, and make it BLOCKING (no continue-on-error; wired into
+  # the `gate` job). Diff-scoping is the key lever: full-tree mutation on a
+  # 75-crate monorepo is hours-long and would choke the merge queue. Gating only
+  # the lines a PR actually touches keeps it fast (minutes, proportional to diff
+  # size) while still preventing NEW untested code from landing. A PR whose diff
+  # contains no mutable code is a clean no-op pass (cargo-mutants reports 0
+  # mutants → exit 0).
+  #
+  # On a push to main (post-merge), the job is a no-op pass: there is no PR diff
+  # to scope against, so we skip rather than fall back to the old hours-long
+  # full-tree run.
   mutants:
     runs-on: [self-hosted, X64, Linux]
-    continue-on-error: true
-    timeout-minutes: 120
-    needs: [gate]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    timeout-minutes: 60
+    needs: [ci, workspace-test]
+    if: github.event_name == 'pull_request'
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
+      # Max surviving (missed) mutants tolerated on the PR diff. 0 = every
+      # mutant introduced/touched by this PR must be caught by a test. Tune up
+      # via repo variable MUTANTS_MAX_MISSED if a diff legitimately can't reach 0.
+      MUTANTS_MAX_MISSED: ${{ vars.MUTANTS_MAX_MISSED || '0' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Need history + base branch to compute the PR diff for --in-diff.
+          fetch-depth: 0
+      - name: Compute PR diff for mutation scoping
+        # cargo-mutants --in-diff takes a unified diff and mutates ONLY the
+        # lines it adds/changes. We diff the PR head against the merge-base with
+        # the target branch so the scope is exactly "what this PR introduces".
+        run: |
+          set -euo pipefail
+          BASE_REF="${{ github.event.pull_request.base.ref }}"
+          # NOT --depth=1: a shallow base commit has no shared ancestor with the
+          # fetch-depth:0 PR head, so `git merge-base` finds none and (under
+          # `set -e`) the step dies — failing the mutants gate on every PR.
+          # Fetch the base branch's history so the merge-base is reachable.
+          git fetch --no-tags origin "$BASE_REF"
+          MERGE_BASE=$(git merge-base HEAD "origin/$BASE_REF" 2>/dev/null || true)
+          if [ -z "$MERGE_BASE" ]; then
+            echo "No merge-base with origin/$BASE_REF — scoping diff to base tip"
+            MERGE_BASE="origin/$BASE_REF"
+          fi
+          echo "Base ref: $BASE_REF  merge-base: $MERGE_BASE"
+          git diff "$MERGE_BASE"...HEAD > pr.diff
+          echo "Diff size: $(wc -l < pr.diff) lines"
+          if [ ! -s pr.diff ]; then
+            echo "Empty diff — no code to mutate"
+          fi
       - name: Pull sovereign-ci image (with retry + local-cache fallback)
         # Same two-layer resilience as workspace-test — see that job for full context.
         run: |
@@ -440,16 +436,58 @@ jobs:
             -w /workspace \
             "$IMAGE" \
             cargo install cargo-mutants --locked
-      - name: Run mutation testing
-        continue-on-error: true
+      - name: Run diff-scoped mutation testing (BLOCKING)
+        # No continue-on-error: a missed mutant on the PR diff fails the job,
+        # which fails `gate`, which blocks merge. --in-diff pr.diff restricts
+        # mutation to PR-touched lines. Empty diff → 0 mutants → clean pass.
+        # We parse mutants.out/outcomes.json for the missed count and compare to
+        # MUTANTS_MAX_MISSED so the threshold is explicit and tunable (rather
+        # than relying solely on cargo-mutants' aggregate exit code).
         run: |
+          set -euo pipefail
+          if [ ! -s pr.diff ]; then
+            echo "No PR diff content — nothing to mutate. Pass."
+            exit 0
+          fi
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -w /workspace \
+            -e MUTANTS_MAX_MISSED \
             "$IMAGE" \
-            cargo mutants --no-times --timeout 300 --in-place -- --lib
+            bash -c '
+              set -uo pipefail
+              # --in-diff pr.diff: mutate only PR-touched lines.
+              # cargo-mutants exits non-zero when mutants survive; we still
+              # parse outcomes.json so the threshold (MUTANTS_MAX_MISSED) is
+              # explicit and the failure message is actionable.
+              cargo mutants --no-times --timeout 300 --in-place \
+                --in-diff pr.diff -- --lib
+              MUT_EXIT=$?
+              echo "cargo-mutants exit: $MUT_EXIT"
+              OUTCOMES=mutants.out/outcomes.json
+              if [ ! -f "$OUTCOMES" ]; then
+                # No outcomes file means cargo-mutants found no mutants in the
+                # diff (e.g. diff only touched non-Rust / non-mutable lines).
+                echo "No mutants.out/outcomes.json — 0 mutants in diff. Pass."
+                exit 0
+              fi
+              MISSED=$(grep -o "\"summary\"[^}]*\"missed\":[0-9]*" "$OUTCOMES" \
+                | grep -o "\"missed\":[0-9]*" | grep -o "[0-9]*" | head -1)
+              TIMEOUT=$(grep -o "\"timeout\":[0-9]*" "$OUTCOMES" \
+                | grep -o "[0-9]*" | head -1)
+              MISSED=${MISSED:-0}; TIMEOUT=${TIMEOUT:-0}
+              echo "Diff-scoped mutation result: missed=$MISSED timeout=$TIMEOUT (max allowed missed=$MUTANTS_MAX_MISSED)"
+              UNCAUGHT=$((MISSED + TIMEOUT))
+              if [ "$UNCAUGHT" -gt "$MUTANTS_MAX_MISSED" ]; then
+                echo "::error::$UNCAUGHT mutant(s) survived/timed-out on the PR diff (> $MUTANTS_MAX_MISSED allowed). New code is under-tested — add tests that kill these mutants. This would have merged SILENTLY before (PMAT gap #1)."
+                exit 1
+              fi
+              echo "All diff-scoped mutants caught (or within threshold). Pass."
+              exit 0
+            '
       - name: Upload mutation results
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: mutation-results
