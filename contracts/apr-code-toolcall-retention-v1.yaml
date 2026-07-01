@@ -1,0 +1,157 @@
+metadata:
+  kind: kernel
+  version: 1.0.0
+  created: '2026-06-25'
+  author: PAIML Engineering
+  description: >
+    apr-code tool-call retention (CCPA-m296). Pins the agentic-loop harness so a
+    format-correct model's tool-calling is RETAINED across multi-turn runs rather
+    than eroded to 0/N by a self-reinforcing text loop. Two correctness surfaces:
+    (1) a prior assistant TOOL_CALL turn is re-rendered STRUCTURALLY (canonical
+    <tool_call> + <tool_result>), never as re-flattened raw Markdown prose with a
+    capability-breaking "### Continue:" nudge; (2) a post-decode SALVAGE PARSER
+    conservatively recovers a tool call emitted outside the exact <tool_call>
+    envelope (a generic fenced block or a bare {"name","input"} JSON object) so a
+    near-miss becomes a real tool call instead of inert prose text.
+  references:
+  - 'crates/aprender-orchestrate/src/agent/runtime.rs — retain_assistant_text(), EndTurn history retention'
+  - 'crates/aprender-orchestrate/src/agent/driver/realizar.rs — parse_tool_calls(), salvage_tool_calls()'
+  - 'crates/aprender-orchestrate/src/agent/driver/chat_template.rs — structured AssistantToolUse/ToolResult render'
+  - 'CCPA m296 distill feasibility spike — agentic-loop harness bug independent of the model'
+equations:
+  toolcall_structural_retention:
+    formula: render(history + AssistantToolUse(c) + ToolResult(r)) preserves <tool_call> AND <tool_result>
+    domain: history with a format-correct assistant tool-call turn, any chat template
+    codomain: next-turn prompt string
+    invariants:
+    - The prior tool_call survives structurally as the canonical <tool_call> envelope
+    - The prior tool_result survives structurally as the <tool_result> envelope
+    - No "### Continue:" prose nudge is injected after a tool-using turn
+    - Raw tool-call markup never enters history as a Message::Assistant prose blob
+    - Genuine text turns are retained verbatim (behavior unchanged for prose)
+    preconditions:
+    - the prior assistant turn emitted a valid tool call
+    postconditions:
+    - prompt contains <tool_call> and <tool_result>
+    - prompt does not contain "### Continue:"
+    lean_theorem: Theorems.Apr_Code_Toolcall_Structural_Retention
+  toolcall_salvage_recovery:
+    formula: parse(text) recovers an unambiguous tool-call JSON outside the <tool_call> envelope
+    domain: model output text with no <tool_call>/```json envelope match
+    codomain: (remaining_text, [ToolCall])
+    invariants:
+    - A generic fenced block whose body is {"name","input"} is salvaged
+    - A bare top-level {"name","input"} JSON object is salvaged
+    - JSON without both a string name AND an input field is NEVER salvaged (conservative)
+    - A proper <tool_call> envelope is owned by the envelope parser, not salvage
+    preconditions:
+    - the envelope parser found no tool call
+    postconditions:
+    - tool-call-shaped JSON yields a non-empty [ToolCall]
+    - non-tool-call JSON yields an empty [ToolCall]
+    lean_theorem: Theorems.Apr_Code_Toolcall_Salvage_Recovery
+proof_obligations:
+- type: invariant
+  property: Prior tool-call turn renders structurally with no prose Continue nudge
+  formal: render(history) ∋ <tool_call> ∧ render(history) ∋ <tool_result> ∧ render(history) ∌ "### Continue:"
+  applies_to: toolcall_structural_retention
+- type: invariant
+  property: Tool-call markup is never retained as Assistant prose
+  formal: ∀ m ∈ history, m = Assistant(s) ⟹ s ∌ "<tool_call>"
+  applies_to: toolcall_structural_retention
+- type: equivalence
+  property: Salvage recovers an unambiguous out-of-envelope tool call
+  formal: parse(bare_or_fenced {"name":n,"input":i}) = (_, [ToolCall{name:n, input:i}])
+  applies_to: toolcall_salvage_recovery
+- type: invariant
+  property: Salvage is conservative — no false positives
+  formal: ¬(has_name_string ∧ has_input) ⟹ salvage = (text, [])
+  applies_to: toolcall_salvage_recovery
+kernel_structure:
+  phases:
+  - name: decode
+    description: Model emits text; parse_tool_calls extracts <tool_call>/```json envelopes
+    invariant: a proper envelope is parsed by the envelope path (id local-N)
+  - name: salvage
+    description: On envelope miss, salvage_tool_calls recovers a fenced/bare tool-call JSON
+    invariant: only {"name"(string),"input"}-shaped objects are salvaged (id salvage-N)
+  - name: retain
+    description: retain_assistant_text strips lingering tool-call markup before history
+    invariant: no capability-breaking raw Markdown re-enters the next-turn prompt
+simd_dispatch:
+  toolcall_structural_retention:
+    scalar: batuta::agent::runtime::retain_assistant_text
+  toolcall_salvage_recovery:
+    scalar: batuta::agent::driver::realizar::salvage_tool_calls
+enforcement:
+  structural_retention:
+    description: A prior tool-call turn must re-render structurally, never as prose + "### Continue:"
+    check: contract_tests::FALSIFY-TCR-001
+    severity: ERROR
+  history_no_prose_markup:
+    description: Raw tool-call markup must not be retained as Assistant prose
+    check: contract_tests::FALSIFY-TCR-003
+    severity: ERROR
+  salvage_recovery:
+    description: An out-of-envelope tool-call JSON must be salvaged, conservatively
+    check: contract_tests::FALSIFY-TCR-004
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-TCR-001
+  rule: Prior tool-call turn renders structurally with no prose Continue nudge
+  prediction: next-turn prompt preserves <tool_call>+<tool_result>, contains no "### Continue:"
+  test: 'cargo test -p aprender-orchestrate --lib falsify_toolcall_retention_001_structured_render_no_continue_nudge'
+  red_state: re-rendering the prior turn as raw Markdown or appending "### Continue:" FAILS
+  green_state: structured ChatML render preserves the envelope and injects no prose nudge (PASS)
+  if_fails: harness re-flattens the tool-call turn to prose and re-primes text mode across turns
+- id: FALSIFY-TCR-002
+  rule: Tool-call turn keeps structured history (not Assistant prose)
+  prediction: after a format-correct tool turn, history carries AssistantToolUse+ToolResult, no raw markup
+  test: 'cargo test -p aprender-orchestrate --lib falsify_toolcall_retention_002_history_keeps_structure_not_prose'
+  red_state: retaining raw tool-call text as Message::Assistant prose FAILS the no-markup assertion
+  green_state: structured tool messages retained; no Assistant prose carries <tool_call> (PASS)
+  if_fails: runtime pushes response.text verbatim into history, re-injecting Markdown next turn
+- id: FALSIFY-TCR-003
+  rule: retain_assistant_text strips residue, keeps prose
+  prediction: pure tool-call markup collapses to empty; genuine prose passes through unchanged
+  test: 'cargo test -p aprender-orchestrate --lib falsify_toolcall_retention_003_retain_strips_residue_keeps_prose'
+  red_state: identity retain_assistant_text leaves <tool_call> markup in prose, FAILS
+  green_state: tool-call spans stripped, prose preserved (PASS)
+  if_fails: lingering tool-call markup re-primes prose mode on the next turn
+- id: FALSIFY-TCR-004
+  rule: Salvage recovers an out-of-envelope tool call (bare JSON)
+  prediction: a bare {"name","input"} object in prose is recovered as a real tool call (salvage-N id)
+  test: 'cargo test -p aprender-orchestrate --lib test_salvage_bare_top_level_json_tool_call'
+  red_state: envelope-only parser scores the bare JSON as inert text, FAILS
+  green_state: salvage_tool_calls extracts the tool call from bare JSON (PASS)
+  if_fails: the "model almost emitted a tool_call" near-miss is lost to prose mode
+- id: FALSIFY-TCR-005
+  rule: Salvage recovers a generically-fenced tool call
+  prediction: a ```tool_call / ```rust fenced {"name","input"} body is recovered as a tool call
+  test: 'cargo test -p aprender-orchestrate --lib test_salvage_generic_fenced_block_non_json_tag'
+  red_state: envelope-only parser (knows only ```json) misses the fence, FAILS
+  green_state: salvage_tool_calls extracts the tool call from a generic fence (PASS)
+  if_fails: coder-finetuned models that fence with ```tool_call lose their tool calls to prose
+kani_harnesses:
+- id: KANI-TCR-001
+  obligation: Prior tool-call turn renders structurally
+  property: render(history) ∋ <tool_call> ∧ ∌ "### Continue:"
+  bound: 4
+  strategy: exhaustive
+  harness: verify_toolcall_structural_retention
+- id: KANI-TCR-002
+  obligation: Salvage is conservative
+  property: ¬(has_name ∧ has_input) ⟹ salvage = (text, [])
+  bound: 8
+  strategy: exhaustive
+  harness: verify_toolcall_salvage_conservative
+qa_gate:
+  id: F-TCR-001
+  name: apr-code Tool-Call Retention Contract
+  description: Pins the agentic-loop harness so tool-calling is retained across turns (CCPA-m296)
+  checks:
+  - structural_retention
+  - history_no_prose_markup
+  - salvage_recovery
+  pass_criteria: All 5 falsification tests PASS (GREEN) on the fixed harness
+  falsification: Make retain_assistant_text identity OR drop salvage — FALSIFY-TCR-001/003/004/005 FAIL

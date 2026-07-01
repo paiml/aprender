@@ -143,8 +143,15 @@ pub async fn run_agent_turn(
                 for msg in &messages[new_start..] {
                     history.push(msg.clone());
                 }
-                if !response.text.is_empty() {
-                    history.push(Message::Assistant(response.text.clone()));
+                // CCPA-m296: only retain GENUINE assistant prose in history. If the
+                // final text still carries un-parsed tool-call markup (a defense-in-
+                // depth residue the driver's parser+salvage couldn't recover), pushing
+                // it verbatim as Message::Assistant re-injects capability-breaking raw
+                // Markdown into the NEXT turn's prompt — the self-reinforcing text loop
+                // that erodes tool-calling. Strip the residue first; never re-prime prose.
+                let retained = retain_assistant_text(&response.text);
+                if !retained.is_empty() {
+                    history.push(Message::Assistant(retained));
                 }
                 return finish_loop(&response, &guard, manifest, query, memory, stream_tx.as_ref())
                     .await;
@@ -189,6 +196,56 @@ pub async fn run_agent_turn(
             }
         }
     }
+}
+
+/// CCPA-m296: sanitize an assistant turn's text before it enters multi-turn
+/// history. Strips any lingering tool-call markup so a prior tool-using turn is
+/// NEVER re-rendered as capability-breaking raw Markdown that re-primes prose
+/// mode on the next turn.
+///
+/// Genuine text turns pass through unchanged. Turns whose entire content was
+/// tool-call markup collapse to empty (the structured `AssistantToolUse` /
+/// `ToolResult` messages already carry that turn's tool semantics into history).
+///
+/// Returns the trimmed prose with `<tool_call>...</tool_call>` / unclosed
+/// `<tool_call>` / `<tool_result>...</tool_result>` spans removed.
+fn retain_assistant_text(text: &str) -> String {
+    let mut out = text.to_string();
+
+    // Remove well-formed <tool_call>...</tool_call> spans.
+    out = strip_spans(&out, "<tool_call>", "</tool_call>");
+    // Remove <tool_result>...</tool_result> spans (model sometimes echoes them).
+    out = strip_spans(&out, "<tool_result>", "</tool_result>");
+
+    // Remove an unclosed trailing <tool_call> (small models omit the close tag):
+    // everything from the marker to end-of-string is tool-call residue, not prose.
+    if let Some(pos) = out.find("<tool_call>") {
+        out.truncate(pos);
+    }
+
+    out.trim().to_string()
+}
+
+/// Remove every `open..close` span (inclusive) from `text`. Spans without a
+/// matching close are left untouched (handled separately by the caller).
+fn strip_spans(text: &str, open: &str, close: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut cursor = text;
+    loop {
+        let Some(start) = cursor.find(open) else {
+            out.push_str(cursor);
+            break;
+        };
+        let after_open = &cursor[start + open.len()..];
+        let Some(rel_end) = after_open.find(close) else {
+            // No closing tag — leave the remainder for the caller to handle.
+            out.push_str(cursor);
+            break;
+        };
+        out.push_str(&cursor[..start]);
+        cursor = &after_open[rel_end + close.len()..];
+    }
+    out
 }
 
 fn check_verdict(verdict: LoopVerdict) -> Result<(), AgentError> {
