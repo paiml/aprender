@@ -455,11 +455,24 @@ impl InstructPipeline {
         }
     }
     /// Evaluate loss and perplexity on a set of samples without updating weights.
+    ///
+    /// # Correctness (C-QLORA-EVAL-SYNC-001)
+    ///
+    /// On the NF4 QLoRA (`cuda`) path, `train_step` writes adapter deltas into
+    /// the GPU-resident `cuda_blocks`; the CPU `self.lora_layers` this method
+    /// forwards through are only refreshed by `sync_lora_to_cpu()`. We therefore
+    /// sync BEFORE evaluating so `val_loss` reflects the current trained
+    /// adapters rather than a stale never-synced copy (which is constant across
+    /// epochs and would freeze best-epoch selection at epoch 0). On the
+    /// CPU/WGPU paths the sync is a no-op — those adapters are already current.
     pub fn evaluate(
-        &self,
+        &mut self,
         prompt_ids_batch: &[Vec<u32>],
         response_ids_batch: &[Vec<u32>],
     ) -> InstructBatchResult {
+        // FALSIFY-CUDA-EVAL-ADAPTER-SYNC-001: pull GPU-trained adapters to CPU.
+        self.sync_lora_to_cpu();
+
         let mut total_loss = 0.0f32;
         let mut total_response_tokens = 0usize;
 

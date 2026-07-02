@@ -1,0 +1,131 @@
+metadata:
+  id: C-QLORA-EVAL-SYNC
+  version: 1.0.0
+  created: '2026-07-02'
+  author: PAIML Engineering
+  kind: pattern
+  status: ACTIVE_ALGORITHM_LEVEL
+  description: |
+    Pins the correctness of NF4 QLoRA per-epoch validation: the loss reported
+    by `InstructPipeline::evaluate()` must reflect the CURRENT trained LoRA
+    adapters, not a stale never-synced copy.
+
+    BACKGROUND. `apr finetune -m qlora` reports a per-epoch `val_loss` and uses
+    it for best-checkpoint selection (`val_loss < best_val_loss`) and early
+    stopping (`patience_counter`). On the CUDA path, `train_step` writes adapter
+    deltas into the GPU-resident `cuda_blocks`; `evaluate()` computes logits on
+    the CPU via `model.forward_with_lora(&full_ids, &self.lora_layers)`. The CPU
+    `self.lora_layers` are only ever refreshed by `sync_lora_to_cpu()` (which
+    downloads A_q/B_q/A_v/B_v from each NF4 block). That sync was invoked ONLY
+    inside `save_checkpoint` — never before `evaluate()` in the epoch loop
+    (`instruct_trainer.rs`).
+
+    ROOT CAUSE (5-whys). Why is per-epoch `val_loss` byte-identical across every
+    epoch and every run? Because `evaluate()` forwards `self.lora_layers`, whose
+    values at eval time are whatever a prior `save_checkpoint` last synced (or
+    the zero-initialised B if none) — NOT the current GPU adapters. Training
+    moves the GPU adapters but leaves `self.lora_layers` untouched, so the CPU
+    forward re-computes the same logits and the same loss. Consequence:
+    `best_val_loss` collapses to the epoch-0 constant, `best_epoch` freezes at 0
+    (the `best/` checkpoint is stale-by-N-epochs), and early stopping fires on a
+    plateau that only exists because the metric never moved.
+
+    FIX. `evaluate()` calls `sync_lora_to_cpu()` before the CPU forward, so the
+    CPU `lora_layers` reflect the current GPU-trained adapters. `evaluate` takes
+    `&mut self`. On the CPU/WGPU training paths `sync_lora_to_cpu` is a no-op
+    (a `#[cfg(not(feature = "cuda"))]` twin) — those adapters are updated in
+    place by `train_step` and are always current. This makes `evaluate`
+    self-consistent for every caller (the trainer, or any direct call), not just
+    the epoch loop.
+
+    SCOPE / KNOWN BOUND. `sync_lora_to_cpu` reconciles the Q and V adapters
+    (2 per layer: `q_lora_idx = 2*layer`, `v_lora_idx = 2*layer+1`), matching the
+    default QLoRA target set. Configurations that train additional projections
+    (K/O/gate/up/down) would still evaluate those partially stale; that is a
+    separate extension, not covered here.
+
+    RED-then-GREEN cycle (verified live on RTX 4090, sm_89, via a GPU-only
+    adapter injection that is independent of the optimizer/clip path):
+      RED  (sync removed from evaluate): val_before == val_after ==
+           14.25047874 byte-for-byte after uploading a nonzero block-0 B
+           (|Δ| = 0.0).
+      GREEN (sync present): val_before 14.25047874 -> val_after 14.22203255
+           (|Δ| = 0.02844620 > 1e-6) — evaluate now reflects the injected
+           adapter delta.
+
+  references:
+    - 'crates/aprender-train/src/finetune/instruct_pipeline/training.rs:466 (evaluate() syncs before the CPU forward)'
+    - 'crates/aprender-train/src/finetune/instruct_pipeline/accessors.rs:78 (sync_lora_to_cpu: downloads GPU LoRA into lora_layers)'
+    - 'crates/aprender-train/src/finetune/instruct_pipeline/accessors.rs:110 (non-cuda no-op twin)'
+    - 'crates/aprender-train/src/finetune/instruct_trainer.rs:243 (epoch loop calls evaluate for val_loss/best-epoch/early-stopping)'
+    - 'crates/aprender-train/src/finetune/instruct_pipeline/eval_sync_probe.rs:1 (FALSIFY-CUDA-EVAL-ADAPTER-SYNC-001)'
+
+equations:
+  eval_reflects_trained_adapters:
+    formula: |
+      ∀ adapter state g on the GPU blocks, c = lora_layers on the CPU:
+        evaluate() ⇒ c := download(g)  (happens-before the CPU forward)
+        ⇒ val_loss = L(forward_with_lora(x, c)) is a function of g
+    domain: |
+      NF4 QLoRA training writes adapters to the GPU `cuda_blocks`; `evaluate`
+      forwards the CPU `lora_layers`. Without a sync, `lora_layers` is
+      independent of the GPU training state and `val_loss` is constant. The sync
+      before the forward makes `val_loss` a function of the current GPU adapters.
+    invariants:
+    - 'sync_lora_to_cpu() precedes forward_with_lora in evaluate()'
+    - 'a change to the GPU adapters changes the next evaluate() val_loss'
+    - 'on non-cuda builds the sync is a no-op (lora_layers already current)'
+    preconditions:
+    - 'cuda_blocks initialized (quantize_nf4 = true) OR CPU/WGPU path (no-op sync)'
+
+proof_obligations:
+- type: invariant
+  property: evaluate synchronizes GPU adapters into lora_layers before the forward
+  formal: 'download(cuda_blocks) ≺ forward_with_lora(x, lora_layers) in evaluate()'
+  applies_to: eval_reflects_trained_adapters
+- type: invariant
+  property: per-epoch val_loss responds to changes in the trained adapters
+  formal: 'g1 != g2 ⇒ evaluate|g1.val_loss != evaluate|g2.val_loss (generically)'
+  applies_to: eval_reflects_trained_adapters
+
+falsification_tests:
+- id: FALSIFY-CUDA-EVAL-ADAPTER-SYNC-001
+  rule: |
+    After a GPU-only change to the LoRA adapters (a completed training step, or
+    here a direct upload), evaluate() on the same sample MUST return a different
+    loss than before the change. A byte-identical loss proves evaluate() ignored
+    the GPU state.
+  prediction: |
+    Build an NF4 QLoRA pipeline, evaluate a fixed sample (val_before), then
+    download block-0 A/B, set B to a nonzero constant (0.05), and upload it back
+    so the GPU adapters diverge from the still-zero CPU lora_layers. Evaluate the
+    same sample again (val_after) with no manual sync. GREEN (sync present):
+    val_after != val_before (measured 14.25047874 -> 14.22203255, |Δ|=0.028).
+    RED (sync removed): val_after == val_before byte-for-byte (|Δ|=0.0). Skips
+    vacuously without a CUDA GPU or APR_PARITY_MODEL.
+  test: cargo test -p aprender-train --features cuda --lib falsify_cuda_eval_adapter_sync_001
+  if_fails: |
+    evaluate() stopped calling sync_lora_to_cpu() before its CPU forward (the
+    call was removed or reordered after forward_with_lora), or sync_lora_to_cpu
+    stopped downloading the GPU adapters. Per-epoch val_loss will go constant
+    again, freezing best-epoch selection at epoch 0 and firing early stopping on
+    a phantom plateau. This falsifier is GPU-gated (`--ignored`, requires
+    APR_PARITY_MODEL); it is not yet CI-enforced pending a CUDA runner.
+  ship_blocking: true
+  counter_example_classes:
+  - eval_forwards_stale_cpu_lora
+  - sync_only_in_save_checkpoint_not_eval
+  - gpu_adapters_never_downloaded_before_eval
+
+qa_gate:
+  id: QA-QLORA-EVAL-SYNC-001
+  name: NF4 QLoRA per-epoch validation adapter-sync gate
+  description: |
+    The falsifier passes on a CUDA host: evaluate() reconciles the GPU-trained
+    LoRA adapters into the CPU lora_layers before the validation forward, so
+    per-epoch val_loss reflects training progress and best-checkpoint / early-
+    stopping decisions are driven by a real signal.
+  checks:
+  - eval_reflects_trained_adapters
+  pass_criteria: FALSIFY-CUDA-EVAL-ADAPTER-SYNC-001 passes
+  falsification: Any failure fails the gate (ship-blocking)

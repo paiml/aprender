@@ -130,7 +130,7 @@ fn test_cov3_evaluate_single_token_response() {
     let model_config = TransformerConfig::tiny();
     let instruct_config =
         InstructConfig { lora_rank: 4, max_seq_len: 64, ..InstructConfig::default() };
-    let pipeline = InstructPipeline::new(&model_config, instruct_config);
+    let mut pipeline = InstructPipeline::new(&model_config, instruct_config);
     let prompts = vec![vec![0u32, 1, 2]];
     let responses = vec![vec![3u32]];
     let result = pipeline.evaluate(&prompts, &responses);
@@ -143,7 +143,7 @@ fn test_cov3_evaluate_prompt_exceeds_max_seq_len() {
     let model_config = TransformerConfig::tiny();
     let instruct_config =
         InstructConfig { lora_rank: 4, max_seq_len: 5, ..InstructConfig::default() };
-    let pipeline = InstructPipeline::new(&model_config, instruct_config);
+    let mut pipeline = InstructPipeline::new(&model_config, instruct_config);
     let prompts = vec![vec![0u32; 8]];
     let responses = vec![vec![1u32; 3]];
     let result = pipeline.evaluate(&prompts, &responses);
@@ -155,7 +155,7 @@ fn test_cov3_evaluate_single_token_full_sequence() {
     let model_config = TransformerConfig::tiny();
     let instruct_config =
         InstructConfig { lora_rank: 4, max_seq_len: 64, ..InstructConfig::default() };
-    let pipeline = InstructPipeline::new(&model_config, instruct_config);
+    let mut pipeline = InstructPipeline::new(&model_config, instruct_config);
     let prompts = vec![vec![0u32]];
     let responses = vec![vec![1u32]];
     let result = pipeline.evaluate(&prompts, &responses);
