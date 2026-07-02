@@ -38,22 +38,6 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
-fn qwen2_1_5b_config() -> TransformerConfig {
-    TransformerConfig::from_apr_metadata(
-        Some(1536),
-        Some(12),
-        Some(2),
-        Some(8960),
-        Some(28),
-        Some(151_936),
-        Some(32_768),
-        Some(1e-6),
-        Some(1_000_000.0),
-        Some("qwen2"),
-    )
-    .expect("qwen2 config from metadata")
-}
-
 #[test]
 #[ignore = "requires CUDA GPU + APR_PARITY_MODEL pointing at a Qwen2-family .apr"]
 fn falsify_cuda_eval_adapter_sync_001() {
@@ -71,7 +55,21 @@ fn falsify_cuda_eval_adapter_sync_001() {
         return;
     }
 
-    let model_config = qwen2_1_5b_config();
+    // Inlined (not a helper fn) so cargo-mutants generates no mutant for a
+    // function only reachable from this `#[ignore]` GPU test.
+    let model_config = TransformerConfig::from_apr_metadata(
+        Some(1536),
+        Some(12),
+        Some(2),
+        Some(8960),
+        Some(28),
+        Some(151_936),
+        Some(32_768),
+        Some(1e-6),
+        Some(1_000_000.0),
+        Some("qwen2"),
+    )
+    .expect("qwen2 config from metadata");
     let instruct_config = InstructConfig {
         lora_rank: 8,
         lora_alpha: 16.0,
