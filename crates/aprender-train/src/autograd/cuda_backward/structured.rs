@@ -50,10 +50,15 @@ pub fn softmax_backward(
         }
     };
 
-    // Softmax backward uses warp-parallel reduction
+    // Softmax backward uses warp-parallel reduction.
+    // FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001: launch a FULL 32-lane warp —
+    // the kernel's shfl.sync reductions use membermask 0xFFFFFFFF, which is
+    // undefined if any named lane is inactive (seq_len < 32 launched a
+    // partial warp). Lanes >= seq_len use predicated loads (identity 0.0),
+    // so a full warp is correct for every seq_len.
     let config = LaunchConfig {
         grid: (batch_size, 1, 1),
-        block: (32.min(seq_len), 1, 1), // Warp size
+        block: (32, 1, 1), // FULL warp — see above
         shared_mem: 0,
     };
 
@@ -119,9 +124,12 @@ pub fn batched_softmax_backward(
         }
     };
 
-    // One warp (32 threads) per row, one block per row
-    let config =
-        LaunchConfig { grid: (total_rows, 1, 1), block: (32.min(row_size), 1, 1), shared_mem: 0 };
+    // One FULL warp (32 threads) per row, one block per row.
+    // FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001: was `32.min(row_size)` — a
+    // partial warp makes the kernel's 0xFFFFFFFF shfl.sync reductions
+    // undefined (garbage row reductions for seq < 32). Guarded loops carry
+    // identity 0.0 on idle lanes, so a full warp is correct.
+    let config = LaunchConfig { grid: (total_rows, 1, 1), block: (32, 1, 1), shared_mem: 0 };
 
     let output_ptr = softmax_output.as_ptr();
     let grad_out_ptr = grad_output.as_ptr();

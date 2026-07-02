@@ -2800,6 +2800,14 @@ pub struct CudaNf4TransformerBlock {
     // QK-norm weights (ENT-270: per-head RMSNorm on Q and K, shape=[head_dim])
     q_norm_weight: Option<GpuBuffer<f32>>,
     k_norm_weight: Option<GpuBuffer<f32>>,
+    // FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001: Q/K/V projection biases
+    // replicated across max_seq_len rows (Qwen2 family use_bias=true).
+    // Pre-fix the NF4 QLoRA block silently DROPPED the biases the CPU model
+    // applies (attention.rs add_bias) — every layer's attention computed a
+    // different function than the model being fine-tuned.
+    b_q_replicated: Option<GpuBuffer<f32>>,
+    b_k_replicated: Option<GpuBuffer<f32>>,
+    b_v_replicated: Option<GpuBuffer<f32>>,
     // FP16 weight buffers for Tier 2 parity (PMAT-470): halve memory BW
     // When set, forward uses gemm_f16_to_f32 (fp16 weights × fp16 activations → fp32 output)
     w_q_fp16: Option<GpuBuffer<u16>>,
@@ -2833,7 +2841,7 @@ impl CudaNf4TransformerBlock {
         w_gate: &[f32],
         w_up: &[f32],
         w_down: &[f32],
-        _max_seq_len: usize, // NF4 blocks use shared scratch (C-SCRATCH-001)
+        max_seq_len: usize, // used for bias replication; scratch is shared (C-SCRATCH-001)
         // ENT-153: Optional LoRA adapters for Q and V projections
         q_lora: Option<(&[f32], &[f32])>,
         v_lora: Option<(&[f32], &[f32])>,
@@ -2842,6 +2850,11 @@ impl CudaNf4TransformerBlock {
         // ENT-270: Optional QK-norm weights (per-head RMSNorm, shape=[head_dim])
         q_norm: Option<&[f32]>,
         k_norm: Option<&[f32]>,
+        // FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001: Q/K/V projection biases
+        // (Qwen2 family use_bias=true; None for LLaMA/Qwen3)
+        b_q: Option<&[f32]>,
+        b_k: Option<&[f32]>,
+        b_v: Option<&[f32]>,
     ) -> Result<Self> {
         use trueno_gpu::kernels::{quantize_nf4, NF4_BLOCK_SIZE};
 
@@ -3054,6 +3067,32 @@ impl CudaNf4TransformerBlock {
             None => None,
         };
 
+        // FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001: replicate Q/K/V biases
+        // across max_seq_len rows (same pattern as the FP32 block's
+        // FALSIFY-CUDA-FORWARD-PARITY-002). Applied by cuda_add_inplace
+        // after each projection GEMM in forward().
+        let replicate = |bias: Option<&[f32]>, dim: usize| -> Result<Option<GpuBuffer<f32>>> {
+            match bias {
+                Some(slice) => {
+                    assert_eq!(
+                        slice.len(),
+                        dim,
+                        "NF4 bias slice len {} != expected dim {dim}",
+                        slice.len()
+                    );
+                    let mut repl: Vec<f32> = Vec::with_capacity(max_seq_len * dim);
+                    for _ in 0..max_seq_len {
+                        repl.extend_from_slice(slice);
+                    }
+                    Ok(Some(GpuBuffer::from_host(&ctx, &repl)?))
+                }
+                None => Ok(None),
+            }
+        };
+        let b_q_replicated = replicate(b_q, q_dim)?;
+        let b_k_replicated = replicate(b_k, kv_hidden_size)?;
+        let b_v_replicated = replicate(b_v, kv_hidden_size)?;
+
         Ok(Self {
             config: config.clone(),
             layer_idx,
@@ -3088,6 +3127,9 @@ impl CudaNf4TransformerBlock {
             lora_rank,
             q_norm_weight,
             k_norm_weight,
+            b_q_replicated,
+            b_k_replicated,
+            b_v_replicated,
             // FP16 weights: None by default, populated by set_fp16_weights() (PMAT-470)
             w_q_fp16: None,
             w_k_fp16: None,
@@ -3217,6 +3259,13 @@ impl CudaNf4TransformerBlock {
                 saturating_u32(seq_len), saturating_u32(hidden_size), saturating_u32(q_dim), stream)?;
         }
 
+        // FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001: Q projection bias
+        // (Qwen2 family). Must be applied BEFORE QK-norm/RoPE, matching the
+        // CPU path (attention.rs: projection → bias → qk-norm → rope).
+        if let Some(b_q_repl) = self.b_q_replicated.as_ref() {
+            cuda_add_inplace(&mut scratch.q, b_q_repl, seq_len * q_dim, stream)?;
+        }
+
         // ENT-153: Q LoRA: q += (norm1_out @ A_q) @ B_q  (B_q pre-scaled by lora_scale)
         if let (Some(a_q), Some(b_q)) = (&self.lora_a_q, &self.lora_b_q) {
             let s = saturating_u32(seq_len);
@@ -3258,6 +3307,15 @@ impl CudaNf4TransformerBlock {
                 saturating_u32(seq_len), saturating_u32(hidden_size), saturating_u32(kv_hidden_size), stream)?;
             gemm_forward(&scratch.norm1_out, &self.w_v_fp32, &mut scratch.v,
                 saturating_u32(seq_len), saturating_u32(hidden_size), saturating_u32(kv_hidden_size), stream)?;
+        }
+
+        // FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001: K/V projection biases
+        // (Qwen2 family), applied for ALL K/V GEMM dispatch variants above.
+        if let Some(b_k_repl) = self.b_k_replicated.as_ref() {
+            cuda_add_inplace(&mut scratch.k, b_k_repl, seq_len * kv_hidden_size, stream)?;
+        }
+        if let Some(b_v_repl) = self.b_v_replicated.as_ref() {
+            cuda_add_inplace(&mut scratch.v, b_v_repl, seq_len * kv_hidden_size, stream)?;
         }
 
         scratch.op_end(_t, OP_QKV_GEMM); // End QKV timing (includes Q/K/V GEMMs + Q LoRA)
@@ -5181,6 +5239,10 @@ impl CudaNf4TransformerBlock {
         Ok(())
     }
 }
+
+#[cfg(all(test, feature = "cuda"))]
+#[path = "cuda_block_parity_probe.rs"]
+mod parity_probe;
 
 #[cfg(test)]
 mod tests {

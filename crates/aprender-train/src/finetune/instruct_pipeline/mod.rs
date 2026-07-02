@@ -25,6 +25,8 @@ mod generate;
 mod training;
 mod wgpu;
 
+#[cfg(all(test, feature = "cuda"))]
+mod parity_probe;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

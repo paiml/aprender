@@ -7,7 +7,7 @@
 use trueno_gpu::driver::{CudaStream, GpuBuffer, LaunchConfig};
 #[cfg(feature = "cuda")]
 use trueno_gpu::kernels::{
-    BatchedFusedResidualRmsNormKernel, BatchedRopeBackwardKernel, BatchedRopeKernel,
+    BatchedFusedResidualRmsNormKernel, BatchedRopeNeoxBackwardKernel, BatchedRopeNeoxKernel,
     BatchedVectorizedRmsNormKernel, Kernel, LayerNormKernel, PerHeadRmsNormKernel, RopeNeoxKernel,
 };
 
@@ -332,13 +332,17 @@ pub fn batched_rope_neox_forward(
         CudaTensorError::KernelError("Failed to acquire kernel cache lock".to_string())
     })?;
 
-    let kernel = BatchedRopeKernel::new(num_heads, head_dim, seq_len, theta);
+    // FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001: MUST be the NEOX split-half
+    // kernel. `BatchedRopeKernel` rotates ADJACENT pairs (GPT-J convention);
+    // wiring it here (ALB-119) rotated Q/K in the wrong basis for
+    // Qwen2/LLaMA weights -> finite-garbage CE ~13-14, flat loss, NaN adapters.
+    let kernel = BatchedRopeNeoxKernel::new(num_heads, head_dim, seq_len, theta);
 
     // FALSIFY-CUDA-ROPE-THETA-CACHE-KEY-001: cache key MUST include
     // theta_bits (and seq_len, which is also baked in via grid sizing).
     // See `rope_neox_forward` rationale.
     let theta_bits = theta.to_bits();
-    let key = format!("batched_rope_fwd_{num_heads}_{head_dim}_{seq_len}_th{theta_bits:08x}");
+    let key = format!("batched_rope_neox_fwd_{num_heads}_{head_dim}_{seq_len}_th{theta_bits:08x}");
     let module = match cache.get_cached(&key) {
         Some(m) => m,
         None => {
@@ -362,7 +366,7 @@ pub fn batched_rope_neox_forward(
 
     // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
     unsafe {
-        stream.launch_kernel(module, "batched_rope", &config, &mut args).map_err(|e| {
+        stream.launch_kernel(module, "batched_rope_neox", &config, &mut args).map_err(|e| {
             CudaTensorError::KernelError(format!("Batched RoPE NeoX forward failed: {e:?}"))
         })?;
     }
@@ -391,12 +395,14 @@ pub fn batched_rope_neox_backward(
         CudaTensorError::KernelError("Failed to acquire kernel cache lock".to_string())
     })?;
 
-    let kernel = BatchedRopeBackwardKernel::new(num_heads, head_dim, seq_len, theta);
+    // FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001: NEOX transpose rotation (must
+    // mirror the NEOX forward above, not the adjacent-pair kernel).
+    let kernel = BatchedRopeNeoxBackwardKernel::new(num_heads, head_dim, seq_len, theta);
 
     // FALSIFY-CUDA-ROPE-THETA-CACHE-KEY-001: cache key MUST include
     // theta_bits. See `rope_neox_forward` rationale.
     let theta_bits = theta.to_bits();
-    let key = format!("batched_rope_bwd_{num_heads}_{head_dim}_{seq_len}_th{theta_bits:08x}");
+    let key = format!("batched_rope_neox_bwd_{num_heads}_{head_dim}_{seq_len}_th{theta_bits:08x}");
     let module = match cache.get_cached(&key) {
         Some(m) => m,
         None => {
@@ -420,9 +426,9 @@ pub fn batched_rope_neox_backward(
 
     // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
     unsafe {
-        stream.launch_kernel(module, "batched_rope_backward", &config, &mut args).map_err(|e| {
-            CudaTensorError::KernelError(format!("Batched RoPE NeoX backward failed: {e:?}"))
-        })?;
+        stream.launch_kernel(module, "batched_rope_neox_backward", &config, &mut args).map_err(
+            |e| CudaTensorError::KernelError(format!("Batched RoPE NeoX backward failed: {e:?}")),
+        )?;
     }
 
     Ok(())
@@ -771,11 +777,8 @@ mod tests {
             let row = &summed[b * hidden_size..(b + 1) * hidden_size];
             cpu_out.extend(cpu_rmsnorm_reference(row, &gamma_data, 1e-6));
         }
-        let max_norm_diff = cpu_out
-            .iter()
-            .zip(output.iter())
-            .map(|(c, g)| (c - g).abs())
-            .fold(0.0f32, f32::max);
+        let max_norm_diff =
+            cpu_out.iter().zip(output.iter()).map(|(c, g)| (c - g).abs()).fold(0.0f32, f32::max);
         assert!(
             max_norm_diff < 1e-4,
             "FALSIFY-CUDA-FUSED-RMSNORM-DEADLOCK-001: output disagrees with CPU \

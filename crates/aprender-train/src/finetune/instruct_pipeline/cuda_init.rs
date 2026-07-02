@@ -258,6 +258,24 @@ impl InstructPipeline {
                     .as_ref()
                     .map(|t| t.data().as_slice().expect("contiguous k_norm").to_vec());
 
+                // FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001: thread Q/K/V biases
+                // (Qwen2 family) into the GPU block — pre-fix they were dropped.
+                let b_q_data = layer
+                    .self_attn
+                    .b_q
+                    .as_ref()
+                    .map(|t| t.data().as_slice().expect("contiguous b_q").to_vec());
+                let b_k_data = layer
+                    .self_attn
+                    .b_k
+                    .as_ref()
+                    .map(|t| t.data().as_slice().expect("contiguous b_k").to_vec());
+                let b_v_data = layer
+                    .self_attn
+                    .b_v
+                    .as_ref()
+                    .map(|t| t.data().as_slice().expect("contiguous b_v").to_vec());
+
                 crate::transformer::CudaNf4TransformerBlock::new(
                     model_config,
                     i,
@@ -278,9 +296,30 @@ impl InstructPipeline {
                     lora_rank,
                     q_norm_data.as_deref(),
                     k_norm_data.as_deref(),
+                    b_q_data.as_deref(),
+                    b_k_data.as_deref(),
+                    b_v_data.as_deref(),
                 )
                 .map(CudaBlock::Nf4)
             } else {
+                // FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001: surface biases on the
+                // FP32 path too (block already supported them since
+                // FALSIFY-CUDA-FORWARD-PARITY-002; this site passed None).
+                let b_q_data = layer
+                    .self_attn
+                    .b_q
+                    .as_ref()
+                    .map(|t| t.data().as_slice().expect("contiguous b_q").to_vec());
+                let b_k_data = layer
+                    .self_attn
+                    .b_k
+                    .as_ref()
+                    .map(|t| t.data().as_slice().expect("contiguous b_k").to_vec());
+                let b_v_data = layer
+                    .self_attn
+                    .b_v
+                    .as_ref()
+                    .map(|t| t.data().as_slice().expect("contiguous b_v").to_vec());
                 CudaTransformerBlock::new(
                     model_config,
                     i,
@@ -295,9 +334,9 @@ impl InstructPipeline {
                     w_up,
                     w_down,
                     max_seq_len,
-                    None, // b_q (instruct pipeline doesn't surface biases yet)
-                    None, // b_k
-                    None, // b_v
+                    b_q_data.as_deref(),
+                    b_k_data.as_deref(),
+                    b_v_data.as_deref(),
                 )
                 .map(CudaBlock::Fp32)
             };
