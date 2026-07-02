@@ -89,6 +89,29 @@ jobs:
       IMAGE: localhost:5000/sovereign-ci:stable
       PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
     steps:
+      - name: Pre-checkout ownership restore (EACCES self-heal)
+        # Five-whys: the end-of-job "Fix file ownership" step is
+        # `if: always()`, but a hard-killed job (runner death, forced
+        # cancel) skips even always() steps → root-owned
+        # target/.rustc_info.json + target/package/ survive in the runner
+        # checkout → the NEXT run's actions/checkout `git clean -ffdx`
+        # fails with EACCES (observed 2026-07-02: 4 jobs across PRs
+        # #2257/#2258 on runners 10/14/16, each needing a manual
+        # `ssh intel sudo rm` sweep). Restoring ownership BEFORE checkout
+        # makes every run self-healing instead of depending on the
+        # previous run's clean exit.
+        # Soundness of the cached-image gate: leftovers can only exist if
+        # a previous docker job ran on this runner — which implies the
+        # image is already in the local cache. So "image not cached ⟹ no
+        # leftovers" and skipping is safe (also keeps this step
+        # registry-outage-tolerant).
+        run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
+              bash -c 'chown -R 1000:1000 /workspace 2>/dev/null || true'
+          else
+            echo "Image not cached — no prior docker job on this runner, nothing to restore"
+          fi
       - uses: actions/checkout@v7
       - name: Pull sovereign-ci image (with retry + local-cache fallback)
         # Self-hosted runner's local Docker registry at localhost:5000 is
@@ -392,6 +415,20 @@ jobs:
       # via repo variable MUTANTS_MAX_MISSED if a diff legitimately can't reach 0.
       MUTANTS_MAX_MISSED: ${{ vars.MUTANTS_MAX_MISSED || '0' }}
     steps:
+      - name: Pre-checkout ownership restore (EACCES self-heal)
+        # Same guard as workspace-test: a hard-killed docker job leaves
+        # root-owned files that EACCES this job's `git clean` at checkout
+        # (observed 2026-07-02 — the mutants job failed twice at checkout
+        # with zero mutants actually run, reading as a gate failure).
+        # Cached-image gate is sound: leftovers ⟹ a docker job ran here
+        # ⟹ image is cached.
+        run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
+              bash -c 'chown -R 1000:1000 /workspace 2>/dev/null || true'
+          else
+            echo "Image not cached — no prior docker job on this runner, nothing to restore"
+          fi
       - uses: actions/checkout@v7
         with:
           # Need history + base branch to compute the PR diff for --in-diff.
