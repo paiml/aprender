@@ -42,4 +42,11 @@ ignore = [
     "RUSTSEC-2026-0098",
     "RUSTSEC-2026-0099",
     "RUSTSEC-2026-0104",
+
+    # quick-xml 0.37.5 — quadratic parse of duplicate-attribute start tags (DoS,
+    # not RCE). Affected ONLY via NsReader; orchestrate's sole use (oracle/arxiv.rs)
+    # is quick_xml::Reader, not NsReader — not the affected path. Patched >=0.41.0
+    # is a 0.37->0.41 API break deferred past v0.57.0.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",  # quick-xml NsReader namespace-alloc DoS — same not-affected path as -0194
 ]
