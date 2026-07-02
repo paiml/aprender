@@ -1,0 +1,115 @@
+metadata:
+  id: C-QLORA-EVAL-GPU-FORWARD
+  version: 1.0.0
+  created: '2026-07-03'
+  author: PAIML Engineering
+  kind: pattern
+  status: ACTIVE_ALGORITHM_LEVEL
+  description: |
+    Pins NF4 QLoRA validation to the GPU forward: when `cuda_blocks` exist,
+    `InstructPipeline::evaluate()` must compute val logits with the SAME GPU
+    forward `train_step` optimizes, falling back to the CPU path only when the
+    GPU forward declines.
+
+    BACKGROUND. evaluate() always ran the CPU forward
+    (`model.forward_with_lora`) even when the whole model was GPU-resident.
+    Two consequences:
+      (1) SPEED — on a 1.5B at seq ~50 the CPU forward costs ~9.9s per sample
+          vs 89ms on the GPU (111x): at seq 2048 with a 40-sample val split,
+          every epoch boundary stalls for tens of minutes with the GPU idle.
+          Observed: a 560s-budget `apr finetune -m qlora` run finished its
+          full 160-step GPU epoch, then timed out INSIDE the val pass having
+          produced zero val output.
+      (2) REPRESENTATIVENESS — training optimizes the NF4-quantized GPU
+          model; the CPU eval measures the F32 weights. val_loss should
+          measure the model being trained.
+
+    FIX. evaluate() calls `forward_logits_gpu(&full_ids)` when
+    `cuda_blocks.is_some()`; a `None` (e.g. seq exceeds scratch capacity)
+    falls back to the CPU path, whose adapters stay current via
+    `sync_lora_to_cpu()` (C-QLORA-EVAL-SYNC-001 — the sync is retained).
+
+    DISCRIMINATING TOLERANCE. The NF4-GPU and F32-CPU forwards are distinct
+    arithmetic and never byte-identical, while NF4 quantization costs well
+    under 0.5 nats on this model — so GPU-vs-forced-CPU loss must satisfy
+    0 < |Δ| <= 0.5: Δ == 0 proves the GPU path silently was not taken;
+    Δ > 0.5 proves the GPU eval computes a different model. Measured GREEN:
+    gpu 2.2411 (89ms) vs cpu 1.9298 (9908ms), |Δ| = 0.3113. Measured RED
+    (GPU branch disabled): 1.92980385 == 1.92980385, |Δ| = 0 exactly.
+
+    NOTE: this contract's CPU reference is only meaningful because
+    C-CPU-LORA-FORWARD-BIAS-PARITY fixed the CPU LoRA forward — pre-fix the
+    CPU eval read 14.53 (worse than uniform) and the 0.5-nat band could not
+    hold against a broken oracle. The falsifier CAUGHT that defect: its upper
+    bound failed with |Δ| = 12.29, which is how the bias drop was discovered.
+
+  references:
+    - 'crates/aprender-train/src/finetune/instruct_pipeline/training.rs:497 (evaluate GPU-first logits path)'
+    - 'crates/aprender-train/src/finetune/instruct_pipeline/cuda_forward.rs:286 (forward_logits_gpu)'
+    - 'crates/aprender-train/src/finetune/instruct_pipeline/eval_sync_probe.rs:1 (FALSIFY-CUDA-EVAL-GPU-FORWARD-001)'
+  depends_on:
+    - 'finetune-eval-adapter-sync-v1'
+    - 'cpu-lora-forward-bias-parity-v1'
+
+equations:
+  eval_uses_training_forward:
+    formula: |
+      cuda_blocks present ∧ forward_logits_gpu(x) = Some(l)
+        ⇒ val_logits(x) = l
+      otherwise val_logits(x) = cpu_forward_with_lora(x, synced_adapters)
+    domain: |
+      Validation must measure the model being optimized (NF4 GPU forward) at
+      GPU speed; the CPU path remains as the fallback for sequences the GPU
+      scratch cannot hold and for non-CUDA builds.
+    invariants:
+    - 'GPU-path val loss differs from the forced-CPU loss (never byte-identical)'
+    - 'GPU-path val loss within 0.5 nats of the F32 CPU reference (same model)'
+    - 'CPU fallback preserved: forward_logits_gpu None ⇒ CPU path with synced adapters'
+    preconditions:
+    - 'C-CPU-LORA-FORWARD-BIAS-PARITY holds (CPU reference is the true model)'
+
+proof_obligations:
+- type: invariant
+  property: evaluate takes the GPU forward when CUDA blocks exist
+  formal: 'cuda_blocks.is_some() ⇒ CE_gpu_eval != CE_forced_cpu_eval (distinct arithmetic)'
+  applies_to: eval_uses_training_forward
+- type: invariant
+  property: GPU eval measures the same model as the CPU reference
+  formal: '|CE_gpu_eval - CE_forced_cpu_eval| <= 0.5 (NF4 quantization band)'
+  applies_to: eval_uses_training_forward
+
+falsification_tests:
+- id: FALSIFY-CUDA-EVAL-GPU-FORWARD-001
+  rule: |
+    evaluate() with cuda_blocks present must produce a loss that differs from
+    the forced-CPU fallback (proving the GPU path ran) by at most the NF4
+    quantization tolerance (proving it is the same model).
+  prediction: |
+    Same sample evaluated with blocks present, then with blocks take()n:
+    0 < |Δ| <= 0.5. GREEN measured: 2.2411 vs 1.9298, |Δ|=0.3113, 89ms vs
+    9908ms (111x). RED (GPU branch removed): byte-identical, |Δ|=0. Skips
+    vacuously without CUDA/APR_PARITY_MODEL.
+  test: cargo test -p aprender-train --features cuda --lib falsify_cuda_eval_gpu_forward_001
+  if_fails: |
+    Lower bound: the GPU branch in evaluate() was removed/short-circuited —
+    every epoch boundary silently pays minutes-per-sample CPU forwards again.
+    Upper bound: the GPU eval forward diverged from the CPU model (wrong-model
+    class: check rope pairing, biases, causal mask per the #2252 playbook) OR
+    the CPU reference regressed (re-run FALSIFY-CPU-LORA-QKV-BIAS-001 first).
+  ship_blocking: true
+  counter_example_classes:
+  - eval_silently_falls_back_to_cpu
+  - gpu_eval_forward_wrong_model
+  - broken_cpu_reference_masks_comparison
+
+qa_gate:
+  id: QA-QLORA-EVAL-GPU-FORWARD-001
+  name: NF4 QLoRA GPU-eval forward gate
+  description: |
+    evaluate() measures the NF4 model being trained, on the GPU, at GPU speed
+    (111x per-sample vs the CPU stall), with the CPU fallback preserved — so
+    per-epoch validation is fast, representative, and honest.
+  checks:
+  - eval_uses_training_forward
+  pass_criteria: FALSIFY-CUDA-EVAL-GPU-FORWARD-001 passes
+  falsification: Any failure fails the gate (ship-blocking)

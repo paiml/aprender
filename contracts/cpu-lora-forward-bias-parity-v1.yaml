@@ -1,0 +1,120 @@
+metadata:
+  id: C-CPU-LORA-FORWARD-BIAS-PARITY
+  version: 1.0.0
+  created: '2026-07-03'
+  author: PAIML Engineering
+  kind: pattern
+  status: ACTIVE_ALGORITHM_LEVEL
+  description: |
+    Pins CPU LoRA forward parity: `forward_with_lora` must compute the SAME
+    model as `forward()` when the adapter delta is zero — in particular it must
+    apply the Q/K/V projection biases on `use_bias=true` (Qwen2-family) models.
+
+    BACKGROUND. `AttentionLayer::forward_with_lora` (the KAIZEN-010/011 path
+    every CPU LoRA train_step and evaluate() forward runs through) computed
+    Q = x@W_q + scale·(x@A^T)@B^T, K = x@W_k, V analogous — and never added
+    b_q/b_k/b_v, which `forward()` applies via `add_bias`. On Qwen2-family
+    models (use_bias=true) every CPU LoRA training and evaluation forward
+    therefore ran a DIFFERENT (bias-less) model than inference.
+
+    MEASURED (qwen2.5-coder-1.5b-instruct-q4k, RTX-4090 host, CPU paths):
+      sample B ("What is 2+2?...\n" -> "4", seq 15):
+        forward() CE = 2.1309; forward_with_lora(B=0) CE = 4.4892 — a
+        bit-exact match to the parity probe's "(x) CPU forward, biases
+        DROPPED" oracle, fingerprinting the mechanism.
+      sample A (44-token prompt -> 10-token response):
+        forward() CE = 1.9298; forward_with_lora(B=0) CE = 14.5337 — worse
+        than uniform (ln 151936 = 11.93): the "wrong model, not noise"
+        signature (same diagnostic class as the #2252 GPU bias drop).
+
+    FIX. `forward_with_lora` applies b_q/b_k/b_v after the base+LoRA
+    projections (before qk-norm/RoPE, mirroring forward()'s order). CRITICALLY
+    it must NOT reuse forward()'s `add_bias` helper: that returns
+    `Tensor::from_vec` with no backward op, severing the autograd chain and
+    orphaning the LoRA A/B gradients (PMAT-805 class — loss frozen, adapters
+    never move). The fix broadcasts the bias to (seq × dim) as a non-trainable
+    tensor and uses the autograd-aware `add_scaled`, which passes gradient to
+    its first argument unchanged and recurses its backward chain.
+
+  references:
+    - 'crates/aprender-train/src/transformer/attention.rs:677 (bias application in forward_with_lora)'
+    - 'crates/aprender-train/src/transformer/attention.rs:486 (forward() bias application being mirrored)'
+    - 'crates/aprender-train/src/transformer/attention.rs:16 (add_bias helper — severs autograd, must not be used on the LoRA path)'
+    - 'crates/aprender-train/src/autograd/ops/basic.rs:144 (add_scaled — autograd-aware add used instead)'
+    - 'crates/aprender-train/src/finetune/instruct_pipeline/parity_probe.rs:1 (three-oracle probe whose biases-DROPPED oracle fingerprinted the defect)'
+
+equations:
+  lora_zero_delta_identity:
+    formula: |
+      B = 0 ⇒ forward_with_lora(x, A, B) == forward(x)
+      (LoRA delta scale·B·(A·x) = 0; biases must appear in BOTH paths)
+    domain: |
+      Zero-initialized LoRA B is the standard adapter init, so this identity
+      is exercised on the very first training/eval forward. Any divergence is
+      structural (a dropped term), not numerical.
+    invariants:
+    - 'forward_with_lora applies b_q, b_k, b_v whenever forward() does'
+    - 'bias application precedes qk-norm and RoPE (same order as forward())'
+    - 'LoRA A/B gradients flow through the bias add (autograd-aware op only)'
+    preconditions:
+    - 'LoRA B zero-initialized (standard init) for the identity check'
+
+proof_obligations:
+- type: invariant
+  property: zero-adapter LoRA forward equals the plain forward on bias models
+  formal: 'B=0 ∧ use_bias ⇒ |CE(forward_with_lora) - CE(forward)| < 1e-4'
+  applies_to: lora_zero_delta_identity
+- type: invariant
+  property: bias application preserves LoRA gradient flow
+  formal: 'use_bias ⇒ train_step moves lora_b ∧ overfit-one-batch loss strictly decreases'
+  applies_to: lora_zero_delta_identity
+
+falsification_tests:
+- id: FALSIFY-CPU-LORA-QKV-BIAS-001
+  rule: |
+    With zero-initialized LoRA B on a use_bias=true model with NONZERO biases,
+    forward_with_lora must agree with forward() (the adapter delta is
+    mathematically zero, so any gap is a dropped/extra term).
+  prediction: |
+    Tiny decoder config with use_bias=true and deterministic nonzero b_q/b_k/
+    b_v: |ΔCE| < 1e-4 (GREEN, measured ~0). RED (biases dropped on the LoRA
+    path): ΔCE = 1.3e-3 on the tiny model; 2.36-12.6 nats on the real 1.5B.
+  test: cargo test -p aprender-train --lib falsify_cpu_lora_qkv_bias_001_forward_parity
+  if_fails: |
+    forward_with_lora stopped applying a Q/K/V bias (or applies one forward()
+    does not). CPU LoRA training and evaluation on Qwen2-family models run a
+    different model than inference: eval CE can exceed ln(vocab) on trivially
+    predictable targets, and adapters train against bias-less activations.
+  ship_blocking: true
+  counter_example_classes:
+  - lora_path_drops_projection_biases
+  - bias_applied_after_rope_wrong_order
+- id: FALSIFY-CPU-LORA-QKV-BIAS-002
+  rule: |
+    The bias application must not sever the autograd chain: with biases
+    present, LoRA training must still move the adapters and decrease loss.
+  prediction: |
+    Overfit-one-batch (16 steps, lr 1e-2) on a use_bias=true tiny model:
+    lora_b max |Δ| > 1e-6 and final loss < first loss - 1e-3. A chain-severing
+    bias add (forward()'s add_bias helper) freezes both.
+  test: cargo test -p aprender-train --lib falsify_cpu_lora_qkv_bias_002_grad_flow_with_biases
+  if_fails: |
+    The bias add was switched to a non-autograd op (add_bias / raw
+    Tensor::from_vec). LoRA A/B are orphaned from the graph: loss is frozen
+    and adapters never move (PMAT-805 class) — silently, on bias models only.
+  ship_blocking: true
+  counter_example_classes:
+  - bias_add_severs_autograd_chain
+
+qa_gate:
+  id: QA-CPU-LORA-FORWARD-BIAS-PARITY-001
+  name: CPU LoRA forward bias-parity gate
+  description: |
+    forward_with_lora computes the same model as forward() at zero adapter
+    delta (biases included) and keeps LoRA gradients flowing through the bias
+    add — so CPU LoRA training and evaluation on Qwen2-family models train and
+    measure the model that inference actually runs.
+  checks:
+  - lora_zero_delta_identity
+  pass_criteria: FALSIFY-CPU-LORA-QKV-BIAS-001 and -002 pass
+  falsification: Any failure fails the gate (ship-blocking)
