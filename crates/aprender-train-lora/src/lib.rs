@@ -17,7 +17,7 @@ pub mod optimizer;
 
 pub use memory::{MemoryPlanner, MemoryRequirement};
 pub use merge::MergeEngine;
-pub use optimizer::{LoraOptimizer, OptimalConfig};
+pub use optimizer::{recommended_learning_rate, LoraOptimizer, OptimalConfig};
 
 use entrenar_common::Result;
 

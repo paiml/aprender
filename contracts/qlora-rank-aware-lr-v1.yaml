@@ -1,0 +1,138 @@
+metadata:
+  id: C-QLORA-RANK-AWARE-LR
+  version: 1.0.0
+  created: '2026-07-02'
+  author: PAIML Engineering
+  kind: pattern
+  status: ACTIVE_ALGORITHM_LEVEL
+  description: |
+    Pins the auto-selected learning rate for `apr finetune -m lora/qlora` to the
+    convergent regime at the high LoRA ranks the planner picks to fill VRAM.
+
+    BACKGROUND. `LoraOptimizer::find_optimal_rank` binary-searches the LARGEST
+    rank that fits the VRAM budget (up to 256), then `apr finetune` used a fixed
+    CLI default learning rate of 2e-4. That pairing DIVERGES: measured live on an
+    RTX 4090, a 1.5B QLoRA run at lr 2e-4 / rank 256 / seq 2048 on
+    apr_code_sft_balanced went 4.31 -> 1.44 (learning) then blew up to 11-16,
+    epoch avg 11.18 — worse than the untrained model. The classic 2e-4 is a
+    known-good default only for the small ranks (<= ~32) LoRA papers use; at the
+    VRAM-filling ranks this optimizer auto-selects it is far too hot.
+
+    ROOT CAUSE. `OptimalConfig` recommended `rank` and `alpha` but NOT a learning
+    rate, and the CLI default (2e-4) was decoupled from the auto-selected rank.
+    So the two knobs the optimizer controls (rank up, lr fixed) combined into a
+    divergent configuration out of the box.
+
+    FIX. `OptimalConfig` gains a rank-aware `learning_rate`, computed by
+    `recommended_learning_rate(method, rank)`: anchored at 2e-4 for rank <= 32
+    (no regression for typical LoRA) and scaled inversely with rank above that,
+    clamped to [1e-5, 2e-4]:
+      rank 32 -> 2e-4, 64 -> 1e-4, 128 -> 5e-5, 256 -> 2.5e-5 (~ the stable 2e-5);
+      full fine-tuning (rank 0) -> a conservative fixed 1e-5.
+    `apr finetune` makes `--learning-rate` optional: when omitted it uses the
+    rank-aware recommendation (recomputed if `--rank` is overridden); an explicit
+    value still wins. Early sub-modes (merge/classify/multi-adapter) keep the
+    classic 2e-4 default — the divergence was measured on the instruct LoRA/QLoRA
+    path, so the auto-lowering is scoped there.
+
+  references:
+    - 'crates/aprender-train-lora/src/optimizer.rs:47 (recommended_learning_rate)'
+    - 'crates/aprender-train-lora/src/optimizer.rs:35 (OptimalConfig.learning_rate field)'
+    - 'crates/aprender-train-lora/src/optimizer.rs:149 (optimize() populates it)'
+    - 'crates/apr-cli/src/commands/finetune.rs:1210 (CLI resolves rank-aware lr when --learning-rate omitted)'
+    - 'crates/apr-cli/src/model_ops_commands.rs:38 (--learning-rate now Option<f64>)'
+
+equations:
+  rank_aware_lr:
+    formula: |
+      lr(method, rank) =
+        1e-5                                        if method = Full or rank = 0
+        clamp(2e-4 * 32 / rank, 1e-5, 2e-4)         otherwise
+    domain: |
+      The planner auto-selects rank to fill VRAM (up to 256). The learning rate
+      must decrease with rank so the update magnitude stays in the convergent
+      band; the classic 2e-4 is retained only where it is known-good (rank<=32).
+    invariants:
+    - '0 < lr(method, rank) <= 2e-4 for all rank'
+    - 'lr is non-increasing in rank'
+    - 'lr(_, rank) <= 5e-5 for rank >= 128 (convergent band; 2e-4 diverges there)'
+    - 'lr(_, rank) == 2e-4 for 0 < rank <= 32 (no regression for typical LoRA)'
+    preconditions:
+    - 'rank is the planner-selected or user-overridden LoRA rank'
+
+proof_obligations:
+- type: invariant
+  property: auto-selected learning rate is convergent at high ranks
+  formal: 'rank >= 128 ⇒ recommended_learning_rate(m, rank) <= 5e-5'
+  applies_to: rank_aware_lr
+- type: invariant
+  property: never hotter than the classic default and monotonic in rank
+  formal: '∀ r: 0 < lr(r) <= 2e-4 ∧ (r1 < r2 ⇒ lr(r1) >= lr(r2))'
+  applies_to: rank_aware_lr
+- type: invariant
+  property: optimize() populates the rank-aware lr end to end
+  formal: 'optimize().learning_rate == recommended_learning_rate(method, rank)'
+  applies_to: rank_aware_lr
+
+falsification_tests:
+- id: FALSIFY-QLORA-RANK-AWARE-LR-001
+  rule: |
+    The learning rate the optimizer recommends for its auto-selected high ranks
+    must sit in the empirically-convergent band, not the classic 2e-4 that
+    diverges there.
+  prediction: |
+    recommended_learning_rate(QLoRA, 256) <= 5e-5 (measured convergent ~2.5e-5);
+    the pre-fix behavior (a fixed 2e-4) is > 5e-5 and FAILS. Also checks rank 128.
+  test: cargo test -p aprender-train-lora --lib falsify_qlora_rank_aware_lr_001_high_rank_is_convergent
+  if_fails: |
+    recommended_learning_rate stopped scaling down with rank (reverted to a fixed
+    2e-4, or the anchor/clamp changed). `apr finetune -m qlora` will diverge again
+    at the auto-selected rank 256 (loss climbs past the untrained baseline).
+  ship_blocking: true
+  counter_example_classes:
+  - fixed_2e4_default_at_high_rank
+  - lr_decoupled_from_auto_selected_rank
+- id: FALSIFY-QLORA-RANK-AWARE-LR-002
+  rule: |
+    The recommendation is never hotter than the classic 2e-4, is unchanged for
+    the small ranks where 2e-4 is known-good, and is monotonically non-increasing
+    in rank.
+  prediction: |
+    lr(16)=lr(32)=2e-4; lr in (0,2e-4] and non-increasing across
+    ranks 8..512; lr(Full,0)=1e-5.
+  test: cargo test -p aprender-train-lora --lib falsify_qlora_rank_aware_lr_002_bounds_and_monotonic
+  if_fails: |
+    The lr curve regressed a small-rank value (breaking typical LoRA) or lost
+    monotonicity/bounds. Check the clamp and anchor in recommended_learning_rate.
+  ship_blocking: true
+  counter_example_classes:
+  - small_rank_regression
+  - non_monotonic_lr_curve
+- id: FALSIFY-QLORA-RANK-AWARE-LR-003
+  rule: |
+    A real end-to-end OptimalConfig for a VRAM-constrained model must not hand
+    back the diverging 2e-4 at its auto-selected high rank.
+  prediction: |
+    LoraOptimizer::new(1.5e9, 24.0).optimize(QLoRA).learning_rate ==
+    recommended_learning_rate(QLoRA, rank), and <= 5e-5 when rank >= 128.
+  test: cargo test -p aprender-train-lora --lib falsify_qlora_rank_aware_lr_003_optimize_populates_convergent_lr
+  if_fails: |
+    optimize() stopped populating learning_rate from recommended_learning_rate
+    (field left at a default, or wired to a constant). The CLI would fall back to
+    the diverging value.
+  ship_blocking: true
+  counter_example_classes:
+  - optimize_does_not_populate_lr
+
+qa_gate:
+  id: QA-QLORA-RANK-AWARE-LR-001
+  name: QLoRA rank-aware learning-rate gate
+  description: |
+    The optimizer recommends a convergent, rank-aware learning rate and the CLI
+    consumes it when --learning-rate is omitted, so `apr finetune -m qlora`
+    converges out of the box at the VRAM-filling ranks it auto-selects instead of
+    diverging under the classic fixed 2e-4.
+  checks:
+  - rank_aware_lr
+  pass_criteria: FALSIFY-QLORA-RANK-AWARE-LR-001..003 pass
+  falsification: Any failure fails the gate (ship-blocking)

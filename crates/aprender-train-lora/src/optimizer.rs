@@ -25,6 +25,34 @@ pub struct OptimalConfig {
     pub utilization_percent: f64,
     /// Training speedup compared to full fine-tuning
     pub speedup: f64,
+    /// Rank-aware recommended learning rate.
+    ///
+    /// The classic 2e-4 LoRA default DIVERGES at the high ranks this optimizer
+    /// auto-selects to fill VRAM (e.g. rank 256 on a 24 GB card): measured on an
+    /// RTX 4090, a 1.5B QLoRA run at lr 2e-4 / rank 256 went 4.31 -> 1.44 then
+    /// blew up to 11-16 (avg 11.18). lr 2e-5 is stable at rank 256. See
+    /// `recommended_learning_rate`.
+    pub learning_rate: f32,
+}
+
+/// Rank-aware LoRA learning rate.
+///
+/// Anchored at the classic 2e-4 for the small ranks where it is known-good
+/// (<= 32) and scaled down inversely with rank above that, so the VRAM-filling
+/// ranks this optimizer selects stay in the convergent regime:
+/// rank 32 -> 2e-4, rank 64 -> 1e-4, rank 128 -> 5e-5, rank 256 -> 2.5e-5
+/// (matching the empirically-stable ~2e-5). Full fine-tuning (rank 0) uses a
+/// conservative fixed 1e-5. Clamped to `[1e-5, 2e-4]` so it is never hotter
+/// than the classic default nor absurdly cold.
+#[must_use]
+pub fn recommended_learning_rate(method: Method, rank: u32) -> f32 {
+    const BASE_LR: f32 = 2e-4;
+    const ANCHOR_RANK: f32 = 32.0;
+    const MIN_LR: f32 = 1e-5;
+    if method == Method::Full || rank == 0 {
+        return MIN_LR;
+    }
+    (BASE_LR * ANCHOR_RANK / rank as f32).clamp(MIN_LR, BASE_LR)
 }
 
 impl OptimalConfig {
@@ -118,6 +146,7 @@ impl LoraOptimizer {
             memory_gb,
             utilization_percent: utilization,
             speedup,
+            learning_rate: recommended_learning_rate(method, rank),
         })
     }
 
@@ -447,6 +476,76 @@ mod tests {
             assert!(c.trainable_params > 0);
             assert!(c.speedup > 0.0);
             assert!(c.rank >= 8);
+        }
+    }
+
+    /// FALSIFY-QLORA-RANK-AWARE-LR-001: the auto-selected learning rate for the
+    /// high LoRA ranks this optimizer chooses to fill VRAM MUST sit in the
+    /// empirically-convergent band, not the classic 2e-4 that diverges there.
+    #[test]
+    fn falsify_qlora_rank_aware_lr_001_high_rank_is_convergent() {
+        // Measured on RTX 4090: 1.5B QLoRA at lr 2e-4 / rank 256 diverged
+        // (4.31 -> 1.44 -> 11-16); lr ~2e-5 is stable. So the recommendation at
+        // rank 256 must be well below the diverging default.
+        let lr256 = recommended_learning_rate(Method::QLoRA, 256);
+        assert!(
+            lr256 <= 5e-5,
+            "FALSIFY-QLORA-RANK-AWARE-LR-001: rank-256 lr {lr256:.2e} is in the \
+             divergent regime (must be <= 5e-5; classic 2e-4 blows up here)"
+        );
+        assert!(lr256 > 0.0, "lr must be positive");
+        // 128 is also a commonly auto-selected rank; still convergent.
+        assert!(recommended_learning_rate(Method::QLoRA, 128) <= 5e-5);
+    }
+
+    /// FALSIFY-QLORA-RANK-AWARE-LR-002: never hotter than the classic default,
+    /// unchanged for the small ranks where 2e-4 is known-good, and monotonically
+    /// non-increasing in rank.
+    #[test]
+    fn falsify_qlora_rank_aware_lr_002_bounds_and_monotonic() {
+        // Small ranks keep the classic 2e-4 (no regression for typical LoRA).
+        assert!((recommended_learning_rate(Method::LoRA, 16) - 2e-4).abs() < 1e-9);
+        assert!((recommended_learning_rate(Method::LoRA, 32) - 2e-4).abs() < 1e-9);
+        // Never exceeds the classic default at any rank.
+        // Non-increasing as rank grows.
+        let mut prev = f32::INFINITY;
+        for r in [8u32, 16, 32, 64, 128, 256, 512] {
+            let lr = recommended_learning_rate(Method::QLoRA, r);
+            assert!(
+                lr > 0.0 && lr <= 2e-4,
+                "lr {lr:.2e} out of (0, 2e-4] at rank {r}"
+            );
+            assert!(
+                lr <= prev,
+                "lr must be non-increasing in rank ({lr:.2e} > {prev:.2e} at {r})"
+            );
+            prev = lr;
+        }
+        // Full fine-tuning (rank 0) uses a conservative fixed rate.
+        assert!((recommended_learning_rate(Method::Full, 0) - 1e-5).abs() < 1e-9);
+    }
+
+    /// FALSIFY-QLORA-RANK-AWARE-LR-003: optimize() actually populates the
+    /// rank-aware lr — a real end-to-end config for a VRAM-constrained model
+    /// must not hand back the diverging 2e-4 at its auto-selected high rank.
+    #[test]
+    fn falsify_qlora_rank_aware_lr_003_optimize_populates_convergent_lr() {
+        // A 1.5B model on a small VRAM budget → QLoRA at a high auto rank.
+        let opt = LoraOptimizer::new(1_500_000_000, 24.0);
+        let config = opt.optimize(Method::QLoRA).expect("optimize");
+        assert_eq!(
+            config.learning_rate,
+            recommended_learning_rate(Method::QLoRA, config.rank),
+            "optimize() must use recommended_learning_rate"
+        );
+        if config.rank >= 128 {
+            assert!(
+                config.learning_rate <= 5e-5,
+                "FALSIFY-QLORA-RANK-AWARE-LR-003: optimize() returned diverging lr \
+                 {:.2e} at rank {}",
+                config.learning_rate,
+                config.rank,
+            );
         }
     }
 }

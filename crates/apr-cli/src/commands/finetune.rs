@@ -14,7 +14,10 @@
 use crate::error::{CliError, Result};
 use crate::output;
 use colored::Colorize;
-use entrenar_lora::{plan, MemoryPlanner, MemoryRequirement, MergeEngine, Method, OptimalConfig};
+use entrenar_lora::{
+    plan, recommended_learning_rate, MemoryPlanner, MemoryRequirement, MergeEngine, Method,
+    OptimalConfig,
+};
 use std::path::Path;
 
 /// Fine-tuning method selection
@@ -1123,7 +1126,7 @@ pub(crate) fn run(
     adapter_path: Option<&Path>,
     merge_mode: bool,
     epochs: u32,
-    learning_rate: f64,
+    learning_rate: Option<f64>,
     model_size: Option<&str>,
     task: Option<&str>,
     num_classes: usize,
@@ -1158,6 +1161,11 @@ pub(crate) fn run(
         wait_for_gpu_vram(wait_gpu, vram_gb, task)?;
     }
 
+    // Early sub-modes (merge / classify / multi-adapter) keep the classic 2e-4
+    // default when --learning-rate is omitted. The rank-aware auto-lowering
+    // below applies to the instruct LoRA/QLoRA path, where the 2e-4 divergence
+    // at high auto-selected ranks was actually measured.
+    let dispatch_lr = learning_rate.unwrap_or(2e-4);
     if let Some(dispatched) = dispatch_finetune_mode(
         merge_mode,
         model_path,
@@ -1168,7 +1176,7 @@ pub(crate) fn run(
         num_classes,
         rank,
         epochs,
-        learning_rate,
+        dispatch_lr,
         plan_only,
         checkpoint_format,
         oversample,
@@ -1197,15 +1205,6 @@ pub(crate) fn run(
     }
 
     let model_params = resolve_model_params(model_size, model_path)?;
-    display_run_header(
-        ft_method,
-        model_params,
-        vram_gb,
-        rank,
-        epochs,
-        learning_rate,
-        json_output,
-    );
 
     let mut config = plan(model_params, vram_gb, ft_method.into())
         .map_err(|e| CliError::ValidationFailed(format!("Failed to plan config: {e}")))?;
@@ -1215,7 +1214,25 @@ pub(crate) fn run(
     if let Some(user_rank) = rank {
         config.rank = user_rank;
         config.alpha = user_rank as f32 * 2.0; // alpha = 2 * rank (standard)
+                                               // Keep the LR consistent with the (now overridden) rank.
+        config.learning_rate = recommended_learning_rate(config.method, user_rank);
     }
+
+    // FALSIFY-QLORA-RANK-AWARE-LR: resolve the effective learning rate. An
+    // explicit --learning-rate wins; otherwise use the rank-aware recommendation
+    // — the classic 2e-4 default diverges at the high ranks auto-selected to
+    // fill VRAM (measured: 1.5B QLoRA @ 2e-4/rank256 blew up to loss ~11-16).
+    let learning_rate = learning_rate.unwrap_or_else(|| f64::from(config.learning_rate));
+
+    display_run_header(
+        ft_method,
+        model_params,
+        vram_gb,
+        rank,
+        epochs,
+        learning_rate,
+        json_output,
+    );
 
     display_finetune_plan(
         &config,

@@ -118,6 +118,7 @@ fn falsify_ft_008_optimal_config_fields() {
         memory_gb: 4.0,
         utilization_percent: 80.0,
         speedup: 3.0,
+        learning_rate: 2e-4,
     };
     assert_eq!(config.rank, 16, "FALSIFY-FT-008: rank");
     assert!(
