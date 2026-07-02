@@ -34,9 +34,12 @@ pub enum ModelOpsCommands {
         /// Training epochs
         #[arg(long, default_value = "3")]
         epochs: u32,
-        /// Learning rate
-        #[arg(long, default_value = "0.0002")]
-        learning_rate: f64,
+        /// Learning rate. Default is rank-aware: the classic 2e-4 diverges at
+        /// the high LoRA ranks auto-selected to fill VRAM (e.g. rank 256), so
+        /// when omitted the recommendation is auto-lowered (2e-4 at rank<=32
+        /// down to ~2.5e-5 at rank 256). Pass an explicit value to override.
+        #[arg(long)]
+        learning_rate: Option<f64>,
         /// Model size for planning (e.g., "7B", "1.5B")
         #[arg(long, value_name = "SIZE")]
         model_size: Option<String>,

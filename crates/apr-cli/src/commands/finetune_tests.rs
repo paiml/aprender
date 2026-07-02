@@ -59,7 +59,7 @@ fn test_run_no_model() {
         None,
         false,
         3,
-        2e-4,
+        Some(2e-4),
         None,
         None,
         5,
@@ -96,7 +96,7 @@ fn test_run_plan_with_model_size() {
         None,
         false,
         3,
-        2e-4,
+        Some(2e-4),
         Some("7B"),
         None,
         5,
@@ -133,7 +133,7 @@ fn test_run_plan_json() {
         None,
         false,
         3,
-        2e-4,
+        Some(2e-4),
         Some("14B"),
         None,
         5,
@@ -172,7 +172,7 @@ fn test_run_with_model_file() {
         None,
         false,
         3,
-        2e-4,
+        Some(2e-4),
         None,
         None,
         5,
@@ -302,7 +302,7 @@ fn test_run_training_creates_adapter() {
         None,
         false,
         3,
-        2e-4,
+        Some(2e-4),
         Some("0.5B"),
         None,
         5,
@@ -1289,7 +1289,7 @@ fn run_with_missing_model_file_errors() {
         None,          // adapter_path
         false,         // merge_mode
         1,             // epochs
-        1e-4,          // learning_rate
+        Some(1e-4),    // learning_rate
         None,          // model_size
         None,          // task
         2,             // num_classes
