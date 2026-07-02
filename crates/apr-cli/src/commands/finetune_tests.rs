@@ -1634,3 +1634,85 @@ fn falsify_apr_merge_runnable_005_noop_merge_rejected() {
     );
     assert!(!out.exists(), "no-op merge must not leave an output file");
 }
+
+/// FALSIFY-APR-MERGE-RUNNABLE-004b: same entrenar adapter naming, but the
+/// base uses GGUF-style tensor names (`blk.{N}.attn_q.weight` — the
+/// `apr convert` import layout, and the ACTUAL layout of the live flip base
+/// qwen2.5-coder-1.5b-instruct-q4k.apr). `lora.{N}.q_proj.*` must resolve
+/// against `blk.{N}.attn_q.weight` via the GGUF→HF projection map.
+#[test]
+fn falsify_apr_merge_runnable_004b_entrenar_adapter_merges_gguf_named_base() {
+    use aprender::format::v2::{AprV2Metadata, AprV2Writer};
+
+    let hidden = 32usize;
+    let rank = 4usize;
+
+    // GGUF-named base with import-shaped metadata (HF-alias dims in custom).
+    let mut md = AprV2Metadata::new("transformer_lm_q4k");
+    md.architecture = Some("qwen2".to_string());
+    md.hidden_size = Some(hidden);
+    md.vocab_size = Some(64);
+    md.intermediate_size = Some(hidden);
+    md.rms_norm_eps = Some(1e-6);
+    md.custom
+        .insert("num_hidden_layers".to_string(), serde_json::json!(1));
+    md.custom
+        .insert("num_attention_heads".to_string(), serde_json::json!(4));
+    md.custom
+        .insert("num_key_value_heads".to_string(), serde_json::json!(2));
+    let vocab: Vec<String> = (0..64).map(|i| format!("t{i}")).collect();
+    md.custom
+        .insert("tokenizer.vocabulary".to_string(), serde_json::json!(vocab));
+    md.custom
+        .insert("tokenizer.merges".to_string(), serde_json::json!(["t0 t1"]));
+    let mut w = AprV2Writer::new(md);
+    let sq = |n: usize| vec![0.02_f32; n];
+    w.add_f32_tensor("token_embd.weight", vec![64, hidden], &sq(64 * hidden));
+    w.add_f32_tensor(
+        "blk.0.attn_q.weight",
+        vec![hidden, hidden],
+        &vec![1.0_f32; hidden * hidden],
+    );
+    let base_file = NamedTempFile::with_suffix(".apr").expect("base tmp");
+    std::fs::write(base_file.path(), w.write().expect("write base")).expect("write base file");
+
+    // Entrenar adapter targets q_proj (HF spelling).
+    let mut amd = AprV2Metadata::new("entrenar-adapter");
+    amd.custom
+        .insert("lora_rank".to_string(), serde_json::json!(rank));
+    amd.custom
+        .insert("lora_alpha".to_string(), serde_json::json!(8.0));
+    let mut aw = AprV2Writer::new(amd);
+    aw.add_f32_tensor(
+        "lora.0.q_proj.lora_a",
+        vec![rank, hidden],
+        &vec![0.3_f32; rank * hidden],
+    );
+    aw.add_f32_tensor(
+        "lora.0.q_proj.lora_b",
+        vec![hidden, rank],
+        &vec![0.5_f32; hidden * rank],
+    );
+    let adapter_file = NamedTempFile::with_suffix(".apr").expect("adapter tmp");
+    std::fs::write(adapter_file.path(), aw.write().expect("write adapter"))
+        .expect("write adapter file");
+
+    let merged = NamedTempFile::with_suffix(".apr").expect("merged tmp");
+    let res = run_merge(
+        Some(base_file.path()),
+        Some(adapter_file.path()),
+        Some(merged.path()),
+        true,
+    );
+    assert!(
+        res.is_ok(),
+        "entrenar adapter must merge against a GGUF-named base: {res:?}"
+    );
+    let q: Vec<f32> = aprender::format::rosetta::RosettaStone::new()
+        .load_tensor_f32(merged.path(), "blk.0.attn_q.weight")
+        .expect("attn_q present");
+    assert!(
+        q.iter().any(|&v| (v - 1.0).abs() > 1e-4),
+        "merged blk.0.attn_q.weight must differ from base — GGUF→HF projection map broken"
+    );
+}

@@ -187,13 +187,29 @@ fn parse_layer_index(name: &str) -> Option<usize> {
     rest.split('.').next()?.parse().ok()
 }
 
+/// GGUF-style projection component → HF-style projection name
+/// (entrenar trainers always use the HF spelling in adapter tensor names).
+fn gguf_proj_to_hf(proj: &str) -> Option<&'static str> {
+    match proj {
+        "attn_q" => Some("q_proj"),
+        "attn_k" => Some("k_proj"),
+        "attn_v" => Some("v_proj"),
+        "attn_output" => Some("o_proj"),
+        "ffn_gate" => Some("gate_proj"),
+        "ffn_up" => Some("up_proj"),
+        "ffn_down" => Some("down_proj"),
+        _ => None,
+    }
+}
+
 /// Candidate adapter `(lora_a, lora_b)` tensor names for a base tensor.
 ///
-/// Two conventions produced by this toolchain (C-APR-MERGE-RUNNABLE):
+/// Conventions produced by this toolchain (C-APR-MERGE-RUNNABLE):
 /// 1. Legacy full-name: `{base}.lora_a` / `{base}.lora_b`
 /// 2. Entrenar trainer checkpoints (`cuda_trainer.rs` / `wgpu_checkpoint.rs`):
-///    `lora.{layer}.{proj}.lora_a` for base
-///    `model.layers.{layer}.self_attn.{proj}.weight` (and mlp projections).
+///    `lora.{layer}.{proj}.lora_a` — resolved against BOTH HF-named bases
+///    (`model.layers.{N}.self_attn.q_proj.weight`) and GGUF-named bases
+///    (`blk.{N}.attn_q.weight`, the `apr convert` import layout).
 fn adapter_pair_names(base_name: &str) -> Vec<(String, String)> {
     let mut candidates = vec![(
         format!("{base_name}.lora_a"),
@@ -209,6 +225,12 @@ fn adapter_pair_names(base_name: &str) -> Vec<(String, String)> {
             format!("lora.{layer}.{proj}.lora_a"),
             format!("lora.{layer}.{proj}.lora_b"),
         ));
+        if let Some(hf_proj) = gguf_proj_to_hf(proj) {
+            candidates.push((
+                format!("lora.{layer}.{hf_proj}.lora_a"),
+                format!("lora.{layer}.{hf_proj}.lora_b"),
+            ));
+        }
     }
     candidates
 }
