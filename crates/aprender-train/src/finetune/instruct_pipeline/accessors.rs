@@ -107,6 +107,16 @@ impl InstructPipeline {
         }
     }
 
+    /// Synchronize GPU LoRA weights back to CPU LoRA layers — no-op without the
+    /// `cuda` feature.
+    ///
+    /// On the CPU/WGPU training paths the adapters in `self.lora_layers` are
+    /// updated in place by `train_step`, so they are always current and no sync
+    /// is required. This twin keeps the call site in `evaluate()` unconditional.
+    #[cfg(not(feature = "cuda"))]
+    #[allow(clippy::unused_self)]
+    pub fn sync_lora_to_cpu(&mut self) {}
+
     /// Check if this pipeline is using CUDA acceleration.
     #[must_use]
     pub fn is_cuda(&self) -> bool {

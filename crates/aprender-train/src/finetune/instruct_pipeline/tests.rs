@@ -97,7 +97,7 @@ fn test_instruct_evaluate() {
     let model_config = TransformerConfig::tiny();
     let instruct_config =
         InstructConfig { lora_rank: 4, max_seq_len: 64, ..InstructConfig::default() };
-    let pipeline = InstructPipeline::new(&model_config, instruct_config);
+    let mut pipeline = InstructPipeline::new(&model_config, instruct_config);
 
     let prompts = vec![vec![0u32, 1, 2, 3, 4]];
     let responses = vec![vec![5u32, 6, 7, 8, 9]];
@@ -357,7 +357,7 @@ fn test_evaluate_empty_batch() {
     let model_config = TransformerConfig::tiny();
     let instruct_config =
         InstructConfig { lora_rank: 4, max_seq_len: 64, ..InstructConfig::default() };
-    let pipeline = InstructPipeline::new(&model_config, instruct_config);
+    let mut pipeline = InstructPipeline::new(&model_config, instruct_config);
 
     let result = pipeline.evaluate(&[], &[]);
     assert_eq!(result.avg_loss, 0.0);
@@ -370,7 +370,7 @@ fn test_evaluate_skips_empty_responses() {
     let model_config = TransformerConfig::tiny();
     let instruct_config =
         InstructConfig { lora_rank: 4, max_seq_len: 64, ..InstructConfig::default() };
-    let pipeline = InstructPipeline::new(&model_config, instruct_config);
+    let mut pipeline = InstructPipeline::new(&model_config, instruct_config);
 
     let prompts = vec![vec![0u32, 1, 2], vec![3u32, 4, 5]];
     let responses = vec![vec![], vec![6u32, 7, 8]];
@@ -384,7 +384,7 @@ fn test_evaluate_truncation() {
     let model_config = TransformerConfig::tiny();
     let instruct_config =
         InstructConfig { lora_rank: 4, max_seq_len: 10, ..InstructConfig::default() };
-    let pipeline = InstructPipeline::new(&model_config, instruct_config);
+    let mut pipeline = InstructPipeline::new(&model_config, instruct_config);
 
     let prompts = vec![vec![0u32; 8]];
     let responses = vec![vec![1u32; 8]]; // total 16, will be truncated to 10
@@ -505,7 +505,7 @@ fn test_evaluate_multiple_samples() {
     let model_config = TransformerConfig::tiny();
     let instruct_config =
         InstructConfig { lora_rank: 4, max_seq_len: 64, ..InstructConfig::default() };
-    let pipeline = InstructPipeline::new(&model_config, instruct_config);
+    let mut pipeline = InstructPipeline::new(&model_config, instruct_config);
 
     let prompts = vec![vec![0u32, 1, 2], vec![3u32, 4, 5], vec![6u32, 7, 8]];
     let responses = vec![vec![10u32, 11], vec![12u32, 13, 14], vec![15u32]];
