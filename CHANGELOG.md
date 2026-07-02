@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.57.0] - 2026-07-03
+
+The release where **GPU QLoRA fine-tuning actually works**. `apr finetune -m qlora` went
+from *deadlocks on the first transformer block* to *trains the correct model on an RTX 4090*
+(and, verified this cycle, on a GB10 Blackwell sm_121) — a four-defect cascade, each fix
+shipped with a named proof-obligation + mutation-verified RED→GREEN falsifier + `pv`-validated
+contract. On the apr-code SFT corpus at seq 2048 the loss now starts at CE ≈ 1.58 and descends
+(pre-fix it sat at 13–14 — worse than uniform — and poisoned the adapters into NaN after ~125
+steps). Alongside: `apr finetune --merge` now produces a **directly-runnable** merged `.apr`
+(was silently unrunnable / zero-layers-merged), and three already-measured beats that claimed
+CI enforcement but ran in no workflow are now genuinely gated per-PR.
+
+### Fixed
+
+- **NF4 QLoRA forward self-deadlock** (#2249) — `fused_residual_rmsnorm_forward` held the
+  `FORWARD_KERNEL_CACHE` mutex and then called the public `residual_add_forward`, re-locking the
+  same non-reentrant lock on the same thread → permanent futex-wait on the first block forward.
+  A "wave of 4": also a single-row kernel launched as batched (rows 1.. never written), eps not
+  threaded (Qwen2 1e-6 vs the 1e-5 default), and a missing pre-warm entry (mid-training JIT).
+  Fixed structurally via `BatchedFusedResidualRmsNormKernel`.
+  (`FALSIFY-CUDA-FUSED-RMSNORM-DEADLOCK-001`)
+- **CUDA loss window honors `--max-seq-len`** (#2250) — `cuda_train_step` clamped the loss
+  window to a hardcoded 512 regardless of the configured sequence length, so any sample whose
+  prompt exceeded 512 tokens had its entire response clamped out → silent `loss=0.0`, zero
+  gradient, a no-op epoch. (`FALSIFY-CUDA-LOSS-WINDOW-512-001`)
+- **NF4 QLoRA NaN loss — cuBLAS cross-stream data race** (#2251) — the finetune path never bound
+  its cuBLAS handles to the trainer's `CU_STREAM_NON_BLOCKING` stream, so every GEMM ran on the
+  legacy default stream unordered against the PTX kernels producing its inputs → NaN at every
+  PTX↔cuBLAS boundary. Fixed with per-call stream binding at all 11 dispatch sites +
+  stream-ordered device-to-device copies. (`FALSIFY-CUDA-NF4-FORWARD-NAN-001`)
+- **NF4 QLoRA forward computed the WRONG MODEL** (#2252) — finite-but-wrong logits (CE ≈ ln(V)+2)
+  traced to four stacked defects: NeoX RoPE instantiated with GPT-J adjacent-pair rotation
+  (Qwen2 needs split-half), dropped Q/K/V biases (`use_bias=true`), a partial-warp `shfl.sync`
+  UB at seq < 32, and a non-causal CPU reference oracle that masked all of it via label leakage.
+  (`FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001`)
+- **`apr finetune --merge` produces a directly-runnable `.apr`** (#2254) — a duplicate-field
+  metadata poison (a typed `Option` dim field and its HF-alias both serialized → realizar serde
+  `duplicate field` → `unwrap_or_default()` silently dropped *all* metadata including the
+  embedded tokenizer), plus a GGUF↔HF adapter-name mismatch that merged **zero** layers while
+  reporting success. Adds a fail-closed post-write gate that re-opens the output and rejects
+  anything not loadable. (`FALSIFY-APR-MERGE-RUNNABLE-001..005`)
+
+### Changed
+
+- **CI now enforces three previously-unwired beats** (#2253) — `beat_pytorch_deploy_footprint`
+  (Pillar-2 15.8× deploy-size win), `beat_fail_closed_structural` (Pillar-4 cross-tensor
+  dimension-mismatch rejection), and the Ollama `/api` NDJSON-framing falsifiers now run in the
+  per-PR required integration chain, converting three measured claims into enforced gates.
+- **cargo-audit / cargo-deny**: exempt RUSTSEC-2026-0194/-0195 (quick-xml `NsReader` DoS) with a
+  not-affected rationale — the sole quick-xml consumer uses `Reader`, never `NsReader` (#2255).
+
+### Verified
+
+- **Blackwell GB10 (sm_121) QLoRA training** — the full cascade was cross-silicon verified on a
+  GB10: both CUDA falsifiers pass, the new NeoX RoPE kernels JIT-compile mid-training without the
+  historical sm_121 stream-poisoning crash, and a toy QLoRA run trains GPU-resident with zero NaN.
+
 ## [0.56.0] - 2026-07-01
 
 Sovereign-leaf refactor + a correctness wave. Headlines: (1) the `.apr` container is extracted into a
