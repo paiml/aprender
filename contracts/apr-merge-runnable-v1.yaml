@@ -1,0 +1,292 @@
+metadata:
+  id: C-APR-MERGE-RUNNABLE
+  version: 1.0.0
+  created: '2026-07-02'
+  author: PAIML Engineering
+  kind: pattern
+  status: ACTIVE_ALGORITHM_LEVEL
+  description: |
+    Pins the runnability of `apr finetune --merge` output: merging a base
+    .apr with a LoRA adapter MUST produce an .apr that `apr run` loads
+    directly (C-01 architecture + C-03 dims + PMAT-171/172 embedded
+    tokenizer), enforced by a fail-closed post-write gate inside
+    `run_merge`.
+
+    BACKGROUND (apr-code flip smoke, 2026-07-01/02). Merging the trained
+    flip adapter into qwen2.5-coder-1.5b-instruct-q4k.apr produced a file
+    that `apr run` rejected with `C-01: APR model missing 'architecture'
+    metadata` and, after stamping, `Tokenizer encode failed for APR model
+    (no tokenizer in APR metadata?)` — even though BOTH architecture and
+    the full embedded tokenizer were physically present in the container.
+
+    ROOT CAUSE (duplicate-field metadata poison). Import-produced bases
+    stamp HF-alias dimension keys (`num_hidden_layers`,
+    `num_attention_heads`, `num_key_value_heads`) which land in
+    `AprV2Metadata.custom` because the aprender-side struct has no serde
+    aliases. Realizar's `AprMetadata` deserializer DOES alias them
+    (PMAT-111). Pre-fix, `run_merge` re-serialized the cloned metadata
+    emitting BOTH `"num_layers": null` (typed Option field with no
+    skip_serializing_if) AND `"num_hidden_layers": 28` (custom flatten) —
+    serde fails that JSON with "duplicate field `num_layers`", and
+    realizar's `MappedAprModel::from_mmap` swallows the error via
+    `serde_json::from_slice(..).unwrap_or_default()`, silently dropping
+    ALL metadata: architecture, dims, AND the embedded tokenizer.
+
+    FIX (three layers, all fail-closed):
+      1. `AprV2Metadata` no longer serializes `None` transformer-config
+         fields (skip_serializing_if), except the three C-APR-PROVENANCE
+         keys (license/data_source/data_license) whose explicit-null
+         emission FALSIFY-SHIP-022 requires — none of which are realizar
+         alias-group members.
+      2. `run_merge` canonicalizes HF-alias keys into typed fields
+         (`AprV2Metadata::canonicalize_hf_aliases`, removing the alias
+         spellings), backfills architecture + C-03 dims from tensor
+         shapes / GH-376-style presets, and clears stale quantization
+         markers (merged tensors are F32).
+      3. Post-write gate `verify_merged_runnable`: re-opens the output,
+         structurally asserts C-01/C-03 with EXACTLY ONE spelling per
+         dimension plus a loadable embedded tokenizer
+         (vocabulary + merges|scores), and — with the inference feature —
+         loads the file through realizar's own `MappedAprModel` +
+         `GGUFConfig::from_apr` + `load_embedded_bpe_tokenizer` (the
+         exact `apr run` path). On ANY failure the output is DELETED and
+         the merge errors loudly. `-o *.safetensors` (APR-in-disguise) is
+         rejected before writing.
+
+    RED-then-GREEN (mutation-verified on this branch): with the fix
+    reverted, FALSIFY-APR-MERGE-RUNNABLE-001 fails with realizar parsing
+    the merged metadata to EMPTY (architecture None — the exact
+    production C-01 signature), 002 leaves an APR container named
+    .safetensors, 003 leaves an unrunnable tokenizer-less artifact. With
+    the fix all three pass, and the real 1.5B flip merge runs end-to-end.
+
+  references:
+    - 'crates/apr-cli/src/commands/finetune_display_next_validate.rs (run_merge, verify_merged_runnable, backfill_arch_dims)'
+    - 'crates/apr-format/src/v2/header_impl.rs (AprV2Metadata skip_serializing_if + canonicalize_hf_aliases)'
+    - 'crates/aprender-serve/src/apr/mapped_apr_model.rs (from_mmap unwrap_or_default — the silent swallow)'
+    - 'crates/aprender-serve/src/gguf/config.rs (GGUFConfig::from_apr — C-01/C-03)'
+    - 'crates/aprender-serve/src/apr/tokenizer_loading.rs (load_embedded_bpe_tokenizer, PMAT-171)'
+  depends_on:
+    - 'tensor-layout-v1'
+
+equations:
+  merge_metadata_single_spelling:
+    formula: |
+      ∀ dim ∈ {hidden_size, num_layers, num_heads, num_kv_heads,
+               intermediate_size}:
+        |spellings(merged_metadata, dim)| ≤ 1
+    domain: |
+      spellings(m, dim) = canonical key ∪ realizar serde aliases present
+      in the serialized metadata JSON (null-valued keys count as
+      present). Two spellings — including a null canonical field next to
+      an HF alias — make realizar's alias-aware deserializer fail with
+      "duplicate field", which its loader silently converts to EMPTY
+      metadata.
+    invariants:
+    - 'canonicalize_hf_aliases removes alias keys from custom after promotion'
+    - 'None-valued transformer-config fields are not serialized (no null poison)'
+    preconditions:
+    - 'base metadata parsed via AprV2Reader (aliases land in custom)'
+
+  merge_output_c01_c03_complete:
+    formula: |
+      GGUFConfig::from_apr(merged) succeeds:
+        architecture ≠ ∅ ∧ hidden_size > 0 ∧ num_layers > 0
+        ∧ num_heads > 0 ∧ intermediate_size > 0
+    domain: |
+      Values come from base metadata when present (post-canonicalization),
+      else are backfilled from tensor shapes (embedding [vocab, hidden],
+      block-index count, FFN gate/up [intermediate, hidden]) and
+      GH-376-style presets by (architecture, hidden_size).
+    invariants:
+    - 'C-01: architecture present in merged metadata'
+    - 'C-03: all required dims present as positive integers'
+    preconditions:
+    - 'merge_metadata_single_spelling holds'
+
+  merge_output_tokenizer_loadable:
+    formula: |
+      load_embedded_bpe_tokenizer(merged) ≠ None
+      ∨ load_embedded_sentencepiece_tokenizer(merged) ≠ None
+    domain: |
+      PMAT-172: APR files are self-contained — the merged output must
+      carry tokenizer.vocabulary plus tokenizer.merges (BPE, PMAT-171) or
+      tokenizer.scores (SentencePiece, GH-366), copied verbatim from the
+      base container's custom metadata. A base without an embedded
+      tokenizer cannot produce a runnable merge: fail loudly, never write.
+    invariants:
+    - 'tokenizer.* custom keys survive the metadata clone byte-for-byte'
+    - 'gate fails when vocabulary or merges/scores are missing or empty'
+    preconditions:
+    - 'merge_metadata_single_spelling holds (else realizar drops the tokenizer too)'
+
+  merge_gate_fail_closed:
+    formula: |
+      verify_merged_runnable(out) = Err ⇒ ¬exists(out) ∧ run_merge = Err
+    domain: |
+      The gate re-opens the WRITTEN file (not in-memory state) and, when
+      built with the inference feature, validates through realizar's own
+      loader — the exact `apr run` code path. Non-.apr output extensions
+      (format-in-disguise) are rejected before any bytes are written.
+    invariants:
+    - 'no unrunnable merge artifact ever remains on disk'
+    - '-o *.safetensors is rejected (APR container must be named .apr)'
+    preconditions:
+    - 'output path writable'
+
+  merge_adapter_actually_merges:
+    formula: |
+      lora_pairs(adapter) > 0 ⇒ merged_count > 0 ∨ run_merge = Err
+    domain: |
+      The toolchain's own trainers (entrenar cuda_trainer/wgpu_checkpoint)
+      name adapter tensors `lora.{layer}.{proj}.lora_{a,b}`; the legacy
+      convention is `{base_tensor}.lora_{a,b}`. run_merge resolves both,
+      derives rank from the adapter's own [rank, d_in] lora_a shape (a
+      stale global rank makes MergeEngine mis-derive dims and silently
+      return the base unchanged), and reads alpha from the safetensors
+      header or the trainer's sidecar metadata.json. A merge where zero
+      adapter pairs match is a silent no-op (live repro: 0/339 on the
+      flip adapter) and MUST error instead of shipping a byte-identical
+      copy of the base under a 'merged' name.
+    invariants:
+    - 'entrenar lora.{layer}.{proj} naming resolves against HF-style base tensors'
+    - 'per-tensor rank comes from the lora_a shape, not global metadata'
+    - 'merged_count == 0 with lora pairs present ⇒ hard error, no output'
+    preconditions:
+    - 'adapter parseable by rosetta (APR or safetensors)'
+
+proof_obligations:
+- type: invariant
+  property: merged metadata has at most one spelling per dimension key
+  formal: '∀dim: |spellings(merged_metadata, dim)| ≤ 1'
+  applies_to: merge_metadata_single_spelling
+- type: invariant
+  property: merged output passes realizar C-01/C-03 config extraction
+  formal: 'GGUFConfig::from_apr(merged, vocab) = Ok'
+  applies_to: merge_output_c01_c03_complete
+- type: invariant
+  property: merged output carries a loadable embedded tokenizer
+  formal: 'load_embedded_bpe_tokenizer(merged) ≠ None ∨ load_embedded_sentencepiece_tokenizer(merged) ≠ None'
+  applies_to: merge_output_tokenizer_loadable
+- type: invariant
+  property: gate failure deletes the output and errors the merge
+  formal: 'gate_fail ⇒ ¬exists(out) ∧ run_merge = Err'
+  applies_to: merge_gate_fail_closed
+- type: invariant
+  property: adapters with LoRA pairs either merge or error — never a silent no-op
+  formal: 'lora_pairs(adapter) > 0 ⇒ merged_count > 0 ∨ run_merge = Err'
+  applies_to: merge_adapter_actually_merges
+
+falsification_tests:
+- id: FALSIFY-APR-MERGE-RUNNABLE-001
+  rule: |
+    Merging an import-shaped base (HF-alias dims in custom + embedded
+    tokenizer, mirroring a real `apr convert` q4k import) with a LoRA
+    adapter yields an output that REALIZAR'S OWN loader parses with full
+    metadata: architecture, C-03 dims, GGUFConfig::from_apr Ok, and a
+    loadable embedded BPE tokenizer.
+  prediction: |
+    Pre-fix: realizar parses the merged metadata to EMPTY
+    (unwrap_or_default on the duplicate-field error) — architecture None,
+    the exact production `C-01: APR model missing 'architecture'`
+    signature seen on the flip merge. Post-fix: all oracle assertions
+    hold on the same input.
+  test: cargo test -p apr-cli --lib falsify_apr_merge_runnable_001_merged_output_loads_in_realizar
+  if_fails: |
+    Architecture/dims None ⇒ duplicate-field metadata poison regressed
+    (a null canonical field or un-stripped HF alias reached the output —
+    check canonicalize_hf_aliases and AprV2Metadata skip_serializing_if).
+    Tokenizer None ⇒ tokenizer.* custom keys were dropped from the clone
+    or the metadata parse failed wholesale.
+  ship_blocking: true
+  counter_example_classes:
+  - null_canonical_field_plus_hf_alias_duplicate
+  - alias_keys_not_stripped_after_promotion
+  - tokenizer_custom_keys_dropped_in_clone
+  - metadata_parse_error_swallowed_to_default
+- id: FALSIFY-APR-MERGE-RUNNABLE-002
+  rule: |
+    `run_merge` with `-o merged.safetensors` errors BEFORE writing: an
+    APR v2 container must never ship under a safetensors extension.
+  prediction: |
+    Pre-fix: run_merge returned Ok and left APR bytes in a .safetensors
+    file that every loader (including safetensors itself) rejects.
+    Post-fix: Err + no file on disk.
+  test: cargo test -p apr-cli --lib falsify_apr_merge_runnable_002_safetensors_extension_rejected
+  if_fails: |
+    The extension guard was removed or reordered after the write — merge
+    is shipping format-in-disguise artifacts again.
+  ship_blocking: true
+  counter_example_classes:
+  - apr_container_under_safetensors_extension
+- id: FALSIFY-APR-MERGE-RUNNABLE-003
+  rule: |
+    Merging a base WITHOUT an embedded tokenizer fails the post-write
+    gate: run_merge errors AND the output file is deleted.
+  prediction: |
+    Pre-fix: run_merge returned Ok, leaving an unrunnable artifact that
+    fails at `apr run` time with the PMAT-172 missing-tokenizer error.
+    Post-fix: Err mentioning the runnability gate, output absent.
+  test: cargo test -p apr-cli --lib falsify_apr_merge_runnable_003_gate_deletes_tokenizerless_output
+  if_fails: |
+    The gate stopped checking the embedded tokenizer, or stopped deleting
+    the output on failure — fail-closed is broken and unrunnable merges
+    can reach users again.
+  ship_blocking: true
+  counter_example_classes:
+  - unrunnable_artifact_left_on_disk
+  - gate_pass_without_embedded_tokenizer
+
+- id: FALSIFY-APR-MERGE-RUNNABLE-004
+  rule: |
+    An entrenar-trainer adapter (`lora.{layer}.{proj}.lora_{a,b}` naming,
+    deliberately wrong global rank in metadata) merges against an
+    HF-named base: run_merge succeeds AND the merged q_proj differs from
+    the base (rank derived from the adapter's own lora_a shape).
+  prediction: |
+    Pre-fix: 0 layers merged — the output q_proj is byte-identical to the
+    base (the exact 0/339 silent no-op observed merging the real flip
+    adapter). Post-fix: the LoRA delta lands and the weights differ.
+  test: cargo test -p apr-cli --lib falsify_apr_merge_runnable_004_entrenar_adapter_naming_merges
+  if_fails: |
+    Weights unchanged ⇒ the entrenar naming map regressed or the
+    per-tensor shape-derived rank was replaced by the global metadata
+    rank (MergeEngine dim mismatch → silent base passthrough).
+  ship_blocking: true
+  counter_example_classes:
+  - entrenar_adapter_naming_unrecognized
+  - global_rank_dim_mismatch_silent_noop
+- id: FALSIFY-APR-MERGE-RUNNABLE-005
+  rule: |
+    An adapter whose LoRA pairs match NO base tensor makes run_merge
+    ERROR with no output file — never a silent no-op merge.
+  prediction: |
+    Pre-fix: Ok with "0 / N layers merged" and a 'merged' file that is a
+    byte-identical copy of the base. Post-fix: Err naming the unmatched
+    adapter tensor and the supported naming schemes; no file on disk.
+  test: cargo test -p apr-cli --lib falsify_apr_merge_runnable_005_noop_merge_rejected
+  if_fails: |
+    The zero-match guard was removed — users get 'merged' models that
+    contain none of their training again.
+  ship_blocking: true
+  counter_example_classes:
+  - zero_match_merge_returns_ok
+
+qa_gate:
+  id: QA-APR-MERGE-RUNNABLE-001
+  name: apr finetune --merge runnable-output gate
+  description: |
+    All five falsifiers pass: the merged .apr loads through realizar's
+    own deserializer with complete C-01/C-03 metadata and a loadable
+    embedded tokenizer; the toolchain's own trainer adapters actually
+    merge (shape-derived rank); zero-match merges and format-in-disguise
+    outputs are rejected; gate failures delete the artifact. Unblocks the
+    apr-code flip smoke (finetune → merge → apr run) for v0.57.0.
+  checks:
+  - merge_metadata_single_spelling
+  - merge_output_c01_c03_complete
+  - merge_output_tokenizer_loadable
+  - merge_gate_fail_closed
+  - merge_adapter_actually_merges
+  pass_criteria: FALSIFY-APR-MERGE-RUNNABLE-001..005 all pass
+  falsification: Any failure fails the gate (ship-blocking)

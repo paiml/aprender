@@ -34,6 +34,30 @@ fn validate_merge_paths<'a>(
     Ok((model, adapter))
 }
 
+/// Read LoRA rank/alpha from the trainer's sidecar `metadata.json`
+/// (written next to safetensors checkpoints by `apr finetune`; the
+/// safetensors `__metadata__` block may carry only epoch/val_loss).
+fn read_sidecar_lora_params(adapter: &Path) -> (Option<u32>, Option<f32>) {
+    let Some(sidecar) = adapter.parent().map(|d| d.join("metadata.json")) else {
+        return (None, None);
+    };
+    let Ok(text) = std::fs::read_to_string(&sidecar) else {
+        return (None, None);
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return (None, None);
+    };
+    let rank = json
+        .get("lora_rank")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|v| u32::try_from(v).ok());
+    let alpha = json
+        .get("lora_alpha")
+        .and_then(serde_json::Value::as_f64)
+        .map(|v| v as f32);
+    (rank, alpha)
+}
+
 /// Read LoRA rank/alpha from adapter metadata.
 fn read_adapter_lora_params(adapter: &Path) -> Result<(u32, f32)> {
     // Handle safetensors adapter (from wgpu training pipeline)
@@ -50,14 +74,18 @@ fn read_adapter_lora_params(adapter: &Path) -> Result<(u32, f32)> {
             .map_err(|e| CliError::ValidationFailed(format!("Read header: {e}")))?;
         let header_str = String::from_utf8_lossy(&header);
         // Parse lora_rank and lora_alpha from JSON metadata
-        let rank = header_str.split("\"lora_rank\"")
+        let header_rank = header_str.split("\"lora_rank\"")
             .nth(1).and_then(|s| s.split('"').nth(1))
-            .and_then(|v| v.parse::<u32>().ok())
-            .unwrap_or(64);
-        let alpha = header_str.split("\"lora_alpha\"")
+            .and_then(|v| v.parse::<u32>().ok());
+        let header_alpha = header_str.split("\"lora_alpha\"")
             .nth(1).and_then(|s| s.split('"').nth(1))
-            .and_then(|v| v.parse::<f32>().ok())
-            .unwrap_or(16.0);
+            .and_then(|v| v.parse::<f32>().ok());
+        // C-APR-MERGE-RUNNABLE: fall back to the trainer's sidecar
+        // metadata.json before defaulting — a defaulted alpha silently
+        // mis-scales the merged delta (scale = alpha/rank).
+        let (sidecar_rank, sidecar_alpha) = read_sidecar_lora_params(adapter);
+        let rank = header_rank.or(sidecar_rank).unwrap_or(64);
+        let alpha = header_alpha.or(sidecar_alpha).unwrap_or(16.0);
         return Ok((rank, alpha));
     }
     // APR format adapter
@@ -121,6 +149,321 @@ fn display_merge_result(
     }
 }
 
+/// C-APR-MERGE-RUNNABLE: merge writes an APR v2 container — refuse
+/// format-in-disguise outputs (an APR container named `.safetensors` is
+/// rejected by every loader AND by `safetensors` itself).
+fn validate_merge_output_extension(out: &Path) -> Result<()> {
+    match out.extension().and_then(|e| e.to_str()) {
+        Some("apr") => Ok(()),
+        other => Err(CliError::ValidationFailed(format!(
+            "apr finetune --merge writes an APR v2 container; -o must end in .apr \
+             (got: {}). Use `apr export --format {}` on the merged .apr for other formats.",
+            out.display(),
+            other.unwrap_or("safetensors"),
+        ))),
+    }
+}
+
+/// GH-376-style preset: (num_heads, num_kv_heads, intermediate_size) by
+/// (architecture, hidden_size) for imports that lost head counts.
+fn arch_preset_dims(arch: &str, hidden: usize) -> Option<(usize, usize, usize)> {
+    if !arch.starts_with("qwen2") {
+        return None;
+    }
+    match hidden {
+        896 => Some((14, 2, 4864)),   // Qwen2.5-0.5B
+        1536 => Some((12, 2, 8960)),  // Qwen2.5-1.5B
+        3584 => Some((28, 4, 18944)), // Qwen2.5-7B
+        _ => None,
+    }
+}
+
+/// Parse a transformer block index from an HF (`model.layers.N.`) or
+/// GGUF (`blk.N.`) style tensor name.
+fn parse_layer_index(name: &str) -> Option<usize> {
+    let rest = name
+        .strip_prefix("model.layers.")
+        .or_else(|| name.strip_prefix("blk."))?;
+    rest.split('.').next()?.parse().ok()
+}
+
+/// GGUF-style projection component → HF-style projection name
+/// (entrenar trainers always use the HF spelling in adapter tensor names).
+fn gguf_proj_to_hf(proj: &str) -> Option<&'static str> {
+    match proj {
+        "attn_q" => Some("q_proj"),
+        "attn_k" => Some("k_proj"),
+        "attn_v" => Some("v_proj"),
+        "attn_output" => Some("o_proj"),
+        "ffn_gate" => Some("gate_proj"),
+        "ffn_up" => Some("up_proj"),
+        "ffn_down" => Some("down_proj"),
+        _ => None,
+    }
+}
+
+/// Candidate adapter `(lora_a, lora_b)` tensor names for a base tensor.
+///
+/// Conventions produced by this toolchain (C-APR-MERGE-RUNNABLE):
+/// 1. Legacy full-name: `{base}.lora_a` / `{base}.lora_b`
+/// 2. Entrenar trainer checkpoints (`cuda_trainer.rs` / `wgpu_checkpoint.rs`):
+///    `lora.{layer}.{proj}.lora_a` — resolved against BOTH HF-named bases
+///    (`model.layers.{N}.self_attn.q_proj.weight`) and GGUF-named bases
+///    (`blk.{N}.attn_q.weight`, the `apr convert` import layout).
+fn adapter_pair_names(base_name: &str) -> Vec<(String, String)> {
+    let mut candidates = vec![(
+        format!("{base_name}.lora_a"),
+        format!("{base_name}.lora_b"),
+    )];
+    if let (Some(layer), Some(proj)) = (
+        parse_layer_index(base_name),
+        base_name
+            .strip_suffix(".weight")
+            .and_then(|s| s.rsplit('.').next()),
+    ) {
+        candidates.push((
+            format!("lora.{layer}.{proj}.lora_a"),
+            format!("lora.{layer}.{proj}.lora_b"),
+        ));
+        if let Some(hf_proj) = gguf_proj_to_hf(proj) {
+            candidates.push((
+                format!("lora.{layer}.{hf_proj}.lora_a"),
+                format!("lora.{layer}.{hf_proj}.lora_b"),
+            ));
+        }
+    }
+    candidates
+}
+
+/// Backfill architecture + C-03 dims from tensor shapes/names when the base
+/// metadata (post-canonicalization) still lacks them (C-APR-MERGE-RUNNABLE).
+fn backfill_arch_dims(
+    md: &mut aprender::format::v2::AprV2Metadata,
+    tensors: &[aprender::format::rosetta::TensorInfo],
+) {
+    // vocab/hidden from embedding shape [vocab, hidden]
+    if let Some(t) = tensors.iter().find(|t| {
+        matches!(
+            t.name.as_str(),
+            "model.embed_tokens.weight" | "token_embd.weight" | "tok_embeddings.weight"
+        )
+    }) {
+        if t.shape.len() == 2 {
+            md.vocab_size = md.vocab_size.or(Some(t.shape[0]));
+            md.hidden_size = md.hidden_size.or(Some(t.shape[1]));
+        }
+    }
+    // num_layers = max block index + 1
+    if md.num_layers.is_none() {
+        md.num_layers = tensors
+            .iter()
+            .filter_map(|t| parse_layer_index(&t.name))
+            .max()
+            .map(|m| m + 1);
+    }
+    // intermediate_size from FFN gate/up shape [intermediate, hidden]
+    if md.intermediate_size.is_none() {
+        md.intermediate_size = tensors
+            .iter()
+            .find(|t| {
+                t.shape.len() == 2
+                    && (t.name.contains("mlp.gate_proj.weight")
+                        || t.name.contains("ffn_gate.weight")
+                        || t.name.contains("mlp.up_proj.weight")
+                        || t.name.contains("ffn_up.weight"))
+            })
+            .map(|t| t.shape[0]);
+    }
+    // architecture from tensor-name pattern: Q/K/V projection *biases* are the
+    // qwen2 signature (llama-family has none).
+    if md.architecture.is_none() {
+        let has_attn_bias = tensors.iter().any(|t| {
+            t.name.ends_with("self_attn.q_proj.bias") || t.name.ends_with("attn_q.bias")
+        });
+        if has_attn_bias {
+            md.architecture = Some("qwen2".to_string());
+        }
+    }
+    // head counts via preset (not derivable from shapes without head_dim)
+    if md.num_heads.is_none() || md.num_kv_heads.is_none() {
+        if let (Some(arch), Some(hidden)) = (md.architecture.clone(), md.hidden_size) {
+            if let Some((heads, kv_heads, intermediate)) = arch_preset_dims(&arch, hidden) {
+                md.num_heads = md.num_heads.or(Some(heads));
+                md.num_kv_heads = md.num_kv_heads.or(Some(kv_heads));
+                md.intermediate_size = md.intermediate_size.or(Some(intermediate));
+            }
+        }
+    }
+}
+
+/// Assert exactly one spelling of a metadata dimension is present and it is a
+/// positive integer. More than one spelling (even a `null`-valued canonical
+/// field next to an HF alias) makes realizar's serde-aliased deserializer fail
+/// with "duplicate field" — which its loader swallows into EMPTY metadata.
+fn gate_one_numeric(
+    map: &serde_json::Map<String, serde_json::Value>,
+    keys: &[&str],
+    what: &str,
+) -> Result<()> {
+    let present: Vec<&&str> = keys.iter().filter(|k| map.contains_key(**k)).collect();
+    if present.len() > 1 {
+        return Err(CliError::ValidationFailed(format!(
+            "merged metadata has {n} spellings of {what} ({present:?}) — realizar's \
+             alias-aware parser rejects duplicates and silently drops ALL metadata",
+            n = present.len(),
+        )));
+    }
+    let key = present.first().ok_or_else(|| {
+        CliError::ValidationFailed(format!("merged metadata missing {what} (C-03)"))
+    })?;
+    let ok = map
+        .get(**key)
+        .and_then(serde_json::Value::as_u64)
+        .is_some_and(|v| v > 0);
+    if ok {
+        Ok(())
+    } else {
+        Err(CliError::ValidationFailed(format!(
+            "merged metadata {what} ({key}) is not a positive integer"
+        )))
+    }
+}
+
+/// Structural half of the post-merge gate: re-open the written container and
+/// assert the RAW metadata JSON satisfies realizar's load requirements
+/// (C-01 architecture, C-03 dims — exactly one spelling each) and carries a
+/// loadable embedded tokenizer (vocabulary + merges|scores, PMAT-171/172).
+fn gate_metadata_structural(bytes: &[u8]) -> Result<()> {
+    let header =
+        aprender::format::v2::AprV2Header::from_bytes(bytes).map_err(|e| {
+            CliError::ValidationFailed(format!("post-merge gate: header re-parse failed: {e}"))
+        })?;
+    let start = usize::try_from(header.metadata_offset).unwrap_or(usize::MAX);
+    let end = start.saturating_add(header.metadata_size as usize);
+    let raw = bytes.get(start..end).ok_or_else(|| {
+        CliError::ValidationFailed("post-merge gate: metadata section out of bounds".to_string())
+    })?;
+    let value: serde_json::Value = serde_json::from_slice(raw).map_err(|e| {
+        CliError::ValidationFailed(format!("post-merge gate: metadata is not valid JSON: {e}"))
+    })?;
+    let map = value.as_object().ok_or_else(|| {
+        CliError::ValidationFailed("post-merge gate: metadata is not a JSON object".to_string())
+    })?;
+
+    // C-01: architecture (realizar cannot infer model type without it)
+    let arch_ok = map
+        .get("architecture")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|a| !a.is_empty());
+    if !arch_ok {
+        return Err(CliError::ValidationFailed(
+            "merged metadata missing 'architecture' (C-01)".to_string(),
+        ));
+    }
+    // C-03 dims, one spelling each (realizar serde-alias groups)
+    gate_one_numeric(map, &["hidden_size", "hidden_dim", "d_model", "n_embd"], "hidden_size")?;
+    gate_one_numeric(
+        map,
+        &["num_layers", "n_layers", "num_hidden_layers", "n_layer"],
+        "num_layers",
+    )?;
+    gate_one_numeric(
+        map,
+        &["num_heads", "n_heads", "num_attention_heads", "n_head"],
+        "num_heads",
+    )?;
+    gate_one_numeric(
+        map,
+        &["intermediate_size", "ffn_dim", "intermediate_dim", "n_inner"],
+        "intermediate_size",
+    )?;
+    // num_kv_heads is optional (defaults to num_heads) but must not be duplicated
+    let kv_present = ["num_kv_heads", "n_kv_heads", "num_key_value_heads"]
+        .iter()
+        .filter(|k| map.contains_key(**k))
+        .count();
+    if kv_present > 1 {
+        return Err(CliError::ValidationFailed(
+            "merged metadata has multiple spellings of num_kv_heads".to_string(),
+        ));
+    }
+
+    // Embedded tokenizer (PMAT-172: APR must be self-contained; PMAT-171 BPE
+    // loader needs vocabulary + merges; GH-366 SentencePiece needs scores).
+    let vocab_len = map
+        .get("tokenizer.vocabulary")
+        .and_then(serde_json::Value::as_array)
+        .map_or(0, Vec::len);
+    if vocab_len == 0 {
+        return Err(CliError::ValidationFailed(
+            "merged model has no embedded tokenizer (tokenizer.vocabulary missing/empty). \
+             Re-convert the base with `apr convert` so it carries an embedded tokenizer \
+             (PMAT-172: APR files must be self-contained)."
+                .to_string(),
+        ));
+    }
+    let merges_len = map
+        .get("tokenizer.merges")
+        .and_then(serde_json::Value::as_array)
+        .map_or(0, Vec::len);
+    let scores_len = map
+        .get("tokenizer.scores")
+        .and_then(serde_json::Value::as_array)
+        .map_or(0, Vec::len);
+    if merges_len == 0 && scores_len == 0 {
+        return Err(CliError::ValidationFailed(
+            "merged model tokenizer is not loadable: needs tokenizer.merges (BPE, PMAT-171) \
+             or tokenizer.scores (SentencePiece, GH-366) alongside tokenizer.vocabulary"
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// Oracle half of the post-merge gate: load the output through REALIZAR's own
+/// deserializer + config extraction — the exact code path `apr run` uses.
+#[cfg(feature = "inference")]
+fn gate_realizar_oracle(out: &Path) -> Result<()> {
+    let mapped = realizar::apr::MappedAprModel::from_path(out).map_err(|e| {
+        CliError::ValidationFailed(format!("post-merge gate: realizar mmap load failed: {e}"))
+    })?;
+    let vocab_size = mapped.metadata.vocab_size.unwrap_or(0);
+    realizar::gguf::GGUFConfig::from_apr(&mapped, vocab_size).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "post-merge gate: realizar config extraction failed (C-01/C-03): {e}"
+        ))
+    })?;
+    let model = realizar::apr::AprV2Model::load(out).map_err(|e| {
+        CliError::ValidationFailed(format!("post-merge gate: realizar APR load failed: {e}"))
+    })?;
+    let tokenizer_loads = model.load_embedded_bpe_tokenizer().is_some()
+        || model.load_embedded_sentencepiece_tokenizer().is_some();
+    if tokenizer_loads {
+        Ok(())
+    } else {
+        Err(CliError::ValidationFailed(
+            "post-merge gate: realizar cannot load an embedded tokenizer from the merged model"
+                .to_string(),
+        ))
+    }
+}
+
+/// Fail-closed post-write gate (C-APR-MERGE-RUNNABLE): re-open the output and
+/// assert it is directly runnable. On failure the output is DELETED — merge
+/// must never leave an unrunnable artifact on disk.
+fn verify_merged_runnable(out: &Path) -> Result<()> {
+    let bytes = std::fs::read(out).map_err(|e| {
+        CliError::ValidationFailed(format!("post-merge gate: cannot re-read output: {e}"))
+    })?;
+    aprender::format::v2::AprV2Reader::from_bytes(&bytes).map_err(|e| {
+        CliError::ValidationFailed(format!("post-merge gate: output is not valid APR v2: {e}"))
+    })?;
+    gate_metadata_structural(&bytes)?;
+    #[cfg(feature = "inference")]
+    gate_realizar_oracle(out)?;
+    Ok(())
+}
+
 /// Run adapter merge (finetune merge)
 #[allow(clippy::disallowed_methods)]
 fn run_merge(
@@ -131,6 +474,7 @@ fn run_merge(
 ) -> Result<()> {
     let (model, adapter) = validate_merge_paths(model_path, adapter_path)?;
     let out = output_path.unwrap_or(Path::new("merged.apr"));
+    validate_merge_output_extension(out)?;
 
     if !json_output {
         output::header("APR Finetune — Merge Adapter");
@@ -185,6 +529,22 @@ fn run_merge(
     metadata.custom.insert("lora_rank".to_string(), serde_json::json!(lora_rank));
     metadata.custom.insert("lora_alpha".to_string(), serde_json::json!(lora_alpha));
 
+    // C-APR-MERGE-RUNNABLE: import-produced bases carry HF-alias dimension
+    // keys (num_hidden_layers, …) in `custom`. Re-serializing the cloned
+    // metadata used to emit BOTH `"num_layers": null` (typed field) AND the
+    // alias — poisoning realizar's alias-aware parser with "duplicate field",
+    // which its loader swallowed into EMPTY metadata (C-01 + lost tokenizer).
+    // Canonicalize aliases into typed fields, then backfill anything still
+    // missing from tensor shapes / GH-376-style presets.
+    metadata.canonicalize_hf_aliases();
+    backfill_arch_dims(&mut metadata, &base_report.tensors);
+    // Merged tensors are written as F32 — drop stale quantization markers
+    // cloned from a quantized base.
+    metadata.quantization = None;
+    if metadata.model_type.starts_with("transformer_lm") {
+        metadata.model_type = "transformer_lm".to_string();
+    }
+
     let mut writer = aprender::format::v2::AprV2Writer::new(metadata);
 
     for ti in &base_report.tensors {
@@ -192,10 +552,11 @@ fn run_merge(
             .load_tensor_f32(model, &ti.name)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to load {}: {e}", ti.name)))?;
 
-        let a_name = format!("{}.lora_a", ti.name);
-        let b_name = format!("{}.lora_b", ti.name);
+        let pair = adapter_pair_names(&ti.name)
+            .into_iter()
+            .find(|(a, b)| adapter_names.contains(a) && adapter_names.contains(b));
 
-        let merged = if adapter_names.contains(&a_name) && adapter_names.contains(&b_name) {
+        let merged = if let Some((a_name, b_name)) = pair {
             let lora_a = rosetta
                 .load_tensor_f32(adapter, &a_name)
                 .map_err(|e| CliError::ValidationFailed(format!("Failed to load {a_name}: {e}")))?;
@@ -203,8 +564,19 @@ fn run_merge(
                 .load_tensor_f32(adapter, &b_name)
                 .map_err(|e| CliError::ValidationFailed(format!("Failed to load {b_name}: {e}")))?;
 
+            // C-APR-MERGE-RUNNABLE: rank from the adapter's own [rank, d_in]
+            // lora_a shape — a stale/defaulted global rank makes MergeEngine
+            // mis-derive dims and silently return the base unchanged.
+            let rank = adapter_report
+                .tensors
+                .iter()
+                .find(|t| t.name == a_name)
+                .filter(|t| t.shape.len() == 2)
+                .and_then(|t| u32::try_from(t.shape[0]).ok())
+                .unwrap_or(lora_rank);
+
             merged_count += 1;
-            engine.merge(&base_data, &lora_a, &lora_b, lora_alpha, lora_rank)
+            engine.merge(&base_data, &lora_a, &lora_b, lora_alpha, rank)
         } else {
             base_data
         };
@@ -212,11 +584,40 @@ fn run_merge(
         writer.add_f32_tensor(&ti.name, ti.shape.clone(), &merged);
     }
 
+    // FALSIFY-APR-MERGE-RUNNABLE-005: a merge that merges NOTHING while the
+    // adapter carries LoRA tensors is a silent no-op (wrong naming scheme) —
+    // fail loudly instead of shipping a byte-identical copy of the base.
+    let adapter_lora_count = adapter_names.iter().filter(|n| n.ends_with(".lora_a")).count();
+    if merged_count == 0 && adapter_lora_count > 0 {
+        let example = adapter_names
+            .iter()
+            .find(|n| n.ends_with(".lora_a"))
+            .cloned()
+            .unwrap_or_default();
+        return Err(CliError::ValidationFailed(format!(
+            "Adapter contains {adapter_lora_count} LoRA tensor pairs but NONE matched any base \
+             tensor (example adapter tensor: {example}). Supported namings: \
+             '{{base_tensor}}.lora_a' or 'lora.{{layer}}.{{proj}}.lora_a'. \
+             Refusing to write a no-op merge."
+        )));
+    }
+
     let bytes = writer.write().map_err(|e| {
         CliError::ValidationFailed(format!("Failed to serialize merged model: {e}"))
     })?;
     std::fs::write(out, &bytes)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to write output: {e}")))?;
+
+    // FALSIFY-APR-MERGE-RUNNABLE-001: fail-closed post-write gate. The merged
+    // file must be directly runnable by `apr run` (C-01/C-03 metadata +
+    // loadable embedded tokenizer). On failure: delete the output, error loud.
+    if let Err(e) = verify_merged_runnable(out) {
+        let _ = std::fs::remove_file(out);
+        return Err(CliError::ValidationFailed(format!(
+            "Post-merge runnability gate FAILED — output deleted ({}): {e}",
+            out.display()
+        )));
+    }
 
     display_merge_result(
         model,
