@@ -24,7 +24,7 @@ jobs:
     runs-on: [self-hosted, X64, Linux]
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Ensure uv is available (for scikit-learn baselines)
         run: |

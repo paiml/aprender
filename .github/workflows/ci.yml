@@ -89,7 +89,7 @@ jobs:
       IMAGE: localhost:5000/sovereign-ci:stable
       PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Pull sovereign-ci image (with retry + local-cache fallback)
         # Self-hosted runner's local Docker registry at localhost:5000 is
         # occasionally restarting OR experiencing extended outages
@@ -392,7 +392,7 @@ jobs:
       # via repo variable MUTANTS_MAX_MISSED if a diff legitimately can't reach 0.
       MUTANTS_MAX_MISSED: ${{ vars.MUTANTS_MAX_MISSED || '0' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Need history + base branch to compute the PR diff for --in-diff.
           fetch-depth: 0
