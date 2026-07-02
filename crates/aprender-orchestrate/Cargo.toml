@@ -120,7 +120,7 @@ pacha = { workspace = true, optional = true }
 realizar = { workspace = true, optional = true }
 
 # ML algorithms and training (native-only)
-aprender = { path = "../aprender-core", version = "0.56.0", package = "aprender-core", optional = true }
+aprender = { path = "../aprender-core", version = "0.57.0", package = "aprender-core", optional = true }
 entrenar = { workspace = true, optional = true }
 alimentar = { workspace = true, optional = true }
 
