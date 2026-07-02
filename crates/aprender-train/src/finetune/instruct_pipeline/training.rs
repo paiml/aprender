@@ -494,14 +494,37 @@ impl InstructPipeline {
             let vocab_size = self.model.config().vocab_size;
             let prompt_len = prompt_len.min(seq_len);
 
-            // PMAT-805: evaluate the LoRA-adapted model so val_loss reflects the
-            // trained adapters (matches train_step's forward_with_lora path).
-            let logits = if self.lora_layers.is_empty() {
-                self.model.forward(&full_ids)
+            // FALSIFY-CUDA-EVAL-GPU-FORWARD-001: when CUDA blocks exist, run
+            // validation through the SAME GPU forward train_step optimizes
+            // (NF4 frozen weights + GPU-resident adapters). This is both the
+            // representative measurement (val measures the model being
+            // trained) and the fast one — the CPU forward on a 1.5B at seq
+            // 2048 costs minutes per sample while the GPU sits idle, turning
+            // every epoch boundary into a multi-minute stall (observed: a
+            // 560s-budget run finished its 160-step epoch but timed out
+            // inside the val pass). Falls back to the CPU path below when the
+            // GPU forward declines (e.g. seq exceeds scratch capacity).
+            #[cfg(feature = "cuda")]
+            let gpu_logits =
+                if self.cuda_blocks.is_some() { self.forward_logits_gpu(&full_ids) } else { None };
+            #[cfg(not(feature = "cuda"))]
+            let gpu_logits: Option<Vec<f32>> = None;
+
+            let logits_data = if let Some(logits) = gpu_logits {
+                logits
             } else {
-                self.model.forward_with_lora(&full_ids, &self.lora_layers)
+                // PMAT-805: evaluate the LoRA-adapted model so val_loss
+                // reflects the trained adapters (matches train_step's
+                // forward_with_lora path). `lora_layers` are current: synced
+                // from the GPU above (C-QLORA-EVAL-SYNC-001) or trained in
+                // place on the CPU/WGPU paths.
+                let logits = if self.lora_layers.is_empty() {
+                    self.model.forward(&full_ids)
+                } else {
+                    self.model.forward_with_lora(&full_ids, &self.lora_layers)
+                };
+                logits.data().as_slice().expect("contiguous logits").to_vec()
             };
-            let logits_data = logits.data().as_slice().expect("contiguous logits").to_vec();
 
             let loss_start = prompt_len.saturating_sub(1);
             let loss_end = seq_len - 1;

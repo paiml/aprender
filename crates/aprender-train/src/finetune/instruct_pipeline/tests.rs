@@ -558,3 +558,127 @@ fn test_batch_result_clone_and_debug() {
     let debug_str = format!("{result:?}");
     assert!(debug_str.contains("InstructBatchResult"));
 }
+
+/// FALSIFY-CPU-LORA-QKV-BIAS-001: `forward_with_lora` must apply the same
+/// Q/K/V projection biases `forward()` applies.
+///
+/// With zero-initialized LoRA B the adapter delta is mathematically zero, so
+/// the two forwards MUST agree. The defect (this falsifier's RED state)
+/// dropped the biases entirely on the LoRA path, so every CPU LoRA train and
+/// eval forward on a bias-model (Qwen2-family `use_bias=true`) computed a
+/// DIFFERENT model — measured on qwen2.5-coder-1.5b: CE 4.4892 on the LoRA
+/// path vs 2.1309 on forward(), matching the parity probe's biases-DROPPED
+/// oracle bit-exactly (the same defect class #2252 fixed on the GPU path).
+#[test]
+fn falsify_cpu_lora_qkv_bias_001_forward_parity() {
+    let mut model_config = TransformerConfig::tiny();
+    model_config.use_bias = true;
+    let instruct_config = InstructConfig {
+        lora_rank: 4,
+        max_seq_len: 64,
+        gradient_clip_norm: None,
+        ..InstructConfig::default()
+    };
+    let mut pipeline = InstructPipeline::new(&model_config, instruct_config);
+
+    // Biases init to ZERO — with zero bias, dropping it is invisible. Set
+    // nonzero deterministic biases so the drop is observable.
+    for layer in &mut pipeline.model.layers {
+        let attn = &mut layer.self_attn;
+        let set = |t: &Option<crate::Tensor>, amp: f32| -> Option<crate::Tensor> {
+            t.as_ref().map(|b| {
+                let n = b.len();
+                crate::Tensor::from_vec(
+                    (0..n).map(|i| amp * ((i % 7) as f32 - 3.0)).collect(),
+                    true,
+                )
+            })
+        };
+        attn.b_q = set(&attn.b_q, 0.05);
+        attn.b_k = set(&attn.b_k, 0.03);
+        attn.b_v = set(&attn.b_v, 0.04);
+    }
+
+    let ids: Vec<u32> = (0..24).map(|i| (i * 37 % 1000) as u32).collect();
+    let seq = ids.len();
+    let vocab = pipeline.model.config().vocab_size;
+
+    let ce = |logits: &crate::Tensor| -> f32 {
+        let ld = logits.data();
+        let l = ld.as_slice().expect("contiguous logits");
+        InstructPipeline::compute_causal_lm_loss(l, &ids, 0, seq - 1, vocab).0
+    };
+
+    let loss_forward = ce(&pipeline.model.forward(&ids));
+    // LoRA B is zero-initialized → adapter delta is exactly zero.
+    let loss_lora = ce(&pipeline.model.forward_with_lora(&ids, &pipeline.lora_layers));
+
+    let delta = (loss_forward - loss_lora).abs();
+    assert!(
+        delta < 1e-4,
+        "FALSIFY-CPU-LORA-QKV-BIAS-001: forward_with_lora with zero-B adapters \
+         diverges from forward() by {delta} (forward={loss_forward:.6}, \
+         with_lora={loss_lora:.6}) on a use_bias=true model — the LoRA forward \
+         is dropping the Q/K/V projection biases, so CPU LoRA training and \
+         evaluation run a DIFFERENT model than inference."
+    );
+}
+
+/// FALSIFY-CPU-LORA-QKV-BIAS-002: the bias fix must NOT sever LoRA gradient
+/// flow. `forward()`'s `add_bias` helper returns a Tensor with no backward op
+/// — using it on the LoRA path would orphan the A/B adapters from the
+/// autograd graph (PMAT-805 class: loss frozen, adapters never move). The fix
+/// uses the autograd-aware add_scaled; this falsifier proves training still
+/// learns WITH biases present.
+#[test]
+fn falsify_cpu_lora_qkv_bias_002_grad_flow_with_biases() {
+    let mut model_config = TransformerConfig::tiny();
+    model_config.use_bias = true;
+    let instruct_config = InstructConfig {
+        lora_rank: 8,
+        lora_alpha: 16.0,
+        learning_rate: 1e-2,
+        max_seq_len: 64,
+        gradient_clip_norm: None,
+        ..InstructConfig::default()
+    };
+    let mut pipeline = InstructPipeline::new(&model_config, instruct_config);
+    for layer in &mut pipeline.model.layers {
+        let attn = &mut layer.self_attn;
+        if let Some(b) = attn.b_q.as_ref() {
+            let n = b.len();
+            attn.b_q = Some(crate::Tensor::from_vec(
+                (0..n).map(|i| 0.05 * ((i % 5) as f32 - 2.0)).collect(),
+                true,
+            ));
+        }
+    }
+
+    let prompt_ids: Vec<u32> = vec![1, 2, 3, 4, 5];
+    let response_ids: Vec<u32> = vec![6, 7, 8, 9, 10];
+
+    let v_b_before: Vec<f32> = pipeline.lora_layers[1].lora_b().data().to_vec();
+    let first = pipeline.train_step(&prompt_ids, &response_ids);
+    assert!(first.loss.is_finite() && first.loss > 0.0, "initial loss finite & positive");
+    let mut last_loss = first.loss;
+    for _ in 0..15 {
+        last_loss = pipeline.train_step(&prompt_ids, &response_ids).loss;
+    }
+    let v_b_after: Vec<f32> = pipeline.lora_layers[1].lora_b().data().to_vec();
+    let max_delta =
+        v_b_before.iter().zip(&v_b_after).map(|(a, b)| (a - b).abs()).fold(0.0_f32, f32::max);
+
+    assert!(
+        max_delta > 1e-6,
+        "FALSIFY-CPU-LORA-QKV-BIAS-002: LoRA V/B params did not move after 16 \
+         steps on a use_bias=true model (max_delta={max_delta}) — the bias add \
+         severed the autograd chain (add_bias-without-backward-op class)."
+    );
+    assert!(
+        last_loss < first.loss - 1e-3,
+        "FALSIFY-CPU-LORA-QKV-BIAS-002: loss did not decrease ({} -> {}) with \
+         biases present — gradient flow broken by the bias add.",
+        first.loss,
+        last_loss
+    );
+}

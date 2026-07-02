@@ -674,6 +674,44 @@ impl MultiHeadAttention {
             crate::autograd::matmul_nt(&v_mid, lora_b_v, seq_len, lora_rank, kv_hidden_size);
         let v = crate::autograd::add_scaled(&v_base, &v_lora, lora_scale);
 
+        // FALSIFY-CPU-LORA-QKV-BIAS-001: apply the SAME Q/K/V projection
+        // biases forward() applies (Qwen2-family use_bias=true). Dropping
+        // them makes every CPU LoRA train/eval forward compute a DIFFERENT
+        // model — measured on qwen2.5-coder-1.5b: CE 4.49 vs forward()'s
+        // 2.13 on a trivially-predictable target, matching the parity
+        // probe's biases-DROPPED oracle bit-exactly (the same defect class
+        // #2252 fixed on the GPU path). NOTE: forward()'s `add_bias` helper
+        // severs the autograd chain (Tensor::from_vec, no backward op) — a
+        // frozen-weight non-issue for forward(), but here it would orphan
+        // the LoRA A/B gradients (PMAT-805 class). We instead broadcast the
+        // bias to (seq × dim) as a non-trainable tensor and use the
+        // autograd-aware add_scaled, which propagates grad to its first
+        // argument unchanged.
+        let broadcast_bias = |bias: &Tensor| -> Tensor {
+            let bd = bias.data();
+            let b = bd.as_slice().expect("contiguous bias");
+            let mut out = Vec::with_capacity(seq_len * b.len());
+            for _ in 0..seq_len {
+                out.extend_from_slice(b);
+            }
+            Tensor::from_vec(out, false)
+        };
+        let q = if let Some(ref b_q) = self.b_q {
+            crate::autograd::add_scaled(&q, &broadcast_bias(b_q), 1.0)
+        } else {
+            q
+        };
+        let k = if let Some(ref b_k) = self.b_k {
+            crate::autograd::add_scaled(&k, &broadcast_bias(b_k), 1.0)
+        } else {
+            k
+        };
+        let v = if let Some(ref b_v) = self.b_v {
+            crate::autograd::add_scaled(&v, &broadcast_bias(b_v), 1.0)
+        } else {
+            v
+        };
+
         // Apply Q/K RMSNorm if present (Qwen3 QK-norm, ENT-269)
         let q = if let Some(ref qn) = self.q_norm {
             apply_qk_norm(&q, qn, seq_len, num_heads, head_dim)
