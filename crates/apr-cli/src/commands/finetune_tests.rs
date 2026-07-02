@@ -350,9 +350,23 @@ fn test_run_training_creates_adapter() {
 
 #[test]
 fn test_merge_creates_merged_model() {
-    // Create base model
+    // Create base model. C-APR-MERGE-RUNNABLE: run_merge now fail-closes on
+    // outputs that are not directly runnable, so the base must carry C-01/C-03
+    // metadata + an embedded tokenizer for the merge to succeed.
     let mut base_writer = aprender::serialization::apr::AprWriter::new();
     base_writer.set_metadata("model_type", serde_json::json!("test"));
+    base_writer.set_metadata("architecture", serde_json::json!("qwen2"));
+    base_writer.set_metadata("hidden_size", serde_json::json!(8));
+    base_writer.set_metadata("num_layers", serde_json::json!(1));
+    base_writer.set_metadata("num_heads", serde_json::json!(2));
+    base_writer.set_metadata("num_kv_heads", serde_json::json!(1));
+    base_writer.set_metadata("intermediate_size", serde_json::json!(8));
+    base_writer.set_metadata("vocab_size", serde_json::json!(4));
+    base_writer.set_metadata(
+        "tokenizer.vocabulary",
+        serde_json::json!(["a", "b", "c", "d"]),
+    );
+    base_writer.set_metadata("tokenizer.merges", serde_json::json!(["a b"]));
     let q_data: Vec<f32> = vec![1.0; 64];
     base_writer.add_tensor_f32(
         "model.layers.0.self_attn.q_proj.weight",
@@ -451,6 +465,17 @@ fn build_tiny_qwen2_base_v2(hidden: usize) -> Vec<u8> {
     md.max_position_embeddings = Some(128);
     md.rope_theta = Some(1_000_000.0);
     md.rms_norm_eps = Some(1e-6);
+    // C-APR-MERGE-RUNNABLE: embedded tokenizer so the merged output passes
+    // the post-write runnability gate (PMAT-171/172 self-contained APR).
+    let vocab: Vec<String> = (0..64).map(|i| format!("t{i}")).collect();
+    md.custom
+        .insert("tokenizer.vocabulary".to_string(), serde_json::json!(vocab));
+    md.custom
+        .insert("tokenizer.merges".to_string(), serde_json::json!(["t0 t1"]));
+    md.custom
+        .insert("tokenizer.bos_token_id".to_string(), serde_json::json!(0));
+    md.custom
+        .insert("tokenizer.eos_token_id".to_string(), serde_json::json!(1));
 
     let mut w = AprV2Writer::new(md);
     let sq = |n: usize| vec![0.02_f32; n];
@@ -726,6 +751,13 @@ fn build_tiny_qwen2_base_beat(hidden: usize) -> Vec<u8> {
     md.max_position_embeddings = Some(128);
     md.rope_theta = Some(1_000_000.0);
     md.rms_norm_eps = Some(1e-6);
+    // C-APR-MERGE-RUNNABLE: embedded tokenizer so the merged output passes
+    // the post-write runnability gate (PMAT-171/172 self-contained APR).
+    let vocab: Vec<String> = (0..64).map(|i| format!("t{i}")).collect();
+    md.custom
+        .insert("tokenizer.vocabulary".to_string(), serde_json::json!(vocab));
+    md.custom
+        .insert("tokenizer.merges".to_string(), serde_json::json!(["t0 t1"]));
 
     // Deterministic, ASYMMETRIC q_proj: W[r,c] depends on (r,c) so W ≠ Wᵀ.
     // Values kept O(1) and well-separated so f32 rounding is the only error term.
@@ -1279,4 +1311,326 @@ fn run_with_missing_model_file_errors() {
         0,             // gpu_share
     );
     assert!(result.is_err());
+}
+
+// ============================================================================
+// C-APR-MERGE-RUNNABLE: `apr finetune --merge` must produce a DIRECTLY
+// RUNNABLE .apr (contracts/apr-merge-runnable-v1.yaml).
+//
+// Mechanism being falsified: import-produced bases carry HF-alias dimension
+// keys (num_hidden_layers/num_attention_heads/num_key_value_heads) in the
+// metadata `custom` map. Pre-fix, run_merge re-serialized the cloned metadata
+// with BOTH `"num_layers": null` (typed field, no skip_serializing_if) AND
+// the alias key — realizar's serde-aliased `AprMetadata` fails that JSON with
+// "duplicate field", `MappedAprModel::from_mmap` swallows the error via
+// `unwrap_or_default()`, and the merged model loses ALL metadata: C-01
+// "missing 'architecture'" + "no tokenizer in APR metadata" on a file that
+// physically contains both.
+// ============================================================================
+
+/// Build a base APR v2 shaped EXACTLY like a real `apr convert` GGUF import
+/// (e.g. qwen2.5-coder-1.5b-instruct-q4k.apr): typed architecture/hidden
+/// fields, HF-alias dimension keys ONLY in `custom`, embedded tokenizer.
+#[cfg(test)]
+fn build_import_shaped_qwen2_base_v2(hidden: usize, with_tokenizer: bool) -> Vec<u8> {
+    use aprender::format::v2::{AprV2Metadata, AprV2Writer};
+
+    let mut md = AprV2Metadata::new("transformer_lm_q4k");
+    md.architecture = Some("qwen2".to_string());
+    md.hidden_size = Some(hidden);
+    md.vocab_size = Some(64);
+    md.intermediate_size = Some(hidden);
+    md.max_position_embeddings = Some(128);
+    md.rope_theta = Some(1_000_000.0);
+    md.rms_norm_eps = Some(1e-6);
+    // HF-alias keys ONLY in custom — exactly how the GGUF import path stamps
+    // them (the typed fields stay None, mirroring the real q4k base).
+    md.custom
+        .insert("num_hidden_layers".to_string(), serde_json::json!(1));
+    md.custom
+        .insert("num_attention_heads".to_string(), serde_json::json!(4));
+    md.custom
+        .insert("num_key_value_heads".to_string(), serde_json::json!(2));
+    if with_tokenizer {
+        let vocab: Vec<String> = (0..64).map(|i| format!("t{i}")).collect();
+        md.custom
+            .insert("tokenizer.vocabulary".to_string(), serde_json::json!(vocab));
+        md.custom
+            .insert("tokenizer.merges".to_string(), serde_json::json!(["t0 t1"]));
+        md.custom
+            .insert("tokenizer.bos_token_id".to_string(), serde_json::json!(0));
+        md.custom
+            .insert("tokenizer.eos_token_id".to_string(), serde_json::json!(1));
+    }
+
+    let mut w = AprV2Writer::new(md);
+    let sq = |n: usize| vec![0.02_f32; n];
+    w.add_f32_tensor(
+        "model.embed_tokens.weight",
+        vec![64, hidden],
+        &sq(64 * hidden),
+    );
+    w.add_f32_tensor("model.norm.weight", vec![hidden], &vec![1.0; hidden]);
+    w.add_f32_tensor(
+        "model.layers.0.self_attn.q_proj.weight",
+        vec![hidden, hidden],
+        &vec![1.0_f32; hidden * hidden],
+    );
+    w.add_f32_tensor(
+        "model.layers.0.mlp.gate_proj.weight",
+        vec![hidden, hidden],
+        &sq(hidden * hidden),
+    );
+    w.write().expect("write import-shaped base v2")
+}
+
+/// FALSIFY-APR-MERGE-RUNNABLE-001: merge an import-shaped base + LoRA adapter,
+/// then load the output through REALIZAR'S OWN deserializer + config path (the
+/// exact code `apr run` executes). RED on pre-fix main: realizar parses the
+/// merged metadata to EMPTY (duplicate-field poison) → architecture None.
+#[cfg(feature = "inference")]
+#[test]
+fn falsify_apr_merge_runnable_001_merged_output_loads_in_realizar() {
+    let hidden = 32usize;
+    let base_file = NamedTempFile::with_suffix(".apr").expect("base tmp");
+    std::fs::write(
+        base_file.path(),
+        build_import_shaped_qwen2_base_v2(hidden, true),
+    )
+    .expect("write base");
+
+    let adapter_file = NamedTempFile::with_suffix(".apr").expect("adapter tmp");
+    std::fs::write(
+        adapter_file.path(),
+        build_tiny_lora_adapter_v2(hidden, 4, 8.0),
+    )
+    .expect("write adapter");
+
+    let merged = NamedTempFile::with_suffix(".apr").expect("merged tmp");
+    let res = run_merge(
+        Some(base_file.path()),
+        Some(adapter_file.path()),
+        Some(merged.path()),
+        true,
+    );
+    assert!(
+        res.is_ok(),
+        "merge must succeed on a runnable base: {res:?}"
+    );
+
+    // ORACLE: realizar's own mmap loader — the exact `apr run` path.
+    let mapped = realizar::apr::MappedAprModel::from_path(merged.path())
+        .expect("realizar must mmap the merged output");
+    assert_eq!(
+        mapped.metadata.architecture.as_deref(),
+        Some("qwen2"),
+        "C-01: architecture must survive merge AND parse in realizar \
+         (empty ⇒ duplicate-field metadata poison regressed)"
+    );
+    assert_eq!(mapped.metadata.num_layers, Some(1), "C-03: num_layers");
+    assert_eq!(mapped.metadata.num_heads, Some(4), "C-03: num_heads");
+    assert_eq!(mapped.metadata.num_kv_heads, Some(2), "C-03: num_kv_heads");
+    assert_eq!(
+        mapped.metadata.intermediate_size,
+        Some(hidden),
+        "C-03: intermediate_size"
+    );
+
+    // C-01/C-03 verbatim: the same config extraction `apr run` performs.
+    realizar::gguf::GGUFConfig::from_apr(&mapped, 64)
+        .expect("GGUFConfig::from_apr must succeed on the merged output");
+
+    // PMAT-171: embedded BPE tokenizer must load from the merged output.
+    let model = realizar::apr::AprV2Model::load(merged.path()).expect("realizar AprV2Model load");
+    assert!(
+        model.load_embedded_bpe_tokenizer().is_some(),
+        "embedded BPE tokenizer (vocabulary+merges) must load from the merged output"
+    );
+}
+
+/// FALSIFY-APR-MERGE-RUNNABLE-002: `-o out.safetensors` while writing an APR
+/// container is format-in-disguise — must ERROR and write nothing. RED on
+/// pre-fix main (run_merge happily wrote APR bytes under .safetensors).
+#[test]
+fn falsify_apr_merge_runnable_002_safetensors_extension_rejected() {
+    let hidden = 32usize;
+    let base_file = NamedTempFile::with_suffix(".apr").expect("base tmp");
+    std::fs::write(
+        base_file.path(),
+        build_import_shaped_qwen2_base_v2(hidden, true),
+    )
+    .expect("write base");
+    let adapter_file = NamedTempFile::with_suffix(".apr").expect("adapter tmp");
+    std::fs::write(
+        adapter_file.path(),
+        build_tiny_lora_adapter_v2(hidden, 4, 8.0),
+    )
+    .expect("write adapter");
+
+    let out_dir = tempfile::tempdir().expect("tmpdir");
+    let out = out_dir.path().join("merged.safetensors");
+    let res = run_merge(
+        Some(base_file.path()),
+        Some(adapter_file.path()),
+        Some(&out),
+        true,
+    );
+    assert!(
+        res.is_err(),
+        "merge must reject a .safetensors output extension (APR-in-disguise)"
+    );
+    assert!(
+        !out.exists(),
+        "no format-in-disguise file may be left on disk"
+    );
+}
+
+/// FALSIFY-APR-MERGE-RUNNABLE-003: fail-closed gate — a base WITHOUT an
+/// embedded tokenizer cannot produce a runnable merge; run_merge must ERROR
+/// and DELETE the output. RED on pre-fix main (returned Ok, left an
+/// unrunnable artifact).
+#[test]
+fn falsify_apr_merge_runnable_003_gate_deletes_tokenizerless_output() {
+    let hidden = 32usize;
+    let base_file = NamedTempFile::with_suffix(".apr").expect("base tmp");
+    std::fs::write(
+        base_file.path(),
+        build_import_shaped_qwen2_base_v2(hidden, false),
+    )
+    .expect("write base");
+    let adapter_file = NamedTempFile::with_suffix(".apr").expect("adapter tmp");
+    std::fs::write(
+        adapter_file.path(),
+        build_tiny_lora_adapter_v2(hidden, 4, 8.0),
+    )
+    .expect("write adapter");
+
+    let out_dir = tempfile::tempdir().expect("tmpdir");
+    let out = out_dir.path().join("merged.apr");
+    let res = run_merge(
+        Some(base_file.path()),
+        Some(adapter_file.path()),
+        Some(&out),
+        true,
+    );
+    assert!(
+        res.is_err(),
+        "merge of a tokenizer-less base must fail the runnability gate"
+    );
+    assert!(!out.exists(), "gate must DELETE the unrunnable output");
+}
+
+/// FALSIFY-APR-MERGE-RUNNABLE-004: entrenar trainer checkpoints name adapter
+/// tensors `lora.{layer}.{proj}.lora_{a,b}` (cuda_trainer.rs /
+/// wgpu_checkpoint.rs) — `apr finetune --merge` must merge ITS OWN trainer's
+/// adapters, deriving rank from the adapter's [rank, d_in] shape (a wrong
+/// global rank makes MergeEngine mis-derive dims and silently no-op).
+/// RED on pre-fix main: 0 layers merged, output weights byte-identical to base.
+#[test]
+fn falsify_apr_merge_runnable_004_entrenar_adapter_naming_merges() {
+    use aprender::format::v2::{AprV2Metadata, AprV2Writer};
+
+    let hidden = 32usize;
+    let rank = 4usize;
+    let base_file = NamedTempFile::with_suffix(".apr").expect("base tmp");
+    std::fs::write(
+        base_file.path(),
+        build_import_shaped_qwen2_base_v2(hidden, true),
+    )
+    .expect("write base");
+
+    // Entrenar-style adapter: lora.0.q_proj.lora_{a,b}. Metadata rank is
+    // deliberately WRONG (64) — the merge must trust the tensor shape (4).
+    let mut md = AprV2Metadata::new("entrenar-adapter");
+    md.custom
+        .insert("lora_rank".to_string(), serde_json::json!(64));
+    md.custom
+        .insert("lora_alpha".to_string(), serde_json::json!(8.0));
+    let mut w = AprV2Writer::new(md);
+    w.add_f32_tensor(
+        "lora.0.q_proj.lora_a",
+        vec![rank, hidden],
+        &vec![0.3_f32; rank * hidden],
+    );
+    w.add_f32_tensor(
+        "lora.0.q_proj.lora_b",
+        vec![hidden, rank],
+        &vec![0.5_f32; hidden * rank],
+    );
+    let adapter_file = NamedTempFile::with_suffix(".apr").expect("adapter tmp");
+    std::fs::write(adapter_file.path(), w.write().expect("write adapter"))
+        .expect("write adapter file");
+
+    let merged = NamedTempFile::with_suffix(".apr").expect("merged tmp");
+    let res = run_merge(
+        Some(base_file.path()),
+        Some(adapter_file.path()),
+        Some(merged.path()),
+        true,
+    );
+    assert!(
+        res.is_ok(),
+        "merge must recognize entrenar lora.{{layer}}.{{proj}} naming: {res:?}"
+    );
+
+    // The merged q_proj must DIFFER from the base (constant 1.0): the LoRA
+    // delta actually landed, at shape-derived rank.
+    let q: Vec<f32> = aprender::format::rosetta::RosettaStone::new()
+        .load_tensor_f32(merged.path(), "model.layers.0.self_attn.q_proj.weight")
+        .expect("q_proj present");
+    assert!(
+        q.iter().any(|&v| (v - 1.0).abs() > 1e-4),
+        "merged q_proj must differ from base — entrenar-style adapter was silently ignored"
+    );
+}
+
+/// FALSIFY-APR-MERGE-RUNNABLE-005: an adapter whose LoRA tensors match NO
+/// base tensor must FAIL the merge (silent no-op ships a byte-identical copy
+/// of the base under a 'merged' name). RED on pre-fix main (returned Ok,
+/// "0 / N layers merged").
+#[test]
+fn falsify_apr_merge_runnable_005_noop_merge_rejected() {
+    use aprender::format::v2::{AprV2Metadata, AprV2Writer};
+
+    let hidden = 32usize;
+    let base_file = NamedTempFile::with_suffix(".apr").expect("base tmp");
+    std::fs::write(
+        base_file.path(),
+        build_import_shaped_qwen2_base_v2(hidden, true),
+    )
+    .expect("write base");
+
+    let mut md = AprV2Metadata::new("mismatched-adapter");
+    md.custom
+        .insert("lora_rank".to_string(), serde_json::json!(4));
+    md.custom
+        .insert("lora_alpha".to_string(), serde_json::json!(8.0));
+    let mut w = AprV2Writer::new(md);
+    w.add_f32_tensor(
+        "some.unrelated.tensor.lora_a",
+        vec![4, hidden],
+        &vec![0.1_f32; 4 * hidden],
+    );
+    w.add_f32_tensor(
+        "some.unrelated.tensor.lora_b",
+        vec![hidden, 4],
+        &vec![0.1_f32; hidden * 4],
+    );
+    let adapter_file = NamedTempFile::with_suffix(".apr").expect("adapter tmp");
+    std::fs::write(adapter_file.path(), w.write().expect("write adapter"))
+        .expect("write adapter file");
+
+    let out_dir = tempfile::tempdir().expect("tmpdir");
+    let out = out_dir.path().join("merged.apr");
+    let res = run_merge(
+        Some(base_file.path()),
+        Some(adapter_file.path()),
+        Some(&out),
+        true,
+    );
+    assert!(
+        res.is_err(),
+        "a merge where zero adapter tensors match must fail loudly, got: {res:?}"
+    );
+    assert!(!out.exists(), "no-op merge must not leave an output file");
 }
