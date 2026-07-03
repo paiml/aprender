@@ -5,9 +5,20 @@ name: CUDA Nightly (GPU QLoRA falsifiers)
 # GPU). See roadmap item CUDA-CI-NIGHTLY-001 and ROADMAP.md
 # "Honest doctrine gap: GPU falsifiers are not yet CI-enforced".
 #
-# CROSS-SILICON MATRIX. Runs the SAME falsifier suite on two self-hosted CUDA
-# runners so a kernel that passes on one target but regresses on the other is
-# caught:
+# WHEN IT RUNS (all three properties are enforced below, not just documented):
+#   1. NIGHTLY ONLY, overnight Madrid time. cron is UTC; 01:30 UTC =
+#      03:30 Europe/Madrid in summer (CEST, UTC+2) and 02:30 in winter (CET,
+#      UTC+1) — deep night year-round, and clear of the other nightlies
+#      (coverage 03:00 UTC, nightly/binary 04:00 UTC, beat-speed 05:45 UTC).
+#   2. YIELDS TO TRAINING. These falsifiers are LOW priority. Before doing any
+#      work, each leg checks its GPU; if a training (or any) job is already
+#      using it, the leg skips for the night (green no-op) so it never contends
+#      with overnight training. A manual dispatch can force-override.
+#   3. NEVER ON PULL REQUESTS. Triggers are schedule + workflow_dispatch ONLY —
+#      there is no `pull_request`/`push` trigger, so it cannot fire on, or gate,
+#      a PR. It only runs on the nightly schedule or when explicitly dispatched.
+#
+# CROSS-SILICON MATRIX (same suite on two self-hosted CUDA runners):
 #   - ada-4090      : lambda-vector, RTX 4090, sm_89,  x86-64, CUDA 12.8
 #                     (labels: self-hosted, Linux, X64, cuda)  -- direct WAN
 #   - blackwell-gb10: gx10, GB10, sm_121, aarch64, CUDA 13.0
@@ -17,20 +28,22 @@ name: CUDA Nightly (GPU QLoRA falsifiers)
 # sm_89 is the stable reference; sm_121 is the higher-risk target (historical
 # JIT bugs), which is exactly why both are gated.
 #
-# GATE: kept behind vars.CUDA_RUNNER_READY so the lane can be disabled without
-# deleting the workflow. Triggers on schedule + workflow_dispatch ONLY (never
-# pull_request), so it can never gate a PR. Nightly first; promote to a blocking
-# check on training-path PRs once it has a green track record.
+# Toggle: gated behind vars.CUDA_RUNNER_READY so the lane can be disabled
+# without deleting the workflow.
 
 on:
   schedule:
-    - cron: "30 6 * * *"   # 06:30 UTC — after beat-speed-nightly (05:45)
+    - cron: "30 1 * * *"   # 01:30 UTC = ~03:30 Europe/Madrid (overnight)
   workflow_dispatch:
     inputs:
       silicon:
         description: "Which silicon to run (all | ada | blackwell)"
         required: false
         default: "all"
+      force:
+        description: "Run even if the GPU is busy with training (bypass the yield)"
+        required: false
+        default: "false"
 
 permissions:
   contents: read
@@ -52,29 +65,47 @@ jobs:
           - name: blackwell-gb10
             arch: ARM64
             select: blackwell
-    # Skip a leg when a dispatch asks for a single silicon.
     runs-on: [self-hosted, Linux, "${{ matrix.arch }}", cuda]
     timeout-minutes: 90
     env:
       APR_PARITY_MODEL: ${{ vars.APR_PARITY_MODEL || '/home/noah/models/qwen2.5-coder-1.5b-instruct-q4k.apr' }}
       CARGO_TERM_COLOR: always
     steps:
-      - name: Silicon filter
-        id: gate
+      - name: Decide whether to run (silicon filter + yield-to-training)
+        id: decide
         run: |
+          set -uo pipefail
           want="${{ github.event.inputs.silicon || 'all' }}"
-          if [ "$want" = "all" ] || [ "$want" = "${{ matrix.select }}" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "skipping ${{ matrix.name }} (dispatch requested: $want)"
+          force="${{ github.event.inputs.force || 'false' }}"
+
+          # (a) silicon filter — a dispatch may target a single leg.
+          if [ "$want" != "all" ] && [ "$want" != "${{ matrix.select }}" ]; then
+            echo "::notice::${{ matrix.name }}: skipped (dispatch requested '$want')"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
 
+          # (b) yield to training — falsifiers are LOW priority. If any compute
+          #     job is already on this GPU (or >2 GiB resident), skip tonight so
+          #     we never contend with overnight training. `force=true` on a
+          #     manual dispatch overrides.
+          used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' ')
+          procs=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | grep -c . || true)
+          echo "${{ matrix.name }}: GPU memory.used=${used:-?} MiB, existing compute procs=${procs:-?}"
+          if [ "$force" = "true" ]; then
+            echo "::notice::${{ matrix.name }}: force=true — running regardless of GPU load"
+            echo "proceed=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ "${used:-0}" -gt 2000 ] || [ "${procs:-0}" -gt 0 ]; then
+            echo "::notice::${{ matrix.name }}: GPU busy (${used:-?} MiB, ${procs:-?} procs) — yielding to training, skipping falsifiers tonight"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "proceed=true" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v7
-        if: steps.gate.outputs.run == 'true'
+        if: steps.decide.outputs.proceed == 'true'
 
       - name: Preflight — CUDA device + parity model present
-        if: steps.gate.outputs.run == 'true'
+        if: steps.decide.outputs.proceed == 'true'
         run: |
           set -euo pipefail
           echo "runner: ${{ matrix.name }} ($(uname -m))"
@@ -87,12 +118,13 @@ jobs:
           echo "parity model: $APR_PARITY_MODEL ($(du -h "$APR_PARITY_MODEL" | cut -f1))"
 
       - name: GPU QLoRA training-correctness falsifiers (--features cuda)
-        if: steps.gate.outputs.run == 'true'
-        # --include-ignored runs BOTH the #[ignore]-gated eval falsifiers and the
-        # non-ignored deadlock/NaN/parity ones (which self-skip without a GPU).
-        # Named explicitly so the suite is auditable and additions are deliberate.
+        if: steps.decide.outputs.proceed == 'true'
+        # `nice` so the build never starves any CPU-side work of a job that
+        # started after our yield check. --include-ignored runs BOTH the
+        # #[ignore]-gated eval falsifiers and the non-ignored deadlock/NaN/
+        # parity ones (which self-skip without a GPU).
         run: |
-          cargo test -p aprender-train --features cuda --lib --release -- \
+          nice -n 19 cargo test -p aprender-train --features cuda --lib --release -- \
             --include-ignored --nocapture --test-threads 1 \
             falsify_cuda_fused_rmsnorm_distinct_residual_out_no_deadlock \
             falsify_cuda_nf4_forward_nan_001 \
@@ -101,6 +133,6 @@ jobs:
             falsify_cuda_eval_gpu_forward_001
 
       - name: CUDA loss-window falsifier suite
-        if: steps.gate.outputs.run == 'true'
+        if: steps.decide.outputs.proceed == 'true'
         run: |
-          cargo test -p aprender-train --features cuda --lib --release cuda_loss_window
+          nice -n 19 cargo test -p aprender-train --features cuda --lib --release cuda_loss_window
