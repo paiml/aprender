@@ -5,28 +5,32 @@ name: CUDA Nightly (GPU QLoRA falsifiers)
 # GPU). See roadmap item CUDA-CI-NIGHTLY-001 and ROADMAP.md
 # "Honest doctrine gap: GPU falsifiers are not yet CI-enforced".
 #
-# ---------------------------------------------------------------------------
-# DORMANT UNTIL ACTIVATED — merging this file changes nothing until an operator:
-#   1. Registers a self-hosted runner on lambda-vector (RTX 4090, sm_89,
-#      CUDA 12.8) with labels: [self-hosted, Linux, X64, cuda]
-#   2. Sets the repo variable CUDA_RUNNER_READY=true
-#        gh variable set CUDA_RUNNER_READY --body true
-#      (optionally override the model path with APR_PARITY_MODEL)
-# Until both are done, the `cuda-falsifiers` job is skipped by its `if:` guard,
-# so scheduled/dispatch runs are a green no-op with no queued jobs and no noise.
-# This workflow NEVER triggers on pull_request, so it can never gate a PR.
+# CROSS-SILICON MATRIX. Runs the SAME falsifier suite on two self-hosted CUDA
+# runners so a kernel that passes on one target but regresses on the other is
+# caught:
+#   - ada-4090      : lambda-vector, RTX 4090, sm_89,  x86-64, CUDA 12.8
+#                     (labels: self-hosted, Linux, X64, cuda)  -- direct WAN
+#   - blackwell-gb10: gx10, GB10, sm_121, aarch64, CUDA 13.0
+#                     (labels: self-hosted, Linux, ARM64, cuda) -- egress via a
+#                     forward proxy on lambda (10.42.0.10:8888) over the wired
+#                     10.42.0.0/24 link; the runner's .env carries HTTPS_PROXY.
+# sm_89 is the stable reference; sm_121 is the higher-risk target (historical
+# JIT bugs), which is exactly why both are gated.
 #
-# WHY THE 4090 AND NOT GB10/gx10: the CI-gate role requires the runner to reach
-# github.com (poll for jobs + report the check). lambda-vector has WAN; gx10 is
-# overlay-only (no WAN, no reverse SSH), so it cannot host a GitHub Actions
-# runner. gx10's Blackwell sm_121 coverage is valuable but belongs in a
-# separate push-based offline cross-silicon check (phase 2), not this gate.
-# ---------------------------------------------------------------------------
+# GATE: kept behind vars.CUDA_RUNNER_READY so the lane can be disabled without
+# deleting the workflow. Triggers on schedule + workflow_dispatch ONLY (never
+# pull_request), so it can never gate a PR. Nightly first; promote to a blocking
+# check on training-path PRs once it has a green track record.
 
 on:
   schedule:
     - cron: "30 6 * * *"   # 06:30 UTC — after beat-speed-nightly (05:45)
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      silicon:
+        description: "Which silicon to run (all | ada | blackwell)"
+        required: false
+        default: "all"
 
 permissions:
   contents: read
@@ -36,38 +40,57 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  cuda-falsifiers:
-    # Dormant switch: stays skipped (green no-op) until the operator flips the
-    # variable AFTER registering the cuda-labeled runner. Prevents jobs queueing
-    # forever against a non-existent runner label.
+  falsifiers:
     if: ${{ vars.CUDA_RUNNER_READY == 'true' }}
-    runs-on: [self-hosted, Linux, X64, cuda]
-    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ada-4090
+            arch: X64
+            select: ada
+          - name: blackwell-gb10
+            arch: ARM64
+            select: blackwell
+    # Skip a leg when a dispatch asks for a single silicon.
+    runs-on: [self-hosted, Linux, "${{ matrix.arch }}", cuda]
+    timeout-minutes: 90
     env:
-      # Qwen2-family .apr with an embedded tokenizer, used by the parity + eval
-      # falsifiers. Overridable via repo variable if the model lives elsewhere.
       APR_PARITY_MODEL: ${{ vars.APR_PARITY_MODEL || '/home/noah/models/qwen2.5-coder-1.5b-instruct-q4k.apr' }}
       CARGO_TERM_COLOR: always
     steps:
+      - name: Silicon filter
+        id: gate
+        run: |
+          want="${{ github.event.inputs.silicon || 'all' }}"
+          if [ "$want" = "all" ] || [ "$want" = "${{ matrix.select }}" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "skipping ${{ matrix.name }} (dispatch requested: $want)"
+          fi
+
       - uses: actions/checkout@v7
+        if: steps.gate.outputs.run == 'true'
 
       - name: Preflight — CUDA device + parity model present
+        if: steps.gate.outputs.run == 'true'
         run: |
           set -euo pipefail
-          nvidia-smi -L || { echo "::error::no CUDA device visible on this runner"; exit 1; }
+          echo "runner: ${{ matrix.name }} ($(uname -m))"
+          nvidia-smi -L || { echo "::error::no CUDA device visible on ${{ matrix.name }}"; exit 1; }
           nvidia-smi --query-gpu=name,driver_version --format=csv,noheader
           if [ ! -f "$APR_PARITY_MODEL" ]; then
-            echo "::error::APR_PARITY_MODEL not found: $APR_PARITY_MODEL"
-            echo "::error::Set repo variable APR_PARITY_MODEL to a Qwen2-family .apr on the runner."
+            echo "::error::APR_PARITY_MODEL not found on ${{ matrix.name }}: $APR_PARITY_MODEL"
             exit 1
           fi
           echo "parity model: $APR_PARITY_MODEL ($(du -h "$APR_PARITY_MODEL" | cut -f1))"
 
       - name: GPU QLoRA training-correctness falsifiers (--features cuda)
+        if: steps.gate.outputs.run == 'true'
         # --include-ignored runs BOTH the #[ignore]-gated eval falsifiers and the
-        # non-ignored deadlock/NaN/parity falsifiers (which self-skip without a
-        # GPU). Named explicitly so the suite is auditable and additions are
-        # deliberate. Any RED here is a real GPU-path correctness regression.
+        # non-ignored deadlock/NaN/parity ones (which self-skip without a GPU).
+        # Named explicitly so the suite is auditable and additions are deliberate.
         run: |
           cargo test -p aprender-train --features cuda --lib --release -- \
             --include-ignored --nocapture --test-threads 1 \
@@ -78,5 +101,6 @@ jobs:
             falsify_cuda_eval_gpu_forward_001
 
       - name: CUDA loss-window falsifier suite
+        if: steps.gate.outputs.run == 'true'
         run: |
           cargo test -p aprender-train --features cuda --lib --release cuda_loss_window
