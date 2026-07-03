@@ -44,7 +44,9 @@ members = [
     "crates/aprender-train-shell",
     "crates/aprender-train-bench",
     "crates/aprender-train-wasm",
-    # "crates/aprender-train-canary",  # Excluded: sqlite3 link conflict with burn dep
+    # "crates/aprender-train-canary",  # Excluded: sqlite3/burn link conflict AND
+    #   non-portable absolute `path = "/home/noah/src/trueno"` patch (breaks any
+    #   checkout without that sibling — intel, clean-room, CI). Dev-only, publish=false.
     # --- APR-MONO Phase 2e: was batuta (orchestration) ---
     "crates/aprender-orchestrate",
     # --- MCP server (Model Context Protocol) ---
@@ -104,7 +106,11 @@ exclude = [
     "crates/aprender-viz-ttop",
     "crates/aprender-present",
     "crates/aprender-test",
-    "crates/aprender-train-canary",
+    # aprender-train-canary is intentionally NOT a member — see the exclusion
+    # note above. It is a publish=false, dev-only GPU/burn benchmark whose
+    # Cargo.toml pins `[patch.crates-io] trueno = { path = "/home/noah/src/trueno" }`
+    # (an absolute dev path). Including it breaks every checkout without that
+    # sibling (intel, clean-room, CI). Build it manually when benchmarking.
 ]
 resolver = "2"
 
