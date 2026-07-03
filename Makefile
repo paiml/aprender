@@ -204,6 +204,8 @@ tier3:
 	@bash scripts/check_publish_safety.sh
 	@echo "Checking build.rs crate-root escapes (v0.31.1 yank class)..."
 	@bash scripts/check_build_rs_paths.sh
+	@echo "Checking self-hosted CI jobs pin a discriminating runner label..."
+	@bash scripts/check_runner_labels.sh
 	@if [ -d tests/golden ] && command -v apr >/dev/null 2>&1; then \
 		echo "Running probar golden regression with profiling..."; \
 		apr probar tests/golden/model.apr --golden tests/golden/ --assert --tolerance 0.98 2>/dev/null || true; \

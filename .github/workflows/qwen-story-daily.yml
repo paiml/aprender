@@ -38,10 +38,17 @@ concurrency:
 jobs:
   story:
     name: Qwen story (apr-cli E2E)
-    runs-on: [self-hosted, gpu]
+    # No self-hosted runner carries a bare `gpu` label (the retired lambda-labs-gpu
+    # runner did; it was never replaced). Target the CUDA x86 GPU pool instead —
+    # `cuda` + `X64` resolves to the RTX 4090 runner that actually holds the Qwen
+    # model registry this story exercises. Do NOT use `gpu` (matches nothing → the
+    # cron silently queued+cancelled daily). See feedback_ci_clean_room_label.
+    runs-on: [self-hosted, cuda, X64]
     timeout-minutes: 30
     env:
-      MODELS_DIR: /home/runner/models
+      # Default to the runner user's $HOME/models (the models live there, e.g.
+      # /home/noah/models). The old hardcoded /home/runner/models was the retired
+      # runner's path → every beat SKIPped (missing model) even once scheduled.
       PMAT_HUNT: ${{ github.event.inputs.pmat_hunt || '1' }}
       RUST_BACKTRACE: '1'
     steps:
