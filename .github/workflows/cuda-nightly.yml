@@ -90,9 +90,11 @@ jobs:
           #     manual dispatch overrides.
           # `procs` (compute contexts) is the primary, portable signal — it
           # works on both sm_89 and GB10. `memory.used` is a secondary signal
-          # and is [N/A] on GB10's unified memory, so extract digits only and
-          # default to 0 (never let a non-integer reach `[ -gt ]`).
-          used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -1 | grep -oE '[0-9]+' | head -1)
+          # and is [N/A] on GB10's unified memory. GitHub runs `run:` as
+          # `bash -e -o pipefail`, so use `tr -cd` (never non-zero) to strip to
+          # digits — a `grep -oE` that finds no digit exits 1 and, under -e,
+          # would kill this step on GB10 (which is exactly what happened first).
+          used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -cd '0-9')
           used=${used:-0}
           procs=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | grep -c . || true)
           procs=${procs:-0}
