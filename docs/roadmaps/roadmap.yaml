@@ -27,11 +27,59 @@
 #
 # RULE: never ship a parity feature when a falsifiable BEAT is on the table.
 # PILLAR1-* items below are sklearn-PARITY (v0.44-0.48 shipped) — LOW marginal EV now.
+#
+# CORRECTION 2026-07-03 (session insight): the 2026-06-12 claim above that "GPU is
+# AUTONOMOUS ... GPU beats join the AUTONOMOUS track" is HALF TRUE and was masking a
+# doctrine gap. GPU WORK is autonomous (the RTX 4090 is pre-authorized and runs
+# unattended), but GPU CI ENFORCEMENT is not: there is NO CUDA-labeled CI runner, so
+# every GPU correctness falsifier shipped in the v0.55-v0.57 QLoRA training wave
+# (FALSIFY-CUDA-{FUSED-RMSNORM-DEADLOCK,NF4-FORWARD-NAN,NF4-TRAIN-LOSS-PARITY,
+# EVAL-ADAPTER-SYNC,EVAL-GPU-FORWARD}-001) is #[ignore]-gated and runs developer-side
+# only. By "gates or theater" these wins are DEVELOPER-VERIFIED, not CI-ENFORCED.
+# The intel-iGPU->Vulkan->wgpu path referenced above does NOT cover the CUDA-only
+# training falsifiers. NEW HIGHEST-EV HARDENING ITEM:
+#   H1. CUDA nightly CI lane on the pre-authorized 4090 (self-hosted, cuda label):
+#       run the GPU falsifier suite as a scheduled check (nightly first, then a
+#       blocking gate on training-path PRs). Converts ~6 developer-verified wins into
+#       CI-enforced ones. EV: very high (closes the biggest "gates or theater" hole).
+#       Prereq only: register a cuda-labeled self-hosted runner on lambda-vector.
+#
+# ALSO DONE this session (remove from backlog if listed): PMAT-711-class QLoRA training
+# now WORKS end-to-end (6-defect cascade #2249/#2250/#2251/#2252/#2257/#2260);
+# default `apr finetune -m qlora` auto-lr no longer diverges (rank-aware lr, #2258).
 # ============================================================================
 roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/aprender
 roadmap:
+- id: CUDA-CI-NIGHTLY-001
+  github_issue: null
+  item_type: task
+  title: 'CUDA nightly CI lane — enforce the GPU QLoRA training-correctness falsifiers'
+  status: pending
+  priority: high
+  assigned_to: null
+  created: 2026-07-03T00:00:00.000000000+00:00
+  updated: 2026-07-03T00:00:00.000000000+00:00
+  spec: null
+  acceptance_criteria:
+  - 'A cuda-labeled self-hosted runner is registered on lambda-vector (RTX 4090, sm_89, CUDA 12.8).'
+  - 'A scheduled workflow runs the #[ignore]-gated GPU falsifier suite with APR_PARITY_MODEL set: FALSIFY-CUDA-FUSED-RMSNORM-DEADLOCK-001, FALSIFY-CUDA-NF4-FORWARD-NAN-001, FALSIFY-CUDA-NF4-TRAIN-LOSS-PARITY-001, FALSIFY-CUDA-EVAL-ADAPTER-SYNC-001, FALSIFY-CUDA-EVAL-GPU-FORWARD-001, plus the loss-window suite.'
+  - 'The lane is GREEN on main and its result is surfaced (nightly first; promote to a blocking gate on training-path PRs once stable).'
+  - 'Each formerly developer-verified GPU win is re-annotated as CI-enforced in ROADMAP.md P3 + the relevant contract qa_gate.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - cuda
+  - ci
+  - pillar-3
+  - doctrine-gap
+  notes: >-
+    Closes the biggest "gates or theater" hole surfaced 2026-07-03: the entire
+    v0.55-v0.57 QLoRA training-correctness wave is falsified only developer-side
+    because the CI fleet has no CUDA runner. Prereq is purely operational
+    (register the runner); the falsifiers already exist and pass on the 4090.
 - id: GH-9
   github_issue: 9
   item_type: task
