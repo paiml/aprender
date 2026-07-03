@@ -83,7 +83,7 @@ jobs:
   # giving us up to ~13 minutes of retry headroom before declaring the
   # registry unreachable. Mirrored in the `mutants` job below.
   workspace-test:
-    runs-on: [self-hosted, X64, Linux]
+    runs-on: [self-hosted, X64, Linux, clean-room]
     timeout-minutes: 85  # bumped to match 75min step + 10min overhead
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
@@ -314,7 +314,7 @@ jobs:
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
             "$IMAGE" \
-            bash -c 'cargo test -p aprender-core --test monorepo_invariants && cargo test -p aprender-core --test readme_contract && cargo test -p apr-cli --test cli_commands && cargo test -p aprender-core --test beat_sklearn_iris && cargo test -p aprender-serve --test beat_fail_closed_garbage && cargo test -p aprender-compute --lib beat_nf4_bitsandbytes_equivalence && cargo test -p aprender-core --test beat_pytorch_autograd_grad && cargo test -p aprender-train-lora --lib beat_lora_merge_forward_equivalence && cargo test -p apr-cli --test beat_pytorch_deploy_footprint && cargo test -p aprender-serve --test beat_fail_closed_structural && cargo test -p aprender-serve --test ollama_http_compat'
+            bash -c 'cargo test -p aprender-core --test monorepo_invariants && cargo test -p aprender-core --test readme_contract && cargo test -p apr-cli --test cli_commands && cargo test -p aprender-core --test beat_sklearn_iris && cargo test -p aprender-core --test beat_sklearn_nmi && cargo test -p aprender-serve --test beat_fail_closed_garbage && cargo test -p aprender-compute --lib beat_nf4_bitsandbytes_equivalence && cargo test -p aprender-core --test beat_pytorch_autograd_grad && cargo test -p aprender-train-lora --lib beat_lora_merge_forward_equivalence && cargo test -p apr-cli --release --test beat_pytorch_deploy_footprint && cargo test -p aprender-serve --test beat_fail_closed_structural && cargo test -p aprender-serve --test ollama_http_compat'
       - name: Build.rs crate-root escape check (v0.31.1 yank guard)
         # Static Poka-Yoke: flags build.rs files that panic on files outside
         # CARGO_MANIFEST_DIR, which break `cargo install` from crates.io.
@@ -357,7 +357,7 @@ jobs:
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".
   gate:
-    runs-on: [self-hosted, X64, Linux]
+    runs-on: [self-hosted, X64, Linux, clean-room]
     needs: [ci, workspace-test, mutants]
     if: always()
     steps:
@@ -404,7 +404,7 @@ jobs:
   # to scope against, so we skip rather than fall back to the old hours-long
   # full-tree run.
   mutants:
-    runs-on: [self-hosted, X64, Linux]
+    runs-on: [self-hosted, X64, Linux, clean-room]
     timeout-minutes: 60
     needs: [ci, workspace-test]
     if: github.event_name == 'pull_request'

@@ -1,0 +1,47 @@
+contract: apr-qlora-composed-forward-equivalence-beat
+metadata:
+  kind: beat-benchmark
+  version: "1.0.0"
+  description: >
+    Pillar-3 (Unsloth) CORRECTNESS beat: aprender's on-the-fly QLoRA forward is
+    numerically faithful — the composed projection base + scale·(B@A) LoRA delta +
+    Q/K/V bias, applied through the real forward_with_lora code path, EQUALS a forward
+    on the model with the LoRA delta MERGED into the base weight. This complements the
+    two existing P3 forward gates: apr-lora-merge-equivalence-beat proves the merge
+    operation is faithful (merged ≡ factored, no biases), and FALSIFY-CPU-LORA-QKV-BIAS
+    proves bias parity at ZERO LoRA — neither drives all three terms (base + nonzero
+    LoRA + bias) through forward_with_lora at once. That combination is exactly where
+    #2260 silently dropped the Q/K/V biases (CPU LoRA train/eval ran a bias-less model).
+    The reference folds W_merged = W + scale·(B@A) and runs the plain forward — a
+    DIFFERENT code path — so a dropped bias, wrong LoRA scale, or transpose diverges;
+    it is not a tautology. Measured 2026-07-03 (CPU, deterministic): max|Δ| = 2.98e-8;
+    mutation-verified — injecting the #2260 bias-drop → |Δ|=3.1e-4 (RED), a 2x LoRA
+    scale → |Δ|=1.8e-3 (RED).
+  references:
+  - "crates/aprender-train/src/transformer/attention.rs (forward_with_lora + beat_qlora_composed_forward_equivalence)"
+  - "apr-lora-merge-equivalence-beat-v1.yaml (sibling: merge faithfulness, no biases)"
+  - "the #2260 fix (forward_with_lora bias application via autograd-aware add_scaled)"
+version: 1
+status: enforced
+date: 2026-07-03
+
+# Beat-benchmark parameters (forward-equivalence invariant; CI fails on divergence).
+beat:
+  pillar: 3
+  incumbent: "PEFT / Unsloth (apply LoRA on-the-fly — no composed-forward-equivalence contract)"
+  incumbent_pinned: "2026-07-03 — incumbents apply base+LoRA(+bias) on the fly but do not contract-verify composed≡merged forward"
+  canonical_task: >
+    On a decoder attention layer with use_bias=true, nonzero Q/K/V biases, and nonzero
+    LoRA factors in STANDARD PEFT layout (A:[rank,hidden], B:[out,rank], scale=alpha/rank)
+    on the Q and V projections, compare the composed forward_with_lora output against a
+    plain forward on the SAME layer with the LoRA delta folded into w_q/w_v
+    (W_merged = W + scale·(B@A)) and identical biases. Metric: max absolute per-element
+    difference between the two forward passes.
+  metric: composed_forward_max_abs_diff
+  direction: lower_is_better
+  baseline_value: 0.0000      # perfect forward-equivalence target
+  baseline_floor: 0.00000003  # measured composed-vs-merged max|Δ| ≈ 2.98e-8
+  beat_threshold: 0.0001      # composed forward must stay equivalent within 1e-4; measured ~3e-8
+  baseline_sourced_date: "2026-07-03"
+  approved_compute: CPU
+  ci_gate_name: "beat_qlora_composed_forward_equivalence"
