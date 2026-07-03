@@ -1209,6 +1209,108 @@ impl MultiHeadAttentionWithLoRA {
 mod tests {
     use super::*;
 
+    /// BEAT-QLORA-COMPOSED-FORWARD-EQUIVALENCE (FALSIFY-QLORA-COMPOSED-FORWARD-001).
+    ///
+    /// The composed on-the-fly QLoRA forward — base projection + `scale·(B@A)`
+    /// LoRA delta + Q/K/V bias — must equal a forward on the model with the LoRA
+    /// delta MERGED into the base weight. Gates the exact composition #2260's
+    /// bias-drop corrupted, with NONZERO LoRA factors AND nonzero biases: the
+    /// existing bias falsifier (FALSIFY-CPU-LORA-QKV-BIAS-001) uses zero-B so it
+    /// only exercises the bias term, and `beat_lora_merge_forward_equivalence`
+    /// uses no biases and hand-rolls the matmuls — neither drives all three terms
+    /// through the real `forward_with_lora` code path.
+    ///
+    /// Independence: `forward_with_lora` computes `q = x@Wᵀ + scale·(x@Aᵀ)@Bᵀ + b`;
+    /// the reference folds `W_merged = W + scale·(B@A)` and runs the plain
+    /// `forward` — a different code path. A dropped bias, a wrong LoRA scale, or a
+    /// transpose in either composition diverges. Self-contained, CPU, deterministic.
+    #[test]
+    fn beat_qlora_composed_forward_equivalence() {
+        let mut config = TransformerConfig::tiny();
+        config.use_bias = true;
+        let hidden = config.hidden_size;
+        let q_dim = config.q_dim();
+        let kv_dim = config.num_kv_heads * config.head_dim();
+        let seq = 3usize;
+        let rank = 4usize;
+        let scale = 8.0f32 / rank as f32; // alpha=8
+
+        let mut attn = MultiHeadAttention::new(&config);
+
+        // Deterministic NONZERO biases (new() zero-inits them — a dropped bias
+        // term is invisible at zero bias).
+        let mk_bias = |n: usize, amp: f32| {
+            Tensor::from_vec((0..n).map(|i| amp * (((i % 7) as f32) - 3.0)).collect(), true)
+        };
+        attn.b_q = Some(mk_bias(q_dim, 0.05));
+        attn.b_k = Some(mk_bias(kv_dim, 0.03));
+        attn.b_v = Some(mk_bias(kv_dim, 0.04));
+
+        // Deterministic NONZERO LoRA factors — PEFT layout A:[rank,hidden],
+        // B:[out,rank], both row-major (matches `apr finetune`).
+        let mk = |rows: usize, cols: usize, amp: f32, ph: f32| -> Vec<f32> {
+            (0..rows * cols).map(|i| amp * ((i as f32).mul_add(0.017, ph)).sin()).collect()
+        };
+        let a_q = mk(rank, hidden, 0.10, 0.0);
+        let b_q = mk(q_dim, rank, 0.12, 1.0);
+        let a_v = mk(rank, hidden, 0.09, 2.0);
+        let b_v = mk(kv_dim, rank, 0.11, 3.0);
+
+        let x = Tensor::from_vec(
+            (0..seq * hidden).map(|i| (i as f32).mul_add(0.023, -0.5).cos() * 0.4).collect(),
+            true,
+        );
+
+        // (1) The real composed forward.
+        let out_lora = attn.forward_with_lora(
+            &x,
+            seq,
+            &Tensor::from_vec(a_q.clone(), true),
+            &Tensor::from_vec(b_q.clone(), true),
+            &Tensor::from_vec(a_v.clone(), true),
+            &Tensor::from_vec(b_v.clone(), true),
+            rank,
+            scale,
+        );
+
+        // (2) Fold the LoRA delta into w_q, w_v IN PLACE (independent path), then
+        // run the plain forward. W_merged[o,i] = W[o,i] + scale·Σ_k B[o,k]·A[k,i].
+        let merge = |w: &Tensor, a: &[f32], b: &[f32], out: usize| -> Vec<f32> {
+            let wd = w.data();
+            let mut m = wd.as_slice().expect("contiguous w").to_vec();
+            for o in 0..out {
+                for i in 0..hidden {
+                    let mut d = 0.0f32;
+                    for k in 0..rank {
+                        d += b[o * rank + k] * a[k * hidden + i];
+                    }
+                    m[o * hidden + i] += scale * d;
+                }
+            }
+            m
+        };
+        attn.w_q = Tensor::from_vec(merge(&attn.w_q, &a_q, &b_q, q_dim), true);
+        attn.w_v = Tensor::from_vec(merge(&attn.w_v, &a_v, &b_v, kv_dim), true);
+        let out_merged = attn.forward(&x, seq);
+
+        let ld = out_lora.data();
+        let ls = ld.as_slice().expect("contiguous lora out");
+        let md = out_merged.data();
+        let ms = md.as_slice().expect("contiguous merged out");
+        assert_eq!(ls.len(), ms.len(), "output shape mismatch");
+        let max_abs = ls.iter().zip(ms).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
+        assert!(
+            max_abs < 1e-4,
+            "FALSIFY-QLORA-COMPOSED-FORWARD-001: composed forward_with_lora (base + \
+             scale·B@A + bias) diverges from the LoRA-merged forward by max|Δ|={max_abs:.6} \
+             — a dropped Q/K/V bias, a wrong LoRA scale, or a transpose in the composition \
+             (the #2260 bias-drop class, now with nonzero LoRA + biases)."
+        );
+        println!(
+            "BEAT-QLORA-COMPOSED-FORWARD: forward_with_lora ≡ merged forward — max|Δ|={max_abs:.2e}"
+        );
+    }
+
     /// PMAT-805: RoPE must propagate gradients (it is no longer an autograd
     /// leaf). Validate `RopeBackward` against finite differences of a scalar
     /// loss `L = sum(rope(x) * w)` so dL/dx = rope_backward(w).
