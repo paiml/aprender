@@ -1,0 +1,44 @@
+contract: apr-sklearn-gaussiannb-accuracy-beat
+metadata:
+  kind: beat-benchmark
+  version: "1.0.0"
+  description: >
+    Pillar-1 (scikit-learn) CORRECTNESS beat: apr's GaussianNB is at least as
+    ACCURATE as scikit-learn on the same data/split. This is the accuracy half of
+    GaussianNB's replace+beat story — the speed half (beat_sklearn_gaussiannb_speed,
+    ~4.9x faster after the ln(2πσ²) hoist) already runs nightly. Together they make
+    GaussianNB provably accuracy-equal AND faster than sklearn on the canonical Iris
+    task. Deterministic (no random_state), host-independent, so it lives in the per-PR
+    BLOCKING gate (unlike the host-variance speed beats which are nightly). This is the
+    SECOND per-PR-blocking P1 accuracy gate (alongside beat_sklearn_iris, RandomForest),
+    broadening the provable-correctness surface in the merge gate from one classifier to
+    two. Pinned 2026-07-03 via `uv run --with scikit-learn` (sklearn 1.9.0).
+  references:
+  - "crates/aprender-core/tests/beat_sklearn_gaussiannb_accuracy.rs (the gate)"
+  - "crates/aprender-core/src/classification/gaussian_nb.rs (GaussianNB)"
+  - "beat-sklearn-iris-v1.yaml (sibling: the RandomForest accuracy beat, same i%3 split)"
+version: 1
+status: enforced
+date: 2026-07-03
+
+# Beat-benchmark parameters (accuracy invariant; CI fails if apr < threshold).
+beat:
+  pillar: 1
+  incumbent: "scikit-learn 1.9.0 GaussianNB"
+  incumbent_pinned: "2026-07-03 — sklearn 1.9.0 GaussianNB test accuracy on the i%3 Iris split"
+  canonical_task: >
+    Fit GaussianNB on the canonical Iris dataset with a DETERMINISTIC split
+    (sample index i%3==0 -> test; n_train=100, n_test=50 — identical to
+    beat_sklearn_iris so both classifiers are compared apples-to-apples), then measure
+    test-set accuracy. GaussianNB is closed-form/deterministic (no random_state), so the
+    accuracy is a single value. Metric: test-set classification accuracy.
+  metric: gaussiannb_test_accuracy
+  direction: higher_is_better
+  baseline_value: 1.0000      # sklearn 1.9.0 GaussianNB test accuracy on this split
+  baseline_floor: 1.0000      # deterministic — single value, no random_state spread
+  beat_threshold: 0.9400      # apr must reach >= 0.94 (sklearn 1.0 minus a 6pp margin for
+                              # implementation differences); a fail means apr underperforms
+                              # sklearn on its own hello-world classifier
+  baseline_sourced_date: "2026-07-03"
+  approved_compute: CPU
+  ci_gate_name: "beat_sklearn_gaussiannb_accuracy"
