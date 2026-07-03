@@ -4,14 +4,17 @@ Next Generation Machine Learning in Pure Rust
 
 ## Current status
 
-> **v0.49.1** (2026-06-13) — published to crates.io: `cargo install aprender` → `apr`.
-> **Actively shipping** the four-pillar **BEAT campaign** (below). The earlier
-> "3-month hiatus" was closed out; development resumed at v0.42 and is ongoing.
+> **v0.57.0** (2026-07-03) — published to crates.io: `cargo install aprender` → `apr`.
+> **Actively shipping** the four-pillar **BEAT campaign** (below) plus a **QLoRA
+> training-correctness wave** (v0.55–v0.57). The earlier "3-month hiatus" was closed
+> out; development resumed at v0.42 and is ongoing.
 
-Aprender is now an **80-crate monorepo** spanning model **training**, **inference**
-(realizar), **SIMD/GPU compute** (trueno), and a **103-subcommand `apr` CLI** — well
+Aprender is now an **86-crate monorepo** spanning model **training**, **inference**
+(realizar), **SIMD/GPU compute** (trueno), and a **104-subcommand `apr` CLI** — well
 beyond the single-algorithm releases this file originally tracked. 25,300+ tests,
-1148+ provable contracts.
+1,400+ provable contracts. *(Live counts drift; the enforced source of truth is
+[`contracts/readme-claims-v1.yaml`](contracts/readme-claims-v1.yaml), which gates the
+README's counts against `find contracts/ -name '*.yaml'` at HEAD.)*
 
 **This file is a high-level version overview, not the working backlog.** The
 canonical, issue-linked roadmap is
@@ -28,8 +31,10 @@ canonical, issue-linked roadmap is
 | v0.31–v0.34 | ✅ Released | MoE serving, distillation pipeline, MODEL-1 code model, provable-contract expansion |
 | v0.35.x | ✅ Released | Hiatus close-out (eval/distill fixes, book completeness, DX) |
 | v0.36–v0.41 | ✅ Released | sklearn-parity breadth — model-selection stack, 13 metrics, preprocessing, `datasets` |
-| **v0.42–v0.49** | ✅ **Current** | **Four-pillar BEAT campaign** — CI-gated falsifiable wins vs sklearn / PyTorch / Unsloth / Ollama (below) |
-| _in flight_ | 🔧 Hardening | Correctness wave — sampling params, Blackwell-GPU coherence, Gemma CPU, APR-format safety, RoPE/LoRA/MCP (each contract-backed) |
+| v0.42–v0.49 | ✅ Released | **Four-pillar BEAT campaign** — CI-gated falsifiable wins vs sklearn / PyTorch / Unsloth / Ollama (below) |
+| v0.50–v0.54 | ✅ Released | Correctness wave — sampling params, Blackwell-GPU coherence, Gemma CPU, APR-format safety, RoPE/LoRA/MCP, `apr-format` leaf extraction (each contract-backed) |
+| **v0.55–v0.57** | ✅ **Current** | **GPU QLoRA training actually works** — a 6-defect cascade fixed (deadlock → loss-window → cross-stream NaN → wrong-model → stale-adapter eval → CPU-only eval), each with a mutation-verified falsifier + contract; runnable `--merge`; rank-aware auto-lr (default no longer diverges) |
+| _in flight_ | 🔧 Hardening | CUDA CI lane so the GPU correctness falsifiers are actually enforced (see doctrine gap below); apr-code tool-call flip envelope measurement |
 | _next_ | 📋 Planned | tracked in [`docs/roadmaps/roadmap.yaml`](docs/roadmaps/roadmap.yaml) |
 
 ### 🎯 The mission (north star)
@@ -43,19 +48,41 @@ wedge none of the four have: **provable, contract-gated correctness.**
 |--------|-----------|--------------------|----------------------------------|
 | **P1** | scikit-learn | Classical-ML breadth & ergonomics | LinearRegression **2.0× faster** (LAPACK-free O(nd)), iris-RF accuracy. *(LAPACK-bound Ridge/Lasso/KMeans/PCA honestly conceded.)* |
 | **P2** | PyTorch | Tensors + autograd + training | Autograd gradients **≡ PyTorch, max\|Δ\|=5e-7**. *(Training speed conceded — ~11× MKL gap; the win is provable gradient correctness.)* |
-| **P3** | Unsloth | Fast low-VRAM PEFT (LoRA/QLoRA) | NF4 quant **≡ bitsandbytes (4.9e-7)** + LoRA-merge forward-**equivalence (1.5e-8)**. *(GPU-Triton tok/s conceded.)* |
+| **P3** | Unsloth | Fast low-VRAM PEFT (LoRA/QLoRA) | NF4 quant **≡ bitsandbytes (4.9e-7)** + LoRA-merge forward-**equivalence (1.5e-8)**; **GPU QLoRA training runs correct end-to-end** (v0.55–v0.57: 6-defect cascade fixed, trains+validates at GPU speed on RTX 4090 & GB10 Blackwell). *(GPU-Triton tok/s conceded; training-correctness falsifiers are developer-run pending a CUDA CI lane.)* |
 | **P4** | Ollama / llama.cpp | Fast local quantized inference | **Fail-closed correctness** — `apr` rejects 10/10 semantically-broken models that Ollama/llama.cpp silently run; decode **1.2–1.37× on RTX 4090**. |
 
 All four beats are **adversarially mutation-verified** — a deliberately injected
 regression must make the gate FAIL, or the gate is theater. Cross-cutting through-line:
 the model is trained → fine-tuned → distilled → served as one CODE model
-(qwen2.5-coder), measured by the apr-code-parity matrix.
+(qwen2.5-coder), measured by the apr-code-parity matrix. As of v0.55–v0.57 the
+**fine-tune stage of that through-line trains and validates correctly** (GPU QLoRA), so
+the lifecycle is closer to demonstrable end-to-end.
 
 **Campaign mode (2026-06):** ≥10 days fully-autonomous, BEATS-as-CI-artifacts across all
 four pillars plus the `cuda-oxide` pure-Rust→PTX spike on Blackwell. Every correctness
 fix ships a named `proof_obligation` + a falsifier verified RED-on-bug / GREEN-on-fix +
 a `pv`-validated contract bump (a bug shipped green ⇔ its falsifier was missing or too
 weak).
+
+### ⚠️ Honest doctrine gap: GPU falsifiers are not yet CI-enforced
+
+The v0.55–v0.57 QLoRA training-correctness falsifiers (deadlock, cross-stream NaN,
+wrong-model rope/bias, stale-adapter eval, GPU-vs-CPU eval-forward) require a CUDA
+device and are `#[ignore]`-gated — the CI fleet has **no CUDA-labeled runner**, so
+today they only run developer-side on the pre-authorized RTX 4090. By the "gates or
+theater" rule this is a real hole: a correctness gate that never runs unattended is
+weaker than one that does. **The highest-EV hardening item is a nightly CUDA lane on
+the 4090** that executes these falsifiers as a scheduled (eventually blocking) check.
+Until it lands, these wins are stated as *developer-verified*, not *CI-enforced* — the
+same discipline §6 applies to conceded speed.
+
+**Case-file lesson (CF-5, 2026-07-03):** the GPU eval-forward falsifier's tolerance band
+*fired against its own CPU reference* (Δ=12.29 ≫ 0.5). Rather than loosen the band, the
+right move was to bisect — which exposed an **unrelated** defect: `forward_with_lora`
+had been silently dropping the Q/K/V projection biases, so every CPU LoRA train/eval ran
+a bias-less model. New doctrine rule: *a falsifier whose band fails against its reference
+may have caught a broken reference — bisect before loosening.* The escape became two
+permanent falsifiers (`FALSIFY-CPU-LORA-QKV-BIAS-001/002`, CI-enforced, no GPU needed).
 
 ---
 
