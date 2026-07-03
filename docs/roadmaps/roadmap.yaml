@@ -56,7 +56,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'CUDA nightly CI lane — enforce the GPU QLoRA training-correctness falsifiers'
-  status: pending
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-07-03T00:00:00.000000000+00:00

@@ -22,14 +22,14 @@ anyhow = { workspace = true }
 tokio = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 tracing = { workspace = true }
-aprender-qa-gen = { version = "0.57.0", path = "../aprender-qa-gen" }
+aprender-qa-gen = { version = "0.58.0", path = "../aprender-qa-gen" }
 hostname = "0.4"
 rayon = "1.10"
 sha2 = "0.10"
 regex = { workspace = true }
 num_cpus = "1.16"
 safetensors = { workspace = true }
-jugar-probar = { version = "0.57.0", path = "../aprender-test-lib", package = "aprender-test-lib", features = ["llm-types"] }
+jugar-probar = { version = "0.58.0", path = "../aprender-test-lib", package = "aprender-test-lib", features = ["llm-types"] }
 # Test fixtures dependencies (optional)
 tempfile = { version = "3", optional = true }
 half = { version = "2.4", optional = true }
