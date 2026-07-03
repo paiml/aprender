@@ -83,7 +83,7 @@ jobs:
   # giving us up to ~13 minutes of retry headroom before declaring the
   # registry unreachable. Mirrored in the `mutants` job below.
   workspace-test:
-    runs-on: [self-hosted, X64, Linux]
+    runs-on: [self-hosted, X64, Linux, clean-room]
     timeout-minutes: 85  # bumped to match 75min step + 10min overhead
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
@@ -357,7 +357,7 @@ jobs:
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".
   gate:
-    runs-on: [self-hosted, X64, Linux]
+    runs-on: [self-hosted, X64, Linux, clean-room]
     needs: [ci, workspace-test, mutants]
     if: always()
     steps:
@@ -404,7 +404,7 @@ jobs:
   # to scope against, so we skip rather than fall back to the old hours-long
   # full-tree run.
   mutants:
-    runs-on: [self-hosted, X64, Linux]
+    runs-on: [self-hosted, X64, Linux, clean-room]
     timeout-minutes: 60
     needs: [ci, workspace-test]
     if: github.event_name == 'pull_request'
