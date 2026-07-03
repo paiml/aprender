@@ -88,9 +88,15 @@ jobs:
           #     job is already on this GPU (or >2 GiB resident), skip tonight so
           #     we never contend with overnight training. `force=true` on a
           #     manual dispatch overrides.
-          used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' ')
+          # `procs` (compute contexts) is the primary, portable signal — it
+          # works on both sm_89 and GB10. `memory.used` is a secondary signal
+          # and is [N/A] on GB10's unified memory, so extract digits only and
+          # default to 0 (never let a non-integer reach `[ -gt ]`).
+          used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -1 | grep -oE '[0-9]+' | head -1)
+          used=${used:-0}
           procs=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | grep -c . || true)
-          echo "${{ matrix.name }}: GPU memory.used=${used:-?} MiB, existing compute procs=${procs:-?}"
+          procs=${procs:-0}
+          echo "${{ matrix.name }}: GPU memory.used=${used} MiB, existing compute procs=${procs}"
           if [ "$force" = "true" ]; then
             echo "::notice::${{ matrix.name }}: force=true — running regardless of GPU load"
             echo "proceed=true" >> "$GITHUB_OUTPUT"; exit 0
