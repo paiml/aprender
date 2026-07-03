@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.58.0] - 2026-07-03
+
+The release where **GPU QLoRA fine-tuning becomes honest and enforced.** v0.57 made
+training *run correctly*; v0.58 makes the *validation* it reports trustworthy — the
+metric now reflects the model being trained, the default hyper-parameters no longer
+diverge, and the whole GPU correctness suite runs every night on **two silicons**
+(RTX 4090 sm_89 + GB10 Blackwell sm_121). The "GPU falsifiers aren't CI-enforced"
+doctrine gap named in v0.57's roadmap is closed.
+
+### Fixed
+
+- **NF4 QLoRA per-epoch `val_loss` reflects the trained adapters** (#2257) — on the CUDA
+  path `train_step` writes adapter deltas to the GPU-resident `cuda_blocks`, but
+  `evaluate()` forwarded the CPU `lora_layers`, refreshed only inside `save_checkpoint` —
+  never before the epoch-loop eval. So per-epoch `val_loss` was byte-identical every epoch,
+  freezing best-epoch selection at 0 and firing early-stopping on a phantom plateau.
+  `evaluate()` now syncs GPU→CPU adapters first. (`FALSIFY-CUDA-EVAL-ADAPTER-SYNC-001`)
+- **CPU LoRA forward dropped the Q/K/V projection biases** (#2260) — `forward_with_lora`
+  (the path every CPU LoRA train/eval forward runs) never applied `b_q/b_k/b_v`, so on
+  Qwen2-family models (`use_bias=true`) it computed a *different, bias-less* model than
+  inference — bit-exactly matching the parity probe's biases-DROPPED oracle (CE 4.49 vs
+  2.13; 14.53 — worse than uniform — on a longer sample). Fixed grad-preservingly via an
+  autograd-aware broadcast add. (`FALSIFY-CPU-LORA-QKV-BIAS-001/002`, CI-enforced, no GPU)
+- **`evaluate()` runs the GPU forward when the model is GPU-resident** (#2260) — it used the
+  CPU forward even under CUDA: ~9.9 s/sample at seq ~50 (minutes at 2048) with the GPU idle,
+  so a real `apr finetune -m qlora` run finished its epoch then timed out *inside* the
+  validation pass. Now 89 ms/sample — a **111× per-sample speedup** — measuring the NF4 model
+  actually being trained. (`FALSIFY-CUDA-EVAL-GPU-FORWARD-001`)
+
+### Changed
+
+- **Rank-aware default learning rate** (#2258) — the planner auto-selects the largest LoRA
+  rank that fits VRAM (up to 256), but the CLI hard-defaulted lr to 2e-4, which **diverges**
+  there (measured on a 4090: loss 4.31→1.44 then blows up to 11–18, epoch avg 11.18).
+  `OptimalConfig` now recommends a rank-aware lr (2e-4 at rank ≤ 32 down to ~2.5e-5 at 256;
+  e2e-validated: epoch avg **1.58** vs 11.18 at the old default); `--learning-rate` is now
+  optional. (`FALSIFY-QLORA-RANK-AWARE-LR-001..003`, CI-enforced)
+- **Roadmap/pillars re-grounded against HEAD** (#2261) — scoreboard counts re-pinned (all
+  were understated), P3 upgraded from equivalence-only to equivalence **+ working, now-enforced
+  training**, and case-file **CF-5** recorded (a falsifier's tolerance band firing against its
+  own reference caught the CPU bias-drop — *bisect before loosening*).
+
+### CI / Infrastructure
+
+- **Cross-silicon CUDA nightly lane** (#2262, #2263) — closes `CUDA-CI-NIGHTLY-001`. The six
+  GPU QLoRA training-correctness falsifiers, previously `#[ignore]`-gated and developer-run,
+  now execute every night on a self-hosted matrix: **ada-4090** (RTX 4090, sm_89, x86-64,
+  CUDA 12.8) and **blackwell-gb10** (GB10, sm_121, aarch64, CUDA 13.0, egress via a
+  subnet-restricted proxy over the wired link). Nightly (01:30 UTC), yields to overnight
+  training (GPU-busy check), never triggers on a PR.
+- **CI checkout self-heal** (#2259) — a pre-checkout ownership-restore step ends the recurring
+  root-owned `target/.rustc_info.json` EACCES flake a hard-killed docker job leaves behind.
+- **actions/checkout bumped 4 → 7** (#2180).
+
+### Verified
+
+- Both cross-silicon nightly legs went **green end-to-end** (checkout → cargo build → all six
+  falsifiers + loss-window suite) on 2026-07-03 — ada-4090 and blackwell-gb10, run 28661079713.
+
 ## [0.57.0] - 2026-07-03
 
 The release where **GPU QLoRA fine-tuning actually works**. `apr finetune -m qlora` went

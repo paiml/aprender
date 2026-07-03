@@ -34,7 +34,7 @@ canonical, issue-linked roadmap is
 | v0.42–v0.49 | ✅ Released | **Four-pillar BEAT campaign** — CI-gated falsifiable wins vs sklearn / PyTorch / Unsloth / Ollama (below) |
 | v0.50–v0.54 | ✅ Released | Correctness wave — sampling params, Blackwell-GPU coherence, Gemma CPU, APR-format safety, RoPE/LoRA/MCP, `apr-format` leaf extraction (each contract-backed) |
 | **v0.55–v0.57** | ✅ **Current** | **GPU QLoRA training actually works** — a 6-defect cascade fixed (deadlock → loss-window → cross-stream NaN → wrong-model → stale-adapter eval → CPU-only eval), each with a mutation-verified falsifier + contract; runnable `--merge`; rank-aware auto-lr (default no longer diverges) |
-| _in flight_ | 🔧 Hardening | CUDA CI lane so the GPU correctness falsifiers are actually enforced (see doctrine gap below); apr-code tool-call flip envelope measurement |
+| _in flight_ | 🔧 Hardening | apr-code tool-call flip envelope measurement; promote the cross-silicon CUDA nightly lane to a blocking training-path gate (now green — see below) |
 | _next_ | 📋 Planned | tracked in [`docs/roadmaps/roadmap.yaml`](docs/roadmaps/roadmap.yaml) |
 
 ### 🎯 The mission (north star)
@@ -48,7 +48,7 @@ wedge none of the four have: **provable, contract-gated correctness.**
 |--------|-----------|--------------------|----------------------------------|
 | **P1** | scikit-learn | Classical-ML breadth & ergonomics | LinearRegression **2.0× faster** (LAPACK-free O(nd)), iris-RF accuracy. *(LAPACK-bound Ridge/Lasso/KMeans/PCA honestly conceded.)* |
 | **P2** | PyTorch | Tensors + autograd + training | Autograd gradients **≡ PyTorch, max\|Δ\|=5e-7**. *(Training speed conceded — ~11× MKL gap; the win is provable gradient correctness.)* |
-| **P3** | Unsloth | Fast low-VRAM PEFT (LoRA/QLoRA) | NF4 quant **≡ bitsandbytes (4.9e-7)** + LoRA-merge forward-**equivalence (1.5e-8)**; **GPU QLoRA training runs correct end-to-end** (v0.55–v0.57: 6-defect cascade fixed, trains+validates at GPU speed on RTX 4090 & GB10 Blackwell). *(GPU-Triton tok/s conceded; training-correctness falsifiers are developer-run pending a CUDA CI lane.)* |
+| **P3** | Unsloth | Fast low-VRAM PEFT (LoRA/QLoRA) | NF4 quant **≡ bitsandbytes (4.9e-7)** + LoRA-merge forward-**equivalence (1.5e-8)**; **GPU QLoRA training runs correct end-to-end** (6-defect cascade fixed, trains+validates at GPU speed), **CI-enforced nightly on two silicons** (RTX 4090 sm_89 + GB10 Blackwell sm_121, v0.58). *(GPU-Triton tok/s conceded.)* |
 | **P4** | Ollama / llama.cpp | Fast local quantized inference | **Fail-closed correctness** — `apr` rejects 10/10 semantically-broken models that Ollama/llama.cpp silently run; decode **1.2–1.37× on RTX 4090**. |
 
 All four beats are **adversarially mutation-verified** — a deliberately injected
@@ -64,17 +64,23 @@ fix ships a named `proof_obligation` + a falsifier verified RED-on-bug / GREEN-o
 a `pv`-validated contract bump (a bug shipped green ⇔ its falsifier was missing or too
 weak).
 
-### ⚠️ Honest doctrine gap: GPU falsifiers are not yet CI-enforced
+### ✅ Doctrine gap CLOSED (2026-07-03): GPU falsifiers are now CI-enforced on two silicons
 
-The v0.55–v0.57 QLoRA training-correctness falsifiers (deadlock, cross-stream NaN,
-wrong-model rope/bias, stale-adapter eval, GPU-vs-CPU eval-forward) require a CUDA
-device and are `#[ignore]`-gated — the CI fleet has **no CUDA-labeled runner**, so
-today they only run developer-side on the pre-authorized RTX 4090. By the "gates or
-theater" rule this is a real hole: a correctness gate that never runs unattended is
-weaker than one that does. **The highest-EV hardening item is a nightly CUDA lane on
-the 4090** that executes these falsifiers as a scheduled (eventually blocking) check.
-Until it lands, these wins are stated as *developer-verified*, not *CI-enforced* — the
-same discipline §6 applies to conceded speed.
+*Was a named gap in v0.57; closed in v0.58.* The v0.55–v0.57 QLoRA training-correctness
+falsifiers (deadlock, cross-stream NaN, wrong-model rope/bias, stale-adapter eval,
+GPU-vs-CPU eval-forward) require a CUDA device and are `#[ignore]`-gated, so they used to
+run developer-side only. As of v0.58 they run every night on a **cross-silicon
+self-hosted matrix** (`.github/workflows/cuda-nightly.yml`, `CUDA-CI-NIGHTLY-001`):
+
+- **ada-4090** — RTX 4090, sm_89, x86-64, CUDA 12.8 (reference platform)
+- **blackwell-gb10** — GB10, sm_121, aarch64, CUDA 13.0 (higher-risk JIT target; egress
+  via a subnet-restricted forward proxy on the wired link, no routing change on the box)
+
+Both legs went **green end-to-end** (checkout → cargo build → all six falsifiers +
+loss-window) on 2026-07-03. The lane is nightly (01:30 UTC ≈ 03:30 Madrid), yields to
+overnight training (GPU-busy check), and never triggers on a PR. These wins are now
+stated as **CI-enforced (nightly, 2 silicons)**, not developer-verified. Next step:
+promote to a blocking gate on training-path PRs once it has a green track record.
 
 **Case-file lesson (CF-5, 2026-07-03):** the GPU eval-forward falsifier's tolerance band
 *fired against its own CPU reference* (Δ=12.29 ≫ 0.5). Rather than loosen the band, the

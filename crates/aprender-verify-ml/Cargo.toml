@@ -50,7 +50,7 @@ uuid = { version = "1.11", features = ["v4", "serde"] }
 trueno = { workspace = true }
 
 # Machine learning for bug prediction (optional)
-aprender = { path = "../aprender-core", version = "0.57.0", package = "aprender-core", optional = true }
+aprender = { path = "../aprender-core", version = "0.58.0", package = "aprender-core", optional = true }
 
 # LLM fine-tuning integration (optional)
 entrenar = { workspace = true, optional = true }
