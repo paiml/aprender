@@ -354,15 +354,32 @@ jobs:
             "$IMAGE" \
             bash -c 'chown -R 1000:1000 /workspace || true; chown -R 1000:1000 /usr/local/cargo/registry || true; chown -R 1000:1000 /workspace/target || true'
 
+  # Poka-yoke (aprender#2269): fail fast if ANY self-hosted job omits a
+  # discriminating runner label, so a bare [self-hosted, X64, Linux] selector
+  # can never again silently land a job on a GPU/dev runner without the
+  # sovereign-ci registry. Pure text check; runs on the clean-room pool.
+  guard-runner-labels:
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      - name: Every self-hosted job must pin a discriminating label
+        run: bash scripts/check_runner_labels.sh
+
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".
   gate:
     runs-on: [self-hosted, X64, Linux, clean-room]
-    needs: [ci, workspace-test, mutants]
+    needs: [ci, workspace-test, mutants, guard-runner-labels]
     if: always()
     steps:
       - name: Check required jobs
         run: |
+          if [ "${{ needs.guard-runner-labels.result }}" != "success" ]; then
+            echo "guard-runner-labels failed: ${{ needs.guard-runner-labels.result }}"
+            exit 1
+          fi
           if [ "${{ needs.ci.result }}" != "success" ]; then
             echo "ci failed: ${{ needs.ci.result }}"
             exit 1
