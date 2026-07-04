@@ -44,11 +44,31 @@ proof_obligations:
   formal: '|mean(LN(x)) - mean(beta)| < eps when gamma = 1'
   tolerance: 1.0e-05
   applies_to: all
+  lean:
+    theorem: LayerNorm.mean_layernorm_centering
+    module: ProvableContracts.LayerNorm
+    status: proved
+    depends_on:
+    - LayerNorm.sum_sub_mean_zero
+    mathlib_imports:
+    - Mathlib.Algebra.BigOperators.Group.Finset.Basic
+    notes: Centered values Σ(xᵢ-μ)=0, so with γ=1 the mean of LN(x) equals mean(β) exactly
 - type: invariant
   property: Standardization
   formal: '|var(LN(x)) - 1.0| < eps when gamma = 1, beta = 0'
   tolerance: 1.0e-05
   applies_to: all
+  lean:
+    theorem: LayerNorm.variance_layernorm_standardized
+    module: ProvableContracts.LayerNorm
+    status: proved
+    depends_on:
+    - LayerNorm.variance_layernorm_ratio
+    - Real.sq_sqrt
+    mathlib_imports:
+    - Mathlib.Algebra.BigOperators.Field
+    - Mathlib.Data.Real.Sqrt
+    notes: var(LN(x))=variance(x)/(variance(x)+ε); ideal ε=0 with variance>0 gives exactly 1
 - type: bound
   property: Denominator strictly positive
   formal: sqrt(sigma^2 + eps) > 0 when eps > 0
@@ -72,6 +92,17 @@ proof_obligations:
   formal: '|LN(LN(x)) - LN(x)| < eps when gamma = 1, beta = 0'
   tolerance: 1.0e-05
   applies_to: all
+  lean:
+    theorem: LayerNorm.layernorm_idempotent
+    module: ProvableContracts.LayerNorm
+    status: proved
+    depends_on:
+    - LayerNorm.layernorm_id_of_normalized
+    - LayerNorm.mean_layernorm_centering
+    - LayerNorm.variance_layernorm_standardized
+    mathlib_imports:
+    - Mathlib.Data.Real.Sqrt
+    notes: LN(x) is mean-0 unit-variance (ε=0, variance>0), so re-normalizing is the identity
 - type: invariant
   property: Shift invariance
   formal: '|LN(x + c) - LN(x)| < eps for any scalar c'
@@ -91,7 +122,7 @@ verification_summary:
   total_obligations: 6
   l2_property_tested: 6
   l3_kani_proved: 3
-  l4_lean_proved: 2
+  l4_lean_proved: 5
   l4_sorry_count: 0
   l4_not_applicable: 1
   mathlib_imports: true
@@ -102,9 +133,22 @@ verification_summary:
   - obligation: Shift invariance
     theorem: LayerNorm.variance_shift
     file: ProvableContracts/Theorems/LayerNorm/ShiftInvariance.lean
-  notes: 2 of 6 obligations proved sorry-free in Lean 4 (Mathlib-backed); 1 N/A
-    (SIMD ULP equivalence, implementation-specific); remaining 3 (centering,
-    standardization, idempotency) are property-tested + Kani-checked only.
+  - obligation: Centering
+    theorem: LayerNorm.mean_layernorm_centering
+    file: ProvableContracts/Theorems/LayerNorm/Centering.lean
+  - obligation: Standardization
+    theorem: LayerNorm.variance_layernorm_standardized
+    file: ProvableContracts/Theorems/LayerNorm/Standardization.lean
+  - obligation: Idempotent under identity affine
+    theorem: LayerNorm.layernorm_idempotent
+    file: ProvableContracts/Theorems/LayerNorm/Idempotency.lean
+  notes: 5 of 6 obligations proved sorry-free in Lean 4 (Mathlib-backed) — centering,
+    standardization (var=variance/(variance+ε); =1 at ε=0), idempotency, shift
+    invariance, denominator positivity. The 1 remaining obligation (SIMD-matches-scalar
+    within 8 ULP) is a runtime floating-point equivalence with no algebraic statement
+    — genuinely not analytically provable (N/A). Analytic proofs use ε=0 for the
+    exact standardization/idempotency invariants (ε>0 gives the variance/(variance+ε)
+    ratio, also proved).
 kernel_structure:
   phases:
   - name: compute_mean
