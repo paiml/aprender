@@ -258,6 +258,34 @@ invariants:
       and a CUDA-built-but-no-GPU host report cleanly.
 
 # ─────────────────────────────────────────────────────────────
+# Proof obligations — one per invariant / falsification test
+# (INV-GPUTRAIN-00N binds to FALSIFY-GPUTRAIN-00N)
+# ─────────────────────────────────────────────────────────────
+
+proof_obligations:
+- type: invariant
+  property: "Device grammar: valid --device values parse and any malformed value is rejected at parse time before training state is allocated (INV-GPUTRAIN-001 / FALSIFY-GPUTRAIN-001)"
+  formal: "matches(requested_device, device_grammar) or reject_at_parse(requested_device)"
+- type: safety
+  property: "No silent CPU fallback: --device cuda on a CUDA-less host returns Err(DeviceUnavailable) and constructs no trainer (INV-GPUTRAIN-002 / FALSIFY-GPUTRAIN-002)"
+  formal: "requested_cuda and not cuda_available implies resolve_device() == Err(DeviceUnavailable)"
+- type: invariant
+  property: "GPU residency proof: when the resolved backend is CUDA, nvidia-smi must show the training pid with used_memory > 0 within 5s of step 0, else the run aborts (INV-GPUTRAIN-003 / FALSIFY-GPUTRAIN-003)"
+  formal: "backend == Cuda implies exists app in nvidia_smi : app.pid == training_pid and app.used_mib > 0"
+- type: invariant
+  property: "CPU fallback path remains fully functional: --device cpu completes with peer-contract gates GATE-TRAIN-001..010 still passing on both CUDA-less and CUDA-ful hosts (INV-GPUTRAIN-004 / FALSIFY-GPUTRAIN-004)"
+  formal: "dispatch(cpu) == cpu and peer_gates(cpu_artifacts) == PASS"
+- type: bound
+  property: "370M scaffold step time on RTX 4090 (sm_89, seq_len=2048, batch=1) has median wall_ms < 500 over steps 20..49 (INV-GPUTRAIN-005 / FALSIFY-GPUTRAIN-005)"
+  formal: "median(wall_ms[20..49]) < 500.0"
+- type: determinism
+  property: "Same-device seed reproducibility: two cuda:0 runs at seed=0 have per-step loss abs-diff within the empirical bound for all steps before divergence (INV-GPUTRAIN-006 / FALSIFY-GPUTRAIN-006)"
+  formal: "forall k in 0..K : abs(loss_run_a[k] - loss_run_b[k]) <= 1e-3"
+- type: invariant
+  property: "Build-time cuda feature is reported truthfully: apr --version --json distinguishes compiled-without-cuda from compiled-with-cuda-but-no-GPU (INV-GPUTRAIN-007 / FALSIFY-GPUTRAIN-007)"
+  formal: "version_json has cuda_feature:bool and cuda_runtime_available:bool and visible_devices:list"
+
+# ─────────────────────────────────────────────────────────────
 # Acceptance gates — bind to AC-SHIP2-* and task #126/#132
 # ─────────────────────────────────────────────────────────────
 

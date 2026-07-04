@@ -1,0 +1,136 @@
+metadata:
+  version: 1.0.0
+  created: '2026-07-04'
+  author: PAIML Engineering
+  description: >-
+    GGUF column-major -> APR row-major tensor-transpose round-trip involution —
+    the Pillar-4 (BEAT Ollama) data-layer correctness the import boundary rests
+    on. Proves the shape swap and the element (byte) reindex are involutions, so
+    the LAYOUT-001/002 transpose neither loses nor duplicates any weight.
+  references:
+  - 'LAYOUT-001/002: contracts/tensor-layout-v1.yaml (SOURCE OF TRUTH for layout)'
+  - Salmon et al. row-major storage; GGUF spec column-major weight tensors
+  lessons_learned:
+  - 'LAYOUT-001: GGUF/APR row-major confusion has occurred 100+ times'
+  - >-
+    Byte preservation is exact only at the index-permutation level; the Rust
+    Q4K/Q6K path dequantizes and re-quantizes, so on-wire bytes match only within
+    quantization error (see TT-REQUANT-TOL-001, L2 numeric).
+equations:
+  tensor_transpose_reindex:
+    formula: out[r * cols + c] = in[c * rows + r]
+    domain: A in R^{cols x rows} (GGUF column-major, shape [cols, rows])
+    codomain: B in R^{rows x cols} (APR row-major, shape [rows, cols])
+    invariants:
+    - 'Shape swap is an involution: transpose(transpose(shape)) = shape'
+    - 'Element reindex is an involution: (A^T)^T = A (bitwise exact at index level)'
+    - 'Bijection on index pairs: no element lost or duplicated'
+    preconditions:
+    - shape.len() == 2 (1-D tensors are a fixed point — not transposed)
+    lean_theorem: Theorems.TensorTranspose.Roundtrip
+proof_obligations:
+- id: TT-SHAPE-INVOL-001
+  type: idempotency
+  property: Shape swap is an involution
+  formal: transpose(transpose((rows, cols))) = (rows, cols)
+  applies_to: all
+  lean:
+    theorem: TensorTranspose.shape_transpose_involution
+    module: ProvableContracts.TensorTranspose
+    file: lean/ProvableContracts/Theorems/TensorTranspose/Roundtrip.lean
+    status: proved
+    core_only: true
+    mathlib_imports: []
+    notes: >-
+      Core-only port of Theorems/Transpose/Involution.lean; Prod-swap style
+      involution over a Nat (rows, cols) Shape struct — rfl.
+- id: TT-BYTE-PRESERVE-001
+  type: idempotency
+  property: Round-trip element (byte) preservation
+  formal: transpose(transpose(A)).get i j = A.get i j (bitwise exact, all i,j)
+  applies_to: all
+  lean:
+    theorem: TensorTranspose.roundtrip_preserves_element
+    module: ProvableContracts.TensorTranspose
+    file: lean/ProvableContracts/Theorems/TensorTranspose/Roundtrip.lean
+    status: proved
+    core_only: true
+    mathlib_imports: []
+    notes: >-
+      Also backed by TensorTranspose.transpose_involution ((A^T)^T = A) — the
+      full-tensor bit-for-bit round trip, rfl.
+- id: TT-ELEMENT-001
+  type: invariant
+  property: Single transpose relocates each element without loss
+  formal: transpose(A).get j i = A.get i j (bijection on index pairs)
+  applies_to: all
+  lean:
+    theorem: TensorTranspose.transpose_element
+    module: ProvableContracts.TensorTranspose
+    file: lean/ProvableContracts/Theorems/TensorTranspose/Roundtrip.lean
+    status: proved
+    core_only: true
+    mathlib_imports: []
+    notes: 'B^T[j][i] = A[i][j] — definitional equality (rfl).'
+verification_summary:
+  total_obligations: 3
+  l2_property_tested: 3
+  l3_kani_proved: 0
+  l4_lean_proved: 3
+  l4_sorry_count: 0
+  l4_not_applicable: 0
+  lean_file: crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/TensorTranspose/Roundtrip.lean
+  lean_standalone_verified: true
+  notes: >-
+    All 3 algebraic proof obligations proved sorry-free by the standalone `lean`
+    binary (no Mathlib import). 3 == 3 → L4. The lossy Q4K/Q6K
+    dequant->transpose->requant numeric tolerance has no exact algebraic
+    identity, so it is NOT a formal proof obligation — it is verified at L2 by
+    falsification test FALSIFY-TT-004 (proving a lossy-requant bound would be
+    theater).
+falsification_tests:
+- id: FALSIFY-TT-001
+  rule: Shape swap involution
+  prediction: transpose(transpose([cols, rows])) == [cols, rows]
+  test: proptest with random 2-D shapes
+  if_fails: Shape swap not self-inverse — importer would corrupt tensor dims
+- id: FALSIFY-TT-002
+  rule: Element round-trip preservation
+  prediction: reindex(reindex(A)) == A for random 2-D data (index level)
+  test: proptest over random f32 matrices up to 256x256
+  if_fails: Index-map asymmetry — weights relocated to wrong positions
+- id: FALSIFY-TT-003
+  rule: 1-D tensor is a fixed point
+  prediction: should_transpose_gguf returns false for 1-D names/shapes
+  test: Explicit 1-D bias/norm tensors are passed through untransposed
+  if_fails: 1-D tensor wrongly transposed — bias vectors scrambled
+- id: FALSIFY-TT-004
+  rule: Q4K/Q6K requant round trip within quantization error
+  prediction: '|transpose_q4k(transpose_q4k(A)) - A| <= 2 * q4k_step'
+  test: dequant->transpose->requant twice, assert within quant tolerance
+  if_fails: Re-quantization drift exceeds one quantization step
+kani_harnesses:
+- id: KANI-TT-001
+  obligation: TT-SHAPE-INVOL-001
+  property: 'Shape swap involution: swap(swap((r,c))) == (r,c)'
+  bound: 16
+  strategy: exhaustive
+  harness: verify_shape_swap_involution
+  status: scaffold
+- id: KANI-TT-002
+  obligation: TT-BYTE-PRESERVE-001
+  property: 'Index round trip: reindex(reindex(idx)) == idx'
+  bound: 8
+  strategy: bounded_int
+  harness: verify_reindex_involution
+  status: scaffold
+qa_gate:
+  id: F-TT-001
+  name: Tensor Transpose Round-Trip Contract
+  checks:
+  - shape_swap_involution
+  - element_roundtrip_preservation
+  - one_d_fixed_point
+  - requant_tolerance
+  pass_criteria: All 4 falsification tests pass + Lean involution proofs compile sorry-free
+  falsification: Swap the reindex to out[r*cols+c]=in[r*cols+c] (identity) to verify test catches lost transpose

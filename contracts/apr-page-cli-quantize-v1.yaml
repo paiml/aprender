@@ -36,3 +36,14 @@ falsification_tests:
     test_harness: "grep -c '^```bash' book/src/cli/quantize.md"
     expected_output: "stdout >= 1"
     if_fails: "Add a ```bash code block with a runnable example."
+
+proof_obligations:
+- type: completeness
+  property: "The reference page book/src/cli/quantize.md exists on disk (FALSIFY-PAGE-CLI-QUANTIZE-001)"
+  formal: "exists(book/src/cli/quantize.md)"
+- type: invariant
+  property: "The page references the `apr quantize` command at least once (FALSIFY-PAGE-CLI-QUANTIZE-002)"
+  formal: "file_contains(book/src/cli/quantize.md, 'apr quantize')"
+- type: completeness
+  property: "The page contains at least one runnable bash code block (FALSIFY-PAGE-CLI-QUANTIZE-003)"
+  formal: "count_fenced(book/src/cli/quantize.md, lang=bash) >= 1"
