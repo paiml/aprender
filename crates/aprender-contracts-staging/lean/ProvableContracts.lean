@@ -24,6 +24,7 @@ import ProvableContracts.Defs.QR
 import ProvableContracts.Defs.Quantization
 import ProvableContracts.Defs.RMSNorm
 import ProvableContracts.Defs.SVD
+import ProvableContracts.Defs.Sampling
 import ProvableContracts.Defs.Sigmoid
 import ProvableContracts.Defs.Softmax
 import ProvableContracts.Defs.Sparse
@@ -71,6 +72,9 @@ import ProvableContracts.Theorems.QuantizedDotProduct.ErrorBound
 import ProvableContracts.Theorems.RMSNorm.DenominatorPositive
 import ProvableContracts.Theorems.RMSNorm.ScaleInvariance
 import ProvableContracts.Theorems.SVD.NonNegative
+import ProvableContracts.Theorems.Sampling.RepeatPenalty
+import ProvableContracts.Theorems.Sampling.TemperatureScaling
+import ProvableContracts.Theorems.Sampling.TopK
 import ProvableContracts.Theorems.Sigmoid.SigmoidBounded
 import ProvableContracts.Theorems.Sigmoid.SigmoidSymmetry
 import ProvableContracts.Theorems.Sigmoid.SiluZero
