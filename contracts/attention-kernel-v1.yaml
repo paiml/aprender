@@ -41,22 +41,73 @@ proof_obligations:
   formal: Σ_j softmax(QK^T/√d_k)_{ij} = 1 for all i
   tolerance: 1.0e-05
   applies_to: all
+  lean:
+    theorem: Attention.attention_weights_sum_to_one
+    module: ProvableContracts.Attention
+    status: proved
+    depends_on:
+    - Softmax.partition_of_unity
+    mathlib_imports:
+    - Mathlib.Algebra.BigOperators.Group.Finset
+    notes: Attention row weights are softmax of the scaled scores; reuses softmax partition-of-unity
 - type: bound
   property: Attention weights in (0,1)
   formal: 0 < attn_{ij} < 1 for all i,j
   applies_to: all
+  lean:
+    theorem: Attention.attention_weights_bounded
+    module: ProvableContracts.Attention
+    status: proved
+    depends_on:
+    - Softmax.softmax_bounded
+    mathlib_imports:
+    - Mathlib.Analysis.SpecialFunctions.ExpDeriv
+    notes: With ≥2 keys, each softmax weight lies strictly in (0,1); reuses softmax_bounded
 - type: bound
   property: Output bounded by V
   formal: min(V) ≤ output_{ij} ≤ max(V)
   applies_to: all
+  lean:
+    theorem: Attention.attention_output_bounded
+    module: ProvableContracts.Attention
+    status: proved
+    depends_on:
+    - Softmax.softmax_pos
+    - Softmax.partition_of_unity
+    mathlib_imports:
+    - Mathlib.Algebra.Order.BigOperators.Group.Finset
+    notes: Output row is a convex combination of V rows (nonneg weights summing to 1) → sandwiched between any lower/upper bound of V
 - type: equivalence
   property: SIMD matches scalar
   tolerance: 8.0
   applies_to: simd
+  l4_status: not_applicable
+  l4_reason: Runtime floating-point ULP-equivalence between SIMD and scalar accumulation
+    orders. Depends on IEEE-754 rounding and reduction order, not an algebraic
+    identity over ℝ — no Lean statement exists. Enforced empirically by FALSIFY-ATT-004.
 - type: invariant
   property: Scaling factor
   formal: Uses 1/√d_k scaling (not 1/d_k)
   applies_to: all
+  lean:
+    theorem: Attention.scale_factor_sq
+    module: ProvableContracts.Attention
+    status: proved
+    depends_on:
+    - Real.sq_sqrt
+    - Real.sqrt_pos
+    mathlib_imports:
+    - Mathlib.Analysis.SpecialFunctions.Sqrt
+    notes: 'scale = 1/√d_k is well-defined and positive (scale_factor_pos), squares to 1/d_k
+      (scale_factor_sq → pins it to d_k^{-1/2}), and strictly exceeds the linear 1/d_k for d_k>1
+      (scale_factor_ne_linear) — proving the sqrt scaling, not 1/d_k'
+verification_summary:
+  total_obligations: 5
+  l2_property_tested: 5
+  l3_kani_proved: 5
+  l4_lean_proved: 4
+  l4_sorry_count: 0
+  l4_not_applicable: 1
 kernel_structure:
   phases:
   - name: compute_scores

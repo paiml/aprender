@@ -11,6 +11,7 @@ import ProvableContracts.Theorems.Softmax.PartitionOfUnity
 import ProvableContracts.Theorems.Softmax.Monotonicity
 import ProvableContracts.Theorems.Softmax.Bounded
 import ProvableContracts.Theorems.Softmax.ShiftInvariance
+import ProvableContracts.Theorems.Attention.ScaledDotProduct
 import ProvableContracts.Theorems.RMSNorm.DenominatorPositive
 import ProvableContracts.Theorems.RMSNorm.ScaleInvariance
 import ProvableContracts.Theorems.Sigmoid.SigmoidBounded
