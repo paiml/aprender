@@ -55,3 +55,10 @@ import ProvableContracts.Theorems.AdamW.WeightDecay
 -- Discrete Fourier Transform
 import ProvableContracts.Defs.FFT
 import ProvableContracts.Theorems.FFT.Parseval
+-- Embedding lookup (gather over table rows)
+import ProvableContracts.Defs.Embedding
+import ProvableContracts.Theorems.Embedding.Shape
+import ProvableContracts.Theorems.Embedding.Rows
+import ProvableContracts.Theorems.Embedding.Bounds
+import ProvableContracts.Theorems.Embedding.Determinism
+import ProvableContracts.Theorems.Embedding.Finite
