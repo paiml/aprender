@@ -1,0 +1,150 @@
+=== APR Run ===
+
+Source: /home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf
+Using mmap for 4466MB model
+[DEBUG] has_chat_template=true, filename_instruct=true
+[DEBUG] formatted_prompt="<|im_start|>user\n<\u{200b}|im_start|>user\nWrite a Python function to compute fibonacci.<\u{200b}|im_end|>\n<\u{200b}|im_start|>assistant\n<|im_end|>\n<|im_start|>assistant\n"
+[DEBUG] add_bos=false, encoded 47 tokens: [151644, 872, 198, 27, 0, 0, 0, 96136, 76, 4906, 91, 29, 872, 198, 7985, 264, 13027, 729, 311, 12564, 75698, 15757, 0, 0, 0, 96136, 76, 6213, 91, 397]
+Loading model: /home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf
+Architecture: Qwen2 [GGUF: qwen2] (28 layers, vocab_size=152064)
+Config: hidden_size=3584, context_length=131072, quant=Q6_K, threads=20
+Model loaded in 6087.9ms
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 3 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 3 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 7 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 7 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-129] Early kernel preload: 44 modules compiled
+[PMAT-053] FP8 cache skipped: requires sm_89-sm_9x (have sm_90, cc=121)
+[trueno#243] Manual graph construction: pos=0, has_graph=false, capture_failed=false, token_count=0
+[GH-559] RmsNorm PTX (1888 bytes)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 3 backward branch(es) for sm_121 JIT workaround
+[PAR-058-ATTN] Layer 0: num_heads=28, num_kv_heads=4, head_dim=128, max_len=2048, seq_len=1
+[PAR-058-ATTN] K input OK, first 16: [-1.1389564, 1.2553855, 1.316874, -0.40190244, 0.674315, 0.064057894, 1.816838, 0.8798144, -0.20228332, -0.8493282, 0.011770308, 0.6043558, 3.2630014, -0.52568954, -0.47604957, 0.009130985]
+[PAR-058-ATTN] Q input OK, first 16: [0.045394123, 2.4362702, -0.07173061, 1.0518492, 1.5710628, 1.3150781, 0.7379453, 0.2268709, -0.74486864, -1.4765288, 0.15778756, 0.97718316, 0.51909083, 0.20453438, -0.56409633, 0.11122036]
+[PAR-058-ATTN] K cache head0 pos0 first 16: [-1.1389564, 1.2553855, 1.316874, -0.40190244, 0.674315, 0.064057894, 1.816838, 0.8798144, -0.20228332, -0.8493282, 0.011770308, 0.6043558, 3.2630014, -0.52568954, -0.47604957, 0.009130985]
+[PAR-058-ATTN] V cache head0 pos0 first 16: [0.25033295, -0.39433014, 0.14255449, 0.28000504, 0.024171278, -0.4612629, 0.105211765, 0.062091023, -0.27708665, -0.030609168, -0.32967716, 0.15872276, -0.4130243, 0.22296172, -0.016400201, 0.37762332]
+[trueno#243] ✓ Manual graph: 619 kernels. first_args=Some(["0xfb48415ee000", "0xfb48415f6c00", "0xfb48417f8000"]), last_args=Some(["0xfb4d63e00000", "0xfb4731600000", "0xfb48415fa400", "0xe00", "0x25200"]), current_logits_buf=0xfb4d63e00000
+Backend: GPU (NVIDIA GB10, 122502 MB VRAM)
+[DEBUG] input_count=47, total_tokens=95, generated_count=48
+[DEBUG] generated token ids: [8420, 374, 264, 4285, 13027, 729, 311, 12564, 279, 79683, 8500, 1447, 73594, 12669, 198, 750, 75698, 1445, 982, 262]
+[DEBUG] raw decoded: "Here is a simple Python function to compute the Fibonacci sequence:\n\n```python\ndef fibonacci(n):\n    if n <= 0:\n        return \"Input should be a positive integer\"\n    elif n == 1:\n        return 0\n"
+
+Output:
+Here is a simple Python function to compute the Fibonacci sequence:
+
+```python
+def fibonacci(n):
+    if n <= 0:
+        return "Input should be a positive integer"
+    elif n == 1:
+        return 0
+
+Completed in 28.47s (cached)
+=== APR Run ===
+
+Source: /home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf
+Using mmap for 4466MB model
+[DEBUG] has_chat_template=true, filename_instruct=true
+[DEBUG] formatted_prompt="<|im_start|>user\n<\u{200b}|im_start|>user\nWrite a Python function to compute fibonacci.<\u{200b}|im_end|>\n<\u{200b}|im_start|>assistant\n<|im_end|>\n<|im_start|>assistant\n"
+[DEBUG] add_bos=false, encoded 47 tokens: [151644, 872, 198, 27, 0, 0, 0, 96136, 76, 4906, 91, 29, 872, 198, 7985, 264, 13027, 729, 311, 12564, 75698, 15757, 0, 0, 0, 96136, 76, 6213, 91, 397]
+Loading model: /home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf
+Architecture: Qwen2 [GGUF: qwen2] (28 layers, vocab_size=152064)
+Config: hidden_size=3584, context_length=131072, quant=Q6_K, threads=20
+Model loaded in 5985.4ms
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 3 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 3 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 7 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 7 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-129] Early kernel preload: 49 modules compiled
+[PMAT-053] FP8 cache skipped: requires sm_89-sm_9x (have sm_90, cc=121)
+[trueno#243] Manual graph construction: pos=0, has_graph=false, capture_failed=false, token_count=0
+[GH-559] RmsNorm PTX (1888 bytes)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 3 backward branch(es) for sm_121 JIT workaround
+[PAR-058-ATTN] Layer 0: num_heads=28, num_kv_heads=4, head_dim=128, max_len=2048, seq_len=1
+[PAR-058-ATTN] K input OK, first 16: [-1.1381967, 1.2564609, 1.3154995, -0.39922184, 0.6760317, 0.06527047, 1.8185726, 0.8788518, -0.19979924, -0.849061, 0.009671137, 0.60525084, 3.2610023, -0.5291828, -0.47551322, 0.008475214]
+[PAR-058-ATTN] Q input OK, first 16: [0.04527545, 2.4347525, -0.0696795, 1.049681, 1.5723552, 1.3131149, 0.7373904, 0.22662953, -0.74518776, -1.4753788, 0.15550673, 0.9771501, 0.5195615, 0.20451306, -0.5640792, 0.11031711]
+[PAR-058-ATTN] K cache head0 pos0 first 16: [-1.1381967, 1.2564609, 1.3154995, -0.39922184, 0.6760317, 0.06527047, 1.8185726, 0.8788518, -0.19979924, -0.849061, 0.009671137, 0.60525084, 3.2610023, -0.5291828, -0.47551322, 0.008475214]
+[PAR-058-ATTN] V cache head0 pos0 first 16: [0.25033295, -0.39433014, 0.14255449, 0.28000504, 0.024171278, -0.4612629, 0.105211765, 0.062091023, -0.27708665, -0.030609168, -0.32967716, 0.15872276, -0.4130243, 0.22296172, -0.016400201, 0.37762332]
+[trueno#243] ✓ Manual graph: 647 kernels. first_args=Some(["0xea07ef3ee000", "0xea07ef3f6c00", "0xea07ef5f8000"]), last_args=Some(["0xea0ce7e00000", "0xea06df400000", "0xea07ef3fa400", "0xe00", "0x25200"]), current_logits_buf=0xea0ce7e00000
+Backend: GPU (NVIDIA GB10, 122502 MB VRAM)
+[F2-VALIDATION] GPU diverges from CPU at real position 3 (argmax 1851 != 84120, cosine 0.9524); min real-position cosine 0.9524 — HwDp4a-class mid-context degradation, falling back to CPU
+TU: error: ../src/freedreno/vulkan/tu_knl.cc:387: failed to open device /dev/dri/renderD128 (VK_ERROR_INCOMPATIBLE_DRIVER)
+Backend: wgpu (Vulkan)
+[PMAT-333] Dequantizing 28 layers (hidden=3584, heads=28/4, intermediate=18944)
+  Dequantized layer 7/28
+  Dequantized layer 14/28
+  Dequantized layer 21/28
+  Dequantized layer 28/28
+[PMAT-333] Dequantized 337 weights, 28282.5 MB F32
+[wgpu] Skipping weight 'lm_head' (2180.0 MB > 2147.5 MB limit) — CPU fallback
+[apr-cpu-vs-gpu-output-parity-v1] wgpu path rejected, attempting fallback: cosine vs CPU = 0.723628 (< 0.99) at step 1/3
+Backend: CPU (wgpu unavailable: Inference error: wgpu parity gate: cosine=0.723628 < 0.99 at step 1/3)
+Backend: CPU (SIMD-accelerated)
+[DEBUG] input_count=47, total_tokens=95, generated_count=48
+[DEBUG] generated token ids: [8420, 374, 264, 4285, 13027, 729, 311, 12564, 279, 79683, 8500, 1447, 73594, 12669, 198, 750, 75698, 1445, 982, 262]
+[DEBUG] raw decoded: "Here is a simple Python function to compute the Fibonacci sequence:\n\n```python\ndef fibonacci(n):\n    if n <= 0:\n        return \"Input should be a positive integer\"\n    elif n == 1:\n        return 0\n"
+
+Output:
+Here is a simple Python function to compute the Fibonacci sequence:
+
+```python
+def fibonacci(n):
+    if n <= 0:
+        return "Input should be a positive integer"
+    elif n == 1:
+        return 0
+
+Completed in 68.74s (cached)

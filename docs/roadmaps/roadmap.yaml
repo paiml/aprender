@@ -83,6 +83,35 @@ roadmap:
     curves, PMAT-733 encoder Pipeline gate, PMAT-735 poly+multiclass SVC) are
     marked `completed`. The live queue is the June-11 PMAT-72x/73x/74x beat
     backlog. See SVC-SMO-WSS-001 for a solver follow-up surfaced this session.
+- id: BEAT-OLLAMA-DECODE-CI-001
+  github_issue: null
+  item_type: task
+  title: 'Wire beat_ollama_decode_throughput_speed into a GPU-nightly (developer-verified -> CI-enforced)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-07-04T00:00:00.000000000+00:00
+  updated: 2026-07-04T00:00:00.000000000+00:00
+  spec: null
+  acceptance_criteria:
+  - 'beat_ollama_decode_throughput_speed (Pillar-4 decode 1.2-1.37x vs ollama) runs on a scheduled GPU workflow, not just developer-side.'
+  - 'The runner has (or gets) the required GGUF (qwen2.5-coder-1.5b-instruct-q4_k_m.gguf) + an apr binary built --features cuda.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-4
+  - ci
+  - gates-or-theater
+  notes: >-
+    Surfaced by the 2026-07-04 beat-wiring audit (see
+    feedback_workspace_test_lib_only_beats_ungated). beat_ollama_decode_throughput_speed
+    is #[ignore]-gated and its docstring says "ENFORCED manual/GPU gate", but it is in
+    NO scheduled workflow (not ci/gate, not beat-speed-nightly, not cuda-nightly) — so
+    it is developer-verified only, a softer version of the closed QLoRA doctrine gap.
+    The natural home is the cuda-nightly lane (has GPU runners), but that needs the
+    q4_k_m GGUF present on the runner (the QLoRA lane uses a .apr, not a GGUF). Deferred
+    from v0.59 to keep the release free of runner-infra dependencies.
 - id: SVC-SMO-WSS-001
   github_issue: null
   item_type: task

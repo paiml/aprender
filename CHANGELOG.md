@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.59.0] - 2026-07-04
+
+The **Pillar-1 (scikit-learn) breadth + provable-parity** release. Three sklearn
+capability gaps are closed and each is locked behind a per-PR **falsifiable
+sklearn-parity gate**, broadening the provable-correctness surface from single
+classifiers to metrics, kernel methods, and preprocessing pipelines. The
+cross-silicon CUDA falsifier lane gains an opt-in path toward becoming a blocking
+training-path gate, and the roadmap backlog is reconciled.
+
+### Added
+
+- **`roc_curve` + `precision_recall_curve`** (`aprender::metrics`, PMAT-730) — the
+  array-returning ROC/PR curves apr was missing (it had `roc_auc_score`/`log_loss`/
+  `average_precision_score`). Byte-match scikit-learn 1.9.0: `roc_curve` implements
+  the default `drop_intermediate=True` with the `+inf` leading threshold (sklearn
+  ≥1.3); `precision_recall_curve` emits the terminal `(precision=1, recall=0)`
+  sentinel (`len(P)==len(R)==len(thr)+1`).
+- **Polynomial kernel + multi-class SVC** (`aprender::classification`, PMAT-735) — a
+  `Kernel` enum adds `SVC(kernel='poly')` `(γ⟨a,b⟩+coef0)^degree` to `SVCRbf` (the RBF
+  path is byte-identical, so the `svc-rbf-v1` parity contract is unchanged), and
+  `MultiClassSVC` provides libsvm/sklearn's **One-vs-One** reduction so apr can now
+  classify 3+ class datasets (e.g. Iris).
+
+### Beats (new per-PR blocking sklearn-parity gates)
+
+- `beat_sklearn_metrics_parity` — the full probabilistic-metric surface (roc_auc,
+  log_loss, avg_precision, roc_curve, pr_curve) matches sklearn 1.9.0 within 1e-4.
+  Mutation-verified (PR-sentinel corruption → RED).
+- `beat_sklearn_svc_accuracy` — `MultiClassSVC(rbf, C=10)` **ties sklearn exactly**
+  on the i%3 Iris split (0.9800) and beats it at C∈{50,100}; poly deg-2 reaches 0.96.
+  Mutation-verified (vote inversion → RED).
+- `beat_sklearn_pipeline_encoder` — apr `Pipeline(OneHotEncoder → LogisticRegression)`
+  matches sklearn `make_pipeline` (1.0000) on a categorical dataset, with byte-exact
+  OneHotEncoder transform parity. Mutation-verified (OHE index-drop → RED).
+
+### CI
+
+- **Closed a gates-or-theater hole**: `beat_sklearn_gaussiannb_accuracy` (#2267) was
+  never wired into the `ci / gate` beat list (integration tests aren't run by the
+  `--lib`-only `workspace-test`), so it wasn't actually enforced. Now wired, alongside
+  the three new P1 beats.
+- **CUDA nightly opt-in PR trigger** — `cuda-nightly.yml` gains a `cuda-check`
+  label trigger so a maintainer can run the cross-silicon GPU QLoRA falsifiers on a
+  training-path PR on demand, building the track record toward a required gate —
+  without auto-firing on regular PRs.
+
+### Changed
+
+- **Roadmap reconciliation** — 43 stale `inprogress` items (pre-2026-06-12-pivot
+  APR-BOOK / CRUX epics) reclassified to `planned`; session-completed PMAT-730/733/735
+  marked completed; `SVC-SMO-WSS-001` follow-up recorded (upgrade the SVCRbf SMO to
+  libsvm 2nd-order working-set selection so multi-class SVC reaches parity at the
+  default `C=1`, not just `C=10`).
+
 ## [0.58.0] - 2026-07-03
 
 The release where **GPU QLoRA fine-tuning becomes honest and enforced.** v0.57 made
