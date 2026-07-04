@@ -14,9 +14,14 @@ name: CUDA Nightly (GPU QLoRA falsifiers)
 #      work, each leg checks its GPU; if a training (or any) job is already
 #      using it, the leg skips for the night (green no-op) so it never contends
 #      with overnight training. A manual dispatch can force-override.
-#   3. NEVER ON PULL REQUESTS. Triggers are schedule + workflow_dispatch ONLY —
-#      there is no `pull_request`/`push` trigger, so it cannot fire on, or gate,
-#      a PR. It only runs on the nightly schedule or when explicitly dispatched.
+#   3. NEVER ON *REGULAR* PULL REQUESTS — opt-in only. There is no `push` trigger
+#      and no unconditional `pull_request` trigger, so an ordinary PR never fires
+#      this lane. The ONLY PR path is explicit targeting: a maintainer adds the
+#      `cuda-check` label to a training-path PR, and the job gate below runs the
+#      falsifiers against that PR's head exactly once (any other label is a
+#      green no-op). This lets us build the green track record needed to later
+#      promote the lane to a required gate on training-path PRs, without
+#      auto-firing on every PR. It is NOT a required check — labeling is manual.
 #
 # CROSS-SILICON MATRIX (same suite on two self-hosted CUDA runners):
 #   - ada-4090      : lambda-vector, RTX 4090, sm_89,  x86-64, CUDA 12.8
@@ -44,6 +49,12 @@ on:
         description: "Run even if the GPU is busy with training (bypass the yield)"
         required: false
         default: "false"
+  # OPT-IN PR path: fires only when a label is added, and the job gate below
+  # runs ONLY for the `cuda-check` label. A regular PR (no label / any other
+  # label) is a green no-op — this never auto-fires on PRs. Yield-to-training
+  # still applies, so a labeled run defers if the GPU is busy.
+  pull_request:
+    types: [labeled]
 
 permissions:
   contents: read
@@ -54,7 +65,11 @@ concurrency:
 
 jobs:
   falsifiers:
-    if: ${{ vars.CUDA_RUNNER_READY == 'true' }}
+    # Run on schedule/manual-dispatch as before; on a PR run ONLY when the
+    # triggering label is exactly `cuda-check` (explicit opt-in targeting).
+    if: >-
+      ${{ vars.CUDA_RUNNER_READY == 'true' &&
+      (github.event_name != 'pull_request' || github.event.label.name == 'cuda-check') }}
     strategy:
       fail-fast: false
       matrix:
