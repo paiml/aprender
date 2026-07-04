@@ -1,0 +1,49 @@
+contract: apr-sklearn-pipeline-encoder-beat
+metadata:
+  kind: beat-benchmark
+  version: "1.0.0"
+  description: >
+    Pillar-1 (scikit-learn) CORRECTNESS beat: apr's sklearn-style Pipeline composes
+    a preprocessing ENCODER with an estimator and matches scikit-learn's
+    make_pipeline on the same categorical data. apr already ships OneHotEncoder /
+    OrdinalEncoder (both impl Transformer) and a Pipeline, but nothing GATED that
+    the encoder→estimator composition works end-to-end and agrees with sklearn.
+    This closes PMAT-733 with two falsifiable checks: (1) apr OneHotEncoder's dense
+    transform is BYTE-IDENTICAL to sklearn OneHotEncoder(handle_unknown='ignore')
+    on a pinned categorical fixture; (2) apr Pipeline(OneHotEncoder ->
+    LogisticRegression) reaches >= beat_threshold test accuracy on a deterministic
+    categorical dataset where sklearn make_pipeline(OneHotEncoder, LogisticRegression)
+    scores 1.0000. Deterministic, host-independent → per-PR BLOCKING gate. Extends
+    the P1 provable-correctness surface from single estimators to the
+    preprocessing-Pipeline composition. Pinned 2026-07-04 via `uv run --with
+    scikit-learn` (sklearn 1.9.0).
+  references:
+  - "crates/aprender-core/tests/beat_sklearn_pipeline_encoder.rs (the gate)"
+  - "crates/aprender-core/src/pipeline.rs (Pipeline)"
+  - "crates/aprender-core/src/preprocessing/one_hot_encoder.rs (OneHotEncoder)"
+version: 1
+status: enforced
+date: 2026-07-04
+
+beat:
+  pillar: 1
+  incumbent: "scikit-learn 1.9.0 make_pipeline(OneHotEncoder(handle_unknown='ignore'), LogisticRegression)"
+  incumbent_pinned: "2026-07-04 — sklearn 1.9.0 pipeline test accuracy on the deterministic categorical dataset"
+  canonical_task: >
+    Deterministic categorical dataset: N=108 rows, 3 categorical features with
+    f0=i%3, f1=(i//3)%3, f2=(i//9)%3, target=1 iff (f0==2 or f1==0). Split i%4==0 ->
+    test (n_train=81, n_test=27). (1) apr OneHotEncoder transform on a 4-row fixture
+    must byte-match sklearn's dense OneHotEncoder(handle_unknown='ignore') output
+    (width 9). (2) apr Pipeline(OneHotEncoder -> LogisticRegression) test accuracy
+    must be >= beat_threshold; sklearn make_pipeline scores 1.0000. Metric: pipeline
+    test-set classification accuracy (with an exact-transform-parity precondition).
+  metric: pipeline_encoder_test_accuracy
+  direction: higher_is_better
+  baseline_value: 1.0000      # sklearn make_pipeline(OneHotEncoder, LogisticRegression)
+  baseline_floor: 1.0000      # deterministic — single value
+  beat_threshold: 0.9000      # apr must reach >= 0.90 (sklearn 1.0 minus a 10pp margin
+                              # for LogReg-solver differences); the exact-transform
+                              # check has NO margin (byte-identical to sklearn)
+  baseline_sourced_date: "2026-07-04"
+  approved_compute: CPU
+  ci_gate_name: "beat_sklearn_pipeline_encoder"
