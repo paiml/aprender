@@ -123,8 +123,8 @@ fn main() {
     let ctx = CudaContext::new(0).expect("ctx"); let stream = ctx.default_stream();
     let data = make_data(m, k);
     let x_host:Vec<f32>=(0..k).map(|i|((i%11)as f32)*0.1-0.5).collect();
-    let d_dev=DeviceBuffer::from_host(&stream,&data).unwrap();
-    let x_dev=DeviceBuffer::from_host(&stream,&x_host).unwrap();
+    let d_dev=DeviceBuffer::from_host(&stream,&data).expect("upload Q4K weight data to device");
+    let x_dev=DeviceBuffer::from_host(&stream,&x_host).expect("upload x vector to device");
     let module=kernels::load(&ctx).expect("load");
     let total=(m*T) as u32;
 
@@ -134,12 +134,12 @@ fn main() {
     for row in 0..m { let mut acc=0.0f32; for j in 0..k {acc+=dequant_elem(&data,row*k+j)*x_host[j];} cpu_ref[row]=acc; }
 
     // ---- Run slice-ABI reference kernel ----
-    let y_slice_dev=DeviceBuffer::<f32>::zeroed(&stream,m).unwrap();
+    let y_slice_dev=DeviceBuffer::<f32>::zeroed(&stream,m).expect("allocate slice-ABI y buffer");
     module.q4k_matvec_atomic(&stream,LaunchConfig::for_num_elems(total),&d_dev,&x_dev,&y_slice_dev).expect("launch slice");
-    let y_slice=y_slice_dev.to_host_vec(&stream).unwrap();
+    let y_slice=y_slice_dev.to_host_vec(&stream).expect("copy slice-ABI y result to host");
 
     // ---- Run NEW raw-ptr kernel ----
-    let y_raw_dev=DeviceBuffer::<f32>::zeroed(&stream,m).unwrap();
+    let y_raw_dev=DeviceBuffer::<f32>::zeroed(&stream,m).expect("allocate raw-ptr y buffer");
     module.q4k_matvec(
         &stream,
         LaunchConfig::for_num_elems(total),
@@ -150,7 +150,7 @@ fn main() {
         k as u32,
         T as u32,
     ).expect("launch raw");
-    let y_raw=y_raw_dev.to_host_vec(&stream).unwrap();
+    let y_raw=y_raw_dev.to_host_vec(&stream).expect("copy raw-ptr y result to host");
 
     // ---- Bit-exact: raw vs slice (must be IDENTICAL bit-for-bit) ----
     let mut bitexact_fail = 0usize;
@@ -178,11 +178,11 @@ fn main() {
 
     // ---- Timing: raw-ptr kernel ----
     for _ in 0..20 {
-        let yz=DeviceBuffer::<f32>::zeroed(&stream,m).unwrap();
+        let yz=DeviceBuffer::<f32>::zeroed(&stream,m).expect("allocate warmup y buffer");
         module.q4k_matvec(&stream,LaunchConfig::for_num_elems(total),
             d_dev.cu_deviceptr() as *const u8, x_dev.cu_deviceptr() as *const f32,
             yz.cu_deviceptr() as *mut f32, m as u32, k as u32, T as u32).expect("w");
-        let _=yz.to_host_vec(&stream).unwrap();
+        let _=yz.to_host_vec(&stream).expect("copy warmup y to host");
     }
     let iters=200u32; let reps=5;
     let mut times=Vec::new();
@@ -193,10 +193,10 @@ fn main() {
                 d_dev.cu_deviceptr() as *const u8, x_dev.cu_deviceptr() as *const f32,
                 y_raw_dev.cu_deviceptr() as *mut f32, m as u32, k as u32, T as u32).expect("t");
         }
-        let _=y_raw_dev.to_host_vec(&stream).unwrap();
+        let _=y_raw_dev.to_host_vec(&stream).expect("copy timed raw-ptr y result to host");
         times.push(t0.elapsed().as_secs_f64()*1e6/(iters as f64));
     }
-    times.sort_by(|a,b|a.partial_cmp(b).unwrap());
+    times.sort_by(|a,b|a.partial_cmp(b).expect("launch times are finite (no NaN)"));
     let med=times[times.len()/2];
     println!("OXIDE-RAWPTR M={} K={} T={} median={:.2} us/launch (reps={:?})", m, k, T, med,
         times.iter().map(|t|(t*100.0).round()/100.0).collect::<Vec<_>>());
