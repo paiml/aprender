@@ -48,14 +48,64 @@
 use crate::error::Result;
 use crate::primitives::{Matrix, Vector};
 
-/// RBF-kernel Support Vector Classifier (binary).
+/// Kernel function for [`SVCRbf`] / [`MultiClassSVC`], mirroring scikit-learn's
+/// `SVC(kernel=...)`. Both variants are `K(a, b)` between two feature rows.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Kernel {
+    /// Gaussian Radial Basis Function: `exp(−γ ‖a − b‖²)` — sklearn `kernel='rbf'`.
+    Rbf {
+        /// Kernel coefficient γ.
+        gamma: f32,
+    },
+    /// Polynomial: `(γ ⟨a, b⟩ + coef0)^degree` — sklearn `kernel='poly'`.
+    Poly {
+        /// Scale on the inner product γ.
+        gamma: f32,
+        /// Independent term `coef0` (`r` in libsvm).
+        coef0: f32,
+        /// Polynomial degree `d`.
+        degree: u32,
+    },
+}
+
+impl Kernel {
+    /// Evaluates `K(a, b)` between two equal-length feature rows.
+    #[must_use]
+    pub fn eval(self, a: &[f32], b: &[f32]) -> f32 {
+        match self {
+            // RBF path is byte-identical to the original inline implementation so
+            // the existing `svc-rbf-v1` sklearn-parity contract still holds.
+            Kernel::Rbf { gamma } => {
+                let mut sq = 0.0_f32;
+                for (&ai, &bi) in a.iter().zip(b.iter()) {
+                    let d = ai - bi;
+                    sq += d * d;
+                }
+                (-gamma * sq).exp()
+            }
+            Kernel::Poly {
+                gamma,
+                coef0,
+                degree,
+            } => {
+                let mut dot = 0.0_f32;
+                for (&ai, &bi) in a.iter().zip(b.iter()) {
+                    dot += ai * bi;
+                }
+                (gamma * dot + coef0).powi(degree as i32)
+            }
+        }
+    }
+}
+
+/// Kernel Support Vector Classifier (binary), RBF by default.
 ///
-/// Solves the dual SVM problem with a Gaussian kernel using SMO. Hyperparameters
-/// `gamma` and `c` mirror scikit-learn's `SVC(kernel='rbf', gamma=..., C=...)`.
+/// Solves the dual SVM problem with a nonlinear [`Kernel`] using SMO.
+/// Hyperparameters mirror scikit-learn's `SVC(kernel=..., gamma=..., C=...)`.
 #[derive(Debug, Clone)]
 pub struct SVCRbf {
-    /// Kernel coefficient γ for `exp(−γ ||x − z||²)`. Default: 0.5.
-    gamma: f32,
+    /// The kernel function. Default: `Rbf { gamma: 0.5 }`.
+    kernel: Kernel,
     /// Regularization parameter C (upper bound on dual coefficients). Default: 1.0.
     c: f32,
     /// KKT tolerance for SMO. Default: 1e-3 (libsvm default).
@@ -79,7 +129,7 @@ impl SVCRbf {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            gamma: 0.5,
+            kernel: Kernel::Rbf { gamma: 0.5 },
             c: 1.0,
             tol: 1e-3,
             max_iter: 1000,
@@ -90,11 +140,36 @@ impl SVCRbf {
         }
     }
 
-    /// Sets the RBF kernel coefficient γ.
+    /// Sets the RBF kernel coefficient γ (selects the RBF kernel).
     #[must_use]
     pub fn with_gamma(mut self, gamma: f32) -> Self {
-        self.gamma = gamma;
+        self.kernel = Kernel::Rbf { gamma };
         self
+    }
+
+    /// Sets the kernel function (RBF or polynomial).
+    #[must_use]
+    pub fn with_kernel(mut self, kernel: Kernel) -> Self {
+        self.kernel = kernel;
+        self
+    }
+
+    /// Selects the polynomial kernel `(γ⟨a,b⟩ + coef0)^degree` (sklearn
+    /// `kernel='poly'`).
+    #[must_use]
+    pub fn with_poly(mut self, gamma: f32, coef0: f32, degree: u32) -> Self {
+        self.kernel = Kernel::Poly {
+            gamma,
+            coef0,
+            degree,
+        };
+        self
+    }
+
+    /// Returns the kernel this SVC is configured with.
+    #[must_use]
+    pub fn kernel(&self) -> Kernel {
+        self.kernel
     }
 
     /// Sets the regularization parameter C.
@@ -116,16 +191,6 @@ impl SVCRbf {
     pub fn with_max_iter(mut self, max_iter: usize) -> Self {
         self.max_iter = max_iter;
         self
-    }
-
-    /// RBF kernel `K(a, b) = exp(−γ ||a − b||²)` between two rows.
-    fn rbf(gamma: f32, a: &[f32], b: &[f32]) -> f32 {
-        let mut sq = 0.0_f32;
-        for (&ai, &bi) in a.iter().zip(b.iter()) {
-            let d = ai - bi;
-            sq += d * d;
-        }
-        (-gamma * sq).exp()
     }
 
     /// Fits the SVC to binary training data via SMO.
@@ -172,7 +237,7 @@ impl SVCRbf {
         let mut kernel = vec![0.0_f32; n_samples * n_samples];
         for i in 0..n_samples {
             for j in i..n_samples {
-                let k = Self::rbf(self.gamma, &rows[i], &rows[j]);
+                let k = self.kernel.eval(&rows[i], &rows[j]);
                 kernel[i * n_samples + j] = k;
                 kernel[j * n_samples + i] = k;
             }
@@ -351,16 +416,14 @@ impl SVCRbf {
 
     /// Computes the raw decision-function value `f(x)` for one feature row.
     fn decision_value(&self, sv: &Matrix<f32>, coef: &[f32], row: &[f32]) -> f32 {
-        let (n_sv, _) = sv.shape();
-        let n_features = row.len();
+        let (n_sv, n_features) = sv.shape();
         let mut s = self.intercept;
+        let mut sv_row = vec![0.0_f32; n_features];
         for i in 0..n_sv {
-            let mut sq = 0.0_f32;
-            for j in 0..n_features {
-                let d = sv.get(i, j) - row[j];
-                sq += d * d;
+            for (j, slot) in sv_row.iter_mut().enumerate() {
+                *slot = sv.get(i, j);
             }
-            s += coef[i] * (-self.gamma * sq).exp();
+            s += coef[i] * self.kernel.eval(&sv_row, row);
         }
         s
     }
@@ -428,6 +491,229 @@ impl SVCRbf {
 }
 
 impl Default for SVCRbf {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Multi-class kernel Support Vector Classifier via **One-vs-One** (OvO).
+///
+/// The binary [`SVCRbf`] handles exactly two classes; real datasets (e.g. the
+/// 3-class Iris) need a multi-class strategy. This wrapper uses the SAME reduction
+/// as libsvm / scikit-learn's `SVC`: it fits one binary classifier per unordered
+/// pair of classes (`C(k, 2)` models), each trained only on that pair's samples,
+/// then predicts by majority vote (ties broken by the larger summed decision-
+/// function magnitude, then the lower class index). Pairwise sub-problems are
+/// class-balanced, which conditions the SMO solver far better than one-vs-rest and
+/// is why this matches sklearn's accuracy. Works with either [`Kernel`] variant
+/// (RBF or polynomial).
+///
+/// # Example
+///
+/// ```
+/// use aprender::classification::MultiClassSVC;
+/// use aprender::primitives::Matrix;
+///
+/// // 3 well-separated blobs in 1-D → 3 classes.
+/// let x = Matrix::from_vec(6, 1, vec![0.0, 0.2, 5.0, 5.2, 10.0, 10.2]).expect("6x1");
+/// let y = vec![0_usize, 0, 1, 1, 2, 2];
+/// let mut svc = MultiClassSVC::new().with_gamma(0.5);
+/// svc.fit(&x, &y).expect("fit");
+/// assert_eq!(svc.predict(&x).expect("predict"), y);
+/// ```
+#[derive(Debug, Clone)]
+pub struct MultiClassSVC {
+    kernel: Kernel,
+    c: f32,
+    tol: f32,
+    max_iter: usize,
+    /// Sorted distinct class labels.
+    classes: Vec<usize>,
+    /// One binary SVC per unordered class pair `(a, b)` with `a < b` (both drawn
+    /// from `classes`), trained on that pair's samples only.
+    models: Vec<(usize, usize, SVCRbf)>,
+}
+
+impl MultiClassSVC {
+    /// Creates a multi-class SVC with default hyperparameters (RBF, `gamma = 0.5`,
+    /// `c = 1.0`).
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            kernel: Kernel::Rbf { gamma: 0.5 },
+            c: 1.0,
+            tol: 1e-3,
+            max_iter: 1000,
+            classes: Vec::new(),
+            models: Vec::new(),
+        }
+    }
+
+    /// Sets the RBF kernel coefficient γ (selects the RBF kernel).
+    #[must_use]
+    pub fn with_gamma(mut self, gamma: f32) -> Self {
+        self.kernel = Kernel::Rbf { gamma };
+        self
+    }
+
+    /// Sets the kernel function (RBF or polynomial).
+    #[must_use]
+    pub fn with_kernel(mut self, kernel: Kernel) -> Self {
+        self.kernel = kernel;
+        self
+    }
+
+    /// Selects the polynomial kernel `(γ⟨a,b⟩ + coef0)^degree`.
+    #[must_use]
+    pub fn with_poly(mut self, gamma: f32, coef0: f32, degree: u32) -> Self {
+        self.kernel = Kernel::Poly {
+            gamma,
+            coef0,
+            degree,
+        };
+        self
+    }
+
+    /// Sets the regularization parameter C.
+    #[must_use]
+    pub fn with_c(mut self, c: f32) -> Self {
+        self.c = c;
+        self
+    }
+
+    /// Sets the maximum number of SMO passes for each binary sub-model.
+    #[must_use]
+    pub fn with_max_iter(mut self, max_iter: usize) -> Self {
+        self.max_iter = max_iter;
+        self
+    }
+
+    /// The distinct class labels seen during `fit`, sorted ascending.
+    #[must_use]
+    pub fn classes(&self) -> &[usize] {
+        &self.classes
+    }
+
+    /// Fits one binary SVC per unordered class pair (One-vs-One).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if X/y lengths mismatch, the data is empty, there are
+    /// fewer than two classes, or any binary sub-fit fails.
+    pub fn fit(&mut self, x: &Matrix<f32>, y: &[usize]) -> Result<()> {
+        let (n_samples, n_features) = x.shape();
+        if n_samples == 0 {
+            return Err("Cannot fit with zero samples".into());
+        }
+        if n_samples != y.len() {
+            return Err("Number of samples in X and y must match".into());
+        }
+        let mut classes: Vec<usize> = y.to_vec();
+        classes.sort_unstable();
+        classes.dedup();
+        if classes.len() < 2 {
+            return Err("MultiClassSVC requires at least 2 classes".into());
+        }
+
+        let mut models = Vec::with_capacity(classes.len() * (classes.len() - 1) / 2);
+        for a_pos in 0..classes.len() {
+            for b_pos in (a_pos + 1)..classes.len() {
+                let (a, b) = (classes[a_pos], classes[b_pos]);
+                // Gather only the samples belonging to this pair of classes.
+                let (mut sub_x, mut sub_y) = (Vec::new(), Vec::new());
+                for i in 0..n_samples {
+                    if y[i] == a || y[i] == b {
+                        for j in 0..n_features {
+                            sub_x.push(x.get(i, j));
+                        }
+                        sub_y.push(y[i]);
+                    }
+                }
+                let n_sub = sub_y.len();
+                let sub_x = Matrix::from_vec(n_sub, n_features, sub_x)?;
+                let mut model = SVCRbf::new()
+                    .with_kernel(self.kernel)
+                    .with_c(self.c)
+                    .with_tolerance(self.tol)
+                    .with_max_iter(self.max_iter);
+                model.fit(&sub_x, &sub_y)?;
+                models.push((a, b, model));
+            }
+        }
+        self.classes = classes;
+        self.models = models;
+        Ok(())
+    }
+
+    /// Predicts class labels by majority vote over the pairwise classifiers.
+    ///
+    /// Ties are broken by the larger summed decision-function magnitude
+    /// (confidence), then by the lower class index — deterministic.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the model is not fitted or feature dims mismatch.
+    pub fn predict(&self, x: &Matrix<f32>) -> Result<Vec<usize>> {
+        if self.models.is_empty() {
+            return Err("Model not fitted".into());
+        }
+        let (n_samples, _) = x.shape();
+        let n_classes = self.classes.len();
+        // Per pairwise model: predicted label per sample + signed margin.
+        let mut pair_preds: Vec<(usize, usize, Vec<usize>, Vector<f32>)> =
+            Vec::with_capacity(self.models.len());
+        for (a, b, model) in &self.models {
+            let preds = model.predict(x)?;
+            let margins = model.decision_function(x)?;
+            pair_preds.push((*a, *b, preds, margins));
+        }
+
+        let class_index: std::collections::HashMap<usize, usize> = self
+            .classes
+            .iter()
+            .enumerate()
+            .map(|(idx, &c)| (c, idx))
+            .collect();
+
+        let mut out = Vec::with_capacity(n_samples);
+        for i in 0..n_samples {
+            let mut votes = vec![0u32; n_classes];
+            let mut confidence = vec![0.0f32; n_classes];
+            for (_, _, preds, margins) in &pair_preds {
+                let winner = preds[i];
+                votes[class_index[&winner]] += 1;
+                // Attribute the |margin| to whichever class the sub-model chose.
+                confidence[class_index[&winner]] += margins.as_slice()[i].abs();
+            }
+            let mut best = 0usize;
+            for k in 1..n_classes {
+                let better = votes[k] > votes[best]
+                    || (votes[k] == votes[best] && confidence[k] > confidence[best]);
+                if better {
+                    best = k;
+                }
+            }
+            out.push(self.classes[best]);
+        }
+        Ok(out)
+    }
+
+    /// Accuracy on test data (fraction correctly classified).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the model is not fitted or feature dims mismatch.
+    pub fn score(&self, x: &Matrix<f32>, y: &[usize]) -> Result<f32> {
+        let preds = self.predict(x)?;
+        if y.is_empty() {
+            return Ok(0.0);
+        }
+        let correct = preds.iter().zip(y.iter()).filter(|(p, t)| p == t).count();
+        Ok(correct as f32 / y.len() as f32)
+    }
+}
+
+impl Default for MultiClassSVC {
     fn default() -> Self {
         Self::new()
     }
