@@ -13,6 +13,7 @@ import ProvableContracts.Defs.Cholesky
 import ProvableContracts.Defs.Conv1D
 import ProvableContracts.Defs.CrossEntropy
 import ProvableContracts.Defs.Elementwise
+import ProvableContracts.Defs.Embedding
 import ProvableContracts.Defs.FFT
 import ProvableContracts.Defs.GEMV
 import ProvableContracts.Defs.Gelu
@@ -45,6 +46,11 @@ import ProvableContracts.Theorems.CrossEntropy.SoftmaxBackward
 import ProvableContracts.Theorems.Elementwise.AddCommutative
 import ProvableContracts.Theorems.Elementwise.MulScalarAssoc
 import ProvableContracts.Theorems.Elementwise.ReLUNonNeg
+import ProvableContracts.Theorems.Embedding.Bounds
+import ProvableContracts.Theorems.Embedding.Determinism
+import ProvableContracts.Theorems.Embedding.Finite
+import ProvableContracts.Theorems.Embedding.Rows
+import ProvableContracts.Theorems.Embedding.Shape
 import ProvableContracts.Theorems.FFT.Parseval
 import ProvableContracts.Theorems.GEMV.Correctness
 import ProvableContracts.Theorems.Gelu.GeluMono
