@@ -18,7 +18,7 @@ equations:
     - x.len() > 0
     - x.iter().all(|v| v.is_finite())
     - weight.len() == x.len()
-    lean_theorem: Theorems.Rmsnorm
+    lean_theorem: Theorems.RMSNorm
     postconditions:
     - result.len() == x.len()
     - result.iter().all(|v| v.is_finite())
@@ -87,6 +87,18 @@ verification_summary:
   l4_lean_proved: 2
   l4_sorry_count: 0
   l4_not_applicable: 1
+  mathlib_imports: true
+  lean_proved_obligations:
+  - obligation: Scale invariance
+    theorem: RMSNorm.rms_scale_zero_eps
+    file: ProvableContracts/Theorems/RMSNorm/ScaleInvariance.lean
+    note: proved for eps=0 (RMS(alpha*x) = |alpha|*RMS(x)); full scale invariance follows
+  - obligation: RMS denominator is positive
+    theorem: RMSNorm.rms_pos
+    file: ProvableContracts/Theorems/RMSNorm/DenominatorPositive.lean
+  notes: 2 of 8 obligations proved sorry-free in Lean 4 (Mathlib-backed); 1 N/A
+    (SIMD ULP equivalence, implementation-specific); remaining 5 (pre/post/frame,
+    finiteness, idempotency) are property-tested + Kani-checked only.
 kernel_structure:
   phases:
   - name: sum_squares

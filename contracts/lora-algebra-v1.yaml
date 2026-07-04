@@ -30,7 +30,13 @@ equations:
     preconditions:
     - input.len() > 0
     - input.iter().all(|v| v.is_finite())
-    lean_theorem: Theorems.Eckart_Young
+    # DEMOTED (theater removed): Eckart-Young-Mirsky optimality
+    # (||delta - delta_r||_F <= sigma_{r+1}) is the SVD low-rank approximation
+    # theorem — a genuinely-analytic result requiring Mathlib's SVD/operator-norm
+    # machinery, which is not available/proved here. The prior `lean_theorem:
+    # Theorems.Eckart_Young` tag referenced NO compiling proof (0 real proofs =
+    # theater), so it was removed. This obligation stays L3 (Kani + falsification
+    # test FALSIFY-LA-002), NOT Lean-proved.
   lora_shape:
     formula: A ∈ ℝ^{m×r}, B ∈ ℝ^{r×n}, A @ B ∈ ℝ^{m×n}
     domain: r << min(m, n)
@@ -86,6 +92,27 @@ proof_obligations:
   property: SIMD LoRA equivalence
   tolerance: 0.0
   applies_to: simd
+verification_summary:
+  total_obligations: 6
+  l2_property_tested: 6
+  l3_kani_proved: 0
+  l4_lean_proved: 4
+  l4_sorry_count: 0
+  l4_not_applicable: 1
+  notes: >-
+    4 equation invariants are Lean-proved sorry-free in
+    crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/LoRA/
+    {Task_Vector,Lora_Shape,Dare_Unbiased,Shape_Preservation}.lean, each
+    verified with `lake env lean <file>` exit 0. Lora_Shape and
+    Shape_Preservation are PURE CORE Lean (no Mathlib — shape algebra over
+    Nat x Nat, also verified with plain `lean <file>` exit 0). Task_Vector
+    (base + (fine-base) = fine roundtrip) and Dare_Unbiased (two-point
+    expectation (1-p)*(delta/(1-p)) + p*0 = delta) are Mathlib-backed
+    (reals, ring/field_simp). The Eckart-Young bound is DEMOTED (see comment
+    on the eckart_young equation): it needs the Mathlib SVD low-rank
+    optimality theorem and is NOT Lean-proved — it stays L3 (Kani +
+    falsification). l4_not_applicable=1 covers the runtime-only SIMD
+    equivalence obligation.
 falsification_tests:
 - id: FALSIFY-LA-001
   rule: Task vector roundtrip

@@ -18,7 +18,7 @@ equations:
     preconditions:
     - x.len() > 0
     - x.iter().all(|v| v.is_finite())
-    lean_theorem: Theorems.Layernorm
+    lean_theorem: Theorems.LayerNorm
     postconditions:
     - result.len() == x.len()
     - result.iter().all(|v| v.is_finite())
@@ -38,7 +38,6 @@ equations:
     preconditions:
     - input.iter().all(|v| v.is_finite())
     - input.len() > 0
-    lean_theorem: Theorems.Statistics
 proof_obligations:
 - type: invariant
   property: Centering
@@ -95,6 +94,17 @@ verification_summary:
   l4_lean_proved: 2
   l4_sorry_count: 0
   l4_not_applicable: 1
+  mathlib_imports: true
+  lean_proved_obligations:
+  - obligation: Denominator strictly positive
+    theorem: LayerNorm.ln_denom_pos
+    file: ProvableContracts/Theorems/LayerNorm/DenominatorPositive.lean
+  - obligation: Shift invariance
+    theorem: LayerNorm.variance_shift
+    file: ProvableContracts/Theorems/LayerNorm/ShiftInvariance.lean
+  notes: 2 of 6 obligations proved sorry-free in Lean 4 (Mathlib-backed); 1 N/A
+    (SIMD ULP equivalence, implementation-specific); remaining 3 (centering,
+    standardization, idempotency) are property-tested + Kani-checked only.
 kernel_structure:
   phases:
   - name: compute_mean

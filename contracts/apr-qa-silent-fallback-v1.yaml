@@ -110,6 +110,23 @@ falsification_tests:
     apr validate /tmp/corrupt.gguf; test $? -ne 0
   if_fails: "corrupted metadata silently accepted"
 
+proof_obligations:
+- type: soundness
+  property: "A 50%-truncated GGUF never passes apr validate (non-zero exit) (F-SILENT-001)"
+  formal: "truncate(M, 0.5) implies exit_code(apr_validate(M)) != 0"
+- type: invariant
+  property: "A benchmark reporting 0.0 tok/s exits non-zero rather than reporting success (F-SILENT-002)"
+  formal: "tok_per_sec(apr_bench(M)) == 0.0 implies exit_code != 0"
+- type: soundness
+  property: "A model with an unknown architecture fails explicitly and never silently maps to the llama default (F-SILENT-003)"
+  formal: "unknown_arch(M) implies (exit_code(apr_run(M)) != 0 and stderr contains 'unsupported'|'unknown')"
+- type: soundness
+  property: "A model with no tokenizer.json either fails/warns or uses the embedded GGUF tokenizer, never silently garbles (F-SILENT-004)"
+  formal: "no_tokenizer(M) implies stderr(apr_run(M)) matches 'tokenizer'|'embedded'|'GGUF'"
+- type: invariant
+  property: "Corrupted metadata produces a non-zero exit, not silent acceptance (F-SILENT-005)"
+  formal: "corrupt_metadata(M) implies exit_code(apr_validate(M)) != 0"
+
 verification_summary:
   total_obligations: 5
   proven: 0
