@@ -49,6 +49,8 @@ import ProvableContracts.Theorems.Elementwise.MulScalarAssoc
 -- Quantization
 import ProvableContracts.Defs.Quantization
 import ProvableContracts.Theorems.Quantization.RoundtripBound
+-- FP8 (E4M3 / E5M2) interchange
+import ProvableContracts.Theorems.FP8.Interchange
 -- AdamW optimizer
 import ProvableContracts.Defs.AdamW
 import ProvableContracts.Theorems.AdamW.WeightDecay
