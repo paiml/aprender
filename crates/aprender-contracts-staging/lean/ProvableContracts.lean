@@ -26,6 +26,7 @@ import ProvableContracts.Defs.Softmax
 import ProvableContracts.Defs.Sparse
 import ProvableContracts.Defs.Transpose
 import ProvableContracts.Theorems.AdamW.WeightDecay
+import ProvableContracts.Theorems.Attention.ScaledDotProduct
 import ProvableContracts.Theorems.BLAS.SyrkSymmetric
 import ProvableContracts.Theorems.Cholesky.SPD
 import ProvableContracts.Theorems.CrossEntropy.LogSoftmaxBound
@@ -35,6 +36,7 @@ import ProvableContracts.Theorems.Elementwise.AddCommutative
 import ProvableContracts.Theorems.Elementwise.MulScalarAssoc
 import ProvableContracts.Theorems.Elementwise.ReLUNonNeg
 import ProvableContracts.Theorems.FFT.Parseval
+import ProvableContracts.Theorems.FP8.Interchange
 import ProvableContracts.Theorems.GEMV.Correctness
 import ProvableContracts.Theorems.Gelu.GeluZero
 import ProvableContracts.Theorems.LU.Existence

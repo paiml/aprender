@@ -1,19 +1,26 @@
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   created: "2026-04-13"
   author: PAIML Engineering
   registry: true
   references:
     - "HuggingFace tokenizers library"
     - "SentencePiece: A simple and language independent subword tokenizer (Kudo & Richardson, 2018)"
+    - "Sennrich et al. (2016) Neural Machine Translation of Rare Words with Subword Units (BPE)"
   description: |
     Tokenizer loading and encoding contract. Covers BPE, Unigram, and
     SentencePiece tokenizers loaded from HuggingFace tokenizer.json or
     GGUF embedded vocabularies.
 
+    v1.1.0 adds the analytic proof core: the encode→decode roundtrip on the
+    vocabulary (a map inverse), the vocab-id bound, encode-injectivity, and
+    BPE merge-order determinism are proved in Lean 4 (ProvableContracts.Tokenizer).
+    File-loading / UTF-8-edge / config-driven-special-token / GGUF-padding
+    obligations are runtime/empirical and marked l4_not_applicable.
+
 kind: AlgorithmContract
 name: tokenizer
-version: "1.0.0"
+version: "1.1.0"
 scope: "crates/aprender-core/src/text/ + crates/aprender-core/src/format/converter/tokenizer_loader.rs"
 
 description: |
@@ -26,6 +33,7 @@ equations:
     description: "Encode→decode preserves text (modulo whitespace normalization)"
     formula: "∀ text: decode(encode(text)) ≈ text (whitespace-normalized)"
     note: "BPE merges may normalize whitespace differently"
+    lean_theorem: Theorems.Tokenizer
 
   special_token_detection:
     description: "BOS/EOS tokens correctly identified from vocabulary"
@@ -36,6 +44,103 @@ equations:
     description: "Reported vocab_size matches actual vocabulary length"
     formula: "tokenizer.vocab_size() == tokenizer.vocab().len()"
     note: "GGUF may report different vocab_size than token count due to padding"
+
+# ── Analytic proof core ─────────────────────────────────────────────
+# Modelled in Lean as vocab : List α, encode t = vocab.idxOf t,
+# decode i = vocab[i]?. Proofs in
+# crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/Tokenizer.lean
+proof_obligations:
+  - type: invariant
+    property: "Encode→decode roundtrip on the vocabulary (map inverse)"
+    formal: "∀ t ∈ vocab: decode(encode(t)) = some t"
+    applies_to: all
+    lean:
+      theorem: Tokenizer.decode_encode
+      module: ProvableContracts.Tokenizer
+      status: proved
+      depends_on:
+        - List.getElem?_idxOf
+      mathlib_imports:
+        - Mathlib.Data.List.Basic
+        - Mathlib.Data.List.Nodup
+      notes: "Decoding the id of an in-vocab token recovers the token; the map-inverse core of the tokenizer."
+
+  - type: bound
+    property: "Vocab-id bound: every emitted id is a valid index"
+    formal: "∀ t ∈ vocab: encode(t) < vocab.length"
+    applies_to: all
+    lean:
+      theorem: Tokenizer.encode_lt_vocab_size
+      module: ProvableContracts.Tokenizer
+      status: proved
+      depends_on:
+        - List.idxOf_lt_length_of_mem
+      mathlib_imports:
+        - Mathlib.Data.List.Basic
+      notes: "Every id produced by encode for an in-vocab token lies in [0, vocab_size)."
+
+  - type: invariant
+    property: "Encode is injective on the vocabulary (ids are single-valued)"
+    formal: "∀ t₁ t₂ ∈ vocab: encode(t₁) = encode(t₂) ⟹ t₁ = t₂"
+    applies_to: all
+    lean:
+      theorem: Tokenizer.encode_injOn
+      module: ProvableContracts.Tokenizer
+      status: proved
+      depends_on:
+        - Tokenizer.decode_encode
+      mathlib_imports:
+        - Mathlib.Data.List.Basic
+      notes: "Distinct in-vocab tokens get distinct ids — what makes decode a genuine inverse."
+
+  - type: invariant
+    property: "BPE merge-order determinism: lowest-rank applicable merge is unique"
+    formal: "∀ s : Finset ℕ, r₁ r₂ ∈ s minimal ⟹ r₁ = r₂"
+    applies_to: all
+    lean:
+      theorem: Tokenizer.merge_rank_unique
+      module: ProvableContracts.Tokenizer
+      status: proved
+      depends_on:
+        - le_antisymm
+      mathlib_imports:
+        - Mathlib.Data.Finset.Lattice.Fold
+      notes: "One BPE step is deterministic: the minimum-rank applicable merge is uniquely determined (no dependence on iteration order/tie-break)."
+
+  # ── Runtime / empirical obligations (no algebraic core) ──────────
+  - type: precondition
+    property: "Vocabulary loading from tokenizer.json / GGUF metadata / SentencePiece .model"
+    formal: "load(path) yields a well-formed vocab"
+    applies_to: all
+    l4_not_applicable: true
+    na_reason: "File IO + JSON/GGUF/protobuf parsing of a real on-disk artifact — no algebraic identity to discharge; verified by loader unit tests (FALSIFY-TOK-001/003)."
+
+  - type: equivalence
+    property: "UTF-8 byte-boundary handling and whitespace normalization on real byte streams"
+    formal: "decode(encode(text)) ≈ text modulo whitespace normalization"
+    applies_to: all
+    l4_not_applicable: true
+    na_reason: "The '≈ modulo whitespace' relation is a runtime property of arbitrary UTF-8 byte streams / normalizer state, not a closed-form identity; the exact-inverse core is proved by Tokenizer.decode_encode, the byte-edge behaviour is empirical."
+
+  - type: postcondition
+    property: "Special-token (BOS/EOS/PAD) detection from config / added_tokens"
+    formal: "bos_id ∈ vocab ∧ eos_id ∈ vocab when defined in config"
+    applies_to: all
+    l4_not_applicable: true
+    na_reason: "Depends on the contents of a runtime JSON config (special_tokens_map / added_tokens); a data-driven parse, not an analytic statement."
+
+  - type: postcondition
+    property: "Reported vocab_size matches token count (GGUF padding tolerated)"
+    formal: "tokenizer.vocab_size() == tokenizer.vocab().len()"
+    applies_to: all
+    l4_not_applicable: true
+    na_reason: "GGUF may report a padded vocab_size differing from the token count; reconciling a reported file field against the actual count is an empirical cross-file check, not an algebraic identity."
+
+verification_summary:
+  total_obligations: 8
+  l4_lean_proved: 4
+  l4_sorry_count: 0
+  l4_not_applicable: 4
 
 falsification:
   - id: FALSIFY-TOK-001

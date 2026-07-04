@@ -275,20 +275,140 @@ kernel_structure:
     description: Verify benchmark data completeness for BLOCKED entries
 
 proof_obligations:
+# ── Registry / runtime obligations (GENUINELY-NOT-APPLICABLE to Lean) ──
+# These three are filesystem / runtime / benchmark predicates: they quantify
+# over the set of kernel source files on disk, over whether a call_site
+# file:line exists and dispatches, and over measured tok/s numbers. None has an
+# algebraic statement to prove — they are enforced by the `enforcement` scan +
+# `kani_harnesses` and are marked l4_not_applicable in verification_summary.
 - type: invariant
   property: Registry completeness — no orphaned kernels
   formal: for all K in fused_kernels, exists E in fusion_decisions where E.kernels.fused == K
   tolerance: 1e-6
   applies_to: all
+  l4_status: not_applicable
+  notes: >-
+    N/A for Lean: quantifies over kernel *source files on disk* in
+    trueno-gpu/src/kernels/. A filesystem-completeness scan, not an algebraic
+    identity. Enforced by enforcement.kernel_registry_complete + KANI-FUSION-001.
 - type: postcondition
   property: ACTIVE entry call site validity
   formal: for all E where E.status == ACTIVE, file_exists(E.call_site) and dispatches(E.kernels.fused)
   applies_to: all
+  l4_status: not_applicable
+  notes: >-
+    N/A for Lean: file_exists(call_site) and dispatches(...) are runtime /
+    build-graph predicates over real source paths, not provable in exact
+    arithmetic. Enforced by enforcement.active_must_be_called + KANI-FUSION-002.
 - type: precondition
   property: BLOCKED entries have complete benchmarks
   formal: for all E where E.status == BLOCKED, E.benchmark.unfused_tok_s != null and E.benchmark.fused_tok_s != null
   applies_to: all
+  l4_status: not_applicable
+  notes: >-
+    N/A for Lean: a data-completeness check over measured wall-clock tok/s
+    (empirical GPU benchmarks). No algebraic content. Enforced by
+    enforcement.blocked_must_benchmark + KANI-FUSION-003.
+# ── Fusion forward-equivalence obligations (ANALYTIC — proved in Lean) ──
+# The analytic CORE of kernel fusion: a fused kernel must compute EXACTLY the
+# same value as the unfused sequence it replaces (fusion is a launch-count /
+# memory-traffic optimization, never a semantic change). Proved sorry-free in
+# CORE Lean 4 (no Mathlib) over List Int, verified with the standalone `lean`.
+- type: equivalence
+  property: SwiGLU activation×multiply fusion — fused(x) == unfused(x)
+  formal: swigluFused f u v = hmul (vmap f u) v
+  applies_to: all
+  id: FUSION-FWD-001
+  lean:
+    theorem: Fusion.swiglu_fusion_correct
+    module: ProvableContracts.Fusion
+    status: proved
+    mathlib_imports: []
+    notes: >-
+      CORE-ONLY Lean (no Mathlib, no ProvableContracts imports). Proves the
+      zipWith/map fusion law: fusing activation f with the element-wise multiply
+      (single pass) equals mapping f then multiplying — for ANY f : Int → Int
+      (SiLU/SwiGLU is one instance). Covers FUSION-001 (FusedSwigluKernel) and
+      FUSION-007 (FusedGateUpKernel SwiGLU output). Structural induction, sorry-free.
+- type: equivalence
+  property: Multi-projection GEMV fusion — stacked GEMV == concatenated GEMVs
+  formal: matvec (A ++ B) x = matvec A x ++ matvec B x
+  applies_to: all
+  id: FUSION-FWD-002
+  lean:
+    theorem: Fusion.matvec_append
+    module: ProvableContracts.Fusion
+    status: proved
+    depends_on:
+    - Fusion.matvec_append3
+    mathlib_imports: []
+    notes: >-
+      CORE-ONLY Lean. A GEMV over stacked (appended) weight rows equals the
+      concatenation of the separate per-projection GEMV outputs. This is the
+      forward-equivalence of FUSION-006 (FusedQKVKernel, 3-way matvec_append3)
+      and FUSION-010 (FusedGateUpQ4KGemvKernel, 2-way). Structural induction, sorry-free.
+- type: equivalence
+  property: Pipeline fusion — fused GEMM+bias+GELU == staged composition
+  formal: fuse3 f g h x = f (g (h x))
+  applies_to: all
+  id: FUSION-FWD-003
+  lean:
+    theorem: Fusion.pipeline_fusion_correct
+    module: ProvableContracts.Fusion
+    status: proved
+    depends_on:
+    - Fusion.gemm_bias_gelu_fusion
+    mathlib_imports: []
+    notes: >-
+      CORE-ONLY Lean. A fused 3-stage pipeline equals the composition of its
+      stages; gemm_bias_gelu_fusion instantiates f=vmap gelu, g=vadd bias,
+      h=matvec W to certify FUSION-008 (FusedGemmBiasGeluKernel) computes exactly
+      gelu(bias + W·x). Proved by rfl, sorry-free.
+verification_summary:
+  total_obligations: 6
+  l2_property_tested: 3
+  l3_kani_proved: 3
+  l4_lean_proved: 3
+  l4_sorry_count: 0
+  l4_not_applicable: 3
+  lean_file: crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/Fusion/Correctness.lean
+  scope_honesty: >-
+    HONEST L4: 3 analytic-proved + 3 genuinely-N/A == 6 total obligations.
+
+    The 3 fusion forward-equivalence obligations (FUSION-FWD-001/002/003) are
+    ALGEBRAIC identities — a fused kernel computes exactly the value of the
+    unfused sequence it replaces — proved sorry-free in CORE Lean 4 (no Mathlib,
+    no ProvableContracts imports) over List Int, verified with the standalone
+    `lean` binary (exit 0, 0 sorry). The integer fold model is exact arithmetic;
+    it establishes the exact-arithmetic forward map is invariant under fusion,
+    which is the real-number result modulo the fold model. FUSION-FWD-001 is
+    proved for ANY activation f : Int → Int (strictly stronger than a
+    SiLU-specific claim).
+
+    The 3 registry obligations (registry completeness, ACTIVE call-site validity,
+    BLOCKED benchmark completeness) are GENUINELY-NOT-APPLICABLE to Lean: they
+    quantify over kernel *source files on disk*, over whether a call_site file:line
+    exists and dispatches (a build-graph predicate), and over measured wall-clock
+    tok/s. None has algebraic content. They are enforced by the `enforcement`
+    scans + KANI-FUSION-001/002/003 and counted as l4_not_applicable — NOT proved
+    as Lean theorems (marking them proved would be theater). The FUSION-003 3x-slower
+    performance decision (26.9 < 80.6·0.9) stays a benchmark falsification, never a proof.
 falsification_tests:
+- id: FALSIFY-FUSION-FWD-001
+  rule: SwiGLU activation×multiply fusion forward-equivalence
+  prediction: swigluFused f u v == hmul (vmap f u) v for all activations f and integer u, v
+  test: lean crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/Fusion/Correctness.lean
+  if_fails: Fused SiLU+multiply diverges from map-then-multiply — activation applied wrong side
+- id: FALSIFY-FUSION-FWD-002
+  rule: Multi-projection GEMV fusion forward-equivalence
+  prediction: matvec (A ++ B) x == matvec A x ++ matvec B x for stacked projection weights
+  test: lean crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/Fusion/Correctness.lean
+  if_fails: Stacked QKV/gate+up GEMV output slicing does not match separate GEMVs
+- id: FALSIFY-FUSION-FWD-003
+  rule: Pipeline (GEMM+bias+GELU) fusion forward-equivalence
+  prediction: fuse3 f g h x == f (g (h x)); gemm_bias_gelu_fusion == gelu(bias + W·x)
+  test: lean crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/Fusion/Correctness.lean
+  if_fails: Fused GEMM+bias+GELU kernel does not equal the staged composition
 - id: FALSIFY-FUSION-001
   rule: Registry completeness
   prediction: Adding a fused kernel without a contract entry triggers ERROR

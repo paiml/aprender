@@ -27,7 +27,7 @@ equations:
     preconditions:
     - scale > 0.0
     - input.len() > 0
-    lean_theorem: Theorems.E4M3_Encode
+    lean_theorem: Theorems.FP8
   e5m2_encode:
     formula: "Encode float32 x to E5M2 (5-bit exponent, 2-bit mantissa, 1 sign bit):\n  sign = (x < 0) ? 1 : 0\n  Clamp |x|\
       \ to [0, 57344] (E5M2 max normal value)\n  exponent = clamp(floor(log2(|x|)) + bias, 0, 31)  where bias = 15\n  mantissa\
@@ -43,7 +43,7 @@ equations:
     preconditions:
     - scale > 0.0
     - input.len() > 0
-    lean_theorem: Theorems.E5M2_Encode
+    lean_theorem: Theorems.FP8
   roundtrip:
     formula: "Roundtrip property:\n  decode(encode(x)) ≈ x within format precision\nFor E4M3: |decode(encode(x)) - x| <= ULP_e4m3(x)\
       \ / 2\nFor E5M2: |decode(encode(x)) - x| <= ULP_e5m2(x) / 2\nWhere ULP (unit in the last place) depends on the exponent:\n\
@@ -57,7 +57,7 @@ equations:
     preconditions:
     - scale > 0.0
     - input.len() > 0
-    lean_theorem: Theorems.Roundtrip
+    lean_theorem: Theorems.FP8
 proof_obligations:
 - type: roundtrip
   property: E4M3 encode-decode preserves value within ULP
@@ -173,3 +173,24 @@ qa_gate:
   - zero_roundtrip
   pass_criteria: All 5 falsification tests pass + 3 Kani harnesses verify
   falsification: Use wrong exponent bias (e.g., 8 instead of 7 for e4m3) to break roundtrip
+
+verification_summary:
+  total_obligations: 5
+  l2_property_tested: 5
+  l3_kani_proved: 3
+  l4_lean_proved: 5
+  l4_sorry_count: 0
+  l4_not_applicable: 0
+  mathlib_imports: true
+  notes: >-
+    All 5 proof obligations are analytic real-number properties and are proved
+    sorry-free in Lean 4 (ProvableContracts/Theorems/FP8/Interchange.lean,
+    verified with `lake env lean`, exit 0): roundtrip half-ULP bound
+    (roundtrip_e4m3 / roundtrip_e5m2 via roundtrip_ulp), dynamic-range bound
+    (range_e4m3 / range_e5m2 via decode_abs_le), and sign / zero preservation
+    (sign_preservation_pos / sign_preservation_neg / zero_roundtrip), plus a
+    bonus within-range monotonicity theorem (gridRound_mono). Exact bit
+    patterns, the reserved E4M3 NaN slot, and E5M2 Inf/NaN saturation are
+    runtime / bit-exact facts (not analytic real-number properties); they are
+    discharged by the exhaustive Kani harnesses KANI-FP8-001..003 (256-pattern
+    bounded model check) and the FALSIFY-FP8-001..005 proptests, not by Lean.

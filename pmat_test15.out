@@ -1,0 +1,261 @@
+Checking PMAT compliance for .
+  Using configuration from .pmat.yaml
+  10 suppression rule(s) loaded
+  [ 1/13] custom-score          0 checks · 0 fail · 0 warn · 0.0s
+  [ 2/13] contract-surfaces     8 checks · 0 fail · 2 warn · 0.2s
+  [ 3/13] provable-contracts   13 checks · 0 fail · 3 warn · 2.0s
+  [ 4/13] foundation           30 checks · 3 fail · 6 warn · 3.0s
+  [ 5/13] macs                  8 checks · 2 fail · 0 warn · 6.8s
+  [ 6/13] falsification        10 checks · 0 fail · 0 warn · 7.2s
+  [ 7/13] binding-scope        10 checks · 0 fail · 0 warn · 7.3s
+  [ 8/13] agent-contracts      11 checks · 0 fail · 2 warn · 15.2s
+  [ 9/13] work-ladder          10 checks · 0 fail · 0 warn · 15.7s
+  [10/13] language              8 checks · 0 fail · 5 warn · 15.8s
+  [11/13] cot-proof            10 checks · 2 fail · 0 warn · 16.4s
+  [12/13] commit-enforcement   26 checks · 1 fail · 2 warn · 17.3s
+  [13/13] codegen              10 checks · 0 fail · 0 warn · 18.8s
+  ── comply: 154 checks in 18.8s (8 fail) ──
+
+[2m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+[1m[4mPMAT Compliance Report[0m
+[2m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+
+Project Version: [1;37m3.24.1[0m
+Current PMAT:    [1;37m3.24.1[0m
+Versions Behind: [1;37m0[0m
+Status:          [31mNON-COMPLIANT[0m
+
+[1mChecks[0m:
+  [32m✓[0m Version Currency: Project is on latest version (v3.24.1)
+  [32m✓[0m Config Files: All required config files present
+  [32m✓[0m Git Hooks: PMAT hooks installed
+  [33m⚠[0m CB-030: O(1) Hooks: Run 'pmat hooks cache init' to enable O(1) hooks
+  [2m-[0m CB-031: Cache Health: No cache metrics available yet
+  [32m✓[0m Quality Thresholds: Quality thresholds configured
+  [32m✓[0m Deprecated Features: No deprecated features detected
+  [33m⚠[0m ComputeBrick Compliance: 1 warnings detected:
+    - No GUI coverage report - run probador to generate
+  [32m✓[0m OIP Tarantula Patterns (CB-120 to CB-124): No OIP Tarantula pattern violations detected
+  [32m✓[0m Coverage Quality Patterns (CB-125 to CB-127): No coverage quality issues detected
+  [32m✓[0m Cargo.lock Present: Cargo.lock present - reproducible builds enabled
+  [32m✓[0m MSRV Defined: rust-version field present in Cargo.toml
+  [32m✓[0m CI Configured: 11 GitHub Actions workflow(s) found
+  [33m⚠[0m PAIML Deps Workspace: 14 dirty: trueno, trueno-graph, trueno-rag, trueno-viz, trueno-db, aprender, entrenar, alimentar, realizar, batuta, renacer, repartir, pacha, simular (using crates.io versions for safety)
+  [33m⚠[0m Sovereign Stack Patterns: Missing: Few ticket references in recent commits
+  [31m✗[0m File Health: CRITICAL: 6 files >2000 lines, 154 files >1000 lines, 720 files >500 lines (avg health: 67%, grade: D)
+  [32m✓[0m CB-300: Muda Waste Score: Muda Score: 8.0/100 (Lean) - Over:0 Wait:0 Inv:0 Proc:20 Def:0
+  [33m⚠[0m CB-301: Reproducibility Level: Reproducibility: Bronze - Lockfile present (deps pinned); CI configuration found
+  [2m-[0m CB-302: Golden Trace Drift: No renacer.toml configured - golden tracing not enabled
+  [32m✓[0m CB-303: EDD Compliance: EDD: 100% (0/0 pub fns documented with math)
+  [32m✓[0m CB-304: Dead Code Percentage: Dead code: 0.2% (104 dead items/92206 total, ~4420 dead lines/2083075 total) [threshold: 15%]
+  [31m✗[0m CB-081: Dependency Health: Score: 0/5 | 121 direct, 474 prod transitive (1495 total w/dev) | 176 duplicates | 3% feature-gated | +5 sovereign (aprender-contracts-macros, aprender-compute, trueno-db, trueno-viz, trueno-rag, simular, probar, aprender-contracts, aprender-profile, aprender-rag, trueno-zram-core, trueno, presentar-core, renacer, trueno-graph, aprender, whisper-apr, pmcp, bashrs)
+    ✗ 121 direct deps exceed max 50 (474 transitive OK)
+    ⚠ 176 duplicate crates: brotli, windows-registry, windows_x86_64_gnullvm, getrandom, naga, equator, ureq, rustc-hash, jugar-probar, schemars, nom, rustls-pemfile, rustyline, bit-set, glam, webpki-roots, hermit-abi, safetensors, windows_x86_64_msvc, metal, darling_macro, darling, tokio-rustls, heck, winnow, windows-targets, matchit, hyper-rustls, windows_i686_gnullvm, addr2line, console, trueno, tungstenite, h2, foldhash, aprender, hashlink, criterion-plot, parquet, hashbrown, windows-link, thiserror-impl, windows_aarch64_msvc, tokio-tungstenite, serde_spanned, hyper, rustls-webpki, unicode-width, block-buffer, ordered-float, indicatif, base64, which, windows_i686_msvc, indexmap, syn, arrow-string, strum_macros, hf-hub, wasm-encoder, socket2, png, gpu-allocator, arrow-arith, hmac, windows, windows-result, r-efi, flatbuffers, twox-hash, bitflags, tonic, constant_time_eq, dirs, dirs-sys, arrow-data, embedded-io, windows_x86_64_gnu, system-configuration, lru, ndk-sys, gif, toml_edit, strum, itertools, digest, arrow-schema, object, rand_chacha, http-body, sha2, toml, arrow, bitmaps, mio, windows-core, bindgen, wgpu-core, prost-derive, arrow-array, axum-core, http, gimli, rand_core, windows-interface, hyper-tls, spin, system-configuration-sys, comfy-table, arrow-ipc, crossterm, rustix, provable-contracts, windows_i686_gnu, arrow-ord, foreign-types, ahash, toml_datetime, codespan-reporting, lz4_flex, reqwest, shlex, cfg-if, sync_wrapper, arrow-buffer, linux-raw-sys, nix, brotli-decompressor, jni-sys, wgpu-hal, wasm-streams, wgpu, windows-strings, quick-error, fancy-regex, pem-rfc7468, foreign-types-shared, prost, tower, der, wasmparser, glow, cpufeatures, rand, zip, equator-macro, provable-contracts-macros, bit-vec, arrow-cast, core-foundation, const-oid, sha1, windows-implement, compact_str, roxmltree, crypto-common, thiserror, float-cmp, wgpu-types, arrow-row, arrow-select, sysinfo, cfg_aliases, core-graphics-types, ndarray, darling_core, rustls, chacha20, wasi, criterion, windows_aarch64_gnullvm, colored, axum, redox_users, quick-xml, windows-sys. Run 'cargo tree --duplicates'
+    ⚠ Only 3% deps use default-features=false. Consider disabling unused features
+  [32m✓[0m CB-400: Shell & Makefile Quality: bashrs: All shell scripts and Makefiles pass quality checks
+  [32m✓[0m CB-533: Stale Path References: No stale path references found
+  [32m✓[0m CB-148: Spec-Work Traceability: All planned spec sections have corresponding work tickets
+  [32m✓[0m CB-130: Agent Context Adoption: Agent context index: 92861 functions, CLAUDE.md configured
+  [2m-[0m CB-140: Mono-Spec Structure: No docs/specifications/pmat-spec.md found (not a spec-managed project)
+  [33m⚠[0m CB-141: Memory Profiling: -10 points penalty:
+    - No memory profiler dependency (dhat, jemalloc, heaptrack)
+    - No memory profile binary (examples/dhat_profile.rs or benches/memory.rs)
+    - No memory baseline (.pmat-metrics/memory-baseline.json)
+  [2m-[0m CB-142: SWE-CI EvoScore: Insufficient commit test data (0 commits, need >= 3). Record test results with: pmat test --record
+  [31m✗[0m CB-200: TDG Grade Gate: 1 function(s) below minimum grade B
+    crates/apr-cli/src/dispatch_analysis.rs:9 dispatch_analysis_commands [C] (complexity: 71)
+  [33m⚠[0m CB-500: Rust Best Practices (CB-500 to CB-530): [Advisory] 0 errors, 1 warnings, 1 info:
+CB-500: Both `include` and `exclude` present - Cargo ignores `exclude` when `include` is set (Cargo.toml:1)
+CB-500: Only 0/7 critical patterns in exclude (target/, .profraw, .profdata, .vscode/, .idea/, .pmat, proptest-regressions) (Cargo.toml:1)
+  [32m✓[0m CB-600: Lua Best Practices (CB-600 to CB-619): Not a Lua project (no .lua files found)
+  [32m✓[0m CB-700: SQL Best Practices (CB-700 to CB-705): Not a SQL project (no .sql files found)
+  [32m✓[0m CB-800: Scala Best Practices (CB-800 to CB-805): Not a Scala project (no .scala files found)
+  [33m⚠[0m CB-900: Markdown Best Practices (CB-900 to CB-904): [Advisory] 0 errors, 304 warnings, 11583 info:
+CB-900: Broken internal link `specifications/chat-template-improvement-spec.md` — target does not exist (docs/model-verification-checklist.md:5)
+CB-900: Broken internal link `specifications/chat-template-improvement-spec.md` — target does not exist (docs/model-verification-checklist.md:340)
+CB-900: Broken internal link `./cli-tui-spec.md` — target does not exist (docs/specifications/aprender-profile/apr-runtime-model-tracing-support.md:762)
+CB-900: Broken internal link `../../../trueno/README.md` — target does not exist (docs/specifications/aprender-serve/pure-rust-ml-library-research-spec.md:247)
+CB-900: Broken internal link `${PATH#book/src/}` — target does not exist (docs/specifications/apr-book-spec.md:152)
+CB-900: Broken internal link `../../../whisper.apr/demos/tests/src/worker_js_tests.rs` — target does not exist (docs/specifications/aprender-test/wasm-threaded-testing-mock-runtime.md:988)
+CB-900: Broken internal link `../../../whisper.apr/docs/specifications/ground-truth-whisper-apr-cpp-hugging-face.md` — target does not exist (docs/specifications/aprender-test/wasm-threaded-testing-mock-runtime.md:989)
+CB-900: Broken internal link `../../../whisper.apr/demos/realtime-transcription/src/lib.rs:558` — target does not exist (docs/specifications/aprender-test/PROBAR-SPEC-007-runtime-validation.md:333)
+CB-900: Broken internal link `../whisper.apr/docs/specifications/` — target does not exist (docs/specifications/aprender-test/probar-docker-wasm-spec.md:289)
+CB-900: Broken internal link `../../../simular` — target does not exist (docs/specifications/aprender-test/advanced-features-probar.md:1939)
+CB-900: Broken internal link `./introduction.md` — target does not exist (docs/specifications/aprender-test/missing-features-in-pure-rust.md:1347)
+CB-900: Broken internal link `./probar/why-probar.md` — target does not exist (docs/specifications/aprender-test/missing-features-in-pure-rust.md:1351)
+CB-900: Broken internal link `./probar/quick-start.md` — target does not exist (docs/specifications/aprender-test/missing-features-in-pure-rust.md:1352)
+CB-900: Broken internal link `./probar/overview.md` — target does not exist (docs/specifications/aprender-test/missing-features-in-pure-rust.md:1353)
+CB-900: Broken internal link `./probar/locators.md` — target does not exist (docs/specifications/aprender-test/missing-features-in-pure-rust.md:1357)
+CB-900: Broken internal link `./probar/assertions.md` — target does not exist (docs/specifications/aprender-test/missing-features-in-pure-rust.md:1358)
+CB-900: Broken internal link `./probar/assertions-soft.md` — target does not exist (docs/specifications/aprender-test/missing-features-in-pure-rust.md:1359)
+CB-900: Broken internal link `./probar/assertions-retry.md` — target does not exist (docs/specifications/aprender-test/missing-features-in-pure-rust.md:1360)
+CB-900: Broken internal link `./probar/assertions-equation.md` — target does not exist (docs/specifications/aprender-test/missing-features-in-pure-rust.md:1361)
+CB-900: Broken internal link `./probar/simulation.md` — target does not exist (docs/specifications/aprender-test/missing-features-in-pure-rust.md:1362)
+    ... and 11867 more
+  [33m⚠[0m CB-950: YAML Best Practices (CB-950 to CB-954): [Advisory] 0 errors, 14 warnings, 31 info:
+CB-950: Unquoted truthy string `N` — quote to prevent implicit boolean conversion (contracts/crux-M-01-v1.yaml:63)
+CB-950: Unquoted truthy string `N` — quote to prevent implicit boolean conversion (contracts/crux-E-08-v1.yaml:52)
+CB-950: Unquoted truthy string `n` — quote to prevent implicit boolean conversion (contracts/patterns/compute-parity-v1.yaml:51)
+CB-950: Unquoted truthy string `n` — quote to prevent implicit boolean conversion (contracts/patterns/compute-parity-v1.yaml:56)
+CB-950: Unquoted truthy string `n` — quote to prevent implicit boolean conversion (contracts/patterns/compute-parity-v1.yaml:66)
+CB-950: Unquoted truthy string `no` — quote to prevent implicit boolean conversion (contracts/apr-format-leaf-sovereignty-v1.yaml:37)
+CB-950: Unquoted truthy string `no` — quote to prevent implicit boolean conversion (contracts/apr-format-leaf-sovereignty-v1.yaml:65)
+CB-950: Unquoted truthy string `N` — quote to prevent implicit boolean conversion (contracts/crux-M-10-v1.yaml:62)
+CB-950: Unquoted truthy string `N` — quote to prevent implicit boolean conversion (contracts/crux-M-02-v1.yaml:53)
+CB-950: Unquoted truthy string `N` — quote to prevent implicit boolean conversion (contracts/crux-L-15-v1.yaml:56)
+CB-950: Unquoted truthy string `N` — quote to prevent implicit boolean conversion (contracts/crux-M-08-v1.yaml:64)
+CB-950: Unquoted truthy string `n` — quote to prevent implicit boolean conversion (crates/aprender-contracts-staging/contracts/patterns/compute-parity-v1.yaml:51)
+CB-950: Unquoted truthy string `n` — quote to prevent implicit boolean conversion (crates/aprender-contracts-staging/contracts/patterns/compute-parity-v1.yaml:56)
+CB-950: Unquoted truthy string `n` — quote to prevent implicit boolean conversion (crates/aprender-contracts-staging/contracts/patterns/compute-parity-v1.yaml:66)
+CB-951: Excessive nesting depth 25 (threshold: 14) — consider restructuring (contracts/crux-I-10-v1.yaml:36)
+CB-951: Excessive nesting depth 25 (threshold: 14) — consider restructuring (contracts/apr-pretrain-from-init-v1.yaml:169)
+CB-951: Excessive nesting depth 15 (threshold: 14) — consider restructuring (contracts/crux-I-06-v1.yaml:51)
+CB-951: Excessive nesting depth 19 (threshold: 14) — consider restructuring (contracts/crux-D-06-v1.yaml:40)
+CB-951: Excessive nesting depth 20 (threshold: 14) — consider restructuring (contracts/crux-K-14-v1.yaml:33)
+CB-951: Excessive nesting depth 15 (threshold: 14) — consider restructuring (contracts/decode-gpu-resident-sampling-v1.yaml:155)
+    ... and 25 more
+  [33m⚠[0m CB-1000: MLOps Model Quality (CB-1000 to CB-1008): [Advisory] 0 errors, 10 warnings, 0 info:
+CB-1000: Model directory has 2 model file(s) but no model card (README.md): aprender-shell-base.apr, sentiment_mini.apr (crates/aprender-present/demo/assets:0)
+CB-1000: Model directory has 2 model file(s) but no model card (README.md): qwen2-0.5b-q4.gguf, mnist_784x2.apr (crates/aprender-serve/models:0)
+CB-1000: Model directory has 1 model file(s) but no model card (README.md): model.safetensors (crates/aprender-train/checkpoints/best:0)
+CB-1000: Model directory has 1 model file(s) but no model card (README.md): model.safetensors (crates/aprender-train/checkpoints/epoch-1:0)
+CB-1000: Model directory has 2 model file(s) but no model card (README.md): golden_v2.apr, golden_v1.apr (crates/apr-format/tests/fixtures:0)
+CB-1000: Model directory has 1 model file(s) but no model card (README.md): model.safetensors (crates/aprender-train/checkpoints/epoch-0:0)
+CB-1000: Model directory has 1 model file(s) but no model card (README.md): aprender-shell-base.apr (crates/aprender-present/www/assets:0)
+CB-1000: Model directory has 1 model file(s) but no model card (README.md): aprender-shell-base.apr (crates/aprender-present-lib/assets:0)
+CB-1002: GGUF model directory missing tokenizer (tokenizer.json/tokenizer.model) (:0)
+CB-1002: GGUF model directory missing tokenizer (tokenizer.json/tokenizer.model) (crates/aprender-serve/models:0)
+  [33m⚠[0m CB-1050: Lean 4 Best Practices (CB-1050 to CB-1053): [Advisory] 0 errors, 7 warnings, 0 info:
+CB-1051: Custom axiom declaration weakens trust base (./crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/MatMul/CooperativeTiling.lean:65)
+CB-1051: Custom axiom declaration weakens trust base (./crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/Quantization/NF4Dequant.lean:28)
+CB-1051: Custom axiom declaration weakens trust base (./crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/Quantization/NF4Dequant.lean:51)
+CB-1051: Custom axiom declaration weakens trust base (./crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/Quantization/NF4Dequant.lean:55)
+CB-1051: Custom axiom declaration weakens trust base (./crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/DPO.lean:34)
+CB-1051: Custom axiom declaration weakens trust base (./crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/DPO.lean:48)
+CB-1051: Custom axiom declaration weakens trust base (./crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/DPO.lean:54)
+  [32m✓[0m CB-1200: Provable Contracts: [1;37m27[0m contract(s) found
+    [32m✓[0m lint passed
+    Bindings: [1;37m125[0m/[1;37m125[0m implemented (100%)
+  [32m✓[0m CB-1201: PV Lint: PV Lint passed, 38/38 tests fulfilled
+  [32m✓[0m CB-1202: Contract Coverage: No critical ML/GPU functions detected
+  [32m✓[0m CB-1203: Contract Annotations: 728 equations, 0 production pub fns found
+  [32m✓[0m CB-1204: Build.rs Pipeline: Superseded by trait enforcement (13 trait impls in crates/aprender-serve/tests/contract_traits.rs)
+  [33m⚠[0m CB-1205: Provability Invariant: 72 violation(s): apr-load-fail-closed-config-v1: 2 obligation(s) but 0 kani_harnesses; lora-adapter-trains-base-frozen-v1: 2 obligation(s) but 0 kani_harnesses; apr-code-harness-ir-v1: 4 obligation(s) but 0 kani_harnesses
+  [32m✓[0m CB-1206: Verification Levels: 0 contracts, 0 obligations
+  [32m✓[0m CB-1207: Contract Drift: 27 contract(s), all fresh (committed within 90 days)
+  [33m⚠[0m CB-1208: Binding Existence: 7/73 bound fns not found (L1, 90% verified, threshold: 80%): compute_mse, with_stdin_support, format_tools_prompt, swap_axes, validate_element_count
+  [2m-[0m CB-1209: Contract Trait Enforcement: No tests/contract_traits.rs found
+  [32m✓[0m CB-1210: Precondition Quality: 281 preconditions, 248 unique (99% diverse), 278 postconditions
+  [32m✓[0m CB-1211: Codegen Fidelity: Generated file: 779 assertions from 559 YAML preconditions across 135 equations
+  [33m⚠[0m CB-1214: Enforcement Quality: 0 contract call sites found in source — contracts exist but are not invoked
+  [32m✓[0m CB-1300: CLI Arg Contracts: 0 OutputFormat enum definition(s)
+  [2m-[0m CB-1302: MCP Schema Contracts: No src/mcp_pmcp/ directory
+  [33m⚠[0m CB-1303: Config Contracts: 4 issue(s): book-contracts.yml: cargo test without RUST_MIN_STACK (clap needs 8MB stack); beat-speed-nightly.yml: cargo test without RUST_MIN_STACK (clap needs 8MB stack); cuda-nightly.yml: cargo test without RUST_MIN_STACK (clap needs 8MB stack); ci.yml: cargo test without RUST_MIN_STACK (clap needs 8MB stack)
+  [32m✓[0m CB-1304: Sovereign Dep Contracts: 4 sovereign dep(s) meet version contracts
+  [32m✓[0m CB-1305: Contract Surface Classification: 27/27 classified (kernel=27)
+  [2m-[0m CB-1306: TUI Widget Contracts: Not a presentar/TUI project
+  [33m⚠[0m CB-1307: WASM FFI Contracts: 221 WASM exports: 17 constructor(s) don't return Result<_, JsValue>
+  [32m✓[0m CB-1308: Verification Ladder: 27/27 contracts at L5 (lean_theorem)
+  [32m✓[0m CB-1400: Agent Contract Existence: 1/1 agent context file(s) reference contract-first design
+  [32m✓[0m CB-1401: Agent Contract Falsifiability: 93/93 work contract(s) have falsifiable claims with evidence
+  [32m✓[0m CB-1402: Agent Verification Level: 93 work contract(s) at verification level >= L1
+  [32m✓[0m CB-1403: Assume-Guarantee Chain: 0/93 contract(s) participate in assume-guarantee chains
+  [33m⚠[0m CB-1404: Agent Comply Usage: Only 29/93 contract(s) have receipts — agents should run pmat comply before completing
+  [32m✓[0m CB-1405: Contract References: 93/93 contract(s) have references (arXiv, spec, five-whys)
+  [32m✓[0m CB-1406: Chain-of-Thought Audit: 0/93 contract(s) have chain-of-thought audit trail
+  [32m✓[0m CB-1407: Five Whys Linked: No defect-related contracts found (check N/A)
+  [32m✓[0m CB-1408: Agent Evidence Executable: 93/93 contract(s) have valid evidence mechanisms (falsification methods or commands)
+  [33m⚠[0m CB-1409: No L0 Autonomous Code: 5/15 AI-authored commit(s) lack work contracts: proof(contracts): corpus climb wave 1 — 4 kernels to st...; feat(contracts): climb quantized-dot-product-v1 to honest...; proof(swiglu-kernel-v1): verified Lean zero-preservation ...
+  [32m✓[0m CB-1410: Sub-Agent Composition: 0/93 contract(s) have multi-iteration falsification chains
+  [32m✓[0m CB-1320: README Layout Contract: README.md has required sections and structure
+  [2m-[0m CB-1321: Dockerfile Contract: No Dockerfile found
+  [32m✓[0m CB-1322: SVG Asset Contract: 1 SVG file(s) validated
+  [2m-[0m CB-1323: Forjar Config Contract: No forjar.yaml or forjar.toml found
+  [32m✓[0m CB-1324: mdBook Contract: SUMMARY.md links valid
+  [32m✓[0m CB-1325: CHANGELOG Contract: CHANGELOG.md follows Keep-a-Changelog format
+  [32m✓[0m CB-1326: Badge Contract: All required badges present: CI status, version/crate, license
+  [32m✓[0m CB-1331: Work Contract Validity: 93 valid work contract(s)
+  [32m✓[0m CB-1332: Cache Staleness: All cache files fresh (<7 days)
+  [32m✓[0m CB-1333: Hook Single Writer: 0 hook writer module(s) found (target: 1)
+  [32m✓[0m CB-1334: Hook Atomic Writes: All hook writes use atomic pattern or no direct writes found
+  [32m✓[0m CB-1335: Hook Determinism: Hook files contain no non-deterministic patterns (checked 3 hooks)
+  [32m✓[0m CB-1336: Hook No Injection: No unescaped template substitution in hook code
+  [32m✓[0m CB-1337: Hook Performance: Pre-commit hook has no expensive cold operations
+  [32m✓[0m CB-1330: L-Level Ratchet: 327 contract(s) at or above target level
+  [32m✓[0m CB-1338: No Ghost Bindings: 93 binding(s) verified, 0 ghosts
+  [33m⚠[0m CB-1339: No Placeholder Preconditions: 122/9487 precondition(s) are placeholders (1%)
+  [32m✓[0m CB-1340: Enforcement Penetration: 3350 call sites / 1 functions = 335000.0% penetration
+  [33m⚠[0m CB-1341: Spec Number Accuracy: 1 oversized spec(s): cli-silent-failure-enforcement.md (540 lines)
+  [32m✓[0m CB-1343: Assertion Placement: No generated contract code found (placement N/A)
+  [32m✓[0m CB-1350: Differential Obligations: No staged files (no obligations to check)
+  [31m✗[0m CB-1351: Binding Index Freshness: binding-index.json is 89 days old (>30 days, run pmat comply refresh-bindings)
+  [32m✓[0m CB-1352: Assume-Guarantee Chains: No work contracts with assume-guarantee declarations
+  [32m✓[0m CB-1353: A/G Cycle Detection: No assume-guarantee relationships to check
+  [32m✓[0m CB-1354: Contract Query Readiness: Ready (4/4): binding-index, contracts/YAML, binding.yaml, pv CLI
+  [32m✓[0m CB-1342: Codegen Compiles: Generated contract code passes syntax checks
+  [2m-[0m CB-1600: Binding Scope Orphan: No staged files to check for binding orphans
+  [2m-[0m CB-1601: Binding SHA Drift: No `.pmat-work/*/contract.json` with `implements:` entries
+  [2m-[0m CB-1602: Unbind Audit: No unbind ledger at .pmat-work/ledger/unbinds.json
+  [2m-[0m CB-1603: Inherited Clause Integrity: No `.pmat-work/*/contract.json` with `implements:` entries
+  [2m-[0m CB-1604: Postcondition Weakening: No `.pmat-work/*/contract.json` tickets present
+  [2m-[0m CB-1605: Kani Harness Execution: No `.pmat-work/*/contract.json` with `implements:` entries
+  [2m-[0m CB-1606: Lean Theorem Linkage: No `.pmat-work/*/contract.json` with `implements:` entries
+  [2m-[0m CB-1607: Binding Equation Identifier: No `.pmat-work/*/contract.json` with `implements:` entries
+  [2m-[0m CB-1608: Cross-Binding Consistency: No `.pmat-work/*/contract.json` tickets present
+  [2m-[0m CB-1609: Binding YAML Git-Tracked: No `.pmat-work/*/contract.json` with `implements:` entries
+  [2m-[0m CB-1610: Verification Level Parses: No `.pmat-work/*/contract.json` tickets present
+  [2m-[0m CB-1611: Target ≤ Max Attainable: No `.pmat-work/*/contract.json` tickets present
+  [2m-[0m CB-1612: L1 Test Evidence: No `.pmat-work/*/contract.json` tickets present
+  [2m-[0m CB-1613: L3 Falsification Evidence: No `.pmat-work/*/contract.json` tickets present
+  [2m-[0m CB-1614: L4 Kani Evidence: No `.pmat-work/*/contract.json` tickets present
+  [2m-[0m CB-1615: Kani Harness SHA: No `.pmat-work/*/contract.json` tickets present
+  [2m-[0m CB-1616: L5 Lean Proof Zero-Sorry: No `.pmat-work/*/contract.json` tickets present
+  [2m-[0m CB-1617: Downgrade Reason Audit: No downgrade ledger at .pmat-work/ledger/downgrades.json
+  [2m-[0m CB-1618: Level Monotonicity: No checkpoint records the `verification_level` field yet
+  [2m-[0m CB-1619: Achieved Level == Target: No `.pmat-work/*/contract.json` tickets present
+  [2m-[0m CB-1620: Inherited Roster Coverage: No ticket has `implements:` bindings to enforce
+  [2m-[0m CB-1621: Expected Snapshot Drift: No `.pmat-work/*/contract.json` tickets present
+  [2m-[0m CB-1622: Roster Execution Coverage: No `.pmat-work/<ID>/falsification.log` files — unified runner hasn't executed rosters yet
+  [2m-[0m CB-1623: No Duplicate ProvableContract Entries: No ProvableContract entries in any ticket yet
+  [2m-[0m CB-1624: No Manual Deletion of Inherited Entries: No roster-mutations ledger at .pmat-work/ledger/roster-mutations.json
+  [2m-[0m CB-1625: Inherited Failure Fatal: No `.pmat-work/<ID>/falsification.log` files to inspect
+  [2m-[0m CB-1626: Referenced test_id Exists in YAML: No ProvableContract entries in any ticket yet
+  [2m-[0m CB-1627: Post-bind YAML Drift: No `.pmat-work/*/contract.json` tickets present
+  [2m-[0m CB-1628: Per-run Log Line Emitted: No `.pmat-work/<ID>/falsification.log` files to validate
+  [2m-[0m CB-1629: L4 Timeout Gate: No L4+ ticket has a `falsification.log` to check
+  [2m-[0m CB-1630: pmat work codegen Succeeds: No `.pmat-work/codegen/` directory — codegen has not been run
+  [2m-[0m CB-1631: Attribute Has Generated Module: No `#[pmat_work_contract]` attribute usage found in `src/`
+  [2m-[0m CB-1632: Attribute Clause IDs Exist: No `#[pmat_work_contract]` attribute usage found in `src/`
+  [2m-[0m CB-1633: Manifest SHA Drift: No `contracts/work/*.manifest.json` files — codegen hasn't emitted manifests yet
+  [2m-[0m CB-1634: expr Clauses Have binds_to: No clause has an `expr` field yet
+  [2m-[0m CB-1635: binds_to Function Actually Modified: No ticket has a clause with `binds_to`
+  [2m-[0m CB-1636: Generated Macros Compile (debug + release): No `.pmat-work/codegen/` directory — codegen has not been run
+  [2m-[0m CB-1637: L2+ Public Function Coverage: No L2+ ticket has `modified-files.json` — work CLI has not emitted diff receipts yet
+  [2m-[0m CB-1638: Generated Modules Git-Tracked: No `.rs` files under `contracts/work/`
+  [2m-[0m CB-1639: Kani Harnesses Reference Generated Macros: No ticket targets L4 or higher
+  [2m-[0m CB-1640: Assumption References Resolve: No structured CoT assumption references to resolve
+  [2m-[0m CB-1641: Step Has Evidence Method: No structured CoT steps found — migration pending
+  [2m-[0m CB-1642: Existing Test Path Resolves: No `ExistingTest` evidence method references found
+  [2m-[0m CB-1643: L3+ Steps Have Expr: No L3+ ticket with structured CoT steps found
+  [2m-[0m CB-1644: Agent Run Replayable: No `.pmat-work/<ID>/agent-runs/*.json` files — Component 10 writer hasn't emitted runs yet
+  [31m✗[0m CB-1645: Derived YAML Obligations: 10 ticket(s) missing derived contracts/work/<ID>.yaml: GH-672, GH-670, GH-663, GH-668, GH-667, GH-666, GH-665, GH-664, GH-671, GH-669
+
+  [31m✗[0m CB-1646: CoT Derivation SHA: 1 ticket(s) with CoT drift — `pmat work cot derive` to refresh:
+  GH-672: recorded=d51ebbbffa1988ed3a7dceb571dbbc1fd59632ea59c5e392771f721be6f636c6, actual=74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b
+
+  [2m-[0m CB-1647: No Orphan CoT Steps: No structured CoT steps to check for orphans
+  [2m-[0m CB-1648: L4 Axiomatic Discharge Bounded: No L4+ ticket present
+  [2m-[0m CB-1649: L5 Lean Theorem Mapping: No L5 ticket present
+  [32m✓[0m CB-1650: Skill Effort Pinned: 2 skill(s) pin a model-level effort
+  [2m-[0m CB-1656: MCP Manifest Faithful: No root mcp.json
+  [31m✗[0m CB-1657: Doc Model Drift: 2 superseded model id(s) outside docs/agent-models.md (MACS F6):
+    - docs/archive/entrenar-contract-falsification-sweep.md:185: m if m.contains("claude-3-5-sonnet-20241022") => (0.015, 0.075),
+    - docs/archive/entrenar-contract-falsification-sweep.md:186: m if m.contains("claude-3-5-haiku-20241022") => (0.003, 0.015),
+  [32m✓[0m CB-1655: Canonical Roadmap Fresh: ROADMAP.yaml is at least as fresh as the ledger
+  [2m-[0m CB-1651: Receipt Provenance Present: No schema_version>=2 receipts yet
+  [2m-[0m CB-1653: Ladder Claim Drift: No contracts or level-carrying receipts yet
+  [2m-[0m CB-1654: Refusal Events Acked: No event journals (.pmat-work/*/events.jsonl) yet
+  [31m✗[0m CB-1658: CoT Derivation Completeness: 1 derivation completeness violation(s):
+    - GH-672: 0 step(s) but 1 obligation(s) / 1 claim(s)
+
+[2m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
