@@ -16,6 +16,11 @@ import ProvableContracts.Theorems.RMSNorm.ScaleInvariance
 import ProvableContracts.Theorems.Sigmoid.SigmoidBounded
 import ProvableContracts.Theorems.Sigmoid.SigmoidSymmetry
 import ProvableContracts.Theorems.Sigmoid.SiluZero
+-- GELU activation (tanh approximation)
+import ProvableContracts.Defs.Gelu
+import ProvableContracts.Theorems.Gelu.GeluZero
+import ProvableContracts.Theorems.Gelu.GeluSign
+import ProvableContracts.Theorems.Gelu.GeluMono
 import ProvableContracts.Theorems.CrossEntropy.LogSoftmaxBound
 import ProvableContracts.Theorems.CrossEntropy.NonNegativity
 import ProvableContracts.Theorems.CrossEntropy.SoftmaxBackward

@@ -36,10 +36,42 @@ proof_obligations:
   property: Non-negativity for positive inputs
   formal: x > 0 implies GELU(x) >= 0
   applies_to: all
+  lean:
+    theorem: Gelu.gelu_nonneg_of_pos
+    module: ProvableContracts.Gelu
+    status: proved
+    depends_on:
+    - Real.neg_one_lt_tanh
+    - mul_nonneg
+    mathlib_imports:
+    - Mathlib.Analysis.SpecialFunctions.Trigonometric.Basic
+    - Mathlib.Analysis.SpecialFunctions.Pow.Real
+    notes: 'GELU(x) = (0.5·x)·(1 + tanh g(x)); for x>0 the left factor 0.5·x ≥ 0 and
+      the right factor 1 + tanh g(x) > 0 since tanh > -1 (Real.neg_one_lt_tanh), so
+      the product is ≥ 0 by mul_nonneg. Proved in Theorems/Gelu/GeluSign.lean.'
 - type: monotonicity
   property: Monotonically increasing for positive inputs
   formal: x > y > 0 implies GELU(x) > GELU(y)
   applies_to: all
+  lean:
+    theorem: Gelu.gelu_strictMono_of_pos
+    module: ProvableContracts.Gelu
+    status: proved
+    depends_on:
+    - Real.sinh_pos_iff
+    - Real.sinh_sub
+    - Odd.pow_lt_pow
+    - mul_lt_mul_of_pos_left
+    - mul_lt_mul_of_pos_right
+    mathlib_imports:
+    - Mathlib.Analysis.SpecialFunctions.Trigonometric.Basic
+    - Mathlib.Analysis.SpecialFunctions.Trigonometric.DerivHyp
+    - Mathlib.Analysis.SpecialFunctions.Pow.Real
+    notes: 'For 0<y<x both factors of GELU strictly increase and are positive. Inner
+      g(t)=√(2/π)(t+0.044715·t³) increases (cube strictMono via Odd.pow_lt_pow, √>0);
+      tanh strictMono (proved as tanh_strictMono from sinh(β−α)>0 via Real.sinh_pos_iff
+      + Real.sinh_sub); left factor 0.5·t increases and is >0. Product of two positive
+      increasing factors increases: (0.5·y)Rᵧ<(0.5·x)Rᵧ<(0.5·x)Rₓ. Theorems/Gelu/GeluMono.lean.'
 - type: symmetry
   property: Odd-function symmetry around origin
   formal: GELU(-x) = -GELU(x) in the limit as the CDF approaches the step function
@@ -165,3 +197,37 @@ qa_gate:
   - approximation_accuracy
   pass_criteria: All 6 falsification tests pass + Kani harnesses verify
   falsification: Replace CDF with constant 0.5 to reduce GELU to 0.5*x
+verification_summary:
+  total_obligations: 5
+  l2_property_tested: 5
+  l3_kani_proved: 2
+  l4_lean_proved: 2
+  l4_sorry_count: 0
+  l4_not_applicable: 1
+  notes: |
+    Analytic obligations proved in verified Lean (0 sorry), reusing the prior-wave
+    tanh-approximation GELU definition ProvableContracts.Gelu.gelu:
+      - Non-negativity for positive inputs -> Gelu.gelu_nonneg_of_pos
+          x>0 ⟹ (0.5·x)≥0 and (1+tanh g(x))>0 (Real.neg_one_lt_tanh) ⟹ product ≥0.
+      - Monotonically increasing for positive inputs -> Gelu.gelu_strictMono_of_pos
+          0<y<x ⟹ both GELU factors positive and strictly increasing (cube strictMono,
+          tanh strictMono via sinh(β−α)>0) ⟹ GELU(y)<GELU(x).
+    Files: Theorems/Gelu/GeluSign.lean, Theorems/Gelu/GeluMono.lean
+    (Defs/Gelu.lean + Theorems/Gelu/GeluZero.lean reused verbatim from the prior wave;
+    gelu_zero — GELU(0)=0 — remains proved and underpins the sign argument.)
+    Not applicable (runtime/hardware, no algebraic statement):
+      - SIMD matches scalar within ULP (gelu_avx2 vs gelu_scalar within 8 ULP) is a
+        fast-math rounding/hardware equivalence property, not an algebraic identity.
+    Uncovered (analytic but NOT yet proven — contract stays below strict L4; honestly
+    left UNPROVEN rather than marked N/A):
+      - Odd-function symmetry "GELU(-x) = -GELU(x) in the limit as the CDF approaches
+        the step function": a limit statement about the EXACT erf/Φ-based GELU. The
+        tanh-approx GELU is not odd (GELU(x)+GELU(-x)=x·tanh g(x)≠0); discharging the
+        step-function limit needs Φ→Heaviside reasoning we have not formalized.
+      - Tanh approximation accuracy |GELU(x) − GELU_approx(x)| < 0.005: a numerical
+        error bound between the tanh approximation and the exact erf-based GELU. The
+        exact erf-GELU is not formalized and the bound needs interval/erf estimates we
+        have not discharged (verified empirically by FALSIFY-GE-005).
+    Strict leveling: l4_lean_proved(2) + l4_not_applicable(1) = 3 != 5, so this
+    contract is HONESTLY L3 (not L4) — two of five obligations (odd-symmetry limit,
+    tanh-approx accuracy) are analytic-but-unproven and left uncovered.
