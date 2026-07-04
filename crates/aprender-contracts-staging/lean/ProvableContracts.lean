@@ -48,6 +48,9 @@ import ProvableContracts.Theorems.Elementwise.MulScalarAssoc
 -- Quantization
 import ProvableContracts.Defs.Quantization
 import ProvableContracts.Theorems.Quantization.RoundtripBound
+-- Quantized dot product
+import ProvableContracts.Theorems.QuantizedDotProduct.ErrorBound
+import ProvableContracts.Theorems.QuantizedDotProduct.BsumDecomposition
 -- AdamW optimizer
 import ProvableContracts.Defs.AdamW
 import ProvableContracts.Theorems.AdamW.WeightDecay
