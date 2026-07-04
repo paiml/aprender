@@ -36,3 +36,14 @@ falsification_tests:
     test_harness: "grep -c '^```rust' book/src/lib/optim.md"
     expected_output: "stdout >= 1"
     if_fails: "Add a rust code block with a runnable example."
+
+proof_obligations:
+- type: completeness
+  property: "The reference page book/src/lib/optim.md exists on disk (FALSIFY-PAGE-LIB-OPTIM-001)"
+  formal: "exists(book/src/lib/optim.md)"
+- type: invariant
+  property: "The page references the aprender::optim module at least once (FALSIFY-PAGE-LIB-OPTIM-002)"
+  formal: "file_contains(book/src/lib/optim.md, 'aprender::optim')"
+- type: completeness
+  property: "The page contains at least one runnable rust code block (FALSIFY-PAGE-LIB-OPTIM-003)"
+  formal: "count_fenced(book/src/lib/optim.md, lang=rust) >= 1"
