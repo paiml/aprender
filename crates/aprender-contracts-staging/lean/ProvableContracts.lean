@@ -11,6 +11,10 @@ import ProvableContracts.Theorems.Softmax.PartitionOfUnity
 import ProvableContracts.Theorems.Softmax.Monotonicity
 import ProvableContracts.Theorems.Softmax.Bounded
 import ProvableContracts.Theorems.Softmax.ShiftInvariance
+import ProvableContracts.Defs.Sampling
+import ProvableContracts.Theorems.Sampling.TemperatureScaling
+import ProvableContracts.Theorems.Sampling.TopK
+import ProvableContracts.Theorems.Sampling.RepeatPenalty
 import ProvableContracts.Theorems.RMSNorm.DenominatorPositive
 import ProvableContracts.Theorems.RMSNorm.ScaleInvariance
 import ProvableContracts.Theorems.Sigmoid.SigmoidBounded
