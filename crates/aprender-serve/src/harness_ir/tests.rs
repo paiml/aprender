@@ -133,6 +133,22 @@ fn falsify_ir_tool_schema_004() {
     );
 }
 
+// ── L5 binding liveness ──
+
+/// L5 binding-liveness gate: binds each function named in
+/// `contracts/binding.yaml` for `apr-code-harness-ir-v1` to a typed function
+/// pointer. If any bound function is renamed, removed, or its signature drifts,
+/// THIS TEST FAILS TO COMPILE — making the binding registry's `status:
+/// implemented` claims compile-enforced, not self-declared. Complements the
+/// source-scan verification (`pv proof-status --binding … --verify-bindings .`).
+#[test]
+fn binding_liveness_l5_bound_functions_exist() {
+    let _oblig_ir_1: fn(&serde_json::Value) -> Result<Message, String> = from_anthropic;
+    let _oblig_ir_2: fn(&serde_json::Value) -> Result<Message, String> = from_gemini;
+    let _oblig_ir_3: fn(&Message) -> Message = Message::semantic;
+    let _oblig_ir_4: fn(&ToolSchema) -> serde_json::Value = tool_to_anthropic;
+}
+
 // ── Proptest generators ──
 
 prop_compose! {
