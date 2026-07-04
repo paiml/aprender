@@ -36,3 +36,14 @@ falsification_tests:
     test_harness: "grep -c '^```rust' book/src/lib/metrics.md"
     expected_output: "stdout >= 1"
     if_fails: "Add a rust code block with a runnable example."
+
+proof_obligations:
+- type: completeness
+  property: "The reference page book/src/lib/metrics.md exists on disk (FALSIFY-PAGE-LIB-METRICS-001)"
+  formal: "exists(book/src/lib/metrics.md)"
+- type: invariant
+  property: "The page references the aprender::metrics module at least once (FALSIFY-PAGE-LIB-METRICS-002)"
+  formal: "file_contains(book/src/lib/metrics.md, 'aprender::metrics')"
+- type: completeness
+  property: "The page contains at least one runnable rust code block (FALSIFY-PAGE-LIB-METRICS-003)"
+  formal: "count_fenced(book/src/lib/metrics.md, lang=rust) >= 1"

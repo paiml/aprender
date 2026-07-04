@@ -98,6 +98,23 @@ falsification_tests:
     # Should be exactly 1 unique output
   if_fails: "temperature=0 is non-deterministic"
 
+proof_obligations:
+- type: equivalence
+  property: "Q6K and Q4K of the same base model agree on the top-1 token for a simple prompt at temperature 0 (F-META-001)"
+  formal: "top1_token(logits(M_Q6K, p)) == top1_token(logits(M_Q4K, p))"
+- type: roundtrip
+  property: "GGUF -> APR -> GGUF round-trip preserves tensor data within 1% L2 drift per tensor (F-META-002)"
+  formal: "apr_diff(M_gguf, roundtrip(M_gguf), tol=0.01) == exit_0"
+- type: completeness
+  property: "At least 3 architecture families produce non-empty, NaN-free 1-token output (F-META-003)"
+  formal: "count(arch in {qwen2,llama,phi,gemma,mistral} : nonempty(run(M_arch)) and not nan(run(M_arch))) >= 3"
+- type: invariant
+  property: "A rephrased prompt produces semantically similar output (both contain the expected answer) (F-META-004)"
+  formal: "answer_token in run(M, p) and answer_token in run(M, rephrase(p))"
+- type: determinism
+  property: "temperature=0 produces a single unique output across 3 repeated runs (F-META-005)"
+  formal: "cardinality({run(M, p, temp=0) for i in 0..3}) == 1"
+
 verification_summary:
   total_obligations: 5
   proven: 0
