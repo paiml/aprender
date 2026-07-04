@@ -8,6 +8,7 @@
 import ProvableContracts.Basic
 import ProvableContracts.Defs.AdamW
 import ProvableContracts.Defs.BLAS
+import ProvableContracts.Defs.CMAES
 import ProvableContracts.Defs.Cholesky
 import ProvableContracts.Defs.CrossEntropy
 import ProvableContracts.Defs.Elementwise
@@ -28,6 +29,10 @@ import ProvableContracts.Defs.Transpose
 import ProvableContracts.Theorems.AdamW.WeightDecay
 import ProvableContracts.Theorems.Attention.ScaledDotProduct
 import ProvableContracts.Theorems.BLAS.SyrkSymmetric
+import ProvableContracts.Theorems.CMAES.StepSizePositive
+import ProvableContracts.Theorems.CMAES.WeightsNormalized
+import ProvableContracts.Theorems.CMAES.CovarianceSymmetry
+import ProvableContracts.Theorems.CMAES.CovariancePositiveDefinite
 import ProvableContracts.Theorems.Cholesky.SPD
 import ProvableContracts.Theorems.CrossEntropy.LogSoftmaxBound
 import ProvableContracts.Theorems.CrossEntropy.NonNegativity
