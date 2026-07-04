@@ -36,6 +36,8 @@ import ProvableContracts.Theorems.Elementwise.MulScalarAssoc
 import ProvableContracts.Theorems.Elementwise.ReLUNonNeg
 import ProvableContracts.Theorems.FFT.Parseval
 import ProvableContracts.Theorems.GEMV.Correctness
+import ProvableContracts.Theorems.Gelu.GeluMono
+import ProvableContracts.Theorems.Gelu.GeluSign
 import ProvableContracts.Theorems.Gelu.GeluZero
 import ProvableContracts.Theorems.LU.Existence
 import ProvableContracts.Theorems.LayerNorm.Centering
