@@ -112,6 +112,23 @@ falsification_tests:
     timeout 10 apr serve plan model.gguf 2>&1 | head -5
   if_fails: "module panics on real model"
 
+proof_obligations:
+- type: bound
+  property: "Every one of the 10 command categories has >= 80% command coverage (F-COV-001)"
+  formal: "forall C in categories : tested_commands(C) / total_commands(C) >= 0.80"
+- type: invariant
+  property: "No coverage gap with impact_score > 0.8 is untested without a tracking issue (F-COV-002)"
+  formal: "forall g in coverage_gaps : g.impact_score < 0.8 or has_issue(g)"
+- type: bound
+  property: "No function with cyclomatic complexity > 15 lacks a dedicated test (F-COV-003)"
+  formal: "forall f in apr_cli : cc(f) <= 15 or has_dedicated_test(f)"
+- type: invariant
+  property: "Zero High-severity SATD items exist in crates/apr-cli production code (F-COV-004)"
+  formal: "count(satd(apr_cli, severity=High)) == 0"
+- type: completeness
+  property: "All 6 critical dogfood modules (hex, profile, cbtop, train, chat, serve) run on a real model without panic (F-COV-005)"
+  formal: "forall m in {hex,profile,cbtop,train,chat,serve} : not panics(exercise(m))"
+
 verification_summary:
   total_obligations: 5
   proven: 0
