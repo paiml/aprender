@@ -61,6 +61,37 @@ the model is trained → fine-tuned → distilled → served as one CODE model
 **fine-tune stage of that through-line trains and validates correctly** (GPU QLoRA), so
 the lifecycle is closer to demonstrable end-to-end.
 
+### Pillar-5 (cross-cutting) — agentic coding: *either* harness, prompt parity
+
+The through-line's final stage is **`apr code`**, the sovereign agentic-coding
+runtime driving the served CODE model. The goal is not to beat a coding IDE but to
+be a **drop-in sovereign brain for *either* leading agentic-coding harness** — with
+**prompt parity**: the same prompt drives the same tool-call behaviour whichever
+harness delivers it.
+
+| Harness | Wire format | apr surface | Contract |
+|---------|-------------|-------------|----------|
+| **Claude Code** (Anthropic) | Messages API | `apr serve anthropic` | [`apr-claude-proxy-v1`](contracts/apr-claude-proxy-v1.yaml) |
+| **Google Antigravity** (Gemini-native, Anthropic-key capable) | `generateContent` | `apr serve gemini` | [`apr-gemini-proxy-v1`](contracts/apr-gemini-proxy-v1.yaml) |
+
+The design is **one agent loop, one CODE model, two wire formats** — a prompt is
+portable because both surfaces decode to the *same* canonical message/tool IR. That
+either-harness invariant is itself a falsifiable contract
+([`apr-antigravity-parity-v1`](contracts/apr-antigravity-parity-v1.yaml),
+`APR-ANTIGRAVITY-PARITY-001`): four gates covering per-format IR round-trip,
+**cross-harness tool-call-trace equivalence on a shared prompt corpus**, lossless
+tool-schema mapping, and single-agent-loop provenance.
+
+**Honest state.** Function-scale model parity is WON (30/30 canonical, cross-swap
+1.0000 — see [`beat-claude-code-parity-v1`](contracts/beat-claude-code-parity-v1.yaml));
+the open gap is project-scale multi-turn agentic tool-calling (Arena 0.20), which is a
+**model/agentic-emission** gap and therefore *harness-independent* — the whole reason
+parity is defined on the shared agent loop, not either wire format. Both wire surfaces
+are **DRAFT/PLANNED**; Antigravity's official custom-endpoint/BYOK path is still
+evolving (Gemini→Vertex Model Garden; Claude via user Anthropic key), so apr targets
+**wire parity** — be a drop-in the instant a base-URL override exists — tracked as
+`APR-ANTIGRAVITY-INTEGRATION-001`.
+
 **Campaign mode (2026-06):** ≥10 days fully-autonomous, BEATS-as-CI-artifacts across all
 four pillars plus the `cuda-oxide` pure-Rust→PTX spike on Blackwell. Every correctness
 fix ships a named `proof_obligation` + a falsifier verified RED-on-bug / GREEN-on-fix +

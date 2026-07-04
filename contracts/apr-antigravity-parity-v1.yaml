@@ -1,0 +1,200 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-antigravity-parity-v1
+#
+# SOURCE OF TRUTH for the Pillar-5 EITHER-HARNESS invariant:
+#
+#   The SAME agentic-coding prompt drives `apr code`'s CODE model to the SAME
+#   tool-call behaviour and equivalent outcome whether it is delivered through
+#   Claude Code (Anthropic Messages wire format) OR Google Antigravity (Gemini
+#   generateContent wire format).
+#
+# In one sentence: ONE agent loop, ONE CODE model, TWO wire formats — and a
+# prompt is portable across both. This is what "parity of prompts to work on
+# either" means, made falsifiable.
+#
+# WHY THIS EXISTS. Pillar-5 (agentic coding) was originally scoped to Claude
+# Code alone. Google Antigravity is a second first-class agentic-coding harness
+# (agent-first IDE, Gemini-native model path, also Anthropic-key capable). The
+# mission is not "beat Antigravity" — it is that apr's sovereign CODE model is
+# a drop-in brain for EITHER harness. That requires two things, each with its
+# own wire contract, unified by THIS parity contract:
+#   * apr-claude-proxy-v1  — Anthropic Messages surface   (Claude Code path)
+#   * apr-gemini-proxy-v1   — Gemini generateContent surface (Antigravity path)
+#   * THIS contract         — the cross-harness equivalence the two surfaces
+#                             must jointly satisfy so a prompt is portable.
+#
+# HONEST STATE (BEATS.md honesty rule applies — do NOT overclaim):
+#   * The two wire surfaces are DRAFT/PLANNED (see the sibling contracts). This
+#     parity contract is therefore also DRAFT: it defines the falsifiers that
+#     gate the claim, not a shipped-and-green claim.
+#   * Antigravity's official custom-endpoint / BYOK story is EVOLVING as of
+#     2026-Q1 (Gemini path -> Vertex Model Garden; Claude path -> user Anthropic
+#     key; no official "point at localhost" button yet). apr therefore targets
+#     WIRE PARITY (be a drop-in the instant a base-URL override exists / via a
+#     community gateway), not a claim that Antigravity ships apr support today.
+#     The integration/BYOK-tracking work is APR-ANTIGRAVITY-INTEGRATION-001.
+#   * Function-scale outcome parity of the underlying model is already WON
+#     (see beat-claude-code-parity-v1: 30/30 canonical, HumanEval, cross-swap
+#     1.0000). The OPEN gap is project-scale multi-turn agentic tool-calling
+#     (Arena 0.20) — which is a MODEL/agentic-emission gap, harness-independent,
+#     and is exactly why the parity here is defined on the SHARED agent loop,
+#     not on a single wire format.
+# ─────────────────────────────────────────────────────────────────────────────
+
+contract: apr-antigravity-parity
+metadata:
+  kind: pattern   # cross-cutting harness-parity invariant, not a mathematical
+                  # kernel and not a four-pillar beat-benchmark. Same kind as
+                  # apr-code-parity-v1 / apr-claude-proxy-v1 / apr-gemini-proxy-v1.
+  antigravity_parity_kind: HarnessPromptParityContract
+  version: "1.0.0"
+  created: '2026-07-04'
+  last_modified: '2026-07-04'
+  author: PAIML Engineering
+  description: >
+    Pillar-5 either-harness invariant. Asserts that a fixed agentic-coding
+    prompt corpus, run against `apr code`'s CODE model through the Anthropic
+    wire surface (apr-claude-proxy-v1, Claude Code) and through the Gemini wire
+    surface (apr-gemini-proxy-v1, Google Antigravity), decodes to the SAME
+    canonical agent-loop message/tool IR and yields equivalent tool-call
+    behaviour. Four falsification gates: canonical-IR round-trip parity per
+    wire format, cross-harness tool-call-trace equivalence on a shared corpus,
+    tool-schema lossless map (Anthropic input_schema <-> Gemini
+    functionDeclarations.parameters), and single-agent-loop provenance (both
+    surfaces MUST call the identical agent loop, never a forked code path).
+  references:
+    - 'Google Antigravity — https://antigravity.google (agent-first IDE)'
+    - 'Antigravity models & Agent Manager (2026-Q1): Gemini 3 Pro/Flash native, Claude via user Anthropic key, GPT-OSS local'
+    - 'Claude Code — https://docs.anthropic.com/claude/docs/claude-code'
+    - 'contracts/apr-claude-proxy-v1.yaml — Anthropic wire surface (Claude Code path)'
+    - 'contracts/apr-gemini-proxy-v1.yaml — Gemini wire surface (Antigravity path)'
+    - 'contracts/apr-code-parity-v1.yaml — the 20-category apr code parity matrix'
+    - 'contracts/beat-claude-code-parity-v1.yaml — the Pillar-5 tracking beat (function-scale WON, project-scale open)'
+    - 'crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml — the ONE agent loop both surfaces front'
+    - 'docs/specifications/apr-mcp-server-spec.md § Pillar-5 either-harness parity'
+  epic: APR-ANTIGRAVITY-PARITY-001
+  depends_on:
+    - apr-code-v1
+  related_contracts:
+    - contracts/apr-code-harness-ir-v1.yaml   # L2 — the PROVEN data-layer core: this contract's canonical_ir round-trip + cross-harness equivalence gates reduce to the obligations proved there
+    - contracts/apr-claude-proxy-v1.yaml
+    - contracts/apr-gemini-proxy-v1.yaml
+    - contracts/apr-code-parity-v1.yaml
+    - contracts/beat-claude-code-parity-v1.yaml
+
+name: apr-antigravity-parity
+version: "1.0.0"
+status: DRAFT   # promotes to ENFORCED when the two wire surfaces ship and all four gates pass
+scope: "the equivalence apr code's CODE model must hold across the Anthropic and Gemini wire surfaces"
+
+# ── The canonical agent-loop IR (the pivot both wire formats map onto) ──
+# Parity is defined on THIS shared representation, not on either wire format.
+# Each wire format is a lossless encoding of the same IR; that is the whole
+# design. Field-level map (both directions must round-trip):
+canonical_ir:
+  message_roles:
+    canonical: [user, assistant]
+    anthropic: { user: user, assistant: assistant }
+    gemini:    { user: user, assistant: model }        # Gemini calls the assistant role `model`
+  system_prompt:
+    canonical: 'system: string | blocks'
+    anthropic: 'top-level `system` (string or content blocks)'
+    gemini:    '`systemInstruction.parts[]`'
+  tool_declaration:
+    canonical: '{ name, description, json_schema }'
+    anthropic: 'tools[].{ name, description, input_schema }'
+    gemini:    'tools[].functionDeclarations[].{ name, description, parameters }'
+  tool_call:
+    canonical: '{ id, name, args }'
+    anthropic: 'content block { type: tool_use, id, name, input }'
+    gemini:    'part { functionCall: { name, args } }   # id is synthesized/stable-hashed by the proxy'
+  tool_result:
+    canonical: '{ tool_call_id, content }'
+    anthropic: 'content block { type: tool_result, tool_use_id, content }'
+    gemini:    'part { functionResponse: { name, response } }'
+  stop_signal:
+    canonical: 'end_turn | tool_use | max_tokens | stop_sequence'
+    anthropic: 'stop_reason enum (tool_use is its OWN stop_reason)'
+    gemini:    'finishReason enum + presence of a functionCall part (tool_use is finishReason=STOP + functionCall)'
+    note: >
+      This is the load-bearing asymmetry: Anthropic encodes "I want to call a
+      tool" in stop_reason; Gemini encodes it in a part + a generic STOP. Both
+      MUST decode to canonical stop_signal=tool_use. FALSIFY-AGY-PARITY-002
+      is the gate that proves it.
+
+# ── Prompt-parity corpus ──
+prompt_corpus:
+  description: >
+    A fixed, version-pinned set of agentic-coding prompts (edit-a-file,
+    run-tests-then-fix, multi-tool plan) with their expected canonical
+    tool-call traces. The SAME corpus is replayed through both wire surfaces.
+  location: 'tests/fixtures/harness-parity/corpus.jsonl (planned)'
+  min_size: 8
+  must_cover:
+    - single-tool call (Bash)
+    - multi-turn tool chain (Read -> Edit -> Bash)
+    - tool call with a nested-object argument (schema-fidelity stressor)
+    - a turn with NO tool call (pure text answer)
+    - system-prompt-dependent behaviour (instruction honoured identically)
+
+# ── Falsification conditions ──
+falsification_conditions:
+  - id: FALSIFY-AGY-PARITY-001
+    name: canonical_ir_round_trip
+    status: PLANNED
+    assertion: >
+      For every wire format W in {anthropic, gemini}: encode(decode(fixture_W))
+      == fixture_W (byte-stable up to field ordering), AND decode(fixture_W)
+      equals the pinned canonical IR for that fixture. Neither wire format may
+      lose or invent a field relative to the canonical IR.
+    test_harness: 'crates/aprender-serve/tests/falsify_agy_parity_001.rs (planned)'
+
+  - id: FALSIFY-AGY-PARITY-002
+    name: cross_harness_toolcall_trace_equivalence
+    status: PLANNED
+    assertion: >
+      For every prompt P in the prompt_corpus: the canonical agent-loop
+      tool-call trace produced when P is delivered via the Anthropic surface is
+      EQUAL to the trace produced when the identical P is delivered via the
+      Gemini surface — same ordered sequence of (tool_name, canonicalized args)
+      and same terminal stop_signal. Greedy decode (temperature 0) so the model
+      is deterministic; the ONLY difference between the two runs is the wire
+      format. A divergence falsifies "prompt parity works on either harness".
+    test_harness: 'crates/aprender-serve/tests/falsify_agy_parity_002.rs (planned)'
+    rationale: >
+      This is THE gate for the user-facing goal. It is harness-level, not
+      wire-level: it proves a prompt is portable, not merely that each surface
+      parses.
+
+  - id: FALSIFY-AGY-PARITY-003
+    name: tool_schema_lossless_map
+    status: PLANNED
+    assertion: >
+      Anthropic `tools[].input_schema` and Gemini
+      `tools[].functionDeclarations[].parameters` for the SAME logical tool
+      decode to the byte-identical internal JSON-Schema. A schema feature
+      expressible in one wire format but silently dropped in the other (e.g.
+      nested required arrays, enums, additionalProperties) falsifies this gate.
+    test_harness: 'crates/aprender-serve/tests/falsify_agy_parity_003.rs (planned)'
+
+  - id: FALSIFY-AGY-PARITY-004
+    name: single_agent_loop_provenance
+    status: PLANNED
+    assertion: >
+      Both `apr serve anthropic` and `apr serve gemini` MUST dispatch into the
+      identical agent-loop entry point (contracts/batuta/apr-code-v1). Asserted
+      structurally: a single call-graph sink reached by both HTTP handlers (no
+      forked per-wire agent implementation). Two divergent agent loops would let
+      the harnesses drift even if the wire gates pass, so provenance is gated
+      directly.
+    test_harness: 'crates/aprender-serve/tests/falsify_agy_parity_004.rs (planned)'
+    rationale: >
+      Prevents the failure mode where each proxy grows its own agent logic and
+      "parity" silently rots. One loop is the invariant; the wire formats are
+      leaves.
+
+# ── Explicit non-goals (honesty) ──
+non_goals:
+  - 'NOT a claim that Google Antigravity ships apr support today — see APR-ANTIGRAVITY-INTEGRATION-001 (BYOK/endpoint tracking).'
+  - 'NOT a "beat Antigravity" benchmark — Antigravity is a harness apr plugs INTO, not a fourth-pillar incumbent to out-score. The beat framing stays Claude-Code-only (beat-claude-code-parity-v1).'
+  - 'NOT project-scale agentic parity — that gap (Arena 0.20) is model/agentic-emission, tracked separately; this contract holds the wire+prompt-portability layer constant so that gap is isolable.'

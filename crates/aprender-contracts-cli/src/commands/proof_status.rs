@@ -10,12 +10,19 @@ use crate::contract_walk::collect_contracts;
 pub fn run(
     path: &Path,
     binding_path: Option<&Path>,
+    verify_root: Option<&Path>,
     format: &str,
     table: bool,
     kind_filter: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let binding = match binding_path {
-        Some(bp) => Some(parse_binding(bp)?),
+        // L5 gate: when --verify-bindings is set, downgrade any `implemented`
+        // binding whose function is absent from source, so L5 requires bindings
+        // that are VERIFIED as implemented rather than merely self-declared.
+        Some(bp) => Some(match verify_root {
+            Some(root) => parse_binding(bp)?.verified(root),
+            None => parse_binding(bp)?,
+        }),
         None => None,
     };
 
