@@ -21,6 +21,11 @@ import ProvableContracts.Theorems.CrossEntropy.NonNegativity
 import ProvableContracts.Theorems.CrossEntropy.SoftmaxBackward
 import ProvableContracts.Theorems.LayerNorm.DenominatorPositive
 import ProvableContracts.Theorems.LayerNorm.ShiftInvariance
+import ProvableContracts.Defs.BatchNorm
+import ProvableContracts.Theorems.BatchNorm.DenominatorPositive
+import ProvableContracts.Theorems.BatchNorm.Centering
+import ProvableContracts.Theorems.BatchNorm.RunningVariance
+import ProvableContracts.Theorems.BatchNorm.EvalUsesRunning
 import ProvableContracts.Theorems.Transpose.Involution
 -- Linear algebra definitions
 import ProvableContracts.Defs.GEMV
