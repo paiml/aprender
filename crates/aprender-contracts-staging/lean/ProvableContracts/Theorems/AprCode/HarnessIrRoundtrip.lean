@@ -108,7 +108,98 @@ theorem message_roundtrip (m : Message) (h : ∀ b ∈ m.blocks, anthNative b) :
   | mk role blocks =>
       simp only [encMsg, decMsg, list_roundtrip blocks h]
 
+-- ─────────────────────────── Gemini codec (OBLIG-IR-2) ───────────────────────────
+
+/-- Abstract Gemini-wire part. `functionCall`/`functionResponse` carry NO id
+    (Gemini pairs by name), but `functionResponse` DOES carry the tool name —
+    the mirror asymmetry to Anthropic. -/
+inductive GemBlock where
+  | text (s : String)
+  | funcCall (name : String) (args : String)
+  | funcResp (name : String) (resp : String)
+  deriving Repr
+
+/-- Encode a canonical block to the Gemini wire (drops the id). -/
+def encGem : Block → GemBlock
+  | .text s => .text s
+  | .toolCall _id name args => .funcCall name args
+  | .toolResult _id name resp => .funcResp name resp
+
+/-- Decode a Gemini-wire part back to canonical (id = none). -/
+def decGem : GemBlock → Block
+  | .text s => .text s
+  | .funcCall name args => .toolCall none name args
+  | .funcResp name resp => .toolResult none name resp
+
+/-- Gemini-native: no ids present (the shape the Gemini wire represents losslessly). -/
+def gemNative : Block → Prop
+  | .text _ => True
+  | .toolCall id _ _ => id = none
+  | .toolResult id _ _ => id = none
+
+/-- OBLIG-IR-2 (block level): on gemini-native blocks, decode∘encode is the identity. -/
+theorem gem_block_roundtrip (b : Block) (h : gemNative b) :
+    decGem (encGem b) = b := by
+  cases b with
+  | text s => rfl
+  | toolCall id name args => simp only [gemNative] at h; subst h; rfl
+  | toolResult id name resp => simp only [gemNative] at h; subst h; rfl
+
+/-- OBLIG-IR-2 lifted over a list of gemini-native blocks. -/
+theorem gem_list_roundtrip (bs : List Block) (h : ∀ b ∈ bs, gemNative b) :
+    (bs.map encGem).map decGem = bs := by
+  induction bs with
+  | nil => rfl
+  | cons b bs ih =>
+      have hb : gemNative b := h b (List.mem_cons_self b bs)
+      have hbs : ∀ b' ∈ bs, gemNative b' := fun b' hb' =>
+        h b' (List.mem_cons_of_mem b hb')
+      simp only [List.map_cons, gem_block_roundtrip b hb, ih hbs]
+
+-- ─────────────────── Cross-harness equivalence (OBLIG-IR-3, keystone) ───────────────────
+
+/-- The semantic projection: strip Anthropic-only ids (wire bookkeeping the model
+    does not act on). Equivalence is stated modulo this projection. -/
+def semanticBlock : Block → Block
+  | .text s => .text s
+  | .toolCall _id name args => .toolCall none name args
+  | .toolResult _id name resp => .toolResult none name resp
+
+/-- The shared core both wire formats carry identically: text + tool invocation.
+    (Tool results differ across formats — Anthropic drops the name, Gemini drops
+    the id — so equivalence is asserted on the core the model's decision uses.) -/
+def sharedCore : Block → Prop
+  | .text _ => True
+  | .toolCall _ _ _ => True
+  | .toolResult _ _ _ => False
+
+/-- OBLIG-IR-3 (keystone, block level): for a shared-core block, the Anthropic
+    and Gemini wire paths decode to the SAME semantic content. This is "prompt
+    parity works on either harness" as a formal theorem. -/
+theorem cross_harness_block (b : Block) (h : sharedCore b) :
+    semanticBlock (decBlock (encBlock b)) = semanticBlock (decGem (encGem b)) := by
+  cases b with
+  | text s => rfl
+  | toolCall id name args => rfl
+  | toolResult id name resp => simp only [sharedCore] at h
+
+/-- OBLIG-IR-3 lifted over a list of shared-core blocks: the two wire paths agree
+    semantically on the whole message. -/
+theorem cross_harness_list (bs : List Block) (h : ∀ b ∈ bs, sharedCore b) :
+    ((bs.map encBlock).map decBlock).map semanticBlock
+      = ((bs.map encGem).map decGem).map semanticBlock := by
+  induction bs with
+  | nil => rfl
+  | cons b bs ih =>
+      have hb : sharedCore b := h b (List.mem_cons_self b bs)
+      have hbs : ∀ b' ∈ bs, sharedCore b' := fun b' hb' =>
+        h b' (List.mem_cons_of_mem b hb')
+      simp only [List.map_cons, cross_harness_block b hb, ih hbs]
+
 #check @block_roundtrip
 #check @message_roundtrip
+#check @gem_block_roundtrip
+#check @cross_harness_block
+#check @cross_harness_list
 
 end ProvableContracts.AprCode
