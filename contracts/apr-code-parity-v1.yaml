@@ -54,6 +54,8 @@ metadata:
   related_contracts:
     - contracts/apr-mcp-server-v1.yaml
     - contracts/apr-claude-proxy-v1.yaml
+    - contracts/apr-gemini-proxy-v1.yaml         # Google Antigravity wire surface (Pillar-5 either-harness)
+    - contracts/apr-antigravity-parity-v1.yaml   # cross-harness prompt-parity invariant
     - crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml
 
 # kind is declared under metadata.kind per aprender-contracts schema.

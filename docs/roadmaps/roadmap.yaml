@@ -52,6 +52,103 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/aprender
 roadmap:
+- id: APR-ANTIGRAVITY-PARITY-001
+  github_issue: null
+  item_type: epic
+  title: 'Pillar-5 either-harness parity: apr code drivable by Claude Code OR Google Antigravity with prompt parity'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-07-04T00:00:00.000000000+00:00
+  updated: 2026-07-04T00:00:00.000000000+00:00
+  spec: docs/specifications/apr-mcp-server-spec.md
+  acceptance_criteria:
+  - 'apr code''s CODE model is drivable by EITHER Claude Code (Anthropic Messages wire) OR Google Antigravity (Gemini generateContent wire) — one agent loop, two wire formats.'
+  - 'A fixed prompt corpus produces the SAME canonical tool-call trace through both surfaces (FALSIFY-AGY-PARITY-002), at temperature 0.'
+  - 'Anthropic input_schema <-> Gemini functionDeclarations.parameters is a lossless map (FALSIFY-AGY-PARITY-003).'
+  - 'Both HTTP handlers dispatch into the identical apr-code-v1 agent loop (FALSIFY-AGY-PARITY-004) — no forked per-wire agent.'
+  - 'contracts/apr-antigravity-parity-v1.yaml promotes DRAFT -> ENFORCED when the two wire surfaces ship and all four gates pass.'
+  phases: []
+  subtasks:
+  - APR-GEMINI-PROXY-001
+  - APR-ANTIGRAVITY-INTEGRATION-001
+  estimated_effort: null
+  labels:
+  - pillar-5
+  - apr-code
+  - antigravity
+  - parity
+  notes: >-
+    Extends the apr-code pillar from Claude-Code-only to EITHER Claude Code OR
+    Google Antigravity, with prompt parity. Antigravity (Google''s agent-first
+    IDE) is Gemini-native (generateContent -> Vertex Model Garden) and also
+    Anthropic-key capable; apr''s existing apr-claude-proxy-v1 covers the
+    Anthropic path, and the new apr-gemini-proxy-v1 covers the Gemini path. The
+    invariant that makes a prompt portable across both is
+    apr-antigravity-parity-v1 (kind: pattern, 4 gates, DRAFT). NOT a "beat
+    Antigravity" benchmark — Antigravity is a harness apr plugs INTO, not a
+    fourth-pillar incumbent (the beat framing stays Claude-Code-only in
+    beat-claude-code-parity-v1). Authored 2026-07-04.
+- id: APR-GEMINI-PROXY-001
+  github_issue: null
+  item_type: task
+  title: 'apr serve gemini — Gemini generateContent provable-contract proxy (the Antigravity wire surface)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-07-04T00:00:00.000000000+00:00
+  updated: 2026-07-04T00:00:00.000000000+00:00
+  spec: docs/specifications/apr-mcp-server-spec.md
+  acceptance_criteria:
+  - 'crates/aprender-serve/src/gemini/ translation layer consumes contracts/apr-gemini-proxy-v1.yaml (YAML authoritative; hand-edited wire shapes rejected).'
+  - 'POST /v1beta/models/{model}:generateContent + :streamGenerateContent (SSE) implemented; contents/parts/systemInstruction/functionDeclarations/generationConfig parsed.'
+  - 'functionCall/functionResponse round-trip to the SAME agent loop as apr serve anthropic (FALSIFY-GEMINI-PROXY-003).'
+  - 'Sovereignty: no egress to *.googleapis.com (FALSIFY-GEMINI-PROXY-006).'
+  - 'All six FALSIFY-GEMINI-PROXY-00x gates green -> contract DRAFT -> ENFORCED.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-5
+  - apr-code
+  - antigravity
+  - serve
+  notes: >-
+    Sibling to apr-claude-proxy-v1 (Anthropic). Same default CODE model
+    (Qwen3-Coder-30B-A3B-Instruct Q4_K_M), same agent loop; only the wire
+    format differs. Key translation asymmetry: Gemini signals tool use via a
+    functionCall PART + finishReason=STOP, whereas Anthropic uses
+    stop_reason=tool_use — both must decode to canonical stop_signal=tool_use.
+    Contract: contracts/apr-gemini-proxy-v1.yaml (validated 2026-07-04).
+- id: APR-ANTIGRAVITY-INTEGRATION-001
+  github_issue: null
+  item_type: task
+  title: 'Track & document Antigravity integration paths (Anthropic-key base URL, Gemini endpoint, community gateways)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-07-04T00:00:00.000000000+00:00
+  updated: 2026-07-04T00:00:00.000000000+00:00
+  spec: docs/specifications/apr-mcp-server-spec.md
+  acceptance_criteria:
+  - 'Document, per Antigravity release, whether it accepts a custom base URL on the Anthropic-key path (apr serve anthropic drop-in) and/or a custom Gemini endpoint.'
+  - 'A runbook: point Antigravity at a local apr instance via whichever path its current version allows (incl. community gateway if that is the only route).'
+  - 'The wire contracts stay a drop-in so apr is ready the instant an official endpoint override lands.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-5
+  - antigravity
+  - integration
+  - tracking
+  notes: >-
+    HONEST tracking task. As of 2026-Q1 Antigravity has no official
+    "add a custom endpoint" button; the Gemini path targets Vertex Model
+    Garden and the Claude path uses a user Anthropic key. apr targets WIRE
+    PARITY (be a drop-in) rather than claiming shipped Antigravity support.
+    This task follows Antigravity''s evolving BYOK/endpoint story and keeps a
+    working integration runbook. Pairs with APR-GEMINI-PROXY-001.
 - id: ROADMAP-RECONCILE-2026-07-04
   github_issue: null
   item_type: note
