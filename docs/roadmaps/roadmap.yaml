@@ -52,6 +52,66 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/aprender
 roadmap:
+- id: ROADMAP-RECONCILE-2026-07-04
+  github_issue: null
+  item_type: note
+  title: 'Reconciliation note (2026-07-04): status drift corrected + beats pivot recorded'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-07-04T00:00:00.000000000+00:00
+  updated: 2026-07-04T00:00:00.000000000+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Stale pre-pivot inprogress epics reclassified to planned (deferred, not actively worked).'
+  - 'Session-completed items PMAT-730/733/735 marked completed.'
+  - 'The 2026-06-12 beats-as-CI-artifacts pivot is recorded as the reason APR-BOOK-* and CRUX-L*/CRUX-M* are deferred.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - housekeeping
+  notes: >-
+    The GitHub-synced backlog had drifted: 43 items were labelled `inprogress`
+    but none had been touched since 2026-05-17 — they are the PRE-PIVOT epics
+    (APR-BOOK-* book-completeness, PMAT-497..514; CRUX-L*/CRUX-M* kernel+gate
+    parity, PMAT-655..678; and the KD/distillation items PMAT-679/680/687/691).
+    The 2026-06-12 pivot to BEATS-as-CI-artifacts (PMAT-741+) superseded those
+    lanes. To stop the backlog implying 43 phantom active tasks WITHOUT
+    fabricating completion, all 43 are reclassified `inprogress` -> `planned`
+    (deferred backlog). Items genuinely finished this session (PMAT-730 roc/pr
+    curves, PMAT-733 encoder Pipeline gate, PMAT-735 poly+multiclass SVC) are
+    marked `completed`. The live queue is the June-11 PMAT-72x/73x/74x beat
+    backlog. See SVC-SMO-WSS-001 for a solver follow-up surfaced this session.
+- id: SVC-SMO-WSS-001
+  github_issue: null
+  item_type: task
+  title: 'SVCRbf: upgrade simplified SMO to libsvm 2nd-order working-set selection (WSS)'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-07-04T00:00:00.000000000+00:00
+  updated: 2026-07-04T00:00:00.000000000+00:00
+  spec: null
+  acceptance_criteria:
+  - 'MultiClassSVC(rbf) reaches sklearn-parity accuracy on the i%3 Iris split at the DEFAULT C=1 (currently needs C=10 to reach 0.98; at C=1 the pair 1v2 under-converges to train 0.806).'
+  - 'The existing svc-rbf-v1 sklearn-parity falsifiers stay green.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-1
+  - svm
+  - follow-up
+  notes: >-
+    Surfaced by beat_sklearn_svc_accuracy (PMAT-735). apr's SVCRbf uses a
+    simplified Platt/CS229 SMO whose working-set selection maximises |E_i - E_j|
+    (first-order). On the overlapping versicolor/virginica Iris pair at C=1 it
+    stalls short of the max-margin solution (train 0.806 vs sklearn 1.0); a
+    larger box constraint C=10 lets it reach 0.98 (ties sklearn). Upgrading to
+    the libsvm 2nd-order WSS heuristic (+ shrinking) should close the gap at the
+    default C=1. Purely a convergence-quality improvement; the RBF kernel math
+    and existing parity contract are unchanged.
 - id: CUDA-CI-NIGHTLY-001
   github_issue: null
   item_type: task
@@ -5130,7 +5190,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'APR-BOOK-001: Scaffold 20 chapter examples'
-  status: inprogress
+  status: planned
   priority: critical
   assigned_to: null
   created: 2026-04-08T08:04:17Z
@@ -5149,7 +5209,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'APR-BOOK-002: Create 20 chapter contract YAMLs'
-  status: inprogress
+  status: planned
   priority: critical
   assigned_to: null
   created: 2026-04-08T08:04:19Z
@@ -5187,7 +5247,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'APR-BOOK-004: Falsify all chapters end-to-end'
-  status: inprogress
+  status: planned
   priority: critical
   assigned_to: null
   created: 2026-04-08T08:04:23Z
@@ -5206,7 +5266,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'APR-BOOK-005: Archive 6 SHOULD-MERGE repos with redirects'
-  status: inprogress
+  status: planned
   priority: critical
   assigned_to: null
   created: 2026-04-08T08:43:26Z
@@ -5244,7 +5304,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'APR-BOOK-007: Tag all 205 repos with category topics'
-  status: inprogress
+  status: planned
   priority: medium
   assigned_to: null
   created: 2026-04-08T08:43:33Z
@@ -5263,7 +5323,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'APR-BOOK-008: Archive 18 LEGACY-LIBRARY repos'
-  status: inprogress
+  status: planned
   priority: high
   assigned_to: null
   created: 2026-04-08T08:53:20Z
@@ -5282,7 +5342,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'APR-BOOK-009: Provable contracts for 21 ACTIVE-TOOL repos'
-  status: inprogress
+  status: planned
   priority: critical
   assigned_to: null
   created: 2026-04-08T08:53:22Z
@@ -5301,7 +5361,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'APR-BOOK-010: Provable contracts for 13 GROUND-TRUTH corpora'
-  status: inprogress
+  status: planned
   priority: high
   assigned_to: null
   created: 2026-04-08T08:53:24Z
@@ -5321,7 +5381,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'APR-BOOK-011: Convert 7 hollow examples to real API exercises'
-  status: inprogress
+  status: planned
   priority: critical
   assigned_to: null
   created: 2026-04-08T09:04:18Z
@@ -5341,7 +5401,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'APR-BOOK-012: Write Part I chapters (1-3) as markdown prose'
-  status: inprogress
+  status: planned
   priority: critical
   assigned_to: null
   created: 2026-04-08T10:58:08Z
@@ -5361,7 +5421,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'APR-BOOK-013: Provable-contract-only book schema — eliminate all muda'
-  status: inprogress
+  status: planned
   priority: critical
   assigned_to: null
   created: 2026-04-08T11:01:19Z
@@ -5382,7 +5442,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'APR-BOOK-014: PCU contracts for 229 remaining pages — iterative falsification'
-  status: inprogress
+  status: planned
   priority: critical
   assigned_to: null
   created: 2026-04-08T11:08:15Z
@@ -5403,7 +5463,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'APR-BOOK-015: POC benchmark chapters — contract-first vs candle/llama.cpp/ollama/vllm'
-  status: inprogress
+  status: planned
   priority: critical
   assigned_to: null
   created: 2026-04-08T11:50:13Z
@@ -5445,7 +5505,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'APR-BOOK-017: Close proof chain leaks L2-L7, add CI enforcement'
-  status: inprogress
+  status: planned
   priority: critical
   assigned_to: null
   created: 2026-04-08T12:45:03Z
@@ -5466,7 +5526,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'APR-MCP-KAIZEN: Continuous drift sweep on apr-mcp-server-spec.md'
-  status: inprogress
+  status: planned
   priority: medium
   assigned_to: null
   created: 2026-04-18T13:33:02Z
@@ -8687,7 +8747,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'CRUX gap: CRUX-L-01 — Load pre-built HF kernel by hf://kernels-community/<name>'
-  status: inprogress
+  status: planned
   priority: high
   assigned_to: null
   created: 2026-04-21T17:14:13Z
@@ -8709,7 +8769,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'CRUX gap: CRUX-L-02 — Drop-in flash-attn2 HF kernel behind aprender FA trait'
-  status: inprogress
+  status: planned
   priority: high
   assigned_to: null
   created: 2026-04-21T17:14:13Z
@@ -8731,7 +8791,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'CRUX gap: CRUX-L-03 — Drop-in flash-attn3 HF kernel (sm_90a / sm_100)'
-  status: inprogress
+  status: planned
   priority: high
   assigned_to: null
   created: 2026-04-21T17:14:13Z
@@ -8753,7 +8813,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'CRUX gap: CRUX-L-04 — rmsnorm fused kernel behind LayerNorm trait'
-  status: inprogress
+  status: planned
   priority: medium
   assigned_to: null
   created: 2026-04-21T17:14:13Z
@@ -8775,7 +8835,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'CRUX gap: CRUX-L-05 — rotary fused RoPE-apply kernel'
-  status: inprogress
+  status: planned
   priority: medium
   assigned_to: null
   created: 2026-04-21T17:14:14Z
@@ -8797,7 +8857,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'CRUX gap: CRUX-L-06 — paged-attention KV-cache kernel (vLLM-compat)'
-  status: inprogress
+  status: planned
   priority: high
   assigned_to: null
   created: 2026-04-21T17:14:14Z
@@ -8819,7 +8879,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'CRUX gap: CRUX-L-07 — fp8-fbgemm matmul path for H100+'
-  status: inprogress
+  status: planned
   priority: medium
   assigned_to: null
   created: 2026-04-21T17:14:14Z
@@ -8841,7 +8901,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'CRUX gap: CRUX-L-08 — quantization-bitsandbytes NF4 via HF kernel'
-  status: inprogress
+  status: planned
   priority: medium
   assigned_to: null
   created: 2026-04-21T17:14:14Z
@@ -8863,7 +8923,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'CRUX gap: CRUX-L-09 — quantization-gptq fused dequant+matmul'
-  status: inprogress
+  status: planned
   priority: medium
   assigned_to: null
   created: 2026-04-21T17:14:14Z
@@ -8885,7 +8945,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'CRUX gap: CRUX-L-10 — liger-kernels fused CE-loss for training'
-  status: inprogress
+  status: planned
   priority: high
   assigned_to: null
   created: 2026-04-21T17:14:14Z
@@ -8907,7 +8967,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'CRUX gap: CRUX-L-11 — megablocks MoE routing kernel'
-  status: inprogress
+  status: planned
   priority: medium
   assigned_to: null
   created: 2026-04-21T17:14:14Z
@@ -8929,7 +8989,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'CRUX gap: CRUX-L-12 — punica-sgmv multi-LoRA fused SGMV'
-  status: inprogress
+  status: planned
   priority: medium
   assigned_to: null
   created: 2026-04-21T17:14:14Z
@@ -8951,7 +9011,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'CRUX gap: CRUX-L-13 — activation fused SwiGLU/GeGLU kernel'
-  status: inprogress
+  status: planned
   priority: medium
   assigned_to: null
   created: 2026-04-21T17:14:14Z
@@ -8973,7 +9033,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'CRUX gap: CRUX-L-14 — mamba-ssm state-space kernel'
-  status: inprogress
+  status: planned
   priority: low
   assigned_to: null
   created: 2026-04-21T17:14:14Z
@@ -8995,7 +9055,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'CRUX gap: CRUX-L-15 — Kernel version-pinning + SHA-verified load'
-  status: inprogress
+  status: planned
   priority: high
   assigned_to: null
   created: 2026-04-21T17:14:14Z
@@ -9017,7 +9077,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'CRUX gap: CRUX-M-01 — Gate-1 byte-identical vs safetensors ground truth'
-  status: inprogress
+  status: planned
   priority: critical
   assigned_to: null
   created: 2026-04-21T17:14:14Z
@@ -9039,7 +9099,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'CRUX gap: CRUX-M-02 — Gate-2 tensor-stats parity (min/max/mean/std, per-tensor)'
-  status: inprogress
+  status: planned
   priority: critical
   assigned_to: null
   created: 2026-04-21T17:14:14Z
@@ -9061,7 +9121,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'CRUX gap: CRUX-M-04 — Gate-4 cross-format parity APR ↔ GGUF ↔ safetensors'
-  status: inprogress
+  status: planned
   priority: critical
   assigned_to: null
   created: 2026-04-21T17:14:14Z
@@ -9083,7 +9143,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'CRUX gap: CRUX-M-05 — Gate-5 tokenizer round-trip with NFC normalization'
-  status: inprogress
+  status: planned
   priority: high
   assigned_to: null
   created: 2026-04-21T17:14:14Z
@@ -9105,7 +9165,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'CRUX gap: CRUX-M-06 — Gate-6 chat-template rendering equivalence'
-  status: inprogress
+  status: planned
   priority: high
   assigned_to: null
   created: 2026-04-21T17:14:14Z
@@ -9127,7 +9187,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'CRUX gap: CRUX-M-07 — Gate-7 pass@1 on canary suite with confidence interval'
-  status: inprogress
+  status: planned
   priority: critical
   assigned_to: null
   created: 2026-04-21T17:14:14Z
@@ -9149,7 +9209,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'CRUX gap: CRUX-M-08 — Gate-8 5-Whys root-cause generator on failure'
-  status: inprogress
+  status: planned
   priority: high
   assigned_to: null
   created: 2026-04-21T17:14:14Z
@@ -9171,7 +9231,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'CRUX gap: CRUX-M-09 — Property-based falsifier ≥ 1000 fuzz cases per gate'
-  status: inprogress
+  status: planned
   priority: high
   assigned_to: null
   created: 2026-04-21T17:14:14Z
@@ -9193,7 +9253,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'CRUX gap: CRUX-M-10 — Upstream-fix enforcement (reject workarounds)'
-  status: inprogress
+  status: planned
   priority: high
   assigned_to: null
   created: 2026-04-21T17:14:14Z
@@ -9215,7 +9275,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'P0-I: Verify P0-G+P0-H end-to-end on fresh checkpoint'
-  status: inprogress
+  status: planned
   priority: critical
   assigned_to: null
   created: 2026-05-16T07:14:53Z
@@ -9236,7 +9296,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'P0-J: Chinchilla gate — warning → hard blocker'
-  status: inprogress
+  status: planned
   priority: critical
   assigned_to: null
   created: 2026-05-16T07:15:09Z
@@ -9395,7 +9455,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'P3-B: apr lint zero High severity on best checkpoint'
-  status: inprogress
+  status: planned
   priority: medium
   assigned_to: null
   created: 2026-05-16T07:15:26Z
@@ -9484,7 +9544,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: Distillation Phase 2 — KD-wired student forward+backward
-  status: inprogress
+  status: planned
   priority: high
   assigned_to: null
   created: 2026-05-18T10:58:38Z
@@ -10051,7 +10111,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'Add missing metrics roc_auc_score, log_loss, roc_curve, precision_recall_curve (VERIFIED ABSENT everywhere) + GradientBoostingRegressor to complete t…'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-06-11T06:26:41Z
@@ -10111,7 +10171,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'Add preprocessing encoders + sklearn-style Pipeline: OneHotEncoder, LabelEncoder, OrdinalEncoder, PolynomialFeatures, SimpleImputer, Normalizer + Pip…'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-06-11T06:26:41Z
@@ -10151,7 +10211,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'Add non-linear SVM (RBF/poly kernel SVC) — sklearn SVC''s signature strength; current LinearSVM cannot separate non-linear data. VERIFIED ABSENT (no …'
-  status: planned
+  status: completed
   priority: low
   assigned_to: null
   created: 2026-06-11T06:26:41Z
