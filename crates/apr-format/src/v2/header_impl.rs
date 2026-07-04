@@ -135,15 +135,15 @@ pub struct AprV2Metadata {
     pub model_type: String,
 
     /// Model name
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub name: Option<String>,
 
     /// Model description
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub description: Option<String>,
 
     /// Model author/organization
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub author: Option<String>,
 
     /// Model license (SPDX identifier; governed by C-APR-PROVENANCE).
@@ -167,21 +167,21 @@ pub struct AprV2Metadata {
     pub data_license: Option<String>,
 
     /// Model version string
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub version: Option<String>,
 
     /// Source/provenance URI (DD6: Model provenance tracking)
     /// Examples: "<hf://openai/whisper-tiny>", "<local://path/to/model.safetensors>"
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub source: Option<String>,
 
     /// Original format before conversion
     /// Examples: "safetensors", "gguf", "pytorch"
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub original_format: Option<String>,
 
     /// Creation timestamp (ISO 8601)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub created_at: Option<String>,
 
     /// Total model size in bytes
@@ -193,34 +193,34 @@ pub struct AprV2Metadata {
     pub param_count: u64,
 
     /// Quantization info
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub quantization: Option<QuantizationMetadata>,
 
     /// Shard info (for multi-file models)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub sharding: Option<ShardingMetadata>,
 
     /// Chat template (Jinja2 format, from tokenizer_config.json)
     /// Per spec: chat-template-improvement-spec.md CTA-01
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub chat_template: Option<String>,
 
     /// Detected chat template format
     /// Per spec: chat-template-improvement-spec.md CTA-03
     /// Values: "chatml", "llama2", "mistral", "phi", "alpaca", "custom", "raw"
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub chat_format: Option<String>,
 
     /// Special tokens for chat templates
     /// Per spec: chat-template-improvement-spec.md CTA-04
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub special_tokens: Option<ChatSpecialTokens>,
 
     // ========================================================================
     // Transformer Config (CRITICAL for inference - realizar::apr::AprMetadata)
     // ========================================================================
     /// Model architecture family (e.g., "llama", "qwen2", "phi")
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub architecture: Option<String>,
 
     /// HuggingFace class name from `config.json::architectures[0]`
@@ -228,70 +228,70 @@ pub struct AprV2Metadata {
     /// `architecture` (family) and `model_type`. PMAT-690 P0-K stamps
     /// this so downstream `apr pretrain --init` can propagate it into
     /// the trained checkpoint's metadata.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub hf_architecture: Option<String>,
 
     /// HuggingFace `config.json::model_type` (e.g., "qwen2", "llama").
     /// PMAT-690 P0-K stamps this alongside `hf_architecture` so the
     /// import→pretrain→export chain has a single source of truth.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub hf_model_type: Option<String>,
 
     /// Hidden dimension size
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub hidden_size: Option<usize>,
 
     /// Number of transformer layers
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub num_layers: Option<usize>,
 
     /// Number of attention heads
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub num_heads: Option<usize>,
 
     /// Number of key-value heads (for GQA, defaults to num_heads)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub num_kv_heads: Option<usize>,
 
     /// Vocabulary size
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub vocab_size: Option<usize>,
 
     /// FFN intermediate dimension
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub intermediate_size: Option<usize>,
 
     /// Maximum context/sequence length
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub max_position_embeddings: Option<usize>,
 
     /// RoPE theta for position encoding
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub rope_theta: Option<f32>,
 
     /// RoPE type: 0=NORM (adjacent pairs), 2=NEOX (split halves)
     /// CORRECTNESS-011: Qwen2.5 models require rope_type=2 (NEOX style)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub rope_type: Option<u32>,
 
     /// Layer norm epsilon
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub rms_norm_eps: Option<f32>,
 
     /// Explicit head dimension (overrides hidden_size / num_heads for Qwen3+)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub head_dim: Option<usize>,
 
     /// Number of MoE experts
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub num_experts: Option<usize>,
 
     /// Number of experts selected per token
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub num_experts_per_tok: Option<usize>,
 
     /// MoE expert intermediate/FFN dimension
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub moe_intermediate_size: Option<usize>,
 
     /// Custom key-value pairs
