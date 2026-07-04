@@ -18,7 +18,7 @@ equations:
     preconditions:
     - scale > 0.0
     - input.len() > 0
-    lean_theorem: Theorems.F16_To_F32_Bias
+    lean_theorem: Theorems.F16.bias_trick_correct
   roundtrip:
     formula: f32_to_f16(f16_to_f32(h)) == h
     domain: h ∈ normal f16 values (exp ∈ [1, 30])
@@ -29,7 +29,7 @@ equations:
     preconditions:
     - scale > 0.0
     - input.len() > 0
-    lean_theorem: Theorems.Roundtrip
+    lean_theorem: Theorems.F16.roundtrip_identity
 proof_obligations:
 - type: equivalence
   property: Bias trick correctness
@@ -118,3 +118,27 @@ qa_gate:
   - f32_to_f16_round_to_nearest_even
   pass_criteria: All 5 falsification tests pass
   falsification: Truncating f32-to-f16 (mantissa >> 13) diverges from half on >440M of the 2^32 inputs
+verification_summary:
+  total_obligations: 5
+  l4_lean_proved: 3
+  l4_sorry_count: 0
+  l4_not_applicable: 2
+  notes: >-
+    3 of the 5 proof-obligations are the analytic core of the F16→F32 widening
+    and are Lean-proved sorry-free in
+    crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/F16/Conversion.lean
+    (core-only, no Mathlib; verified with `lean <file>` exit 0, 0 sorry):
+    (1) "Bias trick correctness" = `bias_trick_correct` — the (s<<31)|((e+112)<<23)|(m<<13)
+    bit-manipulation decodes field-by-field to (sign, e+112, mantissa) with a
+    zero-padded 13-bit tail, over the entire normal-f16 domain (s≤1, 1≤e≤30, m≤1023);
+    (2) "Roundtrip identity" = `roundtrip_identity` — f32→f16 field-decode ∘ f16→f32
+    encode = id on every normal f16 (widening is lossless, so exact — a Nat identity,
+    no reals); (3) "Sign preservation" = `sign_preserved` — the widened f32 sign bit
+    equals the f16 sign bit. Supporting lemmas `mant_padding_zero` and the
+    order-preserving `toF32Bits_monotone` (x≤y ⟹ f16→f32 x ≤ f16→f32 y) are also
+    proved. The 2 N/A obligations are genuinely runtime/empirical, not algebraic:
+    "SIMD conversion equivalence" (AVX2-lane vs scalar behaviour on real silicon —
+    a hardware parity check, FALSIFY-F16-004) and "F32-to-F16 round-to-nearest-even"
+    (bit-exact parity vs the `half` crate over all 2^32 inputs including subnormals,
+    overflow-to-Inf and NaN payloads — IEEE runtime rounding, not an analytic
+    identity; FALSIFY-F16-005). 3 proved + 2 N/A = 5 total, proved > 0 ⇒ L4.
