@@ -25,7 +25,9 @@ import ProvableContracts.Defs.Sigmoid
 import ProvableContracts.Defs.Softmax
 import ProvableContracts.Defs.Sparse
 import ProvableContracts.Defs.Transpose
+import ProvableContracts.Defs.Alibi
 import ProvableContracts.Theorems.AdamW.WeightDecay
+import ProvableContracts.Theorems.Alibi.Basic
 import ProvableContracts.Theorems.Attention.ScaledDotProduct
 import ProvableContracts.Theorems.BLAS.SyrkSymmetric
 import ProvableContracts.Theorems.Cholesky.SPD
